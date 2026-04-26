@@ -57,12 +57,12 @@ exact arithmetic at larger moduli.
 - `intt_ref<P>`: in-place inverse NTT (modifies slice)
 
 ### `vec_znx_big.rs`
-- `ntt120_vec_znx_big_add`, `_add_inplace`, `_add_small`, `_add_small_inplace`
-- `ntt120_vec_znx_big_sub`, `_sub_inplace`, `_sub_negate_inplace`, `_sub_small_a`, `_sub_small_b`
-- `ntt120_vec_znx_big_negate`, `_negate_inplace`
+- `ntt120_vec_znx_big_add`, `_add_assign`, `_add_small`, `_add_small_assign`
+- `ntt120_vec_znx_big_sub`, `_sub_assign`, `_sub_negate_assign`, `_sub_small_a`, `_sub_small_b`
+- `ntt120_vec_znx_big_negate`, `_negate_assign`
 - `ntt120_vec_znx_big_from_small`: sign-extend i64 VecZnx → i128 VecZnxBig
 - `ntt120_vec_znx_big_normalize_tmp_bytes(n)`, `ntt120_vec_znx_big_normalize`: extract base-2k digits
-- `ntt120_vec_znx_big_automorphism_inplace_tmp_bytes(n)`, `ntt120_vec_znx_big_automorphism`, `_automorphism_inplace`: apply X→X^p
+- `ntt120_vec_znx_big_automorphism_assign_tmp_bytes(n)`, `ntt120_vec_znx_big_automorphism`, `_automorphism_assign`: apply X→X^p
 - `ntt120_vec_znx_big_add_normal_ref`: add rounded Gaussian noise to limb
 
 ### `vec_znx_dft.rs`
@@ -73,13 +73,13 @@ exact arithmetic at larger moduli.
 - `ntt120_vec_znx_idft_apply_tmp_bytes(n) = 4*n*8`
 - `ntt120_vec_znx_idft_apply`: q120b → i128 (non-destructive, uses scratch)
 - `ntt120_vec_znx_idft_apply_tmpa`: q120b → i128 (uses input as scratch)
-- `ntt120_vec_znx_dft_{add,sub,add_inplace,sub_inplace,sub_negate_inplace,add_scaled_inplace,copy,zero}`
+- `ntt120_vec_znx_dft_{add,sub,add_assign,sub_assign,sub_negate_assign,add_scaled_assign,copy,zero}`
 
 ### `svp.rs`
 - `ntt120_svp_prepare`: i64 scalar poly → q120c SvpPPol
 - `ntt120_svp_apply_dft_to_dft`: q120c × q120b → q120b (per-coeff, calls bbc)
 - `ntt120_svp_apply_dft_to_dft_add`: accumulate variant
-- `ntt120_svp_apply_dft_to_dft_inplace`: in-place variant
+- `ntt120_svp_apply_dft_to_dft_assign`: in-place variant
 
 ### `vmp.rs`
 - `ntt120_vmp_prepare_tmp_bytes(n) = 4*n*8`
@@ -148,9 +148,9 @@ Signature: `test_foo(base2k: usize, module_ref: &Module<FFT64Ref>, module_test: 
 Available:
 - `vec_znx`: add, sub, shift, negate, rotate, automorphism, normalize, copy (~24 tests)
 - `vec_znx_big`: add, sub, negate variants; automorphism, normalize (~16 tests)
-- `vec_znx_dft`: add, add_inplace, sub, sub_inplace, sub_negate_inplace, copy,
+- `vec_znx_dft`: add, add_assign, sub, sub_assign, sub_negate_assign, copy,
   idft_apply, idft_apply_tmpa, idft_apply_consume
-- `svp`: apply_dft, apply_dft_to_dft, apply_dft_to_dft_add, apply_dft_to_dft_inplace
+- `svp`: apply_dft, apply_dft_to_dft, apply_dft_to_dft_add, apply_dft_to_dft_assign
 - `vmp`: apply_dft, apply_dft_to_dft, apply_dft_to_dft_add
 - `sampling`: fill_uniform, fill_normal, add_normal
 - `convolution`: test_convolution, test_convolution_by_const, test_convolution_pairwise

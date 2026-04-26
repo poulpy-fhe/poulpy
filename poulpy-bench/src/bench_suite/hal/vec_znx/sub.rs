@@ -3,7 +3,7 @@ use std::hint::black_box;
 use criterion::{BenchmarkId, Criterion};
 
 use poulpy_hal::{
-    api::{ModuleNew, VecZnxSub, VecZnxSubInplace, VecZnxSubNegateInplace},
+    api::{ModuleNew, VecZnxSub, VecZnxSubAssign, VecZnxSubNegateAssign},
     layouts::{Backend, FillUniform, Module, VecZnx},
     source::Source,
 };
@@ -54,18 +54,18 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_sub_inplace<B>(c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_sub_assign<B>(c: &mut Criterion, label: &str)
 where
     B: Backend,
-    Module<B>: VecZnxSubInplace + ModuleNew<B>,
+    Module<B>: VecZnxSubAssign + ModuleNew<B>,
 {
-    let group_name: String = format!("vec_znx_sub_inplace::{label}");
+    let group_name: String = format!("vec_znx_sub_assign::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
     fn runner<B: Backend>(params: [usize; 3]) -> impl FnMut()
     where
-        Module<B>: VecZnxSubInplace + ModuleNew<B>,
+        Module<B>: VecZnxSubAssign + ModuleNew<B>,
     {
         let n: usize = 1 << params[0];
         let cols: usize = params[1];
@@ -84,7 +84,7 @@ where
 
         move || {
             for i in 0..cols {
-                module.vec_znx_sub_inplace(&mut b, i, &a, i);
+                module.vec_znx_sub_assign(&mut b, i, &a, i);
             }
             black_box(());
         }
@@ -99,18 +99,18 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_sub_negate_inplace<B>(c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_sub_negate_assign<B>(c: &mut Criterion, label: &str)
 where
     B: Backend,
-    Module<B>: VecZnxSubNegateInplace + ModuleNew<B>,
+    Module<B>: VecZnxSubNegateAssign + ModuleNew<B>,
 {
-    let group_name: String = format!("vec_znx_sub_negate_inplace::{label}");
+    let group_name: String = format!("vec_znx_sub_negate_assign::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
     fn runner<B: Backend>(params: [usize; 3]) -> impl FnMut()
     where
-        Module<B>: VecZnxSubNegateInplace + ModuleNew<B>,
+        Module<B>: VecZnxSubNegateAssign + ModuleNew<B>,
     {
         let n: usize = 1 << params[0];
         let cols: usize = params[1];
@@ -129,7 +129,7 @@ where
 
         move || {
             for i in 0..cols {
-                module.vec_znx_sub_negate_inplace(&mut b, i, &a, i);
+                module.vec_znx_sub_negate_assign(&mut b, i, &a, i);
             }
             black_box(());
         }

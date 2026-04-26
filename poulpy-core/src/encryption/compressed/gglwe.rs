@@ -1,7 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use poulpy_hal::{
-    api::{ModuleN, ScratchAvailable, VecZnxAddScalarAssign, VecZnxDftBytesOf, VecZnxNormalizeInplace, VecZnxNormalizeTmpBytes},
+    api::{ModuleN, ScratchAvailable, VecZnxAddScalarAssign, VecZnxDftBytesOf, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes},
     layouts::{Backend, Module, ScalarZnx, ScalarZnxToRef, Scratch, ZnxInfos, ZnxZero},
     source::Source,
 };
@@ -45,7 +45,7 @@ where
         + GLWEEncryptSkInternal<BE>
         + GLWEEncryptSk<BE>
         + VecZnxDftBytesOf
-        + VecZnxNormalizeInplace<BE>
+        + VecZnxNormalizeAssign<BE>
         + VecZnxAddScalarAssign
         + VecZnxNormalizeTmpBytes,
     Scratch<BE>: ScratchTakeCore<BE>,
@@ -132,7 +132,7 @@ where
                     // Adds the scalar_znx_pt to the i-th limb of the vec_znx_pt
                     tmp_pt.data.zero(); // zeroes for next iteration
                     self.vec_znx_add_scalar_assign(&mut tmp_pt.data, 0, (dsize - 1) + row_i * dsize, pt, col_j);
-                    self.vec_znx_normalize_inplace(base2k, &mut tmp_pt.data, 0, scrach_1);
+                    self.vec_znx_normalize_assign(base2k, &mut tmp_pt.data, 0, scrach_1);
 
                     let (seed, mut source_xa_tmp) = source_xa.branch();
                     seeds[row_i * rank_in + col_j] = seed;

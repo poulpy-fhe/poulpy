@@ -80,44 +80,44 @@ pub trait ReimArith {
         reim_to_znx_i64_ref(res, divisor, a)
     }
 
-    fn reim_to_znx_inplace(res: &mut [f64], divisor: f64) {
-        reim_to_znx_i64_inplace_ref(res, divisor)
+    fn reim_to_znx_assign(res: &mut [f64], divisor: f64) {
+        reim_to_znx_i64_assign_ref(res, divisor)
     }
 
     fn reim_add(res: &mut [f64], a: &[f64], b: &[f64]) {
         reim_add_ref(res, a, b)
     }
 
-    fn reim_add_inplace(res: &mut [f64], a: &[f64]) {
-        reim_add_inplace_ref(res, a)
+    fn reim_add_assign(res: &mut [f64], a: &[f64]) {
+        reim_add_assign_ref(res, a)
     }
 
     fn reim_sub(res: &mut [f64], a: &[f64], b: &[f64]) {
         reim_sub_ref(res, a, b)
     }
 
-    fn reim_sub_inplace(res: &mut [f64], a: &[f64]) {
-        reim_sub_inplace_ref(res, a)
+    fn reim_sub_assign(res: &mut [f64], a: &[f64]) {
+        reim_sub_assign_ref(res, a)
     }
 
-    fn reim_sub_negate_inplace(res: &mut [f64], a: &[f64]) {
-        reim_sub_negate_inplace_ref(res, a)
+    fn reim_sub_negate_assign(res: &mut [f64], a: &[f64]) {
+        reim_sub_negate_assign_ref(res, a)
     }
 
     fn reim_negate(res: &mut [f64], a: &[f64]) {
         reim_negate_ref(res, a)
     }
 
-    fn reim_negate_inplace(res: &mut [f64]) {
-        reim_negate_inplace_ref(res)
+    fn reim_negate_assign(res: &mut [f64]) {
+        reim_negate_assign_ref(res)
     }
 
     fn reim_mul(res: &mut [f64], a: &[f64], b: &[f64]) {
         reim_mul_ref(res, a, b)
     }
 
-    fn reim_mul_inplace(res: &mut [f64], a: &[f64]) {
-        reim_mul_inplace_ref(res, a)
+    fn reim_mul_assign(res: &mut [f64], a: &[f64]) {
+        reim_mul_assign_ref(res, a)
     }
 
     fn reim_addmul(res: &mut [f64], a: &[f64], b: &[f64]) {

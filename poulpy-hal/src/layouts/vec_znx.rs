@@ -172,7 +172,8 @@ impl VecZnx<Vec<u8>> {
         }
 
         let mut compact: Self = Self::alloc(self.n, self.cols, new_size);
-        compact.raw_mut().copy_from_slice(self.raw());
+        let copy_len = compact.raw_mut().len().min(self.raw().len());
+        compact.raw_mut()[..copy_len].copy_from_slice(&self.raw()[..copy_len]);
         *self = compact;
     }
 }

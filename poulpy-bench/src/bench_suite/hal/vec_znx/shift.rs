@@ -4,23 +4,23 @@ use criterion::{BenchmarkId, Criterion};
 
 use poulpy_cpu_ref::reference::vec_znx::{vec_znx_lsh_tmp_bytes, vec_znx_rsh_tmp_bytes};
 use poulpy_hal::{
-    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxLsh, VecZnxLshInplace, VecZnxRsh, VecZnxRshInplace},
+    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxLsh, VecZnxLshAssign, VecZnxRsh, VecZnxRshAssign},
     layouts::{Backend, FillUniform, Module, ScratchOwned, VecZnx},
     source::Source,
 };
 
-pub fn bench_vec_znx_lsh_inplace<B: Backend>(c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_lsh_assign<B: Backend>(c: &mut Criterion, label: &str)
 where
-    Module<B>: ModuleNew<B> + VecZnxLshInplace<B>,
+    Module<B>: ModuleNew<B> + VecZnxLshAssign<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
-    let group_name: String = format!("vec_znx_lsh_inplace::{label}");
+    let group_name: String = format!("vec_znx_lsh_assign::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
     fn runner<B: Backend>(params: [usize; 3]) -> impl FnMut()
     where
-        Module<B>: VecZnxLshInplace<B> + ModuleNew<B>,
+        Module<B>: VecZnxLshAssign<B> + ModuleNew<B>,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
     {
         let n: usize = 1 << params[0];
@@ -44,7 +44,7 @@ where
 
         move || {
             for i in 0..cols {
-                module.vec_znx_lsh_inplace(base2k, base2k - 1, &mut b, i, scratch.borrow());
+                module.vec_znx_lsh_assign(base2k, base2k - 1, &mut b, i, scratch.borrow());
             }
             black_box(());
         }
@@ -109,18 +109,18 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_rsh_inplace<B: Backend>(c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_rsh_assign<B: Backend>(c: &mut Criterion, label: &str)
 where
-    Module<B>: VecZnxRshInplace<B> + ModuleNew<B>,
+    Module<B>: VecZnxRshAssign<B> + ModuleNew<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
-    let group_name: String = format!("vec_znx_rsh_inplace::{label}");
+    let group_name: String = format!("vec_znx_rsh_assign::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
     fn runner<B: Backend>(params: [usize; 3]) -> impl FnMut()
     where
-        Module<B>: VecZnxRshInplace<B> + ModuleNew<B>,
+        Module<B>: VecZnxRshAssign<B> + ModuleNew<B>,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
     {
         let n: usize = 1 << params[0];
@@ -144,7 +144,7 @@ where
 
         move || {
             for i in 0..cols {
-                module.vec_znx_rsh_inplace(base2k, base2k - 1, &mut b, i, scratch.borrow());
+                module.vec_znx_rsh_assign(base2k, base2k - 1, &mut b, i, scratch.borrow());
             }
             black_box(());
         }

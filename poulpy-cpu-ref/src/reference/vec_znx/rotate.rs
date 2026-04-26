@@ -3,7 +3,7 @@ use crate::{
     reference::znx::{ZnxCopy, ZnxRotate, ZnxZero},
 };
 
-pub fn vec_znx_rotate_inplace_tmp_bytes(n: usize) -> usize {
+pub fn vec_znx_rotate_assign_tmp_bytes(n: usize) -> usize {
     n * size_of::<i64>()
 }
 
@@ -35,7 +35,7 @@ where
     }
 }
 
-pub fn vec_znx_rotate_inplace<R, ZNXARI>(p: i64, res: &mut R, res_col: usize, tmp: &mut [i64])
+pub fn vec_znx_rotate_assign<R, ZNXARI>(p: i64, res: &mut R, res_col: usize, tmp: &mut [i64])
 where
     R: VecZnxToMut,
     ZNXARI: ZnxRotate + ZnxCopy,

@@ -85,7 +85,7 @@ where
     let sum_size: usize = a_size.min(res_size);
 
     for j in 0..sum_size {
-        BE::reim_add_inplace(res.at_mut(res_col, j), a.at(a_col, j));
+        BE::reim_add_assign(res.at_mut(res_col, j), a.at(a_col, j));
     }
 }
 
@@ -111,18 +111,18 @@ where
         let shift: usize = (a_scale as usize).min(a_size);
         let sum_size: usize = a_size.min(res_size).saturating_sub(shift);
         for j in 0..sum_size {
-            BE::reim_add_inplace(res.at_mut(res_col, j), a.at(a_col, j + shift));
+            BE::reim_add_assign(res.at_mut(res_col, j), a.at(a_col, j + shift));
         }
     } else if a_scale < 0 {
         let shift: usize = (a_scale.unsigned_abs() as usize).min(res_size);
         let sum_size: usize = a_size.min(res_size.saturating_sub(shift));
         for j in 0..sum_size {
-            BE::reim_add_inplace(res.at_mut(res_col, j + shift), a.at(a_col, j));
+            BE::reim_add_assign(res.at_mut(res_col, j + shift), a.at(a_col, j));
         }
     } else {
         let sum_size: usize = a_size.min(res_size);
         for j in 0..sum_size {
-            BE::reim_add_inplace(res.at_mut(res_col, j), a.at(a_col, j));
+            BE::reim_add_assign(res.at_mut(res_col, j), a.at(a_col, j));
         }
     }
 }
@@ -223,7 +223,7 @@ where
         let res_slice_f64: &mut [f64] = cast_slice_mut(res.at_mut(res_col, j));
         BE::reim_copy(res_slice_f64, a.at(a_col, j));
         BE::reim_dft_execute(table, res_slice_f64);
-        BE::reim_to_znx_inplace(res_slice_f64, divisor);
+        BE::reim_to_znx_assign(res_slice_f64, divisor);
     }
 
     for j in min_size..res_size {
@@ -279,7 +279,7 @@ where
         for i in 0..res.cols() {
             for j in 0..res.size() {
                 BE::reim_dft_execute(table, res.at_mut(i, j));
-                BE::reim_to_znx_inplace(res.at_mut(i, j), divisor);
+                BE::reim_to_znx_assign(res.at_mut(i, j), divisor);
             }
         }
     }
@@ -341,7 +341,7 @@ where
     }
 }
 
-pub fn vec_znx_dft_sub_inplace<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn vec_znx_dft_sub_assign<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<ScalarPrep = f64> + ReimArith,
     R: VecZnxDftToMut<BE>,
@@ -361,11 +361,11 @@ where
     let sum_size: usize = a_size.min(res_size);
 
     for j in 0..sum_size {
-        BE::reim_sub_inplace(res.at_mut(res_col, j), a.at(a_col, j));
+        BE::reim_sub_assign(res.at_mut(res_col, j), a.at(a_col, j));
     }
 }
 
-pub fn vec_znx_dft_sub_negate_inplace<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn vec_znx_dft_sub_negate_assign<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<ScalarPrep = f64> + ReimArith,
     R: VecZnxDftToMut<BE>,
@@ -385,11 +385,11 @@ where
     let sum_size: usize = a_size.min(res_size);
 
     for j in 0..sum_size {
-        BE::reim_sub_negate_inplace(res.at_mut(res_col, j), a.at(a_col, j));
+        BE::reim_sub_negate_assign(res.at_mut(res_col, j), a.at(a_col, j));
     }
 
     for j in sum_size..res_size {
-        BE::reim_negate_inplace(res.at_mut(res_col, j));
+        BE::reim_negate_assign(res.at_mut(res_col, j));
     }
 }
 

@@ -11,7 +11,7 @@ pub fn znx_sub_ref(res: &mut [i64], a: &[i64], b: &[i64]) {
     }
 }
 
-pub fn znx_sub_inplace_ref(res: &mut [i64], a: &[i64]) {
+pub fn znx_sub_assign_ref(res: &mut [i64], a: &[i64]) {
     #[cfg(debug_assertions)]
     {
         assert_eq!(res.len(), a.len());
@@ -23,7 +23,7 @@ pub fn znx_sub_inplace_ref(res: &mut [i64], a: &[i64]) {
     }
 }
 
-pub fn znx_sub_negate_inplace_ref(res: &mut [i64], a: &[i64]) {
+pub fn znx_sub_negate_assign_ref(res: &mut [i64], a: &[i64]) {
     #[cfg(debug_assertions)]
     {
         assert_eq!(res.len(), a.len());

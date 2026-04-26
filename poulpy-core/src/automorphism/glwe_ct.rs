@@ -1,8 +1,8 @@
 use poulpy_hal::{
     api::{
-        ScratchAvailable, ScratchTakeBasic, VecZnxAutomorphismInplace, VecZnxAutomorphismInplaceTmpBytes,
-        VecZnxBigAddSmallAssign, VecZnxBigAutomorphismInplace, VecZnxBigAutomorphismInplaceTmpBytes, VecZnxBigNormalize,
-        VecZnxBigSubSmallInplace, VecZnxBigSubSmallNegateInplace, VecZnxNormalize,
+        ScratchAvailable, ScratchTakeBasic, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxBigAddSmallAssign,
+        VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigNormalize, VecZnxBigSubSmallAssign,
+        VecZnxBigSubSmallNegateAssign, VecZnxNormalize,
     },
     layouts::{Backend, Module, Scratch, VecZnxBig},
 };
@@ -18,12 +18,12 @@ pub(crate) trait GLWEAutomorphismDefault<BE: Backend>:
     + GLWEKeyswitch<BE>
     + GLWEKeySwitchInternal<BE>
     + VecZnxNormalize<BE>
-    + VecZnxAutomorphismInplace<BE>
-    + VecZnxAutomorphismInplaceTmpBytes
-    + VecZnxBigAutomorphismInplace<BE>
-    + VecZnxBigAutomorphismInplaceTmpBytes
-    + VecZnxBigSubSmallInplace<BE>
-    + VecZnxBigSubSmallNegateInplace<BE>
+    + VecZnxAutomorphismAssign<BE>
+    + VecZnxAutomorphismAssignTmpBytes
+    + VecZnxBigAutomorphismAssign<BE>
+    + VecZnxBigAutomorphismAssignTmpBytes
+    + VecZnxBigSubSmallAssign<BE>
+    + VecZnxBigSubSmallNegateAssign<BE>
     + VecZnxBigAddSmallAssign<BE>
     + VecZnxBigNormalize<BE>
     + GLWENormalize<BE>
@@ -42,8 +42,8 @@ where
 
         let lvl_0: usize = self.glwe_keyswitch_tmp_bytes(res_infos, a_infos, key_infos);
         let lvl_1: usize = self
-            .vec_znx_automorphism_inplace_tmp_bytes()
-            .max(self.vec_znx_big_automorphism_inplace_tmp_bytes());
+            .vec_znx_automorphism_assign_tmp_bytes()
+            .max(self.vec_znx_big_automorphism_assign_tmp_bytes());
 
         lvl_0.max(lvl_1)
     }
@@ -67,11 +67,11 @@ where
         let res: &mut GLWE<&mut [u8]> = &mut res.to_mut();
 
         for i in 0..res.rank().as_usize() + 1 {
-            self.vec_znx_automorphism_inplace(key.p(), res.data_mut(), i, scratch);
+            self.vec_znx_automorphism_assign(key.p(), res.data_mut(), i, scratch);
         }
     }
 
-    fn glwe_automorphism_inplace_default<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_automorphism_assign_default<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos,
@@ -84,12 +84,12 @@ where
             self.glwe_automorphism_tmp_bytes_default(res, res, key)
         );
 
-        self.glwe_keyswitch_inplace(res, key, scratch);
+        self.glwe_keyswitch_assign(res, key, scratch);
 
         let res: &mut GLWE<&mut [u8]> = &mut res.to_mut();
 
         for i in 0..res.rank().as_usize() + 1 {
-            self.vec_znx_automorphism_inplace(key.p(), res.data_mut(), i, scratch);
+            self.vec_znx_automorphism_assign(key.p(), res.data_mut(), i, scratch);
         }
     }
 
@@ -125,21 +125,21 @@ where
             self.glwe_normalize(&mut a_conv, a, scratch_2);
             let mut res_big: VecZnxBig<&mut [u8], BE> = self.glwe_keyswitch_internal(res_dft, &a_conv, key, scratch_2);
             for i in 0..res.rank().as_usize() + 1 {
-                self.vec_znx_big_automorphism_inplace(key.p(), &mut res_big, i, scratch_2);
+                self.vec_znx_big_automorphism_assign(key.p(), &mut res_big, i, scratch_2);
                 self.vec_znx_big_add_small_assign(&mut res_big, i, a_conv.data(), i);
                 self.vec_znx_big_normalize(res.data_mut(), res_base2k, 0, i, &res_big, key_base2k, i, scratch_2);
             }
         } else {
             let mut res_big: VecZnxBig<&mut [u8], BE> = self.glwe_keyswitch_internal(res_dft, a, key, scratch_1);
             for i in 0..res.rank().as_usize() + 1 {
-                self.vec_znx_big_automorphism_inplace(key.p(), &mut res_big, i, scratch_1);
+                self.vec_znx_big_automorphism_assign(key.p(), &mut res_big, i, scratch_1);
                 self.vec_znx_big_add_small_assign(&mut res_big, i, a.data(), i);
                 self.vec_znx_big_normalize(res.data_mut(), res_base2k, 0, i, &res_big, key_base2k, i, scratch_1);
             }
         };
     }
 
-    fn glwe_automorphism_add_inplace_default<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_automorphism_add_assign_default<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos,
@@ -168,14 +168,14 @@ where
             self.glwe_normalize(&mut res_conv, res, scratch_2);
             let mut res_big: VecZnxBig<&mut [u8], BE> = self.glwe_keyswitch_internal(res_dft, &res_conv, key, scratch_2);
             for i in 0..res.rank().as_usize() + 1 {
-                self.vec_znx_big_automorphism_inplace(key.p(), &mut res_big, i, scratch_2);
+                self.vec_znx_big_automorphism_assign(key.p(), &mut res_big, i, scratch_2);
                 self.vec_znx_big_add_small_assign(&mut res_big, i, res_conv.data(), i);
                 self.vec_znx_big_normalize(res.data_mut(), res_base2k, 0, i, &res_big, key_base2k, i, scratch_2);
             }
         } else {
             let mut res_big: VecZnxBig<&mut [u8], BE> = self.glwe_keyswitch_internal(res_dft, res, key, scratch_1);
             for i in 0..res.rank().as_usize() + 1 {
-                self.vec_znx_big_automorphism_inplace(key.p(), &mut res_big, i, scratch_1);
+                self.vec_znx_big_automorphism_assign(key.p(), &mut res_big, i, scratch_1);
                 self.vec_znx_big_add_small_assign(&mut res_big, i, res.data(), i);
                 self.vec_znx_big_normalize(res.data_mut(), res_base2k, 0, i, &res_big, key_base2k, i, scratch_1);
             }
@@ -214,15 +214,15 @@ where
             self.glwe_normalize(&mut a_conv, a, scratch_2);
             let mut res_big: VecZnxBig<&mut [u8], BE> = self.glwe_keyswitch_internal(res_dft, &a_conv, key, scratch_2);
             for i in 0..res.rank().as_usize() + 1 {
-                self.vec_znx_big_automorphism_inplace(key.p(), &mut res_big, i, scratch_2);
-                self.vec_znx_big_sub_small_inplace(&mut res_big, i, a_conv.data(), i);
+                self.vec_znx_big_automorphism_assign(key.p(), &mut res_big, i, scratch_2);
+                self.vec_znx_big_sub_small_assign(&mut res_big, i, a_conv.data(), i);
                 self.vec_znx_big_normalize(res.data_mut(), res_base2k, 0, i, &res_big, key_base2k, i, scratch_2);
             }
         } else {
             let mut res_big: VecZnxBig<&mut [u8], BE> = self.glwe_keyswitch_internal(res_dft, a, key, scratch_1);
             for i in 0..res.rank().as_usize() + 1 {
-                self.vec_znx_big_automorphism_inplace(key.p(), &mut res_big, i, scratch_1);
-                self.vec_znx_big_sub_small_inplace(&mut res_big, i, a.data(), i);
+                self.vec_znx_big_automorphism_assign(key.p(), &mut res_big, i, scratch_1);
+                self.vec_znx_big_sub_small_assign(&mut res_big, i, a.data(), i);
                 self.vec_znx_big_normalize(res.data_mut(), res_base2k, 0, i, &res_big, key_base2k, i, scratch_1);
             }
         };
@@ -260,21 +260,21 @@ where
             self.glwe_normalize(&mut a_conv, a, scratch_2);
             let mut res_big: VecZnxBig<&mut [u8], BE> = self.glwe_keyswitch_internal(res_dft, &a_conv, key, scratch_2);
             for i in 0..res.rank().as_usize() + 1 {
-                self.vec_znx_big_automorphism_inplace(key.p(), &mut res_big, i, scratch_2);
-                self.vec_znx_big_sub_small_negate_inplace(&mut res_big, i, a_conv.data(), i);
+                self.vec_znx_big_automorphism_assign(key.p(), &mut res_big, i, scratch_2);
+                self.vec_znx_big_sub_small_negate_assign(&mut res_big, i, a_conv.data(), i);
                 self.vec_znx_big_normalize(res.data_mut(), res_base2k, 0, i, &res_big, key_base2k, i, scratch_2);
             }
         } else {
             let mut res_big: VecZnxBig<&mut [u8], BE> = self.glwe_keyswitch_internal(res_dft, a, key, scratch_1);
             for i in 0..res.rank().as_usize() + 1 {
-                self.vec_znx_big_automorphism_inplace(key.p(), &mut res_big, i, scratch_1);
-                self.vec_znx_big_sub_small_negate_inplace(&mut res_big, i, a.data(), i);
+                self.vec_znx_big_automorphism_assign(key.p(), &mut res_big, i, scratch_1);
+                self.vec_znx_big_sub_small_negate_assign(&mut res_big, i, a.data(), i);
                 self.vec_znx_big_normalize(res.data_mut(), res_base2k, 0, i, &res_big, key_base2k, i, scratch_1);
             }
         };
     }
 
-    fn glwe_automorphism_sub_inplace_default<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_automorphism_sub_assign_default<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos,
@@ -303,21 +303,21 @@ where
             self.glwe_normalize(&mut res_conv, res, scratch_2);
             let mut res_big: VecZnxBig<&mut [u8], BE> = self.glwe_keyswitch_internal(res_dft, &res_conv, key, scratch_2);
             for i in 0..res.rank().as_usize() + 1 {
-                self.vec_znx_big_automorphism_inplace(key.p(), &mut res_big, i, scratch_2);
-                self.vec_znx_big_sub_small_inplace(&mut res_big, i, res_conv.data(), i);
+                self.vec_znx_big_automorphism_assign(key.p(), &mut res_big, i, scratch_2);
+                self.vec_znx_big_sub_small_assign(&mut res_big, i, res_conv.data(), i);
                 self.vec_znx_big_normalize(res.data_mut(), res_base2k, 0, i, &res_big, key_base2k, i, scratch_2);
             }
         } else {
             let mut res_big: VecZnxBig<&mut [u8], BE> = self.glwe_keyswitch_internal(res_dft, res, key, scratch_1);
             for i in 0..res.rank().as_usize() + 1 {
-                self.vec_znx_big_automorphism_inplace(key.p(), &mut res_big, i, scratch_1);
-                self.vec_znx_big_sub_small_inplace(&mut res_big, i, res.data(), i);
+                self.vec_znx_big_automorphism_assign(key.p(), &mut res_big, i, scratch_1);
+                self.vec_znx_big_sub_small_assign(&mut res_big, i, res.data(), i);
                 self.vec_znx_big_normalize(res.data_mut(), res_base2k, 0, i, &res_big, key_base2k, i, scratch_1);
             }
         };
     }
 
-    fn glwe_automorphism_sub_negate_inplace_default<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_automorphism_sub_negate_assign_default<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos,
@@ -346,15 +346,15 @@ where
             self.glwe_normalize(&mut res_conv, res, scratch_2);
             let mut res_big: VecZnxBig<&mut [u8], BE> = self.glwe_keyswitch_internal(res_dft, &res_conv, key, scratch_2);
             for i in 0..res.rank().as_usize() + 1 {
-                self.vec_znx_big_automorphism_inplace(key.p(), &mut res_big, i, scratch_2);
-                self.vec_znx_big_sub_small_negate_inplace(&mut res_big, i, res_conv.data(), i);
+                self.vec_znx_big_automorphism_assign(key.p(), &mut res_big, i, scratch_2);
+                self.vec_znx_big_sub_small_negate_assign(&mut res_big, i, res_conv.data(), i);
                 self.vec_znx_big_normalize(res.data_mut(), res_base2k, 0, i, &res_big, key_base2k, i, scratch_2);
             }
         } else {
             let mut res_big: VecZnxBig<&mut [u8], BE> = self.glwe_keyswitch_internal(res_dft, res, key, scratch_1);
             for i in 0..res.rank().as_usize() + 1 {
-                self.vec_znx_big_automorphism_inplace(key.p(), &mut res_big, i, scratch_1);
-                self.vec_znx_big_sub_small_negate_inplace(&mut res_big, i, res.data(), i);
+                self.vec_znx_big_automorphism_assign(key.p(), &mut res_big, i, scratch_1);
+                self.vec_znx_big_sub_small_negate_assign(&mut res_big, i, res.data(), i);
                 self.vec_znx_big_normalize(res.data_mut(), res_base2k, 0, i, &res_big, key_base2k, i, scratch_1);
             }
         };
@@ -367,12 +367,12 @@ where
         + GLWEKeyswitch<BE>
         + GLWEKeySwitchInternal<BE>
         + VecZnxNormalize<BE>
-        + VecZnxAutomorphismInplace<BE>
-        + VecZnxAutomorphismInplaceTmpBytes
-        + VecZnxBigAutomorphismInplace<BE>
-        + VecZnxBigAutomorphismInplaceTmpBytes
-        + VecZnxBigSubSmallInplace<BE>
-        + VecZnxBigSubSmallNegateInplace<BE>
+        + VecZnxAutomorphismAssign<BE>
+        + VecZnxAutomorphismAssignTmpBytes
+        + VecZnxBigAutomorphismAssign<BE>
+        + VecZnxBigAutomorphismAssignTmpBytes
+        + VecZnxBigSubSmallAssign<BE>
+        + VecZnxBigSubSmallNegateAssign<BE>
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigNormalize<BE>
         + GLWENormalize<BE>,

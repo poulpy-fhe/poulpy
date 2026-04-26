@@ -39,7 +39,7 @@ where
         }
     }
 
-    fn ggsw_rotate_inplace_default<R>(&self, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
+    fn ggsw_rotate_assign_default<R>(&self, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
     where
         R: GGSWToMut,
         Scratch<BE>: ScratchTakeCore<BE> + ScratchAvailable,
@@ -57,7 +57,7 @@ where
 
         for row in 0..rows {
             for col in 0..cols {
-                self.glwe_rotate_inplace(k, &mut res.at_mut(row, col), scratch);
+                self.glwe_rotate_assign(k, &mut res.at_mut(row, col), scratch);
             }
         }
     }

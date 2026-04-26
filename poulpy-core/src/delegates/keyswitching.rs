@@ -32,12 +32,12 @@ where
         BE::glwe_keyswitch(self, res, a, key, scratch)
     }
 
-    fn glwe_keyswitch_inplace<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_keyswitch_assign<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut + GLWEInfos,
         K: GGLWEPreparedToRef<BE> + GGLWEInfos,
     {
-        BE::glwe_keyswitch_inplace(self, res, key, scratch)
+        BE::glwe_keyswitch_assign(self, res, key, scratch)
     }
 }
 
@@ -65,13 +65,13 @@ where
         BE::gglwe_keyswitch(self, res, a, b, scratch)
     }
 
-    fn gglwe_keyswitch_inplace<R, A>(&self, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
+    fn gglwe_keyswitch_assign<R, A>(&self, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
     where
         R: GGLWEToMut,
         A: GGLWEPreparedToRef<BE> + GGLWEInfos,
         Scratch<BE>: crate::ScratchTakeCore<BE>,
     {
-        BE::gglwe_keyswitch_inplace(self, res, a, scratch)
+        BE::gglwe_keyswitch_assign(self, res, a, scratch)
     }
 }
 
@@ -101,14 +101,14 @@ where
         BE::ggsw_keyswitch(self, res, a, key, tsk, scratch)
     }
 
-    fn ggsw_keyswitch_inplace<R, K, T>(&self, res: &mut R, key: &K, tsk: &T, scratch: &mut Scratch<BE>)
+    fn ggsw_keyswitch_assign<R, K, T>(&self, res: &mut R, key: &K, tsk: &T, scratch: &mut Scratch<BE>)
     where
         R: GGSWToMut,
         K: GGLWEPreparedToRef<BE> + GGLWEInfos,
         T: GGLWEToGGSWKeyPreparedToRef<BE> + GGLWEInfos,
         Scratch<BE>: crate::ScratchTakeCore<BE>,
     {
-        BE::ggsw_keyswitch_inplace(self, res, key, tsk, scratch)
+        BE::ggsw_keyswitch_assign(self, res, key, tsk, scratch)
     }
 }
 

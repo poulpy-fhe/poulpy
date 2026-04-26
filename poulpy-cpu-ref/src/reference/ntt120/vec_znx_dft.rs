@@ -30,8 +30,8 @@ use crate::{
         ZnxView, ZnxViewMut,
     },
     reference::ntt120::{
-        NttAdd, NttAddInplace, NttCopy, NttDFTExecute, NttFromZnx64, NttNegate, NttNegateInplace, NttSub, NttSubInplace,
-        NttSubNegateInplace, NttToZnx128, NttZero,
+        NttAdd, NttAddAssign, NttCopy, NttDFTExecute, NttFromZnx64, NttNegate, NttNegateAssign, NttSub, NttSubAssign,
+        NttSubNegateAssign, NttToZnx128, NttZero,
         mat_vec::{BbbMeta, BbcMeta},
         ntt::{NttTable, NttTableInv, intt_ref},
         primes::{PrimeSet, Primes30},
@@ -468,7 +468,7 @@ where
 /// DFT-domain in-place add: `res[res_col] += a[a_col]`.
 pub fn ntt120_vec_znx_dft_add_assign<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttAddInplace,
+    BE: Backend<ScalarPrep = Q120bScalar> + NttAddAssign,
     R: VecZnxDftToMut<BE>,
     A: VecZnxDftToRef<BE>,
 {
@@ -477,7 +477,7 @@ where
 
     let sum_size = res.size().min(a.size());
     for j in 0..sum_size {
-        BE::ntt_add_inplace(limb_u64_mut(&mut res, res_col, j), limb_u64(&a, a_col, j));
+        BE::ntt_add_assign(limb_u64_mut(&mut res, res_col, j), limb_u64(&a, a_col, j));
     }
 }
 
@@ -487,7 +487,7 @@ where
 /// `a_scale < 0` shifts `a` up by `|a_scale|` limbs (adds into higher limbs).
 pub fn ntt120_vec_znx_dft_add_scaled_assign<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize, a_scale: i64)
 where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttAddInplace,
+    BE: Backend<ScalarPrep = Q120bScalar> + NttAddAssign,
     R: VecZnxDftToMut<BE>,
     A: VecZnxDftToRef<BE>,
 {
@@ -501,18 +501,18 @@ where
         let shift = (a_scale as usize).min(a_size);
         let sum_size = a_size.min(res_size).saturating_sub(shift);
         for j in 0..sum_size {
-            BE::ntt_add_inplace(limb_u64_mut(&mut res, res_col, j), limb_u64(&a, a_col, j + shift));
+            BE::ntt_add_assign(limb_u64_mut(&mut res, res_col, j), limb_u64(&a, a_col, j + shift));
         }
     } else if a_scale < 0 {
         let shift = (a_scale.unsigned_abs() as usize).min(res_size);
         let sum_size = a_size.min(res_size.saturating_sub(shift));
         for j in 0..sum_size {
-            BE::ntt_add_inplace(limb_u64_mut(&mut res, res_col, j + shift), limb_u64(&a, a_col, j));
+            BE::ntt_add_assign(limb_u64_mut(&mut res, res_col, j + shift), limb_u64(&a, a_col, j));
         }
     } else {
         let sum_size = a_size.min(res_size);
         for j in 0..sum_size {
-            BE::ntt_add_inplace(limb_u64_mut(&mut res, res_col, j), limb_u64(&a, a_col, j));
+            BE::ntt_add_assign(limb_u64_mut(&mut res, res_col, j), limb_u64(&a, a_col, j));
         }
     }
 }
@@ -569,9 +569,9 @@ where
 }
 
 /// DFT-domain in-place sub: `res[res_col] -= a[a_col]`.
-pub fn ntt120_vec_znx_dft_sub_inplace<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn ntt120_vec_znx_dft_sub_assign<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttSubInplace,
+    BE: Backend<ScalarPrep = Q120bScalar> + NttSubAssign,
     R: VecZnxDftToMut<BE>,
     A: VecZnxDftToRef<BE>,
 {
@@ -580,16 +580,16 @@ where
 
     let sum_size = res.size().min(a.size());
     for j in 0..sum_size {
-        BE::ntt_sub_inplace(limb_u64_mut(&mut res, res_col, j), limb_u64(&a, a_col, j));
+        BE::ntt_sub_assign(limb_u64_mut(&mut res, res_col, j), limb_u64(&a, a_col, j));
     }
 }
 
 /// DFT-domain in-place swap-sub: `res[res_col] = a[a_col] - res[res_col]`.
 ///
 /// Extra `res` limbs beyond `a.size()` are negated.
-pub fn ntt120_vec_znx_dft_sub_negate_inplace<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn ntt120_vec_znx_dft_sub_negate_assign<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttSubNegateInplace + NttNegateInplace,
+    BE: Backend<ScalarPrep = Q120bScalar> + NttSubNegateAssign + NttNegateAssign,
     R: VecZnxDftToMut<BE>,
     A: VecZnxDftToRef<BE>,
 {
@@ -599,10 +599,10 @@ where
     let res_size = res.size();
     let sum_size = res_size.min(a.size());
     for j in 0..sum_size {
-        BE::ntt_sub_negate_inplace(limb_u64_mut(&mut res, res_col, j), limb_u64(&a, a_col, j));
+        BE::ntt_sub_negate_assign(limb_u64_mut(&mut res, res_col, j), limb_u64(&a, a_col, j));
     }
     for j in sum_size..res_size {
-        BE::ntt_negate_inplace(limb_u64_mut(&mut res, res_col, j));
+        BE::ntt_negate_assign(limb_u64_mut(&mut res, res_col, j));
     }
 }
 

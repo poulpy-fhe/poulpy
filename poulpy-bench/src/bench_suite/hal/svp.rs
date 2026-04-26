@@ -4,7 +4,7 @@ use criterion::{BenchmarkId, Criterion};
 use rand::Rng;
 
 use poulpy_hal::{
-    api::{ModuleNew, SvpApplyDft, SvpApplyDftToDft, SvpApplyDftToDftInplace, SvpPPolAlloc, SvpPrepare, VecZnxDftAlloc},
+    api::{ModuleNew, SvpApplyDft, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxDftAlloc},
     layouts::{Backend, DataViewMut, DeviceBuf, FillUniform, Module, ScalarZnx, SvpPPol, VecZnx, VecZnxDft},
     source::Source,
 };
@@ -141,18 +141,18 @@ where
     group.finish();
 }
 
-pub fn bench_svp_apply_dft_to_dft_inplace<B>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
+pub fn bench_svp_apply_dft_to_dft_assign<B>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
 where
-    Module<B>: SvpApplyDftToDftInplace<B> + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
+    Module<B>: SvpApplyDftToDftAssign<B> + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
     B: Backend,
 {
-    let group_name: String = format!("svp_apply_dft_to_dft_inplace::{label}");
+    let group_name: String = format!("svp_apply_dft_to_dft_assign::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
     fn runner<B>(sweep: [usize; 3]) -> impl FnMut()
     where
-        Module<B>: SvpApplyDftToDftInplace<B> + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
+        Module<B>: SvpApplyDftToDftAssign<B> + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
         B: Backend,
     {
         let n: usize = 1 << sweep[0];
@@ -171,7 +171,7 @@ where
 
         move || {
             for j in 0..cols {
-                module.svp_apply_dft_to_dft_inplace(&mut res, j, &svp, j);
+                module.svp_apply_dft_to_dft_assign(&mut res, j, &svp, j);
             }
             black_box(());
         }

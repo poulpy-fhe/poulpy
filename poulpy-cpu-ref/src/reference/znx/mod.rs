@@ -29,20 +29,20 @@ pub trait ZnxAdd {
     fn znx_add(res: &mut [i64], a: &[i64], b: &[i64]);
 }
 
-pub trait ZnxAddInplace {
-    fn znx_add_inplace(res: &mut [i64], a: &[i64]);
+pub trait ZnxAddAssign {
+    fn znx_add_assign(res: &mut [i64], a: &[i64]);
 }
 
 pub trait ZnxSub {
     fn znx_sub(res: &mut [i64], a: &[i64], b: &[i64]);
 }
 
-pub trait ZnxSubInplace {
-    fn znx_sub_inplace(res: &mut [i64], a: &[i64]);
+pub trait ZnxSubAssign {
+    fn znx_sub_assign(res: &mut [i64], a: &[i64]);
 }
 
-pub trait ZnxSubNegateInplace {
-    fn znx_sub_negate_inplace(res: &mut [i64], a: &[i64]);
+pub trait ZnxSubNegateAssign {
+    fn znx_sub_negate_assign(res: &mut [i64], a: &[i64]);
 }
 
 pub trait ZnxAutomorphism {
@@ -57,8 +57,8 @@ pub trait ZnxNegate {
     fn znx_negate(res: &mut [i64], src: &[i64]);
 }
 
-pub trait ZnxNegateInplace {
-    fn znx_negate_inplace(res: &mut [i64]);
+pub trait ZnxNegateAssign {
+    fn znx_negate_assign(res: &mut [i64]);
 }
 
 pub trait ZnxRotate {
@@ -77,8 +77,8 @@ pub trait ZnxMulAddPowerOfTwo {
     fn znx_muladd_power_of_two(k: i64, res: &mut [i64], a: &[i64]);
 }
 
-pub trait ZnxMulPowerOfTwoInplace {
-    fn znx_mul_power_of_two_inplace(k: i64, res: &mut [i64]);
+pub trait ZnxMulPowerOfTwoAssign {
+    fn znx_mul_power_of_two_assign(k: i64, res: &mut [i64]);
 }
 
 pub trait ZnxSwitchRing {
@@ -101,16 +101,16 @@ pub trait ZnxNormalizeFirstStepCarryOnly {
     fn znx_normalize_first_step_carry_only(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]);
 }
 
-pub trait ZnxNormalizeFirstStepInplace {
-    fn znx_normalize_first_step_inplace(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]);
+pub trait ZnxNormalizeFirstStepAssign {
+    fn znx_normalize_first_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]);
 }
 
 pub trait ZnxNormalizeMiddleStepCarryOnly {
     fn znx_normalize_middle_step_carry_only(base2k: usize, lsh: usize, x: &[i64], carry: &mut [i64]);
 }
 
-pub trait ZnxNormalizeMiddleStepInplace {
-    fn znx_normalize_middle_step_inplace(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]);
+pub trait ZnxNormalizeMiddleStepAssign {
+    fn znx_normalize_middle_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]);
 }
 
 pub trait ZnxNormalizeMiddleStepSub {
@@ -121,8 +121,8 @@ pub trait ZnxNormalizeFinalStepSub {
     fn znx_normalize_final_step_sub(base2k: usize, lsh: usize, x: &mut [i64], a: &[i64], carry: &mut [i64]);
 }
 
-pub trait ZnxNormalizeFinalStepInplace {
-    fn znx_normalize_final_step_inplace(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]);
+pub trait ZnxNormalizeFinalStepAssign {
+    fn znx_normalize_final_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]);
 }
 
 pub trait ZnxExtractDigitAddMul {

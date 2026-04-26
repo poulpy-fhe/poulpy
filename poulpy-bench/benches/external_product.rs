@@ -29,7 +29,7 @@ fn bench_glwe_external_product(c: &mut Criterion) {
     );
 }
 
-fn bench_glwe_external_product_inplace(c: &mut Criterion) {
+fn bench_glwe_external_product_assign(c: &mut Criterion) {
     let p = &poulpy_bench::params::BenchParams::get().core;
     let n = p.n;
     let base2k = p.base2k;
@@ -46,7 +46,7 @@ fn bench_glwe_external_product_inplace(c: &mut Criterion) {
         dsize,
     };
     poulpy_bench::for_each_backend!(
-        poulpy_bench::bench_suite::core::external_product::bench_glwe_external_product_inplace,
+        poulpy_bench::bench_suite::core::external_product::bench_glwe_external_product_assign,
         &infos;
         c
     );
@@ -56,6 +56,6 @@ criterion_group! {
     name = benches;
     config = poulpy_bench::criterion_config();
     targets = bench_glwe_external_product,
-    bench_glwe_external_product_inplace
+    bench_glwe_external_product_assign
 }
 criterion_main!(benches);

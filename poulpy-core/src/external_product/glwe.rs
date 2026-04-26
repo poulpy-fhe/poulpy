@@ -56,7 +56,7 @@ where
         lvl_0 + lvl_1.max(lvl_2)
     }
 
-    fn glwe_external_product_inplace_default<R, D>(&self, res: &mut R, ggsw: &D, scratch: &mut Scratch<BE>)
+    fn glwe_external_product_assign_default<R, D>(&self, res: &mut R, ggsw: &D, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut + GLWEInfos,
         D: GGSWPreparedToRef<BE> + GGSWInfos,

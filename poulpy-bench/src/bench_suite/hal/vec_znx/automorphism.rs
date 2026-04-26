@@ -4,8 +4,8 @@ use criterion::{BenchmarkId, Criterion};
 
 use poulpy_hal::{
     api::{
-        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphism, VecZnxAutomorphismInplace,
-        VecZnxAutomorphismInplaceTmpBytes,
+        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphism, VecZnxAutomorphismAssign,
+        VecZnxAutomorphismAssignTmpBytes,
     },
     layouts::{Backend, FillUniform, Module, ScratchOwned, VecZnx},
     source::Source,
@@ -55,18 +55,18 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_automorphism_inplace<B: Backend>(c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_automorphism_assign<B: Backend>(c: &mut Criterion, label: &str)
 where
-    Module<B>: VecZnxAutomorphismInplace<B> + VecZnxAutomorphismInplaceTmpBytes + ModuleNew<B>,
+    Module<B>: VecZnxAutomorphismAssign<B> + VecZnxAutomorphismAssignTmpBytes + ModuleNew<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
-    let group_name: String = format!("vec_znx_automorphism_inplace::{label}");
+    let group_name: String = format!("vec_znx_automorphism_assign::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
     fn runner<B: Backend>(params: [usize; 3]) -> impl FnMut()
     where
-        Module<B>: VecZnxAutomorphismInplace<B> + ModuleNew<B> + VecZnxAutomorphismInplaceTmpBytes,
+        Module<B>: VecZnxAutomorphismAssign<B> + ModuleNew<B> + VecZnxAutomorphismAssignTmpBytes,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
     {
         let n: usize = 1 << params[0];
@@ -79,14 +79,14 @@ where
 
         let mut res: VecZnx<Vec<u8>> = VecZnx::alloc(n, cols, size);
 
-        let mut scratch = ScratchOwned::alloc(module.vec_znx_automorphism_inplace_tmp_bytes());
+        let mut scratch = ScratchOwned::alloc(module.vec_znx_automorphism_assign_tmp_bytes());
 
         // Fill a with random i64
         res.fill_uniform(50, &mut source);
 
         move || {
             for i in 0..cols {
-                module.vec_znx_automorphism_inplace(-7, &mut res, i, scratch.borrow());
+                module.vec_znx_automorphism_assign(-7, &mut res, i, scratch.borrow());
             }
             black_box(());
         }

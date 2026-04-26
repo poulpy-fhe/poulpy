@@ -30,16 +30,11 @@ macro_rules! hal_impl_vec_znx {
             )
         }
 
-        fn vec_znx_normalize_inplace<A>(
-            module: &Module<Self>,
-            base2k: usize,
-            a: &mut A,
-            a_col: usize,
-            scratch: &mut Scratch<Self>,
-        ) where
+        fn vec_znx_normalize_assign<A>(module: &Module<Self>, base2k: usize, a: &mut A, a_col: usize, scratch: &mut Scratch<Self>)
+        where
             A: VecZnxToMut,
         {
-            <Self as HalVecZnxDefaults<Self>>::vec_znx_normalize_inplace_default(module, base2k, a, a_col, scratch)
+            <Self as HalVecZnxDefaults<Self>>::vec_znx_normalize_assign_default(module, base2k, a, a_col, scratch)
         }
 
         fn vec_znx_add_into<R, A, C>(module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize, b: &C, b_col: usize)
@@ -99,20 +94,20 @@ macro_rules! hal_impl_vec_znx {
             <Self as HalVecZnxDefaults<Self>>::vec_znx_sub_default(module, res, res_col, a, a_col, b, b_col)
         }
 
-        fn vec_znx_sub_inplace<R, A>(module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+        fn vec_znx_sub_assign<R, A>(module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
         where
             R: VecZnxToMut,
             A: VecZnxToRef,
         {
-            <Self as HalVecZnxDefaults<Self>>::vec_znx_sub_inplace_default(module, res, res_col, a, a_col)
+            <Self as HalVecZnxDefaults<Self>>::vec_znx_sub_assign_default(module, res, res_col, a, a_col)
         }
 
-        fn vec_znx_sub_negate_inplace<R, A>(module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+        fn vec_znx_sub_negate_assign<R, A>(module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
         where
             R: VecZnxToMut,
             A: VecZnxToRef,
         {
-            <Self as HalVecZnxDefaults<Self>>::vec_znx_sub_negate_inplace_default(module, res, res_col, a, a_col)
+            <Self as HalVecZnxDefaults<Self>>::vec_znx_sub_negate_assign_default(module, res, res_col, a, a_col)
         }
 
         fn vec_znx_sub_scalar<R, A, B>(
@@ -132,7 +127,7 @@ macro_rules! hal_impl_vec_znx {
             <Self as HalVecZnxDefaults<Self>>::vec_znx_sub_scalar_default(module, res, res_col, a, a_col, b, b_col, b_limb)
         }
 
-        fn vec_znx_sub_scalar_inplace<R, A>(
+        fn vec_znx_sub_scalar_assign<R, A>(
             module: &Module<Self>,
             res: &mut R,
             res_col: usize,
@@ -143,7 +138,7 @@ macro_rules! hal_impl_vec_znx {
             R: VecZnxToMut,
             A: ScalarZnxToRef,
         {
-            <Self as HalVecZnxDefaults<Self>>::vec_znx_sub_scalar_inplace_default(module, res, res_col, res_limb, a, a_col)
+            <Self as HalVecZnxDefaults<Self>>::vec_znx_sub_scalar_assign_default(module, res, res_col, res_limb, a, a_col)
         }
 
         fn vec_znx_negate<R, A>(module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
@@ -154,11 +149,11 @@ macro_rules! hal_impl_vec_znx {
             <Self as HalVecZnxDefaults<Self>>::vec_znx_negate_default(module, res, res_col, a, a_col)
         }
 
-        fn vec_znx_negate_inplace<A>(module: &Module<Self>, a: &mut A, a_col: usize)
+        fn vec_znx_negate_assign<A>(module: &Module<Self>, a: &mut A, a_col: usize)
         where
             A: VecZnxToMut,
         {
-            <Self as HalVecZnxDefaults<Self>>::vec_znx_negate_inplace_default(module, a, a_col)
+            <Self as HalVecZnxDefaults<Self>>::vec_znx_negate_assign_default(module, a, a_col)
         }
 
         fn vec_znx_rsh_tmp_bytes(module: &Module<Self>) -> usize {
@@ -265,7 +260,7 @@ macro_rules! hal_impl_vec_znx {
             <Self as HalVecZnxDefaults<Self>>::vec_znx_rsh_sub_default(module, base2k, k, res, res_col, a, a_col, scratch)
         }
 
-        fn vec_znx_rsh_inplace<R>(
+        fn vec_znx_rsh_assign<R>(
             module: &Module<Self>,
             base2k: usize,
             k: usize,
@@ -275,10 +270,10 @@ macro_rules! hal_impl_vec_znx {
         ) where
             R: VecZnxToMut,
         {
-            <Self as HalVecZnxDefaults<Self>>::vec_znx_rsh_inplace_default(module, base2k, k, a, a_col, scratch)
+            <Self as HalVecZnxDefaults<Self>>::vec_znx_rsh_assign_default(module, base2k, k, a, a_col, scratch)
         }
 
-        fn vec_znx_lsh_inplace<R>(
+        fn vec_znx_lsh_assign<R>(
             module: &Module<Self>,
             base2k: usize,
             k: usize,
@@ -288,7 +283,7 @@ macro_rules! hal_impl_vec_znx {
         ) where
             R: VecZnxToMut,
         {
-            <Self as HalVecZnxDefaults<Self>>::vec_znx_lsh_inplace_default(module, base2k, k, a, a_col, scratch)
+            <Self as HalVecZnxDefaults<Self>>::vec_znx_lsh_assign_default(module, base2k, k, a, a_col, scratch)
         }
 
         fn vec_znx_rotate<R, A>(module: &Module<Self>, k: i64, res: &mut R, res_col: usize, a: &A, a_col: usize)
@@ -299,15 +294,15 @@ macro_rules! hal_impl_vec_znx {
             <Self as HalVecZnxDefaults<Self>>::vec_znx_rotate_default(module, k, res, res_col, a, a_col)
         }
 
-        fn vec_znx_rotate_inplace_tmp_bytes(module: &Module<Self>) -> usize {
-            <Self as HalVecZnxDefaults<Self>>::vec_znx_rotate_inplace_tmp_bytes_default(module)
+        fn vec_znx_rotate_assign_tmp_bytes(module: &Module<Self>) -> usize {
+            <Self as HalVecZnxDefaults<Self>>::vec_znx_rotate_assign_tmp_bytes_default(module)
         }
 
-        fn vec_znx_rotate_inplace<A>(module: &Module<Self>, k: i64, a: &mut A, a_col: usize, scratch: &mut Scratch<Self>)
+        fn vec_znx_rotate_assign<A>(module: &Module<Self>, k: i64, a: &mut A, a_col: usize, scratch: &mut Scratch<Self>)
         where
             A: VecZnxToMut,
         {
-            <Self as HalVecZnxDefaults<Self>>::vec_znx_rotate_inplace_default(module, k, a, a_col, scratch)
+            <Self as HalVecZnxDefaults<Self>>::vec_znx_rotate_assign_default(module, k, a, a_col, scratch)
         }
 
         fn vec_znx_automorphism<R, A>(module: &Module<Self>, k: i64, res: &mut R, res_col: usize, a: &A, a_col: usize)
@@ -318,20 +313,15 @@ macro_rules! hal_impl_vec_znx {
             <Self as HalVecZnxDefaults<Self>>::vec_znx_automorphism_default(module, k, res, res_col, a, a_col)
         }
 
-        fn vec_znx_automorphism_inplace_tmp_bytes(module: &Module<Self>) -> usize {
-            <Self as HalVecZnxDefaults<Self>>::vec_znx_automorphism_inplace_tmp_bytes_default(module)
+        fn vec_znx_automorphism_assign_tmp_bytes(module: &Module<Self>) -> usize {
+            <Self as HalVecZnxDefaults<Self>>::vec_znx_automorphism_assign_tmp_bytes_default(module)
         }
 
-        fn vec_znx_automorphism_inplace<R>(
-            module: &Module<Self>,
-            k: i64,
-            res: &mut R,
-            res_col: usize,
-            scratch: &mut Scratch<Self>,
-        ) where
+        fn vec_znx_automorphism_assign<R>(module: &Module<Self>, k: i64, res: &mut R, res_col: usize, scratch: &mut Scratch<Self>)
+        where
             R: VecZnxToMut,
         {
-            <Self as HalVecZnxDefaults<Self>>::vec_znx_automorphism_inplace_default(module, k, res, res_col, scratch)
+            <Self as HalVecZnxDefaults<Self>>::vec_znx_automorphism_assign_default(module, k, res, res_col, scratch)
         }
 
         fn vec_znx_mul_xp_minus_one<R, A>(module: &Module<Self>, k: i64, res: &mut R, res_col: usize, a: &A, a_col: usize)
@@ -342,11 +332,11 @@ macro_rules! hal_impl_vec_znx {
             <Self as HalVecZnxDefaults<Self>>::vec_znx_mul_xp_minus_one_default(module, k, res, res_col, a, a_col)
         }
 
-        fn vec_znx_mul_xp_minus_one_inplace_tmp_bytes(module: &Module<Self>) -> usize {
-            <Self as HalVecZnxDefaults<Self>>::vec_znx_mul_xp_minus_one_inplace_tmp_bytes_default(module)
+        fn vec_znx_mul_xp_minus_one_assign_tmp_bytes(module: &Module<Self>) -> usize {
+            <Self as HalVecZnxDefaults<Self>>::vec_znx_mul_xp_minus_one_assign_tmp_bytes_default(module)
         }
 
-        fn vec_znx_mul_xp_minus_one_inplace<R>(
+        fn vec_znx_mul_xp_minus_one_assign<R>(
             module: &Module<Self>,
             k: i64,
             res: &mut R,
@@ -355,7 +345,7 @@ macro_rules! hal_impl_vec_znx {
         ) where
             R: VecZnxToMut,
         {
-            <Self as HalVecZnxDefaults<Self>>::vec_znx_mul_xp_minus_one_inplace_default(module, k, res, res_col, scratch)
+            <Self as HalVecZnxDefaults<Self>>::vec_znx_mul_xp_minus_one_assign_default(module, k, res, res_col, scratch)
         }
 
         fn vec_znx_split_ring_tmp_bytes(module: &Module<Self>) -> usize {

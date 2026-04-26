@@ -58,7 +58,7 @@ where
         self.ggsw_expand_row(res, tsk, scratch);
     }
 
-    fn ggsw_automorphism_inplace_default<R, K, T>(&self, res: &mut R, key: &K, tsk: &T, scratch: &mut Scratch<BE>)
+    fn ggsw_automorphism_assign_default<R, K, T>(&self, res: &mut R, key: &K, tsk: &T, scratch: &mut Scratch<BE>)
     where
         R: GGSWToMut,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos,
@@ -75,7 +75,7 @@ where
         );
 
         for row in 0..res.dnum().as_usize() {
-            self.glwe_automorphism_inplace(&mut res.at_mut(row, 0), key, scratch);
+            self.glwe_automorphism_assign(&mut res.at_mut(row, 0), key, scratch);
         }
 
         self.ggsw_expand_row(res, tsk, scratch);

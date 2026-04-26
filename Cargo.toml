@@ -1,5 +1,5 @@
 [workspace]
-members = ["poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-schemes", "poulpy-cpu-ref", "poulpy-bench"]
+members = ["poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-schemes", "poulpy-cpu-ref", "poulpy-bench", "poulpy-ckks"]
 resolver = "3"
 
 [workspace.dependencies]
@@ -8,6 +8,7 @@ poulpy-core = {path = "poulpy-core"}
 poulpy-cpu-avx = {path = "poulpy-cpu-avx"}
 poulpy-cpu-ref = {path = "poulpy-cpu-ref"}
 poulpy-schemes = {path = "poulpy-schemes"}
+poulpy-ckks = {path = "poulpy-ckks"}
 dashu-float = "0.4"
 rand = "0.10.1"
 rand_chacha = "0.10.0"

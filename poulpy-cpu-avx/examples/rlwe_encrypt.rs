@@ -17,9 +17,9 @@ use poulpy_cpu_ref::FFT64Ref as BackendImpl;
 
 use poulpy_hal::{
     api::{
-        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDftInplace, SvpPPolAlloc, SvpPrepare, VecZnxAddNormal,
-        VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallNegateInplace,
-        VecZnxDftAlloc, VecZnxDftApply, VecZnxFillUniform, VecZnxIdftApplyTmpA, VecZnxNormalizeInplace,
+        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxAddNormal,
+        VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallNegateAssign,
+        VecZnxDftAlloc, VecZnxDftApply, VecZnxFillUniform, VecZnxIdftApplyTmpA, VecZnxNormalizeAssign,
     },
     layouts::{DeviceBuf, Module, NoiseInfos, ScalarZnx, ScratchOwned, VecZnx, VecZnxBig, VecZnxDft, ZnxInfos},
     source::Source,
@@ -64,7 +64,7 @@ fn main() {
     module.vec_znx_dft_apply(1, 0, &mut buf_dft, 0, &ct, 1);
 
     // Applies DFT(ct[1]) * DFT(s)
-    module.svp_apply_dft_to_dft_inplace(
+    module.svp_apply_dft_to_dft_assign(
         &mut buf_dft, // DFT(ct[1] * s)
         0,            // Selects the first column of res
         &s_dft,       // DFT(s)
@@ -86,10 +86,10 @@ fn main() {
     let mut want: Vec<i64> = vec![0; n];
     want.iter_mut().for_each(|x| *x = source.next_u64n(16, 15) as i64);
     m.encode_vec_i64(base2k, 0, log_scale, &want);
-    module.vec_znx_normalize_inplace(base2k, &mut m, 0, scratch.borrow());
+    module.vec_znx_normalize_assign(base2k, &mut m, 0, scratch.borrow());
 
     // m - BIG(ct[1] * s)
-    module.vec_znx_big_sub_small_negate_inplace(
+    module.vec_znx_big_sub_small_negate_assign(
         &mut buf_big,
         0, // Selects the first column of the receiver
         &m,
@@ -125,7 +125,7 @@ fn main() {
 
     // DFT(ct[1] * s)
     module.vec_znx_dft_apply(1, 0, &mut buf_dft, 0, &ct, 1);
-    module.svp_apply_dft_to_dft_inplace(
+    module.svp_apply_dft_to_dft_assign(
         &mut buf_dft,
         0, // Selects the first column of res.
         &s_dft,

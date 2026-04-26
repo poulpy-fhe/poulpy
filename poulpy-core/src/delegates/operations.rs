@@ -42,11 +42,11 @@ where
         BE::glwe_mul_const(self, cnv_offset, res, a, b, scratch)
     }
 
-    fn glwe_mul_const_inplace<R>(&self, cnv_offset: usize, res: &mut GLWE<R>, b: &[i64], scratch: &mut Scratch<BE>)
+    fn glwe_mul_const_assign<R>(&self, cnv_offset: usize, res: &mut GLWE<R>, b: &[i64], scratch: &mut Scratch<BE>)
     where
         R: DataMut,
     {
-        BE::glwe_mul_const_inplace(self, cnv_offset, res, b, scratch)
+        BE::glwe_mul_const_assign(self, cnv_offset, res, b, scratch)
     }
 }
 
@@ -81,7 +81,7 @@ where
         BE::glwe_mul_plain(self, cnv_offset, res, a, a_effective_k, b, b_effective_k, scratch)
     }
 
-    fn glwe_mul_plain_inplace<R, A>(
+    fn glwe_mul_plain_assign<R, A>(
         &self,
         cnv_offset: usize,
         res: &mut GLWE<R>,
@@ -93,7 +93,7 @@ where
         R: DataMut,
         A: DataRef,
     {
-        BE::glwe_mul_plain_inplace(self, cnv_offset, res, res_effective_k, a, a_effective_k, scratch)
+        BE::glwe_mul_plain_assign(self, cnv_offset, res, res_effective_k, a, a_effective_k, scratch)
     }
 }
 
@@ -134,6 +134,23 @@ where
         B: DataRef,
     {
         BE::glwe_tensor_apply(self, cnv_offset, res, a, a_effective_k, b, b_effective_k, scratch)
+    }
+
+    fn glwe_tensor_apply_add_assign<R, A, B>(
+        &self,
+        cnv_offset: usize,
+        res: &mut GLWETensor<R>,
+        a: &GLWE<A>,
+        a_effective_k: usize,
+        b: &GLWE<B>,
+        b_effective_k: usize,
+        scratch: &mut Scratch<BE>,
+    ) where
+        R: DataMut,
+        A: DataRef,
+        B: DataRef,
+    {
+        BE::glwe_tensor_apply_add_assign(self, cnv_offset, res, a, a_effective_k, b, b_effective_k, scratch)
     }
 
     fn glwe_tensor_square_apply<R, A>(
@@ -192,12 +209,12 @@ where
         BE::glwe_rotate(self, k, res, a)
     }
 
-    fn glwe_rotate_inplace<R>(&self, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
+    fn glwe_rotate_assign<R>(&self, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut,
         Scratch<BE>: crate::ScratchTakeCore<BE>,
     {
-        BE::glwe_rotate_inplace(self, k, res, scratch)
+        BE::glwe_rotate_assign(self, k, res, scratch)
     }
 }
 
@@ -218,12 +235,12 @@ where
         BE::ggsw_rotate(self, k, res, a)
     }
 
-    fn ggsw_rotate_inplace<R>(&self, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
+    fn ggsw_rotate_assign<R>(&self, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
     where
         R: GGSWToMut,
         Scratch<BE>: crate::ScratchTakeCore<BE> + poulpy_hal::api::ScratchAvailable,
     {
-        BE::ggsw_rotate_inplace(self, k, res, scratch)
+        BE::ggsw_rotate_assign(self, k, res, scratch)
     }
 }
 
@@ -240,11 +257,11 @@ where
         BE::glwe_mul_xp_minus_one(self, k, res, a)
     }
 
-    fn glwe_mul_xp_minus_one_inplace<R>(&self, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
+    fn glwe_mul_xp_minus_one_assign<R>(&self, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut,
     {
-        BE::glwe_mul_xp_minus_one_inplace(self, k, res, scratch)
+        BE::glwe_mul_xp_minus_one_assign(self, k, res, scratch)
     }
 }
 
@@ -265,12 +282,12 @@ where
         BE::glwe_rsh(self, k, res, scratch)
     }
 
-    fn glwe_lsh_inplace<R>(&self, res: &mut R, k: usize, scratch: &mut Scratch<BE>)
+    fn glwe_lsh_assign<R>(&self, res: &mut R, k: usize, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut,
         Scratch<BE>: crate::ScratchTakeCore<BE>,
     {
-        BE::glwe_lsh_inplace(self, res, k, scratch)
+        BE::glwe_lsh_assign(self, res, k, scratch)
     }
 
     fn glwe_lsh<R, A>(&self, res: &mut R, a: &A, k: usize, scratch: &mut Scratch<BE>)
@@ -347,12 +364,12 @@ where
         BE::glwe_normalize(self, res, a, scratch)
     }
 
-    fn glwe_normalize_inplace<R>(&self, res: &mut R, scratch: &mut Scratch<BE>)
+    fn glwe_normalize_assign<R>(&self, res: &mut R, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut,
         Scratch<BE>: crate::ScratchTakeCore<BE>,
     {
-        BE::glwe_normalize_inplace(self, res, scratch)
+        BE::glwe_normalize_assign(self, res, scratch)
     }
 }
 
@@ -384,13 +401,13 @@ where
         BE::glwe_trace(self, res, skip, a, keys, scratch)
     }
 
-    fn glwe_trace_inplace<R, K, H>(&self, res: &mut R, skip: usize, keys: &H, scratch: &mut Scratch<BE>)
+    fn glwe_trace_assign<R, K, H>(&self, res: &mut R, skip: usize, keys: &H, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut,
         K: GGLWEPreparedToRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
-        BE::glwe_trace_inplace(self, res, skip, keys, scratch)
+        BE::glwe_trace_assign(self, res, skip, keys, scratch)
     }
 }
 

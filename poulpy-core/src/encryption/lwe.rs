@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{
-        ScratchAvailable, ScratchTakeBasic, VecZnxAddNormal, VecZnxFillUniform, VecZnxNormalizeInplace, VecZnxNormalizeTmpBytes,
+        ScratchAvailable, ScratchTakeBasic, VecZnxAddNormal, VecZnxFillUniform, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
     },
     layouts::{Backend, Module, Scratch, ZnxView, ZnxViewMut, ZnxZero},
     source::Source,
@@ -37,7 +37,7 @@ pub trait LWEEncryptSkDefault<BE: Backend> {
 
 impl<BE: Backend> LWEEncryptSkDefault<BE> for Module<BE>
 where
-    Self: Sized + VecZnxFillUniform + VecZnxAddNormal + VecZnxNormalizeInplace<BE> + VecZnxNormalizeTmpBytes,
+    Self: Sized + VecZnxFillUniform + VecZnxAddNormal + VecZnxNormalizeAssign<BE> + VecZnxNormalizeTmpBytes,
     Scratch<BE>: ScratchTakeBasic + ScratchAvailable,
 {
     fn lwe_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
@@ -113,7 +113,7 @@ where
 
         self.vec_znx_add_normal(base2k, &mut tmp_znx, 0, enc_infos.noise_infos(), source_xe);
 
-        self.vec_znx_normalize_inplace(base2k, &mut tmp_znx, 0, scratch_1);
+        self.vec_znx_normalize_assign(base2k, &mut tmp_znx, 0, scratch_1);
 
         (0..res.size()).for_each(|i| {
             res.data.at_mut(0, i)[0] = tmp_znx.at(0, i)[0];

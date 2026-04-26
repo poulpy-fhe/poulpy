@@ -1,7 +1,7 @@
 use poulpy_hal::{
     api::{
         ScratchAvailable, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxCopy, VecZnxFillUniform, VecZnxNormalize,
-        VecZnxNormalizeInplace,
+        VecZnxNormalizeAssign,
     },
     layouts::{DeviceBuf, FillUniform, Module, Scratch, ScratchOwned, VecZnx, ZnxView, ZnxViewMut},
     source::Source,
@@ -29,7 +29,7 @@ where
         + VecZnxFillUniform
         + GLWESecretPreparedFactory<BE>
         + GLWESub
-        + VecZnxNormalizeInplace<BE>
+        + VecZnxNormalizeAssign<BE>
         + GLWESecretTensorFactory<BE>
         + VecZnxCopy
         + VecZnxNormalize<BE>
@@ -180,7 +180,7 @@ where
             );
 
             module.glwe_sub(&mut pt_tmp, &pt_have, &pt_want);
-            module.vec_znx_normalize_inplace(pt_tmp.base2k().as_usize(), &mut pt_tmp.data, 0, scratch.borrow());
+            module.vec_znx_normalize_assign(pt_tmp.base2k().as_usize(), &mut pt_tmp.data, 0, scratch.borrow());
 
             let noise_have: f64 = pt_tmp.stats().std().log2();
             let noise_want = -((k - scale - res_offset - module.log_n()) as f64 - ((rank - 1) as f64) / SQRT_2);
@@ -191,13 +191,83 @@ where
             module.glwe_decrypt(&res_relin, &mut pt_have, &sk_dft, scratch.borrow());
 
             module.glwe_sub(&mut pt_tmp, &pt_have, &pt_want);
-            module.vec_znx_normalize_inplace(pt_tmp.base2k().as_usize(), &mut pt_tmp.data, 0, scratch.borrow());
+            module.vec_znx_normalize_assign(pt_tmp.base2k().as_usize(), &mut pt_tmp.data, 0, scratch.borrow());
 
             // We can reuse the same noise bound because the relinearization noise (which is additive)
             // is much smaller than the tensoring noise (which is multiplicative)
             let noise_have: f64 = pt_tmp.stats().std().log2();
             assert!(noise_have - noise_want <= 0.5, "{} > {}", noise_have, noise_want);
         }
+    }
+}
+
+pub fn test_glwe_tensor_apply_add_assign<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: GLWETensoring<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    Scratch<BE>: ScratchAvailable + ScratchTakeCore<BE>,
+{
+    let base2k: usize = params.base2k;
+    let in_base2k: usize = base2k - 1;
+    let out_base2k: usize = base2k - 2;
+    let k: usize = 4 * base2k + 1;
+
+    for rank in 1_usize..=3 {
+        let n: usize = module.n();
+
+        let glwe_in_infos = GLWELayout {
+            n: n.into(),
+            base2k: in_base2k.into(),
+            k: k.into(),
+            rank: rank.into(),
+        };
+
+        let glwe_out_infos = GLWELayout {
+            n: n.into(),
+            base2k: out_base2k.into(),
+            k: k.into(),
+            rank: rank.into(),
+        };
+
+        let mut a = GLWE::<Vec<u8>>::alloc_from_infos(&glwe_in_infos);
+        let mut b = GLWE::<Vec<u8>>::alloc_from_infos(&glwe_in_infos);
+        let mut product = GLWETensor::<Vec<u8>>::alloc_from_infos(&glwe_out_infos);
+        let mut acc = GLWETensor::<Vec<u8>>::alloc_from_infos(&glwe_out_infos);
+
+        for (i, x) in a.data_mut().raw_mut().iter_mut().enumerate() {
+            *x = (i as i64 % 7) - 3;
+        }
+        for (i, x) in b.data_mut().raw_mut().iter_mut().enumerate() {
+            *x = (i as i64 % 5) - 2;
+        }
+        for (i, x) in acc.data_mut().raw_mut().iter_mut().enumerate() {
+            *x = (i as i64 % 3) - 1;
+        }
+
+        let initial = acc.data().raw().to_vec();
+        let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_tensor_apply_tmp_bytes(&product, &a, &b));
+
+        module.glwe_tensor_apply(
+            base2k,
+            &mut product,
+            &a,
+            a.max_k().as_usize(),
+            &b,
+            b.max_k().as_usize(),
+            scratch.borrow(),
+        );
+        module.glwe_tensor_apply_add_assign(
+            base2k,
+            &mut acc,
+            &a,
+            a.max_k().as_usize(),
+            &b,
+            b.max_k().as_usize(),
+            scratch.borrow(),
+        );
+
+        let want: Vec<i64> = initial.iter().zip(product.data().raw()).map(|(x, y)| x + y).collect();
+        assert_eq!(acc.data().raw(), want.as_slice());
     }
 }
 
@@ -209,7 +279,7 @@ where
         + VecZnxFillUniform
         + GLWESecretPreparedFactory<BE>
         + GLWESub
-        + VecZnxNormalizeInplace<BE>
+        + VecZnxNormalizeAssign<BE>
         + GLWESecretTensorFactory<BE>
         + VecZnxCopy
         + VecZnxNormalize<BE>
@@ -353,7 +423,7 @@ where
             module.glwe_decrypt(&res_relin_square, &mut pt_have, &sk_dft, scratch.borrow());
             module.glwe_decrypt(&res_relin_tensor, &mut pt_want, &sk_dft, scratch.borrow());
             module.glwe_sub(&mut pt_tmp, &pt_have, &pt_want);
-            module.vec_znx_normalize_inplace(pt_tmp.base2k().as_usize(), &mut pt_tmp.data, 0, scratch.borrow());
+            module.vec_znx_normalize_assign(pt_tmp.base2k().as_usize(), &mut pt_tmp.data, 0, scratch.borrow());
             let noise_have: f64 = pt_tmp.stats().std().log2();
             assert!(noise_have <= -20.0, "{} > -20", noise_have);
         }
@@ -367,7 +437,7 @@ where
         + VecZnxFillUniform
         + GLWESecretPreparedFactory<BE>
         + GLWESub
-        + VecZnxNormalizeInplace<BE>
+        + VecZnxNormalizeAssign<BE>
         + VecZnxCopy
         + VecZnxNormalize<BE>
         + GLWEMulPlain<BE>,
@@ -476,7 +546,7 @@ where
             );
 
             module.glwe_sub(&mut pt_tmp, &pt_have, &pt_want);
-            module.vec_znx_normalize_inplace(pt_tmp.base2k().as_usize(), &mut pt_tmp.data, 0, scratch.borrow());
+            module.vec_znx_normalize_assign(pt_tmp.base2k().as_usize(), &mut pt_tmp.data, 0, scratch.borrow());
 
             let noise_have: f64 = pt_tmp.stats().std().log2();
             let noise_want = -((k - scale - res_offset - module.log_n()) as f64 - ((rank - 1) as f64) / SQRT_2);
@@ -493,7 +563,7 @@ where
         + VecZnxFillUniform
         + GLWESecretPreparedFactory<BE>
         + GLWESub
-        + VecZnxNormalizeInplace<BE>
+        + VecZnxNormalizeAssign<BE>
         + VecZnxCopy
         + VecZnxNormalize<BE>
         + GLWEMulConst<BE>,
@@ -601,7 +671,7 @@ where
             );
 
             module.glwe_sub(&mut pt_tmp, &pt_have, &pt_want);
-            module.vec_znx_normalize_inplace(pt_tmp.base2k().as_usize(), &mut pt_tmp.data, 0, scratch.borrow());
+            module.vec_znx_normalize_assign(pt_tmp.base2k().as_usize(), &mut pt_tmp.data, 0, scratch.borrow());
 
             let noise_have: f64 = pt_tmp.stats().std().log2();
             let noise_want = -((k - scale - res_offset - module.log_n()) as f64 - ((rank - 1) as f64) / SQRT_2);

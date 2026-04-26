@@ -134,7 +134,7 @@ where
             scratch.borrow(),
         );
 
-        module.glwe_rotate_inplace(-(1 << log_batch), &mut pt, scratch.borrow()); // X^-batch * pt
+        module.glwe_rotate_assign(-(1 << log_batch), &mut pt, scratch.borrow()); // X^-batch * pt
 
         if reverse_bits_msb(i, log_n as u32).is_multiple_of(5) {
             glwe_packer_add(module, &mut packer, Some(&ct), &auto_keys, scratch.borrow());
@@ -158,7 +158,7 @@ where
 
     module.glwe_decrypt(&res, &mut pt, &sk_dft, scratch.borrow());
 
-    module.glwe_sub_inplace(&mut pt, &pt_want);
+    module.glwe_sub_assign(&mut pt, &pt_want);
 
     let noise_have: f64 = pt.stats().std().log2();
 

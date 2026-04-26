@@ -88,7 +88,7 @@ pub fn bench_glwe_external_product<BE: Backend>(
     group.finish();
 }
 
-pub fn bench_glwe_external_product_inplace<BE: Backend>(infos: &impl GGSWInfos, c: &mut Criterion, label: &str)
+pub fn bench_glwe_external_product_assign<BE: Backend>(infos: &impl GGSWInfos, c: &mut Criterion, label: &str)
 where
     Module<BE>: ModuleNew<BE>
         + GLWEExternalProduct<BE>
@@ -145,11 +145,11 @@ where
     let mut ggsw_prepared: GGSWPrepared<DeviceBuf<BE>, BE> = module.ggsw_prepared_alloc_from_infos(&ct_ggsw);
     module.ggsw_prepare(&mut ggsw_prepared, &ct_ggsw, scratch.borrow());
 
-    let group_name = format!("glwe_external_product_inplace::{label}");
+    let group_name = format!("glwe_external_product_assign::{label}");
     let mut group = c.benchmark_group(group_name);
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
-            module.glwe_external_product_inplace(&mut ct_glwe, &ggsw_prepared, scratch.borrow());
+            module.glwe_external_product_assign(&mut ct_glwe, &ggsw_prepared, scratch.borrow());
             black_box(());
         })
     });

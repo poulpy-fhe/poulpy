@@ -6,7 +6,7 @@ use rand::Rng;
 use poulpy_hal::{
     api::{
         ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxBigAlloc, VecZnxDftAddAssign, VecZnxDftAddInto, VecZnxDftAlloc,
-        VecZnxDftApply, VecZnxDftSub, VecZnxDftSubInplace, VecZnxDftSubNegateInplace, VecZnxIdftApply, VecZnxIdftApplyTmpA,
+        VecZnxDftApply, VecZnxDftSub, VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxIdftApply, VecZnxIdftApplyTmpA,
         VecZnxIdftApplyTmpBytes,
     },
     layouts::{Backend, DataViewMut, DeviceBuf, Module, ScratchOwned, VecZnx, VecZnxBig, VecZnxDft},
@@ -276,17 +276,17 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_dft_sub_inplace<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_dft_sub_assign<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
 where
-    Module<B>: VecZnxDftSubInplace<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
+    Module<B>: VecZnxDftSubAssign<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
 {
-    let group_name: String = format!("vec_znx_dft_sub_inplace::{label}");
+    let group_name: String = format!("vec_znx_dft_sub_assign::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
     fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
     where
-        Module<B>: VecZnxDftSubInplace<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
+        Module<B>: VecZnxDftSubAssign<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
     {
         let n: usize = 1 << sweep[0];
         let cols: usize = sweep[1];
@@ -305,7 +305,7 @@ where
 
         move || {
             for i in 0..cols {
-                module.vec_znx_dft_sub_inplace(&mut c, i, &a, i);
+                module.vec_znx_dft_sub_assign(&mut c, i, &a, i);
             }
             black_box(());
         }
@@ -320,17 +320,17 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_dft_sub_negate_inplace<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_dft_sub_negate_assign<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
 where
-    Module<B>: VecZnxDftSubNegateInplace<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
+    Module<B>: VecZnxDftSubNegateAssign<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
 {
-    let group_name: String = format!("vec_znx_dft_sub_negate_inplace::{label}");
+    let group_name: String = format!("vec_znx_dft_sub_negate_assign::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
     fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
     where
-        Module<B>: VecZnxDftSubNegateInplace<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
+        Module<B>: VecZnxDftSubNegateAssign<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
     {
         let n: usize = 1 << sweep[0];
         let cols: usize = sweep[1];
@@ -349,7 +349,7 @@ where
 
         move || {
             for i in 0..cols {
-                module.vec_znx_dft_sub_negate_inplace(&mut c, i, &a, i);
+                module.vec_znx_dft_sub_negate_assign(&mut c, i, &a, i);
             }
             black_box(());
         }

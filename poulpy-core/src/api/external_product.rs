@@ -18,7 +18,7 @@ pub trait GLWEExternalProduct<BE: Backend> {
         A: GLWEInfos,
         B: GGSWInfos;
 
-    fn glwe_external_product_inplace<R, D>(&self, res: &mut R, a: &D, scratch: &mut Scratch<BE>)
+    fn glwe_external_product_assign<R, D>(&self, res: &mut R, a: &D, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut + GLWEInfos,
         D: GGSWPreparedToRef<BE> + GGSWInfos,
@@ -120,7 +120,7 @@ where
         }
     }
 
-    fn gglwe_external_product_inplace<R, A>(&self, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
+    fn gglwe_external_product_assign<R, A>(&self, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
     where
         R: GGLWEToMut,
         A: GGSWPreparedToRef<BE>,
@@ -145,7 +145,7 @@ where
 
         for row in 0..res.dnum().into() {
             for col in 0..res.rank_in().into() {
-                self.glwe_external_product_inplace(&mut res.at_mut(row, col), a, scratch);
+                self.glwe_external_product_assign(&mut res.at_mut(row, col), a, scratch);
             }
         }
     }
@@ -202,7 +202,7 @@ where
         }
     }
 
-    fn ggsw_external_product_inplace<R, A>(&self, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
+    fn ggsw_external_product_assign<R, A>(&self, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
     where
         R: crate::layouts::GGSWToMut,
         A: GGSWPreparedToRef<BE>,
@@ -223,7 +223,7 @@ where
 
         for row in 0..res.dnum().into() {
             for col in 0..(res.rank() + 1).into() {
-                self.glwe_external_product_inplace(&mut res.at_mut(row, col), a, scratch);
+                self.glwe_external_product_assign(&mut res.at_mut(row, col), a, scratch);
             }
         }
     }

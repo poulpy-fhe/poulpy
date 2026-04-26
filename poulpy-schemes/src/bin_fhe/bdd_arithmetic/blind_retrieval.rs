@@ -164,7 +164,7 @@ fn add_core<A, S, M, BE: Backend>(
             acc_prev[0].num = 1;
         }
         1 => {
-            module.cmux_inplace_neg(&mut acc_prev[0].data, a, &selector.get_bit(i + offset), scratch);
+            module.cmux_assign_neg(&mut acc_prev[0].data, a, &selector.get_bit(i + offset), scratch);
 
             if !acc_next.is_empty() {
                 add_core(module, &acc_prev[0].data, acc_next, i + 1, selector, offset, scratch);

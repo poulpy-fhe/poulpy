@@ -63,7 +63,7 @@ fn main() {
 
     module.glwe_decrypt(&ct, &mut pt_have, &sk_prepared, scratch.borrow());
 
-    module.glwe_sub_inplace(&mut pt_want, &pt_have);
+    module.glwe_sub_assign(&mut pt_want, &pt_have);
 
     let noise_have: f64 = pt_want.data.stats(base2k.into(), 0).std() * (k_xe.as_u32() as f64).exp2();
     let noise_want: f64 = DEFAULT_SIGMA_XE;

@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchAvailable, ScratchTakeBasic, SvpApplyDftToDftInplace, VecZnxBigAddAssign, VecZnxBigAddSmallAssign,
+        ModuleN, ScratchAvailable, ScratchTakeBasic, SvpApplyDftToDftAssign, VecZnxBigAddAssign, VecZnxBigAddSmallAssign,
         VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApplyConsume, VecZnxNormalizeTmpBytes,
     },
     layouts::{Backend, DataViewMut, Module, Scratch},
@@ -18,7 +18,7 @@ pub(crate) trait GLWEDecryptDefault<BE: Backend>:
     + VecZnxNormalizeTmpBytes
     + VecZnxBigBytesOf
     + VecZnxDftApply<BE>
-    + SvpApplyDftToDftInplace<BE>
+    + SvpApplyDftToDftAssign<BE>
     + VecZnxIdftApplyConsume<BE>
     + VecZnxBigAddAssign<BE>
     + VecZnxBigAddSmallAssign<BE>
@@ -70,7 +70,7 @@ where
             // ci_dft = DFT(a[i]) * DFT(s[i])
             let (mut ci_dft, _) = scratch_1.take_vec_znx_dft(self, 1, res.size()); // TODO optimize size when pt << ct
             self.vec_znx_dft_apply(1, 0, &mut ci_dft, 0, res.data(), i);
-            self.svp_apply_dft_to_dft_inplace(&mut ci_dft, 0, &sk.data, i - 1);
+            self.svp_apply_dft_to_dft_assign(&mut ci_dft, 0, &sk.data, i - 1);
             let ci_big = self.vec_znx_idft_apply_consume(ci_dft);
 
             // c0_big += a[i] * s[i]
@@ -103,7 +103,7 @@ where
         + VecZnxNormalizeTmpBytes
         + VecZnxBigBytesOf
         + VecZnxDftApply<BE>
-        + SvpApplyDftToDftInplace<BE>
+        + SvpApplyDftToDftAssign<BE>
         + VecZnxIdftApplyConsume<BE>
         + VecZnxBigAddAssign<BE>
         + VecZnxBigAddSmallAssign<BE>

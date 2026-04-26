@@ -32,9 +32,9 @@ use core::arch::x86_64::{
 };
 
 use poulpy_cpu_ref::reference::ntt120::{
-    NttAdd, NttAddInplace, NttCFromB, NttCopy, NttDFTExecute, NttExtract1BlkContiguous, NttFromZnx64, NttMulBbb, NttMulBbc,
-    NttMulBbc1ColX2, NttMulBbc2ColsX2, NttNegate, NttNegateInplace, NttPackLeft1BlkX2, NttPackRight1BlkX2,
-    NttPairwisePackLeft1BlkX2, NttPairwisePackRight1BlkX2, NttSub, NttSubInplace, NttSubNegateInplace, NttToZnx128, NttZero,
+    NttAdd, NttAddAssign, NttCFromB, NttCopy, NttDFTExecute, NttExtract1BlkContiguous, NttFromZnx64, NttMulBbb, NttMulBbc,
+    NttMulBbc1ColX2, NttMulBbc2ColsX2, NttNegate, NttNegateAssign, NttPackLeft1BlkX2, NttPackRight1BlkX2,
+    NttPairwisePackLeft1BlkX2, NttPairwisePackRight1BlkX2, NttSub, NttSubAssign, NttSubNegateAssign, NttToZnx128, NttZero,
     mat_vec::{BbbMeta, BbcMeta, extract_1blk_from_contiguous_q120b_ref},
     ntt::{NttTable, NttTableInv},
     primes::Primes30,
@@ -95,7 +95,7 @@ unsafe fn ntt_add_avx2(n: usize, res: &mut [u64], a: &[u64], b: &[u64]) {
 
 /// `res[i] = lazy(res[i]) + lazy(a[i])` for `i ∈ 0..n` q120b elements.
 #[target_feature(enable = "avx2")]
-unsafe fn ntt_add_inplace_avx2(n: usize, res: &mut [u64], a: &[u64]) {
+unsafe fn ntt_add_assign_avx2(n: usize, res: &mut [u64], a: &[u64]) {
     unsafe {
         let q_s = _mm256_loadu_si256(Q_SHIFTED.as_ptr() as *const __m256i);
         let msb = _mm256_set1_epi64x(i64::MIN);
@@ -133,7 +133,7 @@ unsafe fn ntt_sub_avx2(n: usize, res: &mut [u64], a: &[u64], b: &[u64]) {
 
 /// `res[i] = lazy(res[i]) + (q_s − lazy(a[i]))` for `i ∈ 0..n` q120b elements.
 #[target_feature(enable = "avx2")]
-unsafe fn ntt_sub_inplace_avx2(n: usize, res: &mut [u64], a: &[u64]) {
+unsafe fn ntt_sub_assign_avx2(n: usize, res: &mut [u64], a: &[u64]) {
     unsafe {
         let q_s = _mm256_loadu_si256(Q_SHIFTED.as_ptr() as *const __m256i);
         let msb = _mm256_set1_epi64x(i64::MIN);
@@ -151,7 +151,7 @@ unsafe fn ntt_sub_inplace_avx2(n: usize, res: &mut [u64], a: &[u64]) {
 
 /// `res[i] = lazy(a[i]) + (q_s − lazy(res[i]))` for `i ∈ 0..n` q120b elements.
 #[target_feature(enable = "avx2")]
-unsafe fn ntt_sub_negate_inplace_avx2(n: usize, res: &mut [u64], a: &[u64]) {
+unsafe fn ntt_sub_negate_assign_avx2(n: usize, res: &mut [u64], a: &[u64]) {
     unsafe {
         let q_s = _mm256_loadu_si256(Q_SHIFTED.as_ptr() as *const __m256i);
         let msb = _mm256_set1_epi64x(i64::MIN);
@@ -192,7 +192,7 @@ unsafe fn ntt_negate_avx2(n: usize, res: &mut [u64], a: &[u64]) {
 /// **Output range:** For a zero input the result is `Q_SHIFTED[k]` (≡ 0 mod Q[k]), not `0`.
 /// Output range is `(0, Q_SHIFTED[k]]`. Use `val % Q[k] == 0`, not `val == 0`, to test for zero.
 #[target_feature(enable = "avx2")]
-unsafe fn ntt_negate_inplace_avx2(n: usize, res: &mut [u64]) {
+unsafe fn ntt_negate_assign_avx2(n: usize, res: &mut [u64]) {
     unsafe {
         let q_s = _mm256_loadu_si256(Q_SHIFTED.as_ptr() as *const __m256i);
         let msb = _mm256_set1_epi64x(i64::MIN);
@@ -263,11 +263,11 @@ impl NttAdd for NTT120Avx {
     }
 }
 
-impl NttAddInplace for NTT120Avx {
+impl NttAddAssign for NTT120Avx {
     #[inline(always)]
-    fn ntt_add_inplace(res: &mut [u64], a: &[u64]) {
+    fn ntt_add_assign(res: &mut [u64], a: &[u64]) {
         // SAFETY: NTT120Avx::new() verifies AVX2 availability at construction time.
-        unsafe { ntt_add_inplace_avx2(res.len() / 4, res, a) }
+        unsafe { ntt_add_assign_avx2(res.len() / 4, res, a) }
     }
 }
 
@@ -279,19 +279,19 @@ impl NttSub for NTT120Avx {
     }
 }
 
-impl NttSubInplace for NTT120Avx {
+impl NttSubAssign for NTT120Avx {
     #[inline(always)]
-    fn ntt_sub_inplace(res: &mut [u64], a: &[u64]) {
+    fn ntt_sub_assign(res: &mut [u64], a: &[u64]) {
         // SAFETY: NTT120Avx::new() verifies AVX2 availability at construction time.
-        unsafe { ntt_sub_inplace_avx2(res.len() / 4, res, a) }
+        unsafe { ntt_sub_assign_avx2(res.len() / 4, res, a) }
     }
 }
 
-impl NttSubNegateInplace for NTT120Avx {
+impl NttSubNegateAssign for NTT120Avx {
     #[inline(always)]
-    fn ntt_sub_negate_inplace(res: &mut [u64], a: &[u64]) {
+    fn ntt_sub_negate_assign(res: &mut [u64], a: &[u64]) {
         // SAFETY: NTT120Avx::new() verifies AVX2 availability at construction time.
-        unsafe { ntt_sub_negate_inplace_avx2(res.len() / 4, res, a) }
+        unsafe { ntt_sub_negate_assign_avx2(res.len() / 4, res, a) }
     }
 }
 
@@ -303,11 +303,11 @@ impl NttNegate for NTT120Avx {
     }
 }
 
-impl NttNegateInplace for NTT120Avx {
+impl NttNegateAssign for NTT120Avx {
     #[inline(always)]
-    fn ntt_negate_inplace(res: &mut [u64]) {
+    fn ntt_negate_assign(res: &mut [u64]) {
         // SAFETY: NTT120Avx::new() verifies AVX2 availability at construction time.
-        unsafe { ntt_negate_inplace_avx2(res.len() / 4, res) }
+        unsafe { ntt_negate_assign_avx2(res.len() / 4, res) }
     }
 }
 

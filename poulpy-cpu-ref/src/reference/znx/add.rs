@@ -12,7 +12,7 @@ pub fn znx_add_ref(res: &mut [i64], a: &[i64], b: &[i64]) {
     }
 }
 
-pub fn znx_add_inplace_ref(res: &mut [i64], a: &[i64]) {
+pub fn znx_add_assign_ref(res: &mut [i64], a: &[i64]) {
     #[cfg(debug_assertions)]
     {
         assert_eq!(res.len(), a.len());

@@ -1,6 +1,6 @@
 use crate::{
     layouts::{ScalarZnx, ScalarZnxToRef, VecZnx, VecZnxToMut, VecZnxToRef, ZnxInfos, ZnxView, ZnxViewMut},
-    reference::znx::{ZnxAdd, ZnxAddInplace, ZnxCopy, ZnxZero},
+    reference::znx::{ZnxAdd, ZnxAddAssign, ZnxCopy, ZnxZero},
 };
 
 pub fn vec_znx_add_scalar_into<R, A, B, ZNXARI>(
@@ -45,7 +45,7 @@ pub fn vec_znx_add_scalar_assign<R, A, ZNXARI>(res: &mut R, res_col: usize, res_
 where
     R: VecZnxToMut,
     A: ScalarZnxToRef,
-    ZNXARI: ZnxAddInplace,
+    ZNXARI: ZnxAddAssign,
 {
     let a: ScalarZnx<&[u8]> = a.to_ref();
     let mut res: VecZnx<&mut [u8]> = res.to_mut();
@@ -55,5 +55,5 @@ where
         assert!(res_limb < res.size());
     }
 
-    ZNXARI::znx_add_inplace(res.at_mut(res_col, res_limb), a.at(a_col, 0));
+    ZNXARI::znx_add_assign(res.at_mut(res_col, res_limb), a.at(a_col, 0));
 }

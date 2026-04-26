@@ -108,7 +108,7 @@ where
         }
     }
 
-    fn glwe_keyswitch_inplace_default<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_keyswitch_assign_default<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut + GLWEInfos,
         K: GGLWEPreparedToRef<BE> + GGLWEInfos,

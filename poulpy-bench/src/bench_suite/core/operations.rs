@@ -75,7 +75,7 @@ where
     group.finish();
 }
 
-pub fn bench_glwe_sub_inplace<BE: Backend>(infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
+pub fn bench_glwe_sub_assign<BE: Backend>(infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
 where
     Module<BE>: ModuleNew<BE> + GLWESub,
 {
@@ -85,11 +85,11 @@ where
     let mut res: GLWE<Vec<u8>> = GLWE::alloc_from_infos(infos);
     let b: GLWE<Vec<u8>> = GLWE::alloc_from_infos(infos);
 
-    let group_name = format!("glwe_sub_inplace::{label}");
+    let group_name = format!("glwe_sub_assign::{label}");
     let mut group = c.benchmark_group(group_name);
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
-            module.glwe_sub_inplace(&mut res, &b);
+            module.glwe_sub_assign(&mut res, &b);
             black_box(());
         })
     });
@@ -120,7 +120,7 @@ where
     group.finish();
 }
 
-pub fn bench_glwe_normalize_inplace<BE: Backend>(infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
+pub fn bench_glwe_normalize_assign<BE: Backend>(infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
 where
     Module<BE>: ModuleNew<BE> + GLWENormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -132,11 +132,11 @@ where
     let mut res: GLWE<Vec<u8>> = GLWE::alloc_from_infos(infos);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_normalize_tmp_bytes());
 
-    let group_name = format!("glwe_normalize_inplace::{label}");
+    let group_name = format!("glwe_normalize_assign::{label}");
     let mut group = c.benchmark_group(group_name);
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
-            module.glwe_normalize_inplace(&mut res, scratch.borrow());
+            module.glwe_normalize_assign(&mut res, scratch.borrow());
             black_box(());
         })
     });
@@ -176,7 +176,7 @@ where
     group.finish();
 }
 
-pub fn bench_glwe_mul_plain_inplace<BE: Backend>(infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
+pub fn bench_glwe_mul_plain_assign<BE: Backend>(infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
 where
     Module<BE>: ModuleNew<BE> + GLWEMulPlain<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -189,11 +189,11 @@ where
     let pt: GLWEPlaintext<Vec<u8>> = GLWEPlaintext::alloc_from_infos(infos);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_mul_plain_tmp_bytes(infos, infos, infos));
 
-    let group_name = format!("glwe_mul_plain_inplace::{label}");
+    let group_name = format!("glwe_mul_plain_assign::{label}");
     let mut group = c.benchmark_group(group_name);
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
-            module.glwe_mul_plain_inplace(
+            module.glwe_mul_plain_assign(
                 0,
                 &mut ct,
                 infos.max_k().as_usize(),

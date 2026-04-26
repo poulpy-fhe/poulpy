@@ -309,7 +309,7 @@ fn combine<B, K, H, M, BE: Backend>(
             let (mut tmp, scratch_1) = scratch.take_glwe(a);
 
             // a = a * X^-t
-            module.glwe_rotate_inplace(-t, a, scratch_1);
+            module.glwe_rotate_assign(-t, a, scratch_1);
 
             // tmp_b = a * X^-t - b
             module.glwe_sub(&mut tmp, a, b);
@@ -318,28 +318,28 @@ fn combine<B, K, H, M, BE: Backend>(
             module.glwe_add_assign(a, b);
 
             module.glwe_rsh(1, a, scratch_1);
-            module.glwe_normalize_inplace(&mut tmp, scratch_1);
+            module.glwe_normalize_assign(&mut tmp, scratch_1);
 
             // tmp_b = phi(a * X^-t - b)
             if let Some(auto_key) = auto_keys.get_automorphism_key(gal_el) {
-                module.glwe_automorphism_inplace(&mut tmp, auto_key, scratch_1);
+                module.glwe_automorphism_assign(&mut tmp, auto_key, scratch_1);
             } else {
                 panic!("auto_key[{gal_el}] not found");
             }
 
             // a = a * X^-t + b - phi(a * X^-t - b)
-            module.glwe_sub_inplace(a, &tmp);
-            module.glwe_normalize_inplace(a, scratch_1);
+            module.glwe_sub_assign(a, &tmp);
+            module.glwe_normalize_assign(a, scratch_1);
 
             // a = a + b * X^t - phi(a * X^-t - b) * X^t
             //   = a + b * X^t - phi(a * X^-t - b) * - phi(X^t)
             //   = a + b * X^t + phi(a - b * X^t)
-            module.glwe_rotate_inplace(t, a, scratch_1);
+            module.glwe_rotate_assign(t, a, scratch_1);
         } else {
             module.glwe_rsh(1, a, scratch);
             // a = a + phi(a)
             if let Some(auto_key) = auto_keys.get_automorphism_key(gal_el) {
-                module.glwe_automorphism_add_inplace(a, auto_key, scratch);
+                module.glwe_automorphism_add_assign(a, auto_key, scratch);
             } else {
                 panic!("auto_key[{gal_el}] not found");
             }

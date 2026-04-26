@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ScratchAvailable, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphismInplace},
+    api::{ScratchAvailable, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphismAssign},
     layouts::{DeviceBuf, Module, ScalarZnx, Scratch, ScratchOwned},
     source::Source,
     test_suite::TestParams,
@@ -26,7 +26,7 @@ where
         + GGLWEToGGSWKeyPreparedFactory<BE>
         + GGLWEToGGSWKeyEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
-        + VecZnxAutomorphismInplace<BE>
+        + VecZnxAutomorphismAssign<BE>
         + GGSWNoise<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     Scratch<BE>: ScratchAvailable + ScratchTakeCore<BE>,
@@ -149,7 +149,7 @@ where
 
             module.ggsw_automorphism(&mut ct_out, &ct_in, &auto_key_prepared, &tsk_prepared, scratch.borrow());
 
-            module.vec_znx_automorphism_inplace(p, &mut pt_scalar.as_vec_znx_mut(), 0, scratch.borrow());
+            module.vec_znx_automorphism_assign(p, &mut pt_scalar.as_vec_znx_mut(), 0, scratch.borrow());
 
             let max_noise = |col_j: usize| -> f64 {
                 noise_ggsw_keyswitch(
@@ -182,7 +182,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn test_ggsw_automorphism_inplace<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_ggsw_automorphism_assign<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: GGSWEncryptSk<BE>
         + GLWEAutomorphismKeyEncryptSk<BE>
@@ -191,7 +191,7 @@ where
         + GGLWEToGGSWKeyPreparedFactory<BE>
         + GGLWEToGGSWKeyEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
-        + VecZnxAutomorphismInplace<BE>
+        + VecZnxAutomorphismAssign<BE>
         + GGSWNoise<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     Scratch<BE>: ScratchAvailable + ScratchTakeCore<BE>,
@@ -298,9 +298,9 @@ where
                 module.gglwe_to_ggsw_key_prepared_alloc_from_infos(&tsk);
             module.gglwe_to_ggsw_key_prepare(&mut tsk_prepared, &tsk, scratch.borrow());
 
-            module.ggsw_automorphism_inplace(&mut ct, &auto_key_prepared, &tsk_prepared, scratch.borrow());
+            module.ggsw_automorphism_assign(&mut ct, &auto_key_prepared, &tsk_prepared, scratch.borrow());
 
-            module.vec_znx_automorphism_inplace(p, &mut pt_scalar.as_vec_znx_mut(), 0, scratch.borrow());
+            module.vec_znx_automorphism_assign(p, &mut pt_scalar.as_vec_znx_mut(), 0, scratch.borrow());
 
             let max_noise = |col_j: usize| -> f64 {
                 noise_ggsw_keyswitch(

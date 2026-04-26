@@ -3,7 +3,7 @@ use std::hint::black_box;
 use criterion::{BenchmarkId, Criterion};
 
 use poulpy_hal::{
-    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize, VecZnxNormalizeInplace, VecZnxNormalizeTmpBytes},
+    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes},
     layouts::{Backend, FillUniform, Module, ScratchOwned, VecZnx},
     source::Source,
 };
@@ -58,18 +58,18 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_normalize_inplace<B: Backend>(c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_normalize_assign<B: Backend>(c: &mut Criterion, label: &str)
 where
-    Module<B>: VecZnxNormalizeInplace<B> + ModuleNew<B> + VecZnxNormalizeTmpBytes,
+    Module<B>: VecZnxNormalizeAssign<B> + ModuleNew<B> + VecZnxNormalizeTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
-    let group_name: String = format!("vec_znx_normalize_inplace::{label}");
+    let group_name: String = format!("vec_znx_normalize_assign::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
     fn runner<B: Backend>(params: [usize; 3]) -> impl FnMut()
     where
-        Module<B>: VecZnxNormalizeInplace<B> + ModuleNew<B> + VecZnxNormalizeTmpBytes,
+        Module<B>: VecZnxNormalizeAssign<B> + ModuleNew<B> + VecZnxNormalizeTmpBytes,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
     {
         let n: usize = 1 << params[0];
@@ -91,7 +91,7 @@ where
 
         move || {
             for i in 0..cols {
-                module.vec_znx_normalize_inplace(base2k, &mut a, i, scratch.borrow());
+                module.vec_znx_normalize_assign(base2k, &mut a, i, scratch.borrow());
             }
             black_box(());
         }

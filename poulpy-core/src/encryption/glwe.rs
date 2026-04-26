@@ -1,9 +1,9 @@
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchAvailable, ScratchTakeBasic, SvpApplyDftToDft, SvpApplyDftToDftInplace, SvpPPolBytesOf, SvpPrepare,
+        ModuleN, ScratchAvailable, ScratchTakeBasic, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolBytesOf, SvpPrepare,
         VecZnxAddAssign, VecZnxAddNormal, VecZnxBigAddNormal, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxFillUniform, VecZnxIdftApplyConsume, VecZnxNormalize,
-        VecZnxNormalizeInplace, VecZnxNormalizeTmpBytes, VecZnxSub, VecZnxSubInplace,
+        VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes, VecZnxSub, VecZnxSubAssign,
     },
     layouts::{Backend, Module, ScalarZnx, Scratch, VecZnx, VecZnxBig, VecZnxToMut, ZnxInfos, ZnxZero},
     source::Source,
@@ -410,13 +410,13 @@ where
         + VecZnxDftBytesOf
         + VecZnxBigNormalize<BE>
         + VecZnxDftApply<BE>
-        + SvpApplyDftToDftInplace<BE>
+        + SvpApplyDftToDftAssign<BE>
         + VecZnxIdftApplyConsume<BE>
         + VecZnxNormalizeTmpBytes
         + VecZnxFillUniform
-        + VecZnxSubInplace
+        + VecZnxSubAssign
         + VecZnxAddAssign
-        + VecZnxNormalizeInplace<BE>
+        + VecZnxNormalizeAssign<BE>
         + VecZnxAddNormal
         + VecZnxNormalize<BE>
         + VecZnxSub
@@ -477,7 +477,7 @@ where
                 if let Some((pt, col)) = pt {
                     if i == col {
                         self.vec_znx_sub(&mut ci, 0, ct, col_ct, &pt.to_ref().data, 0);
-                        self.vec_znx_normalize_inplace(base2k, &mut ci, 0, scratch_3);
+                        self.vec_znx_normalize_assign(base2k, &mut ci, 0, scratch_3);
                         self.vec_znx_dft_apply(1, 0, &mut ci_dft, 0, &ci, 0);
                     } else {
                         self.vec_znx_dft_apply(1, 0, &mut ci_dft, 0, ct, col_ct);
@@ -486,14 +486,14 @@ where
                     self.vec_znx_dft_apply(1, 0, &mut ci_dft, 0, ct, col_ct);
                 }
 
-                self.svp_apply_dft_to_dft_inplace(&mut ci_dft, 0, &sk.data, i - 1);
+                self.svp_apply_dft_to_dft_assign(&mut ci_dft, 0, &sk.data, i - 1);
                 let ci_big: VecZnxBig<&mut [u8], BE> = self.vec_znx_idft_apply_consume(ci_dft);
 
                 // use c[0] as buffer, which is overwritten later by the normalization step
                 self.vec_znx_big_normalize(&mut ci, base2k, 0, 0, &ci_big, base2k, 0, scratch_3);
 
                 // c0_tmp = -c[i] * s[i] (use c[0] as buffer)
-                self.vec_znx_sub_inplace(&mut c0, 0, &ci, 0);
+                self.vec_znx_sub_assign(&mut c0, 0, &ci, 0);
             });
         }
 

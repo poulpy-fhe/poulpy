@@ -172,7 +172,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn test_gglwe_switching_key_keyswitch_inplace<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_gglwe_switching_key_keyswitch_assign<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: GLWESwitchingKeyEncryptSk<BE>
         + GGLWEKeyswitch<BE>
@@ -304,7 +304,7 @@ where
                     gglwe_s1s2_prepared.max_k(),
                     gglwe_s1s2_prepared.size()
                 );
-                module.gglwe_keyswitch_inplace(&mut gglwe_s0s1, &gglwe_s1s2_prepared, scratch_apply.borrow());
+                module.gglwe_keyswitch_assign(&mut gglwe_s0s1, &gglwe_s1s2_prepared, scratch_apply.borrow());
 
                 let gglwe_s0s2: GLWESwitchingKey<Vec<u8>> = gglwe_s0s1;
 

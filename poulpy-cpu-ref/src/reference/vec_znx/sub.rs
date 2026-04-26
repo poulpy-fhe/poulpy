@@ -1,6 +1,6 @@
 use crate::{
     layouts::{VecZnx, VecZnxToMut, VecZnxToRef, ZnxInfos, ZnxView, ZnxViewMut},
-    reference::znx::{ZnxCopy, ZnxNegate, ZnxNegateInplace, ZnxSub, ZnxSubInplace, ZnxSubNegateInplace, ZnxZero},
+    reference::znx::{ZnxCopy, ZnxNegate, ZnxNegateAssign, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxZero},
 };
 
 pub fn vec_znx_sub<R, A, B, ZNXARI>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
@@ -57,11 +57,11 @@ where
     }
 }
 
-pub fn vec_znx_sub_inplace<R, A, ZNXARI>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn vec_znx_sub_assign<R, A, ZNXARI>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     R: VecZnxToMut,
     A: VecZnxToRef,
-    ZNXARI: ZnxSubInplace,
+    ZNXARI: ZnxSubAssign,
 {
     let a: VecZnx<&[u8]> = a.to_ref();
     let mut res: VecZnx<&mut [u8]> = res.to_mut();
@@ -77,15 +77,15 @@ where
     let sum_size: usize = a_size.min(res_size);
 
     for j in 0..sum_size {
-        ZNXARI::znx_sub_inplace(res.at_mut(res_col, j), a.at(a_col, j));
+        ZNXARI::znx_sub_assign(res.at_mut(res_col, j), a.at(a_col, j));
     }
 }
 
-pub fn vec_znx_sub_negate_inplace<R, A, ZNXARI>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn vec_znx_sub_negate_assign<R, A, ZNXARI>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     R: VecZnxToMut,
     A: VecZnxToRef,
-    ZNXARI: ZnxSubNegateInplace + ZnxNegateInplace,
+    ZNXARI: ZnxSubNegateAssign + ZnxNegateAssign,
 {
     let a: VecZnx<&[u8]> = a.to_ref();
     let mut res: VecZnx<&mut [u8]> = res.to_mut();
@@ -101,10 +101,10 @@ where
     let sum_size: usize = a_size.min(res_size);
 
     for j in 0..sum_size {
-        ZNXARI::znx_sub_negate_inplace(res.at_mut(res_col, j), a.at(a_col, j));
+        ZNXARI::znx_sub_negate_assign(res.at_mut(res_col, j), a.at(a_col, j));
     }
 
     for j in sum_size..res_size {
-        ZNXARI::znx_negate_inplace(res.at_mut(res_col, j));
+        ZNXARI::znx_negate_assign(res.at_mut(res_col, j));
     }
 }

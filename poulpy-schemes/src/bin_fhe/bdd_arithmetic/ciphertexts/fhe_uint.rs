@@ -319,10 +319,10 @@ impl<D: DataMut, T: UnsignedInteger> FheUint<D, T> {
         module.glwe_rotate(-((T::bit_index(src << 3) << log_gap) as i64), &mut tmp_fhe_uint_byte, b);
 
         // Zeroes all other bytes
-        module.glwe_trace_inplace(&mut tmp_fhe_uint_byte, trace_start, keys, scratch_1);
+        module.glwe_trace_assign(&mut tmp_fhe_uint_byte, trace_start, keys, scratch_1);
 
         // Moves back self[0] to self[byte_tg]
-        module.glwe_rotate_inplace(rot, &mut tmp_fhe_uint_byte, scratch_1);
+        module.glwe_rotate_assign(rot, &mut tmp_fhe_uint_byte, scratch_1);
 
         // Add self[0] += a[0]
         module.glwe_add_assign(&mut self.bits, &tmp_fhe_uint_byte);
@@ -410,7 +410,7 @@ impl<D: DataRef, T: UnsignedInteger> FheUint<D, T> {
         let log_gap: usize = module.log_n() - T::LOG_BITS as usize;
         let rot = (T::bit_index(bit) << log_gap) as i64;
         module.glwe_rotate(-rot, res, self);
-        module.glwe_trace_inplace(res, 0, keys, scratch);
+        module.glwe_trace_assign(res, 0, keys, scratch);
     }
 
     pub fn get_byte<R, K, M, H, BE: Backend>(&self, module: &M, byte: usize, res: &mut R, keys: &H, scratch: &mut Scratch<BE>)
@@ -426,7 +426,7 @@ impl<D: DataRef, T: UnsignedInteger> FheUint<D, T> {
         let trace_start = (T::LOG_BITS - T::LOG_BYTES) as usize;
         let rot = (T::bit_index(byte << 3) << log_gap) as i64;
         module.glwe_rotate(-rot, res, self);
-        module.glwe_trace_inplace(res, trace_start, keys, scratch);
+        module.glwe_trace_assign(res, trace_start, keys, scratch);
     }
 }
 
@@ -475,17 +475,17 @@ impl<D: DataMut, T: UnsignedInteger> FheUint<D, T> {
         let rot: i64 = (T::bit_index(byte << 3) << log_gap) as i64;
 
         // Move a to self and align byte
-        module.glwe_rotate_inplace(-rot, &mut self.bits, scratch);
+        module.glwe_rotate_assign(-rot, &mut self.bits, scratch);
 
         // Stores this byte (everything else zeroed) into tmp_trace
         let (mut tmp_trace, scratch_1) = scratch.take_glwe(self);
         module.glwe_trace(&mut tmp_trace, trace_start, self, keys, scratch_1);
 
         // Subtracts to self to zero it
-        module.glwe_sub_inplace(&mut self.bits, &tmp_trace);
+        module.glwe_sub_assign(&mut self.bits, &tmp_trace);
 
         // Move a to self and align byte
-        module.glwe_rotate_inplace(rot, &mut self.bits, scratch);
+        module.glwe_rotate_assign(rot, &mut self.bits, scratch);
     }
 
     pub fn sext<M, H, K, BE>(&mut self, module: &M, byte: usize, keys: &H, scratch: &mut Scratch<BE>)
@@ -506,7 +506,7 @@ impl<D: DataMut, T: UnsignedInteger> FheUint<D, T> {
 
         // Extract MSB
         module.glwe_rotate(-rot, &mut sext, &self.bits);
-        module.glwe_trace_inplace(&mut sext, 0, keys, scratch_1);
+        module.glwe_trace_assign(&mut sext, 0, keys, scratch_1);
 
         // Replicates MSB in byte
         for i in 0..3 {

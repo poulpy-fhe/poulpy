@@ -11,33 +11,33 @@ use crate::reference::{
         vec_znx_big_add_small_assign as fft64_vec_znx_big_add_small_assign,
         vec_znx_big_add_small_into as fft64_vec_znx_big_add_small_into,
         vec_znx_big_automorphism as fft64_vec_znx_big_automorphism,
-        vec_znx_big_automorphism_inplace as fft64_vec_znx_big_automorphism_inplace,
-        vec_znx_big_automorphism_inplace_tmp_bytes as fft64_vec_znx_big_automorphism_inplace_tmp_bytes,
-        vec_znx_big_negate as fft64_vec_znx_big_negate, vec_znx_big_negate_inplace as fft64_vec_znx_big_negate_inplace,
+        vec_znx_big_automorphism_assign as fft64_vec_znx_big_automorphism_assign,
+        vec_znx_big_automorphism_assign_tmp_bytes as fft64_vec_znx_big_automorphism_assign_tmp_bytes,
+        vec_znx_big_negate as fft64_vec_znx_big_negate, vec_znx_big_negate_assign as fft64_vec_znx_big_negate_assign,
         vec_znx_big_normalize as fft64_vec_znx_big_normalize,
         vec_znx_big_normalize_tmp_bytes as fft64_vec_znx_big_normalize_tmp_bytes, vec_znx_big_sub as fft64_vec_znx_big_sub,
-        vec_znx_big_sub_inplace as fft64_vec_znx_big_sub_inplace,
-        vec_znx_big_sub_negate_inplace as fft64_vec_znx_big_sub_negate_inplace,
+        vec_znx_big_sub_assign as fft64_vec_znx_big_sub_assign,
+        vec_znx_big_sub_negate_assign as fft64_vec_znx_big_sub_negate_assign,
         vec_znx_big_sub_small_a as fft64_vec_znx_big_sub_small_a,
-        vec_znx_big_sub_small_a_inplace as fft64_vec_znx_big_sub_small_a_inplace,
+        vec_znx_big_sub_small_a_assign as fft64_vec_znx_big_sub_small_a_assign,
         vec_znx_big_sub_small_b as fft64_vec_znx_big_sub_small_b,
-        vec_znx_big_sub_small_b_inplace as fft64_vec_znx_big_sub_small_b_inplace,
+        vec_znx_big_sub_small_b_assign as fft64_vec_znx_big_sub_small_b_assign,
     },
     ntt120::vec_znx_big::{
         I128BigOps, I128NormalizeOps, ntt120_vec_znx_big_add_assign, ntt120_vec_znx_big_add_into,
         ntt120_vec_znx_big_add_normal_ref, ntt120_vec_znx_big_add_small_assign, ntt120_vec_znx_big_add_small_into,
-        ntt120_vec_znx_big_automorphism, ntt120_vec_znx_big_automorphism_inplace,
-        ntt120_vec_znx_big_automorphism_inplace_tmp_bytes, ntt120_vec_znx_big_from_small, ntt120_vec_znx_big_negate,
-        ntt120_vec_znx_big_negate_inplace, ntt120_vec_znx_big_normalize, ntt120_vec_znx_big_normalize_tmp_bytes,
-        ntt120_vec_znx_big_sub, ntt120_vec_znx_big_sub_inplace, ntt120_vec_znx_big_sub_negate_inplace,
-        ntt120_vec_znx_big_sub_small_a, ntt120_vec_znx_big_sub_small_b, ntt120_vec_znx_big_sub_small_inplace,
-        ntt120_vec_znx_big_sub_small_negate_inplace,
+        ntt120_vec_znx_big_automorphism, ntt120_vec_znx_big_automorphism_assign,
+        ntt120_vec_znx_big_automorphism_assign_tmp_bytes, ntt120_vec_znx_big_from_small, ntt120_vec_znx_big_negate,
+        ntt120_vec_znx_big_negate_assign, ntt120_vec_znx_big_normalize, ntt120_vec_znx_big_normalize_add_assign,
+        ntt120_vec_znx_big_normalize_sub_assign, ntt120_vec_znx_big_normalize_tmp_bytes, ntt120_vec_znx_big_sub,
+        ntt120_vec_znx_big_sub_assign, ntt120_vec_znx_big_sub_negate_assign, ntt120_vec_znx_big_sub_small_a,
+        ntt120_vec_znx_big_sub_small_assign, ntt120_vec_znx_big_sub_small_b, ntt120_vec_znx_big_sub_small_negate_assign,
     },
     znx::{
-        ZnxAdd, ZnxAddInplace, ZnxAutomorphism, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulPowerOfTwoInplace, ZnxNegate,
-        ZnxNegateInplace, ZnxNormalizeDigit, ZnxNormalizeFinalStep, ZnxNormalizeFinalStepInplace, ZnxNormalizeFirstStep,
-        ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepCarryOnly, ZnxNormalizeMiddleStepInplace,
-        ZnxSub, ZnxSubInplace, ZnxSubNegateInplace, ZnxZero, znx_copy_ref, znx_zero_ref,
+        ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulPowerOfTwoAssign, ZnxNegate,
+        ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep, ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep,
+        ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly,
+        ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxZero, znx_copy_ref, znx_zero_ref,
     },
 };
 use poulpy_hal::{
@@ -106,7 +106,7 @@ pub trait FFT64VecZnxBigDefaults<BE: Backend>: Backend {
 
     fn vec_znx_big_add_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
-        BE: Backend<ScalarBig = i64> + ZnxAddInplace,
+        BE: Backend<ScalarBig = i64> + ZnxAddAssign,
         R: VecZnxBigToMut<BE>,
         A: VecZnxBigToRef<BE>,
     {
@@ -132,7 +132,7 @@ pub trait FFT64VecZnxBigDefaults<BE: Backend>: Backend {
 
     fn vec_znx_big_add_small_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
-        BE: Backend<ScalarBig = i64> + ZnxAddInplace,
+        BE: Backend<ScalarBig = i64> + ZnxAddAssign,
         R: VecZnxBigToMut<BE>,
         A: VecZnxToRef,
     {
@@ -156,22 +156,22 @@ pub trait FFT64VecZnxBigDefaults<BE: Backend>: Backend {
         fft64_vec_znx_big_sub(res, res_col, a, a_col, b, b_col);
     }
 
-    fn vec_znx_big_sub_inplace_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_big_sub_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
-        BE: Backend<ScalarBig = i64> + ZnxSubInplace,
+        BE: Backend<ScalarBig = i64> + ZnxSubAssign,
         R: VecZnxBigToMut<BE>,
         A: VecZnxBigToRef<BE>,
     {
-        fft64_vec_znx_big_sub_inplace(res, res_col, a, a_col);
+        fft64_vec_znx_big_sub_assign(res, res_col, a, a_col);
     }
 
-    fn vec_znx_big_sub_negate_inplace_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_big_sub_negate_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
-        BE: Backend<ScalarBig = i64> + ZnxSubNegateInplace + ZnxNegateInplace,
+        BE: Backend<ScalarBig = i64> + ZnxSubNegateAssign + ZnxNegateAssign,
         R: VecZnxBigToMut<BE>,
         A: VecZnxBigToRef<BE>,
     {
-        fft64_vec_znx_big_sub_negate_inplace(res, res_col, a, a_col);
+        fft64_vec_znx_big_sub_negate_assign(res, res_col, a, a_col);
     }
 
     fn vec_znx_big_sub_small_a_default<R, A, C>(
@@ -191,13 +191,13 @@ pub trait FFT64VecZnxBigDefaults<BE: Backend>: Backend {
         fft64_vec_znx_big_sub_small_a(res, res_col, a, a_col, b, b_col);
     }
 
-    fn vec_znx_big_sub_small_inplace_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_big_sub_small_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
-        BE: Backend<ScalarBig = i64> + ZnxSubInplace,
+        BE: Backend<ScalarBig = i64> + ZnxSubAssign,
         R: VecZnxBigToMut<BE>,
         A: VecZnxToRef,
     {
-        fft64_vec_znx_big_sub_small_a_inplace(res, res_col, a, a_col);
+        fft64_vec_znx_big_sub_small_a_assign(res, res_col, a, a_col);
     }
 
     fn vec_znx_big_sub_small_b_default<R, A, C>(
@@ -217,13 +217,13 @@ pub trait FFT64VecZnxBigDefaults<BE: Backend>: Backend {
         fft64_vec_znx_big_sub_small_b(res, res_col, a, a_col, b, b_col);
     }
 
-    fn vec_znx_big_sub_small_negate_inplace_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_big_sub_small_negate_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
-        BE: Backend<ScalarBig = i64> + ZnxSubNegateInplace + ZnxNegateInplace,
+        BE: Backend<ScalarBig = i64> + ZnxSubNegateAssign + ZnxNegateAssign,
         R: VecZnxBigToMut<BE>,
         A: VecZnxToRef,
     {
-        fft64_vec_znx_big_sub_small_b_inplace(res, res_col, a, a_col);
+        fft64_vec_znx_big_sub_small_b_assign(res, res_col, a, a_col);
     }
 
     fn vec_znx_big_negate_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
@@ -235,12 +235,12 @@ pub trait FFT64VecZnxBigDefaults<BE: Backend>: Backend {
         fft64_vec_znx_big_negate(res, res_col, a, a_col);
     }
 
-    fn vec_znx_big_negate_inplace_default<R>(_module: &Module<BE>, res: &mut R, res_col: usize)
+    fn vec_znx_big_negate_assign_default<R>(_module: &Module<BE>, res: &mut R, res_col: usize)
     where
-        BE: Backend<ScalarBig = i64> + ZnxNegateInplace,
+        BE: Backend<ScalarBig = i64> + ZnxNegateAssign,
         R: VecZnxBigToMut<BE>,
     {
-        fft64_vec_znx_big_negate_inplace(res, res_col);
+        fft64_vec_znx_big_negate_assign(res, res_col);
     }
 
     fn vec_znx_big_normalize_tmp_bytes_default(module: &Module<BE>) -> usize
@@ -264,8 +264,8 @@ pub trait FFT64VecZnxBigDefaults<BE: Backend>: Backend {
         BE: Backend<ScalarBig = i64>
             + ZnxZero
             + ZnxCopy
-            + ZnxAddInplace
-            + ZnxMulPowerOfTwoInplace
+            + ZnxAddAssign
+            + ZnxMulPowerOfTwoAssign
             + ZnxNormalizeFirstStepCarryOnly
             + ZnxNormalizeMiddleStepCarryOnly
             + ZnxNormalizeMiddleStep
@@ -273,8 +273,8 @@ pub trait FFT64VecZnxBigDefaults<BE: Backend>: Backend {
             + ZnxNormalizeFirstStep
             + ZnxExtractDigitAddMul
             + ZnxNormalizeDigit
-            + ZnxNormalizeMiddleStepInplace
-            + ZnxNormalizeFinalStepInplace,
+            + ZnxNormalizeMiddleStepAssign
+            + ZnxNormalizeFinalStepAssign,
         Scratch<BE>: TakeSlice,
         R: VecZnxToMut,
         A: VecZnxBigToRef<BE>,
@@ -292,14 +292,14 @@ pub trait FFT64VecZnxBigDefaults<BE: Backend>: Backend {
         fft64_vec_znx_big_automorphism(k, res, res_col, a, a_col);
     }
 
-    fn vec_znx_big_automorphism_inplace_tmp_bytes_default(module: &Module<BE>) -> usize
+    fn vec_znx_big_automorphism_assign_tmp_bytes_default(module: &Module<BE>) -> usize
     where
         BE: Backend<ScalarBig = i64>,
     {
-        fft64_vec_znx_big_automorphism_inplace_tmp_bytes(module.n())
+        fft64_vec_znx_big_automorphism_assign_tmp_bytes(module.n())
     }
 
-    fn vec_znx_big_automorphism_inplace_default<R>(
+    fn vec_znx_big_automorphism_assign_default<R>(
         module: &Module<BE>,
         k: i64,
         res: &mut R,
@@ -310,8 +310,8 @@ pub trait FFT64VecZnxBigDefaults<BE: Backend>: Backend {
         Scratch<BE>: TakeSlice,
         R: VecZnxBigToMut<BE>,
     {
-        let (tmp, _) = scratch.take_slice(fft64_vec_znx_big_automorphism_inplace_tmp_bytes(module.n()) / size_of::<i64>());
-        fft64_vec_znx_big_automorphism_inplace(k, res, res_col, tmp);
+        let (tmp, _) = scratch.take_slice(fft64_vec_znx_big_automorphism_assign_tmp_bytes(module.n()) / size_of::<i64>());
+        fft64_vec_znx_big_automorphism_assign(k, res, res_col, tmp);
     }
 }
 
@@ -411,22 +411,22 @@ pub trait NTT120VecZnxBigDefaults<BE: Backend>: Backend {
         ntt120_vec_znx_big_sub(res, res_col, a, a_col, b, b_col);
     }
 
-    fn vec_znx_big_sub_inplace_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_big_sub_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         BE: Backend<ScalarBig = i128> + I128BigOps,
         R: VecZnxBigToMut<BE>,
         A: VecZnxBigToRef<BE>,
     {
-        ntt120_vec_znx_big_sub_inplace(res, res_col, a, a_col);
+        ntt120_vec_znx_big_sub_assign(res, res_col, a, a_col);
     }
 
-    fn vec_znx_big_sub_negate_inplace_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_big_sub_negate_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         BE: Backend<ScalarBig = i128> + I128BigOps,
         R: VecZnxBigToMut<BE>,
         A: VecZnxBigToRef<BE>,
     {
-        ntt120_vec_znx_big_sub_negate_inplace(res, res_col, a, a_col);
+        ntt120_vec_znx_big_sub_negate_assign(res, res_col, a, a_col);
     }
 
     fn vec_znx_big_sub_small_a_default<R, A, C>(
@@ -446,13 +446,13 @@ pub trait NTT120VecZnxBigDefaults<BE: Backend>: Backend {
         ntt120_vec_znx_big_sub_small_a(res, res_col, a, a_col, b, b_col);
     }
 
-    fn vec_znx_big_sub_small_inplace_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_big_sub_small_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         BE: Backend<ScalarBig = i128> + I128BigOps,
         R: VecZnxBigToMut<BE>,
         A: VecZnxToRef,
     {
-        ntt120_vec_znx_big_sub_small_inplace(res, res_col, a, a_col);
+        ntt120_vec_znx_big_sub_small_assign(res, res_col, a, a_col);
     }
 
     fn vec_znx_big_sub_small_b_default<R, A, C>(
@@ -472,13 +472,13 @@ pub trait NTT120VecZnxBigDefaults<BE: Backend>: Backend {
         ntt120_vec_znx_big_sub_small_b(res, res_col, a, a_col, b, b_col);
     }
 
-    fn vec_znx_big_sub_small_negate_inplace_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_big_sub_small_negate_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         BE: Backend<ScalarBig = i128> + I128BigOps,
         R: VecZnxBigToMut<BE>,
         A: VecZnxToRef,
     {
-        ntt120_vec_znx_big_sub_small_negate_inplace(res, res_col, a, a_col);
+        ntt120_vec_znx_big_sub_small_negate_assign(res, res_col, a, a_col);
     }
 
     fn vec_znx_big_negate_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
@@ -490,12 +490,12 @@ pub trait NTT120VecZnxBigDefaults<BE: Backend>: Backend {
         ntt120_vec_znx_big_negate(res, res_col, a, a_col);
     }
 
-    fn vec_znx_big_negate_inplace_default<R>(_module: &Module<BE>, res: &mut R, res_col: usize)
+    fn vec_znx_big_negate_assign_default<R>(_module: &Module<BE>, res: &mut R, res_col: usize)
     where
         BE: Backend<ScalarBig = i128> + I128BigOps,
         R: VecZnxBigToMut<BE>,
     {
-        ntt120_vec_znx_big_negate_inplace(res, res_col);
+        ntt120_vec_znx_big_negate_assign(res, res_col);
     }
 
     fn vec_znx_big_normalize_tmp_bytes_default(module: &Module<BE>) -> usize
@@ -525,6 +525,46 @@ pub trait NTT120VecZnxBigDefaults<BE: Backend>: Backend {
         ntt120_vec_znx_big_normalize(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
     }
 
+    fn vec_znx_big_normalize_add_assign_default<R, A>(
+        module: &Module<BE>,
+        res: &mut R,
+        res_base2k: usize,
+        res_offset: i64,
+        res_col: usize,
+        a: &A,
+        a_base2k: usize,
+        a_col: usize,
+        scratch: &mut Scratch<BE>,
+    ) where
+        BE: Backend<ScalarBig = i128> + I128NormalizeOps,
+        Scratch<BE>: TakeSlice,
+        R: VecZnxToMut,
+        A: VecZnxBigToRef<BE>,
+    {
+        let (carry, _) = scratch.take_slice(ntt120_vec_znx_big_normalize_tmp_bytes(module.n()) / size_of::<i128>());
+        ntt120_vec_znx_big_normalize_add_assign(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
+    }
+
+    fn vec_znx_big_normalize_sub_assign_default<R, A>(
+        module: &Module<BE>,
+        res: &mut R,
+        res_base2k: usize,
+        res_offset: i64,
+        res_col: usize,
+        a: &A,
+        a_base2k: usize,
+        a_col: usize,
+        scratch: &mut Scratch<BE>,
+    ) where
+        BE: Backend<ScalarBig = i128> + I128NormalizeOps,
+        Scratch<BE>: TakeSlice,
+        R: VecZnxToMut,
+        A: VecZnxBigToRef<BE>,
+    {
+        let (carry, _) = scratch.take_slice(ntt120_vec_znx_big_normalize_tmp_bytes(module.n()) / size_of::<i128>());
+        ntt120_vec_znx_big_normalize_sub_assign(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
+    }
+
     fn vec_znx_big_automorphism_default<R, A>(_module: &Module<BE>, k: i64, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         BE: Backend<ScalarBig = i128> + I128BigOps,
@@ -534,14 +574,14 @@ pub trait NTT120VecZnxBigDefaults<BE: Backend>: Backend {
         ntt120_vec_znx_big_automorphism(k, res, res_col, a, a_col);
     }
 
-    fn vec_znx_big_automorphism_inplace_tmp_bytes_default(module: &Module<BE>) -> usize
+    fn vec_znx_big_automorphism_assign_tmp_bytes_default(module: &Module<BE>) -> usize
     where
         BE: Backend<ScalarBig = i128> + I128BigOps,
     {
-        ntt120_vec_znx_big_automorphism_inplace_tmp_bytes(module.n())
+        ntt120_vec_znx_big_automorphism_assign_tmp_bytes(module.n())
     }
 
-    fn vec_znx_big_automorphism_inplace_default<R>(
+    fn vec_znx_big_automorphism_assign_default<R>(
         module: &Module<BE>,
         k: i64,
         res: &mut R,
@@ -552,8 +592,8 @@ pub trait NTT120VecZnxBigDefaults<BE: Backend>: Backend {
         Scratch<BE>: TakeSlice,
         R: VecZnxBigToMut<BE>,
     {
-        let (tmp, _) = scratch.take_slice(ntt120_vec_znx_big_automorphism_inplace_tmp_bytes(module.n()) / size_of::<i128>());
-        ntt120_vec_znx_big_automorphism_inplace(k, res, res_col, tmp);
+        let (tmp, _) = scratch.take_slice(ntt120_vec_znx_big_automorphism_assign_tmp_bytes(module.n()) / size_of::<i128>());
+        ntt120_vec_znx_big_automorphism_assign(k, res, res_col, tmp);
     }
 }
 

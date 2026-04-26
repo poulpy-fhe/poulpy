@@ -74,7 +74,7 @@ where
         }
     }
 
-    fn gglwe_keyswitch_inplace_default<R, A>(&self, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
+    fn gglwe_keyswitch_assign_default<R, A>(&self, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
     where
         R: GGLWEToMut,
         A: GGLWEPreparedToRef<BE> + GGLWEInfos,
@@ -98,7 +98,7 @@ where
 
         for row in 0..res.dnum().into() {
             for col in 0..res.rank_in().into() {
-                self.glwe_keyswitch_inplace(&mut res.at_mut(row, col), a, scratch);
+                self.glwe_keyswitch_assign(&mut res.at_mut(row, col), a, scratch);
             }
         }
     }

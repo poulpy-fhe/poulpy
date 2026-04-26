@@ -1,4 +1,4 @@
-use crate::reference::znx::{znx_add_inplace_ref, znx_copy_ref};
+use crate::reference::znx::{znx_add_assign_ref, znx_copy_ref};
 
 pub fn znx_mul_power_of_two_ref(mut k: i64, res: &mut [i64], a: &[i64]) {
     #[cfg(debug_assertions)]
@@ -27,7 +27,7 @@ pub fn znx_mul_power_of_two_ref(mut k: i64, res: &mut [i64], a: &[i64]) {
     }
 }
 
-pub fn znx_mul_power_of_two_inplace_ref(mut k: i64, res: &mut [i64]) {
+pub fn znx_mul_power_of_two_assign_ref(mut k: i64, res: &mut [i64]) {
     if k == 0 {
         return;
     }
@@ -55,7 +55,7 @@ pub fn znx_mul_add_power_of_two_ref(mut k: i64, res: &mut [i64], a: &[i64]) {
     }
 
     if k == 0 {
-        znx_add_inplace_ref(res, a);
+        znx_add_assign_ref(res, a);
         return;
     }
 

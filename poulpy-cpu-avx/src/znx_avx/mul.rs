@@ -105,14 +105,14 @@ pub unsafe fn znx_mul_power_of_two_avx(k: i64, res: &mut [i64], a: &[i64]) {
     }
 }
 
-/// Multiply/divide inplace by a power of two with rounding matching [poulpy_cpu_ref::reference::znx::znx_mul_power_of_two_inplace_ref].
+/// Multiply/divide inplace by a power of two with rounding matching [poulpy_cpu_ref::reference::znx::znx_mul_power_of_two_assign_ref].
 ///
 /// # Safety
 /// Caller must ensure the CPU supports AVX2 (e.g., via `is_x86_feature_detected!("avx2")`);
 /// all inputs must have the same length and must not alias.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-pub unsafe fn znx_mul_power_of_two_inplace_avx(k: i64, res: &mut [i64]) {
+pub unsafe fn znx_mul_power_of_two_assign_avx(k: i64, res: &mut [i64]) {
     use core::arch::x86_64::{
         __m128i, __m256i, _mm_cvtsi32_si128, _mm256_add_epi64, _mm256_and_si256, _mm256_cmpgt_epi64, _mm256_loadu_si256,
         _mm256_or_si256, _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_sll_epi64, _mm256_srl_epi64, _mm256_srli_epi64,
@@ -150,8 +150,8 @@ pub unsafe fn znx_mul_power_of_two_inplace_avx(k: i64, res: &mut [i64]) {
 
             // tail
             if !n.is_multiple_of(4) {
-                use poulpy_cpu_ref::reference::znx::znx_mul_power_of_two_inplace_ref;
-                znx_mul_power_of_two_inplace_ref(k, &mut res[span << 2..]);
+                use poulpy_cpu_ref::reference::znx::znx_mul_power_of_two_assign_ref;
+                znx_mul_power_of_two_assign_ref(k, &mut res[span << 2..]);
             }
             return;
         }
@@ -195,12 +195,12 @@ pub unsafe fn znx_mul_power_of_two_inplace_avx(k: i64, res: &mut [i64]) {
 
     // tail
     if !n.is_multiple_of(4) {
-        use poulpy_cpu_ref::reference::znx::znx_mul_power_of_two_inplace_ref;
-        znx_mul_power_of_two_inplace_ref(k, &mut res[span << 2..]);
+        use poulpy_cpu_ref::reference::znx::znx_mul_power_of_two_assign_ref;
+        znx_mul_power_of_two_assign_ref(k, &mut res[span << 2..]);
     }
 }
 
-/// Multiply/divide by a power of two and add on the result with rounding matching [poulpy_cpu_ref::reference::znx::znx_mul_power_of_two_inplace_ref].
+/// Multiply/divide by a power of two and add on the result with rounding matching [poulpy_cpu_ref::reference::znx::znx_mul_power_of_two_assign_ref].
 ///
 /// # Safety
 /// Caller must ensure the CPU supports AVX2 (e.g., via `is_x86_feature_detected!("avx2")`);
@@ -226,9 +226,9 @@ pub unsafe fn znx_mul_add_power_of_two_avx(k: i64, res: &mut [i64], a: &[i64]) {
     }
 
     if k == 0 {
-        use crate::znx_avx::znx_add_inplace_avx;
+        use crate::znx_avx::znx_add_assign_avx;
 
-        znx_add_inplace_avx(res, a);
+        znx_add_assign_avx(res, a);
         return;
     }
 

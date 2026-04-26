@@ -90,20 +90,20 @@ macro_rules! hal_impl_vec_znx_dft_ntt120 {
             <Self as NTT120VecZnxDftDefaults<Self>>::vec_znx_dft_sub_default(module, res, res_col, a, a_col, b, b_col)
         }
 
-        fn vec_znx_dft_sub_inplace<R, A>(module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+        fn vec_znx_dft_sub_assign<R, A>(module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
         where
             R: VecZnxDftToMut<Self>,
             A: VecZnxDftToRef<Self>,
         {
-            <Self as NTT120VecZnxDftDefaults<Self>>::vec_znx_dft_sub_inplace_default(module, res, res_col, a, a_col)
+            <Self as NTT120VecZnxDftDefaults<Self>>::vec_znx_dft_sub_assign_default(module, res, res_col, a, a_col)
         }
 
-        fn vec_znx_dft_sub_negate_inplace<R, A>(module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+        fn vec_znx_dft_sub_negate_assign<R, A>(module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
         where
             R: VecZnxDftToMut<Self>,
             A: VecZnxDftToRef<Self>,
         {
-            <Self as NTT120VecZnxDftDefaults<Self>>::vec_znx_dft_sub_negate_inplace_default(module, res, res_col, a, a_col)
+            <Self as NTT120VecZnxDftDefaults<Self>>::vec_znx_dft_sub_negate_assign_default(module, res, res_col, a, a_col)
         }
 
         fn vec_znx_dft_copy<R, A>(

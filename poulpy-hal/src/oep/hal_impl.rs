@@ -1,7 +1,9 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::{
-    layouts::{Backend, Module, NoiseInfos, ScalarZnxToRef, Scratch, ScratchOwned, VecZnxToMut, VecZnxToRef},
+    layouts::{
+        Backend, Module, NoiseInfos, ScalarZnxToRef, Scratch, ScratchOwned, VecZnx, VecZnxToMut, VecZnxToRef, ZnxView, ZnxViewMut,
+    },
     source::Source,
 };
 
@@ -50,7 +52,7 @@ pub unsafe trait HalImpl<BE: Backend>: Backend {
         R: VecZnxToMut,
         A: VecZnxToRef;
 
-    fn vec_znx_normalize_inplace<A>(module: &Module<BE>, base2k: usize, a: &mut A, a_col: usize, scratch: &mut Scratch<BE>)
+    fn vec_znx_normalize_assign<A>(module: &Module<BE>, base2k: usize, a: &mut A, a_col: usize, scratch: &mut Scratch<BE>)
     where
         A: VecZnxToMut;
 
@@ -91,12 +93,12 @@ pub unsafe trait HalImpl<BE: Backend>: Backend {
         A: VecZnxToRef,
         C: VecZnxToRef;
 
-    fn vec_znx_sub_inplace<R, A>(module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_sub_assign<R, A>(module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         R: VecZnxToMut,
         A: VecZnxToRef;
 
-    fn vec_znx_sub_negate_inplace<R, A>(module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_sub_negate_assign<R, A>(module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         R: VecZnxToMut,
         A: VecZnxToRef;
@@ -116,7 +118,7 @@ pub unsafe trait HalImpl<BE: Backend>: Backend {
         A: ScalarZnxToRef,
         B: VecZnxToRef;
 
-    fn vec_znx_sub_scalar_inplace<R, A>(module: &Module<BE>, res: &mut R, res_col: usize, res_limb: usize, a: &A, a_col: usize)
+    fn vec_znx_sub_scalar_assign<R, A>(module: &Module<BE>, res: &mut R, res_col: usize, res_limb: usize, a: &A, a_col: usize)
     where
         R: VecZnxToMut,
         A: ScalarZnxToRef;
@@ -126,7 +128,7 @@ pub unsafe trait HalImpl<BE: Backend>: Backend {
         R: VecZnxToMut,
         A: VecZnxToRef;
 
-    fn vec_znx_negate_inplace<A>(module: &Module<BE>, a: &mut A, a_col: usize)
+    fn vec_znx_negate_assign<A>(module: &Module<BE>, a: &mut A, a_col: usize)
     where
         A: VecZnxToMut;
 
@@ -212,11 +214,11 @@ pub unsafe trait HalImpl<BE: Backend>: Backend {
         R: VecZnxToMut,
         A: VecZnxToRef;
 
-    fn vec_znx_rsh_inplace<R>(module: &Module<BE>, base2k: usize, k: usize, a: &mut R, a_col: usize, scratch: &mut Scratch<BE>)
+    fn vec_znx_rsh_assign<R>(module: &Module<BE>, base2k: usize, k: usize, a: &mut R, a_col: usize, scratch: &mut Scratch<BE>)
     where
         R: VecZnxToMut;
 
-    fn vec_znx_lsh_inplace<R>(module: &Module<BE>, base2k: usize, k: usize, a: &mut R, a_col: usize, scratch: &mut Scratch<BE>)
+    fn vec_znx_lsh_assign<R>(module: &Module<BE>, base2k: usize, k: usize, a: &mut R, a_col: usize, scratch: &mut Scratch<BE>)
     where
         R: VecZnxToMut;
 
@@ -225,9 +227,9 @@ pub unsafe trait HalImpl<BE: Backend>: Backend {
         R: VecZnxToMut,
         A: VecZnxToRef;
 
-    fn vec_znx_rotate_inplace_tmp_bytes(module: &Module<BE>) -> usize;
+    fn vec_znx_rotate_assign_tmp_bytes(module: &Module<BE>) -> usize;
 
-    fn vec_znx_rotate_inplace<A>(module: &Module<BE>, k: i64, a: &mut A, a_col: usize, scratch: &mut Scratch<BE>)
+    fn vec_znx_rotate_assign<A>(module: &Module<BE>, k: i64, a: &mut A, a_col: usize, scratch: &mut Scratch<BE>)
     where
         A: VecZnxToMut;
 
@@ -236,9 +238,9 @@ pub unsafe trait HalImpl<BE: Backend>: Backend {
         R: VecZnxToMut,
         A: VecZnxToRef;
 
-    fn vec_znx_automorphism_inplace_tmp_bytes(module: &Module<BE>) -> usize;
+    fn vec_znx_automorphism_assign_tmp_bytes(module: &Module<BE>) -> usize;
 
-    fn vec_znx_automorphism_inplace<R>(module: &Module<BE>, k: i64, res: &mut R, res_col: usize, scratch: &mut Scratch<BE>)
+    fn vec_znx_automorphism_assign<R>(module: &Module<BE>, k: i64, res: &mut R, res_col: usize, scratch: &mut Scratch<BE>)
     where
         R: VecZnxToMut;
 
@@ -247,9 +249,9 @@ pub unsafe trait HalImpl<BE: Backend>: Backend {
         R: VecZnxToMut,
         A: VecZnxToRef;
 
-    fn vec_znx_mul_xp_minus_one_inplace_tmp_bytes(module: &Module<BE>) -> usize;
+    fn vec_znx_mul_xp_minus_one_assign_tmp_bytes(module: &Module<BE>) -> usize;
 
-    fn vec_znx_mul_xp_minus_one_inplace<R>(module: &Module<BE>, k: i64, res: &mut R, res_col: usize, scratch: &mut Scratch<BE>)
+    fn vec_znx_mul_xp_minus_one_assign<R>(module: &Module<BE>, k: i64, res: &mut R, res_col: usize, scratch: &mut Scratch<BE>)
     where
         R: VecZnxToMut;
 
@@ -368,12 +370,12 @@ pub unsafe trait HalImpl<BE: Backend>: Backend {
         A: crate::layouts::VecZnxBigToRef<BE>,
         C: crate::layouts::VecZnxBigToRef<BE>;
 
-    fn vec_znx_big_sub_inplace<R, A>(module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_big_sub_assign<R, A>(module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         R: crate::layouts::VecZnxBigToMut<BE>,
         A: crate::layouts::VecZnxBigToRef<BE>;
 
-    fn vec_znx_big_sub_negate_inplace<R, A>(module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_big_sub_negate_assign<R, A>(module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         R: crate::layouts::VecZnxBigToMut<BE>,
         A: crate::layouts::VecZnxBigToRef<BE>;
@@ -391,7 +393,7 @@ pub unsafe trait HalImpl<BE: Backend>: Backend {
         A: VecZnxToRef,
         C: crate::layouts::VecZnxBigToRef<BE>;
 
-    fn vec_znx_big_sub_small_inplace<R, A>(module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_big_sub_small_assign<R, A>(module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         R: crate::layouts::VecZnxBigToMut<BE>,
         A: VecZnxToRef;
@@ -409,7 +411,7 @@ pub unsafe trait HalImpl<BE: Backend>: Backend {
         A: crate::layouts::VecZnxBigToRef<BE>,
         C: VecZnxToRef;
 
-    fn vec_znx_big_sub_small_negate_inplace<R, A>(module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_big_sub_small_negate_assign<R, A>(module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         R: crate::layouts::VecZnxBigToMut<BE>,
         A: VecZnxToRef;
@@ -419,7 +421,7 @@ pub unsafe trait HalImpl<BE: Backend>: Backend {
         R: crate::layouts::VecZnxBigToMut<BE>,
         A: crate::layouts::VecZnxBigToRef<BE>;
 
-    fn vec_znx_big_negate_inplace<A>(module: &Module<BE>, a: &mut A, a_col: usize)
+    fn vec_znx_big_negate_assign<A>(module: &Module<BE>, a: &mut A, a_col: usize)
     where
         A: crate::layouts::VecZnxBigToMut<BE>;
 
@@ -440,14 +442,86 @@ pub unsafe trait HalImpl<BE: Backend>: Backend {
         R: VecZnxToMut,
         A: crate::layouts::VecZnxBigToRef<BE>;
 
+    #[allow(clippy::too_many_arguments)]
+    #[doc(hidden)]
+    fn vec_znx_big_normalize_assign_fallback<R, A, const SUB: bool>(
+        module: &Module<BE>,
+        res: &mut R,
+        res_base2k: usize,
+        res_offset: i64,
+        res_col: usize,
+        a: &A,
+        a_base2k: usize,
+        a_col: usize,
+        scratch: &mut Scratch<BE>,
+    ) where
+        R: VecZnxToMut,
+        A: crate::layouts::VecZnxBigToRef<BE>,
+    {
+        let (n, size) = {
+            let res_ref = res.to_mut();
+            (res_ref.n, res_ref.size)
+        };
+
+        let mut tmp = VecZnx::alloc(n, 1, size);
+        Self::vec_znx_big_normalize(module, &mut tmp, res_base2k, res_offset, 0, a, a_base2k, a_col, scratch);
+
+        let mut res_ref = res.to_mut();
+        for j in 0..size {
+            for (ri, ti) in res_ref.at_mut(res_col, j).iter_mut().zip(tmp.at(0, j).iter()) {
+                *ri = if SUB { ri.wrapping_sub(*ti) } else { ri.wrapping_add(*ti) };
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_big_normalize_add_assign<R, A>(
+        module: &Module<BE>,
+        res: &mut R,
+        res_base2k: usize,
+        res_offset: i64,
+        res_col: usize,
+        a: &A,
+        a_base2k: usize,
+        a_col: usize,
+        scratch: &mut Scratch<BE>,
+    ) where
+        R: VecZnxToMut,
+        A: crate::layouts::VecZnxBigToRef<BE>,
+    {
+        Self::vec_znx_big_normalize_assign_fallback::<R, A, false>(
+            module, res, res_base2k, res_offset, res_col, a, a_base2k, a_col, scratch,
+        );
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_big_normalize_sub_assign<R, A>(
+        module: &Module<BE>,
+        res: &mut R,
+        res_base2k: usize,
+        res_offset: i64,
+        res_col: usize,
+        a: &A,
+        a_base2k: usize,
+        a_col: usize,
+        scratch: &mut Scratch<BE>,
+    ) where
+        R: VecZnxToMut,
+        A: crate::layouts::VecZnxBigToRef<BE>,
+    {
+        Self::vec_znx_big_normalize_assign_fallback::<R, A, true>(
+            module, res, res_base2k, res_offset, res_col, a, a_base2k, a_col, scratch,
+        );
+    }
+
     fn vec_znx_big_automorphism<R, A>(module: &Module<BE>, k: i64, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         R: crate::layouts::VecZnxBigToMut<BE>,
         A: crate::layouts::VecZnxBigToRef<BE>;
 
-    fn vec_znx_big_automorphism_inplace_tmp_bytes(module: &Module<BE>) -> usize;
+    fn vec_znx_big_automorphism_assign_tmp_bytes(module: &Module<BE>) -> usize;
 
-    fn vec_znx_big_automorphism_inplace<A>(module: &Module<BE>, k: i64, a: &mut A, a_col: usize, scratch: &mut Scratch<BE>)
+    fn vec_znx_big_automorphism_assign<A>(module: &Module<BE>, k: i64, a: &mut A, a_col: usize, scratch: &mut Scratch<BE>)
     where
         A: crate::layouts::VecZnxBigToMut<BE>;
 
@@ -498,12 +572,12 @@ pub unsafe trait HalImpl<BE: Backend>: Backend {
         A: crate::layouts::VecZnxDftToRef<BE>,
         D: crate::layouts::VecZnxDftToRef<BE>;
 
-    fn vec_znx_dft_sub_inplace<R, A>(module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_dft_sub_assign<R, A>(module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         R: crate::layouts::VecZnxDftToMut<BE>,
         A: crate::layouts::VecZnxDftToRef<BE>;
 
-    fn vec_znx_dft_sub_negate_inplace<R, A>(module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_dft_sub_negate_assign<R, A>(module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         R: crate::layouts::VecZnxDftToMut<BE>,
         A: crate::layouts::VecZnxDftToRef<BE>;
@@ -535,7 +609,7 @@ pub unsafe trait HalImpl<BE: Backend>: Backend {
         A: crate::layouts::SvpPPolToRef<BE>,
         C: crate::layouts::VecZnxDftToRef<BE>;
 
-    fn svp_apply_dft_to_dft_inplace<R, A>(module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn svp_apply_dft_to_dft_assign<R, A>(module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         R: crate::layouts::VecZnxDftToMut<BE>,
         A: crate::layouts::SvpPPolToRef<BE>;

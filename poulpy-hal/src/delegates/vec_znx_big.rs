@@ -1,10 +1,10 @@
 use crate::{
     api::{
         VecZnxBigAddAssign, VecZnxBigAddInto, VecZnxBigAddNormal, VecZnxBigAddSmallAssign, VecZnxBigAddSmallInto, VecZnxBigAlloc,
-        VecZnxBigAutomorphism, VecZnxBigAutomorphismInplace, VecZnxBigAutomorphismInplaceTmpBytes, VecZnxBigBytesOf,
-        VecZnxBigFromBytes, VecZnxBigFromSmall, VecZnxBigNegate, VecZnxBigNegateInplace, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubInplace, VecZnxBigSubNegateInplace, VecZnxBigSubSmallA,
-        VecZnxBigSubSmallB, VecZnxBigSubSmallInplace, VecZnxBigSubSmallNegateInplace,
+        VecZnxBigAutomorphism, VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf,
+        VecZnxBigFromBytes, VecZnxBigFromSmall, VecZnxBigNegate, VecZnxBigNegateAssign, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallA,
+        VecZnxBigSubSmallAssign, VecZnxBigSubSmallB, VecZnxBigSubSmallNegateAssign,
     },
     layouts::{
         Backend, DeviceBuf, Module, NoiseInfos, Scratch, VecZnxBig, VecZnxBigOwned, VecZnxBigToMut, VecZnxBigToRef, VecZnxToMut,
@@ -129,29 +129,29 @@ where
     }
 }
 
-impl<B> VecZnxBigSubInplace<B> for Module<B>
+impl<B> VecZnxBigSubAssign<B> for Module<B>
 where
     B: Backend + HalImpl<B>,
 {
-    fn vec_znx_big_sub_inplace<R, A>(&self, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_big_sub_assign<R, A>(&self, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         R: VecZnxBigToMut<B>,
         A: VecZnxBigToRef<B>,
     {
-        <B as HalImpl<B>>::vec_znx_big_sub_inplace(self, res, res_col, a, a_col);
+        <B as HalImpl<B>>::vec_znx_big_sub_assign(self, res, res_col, a, a_col);
     }
 }
 
-impl<B> VecZnxBigSubNegateInplace<B> for Module<B>
+impl<B> VecZnxBigSubNegateAssign<B> for Module<B>
 where
     B: Backend + HalImpl<B>,
 {
-    fn vec_znx_big_sub_negate_inplace<R, A>(&self, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_big_sub_negate_assign<R, A>(&self, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         R: VecZnxBigToMut<B>,
         A: VecZnxBigToRef<B>,
     {
-        <B as HalImpl<B>>::vec_znx_big_sub_negate_inplace(self, res, res_col, a, a_col);
+        <B as HalImpl<B>>::vec_znx_big_sub_negate_assign(self, res, res_col, a, a_col);
     }
 }
 
@@ -169,16 +169,16 @@ where
     }
 }
 
-impl<B> VecZnxBigSubSmallInplace<B> for Module<B>
+impl<B> VecZnxBigSubSmallAssign<B> for Module<B>
 where
     B: Backend + HalImpl<B>,
 {
-    fn vec_znx_big_sub_small_inplace<R, A>(&self, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_big_sub_small_assign<R, A>(&self, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         R: VecZnxBigToMut<B>,
         A: VecZnxToRef,
     {
-        <B as HalImpl<B>>::vec_znx_big_sub_small_inplace(self, res, res_col, a, a_col);
+        <B as HalImpl<B>>::vec_znx_big_sub_small_assign(self, res, res_col, a, a_col);
     }
 }
 
@@ -196,16 +196,16 @@ where
     }
 }
 
-impl<B> VecZnxBigSubSmallNegateInplace<B> for Module<B>
+impl<B> VecZnxBigSubSmallNegateAssign<B> for Module<B>
 where
     B: Backend + HalImpl<B>,
 {
-    fn vec_znx_big_sub_small_negate_inplace<R, A>(&self, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_big_sub_small_negate_assign<R, A>(&self, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         R: VecZnxBigToMut<B>,
         A: VecZnxToRef,
     {
-        <B as HalImpl<B>>::vec_znx_big_sub_small_negate_inplace(self, res, res_col, a, a_col);
+        <B as HalImpl<B>>::vec_znx_big_sub_small_negate_assign(self, res, res_col, a, a_col);
     }
 }
 
@@ -222,15 +222,15 @@ where
     }
 }
 
-impl<B> VecZnxBigNegateInplace<B> for Module<B>
+impl<B> VecZnxBigNegateAssign<B> for Module<B>
 where
     B: Backend + HalImpl<B>,
 {
-    fn vec_znx_big_negate_inplace<A>(&self, a: &mut A, a_col: usize)
+    fn vec_znx_big_negate_assign<A>(&self, a: &mut A, a_col: usize)
     where
         A: VecZnxBigToMut<B>,
     {
-        <B as HalImpl<B>>::vec_znx_big_negate_inplace(self, a, a_col);
+        <B as HalImpl<B>>::vec_znx_big_negate_assign(self, a, a_col);
     }
 }
 
@@ -263,6 +263,44 @@ where
     {
         <B as HalImpl<B>>::vec_znx_big_normalize(self, res, res_base2k, res_offset, res_col, a, a_base2k, a_col, scratch);
     }
+
+    fn vec_znx_big_normalize_add_assign<R, A>(
+        &self,
+        res: &mut R,
+        res_base2k: usize,
+        res_offset: i64,
+        res_col: usize,
+        a: &A,
+        a_base2k: usize,
+        a_col: usize,
+        scratch: &mut Scratch<B>,
+    ) where
+        R: VecZnxToMut,
+        A: VecZnxBigToRef<B>,
+    {
+        <B as HalImpl<B>>::vec_znx_big_normalize_add_assign(
+            self, res, res_base2k, res_offset, res_col, a, a_base2k, a_col, scratch,
+        );
+    }
+
+    fn vec_znx_big_normalize_sub_assign<R, A>(
+        &self,
+        res: &mut R,
+        res_base2k: usize,
+        res_offset: i64,
+        res_col: usize,
+        a: &A,
+        a_base2k: usize,
+        a_col: usize,
+        scratch: &mut Scratch<B>,
+    ) where
+        R: VecZnxToMut,
+        A: VecZnxBigToRef<B>,
+    {
+        <B as HalImpl<B>>::vec_znx_big_normalize_sub_assign(
+            self, res, res_base2k, res_offset, res_col, a, a_base2k, a_col, scratch,
+        );
+    }
 }
 
 impl<B> VecZnxBigAutomorphism<B> for Module<B>
@@ -278,23 +316,23 @@ where
     }
 }
 
-impl<B> VecZnxBigAutomorphismInplaceTmpBytes for Module<B>
+impl<B> VecZnxBigAutomorphismAssignTmpBytes for Module<B>
 where
     B: Backend + HalImpl<B>,
 {
-    fn vec_znx_big_automorphism_inplace_tmp_bytes(&self) -> usize {
-        <B as HalImpl<B>>::vec_znx_big_automorphism_inplace_tmp_bytes(self)
+    fn vec_znx_big_automorphism_assign_tmp_bytes(&self) -> usize {
+        <B as HalImpl<B>>::vec_znx_big_automorphism_assign_tmp_bytes(self)
     }
 }
 
-impl<B> VecZnxBigAutomorphismInplace<B> for Module<B>
+impl<B> VecZnxBigAutomorphismAssign<B> for Module<B>
 where
     B: Backend + HalImpl<B>,
 {
-    fn vec_znx_big_automorphism_inplace<A>(&self, k: i64, a: &mut A, a_col: usize, scratch: &mut Scratch<B>)
+    fn vec_znx_big_automorphism_assign<A>(&self, k: i64, a: &mut A, a_col: usize, scratch: &mut Scratch<B>)
     where
         A: VecZnxBigToMut<B>,
     {
-        <B as HalImpl<B>>::vec_znx_big_automorphism_inplace(self, k, a, a_col, scratch);
+        <B as HalImpl<B>>::vec_znx_big_automorphism_assign(self, k, a, a_col, scratch);
     }
 }

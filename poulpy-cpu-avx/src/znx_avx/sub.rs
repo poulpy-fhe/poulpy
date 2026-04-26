@@ -41,7 +41,7 @@ pub fn znx_sub_avx(res: &mut [i64], a: &[i64], b: &[i64]) {
 /// Caller must ensure the CPU supports AVX2 (e.g., via `is_x86_feature_detected!("avx2")`);
 /// all inputs must have the same length and must not alias.
 #[target_feature(enable = "avx2")]
-pub fn znx_sub_inplace_avx(res: &mut [i64], a: &[i64]) {
+pub fn znx_sub_assign_avx(res: &mut [i64], a: &[i64]) {
     #[cfg(debug_assertions)]
     {
         assert_eq!(res.len(), a.len());
@@ -67,9 +67,9 @@ pub fn znx_sub_inplace_avx(res: &mut [i64], a: &[i64]) {
 
     // tail
     if !res.len().is_multiple_of(4) {
-        use poulpy_cpu_ref::reference::znx::znx_sub_inplace_ref;
+        use poulpy_cpu_ref::reference::znx::znx_sub_assign_ref;
 
-        znx_sub_inplace_ref(&mut res[span << 2..], &a[span << 2..]);
+        znx_sub_assign_ref(&mut res[span << 2..], &a[span << 2..]);
     }
 }
 
@@ -77,7 +77,7 @@ pub fn znx_sub_inplace_avx(res: &mut [i64], a: &[i64]) {
 /// Caller must ensure the CPU supports AVX2 (e.g., via `is_x86_feature_detected!("avx2")`);
 /// all inputs must have the same length and must not alias.
 #[target_feature(enable = "avx2")]
-pub fn znx_sub_negate_inplace_avx(res: &mut [i64], a: &[i64]) {
+pub fn znx_sub_negate_assign_avx(res: &mut [i64], a: &[i64]) {
     #[cfg(debug_assertions)]
     {
         assert_eq!(res.len(), a.len());
@@ -103,8 +103,8 @@ pub fn znx_sub_negate_inplace_avx(res: &mut [i64], a: &[i64]) {
 
     // tail
     if !res.len().is_multiple_of(4) {
-        use poulpy_cpu_ref::reference::znx::znx_sub_negate_inplace_ref;
+        use poulpy_cpu_ref::reference::znx::znx_sub_negate_assign_ref;
 
-        znx_sub_negate_inplace_ref(&mut res[span << 2..], &a[span << 2..]);
+        znx_sub_negate_assign_ref(&mut res[span << 2..], &a[span << 2..]);
     }
 }

@@ -1,10 +1,10 @@
 use poulpy_core::layouts::{Base2K, Degree, TorusPrecision};
-use poulpy_cpu_ref::reference::vec_znx::vec_znx_rotate_inplace;
+use poulpy_cpu_ref::reference::vec_znx::vec_znx_rotate_assign;
 use poulpy_cpu_ref::reference::znx::ZnxRef;
 use poulpy_hal::{
     api::{
-        ScratchOwnedAlloc, ScratchOwnedBorrow, TakeSlice, VecZnxCopy, VecZnxNormalizeInplace, VecZnxNormalizeTmpBytes,
-        VecZnxRotateInplace, VecZnxRotateInplaceTmpBytes, VecZnxSwitchRing,
+        ScratchOwnedAlloc, ScratchOwnedBorrow, TakeSlice, VecZnxCopy, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
+        VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxSwitchRing,
     },
     layouts::{Backend, Module, Scratch, ScratchOwned, VecZnx, ZnxInfos, ZnxViewMut},
 };
@@ -257,14 +257,14 @@ fn max_bit_size(vec: &[i64]) -> u32 {
 
 impl<BE: Backend> LookupTableFactory for Module<BE>
 where
-    Self: VecZnxRotateInplace<BE>
-        + VecZnxNormalizeInplace<BE>
+    Self: VecZnxRotateAssign<BE>
+        + VecZnxNormalizeAssign<BE>
         + VecZnxNormalizeTmpBytes
         + VecZnxSwitchRing
         + VecZnxCopy
-        + VecZnxRotateInplaceTmpBytes
-        + VecZnxRotateInplace<BE>
-        + VecZnxRotateInplaceTmpBytes,
+        + VecZnxRotateAssignTmpBytes
+        + VecZnxRotateAssign<BE>
+        + VecZnxRotateAssignTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     Scratch<BE>: TakeSlice,
 {
@@ -323,7 +323,7 @@ where
             for i in 0..res.extension_factor() {
                 self.vec_znx_switch_ring(&mut res.data[i], 0, &lut_full, 0);
                 if i < res.extension_factor() {
-                    vec_znx_rotate_inplace::<_, ZnxRef>(-1, &mut lut_full, 0, tmp);
+                    vec_znx_rotate_assign::<_, ZnxRef>(-1, &mut lut_full, 0, tmp);
                 }
             }
         } else {
@@ -331,7 +331,7 @@ where
         }
 
         for a in res.data.iter_mut() {
-            self.vec_znx_normalize_inplace(res.base2k.into(), a, 0, scratch.borrow());
+            self.vec_znx_normalize_assign(res.base2k.into(), a, 0, scratch.borrow());
         }
 
         res.rotate(self, -(drift as i64));
@@ -344,7 +344,7 @@ where
         let two_n: usize = 2 * res.data[0].n();
         let two_n_ext: usize = two_n * extension_factor;
 
-        let mut scratch: ScratchOwned<_> = ScratchOwned::alloc(self.vec_znx_rotate_inplace_tmp_bytes());
+        let mut scratch: ScratchOwned<_> = ScratchOwned::alloc(self.vec_znx_rotate_assign_tmp_bytes());
 
         let k_pos: usize = ((k + two_n_ext as i64) % two_n_ext as i64) as usize;
 
@@ -352,11 +352,11 @@ where
         let k_lo: usize = k_pos % extension_factor;
 
         (0..extension_factor - k_lo).for_each(|i| {
-            self.vec_znx_rotate_inplace(k_hi as i64, &mut res.data[i], 0, scratch.borrow());
+            self.vec_znx_rotate_assign(k_hi as i64, &mut res.data[i], 0, scratch.borrow());
         });
 
         (extension_factor - k_lo..extension_factor).for_each(|i| {
-            self.vec_znx_rotate_inplace(k_hi as i64 + 1, &mut res.data[i], 0, scratch.borrow());
+            self.vec_znx_rotate_assign(k_hi as i64 + 1, &mut res.data[i], 0, scratch.borrow());
         });
 
         res.data.rotate_right(k_lo);

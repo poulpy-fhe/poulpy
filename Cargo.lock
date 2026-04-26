@@ -282,6 +282,38 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
+name = "f128"
+version = "0.2.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b7d29530784c8b9e49eccb10c95abc69ac72e9e7eb29cb2649b13e08f766d2c"
+dependencies = [
+ "f128_input",
+ "f128_internal",
+ "libc",
+ "num-traits",
+]
+
+[[package]]
+name = "f128_input"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "18a821a6f74745607a8c99c932a8f513e6e7d6ee63725ec95511edf4a94510bb"
+dependencies = [
+ "f128_internal",
+]
+
+[[package]]
+name = "f128_internal"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9708a33de3cda4e6636670c1af561635fe249cb817dda1a14ec18fe9dda0a99d"
+dependencies = [
+ "cc",
+ "libc",
+ "num-traits",
+]
+
+[[package]]
 name = "foldhash"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -500,6 +532,7 @@ name = "poulpy-bench"
 version = "0.5.0"
 dependencies = [
  "criterion",
+ "poulpy-ckks",
  "poulpy-core",
  "poulpy-cpu-avx",
  "poulpy-cpu-ref",
@@ -508,6 +541,21 @@ dependencies = [
  "rand",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "poulpy-ckks"
+version = "0.5.0"
+dependencies = [
+ "anyhow",
+ "bytemuck",
+ "f128",
+ "poulpy-core",
+ "poulpy-cpu-avx",
+ "poulpy-cpu-ref",
+ "poulpy-hal",
+ "rand",
+ "rand_distr",
 ]
 
 [[package]]

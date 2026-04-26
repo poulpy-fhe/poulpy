@@ -9,7 +9,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{ModuleN, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateInplace},
+    api::{ModuleN, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssign},
     layouts::{Backend, DeviceBuf, Module, Scratch, ScratchOwned},
     source::Source,
 };
@@ -41,7 +41,7 @@ where
         + LWEEncryptSk<BE>
         + GGSWPreparedFactory<BE>
         + GLWEEncryptSk<BE>
-        + VecZnxRotateInplace<BE>
+        + VecZnxRotateAssign<BE>
         + BDDKeyEncryptSk<BRA, BE>
         + BDDKeyPreparedFactory<BRA, BE>
         + FheUintPrepare<BRA, BE>

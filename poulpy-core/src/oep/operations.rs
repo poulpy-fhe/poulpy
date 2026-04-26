@@ -35,7 +35,7 @@ pub trait CoreOperationsDefaults<BE: Backend>: Backend {
         R: DataMut,
         A: DataRef;
 
-    fn glwe_mul_const_inplace_default<R>(
+    fn glwe_mul_const_assign_default<R>(
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut GLWE<R>,
@@ -66,7 +66,22 @@ pub trait CoreOperationsDefaults<BE: Backend>: Backend {
         B: DataRef;
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_mul_plain_inplace_default<R, A>(
+    fn glwe_tensor_apply_add_assign_default<R, A, B>(
+        module: &Module<BE>,
+        cnv_offset: usize,
+        res: &mut GLWETensor<R>,
+        a: &GLWE<A>,
+        a_effective_k: usize,
+        b: &GLWE<B>,
+        b_effective_k: usize,
+        scratch: &mut Scratch<BE>,
+    ) where
+        R: DataMut,
+        A: DataRef,
+        B: DataRef;
+
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_mul_plain_assign_default<R, A>(
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut GLWE<R>,
@@ -141,7 +156,7 @@ pub trait CoreOperationsDefaults<BE: Backend>: Backend {
         R: GLWEToMut,
         A: GLWEToRef;
 
-    fn glwe_rotate_inplace_default<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
+    fn glwe_rotate_assign_default<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut,
         Scratch<BE>: ScratchTakeCore<BE>;
@@ -153,7 +168,7 @@ pub trait CoreOperationsDefaults<BE: Backend>: Backend {
         R: GGSWToMut,
         A: GGSWToRef;
 
-    fn ggsw_rotate_inplace_default<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
+    fn ggsw_rotate_assign_default<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
     where
         R: GGSWToMut,
         Scratch<BE>: ScratchTakeCore<BE> + poulpy_hal::api::ScratchAvailable;
@@ -163,7 +178,7 @@ pub trait CoreOperationsDefaults<BE: Backend>: Backend {
         R: GLWEToMut,
         A: GLWEToRef;
 
-    fn glwe_mul_xp_minus_one_inplace_default<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
+    fn glwe_mul_xp_minus_one_assign_default<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut;
 
@@ -174,7 +189,7 @@ pub trait CoreOperationsDefaults<BE: Backend>: Backend {
         R: GLWEToMut,
         Scratch<BE>: ScratchTakeCore<BE>;
 
-    fn glwe_lsh_inplace_default<R>(module: &Module<BE>, res: &mut R, k: usize, scratch: &mut Scratch<BE>)
+    fn glwe_lsh_assign_default<R>(module: &Module<BE>, res: &mut R, k: usize, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut,
         Scratch<BE>: ScratchTakeCore<BE>;
@@ -227,7 +242,7 @@ pub trait CoreOperationsDefaults<BE: Backend>: Backend {
         A: GLWEToRef,
         Scratch<BE>: ScratchTakeCore<BE>;
 
-    fn glwe_normalize_inplace_default<R>(module: &Module<BE>, res: &mut R, scratch: &mut Scratch<BE>)
+    fn glwe_normalize_assign_default<R>(module: &Module<BE>, res: &mut R, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut,
         Scratch<BE>: ScratchTakeCore<BE>;
@@ -247,7 +262,7 @@ pub trait CoreOperationsDefaults<BE: Backend>: Backend {
         K: GGLWEPreparedToRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
-    fn glwe_trace_inplace_default<R, K, H>(module: &Module<BE>, res: &mut R, skip: usize, keys: &H, scratch: &mut Scratch<BE>)
+    fn glwe_trace_assign_default<R, K, H>(module: &Module<BE>, res: &mut R, skip: usize, keys: &H, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut,
         K: GGLWEPreparedToRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -324,7 +339,7 @@ where
         <Module<BE> as GLWEMulConstDefault<BE>>::glwe_mul_const(module, cnv_offset, res, a, b, scratch)
     }
 
-    fn glwe_mul_const_inplace_default<R>(
+    fn glwe_mul_const_assign_default<R>(
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut GLWE<R>,
@@ -333,7 +348,7 @@ where
     ) where
         R: DataMut,
     {
-        <Module<BE> as GLWEMulConstDefault<BE>>::glwe_mul_const_inplace(module, cnv_offset, res, b, scratch)
+        <Module<BE> as GLWEMulConstDefault<BE>>::glwe_mul_const_assign(module, cnv_offset, res, b, scratch)
     }
 
     fn glwe_mul_plain_tmp_bytes_default<R, A, B>(module: &Module<BE>, res: &R, a: &A, b: &B) -> usize
@@ -371,7 +386,7 @@ where
         )
     }
 
-    fn glwe_mul_plain_inplace_default<R, A>(
+    fn glwe_mul_plain_assign_default<R, A>(
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut GLWE<R>,
@@ -383,7 +398,7 @@ where
         R: DataMut,
         A: DataRef,
     {
-        <Module<BE> as GLWEMulPlainDefault<BE>>::glwe_mul_plain_inplace(
+        <Module<BE> as GLWEMulPlainDefault<BE>>::glwe_mul_plain_assign(
             module,
             cnv_offset,
             res,
@@ -426,6 +441,32 @@ where
         B: DataRef,
     {
         <Module<BE> as GLWETensoringDefault<BE>>::glwe_tensor_apply(
+            module,
+            cnv_offset,
+            res,
+            a,
+            a_effective_k,
+            b,
+            b_effective_k,
+            scratch,
+        )
+    }
+
+    fn glwe_tensor_apply_add_assign_default<R, A, B>(
+        module: &Module<BE>,
+        cnv_offset: usize,
+        res: &mut GLWETensor<R>,
+        a: &GLWE<A>,
+        a_effective_k: usize,
+        b: &GLWE<B>,
+        b_effective_k: usize,
+        scratch: &mut Scratch<BE>,
+    ) where
+        R: DataMut,
+        A: DataRef,
+        B: DataRef,
+    {
+        <Module<BE> as GLWETensoringDefault<BE>>::glwe_tensor_apply_add_assign(
             module,
             cnv_offset,
             res,
@@ -487,12 +528,12 @@ where
         <Module<BE> as GLWERotateDefault<BE>>::glwe_rotate(module, k, res, a)
     }
 
-    fn glwe_rotate_inplace_default<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
+    fn glwe_rotate_assign_default<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut,
         Scratch<BE>: ScratchTakeCore<BE>,
     {
-        <Module<BE> as GLWERotateDefault<BE>>::glwe_rotate_inplace(module, k, res, scratch)
+        <Module<BE> as GLWERotateDefault<BE>>::glwe_rotate_assign(module, k, res, scratch)
     }
 
     fn ggsw_rotate_tmp_bytes_default(module: &Module<BE>) -> usize {
@@ -507,12 +548,12 @@ where
         <Module<BE> as GGSWRotateDefault<BE>>::ggsw_rotate_default(module, k, res, a)
     }
 
-    fn ggsw_rotate_inplace_default<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
+    fn ggsw_rotate_assign_default<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
     where
         R: GGSWToMut,
         Scratch<BE>: ScratchTakeCore<BE> + poulpy_hal::api::ScratchAvailable,
     {
-        <Module<BE> as GGSWRotateDefault<BE>>::ggsw_rotate_inplace_default(module, k, res, scratch)
+        <Module<BE> as GGSWRotateDefault<BE>>::ggsw_rotate_assign_default(module, k, res, scratch)
     }
 
     fn glwe_mul_xp_minus_one_default<R, A>(module: &Module<BE>, k: i64, res: &mut R, a: &A)
@@ -523,11 +564,11 @@ where
         <Module<BE> as GLWEMulXpMinusOneDefault<BE>>::glwe_mul_xp_minus_one(module, k, res, a)
     }
 
-    fn glwe_mul_xp_minus_one_inplace_default<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
+    fn glwe_mul_xp_minus_one_assign_default<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut,
     {
-        <Module<BE> as GLWEMulXpMinusOneDefault<BE>>::glwe_mul_xp_minus_one_inplace(module, k, res, scratch)
+        <Module<BE> as GLWEMulXpMinusOneDefault<BE>>::glwe_mul_xp_minus_one_assign(module, k, res, scratch)
     }
 
     fn glwe_shift_tmp_bytes_default(module: &Module<BE>) -> usize {
@@ -542,12 +583,12 @@ where
         <Module<BE> as GLWEShiftDefault<BE>>::glwe_rsh(module, k, res, scratch)
     }
 
-    fn glwe_lsh_inplace_default<R>(module: &Module<BE>, res: &mut R, k: usize, scratch: &mut Scratch<BE>)
+    fn glwe_lsh_assign_default<R>(module: &Module<BE>, res: &mut R, k: usize, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut,
         Scratch<BE>: ScratchTakeCore<BE>,
     {
-        <Module<BE> as GLWEShiftDefault<BE>>::glwe_lsh_inplace(module, res, k, scratch)
+        <Module<BE> as GLWEShiftDefault<BE>>::glwe_lsh_assign(module, res, k, scratch)
     }
 
     fn glwe_lsh_default<R, A>(module: &Module<BE>, res: &mut R, a: &A, k: usize, scratch: &mut Scratch<BE>)
@@ -630,12 +671,12 @@ where
         <Module<BE> as GLWENormalizeDefault<BE>>::glwe_normalize(module, res, a, scratch)
     }
 
-    fn glwe_normalize_inplace_default<R>(module: &Module<BE>, res: &mut R, scratch: &mut Scratch<BE>)
+    fn glwe_normalize_assign_default<R>(module: &Module<BE>, res: &mut R, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut,
         Scratch<BE>: ScratchTakeCore<BE>,
     {
-        <Module<BE> as GLWENormalizeDefault<BE>>::glwe_normalize_inplace(module, res, scratch)
+        <Module<BE> as GLWENormalizeDefault<BE>>::glwe_normalize_assign(module, res, scratch)
     }
 
     fn glwe_trace_galois_elements_default(module: &Module<BE>) -> Vec<i64> {
@@ -661,13 +702,13 @@ where
         <Module<BE> as GLWETraceDefault<BE>>::glwe_trace_default(module, res, skip, a, keys, scratch)
     }
 
-    fn glwe_trace_inplace_default<R, K, H>(module: &Module<BE>, res: &mut R, skip: usize, keys: &H, scratch: &mut Scratch<BE>)
+    fn glwe_trace_assign_default<R, K, H>(module: &Module<BE>, res: &mut R, skip: usize, keys: &H, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut,
         K: GGLWEPreparedToRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
-        <Module<BE> as GLWETraceDefault<BE>>::glwe_trace_inplace_default(module, res, skip, keys, scratch)
+        <Module<BE> as GLWETraceDefault<BE>>::glwe_trace_assign_default(module, res, skip, keys, scratch)
     }
 
     fn glwe_pack_galois_elements_default(module: &Module<BE>) -> Vec<i64> {
@@ -740,7 +781,7 @@ macro_rules! impl_core_operations_default_methods {
             <$be as $crate::oep::CoreOperationsDefaults<$be>>::glwe_mul_const_default(module, cnv_offset, res, a, b, scratch)
         }
 
-        fn glwe_mul_const_inplace<R>(
+        fn glwe_mul_const_assign<R>(
             module: &poulpy_hal::layouts::Module<$be>,
             cnv_offset: usize,
             res: &mut $crate::layouts::GLWE<R>,
@@ -749,7 +790,7 @@ macro_rules! impl_core_operations_default_methods {
         ) where
             R: poulpy_hal::layouts::DataMut,
         {
-            <$be as $crate::oep::CoreOperationsDefaults<$be>>::glwe_mul_const_inplace_default(module, cnv_offset, res, b, scratch)
+            <$be as $crate::oep::CoreOperationsDefaults<$be>>::glwe_mul_const_assign_default(module, cnv_offset, res, b, scratch)
         }
 
         fn glwe_mul_plain_tmp_bytes<R, A, B>(module: &poulpy_hal::layouts::Module<$be>, res: &R, a: &A, b: &B) -> usize
@@ -787,7 +828,7 @@ macro_rules! impl_core_operations_default_methods {
             )
         }
 
-        fn glwe_mul_plain_inplace<R, A>(
+        fn glwe_mul_plain_assign<R, A>(
             module: &poulpy_hal::layouts::Module<$be>,
             cnv_offset: usize,
             res: &mut $crate::layouts::GLWE<R>,
@@ -799,7 +840,7 @@ macro_rules! impl_core_operations_default_methods {
             R: poulpy_hal::layouts::DataMut,
             A: poulpy_hal::layouts::DataRef,
         {
-            <$be as $crate::oep::CoreOperationsDefaults<$be>>::glwe_mul_plain_inplace_default(
+            <$be as $crate::oep::CoreOperationsDefaults<$be>>::glwe_mul_plain_assign_default(
                 module,
                 cnv_offset,
                 res,
@@ -842,6 +883,32 @@ macro_rules! impl_core_operations_default_methods {
             B: poulpy_hal::layouts::DataRef,
         {
             <$be as $crate::oep::CoreOperationsDefaults<$be>>::glwe_tensor_apply_default(
+                module,
+                cnv_offset,
+                res,
+                a,
+                a_effective_k,
+                b,
+                b_effective_k,
+                scratch,
+            )
+        }
+
+        fn glwe_tensor_apply_add_assign<R, A, B>(
+            module: &poulpy_hal::layouts::Module<$be>,
+            cnv_offset: usize,
+            res: &mut $crate::layouts::GLWETensor<R>,
+            a: &$crate::layouts::GLWE<A>,
+            a_effective_k: usize,
+            b: &$crate::layouts::GLWE<B>,
+            b_effective_k: usize,
+            scratch: &mut poulpy_hal::layouts::Scratch<$be>,
+        ) where
+            R: poulpy_hal::layouts::DataMut,
+            A: poulpy_hal::layouts::DataRef,
+            B: poulpy_hal::layouts::DataRef,
+        {
+            <$be as $crate::oep::CoreOperationsDefaults<$be>>::glwe_tensor_apply_add_assign_default(
                 module,
                 cnv_offset,
                 res,
@@ -912,7 +979,7 @@ macro_rules! impl_core_operations_default_methods {
             <$be as $crate::oep::CoreOperationsDefaults<$be>>::glwe_rotate_default(module, k, res, a)
         }
 
-        fn glwe_rotate_inplace<R>(
+        fn glwe_rotate_assign<R>(
             module: &poulpy_hal::layouts::Module<$be>,
             k: i64,
             res: &mut R,
@@ -921,7 +988,7 @@ macro_rules! impl_core_operations_default_methods {
             R: $crate::layouts::GLWEToMut,
             poulpy_hal::layouts::Scratch<$be>: $crate::ScratchTakeCore<$be>,
         {
-            <$be as $crate::oep::CoreOperationsDefaults<$be>>::glwe_rotate_inplace_default(module, k, res, scratch)
+            <$be as $crate::oep::CoreOperationsDefaults<$be>>::glwe_rotate_assign_default(module, k, res, scratch)
         }
 
         fn ggsw_rotate_tmp_bytes(module: &poulpy_hal::layouts::Module<$be>) -> usize {
@@ -936,7 +1003,7 @@ macro_rules! impl_core_operations_default_methods {
             <$be as $crate::oep::CoreOperationsDefaults<$be>>::ggsw_rotate_default(module, k, res, a)
         }
 
-        fn ggsw_rotate_inplace<R>(
+        fn ggsw_rotate_assign<R>(
             module: &poulpy_hal::layouts::Module<$be>,
             k: i64,
             res: &mut R,
@@ -945,7 +1012,7 @@ macro_rules! impl_core_operations_default_methods {
             R: $crate::layouts::GGSWToMut,
             poulpy_hal::layouts::Scratch<$be>: $crate::ScratchTakeCore<$be> + poulpy_hal::api::ScratchAvailable,
         {
-            <$be as $crate::oep::CoreOperationsDefaults<$be>>::ggsw_rotate_inplace_default(module, k, res, scratch)
+            <$be as $crate::oep::CoreOperationsDefaults<$be>>::ggsw_rotate_assign_default(module, k, res, scratch)
         }
 
         fn glwe_mul_xp_minus_one<R, A>(module: &poulpy_hal::layouts::Module<$be>, k: i64, res: &mut R, a: &A)
@@ -956,7 +1023,7 @@ macro_rules! impl_core_operations_default_methods {
             <$be as $crate::oep::CoreOperationsDefaults<$be>>::glwe_mul_xp_minus_one_default(module, k, res, a)
         }
 
-        fn glwe_mul_xp_minus_one_inplace<R>(
+        fn glwe_mul_xp_minus_one_assign<R>(
             module: &poulpy_hal::layouts::Module<$be>,
             k: i64,
             res: &mut R,
@@ -964,7 +1031,7 @@ macro_rules! impl_core_operations_default_methods {
         ) where
             R: $crate::layouts::GLWEToMut,
         {
-            <$be as $crate::oep::CoreOperationsDefaults<$be>>::glwe_mul_xp_minus_one_inplace_default(module, k, res, scratch)
+            <$be as $crate::oep::CoreOperationsDefaults<$be>>::glwe_mul_xp_minus_one_assign_default(module, k, res, scratch)
         }
 
         fn glwe_shift_tmp_bytes(module: &poulpy_hal::layouts::Module<$be>) -> usize {
@@ -983,7 +1050,7 @@ macro_rules! impl_core_operations_default_methods {
             <$be as $crate::oep::CoreOperationsDefaults<$be>>::glwe_rsh_default(module, k, res, scratch)
         }
 
-        fn glwe_lsh_inplace<R>(
+        fn glwe_lsh_assign<R>(
             module: &poulpy_hal::layouts::Module<$be>,
             res: &mut R,
             k: usize,
@@ -992,7 +1059,7 @@ macro_rules! impl_core_operations_default_methods {
             R: $crate::layouts::GLWEToMut,
             poulpy_hal::layouts::Scratch<$be>: $crate::ScratchTakeCore<$be>,
         {
-            <$be as $crate::oep::CoreOperationsDefaults<$be>>::glwe_lsh_inplace_default(module, res, k, scratch)
+            <$be as $crate::oep::CoreOperationsDefaults<$be>>::glwe_lsh_assign_default(module, res, k, scratch)
         }
 
         fn glwe_lsh<R, A>(
@@ -1100,7 +1167,7 @@ macro_rules! impl_core_operations_default_methods {
             <$be as $crate::oep::CoreOperationsDefaults<$be>>::glwe_normalize_default(module, res, a, scratch)
         }
 
-        fn glwe_normalize_inplace<R>(
+        fn glwe_normalize_assign<R>(
             module: &poulpy_hal::layouts::Module<$be>,
             res: &mut R,
             scratch: &mut poulpy_hal::layouts::Scratch<$be>,
@@ -1108,7 +1175,7 @@ macro_rules! impl_core_operations_default_methods {
             R: $crate::layouts::GLWEToMut,
             poulpy_hal::layouts::Scratch<$be>: $crate::ScratchTakeCore<$be>,
         {
-            <$be as $crate::oep::CoreOperationsDefaults<$be>>::glwe_normalize_inplace_default(module, res, scratch)
+            <$be as $crate::oep::CoreOperationsDefaults<$be>>::glwe_normalize_assign_default(module, res, scratch)
         }
 
         fn glwe_trace_galois_elements(module: &poulpy_hal::layouts::Module<$be>) -> Vec<i64> {
@@ -1145,7 +1212,7 @@ macro_rules! impl_core_operations_default_methods {
             <$be as $crate::oep::CoreOperationsDefaults<$be>>::glwe_trace_default(module, res, skip, a, keys, scratch)
         }
 
-        fn glwe_trace_inplace<R, K, H>(
+        fn glwe_trace_assign<R, K, H>(
             module: &poulpy_hal::layouts::Module<$be>,
             res: &mut R,
             skip: usize,
@@ -1156,7 +1223,7 @@ macro_rules! impl_core_operations_default_methods {
             K: $crate::layouts::GGLWEPreparedToRef<$be> + $crate::layouts::GetGaloisElement + $crate::layouts::GGLWEInfos,
             H: $crate::layouts::GLWEAutomorphismKeyHelper<K, $be>,
         {
-            <$be as $crate::oep::CoreOperationsDefaults<$be>>::glwe_trace_inplace_default(module, res, skip, keys, scratch)
+            <$be as $crate::oep::CoreOperationsDefaults<$be>>::glwe_trace_assign_default(module, res, skip, keys, scratch)
         }
 
         fn glwe_pack_galois_elements(module: &poulpy_hal::layouts::Module<$be>) -> Vec<i64> {

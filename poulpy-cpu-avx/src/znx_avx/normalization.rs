@@ -221,7 +221,7 @@ pub fn znx_normalize_first_step_carry_only_avx(base2k: usize, lsh: usize, x: &[i
 /// Caller must ensure the CPU supports AVX2 (e.g., via `is_x86_feature_detected!("avx2")`);
 /// all inputs must have the same length and must not alias.
 #[target_feature(enable = "avx2")]
-pub fn znx_normalize_first_step_inplace_avx(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
+pub fn znx_normalize_first_step_assign_avx(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
     #[cfg(debug_assertions)]
     {
         assert!(x.len() <= carry.len());
@@ -281,9 +281,9 @@ pub fn znx_normalize_first_step_inplace_avx(base2k: usize, lsh: usize, x: &mut [
 
     // tail
     if !x.len().is_multiple_of(4) {
-        use poulpy_cpu_ref::reference::znx::znx_normalize_first_step_inplace_ref;
+        use poulpy_cpu_ref::reference::znx::znx_normalize_first_step_assign_ref;
 
-        znx_normalize_first_step_inplace_ref(base2k, lsh, &mut x[span << 2..], &mut carry[span << 2..]);
+        znx_normalize_first_step_assign_ref(base2k, lsh, &mut x[span << 2..], &mut carry[span << 2..]);
     }
 }
 
@@ -386,7 +386,7 @@ pub fn znx_normalize_first_step_avx<const OVERWRITE: bool>(
 /// Caller must ensure the CPU supports AVX2 (e.g., via `is_x86_feature_detected!("avx2")`);
 /// all inputs must have the same length and must not alias.
 #[target_feature(enable = "avx2")]
-pub fn znx_normalize_middle_step_inplace_avx(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
+pub fn znx_normalize_middle_step_assign_avx(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
     #[cfg(debug_assertions)]
     {
         assert!(x.len() <= carry.len());
@@ -455,9 +455,9 @@ pub fn znx_normalize_middle_step_inplace_avx(base2k: usize, lsh: usize, x: &mut 
     }
 
     if !x.len().is_multiple_of(4) {
-        use poulpy_cpu_ref::reference::znx::znx_normalize_middle_step_inplace_ref;
+        use poulpy_cpu_ref::reference::znx::znx_normalize_middle_step_assign_ref;
 
-        znx_normalize_middle_step_inplace_ref(base2k, lsh, &mut x[span << 2..], &mut carry[span << 2..]);
+        znx_normalize_middle_step_assign_ref(base2k, lsh, &mut x[span << 2..], &mut carry[span << 2..]);
     }
 }
 
@@ -728,7 +728,7 @@ pub fn znx_normalize_middle_step_sub_avx(base2k: usize, lsh: usize, x: &mut [i64
 /// Caller must ensure the CPU supports AVX2 (e.g., via `is_x86_feature_detected!("avx2")`);
 /// all inputs must have the same length and must not alias.
 #[target_feature(enable = "avx2")]
-pub fn znx_normalize_final_step_inplace_avx(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
+pub fn znx_normalize_final_step_assign_avx(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
     #[cfg(debug_assertions)]
     {
         assert!(x.len() <= carry.len());
@@ -788,9 +788,9 @@ pub fn znx_normalize_final_step_inplace_avx(base2k: usize, lsh: usize, x: &mut [
     }
 
     if !x.len().is_multiple_of(4) {
-        use poulpy_cpu_ref::reference::znx::znx_normalize_final_step_inplace_ref;
+        use poulpy_cpu_ref::reference::znx::znx_normalize_final_step_assign_ref;
 
-        znx_normalize_final_step_inplace_ref(base2k, lsh, &mut x[span << 2..], &mut carry[span << 2..]);
+        znx_normalize_final_step_assign_ref(base2k, lsh, &mut x[span << 2..], &mut carry[span << 2..]);
     }
 }
 
@@ -960,9 +960,9 @@ pub fn znx_normalize_final_step_sub_avx(base2k: usize, lsh: usize, x: &mut [i64]
 
 mod tests {
     use poulpy_cpu_ref::reference::znx::{
-        get_carry_i64, get_digit_i64, znx_extract_digit_addmul_ref, znx_normalize_digit_ref,
-        znx_normalize_final_step_inplace_ref, znx_normalize_final_step_ref, znx_normalize_first_step_inplace_ref,
-        znx_normalize_first_step_ref, znx_normalize_middle_step_inplace_ref, znx_normalize_middle_step_ref,
+        get_carry_i64, get_digit_i64, znx_extract_digit_addmul_ref, znx_normalize_digit_ref, znx_normalize_final_step_assign_ref,
+        znx_normalize_final_step_ref, znx_normalize_first_step_assign_ref, znx_normalize_first_step_ref,
+        znx_normalize_middle_step_assign_ref, znx_normalize_middle_step_ref,
     };
 
     use super::*;
@@ -1047,7 +1047,7 @@ mod tests {
 
     #[allow(dead_code)]
     #[target_feature(enable = "avx2")]
-    fn test_znx_normalize_first_step_inplace_avx_internal() {
+    fn test_znx_normalize_first_step_assign_avx_internal() {
         let mut y0: [i64; 4] = [
             7638646372408325293,
             -61440197422348985,
@@ -1066,33 +1066,33 @@ mod tests {
 
         let base2k = 12;
 
-        znx_normalize_first_step_inplace_ref(base2k, 0, &mut y0, &mut c0);
-        znx_normalize_first_step_inplace_avx(base2k, 0, &mut y1, &mut c1);
+        znx_normalize_first_step_assign_ref(base2k, 0, &mut y0, &mut c0);
+        znx_normalize_first_step_assign_avx(base2k, 0, &mut y1, &mut c1);
 
         assert_eq!(y0, y1);
         assert_eq!(c0, c1);
 
-        znx_normalize_first_step_inplace_ref(base2k, base2k - 1, &mut y0, &mut c0);
-        znx_normalize_first_step_inplace_avx(base2k, base2k - 1, &mut y1, &mut c1);
+        znx_normalize_first_step_assign_ref(base2k, base2k - 1, &mut y0, &mut c0);
+        znx_normalize_first_step_assign_avx(base2k, base2k - 1, &mut y1, &mut c1);
 
         assert_eq!(y0, y1);
         assert_eq!(c0, c1);
     }
 
     #[test]
-    fn test_znx_normalize_first_step_inplace_avx() {
+    fn test_znx_normalize_first_step_assign_avx() {
         if !std::is_x86_feature_detected!("avx2") {
             eprintln!("skipping: CPU lacks avx2");
             return;
         };
         unsafe {
-            test_znx_normalize_first_step_inplace_avx_internal();
+            test_znx_normalize_first_step_assign_avx_internal();
         }
     }
 
     #[allow(dead_code)]
     #[target_feature(enable = "avx2")]
-    fn test_znx_normalize_middle_step_inplace_avx_internal() {
+    fn test_znx_normalize_middle_step_assign_avx_internal() {
         let mut y0: [i64; 4] = [
             7638646372408325293,
             -61440197422348985,
@@ -1111,33 +1111,33 @@ mod tests {
 
         let base2k = 12;
 
-        znx_normalize_middle_step_inplace_ref(base2k, 0, &mut y0, &mut c0);
-        znx_normalize_middle_step_inplace_avx(base2k, 0, &mut y1, &mut c1);
+        znx_normalize_middle_step_assign_ref(base2k, 0, &mut y0, &mut c0);
+        znx_normalize_middle_step_assign_avx(base2k, 0, &mut y1, &mut c1);
 
         assert_eq!(y0, y1);
         assert_eq!(c0, c1);
 
-        znx_normalize_middle_step_inplace_ref(base2k, base2k - 1, &mut y0, &mut c0);
-        znx_normalize_middle_step_inplace_avx(base2k, base2k - 1, &mut y1, &mut c1);
+        znx_normalize_middle_step_assign_ref(base2k, base2k - 1, &mut y0, &mut c0);
+        znx_normalize_middle_step_assign_avx(base2k, base2k - 1, &mut y1, &mut c1);
 
         assert_eq!(y0, y1);
         assert_eq!(c0, c1);
     }
 
     #[test]
-    fn test_znx_normalize_middle_step_inplace_avx() {
+    fn test_znx_normalize_middle_step_assign_avx() {
         if !std::is_x86_feature_detected!("avx2") {
             eprintln!("skipping: CPU lacks avx2");
             return;
         };
         unsafe {
-            test_znx_normalize_middle_step_inplace_avx_internal();
+            test_znx_normalize_middle_step_assign_avx_internal();
         }
     }
 
     #[allow(dead_code)]
     #[target_feature(enable = "avx2")]
-    fn test_znx_normalize_final_step_inplace_avx_internal() {
+    fn test_znx_normalize_final_step_assign_avx_internal() {
         let mut y0: [i64; 4] = [
             7638646372408325293,
             -61440197422348985,
@@ -1156,27 +1156,27 @@ mod tests {
 
         let base2k = 12;
 
-        znx_normalize_final_step_inplace_ref(base2k, 0, &mut y0, &mut c0);
-        znx_normalize_final_step_inplace_avx(base2k, 0, &mut y1, &mut c1);
+        znx_normalize_final_step_assign_ref(base2k, 0, &mut y0, &mut c0);
+        znx_normalize_final_step_assign_avx(base2k, 0, &mut y1, &mut c1);
 
         assert_eq!(y0, y1);
         assert_eq!(c0, c1);
 
-        znx_normalize_final_step_inplace_ref(base2k, base2k - 1, &mut y0, &mut c0);
-        znx_normalize_final_step_inplace_avx(base2k, base2k - 1, &mut y1, &mut c1);
+        znx_normalize_final_step_assign_ref(base2k, base2k - 1, &mut y0, &mut c0);
+        znx_normalize_final_step_assign_avx(base2k, base2k - 1, &mut y1, &mut c1);
 
         assert_eq!(y0, y1);
         assert_eq!(c0, c1);
     }
 
     #[test]
-    fn test_znx_normalize_final_step_inplace_avx() {
+    fn test_znx_normalize_final_step_assign_avx() {
         if !std::is_x86_feature_detected!("avx2") {
             eprintln!("skipping: CPU lacks avx2");
             return;
         };
         unsafe {
-            test_znx_normalize_final_step_inplace_avx_internal();
+            test_znx_normalize_final_step_assign_avx_internal();
         }
     }
 

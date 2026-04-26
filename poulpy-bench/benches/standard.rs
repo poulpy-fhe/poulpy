@@ -97,7 +97,7 @@ fn std_glwe_external_product(c: &mut Criterion) {
         dsize: Dsize(cp.dsize),
     };
     poulpy_bench::for_each_backend!(
-        poulpy_bench::bench_suite::core::external_product::bench_glwe_external_product_inplace,
+        poulpy_bench::bench_suite::core::external_product::bench_glwe_external_product_assign,
         &infos;
         c
     );

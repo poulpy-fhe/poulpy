@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ScratchAvailable, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniform, VecZnxRotateInplace},
+    api::{ScratchAvailable, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniform, VecZnxRotateAssign},
     layouts::{DeviceBuf, Module, ScalarZnx, Scratch, ScratchOwned, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
@@ -24,7 +24,7 @@ where
         + GLWEExternalProduct<BE>
         + GLWEEncryptSk<BE>
         + GLWENoise<BE>
-        + VecZnxRotateInplace<BE>
+        + VecZnxRotateAssign<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWENormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -126,7 +126,7 @@ where
 
             module.glwe_external_product(&mut glwe_out, &glwe_in, &ct_ggsw_prepared, scratch.borrow());
 
-            module.vec_znx_rotate_inplace(k as i64, &mut pt_in.data, 0, scratch.borrow());
+            module.vec_znx_rotate_assign(k as i64, &mut pt_in.data, 0, scratch.borrow());
 
             module.glwe_normalize(&mut pt_out, &pt_in, scratch.borrow());
 
@@ -161,7 +161,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn test_glwe_external_product_inplace<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_external_product_assign<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: GGSWEncryptSk<BE>
         + GGSWPreparedFactory<BE>
@@ -169,7 +169,7 @@ where
         + GLWEExternalProduct<BE>
         + GLWEEncryptSk<BE>
         + GLWENoise<BE>
-        + VecZnxRotateInplace<BE>
+        + VecZnxRotateAssign<BE>
         + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     Scratch<BE>: ScratchAvailable + ScratchTakeCore<BE>,
@@ -258,9 +258,9 @@ where
             let mut ct_ggsw_prepared: GGSWPrepared<DeviceBuf<BE>, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw_apply);
             module.ggsw_prepare(&mut ct_ggsw_prepared, &ggsw_apply, scratch.borrow());
 
-            module.glwe_external_product_inplace(&mut glwe_out, &ct_ggsw_prepared, scratch.borrow());
+            module.glwe_external_product_assign(&mut glwe_out, &ct_ggsw_prepared, scratch.borrow());
 
-            module.vec_znx_rotate_inplace(k as i64, &mut pt_want.data, 0, scratch.borrow());
+            module.vec_znx_rotate_assign(k as i64, &mut pt_want.data, 0, scratch.borrow());
 
             let var_gct_err_lhs: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
             let var_gct_err_rhs: f64 = 0f64;

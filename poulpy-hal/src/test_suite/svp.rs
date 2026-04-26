@@ -3,7 +3,7 @@ use rand::Rng;
 
 use crate::{
     api::{
-        ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDft, SvpApplyDftToDft, SvpApplyDftToDftInplace, SvpPPolAlloc, SvpPrepare,
+        ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDft, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare,
         VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApplyConsume,
     },
     layouts::{
@@ -212,13 +212,13 @@ where
     }
 }
 
-pub fn test_svp_apply_dft_to_dft_inplace<BR: Backend, BT: Backend>(
+pub fn test_svp_apply_dft_to_dft_assign<BR: Backend, BT: Backend>(
     params: &TestParams,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
     Module<BR>: SvpPrepare<BR>
-        + SvpApplyDftToDftInplace<BR>
+        + SvpApplyDftToDftAssign<BR>
         + SvpPPolAlloc<BR>
         + VecZnxDftAlloc<BR>
         + VecZnxBigNormalize<BR>
@@ -226,7 +226,7 @@ pub fn test_svp_apply_dft_to_dft_inplace<BR: Backend, BT: Backend>(
         + VecZnxIdftApplyConsume<BR>
         + VecZnxBigNormalizeTmpBytes,
     Module<BT>: SvpPrepare<BT>
-        + SvpApplyDftToDftInplace<BT>
+        + SvpApplyDftToDftAssign<BT>
         + SvpPPolAlloc<BT>
         + VecZnxDftAlloc<BT>
         + VecZnxBigNormalize<BT>
@@ -281,8 +281,8 @@ pub fn test_svp_apply_dft_to_dft_inplace<BR: Backend, BT: Backend>(
         assert_eq!(res.digest_u64(), res_digest);
 
         for j in 0..cols {
-            module_ref.svp_apply_dft_to_dft_inplace(&mut res_dft_ref, j, &svp_ref, j);
-            module_test.svp_apply_dft_to_dft_inplace(&mut res_dft_test, j, &svp_test, j);
+            module_ref.svp_apply_dft_to_dft_assign(&mut res_dft_ref, j, &svp_ref, j);
+            module_test.svp_apply_dft_to_dft_assign(&mut res_dft_test, j, &svp_test, j);
         }
 
         // Assert no change to inputs

@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ScratchAvailable, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateInplace},
+    api::{ScratchAvailable, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssign},
     layouts::{DeviceBuf, Module, ScalarZnx, ScalarZnxToMut, Scratch, ScratchOwned, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
@@ -23,7 +23,7 @@ where
         + GGSWEncryptSk<BE>
         + GLWESwitchingKeyEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
-        + VecZnxRotateInplace<BE>
+        + VecZnxRotateAssign<BE>
         + GGSWPreparedFactory<BE>
         + GGLWENoise<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -138,7 +138,7 @@ where
                 module.gglwe_external_product(&mut ct_gglwe_out, &ct_gglwe_in, &ct_rgsw_prepared, scratch.borrow());
 
                 (0..rank_in).for_each(|i| {
-                    module.vec_znx_rotate_inplace(r as i64, &mut sk_in.data.as_vec_znx_mut(), i, scratch.borrow()); // * X^{r}
+                    module.vec_znx_rotate_assign(r as i64, &mut sk_in.data.as_vec_znx_mut(), i, scratch.borrow()); // * X^{r}
                 });
 
                 let var_gct_err_lhs: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
@@ -178,7 +178,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn test_gglwe_switching_key_external_product_inplace<BE: crate::test_suite::TestBackend>(
+pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::TestBackend>(
     params: &TestParams,
     module: &Module<BE>,
 ) where
@@ -186,7 +186,7 @@ pub fn test_gglwe_switching_key_external_product_inplace<BE: crate::test_suite::
         + GGSWEncryptSk<BE>
         + GLWESwitchingKeyEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
-        + VecZnxRotateInplace<BE>
+        + VecZnxRotateAssign<BE>
         + GGSWPreparedFactory<BE>
         + GGLWENoise<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -286,10 +286,10 @@ pub fn test_gglwe_switching_key_external_product_inplace<BE: crate::test_suite::
                 module.ggsw_prepare(&mut ct_rgsw_prepared, &ct_rgsw, scratch.borrow());
 
                 // gglwe_(m) (x) RGSW_(X^k) = gglwe_(m * X^k)
-                module.gglwe_external_product_inplace(&mut ct_gglwe, &ct_rgsw_prepared, scratch.borrow());
+                module.gglwe_external_product_assign(&mut ct_gglwe, &ct_rgsw_prepared, scratch.borrow());
 
                 (0..rank_in).for_each(|i| {
-                    module.vec_znx_rotate_inplace(r as i64, &mut sk_in.data.as_vec_znx_mut(), i, scratch.borrow()); // * X^{r}
+                    module.vec_znx_rotate_assign(r as i64, &mut sk_in.data.as_vec_znx_mut(), i, scratch.borrow()); // * X^{r}
                 });
 
                 let var_gct_err_lhs: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;

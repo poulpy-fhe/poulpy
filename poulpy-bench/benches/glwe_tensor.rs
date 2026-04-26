@@ -15,6 +15,14 @@ fn bench_glwe_tensor_apply(c: &mut Criterion) {
     poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::core::glwe_tensor::bench_glwe_tensor_apply, &glwe_infos(); c);
 }
 
+fn bench_glwe_tensor_apply_add_assign(c: &mut Criterion) {
+    poulpy_bench::for_each_backend!(
+        poulpy_bench::bench_suite::core::glwe_tensor::bench_glwe_tensor_apply_add_assign,
+        &glwe_infos();
+        c
+    );
+}
+
 fn bench_glwe_tensor_prepare_left(c: &mut Criterion) {
     poulpy_bench::for_each_backend!(
         poulpy_bench::bench_suite::core::glwe_tensor::bench_glwe_tensor_prepare_left,
@@ -59,6 +67,7 @@ criterion_group! {
     name = benches;
     config = poulpy_bench::criterion_config();
     targets = bench_glwe_tensor_apply,
+    bench_glwe_tensor_apply_add_assign,
     bench_glwe_tensor_prepare_left,
     bench_glwe_tensor_prepare_right,
     bench_glwe_tensor_diag_lane,

@@ -23,7 +23,7 @@ pub trait CoreKeyswitchDefaults<BE: Backend>: Backend {
         A: GLWEToRef + GLWEInfos,
         K: GGLWEPreparedToRef<BE> + GGLWEInfos;
 
-    fn glwe_keyswitch_inplace_default<R, K>(module: &Module<BE>, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_keyswitch_assign_default<R, K>(module: &Module<BE>, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut + GLWEInfos,
         K: GGLWEPreparedToRef<BE> + GGLWEInfos;
@@ -41,7 +41,7 @@ pub trait CoreKeyswitchDefaults<BE: Backend>: Backend {
         K: GGLWEPreparedToRef<BE> + GGLWEInfos,
         Scratch<BE>: ScratchTakeCore<BE>;
 
-    fn gglwe_keyswitch_inplace_default<R, K>(module: &Module<BE>, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn gglwe_keyswitch_assign_default<R, K>(module: &Module<BE>, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GGLWEToMut,
         K: GGLWEPreparedToRef<BE> + GGLWEInfos,
@@ -68,7 +68,7 @@ pub trait CoreKeyswitchDefaults<BE: Backend>: Backend {
         T: GGLWEToGGSWKeyPreparedToRef<BE> + GGLWEInfos,
         Scratch<BE>: ScratchTakeCore<BE>;
 
-    fn ggsw_keyswitch_inplace_default<R, K, T>(module: &Module<BE>, res: &mut R, key: &K, tsk: &T, scratch: &mut Scratch<BE>)
+    fn ggsw_keyswitch_assign_default<R, K, T>(module: &Module<BE>, res: &mut R, key: &K, tsk: &T, scratch: &mut Scratch<BE>)
     where
         R: GGSWToMut,
         K: GGLWEPreparedToRef<BE> + GGLWEInfos,
@@ -112,12 +112,12 @@ where
         <Module<BE> as GLWEKeyswitchDefault<BE>>::glwe_keyswitch_default(module, res, a, key, scratch)
     }
 
-    fn glwe_keyswitch_inplace_default<R, K>(module: &Module<BE>, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_keyswitch_assign_default<R, K>(module: &Module<BE>, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut + GLWEInfos,
         K: GGLWEPreparedToRef<BE> + GGLWEInfos,
     {
-        <Module<BE> as GLWEKeyswitchDefault<BE>>::glwe_keyswitch_inplace_default(module, res, key, scratch)
+        <Module<BE> as GLWEKeyswitchDefault<BE>>::glwe_keyswitch_assign_default(module, res, key, scratch)
     }
 
     fn gglwe_keyswitch_tmp_bytes_default<R, A, K>(module: &Module<BE>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
@@ -139,13 +139,13 @@ where
         <Module<BE> as GGLWEKeyswitchDefault<BE>>::gglwe_keyswitch_default(module, res, a, key, scratch)
     }
 
-    fn gglwe_keyswitch_inplace_default<R, K>(module: &Module<BE>, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn gglwe_keyswitch_assign_default<R, K>(module: &Module<BE>, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GGLWEToMut,
         K: GGLWEPreparedToRef<BE> + GGLWEInfos,
         Scratch<BE>: ScratchTakeCore<BE>,
     {
-        <Module<BE> as GGLWEKeyswitchDefault<BE>>::gglwe_keyswitch_inplace_default(module, res, key, scratch)
+        <Module<BE> as GGLWEKeyswitchDefault<BE>>::gglwe_keyswitch_assign_default(module, res, key, scratch)
     }
 
     fn ggsw_keyswitch_tmp_bytes_default<R, A, K, T>(
@@ -177,14 +177,14 @@ where
         <Module<BE> as GGSWKeyswitchDefault<BE>>::ggsw_keyswitch_default(module, res, a, key, tsk, scratch)
     }
 
-    fn ggsw_keyswitch_inplace_default<R, K, T>(module: &Module<BE>, res: &mut R, key: &K, tsk: &T, scratch: &mut Scratch<BE>)
+    fn ggsw_keyswitch_assign_default<R, K, T>(module: &Module<BE>, res: &mut R, key: &K, tsk: &T, scratch: &mut Scratch<BE>)
     where
         R: GGSWToMut,
         K: GGLWEPreparedToRef<BE> + GGLWEInfos,
         T: GGLWEToGGSWKeyPreparedToRef<BE> + GGLWEInfos,
         Scratch<BE>: ScratchTakeCore<BE>,
     {
-        <Module<BE> as GGSWKeyswitchDefault<BE>>::ggsw_keyswitch_inplace_default(module, res, key, tsk, scratch)
+        <Module<BE> as GGSWKeyswitchDefault<BE>>::ggsw_keyswitch_assign_default(module, res, key, tsk, scratch)
     }
 
     fn lwe_keyswitch_tmp_bytes_default<R, A, K>(module: &Module<BE>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
@@ -240,7 +240,7 @@ macro_rules! impl_core_keyswitch_default_methods {
             <$be as $crate::oep::CoreKeyswitchDefaults<$be>>::glwe_keyswitch_default(module, res, a, key, scratch)
         }
 
-        fn glwe_keyswitch_inplace<R, K>(
+        fn glwe_keyswitch_assign<R, K>(
             module: &poulpy_hal::layouts::Module<$be>,
             res: &mut R,
             key: &K,
@@ -249,7 +249,7 @@ macro_rules! impl_core_keyswitch_default_methods {
             R: $crate::layouts::GLWEToMut + $crate::layouts::GLWEInfos,
             K: $crate::layouts::GGLWEPreparedToRef<$be> + $crate::layouts::GGLWEInfos,
         {
-            <$be as $crate::oep::CoreKeyswitchDefaults<$be>>::glwe_keyswitch_inplace_default(module, res, key, scratch)
+            <$be as $crate::oep::CoreKeyswitchDefaults<$be>>::glwe_keyswitch_assign_default(module, res, key, scratch)
         }
 
         fn gglwe_keyswitch_tmp_bytes<R, A, K>(
@@ -283,7 +283,7 @@ macro_rules! impl_core_keyswitch_default_methods {
             <$be as $crate::oep::CoreKeyswitchDefaults<$be>>::gglwe_keyswitch_default(module, res, a, key, scratch)
         }
 
-        fn gglwe_keyswitch_inplace<R, K>(
+        fn gglwe_keyswitch_assign<R, K>(
             module: &poulpy_hal::layouts::Module<$be>,
             res: &mut R,
             key: &K,
@@ -293,7 +293,7 @@ macro_rules! impl_core_keyswitch_default_methods {
             K: $crate::layouts::GGLWEPreparedToRef<$be> + $crate::layouts::GGLWEInfos,
             poulpy_hal::layouts::Scratch<$be>: $crate::ScratchTakeCore<$be>,
         {
-            <$be as $crate::oep::CoreKeyswitchDefaults<$be>>::gglwe_keyswitch_inplace_default(module, res, key, scratch)
+            <$be as $crate::oep::CoreKeyswitchDefaults<$be>>::gglwe_keyswitch_assign_default(module, res, key, scratch)
         }
 
         fn ggsw_keyswitch_tmp_bytes<R, A, K, T>(
@@ -331,7 +331,7 @@ macro_rules! impl_core_keyswitch_default_methods {
             <$be as $crate::oep::CoreKeyswitchDefaults<$be>>::ggsw_keyswitch_default(module, res, a, key, tsk, scratch)
         }
 
-        fn ggsw_keyswitch_inplace<R, K, T>(
+        fn ggsw_keyswitch_assign<R, K, T>(
             module: &poulpy_hal::layouts::Module<$be>,
             res: &mut R,
             key: &K,
@@ -343,7 +343,7 @@ macro_rules! impl_core_keyswitch_default_methods {
             T: $crate::layouts::GGLWEToGGSWKeyPreparedToRef<$be> + $crate::layouts::GGLWEInfos,
             poulpy_hal::layouts::Scratch<$be>: $crate::ScratchTakeCore<$be>,
         {
-            <$be as $crate::oep::CoreKeyswitchDefaults<$be>>::ggsw_keyswitch_inplace_default(module, res, key, tsk, scratch)
+            <$be as $crate::oep::CoreKeyswitchDefaults<$be>>::ggsw_keyswitch_assign_default(module, res, key, tsk, scratch)
         }
 
         fn lwe_keyswitch_tmp_bytes<R, A, K>(

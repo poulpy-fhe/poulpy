@@ -1,5 +1,8 @@
 use crate::{
-    layouts::{Backend, NoiseInfos, Scratch, VecZnxBigOwned, VecZnxBigToMut, VecZnxBigToRef, VecZnxToMut, VecZnxToRef},
+    layouts::{
+        Backend, NoiseInfos, Scratch, VecZnx, VecZnxBigOwned, VecZnxBigToMut, VecZnxBigToRef, VecZnxToMut, VecZnxToRef, ZnxView,
+        ZnxViewMut,
+    },
     source::Source,
 };
 
@@ -93,17 +96,17 @@ pub trait VecZnxBigSub<B: Backend> {
         C: VecZnxBigToRef<B>;
 }
 
-pub trait VecZnxBigSubInplace<B: Backend> {
+pub trait VecZnxBigSubAssign<B: Backend> {
     /// Subtracts `a` from `b` and stores the result on `b`.
-    fn vec_znx_big_sub_inplace<R, A>(&self, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_big_sub_assign<R, A>(&self, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         R: VecZnxBigToMut<B>,
         A: VecZnxBigToRef<B>;
 }
 
-pub trait VecZnxBigSubNegateInplace<B: Backend> {
+pub trait VecZnxBigSubNegateAssign<B: Backend> {
     /// Subtracts `b` from `a` and stores the result on `b`.
-    fn vec_znx_big_sub_negate_inplace<R, A>(&self, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_big_sub_negate_assign<R, A>(&self, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         R: VecZnxBigToMut<B>,
         A: VecZnxBigToRef<B>;
@@ -118,9 +121,9 @@ pub trait VecZnxBigSubSmallA<B: Backend> {
         C: VecZnxBigToRef<B>;
 }
 
-pub trait VecZnxBigSubSmallInplace<B: Backend> {
+pub trait VecZnxBigSubSmallAssign<B: Backend> {
     /// Subtracts `a` from `res` and stores the result on `res`.
-    fn vec_znx_big_sub_small_inplace<R, A>(&self, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_big_sub_small_assign<R, A>(&self, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         R: VecZnxBigToMut<B>,
         A: VecZnxToRef;
@@ -135,9 +138,9 @@ pub trait VecZnxBigSubSmallB<B: Backend> {
         C: VecZnxToRef;
 }
 
-pub trait VecZnxBigSubSmallNegateInplace<B: Backend> {
+pub trait VecZnxBigSubSmallNegateAssign<B: Backend> {
     /// Subtracts `res` from `a` and stores the result on `res`.
-    fn vec_znx_big_sub_small_negate_inplace<R, A>(&self, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_big_sub_small_negate_assign<R, A>(&self, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         R: VecZnxBigToMut<B>,
         A: VecZnxToRef;
@@ -152,8 +155,8 @@ pub trait VecZnxBigNegate<B: Backend> {
 }
 
 /// Negates the selected column of `res` in-place.
-pub trait VecZnxBigNegateInplace<B: Backend> {
-    fn vec_znx_big_negate_inplace<R>(&self, res: &mut R, res_col: usize)
+pub trait VecZnxBigNegateAssign<B: Backend> {
+    fn vec_znx_big_negate_assign<R>(&self, res: &mut R, res_col: usize)
     where
         R: VecZnxBigToMut<B>;
 }
@@ -167,6 +170,24 @@ pub trait VecZnxBigNormalizeTmpBytes {
 /// Normalizes a [`VecZnxBig`](crate::layouts::VecZnxBig) into a coefficient-domain
 /// [`VecZnx`](crate::layouts::VecZnx) with the target base and offset.
 pub trait VecZnxBigNormalize<B: Backend> {
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_big_normalize_into<R, A>(
+        &self,
+        res: &mut R,
+        res_base2k: usize,
+        res_offset: i64,
+        res_col: usize,
+        a: &A,
+        a_base2k: usize,
+        a_col: usize,
+        scratch: &mut Scratch<B>,
+    ) where
+        R: VecZnxToMut,
+        A: VecZnxBigToRef<B>,
+    {
+        self.vec_znx_big_normalize(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, scratch);
+    }
+
     fn vec_znx_big_normalize<R, A>(
         &self,
         res: &mut R,
@@ -180,11 +201,99 @@ pub trait VecZnxBigNormalize<B: Backend> {
     ) where
         R: VecZnxToMut,
         A: VecZnxBigToRef<B>;
+
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_big_normalize_add_assign<R, A>(
+        &self,
+        res: &mut R,
+        res_base2k: usize,
+        res_offset: i64,
+        res_col: usize,
+        a: &A,
+        a_base2k: usize,
+        a_col: usize,
+        scratch: &mut Scratch<B>,
+    ) where
+        R: VecZnxToMut,
+        A: VecZnxBigToRef<B>,
+    {
+        // TODO: Override in backends to normalize directly into `res` without a temporary.
+        let (n, size) = {
+            let res_ref = res.to_mut();
+            (res_ref.n, res_ref.size)
+        };
+
+        let mut tmp = VecZnx::alloc(n, 1, size);
+        self.vec_znx_big_normalize(&mut tmp, res_base2k, res_offset, 0, a, a_base2k, a_col, scratch);
+
+        let mut res_ref = res.to_mut();
+        for j in 0..size {
+            for (ri, ti) in res_ref.at_mut(res_col, j).iter_mut().zip(tmp.at(0, j).iter()) {
+                *ri = ri.wrapping_add(*ti);
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_big_normalize_sub_assign<R, A>(
+        &self,
+        res: &mut R,
+        res_base2k: usize,
+        res_offset: i64,
+        res_col: usize,
+        a: &A,
+        a_base2k: usize,
+        a_col: usize,
+        scratch: &mut Scratch<B>,
+    ) where
+        R: VecZnxToMut,
+        A: VecZnxBigToRef<B>,
+    {
+        // TODO: Override in backends to normalize directly into `res` without a temporary.
+        let (n, size) = {
+            let res_ref = res.to_mut();
+            (res_ref.n, res_ref.size)
+        };
+
+        let mut tmp = VecZnx::alloc(n, 1, size);
+        self.vec_znx_big_normalize(&mut tmp, res_base2k, res_offset, 0, a, a_base2k, a_col, scratch);
+
+        let mut res_ref = res.to_mut();
+        for j in 0..size {
+            for (ri, ti) in res_ref.at_mut(res_col, j).iter_mut().zip(tmp.at(0, j).iter()) {
+                *ri = ri.wrapping_sub(*ti);
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_big_normalize_negate<R, A>(
+        &self,
+        res: &mut R,
+        res_base2k: usize,
+        res_offset: i64,
+        res_col: usize,
+        a: &A,
+        a_base2k: usize,
+        a_col: usize,
+        scratch: &mut Scratch<B>,
+    ) where
+        R: VecZnxToMut,
+        A: VecZnxBigToRef<B>,
+    {
+        self.vec_znx_big_normalize(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, scratch);
+        let mut res_ref = res.to_mut();
+        for j in 0..res_ref.size {
+            for ri in res_ref.at_mut(res_col, j) {
+                *ri = ri.wrapping_neg();
+            }
+        }
+    }
 }
 
 /// Returns scratch bytes required for in-place automorphism on [`VecZnxBig`](crate::layouts::VecZnxBig).
-pub trait VecZnxBigAutomorphismInplaceTmpBytes {
-    fn vec_znx_big_automorphism_inplace_tmp_bytes(&self) -> usize;
+pub trait VecZnxBigAutomorphismAssignTmpBytes {
+    fn vec_znx_big_automorphism_assign_tmp_bytes(&self) -> usize;
 }
 
 pub trait VecZnxBigAutomorphism<B: Backend> {
@@ -195,9 +304,9 @@ pub trait VecZnxBigAutomorphism<B: Backend> {
         A: VecZnxBigToRef<B>;
 }
 
-pub trait VecZnxBigAutomorphismInplace<B: Backend> {
+pub trait VecZnxBigAutomorphismAssign<B: Backend> {
     /// Applies the automorphism X^i -> X^ik on `a` and stores the result on `a`.
-    fn vec_znx_big_automorphism_inplace<R>(&self, p: i64, res: &mut R, res_col: usize, scratch: &mut Scratch<B>)
+    fn vec_znx_big_automorphism_assign<R>(&self, p: i64, res: &mut R, res_col: usize, scratch: &mut Scratch<B>)
     where
         R: VecZnxBigToMut<B>;
 }

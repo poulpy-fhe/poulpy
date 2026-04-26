@@ -10,15 +10,15 @@ use crate::reference::{
             vec_znx_dft_add_assign as fft64_vec_znx_dft_add_assign, vec_znx_dft_add_into as fft64_vec_znx_dft_add_into,
             vec_znx_dft_add_scaled_assign as fft64_vec_znx_dft_add_scaled_assign, vec_znx_dft_apply as fft64_vec_znx_dft_apply,
             vec_znx_dft_copy as fft64_vec_znx_dft_copy, vec_znx_dft_sub as fft64_vec_znx_dft_sub,
-            vec_znx_dft_sub_inplace as fft64_vec_znx_dft_sub_inplace,
-            vec_znx_dft_sub_negate_inplace as fft64_vec_znx_dft_sub_negate_inplace, vec_znx_dft_zero as fft64_vec_znx_dft_zero,
+            vec_znx_dft_sub_assign as fft64_vec_znx_dft_sub_assign,
+            vec_znx_dft_sub_negate_assign as fft64_vec_znx_dft_sub_negate_assign, vec_znx_dft_zero as fft64_vec_znx_dft_zero,
             vec_znx_idft_apply as fft64_vec_znx_idft_apply, vec_znx_idft_apply_consume as fft64_vec_znx_idft_apply_consume,
             vec_znx_idft_apply_tmpa as fft64_vec_znx_idft_apply_tmpa,
         },
     },
     ntt120::{
-        NttAdd, NttAddInplace, NttCopy, NttDFTExecute, NttFromZnx64, NttNegate, NttNegateInplace, NttSub, NttSubInplace,
-        NttSubNegateInplace, NttToZnx128, NttZero,
+        NttAdd, NttAddAssign, NttCopy, NttDFTExecute, NttFromZnx64, NttNegate, NttNegateAssign, NttSub, NttSubAssign,
+        NttSubNegateAssign, NttToZnx128, NttZero,
         ntt::{NttTable, NttTableInv},
         primes::Primes30,
         types::Q120bScalar,
@@ -28,8 +28,8 @@ use crate::reference::{
             ntt120_vec_znx_dft_add_scaled_assign as ntt120_default_vec_znx_dft_add_scaled_assign,
             ntt120_vec_znx_dft_apply as ntt120_default_vec_znx_dft_apply,
             ntt120_vec_znx_dft_copy as ntt120_default_vec_znx_dft_copy, ntt120_vec_znx_dft_sub as ntt120_default_vec_znx_dft_sub,
-            ntt120_vec_znx_dft_sub_inplace as ntt120_default_vec_znx_dft_sub_inplace,
-            ntt120_vec_znx_dft_sub_negate_inplace as ntt120_default_vec_znx_dft_sub_negate_inplace,
+            ntt120_vec_znx_dft_sub_assign as ntt120_default_vec_znx_dft_sub_assign,
+            ntt120_vec_znx_dft_sub_negate_assign as ntt120_default_vec_znx_dft_sub_negate_assign,
             ntt120_vec_znx_dft_zero as ntt120_default_vec_znx_dft_zero,
             ntt120_vec_znx_idft_apply as ntt120_default_vec_znx_idft_apply,
             ntt120_vec_znx_idft_apply_consume as ntt120_default_vec_znx_idft_apply_consume,
@@ -165,22 +165,22 @@ pub trait FFT64VecZnxDftDefaults<BE: Backend>: Backend {
         fft64_vec_znx_dft_sub(res, res_col, a, a_col, b, b_col);
     }
 
-    fn vec_znx_dft_sub_inplace_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_dft_sub_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         BE: Backend<ScalarPrep = f64> + ReimArith,
         R: VecZnxDftToMut<BE>,
         A: VecZnxDftToRef<BE>,
     {
-        fft64_vec_znx_dft_sub_inplace(res, res_col, a, a_col);
+        fft64_vec_znx_dft_sub_assign(res, res_col, a, a_col);
     }
 
-    fn vec_znx_dft_sub_negate_inplace_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_dft_sub_negate_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         BE: Backend<ScalarPrep = f64> + ReimArith,
         R: VecZnxDftToMut<BE>,
         A: VecZnxDftToRef<BE>,
     {
-        fft64_vec_znx_dft_sub_negate_inplace(res, res_col, a, a_col);
+        fft64_vec_znx_dft_sub_negate_assign(res, res_col, a, a_col);
     }
 
     fn vec_znx_dft_copy_default<R, A>(
@@ -298,7 +298,7 @@ pub trait NTT120VecZnxDftDefaults<BE: Backend>: Backend {
         a_col: usize,
         a_scale: i64,
     ) where
-        BE: Backend<ScalarPrep = Q120bScalar> + NttAddInplace,
+        BE: Backend<ScalarPrep = Q120bScalar> + NttAddAssign,
         R: VecZnxDftToMut<BE>,
         A: VecZnxDftToRef<BE>,
     {
@@ -307,7 +307,7 @@ pub trait NTT120VecZnxDftDefaults<BE: Backend>: Backend {
 
     fn vec_znx_dft_add_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
-        BE: Backend<ScalarPrep = Q120bScalar> + NttAddInplace,
+        BE: Backend<ScalarPrep = Q120bScalar> + NttAddAssign,
         R: VecZnxDftToMut<BE>,
         A: VecZnxDftToRef<BE>,
     {
@@ -331,22 +331,22 @@ pub trait NTT120VecZnxDftDefaults<BE: Backend>: Backend {
         ntt120_default_vec_znx_dft_sub(res, res_col, a, a_col, b, b_col);
     }
 
-    fn vec_znx_dft_sub_inplace_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_dft_sub_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
-        BE: Backend<ScalarPrep = Q120bScalar> + NttSubInplace,
+        BE: Backend<ScalarPrep = Q120bScalar> + NttSubAssign,
         R: VecZnxDftToMut<BE>,
         A: VecZnxDftToRef<BE>,
     {
-        ntt120_default_vec_znx_dft_sub_inplace(res, res_col, a, a_col);
+        ntt120_default_vec_znx_dft_sub_assign(res, res_col, a, a_col);
     }
 
-    fn vec_znx_dft_sub_negate_inplace_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_dft_sub_negate_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
-        BE: Backend<ScalarPrep = Q120bScalar> + NttSubNegateInplace + NttNegateInplace,
+        BE: Backend<ScalarPrep = Q120bScalar> + NttSubNegateAssign + NttNegateAssign,
         R: VecZnxDftToMut<BE>,
         A: VecZnxDftToRef<BE>,
     {
-        ntt120_default_vec_znx_dft_sub_negate_inplace(res, res_col, a, a_col);
+        ntt120_default_vec_znx_dft_sub_negate_assign(res, res_col, a, a_col);
     }
 
     fn vec_znx_dft_copy_default<R, A>(

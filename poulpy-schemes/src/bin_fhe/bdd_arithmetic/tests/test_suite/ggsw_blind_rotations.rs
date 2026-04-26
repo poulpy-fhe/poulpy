@@ -6,7 +6,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateInplace},
+    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssign},
     layouts::{Backend, DeviceBuf, Module, ScalarZnx, Scratch, ScratchOwned, ZnxView, ZnxViewMut},
     source::Source,
 };
@@ -30,7 +30,7 @@ where
         + GGSWNoise<BE>
         + GLWEDecrypt<BE>
         + GLWEEncryptSk<BE>
-        + VecZnxRotateInplace<BE>,
+        + VecZnxRotateAssign<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     Scratch<BE>: ScratchTakeCore<BE>,
 {
@@ -128,7 +128,7 @@ where
             let mut scalar_want: ScalarZnx<Vec<u8>> = ScalarZnx::alloc(module.n(), 1);
             scalar_want.raw_mut().copy_from_slice(scalar.raw());
 
-            module.vec_znx_rotate_inplace(-rot, &mut scalar_want.as_vec_znx_mut(), 0, scratch.borrow());
+            module.vec_znx_rotate_assign(-rot, &mut scalar_want.as_vec_znx_mut(), 0, scratch.borrow());
 
             for row in 0..res.dnum().as_usize() {
                 for col in 0..res.rank().as_usize() + 1 {

@@ -572,7 +572,7 @@ where
     }
 
     // res = (a - res) * s + res
-    fn cmux_inplace_neg<R, A, S>(&self, res: &mut R, a: &A, s: &S, scratch: &mut Scratch<BE>)
+    fn cmux_assign_neg<R, A, S>(&self, res: &mut R, a: &A, s: &S, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut,
         A: GLWEToRef,
@@ -603,7 +603,7 @@ where
     }
 
     // res = (res - a) * s + a
-    fn cmux_inplace<R, A, S>(&self, res: &mut R, a: &A, s: &S, scratch: &mut Scratch<BE>)
+    fn cmux_assign<R, A, S>(&self, res: &mut R, a: &A, s: &S, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut,
         A: GLWEToRef,
@@ -615,7 +615,7 @@ where
         let a: GLWE<&[u8]> = a.to_ref();
         let res_base2k: usize = res.base2k().into();
         let ggsw_base2k: usize = s.base2k().into();
-        self.glwe_sub_inplace(res, &a);
+        self.glwe_sub_assign(res, &a);
         let (res_dft, scratch_1) = scratch.take_vec_znx_dft(self, (res.rank() + 1).into(), s.size()); // Todo optimise
         let mut res_big: VecZnxBig<&mut [u8], BE> = self.glwe_external_product_internal(res_dft, res, s, scratch_1);
         for j in 0..(res.rank() + 1).into() {

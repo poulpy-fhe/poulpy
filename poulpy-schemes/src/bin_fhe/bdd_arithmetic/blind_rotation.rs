@@ -3,7 +3,7 @@ use poulpy_core::{
     layouts::{GGSW, GGSWInfos, GGSWToMut, GGSWToRef, GLWE, GLWEInfos, GLWEToMut, GLWEToRef, LWEInfos},
 };
 use poulpy_hal::{
-    api::{VecZnxAddScalarAssign, VecZnxNormalizeInplace},
+    api::{VecZnxAddScalarAssign, VecZnxNormalizeAssign},
     layouts::{Backend, Module, ScalarZnx, ScalarZnxToRef, Scratch, ZnxZero},
 };
 
@@ -11,7 +11,7 @@ use crate::bin_fhe::bdd_arithmetic::{Cmux, GetGGSWBit, UnsignedInteger};
 
 impl<T: UnsignedInteger, BE: Backend> GGSWBlindRotation<T, BE> for Module<BE>
 where
-    Self: GLWEBlindRotation<BE> + VecZnxAddScalarAssign + VecZnxNormalizeInplace<BE>,
+    Self: GLWEBlindRotation<BE> + VecZnxAddScalarAssign + VecZnxNormalizeAssign<BE>,
     Scratch<BE>: ScratchTakeCore<BE>,
 {
 }
@@ -28,7 +28,7 @@ where
 ///   the scalar test-vector into each row of a temporary GLWE and then rotating.
 pub trait GGSWBlindRotation<T: UnsignedInteger, BE: Backend>
 where
-    Self: GLWEBlindRotation<BE> + VecZnxAddScalarAssign + VecZnxNormalizeInplace<BE>,
+    Self: GLWEBlindRotation<BE> + VecZnxAddScalarAssign + VecZnxNormalizeAssign<BE>,
 {
     /// Returns the minimum scratch-space size in bytes required by
     /// [`ggsw_blind_rotation`][Self::ggsw_blind_rotation].
@@ -42,7 +42,7 @@ where
 
     #[allow(clippy::too_many_arguments)]
     /// res <- res * X^{((k>>bit_rsh) % 2^bit_mask) << bit_lsh}.
-    fn ggsw_blind_rotation_inplace<R, K>(
+    fn ggsw_blind_rotation_assign<R, K>(
         &self,
         res: &mut R,
         fhe_uint: &K,
@@ -60,7 +60,7 @@ where
 
         for col in 0..(res.rank() + 1).into() {
             for row in 0..res.dnum().into() {
-                self.glwe_blind_rotation_inplace(&mut res.at_mut(row, col), fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch);
+                self.glwe_blind_rotation_assign(&mut res.at_mut(row, col), fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch);
             }
         }
     }
@@ -142,7 +142,7 @@ where
             for row in 0..res.dnum().into() {
                 tmp_glwe.data_mut().zero();
                 self.vec_znx_add_scalar_assign(tmp_glwe.data_mut(), col, (dsize - 1) + row * dsize, test_vector, 0);
-                self.vec_znx_normalize_inplace(base2k, tmp_glwe.data_mut(), col, scratch_1);
+                self.vec_znx_normalize_assign(base2k, tmp_glwe.data_mut(), col, scratch_1);
 
                 self.glwe_blind_rotation(
                     &mut res.at_mut(row, col),
@@ -193,7 +193,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_blind_rotation_inplace<R, K>(
+    fn glwe_blind_rotation_assign<R, K>(
         &self,
         res: &mut R,
         value: &K,
@@ -229,7 +229,7 @@ where
             }
 
             // b <- (b - a) * GGSW(b[i]) + a
-            self.cmux_inplace(b, a, &value.get_bit(i + bit_rsh), scratch_1);
+            self.cmux_assign(b, a, &value.get_bit(i + bit_rsh), scratch_1);
 
             // ping-pong roles for next iter
             a_is_res = !a_is_res;
@@ -260,6 +260,6 @@ where
         Scratch<BE>: ScratchTakeCore<BE>,
     {
         self.glwe_copy(res, a);
-        self.glwe_blind_rotation_inplace(res, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch);
+        self.glwe_blind_rotation_assign(res, fhe_uint, sign, bit_rsh, bit_mask, bit_lsh, scratch);
     }
 }

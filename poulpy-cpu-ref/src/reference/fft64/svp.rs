@@ -45,7 +45,7 @@ pub fn svp_apply_dft<R, A, B, BE>(
         let out: &mut [f64] = res.at_mut(res_col, j);
         BE::reim_from_znx(out, b.at(b_col, j));
         BE::reim_dft_execute(table, out);
-        BE::reim_mul_inplace(out, ppol);
+        BE::reim_mul_assign(out, ppol);
     }
 
     for j in min_size..res_size {
@@ -78,7 +78,7 @@ where
     }
 }
 
-pub fn svp_apply_dft_to_dft_inplace<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
+pub fn svp_apply_dft_to_dft_assign<R, A, BE>(res: &mut R, res_col: usize, a: &A, a_col: usize)
 where
     BE: Backend<ScalarPrep = f64> + ReimArith,
     R: VecZnxDftToMut<BE>,
@@ -89,6 +89,6 @@ where
 
     let ppol: &[f64] = a.at(a_col, 0);
     for j in 0..res.size() {
-        BE::reim_mul_inplace(res.at_mut(res_col, j), ppol);
+        BE::reim_mul_assign(res.at_mut(res_col, j), ppol);
     }
 }

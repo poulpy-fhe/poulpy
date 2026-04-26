@@ -67,21 +67,21 @@ where
 
                 match (lo, hi) {
                     (Some(lo), Some(hi)) => {
-                        self.cmux_inplace(lo, hi, bit, scratch);
+                        self.cmux_assign(lo, hi, bit, scratch);
                         a.insert(j, lo);
                     }
 
                     (Some(lo), None) => {
                         let (mut zero, scratch_1) = scratch.take_glwe(res);
                         zero.data_mut().zero();
-                        self.cmux_inplace(lo, &zero, bit, scratch_1);
+                        self.cmux_assign(lo, &zero, bit, scratch_1);
                         a.insert(j, lo);
                     }
 
                     (None, Some(hi)) => {
                         let (mut zero, scratch_1) = scratch.take_glwe(res);
                         zero.data_mut().zero();
-                        self.cmux_inplace(&mut zero, hi, bit, scratch_1);
+                        self.cmux_assign(&mut zero, hi, bit, scratch_1);
                         self.glwe_copy(hi, &zero);
                         a.insert(j, hi);
                     }

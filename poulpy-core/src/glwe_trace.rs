@@ -117,7 +117,7 @@ where
             self.glwe_normalize(&mut tmp, a, scratch_1);
         }
 
-        self.glwe_trace_inplace_default(&mut tmp, skip, keys, scratch_1);
+        self.glwe_trace_assign_default(&mut tmp, skip, keys, scratch_1);
 
         if res.base2k() == atk_layout.base2k() {
             self.glwe_copy(res, &tmp);
@@ -126,7 +126,7 @@ where
         }
     }
 
-    fn glwe_trace_inplace_default<R, K, H>(&self, res: &mut R, skip: usize, keys: &H, scratch: &mut Scratch<BE>)
+    fn glwe_trace_assign_default<R, K, H>(&self, res: &mut R, skip: usize, keys: &H, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut,
         K: GGLWEPreparedToRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -158,7 +158,7 @@ where
                 rank: res.rank(),
             });
             self.glwe_normalize(&mut res_conv, res, scratch_1);
-            self.glwe_trace_inplace_default(&mut res_conv, skip, keys, scratch_1);
+            self.glwe_trace_assign_default(&mut res_conv, skip, keys, scratch_1);
             self.glwe_normalize(res, &res_conv, scratch_1);
         } else {
             for i in skip..log_n {
@@ -167,7 +167,7 @@ where
                 let p: i64 = if i == 0 { -1 } else { self.galois_element(1 << (i - 1)) };
 
                 if let Some(key) = keys.get_automorphism_key(p) {
-                    self.glwe_automorphism_add_inplace(res, key, scratch);
+                    self.glwe_automorphism_add_assign(res, key, scratch);
                 } else {
                     panic!("keys[{p}] is empty")
                 }

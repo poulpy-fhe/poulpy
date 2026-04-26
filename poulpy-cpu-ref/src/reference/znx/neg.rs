@@ -11,7 +11,7 @@ pub fn znx_negate_ref(res: &mut [i64], src: &[i64]) {
 }
 
 #[inline(always)]
-pub fn znx_negate_inplace_ref(res: &mut [i64]) {
+pub fn znx_negate_assign_ref(res: &mut [i64]) {
     for value in res {
         *value = -*value
     }

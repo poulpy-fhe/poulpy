@@ -1,7 +1,7 @@
 use crate::{
     api::{
         VecZnxDftAddAssign, VecZnxDftAddInto, VecZnxDftAddScaledAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf,
-        VecZnxDftCopy, VecZnxDftFromBytes, VecZnxDftSub, VecZnxDftSubInplace, VecZnxDftSubNegateInplace, VecZnxDftZero,
+        VecZnxDftCopy, VecZnxDftFromBytes, VecZnxDftSub, VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxDftZero,
         VecZnxIdftApply, VecZnxIdftApplyConsume, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
     },
     layouts::{
@@ -143,29 +143,29 @@ where
     }
 }
 
-impl<B> VecZnxDftSubInplace<B> for Module<B>
+impl<B> VecZnxDftSubAssign<B> for Module<B>
 where
     B: Backend + HalImpl<B>,
 {
-    fn vec_znx_dft_sub_inplace<R, A>(&self, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_dft_sub_assign<R, A>(&self, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         R: VecZnxDftToMut<B>,
         A: VecZnxDftToRef<B>,
     {
-        <B as HalImpl<B>>::vec_znx_dft_sub_inplace(self, res, res_col, a, a_col);
+        <B as HalImpl<B>>::vec_znx_dft_sub_assign(self, res, res_col, a, a_col);
     }
 }
 
-impl<B> VecZnxDftSubNegateInplace<B> for Module<B>
+impl<B> VecZnxDftSubNegateAssign<B> for Module<B>
 where
     B: Backend + HalImpl<B>,
 {
-    fn vec_znx_dft_sub_negate_inplace<R, A>(&self, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn vec_znx_dft_sub_negate_assign<R, A>(&self, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         R: VecZnxDftToMut<B>,
         A: VecZnxDftToRef<B>,
     {
-        <B as HalImpl<B>>::vec_znx_dft_sub_negate_inplace(self, res, res_col, a, a_col);
+        <B as HalImpl<B>>::vec_znx_dft_sub_negate_assign(self, res, res_col, a, a_col);
     }
 }
 

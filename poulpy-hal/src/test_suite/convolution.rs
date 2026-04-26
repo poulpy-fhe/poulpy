@@ -4,7 +4,7 @@ use crate::{
     api::{
         CnvPVecAlloc, Convolution, ModuleN, ScratchOwnedAlloc, ScratchOwnedBorrow, ScratchTakeBasic, TakeSlice, VecZnxAddInto,
         VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopy, VecZnxDftAlloc, VecZnxDftApply,
-        VecZnxIdftApplyTmpA, VecZnxNormalizeInplace,
+        VecZnxIdftApplyTmpA, VecZnxNormalizeAssign,
     },
     layouts::{
         Backend, CnvPVecL, CnvPVecR, DeviceBuf, FillUniform, Scratch, ScratchOwned, VecZnx, VecZnxBig, VecZnxDft, VecZnxToMut,
@@ -24,7 +24,7 @@ where
         + Convolution<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxNormalizeInplace<BE>
+        + VecZnxNormalizeAssign<BE>
         + VecZnxBigAlloc<BE>,
     Scratch<BE>: ScratchTakeBasic,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -92,7 +92,7 @@ where
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxNormalizeInplace<BE>
+        + VecZnxNormalizeAssign<BE>
         + VecZnxBigAlloc<BE>,
     Scratch<BE>: ScratchTakeBasic,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -167,7 +167,7 @@ where
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxNormalizeInplace<BE>
+        + VecZnxNormalizeAssign<BE>
         + VecZnxBigAlloc<BE>
         + VecZnxAddInto
         + VecZnxCopy,
@@ -259,7 +259,7 @@ pub fn bivariate_convolution_naive<R, A, B, M, BE: Backend>(
     R: VecZnxToMut,
     A: VecZnxToRef,
     B: VecZnxToRef,
-    M: VecZnxNormalizeInplace<BE>,
+    M: VecZnxNormalizeAssign<BE>,
     Scratch<BE>: TakeSlice,
 {
     let res: &mut VecZnx<&mut [u8]> = &mut res.to_mut();
@@ -292,7 +292,7 @@ pub fn bivariate_convolution_naive<R, A, B, M, BE: Backend>(
         }
     }
 
-    module.vec_znx_normalize_inplace(base2k, res, res_col, scratch);
+    module.vec_znx_normalize_assign(base2k, res, res_col, scratch);
 }
 
 fn bivariate_tensoring_naive<R, A, B, M, BE: Backend>(
@@ -307,7 +307,7 @@ fn bivariate_tensoring_naive<R, A, B, M, BE: Backend>(
     R: VecZnxToMut,
     A: VecZnxToRef,
     B: VecZnxToRef,
-    M: VecZnxNormalizeInplace<BE>,
+    M: VecZnxNormalizeAssign<BE>,
     Scratch<BE>: TakeSlice,
 {
     let res: &mut VecZnx<&mut [u8]> = &mut res.to_mut();
@@ -353,7 +353,7 @@ fn bivariate_tensoring_naive<R, A, B, M, BE: Backend>(
     }
 
     for i in 0..res.cols() {
-        module.vec_znx_normalize_inplace(base2k, res, i, scratch);
+        module.vec_znx_normalize_assign(base2k, res, i, scratch);
     }
 }
 

@@ -14,7 +14,7 @@ use crate::reference::{
         reim4::{Reim4BlkMatVec, Reim4Convolution},
     },
     ntt120::{
-        NttAddInplace, NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc1ColX2, NttMulBbc2ColsX2, NttPackLeft1BlkX2,
+        NttAddAssign, NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc1ColX2, NttMulBbc2ColsX2, NttPackLeft1BlkX2,
         NttPackRight1BlkX2, NttPairwisePackLeft1BlkX2, NttPairwisePackRight1BlkX2,
         convolution::{
             ntt120_cnv_apply_dft, ntt120_cnv_apply_dft_tmp_bytes, ntt120_cnv_by_const_apply, ntt120_cnv_by_const_apply_tmp_bytes,
@@ -328,7 +328,7 @@ pub trait NTT120ConvolutionDefaults<BE: Backend>: Backend {
     ) where
         Module<BE>: NttModuleHandle,
         BE: Backend<ScalarPrep = Q120bScalar>
-            + NttAddInplace
+            + NttAddAssign
             + NttMulBbc1ColX2
             + NttMulBbc2ColsX2
             + NttPackLeft1BlkX2
@@ -373,7 +373,7 @@ pub trait NTT120ConvolutionDefaults<BE: Backend>: Backend {
     ) where
         Module<BE>: NttModuleHandle,
         BE: Backend<ScalarPrep = Q120bScalar>
-            + NttAddInplace
+            + NttAddAssign
             + NttMulBbc1ColX2
             + NttMulBbc2ColsX2
             + NttPackLeft1BlkX2

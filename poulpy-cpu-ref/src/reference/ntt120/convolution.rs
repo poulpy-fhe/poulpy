@@ -36,7 +36,7 @@ use crate::{
         VecZnxBigToMut, VecZnxDft, VecZnxDftToMut, VecZnxToRef, ZnxInfos, ZnxView, ZnxViewMut,
     },
     reference::ntt120::{
-        NttAddInplace, NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc1ColX2, NttMulBbc2ColsX2, NttPackLeft1BlkX2,
+        NttAddAssign, NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc1ColX2, NttMulBbc2ColsX2, NttPackLeft1BlkX2,
         NttPackRight1BlkX2, NttPairwisePackLeft1BlkX2, NttPairwisePackRight1BlkX2, ntt::NttTable, primes::Primes30,
         types::Q120bScalar, vec_znx_dft::NttModuleHandle,
     },
@@ -461,7 +461,7 @@ pub fn ntt120_cnv_pairwise_apply_dft<R, A, B, BE>(
     tmp: &mut [u8],
 ) where
     BE: Backend<ScalarPrep = Q120bScalar>
-        + NttAddInplace
+        + NttAddAssign
         + NttMulBbc1ColX2
         + NttMulBbc2ColsX2
         + NttPackLeft1BlkX2

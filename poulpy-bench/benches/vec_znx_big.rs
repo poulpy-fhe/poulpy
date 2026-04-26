@@ -15,26 +15,38 @@ fn bench_vec_znx_big_add_small_assign(c: &mut Criterion) {
 fn bench_vec_znx_big_automorphism(c: &mut Criterion) {
     poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::hal::vec_znx_big::bench_vec_znx_big_automorphism, &poulpy_bench::params::BenchParams::get().hal; c);
 }
-fn bench_vec_znx_automorphism_inplace(c: &mut Criterion) {
-    poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::hal::vec_znx_big::bench_vec_znx_automorphism_inplace, &poulpy_bench::params::BenchParams::get().hal; c);
+fn bench_vec_znx_automorphism_assign(c: &mut Criterion) {
+    poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::hal::vec_znx_big::bench_vec_znx_automorphism_assign, &poulpy_bench::params::BenchParams::get().hal; c);
 }
 fn bench_vec_znx_big_negate(c: &mut Criterion) {
     poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::hal::vec_znx_big::bench_vec_znx_big_negate, &poulpy_bench::params::BenchParams::get().hal; c);
 }
-fn bench_vec_znx_big_negate_inplace(c: &mut Criterion) {
-    poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::hal::vec_znx_big::bench_vec_znx_big_negate_inplace, &poulpy_bench::params::BenchParams::get().hal; c);
+fn bench_vec_znx_big_negate_assign(c: &mut Criterion) {
+    poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::hal::vec_znx_big::bench_vec_znx_big_negate_assign, &poulpy_bench::params::BenchParams::get().hal; c);
 }
 fn bench_vec_znx_normalize(c: &mut Criterion) {
     poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::hal::vec_znx_big::bench_vec_znx_normalize, &poulpy_bench::params::BenchParams::get().hal; c);
 }
+fn bench_vec_znx_normalize_add_assign(c: &mut Criterion) {
+    poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::hal::vec_znx_big::bench_vec_znx_normalize_add_assign, &poulpy_bench::params::BenchParams::get().hal; c);
+}
+fn bench_vec_znx_normalize_sub_assign(c: &mut Criterion) {
+    poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::hal::vec_znx_big::bench_vec_znx_normalize_sub_assign, &poulpy_bench::params::BenchParams::get().hal; c);
+}
+fn bench_vec_znx_normalize_add_assign_compare(c: &mut Criterion) {
+    poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::hal::vec_znx_big::bench_vec_znx_normalize_add_assign_compare, &poulpy_bench::params::BenchParams::get().hal; c);
+}
+fn bench_vec_znx_normalize_sub_assign_compare(c: &mut Criterion) {
+    poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::hal::vec_znx_big::bench_vec_znx_normalize_sub_assign_compare, &poulpy_bench::params::BenchParams::get().hal; c);
+}
 fn bench_vec_znx_big_sub(c: &mut Criterion) {
     poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::hal::vec_znx_big::bench_vec_znx_big_sub, &poulpy_bench::params::BenchParams::get().hal; c);
 }
-fn bench_vec_znx_big_sub_inplace(c: &mut Criterion) {
-    poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::hal::vec_znx_big::bench_vec_znx_big_sub_inplace, &poulpy_bench::params::BenchParams::get().hal; c);
+fn bench_vec_znx_big_sub_assign(c: &mut Criterion) {
+    poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::hal::vec_znx_big::bench_vec_znx_big_sub_assign, &poulpy_bench::params::BenchParams::get().hal; c);
 }
-fn bench_vec_znx_big_sub_negate_inplace(c: &mut Criterion) {
-    poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::hal::vec_znx_big::bench_vec_znx_big_sub_negate_inplace, &poulpy_bench::params::BenchParams::get().hal; c);
+fn bench_vec_znx_big_sub_negate_assign(c: &mut Criterion) {
+    poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::hal::vec_znx_big::bench_vec_znx_big_sub_negate_assign, &poulpy_bench::params::BenchParams::get().hal; c);
 }
 fn bench_vec_znx_big_sub_small_a(c: &mut Criterion) {
     poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::hal::vec_znx_big::bench_vec_znx_big_sub_small_a, &poulpy_bench::params::BenchParams::get().hal; c);
@@ -51,13 +63,17 @@ criterion_group! {
     bench_vec_znx_big_add_small_into,
     bench_vec_znx_big_add_small_assign,
     bench_vec_znx_big_automorphism,
-    bench_vec_znx_automorphism_inplace,
+    bench_vec_znx_automorphism_assign,
     bench_vec_znx_big_negate,
-    bench_vec_znx_big_negate_inplace,
+    bench_vec_znx_big_negate_assign,
     bench_vec_znx_normalize,
+    bench_vec_znx_normalize_add_assign,
+    bench_vec_znx_normalize_sub_assign,
+    bench_vec_znx_normalize_add_assign_compare,
+    bench_vec_znx_normalize_sub_assign_compare,
     bench_vec_znx_big_sub,
-    bench_vec_znx_big_sub_inplace,
-    bench_vec_znx_big_sub_negate_inplace,
+    bench_vec_znx_big_sub_assign,
+    bench_vec_znx_big_sub_negate_assign,
     bench_vec_znx_big_sub_small_a,
     bench_vec_znx_big_sub_small_b
 }

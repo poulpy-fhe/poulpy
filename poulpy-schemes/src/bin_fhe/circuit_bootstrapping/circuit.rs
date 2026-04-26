@@ -361,7 +361,7 @@ pub fn circuit_bootstrap_core<R, L, D, M, BRA: BlindRotationAlgo, BE: Backend>(
         }
 
         if i + 1 < dnum_res {
-            module.glwe_rotate_inplace(-(gap as i64), &mut res_glwe_atk_layout, scratch_1);
+            module.glwe_rotate_assign(-(gap as i64), &mut res_glwe_atk_layout, scratch_1);
         }
     }
 
@@ -403,7 +403,7 @@ fn post_process<R, A, M, H, K, BE: Backend>(
 
         for (i, ct) in cts_vec.iter_mut().enumerate().take(steps) {
             if i != 0 {
-                module.glwe_rotate_inplace(-(1 << log_gap_in), &mut a_trace, scratch_2);
+                module.glwe_rotate_assign(-(1 << log_gap_in), &mut a_trace, scratch_2);
             }
 
             module.glwe_copy(ct, &a_trace);

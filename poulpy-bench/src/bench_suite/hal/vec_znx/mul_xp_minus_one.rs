@@ -4,8 +4,8 @@ use criterion::{BenchmarkId, Criterion};
 
 use poulpy_hal::{
     api::{
-        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneInplace,
-        VecZnxMulXpMinusOneInplaceTmpBytes,
+        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxMulXpMinusOne, VecZnxMulXpMinusOneAssign,
+        VecZnxMulXpMinusOneAssignTmpBytes,
     },
     layouts::{Backend, FillUniform, Module, ScratchOwned, VecZnx},
     source::Source,
@@ -55,18 +55,18 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_mul_xp_minus_one_inplace<B: Backend>(c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_mul_xp_minus_one_assign<B: Backend>(c: &mut Criterion, label: &str)
 where
-    Module<B>: VecZnxMulXpMinusOneInplace<B> + VecZnxMulXpMinusOneInplaceTmpBytes + ModuleNew<B>,
+    Module<B>: VecZnxMulXpMinusOneAssign<B> + VecZnxMulXpMinusOneAssignTmpBytes + ModuleNew<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
-    let group_name: String = format!("vec_znx_mul_xp_minus_one_inplace::{label}");
+    let group_name: String = format!("vec_znx_mul_xp_minus_one_assign::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
     fn runner<B: Backend>(params: [usize; 3]) -> impl FnMut()
     where
-        Module<B>: VecZnxMulXpMinusOneInplace<B> + ModuleNew<B> + VecZnxMulXpMinusOneInplaceTmpBytes,
+        Module<B>: VecZnxMulXpMinusOneAssign<B> + ModuleNew<B> + VecZnxMulXpMinusOneAssignTmpBytes,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
     {
         let n: usize = 1 << params[0];
@@ -79,14 +79,14 @@ where
 
         let mut res: VecZnx<Vec<u8>> = VecZnx::alloc(n, cols, size);
 
-        let mut scratch = ScratchOwned::alloc(module.vec_znx_mul_xp_minus_one_inplace_tmp_bytes());
+        let mut scratch = ScratchOwned::alloc(module.vec_znx_mul_xp_minus_one_assign_tmp_bytes());
 
         // Fill a with random i64
         res.fill_uniform(50, &mut source);
 
         move || {
             for i in 0..cols {
-                module.vec_znx_mul_xp_minus_one_inplace(-7, &mut res, i, scratch.borrow());
+                module.vec_znx_mul_xp_minus_one_assign(-7, &mut res, i, scratch.borrow());
             }
             black_box(());
         }

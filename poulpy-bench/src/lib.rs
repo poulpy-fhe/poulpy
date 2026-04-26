@@ -44,6 +44,19 @@ pub fn criterion_config() -> criterion::Criterion {
         .measurement_time(std::time::Duration::from_secs(5))
 }
 
+/// Return the Criterion configuration used by CKKS benchmarks.
+///
+/// CKKS operations are slow enough that the default 100-sample policy can make
+/// a benchmark run impractically long. This keeps a 10-second measurement
+/// budget with 20 samples, giving a small but useful floor without trying to
+/// force 100 samples for each expensive operation.
+pub fn ckks_criterion_config() -> criterion::Criterion {
+    criterion::Criterion::default()
+        .sample_size(20)
+        .warm_up_time(std::time::Duration::from_secs(1))
+        .measurement_time(std::time::Duration::from_secs(10))
+}
+
 /// Private: expands to every FFT64 backend in tier order (ref → avx → gpu).
 #[doc(hidden)]
 #[macro_export]

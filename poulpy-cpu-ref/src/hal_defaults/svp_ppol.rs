@@ -7,14 +7,14 @@ use crate::reference::{
         reim::{ReimArith, ReimFFTExecute, ReimFFTTable},
         svp::{
             svp_apply_dft as fft64_svp_apply_dft, svp_apply_dft_to_dft as fft64_svp_apply_dft_to_dft,
-            svp_apply_dft_to_dft_inplace as fft64_svp_apply_dft_to_dft_inplace, svp_prepare as fft64_svp_prepare,
+            svp_apply_dft_to_dft_assign as fft64_svp_apply_dft_to_dft_assign, svp_prepare as fft64_svp_prepare,
         },
     },
     ntt120::{
         NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc, NttZero,
         ntt::NttTable,
         primes::Primes30,
-        svp::{ntt120_svp_apply_dft_to_dft, ntt120_svp_apply_dft_to_dft_inplace, ntt120_svp_prepare},
+        svp::{ntt120_svp_apply_dft_to_dft, ntt120_svp_apply_dft_to_dft_assign, ntt120_svp_prepare},
         types::Q120bScalar,
         vec_znx_dft::NttModuleHandle,
     },
@@ -66,13 +66,13 @@ pub trait FFT64SvpDefaults<BE: Backend>: Backend {
         fft64_svp_apply_dft_to_dft::<R, A, C, BE>(res, res_col, a, a_col, b, b_col);
     }
 
-    fn svp_apply_dft_to_dft_inplace_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn svp_apply_dft_to_dft_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         BE: Backend<ScalarPrep = f64> + ReimArith,
         R: VecZnxDftToMut<BE>,
         A: SvpPPolToRef<BE>,
     {
-        fft64_svp_apply_dft_to_dft_inplace::<R, A, BE>(res, res_col, a, a_col);
+        fft64_svp_apply_dft_to_dft_assign::<R, A, BE>(res, res_col, a, a_col);
     }
 }
 
@@ -124,14 +124,14 @@ pub trait NTT120SvpDefaults<BE: Backend>: Backend {
         ntt120_svp_apply_dft_to_dft::<R, A, C, BE>(module, res, res_col, a, a_col, b, b_col);
     }
 
-    fn svp_apply_dft_to_dft_inplace_default<R, A>(module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+    fn svp_apply_dft_to_dft_assign_default<R, A>(module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
         Module<BE>: NttModuleHandle,
         BE: Backend<ScalarPrep = Q120bScalar> + NttMulBbc,
         R: VecZnxDftToMut<BE>,
         A: SvpPPolToRef<BE>,
     {
-        ntt120_svp_apply_dft_to_dft_inplace::<R, A, BE>(module, res, res_col, a, a_col);
+        ntt120_svp_apply_dft_to_dft_assign::<R, A, BE>(module, res, res_col, a, a_col);
     }
 }
 

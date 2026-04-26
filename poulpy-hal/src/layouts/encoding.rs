@@ -47,11 +47,11 @@ impl<D: DataMut> VecZnx<D> {
         // Normalizes and shift if necessary.
         for j in (0..size).rev() {
             if j == size - 1 {
-                znx_normalize_first_step_inplace(base2k, k_rem, a.at_mut(col, j), &mut carry);
+                znx_normalize_first_step_assign(base2k, k_rem, a.at_mut(col, j), &mut carry);
             } else if j == 0 {
-                znx_normalize_final_step_inplace(base2k, k_rem, a.at_mut(col, j), &mut carry);
+                znx_normalize_final_step_assign(base2k, k_rem, a.at_mut(col, j), &mut carry);
             } else {
-                znx_normalize_middle_step_inplace(base2k, k_rem, a.at_mut(col, j), &mut carry);
+                znx_normalize_middle_step_assign(base2k, k_rem, a.at_mut(col, j), &mut carry);
             }
         }
     }
@@ -102,11 +102,11 @@ impl<D: DataMut> VecZnx<D> {
 
         for j in (0..size).rev() {
             if j == size - 1 {
-                znx_normalize_first_step_inplace(base2k, k_rem, a.at_mut(col, j), &mut carry);
+                znx_normalize_first_step_assign(base2k, k_rem, a.at_mut(col, j), &mut carry);
             } else if j == 0 {
-                znx_normalize_final_step_inplace(base2k, k_rem, a.at_mut(col, j), &mut carry);
+                znx_normalize_final_step_assign(base2k, k_rem, a.at_mut(col, j), &mut carry);
             } else {
-                znx_normalize_middle_step_inplace(base2k, k_rem, a.at_mut(col, j), &mut carry);
+                znx_normalize_middle_step_assign(base2k, k_rem, a.at_mut(col, j), &mut carry);
             }
         }
     }
@@ -145,11 +145,11 @@ impl<D: DataMut> VecZnx<D> {
             let slice = &mut a.at_mut(col, j)[idx..idx + 1];
 
             if j == size - 1 {
-                znx_normalize_first_step_inplace(base2k, k_rem, slice, &mut carry);
+                znx_normalize_first_step_assign(base2k, k_rem, slice, &mut carry);
             } else if j == 0 {
-                znx_normalize_final_step_inplace(base2k, k_rem, slice, &mut carry);
+                znx_normalize_final_step_assign(base2k, k_rem, slice, &mut carry);
             } else {
-                znx_normalize_middle_step_inplace(base2k, k_rem, slice, &mut carry);
+                znx_normalize_middle_step_assign(base2k, k_rem, slice, &mut carry);
             }
         }
     }
@@ -356,7 +356,7 @@ fn get_carry_i128(base2k: usize, x: i128, digit: i128) -> i128 {
 }
 
 #[inline(always)]
-fn znx_normalize_first_step_inplace(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
+fn znx_normalize_first_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
     #[cfg(debug_assertions)]
     {
         assert!(x.len() <= carry.len());
@@ -380,7 +380,7 @@ fn znx_normalize_first_step_inplace(base2k: usize, lsh: usize, x: &mut [i64], ca
 }
 
 #[inline(always)]
-fn znx_normalize_middle_step_inplace(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
+fn znx_normalize_middle_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
     #[cfg(debug_assertions)]
     {
         assert!(x.len() <= carry.len());
@@ -408,7 +408,7 @@ fn znx_normalize_middle_step_inplace(base2k: usize, lsh: usize, x: &mut [i64], c
 }
 
 #[inline(always)]
-fn znx_normalize_final_step_inplace(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
+fn znx_normalize_final_step_assign(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
     #[cfg(debug_assertions)]
     {
         assert!(x.len() <= carry.len());

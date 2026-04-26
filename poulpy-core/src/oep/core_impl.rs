@@ -45,7 +45,7 @@ pub unsafe trait CoreImpl<BE: Backend>: Backend {
         A: GLWEToRef + GLWEInfos,
         K: GGLWEPreparedToRef<BE> + GGLWEInfos;
 
-    fn glwe_keyswitch_inplace<R, K>(module: &Module<BE>, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_keyswitch_assign<R, K>(module: &Module<BE>, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut + GLWEInfos,
         K: GGLWEPreparedToRef<BE> + GGLWEInfos;
@@ -63,7 +63,7 @@ pub unsafe trait CoreImpl<BE: Backend>: Backend {
         K: GGLWEPreparedToRef<BE> + GGLWEInfos,
         Scratch<BE>: ScratchTakeCore<BE>;
 
-    fn gglwe_keyswitch_inplace<R, K>(module: &Module<BE>, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn gglwe_keyswitch_assign<R, K>(module: &Module<BE>, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GGLWEToMut,
         K: GGLWEPreparedToRef<BE> + GGLWEInfos,
@@ -90,7 +90,7 @@ pub unsafe trait CoreImpl<BE: Backend>: Backend {
         T: GGLWEToGGSWKeyPreparedToRef<BE> + GGLWEInfos,
         Scratch<BE>: ScratchTakeCore<BE>;
 
-    fn ggsw_keyswitch_inplace<R, K, T>(module: &Module<BE>, res: &mut R, key: &K, tsk: &T, scratch: &mut Scratch<BE>)
+    fn ggsw_keyswitch_assign<R, K, T>(module: &Module<BE>, res: &mut R, key: &K, tsk: &T, scratch: &mut Scratch<BE>)
     where
         R: GGSWToMut,
         K: GGLWEPreparedToRef<BE> + GGLWEInfos,
@@ -123,7 +123,7 @@ pub unsafe trait CoreImpl<BE: Backend>: Backend {
         A: GLWEToRef + GLWEInfos,
         G: GGSWPreparedToRef<BE> + GGSWInfos;
 
-    fn glwe_external_product_inplace<R, G>(module: &Module<BE>, res: &mut R, ggsw: &G, scratch: &mut Scratch<BE>)
+    fn glwe_external_product_assign<R, G>(module: &Module<BE>, res: &mut R, ggsw: &G, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut + GLWEInfos,
         G: GGSWPreparedToRef<BE> + GGSWInfos;
@@ -141,7 +141,7 @@ pub unsafe trait CoreImpl<BE: Backend>: Backend {
         B: GGSWPreparedToRef<BE> + GGSWInfos,
         Scratch<BE>: ScratchTakeCore<BE>;
 
-    fn gglwe_external_product_inplace<R, A>(module: &Module<BE>, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
+    fn gglwe_external_product_assign<R, A>(module: &Module<BE>, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
     where
         R: GGLWEToMut,
         A: GGSWPreparedToRef<BE>,
@@ -160,7 +160,7 @@ pub unsafe trait CoreImpl<BE: Backend>: Backend {
         B: GGSWPreparedToRef<BE>,
         Scratch<BE>: ScratchTakeCore<BE>;
 
-    fn ggsw_external_product_inplace<R, A>(module: &Module<BE>, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
+    fn ggsw_external_product_assign<R, A>(module: &Module<BE>, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
     where
         R: GGSWToMut,
         A: GGSWPreparedToRef<BE>,
@@ -267,7 +267,7 @@ pub unsafe trait CoreImpl<BE: Backend>: Backend {
         A: GLWEToRef + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos;
 
-    fn glwe_automorphism_inplace<R, K>(module: &Module<BE>, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_automorphism_assign<R, K>(module: &Module<BE>, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos;
@@ -278,7 +278,7 @@ pub unsafe trait CoreImpl<BE: Backend>: Backend {
         A: GLWEToRef + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos;
 
-    fn glwe_automorphism_add_inplace<R, K>(module: &Module<BE>, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_automorphism_add_assign<R, K>(module: &Module<BE>, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos;
@@ -295,12 +295,12 @@ pub unsafe trait CoreImpl<BE: Backend>: Backend {
         A: GLWEToRef + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos;
 
-    fn glwe_automorphism_sub_inplace<R, K>(module: &Module<BE>, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_automorphism_sub_assign<R, K>(module: &Module<BE>, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos;
 
-    fn glwe_automorphism_sub_negate_inplace<R, K>(module: &Module<BE>, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_automorphism_sub_negate_assign<R, K>(module: &Module<BE>, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos;
@@ -326,7 +326,7 @@ pub unsafe trait CoreImpl<BE: Backend>: Backend {
         T: GGLWEToGGSWKeyPreparedToRef<BE> + GGLWEInfos,
         Scratch<BE>: ScratchTakeCore<BE>;
 
-    fn ggsw_automorphism_inplace<R, K, T>(module: &Module<BE>, res: &mut R, key: &K, tsk: &T, scratch: &mut Scratch<BE>)
+    fn ggsw_automorphism_assign<R, K, T>(module: &Module<BE>, res: &mut R, key: &K, tsk: &T, scratch: &mut Scratch<BE>)
     where
         R: GGSWToMut,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos,
@@ -350,7 +350,7 @@ pub unsafe trait CoreImpl<BE: Backend>: Backend {
         A: GGLWEToRef + GetGaloisElement + GGLWEInfos,
         K: GGLWEPreparedToRef<BE> + GetGaloisElement + GGLWEInfos;
 
-    fn glwe_automorphism_key_automorphism_inplace<R, K>(module: &Module<BE>, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_automorphism_key_automorphism_assign<R, K>(module: &Module<BE>, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GGLWEToMut + SetGaloisElement + GetGaloisElement + GGLWEInfos,
         K: GGLWEPreparedToRef<BE> + GetGaloisElement + GGLWEInfos;
@@ -372,7 +372,7 @@ pub unsafe trait CoreImpl<BE: Backend>: Backend {
         R: DataMut,
         A: DataRef;
 
-    fn glwe_mul_const_inplace<R>(module: &Module<BE>, cnv_offset: usize, res: &mut GLWE<R>, b: &[i64], scratch: &mut Scratch<BE>)
+    fn glwe_mul_const_assign<R>(module: &Module<BE>, cnv_offset: usize, res: &mut GLWE<R>, b: &[i64], scratch: &mut Scratch<BE>)
     where
         R: DataMut;
 
@@ -396,7 +396,21 @@ pub unsafe trait CoreImpl<BE: Backend>: Backend {
         A: DataRef,
         B: DataRef;
 
-    fn glwe_mul_plain_inplace<R, A>(
+    fn glwe_tensor_apply_add_assign<R, A, B>(
+        module: &Module<BE>,
+        cnv_offset: usize,
+        res: &mut GLWETensor<R>,
+        a: &GLWE<A>,
+        a_effective_k: usize,
+        b: &GLWE<B>,
+        b_effective_k: usize,
+        scratch: &mut Scratch<BE>,
+    ) where
+        R: DataMut,
+        A: DataRef,
+        B: DataRef;
+
+    fn glwe_mul_plain_assign<R, A>(
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut GLWE<R>,
@@ -469,7 +483,7 @@ pub unsafe trait CoreImpl<BE: Backend>: Backend {
         R: GLWEToMut,
         A: GLWEToRef;
 
-    fn glwe_rotate_inplace<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
+    fn glwe_rotate_assign<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut,
         Scratch<BE>: ScratchTakeCore<BE>;
@@ -481,7 +495,7 @@ pub unsafe trait CoreImpl<BE: Backend>: Backend {
         R: GGSWToMut,
         A: GGSWToRef;
 
-    fn ggsw_rotate_inplace<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
+    fn ggsw_rotate_assign<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
     where
         R: GGSWToMut,
         Scratch<BE>: ScratchTakeCore<BE> + poulpy_hal::api::ScratchAvailable;
@@ -491,7 +505,7 @@ pub unsafe trait CoreImpl<BE: Backend>: Backend {
         R: GLWEToMut,
         A: GLWEToRef;
 
-    fn glwe_mul_xp_minus_one_inplace<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
+    fn glwe_mul_xp_minus_one_assign<R>(module: &Module<BE>, k: i64, res: &mut R, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut;
 
@@ -502,7 +516,7 @@ pub unsafe trait CoreImpl<BE: Backend>: Backend {
         R: GLWEToMut,
         Scratch<BE>: ScratchTakeCore<BE>;
 
-    fn glwe_lsh_inplace<R>(module: &Module<BE>, res: &mut R, k: usize, scratch: &mut Scratch<BE>)
+    fn glwe_lsh_assign<R>(module: &Module<BE>, res: &mut R, k: usize, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut,
         Scratch<BE>: ScratchTakeCore<BE>;
@@ -555,7 +569,7 @@ pub unsafe trait CoreImpl<BE: Backend>: Backend {
         A: GLWEToRef,
         Scratch<BE>: ScratchTakeCore<BE>;
 
-    fn glwe_normalize_inplace<R>(module: &Module<BE>, res: &mut R, scratch: &mut Scratch<BE>)
+    fn glwe_normalize_assign<R>(module: &Module<BE>, res: &mut R, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut,
         Scratch<BE>: ScratchTakeCore<BE>;
@@ -575,7 +589,7 @@ pub unsafe trait CoreImpl<BE: Backend>: Backend {
         K: GGLWEPreparedToRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
-    fn glwe_trace_inplace<R, K, H>(module: &Module<BE>, res: &mut R, skip: usize, keys: &H, scratch: &mut Scratch<BE>)
+    fn glwe_trace_assign<R, K, H>(module: &Module<BE>, res: &mut R, skip: usize, keys: &H, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut,
         K: GGLWEPreparedToRef<BE> + GetGaloisElement + GGLWEInfos,

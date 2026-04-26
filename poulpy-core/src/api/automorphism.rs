@@ -25,7 +25,7 @@ pub trait GLWEAutomorphism<BE: Backend> {
         A: GLWEToRef + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos;
 
-    fn glwe_automorphism_inplace<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_automorphism_assign<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos;
@@ -36,7 +36,7 @@ pub trait GLWEAutomorphism<BE: Backend> {
         A: GLWEToRef + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos;
 
-    fn glwe_automorphism_add_inplace<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_automorphism_add_assign<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos;
@@ -53,12 +53,12 @@ pub trait GLWEAutomorphism<BE: Backend> {
         A: GLWEToRef + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos;
 
-    fn glwe_automorphism_sub_inplace<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_automorphism_sub_assign<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos;
 
-    fn glwe_automorphism_sub_negate_inplace<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_automorphism_sub_negate_assign<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos;
@@ -110,7 +110,7 @@ where
         self.ggsw_expand_row(res, tsk, scratch);
     }
 
-    fn ggsw_automorphism_inplace<R, K, T>(&self, res: &mut R, key: &K, tsk: &T, scratch: &mut Scratch<BE>)
+    fn ggsw_automorphism_assign<R, K, T>(&self, res: &mut R, key: &K, tsk: &T, scratch: &mut Scratch<BE>)
     where
         R: GGSWToMut,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos,
@@ -127,7 +127,7 @@ where
         );
 
         for row in 0..res.dnum().as_usize() {
-            self.glwe_automorphism_inplace(&mut res.at_mut(row, 0), key, scratch);
+            self.glwe_automorphism_assign(&mut res.at_mut(row, 0), key, scratch);
         }
 
         self.ggsw_expand_row(res, tsk, scratch);
@@ -147,7 +147,7 @@ pub trait GLWEAutomorphismKeyAutomorphism<BE: Backend> {
         A: GGLWEToRef + GetGaloisElement + GGLWEInfos,
         K: GGLWEPreparedToRef<BE> + GetGaloisElement + GGLWEInfos;
 
-    fn glwe_automorphism_key_automorphism_inplace<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_automorphism_key_automorphism_assign<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GGLWEToMut + SetGaloisElement + GetGaloisElement + GGLWEInfos,
         K: GGLWEPreparedToRef<BE> + GetGaloisElement + GGLWEInfos;

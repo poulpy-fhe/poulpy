@@ -1,6 +1,6 @@
 use crate::{
     layouts::{VecZnx, VecZnxToMut, VecZnxToRef, ZnxInfos, ZnxView, ZnxViewMut},
-    reference::znx::{ZnxAdd, ZnxAddInplace, ZnxCopy, ZnxZero},
+    reference::znx::{ZnxAdd, ZnxAddAssign, ZnxCopy, ZnxZero},
 };
 
 pub fn vec_znx_add_into<R, A, B, ZNXARI>(res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
@@ -61,7 +61,7 @@ pub fn vec_znx_add_assign<R, A, ZNXARI>(res: &mut R, res_col: usize, a: &A, a_co
 where
     R: VecZnxToMut,
     A: VecZnxToRef,
-    ZNXARI: ZnxAddInplace,
+    ZNXARI: ZnxAddAssign,
 {
     let a: VecZnx<&[u8]> = a.to_ref();
     let mut res: VecZnx<&mut [u8]> = res.to_mut();
@@ -77,6 +77,6 @@ where
     let sum_size: usize = a_size.min(res_size);
 
     for j in 0..sum_size {
-        ZNXARI::znx_add_inplace(res.at_mut(res_col, j), a.at(a_col, j));
+        ZNXARI::znx_add_assign(res.at_mut(res_col, j), a.at(a_col, j));
     }
 }

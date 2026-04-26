@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ScratchAvailable, VecZnxAutomorphism, VecZnxAutomorphismInplace, VecZnxAutomorphismInplaceTmpBytes},
+    api::{ScratchAvailable, VecZnxAutomorphism, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes},
     layouts::{Backend, CyclotomicOrder, GaloisElement, Module, Scratch},
 };
 
@@ -13,8 +13,8 @@ pub(crate) trait GLWEAutomorphismKeyAutomorphismDefault<BE: Backend>:
     + GaloisElement
     + GLWEKeyswitch<BE>
     + VecZnxAutomorphism
-    + VecZnxAutomorphismInplace<BE>
-    + VecZnxAutomorphismInplaceTmpBytes
+    + VecZnxAutomorphismAssign<BE>
+    + VecZnxAutomorphismAssignTmpBytes
     + CyclotomicOrder
 where
     Scratch<BE>: ScratchTakeCore<BE>,
@@ -34,7 +34,7 @@ where
         } else {
             self.glwe_keyswitch_tmp_bytes(res_infos, a_infos, key_infos) + GLWE::<Vec<u8>>::bytes_of_from_infos(a_infos)
         };
-        let lvl_1: usize = self.vec_znx_automorphism_inplace_tmp_bytes();
+        let lvl_1: usize = self.vec_znx_automorphism_assign_tmp_bytes();
 
         lvl_0.max(lvl_1)
     }
@@ -86,7 +86,7 @@ where
                         }
 
                         // Key-switch (-sa + pi_{k}(s), a) to (-pi^{-1}_{k'}(s)a + pi_{k}(s), a)
-                        self.glwe_keyswitch_inplace(&mut res_tmp, key, scratch);
+                        self.glwe_keyswitch_assign(&mut res_tmp, key, scratch);
                     } else {
                         let (mut tmp_glwe, scratch_1) = scratch.take_glwe(a);
 
@@ -101,7 +101,7 @@ where
 
                     // Applies back the automorphism X^{-k}: (-pi^{-1}_{k'}(s)a + pi_{k}(s), a) to (-pi^{-1}_{k'+k}(s)a + s, a)
                     for i in 0..cols_out {
-                        self.vec_znx_automorphism_inplace(p_inv, res_tmp.data_mut(), i, scratch);
+                        self.vec_znx_automorphism_assign(p_inv, res_tmp.data_mut(), i, scratch);
                     }
                 }
             }
@@ -110,7 +110,7 @@ where
         res.set_p((p * key.p()) % self.cyclotomic_order());
     }
 
-    fn glwe_automorphism_key_automorphism_inplace_default<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_automorphism_key_automorphism_assign_default<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GGLWEToMut + SetGaloisElement + GetGaloisElement + GGLWEInfos,
         K: GGLWEPreparedToRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -137,15 +137,15 @@ where
 
                     // Reverts the automorphism X^{-k}: (-pi^{-1}_{k}(s)a + s, a) to (-sa + pi_{k}(s), a)
                     for i in 0..cols_out {
-                        self.vec_znx_automorphism_inplace(p, res_tmp.data_mut(), i, scratch);
+                        self.vec_znx_automorphism_assign(p, res_tmp.data_mut(), i, scratch);
                     }
 
                     // Key-switch (-sa + pi_{k}(s), a) to (-pi^{-1}_{k'}(s)a + pi_{k}(s), a)
-                    self.glwe_keyswitch_inplace(&mut res_tmp, key, scratch);
+                    self.glwe_keyswitch_assign(&mut res_tmp, key, scratch);
 
                     // Applies back the automorphism X^{-k}: (-pi^{-1}_{k'}(s)a + pi_{k}(s), a) to (-pi^{-1}_{k'+k}(s)a + s, a)
                     for i in 0..cols_out {
-                        self.vec_znx_automorphism_inplace(p_inv, res_tmp.data_mut(), i, scratch);
+                        self.vec_znx_automorphism_assign(p_inv, res_tmp.data_mut(), i, scratch);
                     }
                 }
             }
@@ -160,8 +160,8 @@ where
     Self: GaloisElement
         + GLWEKeyswitch<BE>
         + VecZnxAutomorphism
-        + VecZnxAutomorphismInplace<BE>
-        + VecZnxAutomorphismInplaceTmpBytes
+        + VecZnxAutomorphismAssign<BE>
+        + VecZnxAutomorphismAssignTmpBytes
         + CyclotomicOrder,
     Scratch<BE>: ScratchTakeCore<BE>,
 {

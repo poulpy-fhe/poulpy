@@ -22,7 +22,7 @@ pub trait CoreExternalProductDefaults<BE: Backend>: Backend {
         A: GLWEToRef + GLWEInfos,
         G: GGSWPreparedToRef<BE> + GGSWInfos;
 
-    fn glwe_external_product_inplace_default<R, G>(module: &Module<BE>, res: &mut R, ggsw: &G, scratch: &mut Scratch<BE>)
+    fn glwe_external_product_assign_default<R, G>(module: &Module<BE>, res: &mut R, ggsw: &G, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut + GLWEInfos,
         G: GGSWPreparedToRef<BE> + GGSWInfos;
@@ -40,7 +40,7 @@ pub trait CoreExternalProductDefaults<BE: Backend>: Backend {
         B: GGSWPreparedToRef<BE> + GGSWInfos,
         Scratch<BE>: ScratchTakeCore<BE>;
 
-    fn gglwe_external_product_inplace_default<R, A>(module: &Module<BE>, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
+    fn gglwe_external_product_assign_default<R, A>(module: &Module<BE>, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
     where
         R: GGLWEToMut,
         A: GGSWPreparedToRef<BE>,
@@ -59,7 +59,7 @@ pub trait CoreExternalProductDefaults<BE: Backend>: Backend {
         B: GGSWPreparedToRef<BE>,
         Scratch<BE>: ScratchTakeCore<BE>;
 
-    fn ggsw_external_product_inplace_default<R, A>(module: &Module<BE>, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
+    fn ggsw_external_product_assign_default<R, A>(module: &Module<BE>, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
     where
         R: GGSWToMut,
         A: GGSWPreparedToRef<BE>,
@@ -91,12 +91,12 @@ where
         <Module<BE> as GLWEExternalProductDefault<BE>>::glwe_external_product_default(module, res, a, ggsw, scratch)
     }
 
-    fn glwe_external_product_inplace_default<R, G>(module: &Module<BE>, res: &mut R, ggsw: &G, scratch: &mut Scratch<BE>)
+    fn glwe_external_product_assign_default<R, G>(module: &Module<BE>, res: &mut R, ggsw: &G, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut + GLWEInfos,
         G: GGSWPreparedToRef<BE> + GGSWInfos,
     {
-        <Module<BE> as GLWEExternalProductDefault<BE>>::glwe_external_product_inplace_default(module, res, ggsw, scratch)
+        <Module<BE> as GLWEExternalProductDefault<BE>>::glwe_external_product_assign_default(module, res, ggsw, scratch)
     }
 
     fn gglwe_external_product_tmp_bytes_default<R, A, B>(module: &Module<BE>, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
@@ -120,13 +120,13 @@ where
         <Module<BE> as GGLWEExternalProductDefault<BE>>::gglwe_external_product_default(module, res, a, b, scratch)
     }
 
-    fn gglwe_external_product_inplace_default<R, A>(module: &Module<BE>, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
+    fn gglwe_external_product_assign_default<R, A>(module: &Module<BE>, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
     where
         R: GGLWEToMut,
         A: GGSWPreparedToRef<BE>,
         Scratch<BE>: ScratchTakeCore<BE>,
     {
-        <Module<BE> as GGLWEExternalProductDefault<BE>>::gglwe_external_product_inplace_default(module, res, a, scratch)
+        <Module<BE> as GGLWEExternalProductDefault<BE>>::gglwe_external_product_assign_default(module, res, a, scratch)
     }
 
     fn ggsw_external_product_tmp_bytes_default<R, A, B>(module: &Module<BE>, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
@@ -150,13 +150,13 @@ where
         <Module<BE> as GGSWExternalProductDefault<BE>>::ggsw_external_product_default(module, res, a, b, scratch)
     }
 
-    fn ggsw_external_product_inplace_default<R, A>(module: &Module<BE>, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
+    fn ggsw_external_product_assign_default<R, A>(module: &Module<BE>, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
     where
         R: GGSWToMut,
         A: GGSWPreparedToRef<BE>,
         Scratch<BE>: ScratchTakeCore<BE>,
     {
-        <Module<BE> as GGSWExternalProductDefault<BE>>::ggsw_external_product_inplace_default(module, res, a, scratch)
+        <Module<BE> as GGSWExternalProductDefault<BE>>::ggsw_external_product_assign_default(module, res, a, scratch)
     }
 }
 
@@ -193,7 +193,7 @@ macro_rules! impl_core_external_product_default_methods {
             <$be as $crate::oep::CoreExternalProductDefaults<$be>>::glwe_external_product_default(module, res, a, ggsw, scratch)
         }
 
-        fn glwe_external_product_inplace<R, G>(
+        fn glwe_external_product_assign<R, G>(
             module: &poulpy_hal::layouts::Module<$be>,
             res: &mut R,
             ggsw: &G,
@@ -202,7 +202,7 @@ macro_rules! impl_core_external_product_default_methods {
             R: $crate::layouts::GLWEToMut + $crate::layouts::GLWEInfos,
             G: $crate::layouts::GGSWPreparedToRef<$be> + $crate::layouts::GGSWInfos,
         {
-            <$be as $crate::oep::CoreExternalProductDefaults<$be>>::glwe_external_product_inplace_default(
+            <$be as $crate::oep::CoreExternalProductDefaults<$be>>::glwe_external_product_assign_default(
                 module, res, ggsw, scratch,
             )
         }
@@ -238,7 +238,7 @@ macro_rules! impl_core_external_product_default_methods {
             <$be as $crate::oep::CoreExternalProductDefaults<$be>>::gglwe_external_product_default(module, res, a, b, scratch)
         }
 
-        fn gglwe_external_product_inplace<R, A>(
+        fn gglwe_external_product_assign<R, A>(
             module: &poulpy_hal::layouts::Module<$be>,
             res: &mut R,
             a: &A,
@@ -248,9 +248,7 @@ macro_rules! impl_core_external_product_default_methods {
             A: $crate::layouts::GGSWPreparedToRef<$be>,
             poulpy_hal::layouts::Scratch<$be>: $crate::ScratchTakeCore<$be>,
         {
-            <$be as $crate::oep::CoreExternalProductDefaults<$be>>::gglwe_external_product_inplace_default(
-                module, res, a, scratch,
-            )
+            <$be as $crate::oep::CoreExternalProductDefaults<$be>>::gglwe_external_product_assign_default(module, res, a, scratch)
         }
 
         fn ggsw_external_product_tmp_bytes<R, A, B>(
@@ -284,7 +282,7 @@ macro_rules! impl_core_external_product_default_methods {
             <$be as $crate::oep::CoreExternalProductDefaults<$be>>::ggsw_external_product_default(module, res, a, b, scratch)
         }
 
-        fn ggsw_external_product_inplace<R, A>(
+        fn ggsw_external_product_assign<R, A>(
             module: &poulpy_hal::layouts::Module<$be>,
             res: &mut R,
             a: &A,
@@ -294,7 +292,7 @@ macro_rules! impl_core_external_product_default_methods {
             A: $crate::layouts::GGSWPreparedToRef<$be>,
             poulpy_hal::layouts::Scratch<$be>: $crate::ScratchTakeCore<$be>,
         {
-            <$be as $crate::oep::CoreExternalProductDefaults<$be>>::ggsw_external_product_inplace_default(module, res, a, scratch)
+            <$be as $crate::oep::CoreExternalProductDefaults<$be>>::ggsw_external_product_assign_default(module, res, a, scratch)
         }
     };
 }

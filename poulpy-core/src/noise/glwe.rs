@@ -40,8 +40,8 @@ where
 
         let (mut pt_have, scratch_1) = scratch.take_glwe_plaintext(res);
         self.glwe_decrypt(res, &mut pt_have, sk_prepared, scratch_1);
-        self.glwe_sub_inplace(&mut pt_have, pt_want);
-        self.glwe_normalize_inplace(&mut pt_have, scratch_1);
+        self.glwe_sub_assign(&mut pt_have, pt_want);
+        self.glwe_normalize_assign(&mut pt_have, scratch_1);
         pt_have.data.stats(pt_have.base2k().into(), 0)
     }
 }

@@ -1,7 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use poulpy_hal::{
-    api::{ModuleN, ScratchAvailable, VecZnxAddScalarAssign, VecZnxNormalizeInplace},
+    api::{ModuleN, ScratchAvailable, VecZnxAddScalarAssign, VecZnxNormalizeAssign},
     layouts::{Backend, Module, ScalarZnx, ScalarZnxToRef, Scratch, ZnxInfos, ZnxZero},
     source::Source,
 };
@@ -41,7 +41,7 @@ pub trait GGSWCompressedEncryptSkDefault<BE: Backend> {
 
 impl<BE: Backend> GGSWCompressedEncryptSkDefault<BE> for Module<BE>
 where
-    Self: ModuleN + GLWEEncryptSkInternal<BE> + GGSWEncryptSk<BE> + VecZnxAddScalarAssign + VecZnxNormalizeInplace<BE>,
+    Self: ModuleN + GLWEEncryptSkInternal<BE> + GGSWEncryptSk<BE> + VecZnxAddScalarAssign + VecZnxNormalizeAssign<BE>,
     Scratch<BE>: ScratchTakeCore<BE>,
 {
     fn ggsw_compressed_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
@@ -101,7 +101,7 @@ where
 
                 // Adds the scalar_znx_pt to the i-th limb of the vec_znx_pt
                 self.vec_znx_add_scalar_assign(&mut tmp_pt.data, 0, (dsize - 1) + row_i * dsize, pt, 0);
-                self.vec_znx_normalize_inplace(base2k, &mut tmp_pt.data, 0, scratch_1);
+                self.vec_znx_normalize_assign(base2k, &mut tmp_pt.data, 0, scratch_1);
 
                 for col_j in 0..rank + 1 {
                     // rlwe encrypt of vec_znx_pt into vec_znx_ct

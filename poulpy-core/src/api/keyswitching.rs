@@ -25,7 +25,7 @@ pub trait GLWEKeyswitch<BE: Backend> {
         A: GLWEToRef + GLWEInfos,
         K: GGLWEPreparedToRef<BE> + GGLWEInfos;
 
-    fn glwe_keyswitch_inplace<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_keyswitch_assign<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut + GLWEInfos,
         K: GGLWEPreparedToRef<BE> + GGLWEInfos;
@@ -92,7 +92,7 @@ where
         }
     }
 
-    fn gglwe_keyswitch_inplace<R, A>(&self, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
+    fn gglwe_keyswitch_assign<R, A>(&self, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
     where
         R: GGLWEToMut,
         A: GGLWEPreparedToRef<BE> + GGLWEInfos,
@@ -116,7 +116,7 @@ where
 
         for row in 0..res.dnum().into() {
             for col in 0..res.rank_in().into() {
-                self.glwe_keyswitch_inplace(&mut res.at_mut(row, col), a, scratch);
+                self.glwe_keyswitch_assign(&mut res.at_mut(row, col), a, scratch);
             }
         }
     }
@@ -141,7 +141,7 @@ where
         T: GGLWEToGGSWKeyPreparedToRef<BE> + GGLWEInfos,
         Scratch<BE>: ScratchTakeCore<BE>;
 
-    fn ggsw_keyswitch_inplace<R, K, T>(&self, res: &mut R, key: &K, tsk: &T, scratch: &mut Scratch<BE>)
+    fn ggsw_keyswitch_assign<R, K, T>(&self, res: &mut R, key: &K, tsk: &T, scratch: &mut Scratch<BE>)
     where
         R: GGSWToMut,
         K: GGLWEPreparedToRef<BE> + GGLWEInfos,

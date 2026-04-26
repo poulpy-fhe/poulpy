@@ -120,7 +120,7 @@ where
                 &mut source_xa,
                 scratch.borrow(),
             );
-            module.glwe_rotate_inplace(-5, &mut pt, scratch.borrow()); // X^-batch * pt
+            module.glwe_rotate_assign(-5, &mut pt, scratch.borrow()); // X^-batch * pt
             ct
         })
         .collect_vec();

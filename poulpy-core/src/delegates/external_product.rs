@@ -22,12 +22,12 @@ where
         BE::glwe_external_product_tmp_bytes(self, res_infos, a_infos, b_infos)
     }
 
-    fn glwe_external_product_inplace<R, D>(&self, res: &mut R, rhs: &D, scratch: &mut Scratch<BE>)
+    fn glwe_external_product_assign<R, D>(&self, res: &mut R, rhs: &D, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut + GLWEInfos,
         D: GGSWPreparedToRef<BE> + GGSWInfos,
     {
-        BE::glwe_external_product_inplace(self, res, rhs, scratch)
+        BE::glwe_external_product_assign(self, res, rhs, scratch)
     }
 
     fn glwe_external_product<R, A, D>(&self, res: &mut R, lhs: &A, rhs: &D, scratch: &mut Scratch<BE>)
@@ -64,13 +64,13 @@ where
         BE::gglwe_external_product(self, res, a, b, scratch)
     }
 
-    fn gglwe_external_product_inplace<R, A>(&self, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
+    fn gglwe_external_product_assign<R, A>(&self, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
     where
         R: GGLWEToMut,
         A: GGSWPreparedToRef<BE>,
         Scratch<BE>: crate::ScratchTakeCore<BE>,
     {
-        BE::gglwe_external_product_inplace(self, res, a, scratch)
+        BE::gglwe_external_product_assign(self, res, a, scratch)
     }
 }
 
@@ -98,12 +98,12 @@ where
         BE::ggsw_external_product(self, res, a, b, scratch)
     }
 
-    fn ggsw_external_product_inplace<R, A>(&self, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
+    fn ggsw_external_product_assign<R, A>(&self, res: &mut R, a: &A, scratch: &mut Scratch<BE>)
     where
         R: GGSWToMut,
         A: GGSWPreparedToRef<BE>,
         Scratch<BE>: crate::ScratchTakeCore<BE>,
     {
-        BE::ggsw_external_product_inplace(self, res, a, scratch)
+        BE::ggsw_external_product_assign(self, res, a, scratch)
     }
 }

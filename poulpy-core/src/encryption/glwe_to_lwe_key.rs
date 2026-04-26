@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ModuleN, ScratchAvailable, VecZnxAutomorphismInplace, VecZnxAutomorphismInplaceTmpBytes},
+    api::{ModuleN, ScratchAvailable, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes},
     layouts::{Backend, Module, Scratch, ZnxView, ZnxViewMut, ZnxZero},
     source::Source,
 };
@@ -40,8 +40,8 @@ where
     Self: ModuleN
         + GGLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
-        + VecZnxAutomorphismInplace<BE>
-        + VecZnxAutomorphismInplaceTmpBytes,
+        + VecZnxAutomorphismAssign<BE>
+        + VecZnxAutomorphismAssignTmpBytes,
     Scratch<BE>: ScratchTakeCore<BE>,
 {
     fn glwe_to_lwe_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
@@ -52,7 +52,7 @@ where
 
         let lvl_0: usize = self.glwe_secret_prepared_bytes_of(infos.rank_in());
         let lvl_1_sk_lwe_as_glwe: usize =
-            GLWESecret::bytes_of(self.n().into(), infos.rank_in()) + self.vec_znx_automorphism_inplace_tmp_bytes();
+            GLWESecret::bytes_of(self.n().into(), infos.rank_in()) + self.vec_znx_automorphism_assign_tmp_bytes();
         let lvl_1_encrypt: usize = self.gglwe_encrypt_sk_tmp_bytes(infos);
 
         lvl_0 + lvl_1_sk_lwe_as_glwe.max(lvl_1_encrypt)
@@ -92,7 +92,7 @@ where
             sk_lwe_as_glwe.dist = sk_lwe.dist;
             sk_lwe_as_glwe.data.zero();
             sk_lwe_as_glwe.data.at_mut(0, 0)[..sk_lwe.n().into()].copy_from_slice(sk_lwe.data.at(0, 0));
-            self.vec_znx_automorphism_inplace(-1, &mut sk_lwe_as_glwe.data.as_vec_znx_mut(), 0, scratch_2);
+            self.vec_znx_automorphism_assign(-1, &mut sk_lwe_as_glwe.data.as_vec_znx_mut(), 0, scratch_2);
             self.glwe_secret_prepare(&mut sk_lwe_as_glwe_prep, &sk_lwe_as_glwe);
         }
 

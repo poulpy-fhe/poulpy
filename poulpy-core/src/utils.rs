@@ -57,6 +57,12 @@ impl<D: DataMut> LWEPlaintext<D> {
         let base2k: usize = self.base2k().into();
         self.data.encode_coeff_i64(base2k, 0, k.into(), 0, data);
     }
+
+    /// Encodes a single `i128` value into the LWE plaintext scalar slot.
+    pub fn encode_i128(&mut self, data: i128, k: TorusPrecision) {
+        let base2k: usize = self.base2k().into();
+        self.data.encode_vec_i128(base2k, 0, k.into(), &[data]);
+    }
 }
 
 impl<D: DataRef> LWEPlaintext<D> {

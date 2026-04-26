@@ -1,7 +1,7 @@
 use crate::{
     layouts::{VecZnx, VecZnxToMut, VecZnxToRef, ZnxInfos},
     reference::{
-        vec_znx::{vec_znx_rotate_inplace, vec_znx_switch_ring},
+        vec_znx::{vec_znx_rotate_assign, vec_znx_switch_ring},
         znx::{ZnxCopy, ZnxRotate, ZnxSwitchRing, ZnxZero},
     },
 };
@@ -39,8 +39,8 @@ where
 
     a.iter().for_each(|ai| {
         vec_znx_switch_ring::<_, _, ZNXARI>(&mut res, res_col, ai, a_col);
-        vec_znx_rotate_inplace::<_, ZNXARI>(-1, &mut res, res_col, tmp);
+        vec_znx_rotate_assign::<_, ZNXARI>(-1, &mut res, res_col, tmp);
     });
 
-    vec_znx_rotate_inplace::<_, ZNXARI>(a.len() as i64, &mut res, res_col, tmp);
+    vec_znx_rotate_assign::<_, ZNXARI>(a.len() as i64, &mut res, res_col, tmp);
 }

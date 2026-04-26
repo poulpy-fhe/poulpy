@@ -26,7 +26,7 @@ use poulpy_cpu_avx::FFT64Avx as BackendImpl;
 use poulpy_cpu_ref::FFT64Ref as BackendImpl;
 
 use poulpy_hal::{
-    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalizeInplace},
+    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalizeAssign},
     layouts::{DeviceBuf, Module, ScalarZnx, ScratchOwned, ZnxView, ZnxViewMut},
     source::Source,
 };
@@ -170,7 +170,7 @@ fn main() {
     pt_lwe.encode_i64(data, (k_lwe_pt + 1).into()); // +1 for padding bit
 
     // Normalize plaintext to nicely print coefficients
-    module.vec_znx_normalize_inplace(base2k, pt_lwe.data_mut(), 0, scratch.borrow());
+    module.vec_znx_normalize_assign(base2k, pt_lwe.data_mut(), 0, scratch.borrow());
     println!("pt_lwe: {pt_lwe}");
 
     // LWE ciphertext
@@ -258,7 +258,7 @@ fn main() {
         .for_each(|(x, y)| *y = (x % (1 << (k_glwe_pt - 1))) as i64 - (1 << (k_glwe_pt - 2)));
 
     pt_glwe.encode_vec_i64(&data_vec, (k_lwe_pt + 2).into());
-    module.glwe_normalize_inplace(&mut pt_glwe, scratch.borrow());
+    module.glwe_normalize_assign(&mut pt_glwe, scratch.borrow());
 
     println!("{}", pt_glwe);
 
@@ -279,7 +279,7 @@ fn main() {
     module.ggsw_prepare(&mut res_prepared, &res, scratch.borrow());
 
     // Apply GLWE x GGSW
-    module.glwe_external_product_inplace(&mut ct_glwe, &res_prepared, scratch.borrow());
+    module.glwe_external_product_assign(&mut ct_glwe, &res_prepared, scratch.borrow());
 
     // Decrypt
     let mut pt_res: GLWEPlaintext<Vec<u8>> = GLWEPlaintext::alloc_from_infos(&glwe_infos);

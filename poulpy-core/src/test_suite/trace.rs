@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use poulpy_hal::{
-    api::{ScratchAvailable, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniform, VecZnxNormalizeInplace, VecZnxSubInplace},
+    api::{ScratchAvailable, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniform, VecZnxNormalizeAssign, VecZnxSubAssign},
     layouts::{DeviceBuf, Module, Scratch, ScratchOwned, ZnxView, ZnxViewMut},
     source::Source,
     test_suite::TestParams,
@@ -19,7 +19,7 @@ use crate::{
     noise::var_noise_gglwe_product,
 };
 
-pub fn test_glwe_trace_inplace<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_trace_assign<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: GLWETrace<BE>
         + GLWEEncryptSk<BE>
@@ -28,8 +28,8 @@ where
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + VecZnxFillUniform
         + GLWESecretPreparedFactory<BE>
-        + VecZnxSubInplace
-        + VecZnxNormalizeInplace<BE>,
+        + VecZnxSubAssign
+        + VecZnxNormalizeAssign<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     Scratch<BE>: ScratchAvailable + ScratchTakeCore<BE>,
 {
@@ -119,14 +119,14 @@ where
             auto_keys.insert(*gal_el, atk_prepared);
         });
 
-        module.glwe_trace_inplace(&mut glwe_out, 0, &auto_keys, scratch.borrow());
+        module.glwe_trace_assign(&mut glwe_out, 0, &auto_keys, scratch.borrow());
 
         (0..pt_want.size()).for_each(|i| pt_want.data.at_mut(0, i)[0] = pt_have.data.at(0, i)[0]);
 
         module.glwe_decrypt(&glwe_out, &mut pt_have, &sk_dft, scratch.borrow());
 
-        module.vec_znx_sub_inplace(&mut pt_want.data, 0, &pt_have.data, 0);
-        module.vec_znx_normalize_inplace(pt_want.base2k().as_usize(), &mut pt_want.data, 0, scratch.borrow());
+        module.vec_znx_sub_assign(&mut pt_want.data, 0, &pt_have.data, 0);
+        module.vec_znx_normalize_assign(pt_want.base2k().as_usize(), &mut pt_want.data, 0, scratch.borrow());
 
         let noise_have: f64 = pt_want.stats().std().log2();
 

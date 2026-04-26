@@ -193,7 +193,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn test_ggsw_keyswitch_inplace<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_ggsw_keyswitch_assign<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: GGSWEncryptSk<BE>
         + GLWESwitchingKeyEncryptSk<BE>
@@ -321,7 +321,7 @@ where
                 module.gglwe_to_ggsw_key_prepared_alloc_from_infos(&tsk);
             module.gglwe_to_ggsw_key_prepare(&mut tsk_prepared, &tsk, scratch.borrow());
 
-            module.ggsw_keyswitch_inplace(&mut ggsw_out, &ksk_prepared, &tsk_prepared, scratch.borrow());
+            module.ggsw_keyswitch_assign(&mut ggsw_out, &ksk_prepared, &tsk_prepared, scratch.borrow());
 
             let max_noise = |col_j: usize| -> f64 {
                 noise_ggsw_keyswitch(

@@ -159,7 +159,7 @@ where
     }
 }
 
-pub fn test_glwe_keyswitch_inplace<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+pub fn test_glwe_keyswitch_assign<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     Module<BE>: VecZnxFillUniform
         + GLWESwitchingKeyEncryptSk<BE>
@@ -254,7 +254,7 @@ where
                 module.glwe_switching_key_prepared_alloc_from_infos(&ksk);
             module.glwe_switching_key_prepare(&mut ksk_prepared, &ksk, scratch.borrow());
 
-            module.glwe_keyswitch_inplace(&mut glwe_out, &ksk_prepared, scratch.borrow());
+            module.glwe_keyswitch_assign(&mut glwe_out, &ksk_prepared, scratch.borrow());
 
             let noise_max: f64 = var_noise_gglwe_product_v2(
                 module.n() as f64,

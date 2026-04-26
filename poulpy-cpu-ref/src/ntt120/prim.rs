@@ -6,9 +6,9 @@
 //! This mirrors `poulpy_cpu_ref::fft64::reim` for the FFT64 backend.
 
 use crate::reference::ntt120::{
-    NttAdd, NttAddInplace, NttCFromB, NttCopy, NttDFTExecute, NttExtract1BlkContiguous, NttFromZnx64, NttMulBbb, NttMulBbc,
-    NttMulBbc1ColX2, NttMulBbc2ColsX2, NttNegate, NttNegateInplace, NttPackLeft1BlkX2, NttPackRight1BlkX2,
-    NttPairwisePackLeft1BlkX2, NttPairwisePackRight1BlkX2, NttSub, NttSubInplace, NttSubNegateInplace, NttToZnx128, NttZero,
+    NttAdd, NttAddAssign, NttCFromB, NttCopy, NttDFTExecute, NttExtract1BlkContiguous, NttFromZnx64, NttMulBbb, NttMulBbc,
+    NttMulBbc1ColX2, NttMulBbc2ColsX2, NttNegate, NttNegateAssign, NttPackLeft1BlkX2, NttPackRight1BlkX2,
+    NttPairwisePackLeft1BlkX2, NttPairwisePackRight1BlkX2, NttSub, NttSubAssign, NttSubNegateAssign, NttToZnx128, NttZero,
     arithmetic::{add_bbb_ref, b_from_znx64_ref, b_to_znx128_ref, c_from_b_ref},
     mat_vec::{
         BbbMeta, BbcMeta, extract_1blk_from_contiguous_q120b_ref, vec_mat1col_product_bbb_ref, vec_mat1col_product_bbc_ref,
@@ -68,9 +68,9 @@ impl NttAdd for NTT120Ref {
     }
 }
 
-impl NttAddInplace for NTT120Ref {
+impl NttAddAssign for NTT120Ref {
     #[inline(always)]
-    fn ntt_add_inplace(res: &mut [u64], a: &[u64]) {
+    fn ntt_add_assign(res: &mut [u64], a: &[u64]) {
         let n = res.len() / 4;
         for j in 0..n {
             for (k, &q_s) in Q_SHIFTED.iter().enumerate() {
@@ -94,9 +94,9 @@ impl NttSub for NTT120Ref {
     }
 }
 
-impl NttSubInplace for NTT120Ref {
+impl NttSubAssign for NTT120Ref {
     #[inline(always)]
-    fn ntt_sub_inplace(res: &mut [u64], a: &[u64]) {
+    fn ntt_sub_assign(res: &mut [u64], a: &[u64]) {
         let n = res.len() / 4;
         for j in 0..n {
             for (k, &q_s) in Q_SHIFTED.iter().enumerate() {
@@ -107,9 +107,9 @@ impl NttSubInplace for NTT120Ref {
     }
 }
 
-impl NttSubNegateInplace for NTT120Ref {
+impl NttSubNegateAssign for NTT120Ref {
     #[inline(always)]
-    fn ntt_sub_negate_inplace(res: &mut [u64], a: &[u64]) {
+    fn ntt_sub_negate_assign(res: &mut [u64], a: &[u64]) {
         let n = res.len() / 4;
         for j in 0..n {
             for (k, &q_s) in Q_SHIFTED.iter().enumerate() {
@@ -137,9 +137,9 @@ impl NttNegate for NTT120Ref {
 
 /// **Output range:** For a zero input the result is `Q_SHIFTED[k]` (≡ 0 mod Q[k]), not `0`.
 /// Output range is `(0, Q_SHIFTED[k]]`. Use `val % Q[k] == 0`, not `val == 0`, to test for zero.
-impl NttNegateInplace for NTT120Ref {
+impl NttNegateAssign for NTT120Ref {
     #[inline(always)]
-    fn ntt_negate_inplace(res: &mut [u64]) {
+    fn ntt_negate_assign(res: &mut [u64]) {
         let n = res.len() / 4;
         for j in 0..n {
             for (k, &q_s) in Q_SHIFTED.iter().enumerate() {

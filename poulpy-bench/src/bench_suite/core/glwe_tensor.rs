@@ -8,7 +8,7 @@ use poulpy_core::{
 use poulpy_hal::{
     api::{
         CnvPVecAlloc, Convolution, ModuleNew, ScratchAvailable, ScratchOwnedAlloc, ScratchOwnedBorrow, ScratchTakeBasic,
-        VecZnxBigNormalize, VecZnxCopy, VecZnxIdftApplyConsume, VecZnxSubInplace,
+        VecZnxBigNormalize, VecZnxCopy, VecZnxIdftApplyConsume, VecZnxSubAssign,
     },
     layouts::{Backend, Module, Scratch, ScratchOwned, VecZnx},
 };
@@ -56,6 +56,39 @@ where
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
             module.glwe_tensor_apply(
+                0,
+                &mut tensor,
+                &a,
+                a.max_k().as_usize(),
+                &b,
+                b.max_k().as_usize(),
+                scratch.borrow(),
+            );
+            black_box(());
+        })
+    });
+    group.finish();
+}
+
+pub fn bench_glwe_tensor_apply_add_assign<BE: Backend>(glwe_infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
+where
+    Module<BE>: ModuleNew<BE> + GLWETensoring<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    Scratch<BE>: ScratchTakeCore<BE> + ScratchAvailable,
+{
+    let n: usize = glwe_infos.n().into();
+    let module = Module::<BE>::new(n as u64);
+
+    let a = GLWE::<Vec<u8>>::alloc_from_infos(glwe_infos);
+    let b = GLWE::<Vec<u8>>::alloc_from_infos(glwe_infos);
+    let mut tensor = GLWETensor::<Vec<u8>>::alloc_from_infos(glwe_infos);
+    let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_tensor_apply_tmp_bytes(&tensor, &a, &b));
+
+    let group_name = format!("glwe_tensor_apply_add_assign::{label}");
+    let mut group = c.benchmark_group(group_name);
+    group.bench_function(format!("n={n}"), |bench| {
+        bench.iter(|| {
+            module.glwe_tensor_apply_add_assign(
                 0,
                 &mut tensor,
                 &a,
@@ -189,7 +222,7 @@ where
         + VecZnxIdftApplyConsume<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxCopy
-        + VecZnxSubInplace,
+        + VecZnxSubAssign,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     Scratch<BE>: ScratchTakeCore<BE> + ScratchAvailable + ScratchTakeBasic,
 {
@@ -251,8 +284,8 @@ where
             let res_big = module.vec_znx_idft_apply_consume(res_dft);
             let (mut tmp, scratch) = scratch.take_vec_znx(n, 1, tensor.size());
             module.vec_znx_big_normalize(&mut tmp, base2k, cnv_offset_lo, 0, &res_big, base2k, 0, scratch);
-            module.vec_znx_sub_inplace(&mut tmp, 0, &diag_terms, 0);
-            module.vec_znx_sub_inplace(&mut tmp, 0, &diag_terms, 1);
+            module.vec_znx_sub_assign(&mut tmp, 0, &diag_terms, 0);
+            module.vec_znx_sub_assign(&mut tmp, 0, &diag_terms, 1);
             black_box(());
         })
     });

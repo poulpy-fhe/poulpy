@@ -3,7 +3,7 @@ use std::hint::black_box;
 use criterion::{BenchmarkId, Criterion};
 
 use poulpy_hal::{
-    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotate, VecZnxRotateInplace, VecZnxRotateInplaceTmpBytes},
+    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotate, VecZnxRotateAssign, VecZnxRotateAssignTmpBytes},
     layouts::{Backend, FillUniform, Module, ScratchOwned, VecZnx},
     source::Source,
 };
@@ -52,18 +52,18 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_rotate_inplace<B: Backend>(c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_rotate_assign<B: Backend>(c: &mut Criterion, label: &str)
 where
-    Module<B>: VecZnxRotateInplace<B> + VecZnxRotateInplaceTmpBytes + ModuleNew<B>,
+    Module<B>: VecZnxRotateAssign<B> + VecZnxRotateAssignTmpBytes + ModuleNew<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
-    let group_name: String = format!("vec_znx_rotate_inplace::{label}");
+    let group_name: String = format!("vec_znx_rotate_assign::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
     fn runner<B: Backend>(params: [usize; 3]) -> impl FnMut()
     where
-        Module<B>: VecZnxRotateInplace<B> + ModuleNew<B> + VecZnxRotateInplaceTmpBytes,
+        Module<B>: VecZnxRotateAssign<B> + ModuleNew<B> + VecZnxRotateAssignTmpBytes,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
     {
         let n: usize = 1 << params[0];
@@ -76,14 +76,14 @@ where
 
         let mut res: VecZnx<Vec<u8>> = VecZnx::alloc(n, cols, size);
 
-        let mut scratch = ScratchOwned::alloc(module.vec_znx_rotate_inplace_tmp_bytes());
+        let mut scratch = ScratchOwned::alloc(module.vec_znx_rotate_assign_tmp_bytes());
 
         // Fill a with random i64
         res.fill_uniform(50, &mut source);
 
         move || {
             for i in 0..cols {
-                module.vec_znx_rotate_inplace(-7, &mut res, i, scratch.borrow());
+                module.vec_znx_rotate_assign(-7, &mut res, i, scratch.borrow());
             }
             black_box(());
         }

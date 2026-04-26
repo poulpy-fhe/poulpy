@@ -32,12 +32,12 @@ where
         BE::glwe_automorphism(self, res, a, key, scratch)
     }
 
-    fn glwe_automorphism_inplace<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_automorphism_assign<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos,
     {
-        BE::glwe_automorphism_inplace(self, res, key, scratch)
+        BE::glwe_automorphism_assign(self, res, key, scratch)
     }
 
     fn glwe_automorphism_add<R, A, K>(&self, res: &mut R, a: &A, key: &K, scratch: &mut Scratch<BE>)
@@ -49,12 +49,12 @@ where
         BE::glwe_automorphism_add(self, res, a, key, scratch)
     }
 
-    fn glwe_automorphism_add_inplace<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_automorphism_add_assign<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos,
     {
-        BE::glwe_automorphism_add_inplace(self, res, key, scratch)
+        BE::glwe_automorphism_add_assign(self, res, key, scratch)
     }
 
     fn glwe_automorphism_sub<R, A, K>(&self, res: &mut R, a: &A, key: &K, scratch: &mut Scratch<BE>)
@@ -75,20 +75,20 @@ where
         BE::glwe_automorphism_sub_negate(self, res, a, key, scratch)
     }
 
-    fn glwe_automorphism_sub_inplace<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_automorphism_sub_assign<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos,
     {
-        BE::glwe_automorphism_sub_inplace(self, res, key, scratch)
+        BE::glwe_automorphism_sub_assign(self, res, key, scratch)
     }
 
-    fn glwe_automorphism_sub_negate_inplace<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_automorphism_sub_negate_assign<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GLWEToMut + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos,
     {
-        BE::glwe_automorphism_sub_negate_inplace(self, res, key, scratch)
+        BE::glwe_automorphism_sub_negate_assign(self, res, key, scratch)
     }
 }
 
@@ -118,14 +118,14 @@ where
         BE::ggsw_automorphism(self, res, a, key, tsk, scratch)
     }
 
-    fn ggsw_automorphism_inplace<R, K, T>(&self, res: &mut R, key: &K, tsk: &T, scratch: &mut Scratch<BE>)
+    fn ggsw_automorphism_assign<R, K, T>(&self, res: &mut R, key: &K, tsk: &T, scratch: &mut Scratch<BE>)
     where
         R: GGSWToMut,
         K: GetGaloisElement + GGLWEPreparedToRef<BE> + GGLWEInfos,
         T: GGLWEToGGSWKeyPreparedToRef<BE>,
         Scratch<BE>: crate::ScratchTakeCore<BE>,
     {
-        BE::ggsw_automorphism_inplace(self, res, key, tsk, scratch)
+        BE::ggsw_automorphism_assign(self, res, key, tsk, scratch)
     }
 }
 
@@ -151,11 +151,11 @@ where
         BE::glwe_automorphism_key_automorphism(self, res, a, key, scratch)
     }
 
-    fn glwe_automorphism_key_automorphism_inplace<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
+    fn glwe_automorphism_key_automorphism_assign<R, K>(&self, res: &mut R, key: &K, scratch: &mut Scratch<BE>)
     where
         R: GGLWEToMut + SetGaloisElement + GetGaloisElement + GGLWEInfos,
         K: GGLWEPreparedToRef<BE> + GetGaloisElement + GGLWEInfos,
     {
-        BE::glwe_automorphism_key_automorphism_inplace(self, res, key, scratch)
+        BE::glwe_automorphism_key_automorphism_assign(self, res, key, scratch)
     }
 }

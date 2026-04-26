@@ -3,7 +3,7 @@ use crate::{
     reference::znx::{ZnxAutomorphism, ZnxCopy, ZnxZero},
 };
 
-pub fn vec_znx_automorphism_inplace_tmp_bytes(n: usize) -> usize {
+pub fn vec_znx_automorphism_assign_tmp_bytes(n: usize) -> usize {
     n * size_of::<i64>()
 }
 
@@ -34,7 +34,7 @@ where
     }
 }
 
-pub fn vec_znx_automorphism_inplace<R, ZNXARI>(p: i64, res: &mut R, res_col: usize, tmp: &mut [i64])
+pub fn vec_znx_automorphism_assign<R, ZNXARI>(p: i64, res: &mut R, res_col: usize, tmp: &mut [i64])
 where
     R: VecZnxToMut,
     ZNXARI: ZnxAutomorphism + ZnxCopy,
