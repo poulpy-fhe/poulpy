@@ -82,11 +82,11 @@ macro_rules! hal_impl_vmp_ntt126_ifma {
             crate::ntt126_ifma::vmp::vmp_apply_dft_to_dft_accumulate_ifma(module, res, a, b, limb_offset, tmp)
         }
 
-        fn vmp_zero<R>(module: &Module<Self>, res: &mut R)
+        fn vmp_zero<R>(_module: &Module<Self>, res: &mut R)
         where
             R: VmpPMatToMut<Self>,
         {
-            <Self as NTT126IfmaVmpDefaults<Self>>::vmp_zero_default(module, res)
+            crate::ntt126_ifma::vmp::vmp_zero(res)
         }
     };
 }

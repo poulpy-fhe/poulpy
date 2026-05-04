@@ -7,6 +7,5 @@
 
 pub mod fft64;
 pub mod ntt120;
-pub mod ntt_ifma;
 pub mod vec_znx;
 pub mod znx;

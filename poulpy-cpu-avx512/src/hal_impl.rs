@@ -6,11 +6,6 @@ use poulpy_cpu_ref::hal_defaults::{
     FFT64VmpDefaults, HalScratchDefaults, HalVecZnxDefaults, NTT120ConvolutionDefaults, NTT120ModuleDefaults, NTT120SvpDefaults,
     NTT120VecZnxBigDefaults, NTT120VecZnxDftDefaults, NTT120VmpDefaults,
 };
-#[cfg(feature = "enable-ifma")]
-use poulpy_cpu_ref::hal_defaults::{
-    NTT126IfmaConvolutionDefaults, NTT126IfmaModuleDefaults, NTT126IfmaSvpDefaults, NTT126IfmaVecZnxBigDefaults,
-    NTT126IfmaVecZnxDftDefaults, NTT126IfmaVmpDefaults,
-};
 use poulpy_hal::{
     api::{ScratchTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
     layouts::{

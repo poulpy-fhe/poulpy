@@ -1,53 +1,26 @@
-//! Lazy-accumulation matrix-vector product metadata and reference
-//! implementations for the 3-prime IFMA backend.
+//! Scalar reference matrix-vector product kernels for the 3-prime IFMA backend.
+//!
+//! Used by [`super::super::mat_vec_ifma`] tests as the per-coefficient
+//! correctness oracle for the AVX-512-IFMA BBC kernels.  The shared
+//! [`Bbc126IfmaMeta`](super::super::bbc_meta::Bbc126IfmaMeta) metadata
+//! struct lives in the production module.
 
-use std::marker::PhantomData;
-
-use super::primes::{PrimeSetIfma, Primes42};
-
-/// Metadata for `b × c → b` (BBC) lazy multiply-accumulate (3-prime variant).
-pub struct BbcIfmaMeta<P: PrimeSetIfma> {
-    /// Reduction split point for the final accumulator collapse.
-    pub h: u64,
-    /// `s2l_pow_red[k] = 2^32 mod Q[k]` — low-half reduction weight.
-    pub s2l_pow_red: [u64; 4],
-    /// `s2h_pow_red[k]` — high-half reduction weight.
-    pub s2h_pow_red: [u64; 4],
-    _phantom: PhantomData<P>,
-}
-
-impl BbcIfmaMeta<Primes42> {
-    pub fn new() -> Self {
-        let q = Primes42::Q;
-        let h = 32u64;
-        let mut s2l = [0u64; 4];
-        let mut s2h = [0u64; 4];
-        for k in 0..3 {
-            s2l[k] = ((1u128 << 32) % q[k] as u128) as u64;
-            s2h[k] = ((1u128 << (32 + h)) % q[k] as u128) as u64;
-        }
-        Self {
-            h,
-            s2l_pow_red: s2l,
-            s2h_pow_red: s2h,
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl Default for BbcIfmaMeta<Primes42> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+use super::super::bbc_meta::Bbc126IfmaMeta;
+use super::super::primes::{PrimeSetNtt126Ifma, Primes42};
 
 /// Reference BBC inner product: `res = Σᵢ x[i] · y[i]` for 3-prime IFMA.
 ///
 /// Both `x` and `y` are in `[u32]` view but actually contain u64 data
 /// (each pair of u32s forms one u64). The data layout is 4 u64 per
 /// coefficient (3 active + 1 padding).
-pub fn vec_mat1col_product_bbc_ifma_ref(_meta: &BbcIfmaMeta<Primes42>, ell: usize, res: &mut [u64], x: &[u32], y: &[u32]) {
-    let q = <Primes42 as PrimeSetIfma>::Q;
+pub fn vec_mat1col_product_bbc_ntt126_ifma_ref(
+    _meta: &Bbc126IfmaMeta<Primes42>,
+    ell: usize,
+    res: &mut [u64],
+    x: &[u32],
+    y: &[u32],
+) {
+    let q = <Primes42 as PrimeSetNtt126Ifma>::Q;
     // Reinterpret u32 slices as u64
     let x_u64: &[u64] = unsafe { std::slice::from_raw_parts(x.as_ptr() as *const u64, x.len() / 2) };
     let y_u64: &[u64] = unsafe { std::slice::from_raw_parts(y.as_ptr() as *const u64, y.len() / 2) };
@@ -67,8 +40,14 @@ pub fn vec_mat1col_product_bbc_ifma_ref(_meta: &BbcIfmaMeta<Primes42>, ell: usiz
 }
 
 /// Reference x2-block 1-column BBC product.
-pub fn vec_mat1col_product_x2_bbc_ifma_ref(_meta: &BbcIfmaMeta<Primes42>, ell: usize, res: &mut [u64], x: &[u32], y: &[u32]) {
-    let q = <Primes42 as PrimeSetIfma>::Q;
+pub fn vec_mat1col_product_x2_bbc_ntt126_ifma_ref(
+    _meta: &Bbc126IfmaMeta<Primes42>,
+    ell: usize,
+    res: &mut [u64],
+    x: &[u32],
+    y: &[u32],
+) {
+    let q = <Primes42 as PrimeSetNtt126Ifma>::Q;
     let x_u64: &[u64] = unsafe { std::slice::from_raw_parts(x.as_ptr() as *const u64, x.len() / 2) };
     let y_u64: &[u64] = unsafe { std::slice::from_raw_parts(y.as_ptr() as *const u64, y.len() / 2) };
 
@@ -98,8 +77,14 @@ pub fn vec_mat1col_product_x2_bbc_ifma_ref(_meta: &BbcIfmaMeta<Primes42>, ell: u
 }
 
 /// Reference x2-block 2-column BBC product.
-pub fn vec_mat2cols_product_x2_bbc_ifma_ref(_meta: &BbcIfmaMeta<Primes42>, ell: usize, res: &mut [u64], x: &[u32], y: &[u32]) {
-    let q = <Primes42 as PrimeSetIfma>::Q;
+pub fn vec_mat2cols_product_x2_bbc_ntt126_ifma_ref(
+    _meta: &Bbc126IfmaMeta<Primes42>,
+    ell: usize,
+    res: &mut [u64],
+    x: &[u32],
+    y: &[u32],
+) {
+    let q = <Primes42 as PrimeSetNtt126Ifma>::Q;
     let x_u64: &[u64] = unsafe { std::slice::from_raw_parts(x.as_ptr() as *const u64, x.len() / 2) };
     let y_u64: &[u64] = unsafe { std::slice::from_raw_parts(y.as_ptr() as *const u64, y.len() / 2) };
 
@@ -131,7 +116,7 @@ pub fn vec_mat2cols_product_x2_bbc_ifma_ref(_meta: &BbcIfmaMeta<Primes42>, ell: 
 }
 
 /// Extract one x2-block from a contiguous 3-prime CRT array.
-pub fn extract_1blk_from_contiguous_ifma_ref(n: usize, row_max: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
+pub fn extract_1blk_from_contiguous_ntt126_ifma_ref(n: usize, row_max: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
     // Each x2-block = 2 consecutive coefficients = 8 u64
     let coeff_idx = blk * 2;
     for row in 0..row_max {

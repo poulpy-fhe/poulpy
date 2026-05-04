@@ -1,17 +1,17 @@
 //! Element-wise CRT conversions for the 3-prime IFMA representation.
 //!
 //! Provides:
-//! - `b_ifma_from_znx64_ref`: i64 → 3-prime CRT (4 × u64 per coefficient, lane 3 = 0)
-//! - `b_ifma_to_znx128_ref`: 3-prime CRT → i128 via Garner's algorithm
-//! - `c_ifma_from_b_ref`: b → prepared c format (Harvey quotient pairs)
+//! - `b_ntt126_ifma_from_znx64_ref`: i64 → 3-prime CRT (4 × u64 per coefficient, lane 3 = 0)
+//! - `b_ntt126_ifma_to_znx128_ref`: 3-prime CRT → i128 via Garner's algorithm
+//! - `c_ntt126_ifma_from_b_ref`: b → prepared c format (Harvey quotient pairs)
 
-use super::primes::{PrimeSetIfma, Primes42};
+use super::super::primes::{PrimeSetNtt126Ifma, Primes42};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Compile-time constants for Primes42
 // ─────────────────────────────────────────────────────────────────────────────
 
-const Q: [u64; 3] = <Primes42 as PrimeSetIfma>::Q;
+const Q: [u64; 3] = <Primes42 as PrimeSetNtt126Ifma>::Q;
 
 /// `oq[k] = Q[k] - (2^63 mod Q[k])`.
 ///
@@ -48,7 +48,7 @@ const BIG_Q: u128 = Q01 * Q2 as u128;
 ///
 /// Output layout: `res[4*i + k] = a[i] mod Q[k]` for k ∈ {0,1,2},
 /// and `res[4*i + 3] = 0` (padding).
-pub fn b_ifma_from_znx64_ref(n: usize, res: &mut [u64], a: &[i64]) {
+pub fn b_ntt126_ifma_from_znx64_ref(n: usize, res: &mut [u64], a: &[i64]) {
     debug_assert!(res.len() >= 4 * n);
     debug_assert!(a.len() >= n);
     for i in 0..n {
@@ -67,8 +67,8 @@ pub fn b_ifma_from_znx64_ref(n: usize, res: &mut [u64], a: &[i64]) {
     }
 }
 
-/// Equivalent to [`b_ifma_from_znx64_ref`] on `a[j] & mask`.
-pub fn b_ifma_from_znx64_masked_ref(n: usize, res: &mut [u64], a: &[i64], mask: i64) {
+/// Equivalent to [`b_ntt126_ifma_from_znx64_ref`] on `a[j] & mask`.
+pub fn b_ntt126_ifma_from_znx64_masked_ref(n: usize, res: &mut [u64], a: &[i64], mask: i64) {
     debug_assert!(res.len() >= 4 * n);
     debug_assert!(a.len() >= n);
     for i in 0..n {
@@ -103,7 +103,7 @@ pub fn b_ifma_from_znx64_masked_ref(n: usize, res: &mut [u64], a: &[i64], mask: 
 /// `nn` is the number of coefficients (same as `res.len()`).
 /// The `n^{-1}` normalization is already included in the inverse NTT
 /// twiddle factors, so no extra division is needed.
-pub fn b_ifma_to_znx128_ref(nn: usize, res: &mut [i128], a: &[u64]) {
+pub fn b_ntt126_ifma_to_znx128_ref(nn: usize, res: &mut [i128], a: &[u64]) {
     debug_assert!(res.len() >= nn);
     debug_assert!(a.len() >= 4 * nn);
 
@@ -148,7 +148,7 @@ pub fn b_ifma_to_znx128_ref(nn: usize, res: &mut [i128], a: &[u64]) {
 
 /// Convert `n` coefficients from b format to Harvey-prepared c format.
 ///
-/// The prepared format uses the same `[u64; 4]` layout as Q120bScalar,
+/// The prepared format uses the same `[u64; 4]` layout as the shared prep scalar,
 /// but stores **reduced** residues (mod `Q\[k\]`) rather than lazy values.
 /// The Harvey quotients are computed on-the-fly during multiplication
 /// since they require 52-bit precision that doesn't fit in u32.
@@ -158,7 +158,7 @@ pub fn b_ifma_to_znx128_ref(nn: usize, res: &mut [i128], a: &[u64]) {
 /// The `res` parameter is typed as `&mut [u32]` for trait compatibility with
 /// the HAL's `cast_slice_mut` from `Q120bScalar`, but the data is actually
 /// written as u64 values (each u32 pair forms one u64).
-pub fn c_ifma_from_b_ref(n: usize, res: &mut [u32], a: &[u64]) {
+pub fn c_ntt126_ifma_from_b_ref(n: usize, res: &mut [u32], a: &[u64]) {
     debug_assert!(res.len() >= 8 * n);
     debug_assert!(a.len() >= 4 * n);
 
@@ -188,10 +188,10 @@ mod tests {
         let coeffs: Vec<i64> = vec![0, 1, -1, 42, -42, i64::MAX / 2, i64::MIN / 2 + 1, 12345];
 
         let mut b = vec![0u64; 4 * n];
-        b_ifma_from_znx64_ref(n, &mut b, &coeffs);
+        b_ntt126_ifma_from_znx64_ref(n, &mut b, &coeffs);
 
         let mut result = vec![0i128; n];
-        b_ifma_to_znx128_ref(n, &mut result, &b);
+        b_ntt126_ifma_to_znx128_ref(n, &mut result, &b);
 
         for i in 0..n {
             assert_eq!(

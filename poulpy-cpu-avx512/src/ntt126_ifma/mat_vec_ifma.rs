@@ -1,18 +1,19 @@
 //! AVX512-IFMA BBC inner-product kernels for the IFMA backend.
 //!
-//! This module replaces the scalar reference q120b x q120c inner-product routines
+//! This module replaces the scalar reference IFMA prep-format inner-product routines
 //! with `VPMADD52*`-based SIMD kernels and SIMD-only final reduction.
 //!
 //! # Layout conventions
 //!
 //! | Format | Bytes/element | AVX view |
 //! |--------|--------------|----------|
-//! | q120b  | 32 (4 × u64) | one `__m256i` |
-//! | q120c  | 32 (4 × u64, reduced residues) | one `__m256i` |
-//! | x2-block | 64 (2 × q120b/c) | two `__m256i`s |
+//! | prep scalar | 32 (4 × u64) | one `__m256i` |
+//! | prepared scalar | 32 (4 × u64, reduced residues) | one `__m256i` |
+//! | x2-block | 64 (2 × prep/prepared scalars) | two `__m256i`s |
 //!
-//! The IFMA "c" format stores reduced u64 residues (same layout as b, just
-//! reduced mod Q[k]). This differs from the AVX/NTT120 c format which uses
+//! The IFMA prepared format stores reduced u64 residues in the same 4-lane
+//! layout as the input prep scalar. This differs from the AVX/NTT120 prepared
+//! format, which uses
 //! split lo32/hi32 pairs. The `&[u32]` slice types in the function signatures
 //! are for trait compatibility — the data is actually u64 values (each u32
 //! pair forms one u64).
@@ -36,16 +37,16 @@ use core::arch::x86_64::{
 
 use super::kernels::{cond_sub_2q_si256, cond_sub_2q_si512, harvey_modmul_si256, harvey_modmul_si512};
 
-use poulpy_cpu_ref::reference::ntt_ifma::{
-    mat_vec::BbcIfmaMeta,
-    primes::{PrimeSetIfma, Primes42},
+use crate::ntt126_ifma::{
+    bbc_meta::Bbc126IfmaMeta,
+    primes::{PrimeSetNtt126Ifma, Primes42},
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants for SIMD reduction
 // ─────────────────────────────────────────────────────────────────────────────
 
-const Q_IFMA: [u64; 3] = <Primes42 as PrimeSetIfma>::Q;
+const Q_IFMA: [u64; 3] = <Primes42 as PrimeSetNtt126Ifma>::Q;
 
 /// Q vector: `[Q[0], Q[1], Q[2], 0]`.
 const Q_VEC: [u64; 4] = [Q_IFMA[0], Q_IFMA[1], Q_IFMA[2], 0];
@@ -169,7 +170,7 @@ unsafe fn reduce_wide_mod_q(x: __m256i) -> __m256i {
     }
 }
 
-/// Collapse MADD52 accumulators `(acc_lo, acc_hi)` into a q120b `__m256i`, fully in SIMD.
+/// Collapse MADD52 accumulators `(acc_lo, acc_hi)` into one prep-scalar `__m256i`, fully in SIMD.
 ///
 /// Computes `(acc_lo + acc_hi × 2^52) mod Q` per lane using:
 /// 1. Two-pass reduction of `acc_lo` via POW42 → `lo_red ∈ [0, Q)`
@@ -233,7 +234,7 @@ unsafe fn reduce_wide_mod_q_512(x: __m512i) -> __m512i {
     }
 }
 
-/// Collapse MADD52 accumulators into q120b — 512-bit (2 coefficients at once).
+/// Collapse MADD52 accumulators into prep scalars — 512-bit (2 coefficients at once).
 #[inline]
 #[target_feature(enable = "avx512ifma")]
 pub(crate) unsafe fn reduce_bbc_ifma_simd_512(acc_lo: __m512i, acc_hi: __m512i) -> __m512i {
@@ -316,14 +317,14 @@ impl PrimeConsts512 {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Single-column: q120b × q120c → q120b
+// Single-column: prep scalar × prepared scalar → prep scalar
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// AVX512-IFMA inner product: `res = Σᵢ x[i] · y[i]` in q120b format.
+/// AVX512-IFMA inner product: `res = Σᵢ x[i] · y[i]` in prep-scalar format.
 ///
-/// - `x`: q120b in u32 view — `ell` elements × 8 u32 (one `__m256i` each).
-/// - `y`: q120c in u32 view — `ell` elements × 8 u32 (one `__m256i` each).
-/// - `res`: q120b output — at least 4 u64 (one `__m256i`).
+/// - `x`: prep scalar in u32 view — `ell` elements × 8 u32 (one `__m256i` each).
+/// - `y`: prepared scalar in u32 view — `ell` elements × 8 u32 (one `__m256i` each).
+/// - `res`: prep-scalar output — at least 4 u64 (one `__m256i`).
 ///
 /// # Safety
 ///
@@ -331,7 +332,7 @@ impl PrimeConsts512 {
 /// satisfy `x.len() >= 8 * ell`, `y.len() >= 8 * ell`, `res.len() >= 4`.
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn vec_mat1col_product_bbc_ifma(
-    _meta: &BbcIfmaMeta<Primes42>,
+    _meta: &Bbc126IfmaMeta<Primes42>,
     ell: usize,
     res: &mut [u64],
     x: &[u32],
@@ -405,18 +406,18 @@ pub(crate) unsafe fn vec_mat1col_product_bbc_ifma(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// x2-block, single column: two q120b × q120c pairs → two q120b results
+// x2-block, single column: two prep/prepared pairs → two prep-scalar results
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// AVX512-IFMA x2-block inner product: one column, two paired rows.
 ///
-/// Computes two q120b inner products simultaneously:
+/// Computes two prep-scalar inner products simultaneously:
 /// - `res[0..4]` ← `Σᵢ x_a[i] · y_a[i]`
 /// - `res[4..8]` ← `Σᵢ x_b[i] · y_b[i]`
 ///
 /// - `x`: x2-block in u32 view — `ell` elements × 16 u32 (two `__m256i`s each).
-/// - `y`: x2-block q120c — `ell` elements × 16 u32 (two `__m256i`s each).
-/// - `res`: two q120b outputs — at least 8 u64.
+/// - `y`: x2-block prepared scalars — `ell` elements × 16 u32 (two `__m256i`s each).
+/// - `res`: two prep-scalar outputs — at least 8 u64.
 ///
 /// # Safety
 ///
@@ -431,7 +432,7 @@ pub(crate) unsafe fn vec_mat1col_product_bbc_ifma(
 /// matrix cache lines.
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn vec_mat1col_product_x2_bbc_ifma<const NT_STORE: bool>(
-    _meta: &BbcIfmaMeta<Primes42>,
+    _meta: &Bbc126IfmaMeta<Primes42>,
     ell: usize,
     res: &mut [u64],
     x: &[u32],
@@ -482,29 +483,30 @@ pub(crate) unsafe fn vec_mat1col_product_x2_bbc_ifma<const NT_STORE: bool>(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// x2-block, two columns: two q120b × four q120c pairs → four q120b results
+// x2-block, two columns: two prep scalars × four prepared scalars → four prep-scalar results
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// AVX512-IFMA x2-block inner product: two columns simultaneously.
 ///
-/// Computes four q120b inner products (two x2-block rows × two matrix columns):
+/// Computes four prep-scalar inner products (two x2-block rows × two matrix columns):
 /// - `res[0..4]`   ← `Σᵢ x_a[i] · y_col0_a[i]`
 /// - `res[4..8]`   ← `Σᵢ x_b[i] · y_col0_b[i]`
 /// - `res[8..12]`  ← `Σᵢ x_a[i] · y_col1_a[i]`
 /// - `res[12..16]` ← `Σᵢ x_b[i] · y_col1_b[i]`
 ///
 /// - `x`: x2-block in u32 view — `ell` × 16 u32 (two `__m256i`s per step).
-/// - `y`: two paired x2-block q120c columns — `ell` × 32 u32 (four `__m256i`s per step):
+/// - `y`: two paired x2-block prepared-scalar columns — `ell` × 32 u32 (four `__m256i`s per step):
 ///   `[col0_a, col0_b, col1_a, col1_b]` per element.
-/// - `res`: four q120b outputs — at least 16 u64.
+/// - `res`: four prep-scalar outputs — at least 16 u64.
 ///
 /// # Safety
 ///
 /// Caller must ensure AVX512-IFMA and AVX512-VL support. Slice lengths must
 /// satisfy `x.len() >= 16 * ell`, `y.len() >= 32 * ell`, `res.len() >= 16`.
+#[allow(dead_code)] // exercised only by `vec_mat2cols_product_x2_bbc_ifma_vs_ref` in this module's tests.
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn vec_mat2cols_product_x2_bbc_ifma(
-    _meta: &BbcIfmaMeta<Primes42>,
+    _meta: &Bbc126IfmaMeta<Primes42>,
     ell: usize,
     res: &mut [u64],
     x: &[u32],
@@ -586,31 +588,34 @@ pub(crate) unsafe fn vec_mat2cols_product_x2_bbc_ifma(
 #[cfg(all(test, target_feature = "avx512ifma", target_feature = "avx512vl"))]
 mod tests {
     use super::*;
-    use poulpy_cpu_ref::reference::ntt_ifma::{
-        arithmetic::{b_ifma_from_znx64_ref, c_ifma_from_b_ref},
-        mat_vec::{
-            BbcIfmaMeta, vec_mat1col_product_bbc_ifma_ref, vec_mat1col_product_x2_bbc_ifma_ref,
-            vec_mat2cols_product_x2_bbc_ifma_ref,
-        },
+    use crate::ntt126_ifma::{
+        bbc_meta::Bbc126IfmaMeta,
         primes::Primes42,
+        reference::{
+            arithmetic::{b_ntt126_ifma_from_znx64_ref, c_ntt126_ifma_from_b_ref},
+            mat_vec::{
+                vec_mat1col_product_bbc_ntt126_ifma_ref, vec_mat1col_product_x2_bbc_ntt126_ifma_ref,
+                vec_mat2cols_product_x2_bbc_ntt126_ifma_ref,
+            },
+        },
     };
 
-    /// Build q120b slice (as u32 view) from small i64 coefficients.
-    fn make_q120b_u32(count: usize, seed: i64) -> Vec<u32> {
+    /// Build a prep-scalar slice (as u32 view) from small i64 coefficients.
+    fn make_prep_u32(count: usize, seed: i64) -> Vec<u32> {
         let coeffs: Vec<i64> = (0..count).map(|i| (i as i64 * seed + 1) % 50 + 1).collect();
         let mut b = vec![0u64; 4 * count];
-        b_ifma_from_znx64_ref(count, &mut b, &coeffs);
+        b_ntt126_ifma_from_znx64_ref(count, &mut b, &coeffs);
         // Reinterpret u64 as u32 pairs
         b.iter().flat_map(|&v| [v as u32, (v >> 32) as u32]).collect()
     }
 
-    /// Build q120c slice (as u32 view) from small i64 coefficients.
-    fn make_q120c_u32(count: usize, seed: i64) -> Vec<u32> {
+    /// Build a prepared-scalar slice (as u32 view) from small i64 coefficients.
+    fn make_prepared_u32(count: usize, seed: i64) -> Vec<u32> {
         let coeffs: Vec<i64> = (0..count).map(|i| (i as i64 * seed + 2) % 50 + 1).collect();
         let mut b = vec![0u64; 4 * count];
-        b_ifma_from_znx64_ref(count, &mut b, &coeffs);
+        b_ntt126_ifma_from_znx64_ref(count, &mut b, &coeffs);
         let mut c = vec![0u32; 8 * count];
-        c_ifma_from_b_ref(count, &mut c, &b);
+        c_ntt126_ifma_from_b_ref(count, &mut c, &b);
         c
     }
 
@@ -618,16 +623,16 @@ mod tests {
     #[test]
     fn vec_mat1col_product_bbc_ifma_vs_ref() {
         let ell = 8usize;
-        let meta = BbcIfmaMeta::<Primes42>::new();
+        let meta = Bbc126IfmaMeta::<Primes42>::new();
 
-        let x = make_q120b_u32(ell, 7);
-        let y = make_q120c_u32(ell, 13);
+        let x = make_prep_u32(ell, 7);
+        let y = make_prepared_u32(ell, 13);
 
         let mut res_ifma = vec![0u64; 4];
         let mut res_ref = vec![0u64; 4];
 
         unsafe { vec_mat1col_product_bbc_ifma(&meta, ell, &mut res_ifma, &x, &y) };
-        vec_mat1col_product_bbc_ifma_ref(&meta, ell, &mut res_ref, &x, &y);
+        vec_mat1col_product_bbc_ntt126_ifma_ref(&meta, ell, &mut res_ref, &x, &y);
 
         assert_eq!(res_ifma, res_ref, "vec_mat1col_product_bbc: IFMA vs ref mismatch");
     }
@@ -636,16 +641,16 @@ mod tests {
     #[test]
     fn vec_mat1col_product_bbc_ifma_vs_ref_large_ell() {
         let ell = 64usize;
-        let meta = BbcIfmaMeta::<Primes42>::new();
+        let meta = Bbc126IfmaMeta::<Primes42>::new();
 
-        let x = make_q120b_u32(ell, 3);
-        let y = make_q120c_u32(ell, 17);
+        let x = make_prep_u32(ell, 3);
+        let y = make_prepared_u32(ell, 17);
 
         let mut res_ifma = vec![0u64; 4];
         let mut res_ref = vec![0u64; 4];
 
         unsafe { vec_mat1col_product_bbc_ifma(&meta, ell, &mut res_ifma, &x, &y) };
-        vec_mat1col_product_bbc_ifma_ref(&meta, ell, &mut res_ref, &x, &y);
+        vec_mat1col_product_bbc_ntt126_ifma_ref(&meta, ell, &mut res_ref, &x, &y);
 
         assert_eq!(res_ifma, res_ref, "vec_mat1col_product_bbc (large ell): IFMA vs ref mismatch");
     }
@@ -654,20 +659,20 @@ mod tests {
     #[test]
     fn vec_mat1col_product_x2_bbc_ifma_vs_ref() {
         let ell = 8usize;
-        let meta = BbcIfmaMeta::<Primes42>::new();
+        let meta = Bbc126IfmaMeta::<Primes42>::new();
 
-        // x: 2 interleaved q120b (16 u32 per row)
+        // x: 2 interleaved prep scalars (16 u32 per row)
         let x: Vec<u32> = {
-            let a = make_q120b_u32(ell, 5);
-            let b = make_q120b_u32(ell, 11);
+            let a = make_prep_u32(ell, 5);
+            let b = make_prep_u32(ell, 11);
             (0..ell)
                 .flat_map(|i| a[8 * i..8 * i + 8].iter().chain(b[8 * i..8 * i + 8].iter()).copied())
                 .collect()
         };
-        // y: 2 interleaved q120c (16 u32 per row)
+        // y: 2 interleaved prepared scalars (16 u32 per row)
         let y: Vec<u32> = {
-            let a = make_q120c_u32(ell, 3);
-            let b = make_q120c_u32(ell, 17);
+            let a = make_prepared_u32(ell, 3);
+            let b = make_prepared_u32(ell, 17);
             (0..ell)
                 .flat_map(|i| a[8 * i..8 * i + 8].iter().chain(b[8 * i..8 * i + 8].iter()).copied())
                 .collect()
@@ -677,7 +682,7 @@ mod tests {
         let mut res_ref = vec![0u64; 8];
 
         unsafe { vec_mat1col_product_x2_bbc_ifma::<false>(&meta, ell, &mut res_ifma, &x, &y) };
-        vec_mat1col_product_x2_bbc_ifma_ref(&meta, ell, &mut res_ref, &x, &y);
+        vec_mat1col_product_x2_bbc_ntt126_ifma_ref(&meta, ell, &mut res_ref, &x, &y);
 
         assert_eq!(res_ifma, res_ref, "vec_mat1col_product_x2_bbc: IFMA vs ref mismatch");
     }
@@ -686,22 +691,22 @@ mod tests {
     #[test]
     fn vec_mat2cols_product_x2_bbc_ifma_vs_ref() {
         let ell = 8usize;
-        let meta = BbcIfmaMeta::<Primes42>::new();
+        let meta = Bbc126IfmaMeta::<Primes42>::new();
 
-        // x: 2 interleaved q120b (16 u32 per row)
+        // x: 2 interleaved prep scalars (16 u32 per row)
         let x: Vec<u32> = {
-            let a = make_q120b_u32(ell, 7);
-            let b = make_q120b_u32(ell, 19);
+            let a = make_prep_u32(ell, 7);
+            let b = make_prep_u32(ell, 19);
             (0..ell)
                 .flat_map(|i| a[8 * i..8 * i + 8].iter().chain(b[8 * i..8 * i + 8].iter()).copied())
                 .collect()
         };
-        // y: 4 interleaved q120c (32 u32 per row: col0_a, col0_b, col1_a, col1_b)
+        // y: 4 interleaved prepared scalars (32 u32 per row: col0_a, col0_b, col1_a, col1_b)
         let y: Vec<u32> = {
-            let c0a = make_q120c_u32(ell, 2);
-            let c0b = make_q120c_u32(ell, 9);
-            let c1a = make_q120c_u32(ell, 23);
-            let c1b = make_q120c_u32(ell, 31);
+            let c0a = make_prepared_u32(ell, 2);
+            let c0b = make_prepared_u32(ell, 9);
+            let c1a = make_prepared_u32(ell, 23);
+            let c1b = make_prepared_u32(ell, 31);
             (0..ell)
                 .flat_map(|i| {
                     c0a[8 * i..8 * i + 8]
@@ -718,7 +723,7 @@ mod tests {
         let mut res_ref = vec![0u64; 16];
 
         unsafe { vec_mat2cols_product_x2_bbc_ifma(&meta, ell, &mut res_ifma, &x, &y) };
-        vec_mat2cols_product_x2_bbc_ifma_ref(&meta, ell, &mut res_ref, &x, &y);
+        vec_mat2cols_product_x2_bbc_ntt126_ifma_ref(&meta, ell, &mut res_ref, &x, &y);
 
         assert_eq!(res_ifma, res_ref, "vec_mat2cols_product_x2_bbc: IFMA vs ref mismatch");
     }

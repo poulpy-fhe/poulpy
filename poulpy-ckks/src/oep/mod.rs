@@ -27,10 +27,6 @@ unsafe impl CKKSImpl<poulpy_cpu_ref::NTT120Ref> for poulpy_cpu_ref::NTT120Ref {
     crate::impl_ckks_default_methods!(poulpy_cpu_ref::NTT120Ref);
 }
 
-unsafe impl CKKSImpl<poulpy_cpu_ref::NTTIfmaRef> for poulpy_cpu_ref::NTTIfmaRef {
-    crate::impl_ckks_default_methods!(poulpy_cpu_ref::NTTIfmaRef);
-}
-
 #[cfg(feature = "enable-avx")]
 unsafe impl CKKSImpl<poulpy_cpu_avx::FFT64Avx> for poulpy_cpu_avx::FFT64Avx {
     crate::impl_ckks_default_methods!(poulpy_cpu_avx::FFT64Avx);

@@ -124,7 +124,7 @@ fn bench_ntt_ifma(_c: &mut Criterion) {
 pub fn bench_ntt_ifma(c: &mut Criterion) {
     use criterion::BenchmarkId;
     use poulpy_cpu_avx512::NTT126Ifma;
-    use poulpy_cpu_ref::reference::ntt_ifma::{NttIfmaDFTExecute, ntt::NttIfmaTable, primes::Primes42};
+    use poulpy_cpu_avx512::ntt126_ifma_api::{Ntt126IfmaDFTExecute, Ntt126IfmaTable, Primes42};
     use std::hint::black_box;
 
     let group_name: String = "ntt_ifma_avx512".to_string();
@@ -134,9 +134,9 @@ pub fn bench_ntt_ifma(c: &mut Criterion) {
     fn runner(n: usize) -> impl FnMut() {
         let mut values: Vec<u64> = vec![0u64; 4 * n];
         values.iter_mut().enumerate().for_each(|(i, x)| *x = (i + 1) as u64);
-        let table: NttIfmaTable<Primes42> = NttIfmaTable::<Primes42>::new(n);
+        let table: Ntt126IfmaTable<Primes42> = Ntt126IfmaTable::<Primes42>::new(n);
         move || {
-            NTT126Ifma::ntt_ifma_dft_execute(&table, &mut values);
+            NTT126Ifma::ntt126_ifma_dft_execute(&table, &mut values);
             black_box(());
         }
     }
@@ -171,7 +171,7 @@ fn bench_intt_ifma(_c: &mut Criterion) {
 pub fn bench_intt_ifma(c: &mut Criterion) {
     use criterion::BenchmarkId;
     use poulpy_cpu_avx512::NTT126Ifma;
-    use poulpy_cpu_ref::reference::ntt_ifma::{NttIfmaDFTExecute, ntt::NttIfmaTableInv, primes::Primes42};
+    use poulpy_cpu_avx512::ntt126_ifma_api::{Ntt126IfmaDFTExecute, Ntt126IfmaTableInv, Primes42};
     use std::hint::black_box;
 
     let group_name: String = "intt_ifma_avx512".to_string();
@@ -181,9 +181,9 @@ pub fn bench_intt_ifma(c: &mut Criterion) {
     fn runner(n: usize) -> impl FnMut() {
         let mut values: Vec<u64> = vec![0u64; 4 * n];
         values.iter_mut().enumerate().for_each(|(i, x)| *x = (i + 1) as u64);
-        let table: NttIfmaTableInv<Primes42> = NttIfmaTableInv::<Primes42>::new(n);
+        let table: Ntt126IfmaTableInv<Primes42> = Ntt126IfmaTableInv::<Primes42>::new(n);
         move || {
-            NTT126Ifma::ntt_ifma_dft_execute(&table, &mut values);
+            NTT126Ifma::ntt126_ifma_dft_execute(&table, &mut values);
             black_box(());
         }
     }

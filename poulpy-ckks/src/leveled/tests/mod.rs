@@ -8,9 +8,6 @@ pub mod test_suite;
 pub mod ntt120_ref;
 
 #[cfg(test)]
-pub mod ntt_ifma_ref;
-
-#[cfg(test)]
 #[cfg(all(
     feature = "enable-avx",
     target_arch = "x86_64",

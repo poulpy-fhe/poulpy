@@ -5,11 +5,11 @@ macro_rules! hal_impl_vec_znx_big_ntt126_ifma {
             R: VecZnxBigToMut<Self>,
             A: VecZnxToRef,
         {
-            <Self as NTT126IfmaVecZnxBigDefaults<Self>>::vec_znx_big_from_small_default(res, res_col, a, a_col)
+            poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_from_small(res, res_col, a, a_col)
         }
 
         fn vec_znx_big_add_normal<R>(
-            module: &Module<Self>,
+            _module: &Module<Self>,
             res_base2k: usize,
             res: &mut R,
             res_col: usize,
@@ -18,8 +18,7 @@ macro_rules! hal_impl_vec_znx_big_ntt126_ifma {
         ) where
             R: VecZnxBigToMut<Self>,
         {
-            <Self as NTT126IfmaVecZnxBigDefaults<Self>>::vec_znx_big_add_normal_default(
-                module,
+            poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_add_normal_ref(
                 res_base2k,
                 res,
                 res_col,
@@ -29,7 +28,7 @@ macro_rules! hal_impl_vec_znx_big_ntt126_ifma {
         }
 
         fn vec_znx_big_add_into<R, A, C>(
-            module: &Module<Self>,
+            _module: &Module<Self>,
             res: &mut R,
             res_col: usize,
             a: &A,
@@ -41,19 +40,19 @@ macro_rules! hal_impl_vec_znx_big_ntt126_ifma {
             A: VecZnxBigToRef<Self>,
             C: VecZnxBigToRef<Self>,
         {
-            <Self as NTT126IfmaVecZnxBigDefaults<Self>>::vec_znx_big_add_into_default(module, res, res_col, a, a_col, b, b_col)
+            poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_add_into(res, res_col, a, a_col, b, b_col)
         }
 
-        fn vec_znx_big_add_assign<R, A>(module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+        fn vec_znx_big_add_assign<R, A>(_module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
         where
             R: VecZnxBigToMut<Self>,
             A: VecZnxBigToRef<Self>,
         {
-            <Self as NTT126IfmaVecZnxBigDefaults<Self>>::vec_znx_big_add_assign_default(module, res, res_col, a, a_col)
+            poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_add_assign(res, res_col, a, a_col)
         }
 
         fn vec_znx_big_add_small_into<R, A, C>(
-            module: &Module<Self>,
+            _module: &Module<Self>,
             res: &mut R,
             res_col: usize,
             a: &A,
@@ -65,46 +64,44 @@ macro_rules! hal_impl_vec_znx_big_ntt126_ifma {
             A: VecZnxBigToRef<Self>,
             C: VecZnxToRef,
         {
-            <Self as NTT126IfmaVecZnxBigDefaults<Self>>::vec_znx_big_add_small_into_default(
-                module, res, res_col, a, a_col, b, b_col,
-            )
+            poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_add_small_into(res, res_col, a, a_col, b, b_col)
         }
 
-        fn vec_znx_big_add_small_assign<R, A>(module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+        fn vec_znx_big_add_small_assign<R, A>(_module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
         where
             R: VecZnxBigToMut<Self>,
             A: VecZnxToRef,
         {
-            <Self as NTT126IfmaVecZnxBigDefaults<Self>>::vec_znx_big_add_small_assign_default(module, res, res_col, a, a_col)
+            poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_add_small_assign(res, res_col, a, a_col)
         }
 
-        fn vec_znx_big_sub<R, A, C>(module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize, b: &C, b_col: usize)
+        fn vec_znx_big_sub<R, A, C>(_module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize, b: &C, b_col: usize)
         where
             R: VecZnxBigToMut<Self>,
             A: VecZnxBigToRef<Self>,
             C: VecZnxBigToRef<Self>,
         {
-            <Self as NTT126IfmaVecZnxBigDefaults<Self>>::vec_znx_big_sub_default(module, res, res_col, a, a_col, b, b_col)
+            poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_sub(res, res_col, a, a_col, b, b_col)
         }
 
-        fn vec_znx_big_sub_assign<R, A>(module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+        fn vec_znx_big_sub_assign<R, A>(_module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
         where
             R: VecZnxBigToMut<Self>,
             A: VecZnxBigToRef<Self>,
         {
-            <Self as NTT126IfmaVecZnxBigDefaults<Self>>::vec_znx_big_sub_assign_default(module, res, res_col, a, a_col)
+            poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_sub_assign(res, res_col, a, a_col)
         }
 
-        fn vec_znx_big_sub_negate_assign<R, A>(module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+        fn vec_znx_big_sub_negate_assign<R, A>(_module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
         where
             R: VecZnxBigToMut<Self>,
             A: VecZnxBigToRef<Self>,
         {
-            <Self as NTT126IfmaVecZnxBigDefaults<Self>>::vec_znx_big_sub_negate_assign_default(module, res, res_col, a, a_col)
+            poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_sub_negate_assign(res, res_col, a, a_col)
         }
 
         fn vec_znx_big_sub_small_a<R, A, C>(
-            module: &Module<Self>,
+            _module: &Module<Self>,
             res: &mut R,
             res_col: usize,
             a: &A,
@@ -116,19 +113,19 @@ macro_rules! hal_impl_vec_znx_big_ntt126_ifma {
             A: VecZnxToRef,
             C: VecZnxBigToRef<Self>,
         {
-            <Self as NTT126IfmaVecZnxBigDefaults<Self>>::vec_znx_big_sub_small_a_default(module, res, res_col, a, a_col, b, b_col)
+            poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_sub_small_a(res, res_col, a, a_col, b, b_col)
         }
 
-        fn vec_znx_big_sub_small_assign<R, A>(module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+        fn vec_znx_big_sub_small_assign<R, A>(_module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
         where
             R: VecZnxBigToMut<Self>,
             A: VecZnxToRef,
         {
-            <Self as NTT126IfmaVecZnxBigDefaults<Self>>::vec_znx_big_sub_small_assign_default(module, res, res_col, a, a_col)
+            poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_sub_small_assign(res, res_col, a, a_col)
         }
 
         fn vec_znx_big_sub_small_b<R, A, C>(
-            module: &Module<Self>,
+            _module: &Module<Self>,
             res: &mut R,
             res_col: usize,
             a: &A,
@@ -140,36 +137,34 @@ macro_rules! hal_impl_vec_znx_big_ntt126_ifma {
             A: VecZnxBigToRef<Self>,
             C: VecZnxToRef,
         {
-            <Self as NTT126IfmaVecZnxBigDefaults<Self>>::vec_znx_big_sub_small_b_default(module, res, res_col, a, a_col, b, b_col)
+            poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_sub_small_b(res, res_col, a, a_col, b, b_col)
         }
 
-        fn vec_znx_big_sub_small_negate_assign<R, A>(module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+        fn vec_znx_big_sub_small_negate_assign<R, A>(_module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
         where
             R: VecZnxBigToMut<Self>,
             A: VecZnxToRef,
         {
-            <Self as NTT126IfmaVecZnxBigDefaults<Self>>::vec_znx_big_sub_small_negate_assign_default(
-                module, res, res_col, a, a_col,
-            )
+            poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_sub_small_negate_assign(res, res_col, a, a_col)
         }
 
-        fn vec_znx_big_negate<R, A>(module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
+        fn vec_znx_big_negate<R, A>(_module: &Module<Self>, res: &mut R, res_col: usize, a: &A, a_col: usize)
         where
             R: VecZnxBigToMut<Self>,
             A: VecZnxBigToRef<Self>,
         {
-            <Self as NTT126IfmaVecZnxBigDefaults<Self>>::vec_znx_big_negate_default(module, res, res_col, a, a_col)
+            poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_negate(res, res_col, a, a_col)
         }
 
-        fn vec_znx_big_negate_assign<A>(module: &Module<Self>, a: &mut A, a_col: usize)
+        fn vec_znx_big_negate_assign<A>(_module: &Module<Self>, a: &mut A, a_col: usize)
         where
             A: VecZnxBigToMut<Self>,
         {
-            <Self as NTT126IfmaVecZnxBigDefaults<Self>>::vec_znx_big_negate_assign_default(module, a, a_col)
+            poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_negate_assign(a, a_col)
         }
 
         fn vec_znx_big_normalize_tmp_bytes(module: &Module<Self>) -> usize {
-            <Self as NTT126IfmaVecZnxBigDefaults<Self>>::vec_znx_big_normalize_tmp_bytes_default(module)
+            poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_normalize_tmp_bytes(module.n())
         }
 
         fn vec_znx_big_normalize<R, A>(
@@ -186,8 +181,13 @@ macro_rules! hal_impl_vec_znx_big_ntt126_ifma {
             R: VecZnxToMut,
             A: VecZnxBigToRef<Self>,
         {
-            <Self as NTT126IfmaVecZnxBigDefaults<Self>>::vec_znx_big_normalize_default(
-                module, res, res_base2k, res_offset, res_col, a, a_base2k, a_col, scratch,
+            use poulpy_hal::api::TakeSlice;
+            let (carry, _) = scratch.take_slice(
+                poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_normalize_tmp_bytes(module.n())
+                    / std::mem::size_of::<i128>(),
+            );
+            poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_normalize(
+                res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry,
             )
         }
 
@@ -205,8 +205,13 @@ macro_rules! hal_impl_vec_znx_big_ntt126_ifma {
             R: VecZnxToMut,
             A: VecZnxBigToRef<Self>,
         {
-            <Self as NTT126IfmaVecZnxBigDefaults<Self>>::vec_znx_big_normalize_add_assign_default(
-                module, res, res_base2k, res_offset, res_col, a, a_base2k, a_col, scratch,
+            use poulpy_hal::api::TakeSlice;
+            let (carry, _) = scratch.take_slice(
+                poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_normalize_tmp_bytes(module.n())
+                    / std::mem::size_of::<i128>(),
+            );
+            poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_normalize_add_assign(
+                res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry,
             )
         }
 
@@ -224,28 +229,38 @@ macro_rules! hal_impl_vec_znx_big_ntt126_ifma {
             R: VecZnxToMut,
             A: VecZnxBigToRef<Self>,
         {
-            <Self as NTT126IfmaVecZnxBigDefaults<Self>>::vec_znx_big_normalize_sub_assign_default(
-                module, res, res_base2k, res_offset, res_col, a, a_base2k, a_col, scratch,
+            use poulpy_hal::api::TakeSlice;
+            let (carry, _) = scratch.take_slice(
+                poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_normalize_tmp_bytes(module.n())
+                    / std::mem::size_of::<i128>(),
+            );
+            poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_normalize_sub_assign(
+                res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry,
             )
         }
 
-        fn vec_znx_big_automorphism<R, A>(module: &Module<Self>, k: i64, res: &mut R, res_col: usize, a: &A, a_col: usize)
+        fn vec_znx_big_automorphism<R, A>(_module: &Module<Self>, k: i64, res: &mut R, res_col: usize, a: &A, a_col: usize)
         where
             R: VecZnxBigToMut<Self>,
             A: VecZnxBigToRef<Self>,
         {
-            <Self as NTT126IfmaVecZnxBigDefaults<Self>>::vec_znx_big_automorphism_default(module, k, res, res_col, a, a_col)
+            poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_automorphism(k, res, res_col, a, a_col)
         }
 
         fn vec_znx_big_automorphism_assign_tmp_bytes(module: &Module<Self>) -> usize {
-            <Self as NTT126IfmaVecZnxBigDefaults<Self>>::vec_znx_big_automorphism_assign_tmp_bytes_default(module)
+            poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_automorphism_assign_tmp_bytes(module.n())
         }
 
         fn vec_znx_big_automorphism_assign<A>(module: &Module<Self>, k: i64, a: &mut A, a_col: usize, scratch: &mut Scratch<Self>)
         where
             A: VecZnxBigToMut<Self>,
         {
-            <Self as NTT126IfmaVecZnxBigDefaults<Self>>::vec_znx_big_automorphism_assign_default(module, k, a, a_col, scratch)
+            use poulpy_hal::api::TakeSlice;
+            let (tmp, _) = scratch.take_slice(
+                poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_automorphism_assign_tmp_bytes(module.n())
+                    / std::mem::size_of::<i128>(),
+            );
+            poulpy_cpu_ref::reference::ntt120::vec_znx_big::ntt120_vec_znx_big_automorphism_assign(k, a, a_col, tmp)
         }
     };
 }

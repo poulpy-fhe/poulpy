@@ -12,10 +12,20 @@
 //! keeps the hot BBC kernel's 4-way unrolling saturated.
 
 use bytemuck::{cast_slice, cast_slice_mut};
+use std::mem::size_of;
 
-use poulpy_cpu_ref::reference::ntt_ifma::{mat_vec::BbcIfmaMeta, primes::Primes42};
+use crate::ntt126_ifma::{
+    bbc_meta::Bbc126IfmaMeta,
+    module::handle,
+    primes::Primes42,
+    tables::Ntt126IfmaTable,
+    traits::{Ntt126IfmaCFromB, Ntt126IfmaDFTExecute, Ntt126IfmaFromZnx64},
+};
 use poulpy_cpu_ref::reference::ntt120::types::Q120bScalar;
-use poulpy_hal::layouts::{CnvPVecLToRef, CnvPVecRToRef, VecZnxDftToMut, ZnxInfos, ZnxView, ZnxViewMut};
+use poulpy_hal::layouts::{
+    CnvPVecL, CnvPVecLToMut, CnvPVecLToRef, CnvPVecR, CnvPVecRToMut, CnvPVecRToRef, Module, VecZnx, VecZnxBig, VecZnxBigToMut,
+    VecZnxDftToMut, VecZnxToRef, ZnxInfos, ZnxView, ZnxViewMut,
+};
 
 use super::mat_vec_ifma::vec_mat1col_product_x2_bbc_ifma;
 
@@ -31,9 +41,9 @@ use core::arch::x86_64::{__m512i, _mm_sfence, _mm512_add_epi64, _mm512_loadu_si5
 // `__m512i`. Packing therefore reduces to copying one `__m512i` per row, with
 // optional row reversal or pairwise summation.
 
-/// Gather a row range of q120b x2-blocks into a contiguous buffer.
+/// Gather a row range of prep-scalar x2-blocks into a contiguous buffer.
 ///
-/// `a` is a column-start q120b slice with row stride `row_stride` (in `u64`
+/// `a` is a column-start prep-scalar slice with row stride `row_stride` (in `u64`
 /// units). For each row, block `blk` (8 u64 values) is copied to `dst`.
 /// `dst` must hold at least `8 * row_count` u64.
 #[target_feature(enable = "avx512f")]
@@ -51,7 +61,7 @@ unsafe fn pack_left_1blk_x2_ifma(dst: &mut [u64], a: &[u64], row_count: usize, r
     }
 }
 
-/// Gather a row range of q120b x2-blocks in reversed row order.
+/// Gather a row range of prep-scalar x2-blocks in reversed row order.
 ///
 /// Same layout as [`pack_left_1blk_x2_ifma`] but row 0 in `dst` receives the
 /// source's last row. This lets each output limb consume a contiguous window
@@ -202,7 +212,7 @@ pub(crate) unsafe fn cnv_apply_dft_ifma<R, A, B>(
     let offset = cnv_offset.min(bound);
     let min_size = res_size.min((bound + 1).saturating_sub(offset));
 
-    let meta = BbcIfmaMeta::<Primes42>::new();
+    let meta = Bbc126IfmaMeta::<Primes42>::new();
     let a_cols = a.cols();
     let b_cols = b.cols();
     let n_blks = n / 2;
@@ -307,7 +317,7 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma<R, A, B>(
     let offset = cnv_offset.min(bound);
     let min_size = res_size.min((bound + 1).saturating_sub(offset));
 
-    let meta = BbcIfmaMeta::<Primes42>::new();
+    let meta = Bbc126IfmaMeta::<Primes42>::new();
     let a_cols = a.cols();
     let b_cols = b.cols();
     let n_blks = n / 2;
@@ -371,4 +381,193 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma<R, A, B>(
         res.at_mut(res_col, j).fill(Q120bScalar([0; 4]));
     }
     _mm_sfence();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Convolution prep paths
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// `prepare_left/right/self` materialise NTT-domain operands suitable for
+// downstream consumption by [`cnv_apply_dft_ifma`]; `by_const_apply` is the
+// scalar-by-VecZnx convolution that lands in `VecZnxBig` (no NTT).
+//
+// They keep the same algorithmic shape as the NTT120 reference path — the
+// SIMD work happens inside `ntt126_ifma_dft_execute` / `ntt126_ifma_from_znx64`
+// / `ntt126_ifma_c_from_b`, which the [`NTT126Ifma`] backend implements with
+// the IFMA kernels.
+
+pub(crate) fn cnv_prepare_left_tmp_bytes(_n: usize) -> usize {
+    0
+}
+
+pub(crate) fn cnv_prepare_left<R, A>(module: &Module<NTT126Ifma>, res: &mut R, a: &A, mask: i64, _tmp: &mut [u8])
+where
+    R: CnvPVecLToMut<NTT126Ifma>,
+    A: VecZnxToRef,
+{
+    let mut res: CnvPVecL<&mut [u8], NTT126Ifma> = res.to_mut();
+    let a: VecZnx<&[u8]> = a.to_ref();
+    let table = &handle(module).table_ntt;
+    let cols = res.cols();
+    let res_size = res.size();
+    let min_size = res_size.min(a.size());
+
+    for col in 0..cols {
+        for j in 0..min_size.saturating_sub(1) {
+            let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(col, j));
+            NTT126Ifma::ntt126_ifma_from_znx64(res_u64, a.at(col, j));
+            <NTT126Ifma as Ntt126IfmaDFTExecute<Ntt126IfmaTable<Primes42>>>::ntt126_ifma_dft_execute(table, res_u64);
+        }
+        if min_size > 0 {
+            let last = min_size - 1;
+            let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(col, last));
+            NTT126Ifma::ntt126_ifma_from_znx64_masked(res_u64, a.at(col, last), mask);
+            <NTT126Ifma as Ntt126IfmaDFTExecute<Ntt126IfmaTable<Primes42>>>::ntt126_ifma_dft_execute(table, res_u64);
+        }
+        for j in min_size..res_size {
+            cast_slice_mut::<_, u64>(res.at_mut(col, j)).fill(0);
+        }
+    }
+}
+
+pub(crate) fn cnv_prepare_right_tmp_bytes(n: usize) -> usize {
+    4 * n * size_of::<u64>()
+}
+
+pub(crate) fn cnv_prepare_right<R, A>(module: &Module<NTT126Ifma>, res: &mut R, a: &A, mask: i64, tmp: &mut [u64])
+where
+    R: CnvPVecRToMut<NTT126Ifma>,
+    A: VecZnxToRef,
+{
+    let mut res: CnvPVecR<&mut [u8], NTT126Ifma> = res.to_mut();
+    let a: VecZnx<&[u8]> = a.to_ref();
+    let n = res.n();
+    let table = &handle(module).table_ntt;
+    let cols = res.cols();
+    let res_size = res.size();
+    let min_size = res_size.min(a.size());
+
+    for col in 0..cols {
+        for j in 0..min_size.saturating_sub(1) {
+            NTT126Ifma::ntt126_ifma_from_znx64(tmp, a.at(col, j));
+            <NTT126Ifma as Ntt126IfmaDFTExecute<Ntt126IfmaTable<Primes42>>>::ntt126_ifma_dft_execute(table, tmp);
+            let res_u32: &mut [u32] = cast_slice_mut(res.at_mut(col, j));
+            NTT126Ifma::ntt126_ifma_c_from_b(n, res_u32, tmp);
+        }
+        if min_size > 0 {
+            let last = min_size - 1;
+            NTT126Ifma::ntt126_ifma_from_znx64_masked(tmp, a.at(col, last), mask);
+            <NTT126Ifma as Ntt126IfmaDFTExecute<Ntt126IfmaTable<Primes42>>>::ntt126_ifma_dft_execute(table, tmp);
+            let res_u32: &mut [u32] = cast_slice_mut(res.at_mut(col, last));
+            NTT126Ifma::ntt126_ifma_c_from_b(n, res_u32, tmp);
+        }
+        for j in min_size..res_size {
+            cast_slice_mut::<_, u64>(res.at_mut(col, j)).fill(0);
+        }
+    }
+}
+
+pub(crate) fn cnv_prepare_self_tmp_bytes(n: usize) -> usize {
+    cnv_prepare_left_tmp_bytes(n)
+}
+
+pub(crate) fn cnv_prepare_self<L, R, A>(
+    module: &Module<NTT126Ifma>,
+    left: &mut L,
+    right: &mut R,
+    a: &A,
+    mask: i64,
+    _tmp: &mut [u8],
+) where
+    L: CnvPVecLToMut<NTT126Ifma>,
+    R: CnvPVecRToMut<NTT126Ifma>,
+    A: VecZnxToRef + ZnxInfos,
+{
+    let mut left: CnvPVecL<&mut [u8], NTT126Ifma> = left.to_mut();
+    let mut right: CnvPVecR<&mut [u8], NTT126Ifma> = right.to_mut();
+    let a: VecZnx<&[u8]> = a.to_ref();
+    let table = &handle(module).table_ntt;
+    let n = left.n();
+    let cols = left.cols();
+    let res_size = left.size();
+    let min_size = res_size.min(a.size());
+
+    for col in 0..cols {
+        for j in 0..min_size.saturating_sub(1) {
+            {
+                let left_u64: &mut [u64] = cast_slice_mut(left.at_mut(col, j));
+                NTT126Ifma::ntt126_ifma_from_znx64(left_u64, a.at(col, j));
+                <NTT126Ifma as Ntt126IfmaDFTExecute<Ntt126IfmaTable<Primes42>>>::ntt126_ifma_dft_execute(table, left_u64);
+            }
+            let left_u64: &[u64] = cast_slice(left.at(col, j));
+            let right_u32: &mut [u32] = cast_slice_mut(right.at_mut(col, j));
+            NTT126Ifma::ntt126_ifma_c_from_b(n, right_u32, left_u64);
+        }
+        if min_size > 0 {
+            let last = min_size - 1;
+            {
+                let left_u64: &mut [u64] = cast_slice_mut(left.at_mut(col, last));
+                NTT126Ifma::ntt126_ifma_from_znx64_masked(left_u64, a.at(col, last), mask);
+                <NTT126Ifma as Ntt126IfmaDFTExecute<Ntt126IfmaTable<Primes42>>>::ntt126_ifma_dft_execute(table, left_u64);
+            }
+            let left_u64: &[u64] = cast_slice(left.at(col, last));
+            let right_u32: &mut [u32] = cast_slice_mut(right.at_mut(col, last));
+            NTT126Ifma::ntt126_ifma_c_from_b(n, right_u32, left_u64);
+        }
+        for j in min_size..res_size {
+            cast_slice_mut::<_, u64>(left.at_mut(col, j)).fill(0);
+            cast_slice_mut::<_, u64>(right.at_mut(col, j)).fill(0);
+        }
+    }
+}
+
+pub(crate) fn cnv_by_const_apply_tmp_bytes(_res_size: usize, _a_size: usize, _b_size: usize) -> usize {
+    0
+}
+
+pub(crate) fn cnv_by_const_apply<R, A>(
+    cnv_offset: usize,
+    res: &mut R,
+    res_col: usize,
+    a: &A,
+    a_col: usize,
+    b: &[i64],
+    _tmp: &mut [u8],
+) where
+    R: VecZnxBigToMut<NTT126Ifma>,
+    A: VecZnxToRef,
+{
+    let mut res: VecZnxBig<&mut [u8], NTT126Ifma> = res.to_mut();
+    let a: VecZnx<&[u8]> = a.to_ref();
+    let res_size = res.size();
+    let a_size = a.size();
+    let b_size = b.len();
+    if res_size == 0 || a_size == 0 || b_size == 0 {
+        for j in 0..res_size {
+            res.at_mut(res_col, j).fill(0i128);
+        }
+        return;
+    }
+
+    let bound = a_size + b_size - 1;
+    let min_size = res_size.min(bound);
+    let offset = cnv_offset.min(bound);
+
+    for k in 0..min_size {
+        let k_abs = k + offset;
+        let j_min = k_abs.saturating_sub(a_size - 1);
+        let j_max = (k_abs + 1).min(b_size);
+        let res_limb: &mut [i128] = res.at_mut(res_col, k);
+        for (n_i, r) in res_limb.iter_mut().enumerate() {
+            let mut acc: i128 = 0;
+            for (j, &b_j) in b.iter().enumerate().take(j_max).skip(j_min) {
+                acc += a.at(a_col, k_abs - j)[n_i] as i128 * b_j as i128;
+            }
+            *r = acc;
+        }
+    }
+
+    for j in min_size..res_size {
+        res.at_mut(res_col, j).fill(0i128);
+    }
 }

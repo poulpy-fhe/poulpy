@@ -13,9 +13,12 @@ use core::arch::x86_64::{
 };
 use std::mem::size_of;
 
-use poulpy_cpu_ref::reference::ntt_ifma::{
-    NttIfmaCFromB, NttIfmaDFTExecute, NttIfmaFromZnx64, mat_vec::BbcIfmaMeta, primes::Primes42, types::Q_SHIFTED_IFMA,
-    vec_znx_dft::NttIfmaModuleHandle,
+use crate::ntt126_ifma::{
+    bbc_meta::Bbc126IfmaMeta,
+    module::handle,
+    primes::Primes42,
+    traits::{Ntt126IfmaCFromB, Ntt126IfmaDFTExecute, Ntt126IfmaFromZnx64},
+    types::Q_SHIFTED_NTT126IFMA,
 };
 use poulpy_hal::layouts::{
     DataView, DataViewMut, MatZnx, MatZnxToRef, Module, VecZnxDft, VecZnxDftToMut, VecZnxDftToRef, VmpPMat, VmpPMatToMut,
@@ -32,16 +35,16 @@ use super::{
 // ──────────────────────────────────────────────────────────────────────────────
 
 fn q2_shifted_vec_512() -> __m512i {
-    let q = Q_SHIFTED_IFMA;
+    let q = Q_SHIFTED_NTT126IFMA;
     let q2_512 = [q[0], q[1], q[2], q[3], q[0], q[1], q[2], q[3]];
     unsafe { _mm512_loadu_si512(q2_512.as_ptr() as *const __m512i) }
 }
 
-/// SoA (per-prime) → AoS q120b interleave for one block of a block-quad.
+/// SoA (per-prime) → AoS prep-scalar interleave for one block of a block-quad.
 ///
 /// `red0`/`red1`/`red2` hold the per-prime reductions for the 4 x2-blocks of a
 /// block-quad, with lane order `[blk0.c0, blk0.c1, blk1.c0, blk1.c1, blk2.c0,
-/// blk2.c1, blk3.c0, blk3.c1]`. The output for block `I` (0..4) is one q120b
+/// blk2.c1, blk3.c0, blk3.c1]`. The output for block `I` (0..4) is one prep scalar
 /// `__m512i`: `[p0_c0, p1_c0, p2_c0, 0, p0_c1, p1_c1, p2_c1, 0]`.
 ///
 /// Two `vpermi2q` passes materialise the result in a register; keeping the
@@ -157,15 +160,15 @@ where
     let bq_stride = nrows * ncols * 8; // u64 per block-quad within a plane
     let col_stride = nrows * 8; // u64 per column within a block-quad
 
-    // tmp_c is in interleaved q120c format: per coefficient 4 u64 (as 8 u32),
+    // tmp_c is in the interleaved prepared format: per coefficient 4 u64 (as 8 u32),
     // layout [p0, p1, p2, pad] × n coefficients. We scatter each coefficient
     // into the 3 prime planes at the right block-quad slot.
     for row_i in 0..nrows {
         for col_i in 0..ncols {
             let pos = n * (row_i * ncols + col_i);
-            crate::NTT126Ifma::ntt_ifma_from_znx64(tmp_b, &mat_i64[pos..pos + n]);
-            crate::NTT126Ifma::ntt_ifma_dft_execute(module.get_ntt_ifma_table(), tmp_b);
-            crate::NTT126Ifma::ntt_ifma_c_from_b(n, tmp_c, tmp_b);
+            crate::NTT126Ifma::ntt126_ifma_from_znx64(tmp_b, &mat_i64[pos..pos + n]);
+            crate::NTT126Ifma::ntt126_ifma_dft_execute(&handle(module).table_ntt, tmp_b);
+            crate::NTT126Ifma::ntt126_ifma_c_from_b(n, tmp_c, tmp_b);
 
             let tmp_c_u64: &[u64] = bytemuck::cast_slice(tmp_c);
 
@@ -195,7 +198,7 @@ const IDX_PM_P0: [i64; 8] = [0, 4, 8, 12, 0, 0, 0, 0];
 const IDX_PM_P1: [i64; 8] = [1, 5, 9, 13, 0, 0, 0, 0];
 const IDX_PM_P2: [i64; 8] = [2, 6, 10, 14, 0, 0, 0, 0];
 
-/// Extract a block-quad from interleaved q120b into 3 prime-major planes.
+/// Extract a block-quad from interleaved prep scalars into 3 prime-major planes.
 #[target_feature(enable = "avx512f")]
 unsafe fn extract_blk_quad_prime_major(n: usize, row_max: usize, bq: usize, a_u64: &[u64], x_pm: &mut [u64]) {
     use core::arch::x86_64::{_mm512_castsi512_si256, _mm512_inserti64x4, _mm512_permutex2var_epi64};
@@ -245,7 +248,7 @@ unsafe fn vmp_apply_core_pm<const OVERWRITE: bool>(
     limb_offset: usize,
     nrows: usize,
     ncols: usize,
-    _meta: &BbcIfmaMeta<Primes42>,
+    _meta: &Bbc126IfmaMeta<Primes42>,
     tmp: &mut [u64],
 ) {
     if n < 2 {
@@ -355,7 +358,7 @@ unsafe fn vmp_apply_core_pm<const OVERWRITE: bool>(
                     pc[2].pow52_quot,
                 );
 
-                // SoA → AoS: interleave 3 prime results into 4 q120b blocks
+                // SoA → AoS: interleave 3 prime results into 4 prep-scalar blocks
                 // directly in SIMD registers (no stack round-trip).
                 let base = col_res * 4 * n;
                 let dst_base = res_u64.as_mut_ptr().add(base);
@@ -424,7 +427,7 @@ pub(crate) fn vmp_apply_dft_to_dft_ifma<R, A, C>(
             limb_offset,
             nrows,
             ncols,
-            module.get_bbc_ifma_meta(),
+            &handle(module).meta_bbc,
             tmp,
         );
     }
@@ -467,8 +470,20 @@ pub(crate) fn vmp_apply_dft_to_dft_accumulate_ifma<R, A, C>(
             limb_offset,
             nrows,
             ncols,
-            module.get_bbc_ifma_meta(),
+            &handle(module).meta_bbc,
             tmp,
         );
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// vmp_zero
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Zero a `VmpPMat<NTT126Ifma>`.
+pub(crate) fn vmp_zero<R>(res: &mut R)
+where
+    R: VmpPMatToMut<crate::NTT126Ifma>,
+{
+    res.to_mut().data_mut().as_mut().fill(0);
 }

@@ -1,12 +1,11 @@
 //! Reference (portable) CPU backend for the Poulpy lattice cryptography library.
 //!
-//! This crate provides three backend implementations for [`poulpy_hal`]:
+//! This crate provides two reference implementations for [`poulpy_hal`]:
 //!
 //! - [`FFT64Ref`]: scalar `f64` FFT arithmetic — see the [`fft64`] module.
 //! - [`NTT120Ref`]: scalar Q120 NTT arithmetic (CRT over four ~30-bit primes) — see the [`ntt120`] module.
-//! - [`NTTIfmaRef`]: scalar Q126 NTT arithmetic (CRT over three ~42-bit primes) — see the [`ntt_ifma`] module.
 //!
-//! All are canonical reference implementations: portable across all CPU architectures,
+//! Both are canonical reference implementations: portable across all CPU architectures,
 //! prioritising correctness and debuggability over throughput.
 //!
 //! # Platform support
@@ -18,7 +17,6 @@ pub mod fft64;
 pub mod hal_defaults;
 mod hal_impl;
 pub mod ntt120;
-pub mod ntt_ifma;
 pub mod reference;
 
 #[cfg(test)]
@@ -39,7 +37,6 @@ pub mod source {
 }
 
 pub use fft64::FFT64Ref;
-pub use ntt_ifma::{NTTIfmaRef, NTTIfmaRefHandle};
 pub use ntt120::{NTT120Ref, NTT120RefHandle};
 
 use poulpy_core::oep::CoreImpl;
@@ -49,8 +46,4 @@ unsafe impl CoreImpl<FFT64Ref> for FFT64Ref {
 
 unsafe impl CoreImpl<NTT120Ref> for NTT120Ref {
     poulpy_core::impl_core_default_methods!(NTT120Ref);
-}
-
-unsafe impl CoreImpl<NTTIfmaRef> for NTTIfmaRef {
-    poulpy_core::impl_core_default_methods!(NTTIfmaRef);
 }

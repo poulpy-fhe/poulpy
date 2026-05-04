@@ -1,41 +1,38 @@
 //! Backend handle and module initialisation for [`NTT126Ifma`](super::NTT126Ifma).
 //!
-//! This module defines:
-//!
 //! - [`NTT126IfmaHandle`]: the opaque handle stored inside a `Module<NTT126Ifma>`,
 //!   holding precomputed NTT and iNTT twiddle-factor tables and multiply-accumulate metadata.
 //! - The [`Backend`] trait implementation, which defines scalar types and the
 //!   handle destruction path.
-//! - The [`NttIfmaHandleFactory`] implementation, which allocates the handle on the heap
-//!   and verifies AVX512-IFMA availability at runtime.
-//! - The [`NttIfmaHandleProvider`] impl for [`NTT126IfmaHandle`], wiring the handle into
-//!   the blanket `NttIfmaModuleHandle` impl provided by `poulpy-cpu-ref`.
+//! - [`module_new`]: constructor used by the OEP `HalImpl::new` shim.
 
 use std::ptr::NonNull;
 
-use poulpy_cpu_ref::reference::ntt_ifma::{
-    mat_vec::BbcIfmaMeta,
-    ntt::{NttIfmaTable, NttIfmaTableInv},
+use crate::NTT126Ifma;
+use crate::ntt126_ifma::{
+    bbc_meta::Bbc126IfmaMeta,
     primes::Primes42,
-    vec_znx_dft::{NttIfmaHandleFactory, NttIfmaHandleProvider},
+    tables::{Ntt126IfmaTable, Ntt126IfmaTableInv},
 };
 use poulpy_cpu_ref::reference::ntt120::types::Q120bScalar;
-use poulpy_hal::{alloc_aligned, assert_alignment, layouts::Backend};
-
-use crate::NTT126Ifma;
+use poulpy_hal::{
+    alloc_aligned, assert_alignment,
+    layouts::{Backend, Module},
+};
 
 /// Opaque handle for the [`NTT126Ifma`](super::NTT126Ifma) backend.
 ///
 /// Holds precomputed twiddle-factor tables for the forward NTT and inverse NTT
-/// of size `n`, and the lazy-accumulation metadata for `q120b × q120c` products.
+/// of size `n`, and the lazy-accumulation metadata for IFMA prep-format
+/// products.
 ///
 /// This struct is heap-allocated during module creation and freed when the
 /// `Module<NTT126Ifma>` is dropped (via [`Backend::destroy`]).
 #[repr(C)]
 pub struct NTT126IfmaHandle {
-    table_ntt: NttIfmaTable<Primes42>,
-    table_intt: NttIfmaTableInv<Primes42>,
-    meta_bbc: BbcIfmaMeta<Primes42>,
+    pub(crate) table_ntt: Ntt126IfmaTable<Primes42>,
+    pub(crate) table_intt: Ntt126IfmaTableInv<Primes42>,
+    pub(crate) meta_bbc: Bbc126IfmaMeta<Primes42>,
 }
 
 impl Backend for NTT126Ifma {
@@ -64,55 +61,55 @@ impl Backend for NTT126Ifma {
     }
 }
 
-/// # Safety
+/// Borrow the backend handle stored inside the module.
 ///
-/// The returned handle must be fully initialized for `n`.
+/// # Safety considerations
+///
+/// `Module<NTT126Ifma>` owns a `NonNull<NTT126IfmaHandle>` pointing to a
+/// fully-initialised, heap-allocated handle (set up by [`module_new`]).
+/// The borrow lives for `&Module<NTT126Ifma>` and is sound under the
+/// no-aliasing assumption documented on `Module`.
+#[inline(always)]
+pub(crate) fn handle(module: &Module<NTT126Ifma>) -> &NTT126IfmaHandle {
+    unsafe { &*module.ptr() }
+}
+
+/// Verify that the host CPU supports the AVX-512-IFMA family at runtime.
 ///
 /// # Panics
 ///
-/// Panics if the runtime CPU does not support the AVX512-IFMA instruction set.
-unsafe impl NttIfmaHandleFactory for NTT126IfmaHandle {
-    fn create_ntt_ifma_handle(n: usize) -> Self {
-        NTT126IfmaHandle {
-            table_ntt: NttIfmaTable::new(n),
-            table_intt: NttIfmaTableInv::new(n),
-            meta_bbc: BbcIfmaMeta::new(),
+/// Panics if any required feature is missing.
+fn assert_runtime_support() {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if !std::arch::is_x86_feature_detected!("avx512f") {
+            panic!("NTT126Ifma requires x86_64 with AVX512-F support");
+        }
+        if !std::arch::is_x86_feature_detected!("avx512ifma") {
+            panic!("NTT126Ifma requires x86_64 with AVX512-IFMA support");
+        }
+        if !std::arch::is_x86_feature_detected!("avx512vl") {
+            panic!("NTT126Ifma requires x86_64 with AVX512-VL support");
         }
     }
 
-    fn assert_ntt_ifma_runtime_support() {
-        #[cfg(target_arch = "x86_64")]
-        {
-            if !std::arch::is_x86_feature_detected!("avx512f") {
-                panic!("NTT126Ifma requires x86_64 with AVX512-F support");
-            }
-            if !std::arch::is_x86_feature_detected!("avx512ifma") {
-                panic!("NTT126Ifma requires x86_64 with AVX512-IFMA support");
-            }
-            if !std::arch::is_x86_feature_detected!("avx512vl") {
-                panic!("NTT126Ifma requires x86_64 with AVX512-VL support");
-            }
-        }
-
-        #[cfg(not(target_arch = "x86_64"))]
-        panic!("NTT126Ifma requires x86_64 with AVX512-F + AVX512-IFMA + AVX512-VL support");
-    }
+    #[cfg(not(target_arch = "x86_64"))]
+    panic!("NTT126Ifma requires x86_64 with AVX512-F + AVX512-IFMA + AVX512-VL support");
 }
 
-/// # Safety
+/// Allocate a fully-initialised `Module<NTT126Ifma>` of ring dimension `n`.
 ///
-/// The returned references are valid for the lifetime of `&self`.
-/// All fields are fully initialised in [`NttIfmaHandleFactory::create_ntt_ifma_handle`].
-unsafe impl NttIfmaHandleProvider for NTT126IfmaHandle {
-    fn get_ntt_ifma_table(&self) -> &NttIfmaTable<Primes42> {
-        &self.table_ntt
-    }
-
-    fn get_intt_ifma_table(&self) -> &NttIfmaTableInv<Primes42> {
-        &self.table_intt
-    }
-
-    fn get_bbc_ifma_meta(&self) -> &BbcIfmaMeta<Primes42> {
-        &self.meta_bbc
-    }
+/// Verifies AVX-512-IFMA availability at runtime, then heap-allocates a
+/// [`NTT126IfmaHandle`] containing the forward / inverse NTT tables and the
+/// BBC metadata.
+pub(crate) fn module_new(n: u64) -> Module<NTT126Ifma> {
+    assert_runtime_support();
+    assert!(n >= 8, "NTT126Ifma requires n >= 8, got {n}");
+    let handle = NTT126IfmaHandle {
+        table_ntt: Ntt126IfmaTable::new(n as usize),
+        table_intt: Ntt126IfmaTableInv::new(n as usize),
+        meta_bbc: Bbc126IfmaMeta::new(),
+    };
+    let ptr: NonNull<NTT126IfmaHandle> = NonNull::from(Box::leak(Box::new(handle)));
+    unsafe { Module::from_nonnull(ptr, n) }
 }

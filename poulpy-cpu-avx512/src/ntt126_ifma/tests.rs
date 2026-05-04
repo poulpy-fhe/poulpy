@@ -1,6 +1,6 @@
 use poulpy_hal::{
-    api::ModuleNew,
-    layouts::Module,
+    api::{Convolution, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    layouts::{Module, ScratchOwned, VecZnx, VecZnxBigOwned, ZnxInfos, ZnxView, ZnxViewMut},
     test_suite::convolution::{test_convolution, test_convolution_by_const, test_convolution_pairwise},
 };
 
@@ -12,9 +12,9 @@ mod ntt126_ifma_tests {
 
     cross_backend_test_suite! {
         mod vec_znx,
-        backend_ref =  poulpy_cpu_ref::NTTIfmaRef,
+        backend_ref =  poulpy_cpu_ref::NTT120Ref,
         backend_test = crate::NTT126Ifma,
-        params = TestParams { size: 1<<8, base2k: 12 },
+        params = TestParams { size: 1<<8, base2k: 50 },
         tests = {
             test_vec_znx_add_into => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_into,
             test_vec_znx_add_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_assign,
@@ -48,9 +48,9 @@ mod ntt126_ifma_tests {
 
     cross_backend_test_suite! {
         mod vec_znx_dft,
-        backend_ref =  poulpy_cpu_ref::NTTIfmaRef,
+        backend_ref =  poulpy_cpu_ref::NTT120Ref,
         backend_test = crate::NTT126Ifma,
-        params = TestParams { size: 1<<8, base2k: 12 },
+        params = TestParams { size: 1<<8, base2k: 50 },
         tests = {
             test_vec_znx_dft_add_into => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add_into,
             test_vec_znx_dft_add_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add_assign,
@@ -65,9 +65,9 @@ mod ntt126_ifma_tests {
 
     cross_backend_test_suite! {
         mod svp,
-        backend_ref =  poulpy_cpu_ref::NTTIfmaRef,
+        backend_ref =  poulpy_cpu_ref::NTT120Ref,
         backend_test = crate::NTT126Ifma,
-        params = TestParams { size: 1<<8, base2k: 12 },
+        params = TestParams { size: 1<<8, base2k: 50 },
         tests = {
             test_svp_apply_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft,
             test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
@@ -77,20 +77,21 @@ mod ntt126_ifma_tests {
 
     cross_backend_test_suite! {
         mod vmp,
-        backend_ref =  poulpy_cpu_ref::NTTIfmaRef,
+        backend_ref =  poulpy_cpu_ref::NTT120Ref,
         backend_test = crate::NTT126Ifma,
-        params = TestParams { size: 1<<8, base2k: 12 },
+        params = TestParams { size: 1<<8, base2k: 50 },
         tests = {
             test_vmp_apply_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft,
             test_vmp_apply_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft,
+            test_vmp_apply_dft_to_dft_accumulate => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_accumulate,
         }
     }
 
     cross_backend_test_suite! {
         mod vec_znx_big,
-        backend_ref =  poulpy_cpu_ref::NTTIfmaRef,
+        backend_ref =  poulpy_cpu_ref::NTT120Ref,
         backend_test = crate::NTT126Ifma,
-        params = TestParams { size: 1<<8, base2k: 12 },
+        params = TestParams { size: 1<<8, base2k: 50 },
         tests = {
             test_vec_znx_big_add_into => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_into,
             test_vec_znx_big_add_assign => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_assign,
@@ -114,7 +115,7 @@ mod ntt126_ifma_tests {
     backend_test_suite! {
         mod sampling,
         backend = crate::NTT126Ifma,
-        params = TestParams { size: 1<<12, base2k: 12 },
+        params = TestParams { size: 1<<12, base2k: 50 },
         tests = {
             test_vec_znx_fill_uniform => poulpy_hal::test_suite::vec_znx::test_vec_znx_fill_uniform,
             test_vec_znx_fill_normal => poulpy_hal::test_suite::vec_znx::test_vec_znx_fill_normal,
@@ -134,9 +135,9 @@ mod ntt126_ifma_tests {
     // n = 1024: only block-local inner levels run.
     cross_backend_test_suite! {
         mod ntt_n1024,
-        backend_ref =  poulpy_cpu_ref::NTTIfmaRef,
+        backend_ref =  poulpy_cpu_ref::NTT120Ref,
         backend_test = crate::NTT126Ifma,
-        params = TestParams { size: 1<<10, base2k: 12 },
+        params = TestParams { size: 1<<10, base2k: 50 },
         tests = {
             test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
             test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_consume,
@@ -147,9 +148,9 @@ mod ntt126_ifma_tests {
     // n = 8192: exercises multiple breadth-first outer levels.
     cross_backend_test_suite! {
         mod ntt_n8192,
-        backend_ref =  poulpy_cpu_ref::NTTIfmaRef,
+        backend_ref =  poulpy_cpu_ref::NTT120Ref,
         backend_test = crate::NTT126Ifma,
-        params = TestParams { size: 1<<13, base2k: 12 },
+        params = TestParams { size: 1<<13, base2k: 50 },
         tests = {
             test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
             test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_consume,
@@ -160,9 +161,9 @@ mod ntt126_ifma_tests {
     // n = 16384: large size where the working set exceeds L1.
     cross_backend_test_suite! {
         mod ntt_n16384,
-        backend_ref =  poulpy_cpu_ref::NTTIfmaRef,
+        backend_ref =  poulpy_cpu_ref::NTT120Ref,
         backend_test = crate::NTT126Ifma,
-        params = TestParams { size: 1<<14, base2k: 12 },
+        params = TestParams { size: 1<<14, base2k: 50 },
         tests = {
             test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
             test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_consume,
@@ -173,9 +174,9 @@ mod ntt126_ifma_tests {
     // n = 32768: large size where the working set exceeds L2 on typical cores.
     cross_backend_test_suite! {
         mod ntt_n32768,
-        backend_ref =  poulpy_cpu_ref::NTTIfmaRef,
+        backend_ref =  poulpy_cpu_ref::NTT120Ref,
         backend_test = crate::NTT126Ifma,
-        params = TestParams { size: 1<<15, base2k: 12 },
+        params = TestParams { size: 1<<15, base2k: 50 },
         tests = {
             test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
             test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_consume,
@@ -200,4 +201,39 @@ fn test_convolution_ntt126_ifma() {
 fn test_convolution_pairwise_ntt126_ifma() {
     let module: Module<NTT126Ifma> = Module::<NTT126Ifma>::new(8);
     test_convolution_pairwise(&module, 12);
+}
+
+#[test]
+fn test_convolution_by_const_ntt126_ifma_empty_inputs_zero_output() {
+    let module: Module<NTT126Ifma> = Module::<NTT126Ifma>::new(8);
+    let mut res: VecZnxBigOwned<NTT126Ifma> = VecZnxBigOwned::alloc(8, 1, 2);
+    for j in 0..res.size() {
+        res.at_mut(0, j).fill(7);
+    }
+
+    let a_empty: VecZnx<Vec<u8>> = VecZnx::alloc(8, 1, 0);
+    let mut scratch: ScratchOwned<NTT126Ifma> =
+        ScratchOwned::alloc(module.cnv_by_const_apply_tmp_bytes(0, res.size(), a_empty.size(), 1));
+    module.cnv_by_const_apply(0, &mut res, 0, &a_empty, 0, &[1], scratch.borrow());
+    for j in 0..res.size() {
+        assert!(res.at(0, j).iter().all(|&x| x == 0));
+    }
+
+    let mut a: VecZnx<Vec<u8>> = VecZnx::alloc(8, 1, 1);
+    a.at_mut(0, 0).fill(3);
+    for j in 0..res.size() {
+        res.at_mut(0, j).fill(7);
+    }
+    let mut scratch: ScratchOwned<NTT126Ifma> =
+        ScratchOwned::alloc(module.cnv_by_const_apply_tmp_bytes(0, res.size(), a.size(), 0));
+    module.cnv_by_const_apply(0, &mut res, 0, &a, 0, &[], scratch.borrow());
+    for j in 0..res.size() {
+        assert!(res.at(0, j).iter().all(|&x| x == 0));
+    }
+}
+
+#[test]
+#[should_panic(expected = "NTT126Ifma requires n >= 8")]
+fn test_ntt126_ifma_rejects_too_small_ring() {
+    let _ = Module::<NTT126Ifma>::new(4);
 }

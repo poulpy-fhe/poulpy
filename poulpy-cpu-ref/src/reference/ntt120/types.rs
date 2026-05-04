@@ -21,19 +21,20 @@ use std::{fmt, ops::Add};
 
 use super::primes::{PrimeSet, Primes30};
 
-/// A single NTT-domain coefficient in the q120b representation.
+/// Shared 32-byte NTT prep scalar for 4-lane CRT backends.
 ///
-/// Stores four `u64` residues — one per CRT prime — in a packed
-/// `#[repr(C)]` struct so that:
+/// Stores four `u64` lanes in a packed `#[repr(C)]` struct so that:
 ///
-/// - A `VecZnxDft<_, NTT120Ref>` with ring degree `n` stores `n`
-///   consecutive `Q120bScalar` values per limb.
-/// - The scalar bytes can be reinterpreted as `[u64; 4]` (q120b) via
+/// - A `VecZnxDft` limb stores `n` consecutive `Q120bScalar` values.
+/// - The scalar bytes can be reinterpreted as `[u64; 4]` via
 ///   [`bytemuck::cast_slice`].
-/// - The same 32-byte layout can be reinterpreted as `[u32; 8]` (q120c)
-///   for prepared-constant SVP/VMP multiply–accumulate operations.
+/// - The same 32-byte layout can be reinterpreted as `[u32; 8]` for
+///   prepared-constant SVP/VMP multiply–accumulate operations.
 ///
-/// Used as `Backend::ScalarPrep` for `NTT120Ref`.
+/// The historical `Q120bScalar` name comes from the original 4-prime NTT120
+/// backend. The layout itself is shared by every backend that uses a
+/// 4-lane `ScalarPrep`, including 3-prime backends that leave lane 3 as
+/// padding.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct Q120bScalar(pub [u64; 4]);

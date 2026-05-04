@@ -1,9 +1,8 @@
 //! AVX512-IFMA accelerated NTT CPU backend for the Poulpy lattice cryptography library.
 //!
 //! This module provides [`NTT126Ifma`], an AVX512-IFMA accelerated backend implementation for
-//! [`poulpy_hal`] that uses IFMA NTT arithmetic (CRT over three ~42-bit primes). It
-//! mirrors the structure of the scalar [`poulpy_cpu_ref::NTTIfmaRef`] backend, with
-//! AVX512-IFMA accelerated kernels substituted where available.
+//! [`poulpy_hal`] that uses IFMA NTT arithmetic (CRT over three ~42-bit primes). The
+//! scalar reference for these kernels lives in the [`reference`] submodule.
 //!
 //! # Current acceleration status
 //!
@@ -12,23 +11,29 @@
 //! | Coefficient-domain (`Znx*`) | AVX-512F (reuses `crate::znx_avx512`) |
 //! | NTT forward/inverse | AVX512-IFMA (`kernels` module) |
 //! | mat_vec BBC product (SVP/VMP hot path) | AVX512-IFMA (`mat_vec_ifma` module) |
-//! | VecZnxBig add/sub/negate | AVX-512F (`crate::vec_znx_big_avx512` module) |
-//! | VecZnxBig normalization | AVX-512F (`crate::vec_znx_big_avx512` module) |
+//! | VecZnxBig add/sub/negate | shared `i128` helpers wired through the HAL implementation |
+//! | VecZnxBig normalization | shared `i128` normalization helpers wired through the HAL implementation |
 //!
 //! # Scalar types
 //!
-//! - `ScalarPrep = Q120bScalar` — NTT-domain coefficients (4 × u64 storage: three active residues plus padding).
+//! - `ScalarPrep = Q120bScalar` — shared 4-lane prep scalar (three active residues plus padding).
 //! - `ScalarBig  = i128` — CRT-reconstructed large coefficients.
 
+pub(crate) mod bbc_meta;
 pub(crate) mod convolution;
+pub(crate) mod kernels;
 pub(crate) mod mat_vec_ifma;
-mod module;
+pub(crate) mod module;
 mod prim;
+pub(crate) mod primes;
+pub(crate) mod reference;
+pub(crate) mod svp;
+pub(crate) mod tables;
+pub(crate) mod traits;
+pub(crate) mod types;
 pub(crate) mod vec_znx_dft;
 pub(crate) mod vmp;
 mod znx;
-
-pub(crate) mod kernels;
 
 #[cfg(test)]
 mod tests;
@@ -42,7 +47,7 @@ mod tests;
 ///
 /// # Backend characteristics
 ///
-/// - **ScalarPrep**: `Q120bScalar` — NTT-domain coefficients stored as three CRT residues plus one padding lane.
+/// - **ScalarPrep**: `Q120bScalar` — shared 4-lane prep scalar with three CRT residues plus one padding lane.
 /// - **ScalarBig**: `i128` — large-coefficient ring elements use 128-bit signed integers.
 /// - **Prime set**: `Primes42` (three ~42-bit primes, Q ≈ 2^126).
 ///

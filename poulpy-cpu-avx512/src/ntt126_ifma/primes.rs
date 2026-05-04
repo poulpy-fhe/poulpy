@@ -1,3 +1,5 @@
+//! Prime sets and modular helpers for the 3-prime IFMA representation.
+
 /// Selects a set of three NTT-friendly primes and their associated
 /// constants for the IFMA CRT representation.
 ///
@@ -6,10 +8,10 @@
 /// All three primes support a primitive `2^17`-th root of unity, so
 /// NTT sizes up to `2^16` are supported.
 ///
-/// Unlike [`super::super::ntt120::primes::PrimeSet`] which uses `[u32; 4]`
+/// Unlike [`poulpy_cpu_ref::reference::ntt120::primes::PrimeSet`] which uses `[u32; 4]`
 /// for ~30-bit primes, this trait uses `[u64; 3]` for ~42-bit primes
 /// that fit within IFMA52's 52-bit input window.
-pub trait PrimeSetIfma: Sized + Sync + Send + 'static {
+pub trait PrimeSetNtt126Ifma: Sized + Sync + Send + 'static {
     /// The three NTT-friendly primes `[Q0, Q1, Q2]`.
     const Q: [u64; 3];
 
@@ -41,7 +43,7 @@ pub trait PrimeSetIfma: Sized + Sync + Send + 'static {
 /// - Designed for use with AVX512-IFMA52 instructions (primes < 2^49).
 pub struct Primes42;
 
-impl PrimeSetIfma for Primes42 {
+impl PrimeSetNtt126Ifma for Primes42 {
     const Q: [u64; 3] = [
         4_398_044_938_241, // 33554420 * 2^17 + 1
         4_398_043_496_449, // 33554409 * 2^17 + 1
@@ -114,8 +116,8 @@ mod tests {
             ];
 
             // Garner reconstruction
-            let inv01 = <Primes42 as PrimeSetIfma>::CRT_CST[0];
-            let inv012 = <Primes42 as PrimeSetIfma>::CRT_CST[1];
+            let inv01 = <Primes42 as PrimeSetNtt126Ifma>::CRT_CST[0];
+            let inv012 = <Primes42 as PrimeSetNtt126Ifma>::CRT_CST[1];
 
             let v0 = r[0] as u128;
             // Modular subtraction: (r[1] - v0) mod q[1]

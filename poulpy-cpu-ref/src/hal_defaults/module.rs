@@ -2,9 +2,7 @@
 
 use std::ptr::NonNull;
 
-use crate::reference::{
-    fft64::module::FFT64HandleFactory, ntt_ifma::vec_znx_dft::NttIfmaHandleFactory, ntt120::vec_znx_dft::NttHandleFactory,
-};
+use crate::reference::{fft64::module::FFT64HandleFactory, ntt120::vec_znx_dft::NttHandleFactory};
 use poulpy_hal::layouts::{Backend, Module};
 
 #[doc(hidden)]
@@ -36,18 +34,3 @@ pub trait NTT120ModuleDefaults<BE: Backend>: Backend {
 }
 
 impl<BE: Backend> NTT120ModuleDefaults<BE> for BE {}
-
-#[doc(hidden)]
-pub trait NTT126IfmaModuleDefaults<BE: Backend>: Backend {
-    fn module_new_default(n: u64) -> Module<BE>
-    where
-        BE::Handle: NttIfmaHandleFactory,
-    {
-        <BE::Handle as NttIfmaHandleFactory>::assert_ntt_ifma_runtime_support();
-        let handle = <BE::Handle as NttIfmaHandleFactory>::create_ntt_ifma_handle(n as usize);
-        let ptr: NonNull<BE::Handle> = NonNull::from(Box::leak(Box::new(handle)));
-        unsafe { Module::from_nonnull(ptr, n) }
-    }
-}
-
-impl<BE: Backend> NTT126IfmaModuleDefaults<BE> for BE {}

@@ -34,8 +34,8 @@
 //! # Scalar types
 //!
 //! - For `FFT64Avx512`:  `ScalarPrep = f64` (DFT-domain), `ScalarBig = i64` (one scalar word per limb).
-//! - For `NTT120Avx512`: `ScalarPrep = Q120bScalar` (4 × u64 CRT residues over four ~30-bit primes), `ScalarBig = i128`.
-//! - For `NTT126Ifma`:   `ScalarPrep = Q120bScalar` (4 × u64 storage: three ~42-bit CRT residues plus padding), `ScalarBig = i128`.
+//! - For `NTT120Avx512`: `ScalarPrep = Q120bScalar` (shared 4-lane prep scalar with four active ~30-bit CRT residues), `ScalarBig = i128`.
+//! - For `NTT126Ifma`:   `ScalarPrep = Q120bScalar` (shared 4-lane prep scalar with three active ~42-bit CRT residues plus padding), `ScalarBig = i128`.
 //!
 //! # CPU requirements
 //!
@@ -127,7 +127,7 @@
 //!
 //! Qualitative trends observed across operations:
 //!
-//! - **Ring element arithmetic** (add/sub/negate, lazy q120b ops, VecZnxBig i128 ops):
+//! - **Ring element arithmetic** (add/sub/negate, lazy 4-lane prep-scalar ops, VecZnxBig i128 ops):
 //!   memory-bandwidth bound; the 256→512-bit widening yields little headroom over AVX2.
 //! - **NTT forward / inverse** (`NTT120Avx512`, 2-coefficient pair-pack): a moderate
 //!   improvement over AVX2 in cache-resident regimes; the gap narrows at large `n` as
@@ -199,19 +199,34 @@
 // ─────────────────────────────────────────────────────────────
 
 // `enable-avx512f` (gates `FFT64Avx512`) requires x86-64 + AVX-512F.
-#[cfg(all(feature = "enable-avx512f", not(target_arch = "x86_64")))]
+#[cfg(all(feature = "enable-avx512f", not(docsrs), not(target_arch = "x86_64")))]
 compile_error!("feature `enable-avx512f` requires target_arch = \"x86_64\".");
 
-#[cfg(all(feature = "enable-avx512f", target_arch = "x86_64", not(target_feature = "avx512f")))]
+#[cfg(all(
+    feature = "enable-avx512f",
+    not(docsrs),
+    target_arch = "x86_64",
+    not(target_feature = "avx512f")
+))]
 compile_error!("feature `enable-avx512f` requires AVX512F. Build with RUSTFLAGS=\"-C target-feature=+avx512f\".");
 
 // `enable-ifma` (gates `NTT126Ifma`) additionally requires AVX-512-IFMA and AVX-512VL.
-#[cfg(all(feature = "enable-ifma", target_arch = "x86_64", not(target_feature = "avx512ifma")))]
+#[cfg(all(
+    feature = "enable-ifma",
+    not(docsrs),
+    target_arch = "x86_64",
+    not(target_feature = "avx512ifma")
+))]
 compile_error!(
     "feature `enable-ifma` requires AVX512-IFMA. Build with RUSTFLAGS=\"-C target-feature=+avx512f,+avx512ifma,+avx512vl\"."
 );
 
-#[cfg(all(feature = "enable-ifma", target_arch = "x86_64", not(target_feature = "avx512vl")))]
+#[cfg(all(
+    feature = "enable-ifma",
+    not(docsrs),
+    target_arch = "x86_64",
+    not(target_feature = "avx512vl")
+))]
 compile_error!(
     "feature `enable-ifma` requires AVX512VL. Build with RUSTFLAGS=\"-C target-feature=+avx512f,+avx512ifma,+avx512vl\"."
 );
@@ -240,6 +255,20 @@ pub use fft64::{FFT64Avx512, ReimFFTAvx512, ReimIFFTAvx512};
 pub use ntt120_avx512::NTT120Avx512;
 #[cfg(feature = "enable-ifma")]
 pub use ntt126_ifma::NTT126Ifma;
+
+/// Public surface for tools that drive [`NTT126Ifma`] kernels directly (e.g. the
+/// benches): the precomputed twiddle tables, the prime set, and the
+/// [`Ntt126IfmaDFTExecute`](ntt126_ifma_api::Ntt126IfmaDFTExecute) trait used to
+/// dispatch a forward / inverse NTT.
+///
+/// The scalar test oracles for the IFMA SIMD kernels live under
+/// `crate::ntt126_ifma::reference` and are not re-exported.
+#[cfg(feature = "enable-ifma")]
+pub mod ntt126_ifma_api {
+    pub use crate::ntt126_ifma::primes::{PrimeSetNtt126Ifma, Primes42};
+    pub use crate::ntt126_ifma::tables::{Ntt126IfmaTable, Ntt126IfmaTableInv};
+    pub use crate::ntt126_ifma::traits::Ntt126IfmaDFTExecute;
+}
 
 #[cfg(feature = "enable-avx512f")]
 use poulpy_core::oep::CoreImpl;
