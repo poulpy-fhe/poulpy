@@ -61,6 +61,7 @@ Backends override CKKS algorithms by implementing `unsafe trait CKKSImpl<BE>`, t
 - Make `WriterTo` for `MatZnx` and `VecZnx` emit the canonical logical byte length from layout metadata, write only that prefix, and error when backing storage is shorter than the coefficient span.
 - Fix `ScalarZnx::write_to` to emit the full `n * cols` coefficient byte span (aligned `i64` layout).
 - **Breaking:** Remove `ReaderFrom` / `WriterTo` for prepared DFT layouts (`SvpPPol`); remove `SvpPPolFromBytes`, `VmpPMatFromBytes`, and `from_bytes` on the corresponding prepared types. Document that `SvpPPol` / `VmpPMat` DFT alignment assumes a power-of-two ring degree.
+- The aligned allocator now issues `madvise(MADV_HUGEPAGE)` on Linux for allocations ≥ 2 MB before the zero-fill, reducing TLB pressure on large NTT/VMP working sets (~5% speedup measured on `ntt120-avx` at large rings; FFT64 paths within noise). The threshold is overridable via the `POULPY_HUGEPAGE_MIN_BYTES` environment variable; setting it to a very large value disables the advise. The call is advisory and silently ignored on failure, and is a no-op on non-Linux targets and on Linux hosts with `transparent_hugepage=never`.
 
 ### `poulpy-core`
 - **Breaking:** Rename all in-place GLWE and LWE operation methods from `_inplace` to `_assign` (`glwe_normalize_assign`, `glwe_sub_assign`, `glwe_automorphism_assign`, etc.) to match the workspace-wide naming convention.

@@ -165,3 +165,31 @@ pub trait HalVecZnxDefaults<BE: Backend>: Backend {
 ## Tests
 
 A fully generic cross-backend test suite is available in [`src/test_suite`](./src/test_suite).
+
+## Tuning
+
+### Transparent huge pages (Linux only)
+
+The aligned allocator used for `VecZnx`, `VmpPMat`, and other large workspace
+buffers issues `madvise(MADV_HUGEPAGE)` for allocations at or above 2 MB before
+the zero-fill, which materialises the working set on 2 MB pages directly rather
+than relying on `khugepaged` promotion. On large NTT/VMP workloads (e.g.
+`ntt120-avx` at ring degrees ≥ 16384) this measurably reduces TLB pressure
+(~5% wall-clock improvement on apply-DFT paths).
+
+The threshold is overridable at process start via the
+`POULPY_HUGEPAGE_MIN_BYTES` environment variable:
+
+```bash
+# Disable hugepage advise (e.g. on locked-down containers, cgroup'd
+# environments, or hosts where THP defrag is undesirable):
+POULPY_HUGEPAGE_MIN_BYTES=18446744073709551615 ./your_binary
+
+# Lower the threshold to advise on smaller buffers:
+POULPY_HUGEPAGE_MIN_BYTES=524288 ./your_binary
+```
+
+The variable is read once on first allocation and cached, so changes mid-process
+have no effect. The advise call is silently ignored on failure, is a no-op on
+non-Linux targets, and is a no-op on Linux hosts running with
+`/sys/kernel/mm/transparent_hugepage/enabled = never`.
