@@ -1,7 +1,7 @@
 use poulpy_hal::{
     api::{
         ScratchAvailable, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxCopy, VecZnxFillUniform, VecZnxNormalize,
-        VecZnxNormalizeAssign,
+        VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
     },
     layouts::{DeviceBuf, FillUniform, Module, Scratch, ScratchOwned, VecZnx, ZnxView, ZnxViewMut},
     source::Source,
@@ -269,6 +269,100 @@ where
         let want: Vec<i64> = initial.iter().zip(product.data().raw()).map(|(x, y)| x + y).collect();
         assert_eq!(acc.data().raw(), want.as_slice());
     }
+}
+
+pub fn test_glwe_tensor_apply_aligned_offset<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+where
+    Module<BE>: GLWETensoring<BE> + VecZnxNormalizeAssign<BE> + VecZnxNormalizeTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    Scratch<BE>: ScratchAvailable + ScratchTakeCore<BE>,
+{
+    let base2k: usize = params.base2k;
+    let rank: usize = 2;
+    let k: usize = 6 * base2k;
+    let cnv_offset = k;
+    let cnv_offset_hi = (cnv_offset / base2k).saturating_sub(1);
+    let n: usize = module.n();
+
+    let glwe_infos = GLWELayout {
+        n: n.into(),
+        base2k: base2k.into(),
+        k: k.into(),
+        rank: rank.into(),
+    };
+
+    let mut a = GLWE::<Vec<u8>>::alloc_from_infos(&glwe_infos);
+    let mut b = GLWE::<Vec<u8>>::alloc_from_infos(&glwe_infos);
+    let mut product = GLWETensor::<Vec<u8>>::alloc_from_infos(&glwe_infos);
+    let mut want = GLWETensor::<Vec<u8>>::alloc_from_infos(&glwe_infos);
+    let mut tmp = VecZnx::alloc(n, 1, product.size());
+
+    for (i, x) in a.data_mut().raw_mut().iter_mut().enumerate() {
+        *x = (i as i64 % 7) - 3;
+    }
+    for (i, x) in b.data_mut().raw_mut().iter_mut().enumerate() {
+        *x = (i as i64 % 5) - 2;
+    }
+
+    let mut scratch = ScratchOwned::<BE>::alloc(
+        module
+            .glwe_tensor_apply_tmp_bytes(&product, &a, &b)
+            .max(module.vec_znx_normalize_tmp_bytes()),
+    );
+
+    module.glwe_tensor_apply(
+        cnv_offset,
+        &mut product,
+        &a,
+        a.max_k().as_usize(),
+        &b,
+        b.max_k().as_usize(),
+        scratch.borrow(),
+    );
+
+    let cols = rank + 1;
+    for i in 0..cols {
+        let col_i = i * cols - (i * (i + 1) / 2);
+        for j in i..cols {
+            let res_col = col_i + j;
+            bivariate_convolution_naive(
+                module,
+                base2k,
+                (cnv_offset_hi + 1) as i64,
+                &mut want.data,
+                res_col,
+                a.data(),
+                i,
+                b.data(),
+                j,
+                scratch.borrow(),
+            );
+
+            if i != j {
+                bivariate_convolution_naive(
+                    module,
+                    base2k,
+                    (cnv_offset_hi + 1) as i64,
+                    &mut tmp,
+                    0,
+                    a.data(),
+                    j,
+                    b.data(),
+                    i,
+                    scratch.borrow(),
+                );
+
+                for limb in 0..want.size() {
+                    for (x, y) in want.data.at_mut(res_col, limb).iter_mut().zip(tmp.at(0, limb)) {
+                        *x += y;
+                    }
+                }
+                module.vec_znx_normalize_assign(base2k, &mut want.data, res_col, scratch.borrow());
+            }
+        }
+    }
+
+    assert_eq!(product.data().raw(), want.data().raw());
 }
 
 pub fn test_glwe_tensor_square<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)

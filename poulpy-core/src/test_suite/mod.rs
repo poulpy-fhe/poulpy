@@ -40,6 +40,7 @@ macro_rules! core_backend_test_suite {
                 glwe_base2k_conv => $crate::test_suite::test_glwe_base2k_conversion,
                 test_glwe_tensoring => $crate::test_suite::glwe_tensor::test_glwe_tensoring,
                 test_glwe_tensor_apply_add_assign => $crate::test_suite::glwe_tensor::test_glwe_tensor_apply_add_assign,
+                test_glwe_tensor_apply_aligned_offset => $crate::test_suite::glwe_tensor::test_glwe_tensor_apply_aligned_offset,
                 test_glwe_tensor_square => $crate::test_suite::glwe_tensor::test_glwe_tensor_square,
                 test_glwe_mul_plain => $crate::test_suite::glwe_tensor::test_glwe_mul_plain,
                 test_glwe_mul_const => $crate::test_suite::glwe_tensor::test_glwe_mul_const,

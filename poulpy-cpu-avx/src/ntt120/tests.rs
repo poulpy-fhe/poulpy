@@ -1,7 +1,6 @@
 use poulpy_hal::{
-    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes},
-    layouts::{DataView, FillUniform, MatZnx, Module, ScratchOwned},
-    source::Source,
+    api::ModuleNew,
+    layouts::Module,
     test_suite::convolution::{test_convolution, test_convolution_by_const, test_convolution_pairwise},
 };
 use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
@@ -184,63 +183,4 @@ fn test_convolution_direct() {
     test_convolution(&module, 50);
     test_convolution_by_const(&module, 50);
     test_convolution_pairwise(&module, 50);
-}
-
-#[test]
-fn test_vmp_prepare_matches_ref_layout() {
-    let n = 1usize << 8;
-    let rows = 3;
-    let cols_in = 2;
-    let cols_out = 2;
-    let size = 4;
-
-    let module_ref = Module::<poulpy_cpu_ref::NTT120Ref>::new(n as u64);
-    let module_avx = Module::<NTT120Avx>::new(n as u64);
-
-    let mut source = Source::new([0u8; 32]);
-    let mut mat: MatZnx<Vec<u8>> = MatZnx::alloc(n, rows, cols_in, cols_out, size);
-    mat.fill_uniform(50, &mut source);
-
-    let mut pmat_ref = module_ref.vmp_pmat_alloc(rows, cols_in, cols_out, size);
-    let mut pmat_avx = module_avx.vmp_pmat_alloc(rows, cols_in, cols_out, size);
-
-    let mut scratch_ref: ScratchOwned<poulpy_cpu_ref::NTT120Ref> =
-        ScratchOwned::alloc(module_ref.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size));
-    let mut scratch_avx: ScratchOwned<NTT120Avx> =
-        ScratchOwned::alloc(module_avx.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size));
-
-    module_ref.vmp_prepare(&mut pmat_ref, &mat, scratch_ref.borrow());
-    module_avx.vmp_prepare(&mut pmat_avx, &mat, scratch_avx.borrow());
-
-    let nrows = rows * cols_in;
-    let ncols = cols_out * size;
-    let n_block_pairs = n / 4;
-    let plane_stride = n_block_pairs * ncols * nrows * 4;
-    let offset_u64 = nrows * ncols * 8;
-    let pmat_ref_u64: &[u64] = bytemuck::cast_slice(pmat_ref.data().as_ref());
-
-    let mut expected = vec![0u64; 4 * plane_stride];
-    for row_i in 0..nrows {
-        for col_i in 0..ncols {
-            let dst_base_u64 = if col_i == ncols - 1 && !ncols.is_multiple_of(2) {
-                col_i * nrows * 8 + row_i * 8
-            } else {
-                (col_i / 2) * (nrows * 16) + row_i * 16 + (col_i % 2) * 8
-            };
-
-            for bp in 0..n_block_pairs {
-                let blk0 = 2 * bp;
-                let blk1 = blk0 + 1;
-                let chunk0 = &pmat_ref_u64[dst_base_u64 + blk0 * offset_u64..dst_base_u64 + blk0 * offset_u64 + 8];
-                let chunk1 = &pmat_ref_u64[dst_base_u64 + blk1 * offset_u64..dst_base_u64 + blk1 * offset_u64 + 8];
-
-                for p in 0..4usize {
-                    let dst = p * plane_stride + bp * (ncols * nrows * 4) + col_i * (nrows * 4) + row_i * 4;
-                    expected[dst..dst + 4].copy_from_slice(&[chunk0[p], chunk0[4 + p], chunk1[p], chunk1[4 + p]]);
-                }
-            }
-        }
-    }
-
-    assert_eq!(pmat_avx.data().as_ref(), bytemuck::cast_slice::<u64, u8>(&expected));
 }

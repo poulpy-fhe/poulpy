@@ -36,10 +36,12 @@ pub(crate) trait CKKSMulDefault<BE: Backend> {
             rank: res.rank(),
         };
 
-        GLWETensor::bytes_of_from_infos(&glwe_layout)
-            + self
-                .glwe_tensor_apply_tmp_bytes(&glwe_layout, res, res)
-                .max(self.glwe_tensor_relinearize_tmp_bytes(res, &glwe_layout, tsk))
+        let lvl_0 = GLWETensor::bytes_of_from_infos(&glwe_layout);
+        let lvl_1 = self
+            .glwe_tensor_apply_tmp_bytes(&glwe_layout, res, res)
+            .max(self.glwe_tensor_relinearize_tmp_bytes(res, &glwe_layout, tsk));
+
+        lvl_0 + lvl_1
     }
 
     fn ckks_mul_into_default(

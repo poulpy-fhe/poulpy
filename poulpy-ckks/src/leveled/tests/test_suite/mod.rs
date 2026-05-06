@@ -76,20 +76,6 @@ pub const NTT120_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     dsize: 1,
 };
 
-/// NTT120 parameter set with all scale parameters multiples of base2k,
-/// exercising `cnv_offset_lo == 0` in the fused mul.
-pub const NTT120_PARAMS_ALIGNED: CKKSTestParams = CKKSTestParams {
-    n: 256,
-    base2k: 52,
-    k: 52 * 6,
-    prec: CKKSMeta {
-        log_delta: 52,
-        log_budget: 52 * 5,
-    },
-    hw: 192,
-    dsize: 1,
-};
-
 /// FFT64 parameter set.
 pub const FFT64_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     n: 256,
