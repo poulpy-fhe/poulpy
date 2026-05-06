@@ -129,15 +129,13 @@ pub(crate) fn vmp_apply_tmp_bytes_ifma(a_size: usize, b_rows: usize, b_cols_in: 
     (32 + 3 * 8 * row_max) * size_of::<u64>()
 }
 
-/// Prime-major VMP prepare.
+/// Row-prime-local VMP prepare.
 ///
-/// Layout: 3 planes (one per prime), each containing `n_blk_quads × nrows × ncols`
-/// groups of 8 u64 (= 4 x2-blocks × 2 coefficients). Within each plane, columns are
-/// stored column-major for streaming access during apply.
+/// Layout: `n_blk_quads × ncols × nrows × 3` groups of 8 u64. Each group
+/// contains one prime's 4 x2-blocks × 2 coefficients for the selected row.
 ///
-/// Plane `p` byte offset = `p * plane_bytes`.
-/// Within a plane, element `(blk_quad, row, col)` offset in u64:
-///   `blk_quad * nrows * ncols * 8  +  col * nrows * 8  +  row * 8`.
+/// Element `(blk_quad, col, row, prime)` offset in u64:
+///   `((blk_quad * ncols + col) * nrows + row) * 24 + prime * 8`.
 pub(crate) fn vmp_prepare_ifma<R, A>(module: &Module<crate::NTT126Ifma>, res: &mut R, a: &A, tmp: &mut [u64])
 where
     R: VmpPMatToMut<crate::NTT126Ifma>,
@@ -149,20 +147,19 @@ where
     let nrows = a.cols_in() * a.rows();
     let ncols = a.cols_out() * a.size();
     let n_blks = n / 2;
-    let n_blk_quads = n_blks / 4;
 
     let (tmp_b, tmp_c_u64) = tmp.split_at_mut(4 * n);
     let tmp_c: &mut [u32] = cast_slice_mut(tmp_c_u64);
     let mat_i64: &[i64] = a.raw();
     let pmat_u64: &mut [u64] = cast_slice_mut(res.data_mut());
 
-    let plane_stride = n_blk_quads * nrows * ncols * 8; // u64 per prime plane
-    let bq_stride = nrows * ncols * 8; // u64 per block-quad within a plane
-    let col_stride = nrows * 8; // u64 per column within a block-quad
+    let bq_stride = ncols * nrows * 24; // u64 per block-quad
+    let col_stride = nrows * 24; // u64 per column within a block-quad
+    let row_stride = 24; // u64 per row: 3 prime vectors
 
     // tmp_c is in the interleaved prepared format: per coefficient 4 u64 (as 8 u32),
     // layout [p0, p1, p2, pad] × n coefficients. We scatter each coefficient
-    // into the 3 prime planes at the right block-quad slot.
+    // into row-local prime vectors at the right block-quad slot.
     for row_i in 0..nrows {
         for col_i in 0..ncols {
             let pos = n * (row_i * ncols + col_i);
@@ -176,11 +173,12 @@ where
                 let bq = blk_j / 4;
                 let slot = blk_j % 4; // 0..3, maps to lanes 2*slot, 2*slot+1
                 let coeff0_base = blk_j * 8; // in tmp_c_u64: 4 u64 per coeff, 2 coeffs per x2-block = 8 u64
-                let dst_base = bq * bq_stride + col_i * col_stride + row_i * 8 + 2 * slot;
+                let dst_base = bq * bq_stride + col_i * col_stride + row_i * row_stride + 2 * slot;
 
                 for p in 0..3usize {
-                    pmat_u64[p * plane_stride + dst_base] = tmp_c_u64[coeff0_base + p]; // coeff 0
-                    pmat_u64[p * plane_stride + dst_base + 1] = tmp_c_u64[coeff0_base + 4 + p]; // coeff 1
+                    let dst = dst_base + p * 8;
+                    pmat_u64[dst] = tmp_c_u64[coeff0_base + p]; // coeff 0
+                    pmat_u64[dst + 1] = tmp_c_u64[coeff0_base + 4 + p]; // coeff 1
                 }
             }
         }
@@ -282,9 +280,9 @@ unsafe fn vmp_apply_core_pm<const OVERWRITE: bool>(
     let x_pm = &mut x_pm[..3 * 8 * row_max];
 
     // Matrix layout constants
-    let plane_stride = n_blk_quads * nrows * ncols * 8; // u64 per prime plane
-    let bq_stride = nrows * ncols * 8; // u64 per block-quad
-    let col_stride_y = nrows * 8; // u64 per column within a block-quad
+    let bq_stride = ncols * nrows * 24; // u64 per block-quad
+    let col_stride_y = nrows * 24; // u64 per column within a block-quad
+    let row_stride_y = 24; // u64 per row: 3 prime vectors
 
     for bq in 0..n_blk_quads {
         unsafe { extract_blk_quad_prime_major(n, row_max, bq, a_u64, x_pm) };
@@ -304,9 +302,7 @@ unsafe fn vmp_apply_core_pm<const OVERWRITE: bool>(
                 let x_base0 = x_pm.as_ptr() as *const __m512i;
                 let x_base1 = x_pm.as_ptr().add(x_plane_sz) as *const __m512i;
                 let x_base2 = x_pm.as_ptr().add(2 * x_plane_sz) as *const __m512i;
-                let y_base0 = pmat_u64.as_ptr().add(y_off) as *const __m512i;
-                let y_base1 = pmat_u64.as_ptr().add(plane_stride + y_off) as *const __m512i;
-                let y_base2 = pmat_u64.as_ptr().add(2 * plane_stride + y_off) as *const __m512i;
+                let y_base = pmat_u64.as_ptr().add(y_off);
 
                 let mut acc_lo0 = _mm512_setzero_si512();
                 let mut acc_hi0 = _mm512_setzero_si512();
@@ -317,11 +313,12 @@ unsafe fn vmp_apply_core_pm<const OVERWRITE: bool>(
 
                 for r in 0..row_max {
                     let x0 = _mm512_loadu_si512(x_base0.add(r));
-                    let y0 = _mm512_loadu_si512(y_base0.add(r));
+                    let y_row = y_base.add(r * row_stride_y);
+                    let y0 = _mm512_loadu_si512(y_row as *const __m512i);
                     let x1 = _mm512_loadu_si512(x_base1.add(r));
-                    let y1 = _mm512_loadu_si512(y_base1.add(r));
+                    let y1 = _mm512_loadu_si512(y_row.add(8) as *const __m512i);
                     let x2 = _mm512_loadu_si512(x_base2.add(r));
-                    let y2 = _mm512_loadu_si512(y_base2.add(r));
+                    let y2 = _mm512_loadu_si512(y_row.add(16) as *const __m512i);
                     acc_lo0 = _mm512_madd52lo_epu64(acc_lo0, x0, y0);
                     acc_hi0 = _mm512_madd52hi_epu64(acc_hi0, x0, y0);
                     acc_lo1 = _mm512_madd52lo_epu64(acc_lo1, x1, y1);
