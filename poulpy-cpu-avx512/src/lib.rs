@@ -4,9 +4,15 @@
 //! leverage x86-64 SIMD instruction sets (AVX-512F and AVX-512-IFMA) to accelerate cryptographic
 //! operations in fully homomorphic encryption (FHE) schemes based on Ring-Learning-With-Errors (RLWE):
 //!
-//! - `FFT64Avx512`: FFT64-domain backend using AVX-512F for REIM FFT kernels.
+//! - `FFT64Avx512`: FFT64-domain backend. REIM butterflies use AVX-512F; the inner
+//!   REIM4 vector-matrix kernels (`reim4_vec_mat*_product`) use AVX2+FMA, which
+//!   benchmarks at parity with or ahead of the AVX-512F variant on Zen 5 across
+//!   ring sizes 2^10..2^16 and is competitive on Intel AVX-512.
 //! - `NTT120Avx512`: NTT-domain backend over four ~30-bit CRT primes, AVX-512F-only (no IFMA).
-//! - `NTT126Ifma`: NTT-domain backend over three ~42-bit CRT primes, accelerated with AVX-512-IFMA.
+//! - `NTT126Ifma`: NTT-domain backend over three ~42-bit CRT primes, accelerated with
+//!   AVX-512-IFMA. The post-iNTT 3-prime CRT reconstruction (b → i128) runs through a
+//!   hand-written assembly kernel that combines IFMA Garner reduction with a BMI2/ADX
+//!   scalar carry chain for the final 128-bit recomposition.
 //!
 //! **Backend selection.** On hosts that support AVX-512-IFMA, prefer `NTT126Ifma`: its
 //! `vpmadd52`-driven mat_vec / VMP / SVP kernels typically lead end-to-end on CKKS-style
@@ -17,15 +23,15 @@
 //!
 //! `poulpy_hal` defines a hardware abstraction layer (HAL) via the [`Backend`](poulpy_hal::layouts::Backend)
 //! trait and a family of _open extension point_ (OEP) traits in [`poulpy_hal::oep`]. This crate
-//! implements every OEP trait for `FFT64Avx512`, `NTT120Avx512`, and `NTT126Ifma` using
-//! hand-optimized AVX-512 / IFMA intrinsics where profiling demonstrates performance
-//! benefits over compiler-generated code, and reuses the reference backend for colder paths.
+//! implements every OEP trait for `FFT64Avx512`, `NTT120Avx512`, and `NTT126Ifma` using a
+//! mix of AVX-512F, AVX-512-IFMA, AVX2+FMA, and hand-written x86-64 assembly chosen per
+//! kernel by profiling, and reuses the reference backend for colder paths.
 //!
 //! The internal modules are organized by operation domain:
 //!
 //! | Module          | Domain                                                    |
 //! |-----------------|-----------------------------------------------------------|
-//! | `fft64`         | `FFT64Avx512` backend and AVX-512 REIM FFT kernels        |
+//! | `fft64`         | `FFT64Avx512` backend; AVX-512F REIM FFT kernels and AVX2+FMA REIM4 vec-mat kernels |
 //! | `znx_avx512`    | AVX-512F single ring element (`Z[X]/(X^n+1)`) arithmetic  |
 //! | `ntt120_avx512` | `NTT120Avx512` backend (AVX-512F-only, 4×30-bit CRT primes) |
 //! | `ntt126_ifma`   | `NTT126Ifma` backend, IFMA mat_vec, vec_znx_dft / vec_znx_big |
@@ -39,12 +45,17 @@
 //!
 //! # CPU requirements
 //!
-//! `FFT64Avx512` and `NTT120Avx512` require only:
+//! `FFT64Avx512` and `NTT120Avx512` require:
 //! - **AVX-512F**: 512-bit SIMD foundation.
+//! - **AVX2 + FMA**: used by the REIM4 vec-mat product path inside `FFT64Avx512` (every
+//!   AVX-512F-capable CPU also has AVX2 and FMA, but `Module::new()` checks all three
+//!   explicitly so misconfigured deployments fail loudly).
 //!
 //! `NTT126Ifma` additionally requires:
 //! - **AVX-512-IFMA**: 52-bit fused-multiply-add instructions (`vpmadd52`).
 //! - **AVX-512VL**: 128/256-bit variable-length operations on the AVX-512 register file.
+//! - **BMI2 + ADX**: scalar `mulx` and add-with-carry chains used by the hand-written
+//!   3-prime CRT-to-i128 reconstruction kernel.
 //!
 //! Runtime CPU feature detection is performed in [`Module::new()`](poulpy_hal::api::ModuleNew::new).
 //! If the required features are not present, the constructor panics with a descriptive error message.
@@ -53,17 +64,19 @@
 //!
 //! Two layered cargo features control which backend is built:
 //!
-//! - `enable-avx512f` builds `FFT64Avx512` and `NTT120Avx512` (needs AVX-512F at compile time).
+//! - `enable-avx512f` builds `FFT64Avx512` and `NTT120Avx512` (needs AVX-512F at compile
+//!   time; AVX2 and FMA are implied by AVX-512F on real hardware).
 //! - `enable-ifma` (which implies `enable-avx512f`) additionally builds `NTT126Ifma`
-//!   (needs AVX-512F + AVX-512-IFMA + AVX-512VL at compile time).
+//!   (needs AVX-512F + AVX-512-IFMA + AVX-512VL + BMI2 + ADX at compile time).
 //!
 //! ```text
 //! # AVX-512F only host (Skylake-X / Cascade Lake / KNL): FFT64Avx512 + NTT120Avx512
 //! RUSTFLAGS="-C target-feature=+avx512f" \
 //!     cargo build --release --features enable-avx512f
 //!
-//! # IFMA-capable host (Ice Lake / Tiger Lake / Sapphire Rapids): both backends
-//! RUSTFLAGS="-C target-feature=+avx512f,+avx512ifma,+avx512vl" \
+//! # IFMA-capable host (Ice Lake / Tiger Lake / Sapphire Rapids / Zen 4 / Zen 5):
+//! # all three backends
+//! RUSTFLAGS="-C target-feature=+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx" \
 //!     cargo build --release --features enable-ifma
 //!
 //! # On a supported host:
@@ -96,9 +109,9 @@
 //! ## Safety invariants
 //!
 //! Many functions are marked `unsafe` and require:
-//! - CPU features required by the selected backend are present
-//!   (`FFT64Avx512` / `NTT120Avx512`: AVX-512F; `NTT126Ifma`: AVX-512F + AVX-512-IFMA + AVX-512VL),
-//!   verified at module creation
+//! - CPU features required by the selected backend are present and verified at module creation
+//!   (`FFT64Avx512`: AVX-512F + AVX2 + FMA; `NTT120Avx512`: AVX-512F;
+//!   `NTT126Ifma`: AVX-512F + AVX-512-IFMA + AVX-512VL + BMI2 + ADX),
 //! - Input slices have matching lengths where documented
 //! - Input values satisfy documented bounds (e.g., `|x| < 2^50` for IEEE 754 conversions,
 //!   limb residues `< 2^52` for IFMA `vpmadd52` accumulators)
@@ -135,7 +148,13 @@
 //! - **NTT and BBC mat_vec / VMP / SVP** (`NTT126Ifma`): IFMA's `vpmadd52` chain shortens
 //!   the modular-multiply critical path and is the main beneficiary of AVX-512 on
 //!   compute-heavy paths (key-switch, external product, relinearization).
-//! - **FFT16 kernels** (hand-written assembly): on par with the AVX2 backend.
+//! - **REIM4 vec-mat kernels** (`FFT64Avx512::reim4_vec_mat*_product`): use AVX2+FMA
+//!   rather than 512-bit shuffles; the 256-bit form has shorter dependency chains and
+//!   benchmarks on par with or ahead of the AVX-512F variant on Zen 5 across ring
+//!   sizes 2^10..2^16, with the largest gains on small-`nrows` cache-resident workloads.
+//! - **NTT126Ifma post-iNTT b → i128 CRT reconstruction**: hand-written assembly mixing
+//!   IFMA Garner reduction with a BMI2/ADX scalar carry chain replaces the previous
+//!   intrinsics implementation.
 //!
 //! Net on IFMA-capable hardware: `NTT126Ifma` is typically the faster choice end-to-end
 //! on CKKS-style workloads, with the largest gains on VMP-dominated operations.
@@ -157,9 +176,11 @@
 //!
 //! # Feature flags
 //!
-//! - `enable-avx512f`: builds `FFT64Avx512` and `NTT120Avx512`. Needs AVX-512F at compile time.
+//! - `enable-avx512f`: builds `FFT64Avx512` and `NTT120Avx512`. Needs AVX-512F at compile
+//!   time (AVX2 and FMA are implied by AVX-512F on real hardware and additionally checked
+//!   at runtime by `FFT64Avx512`).
 //! - `enable-ifma`: implies `enable-avx512f` and additionally builds `NTT126Ifma`. Needs
-//!   AVX-512F + AVX-512-IFMA + AVX-512VL at compile time.
+//!   AVX-512F + AVX-512-IFMA + AVX-512VL + BMI2 + ADX at compile time.
 //!
 //! When neither feature is enabled, the crate compiles to an empty shell so that workspaces
 //! targeting non-AVX-512 platforms (e.g. macOS ARM, older x86) remain portable.
@@ -167,8 +188,9 @@
 //! # Platform support
 //!
 //! - **Required**: x86-64 architecture.
-//! - **For `FFT64Avx512` / `NTT120Avx512`**: AVX-512F.
-//! - **For `NTT126Ifma`**: AVX-512F + AVX-512-IFMA + AVX-512VL.
+//! - **For `FFT64Avx512`**: AVX-512F + AVX2 + FMA.
+//! - **For `NTT120Avx512`**: AVX-512F.
+//! - **For `NTT126Ifma`**: AVX-512F + AVX-512-IFMA + AVX-512VL + BMI2 + ADX.
 //! - **Tested on**: Linux (x86_64) on AVX-512-capable Intel and AMD CPUs.
 //! - **Not supported**: ARM, RISC-V, non-x86_64 targets, or x86_64 CPUs lacking the
 //!   required AVX-512 features for the selected backend.
@@ -210,7 +232,7 @@ compile_error!("feature `enable-avx512f` requires target_arch = \"x86_64\".");
 ))]
 compile_error!("feature `enable-avx512f` requires AVX512F. Build with RUSTFLAGS=\"-C target-feature=+avx512f\".");
 
-// `enable-ifma` (gates `NTT126Ifma`) additionally requires AVX-512-IFMA and AVX-512VL.
+// `enable-ifma` (gates `NTT126Ifma`) additionally requires IFMA, VL, BMI2, and ADX.
 #[cfg(all(
     feature = "enable-ifma",
     not(docsrs),
@@ -218,7 +240,7 @@ compile_error!("feature `enable-avx512f` requires AVX512F. Build with RUSTFLAGS=
     not(target_feature = "avx512ifma")
 ))]
 compile_error!(
-    "feature `enable-ifma` requires AVX512-IFMA. Build with RUSTFLAGS=\"-C target-feature=+avx512f,+avx512ifma,+avx512vl\"."
+    "feature `enable-ifma` requires AVX512-IFMA. Build with RUSTFLAGS=\"-C target-feature=+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx\"."
 );
 
 #[cfg(all(
@@ -228,7 +250,17 @@ compile_error!(
     not(target_feature = "avx512vl")
 ))]
 compile_error!(
-    "feature `enable-ifma` requires AVX512VL. Build with RUSTFLAGS=\"-C target-feature=+avx512f,+avx512ifma,+avx512vl\"."
+    "feature `enable-ifma` requires AVX512VL. Build with RUSTFLAGS=\"-C target-feature=+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx\"."
+);
+
+#[cfg(all(feature = "enable-ifma", not(docsrs), target_arch = "x86_64", not(target_feature = "bmi2")))]
+compile_error!(
+    "feature `enable-ifma` requires BMI2. Build with RUSTFLAGS=\"-C target-feature=+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx\"."
+);
+
+#[cfg(all(feature = "enable-ifma", not(docsrs), target_arch = "x86_64", not(target_feature = "adx")))]
+compile_error!(
+    "feature `enable-ifma` requires ADX. Build with RUSTFLAGS=\"-C target-feature=+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx\"."
 );
 
 // `FFT64Avx512`, `NTT120Avx512`, and their supporting AVX-512F `znx_avx512` helpers are gated on `enable-avx512f`.

@@ -47,6 +47,7 @@ use core::arch::x86_64::{__m512i, _mm_sfence, _mm512_add_epi64, _mm512_loadu_si5
 /// units). For each row, block `blk` (8 u64 values) is copied to `dst`.
 /// `dst` must hold at least `8 * row_count` u64.
 #[target_feature(enable = "avx512f")]
+#[inline]
 unsafe fn pack_left_1blk_x2_ifma(dst: &mut [u64], a: &[u64], row_count: usize, row_stride: usize, blk: usize) {
     debug_assert!(dst.len() >= 8 * row_count);
     debug_assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
@@ -67,6 +68,7 @@ unsafe fn pack_left_1blk_x2_ifma(dst: &mut [u64], a: &[u64], row_count: usize, r
 /// source's last row. This lets each output limb consume a contiguous window
 /// `[b_size - j_max ..]` inside the packed buffer.
 #[target_feature(enable = "avx512f")]
+#[inline]
 unsafe fn pack_right_1blk_x2_ifma(dst: &mut [u64], a: &[u64], row_count: usize, row_stride: usize, blk: usize) {
     debug_assert!(dst.len() >= 8 * row_count);
     debug_assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
@@ -86,6 +88,7 @@ unsafe fn pack_right_1blk_x2_ifma(dst: &mut [u64], a: &[u64], row_count: usize, 
 /// Inputs are in `[0, 2Q)` (left side), so the sum is in `[0, 4Q) < 2^45`,
 /// which stays inside the 52-bit VPMADD52 input window.
 #[target_feature(enable = "avx512f")]
+#[inline]
 unsafe fn pairwise_pack_left_1blk_x2_ifma(
     dst: &mut [u64],
     a: &[u64],
@@ -116,6 +119,7 @@ unsafe fn pairwise_pack_left_1blk_x2_ifma(
 /// Pairwise pack in reversed row order. Right-side inputs are in `[0, Q)`,
 /// so the sum is in `[0, 2Q) < 2^44`, well within the madd52 window.
 #[target_feature(enable = "avx512f")]
+#[inline]
 unsafe fn pairwise_pack_right_1blk_x2_ifma(
     dst: &mut [u64],
     a: &[u64],
@@ -552,6 +556,27 @@ pub(crate) fn cnv_by_const_apply<R, A>(
     let bound = a_size + b_size - 1;
     let min_size = res_size.min(bound);
     let offset = cnv_offset.min(bound);
+
+    if b_size == 1 {
+        let b0 = b[0] as i128;
+        for k in 0..min_size {
+            let k_abs = k + offset;
+            let res_limb: &mut [i128] = res.at_mut(res_col, k);
+            if k_abs < a_size {
+                let a_limb = a.at(a_col, k_abs);
+                for n_i in 0..res_limb.len() {
+                    res_limb[n_i] = (a_limb[n_i] as i128) * b0;
+                }
+            } else {
+                res_limb.fill(0i128);
+            }
+        }
+
+        for j in min_size..res_size {
+            res.at_mut(res_col, j).fill(0i128);
+        }
+        return;
+    }
 
     for k in 0..min_size {
         let k_abs = k + offset;

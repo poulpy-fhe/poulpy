@@ -108,8 +108,11 @@ unsafe impl FFT64HandleFactory for FFT64Avx512Handle {
     }
 
     fn assert_fft64_runtime_support() {
-        if !std::arch::is_x86_feature_detected!("avx512f") {
-            panic!("FFT64Avx512 requires x86_64 with AVX512F support");
+        if !std::arch::is_x86_feature_detected!("avx512f")
+            || !std::arch::is_x86_feature_detected!("avx2")
+            || !std::arch::is_x86_feature_detected!("fma")
+        {
+            panic!("FFT64Avx512 requires x86_64 with AVX512F, AVX2, and FMA support");
         }
     }
 }

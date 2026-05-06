@@ -159,6 +159,7 @@ unsafe fn ntt_iter_first_ifma(
 /// All inputs and outputs in `[0, 4q)`.  Sum path subtracts `4q`; diff path
 /// is fed directly into the Harvey multiply (which absorbs the reduction).
 #[target_feature(enable = "avx512ifma")]
+#[inline]
 unsafe fn ntt_iter_ifma(
     nn: usize,
     begin: *mut __m256i,
@@ -189,17 +190,30 @@ unsafe fn ntt_iter_ifma(
                 ptr2 = ptr2.add(1);
             }
 
-            // i = 1..halfnn-1: diff fed directly into Harvey (split layout)
+            // i = 1..halfnn-1: diff fed directly into Harvey (split layout).
+            // Peel i=1 so the wide data loop starts on a 64-byte boundary.
             let remaining = halfnn - 1;
+            let twiddle_shift = if remaining > 0 {
+                let a = _mm256_loadu_si256(ptr1);
+                let b = _mm256_loadu_si256(ptr2);
+                let sum = cond_sub_2q_si256(_mm256_add_epi64(a, b), q4);
+                let diff = _mm256_sub_epi64(_mm256_add_epi64(a, q4), b);
+                let omega = _mm256_loadu_si256(po_omega);
+                let omega_quot = _mm256_loadu_si256(po_quot);
+                _mm256_storeu_si256(ptr1, sum);
+                _mm256_storeu_si256(ptr2, harvey_modmul_si256(diff, omega, omega_quot, q));
+                ptr1 = ptr1.add(1);
+                ptr2 = ptr2.add(1);
+                1
+            } else {
+                0
+            };
+            let remaining = remaining - twiddle_shift;
 
-            // 512-bit pairs — single 512-bit load per twiddle.
-            //
-            // 4-pair unroll: with Harvey's critical path of ~12 cycles per
-            // chain (madd52hi → madd52lo(qq) → sub → and), four independent
-            // pairs keep both Zen 5 FMA ports busy and hide the latency.
+            // 512-bit pairs, unrolled to expose independent Harvey chains.
             let pairs = remaining / 2;
-            let omega_512 = po_omega as *const __m512i;
-            let quot_512 = po_quot as *const __m512i;
+            let omega_512 = po_omega.add(twiddle_shift) as *const __m512i;
+            let quot_512 = po_quot.add(twiddle_shift) as *const __m512i;
             let quads = pairs / 4;
             for p in 0..quads {
                 let base = p * 4;
@@ -268,7 +282,7 @@ unsafe fn ntt_iter_ifma(
 
             // 256-bit tail
             if !remaining.is_multiple_of(2) {
-                let tail_idx = pairs * 2;
+                let tail_idx = twiddle_shift + pairs * 2;
                 let a = _mm256_loadu_si256(ptr1);
                 let b = _mm256_loadu_si256(ptr2);
                 let sum = cond_sub_2q_si256(_mm256_add_epi64(a, b), q4);
@@ -289,6 +303,7 @@ unsafe fn ntt_iter_ifma(
 /// All inputs and outputs in `[0, 4q)`.  `b_raw ∈ [0, 4q)` is fed directly into
 /// Harvey (output `∈ [0, 2q)`); sum/diff use `cond_sub_4q`.
 #[target_feature(enable = "avx512ifma")]
+#[inline]
 unsafe fn intt_iter_ifma(
     nn: usize,
     begin: *mut __m256i,
@@ -319,14 +334,30 @@ unsafe fn intt_iter_ifma(
                 ptr2 = ptr2.add(1);
             }
 
-            // i = 1..halfnn-1: twiddle on b BEFORE butterfly (split layout)
+            // Peel i=1 so the wide data loop starts on a 64-byte boundary.
             let remaining = halfnn - 1;
+            let twiddle_shift = if remaining > 0 {
+                let a = _mm256_loadu_si256(ptr1);
+                let b = _mm256_loadu_si256(ptr2);
+                let omega = _mm256_loadu_si256(po_omega);
+                let omega_quot = _mm256_loadu_si256(po_quot);
+                let bo = harvey_modmul_si256(b, omega, omega_quot, q);
+                let sum = cond_sub_2q_si256(_mm256_add_epi64(a, bo), q4);
+                let diff = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(a, q4), bo), q4);
+                _mm256_storeu_si256(ptr1, sum);
+                _mm256_storeu_si256(ptr2, diff);
+                ptr1 = ptr1.add(1);
+                ptr2 = ptr2.add(1);
+                1
+            } else {
+                0
+            };
+            let remaining = remaining - twiddle_shift;
 
-            // 512-bit pairs — 4-pair unroll to hide Harvey's ~12-cycle
-            // critical path on Zen 5.
+            // 512-bit pairs, unrolled to expose independent Harvey chains.
             let pairs = remaining / 2;
-            let omega_512 = po_omega as *const __m512i;
-            let quot_512 = po_quot as *const __m512i;
+            let omega_512 = po_omega.add(twiddle_shift) as *const __m512i;
+            let quot_512 = po_quot.add(twiddle_shift) as *const __m512i;
             let quads = pairs / 4;
             for p in 0..quads {
                 let base = p * 4;
@@ -397,7 +428,7 @@ unsafe fn intt_iter_ifma(
 
             // 256-bit tail
             if !remaining.is_multiple_of(2) {
-                let tail_idx = pairs * 2;
+                let tail_idx = twiddle_shift + pairs * 2;
                 let a = _mm256_loadu_si256(ptr1);
                 let b = _mm256_loadu_si256(ptr2);
                 let omega = _mm256_loadu_si256(po_omega.add(tail_idx));
@@ -494,15 +525,14 @@ unsafe fn intt_radix8_first3_ifma(begin: *mut __m256i, end: *const __m256i, q: _
 // Public: forward NTT
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Algorithmic block size for the blocked NTT.  Once butterfly size drops to
+/// Algorithmic block size for the blocked NTT. Once butterfly size drops to
 /// this many coefficients, we stop sweeping all data per level and instead
 /// run the remaining levels fully inside each block before moving on.
 ///
-/// Each block holds `NTT_BLOCK * 32` bytes of data (3-prime CRT, 4 × u64
-/// per coefficient).  At `128` coefficients = 4 KiB per block, which fits
-/// comfortably inside any modern L1d (typically ≥ 32 KiB) while cutting
-/// the number of breadth-first sweeps over the full `data` array by two
-/// compared to `NTT_BLOCK = 32`.
+/// Each block holds `NTT_BLOCK * 32` bytes of data (3-prime CRT, 4 x u64 per
+/// coefficient). At `256`, the block is 8 KiB, leaving room in L1d for twiddle
+/// streams and other live data without assuming a specific higher-level
+/// parameter set.
 const NTT_BLOCK: usize = 256;
 
 /// Forward NTT — AVX512-IFMA accelerated, split twiddle layout.

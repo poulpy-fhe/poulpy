@@ -479,8 +479,7 @@ unsafe fn ntt_iter_first(begin: *mut __m256i, end: *const __m256i, meta: &NttSte
 ///
 /// Like `ntt_iter_first` but each element is reduced via `modq_red` before
 /// the `split_precompmul`. Used as the final pass in the inverse NTT when the
-/// accumulation bit-width would otherwise exceed 64 bits. `count` is
-/// guaranteed by the caller to be a power of two ≥ 2, so the loop has no tail.
+/// accumulation bit-width would otherwise exceed 64 bits.
 ///
 /// Matches `ntt_iter_first_red` in `q120_ntt_avx2.c`.
 #[inline(always)]
@@ -502,7 +501,24 @@ unsafe fn ntt_iter_first_red(
         let pairs = count / 2;
         let mut data512 = begin as *mut __m512i;
         let mut po512 = powomega as *const __m512i;
-        for _ in 0..pairs {
+        let unrolled = pairs / 4;
+        for _ in 0..unrolled {
+            let x0 = modq_red_si512(_mm512_loadu_si512(data512), rh, rmask_512, rcst_512);
+            let x1 = modq_red_si512(_mm512_loadu_si512(data512.add(1)), rh, rmask_512, rcst_512);
+            let x2 = modq_red_si512(_mm512_loadu_si512(data512.add(2)), rh, rmask_512, rcst_512);
+            let x3 = modq_red_si512(_mm512_loadu_si512(data512.add(3)), rh, rmask_512, rcst_512);
+            let po0 = _mm512_loadu_si512(po512);
+            let po1 = _mm512_loadu_si512(po512.add(1));
+            let po2 = _mm512_loadu_si512(po512.add(2));
+            let po3 = _mm512_loadu_si512(po512.add(3));
+            _mm512_storeu_si512(data512, split_precompmul_si512(x0, po0, h, vmask_512));
+            _mm512_storeu_si512(data512.add(1), split_precompmul_si512(x1, po1, h, vmask_512));
+            _mm512_storeu_si512(data512.add(2), split_precompmul_si512(x2, po2, h, vmask_512));
+            _mm512_storeu_si512(data512.add(3), split_precompmul_si512(x3, po3, h, vmask_512));
+            data512 = data512.add(4);
+            po512 = po512.add(4);
+        }
+        for _ in 0..(pairs & 3) {
             let x = modq_red_si512(_mm512_loadu_si512(data512), rh, rmask_512, rcst_512);
             let po = _mm512_loadu_si512(po512);
             _mm512_storeu_si512(data512, split_precompmul_si512(x, po, h, vmask_512));
@@ -556,9 +572,7 @@ unsafe fn ntt_iter(nn: usize, begin: *mut __m256i, end: *const __m256i, meta: &N
             // so halfnn >= 4 in power-of-2 context). For halfnn = 2, no pairing.
             let mut po_ptr = powomega;
             if halfnn >= 4 {
-                // halfnn-1 is odd (halfnn power of 2 ≥ 4): pair (1,2),(3,4),...(halfnn-3,halfnn-2);
-                // tail i = halfnn-1.
-                let pairs = (halfnn - 2) / 2; // = halfnn/2 - 1
+                let pairs = (halfnn - 2) / 2;
                 // 2-way unrolled main loop: two independent split_precompmul chains expose ILP
                 // and keep both vector mul ports busy when halfnn ≥ 8.
                 let unrolled = pairs / 2;
@@ -590,7 +604,6 @@ unsafe fn ntt_iter(nn: usize, begin: *mut __m256i, end: *const __m256i, meta: &N
                     ptr2 = ptr2.add(2);
                     po_ptr = po_ptr.add(2);
                 }
-                // Tail (single 256-bit iteration at i = halfnn - 1)
                 let a = _mm256_loadu_si256(ptr1);
                 let b = _mm256_loadu_si256(ptr2);
                 _mm256_storeu_si256(ptr1, _mm256_add_epi64(a, b));
@@ -696,7 +709,6 @@ unsafe fn ntt_iter_red(
                     ptr2 = ptr2.add(2);
                     po_ptr = po_ptr.add(2);
                 }
-                // Tail
                 let a = modq_red_si256(_mm256_loadu_si256(ptr1), rh, rmask, rcst);
                 let b = modq_red_si256(_mm256_loadu_si256(ptr2), rh, rmask, rcst);
                 _mm256_storeu_si256(ptr1, _mm256_add_epi64(a, b));
@@ -934,7 +946,7 @@ unsafe fn intt_iter_red(
 /// Port of `q120_ntt_bb_avx2` from `q120_ntt_avx2.c`, widened to pair-pack two
 /// q120b coefficients per `__m512i`.
 ///
-/// For large transforms (`n > CHANGE_MODE_N = 1024`), outer levels are processed
+/// For large transforms (`n > CHANGE_MODE_N`), outer levels are processed
 /// sequentially across the full array ("by-level"), then the innermost 1024-wide
 /// blocks complete all remaining levels in a single pass ("by-block") to improve
 /// cache locality.  For `n ≤ 1024` only the by-block phase runs.

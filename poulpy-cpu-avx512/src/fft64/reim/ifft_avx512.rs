@@ -24,6 +24,8 @@ use std::arch::x86_64::{
 
 use crate::fft64::reim::as_arr;
 
+const IFFT_RECURSION_CUTOFF: usize = 2048;
+
 #[target_feature(enable = "avx512f")]
 pub(crate) fn ifft_avx512(m: usize, omg: &[f64], data: &mut [f64]) {
     // m <= 16 falls through to the reference implementation: it is too small
@@ -39,7 +41,7 @@ pub(crate) fn ifft_avx512(m: usize, omg: &[f64], data: &mut [f64]) {
     assert!(data.len() == 2 * m);
     let (re, im) = data.split_at_mut(m);
 
-    if m <= 2048 {
+    if m <= IFFT_RECURSION_CUTOFF {
         ifft_bfs_16_avx512(m, re, im, omg, 0);
     } else {
         ifft_rec_16_avx512(m, re, im, omg, 0);
@@ -48,7 +50,7 @@ pub(crate) fn ifft_avx512(m: usize, omg: &[f64], data: &mut [f64]) {
 
 #[target_feature(enable = "avx512f")]
 fn ifft_rec_16_avx512(m: usize, re: &mut [f64], im: &mut [f64], omg: &[f64], mut pos: usize) -> usize {
-    if m <= 2048 {
+    if m <= IFFT_RECURSION_CUTOFF {
         return ifft_bfs_16_avx512(m, re, im, omg, pos);
     };
     let h: usize = m >> 1;

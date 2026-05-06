@@ -54,7 +54,8 @@ mod tests;
 /// # CPU feature requirements
 ///
 /// **Runtime check**: [`Module::new()`](poulpy_hal::api::ModuleNew::new) verifies that
-/// the CPU supports AVX512-IFMA. If the feature is missing, the constructor panics.
+/// the CPU supports AVX512-F, AVX512-IFMA, AVX512-VL, BMI2, and ADX. If a required
+/// feature is missing, the constructor panics.
 ///
 /// # Thread safety
 ///

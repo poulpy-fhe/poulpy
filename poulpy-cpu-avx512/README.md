@@ -4,9 +4,9 @@
 
 It exposes three backends, gated behind two layered Cargo features:
 
-- **`FFT64Avx512`** — f64 complex-FFT backend, gated on `enable-avx512f` (requires AVX-512F only).
+- **`FFT64Avx512`** — f64 complex-FFT backend, gated on `enable-avx512f`. Combines AVX-512F REIM butterflies with AVX2+FMA REIM4 vector-matrix kernels (the AVX2+FMA form has shorter dependency chains and benches at parity with or ahead of the AVX-512F variant across ring sizes 2^10..2^16). Requires AVX-512F + AVX2 + FMA at runtime; AVX2/FMA are implied by AVX-512F on real hardware but verified explicitly at module creation.
 - **`NTT120Avx512`** — Q120 NTT backend (CRT over four ~30-bit primes), gated on `enable-avx512f` (requires AVX-512F only). Targets AVX-512F-capable CPUs without IFMA (Skylake-X, Cascade Lake, KNL, Zen 4 SKUs without IFMA).
-- **`NTT126Ifma`** — Q126 NTT backend (CRT over three ~42-bit primes), gated on `enable-ifma` (requires AVX-512F + AVX-512-IFMA + AVX-512VL).
+- **`NTT126Ifma`** — Q126 NTT backend (CRT over three ~42-bit primes), gated on `enable-ifma`. The post-iNTT 3-prime CRT-to-i128 reconstruction is a hand-written assembly kernel that fuses IFMA Garner reduction with a BMI2/ADX scalar carry chain. Requires AVX-512F + AVX-512-IFMA + AVX-512VL + BMI2 + ADX.
 
 `enable-ifma` implies `enable-avx512f`, so enabling IFMA builds all three backends.
 
@@ -23,8 +23,8 @@ To avoid illegal hardware instructions (SIGILL) on unsupported CPUs, the backend
 
 | Feature | CPU target features required |
 |---------|------------------------------|
-| `enable-avx512f` (builds `FFT64Avx512` and `NTT120Avx512`) | `AVX512F` |
-| `enable-ifma` (additionally builds `NTT126Ifma`) | `AVX512F` + `AVX512IFMA` + `AVX512VL` |
+| `enable-avx512f` (builds `FFT64Avx512` and `NTT120Avx512`) | `AVX512F` (AVX2 + FMA implied by AVX-512F; checked at runtime by `FFT64Avx512`) |
+| `enable-ifma` (additionally builds `NTT126Ifma`) | `AVX512F` + `AVX512IFMA` + `AVX512VL` + `BMI2` + `ADX` |
 
 If a feature is enabled but the target does not provide the required capabilities, the build **fails immediately with a clear error message**, rather than generating invalid binaries.
 
@@ -39,10 +39,10 @@ RUSTFLAGS="-C target-feature=+avx512f" \
 cargo build --features enable-avx512f
 ```
 
-For all three backends (AVX-512F + IFMA):
+For all three backends (AVX-512F + IFMA + BMI2 + ADX):
 
 ```bash
-RUSTFLAGS="-C target-feature=+avx512f,+avx512ifma,+avx512vl" \
+RUSTFLAGS="-C target-feature=+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx" \
 cargo build --features enable-ifma
 ```
 
@@ -56,14 +56,14 @@ cargo build --features enable-ifma
 ### Running an example
 
 ```bash
-RUSTFLAGS="-C target-feature=+avx512f,+avx512ifma,+avx512vl" \
+RUSTFLAGS="-C target-feature=+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx" \
 cargo run --example <name> --features enable-ifma
 ```
 
 ### Running benchmarks
 
 ```bash
-RUSTFLAGS="-C target-feature=+avx512f,+avx512ifma,+avx512vl" \
+RUSTFLAGS="-C target-feature=+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx" \
 cargo bench --features enable-ifma
 ```
 

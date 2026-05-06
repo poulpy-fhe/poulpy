@@ -129,12 +129,11 @@ pub fn reim4_save_2blk_to_reim_avx512<const OVERWRITE: bool>(
 }
 
 /// # Safety
-/// Caller must ensure the CPU supports AVX-512F (e.g., via `is_x86_feature_detected!("avx512f")`);
-#[target_feature(enable = "avx512f")]
+/// Caller must ensure the CPU supports AVX-512F, AVX2, and FMA.
+#[target_feature(enable = "avx512f", enable = "avx2", enable = "fma")]
 pub fn reim4_vec_mat1col_product_avx512(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
     use core::arch::x86_64::{
-        __m256d, __m512d, _mm256_add_pd, _mm256_storeu_pd, _mm256_sub_pd, _mm512_castpd512_pd256, _mm512_extractf64x4_pd,
-        _mm512_fmadd_pd, _mm512_loadu_pd, _mm512_setzero_pd, _mm512_shuffle_f64x2,
+        __m256d, _mm256_add_pd, _mm256_fmadd_pd, _mm256_loadu_pd, _mm256_setzero_pd, _mm256_storeu_pd, _mm256_sub_pd,
     };
 
     #[cfg(debug_assertions)]
@@ -145,50 +144,39 @@ pub fn reim4_vec_mat1col_product_avx512(nrows: usize, dst: &mut [f64], u: &[f64]
     }
 
     unsafe {
-        // Packed accumulators:
-        //   acc_a = [re1 | re2]  (low 256 bits = re1, high 256 bits = re2)
-        //   acc_b = [im1 | im2]
-        let mut acc_a: __m512d = _mm512_setzero_pd();
-        let mut acc_b: __m512d = _mm512_setzero_pd();
+        let mut re1: __m256d = _mm256_setzero_pd();
+        let mut im1: __m256d = _mm256_setzero_pd();
+        let mut re2: __m256d = _mm256_setzero_pd();
+        let mut im2: __m256d = _mm256_setzero_pd();
 
         let mut u_ptr: *const f64 = u.as_ptr();
         let mut v_ptr: *const f64 = v.as_ptr();
 
         for _ in 0..nrows {
-            let u_full: __m512d = _mm512_loadu_pd(u_ptr); // [ur | ui]
-            let v_full: __m512d = _mm512_loadu_pd(v_ptr); // [vr | vi]
-            // Swap 256-bit halves: [vi | vr]
-            let v_swap: __m512d = _mm512_shuffle_f64x2::<0b01_00_11_10>(v_full, v_full);
+            let ur: __m256d = _mm256_loadu_pd(u_ptr);
+            let ui: __m256d = _mm256_loadu_pd(u_ptr.add(4));
+            let vr: __m256d = _mm256_loadu_pd(v_ptr);
+            let vi: __m256d = _mm256_loadu_pd(v_ptr.add(4));
 
-            // acc_a += u_full * v_full  =>  re1 += ur*vr;  re2 += ui*vi
-            acc_a = _mm512_fmadd_pd(u_full, v_full, acc_a);
-            // acc_b += u_full * v_swap  =>  im1 += ur*vi;  im2 += ui*vr
-            acc_b = _mm512_fmadd_pd(u_full, v_swap, acc_b);
+            re1 = _mm256_fmadd_pd(ur, vr, re1);
+            im1 = _mm256_fmadd_pd(ur, vi, im1);
+            re2 = _mm256_fmadd_pd(ui, vi, re2);
+            im2 = _mm256_fmadd_pd(ui, vr, im2);
 
             u_ptr = u_ptr.add(8);
             v_ptr = v_ptr.add(8);
         }
 
-        let re1: __m256d = _mm512_castpd512_pd256(acc_a);
-        let re2: __m256d = _mm512_extractf64x4_pd::<1>(acc_a);
-        let im1: __m256d = _mm512_castpd512_pd256(acc_b);
-        let im2: __m256d = _mm512_extractf64x4_pd::<1>(acc_b);
-
-        // re1 - re2
         _mm256_storeu_pd(dst.as_mut_ptr(), _mm256_sub_pd(re1, re2));
-        // im1 + im2
         _mm256_storeu_pd(dst.as_mut_ptr().add(4), _mm256_add_pd(im1, im2));
     }
 }
 
 /// # Safety
-/// Caller must ensure the CPU supports AVX-512F (e.g., via `is_x86_feature_detected!("avx512f")`);
-#[target_feature(enable = "avx512f")]
+/// Caller must ensure the CPU supports AVX-512F, AVX2, and FMA.
+#[target_feature(enable = "avx512f", enable = "avx2", enable = "fma")]
 pub fn reim4_vec_mat2cols_product_avx512(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
-    use core::arch::x86_64::{
-        __m256d, __m512d, _mm256_storeu_pd, _mm512_castpd512_pd256, _mm512_extractf64x4_pd, _mm512_fmadd_pd, _mm512_fnmadd_pd,
-        _mm512_loadu_pd, _mm512_setzero_pd, _mm512_shuffle_f64x2,
-    };
+    use core::arch::x86_64::{__m256d, _mm256_fmadd_pd, _mm256_fmsub_pd, _mm256_loadu_pd, _mm256_setzero_pd, _mm256_storeu_pd};
 
     #[cfg(debug_assertions)]
     {
@@ -208,44 +196,35 @@ pub fn reim4_vec_mat2cols_product_avx512(nrows: usize, dst: &mut [f64], u: &[f64
     }
 
     unsafe {
-        // Packed accumulators:
-        //   acc_re = [re1 | re2]  (col0_re | col1_re)
-        //   acc_im = [im1 | im2]  (col0_im | col1_im)
-        let mut acc_re: __m512d = _mm512_setzero_pd();
-        let mut acc_im: __m512d = _mm512_setzero_pd();
+        let mut re1: __m256d = _mm256_setzero_pd();
+        let mut im1: __m256d = _mm256_setzero_pd();
+        let mut re2: __m256d = _mm256_setzero_pd();
+        let mut im2: __m256d = _mm256_setzero_pd();
 
         let mut u_ptr: *const f64 = u.as_ptr();
         let mut v_ptr: *const f64 = v.as_ptr();
 
         for _ in 0..nrows {
-            // u_full = [ur(4) | ui(4)]
-            let u_full: __m512d = _mm512_loadu_pd(u_ptr);
-            // Broadcast each half across both halves: [ur | ur] and [ui | ui]
-            let ur_dup: __m512d = _mm512_shuffle_f64x2::<0b01_00_01_00>(u_full, u_full);
-            let ui_dup: __m512d = _mm512_shuffle_f64x2::<0b11_10_11_10>(u_full, u_full);
+            let ur: __m256d = _mm256_loadu_pd(u_ptr);
+            let ui: __m256d = _mm256_loadu_pd(u_ptr.add(4));
 
-            // va = [ar(4) | ai(4)], vb = [br(4) | bi(4)]
-            let va: __m512d = _mm512_loadu_pd(v_ptr);
-            let vb: __m512d = _mm512_loadu_pd(v_ptr.add(8));
-            // v_re = [ar | br], v_im = [ai | bi]
-            let v_re: __m512d = _mm512_shuffle_f64x2::<0b01_00_01_00>(va, vb);
-            let v_im: __m512d = _mm512_shuffle_f64x2::<0b11_10_11_10>(va, vb);
+            let ar: __m256d = _mm256_loadu_pd(v_ptr);
+            let ai: __m256d = _mm256_loadu_pd(v_ptr.add(4));
+            let br: __m256d = _mm256_loadu_pd(v_ptr.add(8));
+            let bi: __m256d = _mm256_loadu_pd(v_ptr.add(12));
 
-            // re += ur*v_re - ui*v_im  (low: re1 = ur*ar - ui*ai; high: re2 = ur*br - ui*bi)
-            acc_re = _mm512_fmadd_pd(ur_dup, v_re, acc_re);
-            acc_re = _mm512_fnmadd_pd(ui_dup, v_im, acc_re);
-            // im += ur*v_im + ui*v_re  (low: im1 = ur*ai + ui*ar; high: im2 = ur*bi + ui*br)
-            acc_im = _mm512_fmadd_pd(ur_dup, v_im, acc_im);
-            acc_im = _mm512_fmadd_pd(ui_dup, v_re, acc_im);
+            re1 = _mm256_fmsub_pd(ui, ai, re1);
+            re2 = _mm256_fmsub_pd(ui, bi, re2);
+            im1 = _mm256_fmadd_pd(ur, ai, im1);
+            im2 = _mm256_fmadd_pd(ur, bi, im2);
+            re1 = _mm256_fmsub_pd(ur, ar, re1);
+            re2 = _mm256_fmsub_pd(ur, br, re2);
+            im1 = _mm256_fmadd_pd(ui, ar, im1);
+            im2 = _mm256_fmadd_pd(ui, br, im2);
 
             u_ptr = u_ptr.add(8);
             v_ptr = v_ptr.add(16);
         }
-
-        let re1: __m256d = _mm512_castpd512_pd256(acc_re);
-        let re2: __m256d = _mm512_extractf64x4_pd::<1>(acc_re);
-        let im1: __m256d = _mm512_castpd512_pd256(acc_im);
-        let im2: __m256d = _mm512_extractf64x4_pd::<1>(acc_im);
 
         _mm256_storeu_pd(dst.as_mut_ptr(), re1);
         _mm256_storeu_pd(dst.as_mut_ptr().add(4), im1);
@@ -255,13 +234,10 @@ pub fn reim4_vec_mat2cols_product_avx512(nrows: usize, dst: &mut [f64], u: &[f64
 }
 
 /// # Safety
-/// Caller must ensure the CPU supports AVX-512F (e.g., via `is_x86_feature_detected!("avx512f")`);
-#[target_feature(enable = "avx512f")]
+/// Caller must ensure the CPU supports AVX-512F, AVX2, and FMA.
+#[target_feature(enable = "avx512f", enable = "avx2", enable = "fma")]
 pub fn reim4_vec_mat2cols_2ndcol_product_avx512(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
-    use core::arch::x86_64::{
-        __m256d, __m512d, _mm256_add_pd, _mm256_storeu_pd, _mm256_sub_pd, _mm512_castpd512_pd256, _mm512_extractf64x4_pd,
-        _mm512_fmadd_pd, _mm512_loadu_pd, _mm512_setzero_pd, _mm512_shuffle_f64x2,
-    };
+    use core::arch::x86_64::{__m256d, _mm256_fmadd_pd, _mm256_fmsub_pd, _mm256_loadu_pd, _mm256_setzero_pd, _mm256_storeu_pd};
 
     #[cfg(debug_assertions)]
     {
@@ -271,33 +247,30 @@ pub fn reim4_vec_mat2cols_2ndcol_product_avx512(nrows: usize, dst: &mut [f64], u
     }
 
     unsafe {
-        // Packed accumulators: acc_a = [Σ ur*ar | Σ ui*ai], acc_b = [Σ ur*ai | Σ ui*ar]
-        let mut acc_a: __m512d = _mm512_setzero_pd();
-        let mut acc_b: __m512d = _mm512_setzero_pd();
+        let mut re1: __m256d = _mm256_setzero_pd();
+        let mut im1: __m256d = _mm256_setzero_pd();
 
         let mut u_ptr: *const f64 = u.as_ptr();
         let mut v_ptr: *const f64 = v.as_ptr().add(8); // Offset to 2nd column
 
         for _ in 0..nrows {
-            let u_full: __m512d = _mm512_loadu_pd(u_ptr); // [ur(4) | ui(4)]
-            let v_full: __m512d = _mm512_loadu_pd(v_ptr); // [ar(4) | ai(4)]
-            let v_swap: __m512d = _mm512_shuffle_f64x2::<0b01_00_11_10>(v_full, v_full); // [ai(4) | ar(4)]
+            let ur: __m256d = _mm256_loadu_pd(u_ptr);
+            let ui: __m256d = _mm256_loadu_pd(u_ptr.add(4));
 
-            acc_a = _mm512_fmadd_pd(u_full, v_full, acc_a); // [ur*ar | ui*ai]
-            acc_b = _mm512_fmadd_pd(u_full, v_swap, acc_b); // [ur*ai | ui*ar]
+            let ar: __m256d = _mm256_loadu_pd(v_ptr);
+            let ai: __m256d = _mm256_loadu_pd(v_ptr.add(4));
+
+            re1 = _mm256_fmsub_pd(ui, ai, re1);
+            im1 = _mm256_fmadd_pd(ur, ai, im1);
+            re1 = _mm256_fmsub_pd(ur, ar, re1);
+            im1 = _mm256_fmadd_pd(ui, ar, im1);
 
             u_ptr = u_ptr.add(8);
             v_ptr = v_ptr.add(16);
         }
 
-        // re = Σ ur*ar - Σ ui*ai, im = Σ ur*ai + Σ ui*ar
-        let lo_a: __m256d = _mm512_castpd512_pd256(acc_a);
-        let hi_a: __m256d = _mm512_extractf64x4_pd::<1>(acc_a);
-        let lo_b: __m256d = _mm512_castpd512_pd256(acc_b);
-        let hi_b: __m256d = _mm512_extractf64x4_pd::<1>(acc_b);
-
-        _mm256_storeu_pd(dst.as_mut_ptr(), _mm256_sub_pd(lo_a, hi_a));
-        _mm256_storeu_pd(dst.as_mut_ptr().add(4), _mm256_add_pd(lo_b, hi_b));
+        _mm256_storeu_pd(dst.as_mut_ptr(), re1);
+        _mm256_storeu_pd(dst.as_mut_ptr().add(4), im1);
     }
 }
 

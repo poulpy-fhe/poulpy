@@ -114,6 +114,31 @@ unsafe fn save_blk_add<const I: usize>(
     }
 }
 
+#[target_feature(enable = "avx512f,avx512vl")]
+#[inline]
+unsafe fn save_blk_quad_result<const OVERWRITE: bool>(
+    dst_base: *mut u64,
+    bq: usize,
+    q2_512: __m512i,
+    red0: __m512i,
+    red1: __m512i,
+    red2: __m512i,
+) {
+    unsafe {
+        if OVERWRITE {
+            save_blk_overwrite_nt::<0>(dst_base, bq, red0, red1, red2);
+            save_blk_overwrite_nt::<1>(dst_base, bq, red0, red1, red2);
+            save_blk_overwrite_nt::<2>(dst_base, bq, red0, red1, red2);
+            save_blk_overwrite_nt::<3>(dst_base, bq, red0, red1, red2);
+        } else {
+            save_blk_add::<0>(dst_base, bq, q2_512, red0, red1, red2);
+            save_blk_add::<1>(dst_base, bq, q2_512, red0, red1, red2);
+            save_blk_add::<2>(dst_base, bq, q2_512, red0, red1, red2);
+            save_blk_add::<3>(dst_base, bq, q2_512, red0, red1, red2);
+        }
+    }
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // IFMA-local VMP prepare
 // ──────────────────────────────────────────────────────────────────────────────
@@ -198,6 +223,46 @@ const IDX_PM_P2: [i64; 8] = [2, 6, 10, 14, 0, 0, 0, 0];
 
 /// Extract a block-quad from interleaved prep scalars into 3 prime-major planes.
 #[target_feature(enable = "avx512f")]
+#[inline]
+unsafe fn extract_blk_quad_prime_major_row(
+    n: usize,
+    bq: usize,
+    row: usize,
+    a_u64: &[u64],
+    idx_p0: __m512i,
+    idx_p1: __m512i,
+    idx_p2: __m512i,
+) -> [__m512i; 3] {
+    use core::arch::x86_64::{_mm512_castsi512_si256, _mm512_inserti64x4, _mm512_permutex2var_epi64};
+
+    let blk_base = bq * 4 * 2;
+
+    unsafe {
+        let src = a_u64.as_ptr().add(row * 4 * n + 4 * blk_base) as *const __m512i;
+        let s0 = _mm512_loadu_si512(src);
+        let s1 = _mm512_loadu_si512(src.add(1));
+        let s2 = _mm512_loadu_si512(src.add(2));
+        let s3 = _mm512_loadu_si512(src.add(3));
+
+        let lo_p0 = _mm512_permutex2var_epi64(s0, idx_p0, s1);
+        let hi_p0 = _mm512_permutex2var_epi64(s2, idx_p0, s3);
+        let p0 = _mm512_inserti64x4::<1>(lo_p0, _mm512_castsi512_si256(hi_p0));
+
+        let lo_p1 = _mm512_permutex2var_epi64(s0, idx_p1, s1);
+        let hi_p1 = _mm512_permutex2var_epi64(s2, idx_p1, s3);
+        let p1 = _mm512_inserti64x4::<1>(lo_p1, _mm512_castsi512_si256(hi_p1));
+
+        let lo_p2 = _mm512_permutex2var_epi64(s0, idx_p2, s1);
+        let hi_p2 = _mm512_permutex2var_epi64(s2, idx_p2, s3);
+        let p2 = _mm512_inserti64x4::<1>(lo_p2, _mm512_castsi512_si256(hi_p2));
+
+        [p0, p1, p2]
+    }
+}
+
+/// Extract a block-quad from interleaved prep scalars into 3 prime-major planes.
+#[target_feature(enable = "avx512f")]
+#[inline]
 unsafe fn extract_blk_quad_prime_major(n: usize, row_max: usize, bq: usize, a_u64: &[u64], x_pm: &mut [u64]) {
     use core::arch::x86_64::{_mm512_castsi512_si256, _mm512_inserti64x4, _mm512_permutex2var_epi64};
 
@@ -238,6 +303,106 @@ unsafe fn extract_blk_quad_prime_major(n: usize, row_max: usize, bq: usize, a_u6
 
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
+#[inline]
+unsafe fn vmp_apply_core_pm_small_rows<const ROWS: usize, const OVERWRITE: bool>(
+    n: usize,
+    res_u64: &mut [u64],
+    a_u64: &[u64],
+    pmat_u64: &[u64],
+    limb_offset: usize,
+    col_max: usize,
+    res_size: usize,
+    nrows: usize,
+    ncols: usize,
+    pc: &[PrimeConsts512; 3],
+    q2_512: __m512i,
+) {
+    unsafe {
+        let n_blk_quads = n / 8;
+        let bq_stride = ncols * nrows * 24;
+        let col_stride_y = nrows * 24;
+        let row_stride_y = 24;
+        let active_cols = col_max.saturating_sub(limb_offset);
+        let idx_p0 = _mm512_loadu_si512(IDX_PM_P0.as_ptr() as *const __m512i);
+        let idx_p1 = _mm512_loadu_si512(IDX_PM_P1.as_ptr() as *const __m512i);
+        let idx_p2 = _mm512_loadu_si512(IDX_PM_P2.as_ptr() as *const __m512i);
+
+        for bq in 0..n_blk_quads {
+            let mut x_rows = [[_mm512_setzero_si512(); 3]; ROWS];
+            for (r, x_row) in x_rows.iter_mut().enumerate() {
+                *x_row = extract_blk_quad_prime_major_row(n, bq, r, a_u64, idx_p0, idx_p1, idx_p2);
+            }
+
+            for col_pmat in limb_offset..col_max {
+                let col_res = col_pmat - limb_offset;
+                let y_base = pmat_u64.as_ptr().add(bq * bq_stride + col_pmat * col_stride_y);
+
+                let mut acc_lo0 = _mm512_setzero_si512();
+                let mut acc_hi0 = _mm512_setzero_si512();
+                let mut acc_lo1 = _mm512_setzero_si512();
+                let mut acc_hi1 = _mm512_setzero_si512();
+                let mut acc_lo2 = _mm512_setzero_si512();
+                let mut acc_hi2 = _mm512_setzero_si512();
+
+                for (r, x_row) in x_rows.iter().enumerate() {
+                    let y_row = y_base.add(r * row_stride_y);
+                    let y0 = _mm512_loadu_si512(y_row as *const __m512i);
+                    let y1 = _mm512_loadu_si512(y_row.add(8) as *const __m512i);
+                    let y2 = _mm512_loadu_si512(y_row.add(16) as *const __m512i);
+
+                    acc_lo0 = _mm512_madd52lo_epu64(acc_lo0, x_row[0], y0);
+                    acc_hi0 = _mm512_madd52hi_epu64(acc_hi0, x_row[0], y0);
+                    acc_lo1 = _mm512_madd52lo_epu64(acc_lo1, x_row[1], y1);
+                    acc_hi1 = _mm512_madd52hi_epu64(acc_hi1, x_row[1], y1);
+                    acc_lo2 = _mm512_madd52lo_epu64(acc_lo2, x_row[2], y2);
+                    acc_hi2 = _mm512_madd52hi_epu64(acc_hi2, x_row[2], y2);
+                }
+
+                let red0 = reduce_bbc_single_prime_512(
+                    acc_lo0,
+                    acc_hi0,
+                    pc[0].q,
+                    pc[0].q2,
+                    pc[0].pow42,
+                    pc[0].pow52,
+                    pc[0].pow52_quot,
+                );
+                let red1 = reduce_bbc_single_prime_512(
+                    acc_lo1,
+                    acc_hi1,
+                    pc[1].q,
+                    pc[1].q2,
+                    pc[1].pow42,
+                    pc[1].pow52,
+                    pc[1].pow52_quot,
+                );
+                let red2 = reduce_bbc_single_prime_512(
+                    acc_lo2,
+                    acc_hi2,
+                    pc[2].q,
+                    pc[2].q2,
+                    pc[2].pow42,
+                    pc[2].pow52,
+                    pc[2].pow52_quot,
+                );
+
+                let dst_base = res_u64.as_mut_ptr().add(col_res * 4 * n);
+                save_blk_quad_result::<OVERWRITE>(dst_base, bq, q2_512, red0, red1, red2);
+            }
+        }
+
+        if OVERWRITE {
+            for col in active_cols..res_size {
+                res_u64[col * 4 * n..(col + 1) * 4 * n].fill(0);
+            }
+            _mm_sfence();
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+#[target_feature(enable = "avx512ifma,avx512vl")]
+#[inline]
 unsafe fn vmp_apply_core_pm<const OVERWRITE: bool>(
     n: usize,
     res_u64: &mut [u64],
@@ -274,15 +439,93 @@ unsafe fn vmp_apply_core_pm<const OVERWRITE: bool>(
         q2_shifted_vec_512()
     };
 
-    // Scratch: 32 u64 reserved for layout compatibility with vmp_apply_tmp_bytes_ifma
-    //        + 3 * 8 * row_max u64 for prime-major x extract
-    let (_kernel_output, x_pm) = tmp.split_at_mut(32);
-    let x_pm = &mut x_pm[..3 * 8 * row_max];
-
     // Matrix layout constants
     let bq_stride = ncols * nrows * 24; // u64 per block-quad
     let col_stride_y = nrows * 24; // u64 per column within a block-quad
     let row_stride_y = 24; // u64 per row: 3 prime vectors
+
+    let active_cols = col_max.saturating_sub(limb_offset);
+
+    if row_max == 1 && a_size == 1 && active_cols <= 16 && limb_offset == 0 {
+        unsafe {
+            vmp_apply_core_pm_small_rows::<1, OVERWRITE>(
+                n,
+                res_u64,
+                a_u64,
+                pmat_u64,
+                limb_offset,
+                col_max,
+                res_size,
+                nrows,
+                ncols,
+                &pc,
+                q2_512,
+            );
+        }
+        return;
+    }
+
+    if row_max == 2 && a_size == 2 && active_cols <= 16 && limb_offset == 0 {
+        unsafe {
+            vmp_apply_core_pm_small_rows::<2, OVERWRITE>(
+                n,
+                res_u64,
+                a_u64,
+                pmat_u64,
+                limb_offset,
+                col_max,
+                res_size,
+                nrows,
+                ncols,
+                &pc,
+                q2_512,
+            );
+        }
+        return;
+    }
+
+    if row_max == 3 && a_size == 3 && active_cols <= 16 && limb_offset == 0 {
+        unsafe {
+            vmp_apply_core_pm_small_rows::<3, OVERWRITE>(
+                n,
+                res_u64,
+                a_u64,
+                pmat_u64,
+                limb_offset,
+                col_max,
+                res_size,
+                nrows,
+                ncols,
+                &pc,
+                q2_512,
+            );
+        }
+        return;
+    }
+
+    if row_max == 4 && a_size == 4 && active_cols <= 16 && limb_offset == 0 {
+        unsafe {
+            vmp_apply_core_pm_small_rows::<4, OVERWRITE>(
+                n,
+                res_u64,
+                a_u64,
+                pmat_u64,
+                limb_offset,
+                col_max,
+                res_size,
+                nrows,
+                ncols,
+                &pc,
+                q2_512,
+            );
+        }
+        return;
+    }
+
+    // Scratch: 32 u64 reserved for layout compatibility with vmp_apply_tmp_bytes_ifma
+    //        + 3 * 8 * row_max u64 for prime-major x extract
+    let (_kernel_output, x_pm) = tmp.split_at_mut(32);
+    let x_pm = &mut x_pm[..3 * 8 * row_max];
 
     for bq in 0..n_blk_quads {
         unsafe { extract_blk_quad_prime_major(n, row_max, bq, a_u64, x_pm) };

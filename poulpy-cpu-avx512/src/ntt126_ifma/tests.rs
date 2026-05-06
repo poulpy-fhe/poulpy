@@ -8,6 +8,11 @@ use crate::NTT126Ifma;
 
 #[cfg(test)]
 mod ntt126_ifma_tests {
+    use crate::ntt126_ifma::{
+        primes::{PrimeSetNtt126Ifma, Primes42},
+        reference::arithmetic::b_ntt126_ifma_to_znx128_ref,
+        vec_znx_dft::simd_b_ntt126_ifma_to_znx128,
+    };
     use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
 
     cross_backend_test_suite! {
@@ -182,6 +187,60 @@ mod ntt126_ifma_tests {
             test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_consume,
             test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
         }
+    }
+
+    #[test]
+    fn test_b_to_znx128_ifma_asm_edges_vs_ref() {
+        const Q: [u64; 3] = <Primes42 as PrimeSetNtt126Ifma>::Q;
+        let big_q = Q[0] as u128 * Q[1] as u128 * Q[2] as u128;
+        let values = [
+            0u128,
+            1,
+            Q[0] as u128 - 1,
+            Q[1] as u128 - 1,
+            Q[2] as u128 - 1,
+            big_q / 2 - 1,
+            big_q / 2,
+            big_q / 2 + 1,
+            big_q - 2,
+            big_q - 1,
+            123_456_789,
+            (1u128 << 63) - 1,
+            (1u128 << 64) + 17,
+            (1u128 << 95) + 0x12345,
+            (1u128 << 120) + 0x6789,
+            big_q / 3,
+            (2 * big_q) / 3,
+            big_q - 123_456_789,
+            42,
+        ];
+
+        fn fill_b_format(dst: &mut [u64], values: &[u128], q: &[u64; 3]) {
+            for (i, &value) in values.iter().enumerate() {
+                for k in 0..3 {
+                    let residue = (value % q[k] as u128) as u64;
+                    dst[4 * i + k] = if (i + k).is_multiple_of(2) { residue } else { residue + q[k] };
+                }
+                dst[4 * i + 3] = 0;
+            }
+        }
+
+        fn assert_matches_ref(n: usize, b: &[u64]) {
+            let mut got = vec![0i128; n];
+            let mut expected = vec![0i128; n];
+            unsafe { simd_b_ntt126_ifma_to_znx128(n, &mut got, b) };
+            b_ntt126_ifma_to_znx128_ref(n, &mut expected, b);
+            assert_eq!(got, expected);
+        }
+
+        let n = values.len();
+        let mut b = vec![0u64; 4 * n];
+        fill_b_format(&mut b, &values, &Q);
+        assert_matches_ref(n, &b);
+
+        let mut skewed = vec![0u64; 4 * n + 1];
+        fill_b_format(&mut skewed[1..], &values, &Q);
+        assert_matches_ref(n, &skewed[1..]);
     }
 }
 

@@ -92,15 +92,16 @@ Backends override CKKS algorithms by implementing `unsafe trait CKKSImpl<BE>`, t
 
 `poulpy-cpu-avx512` is a new optional backend crate exposing **three AVX-512-accelerated CPU backends** for `poulpy-hal`. Building this crate requires AVX-512 capable hardware and is gated behind two layered Cargo features (`enable-avx512f`, `enable-ifma`). When neither feature is enabled the crate remains in the workspace but compiles to an empty shell, and Poulpy falls back to `poulpy-cpu-ref`/`poulpy-cpu-avx`, so non-AVX-512 hosts (incl. macOS ARM) keep building cleanly.
 
-- Add `FFT64Avx512` — f64 complex-FFT backend (REIM/REIM4 AVX-512F kernels); gated on `enable-avx512f`. Conformance-tested against `FFT64Ref`.
+- Add `FFT64Avx512` — f64 complex-FFT backend; gated on `enable-avx512f`. Mixes AVX-512F REIM butterflies with AVX2+FMA REIM4 vector-matrix kernels (`reim4_vec_mat1col_product`, `reim4_vec_mat2cols_product`, `reim4_vec_mat2cols_2ndcol_product`) — the 256-bit FMA form has shorter dependency chains and benches at parity with or ahead of the 512-bit variant across ring sizes 2^10..2^16 on Zen 5. Requires AVX-512F + AVX2 + FMA at runtime (AVX2/FMA are implied by AVX-512F on real hardware and additionally checked at module creation). Conformance-tested against `FFT64Ref`.
 - Add `NTT120Avx512` — Q120 NTT backend with CRT over four ~30-bit primes; gated on `enable-avx512f`. Targets AVX-512F-capable CPUs without IFMA (Skylake-X, Cascade Lake, KNL).
   - 512-bit NTT butterflies with `nn=4` cross-block pair-pack and 2× unrolled NTT / mat-vec kernels.
   - Conformance-tested against `NTT120Ref` across `VecZnx`, `VecZnxBig`, `VecZnxDft`, `SvpPPol`, `VmpPMat`, and convolution.
-- Add `NTT126Ifma` — Q126 NTT backend with CRT over three ~42-bit primes, accelerated with AVX-512-IFMA; gated on `enable-ifma`.
+- Add `NTT126Ifma` — Q126 NTT backend with CRT over three ~42-bit primes, accelerated with AVX-512-IFMA; gated on `enable-ifma`. Requires AVX-512F + AVX-512-IFMA + AVX-512VL + BMI2 + ADX.
   - Implements IFMA-specialized NTT / INTT, BBC mat-vec, `VecZnxDft`, `VecZnxBig`, SVP, VMP, and convolution paths.
+  - The post-iNTT 3-prime CRT-to-i128 reconstruction (`b → znx128`) is a hand-written assembly kernel that fuses IFMA Garner reduction with a BMI2/ADX scalar carry chain for the final 128-bit recomposition, replacing the prior intrinsics implementation.
   - The scalar test oracles, IFMA twiddle tables, and supporting traits now live in `poulpy-cpu-avx512`; the former `NTTIfmaRef` backend has been removed from `poulpy-cpu-ref`.
 - Add a shared `znx_avx512` AVX-512F primitive layer (add/sub/neg/mul/normalization/automorphism/switch_ring) reused by `FFT64Avx512`, `NTT120Avx512`, and `NTT126Ifma`.
-- Build configuration: `enable-avx512f` and `enable-ifma` fail the build immediately with a clear `compile_error!` if the requested CPU target features (`avx512f`, `avx512ifma`, `avx512vl`) are not enabled, rather than emitting binaries that SIGILL at runtime.
+- Build configuration: `enable-avx512f` and `enable-ifma` fail the build immediately with a clear `compile_error!` if the requested CPU target features (`avx512f` for `enable-avx512f`; `avx512f` + `avx512ifma` + `avx512vl` + `bmi2` + `adx` for `enable-ifma`) are not enabled, rather than emitting binaries that SIGILL at runtime.
 
 ### `poulpy-bin-fhe`
 - **Breaking:** Remove the former `poulpy-schemes` crate and move its bin-FHE implementation into the standalone `poulpy-bin-fhe` crate. Downstream users should depend on `poulpy-bin-fhe` and import it as `poulpy_bin_fhe`.
