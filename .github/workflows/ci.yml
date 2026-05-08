@@ -71,7 +71,7 @@ jobs:
     - name: Build (AVX + IFMA enabled)
       if: steps.avxcheck.outputs.supported == 'true' && steps.ifmacheck.outputs.supported == 'true'
       env:
-        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl
+        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
       run: |
         cargo --config target-applies-to-host=false \
           build --workspace --all-targets --target x86_64-unknown-linux-gnu --features enable-avx,enable-ifma
@@ -79,7 +79,7 @@ jobs:
     - name: Clippy (AVX + IFMA enabled)
       if: steps.avxcheck.outputs.supported == 'true' && steps.ifmacheck.outputs.supported == 'true'
       env:
-        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl
+        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
       run: |
         cargo --config target-applies-to-host=false \
           clippy --workspace --all-targets --target x86_64-unknown-linux-gnu --features enable-avx,enable-ifma -- -D warnings
@@ -87,7 +87,7 @@ jobs:
     - name: Tests (AVX + IFMA enabled)
       if: steps.avxcheck.outputs.supported == 'true' && steps.ifmacheck.outputs.supported == 'true'
       env:
-        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl
+        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
       run: |
         cargo --config target-applies-to-host=false \
           test --workspace --target x86_64-unknown-linux-gnu --features enable-avx,enable-ifma
@@ -189,14 +189,14 @@ jobs:
 
     - name: Build (AVX-512F + IFMA, no run)
       env:
-        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl
+        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
       run: |
         cargo --config target-applies-to-host=false \
           build --workspace --all-targets --target x86_64-unknown-linux-gnu --features enable-avx,enable-ifma
 
     - name: Clippy (AVX-512F + IFMA)
       env:
-        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl
+        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
       run: |
         cargo --config target-applies-to-host=false \
           clippy --workspace --all-targets --target x86_64-unknown-linux-gnu --features enable-avx,enable-ifma -- -D warnings
