@@ -4,7 +4,7 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::GLWEToBackendMut;
 
-use crate::{CKKSInfos, SetCKKSInfos, oep::CKKSPlaintextZnxImpl};
+use crate::{CKKSInfos, SetCKKSInfos};
 
 /// Plaintext ZNX extraction.
 ///
@@ -17,7 +17,7 @@ use crate::{CKKSInfos, SetCKKSInfos, oep::CKKSPlaintextZnxImpl};
 /// log_delta_out  = src.log_delta
 /// log_budget_out = src.log_budget
 /// ```
-pub trait CKKSPlaintextVecOps<BE: Backend + CKKSPlaintextZnxImpl<BE>> {
+pub trait CKKSPlaintextVecOps<BE: Backend> {
     fn ckks_extract_pt_tmp_bytes(&self) -> usize;
 
     /// Extracts the ZNX plaintext polynomial from `src` into `dst`.

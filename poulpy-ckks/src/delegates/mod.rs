@@ -7,6 +7,7 @@ pub(crate) mod imag;
 pub(crate) mod mul;
 pub(crate) mod neg;
 pub(crate) mod plaintext;
+pub(crate) mod polynomial_evaluation;
 pub(crate) mod pow2;
 pub(crate) mod rescale;
 pub(crate) mod rotate;

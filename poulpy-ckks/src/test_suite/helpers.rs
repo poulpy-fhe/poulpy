@@ -9,13 +9,17 @@ use std::{collections::HashMap, f64::consts::TAU, fmt::Debug, marker::PhantomDat
 use super::CKKSTestParams;
 use crate::{
     CKKSCompositionError, CKKSInfos, CKKSMeta, SetCKKSInfos,
+    api::CKKSMulAddOps,
     encoding::reim::Encoder,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintextVecHostCodec, ciphertext::CKKSOffset, plaintext::CKKSPlaintext},
     leveled::api::{
         CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSDecrypt, CKKSEncrypt, CKKSImagOps, CKKSMulOps, CKKSNegOps, CKKSPow2Ops,
-        CKKSRescaleOps, CKKSRotateOps, CKKSSubOps,
+        CKKSRescaleOps, CKKSRotateOps, CKKSSubOps, PolynomialEvaluation,
     },
-    oep::CKKSImpl,
+    oep::{
+        CKKSAddImpl, CKKSConjugateImpl, CKKSCopyImpl, CKKSEncryptionImpl, CKKSImagImpl, CKKSMulImpl, CKKSNegImpl,
+        CKKSPlaintextZnxImpl, CKKSPolynomialEvaluationImpl, CKKSPow2Impl, CKKSRescaleImpl, CKKSRotateImpl, CKKSSubImpl,
+    },
 };
 use poulpy_core::{
     EncryptionLayout, GLWEAdd, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWENegate,
@@ -78,7 +82,19 @@ pub trait TestBackend:
     + HalSvpImpl<Self>
     + HalVmpImpl<Self>
     + HalConvolutionImpl<Self>
-    + CKKSImpl<Self>
+    + CKKSPlaintextZnxImpl<Self>
+    + CKKSCopyImpl<Self>
+    + CKKSAddImpl<Self>
+    + CKKSEncryptionImpl<Self>
+    + CKKSSubImpl<Self>
+    + CKKSNegImpl<Self>
+    + CKKSPow2Impl<Self>
+    + CKKSImagImpl<Self>
+    + CKKSRescaleImpl<Self>
+    + CKKSRotateImpl<Self>
+    + CKKSConjugateImpl<Self>
+    + CKKSMulImpl<Self>
+    + CKKSPolynomialEvaluationImpl<Self>
 {
 }
 
@@ -117,7 +133,19 @@ impl<T> TestBackend for T where
         + HalSvpImpl<T>
         + HalVmpImpl<T>
         + HalConvolutionImpl<T>
-        + CKKSImpl<T>
+        + CKKSPlaintextZnxImpl<T>
+        + CKKSCopyImpl<T>
+        + CKKSAddImpl<T>
+        + CKKSEncryptionImpl<T>
+        + CKKSSubImpl<T>
+        + CKKSNegImpl<T>
+        + CKKSPow2Impl<T>
+        + CKKSImagImpl<T>
+        + CKKSRescaleImpl<T>
+        + CKKSRotateImpl<T>
+        + CKKSConjugateImpl<T>
+        + CKKSMulImpl<T>
+        + CKKSPolynomialEvaluationImpl<T>
 {
 }
 
@@ -273,6 +301,21 @@ where
 {
 }
 
+pub trait TestPolynomialEvaluationBackend: TestMulBackend
+where
+    Module<Self>: PolynomialEvaluation<Self>,
+    for<'a> ScratchArena<'a, Self>: ScratchAvailable,
+{
+}
+
+impl<T> TestPolynomialEvaluationBackend for T
+where
+    T: TestMulBackend,
+    Module<T>: PolynomialEvaluation<T>,
+    for<'a> ScratchArena<'a, T>: ScratchAvailable,
+{
+}
+
 pub trait TestPow2Backend: TestCiphertextBackend
 where
     Module<Self>: GLWEShift<Self> + GLWECopy<Self>,
@@ -402,6 +445,7 @@ where
         + GLWEAutomorphism<BE>
         + GLWEAutomorphismKeyEncryptSk<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
+        + CKKSMulAddOps<BE>
         + ModuleN
         + GLWEShift<BE>
         + GLWEMulPlain<BE>

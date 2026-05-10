@@ -54,6 +54,7 @@ mod error;
 pub mod layouts;
 pub mod leveled;
 pub mod oep;
+pub mod polynomial;
 pub mod test_suite;
 pub use error::CKKSCompositionError;
 pub(crate) use error::{

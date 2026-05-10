@@ -23,7 +23,3 @@ pub trait CKKSAllOpsTmpBytes<BE: Backend> {
         A: GGLWEInfos,
         P: CKKSInfos;
 }
-
-// Re-export the CKKSImpl bound so downstream doesn't need to import it separately
-#[allow(unused_imports)]
-use crate::oep::CKKSImpl as _CKKSImpl;

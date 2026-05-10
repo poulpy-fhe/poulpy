@@ -2,7 +2,7 @@ use anyhow::Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::{CKKSCtBounds, SetCKKSInfos, oep::CKKSPow2Impl};
+use crate::{CKKSCtBounds, SetCKKSInfos};
 
 /// Multiplication and division of a ciphertext by a power of two.
 ///
@@ -57,7 +57,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos, oep::CKKSPow2Impl};
 ///
 /// **Capacity consumed**: `bits` bits (plus `offset` for undersized destinations).
 /// Errors with `InsufficientHomomorphicCapacity` if `bits (+ offset) > src.log_budget`.
-pub trait CKKSPow2Ops<BE: Backend + CKKSPow2Impl<BE>> {
+pub trait CKKSPow2Ops<BE: Backend> {
     fn ckks_mul_pow2_tmp_bytes(&self) -> usize;
 
     /// Computes `dst = src * 2^bits`.

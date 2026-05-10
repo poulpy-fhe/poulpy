@@ -5,7 +5,7 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::{CKKSCtBounds, SetCKKSInfos, oep::CKKSRotateImpl};
+use crate::{CKKSCtBounds, SetCKKSInfos};
 
 /// Homomorphic cyclic slot rotation.
 ///
@@ -31,7 +31,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos, oep::CKKSRotateImpl};
 /// ```
 ///
 /// For `_assign` variants `offset = 0` and metadata is unchanged.
-pub trait CKKSRotateOps<BE: Backend + CKKSRotateImpl<BE>> {
+pub trait CKKSRotateOps<BE: Backend> {
     fn ckks_rotate_tmp_bytes<C, K>(&self, ct_infos: &C, key_infos: &K) -> usize
     where
         C: CKKSCtBounds,

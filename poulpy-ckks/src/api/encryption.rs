@@ -8,7 +8,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::{CKKSCtBounds, SetCKKSInfos, oep::CKKSEncryptionImpl};
+use crate::{CKKSCtBounds, SetCKKSInfos};
 
 /// Secret-key encryption of a CKKS plaintext.
 ///
@@ -31,7 +31,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos, oep::CKKSEncryptionImpl};
 /// Errors with `InsufficientHomomorphicCapacity` if `k < pt.log_delta`
 /// (i.e., the encryption key does not provide enough headroom for the
 /// requested plaintext precision).
-pub trait CKKSEncrypt<BE: Backend + CKKSEncryptionImpl<BE>> {
+pub trait CKKSEncrypt<BE: Backend> {
     fn ckks_encrypt_sk_tmp_bytes<A>(&self, ct_infos: &A) -> usize
     where
         A: CKKSCtBounds;
@@ -68,7 +68,7 @@ pub trait CKKSEncrypt<BE: Backend + CKKSEncryptionImpl<BE>> {
 /// log_delta_out  = ct.log_delta
 /// log_budget_out = ct.log_budget
 /// ```
-pub trait CKKSDecrypt<BE: Backend + CKKSEncryptionImpl<BE>> {
+pub trait CKKSDecrypt<BE: Backend> {
     fn ckks_decrypt_tmp_bytes<A>(&self, ct_infos: &A) -> usize
     where
         A: CKKSCtBounds;

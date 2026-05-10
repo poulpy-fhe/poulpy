@@ -497,6 +497,30 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::mul_add::test_mul_add_const_into_aligned
             );
             run_test!(
+                power_basis_populate_degree7,
+                $crate::test_suite::polynomial_evaluation::test_power_basis_populate_degree7
+            );
+            run_test!(
+                power_basis_populate_chebyshev_degree7,
+                $crate::test_suite::polynomial_evaluation::test_power_basis_populate_chebyshev_degree7
+            );
+            run_test!(
+                chebyshev_interpolation_quadratic,
+                $crate::test_suite::polynomial_evaluation::test_chebyshev_interpolation_quadratic
+            );
+            run_test!(
+                eval_poly_const_coeffs_cubic,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_cubic
+            );
+            run_test!(
+                eval_poly_const_coeffs_exp7,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_exp7
+            );
+            run_test!(
+                eval_poly_const_coeffs_chebyshev_degree31,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_chebyshev_degree31
+            );
+            run_test!(
                 mul_add_const_zero_preserves_dst_meta,
                 $crate::test_suite::mul_add::test_mul_add_const_zero_preserves_dst_meta
             );
@@ -593,6 +617,7 @@ pub mod mul_many;
 pub mod mul_pow2;
 pub mod mul_sub;
 pub mod neg;
+pub mod polynomial_evaluation;
 pub mod rotate;
 pub mod sub;
 pub mod sub_unsafe;

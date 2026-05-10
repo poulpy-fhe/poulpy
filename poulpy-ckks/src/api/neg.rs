@@ -2,7 +2,7 @@ use anyhow::Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::{CKKSCtBounds, SetCKKSInfos, oep::CKKSNegImpl};
+use crate::{CKKSCtBounds, SetCKKSInfos};
 
 /// Homomorphic negation.
 ///
@@ -19,7 +19,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos, oep::CKKSNegImpl};
 ///
 /// For `_assign` the buffer is the same as the source so `offset = 0` and
 /// metadata is unchanged.
-pub trait CKKSNegOps<BE: Backend + CKKSNegImpl<BE>> {
+pub trait CKKSNegOps<BE: Backend> {
     fn ckks_neg_tmp_bytes(&self) -> usize;
 
     /// Computes `dst = -src`.

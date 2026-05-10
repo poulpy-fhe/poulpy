@@ -3,7 +3,7 @@ use poulpy_core::layouts::{GGLWEInfos, prepared::GLWEAutomorphismKeyPreparedToBa
 use poulpy_core::layouts::{GGLWEPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::{CKKSCtBounds, SetCKKSInfos, oep::CKKSConjugateImpl};
+use crate::{CKKSCtBounds, SetCKKSInfos};
 
 /// Homomorphic complex conjugation.
 ///
@@ -27,7 +27,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos, oep::CKKSConjugateImpl};
 /// ```
 ///
 /// For `_assign` variants `offset = 0` and metadata is unchanged.
-pub trait CKKSConjugateOps<BE: Backend + CKKSConjugateImpl<BE>> {
+pub trait CKKSConjugateOps<BE: Backend> {
     fn ckks_conjugate_tmp_bytes<C, K>(&self, ct_infos: &C, key_infos: &K) -> usize
     where
         C: CKKSCtBounds,

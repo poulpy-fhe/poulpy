@@ -2,7 +2,7 @@ use anyhow::Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::{CKKSCtBounds, SetCKKSInfos, oep::CKKSCopyImpl};
+use crate::{CKKSCtBounds, SetCKKSInfos};
 
 /// Level-aware ciphertext copy.
 ///
@@ -23,7 +23,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos, oep::CKKSCopyImpl};
 /// `offset = 0`.  When `dst.max_k() < src.effective_k()`, the
 /// most-significant bits that do not fit are silently dropped and
 /// `log_budget` is reduced by the deficit.
-pub trait CKKSCopyOps<BE: Backend + CKKSCopyImpl<BE>> {
+pub trait CKKSCopyOps<BE: Backend> {
     fn ckks_copy_tmp_bytes(&self) -> usize;
 
     /// Copies `src` into `dst`.

@@ -3,7 +3,7 @@ use poulpy_core::layouts::GLWEToBackendMut;
 use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendRef, prepared::GLWETensorKeyPreparedToBackendRef};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, oep::CKKSMulImpl};
+use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos};
 
 /// Ciphertext–ciphertext and ciphertext–plaintext multiplication.
 ///
@@ -67,7 +67,7 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, oep::CKKSMulImpl};
 /// `log_budget` but the same `log_delta`.  To release the physical limbs
 /// no longer needed, call
 /// [`CKKSMaintainOps::ckks_compact_limbs`](crate::layouts::CKKSMaintainOps::ckks_compact_limbs).
-pub trait CKKSMulOps<BE: Backend + CKKSMulImpl<BE>> {
+pub trait CKKSMulOps<BE: Backend> {
     fn ckks_mul_tmp_bytes<R, T>(&self, res: &R, tsk: &T) -> usize
     where
         R: CKKSCtBounds,

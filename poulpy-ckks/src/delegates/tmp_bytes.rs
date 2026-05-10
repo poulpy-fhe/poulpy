@@ -4,7 +4,6 @@ use crate::{
         CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSDecrypt, CKKSEncrypt, CKKSImagOps, CKKSMulOps, CKKSNegOps,
         CKKSPow2Ops, CKKSRescaleOps, CKKSRotateOps, CKKSSubOps,
     },
-    oep::CKKSImpl,
 };
 use poulpy_core::{
     GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWEShift, GLWETensorKeyEncryptSk,
@@ -19,7 +18,7 @@ use poulpy_hal::{
     layouts::{Backend, Module},
 };
 
-impl<BE: Backend + CKKSImpl<BE>> CKKSAllOpsTmpBytes<BE> for Module<BE>
+impl<BE: Backend> CKKSAllOpsTmpBytes<BE> for Module<BE>
 where
     Self: CKKSEncrypt<BE>
         + CKKSDecrypt<BE>

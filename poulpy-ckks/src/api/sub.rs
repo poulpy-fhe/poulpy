@@ -2,9 +2,7 @@ use anyhow::Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
-use crate::{
-    CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSCiphertext, layouts::UnnormalizedCKKSCiphertext, oep::CKKSSubImpl,
-};
+use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSCiphertext, layouts::UnnormalizedCKKSCiphertext};
 
 /// Normalized ciphertext and plaintext subtraction.
 ///
@@ -39,7 +37,7 @@ use crate::{
 /// ## Ciphertext–plaintext-constant subtraction (`ckks_sub_pt_const_*`)
 ///
 /// Metadata follows the same rule as the `pt_vec` variants above.
-pub trait CKKSSubOps<BE: Backend + CKKSSubImpl<BE>> {
+pub trait CKKSSubOps<BE: Backend> {
     fn ckks_sub_tmp_bytes(&self) -> usize;
     fn ckks_sub_pt_vec_tmp_bytes(&self) -> usize;
 

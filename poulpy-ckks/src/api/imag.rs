@@ -2,7 +2,7 @@ use anyhow::Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::{CKKSCtBounds, SetCKKSInfos, oep::CKKSImagImpl};
+use crate::{CKKSCtBounds, SetCKKSInfos};
 
 /// Multiplication and division of a ciphertext by the imaginary unit `i`.
 ///
@@ -25,7 +25,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos, oep::CKKSImagImpl};
 /// ```
 ///
 /// For `_assign` variants `offset = 0` and metadata is unchanged.
-pub trait CKKSImagOps<BE: Backend + CKKSImagImpl<BE>> {
+pub trait CKKSImagOps<BE: Backend> {
     fn ckks_mul_i_tmp_bytes(&self) -> usize;
 
     /// Computes `dst = i · src` (multiply every slot by the imaginary unit).

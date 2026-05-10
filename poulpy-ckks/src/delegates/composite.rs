@@ -19,7 +19,6 @@ use crate::{
         CKKSMulOps, CKKSMulSubOps, CKKSRescaleOps, CKKSSubOps,
     },
     leveled::default::CKKSAddDefault,
-    oep::CKKSImpl,
 };
 
 /// Guards `n` un-normalized accumulations against worst-case `i64` overflow.
@@ -45,7 +44,7 @@ fn ensure_accumulation_fits<D: Data>(op: &'static str, dst: &CKKSCiphertext<D>, 
 
 // --- CKKSAddManyOps ---
 
-impl<BE: Backend + CKKSImpl<BE>> CKKSAddManyOps<BE> for Module<BE>
+impl<BE: Backend> CKKSAddManyOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAddOps<BE> + CKKSRescaleOps<BE>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
@@ -83,7 +82,7 @@ where
 
 // --- CKKSMulManyOps ---
 
-impl<BE: Backend + CKKSImpl<BE>> CKKSMulManyOps<BE> for Module<BE>
+impl<BE: Backend> CKKSMulManyOps<BE> for Module<BE>
 where
     Module<BE>: CKKSMulOps<BE> + CKKSRescaleOps<BE>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
@@ -155,7 +154,7 @@ where
 
 // --- CKKSMulAddOps ---
 
-impl<BE: Backend + CKKSImpl<BE>> CKKSMulAddOps<BE> for Module<BE>
+impl<BE: Backend> CKKSMulAddOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + CKKSAddOpsUnnormalized<BE>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
@@ -288,7 +287,7 @@ where
 
 // --- CKKSAffineOps ---
 
-impl<BE: Backend + CKKSImpl<BE>> CKKSAffineOps<BE> for Module<BE>
+impl<BE: Backend> CKKSAffineOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
@@ -384,7 +383,7 @@ where
 
 // --- CKKSMulSubOps ---
 
-impl<BE: Backend + CKKSImpl<BE>> CKKSMulSubOps<BE> for Module<BE>
+impl<BE: Backend> CKKSMulSubOps<BE> for Module<BE>
 where
     Module<BE>: CKKSMulOps<BE> + CKKSSubOps<BE>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
@@ -496,7 +495,7 @@ fn accumulate_unnormalized<BE, D, F>(
     mut mul_term_into_tmp: F,
 ) -> Result<()>
 where
-    BE: Backend + CKKSImpl<BE>,
+    BE: Backend,
     D: Data,
     Module<BE>: CKKSAddDefault<BE> + GLWEAdd<BE> + GLWEShift<BE> + GLWENormalize<BE>,
     CKKSCiphertext<D>: GLWEToBackendMut<BE>,
@@ -518,7 +517,7 @@ where
     })
 }
 
-impl<BE: Backend + CKKSImpl<BE>> CKKSDotProductOps<BE> for Module<BE>
+impl<BE: Backend> CKKSDotProductOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAddOps<BE>
         + CKKSAddDefault<BE>

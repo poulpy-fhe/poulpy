@@ -2,9 +2,7 @@ use anyhow::Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
-use crate::{
-    CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSCiphertext, layouts::UnnormalizedCKKSCiphertext, oep::CKKSAddImpl,
-};
+use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSCiphertext, layouts::UnnormalizedCKKSCiphertext};
 
 /// Normalized ciphertext and plaintext addition.
 ///
@@ -58,7 +56,7 @@ use crate::{
 /// Adds a single quantized constant (one ZNX coefficient of a plaintext) to
 /// one coefficient slot of the ciphertext.  Metadata follows the same rule as
 /// the `pt_vec` variants above.
-pub trait CKKSAddOps<BE: Backend + CKKSAddImpl<BE>> {
+pub trait CKKSAddOps<BE: Backend> {
     fn ckks_add_tmp_bytes(&self) -> usize;
 
     /// Computes `dst = a + b`.
