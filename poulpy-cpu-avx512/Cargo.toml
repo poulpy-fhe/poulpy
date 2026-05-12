@@ -1,6 +1,6 @@
 [package]
 name = "poulpy-cpu-avx512"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 license = "Apache-2.0"
 readme = "README.md"
@@ -15,9 +15,11 @@ doctest = false
 [features]
 enable-avx512f = []
 enable-ifma = ["enable-avx512f"]
+enable-ckks = ["dep:poulpy-ckks"]
 
 [dependencies]
 bytemuck = {workspace = true}
+poulpy-ckks = {workspace = true, optional = true}
 poulpy-hal = {workspace = true}
 poulpy-core = {workspace = true}
 poulpy-cpu-ref = {workspace = true}
@@ -29,6 +31,10 @@ byteorder = {workspace = true}
 once_cell = {workspace = true}
 rand_chacha = {workspace = true}
 paste = {workspace = true}
+
+[dev-dependencies]
+anyhow = {workspace = true}
+f128 = "0.2"
 
 [package.metadata.docs.rs]
 all-features = true

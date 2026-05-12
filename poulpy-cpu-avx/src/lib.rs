@@ -171,28 +171,77 @@ compile_error!("feature `enable-avx` requires FMA. Build with RUSTFLAGS=\"-C tar
 
 // Keep the crate as a true opt-in backend: without `enable-avx`, none of the
 // AVX modules or their unit tests are compiled.
+#[cfg(all(feature = "enable-avx", feature = "enable-ckks"))]
+mod ckks_impl;
+#[cfg(feature = "enable-avx")]
+mod core_impl;
 #[cfg(feature = "enable-avx")]
 mod fft64;
 #[cfg(feature = "enable-avx")]
 mod hal_impl;
 #[cfg(feature = "enable-avx")]
 mod ntt120;
+#[cfg(all(test, feature = "enable-avx", feature = "enable-ckks"))]
+mod tests;
 #[cfg(feature = "enable-avx")]
 mod znx_avx;
 
 #[cfg(feature = "enable-avx")]
-pub use fft64::{FFT64Avx, ReimFFTAvx, ReimIFFTAvx};
+pub use fft64::{FFT64Avx, FFT64AvxReimTable, ReimFFTAvx, ReimIFFTAvx};
 #[cfg(feature = "enable-avx")]
 pub use ntt120::NTT120Avx;
 
+// --- TransferFrom impls ---
 #[cfg(feature = "enable-avx")]
-use poulpy_core::oep::CoreImpl;
-#[cfg(feature = "enable-avx")]
-unsafe impl CoreImpl<FFT64Avx> for FFT64Avx {
-    poulpy_core::impl_core_default_methods!(FFT64Avx);
-}
+mod transfer_impls {
+    use poulpy_cpu_ref::{FFT64Ref, NTT120Ref};
+    use poulpy_hal::layouts::{Backend, TransferFrom};
 
-#[cfg(feature = "enable-avx")]
-unsafe impl CoreImpl<NTT120Avx> for NTT120Avx {
-    poulpy_core::impl_core_default_methods!(NTT120Avx);
+    use crate::{FFT64Avx, NTT120Avx};
+
+    impl TransferFrom<FFT64Avx> for FFT64Avx {
+        fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
+            FFT64Avx::from_host_bytes(&FFT64Avx::to_host_bytes(src))
+        }
+    }
+    impl TransferFrom<FFT64Ref> for FFT64Avx {
+        fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
+            FFT64Avx::from_host_bytes(&FFT64Ref::to_host_bytes(src))
+        }
+    }
+
+    impl TransferFrom<NTT120Avx> for NTT120Avx {
+        fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
+            NTT120Avx::from_host_bytes(&NTT120Avx::to_host_bytes(src))
+        }
+    }
+    impl TransferFrom<NTT120Ref> for NTT120Avx {
+        fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
+            NTT120Avx::from_host_bytes(&NTT120Ref::to_host_bytes(src))
+        }
+    }
+
+    // Cross-family: coefficient-domain buffers are compatible.
+    // Prepared layouts must not be transferred directly; transfer the
+    // non-prepared form and re-prepare on the destination backend.
+    impl TransferFrom<NTT120Ref> for FFT64Avx {
+        fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
+            FFT64Avx::from_host_bytes(&NTT120Ref::to_host_bytes(src))
+        }
+    }
+    impl TransferFrom<NTT120Avx> for FFT64Avx {
+        fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
+            FFT64Avx::from_host_bytes(&NTT120Avx::to_host_bytes(src))
+        }
+    }
+    impl TransferFrom<FFT64Ref> for NTT120Avx {
+        fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
+            NTT120Avx::from_host_bytes(&FFT64Ref::to_host_bytes(src))
+        }
+    }
+    impl TransferFrom<FFT64Avx> for NTT120Avx {
+        fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
+            NTT120Avx::from_host_bytes(&FFT64Avx::to_host_bytes(src))
+        }
+    }
 }

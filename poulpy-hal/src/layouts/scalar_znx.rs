@@ -7,8 +7,8 @@ use rand_distr::{Distribution, weighted::WeightedIndex};
 use crate::{
     alloc_aligned,
     layouts::{
-        Data, DataMut, DataRef, DataView, DataViewMut, DigestU64, FillUniform, ReaderFrom, ToOwnedDeep, VecZnx, WriterTo,
-        ZnxInfos, ZnxView, ZnxViewMut, ZnxZero,
+        Backend, Data, DataView, DataViewMut, DigestU64, FillUniform, HostDataMut, HostDataRef, ReaderFrom, ToOwnedDeep, VecZnx,
+        VecZnxBackendMut, VecZnxBackendRef, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxZero,
     },
     source::Source,
 };
@@ -22,37 +22,70 @@ use crate::{
 /// The type parameter `D` controls ownership: `Vec<u8>` for owned,
 /// `&[u8]` for shared borrows, `&mut [u8]` for mutable borrows.
 #[repr(C)]
+#[derive(PartialEq, Eq, Debug, Clone, Copy, Hash, Default)]
+pub struct ScalarZnxShape {
+    n: usize,
+    cols: usize,
+}
+
+impl ScalarZnxShape {
+    pub const fn new(n: usize, cols: usize) -> Self {
+        Self { n, cols }
+    }
+
+    pub const fn n(self) -> usize {
+        self.n
+    }
+
+    pub const fn cols(self) -> usize {
+        self.cols
+    }
+}
+
+impl<D: Data> ScalarZnx<D> {
+    pub fn n(&self) -> usize {
+        self.shape.n()
+    }
+
+    pub fn cols(&self) -> usize {
+        self.shape.cols()
+    }
+
+    pub fn shape(&self) -> ScalarZnxShape {
+        self.shape
+    }
+}
+
+#[repr(C)]
 #[derive(PartialEq, Eq, Debug, Clone, Hash)]
 pub struct ScalarZnx<D: Data> {
     pub data: D,
-    pub n: usize,
-    pub cols: usize,
+    shape: ScalarZnxShape,
 }
 
-impl<D: DataRef> DigestU64 for ScalarZnx<D> {
+impl<D: HostDataRef> DigestU64 for ScalarZnx<D> {
     fn digest_u64(&self) -> u64 {
         let mut h: DefaultHasher = DefaultHasher::new();
         h.write(self.data.as_ref());
-        h.write_usize(self.n);
-        h.write_usize(self.cols);
+        h.write_usize(self.n());
+        h.write_usize(self.cols());
         h.finish()
     }
 }
 
-impl<D: DataRef> ToOwnedDeep for ScalarZnx<D> {
+impl<D: HostDataRef> ToOwnedDeep for ScalarZnx<D> {
     type Owned = ScalarZnx<Vec<u8>>;
     fn to_owned_deep(&self) -> Self::Owned {
         ScalarZnx {
             data: self.data.as_ref().to_vec(),
-            n: self.n,
-            cols: self.cols,
+            shape: self.shape,
         }
     }
 }
 
 impl<D: Data> ZnxInfos for ScalarZnx<D> {
     fn cols(&self) -> usize {
-        self.cols
+        self.shape.cols()
     }
 
     fn rows(&self) -> usize {
@@ -60,7 +93,7 @@ impl<D: Data> ZnxInfos for ScalarZnx<D> {
     }
 
     fn n(&self) -> usize {
-        self.n
+        self.shape.n()
     }
 
     fn size(&self) -> usize {
@@ -81,11 +114,11 @@ impl<D: Data> DataViewMut for ScalarZnx<D> {
     }
 }
 
-impl<D: DataRef> ZnxView for ScalarZnx<D> {
+impl<D: HostDataRef> ZnxView for ScalarZnx<D> {
     type Scalar = i64;
 }
 
-impl<D: DataMut> ScalarZnx<D> {
+impl<D: HostDataMut> ScalarZnx<D> {
     /// Fills column `col` with ternary values `{-1, 0, 1}` where each
     /// non-zero entry appears with total probability `prob` (split equally
     /// between `-1` and `+1`).
@@ -174,9 +207,12 @@ impl ScalarZnx<Vec<u8>> {
     }
 
     /// Allocates a zero-initialized `ScalarZnx` aligned to [`DEFAULTALIGN`](crate::DEFAULTALIGN).
-    pub fn alloc(n: usize, cols: usize) -> Self {
+    pub(crate) fn alloc(n: usize, cols: usize) -> Self {
         let data: Vec<u8> = alloc_aligned::<u8>(Self::bytes_of(n, cols));
-        Self { data, n, cols }
+        Self {
+            data,
+            shape: ScalarZnxShape::new(n, cols),
+        }
     }
 
     /// Wraps an existing byte buffer into a `ScalarZnx`.
@@ -189,11 +225,14 @@ impl ScalarZnx<Vec<u8>> {
         let data: Vec<u8> = bytes.into();
         assert!(data.len() == Self::bytes_of(n, cols));
         crate::assert_alignment(data.as_ptr());
-        Self { data, n, cols }
+        Self {
+            data,
+            shape: ScalarZnxShape::new(n, cols),
+        }
     }
 }
 
-impl<D: DataMut> ZnxZero for ScalarZnx<D> {
+impl<D: HostDataMut> ZnxZero for ScalarZnx<D> {
     fn zero(&mut self) {
         self.raw_mut().fill(0)
     }
@@ -202,7 +241,7 @@ impl<D: DataMut> ZnxZero for ScalarZnx<D> {
     }
 }
 
-impl<D: DataMut> FillUniform for ScalarZnx<D> {
+impl<D: HostDataMut> FillUniform for ScalarZnx<D> {
     fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
         match log_bound {
             64 => source.fill_bytes(self.data.as_mut()),
@@ -220,73 +259,156 @@ impl<D: DataMut> FillUniform for ScalarZnx<D> {
 
 /// Owned `ScalarZnx` backed by a `Vec<u8>`.
 pub type ScalarZnxOwned = ScalarZnx<Vec<u8>>;
+/// Shared backend-native borrow of a `ScalarZnx`.
+pub type ScalarZnxBackendRef<'a, B> = ScalarZnx<<B as Backend>::BufRef<'a>>;
+/// Mutable backend-native borrow of a `ScalarZnx`.
+pub type ScalarZnxBackendMut<'a, B> = ScalarZnx<<B as Backend>::BufMut<'a>>;
 
 impl<D: Data> ScalarZnx<D> {
     /// Constructs a `ScalarZnx` from raw parts without validation.
     pub fn from_data(data: D, n: usize, cols: usize) -> Self {
-        Self { data, n, cols }
+        Self {
+            data,
+            shape: ScalarZnxShape::new(n, cols),
+        }
     }
 }
 
-/// Borrow a `ScalarZnx` as a shared reference view.
-pub trait ScalarZnxToRef {
-    fn to_ref(&self) -> ScalarZnx<&[u8]>;
+/// Borrow a backend-owned `ScalarZnx` using the backend's native view type.
+pub trait ScalarZnxToBackendRef<B: Backend> {
+    fn to_backend_ref(&self) -> ScalarZnxBackendRef<'_, B>;
 }
 
-impl<D: DataRef> ScalarZnxToRef for ScalarZnx<D> {
-    fn to_ref(&self) -> ScalarZnx<&[u8]> {
+impl<B: Backend> ScalarZnxToBackendRef<B> for ScalarZnx<B::OwnedBuf> {
+    fn to_backend_ref(&self) -> ScalarZnxBackendRef<'_, B> {
+        ScalarZnx {
+            data: B::view(&self.data),
+            shape: self.shape,
+        }
+    }
+}
+
+impl<'b, B: Backend + 'b> ScalarZnxToBackendRef<B> for &ScalarZnx<B::BufRef<'b>> {
+    fn to_backend_ref(&self) -> ScalarZnxBackendRef<'_, B> {
+        ScalarZnx {
+            data: B::view_ref(&self.data),
+            shape: self.shape,
+        }
+    }
+}
+
+impl<'b, B: Backend + 'b> ScalarZnxToBackendRef<B> for &mut ScalarZnx<B::BufMut<'b>> {
+    fn to_backend_ref(&self) -> ScalarZnxBackendRef<'_, B> {
+        scalar_znx_backend_ref_from_mut::<B>(self)
+    }
+}
+
+/// Mutably borrow a backend-owned `ScalarZnx` using the backend's native view type.
+pub trait ScalarZnxToBackendMut<B: Backend> {
+    fn to_backend_mut(&mut self) -> ScalarZnxBackendMut<'_, B>;
+}
+
+impl<B: Backend> ScalarZnxToBackendMut<B> for ScalarZnx<B::OwnedBuf> {
+    fn to_backend_mut(&mut self) -> ScalarZnxBackendMut<'_, B> {
+        ScalarZnx {
+            data: B::view_mut(&mut self.data),
+            shape: self.shape,
+        }
+    }
+}
+
+impl<'b, B: Backend + 'b> ScalarZnxToBackendMut<B> for &mut ScalarZnx<B::BufMut<'b>> {
+    fn to_backend_mut(&mut self) -> ScalarZnxBackendMut<'_, B> {
+        scalar_znx_backend_mut_from_mut::<B>(self)
+    }
+}
+
+fn scalar_znx_backend_ref_from_mut<'a, 'b, B: Backend + 'b>(scalar: &'a ScalarZnx<B::BufMut<'b>>) -> ScalarZnxBackendRef<'a, B> {
+    ScalarZnx {
+        data: B::view_ref_mut(&scalar.data),
+        shape: scalar.shape,
+    }
+}
+
+fn scalar_znx_backend_mut_from_mut<'a, 'b, B: Backend + 'b>(
+    scalar: &'a mut ScalarZnx<B::BufMut<'b>>,
+) -> ScalarZnxBackendMut<'a, B> {
+    ScalarZnx {
+        data: B::view_mut_ref(&mut scalar.data),
+        shape: scalar.shape,
+    }
+}
+
+impl<D: HostDataRef> ScalarZnx<D> {
+    /// Borrow a host-visible `ScalarZnx` as a shared byte-slice view.
+    pub fn to_ref(&self) -> ScalarZnx<&[u8]> {
         ScalarZnx {
             data: self.data.as_ref(),
-            n: self.n,
-            cols: self.cols,
+            shape: self.shape,
         }
     }
 }
 
-/// Borrow a `ScalarZnx` as a mutable reference view.
-pub trait ScalarZnxToMut {
-    fn to_mut(&mut self) -> ScalarZnx<&mut [u8]>;
-}
-
-impl<D: DataMut> ScalarZnxToMut for ScalarZnx<D> {
-    fn to_mut(&mut self) -> ScalarZnx<&mut [u8]> {
-        ScalarZnx {
-            data: self.data.as_mut(),
-            n: self.n,
-            cols: self.cols,
-        }
-    }
-}
-
-impl<D: DataRef> ScalarZnx<D> {
+impl<D: HostDataRef> ScalarZnx<D> {
     /// Views this `ScalarZnx` as a [`VecZnx`] with `size == 1`.
     pub fn as_vec_znx(&self) -> VecZnx<&[u8]> {
-        VecZnx {
-            data: self.data.as_ref(),
-            n: self.n,
-            cols: self.cols,
-            size: 1,
-            max_size: 1,
-        }
+        VecZnx::from_data(self.data.as_ref(), self.n(), self.cols(), 1)
     }
 }
 
-impl<D: DataMut> ScalarZnx<D> {
+/// Views a backend-owned `ScalarZnx` as a backend-native [`VecZnx`] with `size == 1`.
+pub trait ScalarZnxAsVecZnxBackendRef<B: Backend> {
+    fn as_vec_znx_backend(&self) -> VecZnx<B::BufRef<'_>>;
+}
+
+impl<B: Backend> ScalarZnxAsVecZnxBackendRef<B> for ScalarZnx<B::OwnedBuf> {
+    fn as_vec_znx_backend(&self) -> VecZnx<B::BufRef<'_>> {
+        VecZnx::from_data(B::view(&self.data), self.n(), self.cols(), 1)
+    }
+}
+
+pub fn scalar_znx_as_vec_znx_backend_ref_from_ref<'a, 'b, B: Backend + 'b>(
+    scalar: &'a ScalarZnx<B::BufRef<'b>>,
+) -> VecZnxBackendRef<'a, B> {
+    VecZnx::from_data(B::view_ref(&scalar.data), scalar.n(), scalar.cols(), 1)
+}
+
+pub fn scalar_znx_as_vec_znx_backend_ref_from_mut<'a, 'b, B: Backend + 'b>(
+    scalar: &'a ScalarZnx<B::BufMut<'b>>,
+) -> VecZnxBackendRef<'a, B> {
+    VecZnx::from_data(B::view_ref_mut(&scalar.data), scalar.n(), scalar.cols(), 1)
+}
+
+impl<D: HostDataMut> ScalarZnx<D> {
     /// Mutably views this `ScalarZnx` as a [`VecZnx`] with `size == 1`.
     pub fn as_vec_znx_mut(&mut self) -> VecZnx<&mut [u8]> {
-        VecZnx {
-            data: self.data.as_mut(),
-            n: self.n,
-            cols: self.cols,
-            size: 1,
-            max_size: 1,
-        }
+        let shape = self.shape();
+        VecZnx::from_data(self.data.as_mut(), shape.n(), shape.cols(), 1)
     }
+}
+
+/// Mutably views a backend-owned `ScalarZnx` as a backend-native [`VecZnx`] with `size == 1`.
+pub trait ScalarZnxAsVecZnxBackendMut<B: Backend> {
+    fn as_vec_znx_backend_mut(&mut self) -> VecZnx<B::BufMut<'_>>;
+}
+
+impl<B: Backend> ScalarZnxAsVecZnxBackendMut<B> for ScalarZnx<B::OwnedBuf> {
+    fn as_vec_znx_backend_mut(&mut self) -> VecZnx<B::BufMut<'_>> {
+        let shape = self.shape();
+        VecZnx::from_data(B::view_mut(&mut self.data), shape.n(), shape.cols(), 1)
+    }
+}
+
+pub fn scalar_znx_as_vec_znx_backend_mut_from_mut<'a, 'b, B: Backend + 'b>(
+    scalar: &'a mut ScalarZnx<B::BufMut<'b>>,
+) -> VecZnxBackendMut<'a, B> {
+    let shape = scalar.shape();
+    VecZnx::from_data(B::view_mut_ref(&mut scalar.data), shape.n(), shape.cols(), 1)
 }
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
-impl<D: DataMut> ReaderFrom for ScalarZnx<D> {
+impl<D: HostDataMut> ReaderFrom for ScalarZnx<D> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         let new_n: usize = reader.read_u64::<LittleEndian>()? as usize;
         let new_cols: usize = reader.read_u64::<LittleEndian>()? as usize;
@@ -309,17 +431,16 @@ impl<D: DataMut> ReaderFrom for ScalarZnx<D> {
         }
         reader.read_exact(&mut buf[..len])?;
 
-        self.n = new_n;
-        self.cols = new_cols;
+        self.shape = ScalarZnxShape::new(new_n, new_cols);
         Ok(())
     }
 }
 
-impl<D: DataRef> WriterTo for ScalarZnx<D> {
+impl<D: HostDataRef> WriterTo for ScalarZnx<D> {
     fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        writer.write_u64::<LittleEndian>(self.n as u64)?;
-        writer.write_u64::<LittleEndian>(self.cols as u64)?;
-        let coeff_bytes = self.n * self.cols * size_of::<i64>();
+        writer.write_u64::<LittleEndian>(self.n() as u64)?;
+        writer.write_u64::<LittleEndian>(self.cols() as u64)?;
+        let coeff_bytes = self.n() * self.cols() * size_of::<i64>();
         let buf: &[u8] = self.data.as_ref();
         if buf.len() < coeff_bytes {
             return Err(std::io::Error::new(

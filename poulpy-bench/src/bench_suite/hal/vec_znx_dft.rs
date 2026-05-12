@@ -1,7 +1,6 @@
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion};
-use rand::Rng;
 
 use poulpy_hal::{
     api::{
@@ -9,7 +8,7 @@ use poulpy_hal::{
         VecZnxDftApply, VecZnxDftSub, VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxIdftApply, VecZnxIdftApplyTmpA,
         VecZnxIdftApplyTmpBytes,
     },
-    layouts::{Backend, DataViewMut, DeviceBuf, Module, ScratchOwned, VecZnx, VecZnxBig, VecZnxDft},
+    layouts::{Backend, Module, ScratchOwned, VecZnxBig, VecZnxDft},
     source::Source,
 };
 
@@ -33,15 +32,14 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut a: VecZnxDft<DeviceBuf<B>, B> = module.vec_znx_dft_alloc(cols, size);
-        let mut b: VecZnxDft<DeviceBuf<B>, B> = module.vec_znx_dft_alloc(cols, size);
-        let mut c: VecZnxDft<DeviceBuf<B>, B> = module.vec_znx_dft_alloc(cols, size);
-
-        source.fill_bytes(a.data_mut().as_mut());
-        source.fill_bytes(b.data_mut().as_mut());
-        source.fill_bytes(c.data_mut().as_mut());
+        let a: VecZnxDft<B::OwnedBuf, B> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
+        let b: VecZnxDft<B::OwnedBuf, B> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
+        let mut c: VecZnxDft<B::OwnedBuf, B> = module.vec_znx_dft_alloc(cols, size);
 
         move || {
+            let a = crate::vec_znx_dft_backend_ref::<B>(&a);
+            let b = crate::vec_znx_dft_backend_ref::<B>(&b);
+            let mut c = crate::vec_znx_dft_backend_mut::<B>(&mut c);
             for i in 0..cols {
                 module.vec_znx_dft_add_into(&mut c, i, &a, i, &b, i);
             }
@@ -78,14 +76,12 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut a: VecZnxDft<DeviceBuf<B>, B> = module.vec_znx_dft_alloc(cols, size);
-        let mut c: VecZnxDft<DeviceBuf<B>, B> = module.vec_znx_dft_alloc(cols, size);
-
-        // Fill a with random i64
-        source.fill_bytes(a.data_mut().as_mut());
-        source.fill_bytes(c.data_mut().as_mut());
+        let a: VecZnxDft<B::OwnedBuf, B> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
+        let mut c: VecZnxDft<B::OwnedBuf, B> = module.vec_znx_dft_alloc(cols, size);
 
         move || {
+            let a = crate::vec_znx_dft_backend_ref::<B>(&a);
+            let mut c = crate::vec_znx_dft_backend_mut::<B>(&mut c);
             for i in 0..cols {
                 module.vec_znx_dft_add_assign(&mut c, i, &a, i);
             }
@@ -122,12 +118,13 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut res: VecZnxDft<DeviceBuf<B>, B> = module.vec_znx_dft_alloc(cols, size);
-        let mut a: VecZnx<Vec<u8>> = VecZnx::alloc(n, cols, size);
-        source.fill_bytes(res.data_mut().as_mut());
-        source.fill_bytes(a.data_mut().as_mut());
+        let mut res: VecZnxDft<B::OwnedBuf, B> = module.vec_znx_dft_alloc(cols, size);
+        let a = crate::random_host_vec_znx(module.n(), cols, size, &mut source);
+        let a = crate::upload_host_vec_znx::<B>(&a);
 
         move || {
+            let a = crate::vec_znx_backend_ref::<B>(&a);
+            let mut res = crate::vec_znx_dft_backend_mut(&mut res);
             for i in 0..cols {
                 module.vec_znx_dft_apply(1, 0, &mut res, i, &a, i);
             }
@@ -166,16 +163,16 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut res: VecZnxBig<DeviceBuf<B>, B> = module.vec_znx_big_alloc(cols, size);
-        let mut a: VecZnxDft<DeviceBuf<B>, B> = module.vec_znx_dft_alloc(cols, size);
-        source.fill_bytes(res.data_mut().as_mut());
-        source.fill_bytes(a.data_mut().as_mut());
+        let mut res: VecZnxBig<B::OwnedBuf, B> = module.vec_znx_big_alloc(cols, size);
+        let a: VecZnxDft<B::OwnedBuf, B> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
 
         let mut scratch = ScratchOwned::alloc(module.vec_znx_idft_apply_tmp_bytes());
 
         move || {
+            let a = crate::vec_znx_dft_backend_ref::<B>(&a);
+            let mut res = crate::vec_znx_big_backend_mut(&mut res);
             for i in 0..cols {
-                module.vec_znx_idft_apply(&mut res, i, &a, i, scratch.borrow());
+                module.vec_znx_idft_apply(&mut res, i, &a, i, &mut scratch.borrow());
             }
             black_box(());
         }
@@ -209,12 +206,12 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut res: VecZnxBig<DeviceBuf<B>, B> = module.vec_znx_big_alloc(cols, size);
-        let mut a: VecZnxDft<DeviceBuf<B>, B> = module.vec_znx_dft_alloc(cols, size);
-        source.fill_bytes(res.data_mut().as_mut());
-        source.fill_bytes(a.data_mut().as_mut());
+        let mut res: VecZnxBig<B::OwnedBuf, B> = module.vec_znx_big_alloc(cols, size);
+        let mut a: VecZnxDft<B::OwnedBuf, B> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
 
         move || {
+            let mut res = crate::vec_znx_big_backend_mut(&mut res);
+            let mut a = crate::vec_znx_dft_backend_mut(&mut a);
             for i in 0..cols {
                 module.vec_znx_idft_apply_tmpa(&mut res, i, &mut a, i);
             }
@@ -251,15 +248,14 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut a: VecZnxDft<DeviceBuf<B>, B> = module.vec_znx_dft_alloc(cols, size);
-        let mut b: VecZnxDft<DeviceBuf<B>, B> = module.vec_znx_dft_alloc(cols, size);
-        let mut c: VecZnxDft<DeviceBuf<B>, B> = module.vec_znx_dft_alloc(cols, size);
-
-        source.fill_bytes(a.data_mut().as_mut());
-        source.fill_bytes(b.data_mut().as_mut());
-        source.fill_bytes(c.data_mut().as_mut());
+        let a: VecZnxDft<B::OwnedBuf, B> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
+        let b: VecZnxDft<B::OwnedBuf, B> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
+        let mut c: VecZnxDft<B::OwnedBuf, B> = module.vec_znx_dft_alloc(cols, size);
 
         move || {
+            let a = crate::vec_znx_dft_backend_ref::<B>(&a);
+            let b = crate::vec_znx_dft_backend_ref::<B>(&b);
+            let mut c = crate::vec_znx_dft_backend_mut::<B>(&mut c);
             for i in 0..cols {
                 module.vec_znx_dft_sub(&mut c, i, &a, i, &b, i);
             }
@@ -296,14 +292,12 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut a: VecZnxDft<DeviceBuf<B>, B> = module.vec_znx_dft_alloc(cols, size);
-        let mut c: VecZnxDft<DeviceBuf<B>, B> = module.vec_znx_dft_alloc(cols, size);
-
-        // Fill a with random i64
-        source.fill_bytes(a.data_mut().as_mut());
-        source.fill_bytes(c.data_mut().as_mut());
+        let a: VecZnxDft<B::OwnedBuf, B> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
+        let mut c: VecZnxDft<B::OwnedBuf, B> = module.vec_znx_dft_alloc(cols, size);
 
         move || {
+            let a = crate::vec_znx_dft_backend_ref::<B>(&a);
+            let mut c = crate::vec_znx_dft_backend_mut::<B>(&mut c);
             for i in 0..cols {
                 module.vec_znx_dft_sub_assign(&mut c, i, &a, i);
             }
@@ -340,14 +334,12 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut a: VecZnxDft<DeviceBuf<B>, B> = module.vec_znx_dft_alloc(cols, size);
-        let mut c: VecZnxDft<DeviceBuf<B>, B> = module.vec_znx_dft_alloc(cols, size);
-
-        // Fill a with random i64
-        source.fill_bytes(a.data_mut().as_mut());
-        source.fill_bytes(c.data_mut().as_mut());
+        let a: VecZnxDft<B::OwnedBuf, B> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
+        let mut c: VecZnxDft<B::OwnedBuf, B> = module.vec_znx_dft_alloc(cols, size);
 
         move || {
+            let a = crate::vec_znx_dft_backend_ref::<B>(&a);
+            let mut c = crate::vec_znx_dft_backend_mut::<B>(&mut c);
             for i in 0..cols {
                 module.vec_znx_dft_sub_negate_assign(&mut c, i, &a, i);
             }

@@ -1,15 +1,16 @@
 use poulpy_hal::{
-    api::{ScratchAvailable, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniform, VecZnxRotateAssign},
-    layouts::{DeviceBuf, Module, ScalarZnx, Scratch, ScratchOwned, ZnxViewMut},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSourceBackend, VecZnxRotateAssignBackend},
+    layouts::{Module, ScalarZnx, ScratchOwned, ZnxViewMut},
     source::Source,
-    test_suite::TestParams,
+    test_suite::{TestParams, vec_znx_backend_mut},
 };
 
 use crate::{
-    EncryptionLayout, GGSWEncryptSk, GLWEEncryptSk, GLWEExternalProduct, GLWENoise, GLWENormalize, ScratchTakeCore,
+    EncryptionLayout, GGSWEncryptSk, GLWEEncryptSk, GLWEExternalProduct, GLWENoise, GLWENormalize, ScratchArenaTakeCore,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory,
+        GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, LWEInfos,
+        ModuleCoreAlloc,
         prepared::{GGSWPrepared, GLWESecretPrepared},
     },
     noise::noise_ggsw_product,
@@ -18,17 +19,20 @@ use crate::{
 #[allow(clippy::too_many_arguments)]
 pub fn test_glwe_external_product<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: GGSWEncryptSk<BE>
         + GGSWPreparedFactory<BE>
-        + VecZnxFillUniform
+        + VecZnxFillUniformSourceBackend<BE>
         + GLWEExternalProduct<BE>
         + GLWEEncryptSk<BE>
         + GLWENoise<BE>
-        + VecZnxRotateAssign<BE>
+        + VecZnxRotateAssignBackend<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWENormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    Scratch<BE>: ScratchAvailable + ScratchTakeCore<BE>,
+    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let base2k: usize = params.base2k;
     let in_base2k: usize = base2k - 1;
@@ -69,19 +73,24 @@ where
             })
             .unwrap();
 
-            let mut ggsw_apply: GGSW<Vec<u8>> = GGSW::alloc_from_infos(&ggsw_apply_infos);
-            let mut glwe_in: GLWE<Vec<u8>> = GLWE::alloc_from_infos(&glwe_in_infos);
-            let mut glwe_out: GLWE<Vec<u8>> = GLWE::alloc_from_infos(&glwe_out_infos);
-            let mut pt_ggsw: ScalarZnx<Vec<u8>> = ScalarZnx::alloc(n, 1);
-            let mut pt_in: GLWEPlaintext<Vec<u8>> = GLWEPlaintext::alloc_from_infos(&glwe_in_infos);
-            let mut pt_out: GLWEPlaintext<Vec<u8>> = GLWEPlaintext::alloc_from_infos(&glwe_out_infos);
+            let mut ggsw_apply: GGSW<Vec<u8>> = module.ggsw_alloc_from_infos(&ggsw_apply_infos);
+            let mut glwe_in: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_in_infos);
+            let mut glwe_out: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_out_infos);
+            let mut pt_ggsw: ScalarZnx<Vec<u8>> = module.scalar_znx_alloc(1);
+            let mut pt_in: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_in_infos);
+            let mut pt_out: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
             let mut source_xe: Source = Source::new([0u8; 32]);
             let mut source_xa: Source = Source::new([0u8; 32]);
 
             // Random input plaintext
-            module.vec_znx_fill_uniform(in_base2k, &mut pt_in.data, 0, &mut source_xa);
+            module.vec_znx_fill_uniform_source_backend(
+                in_base2k,
+                &mut vec_znx_backend_mut::<BE>(&mut pt_in.data),
+                0,
+                &mut source_xa,
+            );
 
             pt_in.data.at_mut(0, 0)[1] = 1;
 
@@ -95,10 +104,10 @@ where
                     | module.glwe_external_product_tmp_bytes(&glwe_out_infos, &glwe_in_infos, &ggsw_apply_infos),
             );
 
-            let mut sk: GLWESecret<Vec<u8>> = GLWESecret::alloc(n.into(), rank.into());
+            let mut sk: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank.into());
             sk.fill_ternary_prob(0.5, &mut source_xs);
 
-            let mut sk_prepared: GLWESecretPrepared<DeviceBuf<BE>, BE> = module.glwe_secret_prepared_alloc(rank.into());
+            let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
             module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
             module.ggsw_encrypt_sk(
@@ -108,7 +117,7 @@ where
                 &ggsw_apply_infos,
                 &mut source_xe,
                 &mut source_xa,
-                scratch.borrow(),
+                &mut scratch.borrow(),
             );
 
             module.glwe_encrypt_sk(
@@ -118,17 +127,28 @@ where
                 &glwe_in_infos,
                 &mut source_xe,
                 &mut source_xa,
-                scratch.borrow(),
+                &mut scratch.borrow(),
             );
 
-            let mut ct_ggsw_prepared: GGSWPrepared<DeviceBuf<BE>, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw_apply);
-            module.ggsw_prepare(&mut ct_ggsw_prepared, &ggsw_apply, scratch.borrow());
+            let mut ct_ggsw_prepared: GGSWPrepared<BE::OwnedBuf, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw_apply);
+            module.ggsw_prepare(&mut ct_ggsw_prepared, &ggsw_apply, &mut scratch.borrow());
 
-            module.glwe_external_product(&mut glwe_out, &glwe_in, &ct_ggsw_prepared, scratch.borrow());
+            module.glwe_external_product(
+                &mut glwe_out,
+                &glwe_in,
+                &ct_ggsw_prepared,
+                ct_ggsw_prepared.size(),
+                &mut scratch.borrow(),
+            );
 
-            module.vec_znx_rotate_assign(k as i64, &mut pt_in.data, 0, scratch.borrow());
+            module.vec_znx_rotate_assign_backend(
+                k as i64,
+                &mut vec_znx_backend_mut::<BE>(&mut pt_in.data),
+                0,
+                &mut scratch.borrow(),
+            );
 
-            module.glwe_normalize(&mut pt_out, &pt_in, scratch.borrow());
+            module.glwe_normalize(&mut pt_out, &pt_in, &mut scratch.borrow());
 
             let var_gct_err_lhs: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
             let var_gct_err_rhs: f64 = 0f64;
@@ -152,7 +172,7 @@ where
             ) + 1.0;
 
             let noise = module
-                .glwe_noise(&glwe_out, &pt_out, &sk_prepared, scratch.borrow())
+                .glwe_noise(&glwe_out, &pt_out, &sk_prepared, &mut scratch.borrow())
                 .std()
                 .log2();
             assert!(noise <= max_noise, "noise: {noise} > max_noise: {max_noise}")
@@ -163,16 +183,19 @@ where
 #[allow(clippy::too_many_arguments)]
 pub fn test_glwe_external_product_assign<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: GGSWEncryptSk<BE>
         + GGSWPreparedFactory<BE>
-        + VecZnxFillUniform
+        + VecZnxFillUniformSourceBackend<BE>
         + GLWEExternalProduct<BE>
         + GLWEEncryptSk<BE>
         + GLWENoise<BE>
-        + VecZnxRotateAssign<BE>
+        + VecZnxRotateAssignBackend<BE>
         + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    Scratch<BE>: ScratchAvailable + ScratchTakeCore<BE>,
+    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let base2k: usize = params.base2k;
     let out_base2k: usize = base2k - 1;
@@ -205,17 +228,22 @@ where
             })
             .unwrap();
 
-            let mut ggsw_apply: GGSW<Vec<u8>> = GGSW::alloc_from_infos(&ggsw_apply_infos);
-            let mut glwe_out: GLWE<Vec<u8>> = GLWE::alloc_from_infos(&glwe_out_infos);
-            let mut pt_ggsw: ScalarZnx<Vec<u8>> = ScalarZnx::alloc(n, 1);
-            let mut pt_want: GLWEPlaintext<Vec<u8>> = GLWEPlaintext::alloc_from_infos(&glwe_out_infos);
+            let mut ggsw_apply: GGSW<Vec<u8>> = module.ggsw_alloc_from_infos(&ggsw_apply_infos);
+            let mut glwe_out: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_out_infos);
+            let mut pt_ggsw: ScalarZnx<Vec<u8>> = module.scalar_znx_alloc(1);
+            let mut pt_want: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
             let mut source_xe: Source = Source::new([0u8; 32]);
             let mut source_xa: Source = Source::new([0u8; 32]);
 
             // Random input plaintext
-            module.vec_znx_fill_uniform(out_base2k, &mut pt_want.data, 0, &mut source_xa);
+            module.vec_znx_fill_uniform_source_backend(
+                out_base2k,
+                &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
+                0,
+                &mut source_xa,
+            );
 
             pt_want.data.at_mut(0, 0)[1] = 1;
 
@@ -229,10 +257,10 @@ where
                     | module.glwe_external_product_tmp_bytes(&glwe_out_infos, &glwe_out_infos, &ggsw_apply_infos),
             );
 
-            let mut sk: GLWESecret<Vec<u8>> = GLWESecret::alloc(n.into(), rank.into());
+            let mut sk: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank.into());
             sk.fill_ternary_prob(0.5, &mut source_xs);
 
-            let mut sk_prepared: GLWESecretPrepared<DeviceBuf<BE>, BE> = module.glwe_secret_prepared_alloc(rank.into());
+            let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
             module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
             module.ggsw_encrypt_sk(
@@ -242,7 +270,7 @@ where
                 &ggsw_apply_infos,
                 &mut source_xe,
                 &mut source_xa,
-                scratch.borrow(),
+                &mut scratch.borrow(),
             );
 
             module.glwe_encrypt_sk(
@@ -252,15 +280,25 @@ where
                 &glwe_out_infos,
                 &mut source_xe,
                 &mut source_xa,
-                scratch.borrow(),
+                &mut scratch.borrow(),
             );
 
-            let mut ct_ggsw_prepared: GGSWPrepared<DeviceBuf<BE>, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw_apply);
-            module.ggsw_prepare(&mut ct_ggsw_prepared, &ggsw_apply, scratch.borrow());
+            let mut ct_ggsw_prepared: GGSWPrepared<BE::OwnedBuf, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw_apply);
+            module.ggsw_prepare(&mut ct_ggsw_prepared, &ggsw_apply, &mut scratch.borrow());
 
-            module.glwe_external_product_assign(&mut glwe_out, &ct_ggsw_prepared, scratch.borrow());
+            module.glwe_external_product_assign(
+                &mut glwe_out,
+                &ct_ggsw_prepared,
+                ct_ggsw_prepared.size(),
+                &mut scratch.borrow(),
+            );
 
-            module.vec_znx_rotate_assign(k as i64, &mut pt_want.data, 0, scratch.borrow());
+            module.vec_znx_rotate_assign_backend(
+                k as i64,
+                &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
+                0,
+                &mut scratch.borrow(),
+            );
 
             let var_gct_err_lhs: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
             let var_gct_err_rhs: f64 = 0f64;
@@ -284,7 +322,7 @@ where
             ) + 1.0;
 
             let noise = module
-                .glwe_noise(&glwe_out, &pt_want, &sk_prepared, scratch.borrow())
+                .glwe_noise(&glwe_out, &pt_want, &sk_prepared, &mut scratch.borrow())
                 .std()
                 .log2();
             assert!(noise <= max_noise, "noise: {noise} > max_noise: {max_noise}")

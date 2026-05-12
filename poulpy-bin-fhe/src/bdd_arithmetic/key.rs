@@ -13,20 +13,20 @@ use anyhow::Result;
 use byteorder::{ReadBytesExt, WriteBytesExt};
 use poulpy_core::layouts::{
     GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyPrepared, GLWESecret, GLWESwitchingKey, GLWESwitchingKeyLayout,
-    GLWESwitchingKeyPrepared,
+    GLWESwitchingKeyPrepared, ModuleCoreAlloc,
 };
 use poulpy_core::{DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GLWESwitchingKeyEncryptSk};
 use poulpy_core::{
-    GLWEToLWESwitchingKeyEncryptSk, GetDistribution, ScratchTakeCore,
+    GLWEToLWESwitchingKeyEncryptSk, GetDistribution, ScratchArenaTakeCore,
     layouts::{
-        GLWEInfos, GLWESecretToRef, GLWEToLWEKey, GLWEToLWEKeyLayout, GLWEToLWEKeyPreparedFactory, LWEInfos, LWESecretToRef,
-        prepared::GLWEToLWEKeyPrepared,
+        GLWEInfos, GLWESecretToBackendRef, GLWEToLWEKey, GLWEToLWEKeyLayout, GLWEToLWEKeyPreparedFactory, LWEInfos,
+        LWESecretToBackendRef, prepared::GLWEToLWEKeyPrepared,
     },
 };
 
-use poulpy_hal::layouts::{DeviceBuf, NoiseInfos};
+use poulpy_hal::layouts::NoiseInfos;
 use poulpy_hal::{
-    layouts::{Backend, Data, DataMut, DataRef, Module, ReaderFrom, Scratch, WriterTo},
+    layouts::{Backend, Data, HostBackend, Module, ReaderFrom, ScratchArena, WriterTo},
     source::Source,
 };
 
@@ -136,11 +136,17 @@ where
 }
 
 impl<BRA: BlindRotationAlgo> BDDKey<Vec<u8>, BRA> {
-    pub fn alloc_from_infos<A: BDDKeyInfos>(infos: &A) -> Self {
+    pub fn alloc_from_infos<M, A: BDDKeyInfos>(module: &M, infos: &A) -> Self
+    where
+        M: ModuleCoreAlloc<OwnedBuf = Vec<u8>> + poulpy_hal::api::ModuleN,
+    {
         Self {
-            cbt: CircuitBootstrappingKey::alloc_from_infos(&infos.cbt_infos()),
-            ks_glwe: infos.ks_glwe_infos().as_ref().map(GLWESwitchingKey::alloc_from_infos),
-            ks_lwe: GLWEToLWEKey::alloc_from_infos(&infos.ks_lwe_infos()),
+            cbt: CircuitBootstrappingKey::alloc_from_infos(module, &infos.cbt_infos()),
+            ks_glwe: infos
+                .ks_glwe_infos()
+                .as_ref()
+                .map(|infos| module.glwe_switching_key_alloc_from_infos(infos)),
+            ks_lwe: module.glwe_to_lwe_key_alloc_from_infos(&infos.ks_lwe_infos()),
         }
     }
 }
@@ -150,7 +156,7 @@ impl<BRA: BlindRotationAlgo> BDDKey<Vec<u8>, BRA> {
 /// Implemented for `Module<BE>` when the backend supports circuit-bootstrapping
 /// and switching-key encryption.  Callers should prefer the convenience method
 /// [`BDDKey::encrypt_sk`].
-pub trait BDDKeyEncryptSk<BRA: BlindRotationAlgo, BE: Backend> {
+pub trait BDDKeyEncryptSk<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>>> {
     /// Returns the minimum scratch-space size in bytes required by
     /// [`bdd_key_encrypt_sk`][Self::bdd_key_encrypt_sk].
     fn bdd_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
@@ -168,25 +174,25 @@ pub trait BDDKeyEncryptSk<BRA: BlindRotationAlgo, BE: Backend> {
     /// When `res.ks_glwe` is `Some`, a fresh intermediate GLWE key is sampled
     /// from `source_xe` and used as the bridging secret; `ks_lwe` is then
     /// encrypted under that intermediate key rather than `sk_glwe` directly.
-    fn bdd_key_encrypt_sk<D, S0, S1>(
+    fn bdd_key_encrypt_sk<'s, S0, S1>(
         &self,
-        res: &mut BDDKey<D, BRA>,
+        res: &mut BDDKey<BE::OwnedBuf, BRA>,
         sk_lwe: &S0,
         sk_glwe: &S1,
         enc_infos: &BDDEncryptionInfos,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut Scratch<BE>,
+        scratch: &mut ScratchArena<'s, BE>,
     ) where
-        D: DataMut,
-        S0: LWESecretToRef + GetDistribution + LWEInfos,
-        S1: GLWESecretToRef + GetDistribution + GLWEInfos;
+        S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
+        S1: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
+        BE: 's;
 }
 
-impl<BE: Backend, BRA: BlindRotationAlgo> BDDKeyEncryptSk<BRA, BE> for Module<BE>
+impl<BE: Backend<OwnedBuf = Vec<u8>>, BRA: BlindRotationAlgo> BDDKeyEncryptSk<BRA, BE> for Module<BE>
 where
     Self: CircuitBootstrappingKeyEncryptSk<BRA, BE> + GLWEToLWESwitchingKeyEncryptSk<BE> + GLWESwitchingKeyEncryptSk<BE>,
-    Scratch<BE>: ScratchTakeCore<BE>,
+    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     fn bdd_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -197,26 +203,26 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn bdd_key_encrypt_sk<D, S0, S1>(
+    fn bdd_key_encrypt_sk<'s, S0, S1>(
         &self,
-        res: &mut BDDKey<D, BRA>,
+        res: &mut BDDKey<BE::OwnedBuf, BRA>,
         sk_lwe: &S0,
         sk_glwe: &S1,
         enc_infos: &BDDEncryptionInfos,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut Scratch<BE>,
+        scratch: &mut ScratchArena<'s, BE>,
     ) where
-        D: DataMut,
-        S0: LWESecretToRef + GetDistribution + LWEInfos,
-        S1: GLWESecretToRef + GetDistribution + GLWEInfos,
+        S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
+        S1: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
+        BE: 's,
     {
         if let Some(key) = &mut res.ks_glwe {
             let ks_glwe_infos = enc_infos
                 .ks_glwe
                 .as_ref()
                 .expect("ks_glwe enc_infos missing when ks_glwe key exists");
-            let mut sk_out: GLWESecret<Vec<u8>> = GLWESecret::alloc(sk_glwe.n(), key.rank_out());
+            let mut sk_out: GLWESecret<Vec<u8>> = self.glwe_secret_alloc(key.rank_out());
             sk_out.fill_ternary_prob(0.5, source_xe);
             self.glwe_switching_key_encrypt_sk(key, sk_glwe, &sk_out, ks_glwe_infos, source_xe, source_xa, scratch);
             self.glwe_to_lwe_key_encrypt_sk(
@@ -244,9 +250,9 @@ where
     }
 }
 
-impl<D: DataMut, BRA: BlindRotationAlgo> BDDKey<D, BRA> {
+impl<BRA: BlindRotationAlgo> BDDKey<Vec<u8>, BRA> {
     #[allow(clippy::too_many_arguments)]
-    pub fn encrypt_sk<S0, S1, M, BE: Backend>(
+    pub fn encrypt_sk<'s, S0, S1, M, BE: Backend<OwnedBuf = Vec<u8>> + HostBackend + 's>(
         &mut self,
         module: &M,
         sk_lwe: &S0,
@@ -254,12 +260,12 @@ impl<D: DataMut, BRA: BlindRotationAlgo> BDDKey<D, BRA> {
         enc_infos: &BDDEncryptionInfos,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut Scratch<BE>,
+        scratch: &mut ScratchArena<'s, BE>,
     ) where
-        S0: LWESecretToRef + GetDistribution + LWEInfos,
-        S1: GLWESecretToRef + GetDistribution + GLWEInfos,
+        S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
+        S1: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
         M: BDDKeyEncryptSk<BRA, BE>,
-        Scratch<BE>: ScratchTakeCore<BE>,
+        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         module.bdd_key_encrypt_sk(self, sk_lwe, sk_glwe, enc_infos, source_xe, source_xa, scratch);
     }
@@ -344,7 +350,7 @@ where
     pub(crate) ks_lwe: GLWEToLWEKeyPrepared<D, BE>,
 }
 
-impl<D: DataRef, BRA: BlindRotationAlgo, BE: Backend> BDDKeyInfos for BDDKeyPrepared<D, BRA, BE> {
+impl<D: Data, BRA: BlindRotationAlgo, BE: Backend> BDDKeyInfos for BDDKeyPrepared<D, BRA, BE> {
     fn cbt_infos(&self) -> CircuitBootstrappingKeyLayout {
         CircuitBootstrappingKeyLayout {
             brk_layout: self.cbt.brk_infos(),
@@ -374,14 +380,14 @@ impl<D: DataRef, BRA: BlindRotationAlgo, BE: Backend> BDDKeyInfos for BDDKeyPrep
     }
 }
 
-impl<D: DataRef, BRA: BlindRotationAlgo, BE: Backend> GLWEAutomorphismKeyHelper<GLWEAutomorphismKeyPrepared<D, BE>, BE>
-    for BDDKeyPrepared<D, BRA, BE>
+impl<BRA: BlindRotationAlgo, BE: Backend> GLWEAutomorphismKeyHelper<GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>, BE>
+    for BDDKeyPrepared<BE::OwnedBuf, BRA, BE>
 {
     fn automorphism_key_infos(&self) -> poulpy_core::layouts::GGLWELayout {
         self.cbt.automorphism_key_infos()
     }
 
-    fn get_automorphism_key(&self, k: i64) -> Option<&GLWEAutomorphismKeyPrepared<D, BE>> {
+    fn get_automorphism_key(&self, k: i64) -> Option<&GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> {
         self.cbt.get_automorphism_key(k)
     }
 }
@@ -391,11 +397,11 @@ impl<D: DataRef, BRA: BlindRotationAlgo, BE: Backend> GLWEAutomorphismKeyHelper<
 /// Implemented for `Module<BE>` when the backend supports preparation of all
 /// three constituent sub-keys.  Default method implementations delegate to
 /// the corresponding sub-key factories.
-pub trait BDDKeyPreparedFactory<BRA: BlindRotationAlgo, BE: Backend>
+pub trait BDDKeyPreparedFactory<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>>>
 where
     Self: Sized + CircuitBootstrappingKeyPreparedFactory<BRA, BE> + GLWEToLWEKeyPreparedFactory<BE>,
 {
-    fn alloc_bdd_key_from_infos<A>(&self, infos: &A) -> BDDKeyPrepared<DeviceBuf<BE>, BRA, BE>
+    fn alloc_bdd_key_from_infos<A>(&self, infos: &A) -> BDDKeyPrepared<BE::OwnedBuf, BRA, BE>
     where
         A: BDDKeyInfos,
     {
@@ -420,11 +426,14 @@ where
             .max(self.glwe_to_lwe_key_prepare_tmp_bytes(&infos.ks_lwe_infos()))
     }
 
-    fn prepare_bdd_key<DM, DR>(&self, res: &mut BDDKeyPrepared<DM, BRA, BE>, other: &BDDKey<DR, BRA>, scratch: &mut Scratch<BE>)
-    where
-        DM: DataMut,
-        DR: DataRef,
-        Scratch<BE>: ScratchTakeCore<BE>,
+    fn prepare_bdd_key<'s>(
+        &self,
+        res: &mut BDDKeyPrepared<BE::OwnedBuf, BRA, BE>,
+        other: &BDDKey<BE::OwnedBuf, BRA>,
+        scratch: &mut ScratchArena<'s, BE>,
+    ) where
+        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+        BE: 's,
     {
         res.cbt.prepare(self, &other.cbt, scratch);
 
@@ -439,12 +448,12 @@ where
         self.glwe_to_lwe_key_prepare(&mut res.ks_lwe, &other.ks_lwe, scratch);
     }
 }
-impl<BRA: BlindRotationAlgo, BE: Backend> BDDKeyPreparedFactory<BRA, BE> for Module<BE> where
+impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>>> BDDKeyPreparedFactory<BRA, BE> for Module<BE> where
     Self: Sized + CircuitBootstrappingKeyPreparedFactory<BRA, BE> + GLWEToLWEKeyPreparedFactory<BE>
 {
 }
 
-impl<BRA: BlindRotationAlgo, BE: Backend> BDDKeyPrepared<DeviceBuf<BE>, BRA, BE> {
+impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>>> BDDKeyPrepared<BE::OwnedBuf, BRA, BE> {
     pub fn alloc_from_infos<M, A>(module: &M, infos: &A) -> Self
     where
         M: BDDKeyPreparedFactory<BRA, BE>,
@@ -454,7 +463,7 @@ impl<BRA: BlindRotationAlgo, BE: Backend> BDDKeyPrepared<DeviceBuf<BE>, BRA, BE>
     }
 }
 
-impl<D: DataRef, BRA: BlindRotationAlgo, BE: Backend> BDDKeyHelper<D, BRA, BE> for BDDKeyPrepared<D, BRA, BE> {
+impl<D: Data, BRA: BlindRotationAlgo, BE: Backend> BDDKeyHelper<D, BRA, BE> for BDDKeyPrepared<D, BRA, BE> {
     fn get_cbt_key(
         &self,
     ) -> (
@@ -471,7 +480,7 @@ impl<D: DataRef, BRA: BlindRotationAlgo, BE: Backend> BDDKeyHelper<D, BRA, BE> f
 /// Implemented by [`BDDKeyPrepared`].  Evaluation routines are generic over
 /// this trait so that callers can pass any type that exposes the three
 /// constituent prepared keys.
-pub trait BDDKeyHelper<D: DataRef, BRA: BlindRotationAlgo, BE: Backend> {
+pub trait BDDKeyHelper<D: Data, BRA: BlindRotationAlgo, BE: Backend> {
     /// Returns references to the three constituent prepared keys in order:
     /// the circuit-bootstrapping key, the optional GLWE switching key, and
     /// the GLWE-to-LWE switching key.
@@ -490,17 +499,15 @@ pub trait BDDKeyHelper<D: DataRef, BRA: BlindRotationAlgo, BE: Backend> {
 /// Unlike `FheUintPrepare`, this variant stores the per-bit GGSW ciphertexts
 /// in standard (non-DFT) form, enabling noise inspection via
 /// [`FheUintPreparedDebug::noise`] without a forward DFT transform.
-pub trait FheUintPrepareDebug<BRA: BlindRotationAlgo, T: UnsignedInteger, BE: Backend> {
+pub trait FheUintPrepareDebug<BRA: BlindRotationAlgo, T: UnsignedInteger, BE: Backend<OwnedBuf = Vec<u8>> + HostBackend> {
     /// Populates `res` by bootstrapping each bit of `bits` through `key`'s
     /// circuit-bootstrapping pipeline, storing the output GGSW in standard form.
-    fn fhe_uint_debug_prepare<DM, DR0, DR1>(
+    fn fhe_uint_debug_prepare(
         &self,
-        res: &mut FheUintPreparedDebug<DM, T>,
-        bits: &FheUint<DR0, T>,
-        key: &BDDKeyPrepared<DR1, BRA, BE>,
-        scratch: &mut Scratch<BE>,
+        res: &mut FheUintPreparedDebug<BE::OwnedBuf, T>,
+        bits: &FheUint<BE::OwnedBuf, T>,
+        key: &BDDKeyPrepared<BE::OwnedBuf, BRA, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
-        DM: DataMut,
-        DR0: DataRef,
-        DR1: DataRef;
+        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>;
 }

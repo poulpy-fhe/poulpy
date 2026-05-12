@@ -1,6 +1,6 @@
 [package]
 name = "poulpy-core"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 license = "Apache-2.0"
 description = "A backend agnostic crate implementing RLWE-based encryption & arithmetic."
@@ -10,6 +10,7 @@ documentation = "https://docs.rs/poulpy"
 
 [features]
 default = []
+enable-core = []
 enable-avx = []
 enable-avx512f = []
 enable-ifma = ["enable-avx512f"]

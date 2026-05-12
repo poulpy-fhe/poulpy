@@ -1,9 +1,9 @@
-use poulpy_hal::layouts::{Data, DataMut, DataRef, ReaderFrom, VecZnx, WriterTo};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, VecZnx, WriterTo};
 
 use crate::{
     GetDistribution, GetDistributionMut,
     dist::Distribution,
-    layouts::{Base2K, Degree, GLWE, GLWEInfos, GLWEToMut, GLWEToRef, LWEInfos, Rank, TorusPrecision},
+    layouts::{Base2K, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, TorusPrecision},
 };
 
 #[derive(PartialEq, Eq)]
@@ -12,13 +12,13 @@ pub struct GLWEPublicKey<D: Data> {
     pub(crate) dist: Distribution,
 }
 
-impl<D: DataMut> GetDistributionMut for GLWEPublicKey<D> {
+impl<D: HostDataMut> GetDistributionMut for GLWEPublicKey<D> {
     fn dist_mut(&mut self) -> &mut Distribution {
         &mut self.dist
     }
 }
 
-impl<D: DataRef> GetDistribution for GLWEPublicKey<D> {
+impl<D: HostDataRef> GetDistribution for GLWEPublicKey<D> {
     fn dist(&self) -> &Distribution {
         &self.dist
     }
@@ -72,15 +72,19 @@ impl GLWEInfos for GLWEPublicKeyLayout {
     }
 }
 
+#[expect(
+    dead_code,
+    reason = "host-owned constructors are kept for serialization and host-only staging"
+)]
 impl GLWEPublicKey<Vec<u8>> {
-    pub fn alloc_from_infos<A>(infos: &A) -> Self
+    pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
         A: GLWEInfos,
     {
         Self::alloc(infos.n(), infos.base2k(), infos.max_k(), infos.rank())
     }
 
-    pub fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank) -> Self {
+    pub(crate) fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank) -> Self {
         GLWEPublicKey {
             key: GLWE::alloc(n, base2k, k, rank),
             dist: Distribution::NONE,
@@ -99,14 +103,14 @@ impl GLWEPublicKey<Vec<u8>> {
     }
 }
 
-impl<D: DataMut> ReaderFrom for GLWEPublicKey<D> {
+impl<D: HostDataMut> ReaderFrom for GLWEPublicKey<D> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.dist = Distribution::read_from(reader)?;
         self.key.read_from(reader)
     }
 }
 
-impl<D: DataRef> WriterTo for GLWEPublicKey<D> {
+impl<D: HostDataRef> WriterTo for GLWEPublicKey<D> {
     fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         match self.dist.write_to(writer) {
             Ok(()) => {}
@@ -116,14 +120,20 @@ impl<D: DataRef> WriterTo for GLWEPublicKey<D> {
     }
 }
 
-impl<D: DataRef> GLWEToRef for GLWEPublicKey<D> {
-    fn to_ref(&self) -> GLWE<&[u8]> {
-        self.key.to_ref()
+impl<BE: Backend, D: Data> GLWEToBackendRef<BE> for GLWEPublicKey<D>
+where
+    GLWE<D>: GLWEToBackendRef<BE>,
+{
+    fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>> {
+        self.key.to_backend_ref()
     }
 }
 
-impl<D: DataMut> GLWEToMut for GLWEPublicKey<D> {
-    fn to_mut(&mut self) -> GLWE<&mut [u8]> {
-        self.key.to_mut()
+impl<BE: Backend, D: Data> GLWEToBackendMut<BE> for GLWEPublicKey<D>
+where
+    GLWE<D>: GLWEToBackendMut<BE>,
+{
+    fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>> {
+        self.key.to_backend_mut()
     }
 }

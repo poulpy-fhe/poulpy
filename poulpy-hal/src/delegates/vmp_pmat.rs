@@ -4,11 +4,22 @@ use crate::{
         VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes, VmpZero,
     },
     layouts::{
-        Backend, MatZnxToRef, Module, Scratch, VecZnxDftToMut, VecZnxDftToRef, VecZnxToRef, VmpPMatOwned, VmpPMatToMut,
-        VmpPMatToRef,
+        Backend, MatZnxBackendRef, Module, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
+        VecZnxDftToBackendMut, VmpPMatBackendMut, VmpPMatBackendRef, VmpPMatOwned,
     },
-    oep::HalImpl,
+    oep::HalVmpImpl,
 };
+
+macro_rules! impl_vmp_delegate {
+    ($trait:ty, $($body:item)+) => {
+        impl<B> $trait for Module<B>
+        where
+            B: Backend + HalVmpImpl<B>,
+        {
+            $($body)+
+        }
+    };
+}
 
 impl<B: Backend> VmpPMatAlloc<B> for Module<B> {
     fn vmp_pmat_alloc(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> VmpPMatOwned<B> {
@@ -22,32 +33,27 @@ impl<B: Backend> VmpPMatBytesOf for Module<B> {
     }
 }
 
-impl<B> VmpPrepareTmpBytes for Module<B>
-where
-    B: Backend + HalImpl<B>,
-{
+impl_vmp_delegate!(
+    VmpPrepareTmpBytes,
     fn vmp_prepare_tmp_bytes(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
-        <B as HalImpl<B>>::vmp_prepare_tmp_bytes(self, rows, cols_in, cols_out, size)
+        B::vmp_prepare_tmp_bytes(self, rows, cols_in, cols_out, size)
     }
-}
+);
 
-impl<B> VmpPrepare<B> for Module<B>
-where
-    B: Backend + HalImpl<B>,
-{
-    fn vmp_prepare<R, A>(&self, res: &mut R, a: &A, scratch: &mut Scratch<B>)
-    where
-        R: VmpPMatToMut<B>,
-        A: MatZnxToRef,
-    {
-        <B as HalImpl<B>>::vmp_prepare(self, res, a, scratch)
+impl_vmp_delegate!(
+    VmpPrepare<B>,
+    fn vmp_prepare<'s>(
+        &self,
+        res: &mut VmpPMatBackendMut<'_, B>,
+        a: &MatZnxBackendRef<'_, B>,
+        scratch: &mut ScratchArena<'s, B>,
+    ) {
+        B::vmp_prepare(self, res, a, scratch);
     }
-}
+);
 
-impl<B> VmpApplyDftTmpBytes for Module<B>
-where
-    B: Backend + HalImpl<B>,
-{
+impl_vmp_delegate!(
+    VmpApplyDftTmpBytes,
     fn vmp_apply_dft_tmp_bytes(
         &self,
         res_size: usize,
@@ -57,28 +63,27 @@ where
         b_cols_out: usize,
         b_size: usize,
     ) -> usize {
-        <B as HalImpl<B>>::vmp_apply_dft_tmp_bytes(self, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size)
+        B::vmp_apply_dft_tmp_bytes(self, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size)
     }
-}
+);
 
-impl<B> VmpApplyDft<B> for Module<B>
-where
-    B: Backend + HalImpl<B>,
-{
-    fn vmp_apply_dft<R, A, C>(&self, res: &mut R, a: &A, b: &C, scratch: &mut Scratch<B>)
-    where
-        R: VecZnxDftToMut<B>,
-        A: VecZnxToRef,
-        C: VmpPMatToRef<B>,
+impl_vmp_delegate!(
+    VmpApplyDft<B>,
+    fn vmp_apply_dft<'s, R>(
+        &self,
+        res: &mut R,
+        a: &VecZnxBackendRef<'_, B>,
+        b: &VmpPMatBackendRef<'_, B>,
+        scratch: &mut ScratchArena<'s, B>,
+    ) where
+        R: VecZnxDftToBackendMut<B>,
     {
-        <B as HalImpl<B>>::vmp_apply_dft(self, res, a, b, scratch);
+        B::vmp_apply_dft(self, res, a, b, scratch)
     }
-}
+);
 
-impl<B> VmpApplyDftToDftTmpBytes for Module<B>
-where
-    B: Backend + HalImpl<B>,
-{
+impl_vmp_delegate!(
+    VmpApplyDftToDftTmpBytes,
     fn vmp_apply_dft_to_dft_tmp_bytes(
         &self,
         res_size: usize,
@@ -88,28 +93,26 @@ where
         b_cols_out: usize,
         b_size: usize,
     ) -> usize {
-        <B as HalImpl<B>>::vmp_apply_dft_to_dft_tmp_bytes(self, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size)
+        B::vmp_apply_dft_to_dft_tmp_bytes(self, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size)
     }
-}
+);
 
-impl<B> VmpApplyDftToDft<B> for Module<B>
-where
-    B: Backend + HalImpl<B>,
-{
-    fn vmp_apply_dft_to_dft<R, A, C>(&self, res: &mut R, a: &A, b: &C, limb_offset: usize, scratch: &mut Scratch<B>)
-    where
-        R: VecZnxDftToMut<B>,
-        A: VecZnxDftToRef<B>,
-        C: VmpPMatToRef<B>,
-    {
-        <B as HalImpl<B>>::vmp_apply_dft_to_dft(self, res, a, b, limb_offset, scratch);
+impl_vmp_delegate!(
+    VmpApplyDftToDft<B>,
+    fn vmp_apply_dft_to_dft<'s, 'r>(
+        &self,
+        res: &mut VecZnxDftBackendMut<'r, B>,
+        a: &VecZnxDftBackendRef<'_, B>,
+        b: &VmpPMatBackendRef<'_, B>,
+        limb_offset: usize,
+        scratch: &mut ScratchArena<'s, B>,
+    ) {
+        B::vmp_apply_dft_to_dft(self, res, a, b, limb_offset, scratch)
     }
-}
+);
 
-impl<B> VmpApplyDftToDftAccumulateTmpBytes for Module<B>
-where
-    B: Backend + HalImpl<B>,
-{
+impl_vmp_delegate!(
+    VmpApplyDftToDftAccumulateTmpBytes,
     fn vmp_apply_dft_to_dft_accumulate_tmp_bytes(
         &self,
         res_size: usize,
@@ -119,34 +122,27 @@ where
         b_cols_out: usize,
         b_size: usize,
     ) -> usize {
-        <B as HalImpl<B>>::vmp_apply_dft_to_dft_accumulate_tmp_bytes(
-            self, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size,
-        )
+        B::vmp_apply_dft_to_dft_accumulate_tmp_bytes(self, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size)
     }
-}
+);
 
-impl<B> VmpApplyDftToDftAccumulate<B> for Module<B>
-where
-    B: Backend + HalImpl<B>,
-{
-    fn vmp_apply_dft_to_dft_accumulate<R, A, C>(&self, res: &mut R, a: &A, b: &C, limb_offset: usize, scratch: &mut Scratch<B>)
-    where
-        R: VecZnxDftToMut<B>,
-        A: VecZnxDftToRef<B>,
-        C: VmpPMatToRef<B>,
-    {
-        <B as HalImpl<B>>::vmp_apply_dft_to_dft_accumulate(self, res, a, b, limb_offset, scratch);
+impl_vmp_delegate!(
+    VmpApplyDftToDftAccumulate<B>,
+    fn vmp_apply_dft_to_dft_accumulate<'s, 'r>(
+        &self,
+        res: &mut VecZnxDftBackendMut<'r, B>,
+        a: &VecZnxDftBackendRef<'_, B>,
+        b: &VmpPMatBackendRef<'_, B>,
+        limb_offset: usize,
+        scratch: &mut ScratchArena<'s, B>,
+    ) {
+        B::vmp_apply_dft_to_dft_accumulate(self, res, a, b, limb_offset, scratch);
     }
-}
+);
 
-impl<B> VmpZero<B> for Module<B>
-where
-    B: Backend + HalImpl<B>,
-{
-    fn vmp_zero<R>(&self, res: &mut R)
-    where
-        R: VmpPMatToMut<B>,
-    {
-        <B as HalImpl<B>>::vmp_zero(self, res);
+impl_vmp_delegate!(
+    VmpZero<B>,
+    fn vmp_zero(&self, res: &mut VmpPMatBackendMut<'_, B>) {
+        B::vmp_zero(self, res);
     }
-}
+);

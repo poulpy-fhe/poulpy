@@ -1,20 +1,24 @@
 use core::panic;
-use std::thread;
 
 use itertools::Itertools;
 use poulpy_core::{
-    GLWECopy, GLWENormalize, GLWESub, ScratchTakeCore,
+    GLWECopy, GLWENormalize, GLWESub, ScratchArenaTakeCore,
     api::GLWEExternalProductInternal,
     layouts::{
-        GGSWInfos, GGSWPrepared, GLWE, GLWEInfos, GLWELayout, GLWEToMut, GLWEToRef, LWEInfos, prepared::GGSWPreparedToRef,
+        GGSWInfos, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
+        prepared::GGSWPreparedToBackendRef,
     },
 };
 use poulpy_hal::{
     api::{
-        ScratchAvailable, ScratchTakeBasic, VecZnxBigAddSmallAssign, VecZnxBigAddSmallInto, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallA, VecZnxDftBytesOf,
+        ModuleN, ScratchArenaTakeBasic, VecZnxBigAddSmallAssign, VecZnxBigAddSmallIntoBackend, VecZnxBigBytesOf,
+        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallABackend, VecZnxDftAddAssign, VecZnxDftApply,
+        VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApply, VecZnxNormalizeTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
     },
-    layouts::{Backend, DataMut, Module, Scratch, VecZnxBig, ZnxInfos, ZnxZero},
+    layouts::{
+        Backend, HostDataMut, Module, ScratchArena, VecZnxBigViewMut, ZnxZero, vec_znx_backend_ref_from_mut,
+        vec_znx_big_backend_ref_from_mut, vec_znx_dft_backend_ref_from_mut,
+    },
 };
 
 use crate::bdd_arithmetic::GetGGSWBit;
@@ -101,7 +105,7 @@ where
 /// producing one GLWE ciphertext per output bit.  The circuit is represented as
 /// a sequence of [`Node`] entries arranged in BDD levels; each level is evaluated
 /// using [`Cmux`] gates.
-pub trait ExecuteBDDCircuit<BE: Backend> {
+pub trait ExecuteBDDCircuit<BE: Backend<OwnedBuf = Vec<u8>>> {
     /// Returns the minimum scratch-space size in bytes required by a single
     /// thread of BDD circuit evaluation.
     ///
@@ -120,11 +124,12 @@ pub trait ExecuteBDDCircuit<BE: Backend> {
     ///
     /// Delegates to [`execute_bdd_circuit_multi_thread`][Self::execute_bdd_circuit_multi_thread]
     /// with `threads = 1`.
-    fn execute_bdd_circuit<C, G, O>(&self, out: &mut [GLWE<O>], inputs: &G, circuit: &C, scratch: &mut Scratch<BE>)
+    fn execute_bdd_circuit<C, G, O>(&self, out: &mut [GLWE<O>], inputs: &G, circuit: &C, scratch: &mut ScratchArena<'_, BE>)
     where
         G: GetGGSWBit<BE> + BitSize,
         C: GetBitCircuitInfo,
-        O: DataMut,
+        O: HostDataMut,
+        GLWE<O>: GLWEToBackendMut<BE>,
     {
         self.execute_bdd_circuit_multi_thread(1, out, inputs, circuit, scratch);
     }
@@ -145,21 +150,25 @@ pub trait ExecuteBDDCircuit<BE: Backend> {
         out: &mut [GLWE<O>],
         inputs: &G,
         circuit: &C,
-        scratch: &mut Scratch<BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         G: GetGGSWBit<BE> + BitSize,
         C: GetBitCircuitInfo,
-        O: DataMut;
+        O: HostDataMut,
+        GLWE<O>: GLWEToBackendMut<BE>;
 }
 
 pub trait BitSize {
     fn bit_size(&self) -> usize;
 }
 
-impl<BE: Backend> ExecuteBDDCircuit<BE> for Module<BE>
+impl<BE: Backend<OwnedBuf = Vec<u8>>> ExecuteBDDCircuit<BE> for Module<BE>
 where
-    Self: Cmux<BE> + GLWECopy,
-    Scratch<BE>: ScratchTakeCore<BE>,
+    Self: Cmux<BE> + GLWECopy<BE>,
+    BE: 'static,
+    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+    for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
+    for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
 {
     fn execute_bdd_circuit_tmp_bytes<R, G>(&self, res_infos: &R, state_size: usize, ggsw_infos: &G) -> usize
     where
@@ -175,11 +184,12 @@ where
         out: &mut [GLWE<O>],
         inputs: &G,
         circuit: &C,
-        scratch: &mut Scratch<BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         G: GetGGSWBit<BE> + BitSize,
         C: GetBitCircuitInfo,
-        O: DataMut,
+        O: HostDataMut,
+        GLWE<O>: GLWEToBackendMut<BE>,
     {
         #[cfg(debug_assertions)]
         {
@@ -197,40 +207,17 @@ where
             );
         }
 
-        let max_state_size = circuit.max_state_size();
+        let _ = threads;
 
-        let scratch_thread_size: usize = self.execute_bdd_circuit_tmp_bytes(&out[0], max_state_size, &inputs.get_bit(0));
+        for (bit_idx, out_i) in out[..circuit.output_size()].iter_mut().enumerate() {
+            let (nodes, state_size) = circuit.get_circuit(bit_idx);
 
-        assert!(
-            scratch.available() >= threads * scratch_thread_size,
-            "scratch.available(): {} < threads:{threads} * scratch_thread_size: {scratch_thread_size}",
-            scratch.available()
-        );
-
-        let (mut scratches, _) = scratch.split_mut(threads, scratch_thread_size);
-
-        let chunk_size: usize = circuit.output_size().div_ceil(threads);
-
-        thread::scope(|scope| {
-            for (thread_idx, (scratch_thread, out_chunk)) in scratches
-                .iter_mut()
-                .zip(out[..circuit.output_size()].chunks_mut(chunk_size))
-                .enumerate()
-            {
-                // Capture chunk + thread scratch by move
-                scope.spawn(move || {
-                    for (idx, out_i) in out_chunk.iter_mut().enumerate() {
-                        let (nodes, state_size) = circuit.get_circuit(thread_idx * chunk_size + idx);
-
-                        if state_size == 0 {
-                            out_i.data_mut().zero();
-                        } else {
-                            eval_level(self, out_i, inputs, nodes, state_size, *scratch_thread);
-                        }
-                    }
-                });
+            if state_size == 0 {
+                out_i.data_mut().zero();
+            } else {
+                eval_level(self, out_i, inputs, nodes, state_size, &mut scratch.borrow());
             }
-        });
+        }
 
         for out_i in out.iter_mut().skip(circuit.output_size()) {
             out_i.data_mut().zero();
@@ -238,30 +225,36 @@ where
     }
 }
 
-fn eval_level<M, R, G, BE: Backend>(
+fn eval_level<M, G, R, BE>(
     module: &M,
     res: &mut R,
     inputs: &G,
     nodes: &[Node],
     state_size: usize,
-    scratch: &mut Scratch<BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
-    M: Cmux<BE> + GLWECopy,
-    R: GLWEToMut,
+    M: Cmux<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = Vec<u8>>,
+    BE: Backend<OwnedBuf = Vec<u8>> + 'static,
     G: GetGGSWBit<BE> + BitSize,
-    Scratch<BE>: ScratchTakeCore<BE>,
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+    for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
+    for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
 {
     assert!(nodes.len().is_multiple_of(state_size));
-    let res: &mut GLWE<&mut [u8]> = &mut res.to_mut();
 
-    let (mut level, scratch_1) = scratch.take_glwe_slice(state_size * 2, res);
+    // TODO(device): the current BDD evaluator still uses host-owned temporary
+    // levels because the node execution logic performs host-visible zero/one
+    // initialization over the intermediate GLWEs.
+    let mut level: Vec<GLWE<Vec<u8>>> = (0..state_size * 2).map(|_| module.glwe_alloc_from_infos(res)).collect();
+    let mut scratch_1 = scratch.borrow();
 
     level.iter_mut().for_each(|ct| ct.data_mut().zero());
 
     // TODO: implement API on GLWE
     level[1].data_mut().encode_coeff_i64(res.base2k().into(), 0, 2, 0, 1);
 
-    let mut level_ref: Vec<&mut GLWE<&mut [u8]>> = level.iter_mut().collect_vec();
+    let mut level_ref: Vec<&mut GLWE<Vec<u8>>> = level.iter_mut().collect_vec();
     let (mut prev_level, mut next_level) = level_ref.split_at_mut(state_size);
 
     let (all_but_last, last) = nodes.split_at(nodes.len() - state_size);
@@ -274,8 +267,8 @@ fn eval_level<M, R, G, BE: Backend>(
                         next_level[j],
                         prev_level[*hi_idx],
                         prev_level[*lo_idx],
-                        &inputs.get_bit(*in_idx),
-                        scratch_1,
+                        inputs.get_bit(*in_idx),
+                        &mut scratch_1.borrow(),
                     );
                 }
                 Node::Copy => module.glwe_copy(next_level[j], prev_level[j]), /* Update BDD circuits to order Cmux -> Copy -> None so that mem swap can be used */
@@ -294,8 +287,8 @@ fn eval_level<M, R, G, BE: Backend>(
                 res,
                 prev_level[*hi_idx],
                 prev_level[*lo_idx],
-                &inputs.get_bit(*in_idx),
-                scratch_1,
+                inputs.get_bit(*in_idx),
+                &mut scratch_1.borrow(),
             );
         }
         _ => {
@@ -331,19 +324,26 @@ pub enum Node {
     None,
 }
 
-impl<BE: Backend> Cswap<BE> for Module<BE> where
+impl<BE: Backend<OwnedBuf = Vec<u8>>> Cswap<BE> for Module<BE> where
     Self: Sized
+        + ModuleN
         + GLWEExternalProductInternal<BE>
-        + GLWESub
-        + VecZnxBigAddSmallAssign<BE>
+        + GLWESub<BE>
+        + GLWECopy<BE>
         + GLWENormalize<BE>
-        + VecZnxDftBytesOf
+        + VecZnxBigAddSmallIntoBackend<BE>
+        + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
-        + GLWENormalize<BE>
-        + VecZnxBigAddSmallInto<BE>
-        + VecZnxBigSubSmallA<BE>
-        + VecZnxBigBytesOf
+        + VecZnxBigSubSmallABackend<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxDftBytesOf
+        + VecZnxDftZero<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxNormalizeTmpBytes
+        + VmpApplyDftToDft<BE>
+        + VmpApplyDftToDftTmpBytes
 {
 }
 
@@ -359,21 +359,27 @@ impl<BE: Backend> Cswap<BE> for Module<BE> where
 ///
 /// but is performed entirely in the ciphertext domain.  Used by
 /// `GLWEBlindRetrieval` to implement oblivious array access.
-pub trait Cswap<BE: Backend>
+pub trait Cswap<BE: Backend<OwnedBuf = Vec<u8>>>
 where
     Self: Sized
+        + ModuleN
         + GLWEExternalProductInternal<BE>
-        + GLWESub
-        + GLWECopy
-        + VecZnxBigAddSmallAssign<BE>
+        + GLWESub<BE>
+        + GLWECopy<BE>
         + GLWENormalize<BE>
-        + VecZnxDftBytesOf
+        + VecZnxBigAddSmallIntoBackend<BE>
+        + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
-        + GLWENormalize<BE>
-        + VecZnxBigAddSmallInto<BE>
-        + VecZnxBigSubSmallA<BE>
-        + VecZnxBigBytesOf,
+        + VecZnxBigSubSmallABackend<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxDftBytesOf
+        + VecZnxDftZero<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxNormalizeTmpBytes
+        + VmpApplyDftToDft<BE>
+        + VmpApplyDftToDftTmpBytes,
 {
     /// Returns the minimum scratch-space size in bytes required by [`cswap`][Self::cswap].
     fn cswap_tmp_bytes<R, A, S>(&self, res_a_infos: &R, res_b_infos: &A, s_infos: &S) -> usize
@@ -383,14 +389,15 @@ where
         S: GGSWInfos,
     {
         let res_dft: usize = self.bytes_of_vec_znx_dft((s_infos.rank() + 1).into(), s_infos.size());
+        let tmp_c_infos = GLWELayout {
+            n: s_infos.n(),
+            base2k: s_infos.base2k(),
+            k: res_a_infos.max_k().max(res_b_infos.max_k()),
+            rank: s_infos.rank(),
+        };
         let mut tot = res_dft
-            + (self.glwe_external_product_internal_tmp_bytes(res_a_infos, res_b_infos, s_infos)
-                + GLWE::<Vec<u8>>::bytes_of_from_infos(&GLWELayout {
-                    n: s_infos.n(),
-                    base2k: s_infos.base2k(),
-                    k: res_a_infos.max_k().max(res_b_infos.max_k()),
-                    rank: s_infos.rank(),
-                }))
+            + (self.glwe_external_product_internal_tmp_bytes(&tmp_c_infos, &tmp_c_infos, s_infos)
+                + GLWE::<Vec<u8>>::bytes_of_from_infos(&tmp_c_infos))
             .max(self.vec_znx_big_normalize_tmp_bytes());
 
         if res_a_infos.base2k() != s_infos.base2k() {
@@ -400,111 +407,209 @@ where
                 k: res_a_infos.max_k(),
                 rank: res_a_infos.rank(),
             });
-
             tot += GLWE::<Vec<u8>>::bytes_of_from_infos(&GLWELayout {
                 n: res_b_infos.n(),
                 base2k: s_infos.base2k(),
                 k: res_b_infos.max_k(),
                 rank: res_b_infos.rank(),
             });
+        } else {
+            tot += GLWE::<Vec<u8>>::bytes_of_from_infos(res_a_infos);
+            tot += GLWE::<Vec<u8>>::bytes_of_from_infos(res_b_infos);
         }
 
-        tot += self.bytes_of_vec_znx_big(1, s_infos.size());
-
-        tot
+        tot + self.bytes_of_vec_znx_big(1, s_infos.size())
     }
 
-    fn cswap<A, B, S>(&self, res_a: &mut A, res_b: &mut B, s: &S, scratch: &mut Scratch<BE>)
+    fn cswap<A, B, S>(&self, res_a: &mut A, res_b: &mut B, s: &S, scratch: &mut ScratchArena<'_, BE>)
     where
-        A: GLWEToMut,
-        B: GLWEToMut,
-        S: GGSWPreparedToRef<BE> + GGSWInfos,
-        Scratch<BE>: ScratchTakeCore<BE>,
+        A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
+        B: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
+        S: GGSWPreparedToBackendRef<BE> + GGSWInfos,
+        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+        for<'a> BE::BufMut<'a>: HostDataMut,
     {
-        let res_a: &mut GLWE<&mut [u8]> = &mut res_a.to_mut();
-        let res_b: &mut GLWE<&mut [u8]> = &mut res_b.to_mut();
-        let s: &GGSWPrepared<&[u8], BE> = &s.to_ref();
         assert_eq!(res_a.base2k(), res_b.base2k());
+        assert_eq!(res_a.n(), self.n() as u32);
+        assert_eq!(res_b.n(), self.n() as u32);
+        assert_eq!(res_a.rank(), s.rank());
+        assert_eq!(res_b.rank(), s.rank());
+
+        let scratch = scratch.borrow();
+        assert!(
+            scratch.available() >= self.cswap_tmp_bytes(res_a, res_b, s),
+            "scratch.available(): {} < Cswap::cswap_tmp_bytes: {}",
+            scratch.available(),
+            self.cswap_tmp_bytes(res_a, res_b, s)
+        );
 
         let res_base2k: usize = res_a.base2k().as_usize();
         let s_base2k: usize = s.base2k().as_usize();
+        let cols: usize = (s.rank() + 1).into();
 
         if res_base2k == s_base2k {
-            let res_big: VecZnxBig<&mut [u8], BE>;
-            let (res_dft, scratch_1) = scratch.take_vec_znx_dft(self, (s.rank() + 1).into(), s.size()); // Todo optimise
+            let (mut a_prev, scratch_1) = scratch.take_glwe_scratch(res_a);
+            let (mut b_prev, scratch_2) = scratch_1.take_glwe_scratch(res_b);
+            let (mut res_dft, scratch_3) = scratch_2.take_vec_znx_dft_scratch(self, cols, s.size());
+            let (res_big_tmp, scratch_4) = scratch_3.take_vec_znx_big_scratch(self, 1, s.size());
+            self.glwe_copy(&mut a_prev, res_a);
+            self.glwe_copy(&mut b_prev, res_b);
+
+            let (res_big, mut scratch_norm): (VecZnxBigViewMut<'_, BE>, _);
             {
-                // Temporary value storing a - b
-                let tmp_c_infos: GLWELayout = GLWELayout {
+                let tmp_c_infos = GLWELayout {
                     n: s.n(),
                     base2k: s.base2k(),
                     k: res_a.max_k().max(res_b.max_k()),
                     rank: s.rank(),
                 };
-                let (mut tmp_c, scratch_2) = scratch_1.take_glwe(&tmp_c_infos);
+                let (mut tmp_c, scratch_5) = scratch_4.take_glwe_scratch(&tmp_c_infos);
                 self.glwe_sub(&mut tmp_c, res_b, res_a);
-                res_big = self.glwe_external_product_internal(res_dft, &tmp_c, s, scratch_2);
+                let (tmp_res_big, mut scratch_6) = scratch_5.take_vec_znx_big_scratch(self, cols, s.size());
+                let mut tmp_res_big = tmp_res_big;
+                self.glwe_external_product_dft(&mut res_dft, &tmp_c, s, s.size(), &mut scratch_6.borrow());
+                let res_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&res_dft);
+                for col in 0..cols {
+                    self.vec_znx_idft_apply(&mut tmp_res_big, col, &res_dft_ref, col, &mut scratch_6.borrow());
+                }
+                (res_big, scratch_norm) = (tmp_res_big, scratch_6);
             }
 
-            // Single column res_big to store temporary value before normalization
-            let (mut res_big_tmp, scratch_2) = scratch_1.take_vec_znx_big::<_, BE>(self, 1, res_big.size());
+            let mut res_big_tmp = res_big_tmp;
+            let res_big_ref = vec_znx_big_backend_ref_from_mut::<BE>(&res_big);
+            let mut res_a_backend = res_a.to_backend_mut();
 
-            // res_a = (b-a) * bit + a
-            for j in 0..(res_a.rank() + 1).into() {
-                self.vec_znx_big_add_small_into(&mut res_big_tmp, 0, &res_big, j, res_a.data(), j);
-                self.vec_znx_big_normalize(res_a.data_mut(), res_base2k, 0, j, &res_big_tmp, s_base2k, 0, scratch_2);
+            for j in 0..cols {
+                self.vec_znx_big_add_small_into_backend(
+                    &mut res_big_tmp,
+                    0,
+                    &res_big_ref,
+                    j,
+                    &vec_znx_backend_ref_from_mut::<BE>(a_prev.data()),
+                    j,
+                );
+                let res_big_tmp_ref = vec_znx_big_backend_ref_from_mut::<BE>(&res_big_tmp);
+                self.vec_znx_big_normalize(
+                    res_a_backend.data_mut(),
+                    res_base2k,
+                    0,
+                    j,
+                    &res_big_tmp_ref,
+                    s_base2k,
+                    0,
+                    &mut scratch_norm.borrow(),
+                );
             }
 
-            // res_b = a - (a - b) * bit = (b - a) * bit + a
-            for j in 0..(res_b.rank() + 1).into() {
-                self.vec_znx_big_sub_small_a(&mut res_big_tmp, 0, res_b.data(), j, &res_big, j);
-                self.vec_znx_big_normalize(res_b.data_mut(), res_base2k, 0, j, &res_big_tmp, s_base2k, 0, scratch_2);
+            let mut res_b_backend = res_b.to_backend_mut();
+            for j in 0..cols {
+                self.vec_znx_big_sub_small_a_backend(
+                    &mut res_big_tmp,
+                    0,
+                    &vec_znx_backend_ref_from_mut::<BE>(b_prev.data()),
+                    j,
+                    &res_big_ref,
+                    j,
+                );
+                let res_big_tmp_ref = vec_znx_big_backend_ref_from_mut::<BE>(&res_big_tmp);
+                self.vec_znx_big_normalize(
+                    res_b_backend.data_mut(),
+                    res_base2k,
+                    0,
+                    j,
+                    &res_big_tmp_ref,
+                    s_base2k,
+                    0,
+                    &mut scratch_norm.borrow(),
+                );
             }
         } else {
-            let (mut tmp_a, scratch_1) = scratch.take_glwe(&GLWELayout {
+            let (mut tmp_a, scratch_1) = scratch.take_glwe_scratch(&GLWELayout {
                 n: res_a.n(),
                 base2k: s.base2k(),
                 k: res_a.max_k(),
                 rank: res_a.rank(),
             });
-
-            let (mut tmp_b, scratch_2) = scratch_1.take_glwe(&GLWELayout {
+            let (mut tmp_b, mut scratch_2) = scratch_1.take_glwe_scratch(&GLWELayout {
                 n: res_b.n(),
                 base2k: s.base2k(),
                 k: res_b.max_k(),
                 rank: res_b.rank(),
             });
 
-            self.glwe_normalize(&mut tmp_a, res_a, scratch_2);
-            self.glwe_normalize(&mut tmp_b, res_b, scratch_2);
+            self.glwe_normalize(&mut tmp_a, res_a, &mut scratch_2);
+            self.glwe_normalize(&mut tmp_b, res_b, &mut scratch_2);
 
-            let res_big: VecZnxBig<&mut [u8], BE>;
-            let (res_dft, scratch_3) = scratch_2.take_vec_znx_dft(self, (s.rank() + 1).into(), s.size()); // Todo optimise
+            let (mut res_dft, scratch_3) = scratch_2.take_vec_znx_dft_scratch(self, cols, s.size());
+            let (res_big_tmp, scratch_4) = scratch_3.take_vec_znx_big_scratch(self, 1, s.size());
+
+            let (res_big, mut scratch_norm): (VecZnxBigViewMut<'_, BE>, _);
             {
-                // Temporary value storing a - b
-                let tmp_c_infos: GLWELayout = GLWELayout {
+                let tmp_c_infos = GLWELayout {
                     n: s.n(),
                     base2k: s.base2k(),
                     k: res_a.max_k().max(res_b.max_k()),
                     rank: s.rank(),
                 };
-                let (mut tmp_c, scratch_4) = scratch_3.take_glwe(&tmp_c_infos);
-                self.glwe_sub(&mut tmp_c, res_b, res_a);
-                res_big = self.glwe_external_product_internal(res_dft, &tmp_c, s, scratch_4);
+                let (mut tmp_c, scratch_5) = scratch_4.take_glwe_scratch(&tmp_c_infos);
+                self.glwe_sub(&mut tmp_c, &tmp_b, &tmp_a);
+                let (tmp_res_big, mut scratch_6) = scratch_5.take_vec_znx_big_scratch(self, cols, s.size());
+                let mut tmp_res_big = tmp_res_big;
+                self.glwe_external_product_dft(&mut res_dft, &tmp_c, s, s.size(), &mut scratch_6.borrow());
+                let res_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&res_dft);
+                for col in 0..cols {
+                    self.vec_znx_idft_apply(&mut tmp_res_big, col, &res_dft_ref, col, &mut scratch_6.borrow());
+                }
+                (res_big, scratch_norm) = (tmp_res_big, scratch_6);
             }
 
-            // Single column res_big to store temporary value before normalization
-            let (mut res_big_tmp, scratch_4) = scratch_3.take_vec_znx_big::<_, BE>(self, 1, res_big.size());
+            let mut res_big_tmp = res_big_tmp;
+            let res_big_ref = vec_znx_big_backend_ref_from_mut::<BE>(&res_big);
+            let mut res_a_backend = res_a.to_backend_mut();
 
-            // res_a = (b-a) * bit + a
-            for j in 0..(res_a.rank() + 1).into() {
-                self.vec_znx_big_add_small_into(&mut res_big_tmp, 0, &res_big, j, tmp_a.data(), j);
-                self.vec_znx_big_normalize(res_a.data_mut(), res_base2k, 0, j, &res_big_tmp, s_base2k, 0, scratch_4);
+            for j in 0..cols {
+                self.vec_znx_big_add_small_into_backend(
+                    &mut res_big_tmp,
+                    0,
+                    &res_big_ref,
+                    j,
+                    &vec_znx_backend_ref_from_mut::<BE>(tmp_a.data()),
+                    j,
+                );
+                let res_big_tmp_ref = vec_znx_big_backend_ref_from_mut::<BE>(&res_big_tmp);
+                self.vec_znx_big_normalize(
+                    res_a_backend.data_mut(),
+                    res_base2k,
+                    0,
+                    j,
+                    &res_big_tmp_ref,
+                    s_base2k,
+                    0,
+                    &mut scratch_norm.borrow(),
+                );
             }
 
-            // res_b = a - (a - b) * bit = (b - a) * bit + a
-            for j in 0..(res_b.rank() + 1).into() {
-                self.vec_znx_big_sub_small_a(&mut res_big_tmp, 0, tmp_b.data(), j, &res_big, j);
-                self.vec_znx_big_normalize(res_b.data_mut(), res_base2k, 0, j, &res_big_tmp, s_base2k, 0, scratch_4);
+            let mut res_b_backend = res_b.to_backend_mut();
+            for j in 0..cols {
+                self.vec_znx_big_sub_small_a_backend(
+                    &mut res_big_tmp,
+                    0,
+                    &vec_znx_backend_ref_from_mut::<BE>(tmp_b.data()),
+                    j,
+                    &res_big_ref,
+                    j,
+                );
+                let res_big_tmp_ref = vec_znx_big_backend_ref_from_mut::<BE>(&res_big_tmp);
+                self.vec_znx_big_normalize(
+                    res_b_backend.data_mut(),
+                    res_base2k,
+                    0,
+                    j,
+                    &res_big_tmp_ref,
+                    s_base2k,
+                    0,
+                    &mut scratch_norm.borrow(),
+                );
             }
         }
     }
@@ -521,14 +626,18 @@ where
 ///
 /// so that `res` encrypts `t` when `b = 1` and `f` when `b = 0`.  This is the
 /// fundamental gate used throughout BDD circuit evaluation.
-pub trait Cmux<BE: Backend>
+pub trait Cmux<BE: Backend<OwnedBuf = Vec<u8>>>
 where
     Self: Sized
         + GLWEExternalProductInternal<BE>
-        + GLWESub
+        + GLWECopy<BE>
+        + GLWESub<BE>
+        + ModuleN
         + VecZnxBigAddSmallAssign<BE>
+        + VecZnxBigBytesOf
         + GLWENormalize<BE>
         + VecZnxDftBytesOf
+        + VecZnxIdftApply<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
 {
@@ -540,101 +649,196 @@ where
         B: GGSWInfos,
     {
         let res_dft: usize = self.bytes_of_vec_znx_dft((selector_infos.rank() + 1).into(), selector_infos.size());
-        res_dft
+        GLWE::<Vec<u8>>::bytes_of_from_infos(res_infos)
+            + GLWE::<Vec<u8>>::bytes_of_from_infos(a_infos)
+            + res_dft
             + self
                 .glwe_external_product_internal_tmp_bytes(res_infos, a_infos, selector_infos)
                 .max(self.vec_znx_big_normalize_tmp_bytes())
     }
 
     // res = (t - f) * s + f
-    fn cmux<R, T, F, S>(&self, res: &mut R, t: &T, f: &F, s: &S, scratch: &mut Scratch<BE>)
+    fn cmux<R, T, F, S>(&self, res: &mut R, t: &T, f: &F, s: &S, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToMut,
-        T: GLWEToRef,
-        F: GLWEToRef,
-        S: GGSWPreparedToRef<BE> + GGSWInfos,
-        Scratch<BE>: ScratchTakeCore<BE>,
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        T: GLWEToBackendRef<BE>,
+        F: GLWEToBackendRef<BE>,
+        S: GGSWPreparedToBackendRef<BE> + GGSWInfos,
+        BE: 'static,
+        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+        for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
+        for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {
-        let res: &mut GLWE<&mut [u8]> = &mut res.to_mut();
-        let s: &GGSWPrepared<&[u8], BE> = &s.to_ref();
-        let f: GLWE<&[u8]> = f.to_ref();
+        let f_backend = f.to_backend_ref();
 
+        let scratch = scratch.borrow();
         let res_base2k: usize = res.base2k().into();
         let ggsw_base2k: usize = s.base2k().into();
 
-        self.glwe_sub(res, t, &f);
-        let (res_dft, scratch_1) = scratch.take_vec_znx_dft(self, (res.rank() + 1).into(), s.size()); // Todo optimise
-        let mut res_big: VecZnxBig<&mut [u8], BE> = self.glwe_external_product_internal(res_dft, res, s, scratch_1);
-        for j in 0..(res.rank() + 1).into() {
-            self.vec_znx_big_add_small_assign(&mut res_big, j, f.data(), j);
-            self.vec_znx_big_normalize(res.data_mut(), res_base2k, 0, j, &res_big, ggsw_base2k, j, scratch_1);
+        self.glwe_sub(res, t, f);
+        let cols: usize = (res.rank() + 1).into();
+        let (mut tmp_in, scratch_1) = scratch.take_glwe_scratch(res);
+        let (mut tmp_f, scratch_2) = scratch_1.take_glwe_scratch(&f_backend);
+        self.glwe_copy(&mut tmp_in, res);
+        self.glwe_copy(&mut tmp_f, f);
+        let (mut res_dft, scratch_3) = scratch_2.take_vec_znx_dft_scratch(self, cols, s.size());
+        let (res_big, mut scratch_norm): (VecZnxBigViewMut<'_, BE>, _);
+        {
+            let (tmp_res_big, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(self, cols, s.size());
+            let mut tmp_res_big = tmp_res_big;
+            self.glwe_external_product_dft(&mut res_dft, &tmp_in, s, s.size(), &mut scratch_4.borrow());
+            let res_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&res_dft);
+            for col in 0..cols {
+                self.vec_znx_idft_apply(&mut tmp_res_big, col, &res_dft_ref, col, &mut scratch_4.borrow());
+            }
+            (res_big, scratch_norm) = (tmp_res_big, scratch_4);
         }
+        let mut res_big = res_big;
+        let tmp_f_ref = vec_znx_backend_ref_from_mut::<BE>(tmp_f.data());
+        for j in 0..cols {
+            self.vec_znx_big_add_small_assign(&mut res_big, j, &tmp_f_ref, j);
+            let res_big_ref = vec_znx_big_backend_ref_from_mut::<BE>(&res_big);
+            self.vec_znx_big_normalize(
+                tmp_in.data_mut(),
+                res_base2k,
+                0,
+                j,
+                &res_big_ref,
+                ggsw_base2k,
+                j,
+                &mut scratch_norm.borrow(),
+            );
+        }
+        self.glwe_copy(res, &tmp_in);
     }
 
     // res = (a - res) * s + res
-    fn cmux_assign_neg<R, A, S>(&self, res: &mut R, a: &A, s: &S, scratch: &mut Scratch<BE>)
+    fn cmux_assign_neg<R, A, S>(&self, res: &mut R, a: &A, s: &S, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToMut,
-        A: GLWEToRef,
-        S: GGSWPreparedToRef<BE> + GGSWInfos,
-        Scratch<BE>: ScratchTakeCore<BE>,
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE>,
+        S: GGSWPreparedToBackendRef<BE> + GGSWInfos,
+        BE: 'static,
+        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+        for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
+        for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {
-        let res: &mut GLWE<&mut [u8]> = &mut res.to_mut();
-        let s: &GGSWPrepared<&[u8], BE> = &s.to_ref();
-        let a: &GLWE<&[u8]> = &a.to_ref();
+        let a_backend = a.to_backend_ref();
 
-        assert_eq!(res.base2k(), a.base2k());
+        assert_eq!(res.base2k(), a_backend.base2k());
 
+        let scratch = scratch.borrow();
         let res_base2k: usize = res.base2k().into();
         let ggsw_base2k: usize = s.base2k().into();
-        let (mut tmp, scratch_1) = scratch.take_glwe(&GLWELayout {
+        let (mut tmp, scratch_1) = scratch.take_glwe_scratch(&GLWELayout {
             n: s.n(),
             base2k: res.base2k(),
-            k: res.max_k().max(a.max_k()),
+            k: res.max_k().max(a_backend.max_k()),
             rank: res.rank(),
         });
+        let (mut res_prev, scratch_2) = scratch_1.take_glwe_scratch(res);
+        self.glwe_copy(&mut res_prev, res);
         self.glwe_sub(&mut tmp, a, res);
-        let (res_dft, scratch_2) = scratch_1.take_vec_znx_dft(self, (res.rank() + 1).into(), s.size()); // Todo optimise
-        let mut res_big: VecZnxBig<&mut [u8], BE> = self.glwe_external_product_internal(res_dft, &tmp, s, scratch_2);
-        for j in 0..(res.rank() + 1).into() {
-            self.vec_znx_big_add_small_assign(&mut res_big, j, res.data(), j);
-            self.vec_znx_big_normalize(res.data_mut(), res_base2k, 0, j, &res_big, ggsw_base2k, j, scratch_2);
+        let cols: usize = (res.rank() + 1).into();
+        let (mut res_dft, scratch_3) = scratch_2.take_vec_znx_dft_scratch(self, cols, s.size());
+        let (res_big, mut scratch_norm): (VecZnxBigViewMut<'_, BE>, _);
+        {
+            let (tmp_res_big, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(self, cols, s.size());
+            let mut tmp_res_big = tmp_res_big;
+            self.glwe_external_product_dft(&mut res_dft, &tmp, s, s.size(), &mut scratch_4.borrow());
+            let res_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&res_dft);
+            for col in 0..cols {
+                self.vec_znx_idft_apply(&mut tmp_res_big, col, &res_dft_ref, col, &mut scratch_4.borrow());
+            }
+            (res_big, scratch_norm) = (tmp_res_big, scratch_4);
         }
+        let mut res_big = res_big;
+        let res_prev_ref = vec_znx_backend_ref_from_mut::<BE>(res_prev.data());
+        for j in 0..cols {
+            self.vec_znx_big_add_small_assign(&mut res_big, j, &res_prev_ref, j);
+            let res_big_ref = vec_znx_big_backend_ref_from_mut::<BE>(&res_big);
+            self.vec_znx_big_normalize(
+                tmp.data_mut(),
+                res_base2k,
+                0,
+                j,
+                &res_big_ref,
+                ggsw_base2k,
+                j,
+                &mut scratch_norm.borrow(),
+            );
+        }
+        self.glwe_copy(res, &tmp);
     }
 
     // res = (res - a) * s + a
-    fn cmux_assign<R, A, S>(&self, res: &mut R, a: &A, s: &S, scratch: &mut Scratch<BE>)
+    fn cmux_assign<R, A, S>(&self, res: &mut R, a: &A, s: &S, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWEToMut,
-        A: GLWEToRef,
-        S: GGSWPreparedToRef<BE> + GGSWInfos,
-        Scratch<BE>: ScratchTakeCore<BE>,
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE>,
+        S: GGSWPreparedToBackendRef<BE> + GGSWInfos,
+        BE: 'static,
+        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+        for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
+        for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {
-        let res: &mut GLWE<&mut [u8]> = &mut res.to_mut();
-        let s: &GGSWPrepared<&[u8], BE> = &s.to_ref();
-        let a: GLWE<&[u8]> = a.to_ref();
+        let a_backend = a.to_backend_ref();
+        let scratch = scratch.borrow();
         let res_base2k: usize = res.base2k().into();
         let ggsw_base2k: usize = s.base2k().into();
-        self.glwe_sub_assign(res, &a);
-        let (res_dft, scratch_1) = scratch.take_vec_znx_dft(self, (res.rank() + 1).into(), s.size()); // Todo optimise
-        let mut res_big: VecZnxBig<&mut [u8], BE> = self.glwe_external_product_internal(res_dft, res, s, scratch_1);
-        for j in 0..(res.rank() + 1).into() {
-            self.vec_znx_big_add_small_assign(&mut res_big, j, a.data(), j);
-            self.vec_znx_big_normalize(res.data_mut(), res_base2k, 0, j, &res_big, ggsw_base2k, j, scratch_1);
+        self.glwe_sub_assign(res, a);
+        let cols: usize = (res.rank() + 1).into();
+        let (mut tmp, scratch_1) = scratch.take_glwe_scratch(res);
+        let (mut tmp_a, scratch_2) = scratch_1.take_glwe_scratch(&a_backend);
+        self.glwe_copy(&mut tmp, res);
+        self.glwe_copy(&mut tmp_a, a);
+        let (mut res_dft, scratch_3) = scratch_2.take_vec_znx_dft_scratch(self, cols, s.size());
+        let (res_big, mut scratch_norm): (VecZnxBigViewMut<'_, BE>, _);
+        {
+            let (tmp_res_big, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(self, cols, s.size());
+            let mut tmp_res_big = tmp_res_big;
+            self.glwe_external_product_dft(&mut res_dft, &tmp, s, s.size(), &mut scratch_4.borrow());
+            let res_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&res_dft);
+            for col in 0..cols {
+                self.vec_znx_idft_apply(&mut tmp_res_big, col, &res_dft_ref, col, &mut scratch_4.borrow());
+            }
+            (res_big, scratch_norm) = (tmp_res_big, scratch_4);
         }
+        let mut res_big = res_big;
+        let tmp_a_ref = vec_znx_backend_ref_from_mut::<BE>(tmp_a.data());
+        for j in 0..cols {
+            self.vec_znx_big_add_small_assign(&mut res_big, j, &tmp_a_ref, j);
+            let res_big_ref = vec_znx_big_backend_ref_from_mut::<BE>(&res_big);
+            self.vec_znx_big_normalize(
+                tmp.data_mut(),
+                res_base2k,
+                0,
+                j,
+                &res_big_ref,
+                ggsw_base2k,
+                j,
+                &mut scratch_norm.borrow(),
+            );
+        }
+        self.glwe_copy(res, &tmp);
     }
 }
 
-impl<BE: Backend> Cmux<BE> for Module<BE>
+impl<BE: Backend<OwnedBuf = Vec<u8>>> Cmux<BE> for Module<BE>
 where
     Self: Sized
         + GLWEExternalProductInternal<BE>
-        + GLWESub
+        + GLWECopy<BE>
+        + GLWESub<BE>
+        + ModuleN
         + VecZnxBigAddSmallAssign<BE>
+        + VecZnxBigBytesOf
         + GLWENormalize<BE>
         + VecZnxDftBytesOf
+        + VecZnxIdftApply<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    Scratch<BE>: ScratchTakeCore<BE>,
+    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+    for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
 {
 }

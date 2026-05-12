@@ -1,5 +1,6 @@
 use crate::layouts::{
-    Backend, MatZnxToRef, Scratch, VecZnxDftToMut, VecZnxDftToRef, VecZnxToRef, VmpPMatOwned, VmpPMatToMut, VmpPMatToRef,
+    Backend, MatZnxBackendRef, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
+    VmpPMatBackendMut, VmpPMatBackendRef, VmpPMatOwned,
 };
 
 /// Allocates a [`VmpPMat`](crate::layouts::VmpPMat).
@@ -20,10 +21,12 @@ pub trait VmpPrepareTmpBytes {
 /// Prepares a coefficient-domain [`MatZnx`](crate::layouts::MatZnx) into a
 /// DFT-domain [`VmpPMat`](crate::layouts::VmpPMat).
 pub trait VmpPrepare<B: Backend> {
-    fn vmp_prepare<R, A>(&self, pmat: &mut R, mat: &A, scratch: &mut Scratch<B>)
-    where
-        R: VmpPMatToMut<B>,
-        A: MatZnxToRef;
+    fn vmp_prepare<'s>(
+        &self,
+        pmat: &mut VmpPMatBackendMut<'_, B>,
+        mat: &MatZnxBackendRef<'_, B>,
+        scratch: &mut ScratchArena<'s, B>,
+    );
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -42,11 +45,14 @@ pub trait VmpApplyDftTmpBytes {
 
 /// Applies the vector-matrix product `VecZnx x VmpPMat -> VecZnxDft`.
 pub trait VmpApplyDft<B: Backend> {
-    fn vmp_apply_dft<R, A, C>(&self, res: &mut R, a: &A, pmat: &C, scratch: &mut Scratch<B>)
-    where
-        R: VecZnxDftToMut<B>,
-        A: VecZnxToRef,
-        C: VmpPMatToRef<B>;
+    fn vmp_apply_dft<'s, R>(
+        &self,
+        res: &mut R,
+        a: &VecZnxBackendRef<'_, B>,
+        pmat: &VmpPMatBackendRef<'_, B>,
+        scratch: &mut ScratchArena<'s, B>,
+    ) where
+        R: VecZnxDftToBackendMut<B>;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -102,32 +108,29 @@ pub trait VmpApplyDftToDft<B: Backend> {
     /// * `a`: the left operand [crate::layouts::VecZnxDft] of the vector matrix product.
     /// * `b`: the right operand [crate::layouts::VmpPMat] of the vector matrix product.
     /// * `buf`: scratch space, the size can be obtained with [VmpApplyDftToDftTmpBytes::vmp_apply_dft_to_dft_tmp_bytes].
-    fn vmp_apply_dft_to_dft<R, A, C>(&self, res: &mut R, a: &A, pmat: &C, limb_offset: usize, scratch: &mut Scratch<B>)
-    where
-        R: VecZnxDftToMut<B>,
-        A: VecZnxDftToRef<B>,
-        C: VmpPMatToRef<B>;
+    fn vmp_apply_dft_to_dft<'s, 'r>(
+        &self,
+        res: &mut VecZnxDftBackendMut<'r, B>,
+        a: &VecZnxDftBackendRef<'_, B>,
+        pmat: &VmpPMatBackendRef<'_, B>,
+        limb_offset: usize,
+        scratch: &mut ScratchArena<'s, B>,
+    );
 }
 
 pub trait VmpApplyDftToDftAccumulate<B: Backend> {
-    /// Applies the vector-matrix product and accumulates into the destination:
-    /// `res += a · pmat`, shifted by `limb_offset`.
-    fn vmp_apply_dft_to_dft_accumulate<R, A, C>(
+    /// Fused `res += a · pmat`, shifted by `limb_offset` limbs.
+    fn vmp_apply_dft_to_dft_accumulate<'s, 'r>(
         &self,
-        res: &mut R,
-        a: &A,
-        pmat: &C,
+        res: &mut VecZnxDftBackendMut<'r, B>,
+        a: &VecZnxDftBackendRef<'_, B>,
+        pmat: &VmpPMatBackendRef<'_, B>,
         limb_offset: usize,
-        scratch: &mut Scratch<B>,
-    ) where
-        R: VecZnxDftToMut<B>,
-        A: VecZnxDftToRef<B>,
-        C: VmpPMatToRef<B>;
+        scratch: &mut ScratchArena<'s, B>,
+    );
 }
 
 /// Zeroes all entries of a [`VmpPMat`](crate::layouts::VmpPMat).
 pub trait VmpZero<B: Backend> {
-    fn vmp_zero<R>(&self, res: &mut R)
-    where
-        R: VmpPMatToMut<B>;
+    fn vmp_zero(&self, res: &mut VmpPMatBackendMut<'_, B>);
 }

@@ -14,7 +14,7 @@ This crate implements the Poulpy HAL extension traits and can be used by:
 
 - [`poulpy-hal`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-hal)
 - [`poulpy-core`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-core)
-- [`poulpy-ckks`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-ckks)
+- [`poulpy-ckks`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-ckks) (backend wiring opt-in via `enable-ckks`)
 - [`poulpy-bin-fhe`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-bin-fhe)
 
 ## 🚩 Safety and Requirements
@@ -28,7 +28,7 @@ To avoid illegal hardware instructions (SIGILL) on unsupported CPUs, the backend
 
 If a feature is enabled but the target does not provide the required capabilities, the build **fails immediately with a clear error message**, rather than generating invalid binaries.
 
-When neither feature is enabled, this crate is simply skipped and Poulpy automatically falls back to the portable `poulpy-cpu-ref` backend. This ensures that Poulpy's workspace remains portable (e.g. for macOS ARM).
+When neither feature is enabled, this crate compiles as an empty shell. That keeps the workspace portable on hosts such as macOS ARM, but code that imports AVX-512 backend types must enable the matching feature.
 
 ## ⚙️ Building
 
@@ -67,10 +67,24 @@ RUSTFLAGS="-C target-feature=+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx" \
 cargo bench --features enable-ifma
 ```
 
+### Running Tests
+
+```bash
+RUSTFLAGS="-C target-feature=+avx512f" \
+cargo test -p poulpy-cpu-avx512 --features enable-avx512f
+```
+
+To include CKKS backend wiring and IFMA in the AVX-512 test build:
+
+```bash
+RUSTFLAGS="-C target-feature=+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx" \
+cargo test -p poulpy-cpu-avx512 --features enable-ifma,enable-ckks
+```
+
 ## Basic Usage
 
 ```rust
-use poulpy_cpu_avx512::{FFT64Avx512, NTT120Avx512, NTT126Ifma};
+use poulpy_cpu_avx512::{FFT64Avx512, NTT120Avx512};
 use poulpy_hal::{api::ModuleNew, layouts::Module};
 
 let log_n: usize = 10;
@@ -80,7 +94,15 @@ let module: Module<FFT64Avx512> = Module::<FFT64Avx512>::new(1 << log_n);
 
 // Q120 NTT backend (AVX-512F, CRT over four ~30-bit primes)
 let module: Module<NTT120Avx512> = Module::<NTT120Avx512>::new(1 << log_n);
+```
 
+With `enable-ifma`, `NTT126Ifma` is also available:
+
+```rust
+use poulpy_cpu_avx512::NTT126Ifma;
+use poulpy_hal::{api::ModuleNew, layouts::Module};
+
+let log_n: usize = 10;
 // Q126 NTT backend (AVX-512-IFMA, CRT over three ~42-bit primes)
 let module: Module<NTT126Ifma> = Module::<NTT126Ifma>::new(1 << log_n);
 ```
@@ -92,8 +114,12 @@ Each backend is usable transparently anywhere Poulpy expects a backend type (`po
 To implement your own Poulpy backend (SIMD or accelerator):
 
 1. Define a backend struct
-2. Implement the open extension traits from `poulpy-hal/oep`
-3. Implement the `Backend` trait
+2. Implement the `Backend` trait from `poulpy-hal`.
+3. For each HAL operation family, either call the blanket default or implement the OEP trait directly with a custom dispatch.
+4. For each `poulpy-core` operation family, either call the corresponding `impl_*_defaults_full!` macro to inherit the portable implementation, or implement the OEP trait directly to override it.
+5. Optionally, do the same for `poulpy-ckks` behind a backend-owned `enable-ckks` feature using the `impl_ckks_*_defaults!` macros or direct OEP trait implementations.
+
+At every layer the macro and the direct implementation are mutually exclusive per operation family: the macro opts the backend into the portable `default` path, while a direct OEP impl replaces it entirely. There is no requirement to use the macros — a backend that needs full control can implement every OEP trait by hand.
 
 Your backend will automatically integrate with:
 
@@ -102,7 +128,7 @@ Your backend will automatically integrate with:
 * `poulpy-ckks`
 * `poulpy-bin-fhe`
 
-No modifications to those crates are required — the HAL provides the extension points.
+No modifications to those crates are required — the HAL provides the extension points. Only operations that need a faster implementation require explicit overrides; everything else is inherited from the `default` layer for free.
 
 ---
 

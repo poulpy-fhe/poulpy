@@ -1,15 +1,16 @@
 use std::fmt;
 
 use poulpy_hal::{
-    layouts::{Data, DataMut, DataRef, FillUniform, ReaderFrom, WriterTo},
+    layouts::{Backend, Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, WriterTo},
     source::Source,
 };
 
 use crate::{
     DeclaredK,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEInfos, GGLWEToMut, GGLWEToRef, GLWEInfos, GLWESwitchingKey,
-        GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, LWEInfos, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, Dsize, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos,
+        GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos, GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut,
+        GLWEViewMut, GLWEViewRef, LWEInfos, Rank, TorusPrecision,
     },
 };
 
@@ -106,38 +107,42 @@ impl<D: Data> GGLWEInfos for LWEToGLWEKey<D> {
     }
 }
 
-impl<D: DataRef> fmt::Debug for LWEToGLWEKey<D> {
+impl<D: HostDataRef> fmt::Debug for LWEToGLWEKey<D> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: DataMut> FillUniform for LWEToGLWEKey<D> {
+impl<D: HostDataMut> FillUniform for LWEToGLWEKey<D> {
     fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
         self.0.fill_uniform(log_bound, source);
     }
 }
 
-impl<D: DataRef> fmt::Display for LWEToGLWEKey<D> {
+impl<D: HostDataRef> fmt::Display for LWEToGLWEKey<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "(LWEToGLWEKey) {}", self.0)
     }
 }
 
-impl<D: DataMut> ReaderFrom for LWEToGLWEKey<D> {
+impl<D: HostDataMut> ReaderFrom for LWEToGLWEKey<D> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.0.read_from(reader)
     }
 }
 
-impl<D: DataRef> WriterTo for LWEToGLWEKey<D> {
+impl<D: HostDataRef> WriterTo for LWEToGLWEKey<D> {
     fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         self.0.write_to(writer)
     }
 }
 
+#[expect(
+    dead_code,
+    reason = "host-owned constructors are kept for serialization and host-only staging"
+)]
 impl LWEToGLWEKey<Vec<u8>> {
-    pub fn alloc_from_infos<A>(infos: &A) -> Self
+    pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
         A: GGLWEInfos,
     {
@@ -147,7 +152,7 @@ impl LWEToGLWEKey<Vec<u8>> {
         Self::alloc(infos.n(), infos.base2k(), infos.max_k(), infos.rank_out(), infos.dnum())
     }
 
-    pub fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision, rank_out: Rank, dnum: Dnum) -> Self {
+    pub(crate) fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision, rank_out: Rank, dnum: Dnum) -> Self {
         LWEToGLWEKey(GLWESwitchingKey::alloc(n, base2k, k, Rank(1), rank_out, dnum, Dsize(1)))
     }
 
@@ -165,19 +170,11 @@ impl LWEToGLWEKey<Vec<u8>> {
     }
 }
 
-impl<D: DataRef> GGLWEToRef for LWEToGLWEKey<D> {
-    fn to_ref(&self) -> GGLWE<&[u8]> {
-        self.0.to_ref()
-    }
-}
+impl_gglwe_to_backend_for_field!(LWEToGLWEKey<D>, 0, GLWESwitchingKey<D>);
 
-impl<D: DataMut> GGLWEToMut for LWEToGLWEKey<D> {
-    fn to_mut(&mut self) -> GGLWE<&mut [u8]> {
-        self.0.to_mut()
-    }
-}
+impl_gglwe_at_view_for_field!(LWEToGLWEKey<BE::OwnedBuf>; 0.key);
 
-impl<D: DataMut> GLWESwitchingKeyDegreesMut for LWEToGLWEKey<D> {
+impl<D: HostDataMut> GLWESwitchingKeyDegreesMut for LWEToGLWEKey<D> {
     fn input_degree(&mut self) -> &mut Degree {
         &mut self.0.input_degree
     }
@@ -187,7 +184,7 @@ impl<D: DataMut> GLWESwitchingKeyDegreesMut for LWEToGLWEKey<D> {
     }
 }
 
-impl<D: DataRef> GLWESwitchingKeyDegrees for LWEToGLWEKey<D> {
+impl<D: HostDataRef> GLWESwitchingKeyDegrees for LWEToGLWEKey<D> {
     fn input_degree(&self) -> &Degree {
         &self.0.input_degree
     }

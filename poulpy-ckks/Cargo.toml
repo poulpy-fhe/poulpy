@@ -1,6 +1,6 @@
 [package]
 name = "poulpy-ckks"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 license = "Apache-2.0"
 readme = "README.md"
@@ -10,20 +10,13 @@ homepage = "https://github.com/poulpy-fhe/poulpy"
 documentation = "https://docs.rs/poulpy-ckks"
 
 [features]
-enable-avx = ["dep:poulpy-cpu-avx", "poulpy-core/enable-avx", "poulpy-cpu-avx/enable-avx"]
-enable-avx512f = ["dep:poulpy-cpu-avx512", "poulpy-core/enable-avx512f", "poulpy-cpu-avx512/enable-avx512f"]
-enable-ifma = ["enable-avx512f", "poulpy-core/enable-ifma", "poulpy-cpu-avx512/enable-ifma"]
+enable-ckks = []
+enable-avx = []
 
 [dependencies]
-poulpy-cpu-avx = {workspace = true, optional = true}
-poulpy-cpu-avx512 = {workspace = true, optional = true}
-poulpy-cpu-ref = {workspace = true}
 poulpy-hal = {workspace = true}
 poulpy-core = {workspace = true}
 rand = {workspace = true}
 rand_distr = {workspace = true}
 anyhow = {workspace = true}
 bytemuck = {workspace = true}
-
-[dev-dependencies]
-f128 = "0.2"

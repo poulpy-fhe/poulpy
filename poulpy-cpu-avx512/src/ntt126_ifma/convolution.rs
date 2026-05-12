@@ -23,8 +23,8 @@ use crate::ntt126_ifma::{
 };
 use poulpy_cpu_ref::reference::ntt120::types::Q120bScalar;
 use poulpy_hal::layouts::{
-    CnvPVecL, CnvPVecLToMut, CnvPVecLToRef, CnvPVecR, CnvPVecRToMut, CnvPVecRToRef, Module, VecZnx, VecZnxBig, VecZnxBigToMut,
-    VecZnxDftToMut, VecZnxToRef, ZnxInfos, ZnxView, ZnxViewMut,
+    CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, Module, VecZnxBackendRef,
+    VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
 };
 
 use super::mat_vec_ifma::vec_mat1col_product_x2_bbc_ifma;
@@ -183,24 +183,16 @@ pub(crate) fn cnv_pairwise_apply_dft_ifma_tmp_bytes(res_size: usize, a_size: usi
 /// accumulation via [`vec_mat1col_product_x2_bbc_ifma`].
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
-pub(crate) unsafe fn cnv_apply_dft_ifma<R, A, B>(
-    res: &mut R,
+pub(crate) unsafe fn cnv_apply_dft_ifma(
+    res: &mut VecZnxDftBackendMut<'_, NTT126Ifma>,
     cnv_offset: usize,
     res_col: usize,
-    a: &A,
+    a: &CnvPVecLBackendRef<'_, NTT126Ifma>,
     a_col: usize,
-    b: &B,
+    b: &CnvPVecRBackendRef<'_, NTT126Ifma>,
     b_col: usize,
     tmp: &mut [u8],
-) where
-    R: VecZnxDftToMut<NTT126Ifma>,
-    A: CnvPVecLToRef<NTT126Ifma>,
-    B: CnvPVecRToRef<NTT126Ifma>,
-{
-    let mut res = res.to_mut();
-    let a = a.to_ref();
-    let b = b.to_ref();
-
+) {
     let n = res.n();
     let res_size = res.size();
     let a_size = a.size();
@@ -283,28 +275,20 @@ pub(crate) unsafe fn cnv_apply_dft_ifma<R, A, B>(
 /// When `col_0 == col_1`, delegates to [`cnv_apply_dft_ifma`].
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
-pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma<R, A, B>(
-    res: &mut R,
+pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma(
+    res: &mut VecZnxDftBackendMut<'_, NTT126Ifma>,
     cnv_offset: usize,
     res_col: usize,
-    a: &A,
-    b: &B,
+    a: &CnvPVecLBackendRef<'_, NTT126Ifma>,
+    b: &CnvPVecRBackendRef<'_, NTT126Ifma>,
     col_0: usize,
     col_1: usize,
     tmp: &mut [u8],
-) where
-    R: VecZnxDftToMut<NTT126Ifma>,
-    A: CnvPVecLToRef<NTT126Ifma>,
-    B: CnvPVecRToRef<NTT126Ifma>,
-{
+) {
     if col_0 == col_1 {
         unsafe { cnv_apply_dft_ifma(res, cnv_offset, res_col, a, col_0, b, col_1, tmp) };
         return;
     }
-
-    let mut res = res.to_mut();
-    let a = a.to_ref();
-    let b = b.to_ref();
 
     let n = res.n();
     let res_size = res.size();
@@ -404,13 +388,13 @@ pub(crate) fn cnv_prepare_left_tmp_bytes(_n: usize) -> usize {
     0
 }
 
-pub(crate) fn cnv_prepare_left<R, A>(module: &Module<NTT126Ifma>, res: &mut R, a: &A, mask: i64, _tmp: &mut [u8])
-where
-    R: CnvPVecLToMut<NTT126Ifma>,
-    A: VecZnxToRef,
-{
-    let mut res: CnvPVecL<&mut [u8], NTT126Ifma> = res.to_mut();
-    let a: VecZnx<&[u8]> = a.to_ref();
+pub(crate) fn cnv_prepare_left(
+    module: &Module<NTT126Ifma>,
+    res: &mut CnvPVecLBackendMut<'_, NTT126Ifma>,
+    a: &VecZnxBackendRef<'_, NTT126Ifma>,
+    mask: i64,
+    _tmp: &mut [u8],
+) {
     let table = &handle(module).table_ntt;
     let cols = res.cols();
     let res_size = res.size();
@@ -438,13 +422,13 @@ pub(crate) fn cnv_prepare_right_tmp_bytes(n: usize) -> usize {
     4 * n * size_of::<u64>()
 }
 
-pub(crate) fn cnv_prepare_right<R, A>(module: &Module<NTT126Ifma>, res: &mut R, a: &A, mask: i64, tmp: &mut [u64])
-where
-    R: CnvPVecRToMut<NTT126Ifma>,
-    A: VecZnxToRef,
-{
-    let mut res: CnvPVecR<&mut [u8], NTT126Ifma> = res.to_mut();
-    let a: VecZnx<&[u8]> = a.to_ref();
+pub(crate) fn cnv_prepare_right(
+    module: &Module<NTT126Ifma>,
+    res: &mut CnvPVecRBackendMut<'_, NTT126Ifma>,
+    a: &VecZnxBackendRef<'_, NTT126Ifma>,
+    mask: i64,
+    tmp: &mut [u64],
+) {
     let n = res.n();
     let table = &handle(module).table_ntt;
     let cols = res.cols();
@@ -475,21 +459,14 @@ pub(crate) fn cnv_prepare_self_tmp_bytes(n: usize) -> usize {
     cnv_prepare_left_tmp_bytes(n)
 }
 
-pub(crate) fn cnv_prepare_self<L, R, A>(
+pub(crate) fn cnv_prepare_self(
     module: &Module<NTT126Ifma>,
-    left: &mut L,
-    right: &mut R,
-    a: &A,
+    left: &mut CnvPVecLBackendMut<'_, NTT126Ifma>,
+    right: &mut CnvPVecRBackendMut<'_, NTT126Ifma>,
+    a: &VecZnxBackendRef<'_, NTT126Ifma>,
     mask: i64,
     _tmp: &mut [u8],
-) where
-    L: CnvPVecLToMut<NTT126Ifma>,
-    R: CnvPVecRToMut<NTT126Ifma>,
-    A: VecZnxToRef + ZnxInfos,
-{
-    let mut left: CnvPVecL<&mut [u8], NTT126Ifma> = left.to_mut();
-    let mut right: CnvPVecR<&mut [u8], NTT126Ifma> = right.to_mut();
-    let a: VecZnx<&[u8]> = a.to_ref();
+) {
     let table = &handle(module).table_ntt;
     let n = left.n();
     let cols = left.cols();
@@ -529,23 +506,21 @@ pub(crate) fn cnv_by_const_apply_tmp_bytes(_res_size: usize, _a_size: usize, _b_
     0
 }
 
-pub(crate) fn cnv_by_const_apply<R, A>(
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn cnv_by_const_apply(
     cnv_offset: usize,
-    res: &mut R,
+    res: &mut VecZnxBigBackendMut<'_, NTT126Ifma>,
     res_col: usize,
-    a: &A,
+    a: &VecZnxBackendRef<'_, NTT126Ifma>,
     a_col: usize,
-    b: &[i64],
+    b: &VecZnxBackendRef<'_, NTT126Ifma>,
+    b_col: usize,
+    b_coeff: usize,
     _tmp: &mut [u8],
-) where
-    R: VecZnxBigToMut<NTT126Ifma>,
-    A: VecZnxToRef,
-{
-    let mut res: VecZnxBig<&mut [u8], NTT126Ifma> = res.to_mut();
-    let a: VecZnx<&[u8]> = a.to_ref();
+) {
     let res_size = res.size();
     let a_size = a.size();
-    let b_size = b.len();
+    let b_size = b.size();
     if res_size == 0 || a_size == 0 || b_size == 0 {
         for j in 0..res_size {
             res.at_mut(res_col, j).fill(0i128);
@@ -558,7 +533,7 @@ pub(crate) fn cnv_by_const_apply<R, A>(
     let offset = cnv_offset.min(bound);
 
     if b_size == 1 {
-        let b0 = b[0] as i128;
+        let b0 = b.at(b_col, 0)[b_coeff] as i128;
         for k in 0..min_size {
             let k_abs = k + offset;
             let res_limb: &mut [i128] = res.at_mut(res_col, k);
@@ -585,7 +560,8 @@ pub(crate) fn cnv_by_const_apply<R, A>(
         let res_limb: &mut [i128] = res.at_mut(res_col, k);
         for (n_i, r) in res_limb.iter_mut().enumerate() {
             let mut acc: i128 = 0;
-            for (j, &b_j) in b.iter().enumerate().take(j_max).skip(j_min) {
+            for j in j_min..j_max {
+                let b_j = b.at(b_col, j)[b_coeff];
                 acc += a.at(a_col, k_abs - j)[n_i] as i128 * b_j as i128;
             }
             *r = acc;

@@ -2,7 +2,7 @@
 
 Consolidated [Criterion](https://bheisler.github.io/criterion.rs/book/) benchmark suite for the poulpy workspace.
 
-Each benchmark binary covers one subsystem. Binaries that operate on generic polynomial or FHE operations run against **all available backends**; transform-domain binaries run against every backend that implements the required transform-domain traits.
+Each benchmark binary covers one subsystem. Binaries that operate on generic polynomial or FHE operations run against **all available backends**; binaries that target transform-domain-specific operations (DFT, convolution, VMP/SVP) are restricted to the **FFT64 family**.
 
 ## Backends and feature flags
 
@@ -12,13 +12,29 @@ Each benchmark binary covers one subsystem. Binaries that operate on generic pol
 | `NTT120Ref` | NTT120, portable | *(always enabled)* | `ntt120-ref` |
 | `FFT64Avx` | FFT64, AVX2/FMA | `enable-avx` | `fft64-avx` |
 | `NTT120Avx` | NTT120, AVX2/FMA | `enable-avx` | `ntt120-avx` |
-| `FFT64Avx512` | FFT64, AVX-512F | `enable-avx512f` | `fft64-avx512` |
-| `NTT120Avx512` | NTT120, AVX-512F | `enable-avx512f` | `ntt120-avx512` |
-| `NTT126Ifma` | NTT IFMA, AVX512-IFMA | `enable-ifma` | `ntt-ifma` |
 
 The `enable-avx` flag enables the `poulpy-cpu-avx` backend and requires `target_arch = "x86_64"`.
-The `enable-avx512f` flag enables the AVX-512F backends in `poulpy-cpu-avx512` and requires `target_arch = "x86_64"` plus `AVX512F`.
-The `enable-ifma` flag enables the `poulpy-cpu-avx512` backend and requires `target_arch = "x86_64"` plus `AVX512F`, `AVX512IFMA`, and `AVX512VL`.
+
+Benchmark binaries are also feature-gated by family:
+
+| Feature | Enables |
+|---|---|
+| `hal-bench` | HAL-level polynomial, transform, convolution, FFT, and NTT benchmarks |
+| `core-bench` | `poulpy-core` benchmarks |
+| `bin-fhe-bench` | `poulpy-bin-fhe` scheme benchmarks |
+| `ckks-bench` | CKKS benchmarks |
+
+Useful compile/test commands:
+
+```sh
+cargo check -p poulpy-bench --all-targets --features hal-bench
+cargo check -p poulpy-bench --all-targets --features core-bench
+cargo check -p poulpy-bench --all-targets --features bin-fhe-bench
+cargo check -p poulpy-bench --all-targets --features ckks-bench
+
+cargo clippy -p poulpy-bench --all-targets \
+  --features hal-bench,core-bench,bin-fhe-bench,ckks-bench -- -D warnings
+```
 
 ## Benchmark binaries
 
@@ -28,12 +44,12 @@ The `enable-ifma` flag enables the `poulpy-cpu-avx512` backend and requires `tar
 |---|---|---|
 | `vec_znx` | `VecZnx` add / sub / negate / rotate / automorphism / shift | all |
 | `vec_znx_big` | `VecZnxBig` add / sub / negate / normalize / automorphism | all |
-| `vec_znx_dft` | DFT-domain add / sub / apply / iDFT | all |
-| `convolution` | Polynomial convolution (prepare + apply) | all |
-| `svp` | Scalar-vector product (prepare, DFT-to-DFT) | all |
-| `vmp` | Vector-matrix product (prepare, DFT-to-DFT) | all |
-| `fft` | Raw FFT / iFFT primitive | hardcoded (FFT64 ref + avx + avx512) |
-| `ntt` | Raw NTT / iNTT primitive | hardcoded (NTT ref + avx + avx512 + ifma) |
+| `vec_znx_dft` | DFT-domain add / sub / apply / iDFT | FFT64 only |
+| `convolution` | Polynomial convolution (prepare + apply) | FFT64 only |
+| `svp` | Scalar-vector product (prepare, DFT-to-DFT) | FFT64 only |
+| `vmp` | Vector-matrix product (prepare, DFT-to-DFT) | FFT64 only |
+| `fft` | Raw FFT / iFFT primitive | hardcoded (ref + avx) |
+| `ntt` | Raw NTT / iNTT primitive | hardcoded (ref + avx) |
 
 ### Core-level (scheme-agnostic FHE operations)
 
@@ -54,7 +70,6 @@ The `enable-ifma` flag enables the `poulpy-cpu-avx512` backend and requires `tar
 | `circuit_bootstrapping` | Circuit bootstrapping | hardcoded |
 | `bdd_prepare` | BDD key preparation | hardcoded |
 | `bdd_arithmetic` | BDD homomorphic arithmetic | hardcoded |
-| `ckks_leveled` | CKKS leveled multiplication | single selected NTT backend |
 
 ### Regression tracking
 
@@ -62,7 +77,7 @@ The `enable-ifma` flag enables the `poulpy-cpu-avx512` backend and requires `tar
 |---|---|
 | `standard` | One representative run across **all layers** with fixed parameters — used for version-to-version regression tracking |
 
-The `standard` binary uses a single parameter set (`N=4096`, `base2k=18`, `k=54`, `rank=1`) for all HAL and core benchmarks, and the standard parameter sets embedded in `poulpy-ckks` and `poulpy-bin-fhe` for the scheme-level benchmarks. Its results can be saved as named baselines for direct comparison across releases (see [Save and compare baselines](#save-and-compare-baselines)).
+The `standard` binary uses a single parameter set (`N=4096`, `base2k=18`, `k=54`, `rank=1`) for all HAL and core benchmarks, and the standard parameter sets embedded in the scheme crates for the scheme-level benchmarks. Its results can be saved as named baselines for direct comparison across releases (see [Save and compare baselines](#save-and-compare-baselines)).
 
 ## Configuring parameters via JSON
 
@@ -95,7 +110,7 @@ Field reference:
 
 | Section | Field | Applies to | Description |
 |---|---|---|---|
-| `backends` | `["label", ...]` | shell script | Backends to run: `fft64-ref`, `ntt120-ref`, `fft64-avx`, `ntt120-avx`, `ntt-ifma`. AVX or IFMA features are auto-enabled when matching backends are listed. Omit to run all compiled-in backends. |
+| `backends` | `["label", ...]` | shell script | Backends to run: `fft64-ref`, `ntt120-ref`, `fft64-avx`, `ntt120-avx`. AVX feature is auto-enabled when an AVX backend is listed. Omit to run all compiled-in backends. |
 | `run` | `["name", ...]` | shell script | What to run. Binary names (e.g. `"vec_znx_big"`) run the whole binary; function names (e.g. `"vec_znx_big_add_into"`) are used as a Criterion filter across the default binary set. Mix freely. Omit or leave empty to run the default set in full. |
 | `hal.sweeps` | `[[log_n, cols, size], ...]` | `vec_znx_big`, `vec_znx_dft`, `svp` | Sweep points for generic HAL ops |
 | `cnv.sweeps` | `[[log_n, size], ...]` | `convolution` | Sweep points for convolution |
@@ -113,14 +128,14 @@ Field reference:
 
 ```sh
 POULPY_BENCH_PARAMS='{"hal":{"sweeps":[[12,2,8]]}}' \
-  cargo bench -p poulpy-bench --bench vec_znx_big
+  cargo bench -p poulpy-bench --bench vec_znx_big --features hal-bench
 ```
 
 **Custom core params — run `standard` at a smaller parameter set:**
 
 ```sh
 POULPY_BENCH_PARAMS='{"core":{"n":1024,"base2k":14,"k":42,"rank":1,"dsize":1}}' \
-  cargo bench -p poulpy-bench --bench standard
+  cargo bench -p poulpy-bench --bench standard --features hal-bench,core-bench,bin-fhe-bench
 ```
 
 **From a file — full custom sweep for a profiling run:**
@@ -137,26 +152,18 @@ cat > bench_params.json <<'EOF'
 EOF
 
 POULPY_BENCH_PARAMS=bench_params.json \
-  cargo bench -p poulpy-bench --features enable-avx
-```
-
-**IFMA-enabled run:**
-
-```sh
-POULPY_BENCH_PARAMS='{"backends":["ntt-ifma"],"run":["vec_znx_dft","convolution","ckks_leveled"]}' \
-  RUSTFLAGS="-C target-feature=+avx512f,+avx512ifma,+avx512vl" \
-  cargo bench -p poulpy-bench --features enable-ifma
+  cargo bench -p poulpy-bench --features hal-bench,core-bench,bin-fhe-bench,ckks-bench,enable-avx
 ```
 
 **Regression baseline at a specific parameter set:**
 
 ```sh
 POULPY_BENCH_PARAMS='{"core":{"n":4096,"base2k":18,"k":54,"rank":1,"dsize":1}}' \
-  cargo bench -p poulpy-bench --bench standard -- --save-baseline v0.4.4
+  cargo bench -p poulpy-bench --bench standard --features hal-bench,core-bench,bin-fhe-bench -- --save-baseline v0.4.4
 
 # later, compare against it with the same params
 POULPY_BENCH_PARAMS='{"core":{"n":4096,"base2k":18,"k":54,"rank":1,"dsize":1}}' \
-  cargo bench -p poulpy-bench --bench standard -- --baseline v0.4.4
+  cargo bench -p poulpy-bench --bench standard --features hal-bench,core-bench,bin-fhe-bench -- --baseline v0.4.4
 ```
 
 ## Running benchmarks
@@ -164,34 +171,25 @@ POULPY_BENCH_PARAMS='{"core":{"n":4096,"base2k":18,"k":54,"rank":1,"dsize":1}}' 
 ### All benchmarks, reference backends only
 
 ```sh
-cargo bench -p poulpy-bench
+cargo bench -p poulpy-bench --features hal-bench,core-bench,bin-fhe-bench,ckks-bench
 ```
 
 ### All benchmarks with AVX acceleration
 
 ```sh
-cargo bench -p poulpy-bench --features enable-avx
-```
-
-### All benchmarks with IFMA acceleration
-
-```sh
-RUSTFLAGS="-C target-feature=+avx512f,+avx512ifma,+avx512vl" \
-  cargo bench -p poulpy-bench --features enable-ifma
+RUSTFLAGS="-C target-feature=+avx2,+fma" \
+cargo bench -p poulpy-bench --features hal-bench,core-bench,bin-fhe-bench,ckks-bench,enable-avx
 ```
 
 ### One binary
 
 ```sh
 # run only the vec_znx binary
-cargo bench -p poulpy-bench --bench vec_znx
+cargo bench -p poulpy-bench --bench vec_znx --features hal-bench
 
 # with AVX
-cargo bench -p poulpy-bench --bench vec_znx --features enable-avx
-
-# with IFMA
-RUSTFLAGS="-C target-feature=+avx512f,+avx512ifma,+avx512vl" \
-  cargo bench -p poulpy-bench --bench vec_znx --features enable-ifma
+RUSTFLAGS="-C target-feature=+avx2,+fma" \
+cargo bench -p poulpy-bench --bench vec_znx --features hal-bench,enable-avx
 ```
 
 ### One group or function within a binary
@@ -202,50 +200,48 @@ encodes the operation and backend label.
 
 ```sh
 # all vec_znx benchmarks on the ntt120-ref backend
-cargo bench -p poulpy-bench --bench vec_znx -- ntt120-ref
-
-# all transform-domain benchmarks on the IFMA backend
-RUSTFLAGS="-C target-feature=+avx512f,+avx512ifma,+avx512vl" \
-  cargo bench -p poulpy-bench --bench vec_znx_dft -- ntt-ifma
+cargo bench -p poulpy-bench --bench vec_znx --features hal-bench -- ntt120-ref
 
 # only the add benchmark, all backends
-cargo bench -p poulpy-bench --bench vec_znx -- vec_znx_add_into
+cargo bench -p poulpy-bench --bench vec_znx --features hal-bench -- vec_znx_add_into
 
 # one specific backend × operation
-cargo bench -p poulpy-bench --bench vec_znx -- "vec_znx_add_into::fft64-ref"
+cargo bench -p poulpy-bench --bench vec_znx --features hal-bench -- "vec_znx_add_into::fft64-ref"
 
 # all encryption benchmarks, AVX only
-cargo bench -p poulpy-bench --bench encryption --features enable-avx -- avx
+RUSTFLAGS="-C target-feature=+avx2,+fma" \
+cargo bench -p poulpy-bench --bench encryption --features core-bench,enable-avx -- avx
 ```
 
 ### Standard regression binary
 
 ```sh
 # run the standard binary (ref backends)
-cargo bench -p poulpy-bench --bench standard
+cargo bench -p poulpy-bench --bench standard --features hal-bench,core-bench,bin-fhe-bench
 
 # with AVX acceleration
-cargo bench -p poulpy-bench --bench standard --features enable-avx
+RUSTFLAGS="-C target-feature=+avx2,+fma" \
+cargo bench -p poulpy-bench --bench standard --features hal-bench,core-bench,bin-fhe-bench,enable-avx
 ```
 
 ### Save and compare baselines
 
 ```sh
 # save a named baseline (e.g. tagging a release)
-cargo bench -p poulpy-bench --bench standard -- --save-baseline v0.4.4
+cargo bench -p poulpy-bench --bench standard --features hal-bench,core-bench,bin-fhe-bench -- --save-baseline v0.4.4
 
 # run again later and compare against it
-cargo bench -p poulpy-bench --bench standard -- --baseline v0.4.4
+cargo bench -p poulpy-bench --bench standard --features hal-bench,core-bench,bin-fhe-bench -- --baseline v0.4.4
 ```
 
 The same `--save-baseline` / `--baseline` flags work on any bench binary:
 
 ```sh
 # save a baseline named "before"
-cargo bench -p poulpy-bench --bench vec_znx -- --save-baseline before
+cargo bench -p poulpy-bench --bench vec_znx --features hal-bench -- --save-baseline before
 
 # bench again and compare
-cargo bench -p poulpy-bench --bench vec_znx -- --baseline before
+cargo bench -p poulpy-bench --bench vec_znx --features hal-bench -- --baseline before
 ```
 
 Criterion HTML reports are written to `target/criterion/`.
@@ -255,5 +251,5 @@ Criterion HTML reports are written to `target/criterion/`.
 1. Add the backend crate to `[dependencies]` in `Cargo.toml` (behind an optional feature if needed).
 2. Add one entry to the appropriate private family macro in [`src/lib.rs`](src/lib.rs):
    - `for_each_fft_backend_family!` for an FFT64 backend
-   - `for_each_ntt_backend_family!` for an NTT-family backend
+   - `for_each_ntt_backend_family!` for an NTT120 backend
 3. No bench files need to change.

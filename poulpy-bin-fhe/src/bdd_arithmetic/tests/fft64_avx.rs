@@ -23,6 +23,16 @@ fn fhe_uint_swap() {
 }
 
 #[test]
+fn cswap() {
+    test_suite::test_cswap_direct(&TEST_CONTEXT_CGGI_FFT64_REF);
+}
+
+#[test]
+fn cmux() {
+    test_suite::test_cmux_direct(&TEST_CONTEXT_CGGI_FFT64_REF);
+}
+
+#[test]
 fn fhe_uint_get_bit_glwe() {
     test_suite::test_fhe_uint_get_bit_glwe(&TEST_CONTEXT_CGGI_FFT64_REF);
 }

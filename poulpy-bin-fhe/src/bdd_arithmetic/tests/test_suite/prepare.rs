@@ -1,10 +1,10 @@
 use poulpy_core::{
-    DEFAULT_SIGMA_XE, EncryptionLayout, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWENoise, ScratchTakeCore,
+    DEFAULT_SIGMA_XE, EncryptionLayout, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWENoise,
     layouts::{GGSWInfos, GGSWLayout, GLWEInfos, GLWELayout, GLWESecretPreparedFactory, LWEInfos, prepared::GLWESecretPrepared},
 };
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, DeviceBuf, Module, Scratch, ScratchOwned, Stats},
+    layouts::{Backend, HostBackend, HostDataMut, HostDataRef, Module, ScratchArena, ScratchOwned, Stats},
     source::Source,
 };
 use rand::Rng;
@@ -18,8 +18,9 @@ use crate::{
     blind_rotation::BlindRotationAlgo,
 };
 
-pub fn test_bdd_prepare<BRA: BlindRotationAlgo, BE: Backend>(test_context: &TestContext<BRA, BE>)
-where
+pub fn test_bdd_prepare<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>> + HostBackend>(
+    test_context: &TestContext<BRA, BE>,
+) where
     Module<BE>: ModuleNew<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWEDecrypt<BE>
@@ -34,14 +35,16 @@ where
         + ExecuteBDDCircuit2WTo1W<BE>
         + GLWEEncryptSk<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    Scratch<BE>: ScratchTakeCore<BE>,
+    for<'a> ScratchArena<'a, BE>: poulpy_core::ScratchArenaTakeCore<'a, BE>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
 {
     let glwe_infos: GLWELayout = TEST_GLWE_INFOS;
     let ggsw_infos: GGSWLayout = TEST_GGSW_INFOS;
 
     let module: &Module<BE> = &test_context.module;
-    let sk_glwe_prep: &GLWESecretPrepared<DeviceBuf<BE>, BE> = &test_context.sk_glwe;
-    let bdd_key_prepared: &BDDKeyPrepared<DeviceBuf<BE>, BRA, BE> = &test_context.bdd_key;
+    let sk_glwe_prep: &GLWESecretPrepared<BE::OwnedBuf, BE> = &test_context.sk_glwe;
+    let bdd_key_prepared: &BDDKeyPrepared<BE::OwnedBuf, BRA, BE> = &test_context.bdd_key;
 
     let mut source: Source = Source::new([6u8; 32]);
 
@@ -53,7 +56,7 @@ where
     let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(glwe_infos).unwrap();
 
     // GLWE(value)
-    let mut c_enc: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&glwe_infos);
+    let mut c_enc: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(module, &glwe_infos);
     let value: u32 = source.next_u32();
     c_enc.encrypt_sk(
         module,
@@ -62,7 +65,7 @@ where
         &glwe_enc_infos,
         &mut source_xe,
         &mut source_xa,
-        scratch.borrow(),
+        &mut scratch.borrow(),
     );
 
     // GGSW(0)
@@ -72,7 +75,7 @@ where
     let mut scratch_2 = ScratchOwned::alloc(module.fhe_uint_prepare_tmp_bytes(7, 1, &c_enc_prep_debug, &c_enc, bdd_key_prepared));
 
     // GGSW(value)
-    c_enc_prep_debug.prepare(module, &c_enc, bdd_key_prepared, scratch_2.borrow());
+    c_enc_prep_debug.prepare(module, &c_enc, bdd_key_prepared, &mut scratch_2.borrow());
 
     let max_noise = |col_i: usize| {
         let mut noise: f64 = -(ggsw_infos.size() as f64 * ggsw_infos.base2k().as_usize() as f64) + DEFAULT_SIGMA_XE.log2() + 2.0;
@@ -85,7 +88,7 @@ where
 
     for row in 0..c_enc_prep_debug.dnum().as_usize() {
         for col in 0..c_enc_prep_debug.rank().as_usize() + 1 {
-            let stats: Vec<Stats> = c_enc_prep_debug.noise(module, row, col, value, sk_glwe_prep, scratch.borrow());
+            let stats: Vec<Stats> = c_enc_prep_debug.noise(module, row, col, value, sk_glwe_prep, &mut scratch.borrow());
             for (i, stat) in stats.iter().enumerate() {
                 let noise_have: f64 = stat.std().log2();
                 let noise_max: f64 = max_noise(col);

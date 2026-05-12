@@ -32,8 +32,8 @@ use bytemuck::{cast_slice, cast_slice_mut};
 
 use crate::{
     layouts::{
-        Backend, CnvPVecL, CnvPVecLToMut, CnvPVecLToRef, CnvPVecR, CnvPVecRToMut, CnvPVecRToRef, VecZnx, VecZnxBig,
-        VecZnxBigToMut, VecZnxDft, VecZnxDftToMut, VecZnxToRef, ZnxInfos, ZnxView, ZnxViewMut,
+        Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, HostDataRef, VecZnxBackendRef,
+        VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
     },
     reference::ntt120::{
         NttAddAssign, NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc1ColX2, NttMulBbc2ColsX2, NttPackLeft1BlkX2,
@@ -62,14 +62,16 @@ pub fn ntt120_cnv_prepare_left_tmp_bytes(_n: usize) -> usize {
 ///
 /// Limbs of `res` beyond `a.size()` are zeroed.
 /// No scratch buffer is needed; `_tmp` is unused.
-pub fn ntt120_cnv_prepare_left<R, A, BE>(module: &impl NttModuleHandle, res: &mut R, a: &A, mask: i64, _tmp: &mut [u8])
-where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>>,
-    R: CnvPVecLToMut<BE>,
-    A: VecZnxToRef,
+pub fn ntt120_cnv_prepare_left<BE>(
+    module: &impl NttModuleHandle,
+    res: &mut CnvPVecLBackendMut<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE>,
+    mask: i64,
+    _tmp: &mut [u8],
+) where
+    BE: Backend<ScalarPrep = Q120bScalar> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + 'static,
+    for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
 {
-    let mut res: CnvPVecL<&mut [u8], BE> = res.to_mut();
-    let a: VecZnx<&[u8]> = a.to_ref();
     let table = module.get_ntt_table();
     let cols = res.cols();
     let res_size = res.size();
@@ -116,14 +118,16 @@ pub fn ntt120_cnv_prepare_right_tmp_bytes(n: usize) -> usize {
 ///
 /// `tmp` must hold at least `ntt120_cnv_prepare_right_tmp_bytes(n) / size_of::<u64>()` elements.
 /// Limbs of `res` beyond `a.size()` are zeroed.
-pub fn ntt120_cnv_prepare_right<R, A, BE>(module: &impl NttModuleHandle, res: &mut R, a: &A, mask: i64, tmp: &mut [u64])
-where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + NttCFromB,
-    R: CnvPVecRToMut<BE>,
-    A: VecZnxToRef,
+pub fn ntt120_cnv_prepare_right<BE>(
+    module: &impl NttModuleHandle,
+    res: &mut CnvPVecRBackendMut<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE>,
+    mask: i64,
+    tmp: &mut [u64],
+) where
+    BE: Backend<ScalarPrep = Q120bScalar> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + NttCFromB + 'static,
+    for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
 {
-    let mut res: CnvPVecR<&mut [u8], BE> = res.to_mut();
-    let a: VecZnx<&[u8]> = a.to_ref();
     let n = res.n();
     let table = module.get_ntt_table();
     let cols = res.cols();
@@ -174,22 +178,17 @@ pub fn ntt120_cnv_prepare_self_tmp_bytes(_n: usize) -> usize {
 ///
 /// This saves one full `b_from_znx64 + NTT` per (col, limb) compared to
 /// calling `prepare_left` + `prepare_right` separately.
-pub fn ntt120_cnv_prepare_self<L, R, A, BE>(
+pub fn ntt120_cnv_prepare_self<BE>(
     module: &impl NttModuleHandle,
-    left: &mut L,
-    right: &mut R,
-    a: &A,
+    left: &mut CnvPVecLBackendMut<'_, BE>,
+    right: &mut CnvPVecRBackendMut<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE>,
     mask: i64,
     _tmp: &mut [u8],
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + NttCFromB,
-    L: CnvPVecLToMut<BE>,
-    R: CnvPVecRToMut<BE>,
-    A: VecZnxToRef,
+    BE: Backend<ScalarPrep = Q120bScalar> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + NttCFromB + 'static,
+    for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
 {
-    let mut left: CnvPVecL<&mut [u8], BE> = left.to_mut();
-    let mut right: CnvPVecR<&mut [u8], BE> = right.to_mut();
-    let a: VecZnx<&[u8]> = a.to_ref();
     let table = module.get_ntt_table();
     let n = left.n();
     let cols = left.cols();
@@ -253,26 +252,21 @@ pub fn ntt120_cnv_apply_dft_tmp_bytes(_res_size: usize, a_size: usize, b_size: u
 ///
 /// Output limbs `min_size..res.size()` are zeroed.
 #[allow(clippy::too_many_arguments)]
-pub fn ntt120_cnv_apply_dft<R, A, B, BE>(
+pub fn ntt120_cnv_apply_dft<BE>(
     module: &impl NttModuleHandle,
     cnv_offset: usize,
-    res: &mut R,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
-    a: &A,
+    a: &CnvPVecLBackendRef<'_, BE>,
     a_col: usize,
-    b: &B,
+    b: &CnvPVecRBackendRef<'_, BE>,
     b_col: usize,
     tmp: &mut [u8],
 ) where
     BE: Backend<ScalarPrep = Q120bScalar> + NttMulBbc1ColX2 + NttPackLeft1BlkX2 + NttPackRight1BlkX2,
-    R: VecZnxDftToMut<BE>,
-    A: CnvPVecLToRef<BE>,
-    B: CnvPVecRToRef<BE>,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
-    let mut res: VecZnxDft<&mut [u8], BE> = res.to_mut();
-    let a: CnvPVecL<&[u8], BE> = a.to_ref();
-    let b: CnvPVecR<&[u8], BE> = b.to_ref();
-
     let n = res.n();
     let res_size = res.size();
     let a_size = a.size();
@@ -361,24 +355,24 @@ pub fn ntt120_cnv_by_const_apply_tmp_bytes(_res_size: usize, _a_size: usize, _b_
 /// Output limbs `min_size..res.size()` are zeroed.
 /// `_tmp` is unused.
 #[allow(clippy::too_many_arguments)]
-pub fn ntt120_cnv_by_const_apply<R, A, BE>(
+pub fn ntt120_cnv_by_const_apply<BE>(
     cnv_offset: usize,
-    res: &mut R,
+    res: &mut VecZnxBigBackendMut<'_, BE>,
     res_col: usize,
-    a: &A,
+    a: &VecZnxBackendRef<'_, BE>,
     a_col: usize,
-    b: &[i64],
+    b: &VecZnxBackendRef<'_, BE>,
+    b_col: usize,
+    b_coeff: usize,
     _tmp: &mut [u8],
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar, ScalarBig = i128>,
-    R: VecZnxBigToMut<BE>,
-    A: VecZnxToRef,
+    BE: Backend<ScalarPrep = Q120bScalar, ScalarBig = i128> + 'static,
+    for<'x> BE: Backend<BufRef<'x> = &'x [u8]>,
+    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
-    let mut res: VecZnxBig<&mut [u8], BE> = res.to_mut();
-    let a: VecZnx<&[u8]> = a.to_ref();
     let res_size = res.size();
     let a_size = a.size();
-    let b_size = b.len();
+    let b_size = b.size();
     if res_size == 0 || a_size == 0 || b_size == 0 {
         for j in 0..res_size {
             res.at_mut(res_col, j).fill(0i128);
@@ -397,7 +391,8 @@ pub fn ntt120_cnv_by_const_apply<R, A, BE>(
         let res_limb: &mut [i128] = res.at_mut(res_col, k);
         for (n_i, r) in res_limb.iter_mut().enumerate() {
             let mut acc: i128 = 0;
-            for (j, &b_j) in b.iter().enumerate().take(j_max).skip(j_min) {
+            for j in j_min..j_max {
+                let b_j = b.at(b_col, j)[b_coeff];
                 acc += a.at(a_col, k_abs - j)[n_i] as i128 * b_j as i128;
             }
             *r = acc;
@@ -449,13 +444,13 @@ pub fn ntt120_cnv_pairwise_apply_dft_tmp_bytes(res_size: usize, a_size: usize, b
 ///
 /// Output limbs `min_size..res.size()` are zeroed.
 #[allow(clippy::too_many_arguments)]
-pub fn ntt120_cnv_pairwise_apply_dft<R, A, B, BE>(
+pub fn ntt120_cnv_pairwise_apply_dft<BE>(
     module: &impl NttModuleHandle,
     cnv_offset: usize,
-    res: &mut R,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
-    a: &A,
-    b: &B,
+    a: &CnvPVecLBackendRef<'_, BE>,
+    b: &CnvPVecRBackendRef<'_, BE>,
     col_i: usize,
     col_j: usize,
     tmp: &mut [u8],
@@ -468,18 +463,13 @@ pub fn ntt120_cnv_pairwise_apply_dft<R, A, B, BE>(
         + NttPackRight1BlkX2
         + NttPairwisePackLeft1BlkX2
         + NttPairwisePackRight1BlkX2,
-    R: VecZnxDftToMut<BE>,
-    A: CnvPVecLToRef<BE>,
-    B: CnvPVecRToRef<BE>,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
     if col_i == col_j {
         ntt120_cnv_apply_dft(module, cnv_offset, res, res_col, a, col_i, b, col_j, tmp);
         return;
     }
-
-    let mut res: VecZnxDft<&mut [u8], BE> = res.to_mut();
-    let a: CnvPVecL<&[u8], BE> = a.to_ref();
-    let b: CnvPVecR<&[u8], BE> = b.to_ref();
 
     let meta = module.get_bbc_meta();
     let n = res.n();

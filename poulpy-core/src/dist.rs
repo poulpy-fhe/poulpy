@@ -12,6 +12,24 @@ pub trait GetDistributionMut {
     fn dist_mut(&mut self) -> &mut Distribution;
 }
 
+impl<T: GetDistribution + ?Sized> GetDistribution for &T {
+    fn dist(&self) -> &Distribution {
+        (*self).dist()
+    }
+}
+
+impl<T: GetDistribution + ?Sized> GetDistribution for &mut T {
+    fn dist(&self) -> &Distribution {
+        (**self).dist()
+    }
+}
+
+impl<T: GetDistributionMut + ?Sized> GetDistributionMut for &mut T {
+    fn dist_mut(&mut self) -> &mut Distribution {
+        (**self).dist_mut()
+    }
+}
+
 /// Describes the probability distribution used to sample secret-key
 /// coefficients.
 ///

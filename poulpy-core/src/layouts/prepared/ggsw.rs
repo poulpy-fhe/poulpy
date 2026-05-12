@@ -1,10 +1,13 @@
 use poulpy_hal::{
     api::{ScratchAvailable, VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes, VmpZero},
-    layouts::{Backend, Data, DataMut, DataRef, DeviceBuf, Module, Scratch, VmpPMat, VmpPMatToMut, VmpPMatToRef, ZnxInfos},
+    layouts::{
+        Backend, Data, HostDataRef, Module, ScratchArena, VmpPMat, VmpPMatReborrowBackendRef, VmpPMatToBackendMut,
+        VmpPMatToBackendRef, vmp_pmat_backend_mut_from_mut, vmp_pmat_backend_ref_from_ref,
+    },
 };
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGSW, GGSWInfos, GGSWToRef, GLWEInfos, GetDegree, LWEInfos, Rank, TorusPrecision,
+    Base2K, Degree, Dnum, Dsize, GGSWInfos, GGSWToBackendRef, GLWEInfos, GetDegree, LWEInfos, Rank, TorusPrecision,
 };
 
 /// DFT-domain (prepared) variant of [`GGSW`].
@@ -19,7 +22,24 @@ pub struct GGSWPrepared<D: Data, B: Backend> {
     pub(crate) dsize: Dsize,
 }
 
+pub type GGSWPreparedBackendRef<'a, B> = GGSWPrepared<<B as Backend>::BufRef<'a>, B>;
+pub type GGSWPreparedBackendMut<'a, B> = GGSWPrepared<<B as Backend>::BufMut<'a>, B>;
+
 impl<D: Data, B: Backend> LWEInfos for GGSWPrepared<D, B> {
+    fn n(&self) -> Degree {
+        Degree(self.data.n() as u32)
+    }
+
+    fn base2k(&self) -> Base2K {
+        self.base2k
+    }
+
+    fn size(&self) -> usize {
+        self.data.size()
+    }
+}
+
+impl<D: Data, B: Backend> LWEInfos for &GGSWPrepared<D, B> {
     fn n(&self) -> Degree {
         Degree(self.data.n() as u32)
     }
@@ -39,7 +59,23 @@ impl<D: Data, B: Backend> GLWEInfos for GGSWPrepared<D, B> {
     }
 }
 
+impl<D: Data, B: Backend> GLWEInfos for &GGSWPrepared<D, B> {
+    fn rank(&self) -> Rank {
+        Rank(self.data.cols_out() as u32 - 1)
+    }
+}
+
 impl<D: Data, B: Backend> GGSWInfos for GGSWPrepared<D, B> {
+    fn dsize(&self) -> Dsize {
+        self.dsize
+    }
+
+    fn dnum(&self) -> Dnum {
+        Dnum(self.data.rows() as u32)
+    }
+}
+
+impl<D: Data, B: Backend> GGSWInfos for &GGSWPrepared<D, B> {
     fn dsize(&self) -> Dsize {
         self.dsize
     }
@@ -62,7 +98,7 @@ where
         dnum: Dnum,
         dsize: Dsize,
         rank: Rank,
-    ) -> GGSWPrepared<DeviceBuf<B>, B> {
+    ) -> GGSWPrepared<B::OwnedBuf, B> {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         debug_assert!(
             size as u32 > dsize.0,
@@ -89,7 +125,7 @@ where
         }
     }
 
-    fn ggsw_prepared_alloc_from_infos<A>(&self, infos: &A) -> GGSWPrepared<DeviceBuf<B>, B>
+    fn ggsw_prepared_alloc_from_infos<A>(&self, infos: &A) -> GGSWPrepared<B::OwnedBuf, B>
     where
         A: GGSWInfos,
     {
@@ -136,14 +172,14 @@ where
         );
         lvl_0
     }
-    fn ggsw_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut Scratch<B>)
+    fn ggsw_prepare<'s, R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'s, B>)
     where
-        R: GGSWPreparedToMut<B>,
-        O: GGSWToRef,
-        Scratch<B>: ScratchAvailable,
+        R: GGSWPreparedToBackendMut<B>,
+        O: GGSWToBackendRef<B>,
+        ScratchArena<'s, B>: ScratchAvailable,
     {
-        let mut res: GGSWPrepared<&mut [u8], B> = res.to_mut();
-        let other: GGSW<&[u8]> = other.to_ref();
+        let mut res = res.to_backend_mut();
+        let other = other.to_backend_ref();
         assert_eq!(res.n(), self.ring_degree());
         assert_eq!(other.n(), self.ring_degree());
         assert_eq!(res.base2k, other.base2k);
@@ -159,9 +195,9 @@ where
 
     fn ggsw_zero<R>(&self, res: &mut R)
     where
-        R: GGSWPreparedToMut<B>,
+        R: GGSWPreparedToBackendMut<B>,
     {
-        let mut res: GGSWPrepared<&mut [u8], B> = res.to_mut();
+        let mut res = res.to_backend_mut();
         self.vmp_zero(&mut res.data);
     }
 }
@@ -173,7 +209,7 @@ impl<B: Backend> GGSWPreparedFactory<B> for Module<B> where
 
 // module-only API: allocation/size helpers are provided by `GGSWPreparedFactory` on `Module`.
 
-impl<D: DataRef, B: Backend> GGSWPrepared<D, B> {
+impl<D: HostDataRef, B: Backend> GGSWPrepared<D, B> {
     pub fn data(&self) -> &VmpPMat<D, B> {
         &self.data
     }
@@ -183,30 +219,60 @@ impl<D: DataRef, B: Backend> GGSWPrepared<D, B> {
 
 // module-only API: preparation and zeroing are provided by `GGSWPreparedFactory` on `Module`.
 
-pub trait GGSWPreparedToMut<B: Backend> {
-    fn to_mut(&mut self) -> GGSWPrepared<&mut [u8], B>;
+pub trait GGSWPreparedToBackendRef<B: Backend> {
+    fn to_backend_ref(&self) -> GGSWPreparedBackendRef<'_, B>;
 }
 
-impl<D: DataMut, B: Backend> GGSWPreparedToMut<B> for GGSWPrepared<D, B> {
-    fn to_mut(&mut self) -> GGSWPrepared<&mut [u8], B> {
+impl<B: Backend> GGSWPreparedToBackendRef<B> for GGSWPrepared<B::OwnedBuf, B> {
+    fn to_backend_ref(&self) -> GGSWPreparedBackendRef<'_, B> {
         GGSWPrepared {
             base2k: self.base2k,
             dsize: self.dsize,
-            data: self.data.to_mut(),
+            data: self.data.to_backend_ref(),
         }
     }
 }
 
-pub trait GGSWPreparedToRef<B: Backend> {
-    fn to_ref(&self) -> GGSWPrepared<&[u8], B>;
-}
-
-impl<D: DataRef, B: Backend> GGSWPreparedToRef<B> for GGSWPrepared<D, B> {
-    fn to_ref(&self) -> GGSWPrepared<&[u8], B> {
+impl<'b, B: Backend + 'b> GGSWPreparedToBackendRef<B> for &GGSWPrepared<B::BufRef<'b>, B> {
+    fn to_backend_ref(&self) -> GGSWPreparedBackendRef<'_, B> {
         GGSWPrepared {
             base2k: self.base2k,
             dsize: self.dsize,
-            data: self.data.to_ref(),
+            data: vmp_pmat_backend_ref_from_ref::<B>(&self.data),
+        }
+    }
+}
+
+impl<'b, B: Backend + 'b> GGSWPreparedToBackendRef<B> for &mut GGSWPrepared<B::BufMut<'b>, B> {
+    fn to_backend_ref(&self) -> GGSWPreparedBackendRef<'_, B> {
+        GGSWPrepared {
+            base2k: self.base2k,
+            dsize: self.dsize,
+            data: self.data.reborrow_backend_ref(),
+        }
+    }
+}
+
+pub trait GGSWPreparedToBackendMut<B: Backend> {
+    fn to_backend_mut(&mut self) -> GGSWPreparedBackendMut<'_, B>;
+}
+
+impl<B: Backend> GGSWPreparedToBackendMut<B> for GGSWPrepared<B::OwnedBuf, B> {
+    fn to_backend_mut(&mut self) -> GGSWPreparedBackendMut<'_, B> {
+        GGSWPrepared {
+            base2k: self.base2k,
+            dsize: self.dsize,
+            data: self.data.to_backend_mut(),
+        }
+    }
+}
+
+impl<'b, B: Backend + 'b> GGSWPreparedToBackendMut<B> for &mut GGSWPrepared<B::BufMut<'b>, B> {
+    fn to_backend_mut(&mut self) -> GGSWPreparedBackendMut<'_, B> {
+        GGSWPrepared {
+            base2k: self.base2k,
+            dsize: self.dsize,
+            data: vmp_pmat_backend_mut_from_mut::<B>(&mut self.data),
         }
     }
 }

@@ -1,24 +1,29 @@
 use crate::{
-    layouts::{NoiseInfos, VecZnx, VecZnxToMut, ZnxInfos, ZnxViewMut},
+    layouts::{Backend, HostDataMut, NoiseInfos, VecZnxBackendMut, ZnxViewMut},
     reference::znx::{znx_add_normal_f64_ref, znx_fill_normal_f64_ref, znx_fill_uniform_ref},
     source::Source,
 };
 
-pub fn vec_znx_fill_uniform_ref<R>(base2k: usize, res: &mut R, res_col: usize, source: &mut Source)
+pub fn vec_znx_fill_uniform_ref<'r, BE>(base2k: usize, res: &mut VecZnxBackendMut<'r, BE>, res_col: usize, source: &mut Source)
 where
-    R: VecZnxToMut,
+    BE: Backend,
+    BE::BufMut<'r>: HostDataMut,
 {
-    let mut res: VecZnx<&mut [u8]> = res.to_mut();
     for j in 0..res.size() {
         znx_fill_uniform_ref(base2k, res.at_mut(res_col, j), source)
     }
 }
 
-pub fn vec_znx_fill_normal_ref<R>(base2k: usize, res: &mut R, res_col: usize, noise_infos: NoiseInfos, source: &mut Source)
-where
-    R: VecZnxToMut,
+pub fn vec_znx_fill_normal_ref<'r, BE>(
+    base2k: usize,
+    res: &mut VecZnxBackendMut<'r, BE>,
+    res_col: usize,
+    noise_infos: NoiseInfos,
+    source: &mut Source,
+) where
+    BE: Backend,
+    BE::BufMut<'r>: HostDataMut,
 {
-    let mut res: VecZnx<&mut [u8]> = res.to_mut();
     assert!(
         (noise_infos.bound.log2().ceil() as i64) < 64,
         "invalid bound: ceil(log2(bound))={} > 63",
@@ -34,11 +39,16 @@ where
     )
 }
 
-pub fn vec_znx_add_normal_ref<R>(base2k: usize, res: &mut R, res_col: usize, noise_infos: NoiseInfos, source: &mut Source)
-where
-    R: VecZnxToMut,
+pub fn vec_znx_add_normal_ref<'r, BE>(
+    base2k: usize,
+    res: &mut VecZnxBackendMut<'r, BE>,
+    res_col: usize,
+    noise_infos: NoiseInfos,
+    source: &mut Source,
+) where
+    BE: Backend,
+    BE::BufMut<'r>: HostDataMut,
 {
-    let mut res: VecZnx<&mut [u8]> = res.to_mut();
     assert!(
         (noise_infos.bound.log2().ceil() as i64) < 64,
         "invalid bound: ceil(log2(bound))={} > 63",

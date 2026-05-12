@@ -1,12 +1,13 @@
 use poulpy_hal::{
-    layouts::{Data, DataMut, DataRef, FillUniform, ReaderFrom, WriterTo},
+    layouts::{Backend, Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, WriterTo},
     source::Source,
 };
 
 use crate::{
     DeclaredK,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEInfos, GGLWEToMut, GGLWEToRef, GLWEInfos, LWEInfos, Rank, TorusPrecision,
+        Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos,
+        GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos, GLWEViewMut, GLWEViewRef, LWEInfos, Rank, TorusPrecision,
     },
 };
 
@@ -124,19 +125,19 @@ impl GGLWEInfos for GLWETensorKeyLayout {
     }
 }
 
-impl<D: DataRef> fmt::Debug for GLWETensorKey<D> {
+impl<D: HostDataRef> fmt::Debug for GLWETensorKey<D> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: DataMut> FillUniform for GLWETensorKey<D> {
+impl<D: HostDataMut> FillUniform for GLWETensorKey<D> {
     fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
         self.0.fill_uniform(log_bound, source)
     }
 }
 
-impl<D: DataRef> fmt::Display for GLWETensorKey<D> {
+impl<D: HostDataRef> fmt::Display for GLWETensorKey<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "(GLWETensorKey)",)?;
         write!(f, "{}", self.0)?;
@@ -144,9 +145,13 @@ impl<D: DataRef> fmt::Display for GLWETensorKey<D> {
     }
 }
 
+#[expect(
+    dead_code,
+    reason = "host-owned constructors are kept for serialization and host-only staging"
+)]
 impl GLWETensorKey<Vec<u8>> {
     /// Allocates a new [`GLWETensorKey`] with the given parameters.
-    pub fn alloc_from_infos<A>(infos: &A) -> Self
+    pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
         A: GGLWEInfos,
     {
@@ -161,7 +166,7 @@ impl GLWETensorKey<Vec<u8>> {
     }
 
     /// Allocates a new [`GLWETensorKey`] with the given parameters.
-    pub fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank, dnum: Dnum, dsize: Dsize) -> Self {
+    pub(crate) fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank, dnum: Dnum, dsize: Dsize) -> Self {
         let pairs: u32 = (((rank.0 + 1) * rank.0) >> 1).max(1);
         GLWETensorKey(GGLWE::alloc(n, base2k, k, Rank(pairs), rank, dnum, dsize))
     }
@@ -188,34 +193,20 @@ impl GLWETensorKey<Vec<u8>> {
     }
 }
 
-impl<D: DataMut> ReaderFrom for GLWETensorKey<D> {
+impl<D: HostDataMut> ReaderFrom for GLWETensorKey<D> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.0.read_from(reader)?;
         Ok(())
     }
 }
 
-impl<D: DataRef> WriterTo for GLWETensorKey<D> {
+impl<D: HostDataRef> WriterTo for GLWETensorKey<D> {
     fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         self.0.write_to(writer)?;
         Ok(())
     }
 }
 
-impl<D: DataRef> GGLWEToRef for GLWETensorKey<D>
-where
-    GGLWE<D>: GGLWEToRef,
-{
-    fn to_ref(&self) -> GGLWE<&[u8]> {
-        self.0.to_ref()
-    }
-}
+impl_gglwe_to_backend_for_field!(GLWETensorKey<D>, 0, GGLWE<D>);
 
-impl<D: DataMut> GGLWEToMut for GLWETensorKey<D>
-where
-    GGLWE<D>: GGLWEToMut,
-{
-    fn to_mut(&mut self) -> GGLWE<&mut [u8]> {
-        self.0.to_mut()
-    }
-}
+impl_gglwe_at_view_for_field!(GLWETensorKey<BE::OwnedBuf>; 0);

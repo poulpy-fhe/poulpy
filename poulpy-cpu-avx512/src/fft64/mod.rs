@@ -58,4 +58,4 @@ pub mod tests;
 
 #[allow(unused_imports)]
 pub use poulpy_cpu_ref::reference::fft64::module::FFTModuleHandle;
-pub use reim::{ReimFFTAvx512, ReimIFFTAvx512};
+pub use reim::{FFT64Avx512ReimTable, ReimFFTAvx512, ReimIFFTAvx512};

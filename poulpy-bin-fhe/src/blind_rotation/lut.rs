@@ -1,12 +1,14 @@
-use poulpy_core::layouts::{Base2K, Degree, TorusPrecision};
-use poulpy_cpu_ref::reference::vec_znx::vec_znx_rotate_assign;
-use poulpy_cpu_ref::reference::znx::ZnxRef;
+use poulpy_core::layouts::{Base2K, Degree, GLWE, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision};
+use poulpy_cpu_ref::reference::znx::{ZnxCopy, ZnxRef, ZnxRotate, ZnxSwitchRing};
 use poulpy_hal::{
     api::{
-        ScratchOwnedAlloc, ScratchOwnedBorrow, TakeSlice, VecZnxCopy, VecZnxNormalizeAssign, VecZnxNormalizeTmpBytes,
-        VecZnxRotateAssign, VecZnxRotateAssignTmpBytes, VecZnxSwitchRing,
+        ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes, VecZnxRotateAssignBackend,
+        VecZnxRotateAssignTmpBytes,
     },
-    layouts::{Backend, Module, Scratch, ScratchOwned, VecZnx, ZnxInfos, ZnxViewMut},
+    layouts::{
+        Backend, Data, HostDataRef, Module, ScratchOwned, TransferFrom, VecZnx, VecZnxToBackendMut, ZnxViewMut,
+        vec_znx_host_backend_mut,
+    },
 };
 
 /// Specifies in which direction the LUT is rotated by the LWE constant term
@@ -108,15 +110,15 @@ impl LookupTableInfos for LookUpTableLayout {
 /// - `data` is non-empty; its length equals `extension_factor`.
 /// - All `VecZnx` elements share the same `n`, `base2k`, and `size`.
 /// - `drift` records the half-step pre-rotation applied during encoding.
-pub struct LookupTable {
-    pub(crate) data: Vec<VecZnx<Vec<u8>>>,
+pub struct LookupTable<D: Data = Vec<u8>> {
+    pub(crate) data: Vec<GLWE<D>>,
     pub(crate) rot_dir: LookUpTableRotationDirection,
     pub(crate) base2k: Base2K,
     pub(crate) k: TorusPrecision,
     pub(crate) drift: usize,
 }
 
-impl LookupTableInfos for LookupTable {
+impl<D: Data> LookupTableInfos for LookupTable<D> {
     fn base2k(&self) -> Base2K {
         self.base2k
     }
@@ -130,7 +132,7 @@ impl LookupTableInfos for LookupTable {
     }
 
     fn n(&self) -> Degree {
-        self.data[0].n().into()
+        self.data[0].n()
     }
 
     fn size(&self) -> usize {
@@ -151,40 +153,14 @@ pub trait LookupTableFactory {
     ///
     /// `k` is the message-bit count (e.g., 1 for a binary-valued LUT).
     /// `f` must have length at most `res.domain_size()`.
-    fn lookup_table_set(&self, res: &mut LookupTable, f: &[i64], k: usize);
+    fn lookup_table_set(&self, res: &mut LookupTable<Vec<u8>>, f: &[i64], k: usize);
 
     /// Rotate the lookup table in-place by `k` positions in the ring
     /// `Z[X] / (X^{domain_size} + 1)`.
-    fn lookup_table_rotate(&self, k: i64, res: &mut LookupTable);
+    fn lookup_table_rotate(&self, k: i64, res: &mut LookupTable<Vec<u8>>);
 }
 
-impl LookupTable {
-    /// Allocates a zero-initialised `LookupTable` with dimensions taken from
-    /// `infos`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `infos.extension_factor()` is zero or not a power of two.
-    pub fn alloc<A>(infos: &A) -> Self
-    where
-        A: LookupTableInfos,
-    {
-        assert!(
-            infos.extension_factor() > 0 && infos.extension_factor().is_power_of_two(),
-            "extension_factor must be a non-zero power of two, got: {}",
-            infos.extension_factor()
-        );
-        Self {
-            data: (0..infos.extension_factor())
-                .map(|_| VecZnx::alloc(infos.n().into(), 1, infos.size()))
-                .collect(),
-            base2k: infos.base2k(),
-            k: infos.k(),
-            drift: 0,
-            rot_dir: LookUpTableRotationDirection::Left,
-        }
-    }
-
+impl LookupTable<Vec<u8>> {
     /// Returns `log2(extension_factor)`.
     pub fn log_extension_factor(&self) -> usize {
         (usize::BITS - (self.extension_factor() - 1).leading_zeros()) as _
@@ -198,12 +174,41 @@ impl LookupTable {
     /// Returns the total number of coefficients across all polynomials:
     /// `extension_factor × n`.
     pub fn domain_size(&self) -> usize {
-        self.data.len() * self.data[0].n()
+        self.data.len() * self.data[0].n().as_usize()
     }
 
     /// Returns the currently configured rotation direction.
     pub fn rotation_direction(&self) -> LookUpTableRotationDirection {
         self.rot_dir
+    }
+}
+
+impl LookupTable<Vec<u8>> {
+    /// Allocates a zero-initialised `LookupTable` with dimensions taken from
+    /// `infos`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `infos.extension_factor()` is zero or not a power of two.
+    pub fn alloc<M, A>(module: &M, infos: &A) -> Self
+    where
+        M: ModuleCoreAlloc<OwnedBuf = Vec<u8>>,
+        A: LookupTableInfos,
+    {
+        assert!(
+            infos.extension_factor() > 0 && infos.extension_factor().is_power_of_two(),
+            "extension_factor must be a non-zero power of two, got: {}",
+            infos.extension_factor()
+        );
+        LookupTable {
+            data: (0..infos.extension_factor())
+                .map(|_| module.glwe_alloc(infos.base2k(), infos.k(), Rank(0)))
+                .collect(),
+            base2k: infos.base2k(),
+            k: infos.k(),
+            drift: 0,
+            rot_dir: LookUpTableRotationDirection::Left,
+        }
     }
 
     /// Overrides the rotation direction used during blind rotation.
@@ -236,6 +241,22 @@ impl LookupTable {
     }
 }
 
+impl<D: HostDataRef> LookupTable<D> {
+    pub fn to_backend<From, To>(&self, dst: &Module<To>) -> LookupTable<To::OwnedBuf>
+    where
+        From: Backend<OwnedBuf = D>,
+        To: Backend + TransferFrom<From>,
+    {
+        LookupTable {
+            data: self.data.iter().map(|glwe| glwe.to_backend::<From, To>(dst)).collect(),
+            rot_dir: self.rot_dir,
+            base2k: self.base2k,
+            k: self.k,
+            drift: self.drift,
+        }
+    }
+}
+
 pub(crate) trait DivRound {
     fn div_round(self, rhs: Self) -> Self;
 }
@@ -255,20 +276,19 @@ fn max_bit_size(vec: &[i64]) -> u32 {
         .unwrap_or(0)
 }
 
-impl<BE: Backend> LookupTableFactory for Module<BE>
+impl<BE: Backend<OwnedBuf = Vec<u8>>> LookupTableFactory for Module<BE>
 where
-    Self: VecZnxRotateAssign<BE>
-        + VecZnxNormalizeAssign<BE>
+    Self: VecZnxRotateAssignBackend<BE>
+        + VecZnxNormalizeAssignBackend<BE>
         + VecZnxNormalizeTmpBytes
-        + VecZnxSwitchRing
-        + VecZnxCopy
         + VecZnxRotateAssignTmpBytes
-        + VecZnxRotateAssign<BE>
+        + VecZnxRotateAssignBackend<BE>
         + VecZnxRotateAssignTmpBytes,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    Scratch<BE>: TakeSlice,
 {
-    fn lookup_table_set(&self, res: &mut LookupTable, f: &[i64], k: usize) {
+    fn lookup_table_set(&self, res: &mut LookupTable<Vec<u8>>, f: &[i64], k: usize) {
+        // TODO: add a direct backend-native LUT construction path. This builder
+        // still materializes host-owned `Vec<u8>` polynomials before any upload.
         assert!(f.len() <= self.n());
 
         let base2k: usize = res.base2k.into();
@@ -302,9 +322,11 @@ where
         let size: usize = res.k.as_usize().div_ceil(base2k);
 
         // Equivalent to AUTO([f(0), -f(n-1), -f(n-2), ..., -f(1)], -1)
-        let mut lut_full: VecZnx<Vec<u8>> = VecZnx::alloc(domain_size, 1, size);
+        // but staged purely in host vectors so we do not need to allocate a
+        // second module with ring degree `domain_size`.
+        let mut lut_full_limbs: Vec<Vec<i64>> = (0..size).map(|_| vec![0i64; domain_size]).collect();
 
-        let lut_at: &mut [i64] = lut_full.at_mut(0, limbs - 1);
+        let lut_at: &mut [i64] = &mut lut_full_limbs[limbs - 1];
 
         let step: usize = domain_size.div_round(f_len);
 
@@ -318,20 +340,30 @@ where
 
         // Rotates half the step to the left
         if res.extension_factor() > 1 {
-            let (tmp, _) = scratch.borrow().take_slice(lut_full.n());
+            let mut tmp: Vec<i64> = vec![0i64; domain_size];
 
             for i in 0..res.extension_factor() {
-                self.vec_znx_switch_ring(&mut res.data[i], 0, &lut_full, 0);
-                if i < res.extension_factor() {
-                    vec_znx_rotate_assign::<_, ZnxRef>(-1, &mut lut_full, 0, tmp);
+                let mut res_at = vec_znx_host_backend_mut(res.data[i].data_mut());
+                for (limb, limb_data) in lut_full_limbs.iter().enumerate().take(res_at.size()) {
+                    ZnxRef::znx_switch_ring(res_at.at_mut(0, limb), limb_data);
+                }
+                if i + 1 < res.extension_factor() {
+                    for limb_data in &mut lut_full_limbs {
+                        ZnxRef::znx_rotate(-1, &mut tmp, limb_data);
+                        ZnxRef::znx_copy(limb_data, &tmp);
+                    }
                 }
             }
         } else {
-            self.vec_znx_copy(&mut res.data[0], 0, &lut_full, 0);
+            let mut res_at = vec_znx_host_backend_mut(res.data[0].data_mut());
+            for (limb, limb_data) in lut_full_limbs.iter().enumerate().take(res_at.size()) {
+                res_at.at_mut(0, limb).copy_from_slice(limb_data);
+            }
         }
 
         for a in res.data.iter_mut() {
-            self.vec_znx_normalize_assign(res.base2k.into(), a, 0, scratch.borrow());
+            let mut a_data = <VecZnx<Vec<u8>> as VecZnxToBackendMut<BE>>::to_backend_mut(a.data_mut());
+            self.vec_znx_normalize_assign_backend(res.base2k.into(), &mut a_data, 0, &mut scratch.borrow());
         }
 
         res.rotate(self, -(drift as i64));
@@ -339,9 +371,11 @@ where
         res.drift = drift
     }
 
-    fn lookup_table_rotate(&self, k: i64, res: &mut LookupTable) {
+    fn lookup_table_rotate(&self, k: i64, res: &mut LookupTable<Vec<u8>>) {
+        // TODO: make LUT rotation backend-native once lookup tables can be
+        // constructed and stored directly in backend-owned buffers.
         let extension_factor: usize = res.extension_factor();
-        let two_n: usize = 2 * res.data[0].n();
+        let two_n: usize = 2 * res.data[0].n().as_usize();
         let two_n_ext: usize = two_n * extension_factor;
 
         let mut scratch: ScratchOwned<_> = ScratchOwned::alloc(self.vec_znx_rotate_assign_tmp_bytes());
@@ -352,11 +386,15 @@ where
         let k_lo: usize = k_pos % extension_factor;
 
         (0..extension_factor - k_lo).for_each(|i| {
-            self.vec_znx_rotate_assign(k_hi as i64, &mut res.data[i], 0, scratch.borrow());
+            let mut data: poulpy_hal::layouts::VecZnxBackendMut<'_, BE> =
+                <poulpy_hal::layouts::VecZnx<BE::OwnedBuf> as VecZnxToBackendMut<BE>>::to_backend_mut(res.data[i].data_mut());
+            self.vec_znx_rotate_assign_backend(k_hi as i64, &mut data, 0, &mut scratch.borrow());
         });
 
         (extension_factor - k_lo..extension_factor).for_each(|i| {
-            self.vec_znx_rotate_assign(k_hi as i64 + 1, &mut res.data[i], 0, scratch.borrow());
+            let mut data: poulpy_hal::layouts::VecZnxBackendMut<'_, BE> =
+                <poulpy_hal::layouts::VecZnx<BE::OwnedBuf> as VecZnxToBackendMut<BE>>::to_backend_mut(res.data[i].data_mut());
+            self.vec_znx_rotate_assign_backend(k_hi as i64 + 1, &mut data, 0, &mut scratch.borrow());
         });
 
         res.data.rotate_right(k_lo);

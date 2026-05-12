@@ -1,11 +1,11 @@
 use poulpy_hal::{
-    layouts::{Backend, DataMut, Scratch},
+    layouts::{Backend, HostBackend, HostDataMut, ScratchArena},
     source::Source,
 };
 
 use poulpy_core::{
-    EncryptionInfos, GetDistribution, ScratchTakeCore,
-    layouts::{GGSWInfos, GLWEInfos, GLWESecretPreparedToRef, LWEInfos, LWESecretToRef},
+    EncryptionInfos, GetDistribution, ScratchArenaTakeCore,
+    layouts::{GGSWInfos, GLWEInfos, GLWESecretPreparedToBackendRef, LWEInfos, LWESecretToBackendRef},
 };
 
 use crate::blind_rotation::{BlindRotationAlgo, BlindRotationKey};
@@ -38,25 +38,26 @@ pub trait BlindRotationKeyEncryptSk<BRA: BlindRotationAlgo, B: Backend> {
     /// Encrypts each bit of `sk_lwe` as a GGSW ciphertext under `sk_glwe`,
     /// storing the result in `res`.
     #[allow(clippy::too_many_arguments)]
-    fn blind_rotation_key_encrypt_sk<D, S0, S1, E>(
+    fn blind_rotation_key_encrypt_sk<'s, S0, S1, E>(
         &self,
-        res: &mut BlindRotationKey<D, BRA>,
+        res: &mut BlindRotationKey<B::OwnedBuf, BRA>,
         sk_glwe: &S0,
         sk_lwe: &S1,
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut Scratch<B>,
+        scratch: &mut ScratchArena<'s, B>,
     ) where
-        D: DataMut,
-        S0: GLWESecretPreparedToRef<B> + GLWEInfos,
+        S0: GLWESecretPreparedToBackendRef<B> + GLWEInfos,
         E: EncryptionInfos,
-        S1: LWESecretToRef + LWEInfos + GetDistribution;
+        S1: LWESecretToBackendRef<B> + LWEInfos + GetDistribution,
+        B: 's,
+        ScratchArena<'s, B>: ScratchArenaTakeCore<'s, B>;
 }
 
-impl<D: DataMut, BRA: BlindRotationAlgo> BlindRotationKey<D, BRA> {
+impl<D: HostDataMut, BRA: BlindRotationAlgo> BlindRotationKey<D, BRA> {
     #[allow(clippy::too_many_arguments)]
-    pub fn encrypt_sk<M, S0, S1, E, BE: Backend>(
+    pub fn encrypt_sk<'s, M, S0, S1, E, BE>(
         &mut self,
         module: &M,
         sk_glwe: &S0,
@@ -64,13 +65,14 @@ impl<D: DataMut, BRA: BlindRotationAlgo> BlindRotationKey<D, BRA> {
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut Scratch<BE>,
+        scratch: &mut ScratchArena<'s, BE>,
     ) where
-        S0: GLWESecretPreparedToRef<BE> + GLWEInfos,
-        S1: LWESecretToRef + LWEInfos + GetDistribution,
-        Scratch<BE>: ScratchTakeCore<BE>,
+        S0: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
+        S1: LWESecretToBackendRef<BE> + LWEInfos + GetDistribution,
         E: EncryptionInfos,
         M: BlindRotationKeyEncryptSk<BRA, BE>,
+        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
+        BE: Backend<OwnedBuf = D> + HostBackend + 's,
     {
         module.blind_rotation_key_encrypt_sk(self, sk_glwe, sk_lwe, enc_infos, source_xe, source_xa, scratch);
     }

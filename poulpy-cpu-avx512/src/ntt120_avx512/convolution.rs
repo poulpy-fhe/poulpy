@@ -10,7 +10,7 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::_mm_sfence;
 
 use poulpy_cpu_ref::reference::ntt120::{mat_vec::BbcMeta, primes::Primes30, types::Q120bScalar, vec_znx_dft::NttModuleHandle};
-use poulpy_hal::layouts::{CnvPVecLToRef, CnvPVecRToRef, Module, VecZnxDftToMut, ZnxInfos, ZnxView, ZnxViewMut};
+use poulpy_hal::layouts::{CnvPVecLBackendRef, CnvPVecRBackendRef, Module, VecZnxDftBackendMut, ZnxView, ZnxViewMut};
 
 use super::{
     arithmetic_avx512::{
@@ -37,25 +37,17 @@ pub(crate) fn cnv_pairwise_apply_dft_avx_tmp_bytes(res_size: usize, a_size: usiz
 
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512f")]
-pub(crate) unsafe fn cnv_apply_dft_avx<R, A, B>(
+pub(crate) unsafe fn cnv_apply_dft_avx(
     module: &Module<NTT120Avx512>,
-    res: &mut R,
+    res: &mut VecZnxDftBackendMut<'_, NTT120Avx512>,
     cnv_offset: usize,
     res_col: usize,
-    a: &A,
+    a: &CnvPVecLBackendRef<'_, NTT120Avx512>,
     a_col: usize,
-    b: &B,
+    b: &CnvPVecRBackendRef<'_, NTT120Avx512>,
     b_col: usize,
     tmp: &mut [u8],
-) where
-    R: VecZnxDftToMut<NTT120Avx512>,
-    A: CnvPVecLToRef<NTT120Avx512>,
-    B: CnvPVecRToRef<NTT120Avx512>,
-{
-    let mut res = res.to_mut();
-    let a = a.to_ref();
-    let b = b.to_ref();
-
+) {
     let n = res.n();
     let res_size = res.size();
     let a_size = a.size();
@@ -123,29 +115,21 @@ pub(crate) unsafe fn cnv_apply_dft_avx<R, A, B>(
 
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512f")]
-pub(crate) unsafe fn cnv_pairwise_apply_dft_avx<R, A, B>(
+pub(crate) unsafe fn cnv_pairwise_apply_dft_avx(
     module: &Module<NTT120Avx512>,
-    res: &mut R,
+    res: &mut VecZnxDftBackendMut<'_, NTT120Avx512>,
     cnv_offset: usize,
     res_col: usize,
-    a: &A,
-    b: &B,
+    a: &CnvPVecLBackendRef<'_, NTT120Avx512>,
+    b: &CnvPVecRBackendRef<'_, NTT120Avx512>,
     col_i: usize,
     col_j: usize,
     tmp: &mut [u8],
-) where
-    R: VecZnxDftToMut<NTT120Avx512>,
-    A: CnvPVecLToRef<NTT120Avx512>,
-    B: CnvPVecRToRef<NTT120Avx512>,
-{
+) {
     if col_i == col_j {
         unsafe { cnv_apply_dft_avx(module, res, cnv_offset, res_col, a, col_i, b, col_j, tmp) };
         return;
     }
-
-    let mut res = res.to_mut();
-    let a = a.to_ref();
-    let b = b.to_ref();
 
     let n = res.n();
     let res_size = res.size();

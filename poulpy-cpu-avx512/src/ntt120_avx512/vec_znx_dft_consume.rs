@@ -1,13 +1,9 @@
-//! AVX-512F override for the NTT120 `vec_znx_idft_apply_consume` hot path.
-//!
-//! The shared HAL defaults already cover the whole `vec_znx_dft` theme. This
-//! module restores only the AVX-512F accelerated in-place q120b -> i128
-//! compaction used by `NTT120Avx512`.
+//! AVX-512F fused iNTT + q120b → i128 Garner CRT compaction for `NTT120Avx512`.
 
 use bytemuck::cast_slice_mut;
 use core::arch::x86_64::{__m256i, __m512i, _mm512_extracti64x4_epi64, _mm512_loadu_si512, _mm512_mul_epu32};
 use poulpy_cpu_ref::reference::ntt120::{ntt::NttTableInv, primes::Primes30, vec_znx_dft::NttModuleHandle};
-use poulpy_hal::layouts::{Data, Module, VecZnxBig, VecZnxDft, VecZnxDftToMut, ZnxInfos, ZnxViewMut};
+use poulpy_hal::layouts::{Module, VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxViewMut};
 
 use super::{
     NTT120Avx512,
@@ -18,23 +14,20 @@ use super::{
     ntt::intt_avx512,
 };
 
-/// AVX-512F accelerated in-place CRT compaction: q120b (32 bytes/coeff) -> i128 (16 bytes/coeff).
-///
-/// For each DFT block:
-/// 1. apply the inverse NTT in place,
-/// 2. reduce each 4-residue q120b coefficient against the CRT basis,
-/// 3. accumulate the CRT combination directly into an `i128`.
-///
-/// The 512-bit pair-packed inner loop processes two coefficients per
-/// iteration; a 256-bit tail covers the odd-coefficient case.
+/// iNTT (in place on `src`) + Garner CRT-compact (writing i128 to `dst`).
 ///
 /// # Safety
-///
-/// - `u64_ptr` must cover `4 * n * n_blocks` `u64` values.
-/// - AVX-512F support must be available at runtime.
-/// - no aliased references to the same buffer may be live during the call.
+/// - `src_ptr` covers `4 * n * n_blocks` u64; `dst_ptr` covers `n * n_blocks` i128.
+/// - If aliased, the dst window must lie in the first half of the src window.
+/// - AVX-512F required at runtime.
 #[target_feature(enable = "avx512f")]
-unsafe fn compact_all_blocks_avx512(n: usize, n_blocks: usize, u64_ptr: *mut u64, table: &NttTableInv<Primes30>) {
+unsafe fn intt_then_compact_avx512(
+    n: usize,
+    n_blocks: usize,
+    src_ptr: *mut u64,
+    dst_ptr: *mut i128,
+    table: &NttTableInv<Primes30>,
+) {
     use core::arch::x86_64::_mm256_loadu_si256;
 
     let half_q: u128 = TOTAL_Q.div_ceil(2);
@@ -60,23 +53,20 @@ unsafe fn compact_all_blocks_avx512(n: usize, n_blocks: usize, u64_ptr: *mut u64
     let qm_lo_512 = unsafe { bcast_quad(QM_LO.as_ptr()) };
 
     for k in 0..n_blocks {
-        let src_start = 4 * n * k;
-        let dst_start = 2 * n * k;
+        let src_off_u64 = 4 * n * k;
+        let dst_off_i128 = n * k;
 
         {
-            let blk: &mut [u64] = unsafe { std::slice::from_raw_parts_mut(u64_ptr.add(src_start), 4 * n) };
+            let blk: &mut [u64] = unsafe { std::slice::from_raw_parts_mut(src_ptr.add(src_off_u64), 4 * n) };
             unsafe { intt_avx512::<Primes30>(table, blk) };
         }
 
-        // Pair-packed compaction: read 2 q120b coefficients per iteration via __m512i;
-        // write the 2 i128 results separately (each occupies 2 u64s; in-place compaction
-        // is safe because the dst stride (2 u64) is half the src stride (4 u64), so iter c
-        // never writes into a yet-to-be-read src slot).
+        // Pair-packed compaction: 2 q120b coefficients per __m512i load → 2 i128 stores.
         unsafe {
             let pairs = n / 2;
             let mut c = 0usize;
             for _ in 0..pairs {
-                let xv: __m512i = _mm512_loadu_si512(u64_ptr.add(src_start + 4 * c) as *const __m512i);
+                let xv: __m512i = _mm512_loadu_si512(src_ptr.add(src_off_u64 + 4 * c) as *const __m512i);
                 let t = reduce_b_and_apply_crt_512(xv, q_512, mu_512, pow32_crt_512, pow16_crt_512, crt_512);
                 let p_hi = _mm512_mul_epu32(t, qm_hi_512);
                 let p_mid = _mm512_mul_epu32(t, qm_mid_512);
@@ -105,14 +95,14 @@ unsafe fn compact_all_blocks_avx512(n: usize, n_blocks: usize, u64_ptr: *mut u64
                         v -= TOTAL_Q;
                     }
                     let val: i128 = if v >= half_q { v as i128 - TOTAL_Q as i128 } else { v as i128 };
-                    (u64_ptr.add(dst_start + 2 * (c + j)) as *mut i128).write_unaligned(val);
+                    dst_ptr.add(dst_off_i128 + c + j).write_unaligned(val);
                 }
                 c += 2;
             }
 
             // Tail (single 256-bit coefficient when n is odd).
             if n & 1 != 0 {
-                let xv: __m256i = _mm256_loadu_si256(u64_ptr.add(src_start + 4 * c) as *const __m256i);
+                let xv: __m256i = _mm256_loadu_si256(src_ptr.add(src_off_u64 + 4 * c) as *const __m256i);
                 let t = reduce_b_and_apply_crt(xv, q_avx, mu_avx, pow32_crt_avx, pow16_crt_avx, crt_avx);
                 let mut v = crt_accumulate_avx512(t, qm_hi_avx, qm_mid_avx, qm_lo_avx);
                 let q_approx = (v >> 120) as usize;
@@ -121,32 +111,40 @@ unsafe fn compact_all_blocks_avx512(n: usize, n_blocks: usize, u64_ptr: *mut u64
                     v -= TOTAL_Q;
                 }
                 let val: i128 = if v >= half_q { v as i128 - TOTAL_Q as i128 } else { v as i128 };
-                (u64_ptr.add(dst_start + 2 * c) as *mut i128).write_unaligned(val);
+                dst_ptr.add(dst_off_i128 + c).write_unaligned(val);
             }
         }
     }
 }
 
-pub(crate) fn vec_znx_idft_apply_consume<D: Data>(
+/// `VecZnxIdftApplyTmpA` fast path: iNTT consumes `a` in place, Garner streams
+/// into `res`. Limbs past `min(res.size(), a.size())` are zero-padded.
+pub(crate) fn vec_znx_idft_apply_tmpa_avx512(
     module: &Module<NTT120Avx512>,
-    mut a: VecZnxDft<D, NTT120Avx512>,
-) -> VecZnxBig<D, NTT120Avx512>
-where
-    VecZnxDft<D, NTT120Avx512>: VecZnxDftToMut<NTT120Avx512>,
-{
+    res: &mut VecZnxBigBackendMut<'_, NTT120Avx512>,
+    res_col: usize,
+    a: &mut VecZnxDftBackendMut<'_, NTT120Avx512>,
+    a_col: usize,
+) {
     let table = module.get_intt_table();
+    let n = a.n();
+    let min_size = res.size().min(a.size());
+    let a_cols = a.cols();
+    let res_cols = res.cols();
+    let res_size = res.size();
 
-    let (n, n_blocks, u64_ptr) = {
-        let mut a_mut: VecZnxDft<&mut [u8], NTT120Avx512> = a.to_mut();
-        let n = a_mut.n();
-        let n_blocks = a_mut.cols() * a_mut.size();
-        let ptr: *mut u64 = {
-            let s = a_mut.raw_mut();
-            cast_slice_mut::<_, u64>(s).as_mut_ptr()
-        };
-        (n, n_blocks, ptr)
-    };
+    let src_base: *mut u64 = cast_slice_mut::<_, u64>(a.raw_mut()).as_mut_ptr();
+    let dst_base: *mut i128 = res.raw_mut().as_mut_ptr();
 
-    unsafe { compact_all_blocks_avx512(n, n_blocks, u64_ptr, table) };
-    a.into_big()
+    for j in 0..min_size {
+        let src_off_u64 = 4 * n * (j * a_cols + a_col);
+        let dst_off_i128 = n * (j * res_cols + res_col);
+        unsafe {
+            intt_then_compact_avx512(n, 1, src_base.add(src_off_u64), dst_base.add(dst_off_i128), table);
+        }
+    }
+
+    for j in min_size..res_size {
+        res.at_mut(res_col, j).fill(0i128);
+    }
 }

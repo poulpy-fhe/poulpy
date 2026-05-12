@@ -35,6 +35,7 @@ mod reim;
 mod znx;
 
 pub use crate::reference::fft64::module::FFTModuleHandle;
+pub use reim::FFT64ReimTable;
 
 /// Reference (portable) CPU backend using f64 FFT.
 ///

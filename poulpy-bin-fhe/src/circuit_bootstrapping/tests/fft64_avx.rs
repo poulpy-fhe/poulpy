@@ -1,5 +1,5 @@
 use poulpy_cpu_avx::FFT64Avx;
-use poulpy_hal::{api::ModuleNew, layouts::Module};
+use poulpy_hal::layouts::Module;
 
 use crate::{
     blind_rotation::CGGI,

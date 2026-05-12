@@ -1,7 +1,9 @@
 mod add;
+mod add_const;
 mod add_scalar;
 mod automorphism;
 mod copy;
+mod inner_product;
 mod merge_rings;
 mod mul_xp_minus_one;
 mod negate;
@@ -16,9 +18,11 @@ mod switch_ring;
 mod zero;
 
 pub use add::*;
+pub use add_const::*;
 pub use add_scalar::*;
 pub use automorphism::*;
 pub use copy::*;
+pub use inner_product::*;
 pub use merge_rings::*;
 pub use mul_xp_minus_one::*;
 pub use negate::*;

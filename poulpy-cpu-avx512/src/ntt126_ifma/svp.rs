@@ -4,10 +4,10 @@ use bytemuck::{cast_slice, cast_slice_mut};
 
 use poulpy_cpu_ref::reference::ntt120::types::Q120bScalar;
 use poulpy_hal::{
-    api::VecZnxDftApply,
+    api::{VecZnxDftAlloc, VecZnxDftApply},
     layouts::{
-        Module, ScalarZnx, ScalarZnxToRef, SvpPPol, SvpPPolToMut, SvpPPolToRef, VecZnxDft, VecZnxDftToMut, VecZnxDftToRef,
-        VecZnxToRef, ZnxInfos, ZnxView, ZnxViewMut,
+        Module, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, VecZnxBackendRef, VecZnxDftBackendMut,
+        VecZnxDftBackendRef, VecZnxDftReborrowBackendRef, VecZnxDftToBackendMut, ZnxView, ZnxViewMut,
     },
 };
 
@@ -18,13 +18,13 @@ use crate::ntt126_ifma::{
 };
 
 /// Encode a scalar polynomial into IFMA prepared format.
-pub(crate) fn svp_prepare<R, A>(module: &Module<NTT126Ifma>, res: &mut R, res_col: usize, a: &A, a_col: usize)
-where
-    R: SvpPPolToMut<NTT126Ifma>,
-    A: ScalarZnxToRef,
-{
-    let mut res: SvpPPol<&mut [u8], NTT126Ifma> = res.to_mut();
-    let a: ScalarZnx<&[u8]> = a.to_ref();
+pub(crate) fn svp_prepare(
+    module: &Module<NTT126Ifma>,
+    res: &mut SvpPPolBackendMut<'_, NTT126Ifma>,
+    res_col: usize,
+    a: &ScalarZnxBackendRef<'_, NTT126Ifma>,
+    a_col: usize,
+) {
     let n = res.n();
 
     let mut tmp = vec![0u64; 4 * n];
@@ -37,44 +37,33 @@ where
 
 /// Lift `a` (`VecZnx`) to DFT-domain via the forward NTT, then apply the
 /// prepared SVP factor: `res = svp ⊙ NTT(a)`.
-pub(crate) fn svp_apply_dft<R, A, C>(
+pub(crate) fn svp_apply_dft(
     module: &Module<NTT126Ifma>,
-    res: &mut R,
+    res: &mut VecZnxDftBackendMut<'_, NTT126Ifma>,
     res_col: usize,
-    a: &A,
+    a: &SvpPPolBackendRef<'_, NTT126Ifma>,
     a_col: usize,
-    b: &C,
+    b: &VecZnxBackendRef<'_, NTT126Ifma>,
     b_col: usize,
-) where
-    R: VecZnxDftToMut<NTT126Ifma>,
-    A: SvpPPolToRef<NTT126Ifma>,
-    C: VecZnxToRef,
-{
-    let b = b.to_ref();
+) {
     let b_size = b.size();
-    let mut b_dft = poulpy_hal::layouts::VecZnxDftOwned::<NTT126Ifma>::alloc(module.n(), 1, b_size);
-    <Module<NTT126Ifma> as VecZnxDftApply<NTT126Ifma>>::vec_znx_dft_apply(module, 1, 0, &mut b_dft, 0, &b, b_col);
-    svp_apply_dft_to_dft(module, res, res_col, a, a_col, &b_dft, 0);
+    let mut b_dft_owned = module.vec_znx_dft_alloc(1, b_size);
+    let mut b_dft = b_dft_owned.to_backend_mut();
+    <Module<NTT126Ifma> as VecZnxDftApply<NTT126Ifma>>::vec_znx_dft_apply(module, 1, 0, &mut b_dft, 0, b, b_col);
+    let b_dft_ref = b_dft.reborrow_backend_ref();
+    svp_apply_dft_to_dft(module, res, res_col, a, a_col, &b_dft_ref, 0);
 }
 
 /// Pointwise DFT-domain multiply: `res = a ⊙ b`.
-pub(crate) fn svp_apply_dft_to_dft<R, A, C>(
+pub(crate) fn svp_apply_dft_to_dft(
     module: &Module<NTT126Ifma>,
-    res: &mut R,
+    res: &mut VecZnxDftBackendMut<'_, NTT126Ifma>,
     res_col: usize,
-    a: &A,
+    a: &SvpPPolBackendRef<'_, NTT126Ifma>,
     a_col: usize,
-    b: &C,
+    b: &VecZnxDftBackendRef<'_, NTT126Ifma>,
     b_col: usize,
-) where
-    R: VecZnxDftToMut<NTT126Ifma>,
-    A: SvpPPolToRef<NTT126Ifma>,
-    C: VecZnxDftToRef<NTT126Ifma>,
-{
-    let mut res: VecZnxDft<&mut [u8], NTT126Ifma> = res.to_mut();
-    let a: SvpPPol<&[u8], NTT126Ifma> = a.to_ref();
-    let b: VecZnxDft<&[u8], NTT126Ifma> = b.to_ref();
-
+) {
     let meta = &handle(module).meta_bbc;
     let n = res.n();
     let res_size = res.size();
@@ -103,14 +92,13 @@ pub(crate) fn svp_apply_dft_to_dft<R, A, C>(
 }
 
 /// Pointwise DFT-domain multiply in place: `res = a ⊙ res`.
-pub(crate) fn svp_apply_dft_to_dft_assign<R, A>(module: &Module<NTT126Ifma>, res: &mut R, res_col: usize, a: &A, a_col: usize)
-where
-    R: VecZnxDftToMut<NTT126Ifma>,
-    A: SvpPPolToRef<NTT126Ifma>,
-{
-    let mut res: VecZnxDft<&mut [u8], NTT126Ifma> = res.to_mut();
-    let a: SvpPPol<&[u8], NTT126Ifma> = a.to_ref();
-
+pub(crate) fn svp_apply_dft_to_dft_assign(
+    module: &Module<NTT126Ifma>,
+    res: &mut VecZnxDftBackendMut<'_, NTT126Ifma>,
+    res_col: usize,
+    a: &SvpPPolBackendRef<'_, NTT126Ifma>,
+    a_col: usize,
+) {
     let meta = &handle(module).meta_bbc;
     let n = res.n();
     let res_size = res.size();

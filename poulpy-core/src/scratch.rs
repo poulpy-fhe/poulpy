@@ -1,96 +1,81 @@
 use poulpy_hal::{
-    api::{ModuleN, ScratchAvailable, ScratchFromBytes, ScratchTakeBasic, SvpPPolBytesOf, VecZnxDftBytesOf, VmpPMatBytesOf},
-    layouts::{Backend, Scratch},
+    api::{ModuleN, ScratchArenaTakeBasic, SvpPPolBytesOf, VmpPMatBytesOf},
+    layouts::{Backend, ScratchArena},
 };
 
 use crate::{
     dist::Distribution,
     layouts::{
-        Degree, GGLWE, GGLWEInfos, GGLWELayout, GGSW, GGSWInfos, GLWE, GLWEAutomorphismKey, GLWEInfos, GLWEPlaintext,
-        GLWEPrepared, GLWEPublicKey, GLWESecret, GLWESecretTensor, GLWESwitchingKey, GLWETensor, GLWETensorKey, LWE, LWEInfos,
-        LWEPlaintext, Rank,
-        prepared::{
-            GGLWEPrepared, GGSWPrepared, GLWEAutomorphismKeyPrepared, GLWEPublicKeyPrepared, GLWESecretPrepared,
-            GLWESwitchingKeyPrepared, GLWETensorKeyPrepared,
-        },
+        Degree, GGLWE, GGLWEInfos, GGLWEPreparedViewMut, GGLWEViewMut, GGSW, GGSWInfos, GGSWPreparedViewMut, GGSWViewMut, GLWE,
+        GLWEInfos, GLWEPlaintext, GLWEPlaintextViewMut, GLWESecret, GLWESecretPreparedViewMut, GLWESecretTensor,
+        GLWESecretTensorViewMut, GLWESecretViewMut, GLWETensor, GLWETensorViewMut, GLWEViewMut, LWE, LWEInfos, LWEPlaintext,
+        LWEPlaintextViewMut, LWEViewMut, Rank,
+        prepared::{GGLWEPrepared, GGSWPrepared, GLWESecretPrepared},
     },
 };
 
-/// Arena-style scratch allocator for ciphertext and key temporaries.
+/// Backend-native arena allocation for core ciphertext/key layouts.
 ///
-/// Extends [`ScratchTakeBasic`] (which provides raw polynomial buffer
-/// allocation) with typed `take_*` methods that return fully formed
-/// ciphertext, key, and secret structs backed by scratch memory.
-///
-/// Each `take_*` method carves a sub-region from the scratch buffer
-/// and returns the typed object together with the remaining scratch.
-/// This enables zero-heap-allocation operation pipelines:
-/// callers pre-compute the required byte count with the companion
-/// `*_tmp_bytes` methods, allocate a single [`poulpy_hal::layouts::ScratchOwned`],
-/// and pass `&mut Scratch<B>` into every operation.
-///
-/// # Panics
-///
-/// Every `take_*` method panics if the remaining scratch space is
-/// insufficient.
-pub trait ScratchTakeCore<B: Backend>
-where
-    Self: ScratchTakeBasic + ScratchAvailable + ScratchFromBytes<B>,
-{
+/// Returns backend-native borrows (`B::BufMut<'a>`) carved from a [`ScratchArena`].
+pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + Sized {
     /// Allocates an [`LWE`] ciphertext from scratch space.
-    fn take_lwe<A>(&mut self, infos: &A) -> (LWE<&mut [u8]>, &mut Self)
+    fn take_lwe_scratch<A>(self, infos: &A) -> (LWEViewMut<'a, B>, Self)
     where
+        B: 'a,
         A: LWEInfos,
     {
-        let (data, scratch) = self.take_vec_znx(infos.n().into(), 1, infos.size());
+        let (data, scratch) = self.take_vec_znx_scratch(infos.n().into(), 1, infos.size());
         (
-            LWE {
+            LWEViewMut::from_inner(LWE {
                 base2k: infos.base2k(),
-                data,
-            },
+                data: data.into_inner(),
+            }),
             scratch,
         )
     }
 
     /// Allocates an [`LWEPlaintext`] from scratch space.
-    fn take_lwe_plaintext<A>(&mut self, infos: &A) -> (LWEPlaintext<&mut [u8]>, &mut Self)
+    fn take_lwe_plaintext_scratch<A>(self, infos: &A) -> (LWEPlaintextViewMut<'a, B>, Self)
     where
+        B: 'a,
         A: LWEInfos,
     {
-        let (data, scratch) = self.take_vec_znx(1, 1, infos.size());
+        let (data, scratch) = self.take_vec_znx_scratch(1, 1, infos.size());
         (
-            LWEPlaintext {
+            LWEPlaintextViewMut::from_inner(LWEPlaintext {
                 base2k: infos.base2k(),
-                data,
-            },
+                data: data.into_inner(),
+            }),
             scratch,
         )
     }
 
     /// Allocates a [`GLWE`] ciphertext from scratch space.
-    fn take_glwe<A>(&mut self, infos: &A) -> (GLWE<&mut [u8]>, &mut Self)
+    fn take_glwe_scratch<A>(self, infos: &A) -> (GLWEViewMut<'a, B>, Self)
     where
+        B: 'a,
         A: GLWEInfos,
     {
-        let (data, scratch) = self.take_vec_znx(infos.n().into(), (infos.rank() + 1).into(), infos.size());
+        let (data, scratch) = self.take_vec_znx_scratch(infos.n().into(), (infos.rank() + 1).into(), infos.size());
         (
-            GLWE {
+            GLWEViewMut::from_inner(GLWE {
                 base2k: infos.base2k(),
-                data,
-            },
+                data: data.into_inner(),
+            }),
             scratch,
         )
     }
 
     /// Allocates a `Vec` of `size` [`GLWE`] ciphertexts from scratch space.
-    fn take_glwe_slice<A>(&mut self, size: usize, infos: &A) -> (Vec<GLWE<&mut [u8]>>, &mut Self)
+    fn take_glwe_slice_scratch<A>(self, size: usize, infos: &A) -> (Vec<GLWEViewMut<'a, B>>, Self)
     where
+        B: 'a,
         A: GLWEInfos,
     {
-        let mut scratch: &mut Self = self;
-        let mut cts: Vec<GLWE<&mut [u8]>> = Vec::with_capacity(size);
+        let mut scratch: Self = self;
+        let mut cts: Vec<GLWEViewMut<'a, B>> = Vec::with_capacity(size);
         for _ in 0..size {
-            let (ct, new_scratch) = scratch.take_glwe(infos);
+            let (ct, new_scratch) = scratch.take_glwe_scratch(infos);
             scratch = new_scratch;
             cts.push(ct);
         }
@@ -98,44 +83,94 @@ where
     }
 
     /// Allocates a [`GLWETensor`] from scratch space.
-    fn take_glwe_tensor<A>(&mut self, infos: &A) -> (GLWETensor<&mut [u8]>, &mut Self)
+    fn take_glwe_tensor_scratch<A>(self, infos: &A) -> (GLWETensorViewMut<'a, B>, Self)
     where
+        B: 'a,
         A: GLWEInfos,
     {
         let cols: usize = infos.rank().as_usize() + 1;
         let pairs: usize = (((cols + 1) * cols) >> 1).max(1);
-        let (data, scratch) = self.take_vec_znx(infos.n().into(), pairs, infos.size());
+        let (data, scratch) = self.take_vec_znx_scratch(infos.n().into(), pairs, infos.size());
         (
-            GLWETensor {
+            GLWETensorViewMut::from_inner(GLWETensor {
                 base2k: infos.base2k(),
                 rank: infos.rank(),
-                data,
-            },
+                data: data.into_inner(),
+            }),
             scratch,
         )
     }
 
     /// Allocates a [`GLWEPlaintext`] from scratch space.
-    fn take_glwe_plaintext<A>(&mut self, infos: &A) -> (GLWEPlaintext<&mut [u8]>, &mut Self)
+    fn take_glwe_plaintext_scratch<A>(self, infos: &A) -> (GLWEPlaintextViewMut<'a, B>, Self)
     where
+        B: 'a,
         A: GLWEInfos,
     {
-        let (data, scratch) = self.take_vec_znx(infos.n().into(), 1, infos.size());
+        let (data, scratch) = self.take_vec_znx_scratch(infos.n().into(), 1, infos.size());
         (
-            GLWEPlaintext {
+            GLWEPlaintextViewMut::from_inner(GLWEPlaintext {
                 base2k: infos.base2k(),
-                data,
-            },
+                data: data.into_inner(),
+            }),
+            scratch,
+        )
+    }
+
+    /// Allocates a [`GLWESecretPrepared`] (DFT-domain secret key) from scratch space.
+    fn take_glwe_secret_prepared_scratch<M>(self, module: &M, rank: Rank) -> (GLWESecretPreparedViewMut<'a, B>, Self)
+    where
+        B: 'a,
+        M: ModuleN + SvpPPolBytesOf,
+    {
+        let (data, scratch) = self.take_svp_ppol_scratch(module, rank.into());
+        (
+            GLWESecretPreparedViewMut::from_inner(GLWESecretPrepared {
+                data: data.into_inner(),
+                dist: Distribution::NONE,
+            }),
+            scratch,
+        )
+    }
+
+    /// Allocates a [`GLWESecret`] from scratch space.
+    fn take_glwe_secret_scratch(self, n: Degree, rank: Rank) -> (GLWESecretViewMut<'a, B>, Self)
+    where
+        B: 'a,
+    {
+        let (data, scratch) = self.take_scalar_znx_scratch(n.into(), rank.into());
+        (
+            GLWESecretViewMut::from_inner(GLWESecret {
+                data: data.into_inner(),
+                dist: Distribution::NONE,
+            }),
+            scratch,
+        )
+    }
+
+    /// Allocates a [`GLWESecretTensor`] from scratch space.
+    fn take_glwe_secret_tensor_scratch(self, n: Degree, rank: Rank) -> (GLWESecretTensorViewMut<'a, B>, Self)
+    where
+        B: 'a,
+    {
+        let (data, scratch) = self.take_scalar_znx_scratch(n.into(), GLWESecretTensor::pairs(rank.into()));
+        (
+            GLWESecretTensorViewMut::from_inner(GLWESecretTensor {
+                data: data.into_inner(),
+                rank,
+                dist: Distribution::NONE,
+            }),
             scratch,
         )
     }
 
     /// Allocates a [`GGLWE`] ciphertext from scratch space.
-    fn take_gglwe<A>(&mut self, infos: &A) -> (GGLWE<&mut [u8]>, &mut Self)
+    fn take_gglwe_scratch<A>(self, infos: &A) -> (GGLWEViewMut<'a, B>, Self)
     where
+        B: 'a,
         A: GGLWEInfos,
     {
-        let (data, scratch) = self.take_mat_znx(
+        let (data, scratch) = self.take_mat_znx_scratch(
             infos.n().into(),
             infos.dnum().0.div_ceil(infos.dsize().0) as usize,
             infos.rank_in().into(),
@@ -143,23 +178,24 @@ where
             infos.size(),
         );
         (
-            GGLWE {
+            GGLWEViewMut::from_inner(GGLWE {
                 base2k: infos.base2k(),
                 dsize: infos.dsize(),
-                data,
-            },
+                data: data.into_inner(),
+            }),
             scratch,
         )
     }
 
     /// Allocates a [`GGLWEPrepared`] (DFT-domain GGLWE) from scratch space.
-    fn take_gglwe_prepared<A, M>(&mut self, module: &M, infos: &A) -> (GGLWEPrepared<&mut [u8], B>, &mut Self)
+    fn take_gglwe_prepared_scratch<A, M>(self, module: &M, infos: &A) -> (GGLWEPreparedViewMut<'a, B>, Self)
     where
+        B: 'a,
         A: GGLWEInfos,
         M: ModuleN + VmpPMatBytesOf,
     {
         assert_eq!(module.n() as u32, infos.n());
-        let (data, scratch) = self.take_vmp_pmat(
+        let (data, scratch) = self.take_vmp_pmat_scratch(
             module,
             infos.dnum().into(),
             infos.rank_in().into(),
@@ -167,21 +203,22 @@ where
             infos.size(),
         );
         (
-            GGLWEPrepared {
+            GGLWEPreparedViewMut::from_inner(GGLWEPrepared {
                 base2k: infos.base2k(),
                 dsize: infos.dsize(),
-                data,
-            },
+                data: data.into_inner(),
+            }),
             scratch,
         )
     }
 
     /// Allocates a [`GGSW`] ciphertext from scratch space.
-    fn take_ggsw<A>(&mut self, infos: &A) -> (GGSW<&mut [u8]>, &mut Self)
+    fn take_ggsw_scratch<A>(self, infos: &A) -> (GGSWViewMut<'a, B>, Self)
     where
+        B: 'a,
         A: GGSWInfos,
     {
-        let (data, scratch) = self.take_mat_znx(
+        let (data, scratch) = self.take_mat_znx_scratch(
             infos.n().into(),
             infos.dnum().into(),
             (infos.rank() + 1).into(),
@@ -189,23 +226,24 @@ where
             infos.size(),
         );
         (
-            GGSW {
+            GGSWViewMut::from_inner(GGSW {
                 base2k: infos.base2k(),
                 dsize: infos.dsize(),
-                data,
-            },
+                data: data.into_inner(),
+            }),
             scratch,
         )
     }
 
     /// Allocates a [`GGSWPrepared`] (DFT-domain GGSW) from scratch space.
-    fn take_ggsw_prepared<A, M>(&mut self, module: &M, infos: &A) -> (GGSWPrepared<&mut [u8], B>, &mut Self)
+    fn take_ggsw_prepared_scratch<A, M>(self, module: &M, infos: &A) -> (GGSWPreparedViewMut<'a, B>, Self)
     where
+        B: 'a,
         A: GGSWInfos,
         M: ModuleN + VmpPMatBytesOf,
     {
         assert_eq!(module.n() as u32, infos.n());
-        let (data, scratch) = self.take_vmp_pmat(
+        let (data, scratch) = self.take_vmp_pmat_scratch(
             module,
             infos.dnum().into(),
             (infos.rank() + 1).into(),
@@ -213,246 +251,14 @@ where
             infos.size(),
         );
         (
-            GGSWPrepared {
+            GGSWPreparedViewMut::from_inner(GGSWPrepared {
                 base2k: infos.base2k(),
                 dsize: infos.dsize(),
-                data,
-            },
+                data: data.into_inner(),
+            }),
             scratch,
         )
-    }
-
-    /// Allocates a `Vec` of `size` [`GGSW`] ciphertexts from scratch space.
-    fn take_ggsw_slice<A>(&mut self, size: usize, infos: &A) -> (Vec<GGSW<&mut [u8]>>, &mut Self)
-    where
-        A: GGSWInfos,
-    {
-        let mut scratch: &mut Self = self;
-        let mut cts: Vec<GGSW<&mut [u8]>> = Vec::with_capacity(size);
-        for _ in 0..size {
-            let (ct, new_scratch) = scratch.take_ggsw(infos);
-            scratch = new_scratch;
-            cts.push(ct)
-        }
-        (cts, scratch)
-    }
-
-    /// Allocates a `Vec` of `size` [`GGSWPrepared`] ciphertexts from scratch space.
-    fn take_ggsw_prepared_slice<A, M>(
-        &mut self,
-        module: &M,
-        size: usize,
-        infos: &A,
-    ) -> (Vec<GGSWPrepared<&mut [u8], B>>, &mut Self)
-    where
-        A: GGSWInfos,
-        M: ModuleN + VmpPMatBytesOf,
-    {
-        let mut scratch: &mut Self = self;
-        let mut cts: Vec<GGSWPrepared<&mut [u8], B>> = Vec::with_capacity(size);
-        for _ in 0..size {
-            let (ct, new_scratch) = scratch.take_ggsw_prepared(module, infos);
-            scratch = new_scratch;
-            cts.push(ct)
-        }
-        (cts, scratch)
-    }
-
-    /// Allocates a [`GLWEPublicKey`] from scratch space.
-    fn take_glwe_public_key<A>(&mut self, infos: &A) -> (GLWEPublicKey<&mut [u8]>, &mut Self)
-    where
-        A: GLWEInfos,
-    {
-        let (data, scratch) = self.take_glwe(infos);
-        (
-            GLWEPublicKey {
-                dist: Distribution::NONE,
-                key: data,
-            },
-            scratch,
-        )
-    }
-
-    /// Allocates a [`GLWEPublicKeyPrepared`] (DFT-domain public key) from scratch space.
-    fn take_glwe_public_key_prepared<A, M>(&mut self, module: &M, infos: &A) -> (GLWEPublicKeyPrepared<&mut [u8], B>, &mut Self)
-    where
-        A: GLWEInfos,
-        M: ModuleN + VecZnxDftBytesOf,
-    {
-        let (data, scratch) = self.take_glwe_prepared(module, infos);
-        (
-            GLWEPublicKeyPrepared {
-                dist: Distribution::NONE,
-                key: data,
-            },
-            scratch,
-        )
-    }
-
-    /// Allocates a [`GLWEPrepared`] (DFT-domain GLWE) from scratch space.
-    fn take_glwe_prepared<A, M>(&mut self, module: &M, infos: &A) -> (GLWEPrepared<&mut [u8], B>, &mut Self)
-    where
-        A: GLWEInfos,
-        M: ModuleN + VecZnxDftBytesOf,
-    {
-        assert_eq!(module.n() as u32, infos.n());
-        let (data, scratch) = self.take_vec_znx_dft(module, (infos.rank() + 1).into(), infos.size());
-        (
-            GLWEPrepared {
-                base2k: infos.base2k(),
-                data,
-            },
-            scratch,
-        )
-    }
-
-    /// Allocates a [`GLWESecret`] from scratch space.
-    fn take_glwe_secret(&mut self, n: Degree, rank: Rank) -> (GLWESecret<&mut [u8]>, &mut Self) {
-        let (data, scratch) = self.take_scalar_znx(n.into(), rank.into());
-        (
-            GLWESecret {
-                data,
-                dist: Distribution::NONE,
-            },
-            scratch,
-        )
-    }
-
-    /// Allocates a [`GLWESecretTensor`] from scratch space.
-    fn take_glwe_secret_tensor(&mut self, n: Degree, rank: Rank) -> (GLWESecretTensor<&mut [u8]>, &mut Self) {
-        let (data, scratch) = self.take_scalar_znx(n.into(), GLWESecretTensor::pairs(rank.into()));
-        (
-            GLWESecretTensor {
-                data,
-                rank,
-                dist: Distribution::NONE,
-            },
-            scratch,
-        )
-    }
-
-    /// Allocates a [`GLWESecretPrepared`] (DFT-domain secret key) from scratch space.
-    fn take_glwe_secret_prepared<M>(&mut self, module: &M, rank: Rank) -> (GLWESecretPrepared<&mut [u8], B>, &mut Self)
-    where
-        M: ModuleN + SvpPPolBytesOf,
-    {
-        let (data, scratch) = self.take_svp_ppol(module, rank.into());
-        (
-            GLWESecretPrepared {
-                data,
-                dist: Distribution::NONE,
-            },
-            scratch,
-        )
-    }
-
-    /// Allocates a [`GLWESwitchingKey`] from scratch space.
-    fn take_glwe_switching_key<A>(&mut self, infos: &A) -> (GLWESwitchingKey<&mut [u8]>, &mut Self)
-    where
-        A: GGLWEInfos,
-    {
-        let (data, scratch) = self.take_gglwe(infos);
-        (
-            GLWESwitchingKey {
-                key: data,
-                input_degree: Degree(0),
-                output_degree: Degree(0),
-            },
-            scratch,
-        )
-    }
-
-    /// Allocates a [`GLWESwitchingKeyPrepared`] (DFT-domain switching key) from scratch space.
-    fn take_glwe_switching_key_prepared<A, M>(
-        &mut self,
-        module: &M,
-        infos: &A,
-    ) -> (GLWESwitchingKeyPrepared<&mut [u8], B>, &mut Self)
-    where
-        A: GGLWEInfos,
-        M: ModuleN + VmpPMatBytesOf,
-    {
-        assert_eq!(module.n() as u32, infos.n());
-        let (data, scratch) = self.take_gglwe_prepared(module, infos);
-        (
-            GLWESwitchingKeyPrepared {
-                key: data,
-                input_degree: Degree(0),
-                output_degree: Degree(0),
-            },
-            scratch,
-        )
-    }
-
-    /// Allocates a [`GLWEAutomorphismKey`] from scratch space.
-    fn take_glwe_automorphism_key<A>(&mut self, infos: &A) -> (GLWEAutomorphismKey<&mut [u8]>, &mut Self)
-    where
-        A: GGLWEInfos,
-    {
-        let (data, scratch) = self.take_gglwe(infos);
-        (GLWEAutomorphismKey { key: data, p: 0 }, scratch)
-    }
-
-    /// Allocates a [`GLWEAutomorphismKeyPrepared`] (DFT-domain automorphism key) from scratch space.
-    fn take_glwe_automorphism_key_prepared<A, M>(
-        &mut self,
-        module: &M,
-        infos: &A,
-    ) -> (GLWEAutomorphismKeyPrepared<&mut [u8], B>, &mut Self)
-    where
-        A: GGLWEInfos,
-        M: ModuleN + VmpPMatBytesOf,
-    {
-        assert_eq!(module.n() as u32, infos.n());
-        let (data, scratch) = self.take_gglwe_prepared(module, infos);
-        (GLWEAutomorphismKeyPrepared { key: data, p: 0 }, scratch)
-    }
-
-    /// Allocates a [`GLWETensorKey`] from scratch space.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `rank_in != rank_out` (asymmetric tensor keys are not supported).
-    fn take_glwe_tensor_key<A, M>(&mut self, infos: &A) -> (GLWETensorKey<&mut [u8]>, &mut Self)
-    where
-        A: GGLWEInfos,
-    {
-        assert_eq!(
-            infos.rank_in(),
-            infos.rank_out(),
-            "rank_in != rank_out is not supported for GLWETensorKey"
-        );
-
-        let pairs: u32 = (((infos.rank_out().0 + 1) * infos.rank_out().0) >> 1).max(1);
-        let mut ksk_infos: GGLWELayout = infos.gglwe_layout();
-        ksk_infos.rank_in = Rank(pairs);
-        let (data, scratch) = self.take_gglwe(&ksk_infos);
-        (GLWETensorKey(data), scratch)
-    }
-
-    /// Allocates a [`GLWETensorKeyPrepared`] (DFT-domain tensor key) from scratch space.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `rank_in != rank_out` (asymmetric tensor keys are not supported).
-    fn take_glwe_tensor_key_prepared<A, M>(&mut self, module: &M, infos: &A) -> (GLWETensorKeyPrepared<&mut [u8], B>, &mut Self)
-    where
-        A: GGLWEInfos,
-        M: ModuleN + VmpPMatBytesOf,
-    {
-        assert_eq!(module.n() as u32, infos.n());
-        assert_eq!(
-            infos.rank_in(),
-            infos.rank_out(),
-            "rank_in != rank_out is not supported for GGLWETensorKeyPrepared"
-        );
-
-        let pairs: u32 = (((infos.rank_out().0 + 1) * infos.rank_out().0) >> 1).max(1);
-        let mut ksk_infos: GGLWELayout = infos.gglwe_layout();
-        ksk_infos.rank_in = Rank(pairs);
-        let (data, scratch) = self.take_gglwe_prepared(module, &ksk_infos);
-        (GLWETensorKeyPrepared(data), scratch)
     }
 }
 
-impl<B: Backend> ScratchTakeCore<B> for Scratch<B> where Self: ScratchTakeBasic + ScratchAvailable + ScratchFromBytes<B> {}
+impl<'a, B: Backend> ScratchArenaTakeCore<'a, B> for ScratchArena<'a, B> {}

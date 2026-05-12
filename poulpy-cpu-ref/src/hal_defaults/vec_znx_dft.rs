@@ -12,8 +12,7 @@ use crate::reference::{
             vec_znx_dft_copy as fft64_vec_znx_dft_copy, vec_znx_dft_sub as fft64_vec_znx_dft_sub,
             vec_znx_dft_sub_assign as fft64_vec_znx_dft_sub_assign,
             vec_znx_dft_sub_negate_assign as fft64_vec_znx_dft_sub_negate_assign, vec_znx_dft_zero as fft64_vec_znx_dft_zero,
-            vec_znx_idft_apply as fft64_vec_znx_idft_apply, vec_znx_idft_apply_consume as fft64_vec_znx_idft_apply_consume,
-            vec_znx_idft_apply_tmpa as fft64_vec_znx_idft_apply_tmpa,
+            vec_znx_idft_apply as fft64_vec_znx_idft_apply, vec_znx_idft_apply_tmpa as fft64_vec_znx_idft_apply_tmpa,
         },
     },
     ntt120::{
@@ -32,7 +31,6 @@ use crate::reference::{
             ntt120_vec_znx_dft_sub_negate_assign as ntt120_default_vec_znx_dft_sub_negate_assign,
             ntt120_vec_znx_dft_zero as ntt120_default_vec_znx_dft_zero,
             ntt120_vec_znx_idft_apply as ntt120_default_vec_znx_idft_apply,
-            ntt120_vec_znx_idft_apply_consume as ntt120_default_vec_znx_idft_apply_consume,
             ntt120_vec_znx_idft_apply_tmp_bytes as ntt120_default_vec_znx_idft_apply_tmp_bytes,
             ntt120_vec_znx_idft_apply_tmpa as ntt120_default_vec_znx_idft_apply_tmpa,
         },
@@ -40,27 +38,49 @@ use crate::reference::{
     znx::ZnxZero,
 };
 use poulpy_hal::{
-    api::TakeSlice,
+    api::HostBufMut,
     layouts::{
-        Backend, Data, Module, Scratch, VecZnxBig, VecZnxBigToMut, VecZnxDft, VecZnxDftToMut, VecZnxDftToRef, VecZnxToRef,
+        Backend, HostDataMut, HostDataRef, Module, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
+        VecZnxDftBackendRef,
     },
 };
 
+#[inline]
+fn take_host_typed<'a, BE, T>(arena: ScratchArena<'a, BE>, len: usize) -> (&'a mut [T], ScratchArena<'a, BE>)
+where
+    BE: Backend + 'a,
+    BE::BufMut<'a>: HostBufMut<'a>,
+    T: Copy,
+{
+    debug_assert!(
+        BE::SCRATCH_ALIGN.is_multiple_of(std::mem::align_of::<T>()),
+        "B::SCRATCH_ALIGN ({}) must be a multiple of align_of::<T>() ({})",
+        BE::SCRATCH_ALIGN,
+        std::mem::align_of::<T>()
+    );
+    let (buf, arena) = arena.take_region(len * std::mem::size_of::<T>());
+    let bytes: &'a mut [u8] = buf.into_bytes();
+    let slice = unsafe { std::slice::from_raw_parts_mut(bytes.as_mut_ptr() as *mut T, len) };
+    (slice, arena)
+}
+
 #[doc(hidden)]
-pub trait FFT64VecZnxDftDefaults<BE: Backend>: Backend {
-    fn vec_znx_dft_apply_default<R, A>(
+pub trait FFT64VecZnxDftDefault<BE: Backend>: Backend
+where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+{
+    fn vec_znx_dft_apply_default(
         module: &Module<BE>,
         step: usize,
         offset: usize,
-        res: &mut R,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
         res_col: usize,
-        a: &A,
+        a: &VecZnxBackendRef<'_, BE>,
         a_col: usize,
     ) where
         Module<BE>: FFTModuleHandle<f64>,
-        BE: Backend<ScalarPrep = f64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64>,
-        R: VecZnxDftToMut<BE>,
-        A: VecZnxToRef,
+        BE: Backend<ScalarPrep = f64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
+        for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
     {
         fft64_vec_znx_dft_apply(module.get_fft_table(), step, offset, res, res_col, a, a_col);
     }
@@ -72,161 +92,172 @@ pub trait FFT64VecZnxDftDefaults<BE: Backend>: Backend {
         0
     }
 
-    fn vec_znx_idft_apply_default<R, A>(
+    fn vec_znx_idft_apply_default<'s>(
         module: &Module<BE>,
-        res: &mut R,
+        res: &mut VecZnxBigBackendMut<'_, BE>,
         res_col: usize,
-        a: &A,
+        a: &VecZnxDftBackendRef<'_, BE>,
         a_col: usize,
-        _scratch: &mut Scratch<BE>,
+        scratch: &'s mut ScratchArena<'s, BE>,
     ) where
         Module<BE>: FFTModuleHandle<f64>,
         BE: Backend<ScalarPrep = f64, ScalarBig = i64> + ReimArith + ReimFFTExecute<ReimIFFTTable<f64>, f64> + ZnxZero,
-        R: VecZnxBigToMut<BE>,
-        A: VecZnxDftToRef<BE>,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
+        let _ = scratch;
         fft64_vec_znx_idft_apply(module.get_ifft_table(), res, res_col, a, a_col);
     }
 
-    fn vec_znx_idft_apply_tmpa_default<R, A>(module: &Module<BE>, res: &mut R, res_col: usize, a: &mut A, a_col: usize)
-    where
+    fn vec_znx_idft_apply_tmpa_default(
+        module: &Module<BE>,
+        res: &mut VecZnxBigBackendMut<'_, BE>,
+        res_col: usize,
+        a: &mut VecZnxDftBackendMut<'_, BE>,
+        a_col: usize,
+    ) where
         Module<BE>: FFTModuleHandle<f64>,
         BE: Backend<ScalarPrep = f64, ScalarBig = i64> + ReimArith + ReimFFTExecute<ReimIFFTTable<f64>, f64> + ZnxZero,
-        R: VecZnxBigToMut<BE>,
-        A: VecZnxDftToMut<BE>,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     {
         fft64_vec_znx_idft_apply_tmpa(module.get_ifft_table(), res, res_col, a, a_col);
     }
 
-    fn vec_znx_idft_apply_consume_default<D: Data>(module: &Module<BE>, a: VecZnxDft<D, BE>) -> VecZnxBig<D, BE>
-    where
-        Module<BE>: FFTModuleHandle<f64>,
-        BE: Backend<ScalarPrep = f64, ScalarBig = i64> + ReimArith + ReimFFTExecute<ReimIFFTTable<f64>, f64>,
-        VecZnxDft<D, BE>: VecZnxDftToMut<BE>,
-    {
-        fft64_vec_znx_idft_apply_consume(module.get_ifft_table(), a)
-    }
-
-    fn vec_znx_dft_add_into_default<R, A, D>(
+    fn vec_znx_dft_add_into_default(
         _module: &Module<BE>,
-        res: &mut R,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
         res_col: usize,
-        a: &A,
+        a: &VecZnxDftBackendRef<'_, BE>,
         a_col: usize,
-        b: &D,
+        b: &VecZnxDftBackendRef<'_, BE>,
         b_col: usize,
     ) where
         BE: Backend<ScalarPrep = f64> + ReimArith,
-        R: VecZnxDftToMut<BE>,
-        A: VecZnxDftToRef<BE>,
-        D: VecZnxDftToRef<BE>,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
         fft64_vec_znx_dft_add_into(res, res_col, a, a_col, b, b_col);
     }
 
-    fn vec_znx_dft_add_scaled_assign_default<R, A>(
+    fn vec_znx_dft_add_scaled_assign_default(
         _module: &Module<BE>,
-        res: &mut R,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
         res_col: usize,
-        a: &A,
+        a: &VecZnxDftBackendRef<'_, BE>,
         a_col: usize,
         a_scale: i64,
     ) where
         BE: Backend<ScalarPrep = f64> + ReimArith,
-        R: VecZnxDftToMut<BE>,
-        A: VecZnxDftToRef<BE>,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
         fft64_vec_znx_dft_add_scaled_assign(res, res_col, a, a_col, a_scale);
     }
 
-    fn vec_znx_dft_add_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
-    where
+    fn vec_znx_dft_add_assign_default(
+        _module: &Module<BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        a: &VecZnxDftBackendRef<'_, BE>,
+        a_col: usize,
+    ) where
         BE: Backend<ScalarPrep = f64> + ReimArith,
-        R: VecZnxDftToMut<BE>,
-        A: VecZnxDftToRef<BE>,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
         fft64_vec_znx_dft_add_assign(res, res_col, a, a_col);
     }
 
-    fn vec_znx_dft_sub_default<R, A, D>(
+    fn vec_znx_dft_sub_default(
         _module: &Module<BE>,
-        res: &mut R,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
         res_col: usize,
-        a: &A,
+        a: &VecZnxDftBackendRef<'_, BE>,
         a_col: usize,
-        b: &D,
+        b: &VecZnxDftBackendRef<'_, BE>,
         b_col: usize,
     ) where
         BE: Backend<ScalarPrep = f64> + ReimArith,
-        R: VecZnxDftToMut<BE>,
-        A: VecZnxDftToRef<BE>,
-        D: VecZnxDftToRef<BE>,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
         fft64_vec_znx_dft_sub(res, res_col, a, a_col, b, b_col);
     }
 
-    fn vec_znx_dft_sub_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
-    where
+    fn vec_znx_dft_sub_assign_default(
+        _module: &Module<BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        a: &VecZnxDftBackendRef<'_, BE>,
+        a_col: usize,
+    ) where
         BE: Backend<ScalarPrep = f64> + ReimArith,
-        R: VecZnxDftToMut<BE>,
-        A: VecZnxDftToRef<BE>,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
         fft64_vec_znx_dft_sub_assign(res, res_col, a, a_col);
     }
 
-    fn vec_znx_dft_sub_negate_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
-    where
+    fn vec_znx_dft_sub_negate_assign_default(
+        _module: &Module<BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        a: &VecZnxDftBackendRef<'_, BE>,
+        a_col: usize,
+    ) where
         BE: Backend<ScalarPrep = f64> + ReimArith,
-        R: VecZnxDftToMut<BE>,
-        A: VecZnxDftToRef<BE>,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
         fft64_vec_znx_dft_sub_negate_assign(res, res_col, a, a_col);
     }
 
-    fn vec_znx_dft_copy_default<R, A>(
+    fn vec_znx_dft_copy_default(
         _module: &Module<BE>,
         step: usize,
         offset: usize,
-        res: &mut R,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
         res_col: usize,
-        a: &A,
+        a: &VecZnxDftBackendRef<'_, BE>,
         a_col: usize,
     ) where
         BE: Backend<ScalarPrep = f64> + ReimArith,
-        R: VecZnxDftToMut<BE>,
-        A: VecZnxDftToRef<BE>,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
         fft64_vec_znx_dft_copy(step, offset, res, res_col, a, a_col);
     }
 
-    fn vec_znx_dft_zero_default<R>(_module: &Module<BE>, res: &mut R, res_col: usize)
+    fn vec_znx_dft_zero_default(_module: &Module<BE>, res: &mut VecZnxDftBackendMut<'_, BE>, res_col: usize)
     where
         BE: Backend<ScalarPrep = f64> + ReimArith,
-        R: VecZnxDftToMut<BE>,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     {
         fft64_vec_znx_dft_zero(res, res_col);
     }
 }
 
-impl<BE: Backend> FFT64VecZnxDftDefaults<BE> for BE {}
+impl<BE: Backend> FFT64VecZnxDftDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
 
 #[doc(hidden)]
-pub trait NTT120VecZnxDftDefaults<BE: Backend>: Backend {
-    fn vec_znx_dft_apply_default<R, A>(
+pub trait NTT120VecZnxDftDefault<BE: Backend>: Backend
+where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+{
+    fn vec_znx_dft_apply_default(
         module: &Module<BE>,
         step: usize,
         offset: usize,
-        res: &mut R,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
         res_col: usize,
-        a: &A,
+        a: &VecZnxBackendRef<'_, BE>,
         a_col: usize,
     ) where
         Module<BE>: NttModuleHandle,
-        BE: Backend<ScalarPrep = Q120bScalar> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttZero,
-        R: VecZnxDftToMut<BE>,
-        A: VecZnxToRef,
+        BE: Backend<ScalarPrep = Q120bScalar> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttZero + 'static,
+        for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
     {
-        ntt120_default_vec_znx_dft_apply(module, step, offset, res, res_col, a, a_col);
+        ntt120_default_vec_znx_dft_apply::<BE>(module, step, offset, res, res_col, a, a_col);
     }
 
     fn vec_znx_idft_apply_tmp_bytes_default(module: &Module<BE>) -> usize
@@ -236,142 +267,153 @@ pub trait NTT120VecZnxDftDefaults<BE: Backend>: Backend {
         ntt120_default_vec_znx_idft_apply_tmp_bytes(module.n())
     }
 
-    fn vec_znx_idft_apply_default<R, A>(
+    fn vec_znx_idft_apply_default<'s>(
         module: &Module<BE>,
-        res: &mut R,
+        res: &mut VecZnxBigBackendMut<'_, BE>,
         res_col: usize,
-        a: &A,
+        a: &VecZnxDftBackendRef<'_, BE>,
         a_col: usize,
-        scratch: &mut Scratch<BE>,
+        scratch: &'s mut ScratchArena<'s, BE>,
     ) where
         Module<BE>: NttModuleHandle,
         BE: Backend<ScalarPrep = Q120bScalar, ScalarBig = i128> + NttDFTExecute<NttTableInv<Primes30>> + NttToZnx128 + NttCopy,
-        Scratch<BE>: TakeSlice,
-        R: VecZnxBigToMut<BE>,
-        A: VecZnxDftToRef<BE>,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+        BE::BufMut<'s>: HostBufMut<'s>,
     {
-        let (tmp, _) = scratch.take_slice(ntt120_default_vec_znx_idft_apply_tmp_bytes(module.n()) / size_of::<u64>());
+        let (tmp, _) = take_host_typed::<BE, u64>(
+            scratch.borrow(),
+            ntt120_default_vec_znx_idft_apply_tmp_bytes(module.n()) / size_of::<u64>(),
+        );
         ntt120_default_vec_znx_idft_apply(module, res, res_col, a, a_col, tmp);
     }
 
-    fn vec_znx_idft_apply_tmpa_default<R, A>(module: &Module<BE>, res: &mut R, res_col: usize, a: &mut A, a_col: usize)
-    where
+    fn vec_znx_idft_apply_tmpa_default(
+        module: &Module<BE>,
+        res: &mut VecZnxBigBackendMut<'_, BE>,
+        res_col: usize,
+        a: &mut VecZnxDftBackendMut<'_, BE>,
+        a_col: usize,
+    ) where
         Module<BE>: NttModuleHandle,
         BE: Backend<ScalarPrep = Q120bScalar, ScalarBig = i128> + NttDFTExecute<NttTableInv<Primes30>> + NttToZnx128,
-        R: VecZnxBigToMut<BE>,
-        A: VecZnxDftToMut<BE>,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     {
         ntt120_default_vec_znx_idft_apply_tmpa(module, res, res_col, a, a_col);
     }
 
-    fn vec_znx_idft_apply_consume_default<D: Data>(module: &Module<BE>, a: VecZnxDft<D, BE>) -> VecZnxBig<D, BE>
-    where
-        Module<BE>: NttModuleHandle,
-        BE: Backend<ScalarPrep = Q120bScalar, ScalarBig = i128>,
-        VecZnxDft<D, BE>: VecZnxDftToMut<BE>,
-    {
-        ntt120_default_vec_znx_idft_apply_consume(module, a)
-    }
-
-    fn vec_znx_dft_add_into_default<R, A, D>(
+    fn vec_znx_dft_add_into_default(
         _module: &Module<BE>,
-        res: &mut R,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
         res_col: usize,
-        a: &A,
+        a: &VecZnxDftBackendRef<'_, BE>,
         a_col: usize,
-        b: &D,
+        b: &VecZnxDftBackendRef<'_, BE>,
         b_col: usize,
     ) where
         BE: Backend<ScalarPrep = Q120bScalar> + NttAdd + NttCopy + NttZero,
-        R: VecZnxDftToMut<BE>,
-        A: VecZnxDftToRef<BE>,
-        D: VecZnxDftToRef<BE>,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
         ntt120_default_vec_znx_dft_add_into(res, res_col, a, a_col, b, b_col);
     }
 
-    fn vec_znx_dft_add_scaled_assign_default<R, A>(
+    fn vec_znx_dft_add_scaled_assign_default(
         _module: &Module<BE>,
-        res: &mut R,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
         res_col: usize,
-        a: &A,
+        a: &VecZnxDftBackendRef<'_, BE>,
         a_col: usize,
         a_scale: i64,
     ) where
         BE: Backend<ScalarPrep = Q120bScalar> + NttAddAssign,
-        R: VecZnxDftToMut<BE>,
-        A: VecZnxDftToRef<BE>,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
         ntt120_default_vec_znx_dft_add_scaled_assign(res, res_col, a, a_col, a_scale);
     }
 
-    fn vec_znx_dft_add_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
-    where
+    fn vec_znx_dft_add_assign_default(
+        _module: &Module<BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        a: &VecZnxDftBackendRef<'_, BE>,
+        a_col: usize,
+    ) where
         BE: Backend<ScalarPrep = Q120bScalar> + NttAddAssign,
-        R: VecZnxDftToMut<BE>,
-        A: VecZnxDftToRef<BE>,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
         ntt120_default_vec_znx_dft_add_assign(res, res_col, a, a_col);
     }
 
-    fn vec_znx_dft_sub_default<R, A, D>(
+    fn vec_znx_dft_sub_default(
         _module: &Module<BE>,
-        res: &mut R,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
         res_col: usize,
-        a: &A,
+        a: &VecZnxDftBackendRef<'_, BE>,
         a_col: usize,
-        b: &D,
+        b: &VecZnxDftBackendRef<'_, BE>,
         b_col: usize,
     ) where
         BE: Backend<ScalarPrep = Q120bScalar> + NttSub + NttNegate + NttCopy + NttZero,
-        R: VecZnxDftToMut<BE>,
-        A: VecZnxDftToRef<BE>,
-        D: VecZnxDftToRef<BE>,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
         ntt120_default_vec_znx_dft_sub(res, res_col, a, a_col, b, b_col);
     }
 
-    fn vec_znx_dft_sub_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
-    where
+    fn vec_znx_dft_sub_assign_default(
+        _module: &Module<BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        a: &VecZnxDftBackendRef<'_, BE>,
+        a_col: usize,
+    ) where
         BE: Backend<ScalarPrep = Q120bScalar> + NttSubAssign,
-        R: VecZnxDftToMut<BE>,
-        A: VecZnxDftToRef<BE>,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
         ntt120_default_vec_znx_dft_sub_assign(res, res_col, a, a_col);
     }
 
-    fn vec_znx_dft_sub_negate_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
-    where
+    fn vec_znx_dft_sub_negate_assign_default(
+        _module: &Module<BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        a: &VecZnxDftBackendRef<'_, BE>,
+        a_col: usize,
+    ) where
         BE: Backend<ScalarPrep = Q120bScalar> + NttSubNegateAssign + NttNegateAssign,
-        R: VecZnxDftToMut<BE>,
-        A: VecZnxDftToRef<BE>,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
         ntt120_default_vec_znx_dft_sub_negate_assign(res, res_col, a, a_col);
     }
 
-    fn vec_znx_dft_copy_default<R, A>(
+    fn vec_znx_dft_copy_default(
         _module: &Module<BE>,
         step: usize,
         offset: usize,
-        res: &mut R,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
         res_col: usize,
-        a: &A,
+        a: &VecZnxDftBackendRef<'_, BE>,
         a_col: usize,
     ) where
         BE: Backend<ScalarPrep = Q120bScalar> + NttCopy + NttZero,
-        R: VecZnxDftToMut<BE>,
-        A: VecZnxDftToRef<BE>,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
         ntt120_default_vec_znx_dft_copy(step, offset, res, res_col, a, a_col);
     }
 
-    fn vec_znx_dft_zero_default<R>(_module: &Module<BE>, res: &mut R, res_col: usize)
+    fn vec_znx_dft_zero_default(_module: &Module<BE>, res: &mut VecZnxDftBackendMut<'_, BE>, res_col: usize)
     where
         BE: Backend<ScalarPrep = Q120bScalar> + NttZero,
-        R: VecZnxDftToMut<BE>,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     {
         ntt120_default_vec_znx_dft_zero(res, res_col);
     }
 }
 
-impl<BE: Backend> NTT120VecZnxDftDefaults<BE> for BE {}
+impl<BE: Backend> NTT120VecZnxDftDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}

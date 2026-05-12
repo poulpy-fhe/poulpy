@@ -1,6 +1,6 @@
 use poulpy_hal::{
-    api::{ScratchAvailable, SvpPPolAlloc, SvpPrepare},
-    layouts::{Backend, DataMut, DataRef, DeviceBuf, Module, ScalarZnx, Scratch, SvpPPolOwned},
+    api::{SvpPPolAlloc, SvpPrepare},
+    layouts::{Backend, HostDataMut, HostDataRef, Module, ScalarZnx, ScratchArena, SvpPPolOwned},
 };
 
 use std::marker::PhantomData;
@@ -18,9 +18,9 @@ use crate::blind_rotation::{
 impl<BE: Backend> BlindRotationKeyPreparedFactory<CGGI, BE> for Module<BE>
 where
     Self: GGSWPreparedFactory<BE> + SvpPPolAlloc<BE> + SvpPrepare<BE>,
-    Scratch<BE>: ScratchAvailable,
+    BE::OwnedBuf: HostDataMut + HostDataRef,
 {
-    fn blind_rotation_key_prepared_alloc<A>(&self, infos: &A) -> BlindRotationKeyPrepared<DeviceBuf<BE>, CGGI, BE>
+    fn blind_rotation_key_prepared_alloc<A>(&self, infos: &A) -> BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>
     where
         A: BlindRotationKeyInfos,
     {
@@ -41,15 +41,12 @@ where
         self.ggsw_prepare_tmp_bytes(infos)
     }
 
-    fn prepare_blind_rotation_key<DM, DR>(
+    fn prepare_blind_rotation_key(
         &self,
-        res: &mut BlindRotationKeyPrepared<DM, CGGI, BE>,
-        other: &BlindRotationKey<DR, CGGI>,
-        scratch: &mut Scratch<BE>,
-    ) where
-        DM: DataMut,
-        DR: DataRef,
-    {
+        res: &mut BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>,
+        other: &BlindRotationKey<BE::OwnedBuf, CGGI>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) {
         #[cfg(debug_assertions)]
         {
             assert_eq!(res.data.len(), other.keys.len());
@@ -58,14 +55,14 @@ where
         let n: usize = other.n().as_usize();
 
         for (a, b) in res.data.iter_mut().zip(other.keys.iter()) {
-            self.ggsw_prepare(a, b, scratch);
+            self.ggsw_prepare(a, b, &mut scratch.borrow());
         }
 
         res.dist = other.dist;
 
         if let Distribution::BinaryBlock(_) = other.dist {
             let mut x_pow_a: Vec<SvpPPolOwned<BE>> = Vec::with_capacity(n << 1);
-            let mut buf: ScalarZnx<Vec<u8>> = ScalarZnx::alloc(n, 1);
+            let mut buf: ScalarZnx<BE::OwnedBuf> = self.scalar_znx_alloc(1);
             (0..n << 1).for_each(|i| {
                 let mut res: SvpPPolOwned<BE> = self.svp_ppol_alloc(1);
                 set_xai_plus_y(self, i, 0, &mut res, &mut buf);

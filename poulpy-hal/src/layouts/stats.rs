@@ -1,6 +1,6 @@
 use dashu_float::{FBig, round::mode::HalfEven};
 
-use crate::layouts::{Backend, DataRef, VecZnx, VecZnxBig, VecZnxBigToRef, ZnxInfos};
+use crate::layouts::{Backend, HostDataRef, VecZnx, VecZnxBig};
 
 /// Summary statistics (max absolute value and standard deviation) of a
 /// polynomial vector's decoded floating-point coefficients.
@@ -21,7 +21,7 @@ impl Stats {
     }
 }
 
-impl<D: DataRef> VecZnx<D> {
+impl<D: HostDataRef> VecZnx<D> {
     /// Computes [`Stats`] (max absolute value and standard deviation) for
     /// column `col` by decoding all limbs into arbitrary-precision floats.
     pub fn stats(&self, base2k: usize, col: usize) -> Stats {
@@ -58,16 +58,11 @@ impl<D: DataRef> VecZnx<D> {
     }
 }
 
-impl<D: DataRef, B: Backend + Backend<ScalarBig = i64>> VecZnxBig<D, B> {
+impl<D: HostDataRef, B: Backend + Backend<ScalarBig = i64>> VecZnxBig<D, B> {
     pub fn stats(&self, base2k: usize, col: usize) -> Stats {
-        let self_ref: VecZnxBig<&[u8], B> = self.to_ref();
-        let znx: VecZnx<&[u8]> = VecZnx {
-            data: self_ref.data,
-            n: self_ref.n,
-            cols: self_ref.cols,
-            size: self_ref.size,
-            max_size: self_ref.max_size,
-        };
+        let shape = self.shape();
+        let znx: VecZnx<&[u8]> =
+            VecZnx::from_data_with_max_size(self.data.as_ref(), shape.n(), shape.cols(), shape.size(), shape.max_size());
         znx.stats(base2k, col)
     }
 }

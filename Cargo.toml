@@ -1,5 +1,6 @@
 [workspace]
 members = ["poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-cpu-avx512", "poulpy-bin-fhe", "poulpy-cpu-ref", "poulpy-bench", "poulpy-ckks"]
+default-members = ["poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-bin-fhe", "poulpy-cpu-ref", "poulpy-bench", "poulpy-ckks"]
 resolver = "3"
 
 [workspace.dependencies]

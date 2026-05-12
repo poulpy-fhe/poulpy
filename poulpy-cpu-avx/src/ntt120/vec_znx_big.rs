@@ -6,15 +6,14 @@
 use super::{
     NTT120Avx,
     vec_znx_big_avx::{
-        nfc_final_step_assign_avx2, nfc_final_step_assign_scalar, nfc_final_step_into_avx2, nfc_final_step_into_scalar,
-        nfc_middle_step_assign_avx2, nfc_middle_step_assign_scalar, nfc_middle_step_avx2, nfc_middle_step_into_avx2,
-        nfc_middle_step_into_scalar, nfc_middle_step_scalar, vi128_add_assign_avx2, vi128_add_avx2, vi128_add_small_assign_avx2,
+        nfc_final_step_assign_avx2, nfc_final_step_assign_scalar, nfc_middle_step_assign_avx2, nfc_middle_step_assign_scalar,
+        nfc_middle_step_avx2, nfc_middle_step_scalar, vi128_add_assign_avx2, vi128_add_avx2, vi128_add_small_assign_avx2,
         vi128_add_small_avx2, vi128_from_small_avx2, vi128_neg_from_small_avx2, vi128_negate_assign_avx2, vi128_negate_avx2,
         vi128_sub_assign_avx2, vi128_sub_avx2, vi128_sub_negate_assign_avx2, vi128_sub_small_a_avx2, vi128_sub_small_assign_avx2,
         vi128_sub_small_b_avx2, vi128_sub_small_negate_assign_avx2,
     },
 };
-use poulpy_cpu_ref::reference::ntt120::{I128BigOps, I128NormalizeOps, vec_znx_big::AssignOp};
+use poulpy_cpu_ref::reference::ntt120::{I128BigOps, I128NormalizeOps};
 
 impl I128BigOps for NTT120Avx {
     #[inline(always)]
@@ -102,30 +101,12 @@ impl I128NormalizeOps for NTT120Avx {
     }
 
     #[inline(always)]
-    fn nfc_middle_step_into<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {
-        if base2k <= 64 && res.len() >= 4 {
-            unsafe { nfc_middle_step_into_avx2::<O>(base2k as u32, lsh as u32, res.len(), res, a, carry) }
-        } else {
-            nfc_middle_step_into_scalar::<O>(base2k, lsh, res, a, carry);
-        }
-    }
-
-    #[inline(always)]
     fn nfc_final_step_assign(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
         // SAFETY: NTT120Avx::new() verifies AVX2 availability at construction time.
         if base2k <= 64 && res.len() >= 4 {
             unsafe { nfc_final_step_assign_avx2(base2k as u32, lsh as u32, res.len(), res, carry) }
         } else {
             nfc_final_step_assign_scalar(base2k, lsh, res, carry);
-        }
-    }
-
-    #[inline(always)]
-    fn nfc_final_step_into<O: AssignOp>(base2k: usize, lsh: usize, res: &mut [i64], carry: &mut [i128]) {
-        if base2k <= 64 && res.len() >= 4 {
-            unsafe { nfc_final_step_into_avx2::<O>(base2k as u32, lsh as u32, res.len(), res, carry) }
-        } else {
-            nfc_final_step_into_scalar::<O>(base2k, lsh, res, carry);
         }
     }
 }

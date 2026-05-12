@@ -9,9 +9,9 @@ Implementors must uphold all of the following for **every** call:
   size expected by the kernel. size(), rows(), cols_in(), cols_out(),
   n(), etc... must be interpreted identically to the reference CPU implementation.
 
-* **Scratch lifetime**: Any scratch obtained from scratch.tmp_slice(...) (or a
-  backend-specific variant) must remain valid for the duration of the call; it
-  may be reused by the caller afterwards. Do not retain pointers past return.
+* **Scratch lifetime**: Any region carved from a `ScratchArena` must remain
+  valid for the duration of the call; it may be reused by the caller
+  afterwards. Do not retain pointers past return.
 
 * **Synchronization**: The call must appear **logically synchronous** to the
   caller. If you enqueue asynchronous work (e.g., CUDA streams), you must

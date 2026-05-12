@@ -1,8 +1,8 @@
 use poulpy_core::{
-    DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWENormalize, LWEEncryptSk,
+    DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
     layouts::{
         GGLWEToGGSWKeyLayout, GGSW, GGSWInfos, GGSWLayout, GLWE, GLWEAutomorphismKeyLayout, GLWEInfos, GLWELayout, GLWEPlaintext,
-        GLWESecret, LWE, LWEInfos, LWELayout, LWEPlaintext, LWESecret,
+        GLWESecret, LWE, LWEInfos, LWELayout, LWEPlaintext, LWESecret, ModuleCoreAlloc,
         prepared::{GGSWPrepared, GGSWPreparedFactory, GLWESecretPrepared, GLWESecretPreparedFactory},
     },
 };
@@ -26,8 +26,8 @@ use poulpy_cpu_avx::FFT64Avx as BackendImpl;
 use poulpy_cpu_ref::FFT64Ref as BackendImpl;
 
 use poulpy_hal::{
-    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalizeAssign},
-    layouts::{DeviceBuf, Module, ScalarZnx, ScratchOwned, ZnxView, ZnxViewMut},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalizeAssignBackend},
+    layouts::{Backend, Module, ScalarZnx, ScratchOwned, VecZnxToBackendMut, ZnxView, ZnxViewMut},
     source::Source,
 };
 
@@ -146,17 +146,17 @@ fn main() {
     let mut source_xe: Source = Source::new([1u8; 32]);
 
     // LWE secret
-    let mut sk_lwe: LWESecret<Vec<u8>> = LWESecret::alloc(n_lwe.into());
+    let mut sk_lwe: LWESecret<Vec<u8>> = module.lwe_secret_alloc(n_lwe.into());
     sk_lwe.fill_binary_block(block_size, &mut source_xs);
     // sk_lwe.fill_zero(); // for testing
 
     // GLWE secret
-    let mut sk_glwe: GLWESecret<Vec<u8>> = GLWESecret::alloc(n_glwe.into(), rank.into());
+    let mut sk_glwe: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank.into());
     sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
     // sk_glwe.fill_zero(); // for testing
 
     // GLWE secret prepared (opaque backend dependant write only struct)
-    let mut sk_glwe_prepared: GLWESecretPrepared<DeviceBuf<BackendImpl>, BackendImpl> =
+    let mut sk_glwe_prepared: GLWESecretPrepared<<BackendImpl as Backend>::OwnedBuf, BackendImpl> =
         module.glwe_secret_prepared_alloc(rank.into());
     module.glwe_secret_prepare(&mut sk_glwe_prepared, &sk_glwe);
 
@@ -164,17 +164,22 @@ fn main() {
     let data: i64 = 1 % (1 << k_lwe_pt);
 
     // LWE plaintext
-    let mut pt_lwe: LWEPlaintext<Vec<u8>> = LWEPlaintext::alloc(base2k.into(), k_lwe_pt.into());
+    let mut pt_lwe: LWEPlaintext<Vec<u8>> = module.lwe_plaintext_alloc(base2k.into(), k_lwe_pt.into());
 
     // LWE plaintext(data * 2^{- (k_lwe_pt + 1)})
     pt_lwe.encode_i64(data, (k_lwe_pt + 1).into()); // +1 for padding bit
 
     // Normalize plaintext to nicely print coefficients
-    module.vec_znx_normalize_assign(base2k, pt_lwe.data_mut(), 0, scratch.borrow());
+    module.vec_znx_normalize_assign_backend(
+        base2k,
+        &mut <poulpy_hal::layouts::VecZnx<Vec<u8>> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(pt_lwe.data_mut()),
+        0,
+        &mut scratch.borrow(),
+    );
     println!("pt_lwe: {pt_lwe}");
 
     // LWE ciphertext
-    let mut ct_lwe: LWE<Vec<u8>> = LWE::alloc_from_infos(&lwe_infos);
+    let mut ct_lwe: LWE<Vec<u8>> = module.lwe_alloc_from_infos(&lwe_infos);
 
     let lwe_enc_infos = NoiseInfos::new(lwe_infos.max_k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
     let cbt_enc_infos = CircuitBootstrappingEncryptionInfos::from_default_sigma(&cbt_layout).unwrap();
@@ -187,13 +192,13 @@ fn main() {
         &lwe_enc_infos,
         &mut source_xe,
         &mut source_xa,
-        scratch.borrow(),
+        &mut scratch.borrow(),
     );
 
     let now: Instant = Instant::now();
 
     // Circuit bootstrapping evaluation key
-    let mut cbt_key: CircuitBootstrappingKey<Vec<u8>, CGGI> = CircuitBootstrappingKey::alloc_from_infos(&cbt_layout);
+    let mut cbt_key: CircuitBootstrappingKey<Vec<u8>, CGGI> = CircuitBootstrappingKey::alloc_from_infos(&module, &cbt_layout);
 
     module.circuit_bootstrapping_key_encrypt_sk(
         &mut cbt_key,
@@ -202,34 +207,35 @@ fn main() {
         &cbt_enc_infos,
         &mut source_xe,
         &mut source_xa,
-        scratch.borrow(),
+        &mut scratch.borrow(),
     );
 
     println!("CBT-KGEN: {} ms", now.elapsed().as_millis());
 
     // Output GGSW
-    let mut res: GGSW<Vec<u8>> = GGSW::alloc_from_infos(&ggsw_infos);
+    let mut res: GGSW<Vec<u8>> = module.ggsw_alloc_from_infos(&ggsw_infos);
 
     // Circuit bootstrapping key prepared (opaque backend dependant write only struct)
-    let mut cbt_prepared: CircuitBootstrappingKeyPrepared<DeviceBuf<BackendImpl>, CGGI, BackendImpl> =
+    let mut cbt_prepared: CircuitBootstrappingKeyPrepared<<BackendImpl as Backend>::OwnedBuf, CGGI, BackendImpl> =
         CircuitBootstrappingKeyPrepared::alloc_from_infos(&module, &cbt_layout);
-    cbt_prepared.prepare(&module, &cbt_key, scratch.borrow());
+    cbt_prepared.prepare(&module, &cbt_key, &mut scratch.borrow());
 
     // Apply circuit bootstrapping: LWE(data * 2^{- (k_lwe_pt + 2)}) -> GGSW(data)
     let now: Instant = Instant::now();
-    cbt_prepared.execute_to_constant(&module, &mut res, &ct_lwe, k_lwe_pt, extension_factor, scratch.borrow());
+    cbt_prepared.execute_to_constant(&module, &mut res, &ct_lwe, k_lwe_pt, extension_factor, &mut scratch.borrow());
     println!("CBT: {} ms", now.elapsed().as_millis());
 
     // Allocate "ideal" GGSW(data) plaintext
-    let mut pt_ggsw: ScalarZnx<Vec<u8>> = ScalarZnx::alloc(n_glwe, 1);
+    let mut pt_ggsw: ScalarZnx<Vec<u8>> = module.scalar_znx_alloc(1);
     pt_ggsw.at_mut(0, 0)[0] = data;
+    let pt_ggsw_ref = ScalarZnx::from_data(pt_ggsw.data.as_slice(), pt_ggsw.n(), pt_ggsw.cols());
 
     // Prints noise of GGSW(data)
     for row in 0..res.dnum().as_usize() {
         for col in 0..res.rank().as_usize() + 1 {
             println!(
                 "row:{row} col:{col} -> {}",
-                res.noise(&module, row, col, &pt_ggsw, &sk_glwe_prepared, scratch.borrow())
+                res.noise(&module, row, col, &pt_ggsw_ref, &sk_glwe_prepared, &mut scratch.borrow())
                     .std()
                     .log2()
             )
@@ -246,11 +252,11 @@ fn main() {
     };
 
     // GLWE ciphertext modulus
-    let mut ct_glwe: GLWE<Vec<u8>> = GLWE::alloc_from_infos(&glwe_infos);
+    let mut ct_glwe: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_infos);
 
     // Some GLWE plaintext with signed data
     let k_glwe_pt: usize = 3;
-    let mut pt_glwe: GLWEPlaintext<Vec<u8>> = GLWEPlaintext::alloc_from_infos(&glwe_infos);
+    let mut pt_glwe: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
     let mut data_vec: Vec<i64> = vec![0i64; n_glwe];
     data_vec
         .iter_mut()
@@ -258,7 +264,12 @@ fn main() {
         .for_each(|(x, y)| *y = (x % (1 << (k_glwe_pt - 1))) as i64 - (1 << (k_glwe_pt - 2)));
 
     pt_glwe.encode_vec_i64(&data_vec, (k_lwe_pt + 2).into());
-    module.glwe_normalize_assign(&mut pt_glwe, scratch.borrow());
+    module.vec_znx_normalize_assign_backend(
+        base2k,
+        &mut <poulpy_hal::layouts::VecZnx<Vec<u8>> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(pt_glwe.data_mut()),
+        0,
+        &mut scratch.borrow(),
+    );
 
     println!("{}", pt_glwe);
 
@@ -271,19 +282,23 @@ fn main() {
         &glwe_enc_infos,
         &mut source_xe,
         &mut source_xa,
-        scratch.borrow(),
+        &mut scratch.borrow(),
     );
 
     // Prepare GGSW output of circuit bootstrapping (opaque backend dependant write only struct)
-    let mut res_prepared: GGSWPrepared<DeviceBuf<BackendImpl>, BackendImpl> = module.ggsw_prepared_alloc_from_infos(&res);
-    module.ggsw_prepare(&mut res_prepared, &res, scratch.borrow());
+    let mut res_prepared: GGSWPrepared<<BackendImpl as Backend>::OwnedBuf, BackendImpl> =
+        module.ggsw_prepared_alloc_from_infos(&res);
+    module.ggsw_prepare(&mut res_prepared, &res, &mut scratch.borrow());
 
     // Apply GLWE x GGSW
-    module.glwe_external_product_assign(&mut ct_glwe, &res_prepared, scratch.borrow());
+    {
+        let size = ct_glwe.size() + res_prepared.dsize().as_usize();
+        module.glwe_external_product_assign(&mut ct_glwe, &res_prepared, size, &mut scratch.borrow());
+    }
 
     // Decrypt
-    let mut pt_res: GLWEPlaintext<Vec<u8>> = GLWEPlaintext::alloc_from_infos(&glwe_infos);
-    module.glwe_decrypt(&ct_glwe, &mut pt_res, &sk_glwe_prepared, scratch.borrow());
+    let mut pt_res: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+    module.glwe_decrypt(&ct_glwe, &mut pt_res, &sk_glwe_prepared, &mut scratch.borrow());
 
     println!("pt_res: {:?}", &pt_res.data.at(0, 0)[..64]);
 }

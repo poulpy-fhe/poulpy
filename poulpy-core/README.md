@@ -4,6 +4,20 @@
 
 ## Getting Started
 
+`poulpy-core` exposes its public API as soon as the crate is imported. Backend
+crates own the feature flags that wire concrete implementations into that API.
+
+```sh
+cargo test -p poulpy-core
+```
+
+The backend conformance tests are instantiated by backend crates. To run the
+portable reference backend core suite:
+
+```sh
+cargo test -p poulpy-cpu-ref --features enable-core
+```
+
 `poulpy-core` is backend-agnostic. Concrete execution lives in backend crates such as
 `poulpy-cpu-ref`, `poulpy-cpu-avx`, or `poulpy-cpu-avx512`, which provide the backend type `BE` used by
 `poulpy_hal::layouts::Module<BE>`. The HAL remains dispatch-only: `poulpy-cpu-ref`
@@ -33,6 +47,25 @@ where
 
 For a runnable end-to-end example using a concrete backend, see
 `poulpy-cpu-ref/examples/core_encryption.rs`.
+
+## Crate Organization
+
+`poulpy-core` follows the same four-module layer pattern used throughout the Poulpy workspace:
+
+```
+   ┌─────────┐     ┌─────────┐     ┌─────────────┐     ┌────────────────┐
+   │   api   │────►│   oep   │────►│  delegates  │◄────│    default     │
+   └─────────┘     └─────────┘     └─────────────┘     └────────────────┘
+```
+
+| Module | Role |
+|--------|------|
+| `api` | Public traits for RLWE operations (`GLWEEncryptSk`, `GLWEAutomorphism`, `GLWETensoring`, …). Trait bounds reference `oep` for the backend capabilities they need. |
+| `oep` | **Open Extension Points.** Unsafe backend dispatch traits (one per operation family). A blanket `impl` wires any conforming backend to the corresponding `default` method automatically. Macros (`impl_*_defaults_full!`) are what a backend crate calls to opt in. |
+| `default` | Portable algorithm implementations as safe trait methods — the fallback every backend gets for free. |
+| `delegates` | Implements each `api` trait on `Module<BE>` by dispatching through `oep`. |
+
+**Overriding an operation**: a backend implements the corresponding `oep` trait directly instead of relying on the blanket wiring to `default`. Only the operations that need a faster or device-native implementation require an override; everything else is inherited automatically.
 
 ## Layouts
 
@@ -115,3 +148,10 @@ module.ggsw_automorphism(...);
 A fully generic backend conformance suite is available in [`src/test_suite`](./src/test_suite).
 Concrete backend crates instantiate it via `poulpy_core::core_backend_test_suite!`, keeping
 `poulpy-core` free of any concrete backend dependency.
+
+Useful commands:
+
+```sh
+cargo test -p poulpy-core
+cargo test -p poulpy-cpu-ref --features enable-core
+```

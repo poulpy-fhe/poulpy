@@ -15,6 +15,7 @@
 
 mod convolution;
 mod module;
+mod reim;
 mod scratch;
 mod svp_ppol;
 mod vec_znx;
@@ -24,6 +25,7 @@ mod vmp_pmat;
 
 pub use convolution::*;
 pub use module::*;
+pub use reim::*;
 pub use scratch::*;
 pub use svp_ppol::*;
 pub use vec_znx::*;

@@ -13,8 +13,8 @@ use poulpy_cpu_ref::reference::ntt120::{
     NttCFromB, NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, types::Q_SHIFTED, vec_znx_dft::NttModuleHandle,
 };
 use poulpy_hal::layouts::{
-    DataViewMut, MatZnx, MatZnxToRef, Module, VecZnxDftToMut, VecZnxDftToRef, VmpPMatToMut, VmpPMatToRef, ZnxInfos, ZnxView,
-    ZnxViewMut,
+    DataViewMut, MatZnxBackendRef, Module, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut, VmpPMatBackendRef,
+    ZnxView, ZnxViewMut,
 };
 
 use super::mat_vec_avx::vec_mat1col_product_blkpair_bbc_pm_avx2;
@@ -30,13 +30,12 @@ pub(crate) fn vmp_prepare_tmp_bytes_avx(n: usize) -> usize {
 /// The prepared matrix uses one plane per CRT prime. Within each plane the
 /// layout is `block_pair -> output_column -> input_row`, and every row stores
 /// four u64 values in lane order `[blk0.c0, blk0.c1, blk1.c0, blk1.c1]`.
-pub(crate) fn vmp_prepare_avx_pm<R, A>(module: &Module<NTT120Avx>, res: &mut R, a: &A, tmp: &mut [u64])
-where
-    R: VmpPMatToMut<NTT120Avx>,
-    A: MatZnxToRef,
-{
-    let mut res = res.to_mut();
-    let a: MatZnx<&[u8]> = a.to_ref();
+pub(crate) fn vmp_prepare_avx_pm(
+    module: &Module<NTT120Avx>,
+    res: &mut VmpPMatBackendMut<'_, NTT120Avx>,
+    a: &MatZnxBackendRef<'_, NTT120Avx>,
+    tmp: &mut [u64],
+) {
     let n = res.n();
 
     debug_assert_eq!(a.n(), n);
@@ -240,22 +239,14 @@ unsafe fn vmp_apply_core_avx_pm<const OVERWRITE: bool>(
     }
 }
 
-pub(crate) fn vmp_apply_dft_to_dft_avx<R, A, M>(
+pub(crate) fn vmp_apply_dft_to_dft_avx(
     module: &Module<NTT120Avx>,
-    res: &mut R,
-    a: &A,
-    pmat: &M,
+    res: &mut VecZnxDftBackendMut<'_, NTT120Avx>,
+    a: &VecZnxDftBackendRef<'_, NTT120Avx>,
+    pmat: &VmpPMatBackendRef<'_, NTT120Avx>,
     limb_offset: usize,
     tmp: &mut [u64],
-) where
-    R: VecZnxDftToMut<NTT120Avx>,
-    A: VecZnxDftToRef<NTT120Avx>,
-    M: VmpPMatToRef<NTT120Avx>,
-{
-    let mut res = res.to_mut();
-    let a = a.to_ref();
-    let pmat = pmat.to_ref();
-
+) {
     let n = res.n();
     let nrows = pmat.cols_in() * pmat.rows();
     let ncols = pmat.cols_out() * pmat.size();
@@ -280,22 +271,14 @@ pub(crate) fn vmp_apply_dft_to_dft_avx<R, A, M>(
     }
 }
 
-pub(crate) fn vmp_apply_dft_to_dft_accumulate_avx<R, A, M>(
+pub(crate) fn vmp_apply_dft_to_dft_accumulate_avx(
     module: &Module<NTT120Avx>,
-    res: &mut R,
-    a: &A,
-    pmat: &M,
+    res: &mut VecZnxDftBackendMut<'_, NTT120Avx>,
+    a: &VecZnxDftBackendRef<'_, NTT120Avx>,
+    pmat: &VmpPMatBackendRef<'_, NTT120Avx>,
     limb_offset: usize,
     tmp: &mut [u64],
-) where
-    R: VecZnxDftToMut<NTT120Avx>,
-    A: VecZnxDftToRef<NTT120Avx>,
-    M: VmpPMatToRef<NTT120Avx>,
-{
-    let mut res = res.to_mut();
-    let a = a.to_ref();
-    let pmat = pmat.to_ref();
-
+) {
     let n = res.n();
     let nrows = pmat.cols_in() * pmat.rows();
     let ncols = pmat.cols_out() * pmat.size();

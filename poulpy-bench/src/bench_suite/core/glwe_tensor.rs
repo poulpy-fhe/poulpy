@@ -2,15 +2,19 @@ use std::hint::black_box;
 
 use criterion::Criterion;
 use poulpy_core::{
-    GLWETensoring, ScratchTakeCore,
-    layouts::{GLWE, GLWEInfos, GLWETensor, LWEInfos},
+    GLWETensoring,
+    layouts::{GLWEInfos, LWEInfos, ModuleCoreAlloc},
 };
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, Convolution, ModuleNew, ScratchAvailable, ScratchOwnedAlloc, ScratchOwnedBorrow, ScratchTakeBasic,
-        VecZnxBigNormalize, VecZnxCopy, VecZnxIdftApplyConsume, VecZnxSubAssign,
+        CnvPVecAlloc, Convolution, ModuleNew, ScratchArenaTakeBasic, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxBigNormalize,
+        VecZnxIdftApplyTmpA, VecZnxSubAssignBackend,
     },
-    layouts::{Backend, Module, Scratch, ScratchOwned, VecZnx},
+    layouts::{
+        Backend, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, HostDataMut, Module,
+        ScratchOwned, VecZnx, VecZnxBigReborrowBackendMut, VecZnxDftReborrowBackendMut, VecZnxReborrowBackendMut,
+        VecZnxToBackendRef, ZnxView, ZnxViewMut, vec_znx_big_backend_ref_from_mut,
+    },
 };
 
 #[inline]
@@ -37,18 +41,18 @@ fn normalize_input_limb_bound_with_offset(
     full_size.min((res_size * res_base2k + offset_bits as usize).div_ceil(in_base2k))
 }
 
-pub fn bench_glwe_tensor_apply<BE: Backend>(glwe_infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
+pub fn bench_glwe_tensor_apply<BE: Backend<OwnedBuf = Vec<u8>>>(glwe_infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
 where
     Module<BE>: ModuleNew<BE> + GLWETensoring<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    Scratch<BE>: ScratchTakeCore<BE> + ScratchAvailable,
+    for<'x> BE::BufMut<'x>: HostDataMut + AsRef<[u8]> + AsMut<[u8]> + Sync,
 {
     let n: usize = glwe_infos.n().into();
     let module = Module::<BE>::new(n as u64);
 
-    let a = GLWE::<Vec<u8>>::alloc_from_infos(glwe_infos);
-    let b = GLWE::<Vec<u8>>::alloc_from_infos(glwe_infos);
-    let mut tensor = GLWETensor::<Vec<u8>>::alloc_from_infos(glwe_infos);
+    let a = module.glwe_alloc_from_infos(glwe_infos);
+    let b = module.glwe_alloc_from_infos(glwe_infos);
+    let mut tensor = module.glwe_tensor_alloc_from_infos(glwe_infos);
     let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_tensor_apply_tmp_bytes(&tensor, &a, &b));
 
     let group_name = format!("glwe_tensor_apply::{label}");
@@ -62,7 +66,7 @@ where
                 a.max_k().as_usize(),
                 &b,
                 b.max_k().as_usize(),
-                scratch.borrow(),
+                &mut scratch.borrow(),
             );
             black_box(());
         })
@@ -70,50 +74,20 @@ where
     group.finish();
 }
 
-pub fn bench_glwe_tensor_apply_add_assign<BE: Backend>(glwe_infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
-where
-    Module<BE>: ModuleNew<BE> + GLWETensoring<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    Scratch<BE>: ScratchTakeCore<BE> + ScratchAvailable,
-{
-    let n: usize = glwe_infos.n().into();
-    let module = Module::<BE>::new(n as u64);
-
-    let a = GLWE::<Vec<u8>>::alloc_from_infos(glwe_infos);
-    let b = GLWE::<Vec<u8>>::alloc_from_infos(glwe_infos);
-    let mut tensor = GLWETensor::<Vec<u8>>::alloc_from_infos(glwe_infos);
-    let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_tensor_apply_tmp_bytes(&tensor, &a, &b));
-
-    let group_name = format!("glwe_tensor_apply_add_assign::{label}");
-    let mut group = c.benchmark_group(group_name);
-    group.bench_function(format!("n={n}"), |bench| {
-        bench.iter(|| {
-            module.glwe_tensor_apply_add_assign(
-                0,
-                &mut tensor,
-                &a,
-                a.max_k().as_usize(),
-                &b,
-                b.max_k().as_usize(),
-                scratch.borrow(),
-            );
-            black_box(());
-        })
-    });
-    group.finish();
-}
-
-pub fn bench_glwe_tensor_prepare_left<BE: Backend>(glwe_infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
-where
+pub fn bench_glwe_tensor_prepare_left<BE: Backend<OwnedBuf = Vec<u8>>>(
+    glwe_infos: &impl GLWEInfos,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<BE>: ModuleNew<BE> + Convolution<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    Scratch<BE>: ScratchTakeCore<BE> + ScratchAvailable,
+    for<'x> BE::BufMut<'x>: AsRef<[u8]> + AsMut<[u8]> + Sync,
 {
     let n: usize = glwe_infos.n().into();
     let cols: usize = (glwe_infos.rank() + 1).into();
     let module = Module::<BE>::new(n as u64);
 
-    let a = GLWE::<Vec<u8>>::alloc_from_infos(glwe_infos);
+    let a = module.glwe_alloc_from_infos(glwe_infos);
     let a_mask = msb_mask_bottom_limb(glwe_infos.base2k().as_usize(), a.max_k().as_usize());
     let mut a_prep = module.cnv_pvec_left_alloc(cols, a.size());
     let mut scratch = ScratchOwned::<BE>::alloc(module.cnv_prepare_left_tmp_bytes(a.size(), a.size()));
@@ -122,24 +96,33 @@ where
     let mut group = c.benchmark_group(group_name);
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
-            module.cnv_prepare_left(&mut a_prep, a.data(), a_mask, scratch.borrow());
+            let mut a_prep_backend = a_prep.to_backend_mut();
+            module.cnv_prepare_left(
+                &mut a_prep_backend,
+                &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(a.data()),
+                a_mask,
+                &mut scratch.borrow(),
+            );
             black_box(());
         })
     });
     group.finish();
 }
 
-pub fn bench_glwe_tensor_prepare_right<BE: Backend>(glwe_infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
-where
+pub fn bench_glwe_tensor_prepare_right<BE: Backend<OwnedBuf = Vec<u8>>>(
+    glwe_infos: &impl GLWEInfos,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<BE>: ModuleNew<BE> + Convolution<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    Scratch<BE>: ScratchTakeCore<BE> + ScratchAvailable,
+    for<'x> BE::BufMut<'x>: AsRef<[u8]> + AsMut<[u8]> + Sync,
 {
     let n: usize = glwe_infos.n().into();
     let cols: usize = (glwe_infos.rank() + 1).into();
     let module = Module::<BE>::new(n as u64);
 
-    let b = GLWE::<Vec<u8>>::alloc_from_infos(glwe_infos);
+    let b = module.glwe_alloc_from_infos(glwe_infos);
     let b_mask = msb_mask_bottom_limb(glwe_infos.base2k().as_usize(), b.max_k().as_usize());
     let mut b_prep = module.cnv_pvec_right_alloc(cols, b.size());
     let mut scratch = ScratchOwned::<BE>::alloc(module.cnv_prepare_right_tmp_bytes(b.size(), b.size()));
@@ -148,31 +131,34 @@ where
     let mut group = c.benchmark_group(group_name);
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
-            module.cnv_prepare_right(&mut b_prep, b.data(), b_mask, scratch.borrow());
+            let mut b_prep_backend = b_prep.to_backend_mut();
+            module.cnv_prepare_right(
+                &mut b_prep_backend,
+                &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(b.data()),
+                b_mask,
+                &mut scratch.borrow(),
+            );
             black_box(());
         })
     });
     group.finish();
 }
 
-pub fn bench_glwe_tensor_diag_lane<BE: Backend>(glwe_infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
+pub fn bench_glwe_tensor_diag_lane<BE: Backend<OwnedBuf = Vec<u8>>>(glwe_infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
 where
-    Module<BE>: ModuleNew<BE>
-        + GLWETensoring<BE>
-        + Convolution<BE>
-        + CnvPVecAlloc<BE>
-        + VecZnxIdftApplyConsume<BE>
-        + VecZnxBigNormalize<BE>,
+    Module<BE>:
+        ModuleNew<BE> + GLWETensoring<BE> + Convolution<BE> + CnvPVecAlloc<BE> + VecZnxIdftApplyTmpA<BE> + VecZnxBigNormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    Scratch<BE>: ScratchTakeCore<BE> + ScratchAvailable + ScratchTakeBasic,
+    for<'x> BE::BufMut<'x>: HostDataMut + AsRef<[u8]> + AsMut<[u8]> + Sync,
+    for<'x> BE::BufRef<'x>: AsRef<[u8]> + Send,
 {
     let n: usize = glwe_infos.n().into();
     let cols: usize = (glwe_infos.rank() + 1).into();
     let module = Module::<BE>::new(n as u64);
 
-    let a = GLWE::<Vec<u8>>::alloc_from_infos(glwe_infos);
-    let b = GLWE::<Vec<u8>>::alloc_from_infos(glwe_infos);
-    let tensor = GLWETensor::<Vec<u8>>::alloc_from_infos(glwe_infos);
+    let a = module.glwe_alloc_from_infos(glwe_infos);
+    let b = module.glwe_alloc_from_infos(glwe_infos);
+    let tensor = module.glwe_tensor_alloc_from_infos(glwe_infos);
     let base2k = glwe_infos.base2k().as_usize();
     let (cnv_offset_hi, cnv_offset_lo) = (0, -(base2k as i64));
     let diag_dft_size = normalize_input_limb_bound_with_offset(
@@ -192,8 +178,24 @@ where
             .cnv_prepare_left_tmp_bytes(a.size(), a.size())
             .max(module.cnv_prepare_right_tmp_bytes(b.size(), b.size())),
     );
-    module.cnv_prepare_left(&mut a_prep, a.data(), a_mask, prep_scratch.borrow());
-    module.cnv_prepare_right(&mut b_prep, b.data(), b_mask, prep_scratch.borrow());
+    {
+        let mut a_prep_backend = a_prep.to_backend_mut();
+        module.cnv_prepare_left(
+            &mut a_prep_backend,
+            &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(a.data()),
+            a_mask,
+            &mut prep_scratch.borrow(),
+        );
+    }
+    {
+        let mut b_prep_backend = b_prep.to_backend_mut();
+        module.cnv_prepare_right(
+            &mut b_prep_backend,
+            &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(b.data()),
+            b_mask,
+            &mut prep_scratch.borrow(),
+        );
+    }
 
     let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_tensor_apply_tmp_bytes(&tensor, &a, &b));
 
@@ -202,29 +204,59 @@ where
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
             let scratch = scratch.borrow();
-            let (mut res_dft, scratch) = scratch.take_vec_znx_dft(&module, 1, diag_dft_size);
-            module.cnv_apply_dft(cnv_offset_hi, &mut res_dft, 0, &a_prep, 0, &b_prep, 0, scratch);
-            let res_big = module.vec_znx_idft_apply_consume(res_dft);
-            let (mut tmp, scratch) = scratch.take_vec_znx(n, 1, tensor.size());
-            module.vec_znx_big_normalize(&mut tmp, base2k, cnv_offset_lo, 0, &res_big, base2k, 0, scratch);
+            let (mut res_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(&module, 1, diag_dft_size);
+            module.cnv_apply_dft(
+                cnv_offset_hi,
+                &mut res_dft,
+                0,
+                &a_prep.to_backend_ref(),
+                0,
+                &b_prep.to_backend_ref(),
+                0,
+                &mut scratch,
+            );
+            let (mut res_big, scratch) = scratch.take_vec_znx_big_scratch(&module, 1, diag_dft_size);
+            {
+                let mut res_big_backend = <poulpy_hal::layouts::VecZnxBig<BE::BufMut<'_>, BE> as VecZnxBigReborrowBackendMut<
+                    BE,
+                >>::reborrow_backend_mut(&mut res_big);
+                let mut res_dft_backend = <poulpy_hal::layouts::VecZnxDft<BE::BufMut<'_>, BE> as VecZnxDftReborrowBackendMut<
+                    BE,
+                >>::reborrow_backend_mut(&mut res_dft);
+                module.vec_znx_idft_apply_tmpa(&mut res_big_backend, 0, &mut res_dft_backend, 0);
+            }
+            let (mut tmp, mut scratch) = scratch.take_vec_znx_scratch(n, 1, tensor.size());
+            module.vec_znx_big_normalize(
+                &mut tmp,
+                base2k,
+                cnv_offset_lo,
+                0,
+                &vec_znx_big_backend_ref_from_mut(&res_big),
+                base2k,
+                0,
+                &mut scratch,
+            );
             black_box(());
         })
     });
     group.finish();
 }
 
-pub fn bench_glwe_tensor_pairwise_lane<BE: Backend>(glwe_infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
-where
+pub fn bench_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>>(
+    glwe_infos: &impl GLWEInfos,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<BE>: ModuleNew<BE>
         + GLWETensoring<BE>
         + Convolution<BE>
         + CnvPVecAlloc<BE>
-        + VecZnxIdftApplyConsume<BE>
+        + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
-        + VecZnxCopy
-        + VecZnxSubAssign,
+        + VecZnxSubAssignBackend<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    Scratch<BE>: ScratchTakeCore<BE> + ScratchAvailable + ScratchTakeBasic,
+    for<'x> BE::BufMut<'x>: HostDataMut + AsRef<[u8]> + AsMut<[u8]> + Sync,
+    for<'x> BE::BufRef<'x>: AsRef<[u8]> + Send,
 {
     let n: usize = glwe_infos.n().into();
     let cols: usize = (glwe_infos.rank() + 1).into();
@@ -234,9 +266,9 @@ where
 
     let module = Module::<BE>::new(n as u64);
 
-    let a = GLWE::<Vec<u8>>::alloc_from_infos(glwe_infos);
-    let b = GLWE::<Vec<u8>>::alloc_from_infos(glwe_infos);
-    let tensor = GLWETensor::<Vec<u8>>::alloc_from_infos(glwe_infos);
+    let a = module.glwe_alloc_from_infos(glwe_infos);
+    let b = module.glwe_alloc_from_infos(glwe_infos);
+    let tensor = module.glwe_tensor_alloc_from_infos(glwe_infos);
     let base2k = glwe_infos.base2k().as_usize();
     let (cnv_offset_hi, cnv_offset_lo) = (0, -(base2k as i64));
     let pairwise_dft_size = normalize_input_limb_bound_with_offset(
@@ -256,21 +288,69 @@ where
             .cnv_prepare_left_tmp_bytes(a.size(), a.size())
             .max(module.cnv_prepare_right_tmp_bytes(b.size(), b.size())),
     );
-    module.cnv_prepare_left(&mut a_prep, a.data(), a_mask, prep_scratch.borrow());
-    module.cnv_prepare_right(&mut b_prep, b.data(), b_mask, prep_scratch.borrow());
+    {
+        let mut a_prep_backend = a_prep.to_backend_mut();
+        module.cnv_prepare_left(
+            &mut a_prep_backend,
+            &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(a.data()),
+            a_mask,
+            &mut prep_scratch.borrow(),
+        );
+    }
+    {
+        let mut b_prep_backend = b_prep.to_backend_mut();
+        module.cnv_prepare_right(
+            &mut b_prep_backend,
+            &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(b.data()),
+            b_mask,
+            &mut prep_scratch.borrow(),
+        );
+    }
 
-    let mut diag_terms = VecZnx::alloc(n, cols, tensor.size());
+    let mut diag_terms = module.vec_znx_alloc(cols, tensor.size());
     let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_tensor_apply_tmp_bytes(&tensor, &a, &b));
 
     {
-        let scratch = scratch.borrow();
         for i in 0..cols {
-            let (mut res_dft, scratch) = scratch.take_vec_znx_dft(&module, 1, pairwise_dft_size);
-            module.cnv_apply_dft(cnv_offset_hi, &mut res_dft, 0, &a_prep, i, &b_prep, i, scratch);
-            let res_big = module.vec_znx_idft_apply_consume(res_dft);
-            let (mut tmp, scratch) = scratch.take_vec_znx(n, 1, tensor.size());
-            module.vec_znx_big_normalize(&mut tmp, base2k, cnv_offset_lo, 0, &res_big, base2k, 0, scratch);
-            module.vec_znx_copy(&mut diag_terms, i, &tmp, 0);
+            let scratch = scratch.borrow();
+            let (mut res_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(&module, 1, pairwise_dft_size);
+            module.cnv_apply_dft(
+                cnv_offset_hi,
+                &mut res_dft,
+                0,
+                &a_prep.to_backend_ref(),
+                i,
+                &b_prep.to_backend_ref(),
+                i,
+                &mut scratch,
+            );
+            let (mut res_big, scratch) = scratch.take_vec_znx_big_scratch(&module, 1, pairwise_dft_size);
+            {
+                let mut res_big_backend = <poulpy_hal::layouts::VecZnxBig<BE::BufMut<'_>, BE> as VecZnxBigReborrowBackendMut<
+                    BE,
+                >>::reborrow_backend_mut(&mut res_big);
+                let mut res_dft_backend = <poulpy_hal::layouts::VecZnxDft<BE::BufMut<'_>, BE> as VecZnxDftReborrowBackendMut<
+                    BE,
+                >>::reborrow_backend_mut(&mut res_dft);
+                module.vec_znx_idft_apply_tmpa(&mut res_big_backend, 0, &mut res_dft_backend, 0);
+            }
+            let (mut tmp, mut scratch) = scratch.take_vec_znx_scratch(n, 1, tensor.size());
+            module.vec_znx_big_normalize(
+                &mut tmp,
+                base2k,
+                cnv_offset_lo,
+                0,
+                &vec_znx_big_backend_ref_from_mut(&res_big),
+                base2k,
+                0,
+                &mut scratch,
+            );
+            for j in 0..diag_terms.size().min(tmp.size()) {
+                diag_terms.at_mut(i, j).copy_from_slice(tmp.at(0, j));
+            }
+            for j in tmp.size()..diag_terms.size() {
+                diag_terms.at_mut(i, j).fill(0);
+            }
         }
     }
 
@@ -279,37 +359,70 @@ where
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
             let scratch = scratch.borrow();
-            let (mut res_dft, scratch) = scratch.take_vec_znx_dft(&module, 1, pairwise_dft_size);
-            module.cnv_pairwise_apply_dft(cnv_offset_hi, &mut res_dft, 0, &a_prep, &b_prep, 0, 1, scratch);
-            let res_big = module.vec_znx_idft_apply_consume(res_dft);
-            let (mut tmp, scratch) = scratch.take_vec_znx(n, 1, tensor.size());
-            module.vec_znx_big_normalize(&mut tmp, base2k, cnv_offset_lo, 0, &res_big, base2k, 0, scratch);
-            module.vec_znx_sub_assign(&mut tmp, 0, &diag_terms, 0);
-            module.vec_znx_sub_assign(&mut tmp, 0, &diag_terms, 1);
+            let (mut res_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(&module, 1, pairwise_dft_size);
+            module.cnv_pairwise_apply_dft(
+                cnv_offset_hi,
+                &mut res_dft,
+                0,
+                &a_prep.to_backend_ref(),
+                &b_prep.to_backend_ref(),
+                0,
+                1,
+                &mut scratch,
+            );
+            let (mut res_big, scratch) = scratch.take_vec_znx_big_scratch(&module, 1, pairwise_dft_size);
+            {
+                let mut res_big_backend = <poulpy_hal::layouts::VecZnxBig<BE::BufMut<'_>, BE> as VecZnxBigReborrowBackendMut<
+                    BE,
+                >>::reborrow_backend_mut(&mut res_big);
+                let mut res_dft_backend = <poulpy_hal::layouts::VecZnxDft<BE::BufMut<'_>, BE> as VecZnxDftReborrowBackendMut<
+                    BE,
+                >>::reborrow_backend_mut(&mut res_dft);
+                module.vec_znx_idft_apply_tmpa(&mut res_big_backend, 0, &mut res_dft_backend, 0);
+            }
+            let (mut tmp, mut scratch) = scratch.take_vec_znx_scratch(n, 1, tensor.size());
+            module.vec_znx_big_normalize(
+                &mut tmp,
+                base2k,
+                cnv_offset_lo,
+                0,
+                &vec_znx_big_backend_ref_from_mut(&res_big),
+                base2k,
+                0,
+                &mut scratch,
+            );
+            let mut tmp_mut = <VecZnx<BE::BufMut<'_>> as VecZnxReborrowBackendMut<BE>>::reborrow_backend_mut(&mut tmp);
+            let diag_terms_ref =
+                <VecZnx<BE::OwnedBuf> as poulpy_hal::layouts::VecZnxToBackendRef<BE>>::to_backend_ref(&diag_terms);
+            module.vec_znx_sub_assign_backend(&mut tmp_mut, 0, &diag_terms_ref, 0);
+            module.vec_znx_sub_assign_backend(&mut tmp_mut, 0, &diag_terms_ref, 1);
             black_box(());
         })
     });
     group.finish();
 }
 
-pub fn bench_glwe_tensor_square_apply<BE: Backend>(glwe_infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
-where
+pub fn bench_glwe_tensor_square_apply<BE: Backend<OwnedBuf = Vec<u8>>>(
+    glwe_infos: &impl GLWEInfos,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<BE>: ModuleNew<BE> + GLWETensoring<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    Scratch<BE>: ScratchTakeCore<BE> + ScratchAvailable,
+    for<'x> BE::BufMut<'x>: HostDataMut + AsRef<[u8]> + AsMut<[u8]> + Sync,
 {
     let n: usize = glwe_infos.n().into();
     let module = Module::<BE>::new(n as u64);
 
-    let a = GLWE::<Vec<u8>>::alloc_from_infos(glwe_infos);
-    let mut tensor = GLWETensor::<Vec<u8>>::alloc_from_infos(glwe_infos);
+    let a = module.glwe_alloc_from_infos(glwe_infos);
+    let mut tensor = module.glwe_tensor_alloc_from_infos(glwe_infos);
     let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_tensor_square_apply_tmp_bytes(&tensor, &a));
 
     let group_name = format!("glwe_tensor_square_apply::{label}");
     let mut group = c.benchmark_group(group_name);
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
-            module.glwe_tensor_square_apply(0, &mut tensor, &a, a.max_k().as_usize(), scratch.borrow());
+            module.glwe_tensor_square_apply(0, &mut tensor, &a, a.max_k().as_usize(), &mut scratch.borrow());
             black_box(());
         })
     });

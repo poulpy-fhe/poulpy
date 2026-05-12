@@ -1,186 +1,259 @@
-use poulpy_hal::layouts::{Backend, DataMut, DataRef, Module, Scratch};
+use poulpy_hal::{
+    layouts::{Backend, Data, HostBackend, HostDataMut, HostDataRef, Module, ScratchArena},
+    oep::{HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl},
+};
 
 use crate::{
-    ScratchTakeCore,
-    decryption::{GLWEDecryptDefault, GLWETensorDecryptDefault, LWEDecryptDefault},
+    ScratchArenaTakeCore,
     layouts::{
-        GLWEInfos, GLWEPlaintext, GLWEPlaintextToMut, GLWESecretPrepared, GLWESecretPreparedToRef, GLWESecretTensorPrepared,
-        GLWETensor, LWEInfos, LWEPlaintextToMut, LWESecretToRef, LWEToRef, SetLWEInfos,
+        GLWEInfos, GLWEPlaintext, GLWESecretPrepared, GLWESecretTensorPrepared, GLWETensor, GLWEToBackendMut, GLWEToBackendRef,
+        LWEInfos, LWEPlaintextToBackendMut, LWESecretToBackendRef, LWEToBackendRef, SetLWEInfos,
+        prepared::{GLWESecretPreparedToBackendRef, GLWESecretTensorPreparedToBackendRef},
     },
 };
 
-#[doc(hidden)]
-pub trait CoreDecryptionDefaults<BE: Backend>: Backend {
-    fn glwe_decrypt_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+/// Backend-provided decryption operations.
+///
+/// # Safety
+/// Implementations must interpret ciphertexts, plaintexts, and secrets according to their layout
+/// metadata, avoid out-of-bounds or aliased writes, and only use scratch space within the
+/// advertised temporary-size contracts.
+pub unsafe trait DecryptionImpl<BE: Backend>: Backend {
+    fn glwe_decrypt_tmp_bytes<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: GLWEInfos;
 
-    fn glwe_decrypt_default<R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut Scratch<BE>)
+    fn glwe_decrypt<'s, R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'s, BE>)
     where
-        R: crate::layouts::GLWEToRef + GLWEInfos,
-        P: GLWEPlaintextToMut + GLWEInfos + SetLWEInfos,
-        S: GLWESecretPreparedToRef<BE> + GLWEInfos;
+        R: GLWEToBackendRef<BE> + GLWEInfos,
+        P: GLWEToBackendMut<BE> + GLWEInfos + SetLWEInfos,
+        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
 
-    fn lwe_decrypt_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+    fn lwe_decrypt_tmp_bytes<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: LWEInfos;
 
-    fn lwe_decrypt_default<R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut Scratch<BE>)
+    fn lwe_decrypt<'s, R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'s, BE>)
     where
-        R: LWEToRef,
-        P: LWEPlaintextToMut + SetLWEInfos + LWEInfos,
-        S: LWESecretToRef,
-        Scratch<BE>: ScratchTakeCore<BE>;
+        R: LWEToBackendRef<BE> + LWEInfos,
+        P: LWEPlaintextToBackendMut<BE> + SetLWEInfos + LWEInfos,
+        S: LWESecretToBackendRef<BE> + LWEInfos;
 
-    fn glwe_tensor_decrypt_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+    fn glwe_tensor_decrypt<R: Data, P: Data, S0: Data, S1: Data>(
+        module: &Module<BE>,
+        res: &GLWETensor<R>,
+        pt: &mut GLWEPlaintext<P>,
+        sk: &GLWESecretPrepared<S0, BE>,
+        sk_tensor: &GLWESecretTensorPrepared<S1, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        GLWETensor<R>: GLWEToBackendRef<BE> + GLWEInfos,
+        GLWEPlaintext<P>: GLWEToBackendMut<BE> + GLWEInfos + SetLWEInfos,
+        GLWESecretPrepared<S0, BE>: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
+        GLWESecretTensorPrepared<S1, BE>: GLWESecretTensorPreparedToBackendRef<BE> + GLWEInfos;
+
+    fn glwe_tensor_decrypt_tmp_bytes<A>(module: &Module<BE>, infos: &A) -> usize
+    where
+        A: GLWEInfos;
+}
+
+/// Override surface for the decryption family.
+///
+/// Abstract: no HAL supertraits, no default method bodies. See [`decryption_defaults`]
+/// for reference algorithms a backend may forward to.
+#[doc(hidden)]
+#[allow(private_bounds)]
+pub trait DecryptionDefault<BE: Backend> {
+    fn glwe_decrypt_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos;
 
-    fn glwe_tensor_decrypt_default<R, P, S0, S1>(
-        module: &Module<BE>,
+    fn glwe_decrypt<'s, R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'s, BE>)
+    where
+        R: GLWEToBackendRef<BE> + GLWEInfos,
+        P: GLWEToBackendMut<BE> + GLWEInfos + SetLWEInfos,
+        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
+        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>;
+
+    fn lwe_decrypt_tmp_bytes<A>(&self, infos: &A) -> usize
+    where
+        A: LWEInfos;
+
+    fn lwe_decrypt<'s, R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'s, BE>)
+    where
+        R: LWEToBackendRef<BE> + LWEInfos,
+        P: LWEPlaintextToBackendMut<BE> + SetLWEInfos + LWEInfos,
+        S: LWESecretToBackendRef<BE> + LWEInfos,
+        BE: HostBackend,
+        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+        for<'a> BE::BufMut<'a>: HostDataMut,
+        for<'a> BE::BufRef<'a>: HostDataRef;
+
+    fn glwe_tensor_decrypt<R: Data, P: Data, S0: Data, S1: Data>(
+        &self,
         res: &GLWETensor<R>,
         pt: &mut GLWEPlaintext<P>,
         sk: &GLWESecretPrepared<S0, BE>,
         sk_tensor: &GLWESecretTensorPrepared<S1, BE>,
-        scratch: &mut Scratch<BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: DataRef,
-        P: DataMut,
-        S0: DataRef,
-        S1: DataRef;
+        GLWETensor<R>: GLWEToBackendRef<BE> + GLWEInfos,
+        GLWEPlaintext<P>: GLWEToBackendMut<BE> + GLWEInfos + SetLWEInfos,
+        GLWESecretPrepared<S0, BE>: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
+        GLWESecretTensorPrepared<S1, BE>: GLWESecretTensorPreparedToBackendRef<BE> + GLWEInfos,
+        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>;
+
+    fn glwe_tensor_decrypt_tmp_bytes<A>(&self, infos: &A) -> usize
+    where
+        A: GLWEInfos;
 }
 
-impl<BE: Backend> CoreDecryptionDefaults<BE> for BE
+/// Implements [`DecryptionDefault`] for `Module<$be>` by forwarding every method to
+/// the corresponding [`decryption_defaults`] free function.
+#[macro_export]
+macro_rules! impl_decryption_defaults_full {
+    ($be:ty) => {
+        impl $crate::oep::DecryptionDefault<$be> for ::poulpy_hal::layouts::Module<$be> {
+            fn glwe_decrypt_tmp_bytes<A>(&self, infos: &A) -> usize
+            where
+                A: $crate::layouts::GLWEInfos,
+            {
+                $crate::default::decryption::glwe::glwe_decrypt_tmp_bytes_default::<Self, $be, _>(self, infos)
+            }
+
+            fn glwe_decrypt<'s, R, P, S>(
+                &self,
+                res: &R,
+                pt: &mut P,
+                sk: &S,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'s, $be>,
+            ) where
+                R: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                P: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos + $crate::layouts::SetLWEInfos,
+                S: $crate::layouts::prepared::GLWESecretPreparedToBackendRef<$be> + $crate::layouts::GLWEInfos,
+            {
+                $crate::default::decryption::glwe::glwe_decrypt_default::<Self, $be, _, _, _>(self, res, pt, sk, scratch)
+            }
+
+            fn lwe_decrypt_tmp_bytes<A>(&self, infos: &A) -> usize
+            where
+                A: $crate::layouts::LWEInfos,
+            {
+                $crate::default::decryption::lwe::lwe_decrypt_tmp_bytes_default::<Self, $be, _>(self, infos)
+            }
+
+            fn lwe_decrypt<'s, R, P, S>(
+                &self,
+                res: &R,
+                pt: &mut P,
+                sk: &S,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'s, $be>,
+            ) where
+                R: $crate::layouts::LWEToBackendRef<$be> + $crate::layouts::LWEInfos,
+                P: $crate::layouts::LWEPlaintextToBackendMut<$be> + $crate::layouts::SetLWEInfos + $crate::layouts::LWEInfos,
+                S: $crate::layouts::LWESecretToBackendRef<$be> + $crate::layouts::LWEInfos,
+                $be: ::poulpy_hal::layouts::HostBackend,
+            {
+                $crate::default::decryption::lwe::lwe_decrypt_default::<Self, $be, _, _, _>(self, res, pt, sk, scratch)
+            }
+
+            fn glwe_tensor_decrypt<
+                R: ::poulpy_hal::layouts::Data,
+                P: ::poulpy_hal::layouts::Data,
+                S0: ::poulpy_hal::layouts::Data,
+                S1: ::poulpy_hal::layouts::Data,
+            >(
+                &self,
+                res: &$crate::layouts::GLWETensor<R>,
+                pt: &mut $crate::layouts::GLWEPlaintext<P>,
+                sk: &$crate::layouts::GLWESecretPrepared<S0, $be>,
+                sk_tensor: &$crate::layouts::GLWESecretTensorPrepared<S1, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) where
+                $crate::layouts::GLWETensor<R>: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                $crate::layouts::GLWEPlaintext<P>:
+                    $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos + $crate::layouts::SetLWEInfos,
+                $crate::layouts::GLWESecretPrepared<S0, $be>:
+                    $crate::layouts::prepared::GLWESecretPreparedToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                $crate::layouts::GLWESecretTensorPrepared<S1, $be>:
+                    $crate::layouts::prepared::GLWESecretTensorPreparedToBackendRef<$be> + $crate::layouts::GLWEInfos,
+            {
+                $crate::default::decryption::glwe_tensor::glwe_tensor_decrypt_default::<Self, $be, R, P, S0, S1>(
+                    self, res, pt, sk, sk_tensor, scratch,
+                )
+            }
+
+            fn glwe_tensor_decrypt_tmp_bytes<A>(&self, infos: &A) -> usize
+            where
+                A: $crate::layouts::GLWEInfos,
+            {
+                $crate::default::decryption::glwe_tensor::glwe_tensor_decrypt_tmp_bytes_default::<Self, $be, _>(self, infos)
+            }
+        }
+    };
+}
+
+#[allow(private_bounds)]
+unsafe impl<BE: Backend + HostBackend + HalVecZnxImpl<BE> + HalVecZnxBigImpl<BE> + HalVecZnxDftImpl<BE> + HalSvpImpl<BE>>
+    DecryptionImpl<BE> for BE
 where
-    Module<BE>: GLWEDecryptDefault<BE> + LWEDecryptDefault<BE> + GLWETensorDecryptDefault<BE>,
-    Scratch<BE>: ScratchTakeCore<BE>,
+    Module<BE>: DecryptionDefault<BE>,
+    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    for<'a> BE::BufRef<'a>: HostDataRef,
 {
-    fn glwe_decrypt_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+    fn glwe_decrypt_tmp_bytes<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: GLWEInfos,
     {
-        <Module<BE> as GLWEDecryptDefault<BE>>::glwe_decrypt_tmp_bytes_default(module, infos)
+        <Module<BE> as DecryptionDefault<BE>>::glwe_decrypt_tmp_bytes(module, infos)
     }
 
-    fn glwe_decrypt_default<R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut Scratch<BE>)
+    fn glwe_decrypt<'s, R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'s, BE>)
     where
-        R: crate::layouts::GLWEToRef + GLWEInfos,
-        P: GLWEPlaintextToMut + GLWEInfos + SetLWEInfos,
-        S: GLWESecretPreparedToRef<BE> + GLWEInfos,
+        R: GLWEToBackendRef<BE> + GLWEInfos,
+        P: GLWEToBackendMut<BE> + GLWEInfos + SetLWEInfos,
+        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     {
-        <Module<BE> as GLWEDecryptDefault<BE>>::glwe_decrypt_default(module, res, pt, sk, scratch)
+        <Module<BE> as DecryptionDefault<BE>>::glwe_decrypt(module, res, pt, sk, scratch)
     }
 
-    fn lwe_decrypt_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
+    fn lwe_decrypt_tmp_bytes<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: LWEInfos,
     {
-        <Module<BE> as LWEDecryptDefault<BE>>::lwe_decrypt_tmp_bytes_default(module, infos)
+        <Module<BE> as DecryptionDefault<BE>>::lwe_decrypt_tmp_bytes(module, infos)
     }
 
-    fn lwe_decrypt_default<R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut Scratch<BE>)
+    fn lwe_decrypt<'s, R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'s, BE>)
     where
-        R: LWEToRef,
-        P: LWEPlaintextToMut + SetLWEInfos + LWEInfos,
-        S: LWESecretToRef,
-        Scratch<BE>: ScratchTakeCore<BE>,
+        R: LWEToBackendRef<BE> + LWEInfos,
+        P: LWEPlaintextToBackendMut<BE> + SetLWEInfos + LWEInfos,
+        S: LWESecretToBackendRef<BE> + LWEInfos,
     {
-        <Module<BE> as LWEDecryptDefault<BE>>::lwe_decrypt_default(module, res, pt, sk, scratch)
+        <Module<BE> as DecryptionDefault<BE>>::lwe_decrypt(module, res, pt, sk, scratch)
     }
 
-    fn glwe_tensor_decrypt_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
-    where
-        A: GLWEInfos,
-    {
-        <Module<BE> as GLWETensorDecryptDefault<BE>>::glwe_tensor_decrypt_tmp_bytes_default(module, infos)
-    }
-
-    fn glwe_tensor_decrypt_default<R, P, S0, S1>(
+    fn glwe_tensor_decrypt<R: Data, P: Data, S0: Data, S1: Data>(
         module: &Module<BE>,
         res: &GLWETensor<R>,
         pt: &mut GLWEPlaintext<P>,
         sk: &GLWESecretPrepared<S0, BE>,
         sk_tensor: &GLWESecretTensorPrepared<S1, BE>,
-        scratch: &mut Scratch<BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: DataRef,
-        P: DataMut,
-        S0: DataRef,
-        S1: DataRef,
+        GLWETensor<R>: GLWEToBackendRef<BE> + GLWEInfos,
+        GLWEPlaintext<P>: GLWEToBackendMut<BE> + GLWEInfos + SetLWEInfos,
+        GLWESecretPrepared<S0, BE>: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
+        GLWESecretTensorPrepared<S1, BE>: GLWESecretTensorPreparedToBackendRef<BE> + GLWEInfos,
     {
-        <Module<BE> as GLWETensorDecryptDefault<BE>>::glwe_tensor_decrypt_default(module, res, pt, sk, sk_tensor, scratch)
+        <Module<BE> as DecryptionDefault<BE>>::glwe_tensor_decrypt(module, res, pt, sk, sk_tensor, scratch)
     }
-}
 
-#[macro_export]
-macro_rules! impl_core_decryption_default_methods {
-    ($be:ty) => {
-        fn glwe_decrypt_tmp_bytes<A>(module: &poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
-        where
-            A: $crate::layouts::GLWEInfos,
-        {
-            <$be as $crate::oep::CoreDecryptionDefaults<$be>>::glwe_decrypt_tmp_bytes_default(module, infos)
-        }
-
-        fn glwe_decrypt<R, P, S>(
-            module: &poulpy_hal::layouts::Module<$be>,
-            res: &R,
-            pt: &mut P,
-            sk: &S,
-            scratch: &mut poulpy_hal::layouts::Scratch<$be>,
-        ) where
-            R: $crate::layouts::GLWEToRef + $crate::layouts::GLWEInfos,
-            P: $crate::layouts::GLWEPlaintextToMut + $crate::layouts::GLWEInfos + $crate::layouts::SetLWEInfos,
-            S: $crate::layouts::GLWESecretPreparedToRef<$be> + $crate::layouts::GLWEInfos,
-        {
-            <$be as $crate::oep::CoreDecryptionDefaults<$be>>::glwe_decrypt_default(module, res, pt, sk, scratch)
-        }
-
-        fn lwe_decrypt_tmp_bytes<A>(module: &poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
-        where
-            A: $crate::layouts::LWEInfos,
-        {
-            <$be as $crate::oep::CoreDecryptionDefaults<$be>>::lwe_decrypt_tmp_bytes_default(module, infos)
-        }
-
-        fn lwe_decrypt<R, P, S>(
-            module: &poulpy_hal::layouts::Module<$be>,
-            res: &R,
-            pt: &mut P,
-            sk: &S,
-            scratch: &mut poulpy_hal::layouts::Scratch<$be>,
-        ) where
-            R: $crate::layouts::LWEToRef,
-            P: $crate::layouts::LWEPlaintextToMut + $crate::layouts::SetLWEInfos + $crate::layouts::LWEInfos,
-            S: $crate::layouts::LWESecretToRef,
-            poulpy_hal::layouts::Scratch<$be>: $crate::ScratchTakeCore<$be>,
-        {
-            <$be as $crate::oep::CoreDecryptionDefaults<$be>>::lwe_decrypt_default(module, res, pt, sk, scratch)
-        }
-
-        fn glwe_tensor_decrypt_tmp_bytes<A>(module: &poulpy_hal::layouts::Module<$be>, infos: &A) -> usize
-        where
-            A: $crate::layouts::GLWEInfos,
-        {
-            <$be as $crate::oep::CoreDecryptionDefaults<$be>>::glwe_tensor_decrypt_tmp_bytes_default(module, infos)
-        }
-
-        fn glwe_tensor_decrypt<R, P, S0, S1>(
-            module: &poulpy_hal::layouts::Module<$be>,
-            res: &$crate::layouts::GLWETensor<R>,
-            pt: &mut $crate::layouts::GLWEPlaintext<P>,
-            sk: &$crate::layouts::GLWESecretPrepared<S0, $be>,
-            sk_tensor: &$crate::layouts::GLWESecretTensorPrepared<S1, $be>,
-            scratch: &mut poulpy_hal::layouts::Scratch<$be>,
-        ) where
-            R: poulpy_hal::layouts::DataRef,
-            P: poulpy_hal::layouts::DataMut,
-            S0: poulpy_hal::layouts::DataRef,
-            S1: poulpy_hal::layouts::DataRef,
-        {
-            <$be as $crate::oep::CoreDecryptionDefaults<$be>>::glwe_tensor_decrypt_default(
-                module, res, pt, sk, sk_tensor, scratch,
-            )
-        }
-    };
+    fn glwe_tensor_decrypt_tmp_bytes<A>(module: &Module<BE>, infos: &A) -> usize
+    where
+        A: GLWEInfos,
+    {
+        <Module<BE> as DecryptionDefault<BE>>::glwe_tensor_decrypt_tmp_bytes(module, infos)
+    }
 }

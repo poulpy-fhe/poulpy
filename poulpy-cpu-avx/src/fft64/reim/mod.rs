@@ -28,6 +28,7 @@ pub(crate) use conversion::*;
 pub(crate) use fft_vec_avx2_fma::*;
 
 use poulpy_cpu_ref::reference::fft64::reim::{ReimFFTExecute, ReimFFTTable, ReimIFFTTable};
+use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
 use rand_distr::num_traits::{Float, FloatConst};
 
 use crate::fft64::reim::{fft_avx2_fma::fft_avx2_fma, ifft_avx2_fma::ifft_avx2_fma};
@@ -44,6 +45,40 @@ pub(crate) fn as_arr<const SIZE: usize, R: Float + FloatConst>(x: &[R]) -> &[R; 
 pub(crate) fn as_arr_mut<const SIZE: usize, R: Float + FloatConst>(x: &mut [R]) -> &mut [R; SIZE] {
     debug_assert!(x.len() >= SIZE);
     unsafe { &mut *(x.as_mut_ptr() as *mut [R; SIZE]) }
+}
+
+/// Precomputed twiddle-factor tables for the negacyclic reim FFT and IFFT,
+/// dispatching to AVX2/FMA-accelerated kernels.
+///
+/// Wraps [`ReimFFTTable`] and [`ReimIFFTTable`] into a single object that
+/// implements [`NegacyclicFFT`], suitable for use as the transform provider
+/// in a CKKS [`poulpy_ckks::encoding::Encoder`].
+pub struct FFT64AvxReimTable {
+    fft: ReimFFTTable<f64>,
+    ifft: ReimIFFTTable<f64>,
+}
+
+impl NegacyclicFFT<f64> for FFT64AvxReimTable {
+    fn m(&self) -> usize {
+        self.fft.m()
+    }
+
+    fn fft(&self, data: &mut [f64]) {
+        ReimFFTAvx::reim_dft_execute(&self.fft, data);
+    }
+
+    fn ifft(&self, data: &mut [f64]) {
+        ReimIFFTAvx::reim_dft_execute(&self.ifft, data);
+    }
+}
+
+impl NegacyclicFFTNew<f64> for FFT64AvxReimTable {
+    fn new(m: usize) -> Self {
+        Self {
+            fft: ReimFFTTable::new(m),
+            ifft: ReimIFFTTable::new(m),
+        }
+    }
 }
 
 pub struct ReimFFTAvx;

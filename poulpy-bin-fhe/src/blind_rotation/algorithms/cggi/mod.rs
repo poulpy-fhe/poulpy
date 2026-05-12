@@ -5,7 +5,8 @@ mod key_prepared;
 
 use std::marker::PhantomData;
 
-use poulpy_core::{Distribution, layouts::GGSW};
+use poulpy_core::{Distribution, layouts::ModuleCoreAlloc};
+use poulpy_hal::api::ModuleN;
 
 use crate::blind_rotation::{BlindRotationAlgo, BlindRotationKey, BlindRotationKeyInfos};
 
@@ -32,9 +33,19 @@ use crate::blind_rotation::{BlindRotationAlgo, BlindRotationKey, BlindRotationKe
 pub struct CGGI {}
 
 impl BlindRotationAlgo for CGGI {
-    fn alloc_key<A: BlindRotationKeyInfos>(infos: &A) -> BlindRotationKey<Vec<u8>, Self> {
+    fn alloc_key<M, A>(module: &M, infos: &A) -> BlindRotationKey<M::OwnedBuf, Self>
+    where
+        M: ModuleCoreAlloc + ModuleN,
+        A: BlindRotationKeyInfos,
+    {
+        #[cfg(debug_assertions)]
+        {
+            assert_eq!(module.n(), infos.n_glwe().as_usize());
+        }
         BlindRotationKey {
-            keys: (0..infos.n_lwe().as_usize()).map(|_| GGSW::alloc_from_infos(infos)).collect(),
+            keys: (0..infos.n_lwe().as_usize())
+                .map(|_| module.ggsw_alloc_from_infos(infos))
+                .collect(),
             dist: Distribution::NONE,
             _phantom: PhantomData,
         }

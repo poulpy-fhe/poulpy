@@ -9,16 +9,15 @@ use poulpy_bin_fhe::{
     circuit_bootstrapping::CircuitBootstrappingKeyLayout,
 };
 use poulpy_core::{
-    EncryptionLayout, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk, ScratchTakeCore,
+    EncryptionLayout, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk, ScratchArenaTakeCore,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGLWEToGGSWKeyLayout, GGSWLayout, GGSWPreparedFactory, GLWEAutomorphismKeyLayout,
-        GLWELayout, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, GLWEToMut, GLWEToRef,
-        LWESecret, Rank, TorusPrecision,
+        GLWELayout, GLWESecretPreparedFactory, GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
     },
 };
 use poulpy_hal::{
-    api::{ModuleN, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssign},
-    layouts::{Backend, DeviceBuf, Module, Scratch, ScratchOwned},
+    api::{ModuleN, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssignBackend},
+    layouts::{Backend, HostBackend, HostDataMut, HostDataRef, Module, ScratchArena, ScratchOwned},
     source::Source,
 };
 use rand::RngExt;
@@ -31,8 +30,9 @@ use poulpy_cpu_ref::FFT64Ref;
 // This example demonstrates and end-to-end example usage of the BDD arithmetic API
 // to compute the maximum of an array of integers.
 
-fn example_max_array<BE: Backend, BRA: BlindRotationAlgo>()
+fn example_max_array<BE, BRA: BlindRotationAlgo>()
 where
+    BE: Backend<OwnedBuf = Vec<u8>> + HostBackend + 'static,
     Module<BE>: ModuleNew<BE>
         + ModuleN
         + GLWESecretPreparedFactory<BE>
@@ -41,14 +41,17 @@ where
         + LWEEncryptSk<BE>
         + GGSWPreparedFactory<BE>
         + GLWEEncryptSk<BE>
-        + VecZnxRotateAssign<BE>
+        + VecZnxRotateAssignBackend<BE>
         + BDDKeyEncryptSk<BRA, BE>
         + BDDKeyPreparedFactory<BRA, BE>
         + FheUintPrepare<BRA, BE>
         + ExecuteBDDCircuit2WTo1W<BE>
         + GLWEBlindSelection<u32, BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    Scratch<BE>: ScratchTakeCore<BE>,
+    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+    BE::OwnedBuf: HostDataRef + HostDataMut,
+    for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]> + 'static,
+    for<'a> BE::BufMut<'a>: AsMut<[u8]> + AsRef<[u8]> + Sync,
 {
     ////////// Parameter Selection
     const N_GLWE: u32 = 1024;
@@ -137,10 +140,10 @@ where
 
     ////////// Key Generation and Preparation
     // Generating the GLWE and LWE key
-    let mut sk_glwe = GLWESecret::alloc_from_infos(&glwe_layout);
+    let mut sk_glwe = module.glwe_secret_alloc_from_infos(&glwe_layout);
     sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
 
-    let mut sk_lwe = LWESecret::alloc(Degree(N_LWE));
+    let mut sk_lwe = module.lwe_secret_alloc(Degree(N_LWE));
     sk_lwe.fill_binary_block(BINARY_BLOCK_SIZE as usize, &mut source_xs);
 
     // Preparing the private keys
@@ -153,7 +156,7 @@ where
     let bdd_enc_infos = BDDEncryptionInfos::from_default_sigma(&bdd_layout).unwrap();
     let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(glwe_layout).unwrap();
 
-    let mut bdd_key: BDDKey<Vec<u8>, BRA> = BDDKey::alloc_from_infos(&bdd_layout);
+    let mut bdd_key: BDDKey<Vec<u8>, BRA> = BDDKey::alloc_from_infos(&module, &bdd_layout);
     bdd_key.encrypt_sk(
         &module,
         &sk_lwe,
@@ -161,7 +164,7 @@ where
         &bdd_enc_infos,
         &mut source_xe,
         &mut source_xa,
-        scratch.borrow(),
+        &mut scratch.borrow(),
     );
 
     ////////// Input Encryption
@@ -171,7 +174,7 @@ where
 
     let mut inputs_enc: Vec<FheUint<Vec<u8>, u32>> = Vec::new();
     for input in &inputs {
-        let mut next_input = FheUint::alloc_from_infos(&glwe_layout);
+        let mut next_input = FheUint::alloc_from_infos(&module, &glwe_layout);
         next_input.encrypt_sk(
             &module,
             *input,
@@ -179,7 +182,7 @@ where
             &glwe_enc_infos,
             &mut source_xe,
             &mut source_xa,
-            scratch.borrow(),
+            &mut scratch.borrow(),
         );
         inputs_enc.push(next_input);
     }
@@ -188,10 +191,10 @@ where
 
     // Preparing the BDD Key
     // The BDD key must be prepared once before any operation is performed
-    let mut bdd_key_prepared: BDDKeyPrepared<DeviceBuf<BE>, BRA, BE> = BDDKeyPrepared::alloc_from_infos(&module, &bdd_layout);
-    bdd_key_prepared.prepare(&module, &bdd_key, scratch.borrow());
+    let mut bdd_key_prepared: BDDKeyPrepared<BE::OwnedBuf, BRA, BE> = BDDKeyPrepared::alloc_from_infos(&module, &bdd_layout);
+    bdd_key_prepared.prepare(&module, &bdd_key, &mut scratch.borrow());
 
-    let mut max_enc: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&glwe_layout);
+    let mut max_enc: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&module, &glwe_layout);
     max_enc.encrypt_sk(
         &module,
         0,
@@ -199,24 +202,24 @@ where
         &glwe_enc_infos,
         &mut source_xe,
         &mut source_xa,
-        scratch.borrow(),
+        &mut scratch.borrow(),
     );
     // Copy of max_enc for the HashMap
-    let mut max_enc_copy: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&glwe_layout);
+    let mut max_enc_copy: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&module, &glwe_layout);
 
     // Allocating the intermediate ciphertext c_enc
-    let mut compare_enc: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&glwe_layout);
-    let mut compare_enc_prepared: FheUintPrepared<DeviceBuf<BE>, u32, BE> =
+    let mut compare_enc: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&module, &glwe_layout);
+    let mut compare_enc_prepared: FheUintPrepared<BE::OwnedBuf, u32, BE> =
         FheUintPrepared::alloc_from_infos(&module, &ggsw_layout);
 
     for input_i in inputs_enc.iter_mut() {
-        let mut max_enc_prepared: FheUintPrepared<DeviceBuf<BE>, u32, BE> =
+        let mut max_enc_prepared: FheUintPrepared<BE::OwnedBuf, u32, BE> =
             FheUintPrepared::alloc_from_infos(&module, &ggsw_layout);
-        max_enc_prepared.prepare(&module, &max_enc, &bdd_key_prepared, scratch.borrow());
+        max_enc_prepared.prepare(&module, &max_enc, &bdd_key_prepared, &mut scratch.borrow());
 
-        let mut input_i_enc_prepared: FheUintPrepared<DeviceBuf<BE>, u32, BE> =
+        let mut input_i_enc_prepared: FheUintPrepared<BE::OwnedBuf, u32, BE> =
             FheUintPrepared::alloc_from_infos(&module, &ggsw_layout);
-        input_i_enc_prepared.prepare(&module, input_i, &bdd_key_prepared, scratch.borrow());
+        input_i_enc_prepared.prepare(&module, input_i, &bdd_key_prepared, &mut scratch.borrow());
 
         // b = (input_i < max)
         compare_enc.sltu(
@@ -224,12 +227,12 @@ where
             &input_i_enc_prepared,
             &max_enc_prepared,
             &bdd_key_prepared,
-            scratch.borrow(),
+            &mut scratch.borrow(),
         );
 
-        compare_enc_prepared.prepare(&module, &compare_enc, &bdd_key_prepared, scratch.borrow());
+        compare_enc_prepared.prepare(&module, &compare_enc, &bdd_key_prepared, &mut scratch.borrow());
 
-        module.glwe_copy(&mut max_enc_copy.to_mut(), &max_enc.to_ref());
+        module.glwe_copy(&mut max_enc_copy, &max_enc);
 
         let cts = HashMap::from([(0, input_i), (1, &mut max_enc_copy)]);
 
@@ -240,14 +243,14 @@ where
             &compare_enc_prepared,
             0,
             1,
-            scratch.borrow(),
+            &mut scratch.borrow(),
         );
     }
 
     //////// Homomorphic computation ends here ////////
 
     // Decrypting the result
-    let result_dec = max_enc.decrypt(&module, &sk_glwe_prepared, scratch.borrow());
+    let result_dec = max_enc.decrypt(&module, &sk_glwe_prepared, &mut scratch.borrow());
 
     // result = max of inputs
     let result_correct = inputs.iter().max().unwrap();

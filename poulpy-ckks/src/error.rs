@@ -28,6 +28,15 @@ pub enum CKKSCompositionError {
         ct_base2k: usize,
         pt_base2k: usize,
     },
+    /// A full plaintext-vector operation received a plaintext with the wrong degree.
+    PlaintextDegreeMismatch { op: &'static str, ct_n: usize, pt_n: usize },
+    /// A plaintext-coefficient operation requested a coefficient outside the source or destination layout.
+    PlaintextCoefficientOutOfRange {
+        op: &'static str,
+        role: &'static str,
+        coeff: usize,
+        n: usize,
+    },
     /// A requested rotation/conjugation key is not present in the provided key map.
     MissingAutomorphismKey { op: &'static str, rotation: i64 },
     /// A plaintext cannot be aligned into the requested destination precision.
@@ -35,7 +44,7 @@ pub enum CKKSCompositionError {
         op: &'static str,
         ct_log_budget: usize,
         pt_log_delta: usize,
-        pt_max_k: usize,
+        pt_k: usize,
     },
     /// A multiplication would consume more semantic precision than available.
     MultiplicationPrecisionUnderflow {
@@ -76,6 +85,15 @@ impl fmt::Display for CKKSCompositionError {
                 f,
                 "{op} requires matching base2k values, got ciphertext base2k={ct_base2k} and plaintext base2k={pt_base2k}"
             ),
+            Self::PlaintextDegreeMismatch { op, ct_n, pt_n } => {
+                write!(
+                    f,
+                    "{op} requires a full plaintext with degree {ct_n}, got plaintext degree {pt_n}"
+                )
+            }
+            Self::PlaintextCoefficientOutOfRange { op, role, coeff, n } => {
+                write!(f, "{op} coefficient index {coeff} is out of range for {role} degree {n}")
+            }
             Self::MissingAutomorphismKey { op, rotation } => {
                 write!(
                     f,
@@ -86,10 +104,10 @@ impl fmt::Display for CKKSCompositionError {
                 op,
                 ct_log_budget,
                 pt_log_delta,
-                pt_max_k,
+                pt_k,
             } => write!(
                 f,
-                "{op} cannot align plaintext with ciphertext: ct.log_budget + pt.log_delta = {} but pt.max_k = {pt_max_k} (ct.log_budget={ct_log_budget}, pt.log_delta={pt_log_delta})",
+                "{op} cannot align plaintext with ciphertext: ct.log_budget + pt.log_delta = {} but plaintext precision is {pt_k} bits (ct.log_budget={ct_log_budget}, pt.log_delta={pt_log_delta})",
                 ct_log_budget + pt_log_delta
             ),
             Self::MultiplicationPrecisionUnderflow {
@@ -133,23 +151,37 @@ pub(crate) fn ensure_base2k_match(op: &'static str, ct_base2k: usize, pt_base2k:
     Ok(())
 }
 
+pub(crate) fn ensure_plaintext_degree_match(op: &'static str, ct_n: usize, pt_n: usize) -> Result<()> {
+    if ct_n != pt_n {
+        return Err(CKKSCompositionError::PlaintextDegreeMismatch { op, ct_n, pt_n }.into());
+    }
+    Ok(())
+}
+
+pub(crate) fn ensure_plaintext_coeff_in_range(op: &'static str, role: &'static str, coeff: usize, n: usize) -> Result<()> {
+    if coeff >= n {
+        return Err(CKKSCompositionError::PlaintextCoefficientOutOfRange { op, role, coeff, n }.into());
+    }
+    Ok(())
+}
+
 pub(crate) fn ensure_plaintext_alignment(
     op: &'static str,
     ct_log_budget: usize,
     pt_log_delta: usize,
-    pt_max_k: usize,
+    pt_k: usize,
 ) -> Result<usize> {
     let available = ct_log_budget + pt_log_delta;
-    if available < pt_max_k {
+    if available < pt_k {
         return Err(CKKSCompositionError::PlaintextAlignmentImpossible {
             op,
             ct_log_budget,
             pt_log_delta,
-            pt_max_k,
+            pt_k,
         }
         .into());
     }
-    Ok(available - pt_max_k)
+    Ok(available - pt_k)
 }
 
 pub(crate) fn checked_mul_ct_log_budget(

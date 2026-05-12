@@ -1,236 +1,259 @@
-#[macro_export]
-macro_rules! impl_ckks_mul_default_methods {
-    ($backend:ty) => {
-        fn ckks_mul_tmp_bytes<R: poulpy_core::layouts::GLWEInfos, T: poulpy_core::layouts::GGLWEInfos>(
-            module: &poulpy_hal::layouts::Module<$backend>,
-            res: &R,
-            tsk: &T,
-        ) -> usize
-        where
-            poulpy_hal::layouts::Module<$backend>: poulpy_core::GLWETensoring<$backend>,
-        {
-            <poulpy_hal::layouts::Module<$backend> as $crate::leveled::default::mul::CKKSMulDefault<$backend>>::ckks_mul_tmp_bytes_default(module, res, tsk)
-        }
+use crate::default::mul::CKKSMulDefault;
 
-        fn ckks_square_tmp_bytes<R: poulpy_core::layouts::GLWEInfos, T: poulpy_core::layouts::GGLWEInfos>(
-            module: &poulpy_hal::layouts::Module<$backend>,
-            res: &R,
-            tsk: &T,
-        ) -> usize
-        where
-            poulpy_hal::layouts::Module<$backend>: poulpy_core::GLWETensoring<$backend>,
-        {
-            <poulpy_hal::layouts::Module<$backend> as $crate::leveled::default::mul::CKKSMulDefault<$backend>>::ckks_square_tmp_bytes_default(module, res, tsk)
-        }
+use anyhow::Result;
+use poulpy_core::{
+    GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWETensoring, ScratchArenaTakeCore,
+    layouts::{GGLWEInfos, GLWEInfos, LWEInfos, ModuleCoreAlloc, prepared::GLWETensorKeyPreparedToBackendRef},
+};
+use poulpy_hal::{
+    api::{ScratchAvailable, VecZnxCopyBackend},
+    layouts::{Backend, Module, ScratchArena},
+};
 
-        fn ckks_mul_pt_vec_znx_tmp_bytes<R: poulpy_core::layouts::GLWEInfos, A: poulpy_core::layouts::GLWEInfos>(
-            module: &poulpy_hal::layouts::Module<$backend>,
-            res: &R,
-            a: &A,
-            b: &$crate::CKKSMeta,
-        ) -> usize
-        where
-            poulpy_hal::layouts::Module<$backend>: poulpy_core::GLWEMulPlain<$backend>,
-        {
-            <poulpy_hal::layouts::Module<$backend> as $crate::leveled::default::mul::CKKSMulDefault<$backend>>::ckks_mul_pt_vec_znx_tmp_bytes_default(module, res, a, b)
-        }
+use crate::{CKKSInfos, CKKSMeta, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
 
-        fn ckks_mul_pt_vec_rnx_tmp_bytes<R: poulpy_core::layouts::GLWEInfos, A: poulpy_core::layouts::GLWEInfos>(
-            module: &poulpy_hal::layouts::Module<$backend>,
-            res: &R,
-            a: &A,
-            b: &$crate::CKKSMeta,
-        ) -> usize
-        where
-            poulpy_hal::layouts::Module<$backend>: poulpy_hal::api::ModuleN + poulpy_core::GLWEMulPlain<$backend>,
-        {
-            <poulpy_hal::layouts::Module<$backend> as $crate::leveled::default::mul::CKKSMulDefault<$backend>>::ckks_mul_pt_vec_rnx_tmp_bytes_default(module, res, a, b)
-        }
-
-        fn ckks_mul_pt_const_tmp_bytes<R: poulpy_core::layouts::GLWEInfos, A: poulpy_core::layouts::GLWEInfos>(
-            module: &poulpy_hal::layouts::Module<$backend>,
-            res: &R,
-            a: &A,
-            b: &$crate::CKKSMeta,
-        ) -> usize
-        where
-            poulpy_hal::layouts::Module<$backend>: poulpy_core::GLWEMulConst<$backend> + poulpy_core::GLWERotate<$backend>,
-        {
-            <poulpy_hal::layouts::Module<$backend> as $crate::leveled::default::mul::CKKSMulDefault<$backend>>::ckks_mul_pt_const_tmp_bytes_default(module, res, a, b)
-        }
-
-        fn ckks_mul_into(
-            module: &poulpy_hal::layouts::Module<$backend>,
-            dst: &mut $crate::layouts::CKKSCiphertext<impl poulpy_hal::layouts::DataMut>,
-            a: &$crate::layouts::CKKSCiphertext<impl poulpy_hal::layouts::DataRef>,
-            b: &$crate::layouts::CKKSCiphertext<impl poulpy_hal::layouts::DataRef>,
-            tsk: &poulpy_core::layouts::GLWETensorKeyPrepared<impl poulpy_hal::layouts::DataRef, $backend>,
-            scratch: &mut poulpy_hal::layouts::Scratch<$backend>,
-        ) -> anyhow::Result<()>
-        where
-            poulpy_hal::layouts::Module<$backend>: poulpy_core::GLWETensoring<$backend>,
-            poulpy_hal::layouts::Scratch<$backend>: poulpy_hal::api::ScratchAvailable + poulpy_core::ScratchTakeCore<$backend>,
-        {
-            <poulpy_hal::layouts::Module<$backend> as $crate::leveled::default::mul::CKKSMulDefault<$backend>>::ckks_mul_into_default(module, dst, a, b, tsk, scratch)
-        }
-
-        fn ckks_mul_assign(
-            module: &poulpy_hal::layouts::Module<$backend>,
-            dst: &mut $crate::layouts::CKKSCiphertext<impl poulpy_hal::layouts::DataMut>,
-            a: &$crate::layouts::CKKSCiphertext<impl poulpy_hal::layouts::DataRef>,
-            tsk: &poulpy_core::layouts::GLWETensorKeyPrepared<impl poulpy_hal::layouts::DataRef, $backend>,
-            scratch: &mut poulpy_hal::layouts::Scratch<$backend>,
-        ) -> anyhow::Result<()>
-        where
-            poulpy_hal::layouts::Module<$backend>: poulpy_core::GLWETensoring<$backend>,
-            poulpy_hal::layouts::Scratch<$backend>: poulpy_hal::api::ScratchAvailable + poulpy_core::ScratchTakeCore<$backend>,
-        {
-            <poulpy_hal::layouts::Module<$backend> as $crate::leveled::default::mul::CKKSMulDefault<$backend>>::ckks_mul_assign_default(module, dst, a, tsk, scratch)
-        }
-
-        fn ckks_square_into(
-            module: &poulpy_hal::layouts::Module<$backend>,
-            dst: &mut $crate::layouts::CKKSCiphertext<impl poulpy_hal::layouts::DataMut>,
-            a: &$crate::layouts::CKKSCiphertext<impl poulpy_hal::layouts::DataRef>,
-            tsk: &poulpy_core::layouts::GLWETensorKeyPrepared<impl poulpy_hal::layouts::DataRef, $backend>,
-            scratch: &mut poulpy_hal::layouts::Scratch<$backend>,
-        ) -> anyhow::Result<()>
-        where
-            poulpy_hal::layouts::Module<$backend>: poulpy_core::GLWETensoring<$backend>,
-            poulpy_hal::layouts::Scratch<$backend>: poulpy_hal::api::ScratchAvailable + poulpy_core::ScratchTakeCore<$backend>,
-        {
-            <poulpy_hal::layouts::Module<$backend> as $crate::leveled::default::mul::CKKSMulDefault<$backend>>::ckks_square_into_default(module, dst, a, tsk, scratch)
-        }
-
-        fn ckks_square_assign(
-            module: &poulpy_hal::layouts::Module<$backend>,
-            dst: &mut $crate::layouts::CKKSCiphertext<impl poulpy_hal::layouts::DataMut>,
-            tsk: &poulpy_core::layouts::GLWETensorKeyPrepared<impl poulpy_hal::layouts::DataRef, $backend>,
-            scratch: &mut poulpy_hal::layouts::Scratch<$backend>,
-        ) -> anyhow::Result<()>
-        where
-            poulpy_hal::layouts::Module<$backend>: poulpy_core::GLWETensoring<$backend>,
-            poulpy_hal::layouts::Scratch<$backend>: poulpy_hal::api::ScratchAvailable + poulpy_core::ScratchTakeCore<$backend>,
-        {
-            <poulpy_hal::layouts::Module<$backend> as $crate::leveled::default::mul::CKKSMulDefault<$backend>>::ckks_square_assign_default(module, dst, tsk, scratch)
-        }
-
-        fn ckks_mul_pt_vec_znx_into(
-            module: &poulpy_hal::layouts::Module<$backend>,
-            dst: &mut $crate::layouts::CKKSCiphertext<impl poulpy_hal::layouts::DataMut>,
-            a: &$crate::layouts::CKKSCiphertext<impl poulpy_hal::layouts::DataRef>,
-            pt_znx: &$crate::layouts::plaintext::CKKSPlaintextVecZnx<impl poulpy_hal::layouts::DataRef>,
-            scratch: &mut poulpy_hal::layouts::Scratch<$backend>,
-        ) -> anyhow::Result<()>
-        where
-            poulpy_hal::layouts::Module<$backend>: poulpy_core::GLWEMulPlain<$backend>,
-            poulpy_hal::layouts::Scratch<$backend>: poulpy_hal::api::ScratchAvailable + poulpy_core::ScratchTakeCore<$backend>,
-        {
-            <poulpy_hal::layouts::Module<$backend> as $crate::leveled::default::mul::CKKSMulDefault<$backend>>::ckks_mul_pt_vec_znx_into_default(module, dst, a, pt_znx, scratch)
-        }
-
-        fn ckks_mul_pt_vec_znx_assign(
-            module: &poulpy_hal::layouts::Module<$backend>,
-            dst: &mut $crate::layouts::CKKSCiphertext<impl poulpy_hal::layouts::DataMut>,
-            pt_znx: &$crate::layouts::plaintext::CKKSPlaintextVecZnx<impl poulpy_hal::layouts::DataRef>,
-            scratch: &mut poulpy_hal::layouts::Scratch<$backend>,
-        ) -> anyhow::Result<()>
-        where
-            poulpy_hal::layouts::Module<$backend>: poulpy_core::GLWEMulPlain<$backend>,
-            poulpy_hal::layouts::Scratch<$backend>: poulpy_hal::api::ScratchAvailable + poulpy_core::ScratchTakeCore<$backend>,
-        {
-            <poulpy_hal::layouts::Module<$backend> as $crate::leveled::default::mul::CKKSMulDefault<$backend>>::ckks_mul_pt_vec_znx_assign_default(module, dst, pt_znx, scratch)
-        }
-
-        fn ckks_mul_pt_vec_rnx_into<F>(
-            module: &poulpy_hal::layouts::Module<$backend>,
-            dst: &mut $crate::layouts::CKKSCiphertext<impl poulpy_hal::layouts::DataMut>,
-            a: &$crate::layouts::CKKSCiphertext<impl poulpy_hal::layouts::DataRef>,
-            pt_rnx: &$crate::layouts::plaintext::CKKSPlaintextVecRnx<F>,
-            prec: $crate::CKKSMeta,
-            scratch: &mut poulpy_hal::layouts::Scratch<$backend>,
-        ) -> anyhow::Result<()>
-        where
-            poulpy_hal::layouts::Module<$backend>: poulpy_hal::api::ModuleN + poulpy_core::GLWEMulPlain<$backend>,
-            $crate::layouts::plaintext::CKKSPlaintextVecRnx<F>: $crate::layouts::plaintext::CKKSPlaintextConversion,
-            poulpy_hal::layouts::Scratch<$backend>: poulpy_hal::api::ScratchAvailable + poulpy_core::ScratchTakeCore<$backend>,
-        {
-            <poulpy_hal::layouts::Module<$backend> as $crate::leveled::default::mul::CKKSMulDefault<$backend>>::ckks_mul_pt_vec_rnx_into_default(module, dst, a, pt_rnx, prec, scratch)
-        }
-
-        fn ckks_mul_pt_vec_rnx_assign<F>(
-            module: &poulpy_hal::layouts::Module<$backend>,
-            dst: &mut $crate::layouts::CKKSCiphertext<impl poulpy_hal::layouts::DataMut>,
-            pt_rnx: &$crate::layouts::plaintext::CKKSPlaintextVecRnx<F>,
-            prec: $crate::CKKSMeta,
-            scratch: &mut poulpy_hal::layouts::Scratch<$backend>,
-        ) -> anyhow::Result<()>
-        where
-            poulpy_hal::layouts::Module<$backend>: poulpy_hal::api::ModuleN + poulpy_core::GLWEMulPlain<$backend>,
-            $crate::layouts::plaintext::CKKSPlaintextVecRnx<F>: $crate::layouts::plaintext::CKKSPlaintextConversion,
-            poulpy_hal::layouts::Scratch<$backend>: poulpy_hal::api::ScratchAvailable + poulpy_core::ScratchTakeCore<$backend>,
-        {
-            <poulpy_hal::layouts::Module<$backend> as $crate::leveled::default::mul::CKKSMulDefault<$backend>>::ckks_mul_pt_vec_rnx_assign_default(module, dst, pt_rnx, prec, scratch)
-        }
-
-        fn ckks_mul_pt_const_znx_into(
-            module: &poulpy_hal::layouts::Module<$backend>,
-            dst: &mut $crate::layouts::CKKSCiphertext<impl poulpy_hal::layouts::DataMut>,
-            a: &$crate::layouts::CKKSCiphertext<impl poulpy_hal::layouts::DataRef>,
-            cst_znx: &$crate::layouts::plaintext::CKKSPlaintextCstZnx,
-            scratch: &mut poulpy_hal::layouts::Scratch<$backend>,
-        ) -> anyhow::Result<()>
-        where
-            poulpy_hal::layouts::Module<$backend>: poulpy_core::GLWEAdd + poulpy_core::GLWEMulConst<$backend> + poulpy_core::GLWERotate<$backend>,
-            poulpy_hal::layouts::Scratch<$backend>: poulpy_hal::api::ScratchAvailable + poulpy_core::ScratchTakeCore<$backend>,
-        {
-            <poulpy_hal::layouts::Module<$backend> as $crate::leveled::default::mul::CKKSMulDefault<$backend>>::ckks_mul_pt_const_znx_into_default(module, dst, a, cst_znx, scratch)
-        }
-
-        fn ckks_mul_pt_const_znx_assign(
-            module: &poulpy_hal::layouts::Module<$backend>,
-            dst: &mut $crate::layouts::CKKSCiphertext<impl poulpy_hal::layouts::DataMut>,
-            cst_znx: &$crate::layouts::plaintext::CKKSPlaintextCstZnx,
-            scratch: &mut poulpy_hal::layouts::Scratch<$backend>,
-        ) -> anyhow::Result<()>
-        where
-            poulpy_hal::layouts::Module<$backend>: poulpy_core::GLWEAdd + poulpy_core::GLWEMulConst<$backend> + poulpy_core::GLWERotate<$backend>,
-            poulpy_hal::layouts::Scratch<$backend>: poulpy_hal::api::ScratchAvailable + poulpy_core::ScratchTakeCore<$backend>,
-        {
-            <poulpy_hal::layouts::Module<$backend> as $crate::leveled::default::mul::CKKSMulDefault<$backend>>::ckks_mul_pt_const_znx_assign_default(module, dst, cst_znx, scratch)
-        }
-
-        fn ckks_mul_pt_const_rnx_into<F>(
-            module: &poulpy_hal::layouts::Module<$backend>,
-            dst: &mut $crate::layouts::CKKSCiphertext<impl poulpy_hal::layouts::DataMut>,
-            a: &$crate::layouts::CKKSCiphertext<impl poulpy_hal::layouts::DataRef>,
-            cst_rnx: &$crate::layouts::plaintext::CKKSPlaintextCstRnx<F>,
-            prec: $crate::CKKSMeta,
-            scratch: &mut poulpy_hal::layouts::Scratch<$backend>,
-        ) -> anyhow::Result<()>
-        where
-            poulpy_hal::layouts::Module<$backend>: poulpy_core::GLWEAdd + poulpy_core::GLWEMulConst<$backend> + poulpy_core::GLWERotate<$backend>,
-            poulpy_hal::layouts::Scratch<$backend>: poulpy_hal::api::ScratchAvailable + poulpy_core::ScratchTakeCore<$backend>,
-            $crate::layouts::plaintext::CKKSPlaintextCstRnx<F>: $crate::layouts::plaintext::CKKSConstPlaintextConversion,
-        {
-            <poulpy_hal::layouts::Module<$backend> as $crate::leveled::default::mul::CKKSMulDefault<$backend>>::ckks_mul_pt_const_rnx_into_default(module, dst, a, cst_rnx, prec, scratch)
-        }
-
-        fn ckks_mul_pt_const_rnx_assign<F>(
-            module: &poulpy_hal::layouts::Module<$backend>,
-            dst: &mut $crate::layouts::CKKSCiphertext<impl poulpy_hal::layouts::DataMut>,
-            cst_rnx: &$crate::layouts::plaintext::CKKSPlaintextCstRnx<F>,
-            prec: $crate::CKKSMeta,
-            scratch: &mut poulpy_hal::layouts::Scratch<$backend>,
-        ) -> anyhow::Result<()>
-        where
-            poulpy_hal::layouts::Module<$backend>: poulpy_core::GLWEAdd + poulpy_core::GLWEMulConst<$backend> + poulpy_core::GLWERotate<$backend>,
-            poulpy_hal::layouts::Scratch<$backend>: poulpy_hal::api::ScratchAvailable + poulpy_core::ScratchTakeCore<$backend>,
-            $crate::layouts::plaintext::CKKSPlaintextCstRnx<F>: $crate::layouts::plaintext::CKKSConstPlaintextConversion,
-        {
-            <poulpy_hal::layouts::Module<$backend> as $crate::leveled::default::mul::CKKSMulDefault<$backend>>::ckks_mul_pt_const_rnx_assign_default(module, dst, cst_rnx, prec, scratch)
-        }
-    };
+/// # Safety
+///
+/// Implementations must satisfy the contracts of all trait methods, including
+/// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
+/// associated method signatures.
+pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
+    fn ckks_mul_tmp_bytes<R: GLWEInfos, T: GGLWEInfos>(module: &Module<BE>, res: &R, tsk: &T) -> usize;
+    fn ckks_square_tmp_bytes<R: GLWEInfos, T: GGLWEInfos>(module: &Module<BE>, res: &R, tsk: &T) -> usize;
+    fn ckks_mul_pt_vec_tmp_bytes<R: GLWEInfos, A: GLWEInfos>(module: &Module<BE>, res: &R, a: &A, b: &CKKSMeta) -> usize;
+    fn ckks_mul_pt_const_tmp_bytes<R: GLWEInfos, A: GLWEInfos>(module: &Module<BE>, res: &R, a: &A, b: &CKKSMeta) -> usize;
+    fn ckks_mul_into<Dst, A, B, T>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        a: &A,
+        b: &B,
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        B: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
+    fn ckks_mul_assign<Dst, A, T>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        a: &A,
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
+    fn ckks_square_into<Dst, A, T>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        a: &A,
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
+    fn ckks_square_assign<Dst, T>(module: &Module<BE>, dst: &mut Dst, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
+    fn ckks_mul_pt_vec_into<Dst, A, P>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        a: &A,
+        pt: &P,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        P: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos + CKKSInfos;
+    fn ckks_mul_pt_vec_assign<Dst, P>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        pt: &P,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        P: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos + CKKSInfos;
+    fn ckks_mul_pt_const_into<Dst, A, P>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        a: &A,
+        pt: &P,
+        pt_coeff: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        P: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos + CKKSInfos;
+    fn ckks_mul_pt_const_assign<Dst, P>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        pt: &P,
+        pt_coeff: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        P: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos + CKKSInfos;
 }
 
-pub use crate::impl_ckks_mul_default_methods;
+#[allow(private_bounds)]
+unsafe impl<BE: Backend> CKKSMulImpl<BE> for BE
+where
+    BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
+    Module<BE>: crate::default::mul::CKKSMulDefault<BE>
+        + GLWEAdd<BE>
+        + GLWECopy<BE>
+        + GLWEMulConst<BE>
+        + GLWEMulPlain<BE>
+        + GLWERotate<BE>
+        + GLWETensoring<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
+        + VecZnxCopyBackend<BE>,
+    for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
+{
+    fn ckks_mul_tmp_bytes<R: GLWEInfos, T: GGLWEInfos>(module: &Module<BE>, res: &R, tsk: &T) -> usize {
+        module.ckks_mul_tmp_bytes_default(res, tsk)
+    }
+
+    fn ckks_square_tmp_bytes<R: GLWEInfos, T: GGLWEInfos>(module: &Module<BE>, res: &R, tsk: &T) -> usize {
+        module.ckks_square_tmp_bytes_default(res, tsk)
+    }
+
+    fn ckks_mul_pt_vec_tmp_bytes<R: GLWEInfos, A: GLWEInfos>(module: &Module<BE>, res: &R, a: &A, b: &CKKSMeta) -> usize {
+        module.ckks_mul_pt_vec_tmp_bytes_default(res, a, b)
+    }
+
+    fn ckks_mul_pt_const_tmp_bytes<R: GLWEInfos, A: GLWEInfos>(module: &Module<BE>, res: &R, a: &A, b: &CKKSMeta) -> usize {
+        module.ckks_mul_pt_const_tmp_bytes_default(res, a, b)
+    }
+
+    fn ckks_mul_into<Dst, A, B, T>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        a: &A,
+        b: &B,
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        B: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        module.ckks_mul_into_default(dst, a, b, tsk, scratch)
+    }
+
+    fn ckks_mul_assign<Dst, A, T>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        a: &A,
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        module.ckks_mul_assign_default(dst, a, tsk, scratch)
+    }
+
+    fn ckks_square_into<Dst, A, T>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        a: &A,
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        module.ckks_square_into_default(dst, a, tsk, scratch)
+    }
+
+    fn ckks_square_assign<Dst, T>(module: &Module<BE>, dst: &mut Dst, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        module.ckks_square_assign_default(dst, tsk, scratch)
+    }
+
+    fn ckks_mul_pt_vec_into<Dst, A, P>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        a: &A,
+        pt: &P,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        P: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos + CKKSInfos,
+    {
+        module.ckks_mul_pt_vec_into_default(dst, a, pt, scratch)
+    }
+
+    fn ckks_mul_pt_vec_assign<Dst, P>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        pt: &P,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        P: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos + CKKSInfos,
+    {
+        module.ckks_mul_pt_vec_assign_default(dst, pt, scratch)
+    }
+
+    fn ckks_mul_pt_const_into<Dst, A, P>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        a: &A,
+        pt: &P,
+        pt_coeff: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        P: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos + CKKSInfos,
+    {
+        module.ckks_mul_pt_const_into_default(dst, a, pt, pt_coeff, scratch)
+    }
+
+    fn ckks_mul_pt_const_assign<Dst, P>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        pt: &P,
+        pt_coeff: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        P: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos + CKKSInfos,
+    {
+        module.ckks_mul_pt_const_assign_default(dst, pt, pt_coeff, scratch)
+    }
+}
+
+#[macro_export]
+macro_rules! impl_ckks_mul_defaults {
+    ($be:ty) => {
+        impl $crate::default::mul::CKKSMulDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
+    };
+}
+pub use crate::impl_ckks_mul_defaults;

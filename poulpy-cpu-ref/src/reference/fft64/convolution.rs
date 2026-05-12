@@ -1,7 +1,7 @@
 use crate::{
     layouts::{
-        Backend, CnvPVecL, CnvPVecLToMut, CnvPVecLToRef, CnvPVecR, CnvPVecRToMut, CnvPVecRToRef, VecZnx, VecZnxBig,
-        VecZnxBigToMut, VecZnxDft, VecZnxDftToMut, VecZnxToRef, ZnxInfos, ZnxView, ZnxViewMut, ZnxZero,
+        Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, HostDataRef, VecZnxBackendRef,
+        VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxInfos, ZnxView, ZnxViewMut, ZnxZero,
     },
     reference::fft64::{
         reim::{ReimArith, ReimFFTExecute, ReimFFTTable},
@@ -10,36 +10,43 @@ use crate::{
     },
 };
 
-pub fn convolution_prepare_left<R, A, T, BE>(table: &ReimFFTTable<f64>, res: &mut R, a: &A, mask: i64, tmp: &mut T)
-where
-    BE: Backend<ScalarPrep = f64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64>,
-    R: CnvPVecLToMut<BE> + ZnxInfos + ZnxViewMut<Scalar = BE::ScalarPrep>,
-    A: VecZnxToRef,
-    T: VecZnxDftToMut<BE>,
+pub fn convolution_prepare_left<BE>(
+    table: &ReimFFTTable<f64>,
+    res: &mut CnvPVecLBackendMut<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE>,
+    mask: i64,
+    tmp: &mut VecZnxDftBackendMut<'_, BE>,
+) where
+    BE: Backend<ScalarPrep = f64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
+    for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
 {
     convolution_prepare(table, res, a, mask, tmp)
 }
 
-pub fn convolution_prepare_right<R, A, T, BE>(table: &ReimFFTTable<f64>, res: &mut R, a: &A, mask: i64, tmp: &mut T)
-where
-    BE: Backend<ScalarPrep = f64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64>,
-    R: CnvPVecRToMut<BE> + ZnxInfos + ZnxViewMut<Scalar = BE::ScalarPrep>,
-    A: VecZnxToRef,
-    T: VecZnxDftToMut<BE>,
+pub fn convolution_prepare_right<BE>(
+    table: &ReimFFTTable<f64>,
+    res: &mut CnvPVecRBackendMut<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE>,
+    mask: i64,
+    tmp: &mut VecZnxDftBackendMut<'_, BE>,
+) where
+    BE: Backend<ScalarPrep = f64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
+    for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
 {
     convolution_prepare(table, res, a, mask, tmp)
 }
 
-fn convolution_prepare<R, A, T, BE>(table: &ReimFFTTable<f64>, res: &mut R, a: &A, mask: i64, tmp: &mut T)
-where
-    BE: Backend<ScalarPrep = f64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64>,
+fn convolution_prepare<R, BE>(
+    table: &ReimFFTTable<f64>,
+    res: &mut R,
+    a: &VecZnxBackendRef<'_, BE>,
+    mask: i64,
+    tmp: &mut VecZnxDftBackendMut<'_, BE>,
+) where
+    BE: Backend<ScalarPrep = f64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
+    for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
     R: ZnxInfos + ZnxViewMut<Scalar = BE::ScalarPrep>,
-    A: VecZnxToRef,
-    T: VecZnxDftToMut<BE>,
 {
-    let a: &VecZnx<&[u8]> = &a.to_ref();
-    let tmp: &mut VecZnxDft<&mut [u8], BE> = &mut tmp.to_mut();
-
     let cols: usize = res.cols();
     assert_eq!(a.cols(), cols, "a.cols():{} != res.cols():{cols}", a.cols());
 
@@ -73,23 +80,17 @@ where
     }
 }
 
-pub fn convolution_prepare_self<L, R, A, T, BE>(
+pub fn convolution_prepare_self<BE>(
     table: &ReimFFTTable<f64>,
-    left: &mut L,
-    right: &mut R,
-    a: &A,
+    left: &mut CnvPVecLBackendMut<'_, BE>,
+    right: &mut CnvPVecRBackendMut<'_, BE>,
+    a: &VecZnxBackendRef<'_, BE>,
     mask: i64,
-    tmp: &mut T,
+    tmp: &mut VecZnxDftBackendMut<'_, BE>,
 ) where
-    BE: Backend<ScalarPrep = f64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64>,
-    L: CnvPVecLToMut<BE> + ZnxInfos + ZnxViewMut<Scalar = BE::ScalarPrep>,
-    R: CnvPVecRToMut<BE> + ZnxInfos + ZnxViewMut<Scalar = BE::ScalarPrep>,
-    A: VecZnxToRef,
-    T: VecZnxDftToMut<BE>,
+    BE: Backend<ScalarPrep = f64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
+    for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
 {
-    let a: &VecZnx<&[u8]> = &a.to_ref();
-    let tmp: &mut VecZnxDft<&mut [u8], BE> = &mut tmp.to_mut();
-
     let cols: usize = left.cols();
     assert_eq!(a.cols(), cols, "a.cols():{} != left.cols():{cols}", a.cols());
     assert_eq!(right.cols(), cols, "right.cols():{} != left.cols():{cols}", right.cols());
@@ -141,28 +142,27 @@ pub fn convolution_by_const_apply_tmp_bytes(res_size: usize, a_size: usize, b_si
     size_of::<i64>() * (min_size + a_size) * 8
 }
 
-pub fn convolution_by_const_apply<R, A, BE>(
+pub fn convolution_by_const_apply<BE>(
     cnv_offset: usize,
-    res: &mut R,
+    res: &mut VecZnxBigBackendMut<'_, BE>,
     res_col: usize,
-    a: &A,
+    a: &VecZnxBackendRef<'_, BE>,
     a_col: usize,
-    b: &[i64],
+    b: &VecZnxBackendRef<'_, BE>,
+    b_col: usize,
+    b_coeff: usize,
     tmp: &mut [i64],
 ) where
-    BE: Backend<ScalarBig = i64> + I64Ops,
-    R: VecZnxBigToMut<BE>,
-    A: VecZnxToRef,
+    BE: Backend<ScalarBig = i64> + I64Ops + 'static,
+    for<'x> BE: Backend<BufRef<'x> = &'x [u8]>,
+    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
-    let res: &mut VecZnxBig<&mut [u8], BE> = &mut res.to_mut();
-    let a: &VecZnx<&[u8]> = &a.to_ref();
-
     let n: usize = res.n();
     assert_eq!(a.n(), n);
 
     let res_size: usize = res.size();
     let a_size: usize = a.size();
-    let b_size: usize = b.len();
+    let b_size: usize = b.size();
 
     let bound: usize = a_size + b_size - 1;
     let min_size: usize = res_size.min(bound);
@@ -178,10 +178,14 @@ pub fn convolution_by_const_apply<R, A, BE>(
     let res_idx: usize = n * res_col;
 
     let (res_blk, a_blk) = tmp[..(min_size + a_size) * 8].split_at_mut(min_size * 8);
+    let mut b_digits = vec![0i64; b_size];
+    for (j, digit) in b_digits.iter_mut().enumerate() {
+        *digit = b.at(b_col, j)[b_coeff];
+    }
 
     for blk_i in 0..n / 8 {
         BE::i64_extract_1blk_contiguous(a_sl, a_idx, a_size, blk_i, a_blk, a_raw);
-        BE::i64_convolution_by_const(res_blk, min_size, offset, a_blk, a_size, b);
+        BE::i64_convolution_by_const(res_blk, min_size, offset, a_blk, a_size, &b_digits);
         BE::i64_save_1blk_contiguous(res_sl, res_idx, min_size, blk_i, res_raw, res_blk);
     }
 
@@ -196,25 +200,20 @@ pub fn convolution_apply_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: u
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn convolution_apply_dft<R, A, B, BE>(
+pub fn convolution_apply_dft<BE>(
     cnv_offset: usize,
-    res: &mut R,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
-    a: &A,
+    a: &CnvPVecLBackendRef<'_, BE>,
     a_col: usize,
-    b: &B,
+    b: &CnvPVecRBackendRef<'_, BE>,
     b_col: usize,
     tmp: &mut [f64],
 ) where
     BE: Backend<ScalarPrep = f64> + Reim4BlkMatVec + Reim4Convolution,
-    R: VecZnxDftToMut<BE>,
-    A: CnvPVecLToRef<BE>,
-    B: CnvPVecRToRef<BE>,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
-    let res: &mut VecZnxDft<&mut [u8], BE> = &mut res.to_mut();
-    let a: &CnvPVecL<&[u8], BE> = &a.to_ref();
-    let b: &CnvPVecR<&[u8], BE> = &b.to_ref();
-
     let n: usize = res.n();
     assert_eq!(a.n(), n);
     assert_eq!(b.n(), n);
@@ -253,29 +252,24 @@ pub fn convolution_pairwise_apply_dft_tmp_bytes(res_size: usize, a_size: usize, 
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn convolution_pairwise_apply_dft<R, A, B, BE>(
+pub fn convolution_pairwise_apply_dft<BE>(
     cnv_offset: usize,
-    res: &mut R,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
-    a: &A,
-    b: &B,
+    a: &CnvPVecLBackendRef<'_, BE>,
+    b: &CnvPVecRBackendRef<'_, BE>,
     col_i: usize,
     col_j: usize,
     tmp: &mut [f64],
 ) where
     BE: Backend<ScalarPrep = f64> + ReimArith + Reim4BlkMatVec + Reim4Convolution,
-    R: VecZnxDftToMut<BE>,
-    A: CnvPVecLToRef<BE>,
-    B: CnvPVecRToRef<BE>,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
     if col_i == col_j {
         convolution_apply_dft(cnv_offset, res, res_col, a, col_i, b, col_j, tmp);
         return;
     }
-
-    let res: &mut VecZnxDft<&mut [u8], BE> = &mut res.to_mut();
-    let a: &CnvPVecL<&[u8], BE> = &a.to_ref();
-    let b: &CnvPVecR<&[u8], BE> = &b.to_ref();
 
     let n: usize = res.n();
     let m: usize = n >> 1;

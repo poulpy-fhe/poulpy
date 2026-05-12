@@ -4,10 +4,13 @@ pub use cggi::*;
 
 use itertools::izip;
 use poulpy_core::{
-    ScratchTakeCore,
-    layouts::{GGSWInfos, GLWE, GLWEInfos, LWE, LWEInfos},
+    ScratchArenaTakeCore,
+    layouts::{GGSWInfos, GLWEInfos, GLWEToBackendMut, LWE, LWEInfos, LWEToBackendRef, ModuleCoreAlloc},
 };
-use poulpy_hal::layouts::{Backend, DataMut, DataRef, DeviceBuf, Scratch, ZnxView};
+use poulpy_hal::{
+    api::ModuleN,
+    layouts::{Backend, Data, HostDataRef, ScratchArena, ZnxView},
+};
 
 use crate::blind_rotation::{
     BlindRotationKey, BlindRotationKeyInfos, BlindRotationKeyPrepared, LookUpTableRotationDirection, LookupTable,
@@ -20,8 +23,10 @@ use crate::blind_rotation::{
 /// usage at the type level.  Currently the only implementation is [`CGGI`].
 pub trait BlindRotationAlgo: Sync {
     /// Allocates a zero-filled [`BlindRotationKey`] from a dimension descriptor.
-    fn alloc_key<A: BlindRotationKeyInfos>(infos: &A) -> BlindRotationKey<Vec<u8>, Self>
+    fn alloc_key<M, A>(module: &M, infos: &A) -> BlindRotationKey<M::OwnedBuf, Self>
     where
+        M: ModuleCoreAlloc + ModuleN,
+        A: BlindRotationKeyInfos,
         Self: Sized;
 }
 
@@ -60,41 +65,48 @@ pub trait BlindRotationExecute<BRA: BlindRotationAlgo, BE: Backend> {
     ///
     /// Panics in debug mode if dimension mismatches are detected between `res`,
     /// `lwe`, `lut`, and `brk`.
-    fn blind_rotation_execute<DR, DL, DB>(
+    fn blind_rotation_execute<'s, R, DL>(
         &self,
-        res: &mut GLWE<DR>,
+        res: &mut R,
         lwe: &LWE<DL>,
-        lut: &LookupTable,
-        brk: &BlindRotationKeyPrepared<DB, BRA, BE>,
-        scratch: &mut Scratch<BE>,
+        lut: &LookupTable<BE::OwnedBuf>,
+        brk: &BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE>,
+        scratch: &mut ScratchArena<'s, BE>,
     ) where
-        DR: DataMut,
-        DL: DataRef,
-        DB: DataRef;
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        DL: Data,
+        LWE<DL>: LWEToBackendRef<BE>,
+        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
+        BE: 's;
 }
 
-impl<D: DataRef, BRA: BlindRotationAlgo, BE: Backend> BlindRotationKeyPrepared<D, BRA, BE>
+impl<BRA: BlindRotationAlgo, BE: Backend> BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE>
 where
-    Scratch<BE>: ScratchTakeCore<BE>,
+    BE::OwnedBuf: Data,
 {
     /// Performs blind rotation using `self` as the bootstrapping key.
     ///
     /// Convenience wrapper around [`BlindRotationExecute::blind_rotation_execute`].
-    pub fn execute<DR: DataMut, DI: DataRef, M>(
+    pub fn execute<'s, R, DI, M>(
         &self,
         module: &M,
-        res: &mut GLWE<DR>,
+        res: &mut R,
         lwe: &LWE<DI>,
-        lut: &LookupTable,
-        scratch: &mut Scratch<BE>,
+        lut: &LookupTable<BE::OwnedBuf>,
+        scratch: &mut ScratchArena<'s, BE>,
     ) where
         M: BlindRotationExecute<BRA, BE>,
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        DI: Data,
+        LWE<DI>: LWEToBackendRef<BE>,
+        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
+        BE: 's,
     {
         module.blind_rotation_execute(res, lwe, lut, self, scratch);
     }
 }
 
-impl<BE: Backend, BRA: BlindRotationAlgo> BlindRotationKeyPrepared<DeviceBuf<BE>, BRA, BE> {
+impl<BE: Backend, BRA: BlindRotationAlgo> BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE> {
     /// Returns the minimum scratch-space size in bytes required by
     /// [`BlindRotationKeyPrepared::execute`].
     ///
@@ -133,7 +145,13 @@ impl<BE: Backend, BRA: BlindRotationAlgo> BlindRotationKeyPrepared<DeviceBuf<BE>
 /// - `res`: Output slice of length `lwe.n() + 1` (b, a_0, …, a_{n-1}).
 /// - `lwe`: The LWE ciphertext to switch.
 /// - `rot_dir`: Rotation sign convention.
-pub fn mod_switch_2n(n: usize, res: &mut [i64], lwe: &LWE<&[u8]>, rot_dir: LookUpTableRotationDirection) {
+pub fn mod_switch_2n<BE, A>(n: usize, res: &mut [i64], lwe: &A, rot_dir: LookUpTableRotationDirection)
+where
+    BE: Backend,
+    A: LWEToBackendRef<BE> + LWEInfos,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+{
+    let lwe = lwe.to_backend_ref();
     let base2k: usize = lwe.base2k().into();
 
     let log2n: usize = usize::BITS as usize - (n - 1).leading_zeros() as usize + 1;

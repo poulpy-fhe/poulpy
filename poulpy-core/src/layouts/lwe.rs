@@ -1,10 +1,14 @@
 use std::fmt;
 
 use poulpy_hal::{
-    layouts::{Data, DataMut, DataRef, FillUniform, ReaderFrom, VecZnx, VecZnxToMut, VecZnxToRef, WriterTo, ZnxInfos},
+    layouts::{
+        Backend, Data, FillUniform, HostDataMut, HostDataRef, Module, ReaderFrom, TransferFrom, VecZnx, VecZnxToBackendMut,
+        VecZnxToBackendRef, WriterTo,
+    },
     source::Source,
 };
 
+use crate::api::ModuleTransfer;
 use crate::layouts::{Base2K, Degree, TorusPrecision};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
@@ -82,6 +86,9 @@ pub struct LWE<D: Data> {
     pub(crate) base2k: Base2K,
 }
 
+pub type LWEBackendRef<'a, BE> = LWE<<BE as Backend>::BufRef<'a>>;
+pub type LWEBackendMut<'a, BE> = LWE<<BE as Backend>::BufMut<'a>>;
+
 impl<D: Data> LWEInfos for LWE<D> {
     fn base2k(&self) -> Base2K {
         self.base2k
@@ -102,33 +109,61 @@ impl<D: Data> SetLWEInfos for LWE<D> {
     }
 }
 
-impl<D: DataRef> LWE<D> {
+impl<D: HostDataRef> LWE<D> {
     /// Returns a shared reference to the underlying [`VecZnx`].
     pub fn data(&self) -> &VecZnx<D> {
         &self.data
     }
 }
 
-impl<D: DataMut> LWE<D> {
+impl<D: HostDataMut> LWE<D> {
     /// Returns a mutable reference to the underlying [`VecZnx`].
     pub fn data_mut(&mut self) -> &mut VecZnx<D> {
         &mut self.data
     }
 }
 
-impl<D: DataRef> fmt::Debug for LWE<D> {
+impl<D: HostDataRef> LWE<D> {
+    /// Copies this ciphertext's backing bytes into an owned buffer of
+    /// backend `To`, routing via host bytes.
+    pub fn to_backend<BE, To>(&self, dst: &Module<To>) -> LWE<To::OwnedBuf>
+    where
+        BE: Backend<OwnedBuf = D>,
+        To: Backend,
+        To: TransferFrom<BE>,
+    {
+        dst.upload_lwe(self)
+    }
+}
+
+impl<D: Data> LWE<D> {
+    /// Zero-cost rename when both backends share the same `OwnedBuf`.
+    pub fn reinterpret<To>(self) -> LWE<To::OwnedBuf>
+    where
+        To: Backend<OwnedBuf = D>,
+    {
+        let shape = self.data.shape();
+        let data = self.data.data;
+        LWE {
+            data: VecZnx::from_data_with_max_size(data, shape.n(), shape.cols(), shape.size(), shape.max_size()),
+            base2k: self.base2k,
+        }
+    }
+}
+
+impl<D: HostDataRef> fmt::Debug for LWE<D> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: DataRef> fmt::Display for LWE<D> {
+impl<D: HostDataRef> fmt::Display for LWE<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "LWE: base2k={} k={}: {}", self.base2k().0, self.max_k().0, self.data)
     }
 }
 
-impl<D: DataMut> FillUniform for LWE<D>
+impl<D: HostDataMut> FillUniform for LWE<D>
 where
     VecZnx<D>: FillUniform,
 {
@@ -137,9 +172,13 @@ where
     }
 }
 
+#[expect(
+    dead_code,
+    reason = "host-owned constructors are kept for serialization and host-only staging"
+)]
 impl LWE<Vec<u8>> {
     /// Allocates a new [`LWE`] with the given parameters.
-    pub fn alloc_from_infos<A>(infos: &A) -> Self
+    pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
         A: LWEInfos,
     {
@@ -151,9 +190,15 @@ impl LWE<Vec<u8>> {
     /// * `n` -- ring degree (LWE dimension).
     /// * `base2k` -- base-2-log of the limb width.
     /// * `k` -- torus precision.
-    pub fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision) -> Self {
+    pub(crate) fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision) -> Self {
+        let size: usize = k.0.div_ceil(base2k.0) as usize;
         LWE {
-            data: VecZnx::alloc((n + 1).into(), 1, k.0.div_ceil(base2k.0) as usize),
+            data: VecZnx::from_data(
+                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<Vec<u8>>::bytes_of((n + 1).into(), 1, size)),
+                (n + 1).into(),
+                1,
+                size,
+            ),
             base2k,
         }
     }
@@ -176,38 +221,57 @@ impl LWE<Vec<u8>> {
     }
 }
 
-/// Trait for borrowing an [`LWE`] as an immutable reference.
-pub trait LWEToRef {
-    /// Borrows the data as `&[u8]`.
-    fn to_ref(&self) -> LWE<&[u8]>;
+pub trait LWEToBackendRef<BE: Backend> {
+    fn to_backend_ref(&self) -> LWEBackendRef<'_, BE>;
 }
 
-impl<D: DataRef> LWEToRef for LWE<D> {
-    fn to_ref(&self) -> LWE<&[u8]> {
+impl<BE: Backend, D: Data> LWEToBackendRef<BE> for LWE<D>
+where
+    VecZnx<D>: VecZnxToBackendRef<BE>,
+{
+    fn to_backend_ref(&self) -> LWEBackendRef<'_, BE> {
         LWE {
             base2k: self.base2k,
-            data: self.data.to_ref(),
+            data: self.data.to_backend_ref(),
         }
     }
 }
 
-/// Trait for borrowing an [`LWE`] as a mutable reference.
-pub trait LWEToMut {
-    /// Borrows the data as `&mut [u8]`.
-    #[allow(dead_code)]
-    fn to_mut(&mut self) -> LWE<&mut [u8]>;
+pub trait LWEToBackendMut<BE: Backend>: LWEToBackendRef<BE> {
+    fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE>;
 }
 
-impl<D: DataMut> LWEToMut for LWE<D> {
-    fn to_mut(&mut self) -> LWE<&mut [u8]> {
+impl<BE: Backend, D: Data> LWEToBackendMut<BE> for LWE<D>
+where
+    VecZnx<D>: VecZnxToBackendRef<BE> + VecZnxToBackendMut<BE>,
+{
+    fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE> {
         LWE {
             base2k: self.base2k,
-            data: self.data.to_mut(),
+            data: self.data.to_backend_mut(),
         }
     }
 }
 
-impl<D: DataMut> ReaderFrom for LWE<D> {
+impl<'b, BE: Backend + 'b> LWEToBackendRef<BE> for &mut LWE<BE::BufMut<'b>> {
+    fn to_backend_ref(&self) -> LWEBackendRef<'_, BE> {
+        LWE {
+            base2k: self.base2k,
+            data: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE>(&self.data),
+        }
+    }
+}
+
+impl<'b, BE: Backend + 'b> LWEToBackendMut<BE> for &mut LWE<BE::BufMut<'b>> {
+    fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE> {
+        LWE {
+            base2k: self.base2k,
+            data: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut self.data),
+        }
+    }
+}
+
+impl<D: HostDataMut> ReaderFrom for LWE<D> {
     /// Deserialises an [`LWE`] in little-endian binary format.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.base2k = Base2K(reader.read_u32::<LittleEndian>()?);
@@ -215,7 +279,7 @@ impl<D: DataMut> ReaderFrom for LWE<D> {
     }
 }
 
-impl<D: DataRef> WriterTo for LWE<D> {
+impl<D: HostDataRef> WriterTo for LWE<D> {
     /// Serialises the [`LWE`] in little-endian binary format.
     fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         writer.write_u32::<LittleEndian>(self.base2k.into())?;

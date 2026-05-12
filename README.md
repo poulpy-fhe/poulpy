@@ -24,6 +24,55 @@
 - **`poulpy-cpu-avx512`**: an AVX-512 accelerated CPU implementation of **`poulpy-hal`**, exposing three backends: `FFT64Avx512` and `NTT120Avx512` (AVX-512F, via `enable-avx512f`) and `NTT126Ifma` (AVX-512F + IFMA + VL, via `enable-ifma`).
 - **`poulpy-bench`**: the consolidated Criterion benchmark suite for the workspace. It is an internal workspace crate and is not published to crates.io.
 
+## Architecture
+
+### Crate Dependency Chain
+
+```
+poulpy-hal                   ← hardware abstraction: layouts and operation traits
+└── poulpy-core              ← scheme-agnostic RLWE arithmetic (LWE, GLWE, GGLWE, GGSW)
+    ├── poulpy-ckks           ← leveled CKKS evaluator
+    └── poulpy-bin-fhe       ← binary / gate-level FHE
+
+poulpy-cpu-ref               ← portable reference backend
+poulpy-cpu-avx               ← AVX2/FMA-accelerated backend
+poulpy-cpu-avx512            ← AVX-512/IFMA-accelerated backend
+```
+
+Backend crates (`poulpy-cpu-ref`, `poulpy-cpu-avx`, `poulpy-cpu-avx512`, …) implement the open extension points defined in `poulpy-hal/oep` and are not depended on by any scheme crate. This clean separation means a backend written today automatically works with every current and future scheme layer above it.
+
+### Layer Anatomy
+
+Every layer (`poulpy-hal`, `poulpy-core`, `poulpy-ckks`) follows the same internal four-module pattern:
+
+```
+   ┌─────────┐     ┌─────────┐     ┌─────────────┐     ┌────────────────┐
+   │   api   │────►│   oep   │────►│  delegates  │◄────│    default     │
+   └─────────┘     └─────────┘     └─────────────┘     └────────────────┘
+```
+
+| Module | Role |
+|--------|------|
+| `api` | Public traits user code calls. Bounds reference `oep` for the backend capabilities they need. |
+| `oep` | **Open Extension Points.** Unsafe backend dispatch traits (one per operation family). A blanket `impl` wires any conforming backend to the corresponding `default` method automatically. |
+| `default` | Portable algorithm implementations as safe trait methods — the fallback every new backend gets for free. |
+| `delegates` | Implements each `api` trait on `Module<BE>` by dispatching through `oep`. Composite operations also live here. |
+
+### Overriding at Any Level
+
+A backend overrides any operation by implementing the corresponding `oep` trait directly instead of relying on the blanket `default` wiring. Only the hot-path operations need overrides; everything else inherits the portable `default` implementation for free. This override mechanism is independent at every layer: a backend can override a `poulpy-hal` primitive without touching `poulpy-core` behavior, and vice versa.
+
+### Integrating a Backend
+
+1. Define a backend struct and implement the `Backend` trait from `poulpy-hal`.
+2. For each HAL operation family, either call the blanket default or implement the OEP trait directly with a custom dispatch.
+3. For each `poulpy-core` operation family, either call the corresponding `impl_*_defaults_full!` macro to inherit the portable implementation, or implement the OEP trait directly to override it.
+4. Optionally, do the same for `poulpy-ckks` using the `impl_ckks_*_defaults!` macros or direct OEP trait implementations.
+
+At every layer the macro and the direct implementation are mutually exclusive per operation family: the macro opts the backend into the portable `default` path, while a direct OEP impl replaces it entirely. There is no requirement to use the macros — a backend that needs full control can implement every OEP trait by hand.
+
+See `poulpy-cpu-ref` for the reference implementation of all four steps.
+
 ## Bivariate Polynomial Representation
 
 Existing FHE implementations (such as [Lattigo](https://github.com/tuneinsight/lattigo) or [OpenFHE](https://github.com/openfheorg/openfhe-development)) use the [residue number system](https://en.wikipedia.org/wiki/Residue_number_system) (RNS) to represent large integers. Although the parallelism and carry-less arithmetic offered by the RNS representation provide efficient modular arithmetic over large integers, RNS also has drawbacks in the context of FHE. The main idea behind the bivariate representation is to decouple cyclotomic arithmetic from large-number arithmetic. Instead of using the RNS representation for large integers, integers are decomposed in base $2^{-K}$ over the Torus $\mathbb{T}_{N}[X]$.
@@ -56,16 +105,16 @@ For example, a CKKS application can depend on:
 
 ```toml
 [dependencies]
-poulpy-ckks = "0.5"
-poulpy-cpu-ref = "0.5"
+poulpy-ckks = "0.6"
+poulpy-cpu-ref = "0.6"
 ```
 
 For binary FHE:
 
 ```toml
 [dependencies]
-poulpy-bin-fhe = "0.5"
-poulpy-cpu-ref = "0.5"
+poulpy-bin-fhe = "0.6"
+poulpy-cpu-ref = "0.6"
 ```
 
 ## Documentation
@@ -73,6 +122,28 @@ poulpy-cpu-ref = "0.5"
 * Crate package pages and generated Rust documentation are linked from the crates.io entries above.
 * Architecture diagrams and design notes live in the [`/docs`](./docs) folder.
 * Crate-specific READMEs provide more focused usage notes, especially [`poulpy-ckks`](./poulpy-ckks/README.md) and [`poulpy-bench`](./poulpy-bench/README.md).
+
+## Testing Backend-Gated Integrations
+
+Scheme crate APIs are available when those crates are imported. Backend-owned
+integration tests remain feature-gated so default workspace builds stay light:
+
+```sh
+cargo test -p poulpy-core
+cargo test -p poulpy-ckks
+cargo test -p poulpy-cpu-ref --features enable-core
+cargo test -p poulpy-cpu-ref --features enable-ckks
+cargo test -p poulpy-bin-fhe --features enable-bin-fhe
+```
+
+Benchmark targets are split by family:
+
+```sh
+cargo check -p poulpy-bench --all-targets --features hal-bench
+cargo check -p poulpy-bench --all-targets --features core-bench
+cargo check -p poulpy-bench --all-targets --features bin-fhe-bench
+cargo check -p poulpy-bench --all-targets --features ckks-bench
+```
 
 ## Contributing
 
@@ -103,9 +174,9 @@ Team behind poulpy accepts financial contributions over various platforms. Pleas
 Please use the following BibTeX entry for citing Poulpy:
 
     @misc{poulpy,
-	    title = {Poulpy v0.5.0},
+	    title = {Poulpy v0.6.0},
 	    howpublished = {Online: \url{https://github.com/poulpy-fhe/poulpy}},
-	    month = Apr,
+	    month = May,
 	    year = 2026,
 	    note = {Phantom Zone}
     }

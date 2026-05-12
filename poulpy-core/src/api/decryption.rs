@@ -1,8 +1,9 @@
-use poulpy_hal::layouts::{Backend, DataMut, DataRef, Scratch};
+use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
 use crate::layouts::{
-    GLWEInfos, GLWEPlaintext, GLWEPlaintextToMut, GLWESecretPrepared, GLWESecretPreparedToRef, GLWESecretTensorPrepared,
-    GLWETensor, GLWEToRef, LWEInfos, LWEPlaintextToMut, LWESecretToRef, LWEToRef, SetLWEInfos,
+    GLWEInfos, GLWEPlaintext, GLWESecretPrepared, GLWESecretTensorPrepared, GLWETensor, GLWEToBackendMut, GLWEToBackendRef,
+    LWEInfos, LWEPlaintextToBackendMut, LWESecretToBackendRef, LWEToBackendRef, SetLWEInfos,
+    prepared::{GLWESecretPreparedToBackendRef, GLWESecretTensorPreparedToBackendRef},
 };
 
 pub trait GLWEDecrypt<BE: Backend> {
@@ -10,20 +11,21 @@ pub trait GLWEDecrypt<BE: Backend> {
     where
         A: GLWEInfos;
 
-    fn glwe_decrypt<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut Scratch<BE>)
+    fn glwe_decrypt<'s, R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'s, BE>)
     where
-        R: GLWEToRef + GLWEInfos,
-        P: GLWEPlaintextToMut + GLWEInfos + SetLWEInfos,
-        S: GLWESecretPreparedToRef<BE> + GLWEInfos;
+        R: GLWEToBackendRef<BE> + GLWEInfos,
+        P: GLWEToBackendMut<BE> + GLWEInfos + SetLWEInfos,
+        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
+        for<'a> ScratchArena<'a, BE>: crate::ScratchArenaTakeCore<'a, BE>;
 }
 
 pub trait LWEDecrypt<BE: Backend> {
-    fn lwe_decrypt<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut Scratch<BE>)
+    fn lwe_decrypt<'s, R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'s, BE>)
     where
-        R: LWEToRef,
-        P: LWEPlaintextToMut + SetLWEInfos + LWEInfos,
-        S: LWESecretToRef,
-        Scratch<BE>: crate::ScratchTakeCore<BE>;
+        R: LWEToBackendRef<BE> + LWEInfos,
+        P: LWEPlaintextToBackendMut<BE> + SetLWEInfos + LWEInfos,
+        S: LWESecretToBackendRef<BE> + LWEInfos,
+        for<'a> ScratchArena<'a, BE>: crate::ScratchArenaTakeCore<'a, BE>;
 
     fn lwe_decrypt_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -35,16 +37,16 @@ pub trait GLWETensorDecrypt<BE: Backend> {
     where
         A: GLWEInfos;
 
-    fn glwe_tensor_decrypt<R, P, S0, S1>(
+    fn glwe_tensor_decrypt<R: Data, P: Data, S0: Data, S1: Data>(
         &self,
         res: &GLWETensor<R>,
         pt: &mut GLWEPlaintext<P>,
         sk: &GLWESecretPrepared<S0, BE>,
         sk_tensor: &GLWESecretTensorPrepared<S1, BE>,
-        scratch: &mut Scratch<BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: DataRef,
-        P: DataMut,
-        S0: DataRef,
-        S1: DataRef;
+        GLWETensor<R>: GLWEToBackendRef<BE> + GLWEInfos,
+        GLWEPlaintext<P>: GLWEToBackendMut<BE> + GLWEInfos + SetLWEInfos,
+        GLWESecretPrepared<S0, BE>: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
+        GLWESecretTensorPrepared<S1, BE>: GLWESecretTensorPreparedToBackendRef<BE> + GLWEInfos;
 }

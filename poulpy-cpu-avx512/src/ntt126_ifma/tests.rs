@@ -1,6 +1,5 @@
 use poulpy_hal::{
-    api::{Convolution, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Module, ScratchOwned, VecZnx, VecZnxBigOwned, ZnxInfos, ZnxView, ZnxViewMut},
+    layouts::Module,
     test_suite::convolution::{test_convolution, test_convolution_by_const, test_convolution_pairwise},
 };
 
@@ -21,8 +20,16 @@ mod ntt126_ifma_tests {
         backend_test = crate::NTT126Ifma,
         params = TestParams { size: 1<<8, base2k: 50 },
         tests = {
-            test_vec_znx_add_into => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_into,
+            test_vec_znx_add_into => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_into_backend_matches_reference,
             test_vec_znx_add_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_assign,
+            test_vec_znx_extract_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_extract_coeff_backend,
+            test_vec_znx_normalize_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize_coeff_backend,
+            test_vec_znx_normalize_coeff_assign_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize_coeff_assign_backend,
+            test_vec_znx_lsh_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_coeff_backend,
+            test_vec_znx_lsh_add_coeff_into_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_add_coeff_into_backend,
+            test_vec_znx_rsh_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_coeff_backend,
+            test_vec_znx_rsh_add_coeff_into_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_add_coeff_into_backend,
+            test_vec_znx_rsh_sub_coeff_into_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_sub_coeff_into_backend,
             test_vec_znx_add_scalar_into => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_scalar_into,
             test_vec_znx_add_scalar_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_scalar_assign,
             test_vec_znx_sub => poulpy_hal::test_suite::vec_znx::test_vec_znx_sub,
@@ -63,7 +70,7 @@ mod ntt126_ifma_tests {
             test_vec_znx_dft_sub_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_sub_assign,
             test_vec_znx_dft_sub_negate_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_sub_negate_assign,
             test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
-            test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_consume,
+            test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
             test_vec_znx_idft_apply_tmpa => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_tmpa,
         }
     }
@@ -88,7 +95,7 @@ mod ntt126_ifma_tests {
         tests = {
             test_vmp_apply_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft,
             test_vmp_apply_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft,
-            test_vmp_apply_dft_to_dft_accumulate => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_accumulate,
+        test_vmp_apply_dft_to_dft_accumulate => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_accumulate,
         }
     }
 
@@ -145,7 +152,7 @@ mod ntt126_ifma_tests {
         params = TestParams { size: 1<<10, base2k: 50 },
         tests = {
             test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
-            test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_consume,
+            test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
             test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
         }
     }
@@ -158,7 +165,7 @@ mod ntt126_ifma_tests {
         params = TestParams { size: 1<<13, base2k: 50 },
         tests = {
             test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
-            test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_consume,
+            test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
             test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
         }
     }
@@ -171,7 +178,7 @@ mod ntt126_ifma_tests {
         params = TestParams { size: 1<<14, base2k: 50 },
         tests = {
             test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
-            test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_consume,
+            test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
             test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
         }
     }
@@ -184,7 +191,7 @@ mod ntt126_ifma_tests {
         params = TestParams { size: 1<<15, base2k: 50 },
         tests = {
             test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
-            test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_consume,
+            test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
             test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
         }
     }
@@ -260,35 +267,6 @@ fn test_convolution_ntt126_ifma() {
 fn test_convolution_pairwise_ntt126_ifma() {
     let module: Module<NTT126Ifma> = Module::<NTT126Ifma>::new(8);
     test_convolution_pairwise(&module, 12);
-}
-
-#[test]
-fn test_convolution_by_const_ntt126_ifma_empty_inputs_zero_output() {
-    let module: Module<NTT126Ifma> = Module::<NTT126Ifma>::new(8);
-    let mut res: VecZnxBigOwned<NTT126Ifma> = VecZnxBigOwned::alloc(8, 1, 2);
-    for j in 0..res.size() {
-        res.at_mut(0, j).fill(7);
-    }
-
-    let a_empty: VecZnx<Vec<u8>> = VecZnx::alloc(8, 1, 0);
-    let mut scratch: ScratchOwned<NTT126Ifma> =
-        ScratchOwned::alloc(module.cnv_by_const_apply_tmp_bytes(0, res.size(), a_empty.size(), 1));
-    module.cnv_by_const_apply(0, &mut res, 0, &a_empty, 0, &[1], scratch.borrow());
-    for j in 0..res.size() {
-        assert!(res.at(0, j).iter().all(|&x| x == 0));
-    }
-
-    let mut a: VecZnx<Vec<u8>> = VecZnx::alloc(8, 1, 1);
-    a.at_mut(0, 0).fill(3);
-    for j in 0..res.size() {
-        res.at_mut(0, j).fill(7);
-    }
-    let mut scratch: ScratchOwned<NTT126Ifma> =
-        ScratchOwned::alloc(module.cnv_by_const_apply_tmp_bytes(0, res.size(), a.size(), 0));
-    module.cnv_by_const_apply(0, &mut res, 0, &a, 0, &[], scratch.borrow());
-    for j in 0..res.size() {
-        assert!(res.at(0, j).iter().all(|&x| x == 0));
-    }
 }
 
 #[test]

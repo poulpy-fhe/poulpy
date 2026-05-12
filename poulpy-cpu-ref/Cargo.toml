@@ -1,6 +1,6 @@
 [package]
 name = "poulpy-cpu-ref"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 license = "Apache-2.0"
 readme = "README.md"
@@ -9,7 +9,13 @@ repository = "https://github.com/poulpy-fhe/poulpy"
 homepage = "https://github.com/poulpy-fhe/poulpy"
 documentation = "https://docs.rs/poulpy"
 
+[features]
+enable-core = []
+enable-ckks = ["dep:poulpy-ckks", "enable-core"]
+
 [dependencies]
+anyhow = {workspace = true}
+poulpy-ckks = {workspace = true, optional = true}
 poulpy-core = {workspace = true}
 poulpy-hal = {workspace = true}
 dashu-float = {workspace = true}
@@ -21,7 +27,19 @@ rand_core = {workspace = true}
 byteorder = {workspace = true}
 once_cell = {workspace = true}
 rand_chacha = {workspace = true}
+criterion = {workspace = true}
+
+[dev-dependencies]
+f128 = "0.2"
 
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
+
+[[example]]
+name = "ckks_poly2"
+required-features = ["enable-ckks"]
+
+[[example]]
+name = "core_encryption"
+required-features = ["enable-core"]

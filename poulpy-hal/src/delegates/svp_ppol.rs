@@ -1,10 +1,22 @@
 use crate::{
-    api::{SvpApplyDft, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPPolBytesOf, SvpPrepare},
+    api::{SvpApplyDft, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPPolBytesOf, SvpPPolCopyBackend, SvpPrepare},
     layouts::{
-        Backend, Module, ScalarZnxToRef, SvpPPolOwned, SvpPPolToMut, SvpPPolToRef, VecZnxDftToMut, VecZnxDftToRef, VecZnxToRef,
+        Backend, Module, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, SvpPPolOwned, VecZnxBackendRef,
+        VecZnxDftBackendMut, VecZnxDftBackendRef,
     },
-    oep::HalImpl,
+    oep::HalSvpImpl,
 };
+
+macro_rules! impl_svp_delegate {
+    ($trait:ty, $($body:item)+) => {
+        impl<B> $trait for Module<B>
+        where
+            B: Backend + HalSvpImpl<B>,
+        {
+            $($body)+
+        }
+    };
+}
 
 impl<B: Backend> SvpPPolAlloc<B> for Module<B> {
     fn svp_ppol_alloc(&self, cols: usize) -> SvpPPolOwned<B> {
@@ -18,56 +30,65 @@ impl<B: Backend> SvpPPolBytesOf for Module<B> {
     }
 }
 
-impl<B> SvpPrepare<B> for Module<B>
-where
-    B: Backend + HalImpl<B>,
-{
-    fn svp_prepare<R, A>(&self, res: &mut R, res_col: usize, a: &A, a_col: usize)
-    where
-        R: SvpPPolToMut<B>,
-        A: ScalarZnxToRef,
-    {
-        <B as HalImpl<B>>::svp_prepare(self, res, res_col, a, a_col);
+impl_svp_delegate!(
+    SvpPrepare<B>,
+    fn svp_prepare(&self, res: &mut SvpPPolBackendMut<'_, B>, res_col: usize, a: &ScalarZnxBackendRef<'_, B>, a_col: usize) {
+        B::svp_prepare(self, res, res_col, a, a_col);
     }
-}
+);
 
-impl<B> SvpApplyDft<B> for Module<B>
-where
-    B: Backend + HalImpl<B>,
-{
-    fn svp_apply_dft<R, A, C>(&self, res: &mut R, res_col: usize, a: &A, a_col: usize, b: &C, b_col: usize)
-    where
-        R: VecZnxDftToMut<B>,
-        A: SvpPPolToRef<B>,
-        C: VecZnxToRef,
-    {
-        <B as HalImpl<B>>::svp_apply_dft(self, res, res_col, a, a_col, b, b_col);
+impl_svp_delegate!(
+    SvpPPolCopyBackend<B>,
+    fn svp_ppol_copy_backend(
+        &self,
+        res: &mut SvpPPolBackendMut<'_, B>,
+        res_col: usize,
+        a: &SvpPPolBackendRef<'_, B>,
+        a_col: usize,
+    ) {
+        B::svp_ppol_copy_backend(self, res, res_col, a, a_col);
     }
-}
+);
 
-impl<B> SvpApplyDftToDft<B> for Module<B>
-where
-    B: Backend + HalImpl<B>,
-{
-    fn svp_apply_dft_to_dft<R, A, C>(&self, res: &mut R, res_col: usize, a: &A, a_col: usize, b: &C, b_col: usize)
-    where
-        R: VecZnxDftToMut<B>,
-        A: SvpPPolToRef<B>,
-        C: VecZnxDftToRef<B>,
-    {
-        <B as HalImpl<B>>::svp_apply_dft_to_dft(self, res, res_col, a, a_col, b, b_col);
+impl_svp_delegate!(
+    SvpApplyDft<B>,
+    fn svp_apply_dft(
+        &self,
+        res: &mut VecZnxDftBackendMut<'_, B>,
+        res_col: usize,
+        a: &SvpPPolBackendRef<'_, B>,
+        a_col: usize,
+        b: &VecZnxBackendRef<'_, B>,
+        b_col: usize,
+    ) {
+        B::svp_apply_dft(self, res, res_col, a, a_col, b, b_col);
     }
-}
+);
 
-impl<B> SvpApplyDftToDftAssign<B> for Module<B>
-where
-    B: Backend + HalImpl<B>,
-{
-    fn svp_apply_dft_to_dft_assign<R, A>(&self, res: &mut R, res_col: usize, a: &A, a_col: usize)
-    where
-        R: VecZnxDftToMut<B>,
-        A: SvpPPolToRef<B>,
-    {
-        <B as HalImpl<B>>::svp_apply_dft_to_dft_assign(self, res, res_col, a, a_col);
+impl_svp_delegate!(
+    SvpApplyDftToDft<B>,
+    fn svp_apply_dft_to_dft(
+        &self,
+        res: &mut VecZnxDftBackendMut<'_, B>,
+        res_col: usize,
+        a: &SvpPPolBackendRef<'_, B>,
+        a_col: usize,
+        b: &VecZnxDftBackendRef<'_, B>,
+        b_col: usize,
+    ) {
+        B::svp_apply_dft_to_dft(self, res, res_col, a, a_col, b, b_col);
     }
-}
+);
+
+impl_svp_delegate!(
+    SvpApplyDftToDftAssign<B>,
+    fn svp_apply_dft_to_dft_assign(
+        &self,
+        res: &mut VecZnxDftBackendMut<'_, B>,
+        res_col: usize,
+        a: &SvpPPolBackendRef<'_, B>,
+        a_col: usize,
+    ) {
+        B::svp_apply_dft_to_dft_assign(self, res, res_col, a, a_col);
+    }
+);

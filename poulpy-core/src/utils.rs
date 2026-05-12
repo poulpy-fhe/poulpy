@@ -1,8 +1,8 @@
 use crate::layouts::{GLWEPlaintext, LWEInfos, LWEPlaintext, TorusPrecision};
 use dashu_float::{FBig, round::mode::HalfEven};
-use poulpy_hal::layouts::{DataMut, DataRef, Stats};
+use poulpy_hal::layouts::{HostDataMut, HostDataRef, Stats};
 
-impl<D: DataMut> GLWEPlaintext<D> {
+impl<D: HostDataMut> GLWEPlaintext<D> {
     /// Encodes a slice of `i64` values into the plaintext's coefficient slots.
     ///
     /// Values are scaled by `2^k` and decomposed into the base-2k limb
@@ -24,7 +24,7 @@ impl<D: DataMut> GLWEPlaintext<D> {
     }
 }
 
-impl<D: DataRef> GLWEPlaintext<D> {
+impl<D: HostDataRef> GLWEPlaintext<D> {
     /// Decodes the plaintext coefficients into a slice of `i64` values
     /// using `k` bits of torus precision.
     pub fn decode_vec_i64(&self, data: &mut [i64], k: TorusPrecision) {
@@ -51,7 +51,7 @@ impl<D: DataRef> GLWEPlaintext<D> {
     }
 }
 
-impl<D: DataMut> LWEPlaintext<D> {
+impl<D: HostDataMut> LWEPlaintext<D> {
     /// Encodes a single `i64` value into the LWE plaintext scalar slot.
     pub fn encode_i64(&mut self, data: i64, k: TorusPrecision) {
         let base2k: usize = self.base2k().into();
@@ -65,7 +65,7 @@ impl<D: DataMut> LWEPlaintext<D> {
     }
 }
 
-impl<D: DataRef> LWEPlaintext<D> {
+impl<D: HostDataRef> LWEPlaintext<D> {
     /// Decodes the LWE plaintext scalar as an `i64` using `k` bits of torus precision.
     pub fn decode_i64(&self, k: TorusPrecision) -> i64 {
         self.data.decode_coeff_i64(self.base2k().into(), 0, k.into(), 0)

@@ -30,8 +30,8 @@ use bytemuck::{cast_slice, cast_slice_mut};
 
 use crate::{
     layouts::{
-        Backend, DataViewMut, MatZnx, MatZnxToRef, VecZnxDft, VecZnxDftToMut, VecZnxDftToRef, VmpPMat, VmpPMatToMut,
-        VmpPMatToRef, ZnxInfos, ZnxView, ZnxViewMut,
+        Backend, DataViewMut, HostDataMut, HostDataRef, MatZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
+        VmpPMatBackendMut, VmpPMatBackendRef, ZnxView, ZnxViewMut,
     },
     reference::ntt120::{
         NttCFromB, NttDFTExecute, NttExtract1BlkContiguous, NttFromZnx64, NttMulBbc1ColX2, NttMulBbc2ColsX2, mat_vec::BbcMeta,
@@ -61,14 +61,16 @@ pub fn ntt120_vmp_prepare_tmp_bytes(n: usize) -> usize {
 /// 4. Store in `res` in the block-interleaved layout (see module doc).
 ///
 /// `tmp` must hold at least `ntt120_vmp_prepare_tmp_bytes(n) / size_of::<u64>()` elements.
-pub fn ntt120_vmp_prepare<R, A, BE>(module: &impl NttModuleHandle, res: &mut R, a: &A, tmp: &mut [u64])
-where
+pub fn ntt120_vmp_prepare<BE>(
+    module: &impl NttModuleHandle,
+    res: &mut VmpPMatBackendMut<'_, BE>,
+    a: &MatZnxBackendRef<'_, BE>,
+    tmp: &mut [u64],
+) where
     BE: Backend<ScalarPrep = Q120bScalar> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttCFromB,
-    R: VmpPMatToMut<BE>,
-    A: MatZnxToRef,
+    for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    let mut res: VmpPMat<&mut [u8], BE> = res.to_mut();
-    let a: MatZnx<&[u8]> = a.to_ref();
     let n = res.n();
 
     debug_assert_eq!(a.n(), n);
@@ -84,7 +86,7 @@ where
     let offset: usize = nrows * ncols * 16; // u32 stride between blocks
 
     let mat_i64: &[i64] = a.raw();
-    let pmat_u32: &mut [u32] = cast_slice_mut(res.data_mut());
+    let pmat_u32: &mut [u32] = cast_slice_mut(res.data_mut().as_mut());
 
     for row_i in 0..nrows {
         for col_i in 0..ncols {
@@ -298,23 +300,18 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, BE>(
 /// of `pmat` using lazy q120b × q120c accumulation.
 ///
 /// `tmp` must hold at least `ntt120_vmp_apply_dft_to_dft_tmp_bytes(...) / size_of::<u64>()` elements.
-pub fn ntt120_vmp_apply_dft_to_dft<R, A, M, BE>(
+pub fn ntt120_vmp_apply_dft_to_dft<BE>(
     module: &impl NttModuleHandle,
-    res: &mut R,
-    a: &A,
-    pmat: &M,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE>,
+    pmat: &VmpPMatBackendRef<'_, BE>,
     limb_offset: usize,
     tmp: &mut [u64],
 ) where
     BE: Backend<ScalarPrep = Q120bScalar> + NttExtract1BlkContiguous + NttMulBbc1ColX2 + NttMulBbc2ColsX2,
-    R: VecZnxDftToMut<BE>,
-    A: VecZnxDftToRef<BE>,
-    M: VmpPMatToRef<BE>,
+    for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
-    let mut res: VecZnxDft<&mut [u8], BE> = res.to_mut();
-    let a: VecZnxDft<&[u8], BE> = a.to_ref();
-    let pmat: VmpPMat<&[u8], BE> = pmat.to_ref();
-
     debug_assert_eq!(res.n(), pmat.n());
     debug_assert_eq!(a.n(), pmat.n());
 
@@ -345,9 +342,9 @@ pub fn ntt120_vmp_apply_dft_to_dft<R, A, M, BE>(
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// Zero all entries of a prepared polynomial matrix.
-pub fn ntt120_vmp_zero<R, BE: Backend>(res: &mut R)
+pub fn ntt120_vmp_zero<BE: Backend>(res: &mut VmpPMatBackendMut<'_, BE>)
 where
-    R: VmpPMatToMut<BE>,
+    for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {
-    res.to_mut().data_mut().as_mut().fill(0);
+    cast_slice_mut::<u8, u32>(res.data_mut().as_mut()).fill(0);
 }

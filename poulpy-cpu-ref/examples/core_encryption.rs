@@ -1,14 +1,14 @@
 use poulpy_core::{
     DEFAULT_SIGMA_XE, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWESub,
     layouts::{
-        Base2K, Degree, GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecret, Rank, TorusPrecision,
+        Base2K, Degree, GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWESecret, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::{GLWESecretPrepared, GLWESecretPreparedFactory},
     },
 };
 use poulpy_cpu_ref::FFT64Ref as BackendImpl;
 use poulpy_hal::{
-    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniform},
-    layouts::{DeviceBuf, Module, ScratchOwned},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSourceBackend},
+    layouts::{Backend, Module, ScratchOwned, VecZnxToBackendMut},
     source::Source,
 };
 
@@ -32,9 +32,9 @@ fn main() {
 
     let glwe_pt_infos: GLWEPlaintextLayout = GLWEPlaintextLayout { n, base2k, k: k_pt };
 
-    let mut ct: GLWE<Vec<u8>> = GLWE::alloc_from_infos(&glwe_ct_infos);
-    let mut pt_want: GLWEPlaintext<Vec<u8>> = GLWEPlaintext::alloc_from_infos(&glwe_pt_infos);
-    let mut pt_have: GLWEPlaintext<Vec<u8>> = GLWEPlaintext::alloc_from_infos(&glwe_pt_infos);
+    let mut ct: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_ct_infos);
+    let mut pt_want: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_pt_infos);
+    let mut pt_have: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_pt_infos);
 
     let mut source_xs: Source = Source::new([0u8; 32]);
     let mut source_xe: Source = Source::new([1u8; 32]);
@@ -43,13 +43,19 @@ fn main() {
     let mut scratch: ScratchOwned<BackendImpl> =
         ScratchOwned::alloc(module.glwe_encrypt_sk_tmp_bytes(&glwe_ct_infos) | module.glwe_decrypt_tmp_bytes(&glwe_ct_infos));
 
-    let mut sk: GLWESecret<Vec<u8>> = GLWESecret::alloc_from_infos(&glwe_ct_infos);
+    let mut sk: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(&glwe_ct_infos);
     sk.fill_ternary_prob(0.5, &mut source_xs);
 
-    let mut sk_prepared: GLWESecretPrepared<DeviceBuf<BackendImpl>, BackendImpl> = module.glwe_secret_prepared_alloc(rank);
+    let mut sk_prepared: GLWESecretPrepared<<BackendImpl as Backend>::OwnedBuf, BackendImpl> =
+        module.glwe_secret_prepared_alloc(rank);
     module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
-    module.vec_znx_fill_uniform(base2k.into(), &mut pt_want.data, 0, &mut source_xa);
+    module.vec_znx_fill_uniform_source_backend(
+        base2k.into(),
+        &mut <poulpy_hal::layouts::VecZnx<Vec<u8>> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut pt_want.data),
+        0,
+        &mut source_xa,
+    );
 
     module.glwe_encrypt_sk(
         &mut ct,
@@ -58,10 +64,10 @@ fn main() {
         &glwe_ct_infos,
         &mut source_xe,
         &mut source_xa,
-        scratch.borrow(),
+        &mut scratch.borrow(),
     );
 
-    module.glwe_decrypt(&ct, &mut pt_have, &sk_prepared, scratch.borrow());
+    module.glwe_decrypt(&ct, &mut pt_have, &sk_prepared, &mut scratch.borrow());
 
     module.glwe_sub_assign(&mut pt_want, &pt_have);
 

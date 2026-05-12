@@ -2,215 +2,231 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: nightly-2026-04-25
+  PORTABLE_FEATURES: >-
+    poulpy-core/enable-core
+    poulpy-ckks/enable-ckks
+    poulpy-cpu-ref/enable-core
+    poulpy-cpu-ref/enable-ckks
+    poulpy-cpu-avx/enable-ckks
+    poulpy-bin-fhe/enable-bin-fhe
+    poulpy-bench/hal-bench
+    poulpy-bench/core-bench
+    poulpy-bench/bin-fhe-bench
+    poulpy-bench/ckks-bench
+  AVX_FEATURES: >-
+    poulpy-core/enable-core
+    poulpy-core/enable-avx
+    poulpy-ckks/enable-ckks
+    poulpy-ckks/enable-avx
+    poulpy-cpu-ref/enable-core
+    poulpy-cpu-ref/enable-ckks
+    poulpy-cpu-avx/enable-ckks
+    poulpy-cpu-avx/enable-avx
+    poulpy-bin-fhe/enable-bin-fhe
+    poulpy-bin-fhe/enable-avx
+    poulpy-bench/hal-bench
+    poulpy-bench/core-bench
+    poulpy-bench/bin-fhe-bench
+    poulpy-bench/ckks-bench
+    poulpy-bench/enable-avx
+  AVX512_FEATURES: >-
+    poulpy-core/enable-core
+    poulpy-core/enable-avx
+    poulpy-ckks/enable-ckks
+    poulpy-ckks/enable-avx
+    poulpy-cpu-ref/enable-core
+    poulpy-cpu-ref/enable-ckks
+    poulpy-cpu-avx/enable-ckks
+    poulpy-cpu-avx/enable-avx
+    poulpy-cpu-avx512/enable-ckks
+    poulpy-cpu-avx512/enable-ifma
+    poulpy-bin-fhe/enable-bin-fhe
+    poulpy-bin-fhe/enable-avx
+    poulpy-bin-fhe/enable-ifma
+    poulpy-bench/hal-bench
+    poulpy-bench/core-bench
+    poulpy-bench/bin-fhe-bench
+    poulpy-bench/ckks-bench
+    poulpy-bench/enable-avx
+    poulpy-bench/enable-ifma
 
 jobs:
+  portable:
+    name: Portable features
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: clippy, rustfmt
+
+      - name: Cache cargo deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-portable-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-portable-
+            ${{ runner.os }}-cargo-
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Check all non-AVX features
+        run: cargo check --workspace --all-targets --features "$PORTABLE_FEATURES"
+
+      - name: Clippy all non-AVX features
+        run: cargo clippy --workspace --all-targets --features "$PORTABLE_FEATURES" -- -D warnings
+
+      - name: Test all non-AVX features
+        run: cargo test --workspace --features "$PORTABLE_FEATURES"
+
+  avx:
+    name: AVX backend
+    runs-on: ubuntu-latest
+
+    env:
+      RUSTFLAGS: -C target-feature=+avx2,+fma
+      RUSTDOCFLAGS: -C target-feature=+avx2 -C target-feature=+fma
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: clippy, rustfmt
+
+      - name: Cache cargo deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-avx-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-avx-
+            ${{ runner.os }}-cargo-
+
+      - name: Detect AVX2 and FMA
+        id: avx
+        run: |
+          if lscpu | grep -qi avx2 && lscpu | grep -qi fma; then
+            echo "supported=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "supported=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check AVX backend
+        if: steps.avx.outputs.supported == 'true'
+        run: cargo check --workspace --all-targets --features "$AVX_FEATURES"
+
+      - name: Clippy AVX backend
+        if: steps.avx.outputs.supported == 'true'
+        run: cargo clippy --workspace --all-targets --features "$AVX_FEATURES" -- -D warnings
+
+      - name: Test AVX backend
+        if: steps.avx.outputs.supported == 'true'
+        run: cargo test --workspace --features "$AVX_FEATURES"
+
+      - name: Skip AVX backend
+        if: steps.avx.outputs.supported != 'true'
+        run: echo "Runner CPU does not expose AVX2 and FMA; AVX backend checks skipped."
+
+  # AVX-512 typecheck/clippy lane. GitHub-hosted runners do not expose AVX-512,
+  # so this lane builds and lints the AVX-512F + IFMA configuration on every
+  # push to keep the poulpy-cpu-avx512 crate buildable. Tests are NOT run here
+  # (no AVX-512 silicon to execute on); a self-hosted runner is required to
+  # actually run the AVX-512 test suite.
+  avx512:
+    name: AVX-512 backend (typecheck only)
+    runs-on: ubuntu-latest
+
+    env:
+      RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
+      RUSTDOCFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: clippy
+
+      - name: Cache cargo deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-avx512-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-avx512-
+            ${{ runner.os }}-cargo-
+
+      - name: Check AVX-512 backend
+        run: cargo check --workspace --all-targets --features "$AVX512_FEATURES"
+
+      - name: Clippy AVX-512 backend
+        run: cargo clippy --workspace --all-targets --features "$AVX512_FEATURES" -- -D warnings
+
   build-and-test:
+    name: build-and-test
     runs-on: ubuntu-latest
+    needs:
+      - portable
+      - avx
+      - avx512
+    if: always()
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
+      - name: Check CI jobs
+        run: |
+          if [ "${{ needs.portable.result }}" != "success" ]; then
+            echo "Portable features job finished with: ${{ needs.portable.result }}"
+            exit 1
+          fi
 
-    - name: Install pinned Rust nightly
-      uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: nightly-2026-04-25
-        components: clippy, rustfmt
+          if [ "${{ needs.avx.result }}" != "success" ]; then
+            echo "AVX backend job finished with: ${{ needs.avx.result }}"
+            exit 1
+          fi
 
-    - name: Cache cargo deps
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-
+          if [ "${{ needs.avx512.result }}" != "success" ]; then
+            echo "AVX-512 backend job finished with: ${{ needs.avx512.result }}"
+            exit 1
+          fi
 
-    # Detect whether runner supports AVX2 + FMA
-    - name: Detect AVX support
-      id: avxcheck
-      run: |
-        if lscpu | grep -qi avx2 && lscpu | grep -qi fma; then
-          echo "supported=true" >> $GITHUB_OUTPUT
-        else
-          echo "supported=false" >> $GITHUB_OUTPUT
-        fi
-
-    # Detect whether runner supports AVX-512F (without requiring IFMA)
-    - name: Detect AVX-512F support
-      id: avx512fcheck
-      run: |
-        if lscpu | grep -qi avx512f; then
-          echo "supported=true" >> $GITHUB_OUTPUT
-        else
-          echo "supported=false" >> $GITHUB_OUTPUT
-        fi
-
-    # Detect whether runner supports AVX-512F + AVX-512IFMA + AVX-512VL
-    - name: Detect IFMA support
-      id: ifmacheck
-      run: |
-        if lscpu | grep -qi avx512f && lscpu | grep -qi avx512ifma && lscpu | grep -qi avx512vl; then
-          echo "supported=true" >> $GITHUB_OUTPUT
-        else
-          echo "supported=false" >> $GITHUB_OUTPUT
-        fi
-
-    # rustfmt always runs — unrelated to AVX support
-    - name: rustfmt (check only)
-      run: cargo fmt --all --check
-
-    # Build / lint / test WITH AVX + IFMA (preferred when available)
-    - name: Build (AVX + IFMA enabled)
-      if: steps.avxcheck.outputs.supported == 'true' && steps.ifmacheck.outputs.supported == 'true'
-      env:
-        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
-      run: |
-        cargo --config target-applies-to-host=false \
-          build --workspace --all-targets --target x86_64-unknown-linux-gnu --features enable-avx,enable-ifma
-
-    - name: Clippy (AVX + IFMA enabled)
-      if: steps.avxcheck.outputs.supported == 'true' && steps.ifmacheck.outputs.supported == 'true'
-      env:
-        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
-      run: |
-        cargo --config target-applies-to-host=false \
-          clippy --workspace --all-targets --target x86_64-unknown-linux-gnu --features enable-avx,enable-ifma -- -D warnings
-
-    - name: Tests (AVX + IFMA enabled)
-      if: steps.avxcheck.outputs.supported == 'true' && steps.ifmacheck.outputs.supported == 'true'
-      env:
-        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
-      run: |
-        cargo --config target-applies-to-host=false \
-          test --workspace --target x86_64-unknown-linux-gnu --features enable-avx,enable-ifma
-
-    # Build / lint / test WITH AVX-512F only (FFT64Avx512 without NTT120Ifma).
-    # Active when the runner has AVX-512F but not IFMA (e.g. Skylake-X / Cascade Lake / KNL).
-    - name: Build (AVX + AVX-512F enabled, no IFMA)
-      if: steps.avxcheck.outputs.supported == 'true' && steps.avx512fcheck.outputs.supported == 'true' && steps.ifmacheck.outputs.supported == 'false'
-      env:
-        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f
-      run: |
-        cargo --config target-applies-to-host=false \
-          build --workspace --all-targets --target x86_64-unknown-linux-gnu --features enable-avx,enable-avx512f
-
-    - name: Clippy (AVX + AVX-512F enabled, no IFMA)
-      if: steps.avxcheck.outputs.supported == 'true' && steps.avx512fcheck.outputs.supported == 'true' && steps.ifmacheck.outputs.supported == 'false'
-      env:
-        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f
-      run: |
-        cargo --config target-applies-to-host=false \
-          clippy --workspace --all-targets --target x86_64-unknown-linux-gnu --features enable-avx,enable-avx512f -- -D warnings
-
-    - name: Tests (AVX + AVX-512F enabled, no IFMA)
-      if: steps.avxcheck.outputs.supported == 'true' && steps.avx512fcheck.outputs.supported == 'true' && steps.ifmacheck.outputs.supported == 'false'
-      env:
-        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f
-      run: |
-        cargo --config target-applies-to-host=false \
-          test --workspace --target x86_64-unknown-linux-gnu --features enable-avx,enable-avx512f
-
-    # Build / lint / test WITH AVX (no AVX-512 at all)
-    - name: Build (AVX enabled)
-      if: steps.avxcheck.outputs.supported == 'true' && steps.avx512fcheck.outputs.supported == 'false'
-      env:
-        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma
-      run: |
-        cargo --config target-applies-to-host=false \
-          build --workspace --all-targets --target x86_64-unknown-linux-gnu --features enable-avx
-
-    - name: Clippy (AVX enabled)
-      if: steps.avxcheck.outputs.supported == 'true' && steps.avx512fcheck.outputs.supported == 'false'
-      env:
-        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma
-      run: |
-        cargo --config target-applies-to-host=false \
-          clippy --workspace --all-targets --target x86_64-unknown-linux-gnu --features enable-avx -- -D warnings
-
-    - name: Tests (AVX enabled)
-      if: steps.avxcheck.outputs.supported == 'true' && steps.avx512fcheck.outputs.supported == 'false'
-      env:
-        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma
-      run: |
-        cargo --config target-applies-to-host=false \
-          test --workspace --target x86_64-unknown-linux-gnu --features enable-avx
-
-    # Build / lint / test WITHOUT AVX
-    - name: Build (portable mode)
-      if: steps.avxcheck.outputs.supported == 'false'
-      run: cargo build --workspace --all-targets
-
-    - name: Clippy (portable mode)
-      if: steps.avxcheck.outputs.supported == 'false'
-      run: cargo clippy --workspace --all-targets -- -D warnings
-
-    - name: Tests (portable mode)
-      if: steps.avxcheck.outputs.supported == 'false'
-      run: cargo test --workspace
-
-  # AVX-512 typecheck/clippy lane: GitHub-hosted runners do not expose AVX-512,
-  # so the conditional steps above never fire on PRs. This lane forces the
-  # AVX-512F + IFMA build to compile and lint on every push, ensuring the
-  # poulpy-cpu-avx512 crate stays buildable. Tests are NOT run here (no
-  # AVX-512 silicon to execute on); a self-hosted runner is required for that.
-  avx512-typecheck:
-    runs-on: ubuntu-latest
-
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
-
-    - name: Install pinned Rust nightly
-      uses: dtolnay/rust-toolchain@master
-      with:
-        toolchain: nightly-2026-04-25
-        components: clippy
-
-    - name: Cache cargo deps
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-avx512-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-avx512-
-
-    - name: Build (AVX-512F + IFMA, no run)
-      env:
-        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
-      run: |
-        cargo --config target-applies-to-host=false \
-          build --workspace --all-targets --target x86_64-unknown-linux-gnu --features enable-avx,enable-ifma
-
-    - name: Clippy (AVX-512F + IFMA)
-      env:
-        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
-      run: |
-        cargo --config target-applies-to-host=false \
-          clippy --workspace --all-targets --target x86_64-unknown-linux-gnu --features enable-avx,enable-ifma -- -D warnings
-
-    - name: Build (AVX-512F only, no IFMA, no run)
-      env:
-        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f
-      run: |
-        cargo --config target-applies-to-host=false \
-          build --workspace --all-targets --target x86_64-unknown-linux-gnu --features enable-avx,enable-avx512f
-
-    - name: Clippy (AVX-512F only, no IFMA)
-      env:
-        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f
-      run: |
-        cargo --config target-applies-to-host=false \
-          clippy --workspace --all-targets --target x86_64-unknown-linux-gnu --features enable-avx,enable-avx512f -- -D warnings
+          echo "Portable, AVX, and AVX-512 CI jobs passed."

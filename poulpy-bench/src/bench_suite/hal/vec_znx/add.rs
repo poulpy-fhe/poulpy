@@ -3,14 +3,13 @@ use std::hint::black_box;
 use criterion::{BenchmarkId, Criterion};
 
 use poulpy_hal::{
-    api::{ModuleNew, VecZnxAddAssign, VecZnxAddInto},
-    layouts::{Backend, FillUniform, Module, VecZnx},
-    source::Source,
+    api::{ModuleNew, VecZnxAddAssignBackend, VecZnxAddIntoBackend, VecZnxAlloc},
+    layouts::{Backend, Module},
 };
 
 pub fn bench_vec_znx_add_into<B: Backend>(c: &mut Criterion, label: &str)
 where
-    Module<B>: VecZnxAddInto + ModuleNew<B>,
+    Module<B>: VecZnxAddIntoBackend<B> + ModuleNew<B> + VecZnxAlloc<B>,
 {
     let group_name: String = format!("vec_znx_add_into::{label}");
 
@@ -18,7 +17,7 @@ where
 
     fn runner<B: Backend>(params: [usize; 3]) -> impl FnMut()
     where
-        Module<B>: VecZnxAddInto + ModuleNew<B>,
+        Module<B>: VecZnxAddIntoBackend<B> + ModuleNew<B> + VecZnxAlloc<B>,
     {
         let n: usize = 1 << params[0];
         let cols: usize = params[1];
@@ -26,19 +25,20 @@ where
 
         let module: Module<B> = Module::<B>::new(n as u64);
 
-        let mut source: Source = Source::new([0u8; 32]);
+        let mut source = poulpy_hal::source::Source::new([0u8; 32]);
 
-        let mut a: VecZnx<Vec<u8>> = VecZnx::alloc(n, cols, size);
-        let mut b: VecZnx<Vec<u8>> = VecZnx::alloc(n, cols, size);
-        let mut c: VecZnx<Vec<u8>> = VecZnx::alloc(n, cols, size);
-
-        // Fill a with random i64
-        a.fill_uniform(50, &mut source);
-        b.fill_uniform(50, &mut source);
+        let a = crate::random_host_vec_znx(module.n(), cols, size, &mut source);
+        let b = crate::random_host_vec_znx(module.n(), cols, size, &mut source);
+        let a = crate::upload_host_vec_znx::<B>(&a);
+        let b = crate::upload_host_vec_znx::<B>(&b);
+        let mut c = module.vec_znx_alloc(cols, size);
 
         move || {
+            let a = crate::vec_znx_backend_ref::<B>(&a);
+            let b = crate::vec_znx_backend_ref::<B>(&b);
+            let mut c = crate::vec_znx_backend_mut::<B>(&mut c);
             for i in 0..cols {
-                module.vec_znx_add_into(&mut c, i, &a, i, &b, i);
+                module.vec_znx_add_into_backend(&mut c, i, &a, i, &b, i);
             }
             black_box(());
         }
@@ -55,7 +55,7 @@ where
 
 pub fn bench_vec_znx_add_assign<B: Backend>(c: &mut Criterion, label: &str)
 where
-    Module<B>: VecZnxAddAssign + ModuleNew<B>,
+    Module<B>: VecZnxAddAssignBackend<B> + ModuleNew<B> + VecZnxAlloc<B>,
 {
     let group_name: String = format!("vec_znx_add_assign::{label}");
 
@@ -63,7 +63,7 @@ where
 
     fn runner<B: Backend>(params: [usize; 3]) -> impl FnMut()
     where
-        Module<B>: VecZnxAddAssign + ModuleNew<B>,
+        Module<B>: VecZnxAddAssignBackend<B> + ModuleNew<B> + VecZnxAlloc<B>,
     {
         let n: usize = 1 << params[0];
         let cols: usize = params[1];
@@ -71,18 +71,17 @@ where
 
         let module: Module<B> = Module::<B>::new(n as u64);
 
-        let mut source: Source = Source::new([0u8; 32]);
+        let mut source = poulpy_hal::source::Source::new([0u8; 32]);
 
-        let mut a: VecZnx<Vec<u8>> = VecZnx::alloc(n, cols, size);
-        let mut b: VecZnx<Vec<u8>> = VecZnx::alloc(n, cols, size);
-
-        // Fill a with random i64
-        a.fill_uniform(50, &mut source);
-        b.fill_uniform(50, &mut source);
+        let a = crate::random_host_vec_znx(module.n(), cols, size, &mut source);
+        let a = crate::upload_host_vec_znx::<B>(&a);
+        let mut b = module.vec_znx_alloc(cols, size);
 
         move || {
+            let a = crate::vec_znx_backend_ref::<B>(&a);
+            let mut b = crate::vec_znx_backend_mut::<B>(&mut b);
             for i in 0..cols {
-                module.vec_znx_add_assign(&mut b, i, &a, i);
+                module.vec_znx_add_assign_backend(&mut b, i, &a, i);
             }
             black_box(());
         }

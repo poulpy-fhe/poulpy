@@ -1,35 +1,41 @@
 use poulpy_hal::{
-    api::{ScratchAvailable, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphism, VecZnxFillUniform},
-    layouts::{DeviceBuf, GaloisElement, Module, Scratch, ScratchOwned},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphismBackend, VecZnxFillUniformSourceBackend},
+    layouts::{Backend, GaloisElement, Module, ScalarZnx, ScratchOwned},
     source::Source,
     test_suite::TestParams,
 };
 
 use crate::{
     EncryptionLayout, GGLWEKeyswitch, GLWEAutomorphismKeyCompressedEncryptSk, GLWEAutomorphismKeyEncryptSk,
-    GLWESwitchingKeyCompressedEncryptSk, GLWESwitchingKeyEncryptSk, ScratchTakeCore,
+    GLWESwitchingKeyCompressedEncryptSk, GLWESwitchingKeyEncryptSk, ScratchArenaTakeCore,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GGLWEInfos, GLWEAutomorphismKey, GLWEAutomorphismKeyDecompress, GLWEAutomorphismKeyLayout, GLWEInfos, GLWESecret,
-        GLWESecretPreparedFactory, GLWESwitchingKeyDecompress, compressed::GLWEAutomorphismKeyCompressed,
-        prepared::GLWESecretPrepared,
+        GLWESecretPreparedFactory, GLWESwitchingKeyDecompress, ModuleCoreAlloc, ModuleCoreCompressedAlloc,
+        compressed::GLWEAutomorphismKeyCompressed, prepared::GLWESecretPrepared,
     },
     noise::GGLWENoise,
 };
 
-pub fn test_gglwe_automorphism_key_encrypt_sk<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
-where
+pub fn test_gglwe_automorphism_key_encrypt_sk<BE: crate::test_suite::TestBackend + Backend<OwnedBuf = Vec<u8>>>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: GLWEAutomorphismKeyEncryptSk<BE>
         + GGLWEKeyswitch<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWESwitchingKeyEncryptSk<BE>
         + GLWESwitchingKeyCompressedEncryptSk<BE>
         + GLWESwitchingKeyDecompress
+        + crate::layouts::compressed::GLWEDecompress<Backend = BE>
         + GGLWENoise<BE>
-        + VecZnxFillUniform
-        + VecZnxAutomorphism,
+        + VecZnxFillUniformSourceBackend<BE>
+        + VecZnxAutomorphismBackend<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    Scratch<BE>: ScratchAvailable + ScratchTakeCore<BE>,
+    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let base2k: usize = params.base2k;
     let k_ksk: usize = 4 * base2k + 1;
@@ -49,16 +55,19 @@ where
             })
             .unwrap();
 
-            let mut atk: GLWEAutomorphismKey<Vec<u8>> = GLWEAutomorphismKey::alloc_from_infos(&atk_infos);
+            let mut atk: GLWEAutomorphismKey<Vec<u8>> = module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
             let mut source_xe: Source = Source::new([0u8; 32]);
             let mut source_xa: Source = Source::new([0u8; 32]);
 
-            let mut scratch: ScratchOwned<BE> =
-                ScratchOwned::alloc((module).glwe_automorphism_key_encrypt_sk_tmp_bytes(&atk_infos));
+            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+                (module)
+                    .glwe_automorphism_key_encrypt_sk_tmp_bytes(&atk_infos)
+                    .max(module.gglwe_noise_tmp_bytes(&atk_infos)),
+            );
 
-            let mut sk: GLWESecret<Vec<u8>> = GLWESecret::alloc_from_infos(&atk_infos);
+            let mut sk: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(&atk_infos);
             sk.fill_ternary_prob(0.5, &mut source_xs);
 
             let p = -5;
@@ -70,20 +79,31 @@ where
                 &atk_infos,
                 &mut source_xe,
                 &mut source_xa,
-                scratch.borrow(),
+                &mut crate::test_suite::scratch_host_arena(&mut scratch),
             );
 
             let mut sk_out: GLWESecret<Vec<u8>> = sk.clone();
-            (0..atk.rank().into()).for_each(|i| {
-                module.vec_znx_automorphism(
-                    module.galois_element_inv(p),
-                    &mut sk_out.data.as_vec_znx_mut(),
-                    i,
-                    &sk.data.as_vec_znx(),
-                    i,
-                );
-            });
-            let mut sk_out_prepared: GLWESecretPrepared<DeviceBuf<BE>, BE> = module.glwe_secret_prepared_alloc(sk_out.rank());
+            let sk_backend = ScalarZnx::from_data(BE::from_host_bytes(sk.data.data.as_ref()), sk.data.n(), sk.data.cols());
+            let mut sk_out_backend = ScalarZnx::from_data(
+                BE::from_host_bytes(sk_out.data.data.as_ref()),
+                sk_out.data.n(),
+                sk_out.data.cols(),
+            );
+            {
+                let sk_backend_as_vec = crate::test_suite::scalar_znx_as_vec_znx_backend_ref::<BE>(&sk_backend);
+                let mut sk_out_backend_as_vec = crate::test_suite::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut sk_out_backend);
+                for i in 0..atk.rank().into() {
+                    module.vec_znx_automorphism_backend(
+                        module.galois_element_inv(p),
+                        &mut sk_out_backend_as_vec,
+                        i,
+                        &sk_backend_as_vec,
+                        i,
+                    );
+                }
+            }
+            BE::copy_to_host(&sk_out_backend.data, sk_out.data.data.as_mut());
+            let mut sk_out_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(sk_out.rank());
             module.glwe_secret_prepare(&mut sk_out_prepared, &sk_out);
 
             let max_noise: f64 = DEFAULT_SIGMA_XE.log2() - (k_ksk as f64) + 0.5;
@@ -92,7 +112,7 @@ where
                 for col in 0..atk.rank().as_usize() {
                     let noise_have = atk
                         .key
-                        .noise(module, row, col, &sk.data, &sk_out_prepared, scratch.borrow())
+                        .noise(module, row, col, &sk.data.to_ref(), &sk_out_prepared, &mut scratch.borrow())
                         .std()
                         .log2();
                     assert!(
@@ -109,17 +129,21 @@ pub fn test_gglwe_automorphism_key_compressed_encrypt_sk<BE: crate::test_suite::
     params: &TestParams,
     module: &Module<BE>,
 ) where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: GLWEAutomorphismKeyCompressedEncryptSk<BE>
         + GGLWEKeyswitch<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWESwitchingKeyEncryptSk<BE>
         + GLWESwitchingKeyCompressedEncryptSk<BE>
         + GLWEAutomorphismKeyDecompress
-        + VecZnxAutomorphism
-        + VecZnxFillUniform
+        + crate::layouts::compressed::GLWEDecompress<Backend = BE>
+        + VecZnxAutomorphismBackend<BE>
+        + VecZnxFillUniformSourceBackend<BE>
         + GGLWENoise<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    Scratch<BE>: ScratchAvailable + ScratchTakeCore<BE>,
+    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let base2k: usize = params.base2k;
     let k_ksk: usize = 4 * base2k + 1;
@@ -140,15 +164,18 @@ pub fn test_gglwe_automorphism_key_compressed_encrypt_sk<BE: crate::test_suite::
             .unwrap();
 
             let mut atk_compressed: GLWEAutomorphismKeyCompressed<Vec<u8>> =
-                GLWEAutomorphismKeyCompressed::alloc_from_infos(&atk_infos);
+                module.glwe_automorphism_key_compressed_alloc_from_infos(&atk_infos);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
             let mut source_xe: Source = Source::new([0u8; 32]);
 
-            let mut scratch: ScratchOwned<BE> =
-                ScratchOwned::alloc((module).glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes(&atk_infos));
+            let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+                (module)
+                    .glwe_automorphism_key_compressed_encrypt_sk_tmp_bytes(&atk_infos)
+                    .max(module.gglwe_noise_tmp_bytes(&atk_infos)),
+            );
 
-            let mut sk: GLWESecret<Vec<u8>> = GLWESecret::alloc_from_infos(&atk_infos);
+            let mut sk: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(&atk_infos);
             sk.fill_ternary_prob(0.5, &mut source_xs);
 
             let p: i64 = -5;
@@ -162,23 +189,34 @@ pub fn test_gglwe_automorphism_key_compressed_encrypt_sk<BE: crate::test_suite::
                 seed_xa,
                 &atk_infos,
                 &mut source_xe,
-                scratch.borrow(),
+                &mut crate::test_suite::scratch_host_arena(&mut scratch),
             );
 
             let mut sk_out: GLWESecret<Vec<u8>> = sk.clone();
-            (0..atk_compressed.rank().into()).for_each(|i| {
-                module.vec_znx_automorphism(
-                    module.galois_element_inv(p),
-                    &mut sk_out.data.as_vec_znx_mut(),
-                    i,
-                    &sk.data.as_vec_znx(),
-                    i,
-                );
-            });
-            let mut sk_out_prepared: GLWESecretPrepared<DeviceBuf<BE>, BE> = module.glwe_secret_prepared_alloc(sk_out.rank());
+            let sk_backend = ScalarZnx::from_data(BE::from_host_bytes(sk.data.data.as_ref()), sk.data.n(), sk.data.cols());
+            let mut sk_out_backend = ScalarZnx::from_data(
+                BE::from_host_bytes(sk_out.data.data.as_ref()),
+                sk_out.data.n(),
+                sk_out.data.cols(),
+            );
+            {
+                let sk_backend_as_vec = crate::test_suite::scalar_znx_as_vec_znx_backend_ref::<BE>(&sk_backend);
+                let mut sk_out_backend_as_vec = crate::test_suite::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut sk_out_backend);
+                for i in 0..atk_compressed.rank().into() {
+                    module.vec_znx_automorphism_backend(
+                        module.galois_element_inv(p),
+                        &mut sk_out_backend_as_vec,
+                        i,
+                        &sk_backend_as_vec,
+                        i,
+                    );
+                }
+            }
+            BE::copy_to_host(&sk_out_backend.data, sk_out.data.data.as_mut());
+            let mut sk_out_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(sk_out.rank());
             module.glwe_secret_prepare(&mut sk_out_prepared, &sk_out);
 
-            let mut atk: GLWEAutomorphismKey<Vec<u8>> = GLWEAutomorphismKey::alloc_from_infos(&atk_infos);
+            let mut atk: GLWEAutomorphismKey<Vec<u8>> = module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
             module.decompress_automorphism_key(&mut atk, &atk_compressed);
 
             let max_noise: f64 = DEFAULT_SIGMA_XE.log2() - (k_ksk as f64) + 0.5;
@@ -187,7 +225,7 @@ pub fn test_gglwe_automorphism_key_compressed_encrypt_sk<BE: crate::test_suite::
                 for col in 0..atk.rank().as_usize() {
                     let noise_have = atk
                         .key
-                        .noise(module, row, col, &sk.data, &sk_out_prepared, scratch.borrow())
+                        .noise(module, row, col, &sk.data.to_ref(), &sk_out_prepared, &mut scratch.borrow())
                         .std()
                         .log2();
 

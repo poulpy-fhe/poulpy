@@ -1,8 +1,8 @@
 use std::time::Instant;
 
 use poulpy_hal::{
-    api::{ModuleN, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssign},
-    layouts::{Backend, DeviceBuf, ScalarZnx, Scratch, ScratchOwned, ZnxView, ZnxViewMut},
+    api::{ModuleN, ScalarZnxAlloc, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssignBackend},
+    layouts::{Backend, HostBackend, HostDataMut, HostDataRef, ScalarZnx, ScratchOwned, ZnxView, ZnxViewMut},
     source::Source,
 };
 
@@ -16,10 +16,10 @@ use crate::{
 };
 
 use poulpy_core::{
-    EncryptionLayout, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk, ScratchTakeCore,
+    EncryptionLayout, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
     layouts::{
         Dsize, GGLWEToGGSWKeyLayout, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GLWEAutomorphismKeyLayout, GLWEInfos,
-        GLWESecretPreparedFactory, LWELayout,
+        GLWESecretPreparedFactory, LWEInfos, LWELayout, ModuleCoreAlloc,
     },
 };
 
@@ -28,9 +28,11 @@ use poulpy_core::layouts::{
     prepared::{GGSWPrepared, GLWESecretPrepared},
 };
 
-pub fn test_circuit_bootstrapping_to_exponent<BE: Backend, M, BRA: BlindRotationAlgo>(module: &M)
-where
+pub fn test_circuit_bootstrapping_to_exponent<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend, M, BRA: BlindRotationAlgo>(
+    module: &M,
+) where
     M: ModuleN
+        + ModuleCoreAlloc
         + GLWESecretPreparedFactory<BE>
         + GLWEExternalProduct<BE>
         + GLWEDecrypt<BE>
@@ -41,9 +43,12 @@ where
         + GGSWPreparedFactory<BE>
         + GGSWNoise<BE>
         + GLWEEncryptSk<BE>
-        + VecZnxRotateAssign<BE>,
+        + ScalarZnxAlloc<BE>
+        + VecZnxRotateAssignBackend<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    Scratch<BE>: ScratchTakeCore<BE>,
+    BE::OwnedBuf: HostDataRef + HostDataMut,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
 {
     let n_glwe: usize = module.n();
     let res_base2k: usize = 15;
@@ -119,24 +124,24 @@ where
     let mut source_xa: Source = Source::new([1u8; 32]);
     let mut source_xe: Source = Source::new([1u8; 32]);
 
-    let mut sk_lwe: LWESecret<Vec<u8>> = LWESecret::alloc(n_lwe.into());
+    let mut sk_lwe: LWESecret<Vec<u8>> = module.lwe_secret_alloc(n_lwe.into());
     sk_lwe.fill_binary_block(block_size, &mut source_xs);
 
-    let mut sk_glwe: GLWESecret<Vec<u8>> = GLWESecret::alloc(n_glwe.into(), rank.into());
+    let mut sk_glwe: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank.into());
     sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
 
-    let mut sk_glwe_prepared: GLWESecretPrepared<DeviceBuf<BE>, BE> = module.glwe_secret_prepared_alloc(rank.into());
+    let mut sk_glwe_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
     module.glwe_secret_prepare(&mut sk_glwe_prepared, &sk_glwe);
 
     let data: i64 = 1;
 
-    let mut pt_lwe: LWEPlaintext<Vec<u8>> = LWEPlaintext::alloc(base2k_lwe.into(), k_lwe_pt.into());
+    let mut pt_lwe: LWEPlaintext<Vec<u8>> = module.lwe_plaintext_alloc(base2k_lwe.into(), k_lwe_pt.into());
     pt_lwe.encode_i64(data, (k_lwe_pt + 1).into());
 
     println!("pt_lwe: {pt_lwe}");
 
     let lwe_enc_infos = EncryptionLayout::new_from_default_sigma(lwe_infos).unwrap();
-    let mut ct_lwe: LWE<Vec<u8>> = LWE::alloc_from_infos(&lwe_infos);
+    let mut ct_lwe: LWE<Vec<u8>> = module.lwe_alloc_from_infos(&lwe_infos);
     module.lwe_encrypt_sk(
         &mut ct_lwe,
         &pt_lwe,
@@ -144,11 +149,11 @@ where
         &lwe_enc_infos,
         &mut source_xe,
         &mut source_xa,
-        scratch.borrow(),
+        &mut scratch.borrow(),
     );
 
     let now: Instant = Instant::now();
-    let mut cbt_key: CircuitBootstrappingKey<Vec<u8>, BRA> = CircuitBootstrappingKey::alloc_from_infos(&cbt_infos);
+    let mut cbt_key: CircuitBootstrappingKey<Vec<u8>, BRA> = CircuitBootstrappingKey::alloc_from_infos(module, &cbt_infos);
     println!("CBT-ALLOC: {} ms", now.elapsed().as_millis());
 
     let cbt_enc_infos = CircuitBootstrappingEncryptionInfos::from_default_sigma(&cbt_infos).unwrap();
@@ -160,17 +165,17 @@ where
         &cbt_enc_infos,
         &mut source_xe,
         &mut source_xa,
-        scratch.borrow(),
+        &mut scratch.borrow(),
     );
     println!("CBT-ENCRYPT: {} ms", now.elapsed().as_millis());
 
-    let mut res: GGSW<Vec<u8>> = GGSW::alloc_from_infos(&ggsw_infos);
+    let mut res: GGSW<Vec<u8>> = module.ggsw_alloc_from_infos(&ggsw_infos);
 
     let log_gap_out = 1;
 
-    let mut cbt_prepared: CircuitBootstrappingKeyPrepared<DeviceBuf<BE>, BRA, BE> =
+    let mut cbt_prepared: CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE> =
         CircuitBootstrappingKeyPrepared::alloc_from_infos(module, &cbt_infos);
-    cbt_prepared.prepare(module, &cbt_key, scratch.borrow());
+    cbt_prepared.prepare(module, &cbt_key, &mut scratch.borrow());
 
     let now: Instant = Instant::now();
     cbt_prepared.execute_to_exponent(
@@ -180,28 +185,28 @@ where
         &ct_lwe,
         k_lwe_pt,
         extension_factor,
-        scratch.borrow(),
+        &mut scratch.borrow(),
     );
     println!("CBT: {} ms", now.elapsed().as_millis());
 
     // X^{data * 2^log_gap_out}
-    let mut pt_ggsw: ScalarZnx<Vec<u8>> = ScalarZnx::alloc(n_glwe, 1);
-    pt_ggsw.at_mut(0, 0)[0] = 1;
-    module.vec_znx_rotate_assign(data * (1 << log_gap_out), &mut pt_ggsw.as_vec_znx_mut(), 0, scratch.borrow());
+    let mut pt_ggsw: ScalarZnx<Vec<u8>> = module.scalar_znx_alloc(1);
+    pt_ggsw.at_mut(0, 0)[data as usize * (1 << log_gap_out)] = 1;
+    let pt_ggsw_ref = ScalarZnx::from_data(pt_ggsw.data.as_slice(), pt_ggsw.n(), pt_ggsw.cols());
 
     for row in 0..res.dnum().as_usize() {
         for col in 0..res.rank().as_usize() + 1 {
             println!(
                 "row:{row} col:{col} -> {}",
-                res.noise(module, row, col, &pt_ggsw, &sk_glwe_prepared, scratch.borrow())
+                res.noise(module, row, col, &pt_ggsw_ref, &sk_glwe_prepared, &mut scratch.borrow())
                     .std()
                     .log2()
             )
         }
     }
     let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(ggsw_infos).unwrap();
-    let mut ct_glwe: GLWE<Vec<u8>> = GLWE::alloc_from_infos(&ggsw_infos);
-    let mut pt_glwe: GLWEPlaintext<Vec<u8>> = GLWEPlaintext::alloc_from_infos(&ggsw_infos);
+    let mut ct_glwe: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&ggsw_infos);
+    let mut pt_glwe: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&ggsw_infos);
     pt_glwe.data.at_mut(0, 0)[0] = 1 << (res_base2k - 2);
 
     module.glwe_encrypt_sk(
@@ -211,16 +216,18 @@ where
         &glwe_enc_infos,
         &mut source_xe,
         &mut source_xa,
-        scratch.borrow(),
+        &mut scratch.borrow(),
     );
 
-    let mut res_prepared: GGSWPrepared<DeviceBuf<BE>, BE> = module.ggsw_prepared_alloc_from_infos(&res);
-    module.ggsw_prepare(&mut res_prepared, &res, scratch.borrow());
+    let mut res_prepared: GGSWPrepared<BE::OwnedBuf, BE> = module.ggsw_prepared_alloc_from_infos(&res);
+    module.ggsw_prepare(&mut res_prepared, &res, &mut scratch.borrow());
 
-    module.glwe_external_product_assign(&mut ct_glwe, &res_prepared, scratch.borrow());
+    {
+        module.glwe_external_product_assign(&mut ct_glwe, &res_prepared, res_prepared.size(), &mut scratch.borrow());
+    }
 
-    let mut pt_res: GLWEPlaintext<Vec<u8>> = GLWEPlaintext::alloc_from_infos(&ggsw_infos);
-    module.glwe_decrypt(&ct_glwe, &mut pt_res, &sk_glwe_prepared, scratch.borrow());
+    let mut pt_res: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&ggsw_infos);
+    module.glwe_decrypt(&ct_glwe, &mut pt_res, &sk_glwe_prepared, &mut scratch.borrow());
 
     // Parameters are set such that the first limb should be noiseless.
     let mut pt_want: Vec<i64> = vec![0i64; module.n()];
@@ -228,8 +235,9 @@ where
     assert_eq!(pt_res.data.at(0, 0), pt_want);
 }
 
-pub fn test_circuit_bootstrapping_to_constant<BE: Backend, M, BRA: BlindRotationAlgo>(module: &M)
-where
+pub fn test_circuit_bootstrapping_to_constant<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend, M, BRA: BlindRotationAlgo>(
+    module: &M,
+) where
     M: ModuleN
         + GLWESecretPreparedFactory<BE>
         + GLWEExternalProduct<BE>
@@ -241,9 +249,12 @@ where
         + GGSWPreparedFactory<BE>
         + GGSWNoise<BE>
         + GLWEEncryptSk<BE>
-        + VecZnxRotateAssign<BE>,
+        + ScalarZnxAlloc<BE>
+        + VecZnxRotateAssignBackend<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    Scratch<BE>: ScratchTakeCore<BE>,
+    BE::OwnedBuf: HostDataRef + HostDataMut,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
 {
     let n_glwe: usize = module.n();
     let res_base2k: usize = 15;
@@ -319,24 +330,24 @@ where
     let mut source_xa: Source = Source::new([1u8; 32]);
     let mut source_xe: Source = Source::new([1u8; 32]);
 
-    let mut sk_lwe: LWESecret<Vec<u8>> = LWESecret::alloc(n_lwe.into());
+    let mut sk_lwe: LWESecret<Vec<u8>> = module.lwe_secret_alloc(n_lwe.into());
     sk_lwe.fill_binary_block(block_size, &mut source_xs);
 
-    let mut sk_glwe: GLWESecret<Vec<u8>> = GLWESecret::alloc(n_glwe.into(), rank.into());
+    let mut sk_glwe: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank.into());
     sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
 
-    let mut sk_glwe_prepared: GLWESecretPrepared<DeviceBuf<BE>, BE> = module.glwe_secret_prepared_alloc(rank.into());
+    let mut sk_glwe_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
     module.glwe_secret_prepare(&mut sk_glwe_prepared, &sk_glwe);
 
     let data: i64 = 1;
 
-    let mut pt_lwe: LWEPlaintext<Vec<u8>> = LWEPlaintext::alloc(base2k_lwe.into(), k_lwe_pt.into());
+    let mut pt_lwe: LWEPlaintext<Vec<u8>> = module.lwe_plaintext_alloc(base2k_lwe.into(), k_lwe_pt.into());
     pt_lwe.encode_i64(data, (k_lwe_pt + 1).into());
 
     println!("pt_lwe: {pt_lwe}");
 
     let lwe_enc_infos = EncryptionLayout::new_from_default_sigma(lwe_infos).unwrap();
-    let mut ct_lwe: LWE<Vec<u8>> = LWE::alloc_from_infos(&lwe_infos);
+    let mut ct_lwe: LWE<Vec<u8>> = module.lwe_alloc_from_infos(&lwe_infos);
     module.lwe_encrypt_sk(
         &mut ct_lwe,
         &pt_lwe,
@@ -344,11 +355,11 @@ where
         &lwe_enc_infos,
         &mut source_xe,
         &mut source_xa,
-        scratch.borrow(),
+        &mut scratch.borrow(),
     );
 
     let now: Instant = Instant::now();
-    let mut cbt_key: CircuitBootstrappingKey<Vec<u8>, BRA> = CircuitBootstrappingKey::alloc_from_infos(&cbt_infos);
+    let mut cbt_key: CircuitBootstrappingKey<Vec<u8>, BRA> = CircuitBootstrappingKey::alloc_from_infos(module, &cbt_infos);
     println!("CBT-ALLOC: {} ms", now.elapsed().as_millis());
 
     let cbt_enc_infos = CircuitBootstrappingEncryptionInfos::from_default_sigma(&cbt_infos).unwrap();
@@ -360,29 +371,30 @@ where
         &cbt_enc_infos,
         &mut source_xe,
         &mut source_xa,
-        scratch.borrow(),
+        &mut scratch.borrow(),
     );
     println!("CBT-ENCRYPT: {} ms", now.elapsed().as_millis());
 
-    let mut res: GGSW<Vec<u8>> = GGSW::alloc_from_infos(&ggsw_infos);
+    let mut res: GGSW<Vec<u8>> = module.ggsw_alloc_from_infos(&ggsw_infos);
 
-    let mut cbt_prepared: CircuitBootstrappingKeyPrepared<DeviceBuf<BE>, BRA, BE> =
+    let mut cbt_prepared: CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE> =
         CircuitBootstrappingKeyPrepared::alloc_from_infos(module, &cbt_infos);
-    cbt_prepared.prepare(module, &cbt_key, scratch.borrow());
+    cbt_prepared.prepare(module, &cbt_key, &mut scratch.borrow());
 
     let now: Instant = Instant::now();
-    cbt_prepared.execute_to_constant(module, &mut res, &ct_lwe, k_lwe_pt, extension_factor, scratch.borrow());
+    cbt_prepared.execute_to_constant(module, &mut res, &ct_lwe, k_lwe_pt, extension_factor, &mut scratch.borrow());
     println!("CBT: {} ms", now.elapsed().as_millis());
 
     // X^{data * 2^log_gap_out}
-    let mut pt_ggsw: ScalarZnx<Vec<u8>> = ScalarZnx::alloc(n_glwe, 1);
+    let mut pt_ggsw: ScalarZnx<Vec<u8>> = module.scalar_znx_alloc(1);
     pt_ggsw.at_mut(0, 0)[0] = data;
+    let pt_ggsw_ref = ScalarZnx::from_data(pt_ggsw.data.as_slice(), pt_ggsw.n(), pt_ggsw.cols());
 
     for row in 0..res.dnum().as_usize() {
         for col in 0..res.rank().as_usize() + 1 {
             println!(
                 "row:{row} col:{col} -> {}",
-                res.noise(module, row, col, &pt_ggsw, &sk_glwe_prepared, scratch.borrow())
+                res.noise(module, row, col, &pt_ggsw_ref, &sk_glwe_prepared, &mut scratch.borrow())
                     .std()
                     .log2()
             )
@@ -390,8 +402,8 @@ where
     }
 
     let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(ggsw_infos).unwrap();
-    let mut ct_glwe: GLWE<Vec<u8>> = GLWE::alloc_from_infos(&ggsw_infos);
-    let mut pt_glwe: GLWEPlaintext<Vec<u8>> = GLWEPlaintext::alloc_from_infos(&ggsw_infos);
+    let mut ct_glwe: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&ggsw_infos);
+    let mut pt_glwe: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&ggsw_infos);
     pt_glwe.data.at_mut(0, 0)[0] = 1 << (res_base2k - k_lwe_pt - 1);
 
     module.glwe_encrypt_sk(
@@ -401,16 +413,18 @@ where
         &glwe_enc_infos,
         &mut source_xe,
         &mut source_xa,
-        scratch.borrow(),
+        &mut scratch.borrow(),
     );
 
-    let mut res_prepared: GGSWPrepared<DeviceBuf<BE>, BE> = module.ggsw_prepared_alloc_from_infos(&res);
-    module.ggsw_prepare(&mut res_prepared, &res, scratch.borrow());
+    let mut res_prepared: GGSWPrepared<BE::OwnedBuf, BE> = module.ggsw_prepared_alloc_from_infos(&res);
+    module.ggsw_prepare(&mut res_prepared, &res, &mut scratch.borrow());
 
-    module.glwe_external_product_assign(&mut ct_glwe, &res_prepared, scratch.borrow());
+    {
+        module.glwe_external_product_assign(&mut ct_glwe, &res_prepared, res_prepared.size(), &mut scratch.borrow());
+    }
 
-    let mut pt_res: GLWEPlaintext<Vec<u8>> = GLWEPlaintext::alloc_from_infos(&ggsw_infos);
-    module.glwe_decrypt(&ct_glwe, &mut pt_res, &sk_glwe_prepared, scratch.borrow());
+    let mut pt_res: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&ggsw_infos);
+    module.glwe_decrypt(&ct_glwe, &mut pt_res, &sk_glwe_prepared, &mut scratch.borrow());
 
     // Parameters are set such that the first limb should be noiseless.
     let mut pt_want: Vec<i64> = vec![0i64; module.n()];

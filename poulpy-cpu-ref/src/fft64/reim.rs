@@ -14,13 +14,50 @@
 //!
 //! All implementations use the default `_ref` implementations.
 
+use std::fmt::Debug;
+
 use crate::reference::fft64::{
     convolution::I64Ops,
     reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable, fft_ref, ifft_ref},
     reim4::{Reim4BlkMatVec, Reim4Convolution},
 };
+use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
+use rand_distr::num_traits::{Float, FloatConst};
 
 use super::FFT64Ref;
+
+/// Precomputed twiddle-factor tables for the negacyclic reim FFT and IFFT.
+///
+/// Wraps [`ReimFFTTable`] and [`ReimIFFTTable`] into a single object that
+/// implements [`NegacyclicFFT`], suitable for use as the transform provider
+/// in a CKKS [`poulpy_ckks::encoding::Encoder`].
+pub struct FFT64ReimTable<F: Float + FloatConst + Debug> {
+    fft: ReimFFTTable<F>,
+    ifft: ReimIFFTTable<F>,
+}
+
+impl<F: Float + FloatConst + Debug> NegacyclicFFT<F> for FFT64ReimTable<F> {
+    fn m(&self) -> usize {
+        self.fft.m()
+    }
+
+    fn fft(&self, data: &mut [F]) {
+        self.fft.execute(data);
+    }
+
+    fn ifft(&self, data: &mut [F]) {
+        self.ifft.execute(data);
+    }
+}
+
+impl<F: Float + FloatConst + Debug> NegacyclicFFTNew<F> for FFT64ReimTable<F> {
+    fn new(m: usize) -> Self {
+        Self {
+            fft: ReimFFTTable::new(m),
+            ifft: ReimIFFTTable::new(m),
+        }
+    }
+}
 
 impl ReimFFTExecute<ReimFFTTable<f64>, f64> for FFT64Ref {
     fn reim_dft_execute(table: &ReimFFTTable<f64>, data: &mut [f64]) {

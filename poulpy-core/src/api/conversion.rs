@@ -1,131 +1,58 @@
-use poulpy_hal::{
-    api::{ModuleN, ScratchAvailable},
-    layouts::{Backend, Scratch, ZnxView, ZnxViewMut, ZnxZero},
-};
+use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{
-    ScratchTakeCore,
-    api::{GLWEKeyswitch, GLWERotate},
+    ScratchArenaTakeCore,
     layouts::{
-        GGLWEInfos, GGLWEPreparedToRef, GGLWEToGGSWKeyPreparedToRef, GGLWEToRef, GGSWInfos, GGSWToMut, GLWE, GLWEInfos,
-        GLWELayout, GLWEToRef, LWE, LWEInfos, LWEToMut, Rank,
+        GGLWEInfos, GGLWEToBackendRef, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef,
+        LWEInfos, LWEToBackendMut, LWEToBackendRef,
+        prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
     },
 };
 
-pub trait LWESampleExtract
-where
-    Self: ModuleN,
-{
+pub trait LWESampleExtract<BE: Backend> {
     fn lwe_sample_extract<R, A>(&self, res: &mut R, a: &A)
     where
-        R: LWEToMut,
-        A: GLWEToRef,
-    {
-        let res: &mut LWE<&mut [u8]> = &mut res.to_mut();
-        let a: &GLWE<&[u8]> = &a.to_ref();
-
-        assert!(res.n() <= a.n());
-        assert_eq!(a.n(), self.n() as u32);
-        assert!(res.base2k() == a.base2k());
-
-        let min_size: usize = res.size().min(a.size());
-        let n: usize = res.n().into();
-
-        res.data.zero();
-        (0..min_size).for_each(|i| {
-            let data_lwe: &mut [i64] = res.data.at_mut(0, i);
-            data_lwe[0] = a.data.at(0, i)[0];
-            data_lwe[1..].copy_from_slice(&a.data.at(1, i)[..n]);
-        });
-    }
+        R: LWEToBackendMut<BE> + LWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos;
 }
 
-pub trait GLWEFromLWE<BE: Backend>
-where
-    Self: GLWEKeyswitch<BE>,
-{
+pub trait GLWEFromLWE<BE: Backend> {
     fn glwe_from_lwe_tmp_bytes<R, A, K>(&self, glwe_infos: &R, lwe_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
         A: LWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_from_lwe<R, A, K>(&self, res: &mut R, lwe: &A, ksk: &K, scratch: &mut Scratch<BE>)
+    fn glwe_from_lwe<'s, R, A, K>(&self, res: &mut R, lwe: &A, ksk: &K, key_size: usize, scratch: &mut ScratchArena<'s, BE>)
     where
-        R: crate::layouts::GLWEToMut,
-        A: crate::layouts::LWEToRef,
-        K: GGLWEPreparedToRef<BE> + GGLWEInfos;
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: LWEToBackendRef<BE> + LWEInfos,
+        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+        BE: 's,
+        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>;
 }
 
-pub trait LWEFromGLWE<BE: Backend>
-where
-    Self: GLWEKeyswitch<BE> + LWESampleExtract + GLWERotate<BE>,
-{
+pub trait LWEFromGLWE<BE: Backend> {
     fn lwe_from_glwe_tmp_bytes<R, A, K>(&self, lwe_infos: &R, glwe_infos: &A, key_infos: &K) -> usize
     where
         R: LWEInfos,
         A: GLWEInfos,
-        K: GGLWEInfos,
-    {
-        assert_eq!(self.n() as u32, glwe_infos.n());
-        assert_eq!(self.n() as u32, key_infos.n());
+        K: GGLWEInfos;
 
-        let res_infos: GLWELayout = GLWELayout {
-            n: self.n().into(),
-            base2k: lwe_infos.base2k(),
-            k: lwe_infos.max_k(),
-            rank: Rank(1),
-        };
-
-        let lvl_0: usize = GLWE::<Vec<u8>>::bytes_of(self.n().into(), lwe_infos.base2k(), lwe_infos.max_k(), 1u32.into());
-        let lvl_1: usize = self.glwe_keyswitch_tmp_bytes(&res_infos, glwe_infos, key_infos);
-        let lvl_2: usize = GLWE::<Vec<u8>>::bytes_of_from_infos(glwe_infos);
-
-        lvl_0 + lvl_1 + lvl_2
-    }
-
-    fn lwe_from_glwe<R, A, K>(&self, res: &mut R, a: &A, a_idx: usize, key: &K, scratch: &mut Scratch<BE>)
-    where
-        R: LWEToMut,
-        A: GLWEToRef,
-        K: GGLWEPreparedToRef<BE> + GGLWEInfos,
-        Scratch<BE>: ScratchTakeCore<BE>,
-    {
-        let res: &mut LWE<&mut [u8]> = &mut res.to_mut();
-        let a: &GLWE<&[u8]> = &a.to_ref();
-
-        assert_eq!(a.n(), self.n() as u32);
-        assert_eq!(key.n(), self.n() as u32);
-        assert!(res.n() <= self.n() as u32);
-        assert!(
-            scratch.available() >= self.lwe_from_glwe_tmp_bytes(res, a, key),
-            "scratch.available(): {} < LWEFromGLWE::lwe_from_glwe_tmp_bytes: {}",
-            scratch.available(),
-            self.lwe_from_glwe_tmp_bytes(res, a, key)
-        );
-
-        let glwe_layout: GLWELayout = GLWELayout {
-            n: self.n().into(),
-            base2k: res.base2k(),
-            k: res.max_k(),
-            rank: Rank(1),
-        };
-
-        let (mut tmp_glwe_rank_1, scratch_1) = scratch.take_glwe(&glwe_layout);
-
-        match a_idx {
-            0 => {
-                self.glwe_keyswitch(&mut tmp_glwe_rank_1, a, key, scratch_1);
-            }
-            _ => {
-                let (mut tmp_glwe_in, scratch_2) = scratch_1.take_glwe(a);
-                self.glwe_rotate(-(a_idx as i64), &mut tmp_glwe_in, a);
-                self.glwe_keyswitch(&mut tmp_glwe_rank_1, &tmp_glwe_in, key, scratch_2);
-            }
-        }
-
-        self.lwe_sample_extract(res, &tmp_glwe_rank_1);
-    }
+    fn lwe_from_glwe<'s, R, A, K>(
+        &self,
+        res: &mut R,
+        a: &A,
+        a_idx: usize,
+        key: &K,
+        key_size: usize,
+        scratch: &mut ScratchArena<'s, BE>,
+    ) where
+        R: LWEToBackendMut<BE> + LWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+        BE: 's,
+        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>;
 }
 
 pub trait GGSWFromGGLWE<BE: Backend> {
@@ -134,12 +61,13 @@ pub trait GGSWFromGGLWE<BE: Backend> {
         R: GGSWInfos,
         A: GGLWEInfos;
 
-    fn ggsw_from_gglwe<R, A, T>(&self, res: &mut R, a: &A, tsk: &T, scratch: &mut Scratch<BE>)
+    fn ggsw_from_gglwe<'s, R, A, T>(&self, res: &mut R, a: &A, tsk: &T, tsk_size: usize, scratch: &mut ScratchArena<'s, BE>)
     where
-        R: GGSWToMut,
-        A: GGLWEToRef,
-        T: GGLWEToGGSWKeyPreparedToRef<BE>,
-        Scratch<BE>: ScratchTakeCore<BE>;
+        R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWInfos,
+        A: GGLWEToBackendRef<BE> + GGLWEInfos,
+        T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
+        BE: 's,
+        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>;
 }
 
 pub trait GGSWExpandRows<BE: Backend> {
@@ -148,9 +76,9 @@ pub trait GGSWExpandRows<BE: Backend> {
         R: GGSWInfos,
         A: GGLWEInfos;
 
-    fn ggsw_expand_row<R, T>(&self, res: &mut R, tsk: &T, scratch: &mut Scratch<BE>)
+    fn ggsw_expand_row<'s, R, T>(&self, res: &mut R, tsk: &T, tsk_size: usize, scratch: &mut ScratchArena<'s, BE>)
     where
-        R: GGSWToMut,
-        T: GGLWEToGGSWKeyPreparedToRef<BE>,
-        Scratch<BE>: ScratchTakeCore<BE>;
+        R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWInfos,
+        T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
+        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>;
 }

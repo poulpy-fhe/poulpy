@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Display};
 
 use crate::{
-    layouts::{Data, DataMut, DataRef},
+    layouts::{Data, HostDataMut, HostDataRef},
     source::Source,
 };
 use bytemuck::Pod;
@@ -54,7 +54,7 @@ pub trait DataViewMut: DataView {
 ///
 /// The associated `Scalar` type is `i64` for coefficient-domain types
 /// and a backend-specific type for DFT/big representations.
-pub trait ZnxView: ZnxInfos + DataView<D: DataRef> {
+pub trait ZnxView: ZnxInfos + DataView<D: HostDataRef> {
     type Scalar: Copy + Zero + Display + Debug + Pod;
 
     /// Returns a non-mutable pointer to the underlying coefficients array.
@@ -84,7 +84,7 @@ pub trait ZnxView: ZnxInfos + DataView<D: DataRef> {
 /// Mutable view into a polynomial container's coefficient data.
 ///
 /// Extends [`ZnxView`] with mutable pointer and slice accessors.
-pub trait ZnxViewMut: ZnxView + DataViewMut<D: DataMut> {
+pub trait ZnxViewMut: ZnxView + DataViewMut<D: HostDataMut> {
     /// Returns a mutable pointer to the underlying coefficients array.
     fn as_mut_ptr(&mut self) -> *mut Self::Scalar {
         self.data_mut().as_mut().as_mut_ptr() as *mut Self::Scalar
@@ -110,7 +110,7 @@ pub trait ZnxViewMut: ZnxView + DataViewMut<D: DataMut> {
 }
 
 // Note: Cannot provide blanket impl of ZnxView because Scalar is not known.
-impl<T> ZnxViewMut for T where T: ZnxView + DataViewMut<D: DataMut> {}
+impl<T> ZnxViewMut for T where T: ZnxView + DataViewMut<D: HostDataMut> {}
 
 /// Zero-fill operations for polynomial containers.
 pub trait ZnxZero

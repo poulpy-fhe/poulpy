@@ -1,6 +1,9 @@
+use poulpy_hal::layouts::{HostBytesBackend as HB, Module};
 use poulpy_hal::test_suite::serialization::test_reader_writer_interface;
 
 use crate::blind_rotation::{BlindRotationKey, BlindRotationKeyCompressed, BlindRotationKeyLayout, CGGI};
+
+type HostModule = Module<HB>;
 
 #[test]
 fn test_cggi_blind_rotation_key_serialization() {
@@ -12,7 +15,8 @@ fn test_cggi_blind_rotation_key_serialization() {
         dnum: 2_usize.into(),
         rank: 2_usize.into(),
     };
-    let original: BlindRotationKey<Vec<u8>, CGGI> = BlindRotationKey::alloc(&layout);
+    let module = HostModule::new(layout.n_glwe.as_u32() as u64);
+    let original: BlindRotationKey<Vec<u8>, CGGI> = BlindRotationKey::alloc(&module, &layout);
     test_reader_writer_interface(original);
 }
 
@@ -26,6 +30,7 @@ fn test_cggi_blind_rotation_key_compressed_serialization() {
         dnum: 2_usize.into(),
         rank: 2_usize.into(),
     };
-    let original: BlindRotationKeyCompressed<Vec<u8>, CGGI> = BlindRotationKeyCompressed::alloc(&layout);
+    let module = HostModule::new(layout.n_glwe.as_u32() as u64);
+    let original: BlindRotationKeyCompressed<Vec<u8>, CGGI> = BlindRotationKeyCompressed::alloc(&module, &layout);
     test_reader_writer_interface(original);
 }

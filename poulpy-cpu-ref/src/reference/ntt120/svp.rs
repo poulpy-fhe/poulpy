@@ -26,8 +26,8 @@ use bytemuck::{cast_slice, cast_slice_mut};
 
 use crate::{
     layouts::{
-        Backend, ScalarZnx, ScalarZnxToRef, SvpPPol, SvpPPolToMut, SvpPPolToRef, VecZnxDft, VecZnxDftToMut, VecZnxDftToRef,
-        ZnxInfos, ZnxView, ZnxViewMut,
+        Backend, HostDataMut, HostDataRef, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, VecZnxDftBackendMut,
+        VecZnxDftBackendRef, ZnxView, ZnxViewMut,
     },
     reference::ntt120::{
         NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc, NttZero, ntt::NttTable, primes::Primes30, types::Q120bScalar,
@@ -49,14 +49,17 @@ use crate::{
 /// `res` must be a [`SvpPPol`] with `ScalarPrep = Q120bScalar`.
 /// A temporary heap buffer of `4 * n` u64 values is allocated internally
 /// (this is a setup/key-preparation function, not a hot path).
-pub fn ntt120_svp_prepare<R, A, BE>(module: &impl NttModuleHandle, res: &mut R, res_col: usize, a: &A, a_col: usize)
-where
+pub fn ntt120_svp_prepare<'r, 'a, BE>(
+    module: &impl NttModuleHandle,
+    res: &mut SvpPPolBackendMut<'r, BE>,
+    res_col: usize,
+    a: &ScalarZnxBackendRef<'a, BE>,
+    a_col: usize,
+) where
     BE: Backend<ScalarPrep = Q120bScalar> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttCFromB,
-    R: SvpPPolToMut<BE>,
-    A: ScalarZnxToRef,
+    BE::BufMut<'r>: HostDataMut,
+    BE::BufRef<'a>: HostDataRef,
 {
-    let mut res: SvpPPol<&mut [u8], BE> = res.to_mut();
-    let a: ScalarZnx<&[u8]> = a.to_ref();
     let n = res.n();
 
     // Temporary q120b working buffer (heap-allocated; prepare is not hot).
@@ -84,24 +87,19 @@ where
 /// `a`: prepared [`SvpPPol`] in q120c format.
 /// `b`: input [`VecZnxDft`] in q120b format.
 /// `res`: output [`VecZnxDft`] in q120b format.
-pub fn ntt120_svp_apply_dft_to_dft<R, A, C, BE>(
+pub fn ntt120_svp_apply_dft_to_dft<'r, 'a, 'b, BE>(
     module: &impl NttModuleHandle,
-    res: &mut R,
+    res: &mut VecZnxDftBackendMut<'r, BE>,
     res_col: usize,
-    a: &A,
+    a: &SvpPPolBackendRef<'a, BE>,
     a_col: usize,
-    b: &C,
+    b: &VecZnxDftBackendRef<'b, BE>,
     b_col: usize,
 ) where
     BE: Backend<ScalarPrep = Q120bScalar> + NttMulBbc + NttZero,
-    R: VecZnxDftToMut<BE>,
-    A: SvpPPolToRef<BE>,
-    C: VecZnxDftToRef<BE>,
+    BE::BufMut<'r>: HostDataMut,
+    for<'x> BE::BufRef<'x>: HostDataRef,
 {
-    let mut res: VecZnxDft<&mut [u8], BE> = res.to_mut();
-    let a: SvpPPol<&[u8], BE> = a.to_ref();
-    let b: VecZnxDft<&[u8], BE> = b.to_ref();
-
     let meta = module.get_bbc_meta();
     let n = res.n();
     let res_size = res.size();
@@ -145,20 +143,17 @@ pub fn ntt120_svp_apply_dft_to_dft<R, A, C, BE>(
 ///
 /// Processes each q120b coefficient by copying it (since [`Q120bScalar`] is
 /// `Copy`) before overwriting to avoid aliasing conflicts.
-pub fn ntt120_svp_apply_dft_to_dft_assign<R, A, BE>(
+pub fn ntt120_svp_apply_dft_to_dft_assign<'r, 'a, BE>(
     module: &impl NttModuleHandle,
-    res: &mut R,
+    res: &mut VecZnxDftBackendMut<'r, BE>,
     res_col: usize,
-    a: &A,
+    a: &SvpPPolBackendRef<'a, BE>,
     a_col: usize,
 ) where
     BE: Backend<ScalarPrep = Q120bScalar> + NttMulBbc,
-    R: VecZnxDftToMut<BE>,
-    A: SvpPPolToRef<BE>,
+    BE::BufMut<'r>: HostDataMut,
+    BE::BufRef<'a>: HostDataRef,
 {
-    let mut res: VecZnxDft<&mut [u8], BE> = res.to_mut();
-    let a: SvpPPol<&[u8], BE> = a.to_ref();
-
     let meta = module.get_bbc_meta();
     let n = res.n();
     let res_size = res.size();

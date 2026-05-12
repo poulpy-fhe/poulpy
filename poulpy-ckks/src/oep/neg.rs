@@ -1,36 +1,63 @@
-#[macro_export]
-macro_rules! impl_ckks_neg_default_methods {
-    ($backend:ty) => {
-        fn ckks_neg_tmp_bytes(module: &poulpy_hal::layouts::Module<$backend>) -> usize
-        where
-            poulpy_hal::layouts::Module<$backend>: poulpy_core::GLWEShift<$backend>,
-        {
-            <poulpy_hal::layouts::Module<$backend> as $crate::leveled::default::neg::CKKSNegDefault<$backend>>::ckks_neg_tmp_bytes_default(module)
-        }
+use crate::default::neg::CKKSNegDefault;
 
-        fn ckks_neg_into(
-            module: &poulpy_hal::layouts::Module<$backend>,
-            dst: &mut $crate::layouts::CKKSCiphertext<impl poulpy_hal::layouts::DataMut>,
-            src: &$crate::layouts::CKKSCiphertext<impl poulpy_hal::layouts::DataRef>,
-            scratch: &mut poulpy_hal::layouts::Scratch<$backend>,
-        ) -> anyhow::Result<()>
-        where
-            poulpy_hal::layouts::Module<$backend>: poulpy_core::GLWENegate + poulpy_core::GLWEShift<$backend>,
-            poulpy_hal::layouts::Scratch<$backend>: poulpy_hal::api::ScratchAvailable + poulpy_core::ScratchTakeCore<$backend>,
-        {
-            <poulpy_hal::layouts::Module<$backend> as $crate::leveled::default::neg::CKKSNegDefault<$backend>>::ckks_neg_into_default(module, dst, src, scratch)
-        }
+use anyhow::Result;
+use poulpy_core::{
+    GLWENegate, GLWEShift, ScratchArenaTakeCore,
+    layouts::{GLWEInfos, LWEInfos},
+};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-        fn ckks_neg_assign(
-            module: &poulpy_hal::layouts::Module<$backend>,
-            dst: &mut $crate::layouts::CKKSCiphertext<impl poulpy_hal::layouts::DataMut>,
-        ) -> anyhow::Result<()>
-        where
-            poulpy_hal::layouts::Module<$backend>: poulpy_core::GLWENegate,
-        {
-            <poulpy_hal::layouts::Module<$backend> as $crate::leveled::default::neg::CKKSNegDefault<$backend>>::ckks_neg_assign_default(module, dst)
-        }
-    };
+use crate::{CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
+
+/// # Safety
+///
+/// Implementations must satisfy the contracts of all trait methods, including
+/// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
+/// associated method signatures.
+pub unsafe trait CKKSNegImpl<BE: Backend>: Backend {
+    fn ckks_neg_tmp_bytes(module: &Module<BE>) -> usize;
+
+    fn ckks_neg_into<Dst, Src>(module: &Module<BE>, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos;
+
+    fn ckks_neg_assign<Dst>(module: &Module<BE>, dst: &mut Dst) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos;
 }
 
-pub use crate::impl_ckks_neg_default_methods;
+#[allow(private_bounds)]
+unsafe impl<BE: Backend> CKKSNegImpl<BE> for BE
+where
+    BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
+    Module<BE>: crate::default::neg::CKKSNegDefault<BE> + GLWENegate<BE> + GLWEShift<BE>,
+    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+{
+    fn ckks_neg_tmp_bytes(module: &Module<BE>) -> usize {
+        module.ckks_neg_tmp_bytes_default()
+    }
+
+    fn ckks_neg_into<Dst, Src>(module: &Module<BE>, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos,
+    {
+        module.ckks_neg_into_default(dst, src, scratch)
+    }
+
+    fn ckks_neg_assign<Dst>(module: &Module<BE>, dst: &mut Dst) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
+    {
+        module.ckks_neg_assign_default(dst)
+    }
+}
+
+#[macro_export]
+macro_rules! impl_ckks_neg_defaults {
+    ($be:ty) => {
+        impl $crate::default::neg::CKKSNegDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
+    };
+}
+pub use crate::impl_ckks_neg_defaults;

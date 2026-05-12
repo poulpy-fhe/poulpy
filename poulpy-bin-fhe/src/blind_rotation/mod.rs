@@ -51,4 +51,5 @@ pub use algorithms::*;
 pub use encryption::*;
 pub use layouts::*;
 pub use lut::*;
+#[cfg(all(test, feature = "enable-bin-fhe"))]
 pub mod tests;

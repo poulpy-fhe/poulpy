@@ -1,16 +1,16 @@
 use poulpy_hal::{
-    api::{ScratchAvailable, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{DeviceBuf, Module, Scratch, ScratchOwned},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
+    layouts::{Module, ScratchOwned},
     source::Source,
     test_suite::TestParams,
 };
 
 use crate::{
-    EncryptionLayout, GGLWEKeyswitch, GGLWENoise, GLWESwitchingKeyEncryptSk, ScratchTakeCore,
+    EncryptionLayout, GGLWEKeyswitch, GGLWENoise, GLWESwitchingKeyEncryptSk, ScratchArenaTakeCore,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GGLWEInfos, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey, GLWESwitchingKeyLayout,
-        GLWESwitchingKeyPreparedFactory, LWEInfos,
+        GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
         prepared::{GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
     noise::log2_std_noise_gglwe_product,
@@ -19,13 +19,16 @@ use crate::{
 
 pub fn test_gglwe_switching_key_keyswitch<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: GLWESwitchingKeyEncryptSk<BE>
         + GGLWEKeyswitch<BE>
         + GLWESwitchingKeyPreparedFactory<BE>
         + GLWESecretPreparedFactory<BE>
         + GGLWENoise<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    Scratch<BE>: ScratchAvailable + ScratchTakeCore<BE>,
+    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let base2k: usize = params.base2k;
     let in_base2k: usize = base2k - 1;
@@ -78,9 +81,9 @@ where
                         rank_out: rank_out_s1s2.into(),
                     };
 
-                    let mut gglwe_s0s1: GLWESwitchingKey<Vec<u8>> = GLWESwitchingKey::alloc_from_infos(&gglwe_s0s1_infos);
-                    let mut gglwe_s1s2: GLWESwitchingKey<Vec<u8>> = GLWESwitchingKey::alloc_from_infos(&gglwe_s1s2_infos);
-                    let mut gglwe_s0s2: GLWESwitchingKey<Vec<u8>> = GLWESwitchingKey::alloc_from_infos(&gglwe_s0s2_infos);
+                    let mut gglwe_s0s1: GLWESwitchingKey<Vec<u8>> = module.glwe_switching_key_alloc_from_infos(&gglwe_s0s1_infos);
+                    let mut gglwe_s1s2: GLWESwitchingKey<Vec<u8>> = module.glwe_switching_key_alloc_from_infos(&gglwe_s1s2_infos);
+                    let mut gglwe_s0s2: GLWESwitchingKey<Vec<u8>> = module.glwe_switching_key_alloc_from_infos(&gglwe_s0s2_infos);
 
                     let mut source_xs: Source = Source::new([0u8; 32]);
                     let mut source_xe: Source = Source::new([0u8; 32]);
@@ -96,16 +99,16 @@ where
                             | module.gglwe_noise_tmp_bytes(&gglwe_s0s2_infos),
                     );
 
-                    let mut sk0: GLWESecret<Vec<u8>> = GLWESecret::alloc(n.into(), rank_in_s0s1.into());
+                    let mut sk0: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank_in_s0s1.into());
                     sk0.fill_ternary_prob(0.5, &mut source_xs);
 
-                    let mut sk1: GLWESecret<Vec<u8>> = GLWESecret::alloc(n.into(), rank_out_s0s1.into());
+                    let mut sk1: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank_out_s0s1.into());
                     sk1.fill_ternary_prob(0.5, &mut source_xs);
 
-                    let mut sk2: GLWESecret<Vec<u8>> = GLWESecret::alloc(n.into(), rank_out_s1s2.into());
+                    let mut sk2: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank_out_s1s2.into());
                     sk2.fill_ternary_prob(0.5, &mut source_xs);
 
-                    let mut sk2_prepared: GLWESecretPrepared<DeviceBuf<BE>, BE> =
+                    let mut sk2_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> =
                         module.glwe_secret_prepared_alloc(rank_out_s1s2.into());
                     module.glwe_secret_prepare(&mut sk2_prepared, &sk2);
 
@@ -117,7 +120,7 @@ where
                         &gglwe_s0s1_infos,
                         &mut source_xe,
                         &mut source_xa,
-                        scratch_enc.borrow(),
+                        &mut scratch_enc.arena(),
                     );
 
                     // gglwe_{s2}(s1) -> s1 -> s2
@@ -128,15 +131,21 @@ where
                         &gglwe_s1s2_infos,
                         &mut source_xe,
                         &mut source_xa,
-                        scratch_enc.borrow(),
+                        &mut scratch_enc.arena(),
                     );
 
-                    let mut gglwe_s1s2_prepared: GLWESwitchingKeyPrepared<DeviceBuf<BE>, BE> =
+                    let mut gglwe_s1s2_prepared: GLWESwitchingKeyPrepared<BE::OwnedBuf, BE> =
                         module.glwe_switching_key_prepared_alloc_from_infos(&gglwe_s1s2);
-                    module.glwe_switching_key_prepare(&mut gglwe_s1s2_prepared, &gglwe_s1s2, scratch_apply.borrow());
+                    module.glwe_switching_key_prepare(&mut gglwe_s1s2_prepared, &gglwe_s1s2, &mut scratch_apply.borrow());
 
                     // gglwe_{s1}(s0) (x) gglwe_{s2}(s1) = gglwe_{s2}(s0)
-                    module.gglwe_keyswitch(&mut gglwe_s0s2, &gglwe_s0s1, &gglwe_s1s2_prepared, scratch_apply.borrow());
+                    module.gglwe_keyswitch(
+                        &mut gglwe_s0s2,
+                        &gglwe_s0s1,
+                        &gglwe_s1s2_prepared,
+                        gglwe_s1s2_prepared.size(),
+                        &mut scratch_apply.borrow(),
+                    );
 
                     let max_noise: f64 = var_noise_gglwe_product_v2(
                         module.n() as f64,
@@ -159,7 +168,14 @@ where
                         for col in 0..gglwe_s0s2.rank_in().as_usize() {
                             let noise_have: f64 = gglwe_s0s2
                                 .key
-                                .noise(module, row, col, &sk0.data, &sk2_prepared, scratch_apply.borrow())
+                                .noise(
+                                    module,
+                                    row,
+                                    col,
+                                    &sk0.data.to_ref(),
+                                    &sk2_prepared,
+                                    &mut scratch_apply.borrow(),
+                                )
                                 .std()
                                 .log2();
                             assert!(noise_have <= max_noise, "noise_have: {noise_have} > max_noise: {max_noise}")
@@ -174,13 +190,16 @@ where
 #[allow(clippy::too_many_arguments)]
 pub fn test_gglwe_switching_key_keyswitch_assign<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: GLWESwitchingKeyEncryptSk<BE>
         + GGLWEKeyswitch<BE>
         + GLWESecretPreparedFactory<BE>
         + GGLWENoise<BE>
         + GLWESwitchingKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    Scratch<BE>: ScratchAvailable + ScratchTakeCore<BE>,
+    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let base2k: usize = params.base2k;
     let out_base2k: usize = base2k - 1;
@@ -221,8 +240,8 @@ where
                 })
                 .unwrap();
 
-                let mut gglwe_s0s1: GLWESwitchingKey<Vec<u8>> = GLWESwitchingKey::alloc_from_infos(&gglwe_s0s1_infos);
-                let mut gglwe_s1s2: GLWESwitchingKey<Vec<u8>> = GLWESwitchingKey::alloc_from_infos(&gglwe_s1s2_infos);
+                let mut gglwe_s0s1: GLWESwitchingKey<Vec<u8>> = module.glwe_switching_key_alloc_from_infos(&gglwe_s0s1_infos);
+                let mut gglwe_s1s2: GLWESwitchingKey<Vec<u8>> = module.glwe_switching_key_alloc_from_infos(&gglwe_s1s2_infos);
 
                 let mut source_xs: Source = Source::new([0u8; 32]);
                 let mut source_xe: Source = Source::new([0u8; 32]);
@@ -258,16 +277,16 @@ where
 
                 let var_xs: f64 = 0.5;
 
-                let mut sk0: GLWESecret<Vec<u8>> = GLWESecret::alloc(n.into(), rank_in.into());
+                let mut sk0: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank_in.into());
                 sk0.fill_ternary_prob(var_xs, &mut source_xs);
 
-                let mut sk1: GLWESecret<Vec<u8>> = GLWESecret::alloc(n.into(), rank_out.into());
+                let mut sk1: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank_out.into());
                 sk1.fill_ternary_prob(var_xs, &mut source_xs);
 
-                let mut sk2: GLWESecret<Vec<u8>> = GLWESecret::alloc(n.into(), rank_out.into());
+                let mut sk2: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank_out.into());
                 sk2.fill_ternary_prob(var_xs, &mut source_xs);
 
-                let mut sk2_prepared: GLWESecretPrepared<DeviceBuf<BE>, BE> = module.glwe_secret_prepared_alloc(rank_out.into());
+                let mut sk2_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank_out.into());
                 module.glwe_secret_prepare(&mut sk2_prepared, &sk2);
 
                 // gglwe_{s1}(s0) = s0 -> s1
@@ -278,7 +297,7 @@ where
                     &gglwe_s0s1_infos,
                     &mut source_xe,
                     &mut source_xa,
-                    scratch_enc.borrow(),
+                    &mut scratch_enc.arena(),
                 );
 
                 // gglwe_{s2}(s1) -> s1 -> s2
@@ -289,12 +308,12 @@ where
                     &gglwe_s1s2_infos,
                     &mut source_xe,
                     &mut source_xa,
-                    scratch_enc.borrow(),
+                    &mut scratch_enc.arena(),
                 );
 
-                let mut gglwe_s1s2_prepared: GLWESwitchingKeyPrepared<DeviceBuf<BE>, BE> =
+                let mut gglwe_s1s2_prepared: GLWESwitchingKeyPrepared<BE::OwnedBuf, BE> =
                     module.glwe_switching_key_prepared_alloc_from_infos(&gglwe_s1s2);
-                module.glwe_switching_key_prepare(&mut gglwe_s1s2_prepared, &gglwe_s1s2, scratch_apply.borrow());
+                module.glwe_switching_key_prepare(&mut gglwe_s1s2_prepared, &gglwe_s1s2, &mut scratch_apply.borrow());
 
                 // gglwe_{s1}(s0) (x) gglwe_{s2}(s1) = gglwe_{s2}(s0)
                 println!("{} {} {}", gglwe_s0s1.base2k(), gglwe_s0s1.max_k(), gglwe_s0s1.size());
@@ -304,7 +323,12 @@ where
                     gglwe_s1s2_prepared.max_k(),
                     gglwe_s1s2_prepared.size()
                 );
-                module.gglwe_keyswitch_assign(&mut gglwe_s0s1, &gglwe_s1s2_prepared, scratch_apply.borrow());
+                module.gglwe_keyswitch_assign(
+                    &mut gglwe_s0s1,
+                    &gglwe_s1s2_prepared,
+                    gglwe_s1s2_prepared.size(),
+                    &mut scratch_apply.borrow(),
+                );
 
                 let gglwe_s0s2: GLWESwitchingKey<Vec<u8>> = gglwe_s0s1;
 
@@ -325,7 +349,14 @@ where
                     for col in 0..gglwe_s0s2.rank_in().as_usize() {
                         let noise_have = gglwe_s0s2
                             .key
-                            .noise(module, row, col, &sk0.data, &sk2_prepared, scratch_apply.borrow())
+                            .noise(
+                                module,
+                                row,
+                                col,
+                                &sk0.data.to_ref(),
+                                &sk2_prepared,
+                                &mut scratch_apply.borrow(),
+                            )
                             .std()
                             .log2();
                         assert!(noise_have <= max_noise, "noise_have: {noise_have} > max_noise: {max_noise}")

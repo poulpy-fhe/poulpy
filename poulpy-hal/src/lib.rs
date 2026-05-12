@@ -30,22 +30,23 @@
 //! - [`layouts::SvpPPol`] -- prepared scalar polynomial for scalar-vector products.
 //! - [`layouts::VmpPMat`] -- prepared matrix for vector-matrix products.
 //! - [`layouts::CnvPVecL`], [`layouts::CnvPVecR`] -- prepared left/right operands for bivariate convolution.
-//! - [`layouts::Scratch`], [`layouts::ScratchOwned`] -- aligned scratch memory for temporary workspace.
+//! - [`layouts::ScratchArena`], [`layouts::ScratchOwned`] -- aligned scratch memory for temporary workspace.
 //!
 //! All layout types are generic over a data container `D` (owned `Vec<u8>`, borrowed
 //! `&[u8]` / `&mut [u8]`), enabling zero-copy views and arena-style allocation via
-//! [`layouts::Scratch`].
+//! [`layouts::ScratchArena`].
 //!
 //! ## Architecture
 //!
 //! The crate is organized into a four-layer stack:
 //!
-//! 1. **[`api`]** -- Safe, user-facing trait definitions (e.g. [`api::VecZnxAddInto`],
+//! 1. **[`api`]** -- Safe, user-facing trait definitions (e.g. [`api::VecZnxAddIntoBackend`],
 //!    [`api::VmpApplyDftToDft`]). Scheme authors program against these.
-//! 2. **[`oep`]** -- Unsafe extension-point layer centered on [`oep::HalImpl`].
-//!    Backend crates implement `HalImpl` and opt into default fallbacks via macros.
+//! 2. **[`oep`]** -- Unsafe extension-point layer of per-family backend traits.
+//!    Backend crates implement only the families they own and may reuse helper
+//!    macros or defaults where convenient.
 //! 3. **[`delegates`]** -- Blanket `impl` glue that connects each [`api`] trait to
-//!    the corresponding `HalImpl` method on [`layouts::Module`].
+//!    the corresponding backend family method on [`layouts::Module`].
 //! 4. **Reference implementations** live in the `poulpy-cpu-ref` crate, which provides
 //!    the portable default backend used by tests and benchmarks.
 //!
@@ -108,11 +109,11 @@ pub mod delegates;
 /// `&mut [u8]`) enabling owned, borrowed, and scratch-backed usage.
 pub mod layouts;
 
-/// Open Extension Points: the `unsafe` backend extension layer centered on
-/// [`oep::HalImpl`].
+/// Open Extension Points: the `unsafe` backend extension layer of per-family
+/// backend traits.
 ///
-/// Backend crates implement `HalImpl` and may delegate to default fallbacks
-/// provided by a backend crate (for example `poulpy-cpu-ref`). See
+/// Backend crates implement only the families they own and may delegate to
+/// helper defaults provided by a backend crate (for example `poulpy-cpu-ref`). See
 /// [`doc::backend_safety`] for the safety contract.
 pub mod oep;
 

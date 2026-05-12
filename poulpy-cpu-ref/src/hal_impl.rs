@@ -1,73 +1,88 @@
 use crate::{
     FFT64Ref, NTT120Ref,
     hal_defaults::{
-        FFT64ConvolutionDefaults, FFT64ModuleDefaults, FFT64SvpDefaults, FFT64VecZnxBigDefaults, FFT64VecZnxDftDefaults,
-        FFT64VmpDefaults, HalScratchDefaults, HalVecZnxDefaults, NTT120ConvolutionDefaults, NTT120ModuleDefaults,
-        NTT120SvpDefaults, NTT120VecZnxBigDefaults, NTT120VecZnxDftDefaults, NTT120VmpDefaults,
+        FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault, FFT64VecZnxDftDefault,
+        FFT64VmpDefault, HalVecZnxDefault, NTT120ConvolutionDefault, NTT120ModuleDefault, NTT120SvpDefault,
+        NTT120VecZnxBigDefault, NTT120VecZnxDftDefault, NTT120VmpDefault,
     },
 };
 use poulpy_hal::{
-    api::{ScratchTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
+    api::{VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
     layouts::{
-        Backend, CnvPVecLToMut, CnvPVecLToRef, CnvPVecRToMut, CnvPVecRToRef, Data, MatZnxToRef, Module, NoiseInfos,
-        ScalarZnxToRef, Scratch, ScratchOwned, SvpPPolToMut, SvpPPolToRef, VecZnx, VecZnxBig, VecZnxBigToMut, VecZnxBigToRef,
-        VecZnxDft, VecZnxDftToMut, VecZnxDftToRef, VecZnxToMut, VecZnxToRef, VmpPMat, VmpPMatToMut, VmpPMatToRef, ZnxInfos,
+        Backend, Module, NoiseInfos, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, ZnxInfos,
     },
-    oep::HalImpl,
-    source::Source,
+    oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
 #[macro_use]
-mod scratch;
-#[macro_use]
 mod vec_znx;
 #[macro_use]
-mod family_common;
+mod module;
 #[macro_use]
-mod module_fft64;
+mod vmp;
 #[macro_use]
-mod module_ntt120;
+mod convolution;
 #[macro_use]
-mod vmp_fft64;
+mod vec_znx_big;
 #[macro_use]
-mod vmp_ntt120;
+mod svp;
 #[macro_use]
-mod convolution_fft64;
-#[macro_use]
-mod convolution_ntt120;
-#[macro_use]
-mod vec_znx_big_fft64;
-#[macro_use]
-mod vec_znx_big_ntt120;
-#[macro_use]
-mod svp_fft64;
-#[macro_use]
-mod svp_ntt120;
-#[macro_use]
-mod vec_znx_dft_fft64;
-#[macro_use]
-mod vec_znx_dft_ntt120;
+mod vec_znx_dft;
+#[cfg(all(test, feature = "enable-core"))]
+pub(crate) mod delegating_backend;
 
-unsafe impl HalImpl<FFT64Ref> for FFT64Ref {
-    hal_impl_scratch!();
+unsafe impl HalVecZnxImpl<FFT64Ref> for FFT64Ref {
     hal_impl_vec_znx!();
-    hal_impl_family_common!();
-    hal_impl_module_fft64!();
-    hal_impl_vmp_fft64!();
-    hal_impl_convolution_fft64!();
-    hal_impl_vec_znx_big_fft64!();
-    hal_impl_svp_fft64!();
-    hal_impl_vec_znx_dft_fft64!();
 }
 
-unsafe impl HalImpl<NTT120Ref> for NTT120Ref {
-    hal_impl_scratch!();
+unsafe impl HalModuleImpl<FFT64Ref> for FFT64Ref {
+    hal_impl_module!(FFT64ModuleDefault);
+}
+
+unsafe impl HalVmpImpl<FFT64Ref> for FFT64Ref {
+    hal_impl_vmp!(FFT64VmpDefault);
+}
+
+unsafe impl HalConvolutionImpl<FFT64Ref> for FFT64Ref {
+    hal_impl_convolution!(FFT64ConvolutionDefault);
+}
+
+unsafe impl HalVecZnxBigImpl<FFT64Ref> for FFT64Ref {
+    hal_impl_vec_znx_big!(FFT64VecZnxBigDefault);
+}
+
+unsafe impl HalSvpImpl<FFT64Ref> for FFT64Ref {
+    hal_impl_svp!(FFT64SvpDefault);
+}
+
+unsafe impl HalVecZnxDftImpl<FFT64Ref> for FFT64Ref {
+    hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault);
+}
+
+unsafe impl HalVecZnxImpl<NTT120Ref> for NTT120Ref {
     hal_impl_vec_znx!();
-    hal_impl_family_common!();
-    hal_impl_module_ntt120!();
-    hal_impl_vmp_ntt120!();
-    hal_impl_convolution_ntt120!();
-    hal_impl_vec_znx_big_ntt120!();
-    hal_impl_svp_ntt120!();
-    hal_impl_vec_znx_dft_ntt120!();
+}
+
+unsafe impl HalModuleImpl<NTT120Ref> for NTT120Ref {
+    hal_impl_module!(NTT120ModuleDefault);
+}
+
+unsafe impl HalVmpImpl<NTT120Ref> for NTT120Ref {
+    hal_impl_vmp!(NTT120VmpDefault);
+}
+
+unsafe impl HalConvolutionImpl<NTT120Ref> for NTT120Ref {
+    hal_impl_convolution!(NTT120ConvolutionDefault);
+}
+
+unsafe impl HalVecZnxBigImpl<NTT120Ref> for NTT120Ref {
+    hal_impl_vec_znx_big!(NTT120VecZnxBigDefault);
+}
+
+unsafe impl HalSvpImpl<NTT120Ref> for NTT120Ref {
+    hal_impl_svp!(NTT120SvpDefault);
+}
+
+unsafe impl HalVecZnxDftImpl<NTT120Ref> for NTT120Ref {
+    hal_impl_vec_znx_dft!(NTT120VecZnxDftDefault);
 }

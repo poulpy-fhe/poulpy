@@ -7,7 +7,7 @@
 use bytemuck::cast_slice_mut;
 use core::arch::x86_64::__m256i;
 use poulpy_cpu_ref::reference::ntt120::{ntt::NttTableInv, primes::Primes30, vec_znx_dft::NttModuleHandle};
-use poulpy_hal::layouts::{Data, Module, VecZnxBig, VecZnxDft, VecZnxDftToMut, ZnxInfos, ZnxViewMut};
+use poulpy_hal::layouts::{Data, Module, VecZnxBig, VecZnxDft, VecZnxDftToBackendMut, ZnxViewMut};
 
 use super::{
     NTT120Avx,
@@ -30,6 +30,7 @@ use super::{
 /// - `u64_ptr` must cover `4 * n * n_blocks` `u64` values.
 /// - AVX2 support must be available at runtime.
 /// - no aliased references to the same buffer may be live during the call.
+#[allow(dead_code)]
 #[target_feature(enable = "avx2")]
 unsafe fn compact_all_blocks_avx2(n: usize, n_blocks: usize, u64_ptr: *mut u64, table: &NttTableInv<Primes30>) {
     use core::arch::x86_64::_mm256_loadu_si256;
@@ -71,17 +72,18 @@ unsafe fn compact_all_blocks_avx2(n: usize, n_blocks: usize, u64_ptr: *mut u64, 
     }
 }
 
+#[allow(dead_code)]
 pub(crate) fn vec_znx_idft_apply_consume<D: Data>(
     module: &Module<NTT120Avx>,
     mut a: VecZnxDft<D, NTT120Avx>,
 ) -> VecZnxBig<D, NTT120Avx>
 where
-    VecZnxDft<D, NTT120Avx>: VecZnxDftToMut<NTT120Avx>,
+    VecZnxDft<D, NTT120Avx>: VecZnxDftToBackendMut<NTT120Avx>,
 {
     let table = module.get_intt_table();
 
     let (n, n_blocks, u64_ptr) = {
-        let mut a_mut: VecZnxDft<&mut [u8], NTT120Avx> = a.to_mut();
+        let mut a_mut: VecZnxDft<&mut [u8], NTT120Avx> = a.to_backend_mut();
         let n = a_mut.n();
         let n_blocks = a_mut.cols() * a_mut.size();
         let ptr: *mut u64 = {

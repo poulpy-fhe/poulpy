@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{ModuleN, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, DeviceBuf, Scratch, ScratchOwned, ZnxView},
+    layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, ScratchOwned, ZnxView},
     source::Source,
 };
 
@@ -10,20 +10,21 @@ use crate::blind_rotation::{
 };
 
 use poulpy_core::{
-    EncryptionLayout, GLWEDecrypt, LWEEncryptSk, ScratchTakeCore,
+    EncryptionLayout, GLWEDecrypt, LWEEncryptSk,
     layouts::{
         GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, LWE, LWEInfos, LWELayout, LWEPlaintext,
-        LWESecret, LWEToRef, prepared::GLWESecretPrepared,
+        LWESecret, ModuleCoreAlloc, prepared::GLWESecretPrepared,
     },
 };
 
-pub fn test_blind_rotation<BRA: BlindRotationAlgo, M, BE: Backend>(
+pub fn test_blind_rotation<BRA: BlindRotationAlgo, M, BE: Backend<OwnedBuf = Vec<u8>>>(
     module: &M,
     n_lwe: usize,
     block_size: usize,
     extension_factor: usize,
 ) where
     M: ModuleN
+        + ModuleCoreAlloc<OwnedBuf = Vec<u8>>
         + BlindRotationKeyEncryptSk<BRA, BE>
         + BlindRotationKeyPreparedFactory<BRA, BE>
         + BlindRotationExecute<BRA, BE>
@@ -32,7 +33,10 @@ pub fn test_blind_rotation<BRA: BlindRotationAlgo, M, BE: Backend>(
         + GLWEDecrypt<BE>
         + LWEEncryptSk<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    Scratch<BE>: ScratchTakeCore<BE>,
+    BE::OwnedBuf: HostDataRef + HostDataMut,
+    for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
+    for<'a> BE::OwnedBuf: HostDataRef,
+    for<'a> BE::BufRef<'a>: HostDataRef,
 {
     let n_glwe: usize = module.n();
     let base2k: usize = 19;
@@ -78,12 +82,12 @@ pub fn test_blind_rotation<BRA: BlindRotationAlgo, M, BE: Backend>(
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::<BE>::alloc(BlindRotationKey::encrypt_sk_tmp_bytes(module, &brk_infos));
 
-    let mut sk_glwe: GLWESecret<Vec<u8>> = GLWESecret::alloc_from_infos(&glwe_infos);
+    let mut sk_glwe: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(&glwe_infos);
     sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
-    let mut sk_glwe_dft: GLWESecretPrepared<DeviceBuf<BE>, BE> = module.glwe_secret_prepared_alloc_from_infos(&glwe_infos);
+    let mut sk_glwe_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&glwe_infos);
     module.glwe_secret_prepare(&mut sk_glwe_dft, &sk_glwe);
 
-    let mut sk_lwe: LWESecret<Vec<u8>> = LWESecret::alloc(n_lwe.into());
+    let mut sk_lwe: LWESecret<Vec<u8>> = module.lwe_secret_alloc(n_lwe.into());
     sk_lwe.fill_binary_block(block_size, &mut source_xs);
 
     let mut scratch_br: ScratchOwned<BE> = ScratchOwned::<BE>::alloc(BlindRotationKeyPrepared::execute_tmp_bytes(
@@ -94,7 +98,7 @@ pub fn test_blind_rotation<BRA: BlindRotationAlgo, M, BE: Backend>(
         &brk_infos,
     ));
 
-    let mut brk: BlindRotationKey<Vec<u8>, BRA> = BlindRotationKey::<Vec<u8>, BRA>::alloc(&brk_infos);
+    let mut brk: BlindRotationKey<Vec<u8>, BRA> = BlindRotationKey::<Vec<u8>, BRA>::alloc(module, &brk_infos);
 
     module.blind_rotation_key_encrypt_sk(
         &mut brk,
@@ -103,12 +107,12 @@ pub fn test_blind_rotation<BRA: BlindRotationAlgo, M, BE: Backend>(
         &brk_infos,
         &mut source_xe,
         &mut source_xa,
-        scratch.borrow(),
+        &mut scratch.borrow(),
     );
 
-    let mut lwe: LWE<Vec<u8>> = LWE::alloc_from_infos(&lwe_infos);
+    let mut lwe: LWE<Vec<u8>> = module.lwe_alloc_from_infos(&lwe_infos);
 
-    let mut pt_lwe: LWEPlaintext<Vec<u8>> = LWEPlaintext::alloc_from_infos(&lwe_infos);
+    let mut pt_lwe: LWEPlaintext<Vec<u8>> = module.lwe_plaintext_alloc_from_infos(&lwe_infos);
 
     let x: i64 = 15 % (message_modulus as i64);
 
@@ -121,7 +125,7 @@ pub fn test_blind_rotation<BRA: BlindRotationAlgo, M, BE: Backend>(
         &lwe_infos,
         &mut source_xe,
         &mut source_xa,
-        scratch.borrow(),
+        &mut scratch.borrow(),
     );
 
     let f = |x: i64| -> i64 { 2 * x + 1 };
@@ -136,23 +140,23 @@ pub fn test_blind_rotation<BRA: BlindRotationAlgo, M, BE: Backend>(
         base2k: base2k.into(),
     };
 
-    let mut lut: LookupTable = LookupTable::alloc(&lut_infos);
+    let mut lut: LookupTable = LookupTable::alloc(module, &lut_infos);
     lut.set(module, &f_vec, log_message_modulus + 1);
 
-    let mut res: GLWE<Vec<u8>> = GLWE::alloc_from_infos(&glwe_infos);
+    let mut res: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_infos);
 
-    let mut brk_prepared: BlindRotationKeyPrepared<DeviceBuf<BE>, BRA, BE> = BlindRotationKeyPrepared::alloc(module, &brk);
-    brk_prepared.prepare(module, &brk, scratch_br.borrow());
+    let mut brk_prepared: BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE> = BlindRotationKeyPrepared::alloc(module, &brk);
+    brk_prepared.prepare(module, &brk, &mut scratch_br.borrow());
 
-    brk_prepared.execute(module, &mut res, &lwe, &lut, scratch_br.borrow());
+    brk_prepared.execute(module, &mut res, &lwe, &lut, &mut scratch_br.borrow());
 
-    let mut pt_have: GLWEPlaintext<Vec<u8>> = GLWEPlaintext::alloc_from_infos(&glwe_infos);
+    let mut pt_have: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
 
-    module.glwe_decrypt(&res, &mut pt_have, &sk_glwe_dft, scratch.borrow());
+    module.glwe_decrypt(&res, &mut pt_have, &sk_glwe_dft, &mut scratch.borrow());
 
     let mut lwe_2n: Vec<i64> = vec![0i64; (lwe.n() + 1).into()]; // TODO: from scratch space
 
-    mod_switch_2n(2 * lut.domain_size(), &mut lwe_2n, &lwe.to_ref(), lut.rotation_direction());
+    mod_switch_2n::<HostBytesBackend, _>(2 * lut.domain_size(), &mut lwe_2n, &lwe, lut.rotation_direction());
 
     let pt_want: i64 =
         (lwe_2n[0] + lwe_2n[1..].iter().zip(sk_lwe.raw()).map(|(x, y)| x * y).sum::<i64>()) & (2 * lut.domain_size() - 1) as i64;
@@ -161,7 +165,7 @@ pub fn test_blind_rotation<BRA: BlindRotationAlgo, M, BE: Backend>(
 
     // First limb should be exactly equal (test are parameterized such that the noise does not reach
     // the first limb)
-    assert_eq!(pt_have.data.at(0, 0), lut.data[0].at(0, 0));
+    assert_eq!(pt_have.data.at(0, 0), lut.data[0].data().at(0, 0));
 
     // Verify that it effectively compute f(x)
     let mut have: i64 = pt_have.decode_coeff_i64((log_message_modulus + 1).into(), 0);

@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, Data, DataMut, DataRef, DeviceBuf, Scratch, SvpPPolOwned};
+use poulpy_hal::layouts::{Backend, Data, ScratchArena, SvpPPolOwned};
 
 use std::marker::PhantomData;
 
@@ -17,7 +17,7 @@ use crate::blind_rotation::{BlindRotationAlgo, BlindRotationKey, BlindRotationKe
 /// methods on [`BlindRotationKeyPrepared`] rather than calling these directly.
 pub trait BlindRotationKeyPreparedFactory<BRA: BlindRotationAlgo, BE: Backend> {
     /// Allocates a zero-filled prepared key from a dimension descriptor.
-    fn blind_rotation_key_prepared_alloc<A>(&self, infos: &A) -> BlindRotationKeyPrepared<DeviceBuf<BE>, BRA, BE>
+    fn blind_rotation_key_prepared_alloc<A>(&self, infos: &A) -> BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE>
     where
         A: BlindRotationKeyInfos;
 
@@ -32,17 +32,15 @@ pub trait BlindRotationKeyPreparedFactory<BRA: BlindRotationAlgo, BE: Backend> {
     ///
     /// For the `BinaryBlock` distribution this also pre-computes the
     /// `X^{a_i}` scalar polynomial products used in the batched CMux loop.
-    fn prepare_blind_rotation_key<DM, DR>(
+    fn prepare_blind_rotation_key(
         &self,
-        res: &mut BlindRotationKeyPrepared<DM, BRA, BE>,
-        other: &BlindRotationKey<DR, BRA>,
-        scratch: &mut Scratch<BE>,
-    ) where
-        DM: DataMut,
-        DR: DataRef;
+        res: &mut BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE>,
+        other: &BlindRotationKey<BE::OwnedBuf, BRA>,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
 }
 
-impl<BE: Backend, BRA: BlindRotationAlgo> BlindRotationKeyPrepared<DeviceBuf<BE>, BRA, BE> {
+impl<BE: Backend, BRA: BlindRotationAlgo> BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE> {
     pub fn alloc<A, M>(module: &M, infos: &A) -> Self
     where
         A: BlindRotationKeyInfos,
@@ -60,12 +58,12 @@ impl<BE: Backend, BRA: BlindRotationAlgo> BlindRotationKeyPrepared<DeviceBuf<BE>
     }
 }
 
-impl<D: DataMut, BRA: BlindRotationAlgo, BE: Backend> BlindRotationKeyPrepared<D, BRA, BE> {
+impl<BRA: BlindRotationAlgo, BE: Backend> BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE> {
     /// Populates `self` from the standard key `other`.
     ///
     /// Convenience wrapper around
     /// [`BlindRotationKeyPreparedFactory::prepare_blind_rotation_key`].
-    pub fn prepare<DR: DataRef, M>(&mut self, module: &M, other: &BlindRotationKey<DR, BRA>, scratch: &mut Scratch<BE>)
+    pub fn prepare<M>(&mut self, module: &M, other: &BlindRotationKey<BE::OwnedBuf, BRA>, scratch: &mut ScratchArena<'_, BE>)
     where
         M: BlindRotationKeyPreparedFactory<BRA, BE>,
     {

@@ -21,8 +21,8 @@ use crate::ntt126_ifma::{
     types::Q_SHIFTED_NTT126IFMA,
 };
 use poulpy_hal::layouts::{
-    DataView, DataViewMut, MatZnx, MatZnxToRef, Module, VecZnxDft, VecZnxDftToMut, VecZnxDftToRef, VmpPMat, VmpPMatToMut,
-    VmpPMatToRef, ZnxInfos, ZnxView, ZnxViewMut,
+    DataView, DataViewMut, MatZnxBackendRef, Module, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut,
+    VmpPMatBackendRef, ZnxView, ZnxViewMut,
 };
 
 use super::{
@@ -161,13 +161,12 @@ pub(crate) fn vmp_apply_tmp_bytes_ifma(a_size: usize, b_rows: usize, b_cols_in: 
 ///
 /// Element `(blk_quad, col, row, prime)` offset in u64:
 ///   `((blk_quad * ncols + col) * nrows + row) * 24 + prime * 8`.
-pub(crate) fn vmp_prepare_ifma<R, A>(module: &Module<crate::NTT126Ifma>, res: &mut R, a: &A, tmp: &mut [u64])
-where
-    R: VmpPMatToMut<crate::NTT126Ifma>,
-    A: MatZnxToRef,
-{
-    let mut res: VmpPMat<&mut [u8], crate::NTT126Ifma> = res.to_mut();
-    let a: MatZnx<&[u8]> = a.to_ref();
+pub(crate) fn vmp_prepare_ifma(
+    module: &Module<crate::NTT126Ifma>,
+    res: &mut VmpPMatBackendMut<'_, crate::NTT126Ifma>,
+    a: &MatZnxBackendRef<'_, crate::NTT126Ifma>,
+    tmp: &mut [u64],
+) {
     let n = res.n();
     let nrows = a.cols_in() * a.rows();
     let ncols = a.cols_out() * a.size();
@@ -631,32 +630,24 @@ unsafe fn vmp_apply_core_pm<const OVERWRITE: bool>(
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn vmp_apply_dft_to_dft_ifma<R, A, C>(
+pub(crate) fn vmp_apply_dft_to_dft_ifma(
     module: &Module<crate::NTT126Ifma>,
-    res: &mut R,
-    a: &A,
-    pmat: &C,
+    res: &mut VecZnxDftBackendMut<'_, crate::NTT126Ifma>,
+    a: &VecZnxDftBackendRef<'_, crate::NTT126Ifma>,
+    pmat: &VmpPMatBackendRef<'_, crate::NTT126Ifma>,
     limb_offset: usize,
     tmp: &mut [u64],
-) where
-    R: VecZnxDftToMut<crate::NTT126Ifma>,
-    A: VecZnxDftToRef<crate::NTT126Ifma>,
-    C: VmpPMatToRef<crate::NTT126Ifma>,
-{
-    let mut res_ref: VecZnxDft<&mut [u8], crate::NTT126Ifma> = res.to_mut();
-    let a_ref: VecZnxDft<&[u8], crate::NTT126Ifma> = a.to_ref();
-    let pmat_ref: VmpPMat<&[u8], crate::NTT126Ifma> = pmat.to_ref();
-
-    let n = res_ref.n();
-    let res_size = res_ref.size();
-    let nrows = pmat_ref.rows() * pmat_ref.cols_in();
-    let ncols = pmat_ref.cols_out() * pmat_ref.size();
-    let limb_offset = limb_offset * pmat_ref.cols_out();
+) {
+    let n = res.n();
+    let res_size = res.size();
+    let nrows = pmat.rows() * pmat.cols_in();
+    let ncols = pmat.cols_out() * pmat.size();
+    let limb_offset = limb_offset * pmat.cols_out();
     let _ = res_size;
 
-    let res_u64: &mut [u64] = cast_slice_mut(res_ref.raw_mut());
-    let a_u64: &[u64] = cast_slice(a_ref.raw());
-    let pmat_u64: &[u64] = cast_slice(pmat_ref.data());
+    let res_u64: &mut [u64] = cast_slice_mut(res.raw_mut());
+    let a_u64: &[u64] = cast_slice(a.raw());
+    let pmat_u64: &[u64] = cast_slice(pmat.data());
 
     unsafe {
         vmp_apply_core_pm::<true>(
@@ -674,32 +665,24 @@ pub(crate) fn vmp_apply_dft_to_dft_ifma<R, A, C>(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn vmp_apply_dft_to_dft_accumulate_ifma<R, A, C>(
+pub(crate) fn vmp_apply_dft_to_dft_accumulate_ifma(
     module: &Module<crate::NTT126Ifma>,
-    res: &mut R,
-    a: &A,
-    pmat: &C,
+    res: &mut VecZnxDftBackendMut<'_, crate::NTT126Ifma>,
+    a: &VecZnxDftBackendRef<'_, crate::NTT126Ifma>,
+    pmat: &VmpPMatBackendRef<'_, crate::NTT126Ifma>,
     limb_offset: usize,
     tmp: &mut [u64],
-) where
-    R: VecZnxDftToMut<crate::NTT126Ifma>,
-    A: VecZnxDftToRef<crate::NTT126Ifma>,
-    C: VmpPMatToRef<crate::NTT126Ifma>,
-{
-    let mut res_ref: VecZnxDft<&mut [u8], crate::NTT126Ifma> = res.to_mut();
-    let a_ref: VecZnxDft<&[u8], crate::NTT126Ifma> = a.to_ref();
-    let pmat_ref: VmpPMat<&[u8], crate::NTT126Ifma> = pmat.to_ref();
-
-    let n = res_ref.n();
-    let res_size = res_ref.size();
-    let nrows = pmat_ref.rows() * pmat_ref.cols_in();
-    let ncols = pmat_ref.cols_out() * pmat_ref.size();
-    let limb_offset = limb_offset * pmat_ref.cols_out();
+) {
+    let n = res.n();
+    let res_size = res.size();
+    let nrows = pmat.rows() * pmat.cols_in();
+    let ncols = pmat.cols_out() * pmat.size();
+    let limb_offset = limb_offset * pmat.cols_out();
     let _ = res_size;
 
-    let res_u64: &mut [u64] = cast_slice_mut(res_ref.raw_mut());
-    let a_u64: &[u64] = cast_slice(a_ref.raw());
-    let pmat_u64: &[u64] = cast_slice(pmat_ref.data());
+    let res_u64: &mut [u64] = cast_slice_mut(res.raw_mut());
+    let a_u64: &[u64] = cast_slice(a.raw());
+    let pmat_u64: &[u64] = cast_slice(pmat.data());
 
     unsafe {
         vmp_apply_core_pm::<false>(
@@ -721,9 +704,6 @@ pub(crate) fn vmp_apply_dft_to_dft_accumulate_ifma<R, A, C>(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Zero a `VmpPMat<NTT126Ifma>`.
-pub(crate) fn vmp_zero<R>(res: &mut R)
-where
-    R: VmpPMatToMut<crate::NTT126Ifma>,
-{
-    res.to_mut().data_mut().as_mut().fill(0);
+pub(crate) fn vmp_zero(res: &mut VmpPMatBackendMut<'_, crate::NTT126Ifma>) {
+    res.data_mut().as_mut().fill(0);
 }

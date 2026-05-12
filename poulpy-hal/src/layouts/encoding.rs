@@ -1,9 +1,9 @@
 use dashu_float::{Context, FBig, round::mode::HalfEven};
 use itertools::izip;
 
-use crate::layouts::{DataMut, DataRef, VecZnx, VecZnxToMut, VecZnxToRef, ZnxInfos, ZnxView, ZnxViewMut};
+use crate::layouts::{HostDataMut, HostDataRef, VecZnx, ZnxView, ZnxViewMut};
 
-impl<D: DataMut> VecZnx<D> {
+impl<D: HostDataMut> VecZnx<D> {
     /// Encodes an `i64` slice into the limb-decomposed (base-2^k) representation.
     ///
     /// The input `data` (length `N`) is placed at the appropriate limb position
@@ -11,15 +11,16 @@ impl<D: DataMut> VecZnx<D> {
     ///
     /// # Panics (debug)
     ///
-    /// - `k.div_ceil(base2k) > self.size()`
-    /// - `col >= self.cols()`
+    /// - `k.div_ceil(base2k) > self.size()()`
+    /// - `col >= self.cols()()`
     /// - `data.len() != N`
     pub fn encode_vec_i64(&mut self, base2k: usize, col: usize, k: usize, data: &[i64]) {
         let size: usize = k.div_ceil(base2k);
 
         #[cfg(debug_assertions)]
         {
-            let a: VecZnx<&mut [u8]> = self.to_mut();
+            let shape = self.shape();
+            let a = VecZnx::from_data_with_max_size(self.data.as_mut(), shape.n(), shape.cols(), shape.size(), shape.max_size());
             assert!(
                 size <= a.size(),
                 "invalid argument k.div_ceil(base2k)={} > a.size()={}",
@@ -30,7 +31,8 @@ impl<D: DataMut> VecZnx<D> {
             assert!(data.len() == a.n())
         }
 
-        let mut a: VecZnx<&mut [u8]> = self.to_mut();
+        let shape = self.shape();
+        let mut a = VecZnx::from_data_with_max_size(self.data.as_mut(), shape.n(), shape.cols(), shape.size(), shape.max_size());
         let a_size: usize = a.size();
 
         // Zeroes coefficients of the i-th column
@@ -65,7 +67,8 @@ impl<D: DataMut> VecZnx<D> {
 
         #[cfg(debug_assertions)]
         {
-            let a: VecZnx<&mut [u8]> = self.to_mut();
+            let shape = self.shape();
+            let a = VecZnx::from_data_with_max_size(self.data.as_mut(), shape.n(), shape.cols(), shape.size(), shape.max_size());
             assert!(
                 size <= a.size(),
                 "invalid argument k.div_ceil(base2k)={} > a.size()={}",
@@ -76,7 +79,8 @@ impl<D: DataMut> VecZnx<D> {
             assert!(data.len() == a.n())
         }
 
-        let mut a: VecZnx<&mut [u8]> = self.to_mut();
+        let shape = self.shape();
+        let mut a = VecZnx::from_data_with_max_size(self.data.as_mut(), shape.n(), shape.cols(), shape.size(), shape.max_size());
         let a_size: usize = a.size();
 
         {
@@ -118,7 +122,8 @@ impl<D: DataMut> VecZnx<D> {
 
         #[cfg(debug_assertions)]
         {
-            let a: VecZnx<&mut [u8]> = self.to_mut();
+            let shape = self.shape();
+            let a = VecZnx::from_data_with_max_size(self.data.as_mut(), shape.n(), shape.cols(), shape.size(), shape.max_size());
             assert!(idx < a.n());
             assert!(
                 size <= a.size(),
@@ -129,7 +134,8 @@ impl<D: DataMut> VecZnx<D> {
             assert!(col < a.cols());
         }
 
-        let mut a: VecZnx<&mut [u8]> = self.to_mut();
+        let shape = self.shape();
+        let mut a = VecZnx::from_data_with_max_size(self.data.as_mut(), shape.n(), shape.cols(), shape.size(), shape.max_size());
         let a_size = a.size();
 
         for j in 0..a_size {
@@ -155,14 +161,15 @@ impl<D: DataMut> VecZnx<D> {
     }
 }
 
-impl<D: DataRef> VecZnx<D> {
+impl<D: HostDataRef> VecZnx<D> {
     /// Decodes column `col` from the limb-decomposed representation back into
     /// an `i64` slice, reconstructing values up to `k` bits of precision.
     pub fn decode_vec_i64(&self, base2k: usize, col: usize, k: usize, data: &mut [i64]) {
         let size: usize = k.div_ceil(base2k);
         #[cfg(debug_assertions)]
         {
-            let a: VecZnx<&[u8]> = self.to_ref();
+            let shape = self.shape();
+            let a = VecZnx::from_data_with_max_size(self.data.as_ref(), shape.n(), shape.cols(), shape.size(), shape.max_size());
             assert!(
                 data.len() >= a.n(),
                 "invalid data: data.len()={} < a.n()={}",
@@ -172,7 +179,8 @@ impl<D: DataRef> VecZnx<D> {
             assert!(col < a.cols());
         }
 
-        let a: VecZnx<&[u8]> = self.to_ref();
+        let shape = self.shape();
+        let a = VecZnx::from_data_with_max_size(self.data.as_ref(), shape.n(), shape.cols(), shape.size(), shape.max_size());
         data.copy_from_slice(a.at(col, 0));
         let rem: usize = base2k - (k % base2k);
         if k < base2k {
@@ -199,7 +207,8 @@ impl<D: DataRef> VecZnx<D> {
         let size: usize = k.div_ceil(base2k);
         #[cfg(debug_assertions)]
         {
-            let a: VecZnx<&[u8]> = self.to_ref();
+            let shape = self.shape();
+            let a = VecZnx::from_data_with_max_size(self.data.as_ref(), shape.n(), shape.cols(), shape.size(), shape.max_size());
             assert!(
                 data.len() >= a.n(),
                 "invalid data: data.len()={} < a.n()={}",
@@ -209,7 +218,8 @@ impl<D: DataRef> VecZnx<D> {
             assert!(col < a.cols());
         }
 
-        let a: VecZnx<&[u8]> = self.to_ref();
+        let shape = self.shape();
+        let a = VecZnx::from_data_with_max_size(self.data.as_ref(), shape.n(), shape.cols(), shape.size(), shape.max_size());
         data.iter_mut()
             .zip(a.at(col, 0).iter())
             .for_each(|(bi, ai)| *bi = *ai as i128);
@@ -240,12 +250,14 @@ impl<D: DataRef> VecZnx<D> {
     pub fn decode_coeff_i64(&self, base2k: usize, col: usize, k: usize, idx: usize) -> i64 {
         #[cfg(debug_assertions)]
         {
-            let a: VecZnx<&[u8]> = self.to_ref();
+            let shape = self.shape();
+            let a = VecZnx::from_data_with_max_size(self.data.as_ref(), shape.n(), shape.cols(), shape.size(), shape.max_size());
             assert!(idx < a.n());
             assert!(col < a.cols())
         }
 
-        let a: VecZnx<&[u8]> = self.to_ref();
+        let shape = self.shape();
+        let a = VecZnx::from_data_with_max_size(self.data.as_ref(), shape.n(), shape.cols(), shape.size(), shape.max_size());
         let size: usize = k.div_ceil(base2k);
         let mut res: i64 = 0;
         let rem: usize = base2k - (k % base2k);
@@ -267,7 +279,8 @@ impl<D: DataRef> VecZnx<D> {
     pub fn decode_vec_float(&self, base2k: usize, col: usize, data: &mut [FBig<HalfEven>]) {
         #[cfg(debug_assertions)]
         {
-            let a: VecZnx<&[u8]> = self.to_ref();
+            let shape = self.shape();
+            let a = VecZnx::from_data_with_max_size(self.data.as_ref(), shape.n(), shape.cols(), shape.size(), shape.max_size());
             assert!(
                 data.len() >= a.n(),
                 "invalid data: data.len()={} < a.n()={}",
@@ -277,7 +290,8 @@ impl<D: DataRef> VecZnx<D> {
             assert!(col < a.cols());
         }
 
-        let a: VecZnx<&[u8]> = self.to_ref();
+        let shape = self.shape();
+        let a = VecZnx::from_data_with_max_size(self.data.as_ref(), shape.n(), shape.cols(), shape.size(), shape.max_size());
         let size: usize = a.size();
         // Extra 256 guard bits absorb cancellation in downstream reduce(x * 2^offset)
         // operations (offset up to 128 bits) without affecting the public f64 API.

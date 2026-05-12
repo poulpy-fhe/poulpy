@@ -49,7 +49,7 @@
 //!
 //! ## Scratch-Space Allocation
 //!
-//! All evaluation and preparation routines accept a mutable `Scratch<BE>` arena.
+//! All evaluation and preparation routines accept a mutable `ScratchArena<'_, BE>`.
 //! No heap allocation occurs on the hot path; callers must size the arena using
 //! the corresponding `*_tmp_bytes` query method.
 mod bdd_1w_to_1w;
@@ -72,6 +72,7 @@ pub(crate) use circuits::*;
 pub use eval::*;
 pub use key::*;
 
+#[cfg(all(test, feature = "enable-bin-fhe"))]
 pub mod tests;
 
 /// Marker trait for unsigned integer types whose bits can be encrypted by [`FheUint`].
