@@ -1,4 +1,4 @@
-//! Reference implementations of the [`LWEKeyswitchDefaults`] methods.
+//! Reference implementations of the [`LWEKeyswitchDefault`] methods.
 //!
 //! Re-exported publicly through `crate::oep::lwe_keyswitch_defaults`.
 
@@ -15,13 +15,13 @@ use crate::{
         GGLWEInfos, GLWE, GLWELayout, LWEInfos, LWEToBackendMut, LWEToBackendRef, Rank, TorusPrecision,
         glwe_backend_ref_from_mut, prepared::GGLWEPreparedToBackendRef,
     },
-    oep::{GLWEKeyswitchDefaults, LWEKeyswitchDefaults},
+    oep::{GLWEKeyswitchDefault, LWEKeyswitchDefault},
 };
 
 pub fn lwe_keyswitch_tmp_bytes_default<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
-    M: ModuleN + GLWEKeyswitchDefaults<BE>,
+    M: ModuleN + GLWEKeyswitchDefault<BE>,
     R: LWEInfos,
     A: LWEInfos,
     K: GGLWEInfos,
@@ -52,10 +52,16 @@ where
     lvl_0 + lvl_1 + lvl_2
 }
 
-pub fn lwe_keyswitch_default<'s, BE, M, R, A, K>(module: &M, res: &mut R, a: &A, ksk: &K, scratch: &mut ScratchArena<'s, BE>)
-where
+pub fn lwe_keyswitch_default<'s, BE, M, R, A, K>(
+    module: &M,
+    res: &mut R,
+    a: &A,
+    ksk: &K,
+    key_size: usize,
+    scratch: &mut ScratchArena<'s, BE>,
+) where
     BE: Backend,
-    M: LWEKeyswitchDefaults<BE> + ModuleN + GLWEKeyswitchDefaults<BE> + VecZnxCopyRangeBackend<BE> + VecZnxZeroBackend<BE>,
+    M: LWEKeyswitchDefault<BE> + ModuleN + GLWEKeyswitchDefault<BE> + VecZnxCopyRangeBackend<BE> + VecZnxZeroBackend<BE>,
     R: LWEToBackendMut<BE> + LWEInfos,
     A: LWEToBackendRef<BE> + LWEInfos,
     K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
@@ -98,7 +104,7 @@ where
 
     let glwe_in_ref = glwe_backend_ref_from_mut::<BE>(&glwe_in);
     let glwe_in_view = &glwe_in_ref;
-    module.glwe_keyswitch(&mut glwe_out, &glwe_in_view, ksk, &mut scratch_2);
+    module.glwe_keyswitch(&mut glwe_out, &glwe_in_view, ksk, key_size, &mut scratch_2);
 
     let mut res_backend = res.to_backend_mut();
     let glwe_out_ref = glwe_backend_ref_from_mut::<BE>(&glwe_out);

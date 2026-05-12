@@ -389,7 +389,14 @@ pub fn circuit_bootstrap_core<R, L, M, BRA, BE>(
                 );
             } else {
                 let mut tmp_row: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&res_row);
-                module.glwe_trace(&mut tmp_row, 0, &res_glwe_atk_layout, &key.atk, &mut scratch_1.borrow());
+                module.glwe_trace(
+                    &mut tmp_row,
+                    0,
+                    &res_glwe_atk_layout,
+                    &key.atk,
+                    key.automorphism_key_infos().size(),
+                    &mut scratch_1.borrow(),
+                );
                 module.glwe_copy(&mut res_row, &tmp_row);
             }
 
@@ -400,7 +407,7 @@ pub fn circuit_bootstrap_core<R, L, M, BRA, BE>(
     }
 
     // Expands GGLWE to GGSW using GGLWE(s^2)
-    module.ggsw_expand_row(res, &key.tsk, &mut scratch_1.borrow());
+    module.ggsw_expand_row(res, &key.tsk, key.tsk.size(), &mut scratch_1.borrow());
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -440,6 +447,7 @@ fn post_process<'s, R, A, M, H, K, BE>(
             module.log_n() - log_gap_in + 1,
             a,
             auto_keys,
+            auto_keys.automorphism_key_infos().size(),
             &mut scratch.borrow(),
         );
 
@@ -460,11 +468,25 @@ fn post_process<'s, R, A, M, H, K, BE>(
             cts.insert(i * (1 << log_gap_out), ct);
         }
 
-        module.glwe_pack(&mut packed, cts, log_gap_out, auto_keys, &mut scratch.borrow());
+        module.glwe_pack(
+            &mut packed,
+            cts,
+            log_gap_out,
+            auto_keys,
+            auto_keys.automorphism_key_infos().size(),
+            &mut scratch.borrow(),
+        );
         module.glwe_copy(res, &packed);
     } else {
         let mut traced: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(res);
-        module.glwe_trace(&mut traced, module.log_n() - log_gap_in + 1, a, auto_keys, scratch);
+        module.glwe_trace(
+            &mut traced,
+            module.log_n() - log_gap_in + 1,
+            a,
+            auto_keys,
+            auto_keys.automorphism_key_infos().size(),
+            scratch,
+        );
         module.glwe_copy(res, &traced);
     }
 }

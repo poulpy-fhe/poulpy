@@ -22,7 +22,7 @@ use super::helpers::{
     assert_decrypt_precision, assert_unary_output_meta, ckks_encrypt, gen_atk, gen_sk_with_raw, test_vector_1, want_rotate,
 };
 use poulpy_core::layouts::GLWEAutomorphismKeyPrepared;
-use poulpy_core::{GLWEAutomorphism, GLWEShift, oep::GLWEAutomorphismDefaults};
+use poulpy_core::{GLWEAutomorphism, GLWEShift};
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchAvailable, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, ScratchArena},
@@ -37,7 +37,7 @@ pub fn test_rotate_aligned<BE, F, E>(
     rotations: &[i64],
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE> + GLWEAutomorphismDefaults<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSRotateOps<BE>,
+    Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSRotateOps<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
@@ -93,7 +93,7 @@ pub fn test_rotate_smaller_output<BE, F, E>(
     rotations: &[i64],
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE> + GLWEAutomorphismDefaults<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSRotateOps<BE>,
+    Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSRotateOps<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
@@ -149,7 +149,7 @@ pub fn test_rotate_assign<BE, F, E>(
     rotations: &[i64],
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE> + GLWEAutomorphismDefaults<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSRotateOps<BE>,
+    Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSRotateOps<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
@@ -203,7 +203,7 @@ pub fn test_rotate_assign_missing_key_error<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE> + GLWEAutomorphismDefaults<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSRotateOps<BE>,
+    Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSRotateOps<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,

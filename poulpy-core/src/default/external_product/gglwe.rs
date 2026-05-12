@@ -1,4 +1,4 @@
-//! Reference implementations of the [`GGLWEExternalProductDefaults`] methods.
+//! Reference implementations of the [`GGLWEExternalProductDefault`] methods.
 //!
 //! Re-exported publicly through `crate::oep::gglwe_external_product_defaults`.
 
@@ -10,13 +10,13 @@ use crate::{
     ScratchArenaTakeCore,
     default::operations::GLWEZeroDefault,
     layouts::{GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GLWEViewMut, prepared::GGSWPreparedToBackendRef},
-    oep::{GGLWEExternalProductDefaults, GLWEExternalProductDefaults},
+    oep::{GGLWEExternalProductDefault, GLWEExternalProductDefault},
 };
 
 pub fn gglwe_external_product_tmp_bytes_default<BE, M, R, A, B>(module: &M, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
 where
     BE: Backend,
-    M: GLWEExternalProductDefaults<BE>,
+    M: GLWEExternalProductDefault<BE>,
     R: GGLWEInfos,
     A: GGLWEInfos,
     B: GGSWInfos,
@@ -30,10 +30,11 @@ pub fn gglwe_external_product_default<'s, BE, M, R, A, B>(
     res: &mut R,
     a: &A,
     b: &B,
+    key_size: usize,
     scratch: &mut ScratchArena<'s, BE>,
 ) where
     BE: Backend + 's,
-    M: GGLWEExternalProductDefaults<BE> + GLWEExternalProductDefaults<BE> + GLWEZeroDefault<BE>,
+    M: GGLWEExternalProductDefault<BE> + GLWEExternalProductDefault<BE> + GLWEZeroDefault<BE>,
     R: GGLWEToBackendMut<BE> + GGLWEInfos,
     A: GGLWEToBackendRef<BE> + GGLWEInfos,
     B: GGSWPreparedToBackendRef<BE> + GGSWInfos,
@@ -78,7 +79,7 @@ pub fn gglwe_external_product_default<'s, BE, M, R, A, B>(
             for col in 0..res_rank_in {
                 let mut res_at = res.at_view_mut(row, col);
                 let a_at = a.at_view(row, col);
-                module.glwe_external_product(&mut res_at, &a_at, b, &mut scratch.borrow());
+                module.glwe_external_product(&mut res_at, &a_at, b, key_size, &mut scratch.borrow());
             }
         }
     }
@@ -94,10 +95,15 @@ pub fn gglwe_external_product_default<'s, BE, M, R, A, B>(
     }
 }
 
-pub fn gglwe_external_product_assign_default<'s, BE, M, R, A>(module: &M, res: &mut R, a: &A, scratch: &mut ScratchArena<'s, BE>)
-where
+pub fn gglwe_external_product_assign_default<'s, BE, M, R, A>(
+    module: &M,
+    res: &mut R,
+    a: &A,
+    key_size: usize,
+    scratch: &mut ScratchArena<'s, BE>,
+) where
     BE: Backend + 's,
-    M: GGLWEExternalProductDefaults<BE> + GLWEExternalProductDefaults<BE>,
+    M: GGLWEExternalProductDefault<BE> + GLWEExternalProductDefault<BE>,
     R: GGLWEToBackendMut<BE> + GGLWEInfos,
     A: GGSWPreparedToBackendRef<BE> + GGSWInfos,
     for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
@@ -122,7 +128,7 @@ where
     for row in 0..res_dnum {
         for col in 0..res_rank_in {
             let mut res_at = res.at_view_mut(row, col);
-            module.glwe_external_product_assign(&mut res_at, a, &mut scratch.borrow());
+            module.glwe_external_product_assign(&mut res_at, a, key_size, &mut scratch.borrow());
         }
     }
 }

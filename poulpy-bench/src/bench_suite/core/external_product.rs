@@ -1,7 +1,7 @@
 use poulpy_core::{
     DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GGSWEncryptSk, GLWEEncryptSk, GLWEExternalProduct,
     layouts::{
-        GGSW, GGSWInfos, GLWE, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
+        GGSW, GGSWInfos, GLWE, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc,
         prepared::{GGSWPrepared, GGSWPreparedFactory, GLWESecretPrepared},
     },
 };
@@ -81,7 +81,13 @@ pub fn bench_glwe_external_product<BE: Backend<OwnedBuf = Vec<u8>>>(
     let mut group = c.benchmark_group(group_name);
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
-            module.glwe_external_product(&mut ct_glwe_out, &ct_glwe_in, &ggsw_prepared, &mut scratch.borrow());
+            module.glwe_external_product(
+                &mut ct_glwe_out,
+                &ct_glwe_in,
+                &ggsw_prepared,
+                ct_glwe_in.size() + ggsw_prepared.dsize().as_usize(),
+                &mut scratch.borrow(),
+            );
             black_box(());
         })
     });
@@ -147,9 +153,10 @@ where
 
     let group_name = format!("glwe_external_product_assign::{label}");
     let mut group = c.benchmark_group(group_name);
+    let size = ct_glwe.size() + ggsw_prepared.dsize().as_usize();
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
-            module.glwe_external_product_assign(&mut ct_glwe, &ggsw_prepared, &mut scratch.borrow());
+            module.glwe_external_product_assign(&mut ct_glwe, &ggsw_prepared, size, &mut scratch.borrow());
             black_box(());
         })
     });

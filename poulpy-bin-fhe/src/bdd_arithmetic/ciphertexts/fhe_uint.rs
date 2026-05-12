@@ -282,7 +282,14 @@ impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T> {
             cts.insert(T::bit_index(i) << log_gap, ct);
         }
 
-        module.glwe_pack(&mut self.bits, cts, log_gap, keys, scratch);
+        module.glwe_pack(
+            &mut self.bits,
+            cts,
+            log_gap,
+            keys,
+            keys.automorphism_key_infos().size(),
+            scratch,
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -372,7 +379,13 @@ impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T> {
         module.glwe_rotate(-((T::bit_index(src << 3) << log_gap) as i64), &mut tmp_fhe_uint_byte, b);
 
         // Zeroes all other bytes
-        module.glwe_trace_assign(&mut tmp_fhe_uint_byte, trace_start, keys, &mut scratch_1);
+        module.glwe_trace_assign(
+            &mut tmp_fhe_uint_byte,
+            trace_start,
+            keys,
+            keys.automorphism_key_infos().size(),
+            &mut scratch_1,
+        );
 
         // Moves back self[0] to self[byte_tg]
         module.glwe_rotate_assign(rot, &mut tmp_fhe_uint_byte, &mut scratch_1);
@@ -456,12 +469,19 @@ impl<D: HostDataRef, T: UnsignedInteger> FheUint<D, T> {
             let mut scratch_1 = scratch.borrow();
             {
                 let mut scratch_op = scratch_1.borrow();
-                module.glwe_keyswitch(&mut res_tmp, self, ks_glwe, &mut scratch_op);
+                module.glwe_keyswitch(&mut res_tmp, self, ks_glwe, ks_glwe.size(), &mut scratch_op);
             }
             let mut scratch_op = scratch_1.borrow();
-            module.lwe_from_glwe(res, &res_tmp, T::bit_index(bit) << log_gap, ks_lwe, &mut scratch_op);
+            module.lwe_from_glwe(
+                res,
+                &res_tmp,
+                T::bit_index(bit) << log_gap,
+                ks_lwe,
+                ks_lwe.size(),
+                &mut scratch_op,
+            );
         } else {
-            module.lwe_from_glwe(res, self, T::bit_index(bit) << log_gap, ks_lwe, scratch);
+            module.lwe_from_glwe(res, self, T::bit_index(bit) << log_gap, ks_lwe, ks_lwe.size(), scratch);
         }
     }
 
@@ -486,7 +506,7 @@ impl<D: HostDataRef, T: UnsignedInteger> FheUint<D, T> {
         let log_gap: usize = module.log_n() - T::LOG_BITS as usize;
         let rot = (T::bit_index(bit) << log_gap) as i64;
         module.glwe_rotate(-rot, res, self);
-        module.glwe_trace_assign(res, 0, keys, scratch);
+        module.glwe_trace_assign(res, 0, keys, keys.automorphism_key_infos().size(), scratch);
     }
 
     pub fn get_byte<'s, R, K, M, H, BE>(&self, module: &M, byte: usize, res: &mut R, keys: &H, scratch: &mut ScratchArena<'s, BE>)
@@ -505,7 +525,7 @@ impl<D: HostDataRef, T: UnsignedInteger> FheUint<D, T> {
         let trace_start = (T::LOG_BITS - T::LOG_BYTES) as usize;
         let rot = (T::bit_index(byte << 3) << log_gap) as i64;
         module.glwe_rotate(-rot, res, self);
-        module.glwe_trace_assign(res, trace_start, keys, scratch);
+        module.glwe_trace_assign(res, trace_start, keys, keys.automorphism_key_infos().size(), scratch);
     }
 }
 
@@ -568,7 +588,14 @@ impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T> {
 
         // Stores this byte (everything else zeroed) into tmp_trace
         let mut tmp_trace: GLWE<BE::OwnedBuf> = module.glwe_alloc_from_infos(self);
-        module.glwe_trace(&mut tmp_trace, trace_start, self, keys, scratch);
+        module.glwe_trace(
+            &mut tmp_trace,
+            trace_start,
+            self,
+            keys,
+            keys.automorphism_key_infos().size(),
+            scratch,
+        );
 
         // Subtracts to self to zero it
         module.glwe_sub_assign(self, &tmp_trace);
@@ -605,7 +632,13 @@ impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T> {
 
         // Extract MSB
         module.glwe_rotate(-rot, &mut sext, self);
-        module.glwe_trace_assign(&mut sext, 0, keys, &mut scratch_1.borrow());
+        module.glwe_trace_assign(
+            &mut sext,
+            0,
+            keys,
+            keys.automorphism_key_infos().size(),
+            &mut scratch_1.borrow(),
+        );
 
         // Replicates MSB in byte
         for i in 0..3 {

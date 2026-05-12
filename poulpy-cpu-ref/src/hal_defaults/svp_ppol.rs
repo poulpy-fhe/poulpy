@@ -31,7 +31,7 @@ use poulpy_hal::{
 };
 
 #[doc(hidden)]
-pub trait FFT64SvpDefaults<BE: Backend>: Backend
+pub trait FFT64SvpDefault<BE: Backend>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
@@ -116,10 +116,10 @@ where
     }
 }
 
-impl<BE: Backend> FFT64SvpDefaults<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
+impl<BE: Backend> FFT64SvpDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
 
 #[doc(hidden)]
-pub trait NTT120SvpDefaults<BE: Backend>: Backend
+pub trait NTT120SvpDefault<BE: Backend>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
@@ -254,4 +254,4 @@ where
     }
 }
 
-impl<BE: Backend> NTT120SvpDefaults<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
+impl<BE: Backend> NTT120SvpDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}

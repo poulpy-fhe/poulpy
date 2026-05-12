@@ -13,7 +13,7 @@ use crate::{
     ScratchArenaTakeCore,
     layouts::{
         GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWEPlaintext,
-        GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
+        GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
 };
@@ -136,7 +136,7 @@ where
 
     let mut res: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_out_infos);
 
-    module.glwe_pack(&mut res, cts_map, 0, &auto_keys, &mut scratch.borrow());
+    module.glwe_pack(&mut res, cts_map, 0, &auto_keys, key_infos.size(), &mut scratch.borrow());
 
     let mut pt_want: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
     let mut data: Vec<i64> = vec![0i64; n];

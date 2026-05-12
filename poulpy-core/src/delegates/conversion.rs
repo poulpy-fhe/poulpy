@@ -7,7 +7,7 @@ use crate::{
         LWEToBackendRef,
         prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
     },
-    oep::{ConversionDefaults, ConversionImpl},
+    oep::{ConversionDefault, ConversionImpl},
 };
 
 macro_rules! impl_conversion_delegate {
@@ -23,7 +23,7 @@ macro_rules! impl_conversion_delegate {
 
 impl_conversion_delegate!(
     LWESampleExtract<BE>,
-    [BE: Backend + ConversionImpl<BE>, Module<BE>: ConversionDefaults<BE>],
+    [BE: Backend + ConversionImpl<BE>, Module<BE>: ConversionDefault<BE>],
     fn lwe_sample_extract<R, A>(&self, res: &mut R, a: &A)
     where
         R: LWEToBackendMut<BE> + LWEInfos,
@@ -35,7 +35,7 @@ impl_conversion_delegate!(
 
 impl_conversion_delegate!(
     GLWEFromLWE<BE>,
-    [BE: Backend + ConversionImpl<BE>, Module<BE>: ConversionDefaults<BE>],
+    [BE: Backend + ConversionImpl<BE>, Module<BE>: ConversionDefault<BE>],
     fn glwe_from_lwe_tmp_bytes<R, A, K>(&self, glwe_infos: &R, lwe_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
@@ -50,6 +50,7 @@ impl_conversion_delegate!(
         res: &mut R,
         lwe: &A,
         ksk: &K,
+        key_size: usize,
         scratch: &mut ScratchArena<'s, BE>,
     )
     where
@@ -59,13 +60,13 @@ impl_conversion_delegate!(
         BE: 's,
         for<'a> ScratchArena<'a, BE>: crate::ScratchArenaTakeCore<'a, BE>,
     {
-        BE::glwe_from_lwe(self, res, lwe, ksk, scratch)
+        BE::glwe_from_lwe(self, res, lwe, ksk, key_size, scratch)
     }
 );
 
 impl_conversion_delegate!(
     LWEFromGLWE<BE>,
-    [BE: Backend + ConversionImpl<BE>, Module<BE>: ConversionDefaults<BE>],
+    [BE: Backend + ConversionImpl<BE>, Module<BE>: ConversionDefault<BE>],
     fn lwe_from_glwe_tmp_bytes<R, A, K>(&self, lwe_infos: &R, glwe_infos: &A, key_infos: &K) -> usize
     where
         R: LWEInfos,
@@ -81,6 +82,7 @@ impl_conversion_delegate!(
         a: &A,
         a_idx: usize,
         key: &K,
+        key_size: usize,
         scratch: &mut ScratchArena<'s, BE>,
     )
     where
@@ -90,13 +92,13 @@ impl_conversion_delegate!(
         BE: 's,
         for<'a> ScratchArena<'a, BE>: crate::ScratchArenaTakeCore<'a, BE>,
     {
-        BE::lwe_from_glwe(self, res, a, a_idx, key, scratch)
+        BE::lwe_from_glwe(self, res, a, a_idx, key, key_size, scratch)
     }
 );
 
 impl_conversion_delegate!(
     GGSWFromGGLWE<BE>,
-    [BE: Backend + ConversionImpl<BE>, Module<BE>: ConversionDefaults<BE>],
+    [BE: Backend + ConversionImpl<BE>, Module<BE>: ConversionDefault<BE>],
     fn ggsw_from_gglwe_tmp_bytes<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
     where
         R: GGSWInfos,
@@ -110,6 +112,7 @@ impl_conversion_delegate!(
         res: &mut R,
         a: &A,
         tsk: &T,
+        tsk_size: usize,
         scratch: &mut ScratchArena<'s, BE>,
     )
     where
@@ -119,13 +122,13 @@ impl_conversion_delegate!(
         BE: 's,
         for<'a> ScratchArena<'a, BE>: crate::ScratchArenaTakeCore<'a, BE>,
     {
-        BE::ggsw_from_gglwe(self, res, a, tsk, scratch)
+        BE::ggsw_from_gglwe(self, res, a, tsk, tsk_size, scratch)
     }
 );
 
 impl_conversion_delegate!(
     GGSWExpandRows<BE>,
-    [BE: Backend + ConversionImpl<BE>, Module<BE>: ConversionDefaults<BE>],
+    [BE: Backend + ConversionImpl<BE>, Module<BE>: ConversionDefault<BE>],
     fn ggsw_expand_rows_tmp_bytes<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
     where
         R: GGSWInfos,
@@ -138,6 +141,7 @@ impl_conversion_delegate!(
         &self,
         res: &mut R,
         tsk: &T,
+        tsk_size: usize,
         scratch: &mut ScratchArena<'s, BE>,
     )
     where
@@ -145,6 +149,6 @@ impl_conversion_delegate!(
         T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
         ScratchArena<'s, BE>: crate::ScratchArenaTakeCore<'s, BE>,
     {
-        BE::ggsw_expand_row(self, res, tsk, scratch)
+        BE::ggsw_expand_row(self, res, tsk, tsk_size, scratch)
     }
 );

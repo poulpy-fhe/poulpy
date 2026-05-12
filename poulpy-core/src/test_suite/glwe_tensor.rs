@@ -12,9 +12,9 @@ use crate::{
     EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEMulConst, GLWEMulPlain, GLWESub, GLWETensorDecrypt, GLWETensorKeyEncryptSk,
     GLWETensoring, ScratchArenaTakeCore,
     layouts::{
-        Dsize, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESecretTensor, GLWESecretTensorFactory,
-        GLWESecretTensorPrepared, GLWESecretTensorPreparedFactory, GLWETensor, GLWETensorKey, GLWETensorKeyLayout,
-        GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, TorusPrecision,
+        Dsize, GGLWEInfos, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESecretTensor,
+        GLWESecretTensorFactory, GLWESecretTensorPrepared, GLWESecretTensorPreparedFactory, GLWETensor, GLWETensorKey,
+        GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, TorusPrecision,
         prepared::GLWESecretPrepared,
     },
 };
@@ -199,7 +199,13 @@ where
 
             assert!(noise_have - noise_want <= 0.5, "{} > {}", noise_have, noise_want);
 
-            module.glwe_tensor_relinearize(&mut res_relin, &res_tensor, &tsk_prep, tsk_prep.size(), &mut scratch.borrow());
+            module.glwe_tensor_relinearize(
+                &mut res_relin,
+                &res_tensor,
+                &tsk_prep,
+                (res_tensor.size() + tsk_prep.dsize().as_usize()).min(tsk_prep.size()),
+                &mut scratch.borrow(),
+            );
             module.glwe_decrypt(&res_relin, &mut pt_have, &sk_dft, &mut scratch.borrow());
 
             module.glwe_sub(&mut pt_tmp, &pt_have, &pt_want);
@@ -355,14 +361,14 @@ where
                 &mut res_relin_square,
                 &res_square,
                 &tsk_prep,
-                tsk_prep.size(),
+                (res_square.size() + tsk_prep.dsize().as_usize()).min(tsk_prep.size()),
                 &mut scratch.borrow(),
             );
             module.glwe_tensor_relinearize(
                 &mut res_relin_tensor,
                 &res_tensor,
                 &tsk_prep,
-                tsk_prep.size(),
+                (res_tensor.size() + tsk_prep.dsize().as_usize()).min(tsk_prep.size()),
                 &mut scratch.borrow(),
             );
             assert_eq!(res_relin_square.data().raw(), res_relin_tensor.data().raw());

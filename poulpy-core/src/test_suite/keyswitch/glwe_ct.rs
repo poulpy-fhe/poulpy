@@ -135,7 +135,13 @@ where
                     module.glwe_switching_key_prepared_alloc_from_infos(&ksk);
                 module.glwe_switching_key_prepare(&mut ksk_prepared, &ksk, &mut scratch.borrow());
 
-                module.glwe_keyswitch(&mut glwe_out, &glwe_in, &ksk_prepared, &mut scratch.borrow());
+                module.glwe_keyswitch(
+                    &mut glwe_out,
+                    &glwe_in,
+                    &ksk_prepared,
+                    ksk_prepared.size(),
+                    &mut scratch.borrow(),
+                );
 
                 let noise_max: f64 = var_noise_gglwe_product_v2(
                     module.n() as f64,
@@ -270,7 +276,7 @@ where
                 module.glwe_switching_key_prepared_alloc_from_infos(&ksk);
             module.glwe_switching_key_prepare(&mut ksk_prepared, &ksk, &mut scratch.borrow());
 
-            module.glwe_keyswitch_assign(&mut glwe_out, &ksk_prepared, &mut scratch.borrow());
+            module.glwe_keyswitch_assign(&mut glwe_out, &ksk_prepared, ksk_prepared.size(), &mut scratch.borrow());
 
             let noise_max: f64 = var_noise_gglwe_product_v2(
                 module.n() as f64,

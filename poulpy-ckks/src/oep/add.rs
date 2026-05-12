@@ -5,6 +5,7 @@ use poulpy_core::{GLWEAdd, GLWENormalize, GLWEShift, ScratchArenaTakeCore, layou
 use poulpy_hal::{
     api::{VecZnxRshAddCoeffIntoBackend, VecZnxRshAddIntoBackend, VecZnxRshTmpBytes},
     layouts::{Backend, Module, ScratchArena},
+    oep::HalVecZnxImpl,
 };
 
 use crate::{CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
@@ -85,8 +86,8 @@ pub unsafe trait CKKSAddImpl<BE: Backend>: Backend {
 #[allow(private_bounds)]
 unsafe impl<BE: Backend> CKKSAddImpl<BE> for BE
 where
-    BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
-    Module<BE>: crate::default::add::CKKSAddDefault<BE>
+    BE: HalVecZnxImpl<BE>,
+    Module<BE>: CKKSAddDefault<BE>
         + GLWEAdd<BE>
         + GLWENormalize<BE>
         + GLWEShift<BE>

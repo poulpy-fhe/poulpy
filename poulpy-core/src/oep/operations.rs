@@ -354,6 +354,7 @@ pub unsafe trait GLWETraceImpl<BE: Backend>: Backend {
         skip: usize,
         a: &A,
         keys: &H,
+        key_size: usize,
         scratch: &mut ScratchArena<'s, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -367,6 +368,7 @@ pub unsafe trait GLWETraceImpl<BE: Backend>: Backend {
         res: &mut R,
         skip: usize,
         keys: &H,
+        key_size: usize,
         scratch: &mut ScratchArena<'s, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -394,6 +396,7 @@ pub unsafe trait GLWEPackImpl<BE: Backend>: Backend {
         a: HashMap<usize, &mut A>,
         log_gap_out: usize,
         keys: &H,
+        key_size: usize,
         scratch: &mut ScratchArena<'s, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -848,6 +851,7 @@ where
         skip: usize,
         a: &A,
         keys: &H,
+        key_size: usize,
         scratch: &mut ScratchArena<'s, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -857,18 +861,24 @@ where
         BE: 's,
     {
         let mut scratch_local = scratch.borrow();
-        module.glwe_trace_default(res, skip, a, keys, &mut scratch_local)
+        module.glwe_trace_default(res, skip, a, keys, key_size, &mut scratch_local)
     }
 
-    fn glwe_trace_assign<'s, R, K, H>(module: &Module<BE>, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'s, BE>)
-    where
+    fn glwe_trace_assign<'s, R, K, H>(
+        module: &Module<BE>,
+        res: &mut R,
+        skip: usize,
+        keys: &H,
+        key_size: usize,
+        scratch: &mut ScratchArena<'s, BE>,
+    ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
         BE: 's,
     {
         let mut scratch_local = scratch.borrow();
-        module.glwe_trace_assign_default(res, skip, keys, &mut scratch_local)
+        module.glwe_trace_assign_default(res, skip, keys, key_size, &mut scratch_local)
     }
 }
 
@@ -897,6 +907,7 @@ where
         a: HashMap<usize, &mut A>,
         log_gap_out: usize,
         keys: &H,
+        key_size: usize,
         scratch: &mut ScratchArena<'s, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -906,7 +917,7 @@ where
         BE: 's,
     {
         let mut scratch_local = scratch.borrow();
-        module.glwe_pack_default(res, a, log_gap_out, keys, &mut scratch_local)
+        module.glwe_pack_default(res, a, log_gap_out, keys, key_size, &mut scratch_local)
     }
 }
 
@@ -1054,6 +1065,7 @@ macro_rules! impl_glwe_trace_defaults_full {
                 skip: usize,
                 a: &A,
                 keys: &H,
+                key_size: usize,
                 scratch: &'s mut ::poulpy_hal::layouts::ScratchArena<'s, $be>,
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
@@ -1065,7 +1077,7 @@ macro_rules! impl_glwe_trace_defaults_full {
                 $be: 's,
             {
                 $crate::default::glwe_trace::glwe_trace_defaults_impl::glwe_trace_default::<$be, _, _, _, _, _>(
-                    self, res, skip, a, keys, scratch,
+                    self, res, skip, a, keys, key_size, scratch,
                 )
             }
 
@@ -1074,6 +1086,7 @@ macro_rules! impl_glwe_trace_defaults_full {
                 res: &mut R,
                 skip: usize,
                 keys: &H,
+                key_size: usize,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'s, $be>,
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
@@ -1084,7 +1097,7 @@ macro_rules! impl_glwe_trace_defaults_full {
                 $be: 's,
             {
                 $crate::default::glwe_trace::glwe_trace_defaults_impl::glwe_trace_assign_default::<$be, _, _, _, _>(
-                    self, res, skip, keys, scratch,
+                    self, res, skip, keys, key_size, scratch,
                 )
             }
         }
@@ -1117,6 +1130,7 @@ macro_rules! impl_glwe_packing_defaults_full {
                 a: ::std::collections::HashMap<usize, &mut A>,
                 log_gap_out: usize,
                 keys: &H,
+                key_size: usize,
                 scratch: &'s mut ::poulpy_hal::layouts::ScratchArena<'s, $be>,
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
@@ -1133,6 +1147,7 @@ macro_rules! impl_glwe_packing_defaults_full {
                     a,
                     log_gap_out,
                     keys,
+                    key_size,
                     scratch,
                 )
             }

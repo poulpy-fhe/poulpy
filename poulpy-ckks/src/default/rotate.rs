@@ -1,8 +1,7 @@
 use anyhow::Result;
 use poulpy_core::{
-    GLWEShift, ScratchArenaTakeCore,
+    GLWEAutomorphism, GLWEShift, ScratchArenaTakeCore,
     layouts::{GGLWEInfos, GGLWEPreparedToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos},
-    oep::GLWEAutomorphismDefaults,
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
@@ -13,9 +12,9 @@ pub trait CKKSRotateDefault<BE: Backend> {
     where
         C: GLWEInfos,
         K: GGLWEInfos,
-        Self: GLWEAutomorphismDefaults<BE>,
+        Self: GLWEAutomorphism<BE>,
     {
-        <Self as GLWEAutomorphismDefaults<BE>>::glwe_automorphism_tmp_bytes(self, ct_infos, ct_infos, key_infos)
+        self.glwe_automorphism_tmp_bytes(ct_infos, ct_infos, key_infos)
     }
 
     fn ckks_rotate_into_default<'s, Dst, Src, K>(
@@ -26,7 +25,7 @@ pub trait CKKSRotateDefault<BE: Backend> {
         scratch: &mut ScratchArena<'s, BE>,
     ) -> Result<()>
     where
-        Self: GLWEAutomorphismDefaults<BE> + GLWEShift<BE>,
+        Self: GLWEAutomorphism<BE> + GLWEShift<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEInfos + LWEInfos + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
@@ -37,9 +36,9 @@ pub trait CKKSRotateDefault<BE: Backend> {
 
         if offset != 0 {
             self.glwe_lsh(dst, src, offset, scratch);
-            <Self as GLWEAutomorphismDefaults<BE>>::glwe_automorphism_assign(self, dst, key, scratch);
+            self.glwe_automorphism_assign(dst, key, dst.size() + key.dsize().as_usize(), scratch);
         } else {
-            <Self as GLWEAutomorphismDefaults<BE>>::glwe_automorphism(self, dst, src, key, scratch);
+            self.glwe_automorphism(dst, src, key, src.size() + key.dsize().as_usize(), scratch);
         }
 
         dst.set_meta(src.meta());
@@ -49,13 +48,13 @@ pub trait CKKSRotateDefault<BE: Backend> {
 
     fn ckks_rotate_assign_default<'s, Dst, K>(&self, dst: &mut Dst, key: &K, scratch: &mut ScratchArena<'s, BE>) -> Result<()>
     where
-        Self: GLWEAutomorphismDefaults<BE>,
+        Self: GLWEAutomorphism<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEInfos + LWEInfos + CKKSInfos + SetCKKSInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
         BE: 's,
     {
-        <Self as GLWEAutomorphismDefaults<BE>>::glwe_automorphism_assign(self, dst, key, scratch);
+        self.glwe_automorphism_assign(dst, key, dst.size() + key.dsize().as_usize(), scratch);
         Ok(())
     }
 }

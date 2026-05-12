@@ -1,5 +1,5 @@
 //! GLWE external-product internals + reference implementations of the
-//! [`GLWEExternalProductDefaults`] methods.
+//! [`GLWEExternalProductDefault`] methods.
 //!
 //! Re-exported publicly through `crate::oep::glwe_external_product_defaults`.
 
@@ -22,7 +22,7 @@ use crate::{
         GGSWInfos, GGSWPreparedBackendRef, GLWE, GLWEBackendRef, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef,
         LWEInfos, prepared::GGSWPreparedToBackendRef,
     },
-    oep::GLWEExternalProductDefaults,
+    oep::GLWEExternalProductDefault,
 };
 
 fn glwe_external_product_dft_fill<'s, 'r, BE, M>(
@@ -49,41 +49,40 @@ fn glwe_external_product_dft_fill<'s, 'r, BE, M>(
     let dsize: usize = ggsw.dsize().into();
     let a_size: usize = a.size();
     {
-        let scratch_phase = scratch.borrow();
-        let (mut a_dft, mut scratch_1) = scratch_phase.take_vec_znx_dft_scratch(module, cols, a_size.div_ceil(dsize));
-        for col in 0..a_dft.cols() {
-            module.vec_znx_dft_zero(&mut a_dft, col);
-        }
-
         if dsize == 1 {
-            a_dft.set_size(a_size);
-            res_dft.set_size(ggsw.size());
+            let (mut a_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, a_size);
             for j in 0..cols {
                 module.vec_znx_dft_apply(1, 0, &mut a_dft, j, &a.data, j);
             }
             let a_dft_ref = a_dft.to_backend_ref();
             module.vmp_apply_dft_to_dft(res_dft, &a_dft_ref, &ggsw.data, 0, &mut scratch_1.borrow());
         } else {
-            let (mut res_dft_tmp, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(module, res_dft.cols(), ggsw.size());
-
             for di in 0..dsize {
-                a_dft.set_size((a.size() + di) / dsize);
-                res_dft.set_size(ggsw.size() - ((dsize - di) as isize - 2).max(0) as usize);
+                let (mut a_dft, mut scratch_1) = scratch
+                    .borrow()
+                    .take_vec_znx_dft_scratch(module, cols, (a.size() + di) / dsize);
+                res_dft.set_size(res_dft.max_size() - ((dsize - di) as isize - 2).max(0) as usize);
 
                 for j in 0..cols {
                     module.vec_znx_dft_apply(dsize, dsize - 1 - di, &mut a_dft, j, &a.data, j);
                 }
 
                 if di == 0 {
-                    let a_dft_ref = a_dft.to_backend_ref();
-                    module.vmp_apply_dft_to_dft(res_dft, &a_dft_ref, &ggsw.data, 0, &mut scratch_2.borrow());
+                    module.vmp_apply_dft_to_dft(res_dft, &a_dft.to_backend_ref(), &ggsw.data, 0, &mut scratch_1.borrow());
                 } else {
-                    res_dft_tmp.set_size(res_dft.size());
-                    let a_dft_ref = a_dft.to_backend_ref();
-                    module.vmp_apply_dft_to_dft(&mut res_dft_tmp, &a_dft_ref, &ggsw.data, di, &mut scratch_2.borrow());
-                    let res_dft_tmp_ref = res_dft_tmp.to_backend_ref();
+                    let (mut res_dft_tmp, mut scratch_2) =
+                        scratch_1
+                            .borrow()
+                            .take_vec_znx_dft_scratch(module, res_dft.cols(), res_dft.size());
+                    module.vmp_apply_dft_to_dft(
+                        &mut res_dft_tmp,
+                        &a_dft.to_backend_ref(),
+                        &ggsw.data,
+                        di,
+                        &mut scratch_2.borrow(),
+                    );
                     for col in 0..cols {
-                        module.vec_znx_dft_add_assign(res_dft, col, &res_dft_tmp_ref, col);
+                        module.vec_znx_dft_add_assign(res_dft, col, &res_dft_tmp.to_backend_ref(), col);
                     }
                 }
             }
@@ -135,6 +134,7 @@ where
         res_dft: &mut VecZnxDft<BE::BufMut<'r>, BE>,
         a: &A,
         ggsw: &G,
+        _key_size: usize,
         scratch: &mut ScratchArena<'s, BE>,
     ) where
         A: GLWEToBackendRef<BE>,
@@ -148,7 +148,7 @@ where
     }
 }
 
-// === Free-function defaults for GLWEExternalProductDefaults ===
+// === Free-function defaults for GLWEExternalProductDefault ===
 
 pub fn glwe_external_product_dft_fill_tmp_bytes_default<BE, M, A, G>(module: &M, a_infos: &A, ggsw_infos: &G) -> usize
 where
@@ -177,7 +177,7 @@ where
 pub fn glwe_external_product_tmp_bytes_default<BE, M, R, A, G>(module: &M, res_infos: &R, a_infos: &A, ggsw_infos: &G) -> usize
 where
     BE: Backend,
-    M: GLWEExternalProductDefaults<BE>
+    M: GLWEExternalProductDefault<BE>
         + GLWEExternalProductInternal<BE>
         + GLWENormalizeDefault<BE>
         + ModuleN
@@ -221,10 +221,11 @@ pub fn glwe_external_product_default<'s, BE, M, R, A, G>(
     res: &mut R,
     a: &A,
     ggsw: &G,
+    key_size: usize,
     scratch: &mut ScratchArena<'s, BE>,
 ) where
     BE: Backend + 's,
-    M: GLWEExternalProductDefaults<BE>
+    M: GLWEExternalProductDefault<BE>
         + GLWEExternalProductInternal<BE>
         + GLWENormalizeDefault<BE>
         + ModuleN
@@ -249,13 +250,15 @@ pub fn glwe_external_product_default<'s, BE, M, R, A, G>(
         module.glwe_external_product_tmp_bytes(res, a, ggsw)
     );
 
+    let key_size = ggsw.size().min(key_size);
+
     let a_base2k: usize = a.base2k().into();
     let ggsw_base2k: usize = ggsw.base2k().into();
     let res_base2k: usize = res.base2k().into();
     let cols: usize = (res.rank() + 1).into();
     let (mut res_dft, scratch_1) = scratch
         .borrow()
-        .take_vec_znx_dft_scratch(module, (res.rank() + 1).into(), ggsw.size());
+        .take_vec_znx_dft_scratch(module, (res.rank() + 1).into(), key_size);
     for col in 0..res_dft.cols() {
         module.vec_znx_dft_zero(&mut res_dft, col);
     }
@@ -270,10 +273,10 @@ pub fn glwe_external_product_default<'s, BE, M, R, A, G>(
                 rank: a.rank(),
             });
             module.glwe_normalize_default(&mut a_conv, a, &mut scratch_2.borrow());
-            module.glwe_external_product_dft(&mut res_dft, &a_conv, ggsw, &mut scratch_2);
+            module.glwe_external_product_dft(&mut res_dft, &a_conv, ggsw, key_size, &mut scratch_2);
         });
     } else {
-        module.glwe_external_product_dft(&mut res_dft, a, ggsw, &mut scratch.borrow());
+        module.glwe_external_product_dft(&mut res_dft, a, ggsw, key_size, &mut scratch.borrow());
     }
 
     let (mut res_big, mut scratch) = scratch.borrow().take_vec_znx_big_scratch(module, cols, res_dft.size());
@@ -301,10 +304,11 @@ pub fn glwe_external_product_assign_default<'s, BE, M, R, G>(
     module: &M,
     res: &mut R,
     ggsw: &G,
+    key_size: usize,
     scratch: &mut ScratchArena<'s, BE>,
 ) where
     BE: Backend + 's,
-    M: GLWEExternalProductDefaults<BE>
+    M: GLWEExternalProductDefault<BE>
         + GLWEExternalProductInternal<BE>
         + GLWENormalizeDefault<BE>
         + ModuleN
@@ -331,7 +335,7 @@ pub fn glwe_external_product_assign_default<'s, BE, M, R, G>(
     let cols: usize = (res.rank() + 1).into();
     let (mut res_dft, scratch_1) = scratch
         .borrow()
-        .take_vec_znx_dft_scratch(module, (res.rank() + 1).into(), ggsw.size());
+        .take_vec_znx_dft_scratch(module, (res.rank() + 1).into(), key_size);
     for col in 0..res_dft.cols() {
         module.vec_znx_dft_zero(&mut res_dft, col);
     }
@@ -346,10 +350,10 @@ pub fn glwe_external_product_assign_default<'s, BE, M, R, G>(
                 rank: res.rank(),
             });
             module.glwe_normalize_default(&mut res_conv, res, &mut scratch_2.borrow());
-            module.glwe_external_product_dft(&mut res_dft, &res_conv, ggsw, &mut scratch_2);
+            module.glwe_external_product_dft(&mut res_dft, &res_conv, ggsw, key_size, &mut scratch_2);
         });
     } else {
-        module.glwe_external_product_dft(&mut res_dft, res, ggsw, &mut scratch.borrow());
+        module.glwe_external_product_dft(&mut res_dft, res, ggsw, key_size, &mut scratch.borrow());
     }
 
     let (mut res_big, mut scratch) = scratch.borrow().take_vec_znx_big_scratch(module, cols, res_dft.size());

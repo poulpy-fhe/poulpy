@@ -129,7 +129,7 @@ where
             auto_keys.insert(*gal_el, atk_prepared);
         });
 
-        module.glwe_trace_assign(&mut glwe_out, 0, &auto_keys, &mut scratch.borrow());
+        module.glwe_trace_assign(&mut glwe_out, 0, &auto_keys, key_infos.size(), &mut scratch.borrow());
         let mut pt_have_backend = upload_glwe_plaintext(module, &pt_template);
         module.glwe_decrypt(&glwe_out, &mut pt_have_backend, &sk_dft, &mut scratch.borrow());
         let pt_have: GLWEPlaintext<Vec<u8>> = download_glwe_plaintext(module, &pt_have_backend);

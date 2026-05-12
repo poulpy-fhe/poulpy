@@ -34,5 +34,5 @@ pub use pow2::impl_ckks_pow2_defaults;
 pub use rescale::CKKSRescaleImpl;
 pub use rescale::impl_ckks_rescale_defaults;
 pub use rotate::CKKSRotateImpl;
-pub use rotate::impl_ckks_rotate_defaults;
+pub use rotate::impl_ckks_rotate_default;
 pub use sub::CKKSSubImpl;

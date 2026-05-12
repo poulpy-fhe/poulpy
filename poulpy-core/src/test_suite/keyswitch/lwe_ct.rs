@@ -8,8 +8,8 @@ use poulpy_hal::{
 use crate::{
     EncryptionLayout, LWEDecrypt, LWEEncryptSk, LWEKeySwitch, LWESwitchingKeyEncrypt, ScratchArenaTakeCore,
     layouts::{
-        LWE, LWELayout, LWEPlaintext, LWESecret, LWESwitchingKey, LWESwitchingKeyLayout, LWESwitchingKeyPreparedFactory,
-        ModuleCoreAlloc, prepared::LWESwitchingKeyPrepared,
+        LWE, LWEInfos, LWELayout, LWEPlaintext, LWESecret, LWESwitchingKey, LWESwitchingKeyLayout,
+        LWESwitchingKeyPreparedFactory, ModuleCoreAlloc, prepared::LWESwitchingKeyPrepared,
     },
 };
 
@@ -110,7 +110,13 @@ where
     let mut ksk_prepared: LWESwitchingKeyPrepared<BE::OwnedBuf, BE> = module.lwe_switching_key_prepared_alloc_from_infos(&ksk);
     module.lwe_switching_key_prepare(&mut ksk_prepared, &ksk, &mut scratch.borrow());
 
-    module.lwe_keyswitch(&mut lwe_ct_out, &lwe_ct_in, &ksk_prepared, &mut scratch.borrow());
+    module.lwe_keyswitch(
+        &mut lwe_ct_out,
+        &lwe_ct_in,
+        &ksk_prepared,
+        ksk_prepared.size(),
+        &mut scratch.borrow(),
+    );
 
     let mut lwe_pt_out: LWEPlaintext<Vec<u8>> = module.lwe_plaintext_alloc_from_infos(&lwe_out_infos);
     module.lwe_decrypt(&lwe_ct_out, &mut lwe_pt_out, &sk_lwe_out, &mut scratch.borrow());

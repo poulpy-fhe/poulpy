@@ -6,7 +6,7 @@ use crate::reference::{fft64::module::FFT64HandleFactory, ntt120::vec_znx_dft::N
 use poulpy_hal::layouts::{Backend, Module};
 
 #[doc(hidden)]
-pub trait FFT64ModuleDefaults<BE: Backend>: Backend
+pub trait FFT64ModuleDefault<BE: Backend>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
@@ -21,10 +21,10 @@ where
     }
 }
 
-impl<BE: Backend> FFT64ModuleDefaults<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
+impl<BE: Backend> FFT64ModuleDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
 
 #[doc(hidden)]
-pub trait NTT120ModuleDefaults<BE: Backend>: Backend
+pub trait NTT120ModuleDefault<BE: Backend>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
@@ -39,4 +39,4 @@ where
     }
 }
 
-impl<BE: Backend> NTT120ModuleDefaults<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
+impl<BE: Backend> NTT120ModuleDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}

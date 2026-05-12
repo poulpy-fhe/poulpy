@@ -23,8 +23,15 @@ pub trait GLWETrace<BE: Backend> {
         A: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_trace<'s, R, A, K, H>(&self, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'s, BE>)
-    where
+    fn glwe_trace<'s, R, A, K, H>(
+        &self,
+        res: &mut R,
+        skip: usize,
+        a: &A,
+        keys: &H,
+        key_size: usize,
+        scratch: &mut ScratchArena<'s, BE>,
+    ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -32,8 +39,14 @@ pub trait GLWETrace<BE: Backend> {
         ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
         BE: 's;
 
-    fn glwe_trace_assign<'s, R, K, H>(&self, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'s, BE>)
-    where
+    fn glwe_trace_assign<'s, R, K, H>(
+        &self,
+        res: &mut R,
+        skip: usize,
+        keys: &H,
+        key_size: usize,
+        scratch: &mut ScratchArena<'s, BE>,
+    ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
@@ -55,6 +68,7 @@ pub trait GLWEPacking<BE: Backend> {
         a: HashMap<usize, &mut A>,
         log_gap_out: usize,
         keys: &H,
+        key_size: usize,
         scratch: &mut ScratchArena<'s, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,

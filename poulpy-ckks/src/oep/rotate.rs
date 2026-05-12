@@ -2,14 +2,16 @@ use crate::default::rotate::CKKSRotateDefault;
 
 use anyhow::Result;
 use poulpy_core::{
-    GLWEShift, ScratchArenaTakeCore,
+    GLWEAutomorphism, GLWEShift, ScratchArenaTakeCore,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
         prepared::GGLWEPreparedToBackendRef,
     },
-    oep::GLWEAutomorphismDefaults,
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::{
+    layouts::{Backend, Module, ScratchArena},
+    oep::HalVecZnxImpl,
+};
 
 use crate::{CKKSInfos, SetCKKSInfos};
 
@@ -49,8 +51,8 @@ pub unsafe trait CKKSRotateImpl<BE: Backend>: Backend {
 #[allow(private_bounds)]
 unsafe impl<BE: Backend> CKKSRotateImpl<BE> for BE
 where
-    BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
-    Module<BE>: crate::default::rotate::CKKSRotateDefault<BE> + GLWEAutomorphismDefaults<BE> + GLWEShift<BE>,
+    BE: HalVecZnxImpl<BE>,
+    Module<BE>: CKKSRotateDefault<BE> + GLWEAutomorphism<BE> + GLWEShift<BE>,
     for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_rotate_tmp_bytes<C: GLWEInfos, K: GGLWEInfos>(module: &Module<BE>, ct_infos: &C, key_infos: &K) -> usize {
@@ -89,9 +91,9 @@ where
 }
 
 #[macro_export]
-macro_rules! impl_ckks_rotate_defaults {
+macro_rules! impl_ckks_rotate_default {
     ($be:ty) => {
         impl $crate::default::rotate::CKKSRotateDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
     };
 }
-pub use crate::impl_ckks_rotate_defaults;
+pub use crate::impl_ckks_rotate_default;

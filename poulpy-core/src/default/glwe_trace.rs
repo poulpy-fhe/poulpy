@@ -47,6 +47,7 @@ fn trace_assign_internal<'s, M, K, H, R, BE: Backend + 's>(
     res: &mut R,
     skip: usize,
     keys: &H,
+    key_size: usize,
     scratch: &mut ScratchArena<'s, BE>,
 ) where
     M: ModuleLogN
@@ -94,7 +95,7 @@ fn trace_assign_internal<'s, M, K, H, R, BE: Backend + 's>(
         });
 
         scratch_1 = scratch_1.apply_mut(|scratch| {
-            trace_assign_internal::<M, K, H, _, BE>(module, &mut res_conv, skip, keys, scratch);
+            trace_assign_internal::<M, K, H, _, BE>(module, &mut res_conv, skip, keys, key_size, scratch);
         });
 
         scratch_1.apply_mut(|scratch| {
@@ -107,7 +108,7 @@ fn trace_assign_internal<'s, M, K, H, R, BE: Backend + 's>(
         let p: i64 = if i == 0 { -1 } else { module.galois_element(1 << (i - 1)) };
         module.glwe_rsh(1, res, scratch);
         if let Some(key) = keys.get_automorphism_key(p) {
-            module.glwe_automorphism_add_assign(res, key, scratch);
+            module.glwe_automorphism_add_assign(res, key, key_size, scratch);
         } else {
             panic!("keys[{p}] is empty")
         }
@@ -135,6 +136,7 @@ pub trait GLWETraceDefault<BE: Backend> {
         skip: usize,
         a: &A,
         keys: &H,
+        key_size: usize,
         scratch: &'s mut ScratchArena<'s, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -144,8 +146,14 @@ pub trait GLWETraceDefault<BE: Backend> {
         ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
         BE: 's;
 
-    fn glwe_trace_assign_default<'s, R, K, H>(&self, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'s, BE>)
-    where
+    fn glwe_trace_assign_default<'s, R, K, H>(
+        &self,
+        res: &mut R,
+        skip: usize,
+        keys: &H,
+        key_size: usize,
+        scratch: &mut ScratchArena<'s, BE>,
+    ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
@@ -248,6 +256,7 @@ pub mod glwe_trace_defaults_impl {
         skip: usize,
         a: &A,
         keys: &H,
+        key_size: usize,
         scratch: &'s mut ScratchArena<'s, BE>,
     ) where
         BE: Backend + 's,
@@ -292,7 +301,7 @@ pub mod glwe_trace_defaults_impl {
 
         {
             scratch_1 = scratch_1.apply_mut(|scratch| {
-                trace_assign_internal::<M, K, H, _, BE>(module, &mut tmp, skip, keys, scratch);
+                trace_assign_internal::<M, K, H, _, BE>(module, &mut tmp, skip, keys, key_size, scratch);
             });
         }
 
@@ -314,6 +323,7 @@ pub mod glwe_trace_defaults_impl {
         res: &mut R,
         skip: usize,
         keys: &H,
+        key_size: usize,
         scratch: &mut ScratchArena<'s, BE>,
     ) where
         BE: Backend + 's,
@@ -330,6 +340,6 @@ pub mod glwe_trace_defaults_impl {
         H: GLWEAutomorphismKeyHelper<K, BE>,
         ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
     {
-        trace_assign_internal::<M, K, H, _, BE>(module, res, skip, keys, scratch);
+        trace_assign_internal::<M, K, H, _, BE>(module, res, skip, keys, key_size, scratch);
     }
 }

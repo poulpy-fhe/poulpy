@@ -137,15 +137,15 @@ unsafe impl HalImpl<FFT64Avx> for FFT64Avx {
         A: VecZnxToBackendRef<Self>,
         B: VecZnxToBackendRef<Self>,
     {
-        HalVecZnxDefaults::vec_znx_add_into_default(module, res, res_col, a, a_col, b, b_col)
+        HalVecZnxDefault::vec_znx_add_into_default(module, res, res_col, a, a_col, b, b_col)
     }
 }
 ```
 
-Defaults in `poulpy-cpu-ref`:
+Default in `poulpy-cpu-ref`:
 
 ```rust
-pub trait HalVecZnxDefaults<BE: Backend>: Backend {
+pub trait HalVecZnxDefault<BE: Backend>: Backend {
     fn vec_znx_add_default<R, A, B>(
         module: &Module<BE>,
         res: &mut R,

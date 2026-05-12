@@ -292,7 +292,8 @@ fn main() {
 
     // Apply GLWE x GGSW
     {
-        module.glwe_external_product_assign(&mut ct_glwe, &res_prepared, &mut scratch.borrow());
+        let size = ct_glwe.size() + res_prepared.dsize().as_usize();
+        module.glwe_external_product_assign(&mut ct_glwe, &res_prepared, size, &mut scratch.borrow());
     }
 
     // Decrypt

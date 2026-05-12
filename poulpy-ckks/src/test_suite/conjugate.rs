@@ -21,7 +21,7 @@ use super::helpers::{
     TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ct_meta, assert_decrypt_precision,
     assert_unary_output_meta, ckks_encrypt, gen_atk, gen_sk_with_raw, test_vector_1, want_conjugate,
 };
-use poulpy_core::{GLWEAutomorphism, GLWEShift, oep::GLWEAutomorphismDefaults};
+use poulpy_core::{GLWEAutomorphism, GLWEShift};
 use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew, ScratchAvailable, ScratchOwnedBorrow};
 use poulpy_hal::layouts::{HostBytesBackend, Module, ScratchArena};
 
@@ -30,8 +30,7 @@ use crate::{encoding::reim::Encoder, test_suite::CKKSTestParams};
 pub fn test_conjugate_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
-    Module<BE>:
-        TestContextModule<BE> + GLWEAutomorphismDefaults<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSConjugateOps<BE>,
+    Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSConjugateOps<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
@@ -79,8 +78,7 @@ pub fn test_conjugate_smaller_output<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
-    Module<BE>:
-        TestContextModule<BE> + GLWEAutomorphismDefaults<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSConjugateOps<BE>,
+    Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSConjugateOps<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
@@ -125,8 +123,7 @@ pub fn test_conjugate_smaller_output<BE, F, E>(
 pub fn test_conjugate_assign<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
-    Module<BE>:
-        TestContextModule<BE> + GLWEAutomorphismDefaults<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSConjugateOps<BE>,
+    Module<BE>: TestContextModule<BE> + GLWEAutomorphism<BE> + GLWEShift<BE> + CKKSConjugateOps<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,

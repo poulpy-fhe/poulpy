@@ -9,7 +9,7 @@ use crate::{
     EncryptionLayout, GGSWEncryptSk, GLWEEncryptSk, GLWEExternalProduct, GLWENoise, GLWENormalize, ScratchArenaTakeCore,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory,
+        GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, LWEInfos,
         ModuleCoreAlloc,
         prepared::{GGSWPrepared, GLWESecretPrepared},
     },
@@ -133,7 +133,13 @@ where
             let mut ct_ggsw_prepared: GGSWPrepared<BE::OwnedBuf, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw_apply);
             module.ggsw_prepare(&mut ct_ggsw_prepared, &ggsw_apply, &mut scratch.borrow());
 
-            module.glwe_external_product(&mut glwe_out, &glwe_in, &ct_ggsw_prepared, &mut scratch.borrow());
+            module.glwe_external_product(
+                &mut glwe_out,
+                &glwe_in,
+                &ct_ggsw_prepared,
+                ct_ggsw_prepared.size(),
+                &mut scratch.borrow(),
+            );
 
             module.vec_znx_rotate_assign_backend(
                 k as i64,
@@ -280,7 +286,12 @@ where
             let mut ct_ggsw_prepared: GGSWPrepared<BE::OwnedBuf, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw_apply);
             module.ggsw_prepare(&mut ct_ggsw_prepared, &ggsw_apply, &mut scratch.borrow());
 
-            module.glwe_external_product_assign(&mut glwe_out, &ct_ggsw_prepared, &mut scratch.borrow());
+            module.glwe_external_product_assign(
+                &mut glwe_out,
+                &ct_ggsw_prepared,
+                ct_ggsw_prepared.size(),
+                &mut scratch.borrow(),
+            );
 
             module.vec_znx_rotate_assign_backend(
                 k as i64,

@@ -54,7 +54,7 @@ where
 }
 
 #[doc(hidden)]
-pub trait FFT64VmpDefaults<BE: Backend>: Backend
+pub trait FFT64VmpDefault<BE: Backend>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -129,7 +129,7 @@ where
     }
 }
 
-impl<BE: Backend> FFT64VmpDefaults<BE> for BE
+impl<BE: Backend> FFT64VmpDefault<BE> for BE
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -138,7 +138,7 @@ where
 }
 
 #[doc(hidden)]
-pub trait NTT120VmpDefaults<BE: Backend>: Backend
+pub trait NTT120VmpDefault<BE: Backend>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -213,7 +213,7 @@ where
     }
 }
 
-impl<BE: Backend> NTT120VmpDefaults<BE> for BE
+impl<BE: Backend> NTT120VmpDefault<BE> for BE
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufMut<'a>: HostDataMut,

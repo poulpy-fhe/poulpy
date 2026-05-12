@@ -65,7 +65,7 @@ where
 }
 
 #[doc(hidden)]
-pub trait FFT64VecZnxDftDefaults<BE: Backend>: Backend
+pub trait FFT64VecZnxDftDefault<BE: Backend>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
@@ -237,10 +237,10 @@ where
     }
 }
 
-impl<BE: Backend> FFT64VecZnxDftDefaults<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
+impl<BE: Backend> FFT64VecZnxDftDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
 
 #[doc(hidden)]
-pub trait NTT120VecZnxDftDefaults<BE: Backend>: Backend
+pub trait NTT120VecZnxDftDefault<BE: Backend>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
@@ -416,4 +416,4 @@ where
     }
 }
 
-impl<BE: Backend> NTT120VecZnxDftDefaults<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
+impl<BE: Backend> NTT120VecZnxDftDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}

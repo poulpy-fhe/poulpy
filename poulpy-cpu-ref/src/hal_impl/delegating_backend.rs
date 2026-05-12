@@ -9,8 +9,8 @@ use poulpy_hal::{
 use crate::{
     FFT64Ref,
     hal_defaults::{
-        FFT64ConvolutionDefaults, FFT64ModuleDefaults, FFT64SvpDefaults, FFT64VecZnxBigDefaults, FFT64VecZnxDftDefaults,
-        FFT64VmpDefaults, HalVecZnxDefaults,
+        FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault, FFT64VecZnxDftDefault,
+        FFT64VmpDefault, HalVecZnxDefault,
     },
     reference::{
         fft64::{
@@ -141,25 +141,25 @@ unsafe impl HalVecZnxImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
 }
 
 unsafe impl HalModuleImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
-    crate::hal_impl_module!(FFT64ModuleDefaults);
+    crate::hal_impl_module!(FFT64ModuleDefault);
 }
 
 unsafe impl HalVmpImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
-    crate::hal_impl_vmp!(FFT64VmpDefaults);
+    crate::hal_impl_vmp!(FFT64VmpDefault);
 }
 
 unsafe impl HalConvolutionImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
-    crate::hal_impl_convolution!(FFT64ConvolutionDefaults);
+    crate::hal_impl_convolution!(FFT64ConvolutionDefault);
 }
 
 unsafe impl HalVecZnxBigImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
-    crate::hal_impl_vec_znx_big!(FFT64VecZnxBigDefaults);
+    crate::hal_impl_vec_znx_big!(FFT64VecZnxBigDefault);
 }
 
 unsafe impl HalSvpImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
-    crate::hal_impl_svp!(FFT64SvpDefaults);
+    crate::hal_impl_svp!(FFT64SvpDefault);
 }
 
 unsafe impl HalVecZnxDftImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
-    crate::hal_impl_vec_znx_dft!(FFT64VecZnxDftDefaults);
+    crate::hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault);
 }

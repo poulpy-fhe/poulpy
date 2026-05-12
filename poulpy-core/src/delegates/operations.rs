@@ -439,8 +439,15 @@ impl_operations_delegate!(
     {
         BE::glwe_trace_tmp_bytes(self, res_infos, a_infos, key_infos)
     },
-    fn glwe_trace<'s, R, A, K, H>(&self, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'s, BE>)
-    where
+    fn glwe_trace<'s, R, A, K, H>(
+        &self,
+        res: &mut R,
+        skip: usize,
+        a: &A,
+        keys: &H,
+        key_size: usize,
+        scratch: &mut ScratchArena<'s, BE>,
+    ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -448,17 +455,23 @@ impl_operations_delegate!(
         ScratchArena<'s, BE>: crate::ScratchArenaTakeCore<'s, BE>,
         BE: 's,
     {
-        BE::glwe_trace(self, res, skip, a, keys, scratch)
+        BE::glwe_trace(self, res, skip, a, keys, key_size, scratch)
     },
-    fn glwe_trace_assign<'s, R, K, H>(&self, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'s, BE>)
-    where
+    fn glwe_trace_assign<'s, R, K, H>(
+        &self,
+        res: &mut R,
+        skip: usize,
+        keys: &H,
+        key_size: usize,
+        scratch: &mut ScratchArena<'s, BE>,
+    ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
         ScratchArena<'s, BE>: crate::ScratchArenaTakeCore<'s, BE>,
         BE: 's,
     {
-        BE::glwe_trace_assign(self, res, skip, keys, scratch)
+        BE::glwe_trace_assign(self, res, skip, keys, key_size, scratch)
     }
 );
 
@@ -482,6 +495,7 @@ impl_operations_delegate!(
         a: HashMap<usize, &mut A>,
         log_gap_out: usize,
         keys: &H,
+        key_size: usize,
         scratch: &mut ScratchArena<'s, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -491,6 +505,6 @@ impl_operations_delegate!(
         ScratchArena<'s, BE>: crate::ScratchArenaTakeCore<'s, BE>,
         BE: 's,
     {
-        BE::glwe_pack(self, res, a, log_gap_out, keys, scratch)
+        BE::glwe_pack(self, res, a, log_gap_out, keys, key_size, scratch)
     }
 );

@@ -49,7 +49,7 @@ where
     (slice, arena)
 }
 #[doc(hidden)]
-pub trait HalVecZnxDefaults<BE: Backend>: Backend
+pub trait HalVecZnxDefault<BE: Backend>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
@@ -1110,4 +1110,4 @@ where
     }
 }
 
-impl<BE: Backend> HalVecZnxDefaults<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
+impl<BE: Backend> HalVecZnxDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}

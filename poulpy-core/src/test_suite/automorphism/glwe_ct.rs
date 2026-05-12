@@ -12,7 +12,7 @@ use crate::{
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWEPlaintext,
-        GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
+        GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
     var_noise_gglwe_product_v2,
@@ -130,7 +130,13 @@ where
                 module.glwe_automorphism_key_prepared_alloc_from_infos(&autokey_infos);
             module.glwe_automorphism_key_prepare(&mut autokey_prepared, &autokey, &mut scratch.borrow());
 
-            module.glwe_automorphism(&mut ct_out, &ct_in, &autokey_prepared, &mut scratch.borrow());
+            module.glwe_automorphism(
+                &mut ct_out,
+                &ct_in,
+                &autokey_prepared,
+                autokey_prepared.size(),
+                &mut scratch.borrow(),
+            );
 
             let max_noise: f64 = var_noise_gglwe_product_v2(
                 module.n() as f64,
@@ -264,7 +270,7 @@ where
                 module.glwe_automorphism_key_prepared_alloc_from_infos(&autokey);
             module.glwe_automorphism_key_prepare(&mut autokey_prepared, &autokey, &mut scratch.borrow());
 
-            module.glwe_automorphism_assign(&mut ct, &autokey_prepared, &mut scratch.borrow());
+            module.glwe_automorphism_assign(&mut ct, &autokey_prepared, autokey_prepared.size(), &mut scratch.borrow());
 
             let max_noise: f64 = var_noise_gglwe_product_v2(
                 module.n() as f64,

@@ -559,7 +559,7 @@ fn execute_standard<R, DataIn, M, BE: Backend<OwnedBuf = Vec<u8>>>(
     for (ai, ski) in izip!(a.iter(), brk.data.iter()) {
         // acc_tmp = sk[i] * acc
         {
-            module.glwe_external_product(&mut acc_tmp, &out_tmp, ski, &mut scratch_1.borrow());
+            module.glwe_external_product(&mut acc_tmp, &out_tmp, ski, ski.size(), &mut scratch_1.borrow());
         }
 
         // acc_tmp = (sk[i] * acc) * (X^{ai} - 1)

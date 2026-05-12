@@ -78,7 +78,7 @@ where
 }
 
 #[doc(hidden)]
-pub trait FFT64VecZnxBigDefaults<BE: Backend>: Backend
+pub trait FFT64VecZnxBigDefault<BE: Backend>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -386,7 +386,7 @@ where
     }
 }
 
-impl<BE: Backend> FFT64VecZnxBigDefaults<BE> for BE
+impl<BE: Backend> FFT64VecZnxBigDefault<BE> for BE
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -395,7 +395,7 @@ where
 }
 
 #[doc(hidden)]
-pub trait NTT120VecZnxBigDefaults<BE: Backend>: Backend
+pub trait NTT120VecZnxBigDefault<BE: Backend>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -729,7 +729,7 @@ where
     }
 }
 
-impl<BE: Backend> NTT120VecZnxBigDefaults<BE> for BE
+impl<BE: Backend> NTT120VecZnxBigDefault<BE> for BE
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufMut<'a>: HostDataMut,

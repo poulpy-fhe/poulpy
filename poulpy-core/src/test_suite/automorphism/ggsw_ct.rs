@@ -11,7 +11,7 @@ use crate::{
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPreparedFactory, GGSW, GGSWInfos, GGSWLayout, GLWEAutomorphismKey,
-        GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
+        GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc,
         prepared::{GGLWEToGGSWKeyPrepared, GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
     noise::noise_ggsw_keyswitch,
@@ -168,7 +168,15 @@ where
             module.gglwe_to_ggsw_key_prepare(&mut tsk_prepared, &tsk, &mut scratch.borrow());
 
             let mut ct_out = upload_ggsw(module, &ct_out_template);
-            module.ggsw_automorphism(&mut ct_out, &ct_in, &auto_key_prepared, &tsk_prepared, &mut scratch.borrow());
+            module.ggsw_automorphism(
+                &mut ct_out,
+                &ct_in,
+                &auto_key_prepared,
+                auto_key_prepared.size(),
+                &tsk_prepared,
+                tsk_prepared.size(),
+                &mut scratch.borrow(),
+            );
 
             {
                 let mut pt_scalar_backend_as_vec =
@@ -347,7 +355,14 @@ where
                 module.gglwe_to_ggsw_key_prepared_alloc_from_infos(&tsk);
             module.gglwe_to_ggsw_key_prepare(&mut tsk_prepared, &tsk, &mut scratch.borrow());
 
-            module.ggsw_automorphism_assign(&mut ct, &auto_key_prepared, &tsk_prepared, &mut scratch.borrow());
+            module.ggsw_automorphism_assign(
+                &mut ct,
+                &auto_key_prepared,
+                auto_key_prepared.size(),
+                &tsk_prepared,
+                tsk_prepared.size(),
+                &mut scratch.borrow(),
+            );
 
             {
                 let mut pt_scalar_backend_as_vec =

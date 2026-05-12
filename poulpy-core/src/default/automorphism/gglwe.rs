@@ -1,4 +1,4 @@
-//! Reference implementations of the [`GGLWEAutomorphismDefaults`] methods.
+//! Reference implementations of the [`GGLWEAutomorphismDefault`] methods.
 //!
 //! Each free function carries the HAL bounds it actually needs in its own `where` clause.
 //!
@@ -15,7 +15,7 @@ use crate::{
         GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWE, GLWEViewRef, GetGaloisElement, SetGaloisElement,
         glwe_backend_ref_from_mut, prepared::GGLWEPreparedToBackendRef,
     },
-    oep::{GGLWEAutomorphismDefaults, GLWEKeyswitchDefaults},
+    oep::{GGLWEAutomorphismDefault, GLWEKeyswitchDefault},
 };
 
 pub fn glwe_automorphism_key_automorphism_tmp_bytes_default<BE, M, R, A, K>(
@@ -26,7 +26,7 @@ pub fn glwe_automorphism_key_automorphism_tmp_bytes_default<BE, M, R, A, K>(
 ) -> usize
 where
     BE: Backend,
-    M: ModuleN + GLWEKeyswitchDefaults<BE> + VecZnxAutomorphismAssignTmpBytes,
+    M: ModuleN + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssignTmpBytes,
     R: GGLWEInfos,
     A: GGLWEInfos,
     K: GGLWEInfos,
@@ -51,12 +51,13 @@ pub fn glwe_automorphism_key_automorphism_default<'s, BE, M, R, A, K>(
     res: &mut R,
     a: &A,
     key: &K,
+    key_size: usize,
     scratch: &mut ScratchArena<'s, BE>,
 ) where
     BE: Backend + 's,
-    M: GGLWEAutomorphismDefaults<BE>
+    M: GGLWEAutomorphismDefault<BE>
         + GaloisElement
-        + GLWEKeyswitchDefaults<BE>
+        + GLWEKeyswitchDefault<BE>
         + VecZnxAutomorphismBackend<BE>
         + VecZnxAutomorphismAssign<BE>
         + VecZnxAutomorphismAssignTmpBytes
@@ -103,7 +104,7 @@ pub fn glwe_automorphism_key_automorphism_default<'s, BE, M, R, A, K>(
                     }
 
                     let mut scratch_iter = scratch.borrow();
-                    module.glwe_keyswitch_assign(&mut res_tmp, key, &mut scratch_iter);
+                    module.glwe_keyswitch_assign(&mut res_tmp, key, key_size, &mut scratch_iter);
 
                     for i in 0..cols_out {
                         module.vec_znx_automorphism_assign(p_inv, &mut res_tmp.data, i, &mut scratch_iter);
@@ -117,7 +118,7 @@ pub fn glwe_automorphism_key_automorphism_default<'s, BE, M, R, A, K>(
 
                     let tmp_glwe_ref = glwe_backend_ref_from_mut::<BE>(&tmp_glwe);
                     let tmp_glwe_view = &tmp_glwe_ref;
-                    module.glwe_keyswitch(&mut res_tmp, &tmp_glwe_view, key, &mut scratch_iter);
+                    module.glwe_keyswitch(&mut res_tmp, &tmp_glwe_view, key, key_size, &mut scratch_iter);
 
                     for i in 0..cols_out {
                         module.vec_znx_automorphism_assign(p_inv, &mut res_tmp.data, i, &mut scratch_iter);
@@ -134,10 +135,11 @@ pub fn glwe_automorphism_key_automorphism_assign_default<'s, BE, M, R, K>(
     module: &M,
     res: &mut R,
     key: &K,
+    key_size: usize,
     scratch: &mut ScratchArena<'s, BE>,
 ) where
     BE: Backend + 's,
-    M: GaloisElement + GLWEKeyswitchDefaults<BE> + VecZnxAutomorphismAssign<BE> + CyclotomicOrder,
+    M: GaloisElement + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssign<BE> + CyclotomicOrder,
     R: GGLWEToBackendMut<BE> + SetGaloisElement + GetGaloisElement + GGLWEInfos,
     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
@@ -160,7 +162,7 @@ pub fn glwe_automorphism_key_automorphism_assign_default<'s, BE, M, R, K>(
                     module.vec_znx_automorphism_assign(p, &mut res_tmp.data, i, &mut scratch_iter);
                 }
 
-                module.glwe_keyswitch_assign(&mut res_tmp, key, &mut scratch_iter);
+                module.glwe_keyswitch_assign(&mut res_tmp, key, key_size, &mut scratch_iter);
 
                 for i in 0..cols_out {
                     module.vec_znx_automorphism_assign(p_inv, &mut res_tmp.data, i, &mut scratch_iter);

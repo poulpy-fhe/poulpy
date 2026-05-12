@@ -36,6 +36,7 @@ impl_external_product_delegate!(
         &self,
         res: &mut R,
         rhs: &D,
+        key_size: usize,
         scratch: &mut ScratchArena<'s, BE>,
     )
     where
@@ -44,7 +45,7 @@ impl_external_product_delegate!(
         ScratchArena<'s, BE>: crate::ScratchArenaTakeCore<'s, BE>,
         BE: 's,
     {
-        BE::glwe_external_product_assign(self, res, rhs, scratch)
+        BE::glwe_external_product_assign(self, res, rhs, key_size, scratch)
     }
 
     fn glwe_external_product<'s, R, A, D>(
@@ -52,6 +53,7 @@ impl_external_product_delegate!(
         res: &mut R,
         lhs: &A,
         rhs: &D,
+        key_size: usize,
         scratch: &mut ScratchArena<'s, BE>,
     )
     where
@@ -61,7 +63,7 @@ impl_external_product_delegate!(
         ScratchArena<'s, BE>: crate::ScratchArenaTakeCore<'s, BE>,
         BE: 's,
     {
-        BE::glwe_external_product(self, res, lhs, rhs, scratch)
+        BE::glwe_external_product(self, res, lhs, rhs, key_size, scratch)
     }
 );
 
@@ -82,6 +84,7 @@ impl_external_product_delegate!(
         res: &mut R,
         a: &A,
         b: &B,
+        key_size: usize,
         scratch: &mut ScratchArena<'s, BE>,
     )
     where
@@ -91,13 +94,14 @@ impl_external_product_delegate!(
         ScratchArena<'s, BE>: crate::ScratchArenaTakeCore<'s, BE>,
         BE: 's,
     {
-        BE::gglwe_external_product(self, res, a, b, scratch)
+        BE::gglwe_external_product(self, res, a, b, key_size, scratch)
     }
 
     fn gglwe_external_product_assign<'s, R, A>(
         &self,
         res: &mut R,
         a: &A,
+        key_size: usize,
         scratch: &mut ScratchArena<'s, BE>,
     )
     where
@@ -106,7 +110,7 @@ impl_external_product_delegate!(
         ScratchArena<'s, BE>: crate::ScratchArenaTakeCore<'s, BE>,
         BE: 's,
     {
-        BE::gglwe_external_product_assign(self, res, a, scratch)
+        BE::gglwe_external_product_assign(self, res, a, key_size, scratch)
     }
 );
 
@@ -127,6 +131,7 @@ impl_external_product_delegate!(
         res: &mut R,
         a: &A,
         b: &B,
+        key_size: usize,
         scratch: &mut ScratchArena<'s, BE>,
     )
     where
@@ -136,13 +141,14 @@ impl_external_product_delegate!(
         ScratchArena<'s, BE>: crate::ScratchArenaTakeCore<'s, BE>,
         BE: 's,
     {
-        BE::ggsw_external_product(self, res, a, b, scratch)
+        BE::ggsw_external_product(self, res, a, b, key_size, scratch)
     }
 
     fn ggsw_external_product_assign<'s, R, A>(
         &self,
         res: &mut R,
         a: &A,
+        key_size: usize,
         scratch: &mut ScratchArena<'s, BE>,
     )
     where
@@ -151,6 +157,6 @@ impl_external_product_delegate!(
         ScratchArena<'s, BE>: crate::ScratchArenaTakeCore<'s, BE>,
         BE: 's,
     {
-        BE::ggsw_external_product_assign(self, res, a, scratch)
+        BE::ggsw_external_product_assign(self, res, a, key_size, scratch)
     }
 );

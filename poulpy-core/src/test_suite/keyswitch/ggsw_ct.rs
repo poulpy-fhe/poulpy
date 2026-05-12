@@ -12,7 +12,7 @@ use crate::{
     layouts::{
         GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPrepared, GGLWEToGGSWKeyPreparedFactory, GGSW, GGSWInfos, GGSWLayout,
         GLWEInfos, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey, GLWESwitchingKeyLayout,
-        GLWESwitchingKeyPreparedFactory, ModuleCoreAlloc,
+        GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
         prepared::{GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
     noise::noise_ggsw_keyswitch,
@@ -163,7 +163,15 @@ where
                 module.gglwe_to_ggsw_key_prepared_alloc_from_infos(&tsk);
             module.gglwe_to_ggsw_key_prepare(&mut tsk_prepared, &tsk, &mut scratch.borrow());
 
-            module.ggsw_keyswitch(&mut ggsw_out, &ggsw_in, &ksk_prepared, &tsk_prepared, &mut scratch.borrow());
+            module.ggsw_keyswitch(
+                &mut ggsw_out,
+                &ggsw_in,
+                &ksk_prepared,
+                ksk_prepared.size(),
+                &tsk_prepared,
+                tsk_prepared.size(),
+                &mut scratch.borrow(),
+            );
 
             let max_noise = |col_j: usize| -> f64 {
                 noise_ggsw_keyswitch(
@@ -336,7 +344,14 @@ where
                 module.gglwe_to_ggsw_key_prepared_alloc_from_infos(&tsk);
             module.gglwe_to_ggsw_key_prepare(&mut tsk_prepared, &tsk, &mut scratch.borrow());
 
-            module.ggsw_keyswitch_assign(&mut ggsw_out, &ksk_prepared, &tsk_prepared, &mut scratch.borrow());
+            module.ggsw_keyswitch_assign(
+                &mut ggsw_out,
+                &ksk_prepared,
+                ksk_prepared.size(),
+                &tsk_prepared,
+                tsk_prepared.size(),
+                &mut scratch.borrow(),
+            );
 
             let max_noise = |col_j: usize| -> f64 {
                 noise_ggsw_keyswitch(

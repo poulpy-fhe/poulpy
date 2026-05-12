@@ -13,35 +13,6 @@ use crate::{
     },
 };
 
-fn glwe_rotate_assign_on<'s, M, A, BE: Backend + 's>(module: &M, k: i64, a: &mut A, scratch: &mut ScratchArena<'s, BE>)
-where
-    M: GLWERotate<BE> + ?Sized,
-    A: GLWEToBackendMut<BE>,
-{
-    module.glwe_rotate_assign(k, a, scratch);
-}
-
-fn glwe_normalize_assign_on<'s, M, A, BE: Backend + 's>(module: &M, a: &mut A, scratch: &mut ScratchArena<'s, BE>)
-where
-    M: GLWENormalize<BE> + ?Sized,
-    A: GLWEToBackendMut<BE>,
-{
-    module.glwe_normalize_assign(a, scratch)
-}
-
-fn glwe_automorphism_add_assign_on<'s, M, A, K, BE: Backend + 's>(
-    module: &M,
-    a: &mut A,
-    key: &K,
-    scratch: &mut ScratchArena<'s, BE>,
-) where
-    M: GLWEAutomorphism<BE> + ?Sized,
-    A: GLWEToBackendMut<BE> + GLWEInfos,
-    K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-{
-    module.glwe_automorphism_add_assign(a, key, scratch)
-}
-
 #[allow(clippy::too_many_arguments)]
 fn pack_internal<'s, M, A, B, K, BE: Backend + 's>(
     module: &M,
@@ -49,6 +20,7 @@ fn pack_internal<'s, M, A, B, K, BE: Backend + 's>(
     b: &mut Option<&mut B>,
     i: usize,
     auto_key: &K,
+    key_size: usize,
     scratch: &mut ScratchArena<'s, BE>,
 ) where
     M: GLWEAutomorphism<BE>
@@ -73,26 +45,19 @@ fn pack_internal<'s, M, A, B, K, BE: Backend + 's>(
         if let Some(b) = b.as_deref_mut() {
             let a_layout = a.glwe_layout();
             let mut tmp_b = module.glwe_alloc_from_infos(&a_layout);
-
-            glwe_rotate_assign_on(module, -t, a, scratch);
-
+            module.glwe_rotate_assign(-t, a, scratch);
             module.glwe_sub(&mut tmp_b, a, b);
             module.glwe_rsh(1, &mut tmp_b, scratch);
-
             module.glwe_add_assign(a, b);
             module.glwe_rsh(1, a, scratch);
-
             module.glwe_normalize_assign(&mut tmp_b, scratch);
-
-            module.glwe_automorphism_assign(&mut tmp_b, auto_key, scratch);
-
+            module.glwe_automorphism_assign(&mut tmp_b, auto_key, key_size, scratch);
             module.glwe_sub_assign(a, &tmp_b);
-            glwe_normalize_assign_on(module, a, scratch);
-
-            glwe_rotate_assign_on(module, t, a, scratch)
+            module.glwe_normalize_assign(a, scratch);
+            module.glwe_rotate_assign(t, a, scratch);
         } else {
             module.glwe_rsh(1, a, scratch);
-            glwe_automorphism_add_assign_on(module, a, auto_key, scratch);
+            module.glwe_automorphism_add_assign(a, auto_key, key_size, scratch)
         }
     } else if let Some(b) = b.as_deref_mut() {
         let t: i64 = 1 << (b.n().log2() - i - 1);
@@ -101,8 +66,7 @@ fn pack_internal<'s, M, A, B, K, BE: Backend + 's>(
         let mut tmp_b = module.glwe_alloc_from_infos(&b_layout);
         module.glwe_rotate(t, &mut tmp_b, b);
         module.glwe_rsh(1, &mut tmp_b, scratch);
-
-        module.glwe_automorphism_sub_negate(b, &tmp_b, auto_key, scratch)
+        module.glwe_automorphism_sub_negate(b, &tmp_b, auto_key, key_size, scratch)
     }
 }
 
@@ -121,6 +85,7 @@ pub trait GLWEPackingDefault<BE: Backend> {
         a: HashMap<usize, &mut A>,
         log_gap_out: usize,
         keys: &H,
+        key_size: usize,
         scratch: &'s mut ScratchArena<'s, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -169,6 +134,7 @@ pub mod glwe_packing_defaults_impl {
         mut a: HashMap<usize, &mut A>,
         log_gap_out: usize,
         keys: &H,
+        key_size: usize,
         scratch: &'s mut ScratchArena<'s, BE>,
     ) where
         BE: Backend + 's,
@@ -214,7 +180,7 @@ pub mod glwe_packing_defaults_impl {
                 let mut hi: Option<&mut A> = a.remove(&(j + t));
 
                 scratch_local = scratch_local.apply_mut(|scratch| {
-                    pack_internal(module, &mut lo, &mut hi, i, key, scratch);
+                    pack_internal(module, &mut lo, &mut hi, i, key, key_size, scratch);
                 });
 
                 if let Some(lo) = lo {
@@ -226,7 +192,7 @@ pub mod glwe_packing_defaults_impl {
         }
 
         scratch_local.apply_mut(|scratch| {
-            module.glwe_trace(res, log_n - log_gap_out, *a.get_mut(&0).unwrap(), keys, scratch);
+            module.glwe_trace(res, log_n - log_gap_out, *a.get_mut(&0).unwrap(), keys, key_size, scratch);
         });
     }
 }

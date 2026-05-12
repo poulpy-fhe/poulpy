@@ -1,4 +1,4 @@
-//! Reference implementations of the [`GGSWKeyswitchDefaults`] methods.
+//! Reference implementations of the [`GGSWKeyswitchDefault`] methods.
 //!
 //! Re-exported publicly through `crate::oep::ggsw_keyswitch_defaults`.
 
@@ -15,7 +15,7 @@ use crate::{
         GGLWEInfos, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, LWEInfos,
         prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
     },
-    oep::{ConversionDefaults, GGSWKeyswitchDefaults, GLWEKeyswitchDefaults},
+    oep::{ConversionDefault, GGSWKeyswitchDefault, GLWEKeyswitchDefault},
 };
 
 pub fn ggsw_keyswitch_tmp_bytes_default<BE, M, R, A, K, T>(
@@ -27,7 +27,7 @@ pub fn ggsw_keyswitch_tmp_bytes_default<BE, M, R, A, K, T>(
 ) -> usize
 where
     BE: Backend,
-    M: ModuleN + GLWEKeyswitchDefaults<BE> + ConversionDefaults<BE>,
+    M: ModuleN + GLWEKeyswitchDefault<BE> + ConversionDefault<BE>,
     R: GGSWInfos,
     A: GGSWInfos,
     K: GGLWEInfos,
@@ -47,16 +47,19 @@ where
         .max(module.ggsw_expand_rows_tmp_bytes(res_infos, tsk_infos))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn ggsw_keyswitch_default<'s, BE, M, R, A, K, T>(
     module: &M,
     res: &mut R,
     a: &A,
     key: &K,
+    key_size: usize,
     tsk: &T,
+    tsk_size: usize,
     scratch: &mut ScratchArena<'s, BE>,
 ) where
     BE: Backend + 's,
-    M: GGSWKeyswitchDefaults<BE> + ModuleN + GLWEKeyswitchDefaults<BE> + ConversionDefaults<BE>,
+    M: GGSWKeyswitchDefault<BE> + ModuleN + GLWEKeyswitchDefault<BE> + ConversionDefault<BE>,
     R: GGSWToBackendMut<BE> + GGSWInfos,
     A: GGSWToBackendRef<BE> + GGSWInfos,
     K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
@@ -79,21 +82,23 @@ pub fn ggsw_keyswitch_default<'s, BE, M, R, A, K, T>(
     for row in 0..a_backend.dnum().into() {
         let mut res_at = res_backend.at_view_mut(row, 0);
         let a_at = a_backend.at_view(row, 0);
-        module.glwe_keyswitch(&mut res_at, &a_at, key, &mut scratch.borrow());
+        module.glwe_keyswitch(&mut res_at, &a_at, key, key_size, &mut scratch.borrow());
     }
 
-    module.ggsw_expand_row(&mut res_backend, tsk, scratch)
+    module.ggsw_expand_row(&mut res_backend, tsk, tsk_size, scratch)
 }
 
 pub fn ggsw_keyswitch_assign_default<'s, BE, M, R, K, T>(
     module: &M,
     res: &mut R,
     key: &K,
+    key_size: usize,
     tsk: &T,
+    tsk_size: usize,
     scratch: &mut ScratchArena<'s, BE>,
 ) where
     BE: Backend + 's,
-    M: GGSWKeyswitchDefaults<BE> + ModuleN + GLWEKeyswitchDefaults<BE> + ConversionDefaults<BE>,
+    M: GGSWKeyswitchDefault<BE> + ModuleN + GLWEKeyswitchDefault<BE> + ConversionDefault<BE>,
     R: GGSWToBackendMut<BE> + GGSWInfos,
     K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -110,8 +115,8 @@ pub fn ggsw_keyswitch_assign_default<'s, BE, M, R, K, T>(
 
     for row in 0..res_backend.dnum().into() {
         let mut res_at = res_backend.at_view_mut(row, 0);
-        module.glwe_keyswitch_assign(&mut res_at, key, &mut scratch.borrow());
+        module.glwe_keyswitch_assign(&mut res_at, key, key_size, &mut scratch.borrow());
     }
 
-    module.ggsw_expand_row(&mut res_backend, tsk, scratch)
+    module.ggsw_expand_row(&mut res_backend, tsk, tsk_size, scratch)
 }

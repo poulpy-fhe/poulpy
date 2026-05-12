@@ -56,7 +56,7 @@ where
     (slice, arena)
 }
 #[doc(hidden)]
-pub trait FFT64ConvolutionDefaults<BE: Backend>: Backend
+pub trait FFT64ConvolutionDefault<BE: Backend>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
@@ -252,10 +252,10 @@ where
     }
 }
 
-impl<BE: Backend> FFT64ConvolutionDefaults<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
+impl<BE: Backend> FFT64ConvolutionDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
 
 #[doc(hidden)]
-pub trait NTT120ConvolutionDefaults<BE: Backend>: Backend
+pub trait NTT120ConvolutionDefault<BE: Backend>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
@@ -459,4 +459,4 @@ where
     }
 }
 
-impl<BE: Backend> NTT120ConvolutionDefaults<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
+impl<BE: Backend> NTT120ConvolutionDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}

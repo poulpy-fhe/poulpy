@@ -720,6 +720,8 @@ where
             self.glwe_tensor_relinearize_tmp_bytes_default(res, a, tsk)
         );
 
+        let tsk_size = tsk.size().min(tsk_size);
+
         let a_base2k: usize = a.base2k().into();
         let key_base2k: usize = tsk.base2k().into();
         let res_base2k: usize = res.base2k().into();
@@ -754,7 +756,7 @@ where
             }
         }
 
-        let (mut res_dft, mut scratch_2) = scratch.borrow().take_vec_znx_dft_scratch(self, cols, tsk_size); // Todo optimise
+        let (mut res_dft, mut scratch_2) = scratch.borrow().take_vec_znx_dft_scratch(self, cols, tsk_size);
         let tsk = tsk.to_backend_ref();
 
         let a_dft_ref = a_dft.to_backend_ref();

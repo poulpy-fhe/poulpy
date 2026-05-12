@@ -127,7 +127,7 @@ pub trait Backend: Sized + Sync + Send {
 
     /// Required alignment (in bytes) for scratch-arena carved regions.
     ///
-    /// Defaults to 64 (one CPU cache line). Device backends should override this
+    /// Default to 64 (one CPU cache line). Device backends should override this
     /// to match their native memory alignment requirement (e.g. 128 for CUDA,
     /// 256 for ROCm). `ScratchArena::align_up` uses this constant so that
     /// carved regions satisfy both alignment and SIMD requirements.

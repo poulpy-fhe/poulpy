@@ -6,11 +6,12 @@ use anyhow::Result;
 use poulpy_core::{
     EncryptionInfos, ScratchArenaTakeCore,
     layouts::{GLWEInfos, GLWESecretPreparedToBackendRef, LWEInfos},
-    oep::{DecryptionDefaults, EncryptionDefaults},
+    oep::{DecryptionDefault, EncryptionDefault},
 };
 use poulpy_hal::{
     api::{ScratchAvailable, VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddIntoBackend, VecZnxRshBackend, VecZnxRshTmpBytes},
     layouts::{Backend, HostBackend, HostDataMut, HostDataRef, Module, ScratchArena},
+    oep::{HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl},
     source::Source,
 };
 
@@ -63,14 +64,10 @@ pub unsafe trait CKKSEncryptionImpl<BE: Backend>: Backend {
 #[allow(private_bounds)]
 unsafe impl<BE: Backend> CKKSEncryptionImpl<BE> for BE
 where
-    BE: poulpy_hal::oep::HalVecZnxImpl<BE>
-        + poulpy_hal::oep::HalVecZnxBigImpl<BE>
-        + poulpy_hal::oep::HalVecZnxDftImpl<BE>
-        + poulpy_hal::oep::HalSvpImpl<BE>
-        + HostBackend,
-    Module<BE>: crate::default::encryption::CKKSEncryptionDefault<BE>
-        + EncryptionDefaults<BE>
-        + DecryptionDefaults<BE>
+    BE: HalVecZnxImpl<BE> + HalVecZnxBigImpl<BE> + HalVecZnxDftImpl<BE> + HalSvpImpl<BE> + HostBackend,
+    Module<BE>: CKKSEncryptionDefault<BE>
+        + EncryptionDefault<BE>
+        + DecryptionDefault<BE>
         + VecZnxRshAddIntoBackend<BE>
         + VecZnxRshTmpBytes
         + VecZnxLshBackend<BE>

@@ -9,7 +9,8 @@ use crate::{
     EncryptionLayout, GGSWEncryptSk, GGSWExternalProduct, GGSWNoise, ScratchArenaTakeCore,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGSW, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
+        GGSW, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, LWEInfos,
+        ModuleCoreAlloc,
         prepared::{GGSWPrepared, GLWESecretPrepared},
     },
     noise::noise_ggsw_product,
@@ -128,7 +129,13 @@ where
             let mut ct_rhs_prepared: GGSWPrepared<BE::OwnedBuf, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw_apply);
             module.ggsw_prepare(&mut ct_rhs_prepared, &ggsw_apply, &mut scratch.borrow());
 
-            module.ggsw_external_product(&mut ggsw_out, &ggsw_in, &ct_rhs_prepared, &mut scratch.borrow());
+            module.ggsw_external_product(
+                &mut ggsw_out,
+                &ggsw_in,
+                &ct_rhs_prepared,
+                ct_rhs_prepared.size(),
+                &mut scratch.borrow(),
+            );
 
             {
                 let mut pt_in_as_vec = crate::test_suite::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut pt_in);
@@ -282,7 +289,7 @@ where
             let mut ct_rhs_prepared: GGSWPrepared<BE::OwnedBuf, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw_apply);
             module.ggsw_prepare(&mut ct_rhs_prepared, &ggsw_apply, &mut scratch.borrow());
 
-            module.ggsw_external_product_assign(&mut ggsw_out, &ct_rhs_prepared, &mut scratch.borrow());
+            module.ggsw_external_product_assign(&mut ggsw_out, &ct_rhs_prepared, ct_rhs_prepared.size(), &mut scratch.borrow());
 
             {
                 let mut pt_in_as_vec = crate::test_suite::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut pt_in);

@@ -1,4 +1,4 @@
-//! Reference implementations of the [`GGLWEKeyswitchDefaults`] methods.
+//! Reference implementations of the [`GGLWEKeyswitchDefault`] methods.
 //!
 //! Re-exported publicly through `crate::oep::gglwe_keyswitch_defaults`.
 
@@ -9,13 +9,13 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 use crate::{
     ScratchArenaTakeCore,
     layouts::{GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, prepared::GGLWEPreparedToBackendRef},
-    oep::{GGLWEKeyswitchDefaults, GLWEKeyswitchDefaults},
+    oep::{GGLWEKeyswitchDefault, GLWEKeyswitchDefault},
 };
 
 pub fn gglwe_keyswitch_tmp_bytes_default<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
-    M: GLWEKeyswitchDefaults<BE>,
+    M: GLWEKeyswitchDefault<BE>,
     R: GGLWEInfos,
     A: GGLWEInfos,
     K: GGLWEInfos,
@@ -24,10 +24,16 @@ where
     module.glwe_keyswitch_tmp_bytes(res_infos, a_infos, key_infos)
 }
 
-pub fn gglwe_keyswitch_default<'s, BE, M, R, A, B>(module: &M, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'s, BE>)
-where
+pub fn gglwe_keyswitch_default<'s, BE, M, R, A, B>(
+    module: &M,
+    res: &mut R,
+    a: &A,
+    b: &B,
+    key_size: usize,
+    scratch: &mut ScratchArena<'s, BE>,
+) where
     BE: Backend + 's,
-    M: GGLWEKeyswitchDefaults<BE> + GLWEKeyswitchDefaults<BE>,
+    M: GGLWEKeyswitchDefault<BE> + GLWEKeyswitchDefault<BE>,
     R: GGLWEToBackendMut<BE> + GGLWEInfos,
     A: GGLWEToBackendRef<BE> + GGLWEInfos,
     B: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
@@ -71,15 +77,20 @@ where
         for col in 0..res.rank_in().into() {
             let mut res_at = res.at_view_mut(row, col);
             let a_at = a.at_view(row, col);
-            module.glwe_keyswitch(&mut res_at, &a_at, b, &mut scratch.borrow());
+            module.glwe_keyswitch(&mut res_at, &a_at, b, key_size, &mut scratch.borrow());
         }
     }
 }
 
-pub fn gglwe_keyswitch_assign_default<'s, BE, M, R, A>(module: &M, res: &mut R, a: &A, scratch: &mut ScratchArena<'s, BE>)
-where
+pub fn gglwe_keyswitch_assign_default<'s, BE, M, R, A>(
+    module: &M,
+    res: &mut R,
+    a: &A,
+    key_size: usize,
+    scratch: &mut ScratchArena<'s, BE>,
+) where
     BE: Backend + 's,
-    M: GGLWEKeyswitchDefaults<BE> + GLWEKeyswitchDefaults<BE>,
+    M: GGLWEKeyswitchDefault<BE> + GLWEKeyswitchDefault<BE>,
     R: GGLWEToBackendMut<BE> + GGLWEInfos,
     A: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
@@ -103,7 +114,7 @@ where
     for row in 0..res.dnum().into() {
         for col in 0..res.rank_in().into() {
             let mut res_at = res.at_view_mut(row, col);
-            module.glwe_keyswitch_assign(&mut res_at, a, &mut scratch.borrow());
+            module.glwe_keyswitch_assign(&mut res_at, a, key_size, &mut scratch.borrow());
         }
     }
 }

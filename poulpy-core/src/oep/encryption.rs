@@ -437,7 +437,7 @@ pub unsafe trait EncryptionImpl<BE: Backend>: Backend {
 
 #[doc(hidden)]
 #[allow(private_bounds)]
-pub trait EncryptionDefaults<BE: Backend>:
+pub trait EncryptionDefault<BE: Backend>:
     LWEEncryptSkDefault<BE>
     + GLWEEncryptSkDefault<BE>
     + GLWEEncryptPkDefault<BE>
@@ -467,7 +467,7 @@ where
 
 unsafe impl<BE: Backend> EncryptionImpl<BE> for BE
 where
-    Module<BE>: EncryptionDefaults<BE>,
+    Module<BE>: EncryptionDefault<BE>,
     for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     fn lwe_encrypt_sk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
@@ -1002,13 +1002,13 @@ where
     }
 }
 
-/// Marker opt-in for [`EncryptionDefaults`] on `Module<$be>`.
+/// Marker opt-in for [`EncryptionDefault`] on `Module<$be>`.
 ///
-/// Equivalent to writing `impl EncryptionDefaults<$be> for Module<$be> {}`. The aggregator's
+/// Equivalent to writing `impl EncryptionDefault<$be> for Module<$be> {}`. The aggregator's
 /// supertrait chain auto-derives all 22 encryption sub-defaults from their HAL bounds.
 #[macro_export]
 macro_rules! impl_encryption_defaults_full {
     ($be:ty) => {
-        impl $crate::oep::EncryptionDefaults<$be> for ::poulpy_hal::layouts::Module<$be> {}
+        impl $crate::oep::EncryptionDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
     };
 }
