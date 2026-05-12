@@ -1,13 +1,25 @@
-use poulpy_core::layouts::LWEInfos;
-use poulpy_hal::api::{NegacyclicFFT, ScratchOwnedBorrow};
+use poulpy_core::{
+    layouts::GLWETensorKeyPrepared,
+    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef},
+};
+use poulpy_hal::{
+    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    layouts::{HostBytesBackend, Module},
+};
 
 use crate::{
+    CKKSCtBounds, SetCKKSInfos,
+    encoding::reim::Encoder,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
     leveled::api::{CKKSMulOps, PolynomialEvaluation},
     polynomial::{BSGSPolynomial, Basis, Polynomial, PowerBasis, chebyshev_interpolate},
+    test_suite::CKKSTestParams,
 };
 
-use super::helpers::{TestBackend, TestContext, TestPolynomialEvaluationBackend, TestScalar};
+use super::helpers::{
+    PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_decrypt_precision, ckks_encrypt,
+    ckks_encrypt_with_prec, gen_sk_with_raw, gen_tsk, precision_at, quantized_const, quantized_slots, test_vector_1, upload_pt,
+};
 
 fn scale_add<F: TestScalar>(acc: &mut [F], src: &[F], scale: F) {
     for (a, s) in acc.iter_mut().zip(src.iter()) {
@@ -105,32 +117,75 @@ fn eval_encoded_bsgs_chebyshev<F: TestScalar>(poly: &BSGSPolynomial<CKKSPlaintex
     steps[0].value
 }
 
-fn coeff_pt<BE: TestBackend, F: TestScalar, E: NegacyclicFFT<F>>(
-    ctx: &TestContext<BE, F, E>,
+fn coeff_pt<BE, F>(
+    params: &CKKSTestParams,
+    host_module: &Module<HostBytesBackend>,
+    module: &Module<BE>,
     coeffs: &[F],
-) -> CKKSPlaintext<Vec<u8>> {
-    let mut pt = ctx
-        .host_module
-        .ckks_pt_coeffs_alloc(coeffs.len(), ctx.base2k(), ctx.meta_pt());
+) -> CKKSPlaintext<BE::OwnedBuf>
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+{
+    let mut pt = host_module.ckks_pt_coeffs_alloc(coeffs.len(), params.base2k.into(), PT_PREC);
     pt.encode_host_floats(coeffs).unwrap();
-    pt
+    upload_pt(module, &pt)
 }
 
-// ── Power-basis test ─────────────────────────────────────────────────────────
+fn upload_bsgs<BE>(
+    module: &Module<BE>,
+    poly: &BSGSPolynomial<CKKSPlaintext<Vec<u8>>>,
+) -> BSGSPolynomial<CKKSPlaintext<BE::OwnedBuf>>
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+{
+    BSGSPolynomial {
+        basis: poly.basis,
+        degree: poly.degree,
+        base: poly.base,
+        baby_degrees: poly.baby_degrees.clone(),
+        baby_steps: poly.baby_steps.iter().map(|pt| upload_pt(module, pt)).collect(),
+    }
+}
 
-pub fn test_power_basis_populate_degree7<BE: TestPolynomialEvaluationBackend, F: TestScalar, E: NegacyclicFFT<F>>(
-    ctx: &TestContext<BE, F, E>,
-) {
-    let mut scratch = ctx.alloc_scratch();
-
-    let x_re_raw = ctx.re1.clone();
+pub fn test_power_basis_populate_degree7<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (x_re_raw, _x_im_raw) = test_vector_1::<F>(m);
     let x_im_raw = vec![F::zero(); x_re_raw.len()];
-    let (x_re, _x_im) = ctx.quantized_slots(&x_re_raw, &x_im_raw, ctx.meta());
+    let (x_re, _) = quantized_slots(host_module, &encoder, params.base2k.into(), params.prec, &x_re_raw, &x_im_raw);
 
-    let x_ct = ctx.encrypt(ctx.max_k(), &x_re_raw, &x_im_raw, &mut scratch.borrow());
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+
+    let x_ct = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &x_re_raw,
+        &x_im_raw,
+        &mut scratch.borrow(),
+    );
     let mut power_basis = PowerBasis::new(Basis::Monomial, x_ct);
     power_basis
-        .populate(7, &ctx.module, ctx.tsk(), &mut scratch.borrow())
+        .populate(7, module, &tsk, &mut scratch.borrow())
         .expect("populate power basis for degree 7");
 
     let zero_im = vec![F::zero(); x_re.len()];
@@ -139,9 +194,13 @@ pub fn test_power_basis_populate_degree7<BE: TestPolynomialEvaluationBackend, F:
         let ct = power_basis
             .get_stored(power)
             .unwrap_or_else(|| panic!("missing power-basis entry X^{power}"));
-        ctx.assert_decrypt_precision(
+        assert_decrypt_precision(
             &format!("power_basis_x{power}"),
+            &params,
+            module,
+            &encoder,
             ct,
+            &sk,
             &want_re,
             &zero_im,
             &mut scratch.borrow(),
@@ -149,20 +208,42 @@ pub fn test_power_basis_populate_degree7<BE: TestPolynomialEvaluationBackend, F:
     }
 }
 
-pub fn test_power_basis_populate_chebyshev_degree7<BE: TestPolynomialEvaluationBackend, F: TestScalar, E: NegacyclicFFT<F>>(
-    ctx: &TestContext<BE, F, E>,
-) {
-    let mut scratch = ctx.alloc_scratch();
-
-    let x_re_raw = ctx.re1.clone();
+pub fn test_power_basis_populate_chebyshev_degree7<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (x_re_raw, _x_im_raw) = test_vector_1::<F>(m);
     let x_im_raw = vec![F::zero(); x_re_raw.len()];
-    let (x_re, _x_im) = ctx.quantized_slots(&x_re_raw, &x_im_raw, ctx.meta());
+    let (x_re, _) = quantized_slots(host_module, &encoder, params.base2k.into(), params.prec, &x_re_raw, &x_im_raw);
 
-    let x_ct = ctx.encrypt(ctx.max_k(), &x_re_raw, &x_im_raw, &mut scratch.borrow());
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
 
+    let x_ct = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &x_re_raw,
+        &x_im_raw,
+        &mut scratch.borrow(),
+    );
     let mut power_basis = PowerBasis::new(Basis::Chebyshev, x_ct);
     power_basis
-        .populate_chebyshev(7, &ctx.module, ctx.tsk(), &mut scratch.borrow())
+        .populate_chebyshev(7, module, &tsk, &mut scratch.borrow())
         .expect("populate Chebyshev power basis for degree 7");
 
     let want = chebyshev_values(&x_re, 4);
@@ -171,9 +252,13 @@ pub fn test_power_basis_populate_chebyshev_degree7<BE: TestPolynomialEvaluationB
         let ct = power_basis
             .get_stored(power)
             .unwrap_or_else(|| panic!("missing Chebyshev power-basis entry T_{power}"));
-        ctx.assert_decrypt_precision(
+        assert_decrypt_precision(
             &format!("power_basis_chebyshev_t{power}"),
+            &params,
+            module,
+            &encoder,
             ct,
+            &sk,
             want_re,
             &zero_im,
             &mut scratch.borrow(),
@@ -181,9 +266,15 @@ pub fn test_power_basis_populate_chebyshev_degree7<BE: TestPolynomialEvaluationB
     }
 }
 
-pub fn test_chebyshev_interpolation_quadratic<BE: TestPolynomialEvaluationBackend, F: TestScalar, E: NegacyclicFFT<F>>(
-    _ctx: &TestContext<BE, F, E>,
-) {
+pub fn test_chebyshev_interpolation_quadratic<BE, F, E>(
+    _params: CKKSTestParams,
+    _module: &Module<BE>,
+    _host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    F: TestScalar,
+    E: NegacyclicFFT<F>,
+{
     let zero = F::zero();
     let one = F::one();
     let two = one + one;
@@ -205,26 +296,35 @@ pub fn test_chebyshev_interpolation_quadratic<BE: TestPolynomialEvaluationBacken
     }
 }
 
-// ── Cubic polynomial test ─────────────────────────────────────────────────────
-
-pub fn test_eval_poly_const_coeffs_cubic<BE: TestPolynomialEvaluationBackend, F: TestScalar, E: NegacyclicFFT<F>>(
-    ctx: &TestContext<BE, F, E>,
-) {
-    let mut scratch = ctx.alloc_scratch();
+pub fn test_eval_poly_const_coeffs_cubic<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE> + PolynomialEvaluation<BE>,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
 
     let quarter = F::from_f64(0.25).unwrap();
-    let x_re_raw: Vec<F> = ctx.re1.iter().copied().map(|x| x * quarter).collect();
+    let (re1, _im1) = test_vector_1::<F>(m);
+    let x_re_raw: Vec<F> = re1.iter().copied().map(|x| x * quarter).collect();
     let x_im_raw = vec![F::zero(); x_re_raw.len()];
-    let (x_re, x_im) = ctx.quantized_slots(&x_re_raw, &x_im_raw, ctx.meta());
+    let (x_re, x_im) = quantized_slots(host_module, &encoder, params.base2k.into(), params.prec, &x_re_raw, &x_im_raw);
 
-    let c0 = ctx.quantized_const_pt(0.125, 0.0).0;
-    let c1 = ctx.quantized_const_pt(-0.25, 0.0).0;
-    let c2 = ctx.quantized_const_pt(0.0625, 0.0).0;
-    let c3 = ctx.quantized_const_pt(0.03125, 0.0).0;
+    let c0 = quantized_const::<F>(0.125, 0.0, PT_PREC.log_delta).0;
+    let c1 = quantized_const::<F>(-0.25, 0.0, PT_PREC.log_delta).0;
+    let c2 = quantized_const::<F>(0.0625, 0.0, PT_PREC.log_delta).0;
+    let c3 = quantized_const::<F>(0.03125, 0.0, PT_PREC.log_delta).0;
 
-    // degree 3, base 2: two baby steps of degree 1, stored lowest-first.
-    let low = coeff_pt(ctx, &[c0, c1]);
-    let high = coeff_pt(ctx, &[c2, c3]);
+    let low = coeff_pt(&params, host_module, module, &[c0, c1]);
+    let high = coeff_pt(&params, host_module, module, &[c2, c3]);
     let poly = BSGSPolynomial {
         basis: Basis::Monomial,
         degree: 3,
@@ -233,11 +333,23 @@ pub fn test_eval_poly_const_coeffs_cubic<BE: TestPolynomialEvaluationBackend, F:
         baby_steps: vec![low, high],
     };
 
-    let x = ctx.encrypt(ctx.max_k(), &x_re_raw, &x_im_raw, &mut scratch.borrow());
-    let mut x2 = ctx.alloc_ct(ctx.max_k());
-    ctx.module
-        .ckks_square_into(&mut x2, &x, ctx.tsk(), &mut scratch.borrow())
-        .unwrap();
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+
+    let x = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &x_re_raw,
+        &x_im_raw,
+        &mut scratch.borrow(),
+    );
+    let mut x2 = alloc_ct(&params, module, params.k);
+    module.ckks_square_into(&mut x2, &x, &tsk, &mut scratch.borrow()).unwrap();
 
     let mut power_basis = PowerBasis::new(Basis::Monomial, x);
     power_basis.insert(2, x2);
@@ -250,35 +362,43 @@ pub fn test_eval_poly_const_coeffs_cubic<BE: TestPolynomialEvaluationBackend, F:
     scale_add(&mut want_re, &x2_re, c2);
     scale_add(&mut want_re, &x3_re, c3);
 
-    let mut res = ctx.alloc_ct(ctx.max_k());
-    ctx.module
-        .ckks_eval_poly_const_coeffs::<_, _, CKKSCiphertext<Vec<u8>>, _, _>(
+    let mut res = alloc_ct(&params, module, params.k);
+    module
+        .ckks_eval_poly_const_coeffs::<_, _, CKKSCiphertext<BE::OwnedBuf>, _, _>(
             &mut res,
             &poly,
             &power_basis,
-            ctx.tsk(),
+            &tsk,
             &mut scratch.borrow(),
         )
         .unwrap();
 
-    ctx.assert_decrypt_precision(
+    assert_decrypt_precision(
         "eval_poly_const_coeffs_cubic",
+        &params,
+        module,
+        &encoder,
         &res,
+        &sk,
         &want_re,
         &want_im,
         &mut scratch.borrow(),
     );
 }
 
-// ── Degree-7 exponential polynomial test (matches Lattigo's test) ─────────────
-
-/// Evaluates the degree-7 Taylor approximation of e^x on all slots and checks
-/// precision.  Mirrors the `PolynomialEvaluator/Evaluate/PolySingle/Exp` test
-/// from the Lattigo test suite.
-pub fn test_eval_poly_const_coeffs_exp7<BE: TestPolynomialEvaluationBackend, F: TestScalar, E: NegacyclicFFT<F>>(
-    ctx: &TestContext<BE, F, E>,
-) {
-    // e^x Taylor coefficients: 1, 1, 1/2!, 1/3!, …, 1/7!
+pub fn test_eval_poly_const_coeffs_exp7<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE> + PolynomialEvaluation<BE>,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
     let raw_coeffs: [f64; 8] = [
         1.0,
         1.0,
@@ -290,16 +410,14 @@ pub fn test_eval_poly_const_coeffs_exp7<BE: TestPolynomialEvaluationBackend, F: 
         1.0 / 5040.0,
     ];
 
-    // ctx.re1 values are cosines, so they lie in [-1, 1].
-    let x_re_raw = ctx.re1.clone();
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (x_re_raw, _x_im_raw) = test_vector_1::<F>(m);
     let x_im_raw = vec![F::zero(); x_re_raw.len()];
 
-    // Reference: evaluate the polynomial with the same coefficient precision
-    // used by the encoded BSGS helper.
-    let poly_ref = Polynomial::new(Basis::Monomial, raw_coeffs.to_vec());
     let encoded_coeffs: Vec<F> = raw_coeffs
         .iter()
-        .map(|&c| ctx.quantized_const(c, 0.0, ctx.meta_pt().log_delta).0)
+        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta).0)
         .collect();
     let want_re: Vec<F> = x_re_raw
         .iter()
@@ -307,78 +425,122 @@ pub fn test_eval_poly_const_coeffs_exp7<BE: TestPolynomialEvaluationBackend, F: 
         .collect();
     let want_im = vec![F::zero(); x_re_raw.len()];
 
-    // Encode the BSGS polynomial (degree 7, 2 baby steps of degree 3 each).
-    let bsgs = poly_ref
-        .encode_bsgs(&ctx.host_module, ctx.base2k(), ctx.meta_pt())
+    let poly_ref = Polynomial::new(Basis::Monomial, raw_coeffs.to_vec());
+    let bsgs_host = poly_ref
+        .encode_bsgs(host_module, params.base2k.into(), PT_PREC)
         .expect("encode_bsgs should succeed for degree-7 monomial polynomial");
+    let bsgs = upload_bsgs(module, &bsgs_host);
 
-    let mut scratch = ctx.alloc_scratch();
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
 
-    // Encrypt x.
-    let x_ct = ctx.encrypt(ctx.max_k(), &x_re_raw, &x_im_raw, &mut scratch.borrow());
-
-    // Build power basis: needs X^1, X^2, X^3, X^4.
+    let x_ct = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &x_re_raw,
+        &x_im_raw,
+        &mut scratch.borrow(),
+    );
     let mut pb = PowerBasis::new(Basis::Monomial, x_ct);
-    pb.populate(7, &ctx.module, ctx.tsk(), &mut scratch.borrow())
+    pb.populate(7, module, &tsk, &mut scratch.borrow())
         .expect("populate power basis for degree 7");
 
-    let mut res = ctx.alloc_ct(ctx.max_k());
-    ctx.module
-        .ckks_eval_poly_const_coeffs::<_, _, CKKSCiphertext<Vec<u8>>, _, _>(
+    let mut res = alloc_ct(&params, module, params.k);
+    module
+        .ckks_eval_poly_const_coeffs::<_, _, CKKSCiphertext<BE::OwnedBuf>, _, _>(
             &mut res,
             &bsgs,
             &pb,
-            ctx.tsk(),
+            &tsk,
             &mut scratch.borrow(),
         )
         .expect("ckks_eval_poly_const_coeffs should succeed");
 
-    ctx.assert_decrypt_precision("eval_poly_const_coeffs_exp7", &res, &want_re, &want_im, &mut scratch.borrow());
+    assert_decrypt_precision(
+        "eval_poly_const_coeffs_exp7",
+        &params,
+        module,
+        &encoder,
+        &res,
+        &sk,
+        &want_re,
+        &want_im,
+        &mut scratch.borrow(),
+    );
 }
 
-pub fn test_eval_poly_const_coeffs_chebyshev_degree31<BE: TestPolynomialEvaluationBackend, F: TestScalar, E: NegacyclicFFT<F>>(
-    ctx: &TestContext<BE, F, E>,
-) {
-    let x_re_raw = ctx.re1.clone();
+pub fn test_eval_poly_const_coeffs_chebyshev_degree31<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE> + PolynomialEvaluation<BE>,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (x_re_raw, _x_im_raw) = test_vector_1::<F>(m);
     let x_im_raw = vec![F::zero(); x_re_raw.len()];
-    let input_meta = ctx.precision_at(ctx.meta().log_delta.min(20));
-    let (x_re, _x_im) = ctx.quantized_slots(&x_re_raw, &x_im_raw, input_meta);
+    let input_meta = precision_at(&params, params.prec.log_delta.min(20));
+    let (x_re, _) = quantized_slots(host_module, &encoder, params.base2k.into(), input_meta, &x_re_raw, &x_im_raw);
 
     let poly = chebyshev_interpolate(31, -F::one(), F::one(), |x: F| x.sin())
         .expect("degree-31 Chebyshev interpolation of sin(x) should succeed");
-
-    let bsgs = poly
-        .encode_bsgs(&ctx.host_module, ctx.base2k(), ctx.meta_pt())
+    let bsgs_host = poly
+        .encode_bsgs(host_module, params.base2k.into(), PT_PREC)
         .expect("encode_bsgs should succeed for degree-31 Chebyshev polynomial");
-    let want_re: Vec<F> = x_re.iter().map(|&x| eval_encoded_bsgs_chebyshev(&bsgs, x)).collect();
+    let want_re: Vec<F> = x_re.iter().map(|&x| eval_encoded_bsgs_chebyshev(&bsgs_host, x)).collect();
     let want_im = vec![F::zero(); x_re.len()];
+    let bsgs = upload_bsgs(module, &bsgs_host);
 
-    let mut scratch = ctx.alloc_scratch();
-    let x_ct = ctx.encrypt_with_prec(ctx.max_k(), &x_re_raw, &x_im_raw, input_meta, &mut scratch.borrow());
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
 
-    println!("x_ct.meta: {:?}", x_ct.meta);
-
+    let x_ct = ckks_encrypt_with_prec(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &x_re_raw,
+        &x_im_raw,
+        input_meta,
+        &mut scratch.borrow(),
+    );
     let mut pb = PowerBasis::new(Basis::Chebyshev, x_ct);
-
-    pb.populate_chebyshev(31, &ctx.module, ctx.tsk(), &mut scratch.borrow())
+    pb.populate_chebyshev(31, module, &tsk, &mut scratch.borrow())
         .expect("populate Chebyshev power basis for degree 31");
 
-    let mut res = ctx.alloc_ct(ctx.max_k());
-    ctx.module
-        .ckks_eval_poly_const_coeffs::<_, _, CKKSCiphertext<Vec<u8>>, _, _>(
+    let mut res = alloc_ct(&params, module, params.k);
+    module
+        .ckks_eval_poly_const_coeffs::<_, _, CKKSCiphertext<BE::OwnedBuf>, _, _>(
             &mut res,
             &bsgs,
             &pb,
-            ctx.tsk(),
+            &tsk,
             &mut scratch.borrow(),
         )
         .expect("ckks_eval_poly_const_coeffs should succeed");
 
-    println!("res.meta: {:?}", res.meta);
-
-    ctx.assert_decrypt_precision(
+    assert_decrypt_precision(
         "eval_poly_const_coeffs_chebyshev_degree31",
+        &params,
+        module,
+        &encoder,
         &res,
+        &sk,
         &want_re,
         &want_im,
         &mut scratch.borrow(),

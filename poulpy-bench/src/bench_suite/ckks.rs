@@ -5,8 +5,8 @@ use poulpy_ckks::{
     CKKSMeta,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
     leveled::api::{
-        CKKSAddManyOps, CKKSAddOps, CKKSConjugateOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulManyOps, CKKSMulOps,
-        CKKSMulSubOps, CKKSNegOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
+        CKKSAddManyOps, CKKSAddOps, CKKSConjugateOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps,
+        CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
     },
     oep::CKKSImpl,
 };
@@ -85,7 +85,6 @@ where
         + CKKSRotateOps<Self>
         + CKKSConjugateOps<Self>
         + CKKSAddManyOps<Self>
-        + CKKSMulManyOps<Self>
         + CKKSMulAddOps<Self>
         + CKKSMulSubOps<Self>
         + CKKSDotProductOps<Self>,
@@ -141,7 +140,6 @@ where
         + CKKSRotateOps<BE>
         + CKKSConjugateOps<BE>
         + CKKSAddManyOps<BE>
-        + CKKSMulManyOps<BE>
         + CKKSMulAddOps<BE>
         + CKKSMulSubOps<BE>
         + CKKSDotProductOps<BE>,
@@ -252,7 +250,6 @@ fn setup<BE: CkksBenchBackend>() -> CkksBenchSetup<BE> {
         .max(module.ckks_rotate_tmp_bytes(&ct_a, atks.get(&ROTATION).unwrap()))
         .max(module.ckks_conjugate_tmp_bytes(&ct_a, atks.get(&-1).unwrap()))
         .max(module.ckks_add_many_tmp_bytes())
-        .max(module.ckks_mul_many_tmp_bytes(MANY_TERMS, &ct_a, &tsk))
         .max(module.ckks_mul_add_ct_tmp_bytes(&ct_dst, &tsk))
         .max(module.ckks_mul_sub_ct_tmp_bytes(&ct_dst, &tsk))
         .max(module.ckks_mul_add_pt_vec_tmp_bytes(&ct_dst, &ct_a, &pt))
@@ -540,14 +537,6 @@ pub fn bench_ckks_composite<BE: CkksBenchBackend>(c: &mut Criterion, label: &str
             reset_dst(&mut s.ct_dst);
             s.module
                 .ckks_add_many(&mut s.ct_dst, black_box(many_a.as_slice()), &mut s.scratch.borrow())
-                .unwrap();
-        })
-    });
-    group.bench_function("mul_many_8", |b| {
-        b.iter(|| {
-            reset_dst(&mut s.ct_dst);
-            s.module
-                .ckks_mul_many(&mut s.ct_dst, black_box(many_a.as_slice()), &s.tsk, &mut s.scratch.borrow())
                 .unwrap();
         })
     });

@@ -12,7 +12,6 @@ use crate::{
     api::{BSGSPolynomialInfos, CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSSubOps, PowerBasisHelper},
     checked_mul_ct_log_budget,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
-    oep::{CKKSAddImpl, CKKSCopyImpl, CKKSMulImpl, CKKSSubImpl},
 };
 
 // Re-export so callers can use `polynomial::Basis` without reaching into `api`.
@@ -407,7 +406,7 @@ impl<D: Data> PowerBasis<CKKSCiphertext<D>> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: Backend<OwnedBuf = D> + CKKSMulImpl<BE>,
+        BE: Backend<OwnedBuf = D>,
         Module<BE>: CKKSMulOps<BE> + CKKSModuleAlloc<BE>,
         CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         poulpy_core::layouts::GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -452,7 +451,7 @@ impl<D: Data> PowerBasis<CKKSCiphertext<D>> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: Backend<OwnedBuf = D> + CKKSAddImpl<BE> + CKKSCopyImpl<BE> + CKKSMulImpl<BE> + CKKSSubImpl<BE>,
+        BE: Backend<OwnedBuf = D>,
         Module<BE>: CKKSAddOps<BE> + CKKSCopyOps<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
         CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         poulpy_core::layouts::GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -514,7 +513,7 @@ impl<D: Data> PowerBasis<CKKSCiphertext<D>> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: Backend<OwnedBuf = D> + CKKSMulImpl<BE>,
+        BE: Backend<OwnedBuf = D>,
         Module<BE>: CKKSMulOps<BE> + CKKSModuleAlloc<BE>,
         CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         poulpy_core::layouts::GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -554,7 +553,7 @@ impl<D: Data> PowerBasis<CKKSCiphertext<D>> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: Backend<OwnedBuf = D> + CKKSAddImpl<BE> + CKKSCopyImpl<BE> + CKKSMulImpl<BE> + CKKSSubImpl<BE>,
+        BE: Backend<OwnedBuf = D>,
         Module<BE>: CKKSAddOps<BE> + CKKSCopyOps<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
         CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         poulpy_core::layouts::GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -582,7 +581,7 @@ impl<D: Data> PowerBasis<CKKSCiphertext<D>> {
     }
 }
 
-fn compact_power_ct<M, S, BE: Backend + CKKSCopyImpl<BE>>(
+fn compact_power_ct<M, S, BE: Backend>(
     module: &M,
     src: &S,
     scratch: &mut ScratchArena<'_, BE>,

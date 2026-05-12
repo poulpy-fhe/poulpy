@@ -267,7 +267,7 @@ where
 
         let res_dft_size =
             normalize_input_limb_bound_worst_case(a_size + b_size, res.size(), res.base2k().as_usize(), ab_base2k.as_usize());
-        let lvl_2_cnv_apply: usize = self.cnv_apply_dft_tmp_bytes(res_dft_size, cnv_offset, a_size, b_size);
+        let lvl_2_cnv_apply: usize = self.cnv_apply_dft_tmp_bytes(cnv_offset, res_dft_size, a_size, b_size);
 
         let lvl_2_res_dft: usize = self.bytes_of_vec_znx_dft(1, res_dft_size);
         let lvl_2_res_tmp: usize = self.bytes_of_vec_znx_big(1, res_dft_size) + VecZnx::bytes_of(self.n(), 1, res.size());
@@ -596,7 +596,7 @@ where
         let lvl_1: usize = self.cnv_prepare_self_tmp_bytes(a_size, a_size);
         let diag_dft_size =
             normalize_input_limb_bound_worst_case(2 * a_size, res_size, res.base2k().as_usize(), a.base2k().as_usize());
-        let lvl_2_apply: usize = self.cnv_apply_dft_tmp_bytes(diag_dft_size, cnv_offset, a_size, a_size);
+        let lvl_2_apply: usize = self.cnv_apply_dft_tmp_bytes(cnv_offset, diag_dft_size, a_size, a_size);
         let pairwise_dft_size =
             normalize_input_limb_bound_worst_case(2 * a_size, res_size, res.base2k().as_usize(), a.base2k().as_usize());
         let lvl_2_pairwise: usize = self.cnv_pairwise_apply_dft_tmp_bytes(cnv_offset, pairwise_dft_size, a_size, a_size);
@@ -640,7 +640,7 @@ where
             .max(self.cnv_prepare_right_tmp_bytes(b_size, b_size));
         let diag_dft_size =
             normalize_input_limb_bound_worst_case(a_size + b_size, res_size, res.base2k().as_usize(), ab_base2k.as_usize());
-        let lvl_2_apply: usize = self.cnv_apply_dft_tmp_bytes(diag_dft_size, cnv_offset, a_size, b_size);
+        let lvl_2_apply: usize = self.cnv_apply_dft_tmp_bytes(cnv_offset, diag_dft_size, a_size, b_size);
         let pairwise_dft_size =
             normalize_input_limb_bound_worst_case(a_size + b_size, res_size, res.base2k().as_usize(), ab_base2k.as_usize());
         let lvl_2_pairwise: usize = self.cnv_pairwise_apply_dft_tmp_bytes(cnv_offset, pairwise_dft_size, a_size, b_size);

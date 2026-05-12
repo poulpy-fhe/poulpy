@@ -15,7 +15,7 @@ mod sub;
 mod tmp_bytes;
 
 pub use add::{CKKSAddOps, CKKSAddOpsUnnormalized};
-pub use composite::{CKKSAddManyOps, CKKSAffineOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulManyOps, CKKSMulSubOps};
+pub use composite::{CKKSAddManyOps, CKKSAffineOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulSubOps};
 pub use conjugate::CKKSConjugateOps;
 pub use copy::CKKSCopyOps;
 pub use encryption::{CKKSDecrypt, CKKSEncrypt};

@@ -1,114 +1,231 @@
 //! Subtraction tests: ct-ct, ct-pt, ct-const (out-of-place and in-place).
-//!
-//! # Test inventory
-//!
-//! ## Operations-layer ct-ct (`GLWE<_, CKKS>::sub`)
-//!
-//! | Function | Path exercised |
-//! |----------|----------------|
-//! | [`test_sub_ct_aligned`] | `a.log_budget() == b.log_budget()`, `offset == 0` → `glwe_sub` fast path |
-//! | [`test_sub_ct_delta_a_lt_b`] | `a.log_budget() < b.log_budget()` → b shifted to align with a |
-//! | [`test_sub_ct_delta_a_gt_b`] | `a.log_budget() > b.log_budget()` → a shifted to align with b |
-//! | [`test_sub_ct_smaller_output`] | `offset > 0` (output one limb narrower than inputs) |
-//!
-//! ## Operations-layer ct-ct (`GLWE<_, CKKS>::sub_assign`)
-//!
-//! | Function | Path exercised |
-//! |----------|----------------|
-//! | [`test_sub_ct_assign_aligned`] | `self.log_budget() == a.log_budget()` |
-//! | [`test_sub_ct_assign_self_lt`] | `self.log_budget() < a.log_budget()` → a shifted to align with self |
-//! | [`test_sub_ct_assign_self_gt`] | `self.log_budget() > a.log_budget()` → self shifted to align with a |
-//!
-//! ## Operations-layer ct - ZNX plaintext (`GLWE<_, CKKS>::sub_pt_vec_into[_assign]`)
-//!
-//! | Function | Path exercised |
-//! |----------|----------------|
-//! | [`test_sub_pt_vec_assign`] | in-place, `offset == 0` |
-//! | [`test_sub_pt_vec`] | out-of-place, `offset == 0` |
-//! | [`test_sub_pt_vec_into_smaller_output`] | out-of-place, `offset > 0` (output one limb narrower) |
+
 use crate::{CKKSInfos, leveled::api::CKKSSubOps};
 
 use super::helpers::{
-    TestContext, TestScalar, TestSubBackend as Backend, TestVector, assert_binary_output_meta, assert_ct_meta,
-    assert_unary_output_meta,
+    ADD_SUB_CONST, PT_PREC, TestContextBackend, TestContextModule, TestScalar, TestVector, add_sub_const_pt, alloc_ct,
+    alloc_scratch, assert_binary_output_meta, assert_ct_meta, assert_decrypt_precision, assert_decrypt_precision_at_log_delta,
+    assert_unary_output_meta, ckks_encrypt, ckks_encrypt_with_prec, encode_and_upload_pt, gen_sk, precision_at, quantize,
+    quantized_const, quantized_vector, test_vector_1, test_vector_2, want_sub,
 };
-use poulpy_hal::api::NegacyclicFFT;
-use poulpy_hal::api::ScratchOwnedBorrow;
+use poulpy_hal::{
+    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    layouts::{HostBytesBackend, Module},
+};
+
+use crate::{encoding::reim::Encoder, test_suite::CKKSTestParams};
 
 const DELTA_LOG_DELTA: usize = 12;
 
-// ─── ct-ct out-of-place (GLWE<_, CKKS>::sub) ────────────────────────────────
+pub fn test_sub_ct_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let (re2, im2) = test_vector_2::<F>(m);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
 
-/// ct-ct out-of-place, aligned (same log_budget, offset == 0 → glwe_sub fast path).
-pub fn test_sub_ct_aligned<BE: Backend, F: TestScalar, E: NegacyclicFFT<F>>(ctx: &TestContext<BE, F, E>) {
-    let mut scratch = ctx.alloc_scratch();
-    let ct1 = ctx.encrypt(ctx.max_k(), &ctx.re1, &ctx.im1, &mut scratch.borrow());
-    let ct2 = ctx.encrypt(ctx.max_k(), &ctx.re2, &ctx.im2, &mut scratch.borrow());
-    let (want_re, want_im) = ctx.want_sub();
-    let mut ct_res = ctx.alloc_ct(ctx.max_k());
-    ctx.module
-        .ckks_sub_into(&mut ct_res, &ct1, &ct2, &mut scratch.borrow())
-        .unwrap();
+    let ct1 = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re1,
+        &im1,
+        &mut scratch.borrow(),
+    );
+    let ct2 = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re2,
+        &im2,
+        &mut scratch.borrow(),
+    );
+    let (want_re, want_im) = want_sub(&re1, &im1, &re2, &im2);
+    let mut ct_res = alloc_ct(&params, module, params.k);
+    module.ckks_sub_into(&mut ct_res, &ct1, &ct2, &mut scratch.borrow()).unwrap();
     assert_binary_output_meta("sub_ct_aligned", &ct_res, &ct1, &ct2);
-    ctx.assert_decrypt_precision("sub_ct_aligned", &ct_res, &want_re, &want_im, &mut scratch.borrow());
-}
-
-/// ct-ct out-of-place, a.log_budget() < b.log_budget() (b is shifted to align with a).
-pub fn test_sub_ct_delta_a_lt_b<BE: Backend, F: TestScalar, E: NegacyclicFFT<F>>(ctx: &TestContext<BE, F, E>) {
-    let mut scratch = ctx.alloc_scratch();
-    let ct1 = ctx.encrypt(
-        ctx.max_k() - ctx.base2k().as_usize() + 1,
-        &ctx.re1,
-        &ctx.im1,
-        &mut scratch.borrow(),
-    );
-    let ct2 = ctx.encrypt(ctx.max_k(), &ctx.re2, &ctx.im2, &mut scratch.borrow());
-    let (want_re, want_im) = ctx.want_sub();
-    let mut ct_res = ctx.alloc_ct(ctx.max_k());
-    ctx.module
-        .ckks_sub_into(&mut ct_res, &ct1, &ct2, &mut scratch.borrow())
-        .unwrap();
-    assert_binary_output_meta("sub_ct a_lt_b", &ct_res, &ct1, &ct2);
-    ctx.assert_decrypt_precision("sub_ct a_lt_b", &ct_res, &want_re, &want_im, &mut scratch.borrow());
-}
-
-/// ct-ct out-of-place, a.log_budget() > b.log_budget() (a is shifted to align with b).
-pub fn test_sub_ct_delta_a_gt_b<BE: Backend, F: TestScalar, E: NegacyclicFFT<F>>(ctx: &TestContext<BE, F, E>) {
-    let mut scratch = ctx.alloc_scratch();
-    let ct1 = ctx.encrypt(ctx.max_k(), &ctx.re1, &ctx.im1, &mut scratch.borrow());
-    let ct2 = ctx.encrypt(
-        ctx.max_k() - ctx.base2k().as_usize() + 1,
-        &ctx.re2,
-        &ctx.im2,
-        &mut scratch.borrow(),
-    );
-    let (want_re, want_im) = ctx.want_sub();
-    let mut ct_res = ctx.alloc_ct(ctx.max_k());
-    ctx.module
-        .ckks_sub_into(&mut ct_res, &ct1, &ct2, &mut scratch.borrow())
-        .unwrap();
-    assert_binary_output_meta("sub_ct a_gt_b", &ct_res, &ct1, &ct2);
-    ctx.assert_decrypt_precision("sub_ct a_gt_b", &ct_res, &want_re, &want_im, &mut scratch.borrow());
-}
-
-/// ct-ct out-of-place with aligned homomorphic capacity but different log_delta.
-pub fn test_sub_ct_delta_log_delta<BE: Backend, F: TestScalar, E: NegacyclicFFT<F>>(ctx: &TestContext<BE, F, E>) {
-    let mut scratch = ctx.alloc_scratch();
-    let low_log_delta = ctx.meta().log_delta - DELTA_LOG_DELTA;
-    let low_prec = ctx.precision_at(low_log_delta);
-    let (a_re, a_im) = ctx.quantized_vector(TestVector::First, ctx.meta().log_delta);
-    let (b_re, b_im) = ctx.quantized_vector(TestVector::Second, low_log_delta);
-    let ct1 = ctx.encrypt(ctx.max_k(), &a_re, &a_im, &mut scratch.borrow());
-    let ct2 = ctx.encrypt_with_prec(ctx.max_k() - DELTA_LOG_DELTA, &b_re, &b_im, low_prec, &mut scratch.borrow());
-    let (want_re, want_im) = ctx.want_sub_from(&a_re, &a_im, &b_re, &b_im);
-    let mut ct_res = ctx.alloc_ct(ctx.max_k());
-    ctx.module
-        .ckks_sub_into(&mut ct_res, &ct1, &ct2, &mut scratch.borrow())
-        .unwrap();
-    assert_binary_output_meta("sub_ct delta_log_delta", &ct_res, &ct1, &ct2);
-    ctx.assert_decrypt_precision_at_log_delta(
-        "sub_ct delta_log_delta",
+    assert_decrypt_precision(
+        "sub_ct_aligned",
+        &params,
+        module,
+        &encoder,
         &ct_res,
+        &sk,
+        &want_re,
+        &want_im,
+        &mut scratch.borrow(),
+    );
+}
+
+pub fn test_sub_ct_delta_a_lt_b<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let (re2, im2) = test_vector_2::<F>(m);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    let ct1 = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k - params.base2k + 1,
+        &re1,
+        &im1,
+        &mut scratch.borrow(),
+    );
+    let ct2 = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re2,
+        &im2,
+        &mut scratch.borrow(),
+    );
+    let (want_re, want_im) = want_sub(&re1, &im1, &re2, &im2);
+    let mut ct_res = alloc_ct(&params, module, params.k);
+    module.ckks_sub_into(&mut ct_res, &ct1, &ct2, &mut scratch.borrow()).unwrap();
+    assert_binary_output_meta("sub_ct a_lt_b", &ct_res, &ct1, &ct2);
+    assert_decrypt_precision(
+        "sub_ct a_lt_b",
+        &params,
+        module,
+        &encoder,
+        &ct_res,
+        &sk,
+        &want_re,
+        &want_im,
+        &mut scratch.borrow(),
+    );
+}
+
+pub fn test_sub_ct_delta_a_gt_b<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let (re2, im2) = test_vector_2::<F>(m);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    let ct1 = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re1,
+        &im1,
+        &mut scratch.borrow(),
+    );
+    let ct2 = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k - params.base2k + 1,
+        &re2,
+        &im2,
+        &mut scratch.borrow(),
+    );
+    let (want_re, want_im) = want_sub(&re1, &im1, &re2, &im2);
+    let mut ct_res = alloc_ct(&params, module, params.k);
+    module.ckks_sub_into(&mut ct_res, &ct1, &ct2, &mut scratch.borrow()).unwrap();
+    assert_binary_output_meta("sub_ct a_gt_b", &ct_res, &ct1, &ct2);
+    assert_decrypt_precision(
+        "sub_ct a_gt_b",
+        &params,
+        module,
+        &encoder,
+        &ct_res,
+        &sk,
+        &want_re,
+        &want_im,
+        &mut scratch.borrow(),
+    );
+}
+
+pub fn test_sub_ct_delta_log_delta<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    let low_log_delta = params.prec.log_delta - DELTA_LOG_DELTA;
+    let low_prec = precision_at(&params, low_log_delta);
+    let (a_re, a_im) = quantized_vector(host_module, &encoder, &params, TestVector::First, params.prec.log_delta);
+    let (b_re, b_im) = quantized_vector(host_module, &encoder, &params, TestVector::Second, low_log_delta);
+    let ct1 = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &a_re,
+        &a_im,
+        &mut scratch.borrow(),
+    );
+    let ct2 = ckks_encrypt_with_prec(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k - DELTA_LOG_DELTA,
+        &b_re,
+        &b_im,
+        low_prec,
+        &mut scratch.borrow(),
+    );
+    let (want_re, want_im) = want_sub(&a_re, &a_im, &b_re, &b_im);
+    let mut ct_res = alloc_ct(&params, module, params.k);
+    module.ckks_sub_into(&mut ct_res, &ct1, &ct2, &mut scratch.borrow()).unwrap();
+    assert_binary_output_meta("sub_ct delta_log_delta", &ct_res, &ct1, &ct2);
+    assert_decrypt_precision_at_log_delta(
+        "sub_ct delta_log_delta",
+        &params,
+        module,
+        &encoder,
+        &ct_res,
+        &sk,
         &want_re,
         &want_im,
         low_log_delta,
@@ -116,194 +233,522 @@ pub fn test_sub_ct_delta_log_delta<BE: Backend, F: TestScalar, E: NegacyclicFFT<
     );
 }
 
-/// ct-ct out-of-place, output buffer has smaller max_k than inputs (offset > 0).
-///
-/// Both inputs are at the same log_budget.  The output is one limb narrower,
-/// so both inputs are shifted by one limb before subtraction to fit.
-/// Expected result log_budget = input log_budget − base2k.
-pub fn test_sub_ct_smaller_output<BE: Backend, F: TestScalar, E: NegacyclicFFT<F>>(ctx: &TestContext<BE, F, E>) {
-    let mut scratch = ctx.alloc_scratch();
-    let ct1 = ctx.encrypt(ctx.max_k(), &ctx.re1, &ctx.im1, &mut scratch.borrow());
-    let ct2 = ctx.encrypt(ctx.max_k(), &ctx.re2, &ctx.im2, &mut scratch.borrow());
-    let (want_re, want_im) = ctx.want_sub();
-    let mut ct_res = ctx.alloc_ct(ctx.max_k() - ctx.base2k().as_usize() - 1);
-    ctx.module
-        .ckks_sub_into(&mut ct_res, &ct1, &ct2, &mut scratch.borrow())
-        .unwrap();
-    assert_binary_output_meta("sub_ct smaller_output", &ct_res, &ct1, &ct2);
-    ctx.assert_decrypt_precision("sub_ct smaller_output", &ct_res, &want_re, &want_im, &mut scratch.borrow());
-}
+pub fn test_sub_ct_smaller_output<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let (re2, im2) = test_vector_2::<F>(m);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
 
-// ─── ct-ct in-place (GLWE<_, CKKS>::sub_assign) ────────────────────────────
-
-/// ct-ct in-place, aligned (same log_budget).
-pub fn test_sub_ct_assign_aligned<BE: Backend, F: TestScalar, E: NegacyclicFFT<F>>(ctx: &TestContext<BE, F, E>) {
-    let mut scratch = ctx.alloc_scratch();
-    let mut ct1 = ctx.encrypt(ctx.max_k(), &ctx.re1, &ctx.im1, &mut scratch.borrow());
-    let ct2 = ctx.encrypt(ctx.max_k(), &ctx.re2, &ctx.im2, &mut scratch.borrow());
-    let (want_re, want_im) = ctx.want_sub();
-    let expected_log_budget = ct1.log_budget().min(ct2.log_budget());
-    let expected_log_delta = ct1.log_delta().max(ct2.log_delta());
-    ctx.module.ckks_sub_assign(&mut ct1, &ct2, &mut scratch.borrow()).unwrap();
-    assert_ct_meta("sub_ct_assign_aligned", &ct1, expected_log_delta, expected_log_budget);
-    ctx.assert_decrypt_precision("sub_ct_assign_aligned", &ct1, &want_re, &want_im, &mut scratch.borrow());
-}
-
-/// ct-ct in-place, self.log_budget() < a.log_budget() (a is shifted down to align with self).
-pub fn test_sub_ct_assign_self_lt<BE: Backend, F: TestScalar, E: NegacyclicFFT<F>>(ctx: &TestContext<BE, F, E>) {
-    let mut scratch = ctx.alloc_scratch();
-    let mut ct_self = ctx.encrypt(
-        ctx.max_k() - ctx.base2k().as_usize() - 1,
-        &ctx.re1,
-        &ctx.im1,
+    let ct1 = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re1,
+        &im1,
         &mut scratch.borrow(),
     );
-    let ct_other = ctx.encrypt(ctx.max_k(), &ctx.re2, &ctx.im2, &mut scratch.borrow());
-    let (want_re, want_im) = ctx.want_sub();
+    let ct2 = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re2,
+        &im2,
+        &mut scratch.borrow(),
+    );
+    let (want_re, want_im) = want_sub(&re1, &im1, &re2, &im2);
+    let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
+    module.ckks_sub_into(&mut ct_res, &ct1, &ct2, &mut scratch.borrow()).unwrap();
+    assert_binary_output_meta("sub_ct smaller_output", &ct_res, &ct1, &ct2);
+    assert_decrypt_precision(
+        "sub_ct smaller_output",
+        &params,
+        module,
+        &encoder,
+        &ct_res,
+        &sk,
+        &want_re,
+        &want_im,
+        &mut scratch.borrow(),
+    );
+}
+
+pub fn test_sub_ct_assign_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let (re2, im2) = test_vector_2::<F>(m);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    let mut ct1 = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re1,
+        &im1,
+        &mut scratch.borrow(),
+    );
+    let ct2 = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re2,
+        &im2,
+        &mut scratch.borrow(),
+    );
+    let (want_re, want_im) = want_sub(&re1, &im1, &re2, &im2);
+    let expected_log_budget = ct1.log_budget().min(ct2.log_budget());
+    let expected_log_delta = ct1.log_delta().max(ct2.log_delta());
+    module.ckks_sub_assign(&mut ct1, &ct2, &mut scratch.borrow()).unwrap();
+    assert_ct_meta("sub_ct_assign_aligned", &ct1, expected_log_delta, expected_log_budget);
+    assert_decrypt_precision(
+        "sub_ct_assign_aligned",
+        &params,
+        module,
+        &encoder,
+        &ct1,
+        &sk,
+        &want_re,
+        &want_im,
+        &mut scratch.borrow(),
+    );
+}
+
+pub fn test_sub_ct_assign_self_lt<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let (re2, im2) = test_vector_2::<F>(m);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    let mut ct_self = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k - params.base2k - 1,
+        &re1,
+        &im1,
+        &mut scratch.borrow(),
+    );
+    let ct_other = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re2,
+        &im2,
+        &mut scratch.borrow(),
+    );
+    let (want_re, want_im) = want_sub(&re1, &im1, &re2, &im2);
     let expected_log_budget = ct_self.log_budget().min(ct_other.log_budget());
     let expected_log_delta = ct_self.log_delta().max(ct_other.log_delta());
-    ctx.module
+    module
         .ckks_sub_assign(&mut ct_self, &ct_other, &mut scratch.borrow())
         .unwrap();
     assert_ct_meta("sub_ct_assign self_lt", &ct_self, expected_log_delta, expected_log_budget);
-    ctx.assert_decrypt_precision("sub_ct_assign self_lt", &ct_self, &want_re, &want_im, &mut scratch.borrow());
-}
-
-/// ct-ct in-place, self.log_budget() > a.log_budget() (self is shifted down to align with a).
-pub fn test_sub_ct_assign_self_gt<BE: Backend, F: TestScalar, E: NegacyclicFFT<F>>(ctx: &TestContext<BE, F, E>) {
-    let mut scratch = ctx.alloc_scratch();
-    let mut ct_self = ctx.encrypt(ctx.max_k(), &ctx.re1, &ctx.im1, &mut scratch.borrow());
-    let ct_other = ctx.encrypt(
-        ctx.max_k() - ctx.base2k().as_usize() - 1,
-        &ctx.re2,
-        &ctx.im2,
+    assert_decrypt_precision(
+        "sub_ct_assign self_lt",
+        &params,
+        module,
+        &encoder,
+        &ct_self,
+        &sk,
+        &want_re,
+        &want_im,
         &mut scratch.borrow(),
     );
-    let (want_re, want_im) = ctx.want_sub();
+}
+
+pub fn test_sub_ct_assign_self_gt<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let (re2, im2) = test_vector_2::<F>(m);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    let mut ct_self = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re1,
+        &im1,
+        &mut scratch.borrow(),
+    );
+    let ct_other = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k - params.base2k - 1,
+        &re2,
+        &im2,
+        &mut scratch.borrow(),
+    );
+    let (want_re, want_im) = want_sub(&re1, &im1, &re2, &im2);
     let expected_log_budget = ct_self.log_budget().min(ct_other.log_budget());
     let expected_log_delta = ct_self.log_delta().max(ct_other.log_delta());
-    ctx.module
+    module
         .ckks_sub_assign(&mut ct_self, &ct_other, &mut scratch.borrow())
         .unwrap();
     assert_ct_meta("sub_ct_assign self_gt", &ct_self, expected_log_delta, expected_log_budget);
-    ctx.assert_decrypt_precision("sub_ct_assign self_gt", &ct_self, &want_re, &want_im, &mut scratch.borrow());
+    assert_decrypt_precision(
+        "sub_ct_assign self_gt",
+        &params,
+        module,
+        &encoder,
+        &ct_self,
+        &sk,
+        &want_re,
+        &want_im,
+        &mut scratch.borrow(),
+    );
 }
 
-// ─── ct - compact ZNX plaintext (GLWE<_, CKKS>::sub_pt_vec_into[_assign]) ────────
+pub fn test_sub_pt_vec_assign<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let (re2, im2) = test_vector_2::<F>(m);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
 
-/// ct - ZNX plaintext, in-place.
-pub fn test_sub_pt_vec_assign<BE: Backend, F: TestScalar, E: NegacyclicFFT<F>>(ctx: &TestContext<BE, F, E>) {
-    let mut scratch = ctx.alloc_scratch();
-    let mut ct = ctx.encrypt(ctx.max_k(), &ctx.re1, &ctx.im1, &mut scratch.borrow());
-    let (pt_re, pt_im) = ctx.pt_vector(TestVector::Second);
-    let pt = ctx.encode_pt(&ctx.re2, &ctx.im2);
-    let (want_re, want_im) = ctx.want_sub_from(&ctx.re1, &ctx.im1, &pt_re, &pt_im);
+    let mut ct = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re1,
+        &im1,
+        &mut scratch.borrow(),
+    );
+    let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), params.prec, &re2, &im2);
+    let (want_re, want_im) = want_sub(
+        &re1,
+        &im1,
+        &quantize(&re2, params.prec.log_delta),
+        &quantize(&im2, params.prec.log_delta),
+    );
     let expected_log_delta = ct.log_delta();
     let expected_log_budget = ct.log_budget();
-    ctx.module
-        .ckks_sub_pt_vec_assign(&mut ct, &pt, &mut scratch.borrow())
-        .unwrap();
+    module.ckks_sub_pt_vec_assign(&mut ct, &pt, &mut scratch.borrow()).unwrap();
     assert_ct_meta("sub_pt_vec_assign", &ct, expected_log_delta, expected_log_budget);
-    ctx.assert_decrypt_precision("sub_pt_vec_assign", &ct, &want_re, &want_im, &mut scratch.borrow());
+    assert_decrypt_precision(
+        "sub_pt_vec_assign",
+        &params,
+        module,
+        &encoder,
+        &ct,
+        &sk,
+        &want_re,
+        &want_im,
+        &mut scratch.borrow(),
+    );
 }
 
-/// ct - ZNX plaintext, out-of-place.
-pub fn test_sub_pt_vec<BE: Backend, F: TestScalar, E: NegacyclicFFT<F>>(ctx: &TestContext<BE, F, E>) {
-    let mut scratch = ctx.alloc_scratch();
-    let ct1 = ctx.encrypt(ctx.max_k(), &ctx.re1, &ctx.im1, &mut scratch.borrow());
-    let (pt_re, pt_im) = ctx.pt_vector(TestVector::Second);
-    let pt = ctx.encode_pt(&ctx.re2, &ctx.im2);
-    let (want_re, want_im) = ctx.want_sub_from(&ctx.re1, &ctx.im1, &pt_re, &pt_im);
-    let mut ct_res = ctx.alloc_ct(ctx.max_k());
-    ctx.module
+pub fn test_sub_pt_vec<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let (re2, im2) = test_vector_2::<F>(m);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    let ct1 = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re1,
+        &im1,
+        &mut scratch.borrow(),
+    );
+    let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), params.prec, &re2, &im2);
+    let (want_re, want_im) = want_sub(
+        &re1,
+        &im1,
+        &quantize(&re2, params.prec.log_delta),
+        &quantize(&im2, params.prec.log_delta),
+    );
+    let mut ct_res = alloc_ct(&params, module, params.k);
+    module
         .ckks_sub_pt_vec_into(&mut ct_res, &ct1, &pt, &mut scratch.borrow())
         .unwrap();
     assert_unary_output_meta("sub_pt_vec_into", &ct_res, &ct1);
-    ctx.assert_decrypt_precision("sub_pt_vec_into", &ct_res, &want_re, &want_im, &mut scratch.borrow());
+    assert_decrypt_precision(
+        "sub_pt_vec_into",
+        &params,
+        module,
+        &encoder,
+        &ct_res,
+        &sk,
+        &want_re,
+        &want_im,
+        &mut scratch.borrow(),
+    );
 }
 
-/// ct - ZNX plaintext, out-of-place, plaintext encoded at lower decimal precision.
-pub fn test_sub_pt_vec_into_delta_log_delta<BE: Backend, F: TestScalar, E: NegacyclicFFT<F>>(ctx: &TestContext<BE, F, E>) {
-    let mut scratch = ctx.alloc_scratch();
-    let pt_prec = ctx.meta_pt();
-    let (a_re, a_im) = ctx.quantized_vector(TestVector::First, ctx.meta().log_delta);
-    let (b_re, b_im) = ctx.pt_vector(TestVector::Second);
-    let ct1 = ctx.encrypt(ctx.max_k(), &a_re, &a_im, &mut scratch.borrow());
-    let pt = ctx.encode_pt_with_prec(&ctx.re2, &ctx.im2, pt_prec);
-    let (want_re, want_im) = ctx.want_sub_from(&a_re, &a_im, &b_re, &b_im);
-    let mut ct_res = ctx.alloc_ct(ctx.max_k());
-    ctx.module
+pub fn test_sub_pt_vec_into_delta_log_delta<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (re2, im2) = test_vector_2::<F>(m);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    let (a_re, a_im) = quantized_vector(host_module, &encoder, &params, TestVector::First, params.prec.log_delta);
+    let ct1 = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &a_re,
+        &a_im,
+        &mut scratch.borrow(),
+    );
+    let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), PT_PREC, &re2, &im2);
+    let (want_re, want_im) = want_sub(
+        &a_re,
+        &a_im,
+        &quantize(&re2, PT_PREC.log_delta),
+        &quantize(&im2, PT_PREC.log_delta),
+    );
+    let mut ct_res = alloc_ct(&params, module, params.k);
+    module
         .ckks_sub_pt_vec_into(&mut ct_res, &ct1, &pt, &mut scratch.borrow())
         .unwrap();
     assert_unary_output_meta("sub_pt_vec_into delta_log_delta", &ct_res, &ct1);
-    ctx.assert_decrypt_precision_at_log_delta(
+    assert_decrypt_precision_at_log_delta(
         "sub_pt_vec_into delta_log_delta",
+        &params,
+        module,
+        &encoder,
         &ct_res,
+        &sk,
         &want_re,
         &want_im,
-        pt_prec.log_delta(),
+        PT_PREC.log_delta,
         &mut scratch.borrow(),
     );
 }
 
-/// ct - ZNX plaintext, out-of-place, output buffer has smaller max_k than `a` (offset > 0).
-///
-/// Exercises the lsh-then-sub path in `sub_pt_vec_into`.  The output log_budget must
-/// equal `a.log_budget() − base2k`, not the original `a.log_budget()`.
-pub fn test_sub_pt_vec_into_smaller_output<BE: Backend, F: TestScalar, E: NegacyclicFFT<F>>(ctx: &TestContext<BE, F, E>) {
-    let mut scratch = ctx.alloc_scratch();
-    let ct1 = ctx.encrypt(ctx.max_k(), &ctx.re1, &ctx.im1, &mut scratch.borrow());
-    let (pt_re, pt_im) = ctx.pt_vector(TestVector::Second);
-    let pt = ctx.encode_pt(&ctx.re2, &ctx.im2);
-    let (want_re, want_im) = ctx.want_sub_from(&ctx.re1, &ctx.im1, &pt_re, &pt_im);
-    let mut ct_res = ctx.alloc_ct(ctx.max_k() - ctx.base2k().as_usize() - 1);
-    ctx.module
+pub fn test_sub_pt_vec_into_smaller_output<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let (re2, im2) = test_vector_2::<F>(m);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    let ct1 = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re1,
+        &im1,
+        &mut scratch.borrow(),
+    );
+    let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), params.prec, &re2, &im2);
+    let (want_re, want_im) = want_sub(
+        &re1,
+        &im1,
+        &quantize(&re2, params.prec.log_delta),
+        &quantize(&im2, params.prec.log_delta),
+    );
+    let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
+    module
         .ckks_sub_pt_vec_into(&mut ct_res, &ct1, &pt, &mut scratch.borrow())
         .unwrap();
     assert_unary_output_meta("sub_pt_vec_into smaller_output", &ct_res, &ct1);
-    ctx.assert_decrypt_precision(
+    assert_decrypt_precision(
         "sub_pt_vec_into smaller_output",
+        &params,
+        module,
+        &encoder,
         &ct_res,
+        &sk,
         &want_re,
         &want_im,
         &mut scratch.borrow(),
     );
 }
 
-pub fn test_sub_pt_const_into_aligned<BE: Backend, F: TestScalar, E: NegacyclicFFT<F>>(ctx: &TestContext<BE, F, E>) {
-    let mut scratch = ctx.alloc_scratch();
-    let ct = ctx.encrypt(ctx.max_k(), &ctx.re1, &ctx.im1, &mut scratch.borrow());
-    let (const_re, const_im) = ctx.add_sub_const();
-    let want_re: Vec<F> = ctx.re1.iter().map(|x| *x - const_re).collect();
-    let want_im: Vec<F> = ctx.im1.iter().map(|x| *x - const_im).collect();
-    let mut ct_res = ctx.alloc_ct(ctx.max_k());
-    let cst = ctx.add_sub_const_pt();
-    ctx.module
+pub fn test_sub_pt_const_into_aligned<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    let ct = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re1,
+        &im1,
+        &mut scratch.borrow(),
+    );
+    let (const_re, const_im) = quantized_const::<F>(ADD_SUB_CONST.0, ADD_SUB_CONST.1, PT_PREC.log_delta);
+    let want_re: Vec<F> = re1.iter().map(|x| *x - const_re).collect();
+    let want_im: Vec<F> = im1.iter().map(|x| *x - const_im).collect();
+    let mut ct_res = alloc_ct(&params, module, params.k);
+    let cst = add_sub_const_pt::<BE, F>(host_module, module, params.base2k.into());
+    module
         .ckks_sub_pt_const_into(&mut ct_res, &ct, 0, &cst, 0, &mut scratch.borrow())
         .unwrap();
-    ctx.module
-        .ckks_sub_pt_const_assign(&mut ct_res, ctx.m(), &cst, 1, &mut scratch.borrow())
+    module
+        .ckks_sub_pt_const_assign(&mut ct_res, m, &cst, 1, &mut scratch.borrow())
         .unwrap();
     assert_unary_output_meta("sub_pt_const_into_aligned", &ct_res, &ct);
-    ctx.assert_decrypt_precision(
+    assert_decrypt_precision(
         "sub_pt_const_into_aligned",
+        &params,
+        module,
+        &encoder,
         &ct_res,
+        &sk,
         &want_re,
         &want_im,
         &mut scratch.borrow(),
     );
 }
 
-pub fn test_sub_one_assign<BE: Backend, F: TestScalar, E: NegacyclicFFT<F>>(ctx: &TestContext<BE, F, E>) {
-    let mut scratch = ctx.alloc_scratch();
-    let mut ct = ctx.encrypt(ctx.max_k(), &ctx.re1, &ctx.im1, &mut scratch.borrow());
-    let want_re: Vec<F> = ctx.re1.iter().map(|x| *x - F::one()).collect();
-    let want_im = ctx.im1.clone();
+pub fn test_sub_one_assign<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    let mut ct = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re1,
+        &im1,
+        &mut scratch.borrow(),
+    );
+    let want_re: Vec<F> = re1.iter().map(|x| *x - F::one()).collect();
+    let want_im = im1.clone();
     let expected_log_delta = ct.log_delta();
     let expected_log_budget = ct.log_budget();
-
-    ctx.module.ckks_sub_one_assign(&mut ct, &mut scratch.borrow()).unwrap();
-
+    module.ckks_sub_one_assign(&mut ct, &mut scratch.borrow()).unwrap();
     assert_ct_meta("sub_one_assign", &ct, expected_log_delta, expected_log_budget);
-    ctx.assert_decrypt_precision("sub_one_assign", &ct, &want_re, &want_im, &mut scratch.borrow());
+    assert_decrypt_precision(
+        "sub_one_assign",
+        &params,
+        module,
+        &encoder,
+        &ct,
+        &sk,
+        &want_re,
+        &want_im,
+        &mut scratch.borrow(),
+    );
 }

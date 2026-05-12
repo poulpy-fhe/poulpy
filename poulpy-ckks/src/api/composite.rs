@@ -46,48 +46,6 @@ pub trait CKKSAddManyOps<BE: Backend> {
         CKKSCiphertext<Src>: GLWEToBackendRef<BE>;
 }
 
-/// Tree-reduction product over a slice of ciphertexts.
-pub trait CKKSMulManyOps<BE: Backend> {
-    fn ckks_mul_many_tmp_bytes<R, T>(&self, n: usize, res: &R, tsk: &T) -> usize
-    where
-        R: CKKSCtBounds,
-        T: GGLWEInfos;
-
-    /// Computes `dst = inputs[0] * inputs[1] * … * inputs[n-1]` using a
-    /// balanced binary multiplication tree, automatically rescaling between
-    /// levels.
-    ///
-    /// # Metadata
-    ///
-    /// Each multiplication in the tree follows the ct–ct rule; with
-    /// equal-precision inputs (same `log_delta` for all), each level of the
-    /// tree consumes one `log_delta`-sized chunk of capacity:
-    ///
-    /// ```text
-    /// log_delta_out  = common log_delta of all inputs
-    /// log_budget_out ≈ log_budget_in − ⌈log₂(n)⌉ · log_delta
-    ///                  − max(0, natural_eff_k − dst.max_k())
-    /// ```
-    ///
-    /// **All inputs must have the same `log_delta`.**  This constraint is
-    /// enforced at runtime; the call returns an error if any two inputs
-    /// differ.  (Mixed-precision mul-many is planned for a future release.)
-    ///
-    /// Errors if `inputs` is empty or if any two inputs have different
-    /// `log_delta` values.
-    fn ckks_mul_many<Dst: Data, Src: Data, T: Data>(
-        &self,
-        dst: &mut CKKSCiphertext<Dst>,
-        inputs: &[&CKKSCiphertext<Src>],
-        tsk: &GLWETensorKeyPrepared<T, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
-        CKKSCiphertext<Src>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
-        GLWETensorKeyPrepared<T, BE>: GLWETensorKeyPreparedToBackendRef<BE>;
-}
-
 /// Fused multiply-accumulate: `dst += a * b`.
 ///
 /// Each variant computes the product of two operands and adds it to `dst`

@@ -1,10 +1,9 @@
 //! Backend-generic CKKS test suite.
 //!
-//! All test functions are generic over `BE: Backend` and take a
-//! [`TestContext`](helpers::TestContext) that owns the module, secret key,
-//! and optional evaluation keys.  The backend-specific test harnesses
-//! (in downstream crates such as `poulpy-cpu-ref`) instantiate and invoke
-//! these functions via the [`ckks_backend_test_suite!`] macro.
+//! All test functions are generic over `BE: super::helpers::TestContextBackend` and take
+//! `(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)`.
+//! The backend-specific test harnesses (in downstream crates such as `poulpy-cpu-ref`)
+//! instantiate and invoke these functions via the [`ckks_backend_test_suite!`] macro.
 
 use poulpy_core::{
     EncryptionLayout,
@@ -118,16 +117,19 @@ macro_rules! ckks_backend_test_suite {
 
             use anyhow::Result;
 
-            use $crate::test_suite::helpers::TestContext;
+            use poulpy_hal::layouts::{HostBytesBackend, Module};
 
-            static CTX: LazyLock<TestContext<$backend, $scalar, $encoder_ty>> =
-                LazyLock::new(|| TestContext::new($params, $rotations));
+            static MODULE: LazyLock<Module<$backend>> = LazyLock::new(|| Module::<$backend>::new($params.n as u64));
+            static HOST_MODULE: LazyLock<Module<HostBytesBackend>> =
+                LazyLock::new(|| Module::<HostBytesBackend>::new($params.n as u64));
 
             macro_rules! run_test {
                 ($name:ident, $path:path) => {
                     #[test]
                     fn $name() {
-                        $path(&CTX);
+                        #[allow(clippy::unsafe_removed_from_name)]
+                        use $path as __test_fn;
+                        __test_fn::<$backend, $scalar, $encoder_ty>($params, &*MODULE, &*HOST_MODULE);
                     }
                 };
             }
@@ -136,7 +138,9 @@ macro_rules! ckks_backend_test_suite {
                 ($name:ident, $path:path, $arg:expr) => {
                     #[test]
                     fn $name() {
-                        $path(&CTX, $arg);
+                        #[allow(clippy::unsafe_removed_from_name)]
+                        use $path as __test_fn;
+                        __test_fn::<$backend, $scalar, $encoder_ty>($params, &*MODULE, &*HOST_MODULE, $arg);
                     }
                 };
             }
@@ -145,7 +149,9 @@ macro_rules! ckks_backend_test_suite {
                 ($name:ident, $path:path) => {
                     #[test]
                     fn $name() -> Result<()> {
-                        $path(&CTX)
+                        #[allow(clippy::unsafe_removed_from_name)]
+                        use $path as __test_fn;
+                        __test_fn::<$backend, $scalar, $encoder_ty>($params, &*MODULE, &*HOST_MODULE)
                     }
                 };
             }
@@ -461,24 +467,6 @@ macro_rules! ckks_backend_test_suite {
                 add_many_smaller_output,
                 $crate::test_suite::add_many::test_add_many_smaller_output
             );
-            run_test!(mul_many_aligned, $crate::test_suite::mul_many::test_mul_many_aligned);
-            run_test!(
-                mul_many_two_terms_exact_tmp,
-                $crate::test_suite::mul_many::test_mul_many_two_terms_exact_tmp
-            );
-            run_test!(
-                mul_many_single_smaller_output,
-                $crate::test_suite::mul_many::test_mul_many_single_smaller_output
-            );
-            run_test!(mul_many_odd_tree, $crate::test_suite::mul_many::test_mul_many_odd_tree);
-            run_test!(
-                mul_many_unaligned_log_budget,
-                $crate::test_suite::mul_many::test_mul_many_unaligned_log_budget
-            );
-            run_test!(
-                mul_many_smaller_output,
-                $crate::test_suite::mul_many::test_mul_many_smaller_output
-            );
             run_test!(mul_add_ct_aligned, $crate::test_suite::mul_add::test_mul_add_ct_aligned);
             run_test!(
                 mul_add_ct_unaligned_dst,
@@ -613,7 +601,6 @@ pub mod helpers;
 pub mod imag;
 pub mod mul;
 pub mod mul_add;
-pub mod mul_many;
 pub mod mul_pow2;
 pub mod mul_sub;
 pub mod neg;

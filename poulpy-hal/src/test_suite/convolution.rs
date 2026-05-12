@@ -265,7 +265,7 @@ where
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
-            .cnv_pairwise_apply_dft_tmp_bytes(res_size, 0, a_size, b_size)
+            .cnv_pairwise_apply_dft_tmp_bytes(0, res_size, a_size, b_size)
             .max(module.cnv_prepare_left_tmp_bytes(res_size, a_size))
             .max(module.cnv_prepare_right_tmp_bytes(res_size, b_size))
             .max(module.vec_znx_big_normalize_tmp_bytes()),

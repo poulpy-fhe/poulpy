@@ -1,52 +1,59 @@
 //! Multiplication and division by a power of two.
-//!
-//! These operations shift the GLWE payload without altering CKKS metadata
-//! (`log_delta`, `log_budget`).
-//!
-//! # Test inventory
-//!
-//! ## `GLWE<_, CKKS>::mul_pow2` / `mul_pow2_assign`
-//!
-//! | Function | Path exercised |
-//! |----------|----------------|
-//! | [`test_mul_pow2_aligned`] | out-of-place, message × 2^bits |
-//! | [`test_mul_pow2_smaller_output`] | out-of-place into a smaller output buffer |
-//! | [`test_mul_pow2_assign`] | in-place, message × 2^bits |
-//!
-//! ## `GLWE<_, CKKS>::div_pow2` / `div_pow2_assign`
-//!
-//! | Function | Path exercised |
-//! |----------|----------------|
-//! | [`test_div_pow2_aligned`] | out-of-place, message / 2^bits |
-//! | [`test_div_pow2_smaller_output`] | out-of-place into a smaller output buffer |
-//! | [`test_div_pow2_assign`] | in-place, message / 2^bits |
 
 use crate::{CKKSCompositionError, CKKSInfos, leveled::api::CKKSPow2Ops};
 use poulpy_core::layouts::LWEInfos;
 
 use super::helpers::{
-    TestContext, TestPow2Backend as Backend, TestScalar, assert_ckks_error, assert_ct_meta, assert_unary_output_meta,
+    TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ckks_error, assert_ct_meta,
+    assert_decrypt_precision, assert_decrypt_precision_at_log_delta, assert_unary_output_meta, ckks_encrypt, gen_sk,
+    test_vector_1, want_div_pow2, want_mul_pow2,
 };
-use poulpy_hal::api::NegacyclicFFT;
-use poulpy_hal::api::ScratchOwnedBorrow;
+use poulpy_hal::{
+    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
+    layouts::{HostBytesBackend, Module},
+};
+
+use crate::{encoding::reim::Encoder, test_suite::CKKSTestParams};
 
 const SHIFT_BITS: usize = 7;
 
-// ─── mul_pow2 (message × 2^bits) ───────────────────────────────────────────────
+pub fn test_mul_pow2_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
 
-/// Out-of-place multiplication by 2^bits.
-pub fn test_mul_pow2_aligned<BE: Backend, F: TestScalar, E: NegacyclicFFT<F>>(ctx: &TestContext<BE, F, E>) {
-    let mut scratch = ctx.alloc_scratch();
-    let ct = ctx.encrypt(ctx.max_k(), &ctx.re1, &ctx.im1, &mut scratch.borrow());
-    let (want_re, want_im) = ctx.want_mul_pow2(SHIFT_BITS);
-    let mut ct_res = ctx.alloc_ct(ctx.max_k());
-    ctx.module
+    let ct = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re1,
+        &im1,
+        &mut scratch.borrow(),
+    );
+    let (want_re, want_im) = want_mul_pow2(&re1, &im1, SHIFT_BITS);
+    let mut ct_res = alloc_ct(&params, module, params.k);
+    module
         .ckks_mul_pow2_into(&mut ct_res, &ct, SHIFT_BITS, &mut scratch.borrow())
         .unwrap();
     assert_unary_output_meta("mul_pow2", &ct_res, &ct);
-    ctx.assert_decrypt_precision_at_log_delta(
+    assert_decrypt_precision_at_log_delta(
         "mul_pow2",
+        &params,
+        module,
+        &encoder,
         &ct_res,
+        &sk,
         &want_re,
         &want_im,
         ct.log_delta() - SHIFT_BITS,
@@ -54,19 +61,43 @@ pub fn test_mul_pow2_aligned<BE: Backend, F: TestScalar, E: NegacyclicFFT<F>>(ct
     );
 }
 
-/// Out-of-place multiplication by 2^bits.
-pub fn test_mul_pow2_smaller_output<BE: Backend, F: TestScalar, E: NegacyclicFFT<F>>(ctx: &TestContext<BE, F, E>) {
-    let mut scratch = ctx.alloc_scratch();
-    let ct = ctx.encrypt(ctx.max_k(), &ctx.re1, &ctx.im1, &mut scratch.borrow());
-    let (want_re, want_im) = ctx.want_mul_pow2(SHIFT_BITS);
-    let mut ct_res = ctx.alloc_ct(ctx.max_k() - ctx.base2k().as_usize() - 1);
-    ctx.module
+pub fn test_mul_pow2_smaller_output<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    let ct = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re1,
+        &im1,
+        &mut scratch.borrow(),
+    );
+    let (want_re, want_im) = want_mul_pow2(&re1, &im1, SHIFT_BITS);
+    let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
+    module
         .ckks_mul_pow2_into(&mut ct_res, &ct, SHIFT_BITS, &mut scratch.borrow())
         .unwrap();
     assert_unary_output_meta("mul_pow2 smaller_output", &ct_res, &ct);
-    ctx.assert_decrypt_precision_at_log_delta(
+    assert_decrypt_precision_at_log_delta(
         "mul_pow2",
+        &params,
+        module,
+        &encoder,
         &ct_res,
+        &sk,
         &want_re,
         &want_im,
         ct.log_delta() - SHIFT_BITS,
@@ -74,20 +105,44 @@ pub fn test_mul_pow2_smaller_output<BE: Backend, F: TestScalar, E: NegacyclicFFT
     );
 }
 
-/// In-place multiplication by 2^bits.
-pub fn test_mul_pow2_assign<BE: Backend, F: TestScalar, E: NegacyclicFFT<F>>(ctx: &TestContext<BE, F, E>) {
-    let mut scratch = ctx.alloc_scratch();
-    let mut ct = ctx.encrypt(ctx.max_k(), &ctx.re1, &ctx.im1, &mut scratch.borrow());
-    let (want_re, want_im) = ctx.want_mul_pow2(SHIFT_BITS);
+pub fn test_mul_pow2_assign<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    let mut ct = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re1,
+        &im1,
+        &mut scratch.borrow(),
+    );
+    let (want_re, want_im) = want_mul_pow2(&re1, &im1, SHIFT_BITS);
     let expected_log_delta = ct.log_delta();
     let expected_log_budget = ct.log_budget();
-    ctx.module
+    module
         .ckks_mul_pow2_assign(&mut ct, SHIFT_BITS, &mut scratch.borrow())
         .unwrap();
     assert_ct_meta("mul_pow2_assign", &ct, expected_log_delta, expected_log_budget);
-    ctx.assert_decrypt_precision_at_log_delta(
+    assert_decrypt_precision_at_log_delta(
         "mul_pow2_assign",
+        &params,
+        module,
+        &encoder,
         &ct,
+        &sk,
         &want_re,
         &want_im,
         expected_log_delta - SHIFT_BITS,
@@ -95,28 +150,76 @@ pub fn test_mul_pow2_assign<BE: Backend, F: TestScalar, E: NegacyclicFFT<F>>(ctx
     );
 }
 
-// ─── div_pow2 (message / 2^bits) ───────────────────────────────────────────────
+pub fn test_div_pow2_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
 
-/// Out-of-place division by 2^bits.
-pub fn test_div_pow2_aligned<BE: Backend, F: TestScalar, E: NegacyclicFFT<F>>(ctx: &TestContext<BE, F, E>) {
-    let mut scratch = ctx.alloc_scratch();
-    let ct = ctx.encrypt(ctx.max_k(), &ctx.re1, &ctx.im1, &mut scratch.borrow());
-    let (want_re, want_im) = ctx.want_div_pow2(SHIFT_BITS);
-    let mut ct_res = ctx.alloc_ct(ctx.max_k());
-    ctx.module
+    let ct = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re1,
+        &im1,
+        &mut scratch.borrow(),
+    );
+    let (want_re, want_im) = want_div_pow2(&re1, &im1, SHIFT_BITS);
+    let mut ct_res = alloc_ct(&params, module, params.k);
+    module
         .ckks_div_pow2_into(&mut ct_res, &ct, SHIFT_BITS, &mut scratch.borrow())
         .unwrap();
     assert_ct_meta("div_pow2", &ct_res, ct.log_delta() + SHIFT_BITS, ct.log_budget() - SHIFT_BITS);
-    ctx.assert_decrypt_precision("div_pow2", &ct_res, &want_re, &want_im, &mut scratch.borrow());
+    assert_decrypt_precision(
+        "div_pow2",
+        &params,
+        module,
+        &encoder,
+        &ct_res,
+        &sk,
+        &want_re,
+        &want_im,
+        &mut scratch.borrow(),
+    );
 }
 
-/// Out-of-place division by 2^bits.
-pub fn test_div_pow2_smaller_output<BE: Backend, F: TestScalar, E: NegacyclicFFT<F>>(ctx: &TestContext<BE, F, E>) {
-    let mut scratch = ctx.alloc_scratch();
-    let ct = ctx.encrypt(ctx.max_k(), &ctx.re1, &ctx.im1, &mut scratch.borrow());
-    let (want_re, want_im) = ctx.want_div_pow2(SHIFT_BITS);
-    let mut ct_res = ctx.alloc_ct(ctx.max_k() - ctx.base2k().as_usize() - 1);
-    ctx.module
+pub fn test_div_pow2_smaller_output<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    let ct = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re1,
+        &im1,
+        &mut scratch.borrow(),
+    );
+    let (want_re, want_im) = want_div_pow2(&re1, &im1, SHIFT_BITS);
+    let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
+    module
         .ckks_div_pow2_into(&mut ct_res, &ct, SHIFT_BITS, &mut scratch.borrow())
         .unwrap();
     let offset = ct.effective_k().saturating_sub(ct_res.max_k().as_usize());
@@ -126,28 +229,91 @@ pub fn test_div_pow2_smaller_output<BE: Backend, F: TestScalar, E: NegacyclicFFT
         ct.log_delta() + SHIFT_BITS,
         ct.log_budget() - SHIFT_BITS - offset,
     );
-    ctx.assert_decrypt_precision("div_pow2", &ct_res, &want_re, &want_im, &mut scratch.borrow());
+    assert_decrypt_precision(
+        "div_pow2",
+        &params,
+        module,
+        &encoder,
+        &ct_res,
+        &sk,
+        &want_re,
+        &want_im,
+        &mut scratch.borrow(),
+    );
 }
 
-/// In-place division by 2^bits.
-pub fn test_div_pow2_assign<BE: Backend, F: TestScalar, E: NegacyclicFFT<F>>(ctx: &TestContext<BE, F, E>) {
-    let mut scratch = ctx.alloc_scratch();
-    let mut ct = ctx.encrypt(ctx.max_k(), &ctx.re1, &ctx.im1, &mut scratch.borrow());
-    let (want_re, want_im) = ctx.want_div_pow2(SHIFT_BITS);
+pub fn test_div_pow2_assign<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    let mut ct = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re1,
+        &im1,
+        &mut scratch.borrow(),
+    );
+    let (want_re, want_im) = want_div_pow2(&re1, &im1, SHIFT_BITS);
     let expected_log_delta = ct.log_delta();
     let expected_log_budget = ct.log_budget() - SHIFT_BITS;
-    ctx.module.ckks_div_pow2_assign(&mut ct, SHIFT_BITS).unwrap();
+    module.ckks_div_pow2_assign(&mut ct, SHIFT_BITS).unwrap();
     assert_ct_meta("div_pow2_assign", &ct, expected_log_delta, expected_log_budget);
-    ctx.assert_decrypt_precision("div_pow2_assign", &ct, &want_re, &want_im, &mut scratch.borrow());
+    assert_decrypt_precision(
+        "div_pow2_assign",
+        &params,
+        module,
+        &encoder,
+        &ct,
+        &sk,
+        &want_re,
+        &want_im,
+        &mut scratch.borrow(),
+    );
 }
 
-/// In-place division by too large a power of two must return a clear metadata error.
-pub fn test_div_pow2_assign_explicit_error<BE: Backend, F: TestScalar, E: NegacyclicFFT<F>>(ctx: &TestContext<BE, F, E>) {
-    let mut scratch = ctx.alloc_scratch();
-    let mut ct = ctx.encrypt(ctx.max_k(), &ctx.re1, &ctx.im1, &mut scratch.borrow());
+pub fn test_div_pow2_assign_explicit_error<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    let mut ct = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re1,
+        &im1,
+        &mut scratch.borrow(),
+    );
     let available_log_budget = ct.log_budget();
     let required_bits = available_log_budget + 1;
-    let err = ctx.module.ckks_div_pow2_assign(&mut ct, required_bits).unwrap_err();
+    let err = module.ckks_div_pow2_assign(&mut ct, required_bits).unwrap_err();
     assert_ckks_error(
         "div_pow2_assign_explicit_error",
         &err,

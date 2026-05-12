@@ -12,11 +12,11 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSMeta,
+    CKKSCtBounds, CKKSInfos,
     layouts::{CKKSCiphertext, CKKSCiphertextViewMut, ScratchArenaTakeCKKS, UnnormalizedCKKSCiphertext, ciphertext::CKKSOffset},
     leveled::api::{
-        CKKSAddManyOps, CKKSAddOps, CKKSAddOpsUnnormalized, CKKSAffineOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulManyOps,
-        CKKSMulOps, CKKSMulSubOps, CKKSRescaleOps, CKKSSubOps,
+        CKKSAddManyOps, CKKSAddOps, CKKSAddOpsUnnormalized, CKKSAffineOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulOps,
+        CKKSMulSubOps, CKKSRescaleOps, CKKSSubOps,
     },
     leveled::default::CKKSAddDefault,
 };
@@ -77,78 +77,6 @@ where
             }
         }
         Ok(())
-    }
-}
-
-// --- CKKSMulManyOps ---
-
-impl<BE: Backend> CKKSMulManyOps<BE> for Module<BE>
-where
-    Module<BE>: CKKSMulOps<BE> + CKKSRescaleOps<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
-{
-    fn ckks_mul_many_tmp_bytes<R, T>(&self, n: usize, res: &R, tsk: &T) -> usize
-    where
-        R: CKKSCtBounds,
-        T: GGLWEInfos,
-    {
-        let mul_scratch: usize = self.ckks_mul_tmp_bytes(res, tsk);
-        let rescale_scratch: usize = self.ckks_rescale_tmp_bytes();
-        if n <= 1 {
-            return rescale_scratch;
-        }
-        let op_scratch: usize = mul_scratch.max(rescale_scratch);
-        let ct_bytes: usize = GLWE::<Vec<u8>>::bytes_of_from_infos(res);
-        (1 + 2 * (n - 2)) * ct_bytes + op_scratch
-    }
-
-    fn ckks_mul_many<Dst: Data, Src: Data, T: Data>(
-        &self,
-        dst: &mut CKKSCiphertext<Dst>,
-        inputs: &[&CKKSCiphertext<Src>],
-        tsk: &GLWETensorKeyPrepared<T, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-        CKKSCiphertext<Src>: GLWEToBackendRef<BE> + GLWEInfos,
-        GLWETensorKeyPrepared<T, BE>: poulpy_core::layouts::prepared::GLWETensorKeyPreparedToBackendRef<BE>,
-    {
-        if inputs.is_empty() {
-            bail!("ckks_mul_many: inputs must contain at least one ciphertext");
-        }
-        anyhow::ensure!(
-            inputs.iter().all(|c| c.log_delta() == inputs[0].log_delta()),
-            "ckks_mul_many: all inputs must have the same log_delta"
-        );
-        if inputs.len() == 1 {
-            self.ckks_rescale_into(dst, dst.offset_unary(inputs[0]), inputs[0], scratch)?;
-            return Ok(());
-        }
-
-        scratch.scope(|scratch_local| {
-            let (mut acc, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
-            self.ckks_mul_into(&mut acc, inputs[0], inputs[1], tsk, &mut scratch_local)?;
-
-            for ct in &inputs[2..] {
-                let compact_layout = GLWELayout {
-                    n: acc.n(),
-                    base2k: acc.base2k(),
-                    k: acc.effective_k().into(),
-                    rank: acc.rank(),
-                };
-                let (mut compact, rem) = scratch_local.take_ckks_ciphertext_scratch(&compact_layout, CKKSMeta::default());
-                scratch_local = rem;
-                self.ckks_rescale_into(&mut compact, 0, &acc, &mut scratch_local)?;
-
-                let (mut next, rem) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
-                scratch_local = rem;
-                self.ckks_mul_into(&mut next, &compact, *ct, tsk, &mut scratch_local)?;
-                acc = next;
-            }
-
-            self.ckks_rescale_into(dst, dst.offset_unary(&acc), &acc, &mut scratch_local)
-        })
     }
 }
 
