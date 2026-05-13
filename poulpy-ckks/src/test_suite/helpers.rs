@@ -16,9 +16,9 @@ use std::{f64::consts::TAU, fmt::Debug};
 use crate::{
     CKKSCompositionError, CKKSInfos, CKKSMeta, SetCKKSInfos,
     api::{
-        CKKSAddManyOps, CKKSAddOps, CKKSAddOpsUnnormalized, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps,
-        CKKSDotProductOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps, CKKSPlaintextVecOps, CKKSPow2Ops,
-        CKKSRotateOps, CKKSSubOps, CKKSSubOpsUnnormalized,
+        CKKSAddManyOps, CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSDotProductOps,
+        CKKSImagOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps, CKKSPlaintextVecOps, CKKSPow2Ops, CKKSRotateOps,
+        CKKSSubOps,
     },
     encoding::reim::Encoder,
     layouts::{
@@ -89,9 +89,7 @@ pub trait TestContextModule<BE: Backend>:
     + CKKSEncrypt<BE>
     + CKKSDecrypt<BE>
     + CKKSAddOps<BE>
-    + CKKSAddOpsUnnormalized<BE>
     + CKKSSubOps<BE>
-    + CKKSSubOpsUnnormalized<BE>
     + CKKSMulOps<BE>
     + CKKSNegOps<BE>
     + CKKSCopyOps<BE>
@@ -125,9 +123,7 @@ impl<BE: Backend, M> TestContextModule<BE> for M where
         + CKKSEncrypt<BE>
         + CKKSDecrypt<BE>
         + CKKSAddOps<BE>
-        + CKKSAddOpsUnnormalized<BE>
         + CKKSSubOps<BE>
-        + CKKSSubOpsUnnormalized<BE>
         + CKKSMulOps<BE>
         + CKKSNegOps<BE>
         + CKKSCopyOps<BE>

@@ -10,11 +10,13 @@ use std::{
 };
 
 use anyhow::Result;
-use poulpy_core::layouts::{Base2K, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, LWEInfos, Rank};
+use poulpy_core::layouts::{
+    Base2K, Degree, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, LWEInfos, Rank,
+};
 use poulpy_core::{GLWENormalize, ScratchArenaTakeCore};
 use poulpy_hal::layouts::{Backend, Data, HostBackend, HostDataRef, Module, ScratchArena};
 
-use crate::{CKKSInfos, CKKSMeta, SetCKKSInfos, error::CKKSCompositionError, layouts::CKKSModuleAlloc};
+use crate::{CKKSInfos, CKKSMeta, SetCKKSInfos, api::CKKSCopyOps, error::CKKSCompositionError, layouts::CKKSModuleAlloc};
 
 mod sealed {
     pub trait Sealed {}
@@ -103,6 +105,22 @@ impl<D: Data, S: CKKSNormalizationState> CKKSCiphertext<D, S> {
         );
         self.meta = meta;
         Ok(())
+    }
+
+    /// Allocates a fresh backend-owned ciphertext and copies `self` into it.
+    ///
+    /// Used to normalize the allocation size after arithmetic operations that
+    /// may leave the buffer over-sized relative to `effective_k`.
+    pub fn compact<M, BE>(&self, module: &M, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSCiphertext<BE::OwnedBuf>>
+    where
+        BE: Backend,
+        M: CKKSCopyOps<BE> + CKKSModuleAlloc<BE>,
+        Self: GLWEToBackendRef<BE>,
+        CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE>,
+    {
+        let mut out = module.ckks_ciphertext_alloc(self.base2k(), self.effective_k().into());
+        module.ckks_copy(&mut out, self, scratch)?;
+        Ok(out)
     }
 }
 
@@ -288,6 +306,20 @@ pub trait ScratchArenaTakeCKKS<'a, BE: Backend>: ScratchArenaTakeCore<'a, BE> + 
         C: GLWEInfos + CKKSInfos,
     {
         self.take_ckks_ciphertext_scratch(ct, ct.meta())
+    }
+
+    fn take_compact_ckks_ciphertext_scratch<C>(self, ct: &C) -> (CKKSCiphertextViewMut<'a, BE>, Self)
+    where
+        BE: 'a,
+        C: GLWEInfos + CKKSInfos,
+    {
+        let layout = GLWELayout {
+            n: ct.n(),
+            base2k: ct.base2k(),
+            k: ct.effective_k().into(),
+            rank: ct.rank(),
+        };
+        self.take_ckks_ciphertext_scratch(&layout, ct.meta())
     }
 
     fn take_unnormalized_ckks_ciphertext_scratch<I>(

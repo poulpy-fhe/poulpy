@@ -1,6 +1,6 @@
 use anyhow::{Result, bail, ensure};
 use poulpy_core::{
-    GLWENormalize, GLWETensoring, ScratchArenaTakeCore,
+    GLWEAdd, GLWENormalize, GLWEShift, GLWETensoring, ScratchArenaTakeCore,
     layouts::{
         GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWETensor, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         TorusPrecision,
@@ -12,14 +12,14 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSInfos,
+    CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     layouts::{
-        CKKSCiphertext, CKKSCiphertextViewMut, ScratchArenaTakeCKKS, UnnormalizedCKKSCiphertext,
+        CKKSCiphertext, CKKSCiphertextViewMut, ScratchArenaTakeCKKS,
         ciphertext::{CKKSOffset, UnnormalizedCKKSCiphertextRefMut},
     },
     leveled::api::{
-        CKKSAddManyOps, CKKSAddOps, CKKSAddOpsUnnormalized, CKKSAffineOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulOps,
-        CKKSMulSubOps, CKKSRescaleOps, CKKSSubOps,
+        CKKSAddManyOps, CKKSAddOps, CKKSAffineOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSRescaleOps,
+        CKKSSubOps,
     },
     oep::CKKSAddImpl,
 };
@@ -85,9 +85,9 @@ where
 
 // --- CKKSMulAddOps ---
 
-impl<BE: Backend> CKKSMulAddOps<BE> for Module<BE>
+impl<BE: Backend + CKKSAddImpl<BE>> CKKSMulAddOps<BE> for Module<BE>
 where
-    Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + CKKSAddOpsUnnormalized<BE>,
+    Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + GLWEAdd<BE> + GLWEShift<BE>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_mul_add_ct_tmp_bytes<R, T>(&self, res: &R, tsk: &T) -> usize
@@ -116,19 +116,19 @@ where
         GLWE::<Vec<u8>>::bytes_of_from_infos(res) + self.ckks_mul_pt_const_tmp_bytes(res, a, b).max(self.ckks_add_tmp_bytes())
     }
 
-    fn ckks_mul_add_ct_into<Dst: Data, A: Data, B: Data, T: Data>(
+    fn ckks_mul_add_ct_into<Dst, A, B, T>(
         &self,
-        dst: &mut CKKSCiphertext<Dst>,
-        a: &CKKSCiphertext<A>,
-        b: &CKKSCiphertext<B>,
-        tsk: &GLWETensorKeyPrepared<T, BE>,
+        dst: &mut Dst,
+        a: &A,
+        b: &B,
+        tsk: &T,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<A>: GLWEToBackendRef<BE> + GLWEInfos,
-        CKKSCiphertext<B>: GLWEToBackendRef<BE> + GLWEInfos,
-        GLWETensorKeyPrepared<T, BE>: poulpy_core::layouts::prepared::GLWETensorKeyPreparedToBackendRef<BE>,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE> + CKKSCtBounds,
+        T: GGLWEInfos + poulpy_core::layouts::prepared::GLWETensorKeyPreparedToBackendRef<BE>,
     {
         scratch.scope(|scratch_local| {
             let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
@@ -137,16 +137,10 @@ where
         })
     }
 
-    fn ckks_mul_add_pt_vec_into<Dst: Data, A: Data, P>(
-        &self,
-        dst: &mut CKKSCiphertext<Dst>,
-        a: &CKKSCiphertext<A>,
-        pt: &P,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    fn ckks_mul_add_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<A>: GLWEToBackendRef<BE> + GLWEInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         scratch.scope(|scratch_local| {
@@ -156,17 +150,17 @@ where
         })
     }
 
-    fn ckks_mul_add_pt_const_into<Dst: Data, A: Data, P>(
+    fn ckks_mul_add_pt_const_into<Dst, A, P>(
         &self,
-        dst: &mut CKKSCiphertext<Dst>,
-        a: &CKKSCiphertext<A>,
+        dst: &mut Dst,
+        a: &A,
         pt: &P,
         pt_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<A>: GLWEToBackendRef<BE> + GLWEInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         scratch.scope(|scratch_local| {
@@ -176,42 +170,42 @@ where
         })
     }
 
-    fn ckks_mul_add_pt_const_into_unnormalized<Dst: Data, A, P>(
+    fn ckks_mul_add_pt_const_into_unnormalized<Dst, A, P>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst>,
+        dst: &mut Dst,
         a: &A,
         pt: &P,
         pt_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         scratch.scope(|scratch_local| {
             let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
             self.ckks_mul_pt_const_into(&mut tmp, a, pt, pt_coeff, &mut scratch_local)?;
-            self.ckks_add_assign_unnormalized(dst, &tmp, &mut scratch_local)
+            BE::ckks_add_assign_unnormalized_generic(self, dst, &tmp, &mut scratch_local)
         })
     }
 
-    fn ckks_mul_add_pt_vec_into_unnormalized<Dst: Data, A, P>(
+    fn ckks_mul_add_pt_vec_into_unnormalized<Dst, A, P>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst>,
+        dst: &mut Dst,
         a: &A,
         pt: &P,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         scratch.scope(|scratch_local| {
             let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
             self.ckks_mul_pt_vec_into(&mut tmp, a, pt, &mut scratch_local)?;
-            self.ckks_add_assign_unnormalized(dst, &tmp, &mut scratch_local)
+            BE::ckks_add_assign_unnormalized_generic(self, dst, &tmp, &mut scratch_local)
         })
     }
 }

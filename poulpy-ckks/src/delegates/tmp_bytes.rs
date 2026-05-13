@@ -15,7 +15,7 @@ use poulpy_hal::{
         ModuleN, VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddIntoBackend, VecZnxRshBackend, VecZnxRshSubBackend,
         VecZnxRshTmpBytes,
     },
-    layouts::{Backend, Module},
+    layouts::{Backend, Module, VecZnx},
 };
 
 impl<BE: Backend> CKKSAllOpsTmpBytes<BE> for Module<BE>
@@ -55,6 +55,10 @@ where
         T: GGLWEInfos,
         P: CKKSInfos,
     {
+        let compact_ct_scratch_bytes = VecZnx::bytes_of(ct_infos.n().into(), (ct_infos.rank() + 1).into(), ct_infos.size());
+        let polynomial_giant_steps_tmp_bytes =
+            self.ckks_mul_tmp_bytes(ct_infos, tsk_infos).max(self.ckks_add_tmp_bytes()) + 3 * compact_ct_scratch_bytes;
+
         self.ckks_encrypt_sk_tmp_bytes(ct_infos)
             .max(self.ckks_decrypt_tmp_bytes(ct_infos))
             .max(self.ckks_add_tmp_bytes())
@@ -72,6 +76,7 @@ where
             .max(self.ckks_align_tmp_bytes())
             .max(self.ckks_mul_tmp_bytes(ct_infos, tsk_infos))
             .max(self.ckks_square_tmp_bytes(ct_infos, tsk_infos))
+            .max(polynomial_giant_steps_tmp_bytes)
             .max(self.ckks_mul_pt_vec_tmp_bytes(ct_infos, ct_infos, pt_prec))
             .max(self.ckks_mul_pt_const_tmp_bytes(ct_infos, ct_infos, pt_prec))
             .max(self.prepare_tensor_key_tmp_bytes(tsk_infos))

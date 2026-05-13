@@ -4,7 +4,10 @@ use poulpy_core::{
     layouts::{GLWEToBackendMut, LWEInfos},
 };
 use poulpy_hal::{
-    api::{ScratchAvailable, VecZnxRshSubBackend, VecZnxRshSubCoeffIntoBackend, VecZnxRshTmpBytes},
+    api::{
+        ScratchAvailable, VecZnxLshSubBackend, VecZnxLshSubCoeffToCoeffBackend, VecZnxLshTmpBytes, VecZnxRshSubBackend,
+        VecZnxRshSubCoeffIntoBackend, VecZnxRshTmpBytes,
+    },
     layouts::{Backend, ScratchArena},
 };
 
@@ -16,7 +19,7 @@ use crate::{
 pub trait CKKSSubDefault<BE: Backend> {
     fn ckks_sub_tmp_bytes_default(&self) -> usize
     where
-        Self: GLWEShift<BE> + GLWENormalize<BE> + VecZnxRshTmpBytes,
+        Self: GLWEShift<BE> + GLWENormalize<BE> + VecZnxLshTmpBytes + VecZnxRshTmpBytes,
     {
         self.glwe_shift_tmp_bytes()
             .max(self.vec_znx_rsh_tmp_bytes())
@@ -25,7 +28,7 @@ pub trait CKKSSubDefault<BE: Backend> {
 
     fn ckks_sub_pt_vec_tmp_bytes_default(&self) -> usize
     where
-        Self: GLWEShift<BE> + GLWENormalize<BE> + VecZnxRshTmpBytes,
+        Self: GLWEShift<BE> + GLWENormalize<BE> + VecZnxLshTmpBytes + VecZnxRshTmpBytes,
     {
         self.ckks_sub_tmp_bytes_default()
     }
@@ -121,7 +124,8 @@ pub trait CKKSSubDefault<BE: Backend> {
 
     fn ckks_sub_one_assign_default<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Self: VecZnxRshSubCoeffIntoBackend<BE> + CKKSPlaintextDefault<BE> + GLWENormalize<BE>,
+        Self:
+            VecZnxLshSubCoeffToCoeffBackend<BE> + VecZnxRshSubCoeffIntoBackend<BE> + CKKSPlaintextDefault<BE> + GLWENormalize<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + LWEInfos,
         for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     {
@@ -137,7 +141,7 @@ pub trait CKKSSubDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: VecZnxRshSubBackend<BE> + GLWEShift<BE> + GLWENormalize<BE> + CKKSPlaintextDefault<BE>,
+        Self: VecZnxLshSubBackend<BE> + VecZnxRshSubBackend<BE> + GLWEShift<BE> + GLWENormalize<BE> + CKKSPlaintextDefault<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + LWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + LWEInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
@@ -156,7 +160,7 @@ pub trait CKKSSubDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: VecZnxRshSubBackend<BE> + GLWEShift<BE> + CKKSPlaintextDefault<BE>,
+        Self: VecZnxLshSubBackend<BE> + VecZnxRshSubBackend<BE> + GLWEShift<BE> + CKKSPlaintextDefault<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + LWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + LWEInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
@@ -172,7 +176,7 @@ pub trait CKKSSubDefault<BE: Backend> {
 
     fn ckks_sub_pt_vec_assign_default<Dst, P>(&self, dst: &mut Dst, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Self: VecZnxRshSubBackend<BE> + GLWENormalize<BE> + CKKSPlaintextDefault<BE>,
+        Self: VecZnxLshSubBackend<BE> + VecZnxRshSubBackend<BE> + GLWENormalize<BE> + CKKSPlaintextDefault<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + LWEInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
         for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
@@ -189,7 +193,7 @@ pub trait CKKSSubDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: VecZnxRshSubBackend<BE> + CKKSPlaintextDefault<BE>,
+        Self: VecZnxLshSubBackend<BE> + VecZnxRshSubBackend<BE> + CKKSPlaintextDefault<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + LWEInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
         for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
@@ -208,7 +212,11 @@ pub trait CKKSSubDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEShift<BE> + GLWENormalize<BE> + VecZnxRshSubCoeffIntoBackend<BE> + CKKSPlaintextDefault<BE>,
+        Self: GLWEShift<BE>
+            + GLWENormalize<BE>
+            + VecZnxLshSubCoeffToCoeffBackend<BE>
+            + VecZnxRshSubCoeffIntoBackend<BE>
+            + CKKSPlaintextDefault<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + LWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + LWEInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
@@ -229,7 +237,7 @@ pub trait CKKSSubDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEShift<BE> + VecZnxRshSubCoeffIntoBackend<BE> + CKKSPlaintextDefault<BE>,
+        Self: GLWEShift<BE> + VecZnxLshSubCoeffToCoeffBackend<BE> + VecZnxRshSubCoeffIntoBackend<BE> + CKKSPlaintextDefault<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + LWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + LWEInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
@@ -251,7 +259,8 @@ pub trait CKKSSubDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: VecZnxRshSubCoeffIntoBackend<BE> + CKKSPlaintextDefault<BE> + GLWENormalize<BE>,
+        Self:
+            VecZnxLshSubCoeffToCoeffBackend<BE> + VecZnxRshSubCoeffIntoBackend<BE> + CKKSPlaintextDefault<BE> + GLWENormalize<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + LWEInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
         for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
@@ -270,7 +279,7 @@ pub trait CKKSSubDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: VecZnxRshSubCoeffIntoBackend<BE> + CKKSPlaintextDefault<BE>,
+        Self: VecZnxLshSubCoeffToCoeffBackend<BE> + VecZnxRshSubCoeffIntoBackend<BE> + CKKSPlaintextDefault<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + LWEInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
         for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,

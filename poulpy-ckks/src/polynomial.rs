@@ -1,48 +1,29 @@
-use std::{collections::HashMap, fmt::Debug};
+use std::fmt::Debug;
 
 use anyhow::{Result, anyhow, ensure};
-use poulpy_core::layouts::{
-    Base2K, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
-};
-use poulpy_hal::layouts::{Backend, Data, HostBytesBackend, Module, ScratchArena};
+use poulpy_core::layouts::{Base2K, GLWEInfos, GLWEToBackendRef};
+use poulpy_hal::layouts::{Backend, HostBytesBackend, Module};
 use rand_distr::num_traits::{Float, FloatConst, FromPrimitive};
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
-    api::{BSGSPolynomialInfos, CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSSubOps, PowerBasisHelper},
-    checked_mul_ct_log_budget,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
+    CKKSInfos, CKKSMeta,
+    api::BSGSPolynomialInfos,
+    layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
 };
 
-// Re-export so callers can use `polynomial::Basis` without reaching into `api`.
-pub use crate::api::Basis;
+// Re-export so callers can use `polynomial::Basis`/`Parity` without reaching into `api`.
+pub use crate::api::{Basis, Parity};
 
 // ── BSGS helpers ─────────────────────────────────────────────────────────────
 
-/// Splits `n` into `(a, b)` with `n = a + b` and `|a – b|` minimised.
-///
-/// When `n` is a power of two `a = b = n/2`; otherwise uses the
-/// Lee et al. (2020) strategy that maximises the number of odd-degree
-/// Chebyshev terms.
-pub fn split_degree(n: usize) -> (usize, usize) {
-    if n.is_power_of_two() {
-        (n / 2, n / 2)
-    } else {
-        let k = (usize::BITS - (n - 1).leading_zeros()) as usize - 1;
-        let a = (1usize << k) - 1;
-        let b = n + 1 - (1usize << k);
-        (a, b)
-    }
-}
-
 /// Returns the BSGS log-split that minimises multiplication depth for a
 /// polynomial of log-degree `log_degree`.
-pub fn optimal_split(log_degree: usize) -> usize {
-    let s = (log_degree >> 1) as i64;
-    let d = log_degree as i64;
-    let a = (1i64 << s) + (1i64 << (d - s)) + d - s - 3;
-    let b = (1i64 << (s + 1)) + (1i64 << (d - s - 1)) + d - s - 4;
-    if a > b { (s + 1) as usize } else { s as usize }
+pub(crate) fn optimal_split(log_degree: usize) -> usize {
+    debug_assert!(log_degree >= 1, "optimal_split requires log_degree ≥ 1");
+    let s = log_degree >> 1;
+    let a = (1 << s) + (1 << (log_degree - s)) + log_degree - s - 3;
+    let b = (1 << (s + 1)) + (1 << (log_degree - s - 1)) + log_degree - s - 4;
+    if a > b { s + 1 } else { s }
 }
 
 // ── Polynomial ───────────────────────────────────────────────────────────────
@@ -51,29 +32,41 @@ pub fn optimal_split(log_degree: usize) -> usize {
 ///
 /// `coeffs[i]` is the coefficient of the degree-`i` term (monomial basis) or
 /// of `Tᵢ(x)` (Chebyshev basis).
-pub struct Polynomial<F = f64> {
+pub struct Polynomial<F> {
     pub basis: Basis,
     pub coeffs: Vec<F>,
-    /// `true` when all odd-degree coefficients are zero.
-    pub is_even: bool,
-    /// `true` when all even-degree coefficients are zero.
-    pub is_odd: bool,
+    pub parity: Parity,
 }
 
 impl<F> Polynomial<F>
 where
-    F: Float,
+    F: Float + FloatConst + FromPrimitive + Debug,
 {
     /// Constructs a polynomial and auto-detects even/odd symmetry.
     pub fn new(basis: Basis, coeffs: Vec<F>) -> Self {
-        let is_even = coeffs.iter().enumerate().all(|(i, &c)| i % 2 == 0 || c == F::zero());
-        let is_odd = coeffs.iter().enumerate().all(|(i, &c)| i % 2 != 0 || c == F::zero());
-        Self {
-            basis,
-            coeffs,
-            is_even,
-            is_odd,
-        }
+        let parity = if coeffs.iter().enumerate().all(|(i, &c)| i.is_multiple_of(2) || c == F::zero()) {
+            Parity::Even
+        } else if coeffs
+            .iter()
+            .enumerate()
+            .all(|(i, &c)| !i.is_multiple_of(2) || c == F::zero())
+        {
+            Parity::Odd
+        } else {
+            Parity::Full
+        };
+        Self::new_with_parity(basis, coeffs, parity)
+    }
+
+    pub fn new_with_parity(basis: Basis, coeffs: Vec<F>, parity: Parity) -> Self {
+        Self { basis, coeffs, parity }
+    }
+
+    pub fn chebyshev_interpolate<Fun>(degree: usize, a: F, b: F, f: Fun) -> Result<Self>
+    where
+        Fun: Fn(F) -> F,
+    {
+        chebyshev_interpolate(degree, a, b, f)
     }
 
     pub fn degree(&self) -> usize {
@@ -133,7 +126,7 @@ where
     /// coefficients as a `CKKSPlaintext`.
     ///
     /// The returned [`BSGSPolynomial`] implements [`BSGSPolynomialInfos`] and
-    /// can be passed directly to `ckks_eval_poly_const_coeffs`.
+    /// can be passed directly to `ckks_eval_poly_real_const_coeffs_from_power_basis`.
     ///
     /// `module` is used only for host-side encoding; it does not need to match
     /// the compute backend.
@@ -153,31 +146,23 @@ where
         let log_split = optimal_split(log_degree);
         let base = 1usize << log_split;
 
-        let decomposed = decompose_bsgs_coeffs(self.basis, &self.coeffs, log_split, degree, true);
-        let n_steps = decomposed.len();
-        let mut baby_steps = Vec::with_capacity(n_steps);
-        let mut baby_degrees = Vec::with_capacity(n_steps);
-
-        for (step_idx, (baby_degree, baby_coeffs)) in decomposed.into_iter().enumerate() {
-            // Use a full-ring plaintext so the encoded baby polynomials can be
-            // uploaded and multiplied on any backend without limb-shape fixes.
-            let mut pt = module.ckks_pt_vec_alloc(base2k, coeff_meta);
-            let mut padded = vec![F::zero(); pt.n().as_usize()];
-            padded[..baby_coeffs.len()].copy_from_slice(&baby_coeffs);
-
-            pt.encode_host_floats(&padded)
+        let mut baby_steps = Vec::new();
+        let mut step_idx = 0usize;
+        decompose_bsgs_coeffs(self.basis, &self.coeffs, log_split, degree, true, &mut |baby_coeffs| {
+            let mut pt = module.ckks_pt_coeffs_alloc(baby_coeffs.len(), base2k, coeff_meta);
+            pt.encode_host_floats(baby_coeffs)
                 .map_err(|e| anyhow!("encode_bsgs: step {step_idx}: {e}"))?;
-
-            baby_degrees.push(baby_degree);
             baby_steps.push(pt);
-        }
+            step_idx += 1;
+            Ok(())
+        })?;
 
         Ok(BSGSPolynomial {
             basis: self.basis,
             degree,
             base,
-            baby_degrees,
             baby_steps,
+            parity: self.parity,
         })
     }
 }
@@ -189,7 +174,7 @@ where
 /// `u = (2x-a-b)/(b-a)`. Use [`Polynomial::evaluate_on_interval`] for host
 /// evaluation on the original interval, or evaluate homomorphically on an
 /// input ciphertext that has already been mapped to `u`.
-pub fn chebyshev_interpolate<F, Fun>(degree: usize, a: F, b: F, f: Fun) -> Result<Polynomial<F>>
+fn chebyshev_interpolate<F, Fun>(degree: usize, a: F, b: F, f: Fun) -> Result<Polynomial<F>>
 where
     F: Float + FloatConst + FromPrimitive + Debug,
     Fun: Fn(F) -> F,
@@ -203,24 +188,17 @@ where
     let radius = (b - a) * half;
     let pi_over_n = F::PI() / F::from_usize(n).expect("n must fit in scalar");
 
-    let mut nodes = vec![F::zero(); n];
-    let mut values = vec![F::zero(); n];
-    for k in 1..=n {
-        let theta = (F::from_usize(k).expect("k must fit in scalar") - half) * pi_over_n;
-        let x = center + radius * theta.cos();
-        // Match Lattigo's ascending node order.
-        let idx = n - k;
-        nodes[idx] = x;
-        values[idx] = f(x);
-    }
-
     let mut coeffs = vec![F::zero(); n];
-    for i in 0..n {
-        let u = (two * nodes[i] - a - b) / (b - a);
+    // Iterate nodes in ascending x order (k = n..1) to match Lattigo's convention.
+    // u = cos(theta_k) is the normalized Chebyshev variable; x is only needed for f.
+    for k in (1..=n).rev() {
+        let theta = (F::from_usize(k).expect("k must fit in scalar") - half) * pi_over_n;
+        let u = theta.cos();
+        let val = f(center + radius * u);
         let mut t_prev = F::one();
         let mut t = u;
         for coeff in coeffs.iter_mut() {
-            *coeff = *coeff + values[i] * t_prev;
+            *coeff = *coeff + val * t_prev;
             let t_next = two * u * t - t_prev;
             t_prev = t;
             t = t_next;
@@ -237,7 +215,14 @@ where
     Ok(Polynomial::new(Basis::Chebyshev, coeffs))
 }
 
-fn decompose_bsgs_coeffs<F>(basis: Basis, coeffs: &[F], log_split: usize, max_degree: usize, lead: bool) -> Vec<(usize, Vec<F>)>
+fn decompose_bsgs_coeffs<F>(
+    basis: Basis,
+    coeffs: &[F],
+    log_split: usize,
+    max_degree: usize,
+    lead: bool,
+    visit: &mut impl FnMut(&[F]) -> Result<()>,
+) -> Result<()>
 where
     F: Float,
 {
@@ -248,10 +233,10 @@ where
             let log_degree = bit_len(degree);
             let smaller_log_split = optimal_split(log_degree);
             if smaller_log_split < log_split {
-                return decompose_bsgs_coeffs(basis, coeffs, smaller_log_split, max_degree, lead);
+                return decompose_bsgs_coeffs(basis, coeffs, smaller_log_split, max_degree, lead, visit);
             }
         }
-        return vec![(degree, coeffs.to_vec())];
+        return visit(coeffs);
     }
 
     let mut next_power = base;
@@ -259,10 +244,17 @@ where
         next_power <<= 1;
     }
 
-    let (q, r) = factorize_coeffs(basis, coeffs, next_power);
-    let mut steps = decompose_bsgs_coeffs(basis, &r, log_split, max_degree, false);
-    steps.extend(decompose_bsgs_coeffs(basis, &q, log_split, max_degree, lead));
-    steps
+    match basis {
+        Basis::Monomial => {
+            decompose_bsgs_coeffs(basis, &coeffs[..next_power], log_split, max_degree, false, visit)?;
+            decompose_bsgs_coeffs(basis, &coeffs[next_power..], log_split, max_degree, lead, visit)
+        }
+        Basis::Chebyshev => {
+            let (q, r) = factorize_coeffs_chebyshev(coeffs, next_power);
+            decompose_bsgs_coeffs(basis, &r, log_split, max_degree, false, visit)?;
+            decompose_bsgs_coeffs(basis, &q, log_split, max_degree, lead, visit)
+        }
+    }
 }
 
 fn should_split_leading_baby_step(degree: usize, log_split: usize, max_degree: usize, lead: bool) -> bool {
@@ -279,30 +271,20 @@ fn bit_len(n: usize) -> usize {
     usize::BITS as usize - n.leading_zeros() as usize
 }
 
-fn factorize_coeffs<F>(basis: Basis, coeffs: &[F], n: usize) -> (Vec<F>, Vec<F>)
+fn factorize_coeffs_chebyshev<F>(coeffs: &[F], n: usize) -> (Vec<F>, Vec<F>)
 where
     F: Float,
 {
-    let degree = coeffs.len().saturating_sub(1);
     let mut r = vec![F::zero(); n];
     r.copy_from_slice(&coeffs[..n]);
 
     let mut q = vec![F::zero(); n];
     q[0] = coeffs[n];
 
-    match basis {
-        Basis::Monomial => {
-            for i in n + 1..=degree {
-                q[i - n] = coeffs[i];
-            }
-        }
-        Basis::Chebyshev => {
-            let two = F::one() + F::one();
-            for (i, j) in ((n + 1)..=degree).zip(1..) {
-                q[i - n] = two * coeffs[i];
-                r[n - j] = r[n - j] - coeffs[i];
-            }
-        }
+    let two = F::one() + F::one();
+    for (i, j) in (n + 1..coeffs.len()).zip(1..) {
+        q[i - n] = two * coeffs[i];
+        r[n - j] = r[n - j] - coeffs[i];
     }
 
     (q, r)
@@ -320,8 +302,8 @@ pub struct BSGSPolynomial<C> {
     pub basis: Basis,
     pub degree: usize,
     pub base: usize,
-    pub baby_degrees: Vec<usize>,
     pub baby_steps: Vec<C>,
+    pub parity: Parity,
 }
 
 impl<BE: Backend, C> BSGSPolynomialInfos<BE> for BSGSPolynomial<C>
@@ -338,10 +320,6 @@ where
         self.baby_steps.len()
     }
 
-    fn baby_degree(&self, i: usize) -> usize {
-        self.baby_degrees[i]
-    }
-
     fn baby_step(&self, i: usize) -> &Self::Coeffs {
         &self.baby_steps[i]
     }
@@ -349,260 +327,10 @@ where
     fn basis(&self) -> Basis {
         self.basis
     }
-}
 
-// ── PowerBasis ────────────────────────────────────────────────────────────────
-
-/// Stores pre-computed powers of a ciphertext for BSGS polynomial evaluation.
-///
-/// `values[n]` = X^n (monomial basis) or Tₙ(X) (Chebyshev basis).
-/// `values[1]` must be provided at construction time.
-///
-/// Implements [`PowerBasisHelper`] so it can be passed directly to
-/// `ckks_eval_poly_const_coeffs`.
-pub struct PowerBasis<A> {
-    pub basis: Basis,
-    values: HashMap<usize, A>,
-}
-
-impl<A> PowerBasis<A> {
-    /// Creates a power basis with `x` treated as X (or T₁(X) for Chebyshev).
-    pub fn new(basis: Basis, x: A) -> Self {
-        let mut values = HashMap::new();
-        values.insert(1, x);
-        Self { basis, values }
+    fn parity(&self) -> Parity {
+        self.parity
     }
-
-    /// Returns a reference to the stored power at degree `n`, if computed.
-    pub fn get_stored(&self, n: usize) -> Option<&A> {
-        self.values.get(&n)
-    }
-
-    /// Inserts a pre-computed power at degree `n`.
-    pub fn insert(&mut self, n: usize, value: A) {
-        self.values.insert(n, value);
-    }
-}
-
-impl<BE: Backend, A> PowerBasisHelper<BE, A> for PowerBasis<A>
-where
-    A: GLWEToBackendRef<BE>,
-{
-    fn get(&self, power: usize) -> Result<&A> {
-        self.values
-            .get(&power)
-            .ok_or_else(|| anyhow!("PowerBasis: X^{power} not computed; call gen_power or populate first"))
-    }
-}
-
-impl<D: Data> PowerBasis<CKKSCiphertext<D>> {
-    /// Recursively computes and stores X^`n` using `split_degree` to choose the
-    /// multiplication tree: X^n = X^a · X^b where `split_degree(n) = (a, b)`.
-    pub fn gen_power<BE>(
-        &mut self,
-        n: usize,
-        module: &Module<BE>,
-        tsk: &poulpy_core::layouts::GLWETensorKeyPrepared<D, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        BE: Backend<OwnedBuf = D>,
-        Module<BE>: CKKSMulOps<BE> + CKKSModuleAlloc<BE>,
-        CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        poulpy_core::layouts::GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
-    {
-        ensure!(
-            self.basis == Basis::Monomial,
-            "PowerBasis::gen_power only supports the monomial basis; use gen_power_chebyshev for Chebyshev"
-        );
-
-        if self.values.contains_key(&n) {
-            return Ok(());
-        }
-
-        ensure!(n >= 2, "gen_power: n={n} < 2; X^1 must be provided at construction");
-
-        let (a, b) = split_degree(n);
-        self.gen_power(a, module, tsk, scratch)?;
-        self.gen_power(b, module, tsk, scratch)?;
-
-        // Hold immutable borrows only inside this block; insert afterwards.
-        let result = {
-            let a_val = self.values.get(&a).expect("gen_power(a) just succeeded");
-            let b_val = self.values.get(&b).expect("gen_power(b) just succeeded");
-            let k = mul_ct_effective_k(a_val, b_val)?;
-            let mut r = module.ckks_ciphertext_alloc(a_val.base2k(), k.into());
-            module.ckks_mul_into(&mut r, a_val, b_val, tsk, scratch)?;
-            r
-        };
-        self.values.insert(n, result);
-        Ok(())
-    }
-
-    /// Recursively computes and stores `T_n(X)` for the Chebyshev basis.
-    ///
-    /// Generates the plaintext `T_0 = 1` term on demand for
-    /// `T_{a+b}(X) = 2*T_a(X)*T_b(X) - T_{|a-b|}(X)`.
-    pub fn gen_power_chebyshev<BE>(
-        &mut self,
-        n: usize,
-        module: &Module<BE>,
-        tsk: &poulpy_core::layouts::GLWETensorKeyPrepared<D, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        BE: Backend<OwnedBuf = D>,
-        Module<BE>: CKKSAddOps<BE> + CKKSCopyOps<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
-        CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        poulpy_core::layouts::GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
-    {
-        ensure!(
-            self.basis == Basis::Chebyshev,
-            "gen_power_chebyshev requires a Chebyshev PowerBasis"
-        );
-
-        if self.values.contains_key(&n) {
-            return Ok(());
-        }
-
-        ensure!(n >= 2, "gen_power_chebyshev: n={n} < 2; T_1 must be provided at construction");
-
-        let (a, b) = split_degree(n);
-        self.gen_power_chebyshev(a, module, tsk, scratch)?;
-        self.gen_power_chebyshev(b, module, tsk, scratch)?;
-
-        let c = a.abs_diff(b);
-        if c != 0 {
-            self.gen_power_chebyshev(c, module, tsk, scratch)?;
-        }
-
-        let result = {
-            let a_val = self.values.get(&a).expect("gen_power_chebyshev(a) just succeeded");
-            let b_val = self.values.get(&b).expect("gen_power_chebyshev(b) just succeeded");
-            let k = mul_ct_effective_k(a_val, b_val)?;
-            let mut product = module.ckks_ciphertext_alloc(a_val.base2k(), k.into());
-            module.ckks_mul_into(&mut product, a_val, b_val, tsk, scratch)?;
-
-            let mut doubled = module.ckks_ciphertext_alloc(product.base2k(), product.effective_k().into());
-            module.ckks_add_into(&mut doubled, &product, &product, scratch)?;
-
-            if c == 0 {
-                module.ckks_sub_one_assign(&mut doubled, scratch)?;
-            } else {
-                let c_val = self.values.get(&c).expect("gen_power_chebyshev(c) just succeeded");
-                module.ckks_sub_assign(&mut doubled, c_val, scratch)?;
-            }
-
-            compact_power_ct(module, &doubled, scratch)?
-        };
-
-        self.values.insert(n, result);
-        Ok(())
-    }
-
-    /// Pre-computes all powers required to evaluate a polynomial of the given
-    /// `degree` using BSGS with the Monomial basis.
-    ///
-    /// Populates powers of two up to `2^(⌈log₂ degree⌉−1)` and all
-    /// intermediate powers from 2 up to `(2^log_split) − 1`.
-    pub fn populate<BE>(
-        &mut self,
-        degree: usize,
-        module: &Module<BE>,
-        tsk: &poulpy_core::layouts::GLWETensorKeyPrepared<D, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        BE: Backend<OwnedBuf = D>,
-        Module<BE>: CKKSMulOps<BE> + CKKSModuleAlloc<BE>,
-        CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        poulpy_core::layouts::GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
-    {
-        ensure!(
-            self.basis == Basis::Monomial,
-            "PowerBasis::populate only supports the monomial basis; use populate_chebyshev for Chebyshev"
-        );
-        ensure!(degree >= 1, "populate: degree must be ≥ 1");
-
-        let log_degree = (usize::BITS - degree.leading_zeros()) as usize;
-        let log_split = optimal_split(log_degree);
-
-        // Largest power of two needed (also computes all smaller powers of two
-        // recursively via split_degree).
-        let largest_pow2 = 1usize << (log_degree - 1);
-        if largest_pow2 >= 2 {
-            self.gen_power(largest_pow2, module, tsk, scratch)?;
-        }
-
-        // Intermediate powers from base−1 down to 3 (2 is computed transitively).
-        let base = 1usize << log_split;
-        for i in (3..base).rev() {
-            self.gen_power(i, module, tsk, scratch)?;
-        }
-
-        Ok(())
-    }
-
-    /// Pre-computes all Chebyshev powers required to evaluate a polynomial of
-    /// the given `degree` using the BSGS evaluator.
-    pub fn populate_chebyshev<BE>(
-        &mut self,
-        degree: usize,
-        module: &Module<BE>,
-        tsk: &poulpy_core::layouts::GLWETensorKeyPrepared<D, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        BE: Backend<OwnedBuf = D>,
-        Module<BE>: CKKSAddOps<BE> + CKKSCopyOps<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
-        CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        poulpy_core::layouts::GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
-    {
-        ensure!(
-            self.basis == Basis::Chebyshev,
-            "populate_chebyshev requires a Chebyshev PowerBasis"
-        );
-        ensure!(degree >= 1, "populate_chebyshev: degree must be ≥ 1");
-
-        let log_degree = (usize::BITS - degree.leading_zeros()) as usize;
-        let log_split = optimal_split(log_degree);
-
-        let largest_pow2 = 1usize << (log_degree - 1);
-        if largest_pow2 >= 2 {
-            self.gen_power_chebyshev(largest_pow2, module, tsk, scratch)?;
-        }
-
-        let base = 1usize << log_split;
-        for i in (3..base).rev() {
-            self.gen_power_chebyshev(i, module, tsk, scratch)?;
-        }
-
-        Ok(())
-    }
-}
-
-fn compact_power_ct<M, S, BE: Backend>(
-    module: &M,
-    src: &S,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<CKKSCiphertext<BE::OwnedBuf>>
-where
-    M: CKKSCopyOps<BE> + CKKSModuleAlloc<BE>,
-    S: GLWEToBackendRef<BE> + CKKSCtBounds,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE>,
-{
-    let mut compact = module.ckks_ciphertext_alloc(src.base2k(), src.effective_k().into());
-    module.ckks_copy(&mut compact, src, scratch)?;
-    Ok(compact)
-}
-
-fn mul_ct_effective_k<A, B>(a: &A, b: &B) -> Result<usize>
-where
-    A: GLWEInfos + CKKSInfos,
-    B: GLWEInfos + CKKSInfos,
-{
-    let log_budget = checked_mul_ct_log_budget("power_basis", a.log_budget(), b.log_budget(), a.log_delta(), b.log_delta())?;
-    Ok(log_budget + a.log_delta().min(b.log_delta()))
 }
 
 #[cfg(test)]
@@ -615,8 +343,12 @@ mod tests {
         let log_split = optimal_split(bit_len(degree));
         let coeffs = vec![0.0f64; degree + 1];
 
-        let steps = decompose_bsgs_coeffs(Basis::Chebyshev, &coeffs, log_split, degree, true);
-        let degrees: Vec<usize> = steps.iter().map(|(degree, _)| *degree).collect();
+        let mut degrees = Vec::new();
+        decompose_bsgs_coeffs(Basis::Chebyshev, &coeffs, log_split, degree, true, &mut |s| {
+            degrees.push(s.len() - 1);
+            Ok(())
+        })
+        .unwrap();
 
         assert_eq!(log_split, 3);
         assert_eq!(degrees, vec![7, 7, 7, 3, 1, 1]);
@@ -628,8 +360,12 @@ mod tests {
         let log_split = optimal_split(bit_len(degree));
         let coeffs = vec![0.0f64; 8];
 
-        let steps = decompose_bsgs_coeffs(Basis::Chebyshev, &coeffs, log_split, degree, false);
-        let degrees: Vec<usize> = steps.iter().map(|(degree, _)| *degree).collect();
+        let mut degrees = Vec::new();
+        decompose_bsgs_coeffs(Basis::Chebyshev, &coeffs, log_split, degree, false, &mut |s| {
+            degrees.push(s.len() - 1);
+            Ok(())
+        })
+        .unwrap();
 
         assert_eq!(degrees, vec![7]);
     }

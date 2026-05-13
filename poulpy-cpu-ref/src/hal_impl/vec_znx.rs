@@ -556,6 +556,60 @@ macro_rules! hal_impl_vec_znx {
             );
         }
 
+        fn vec_znx_lsh_add_coeff_to_coeff_backend<'s, 'r, 'a>(
+            module: &Module<Self>,
+            base2k: usize,
+            k: usize,
+            res: &mut VecZnxBackendMut<'r, Self>,
+            res_col: usize,
+            a: &VecZnxBackendRef<'a, Self>,
+            a_col: usize,
+            a_coeff: usize,
+            res_coeff: usize,
+            scratch: &mut poulpy_hal::layouts::ScratchArena<'s, Self>,
+        ) {
+            let mut scratch = scratch.borrow();
+            <Self as HalVecZnxDefault<Self>>::vec_znx_lsh_add_coeff_to_coeff_backend_default(
+                module,
+                base2k,
+                k,
+                res,
+                res_col,
+                a,
+                a_col,
+                a_coeff,
+                res_coeff,
+                &mut scratch,
+            );
+        }
+
+        fn vec_znx_lsh_sub_coeff_to_coeff_backend<'s, 'r, 'a>(
+            module: &Module<Self>,
+            base2k: usize,
+            k: usize,
+            res: &mut VecZnxBackendMut<'r, Self>,
+            res_col: usize,
+            a: &VecZnxBackendRef<'a, Self>,
+            a_col: usize,
+            a_coeff: usize,
+            res_coeff: usize,
+            scratch: &mut poulpy_hal::layouts::ScratchArena<'s, Self>,
+        ) {
+            let mut scratch = scratch.borrow();
+            <Self as HalVecZnxDefault<Self>>::vec_znx_lsh_sub_coeff_to_coeff_backend_default(
+                module,
+                base2k,
+                k,
+                res,
+                res_col,
+                a,
+                a_col,
+                a_coeff,
+                res_coeff,
+                &mut scratch,
+            );
+        }
+
         fn vec_znx_lsh_sub_backend<'s, 'r, 'a>(
             module: &Module<Self>,
             base2k: usize,

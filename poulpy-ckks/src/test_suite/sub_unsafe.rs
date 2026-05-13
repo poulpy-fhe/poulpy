@@ -1,11 +1,11 @@
-//! Subtraction tests for the `CKKSSubOpsUnnormalized` API.
+//! Subtraction tests for the unnormalized `CKKSSubOps` API.
 
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module},
 };
 
-use crate::{CKKSInfos, layouts::UnnormalizedCKKSCiphertext, leveled::api::CKKSSubOpsUnnormalized};
+use crate::{CKKSInfos, layouts::UnnormalizedCKKSCiphertext, leveled::api::CKKSSubOps};
 
 use super::helpers::{
     ADD_SUB_CONST, PT_PREC, TestContextBackend, TestContextModule, TestScalar, add_sub_const_pt, alloc_ct, alloc_scratch,

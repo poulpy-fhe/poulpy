@@ -2,7 +2,10 @@ use anyhow::Result;
 use poulpy_core::layouts::{GLWEInfos, GLWEPlaintext, GLWESecretPreparedToBackendRef, GLWEToBackendMut, LWEInfos};
 use poulpy_core::{EncryptionInfos, GLWEDecrypt, GLWEEncryptSk, ScratchArenaTakeCore};
 use poulpy_hal::{
-    api::{ScratchAvailable, VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddIntoBackend, VecZnxRshBackend, VecZnxRshTmpBytes},
+    api::{
+        ScratchAvailable, VecZnxLshAddIntoBackend, VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddIntoBackend,
+        VecZnxRshBackend, VecZnxRshTmpBytes,
+    },
     layouts::{Backend, ScratchArena},
     source::Source,
 };
@@ -16,9 +19,11 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
     fn ckks_encrypt_sk_tmp_bytes_default<A>(&self, ct_infos: &A) -> usize
     where
         A: GLWEInfos + CKKSInfos,
-        Self: GLWEEncryptSk<BE> + VecZnxRshAddIntoBackend<BE> + VecZnxRshTmpBytes,
+        Self: GLWEEncryptSk<BE> + VecZnxLshTmpBytes + VecZnxRshAddIntoBackend<BE> + VecZnxRshTmpBytes,
     {
-        self.glwe_encrypt_sk_tmp_bytes(ct_infos).max(self.vec_znx_rsh_tmp_bytes())
+        self.glwe_encrypt_sk_tmp_bytes(ct_infos)
+            .max(self.vec_znx_lsh_tmp_bytes())
+            .max(self.vec_znx_rsh_tmp_bytes())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -37,7 +42,7 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
         S: GLWESecretPreparedToBackendRef<BE>,
         Dct: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         Dpt: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
-        Self: GLWEEncryptSk<BE> + VecZnxRshAddIntoBackend<BE> + CKKSPlaintextDefault<BE>,
+        Self: GLWEEncryptSk<BE> + VecZnxLshAddIntoBackend<BE> + VecZnxRshAddIntoBackend<BE> + CKKSPlaintextDefault<BE>,
         BE: 's,
         for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     {

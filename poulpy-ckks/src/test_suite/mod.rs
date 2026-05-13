@@ -505,6 +505,14 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_exp7
             );
             run_test!(
+                eval_poly_const_coeffs_even_monomial,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_even_monomial
+            );
+            run_test!(
+                eval_poly_const_coeffs_odd_monomial,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_odd_monomial
+            );
+            run_test!(
                 eval_poly_const_coeffs_chebyshev_degree31,
                 $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_chebyshev_degree31
             );

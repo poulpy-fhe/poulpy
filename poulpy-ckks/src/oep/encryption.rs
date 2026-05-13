@@ -9,7 +9,10 @@ use poulpy_core::{
     oep::{DecryptionDefault, EncryptionDefault},
 };
 use poulpy_hal::{
-    api::{ScratchAvailable, VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddIntoBackend, VecZnxRshBackend, VecZnxRshTmpBytes},
+    api::{
+        ScratchAvailable, VecZnxLshAddIntoBackend, VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddIntoBackend,
+        VecZnxRshBackend, VecZnxRshTmpBytes,
+    },
     layouts::{Backend, HostBackend, HostDataMut, HostDataRef, Module, ScratchArena},
     oep::{HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl},
     source::Source,
@@ -69,6 +72,7 @@ where
         + CKKSPlaintextDefault<BE>
         + EncryptionDefault<BE>
         + DecryptionDefault<BE>
+        + VecZnxLshAddIntoBackend<BE>
         + VecZnxRshAddIntoBackend<BE>
         + VecZnxRshTmpBytes
         + VecZnxLshBackend<BE>

@@ -5,10 +5,7 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
-use crate::{
-    CKKSCtBounds, CKKSInfos,
-    layouts::{CKKSCiphertext, UnnormalizedCKKSCiphertext},
-};
+use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSCiphertext};
 
 /// Tree-reduction sum over a slice of ciphertexts.
 pub trait CKKSAddManyOps<BE: Backend> {
@@ -48,8 +45,9 @@ pub trait CKKSAddManyOps<BE: Backend> {
 
 /// Fused multiply-accumulate: `dst += a * b`.
 ///
-/// Each variant computes the product of two operands and adds it to `dst`
-/// without a separate allocation for the intermediate product.
+/// Each variant accepts any CKKS-compatible backend layout and uses caller
+/// scratch for the intermediate product instead of requiring a caller-visible
+/// ciphertext allocation.
 pub trait CKKSMulAddOps<BE: Backend> {
     fn ckks_mul_add_ct_tmp_bytes<R, T>(&self, res: &R, tsk: &T) -> usize
     where
@@ -86,19 +84,19 @@ pub trait CKKSMulAddOps<BE: Backend> {
     /// log_budget_out = min(dst.log_budget, prod_budget)
     ///                  − max(0, min(dst.effective_k(), prod_effective_k) − dst.max_k())
     /// ```
-    fn ckks_mul_add_ct_into<Dst: Data, A: Data, B: Data, T: Data>(
+    fn ckks_mul_add_ct_into<Dst, A, B, T>(
         &self,
-        dst: &mut CKKSCiphertext<Dst>,
-        a: &CKKSCiphertext<A>,
-        b: &CKKSCiphertext<B>,
-        tsk: &GLWETensorKeyPrepared<T, BE>,
+        dst: &mut Dst,
+        a: &A,
+        b: &B,
+        tsk: &T,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<A>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
-        CKKSCiphertext<B>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
-        GLWETensorKeyPrepared<T, BE>: GLWETensorKeyPreparedToBackendRef<BE>;
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE> + CKKSCtBounds,
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
 
     /// Computes `dst += a * pt` where `pt` is a full plaintext polynomial.
     ///
@@ -114,51 +112,44 @@ pub trait CKKSMulAddOps<BE: Backend> {
     /// log_budget_out = min(dst.log_budget, prod_budget)
     ///                  − max(0, min(dst.effective_k(), prod_effective_k) − dst.max_k())
     /// ```
-    fn ckks_mul_add_pt_vec_into<Dst: Data, A: Data, P>(
-        &self,
-        dst: &mut CKKSCiphertext<Dst>,
-        a: &CKKSCiphertext<A>,
-        pt: &P,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    fn ckks_mul_add_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<A>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
     /// Computes `dst += a * pt[pt_coeff]`.
     ///
     /// Metadata follows the same rule as [`Self::ckks_mul_add_pt_vec_into`].
-    fn ckks_mul_add_pt_const_into<Dst: Data, A: Data, P>(
+    fn ckks_mul_add_pt_const_into<Dst, A, P>(
         &self,
-        dst: &mut CKKSCiphertext<Dst>,
-        a: &CKKSCiphertext<A>,
-        pt: &P,
-        pt_coeff: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<A>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds;
-
-    /// Computes `dst += a * pt[pt_coeff]` without normalizing `dst`.
-    ///
-    /// The accumulator `dst` carries un-propagated carries in its limb digits.
-    /// Use this to fuse several multiply-add steps before a single
-    /// [`UnnormalizedCKKSCiphertext::normalize`] call.  See
-    /// [`crate::api::CKKSAddOpsUnnormalized`] for the digit-growth analysis
-    /// and safety bound.
-    fn ckks_mul_add_pt_const_into_unnormalized<Dst: Data, A, P>(
-        &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst>,
+        dst: &mut Dst,
         a: &A,
         pt: &P,
         pt_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds;
+
+    /// Computes `dst += a * pt[pt_coeff]` without normalizing `dst`.
+    ///
+    /// The accumulator `dst` carries un-propagated carries in its limb digits.
+    /// Use this to fuse several multiply-add steps before a single
+    /// normalization pass.  See [`crate::api::CKKSAddOps`] for
+    /// the digit-growth analysis and safety bound.
+    fn ckks_mul_add_pt_const_into_unnormalized<Dst, A, P>(
+        &self,
+        dst: &mut Dst,
+        a: &A,
+        pt: &P,
+        pt_coeff: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
@@ -166,15 +157,15 @@ pub trait CKKSMulAddOps<BE: Backend> {
     ///
     /// Metadata follows the same rule as
     /// [`Self::ckks_mul_add_pt_const_into_unnormalized`].
-    fn ckks_mul_add_pt_vec_into_unnormalized<Dst: Data, A, P>(
+    fn ckks_mul_add_pt_vec_into_unnormalized<Dst, A, P>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst>,
+        dst: &mut Dst,
         a: &A,
         pt: &P,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 }

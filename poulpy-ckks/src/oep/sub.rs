@@ -3,7 +3,10 @@ use crate::default::sub::CKKSSubDefault;
 use anyhow::Result;
 use poulpy_core::{GLWENormalize, GLWEShift, GLWESub, ScratchArenaTakeCore, layouts::LWEInfos};
 use poulpy_hal::{
-    api::{VecZnxRshSubBackend, VecZnxRshSubCoeffIntoBackend, VecZnxRshTmpBytes},
+    api::{
+        VecZnxLshSubBackend, VecZnxLshSubCoeffToCoeffBackend, VecZnxLshTmpBytes, VecZnxRshSubBackend,
+        VecZnxRshSubCoeffIntoBackend, VecZnxRshTmpBytes,
+    },
     layouts::{Backend, Data, Module, ScratchArena},
 };
 
@@ -164,6 +167,9 @@ where
         + GLWENormalize<BE>
         + GLWEShift<BE>
         + GLWESub<BE>
+        + VecZnxLshSubBackend<BE>
+        + VecZnxLshSubCoeffToCoeffBackend<BE>
+        + VecZnxLshTmpBytes
         + VecZnxRshSubBackend<BE>
         + VecZnxRshSubCoeffIntoBackend<BE>
         + VecZnxRshTmpBytes,

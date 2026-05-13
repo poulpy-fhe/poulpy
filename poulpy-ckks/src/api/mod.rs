@@ -14,7 +14,7 @@ mod rotate;
 mod sub;
 mod tmp_bytes;
 
-pub use add::{CKKSAddOps, CKKSAddOpsUnnormalized};
+pub use add::CKKSAddOps;
 pub use composite::{CKKSAddManyOps, CKKSAffineOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulSubOps};
 pub use conjugate::CKKSConjugateOps;
 pub use copy::CKKSCopyOps;
@@ -27,5 +27,5 @@ pub use polynomial_evaluation::*;
 pub use pow2::CKKSPow2Ops;
 pub use rescale::CKKSRescaleOps;
 pub use rotate::CKKSRotateOps;
-pub use sub::{CKKSSubOps, CKKSSubOpsUnnormalized};
+pub use sub::CKKSSubOps;
 pub use tmp_bytes::CKKSAllOpsTmpBytes;

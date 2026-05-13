@@ -22,17 +22,17 @@
 //! metadata for you, while maintenance helpers let you compact or resize owned
 //! buffers without violating those invariants.
 //!
-//! Safe add/sub operations return K-normalized ciphertexts. The paired
-//! unnormalized traits ([`api::CKKSAddOpsUnnormalized`] and
-//! [`api::CKKSSubOpsUnnormalized`]) write into an
-//! [`layouts::UnnormalizedCKKSCiphertext`] for callers who want to fuse
-//! several linear steps before normalizing explicitly. Limb digits in that
-//! wrapper may hold un-propagated carries (wider than `base2k` bits), so
-//! passing it to any DFT-domain primitive (keyswitching, convolution,
-//! automorphisms) would produce incorrect decryptions. The wrapper does not
-//! implement [`GLWEToBackendRef`] or [`GLWEToBackendMut`], making such misuse
-//! a compile error. Call [`layouts::UnnormalizedCKKSCiphertext::normalize`]
-//! before the next keyswitching or convolution step.
+//! Safe add/sub operations return K-normalized ciphertexts. Their
+//! unnormalized variants live on [`api::CKKSAddOps`] and [`api::CKKSSubOps`]
+//! and write into an [`layouts::UnnormalizedCKKSCiphertext`] for callers who
+//! want to fuse several linear steps before normalizing explicitly. Limb
+//! digits in that wrapper may hold un-propagated carries (wider than `base2k`
+//! bits), so passing it to any DFT-domain primitive (keyswitching,
+//! convolution, automorphisms) would produce incorrect decryptions. The
+//! wrapper does not implement [`GLWEToBackendRef`] or [`GLWEToBackendMut`],
+//! making such misuse a compile error. Call
+//! [`layouts::UnnormalizedCKKSCiphertext::normalize`] before the next
+//! keyswitching or convolution step.
 //!
 //! ## Modules
 //!
@@ -55,6 +55,7 @@ pub mod layouts;
 pub mod leveled;
 pub mod oep;
 pub mod polynomial;
+pub mod power_basis;
 pub mod test_suite;
 pub use error::CKKSCompositionError;
 pub(crate) use error::{

@@ -169,19 +169,19 @@ pub(crate) fn ensure_plaintext_alignment(
     op: &'static str,
     ct_log_budget: usize,
     pt_log_delta: usize,
-    pt_k: usize,
-) -> Result<usize> {
+    pt_effective_k: usize,
+) -> Result<()> {
     let available = ct_log_budget + pt_log_delta;
-    if available < pt_k {
+    if available < pt_effective_k {
         return Err(CKKSCompositionError::PlaintextAlignmentImpossible {
             op,
             ct_log_budget,
             pt_log_delta,
-            pt_k,
+            pt_k: pt_effective_k,
         }
         .into());
     }
-    Ok(available - pt_k)
+    Ok(())
 }
 
 pub(crate) fn checked_mul_ct_log_budget(

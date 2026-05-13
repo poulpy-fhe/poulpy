@@ -3,7 +3,10 @@ use crate::default::add::CKKSAddDefault;
 use anyhow::Result;
 use poulpy_core::{GLWEAdd, GLWENormalize, GLWEShift, ScratchArenaTakeCore, layouts::LWEInfos};
 use poulpy_hal::{
-    api::{VecZnxRshAddCoeffIntoBackend, VecZnxRshAddIntoBackend, VecZnxRshTmpBytes},
+    api::{
+        VecZnxLshAddCoeffToCoeffBackend, VecZnxLshAddIntoBackend, VecZnxLshTmpBytes, VecZnxRshAddCoeffIntoBackend,
+        VecZnxRshAddIntoBackend, VecZnxRshTmpBytes,
+    },
     layouts::{Backend, Data, Module, ScratchArena},
     oep::HalVecZnxImpl,
 };
@@ -67,6 +70,15 @@ pub unsafe trait CKKSAddImpl<BE: Backend>: Backend {
     where
         Dst: Data,
         CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        A: GLWEToBackendRef<BE> + CKKSInfos;
+    fn ckks_add_assign_unnormalized_generic<Dst, A>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        a: &A,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos;
     fn ckks_add_one_assign<Dst>(module: &Module<BE>, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
@@ -176,6 +188,9 @@ where
         + GLWEAdd<BE>
         + GLWENormalize<BE>
         + GLWEShift<BE>
+        + VecZnxLshAddCoeffToCoeffBackend<BE>
+        + VecZnxLshAddIntoBackend<BE>
+        + VecZnxLshTmpBytes
         + VecZnxRshAddCoeffIntoBackend<BE>
         + VecZnxRshAddIntoBackend<BE>
         + VecZnxRshTmpBytes,
@@ -250,6 +265,19 @@ where
         A: GLWEToBackendRef<BE> + CKKSInfos,
     {
         module.ckks_add_assign_unsafe_default(dst.inner, a, scratch)
+    }
+
+    fn ckks_add_assign_unnormalized_generic<Dst, A>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        a: &A,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSInfos,
+    {
+        module.ckks_add_assign_unsafe_default(dst, a, scratch)
     }
 
     fn ckks_add_one_assign<Dst>(module: &Module<BE>, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
