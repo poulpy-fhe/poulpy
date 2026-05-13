@@ -15,7 +15,7 @@ We will acknowledge receipt and work with you on resolution.
 
 ## Security Model
 
-Poulpy implements RLWE-based cryptography and follows the standard **IND-CPA security model** when used with appropriate parameters.
+Poulpy implements Module-LWE-based cryptography and follows the standard **IND-CPA security model** when used with appropriate parameters.
 
 To select secure parameters, we recommend using the [Lattice Estimator](https://github.com/malb/lattice-estimator).
 

@@ -16,7 +16,7 @@
 ## Library Crates
 
 - **`poulpy-hal`**: a crate providing layouts and a trait-based hardware acceleration layer with open extension points, matching the API and types of spqlios-arithmetic. This crate does not provide concrete implementations other than the layouts (e.g. `VecZnx`, `VmpPmat`).
-- **`poulpy-core`**: a backend-agnostic crate implementing scheme-agnostic RLWE arithmetic for LWE, GLWE, GGLWE, and GGSW ciphertexts using **`poulpy-hal`**. It can be instantiated with any backend crate (e.g. `poulpy-cpu-ref`, `poulpy-cpu-avx`).
+- **`poulpy-core`**: a backend-agnostic crate implementing scheme-agnostic Module-LWE arithmetic for LWE, GLWE, GGLWE, and GGSW ciphertexts using **`poulpy-hal`**. It can be instantiated with any backend crate (e.g. `poulpy-cpu-ref`, `poulpy-cpu-avx`).
 - **`poulpy-ckks`**: a backend-agnostic leveled CKKS implementation built on **`poulpy-core`** and **`poulpy-hal`**. This is the first iteration of the CKKS crate: the evaluator is functional and tested, but the public API is still subject to change.
 - **`poulpy-bin-fhe`**: a backend-agnostic binary/gate-level FHE crate built on **`poulpy-core`** and **`poulpy-hal`**. This replaces the former `poulpy-schemes` crate.
 - **`poulpy-cpu-ref`**: the reference CPU implementation of **`poulpy-hal`**.
@@ -29,7 +29,7 @@
 
 ```
 poulpy-hal                   ← hardware abstraction: layouts and operation traits
-└── poulpy-core              ← scheme-agnostic RLWE arithmetic (LWE, GLWE, GGLWE, GGSW)
+└── poulpy-core              ← scheme-agnostic Module-LWE arithmetic (LWE, GLWE, GGLWE, GGSW)
     ├── poulpy-ckks           ← leveled CKKS evaluator
     └── poulpy-bin-fhe       ← binary / gate-level FHE
 
@@ -83,7 +83,7 @@ This provides the following benefits:
 
 - **Linear number of DFTs in the half external product:** The bivariate representation of the coefficients implicitly provides the digit decomposition. As a result, the number of DFTs is linear in the number of limbs, unlike in the RNS representation where it is quadratic due to RNS basis conversion. This enables much more efficient key switching, which is one of the **most used and expensive** FHE operations.
 
-- **Unified plaintext space:** The bivariate polynomial representation is, by nature, a high-precision discretized representation of the Torus $\mathbb{T}_{N}[X]$. Using the Torus as the common plaintext space for all schemes follows the vision of [CHIMERA: Combining Ring-LWE-based Fully Homomorphic Encryption Schemes](https://eprint.iacr.org/2018/758): unifying RLWE-based FHE schemes (TFHE, FHEW, BGV, BFV, CLPX, GBFV, CKKS, ...) under a single scheme with different encodings, enabling native and efficient scheme switching.
+- **Unified plaintext space:** The bivariate polynomial representation is, by nature, a high-precision discretized representation of the Torus $\mathbb{T}_{N}[X]$. Using the Torus as the common plaintext space for all schemes follows the vision of [CHIMERA: Combining Ring-LWE-based Fully Homomorphic Encryption Schemes](https://eprint.iacr.org/2018/758): unifying Module-LWE-based FHE schemes (TFHE, FHEW, BGV, BFV, CLPX, GBFV, CKKS, ...) under a single scheme with different encodings, enabling native and efficient scheme switching.
 
 - **Simpler implementation:** Since cyclotomic arithmetic is decoupled from the coefficient representation, the same pipeline (including DFT) can be reused for all limbs, unlike in the RNS representation. The bivariate representation also has a straightforward flat, aligned, and vectorized memory layout. These properties make it a strong target for hardware acceleration.
 

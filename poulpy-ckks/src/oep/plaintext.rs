@@ -45,3 +45,11 @@ where
         module.ckks_extract_pt_default(dst, src, scratch)
     }
 }
+
+#[macro_export]
+macro_rules! impl_ckks_plaintext_defaults {
+    ($be:ty) => {
+        impl $crate::default::plaintext::CKKSPlaintextDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
+    };
+}
+pub use crate::impl_ckks_plaintext_defaults;

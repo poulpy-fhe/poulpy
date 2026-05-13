@@ -21,7 +21,11 @@ use crate::{
         CKKSRotateOps, CKKSSubOps, CKKSSubOpsUnnormalized,
     },
     encoding::reim::Encoder,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintextVecHostCodec, ciphertext::CKKSOffset, plaintext::CKKSPlaintext},
+    layouts::{
+        CKKSCiphertext, CKKSModuleAlloc, CKKSNormalizationState, CKKSPlaintextVecHostCodec,
+        ciphertext::{CKKSMaintainOpsDefault, CKKSOffset},
+        plaintext::CKKSPlaintext,
+    },
     leveled::api::{CKKSDecrypt, CKKSEncrypt},
 };
 use poulpy_core::{
@@ -80,6 +84,7 @@ pub trait TestContextModule<BE: Backend>:
     ModuleNew<BE>
     + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
     + CKKSModuleAlloc<BE>
+    + CKKSMaintainOpsDefault<BE>
     + CKKSAllOpsTmpBytes<BE>
     + CKKSEncrypt<BE>
     + CKKSDecrypt<BE>
@@ -115,6 +120,7 @@ impl<BE: Backend, M> TestContextModule<BE> for M where
     M: ModuleNew<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
         + CKKSModuleAlloc<BE>
+        + CKKSMaintainOpsDefault<BE>
         + CKKSAllOpsTmpBytes<BE>
         + CKKSEncrypt<BE>
         + CKKSDecrypt<BE>
@@ -909,7 +915,12 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
 
 // ─── metadata assertion helpers ───────────────────────────────────────────────
 
-pub fn assert_ct_meta(label: &str, ct: &CKKSCiphertext<impl Data>, log_delta: usize, log_budget: usize) {
+pub fn assert_ct_meta<D: Data, S: CKKSNormalizationState>(
+    label: &str,
+    ct: &CKKSCiphertext<D, S>,
+    log_delta: usize,
+    log_budget: usize,
+) {
     assert_eq!(ct.log_delta(), log_delta, "{label}: unexpected log_delta");
     assert_eq!(ct.log_budget(), log_budget, "{label}: unexpected log_budget");
 }
@@ -919,13 +930,17 @@ pub fn assert_ckks_error(label: &str, err: &anyhow::Error, want: CKKSComposition
     assert_eq!(got, Some(&want), "{label}: unexpected error: {err}");
 }
 
-pub fn assert_unary_output_meta(label: &str, ct: &CKKSCiphertext<impl Data>, input: &CKKSCiphertext<impl Data>) {
+pub fn assert_unary_output_meta<D: Data, S: CKKSNormalizationState>(
+    label: &str,
+    ct: &CKKSCiphertext<D, S>,
+    input: &CKKSCiphertext<impl Data>,
+) {
     assert_ct_meta(label, ct, input.log_delta(), input.log_budget() - ct.offset_unary(input));
 }
 
-pub fn assert_binary_output_meta(
+pub fn assert_binary_output_meta<D: Data, S: CKKSNormalizationState>(
     label: &str,
-    ct: &CKKSCiphertext<impl Data>,
+    ct: &CKKSCiphertext<D, S>,
     a: &CKKSCiphertext<impl Data>,
     b: &CKKSCiphertext<impl Data>,
 ) {
@@ -937,14 +952,24 @@ pub fn assert_binary_output_meta(
     );
 }
 
-pub fn assert_mul_ct_output_meta(label: &str, ct: &CKKSCiphertext<impl Data>, a: &impl CKKSInfos, b: &impl CKKSInfos) {
+pub fn assert_mul_ct_output_meta<D: Data, S: CKKSNormalizationState>(
+    label: &str,
+    ct: &CKKSCiphertext<D, S>,
+    a: &impl CKKSInfos,
+    b: &impl CKKSInfos,
+) {
     let log_budget = a.log_budget().min(b.log_budget()) - a.log_delta().max(b.log_delta());
     let log_delta = a.log_delta().min(b.log_delta());
     let offset = (log_budget + log_delta).saturating_sub(ct.max_k().as_usize());
     assert_ct_meta(label, ct, log_delta, log_budget - offset);
 }
 
-pub fn assert_mul_pt_output_meta(label: &str, ct: &CKKSCiphertext<impl Data>, a: &impl CKKSInfos, b: &impl CKKSInfos) {
+pub fn assert_mul_pt_output_meta<D: Data, S: CKKSNormalizationState>(
+    label: &str,
+    ct: &CKKSCiphertext<D, S>,
+    a: &impl CKKSInfos,
+    b: &impl CKKSInfos,
+) {
     let log_budget = a.log_budget() - a.log_delta().min(b.log_delta());
     let log_delta = a.log_delta().max(b.log_delta());
     let offset = (log_budget + log_delta).saturating_sub(ct.max_k().as_usize());

@@ -15,7 +15,10 @@ pub mod ciphertext;
 pub mod plaintext;
 
 pub use alloc::CKKSModuleAlloc;
-pub use ciphertext::{CKKSCiphertext, CKKSCiphertextViewMut, CKKSMaintainOps, ScratchArenaTakeCKKS, UnnormalizedCKKSCiphertext};
+pub use ciphertext::{
+    CKKSCiphertext, CKKSCiphertextViewMut, CKKSMaintainOps, CKKSNormalizationState, Normalized, ScratchArenaTakeCKKS,
+    Unnormalized, UnnormalizedCKKSCiphertext,
+};
 pub use plaintext::CKKSPlaintext;
 
 use std::fmt::Debug;

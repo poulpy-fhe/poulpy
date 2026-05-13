@@ -36,7 +36,7 @@ where
     assert_eq!(module.n() as u32, a_infos.n());
     assert_eq!(module.n() as u32, key_infos.n());
 
-    let lvl_0: usize = module.glwe_keyswitch_tmp_bytes(res_infos, a_infos, key_infos);
+    let lvl_0: usize = module.glwe_keyswitch_tmp_bytes_default(res_infos, a_infos, key_infos);
     let lvl_1: usize = module.vec_znx_automorphism_assign_tmp_bytes();
 
     if res_infos.glwe_layout() == a_infos.glwe_layout() {
@@ -77,10 +77,10 @@ pub fn glwe_automorphism_key_automorphism_default<'s, BE, M, R, A, K>(
     assert_eq!(res.dsize(), a.dsize(), "res dnum: {} != a dnum: {}", res.dsize(), a.dsize());
     assert_eq!(res.base2k(), a.base2k());
     assert!(
-        scratch.available() >= module.glwe_automorphism_key_automorphism_tmp_bytes(res, a, key),
+        scratch.available() >= module.glwe_automorphism_key_automorphism_tmp_bytes_default(res, a, key),
         "scratch.available(): {} < GLWEAutomorphismKeyAutomorphism::glwe_automorphism_key_automorphism_tmp_bytes: {}",
         scratch.available(),
-        module.glwe_automorphism_key_automorphism_tmp_bytes(res, a, key)
+        module.glwe_automorphism_key_automorphism_tmp_bytes_default(res, a, key)
     );
 
     let cols_out: usize = (key.rank_out() + 1).into();
@@ -104,7 +104,7 @@ pub fn glwe_automorphism_key_automorphism_default<'s, BE, M, R, A, K>(
                     }
 
                     let mut scratch_iter = scratch.borrow();
-                    module.glwe_keyswitch_assign(&mut res_tmp, key, key_size, &mut scratch_iter);
+                    module.glwe_keyswitch_assign_default(&mut res_tmp, key, key_size, &mut scratch_iter);
 
                     for i in 0..cols_out {
                         module.vec_znx_automorphism_assign(p_inv, &mut res_tmp.data, i, &mut scratch_iter);
@@ -118,7 +118,7 @@ pub fn glwe_automorphism_key_automorphism_default<'s, BE, M, R, A, K>(
 
                     let tmp_glwe_ref = glwe_backend_ref_from_mut::<BE>(&tmp_glwe);
                     let tmp_glwe_view = &tmp_glwe_ref;
-                    module.glwe_keyswitch(&mut res_tmp, &tmp_glwe_view, key, key_size, &mut scratch_iter);
+                    module.glwe_keyswitch_default(&mut res_tmp, &tmp_glwe_view, key, key_size, &mut scratch_iter);
 
                     for i in 0..cols_out {
                         module.vec_znx_automorphism_assign(p_inv, &mut res_tmp.data, i, &mut scratch_iter);
@@ -162,7 +162,7 @@ pub fn glwe_automorphism_key_automorphism_assign_default<'s, BE, M, R, K>(
                     module.vec_znx_automorphism_assign(p, &mut res_tmp.data, i, &mut scratch_iter);
                 }
 
-                module.glwe_keyswitch_assign(&mut res_tmp, key, key_size, &mut scratch_iter);
+                module.glwe_keyswitch_assign_default(&mut res_tmp, key, key_size, &mut scratch_iter);
 
                 for i in 0..cols_out {
                     module.vec_znx_automorphism_assign(p_inv, &mut res_tmp.data, i, &mut scratch_iter);

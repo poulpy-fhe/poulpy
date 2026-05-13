@@ -72,7 +72,7 @@ where
         1u32.into(),
     );
 
-    let lvl_1_ks: usize = module.glwe_keyswitch_tmp_bytes(glwe_infos, glwe_infos, key_infos);
+    let lvl_1_ks: usize = module.glwe_keyswitch_tmp_bytes_default(glwe_infos, glwe_infos, key_infos);
     let lvl_1_a_conv: usize = if lwe_infos.base2k() == key_infos.base2k() {
         0
     } else {
@@ -117,10 +117,10 @@ pub fn glwe_from_lwe_default<'s, BE, M, R, A, K>(
     assert_eq!(ksk.n(), module.n() as u32);
     assert!(lwe.n() <= module.n() as u32);
     assert!(
-        scratch.available() >= module.glwe_from_lwe_tmp_bytes(&res_infos, &lwe, ksk),
+        scratch.available() >= module.glwe_from_lwe_tmp_bytes_default(&res_infos, &lwe, ksk),
         "scratch.available(): {} < GLWEFromLWE::glwe_from_lwe_tmp_bytes: {}",
         scratch.available(),
-        module.glwe_from_lwe_tmp_bytes(&res_infos, &lwe, ksk)
+        module.glwe_from_lwe_tmp_bytes_default(&res_infos, &lwe, ksk)
     );
 
     let scratch = scratch.borrow();
@@ -183,7 +183,7 @@ pub fn glwe_from_lwe_default<'s, BE, M, R, A, K>(
     let glwe_ref = glwe_backend_ref_from_mut::<BE>(&glwe);
     let glwe_view = &glwe_ref;
     let mut res_view = &mut res_backend;
-    module.glwe_keyswitch(&mut res_view, &glwe_view, ksk, key_size, &mut scratch_1)
+    module.glwe_keyswitch_default(&mut res_view, &glwe_view, ksk, key_size, &mut scratch_1)
 }
 
 pub fn lwe_from_glwe_tmp_bytes_default<BE, M, R, A, K>(module: &M, lwe_infos: &R, glwe_infos: &A, key_infos: &K) -> usize
@@ -206,7 +206,7 @@ where
     };
 
     let lvl_0: usize = GLWE::<Vec<u8>>::bytes_of(module.n().into(), lwe_infos.base2k(), lwe_infos.max_k(), 1u32.into());
-    let lvl_1: usize = module.glwe_keyswitch_tmp_bytes(&res_infos, glwe_infos, key_infos);
+    let lvl_1: usize = module.glwe_keyswitch_tmp_bytes_default(&res_infos, glwe_infos, key_infos);
     let lvl_2: usize = GLWE::<Vec<u8>>::bytes_of_from_infos(glwe_infos);
 
     lvl_0 + lvl_1 + lvl_2
@@ -239,10 +239,10 @@ pub fn lwe_from_glwe_default<'s, BE, M, R, A, K>(
     assert_eq!(key.n(), module.n() as u32);
     assert!(res.n() <= module.n() as u32);
     assert!(
-        scratch.available() >= module.lwe_from_glwe_tmp_bytes(res, a, key),
+        scratch.available() >= module.lwe_from_glwe_tmp_bytes_default(res, a, key),
         "scratch.available(): {} < LWEFromGLWE::lwe_from_glwe_tmp_bytes: {}",
         scratch.available(),
-        module.lwe_from_glwe_tmp_bytes(res, a, key)
+        module.lwe_from_glwe_tmp_bytes_default(res, a, key)
     );
 
     let glwe_layout: GLWELayout = GLWELayout {
@@ -256,7 +256,7 @@ pub fn lwe_from_glwe_default<'s, BE, M, R, A, K>(
     let (mut tmp_glwe_rank_1, mut scratch_1) = scratch.take_glwe_scratch(&glwe_layout);
 
     let a_backend_view = &a_backend;
-    module.glwe_keyswitch(&mut tmp_glwe_rank_1, &a_backend_view, key, key_size, &mut scratch_1);
+    module.glwe_keyswitch_default(&mut tmp_glwe_rank_1, &a_backend_view, key, key_size, &mut scratch_1);
     if a_idx != 0 {
         module.glwe_rotate_assign(-(a_idx as i64), &mut tmp_glwe_rank_1, &mut scratch_1);
     }
@@ -281,7 +281,7 @@ where
     A: GGLWEInfos,
     for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
-    module.ggsw_expand_rows_tmp_bytes(res_infos, tsk_infos)
+    module.ggsw_expand_rows_tmp_bytes_default(res_infos, tsk_infos)
 }
 
 pub fn ggsw_from_gglwe_default<'s, BE, M, R, A, T>(
@@ -309,10 +309,10 @@ pub fn ggsw_from_gglwe_default<'s, BE, M, R, A, T>(
     assert_eq!(tsk.n(), module.n() as u32);
     assert_eq!(res_backend.base2k(), a_backend.base2k());
     assert!(
-        scratch.available() >= module.ggsw_from_gglwe_tmp_bytes(&res_backend, tsk),
+        scratch.available() >= module.ggsw_from_gglwe_tmp_bytes_default(&res_backend, tsk),
         "scratch.available(): {} < GGSWFromGGLWE::ggsw_from_gglwe_tmp_bytes: {}",
         scratch.available(),
-        module.ggsw_from_gglwe_tmp_bytes(&res_backend, tsk)
+        module.ggsw_from_gglwe_tmp_bytes_default(&res_backend, tsk)
     );
 
     for row in 0..res_backend.dnum().into() {
@@ -321,7 +321,7 @@ pub fn ggsw_from_gglwe_default<'s, BE, M, R, A, T>(
         module.glwe_copy_default(&mut res_at, &a_at);
     }
 
-    module.ggsw_expand_row(&mut res_backend, tsk, tsk_size, scratch)
+    module.ggsw_expand_row_default(&mut res_backend, tsk, tsk_size, scratch)
 }
 
 pub fn ggsw_expand_rows_tmp_bytes_default<BE, M, R, A>(module: &M, res_infos: &R, tsk_infos: &A) -> usize
@@ -389,10 +389,10 @@ pub fn ggsw_expand_row_default<'s, BE, M, R, T>(
     let tsk_base2k: usize = tsk.base2k().into();
 
     assert!(
-        scratch.available() >= module.ggsw_expand_rows_tmp_bytes(&res_backend, tsk),
+        scratch.available() >= module.ggsw_expand_rows_tmp_bytes_default(&res_backend, tsk),
         "scratch.available(): {} < GGSWExpandRows::ggsw_expand_rows_tmp_bytes: {}",
         scratch.available(),
-        module.ggsw_expand_rows_tmp_bytes(&res_backend, tsk)
+        module.ggsw_expand_rows_tmp_bytes_default(&res_backend, tsk)
     );
 
     let rank: usize = res_backend.rank().into();

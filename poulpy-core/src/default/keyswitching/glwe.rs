@@ -11,9 +11,9 @@ use crate::{
     layouts::{GGLWEInfos, GGLWEPreparedBackendRef, GLWEInfos, GLWEToBackendRef, LWEInfos, prepared::GGLWEPreparedToBackendRef},
 };
 
-impl<BE: Backend> GLWEKeySwitchInternal<BE> for Module<BE> where Self: GGLWEProductDefault<BE> + VecZnxDftApply<BE> {}
+impl<BE: Backend> GLWEKeyswitchInternal<BE> for Module<BE> where Self: GGLWEProductDefault<BE> + VecZnxDftApply<BE> {}
 
-pub(crate) trait GLWEKeySwitchInternal<BE: Backend>
+pub(crate) trait GLWEKeyswitchInternal<BE: Backend>
 where
     Self: GGLWEProductDefault<BE> + VecZnxDftApply<BE>,
 {
@@ -47,7 +47,7 @@ where
         assert_eq!(a.base2k(), key.base2k());
         assert!(
             scratch.available() >= self.glwe_keyswitch_internal_tmp_bytes(&key, &a, &key),
-            "scratch.available(): {} < GLWEKeySwitchInternal::glwe_keyswitch_internal_tmp_bytes: {}",
+            "scratch.available(): {} < GLWEKeyswitchInternal::glwe_keyswitch_internal_tmp_bytes: {}",
             scratch.available(),
             self.glwe_keyswitch_internal_tmp_bytes(&key, &a, &key)
         );
@@ -206,14 +206,14 @@ fn glwe_keyswitch_dft_fill<'s, 'r, BE, M, A>(
 ) where
     BE: Backend + 's,
     A: GLWEToBackendRef<BE>,
-    M: GLWEKeySwitchInternal<BE> + GGLWEProductDefault<BE> + VecZnxDftApply<BE>,
+    M: GLWEKeyswitchInternal<BE> + GGLWEProductDefault<BE> + VecZnxDftApply<BE>,
     for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE> + ScratchAvailable,
 {
     let a = a.to_backend_ref();
     assert_eq!(a.base2k(), key.base2k());
     assert!(
         scratch.available() >= module.glwe_keyswitch_internal_tmp_bytes(key, &a, key),
-        "scratch.available(): {} < GLWEKeySwitchInternal::glwe_keyswitch_internal_tmp_bytes: {}",
+        "scratch.available(): {} < GLWEKeyswitchInternal::glwe_keyswitch_internal_tmp_bytes: {}",
         scratch.available(),
         module.glwe_keyswitch_internal_tmp_bytes(key, &a, key)
     );
@@ -235,7 +235,7 @@ pub fn glwe_keyswitch_tmp_bytes_default<BE, M, R, A, K>(module: &M, res_infos: &
 where
     BE: Backend,
     M: ModuleN
-        + GLWEKeySwitchInternal<BE>
+        + GLWEKeyswitchInternal<BE>
         + GLWENormalizeDefault<BE>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
@@ -296,7 +296,7 @@ pub fn glwe_keyswitch_default<'s, BE, M, R, A, K>(
     BE: Backend + 's,
     M: GLWEKeyswitchDefault<BE>
         + ModuleN
-        + GLWEKeySwitchInternal<BE>
+        + GLWEKeyswitchInternal<BE>
         + GLWENormalizeDefault<BE>
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigBytesOf
@@ -330,10 +330,10 @@ pub fn glwe_keyswitch_default<'s, BE, M, R, A, K>(
     assert_eq!(key.n(), module.n() as u32);
 
     assert!(
-        scratch.available() >= module.glwe_keyswitch_tmp_bytes(res, a, key),
+        scratch.available() >= module.glwe_keyswitch_tmp_bytes_default(res, a, key),
         "scratch.available(): {} < GLWEKeyswitch::glwe_keyswitch_tmp_bytes: {}",
         scratch.available(),
-        module.glwe_keyswitch_tmp_bytes(res, a, key)
+        module.glwe_keyswitch_tmp_bytes_default(res, a, key)
     );
 
     let key_size = key.size().min(key_size);
@@ -414,7 +414,7 @@ pub fn glwe_keyswitch_assign_default<'s, BE, M, R, K>(
     BE: Backend + 's,
     M: GLWEKeyswitchDefault<BE>
         + ModuleN
-        + GLWEKeySwitchInternal<BE>
+        + GLWEKeyswitchInternal<BE>
         + GLWENormalizeDefault<BE>
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigBytesOf
@@ -447,10 +447,10 @@ pub fn glwe_keyswitch_assign_default<'s, BE, M, R, K>(
     assert_eq!(key.n(), module.n() as u32);
 
     assert!(
-        scratch.available() >= module.glwe_keyswitch_tmp_bytes(res, res, key),
+        scratch.available() >= module.glwe_keyswitch_tmp_bytes_default(res, res, key),
         "scratch.available(): {} < GLWEKeyswitch::glwe_keyswitch_tmp_bytes: {}",
         scratch.available(),
-        module.glwe_keyswitch_tmp_bytes(res, res, key)
+        module.glwe_keyswitch_tmp_bytes_default(res, res, key)
     );
 
     let key_size = key.size().min(key_size);

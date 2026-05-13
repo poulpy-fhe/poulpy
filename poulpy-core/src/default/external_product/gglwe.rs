@@ -22,7 +22,7 @@ where
     B: GGSWInfos,
     for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
-    module.glwe_external_product_tmp_bytes(res_infos, a_infos, b_infos)
+    module.glwe_external_product_tmp_bytes_default(res_infos, a_infos, b_infos)
 }
 
 pub fn gglwe_external_product_default<'s, BE, M, R, A, B>(
@@ -63,10 +63,10 @@ pub fn gglwe_external_product_default<'s, BE, M, R, A, B>(
     );
     assert_eq!(res.base2k(), a.base2k());
     assert!(
-        scratch.available() >= module.gglwe_external_product_tmp_bytes(res, a, b),
+        scratch.available() >= module.gglwe_external_product_tmp_bytes_default(res, a, b),
         "scratch.available(): {} < GGLWEExternalProduct::gglwe_external_product_tmp_bytes: {}",
         scratch.available(),
-        module.gglwe_external_product_tmp_bytes(res, a, b)
+        module.gglwe_external_product_tmp_bytes_default(res, a, b)
     );
 
     let min_dnum: usize = res.dnum().min(a.dnum()).into();
@@ -79,7 +79,7 @@ pub fn gglwe_external_product_default<'s, BE, M, R, A, B>(
             for col in 0..res_rank_in {
                 let mut res_at = res.at_view_mut(row, col);
                 let a_at = a.at_view(row, col);
-                module.glwe_external_product(&mut res_at, &a_at, b, key_size, &mut scratch.borrow());
+                module.glwe_external_product_default(&mut res_at, &a_at, b, key_size, &mut scratch.borrow());
             }
         }
     }
@@ -116,10 +116,10 @@ pub fn gglwe_external_product_assign_default<'s, BE, M, R, A>(
         a.rank()
     );
     assert!(
-        scratch.available() >= module.gglwe_external_product_tmp_bytes(res, res, a),
+        scratch.available() >= module.gglwe_external_product_tmp_bytes_default(res, res, a),
         "scratch.available(): {} < GGLWEExternalProduct::gglwe_external_product_tmp_bytes: {}",
         scratch.available(),
-        module.gglwe_external_product_tmp_bytes(res, res, a)
+        module.gglwe_external_product_tmp_bytes_default(res, res, a)
     );
 
     let res_dnum: usize = res.dnum().into();
@@ -128,7 +128,7 @@ pub fn gglwe_external_product_assign_default<'s, BE, M, R, A>(
     for row in 0..res_dnum {
         for col in 0..res_rank_in {
             let mut res_at = res.at_view_mut(row, col);
-            module.glwe_external_product_assign(&mut res_at, a, key_size, &mut scratch.borrow());
+            module.glwe_external_product_assign_default(&mut res_at, a, key_size, &mut scratch.borrow());
         }
     }
 }

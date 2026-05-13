@@ -58,7 +58,6 @@ impl_conversion_delegate!(
         A: LWEToBackendRef<BE> + LWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         BE: 's,
-        for<'a> ScratchArena<'a, BE>: crate::ScratchArenaTakeCore<'a, BE>,
     {
         BE::glwe_from_lwe(self, res, lwe, ksk, key_size, scratch)
     }
@@ -90,7 +89,6 @@ impl_conversion_delegate!(
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         BE: 's,
-        for<'a> ScratchArena<'a, BE>: crate::ScratchArenaTakeCore<'a, BE>,
     {
         BE::lwe_from_glwe(self, res, a, a_idx, key, key_size, scratch)
     }
@@ -120,7 +118,6 @@ impl_conversion_delegate!(
         A: crate::layouts::GGLWEToBackendRef<BE> + GGLWEInfos,
         T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
         BE: 's,
-        for<'a> ScratchArena<'a, BE>: crate::ScratchArenaTakeCore<'a, BE>,
     {
         BE::ggsw_from_gglwe(self, res, a, tsk, tsk_size, scratch)
     }
@@ -147,7 +144,7 @@ impl_conversion_delegate!(
     where
         R: GGSWToBackendMut<BE> + GGSWInfos,
         T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-        ScratchArena<'s, BE>: crate::ScratchArenaTakeCore<'s, BE>,
+        BE: 's,
     {
         BE::ggsw_expand_row(self, res, tsk, tsk_size, scratch)
     }

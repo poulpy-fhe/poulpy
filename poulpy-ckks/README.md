@@ -7,7 +7,7 @@ It is built explicitly on top of:
 
 - `poulpy-hal` for backend-agnostic modules, layouts, scratch management, and
   low-level arithmetic dispatch
-- `poulpy-core` for RLWE-oriented cryptographic building blocks used to assemble
+- `poulpy-core` for Module-LWE-oriented cryptographic building blocks used to assemble
   the CKKS evaluator
 
 The crate exposes:

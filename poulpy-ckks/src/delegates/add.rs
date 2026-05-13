@@ -1,33 +1,13 @@
 use anyhow::Result;
-use poulpy_core::{
-    GLWEAdd, GLWENormalize, GLWEShift, ScratchArenaTakeCore,
-    layouts::{GLWEToBackendMut, GLWEToBackendRef},
-};
-use poulpy_hal::{
-    api::{ScratchAvailable, VecZnxRshAddCoeffIntoBackend, VecZnxRshAddIntoBackend, VecZnxRshTmpBytes},
-    layouts::{Backend, Data, Module, ScratchArena},
-    oep::HalVecZnxImpl,
-};
+use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
+use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
-use crate::layouts::{CKKSCiphertext, UnnormalizedCKKSCiphertext};
-use crate::leveled::{
-    api::{CKKSAddOps, CKKSAddOpsUnnormalized},
-    default::{CKKSAddDefault, CKKSPlaintextDefault},
-};
+use crate::layouts::UnnormalizedCKKSCiphertext;
+use crate::leveled::api::{CKKSAddOps, CKKSAddOpsUnnormalized};
 
 use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, oep::CKKSAddImpl};
 
-impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOps<BE> for Module<BE>
-where
-    Module<BE>: GLWEShift<BE>
-        + GLWEAdd<BE>
-        + GLWENormalize<BE>
-        + CKKSPlaintextDefault<BE>
-        + VecZnxRshAddCoeffIntoBackend<BE>
-        + VecZnxRshAddIntoBackend<BE>
-        + VecZnxRshTmpBytes,
-    for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
-{
+impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOps<BE> for Module<BE> {
     fn ckks_add_tmp_bytes(&self) -> usize {
         BE::ckks_add_tmp_bytes(self)
     }
@@ -114,16 +94,7 @@ where
     }
 }
 
-impl<BE: Backend + HalVecZnxImpl<BE>> CKKSAddOpsUnnormalized<BE> for Module<BE>
-where
-    Module<BE>: CKKSAddDefault<BE>
-        + GLWEShift<BE>
-        + GLWEAdd<BE>
-        + CKKSPlaintextDefault<BE>
-        + VecZnxRshAddCoeffIntoBackend<BE>
-        + VecZnxRshAddIntoBackend<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
-{
+impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOpsUnnormalized<BE> for Module<BE> {
     fn ckks_add_into_unnormalized<Dst, A, B>(
         &self,
         dst: &mut UnnormalizedCKKSCiphertext<Dst>,
@@ -133,11 +104,11 @@ where
     ) -> Result<()>
     where
         Dst: Data,
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        self.ckks_add_into_unsafe_default(&mut dst.inner, a, b, scratch)
+        BE::ckks_add_into_unnormalized(self, dst, a, b, scratch)
     }
 
     fn ckks_add_assign_unnormalized<Dst, A>(
@@ -148,10 +119,10 @@ where
     ) -> Result<()>
     where
         Dst: Data,
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSInfos,
     {
-        self.ckks_add_assign_unsafe_default(&mut dst.inner, a, scratch)
+        BE::ckks_add_assign_unnormalized(self, dst, a, scratch)
     }
 
     fn ckks_add_pt_vec_into_unnormalized<Dst, A, P>(
@@ -163,11 +134,11 @@ where
     ) -> Result<()>
     where
         Dst: Data,
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        self.ckks_add_pt_vec_into_unsafe_default(&mut dst.inner, a, pt, scratch)
+        BE::ckks_add_pt_vec_into_unnormalized(self, dst, a, pt, scratch)
     }
 
     fn ckks_add_pt_vec_assign_unnormalized<Dst, P>(
@@ -178,10 +149,10 @@ where
     ) -> Result<()>
     where
         Dst: Data,
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        self.ckks_add_pt_vec_assign_unsafe_default(&mut dst.inner, pt, scratch)
+        BE::ckks_add_pt_vec_assign_unnormalized(self, dst, pt, scratch)
     }
 
     fn ckks_add_pt_const_into_unnormalized<Dst, A, P>(
@@ -195,11 +166,11 @@ where
     ) -> Result<()>
     where
         Dst: Data,
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        self.ckks_add_pt_const_into_unsafe_default(&mut dst.inner, a, dst_coeff, pt, pt_coeff, scratch)
+        BE::ckks_add_pt_const_into_unnormalized(self, dst, a, dst_coeff, pt, pt_coeff, scratch)
     }
 
     fn ckks_add_pt_const_assign_unnormalized<Dst, P>(
@@ -212,9 +183,9 @@ where
     ) -> Result<()>
     where
         Dst: Data,
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        self.ckks_add_pt_const_assign_unsafe_default(&mut dst.inner, dst_coeff, pt, pt_coeff, scratch)
+        BE::ckks_add_pt_const_assign_unnormalized(self, dst, dst_coeff, pt, pt_coeff, scratch)
     }
 }
