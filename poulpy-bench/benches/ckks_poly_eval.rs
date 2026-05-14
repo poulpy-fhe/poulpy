@@ -1,0 +1,191 @@
+//! Times the ciphertext → P(ciphertext) BSGS evaluation pipeline across a
+//! degree sweep, comparing the two split strategies (`MinDepth`, `MinMult`).
+//! Polynomial: dense random monomial coefficients (parity = Full). Per
+//! (degree, strategy), prints the baby-step size and the level consumption
+//! (log_budget delta) measured from the actual run.
+
+use std::hint::black_box;
+
+use criterion::{Criterion, criterion_group, criterion_main};
+use poulpy_ckks::{
+    CKKSInfos, CKKSMeta,
+    layouts::{CKKSCiphertext, CKKSModuleAlloc},
+    leveled::api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, PolynomialEvaluation},
+    polynomial::{Basis, Polynomial, SplitStrategy},
+    power_basis::PowerBasis,
+};
+use poulpy_core::layouts::{
+    Base2K, Degree, Dnum, Dsize, GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, Rank, TorusPrecision,
+};
+use poulpy_hal::{
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
+    layouts::{HostBytesBackend, Module, ScratchOwned},
+};
+
+const N: usize = 4096;
+const BASE2K: usize = 52;
+const CT_K: usize = 400;
+const LOG_DELTA: usize = 30;
+const DSIZE: usize = 1;
+const DEGREES: &[usize] = &[7, 15, 31, 63, 127];
+const STRATEGIES: &[(SplitStrategy, &str)] = &[(SplitStrategy::MinDepth, "min-depth"), (SplitStrategy::MinMult, "min-mult")];
+
+const COEFF_META: CKKSMeta = CKKSMeta {
+    log_delta: LOG_DELTA,
+    log_budget: 1,
+};
+
+fn glwe_layout() -> GLWELayout {
+    GLWELayout {
+        n: Degree(N as u32),
+        base2k: Base2K(BASE2K as u32),
+        k: TorusPrecision(CT_K as u32),
+        rank: Rank(1),
+    }
+}
+
+fn tsk_layout() -> GLWETensorKeyLayout {
+    let k = CT_K + DSIZE * BASE2K;
+    GLWETensorKeyLayout {
+        n: Degree(N as u32),
+        base2k: Base2K(BASE2K as u32),
+        k: TorusPrecision(k as u32),
+        rank: Rank(1),
+        dsize: Dsize(DSIZE as u32),
+        dnum: Dnum(k.div_ceil(DSIZE * BASE2K) as u32),
+    }
+}
+
+fn random_coeffs(degree: usize) -> Vec<f64> {
+    let mut state = (0x9e37_79b9_7f4a_7c15_u64).wrapping_add(degree as u64);
+    let mut next = || {
+        state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        ((state >> 33) as i64) as f64 / (1u64 << 31) as f64 * 0.5
+    };
+    (0..=degree).map(|_| next()).collect()
+}
+
+fn bench_ntt120_ref(c: &mut Criterion) {
+    type BE = poulpy_cpu_ref::NTT120Ref;
+    let label = "ntt120-ref";
+
+    let module = Module::<BE>::new(N as u64);
+    let host_module = Module::<HostBytesBackend>::new(N as u64);
+    let glwe_layout = glwe_layout();
+    let tsk_layout = tsk_layout();
+    let input_meta = CKKSMeta {
+        log_delta: LOG_DELTA,
+        log_budget: CT_K - LOG_DELTA,
+    };
+
+    let ct_template = module.ckks_ciphertext_alloc_from_infos(&glwe_layout);
+    let mul_bytes = module.ckks_mul_tmp_bytes(&ct_template, &tsk_layout);
+    let mul_pt_bytes = module.ckks_mul_pt_const_tmp_bytes(&ct_template, &ct_template, &COEFF_META);
+    let add_bytes = module.ckks_add_tmp_bytes();
+    let copy_bytes = module.ckks_copy_tmp_bytes();
+    let ct_block = poulpy_core::layouts::GLWE::<Vec<u8>>::bytes_of_from_infos(&ct_template);
+    let scratch_bytes = mul_bytes
+        .max(mul_pt_bytes)
+        .max(add_bytes)
+        .max(copy_bytes)
+        .max(mul_bytes + 3 * ct_block);
+    let mut scratch = ScratchOwned::<BE>::alloc(scratch_bytes);
+
+    let tsk_prepared = module.alloc_tensor_key_prepared_from_infos(&tsk_layout);
+
+    let mut ct_x = module.ckks_ciphertext_alloc(Base2K(BASE2K as u32), TorusPrecision(CT_K as u32));
+    ct_x.set_meta_checked(input_meta).unwrap();
+
+    let mut group = c.benchmark_group(format!("ckks_poly_eval::{label}"));
+    for &degree in DEGREES {
+        let coeffs = random_coeffs(degree);
+        let poly = Polynomial::new(Basis::Monomial, coeffs);
+        let parity = poly.parity;
+
+        for &(strategy, strategy_label) in STRATEGIES {
+            let bsgs = poly
+                .encode_bsgs_with(&host_module, Base2K(BASE2K as u32), COEFF_META, strategy)
+                .expect("encode_bsgs_with");
+            let log_split = bsgs.base.trailing_zeros() as usize;
+
+            // Untimed dry run for level / log_budget reporting.
+            let (levels, log_budget_in, log_budget_out) = {
+                let mut ct_x_run = module.ckks_ciphertext_alloc(Base2K(BASE2K as u32), TorusPrecision(CT_K as u32));
+                {
+                    let mut sc = scratch.borrow();
+                    module.ckks_copy(&mut ct_x_run, &ct_x, &mut sc).unwrap();
+                }
+                let lb_in = ct_x_run.log_budget();
+                let mut pb = PowerBasis::new(Basis::Monomial, ct_x_run);
+                {
+                    let mut sc = scratch.borrow();
+                    pb.populate(degree, log_split, parity, &module, &tsk_prepared, &mut sc)
+                        .unwrap();
+                }
+                let mut ct_res = module.ckks_ciphertext_alloc(Base2K(BASE2K as u32), TorusPrecision(CT_K as u32));
+                {
+                    let mut sc = scratch.borrow();
+                    module
+                        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<Vec<u8>>, _, _>(
+                            &mut ct_res,
+                            &bsgs,
+                            &pb,
+                            &tsk_prepared,
+                            &mut sc,
+                        )
+                        .unwrap();
+                }
+                let lb_out = ct_res.log_budget();
+                ((lb_in - lb_out) / LOG_DELTA, lb_in, lb_out)
+            };
+            eprintln!(
+                "[poly_eval/{label} d={degree:3} {strategy_label:>9}] k={k:2} baby_steps={n_baby:2} L={levels} ({lb_in}→{lb_out} budget bits)",
+                k = bsgs.base,
+                n_baby = bsgs.baby_steps.len(),
+                lb_in = log_budget_in,
+                lb_out = log_budget_out,
+            );
+
+            group.bench_function(format!("{strategy_label}/d{degree}"), |b| {
+                b.iter(|| {
+                    let mut ct_x_run = module.ckks_ciphertext_alloc(Base2K(BASE2K as u32), TorusPrecision(CT_K as u32));
+                    {
+                        let mut sc = scratch.borrow();
+                        module.ckks_copy(&mut ct_x_run, &ct_x, &mut sc).unwrap();
+                    }
+                    let mut pb = PowerBasis::new(Basis::Monomial, ct_x_run);
+                    {
+                        let mut sc = scratch.borrow();
+                        pb.populate(degree, log_split, parity, &module, &tsk_prepared, &mut sc)
+                            .unwrap();
+                    }
+                    let mut ct_res = module.ckks_ciphertext_alloc(Base2K(BASE2K as u32), TorusPrecision(CT_K as u32));
+                    {
+                        let mut sc = scratch.borrow();
+                        module
+                            .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<Vec<u8>>, _, _>(
+                                black_box(&mut ct_res),
+                                black_box(&bsgs),
+                                black_box(&pb),
+                                &tsk_prepared,
+                                &mut sc,
+                            )
+                            .unwrap();
+                    }
+                });
+            });
+        }
+    }
+    group.finish();
+}
+
+fn bench_ckks_poly_eval(c: &mut Criterion) {
+    bench_ntt120_ref(c);
+}
+
+criterion_group! {
+    name = benches;
+    config = poulpy_bench::ckks_criterion_config();
+    targets = bench_ckks_poly_eval
+}
+criterion_main!(benches);

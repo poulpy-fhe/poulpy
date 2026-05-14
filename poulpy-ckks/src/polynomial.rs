@@ -9,6 +9,7 @@ use crate::{
     CKKSInfos, CKKSMeta,
     api::BSGSPolynomialInfos,
     layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
+    power_basis::split_degree,
 };
 
 // Re-export so callers can use `polynomial::Basis`/`Parity` without reaching into `api`.
@@ -16,14 +17,133 @@ pub use crate::api::{Basis, Parity};
 
 // ── BSGS helpers ─────────────────────────────────────────────────────────────
 
+/// Chooses how `Polynomial::encode_bsgs` picks `log_split`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SplitStrategy {
+    /// Closed-form choice minimising multiplicative depth.
+    MinDepth,
+    /// Sweep `log_split` to minimise `(CT-CT, PT-CT)` lexicographically.
+    MinMult,
+}
+
+/// Default planner picked by [`Polynomial::encode_bsgs`].
+pub const DEFAULT_SPLIT_STRATEGY: SplitStrategy = SplitStrategy::MinDepth;
+
 /// Returns the BSGS log-split that minimises multiplication depth for a
 /// polynomial of log-degree `log_degree`.
-pub(crate) fn optimal_split(log_degree: usize) -> usize {
-    debug_assert!(log_degree >= 1, "optimal_split requires log_degree ≥ 1");
+pub(crate) fn min_depth_split(log_degree: usize) -> usize {
+    debug_assert!(log_degree >= 1, "min_depth_split requires log_degree ≥ 1");
     let s = log_degree >> 1;
     let a = (1 << s) + (1 << (log_degree - s)) + log_degree - s - 3;
     let b = (1 << (s + 1)) + (1 << (log_degree - s - 1)) + log_degree - s - 4;
     if a > b { s + 1 } else { s }
+}
+
+/// Returns the BSGS log-split that minimises total multiplication count
+/// `(CT-CT, PT-CT)` lexicographically, sweeping `log_split ∈ [1, log_degree]`.
+pub(crate) fn min_mult_split(degree: usize, parity: Parity, basis: Basis) -> usize {
+    let log_degree = bit_len(degree);
+    if log_degree <= 1 {
+        return 1;
+    }
+    let mut best_log_split = 1usize;
+    let mut best_score = (usize::MAX, usize::MAX);
+    for log_split in 1..=log_degree {
+        let score = estimate_op_counts(degree, log_split, parity, basis);
+        if score < best_score {
+            best_score = score;
+            best_log_split = log_split;
+        }
+    }
+    best_log_split
+}
+
+pub(crate) fn split_for_strategy(strategy: SplitStrategy, degree: usize, parity: Parity, basis: Basis) -> usize {
+    match strategy {
+        SplitStrategy::MinDepth => min_depth_split(bit_len(degree)),
+        SplitStrategy::MinMult => min_mult_split(degree, parity, basis),
+    }
+}
+
+/// `(ct_ct, pt_ct)` mul count for the given plan.
+fn estimate_op_counts(degree: usize, log_split: usize, parity: Parity, basis: Basis) -> (usize, usize) {
+    let mut baby_degrees: Vec<usize> = Vec::new();
+    simulate_baby_step_decomposition(degree, log_split, &mut baby_degrees);
+    if baby_degrees.is_empty() {
+        return (usize::MAX, usize::MAX);
+    }
+    let pt_ct: usize = baby_degrees.iter().map(|&d| pt_ct_muls_for_baby_step(d, parity)).sum();
+    let giant_steps = baby_degrees.len().saturating_sub(1);
+    let power_basis = estimate_power_basis_muls(degree, log_split, parity, basis);
+    let mut cc = giant_steps + power_basis;
+    let mut pc = pt_ct;
+    let trailing_const = baby_degrees.len() >= 2 && *baby_degrees.last().unwrap() == 0;
+    if trailing_const && degree.is_power_of_two() && cc > 0 {
+        cc -= 1;
+        pc += 1;
+    }
+    (cc, pc)
+}
+
+/// Replays `decompose_bsgs_coeffs` structurally to collect baby-step degrees.
+fn simulate_baby_step_decomposition(degree: usize, log_split: usize, out: &mut Vec<usize>) {
+    let base = 1usize << log_split;
+    if degree < base {
+        out.push(degree);
+        return;
+    }
+    let mut next_power = base;
+    while next_power < (degree >> 1) + 1 {
+        next_power <<= 1;
+    }
+    simulate_baby_step_decomposition(next_power - 1, log_split, out);
+    simulate_baby_step_decomposition(degree - next_power, log_split, out);
+}
+
+fn pt_ct_muls_for_baby_step(degree: usize, parity: Parity) -> usize {
+    let (first, step) = match parity {
+        Parity::Even => (2usize, 2usize),
+        Parity::Odd => (1, 2),
+        Parity::Full => (1, 1),
+    };
+    if degree < first { 0 } else { (degree - first) / step + 1 }
+}
+
+fn estimate_power_basis_muls(degree: usize, log_split: usize, parity: Parity, basis: Basis) -> usize {
+    if degree < 2 {
+        return 0;
+    }
+    let log_degree = bit_len(degree);
+    let largest_pow2 = 1usize << (log_degree - 1);
+    let base = 1usize << log_split;
+
+    let mut targets: Vec<usize> = Vec::new();
+    if largest_pow2 >= 2 {
+        targets.push(largest_pow2);
+    }
+    match parity {
+        Parity::Even => targets.extend((4..base).step_by(2)),
+        Parity::Odd => targets.extend((3..base).step_by(2)),
+        Parity::Full => targets.extend(3..base),
+    }
+
+    let mut needed = std::collections::HashSet::<usize>::new();
+    let mut stack = targets;
+    while let Some(n) = stack.pop() {
+        if n <= 1 || !needed.insert(n) {
+            continue;
+        }
+        let (a, b) = split_degree(n);
+        stack.push(a);
+        stack.push(b);
+        if matches!(basis, Basis::Chebyshev) {
+            let c = a.abs_diff(b);
+            if c >= 2 {
+                stack.push(c);
+            }
+        }
+    }
+    needed.len()
 }
 
 // ── Polynomial ───────────────────────────────────────────────────────────────
@@ -130,6 +250,9 @@ where
     ///
     /// `module` is used only for host-side encoding; it does not need to match
     /// the compute backend.
+    ///
+    /// Uses [`DEFAULT_SPLIT_STRATEGY`]; call [`Self::encode_bsgs_with`] to
+    /// pick the strategy explicitly.
     pub fn encode_bsgs(
         &self,
         module: &Module<HostBytesBackend>,
@@ -139,23 +262,45 @@ where
     where
         F: crate::layouts::CKKSScalar,
     {
+        self.encode_bsgs_with(module, base2k, coeff_meta, DEFAULT_SPLIT_STRATEGY)
+    }
+
+    /// Same as [`Self::encode_bsgs`] with an explicit [`SplitStrategy`].
+    pub fn encode_bsgs_with(
+        &self,
+        module: &Module<HostBytesBackend>,
+        base2k: Base2K,
+        coeff_meta: CKKSMeta,
+        strategy: SplitStrategy,
+    ) -> Result<BSGSPolynomial<CKKSPlaintext<Vec<u8>>>>
+    where
+        F: crate::layouts::CKKSScalar,
+    {
         ensure!(self.degree() >= 1, "polynomial must have degree ≥ 1");
 
         let degree = self.degree();
-        let log_degree = (usize::BITS - degree.leading_zeros()) as usize;
-        let log_split = optimal_split(log_degree);
+        let log_split = split_for_strategy(strategy, degree, self.parity, self.basis);
         let base = 1usize << log_split;
+        let split_leading = matches!(strategy, SplitStrategy::MinDepth);
 
         let mut baby_steps = Vec::new();
         let mut step_idx = 0usize;
-        decompose_bsgs_coeffs(self.basis, &self.coeffs, log_split, degree, true, &mut |baby_coeffs| {
-            let mut pt = module.ckks_pt_coeffs_alloc(baby_coeffs.len(), base2k, coeff_meta);
-            pt.encode_host_floats(baby_coeffs)
-                .map_err(|e| anyhow!("encode_bsgs: step {step_idx}: {e}"))?;
-            baby_steps.push(pt);
-            step_idx += 1;
-            Ok(())
-        })?;
+        decompose_bsgs_coeffs(
+            self.basis,
+            &self.coeffs,
+            log_split,
+            degree,
+            true,
+            split_leading,
+            &mut |baby_coeffs| {
+                let mut pt = module.ckks_pt_coeffs_alloc(baby_coeffs.len(), base2k, coeff_meta);
+                pt.encode_host_floats(baby_coeffs)
+                    .map_err(|e| anyhow!("encode_bsgs: step {step_idx}: {e}"))?;
+                baby_steps.push(pt);
+                step_idx += 1;
+                Ok(())
+            },
+        )?;
 
         Ok(BSGSPolynomial {
             basis: self.basis,
@@ -221,6 +366,7 @@ fn decompose_bsgs_coeffs<F>(
     log_split: usize,
     max_degree: usize,
     lead: bool,
+    split_leading: bool,
     visit: &mut impl FnMut(&[F]) -> Result<()>,
 ) -> Result<()>
 where
@@ -229,11 +375,11 @@ where
     let degree = coeffs.len().saturating_sub(1);
     let base = 1usize << log_split;
     if degree < base {
-        if should_split_leading_baby_step(degree, log_split, max_degree, lead) {
+        if split_leading && should_split_leading_baby_step(degree, log_split, max_degree, lead) {
             let log_degree = bit_len(degree);
-            let smaller_log_split = optimal_split(log_degree);
-            if smaller_log_split < log_split {
-                return decompose_bsgs_coeffs(basis, coeffs, smaller_log_split, max_degree, lead, visit);
+            let smaller = min_depth_split(log_degree);
+            if smaller < log_split {
+                return decompose_bsgs_coeffs(basis, coeffs, smaller, max_degree, lead, split_leading, visit);
             }
         }
         return visit(coeffs);
@@ -246,13 +392,29 @@ where
 
     match basis {
         Basis::Monomial => {
-            decompose_bsgs_coeffs(basis, &coeffs[..next_power], log_split, max_degree, false, visit)?;
-            decompose_bsgs_coeffs(basis, &coeffs[next_power..], log_split, max_degree, lead, visit)
+            decompose_bsgs_coeffs(
+                basis,
+                &coeffs[..next_power],
+                log_split,
+                max_degree,
+                false,
+                split_leading,
+                visit,
+            )?;
+            decompose_bsgs_coeffs(
+                basis,
+                &coeffs[next_power..],
+                log_split,
+                max_degree,
+                lead,
+                split_leading,
+                visit,
+            )
         }
         Basis::Chebyshev => {
             let (q, r) = factorize_coeffs_chebyshev(coeffs, next_power);
-            decompose_bsgs_coeffs(basis, &r, log_split, max_degree, false, visit)?;
-            decompose_bsgs_coeffs(basis, &q, log_split, max_degree, lead, visit)
+            decompose_bsgs_coeffs(basis, &r, log_split, max_degree, false, split_leading, visit)?;
+            decompose_bsgs_coeffs(basis, &q, log_split, max_degree, lead, split_leading, visit)
         }
     }
 }
@@ -261,7 +423,6 @@ fn should_split_leading_baby_step(degree: usize, log_split: usize, max_degree: u
     if !lead || degree == 0 || log_split <= 1 {
         return false;
     }
-
     let next_strict_power_of_two = 1usize << bit_len(max_degree);
     let close_to_next_power = next_strict_power_of_two - (1usize << (log_split - 1));
     max_degree > close_to_next_power
@@ -278,7 +439,7 @@ where
     let mut r = vec![F::zero(); n];
     r.copy_from_slice(&coeffs[..n]);
 
-    let mut q = vec![F::zero(); n];
+    let mut q = vec![F::zero(); coeffs.len() - n];
     q[0] = coeffs[n];
 
     let two = F::one() + F::one();
@@ -337,36 +498,34 @@ where
 mod tests {
     use super::*;
 
-    #[test]
-    fn bsgs_decomposition_splits_leading_degree_close_to_next_power_of_two() {
-        let degree = 31;
-        let log_split = optimal_split(bit_len(degree));
+    fn collect_baby_step_degrees(basis: Basis, degree: usize, log_split: usize, split_leading: bool) -> Vec<usize> {
         let coeffs = vec![0.0f64; degree + 1];
-
         let mut degrees = Vec::new();
-        decompose_bsgs_coeffs(Basis::Chebyshev, &coeffs, log_split, degree, true, &mut |s| {
+        decompose_bsgs_coeffs(basis, &coeffs, log_split, degree, true, split_leading, &mut |s| {
             degrees.push(s.len() - 1);
             Ok(())
         })
         .unwrap();
-
-        assert_eq!(log_split, 3);
-        assert_eq!(degrees, vec![7, 7, 7, 3, 1, 1]);
+        degrees
     }
 
     #[test]
-    fn bsgs_decomposition_keeps_non_leading_baby_step_at_current_split() {
-        let degree = 31;
-        let log_split = optimal_split(bit_len(degree));
-        let coeffs = vec![0.0f64; 8];
+    fn min_mult_chebyshev_degree31_uniform_baby_steps() {
+        let log_split = min_mult_split(31, Parity::Full, Basis::Chebyshev);
+        assert_eq!(log_split, 3);
+        assert_eq!(
+            collect_baby_step_degrees(Basis::Chebyshev, 31, log_split, false),
+            vec![7, 7, 7, 7]
+        );
+    }
 
-        let mut degrees = Vec::new();
-        decompose_bsgs_coeffs(Basis::Chebyshev, &coeffs, log_split, degree, false, &mut |s| {
-            degrees.push(s.len() - 1);
-            Ok(())
-        })
-        .unwrap();
-
-        assert_eq!(degrees, vec![7]);
+    #[test]
+    fn min_depth_chebyshev_degree31_splits_leading_baby_step() {
+        let log_split = min_depth_split(bit_len(31));
+        assert_eq!(log_split, 3);
+        assert_eq!(
+            collect_baby_step_degrees(Basis::Chebyshev, 31, log_split, true),
+            vec![7, 7, 7, 3, 1, 1]
+        );
     }
 }

@@ -292,7 +292,15 @@ fn evaluation(
     let mut pb = PowerBasis::new(Basis::Chebyshev, encryption.ct_x);
     {
         let mut scratch = setup.scratch.borrow();
-        pb.populate(DEGREE, encoding.bsgs.parity, &setup.module, &setup.tsk_prepared, &mut scratch)?;
+        let log_split = encoding.bsgs.base.trailing_zeros() as usize;
+        pb.populate(
+            DEGREE,
+            log_split,
+            encoding.bsgs.parity,
+            &setup.module,
+            &setup.tsk_prepared,
+            &mut scratch,
+        )?;
     }
 
     println!("  -> BSGS polynomial evaluation");

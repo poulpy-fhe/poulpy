@@ -11,7 +11,6 @@ use crate::{
     api::{CKKSAddOps, CKKSMulOps, CKKSSubOps, PowerBasisHelper},
     checked_mul_ct_log_budget,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, ScratchArenaTakeCKKS},
-    polynomial::optimal_split,
 };
 
 // Re-export so callers can use `polynomial::Basis`/`Parity` without reaching into `api`.
@@ -175,6 +174,10 @@ impl<D: Data> PowerBasis<CKKSCiphertext<D>> {
     /// Pre-computes all powers required to evaluate a polynomial of the given
     /// `degree` using BSGS, for the basis stored in `self`.
     ///
+    /// `log_split` is the baby-step split (`base = 2^log_split`); read it off
+    /// the BSGSPolynomial the caller will evaluate via
+    /// `bsgs.base.trailing_zeros() as usize`.
+    ///
     /// `parity` should match the polynomial to be evaluated:
     /// - [`Parity::Even`]: only even baby-step powers are needed (skip 3, 5, 7, …).
     /// - [`Parity::Odd`]:  only odd baby-step powers are needed (skip 4, 6, 8, …).
@@ -184,6 +187,7 @@ impl<D: Data> PowerBasis<CKKSCiphertext<D>> {
     pub fn populate<BE>(
         &mut self,
         degree: usize,
+        log_split: usize,
         parity: Parity,
         module: &Module<BE>,
         tsk: &poulpy_core::layouts::GLWETensorKeyPrepared<D, BE>,
@@ -198,7 +202,6 @@ impl<D: Data> PowerBasis<CKKSCiphertext<D>> {
         ensure!(degree >= 1, "populate: degree must be ≥ 1");
 
         let log_degree = (usize::BITS - degree.leading_zeros()) as usize;
-        let log_split = optimal_split(log_degree);
         // Giant-step powers of two (also computes all smaller powers of two recursively).
         let largest_pow2 = 1usize << (log_degree - 1);
         let base = 1usize << log_split;

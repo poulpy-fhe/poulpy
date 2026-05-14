@@ -115,10 +115,17 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
             "ckks_eval_poly_real_const_coeffs_from_power_basis: polynomial must contain at least one baby step"
         );
 
-        let mut baby_steps = Vec::with_capacity(poly.baby_steps());
+        let n_baby = poly.baby_steps();
+        let last_coeffs = poly.baby_step(n_baby - 1);
+        let trailing_const_only = n_baby >= 2 && last_coeffs.n().as_usize() == 1;
+        let fold_power = poly.degree();
+        let can_fold = trailing_const_only && power_basis.get(fold_power).is_ok();
+
+        let n_to_process = if can_fold { n_baby - 1 } else { n_baby };
+        let mut baby_steps = Vec::with_capacity(n_to_process);
         let parity = poly.parity();
         let x = power_basis.get(1)?;
-        for i in 0..poly.baby_steps() {
+        for i in 0..n_to_process {
             let coeffs = poly.baby_step(i);
             let degree = coeffs.n().as_usize() - 1;
             let mut value = self.ckks_ciphertext_alloc_from_infos(x);
@@ -128,6 +135,12 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
         }
 
         self.ckks_eval_giant_steps_default(res, &mut baby_steps, power_basis, tsk, &mut scratch.borrow())?;
+
+        if can_fold {
+            let xpow = power_basis.get(fold_power)?;
+            self.ckks_mul_add_pt_const_into(res, xpow, last_coeffs, 0, scratch)?;
+        }
+
         Ok(())
     }
 }

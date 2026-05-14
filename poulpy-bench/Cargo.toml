@@ -124,6 +124,11 @@ harness = false
 required-features = ["ckks-bench"]
 
 [[bench]]
+name = "ckks_poly_eval"
+harness = false
+required-features = ["ckks-bench"]
+
+[[bench]]
 name = "ckks_automorphism"
 harness = false
 required-features = ["ckks-bench"]

@@ -186,7 +186,7 @@ pub fn test_power_basis_populate_degree7<BE, F, E>(
     );
     let mut power_basis = PowerBasis::new(Basis::Monomial, x_ct);
     power_basis
-        .populate(7, Parity::Full, module, &tsk, &mut scratch.borrow())
+        .populate(7, 2, Parity::Full, module, &tsk, &mut scratch.borrow())
         .expect("populate power basis for degree 7");
 
     let zero_im = vec![F::zero(); x_re.len()];
@@ -244,7 +244,7 @@ pub fn test_power_basis_populate_chebyshev_degree7<BE, F, E>(
     );
     let mut power_basis = PowerBasis::new(Basis::Chebyshev, x_ct);
     power_basis
-        .populate(7, Parity::Full, module, &tsk, &mut scratch.borrow())
+        .populate(7, 2, Parity::Full, module, &tsk, &mut scratch.borrow())
         .expect("populate Chebyshev power basis for degree 7");
 
     let want = chebyshev_values(&x_re, 4);
@@ -449,8 +449,15 @@ pub fn test_eval_poly_const_coeffs_exp7<BE, F, E>(
         &mut scratch.borrow(),
     );
     let mut pb = PowerBasis::new(Basis::Monomial, x_ct);
-    pb.populate(7, Parity::Full, module, &tsk, &mut scratch.borrow())
-        .expect("populate power basis for degree 7");
+    pb.populate(
+        7,
+        bsgs_host.base.trailing_zeros() as usize,
+        Parity::Full,
+        module,
+        &tsk,
+        &mut scratch.borrow(),
+    )
+    .expect("populate power basis for degree 7");
 
     let mut res = alloc_ct(&params, module, params.k);
     module
@@ -533,8 +540,15 @@ pub fn test_eval_poly_const_coeffs_even_monomial<BE, F, E>(
         &mut scratch.borrow(),
     );
     let mut pb = PowerBasis::new(Basis::Monomial, x_ct);
-    pb.populate(4, bsgs_host.parity, module, &tsk, &mut scratch.borrow())
-        .expect("populate power basis for degree 4");
+    pb.populate(
+        4,
+        bsgs_host.base.trailing_zeros() as usize,
+        bsgs_host.parity,
+        module,
+        &tsk,
+        &mut scratch.borrow(),
+    )
+    .expect("populate power basis for degree 4");
 
     let mut res = alloc_ct(&params, module, params.k);
     module
@@ -617,8 +631,15 @@ pub fn test_eval_poly_const_coeffs_odd_monomial<BE, F, E>(
         &mut scratch.borrow(),
     );
     let mut pb = PowerBasis::new(Basis::Monomial, x_ct);
-    pb.populate(5, bsgs_host.parity, module, &tsk, &mut scratch.borrow())
-        .expect("populate power basis for degree 5");
+    pb.populate(
+        5,
+        bsgs_host.base.trailing_zeros() as usize,
+        bsgs_host.parity,
+        module,
+        &tsk,
+        &mut scratch.borrow(),
+    )
+    .expect("populate power basis for degree 5");
 
     let mut res = alloc_ct(&params, module, params.k);
     module
@@ -690,8 +711,15 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31<BE, F, E>(
         &mut scratch.borrow(),
     );
     let mut pb = PowerBasis::new(Basis::Chebyshev, x_ct);
-    pb.populate(31, bsgs_host.parity, module, &tsk, &mut scratch.borrow())
-        .expect("populate Chebyshev power basis for degree 31");
+    pb.populate(
+        31,
+        bsgs_host.base.trailing_zeros() as usize,
+        bsgs_host.parity,
+        module,
+        &tsk,
+        &mut scratch.borrow(),
+    )
+    .expect("populate Chebyshev power basis for degree 31");
 
     let mut res = alloc_ct(&params, module, params.k);
     module
