@@ -9,7 +9,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 
 /// Homomorphic cyclic slot rotation.
 ///
-/// Applies the automorphism `X ↦ X^(5^k mod 2n)` to the RLWE ciphertext,
+/// Applies the automorphism `X ↦ X^(5^k mod 2n)` to the Module-LWE ciphertext,
 /// which corresponds to a cyclic shift of the CKKS complex slot vector by
 /// `k` positions: slot `j` moves to slot `(j + k) mod (n/2)`.
 ///

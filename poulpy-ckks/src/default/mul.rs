@@ -306,6 +306,13 @@ where
     let res_log_delta = a.log_delta().min(b.log_delta());
 
     let res_offset = (res_log_budget + res_log_delta).saturating_sub(res.max_k().as_usize());
+    // Addition/subtraction align to the shared, lower effective precision
+    // (`ckks_offset_binary` uses `min`). Multiplication is different: the
+    // bivariate convolution must traverse every live input limb, so the
+    // convolution offset starts after the wider operand span and then skips any
+    // extra limbs that cannot fit in `res`. This matches the already-rescaled
+    // multiplication rule documented by `CKKSMulOps` and the bivariate Torus
+    // analysis cited in the README/ePrint 2023/771.
     let cnv_offset = a.effective_k().max(b.effective_k()) + res_offset;
 
     Ok((

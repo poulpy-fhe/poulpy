@@ -7,7 +7,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 
 /// Homomorphic complex conjugation.
 ///
-/// Applies the automorphism `X ↦ X^(2n−1)` to the RLWE ciphertext, which
+/// Applies the automorphism `X ↦ X^(2n−1)` to the Module-LWE ciphertext, which
 /// maps every complex slot value `z_j` to its conjugate `z̄_j`.
 ///
 /// Conjugation requires one automorphism evaluation key (the key for the

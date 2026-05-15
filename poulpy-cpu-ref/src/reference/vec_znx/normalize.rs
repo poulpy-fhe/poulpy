@@ -1,26 +1,18 @@
-use std::{hint::black_box, mem::size_of};
-
-use criterion::{BenchmarkId, Criterion};
+use std::mem::size_of;
 
 use crate::{
-    api::{
-        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxNormalize, VecZnxNormalizeAssignBackend,
-        VecZnxNormalizeTmpBytes,
-    },
-    layouts::{
-        Backend, FillUniform, HostDataMut, HostDataRef, Module, ScratchOwned, VecZnx, VecZnxBackendMut, VecZnxBackendRef,
-        VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut,
-    },
+    layouts::{Backend, HostDataMut, HostDataRef, VecZnxBackendMut, VecZnxBackendRef, ZnxView, ZnxViewMut},
     reference::znx::{
         ZnxAddAssign, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulPowerOfTwoAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
         ZnxNormalizeFinalStepAssign, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly,
         ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxZero,
     },
-    source::Source,
 };
 
 #[cfg(test)]
-fn alloc_host_vec_znx(n: usize, cols: usize, size: usize) -> VecZnx<Vec<u8>> {
+fn alloc_host_vec_znx(n: usize, cols: usize, size: usize) -> crate::layouts::VecZnx<Vec<u8>> {
+    use crate::layouts::VecZnx;
+
     crate::layouts::VecZnx::from_data(
         crate::layouts::HostBytesBackend::alloc_bytes(VecZnx::<Vec<u8>>::bytes_of(n, cols, size)),
         n,
@@ -756,7 +748,8 @@ where
 fn test_vec_znx_normalize_cross_base2k() {
     use crate::{
         FFT64Ref,
-        layouts::{VecZnx, VecZnxToBackendMut, VecZnxToBackendRef},
+        layouts::{FillUniform, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef},
+        source::Source,
     };
     let n: usize = 8;
 
@@ -881,7 +874,8 @@ fn test_vec_znx_normalize_cross_base2k() {
 fn test_vec_znx_normalize_inter_base2k() {
     use crate::{
         FFT64Ref,
-        layouts::{VecZnx, VecZnxToBackendMut, VecZnxToBackendRef},
+        layouts::{FillUniform, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef},
+        source::Source,
     };
     let n: usize = 8;
 
@@ -981,121 +975,4 @@ fn test_vec_znx_normalize_inter_base2k() {
             }
         }
     }
-}
-pub fn bench_vec_znx_normalize<B>(c: &mut Criterion, label: &str)
-where
-    B: Backend<OwnedBuf = Vec<u8>> + 'static,
-    Module<B>: VecZnxNormalize<B> + ModuleNew<B> + VecZnxNormalizeTmpBytes + VecZnxAlloc<B>,
-    ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
-    for<'x> B: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
-{
-    let group_name: String = format!("vec_znx_normalize::{label}");
-
-    let mut group = c.benchmark_group(group_name);
-
-    fn runner<B>(params: [usize; 3]) -> impl FnMut()
-    where
-        B: Backend<OwnedBuf = Vec<u8>> + 'static,
-        Module<B>: VecZnxNormalize<B> + ModuleNew<B> + VecZnxNormalizeTmpBytes + VecZnxAlloc<B>,
-        ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
-        for<'x> B: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
-    {
-        let n: usize = 1 << params[0];
-        let cols: usize = params[1];
-        let size: usize = params[2];
-
-        let module: Module<B> = Module::<B>::new(n as u64);
-
-        let base2k: usize = 50;
-
-        let mut source: Source = Source::new([0u8; 32]);
-
-        let mut a: VecZnx<Vec<u8>> = module.vec_znx_alloc(cols, size);
-        let mut res: VecZnx<Vec<u8>> = module.vec_znx_alloc(cols, size);
-
-        // Fill a with random i64
-        a.fill_uniform(50, &mut source);
-        res.fill_uniform(50, &mut source);
-
-        let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.vec_znx_normalize_tmp_bytes());
-        let res_offset: i64 = 0;
-        move || {
-            for i in 0..cols {
-                module.vec_znx_normalize(
-                    &mut <VecZnx<Vec<u8>> as VecZnxToBackendMut<B>>::to_backend_mut(&mut res),
-                    base2k,
-                    res_offset,
-                    i,
-                    &<VecZnx<Vec<u8>> as VecZnxToBackendRef<B>>::to_backend_ref(&a),
-                    base2k,
-                    i,
-                    &mut scratch.borrow(),
-                );
-            }
-            black_box(());
-        }
-    }
-
-    for params in [[10, 2, 2], [11, 2, 4], [12, 2, 8], [13, 2, 16], [14, 2, 32]] {
-        let id: BenchmarkId = BenchmarkId::from_parameter(format!("{}x({}x{})", 1 << params[0], params[1], params[2],));
-        let mut runner = runner::<B>(params);
-        group.bench_with_input(id, &(), |b, _| b.iter(&mut runner));
-    }
-
-    group.finish();
-}
-
-pub fn bench_vec_znx_normalize_inplace<B>(c: &mut Criterion, label: &str)
-where
-    B: Backend<OwnedBuf = Vec<u8>>,
-    Module<B>: VecZnxNormalizeAssignBackend<B> + ModuleNew<B> + VecZnxNormalizeTmpBytes + VecZnxAlloc<B>,
-    ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
-{
-    let group_name: String = format!("vec_znx_normalize_inplace::{label}");
-
-    let mut group = c.benchmark_group(group_name);
-
-    fn runner<B>(params: [usize; 3]) -> impl FnMut()
-    where
-        B: Backend<OwnedBuf = Vec<u8>>,
-        Module<B>: VecZnxNormalizeAssignBackend<B> + ModuleNew<B> + VecZnxNormalizeTmpBytes + VecZnxAlloc<B>,
-        ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
-    {
-        let n: usize = 1 << params[0];
-        let cols: usize = params[1];
-        let size: usize = params[2];
-
-        let module: Module<B> = Module::<B>::new(n as u64);
-
-        let base2k: usize = 50;
-
-        let mut source: Source = Source::new([0u8; 32]);
-
-        let mut a: VecZnx<Vec<u8>> = module.vec_znx_alloc(cols, size);
-
-        // Fill a with random i64
-        a.fill_uniform(50, &mut source);
-
-        let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.vec_znx_normalize_tmp_bytes());
-
-        move || {
-            for i in 0..cols {
-                module.vec_znx_normalize_assign_backend(
-                    base2k,
-                    &mut <VecZnx<Vec<u8>> as VecZnxToBackendMut<B>>::to_backend_mut(&mut a),
-                    i,
-                    &mut scratch.borrow(),
-                );
-            }
-            black_box(());
-        }
-    }
-
-    for params in [[10, 2, 2], [11, 2, 4], [12, 2, 8], [13, 2, 16], [14, 2, 32]] {
-        let id: BenchmarkId = BenchmarkId::from_parameter(format!("{}x({}x{})", 1 << params[0], params[1], params[2],));
-        let mut runner = runner::<B>(params);
-        group.bench_with_input(id, &(), |b, _| b.iter(&mut runner));
-    }
-
-    group.finish();
 }

@@ -216,11 +216,6 @@ impl<'a, BE: Backend + 'a> CKKSCiphertextViewMut<'a, BE> {
     pub(crate) fn from_inner(inner: GLWEViewMut<'a, BE>, meta: CKKSMeta) -> Self {
         Self { inner, meta }
     }
-
-    #[allow(dead_code)]
-    pub(crate) fn into_inner(self) -> GLWEViewMut<'a, BE> {
-        self.inner
-    }
 }
 
 impl<'a, BE: Backend + 'a> Deref for CKKSCiphertextViewMut<'a, BE> {
@@ -482,12 +477,6 @@ impl<D: Data> CKKSCiphertext<D, Unnormalized> {
     /// Wraps `ct` in the unnormalized typestate.
     pub fn new(ct: CKKSCiphertext<D>) -> Self {
         Self::from_inner(ct.inner, ct.meta)
-    }
-
-    /// Returns a shared reference to the underlying ciphertext for read-only
-    /// inspection (e.g. metadata checks or decryption in tests).
-    pub fn as_inner(&self) -> &Self {
-        self
     }
 
     /// Normalizes the ciphertext and returns the result as a [`CKKSCiphertext`].

@@ -122,7 +122,7 @@ where
                 });
 
                 for col_j in 0..rank + 1 {
-                    // rlwe encrypt of vec_znx_pt into vec_znx_ct
+                    // GLWE encrypt of vec_znx_pt into vec_znx_ct
 
                     let (seed, mut source_xa_tmp) = source.branch();
 

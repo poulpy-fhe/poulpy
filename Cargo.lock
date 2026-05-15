@@ -620,7 +620,6 @@ dependencies = [
  "anyhow",
  "bytemuck",
  "byteorder",
- "criterion",
  "dashu-float",
  "f128",
  "itertools 0.14.0",

@@ -48,7 +48,6 @@ pub unsafe trait CKKSConjugateImpl<BE: Backend>: Backend {
         BE: 's;
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> CKKSConjugateImpl<BE> for BE
 where
     BE: HalVecZnxImpl<BE>,

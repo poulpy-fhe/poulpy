@@ -161,12 +161,12 @@ where
         res.at_mut(res_col, res_limb)[res_offset] -= sum;
     }
 
-    fn vec_znx_normalize_tmp_bytes_default(module: &Module<BE>) -> usize {
+    fn vec_znx_normalize_tmp_bytes_backend_default(module: &Module<BE>) -> usize {
         vec_znx_normalize_tmp_bytes(module.n())
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_normalize_default<'s, 'r, 'a>(
+    fn vec_znx_normalize_backend_default<'s, 'r, 'a>(
         module: &Module<BE>,
         res: &mut VecZnxBackendMut<'r, BE>,
         res_base2k: usize,
@@ -502,7 +502,7 @@ where
         vec_znx_negate_assign::<BE>(res, res_col);
     }
 
-    fn vec_znx_rsh_tmp_bytes_default(module: &Module<BE>) -> usize {
+    fn vec_znx_rsh_tmp_bytes_backend_default(module: &Module<BE>) -> usize {
         vec_znx_rsh_tmp_bytes(module.n())
     }
 
@@ -655,7 +655,7 @@ where
         vec_znx_rsh_sub_coeff_into::<BE>(base2k, k, res, res_col, a, a_col, a_coeff, res_coeff, carry);
     }
 
-    fn vec_znx_lsh_tmp_bytes_default(module: &Module<BE>) -> usize {
+    fn vec_znx_lsh_tmp_bytes_backend_default(module: &Module<BE>) -> usize {
         vec_znx_lsh_tmp_bytes(module.n())
     }
 
@@ -933,7 +933,7 @@ where
         vec_znx_rotate::<BE>(p, res, res_col, a, a_col);
     }
 
-    fn vec_znx_rotate_assign_tmp_bytes_default(module: &Module<BE>) -> usize {
+    fn vec_znx_rotate_assign_tmp_bytes_backend_default(module: &Module<BE>) -> usize {
         vec_znx_rotate_assign_tmp_bytes(module.n())
     }
 
@@ -971,11 +971,11 @@ where
         vec_znx_automorphism::<BE>(p, res, res_col, a, a_col);
     }
 
-    fn vec_znx_automorphism_assign_tmp_bytes_default(module: &Module<BE>) -> usize {
+    fn vec_znx_automorphism_assign_tmp_bytes_backend_default(module: &Module<BE>) -> usize {
         vec_znx_automorphism_assign_tmp_bytes(module.n())
     }
 
-    fn vec_znx_automorphism_assign_default<'s, 'r>(
+    fn vec_znx_automorphism_assign_backend_default<'s, 'r>(
         module: &Module<BE>,
         p: i64,
         res: &mut VecZnxBackendMut<'r, BE>,
@@ -1009,7 +1009,7 @@ where
         vec_znx_mul_xp_minus_one::<BE>(p, res, res_col, a, a_col);
     }
 
-    fn vec_znx_mul_xp_minus_one_assign_tmp_bytes_default(module: &Module<BE>) -> usize {
+    fn vec_znx_mul_xp_minus_one_assign_tmp_bytes_backend_default(module: &Module<BE>) -> usize {
         vec_znx_mul_xp_minus_one_assign_tmp_bytes(module.n())
     }
 
@@ -1032,7 +1032,7 @@ where
         vec_znx_mul_xp_minus_one_assign::<BE>(p, res, res_col, tmp);
     }
 
-    fn vec_znx_split_ring_tmp_bytes_default(module: &Module<BE>) -> usize {
+    fn vec_znx_split_ring_tmp_bytes_backend_default(module: &Module<BE>) -> usize {
         vec_znx_split_ring_tmp_bytes(module.n())
     }
 
@@ -1054,7 +1054,7 @@ where
         vec_znx_split_ring::<BE>(res, res_col, a, a_col, tmp);
     }
 
-    fn vec_znx_merge_rings_tmp_bytes_default(module: &Module<BE>) -> usize {
+    fn vec_znx_merge_rings_tmp_bytes_backend_default(module: &Module<BE>) -> usize {
         vec_znx_merge_rings_tmp_bytes(module.n())
     }
 

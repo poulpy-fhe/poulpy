@@ -31,7 +31,7 @@ use crate::blind_rotation::BlindRotationAlgo;
 /// - `base2k`: Decomposition base (bits per limb).
 /// - `k`: Total torus precision (message bits).
 /// - `dnum`: Number of decomposition digits per GGSW row.
-/// - `rank`: GLWE rank (0 for plain LWE, ≥ 1 for RLWE).
+/// - `rank`: GLWE rank (0 for plain LWE, ≥ 1 for GLWE / Module-LWE).
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub struct BlindRotationKeyLayout {
     pub n_glwe: Degree,

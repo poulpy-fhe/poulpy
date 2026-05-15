@@ -191,6 +191,12 @@ pub(crate) fn checked_mul_ct_log_budget(
     lhs_log_delta: usize,
     rhs_log_delta: usize,
 ) -> Result<usize> {
+    // Bivariate-torus CKKS multiplication returns the already-rescaled product:
+    // the output scale is `min(log_delta)` and the discarded scale/headroom is
+    // therefore `max(log_delta)`, not `lhs_log_delta + rhs_log_delta` as it
+    // would be for an unreduced fixed-point product. See the `CKKSMulOps`
+    // metadata docs and the bivariate Torus analysis cited in the README
+    // ("Revisiting Key Decomposition Techniques for FHE", ePrint 2023/771).
     lhs_log_budget
         .min(rhs_log_budget)
         .checked_sub(lhs_log_delta.max(rhs_log_delta))

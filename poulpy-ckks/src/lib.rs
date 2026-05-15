@@ -1,5 +1,3 @@
-#![allow(private_bounds)]
-
 //! # poulpy-ckks
 //!
 //! Backend-agnostic implementation of the CKKS (Cheon-Kim-Kim-Song)

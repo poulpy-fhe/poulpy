@@ -2,7 +2,7 @@
 //!
 //! This crate provides [`FFT64Avx`], a high-performance backend implementation for [`poulpy_hal`]
 //! that leverages x86-64 SIMD instruction sets (AVX2 and FMA) to accelerate cryptographic operations
-//! in fully homomorphic encryption (FHE) schemes based on Ring-Learning-With-Errors (RLWE).
+//! in fully homomorphic encryption (FHE) schemes based on Module-LWE.
 //!
 //! # Architecture
 //!

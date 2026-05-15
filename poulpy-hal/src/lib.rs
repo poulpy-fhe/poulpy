@@ -4,7 +4,7 @@
 //! arithmetic over the cyclotomic ring `Z[X]/(X^N + 1)`.
 //!
 //! This crate provides backend-agnostic data layouts and a trait-based API for
-//! polynomial operations commonly used in lattice-based cryptography (LWE/RLWE
+//! polynomial operations commonly used in lattice-based cryptography (LWE/Module-LWE
 //! ciphertexts, key-switching matrices, external products, etc.). It is designed
 //! so that cryptographic schemes can be written once against the [`api`] traits and
 //! then executed on any backend (CPU with AVX2/AVX-512, GPU, FPGA, ...) that

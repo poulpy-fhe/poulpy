@@ -47,7 +47,7 @@ impl_vec_znx_delegate!(
 impl_vec_znx_delegate!(
     VecZnxNormalizeTmpBytes,
     fn vec_znx_normalize_tmp_bytes(&self) -> usize {
-        B::vec_znx_normalize_tmp_bytes(self)
+        B::vec_znx_normalize_tmp_bytes_backend(self)
     }
 );
 
@@ -65,7 +65,7 @@ impl_vec_znx_delegate!(
         a_col: usize,
         scratch: &mut ScratchArena<'s, B>,
     ) {
-        B::vec_znx_normalize(self, res, res_base2k, res_offset, res_col, a, a_base2k, a_col, scratch)
+        B::vec_znx_normalize_backend(self, res, res_base2k, res_offset, res_col, a, a_base2k, a_col, scratch)
     }
 );
 
@@ -358,14 +358,14 @@ impl_vec_znx_delegate!(
 impl_vec_znx_delegate!(
     VecZnxRshTmpBytes,
     fn vec_znx_rsh_tmp_bytes(&self) -> usize {
-        B::vec_znx_rsh_tmp_bytes(self)
+        B::vec_znx_rsh_tmp_bytes_backend(self)
     }
 );
 
 impl_vec_znx_delegate!(
     VecZnxLshTmpBytes,
     fn vec_znx_lsh_tmp_bytes(&self) -> usize {
-        B::vec_znx_lsh_tmp_bytes(self)
+        B::vec_znx_lsh_tmp_bytes_backend(self)
     }
 );
 
@@ -633,7 +633,7 @@ impl_vec_znx_delegate!(
 impl_vec_znx_delegate!(
     VecZnxRotateAssignTmpBytes,
     fn vec_znx_rotate_assign_tmp_bytes(&self) -> usize {
-        B::vec_znx_rotate_assign_tmp_bytes(self)
+        B::vec_znx_rotate_assign_tmp_bytes_backend(self)
     }
 );
 
@@ -667,7 +667,7 @@ impl_vec_znx_delegate!(
 impl_vec_znx_delegate!(
     VecZnxAutomorphismAssignTmpBytes,
     fn vec_znx_automorphism_assign_tmp_bytes(&self) -> usize {
-        B::vec_znx_automorphism_assign_tmp_bytes(self)
+        B::vec_znx_automorphism_assign_tmp_bytes_backend(self)
     }
 );
 
@@ -680,7 +680,7 @@ impl_vec_znx_delegate!(
         res_col: usize,
         scratch: &mut ScratchArena<'s, B>,
     ) {
-        B::vec_znx_automorphism_assign(self, k, res, res_col, scratch)
+        B::vec_znx_automorphism_assign_backend(self, k, res, res_col, scratch)
     }
 );
 
@@ -701,7 +701,7 @@ impl_vec_znx_delegate!(
 impl_vec_znx_delegate!(
     VecZnxMulXpMinusOneAssignTmpBytes,
     fn vec_znx_mul_xp_minus_one_assign_tmp_bytes(&self) -> usize {
-        B::vec_znx_mul_xp_minus_one_assign_tmp_bytes(self)
+        B::vec_znx_mul_xp_minus_one_assign_tmp_bytes_backend(self)
     }
 );
 
@@ -721,7 +721,7 @@ impl_vec_znx_delegate!(
 impl_vec_znx_delegate!(
     VecZnxSplitRingTmpBytes,
     fn vec_znx_split_ring_tmp_bytes(&self) -> usize {
-        B::vec_znx_split_ring_tmp_bytes(self)
+        B::vec_znx_split_ring_tmp_bytes_backend(self)
     }
 );
 
@@ -742,7 +742,7 @@ impl_vec_znx_delegate!(
 impl_vec_znx_delegate!(
     VecZnxMergeRingsTmpBytes,
     fn vec_znx_merge_rings_tmp_bytes(&self) -> usize {
-        B::vec_znx_merge_rings_tmp_bytes(self)
+        B::vec_znx_merge_rings_tmp_bytes_backend(self)
     }
 );
 

@@ -179,7 +179,6 @@ pub unsafe trait CKKSAddImpl<BE: Backend>: Backend {
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos;
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> CKKSAddImpl<BE> for BE
 where
     BE: HalVecZnxImpl<BE>,

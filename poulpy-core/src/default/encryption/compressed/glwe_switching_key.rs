@@ -1,7 +1,7 @@
 use poulpy_hal::{
-    api::{ModuleN, ScratchArenaTakeBasic, ScratchOwnedAlloc, VecZnxSwitchRingBackend},
+    api::{ModuleN, ScratchArenaTakeBasic, VecZnxSwitchRingBackend},
     layouts::{
-        Backend, Module, ScalarZnx, ScratchArena, ScratchOwned, scalar_znx_as_vec_znx_backend_mut_from_mut,
+        Backend, Module, ScalarZnx, ScratchArena, scalar_znx_as_vec_znx_backend_mut_from_mut,
         scalar_znx_as_vec_znx_backend_ref_from_ref,
     },
     source::Source,
@@ -40,7 +40,6 @@ pub trait GLWESwitchingKeyCompressedEncryptSkDefault<BE: Backend> {
 impl<BE: Backend> GLWESwitchingKeyCompressedEncryptSkDefault<BE> for Module<BE>
 where
     Self: ModuleN + GGLWECompressedEncryptSk<BE> + GLWESecretPreparedFactory<BE> + VecZnxSwitchRingBackend<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     fn glwe_switching_key_compressed_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
@@ -52,7 +51,8 @@ where
         let lvl_0: usize = ScalarZnx::bytes_of(self.n(), infos.rank_in().into());
         let lvl_1: usize = ScalarZnx::bytes_of(self.n(), infos.rank_out().into());
         let lvl_2: usize = self.glwe_secret_prepared_bytes_of(infos.rank_out());
-        lvl_0 + lvl_1 + lvl_2
+        let lvl_3_encrypt: usize = self.gglwe_compressed_encrypt_sk_tmp_bytes(infos);
+        lvl_0 + lvl_1 + lvl_2 + lvl_3_encrypt
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -98,10 +98,10 @@ where
             self.vec_znx_switch_ring_backend(&mut sk_out_lifted_backend_vec, i, &sk_out_backend_vec, i);
         }
 
-        let (mut sk_out_prepared, _scratch_3) = scratch_2.take_glwe_secret_prepared_scratch(self, sk_out_ref.rank());
+        let (mut sk_out_prepared, scratch_3) = scratch_2.take_glwe_secret_prepared_scratch(self, sk_out_ref.rank());
         self.glwe_secret_prepare(&mut sk_out_prepared, &sk_out_lifted);
 
-        let mut enc_scratch: ScratchOwned<BE> = ScratchOwned::alloc(self.gglwe_compressed_encrypt_sk_tmp_bytes(res));
+        let (mut enc_scratch, _scratch_4) = scratch_3.split_at(self.gglwe_compressed_encrypt_sk_tmp_bytes(res));
         self.gglwe_compressed_encrypt_sk(
             res,
             &sk_in_lifted,
@@ -109,7 +109,7 @@ where
             seed_xa,
             enc_infos,
             source_xe,
-            &mut enc_scratch.arena(),
+            &mut enc_scratch,
         );
 
         *res.input_degree() = sk_in.n();

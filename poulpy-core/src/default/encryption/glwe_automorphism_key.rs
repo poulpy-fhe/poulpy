@@ -1,7 +1,7 @@
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, SvpPPolBytesOf, VecZnxAutomorphismBackend},
+    api::{SvpPPolBytesOf, VecZnxAutomorphismBackend},
     layouts::{
-        Backend, GaloisElement, Module, ScratchArena, ScratchOwned, scalar_znx_as_vec_znx_backend_mut_from_mut,
+        Backend, GaloisElement, Module, ScratchArena, scalar_znx_as_vec_znx_backend_mut_from_mut,
         scalar_znx_as_vec_znx_backend_ref_from_ref,
     },
     source::Source,
@@ -39,7 +39,6 @@ pub trait GLWEAutomorphismKeyEncryptSkDefault<BE: Backend> {
 impl<BE: Backend> GLWEAutomorphismKeyEncryptSkDefault<BE> for Module<BE>
 where
     Self: GGLWEEncryptSk<BE> + VecZnxAutomorphismBackend<BE> + GaloisElement + SvpPPolBytesOf + GLWESecretPreparedFactory<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     fn glwe_automorphism_key_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
@@ -56,8 +55,9 @@ where
         let lvl_0: usize = self.glwe_secret_prepared_bytes_of_from_infos(infos);
         let lvl_1_sk: usize = GLWESecret::bytes_of_from_infos(infos);
         let lvl_1: usize = lvl_1_sk;
+        let lvl_2_encrypt: usize = self.gglwe_encrypt_sk_tmp_bytes(infos);
 
-        lvl_0 + lvl_1
+        lvl_0 + lvl_1 + lvl_2_encrypt
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -90,7 +90,7 @@ where
 
         let scratch = scratch.borrow();
         let (mut sk_out_prepared, scratch_1) = scratch.take_glwe_secret_prepared_scratch(self, sk.rank());
-        let (mut sk_out, _scratch_2) = scratch_1.take_glwe_secret_scratch(self.n().into(), sk.rank());
+        let (mut sk_out, scratch_2) = scratch_1.take_glwe_secret_scratch(self.n().into(), sk.rank());
         sk_out.dist = sk.dist;
         {
             let sk_backend = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(&sk.data);
@@ -101,7 +101,7 @@ where
         }
         self.glwe_secret_prepare(&mut sk_out_prepared, &sk_out);
 
-        let mut enc_scratch: ScratchOwned<BE> = ScratchOwned::alloc(self.gglwe_encrypt_sk_tmp_bytes(res));
+        let (mut enc_scratch, _scratch_3) = scratch_2.split_at(self.gglwe_encrypt_sk_tmp_bytes(res));
         let sk_data_ref = &sk.data;
         self.gglwe_encrypt_sk(
             res,
@@ -110,7 +110,7 @@ where
             enc_infos,
             source_xe,
             source_xa,
-            &mut enc_scratch.arena(),
+            &mut enc_scratch,
         );
 
         res.set_p(p);

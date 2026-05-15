@@ -158,7 +158,6 @@ pub unsafe trait CKKSSubImpl<BE: Backend>: Backend {
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos;
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> CKKSSubImpl<BE> for BE
 where
     BE: poulpy_hal::oep::HalVecZnxImpl<BE>,

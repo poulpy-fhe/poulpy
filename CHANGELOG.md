@@ -14,9 +14,9 @@ This branch completes the migration from the legacy host-oriented HAL/backend pl
 - Add backend-owned/layout interop APIs: `Backend::{OwnedBuf, BufRef, BufMut}`, `HostBackend` / `DeviceBackend`, `TransferFrom<From>`, backend view aliases/reborrow traits for all major layouts, and allocator traits `ScalarZnxAlloc`, `VecZnxAlloc`, `MatZnxAlloc`, plus `api::reim::{NegacyclicFFT, NegacyclicFFTNew}`.
 - Fix the convolution API by renaming the output-shift parameter to `cnv_offset`, moving it to the front of the apply calls, and updating delegates and conformance tests to match the corrected calling convention.
 - **Breaking:** `Convolution::cnv_by_const_apply` no longer takes a raw coefficient slice; it now takes a backend `VecZnx` plus `(b_col, b_coeff)` selectors, matching the rest of the backend-native convolution surface.
-- Replace legacy OEP modules with the unified `oep::HalImpl` entrypoint to provide one consistent extension surface for backends.
-- Add family defaults for `vec_znx`, `vec_znx_big`, `vec_znx_dft`, `svp_ppol`, `vmp_pmat`, and `convolution` to reduce backend boilerplate and make overrides explicit.
-- Remove legacy OEP traits and per-family OEP modules; update delegates to route through `HalImpl` and simplify dispatch.
+- Replace the legacy monolithic `oep::HalImpl` entrypoint with per-family OEP traits (`HalModuleImpl`, `HalVecZnxImpl`, `HalVecZnxBigImpl`, `HalVecZnxDftImpl`, `HalSvpImpl`, `HalVmpImpl`, and `HalConvolutionImpl`) so backends can opt into and override only the families they own.
+- Add family defaults for `vec_znx`, `vec_znx_big`, `vec_znx_dft`, `svp_ppol`, `vmp_pmat`, and `convolution` to reduce backend boilerplate and make per-family overrides explicit.
+- Remove the aggregate `HalImpl` dispatch surface; update delegates to route through the per-family OEP traits and simplify dispatch.
 - Update layouts and encoding helpers to match the new dispatch surface.
 - Generalize scratch/layout plumbing around backend-owned buffers and views so HAL families no longer assume host-resident storage.
 - Refresh HAL test suites to align with the new defaults and dispatch.
@@ -51,7 +51,7 @@ This branch completes the migration from the legacy host-oriented HAL/backend pl
 - Refresh FFT64/NTT120 references and backend glue for the new private-shape HAL layouts, including explicit `from_data[_with_max_size]` rebuilding where host helpers reinterpret backend buffers.
 - Update FFT64 and NTT120 convolution implementations, references, and tests to the corrected `cnv_offset` API.
 - Optimize NTT120 convolution on the AVX backend by wiring the prep paths to backend-specific kernels and restructuring `cnv_apply_dft` / `cnv_pairwise_apply_dft` around prepacked x2 blocks, substantially reducing GLWE tensoring time on large `ntt120-avx` workloads.
-- Reorganize backend implementations around `hal_impl` modules and `hal_defaults` to mirror the new HAL entrypoint and reduce duplication.
+- Reorganize backend implementations around `hal_impl` modules and `hal_defaults` to mirror the new per-family HAL extension surface and reduce duplication.
 - Remove legacy per-family FFT64/NTT120 modules; route implementations through the new HAL defaults to keep a single source of truth.
 - Update FFT64/NTT120 reference kernels, normalization, and shift helpers to keep behavior aligned with the new dispatch path.
 - Flatten AVX test module paths to remove redundant crate prefixes.
@@ -105,23 +105,9 @@ This branch completes the migration from the legacy host-oriented HAL/backend pl
 
 ### Migration (before/after)
 
-**HAL backend wiring** moved from per-family OEP traits to a single `HalImpl` entrypoint with defaults.
+**HAL backend wiring** moved from the aggregate `HalImpl` entrypoint to per-family OEP traits with defaults.
 
-Before (legacy OEP traits):
-
-```rust
-use poulpy_hal::oep::{VecZnxImpl, VecZnxTmpBytesImpl};
-
-unsafe impl VecZnxImpl<FFT64Avx> for FFT64Avx {
-    fn vec_znx_add_into<R, A, B>(/* ... */) { /* AVX impl */ }
-}
-
-unsafe impl VecZnxTmpBytesImpl<FFT64Avx> for FFT64Avx {
-    fn vec_znx_add_tmp_bytes(/* ... */) -> usize { /* ... */ }
-}
-```
-
-After (unified `HalImpl` + defaults):
+Before (aggregate `HalImpl`):
 
 ```rust
 use poulpy_hal::oep::HalImpl;
@@ -129,8 +115,30 @@ use poulpy_hal::oep::HalImpl;
 unsafe impl HalImpl<FFT64Avx> for FFT64Avx {
     hal_impl_vec_znx!();      // default VecZnx wiring
     hal_impl_module_fft64!(); // FFT64-specific hooks
+    fn vec_znx_add_into<R, A, B>(/* ... */) { /* AVX impl */ }
     // override only the hot paths you need
 }
+```
+
+After (per-family OEP traits + defaults):
+
+```rust
+use poulpy_hal::oep::{
+    HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl,
+    HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl,
+};
+
+unsafe impl HalVecZnxImpl<FFT64Avx> for FFT64Avx {
+    poulpy_cpu_ref::hal_impl_vec_znx!();
+}
+
+unsafe impl HalModuleImpl<FFT64Avx> for FFT64Avx {
+    poulpy_cpu_ref::hal_impl_module!(FFT64ModuleDefault);
+}
+
+// Implement only the additional families this backend supports:
+// HalVecZnxBigImpl, HalVecZnxDftImpl, HalSvpImpl, HalVmpImpl,
+// and HalConvolutionImpl.
 ```
 
 **Core API override hooks**: `poulpy-core` dispatches through `poulpy-hal::Module<BE>` by default, but a backend can override core algorithms directly by implementing `CoreImpl`.

@@ -26,7 +26,6 @@ pub unsafe trait CKKSPlaintextZnxImpl<BE: Backend>: Backend {
         Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos;
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> CKKSPlaintextZnxImpl<BE> for BE
 where
     BE: poulpy_hal::oep::HalVecZnxImpl<BE>,

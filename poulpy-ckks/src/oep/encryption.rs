@@ -64,7 +64,6 @@ pub unsafe trait CKKSEncryptionImpl<BE: Backend>: Backend {
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> CKKSEncryptionImpl<BE> for BE
 where
     BE: HalVecZnxImpl<BE> + HalVecZnxBigImpl<BE> + HalVecZnxDftImpl<BE> + HalSvpImpl<BE> + HostBackend,

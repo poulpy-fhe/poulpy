@@ -1,7 +1,7 @@
-//! Backend-agnostic RLWE-based homomorphic encryption primitives.
+//! Backend-agnostic Module-LWE-based homomorphic encryption primitives.
 //!
 //! `poulpy-core` implements the cryptographic building blocks of a
-//! Ring-LWE (RLWE) fully homomorphic encryption (FHE) scheme on top
+//! Module-LWE (MLWE) fully homomorphic encryption (FHE) scheme on top
 //! of the hardware-abstraction layer provided by [`poulpy_hal`].
 //! The public operation traits live in [`api`], while their blanket
 //! implementations on [`poulpy_hal::layouts::Module<BE>`] delegate to
