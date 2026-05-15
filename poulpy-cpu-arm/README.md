@@ -1,213 +1,118 @@
-# poulpy-cpu-arm
+# 🐙 Poulpy-CPU-ARM
 
-NEON-accelerated CPU backend for the [Poulpy](https://github.com/poulpy-fhe/poulpy)
-lattice-cryptography library. Targets AArch64 (Apple Silicon and ARMv8-A
-servers); SVE/SVE2 are out of scope for now.
+**Poulpy-CPU-ARM** is a Rust crate that provides a **NEON / ASIMD accelerated CPU backend for Poulpy**.
 
-## Backend types
+This backend implements the Poulpy HAL extension traits and can be used by:
 
-| Type           | `ScalarPrep`   | `ScalarBig` | Domain                                  |
-|----------------|----------------|-------------|-----------------------------------------|
-| `FFT64Neon`    | `f64`          | `i64`       | f64 FFT (twiddle-factor tables)         |
-| `NTT120Neon`   | `Q120bScalar`  | `i128`      | Q120 NTT, CRT over four ~30-bit primes  |
+- [`poulpy-hal`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-hal)
+- [`poulpy-core`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-core)
+- [`poulpy-ckks`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-ckks) (backend wiring opt-in via `enable-ckks`)
+- [`poulpy-bin-fhe`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-bin-fhe)
 
-Both implement the same `poulpy_hal::oep` extension points as the AVX backends
-and share the HAL contract with `poulpy-cpu-ref`.
+## 🚩 Safety and Requirements
 
-## Status
+To avoid illegal hardware instructions on non-AArch64 CPUs, this backend is **opt-in** and **only builds when explicitly requested**.
 
-All HAL extension points are wired with NEON kernels.
+| Requirement | Status |
+|------------|--------|
+| Cargo feature flag | `--features enable-neon` **must be enabled** |
+| CPU architecture | `aarch64` (NEON / ASIMD is part of the architectural baseline) |
+| Runtime CPU detection | not required |
 
-| Family                                    | NEON | Wired |
-|-------------------------------------------|:----:|:-----:|
-| `Znx*` (i64 add/sub/negate)               | ✅   | ✅    |
-| `I128BigOps` (i128 add/sub/negate, ±i64)  | ✅   | ✅    |
-| `I128NormalizeOps` (i128 carry-prop)      | ✅   | ✅    |
-| `Ntt*` lazy-modular q120b add/sub/negate  | ✅   | ✅    |
-| `NttFromZnx64`, `NttToZnx128`, `NttCFromB`| ✅   | ✅    |
-| `NttPack*`, `NttPairwisePack*`            | ✅   | ✅    |
-| `NttMulBbb`, `NttMulBbc`, `NttMulBbc*X2`  | ✅   | ✅    |
-| `NttDFTExecute` (forward/inverse NTT)     | ✅   | ✅    |
-| `vec_znx_idft_apply_consume`              | ✅   | ✅    |
-| `ReimArith` (pointwise REIM)              | ✅   | ✅    |
-| `Reim4BlkMatVec` (4-block mat-vec)        | ✅   | ✅    |
-| `Reim4Convolution` (4 primitives)         | ✅   | ✅    |
-| `I64Ops` (i64 block move + by-const conv) | ✅   | ✅    |
-| `ReimFFTExecute` (FFT/IFFT butterflies)   | ✅   | ✅    |
+If `enable-neon` is enabled but the target is not `aarch64`, the build **fails immediately with a clear error message** (`compile_error!` in `lib.rs`).
 
-The crate ships ~5400 lines of NEON code across `src/neon/`. Total LOC
-including the wired trait impls and tests is comparable to the AVX backend.
+When `enable-neon` is **not** enabled, this crate is simply skipped and Poulpy automatically falls back to the portable `poulpy-cpu-ref` backend. This keeps the workspace buildable on any target (e.g. x86 developer machines).
 
-## Feature flag
+## ⚙️ Building with the NEON backend enabled
 
-```toml
-poulpy-cpu-arm = { workspace = true, features = ["enable-neon"] }
-```
-
-Without `enable-neon`, the crate compiles to an empty shell on any architecture,
-so the workspace remains buildable on x86 and other targets. With `enable-neon`,
-the crate requires `target_arch = "aarch64"`; a clear `compile_error!` fires
-on any other target.
-
-NEON/ASIMD is part of the AArch64 architectural baseline, so no runtime CPU
-feature detection is performed.
-
-## Build & test
-
-### Native AArch64
+NEON / ASIMD is part of the AArch64 baseline, so no `RUSTFLAGS` target-feature flag is needed:
 
 ```bash
-cargo build -p poulpy-cpu-arm --features enable-neon
-cargo test  -p poulpy-cpu-arm --features enable-neon
+cargo build --features enable-neon
 ```
 
-### Cross-build from x86 with rust-lld + qemu
-
-The workspace `.cargo/config.toml` configures the AArch64 cross-targets to
-use `rust-lld` (bundled with rustup) for the musl target and
-`aarch64-linux-gnu-gcc` for the GNU target, with `qemu-aarch64-static` as
-the runner. To execute the NEON test suite under emulation:
+### Running an example
 
 ```bash
-# one-time install (Arch Linux)
-sudo pacman -S qemu-user-static aarch64-linux-gnu-gcc
+cargo run --example <name> --features enable-neon
+```
+
+### Running benchmarks
+
+```bash
+cargo bench --features enable-neon
+```
+
+### Running tests
+
+```bash
+cargo test -p poulpy-cpu-arm --features enable-neon
+```
+
+To include CKKS backend wiring in the test build:
+
+```bash
+cargo test -p poulpy-cpu-arm --features enable-neon,enable-ckks
+```
+
+### Cross-compiling from x86 with qemu
+
+The workspace `.cargo/config.toml` configures the AArch64 cross-targets to use `rust-lld` for the musl target and `aarch64-linux-gnu-gcc` for the GNU target, with `qemu-aarch64-static` as the runner:
+
+```bash
+# one-time setup
 rustup target add aarch64-unknown-linux-musl
+sudo apt install -y qemu-user-static    # or: sudo pacman -S qemu-user-static
 
-# run the tests under qemu
-cargo test -p poulpy-cpu-arm --features enable-neon \
+# test the NEON backend under emulation
+cargo test -p poulpy-cpu-arm --features enable-neon,enable-ckks \
     --target aarch64-unknown-linux-musl
 ```
 
-The musl target only needs `qemu-aarch64-static` (no cross-cc) because
-`rust-lld` links the static binary itself. The GNU target additionally
-requires the C cross-toolchain.
+qemu emulation overhead dominates the wall-clock time; treat such runs as correctness gates, not performance signals.
 
-### x86 portability
+## Basic Usage
 
-```bash
-cargo build -p poulpy-cpu-arm   # empty shell, no NEON code
-cargo check --workspace         # default features
-```
-
-## Benchmarks
-
-`poulpy-bench` includes ARM backend selection behind the `enable-neon`
-feature.
-
-### Apple Silicon / native AArch64
-
-No `--target` flag is needed — the host triple (`aarch64-apple-darwin` on
-a Mac, `aarch64-unknown-linux-gnu` on Linux servers) already matches.
-
-```bash
-# all backends and benches
-cargo bench -p poulpy-bench --features enable-neon
-
-# single bench, filtered to one backend
-cargo bench -p poulpy-bench --features enable-neon --bench fft       -- fft_neon
-cargo bench -p poulpy-bench --features enable-neon --bench ckks_mul  -- ntt120-neon
-cargo bench -p poulpy-bench --features enable-neon --bench ckks_mul  -- fft64-neon
-```
-
-The benchmark dispatchers (`for_each_backend!`, `for_each_fft_backend!`,
-`for_each_ntt_backend!` in `poulpy-bench/src/lib.rs`) emit one bench per
-backend in tier order: `ref → avx → neon → gpu`. Most benches do not need
-to mention any specific backend; they pick up `FFT64Neon` / `NTT120Neon`
-automatically when `enable-neon` is on. The standalone `fft.rs` bench is
-the exception — it has hand-written per-backend entry points
-(`bench_fft_ref` / `bench_fft_avx` / `bench_fft_neon` and the `ifft_*`
-counterparts).
-
-### Cross-compiling benches from x86 + qemu
-
-The bench crate transitively pulls a small C build (`alloca`), so cross-
-compiling it from x86 needs an AArch64 C cross-toolchain. `clang` works
-out of the box:
-
-```bash
-CC_aarch64_unknown_linux_musl=clang \
-CFLAGS_aarch64_unknown_linux_musl="--target=aarch64-linux-musl" \
-cargo bench -p poulpy-bench --features enable-neon \
-    --target aarch64-unknown-linux-musl --bench fft -- fft_neon
-```
-
-qemu cycle counts are not representative of native AArch64 performance;
-treat such runs as smoke tests only. The `poulpy-cpu-arm` crate itself
-has no `cc-rs` dependency and tests fine under qemu without a cross-cc.
-
-## Example
+This crate exposes two NEON-accelerated backends:
 
 ```rust
 use poulpy_cpu_arm::{FFT64Neon, NTT120Neon};
 use poulpy_hal::{api::ModuleNew, layouts::Module};
 
-let m_fft:  Module<FFT64Neon>   = Module::<FFT64Neon>::new(1 << 12);
-let m_ntt:  Module<NTT120Neon>  = Module::<NTT120Neon>::new(1 << 12);
-// Use m_fft / m_ntt with poulpy_hal / poulpy_core APIs.
+let log_n: usize = 10;
+
+// f64 FFT backend (NEON)
+let module: Module<FFT64Neon> = Module::<FFT64Neon>::new(1 << log_n);
+
+// Q120 NTT backend (NEON, CRT over four ~30-bit primes)
+let module: Module<NTT120Neon> = Module::<NTT120Neon>::new(1 << log_n);
 ```
+
+Once compiled with `enable-neon`, both backends are usable transparently anywhere Poulpy expects a backend type (`poulpy-hal`, `poulpy-core`, `poulpy-ckks`, `poulpy-bin-fhe`).
 
 ## Numerical contract
 
-- Integer and modular operations (`Znx*`, `I128BigOps`, `Ntt*`,
-  `NttDFTExecute`) are bit-exact against `poulpy-cpu-ref`.
-- FFT-domain (`ReimArith`, `Reim4*`, `I64Ops`) operations match the
-  reference within ULP tolerance — the NEON kernels use FMA where the
-  scalar reference does not, so individual rounding bits may differ but
-  the magnitude stays within the documented FFT tolerance.
+- Integer / modular operations (`Znx*`, `I128BigOps`, `Ntt*`, `NttDFTExecute`) are bit-exact against `poulpy-cpu-ref`.
+- FFT-domain operations (`ReimArith`, `Reim4*`, `I64Ops`, `ReimFFTExecute`) match the reference within ULP tolerance — NEON kernels use FMA where the scalar reference does not, so individual rounding bits may differ.
 
-See `poulpy-hal/docs/backend_safety_contract.md` for the full backend
-contract.
+See `poulpy-hal/docs/backend_safety_contract.md` for the full backend contract.
 
 ## Future work
 
-- **`reim4_extract_1blk` & related step parameter**: the AVX backend uses
-  a `step = m >> 2` __m256i stride; the NEON port currently uses the
-  doubled f64-unit stride directly. Re-verify on hardware that the stride
-  matches the AVX layout exactly.
-- **Hand-written assembly leaves**: the AVX backend has `.s` files for
-  `fft16` / `ifft16`. The handoff is briefed in
-  `docs/poulpy-cpu-arm-fft16-asm-handoff.md` and is gated on a real
-  AArch64 bench delta — defer until benchmarks on Apple Silicon prove the
-  intrinsic version is the bottleneck.
-- **SVE/SVE2**: intentionally not mixed into the NEON code path. Future
-  SVE support will land as separate `FFT64Sve` / `NTT120Sve` backend
-  types.
+- Hand-written assembly `fft16` / `ifft16` leaves (mirror of the AVX `.s` files). LLVM auto-vectorisation already gets close, so this is deferred behind a benchmarked delta. Briefed in `docs/poulpy-cpu-arm-fft16-asm-handoff.md`.
+- SVE / SVE2 support will land as separate `FFT64Sve` / `NTT120Sve` backend types rather than being mixed into the NEON code path.
 
-## File map
+## 🤝 Contributors
 
-```
-poulpy-cpu-arm/
-├── Cargo.toml
-├── README.md
-└── src/
-    ├── lib.rs                       # crate gate, CoreImpl
-    ├── hal_impl.rs                  # HAL macro orchestration
-    ├── hal_impl/                    # 15 macro modules wiring HAL methods
-    ├── fft64/                       # FFT64Neon backend type + Backend impl
-    │   ├── mod.rs
-    │   ├── module.rs                # Backend handle (FFT/IFFT tables)
-    │   ├── reim.rs                  # ReimArith / Reim4* / I64Ops impls
-    │   ├── znx.rs                   # Znx* impls (NEON kernels via aliases)
-    │   └── tests.rs                 # cross_backend_test_suite!
-    ├── ntt120/                      # NTT120Neon backend type + Backend impl
-    │   ├── mod.rs
-    │   ├── module.rs                # Backend handle (NTT/iNTT tables)
-    │   ├── prim.rs                  # Ntt* impls (NEON kernels)
-    │   ├── vec_znx_big.rs           # I128BigOps / I128NormalizeOps impls
-    │   ├── znx.rs                   # Znx* impls
-    │   └── tests.rs                 # cross_backend_test_suite!
-    └── neon/                        # NEON kernel modules (~5400 LOC)
-        ├── mod.rs
-        ├── q120.rs                  # Q120 split-register helpers (shared)
-        ├── znx.rs                   # i64 add/sub/negate
-        ├── normalize.rs             # i128 carry-propagation (nfc_*)
-        ├── vec_znx_big.rs           # i128 paired-register helpers (vi128_*)
-        ├── ntt120_arithmetic.rs     # q120b lazy-modular helpers
-        ├── ntt120_convert.rs        # i64↔q120b↔i128, packs, consume
-        ├── ntt120_mat_vec.rs        # bbb / bbc matrix-vector products
-        ├── ntt120_ntt.rs            # forward / inverse NTT butterflies
-        ├── reim_arith.rs            # pointwise REIM + i64↔f64 conversions
-        ├── reim4_arith.rs           # Reim4 block move + mat-vec
-        ├── reim4_conv.rs            # Reim4 convolution kernels
-        └── conv_i64.rs              # I64Ops kernels
-```
+To implement your own Poulpy backend (SIMD or accelerator):
+
+1. Define a backend struct and implement the `Backend` trait from `poulpy-hal`.
+2. For each HAL operation family, either call the blanket default or implement the OEP trait directly with a custom dispatch.
+3. For each `poulpy-core` operation family, either call the corresponding `impl_*_defaults_full!` macro to inherit the portable implementation, or implement the OEP trait directly to override it.
+4. Optionally, do the same for `poulpy-ckks` behind a backend-owned `enable-ckks` feature using the `impl_ckks_*_defaults!` macros or direct OEP trait implementations.
+
+At every layer the macro and the direct implementation are mutually exclusive per operation family: the macro opts the backend into the portable `default` path, while a direct OEP impl replaces it entirely.
+
+---
+
+For questions or guidance, feel free to open an issue or discussion in the repository.
