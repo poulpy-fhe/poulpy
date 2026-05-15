@@ -12,6 +12,7 @@ documentation = "https://docs.rs/poulpy"
 default = []
 enable-core = []
 enable-avx = []
+enable-neon = []
 
 [dependencies]
 dashu-float = {workspace = true}

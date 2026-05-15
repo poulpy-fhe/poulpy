@@ -264,7 +264,7 @@ where
     module.upload_ggsw::<BenchHostBackend>(src)
 }
 
-/// Private: expands to every FFT64 backend in tier order (ref → avx → gpu).
+/// Private: expands to every FFT64 backend in tier order (ref → avx → neon → gpu).
 #[doc(hidden)]
 #[macro_export]
 macro_rules! for_each_fft_backend_family {
@@ -278,12 +278,17 @@ macro_rules! for_each_fft_backend_family {
             use $fn as __f;
             __f::<poulpy_cpu_avx::FFT64Avx>($($arg,)* $c, "fft64-avx");
         }
+        #[cfg(all(feature = "enable-neon", target_arch = "aarch64"))]
+        {
+            use $fn as __f;
+            __f::<poulpy_cpu_arm::FFT64Neon>($($arg,)* $c, "fft64-neon");
+        }
         // #[cfg(feature = "enable-gpu")]
         // { use $fn as __f; __f::<poulpy_gpu::FFT64GPU>($($arg,)* $c, "fft64-gpu"); }
     }};
 }
 
-/// Private: expands to every NTT120 backend in tier order (ref → avx → gpu).
+/// Private: expands to every NTT120 backend in tier order (ref → avx → neon → gpu).
 #[doc(hidden)]
 #[macro_export]
 macro_rules! for_each_ntt_backend_family {
@@ -296,6 +301,11 @@ macro_rules! for_each_ntt_backend_family {
         {
             use $fn as __f;
             __f::<poulpy_cpu_avx::NTT120Avx>($($arg,)* $c, "ntt120-avx");
+        }
+        #[cfg(all(feature = "enable-neon", target_arch = "aarch64"))]
+        {
+            use $fn as __f;
+            __f::<poulpy_cpu_arm::NTT120Neon>($($arg,)* $c, "ntt120-neon");
         }
         // #[cfg(feature = "enable-gpu")]
         // { use $fn as __f; __f::<poulpy_gpu::NTT120GPU>($($arg,)* $c, "ntt120-gpu"); }

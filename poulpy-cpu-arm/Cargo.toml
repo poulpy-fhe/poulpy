@@ -1,0 +1,39 @@
+[package]
+name = "poulpy-cpu-arm"
+version = "0.6.0"
+edition = "2024"
+license = "Apache-2.0"
+readme = "README.md"
+description = "A crate providing concrete NEON accelerated CPU implementations of poulpy-hal through its open extension points"
+repository = "https://github.com/poulpy-fhe/poulpy"
+homepage = "https://github.com/poulpy-fhe/poulpy"
+documentation = "https://docs.rs/poulpy"
+
+[lib]
+doctest = false
+
+[features]
+enable-neon = []
+enable-ckks = ["dep:poulpy-ckks"]
+
+[dependencies]
+bytemuck = {workspace = true}
+poulpy-ckks = {workspace = true, optional = true}
+poulpy-core = {workspace = true}
+poulpy-hal = {workspace = true}
+poulpy-cpu-ref = {workspace = true}
+itertools = {workspace = true}
+rand = {workspace = true}
+rand_distr = {workspace = true}
+rand_core = {workspace = true}
+byteorder = {workspace = true}
+once_cell = {workspace = true}
+rand_chacha = {workspace = true}
+paste = {workspace = true}
+
+[dev-dependencies]
+anyhow = {workspace = true}
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

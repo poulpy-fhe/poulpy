@@ -40,6 +40,22 @@ env:
     poulpy-bench/bin-fhe-bench
     poulpy-bench/ckks-bench
     poulpy-bench/enable-avx
+  NEON_FEATURES: >-
+    poulpy-core/enable-core
+    poulpy-core/enable-neon
+    poulpy-ckks/enable-ckks
+    poulpy-ckks/enable-neon
+    poulpy-cpu-ref/enable-core
+    poulpy-cpu-ref/enable-ckks
+    poulpy-cpu-arm/enable-ckks
+    poulpy-cpu-arm/enable-neon
+    poulpy-bin-fhe/enable-bin-fhe
+    poulpy-bin-fhe/enable-neon
+    poulpy-bench/hal-bench
+    poulpy-bench/core-bench
+    poulpy-bench/bin-fhe-bench
+    poulpy-bench/ckks-bench
+    poulpy-bench/enable-neon
 
 jobs:
   portable:
@@ -139,12 +155,60 @@ jobs:
         if: steps.avx.outputs.supported != 'true'
         run: echo "Runner CPU does not expose AVX2 and FMA; AVX backend checks skipped."
 
+  neon:
+    name: NEON backend (aarch64 via qemu)
+    runs-on: ubuntu-latest
+
+    env:
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER: qemu-aarch64-static
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: clippy, rustfmt
+          targets: aarch64-unknown-linux-gnu
+
+      - name: Install qemu-user-static and aarch64 cross toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static gcc-aarch64-linux-gnu
+
+      - name: Cache cargo deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-neon-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-neon-
+            ${{ runner.os }}-cargo-
+
+      - name: Check NEON backend (workspace libs)
+        run: cargo check --workspace --target aarch64-unknown-linux-gnu --features "$NEON_FEATURES"
+
+      - name: Clippy NEON backend (workspace libs)
+        run: cargo clippy --workspace --target aarch64-unknown-linux-gnu --features "$NEON_FEATURES" -- -D warnings
+
+      - name: Test NEON backend under qemu
+        run: cargo test -p poulpy-cpu-arm --target aarch64-unknown-linux-gnu --features "enable-neon,enable-ckks"
+
   build-and-test:
     name: build-and-test
     runs-on: ubuntu-latest
     needs:
       - portable
       - avx
+      - neon
     if: always()
 
     steps:
@@ -160,4 +224,9 @@ jobs:
             exit 1
           fi
 
-          echo "Portable and AVX CI jobs passed."
+          if [ "${{ needs.neon.result }}" != "success" ]; then
+            echo "NEON backend job finished with: ${{ needs.neon.result }}"
+            exit 1
+          fi
+
+          echo "Portable, AVX and NEON CI jobs passed."

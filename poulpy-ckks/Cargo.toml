@@ -12,6 +12,7 @@ documentation = "https://docs.rs/poulpy-ckks"
 [features]
 enable-ckks = []
 enable-avx = []
+enable-neon = []
 
 [dependencies]
 poulpy-hal = {workspace = true}
