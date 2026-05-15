@@ -12,7 +12,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  RUST_TOOLCHAIN: nightly-2026-04-25
+  RUST_TOOLCHAIN: nightly-2026-05-14
   PORTABLE_FEATURES: >-
     poulpy-core/enable-core
     poulpy-ckks/enable-ckks
@@ -168,8 +168,13 @@ jobs:
     name: AVX-512 backend (typecheck only)
     runs-on: ubuntu-latest
 
+    # GitHub-hosted runners do not expose AVX-512, so we MUST keep AVX-512 flags
+    # off the host toolchain (build scripts, proc-macros). We pin --target and
+    # use the target-scoped CARGO_TARGET_<TRIPLE>_RUSTFLAGS variable so host
+    # artifacts stay portable while the workspace itself builds for AVX-512.
     env:
-      RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
+      CARGO_BUILD_TARGET: x86_64-unknown-linux-gnu
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
       RUSTDOCFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
 
     steps:
@@ -182,6 +187,7 @@ jobs:
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: x86_64-unknown-linux-gnu
           components: clippy
 
       - name: Cache cargo deps

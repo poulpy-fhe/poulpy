@@ -81,7 +81,7 @@ pub fn test_vec_znx_encode_vec_i64() {
             a.encode_vec_i64(base2k, col_i, k, &have);
             let mut want: Vec<i64> = vec![i64::default(); n];
             a.decode_vec_i64(base2k, col_i, k, &mut want);
-            assert_eq!(have, want, "{:?} != {:?}", &have, &want);
+            assert_eq!(have, want, "{:?} != {:?}", have, want);
         })
     }
 }
