@@ -159,24 +159,22 @@ Poulpy is licensed under the Apache-2.0 License. See [NOTICE](./NOTICE) & [LICEN
 
 ## Acknowledgements
 
-**Poulpy** was incubated by [PhantomZone](https://phantom.zone/) with grants from [Ethereum Foundation](https://ethereum.foundation/) and [ENS Foundation](https://docs.ens.domains/dao/foundation/).
+**Poulpy** was initially incubated by [PhantomZone](https://phantom.zone/) with grants from [Ethereum Foundation](https://ethereum.foundation/) and [ENS Foundation](https://docs.ens.domains/dao/foundation/).
 
+Poulpy is now actively supported, funded, and developed by [PhantomZone](https://phantom.zone/), together with [Ideal Rings Lab](https://idealringslab.com) and other contributors.
 
 ## Contact
 
 Consider joining our [telegram](https://t.me/+uy7_HADsdN1jNmU1) group for any questions or discussions.
 
-## Funding
-
-Team behind poulpy accepts financial contributions over various platforms. Please see [funding.json](./funding.json) for funding.
-
 ## Citing
 Please use the following BibTeX entry for citing Poulpy:
 
     @misc{poulpy,
-	    title = {Poulpy v0.6.0},
-	    howpublished = {Online: \url{https://github.com/poulpy-fhe/poulpy}},
-	    month = May,
-	    year = 2026,
-	    note = {Phantom Zone}
+        title = {Poulpy v0.6.0},
+        author = {Jean-Philippe Bossuat and Jules Dumezy and Rasoul Akhavan Mahdavi and Janmajaya Mall and Cedoor and Luis Ruiz-Lopez},
+        affiliation = {Jean-Philippe Bossuat: Ideal Rings Lab and PhantomZone; Jules Dumezy: CEA-List, Universit{\'e} Paris-Saclay; Rasoul Akhavan Mahdavi: University of Waterloo; Janmajaya Mall: PhantomZone; Cedoor: Independent contributor; Luis Ruiz-Lopez: University of Waterloo},
+        howpublished = {Online: \url{https://github.com/poulpy-fhe/poulpy}},
+        month = May,
+        year = 2026,
     }
