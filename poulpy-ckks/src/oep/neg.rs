@@ -27,7 +27,6 @@ pub unsafe trait CKKSNegImpl<BE: Backend>: Backend {
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos;
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> CKKSNegImpl<BE> for BE
 where
     BE: poulpy_hal::oep::HalVecZnxImpl<BE>,

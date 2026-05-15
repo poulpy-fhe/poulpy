@@ -15,7 +15,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::{CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
+use crate::{CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos, default::plaintext::CKKSPlaintextDefault};
 
 /// # Safety
 ///
@@ -61,11 +61,11 @@ pub unsafe trait CKKSEncryptionImpl<BE: Backend>: Backend {
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> CKKSEncryptionImpl<BE> for BE
 where
     BE: HalVecZnxImpl<BE> + HalVecZnxBigImpl<BE> + HalVecZnxDftImpl<BE> + HalSvpImpl<BE> + HostBackend,
     Module<BE>: CKKSEncryptionDefault<BE>
+        + CKKSPlaintextDefault<BE>
         + EncryptionDefault<BE>
         + DecryptionDefault<BE>
         + VecZnxRshAddIntoBackend<BE>

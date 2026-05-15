@@ -5,6 +5,7 @@
 
 use std::{
     fmt,
+    marker::PhantomData,
     ops::{Deref, DerefMut},
 };
 
@@ -15,28 +16,52 @@ use poulpy_hal::layouts::{Backend, Data, HostBackend, HostDataRef, Module, Scrat
 
 use crate::{CKKSInfos, CKKSMeta, SetCKKSInfos, error::CKKSCompositionError, layouts::CKKSModuleAlloc};
 
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// Marker for CKKS ciphertexts whose limb digits are carry-normalized.
+pub struct Normalized;
+
+/// Marker for CKKS ciphertexts whose limb digits may contain unpropagated carries.
+pub struct Unnormalized;
+
+impl sealed::Sealed for Normalized {}
+impl sealed::Sealed for Unnormalized {}
+
+/// Sealed CKKS ciphertext normalization state.
+pub trait CKKSNormalizationState: sealed::Sealed {}
+
+impl CKKSNormalizationState for Normalized {}
+impl CKKSNormalizationState for Unnormalized {}
+
 /// CKKS ciphertext storage plus semantic precision metadata.
 ///
 /// `inner` contains the raw GLWE torus digits while `meta` describes the
 /// semantic decimal scaling and remaining homomorphic capacity of the value.
-pub struct CKKSCiphertext<D: Data> {
+pub struct CKKSCiphertext<D: Data, S: CKKSNormalizationState = Normalized> {
     /// Raw GLWE ciphertext storage.
     pub(crate) inner: GLWE<D>,
     /// Semantic CKKS metadata associated with `inner`.
     pub(crate) meta: CKKSMeta,
+    _state: PhantomData<S>,
 }
 
-impl<D: Data> CKKSCiphertext<D> {
+impl<D: Data, S: CKKSNormalizationState> CKKSCiphertext<D, S> {
     pub(crate) fn from_inner(inner: GLWE<D>, meta: CKKSMeta) -> Self {
-        Self { inner, meta }
+        Self {
+            inner,
+            meta,
+            _state: PhantomData,
+        }
     }
 
     /// Rebuilds this backend-owned ciphertext as a host-owned [`CKKSCiphertext<Vec<u8>>`].
-    pub fn to_host_owned<BE>(&self) -> CKKSCiphertext<Vec<u8>>
+    pub fn to_host_owned<BE>(&self) -> CKKSCiphertext<Vec<u8>, S>
     where
         BE: Backend<OwnedBuf = D>,
     {
-        CKKSCiphertext::from_inner(self.inner.to_host_owned::<BE>(), self.meta)
+        CKKSCiphertext::<Vec<u8>, S>::from_inner(self.inner.to_host_owned::<BE>(), self.meta)
     }
 
     /// Formats this backend-owned ciphertext through the existing host [`fmt::Display`] implementation.
@@ -81,7 +106,7 @@ impl<D: Data> CKKSCiphertext<D> {
     }
 }
 
-impl<D: Data> Deref for CKKSCiphertext<D> {
+impl<D: Data, S: CKKSNormalizationState> Deref for CKKSCiphertext<D, S> {
     type Target = GLWE<D>;
 
     fn deref(&self) -> &Self::Target {
@@ -89,13 +114,13 @@ impl<D: Data> Deref for CKKSCiphertext<D> {
     }
 }
 
-impl<D: Data> DerefMut for CKKSCiphertext<D> {
+impl<D: Data, S: CKKSNormalizationState> DerefMut for CKKSCiphertext<D, S> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
     }
 }
 
-impl<D: Data> LWEInfos for CKKSCiphertext<D> {
+impl<D: Data, S: CKKSNormalizationState> LWEInfos for CKKSCiphertext<D, S> {
     fn base2k(&self) -> Base2K {
         self.inner.base2k()
     }
@@ -109,13 +134,13 @@ impl<D: Data> LWEInfos for CKKSCiphertext<D> {
     }
 }
 
-impl<D: Data> GLWEInfos for CKKSCiphertext<D> {
+impl<D: Data, S: CKKSNormalizationState> GLWEInfos for CKKSCiphertext<D, S> {
     fn rank(&self) -> Rank {
         self.inner.rank()
     }
 }
 
-impl<D: Data> CKKSInfos for CKKSCiphertext<D> {
+impl<D: Data, S: CKKSNormalizationState> CKKSInfos for CKKSCiphertext<D, S> {
     fn meta(&self) -> CKKSMeta {
         self.meta
     }
@@ -129,19 +154,19 @@ impl<D: Data> CKKSInfos for CKKSCiphertext<D> {
     }
 }
 
-impl<D: Data> SetCKKSInfos for CKKSCiphertext<D> {
+impl<D: Data, S: CKKSNormalizationState> SetCKKSInfos for CKKSCiphertext<D, S> {
     fn set_meta(&mut self, meta: CKKSMeta) {
         self.meta = meta;
     }
 }
 
-impl<D: HostDataRef> fmt::Display for CKKSCiphertext<D> {
+impl<D: HostDataRef, S: CKKSNormalizationState> fmt::Display for CKKSCiphertext<D, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.inner)
     }
 }
 
-impl<BE: Backend, D: Data> GLWEToBackendRef<BE> for CKKSCiphertext<D>
+impl<BE: Backend, D: Data, S: CKKSNormalizationState> GLWEToBackendRef<BE> for CKKSCiphertext<D, S>
 where
     GLWE<D>: GLWEToBackendRef<BE>,
 {
@@ -150,7 +175,7 @@ where
     }
 }
 
-impl<BE: Backend, D: Data> GLWEToBackendMut<BE> for CKKSCiphertext<D>
+impl<BE: Backend, D: Data, S: CKKSNormalizationState> GLWEToBackendMut<BE> for CKKSCiphertext<D, S>
 where
     GLWE<D>: GLWEToBackendMut<BE>,
 {
@@ -172,11 +197,6 @@ pub struct CKKSCiphertextViewMut<'a, BE: Backend + 'a> {
 impl<'a, BE: Backend + 'a> CKKSCiphertextViewMut<'a, BE> {
     pub(crate) fn from_inner(inner: GLWEViewMut<'a, BE>, meta: CKKSMeta) -> Self {
         Self { inner, meta }
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn into_inner(self) -> GLWEViewMut<'a, BE> {
-        self.inner
     }
 }
 
@@ -275,10 +295,7 @@ pub trait ScratchArenaTakeCKKS<'a, BE: Backend>: ScratchArenaTakeCore<'a, BE> + 
         I: GLWEInfos,
     {
         let (inner, scratch) = self.take_glwe_scratch(infos);
-        (
-            UnnormalizedCKKSCiphertext::new(CKKSCiphertext::from_inner(inner.into_inner(), meta)),
-            scratch,
-        )
+        (UnnormalizedCKKSCiphertext::from_inner(inner.into_inner(), meta), scratch)
     }
 
     fn take_unnormalized_ckks_ciphertext_like_scratch<C>(self, ct: &C) -> (UnnormalizedCKKSCiphertext<BE::BufMut<'a>>, Self)
@@ -350,7 +367,7 @@ pub trait CKKSMaintainOps {
 }
 
 #[doc(hidden)]
-pub trait CKKSMaintainOpsDefault {
+pub trait CKKSMaintainOpsDefault<BE: Backend> {
     fn ckks_reallocate_limbs_checked_default(&self, ct: &mut CKKSCiphertext<Vec<u8>>, size: usize) -> Result<()> {
         let base2k = ct.base2k().as_usize();
         let required_limbs = ct.effective_k().div_ceil(base2k);
@@ -374,12 +391,18 @@ pub trait CKKSMaintainOpsDefault {
     }
 }
 
-impl<BE: Backend> CKKSMaintainOpsDefault for Module<BE> {}
+#[macro_export]
+macro_rules! impl_ckks_maintain_ops_defaults {
+    ($be:ty) => {
+        impl $crate::layouts::ciphertext::CKKSMaintainOpsDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
+    };
+}
+pub use crate::impl_ckks_maintain_ops_defaults;
 
 impl<BE: Backend> CKKSMaintainOps for Module<BE>
 where
     BE: HostBackend<OwnedBuf = Vec<u8>>,
-    Module<BE>: CKKSMaintainOpsDefault + CKKSModuleAlloc<BE>,
+    Module<BE>: CKKSMaintainOpsDefault<BE> + CKKSModuleAlloc<BE>,
 {
     fn ckks_reallocate_limbs_checked(&self, ct: &mut CKKSCiphertext<Vec<u8>>, size: usize) -> Result<()> {
         self.ckks_reallocate_limbs_checked_default(ct, size)
@@ -410,27 +433,18 @@ where
 /// keyswitching, convolution (`ckks_mul`), or automorphisms (`ckks_rotate`,
 /// `ckks_conjugate`) — assumes each limb fits within `base2k` bits; passing
 /// an unnormalized ciphertext to one will silently produce an incorrectly
-/// decryptable result. Because this type does not implement [`GLWEToBackendRef`]
-/// or [`GLWEToBackendMut`], it cannot be used as an operand in any such
-/// primitive — the compiler enforces the normalization requirement.
+/// decryptable result. CKKS-level APIs use the normalization state parameter to
+/// route explicit unnormalized accumulation through the matching operations.
 ///
 /// The only way to recover a [`CKKSCiphertext`] from an
 /// `UnnormalizedCKKSCiphertext` is to call [`Self::normalize`], which applies
 /// the missing `glwe_normalize_assign` step and consumes `self`.
-pub struct UnnormalizedCKKSCiphertext<D: Data> {
-    pub(crate) inner: CKKSCiphertext<D>,
-}
+pub type UnnormalizedCKKSCiphertext<D> = CKKSCiphertext<D, Unnormalized>;
 
-impl<D: Data> UnnormalizedCKKSCiphertext<D> {
+impl<D: Data> CKKSCiphertext<D, Unnormalized> {
     /// Wraps `ct` in the unnormalized typestate.
     pub fn new(ct: CKKSCiphertext<D>) -> Self {
-        Self { inner: ct }
-    }
-
-    /// Returns a shared reference to the underlying ciphertext for read-only
-    /// inspection (e.g. metadata checks or decryption in tests).
-    pub fn as_inner(&self) -> &CKKSCiphertext<D> {
-        &self.inner
+        Self::from_inner(ct.inner, ct.meta)
     }
 
     /// Normalizes the ciphertext and returns the result as a [`CKKSCiphertext`].
@@ -446,49 +460,29 @@ impl<D: Data> UnnormalizedCKKSCiphertext<D> {
         GLWE<D>: GLWEToBackendMut<BE>,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
-        let mut inner = self.inner;
-        module.glwe_normalize_assign(&mut inner, scratch);
-        inner
+        let mut normalized = CKKSCiphertext::<D>::from_inner(self.inner, self.meta);
+        module.glwe_normalize_assign(&mut normalized, scratch);
+        normalized
     }
 }
 
-impl<D: Data> CKKSInfos for UnnormalizedCKKSCiphertext<D> {
-    fn meta(&self) -> CKKSMeta {
-        self.inner.meta()
-    }
-
-    fn log_delta(&self) -> usize {
-        self.inner.log_delta()
-    }
-
-    fn log_budget(&self) -> usize {
-        self.inner.log_budget()
-    }
+pub struct UnnormalizedCKKSCiphertextRefMut<'a, D: Data> {
+    pub(crate) inner: &'a mut CKKSCiphertext<D>,
 }
 
-impl<D: Data> SetCKKSInfos for UnnormalizedCKKSCiphertext<D> {
-    fn set_meta(&mut self, meta: CKKSMeta) {
-        self.inner.set_meta(meta);
-    }
-}
-
-impl<D: Data> LWEInfos for UnnormalizedCKKSCiphertext<D> {
-    fn base2k(&self) -> Base2K {
-        self.inner.base2k()
+impl<'a, D: Data> UnnormalizedCKKSCiphertextRefMut<'a, D> {
+    pub(crate) fn new(inner: &'a mut CKKSCiphertext<D>) -> Self {
+        Self { inner }
     }
 
-    fn n(&self) -> Degree {
-        self.inner.n()
-    }
-
-    fn size(&self) -> usize {
-        self.inner.size()
-    }
-}
-
-impl<D: Data> GLWEInfos for UnnormalizedCKKSCiphertext<D> {
-    fn rank(&self) -> Rank {
-        self.inner.rank()
+    pub(crate) fn normalize<M, BE>(self, module: &M, scratch: &mut ScratchArena<'_, BE>)
+    where
+        BE: Backend,
+        M: GLWENormalize<BE>,
+        CKKSCiphertext<D>: GLWEToBackendMut<BE>,
+        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
+    {
+        module.glwe_normalize_assign(self.inner, scratch);
     }
 }
 

@@ -1,8 +1,7 @@
 use poulpy_hal::{
-    api::{ModuleN, ScratchArenaTakeBasic, ScratchOwnedAlloc, VecZnxCopyBackend},
+    api::{ModuleN, ScratchArenaTakeBasic, VecZnxCopyBackend},
     layouts::{
-        Backend, Module, ScratchArena, ScratchOwned, scalar_znx_as_vec_znx_backend_mut_from_mut,
-        scalar_znx_as_vec_znx_backend_ref_from_mut,
+        Backend, Module, ScratchArena, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_mut,
     },
     source::Source,
 };
@@ -38,7 +37,6 @@ pub trait GGLWEToGGSWKeyEncryptSkDefault<BE: Backend> {
 impl<BE: Backend> GGLWEToGGSWKeyEncryptSkDefault<BE> for Module<BE>
 where
     Self: ModuleN + GGLWEEncryptSk<BE> + GLWESecretTensorFactory<BE> + GLWESecretPreparedFactory<BE> + VecZnxCopyBackend<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     fn gglwe_to_ggsw_key_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
@@ -55,8 +53,9 @@ where
         let lvl_2: usize = sk_ij;
         let lvl_3_prepare: usize = self.glwe_secret_tensor_prepare_tmp_bytes(infos.rank());
         let lvl_3: usize = lvl_3_prepare;
+        let lvl_4_encrypt: usize = self.gglwe_encrypt_sk_tmp_bytes(infos);
 
-        lvl_0 + lvl_1 + lvl_2 + lvl_3
+        lvl_0 + lvl_1 + lvl_2 + lvl_3 + lvl_4_encrypt
     }
 
     fn gglwe_to_ggsw_key_encrypt_sk_default<R, S, E>(
@@ -86,11 +85,12 @@ where
         let scratch = scratch.borrow();
         let (mut sk_prepared, scratch_1) = scratch.take_glwe_secret_prepared_scratch(self, res.rank());
         let (mut sk_tensor, scratch_2) = scratch_1.take_glwe_secret_tensor_scratch(self.n().into(), res.rank());
-        let (mut sk_ij, mut tensor_scratch) = scratch_2.take_scalar_znx_scratch(self.n(), rank);
+        let (mut sk_ij, scratch_3) = scratch_2.take_scalar_znx_scratch(self.n(), rank);
+        let (mut tensor_scratch, scratch_4) = scratch_3.split_at(self.glwe_secret_tensor_prepare_tmp_bytes(res.rank()));
         self.glwe_secret_prepare(&mut sk_prepared, sk);
         self.glwe_secret_tensor_prepare(&mut sk_tensor, sk, &mut tensor_scratch);
 
-        let mut enc_scratch: ScratchOwned<BE> = ScratchOwned::alloc(self.gglwe_encrypt_sk_tmp_bytes(&res));
+        let (mut enc_scratch, _scratch_5) = scratch_4.split_at(self.gglwe_encrypt_sk_tmp_bytes(&res));
         let sk_tensor_backend = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(&sk_tensor.data);
 
         for i in 0..rank {
@@ -110,7 +110,7 @@ where
                 enc_infos,
                 source_xe,
                 source_xa,
-                &mut enc_scratch.arena(),
+                &mut enc_scratch,
             );
         }
     }

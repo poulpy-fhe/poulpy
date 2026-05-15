@@ -6,7 +6,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    EncryptionLayout, LWEDecrypt, LWEEncryptSk, LWEKeySwitch, LWESwitchingKeyEncrypt, ScratchArenaTakeCore,
+    EncryptionLayout, LWEDecrypt, LWEEncryptSk, LWEKeyswitch, LWESwitchingKeyEncrypt, ScratchArenaTakeCore,
     layouts::{
         LWE, LWEInfos, LWELayout, LWEPlaintext, LWESecret, LWESwitchingKey, LWESwitchingKeyLayout,
         LWESwitchingKeyPreparedFactory, ModuleCoreAlloc, prepared::LWESwitchingKeyPrepared,
@@ -18,7 +18,7 @@ where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: LWEKeySwitch<BE>
+    Module<BE>: LWEKeyswitch<BE>
         + LWESwitchingKeyEncrypt<BE>
         + LWEEncryptSk<BE>
         + LWESwitchingKeyPreparedFactory<BE>

@@ -158,7 +158,7 @@ pub trait CKKSMulAddOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
@@ -174,7 +174,7 @@ pub trait CKKSMulAddOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 }

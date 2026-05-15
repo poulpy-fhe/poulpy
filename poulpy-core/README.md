@@ -1,6 +1,6 @@
 # 🐙 Poulpy-Core
 
-**Poulpy-Core** is a Rust crate built on **`poulpy-hal`**, providing scheme- and backend-agnostic RLWE-based homomorphic encryption building blocks.
+**Poulpy-Core** is a Rust crate built on **`poulpy-hal`**, providing scheme- and backend-agnostic Module-LWE-based homomorphic encryption building blocks.
 
 ## Getting Started
 
@@ -60,7 +60,7 @@ For a runnable end-to-end example using a concrete backend, see
 
 | Module | Role |
 |--------|------|
-| `api` | Public traits for RLWE operations (`GLWEEncryptSk`, `GLWEAutomorphism`, `GLWETensoring`, …). Trait bounds reference `oep` for the backend capabilities they need. |
+| `api` | Public traits for Module-LWE operations (`GLWEEncryptSk`, `GLWEAutomorphism`, `GLWETensoring`, …). Trait bounds reference `oep` for the backend capabilities they need. |
 | `oep` | **Open Extension Points.** Unsafe backend dispatch traits (one per operation family). A blanket `impl` wires any conforming backend to the corresponding `default` method automatically. Macros (`impl_*_defaults_full!`) are what a backend crate calls to opt in. |
 | `default` | Portable algorithm implementations as safe trait methods — the fallback every backend gets for free. |
 | `delegates` | Implements each `api` trait on `Module<BE>` by dispatching through `oep`. |

@@ -32,8 +32,8 @@ where
     for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     module
-        .glwe_automorphism_tmp_bytes(res_infos, a_infos, key_infos)
-        .max(module.ggsw_expand_rows_tmp_bytes(res_infos, tsk_infos))
+        .glwe_automorphism_tmp_bytes_default(res_infos, a_infos, key_infos)
+        .max(module.ggsw_expand_rows_tmp_bytes_default(res_infos, tsk_infos))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -62,10 +62,10 @@ pub fn ggsw_automorphism_default<'s, BE, M, R, A, K, T>(
         for row in 0..rows {
             let mut res_at = res_backend.at_view_mut(row, 0);
             let a_at = a_backend.at_view(row, 0);
-            module.glwe_automorphism(&mut res_at, &a_at, key, key_size, scratch);
+            module.glwe_automorphism_default(&mut res_at, &a_at, key, key_size, scratch);
         }
     }
-    module.ggsw_expand_row(&mut res.to_backend_mut(), tsk, tsk_size, scratch);
+    module.ggsw_expand_row_default(&mut res.to_backend_mut(), tsk, tsk_size, scratch);
 }
 
 pub fn ggsw_automorphism_assign_default<'s, BE, M, R, K, T>(
@@ -89,8 +89,8 @@ pub fn ggsw_automorphism_assign_default<'s, BE, M, R, K, T>(
         let mut res_backend = res.to_backend_mut();
         for row in 0..rows {
             let mut res_at = res_backend.at_view_mut(row, 0);
-            module.glwe_automorphism_assign(&mut res_at, key, key_size, &mut scratch.borrow());
+            module.glwe_automorphism_assign_default(&mut res_at, key, key_size, &mut scratch.borrow());
         }
     }
-    module.ggsw_expand_row(&mut res.to_backend_mut(), tsk, tsk_size, scratch);
+    module.ggsw_expand_row_default(&mut res.to_backend_mut(), tsk, tsk_size, scratch);
 }

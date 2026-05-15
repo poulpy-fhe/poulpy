@@ -26,7 +26,6 @@ pub unsafe trait CKKSPlaintextZnxImpl<BE: Backend>: Backend {
         Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos;
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> CKKSPlaintextZnxImpl<BE> for BE
 where
     BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
@@ -45,3 +44,11 @@ where
         module.ckks_extract_pt_default(dst, src, scratch)
     }
 }
+
+#[macro_export]
+macro_rules! impl_ckks_plaintext_defaults {
+    ($be:ty) => {
+        impl $crate::default::plaintext::CKKSPlaintextDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
+    };
+}
+pub use crate::impl_ckks_plaintext_defaults;

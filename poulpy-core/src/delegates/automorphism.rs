@@ -129,7 +129,6 @@ impl_automorphism_delegate!(
         A: GGSWToBackendRef<BE> + GGSWInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-        ScratchArena<'s, BE>: crate::ScratchArenaTakeCore<'s, BE>,
         BE: 's,
     {
         BE::ggsw_automorphism(self, res, a, key, key_size, tsk, tsk_size, scratch)
@@ -140,7 +139,6 @@ impl_automorphism_delegate!(
         R: GGSWToBackendMut<BE> + GGSWInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-        ScratchArena<'s, BE>: crate::ScratchArenaTakeCore<'s, BE>,
         BE: 's,
     {
         BE::ggsw_automorphism_assign(self, res, key, key_size, tsk, tsk_size, scratch)

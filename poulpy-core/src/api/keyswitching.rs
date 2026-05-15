@@ -2,13 +2,10 @@
 
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::{
-    ScratchArenaTakeCore,
-    layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
-        GGSWToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEToBackendMut, LWEToBackendRef,
-        prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
-    },
+use crate::layouts::{
+    GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
+    GLWEToBackendRef, LWEInfos, LWEToBackendMut, LWEToBackendRef,
+    prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
 };
 
 pub trait GLWEKeyswitch<BE: Backend> {
@@ -44,14 +41,12 @@ pub trait GGLWEKeyswitch<BE: Backend> {
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         A: GGLWEToBackendRef<BE> + GGLWEInfos,
         B: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
         BE: 's;
 
     fn gglwe_keyswitch_assign<'s, R, A>(&self, res: &mut R, a: &A, key_size: usize, scratch: &mut ScratchArena<'s, BE>)
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         A: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
         BE: 's;
 }
 
@@ -73,11 +68,10 @@ pub trait GGSWKeyswitch<BE: Backend> {
         tsk_size: usize,
         scratch: &mut ScratchArena<'s, BE>,
     ) where
-        R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWAtViewRef<BE> + GGSWInfos,
-        A: GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos,
+        R: GGSWToBackendMut<BE> + GGSWInfos,
+        A: GGSWToBackendRef<BE> + GGSWInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
         BE: 's;
 
     fn ggsw_keyswitch_assign<'s, R, K, T>(
@@ -89,14 +83,13 @@ pub trait GGSWKeyswitch<BE: Backend> {
         tsk_size: usize,
         scratch: &mut ScratchArena<'s, BE>,
     ) where
-        R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWInfos,
+        R: GGSWToBackendMut<BE> + GGSWInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
         BE: 's;
 }
 
-pub trait LWEKeySwitch<BE: Backend> {
+pub trait LWEKeyswitch<BE: Backend> {
     fn lwe_keyswitch_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: LWEInfos,
@@ -108,5 +101,5 @@ pub trait LWEKeySwitch<BE: Backend> {
         R: LWEToBackendMut<BE> + LWEInfos,
         A: LWEToBackendRef<BE> + LWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        for<'x> ScratchArena<'x, BE>: ScratchArenaTakeCore<'x, BE>;
+        BE: 's;
 }

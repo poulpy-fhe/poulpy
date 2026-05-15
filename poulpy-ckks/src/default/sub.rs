@@ -5,7 +5,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ScratchAvailable, VecZnxRshSubBackend, VecZnxRshSubCoeffIntoBackend, VecZnxRshTmpBytes},
-    layouts::{Backend, Module, ScratchArena},
+    layouts::{Backend, ScratchArena},
 };
 
 use crate::{
@@ -279,5 +279,3 @@ pub trait CKKSSubDefault<BE: Backend> {
         Ok(())
     }
 }
-
-impl<BE: Backend> CKKSSubDefault<BE> for Module<BE> {}

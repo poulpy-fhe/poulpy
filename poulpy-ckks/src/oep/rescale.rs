@@ -36,7 +36,6 @@ pub unsafe trait CKKSRescaleImpl<BE: Backend>: Backend {
     fn ckks_align_tmp_bytes(module: &Module<BE>) -> usize;
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> CKKSRescaleImpl<BE> for BE
 where
     BE: poulpy_hal::oep::HalVecZnxImpl<BE>,

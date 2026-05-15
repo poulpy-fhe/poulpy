@@ -8,7 +8,7 @@ use poulpy_hal::{
         VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddCoeffIntoBackend, VecZnxRshAddIntoBackend, VecZnxRshBackend,
         VecZnxRshSubBackend, VecZnxRshSubCoeffIntoBackend, VecZnxRshTmpBytes,
     },
-    layouts::{Backend, Module, ScratchArena},
+    layouts::{Backend, ScratchArena},
 };
 
 use crate::GLWEToBackendRef;
@@ -201,5 +201,3 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
         Ok(())
     }
 }
-
-impl<BE: Backend> CKKSPlaintextDefault<BE> for Module<BE> {}

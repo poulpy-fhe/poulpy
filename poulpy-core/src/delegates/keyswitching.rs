@@ -1,7 +1,7 @@
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    api::{GGLWEKeyswitch, GGSWKeyswitch, GLWEKeyswitch, LWEKeySwitch},
+    api::{GGLWEKeyswitch, GGSWKeyswitch, GLWEKeyswitch, LWEKeyswitch},
     layouts::{
         GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos,
         GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEToBackendMut, LWEToBackendRef,
@@ -70,7 +70,6 @@ impl_keyswitching_delegate!(
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         A: GGLWEToBackendRef<BE> + GGLWEInfos,
         B: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        ScratchArena<'s, BE>: crate::ScratchArenaTakeCore<'s, BE>,
         BE: 's,
     {
         BE::gglwe_keyswitch(self, res, a, b, key_size, scratch)
@@ -80,7 +79,6 @@ impl_keyswitching_delegate!(
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         A: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        ScratchArena<'s, BE>: crate::ScratchArenaTakeCore<'s, BE>,
         BE: 's,
     {
         BE::gglwe_keyswitch_assign(self, res, a, key_size, scratch)
@@ -115,7 +113,6 @@ impl_keyswitching_delegate!(
         A: GGSWToBackendRef<BE> + GGSWInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-        ScratchArena<'s, BE>: crate::ScratchArenaTakeCore<'s, BE>,
         BE: 's,
     {
         BE::ggsw_keyswitch(self, res, a, key, key_size, tsk, tsk_size, scratch)
@@ -134,7 +131,6 @@ impl_keyswitching_delegate!(
         R: GGSWToBackendMut<BE> + GGSWInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-        ScratchArena<'s, BE>: crate::ScratchArenaTakeCore<'s, BE>,
         BE: 's,
     {
         BE::ggsw_keyswitch_assign(self, res, key, key_size, tsk, tsk_size, scratch)
@@ -142,7 +138,7 @@ impl_keyswitching_delegate!(
 );
 
 impl_keyswitching_delegate!(
-    LWEKeySwitch<BE>,
+    LWEKeyswitch<BE>,
     [BE: Backend + LWEKeyswitchImpl<BE>],
     fn lwe_keyswitch_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
@@ -158,7 +154,7 @@ impl_keyswitching_delegate!(
         R: LWEToBackendMut<BE> + LWEInfos,
         A: LWEToBackendRef<BE> + LWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        for<'a> ScratchArena<'a, BE>: crate::ScratchArenaTakeCore<'a, BE>,
+        BE: 's,
     {
         BE::lwe_keyswitch(self, res, a, ksk, key_size, scratch)
     }

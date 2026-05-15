@@ -242,7 +242,7 @@ fn main() {
         }
     }
 
-    // Tests RLWE(1) * GGSW(data)
+    // Tests GLWE(1) * GGSW(data)
 
     let glwe_infos: GLWELayout = GLWELayout {
         n: n_glwe.into(),

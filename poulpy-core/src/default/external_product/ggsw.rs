@@ -25,7 +25,7 @@ where
     B: GGSWInfos,
     for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
-    module.glwe_external_product_tmp_bytes(res_infos, a_infos, b_infos)
+    module.glwe_external_product_tmp_bytes_default(res_infos, a_infos, b_infos)
 }
 
 pub fn ggsw_external_product_default<'s, BE, M, R, A, B>(
@@ -47,10 +47,10 @@ pub fn ggsw_external_product_default<'s, BE, M, R, A, B>(
     assert_eq!(res.rank(), b.rank(), "res rank: {} != b rank: {}", res.rank(), b.rank());
     assert_eq!(res.base2k(), a.base2k());
     assert!(
-        scratch.available() >= module.ggsw_external_product_tmp_bytes(res, a, b),
+        scratch.available() >= module.ggsw_external_product_tmp_bytes_default(res, a, b),
         "scratch.available(): {} < GGSWExternalProduct::ggsw_external_product_tmp_bytes: {}",
         scratch.available(),
-        module.ggsw_external_product_tmp_bytes(res, a, b)
+        module.ggsw_external_product_tmp_bytes_default(res, a, b)
     );
 
     let min_dnum: usize = res.dnum().min(a.dnum()).into();
@@ -60,7 +60,7 @@ pub fn ggsw_external_product_default<'s, BE, M, R, A, B>(
         for col in 0..res_rank {
             let mut res_at = res.at_view_mut(row, col);
             let a_at = a.at_view(row, col);
-            module.glwe_external_product(&mut res_at, &a_at, b, key_size, &mut scratch.borrow());
+            module.glwe_external_product_default(&mut res_at, &a_at, b, key_size, &mut scratch.borrow());
         }
     }
 
@@ -90,17 +90,17 @@ pub fn ggsw_external_product_assign_default<'s, BE, M, R, A>(
     assert_eq!(a.n(), module.n() as u32);
     assert_eq!(res.rank(), a.rank(), "res rank: {} != a rank: {}", res.rank(), a.rank());
     assert!(
-        scratch.available() >= module.ggsw_external_product_tmp_bytes(res, res, a),
+        scratch.available() >= module.ggsw_external_product_tmp_bytes_default(res, res, a),
         "scratch.available(): {} < GGSWExternalProduct::ggsw_external_product_tmp_bytes: {}",
         scratch.available(),
-        module.ggsw_external_product_tmp_bytes(res, res, a)
+        module.ggsw_external_product_tmp_bytes_default(res, res, a)
     );
 
     let res_dnum: usize = res.dnum().into();
     let res_rank: usize = (res.rank() + 1).into();
     for row in 0..res_dnum {
         for col in 0..res_rank {
-            module.glwe_external_product_assign(&mut res.at_view_mut(row, col), a, key_size, &mut scratch.borrow());
+            module.glwe_external_product_assign_default(&mut res.at_view_mut(row, col), a, key_size, &mut scratch.borrow());
         }
     }
 }

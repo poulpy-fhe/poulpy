@@ -15,9 +15,9 @@ This release completes the migration from the legacy host-oriented HAL/backend p
 - Add `VmpApplyDftToDftAccumulate` (+ `*_tmp_bytes`) for a fused `res += a · pmat` with limb-offset shift, replacing the scattered `vmp_apply_dft_to_dft` + per-column `vec_znx_dft_add_assign` fold in `gglwe_product_dft`.
 - Fix the convolution API by renaming the output-shift parameter to `cnv_offset`, moving it to the front of the apply calls, and updating delegates and conformance tests to match the corrected calling convention.
 - **Breaking:** `Convolution::cnv_by_const_apply` no longer takes a raw coefficient slice; it now takes a backend `VecZnx` plus `(b_col, b_coeff)` selectors, matching the rest of the backend-native convolution surface.
-- Replace legacy OEP modules with the unified `oep::HalImpl` entrypoint to provide one consistent extension surface for backends.
-- Add family defaults for `vec_znx`, `vec_znx_big`, `vec_znx_dft`, `svp_ppol`, `vmp_pmat`, and `convolution` to reduce backend boilerplate and make overrides explicit.
-- Remove legacy OEP traits and per-family OEP modules; update delegates to route through `HalImpl` and simplify dispatch.
+- Replace the legacy monolithic `oep::HalImpl` entrypoint with per-family OEP traits (`HalModuleImpl`, `HalVecZnxImpl`, `HalVecZnxBigImpl`, `HalVecZnxDftImpl`, `HalSvpImpl`, `HalVmpImpl`, and `HalConvolutionImpl`) so backends can opt into and override only the families they own.
+- Add family defaults for `vec_znx`, `vec_znx_big`, `vec_znx_dft`, `svp_ppol`, `vmp_pmat`, and `convolution` to reduce backend boilerplate and make per-family overrides explicit.
+- Remove the aggregate `HalImpl` dispatch surface; update delegates to route through the per-family OEP traits and simplify dispatch.
 - Update layouts and encoding helpers to match the new dispatch surface.
 - Generalize scratch/layout plumbing around backend-owned buffers and views so HAL families no longer assume host-resident storage.
 - Refresh HAL test suites to align with the new defaults and dispatch.
@@ -53,7 +53,7 @@ This release completes the migration from the legacy host-oriented HAL/backend p
 - Update FFT64 and NTT120 convolution implementations, references, and tests to the corrected `cnv_offset` API.
 - Optimize NTT120 convolution on the AVX backend by wiring the prep paths to backend-specific kernels and restructuring `cnv_apply_dft` / `cnv_pairwise_apply_dft` around prepacked x2 blocks, substantially reducing GLWE tensoring time on large `ntt120-avx` workloads.
 - Add a row-prime-major prepared-matrix layout for the `NTT120Avx` VMP (`vmp_prepare_avx_pm`, `vmp_apply_dft_to_dft_avx`, `vmp_apply_dft_to_dft_accumulate_avx`); the hot apply path streams one prime plane at a time and reuses extracted input rows across the output-column loop.
-- Reorganize backend implementations around `hal_impl` modules and `hal_defaults` to mirror the new HAL entrypoint and reduce duplication.
+- Reorganize backend implementations around `hal_impl` modules and `hal_defaults` to mirror the new per-family HAL extension surface and reduce duplication.
 - Remove legacy per-family FFT64/NTT120 modules; route implementations through the new HAL defaults to keep a single source of truth.
 - Update FFT64/NTT120 reference kernels, normalization, and shift helpers to keep behavior aligned with the new dispatch path.
 - Flatten AVX test module paths to remove redundant crate prefixes.
@@ -73,7 +73,7 @@ This release completes the migration from the legacy host-oriented HAL/backend p
 - Organize the public interface into the same four-module layered architecture as `poulpy-core`: `api` (user-facing traits), `oep` (backend extension points), `delegates` (dispatch), and `default` (portable reference implementations). Backends opt into portable defaults via `impl_ckks_*_defaults!` macros or can override individual operations directly through OEP.
 - **Breaking:** Collapse the previous plaintext family split (`CKKSPlaintextVecZnx`, `CKKSPlaintextVec`, `CKKSPlaintextConstZnx`, `CKKSPlaintextConst`, and the old conversion traits) into a unified `CKKSPlaintext<D>` plus `CKKSPlaintextVecHostCodec<F>` for host float encode/decode and `CKKSModuleAlloc` for module-first plaintext/ciphertext allocation.
 - Add first-class `api` trait families for CKKS copy, affine/composite helpers, and imaginary-unit operations, so backends can inherit or override those evaluator entrypoints independently.
-- Add `UnnormalizedCKKSCiphertext` wrapper for fused linear operations: the type does not implement `GLWEToBackendRef` or `GLWEToBackendMut`, making it a compile error to pass an un-normalized value into any DFT-domain primitive (keyswitching, convolution, automorphism). Call `UnnormalizedCKKSCiphertext::normalize` before the next such step.
+- Add CKKS-local normalization typestate: `CKKSCiphertext<D, S = Normalized>` now tags normalized versus unnormalized values with `PhantomData`, and `UnnormalizedCKKSCiphertext<D>` aliases `CKKSCiphertext<D, Unnormalized>` for fused linear operations before an explicit `normalize`.
 - Add `CKKSCiphertextViewMut` for in-place write patterns that avoid hot-path allocations in composite operations.
 - Add scratch/layout helpers for the new evaluator surface: `ScratchArenaTakeCKKS`, backend-view aliases `CKKSCiphertextRef` / `CKKSCiphertextMut`, and new user-facing traits `CKKSAddOpsUnnormalized`, `CKKSSubOpsUnnormalized`, `CKKSAffineOps`, `CKKSImagOps`, and `CKKSCopyOps`.
 - Move the CKKS conformance test suite into `poulpy-ckks/src/test_suite/` and wire it into `poulpy-cpu-ref` via `ckks_backend_test_suite!`; CI gains a dedicated focused step that runs the CKKS suite against every available backend.

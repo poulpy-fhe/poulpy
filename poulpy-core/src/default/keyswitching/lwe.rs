@@ -47,7 +47,7 @@ where
 
     let lvl_0: usize = GLWE::<Vec<u8>>::bytes_of_from_infos(&glwe_a_infos);
     let lvl_1: usize = GLWE::<Vec<u8>>::bytes_of_from_infos(&glwe_res_infos);
-    let lvl_2: usize = module.glwe_keyswitch_tmp_bytes(&glwe_res_infos, &glwe_a_infos, key_infos);
+    let lvl_2: usize = module.glwe_keyswitch_tmp_bytes_default(&glwe_res_infos, &glwe_a_infos, key_infos);
 
     lvl_0 + lvl_1 + lvl_2
 }
@@ -71,10 +71,10 @@ pub fn lwe_keyswitch_default<'s, BE, M, R, A, K>(
     assert!(a.n().as_usize() <= module.n());
     assert_eq!(ksk.n(), module.n() as u32);
     assert!(
-        scratch.available() >= module.lwe_keyswitch_tmp_bytes(res, a, ksk),
-        "scratch.available(): {} < LWEKeySwitch::lwe_keyswitch_tmp_bytes: {}",
+        scratch.available() >= module.lwe_keyswitch_tmp_bytes_default(res, a, ksk),
+        "scratch.available(): {} < LWEKeyswitch::lwe_keyswitch_tmp_bytes: {}",
         scratch.available(),
-        module.lwe_keyswitch_tmp_bytes(res, a, ksk)
+        module.lwe_keyswitch_tmp_bytes_default(res, a, ksk)
     );
 
     let scratch = scratch.borrow();
@@ -104,7 +104,7 @@ pub fn lwe_keyswitch_default<'s, BE, M, R, A, K>(
 
     let glwe_in_ref = glwe_backend_ref_from_mut::<BE>(&glwe_in);
     let glwe_in_view = &glwe_in_ref;
-    module.glwe_keyswitch(&mut glwe_out, &glwe_in_view, ksk, key_size, &mut scratch_2);
+    module.glwe_keyswitch_default(&mut glwe_out, &glwe_in_view, ksk, key_size, &mut scratch_2);
 
     let mut res_backend = res.to_backend_mut();
     let glwe_out_ref = glwe_backend_ref_from_mut::<BE>(&glwe_out);

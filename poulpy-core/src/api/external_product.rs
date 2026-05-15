@@ -1,11 +1,8 @@
 use poulpy_hal::layouts::{Backend, ScratchArena, VecZnxDft};
 
-use crate::{
-    ScratchArenaTakeCore,
-    layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
-        GGSWToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GGSWPreparedToBackendRef,
-    },
+use crate::layouts::{
+    GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
+    GGSWToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GGSWPreparedToBackendRef,
 };
 
 pub trait GLWEExternalProduct<BE: Backend> {
@@ -19,8 +16,7 @@ pub trait GLWEExternalProduct<BE: Backend> {
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         D: GGSWPreparedToBackendRef<BE> + GGSWInfos,
-        BE: 's,
-        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>;
+        BE: 's;
 
     fn glwe_external_product<'s, R, A, D>(
         &self,
@@ -33,8 +29,7 @@ pub trait GLWEExternalProduct<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         D: GGSWPreparedToBackendRef<BE> + GGSWInfos,
-        BE: 's,
-        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>;
+        BE: 's;
 }
 
 pub trait GLWEExternalProductInternal<BE: Backend> {
@@ -54,8 +49,7 @@ pub trait GLWEExternalProductInternal<BE: Backend> {
     ) where
         A: GLWEToBackendRef<BE>,
         G: GGSWPreparedToBackendRef<BE>,
-        BE: 's,
-        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>;
+        BE: 's;
 }
 
 pub trait GGLWEExternalProduct<BE: Backend> {
@@ -70,15 +64,13 @@ pub trait GGLWEExternalProduct<BE: Backend> {
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         A: GGLWEToBackendRef<BE> + GGLWEInfos,
         B: GGSWPreparedToBackendRef<BE> + GGSWInfos,
-        BE: 's,
-        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>;
+        BE: 's;
 
     fn gglwe_external_product_assign<'s, R, A>(&self, res: &mut R, a: &A, key_size: usize, scratch: &mut ScratchArena<'s, BE>)
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         A: GGSWPreparedToBackendRef<BE> + GGSWInfos,
-        BE: 's,
-        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>;
+        BE: 's;
 }
 
 pub trait GGSWExternalProduct<BE: Backend> {
@@ -90,16 +82,14 @@ pub trait GGSWExternalProduct<BE: Backend> {
 
     fn ggsw_external_product<'s, R, A, B>(&self, res: &mut R, a: &A, b: &B, key_size: usize, scratch: &mut ScratchArena<'s, BE>)
     where
-        R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWAtViewMut<BE> + GGSWInfos,
+        R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         A: GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos,
         B: GGSWPreparedToBackendRef<BE> + GGSWInfos,
-        BE: 's,
-        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>;
+        BE: 's;
 
     fn ggsw_external_product_assign<'s, R, A>(&self, res: &mut R, a: &A, key_size: usize, scratch: &mut ScratchArena<'s, BE>)
     where
-        R: GGSWToBackendMut<BE> + GGSWInfos + GGSWAtViewMut<BE>,
+        R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         A: GGSWPreparedToBackendRef<BE> + GGSWInfos,
-        BE: 's,
-        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>;
+        BE: 's;
 }

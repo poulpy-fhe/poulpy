@@ -2,13 +2,10 @@
 
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::{
-    ScratchArenaTakeCore,
-    layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef,
-        GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, SetGaloisElement,
-        prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
-    },
+use crate::layouts::{
+    GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
+    GLWEToBackendRef, GetGaloisElement, SetGaloisElement,
+    prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
 };
 
 pub trait GLWEAutomorphism<BE: Backend> {
@@ -112,11 +109,10 @@ pub trait GGSWAutomorphism<BE: Backend> {
         tsk_size: usize,
         scratch: &mut ScratchArena<'s, BE>,
     ) where
-        R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWInfos,
+        R: GGSWToBackendMut<BE> + GGSWInfos,
         A: GGSWToBackendRef<BE> + GGSWInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
         BE: 's;
 
     fn ggsw_automorphism_assign<'s, R, K, T>(
@@ -128,10 +124,9 @@ pub trait GGSWAutomorphism<BE: Backend> {
         tsk_size: usize,
         scratch: &mut ScratchArena<'s, BE>,
     ) where
-        R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWInfos,
+        R: GGSWToBackendMut<BE> + GGSWInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
         BE: 's;
 }
 

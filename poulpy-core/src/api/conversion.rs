@@ -1,12 +1,9 @@
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::{
-    ScratchArenaTakeCore,
-    layouts::{
-        GGLWEInfos, GGLWEToBackendRef, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef,
-        LWEInfos, LWEToBackendMut, LWEToBackendRef,
-        prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
-    },
+use crate::layouts::{
+    GGLWEInfos, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+    LWEToBackendMut, LWEToBackendRef,
+    prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
 };
 
 pub trait LWESampleExtract<BE: Backend> {
@@ -28,8 +25,7 @@ pub trait GLWEFromLWE<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: LWEToBackendRef<BE> + LWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>;
+        BE: 's;
 }
 
 pub trait LWEFromGLWE<BE: Backend> {
@@ -51,8 +47,7 @@ pub trait LWEFromGLWE<BE: Backend> {
         R: LWEToBackendMut<BE> + LWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>;
+        BE: 's;
 }
 
 pub trait GGSWFromGGLWE<BE: Backend> {
@@ -63,11 +58,10 @@ pub trait GGSWFromGGLWE<BE: Backend> {
 
     fn ggsw_from_gglwe<'s, R, A, T>(&self, res: &mut R, a: &A, tsk: &T, tsk_size: usize, scratch: &mut ScratchArena<'s, BE>)
     where
-        R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWInfos,
+        R: GGSWToBackendMut<BE> + GGSWInfos,
         A: GGLWEToBackendRef<BE> + GGLWEInfos,
         T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>;
+        BE: 's;
 }
 
 pub trait GGSWExpandRows<BE: Backend> {
@@ -78,7 +72,7 @@ pub trait GGSWExpandRows<BE: Backend> {
 
     fn ggsw_expand_row<'s, R, T>(&self, res: &mut R, tsk: &T, tsk_size: usize, scratch: &mut ScratchArena<'s, BE>)
     where
-        R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWInfos,
+        R: GGSWToBackendMut<BE> + GGSWInfos,
         T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>;
+        BE: 's;
 }

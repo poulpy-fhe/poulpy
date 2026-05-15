@@ -50,7 +50,6 @@ pub unsafe trait CKKSPow2Impl<BE: Backend>: Backend {
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos;
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> CKKSPow2Impl<BE> for BE
 where
     BE: poulpy_hal::oep::HalVecZnxImpl<BE>,

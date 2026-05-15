@@ -48,7 +48,6 @@ pub unsafe trait CKKSRotateImpl<BE: Backend>: Backend {
         BE: 's;
 }
 
-#[allow(private_bounds)]
 unsafe impl<BE: Backend> CKKSRotateImpl<BE> for BE
 where
     BE: HalVecZnxImpl<BE>,

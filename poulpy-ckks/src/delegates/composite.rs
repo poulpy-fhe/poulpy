@@ -1,6 +1,6 @@
 use anyhow::{Result, bail, ensure};
 use poulpy_core::{
-    GLWEAdd, GLWENormalize, GLWEShift, GLWETensoring, ScratchArenaTakeCore,
+    GLWENormalize, GLWETensoring, ScratchArenaTakeCore,
     layouts::{
         GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWETensor, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         TorusPrecision,
@@ -13,12 +13,15 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCtBounds, CKKSInfos,
-    layouts::{CKKSCiphertext, CKKSCiphertextViewMut, ScratchArenaTakeCKKS, UnnormalizedCKKSCiphertext, ciphertext::CKKSOffset},
+    layouts::{
+        CKKSCiphertext, CKKSCiphertextViewMut, ScratchArenaTakeCKKS, UnnormalizedCKKSCiphertext,
+        ciphertext::{CKKSOffset, UnnormalizedCKKSCiphertextRefMut},
+    },
     leveled::api::{
         CKKSAddManyOps, CKKSAddOps, CKKSAddOpsUnnormalized, CKKSAffineOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulOps,
         CKKSMulSubOps, CKKSRescaleOps, CKKSSubOps,
     },
-    leveled::default::CKKSAddDefault,
+    oep::CKKSAddImpl,
 };
 
 /// Guards `n` un-normalized accumulations against worst-case `i64` overflow.
@@ -182,12 +185,12 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         scratch.scope(|scratch_local| {
-            let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&dst.inner);
+            let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
             self.ckks_mul_pt_const_into(&mut tmp, a, pt, pt_coeff, &mut scratch_local)?;
             self.ckks_add_assign_unnormalized(dst, &tmp, &mut scratch_local)
         })
@@ -201,12 +204,12 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         scratch.scope(|scratch_local| {
-            let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(&dst.inner);
+            let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
             self.ckks_mul_pt_vec_into(&mut tmp, a, pt, &mut scratch_local)?;
             self.ckks_add_assign_unnormalized(dst, &tmp, &mut scratch_local)
         })
@@ -425,7 +428,8 @@ fn accumulate_unnormalized<BE, D, F>(
 where
     BE: Backend,
     D: Data,
-    Module<BE>: CKKSAddDefault<BE> + GLWEAdd<BE> + GLWEShift<BE> + GLWENormalize<BE>,
+    BE: CKKSAddImpl<BE>,
+    Module<BE>: GLWENormalize<BE>,
     CKKSCiphertext<D>: GLWEToBackendMut<BE>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     F: for<'a> FnMut(&mut CKKSCiphertextViewMut<'a, BE>, usize, &mut ScratchArena<'a, BE>) -> Result<()>,
@@ -436,25 +440,19 @@ where
     }
     scratch.scope(|scratch_local| {
         let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
+        let mut acc = UnnormalizedCKKSCiphertextRefMut::new(dst);
         for i in 1..n {
             mul_term_into_tmp(&mut tmp, i, &mut scratch_local)?;
-            <Module<BE> as CKKSAddDefault<BE>>::ckks_add_assign_unsafe_default(module, dst, &tmp, &mut scratch_local)?;
+            BE::ckks_add_assign_unnormalized_ref(module, &mut acc, &tmp, &mut scratch_local)?;
         }
-        module.glwe_normalize_assign(dst, &mut scratch_local);
+        acc.normalize(module, &mut scratch_local);
         Ok(())
     })
 }
 
-impl<BE: Backend> CKKSDotProductOps<BE> for Module<BE>
+impl<BE: Backend + CKKSAddImpl<BE>> CKKSDotProductOps<BE> for Module<BE>
 where
-    Module<BE>: CKKSAddOps<BE>
-        + CKKSAddDefault<BE>
-        + CKKSMulOps<BE>
-        + CKKSRescaleOps<BE>
-        + GLWEAdd<BE>
-        + GLWEShift<BE>
-        + GLWENormalize<BE>
-        + GLWETensoring<BE>,
+    Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + CKKSRescaleOps<BE> + GLWENormalize<BE> + GLWETensoring<BE>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_dot_product_ct_tmp_bytes<R, T>(&self, n: usize, res: &R, tsk: &T) -> usize

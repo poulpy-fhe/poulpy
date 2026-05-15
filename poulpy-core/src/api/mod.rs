@@ -1,4 +1,4 @@
-//! Safe, user-facing trait definitions for RLWE operations.
+//! Safe, user-facing trait definitions for Module-LWE operations.
 //!
 //! Traits are organized by operation family:
 //! - `automorphism` -- Galois automorphisms on ciphertexts and automorphism keys.

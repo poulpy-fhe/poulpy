@@ -27,7 +27,6 @@ rand_core = {workspace = true}
 byteorder = {workspace = true}
 once_cell = {workspace = true}
 rand_chacha = {workspace = true}
-criterion = {workspace = true}
 
 [dev-dependencies]
 f128 = "0.2"

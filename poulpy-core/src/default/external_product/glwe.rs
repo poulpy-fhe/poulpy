@@ -208,7 +208,7 @@ where
         let lvl_2_0: usize = GLWE::<Vec<u8>>::bytes_of_from_infos(&a_conv_infos);
         let lvl_2_1: usize = module
             .glwe_normalize_tmp_bytes_default()
-            .max(module.glwe_external_product_dft_fill_tmp_bytes(&a_conv_infos, ggsw_infos));
+            .max(module.glwe_external_product_dft_fill_tmp_bytes_default(&a_conv_infos, ggsw_infos));
         lvl_2_0 + lvl_2_1
     } else {
         module.glwe_external_product_internal_tmp_bytes(res_infos, a_infos, ggsw_infos)
@@ -244,10 +244,10 @@ pub fn glwe_external_product_default<'s, BE, M, R, A, G>(
     assert_eq!(ggsw.n(), res.n());
     assert_eq!(a.n(), res.n());
     assert!(
-        scratch.available() >= module.glwe_external_product_tmp_bytes(res, a, ggsw),
+        scratch.available() >= module.glwe_external_product_tmp_bytes_default(res, a, ggsw),
         "scratch.available(): {} < GLWEExternalProduct::glwe_external_product_tmp_bytes: {}",
         scratch.available(),
-        module.glwe_external_product_tmp_bytes(res, a, ggsw)
+        module.glwe_external_product_tmp_bytes_default(res, a, ggsw)
     );
 
     let key_size = ggsw.size().min(key_size);
@@ -324,10 +324,10 @@ pub fn glwe_external_product_assign_default<'s, BE, M, R, G>(
     assert_eq!(ggsw.rank(), res.rank());
     assert_eq!(ggsw.n(), res.n());
     assert!(
-        scratch.available() >= module.glwe_external_product_tmp_bytes(res, res, ggsw),
+        scratch.available() >= module.glwe_external_product_tmp_bytes_default(res, res, ggsw),
         "scratch.available(): {} < GLWEExternalProduct::glwe_external_product_tmp_bytes: {}",
         scratch.available(),
-        module.glwe_external_product_tmp_bytes(res, res, ggsw)
+        module.glwe_external_product_tmp_bytes_default(res, res, ggsw)
     );
 
     let res_base2k: usize = res.base2k().as_usize();

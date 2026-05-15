@@ -2,7 +2,7 @@ use anyhow::Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
-use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSCiphertext, layouts::UnnormalizedCKKSCiphertext};
+use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::UnnormalizedCKKSCiphertext};
 
 /// Normalized ciphertext and plaintext subtraction.
 ///
@@ -135,7 +135,7 @@ pub trait CKKSSubOpsUnnormalized<BE: Backend> {
     ) -> Result<()>
     where
         Dst: Data,
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: GLWEToBackendRef<BE> + CKKSCtBounds;
 
@@ -147,7 +147,7 @@ pub trait CKKSSubOpsUnnormalized<BE: Backend> {
     ) -> Result<()>
     where
         Dst: Data,
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSInfos;
 
     fn ckks_sub_pt_vec_into_unnormalized<Dst, A, P>(
@@ -159,7 +159,7 @@ pub trait CKKSSubOpsUnnormalized<BE: Backend> {
     ) -> Result<()>
     where
         Dst: Data,
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
@@ -171,7 +171,7 @@ pub trait CKKSSubOpsUnnormalized<BE: Backend> {
     ) -> Result<()>
     where
         Dst: Data,
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
     fn ckks_sub_pt_const_into_unnormalized<Dst, A, P>(
@@ -185,7 +185,7 @@ pub trait CKKSSubOpsUnnormalized<BE: Backend> {
     ) -> Result<()>
     where
         Dst: Data,
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
@@ -199,6 +199,6 @@ pub trait CKKSSubOpsUnnormalized<BE: Backend> {
     ) -> Result<()>
     where
         Dst: Data,
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 }
