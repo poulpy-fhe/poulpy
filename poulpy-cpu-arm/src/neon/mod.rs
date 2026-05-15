@@ -25,3 +25,4 @@ pub(crate) mod reim4_conv;
 pub(crate) mod reim_arith;
 pub(crate) mod vec_znx_big;
 pub(crate) mod znx;
+pub(crate) mod znx_normalize;
