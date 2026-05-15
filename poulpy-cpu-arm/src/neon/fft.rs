@@ -17,12 +17,11 @@
 //! [`ifft_ref`]. `m == 16` and the BFS leaves use the NEON-intrinsic
 //! [`fft16_neon`] / [`ifft16_neon`], a 4-stage radix-2 port of
 //! `fft16_ref` / `ifft16_ref`. An optional hand-written assembly
-//! follow-up is briefed in `docs/poulpy-cpu-arm-fft16-asm-handoff.md`,
-//! gated on a real-AArch64 bench delta.
+//! follow-up is gated on a real-AArch64 bench delta.
 
 use core::arch::aarch64::{
-    float64x2_t, vaddq_f64, vdupq_n_f64, vfmaq_f64, vfmsq_f64, vld1q_f64, vmulq_f64, vnegq_f64, vst1q_f64, vsubq_f64,
-    vzip1q_f64, vzip2q_f64,
+    float64x2_t, vaddq_f64, vdupq_n_f64, vfmaq_f64, vfmsq_f64, vld1q_f64, vmulq_f64, vnegq_f64, vst1q_f64, vsubq_f64, vzip1q_f64,
+    vzip2q_f64,
 };
 
 use poulpy_cpu_ref::reference::fft64::reim::{fft_ref, ifft_ref};
@@ -724,10 +723,10 @@ unsafe fn fft16_neon(re: &mut [f64], im: &mut [f64], omg: &[f64]) {
 
         // Stage 4 (omg[8..16]): within-register lane butterflies. Pair consecutive
         // regs so each NEON op runs two scalar butterflies (one per lane).
-        let omr_lo = vld1q_f64(o.add(8));    // (omg[8],  omg[9])
-        let omr_hi = vld1q_f64(o.add(10));   // (omg[10], omg[11])
-        let omi_lo = vld1q_f64(o.add(12));   // (omg[12], omg[13])
-        let omi_hi = vld1q_f64(o.add(14));   // (omg[14], omg[15])
+        let omr_lo = vld1q_f64(o.add(8)); // (omg[8],  omg[9])
+        let omr_hi = vld1q_f64(o.add(10)); // (omg[10], omg[11])
+        let omi_lo = vld1q_f64(o.add(12)); // (omg[12], omg[13])
+        let omi_hi = vld1q_f64(o.add(14)); // (omg[14], omg[15])
 
         // Group covering r[0..3]: cplx_twiddle on r0,r2; cplx_i_twiddle on r1,r3.
         let mut xa_r = vzip1q_f64(r0, r2);
@@ -815,10 +814,10 @@ unsafe fn ifft16_neon(re: &mut [f64], im: &mut [f64], omg: &[f64]) {
 
         // Stage 1 (omg[0..8]): within-register lane butterflies. Twiddle k uses
         // (omg[k], omg[k+4]); inv_twiddle on r[2k], inv_itwiddle on r[2k+1].
-        let omr_lo = vld1q_f64(o);          // (omg[0], omg[1])
-        let omr_hi = vld1q_f64(o.add(2));   // (omg[2], omg[3])
-        let omi_lo = vld1q_f64(o.add(4));   // (omg[4], omg[5])
-        let omi_hi = vld1q_f64(o.add(6));   // (omg[6], omg[7])
+        let omr_lo = vld1q_f64(o); // (omg[0], omg[1])
+        let omr_hi = vld1q_f64(o.add(2)); // (omg[2], omg[3])
+        let omi_lo = vld1q_f64(o.add(4)); // (omg[4], omg[5])
+        let omi_hi = vld1q_f64(o.add(6)); // (omg[6], omg[7])
 
         // Group r[0..3]: inv_twiddle on r0,r2; inv_itwiddle on r1,r3 (twiddles lo).
         let mut xa_r = vzip1q_f64(r0, r2);

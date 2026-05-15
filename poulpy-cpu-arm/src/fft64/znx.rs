@@ -26,7 +26,8 @@ use crate::neon::{
     znx_normalize::{
         znx_extract_digit_addmul_neon as kn_extract_digit_addmul, znx_normalize_digit_neon as kn_normalize_digit,
         znx_normalize_final_step_assign_neon as kn_normalize_final_step_assign,
-        znx_normalize_final_step_neon as kn_normalize_final_step, znx_normalize_final_step_sub_neon as kn_normalize_final_step_sub,
+        znx_normalize_final_step_neon as kn_normalize_final_step,
+        znx_normalize_final_step_sub_neon as kn_normalize_final_step_sub,
         znx_normalize_first_step_assign_neon as kn_normalize_first_step_assign,
         znx_normalize_first_step_carry_only_neon as kn_normalize_first_step_carry_only,
         znx_normalize_first_step_neon as kn_normalize_first_step,

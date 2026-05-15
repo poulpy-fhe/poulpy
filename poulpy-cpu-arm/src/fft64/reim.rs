@@ -7,13 +7,13 @@
 //! (= scalar reference) — those are deferred until after live aarch64
 //! verification.
 
+#[cfg(not(target_arch = "aarch64"))]
+use poulpy_cpu_ref::reference::fft64::reim::{fft_ref, ifft_ref};
 use poulpy_cpu_ref::reference::fft64::{
     convolution::I64Ops,
     reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
     reim4::{Reim4BlkMatVec, Reim4Convolution},
 };
-#[cfg(not(target_arch = "aarch64"))]
-use poulpy_cpu_ref::reference::fft64::reim::{fft_ref, ifft_ref};
 use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
 
 use super::FFT64Neon;

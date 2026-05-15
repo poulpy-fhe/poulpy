@@ -1,8 +1,6 @@
 //! NEON kernels for the base-2^k normalize / digit-extract family.
 
-use core::arch::aarch64::{
-    int64x2_t, vaddq_s64, vandq_s64, vdupq_n_s64, veorq_s64, vld1q_s64, vshlq_s64, vst1q_s64, vsubq_s64,
-};
+use core::arch::aarch64::{int64x2_t, vaddq_s64, vandq_s64, vdupq_n_s64, veorq_s64, vld1q_s64, vshlq_s64, vst1q_s64, vsubq_s64};
 
 use poulpy_cpu_ref::reference::znx::{
     znx_extract_digit_addmul_ref, znx_normalize_digit_ref, znx_normalize_final_step_assign_ref, znx_normalize_final_step_ref,
@@ -17,13 +15,7 @@ unsafe fn normalize_consts_neon(base2k: usize) -> (int64x2_t, int64x2_t, int64x2
     debug_assert!((1..=63).contains(&base2k));
     let mask_k: i64 = ((1u64 << base2k) - 1) as i64;
     let sign_k: i64 = (1u64 << (base2k - 1)) as i64;
-    unsafe {
-        (
-            vdupq_n_s64(mask_k),
-            vdupq_n_s64(sign_k),
-            vdupq_n_s64(-(base2k as i64)),
-        )
-    }
+    unsafe { (vdupq_n_s64(mask_k), vdupq_n_s64(sign_k), vdupq_n_s64(-(base2k as i64))) }
 }
 
 /// `digit = ((x & mask_k) ^ sign_k) - sign_k` — sign-extends the low `base2k` bits.

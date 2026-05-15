@@ -1,8 +1,8 @@
 use crate::{FFT64Neon, NTT120Neon};
 use poulpy_cpu_ref::hal_defaults::{
-    FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault, FFT64VecZnxDftDefault,
-    FFT64VmpDefault, HalVecZnxDefault, NTT120ConvolutionDefault, NTT120ModuleDefault, NTT120SvpDefault,
-    NTT120VecZnxBigDefault, NTT120VecZnxDftDefault, NTT120VmpDefault,
+    FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault, FFT64VecZnxDftDefault, FFT64VmpDefault,
+    HalVecZnxDefault, NTT120ConvolutionDefault, NTT120ModuleDefault, NTT120SvpDefault, NTT120VecZnxBigDefault,
+    NTT120VecZnxDftDefault, NTT120VmpDefault,
 };
 use poulpy_hal::{
     api::{VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},

@@ -7,9 +7,9 @@
 //! root of `lib.rs`).
 
 use super::NTT120Neon;
-use poulpy_cpu_ref::reference::ntt120::{I128BigOps, I128NormalizeOps};
 #[cfg(target_arch = "aarch64")]
 use poulpy_cpu_ref::reference::ntt120::vec_znx_big::AssignOp;
+use poulpy_cpu_ref::reference::ntt120::{I128BigOps, I128NormalizeOps};
 
 #[cfg(target_arch = "aarch64")]
 use crate::neon::normalize::{

@@ -99,7 +99,7 @@ See `poulpy-hal/docs/backend_safety_contract.md` for the full backend contract.
 
 ## Future work
 
-- Hand-written assembly `fft16` / `ifft16` leaves (mirror of the AVX `.s` files). LLVM auto-vectorisation already gets close, so this is deferred behind a benchmarked delta. Briefed in `docs/poulpy-cpu-arm-fft16-asm-handoff.md`.
+- Hand-written assembly `fft16` / `ifft16` leaves (mirror of the AVX `.s` files). LLVM auto-vectorisation already gets close, so this is deferred behind a benchmarked delta.
 - SVE / SVE2 support will land as separate `FFT64Sve` / `NTT120Sve` backend types rather than being mixed into the NEON code path.
 
 ## 🤝 Contributors
