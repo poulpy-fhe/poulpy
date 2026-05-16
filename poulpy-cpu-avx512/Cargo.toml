@@ -1,0 +1,41 @@
+[package]
+name = "poulpy-cpu-avx512"
+version = "0.6.0"
+edition = "2024"
+license = "Apache-2.0"
+readme = "README.md"
+description = "AVX-512 accelerated CPU backends for poulpy-hal: FFT64 (AVX-512F), NTT120 (AVX-512F, 4x30-bit primes), and NTT126 (AVX-512-IFMA, 3x42-bit primes)"
+repository = "https://github.com/poulpy-fhe/poulpy"
+homepage = "https://github.com/poulpy-fhe/poulpy"
+documentation = "https://docs.rs/poulpy"
+
+[lib]
+doctest = false
+
+[features]
+enable-avx512f = []
+enable-ifma = ["enable-avx512f"]
+enable-ckks = ["dep:poulpy-ckks"]
+
+[dependencies]
+bytemuck = {workspace = true}
+poulpy-ckks = {workspace = true, optional = true}
+poulpy-hal = {workspace = true}
+poulpy-core = {workspace = true}
+poulpy-cpu-ref = {workspace = true}
+itertools = {workspace = true}
+rand = {workspace = true}
+rand_distr = {workspace = true}
+rand_core = {workspace = true}
+byteorder = {workspace = true}
+once_cell = {workspace = true}
+rand_chacha = {workspace = true}
+paste = {workspace = true}
+
+[dev-dependencies]
+anyhow = {workspace = true}
+f128 = "0.2"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

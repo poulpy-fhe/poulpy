@@ -1,4 +1,4 @@
-//! Backend extension points for extended-precision [`VecZnxBig`](poulpy_hal::layouts::VecZnxBig) operations.
+//! Backend extension points for extended-precision [`poulpy_hal::layouts::VecZnxBig`] operations.
 
 #![allow(clippy::too_many_arguments)]
 

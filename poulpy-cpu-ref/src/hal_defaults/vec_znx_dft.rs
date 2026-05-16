@@ -1,4 +1,4 @@
-//! Backend extension points for DFT-domain [`VecZnxDft`](poulpy_hal::layouts::VecZnxDft) operations.
+//! Backend extension points for DFT-domain [`poulpy_hal::layouts::VecZnxDft`] operations.
 
 use std::mem::size_of;
 

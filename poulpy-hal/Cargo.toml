@@ -22,6 +22,10 @@ bytemuck = {workspace = true}
 paste = {workspace = true}
 anyhow = {workspace = true}
 
+# madvise(MADV_HUGEPAGE) in the aligned allocator; Linux only.
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
 
 [build-dependencies]
 cmake = "0.1.54"

@@ -21,6 +21,7 @@
 - **`poulpy-bin-fhe`**: a backend-agnostic binary/gate-level FHE crate built on **`poulpy-core`** and **`poulpy-hal`**. This replaces the former `poulpy-schemes` crate.
 - **`poulpy-cpu-ref`**: the reference CPU implementation of **`poulpy-hal`**.
 - **`poulpy-cpu-avx`**: an AVX2/FMA accelerated CPU implementation of **`poulpy-hal`**. Enable it with the `enable-avx` feature on crates that expose that feature.
+- **`poulpy-cpu-avx512`**: an AVX-512 accelerated CPU implementation of **`poulpy-hal`**, exposing three backends: `FFT64Avx512` and `NTT120Avx512` (AVX-512F, via `enable-avx512f`) and `NTT126Ifma` (AVX-512F + IFMA + VL + BMI2 + ADX, via `enable-ifma`).
 - **`poulpy-bench`**: the consolidated Criterion benchmark suite for the workspace. It is an internal workspace crate and is not published to crates.io.
 
 ## Architecture
@@ -35,9 +36,10 @@ poulpy-hal                   ← hardware abstraction: layouts and operation tra
 
 poulpy-cpu-ref               ← portable reference backend
 poulpy-cpu-avx               ← AVX2/FMA-accelerated backend
+poulpy-cpu-avx512            ← AVX-512/IFMA-accelerated backend
 ```
 
-Backend crates (`poulpy-cpu-ref`, `poulpy-cpu-avx`, …) implement the open extension points defined in `poulpy-hal/oep` and are not depended on by any scheme crate. This clean separation means a backend written today automatically works with every current and future scheme layer above it.
+Backend crates (`poulpy-cpu-ref`, `poulpy-cpu-avx`, `poulpy-cpu-avx512`, …) implement the open extension points defined in `poulpy-hal/oep` and are not depended on by any scheme crate. This clean separation means a backend written today automatically works with every current and future scheme layer above it.
 
 ### Layer Anatomy
 
@@ -97,21 +99,22 @@ This provides the following benefits:
 - **`poulpy-bin-fhe`**: https://crates.io/crates/poulpy-bin-fhe
 - **`poulpy-cpu-ref`**: https://crates.io/crates/poulpy-cpu-ref
 - **`poulpy-cpu-avx`**: https://crates.io/crates/poulpy-cpu-avx
+- **`poulpy-cpu-avx512`**: https://crates.io/crates/poulpy-cpu-avx512
 
 For example, a CKKS application can depend on:
 
 ```toml
 [dependencies]
-poulpy-ckks = "0.5"
-poulpy-cpu-ref = "0.5"
+poulpy-ckks = "0.6"
+poulpy-cpu-ref = "0.6"
 ```
 
 For binary FHE:
 
 ```toml
 [dependencies]
-poulpy-bin-fhe = "0.5"
-poulpy-cpu-ref = "0.5"
+poulpy-bin-fhe = "0.6"
+poulpy-cpu-ref = "0.6"
 ```
 
 ## Documentation

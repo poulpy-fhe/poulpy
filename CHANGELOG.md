@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-This branch completes the migration from the legacy host-oriented HAL/backend plumbing to backend-generic HAL and core layers, so backends can now own buffers, scratch space, and transfer paths explicitly.
+This release completes the migration from the legacy host-oriented HAL/backend plumbing to backend-generic HAL and core layers, so backends can now own buffers, scratch space, and transfer paths explicitly, and adds a new AVX-512 backend crate (`poulpy-cpu-avx512`) exposing three accelerated backends (`FFT64Avx512`, `NTT120Avx512`, `NTT126Ifma`).
 
 ### `poulpy-hal`
 - Refactor `VecZnx`, `ScalarZnx`, `MatZnx`, `VecZnxDft`, `VecZnxBig`, `SvpPPol`, `VmpPMat`, `CnvPVecL`, and `CnvPVecR` to store private shape metadata snapshots instead of exposing mutable layout fields directly.
@@ -12,6 +12,7 @@ This branch completes the migration from the legacy host-oriented HAL/backend pl
 - Remove the temporary host-allocation helper traits again and migrate tests/bench/core staging to explicit `Module::<HostBytesBackend>::new(...).<alloc>(...)` calls, keeping host-owned allocation a direct module concern rather than a separate HAL abstraction.
 - **Breaking:** HAL compute traits now take backend-native borrows and scratch explicitly: `Scratch` becomes `ScratchArena<'_, BE>`, `*ToRef` / `*ToMut` become `*ToBackendRef<BE>` / `*ToBackendMut<BE>`, and public trait names move to backend-explicit forms such as `VecZnxAddIntoBackend`, `VecZnxRotateAssignBackend`, and `VecZnxRshSubBackend`.
 - Add backend-owned/layout interop APIs: `Backend::{OwnedBuf, BufRef, BufMut}`, `HostBackend` / `DeviceBackend`, `TransferFrom<From>`, backend view aliases/reborrow traits for all major layouts, and allocator traits `ScalarZnxAlloc`, `VecZnxAlloc`, `MatZnxAlloc`, plus `api::reim::{NegacyclicFFT, NegacyclicFFTNew}`.
+- Add `VmpApplyDftToDftAccumulate` (+ `*_tmp_bytes`) for a fused `res += a · pmat` with limb-offset shift, replacing the scattered `vmp_apply_dft_to_dft` + per-column `vec_znx_dft_add_assign` fold in `gglwe_product_dft`.
 - Fix the convolution API by renaming the output-shift parameter to `cnv_offset`, moving it to the front of the apply calls, and updating delegates and conformance tests to match the corrected calling convention.
 - **Breaking:** `Convolution::cnv_by_const_apply` no longer takes a raw coefficient slice; it now takes a backend `VecZnx` plus `(b_col, b_coeff)` selectors, matching the rest of the backend-native convolution surface.
 - Replace the legacy monolithic `oep::HalImpl` entrypoint with per-family OEP traits (`HalModuleImpl`, `HalVecZnxImpl`, `HalVecZnxBigImpl`, `HalVecZnxDftImpl`, `HalSvpImpl`, `HalVmpImpl`, and `HalConvolutionImpl`) so backends can opt into and override only the families they own.
@@ -51,6 +52,7 @@ This branch completes the migration from the legacy host-oriented HAL/backend pl
 - Refresh FFT64/NTT120 references and backend glue for the new private-shape HAL layouts, including explicit `from_data[_with_max_size]` rebuilding where host helpers reinterpret backend buffers.
 - Update FFT64 and NTT120 convolution implementations, references, and tests to the corrected `cnv_offset` API.
 - Optimize NTT120 convolution on the AVX backend by wiring the prep paths to backend-specific kernels and restructuring `cnv_apply_dft` / `cnv_pairwise_apply_dft` around prepacked x2 blocks, substantially reducing GLWE tensoring time on large `ntt120-avx` workloads.
+- Add a row-prime-major prepared-matrix layout for the `NTT120Avx` VMP (`vmp_prepare_avx_pm`, `vmp_apply_dft_to_dft_avx`, `vmp_apply_dft_to_dft_accumulate_avx`); the hot apply path streams one prime plane at a time and reuses extracted input rows across the output-column loop.
 - Reorganize backend implementations around `hal_impl` modules and `hal_defaults` to mirror the new per-family HAL extension surface and reduce duplication.
 - Remove legacy per-family FFT64/NTT120 modules; route implementations through the new HAL defaults to keep a single source of truth.
 - Update FFT64/NTT120 reference kernels, normalization, and shift helpers to keep behavior aligned with the new dispatch path.
@@ -58,6 +60,13 @@ This branch completes the migration from the legacy host-oriented HAL/backend pl
 - Split backend code into family-specific `hal_impl/*` modules (module/scratch/vec_znx/vmp/svp/convolution) for clearer override points.
 - Export FFT-table types needed by the new CKKS encoder API: `poulpy-cpu-ref::FFT64ReimTable` and `poulpy-cpu-avx::FFT64AvxReimTable`.
 - Move the runnable CKKS `poly2` example and reusable CKKS backend tests into `poulpy-cpu-ref`; add `poulpy-cpu-avx`'s opt-in `enable-ckks` feature so accelerated backends can wire in the CKKS layer without making it an unconditional dependency.
+
+### `poulpy-cpu-avx512`
+- Add `FFT64Avx512` — f64 complex-FFT backend gated on `enable-avx512f`; mixes AVX-512F REIM butterflies with AVX2+FMA REIM4 vec-mat kernels.
+- Add `NTT120Avx512` — Q120 NTT backend with CRT over four ~30-bit primes (Primes30), gated on `enable-avx512f`; AVX-512F NTT butterflies with `nn=4` cross-block pair-pack and 2× unrolled NTT / mat-vec kernels. The row-prime-major VMP and AVX-512F convolution kernels override the cpu-ref defaults at the `HalVmpImpl` / `HalConvolutionImpl` level, and the `vec_znx_idft_apply_tmpa` hook uses a fused iNTT + Garner CRT compaction kernel.
+- Add `NTT126Ifma` — Q126 NTT backend with CRT over three ~42-bit primes (Primes42), accelerated with AVX-512-IFMA; gated on `enable-ifma` and requires AVX-512F + AVX-512-IFMA + AVX-512-VL + BMI2 + ADX. Implements every HAL family directly against IFMA-specialized kernels (NTT/INTT, BBC mat-vec, VMP including row-prime-major + `vmp_apply_dft_to_dft_accumulate`, SVP, VecZnxDft, convolution). The post-iNTT 3-prime CRT-to-i128 reconstruction is a hand-written assembly kernel fusing IFMA Garner reduction with a BMI2/ADX scalar carry chain; the `vec_znx_idft_apply_tmpa` hook uses the same fused kernel.
+- Build configuration: `enable-avx512f` and `enable-ifma` fail the build with a clear `compile_error!` if the matching CPU target features are not enabled, rather than emitting binaries that SIGILL at runtime. When neither feature is set, the crate compiles to an empty shell so non-AVX-512 hosts (including macOS ARM) keep building.
+- Opt-in `enable-ckks` feature mirrors `poulpy-cpu-avx`: the three AVX-512 backends pick up the CKKS evaluator defaults via `impl_ckks_*_defaults!` and run the full `poulpy-ckks::test_suite` against `FFT64Avx512`, `NTT120Avx512` (f64), and `NTT126Ifma` (f64 and f128).
 
 ### `poulpy-ckks`
 - Implement a fully backend-generic leveled CKKS evaluator: all operations (add, sub, mul, rotate, conjugate, rescale, encryption, decryption, and plaintext-polynomial ops) are now generic over any backend implementing `poulpy-hal`, including `FFT64Ref`, `FFT64Avx`, `NTT120Ref`, and `NTT120Avx`.
@@ -91,11 +100,14 @@ This branch completes the migration from the legacy host-oriented HAL/backend pl
 - Add shared host-upload/randomization helpers and `ModuleTransfer`-based typed uploads so benchmark fixtures can be staged on arbitrary backends without reaching into raw layout internals.
 - Make CKKS benchmarks opt-in behind a new `ckks-bench` feature and gate the CKKS bench targets with `required-features`, so default bench runs do not pull CKKS support unless requested.
 - Split benchmark opt-ins by family (`hal-bench`, `core-bench`, `bin-fhe-bench`, and `ckks-bench`) instead of gating every benchmark target behind one monolithic bench feature.
+- Add `enable-avx512f` and `enable-ifma` bench features that pull `poulpy-cpu-avx512` into the workspace bench targets.
 - Export new benchmark-support helpers for backend-generic staging: `upload_host_*`, `random_host_*`, `random_backend_*`, and `*_backend_ref/mut` adapters for raw HAL/core objects.
 
 ### Build & Docs
 - Refresh root and crate READMEs (naming, examples, links, and architecture guidance); document the shared `api` / `oep` / `delegates` / `default` layering and backend-integration flow across the workspace.
 - Extend CI with dedicated CKKS-focused `poulpy-cpu-ref` test steps in both AVX-enabled and portable configurations.
+- Add a dedicated `avx512` CI lane that type-checks and clippies the AVX-512F + IFMA configuration on every push; tests are NOT run there (GitHub-hosted runners lack AVX-512 silicon, so executing the AVX-512 suite requires a self-hosted runner).
+- Add a hugepage hint in the aligned allocator: on Linux, allocations ≥ 2 MB issue `madvise(MADV_HUGEPAGE)` before the zero-fill, reducing TLB pressure on large NTT/VMP working sets (~5% measured on `ntt120-avx` at large rings; FFT64 paths within noise). The threshold is overridable via the `POULPY_HUGEPAGE_MIN_BYTES` environment variable.
 - Move higher-level feature gating to backend-owned integration features while keeping scheme crate APIs available when their crates are imported; update CI to enable the backend and benchmark feature set explicitly.
 - Add acknowledgements for PZ, EF, and ENS in the root README.
 
@@ -105,71 +117,66 @@ This branch completes the migration from the legacy host-oriented HAL/backend pl
 
 ### Migration (before/after)
 
-**HAL backend wiring** moved from the aggregate `HalImpl` entrypoint to per-family OEP traits with defaults.
+**HAL backend wiring** moved from a single monolithic OEP trait to per-family OEP traits (`HalModuleImpl`, `HalVecZnxImpl`, `HalVmpImpl`, `HalConvolutionImpl`, `HalSvpImpl`, `HalVecZnxBigImpl`, `HalVecZnxDftImpl`). `poulpy-cpu-ref` exposes per-family `hal_impl_*!` macros and `*Defaults` traits so accelerated backends opt into the reference scalar path for cold methods and override only the hot ones.
 
-Before (aggregate `HalImpl`):
+Before (single OEP entrypoint):
 
 ```rust
 use poulpy_hal::oep::HalImpl;
 
 unsafe impl HalImpl<FFT64Avx> for FFT64Avx {
-    hal_impl_vec_znx!();      // default VecZnx wiring
-    hal_impl_module_fft64!(); // FFT64-specific hooks
-    fn vec_znx_add_into<R, A, B>(/* ... */) { /* AVX impl */ }
-    // override only the hot paths you need
+    hal_impl_vec_znx!();
+    hal_impl_module_fft64!();
+    // ...
 }
 ```
 
-After (per-family OEP traits + defaults):
+After (per-family OEPs with shared defaults):
 
 ```rust
-use poulpy_hal::oep::{
-    HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl,
-    HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl,
-};
+use poulpy_hal::oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl};
+use poulpy_cpu_ref::hal_defaults::{FFT64ModuleDefaults, FFT64VmpDefaults, /* ... */};
 
 unsafe impl HalVecZnxImpl<FFT64Avx> for FFT64Avx {
     poulpy_cpu_ref::hal_impl_vec_znx!();
 }
-
 unsafe impl HalModuleImpl<FFT64Avx> for FFT64Avx {
-    poulpy_cpu_ref::hal_impl_module!(FFT64ModuleDefault);
+    poulpy_cpu_ref::hal_impl_module!(FFT64ModuleDefaults);
 }
-
-// Implement only the additional families this backend supports:
-// HalVecZnxBigImpl, HalVecZnxDftImpl, HalSvpImpl, HalVmpImpl,
-// and HalConvolutionImpl.
+unsafe impl HalVmpImpl<FFT64Avx> for FFT64Avx {
+    poulpy_cpu_ref::hal_impl_vmp!(FFT64VmpDefaults);
+}
+// ...one impl per family; override individual methods inline when a backend has a faster kernel.
 ```
 
-**Core API override hooks**: `poulpy-core` dispatches through `poulpy-hal::Module<BE>` by default, but a backend can override core algorithms directly by implementing `CoreImpl`.
+**Core / CKKS backend wiring**: the old monolithic `CoreImpl` + `impl_core_default_methods!` macro is replaced by per-family `impl_*_defaults_full!` macros under `poulpy-core` (and `impl_ckks_*_defaults!` under `poulpy-ckks`).
 
-Before (default core behavior via HAL + core APIs):
-
-```rust
-use poulpy_core::api::GLWEAdd;
-use poulpy_hal::layouts::Module;
-
-// Uses default core algorithms routed through Module<BE>
-module.glwe_add(&mut out, &a, &b);
-```
-
-After (override selected core ops in the backend):
+Before (single core entrypoint):
 
 ```rust
 use poulpy_core::oep::{CoreImpl, impl_core_default_methods};
 
-unsafe impl CoreImpl<Self> for MyBackend {
-    impl_core_default_methods!(Self); // keep defaults
-
-    fn glwe_add<R, A, B>(module: &Module<Self>, res: &mut R, a: &A, b: &B)
-    where
-        R: GLWEToBackendMut<Self> + GLWEInfos,
-        A: GLWEToBackendRef<Self> + GLWEInfos,
-        B: GLWEToBackendRef<Self> + GLWEInfos,
-    {
-        // custom fast path here
-    }
+unsafe impl CoreImpl<MyBackend> for MyBackend {
+    impl_core_default_methods!(MyBackend);
 }
+```
+
+After (per-family `_defaults_full!` macros):
+
+```rust
+use poulpy_core::{
+    impl_conversion_defaults_full, impl_decryption_defaults_full, impl_encryption_defaults_full,
+    impl_gglwe_automorphism_defaults_full, impl_gglwe_external_product_defaults_full,
+    impl_gglwe_keyswitch_defaults_full, impl_ggsw_automorphism_defaults_full,
+    impl_ggsw_external_product_defaults_full, impl_ggsw_keyswitch_defaults_full,
+    impl_glwe_automorphism_defaults_full, impl_glwe_external_product_defaults_full,
+    impl_glwe_keyswitch_defaults_full, impl_glwe_packing_defaults_full,
+    impl_glwe_trace_defaults_full, impl_lwe_keyswitch_defaults_full,
+};
+
+impl_glwe_automorphism_defaults_full!(MyBackend);
+impl_glwe_keyswitch_defaults_full!(MyBackend);
+// ...one macro per family; override any method by writing it after the macro call.
 ```
 
 ## [0.5.0] - 2026-03-31

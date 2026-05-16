@@ -120,8 +120,8 @@ impl NttSubNegateAssign for NTT120Ref {
     }
 }
 
-/// **Output range:** For a zero input the result is `Q_SHIFTED[k]` (≡ 0 mod Q[k]), not `0`.
-/// Output range is `(0, Q_SHIFTED[k]]`. Use `val % Q[k] == 0`, not `val == 0`, to test for zero.
+/// **Output range:** For a zero input the result is `Q_SHIFTED\[k\]` (≡ 0 mod `Q\[k\]`), not `0`.
+/// Output range is `(0, Q_SHIFTED\[k\]\]`. Use `val % Q\[k\] == 0`, not `val == 0`, to test for zero.
 impl NttNegate for NTT120Ref {
     #[inline(always)]
     fn ntt_negate(res: &mut [u64], a: &[u64]) {
@@ -135,8 +135,8 @@ impl NttNegate for NTT120Ref {
     }
 }
 
-/// **Output range:** For a zero input the result is `Q_SHIFTED[k]` (≡ 0 mod Q[k]), not `0`.
-/// Output range is `(0, Q_SHIFTED[k]]`. Use `val % Q[k] == 0`, not `val == 0`, to test for zero.
+/// **Output range:** For a zero input the result is `Q_SHIFTED\[k\]` (≡ 0 mod `Q\[k\]`), not `0`.
+/// Output range is `(0, Q_SHIFTED\[k\]\]`. Use `val % Q\[k\] == 0`, not `val == 0`, to test for zero.
 impl NttNegateAssign for NTT120Ref {
     #[inline(always)]
     fn ntt_negate_assign(res: &mut [u64]) {

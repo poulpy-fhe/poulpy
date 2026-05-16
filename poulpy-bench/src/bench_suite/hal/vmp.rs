@@ -91,7 +91,8 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(1 << 20);
+        let mut scratch: ScratchOwned<B> =
+            ScratchOwned::alloc(module.vmp_apply_dft_tmp_bytes(size, size, rows, cols_in, cols_out, size));
 
         let mut res: VecZnxDft<B::OwnedBuf, B> = module.vec_znx_dft_alloc(cols_out, size);
         let a = crate::random_host_vec_znx(module.n(), cols_in, size, &mut source);

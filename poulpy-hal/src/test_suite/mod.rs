@@ -3,7 +3,8 @@
 //! Provides fully generic test functions that can be instantiated for any
 //! backend via the [`backend_test_suite!`](crate::backend_test_suite) and
 //! [`cross_backend_test_suite!`](crate::cross_backend_test_suite) macros.
-//! Tests validate correctness against the [`crate::reference`] implementation.
+//! Tests validate correctness against the reference implementation in
+//! [`poulpy-cpu-ref`](https://docs.rs/poulpy-cpu-ref).
 
 use crate::layouts::{
     Backend, DataView, HostBytesBackend, HostDataRef, MatZnx, ScalarZnx, ScalarZnxBackendRef, ScalarZnxToBackendRef, VecZnx,
@@ -18,8 +19,9 @@ pub mod vec_znx_big;
 pub mod vec_znx_dft;
 pub mod vmp;
 
-/// Parameters passed to every test function in a [`backend_test_suite!`] or
-/// [`cross_backend_test_suite!`].
+/// Parameters passed to every test function in a
+/// [`backend_test_suite!`](crate::backend_test_suite) or
+/// [`cross_backend_test_suite!`](crate::cross_backend_test_suite).
 ///
 /// Centralising these values at the macro call-site makes it possible to
 /// instantiate the same test suite with backend-appropriate parameters

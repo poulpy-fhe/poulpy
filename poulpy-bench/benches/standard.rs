@@ -2,7 +2,12 @@
 //!
 //! Run with:
 //!   cargo bench -p poulpy-bench --bench standard
-//!   cargo bench -p poulpy-bench --bench standard --features enable-avx
+//!   RUSTFLAGS="-C target-feature=+avx2,+fma" \
+//!     cargo bench -p poulpy-bench --bench standard --features enable-avx
+//!   RUSTFLAGS="-C target-feature=+avx512f,+avx512ifma,+avx512vl" \
+//!     cargo bench -p poulpy-bench --bench standard --features enable-ifma
+//!   RUSTFLAGS="-C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl" \
+//!     cargo bench -p poulpy-bench --bench standard --features "enable-avx,enable-ifma"
 //!
 //! Save and compare baselines:
 //!   cargo bench -p poulpy-bench --bench standard -- --save-baseline v0.4.4
@@ -25,19 +30,19 @@ fn p() -> &'static poulpy_bench::params::BenchParams {
 // ── Layer 1: HAL – FFT-domain ────────────────────────────────────────────────
 
 fn std_vec_znx_dft_apply(c: &mut Criterion) {
-    poulpy_bench::for_each_fft_backend!(poulpy_bench::bench_suite::hal::vec_znx_dft::bench_vec_znx_dft_apply, &p().hal; c);
+    poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::hal::vec_znx_dft::bench_vec_znx_dft_apply, &p().hal; c);
 }
 
 fn std_vec_znx_idft_apply(c: &mut Criterion) {
-    poulpy_bench::for_each_fft_backend!(poulpy_bench::bench_suite::hal::vec_znx_dft::bench_vec_znx_idft_apply, &p().hal; c);
+    poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::hal::vec_znx_dft::bench_vec_znx_idft_apply, &p().hal; c);
 }
 
 fn std_vmp_apply_dft_to_dft(c: &mut Criterion) {
-    poulpy_bench::for_each_fft_backend!(poulpy_bench::bench_suite::hal::vmp::bench_vmp_apply_dft_to_dft, &p().vmp; c);
+    poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::hal::vmp::bench_vmp_apply_dft_to_dft, &p().vmp; c);
 }
 
 fn std_svp_apply_dft_to_dft(c: &mut Criterion) {
-    poulpy_bench::for_each_fft_backend!(poulpy_bench::bench_suite::hal::svp::bench_svp_apply_dft_to_dft, &p().hal; c);
+    poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::hal::svp::bench_svp_apply_dft_to_dft, &p().hal; c);
 }
 
 // ── Layer 1: HAL – coefficient domain (all backends) ────────────────────────
@@ -167,6 +172,11 @@ fn std_blind_rotate(c: &mut Criterion) {
     poulpy_bench::bench_suite::schemes::blind_rotation::bench_blind_rotate::<poulpy_cpu_ref::FFT64Ref, CGGI>(c, "fft64-ref");
     #[cfg(all(feature = "enable-avx", target_arch = "x86_64"))]
     poulpy_bench::bench_suite::schemes::blind_rotation::bench_blind_rotate::<poulpy_cpu_avx::FFT64Avx, CGGI>(c, "fft64-avx");
+    #[cfg(all(feature = "enable-avx512f", target_arch = "x86_64"))]
+    poulpy_bench::bench_suite::schemes::blind_rotation::bench_blind_rotate::<poulpy_cpu_avx512::FFT64Avx512, CGGI>(
+        c,
+        "fft64-avx512",
+    );
 }
 
 fn std_circuit_bootstrapping(c: &mut Criterion) {
@@ -178,6 +188,11 @@ fn std_circuit_bootstrapping(c: &mut Criterion) {
     poulpy_bench::bench_suite::schemes::circuit_bootstrapping::bench_circuit_bootstrapping::<poulpy_cpu_avx::FFT64Avx, CGGI>(
         c,
         "fft64-avx",
+    );
+    #[cfg(all(feature = "enable-avx512f", target_arch = "x86_64"))]
+    poulpy_bench::bench_suite::schemes::circuit_bootstrapping::bench_circuit_bootstrapping::<poulpy_cpu_avx512::FFT64Avx512, CGGI>(
+        c,
+        "fft64-avx512",
     );
 }
 

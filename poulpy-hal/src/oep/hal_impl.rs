@@ -926,6 +926,26 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'s, BE>,
     );
 
+    #[allow(clippy::too_many_arguments)]
+    fn vmp_apply_dft_to_dft_accumulate_tmp_bytes(
+        module: &Module<BE>,
+        res_size: usize,
+        a_size: usize,
+        b_rows: usize,
+        b_cols_in: usize,
+        b_cols_out: usize,
+        b_size: usize,
+    ) -> usize;
+
+    fn vmp_apply_dft_to_dft_accumulate<'s, 'r>(
+        module: &Module<BE>,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'r, BE>,
+        a: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
+        b: &crate::layouts::VmpPMatBackendRef<'_, BE>,
+        limb_offset: usize,
+        scratch: &mut ScratchArena<'s, BE>,
+    );
+
     fn vmp_zero(module: &Module<BE>, res: &mut crate::layouts::VmpPMatBackendMut<'_, BE>);
 }
 

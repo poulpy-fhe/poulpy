@@ -1,6 +1,6 @@
 //! AVX2/FMA-accelerated CPU backend for the Poulpy lattice cryptography library.
 //!
-//! This crate provides [`FFT64Avx`], a high-performance backend implementation for [`poulpy_hal`]
+//! This crate provides `FFT64Avx`, a high-performance backend implementation for [`poulpy_hal`]
 //! that leverages x86-64 SIMD instruction sets (AVX2 and FMA) to accelerate cryptographic operations
 //! in fully homomorphic encryption (FHE) schemes based on Module-LWE.
 //!
@@ -8,7 +8,7 @@
 //!
 //! `poulpy_hal` defines a hardware abstraction layer (HAL) via the [`Backend`](poulpy_hal::layouts::Backend)
 //! trait and a family of _open extension point_ (OEP) traits in [`poulpy_hal::oep`]. This crate
-//! implements every OEP trait for the [`FFT64Avx`] backend using hand-optimized AVX2/FMA intrinsics
+//! implements every OEP trait for the `FFT64Avx` backend using hand-optimized AVX2/FMA intrinsics
 //! and assembly kernels where profiling demonstrates performance benefits over compiler-generated code.
 //!
 //! The internal modules are organized by operation domain:
@@ -39,7 +39,7 @@
 //! - **AVX2**: 256-bit SIMD registers and operations
 //! - **FMA**: Fused multiply-add for reduced rounding error in FFT
 //!
-//! Runtime CPU feature detection is performed in [`Module::new()`](poulpy_hal::layouts::Module::new).
+//! Runtime CPU feature detection is performed in [`Module::new()`](poulpy_hal::api::ModuleNew::new).
 //! If the required features are not present, the constructor panics with a descriptive error message.
 //!
 //! # Compile-time requirements
@@ -99,11 +99,16 @@
 //! - **Convolution**: O(n log n) via FFT-based approach
 //! - **Normalization**: O(n) per limb with vectorized digit extraction
 //!
-//! ## Typical speedup over reference backend
+//! ## Speedup over reference backend
 //!
-//! - **Ring element arithmetic** (add/sub/negate): ~3-4× (memory bandwidth bound)
-//! - **FFT16 kernels** (hand-written assembly): ~2× over intrinsics
-//! - **Convolution** (large degree): ~3-5× depending on coefficient size
+//! Speedups depend on the host micro-architecture and on the operation profile of the
+//! workload. Run the benches in `poulpy-bench` on the target host for representative
+//! numbers. Qualitative trends:
+//!
+//! - **Ring element arithmetic** (add/sub/negate): bandwidth-bound, modest gains.
+//! - **FFT16 kernels** (hand-written assembly): noticeably ahead of compiler-generated
+//!   intrinsics on supported micro-architectures.
+//! - **Convolution** (large degree): the largest gains, scaling with coefficient size.
 //!
 //! ## Memory layout
 //!
@@ -137,13 +142,13 @@
 //!
 //! # Usage
 //!
-//! This crate exports a single public type, [`FFT64Avx`], which is used as a type parameter
+//! This crate exports a single public type, `FFT64Avx`, which is used as a type parameter
 //! to the HAL generic types. Application code typically does not import this crate directly,
 //! but instead uses it via `poulpy_core` or `poulpy_bin_fhe` with runtime backend selection.
 //!
 //! # Versioning and stability
 //!
-//! This crate follows semantic versioning. The public API consists solely of the [`FFT64Avx`]
+//! This crate follows semantic versioning. The public API consists solely of the `FFT64Avx`
 //! marker type and its trait implementations from `poulpy_hal::oep`. All other items are
 //! implementation details subject to change without notice.
 

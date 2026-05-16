@@ -156,7 +156,7 @@ unsafe impl NttHandleFactory for NTT120RefHandle {
 /// # Safety
 ///
 /// The returned references are valid for the lifetime of `&self`.
-/// All fields are fully initialised in [`NTT120Ref::new_impl`].
+/// All fields are fully initialised by the [`NttHandleFactory`] impl above.
 unsafe impl NttHandleProvider for NTT120RefHandle {
     fn get_ntt_table(&self) -> &NttTable<Primes30> {
         &self.table_ntt

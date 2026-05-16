@@ -11,6 +11,11 @@ fn bench_circuit_bootstrapping(c: &mut Criterion) {
         c,
         "fft64-avx",
     );
+    #[cfg(all(feature = "enable-avx512f", target_arch = "x86_64"))]
+    poulpy_bench::bench_suite::schemes::circuit_bootstrapping::bench_circuit_bootstrapping::<poulpy_cpu_avx512::FFT64Avx512, CGGI>(
+        c,
+        "fft64-avx512",
+    );
 }
 
 criterion_group! {

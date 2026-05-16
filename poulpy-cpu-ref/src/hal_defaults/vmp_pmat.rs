@@ -27,10 +27,10 @@ use crate::reference::{
     },
 };
 use poulpy_hal::{
-    api::HostBufMut,
+    api::{HostBufMut, ModuleN, ScratchArenaTakeBasic, VecZnxDftAddAssign, VecZnxDftBytesOf, VecZnxDftZero},
     layouts::{
         Backend, HostDataMut, HostDataRef, MatZnxBackendRef, Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftBackendRef,
-        VmpPMatBackendMut, VmpPMatBackendRef,
+        VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef,
     },
 };
 
@@ -120,6 +120,53 @@ where
         fft64_vmp_apply_dft_to_dft(res, a, b, limb_offset, tmp);
     }
 
+    fn vmp_apply_dft_to_dft_accumulate_tmp_bytes_default(
+        module: &Module<BE>,
+        res_size: usize,
+        a_size: usize,
+        b_rows: usize,
+        b_cols_in: usize,
+        b_cols_out: usize,
+        _b_size: usize,
+    ) -> usize
+    where
+        BE: Backend<ScalarPrep = f64>,
+        Module<BE>: VecZnxDftBytesOf,
+    {
+        module.bytes_of_vec_znx_dft(b_cols_out, res_size) + fft64_vmp_apply_dft_to_dft_tmp_bytes(a_size, b_rows, b_cols_in)
+    }
+
+    fn vmp_apply_dft_to_dft_accumulate_default<'s, 'b>(
+        module: &Module<BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        a: &VecZnxDftBackendRef<'_, BE>,
+        b: &VmpPMatBackendRef<'b, BE>,
+        limb_offset: usize,
+        scratch: &'s mut ScratchArena<'s, BE>,
+    ) where
+        Module<BE>: VecZnxDftBytesOf + ModuleN + VecZnxDftAddAssign<BE> + VecZnxDftZero<BE>,
+        BE: 's,
+        BE: 'b,
+        BE: Backend<ScalarPrep = f64> + ReimArith + Reim4BlkMatVec,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+        BE::BufMut<'s>: HostBufMut<'s>,
+    {
+        let cols_out = res.cols();
+        let res_size = res.size();
+        let (mut tmp, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols_out, res_size);
+        for col in 0..cols_out {
+            module.vec_znx_dft_zero(&mut tmp, col);
+        }
+        let bytes = fft64_vmp_apply_dft_to_dft_tmp_bytes(a.size(), b.rows(), b.cols_in());
+        let (kernel_tmp, _) = take_host_typed::<BE, f64>(scratch_1, bytes / size_of::<f64>());
+        fft64_vmp_apply_dft_to_dft(&mut tmp, a, b, limb_offset, kernel_tmp);
+        let tmp_ref = tmp.to_backend_ref();
+        for col in 0..cols_out {
+            module.vec_znx_dft_add_assign(res, col, &tmp_ref, col);
+        }
+    }
+
     fn vmp_zero_default(_module: &Module<BE>, res: &mut VmpPMatBackendMut<'_, BE>)
     where
         BE: Backend<ScalarPrep = f64>,
@@ -203,6 +250,54 @@ where
         let bytes = ntt120_vmp_apply_dft_to_dft_tmp_bytes(a.size(), b.rows(), b.cols_in());
         let (tmp, _) = take_host_typed::<BE, u64>(scratch.borrow(), bytes / size_of::<u64>());
         ntt120_vmp_apply_dft_to_dft::<BE>(module, res, a, b, limb_offset, tmp);
+    }
+
+    fn vmp_apply_dft_to_dft_accumulate_tmp_bytes_default(
+        module: &Module<BE>,
+        res_size: usize,
+        a_size: usize,
+        b_rows: usize,
+        b_cols_in: usize,
+        b_cols_out: usize,
+        b_size: usize,
+    ) -> usize
+    where
+        BE: Backend<ScalarPrep = Q120bScalar>,
+        Module<BE>: VecZnxDftBytesOf,
+    {
+        module.bytes_of_vec_znx_dft(b_cols_out, res_size.min(b_size))
+            + ntt120_vmp_apply_dft_to_dft_tmp_bytes(a_size, b_rows, b_cols_in)
+    }
+
+    fn vmp_apply_dft_to_dft_accumulate_default<'s, 'b>(
+        module: &Module<BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        a: &VecZnxDftBackendRef<'_, BE>,
+        b: &VmpPMatBackendRef<'b, BE>,
+        limb_offset: usize,
+        scratch: &'s mut ScratchArena<'s, BE>,
+    ) where
+        Module<BE>: NttModuleHandle + VecZnxDftBytesOf + ModuleN + VecZnxDftAddAssign<BE> + VecZnxDftZero<BE>,
+        BE: 's,
+        BE: 'b,
+        BE: Backend<ScalarPrep = Q120bScalar> + NttExtract1BlkContiguous + NttMulBbc1ColX2 + NttMulBbc2ColsX2,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+        BE::BufMut<'s>: HostBufMut<'s>,
+    {
+        let cols_out = res.cols();
+        let res_size = res.size();
+        let (mut tmp, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols_out, res_size);
+        for col in 0..cols_out {
+            module.vec_znx_dft_zero(&mut tmp, col);
+        }
+        let bytes = ntt120_vmp_apply_dft_to_dft_tmp_bytes(a.size(), b.rows(), b.cols_in());
+        let (kernel_tmp, _) = take_host_typed::<BE, u64>(scratch_1, bytes / size_of::<u64>());
+        ntt120_vmp_apply_dft_to_dft::<BE>(module, &mut tmp, a, b, limb_offset, kernel_tmp);
+        let tmp_ref = tmp.to_backend_ref();
+        for col in 0..cols_out {
+            module.vec_znx_dft_add_assign(res, col, &tmp_ref, col);
+        }
     }
 
     fn vmp_zero_default(_module: &Module<BE>, res: &mut VmpPMatBackendMut<'_, BE>)

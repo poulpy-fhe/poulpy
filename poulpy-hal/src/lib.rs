@@ -52,11 +52,15 @@
 //!
 //! ## Testing and Benchmarking
 //!
-//! The `poulpy-bench` crate provides generic, backend-parametric test helpers
-//! (`test_suite`) and Criterion benchmark harnesses (`bench_suite`). Backend
-//! crates instantiate tests via the [`backend_test_suite!`] and
-//! [`cross_backend_test_suite!`] macros to validate correctness against the
-//! reference implementation.
+//! The [`test_suite`] module provides fully generic, backend-parametric test
+//! functions. Backend crates instantiate these via the
+//! [`backend_test_suite!`](crate::backend_test_suite) and
+//! [`cross_backend_test_suite!`](crate::cross_backend_test_suite) macros to
+//! validate correctness against the reference implementation in
+//! [`poulpy-cpu-ref`](https://docs.rs/poulpy-cpu-ref).
+//!
+//! Analogous Criterion-based benchmark harnesses live in the separate
+//! [`poulpy-bench`](https://docs.rs/poulpy-bench) crate.
 //!
 //! ## Safety Contract
 //!
@@ -226,9 +230,55 @@ pub fn cast_mut<T, V>(data: &mut [T]) -> &mut [V] {
     unsafe { std::slice::from_raw_parts_mut(ptr, len) }
 }
 
+/// Minimum allocation size for which the aligned allocator advises
+/// transparent huge pages. Overridable via `POULPY_HUGEPAGE_MIN_BYTES`.
+const HUGEPAGE_ADVISE_THRESHOLD: usize = 2 * 1024 * 1024;
+
+#[cfg(target_os = "linux")]
+fn hugepage_min_bytes() -> usize {
+    use once_cell::sync::Lazy;
+    static THRESH: Lazy<usize> = Lazy::new(|| {
+        std::env::var("POULPY_HUGEPAGE_MIN_BYTES")
+            .ok()
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(HUGEPAGE_ADVISE_THRESHOLD)
+    });
+    *THRESH
+}
+
+/// `madvise(MADV_HUGEPAGE)` on a freshly-allocated range. Skipped if the
+/// pointer is not page-aligned (non-mmap'd heap arenas) or the size is
+/// below the threshold. Failure is silently ignored — advisory only.
+#[cfg(target_os = "linux")]
+fn advise_hugepage(ptr: *mut u8, size: usize) {
+    if size < hugepage_min_bytes() {
+        return;
+    }
+    let page_size = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+    if page_size <= 0 {
+        return;
+    }
+    let page_size = page_size as usize;
+    if !(ptr as usize).is_multiple_of(page_size) {
+        return;
+    }
+    let len = size - (size % page_size);
+    if len == 0 {
+        return;
+    }
+    let _ = unsafe { libc::madvise(ptr.cast(), len, libc::MADV_HUGEPAGE) };
+}
+
+#[cfg(not(target_os = "linux"))]
+#[inline(always)]
+fn advise_hugepage(_ptr: *mut u8, _size: usize) {}
+
 /// Allocates a block of bytes with a custom alignment.
 /// Alignment must be a power of two and size a multiple of the alignment.
 /// Allocated memory is initialized to zero.
+///
+/// Large allocations are advised for transparent huge pages via
+/// [`advise_hugepage`] on Linux before the zero-fill.
 ///
 /// # Known issue (CRITICAL-2)
 /// The returned `Vec<u8>` was allocated with custom alignment via `std::alloc::alloc`,
@@ -254,7 +304,9 @@ fn alloc_aligned_custom_u8(size: usize, align: usize) -> Vec<u8> {
             is_aligned_custom(ptr, align),
             "Memory allocation at {ptr:p} is not aligned to {align} bytes"
         );
-        // Init allocated memory to zero
+        // Advise before write_bytes so the zero-fill faults materialise
+        // 2 MB pages directly rather than relying on khugepaged promotion.
+        advise_hugepage(ptr, size);
         std::ptr::write_bytes(ptr, 0, size);
         Vec::from_raw_parts(ptr, size, size)
     }

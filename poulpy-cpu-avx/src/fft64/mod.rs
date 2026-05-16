@@ -15,11 +15,11 @@ mod reim4;
 /// - **ScalarPrep**: `f64` — DFT-domain coefficients are 64-bit IEEE 754 floats.
 /// - **ScalarBig**: `i64` — large-coefficient ring elements use 64-bit signed integers.
 /// - **FFT tables**: precomputed twiddle factors stored in the module handle
-///   ([`FFT64AvxHandle`]), shared across all operations on the same module.
+///   ([`FFTModuleHandle`]), shared across all operations on the same module.
 ///
 /// # CPU feature requirements
 ///
-/// **Runtime check**: [`Module::new()`](poulpy_hal::layouts::Module::new) verifies that
+/// **Runtime check**: [`Module::new()`](poulpy_hal::api::ModuleNew::new) verifies that
 /// the CPU supports AVX2, AVX, and FMA. If any feature is missing, the constructor panics.
 ///
 /// **Compile-time requirement**: Code must be compiled with `-C target-feature=+avx2,+fma`.
@@ -35,7 +35,8 @@ mod reim4;
 /// # Performance notes
 ///
 /// - Optimized for x86-64 CPUs with AVX2 (2013+) and FMA (Haswell and later).
-/// - Hand-written assembly FFT kernels outperform compiler-generated intrinsics by ~2×.
+/// - Hand-written assembly FFT kernels outperform compiler-generated intrinsics on
+///   supported micro-architectures; the exact gain is host-dependent.
 /// - Memory layout is vectorized (4 × `i64` per AVX2 register) with 64-byte alignment.
 /// - Scalar fallback for non-multiple-of-4 lengths (negligible overhead for typical FHE parameters).
 ///
