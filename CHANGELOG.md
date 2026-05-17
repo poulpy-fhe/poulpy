@@ -27,6 +27,11 @@ This release completes the migration from the legacy host-oriented HAL/backend p
 - **Breaking:** Remove `ReaderFrom` / `WriterTo` for prepared DFT layouts (`SvpPPol`); remove `SvpPPolFromBytes`, `VmpPMatFromBytes`, and `from_bytes` on the corresponding prepared types. Document that `SvpPPol` / `VmpPMat` DFT alignment assumes a power-of-two ring degree.
 
 ### `poulpy-core`
+- Fix #158: `VecZnxScalarProduct` semantics corrected — the default implementation now computes element-wise Hadamard products `res[limb][k] = a[limb][k] * b[k]` stored in `VecZnxBig`; callers that need the inner sum must follow up with `VecZnxBigInnerSumBackend`. LWE encryption updated accordingly (adds a `vec_znx_big_inner_sum_backend` step after `vec_znx_scalar_product`).
+- Remove the redundant `for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>` bound from the `LWEEncryptSk::lwe_encrypt_sk` user-facing API method; the blanket impl always satisfies this constraint, so it was unnecessary noise on call sites.
+- Add rank>1 support to `GLWEExpandLWE::glwe_expand_lwe`; add `glwe_expand_lwe_tmp_bytes` to the trait.
+- Add rank>1 support to `SecretConversion::lwe_secret_from_glwe_secret`, producing the concatenated LWE key `(s_0(-X) || ... || s_{k-1}(-X))` needed to decrypt sample-extracted ciphertexts from rank-k GLWEs.
+- Update `test_glwe_expand_lwe` to exercise both rank=1 and rank=2, verifying correctness of the secret derivation and decryption round-trip for each rank.
 - Update layout wrappers, encryption/conversion paths, and tests to consume backend-view getters/constructors instead of reaching into HAL layout fields directly.
 - Add `ModuleCoreAlloc` and `ModuleCoreCompressedAlloc`, then migrate workspace allocation sites so standard and compressed `poulpy-core` wrappers are allocated through `Module` instead of direct static `alloc*` constructors.
 - Restrict standard and compressed wrapper `alloc` / `alloc_from_infos` constructors to crate-private visibility now that `Module` is the canonical public allocation entrypoint.
@@ -83,6 +88,8 @@ This release completes the migration from the legacy host-oriented HAL/backend p
 - Document unnormalized operations with signed-digit behavior, worst-case O(n) growth, Irwin–Hall O(√n) typical growth, and the `n ≤ 2^(63 − base2k)` safety bound against i64 overflow.
 
 ### `poulpy-bin-fhe`
+- Remove unnecessary `BE: 'static` bounds from blind-rotation and BDD-arithmetic trait signatures, and spurious `BE: 's` lifetime bounds from scratch-arena generic methods.
+- Remove redundant `for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>` where clauses from public API methods, examples, and macros; the blanket impl always satisfies this constraint.
 - Update bin-FHE BDD arithmetic, blind rotation, and test suites for the new core/HAL APIs.
 - Refresh blind-rotation / circuit-bootstrapping staging helpers for the new `ScalarZnx` view API.
 - Refresh scheme examples and library wiring to match the crate split and the new backend-generic APIs.
@@ -94,6 +101,9 @@ This release completes the migration from the legacy host-oriented HAL/backend p
 - Add `ReaderFrom` / `WriterTo` for `CircuitBootstrappingKey` and `BDDKey<Vec<u8>>` (optional `ks_glwe` encoded with a presence tag), with stable ATK map serialization (sorted Galois keys).
 
 ### `poulpy-bench`
+- Fix `VecZnxAutomorphismAssignBackend` rename in automorphism benchmark helpers (was `VecZnxAutomorphismAssign`).
+- Remove redundant `for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>` where clauses from CKKS and scheme benchmark helpers.
+- Fix `lwe.fill_uniform` call site (was `lwe.data_mut().fill_uniform`) in blind-rotation bench staging.
 - Update core and HAL convolution benchmarks to the new convolution API.
 - Align benchmark suites with the new HAL/core APIs and update parameter examples.
 - Remove remaining direct layout-field assumptions from benchmark staging helpers.
