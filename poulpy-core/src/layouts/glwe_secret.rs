@@ -2,7 +2,7 @@ use poulpy_hal::{
     api::VecZnxAutomorphismBackend,
     layouts::{
         Backend, Data, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxAsVecZnxBackendMut, ScalarZnxToBackendMut,
-        ScalarZnxToBackendRef, TransferFrom, ZnxZero, scalar_znx_as_vec_znx_backend_ref_from_ref,
+        ScalarZnxToBackendRef, TransferFrom, VecZnx, ZnxZero, scalar_znx_as_vec_znx_backend_ref_from_ref,
     },
     oep::HalVecZnxImpl,
     source::Source,
@@ -301,18 +301,18 @@ impl<B: Backend + HalVecZnxImpl<B>> SecretConversion<B> for Module<B> {
         S: GLWESecretToBackendRef<B>,
     {
         let src = src.to_backend_ref();
-        assert_eq!(
-            src.rank(),
-            Rank(1),
-            "lwe_secret_from_glwe_secret: only valid for rank-1 GLWE secret"
-        );
-        assert_eq!(src.n().as_usize(), self.n(), "GLWE secret degree must equal module degree");
-        let mut res = self.lwe_secret_alloc(src.n());
+        let n = self.n();
+        let rank: usize = src.rank().into();
+        assert_eq!(src.n().as_usize(), n, "GLWE secret degree must equal module degree");
+        let mut res = self.lwe_secret_alloc(Degree((n * rank) as u32));
         res.dist = src.dist;
         {
             let src_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<B>(&src.data);
-            let mut res_vec = <ScalarZnx<B::OwnedBuf> as ScalarZnxAsVecZnxBackendMut<B>>::as_vec_znx_backend_mut(&mut res.data);
-            self.vec_znx_automorphism_backend(-1, &mut res_vec, 0, &src_vec, 0);
+            let res_as_backend = <ScalarZnx<B::OwnedBuf> as ScalarZnxToBackendMut<B>>::to_backend_mut(&mut res.data);
+            let mut res_vec = VecZnx::from_data(res_as_backend.data, n, rank, 1);
+            for j in 0..rank {
+                self.vec_znx_automorphism_backend(-1, &mut res_vec, j, &src_vec, j);
+            }
         }
         res
     }

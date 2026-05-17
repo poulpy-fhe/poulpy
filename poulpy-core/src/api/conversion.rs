@@ -62,7 +62,12 @@ pub trait GGSWFromGGLWE<BE: Backend> {
 }
 
 pub trait GLWEExpandLWE<BE: Backend> {
-    fn glwe_expand_lwe<R, A>(&self, res: &mut [R], a: &A)
+    fn glwe_expand_lwe_tmp_bytes<R, A>(&self, lwe_infos: &R, a_infos: &A) -> usize
+    where
+        R: LWEInfos,
+        A: GLWEInfos;
+
+    fn glwe_expand_lwe<R, A>(&self, res: &mut [R], a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: LWEToBackendMut<BE> + LWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos;

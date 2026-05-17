@@ -381,70 +381,80 @@ where
     let k = 4 * base2k + 1;
     let k_pt = TorusPrecision(8);
 
-    let glwe_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
-        n: Degree(n as u32),
-        base2k: Base2K(base2k as u32),
-        k: TorusPrecision(k as u32),
-        rank: Rank(1),
-    })
-    .unwrap();
+    for rank in [Rank(1), Rank(2)] {
+        let glwe_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+            n: Degree(n as u32),
+            base2k: Base2K(base2k as u32),
+            k: TorusPrecision(k as u32),
+            rank,
+        })
+        .unwrap();
 
-    let lwe_infos = LWELayout {
-        n: Degree(n as u32),
-        base2k: Base2K(base2k as u32),
-        k: TorusPrecision(k as u32),
-    };
+        let lwe_infos = LWELayout {
+            n: Degree(n as u32 * rank.0),
+            base2k: Base2K(base2k as u32),
+            k: TorusPrecision(k as u32),
+        };
 
-    let mut source_xs: Source = Source::new([0u8; 32]);
-    let mut source_xa: Source = Source::new([0u8; 32]);
-    let mut source_xe: Source = Source::new([0u8; 32]);
+        let mut source_xs: Source = Source::new([0u8; 32]);
+        let mut source_xa: Source = Source::new([0u8; 32]);
+        let mut source_xe: Source = Source::new([0u8; 32]);
 
-    let mut sk_glwe: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(Rank(1));
-    sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
+        let mut sk_glwe: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank);
+        sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
 
-    let mut sk_glwe_prep: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk_glwe);
-    module.glwe_secret_prepare(&mut sk_glwe_prep, &sk_glwe);
+        let mut sk_glwe_prep: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk_glwe);
+        module.glwe_secret_prepare(&mut sk_glwe_prep, &sk_glwe);
 
-    let sk_lwe = module.lwe_secret_from_glwe_secret(&sk_glwe);
+        let sk_lwe = module.lwe_secret_from_glwe_secret(&sk_glwe);
 
-    let a_idx: usize = 3;
-    let mut data: Vec<i64> = vec![0i64; n];
-    data[a_idx] = 17;
+        let a_idx: usize = 3;
+        let mut data: Vec<i64> = vec![0i64; n];
+        data[a_idx] = 17;
 
-    let mut glwe_pt: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
-    glwe_pt.encode_vec_i64(&data, k_pt);
+        let mut glwe_pt: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+        glwe_pt.encode_vec_i64(&data, k_pt);
 
-    let mut scratch: ScratchOwned<BE> =
-        ScratchOwned::alloc(module.glwe_encrypt_sk_tmp_bytes(&glwe_infos) | module.lwe_decrypt_tmp_bytes(&lwe_infos));
+        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+            module.glwe_encrypt_sk_tmp_bytes(&glwe_infos)
+                | module.lwe_decrypt_tmp_bytes(&lwe_infos)
+                | module.glwe_expand_lwe_tmp_bytes(&lwe_infos, &glwe_infos),
+        );
 
-    let mut glwe_ct: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_infos);
-    module.glwe_encrypt_sk(
-        &mut glwe_ct,
-        &glwe_pt,
-        &sk_glwe_prep,
-        &glwe_infos,
-        &mut source_xe,
-        &mut source_xa,
-        &mut scratch.borrow(),
-    );
+        let mut glwe_ct: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_infos);
+        module.glwe_encrypt_sk(
+            &mut glwe_ct,
+            &glwe_pt,
+            &sk_glwe_prep,
+            &glwe_infos,
+            &mut source_xe,
+            &mut source_xa,
+            &mut scratch.borrow(),
+        );
 
-    let mut lwe_cts: Vec<LWE<Vec<u8>>> = (0..n).map(|_| module.lwe_alloc_from_infos(&lwe_infos)).collect();
-    module.glwe_expand_lwe(lwe_cts.as_mut_slice(), &glwe_ct);
+        let mut lwe_cts: Vec<LWE<Vec<u8>>> = (0..n).map(|_| module.lwe_alloc_from_infos(&lwe_infos)).collect();
+        module.glwe_expand_lwe(lwe_cts.as_mut_slice(), &glwe_ct, &mut scratch.borrow());
 
-    let mut lwe_pt: LWEPlaintext<Vec<u8>> = module.lwe_plaintext_alloc_from_infos(&lwe_infos);
-    module.lwe_decrypt(&lwe_cts[a_idx], &mut lwe_pt, &sk_lwe, &mut scratch.borrow());
+        let mut lwe_pt: LWEPlaintext<Vec<u8>> = module.lwe_plaintext_alloc_from_infos(&lwe_infos);
+        module.lwe_decrypt(&lwe_cts[a_idx], &mut lwe_pt, &sk_lwe, &mut scratch.borrow());
 
-    let mut glwe_pt_conv = GLWEPlaintext::<Vec<u8>>::alloc(glwe_ct.n(), lwe_pt.base2k(), lwe_pt.max_k());
-    module.vec_znx_normalize(
-        &mut vec_znx_backend_mut::<BE>(&mut glwe_pt_conv.data),
-        lwe_pt.base2k().as_usize(),
-        0,
-        0,
-        &vec_znx_backend_ref::<BE>(&glwe_pt.data),
-        glwe_ct.base2k().as_usize(),
-        0,
-        &mut scratch.borrow(),
-    );
+        let mut glwe_pt_conv = GLWEPlaintext::<Vec<u8>>::alloc(glwe_ct.n(), lwe_pt.base2k(), lwe_pt.max_k());
+        module.vec_znx_normalize(
+            &mut vec_znx_backend_mut::<BE>(&mut glwe_pt_conv.data),
+            lwe_pt.base2k().as_usize(),
+            0,
+            0,
+            &vec_znx_backend_ref::<BE>(&glwe_pt.data),
+            glwe_ct.base2k().as_usize(),
+            0,
+            &mut scratch.borrow(),
+        );
 
-    assert_eq!(glwe_pt_conv.data.at(0, 0)[a_idx], lwe_pt.data.at(0, 0)[0]);
+        assert_eq!(
+            glwe_pt_conv.data.at(0, 0)[a_idx],
+            lwe_pt.data.at(0, 0)[0],
+            "rank={} failed",
+            rank.0
+        );
+    }
 }

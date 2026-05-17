@@ -95,12 +95,20 @@ impl_conversion_delegate!(
 impl_conversion_delegate!(
     GLWEExpandLWE<BE>,
     [BE: Backend + ConversionImpl<BE>, Module<BE>: ConversionDefault<BE>],
-    fn glwe_expand_lwe<R, A>(&self, res: &mut [R], a: &A)
+    fn glwe_expand_lwe_tmp_bytes<R, A>(&self, lwe_infos: &R, a_infos: &A) -> usize
+    where
+        R: LWEInfos,
+        A: GLWEInfos,
+    {
+        BE::glwe_expand_lwe_tmp_bytes(self, lwe_infos, a_infos)
+    }
+
+    fn glwe_expand_lwe<R, A>(&self, res: &mut [R], a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: LWEToBackendMut<BE> + LWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        BE::glwe_expand_lwe(self, res, a)
+        BE::glwe_expand_lwe(self, res, a, scratch)
     }
 );
 

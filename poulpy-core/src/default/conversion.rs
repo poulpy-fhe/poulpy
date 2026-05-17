@@ -15,7 +15,7 @@ use poulpy_hal::{
     },
     layouts::{
         Backend, ScratchArena, VecZnx, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendRef, VecZnxDftToBackendRef,
-        VecZnxToBackendRef,
+        VecZnxToBackendMut, VecZnxToBackendRef,
     },
 };
 
@@ -55,29 +55,57 @@ where
     });
 }
 
-pub fn glwe_expand_lwe_default<BE, M, R, A>(module: &M, res: &mut [R], a: &A)
+pub fn glwe_expand_lwe_tmp_bytes_default<BE, M, R, A>(module: &M, lwe_infos: &R, a_infos: &A) -> usize
 where
     BE: Backend,
-    M: ModuleN + VecZnxExtractCoeffBackend<BE> + VecZnxRotateBackend<BE>,
+    M: ModuleN,
+    R: LWEInfos,
+    A: GLWEInfos,
+{
+    if a_infos.rank().as_usize() == 1 {
+        0
+    } else {
+        VecZnx::<Vec<u8>>::bytes_of(module.n(), 1, lwe_infos.size())
+    }
+}
+
+pub fn glwe_expand_lwe_default<BE, M, R, A>(module: &M, res: &mut [R], a: &A, scratch: &mut ScratchArena<'_, BE>)
+where
+    BE: Backend,
+    M: ModuleN + VecZnxExtractCoeffBackend<BE> + VecZnxRotateBackend<BE> + VecZnxCopyRangeBackend<BE>,
     R: LWEToBackendMut<BE> + LWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
 {
     let a = a.to_backend_ref();
     let n = module.n();
+    let rank: usize = a.rank().into();
 
-    assert_eq!(
-        a.rank(),
-        Rank(1),
-        "glwe_expand_lwe: expects rank-1 GLWE, got rank {}",
-        a.rank()
-    );
     assert_eq!(usize::from(a.n()), n, "glwe_expand_lwe: GLWE.n() != module.n()");
     assert!(res.len() <= n, "glwe_expand_lwe: res.len() > module.n()");
 
-    for (i, lwe) in res.iter_mut().enumerate() {
-        let mut lwe = lwe.to_backend_mut();
-        module.vec_znx_extract_coeff_backend(&mut lwe.body, 0, &a.data, 0, i);
-        module.vec_znx_rotate_backend(-(i as i64), &mut lwe.mask, 0, &a.data, 1);
+    if rank == 1 {
+        for (i, lwe) in res.iter_mut().enumerate() {
+            let mut lwe = lwe.to_backend_mut();
+            module.vec_znx_extract_coeff_backend(&mut lwe.body, 0, &a.data, 0, i);
+            module.vec_znx_rotate_backend(-(i as i64), &mut lwe.mask, 0, &a.data, 1);
+        }
+    } else {
+        let lwe_size = res.first().map(|r| r.size()).unwrap_or(0);
+        let (mut tmp, _) = scratch.borrow().take_vec_znx_scratch(n, 1, lwe_size);
+        for (i, lwe) in res.iter_mut().enumerate() {
+            let mut lwe = lwe.to_backend_mut();
+            module.vec_znx_extract_coeff_backend(&mut lwe.body, 0, &a.data, 0, i);
+            for j in 0..rank {
+                {
+                    let mut tmp_mut = tmp.to_backend_mut();
+                    module.vec_znx_rotate_backend(-(i as i64), &mut tmp_mut, 0, &a.data, j + 1);
+                }
+                let tmp_ref = tmp.to_backend_ref();
+                for l in 0..lwe_size {
+                    module.vec_znx_copy_range_backend(&mut lwe.mask, 0, l, j * n, &tmp_ref, 0, l, 0, n);
+                }
+            }
+        }
     }
 }
 
