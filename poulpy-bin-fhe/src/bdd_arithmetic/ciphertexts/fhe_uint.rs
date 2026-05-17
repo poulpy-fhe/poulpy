@@ -620,7 +620,6 @@ impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T> {
             + GLWECopy<BE>,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeBDD<'a, T, BE>,
         for<'a> BE::BufMut<'a>: HostDataMut,
-        BE: 's,
     {
         assert!(byte < (1 << T::LOG_BYTES));
 

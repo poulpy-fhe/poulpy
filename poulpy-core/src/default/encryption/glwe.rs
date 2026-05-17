@@ -64,7 +64,6 @@ pub trait GLWEEncryptSkDefault<BE: Backend> {
         P: GLWEToBackendRef<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        BE: 's,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>;
 
     fn glwe_encrypt_zero_sk_default<'s, R, E, S>(
@@ -79,7 +78,6 @@ pub trait GLWEEncryptSkDefault<BE: Backend> {
         R: GLWEToBackendMut<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        BE: 's,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>;
 }
 
@@ -118,7 +116,6 @@ where
         P: GLWEToBackendRef<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        BE: 's,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         let res = &mut res.to_backend_mut();
@@ -163,7 +160,6 @@ where
         R: GLWEToBackendMut<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        BE: 's,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         let res = &mut res.to_backend_mut();
@@ -480,7 +476,6 @@ pub(crate) trait GLWEEncryptSkInternal<BE: Backend> {
     ) where
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        BE: 's,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>;
 }
 
@@ -521,7 +516,6 @@ where
     ) where
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        BE: 's,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         let mut res_ref = res;

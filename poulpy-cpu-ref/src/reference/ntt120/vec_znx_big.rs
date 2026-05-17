@@ -839,6 +839,15 @@ fn ntt120_vec_znx_big_normalize_cross_assign<O, R, A, BE>(
 /// This is the `i128`-equivalent of the `NttAdd` / `NttSub` / … dispatch traits
 /// for q120b (NTT-domain) element operations.
 pub trait I128BigOps {
+    /// `res[i] = (a[i] as i128).wrapping_mul(b[i] as i128)` for each `i`.
+    #[inline(always)]
+    fn i128_hadamard_product_i64(res: &mut [i128], a: &[i64], b: &[i64]) {
+        res.iter_mut()
+            .zip(a.iter())
+            .zip(b.iter())
+            .for_each(|((r, &ai), &bi)| *r = (ai as i128).wrapping_mul(bi as i128));
+    }
+
     /// `res[i] = a[i].wrapping_add(b[i])` for each `i`.
     #[inline(always)]
     fn i128_add(res: &mut [i128], a: &[i128], b: &[i128]) {

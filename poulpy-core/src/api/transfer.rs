@@ -152,7 +152,8 @@ impl<To: Backend> ModuleTransfer<To> for Module<To> {
     {
         let _ = self;
         LWE {
-            data: transfer_vec_znx::<From, To>(&src.data),
+            body: transfer_vec_znx::<From, To>(&src.body),
+            mask: transfer_vec_znx::<From, To>(&src.mask),
             base2k: src.base2k,
         }
     }

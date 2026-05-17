@@ -5,6 +5,51 @@ use core::arch::x86_64::{
 
 use super::znx_add_assign_avx512;
 
+#[target_feature(enable = "avx512f")]
+unsafe fn mullo_epi64_avx512(a: __m512i, b: __m512i) -> __m512i {
+    use core::arch::x86_64::{_mm512_mul_epu32, _mm512_slli_epi64};
+
+    let lo = _mm512_mul_epu32(a, b);
+    let cross = _mm512_add_epi64(
+        _mm512_mul_epu32(_mm512_srli_epi64(a, 32), b),
+        _mm512_mul_epu32(a, _mm512_srli_epi64(b, 32)),
+    );
+    _mm512_add_epi64(lo, _mm512_slli_epi64(cross, 32))
+}
+
+/// `res[i] = a[i].wrapping_mul(b[i])` for i64 coefficient slices.
+///
+/// # Safety
+/// Caller must ensure the CPU supports AVX-512F; all inputs must have the same
+/// length and `res` must not alias `a` or `b`.
+#[target_feature(enable = "avx512f")]
+pub(crate) unsafe fn znx_hadamard_product_i64_avx512(res: &mut [i64], a: &[i64], b: &[i64]) {
+    debug_assert_eq!(res.len(), a.len());
+    debug_assert_eq!(res.len(), b.len());
+
+    let n = res.len();
+    let chunks = n >> 3;
+
+    unsafe {
+        let mut rr = res.as_mut_ptr() as *mut __m512i;
+        let mut aa = a.as_ptr() as *const __m512i;
+        let mut bb = b.as_ptr() as *const __m512i;
+
+        for _ in 0..chunks {
+            let x = _mm512_loadu_si512(aa);
+            let y = _mm512_loadu_si512(bb);
+            _mm512_storeu_si512(rr, mullo_epi64_avx512(x, y));
+            rr = rr.add(1);
+            aa = aa.add(1);
+            bb = bb.add(1);
+        }
+    }
+
+    for i in (chunks << 3)..n {
+        res[i] = a[i].wrapping_mul(b[i]);
+    }
+}
+
 /// Multiply/divide by a power of two with rounding matching [poulpy_cpu_ref::reference::znx::znx_mul_power_of_two_ref].
 ///
 /// # Safety

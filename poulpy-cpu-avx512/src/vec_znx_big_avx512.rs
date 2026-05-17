@@ -692,6 +692,81 @@ unsafe fn store8_i128(r_ptr: *mut __m512i, i: usize, lo_r: __m512i, hi_r: __m512
     }
 }
 
+/// Signed 64x64 -> 128-bit multiplication in split form.
+///
+/// # Safety
+/// Requires AVX-512F.
+#[inline(always)]
+unsafe fn mul8_i64_to_i128(lo_a: __m512i, lo_b: __m512i) -> (__m512i, __m512i) {
+    unsafe {
+        let mask32 = _mm512_set1_epi64(0xffff_ffff);
+
+        let a_hi32 = _mm512_srli_epi64(lo_a, 32);
+        let b_hi32 = _mm512_srli_epi64(lo_b, 32);
+
+        let p0 = _mm512_mul_epu32(lo_a, lo_b);
+        let p1 = _mm512_mul_epu32(lo_a, b_hi32);
+        let p2 = _mm512_mul_epu32(a_hi32, lo_b);
+        let p3 = _mm512_mul_epu32(a_hi32, b_hi32);
+
+        let mid_low = _mm512_add_epi64(
+            _mm512_add_epi64(_mm512_srli_epi64(p0, 32), _mm512_and_si512(p1, mask32)),
+            _mm512_and_si512(p2, mask32),
+        );
+        let lo = _mm512_or_si512(_mm512_and_si512(p0, mask32), _mm512_slli_epi64(mid_low, 32));
+
+        let hi_unsigned = _mm512_add_epi64(
+            _mm512_add_epi64(p3, _mm512_srli_epi64(p1, 32)),
+            _mm512_add_epi64(_mm512_srli_epi64(p2, 32), _mm512_srli_epi64(mid_low, 32)),
+        );
+
+        let zero = _mm512_setzero_si512();
+        let sign_a = _mm512_maskz_set1_epi64(_mm512_cmp_epi64_mask(lo_a, zero, _MM_CMPINT_LT), -1);
+        let sign_b = _mm512_maskz_set1_epi64(_mm512_cmp_epi64_mask(lo_b, zero, _MM_CMPINT_LT), -1);
+        let hi = _mm512_sub_epi64(
+            _mm512_sub_epi64(hi_unsigned, _mm512_and_si512(sign_a, lo_b)),
+            _mm512_and_si512(sign_b, lo_a),
+        );
+
+        (lo, hi)
+    }
+}
+
+/// `res[i] = (a[i] as i128).wrapping_mul(b[i] as i128)` for `n` elements.
+///
+/// # Safety
+/// Requires AVX-512F. All slices must have at least `n` elements and `res` must
+/// not alias `a` or `b`.
+#[target_feature(enable = "avx512f")]
+pub(crate) unsafe fn vi128_hadamard_i64_avx512(n: usize, res: &mut [i128], a: &[i64], b: &[i64]) {
+    debug_assert!(res.len() >= n);
+    debug_assert!(a.len() >= n);
+    debug_assert!(b.len() >= n);
+
+    unsafe {
+        let a_ptr = a.as_ptr() as *const __m512i;
+        let b_ptr = b.as_ptr() as *const __m512i;
+        let r_ptr = res.as_mut_ptr() as *mut __m512i;
+        let idx_ilo = _mm512_loadu_si512(INTERLEAVE_LO.as_ptr() as *const __m512i);
+        let idx_ihi = _mm512_loadu_si512(INTERLEAVE_HI.as_ptr() as *const __m512i);
+        let chunks = n / 8;
+
+        for i in 0..chunks {
+            let (lo_a, _) = load8_i64_as_i128(a_ptr, i);
+            let (lo_b, _) = load8_i64_as_i128(b_ptr, i);
+            let (lo_r, hi_r) = mul8_i64_to_i128(lo_a, lo_b);
+            store8_i128(r_ptr, i, lo_r, hi_r, idx_ilo, idx_ihi);
+        }
+
+        let tail = chunks * 8;
+        res[tail..n]
+            .iter_mut()
+            .zip(a[tail..n].iter())
+            .zip(b[tail..n].iter())
+            .for_each(|((r, &ai), &bi)| *r = (ai as i128).wrapping_mul(bi as i128));
+    }
+}
+
 /// 128-bit addition in split form: `(lo_r, hi_r) = (lo_a + lo_b, hi_a + hi_b + carry)`.
 ///
 /// # Safety

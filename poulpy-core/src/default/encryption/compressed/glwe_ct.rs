@@ -22,7 +22,7 @@ pub trait GLWECompressedEncryptSkDefault<BE: Backend> {
 
     fn glwe_compressed_encrypt_sk_default<'s, R, P, S, E>(
         &self,
-        res: &'s mut R,
+        res: &mut R,
         pt: &P,
         sk: &S,
         seed_xa: [u8; 32],
@@ -34,7 +34,6 @@ pub trait GLWECompressedEncryptSkDefault<BE: Backend> {
         P: GLWEToBackendRef<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        BE: 's,
         ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>;
 }
 
@@ -54,7 +53,7 @@ where
     #[allow(clippy::too_many_arguments)]
     fn glwe_compressed_encrypt_sk_default<'s, R, P, S, E>(
         &self,
-        res: &'s mut R,
+        res: &mut R,
         pt: &P,
         sk: &S,
         seed_xa: [u8; 32],
@@ -66,7 +65,6 @@ where
         P: GLWEToBackendRef<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        BE: 's,
         ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
     {
         res.seed_mut().copy_from_slice(&seed_xa);

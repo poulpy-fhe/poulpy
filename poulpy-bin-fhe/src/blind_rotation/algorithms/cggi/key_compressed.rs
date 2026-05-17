@@ -68,7 +68,6 @@ where
         E: EncryptionInfos,
         S1: LWESecretToBackendRef<BE> + LWEInfos + GetDistribution,
         ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
-        BE: 's,
     {
         assert_eq!(res.keys.len() as u32, sk_lwe.n());
         assert!(sk_glwe.n() <= self.n() as u32);

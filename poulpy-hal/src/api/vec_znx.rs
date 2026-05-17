@@ -1,5 +1,8 @@
 use crate::{
-    layouts::{Backend, NoiseInfos, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef},
+    layouts::{
+        Backend, NoiseInfos, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
+        VecZnxBigBackendMut,
+    },
     source::Source,
 };
 
@@ -56,22 +59,15 @@ pub trait VecZnxNormalizeCoeffBackend<B: Backend> {
     );
 }
 
-pub trait VecZnxSubInnerProductAssignBackend<B: Backend> {
-    #[allow(clippy::too_many_arguments)]
-    fn vec_znx_sub_inner_product_assign_backend<'r, 'a, 'b>(
+pub trait VecZnxHadamardProductScalarZnxBackend<B: Backend> {
+    fn vec_znx_hadamard_product_scalar_znx_backend<'r, 'a, 'b>(
         &self,
-        res: &mut VecZnxBackendMut<'r, B>,
+        res: &mut VecZnxBigBackendMut<'r, B>,
         res_col: usize,
-        res_limb: usize,
-        res_offset: usize,
         a: &VecZnxBackendRef<'a, B>,
         a_col: usize,
-        a_limb: usize,
-        a_offset: usize,
         b: &ScalarZnxBackendRef<'b, B>,
         b_col: usize,
-        b_offset: usize,
-        len: usize,
     );
 }
 
@@ -505,9 +501,9 @@ pub trait VecZnxAutomorphismAssignTmpBytes {
     fn vec_znx_automorphism_assign_tmp_bytes(&self) -> usize;
 }
 
-pub trait VecZnxAutomorphismAssign<B: Backend> {
+pub trait VecZnxAutomorphismAssignBackend<B: Backend> {
     /// Applies the automorphism X^i -> X^ik on the selected column of `a`.
-    fn vec_znx_automorphism_assign<'s, 'r>(
+    fn vec_znx_automorphism_assign_backend<'s, 'r>(
         &self,
         k: i64,
         res: &mut VecZnxBackendMut<'r, B>,

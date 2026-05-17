@@ -39,7 +39,6 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
-        BE: 's,
     {
         let key = keys
             .get_automorphism_key(k)
@@ -56,7 +55,6 @@ where
         H: GLWEAutomorphismKeyHelper<K, BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
-        BE: 's,
     {
         let key = keys
             .get_automorphism_key(k)

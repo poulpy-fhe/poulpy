@@ -185,8 +185,7 @@ pub trait BDDKeyEncryptSk<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>
         scratch: &mut ScratchArena<'s, BE>,
     ) where
         S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
-        S1: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
-        BE: 's;
+        S1: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
 impl<BE: Backend<OwnedBuf = Vec<u8>>, BRA: BlindRotationAlgo> BDDKeyEncryptSk<BRA, BE> for Module<BE>
@@ -215,7 +214,6 @@ where
     ) where
         S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
         S1: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
-        BE: 's,
     {
         if let Some(key) = &mut res.ks_glwe {
             let ks_glwe_infos = enc_infos
@@ -433,7 +431,6 @@ where
         scratch: &mut ScratchArena<'s, BE>,
     ) where
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
-        BE: 's,
     {
         res.cbt.prepare(self, &other.cbt, scratch);
 

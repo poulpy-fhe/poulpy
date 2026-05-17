@@ -39,7 +39,6 @@ impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>>> CircuitBootstrappi
     ) where
         M: CircuitBootstrappingKeyPreparedFactory<BRA, BE>,
         for<'a> ScratchArena<'a, BE>: ScratchAvailable,
-        BE: 's,
     {
         module.circuit_bootstrapping_key_prepare(self, other, scratch);
     }
@@ -109,7 +108,6 @@ where
         scratch: &mut ScratchArena<'s, BE>,
     ) where
         for<'a> ScratchArena<'a, BE>: ScratchAvailable,
-        BE: 's,
     {
         // TODO(device): the prepared CBT bundle is still assembled from the
         // host-backed prepared blind-rotation / automorphism / tensor-switching

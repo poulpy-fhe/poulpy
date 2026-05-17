@@ -23,7 +23,7 @@ pub unsafe trait DecryptionImpl<BE: Backend>: Backend {
     where
         A: GLWEInfos;
 
-    fn glwe_decrypt<'s, R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'s, BE>)
+    fn glwe_decrypt<R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendRef<BE> + GLWEInfos,
         P: GLWEToBackendMut<BE> + GLWEInfos + SetLWEInfos,
@@ -33,7 +33,7 @@ pub unsafe trait DecryptionImpl<BE: Backend>: Backend {
     where
         A: LWEInfos;
 
-    fn lwe_decrypt<'s, R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'s, BE>)
+    fn lwe_decrypt<R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
         R: LWEToBackendRef<BE> + LWEInfos,
         P: LWEPlaintextToBackendMut<BE> + SetLWEInfos + LWEInfos,
@@ -63,10 +63,7 @@ pub unsafe trait DecryptionImpl<BE: Backend>: Backend {
 /// for reference algorithms a backend may forward to.
 #[doc(hidden)]
 #[allow(private_bounds)]
-pub trait DecryptionDefault<BE: Backend>
-where
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
-{
+pub trait DecryptionDefault<BE: Backend>{
     fn glwe_decrypt_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos;
@@ -209,7 +206,7 @@ where
         <Module<BE> as DecryptionDefault<BE>>::glwe_decrypt_tmp_bytes_default(module, infos)
     }
 
-    fn glwe_decrypt<'s, R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'s, BE>)
+    fn glwe_decrypt<R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendRef<BE> + GLWEInfos,
         P: GLWEToBackendMut<BE> + GLWEInfos + SetLWEInfos,
@@ -225,7 +222,7 @@ where
         <Module<BE> as DecryptionDefault<BE>>::lwe_decrypt_tmp_bytes_default(module, infos)
     }
 
-    fn lwe_decrypt<'s, R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'s, BE>)
+    fn lwe_decrypt<R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
         R: LWEToBackendRef<BE> + LWEInfos,
         P: LWEPlaintextToBackendMut<BE> + SetLWEInfos + LWEInfos,

@@ -37,7 +37,6 @@ where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
-        BE: 's,
     {
         BE::ckks_conjugate_into(self, dst, src, key, scratch)
     }
@@ -47,7 +46,6 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
-        BE: 's,
     {
         BE::ckks_conjugate_assign(self, dst, key, scratch)
     }

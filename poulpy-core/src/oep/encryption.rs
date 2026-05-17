@@ -36,7 +36,7 @@ pub unsafe trait EncryptionImpl<BE: Backend>: Backend {
     where
         A: LWEInfos;
 
-    fn lwe_encrypt_sk_default<'s, R, P, S, E>(
+    fn lwe_encrypt_sk_default<R, P, S, E>(
         module: &Module<BE>,
         res: &mut R,
         pt: &P,
@@ -44,9 +44,9 @@ pub unsafe trait EncryptionImpl<BE: Backend>: Backend {
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: LWEToBackendMut<BE>,
+        R: LWEToBackendMut<BE> + LWEInfos,
         P: LWEPlaintextToBackendRef<BE>,
         S: LWESecretToBackendRef<BE>,
         E: EncryptionInfos;
@@ -55,7 +55,7 @@ pub unsafe trait EncryptionImpl<BE: Backend>: Backend {
     where
         A: GLWEInfos;
 
-    fn glwe_encrypt_sk_default<'s, R, P, S, E>(
+    fn glwe_encrypt_sk_default<R, P, S, E>(
         module: &Module<BE>,
         res: &mut R,
         pt: &P,
@@ -63,33 +63,31 @@ pub unsafe trait EncryptionImpl<BE: Backend>: Backend {
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE>,
         E: EncryptionInfos,
-        S: GLWESecretPreparedToBackendRef<BE>,
-        BE: 's;
+        S: GLWESecretPreparedToBackendRef<BE>;
 
-    fn glwe_encrypt_zero_sk_default<'s, R, E, S>(
+    fn glwe_encrypt_zero_sk_default<R, E, S>(
         module: &Module<BE>,
         res: &mut R,
         sk: &S,
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE>,
         E: EncryptionInfos,
-        S: GLWESecretPreparedToBackendRef<BE>,
-        BE: 's;
+        S: GLWESecretPreparedToBackendRef<BE>;
 
     fn glwe_encrypt_pk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: GLWEInfos;
 
-    fn glwe_encrypt_pk_default<'s, R, P, K, E>(
+    fn glwe_encrypt_pk_default<R, P, K, E>(
         module: &Module<BE>,
         res: &mut R,
         pt: &P,
@@ -97,27 +95,25 @@ pub unsafe trait EncryptionImpl<BE: Backend>: Backend {
         enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         P: GLWEToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos,
-        K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
-        BE: 's;
+        K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
 
-    fn glwe_encrypt_zero_pk_default<'s, R, K, E>(
+    fn glwe_encrypt_zero_pk_default<R, K, E>(
         module: &Module<BE>,
         res: &mut R,
         pk: &K,
         enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         E: EncryptionInfos,
-        K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
-        BE: 's;
+        K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
 
     fn glwe_public_key_generate_default<R, S, E>(
         module: &Module<BE>,
@@ -135,7 +131,7 @@ pub unsafe trait EncryptionImpl<BE: Backend>: Backend {
     where
         A: GGLWEInfos;
 
-    fn gglwe_encrypt_sk_default<'s, R, P, S, E>(
+    fn gglwe_encrypt_sk_default<R, P, S, E>(
         module: &Module<BE>,
         res: &mut R,
         pt: &P,
@@ -143,7 +139,7 @@ pub unsafe trait EncryptionImpl<BE: Backend>: Backend {
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE>,
         P: ScalarZnxToBackendRef<BE>,
@@ -154,7 +150,7 @@ pub unsafe trait EncryptionImpl<BE: Backend>: Backend {
     where
         A: GGSWInfos;
 
-    fn ggsw_encrypt_sk_default<'s, R, P, S, E>(
+    fn ggsw_encrypt_sk_default<R, P, S, E>(
         module: &Module<BE>,
         res: &mut R,
         pt: &P,
@@ -162,7 +158,7 @@ pub unsafe trait EncryptionImpl<BE: Backend>: Backend {
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWToBackendMut<BE> + GGSWInfos + GGSWAtViewMut<BE>,
         P: ScalarZnxToBackendRef<BE> + ZnxInfos,
@@ -309,27 +305,26 @@ pub unsafe trait EncryptionImpl<BE: Backend>: Backend {
     where
         A: GLWEInfos;
 
-    fn glwe_compressed_encrypt_sk_default<'s, R, P, S, E>(
+    fn glwe_compressed_encrypt_sk_default<R, P, S, E>(
         module: &Module<BE>,
-        res: &'s mut R,
+        res: &mut R,
         pt: &P,
         sk: &S,
         seed_xa: [u8; 32],
         enc_infos: &E,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
         P: GLWEToBackendRef<BE>,
         E: EncryptionInfos,
-        S: GLWESecretPreparedToBackendRef<BE>,
-        BE: 's;
+        S: GLWESecretPreparedToBackendRef<BE>;
 
     fn gglwe_compressed_encrypt_sk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: GGLWEInfos;
 
-    fn gglwe_compressed_encrypt_sk_default<'s, R, P, S, E>(
+    fn gglwe_compressed_encrypt_sk_default<R, P, S, E>(
         module: &Module<BE>,
         res: &mut R,
         pt: &P,
@@ -337,7 +332,7 @@ pub unsafe trait EncryptionImpl<BE: Backend>: Backend {
         seed: [u8; 32],
         enc_infos: &E,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeedMut,
         P: ScalarZnxToBackendRef<BE>,
@@ -348,7 +343,7 @@ pub unsafe trait EncryptionImpl<BE: Backend>: Backend {
     where
         A: GGSWInfos;
 
-    fn ggsw_compressed_encrypt_sk_default<'s, R, P, S, E>(
+    fn ggsw_compressed_encrypt_sk_default<R, P, S, E>(
         module: &Module<BE>,
         res: &mut R,
         pt: &P,
@@ -356,7 +351,7 @@ pub unsafe trait EncryptionImpl<BE: Backend>: Backend {
         seed_xa: [u8; 32],
         enc_infos: &E,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWCompressedToBackendMut<BE> + GGSWCompressedSeedMut + GGSWInfos,
         P: ScalarZnxToBackendRef<BE>,
@@ -459,16 +454,12 @@ pub trait EncryptionDefault<BE: Backend>:
     + GGLWEToGGSWKeyCompressedEncryptSkDefault<BE>
     + GLWEAutomorphismKeyCompressedEncryptSkDefault<BE>
     + GLWESwitchingKeyCompressedEncryptSkDefault<BE>
-    + GLWETensorKeyCompressedEncryptSkDefault<BE>
-where
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
-{
+    + GLWETensorKeyCompressedEncryptSkDefault<BE>{
 }
 
 unsafe impl<BE: Backend> EncryptionImpl<BE> for BE
 where
     Module<BE>: EncryptionDefault<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     fn lwe_encrypt_sk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
     where
@@ -477,7 +468,7 @@ where
         module.lwe_encrypt_sk_tmp_bytes_default(infos)
     }
 
-    fn lwe_encrypt_sk_default<'s, R, P, S, E>(
+    fn lwe_encrypt_sk_default<R, P, S, E>(
         module: &Module<BE>,
         res: &mut R,
         pt: &P,
@@ -485,9 +476,9 @@ where
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
-        R: LWEToBackendMut<BE>,
+        R: LWEToBackendMut<BE> + LWEInfos,
         P: LWEPlaintextToBackendRef<BE>,
         S: LWESecretToBackendRef<BE>,
         E: EncryptionInfos,
@@ -502,7 +493,7 @@ where
         module.glwe_encrypt_sk_tmp_bytes_default(infos)
     }
 
-    fn glwe_encrypt_sk_default<'s, R, P, S, E>(
+    fn glwe_encrypt_sk_default<R, P, S, E>(
         module: &Module<BE>,
         res: &mut R,
         pt: &P,
@@ -510,30 +501,28 @@ where
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        BE: 's,
     {
         module.glwe_encrypt_sk_default(res, pt, sk, enc_infos, source_xe, source_xa, scratch)
     }
 
-    fn glwe_encrypt_zero_sk_default<'s, R, E, S>(
+    fn glwe_encrypt_zero_sk_default<R, E, S>(
         module: &Module<BE>,
         res: &mut R,
         sk: &S,
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        BE: 's,
     {
         module.glwe_encrypt_zero_sk_default(res, sk, enc_infos, source_xe, source_xa, scratch)
     }
@@ -545,7 +534,7 @@ where
         module.glwe_encrypt_pk_tmp_bytes_default(infos)
     }
 
-    fn glwe_encrypt_pk_default<'s, R, P, K, E>(
+    fn glwe_encrypt_pk_default<R, P, K, E>(
         module: &Module<BE>,
         res: &mut R,
         pt: &P,
@@ -553,30 +542,28 @@ where
         enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         P: GLWEToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
-        BE: 's,
     {
         module.glwe_encrypt_pk_default(res, pt, pk, enc_infos, source_xu, source_xe, scratch)
     }
 
-    fn glwe_encrypt_zero_pk_default<'s, R, K, E>(
+    fn glwe_encrypt_zero_pk_default<R, K, E>(
         module: &Module<BE>,
         res: &mut R,
         pk: &K,
         enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
-        BE: 's,
     {
         module.glwe_encrypt_zero_pk_default(res, pk, enc_infos, source_xu, source_xe, scratch)
     }
@@ -603,7 +590,7 @@ where
         module.gglwe_encrypt_sk_tmp_bytes_default(infos)
     }
 
-    fn gglwe_encrypt_sk_default<'s, R, P, S, E>(
+    fn gglwe_encrypt_sk_default<R, P, S, E>(
         module: &Module<BE>,
         res: &mut R,
         pt: &P,
@@ -611,7 +598,7 @@ where
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE>,
         P: ScalarZnxToBackendRef<BE>,
@@ -628,7 +615,7 @@ where
         module.ggsw_encrypt_sk_tmp_bytes_default(infos)
     }
 
-    fn ggsw_encrypt_sk_default<'s, R, P, S, E>(
+    fn ggsw_encrypt_sk_default<R, P, S, E>(
         module: &Module<BE>,
         res: &mut R,
         pt: &P,
@@ -636,7 +623,7 @@ where
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWToBackendMut<BE> + GGSWInfos + GGSWAtViewMut<BE>,
         P: ScalarZnxToBackendRef<BE> + ZnxInfos,
@@ -837,21 +824,20 @@ where
         module.glwe_compressed_encrypt_sk_tmp_bytes_default(infos)
     }
 
-    fn glwe_compressed_encrypt_sk_default<'s, R, P, S, E>(
+    fn glwe_compressed_encrypt_sk_default<R, P, S, E>(
         module: &Module<BE>,
-        res: &'s mut R,
+        res: &mut R,
         pt: &P,
         sk: &S,
         seed_xa: [u8; 32],
         enc_infos: &E,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
         P: GLWEToBackendRef<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        BE: 's,
     {
         module.glwe_compressed_encrypt_sk_default(res, pt, sk, seed_xa, enc_infos, source_xe, scratch)
     }
@@ -863,7 +849,7 @@ where
         module.gglwe_compressed_encrypt_sk_tmp_bytes_default(infos)
     }
 
-    fn gglwe_compressed_encrypt_sk_default<'s, R, P, S, E>(
+    fn gglwe_compressed_encrypt_sk_default<R, P, S, E>(
         module: &Module<BE>,
         res: &mut R,
         pt: &P,
@@ -871,7 +857,7 @@ where
         seed: [u8; 32],
         enc_infos: &E,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeedMut,
         P: ScalarZnxToBackendRef<BE>,
@@ -888,7 +874,7 @@ where
         module.ggsw_compressed_encrypt_sk_tmp_bytes_default(infos)
     }
 
-    fn ggsw_compressed_encrypt_sk_default<'s, R, P, S, E>(
+    fn ggsw_compressed_encrypt_sk_default<R, P, S, E>(
         module: &Module<BE>,
         res: &mut R,
         pt: &P,
@@ -896,7 +882,7 @@ where
         seed_xa: [u8; 32],
         enc_infos: &E,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWCompressedToBackendMut<BE> + GGSWCompressedSeedMut + GGSWInfos,
         P: ScalarZnxToBackendRef<BE>,

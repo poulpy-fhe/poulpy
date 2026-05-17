@@ -11,7 +11,7 @@ use crate::{
         ScalarZnxFillTernaryHwBackend, ScalarZnxFillTernaryHwSourceBackend, ScalarZnxFillTernaryProbBackend,
         ScalarZnxFillTernaryProbSourceBackend, ScratchOwnedAlloc, VecZnxAddAssignBackend, VecZnxAddConstAssignBackend,
         VecZnxAddConstIntoBackend, VecZnxAddIntoBackend, VecZnxAddNormalSourceBackend, VecZnxAddScalarAssignBackend,
-        VecZnxAddScalarIntoBackend, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxAutomorphismBackend,
+        VecZnxAddScalarIntoBackend, VecZnxAutomorphismAssignBackend, VecZnxAutomorphismAssignTmpBytes, VecZnxAutomorphismBackend,
         VecZnxCopyBackend, VecZnxCopyRangeBackend, VecZnxExtractCoeffBackend, VecZnxFillNormalBackend,
         VecZnxFillNormalSourceBackend, VecZnxFillUniformBackend, VecZnxFillUniformSourceBackend, VecZnxLshAddCoeffIntoBackend,
         VecZnxLshAssignBackend, VecZnxLshBackend, VecZnxLshCoeffBackend, VecZnxLshTmpBytes, VecZnxMergeRingsBackend,
@@ -617,9 +617,9 @@ pub fn test_vec_znx_automorphism_assign<BR: crate::test_suite::TestBackend, BT: 
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
 ) where
-    Module<BR>: VecZnxAutomorphismAssign<BR> + VecZnxAutomorphismAssignTmpBytes,
+    Module<BR>: VecZnxAutomorphismAssignBackend<BR> + VecZnxAutomorphismAssignTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
-    Module<BT>: VecZnxAutomorphismAssign<BT> + VecZnxAutomorphismAssignTmpBytes,
+    Module<BT>: VecZnxAutomorphismAssignBackend<BT> + VecZnxAutomorphismAssignTmpBytes,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
 {
     let base2k = params.base2k;
@@ -645,13 +645,13 @@ pub fn test_vec_znx_automorphism_assign<BR: crate::test_suite::TestBackend, BT: 
 
         // Normalize on c
         for i in 0..cols {
-            module_ref.vec_znx_automorphism_assign(
+            module_ref.vec_znx_automorphism_assign_backend(
                 p,
                 &mut vec_znx_backend_mut::<BR>(&mut res_ref_backend),
                 i,
                 &mut scratch_ref.arena(),
             );
-            module_test.vec_znx_automorphism_assign(
+            module_test.vec_znx_automorphism_assign_backend(
                 p,
                 &mut vec_znx_backend_mut::<BT>(&mut res_test_backend),
                 i,
@@ -668,13 +668,13 @@ pub fn test_vec_znx_automorphism_assign<BR: crate::test_suite::TestBackend, BT: 
 
         // Normalize on c
         for i in 0..cols {
-            module_ref.vec_znx_automorphism_assign(
+            module_ref.vec_znx_automorphism_assign_backend(
                 p,
                 &mut vec_znx_backend_mut::<BR>(&mut res_ref_backend),
                 i,
                 &mut scratch_ref.arena(),
             );
-            module_test.vec_znx_automorphism_assign(
+            module_test.vec_znx_automorphism_assign_backend(
                 p,
                 &mut vec_znx_backend_mut::<BT>(&mut res_test_backend),
                 i,

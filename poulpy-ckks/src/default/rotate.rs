@@ -30,7 +30,6 @@ pub trait CKKSRotateDefault<BE: Backend> {
         Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
-        BE: 's,
     {
         let offset = ckks_offset_unary(dst, src);
 
@@ -52,7 +51,6 @@ pub trait CKKSRotateDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEInfos + LWEInfos + CKKSInfos + SetCKKSInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
-        BE: 's,
     {
         self.glwe_automorphism_assign(dst, key, dst.size() + key.dsize().as_usize(), scratch);
         Ok(())

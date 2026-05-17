@@ -41,7 +41,6 @@ where
         S: GLWESecretPreparedToBackendRef<BE>,
         Dct: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Dpt: GLWEToBackendRef<BE> + CKKSCtBounds,
-        BE: 's,
     {
         BE::ckks_encrypt_sk(self, ct, pt, sk, enc_infos, source_xa, source_xe, scratch)
     }

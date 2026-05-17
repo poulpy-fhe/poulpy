@@ -33,8 +33,7 @@ pub unsafe trait CKKSConjugateImpl<BE: Backend>: Backend {
     where
         Dst: GLWEToBackendMut<BE> + GLWEInfos + LWEInfos + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
     fn ckks_conjugate_assign<'s, Dst, K>(
         module: &Module<BE>,
@@ -44,8 +43,7 @@ pub unsafe trait CKKSConjugateImpl<BE: Backend>: Backend {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEInfos + CKKSInfos + SetCKKSInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 }
 
 unsafe impl<BE: Backend> CKKSConjugateImpl<BE> for BE
@@ -69,7 +67,6 @@ where
         Dst: GLWEToBackendMut<BE> + GLWEInfos + LWEInfos + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's,
     {
         module.ckks_conjugate_into_default(dst, src, key, scratch)
     }
@@ -83,7 +80,6 @@ where
     where
         Dst: GLWEToBackendMut<BE> + GLWEInfos + CKKSInfos + SetCKKSInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's,
     {
         module.ckks_conjugate_assign_default(dst, key, scratch)
     }

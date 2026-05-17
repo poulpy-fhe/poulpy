@@ -41,8 +41,7 @@ pub unsafe trait CKKSEncryptionImpl<BE: Backend>: Backend {
         E: EncryptionInfos,
         Pt: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
         Dct: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
-        S: GLWESecretPreparedToBackendRef<BE>,
-        BE: 's;
+        S: GLWESecretPreparedToBackendRef<BE>;
 
     fn ckks_decrypt_tmp_bytes<A>(module: &Module<BE>, ct_infos: &A) -> usize
     where
@@ -99,7 +98,6 @@ where
         Pt: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
         Dct: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        BE: 's,
     {
         module.ckks_encrypt_sk_default(ct, pt, sk, enc_infos, source_xa, source_xe, scratch)
     }

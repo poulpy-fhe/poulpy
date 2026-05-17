@@ -349,7 +349,8 @@ pub fn circuit_bootstrap_core<R, L, M, BRA, BE>(
     {
         let mut res_glwe_brk_layout: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(glwe_brk_layout);
         let mut lwe_owned: LWE<Vec<u8>> = module.lwe_alloc_from_infos(&lwe_backend);
-        lwe_owned.data_mut().raw_mut().copy_from_slice(lwe_backend.data().raw());
+        lwe_owned.body_mut().raw_mut().copy_from_slice(lwe_backend.body().raw());
+        lwe_owned.mask_mut().raw_mut().copy_from_slice(lwe_backend.mask().raw());
         key.brk
             .execute(module, &mut res_glwe_brk_layout, &lwe_owned, &lut, &mut scratch_1.borrow());
 

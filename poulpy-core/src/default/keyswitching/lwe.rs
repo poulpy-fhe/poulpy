@@ -91,8 +91,8 @@ pub fn lwe_keyswitch_default<'s, BE, M, R, A, K>(
     let n_lwe: usize = a.n().into();
 
     for i in 0..a.size() {
-        module.vec_znx_copy_range_backend(&mut glwe_in.data, 0, i, 0, &a_backend.data, 0, i, 0, 1);
-        module.vec_znx_copy_range_backend(&mut glwe_in.data, 1, i, 0, &a_backend.data, 0, i, 1, n_lwe);
+        module.vec_znx_copy_range_backend(&mut glwe_in.data, 0, i, 0, &a_backend.body, 0, i, 0, 1);
+        module.vec_znx_copy_range_backend(&mut glwe_in.data, 1, i, 0, &a_backend.mask, 0, i, 0, n_lwe);
     }
 
     let (mut glwe_out, mut scratch_2) = scratch_1.take_glwe_scratch(&GLWELayout {
@@ -111,9 +111,10 @@ pub fn lwe_keyswitch_default<'s, BE, M, R, A, K>(
     let min_size: usize = res_backend.size().min(glwe_out_ref.size());
     let n: usize = res_backend.n().into();
 
-    module.vec_znx_zero_backend(&mut res_backend.data, 0);
+    module.vec_znx_zero_backend(&mut res_backend.body, 0);
+    module.vec_znx_zero_backend(&mut res_backend.mask, 0);
     for i in 0..min_size {
-        module.vec_znx_copy_range_backend(&mut res_backend.data, 0, i, 0, &glwe_out_ref.data, 0, i, 0, 1);
-        module.vec_znx_copy_range_backend(&mut res_backend.data, 0, i, 1, &glwe_out_ref.data, 1, i, 0, n);
+        module.vec_znx_copy_range_backend(&mut res_backend.body, 0, i, 0, &glwe_out_ref.data, 0, i, 0, 1);
+        module.vec_znx_copy_range_backend(&mut res_backend.mask, 0, i, 0, &glwe_out_ref.data, 1, i, 0, n);
     }
 }

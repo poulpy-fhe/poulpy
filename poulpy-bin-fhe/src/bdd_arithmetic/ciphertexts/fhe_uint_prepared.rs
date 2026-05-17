@@ -270,8 +270,7 @@ where
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
-        BE::OwnedBuf: HostDataRef,
-        BE: 'static,
+        BE::OwnedBuf: HostDataReftatic,
         for<'a> BE::BufMut<'a>: HostDataMut,
         for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {
@@ -317,7 +316,6 @@ impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>>> BDDKeyPrepared<BE:
     where
         M: BDDKeyPreparedFactory<BRA, BE>,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
-        BE: 's,
     {
         module.prepare_bdd_key(self, other, scratch);
     }

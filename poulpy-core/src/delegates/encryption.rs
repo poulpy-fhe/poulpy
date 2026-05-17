@@ -44,7 +44,7 @@ impl_encryption_delegate!(
     {
         BE::lwe_encrypt_sk_tmp_bytes_default(self, infos)
     },
-    fn lwe_encrypt_sk<'s, R, P, S, E>(
+    fn lwe_encrypt_sk<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -52,13 +52,12 @@ impl_encryption_delegate!(
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<BE>,
     ) where
-        R: LWEToBackendMut<BE>,
+        R: LWEToBackendMut<BE> + LWEInfos,
         P: LWEPlaintextToBackendRef<BE>,
         S: LWESecretToBackendRef<BE>,
         E: EncryptionInfos,
-        for<'a> ScratchArena<'a, BE>: crate::ScratchArenaTakeCore<'a, BE>,
     {
         BE::lwe_encrypt_sk_default(self, res, pt, sk, enc_infos, source_xe, source_xa, scratch)
     }
@@ -73,7 +72,7 @@ impl_encryption_delegate!(
     {
         BE::glwe_encrypt_sk_tmp_bytes_default(self, infos)
     },
-    fn glwe_encrypt_sk<'s, R, P, S, E>(
+    fn glwe_encrypt_sk<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -81,31 +80,27 @@ impl_encryption_delegate!(
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<BE>,
     ) where
         R: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        BE: 's,
-        for<'a> ScratchArena<'a, BE>: crate::ScratchArenaTakeCore<'a, BE>,
     {
         BE::glwe_encrypt_sk_default(self, res, pt, sk, enc_infos, source_xe, source_xa, scratch)
     },
-    fn glwe_encrypt_zero_sk<'s, R, E, S>(
+    fn glwe_encrypt_zero_sk<R, E, S>(
         &self,
         res: &mut R,
         sk: &S,
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<BE>,
     ) where
         R: GLWEToBackendMut<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        BE: 's,
-        for<'a> ScratchArena<'a, BE>: crate::ScratchArenaTakeCore<'a, BE>,
     {
         BE::glwe_encrypt_zero_sk_default(self, res, sk, enc_infos, source_xe, source_xa, scratch)
     }
@@ -120,7 +115,7 @@ impl_encryption_delegate!(
     {
         BE::glwe_encrypt_pk_tmp_bytes_default(self, infos)
     },
-    fn glwe_encrypt_pk<'s, R, P, K, E>(
+    fn glwe_encrypt_pk<R, P, K, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -128,31 +123,27 @@ impl_encryption_delegate!(
         enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         P: GLWEToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
-        BE: 's,
-        for<'a> ScratchArena<'a, BE>: crate::ScratchArenaTakeCore<'a, BE>,
     {
         BE::glwe_encrypt_pk_default(self, res, pt, pk, enc_infos, source_xu, source_xe, scratch)
     },
-    fn glwe_encrypt_zero_pk<'s, R, K, E>(
+    fn glwe_encrypt_zero_pk<R, K, E>(
         &self,
         res: &mut R,
         pk: &K,
         enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
-        BE: 's,
-        for<'a> ScratchArena<'a, BE>: crate::ScratchArenaTakeCore<'a, BE>,
     {
         BE::glwe_encrypt_zero_pk_default(self, res, pk, enc_infos, source_xu, source_xe, scratch)
     }
@@ -186,7 +177,7 @@ impl_encryption_delegate!(
     {
         BE::gglwe_encrypt_sk_tmp_bytes_default(self, infos)
     },
-    fn gglwe_encrypt_sk<'s, R, P, S, E>(
+    fn gglwe_encrypt_sk<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -194,13 +185,12 @@ impl_encryption_delegate!(
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<BE>,
     ) where
         R: GGLWEToBackendMut<BE>,
         P: ScalarZnxToBackendRef<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        for<'a> ScratchArena<'a, BE>: crate::ScratchArenaTakeCore<'a, BE>,
     {
         BE::gglwe_encrypt_sk_default(self, res, pt, sk, enc_infos, source_xe, source_xa, scratch)
     }
@@ -215,7 +205,7 @@ impl_encryption_delegate!(
     {
         BE::ggsw_encrypt_sk_tmp_bytes_default(self, infos)
     },
-    fn ggsw_encrypt_sk<'s, R, P, S, E>(
+    fn ggsw_encrypt_sk<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -223,13 +213,12 @@ impl_encryption_delegate!(
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<BE>,
     ) where
         R: GGSWToBackendMut<BE> + GGSWInfos + GGSWAtViewMut<BE>,
         P: ScalarZnxToBackendRef<BE> + ZnxInfos,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE> + LWEInfos + GLWEInfos,
-        for<'a> ScratchArena<'a, BE>: crate::ScratchArenaTakeCore<'a, BE>,
     {
         BE::ggsw_encrypt_sk_default(self, res, pt, sk, enc_infos, source_xe, source_xa, scratch)
     }
@@ -457,22 +446,20 @@ impl_encryption_delegate!(
     {
         BE::glwe_compressed_encrypt_sk_tmp_bytes_default(self, infos)
     },
-    fn glwe_compressed_encrypt_sk<'s, R, P, S, E>(
+    fn glwe_compressed_encrypt_sk<R, P, S, E>(
         &self,
-        res: &'s mut R,
+        res: &mut R,
         pt: &P,
         sk: &S,
         seed_xa: [u8; 32],
         enc_infos: &E,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<BE>,
     ) where
         R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
         P: GLWEToBackendRef<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        BE: 's,
-        ScratchArena<'s, BE>: crate::ScratchArenaTakeCore<'s, BE>,
     {
         BE::glwe_compressed_encrypt_sk_default(self, res, pt, sk, seed_xa, enc_infos, source_xe, scratch)
     }
@@ -487,7 +474,7 @@ impl_encryption_delegate!(
     {
         BE::gglwe_compressed_encrypt_sk_tmp_bytes_default(self, infos)
     },
-    fn gglwe_compressed_encrypt_sk<'s, R, P, S, E>(
+    fn gglwe_compressed_encrypt_sk<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -495,13 +482,12 @@ impl_encryption_delegate!(
         seed: [u8; 32],
         enc_infos: &E,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<BE>,
     ) where
         R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeedMut,
         P: ScalarZnxToBackendRef<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        for<'a> ScratchArena<'a, BE>: crate::ScratchArenaTakeCore<'a, BE>,
     {
         BE::gglwe_compressed_encrypt_sk_default(self, res, pt, sk, seed, enc_infos, source_xe, scratch)
     }
@@ -516,7 +502,7 @@ impl_encryption_delegate!(
     {
         BE::ggsw_compressed_encrypt_sk_tmp_bytes_default(self, infos)
     },
-    fn ggsw_compressed_encrypt_sk<'s, R, P, S, E>(
+    fn ggsw_compressed_encrypt_sk<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -524,13 +510,12 @@ impl_encryption_delegate!(
         seed_xa: [u8; 32],
         enc_infos: &E,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<BE>,
     ) where
         R: GGSWCompressedToBackendMut<BE> + GGSWCompressedSeedMut + GGSWInfos,
         P: ScalarZnxToBackendRef<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        for<'a> ScratchArena<'a, BE>: crate::ScratchArenaTakeCore<'a, BE>,
     {
         BE::ggsw_compressed_encrypt_sk_default(self, res, pt, sk, seed_xa, enc_infos, source_xe, scratch)
     }

@@ -111,7 +111,6 @@ where
         DL: Data,
         LWE<DL>: LWEToBackendRef<BE>,
         ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
-        BE: 's,
     {
         // TODO(device): make the full execute path 100% backend-native. The
         // current implementation still relies on host-visible scratch/result

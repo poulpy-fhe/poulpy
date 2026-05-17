@@ -92,13 +92,13 @@ where
         0
     }
 
-    fn vec_znx_idft_apply_default<'s>(
+    fn vec_znx_idft_apply_default(
         module: &Module<BE>,
         res: &mut VecZnxBigBackendMut<'_, BE>,
         res_col: usize,
         a: &VecZnxDftBackendRef<'_, BE>,
         a_col: usize,
-        scratch: &'s mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         Module<BE>: FFTModuleHandle<f64>,
         BE: Backend<ScalarPrep = f64, ScalarBig = i64> + ReimArith + ReimFFTExecute<ReimIFFTTable<f64>, f64> + ZnxZero,
@@ -267,19 +267,19 @@ where
         ntt120_default_vec_znx_idft_apply_tmp_bytes(module.n())
     }
 
-    fn vec_znx_idft_apply_default<'s>(
+    fn vec_znx_idft_apply_default(
         module: &Module<BE>,
         res: &mut VecZnxBigBackendMut<'_, BE>,
         res_col: usize,
         a: &VecZnxDftBackendRef<'_, BE>,
         a_col: usize,
-        scratch: &'s mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         Module<BE>: NttModuleHandle,
         BE: Backend<ScalarPrep = Q120bScalar, ScalarBig = i128> + NttDFTExecute<NttTableInv<Primes30>> + NttToZnx128 + NttCopy,
         for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
-        BE::BufMut<'s>: HostBufMut<'s>,
+        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
     {
         let (tmp, _) = take_host_typed::<BE, u64>(
             scratch.borrow(),

@@ -25,14 +25,14 @@ use crate::{
     oep::GLWEExternalProductDefault,
 };
 
-fn glwe_external_product_dft_fill<'s, 'r, BE, M>(
+fn glwe_external_product_dft_fill<BE, M>(
     module: &M,
-    res_dft: &mut VecZnxDft<BE::BufMut<'r>, BE>,
+    res_dft: &mut VecZnxDft<BE::BufMut<'_>, BE>,
     a: GLWEBackendRef<'_, BE>,
     ggsw: &GGSWPreparedBackendRef<'_, BE>,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + 's,
+    BE: Backend,
     M: ModuleN
         + VecZnxDftBytesOf
         + VmpApplyDftToDftTmpBytes
@@ -43,7 +43,6 @@ fn glwe_external_product_dft_fill<'s, 'r, BE, M>(
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpBytes
         + VecZnxDftZero<BE>,
-    for<'x> ScratchArena<'x, BE>: ScratchArenaTakeCore<'x, BE>,
 {
     let cols: usize = (ggsw.rank() + 1).into();
     let dsize: usize = ggsw.dsize().into();
@@ -140,7 +139,6 @@ where
         A: GLWEToBackendRef<BE>,
         G: GGSWPreparedToBackendRef<BE>,
         for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
-        BE: 's,
     {
         let ggsw: GGSWPreparedBackendRef<'_, BE> = ggsw.to_backend_ref();
         let a = a.to_backend_ref();

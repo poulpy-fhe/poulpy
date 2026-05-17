@@ -40,7 +40,6 @@ where
         A: GLWEToBackendRef<BE>,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE> + ScratchAvailable,
-        BE: 's,
     {
         let a = a.to_backend_ref();
         let key: GGLWEPreparedBackendRef<'_, BE> = key.to_backend_ref();
@@ -129,7 +128,6 @@ where
         scratch: &mut ScratchArena<'s, BE>,
     ) where
         for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
-        BE: 's,
     {
         let cols: usize = a.cols();
         let a_size: usize = a.size();

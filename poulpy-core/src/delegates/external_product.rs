@@ -42,7 +42,6 @@ impl_external_product_delegate!(
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         D: GGSWPreparedToBackendRef<BE> + GGSWInfos,
-        BE: 's,
     {
         BE::glwe_external_product_assign(self, res, rhs, key_size, scratch)
     }
@@ -59,7 +58,6 @@ impl_external_product_delegate!(
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         D: GGSWPreparedToBackendRef<BE> + GGSWInfos,
-        BE: 's,
     {
         BE::glwe_external_product(self, res, lhs, rhs, key_size, scratch)
     }
@@ -89,7 +87,6 @@ impl_external_product_delegate!(
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         A: GGLWEToBackendRef<BE> + GGLWEInfos,
         B: GGSWPreparedToBackendRef<BE> + GGSWInfos,
-        BE: 's,
     {
         BE::gglwe_external_product(self, res, a, b, key_size, scratch)
     }
@@ -104,7 +101,6 @@ impl_external_product_delegate!(
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         A: GGSWPreparedToBackendRef<BE> + GGSWInfos,
-        BE: 's,
     {
         BE::gglwe_external_product_assign(self, res, a, key_size, scratch)
     }
@@ -134,7 +130,6 @@ impl_external_product_delegate!(
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         A: GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos,
         B: GGSWPreparedToBackendRef<BE> + GGSWInfos,
-        BE: 's,
     {
         BE::ggsw_external_product(self, res, a, b, key_size, scratch)
     }
@@ -149,7 +144,6 @@ impl_external_product_delegate!(
     where
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         A: GGSWPreparedToBackendRef<BE> + GGSWInfos,
-        BE: 's,
     {
         BE::ggsw_external_product_assign(self, res, a, key_size, scratch)
     }

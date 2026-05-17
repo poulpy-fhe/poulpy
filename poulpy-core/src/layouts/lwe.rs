@@ -73,16 +73,18 @@ impl LWEInfos for LWELayout {
         self.k.as_usize().div_ceil(self.base2k.into())
     }
 }
+
 /// A scalar (non-polynomial) LWE ciphertext.
 ///
-/// Stored as a single-column [`VecZnx`] of dimension `n + 1` where
-/// the body `b` and the mask `(a_1, ..., a_n)` are packed together.
-/// When `rank = 0` the mask column is embedded in the single [`VecZnx`] column.
+/// Stored as two separate [`VecZnx`] buffers:
+/// - `body`: degree-0 polynomial (n = 1) holding the scalar body `b`.
+/// - `mask`: degree-n polynomial (n = lwe_dim) holding the mask `(a_1, ..., a_n)`.
 ///
 /// `D: Data` is the storage backend (e.g. `Vec<u8>`, `&[u8]`, `&mut [u8]`).
 #[derive(PartialEq, Eq, Clone)]
 pub struct LWE<D: Data> {
-    pub(crate) data: VecZnx<D>,
+    pub(crate) body: VecZnx<D>,
+    pub(crate) mask: VecZnx<D>,
     pub(crate) base2k: Base2K,
 }
 
@@ -95,11 +97,11 @@ impl<D: Data> LWEInfos for LWE<D> {
     }
 
     fn n(&self) -> Degree {
-        Degree(self.data.n() as u32 - 1)
+        Degree(self.mask.n() as u32)
     }
 
     fn size(&self) -> usize {
-        self.data.size()
+        self.mask.size()
     }
 }
 
@@ -109,17 +111,25 @@ impl<D: Data> SetLWEInfos for LWE<D> {
     }
 }
 
-impl<D: HostDataRef> LWE<D> {
-    /// Returns a shared reference to the underlying [`VecZnx`].
-    pub fn data(&self) -> &VecZnx<D> {
-        &self.data
+impl<D: Data> LWE<D> {
+    /// Returns a shared reference to the body [`VecZnx`] (n = 1).
+    pub fn body(&self) -> &VecZnx<D> {
+        &self.body
     }
-}
 
-impl<D: HostDataMut> LWE<D> {
-    /// Returns a mutable reference to the underlying [`VecZnx`].
-    pub fn data_mut(&mut self) -> &mut VecZnx<D> {
-        &mut self.data
+    /// Returns a mutable reference to the body [`VecZnx`] (n = 1).
+    pub fn body_mut(&mut self) -> &mut VecZnx<D> {
+        &mut self.body
+    }
+
+    /// Returns a shared reference to the mask [`VecZnx`] (n = lwe_dim).
+    pub fn mask(&self) -> &VecZnx<D> {
+        &self.mask
+    }
+
+    /// Returns a mutable reference to the mask [`VecZnx`] (n = lwe_dim).
+    pub fn mask_mut(&mut self) -> &mut VecZnx<D> {
+        &mut self.mask
     }
 }
 
@@ -142,10 +152,25 @@ impl<D: Data> LWE<D> {
     where
         To: Backend<OwnedBuf = D>,
     {
-        let shape = self.data.shape();
-        let data = self.data.data;
+        let body_shape = self.body.shape();
+        let body_data = self.body.data;
+        let mask_shape = self.mask.shape();
+        let mask_data = self.mask.data;
         LWE {
-            data: VecZnx::from_data_with_max_size(data, shape.n(), shape.cols(), shape.size(), shape.max_size()),
+            body: VecZnx::from_data_with_max_size(
+                body_data,
+                body_shape.n(),
+                body_shape.cols(),
+                body_shape.size(),
+                body_shape.max_size(),
+            ),
+            mask: VecZnx::from_data_with_max_size(
+                mask_data,
+                mask_shape.n(),
+                mask_shape.cols(),
+                mask_shape.size(),
+                mask_shape.max_size(),
+            ),
             base2k: self.base2k,
         }
     }
@@ -159,7 +184,14 @@ impl<D: HostDataRef> fmt::Debug for LWE<D> {
 
 impl<D: HostDataRef> fmt::Display for LWE<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "LWE: base2k={} k={}: {}", self.base2k().0, self.max_k().0, self.data)
+        write!(
+            f,
+            "LWE: base2k={} k={}: body={} mask={}",
+            self.base2k().0,
+            self.max_k().0,
+            self.body,
+            self.mask
+        )
     }
 }
 
@@ -168,7 +200,7 @@ where
     VecZnx<D>: FillUniform,
 {
     fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        self.data.fill_uniform(log_bound, source);
+        self.mask.fill_uniform(log_bound, source);
     }
 }
 
@@ -187,15 +219,21 @@ impl LWE<Vec<u8>> {
 
     /// Allocates a new [`LWE`] with the given parameters.
     ///
-    /// * `n` -- ring degree (LWE dimension).
+    /// * `n` -- LWE dimension (mask length).
     /// * `base2k` -- base-2-log of the limb width.
     /// * `k` -- torus precision.
     pub(crate) fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision) -> Self {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         LWE {
-            data: VecZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<Vec<u8>>::bytes_of((n + 1).into(), 1, size)),
-                (n + 1).into(),
+            body: VecZnx::from_data(
+                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<Vec<u8>>::bytes_of(1, 1, size)),
+                1,
+                1,
+                size,
+            ),
+            mask: VecZnx::from_data(
+                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<Vec<u8>>::bytes_of(n.as_usize(), 1, size)),
+                n.as_usize(),
                 1,
                 size,
             ),
@@ -213,11 +251,12 @@ impl LWE<Vec<u8>> {
 
     /// Returns the byte count required for an [`LWE`] with the given parameters.
     ///
-    /// * `n` -- ring degree (LWE dimension).
+    /// * `n` -- LWE dimension (mask length).
     /// * `base2k` -- base-2-log of the limb width.
     /// * `k` -- torus precision.
     pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision) -> usize {
-        VecZnx::bytes_of((n + 1).into(), 1, k.0.div_ceil(base2k.0) as usize)
+        let size: usize = k.0.div_ceil(base2k.0) as usize;
+        VecZnx::<Vec<u8>>::bytes_of(1, 1, size) + VecZnx::<Vec<u8>>::bytes_of(n.as_usize(), 1, size)
     }
 }
 
@@ -232,7 +271,8 @@ where
     fn to_backend_ref(&self) -> LWEBackendRef<'_, BE> {
         LWE {
             base2k: self.base2k,
-            data: self.data.to_backend_ref(),
+            body: self.body.to_backend_ref(),
+            mask: self.mask.to_backend_ref(),
         }
     }
 }
@@ -248,7 +288,8 @@ where
     fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE> {
         LWE {
             base2k: self.base2k,
-            data: self.data.to_backend_mut(),
+            body: self.body.to_backend_mut(),
+            mask: self.mask.to_backend_mut(),
         }
     }
 }
@@ -257,7 +298,8 @@ impl<'b, BE: Backend + 'b> LWEToBackendRef<BE> for &mut LWE<BE::BufMut<'b>> {
     fn to_backend_ref(&self) -> LWEBackendRef<'_, BE> {
         LWE {
             base2k: self.base2k,
-            data: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE>(&self.data),
+            body: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE>(&self.body),
+            mask: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE>(&self.mask),
         }
     }
 }
@@ -266,7 +308,8 @@ impl<'b, BE: Backend + 'b> LWEToBackendMut<BE> for &mut LWE<BE::BufMut<'b>> {
     fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE> {
         LWE {
             base2k: self.base2k,
-            data: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut self.data),
+            body: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut self.body),
+            mask: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut self.mask),
         }
     }
 }
@@ -275,7 +318,8 @@ impl<D: HostDataMut> ReaderFrom for LWE<D> {
     /// Deserialises an [`LWE`] in little-endian binary format.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.base2k = Base2K(reader.read_u32::<LittleEndian>()?);
-        self.data.read_from(reader)
+        self.body.read_from(reader)?;
+        self.mask.read_from(reader)
     }
 }
 
@@ -283,6 +327,7 @@ impl<D: HostDataRef> WriterTo for LWE<D> {
     /// Serialises the [`LWE`] in little-endian binary format.
     fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         writer.write_u32::<LittleEndian>(self.base2k.into())?;
-        self.data.write_to(writer)
+        self.body.write_to(writer)?;
+        self.mask.write_to(writer)
     }
 }

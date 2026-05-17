@@ -12,8 +12,8 @@
 
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxBigAddSmallAssign,
-        VecZnxBigAutomorphismAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigSubSmallAssign,
+        ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssignBackend, VecZnxAutomorphismAssignTmpBytes,
+        VecZnxBigAddSmallAssign, VecZnxBigAutomorphismAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigSubSmallAssign,
         VecZnxBigSubSmallNegateAssign, VecZnxDftBytesOf, VecZnxIdftApply,
     },
     layouts::{Backend, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
@@ -65,7 +65,7 @@ pub fn glwe_automorphism_default<'s, BE, M, R, A, K>(
     scratch: &mut ScratchArena<'s, BE>,
 ) where
     BE: Backend + 's,
-    M: GLWEAutomorphismDefault<BE> + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssign<BE>,
+    M: GLWEAutomorphismDefault<BE> + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssignBackend<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
@@ -82,7 +82,7 @@ pub fn glwe_automorphism_default<'s, BE, M, R, A, K>(
     let cols = res.rank().as_usize() + 1;
     let mut res_ref = res.to_backend_mut();
     for i in 0..cols {
-        module.vec_znx_automorphism_assign(key.p(), &mut res_ref.data, i, &mut scratch.borrow());
+        module.vec_znx_automorphism_assign_backend(key.p(), &mut res_ref.data, i, &mut scratch.borrow());
     }
 }
 
@@ -94,7 +94,7 @@ pub fn glwe_automorphism_assign_default<'s, BE, M, R, K>(
     scratch: &mut ScratchArena<'s, BE>,
 ) where
     BE: Backend + 's,
-    M: GLWEAutomorphismDefault<BE> + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssign<BE>,
+    M: GLWEAutomorphismDefault<BE> + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssignBackend<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
@@ -111,7 +111,7 @@ pub fn glwe_automorphism_assign_default<'s, BE, M, R, K>(
     let cols = res.rank().as_usize() + 1;
     let mut res_ref = res.to_backend_mut();
     for i in 0..cols {
-        module.vec_znx_automorphism_assign(key.p(), &mut res_ref.data, i, &mut scratch.borrow());
+        module.vec_znx_automorphism_assign_backend(key.p(), &mut res_ref.data, i, &mut scratch.borrow());
     }
 }
 

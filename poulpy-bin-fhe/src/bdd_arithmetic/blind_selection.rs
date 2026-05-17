@@ -52,8 +52,7 @@ where
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGGSWBit<BE>,
-        BE: 'static,
+        K: GetGGSWBit<BE>tatic,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
         for<'a> BE::BufMut<'a>: HostDataMut,
         for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,

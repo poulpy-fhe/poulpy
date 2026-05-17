@@ -79,21 +79,19 @@ pub trait GLWEPackingDefault<BE: Backend> {
         R: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_pack_default<'s, R, A, K, H>(
+    fn glwe_pack_default<R, A, K, H>(
         &self,
         res: &mut R,
         a: HashMap<usize, &mut A>,
         log_gap_out: usize,
         keys: &H,
         key_size: usize,
-        scratch: &'s mut ScratchArena<'s, BE>,
+        scratch: & mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
-        BE: 's;
+        H: GLWEAutomorphismKeyHelper<K, BE>;
 }
 
 /// Reference implementations of the [`GLWEPackingDefault`] methods.
@@ -128,16 +126,16 @@ pub mod glwe_packing_defaults_impl {
         (lvl_0 + lvl_1).max(module.glwe_trace_tmp_bytes(res, res, key))
     }
 
-    pub fn glwe_pack_default<'s, BE, M, R, A, K, H>(
+    pub fn glwe_pack_default<BE, M, R, A, K, H>(
         module: &M,
         res: &mut R,
         mut a: HashMap<usize, &mut A>,
         log_gap_out: usize,
         keys: &H,
         key_size: usize,
-        scratch: &'s mut ScratchArena<'s, BE>,
+        scratch: & mut ScratchArena<'_, BE>,
     ) where
-        BE: Backend + 's,
+        BE: Backend,
         M: GLWEAutomorphism<BE>
             + GaloisElement
             + ModuleLogN
@@ -153,7 +151,6 @@ pub mod glwe_packing_defaults_impl {
         A: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
     {
         assert!(*a.keys().max().unwrap() < module.n());
         let key_infos = keys.automorphism_key_infos();

@@ -138,8 +138,7 @@ where
         scratch: &mut ScratchArena<'s, BE>,
     ) where
         S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
-        S1: GLWESecretToBackendRef<BE> + GLWEInfos + GetDistribution,
-        BE: 's;
+        S1: GLWESecretToBackendRef<BE> + GLWEInfos + GetDistribution;
 }
 
 impl<D: Data, BRA: BlindRotationAlgo> CircuitBootstrappingKey<D, BRA> {
@@ -248,7 +247,6 @@ where
     ) where
         S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
         S1: GLWESecretToBackendRef<BE> + GLWEInfos + GetDistribution,
-        BE: 's,
     {
         // TODO(device): this bundle encryptor is still effectively host-backed
         // through the current blind-rotation / automorphism / tensor key

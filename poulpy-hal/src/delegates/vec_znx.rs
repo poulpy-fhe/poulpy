@@ -5,21 +5,23 @@ use crate::{
         ScalarZnxFillTernaryHwBackend, ScalarZnxFillTernaryHwSourceBackend, ScalarZnxFillTernaryProbBackend,
         ScalarZnxFillTernaryProbSourceBackend, VecZnxAddAssignBackend, VecZnxAddConstAssignBackend, VecZnxAddConstIntoBackend,
         VecZnxAddIntoBackend, VecZnxAddNormalBackend, VecZnxAddNormalSourceBackend, VecZnxAddScalarAssignBackend,
-        VecZnxAddScalarIntoBackend, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxAutomorphismBackend,
+        VecZnxAddScalarIntoBackend, VecZnxAutomorphismAssignBackend, VecZnxAutomorphismAssignTmpBytes, VecZnxAutomorphismBackend,
         VecZnxCopyBackend, VecZnxCopyRangeBackend, VecZnxExtractCoeffBackend, VecZnxFillNormalBackend,
-        VecZnxFillNormalSourceBackend, VecZnxFillUniformBackend, VecZnxFillUniformSourceBackend, VecZnxLshAddCoeffIntoBackend,
-        VecZnxLshAddIntoBackend, VecZnxLshAssignBackend, VecZnxLshBackend, VecZnxLshCoeffBackend, VecZnxLshSubBackend,
-        VecZnxLshTmpBytes, VecZnxMergeRingsBackend, VecZnxMergeRingsTmpBytes, VecZnxMulXpMinusOneAssignBackend,
-        VecZnxMulXpMinusOneAssignTmpBytes, VecZnxMulXpMinusOneBackend, VecZnxNegateAssignBackend, VecZnxNegateBackend,
-        VecZnxNormalize, VecZnxNormalizeAssignBackend, VecZnxNormalizeCoeffAssignBackend, VecZnxNormalizeCoeffBackend,
-        VecZnxNormalizeTmpBytes, VecZnxRotateAssignBackend, VecZnxRotateAssignTmpBytes, VecZnxRotateBackend,
-        VecZnxRshAddCoeffIntoBackend, VecZnxRshAddIntoBackend, VecZnxRshAssignBackend, VecZnxRshBackend, VecZnxRshCoeffBackend,
-        VecZnxRshSubBackend, VecZnxRshSubCoeffIntoBackend, VecZnxRshTmpBytes, VecZnxSplitRingBackend, VecZnxSplitRingTmpBytes,
-        VecZnxSubAssignBackend, VecZnxSubBackend, VecZnxSubInnerProductAssignBackend, VecZnxSubNegateAssignBackend,
-        VecZnxSubScalarAssignBackend, VecZnxSubScalarBackend, VecZnxSwitchRingBackend, VecZnxZeroBackend,
+        VecZnxFillNormalSourceBackend, VecZnxFillUniformBackend, VecZnxFillUniformSourceBackend,
+        VecZnxHadamardProductScalarZnxBackend, VecZnxLshAddCoeffIntoBackend, VecZnxLshAddIntoBackend, VecZnxLshAssignBackend,
+        VecZnxLshBackend, VecZnxLshCoeffBackend, VecZnxLshSubBackend, VecZnxLshTmpBytes, VecZnxMergeRingsBackend,
+        VecZnxMergeRingsTmpBytes, VecZnxMulXpMinusOneAssignBackend, VecZnxMulXpMinusOneAssignTmpBytes,
+        VecZnxMulXpMinusOneBackend, VecZnxNegateAssignBackend, VecZnxNegateBackend, VecZnxNormalize,
+        VecZnxNormalizeAssignBackend, VecZnxNormalizeCoeffAssignBackend, VecZnxNormalizeCoeffBackend, VecZnxNormalizeTmpBytes,
+        VecZnxRotateAssignBackend, VecZnxRotateAssignTmpBytes, VecZnxRotateBackend, VecZnxRshAddCoeffIntoBackend,
+        VecZnxRshAddIntoBackend, VecZnxRshAssignBackend, VecZnxRshBackend, VecZnxRshCoeffBackend, VecZnxRshSubBackend,
+        VecZnxRshSubCoeffIntoBackend, VecZnxRshTmpBytes, VecZnxSplitRingBackend, VecZnxSplitRingTmpBytes, VecZnxSubAssignBackend,
+        VecZnxSubBackend, VecZnxSubNegateAssignBackend, VecZnxSubScalarAssignBackend, VecZnxSubScalarBackend,
+        VecZnxSwitchRingBackend, VecZnxZeroBackend,
     },
     layouts::{
         Backend, Module, NoiseInfos, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
+        VecZnxBigBackendMut,
     },
     oep::HalVecZnxImpl,
     source::Source,
@@ -211,25 +213,17 @@ impl_vec_znx_delegate!(
 );
 
 impl_vec_znx_delegate!(
-    VecZnxSubInnerProductAssignBackend<B>,
-    fn vec_znx_sub_inner_product_assign_backend<'r, 'a, 'b>(
+    VecZnxHadamardProductScalarZnxBackend<B>,
+    fn vec_znx_hadamard_product_scalar_znx_backend<'r, 'a, 'b>(
         &self,
-        res: &mut VecZnxBackendMut<'r, B>,
+        res: &mut VecZnxBigBackendMut<'r, B>,
         res_col: usize,
-        res_limb: usize,
-        res_offset: usize,
         a: &VecZnxBackendRef<'a, B>,
         a_col: usize,
-        a_limb: usize,
-        a_offset: usize,
         b: &ScalarZnxBackendRef<'b, B>,
         b_col: usize,
-        b_offset: usize,
-        len: usize,
     ) {
-        B::vec_znx_sub_inner_product_assign_backend(
-            self, res, res_col, res_limb, res_offset, a, a_col, a_limb, a_offset, b, b_col, b_offset, len,
-        )
+        B::vec_znx_hadamard_product_scalar_znx_backend(self, res, res_col, a, a_col, b, b_col)
     }
 );
 
@@ -635,8 +629,8 @@ impl_vec_znx_delegate!(
 );
 
 impl_vec_znx_delegate!(
-    VecZnxAutomorphismAssign<B>,
-    fn vec_znx_automorphism_assign<'s, 'r>(
+    VecZnxAutomorphismAssignBackend<B>,
+    fn vec_znx_automorphism_assign_backend<'s, 'r>(
         &self,
         k: i64,
         res: &mut VecZnxBackendMut<'r, B>,

@@ -53,8 +53,7 @@ pub trait CKKSRotateOps<BE: Backend> {
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        BE: 's;
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds;
 
     /// Computes `dst = rotate(dst, k)` in-place.  Metadata is unchanged.
     fn ckks_rotate_assign<'s, Dst, H, K>(
@@ -67,6 +66,5 @@ pub trait CKKSRotateOps<BE: Backend> {
     where
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        BE: 's;
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 }

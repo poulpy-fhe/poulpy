@@ -50,8 +50,7 @@ pub trait CKKSEncrypt<BE: Backend> {
     where
         S: GLWESecretPreparedToBackendRef<BE>,
         Dct: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Dpt: GLWEToBackendRef<BE> + CKKSCtBounds,
-        BE: 's;
+        Dpt: GLWEToBackendRef<BE> + CKKSCtBounds;
 }
 
 /// Secret-key decryption of a CKKS ciphertext.

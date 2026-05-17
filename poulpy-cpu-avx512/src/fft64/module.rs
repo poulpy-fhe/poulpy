@@ -1,5 +1,6 @@
 use std::ptr::NonNull;
 
+use poulpy_cpu_ref::hal_defaults::ScalarBigHadamardProduct;
 use poulpy_cpu_ref::reference::{
     fft64::{
         convolution::I64Ops,
@@ -588,6 +589,11 @@ impl Reim4Convolution for FFT64Avx512 {
 
 impl I64Ops for FFT64Avx512 {
     #[inline(always)]
+    fn i64_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
+        unsafe { crate::znx_avx512::znx_hadamard_product_i64_avx512(res, a, b) }
+    }
+
+    #[inline(always)]
     fn i64_extract_1blk_contiguous(n: usize, offset: usize, rows: usize, blk: usize, dst: &mut [i64], src: &[i64]) {
         unsafe { i64_extract_1blk_contiguous_avx512(n, offset, rows, blk, dst, src) }
     }
@@ -605,5 +611,12 @@ impl I64Ops for FFT64Avx512 {
     #[inline(always)]
     fn i64_convolution_by_const_2coeffs(k: usize, dst: &mut [i64; 16], a: &[i64], a_size: usize, b: &[i64]) {
         unsafe { i64_convolution_by_const_2coeffs_avx512(k, dst, a, a_size, b) }
+    }
+}
+
+impl ScalarBigHadamardProduct for FFT64Avx512 {
+    #[inline(always)]
+    fn scalar_big_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
+        Self::i64_hadamard_product(res, a, b)
     }
 }

@@ -38,7 +38,6 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
         Dct: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         Dpt: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
         Self: GLWEEncryptSk<BE> + VecZnxRshAddIntoBackend<BE> + CKKSPlaintextDefault<BE>,
-        BE: 's,
         for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     {
         self.glwe_encrypt_zero_sk(ct, sk, enc_infos, source_xe, source_xa, scratch);
