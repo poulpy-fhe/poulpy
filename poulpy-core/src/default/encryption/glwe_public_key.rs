@@ -1,11 +1,11 @@
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, Module, ScratchArena, ScratchOwned},
+    layouts::{Backend, Module, ScratchOwned},
     source::Source,
 };
 
 use crate::{
-    Distribution, EncryptionInfos, GLWEEncryptSk, GetDistribution, GetDistributionMut, ScratchArenaTakeCore,
+    Distribution, EncryptionInfos, GLWEEncryptSk, GetDistribution, GetDistributionMut,
     layouts::{GLWEInfos, GLWEToBackendMut, prepared::GLWESecretPreparedToBackendRef},
 };
 
@@ -28,7 +28,6 @@ impl<BE: Backend> GLWEPublicKeyGenerateDefault<BE> for Module<BE>
 where
     Self: GLWEEncryptSk<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     fn glwe_public_key_generate_default<R, S, E>(
         &self,

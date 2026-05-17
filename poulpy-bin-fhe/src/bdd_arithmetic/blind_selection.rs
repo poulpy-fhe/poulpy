@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 
 use poulpy_core::{
-    GLWECopy, GLWEDecrypt, ScratchArenaTakeCore,
+    GLWECopy, GLWEDecrypt,
     layouts::{GGSWInfos, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, ModuleCoreAlloc},
 };
 use poulpy_hal::layouts::{Backend, HostDataMut, Module, ScratchArena, ZnxZero};
 
 use crate::bdd_arithmetic::{Cmux, GetGGSWBit, UnsignedInteger};
 
-impl<T: UnsignedInteger, BE: Backend<OwnedBuf = Vec<u8>>> GLWEBlindSelection<T, BE> for Module<BE> where
+impl<T: UnsignedInteger, BE: Backend<OwnedBuf = Vec<u8>> + 'static> GLWEBlindSelection<T, BE> for Module<BE> where
     Self: GLWECopy<BE> + Cmux<BE> + GLWEDecrypt<BE>
 {
 }
@@ -26,7 +26,7 @@ impl<T: UnsignedInteger, BE: Backend<OwnedBuf = Vec<u8>>> GLWEBlindSelection<T, 
 /// `bit_mask` most-significant bits of the selected index sub-field, traversing
 /// from MSB to LSB.  Indices absent from the map are treated as encryptions of
 /// zero.
-pub trait GLWEBlindSelection<T: UnsignedInteger, BE: Backend<OwnedBuf = Vec<u8>>>
+pub trait GLWEBlindSelection<T: UnsignedInteger, BE: Backend<OwnedBuf = Vec<u8>> + 'static>
 where
     Self: GLWECopy<BE> + Cmux<BE> + GLWEDecrypt<BE> + ModuleCoreAlloc<OwnedBuf = Vec<u8>>,
 {
@@ -52,8 +52,7 @@ where
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGGSWBit<BE>tatic,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+        K: GetGGSWBit<BE> + 'static,
         for<'a> BE::BufMut<'a>: HostDataMut,
         for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {

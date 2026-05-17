@@ -29,7 +29,6 @@ where
     P: LWEPlaintextToBackendMut<BE> + SetLWEInfos + LWEInfos,
     S: LWESecretToBackendRef<BE> + LWEInfos,
     BE: Backend + HostBackend,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
     for<'a> BE::BufRef<'a>: HostDataRef,
 {

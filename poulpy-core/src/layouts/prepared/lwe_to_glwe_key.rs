@@ -1,7 +1,4 @@
-use poulpy_hal::{
-    api::ScratchAvailable,
-    layouts::{Backend, Data, Module, ScratchArena},
-};
+use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::layouts::{
     Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendRef, GGLWEPreparedToBackendMut,
@@ -98,12 +95,10 @@ where
         lvl_0
     }
 
-    fn lwe_to_glwe_key_prepare<'s, R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'s, B>)
+    fn lwe_to_glwe_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, B>)
     where
         R: GGLWEPreparedToBackendMut<B> + GLWESwitchingKeyDegreesMut,
         O: GGLWEToBackendRef<B> + GLWESwitchingKeyDegrees,
-        ScratchArena<'s, B>: ScratchAvailable,
-        B: 's,
     {
         let tmp_bytes = {
             let res_infos = res.to_backend_mut();

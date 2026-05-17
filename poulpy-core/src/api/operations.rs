@@ -1,17 +1,11 @@
 use std::collections::HashMap;
 
-use poulpy_hal::{
-    api::ScratchAvailable,
-    layouts::{Backend, ScratchArena},
-};
+use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::{
-    ScratchArenaTakeCore,
-    layouts::{
-        GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEAutomorphismKeyHelper,
-        GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
-        prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
-    },
+use crate::layouts::{
+    GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEAutomorphismKeyHelper,
+    GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
+    prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
 };
 
 pub trait GLWETrace<BE: Backend> {
@@ -37,14 +31,8 @@ pub trait GLWETrace<BE: Backend> {
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
-    fn glwe_trace_assign<R, K, H>(
-        &self,
-        res: &mut R,
-        skip: usize,
-        keys: &H,
-        key_size: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_trace_assign<R, K, H>(&self, res: &mut R, skip: usize, keys: &H, key_size: usize, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
@@ -180,14 +168,8 @@ pub trait GLWETensoring<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos;
 
-    fn glwe_tensor_relinearize<R, A, T>(
-        &self,
-        res: &mut R,
-        a: &A,
-        tsk: &T,
-        tsk_size: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_tensor_relinearize<R, A, T>(&self, res: &mut R, a: &A, tsk: &T, tsk_size: usize, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
@@ -270,8 +252,7 @@ pub trait GGSWRotate<BE: Backend> {
 
     fn ggsw_rotate_assign<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GGSWToBackendMut<BE> + GGSWInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE> + ScratchAvailable;
+        R: GGSWToBackendMut<BE> + GGSWInfos;
 }
 
 pub trait GLWEMulXpMinusOne<BE: Backend> {

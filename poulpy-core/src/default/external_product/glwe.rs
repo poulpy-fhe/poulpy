@@ -128,17 +128,16 @@ where
         (lvl_0.next_multiple_of(align) + lvl_1.next_multiple_of(align) + lvl_2).max(lvl_3)
     }
 
-    fn glwe_external_product_dft<'s, 'r, A, G>(
+    fn glwe_external_product_dft<'r, A, G>(
         &self,
         res_dft: &mut VecZnxDft<BE::BufMut<'r>, BE>,
         a: &A,
         ggsw: &G,
         _key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         A: GLWEToBackendRef<BE>,
         G: GGSWPreparedToBackendRef<BE>,
-        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
     {
         let ggsw: GGSWPreparedBackendRef<'_, BE> = ggsw.to_backend_ref();
         let a = a.to_backend_ref();
@@ -187,7 +186,6 @@ where
     R: GLWEInfos,
     A: GLWEInfos,
     G: GGSWInfos,
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     let align: usize = BE::SCRATCH_ALIGN;
     let cols: usize = res_infos.rank().as_usize() + 1;
@@ -214,15 +212,15 @@ where
     lvl_0.next_multiple_of(align) + lvl_1.max(lvl_2)
 }
 
-pub fn glwe_external_product_default<'s, BE, M, R, A, G>(
+pub fn glwe_external_product_default<BE, M, R, A, G>(
     module: &M,
     res: &mut R,
     a: &A,
     ggsw: &G,
     key_size: usize,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + 's,
+    BE: Backend,
     M: GLWEExternalProductDefault<BE>
         + GLWEExternalProductInternal<BE>
         + GLWENormalizeDefault<BE>
@@ -235,7 +233,6 @@ pub fn glwe_external_product_default<'s, BE, M, R, A, G>(
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     G: GGSWPreparedToBackendRef<BE> + GGSWInfos,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     assert_eq!(ggsw.rank(), a.rank());
     assert_eq!(ggsw.rank(), res.rank());
@@ -298,14 +295,14 @@ pub fn glwe_external_product_default<'s, BE, M, R, A, G>(
     }
 }
 
-pub fn glwe_external_product_assign_default<'s, BE, M, R, G>(
+pub fn glwe_external_product_assign_default<BE, M, R, G>(
     module: &M,
     res: &mut R,
     ggsw: &G,
     key_size: usize,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + 's,
+    BE: Backend,
     M: GLWEExternalProductDefault<BE>
         + GLWEExternalProductInternal<BE>
         + GLWENormalizeDefault<BE>
@@ -317,7 +314,6 @@ pub fn glwe_external_product_assign_default<'s, BE, M, R, G>(
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     G: GGSWPreparedToBackendRef<BE> + GGSWInfos,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     assert_eq!(ggsw.rank(), res.rank());
     assert_eq!(ggsw.n(), res.n());

@@ -2,12 +2,10 @@
 
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use crate::{
-    layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos,
-        GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, SetGaloisElement,
-        prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
-    },
+use crate::layouts::{
+    GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
+    GLWEToBackendRef, GetGaloisElement, SetGaloisElement,
+    prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
 };
 
 /// Backend hook for automorphism-family operations.
@@ -198,7 +196,7 @@ pub unsafe trait AutomorphismImpl<BE: Backend>: Backend {
 /// the default implementation.
 #[doc(hidden)]
 #[allow(private_bounds)]
-pub trait GLWEAutomorphismDefault<BE: Backend>{
+pub trait GLWEAutomorphismDefault<BE: Backend> {
     fn glwe_automorphism_tmp_bytes_default<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
@@ -217,13 +215,8 @@ pub trait GLWEAutomorphismDefault<BE: Backend>{
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
-    fn glwe_automorphism_assign_default<R, K>(
-        &self,
-        res: &mut R,
-        key: &K,
-        key_size: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_automorphism_assign_default<R, K>(&self, res: &mut R, key: &K, key_size: usize, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
@@ -300,7 +293,7 @@ pub trait GLWEAutomorphismDefault<BE: Backend>{
 /// [`crate::default::automorphism::ggsw`] for reference algorithms a backend may forward to.
 #[doc(hidden)]
 #[allow(private_bounds)]
-pub trait GGSWAutomorphismDefault<BE: Backend>{
+pub trait GGSWAutomorphismDefault<BE: Backend> {
     fn ggsw_automorphism_tmp_bytes_default<R, A, K, T>(&self, res_infos: &R, a_infos: &A, key_infos: &K, tsk_infos: &T) -> usize
     where
         R: GGSWInfos,
@@ -343,7 +336,7 @@ pub trait GGSWAutomorphismDefault<BE: Backend>{
 /// [`crate::default::automorphism::gglwe`] for reference algorithms a backend may forward to.
 #[doc(hidden)]
 #[allow(private_bounds)]
-pub trait GGLWEAutomorphismDefault<BE: Backend>{
+pub trait GGLWEAutomorphismDefault<BE: Backend> {
     fn glwe_automorphism_key_automorphism_tmp_bytes_default<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GGLWEInfos,
@@ -377,7 +370,8 @@ pub trait GGLWEAutomorphismDefault<BE: Backend>{
 unsafe impl<BE> AutomorphismImpl<BE> for BE
 where
     BE: Backend,
-    Module<BE>: GLWEAutomorphismDefault<BE> + GGSWAutomorphismDefault<BE> + GGLWEAutomorphismDefault<BE>{
+    Module<BE>: GLWEAutomorphismDefault<BE> + GGSWAutomorphismDefault<BE> + GGLWEAutomorphismDefault<BE>,
+{
     fn glwe_automorphism_tmp_bytes<R, A, K>(module: &Module<BE>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,

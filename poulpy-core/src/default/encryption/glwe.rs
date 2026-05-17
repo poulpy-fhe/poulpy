@@ -16,7 +16,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    EncryptionInfos, GetDistribution, ScratchArenaTakeCore,
+    EncryptionInfos, GetDistribution,
     dist::Distribution,
     layouts::{
         GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
@@ -50,7 +50,7 @@ pub trait GLWEEncryptSkDefault<BE: Backend> {
     where
         A: GLWEInfos;
 
-    fn glwe_encrypt_sk_default<'s, R, P, S, E>(
+    fn glwe_encrypt_sk_default<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -58,27 +58,25 @@ pub trait GLWEEncryptSkDefault<BE: Backend> {
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE>,
         E: EncryptionInfos,
-        S: GLWESecretPreparedToBackendRef<BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>;
+        S: GLWESecretPreparedToBackendRef<BE>;
 
-    fn glwe_encrypt_zero_sk_default<'s, R, E, S>(
+    fn glwe_encrypt_zero_sk_default<R, E, S>(
         &self,
         res: &mut R,
         sk: &S,
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE>,
         E: EncryptionInfos,
-        S: GLWESecretPreparedToBackendRef<BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>;
+        S: GLWESecretPreparedToBackendRef<BE>;
 }
 
 impl<BE: Backend> GLWEEncryptSkDefault<BE> for Module<BE>
@@ -102,7 +100,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_encrypt_sk_default<'s, R, P, S, E>(
+    fn glwe_encrypt_sk_default<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -110,13 +108,12 @@ where
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         let res = &mut res.to_backend_mut();
         let pt_backend = pt.to_backend_ref();
@@ -148,19 +145,18 @@ where
         );
     }
 
-    fn glwe_encrypt_zero_sk_default<'s, R, E, S>(
+    fn glwe_encrypt_zero_sk_default<R, E, S>(
         &self,
         res: &mut R,
         sk: &S,
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         let res = &mut res.to_backend_mut();
         let sk_ref = sk.to_backend_ref();
@@ -197,7 +193,7 @@ pub trait GLWEEncryptPkDefault<BE: Backend> {
     where
         A: GLWEInfos;
 
-    fn glwe_encrypt_pk_default<'s, R, P, K, E>(
+    fn glwe_encrypt_pk_default<R, P, K, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -205,27 +201,25 @@ pub trait GLWEEncryptPkDefault<BE: Backend> {
         enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         P: GLWEToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos,
-        K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>;
+        K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
 
-    fn glwe_encrypt_zero_pk_default<'s, R, K, E>(
+    fn glwe_encrypt_zero_pk_default<R, K, E>(
         &self,
         res: &mut R,
         pk: &K,
         enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         E: EncryptionInfos,
-        K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>;
+        K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
 impl<BE: Backend> GLWEEncryptPkDefault<BE> for Module<BE>
@@ -254,7 +248,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_encrypt_pk_default<'s, R, P, K, E>(
+    fn glwe_encrypt_pk_default<R, P, K, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -262,13 +256,12 @@ where
         enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         P: GLWEToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         assert!(
             scratch.available() >= self.glwe_encrypt_pk_tmp_bytes_default(res),
@@ -287,19 +280,18 @@ where
         )
     }
 
-    fn glwe_encrypt_zero_pk_default<'s, R, K, E>(
+    fn glwe_encrypt_zero_pk_default<R, K, E>(
         &self,
         res: &mut R,
         pk: &K,
         enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         assert!(
             scratch.available() >= self.glwe_encrypt_pk_tmp_bytes_default(res),
@@ -313,7 +305,7 @@ where
 
 pub(crate) trait GLWEEncryptPkInternal<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
-    fn glwe_encrypt_pk_internal<'s, R, K, E>(
+    fn glwe_encrypt_pk_internal<R, K, E>(
         &self,
         res: &mut R,
         pt: Option<(GLWEBackendRef<'_, BE>, usize)>,
@@ -321,12 +313,11 @@ pub(crate) trait GLWEEncryptPkInternal<BE: Backend> {
         enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE>,
         E: EncryptionInfos,
-        K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>;
+        K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
 impl<BE: Backend> GLWEEncryptPkInternal<BE> for Module<BE>
@@ -349,7 +340,7 @@ where
         + VecZnxDftBytesOf,
 {
     #[allow(clippy::too_many_arguments)]
-    fn glwe_encrypt_pk_internal<'s, R, K, E>(
+    fn glwe_encrypt_pk_internal<R, K, E>(
         &self,
         res: &mut R,
         pt: Option<(GLWEBackendRef<'_, BE>, usize)>,
@@ -357,12 +348,11 @@ where
         enc_infos: &E,
         source_xu: &mut Source,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE>,
         E: EncryptionInfos,
         K: GLWEPreparedToBackendRef<BE> + GetDistribution + GLWEInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         let res = &mut res.to_backend_mut();
 
@@ -461,7 +451,7 @@ where
 
 pub(crate) trait GLWEEncryptSkInternal<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
-    fn glwe_encrypt_sk_internal<'s, 'pt, S, E>(
+    fn glwe_encrypt_sk_internal<'pt, S, E>(
         &self,
         base2k: usize,
         res: &mut VecZnx<BE::BufMut<'_>>,
@@ -472,11 +462,10 @@ pub(crate) trait GLWEEncryptSkInternal<BE: Backend> {
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         E: EncryptionInfos,
-        S: GLWESecretPreparedToBackendRef<BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>;
+        S: GLWESecretPreparedToBackendRef<BE>;
 }
 
 type GLWEEncryptSkPlaintext<'a, BE> = Option<(GLWEBackendRef<'a, BE>, usize)>;
@@ -501,7 +490,7 @@ where
         + VecZnxSubNegateAssignBackend<BE>
         + VecZnxBigNormalizeTmpBytes,
 {
-    fn glwe_encrypt_sk_internal<'s, 'pt, S, E>(
+    fn glwe_encrypt_sk_internal<'pt, S, E>(
         &self,
         base2k: usize,
         res: &mut VecZnx<BE::BufMut<'_>>,
@@ -512,11 +501,10 @@ where
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         let mut res_ref = res;
         let mut ct = <&mut VecZnx<BE::BufMut<'_>> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut res_ref);

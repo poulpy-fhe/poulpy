@@ -1,8 +1,8 @@
 use anyhow::Result;
 use poulpy_core::layouts::{GLWEInfos, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_core::{EncryptionInfos, GLWEDecrypt, GLWEEncryptSk, ScratchArenaTakeCore};
+use poulpy_core::{EncryptionInfos, GLWEDecrypt, GLWEEncryptSk};
 use poulpy_hal::{
-    api::{ScratchAvailable, VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddIntoBackend, VecZnxRshBackend, VecZnxRshTmpBytes},
+    api::{VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddIntoBackend, VecZnxRshBackend, VecZnxRshTmpBytes},
     layouts::{Backend, HostDataMut, Module, ScratchArena},
     source::Source,
 };
@@ -17,7 +17,6 @@ impl<BE: Backend + CKKSEncryptionImpl<BE>> CKKSEncrypt<BE> for Module<BE>
 where
     BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
     Self: GLWEEncryptSk<BE> + VecZnxRshAddIntoBackend<BE> + VecZnxRshTmpBytes,
-    for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_encrypt_sk_tmp_bytes<A>(&self, ct_infos: &A) -> usize
     where
@@ -27,7 +26,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn ckks_encrypt_sk<'s, Dct, Dpt, S, E: EncryptionInfos>(
+    fn ckks_encrypt_sk<Dct, Dpt, S, E: EncryptionInfos>(
         &self,
         ct: &mut Dct,
         pt: &Dpt,
@@ -35,7 +34,7 @@ where
         enc_infos: &E,
         source_xa: &mut Source,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         S: GLWESecretPreparedToBackendRef<BE>,
@@ -56,7 +55,6 @@ where
         + VecZnxRshTmpBytes
         + poulpy_core::layouts::ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>,
     BE::OwnedBuf: HostDataMut,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_decrypt_tmp_bytes<A>(&self, ct_infos: &A) -> usize
     where

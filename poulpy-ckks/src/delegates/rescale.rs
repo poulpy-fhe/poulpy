@@ -1,6 +1,6 @@
 use anyhow::Result;
 use poulpy_core::{
-    GLWEShift, ScratchArenaTakeCore,
+    GLWEShift,
     layouts::{GLWEToBackendMut, GLWEToBackendRef},
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -10,7 +10,6 @@ use crate::{CKKSCtBounds, SetCKKSInfos, api::CKKSRescaleOps, oep::CKKSRescaleImp
 impl<BE: Backend + CKKSRescaleImpl<BE>> CKKSRescaleOps<BE> for Module<BE>
 where
     Module<BE>: GLWEShift<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_rescale_tmp_bytes(&self) -> usize {
         BE::ckks_rescale_tmp_bytes(self)

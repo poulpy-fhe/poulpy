@@ -2,13 +2,10 @@
 
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use crate::{
-    ScratchArenaTakeCore,
-    layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos,
-        GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEToBackendMut, LWEToBackendRef,
-        prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
-    },
+use crate::layouts::{
+    GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
+    GLWEToBackendRef, LWEInfos, LWEToBackendMut, LWEToBackendRef,
+    prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
 };
 
 /// Backend-provided GLWE key-switching operations.
@@ -164,21 +161,15 @@ pub unsafe trait LWEKeyswitchImpl<BE: Backend>: Backend {
 /// for reference algorithms a backend may forward to.
 #[doc(hidden)]
 #[allow(private_bounds)]
-pub trait GLWEKeyswitchDefault<BE: Backend>{
+pub trait GLWEKeyswitchDefault<BE: Backend> {
     fn glwe_keyswitch_tmp_bytes_default<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_keyswitch_default<R, A, K>(
-        &self,
-        res: &mut R,
-        a: &A,
-        key: &K,
-        key_size: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_keyswitch_default<R, A, K>(&self, res: &mut R, a: &A, key: &K, key_size: usize, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
@@ -192,21 +183,15 @@ pub trait GLWEKeyswitchDefault<BE: Backend>{
 /// Override surface for the GGLWE key-switching sub-family.
 #[doc(hidden)]
 #[allow(private_bounds)]
-pub trait GGLWEKeyswitchDefault<BE: Backend>{
+pub trait GGLWEKeyswitchDefault<BE: Backend> {
     fn gglwe_keyswitch_tmp_bytes_default<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GGLWEInfos,
         A: GGLWEInfos,
         K: GGLWEInfos;
 
-    fn gglwe_keyswitch_default<R, A, B>(
-        &self,
-        res: &mut R,
-        a: &A,
-        b: &B,
-        key_size: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn gglwe_keyswitch_default<R, A, B>(&self, res: &mut R, a: &A, b: &B, key_size: usize, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
         A: GGLWEToBackendRef<BE> + GGLWEInfos,
         B: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
@@ -220,7 +205,7 @@ pub trait GGLWEKeyswitchDefault<BE: Backend>{
 /// Override surface for the GGSW key-switching sub-family.
 #[doc(hidden)]
 #[allow(private_bounds)]
-pub trait GGSWKeyswitchDefault<BE: Backend>{
+pub trait GGSWKeyswitchDefault<BE: Backend> {
     fn ggsw_keyswitch_tmp_bytes_default<R, A, K, T>(&self, res_infos: &R, a_infos: &A, key_infos: &K, tsk_infos: &T) -> usize
     where
         R: GGSWInfos,
@@ -260,21 +245,15 @@ pub trait GGSWKeyswitchDefault<BE: Backend>{
 /// Override surface for the LWE key-switching sub-family.
 #[doc(hidden)]
 #[allow(private_bounds)]
-pub trait LWEKeyswitchDefault<BE: Backend>{
+pub trait LWEKeyswitchDefault<BE: Backend> {
     fn lwe_keyswitch_tmp_bytes_default<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: LWEInfos,
         A: LWEInfos,
         K: GGLWEInfos;
 
-    fn lwe_keyswitch_default<R, A, K>(
-        &self,
-        res: &mut R,
-        a: &A,
-        ksk: &K,
-        key_size: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn lwe_keyswitch_default<R, A, K>(&self, res: &mut R, a: &A, ksk: &K, key_size: usize, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: LWEToBackendMut<BE> + LWEInfos,
         A: LWEToBackendRef<BE> + LWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
@@ -283,7 +262,8 @@ pub trait LWEKeyswitchDefault<BE: Backend>{
 #[allow(private_bounds)]
 unsafe impl<BE: Backend> GLWEKeyswitchImpl<BE> for BE
 where
-    Module<BE>: GLWEKeyswitchDefault<BE>{
+    Module<BE>: GLWEKeyswitchDefault<BE>,
+{
     fn glwe_keyswitch_tmp_bytes<R, A, K>(module: &Module<BE>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
@@ -308,13 +288,8 @@ where
         module.glwe_keyswitch_default(res, a, key, key_size, scratch)
     }
 
-    fn glwe_keyswitch_assign<R, K>(
-        module: &Module<BE>,
-        res: &mut R,
-        key: &K,
-        key_size: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_keyswitch_assign<R, K>(module: &Module<BE>, res: &mut R, key: &K, key_size: usize, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
@@ -325,7 +300,8 @@ where
 #[allow(private_bounds)]
 unsafe impl<BE: Backend> GGLWEKeyswitchImpl<BE> for BE
 where
-    Module<BE>: GGLWEKeyswitchDefault<BE>{
+    Module<BE>: GGLWEKeyswitchDefault<BE>,
+{
     fn gglwe_keyswitch_tmp_bytes<R, A, K>(module: &Module<BE>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GGLWEInfos,
@@ -367,7 +343,8 @@ where
 #[allow(private_bounds)]
 unsafe impl<BE: Backend> GGSWKeyswitchImpl<BE> for BE
 where
-    Module<BE>: GGSWKeyswitchDefault<BE>{
+    Module<BE>: GGSWKeyswitchDefault<BE>,
+{
     fn ggsw_keyswitch_tmp_bytes<R, A, K, T>(
         module: &Module<BE>,
         res_infos: &R,
@@ -422,7 +399,8 @@ where
 #[allow(private_bounds)]
 unsafe impl<BE: Backend> LWEKeyswitchImpl<BE> for BE
 where
-    Module<BE>: LWEKeyswitchDefault<BE>{
+    Module<BE>: LWEKeyswitchDefault<BE>,
+{
     fn lwe_keyswitch_tmp_bytes<R, A, K>(module: &Module<BE>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: LWEInfos,

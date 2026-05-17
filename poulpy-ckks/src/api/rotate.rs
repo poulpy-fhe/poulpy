@@ -41,13 +41,13 @@ pub trait CKKSRotateOps<BE: Backend> {
     ///
     /// `k` may be negative (shifts in the opposite direction).  The `keys`
     /// collection must contain the automorphism key for shift amount `k`.
-    fn ckks_rotate_into<'s, Dst, Src, H, K>(
+    fn ckks_rotate_into<Dst, Src, H, K>(
         &self,
         dst: &mut Dst,
         src: &Src,
         k: i64,
         keys: &H,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -56,13 +56,7 @@ pub trait CKKSRotateOps<BE: Backend> {
         Src: GLWEToBackendRef<BE> + CKKSCtBounds;
 
     /// Computes `dst = rotate(dst, k)` in-place.  Metadata is unchanged.
-    fn ckks_rotate_assign<'s, Dst, H, K>(
-        &self,
-        dst: &mut Dst,
-        k: i64,
-        keys: &H,
-        scratch: &mut ScratchArena<'s, BE>,
-    ) -> Result<()>
+    fn ckks_rotate_assign<Dst, H, K>(&self, dst: &mut Dst, k: i64, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,

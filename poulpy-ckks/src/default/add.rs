@@ -1,17 +1,17 @@
 use anyhow::Result;
 use poulpy_core::{
-    GLWEAdd, GLWENormalize, GLWEShift, ScratchArenaTakeCore,
+    GLWEAdd, GLWENormalize, GLWEShift,
     layouts::{Base2K, GLWEPlaintext, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
-    api::{ScratchAvailable, VecZnxRshAddCoeffIntoBackend, VecZnxRshAddIntoBackend, VecZnxRshTmpBytes},
+    api::{VecZnxRshAddCoeffIntoBackend, VecZnxRshAddIntoBackend, VecZnxRshTmpBytes},
     layouts::{Backend, ScratchArena, VecZnx},
 };
 
 use crate::{
     CKKSInfos, CKKSMeta, SetCKKSInfos, checked_log_budget_sub, ckks_offset_binary, ckks_offset_unary,
+    default::CKKSPlaintextDefault,
     layouts::{CKKSPlaintext, CKKSPlaintextVecHostCodec},
-    leveled::default::CKKSPlaintextDefault,
 };
 
 pub(crate) fn ckks_one_pt<BE>(base2k: Base2K) -> Result<CKKSPlaintext<BE::OwnedBuf>>
@@ -75,7 +75,6 @@ pub trait CKKSAddDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + LWEInfos + SetCKKSInfos + CKKSInfos,
         A: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
         B: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     {
         self.ckks_add_into_unsafe_default(dst, a, b, scratch)?;
         self.glwe_normalize_assign(dst, scratch);
@@ -94,7 +93,6 @@ pub trait CKKSAddDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + LWEInfos + SetCKKSInfos + CKKSInfos,
         A: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
         B: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     {
         let offset = ckks_offset_binary(dst, a, b);
 
@@ -119,7 +117,6 @@ pub trait CKKSAddDefault<BE: Backend> {
         Self: GLWEAdd<BE> + GLWEShift<BE> + GLWENormalize<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     {
         self.ckks_add_assign_unsafe_default(dst, a, scratch)?;
         self.glwe_normalize_assign(dst, scratch);
@@ -131,7 +128,6 @@ pub trait CKKSAddDefault<BE: Backend> {
         Self: GLWEAdd<BE> + GLWEShift<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     {
         let dst_log_budget = dst.log_budget();
 
@@ -153,7 +149,6 @@ pub trait CKKSAddDefault<BE: Backend> {
     where
         Self: GLWENormalize<BE> + VecZnxRshAddCoeffIntoBackend<BE> + CKKSPlaintextDefault<BE>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     {
         let one = ckks_one_pt::<BE>(dst.base2k())?;
         self.ckks_add_pt_const_assign_default(dst, 0, &one, 0, scratch)
@@ -171,7 +166,6 @@ pub trait CKKSAddDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     {
         self.ckks_add_pt_vec_into_unsafe_default(dst, a, pt, scratch)?;
         self.glwe_normalize_assign(dst, scratch);
@@ -190,7 +184,6 @@ pub trait CKKSAddDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     {
         let offset = ckks_offset_unary(dst, a);
         self.glwe_lsh(dst, a, offset, scratch);
@@ -205,7 +198,6 @@ pub trait CKKSAddDefault<BE: Backend> {
         Self: VecZnxRshAddIntoBackend<BE> + GLWENormalize<BE> + CKKSPlaintextDefault<BE>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     {
         self.ckks_add_pt_vec_assign_unsafe_default(dst, pt, scratch)?;
         self.glwe_normalize_assign(dst, scratch);
@@ -222,7 +214,6 @@ pub trait CKKSAddDefault<BE: Backend> {
         Self: VecZnxRshAddIntoBackend<BE> + CKKSPlaintextDefault<BE>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     {
         CKKSPlaintextDefault::ckks_add_pt_vec_into_default(self, dst, pt, scratch)?;
         Ok(())
@@ -242,7 +233,6 @@ pub trait CKKSAddDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     {
         self.ckks_add_pt_const_into_unsafe_default(dst, a, dst_coeff, cst, const_coeff, scratch)?;
         self.glwe_normalize_assign(dst, scratch);
@@ -263,7 +253,6 @@ pub trait CKKSAddDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     {
         let offset = ckks_offset_unary(dst, a);
         self.glwe_lsh(dst, a, offset, scratch);
@@ -284,7 +273,6 @@ pub trait CKKSAddDefault<BE: Backend> {
         Self: GLWENormalize<BE> + VecZnxRshAddCoeffIntoBackend<BE> + CKKSPlaintextDefault<BE>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     {
         self.ckks_add_pt_const_assign_unsafe_default(dst, dst_coeff, cst, const_coeff, scratch)?;
         self.glwe_normalize_assign(dst, scratch);
@@ -303,7 +291,6 @@ pub trait CKKSAddDefault<BE: Backend> {
         Self: VecZnxRshAddCoeffIntoBackend<BE> + CKKSPlaintextDefault<BE>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     {
         CKKSPlaintextDefault::ckks_add_pt_const_into_default(self, dst, dst_coeff, cst, const_coeff, scratch)?;
         Ok(())

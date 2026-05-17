@@ -32,12 +32,12 @@ impl_external_product_delegate!(
         BE::glwe_external_product_tmp_bytes(self, res_infos, a_infos, b_infos)
     }
 
-    fn glwe_external_product_assign<'s, R, D>(
+    fn glwe_external_product_assign<R, D>(
         &self,
         res: &mut R,
         rhs: &D,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     )
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -46,13 +46,13 @@ impl_external_product_delegate!(
         BE::glwe_external_product_assign(self, res, rhs, key_size, scratch)
     }
 
-    fn glwe_external_product<'s, R, A, D>(
+    fn glwe_external_product<R, A, D>(
         &self,
         res: &mut R,
         lhs: &A,
         rhs: &D,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     )
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -75,13 +75,13 @@ impl_external_product_delegate!(
         BE::gglwe_external_product_tmp_bytes(self, res_infos, a_infos, b_infos)
     }
 
-    fn gglwe_external_product<'s, R, A, B>(
+    fn gglwe_external_product<R, A, B>(
         &self,
         res: &mut R,
         a: &A,
         b: &B,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     )
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
@@ -91,12 +91,12 @@ impl_external_product_delegate!(
         BE::gglwe_external_product(self, res, a, b, key_size, scratch)
     }
 
-    fn gglwe_external_product_assign<'s, R, A>(
+    fn gglwe_external_product_assign<R, A>(
         &self,
         res: &mut R,
         a: &A,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     )
     where
         R: GGLWEToBackendMut<BE> + GGLWEInfos,
@@ -118,13 +118,13 @@ impl_external_product_delegate!(
         BE::ggsw_external_product_tmp_bytes(self, res_infos, a_infos, b_infos)
     }
 
-    fn ggsw_external_product<'s, R, A, B>(
+    fn ggsw_external_product<R, A, B>(
         &self,
         res: &mut R,
         a: &A,
         b: &B,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     )
     where
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
@@ -134,12 +134,12 @@ impl_external_product_delegate!(
         BE::ggsw_external_product(self, res, a, b, key_size, scratch)
     }
 
-    fn ggsw_external_product_assign<'s, R, A>(
+    fn ggsw_external_product_assign<R, A>(
         &self,
         res: &mut R,
         a: &A,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     )
     where
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,

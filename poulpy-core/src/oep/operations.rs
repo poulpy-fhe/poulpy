@@ -1060,7 +1060,7 @@ macro_rules! impl_glwe_trace_defaults_full {
                 a: &A,
                 keys: &H,
                 key_size: usize,
-                scratch: & mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,

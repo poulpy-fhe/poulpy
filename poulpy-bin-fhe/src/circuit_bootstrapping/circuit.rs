@@ -7,7 +7,6 @@ use poulpy_hal::{
 
 use poulpy_core::{
     GGSWExpandRows, GGSWFromGGLWE, GLWECopy, GLWEDecrypt, GLWENormalize, GLWEPacking, GLWERotate, GLWETrace,
-    ScratchArenaTakeCore,
     layouts::{
         Dsize, GGLWE, GGLWEInfos, GGLWELayout, GGLWEPreparedToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos,
         GGSWToBackendMut, GLWEAutomorphismKeyHelper, GLWEInfos, GLWELayout, GLWESecretPreparedFactory, GLWEToBackendMut,
@@ -156,7 +155,6 @@ where
         + GLWENormalize<BE>
         + GLWECopy<BE>
         + GGSWExpandRows<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
     BE::OwnedBuf: HostDataRef,
     for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
@@ -265,7 +263,6 @@ pub fn circuit_bootstrap_core<R, L, M, BRA, BE>(
         + GLWENormalize<BE>
         + GLWECopy<BE>
         + GGSWExpandRows<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
     BE::OwnedBuf: HostDataRef,
     for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
@@ -412,7 +409,7 @@ pub fn circuit_bootstrap_core<R, L, M, BRA, BE>(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn post_process<'s, R, A, M, H, K, BE>(
+fn post_process<R, A, M, H, K, BE>(
     module: &M,
     res: &mut R,
     a: &A,
@@ -420,15 +417,14 @@ fn post_process<'s, R, A, M, H, K, BE>(
     log_gap_out: usize,
     log_domain: usize,
     auto_keys: &H,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend<OwnedBuf = Vec<u8>> + 'static + 's,
+    BE: Backend<OwnedBuf = Vec<u8>> + 'static,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     M: ModuleLogN + GLWETrace<BE> + GLWEPacking<BE> + GLWERotate<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = Vec<u8>>,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
     for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
 {

@@ -1,8 +1,5 @@
 use anyhow::Result;
-use poulpy_core::{
-    ScratchArenaTakeCore,
-    layouts::{GLWEInfos, GLWEToBackendMut, LWEInfos},
-};
+use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, LWEInfos};
 use poulpy_hal::{
     api::{
         VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddCoeffIntoBackend, VecZnxRshAddIntoBackend, VecZnxRshBackend,
@@ -21,7 +18,6 @@ use crate::{
 pub trait CKKSPlaintextDefault<BE: Backend> {
     fn ckks_add_pt_vec_into_default<Dst, A>(&self, ct: &mut Dst, pt: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
         Self: VecZnxRshAddIntoBackend<BE>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos,
         A: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
@@ -46,7 +42,6 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
         Self: VecZnxRshAddCoeffIntoBackend<BE>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos,
         A: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
@@ -83,7 +78,6 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
         Self: VecZnxRshSubCoeffIntoBackend<BE>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos,
         A: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
@@ -113,7 +107,6 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
 
     fn ckks_sub_pt_vec_into_default<Dst, A>(&self, ct: &mut Dst, pt: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
         Self: VecZnxRshSubBackend<BE>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos,
         A: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
@@ -140,7 +133,6 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
     where
         D: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         S: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
         Self: VecZnxLshBackend<BE> + VecZnxRshBackend<BE>,
     {
         self.ckks_extract_pt_with_meta_default(dst, src, src.meta(), scratch)
@@ -156,7 +148,6 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
     where
         D: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         S: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
         Self: VecZnxLshBackend<BE> + VecZnxRshBackend<BE>,
     {
         ensure_base2k_match("ckks_extract_pt", src.base2k().as_usize(), dst.base2k().as_usize())?;

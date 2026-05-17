@@ -1,6 +1,6 @@
 use anyhow::Result;
 use poulpy_core::{
-    GLWEAutomorphism, GLWEShift, ScratchArenaTakeCore,
+    GLWEAutomorphism, GLWEShift,
     layouts::{GGLWEInfos, GGLWEPreparedToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos},
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
@@ -17,19 +17,18 @@ pub trait CKKSConjugateDefault<BE: Backend> {
         self.glwe_automorphism_tmp_bytes(ct_infos, ct_infos, key_infos)
     }
 
-    fn ckks_conjugate_into_default<'s, Dst, Src, K>(
+    fn ckks_conjugate_into_default<Dst, Src, K>(
         &self,
         dst: &mut Dst,
         src: &Src,
         key: &K,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Self: GLWEAutomorphism<BE> + GLWEShift<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEInfos + LWEInfos + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
     {
         let offset = ckks_offset_unary(dst, src);
         if offset != 0 {
@@ -44,12 +43,11 @@ pub trait CKKSConjugateDefault<BE: Backend> {
         Ok(())
     }
 
-    fn ckks_conjugate_assign_default<'s, Dst, K>(&self, dst: &mut Dst, key: &K, scratch: &mut ScratchArena<'s, BE>) -> Result<()>
+    fn ckks_conjugate_assign_default<Dst, K>(&self, dst: &mut Dst, key: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: GLWEAutomorphism<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
     {
         self.glwe_automorphism_assign(dst, key, dst.size() + key.dsize().as_usize(), scratch);
         Ok(())

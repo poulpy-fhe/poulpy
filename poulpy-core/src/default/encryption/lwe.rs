@@ -18,7 +18,7 @@ pub trait LWEEncryptSkDefault<BE: Backend> {
     where
         A: LWEInfos;
 
-    fn lwe_encrypt_sk_default<'s, R, P, S, E>(
+    fn lwe_encrypt_sk_default<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -26,7 +26,7 @@ pub trait LWEEncryptSkDefault<BE: Backend> {
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: LWEToBackendMut<BE> + LWEInfos,
         P: LWEPlaintextToBackendRef<BE>,
@@ -59,7 +59,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn lwe_encrypt_sk_default<'s, R, P, S, E>(
+    fn lwe_encrypt_sk_default<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -67,7 +67,7 @@ where
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: LWEToBackendMut<BE> + LWEInfos,
         P: LWEPlaintextToBackendRef<BE>,

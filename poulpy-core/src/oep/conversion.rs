@@ -1,11 +1,9 @@
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use crate::{
-    layouts::{
-        GGLWEInfos, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-        LWEToBackendMut, LWEToBackendRef,
-        prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
-    },
+use crate::layouts::{
+    GGLWEInfos, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+    LWEToBackendMut, LWEToBackendRef,
+    prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
 };
 
 /// Backend-provided ciphertext conversion operations.
@@ -97,7 +95,7 @@ pub unsafe trait ConversionImpl<BE: Backend>: Backend {
 /// for reference algorithms a backend may forward to.
 #[doc(hidden)]
 #[allow(private_bounds)]
-pub trait ConversionDefault<BE: Backend>{
+pub trait ConversionDefault<BE: Backend> {
     fn lwe_sample_extract_default<R, A>(&self, res: &mut R, a: &A)
     where
         R: LWEToBackendMut<BE> + LWEInfos,
@@ -109,14 +107,8 @@ pub trait ConversionDefault<BE: Backend>{
         A: LWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_from_lwe_default<R, A, K>(
-        &self,
-        res: &mut R,
-        lwe: &A,
-        ksk: &K,
-        key_size: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_from_lwe_default<R, A, K>(&self, res: &mut R, lwe: &A, ksk: &K, key_size: usize, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: LWEToBackendRef<BE> + LWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
@@ -145,14 +137,8 @@ pub trait ConversionDefault<BE: Backend>{
         R: GGSWInfos,
         A: GGLWEInfos;
 
-    fn ggsw_from_gglwe_default<R, A, T>(
-        &self,
-        res: &mut R,
-        a: &A,
-        tsk: &T,
-        tsk_size: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn ggsw_from_gglwe_default<R, A, T>(&self, res: &mut R, a: &A, tsk: &T, tsk_size: usize, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GGSWToBackendMut<BE> + GGSWInfos,
         A: GGLWEToBackendRef<BE> + GGLWEInfos,
         T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos;
@@ -176,7 +162,8 @@ pub trait ConversionDefault<BE: Backend>{
 #[allow(private_bounds)]
 unsafe impl<BE: Backend> ConversionImpl<BE> for BE
 where
-    Module<BE>: ConversionDefault<BE>{
+    Module<BE>: ConversionDefault<BE>,
+{
     fn lwe_sample_extract<R, A>(module: &Module<BE>, res: &mut R, a: &A)
     where
         R: LWEToBackendMut<BE> + LWEInfos,

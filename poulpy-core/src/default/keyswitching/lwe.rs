@@ -25,7 +25,6 @@ where
     R: LWEInfos,
     A: LWEInfos,
     K: GGLWEInfos,
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     assert_eq!(module.n() as u32, key_infos.n());
 
@@ -52,13 +51,13 @@ where
     lvl_0 + lvl_1 + lvl_2
 }
 
-pub fn lwe_keyswitch_default<'s, BE, M, R, A, K>(
+pub fn lwe_keyswitch_default<BE, M, R, A, K>(
     module: &M,
     res: &mut R,
     a: &A,
     ksk: &K,
     key_size: usize,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
     M: LWEKeyswitchDefault<BE> + ModuleN + GLWEKeyswitchDefault<BE> + VecZnxCopyRangeBackend<BE> + VecZnxZeroBackend<BE>,

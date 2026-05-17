@@ -103,7 +103,6 @@ where
     BE: HostBackend<OwnedBuf = Vec<u8>>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
 }
 

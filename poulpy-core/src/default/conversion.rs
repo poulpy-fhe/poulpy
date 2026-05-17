@@ -88,7 +88,6 @@ where
     R: GLWEInfos,
     A: LWEInfos,
     K: GGLWEInfos,
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     assert_eq!(module.n() as u32, glwe_infos.n());
     assert_eq!(module.n() as u32, key_infos.n());
@@ -112,15 +111,15 @@ where
     lvl_0 + lvl_1
 }
 
-pub fn glwe_from_lwe_default<'s, BE, M, R, A, K>(
+pub fn glwe_from_lwe_default<BE, M, R, A, K>(
     module: &M,
     res: &mut R,
     lwe: &A,
     ksk: &K,
     key_size: usize,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + 's,
+    BE: Backend,
     M: ConversionDefault<BE>
         + ModuleN
         + GLWEKeyswitchDefault<BE>
@@ -131,7 +130,6 @@ pub fn glwe_from_lwe_default<'s, BE, M, R, A, K>(
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: LWEToBackendRef<BE> + LWEInfos,
     K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let res_infos = GLWELayout {
         n: res.n(),
@@ -221,7 +219,6 @@ where
     R: LWEInfos,
     A: GLWEInfos,
     K: GGLWEInfos,
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     assert_eq!(module.n() as u32, glwe_infos.n());
     assert_eq!(module.n() as u32, key_infos.n());
@@ -240,16 +237,16 @@ where
     lvl_0 + lvl_1 + lvl_2
 }
 
-pub fn lwe_from_glwe_default<'s, BE, M, R, A, K>(
+pub fn lwe_from_glwe_default<BE, M, R, A, K>(
     module: &M,
     res: &mut R,
     a: &A,
     a_idx: usize,
     key: &K,
     key_size: usize,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + 's,
+    BE: Backend,
     M: ConversionDefault<BE>
         + ModuleN
         + GLWEKeyswitchDefault<BE>
@@ -259,7 +256,6 @@ pub fn lwe_from_glwe_default<'s, BE, M, R, A, K>(
     R: LWEToBackendMut<BE> + LWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let a_backend = a.to_backend_ref();
 
@@ -308,25 +304,23 @@ where
     M: ConversionDefault<BE>,
     R: GGSWInfos,
     A: GGLWEInfos,
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     module.ggsw_expand_rows_tmp_bytes_default(res_infos, tsk_infos)
 }
 
-pub fn ggsw_from_gglwe_default<'s, BE, M, R, A, T>(
+pub fn ggsw_from_gglwe_default<BE, M, R, A, T>(
     module: &M,
     res: &mut R,
     a: &A,
     tsk: &T,
     tsk_size: usize,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + 's,
+    BE: Backend,
     M: ConversionDefault<BE> + ModuleN + GLWECopyDefault<BE>,
     R: GGSWToBackendMut<BE> + GGSWInfos,
     A: GGLWEToBackendRef<BE> + GGLWEInfos,
     T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let mut res_backend = res.to_backend_mut();
     let a_backend = a.to_backend_ref();
@@ -390,14 +384,9 @@ where
     lvl_0 + lvl_1.max(lvl_2)
 }
 
-pub fn ggsw_expand_row_default<'s, BE, M, R, T>(
-    module: &M,
-    res: &mut R,
-    tsk: &T,
-    tsk_size: usize,
-    scratch: &mut ScratchArena<'s, BE>,
-) where
-    BE: Backend + 's,
+pub fn ggsw_expand_row_default<BE, M, R, T>(module: &M, res: &mut R, tsk: &T, tsk_size: usize, scratch: &mut ScratchArena<'_, BE>)
+where
+    BE: Backend,
     M: ConversionDefault<BE>
         + ModuleN
         + GGLWEProductDefault<BE>
@@ -410,7 +399,6 @@ pub fn ggsw_expand_row_default<'s, BE, M, R, T>(
         + VecZnxNormalize<BE>,
     R: GGSWToBackendMut<BE> + GGSWInfos,
     T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let mut res_backend = res.to_backend_mut();
 
@@ -499,7 +487,6 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, T, BE: Backend>(
         + VecZnxIdftApply<BE>,
     R: GGSWAtViewMut<BE> + GGSWInfos,
     T: GGLWEToGGSWKeyPreparedToBackendRef<BE>,
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     let tsk: GGLWEToGGSWKeyPreparedBackendRef<'_, BE> = tsk.to_backend_ref();
     let cols: usize = res.rank().as_usize() + 1;

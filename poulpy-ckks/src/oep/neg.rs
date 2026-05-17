@@ -2,7 +2,7 @@ use crate::default::neg::CKKSNegDefault;
 
 use anyhow::Result;
 use poulpy_core::{
-    GLWENegate, GLWEShift, ScratchArenaTakeCore,
+    GLWENegate, GLWEShift,
     layouts::{GLWEInfos, LWEInfos},
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -31,7 +31,6 @@ unsafe impl<BE: Backend> CKKSNegImpl<BE> for BE
 where
     BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
     Module<BE>: crate::default::neg::CKKSNegDefault<BE> + GLWENegate<BE> + GLWEShift<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_neg_tmp_bytes(module: &Module<BE>) -> usize {
         module.ckks_neg_tmp_bytes_default()

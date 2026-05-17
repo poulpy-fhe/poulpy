@@ -4,7 +4,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBackend, HostDataMut, Module, ScratchArena, ScratchOwned},
+    layouts::{Backend, HostBackend, HostDataMut, Module, ScratchOwned},
     source::Source,
 };
 use rand::Rng;
@@ -22,7 +22,6 @@ pub fn test_fhe_uint_sext<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>
 ) where
     Module<BE>: GLWEEncryptSk<BE> + GLWERotate<BE> + GLWETrace<BE> + GLWESub<BE> + GLWEAdd<BE> + GLWECopy<BE> + GLWEDecrypt<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> ScratchArena<'a, BE>: poulpy_core::ScratchArenaTakeCore<'a, BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     let glwe_infos: GLWELayout = TEST_GLWE_INFOS;
@@ -92,7 +91,6 @@ pub fn test_fhe_uint_splice_u8<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Ve
 ) where
     Module<BE>: GLWEEncryptSk<BE> + GLWERotate<BE> + GLWETrace<BE> + GLWESub<BE> + GLWEAdd<BE> + GLWECopy<BE> + GLWEDecrypt<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> ScratchArena<'a, BE>: poulpy_core::ScratchArenaTakeCore<'a, BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     let glwe_infos: GLWELayout = TEST_GLWE_INFOS;
@@ -155,7 +153,6 @@ pub fn test_fhe_uint_splice_u16<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = V
 ) where
     Module<BE>: GLWEEncryptSk<BE> + GLWERotate<BE> + GLWETrace<BE> + GLWESub<BE> + GLWEAdd<BE> + GLWECopy<BE> + GLWEDecrypt<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> ScratchArena<'a, BE>: poulpy_core::ScratchArenaTakeCore<'a, BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     let glwe_infos: GLWELayout = TEST_GLWE_INFOS;
@@ -215,7 +212,6 @@ pub fn test_fhe_uint_get_bit_glwe<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf =
 ) where
     Module<BE>: GLWEEncryptSk<BE> + GLWERotate<BE> + GLWETrace<BE> + GLWESub<BE> + GLWEAdd<BE> + GLWEDecrypt<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> ScratchArena<'a, BE>: poulpy_core::ScratchArenaTakeCore<'a, BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     let glwe_infos: GLWELayout = TEST_GLWE_INFOS;

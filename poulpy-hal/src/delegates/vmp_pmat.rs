@@ -42,12 +42,7 @@ impl_vmp_delegate!(
 
 impl_vmp_delegate!(
     VmpPrepare<B>,
-    fn vmp_prepare<'s>(
-        &self,
-        res: &mut VmpPMatBackendMut<'_, B>,
-        a: &MatZnxBackendRef<'_, B>,
-        scratch: &mut ScratchArena<'s, B>,
-    ) {
+    fn vmp_prepare(&self, res: &mut VmpPMatBackendMut<'_, B>, a: &MatZnxBackendRef<'_, B>, scratch: &mut ScratchArena<'_, B>) {
         B::vmp_prepare(self, res, a, scratch);
     }
 );
@@ -69,12 +64,12 @@ impl_vmp_delegate!(
 
 impl_vmp_delegate!(
     VmpApplyDft<B>,
-    fn vmp_apply_dft<'s, R>(
+    fn vmp_apply_dft<R>(
         &self,
         res: &mut R,
         a: &VecZnxBackendRef<'_, B>,
         b: &VmpPMatBackendRef<'_, B>,
-        scratch: &mut ScratchArena<'s, B>,
+        scratch: &mut ScratchArena<'_, B>,
     ) where
         R: VecZnxDftToBackendMut<B>,
     {
@@ -99,13 +94,13 @@ impl_vmp_delegate!(
 
 impl_vmp_delegate!(
     VmpApplyDftToDft<B>,
-    fn vmp_apply_dft_to_dft<'s, 'r>(
+    fn vmp_apply_dft_to_dft(
         &self,
-        res: &mut VecZnxDftBackendMut<'r, B>,
+        res: &mut VecZnxDftBackendMut<'_, B>,
         a: &VecZnxDftBackendRef<'_, B>,
         b: &VmpPMatBackendRef<'_, B>,
         limb_offset: usize,
-        scratch: &mut ScratchArena<'s, B>,
+        scratch: &mut ScratchArena<'_, B>,
     ) {
         B::vmp_apply_dft_to_dft(self, res, a, b, limb_offset, scratch)
     }
@@ -128,13 +123,13 @@ impl_vmp_delegate!(
 
 impl_vmp_delegate!(
     VmpApplyDftToDftAccumulate<B>,
-    fn vmp_apply_dft_to_dft_accumulate<'s, 'r>(
+    fn vmp_apply_dft_to_dft_accumulate(
         &self,
-        res: &mut VecZnxDftBackendMut<'r, B>,
+        res: &mut VecZnxDftBackendMut<'_, B>,
         a: &VecZnxDftBackendRef<'_, B>,
         b: &VmpPMatBackendRef<'_, B>,
         limb_offset: usize,
-        scratch: &mut ScratchArena<'s, B>,
+        scratch: &mut ScratchArena<'_, B>,
     ) {
         B::vmp_apply_dft_to_dft_accumulate(self, res, a, b, limb_offset, scratch);
     }

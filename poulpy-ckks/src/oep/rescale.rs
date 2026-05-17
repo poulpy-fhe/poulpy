@@ -2,7 +2,7 @@ use crate::default::rescale::CKKSRescaleOpsDefault;
 
 use anyhow::Result;
 use poulpy_core::{
-    GLWEShift, ScratchArenaTakeCore,
+    GLWEShift,
     layouts::{GLWEInfos, LWEInfos},
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -40,7 +40,6 @@ unsafe impl<BE: Backend> CKKSRescaleImpl<BE> for BE
 where
     BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
     Module<BE>: crate::default::rescale::CKKSRescaleOpsDefault<BE> + GLWEShift<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_rescale_tmp_bytes(module: &Module<BE>) -> usize {
         module.ckks_rescale_tmp_bytes_default()

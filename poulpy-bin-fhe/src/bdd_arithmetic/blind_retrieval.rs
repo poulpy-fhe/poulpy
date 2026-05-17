@@ -1,6 +1,6 @@
 use itertools::Itertools;
 use poulpy_core::{
-    GLWECopy, ScratchArenaTakeCore,
+    GLWECopy,
     layouts::{GGSWInfos, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, ModuleCoreAlloc},
 };
 use poulpy_hal::layouts::{Backend, HostDataMut, Module, ScratchArena, ZnxZero};
@@ -70,7 +70,6 @@ impl GLWEBlindRetriever<Vec<u8>> {
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
         S: GetGGSWBit<BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
         for<'a> BE::BufMut<'a>: HostDataMut,
         for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {
@@ -87,7 +86,6 @@ impl GLWEBlindRetriever<Vec<u8>> {
         S: GetGGSWBit<BE>,
         M: GLWECopy<BE> + Cmux<BE>,
         BE: Backend<OwnedBuf = Vec<u8>> + 'static,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
         for<'a> BE::BufMut<'a>: HostDataMut,
         for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {
@@ -107,7 +105,6 @@ impl GLWEBlindRetriever<Vec<u8>> {
         S: GetGGSWBit<BE>,
         M: GLWECopy<BE> + Cmux<BE>,
         BE: Backend<OwnedBuf = Vec<u8>> + 'static,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
         for<'a> BE::BufMut<'a>: HostDataMut,
         for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {
@@ -166,7 +163,6 @@ fn add_core<A, S, M, BE>(
     S: GetGGSWBit<BE>,
     M: GLWECopy<BE> + Cmux<BE>,
     BE: Backend<OwnedBuf = Vec<u8>> + 'static,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
     for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
 {
@@ -194,7 +190,10 @@ fn add_core<A, S, M, BE>(
     }
 }
 
-impl<BE: Backend<OwnedBuf = Vec<u8>>> GLWEBlindRetrieval<BE> for Module<BE> where Self: GLWECopy<BE> + Cmux<BE> + Cswap<BE> {}
+impl<BE: Backend<OwnedBuf = Vec<u8>> + 'static> GLWEBlindRetrieval<BE> for Module<BE> where
+    Self: GLWECopy<BE> + Cmux<BE> + Cswap<BE>
+{
+}
 
 /// Oblivious in-place sorting / retrieval of a GLWE vector by an encrypted index.
 ///
@@ -208,7 +207,7 @@ impl<BE: Backend<OwnedBuf = Vec<u8>>> GLWEBlindRetrieval<BE> for Module<BE> wher
 /// The rearrangement uses conditional-swap ([`Cswap`]) operations, one per bit
 /// of the selector sub-field.  The `_rev` variant applies the operations in
 /// reverse, useful for undoing the permutation.
-pub trait GLWEBlindRetrieval<BE: Backend<OwnedBuf = Vec<u8>>>
+pub trait GLWEBlindRetrieval<BE: Backend<OwnedBuf = Vec<u8>> + 'static>
 where
     Self: GLWECopy<BE> + Cmux<BE> + Cswap<BE>,
 {
@@ -236,8 +235,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGGSWBit<BE>tatic,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+        K: GetGGSWBit<BE> + 'static,
         for<'a> BE::BufMut<'a>: HostDataMut,
         for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {
@@ -267,8 +265,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGGSWBit<BE>tatic,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+        K: GetGGSWBit<BE> + 'static,
         for<'a> BE::BufMut<'a>: HostDataMut,
         for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {

@@ -6,7 +6,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    EncryptionInfos, GetDistribution, GetDistributionMut, ScratchArenaTakeCore,
+    EncryptionInfos, GetDistribution, GetDistributionMut,
     encryption::{
         GGLWECompressedEncryptSkDefault, GGLWEEncryptSkDefault, GGLWEToGGSWKeyCompressedEncryptSkDefault,
         GGLWEToGGSWKeyEncryptSkDefault, GGSWCompressedEncryptSkDefault, GGSWEncryptSkDefault,
@@ -454,7 +454,8 @@ pub trait EncryptionDefault<BE: Backend>:
     + GGLWEToGGSWKeyCompressedEncryptSkDefault<BE>
     + GLWEAutomorphismKeyCompressedEncryptSkDefault<BE>
     + GLWESwitchingKeyCompressedEncryptSkDefault<BE>
-    + GLWETensorKeyCompressedEncryptSkDefault<BE>{
+    + GLWETensorKeyCompressedEncryptSkDefault<BE>
+{
 }
 
 unsafe impl<BE: Backend> EncryptionImpl<BE> for BE

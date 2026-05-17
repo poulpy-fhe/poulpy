@@ -3,10 +3,7 @@ mod cggi;
 pub use cggi::*;
 
 use itertools::izip;
-use poulpy_core::{
-    ScratchArenaTakeCore,
-    layouts::{GGSWInfos, GLWEInfos, GLWEToBackendMut, LWE, LWEInfos, LWEToBackendRef, ModuleCoreAlloc},
-};
+use poulpy_core::layouts::{GGSWInfos, GLWEInfos, GLWEToBackendMut, LWE, LWEInfos, LWEToBackendRef, ModuleCoreAlloc};
 use poulpy_hal::{
     api::ModuleN,
     layouts::{Backend, Data, HostDataRef, ScratchArena, ZnxView},
@@ -65,18 +62,17 @@ pub trait BlindRotationExecute<BRA: BlindRotationAlgo, BE: Backend> {
     ///
     /// Panics in debug mode if dimension mismatches are detected between `res`,
     /// `lwe`, `lut`, and `brk`.
-    fn blind_rotation_execute<'s, R, DL>(
+    fn blind_rotation_execute<R, DL>(
         &self,
         res: &mut R,
         lwe: &LWE<DL>,
         lut: &LookupTable<BE::OwnedBuf>,
         brk: &BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE>,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         DL: Data,
-        LWE<DL>: LWEToBackendRef<BE>,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>;
+        LWE<DL>: LWEToBackendRef<BE>;
 }
 
 impl<BRA: BlindRotationAlgo, BE: Backend> BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE>
@@ -86,19 +82,18 @@ where
     /// Performs blind rotation using `self` as the bootstrapping key.
     ///
     /// Convenience wrapper around [`BlindRotationExecute::blind_rotation_execute`].
-    pub fn execute<'s, R, DI, M>(
+    pub fn execute<R, DI, M>(
         &self,
         module: &M,
         res: &mut R,
         lwe: &LWE<DI>,
         lut: &LookupTable<BE::OwnedBuf>,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         M: BlindRotationExecute<BRA, BE>,
         R: GLWEToBackendMut<BE> + GLWEInfos,
         DI: Data,
         LWE<DI>: LWEToBackendRef<BE>,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
     {
         module.blind_rotation_execute(res, lwe, lut, self, scratch);
     }

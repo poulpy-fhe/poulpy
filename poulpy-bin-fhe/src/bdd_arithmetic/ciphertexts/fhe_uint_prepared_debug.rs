@@ -9,7 +9,7 @@ use poulpy_core::GGSWNoise;
 use poulpy_core::layouts::{Base2K, Dnum, Dsize, ModuleCoreAlloc, Rank, TorusPrecision};
 use poulpy_core::layouts::{GGSW, GLWESecretPreparedToBackendRef, LWE};
 use poulpy_core::{
-    GLWEKeyswitch, LWEFromGLWE, ScratchArenaTakeCore,
+    GLWEKeyswitch, LWEFromGLWE,
     layouts::{GGSWInfos, GGSWPreparedFactory, GLWEInfos, LWEInfos},
 };
 
@@ -133,7 +133,6 @@ impl<T: UnsignedInteger + ToBits> FheUintPreparedDebug<Vec<u8>, T> {
 impl<BRA: BlindRotationAlgo, BE: Backend + HostBackend, T: UnsignedInteger> FheUintPrepareDebug<BRA, T, BE> for Module<BE>
 where
     Self: ModuleN + LWEFromGLWE<BE> + GLWEKeyswitch<BE> + CircuitBootstrappingExecute<BRA, BE> + GGSWPreparedFactory<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     BE: Backend<OwnedBuf = Vec<u8>>,
     BE::OwnedBuf: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -166,7 +165,6 @@ impl<T: UnsignedInteger> FheUintPreparedDebug<Vec<u8>, T> {
         BRA: BlindRotationAlgo,
         BE: Backend<OwnedBuf = Vec<u8>> + HostBackend,
         M: FheUintPrepareDebug<BRA, T, BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         module.fhe_uint_debug_prepare(self, other, key, scratch);
     }

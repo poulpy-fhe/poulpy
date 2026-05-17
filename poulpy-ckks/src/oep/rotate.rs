@@ -2,7 +2,7 @@ use crate::default::rotate::CKKSRotateDefault;
 
 use anyhow::Result;
 use poulpy_core::{
-    GLWEAutomorphism, GLWEShift, ScratchArenaTakeCore,
+    GLWEAutomorphism, GLWEShift,
     layouts::{
         GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
         prepared::GGLWEPreparedToBackendRef,
@@ -23,24 +23,19 @@ use crate::{CKKSInfos, SetCKKSInfos};
 pub unsafe trait CKKSRotateImpl<BE: Backend>: Backend {
     fn ckks_rotate_tmp_bytes<C: GLWEInfos, K: GGLWEInfos>(module: &Module<BE>, ct_infos: &C, key_infos: &K) -> usize;
 
-    fn ckks_rotate_into<'s, Dst, Src, K>(
+    fn ckks_rotate_into<Dst, Src, K>(
         module: &Module<BE>,
         dst: &mut Dst,
         src: &Src,
         key: &K,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEInfos + LWEInfos + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
-    fn ckks_rotate_assign<'s, Dst, K>(
-        module: &Module<BE>,
-        dst: &mut Dst,
-        key: &K,
-        scratch: &mut ScratchArena<'s, BE>,
-    ) -> Result<()>
+    fn ckks_rotate_assign<Dst, K>(module: &Module<BE>, dst: &mut Dst, key: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEInfos + LWEInfos + CKKSInfos + SetCKKSInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
@@ -50,18 +45,17 @@ unsafe impl<BE: Backend> CKKSRotateImpl<BE> for BE
 where
     BE: HalVecZnxImpl<BE>,
     Module<BE>: CKKSRotateDefault<BE> + GLWEAutomorphism<BE> + GLWEShift<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_rotate_tmp_bytes<C: GLWEInfos, K: GGLWEInfos>(module: &Module<BE>, ct_infos: &C, key_infos: &K) -> usize {
         module.ckks_rotate_tmp_bytes_default(ct_infos, key_infos)
     }
 
-    fn ckks_rotate_into<'s, Dst, Src, K>(
+    fn ckks_rotate_into<Dst, Src, K>(
         module: &Module<BE>,
         dst: &mut Dst,
         src: &Src,
         key: &K,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEInfos + LWEInfos + CKKSInfos + SetCKKSInfos,
@@ -71,12 +65,7 @@ where
         module.ckks_rotate_into_default(dst, src, key, scratch)
     }
 
-    fn ckks_rotate_assign<'s, Dst, K>(
-        module: &Module<BE>,
-        dst: &mut Dst,
-        key: &K,
-        scratch: &mut ScratchArena<'s, BE>,
-    ) -> Result<()>
+    fn ckks_rotate_assign<Dst, K>(module: &Module<BE>, dst: &mut Dst, key: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEInfos + LWEInfos + CKKSInfos + SetCKKSInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,

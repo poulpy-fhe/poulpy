@@ -136,7 +136,7 @@ pub trait GLWETraceDefault<BE: Backend> {
         a: &A,
         keys: &H,
         key_size: usize,
-        scratch: & mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
@@ -252,7 +252,7 @@ pub mod glwe_trace_defaults_impl {
         a: &A,
         keys: &H,
         key_size: usize,
-        scratch: & mut ScratchArena<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: Backend,
         M: GLWETraceDefault<BE>

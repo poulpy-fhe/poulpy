@@ -34,12 +34,12 @@ pub trait CKKSConjugateOps<BE: Backend> {
         K: GGLWEInfos;
 
     /// Computes `dst = conj(src)`: takes the complex conjugate of every slot.
-    fn ckks_conjugate_into<'s, Dst, Src, K>(
+    fn ckks_conjugate_into<Dst, Src, K>(
         &self,
         dst: &mut Dst,
         src: &Src,
         key: &K,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -47,7 +47,7 @@ pub trait CKKSConjugateOps<BE: Backend> {
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos;
 
     /// Computes `dst = conj(dst)` in-place.  Metadata is unchanged.
-    fn ckks_conjugate_assign<'s, Dst, K>(&self, dst: &mut Dst, key: &K, scratch: &mut ScratchArena<'s, BE>) -> Result<()>
+    fn ckks_conjugate_assign<Dst, K>(&self, dst: &mut Dst, key: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos;

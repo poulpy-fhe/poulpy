@@ -3,13 +3,10 @@ use poulpy_hal::{
     oep::{HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl},
 };
 
-use crate::{
-    ScratchArenaTakeCore,
-    layouts::{
-        GLWEInfos, GLWEPlaintext, GLWESecretPrepared, GLWESecretTensorPrepared, GLWETensor, GLWEToBackendMut, GLWEToBackendRef,
-        LWEInfos, LWEPlaintextToBackendMut, LWESecretToBackendRef, LWEToBackendRef, SetLWEInfos,
-        prepared::{GLWESecretPreparedToBackendRef, GLWESecretTensorPreparedToBackendRef},
-    },
+use crate::layouts::{
+    GLWEInfos, GLWEPlaintext, GLWESecretPrepared, GLWESecretTensorPrepared, GLWETensor, GLWEToBackendMut, GLWEToBackendRef,
+    LWEInfos, LWEPlaintextToBackendMut, LWESecretToBackendRef, LWEToBackendRef, SetLWEInfos,
+    prepared::{GLWESecretPreparedToBackendRef, GLWESecretTensorPreparedToBackendRef},
 };
 
 /// Backend-provided decryption operations.
@@ -63,7 +60,7 @@ pub unsafe trait DecryptionImpl<BE: Backend>: Backend {
 /// for reference algorithms a backend may forward to.
 #[doc(hidden)]
 #[allow(private_bounds)]
-pub trait DecryptionDefault<BE: Backend>{
+pub trait DecryptionDefault<BE: Backend> {
     fn glwe_decrypt_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos;
@@ -195,7 +192,6 @@ unsafe impl<BE: Backend + HostBackend + HalVecZnxImpl<BE> + HalVecZnxBigImpl<BE>
     DecryptionImpl<BE> for BE
 where
     Module<BE>: DecryptionDefault<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
     for<'a> BE::BufRef<'a>: HostDataRef,
 {

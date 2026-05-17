@@ -22,7 +22,7 @@ pub trait GGSWEncryptSkDefault<BE: Backend> {
     where
         A: GGSWInfos;
 
-    fn ggsw_encrypt_sk_default<'s, R, P, S, E>(
+    fn ggsw_encrypt_sk_default<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -30,13 +30,12 @@ pub trait GGSWEncryptSkDefault<BE: Backend> {
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWToBackendMut<BE> + GGSWInfos + GGSWAtViewMut<BE>,
         P: ScalarZnxToBackendRef<BE> + ZnxInfos,
         E: EncryptionInfos,
-        S: GLWESecretPreparedToBackendRef<BE> + LWEInfos + GLWEInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>;
+        S: GLWESecretPreparedToBackendRef<BE> + LWEInfos + GLWEInfos;
 }
 
 impl<BE: Backend> GGSWEncryptSkDefault<BE> for Module<BE>
@@ -61,7 +60,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn ggsw_encrypt_sk_default<'s, R, P, S, E>(
+    fn ggsw_encrypt_sk_default<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -69,13 +68,12 @@ where
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWToBackendMut<BE> + GGSWInfos + GGSWAtViewMut<BE>,
         P: ScalarZnxToBackendRef<BE> + ZnxInfos,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE> + LWEInfos + GLWEInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         assert_eq!(res.rank(), sk.rank());
         assert_eq!(res.n(), self.n() as u32);

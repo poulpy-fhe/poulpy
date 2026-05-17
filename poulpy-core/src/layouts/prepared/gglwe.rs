@@ -1,9 +1,6 @@
 use poulpy_hal::{
-    api::{ScratchAvailable, VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes},
-    layouts::{
-        Backend, Data, Module, ScratchArena, VmpPMat, VmpPMatReborrowBackendRef, VmpPMatToBackendMut, VmpPMatToBackendRef,
-        vmp_pmat_backend_mut_from_mut, vmp_pmat_backend_ref_from_ref,
-    },
+    api::{VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes},
+    layouts::{Backend, Data, Module, ScratchArena, VmpPMat, VmpPMatToBackendMut, VmpPMatToBackendRef},
 };
 
 use crate::layouts::{
@@ -186,11 +183,10 @@ where
     /// Transforms a standard [`GGLWE`] into the DFT domain, writing the result into `res`.
     ///
     /// Both `res` and `other` must share the same ring degree, base2k, precision, and dsize.
-    fn gglwe_prepare<'s, R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'s, BE>)
+    fn gglwe_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GGLWEPreparedToBackendMut<BE>,
         O: GGLWEToBackendRef<BE>,
-        ScratchArena<'s, BE>: ScratchAvailable,
     {
         let mut res = res.to_backend_mut();
         let other = other.to_backend_ref();
@@ -233,26 +229,6 @@ impl<B: Backend> GGLWEPreparedToBackendRef<B> for GGLWEPrepared<B::OwnedBuf, B> 
     }
 }
 
-impl<'b, B: Backend + 'b> GGLWEPreparedToBackendRef<B> for &GGLWEPrepared<B::BufRef<'b>, B> {
-    fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
-        GGLWEPrepared {
-            base2k: self.base2k,
-            dsize: self.dsize,
-            data: vmp_pmat_backend_ref_from_ref::<B>(&self.data),
-        }
-    }
-}
-
-impl<'b, B: Backend + 'b> GGLWEPreparedToBackendRef<B> for &mut GGLWEPrepared<B::BufMut<'b>, B> {
-    fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
-        GGLWEPrepared {
-            base2k: self.base2k,
-            dsize: self.dsize,
-            data: self.data.reborrow_backend_ref(),
-        }
-    }
-}
-
 pub trait GGLWEPreparedToBackendMut<B: Backend> {
     fn to_backend_mut(&mut self) -> GGLWEPreparedBackendMut<'_, B>;
 }
@@ -263,16 +239,6 @@ impl<B: Backend> GGLWEPreparedToBackendMut<B> for GGLWEPrepared<B::OwnedBuf, B> 
             base2k: self.base2k,
             dsize: self.dsize,
             data: self.data.to_backend_mut(),
-        }
-    }
-}
-
-impl<'b, B: Backend + 'b> GGLWEPreparedToBackendMut<B> for &mut GGLWEPrepared<B::BufMut<'b>, B> {
-    fn to_backend_mut(&mut self) -> GGLWEPreparedBackendMut<'_, B> {
-        GGLWEPrepared {
-            base2k: self.base2k,
-            dsize: self.dsize,
-            data: vmp_pmat_backend_mut_from_mut::<B>(&mut self.data),
         }
     }
 }

@@ -30,7 +30,6 @@ where
     R: GGLWEInfos,
     A: GGLWEInfos,
     K: GGLWEInfos,
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     assert_eq!(module.n() as u32, res_infos.n());
     assert_eq!(module.n() as u32, a_infos.n());
@@ -46,15 +45,15 @@ where
     }
 }
 
-pub fn glwe_automorphism_key_automorphism_default<'s, BE, M, R, A, K>(
+pub fn glwe_automorphism_key_automorphism_default<BE, M, R, A, K>(
     module: &M,
     res: &mut R,
     a: &A,
     key: &K,
     key_size: usize,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + 's,
+    BE: Backend,
     M: GGLWEAutomorphismDefault<BE>
         + GaloisElement
         + GLWEKeyswitchDefault<BE>
@@ -65,7 +64,6 @@ pub fn glwe_automorphism_key_automorphism_default<'s, BE, M, R, A, K>(
     R: GGLWEToBackendMut<BE> + SetGaloisElement + GGLWEInfos,
     A: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     assert!(
         res.dnum().as_u32() <= a.dnum().as_u32(),
@@ -131,18 +129,17 @@ pub fn glwe_automorphism_key_automorphism_default<'s, BE, M, R, A, K>(
     res.set_p((p * key.p()) % module.cyclotomic_order());
 }
 
-pub fn glwe_automorphism_key_automorphism_assign_default<'s, BE, M, R, K>(
+pub fn glwe_automorphism_key_automorphism_assign_default<BE, M, R, K>(
     module: &M,
     res: &mut R,
     key: &K,
     key_size: usize,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + 's,
+    BE: Backend,
     M: GaloisElement + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssignBackend<BE> + CyclotomicOrder,
     R: GGLWEToBackendMut<BE> + SetGaloisElement + GetGaloisElement + GGLWEInfos,
     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     assert_eq!(res.rank(), key.rank(), "key rank: {} != key rank: {}", res.rank(), key.rank());
 

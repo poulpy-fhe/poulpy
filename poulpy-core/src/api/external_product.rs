@@ -17,14 +17,8 @@ pub trait GLWEExternalProduct<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         D: GGSWPreparedToBackendRef<BE> + GGSWInfos;
 
-    fn glwe_external_product<R, A, D>(
-        &self,
-        res: &mut R,
-        lhs: &A,
-        rhs: &D,
-        key_size: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_external_product<R, A, D>(&self, res: &mut R, lhs: &A, rhs: &D, key_size: usize, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         D: GGSWPreparedToBackendRef<BE> + GGSWInfos;

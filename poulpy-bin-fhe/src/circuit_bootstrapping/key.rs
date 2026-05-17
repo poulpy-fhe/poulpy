@@ -2,7 +2,6 @@ use anyhow::Result;
 use itertools::Itertools;
 use poulpy_core::{
     DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, Distribution, GGLWEToGGSWKeyEncryptSk, GLWEAutomorphismKeyEncryptSk, GetDistribution,
-    ScratchArenaTakeCore,
     layouts::{
         GGLWEInfos, GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGSWInfos, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEInfos,
         GLWESecretPreparedFactory, GLWESecretToBackendRef, LWEInfos, LWESecretToBackendRef, ModuleCoreAlloc,
@@ -127,7 +126,7 @@ where
     /// Scratch space is reused across sub-key encryptions (peak is the maximum
     /// of the three individual requirements).
     #[allow(clippy::too_many_arguments)]
-    fn circuit_bootstrapping_key_encrypt_sk<'s, S0, S1>(
+    fn circuit_bootstrapping_key_encrypt_sk<S0, S1>(
         &self,
         res: &mut CircuitBootstrappingKey<BE::OwnedBuf, BRA>,
         sk_lwe: &S0,
@@ -135,7 +134,7 @@ where
         enc_infos: &CircuitBootstrappingEncryptionInfos,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
         S1: GLWESecretToBackendRef<BE> + GLWEInfos + GetDistribution;
@@ -197,7 +196,7 @@ pub struct CircuitBootstrappingKey<D: Data, BRA: BlindRotationAlgo> {
 
 impl<BRA: BlindRotationAlgo> CircuitBootstrappingKey<Vec<u8>, BRA> {
     #[allow(clippy::too_many_arguments)]
-    pub fn encrypt_sk<'s, M, S0, S1, BE>(
+    pub fn encrypt_sk<M, S0, S1, BE>(
         &mut self,
         module: &M,
         sk_lwe: &S0,
@@ -205,12 +204,12 @@ impl<BRA: BlindRotationAlgo> CircuitBootstrappingKey<Vec<u8>, BRA> {
         enc_infos: &CircuitBootstrappingEncryptionInfos,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
         S1: GLWESecretToBackendRef<BE> + GLWEInfos + GetDistribution,
         M: CircuitBootstrappingKeyEncryptSk<BRA, BE>,
-        BE: Backend<OwnedBuf = Vec<u8>> + HostBackend + 's,
+        BE: Backend<OwnedBuf = Vec<u8>> + HostBackend,
     {
         module.circuit_bootstrapping_key_encrypt_sk(self, sk_lwe, sk_glwe, enc_infos, source_xe, source_xa, scratch);
     }
@@ -222,7 +221,6 @@ where
         + BlindRotationKeyEncryptSk<BRA, BE>
         + GLWEAutomorphismKeyEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     BE::OwnedBuf: HostDataMut + HostDataRef,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
@@ -235,7 +233,7 @@ where
             .max(self.gglwe_to_ggsw_key_encrypt_sk_tmp_bytes(&infos.tsk_infos()))
     }
 
-    fn circuit_bootstrapping_key_encrypt_sk<'s, S0, S1>(
+    fn circuit_bootstrapping_key_encrypt_sk<S0, S1>(
         &self,
         res: &mut CircuitBootstrappingKey<BE::OwnedBuf, BRA>,
         sk_lwe: &S0,
@@ -243,7 +241,7 @@ where
         enc_infos: &CircuitBootstrappingEncryptionInfos,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
         S1: GLWESecretToBackendRef<BE> + GLWEInfos + GetDistribution,

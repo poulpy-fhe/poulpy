@@ -4,7 +4,7 @@ use poulpy_hal::{
 };
 
 use poulpy_core::{
-    Distribution, EncryptionInfos, GGSWEncryptSk, GetDistribution, ScratchArenaTakeCore,
+    Distribution, EncryptionInfos, GGSWEncryptSk, GetDistribution,
     layouts::{GGSWInfos, GLWEInfos, GLWESecretPreparedToBackendRef, LWEInfos, LWESecretToBackendRef},
 };
 
@@ -23,7 +23,7 @@ where
         self.ggsw_encrypt_sk_tmp_bytes(infos)
     }
 
-    fn blind_rotation_key_encrypt_sk<'s, S0, S1, E>(
+    fn blind_rotation_key_encrypt_sk<S0, S1, E>(
         &self,
         res: &mut BlindRotationKey<BE::OwnedBuf, CGGI>,
         sk_glwe: &S0,
@@ -31,12 +31,11 @@ where
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         S0: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos,
         S1: LWESecretToBackendRef<BE> + LWEInfos + GetDistribution,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
     {
         assert_eq!(res.keys.len() as u32, sk_lwe.n());
         assert!(sk_glwe.n() <= self.n() as u32);

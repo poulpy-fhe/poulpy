@@ -41,7 +41,6 @@ where
         + GLWESecretTensorFactory<BE>
         + GLWESecretPreparedFactory<BE>
         + VecZnxCopyBackend<BE>,
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     fn gglwe_to_ggsw_key_compressed_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where

@@ -258,16 +258,16 @@ pub trait VecZnxBigNormalizeTmpBytes {
 /// Normalizes a [`VecZnxBig`](crate::layouts::VecZnxBig) into a coefficient-domain
 /// [`VecZnx`](crate::layouts::VecZnx) with the target base and offset.
 pub trait VecZnxBigNormalize<B: Backend> {
-    fn vec_znx_big_normalize<'s, 'r, 'a>(
+    fn vec_znx_big_normalize(
         &self,
-        res: &mut VecZnxBackendMut<'r, B>,
+        res: &mut VecZnxBackendMut<'_, B>,
         res_base2k: usize,
         res_offset: i64,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'a, B>,
+        a: &VecZnxBigBackendRef<'_, B>,
         a_base2k: usize,
         a_col: usize,
-        scratch: &mut ScratchArena<'s, B>,
+        scratch: &mut ScratchArena<'_, B>,
     );
 }
 
@@ -290,11 +290,11 @@ pub trait VecZnxBigAutomorphism<B: Backend> {
 
 pub trait VecZnxBigAutomorphismAssign<B: Backend> {
     /// Applies the automorphism X^i -> X^ik on `a` and stores the result on `a`.
-    fn vec_znx_big_automorphism_assign<'s>(
+    fn vec_znx_big_automorphism_assign(
         &self,
         p: i64,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
-        scratch: &mut ScratchArena<'s, B>,
+        scratch: &mut ScratchArena<'_, B>,
     );
 }

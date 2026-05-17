@@ -2,7 +2,7 @@ use crate::default::imag::CKKSImagDefault;
 
 use anyhow::Result;
 use poulpy_core::{
-    GLWECopy, GLWENegate, GLWERotate, GLWEShift, ScratchArenaTakeCore,
+    GLWECopy, GLWENegate, GLWERotate, GLWEShift,
     layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
@@ -46,7 +46,6 @@ where
     BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
     Module<BE>:
         crate::default::imag::CKKSImagDefault<BE> + GLWECopy<BE> + GLWENegate<BE> + GLWERotate<BE> + GLWEShift<BE> + ModuleN,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_mul_i_tmp_bytes(module: &Module<BE>) -> usize {
         module.ckks_mul_i_tmp_bytes_default()

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use poulpy_core::{
-    GLWECopy, GLWEShift, ScratchArenaTakeCore,
+    GLWECopy, GLWEShift,
     layouts::{GLWEToBackendMut, GLWEToBackendRef},
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -12,7 +12,6 @@ use crate::api::CKKSPow2Ops;
 impl<BE: Backend + CKKSPow2Impl<BE>> CKKSPow2Ops<BE> for Module<BE>
 where
     Module<BE>: GLWECopy<BE> + GLWEShift<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_mul_pow2_tmp_bytes(&self) -> usize {
         BE::ckks_mul_pow2_tmp_bytes(self)
