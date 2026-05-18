@@ -159,11 +159,11 @@ POULPY_BENCH_PARAMS=bench_params.json \
 
 ```sh
 POULPY_BENCH_PARAMS='{"core":{"n":4096,"base2k":18,"k":54,"rank":1,"dsize":1}}' \
-  cargo bench -p poulpy-bench --bench standard --features hal-bench,core-bench,bin-fhe-bench -- --save-baseline v0.4.4
+  cargo bench -p poulpy-bench --bench standard --features hal-bench,core-bench,bin-fhe-bench -- --save-baseline v0.6.0
 
 # later, compare against it with the same params
 POULPY_BENCH_PARAMS='{"core":{"n":4096,"base2k":18,"k":54,"rank":1,"dsize":1}}' \
-  cargo bench -p poulpy-bench --bench standard --features hal-bench,core-bench,bin-fhe-bench -- --baseline v0.4.4
+  cargo bench -p poulpy-bench --bench standard --features hal-bench,core-bench,bin-fhe-bench -- --baseline v0.6.0
 ```
 
 ## Running benchmarks
@@ -228,10 +228,10 @@ cargo bench -p poulpy-bench --bench standard --features hal-bench,core-bench,bin
 
 ```sh
 # save a named baseline (e.g. tagging a release)
-cargo bench -p poulpy-bench --bench standard --features hal-bench,core-bench,bin-fhe-bench -- --save-baseline v0.4.4
+cargo bench -p poulpy-bench --bench standard --features hal-bench,core-bench,bin-fhe-bench -- --save-baseline v0.6.0
 
 # run again later and compare against it
-cargo bench -p poulpy-bench --bench standard --features hal-bench,core-bench,bin-fhe-bench -- --baseline v0.4.4
+cargo bench -p poulpy-bench --bench standard --features hal-bench,core-bench,bin-fhe-bench -- --baseline v0.6.0
 ```
 
 The same `--save-baseline` / `--baseline` flags work on any bench binary:

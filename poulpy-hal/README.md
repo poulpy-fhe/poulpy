@@ -74,7 +74,7 @@ This module provides open extension points that can be implemented to provide a 
 
 ### **poulpy-hal/delegates**
 
-This module provides a link between the open extension points and public API, forwarding trait calls on `Module<BE>` to `BE`'s `HalImpl`.
+This module provides a link between the open extension points and public API, forwarding trait calls on `Module<BE>` to the matching per-family OEP trait implemented by `BE` (for example `HalVecZnxImpl<BE>`, `HalVmpImpl<BE>`, or `HalConvolutionImpl<BE>`).
 
 
 ---------
@@ -90,31 +90,36 @@ flowchart TD
 
 ### E2E Dispatch Example
 
-User-facing call:
+User-facing backend-native call:
 
-```rust
-use poulpy_hal::api::VecZnxAddInto;
-use poulpy_hal::layouts::Module;
+```rust,ignore
+use poulpy_hal::{
+    api::VecZnxAddIntoBackend,
+    layouts::{Module, VecZnxBackendMut, VecZnxBackendRef},
+};
 use poulpy_cpu_avx::FFT64Avx;
 
 let module = Module::<FFT64Avx>::new(1 << 12);
-module.vec_znx_add_into(&mut res, 0, &a, 0, &b, 0);
+module.vec_znx_add_into_backend(&mut res, 0, &a, 0, &b, 0);
 ```
 
 Delegate in `poulpy-hal`:
 
 ```rust
-impl<BE> VecZnxAddInto for Module<BE>
+impl<BE> VecZnxAddIntoBackend<BE> for Module<BE>
 where
-    BE: Backend + HalImpl<BE>,
+    BE: Backend + HalVecZnxImpl<BE>,
 {
-    fn vec_znx_add_into<R, A, B>(&self, res: &mut R, res_col: usize, a: &A, a_col: usize, b: &B, b_col: usize)
-    where
-        R: VecZnxToBackendMut<BE>,
-        A: VecZnxToBackendRef<BE>,
-        B: VecZnxToBackendRef<BE>,
-    {
-        BE::vec_znx_add_into(self, res, res_col, a, a_col, b, b_col)
+    fn vec_znx_add_into_backend(
+        &self,
+        res: &mut VecZnxBackendMut<'_, BE>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, BE>,
+        a_col: usize,
+        b: &VecZnxBackendRef<'_, BE>,
+        b_col: usize,
+    ) {
+        BE::vec_znx_add_into_backend(self, res, res_col, a, a_col, b, b_col)
     }
 }
 ```
@@ -122,23 +127,8 @@ where
 Backend implementation (AVX keeps defaults unless it overrides):
 
 ```rust
-unsafe impl HalImpl<FFT64Avx> for FFT64Avx {
-    fn vec_znx_add_into<R, A, B>(
-        module: &Module<Self>,
-        res: &mut R,
-        res_col: usize,
-        a: &A,
-        a_col: usize,
-        b: &B,
-        b_col: usize,
-    )
-    where
-        R: VecZnxToBackendMut<Self>,
-        A: VecZnxToBackendRef<Self>,
-        B: VecZnxToBackendRef<Self>,
-    {
-        HalVecZnxDefault::vec_znx_add_into_default(module, res, res_col, a, a_col, b, b_col)
-    }
+unsafe impl HalVecZnxImpl<FFT64Avx> for FFT64Avx {
+    poulpy_cpu_ref::hal_impl_vec_znx!();
 }
 ```
 
@@ -146,25 +136,19 @@ Default in `poulpy-cpu-ref`:
 
 ```rust
 pub trait HalVecZnxDefault<BE: Backend>: Backend {
-    fn vec_znx_add_default<R, A, B>(
+    fn vec_znx_add_into_backend_default(
         module: &Module<BE>,
-        res: &mut R,
+        res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
-        a: &A,
+        a: &VecZnxBackendRef<'_, BE>,
         a_col: usize,
-        b: &B,
+        b: &VecZnxBackendRef<'_, BE>,
         b_col: usize,
     )
     where
-        R: VecZnxToBackendMut<BE>,
-        A: VecZnxToBackendRef<BE>,
-        B: VecZnxToBackendRef<BE>,
         BE: ZnxAdd + ZnxCopy + ZnxZero,
     {
-        let mut res = res.to_backend_mut();
-        let a = a.to_backend_ref();
-        let b = b.to_backend_ref();
-        reference::vec_znx::vec_znx_add_into::<BE>(&mut res, res_col, &a, a_col, &b, b_col);
+        vec_znx_add_into::<BE>(res, res_col, a, a_col, b, b_col);
     }
 }
 ```

@@ -7,7 +7,7 @@ readme = "README.md"
 description = "A crate providing concrete AVX accelerated CPU implementations of poulpy-hal through its open extension points"
 repository = "https://github.com/poulpy-fhe/poulpy"
 homepage = "https://github.com/poulpy-fhe/poulpy"
-documentation = "https://docs.rs/poulpy"
+documentation = "https://docs.rs/poulpy-cpu-avx"
 
 [lib]
 doctest = false

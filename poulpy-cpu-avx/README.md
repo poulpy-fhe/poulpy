@@ -7,7 +7,7 @@ This backend implements the Poulpy HAL extension traits and can be used by:
 - [`poulpy-hal`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-hal)
 - [`poulpy-core`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-core)
 - [`poulpy-ckks`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-ckks) (backend wiring opt-in via `enable-ckks`)
-- [`poulpy-bin-fhe`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-bin-fhe)
+- [`poulpy-bin-fhe`](https://github.com/poulpy-fhe/poulpy/tree/main/poulpy-bin-fhe) through the crate's explicit `enable-avx` integration feature
 
 ## 🚩 Safety and Requirements
 
@@ -77,7 +77,7 @@ let module: Module<FFT64Avx> = Module::<FFT64Avx>::new(1 << log_n);
 let module: Module<NTT120Avx> = Module::<NTT120Avx>::new(1 << log_n);
 ```
 
-Once compiled with `enable-avx`, both backends are usable transparently anywhere Poulpy expects a backend type (`poulpy-hal`, `poulpy-core`, `poulpy-ckks`, `poulpy-bin-fhe`).
+Once compiled with `enable-avx`, both backends are usable anywhere Poulpy expects a backend type in the HAL/core/CKKS layers. `poulpy-bin-fhe` has a separate `enable-avx` feature for its current crate-local integration.
 
 ## 🤝 Contributors
 
@@ -90,14 +90,13 @@ To implement your own Poulpy backend (SIMD or accelerator):
 
 At every layer the macro and the direct implementation are mutually exclusive per operation family: the macro opts the backend into the portable `default` path, while a direct OEP impl replaces it entirely. There is no requirement to use the macros — a backend that needs full control can implement every OEP trait by hand.
 
-Your backend will automatically integrate with:
+Your backend will automatically integrate with the backend-generic layers:
 
 * `poulpy-hal`
 * `poulpy-core`
 * `poulpy-ckks`
-* `poulpy-bin-fhe`
 
-No modifications to those crates are required — the HAL provides the extension points. Only operations that need a faster implementation require explicit overrides; everything else is inherited from the `default` layer for free.
+No modifications to those crates are required — the HAL provides the extension points. Scheme crates that still carry crate-specific backend glue, such as parts of `poulpy-bin-fhe` in v0.6.0, may need follow-up integration work. Only operations that need a faster implementation require explicit overrides; everything else is inherited from the `default` layer for free.
 
 ---
 
