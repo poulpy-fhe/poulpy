@@ -2,11 +2,11 @@ use crate::default::mul::CKKSMulDefault;
 
 use anyhow::Result;
 use poulpy_core::{
-    GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWETensoring, ScratchArenaTakeCore,
+    GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWETensoring,
     layouts::{GGLWEInfos, GLWEInfos, LWEInfos, ModuleCoreAlloc, prepared::GLWETensorKeyPreparedToBackendRef},
 };
 use poulpy_hal::{
-    api::{ScratchAvailable, VecZnxCopyBackend},
+    api::VecZnxCopyBackend,
     layouts::{Backend, Module, ScratchArena},
 };
 
@@ -117,7 +117,6 @@ where
         + GLWETensoring<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
         + VecZnxCopyBackend<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_mul_tmp_bytes<R: GLWEInfos, T: GGLWEInfos>(module: &Module<BE>, res: &R, tsk: &T) -> usize {
         module.ckks_mul_tmp_bytes_default(res, tsk)

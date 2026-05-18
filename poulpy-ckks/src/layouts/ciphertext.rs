@@ -458,7 +458,6 @@ impl<D: Data> CKKSCiphertext<D, Unnormalized> {
         BE: Backend,
         M: GLWENormalize<BE>,
         GLWE<D>: GLWEToBackendMut<BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         let mut normalized = CKKSCiphertext::<D>::from_inner(self.inner, self.meta);
         module.glwe_normalize_assign(&mut normalized, scratch);
@@ -480,7 +479,6 @@ impl<'a, D: Data> UnnormalizedCKKSCiphertextRefMut<'a, D> {
         BE: Backend,
         M: GLWENormalize<BE>,
         CKKSCiphertext<D>: GLWEToBackendMut<BE>,
-        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
     {
         module.glwe_normalize_assign(self.inner, scratch);
     }

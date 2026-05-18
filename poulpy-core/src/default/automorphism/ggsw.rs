@@ -7,7 +7,6 @@
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{
-    ScratchArenaTakeCore,
     layouts::{
         GGLWEInfos, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GetGaloisElement,
         prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
@@ -29,7 +28,6 @@ where
     A: GGSWInfos,
     K: GGLWEInfos,
     T: GGLWEInfos,
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     module
         .glwe_automorphism_tmp_bytes_default(res_infos, a_infos, key_infos)
@@ -37,7 +35,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ggsw_automorphism_default<'s, BE, M, R, A, K, T>(
+pub fn ggsw_automorphism_default<BE, M, R, A, K, T>(
     module: &M,
     res: &mut R,
     a: &A,
@@ -45,15 +43,14 @@ pub fn ggsw_automorphism_default<'s, BE, M, R, A, K, T>(
     key_size: usize,
     tsk: &T,
     tsk_size: usize,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + 's,
+    BE: Backend,
     M: GGSWAutomorphismDefault<BE> + GLWEAutomorphismDefault<BE> + ConversionDefault<BE>,
     R: GGSWToBackendMut<BE> + GGSWInfos,
     A: GGSWToBackendRef<BE> + GGSWInfos,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     {
         let a_backend = a.to_backend_ref();
@@ -68,21 +65,20 @@ pub fn ggsw_automorphism_default<'s, BE, M, R, A, K, T>(
     module.ggsw_expand_row_default(&mut res.to_backend_mut(), tsk, tsk_size, scratch);
 }
 
-pub fn ggsw_automorphism_assign_default<'s, BE, M, R, K, T>(
+pub fn ggsw_automorphism_assign_default<BE, M, R, K, T>(
     module: &M,
     res: &mut R,
     key: &K,
     key_size: usize,
     tsk: &T,
     tsk_size: usize,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + 's,
+    BE: Backend,
     M: GGSWAutomorphismDefault<BE> + GLWEAutomorphismDefault<BE> + ConversionDefault<BE>,
     R: GGSWToBackendMut<BE> + GGSWInfos,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     {
         let rows = res.dnum().as_usize();

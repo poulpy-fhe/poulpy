@@ -1,7 +1,7 @@
 use crate::{
     layouts::{
-        Backend, NoiseInfos, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxBigBackendRef,
-        VecZnxBigOwned,
+        Backend, NoiseInfos, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
+        VecZnxBigBackendRef, VecZnxBigOwned,
     },
     source::Source,
 };
@@ -21,17 +21,23 @@ pub trait VecZnxBigFromSmallBackend<B: Backend> {
 /// Allocates as [crate::layouts::VecZnxBig].
 pub trait VecZnxBigAlloc<B: Backend> {
     fn vec_znx_big_alloc(&self, cols: usize, size: usize) -> VecZnxBigOwned<B>;
+
+    fn vec_znx_big_alloc_n(&self, n: usize, cols: usize, size: usize) -> VecZnxBigOwned<B>;
 }
 
 /// Returns the size in bytes to allocate a [crate::layouts::VecZnxBig].
 pub trait VecZnxBigBytesOf {
     fn bytes_of_vec_znx_big(&self, cols: usize, size: usize) -> usize;
+
+    fn bytes_of_vec_znx_big_n(&self, n: usize, cols: usize, size: usize) -> usize;
 }
 
 /// Consume a vector of bytes into a [crate::layouts::VecZnxBig].
 /// User must ensure that bytes is memory aligned and that its length is equal to [VecZnxBigBytesOf::bytes_of_vec_znx_big].
 pub trait VecZnxBigFromBytes<B: Backend> {
     fn vec_znx_big_from_bytes(&self, cols: usize, size: usize, bytes: Vec<u8>) -> VecZnxBigOwned<B>;
+
+    fn vec_znx_big_from_bytes_n(&self, n: usize, cols: usize, size: usize, bytes: Vec<u8>) -> VecZnxBigOwned<B>;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -199,6 +205,34 @@ pub trait VecZnxBigSubSmallNegateAssign<B: Backend> {
     );
 }
 
+/// Sums coefficients from a selected [`VecZnxBig`](crate::layouts::VecZnxBig)
+/// column and stores each limb's result in one destination coefficient.
+pub trait VecZnxBigInnerSumBackend<B: Backend> {
+    fn vec_znx_big_inner_sum_backend<'r, 'a>(
+        &self,
+        res: &mut VecZnxBigBackendMut<'r, B>,
+        res_col: usize,
+        res_coeff: usize,
+        a: &VecZnxBigBackendRef<'a, B>,
+        a_col: usize,
+    );
+}
+
+/// Computes the element-wise (Hadamard) product `res[k] = a[k] * b[k]` for all `k`
+/// and stores each product as a [`ScalarBig`](Backend::ScalarBig) value in `res`.
+/// Use [`VecZnxBigInnerSumBackend`] afterwards to reduce to a single scalar.
+pub trait VecZnxScalarProduct<B: Backend> {
+    fn vec_znx_scalar_product<'r, 'a, 'b>(
+        &self,
+        res: &mut VecZnxBigBackendMut<'r, B>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'a, B>,
+        a_col: usize,
+        b: &ScalarZnxBackendRef<'b, B>,
+        b_col: usize,
+    );
+}
+
 /// Negates the selected column of `a` and stores the result in `res`.
 pub trait VecZnxBigNegate<B: Backend> {
     fn vec_znx_big_negate(
@@ -224,16 +258,16 @@ pub trait VecZnxBigNormalizeTmpBytes {
 /// Normalizes a [`VecZnxBig`](crate::layouts::VecZnxBig) into a coefficient-domain
 /// [`VecZnx`](crate::layouts::VecZnx) with the target base and offset.
 pub trait VecZnxBigNormalize<B: Backend> {
-    fn vec_znx_big_normalize<'s, 'r, 'a>(
+    fn vec_znx_big_normalize(
         &self,
-        res: &mut VecZnxBackendMut<'r, B>,
+        res: &mut VecZnxBackendMut<'_, B>,
         res_base2k: usize,
         res_offset: i64,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'a, B>,
+        a: &VecZnxBigBackendRef<'_, B>,
         a_base2k: usize,
         a_col: usize,
-        scratch: &mut ScratchArena<'s, B>,
+        scratch: &mut ScratchArena<'_, B>,
     );
 }
 
@@ -256,11 +290,11 @@ pub trait VecZnxBigAutomorphism<B: Backend> {
 
 pub trait VecZnxBigAutomorphismAssign<B: Backend> {
     /// Applies the automorphism X^i -> X^ik on `a` and stores the result on `a`.
-    fn vec_znx_big_automorphism_assign<'s>(
+    fn vec_znx_big_automorphism_assign(
         &self,
         p: i64,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
-        scratch: &mut ScratchArena<'s, B>,
+        scratch: &mut ScratchArena<'_, B>,
     );
 }

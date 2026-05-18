@@ -29,12 +29,11 @@ impl_decryption_delegate!(
     {
         BE::glwe_decrypt_tmp_bytes(self, infos)
     },
-    fn glwe_decrypt<'s, R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'s, BE>)
+    fn glwe_decrypt<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendRef<BE> + GLWEInfos,
         P: GLWEToBackendMut<BE> + GLWEInfos + SetLWEInfos,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        for<'a> ScratchArena<'a, BE>: crate::ScratchArenaTakeCore<'a, BE>,
     {
         BE::glwe_decrypt(self, res, pt, sk, scratch)
     }
@@ -42,12 +41,11 @@ impl_decryption_delegate!(
 
 impl_decryption_delegate!(
     LWEDecrypt<BE>,
-    fn lwe_decrypt<'s, R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'s, BE>)
+    fn lwe_decrypt<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
         R: LWEToBackendRef<BE> + LWEInfos,
         P: LWEPlaintextToBackendMut<BE> + SetLWEInfos + LWEInfos,
         S: LWESecretToBackendRef<BE> + LWEInfos,
-        for<'a> ScratchArena<'a, BE>: crate::ScratchArenaTakeCore<'a, BE>,
     {
         BE::lwe_decrypt(self, res, pt, sk, scratch)
     },

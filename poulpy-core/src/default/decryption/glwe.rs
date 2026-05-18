@@ -7,12 +7,9 @@ use poulpy_hal::{
 };
 
 pub use crate::api::GLWEDecrypt;
-use crate::{
-    ScratchArenaTakeCore,
-    layouts::{
-        GLWEBackendMut, GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetLWEInfos,
-        prepared::{GLWESecretPreparedBackendRef, GLWESecretPreparedToBackendRef},
-    },
+use crate::layouts::{
+    GLWEBackendMut, GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetLWEInfos,
+    prepared::{GLWESecretPreparedBackendRef, GLWESecretPreparedToBackendRef},
 };
 
 pub fn glwe_decrypt_tmp_bytes_default<M, BE: Backend, A>(module: &M, infos: &A) -> usize
@@ -45,7 +42,6 @@ where
     R: GLWEToBackendRef<BE> + GLWEInfos,
     P: GLWEToBackendMut<BE> + GLWEInfos + SetLWEInfos,
     S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let res_backend = res.to_backend_ref();
     let mut pt_backend = pt.to_backend_mut();
@@ -71,7 +67,6 @@ pub(crate) fn glwe_decrypt_backend_inner<'arena, 'scratch, M, BE: Backend>(
         + VecZnxBigAddAssign<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     #[cfg(debug_assertions)]
     {

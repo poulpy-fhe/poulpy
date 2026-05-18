@@ -42,13 +42,13 @@ pub fn trace_galois_elements(log_n: usize, cyclotomic_order: i64) -> Vec<i64> {
         .collect()
 }
 
-fn trace_assign_internal<'s, M, K, H, R, BE: Backend + 's>(
+fn trace_assign_internal<M, K, H, R, BE: Backend>(
     module: &M,
     res: &mut R,
     skip: usize,
     keys: &H,
     key_size: usize,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
     M: ModuleLogN
         + GaloisElement
@@ -62,7 +62,6 @@ fn trace_assign_internal<'s, M, K, H, R, BE: Backend + 's>(
     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let ksk_infos: &GGLWELayout = &keys.automorphism_key_infos();
     let log_n: usize = module.log_n();
@@ -130,35 +129,31 @@ pub trait GLWETraceDefault<BE: Backend> {
         A: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_trace_default<'s, R, A, K, H>(
+    fn glwe_trace_default<R, A, K, H>(
         &self,
         res: &mut R,
         skip: usize,
         a: &A,
         keys: &H,
         key_size: usize,
-        scratch: &'s mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
-        BE: 's;
+        H: GLWEAutomorphismKeyHelper<K, BE>;
 
-    fn glwe_trace_assign_default<'s, R, K, H>(
+    fn glwe_trace_assign_default<R, K, H>(
         &self,
         res: &mut R,
         skip: usize,
         keys: &H,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
-        BE: 's;
+        H: GLWEAutomorphismKeyHelper<K, BE>;
 }
 
 /// Reference implementations of the [`GLWETraceDefault`] methods.
@@ -250,16 +245,16 @@ pub mod glwe_trace_defaults_impl {
         lvl_0 + lvl_1.max(lvl_2).max(lvl_3)
     }
 
-    pub fn glwe_trace_default<'s, BE, M, R, A, K, H>(
+    pub fn glwe_trace_default<BE, M, R, A, K, H>(
         module: &M,
         res: &mut R,
         skip: usize,
         a: &A,
         keys: &H,
         key_size: usize,
-        scratch: &'s mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
-        BE: Backend + 's,
+        BE: Backend,
         M: GLWETraceDefault<BE>
             + ModuleLogN
             + GaloisElement
@@ -272,7 +267,6 @@ pub mod glwe_trace_defaults_impl {
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
     {
         let atk_layout: &GGLWELayout = &keys.automorphism_key_infos();
         assert!(
@@ -318,15 +312,15 @@ pub mod glwe_trace_defaults_impl {
         }
     }
 
-    pub fn glwe_trace_assign_default<'s, BE, M, R, K, H>(
+    pub fn glwe_trace_assign_default<BE, M, R, K, H>(
         module: &M,
         res: &mut R,
         skip: usize,
         keys: &H,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
-        BE: Backend + 's,
+        BE: Backend,
         M: GLWETraceDefault<BE>
             + ModuleLogN
             + GaloisElement
@@ -338,7 +332,6 @@ pub mod glwe_trace_defaults_impl {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
     {
         trace_assign_internal::<M, K, H, _, BE>(module, res, skip, keys, key_size, scratch);
     }

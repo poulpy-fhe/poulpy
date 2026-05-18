@@ -585,13 +585,10 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
 
     fn lwe_alloc_from_infos<A: LWEInfos>(&self, infos: &A) -> LWE<B::OwnedBuf> {
         let size = infos.max_k().as_usize().div_ceil(infos.base2k().as_usize());
+        let n = infos.n().as_usize();
         LWE {
-            data: VecZnx::from_data(
-                B::alloc_zeroed_bytes(VecZnx::<Vec<u8>>::bytes_of(infos.n().as_usize() + 1, 1, size)),
-                infos.n().as_usize() + 1,
-                1,
-                size,
-            ),
+            body: VecZnx::from_data(B::alloc_zeroed_bytes(VecZnx::<Vec<u8>>::bytes_of(1, 1, size)), 1, 1, size),
+            mask: VecZnx::from_data(B::alloc_zeroed_bytes(VecZnx::<Vec<u8>>::bytes_of(n, 1, size)), n, 1, size),
             base2k: infos.base2k(),
         }
     }

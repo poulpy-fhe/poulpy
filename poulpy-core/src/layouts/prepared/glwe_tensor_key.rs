@@ -1,7 +1,4 @@
-use poulpy_hal::{
-    api::ScratchAvailable,
-    layouts::{Backend, Data, Module, ScratchArena, vmp_pmat_backend_ref_from_ref},
-};
+use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::layouts::prepared::{GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef};
 use crate::layouts::{
@@ -173,12 +170,10 @@ where
         lvl_0
     }
 
-    fn prepare_tensor_key<'s, R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'s, B>)
+    fn prepare_tensor_key<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, B>)
     where
         R: GGLWEPreparedToBackendMut<B>,
         O: GGLWEToBackendRef<B>,
-        ScratchArena<'s, B>: ScratchAvailable,
-        B: 's,
     {
         let tmp_bytes = {
             let res_infos = res.to_backend_mut();
@@ -215,17 +210,6 @@ where
 {
     fn to_backend_ref(&self) -> GLWETensorKeyPreparedBackendRef<'_, B> {
         GLWETensorKeyPrepared(self.0.to_backend_ref())
-    }
-}
-
-impl<'b, B: Backend + 'b> GLWETensorKeyPreparedToBackendRef<B> for &GLWETensorKeyPrepared<B::BufRef<'b>, B> {
-    fn to_backend_ref(&self) -> GLWETensorKeyPreparedBackendRef<'_, B> {
-        let inner = &self.0;
-        GLWETensorKeyPrepared(GGLWEPrepared {
-            data: vmp_pmat_backend_ref_from_ref::<B>(&inner.data),
-            base2k: inner.base2k,
-            dsize: inner.dsize,
-        })
     }
 }
 

@@ -1,12 +1,9 @@
 use anyhow::Result;
 use poulpy_core::{
-    GLWECopy, GLWEShift, ScratchArenaTakeCore,
+    GLWECopy, GLWEShift,
     layouts::{GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
 };
-use poulpy_hal::{
-    api::ScratchAvailable,
-    layouts::{Backend, ScratchArena},
-};
+use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub, ckks_offset_unary};
 
@@ -23,7 +20,6 @@ pub trait CKKSCopyDefault<BE: Backend> {
         Self: GLWECopy<BE> + GLWEShift<BE>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     {
         let offset = ckks_offset_unary(dst, src);
         if offset == 0 {

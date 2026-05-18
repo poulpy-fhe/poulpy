@@ -3,10 +3,7 @@ mod cggi;
 pub use cggi::*;
 
 use itertools::izip;
-use poulpy_core::{
-    ScratchArenaTakeCore,
-    layouts::{GGSWInfos, GLWEInfos, GLWEToBackendMut, LWE, LWEInfos, LWEToBackendRef, ModuleCoreAlloc},
-};
+use poulpy_core::layouts::{GGSWInfos, GLWEInfos, GLWEToBackendMut, LWE, LWEInfos, LWEToBackendRef, ModuleCoreAlloc};
 use poulpy_hal::{
     api::ModuleN,
     layouts::{Backend, Data, HostDataRef, ScratchArena, ZnxView},
@@ -65,19 +62,17 @@ pub trait BlindRotationExecute<BRA: BlindRotationAlgo, BE: Backend> {
     ///
     /// Panics in debug mode if dimension mismatches are detected between `res`,
     /// `lwe`, `lut`, and `brk`.
-    fn blind_rotation_execute<'s, R, DL>(
+    fn blind_rotation_execute<R, DL>(
         &self,
         res: &mut R,
         lwe: &LWE<DL>,
         lut: &LookupTable<BE::OwnedBuf>,
         brk: &BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE>,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         DL: Data,
-        LWE<DL>: LWEToBackendRef<BE>,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
-        BE: 's;
+        LWE<DL>: LWEToBackendRef<BE>;
 }
 
 impl<BRA: BlindRotationAlgo, BE: Backend> BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE>
@@ -87,20 +82,18 @@ where
     /// Performs blind rotation using `self` as the bootstrapping key.
     ///
     /// Convenience wrapper around [`BlindRotationExecute::blind_rotation_execute`].
-    pub fn execute<'s, R, DI, M>(
+    pub fn execute<R, DI, M>(
         &self,
         module: &M,
         res: &mut R,
         lwe: &LWE<DI>,
         lut: &LookupTable<BE::OwnedBuf>,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         M: BlindRotationExecute<BRA, BE>,
         R: GLWEToBackendMut<BE> + GLWEInfos,
         DI: Data,
         LWE<DI>: LWEToBackendRef<BE>,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
-        BE: 's,
     {
         module.blind_rotation_execute(res, lwe, lut, self, scratch);
     }
@@ -156,7 +149,8 @@ where
 
     let log2n: usize = usize::BITS as usize - (n - 1).leading_zeros() as usize + 1;
 
-    res.copy_from_slice(lwe.data().at(0, 0));
+    res[0] = lwe.body().at(0, 0)[0];
+    res[1..].copy_from_slice(lwe.mask().at(0, 0));
 
     match rot_dir {
         LookUpTableRotationDirection::Left => {
@@ -174,13 +168,16 @@ where
         let rem: usize = base2k - (log2n % base2k);
         let size: usize = log2n.div_ceil(base2k);
         (1..size).for_each(|i| {
+            let body_i = lwe.body().at(0, i)[0];
+            let mask_i = lwe.mask().at(0, i);
+            let coeffs = std::iter::once(&body_i).chain(mask_i.iter());
             if i == size - 1 && rem != base2k {
                 let k_rem: usize = base2k - rem;
-                izip!(lwe.data().at(0, i).iter(), res.iter_mut()).for_each(|(x, y)| {
+                izip!(coeffs, res.iter_mut()).for_each(|(x, y)| {
                     *y = (*y << k_rem) + (x >> rem);
                 });
             } else {
-                izip!(lwe.data().at(0, i).iter(), res.iter_mut()).for_each(|(x, y)| {
+                izip!(coeffs, res.iter_mut()).for_each(|(x, y)| {
                     *y = (*y << base2k) + x;
                 });
             }

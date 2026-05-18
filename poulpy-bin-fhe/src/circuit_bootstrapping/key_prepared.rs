@@ -6,10 +6,7 @@ use poulpy_core::layouts::{
 };
 use std::collections::HashMap;
 
-use poulpy_hal::{
-    api::ScratchAvailable,
-    layouts::{Backend, Data, Module, ScratchArena},
-};
+use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::circuit_bootstrapping::trace_galois_elements;
 use crate::{
@@ -31,15 +28,13 @@ impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>>> CircuitBootstrappi
 }
 
 impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>>> CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE> {
-    pub fn prepare<'s, M>(
+    pub fn prepare<M>(
         &mut self,
         module: &M,
         other: &CircuitBootstrappingKey<BE::OwnedBuf, BRA>,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         M: CircuitBootstrappingKeyPreparedFactory<BRA, BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchAvailable,
-        BE: 's,
     {
         module.circuit_bootstrapping_key_prepare(self, other, scratch);
     }
@@ -102,15 +97,12 @@ where
             .max(self.glwe_automorphism_key_prepare_tmp_bytes(&infos.atk_infos()))
     }
 
-    fn circuit_bootstrapping_key_prepare<'s>(
+    fn circuit_bootstrapping_key_prepare(
         &self,
         res: &mut CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
         other: &CircuitBootstrappingKey<BE::OwnedBuf, BRA>,
-        scratch: &mut ScratchArena<'s, BE>,
-    ) where
-        for<'a> ScratchArena<'a, BE>: ScratchAvailable,
-        BE: 's,
-    {
+        scratch: &mut ScratchArena<'_, BE>,
+    ) {
         // TODO(device): the prepared CBT bundle is still assembled from the
         // host-backed prepared blind-rotation / automorphism / tensor-switching
         // key factories. Keep the public factory generic, but leave the

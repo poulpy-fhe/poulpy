@@ -1,5 +1,5 @@
 use poulpy_core::{
-    GLWECopy, GLWEPacking, ScratchArenaTakeCore,
+    GLWECopy, GLWEPacking,
     layouts::{
         GGLWEInfos, GGLWEPreparedToBackendRef, GLWE, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GetGaloisElement,
         ModuleCoreAlloc,
@@ -40,7 +40,6 @@ where
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
         BE: Backend<OwnedBuf = Vec<u8>>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
         self.execute_bdd_circuit_1w_to_1w_multi_thread(1, out, circuit, a, key, scratch);
@@ -62,7 +61,6 @@ where
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
         BE: Backend<OwnedBuf = Vec<u8>>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
         // TODO(device): this wrapper still repacks through host-owned
@@ -98,7 +96,6 @@ macro_rules! define_bdd_1w_to_1w_trait {
                     H: GLWEAutomorphismKeyHelper<K, BE>,
                     BE: Backend<OwnedBuf = Vec<u8>>,
                     Self: GLWEToBackendMut<BE>,
-                    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
                     for<'a> BE::BufMut<'a>: HostDataMut;
 
                 /// Multithreaded version – same vis, method_name + "_multi_thread"
@@ -115,7 +112,6 @@ macro_rules! define_bdd_1w_to_1w_trait {
                     H: GLWEAutomorphismKeyHelper<K, BE>,
                     BE: Backend<OwnedBuf = Vec<u8>>,
                     Self: GLWEToBackendMut<BE>,
-                    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
                     for<'a> BE::BufMut<'a>: HostDataMut;
             }
         }
@@ -139,7 +135,6 @@ macro_rules! impl_bdd_1w_to_1w_trait {
                     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
                     H: GLWEAutomorphismKeyHelper<K, BE>,
                     BE: Backend<OwnedBuf = Vec<u8>>,
-                    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
                     for<'a> BE::BufMut<'a>: HostDataMut,
                 {
                     module.execute_bdd_circuit_1w_to_1w(self, &$output_circuits, a, key, scratch)
@@ -157,7 +152,6 @@ macro_rules! impl_bdd_1w_to_1w_trait {
                     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
                     H: GLWEAutomorphismKeyHelper<K, BE>,
                     BE: Backend<OwnedBuf = Vec<u8>>,
-                    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
                     for<'a> BE::BufMut<'a>: HostDataMut,
                 {
                     module.execute_bdd_circuit_1w_to_1w_multi_thread(threads, self, &$output_circuits, a, key, scratch)

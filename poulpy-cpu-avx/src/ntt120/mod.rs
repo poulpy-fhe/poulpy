@@ -27,7 +27,7 @@ mod module;
 pub(crate) mod ntt;
 mod prim;
 mod vec_znx_big;
-mod vec_znx_big_avx;
+pub(crate) mod vec_znx_big_avx;
 pub(crate) mod vec_znx_dft_consume;
 pub(crate) mod vmp;
 mod znx;

@@ -21,12 +21,7 @@ pub trait VmpPrepareTmpBytes {
 /// Prepares a coefficient-domain [`MatZnx`](crate::layouts::MatZnx) into a
 /// DFT-domain [`VmpPMat`](crate::layouts::VmpPMat).
 pub trait VmpPrepare<B: Backend> {
-    fn vmp_prepare<'s>(
-        &self,
-        pmat: &mut VmpPMatBackendMut<'_, B>,
-        mat: &MatZnxBackendRef<'_, B>,
-        scratch: &mut ScratchArena<'s, B>,
-    );
+    fn vmp_prepare(&self, pmat: &mut VmpPMatBackendMut<'_, B>, mat: &MatZnxBackendRef<'_, B>, scratch: &mut ScratchArena<'_, B>);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -45,12 +40,12 @@ pub trait VmpApplyDftTmpBytes {
 
 /// Applies the vector-matrix product `VecZnx x VmpPMat -> VecZnxDft`.
 pub trait VmpApplyDft<B: Backend> {
-    fn vmp_apply_dft<'s, R>(
+    fn vmp_apply_dft<R>(
         &self,
         res: &mut R,
         a: &VecZnxBackendRef<'_, B>,
         pmat: &VmpPMatBackendRef<'_, B>,
-        scratch: &mut ScratchArena<'s, B>,
+        scratch: &mut ScratchArena<'_, B>,
     ) where
         R: VecZnxDftToBackendMut<B>;
 }
@@ -108,25 +103,25 @@ pub trait VmpApplyDftToDft<B: Backend> {
     /// * `a`: the left operand [crate::layouts::VecZnxDft] of the vector matrix product.
     /// * `b`: the right operand [crate::layouts::VmpPMat] of the vector matrix product.
     /// * `buf`: scratch space, the size can be obtained with [VmpApplyDftToDftTmpBytes::vmp_apply_dft_to_dft_tmp_bytes].
-    fn vmp_apply_dft_to_dft<'s, 'r>(
+    fn vmp_apply_dft_to_dft<'r>(
         &self,
         res: &mut VecZnxDftBackendMut<'r, B>,
         a: &VecZnxDftBackendRef<'_, B>,
         pmat: &VmpPMatBackendRef<'_, B>,
         limb_offset: usize,
-        scratch: &mut ScratchArena<'s, B>,
+        scratch: &mut ScratchArena<'_, B>,
     );
 }
 
 pub trait VmpApplyDftToDftAccumulate<B: Backend> {
     /// Fused `res += a · pmat`, shifted by `limb_offset` limbs.
-    fn vmp_apply_dft_to_dft_accumulate<'s, 'r>(
+    fn vmp_apply_dft_to_dft_accumulate<'r>(
         &self,
         res: &mut VecZnxDftBackendMut<'r, B>,
         a: &VecZnxDftBackendRef<'_, B>,
         pmat: &VmpPMatBackendRef<'_, B>,
         limb_offset: usize,
-        scratch: &mut ScratchArena<'s, B>,
+        scratch: &mut ScratchArena<'_, B>,
     );
 }
 

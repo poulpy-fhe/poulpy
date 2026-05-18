@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use poulpy_core::{
-    Distribution, EncryptionInfos, GGSWCompressedEncryptSk, GetDistribution, ScratchArenaTakeCore,
+    Distribution, EncryptionInfos, GGSWCompressedEncryptSk, GetDistribution,
     layouts::{
         GGSWCompressed, GGSWInfos, GLWEInfos, GLWESecretPreparedToBackendRef, LWEInfos, LWESecretToBackendRef,
         ModuleCoreCompressedAlloc,
@@ -54,7 +54,7 @@ where
         self.ggsw_compressed_encrypt_sk_tmp_bytes(infos)
     }
 
-    fn blind_rotation_key_compressed_encrypt_sk<'s, S0, S1, E>(
+    fn blind_rotation_key_compressed_encrypt_sk<S0, S1, E>(
         &self,
         res: &mut BlindRotationKeyCompressed<BE::OwnedBuf, CGGI>,
         sk_glwe: &S0,
@@ -62,13 +62,11 @@ where
         seed_xa: [u8; 32],
         enc_infos: &E,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         S0: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         E: EncryptionInfos,
         S1: LWESecretToBackendRef<BE> + LWEInfos + GetDistribution,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
-        BE: 's,
     {
         assert_eq!(res.keys.len() as u32, sk_lwe.n());
         assert!(sk_glwe.n() <= self.n() as u32);

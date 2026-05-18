@@ -5,7 +5,7 @@
 //! Re-exported publicly through `crate::oep::gglwe_automorphism_defaults`.
 
 use poulpy_hal::{
-    api::{ModuleN, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes, VecZnxAutomorphismBackend},
+    api::{ModuleN, VecZnxAutomorphismAssignBackend, VecZnxAutomorphismAssignTmpBytes, VecZnxAutomorphismBackend},
     layouts::{Backend, CyclotomicOrder, GaloisElement, ScratchArena},
 };
 
@@ -30,7 +30,6 @@ where
     R: GGLWEInfos,
     A: GGLWEInfos,
     K: GGLWEInfos,
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     assert_eq!(module.n() as u32, res_infos.n());
     assert_eq!(module.n() as u32, a_infos.n());
@@ -46,26 +45,25 @@ where
     }
 }
 
-pub fn glwe_automorphism_key_automorphism_default<'s, BE, M, R, A, K>(
+pub fn glwe_automorphism_key_automorphism_default<BE, M, R, A, K>(
     module: &M,
     res: &mut R,
     a: &A,
     key: &K,
     key_size: usize,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + 's,
+    BE: Backend,
     M: GGLWEAutomorphismDefault<BE>
         + GaloisElement
         + GLWEKeyswitchDefault<BE>
         + VecZnxAutomorphismBackend<BE>
-        + VecZnxAutomorphismAssign<BE>
+        + VecZnxAutomorphismAssignBackend<BE>
         + VecZnxAutomorphismAssignTmpBytes
         + CyclotomicOrder,
     R: GGLWEToBackendMut<BE> + SetGaloisElement + GGLWEInfos,
     A: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     assert!(
         res.dnum().as_u32() <= a.dnum().as_u32(),
@@ -107,7 +105,7 @@ pub fn glwe_automorphism_key_automorphism_default<'s, BE, M, R, A, K>(
                     module.glwe_keyswitch_assign_default(&mut res_tmp, key, key_size, &mut scratch_iter);
 
                     for i in 0..cols_out {
-                        module.vec_znx_automorphism_assign(p_inv, &mut res_tmp.data, i, &mut scratch_iter);
+                        module.vec_znx_automorphism_assign_backend(p_inv, &mut res_tmp.data, i, &mut scratch_iter);
                     }
                 } else {
                     let (mut tmp_glwe, mut scratch_iter) = scratch.borrow().take_glwe_scratch(&a_ct_backend);
@@ -121,7 +119,7 @@ pub fn glwe_automorphism_key_automorphism_default<'s, BE, M, R, A, K>(
                     module.glwe_keyswitch_default(&mut res_tmp, &tmp_glwe_view, key, key_size, &mut scratch_iter);
 
                     for i in 0..cols_out {
-                        module.vec_znx_automorphism_assign(p_inv, &mut res_tmp.data, i, &mut scratch_iter);
+                        module.vec_znx_automorphism_assign_backend(p_inv, &mut res_tmp.data, i, &mut scratch_iter);
                     }
                 }
             }
@@ -131,18 +129,17 @@ pub fn glwe_automorphism_key_automorphism_default<'s, BE, M, R, A, K>(
     res.set_p((p * key.p()) % module.cyclotomic_order());
 }
 
-pub fn glwe_automorphism_key_automorphism_assign_default<'s, BE, M, R, K>(
+pub fn glwe_automorphism_key_automorphism_assign_default<BE, M, R, K>(
     module: &M,
     res: &mut R,
     key: &K,
     key_size: usize,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + 's,
-    M: GaloisElement + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssign<BE> + CyclotomicOrder,
+    BE: Backend,
+    M: GaloisElement + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssignBackend<BE> + CyclotomicOrder,
     R: GGLWEToBackendMut<BE> + SetGaloisElement + GetGaloisElement + GGLWEInfos,
     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     assert_eq!(res.rank(), key.rank(), "key rank: {} != key rank: {}", res.rank(), key.rank());
 
@@ -159,13 +156,13 @@ pub fn glwe_automorphism_key_automorphism_assign_default<'s, BE, M, R, K>(
 
                 let mut scratch_iter = scratch.borrow();
                 for i in 0..cols_out {
-                    module.vec_znx_automorphism_assign(p, &mut res_tmp.data, i, &mut scratch_iter);
+                    module.vec_znx_automorphism_assign_backend(p, &mut res_tmp.data, i, &mut scratch_iter);
                 }
 
                 module.glwe_keyswitch_assign_default(&mut res_tmp, key, key_size, &mut scratch_iter);
 
                 for i in 0..cols_out {
-                    module.vec_znx_automorphism_assign(p_inv, &mut res_tmp.data, i, &mut scratch_iter);
+                    module.vec_znx_automorphism_assign_backend(p_inv, &mut res_tmp.data, i, &mut scratch_iter);
                 }
             }
         }

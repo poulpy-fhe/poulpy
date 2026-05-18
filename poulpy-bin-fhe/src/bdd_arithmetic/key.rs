@@ -17,7 +17,7 @@ use poulpy_core::layouts::{
 };
 use poulpy_core::{DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GLWESwitchingKeyEncryptSk};
 use poulpy_core::{
-    GLWEToLWESwitchingKeyEncryptSk, GetDistribution, ScratchArenaTakeCore,
+    GLWEToLWESwitchingKeyEncryptSk, GetDistribution,
     layouts::{
         GLWEInfos, GLWESecretToBackendRef, GLWEToLWEKey, GLWEToLWEKeyLayout, GLWEToLWEKeyPreparedFactory, LWEInfos,
         LWESecretToBackendRef, prepared::GLWEToLWEKeyPrepared,
@@ -174,7 +174,7 @@ pub trait BDDKeyEncryptSk<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>
     /// When `res.ks_glwe` is `Some`, a fresh intermediate GLWE key is sampled
     /// from `source_xe` and used as the bridging secret; `ks_lwe` is then
     /// encrypted under that intermediate key rather than `sk_glwe` directly.
-    fn bdd_key_encrypt_sk<'s, S0, S1>(
+    fn bdd_key_encrypt_sk<S0, S1>(
         &self,
         res: &mut BDDKey<BE::OwnedBuf, BRA>,
         sk_lwe: &S0,
@@ -182,17 +182,15 @@ pub trait BDDKeyEncryptSk<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>
         enc_infos: &BDDEncryptionInfos,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
-        S1: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
-        BE: 's;
+        S1: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
 impl<BE: Backend<OwnedBuf = Vec<u8>>, BRA: BlindRotationAlgo> BDDKeyEncryptSk<BRA, BE> for Module<BE>
 where
     Self: CircuitBootstrappingKeyEncryptSk<BRA, BE> + GLWEToLWESwitchingKeyEncryptSk<BE> + GLWESwitchingKeyEncryptSk<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     fn bdd_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -203,7 +201,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn bdd_key_encrypt_sk<'s, S0, S1>(
+    fn bdd_key_encrypt_sk<S0, S1>(
         &self,
         res: &mut BDDKey<BE::OwnedBuf, BRA>,
         sk_lwe: &S0,
@@ -211,11 +209,10 @@ where
         enc_infos: &BDDEncryptionInfos,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
         S1: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
-        BE: 's,
     {
         if let Some(key) = &mut res.ks_glwe {
             let ks_glwe_infos = enc_infos
@@ -252,7 +249,7 @@ where
 
 impl<BRA: BlindRotationAlgo> BDDKey<Vec<u8>, BRA> {
     #[allow(clippy::too_many_arguments)]
-    pub fn encrypt_sk<'s, S0, S1, M, BE: Backend<OwnedBuf = Vec<u8>> + HostBackend + 's>(
+    pub fn encrypt_sk<S0, S1, M, BE: Backend<OwnedBuf = Vec<u8>> + HostBackend>(
         &mut self,
         module: &M,
         sk_lwe: &S0,
@@ -260,12 +257,11 @@ impl<BRA: BlindRotationAlgo> BDDKey<Vec<u8>, BRA> {
         enc_infos: &BDDEncryptionInfos,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
         S1: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
         M: BDDKeyEncryptSk<BRA, BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         module.bdd_key_encrypt_sk(self, sk_lwe, sk_glwe, enc_infos, source_xe, source_xa, scratch);
     }
@@ -426,15 +422,12 @@ where
             .max(self.glwe_to_lwe_key_prepare_tmp_bytes(&infos.ks_lwe_infos()))
     }
 
-    fn prepare_bdd_key<'s>(
+    fn prepare_bdd_key(
         &self,
         res: &mut BDDKeyPrepared<BE::OwnedBuf, BRA, BE>,
         other: &BDDKey<BE::OwnedBuf, BRA>,
-        scratch: &mut ScratchArena<'s, BE>,
-    ) where
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
-        BE: 's,
-    {
+        scratch: &mut ScratchArena<'_, BE>,
+    ) {
         res.cbt.prepare(self, &other.cbt, scratch);
 
         if let Some(key_prep) = &mut res.ks_glwe {
@@ -508,6 +501,5 @@ pub trait FheUintPrepareDebug<BRA: BlindRotationAlgo, T: UnsignedInteger, BE: Ba
         bits: &FheUint<BE::OwnedBuf, T>,
         key: &BDDKeyPrepared<BE::OwnedBuf, BRA, BE>,
         scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>;
+    );
 }

@@ -1,7 +1,7 @@
 use crate::default::sub::CKKSSubDefault;
 
 use anyhow::Result;
-use poulpy_core::{GLWENormalize, GLWEShift, GLWESub, ScratchArenaTakeCore, layouts::LWEInfos};
+use poulpy_core::{GLWENormalize, GLWEShift, GLWESub, layouts::LWEInfos};
 use poulpy_hal::{
     api::{VecZnxRshSubBackend, VecZnxRshSubCoeffIntoBackend, VecZnxRshTmpBytes},
     layouts::{Backend, Data, Module, ScratchArena},
@@ -166,7 +166,6 @@ where
         + VecZnxRshSubBackend<BE>
         + VecZnxRshSubCoeffIntoBackend<BE>
         + VecZnxRshTmpBytes,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_sub_tmp_bytes(module: &Module<BE>) -> usize {
         module.ckks_sub_tmp_bytes_default()

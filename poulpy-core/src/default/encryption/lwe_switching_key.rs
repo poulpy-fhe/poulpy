@@ -42,7 +42,6 @@ where
         + VecZnxAutomorphismBackend<BE>
         + VecZnxCopyRangeBackend<BE>
         + VecZnxZeroBackend<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     fn lwe_switching_key_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where

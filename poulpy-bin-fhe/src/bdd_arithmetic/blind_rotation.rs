@@ -1,5 +1,5 @@
 use poulpy_core::{
-    GLWECopy, GLWERotate, ScratchArenaTakeCore,
+    GLWECopy, GLWERotate,
     layouts::{
         GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWE, GLWEInfos, GLWEToBackendMut,
         GLWEToBackendRef, ModuleCoreAlloc,
@@ -15,7 +15,6 @@ use crate::bdd_arithmetic::{Cmux, GetGGSWBit, UnsignedInteger};
 impl<T: UnsignedInteger, BE: Backend<OwnedBuf = Vec<u8>>> GGSWBlindRotation<T, BE> for Module<BE>
 where
     Self: GLWEBlindRotation<BE> + VecZnxAddScalarAssignBackend<BE> + VecZnxNormalizeAssignBackend<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
 }
@@ -61,9 +60,7 @@ where
     ) where
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         K: GetGGSWBit<BE>,
-        BE: Backend<OwnedBuf = Vec<u8>>,
-        BE: 'static,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+        BE: Backend<OwnedBuf = Vec<u8>> + 'static,
         for<'a> BE::BufMut<'a>: HostDataMut,
         for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {
@@ -98,9 +95,7 @@ where
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         A: GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos,
         K: GetGGSWBit<BE>,
-        BE: Backend<OwnedBuf = Vec<u8>>,
-        BE: 'static,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+        BE: Backend<OwnedBuf = Vec<u8>> + 'static,
         for<'a> BE::BufMut<'a>: HostDataMut,
         for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {
@@ -145,9 +140,7 @@ where
     ) where
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         K: GetGGSWBit<BE>,
-        BE: Backend<OwnedBuf = Vec<u8>>,
-        BE: 'static,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+        BE: Backend<OwnedBuf = Vec<u8>> + 'static,
         for<'a> BE::BufMut<'a>: HostDataMut,
         for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {
@@ -195,7 +188,6 @@ where
 impl<BE: Backend<OwnedBuf = Vec<u8>>> GLWEBlindRotation<BE> for Module<BE>
 where
     Self: GLWECopy<BE> + GLWERotate<BE> + Cmux<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
 }
@@ -239,9 +231,7 @@ where
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GetGGSWBit<BE>,
-        BE: Backend<OwnedBuf = Vec<u8>>,
-        BE: 'static,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+        BE: Backend<OwnedBuf = Vec<u8>> + 'static,
         for<'a> BE::BufMut<'a>: HostDataMut,
         for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {
@@ -299,9 +289,7 @@ where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE>,
         K: GetGGSWBit<BE>,
-        BE: Backend<OwnedBuf = Vec<u8>>,
-        BE: 'static,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+        BE: Backend<OwnedBuf = Vec<u8>> + 'static,
         for<'a> BE::BufMut<'a>: HostDataMut,
         for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {

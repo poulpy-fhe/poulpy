@@ -103,7 +103,6 @@ where
     BE: HostBackend<OwnedBuf = Vec<u8>>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
 }
 
@@ -308,6 +307,12 @@ macro_rules! core_backend_test_suite {
                 lwe_keyswitch => $crate::test_suite::keyswitch::test_lwe_keyswitch,
                 glwe_to_lwe => $crate::test_suite::test_glwe_to_lwe,
                 lwe_to_glwe => $crate::test_suite::test_lwe_to_glwe,
+                glwe_expand_lwe => $crate::test_suite::test_glwe_expand_lwe,
+                glwe_expand_lwe_rejects_incompatible_lwe_layout =>
+                    $crate::test_suite::test_glwe_expand_lwe_rejects_incompatible_lwe_layout,
+                lwe_read_from_rejects_malformed_shape => $crate::test_suite::test_lwe_read_from_rejects_malformed_shape,
+                lwe_secret_from_glwe_secret_flattens_rank_and_preserves_metadata =>
+                    $crate::test_suite::test_lwe_secret_from_glwe_secret_flattens_rank_and_preserves_metadata,
             }
         );
     };

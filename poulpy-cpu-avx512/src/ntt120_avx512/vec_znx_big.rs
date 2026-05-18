@@ -14,13 +14,19 @@ use crate::vec_znx_big_avx512::{
     nfc_middle_step_add_assign_avx512, nfc_middle_step_add_assign_scalar, nfc_middle_step_assign_avx512,
     nfc_middle_step_assign_scalar, nfc_middle_step_avx512, nfc_middle_step_scalar, nfc_middle_step_sub_assign_avx512,
     nfc_middle_step_sub_assign_scalar, vi128_add_assign_avx512, vi128_add_avx512, vi128_add_small_assign_avx512,
-    vi128_add_small_avx512, vi128_from_small_avx512, vi128_neg_from_small_avx512, vi128_negate_assign_avx512,
-    vi128_negate_avx512, vi128_sub_assign_avx512, vi128_sub_avx512, vi128_sub_negate_assign_avx512, vi128_sub_small_a_avx512,
-    vi128_sub_small_assign_avx512, vi128_sub_small_b_avx512, vi128_sub_small_negate_assign_avx512,
+    vi128_add_small_avx512, vi128_from_small_avx512, vi128_hadamard_i64_avx512, vi128_neg_from_small_avx512,
+    vi128_negate_assign_avx512, vi128_negate_avx512, vi128_sub_assign_avx512, vi128_sub_avx512, vi128_sub_negate_assign_avx512,
+    vi128_sub_small_a_avx512, vi128_sub_small_assign_avx512, vi128_sub_small_b_avx512, vi128_sub_small_negate_assign_avx512,
 };
+use poulpy_cpu_ref::hal_defaults::ScalarBigHadamardProduct;
 use poulpy_cpu_ref::reference::ntt120::{I128BigOps, I128NormalizeOps, vec_znx_big::AssignOp};
 
 impl I128BigOps for NTT120Avx512 {
+    #[inline(always)]
+    fn i128_hadamard_product_i64(res: &mut [i128], a: &[i64], b: &[i64]) {
+        unsafe { vi128_hadamard_i64_avx512(res.len(), res, a, b) }
+    }
+
     #[inline(always)]
     fn i128_add(res: &mut [i128], a: &[i128], b: &[i128]) {
         // SAFETY: NTT120Avx512::new() verifies AVX-512F availability at construction time.
@@ -81,6 +87,13 @@ impl I128BigOps for NTT120Avx512 {
     #[inline(always)]
     fn i128_from_small(res: &mut [i128], a: &[i64]) {
         unsafe { vi128_from_small_avx512(res.len(), res, a) }
+    }
+}
+
+impl ScalarBigHadamardProduct for NTT120Avx512 {
+    #[inline(always)]
+    fn scalar_big_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
+        Self::i128_hadamard_product_i64(res, a, b)
     }
 }
 

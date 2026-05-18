@@ -7,7 +7,6 @@
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{
-    ScratchArenaTakeCore,
     layouts::{GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, prepared::GGLWEPreparedToBackendRef},
     oep::{GGLWEKeyswitchDefault, GLWEKeyswitchDefault},
 };
@@ -19,25 +18,23 @@ where
     R: GGLWEInfos,
     A: GGLWEInfos,
     K: GGLWEInfos,
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     module.glwe_keyswitch_tmp_bytes_default(res_infos, a_infos, key_infos)
 }
 
-pub fn gglwe_keyswitch_default<'s, BE, M, R, A, B>(
+pub fn gglwe_keyswitch_default<BE, M, R, A, B>(
     module: &M,
     res: &mut R,
     a: &A,
     b: &B,
     key_size: usize,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + 's,
+    BE: Backend,
     M: GGLWEKeyswitchDefault<BE> + GLWEKeyswitchDefault<BE>,
     R: GGLWEToBackendMut<BE> + GGLWEInfos,
     A: GGLWEToBackendRef<BE> + GGLWEInfos,
     B: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     assert_eq!(
         res.rank_in(),
@@ -82,18 +79,17 @@ pub fn gglwe_keyswitch_default<'s, BE, M, R, A, B>(
     }
 }
 
-pub fn gglwe_keyswitch_assign_default<'s, BE, M, R, A>(
+pub fn gglwe_keyswitch_assign_default<BE, M, R, A>(
     module: &M,
     res: &mut R,
     a: &A,
     key_size: usize,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + 's,
+    BE: Backend,
     M: GGLWEKeyswitchDefault<BE> + GLWEKeyswitchDefault<BE>,
     R: GGLWEToBackendMut<BE> + GGLWEInfos,
     A: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let mut res = res.to_backend_mut();
 

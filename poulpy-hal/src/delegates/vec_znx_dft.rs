@@ -49,13 +49,13 @@ impl_vec_znx_dft_delegate!(
 
 impl_vec_znx_dft_delegate!(
     VecZnxIdftApply<B>,
-    fn vec_znx_idft_apply<'s>(
+    fn vec_znx_idft_apply(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
         a: &VecZnxDftBackendRef<'_, B>,
         a_col: usize,
-        scratch: &mut ScratchArena<'s, B>,
+        scratch: &mut ScratchArena<'_, B>,
     ) {
         B::vec_znx_idft_apply(self, res, res_col, a, a_col, scratch)
     }
@@ -76,13 +76,13 @@ impl_vec_znx_dft_delegate!(
 
 impl_vec_znx_dft_delegate!(
     VecZnxDftApply<B>,
-    fn vec_znx_dft_apply<'a>(
+    fn vec_znx_dft_apply(
         &self,
         step: usize,
         offset: usize,
         res: &mut VecZnxDftBackendMut<'_, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'a, B>,
+        a: &VecZnxBackendRef<'_, B>,
         a_col: usize,
     ) {
         B::vec_znx_dft_apply(self, step, offset, res, res_col, a, a_col);

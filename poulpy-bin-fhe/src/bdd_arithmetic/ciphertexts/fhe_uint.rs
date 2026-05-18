@@ -112,7 +112,7 @@ impl<D: HostDataRef, T: UnsignedInteger> GLWEInfos for FheUint<D, T> {
 
 impl<D: HostDataMut, T: UnsignedInteger + ToBits> FheUint<D, T> {
     #[allow(clippy::too_many_arguments)]
-    pub fn encrypt_sk<'s, S, M, E, BE>(
+    pub fn encrypt_sk<S, M, E, BE>(
         &mut self,
         module: &M,
         data: T,
@@ -120,14 +120,13 @@ impl<D: HostDataMut, T: UnsignedInteger + ToBits> FheUint<D, T> {
         enc_infos: &E,
         source_xe: &mut Source,
         source_xa: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
-        BE: Backend<OwnedBuf = Vec<u8>> + 's,
+        BE: Backend<OwnedBuf = Vec<u8>>,
         GLWE<D>: GLWEToBackendMut<BE>,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         M: ModuleLogN + ModuleCoreAlloc<OwnedBuf = Vec<u8>> + GLWEEncryptSk<BE>,
         E: EncryptionInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
         #[cfg(debug_assertions)]
@@ -178,7 +177,6 @@ impl<D: HostDataRef, T: UnsignedInteger + FromBits> FheUint<D, T> {
         Self: GLWEToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         M: ModuleLogN + ModuleCoreAlloc<OwnedBuf = Vec<u8>> + GLWEDecrypt<BE> + GLWENoise<BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
         for<'a> BE::BufRef<'a>: HostDataRef,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
@@ -211,7 +209,6 @@ impl<D: HostDataRef, T: UnsignedInteger + FromBits> FheUint<D, T> {
         Self: GLWEToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         M: ModuleLogN + ModuleCoreAlloc<OwnedBuf = Vec<u8>> + GLWEDecrypt<BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
         #[cfg(debug_assertions)]
@@ -264,15 +261,14 @@ impl<D: HostDataRef, T: UnsignedInteger + FromBits> FheUint<D, T> {
 
 impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T> {
     /// Packs `Vec<GLWE(bit[i])>` into [`FheUint`].
-    pub fn pack<'s, G, M, K, H, BE>(&mut self, module: &M, mut bits: Vec<G>, keys: &H, scratch: &mut ScratchArena<'s, BE>)
+    pub fn pack<G, M, K, H, BE>(&mut self, module: &M, mut bits: Vec<G>, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
-        BE: Backend<OwnedBuf = Vec<u8>> + 's,
+        BE: Backend<OwnedBuf = Vec<u8>>,
         G: GLWEToBackendMut<BE> + GLWEInfos,
         M: ModuleLogN + GLWEPacking<BE> + GLWECopy<BE>,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
         GLWE<D>: GLWEToBackendMut<BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
         // Repacks the GLWE ciphertexts bits
@@ -331,7 +327,7 @@ impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T> {
 
     #[allow(clippy::too_many_arguments)]
     // Self <- ((a.rotate_right(dst<<3) & 0xFFFF_FF00) | (b.rotate_right(src<<3) & 0x0000_00FF)).rotate_left(dst<<3);
-    pub fn splice_u8<'s, A, B, H, K, M, BE>(
+    pub fn splice_u8<A, B, H, K, M, BE>(
         &mut self,
         module: &M,
         dst: usize,
@@ -339,9 +335,9 @@ impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T> {
         a: &A,
         b: &B,
         keys: &H,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
-        BE: Backend<OwnedBuf = Vec<u8>> + 's,
+        BE: Backend<OwnedBuf = Vec<u8>>,
         Self: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
@@ -443,22 +439,21 @@ impl<'a, T: UnsignedInteger, BE: Backend> ScratchArenaTakeBDD<'a, T, BE> for Scr
 }
 
 impl<D: HostDataRef, T: UnsignedInteger> FheUint<D, T> {
-    pub fn get_bit_lwe<'s, R, KGLWE, KLWE, M, BE>(
+    pub fn get_bit_lwe<R, KGLWE, KLWE, M, BE>(
         &self,
         module: &M,
         bit: usize,
         res: &mut R,
         ks_glwe: Option<&KGLWE>,
         ks_lwe: &KLWE,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
-        BE: Backend<OwnedBuf = Vec<u8>> + 's,
+        BE: Backend<OwnedBuf = Vec<u8>>,
         R: LWEToBackendMut<BE> + LWEInfos,
         Self: GLWEToBackendRef<BE>,
         KGLWE: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         KLWE: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         M: ModuleLogN + ModuleCoreAlloc<OwnedBuf = Vec<u8>> + LWEFromGLWE<BE> + GLWEKeyswitch<BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
         let log_gap: usize = module.log_n() - T::LOG_BITS as usize;
@@ -485,22 +480,15 @@ impl<D: HostDataRef, T: UnsignedInteger> FheUint<D, T> {
         }
     }
 
-    pub fn get_bit_glwe<'s, R, K, M, H, BE>(
-        &self,
-        module: &M,
-        bit: usize,
-        res: &mut R,
-        keys: &H,
-        scratch: &mut ScratchArena<'s, BE>,
-    ) where
-        BE: Backend + 's,
+    pub fn get_bit_glwe<R, K, M, H, BE>(&self, module: &M, bit: usize, res: &mut R, keys: &H, scratch: &mut ScratchArena<'_, BE>)
+    where
+        BE: Backend,
         R: GLWEToBackendMut<BE> + GLWEInfos,
         Self: GLWEToBackendRef<BE>,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         M: ModuleLogN + GLWERotate<BE> + GLWETrace<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos + GetGaloisElement,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
         let log_gap: usize = module.log_n() - T::LOG_BITS as usize;
@@ -509,16 +497,15 @@ impl<D: HostDataRef, T: UnsignedInteger> FheUint<D, T> {
         module.glwe_trace_assign(res, 0, keys, keys.automorphism_key_infos().size(), scratch);
     }
 
-    pub fn get_byte<'s, R, K, M, H, BE>(&self, module: &M, byte: usize, res: &mut R, keys: &H, scratch: &mut ScratchArena<'s, BE>)
+    pub fn get_byte<R, K, M, H, BE>(&self, module: &M, byte: usize, res: &mut R, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
-        BE: Backend + 's,
+        BE: Backend,
         R: GLWEToBackendMut<BE> + GLWEInfos,
         Self: GLWEToBackendRef<BE>,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         M: ModuleLogN + GLWERotate<BE> + GLWETrace<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos + GetGaloisElement,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
         let log_gap: usize = module.log_n() - T::LOG_BITS as usize;
@@ -563,9 +550,9 @@ impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T> {
         self.pack(module, out_bits, keys, &mut scratch_1);
     }
 
-    pub fn zero_byte<'s, M, K, H, BE>(&mut self, module: &M, byte: usize, keys: &H, scratch: &mut ScratchArena<'s, BE>)
+    pub fn zero_byte<M, K, H, BE>(&mut self, module: &M, byte: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
-        BE: Backend<OwnedBuf = Vec<u8>> + 's,
+        BE: Backend<OwnedBuf = Vec<u8>>,
         Self: GLWEToBackendMut<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos + GetGaloisElement,
@@ -604,7 +591,7 @@ impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T> {
         module.glwe_rotate_assign(rot, self, scratch);
     }
 
-    pub fn sext<'s, M, H, K, BE>(&mut self, module: &M, byte: usize, keys: &H, scratch: &mut ScratchArena<'s, BE>)
+    pub fn sext<M, H, K, BE>(&mut self, module: &M, byte: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         Self: GLWEToBackendRef<BE>,
         Self: GLWEToBackendMut<BE>,
@@ -620,7 +607,6 @@ impl<D: HostDataMut, T: UnsignedInteger> FheUint<D, T> {
             + GLWECopy<BE>,
         for<'a> ScratchArena<'a, BE>: ScratchArenaTakeBDD<'a, T, BE>,
         for<'a> BE::BufMut<'a>: HostDataMut,
-        BE: 's,
     {
         assert!(byte < (1 << T::LOG_BYTES));
 

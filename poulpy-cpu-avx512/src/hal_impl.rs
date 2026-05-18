@@ -80,12 +80,12 @@ unsafe impl HalVmpImpl<NTT120Avx512> for NTT120Avx512 {
             + Self::vmp_apply_dft_to_dft_tmp_bytes(module, res_size, a_dft_size, b_rows, b_cols_in, b_cols_out, b_size)
     }
 
-    fn vmp_apply_dft<'s, R>(
+    fn vmp_apply_dft<R>(
         module: &Module<Self>,
         res: &mut R,
         a: &VecZnxBackendRef<'_, Self>,
         b: &VmpPMatBackendRef<'_, Self>,
-        scratch: &mut ScratchArena<'s, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) where
         R: VecZnxDftToBackendMut<Self>,
     {
@@ -115,11 +115,11 @@ unsafe impl HalVmpImpl<NTT120Avx512> for NTT120Avx512 {
         crate::ntt120_avx512::vmp::vmp_prepare_tmp_bytes_avx(module.n())
     }
 
-    fn vmp_prepare<'s>(
+    fn vmp_prepare(
         module: &Module<Self>,
         res: &mut VmpPMatBackendMut<'_, Self>,
         a: &MatZnxBackendRef<'_, Self>,
-        scratch: &mut ScratchArena<'s, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) {
         let bytes = crate::ntt120_avx512::vmp::vmp_prepare_tmp_bytes_avx(module.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
@@ -138,13 +138,13 @@ unsafe impl HalVmpImpl<NTT120Avx512> for NTT120Avx512 {
         crate::ntt120_avx512::vmp::vmp_apply_tmp_bytes_avx(a_size, b_rows, b_cols_in)
     }
 
-    fn vmp_apply_dft_to_dft<'s, 'r>(
+    fn vmp_apply_dft_to_dft(
         module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'r, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
         a: &VecZnxDftBackendRef<'_, Self>,
         b: &VmpPMatBackendRef<'_, Self>,
         limb_offset: usize,
-        scratch: &mut ScratchArena<'s, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) {
         let bytes = crate::ntt120_avx512::vmp::vmp_apply_tmp_bytes_avx(a.size(), b.rows(), b.cols_in());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
@@ -163,13 +163,13 @@ unsafe impl HalVmpImpl<NTT120Avx512> for NTT120Avx512 {
         crate::ntt120_avx512::vmp::vmp_apply_tmp_bytes_avx(a_size, b_rows, b_cols_in)
     }
 
-    fn vmp_apply_dft_to_dft_accumulate<'s, 'r>(
+    fn vmp_apply_dft_to_dft_accumulate(
         module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'r, Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
         a: &VecZnxDftBackendRef<'_, Self>,
         b: &VmpPMatBackendRef<'_, Self>,
         limb_offset: usize,
-        scratch: &mut ScratchArena<'s, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) {
         let bytes = crate::ntt120_avx512::vmp::vmp_apply_tmp_bytes_avx(a.size(), b.rows(), b.cols_in());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
@@ -186,12 +186,12 @@ unsafe impl HalConvolutionImpl<NTT120Avx512> for NTT120Avx512 {
         <Self as NTT120ConvolutionDefault<Self>>::cnv_prepare_left_tmp_bytes_default(module, res_size, a_size)
     }
 
-    fn cnv_prepare_left<'s, 'r>(
+    fn cnv_prepare_left(
         module: &Module<Self>,
-        res: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'r, Self>,
+        res: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
         mask: i64,
-        scratch: &mut ScratchArena<'s, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) {
         let mut scratch = scratch.borrow();
         <Self as NTT120ConvolutionDefault<Self>>::cnv_prepare_left_default(module, res, a, mask, &mut scratch);
@@ -201,12 +201,12 @@ unsafe impl HalConvolutionImpl<NTT120Avx512> for NTT120Avx512 {
         <Self as NTT120ConvolutionDefault<Self>>::cnv_prepare_right_tmp_bytes_default(module, res_size, a_size)
     }
 
-    fn cnv_prepare_right<'s, 'r>(
+    fn cnv_prepare_right(
         module: &Module<Self>,
-        res: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'r, Self>,
+        res: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
         mask: i64,
-        scratch: &mut ScratchArena<'s, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) {
         let mut scratch = scratch.borrow();
         <Self as NTT120ConvolutionDefault<Self>>::cnv_prepare_right_default(module, res, a, mask, &mut scratch);
@@ -235,7 +235,7 @@ unsafe impl HalConvolutionImpl<NTT120Avx512> for NTT120Avx512 {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn cnv_by_const_apply<'s>(
+    fn cnv_by_const_apply(
         module: &Module<Self>,
         cnv_offset: usize,
         mut res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
@@ -245,7 +245,7 @@ unsafe impl HalConvolutionImpl<NTT120Avx512> for NTT120Avx512 {
         b: &VecZnxBackendRef<'_, Self>,
         b_col: usize,
         b_coeff: usize,
-        scratch: &mut ScratchArena<'s, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) {
         let mut scratch = scratch.borrow();
         <Self as NTT120ConvolutionDefault<Self>>::cnv_by_const_apply_default(
@@ -263,7 +263,7 @@ unsafe impl HalConvolutionImpl<NTT120Avx512> for NTT120Avx512 {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn cnv_apply_dft<'s>(
+    fn cnv_apply_dft(
         module: &Module<Self>,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -272,7 +272,7 @@ unsafe impl HalConvolutionImpl<NTT120Avx512> for NTT120Avx512 {
         a_col: usize,
         b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
         b_col: usize,
-        scratch: &mut ScratchArena<'s, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) {
         let bytes = crate::ntt120_avx512::convolution::cnv_apply_dft_avx_tmp_bytes(a.size(), b.size());
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
@@ -292,7 +292,7 @@ unsafe impl HalConvolutionImpl<NTT120Avx512> for NTT120Avx512 {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn cnv_pairwise_apply_dft<'s>(
+    fn cnv_pairwise_apply_dft(
         module: &Module<Self>,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -301,7 +301,7 @@ unsafe impl HalConvolutionImpl<NTT120Avx512> for NTT120Avx512 {
         b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
         i: usize,
         j: usize,
-        scratch: &mut ScratchArena<'s, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) {
         let bytes = crate::ntt120_avx512::convolution::cnv_pairwise_apply_dft_avx_tmp_bytes(res.size(), a.size(), b.size());
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
@@ -314,13 +314,13 @@ unsafe impl HalConvolutionImpl<NTT120Avx512> for NTT120Avx512 {
         <Self as NTT120ConvolutionDefault<Self>>::cnv_prepare_self_tmp_bytes_default(module, res_size, a_size)
     }
 
-    fn cnv_prepare_self<'s, 'l, 'r>(
+    fn cnv_prepare_self(
         module: &Module<Self>,
-        left: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'l, Self>,
-        right: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'r, Self>,
+        left: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
+        right: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
         mask: i64,
-        scratch: &mut ScratchArena<'s, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) {
         let mut scratch = scratch.borrow();
         <Self as NTT120ConvolutionDefault<Self>>::cnv_prepare_self_default(module, left, right, a, mask, &mut scratch);
@@ -352,13 +352,13 @@ unsafe impl HalVecZnxDftImpl<NTT120Avx512> for NTT120Avx512 {
         <Self as NTT120VecZnxDftDefault<Self>>::vec_znx_idft_apply_tmp_bytes_default(module)
     }
 
-    fn vec_znx_idft_apply<'s>(
+    fn vec_znx_idft_apply(
         module: &Module<Self>,
         res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
         res_col: usize,
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
-        scratch: &mut ScratchArena<'s, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
     ) {
         let mut scratch = scratch.borrow();
         <Self as NTT120VecZnxDftDefault<Self>>::vec_znx_idft_apply_default(module, res, res_col, a, a_col, &mut scratch);
@@ -497,12 +497,12 @@ mod ifma_impl {
                 + Self::vmp_apply_dft_to_dft_tmp_bytes(module, res_size, a_dft_size, b_rows, b_cols_in, b_cols_out, b_size)
         }
 
-        fn vmp_apply_dft<'s, R>(
+        fn vmp_apply_dft<R>(
             module: &Module<Self>,
             res: &mut R,
             a: &VecZnxBackendRef<'_, Self>,
             b: &VmpPMatBackendRef<'_, Self>,
-            scratch: &mut ScratchArena<'s, Self>,
+            scratch: &mut ScratchArena<'_, Self>,
         ) where
             R: VecZnxDftToBackendMut<Self>,
         {
@@ -532,11 +532,11 @@ mod ifma_impl {
             crate::ntt126_ifma::vmp::vmp_prepare_tmp_bytes_ifma(module.n())
         }
 
-        fn vmp_prepare<'s>(
+        fn vmp_prepare(
             module: &Module<Self>,
             res: &mut VmpPMatBackendMut<'_, Self>,
             a: &MatZnxBackendRef<'_, Self>,
-            scratch: &mut ScratchArena<'s, Self>,
+            scratch: &mut ScratchArena<'_, Self>,
         ) {
             let bytes = crate::ntt126_ifma::vmp::vmp_prepare_tmp_bytes_ifma(module.n());
             let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
@@ -555,13 +555,13 @@ mod ifma_impl {
             crate::ntt126_ifma::vmp::vmp_apply_tmp_bytes_ifma(a_size, b_rows, b_cols_in)
         }
 
-        fn vmp_apply_dft_to_dft<'s, 'r>(
+        fn vmp_apply_dft_to_dft(
             module: &Module<Self>,
-            res: &mut VecZnxDftBackendMut<'r, Self>,
+            res: &mut VecZnxDftBackendMut<'_, Self>,
             a: &VecZnxDftBackendRef<'_, Self>,
             b: &VmpPMatBackendRef<'_, Self>,
             limb_offset: usize,
-            scratch: &mut ScratchArena<'s, Self>,
+            scratch: &mut ScratchArena<'_, Self>,
         ) {
             let bytes = crate::ntt126_ifma::vmp::vmp_apply_tmp_bytes_ifma(a.size(), b.rows(), b.cols_in());
             let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
@@ -580,13 +580,13 @@ mod ifma_impl {
             crate::ntt126_ifma::vmp::vmp_apply_tmp_bytes_ifma(a_size, b_rows, b_cols_in)
         }
 
-        fn vmp_apply_dft_to_dft_accumulate<'s, 'r>(
+        fn vmp_apply_dft_to_dft_accumulate(
             module: &Module<Self>,
-            res: &mut VecZnxDftBackendMut<'r, Self>,
+            res: &mut VecZnxDftBackendMut<'_, Self>,
             a: &VecZnxDftBackendRef<'_, Self>,
             b: &VmpPMatBackendRef<'_, Self>,
             limb_offset: usize,
-            scratch: &mut ScratchArena<'s, Self>,
+            scratch: &mut ScratchArena<'_, Self>,
         ) {
             let bytes = crate::ntt126_ifma::vmp::vmp_apply_tmp_bytes_ifma(a.size(), b.rows(), b.cols_in());
             let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
@@ -677,13 +677,13 @@ mod ifma_impl {
             crate::ntt126_ifma::vec_znx_dft::vec_znx_idft_apply_tmp_bytes(module.n())
         }
 
-        fn vec_znx_idft_apply<'s>(
+        fn vec_znx_idft_apply(
             module: &Module<Self>,
             res: &mut VecZnxBigBackendMut<'_, Self>,
             res_col: usize,
             a: &VecZnxDftBackendRef<'_, Self>,
             a_col: usize,
-            scratch: &mut ScratchArena<'s, Self>,
+            scratch: &mut ScratchArena<'_, Self>,
         ) {
             let bytes = crate::ntt126_ifma::vec_znx_dft::vec_znx_idft_apply_tmp_bytes(module.n());
             let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
@@ -787,12 +787,12 @@ mod ifma_impl {
             crate::ntt126_ifma::convolution::cnv_prepare_left_tmp_bytes(module.n())
         }
 
-        fn cnv_prepare_left<'s, 'r>(
+        fn cnv_prepare_left(
             module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'r, Self>,
+            res: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
             a: &VecZnxBackendRef<'_, Self>,
             mask: i64,
-            scratch: &mut ScratchArena<'s, Self>,
+            scratch: &mut ScratchArena<'_, Self>,
         ) {
             let bytes = crate::ntt126_ifma::convolution::cnv_prepare_left_tmp_bytes(module.n());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
@@ -803,12 +803,12 @@ mod ifma_impl {
             crate::ntt126_ifma::convolution::cnv_prepare_right_tmp_bytes(module.n())
         }
 
-        fn cnv_prepare_right<'s, 'r>(
+        fn cnv_prepare_right(
             module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'r, Self>,
+            res: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
             a: &VecZnxBackendRef<'_, Self>,
             mask: i64,
-            scratch: &mut ScratchArena<'s, Self>,
+            scratch: &mut ScratchArena<'_, Self>,
         ) {
             let bytes = crate::ntt126_ifma::convolution::cnv_prepare_right_tmp_bytes(module.n());
             let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
@@ -836,7 +836,7 @@ mod ifma_impl {
         }
 
         #[allow(clippy::too_many_arguments)]
-        fn cnv_by_const_apply<'s>(
+        fn cnv_by_const_apply(
             _module: &Module<Self>,
             cnv_offset: usize,
             res: &mut VecZnxBigBackendMut<'_, Self>,
@@ -846,7 +846,7 @@ mod ifma_impl {
             b: &VecZnxBackendRef<'_, Self>,
             b_col: usize,
             b_coeff: usize,
-            scratch: &mut ScratchArena<'s, Self>,
+            scratch: &mut ScratchArena<'_, Self>,
         ) {
             let bytes = crate::ntt126_ifma::convolution::cnv_by_const_apply_tmp_bytes(res.size(), a.size(), b.size());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
@@ -854,7 +854,7 @@ mod ifma_impl {
         }
 
         #[allow(clippy::too_many_arguments)]
-        fn cnv_apply_dft<'s>(
+        fn cnv_apply_dft(
             _module: &Module<Self>,
             cnv_offset: usize,
             res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -863,7 +863,7 @@ mod ifma_impl {
             a_col: usize,
             b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
             b_col: usize,
-            scratch: &mut ScratchArena<'s, Self>,
+            scratch: &mut ScratchArena<'_, Self>,
         ) {
             let bytes = crate::ntt126_ifma::convolution::cnv_apply_dft_ifma_tmp_bytes(a.size(), b.size());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
@@ -883,7 +883,7 @@ mod ifma_impl {
         }
 
         #[allow(clippy::too_many_arguments)]
-        fn cnv_pairwise_apply_dft<'s>(
+        fn cnv_pairwise_apply_dft(
             _module: &Module<Self>,
             cnv_offset: usize,
             res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -892,7 +892,7 @@ mod ifma_impl {
             b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
             i: usize,
             j: usize,
-            scratch: &mut ScratchArena<'s, Self>,
+            scratch: &mut ScratchArena<'_, Self>,
         ) {
             let bytes = crate::ntt126_ifma::convolution::cnv_pairwise_apply_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
@@ -905,13 +905,13 @@ mod ifma_impl {
             crate::ntt126_ifma::convolution::cnv_prepare_self_tmp_bytes(module.n())
         }
 
-        fn cnv_prepare_self<'s, 'l, 'r>(
+        fn cnv_prepare_self(
             module: &Module<Self>,
-            left: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'l, Self>,
-            right: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'r, Self>,
+            left: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
+            right: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
             a: &VecZnxBackendRef<'_, Self>,
             mask: i64,
-            scratch: &mut ScratchArena<'s, Self>,
+            scratch: &mut ScratchArena<'_, Self>,
         ) {
             let bytes = crate::ntt126_ifma::convolution::cnv_prepare_self_tmp_bytes(module.n());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);

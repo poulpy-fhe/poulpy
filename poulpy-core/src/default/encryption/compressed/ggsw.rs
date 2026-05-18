@@ -21,7 +21,7 @@ pub trait GGSWCompressedEncryptSkDefault<BE: Backend> {
     where
         A: GGSWInfos;
 
-    fn ggsw_compressed_encrypt_sk_default<'s, R, P, S, E>(
+    fn ggsw_compressed_encrypt_sk_default<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -29,13 +29,12 @@ pub trait GGSWCompressedEncryptSkDefault<BE: Backend> {
         seed_xa: [u8; 32],
         enc_infos: &E,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWCompressedToBackendMut<BE> + GGSWCompressedSeedMut + GGSWInfos,
         P: ScalarZnxToBackendRef<BE>,
         E: EncryptionInfos,
-        S: GLWESecretPreparedToBackendRef<BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>;
+        S: GLWESecretPreparedToBackendRef<BE>;
 }
 
 impl<BE: Backend> GGSWCompressedEncryptSkDefault<BE> for Module<BE>
@@ -57,7 +56,7 @@ where
         lvl_0
     }
 
-    fn ggsw_compressed_encrypt_sk_default<'s, R, P, S, E>(
+    fn ggsw_compressed_encrypt_sk_default<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -65,13 +64,12 @@ where
         seed_xa: [u8; 32],
         enc_infos: &E,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWCompressedToBackendMut<BE> + GGSWCompressedSeedMut + GGSWInfos,
         P: ScalarZnxToBackendRef<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         let base2k: usize = res.base2k().into();
         let rank: usize = res.rank().into();

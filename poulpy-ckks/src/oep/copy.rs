@@ -1,7 +1,7 @@
 use crate::default::copy::CKKSCopyDefault;
 
 use anyhow::Result;
-use poulpy_core::{GLWECopy, GLWEShift, ScratchArenaTakeCore, layouts::LWEInfos};
+use poulpy_core::{GLWECopy, GLWEShift, layouts::LWEInfos};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
@@ -24,7 +24,6 @@ unsafe impl<BE: Backend> CKKSCopyImpl<BE> for BE
 where
     BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
     Module<BE>: crate::default::copy::CKKSCopyDefault<BE> + GLWECopy<BE> + GLWEShift<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_copy_tmp_bytes(module: &Module<BE>) -> usize {
         module.ckks_copy_tmp_bytes_default()
