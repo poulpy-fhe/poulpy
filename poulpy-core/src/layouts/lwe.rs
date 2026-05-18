@@ -131,6 +131,64 @@ impl<D: Data> LWE<D> {
     pub fn mask_mut(&mut self) -> &mut VecZnx<D> {
         &mut self.mask
     }
+
+    fn validate_shape(&self) -> std::io::Result<()> {
+        if self.base2k.as_u32() == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "LWE base2k must be non-zero",
+            ));
+        }
+        if self.body.n() != 1 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("LWE body degree must be 1, got {}", self.body.n()),
+            ));
+        }
+        if self.body.cols() != 1 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("LWE body cols must be 1, got {}", self.body.cols()),
+            ));
+        }
+        if self.mask.cols() != 1 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("LWE mask cols must be 1, got {}", self.mask.cols()),
+            ));
+        }
+        if self.body.size() != self.mask.size() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "LWE body and mask sizes must match, got body.size={} mask.size={}",
+                    self.body.size(),
+                    self.mask.size()
+                ),
+            ));
+        }
+        if self.body.size() > self.body.max_size() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "LWE body size must not exceed max_size, got size={} max_size={}",
+                    self.body.size(),
+                    self.body.max_size()
+                ),
+            ));
+        }
+        if self.mask.size() > self.mask.max_size() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "LWE mask size must not exceed max_size, got size={} max_size={}",
+                    self.mask.size(),
+                    self.mask.max_size()
+                ),
+            ));
+        }
+        Ok(())
+    }
 }
 
 impl<D: HostDataRef> LWE<D> {
@@ -204,10 +262,6 @@ where
     }
 }
 
-#[expect(
-    dead_code,
-    reason = "host-owned constructors are kept for serialization and host-only staging"
-)]
 impl LWE<Vec<u8>> {
     /// Allocates a new [`LWE`] with the given parameters.
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
@@ -319,7 +373,8 @@ impl<D: HostDataMut> ReaderFrom for LWE<D> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.base2k = Base2K(reader.read_u32::<LittleEndian>()?);
         self.body.read_from(reader)?;
-        self.mask.read_from(reader)
+        self.mask.read_from(reader)?;
+        self.validate_shape()
     }
 }
 

@@ -1,10 +1,12 @@
 use dashu_float::{FBig, round::mode::HalfEven};
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize},
-    layouts::{FillUniform, Module, ScratchOwned, ZnxView},
+    layouts::{FillUniform, Module, ReaderFrom, ScratchOwned, ZnxView},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut, vec_znx_backend_ref},
 };
+
+use byteorder::{LittleEndian, WriteBytesExt};
 
 use crate::{
     DEFAULT_SIGMA_XE, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEExpandLWE, GLWEFromLWE, GLWENoise, GLWENormalize,
@@ -16,6 +18,46 @@ use crate::{
         SecretConversion, TorusPrecision, prepared::GLWESecretPrepared,
     },
 };
+
+fn write_vec_znx_bytes(out: &mut Vec<u8>, n: u64, cols: u64, size: u64, max_size: u64, coeffs: &[i64]) {
+    out.write_u64::<LittleEndian>(n).unwrap();
+    out.write_u64::<LittleEndian>(cols).unwrap();
+    out.write_u64::<LittleEndian>(size).unwrap();
+    out.write_u64::<LittleEndian>(max_size).unwrap();
+
+    let mut raw = Vec::with_capacity(std::mem::size_of_val(coeffs));
+    for coeff in coeffs {
+        raw.write_i64::<LittleEndian>(*coeff).unwrap();
+    }
+
+    out.write_u64::<LittleEndian>(raw.len() as u64).unwrap();
+    out.extend_from_slice(&raw);
+}
+
+pub fn test_lwe_read_from_rejects_malformed_shape<BE: crate::test_suite::TestBackend>(_params: &TestParams, _module: &Module<BE>)
+where
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+{
+    let infos = LWELayout {
+        n: Degree(2),
+        base2k: Base2K(32),
+        k: TorusPrecision(64),
+    };
+
+    let mut lwe = LWE::<Vec<u8>>::alloc_from_infos(&infos);
+    let mut bytes = Vec::new();
+
+    bytes.write_u32::<LittleEndian>(32).unwrap();
+    write_vec_znx_bytes(&mut bytes, 1, 1, 1, 1, &[123]);
+    write_vec_znx_bytes(&mut bytes, 2, 1, 2, 2, &[1, 2, 3, 4]);
+
+    let err = lwe
+        .read_from(&mut &bytes[..])
+        .expect_err("malformed LWE body/mask shape must be rejected");
+
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+}
 
 pub fn test_glwe_base2k_conversion<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where

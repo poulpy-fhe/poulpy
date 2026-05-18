@@ -308,6 +308,7 @@ macro_rules! core_backend_test_suite {
                 glwe_to_lwe => $crate::test_suite::test_glwe_to_lwe,
                 lwe_to_glwe => $crate::test_suite::test_lwe_to_glwe,
                 glwe_expand_lwe => $crate::test_suite::test_glwe_expand_lwe,
+                lwe_read_from_rejects_malformed_shape => $crate::test_suite::test_lwe_read_from_rejects_malformed_shape,
             }
         );
     };
