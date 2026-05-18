@@ -677,6 +677,17 @@ pub unsafe trait HalVecZnxBigImpl<BE: Backend>: Backend {
         a_col: usize,
     );
 
+    fn vec_znx_big_col_weighted_sum(
+        module: &Module<BE>,
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, BE>,
+        weights: &ScalarZnxBackendRef<'_, BE>,
+        weights_col: usize,
+        cols: usize,
+        coeffs: usize,
+    );
+
     fn vec_znx_scalar_product(
         module: &Module<BE>,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
@@ -960,6 +971,76 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend {
     );
 
     fn vmp_zero(module: &Module<BE>, res: &mut crate::layouts::VmpPMatBackendMut<'_, BE>);
+}
+
+/// Plain coefficient-domain matrix product extension point.
+///
+/// # Safety
+/// Implementations must preserve the `CoeffMatPMat` coefficient-domain contract:
+/// values may be packed/re-encoded for coefficient-matrix multiplication, but
+/// must not be interpreted as small-polynomial entries or transformed into the
+/// cyclotomic DFT/NTT domain used by VMP.
+pub unsafe trait HalCoeffMatImpl<BE: Backend>: Backend {
+    fn coeff_mat_prepare_tmp_bytes(module: &Module<BE>, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize;
+
+    fn coeff_mat_prepare(
+        module: &Module<BE>,
+        res: &mut crate::layouts::CoeffMatPMatBackendMut<'_, BE>,
+        matrix: &crate::layouts::VecZnxBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+
+    fn coeff_mat_apply_big_tmp_bytes(module: &Module<BE>, rows_in: usize, rows_out: usize) -> usize;
+
+    #[allow(clippy::too_many_arguments)]
+    fn coeff_mat_apply_big(
+        module: &Module<BE>,
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+        res_limb: usize,
+        pmat: &crate::layouts::CoeffMatPMatBackendRef<'_, BE>,
+        pmat_limb: usize,
+        a: &crate::layouts::VecZnxBackendRef<'_, BE>,
+        a_col: usize,
+        a_limb: usize,
+        rows_in: usize,
+        rows_out: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+}
+
+/// Packed coefficient-matrix product extension point.
+///
+/// # Safety
+/// Implementations must respect the packed coefficient layout described by
+/// [`crate::api::VecZnxMatMul`], use only the provided scratch region, and
+/// write only the selected result column.
+pub unsafe trait HalVecZnxMatMulImpl<BE: Backend>: Backend {
+    fn vec_znx_matmul_tmp_bytes(
+        module: &Module<BE>,
+        rows_in: usize,
+        rows_out: usize,
+        cols: usize,
+        res_size: usize,
+        u_size: usize,
+        a_size: usize,
+    ) -> usize;
+
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_matmul(
+        module: &Module<BE>,
+        res: &mut crate::layouts::VecZnxBackendMut<'_, BE>,
+        res_col: usize,
+        res_base2k: usize,
+        u: &crate::layouts::VecZnxBackendRef<'_, BE>,
+        u_base2k: usize,
+        a: &crate::layouts::VecZnxBackendRef<'_, BE>,
+        a_col: usize,
+        cols: usize,
+        a_base2k: usize,
+        rows_in: usize,
+        rows_out: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
 }
 
 /// Convolution family extension point.

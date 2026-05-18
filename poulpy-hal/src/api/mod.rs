@@ -7,12 +7,14 @@
 //! - **vec\_znx\_dft** -- DFT-domain operations (forward/inverse transform, arithmetic).
 //! - **svp\_ppol** -- scalar-vector product preparation and application.
 //! - **vmp\_pmat** -- vector-matrix product preparation and application.
+//! - **coeff\_mat\_pmat** -- coefficient-matrix preparation and application.
 //! - **convolution** -- bivariate convolution preparation and application.
 //! - **scratch** -- scratch buffer management.
 //!
 //! Scheme authors program against these traits; the actual computation is
 //! dispatched to a backend via the [`oep`](crate::oep) extension points.
 
+mod coeff_mat_pmat;
 mod convolution;
 mod module;
 mod reim;
@@ -21,8 +23,10 @@ mod svp_ppol;
 mod vec_znx;
 mod vec_znx_big;
 mod vec_znx_dft;
+mod vec_znx_matmul;
 mod vmp_pmat;
 
+pub use coeff_mat_pmat::*;
 pub use convolution::*;
 pub use module::*;
 pub use reim::*;
@@ -31,4 +35,5 @@ pub use svp_ppol::*;
 pub use vec_znx::*;
 pub use vec_znx_big::*;
 pub use vec_znx_dft::*;
+pub use vec_znx_matmul::*;
 pub use vmp_pmat::*;

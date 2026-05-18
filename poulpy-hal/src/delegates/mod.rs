@@ -4,6 +4,7 @@
 //! This module contains no user-facing logic; it exists solely to wire the safe
 //! API layer to the unsafe backend implementations via blanket `impl` blocks.
 
+mod coeff_mat_pmat;
 mod convolution;
 mod module;
 mod scratch;
@@ -11,4 +12,5 @@ mod svp_ppol;
 mod vec_znx;
 mod vec_znx_big;
 mod vec_znx_dft;
+mod vec_znx_matmul;
 mod vmp_pmat;

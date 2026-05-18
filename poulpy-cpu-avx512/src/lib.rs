@@ -156,6 +156,8 @@ compile_error!(
 #[cfg(feature = "enable-avx512f")]
 mod fft64;
 #[cfg(feature = "enable-avx512f")]
+mod gemm;
+#[cfg(feature = "enable-avx512f")]
 mod hal_impl;
 #[cfg(feature = "enable-avx512f")]
 mod ntt120_avx512;
@@ -191,6 +193,8 @@ pub mod ntt126_ifma_api {
 
 #[cfg(all(feature = "enable-avx512f", feature = "enable-ckks"))]
 mod ckks_impl;
+#[cfg(feature = "enable-avx512f")]
+mod coeff_mat;
 #[cfg(feature = "enable-avx512f")]
 mod core_impl;
 

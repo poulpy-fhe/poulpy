@@ -124,6 +124,17 @@ backend_test_suite! {
     }
 }
 
+backend_test_suite! {
+    mod lwe_matrix,
+    backend = crate::FFT64Avx,
+    params = TestParams { size: 1<<8, base2k: 17 },
+    tests = {
+        glwe_expand_lwe_matrix_decrypt => poulpy_core::test_suite::test_glwe_expand_lwe_matrix_decrypt,
+        lwe_matrix_mul_identity => poulpy_core::test_suite::test_lwe_matrix_mul_identity,
+        lwe_matrix_mul_decrypts_to_plain_product => poulpy_core::test_suite::test_lwe_matrix_mul_decrypts_to_plain_product,
+    }
+}
+
 #[test]
 fn test_convolution_direct() {
     let module = Module::<FFT64Avx>::new(1 << 8);

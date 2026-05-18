@@ -4,15 +4,19 @@ use crate::{FFT64Avx512, NTT120Avx512};
 use poulpy_cpu_ref::hal_defaults::{
     FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault, FFT64VecZnxDftDefault, FFT64VmpDefault,
     HalVecZnxDefault, NTT120ConvolutionDefault, NTT120ModuleDefault, NTT120SvpDefault, NTT120VecZnxBigDefault,
-    NTT120VecZnxDftDefault, NTT120VmpDefault,
+    NTT120VecZnxDftDefault, NTT120VmpDefault, VecZnxMatMulDefault,
 };
 use poulpy_hal::{
     api::{HostBufMut, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
     layouts::{
-        Backend, MatZnxBackendRef, Module, NoiseInfos, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut,
-        VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
+        Backend, CoeffMatPMatBackendMut, CoeffMatPMatBackendRef, MatZnxBackendRef, Module, NoiseInfos, ScratchArena,
+        VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
+        VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
     },
-    oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
+    oep::{
+        HalCoeffMatImpl, HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl,
+        HalVecZnxMatMulImpl, HalVmpImpl,
+    },
 };
 
 #[inline]
@@ -39,6 +43,90 @@ unsafe impl HalModuleImpl<FFT64Avx512> for FFT64Avx512 {
 
 unsafe impl HalVmpImpl<FFT64Avx512> for FFT64Avx512 {
     poulpy_cpu_ref::hal_impl_vmp!(FFT64VmpDefault);
+}
+
+unsafe impl HalCoeffMatImpl<FFT64Avx512> for FFT64Avx512 {
+    fn coeff_mat_prepare_tmp_bytes(module: &Module<Self>, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
+        crate::coeff_mat::coeff_mat_prepare_tmp_bytes::<Self>(module, rows, cols_in, cols_out, size)
+    }
+
+    fn coeff_mat_prepare(
+        module: &Module<Self>,
+        res: &mut CoeffMatPMatBackendMut<'_, Self>,
+        matrix: &VecZnxBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        crate::coeff_mat::coeff_mat_prepare::<Self>(module, res, matrix, scratch)
+    }
+
+    fn coeff_mat_apply_big_tmp_bytes(_module: &Module<Self>, rows_in: usize, rows_out: usize) -> usize {
+        crate::coeff_mat::coeff_mat_apply_big_tmp_bytes(rows_in, rows_out)
+    }
+
+    fn coeff_mat_apply_big(
+        _module: &Module<Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res_limb: usize,
+        pmat: &CoeffMatPMatBackendRef<'_, Self>,
+        pmat_limb: usize,
+        a: &VecZnxBackendRef<'_, Self>,
+        a_col: usize,
+        a_limb: usize,
+        rows_in: usize,
+        rows_out: usize,
+        _scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        crate::coeff_mat::coeff_mat_apply_big_i64(res, res_limb, pmat, pmat_limb, a, a_col, a_limb, rows_in, rows_out)
+    }
+}
+
+unsafe impl HalVecZnxMatMulImpl<FFT64Avx512> for FFT64Avx512 {
+    fn vec_znx_matmul_tmp_bytes(
+        module: &Module<Self>,
+        rows_in: usize,
+        rows_out: usize,
+        cols: usize,
+        res_size: usize,
+        u_size: usize,
+        a_size: usize,
+    ) -> usize {
+        <Self as VecZnxMatMulDefault<Self>>::vec_znx_matmul_tmp_bytes_default(
+            module, rows_in, rows_out, cols, res_size, u_size, a_size,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_matmul(
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
+        res_col: usize,
+        res_base2k: usize,
+        u: &VecZnxBackendRef<'_, Self>,
+        u_base2k: usize,
+        a: &VecZnxBackendRef<'_, Self>,
+        a_col: usize,
+        cols: usize,
+        a_base2k: usize,
+        rows_in: usize,
+        rows_out: usize,
+        _scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        poulpy_cpu_ref::hal_defaults::vec_znx_matmul::matmul_gemm::<Self, _>(
+            module,
+            res,
+            res_col,
+            res_base2k,
+            u,
+            u_base2k,
+            a,
+            a_col,
+            cols,
+            a_base2k,
+            rows_in,
+            rows_out,
+            crate::gemm::gemm_dot_i32,
+        );
+    }
 }
 
 unsafe impl HalConvolutionImpl<FFT64Avx512> for FFT64Avx512 {
@@ -178,6 +266,90 @@ unsafe impl HalVmpImpl<NTT120Avx512> for NTT120Avx512 {
 
     fn vmp_zero(module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
         <Self as NTT120VmpDefault<Self>>::vmp_zero_default(module, res)
+    }
+}
+
+unsafe impl HalCoeffMatImpl<NTT120Avx512> for NTT120Avx512 {
+    fn coeff_mat_prepare_tmp_bytes(module: &Module<Self>, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
+        crate::coeff_mat::coeff_mat_prepare_tmp_bytes::<Self>(module, rows, cols_in, cols_out, size)
+    }
+
+    fn coeff_mat_prepare(
+        module: &Module<Self>,
+        res: &mut CoeffMatPMatBackendMut<'_, Self>,
+        matrix: &VecZnxBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        crate::coeff_mat::coeff_mat_prepare::<Self>(module, res, matrix, scratch)
+    }
+
+    fn coeff_mat_apply_big_tmp_bytes(_module: &Module<Self>, rows_in: usize, rows_out: usize) -> usize {
+        crate::coeff_mat::coeff_mat_apply_big_tmp_bytes(rows_in, rows_out)
+    }
+
+    fn coeff_mat_apply_big(
+        _module: &Module<Self>,
+        res: &mut VecZnxBigBackendMut<'_, Self>,
+        res_limb: usize,
+        pmat: &CoeffMatPMatBackendRef<'_, Self>,
+        pmat_limb: usize,
+        a: &VecZnxBackendRef<'_, Self>,
+        a_col: usize,
+        a_limb: usize,
+        rows_in: usize,
+        rows_out: usize,
+        _scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        crate::coeff_mat::coeff_mat_apply_big_i128(res, res_limb, pmat, pmat_limb, a, a_col, a_limb, rows_in, rows_out)
+    }
+}
+
+unsafe impl HalVecZnxMatMulImpl<NTT120Avx512> for NTT120Avx512 {
+    fn vec_znx_matmul_tmp_bytes(
+        module: &Module<Self>,
+        rows_in: usize,
+        rows_out: usize,
+        cols: usize,
+        res_size: usize,
+        u_size: usize,
+        a_size: usize,
+    ) -> usize {
+        <Self as VecZnxMatMulDefault<Self>>::vec_znx_matmul_tmp_bytes_default(
+            module, rows_in, rows_out, cols, res_size, u_size, a_size,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_matmul(
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
+        res_col: usize,
+        res_base2k: usize,
+        u: &VecZnxBackendRef<'_, Self>,
+        u_base2k: usize,
+        a: &VecZnxBackendRef<'_, Self>,
+        a_col: usize,
+        cols: usize,
+        a_base2k: usize,
+        rows_in: usize,
+        rows_out: usize,
+        _scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        poulpy_cpu_ref::hal_defaults::vec_znx_matmul::matmul_gemm::<Self, _>(
+            module,
+            res,
+            res_col,
+            res_base2k,
+            u,
+            u_base2k,
+            a,
+            a_col,
+            cols,
+            a_base2k,
+            rows_in,
+            rows_out,
+            crate::gemm::gemm_dot_split,
+        );
     }
 }
 
@@ -460,7 +632,7 @@ unsafe impl HalVecZnxDftImpl<NTT120Avx512> for NTT120Avx512 {
 mod ifma_impl {
     use super::{ScratchArena, take_host_typed};
     use crate::NTT126Ifma;
-    use poulpy_cpu_ref::hal_defaults::HalVecZnxDefault;
+    use poulpy_cpu_ref::hal_defaults::{HalVecZnxDefault, VecZnxMatMulDefault};
     use poulpy_hal::{
         api::{ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
         layouts::{
@@ -468,7 +640,10 @@ mod ifma_impl {
             VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef,
             VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
         },
-        oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
+        oep::{
+            HalCoeffMatImpl, HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl,
+            HalVecZnxMatMulImpl, HalVmpImpl,
+        },
     };
     use std::mem::size_of;
 
@@ -780,6 +955,51 @@ mod ifma_impl {
         fn vec_znx_dft_zero(_module: &Module<Self>, res: &mut VecZnxDftBackendMut<'_, Self>, res_col: usize) {
             crate::ntt126_ifma::vec_znx_dft::vec_znx_dft_zero(res, res_col);
         }
+    }
+
+    unsafe impl HalCoeffMatImpl<NTT126Ifma> for NTT126Ifma {
+        fn coeff_mat_prepare_tmp_bytes(
+            module: &Module<Self>,
+            rows: usize,
+            cols_in: usize,
+            cols_out: usize,
+            size: usize,
+        ) -> usize {
+            crate::coeff_mat::coeff_mat_prepare_tmp_bytes::<Self>(module, rows, cols_in, cols_out, size)
+        }
+
+        fn coeff_mat_prepare(
+            module: &Module<Self>,
+            res: &mut poulpy_hal::layouts::CoeffMatPMatBackendMut<'_, Self>,
+            matrix: &VecZnxBackendRef<'_, Self>,
+            scratch: &mut ScratchArena<'_, Self>,
+        ) {
+            crate::coeff_mat::coeff_mat_prepare::<Self>(module, res, matrix, scratch)
+        }
+
+        fn coeff_mat_apply_big_tmp_bytes(_module: &Module<Self>, rows_in: usize, rows_out: usize) -> usize {
+            crate::coeff_mat::coeff_mat_apply_big_tmp_bytes(rows_in, rows_out)
+        }
+
+        fn coeff_mat_apply_big(
+            _module: &Module<Self>,
+            res: &mut VecZnxBigBackendMut<'_, Self>,
+            res_limb: usize,
+            pmat: &poulpy_hal::layouts::CoeffMatPMatBackendRef<'_, Self>,
+            pmat_limb: usize,
+            a: &VecZnxBackendRef<'_, Self>,
+            a_col: usize,
+            a_limb: usize,
+            rows_in: usize,
+            rows_out: usize,
+            _scratch: &mut ScratchArena<'_, Self>,
+        ) {
+            crate::coeff_mat::coeff_mat_apply_big_i128(res, res_limb, pmat, pmat_limb, a, a_col, a_limb, rows_in, rows_out)
+        }
+    }
+
+    unsafe impl HalVecZnxMatMulImpl<NTT126Ifma> for NTT126Ifma {
+        poulpy_cpu_ref::hal_impl_vec_znx_matmul!(VecZnxMatMulDefault);
     }
 
     unsafe impl HalConvolutionImpl<NTT126Ifma> for NTT126Ifma {

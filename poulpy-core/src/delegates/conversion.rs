@@ -1,9 +1,13 @@
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    api::{GGSWExpandRows, GGSWFromGGLWE, GLWEExpandLWE, GLWEFromLWE, LWEFromGLWE, LWESampleExtract},
+    api::{
+        GGSWExpandRows, GGSWFromGGLWE, GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE, LWEFromGLWE, LWEMatrixMul,
+        LWESampleExtract,
+    },
     layouts::{
-        GGLWEInfos, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEToBackendMut,
+        CoeffMatrixInfos, CoeffMatrixToBackendRef, GGLWEInfos, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut,
+        GLWEToBackendRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendMut, LWEMatrixToBackendRef, LWEToBackendMut,
         LWEToBackendRef,
         prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
     },
@@ -109,6 +113,54 @@ impl_conversion_delegate!(
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_expand_lwe(self, res, a, scratch)
+    }
+);
+
+impl_conversion_delegate!(
+    GLWEExpandLWEMatrix<BE>,
+    [
+        BE: Backend + ConversionImpl<BE>,
+        Module<BE>: ConversionDefault<BE>
+    ],
+    fn glwe_expand_lwe_matrix_tmp_bytes<R, A>(&self, res_infos: &R, a_infos: &A) -> usize
+    where
+        R: LWEMatrixInfos,
+        A: GLWEInfos,
+    {
+        BE::glwe_expand_lwe_matrix_tmp_bytes(self, res_infos, a_infos)
+    }
+
+    fn glwe_expand_lwe_matrix<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+    {
+        BE::glwe_expand_lwe_matrix(self, res, a, scratch)
+    }
+);
+
+impl_conversion_delegate!(
+    LWEMatrixMul<BE>,
+    [
+        BE: Backend + ConversionImpl<BE>,
+        Module<BE>: ConversionDefault<BE>
+    ],
+    fn lwe_matrix_mul_tmp_bytes<R, U, A>(&self, res_infos: &R, u_infos: &U, a_infos: &A) -> usize
+    where
+        R: LWEMatrixInfos,
+        U: CoeffMatrixInfos,
+        A: LWEMatrixInfos,
+    {
+        BE::lwe_matrix_mul_tmp_bytes(self, res_infos, u_infos, a_infos)
+    }
+
+    fn lwe_matrix_mul<R, U, A>(&self, res: &mut R, u: &U, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
+        U: CoeffMatrixToBackendRef<BE> + CoeffMatrixInfos,
+        A: LWEMatrixToBackendRef<BE> + LWEMatrixInfos,
+    {
+        BE::lwe_matrix_mul(self, res, u, a, scratch)
     }
 );
 

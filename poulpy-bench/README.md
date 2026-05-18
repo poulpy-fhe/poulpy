@@ -56,6 +56,7 @@ cargo clippy -p poulpy-bench --all-targets \
 | Binary | Subsystem | Backends |
 |---|---|---|
 | `operations` | GLWE add / sub / normalize / mul-plain | all |
+| `coeff_mat` | `CoeffMatrix x LWEMatrix -> LWEMatrix` | all |
 | `encryption` | GLWE / GGSW / automorphism-key encryption | all |
 | `decryption` | GLWE decryption | all |
 | `automorphism` | GLWE automorphism | all |
@@ -97,6 +98,9 @@ All sweep ranges and layout parameters are overridable at runtime through the `P
   "vmp": {
     "sweeps": [[10,2,1,2,3],[11,4,1,2,5],[12,7,1,2,8],[13,15,1,2,16],[14,31,1,2,32]]
   },
+  "coeff_mat": {
+    "sweeps": [[10,1024,1,8,3],[11,2048,1,8,5],[12,4096,2,8,8]]
+  },
   "svp_prepare": {
     "log_n": [10,11,12,13,14]
   },
@@ -115,6 +119,7 @@ Field reference:
 | `hal.sweeps` | `[[log_n, cols, size], ...]` | `vec_znx_big`, `vec_znx_dft`, `svp` | Sweep points for generic HAL ops |
 | `cnv.sweeps` | `[[log_n, size], ...]` | `convolution` | Sweep points for convolution |
 | `vmp.sweeps` | `[[log_n, rows, cols_in, cols_out, size], ...]` | `vmp` | Sweep points for VMP |
+| `coeff_mat.sweeps` | `[[log_n, rows_in, lwe_n, rows_out, size], ...]` | `coeff_mat` | Sweep points for `CoeffMatrix x LWEMatrix` |
 | `svp_prepare.log_n` | `[log_n, ...]` | `svp` prepare | Ring degrees for SVP prepare |
 | `core.n` | power of two | all core/scheme/standard | Ring degree `N` |
 | `core.base2k` | integer | all core/scheme/standard | Limb bit-width |
@@ -147,6 +152,7 @@ cat > bench_params.json <<'EOF'
   "hal":  { "sweeps": [[10,2,2],[12,2,8],[14,2,32]] },
   "cnv":  { "sweeps": [[10,1],[12,4],[14,16]] },
   "vmp":  { "sweeps": [[10,2,1,2,3],[12,7,1,2,8]] },
+  "coeff_mat": { "sweeps": [[10,1024,1,8,3],[12,4096,2,8,8]] },
   "core": { "n": 4096, "base2k": 18, "k": 54, "rank": 1, "dsize": 1 }
 }
 EOF

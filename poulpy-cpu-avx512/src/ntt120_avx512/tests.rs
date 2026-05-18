@@ -126,6 +126,17 @@ backend_test_suite! {
     }
 }
 
+backend_test_suite! {
+    mod lwe_matrix,
+    backend = crate::NTT120Avx512,
+    params = TestParams { size: 1<<8, base2k: 50 },
+    tests = {
+        glwe_expand_lwe_matrix_decrypt => poulpy_core::test_suite::test_glwe_expand_lwe_matrix_decrypt,
+        lwe_matrix_mul_identity => poulpy_core::test_suite::test_lwe_matrix_mul_identity,
+        lwe_matrix_mul_decrypts_to_plain_product => poulpy_core::test_suite::test_lwe_matrix_mul_decrypts_to_plain_product,
+    }
+}
+
 // NTT CHANGE_MODE_N boundary tests.
 // CHANGE_MODE_N = 1024: for n <= 1024 the AVX NTT runs fully by-block;
 // for n > 1024 it first completes upper levels by-level then switches to

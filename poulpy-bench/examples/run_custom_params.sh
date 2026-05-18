@@ -92,14 +92,14 @@ echo ""
 # ── known binaries ────────────────────────────────────────────────────────────
 
 ALL_BINARIES=(
-  vec_znx vec_znx_big vec_znx_dft convolution svp vmp fft ntt
+  vec_znx vec_znx_big vec_znx_dft convolution svp vmp coeff_mat fft ntt
   operations encryption decryption automorphism external_product keyswitch
   blind_rotate circuit_bootstrapping bdd_prepare bdd_arithmetic
   ckks_leveled standard
 )
 
 DEFAULT_BINARIES=(
-  vec_znx_big vec_znx_dft vmp svp
+  vec_znx_big vec_znx_dft vmp coeff_mat svp
   operations encryption external_product
   standard
 )

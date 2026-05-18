@@ -308,6 +308,9 @@ macro_rules! core_backend_test_suite {
                 glwe_to_lwe => $crate::test_suite::test_glwe_to_lwe,
                 lwe_to_glwe => $crate::test_suite::test_lwe_to_glwe,
                 glwe_expand_lwe => $crate::test_suite::test_glwe_expand_lwe,
+                glwe_expand_lwe_matrix_decrypt => $crate::test_suite::test_glwe_expand_lwe_matrix_decrypt,
+                lwe_matrix_mul_identity => $crate::test_suite::test_lwe_matrix_mul_identity,
+                lwe_matrix_mul_decrypts_to_plain_product => $crate::test_suite::test_lwe_matrix_mul_decrypts_to_plain_product,
                 glwe_expand_lwe_rejects_incompatible_lwe_layout =>
                     $crate::test_suite::test_glwe_expand_lwe_rejects_incompatible_lwe_layout,
                 lwe_read_from_rejects_malformed_shape => $crate::test_suite::test_lwe_read_from_rejects_malformed_shape,

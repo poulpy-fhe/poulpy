@@ -174,9 +174,13 @@ compile_error!("feature `enable-avx` requires FMA. Build with RUSTFLAGS=\"-C tar
 #[cfg(all(feature = "enable-avx", feature = "enable-ckks"))]
 mod ckks_impl;
 #[cfg(feature = "enable-avx")]
+mod coeff_mat;
+#[cfg(feature = "enable-avx")]
 mod core_impl;
 #[cfg(feature = "enable-avx")]
 mod fft64;
+#[cfg(feature = "enable-avx")]
+mod gemm;
 #[cfg(feature = "enable-avx")]
 mod hal_impl;
 #[cfg(feature = "enable-avx")]

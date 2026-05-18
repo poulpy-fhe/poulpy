@@ -10,8 +10,8 @@ use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxCopyRangeBackend, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero,
-        VecZnxExtractCoeffBackend, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
-        VecZnxRotateBackend, VecZnxZeroBackend,
+        VecZnxExtractCoeffBackend, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxMatMul, VecZnxMatMulTmpBytes, VecZnxNormalize,
+        VecZnxNormalizeTmpBytes, VecZnxRotateBackend, VecZnxZeroBackend,
     },
     layouts::{
         Backend, ScratchArena, VecZnx, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendRef, VecZnxDftToBackendRef,
@@ -23,8 +23,9 @@ use crate::{
     GLWERotate, ScratchArenaTakeCore,
     default::{keyswitching::GGLWEProductDefault, operations::GLWECopyDefault},
     layouts::{
-        GGLWEInfos, GGLWEToBackendRef, GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut,
-        GLWEToBackendRef, GLWEViewMut, GLWEViewRef, LWEInfos, LWEToBackendMut, LWEToBackendRef, Rank, glwe_backend_ref_from_mut,
+        CoeffMatrixInfos, CoeffMatrixToBackendRef, GGLWEInfos, GGLWEToBackendRef, GGSWAtViewMut, GGSWInfos, GGSWToBackendMut,
+        GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, GLWEViewRef, LWEInfos, LWEMatrixInfos,
+        LWEMatrixToBackendMut, LWEMatrixToBackendRef, LWEToBackendMut, LWEToBackendRef, Rank, glwe_backend_ref_from_mut,
         prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
     },
     oep::{ConversionDefault, GLWEKeyswitchDefault},
@@ -140,6 +141,168 @@ where
             }
         }
     }
+}
+
+pub fn glwe_expand_lwe_matrix_tmp_bytes_default<BE, M, R, A>(module: &M, _res_infos: &R, a_infos: &A) -> usize
+where
+    BE: Backend,
+    M: ModuleN,
+    R: LWEMatrixInfos,
+    A: GLWEInfos,
+{
+    VecZnx::<Vec<u8>>::bytes_of(module.n(), 1, a_infos.size())
+}
+
+pub fn glwe_expand_lwe_matrix_default<BE, M, R, A>(module: &M, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+where
+    BE: Backend,
+    M: ModuleN + VecZnxRotateBackend<BE> + VecZnxCopyRangeBackend<BE> + VecZnxZeroBackend<BE>,
+    R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
+    A: GLWEToBackendRef<BE> + GLWEInfos,
+{
+    let a = a.to_backend_ref();
+    let mut res = res.to_backend_mut();
+    let n = module.n();
+    let rank = a.rank().as_usize();
+    let min_size = res.size().min(a.size());
+    let rows = res.rows();
+
+    assert_eq!(a.n().as_usize(), n, "glwe_expand_lwe_matrix: GLWE.n() != module.n()");
+    assert_eq!(
+        res.n().as_usize(),
+        rank * n,
+        "glwe_expand_lwe_matrix: invalid result LWE dimension"
+    );
+    assert!(rows <= n, "glwe_expand_lwe_matrix: rows > module.n()");
+    assert_eq!(res.base2k(), a.base2k(), "glwe_expand_lwe_matrix: base2k mismatch");
+    assert!(
+        scratch.available() >= glwe_expand_lwe_matrix_tmp_bytes_default::<BE, _, _, _>(module, &res, &a),
+        "scratch.available(): {} < GLWEExpandLWEMatrix::glwe_expand_lwe_matrix_tmp_bytes: {}",
+        scratch.available(),
+        glwe_expand_lwe_matrix_tmp_bytes_default::<BE, _, _, _>(module, &res, &a)
+    );
+
+    module.vec_znx_zero_backend(&mut res.body, 0);
+    for col in 0..res.n().as_usize() {
+        module.vec_znx_zero_backend(&mut res.mask, col);
+    }
+
+    let (mut tmp, _) = scratch.borrow().take_vec_znx_scratch(n, 1, min_size);
+    for limb in 0..min_size {
+        module.vec_znx_copy_range_backend(&mut res.body, 0, limb, 0, &a.data, 0, limb, 0, rows);
+    }
+
+    for row in 0..rows {
+        for glwe_col in 0..rank {
+            {
+                let mut tmp = tmp.to_backend_mut();
+                module.vec_znx_rotate_backend(-(row as i64), &mut tmp, 0, &a.data, glwe_col + 1);
+            }
+            let tmp_ref = tmp.to_backend_ref();
+            for limb in 0..min_size {
+                for coeff in 0..n {
+                    module.vec_znx_copy_range_backend(
+                        &mut res.mask,
+                        glwe_col * n + coeff,
+                        limb,
+                        row,
+                        &tmp_ref,
+                        0,
+                        limb,
+                        coeff,
+                        1,
+                    );
+                }
+            }
+        }
+    }
+}
+
+pub fn lwe_matrix_mul_tmp_bytes_default<BE, M, R, U, A>(module: &M, res_infos: &R, u_infos: &U, a_infos: &A) -> usize
+where
+    BE: Backend,
+    M: VecZnxMatMulTmpBytes,
+    R: LWEMatrixInfos,
+    U: CoeffMatrixInfos,
+    A: LWEMatrixInfos,
+{
+    module.vec_znx_matmul_tmp_bytes(
+        u_infos.n().as_usize(),
+        res_infos.rows(),
+        1.max(a_infos.n().as_usize()),
+        res_infos.size(),
+        u_infos.size(),
+        a_infos.size(),
+    )
+}
+
+pub fn lwe_matrix_mul_default<BE, M, R, U, A>(module: &M, res: &mut R, u: &U, a: &A, scratch: &mut ScratchArena<'_, BE>)
+where
+    BE: Backend,
+    M: VecZnxZeroBackend<BE> + VecZnxMatMulTmpBytes + VecZnxMatMul<BE>,
+    R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
+    U: CoeffMatrixToBackendRef<BE> + CoeffMatrixInfos,
+    A: LWEMatrixToBackendRef<BE> + LWEMatrixInfos,
+{
+    let u = u.to_backend_ref();
+    let a = a.to_backend_ref();
+    let mut res = res.to_backend_mut();
+
+    assert_eq!(
+        u.n().as_usize(),
+        a.rows(),
+        "lwe_matrix_mul: U input rows != input matrix rows"
+    );
+    assert_eq!(res.rows(), u.rows_out(), "lwe_matrix_mul: result rows != U rows_out");
+    assert_eq!(res.n(), a.n(), "lwe_matrix_mul: result LWE dimension != input LWE dimension");
+    assert!(
+        scratch.available() >= lwe_matrix_mul_tmp_bytes_default::<BE, _, _, _, _>(module, &res, &u, &a),
+        "scratch.available(): {} < LWEMatrixMul::lwe_matrix_mul_tmp_bytes: {}",
+        scratch.available(),
+        lwe_matrix_mul_tmp_bytes_default::<BE, _, _, _, _>(module, &res, &u, &a)
+    );
+
+    module.vec_znx_zero_backend(&mut res.body, 0);
+    for col in 0..res.n().as_usize() {
+        module.vec_znx_zero_backend(&mut res.mask, col);
+    }
+
+    let res_base2k = res.base2k().as_usize();
+    let res_rows = res.rows();
+    let u_base2k = u.base2k().as_usize();
+    let a_base2k = a.base2k().as_usize();
+    let a_rows = a.rows();
+    let lwe_n = res.n().as_usize();
+
+    module.vec_znx_matmul(
+        &mut res.body,
+        0,
+        res_base2k,
+        &u.data,
+        u_base2k,
+        &a.body,
+        0,
+        1,
+        a_base2k,
+        a_rows,
+        res_rows,
+        scratch,
+    );
+
+    module.vec_znx_matmul(
+        &mut res.mask,
+        0,
+        res_base2k,
+        &u.data,
+        u_base2k,
+        &a.mask,
+        0,
+        lwe_n,
+        a_base2k,
+        a_rows,
+        res_rows,
+        scratch,
+    );
 }
 
 pub fn glwe_from_lwe_tmp_bytes_default<BE, M, R, A, K>(module: &M, glwe_infos: &R, lwe_infos: &A, key_infos: &K) -> usize

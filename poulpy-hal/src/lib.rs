@@ -29,6 +29,7 @@
 //! - [`layouts::VecZnxDft`] -- vector of polynomials in DFT/NTT domain (backend-specific prepared scalars).
 //! - [`layouts::SvpPPol`] -- prepared scalar polynomial for scalar-vector products.
 //! - [`layouts::VmpPMat`] -- prepared matrix for vector-matrix products.
+//! - [`layouts::CoeffMatPMat`] -- coefficient-domain prepared matrix for coefficient-matrix products.
 //! - [`layouts::CnvPVecL`], [`layouts::CnvPVecR`] -- prepared left/right operands for bivariate convolution.
 //! - [`layouts::ScratchArena`], [`layouts::ScratchOwned`] -- aligned scratch memory for temporary workspace.
 //!

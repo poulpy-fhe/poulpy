@@ -1,36 +1,36 @@
 use poulpy_hal::{
-    api::{VecZnxNormalize, VecZnxNormalizeTmpBytes},
-    layouts::{Backend, HostBackend, HostDataMut, HostDataRef, ScratchArena, ZnxView, ZnxViewMut},
+    api::{
+        ScratchArenaTakeBasic, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigInnerSumBackend, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxScalarProduct,
+    },
+    layouts::{Backend, ScratchArena, VecZnxBigToBackendRef},
 };
 
-use crate::{
-    ScratchArenaTakeCore,
-    layouts::{
-        LWEInfos, LWEPlaintext, LWEPlaintextToBackendMut, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendRef,
-        SetLWEInfos,
-    },
-};
+use crate::layouts::{LWEInfos, LWEPlaintextToBackendMut, LWESecretToBackendRef, LWEToBackendRef, SetLWEInfos};
 
 pub fn lwe_decrypt_tmp_bytes_default<M, BE: Backend, A>(module: &M, infos: &A) -> usize
 where
-    M: VecZnxNormalizeTmpBytes,
+    M: VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
     A: LWEInfos,
 {
-    let lvl_0: usize = LWEPlaintext::bytes_of(infos.size());
-    let lvl_1: usize = module.vec_znx_normalize_tmp_bytes();
-
-    lvl_0 + lvl_1
+    module.bytes_of_vec_znx_big_n(infos.n().as_usize(), 1, infos.size())
+        + module.bytes_of_vec_znx_big_n(1, 1, infos.size())
+        + module.vec_znx_big_normalize_tmp_bytes()
+        + 2 * (BE::SCRATCH_ALIGN - 1)
 }
 
 pub fn lwe_decrypt_default<M, BE, R, P, S>(module: &M, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
 where
-    M: VecZnxNormalize<BE> + VecZnxNormalizeTmpBytes,
+    M: VecZnxScalarProduct<BE>
+        + VecZnxBigInnerSumBackend<BE>
+        + VecZnxBigAddSmallAssign<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalizeTmpBytes,
     R: LWEToBackendRef<BE> + LWEInfos,
     P: LWEPlaintextToBackendMut<BE> + SetLWEInfos + LWEInfos,
     S: LWESecretToBackendRef<BE> + LWEInfos,
-    BE: Backend + HostBackend,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> BE::BufRef<'a>: HostDataRef,
+    BE: Backend,
 {
     let res = res.to_backend_ref();
     let sk = sk.to_backend_ref();
@@ -47,22 +47,24 @@ where
     );
 
     let scratch = scratch.borrow();
+    let (mut tmp_hadamard, scratch_1) = scratch.take_vec_znx_big_scratch_n(res.n().as_usize(), 1, res.size());
+    module.vec_znx_scalar_product(&mut tmp_hadamard, 0, &res.mask, 0, &sk.data, 0);
 
-    let (mut tmp, mut scratch_1) = scratch.take_lwe_plaintext_scratch(&res);
-    for i in 0..res.size() {
-        tmp.data.at_mut(0, i)[0] = res.body.at(0, i)[0]
-            + res
-                .mask
-                .at(0, i)
-                .iter()
-                .zip(sk.data.at(0, 0))
-                .map(|(x, y)| x * y)
-                .sum::<i64>();
-    }
+    let (mut tmp_scalar, mut scratch_2) = scratch_1.take_vec_znx_big_scratch_n(1, 1, res.size());
+    module.vec_znx_big_inner_sum_backend(&mut tmp_scalar, 0, 0, &tmp_hadamard.to_backend_ref(), 0);
+    module.vec_znx_big_add_small_assign(&mut tmp_scalar, 0, &res.body, 0);
 
     let pt_base2k = pt.base2k().into();
     let res_base2k = res.base2k().into();
     let mut pt = pt.to_backend_mut();
-    let tmp_ref = tmp.to_backend_ref();
-    module.vec_znx_normalize(&mut pt.data, pt_base2k, 0, 0, &tmp_ref.data, res_base2k, 0, &mut scratch_1);
+    module.vec_znx_big_normalize(
+        &mut pt.data,
+        pt_base2k,
+        0,
+        0,
+        &tmp_scalar.to_backend_ref(),
+        res_base2k,
+        0,
+        &mut scratch_2,
+    );
 }
