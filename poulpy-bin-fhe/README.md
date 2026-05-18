@@ -1,7 +1,7 @@
 # poulpy-bin-fhe
 
-`poulpy-bin-fhe` is the backend-agnostic binary and gate-level FHE crate built
-on top of `poulpy-core` and `poulpy-hal`.
+`poulpy-bin-fhe` is the binary and gate-level FHE crate built on top of
+`poulpy-core` and `poulpy-hal`.
 
 It provides:
 
@@ -35,3 +35,12 @@ cargo test -p poulpy-bin-fhe --features enable-avx
 
 Without `enable-bin-fhe`, the public API still builds, but this crate's
 backend-backed examples are skipped.
+
+## Backend Status
+
+Most public traits and helpers now use the backend-owned HAL/core surface
+(`ScratchArena<'_, BE>`, `...ToBackendRef<BE>`, and
+`...ToBackendMut<BE>`). The crate is still not fully backend-agnostic in
+v0.6.0: it keeps an unconditional `poulpy-cpu-ref` dependency and several
+host `Vec<u8>` / `HostBackend` bounds. Full backend-agnostic cleanup is
+planned as follow-up work.

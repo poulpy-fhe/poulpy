@@ -7,7 +7,7 @@ readme = "README.md"
 description = "A crate providing layouts and a trait-based hardware acceleration layer with open extension points, matching the API and types of spqlios-arithmetic."
 repository = "https://github.com/poulpy-fhe/poulpy"
 homepage = "https://github.com/poulpy-fhe/poulpy"
-documentation = "https://docs.rs/poulpy"
+documentation = "https://docs.rs/poulpy-hal"
 
 [dependencies]
 dashu-float = {workspace = true}

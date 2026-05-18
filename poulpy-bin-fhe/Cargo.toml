@@ -4,10 +4,10 @@ version = "0.6.0"
 edition = "2024"
 license = "Apache-2.0"
 readme = "README.md"
-description = "A backend agnostic crate implementing binary/gate-level Module-LWE-based FHE"
+description = "Binary/gate-level Module-LWE-based FHE built on Poulpy core and HAL"
 repository = "https://github.com/poulpy-fhe/poulpy"
 homepage = "https://github.com/poulpy-fhe/poulpy"
-documentation = "https://docs.rs/poulpy"
+documentation = "https://docs.rs/poulpy-bin-fhe"
 
 [features]
 enable-bin-fhe = ["poulpy-cpu-ref/enable-core"]

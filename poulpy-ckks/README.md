@@ -306,6 +306,8 @@ users will choose one of:
 
 - `poulpy-cpu-ref` for portable reference execution
 - `poulpy-cpu-avx` for optimized x86_64 execution when AVX2/FMA is available
+- `poulpy-cpu-avx512` for AVX-512F and AVX-512-IFMA execution when those
+  target features are available
 
 Backend selection happens through the `BE` parameter of `Module<BE>`. Note that
 the `encoding::Encoder<T>` requires a concrete FFT table type (e.g.
