@@ -59,6 +59,26 @@ where
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
 }
 
+pub fn test_lwe_secret_from_glwe_secret_flattens_rank_and_preserves_metadata<BE: crate::test_suite::TestBackend>(
+    _params: &TestParams,
+    module: &Module<BE>,
+) where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf> + SecretConversion<BE>,
+{
+    let rank = Rank(2);
+    let mut source = Source::new([9u8; 32]);
+    let mut sk_glwe = module.glwe_secret_alloc(rank);
+    sk_glwe.fill_ternary_hw(3, &mut source);
+
+    let sk_lwe = module.lwe_secret_from_glwe_secret(&sk_glwe);
+
+    assert_eq!(sk_lwe.n(), Degree((module.n() * rank.as_usize()) as u32));
+    assert_eq!(sk_lwe.dist(), crate::dist::Distribution::TernaryFixed(3));
+}
+
 pub fn test_glwe_base2k_conversion<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
@@ -499,4 +519,51 @@ where
             rank.0
         );
     }
+}
+
+pub fn test_glwe_expand_lwe_rejects_incompatible_lwe_layout<BE: crate::test_suite::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: GLWEExpandLWE<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k = params.base2k;
+    let k = 2 * base2k;
+
+    let glwe_infos = GLWELayout {
+        n: Degree(module.n() as u32),
+        base2k: Base2K(base2k as u32),
+        k: TorusPrecision(k as u32),
+        rank: Rank(1),
+    };
+
+    let bad_lwe_infos = LWELayout {
+        n: Degree(module.n() as u32),
+        base2k: Base2K((base2k - 1) as u32),
+        k: TorusPrecision(k as u32),
+    };
+
+    let glwe_ct = module.glwe_alloc_from_infos(&glwe_infos);
+    let mut lwe_out = module.lwe_alloc_from_infos(&bad_lwe_infos);
+
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            module.glwe_expand_lwe_tmp_bytes(&bad_lwe_infos, &glwe_infos);
+        }))
+        .is_err(),
+        "glwe_expand_lwe_tmp_bytes must reject incompatible LWE layout"
+    );
+
+    let mut scratch = ScratchOwned::<BE>::alloc(0);
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            module.glwe_expand_lwe(std::slice::from_mut(&mut lwe_out), &glwe_ct, &mut scratch.borrow());
+        }))
+        .is_err(),
+        "glwe_expand_lwe must reject incompatible LWE layout"
+    );
 }

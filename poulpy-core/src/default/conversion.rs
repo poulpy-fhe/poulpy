@@ -62,11 +62,41 @@ where
     R: LWEInfos,
     A: GLWEInfos,
 {
+    assert_eq!(
+        a_infos.n().as_usize(),
+        module.n(),
+        "glwe_expand_lwe_tmp_bytes: GLWE.n() != module.n()"
+    );
+    assert_glwe_expand_lwe_lwe_layout(lwe_infos, a_infos, "glwe_expand_lwe_tmp_bytes");
+
     if a_infos.rank().as_usize() == 1 {
         0
     } else {
         VecZnx::<Vec<u8>>::bytes_of(module.n(), 1, lwe_infos.size())
     }
+}
+
+fn assert_glwe_expand_lwe_lwe_layout<R, A>(lwe_infos: &R, a_infos: &A, context: &str)
+where
+    R: LWEInfos,
+    A: GLWEInfos,
+{
+    let expected_lwe_n = a_infos.n().as_usize() * a_infos.rank().as_usize();
+    assert_eq!(
+        lwe_infos.n().as_usize(),
+        expected_lwe_n,
+        "{context}: LWE.n() must equal GLWE.n() * GLWE.rank()"
+    );
+    assert_eq!(
+        lwe_infos.base2k(),
+        a_infos.base2k(),
+        "{context}: LWE.base2k() must equal GLWE.base2k()"
+    );
+    assert_eq!(
+        lwe_infos.size(),
+        a_infos.size(),
+        "{context}: LWE.size() must equal GLWE.size()"
+    );
 }
 
 pub fn glwe_expand_lwe_default<BE, M, R, A>(module: &M, res: &mut [R], a: &A, scratch: &mut ScratchArena<'_, BE>)
@@ -82,6 +112,9 @@ where
 
     assert_eq!(usize::from(a.n()), n, "glwe_expand_lwe: GLWE.n() != module.n()");
     assert!(res.len() <= n, "glwe_expand_lwe: res.len() > module.n()");
+    for (idx, lwe) in res.iter().enumerate() {
+        assert_glwe_expand_lwe_lwe_layout(lwe, &a, &format!("glwe_expand_lwe: res[{idx}]"));
+    }
 
     if rank == 1 {
         for (i, lwe) in res.iter_mut().enumerate() {

@@ -270,10 +270,18 @@ pub trait SecretConversion<B: Backend> {
     where
         S: LWESecretToBackendRef<B>;
 
-    /// Derives the associated `LWESecret` from a rank-1 `GLWESecret` by applying
-    /// the X → X⁻¹ automorphism (k = -1). This is the inverse of
-    /// `glwe_secret_from_lwe_secret`: applying both conversions recovers the
-    /// original key.
+    /// Derives the associated `LWESecret` from a `GLWESecret` by applying the
+    /// X → X⁻¹ automorphism (k = -1) to each rank component.
+    ///
+    /// For a GLWE secret of degree `n` and rank `r`, the result is an LWE secret
+    /// of degree `n * r`. Each rank component is automorphed independently and
+    /// written as one contiguous `n`-coefficient block in the output key. For
+    /// rank 1, this is the inverse of `glwe_secret_from_lwe_secret`: applying
+    /// both conversions recovers the original key.
+    ///
+    /// Distribution metadata is preserved from the source secret. In particular,
+    /// fixed-weight metadata denotes the advertised fixed-weight distribution of
+    /// the source key and is not multiplied by the rank during flattening.
     fn lwe_secret_from_glwe_secret<S>(&self, src: &S) -> LWESecret<B::OwnedBuf>
     where
         S: GLWESecretToBackendRef<B>;
