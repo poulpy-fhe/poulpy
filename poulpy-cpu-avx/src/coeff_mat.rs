@@ -6,7 +6,7 @@ use poulpy_hal::layouts::{
     VecZnxBigBackendMut, ZnxView, ZnxViewMut,
 };
 
-pub(crate) fn coeff_mat_prepare_tmp_bytes<BE: Backend>(
+pub(crate) fn coeff_mat_prepare_tmp_bytes<BE>(
     module: &Module<BE>,
     rows: usize,
     cols_in: usize,
@@ -14,7 +14,7 @@ pub(crate) fn coeff_mat_prepare_tmp_bytes<BE: Backend>(
     size: usize,
 ) -> usize
 where
-    BE: CoeffMatPMatDefault<BE>,
+    BE: Backend + CoeffMatPMatDefault<BE>,
     BE::OwnedBuf: HostDataMut,
     for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
@@ -22,13 +22,13 @@ where
     <BE as CoeffMatPMatDefault<BE>>::coeff_mat_prepare_tmp_bytes_default(module, rows, cols_in, cols_out, size)
 }
 
-pub(crate) fn coeff_mat_prepare<BE: Backend>(
+pub(crate) fn coeff_mat_prepare<BE>(
     module: &Module<BE>,
     res: &mut CoeffMatPMatBackendMut<'_, BE>,
     matrix: &VecZnxBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: CoeffMatPMatDefault<BE>,
+    BE: Backend + CoeffMatPMatDefault<BE>,
     BE::OwnedBuf: HostDataMut,
     for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
@@ -81,9 +81,9 @@ unsafe fn coeff_mat1col_product_i64(rows_in: usize, nrows: usize, ncols: usize, 
     let mut lanes = [0i64; 4];
     _mm256_storeu_si256(lanes.as_mut_ptr() as *mut __m256i, acc);
     let mut res = lanes.into_iter().fold(0i64, i64::wrapping_add);
-    for coeff in (4 * blocks)..rows_in {
+    for (coeff, ai) in a.iter().enumerate().take(rows_in).skip(4 * blocks) {
         let p_off = packed_col_block_offset(nrows, ncols, col, coeff / 8) + coeff % 8;
-        res = res.wrapping_add(a[coeff].wrapping_mul(pmat[p_off]));
+        res = res.wrapping_add(ai.wrapping_mul(pmat[p_off]));
     }
     res
 }
@@ -119,10 +119,10 @@ unsafe fn coeff_mat2cols_product_i64(
         lanes0.into_iter().fold(0i64, i64::wrapping_add),
         lanes1.into_iter().fold(0i64, i64::wrapping_add),
     ];
-    for coeff in (4 * blocks)..rows_in {
+    for (coeff, ai) in a.iter().enumerate().take(rows_in).skip(4 * blocks) {
         let p_off = packed_col_block_offset(nrows, ncols, col, coeff / 8) + coeff % 8;
-        res[0] = res[0].wrapping_add(a[coeff].wrapping_mul(pmat[p_off]));
-        res[1] = res[1].wrapping_add(a[coeff].wrapping_mul(pmat[p_off + 8]));
+        res[0] = res[0].wrapping_add(ai.wrapping_mul(pmat[p_off]));
+        res[1] = res[1].wrapping_add(ai.wrapping_mul(pmat[p_off + 8]));
     }
     res
 }
@@ -191,9 +191,10 @@ unsafe fn coeff_mat1col_product_i128(rows_in: usize, nrows: usize, ncols: usize,
             acc = acc.wrapping_add(i128_from_bits(lo[lane], hi[lane]));
         }
     }
-    for coeff in (4 * blocks)..rows_in {
+    
+    for (coeff, ai) in a.iter().enumerate().take(rows_in).skip(4 * blocks) {
         let p_off = packed_col_block_offset(nrows, ncols, col, coeff / 8) + coeff % 8;
-        acc = acc.wrapping_add((a[coeff] as i128).wrapping_mul(pmat[p_off] as i128));
+        acc = acc.wrapping_add((*ai as i128).wrapping_mul(pmat[p_off] as i128));
     }
     acc
 }
@@ -224,9 +225,9 @@ unsafe fn coeff_mat2cols_product_i128(
             }
         }
     }
-    for coeff in (4 * blocks)..rows_in {
+    for (coeff, ai) in a.iter().enumerate().take(rows_in).skip(4 * blocks) {
         let p_off = packed_col_block_offset(nrows, ncols, col, coeff / 8) + coeff % 8;
-        let a_value = a[coeff] as i128;
+        let a_value = *ai as i128;
         acc[0] = acc[0].wrapping_add(a_value.wrapping_mul(pmat[p_off] as i128));
         acc[1] = acc[1].wrapping_add(a_value.wrapping_mul(pmat[p_off + 8] as i128));
     }
