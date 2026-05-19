@@ -353,33 +353,33 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    fn vec_znx_lsh_add_coeff_to_coeff_backend<'s, 'r, 'a>(
+    fn vec_znx_lsh_add_coeff_to_coeff_backend(
         module: &Module<BE>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'r, BE>,
+        res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
-        a: &VecZnxBackendRef<'a, BE>,
+        a: &VecZnxBackendRef<'_, BE>,
         a_col: usize,
         a_coeff: usize,
         res_coeff: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     );
 
-    fn vec_znx_lsh_sub_coeff_to_coeff_backend<'s, 'r, 'a>(
+    fn vec_znx_lsh_sub_coeff_to_coeff_backend(
         module: &Module<BE>,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'r, BE>,
+        res: &mut VecZnxBackendMut<'_, BE>,
         res_col: usize,
-        a: &VecZnxBackendRef<'a, BE>,
+        a: &VecZnxBackendRef<'_, BE>,
         a_col: usize,
         a_coeff: usize,
         res_coeff: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     );
 
-    fn vec_znx_lsh_sub_backend<'s, 'r, 'a>(
+    fn vec_znx_lsh_sub_backend(
         module: &Module<BE>,
         base2k: usize,
         k: usize,

@@ -324,33 +324,33 @@ pub trait VecZnxLshAddCoeffIntoBackend<B: Backend> {
 
 pub trait VecZnxLshAddCoeffToCoeffBackend<B: Backend> {
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_lsh_add_coeff_to_coeff_backend<'s, 'r, 'a>(
+    fn vec_znx_lsh_add_coeff_to_coeff_backend(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'r, B>,
+        res: &mut VecZnxBackendMut<'_, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'a, B>,
+        a: &VecZnxBackendRef<'_, B>,
         a_col: usize,
         a_coeff: usize,
         res_coeff: usize,
-        scratch: &mut ScratchArena<'s, B>,
+        scratch: &mut ScratchArena<'_, B>,
     );
 }
 
 pub trait VecZnxLshSubCoeffToCoeffBackend<B: Backend> {
     #[allow(clippy::too_many_arguments)]
-    fn vec_znx_lsh_sub_coeff_to_coeff_backend<'s, 'r, 'a>(
+    fn vec_znx_lsh_sub_coeff_to_coeff_backend(
         &self,
         base2k: usize,
         k: usize,
-        res: &mut VecZnxBackendMut<'r, B>,
+        res: &mut VecZnxBackendMut<'_, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'a, B>,
+        a: &VecZnxBackendRef<'_, B>,
         a_col: usize,
         a_coeff: usize,
         res_coeff: usize,
-        scratch: &mut ScratchArena<'s, B>,
+        scratch: &mut ScratchArena<'_, B>,
     );
 }
 

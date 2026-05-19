@@ -3,7 +3,7 @@ use poulpy_core::layouts::{GLWEInfos, GLWEPlaintext, GLWESecretPreparedToBackend
 use poulpy_core::{EncryptionInfos, GLWEDecrypt, GLWEEncryptSk, ScratchArenaTakeCore};
 use poulpy_hal::{
     api::{
-        ScratchAvailable, VecZnxLshAddIntoBackend, VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddIntoBackend,
+        VecZnxLshAddIntoBackend, VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddIntoBackend,
         VecZnxRshBackend, VecZnxRshTmpBytes,
     },
     layouts::{Backend, ScratchArena},
@@ -43,9 +43,6 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
         Dct: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         Dpt: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
         Self: GLWEEncryptSk<BE> + VecZnxLshAddIntoBackend<BE> + VecZnxRshAddIntoBackend<BE> + CKKSPlaintextDefault<BE>,
-        BE: 's,
-        for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
-        Self: GLWEEncryptSk<BE> + VecZnxRshAddIntoBackend<BE> + CKKSPlaintextDefault<BE>,
     {
         self.glwe_encrypt_zero_sk(ct, sk, enc_infos, source_xe, source_xa, scratch);
         ct.set_log_budget(checked_log_budget_sub(

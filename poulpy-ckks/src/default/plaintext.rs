@@ -35,7 +35,7 @@ fn plaintext_shift<P: CKKSInfos + LWEInfos>(ct_log_budget: usize, pt: &P) -> Pla
 pub trait CKKSPlaintextDefault<BE: Backend> {
     fn ckks_add_pt_vec_into_default<Dst, A>(&self, ct: &mut Dst, pt: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Self: VecZnxRshAddIntoBackend<BE>,
+        Self: VecZnxRshAddIntoBackend<BE> + VecZnxLshAddIntoBackend<BE>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos,
         A: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
     {
@@ -67,7 +67,7 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: VecZnxRshAddCoeffIntoBackend<BE>,
+        Self: VecZnxRshAddCoeffIntoBackend<BE> + VecZnxLshAddCoeffToCoeffBackend<BE>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos,
         A: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
     {
@@ -117,7 +117,7 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: VecZnxRshSubCoeffIntoBackend<BE>,
+        Self: VecZnxRshSubCoeffIntoBackend<BE> + VecZnxLshSubCoeffToCoeffBackend<BE>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos,
         A: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
     {
@@ -160,7 +160,7 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
 
     fn ckks_sub_pt_vec_into_default<Dst, A>(&self, ct: &mut Dst, pt: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Self: VecZnxRshSubBackend<BE>,
+        Self: VecZnxRshSubBackend<BE> + VecZnxLshSubBackend<BE>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos,
         A: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
     {

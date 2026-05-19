@@ -4,7 +4,7 @@ use poulpy_core::{
     layouts::{GLWEToBackendMut, LWEInfos},
 };
 use poulpy_hal::{
-    api::{VecZnxRshSubBackend, VecZnxRshSubCoeffIntoBackend, VecZnxRshTmpBytes},
+    api::{VecZnxLshSubBackend, VecZnxLshSubCoeffToCoeffBackend, VecZnxLshTmpBytes, VecZnxRshSubBackend, VecZnxRshSubCoeffIntoBackend, VecZnxRshTmpBytes},
     layouts::{Backend, ScratchArena},
 };
 

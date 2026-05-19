@@ -11,7 +11,7 @@ use poulpy_ckks::{
     oep::CKKSImpl,
 };
 use poulpy_core::{
-    EncryptionLayout, ScratchArenaTakeCore,
+    EncryptionLayout,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
         GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, ModuleCoreAlloc, Rank, SetGaloisElement, TorusPrecision,
@@ -24,8 +24,8 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{ModuleNew, ScratchAvailable, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, GaloisElement, Module, ScratchArena, ScratchOwned, ZnxViewMut},
+    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    layouts::{Backend, GaloisElement, Module, ScratchOwned, ZnxViewMut},
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
@@ -89,7 +89,6 @@ where
         + CKKSMulSubOps<Self>
         + CKKSDotProductOps<Self>,
     ScratchOwned<Self>: ScratchOwnedAlloc<Self> + ScratchOwnedBorrow<Self>,
-    for<'a> ScratchArena<'a, Self>: ScratchAvailable + ScratchArenaTakeCore<'a, Self>,
 {
 }
 
