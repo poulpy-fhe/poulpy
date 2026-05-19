@@ -512,6 +512,33 @@ pub trait VecZnxAutomorphismAssignBackend<B: Backend> {
     );
 }
 
+pub trait ScalarZnxAutomorphismBackend<B: Backend> {
+    /// Applies the automorphism X^i -> X^ik on the selected column of `a` and stores the result in `res_col` column of `res`.
+    fn scalar_znx_automorphism_backend(
+        &self,
+        k: i64,
+        res: &mut ScalarZnxBackendMut<'_, B>,
+        res_col: usize,
+        a: &ScalarZnxBackendRef<'_, B>,
+        a_col: usize,
+    );
+}
+
+pub trait ScalarZnxAutomorphismAssignTmpBytes {
+    fn scalar_znx_automorphism_assign_tmp_bytes(&self) -> usize;
+}
+
+pub trait ScalarZnxAutomorphismAssignBackend<B: Backend> {
+    /// Applies the automorphism X^i -> X^ik on the selected column of `a`.
+    fn scalar_znx_automorphism_assign_backend(
+        &self,
+        k: i64,
+        res: &mut ScalarZnxBackendMut<'_, B>,
+        res_col: usize,
+        scratch: &mut ScratchArena<'_, B>,
+    );
+}
+
 /// Multiplies the selected column by `(X^p - 1)` in `Z[X]/(X^N + 1)`.
 pub trait VecZnxMulXpMinusOneBackend<B: Backend> {
     fn vec_znx_mul_xp_minus_one_backend(

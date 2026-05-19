@@ -68,20 +68,6 @@ impl<D: Data> LWEInfos for GLWESecret<D> {
     }
 }
 
-impl<D: Data> LWEInfos for &mut GLWESecret<D> {
-    fn base2k(&self) -> Base2K {
-        (**self).base2k()
-    }
-
-    fn n(&self) -> Degree {
-        (**self).n()
-    }
-
-    fn size(&self) -> usize {
-        (**self).size()
-    }
-}
-
 impl<D: Data> GetDistribution for GLWESecret<D> {
     fn dist(&self) -> &Distribution {
         &self.dist
@@ -91,12 +77,6 @@ impl<D: Data> GetDistribution for GLWESecret<D> {
 impl<D: Data> GLWEInfos for GLWESecret<D> {
     fn rank(&self) -> Rank {
         Rank(self.data.cols() as u32)
-    }
-}
-
-impl<D: Data> GLWEInfos for &mut GLWESecret<D> {
-    fn rank(&self) -> Rank {
-        (**self).rank()
     }
 }
 
@@ -219,17 +199,6 @@ impl<BE: Backend> GLWESecretToBackendMut<BE> for GLWESecret<BE::OwnedBuf> {
     }
 }
 
-impl<'b, BE: Backend + 'b> GLWESecretToBackendMut<BE> for &mut GLWESecret<BE::BufMut<'b>> {
-    fn to_backend_mut(&mut self) -> GLWESecretBackendMut<'_, BE> {
-        let n = self.data.n();
-        let cols = self.data.cols();
-        GLWESecret {
-            dist: self.dist,
-            data: ScalarZnx::from_data(BE::view_mut_ref(&mut self.data.data), n, cols),
-        }
-    }
-}
-
 pub trait GLWESecretToBackendRef<BE: Backend> {
     fn to_backend_ref(&self) -> GLWESecretBackendRef<'_, BE>;
 }
@@ -238,24 +207,6 @@ impl<BE: Backend> GLWESecretToBackendRef<BE> for GLWESecret<BE::OwnedBuf> {
     fn to_backend_ref(&self) -> GLWESecretBackendRef<'_, BE> {
         GLWESecret {
             data: <ScalarZnx<BE::OwnedBuf> as ScalarZnxToBackendRef<BE>>::to_backend_ref(&self.data),
-            dist: self.dist,
-        }
-    }
-}
-
-impl<'b, BE: Backend + 'b> GLWESecretToBackendRef<BE> for &GLWESecret<BE::BufRef<'b>> {
-    fn to_backend_ref(&self) -> GLWESecretBackendRef<'_, BE> {
-        GLWESecret {
-            data: ScalarZnx::from_data(BE::view_ref(&self.data.data), self.data.n(), self.data.cols()),
-            dist: self.dist,
-        }
-    }
-}
-
-impl<'b, BE: Backend + 'b> GLWESecretToBackendRef<BE> for &mut GLWESecret<BE::BufMut<'b>> {
-    fn to_backend_ref(&self) -> GLWESecretBackendRef<'_, BE> {
-        GLWESecret {
-            data: ScalarZnx::from_data(BE::view_ref_mut(&self.data.data), self.data.n(), self.data.cols()),
             dist: self.dist,
         }
     }

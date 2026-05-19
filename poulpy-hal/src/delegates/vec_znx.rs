@@ -1,5 +1,6 @@
 use crate::{
     api::{
+        ScalarZnxAutomorphismAssignBackend, ScalarZnxAutomorphismAssignTmpBytes, ScalarZnxAutomorphismBackend,
         ScalarZnxFillBinaryBlockBackend, ScalarZnxFillBinaryBlockSourceBackend, ScalarZnxFillBinaryHwBackend,
         ScalarZnxFillBinaryHwSourceBackend, ScalarZnxFillBinaryProbBackend, ScalarZnxFillBinaryProbSourceBackend,
         ScalarZnxFillTernaryHwBackend, ScalarZnxFillTernaryHwSourceBackend, ScalarZnxFillTernaryProbBackend,
@@ -21,7 +22,7 @@ use crate::{
     },
     layouts::{
         Backend, Module, NoiseInfos, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
-        VecZnxBigBackendMut,
+        VecZnxBigBackendMut, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_ref,
     },
     oep::HalVecZnxImpl,
     source::Source,
@@ -638,6 +639,43 @@ impl_vec_znx_delegate!(
         scratch: &mut ScratchArena<'_, B>,
     ) {
         B::vec_znx_automorphism_assign_backend(self, k, res, res_col, scratch)
+    }
+);
+
+impl_vec_znx_delegate!(
+    ScalarZnxAutomorphismBackend<B>,
+    fn scalar_znx_automorphism_backend(
+        &self,
+        k: i64,
+        res: &mut ScalarZnxBackendMut<'_, B>,
+        res_col: usize,
+        a: &ScalarZnxBackendRef<'_, B>,
+        a_col: usize,
+    ) {
+        let mut res_vec = scalar_znx_as_vec_znx_backend_mut_from_mut::<B>(res);
+        let a_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<B>(a);
+        B::vec_znx_automorphism_backend(self, k, &mut res_vec, res_col, &a_vec, a_col)
+    }
+);
+
+impl_vec_znx_delegate!(
+    ScalarZnxAutomorphismAssignTmpBytes,
+    fn scalar_znx_automorphism_assign_tmp_bytes(&self) -> usize {
+        B::vec_znx_automorphism_assign_tmp_bytes_backend(self)
+    }
+);
+
+impl_vec_znx_delegate!(
+    ScalarZnxAutomorphismAssignBackend<B>,
+    fn scalar_znx_automorphism_assign_backend(
+        &self,
+        k: i64,
+        res: &mut ScalarZnxBackendMut<'_, B>,
+        res_col: usize,
+        scratch: &mut ScratchArena<'_, B>,
+    ) {
+        let mut res_vec = scalar_znx_as_vec_znx_backend_mut_from_mut::<B>(res);
+        B::vec_znx_automorphism_assign_backend(self, k, &mut res_vec, res_col, scratch)
     }
 );
 
