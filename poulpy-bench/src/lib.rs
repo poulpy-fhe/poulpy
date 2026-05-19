@@ -24,8 +24,8 @@
 //! ```
 //!
 //! Use:
-//! - `for_each_fft_backend!` for FFT64-specific operations (DFT domain, convolution, VMP/SVP)
-//! - `for_each_ntt_backend!` for NTT120-specific operations
+//! - `for_each_fft_backend!` for FFT64-specific operations (`fft` primitive benches)
+//! - `for_each_ntt_backend!` for NTT-family-specific operations (`ntt` primitive benches)
 //! - `for_each_backend!` for operations that work with any backend (generic GLWE ops, vec_znx, etc.)
 //!
 //! # Adding a new backend
@@ -56,6 +56,12 @@ use rand::Rng;
 
 #[cfg(any(feature = "core-bench", feature = "bin-fhe-bench", feature = "ckks-bench"))]
 type BenchHostBackend = poulpy_cpu_ref::FFT64Ref;
+
+fn random_aligned_host_bytes(len: usize, source: &mut Source) -> Vec<u8> {
+    let mut bytes = poulpy_hal::alloc_aligned_custom::<u8>(len, poulpy_hal::DEFAULTALIGN);
+    source.fill_bytes(&mut bytes);
+    bytes
+}
 
 /// Return the shared Criterion configuration used by all bench binaries.
 ///
@@ -100,14 +106,12 @@ pub fn upload_host_mat_znx<BE: Backend>(src: &MatZnx<Vec<u8>>) -> MatZnx<BE::Own
 }
 
 pub fn random_host_scalar_znx(n: usize, cols: usize, source: &mut Source) -> ScalarZnx<Vec<u8>> {
-    let mut bytes = vec![0u8; ScalarZnx::<Vec<u8>>::bytes_of(n, cols)];
-    source.fill_bytes(&mut bytes);
+    let bytes = random_aligned_host_bytes(ScalarZnx::<Vec<u8>>::bytes_of(n, cols), source);
     ScalarZnx::from_bytes(n, cols, bytes)
 }
 
 pub fn random_host_vec_znx(n: usize, cols: usize, size: usize, source: &mut Source) -> VecZnx<Vec<u8>> {
-    let mut bytes = vec![0u8; VecZnx::<Vec<u8>>::bytes_of(n, cols, size)];
-    source.fill_bytes(&mut bytes);
+    let bytes = random_aligned_host_bytes(VecZnx::<Vec<u8>>::bytes_of(n, cols, size), source);
     VecZnx::from_bytes(n, cols, size, bytes)
 }
 
@@ -119,8 +123,7 @@ pub fn random_host_mat_znx(
     size: usize,
     source: &mut Source,
 ) -> MatZnx<Vec<u8>> {
-    let mut bytes = vec![0u8; MatZnx::<Vec<u8>>::bytes_of(n, rows, cols_in, cols_out, size)];
-    source.fill_bytes(&mut bytes);
+    let bytes = random_aligned_host_bytes(MatZnx::<Vec<u8>>::bytes_of(n, rows, cols_in, cols_out, size), source);
     MatZnx::from_bytes(n, rows, cols_in, cols_out, size, bytes)
 }
 
@@ -278,12 +281,18 @@ macro_rules! for_each_fft_backend_family {
             use $fn as __f;
             __f::<poulpy_cpu_avx::FFT64Avx>($($arg,)* $c, "fft64-avx");
         }
+        #[cfg(all(feature = "enable-avx512f", target_arch = "x86_64"))]
+        {
+            use $fn as __f;
+            __f::<poulpy_cpu_avx512::FFT64Avx512>($($arg,)* $c, "fft64-avx512");
+        }
         // #[cfg(feature = "enable-gpu")]
         // { use $fn as __f; __f::<poulpy_gpu::FFT64GPU>($($arg,)* $c, "fft64-gpu"); }
     }};
 }
 
-/// Private: expands to every NTT120 backend in tier order (ref → avx → gpu).
+/// Private: expands to every NTT-family backend in tier order
+/// (ntt120-ref → ntt120-avx → ntt120-avx512 → ntt-ifma → gpu).
 #[doc(hidden)]
 #[macro_export]
 macro_rules! for_each_ntt_backend_family {
@@ -296,6 +305,16 @@ macro_rules! for_each_ntt_backend_family {
         {
             use $fn as __f;
             __f::<poulpy_cpu_avx::NTT120Avx>($($arg,)* $c, "ntt120-avx");
+        }
+        #[cfg(all(feature = "enable-avx512f", target_arch = "x86_64"))]
+        {
+            use $fn as __f;
+            __f::<poulpy_cpu_avx512::NTT120Avx512>($($arg,)* $c, "ntt120-avx512");
+        }
+        #[cfg(all(feature = "enable-ifma", target_arch = "x86_64"))]
+        {
+            use $fn as __f;
+            __f::<poulpy_cpu_avx512::NTT126Ifma>($($arg,)* $c, "ntt-ifma");
         }
         // #[cfg(feature = "enable-gpu")]
         // { use $fn as __f; __f::<poulpy_gpu::NTT120GPU>($($arg,)* $c, "ntt120-gpu"); }
@@ -323,7 +342,7 @@ macro_rules! for_each_ntt_backend {
     }};
 }
 
-/// Run a bench function against every available backend (FFT64 and NTT120).
+/// Run a bench function against every available backend (FFT64 and NTT-family).
 ///
 /// Use for operations that work with any backend: generic GLWE operations,
 /// `vec_znx` / `vec_znx_big` arithmetic, encryption, decryption, key-switching, etc.

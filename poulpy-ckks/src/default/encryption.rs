@@ -27,7 +27,7 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn ckks_encrypt_sk_default<'s, Dct, Dpt, S, E>(
+    fn ckks_encrypt_sk_default<Dct, Dpt, S, E>(
         &self,
         ct: &mut Dct,
         pt: &Dpt,
@@ -35,7 +35,7 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
         enc_infos: &E,
         source_xa: &mut Source,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         E: EncryptionInfos,
@@ -45,6 +45,7 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
         Self: GLWEEncryptSk<BE> + VecZnxLshAddIntoBackend<BE> + VecZnxRshAddIntoBackend<BE> + CKKSPlaintextDefault<BE>,
         BE: 's,
         for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
+        Self: GLWEEncryptSk<BE> + VecZnxRshAddIntoBackend<BE> + CKKSPlaintextDefault<BE>,
     {
         self.glwe_encrypt_zero_sk(ct, sk, enc_infos, source_xe, source_xa, scratch);
         ct.set_log_budget(checked_log_budget_sub(
@@ -78,7 +79,6 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
         Dpt: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         Dct: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos,
         Self: GLWEDecrypt<BE> + CKKSPlaintextDefault<BE> + VecZnxLshBackend<BE> + VecZnxRshBackend<BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         let (mut full_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(ct);
         self.glwe_decrypt(ct, &mut full_pt, sk, &mut scratch_1);

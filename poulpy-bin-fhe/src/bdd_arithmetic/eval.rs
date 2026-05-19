@@ -166,7 +166,6 @@ impl<BE: Backend<OwnedBuf = Vec<u8>>> ExecuteBDDCircuit<BE> for Module<BE>
 where
     Self: Cmux<BE> + GLWECopy<BE>,
     BE: 'static,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
     for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
 {
@@ -237,7 +236,6 @@ fn eval_level<M, G, R, BE>(
     BE: Backend<OwnedBuf = Vec<u8>> + 'static,
     G: GetGGSWBit<BE> + BitSize,
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
     for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
 {
@@ -426,7 +424,6 @@ where
         A: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
         S: GGSWPreparedToBackendRef<BE> + GGSWInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
         assert_eq!(res_a.base2k(), res_b.base2k());
@@ -663,9 +660,7 @@ where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         T: GLWEToBackendRef<BE>,
         F: GLWEToBackendRef<BE>,
-        S: GGSWPreparedToBackendRef<BE> + GGSWInfos,
-        BE: 'static,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+        S: GGSWPreparedToBackendRef<BE> + GGSWInfos + 'static,
         for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
         for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {
@@ -717,9 +712,7 @@ where
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE>,
-        S: GGSWPreparedToBackendRef<BE> + GGSWInfos,
-        BE: 'static,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+        S: GGSWPreparedToBackendRef<BE> + GGSWInfos + 'static,
         for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
         for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {
@@ -776,9 +769,7 @@ where
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE>,
-        S: GGSWPreparedToBackendRef<BE> + GGSWInfos,
-        BE: 'static,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+        S: GGSWPreparedToBackendRef<BE> + GGSWInfos + 'static,
         for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
         for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {
@@ -838,7 +829,6 @@ where
         + VecZnxIdftApply<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
 {
 }

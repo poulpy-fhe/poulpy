@@ -83,6 +83,10 @@ pub trait ScratchArenaTakeBasic<'a, B: Backend>: Sized {
         B: 'a,
         M: VecZnxBigBytesOf + ModuleN;
 
+    fn take_vec_znx_big_scratch_n(self, n: usize, cols: usize, size: usize) -> (VecZnxBigViewMut<'a, B>, Self)
+    where
+        B: 'a;
+
     /// Takes a [`VecZnxDft`] from the scratch arena.
     fn take_vec_znx_dft_scratch<M>(self, module: &M, cols: usize, size: usize) -> (VecZnxDftViewMut<'a, B>, Self)
     where
@@ -207,11 +211,15 @@ impl<'a, B: Backend> ScratchArenaTakeBasic<'a, B> for ScratchArena<'a, B> {
         B: 'a,
         M: VecZnxBigBytesOf + ModuleN,
     {
-        let (data, arena) = self.take_region(module.bytes_of_vec_znx_big(cols, size));
-        (
-            VecZnxBigViewMut::from_inner(VecZnxBig::from_data(data, module.n(), cols, size)),
-            arena,
-        )
+        self.take_vec_znx_big_scratch_n(module.n(), cols, size)
+    }
+
+    fn take_vec_znx_big_scratch_n(self, n: usize, cols: usize, size: usize) -> (VecZnxBigViewMut<'a, B>, Self)
+    where
+        B: 'a,
+    {
+        let (data, arena) = self.take_region(B::bytes_of_vec_znx_big(n, cols, size));
+        (VecZnxBigViewMut::from_inner(VecZnxBig::from_data(data, n, cols, size)), arena)
     }
 
     fn take_vec_znx_dft_scratch<M>(self, module: &M, cols: usize, size: usize) -> (VecZnxDftViewMut<'a, B>, Self)

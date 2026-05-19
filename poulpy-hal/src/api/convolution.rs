@@ -24,24 +24,24 @@ pub trait Convolution<BE: Backend> {
     fn cnv_prepare_left_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
     /// Prepares a coefficient-domain [`VecZnx`](crate::layouts::VecZnx) as the left
     /// operand of a bivariate convolution.
-    fn cnv_prepare_left<'s, 'r>(
+    fn cnv_prepare_left(
         &self,
-        res: &mut CnvPVecLBackendMut<'r, BE>,
+        res: &mut CnvPVecLBackendMut<'_, BE>,
         a: &VecZnxBackendRef<'_, BE>,
         mask: i64,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     );
 
     /// Returns scratch bytes required for [`cnv_prepare_right`](Convolution::cnv_prepare_right).
     fn cnv_prepare_right_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
     /// Prepares a coefficient-domain [`VecZnx`](crate::layouts::VecZnx) as the right
     /// operand of a bivariate convolution.
-    fn cnv_prepare_right<'s, 'r>(
+    fn cnv_prepare_right(
         &self,
-        res: &mut CnvPVecRBackendMut<'r, BE>,
+        res: &mut CnvPVecRBackendMut<'_, BE>,
         a: &VecZnxBackendRef<'_, BE>,
         mask: i64,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     );
 
     /// Returns scratch bytes required for [`cnv_apply_dft`](Convolution::cnv_apply_dft).
@@ -65,7 +65,7 @@ pub trait Convolution<BE: Backend> {
     /// ```
     /// This method is intended to be used for multiplications by constants that are greater than the base2k.
     #[allow(clippy::too_many_arguments)]
-    fn cnv_by_const_apply<'s>(
+    fn cnv_by_const_apply(
         &self,
         cnv_offset: usize,
         res: &mut VecZnxBigBackendMut<'_, BE>,
@@ -75,7 +75,7 @@ pub trait Convolution<BE: Backend> {
         b: &VecZnxBackendRef<'_, BE>,
         b_col: usize,
         b_coeff: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     );
 
     #[allow(clippy::too_many_arguments)]
@@ -108,7 +108,7 @@ pub trait Convolution<BE: Backend> {
     ///       Y^3[  0,   0,   0 ,  0]
     /// ```
     /// If res.size() < a.size() + b.size() + k, result is truncated accordingly in the Y dimension.
-    fn cnv_apply_dft<'s>(
+    fn cnv_apply_dft(
         &self,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -117,7 +117,7 @@ pub trait Convolution<BE: Backend> {
         a_col: usize,
         b: &CnvPVecRBackendRef<'_, BE>,
         b_col: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     );
 
     /// Returns scratch bytes required for [`cnv_pairwise_apply_dft`](Convolution::cnv_pairwise_apply_dft).
@@ -127,7 +127,7 @@ pub trait Convolution<BE: Backend> {
     /// Evaluates the bivariate pair-wise convolution res = (a\[i\] + a\[j\]) * (b\[i\] + b\[j\]).
     /// If i == j then calls [Convolution::cnv_apply_dft], i.e. res = a\[i\] * b\[i\].
     /// See [Convolution::cnv_apply_dft] for information about the bivariate convolution.
-    fn cnv_pairwise_apply_dft<'s>(
+    fn cnv_pairwise_apply_dft(
         &self,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -136,7 +136,7 @@ pub trait Convolution<BE: Backend> {
         b: &CnvPVecRBackendRef<'_, BE>,
         i: usize,
         j: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     );
 
     /// Returns scratch bytes required for [`cnv_prepare_self`](Convolution::cnv_prepare_self).
@@ -145,12 +145,12 @@ pub trait Convolution<BE: Backend> {
     /// Prepares both left and right convolution operands from the same input polynomial,
     /// sharing the FFT/NTT computation. This is an optimization for self-convolution
     /// (squaring) where both operands are the same polynomial.
-    fn cnv_prepare_self<'s, 'l, 'r>(
+    fn cnv_prepare_self(
         &self,
-        left: &mut CnvPVecLBackendMut<'l, BE>,
-        right: &mut CnvPVecRBackendMut<'r, BE>,
+        left: &mut CnvPVecLBackendMut<'_, BE>,
+        right: &mut CnvPVecRBackendMut<'_, BE>,
         a: &VecZnxBackendRef<'_, BE>,
         mask: i64,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     );
 }

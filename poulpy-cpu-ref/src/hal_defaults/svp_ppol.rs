@@ -39,76 +39,74 @@ where
     where
         Module<BE>: FFTModuleHandle<f64>,
         BE: Backend<ScalarPrep = f64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64>,
-        for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-        for<'a> BE::BufRef<'a>: HostDataRef,
+        for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
+        for<'x> BE::BufRef<'x>: HostDataRef,
         R: SvpPPolToBackendMut<BE>,
     {
         let mut res_ref = res.to_backend_mut();
         fft64_svp_prepare::<BE>(module.get_fft_table(), &mut res_ref, res_col, a, a_col);
     }
 
-    fn svp_ppol_copy_backend_default<'r, 'a>(
+    fn svp_ppol_copy_backend_default(
         _module: &Module<BE>,
-        res: &mut SvpPPolBackendMut<'r, BE>,
+        res: &mut SvpPPolBackendMut<'_, BE>,
         res_col: usize,
-        a: &SvpPPolBackendRef<'a, BE>,
+        a: &SvpPPolBackendRef<'_, BE>,
         a_col: usize,
     ) where
-        BE: 'r + 'a,
-        BE::BufMut<'r>: poulpy_hal::layouts::HostDataMut,
-        BE::BufRef<'a>: HostDataRef,
+        for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
+        for<'x> BE::BufRef<'x>: HostDataRef,
     {
         res.at_mut(res_col, 0).copy_from_slice(a.at(a_col, 0));
     }
 
-    fn svp_apply_dft_default<'r, 'b, A>(
+    fn svp_apply_dft_default<'b, A>(
         module: &Module<BE>,
-        res: &mut VecZnxDftBackendMut<'r, BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
         res_col: usize,
         a: &'b A,
         a_col: usize,
         b: &VecZnxBackendRef<'b, BE>,
         b_col: usize,
     ) where
-        BE: 'r + 'b,
         Module<BE>: FFTModuleHandle<f64>,
         BE: Backend<ScalarPrep = f64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64>,
-        BE::BufMut<'r>: poulpy_hal::layouts::HostDataMut,
-        BE::BufRef<'b>: HostDataRef,
+        for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
+        for<'x> BE::BufRef<'x>: HostDataRef,
         A: SvpPPolToBackendRef<BE>,
     {
         let a_ref = a.to_backend_ref();
         fft64_svp_apply_dft(module.get_fft_table(), res, res_col, &a_ref, a_col, b, b_col);
     }
 
-    fn svp_apply_dft_to_dft_default<'r, 'b, A>(
+    fn svp_apply_dft_to_dft_default<'b, A>(
         _module: &Module<BE>,
-        res: &mut VecZnxDftBackendMut<'r, BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
         res_col: usize,
         a: &'b A,
         a_col: usize,
         b: &VecZnxDftBackendRef<'b, BE>,
         b_col: usize,
     ) where
-        BE: 'r + 'b + Backend<ScalarPrep = f64> + ReimArith,
-        BE::BufMut<'r>: poulpy_hal::layouts::HostDataMut,
-        BE::BufRef<'b>: HostDataRef,
+        BE: Backend<ScalarPrep = f64> + ReimArith,
+        for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
+        for<'x> BE::BufRef<'x>: HostDataRef,
         A: SvpPPolToBackendRef<BE>,
     {
         let a_ref = a.to_backend_ref();
         fft64_svp_apply_dft_to_dft::<BE>(res, res_col, &a_ref, a_col, b, b_col);
     }
 
-    fn svp_apply_dft_to_dft_assign_default<'r, A>(
+    fn svp_apply_dft_to_dft_assign_default<A>(
         _module: &Module<BE>,
-        res: &mut VecZnxDftBackendMut<'r, BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
         res_col: usize,
         a: &A,
         a_col: usize,
     ) where
-        BE: 'r + Backend<ScalarPrep = f64> + ReimArith,
-        BE::BufMut<'r>: poulpy_hal::layouts::HostDataMut,
-        for<'a> BE::BufRef<'a>: HostDataRef,
+        BE: Backend<ScalarPrep = f64> + ReimArith,
+        for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
+        for<'x> BE::BufRef<'x>: HostDataRef,
         A: SvpPPolToBackendRef<BE>,
     {
         let a_ref = a.to_backend_ref();
@@ -127,42 +125,40 @@ where
     where
         Module<BE>: NttModuleHandle,
         BE: Backend<ScalarPrep = Q120bScalar> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttCFromB,
-        for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-        for<'a> BE::BufRef<'a>: HostDataRef,
+        for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
+        for<'x> BE::BufRef<'x>: HostDataRef,
         R: SvpPPolToBackendMut<BE>,
     {
         let mut res_ref = res.to_backend_mut();
         ntt120_svp_prepare::<BE>(module, &mut res_ref, res_col, a, a_col);
     }
 
-    fn svp_ppol_copy_backend_default<'r, 'a>(
+    fn svp_ppol_copy_backend_default(
         _module: &Module<BE>,
-        res: &mut SvpPPolBackendMut<'r, BE>,
+        res: &mut SvpPPolBackendMut<'_, BE>,
         res_col: usize,
-        a: &SvpPPolBackendRef<'a, BE>,
+        a: &SvpPPolBackendRef<'_, BE>,
         a_col: usize,
     ) where
-        BE: 'r + 'a,
-        BE::BufMut<'r>: poulpy_hal::layouts::HostDataMut,
-        BE::BufRef<'a>: HostDataRef,
+        for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
+        for<'x> BE::BufRef<'x>: HostDataRef,
     {
         res.at_mut(res_col, 0).copy_from_slice(a.at(a_col, 0));
     }
 
-    fn svp_apply_dft_default<'r, 'b, A>(
+    fn svp_apply_dft_default<'b, A>(
         module: &Module<BE>,
-        res: &mut VecZnxDftBackendMut<'r, BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
         res_col: usize,
         a: &'b A,
         a_col: usize,
         b: &VecZnxBackendRef<'b, BE>,
         b_col: usize,
     ) where
-        BE: 'r + 'b,
         Module<BE>: NttModuleHandle + VecZnxDftApply<BE>,
         BE: Backend<ScalarPrep = Q120bScalar> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttMulBbc + NttZero,
         for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
-        BE::BufRef<'b>: HostDataRef,
+        for<'x> BE::BufRef<'x>: HostDataRef,
         A: SvpPPolToBackendRef<BE>,
     {
         let a_ref = a.to_backend_ref();
@@ -196,9 +192,9 @@ where
         }
     }
 
-    fn svp_apply_dft_to_dft_default<'r, 'b, A>(
+    fn svp_apply_dft_to_dft_default<'b, A>(
         module: &Module<BE>,
-        res: &mut VecZnxDftBackendMut<'r, BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
         res_col: usize,
         a: &'b A,
         a_col: usize,
@@ -206,9 +202,9 @@ where
         b_col: usize,
     ) where
         Module<BE>: NttModuleHandle,
-        BE: 'r + 'b + Backend<ScalarPrep = Q120bScalar> + NttMulBbc + NttZero,
-        BE::BufMut<'r>: poulpy_hal::layouts::HostDataMut,
-        BE::BufRef<'b>: HostDataRef,
+        BE: Backend<ScalarPrep = Q120bScalar> + NttMulBbc + NttZero,
+        for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
+        for<'x> BE::BufRef<'x>: HostDataRef,
         A: SvpPPolToBackendRef<BE>,
     {
         let a_ref = a.to_backend_ref();
@@ -236,17 +232,17 @@ where
         }
     }
 
-    fn svp_apply_dft_to_dft_assign_default<'r, A>(
+    fn svp_apply_dft_to_dft_assign_default<A>(
         module: &Module<BE>,
-        res: &mut VecZnxDftBackendMut<'r, BE>,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
         res_col: usize,
         a: &A,
         a_col: usize,
     ) where
         Module<BE>: NttModuleHandle,
-        BE: 'r + Backend<ScalarPrep = Q120bScalar> + NttMulBbc,
-        BE::BufMut<'r>: poulpy_hal::layouts::HostDataMut,
-        for<'a> BE::BufRef<'a>: HostDataRef,
+        BE: Backend<ScalarPrep = Q120bScalar> + NttMulBbc,
+        for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
+        for<'x> BE::BufRef<'x>: HostDataRef,
         A: SvpPPolToBackendRef<BE>,
     {
         let a_ref = a.to_backend_ref();

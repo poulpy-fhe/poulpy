@@ -1,10 +1,10 @@
 use anyhow::Result;
 use poulpy_core::{
-    GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWETensoring, ScratchArenaTakeCore,
+    GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWETensoring,
     layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, ModuleCoreAlloc, prepared::GLWETensorKeyPreparedToBackendRef},
 };
 use poulpy_hal::{
-    api::{ModuleN, ScratchAvailable, VecZnxCopyBackend},
+    api::{ModuleN, VecZnxCopyBackend},
     layouts::{Backend, Module, ScratchArena},
 };
 
@@ -23,7 +23,6 @@ where
         + ModuleN
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
         + VecZnxCopyBackend<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_mul_tmp_bytes<R, T>(&self, res: &R, tsk: &T) -> usize
     where

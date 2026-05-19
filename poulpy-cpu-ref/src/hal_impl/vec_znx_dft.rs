@@ -17,13 +17,13 @@ macro_rules! hal_impl_vec_znx_dft {
             <Self as $defaults<Self>>::vec_znx_idft_apply_tmp_bytes_default(module)
         }
 
-        fn vec_znx_idft_apply<'s>(
+        fn vec_znx_idft_apply(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
             res_col: usize,
             a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
             a_col: usize,
-            scratch: &mut poulpy_hal::layouts::ScratchArena<'s, Self>,
+            scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
             <Self as $defaults<Self>>::vec_znx_idft_apply_default(module, res, res_col, a, a_col, &mut scratch);

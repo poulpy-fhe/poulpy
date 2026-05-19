@@ -38,13 +38,10 @@ pub use sub::*;
 pub use swap::*;
 pub use xor::*;
 
-use poulpy_core::{
-    ScratchArenaTakeCore,
-    layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWEToGGSWKeyLayout, GGSWLayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWESecret,
-        GLWESecretPrepared, GLWESecretPreparedFactory, GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, LWESecret, ModuleCoreAlloc,
-        Rank, TorusPrecision,
-    },
+use poulpy_core::layouts::{
+    Base2K, Degree, Dnum, Dsize, GGLWEToGGSWKeyLayout, GGSWLayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWESecret,
+    GLWESecretPrepared, GLWESecretPreparedFactory, GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, LWESecret, ModuleCoreAlloc, Rank,
+    TorusPrecision,
 };
 
 use crate::{
@@ -71,7 +68,6 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     BE::OwnedBuf: poulpy_hal::layouts::HostDataRef + poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     fn default() -> Self {
         Self::new()
@@ -98,7 +94,6 @@ impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>> + HostBackend + Hal
         ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
         BE::OwnedBuf: poulpy_hal::layouts::HostDataRef + poulpy_hal::layouts::HostDataMut,
         for<'a> BE::BufMut<'a>: HostDataMut,
-        for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         let module: Module<BE> = Module::<BE>::new(TEST_N_GLWE as u64);
 

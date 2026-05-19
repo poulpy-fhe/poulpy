@@ -75,7 +75,6 @@ impl<BE> TestContextBackend for BE
 where
     BE: Backend<OwnedBuf = Vec<u8>> + HostBackend + TransferFrom<HostBytesBackend> + Send + Sync + 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
 }
 

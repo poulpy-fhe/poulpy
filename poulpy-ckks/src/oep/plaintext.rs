@@ -1,10 +1,7 @@
 use crate::default::plaintext::CKKSPlaintextDefault;
 
 use anyhow::Result;
-use poulpy_core::{
-    ScratchArenaTakeCore,
-    layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
-};
+use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos};
 use poulpy_hal::{
     api::{VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshBackend, VecZnxRshTmpBytes},
     layouts::{Backend, Module, ScratchArena},
@@ -30,7 +27,6 @@ unsafe impl<BE: Backend> CKKSPlaintextZnxImpl<BE> for BE
 where
     BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
     Module<BE>: CKKSPlaintextDefault<BE> + VecZnxLshTmpBytes + VecZnxRshTmpBytes + VecZnxLshBackend<BE> + VecZnxRshBackend<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_extract_pt_tmp_bytes(module: &Module<BE>) -> usize {
         module.ckks_extract_pt_tmp_bytes_default()

@@ -5,7 +5,7 @@ use rand::Rng;
 
 use poulpy_hal::{
     api::{
-        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphismAssign, VecZnxAutomorphismAssignTmpBytes,
+        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphismAssignBackend, VecZnxAutomorphismAssignTmpBytes,
         VecZnxAutomorphismBackend,
     },
     layouts::{Backend, DataViewMut, Module, ScratchOwned, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef},
@@ -60,7 +60,7 @@ where
 
 pub fn bench_vec_znx_automorphism_assign<B: Backend>(c: &mut Criterion, label: &str)
 where
-    Module<B>: VecZnxAutomorphismAssign<B> + VecZnxAutomorphismAssignTmpBytes + ModuleNew<B>,
+    Module<B>: VecZnxAutomorphismAssignBackend<B> + VecZnxAutomorphismAssignTmpBytes + ModuleNew<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
     B::OwnedBuf: AsMut<[u8]>,
 {
@@ -70,7 +70,7 @@ where
 
     fn runner<B: Backend>(params: [usize; 3]) -> impl FnMut()
     where
-        Module<B>: VecZnxAutomorphismAssign<B> + ModuleNew<B> + VecZnxAutomorphismAssignTmpBytes,
+        Module<B>: VecZnxAutomorphismAssignBackend<B> + ModuleNew<B> + VecZnxAutomorphismAssignTmpBytes,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
         B::OwnedBuf: AsMut<[u8]>,
     {
@@ -90,7 +90,7 @@ where
         move || {
             let mut res = <VecZnx<B::OwnedBuf> as VecZnxToBackendMut<B>>::to_backend_mut(&mut res);
             for i in 0..cols {
-                module.vec_znx_automorphism_assign(-7, &mut res, i, &mut scratch.borrow());
+                module.vec_znx_automorphism_assign_backend(-7, &mut res, i, &mut scratch.borrow());
             }
             black_box(());
         }

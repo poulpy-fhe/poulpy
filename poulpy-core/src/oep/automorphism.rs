@@ -2,13 +2,10 @@
 
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use crate::{
-    ScratchArenaTakeCore,
-    layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos,
-        GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, SetGaloisElement,
-        prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
-    },
+use crate::layouts::{
+    GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos, GLWEToBackendMut,
+    GLWEToBackendRef, GetGaloisElement, SetGaloisElement,
+    prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
 };
 
 /// Backend hook for automorphism-family operations.
@@ -24,101 +21,93 @@ pub unsafe trait AutomorphismImpl<BE: Backend>: Backend {
         A: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_automorphism<'s, R, A, K>(
+    fn glwe_automorphism<R, A, K>(
         module: &Module<BE>,
         res: &mut R,
         a: &A,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
-    fn glwe_automorphism_assign<'s, R, K>(
+    fn glwe_automorphism_assign<R, K>(
         module: &Module<BE>,
         res: &mut R,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
-    fn glwe_automorphism_add<'s, R, A, K>(
+    fn glwe_automorphism_add<R, A, K>(
         module: &Module<BE>,
         res: &mut R,
         a: &A,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
-    fn glwe_automorphism_add_assign<'s, R, K>(
+    fn glwe_automorphism_add_assign<R, K>(
         module: &Module<BE>,
         res: &mut R,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
-    fn glwe_automorphism_sub<'s, R, A, K>(
+    fn glwe_automorphism_sub<R, A, K>(
         module: &Module<BE>,
         res: &mut R,
         a: &A,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
-    fn glwe_automorphism_sub_negate<'s, R, A, K>(
+    fn glwe_automorphism_sub_negate<R, A, K>(
         module: &Module<BE>,
         res: &mut R,
         a: &A,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
-    fn glwe_automorphism_sub_assign<'s, R, K>(
+    fn glwe_automorphism_sub_assign<R, K>(
         module: &Module<BE>,
         res: &mut R,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
-    fn glwe_automorphism_sub_negate_assign<'s, R, K>(
+    fn glwe_automorphism_sub_negate_assign<R, K>(
         module: &Module<BE>,
         res: &mut R,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
     fn ggsw_automorphism_tmp_bytes<R, A, K, T>(
         module: &Module<BE>,
@@ -133,7 +122,7 @@ pub unsafe trait AutomorphismImpl<BE: Backend>: Backend {
         K: GGLWEInfos,
         T: GGLWEInfos;
 
-    fn ggsw_automorphism<'s, R, A, K, T>(
+    fn ggsw_automorphism<R, A, K, T>(
         module: &Module<BE>,
         res: &mut R,
         a: &A,
@@ -141,27 +130,25 @@ pub unsafe trait AutomorphismImpl<BE: Backend>: Backend {
         key_size: usize,
         tsk: &T,
         tsk_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWToBackendMut<BE> + GGSWInfos,
         A: GGSWToBackendRef<BE> + GGSWInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos;
 
-    fn ggsw_automorphism_assign<'s, R, K, T>(
+    fn ggsw_automorphism_assign<R, K, T>(
         module: &Module<BE>,
         res: &mut R,
         key: &K,
         key_size: usize,
         tsk: &T,
         tsk_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWToBackendMut<BE> + GGSWInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos;
 
     fn glwe_automorphism_key_automorphism_tmp_bytes<R, A, K>(
         module: &Module<BE>,
@@ -174,29 +161,27 @@ pub unsafe trait AutomorphismImpl<BE: Backend>: Backend {
         A: GGLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_automorphism_key_automorphism<'s, R, A, K>(
+    fn glwe_automorphism_key_automorphism<R, A, K>(
         module: &Module<BE>,
         res: &mut R,
         a: &A,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE> + SetGaloisElement + GGLWEInfos,
         A: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        BE: 's;
+        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos;
 
-    fn glwe_automorphism_key_automorphism_assign<'s, R, K>(
+    fn glwe_automorphism_key_automorphism_assign<R, K>(
         module: &Module<BE>,
         res: &mut R,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE> + SetGaloisElement + GetGaloisElement + GGLWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        BE: 's;
+        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos;
 }
 
 /// Override surface for the GLWE-automorphism sub-family.
@@ -211,111 +196,95 @@ pub unsafe trait AutomorphismImpl<BE: Backend>: Backend {
 /// the default implementation.
 #[doc(hidden)]
 #[allow(private_bounds)]
-pub trait GLWEAutomorphismDefault<BE: Backend>
-where
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
-{
+pub trait GLWEAutomorphismDefault<BE: Backend> {
     fn glwe_automorphism_tmp_bytes_default<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_automorphism_default<'s, R, A, K>(
+    fn glwe_automorphism_default<R, A, K>(
         &self,
         res: &mut R,
         a: &A,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
-    fn glwe_automorphism_assign_default<'s, R, K>(
-        &self,
-        res: &mut R,
-        key: &K,
-        key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
-    ) where
+    fn glwe_automorphism_assign_default<R, K>(&self, res: &mut R, key: &K, key_size: usize, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
-    fn glwe_automorphism_add_default<'s, R, A, K>(
+    fn glwe_automorphism_add_default<R, A, K>(
         &self,
         res: &mut R,
         a: &A,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
-    fn glwe_automorphism_add_assign_default<'s, R, K>(
+    fn glwe_automorphism_add_assign_default<R, K>(
         &self,
         res: &mut R,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
-    fn glwe_automorphism_sub_default<'s, R, A, K>(
+    fn glwe_automorphism_sub_default<R, A, K>(
         &self,
         res: &mut R,
         a: &A,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
-    fn glwe_automorphism_sub_negate_default<'s, R, A, K>(
+    fn glwe_automorphism_sub_negate_default<R, A, K>(
         &self,
         res: &mut R,
         a: &A,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
-    fn glwe_automorphism_sub_assign_default<'s, R, K>(
+    fn glwe_automorphism_sub_assign_default<R, K>(
         &self,
         res: &mut R,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
-    fn glwe_automorphism_sub_negate_assign_default<'s, R, K>(
+    fn glwe_automorphism_sub_negate_assign_default<R, K>(
         &self,
         res: &mut R,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 }
 
 /// Override surface for the GGSW-automorphism sub-family.
@@ -324,10 +293,7 @@ where
 /// [`crate::default::automorphism::ggsw`] for reference algorithms a backend may forward to.
 #[doc(hidden)]
 #[allow(private_bounds)]
-pub trait GGSWAutomorphismDefault<BE: Backend>
-where
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
-{
+pub trait GGSWAutomorphismDefault<BE: Backend> {
     fn ggsw_automorphism_tmp_bytes_default<R, A, K, T>(&self, res_infos: &R, a_infos: &A, key_infos: &K, tsk_infos: &T) -> usize
     where
         R: GGSWInfos,
@@ -335,7 +301,7 @@ where
         K: GGLWEInfos,
         T: GGLWEInfos;
 
-    fn ggsw_automorphism_default<'s, R, A, K, T>(
+    fn ggsw_automorphism_default<R, A, K, T>(
         &self,
         res: &mut R,
         a: &A,
@@ -343,27 +309,25 @@ where
         key_size: usize,
         tsk: &T,
         tsk_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWToBackendMut<BE> + GGSWInfos,
         A: GGSWToBackendRef<BE> + GGSWInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos;
 
-    fn ggsw_automorphism_assign_default<'s, R, K, T>(
+    fn ggsw_automorphism_assign_default<R, K, T>(
         &self,
         res: &mut R,
         key: &K,
         key_size: usize,
         tsk: &T,
         tsk_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWToBackendMut<BE> + GGSWInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos;
 }
 
 /// Override surface for the GGLWE key-automorphism sub-family.
@@ -372,39 +336,34 @@ where
 /// [`crate::default::automorphism::gglwe`] for reference algorithms a backend may forward to.
 #[doc(hidden)]
 #[allow(private_bounds)]
-pub trait GGLWEAutomorphismDefault<BE: Backend>
-where
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
-{
+pub trait GGLWEAutomorphismDefault<BE: Backend> {
     fn glwe_automorphism_key_automorphism_tmp_bytes_default<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GGLWEInfos,
         A: GGLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_automorphism_key_automorphism_default<'s, R, A, K>(
+    fn glwe_automorphism_key_automorphism_default<R, A, K>(
         &self,
         res: &mut R,
         a: &A,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE> + SetGaloisElement + GGLWEInfos,
         A: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        BE: 's;
+        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos;
 
-    fn glwe_automorphism_key_automorphism_assign_default<'s, R, K>(
+    fn glwe_automorphism_key_automorphism_assign_default<R, K>(
         &self,
         res: &mut R,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE> + SetGaloisElement + GetGaloisElement + GGLWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        BE: 's;
+        K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos;
 }
 
 #[allow(private_bounds)]
@@ -412,7 +371,6 @@ unsafe impl<BE> AutomorphismImpl<BE> for BE
 where
     BE: Backend,
     Module<BE>: GLWEAutomorphismDefault<BE> + GGSWAutomorphismDefault<BE> + GGLWEAutomorphismDefault<BE>,
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     fn glwe_automorphism_tmp_bytes<R, A, K>(module: &Module<BE>, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
@@ -423,122 +381,114 @@ where
         module.glwe_automorphism_tmp_bytes_default(res_infos, a_infos, key_infos)
     }
 
-    fn glwe_automorphism<'s, R, A, K>(
+    fn glwe_automorphism<R, A, K>(
         module: &Module<BE>,
         res: &mut R,
         a: &A,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's,
     {
         module.glwe_automorphism_default(res, a, key, key_size, scratch)
     }
 
-    fn glwe_automorphism_assign<'s, R, K>(
+    fn glwe_automorphism_assign<R, K>(
         module: &Module<BE>,
         res: &mut R,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's,
     {
         module.glwe_automorphism_assign_default(res, key, key_size, scratch)
     }
 
-    fn glwe_automorphism_add<'s, R, A, K>(
+    fn glwe_automorphism_add<R, A, K>(
         module: &Module<BE>,
         res: &mut R,
         a: &A,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's,
     {
         module.glwe_automorphism_add_default(res, a, key, key_size, scratch)
     }
 
-    fn glwe_automorphism_add_assign<'s, R, K>(
+    fn glwe_automorphism_add_assign<R, K>(
         module: &Module<BE>,
         res: &mut R,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's,
     {
         module.glwe_automorphism_add_assign_default(res, key, key_size, scratch)
     }
 
-    fn glwe_automorphism_sub<'s, R, A, K>(
+    fn glwe_automorphism_sub<R, A, K>(
         module: &Module<BE>,
         res: &mut R,
         a: &A,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's,
     {
         module.glwe_automorphism_sub_default(res, a, key, key_size, scratch)
     }
 
-    fn glwe_automorphism_sub_negate<'s, R, A, K>(
+    fn glwe_automorphism_sub_negate<R, A, K>(
         module: &Module<BE>,
         res: &mut R,
         a: &A,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's,
     {
         module.glwe_automorphism_sub_negate_default(res, a, key, key_size, scratch)
     }
 
-    fn glwe_automorphism_sub_assign<'s, R, K>(
+    fn glwe_automorphism_sub_assign<R, K>(
         module: &Module<BE>,
         res: &mut R,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's,
     {
         module.glwe_automorphism_sub_assign_default(res, key, key_size, scratch)
     }
 
-    fn glwe_automorphism_sub_negate_assign<'s, R, K>(
+    fn glwe_automorphism_sub_negate_assign<R, K>(
         module: &Module<BE>,
         res: &mut R,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's,
     {
         module.glwe_automorphism_sub_negate_assign_default(res, key, key_size, scratch)
     }
@@ -559,7 +509,7 @@ where
         module.ggsw_automorphism_tmp_bytes_default(res_infos, a_infos, key_infos, tsk_infos)
     }
 
-    fn ggsw_automorphism<'s, R, A, K, T>(
+    fn ggsw_automorphism<R, A, K, T>(
         module: &Module<BE>,
         res: &mut R,
         a: &A,
@@ -567,30 +517,28 @@ where
         key_size: usize,
         tsk: &T,
         tsk_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWToBackendMut<BE> + GGSWInfos,
         A: GGSWToBackendRef<BE> + GGSWInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's,
     {
         module.ggsw_automorphism_default(res, a, key, key_size, tsk, tsk_size, scratch)
     }
 
-    fn ggsw_automorphism_assign<'s, R, K, T>(
+    fn ggsw_automorphism_assign<R, K, T>(
         module: &Module<BE>,
         res: &mut R,
         key: &K,
         key_size: usize,
         tsk: &T,
         tsk_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWToBackendMut<BE> + GGSWInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's,
     {
         module.ggsw_automorphism_assign_default(res, key, key_size, tsk, tsk_size, scratch)
     }
@@ -609,32 +557,30 @@ where
         module.glwe_automorphism_key_automorphism_tmp_bytes_default(res_infos, a_infos, key_infos)
     }
 
-    fn glwe_automorphism_key_automorphism<'s, R, A, K>(
+    fn glwe_automorphism_key_automorphism<R, A, K>(
         module: &Module<BE>,
         res: &mut R,
         a: &A,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE> + SetGaloisElement + GGLWEInfos,
         A: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        BE: 's,
     {
         module.glwe_automorphism_key_automorphism_default(res, a, key, key_size, scratch)
     }
 
-    fn glwe_automorphism_key_automorphism_assign<'s, R, K>(
+    fn glwe_automorphism_key_automorphism_assign<R, K>(
         module: &Module<BE>,
         res: &mut R,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWEToBackendMut<BE> + SetGaloisElement + GetGaloisElement + GGLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        BE: 's,
     {
         module.glwe_automorphism_key_automorphism_assign_default(res, key, key_size, scratch)
     }
@@ -660,152 +606,144 @@ macro_rules! impl_glwe_automorphism_defaults_full {
                 )
             }
 
-            fn glwe_automorphism_default<'s, R, A, K>(
+            fn glwe_automorphism_default<R, A, K>(
                 &self,
                 res: &mut R,
                 a: &A,
                 key: &K,
                 key_size: usize,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'s, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GetGaloisElement
                     + $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be>
                     + $crate::layouts::GGLWEInfos,
-                $be: 's,
             {
                 $crate::default::automorphism::glwe::glwe_automorphism_default::<$be, _, _, _, _>(
                     self, res, a, key, key_size, scratch,
                 )
             }
 
-            fn glwe_automorphism_assign_default<'s, R, K>(
+            fn glwe_automorphism_assign_default<R, K>(
                 &self,
                 res: &mut R,
                 key: &K,
                 key_size: usize,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'s, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GetGaloisElement
                     + $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be>
                     + $crate::layouts::GGLWEInfos,
-                $be: 's,
             {
                 $crate::default::automorphism::glwe::glwe_automorphism_assign_default::<$be, _, _, _>(
                     self, res, key, key_size, scratch,
                 )
             }
 
-            fn glwe_automorphism_add_default<'s, R, A, K>(
+            fn glwe_automorphism_add_default<R, A, K>(
                 &self,
                 res: &mut R,
                 a: &A,
                 key: &K,
                 key_size: usize,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'s, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GetGaloisElement
                     + $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be>
                     + $crate::layouts::GGLWEInfos,
-                $be: 's,
             {
                 $crate::default::automorphism::glwe::glwe_automorphism_add_default::<$be, _, _, _, _>(
                     self, res, a, key, key_size, scratch,
                 )
             }
 
-            fn glwe_automorphism_add_assign_default<'s, R, K>(
+            fn glwe_automorphism_add_assign_default<R, K>(
                 &self,
                 res: &mut R,
                 key: &K,
                 key_size: usize,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'s, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GetGaloisElement
                     + $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be>
                     + $crate::layouts::GGLWEInfos,
-                $be: 's,
             {
                 $crate::default::automorphism::glwe::glwe_automorphism_add_assign_default::<$be, _, _, _>(
                     self, res, key, key_size, scratch,
                 )
             }
 
-            fn glwe_automorphism_sub_default<'s, R, A, K>(
+            fn glwe_automorphism_sub_default<R, A, K>(
                 &self,
                 res: &mut R,
                 a: &A,
                 key: &K,
                 key_size: usize,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'s, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GetGaloisElement
                     + $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be>
                     + $crate::layouts::GGLWEInfos,
-                $be: 's,
             {
                 $crate::default::automorphism::glwe::glwe_automorphism_sub_default::<$be, _, _, _, _>(
                     self, res, a, key, key_size, scratch,
                 )
             }
 
-            fn glwe_automorphism_sub_negate_default<'s, R, A, K>(
+            fn glwe_automorphism_sub_negate_default<R, A, K>(
                 &self,
                 res: &mut R,
                 a: &A,
                 key: &K,
                 key_size: usize,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'s, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GetGaloisElement
                     + $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be>
                     + $crate::layouts::GGLWEInfos,
-                $be: 's,
             {
                 $crate::default::automorphism::glwe::glwe_automorphism_sub_negate_default::<$be, _, _, _, _>(
                     self, res, a, key, key_size, scratch,
                 )
             }
 
-            fn glwe_automorphism_sub_assign_default<'s, R, K>(
+            fn glwe_automorphism_sub_assign_default<R, K>(
                 &self,
                 res: &mut R,
                 key: &K,
                 key_size: usize,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'s, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GetGaloisElement
                     + $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be>
                     + $crate::layouts::GGLWEInfos,
-                $be: 's,
             {
                 $crate::default::automorphism::glwe::glwe_automorphism_sub_assign_default::<$be, _, _, _>(
                     self, res, key, key_size, scratch,
                 )
             }
 
-            fn glwe_automorphism_sub_negate_assign_default<'s, R, K>(
+            fn glwe_automorphism_sub_negate_assign_default<R, K>(
                 &self,
                 res: &mut R,
                 key: &K,
                 key_size: usize,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'s, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GetGaloisElement
                     + $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be>
                     + $crate::layouts::GGLWEInfos,
-                $be: 's,
             {
                 $crate::default::automorphism::glwe::glwe_automorphism_sub_negate_assign_default::<$be, _, _, _>(
                     self, res, key, key_size, scratch,
@@ -839,7 +777,7 @@ macro_rules! impl_ggsw_automorphism_defaults_full {
                 )
             }
 
-            fn ggsw_automorphism_default<'s, R, A, K, T>(
+            fn ggsw_automorphism_default<R, A, K, T>(
                 &self,
                 res: &mut R,
                 a: &A,
@@ -847,7 +785,7 @@ macro_rules! impl_ggsw_automorphism_defaults_full {
                 key_size: usize,
                 tsk: &T,
                 tsk_size: usize,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'s, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
                 R: $crate::layouts::GGSWToBackendMut<$be> + $crate::layouts::GGSWInfos,
                 A: $crate::layouts::GGSWToBackendRef<$be> + $crate::layouts::GGSWInfos,
@@ -855,28 +793,26 @@ macro_rules! impl_ggsw_automorphism_defaults_full {
                     + $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be>
                     + $crate::layouts::GGLWEInfos,
                 T: $crate::layouts::prepared::GGLWEToGGSWKeyPreparedToBackendRef<$be> + $crate::layouts::GGLWEInfos,
-                $be: 's,
             {
                 $crate::default::automorphism::ggsw::ggsw_automorphism_default::<$be, _, _, _, _, _>(
                     self, res, a, key, key_size, tsk, tsk_size, scratch,
                 )
             }
 
-            fn ggsw_automorphism_assign_default<'s, R, K, T>(
+            fn ggsw_automorphism_assign_default<R, K, T>(
                 &self,
                 res: &mut R,
                 key: &K,
                 key_size: usize,
                 tsk: &T,
                 tsk_size: usize,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'s, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
                 R: $crate::layouts::GGSWToBackendMut<$be> + $crate::layouts::GGSWInfos,
                 K: $crate::layouts::GetGaloisElement
                     + $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be>
                     + $crate::layouts::GGLWEInfos,
                 T: $crate::layouts::prepared::GGLWEToGGSWKeyPreparedToBackendRef<$be> + $crate::layouts::GGLWEInfos,
-                $be: 's,
             {
                 $crate::default::automorphism::ggsw::ggsw_automorphism_assign_default::<$be, _, _, _, _>(
                     self, res, key, key_size, tsk, tsk_size, scratch,
@@ -908,32 +844,31 @@ macro_rules! impl_gglwe_automorphism_defaults_full {
                 )
             }
 
-            fn glwe_automorphism_key_automorphism_default<'s, R, A, K>(
+            fn glwe_automorphism_key_automorphism_default<R, A, K>(
                 &self,
                 res: &mut R,
                 a: &A,
                 key: &K,
                 key_size: usize,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'s, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
                 R: $crate::layouts::GGLWEToBackendMut<$be> + $crate::layouts::SetGaloisElement + $crate::layouts::GGLWEInfos,
                 A: $crate::layouts::GGLWEToBackendRef<$be> + $crate::layouts::GetGaloisElement + $crate::layouts::GGLWEInfos,
                 K: $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be>
                     + $crate::layouts::GetGaloisElement
                     + $crate::layouts::GGLWEInfos,
-                $be: 's,
             {
                 $crate::default::automorphism::gglwe::glwe_automorphism_key_automorphism_default::<$be, _, _, _, _>(
                     self, res, a, key, key_size, scratch,
                 )
             }
 
-            fn glwe_automorphism_key_automorphism_assign_default<'s, R, K>(
+            fn glwe_automorphism_key_automorphism_assign_default<R, K>(
                 &self,
                 res: &mut R,
                 key: &K,
                 key_size: usize,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'s, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
                 R: $crate::layouts::GGLWEToBackendMut<$be>
                     + $crate::layouts::SetGaloisElement
@@ -942,7 +877,6 @@ macro_rules! impl_gglwe_automorphism_defaults_full {
                 K: $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be>
                     + $crate::layouts::GetGaloisElement
                     + $crate::layouts::GGLWEInfos,
-                $be: 's,
             {
                 $crate::default::automorphism::gglwe::glwe_automorphism_key_automorphism_assign_default::<$be, _, _, _>(
                     self, res, key, key_size, scratch,

@@ -377,7 +377,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn bivariate_convolution_naive<'s, M, BE: crate::test_suite::TestBackend>(
+pub fn bivariate_convolution_naive<M, BE: crate::test_suite::TestBackend>(
     module: &M,
     base2k: usize,
     k: i64,
@@ -387,7 +387,7 @@ pub fn bivariate_convolution_naive<'s, M, BE: crate::test_suite::TestBackend>(
     a_col: usize,
     b: &VecZnx<Vec<u8>>,
     b_col: usize,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
     M: VecZnxNormalizeAssignBackend<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
@@ -423,14 +423,14 @@ pub fn bivariate_convolution_naive<'s, M, BE: crate::test_suite::TestBackend>(
     *res = download_vec_znx::<BE>(&res_backend);
 }
 
-fn bivariate_tensoring_naive<'s, M, BE: crate::test_suite::TestBackend>(
+fn bivariate_tensoring_naive<M, BE: crate::test_suite::TestBackend>(
     module: &M,
     base2k: usize,
     k: i64,
     res: &mut VecZnx<Vec<u8>>,
     a: &VecZnx<Vec<u8>>,
     b: &VecZnx<Vec<u8>>,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
     M: VecZnxNormalizeAssignBackend<BE>,
 {

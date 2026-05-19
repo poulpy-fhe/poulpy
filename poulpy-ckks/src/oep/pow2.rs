@@ -2,7 +2,7 @@ use crate::default::pow2::CKKSPow2Default;
 
 use anyhow::Result;
 use poulpy_core::{
-    GLWECopy, GLWEShift, ScratchArenaTakeCore,
+    GLWECopy, GLWEShift,
     layouts::{GLWEInfos, LWEInfos},
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -54,7 +54,6 @@ unsafe impl<BE: Backend> CKKSPow2Impl<BE> for BE
 where
     BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
     Module<BE>: crate::default::pow2::CKKSPow2Default<BE> + GLWECopy<BE> + GLWEShift<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_mul_pow2_tmp_bytes(module: &Module<BE>) -> usize {
         module.ckks_mul_pow2_tmp_bytes_default()

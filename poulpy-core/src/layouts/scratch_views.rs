@@ -226,17 +226,18 @@ impl<'a, BE: Backend + 'a> LWEToBackendRef<BE> for LWEViewMut<'a, BE> {
     fn to_backend_ref(&self) -> LWEBackendRef<'_, BE> {
         LWE {
             base2k: self.inner.base2k,
-            data: vec_znx_backend_ref_from_mut::<BE>(&self.inner.data),
+            body: vec_znx_backend_ref_from_mut::<BE>(&self.inner.body),
+            mask: vec_znx_backend_ref_from_mut::<BE>(&self.inner.mask),
         }
     }
 }
 
 impl<'a, BE: Backend + 'a> LWEToBackendMut<BE> for LWEViewMut<'a, BE> {
     fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE> {
-        LWE {
-            base2k: self.inner.base2k,
-            data: vec_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
-        }
+        let base2k = self.inner.base2k;
+        let body = vec_znx_backend_mut_from_mut::<BE>(&mut self.inner.body);
+        let mask = vec_znx_backend_mut_from_mut::<BE>(&mut self.inner.mask);
+        LWE { base2k, body, mask }
     }
 }
 

@@ -1,8 +1,12 @@
-//! Backend extension points for extended-precision [`VecZnxBig`](poulpy_hal::layouts::VecZnxBig) operations.
+//! Backend extension points for extended-precision [`poulpy_hal::layouts::VecZnxBig`] operations.
 
 #![allow(clippy::too_many_arguments)]
 
-use std::mem::size_of;
+use std::{
+    mem::size_of,
+    num::Wrapping,
+    ops::{Add, Mul},
+};
 
 use crate::reference::{
     fft64::vec_znx_big::{
@@ -43,8 +47,8 @@ use crate::reference::{
 use poulpy_hal::{
     api::HostBufMut,
     layouts::{
-        Backend, HostDataMut, HostDataRef, Module, NoiseInfos, ScratchArena, VecZnx, VecZnxBackendRef, VecZnxBigToBackendMut,
-        VecZnxBigToBackendRef, VecZnxToBackendMut, ZnxView, ZnxViewMut,
+        Backend, HostDataMut, HostDataRef, Module, NoiseInfos, ScalarZnxBackendRef, ScratchArena, VecZnx, VecZnxBackendRef,
+        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut, ZnxView, ZnxViewMut,
     },
     source::Source,
 };
@@ -72,23 +76,80 @@ where
 fn vec_znx_backend_ref_as_host_ref<'a, 'b, BE>(a: &'a VecZnx<BE::BufRef<'b>>) -> VecZnx<&'a [u8]>
 where
     BE: Backend + 'b,
-    BE::BufRef<'b>: AsRef<[u8]>,
+    for<'x> BE::BufRef<'x>: AsRef<[u8]>,
 {
     VecZnx::from_data_with_max_size(a.data.as_ref(), a.n(), a.cols(), a.size(), a.max_size())
+}
+
+fn vec_znx_big_inner_sum_default_impl<R, A, BE>(res: &mut R, res_col: usize, res_coeff: usize, a: &A, a_col: usize)
+where
+    BE: Backend,
+    BE::ScalarBig: Copy + From<i64>,
+    Wrapping<BE::ScalarBig>: Add<Output = Wrapping<BE::ScalarBig>>,
+    for<'x> BE::BufMut<'x>: HostDataMut,
+    for<'x> BE::BufRef<'x>: HostDataRef,
+    R: VecZnxBigToBackendMut<BE>,
+    A: VecZnxBigToBackendRef<BE>,
+{
+    let mut res = res.to_backend_mut();
+    let a = a.to_backend_ref();
+
+    assert!(res_coeff < res.n());
+    assert!(res.size() <= a.size());
+    for limb in 0..res.size() {
+        let sum = a
+            .at(a_col, limb)
+            .iter()
+            .fold(Wrapping(BE::ScalarBig::from(0)), |acc, &x| acc + Wrapping(x));
+
+        res.at_mut(res_col, limb)[res_coeff] = sum.0;
+    }
+}
+
+fn vec_znx_scalar_product_default_impl<R, BE>(
+    res: &mut R,
+    res_col: usize,
+    a: &VecZnxBackendRef<'_, BE>,
+    a_col: usize,
+    b: &ScalarZnxBackendRef<'_, BE>,
+    b_col: usize,
+) where
+    BE: Backend,
+    BE::ScalarBig: Copy + From<i64>,
+    Wrapping<BE::ScalarBig>: Mul<Output = Wrapping<BE::ScalarBig>>,
+    for<'x> BE::BufMut<'x>: HostDataMut,
+    for<'x> BE::BufRef<'x>: HostDataRef,
+    R: VecZnxBigToBackendMut<BE>,
+{
+    let mut res = res.to_backend_mut();
+
+    let n = a.n();
+    assert_eq!(n, b.n());
+    assert!(res.n() >= n);
+    assert!(res.size() <= a.size());
+
+    let b_slice = b.at(b_col, 0);
+    for limb in 0..res.size() {
+        let a_slice = a.at(a_col, limb);
+        let res_slice = res.at_mut(res_col, limb);
+        for k in 0..n {
+            res_slice[k] = (Wrapping(BE::ScalarBig::from(a_slice[k])) * Wrapping(BE::ScalarBig::from(b_slice[k]))).0;
+        }
+    }
 }
 
 #[doc(hidden)]
 pub trait FFT64VecZnxBigDefault<BE: Backend>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'x> BE::BufMut<'x>: HostDataMut,
+    for<'x> BE::BufRef<'x>: HostDataRef,
 {
     fn vec_znx_big_from_small_default<R>(res: &mut R, res_col: usize, a: &VecZnxBackendRef<'_, BE>, a_col: usize)
     where
         BE: Backend<ScalarBig = i64>,
-        for<'a> BE::BufMut<'a>: HostDataMut,
-        for<'a> BE::BufRef<'a>: AsRef<[u8]>,
+        for<'x> BE::BufMut<'x>: HostDataMut,
+        for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
     {
         let mut res = res.to_backend_mut();
@@ -146,7 +207,7 @@ where
         b_col: usize,
     ) where
         BE: Backend<ScalarBig = i64> + ZnxAdd + ZnxCopy + ZnxZero,
-        for<'a> BE::BufRef<'a>: AsRef<[u8]>,
+        for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
         C: VecZnxBigToBackendRef<BE>,
@@ -173,7 +234,7 @@ where
         b_col: usize,
     ) where
         BE: Backend<ScalarBig = i64> + ZnxAdd + ZnxCopy + ZnxZero,
-        for<'a> BE::BufRef<'a>: AsRef<[u8]>,
+        for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
     {
@@ -188,7 +249,7 @@ where
         a_col: usize,
     ) where
         BE: Backend<ScalarBig = i64> + ZnxAddAssign,
-        for<'a> BE::BufRef<'a>: AsRef<[u8]>,
+        for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
     {
         fft64_vec_znx_big_add_small_assign(res, res_col, &a, a_col);
@@ -239,7 +300,7 @@ where
         b_col: usize,
     ) where
         BE: Backend<ScalarBig = i64> + ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
-        for<'a> BE::BufRef<'a>: AsRef<[u8]>,
+        for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
         C: VecZnxBigToBackendRef<BE>,
     {
@@ -254,7 +315,7 @@ where
         a_col: usize,
     ) where
         BE: Backend<ScalarBig = i64> + ZnxSubAssign,
-        for<'a> BE::BufRef<'a>: AsRef<[u8]>,
+        for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
     {
         fft64_vec_znx_big_sub_small_a_assign(res, res_col, &a, a_col);
@@ -270,7 +331,7 @@ where
         b_col: usize,
     ) where
         BE: Backend<ScalarBig = i64> + ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
-        for<'a> BE::BufRef<'a>: AsRef<[u8]>,
+        for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
     {
@@ -285,10 +346,44 @@ where
         a_col: usize,
     ) where
         BE: Backend<ScalarBig = i64> + ZnxSubNegateAssign + ZnxNegateAssign,
-        for<'a> BE::BufRef<'a>: AsRef<[u8]>,
+        for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
     {
         fft64_vec_znx_big_sub_small_b_assign(res, res_col, &a, a_col);
+    }
+
+    fn vec_znx_big_inner_sum_default<R, A>(
+        _module: &Module<BE>,
+        res: &mut R,
+        res_col: usize,
+        res_coeff: usize,
+        a: &A,
+        a_col: usize,
+    ) where
+        BE: Backend<ScalarBig = i64>,
+        for<'x> BE::BufMut<'x>: HostDataMut,
+        for<'x> BE::BufRef<'x>: HostDataRef,
+        R: VecZnxBigToBackendMut<BE>,
+        A: VecZnxBigToBackendRef<BE>,
+    {
+        vec_znx_big_inner_sum_default_impl::<R, A, BE>(res, res_col, res_coeff, a, a_col);
+    }
+
+    fn vec_znx_scalar_product_default<R>(
+        _module: &Module<BE>,
+        res: &mut R,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, BE>,
+        a_col: usize,
+        b: &ScalarZnxBackendRef<'_, BE>,
+        b_col: usize,
+    ) where
+        BE: Backend<ScalarBig = i64>,
+        for<'x> BE::BufMut<'x>: HostDataMut,
+        for<'x> BE::BufRef<'x>: HostDataRef,
+        R: VecZnxBigToBackendMut<BE>,
+    {
+        vec_znx_scalar_product_default_impl::<R, BE>(res, res_col, a, a_col, b, b_col);
     }
 
     fn vec_znx_big_negate_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
@@ -315,7 +410,7 @@ where
         fft64_vec_znx_big_normalize_tmp_bytes(module.n())
     }
 
-    fn vec_znx_big_normalize_default<'s, R, A>(
+    fn vec_znx_big_normalize_default<R, A>(
         module: &Module<BE>,
         res: &mut R,
         res_base2k: usize,
@@ -324,7 +419,7 @@ where
         a: &A,
         a_base2k: usize,
         a_col: usize,
-        scratch: &'s mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: Backend<ScalarBig = i64>
             + ZnxZero
@@ -340,7 +435,7 @@ where
             + ZnxNormalizeDigit
             + ZnxNormalizeMiddleStepAssign
             + ZnxNormalizeFinalStepAssign,
-        BE::BufMut<'s>: HostBufMut<'s>,
+        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
         R: VecZnxToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
     {
@@ -367,15 +462,15 @@ where
         fft64_vec_znx_big_automorphism_assign_tmp_bytes(module.n())
     }
 
-    fn vec_znx_big_automorphism_assign_default<'s, R>(
+    fn vec_znx_big_automorphism_assign_default<R>(
         module: &Module<BE>,
         k: i64,
         res: &mut R,
         res_col: usize,
-        scratch: &'s mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: Backend<ScalarBig = i64> + ZnxAutomorphism + ZnxCopy,
-        BE::BufMut<'s>: HostBufMut<'s>,
+        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
         R: VecZnxBigToBackendMut<BE>,
     {
         let (tmp, _) = take_host_typed::<BE, i64>(
@@ -389,8 +484,8 @@ where
 impl<BE: Backend> FFT64VecZnxBigDefault<BE> for BE
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'x> BE::BufMut<'x>: HostDataMut,
+    for<'x> BE::BufRef<'x>: HostDataRef,
 {
 }
 
@@ -398,13 +493,13 @@ where
 pub trait NTT120VecZnxBigDefault<BE: Backend>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'x> BE::BufMut<'x>: HostDataMut,
+    for<'x> BE::BufRef<'x>: HostDataRef,
 {
     fn vec_znx_big_from_small_default<R>(res: &mut R, res_col: usize, a: &VecZnxBackendRef<'_, BE>, a_col: usize)
     where
         BE: Backend<ScalarBig = i128> + I128BigOps,
-        for<'a> BE::BufRef<'a>: AsRef<[u8]>,
+        for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
     {
         let a = vec_znx_backend_ref_as_host_ref::<BE>(a);
@@ -450,7 +545,7 @@ where
         b_col: usize,
     ) where
         BE: Backend<ScalarBig = i128> + I128BigOps,
-        for<'a> BE::BufRef<'a>: AsRef<[u8]>,
+        for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
         C: VecZnxBigToBackendRef<BE>,
@@ -477,7 +572,7 @@ where
         b_col: usize,
     ) where
         BE: Backend<ScalarBig = i128> + I128BigOps,
-        for<'a> BE::BufRef<'a>: AsRef<[u8]>,
+        for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
     {
@@ -493,7 +588,7 @@ where
         a_col: usize,
     ) where
         BE: Backend<ScalarBig = i128> + I128BigOps,
-        for<'a> BE::BufRef<'a>: AsRef<[u8]>,
+        for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
     {
         let a = vec_znx_backend_ref_as_host_ref::<BE>(a);
@@ -545,7 +640,7 @@ where
         b_col: usize,
     ) where
         BE: Backend<ScalarBig = i128> + I128BigOps,
-        for<'a> BE::BufRef<'a>: AsRef<[u8]>,
+        for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
         C: VecZnxBigToBackendRef<BE>,
     {
@@ -561,7 +656,7 @@ where
         a_col: usize,
     ) where
         BE: Backend<ScalarBig = i128> + I128BigOps,
-        for<'a> BE::BufRef<'a>: AsRef<[u8]>,
+        for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
     {
         let a = vec_znx_backend_ref_as_host_ref::<BE>(a);
@@ -578,7 +673,7 @@ where
         b_col: usize,
     ) where
         BE: Backend<ScalarBig = i128> + I128BigOps,
-        for<'a> BE::BufRef<'a>: AsRef<[u8]>,
+        for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
     {
@@ -594,11 +689,45 @@ where
         a_col: usize,
     ) where
         BE: Backend<ScalarBig = i128> + I128BigOps,
-        for<'a> BE::BufRef<'a>: AsRef<[u8]>,
+        for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
     {
         let a = vec_znx_backend_ref_as_host_ref::<BE>(a);
         ntt120_vec_znx_big_sub_small_negate_assign(res, res_col, &a, a_col);
+    }
+
+    fn vec_znx_big_inner_sum_default<R, A>(
+        _module: &Module<BE>,
+        res: &mut R,
+        res_col: usize,
+        res_coeff: usize,
+        a: &A,
+        a_col: usize,
+    ) where
+        BE: Backend<ScalarBig = i128>,
+        for<'x> BE::BufMut<'x>: HostDataMut,
+        for<'x> BE::BufRef<'x>: HostDataRef,
+        R: VecZnxBigToBackendMut<BE>,
+        A: VecZnxBigToBackendRef<BE>,
+    {
+        vec_znx_big_inner_sum_default_impl::<R, A, BE>(res, res_col, res_coeff, a, a_col);
+    }
+
+    fn vec_znx_scalar_product_default<R>(
+        _module: &Module<BE>,
+        res: &mut R,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, BE>,
+        a_col: usize,
+        b: &ScalarZnxBackendRef<'_, BE>,
+        b_col: usize,
+    ) where
+        BE: Backend<ScalarBig = i128>,
+        for<'x> BE::BufMut<'x>: HostDataMut,
+        for<'x> BE::BufRef<'x>: HostDataRef,
+        R: VecZnxBigToBackendMut<BE>,
+    {
+        vec_znx_scalar_product_default_impl::<R, BE>(res, res_col, a, a_col, b, b_col);
     }
 
     fn vec_znx_big_negate_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
@@ -625,7 +754,7 @@ where
         ntt120_vec_znx_big_normalize_tmp_bytes(module.n())
     }
 
-    fn vec_znx_big_normalize_default<'s, R, A>(
+    fn vec_znx_big_normalize_default<R, A>(
         module: &Module<BE>,
         res: &mut R,
         res_base2k: usize,
@@ -634,10 +763,10 @@ where
         a: &A,
         a_base2k: usize,
         a_col: usize,
-        scratch: &'s mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: Backend<ScalarBig = i128> + I128NormalizeOps,
-        BE::BufMut<'s>: HostBufMut<'s>,
+        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
         R: VecZnxToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
     {
@@ -648,7 +777,7 @@ where
         ntt120_vec_znx_big_normalize(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
     }
 
-    fn vec_znx_big_normalize_add_assign_default<'s, R, A>(
+    fn vec_znx_big_normalize_add_assign_default<R, A>(
         module: &Module<BE>,
         res: &mut R,
         res_base2k: usize,
@@ -657,10 +786,10 @@ where
         a: &A,
         a_base2k: usize,
         a_col: usize,
-        scratch: &'s mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: Backend<ScalarBig = i128> + I128NormalizeOps,
-        BE::BufMut<'s>: HostBufMut<'s>,
+        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
         R: VecZnxToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
     {
@@ -671,7 +800,7 @@ where
         ntt120_vec_znx_big_normalize_add_assign(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
     }
 
-    fn vec_znx_big_normalize_sub_assign_default<'s, R, A>(
+    fn vec_znx_big_normalize_sub_assign_default<R, A>(
         module: &Module<BE>,
         res: &mut R,
         res_base2k: usize,
@@ -680,10 +809,10 @@ where
         a: &A,
         a_base2k: usize,
         a_col: usize,
-        scratch: &'s mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: Backend<ScalarBig = i128> + I128NormalizeOps,
-        BE::BufMut<'s>: HostBufMut<'s>,
+        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
         R: VecZnxToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
     {
@@ -710,15 +839,15 @@ where
         ntt120_vec_znx_big_automorphism_assign_tmp_bytes(module.n())
     }
 
-    fn vec_znx_big_automorphism_assign_default<'s, R>(
+    fn vec_znx_big_automorphism_assign_default<R>(
         module: &Module<BE>,
         k: i64,
         res: &mut R,
         res_col: usize,
-        scratch: &'s mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: Backend<ScalarBig = i128> + I128BigOps,
-        BE::BufMut<'s>: HostBufMut<'s>,
+        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
         R: VecZnxBigToBackendMut<BE>,
     {
         let (tmp, _) = take_host_typed::<BE, i128>(
@@ -732,7 +861,7 @@ where
 impl<BE: Backend> NTT120VecZnxBigDefault<BE> for BE
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'x> BE::BufMut<'x>: HostDataMut,
+    for<'x> BE::BufRef<'x>: HostDataRef,
 {
 }

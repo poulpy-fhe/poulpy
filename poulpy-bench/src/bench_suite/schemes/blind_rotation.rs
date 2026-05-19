@@ -97,7 +97,7 @@ where
     let mut res: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_infos);
     res.data_mut().fill_uniform(glwe_infos.base2k().as_usize(), &mut source_xa);
     let mut lwe: LWE<Vec<u8>> = module.lwe_alloc_from_infos(&lwe_infos);
-    lwe.data_mut().fill_uniform(lwe_infos.base2k().as_usize(), &mut source_xa);
+    lwe.fill_uniform(lwe_infos.base2k().as_usize(), &mut source_xa);
 
     let mut f_vec: Vec<i64> = vec![0i64; message_modulus];
     f_vec.iter_mut().enumerate().for_each(|(i, x)| *x = 2 * i as i64 + 1);

@@ -1,9 +1,6 @@
 use poulpy_hal::{
-    api::{ScratchAvailable, VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes, VmpZero},
-    layouts::{
-        Backend, Data, HostDataRef, Module, ScratchArena, VmpPMat, VmpPMatReborrowBackendRef, VmpPMatToBackendMut,
-        VmpPMatToBackendRef, vmp_pmat_backend_mut_from_mut, vmp_pmat_backend_ref_from_ref,
-    },
+    api::{VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes, VmpZero},
+    layouts::{Backend, Data, HostDataRef, Module, ScratchArena, VmpPMat, VmpPMatToBackendMut, VmpPMatToBackendRef},
 };
 
 use crate::layouts::{
@@ -172,11 +169,10 @@ where
         );
         lvl_0
     }
-    fn ggsw_prepare<'s, R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'s, B>)
+    fn ggsw_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, B>)
     where
         R: GGSWPreparedToBackendMut<B>,
         O: GGSWToBackendRef<B>,
-        ScratchArena<'s, B>: ScratchAvailable,
     {
         let mut res = res.to_backend_mut();
         let other = other.to_backend_ref();
@@ -233,26 +229,6 @@ impl<B: Backend> GGSWPreparedToBackendRef<B> for GGSWPrepared<B::OwnedBuf, B> {
     }
 }
 
-impl<'b, B: Backend + 'b> GGSWPreparedToBackendRef<B> for &GGSWPrepared<B::BufRef<'b>, B> {
-    fn to_backend_ref(&self) -> GGSWPreparedBackendRef<'_, B> {
-        GGSWPrepared {
-            base2k: self.base2k,
-            dsize: self.dsize,
-            data: vmp_pmat_backend_ref_from_ref::<B>(&self.data),
-        }
-    }
-}
-
-impl<'b, B: Backend + 'b> GGSWPreparedToBackendRef<B> for &mut GGSWPrepared<B::BufMut<'b>, B> {
-    fn to_backend_ref(&self) -> GGSWPreparedBackendRef<'_, B> {
-        GGSWPrepared {
-            base2k: self.base2k,
-            dsize: self.dsize,
-            data: self.data.reborrow_backend_ref(),
-        }
-    }
-}
-
 pub trait GGSWPreparedToBackendMut<B: Backend> {
     fn to_backend_mut(&mut self) -> GGSWPreparedBackendMut<'_, B>;
 }
@@ -263,16 +239,6 @@ impl<B: Backend> GGSWPreparedToBackendMut<B> for GGSWPrepared<B::OwnedBuf, B> {
             base2k: self.base2k,
             dsize: self.dsize,
             data: self.data.to_backend_mut(),
-        }
-    }
-}
-
-impl<'b, B: Backend + 'b> GGSWPreparedToBackendMut<B> for &mut GGSWPrepared<B::BufMut<'b>, B> {
-    fn to_backend_mut(&mut self) -> GGSWPreparedBackendMut<'_, B> {
-        GGSWPrepared {
-            base2k: self.base2k,
-            dsize: self.dsize,
-            data: vmp_pmat_backend_mut_from_mut::<B>(&mut self.data),
         }
     }
 }

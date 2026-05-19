@@ -1,12 +1,9 @@
 use anyhow::Result;
 use poulpy_core::{
-    GLWENegate, GLWEShift, ScratchArenaTakeCore,
+    GLWENegate, GLWEShift,
     layouts::{GLWEToBackendMut, GLWEToBackendRef},
 };
-use poulpy_hal::{
-    api::ScratchAvailable,
-    layouts::{Backend, Module, ScratchArena},
-};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos, oep::CKKSNegImpl};
 
@@ -15,7 +12,6 @@ use crate::api::CKKSNegOps;
 impl<BE: Backend + CKKSNegImpl<BE>> CKKSNegOps<BE> for Module<BE>
 where
     Module<BE>: GLWENegate<BE> + GLWEShift<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_neg_tmp_bytes(&self) -> usize {
         BE::ckks_neg_tmp_bytes(self)

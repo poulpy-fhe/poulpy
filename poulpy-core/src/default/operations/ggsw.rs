@@ -1,10 +1,6 @@
-use poulpy_hal::{
-    api::ScratchAvailable,
-    layouts::{Backend, Module, ScratchArena},
-};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    ScratchArenaTakeCore,
     default::operations::GLWERotateDefault,
     layouts::{GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut},
 };
@@ -18,16 +14,14 @@ pub trait GGSWRotateDefault<BE: Backend> {
         R: crate::layouts::GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
         A: crate::layouts::GGSWToBackendRef<BE> + GGSWAtViewRef<BE> + GGSWInfos;
 
-    fn ggsw_rotate_assign_default<'s, R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'s, BE>)
+    fn ggsw_rotate_assign_default<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE> + ScratchAvailable;
+        R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos;
 }
 
 impl<BE: Backend> GGSWRotateDefault<BE> for Module<BE>
 where
     Module<BE>: GLWERotateDefault<BE>,
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     fn ggsw_rotate_tmp_bytes_default(&self) -> usize {
         self.glwe_rotate_tmp_bytes_default()
@@ -53,10 +47,9 @@ where
         }
     }
 
-    fn ggsw_rotate_assign_default<'s, R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'s, BE>)
+    fn ggsw_rotate_assign_default<R>(&self, k: i64, res: &mut R, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE> + ScratchAvailable,
     {
         assert!(
             scratch.available() >= <Self as GGSWRotateDefault<BE>>::ggsw_rotate_tmp_bytes_default(self),

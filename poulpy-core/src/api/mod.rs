@@ -11,8 +11,8 @@
 //! - `operations` -- arithmetic helpers, packing, trace, and tensoring.
 //!
 //! Scheme authors can program against these traits directly. Execution is
-//! dispatched through the [`crate::oep`] backend extension points by the
-//! blanket implementations in [`crate::delegates`].
+//! dispatched through the [`crate::oep`] backend extension points by blanket
+//! implementations in the (private) `delegates` module.
 
 mod automorphism;
 mod conversion;

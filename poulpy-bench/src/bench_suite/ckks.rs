@@ -144,7 +144,6 @@ where
         + CKKSMulSubOps<BE>
         + CKKSDotProductOps<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
 {
 }
 

@@ -99,19 +99,17 @@ where
         }
     }
 
-    fn blind_rotation_execute<'s, R, DL>(
+    fn blind_rotation_execute<R, DL>(
         &self,
         res: &mut R,
         lwe: &LWE<DL>,
         lut: &LookupTable<BE::OwnedBuf>,
         brk: &BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         DL: Data,
         LWE<DL>: LWEToBackendRef<BE>,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
-        BE: 's,
     {
         // TODO(device): make the full execute path 100% backend-native. The
         // current implementation still relies on host-visible scratch/result
@@ -164,7 +162,6 @@ fn execute_block_binary_extended<R, DataIn, M, BE: Backend<OwnedBuf = Vec<u8>> +
         + VecZnxBigNormalize<BE>
         + GLWECopy<BE>
         + VecZnxBigBytesOf,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     // TODO(device): this extended block-binary path still performs host-side
     // coefficient orchestration over temporary accumulators.
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -372,7 +369,6 @@ fn execute_block_binary<R, DataIn, M, BE: Backend<OwnedBuf = Vec<u8>> + 'static>
         + VecZnxBigNormalize<BE>
         + GLWECopy<BE>
         + VecZnxBigBytesOf,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     // TODO(device): this block-binary path still assumes host-visible
     // temporary accumulators and LUT buffers.
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -498,7 +494,6 @@ fn execute_standard<R, DataIn, M, BE: Backend<OwnedBuf = Vec<u8>>>(
         + GLWENormalize<BE>
         + GLWECopy<BE>
         + ModuleCoreAlloc<OwnedBuf = Vec<u8>>,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     // TODO(device): the standard CGGI path still uses host-visible
     // coefficient staging for the accumulator.
     for<'a> BE::BufMut<'a>: HostDataMut,

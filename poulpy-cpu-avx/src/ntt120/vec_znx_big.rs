@@ -8,14 +8,20 @@ use super::{
     vec_znx_big_avx::{
         nfc_final_step_assign_avx2, nfc_final_step_assign_scalar, nfc_middle_step_assign_avx2, nfc_middle_step_assign_scalar,
         nfc_middle_step_avx2, nfc_middle_step_scalar, vi128_add_assign_avx2, vi128_add_avx2, vi128_add_small_assign_avx2,
-        vi128_add_small_avx2, vi128_from_small_avx2, vi128_neg_from_small_avx2, vi128_negate_assign_avx2, vi128_negate_avx2,
-        vi128_sub_assign_avx2, vi128_sub_avx2, vi128_sub_negate_assign_avx2, vi128_sub_small_a_avx2, vi128_sub_small_assign_avx2,
-        vi128_sub_small_b_avx2, vi128_sub_small_negate_assign_avx2,
+        vi128_add_small_avx2, vi128_from_small_avx2, vi128_hadamard_i64_avx2, vi128_neg_from_small_avx2,
+        vi128_negate_assign_avx2, vi128_negate_avx2, vi128_sub_assign_avx2, vi128_sub_avx2, vi128_sub_negate_assign_avx2,
+        vi128_sub_small_a_avx2, vi128_sub_small_assign_avx2, vi128_sub_small_b_avx2, vi128_sub_small_negate_assign_avx2,
     },
 };
+use poulpy_cpu_ref::hal_defaults::ScalarBigHadamardProduct;
 use poulpy_cpu_ref::reference::ntt120::{I128BigOps, I128NormalizeOps};
 
 impl I128BigOps for NTT120Avx {
+    #[inline(always)]
+    fn i128_hadamard_product_i64(res: &mut [i128], a: &[i64], b: &[i64]) {
+        unsafe { vi128_hadamard_i64_avx2(res.len(), res, a, b) }
+    }
+
     #[inline(always)]
     fn i128_add(res: &mut [i128], a: &[i128], b: &[i128]) {
         // SAFETY: NTT120Avx::new() verifies AVX2 availability at construction time.
@@ -76,6 +82,13 @@ impl I128BigOps for NTT120Avx {
     #[inline(always)]
     fn i128_from_small(res: &mut [i128], a: &[i64]) {
         unsafe { vi128_from_small_avx2(res.len(), res, a) }
+    }
+}
+
+impl ScalarBigHadamardProduct for NTT120Avx {
+    #[inline(always)]
+    fn scalar_big_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
+        Self::i128_hadamard_product_i64(res, a, b)
     }
 }
 

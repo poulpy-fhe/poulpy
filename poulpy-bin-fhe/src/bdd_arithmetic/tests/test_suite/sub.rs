@@ -4,7 +4,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBackend, HostDataMut, Module, ScratchArena, ScratchOwned},
+    layouts::{Backend, HostBackend, HostDataMut, Module, ScratchOwned},
     source::Source,
 };
 use rand::Rng;
@@ -34,7 +34,6 @@ where
         + ExecuteBDDCircuit2WTo1W<BE>
         + GLWEEncryptSk<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> ScratchArena<'a, BE>: poulpy_core::ScratchArenaTakeCore<'a, BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     let glwe_infos: GLWELayout = TEST_GLWE_INFOS;

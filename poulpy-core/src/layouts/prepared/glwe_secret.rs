@@ -1,9 +1,6 @@
 use poulpy_hal::{
     api::{SvpPPolAlloc, SvpPPolBytesOf, SvpPrepare},
-    layouts::{
-        Backend, Data, Module, SvpPPol, SvpPPolReborrowBackendMut, SvpPPolReborrowBackendRef, SvpPPolToBackendMut,
-        SvpPPolToBackendRef, ZnxInfos,
-    },
+    layouts::{Backend, Data, Module, SvpPPol, SvpPPolToBackendMut, SvpPPolToBackendRef, ZnxInfos},
 };
 
 use crate::{
@@ -24,15 +21,6 @@ pub struct GLWESecretPrepared<D: Data, B: Backend> {
 
 pub type GLWESecretPreparedBackendRef<'a, B> = GLWESecretPrepared<<B as Backend>::BufRef<'a>, B>;
 pub type GLWESecretPreparedBackendMut<'a, B> = GLWESecretPrepared<<B as Backend>::BufMut<'a>, B>;
-
-pub fn glwe_secret_prepared_backend_ref_from_mut<'a, 'b, B: Backend>(
-    sk: &'a GLWESecretPrepared<B::BufMut<'b>, B>,
-) -> GLWESecretPreparedBackendRef<'a, B> {
-    GLWESecretPrepared {
-        dist: sk.dist,
-        data: sk.data.reborrow_backend_ref(),
-    }
-}
 
 impl<D: Data, BE: Backend> GetDistribution for GLWESecretPrepared<D, BE> {
     fn dist(&self) -> &Distribution {
@@ -162,21 +150,6 @@ impl<B: Backend> GLWESecretPreparedToBackendRef<B> for GLWESecretPrepared<B::Own
     }
 }
 
-impl<'b, B: Backend + 'b> GLWESecretPreparedToBackendRef<B> for &mut GLWESecretPrepared<B::BufMut<'b>, B> {
-    fn to_backend_ref(&self) -> GLWESecretPreparedBackendRef<'_, B> {
-        glwe_secret_prepared_backend_ref_from_mut::<B>(self)
-    }
-}
-
-impl<'b, B: Backend + 'b> GLWESecretPreparedToBackendRef<B> for &GLWESecretPrepared<B::BufRef<'b>, B> {
-    fn to_backend_ref(&self) -> GLWESecretPreparedBackendRef<'_, B> {
-        GLWESecretPrepared {
-            dist: self.dist,
-            data: SvpPPol::from_data(B::view_ref(&self.data.data), self.data.n(), self.data.cols()),
-        }
-    }
-}
-
 pub trait GLWESecretPreparedToBackendMut<B: Backend> {
     fn to_backend_mut(&mut self) -> GLWESecretPreparedBackendMut<'_, B>;
 }
@@ -186,15 +159,6 @@ impl<B: Backend> GLWESecretPreparedToBackendMut<B> for GLWESecretPrepared<B::Own
         GLWESecretPrepared {
             dist: self.dist,
             data: self.data.to_backend_mut(),
-        }
-    }
-}
-
-impl<'b, B: Backend + 'b> GLWESecretPreparedToBackendMut<B> for &mut GLWESecretPrepared<B::BufMut<'b>, B> {
-    fn to_backend_mut(&mut self) -> GLWESecretPreparedBackendMut<'_, B> {
-        GLWESecretPrepared {
-            dist: self.dist,
-            data: self.data.reborrow_backend_mut(),
         }
     }
 }

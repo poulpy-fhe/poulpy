@@ -34,7 +34,6 @@ pub trait GLWETensorKeyCompressedEncryptSkDefault<BE: Backend> {
 impl<BE: Backend> GLWETensorKeyCompressedEncryptSkDefault<BE> for Module<BE>
 where
     Self: GGLWECompressedEncryptSk<BE> + GLWESecretPreparedFactory<BE> + GLWESecretTensorFactory<BE>,
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     fn glwe_tensor_key_compressed_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where

@@ -7,7 +7,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{ScratchAvailable, VecZnxCopyBackend},
+    api::VecZnxCopyBackend,
     layouts::{Backend, ScratchArena},
 };
 
@@ -49,7 +49,6 @@ pub trait CKKSMulDefault<BE: Backend> {
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         B: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, a, b)?;
 
@@ -83,7 +82,6 @@ pub trait CKKSMulDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, dst, a)?;
 
@@ -138,7 +136,6 @@ pub trait CKKSMulDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, a, a)?;
 
@@ -163,7 +160,6 @@ pub trait CKKSMulDefault<BE: Backend> {
         Self: GLWETensoring<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, dst, dst)?;
 
@@ -226,7 +222,6 @@ pub trait CKKSMulDefault<BE: Backend> {
         Self: GLWECopy<BE> + GLWEMulPlain<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf> + VecZnxCopyBackend<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, a, pt)?;
         self.glwe_mul_plain(cnv_offset, dst, a, a.effective_k(), pt, pt.max_k().as_usize(), scratch);
@@ -240,7 +235,6 @@ pub trait CKKSMulDefault<BE: Backend> {
         P: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos + CKKSInfos,
         Self: GLWECopy<BE> + GLWEMulPlain<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf> + VecZnxCopyBackend<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, dst, pt)?;
         let dst_effective_k = dst.effective_k();
@@ -263,7 +257,6 @@ pub trait CKKSMulDefault<BE: Backend> {
         Self: GLWEMulConst<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, a, pt)?;
         self.glwe_mul_const(cnv_offset, dst, a, pt, pt_coeff, scratch);
@@ -284,7 +277,6 @@ pub trait CKKSMulDefault<BE: Backend> {
         P: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos + CKKSInfos,
         Self: GLWEMulConst<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, dst, cnst)?;
 

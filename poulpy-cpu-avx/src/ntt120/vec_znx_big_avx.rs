@@ -445,6 +445,82 @@ unsafe fn store4_i128(r_ptr: *mut __m256i, i: usize, lo_r: __m256i, hi_r: __m256
     }
 }
 
+/// Signed 64x64 -> 128-bit multiplication in split form.
+///
+/// Inputs and outputs use the deinterleaved lane order expected by
+/// [`load4_i64_as_i128`] and [`store4_i128`].
+///
+/// # Safety
+/// Requires AVX2.
+#[inline(always)]
+unsafe fn mul4_i64_to_i128(lo_a: __m256i, lo_b: __m256i) -> (__m256i, __m256i) {
+    unsafe {
+        let mask32 = _mm256_set1_epi64x(0xffff_ffff);
+
+        let a_hi32 = _mm256_srli_epi64(lo_a, 32);
+        let b_hi32 = _mm256_srli_epi64(lo_b, 32);
+
+        let p0 = _mm256_mul_epu32(lo_a, lo_b);
+        let p1 = _mm256_mul_epu32(lo_a, b_hi32);
+        let p2 = _mm256_mul_epu32(a_hi32, lo_b);
+        let p3 = _mm256_mul_epu32(a_hi32, b_hi32);
+
+        let mid_low = _mm256_add_epi64(
+            _mm256_add_epi64(_mm256_srli_epi64(p0, 32), _mm256_and_si256(p1, mask32)),
+            _mm256_and_si256(p2, mask32),
+        );
+        let lo = _mm256_or_si256(_mm256_and_si256(p0, mask32), _mm256_slli_epi64(mid_low, 32));
+
+        let hi_unsigned = _mm256_add_epi64(
+            _mm256_add_epi64(p3, _mm256_srli_epi64(p1, 32)),
+            _mm256_add_epi64(_mm256_srli_epi64(p2, 32), _mm256_srli_epi64(mid_low, 32)),
+        );
+
+        let zero = _mm256_setzero_si256();
+        let sign_a = _mm256_cmpgt_epi64(zero, lo_a);
+        let sign_b = _mm256_cmpgt_epi64(zero, lo_b);
+        let hi = _mm256_sub_epi64(
+            _mm256_sub_epi64(hi_unsigned, _mm256_and_si256(sign_a, lo_b)),
+            _mm256_and_si256(sign_b, lo_a),
+        );
+
+        (lo, hi)
+    }
+}
+
+/// `res[i] = (a[i] as i128).wrapping_mul(b[i] as i128)` for `n` elements.
+///
+/// # Safety
+/// Requires AVX2. All slices must have at least `n` elements and `res` must not
+/// alias `a` or `b`.
+#[target_feature(enable = "avx2")]
+pub(crate) unsafe fn vi128_hadamard_i64_avx2(n: usize, res: &mut [i128], a: &[i64], b: &[i64]) {
+    debug_assert!(res.len() >= n);
+    debug_assert!(a.len() >= n);
+    debug_assert!(b.len() >= n);
+
+    unsafe {
+        let a_ptr = a.as_ptr() as *const __m256i;
+        let b_ptr = b.as_ptr() as *const __m256i;
+        let r_ptr = res.as_mut_ptr() as *mut __m256i;
+        let chunks = n / 4;
+
+        for i in 0..chunks {
+            let (lo_a, _) = load4_i64_as_i128(a_ptr, i);
+            let (lo_b, _) = load4_i64_as_i128(b_ptr, i);
+            let (lo_r, hi_r) = mul4_i64_to_i128(lo_a, lo_b);
+            store4_i128(r_ptr, i, lo_r, hi_r);
+        }
+
+        let tail = chunks * 4;
+        res[tail..n]
+            .iter_mut()
+            .zip(a[tail..n].iter())
+            .zip(b[tail..n].iter())
+            .for_each(|((r, &ai), &bi)| *r = (ai as i128).wrapping_mul(bi as i128));
+    }
+}
+
 /// 128-bit addition in split form: `(lo_r, hi_r) = (lo_a + lo_b, hi_a + hi_b + carry)`.
 ///
 /// # Safety
@@ -870,8 +946,8 @@ pub(super) unsafe fn vi128_neg_from_small_avx2(n: usize, res: &mut [i128], a: &[
 mod tests {
     use super::{
         nfc_final_step_assign_avx2, nfc_final_step_assign_scalar, nfc_middle_step_assign_avx2, nfc_middle_step_assign_scalar,
-        nfc_middle_step_avx2, nfc_middle_step_scalar, vi128_add_avx2, vi128_from_small_avx2, vi128_neg_from_small_avx2,
-        vi128_negate_avx2, vi128_sub_avx2,
+        nfc_middle_step_avx2, nfc_middle_step_scalar, vi128_add_avx2, vi128_from_small_avx2, vi128_hadamard_i64_avx2,
+        vi128_neg_from_small_avx2, vi128_negate_avx2, vi128_sub_avx2,
     };
 
     fn i128_data(n: usize, seed: i128) -> Vec<i128> {
@@ -937,6 +1013,40 @@ mod tests {
         let mut res = vec![0i128; n];
         unsafe { vi128_neg_from_small_avx2(n, &mut res, &a) };
         assert_eq!(res, expected, "vi128_neg_from_small_avx2 mismatch");
+    }
+
+    #[test]
+    fn vi128_hadamard_i64_avx2_vs_scalar() {
+        let n = 67usize;
+        let a: Vec<i64> = (0..n)
+            .map(|i| match i % 7 {
+                0 => i64::MIN + i as i64,
+                1 => i64::MAX - i as i64,
+                2 => -(i as i64 * 0x1_0000_0001),
+                3 => i as i64 * 0x7fff_ffff,
+                4 => -1,
+                5 => 0,
+                _ => 17,
+            })
+            .collect();
+        let b: Vec<i64> = (0..n)
+            .map(|i| match i % 5 {
+                0 => -1,
+                1 => i64::MIN / 3 + i as i64,
+                2 => i64::MAX / 5 - i as i64,
+                3 => i as i64 - 23,
+                _ => 0x1_0000_0001,
+            })
+            .collect();
+        let expected: Vec<i128> = a
+            .iter()
+            .zip(b.iter())
+            .map(|(&x, &y)| (x as i128).wrapping_mul(y as i128))
+            .collect();
+
+        let mut res = vec![0i128; n];
+        unsafe { vi128_hadamard_i64_avx2(n, &mut res, &a, &b) };
+        assert_eq!(res, expected, "vi128_hadamard_i64_avx2 mismatch");
     }
 
     #[test]

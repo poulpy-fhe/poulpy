@@ -12,7 +12,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  RUST_TOOLCHAIN: nightly-2026-03-21
+  RUST_TOOLCHAIN: nightly-2026-05-14
   PORTABLE_FEATURES: >-
     poulpy-core/enable-core
     poulpy-ckks/enable-ckks
@@ -40,6 +40,26 @@ env:
     poulpy-bench/bin-fhe-bench
     poulpy-bench/ckks-bench
     poulpy-bench/enable-avx
+  AVX512_FEATURES: >-
+    poulpy-core/enable-core
+    poulpy-core/enable-avx
+    poulpy-ckks/enable-ckks
+    poulpy-ckks/enable-avx
+    poulpy-cpu-ref/enable-core
+    poulpy-cpu-ref/enable-ckks
+    poulpy-cpu-avx/enable-ckks
+    poulpy-cpu-avx/enable-avx
+    poulpy-cpu-avx512/enable-ckks
+    poulpy-cpu-avx512/enable-ifma
+    poulpy-bin-fhe/enable-bin-fhe
+    poulpy-bin-fhe/enable-avx
+    poulpy-bin-fhe/enable-ifma
+    poulpy-bench/hal-bench
+    poulpy-bench/core-bench
+    poulpy-bench/bin-fhe-bench
+    poulpy-bench/ckks-bench
+    poulpy-bench/enable-avx
+    poulpy-bench/enable-ifma
 
 jobs:
   portable:
@@ -139,12 +159,62 @@ jobs:
         if: steps.avx.outputs.supported != 'true'
         run: echo "Runner CPU does not expose AVX2 and FMA; AVX backend checks skipped."
 
+  # AVX-512 typecheck/clippy lane. GitHub-hosted runners do not expose AVX-512,
+  # so this lane builds and lints the AVX-512F + IFMA configuration on every
+  # push to keep the poulpy-cpu-avx512 crate buildable. Tests are NOT run here
+  # (no AVX-512 silicon to execute on); a self-hosted runner is required to
+  # actually run the AVX-512 test suite.
+  avx512:
+    name: AVX-512 backend (typecheck only)
+    runs-on: ubuntu-latest
+
+    # GitHub-hosted runners do not expose AVX-512, so we MUST keep AVX-512 flags
+    # off the host toolchain (build scripts, proc-macros). We pin --target and
+    # use the target-scoped CARGO_TARGET_<TRIPLE>_RUSTFLAGS variable so host
+    # artifacts stay portable while the workspace itself builds for AVX-512.
+    env:
+      CARGO_BUILD_TARGET: x86_64-unknown-linux-gnu
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
+      RUSTDOCFLAGS: -C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: x86_64-unknown-linux-gnu
+          components: clippy
+
+      - name: Cache cargo deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-avx512-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-avx512-
+            ${{ runner.os }}-cargo-
+
+      - name: Check AVX-512 backend
+        run: cargo check --workspace --all-targets --features "$AVX512_FEATURES"
+
+      - name: Clippy AVX-512 backend
+        run: cargo clippy --workspace --all-targets --features "$AVX512_FEATURES" -- -D warnings
+
   build-and-test:
     name: build-and-test
     runs-on: ubuntu-latest
     needs:
       - portable
       - avx
+      - avx512
     if: always()
 
     steps:
@@ -160,4 +230,9 @@ jobs:
             exit 1
           fi
 
-          echo "Portable and AVX CI jobs passed."
+          if [ "${{ needs.avx512.result }}" != "success" ]; then
+            echo "AVX-512 backend job finished with: ${{ needs.avx512.result }}"
+            exit 1
+          fi
+
+          echo "Portable, AVX, and AVX-512 CI jobs passed."

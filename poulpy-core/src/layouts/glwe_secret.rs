@@ -1,8 +1,10 @@
 use poulpy_hal::{
+    api::VecZnxAutomorphismBackend,
     layouts::{
-        Backend, Data, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendMut, ScalarZnxToBackendRef, TransferFrom,
-        ZnxZero,
+        Backend, Data, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxAsVecZnxBackendMut, ScalarZnxToBackendMut,
+        ScalarZnxToBackendRef, TransferFrom, VecZnx, ZnxZero, scalar_znx_as_vec_znx_backend_ref_from_ref,
     },
+    oep::HalVecZnxImpl,
     source::Source,
 };
 
@@ -11,6 +13,11 @@ use crate::{
     api::ModuleTransfer,
     dist::Distribution,
     layouts::{Base2K, Degree, GLWEInfos, LWEInfos, Rank},
+};
+
+use super::{
+    ModuleCoreAlloc,
+    lwe_secret::{LWESecret, LWESecretToBackendRef},
 };
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
@@ -251,5 +258,70 @@ impl<'b, BE: Backend + 'b> GLWESecretToBackendRef<BE> for &mut GLWESecret<BE::Bu
             data: ScalarZnx::from_data(BE::view_ref_mut(&self.data.data), self.data.n(), self.data.cols()),
             dist: self.dist,
         }
+    }
+}
+
+pub trait SecretConversion<B: Backend> {
+    /// Derives the associated rank-1 `GLWESecret` from a `LWESecret` by applying
+    /// the X → X⁻¹ automorphism (k = -1). The result is the GLWE polynomial key
+    /// whose ring product with a mask decrypts LWE ciphertexts produced by
+    /// `glwe_expand_lwe`.
+    fn glwe_secret_from_lwe_secret<S>(&self, src: &S) -> GLWESecret<B::OwnedBuf>
+    where
+        S: LWESecretToBackendRef<B>;
+
+    /// Derives the associated `LWESecret` from a `GLWESecret` by applying the
+    /// X → X⁻¹ automorphism (k = -1) to each rank component.
+    ///
+    /// For a GLWE secret of degree `n` and rank `r`, the result is an LWE secret
+    /// of degree `n * r`. Each rank component is automorphed independently and
+    /// written as one contiguous `n`-coefficient block in the output key. For
+    /// rank 1, this is the inverse of `glwe_secret_from_lwe_secret`: applying
+    /// both conversions recovers the original key.
+    ///
+    /// Distribution metadata is preserved from the source secret. In particular,
+    /// fixed-weight metadata denotes the advertised fixed-weight distribution of
+    /// the source key and is not multiplied by the rank during flattening.
+    fn lwe_secret_from_glwe_secret<S>(&self, src: &S) -> LWESecret<B::OwnedBuf>
+    where
+        S: GLWESecretToBackendRef<B>;
+}
+
+impl<B: Backend + HalVecZnxImpl<B>> SecretConversion<B> for Module<B> {
+    fn glwe_secret_from_lwe_secret<S>(&self, src: &S) -> GLWESecret<B::OwnedBuf>
+    where
+        S: LWESecretToBackendRef<B>,
+    {
+        let src = src.to_backend_ref();
+        assert_eq!(src.n().as_usize(), self.n(), "LWE secret degree must equal module degree");
+        let mut res = self.glwe_secret_alloc(Rank(1));
+        res.dist = src.dist;
+        {
+            let src_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<B>(&src.data);
+            let mut res_vec = <ScalarZnx<B::OwnedBuf> as ScalarZnxAsVecZnxBackendMut<B>>::as_vec_znx_backend_mut(&mut res.data);
+            self.vec_znx_automorphism_backend(-1, &mut res_vec, 0, &src_vec, 0);
+        }
+        res
+    }
+
+    fn lwe_secret_from_glwe_secret<S>(&self, src: &S) -> LWESecret<B::OwnedBuf>
+    where
+        S: GLWESecretToBackendRef<B>,
+    {
+        let src = src.to_backend_ref();
+        let n = self.n();
+        let rank: usize = src.rank().into();
+        assert_eq!(src.n().as_usize(), n, "GLWE secret degree must equal module degree");
+        let mut res = self.lwe_secret_alloc(Degree((n * rank) as u32));
+        res.dist = src.dist;
+        {
+            let src_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<B>(&src.data);
+            let res_as_backend = <ScalarZnx<B::OwnedBuf> as ScalarZnxToBackendMut<B>>::to_backend_mut(&mut res.data);
+            let mut res_vec = VecZnx::from_data(res_as_backend.data, n, rank, 1);
+            for j in 0..rank {
+                self.vec_znx_automorphism_backend(-1, &mut res_vec, j, &src_vec, j);
+            }
+        }
+        res
     }
 }

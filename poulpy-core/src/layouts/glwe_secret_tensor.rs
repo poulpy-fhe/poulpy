@@ -195,11 +195,10 @@ impl GLWESecretTensor<Vec<u8>> {
 pub trait GLWESecretTensorFactory<BE: Backend> {
     fn glwe_secret_tensor_prepare_tmp_bytes(&self, rank: Rank) -> usize;
 
-    fn glwe_secret_tensor_prepare<'s, R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'s, BE>)
+    fn glwe_secret_tensor_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos,
-        O: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>;
+        O: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
 impl<BE: Backend> GLWESecretTensorFactory<BE> for Module<BE>
@@ -214,17 +213,15 @@ where
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     fn glwe_secret_tensor_prepare_tmp_bytes(&self, rank: Rank) -> usize {
         self.glwe_secret_prepared_bytes_of(rank)
     }
 
-    fn glwe_secret_tensor_prepare<'s, R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'s, BE>)
+    fn glwe_secret_tensor_prepare<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos,
         A: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         let res = &mut res.to_backend_mut();
         let a = a.to_backend_ref();

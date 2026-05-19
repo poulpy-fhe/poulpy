@@ -6,7 +6,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GLWEAdd, GLWEAutomorphism, GLWECopy, GLWENormalize, GLWERotate, GLWEShift, GLWESub, GLWETrace, ScratchArenaTakeCore,
+    GLWEAdd, GLWEAutomorphism, GLWECopy, GLWENormalize, GLWERotate, GLWEShift, GLWESub, GLWETrace,
     layouts::{
         GGLWEInfos, GLWE, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut, GetGaloisElement, ModuleCoreAlloc,
         prepared::GGLWEPreparedToBackendRef,
@@ -14,14 +14,14 @@ use crate::{
 };
 
 #[allow(clippy::too_many_arguments)]
-fn pack_internal<'s, M, A, B, K, BE: Backend + 's>(
+fn pack_internal<M, A, B, K, BE: Backend>(
     module: &M,
     a: &mut Option<&mut A>,
     b: &mut Option<&mut B>,
     i: usize,
     auto_key: &K,
     key_size: usize,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
     M: GLWEAutomorphism<BE>
         + GLWERotate<BE>
@@ -34,7 +34,6 @@ fn pack_internal<'s, M, A, B, K, BE: Backend + 's>(
     A: GLWEToBackendMut<BE> + GLWEInfos,
     B: GLWEToBackendMut<BE> + GLWEInfos,
     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-    ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     // Goal is to evaluate: a = a + b*X^t + phi(a - b*X^t))
     // We also use the identity: AUTO(a * X^t, g) = -X^t * AUTO(a, g)
@@ -79,21 +78,19 @@ pub trait GLWEPackingDefault<BE: Backend> {
         R: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_pack_default<'s, R, A, K, H>(
+    fn glwe_pack_default<R, A, K, H>(
         &self,
         res: &mut R,
         a: HashMap<usize, &mut A>,
         log_gap_out: usize,
         keys: &H,
         key_size: usize,
-        scratch: &'s mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
-        BE: 's;
+        H: GLWEAutomorphismKeyHelper<K, BE>;
 }
 
 /// Reference implementations of the [`GLWEPackingDefault`] methods.
@@ -128,16 +125,16 @@ pub mod glwe_packing_defaults_impl {
         (lvl_0 + lvl_1).max(module.glwe_trace_tmp_bytes(res, res, key))
     }
 
-    pub fn glwe_pack_default<'s, BE, M, R, A, K, H>(
+    pub fn glwe_pack_default<BE, M, R, A, K, H>(
         module: &M,
         res: &mut R,
         mut a: HashMap<usize, &mut A>,
         log_gap_out: usize,
         keys: &H,
         key_size: usize,
-        scratch: &'s mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
-        BE: Backend + 's,
+        BE: Backend,
         M: GLWEAutomorphism<BE>
             + GaloisElement
             + ModuleLogN
@@ -153,7 +150,6 @@ pub mod glwe_packing_defaults_impl {
         A: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
     {
         assert!(*a.keys().max().unwrap() < module.n());
         let key_infos = keys.automorphism_key_infos();

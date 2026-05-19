@@ -29,7 +29,6 @@ where
     P: LWEPlaintextToBackendMut<BE> + SetLWEInfos + LWEInfos,
     S: LWESecretToBackendRef<BE> + LWEInfos,
     BE: Backend + HostBackend,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
     for<'a> BE::BufRef<'a>: HostDataRef,
 {
@@ -51,8 +50,10 @@ where
 
     let (mut tmp, mut scratch_1) = scratch.take_lwe_plaintext_scratch(&res);
     for i in 0..res.size() {
-        tmp.data.at_mut(0, i)[0] = res.data.at(0, i)[0]
-            + res.data.at(0, i)[1..]
+        tmp.data.at_mut(0, i)[0] = res.body.at(0, i)[0]
+            + res
+                .mask
+                .at(0, i)
                 .iter()
                 .zip(sk.data.at(0, 0))
                 .map(|(x, y)| x * y)

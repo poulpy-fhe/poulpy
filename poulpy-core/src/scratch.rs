@@ -24,11 +24,13 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
         B: 'a,
         A: LWEInfos,
     {
-        let (data, scratch) = self.take_vec_znx_scratch(infos.n().into(), 1, infos.size());
+        let (body, scratch_1) = self.take_vec_znx_scratch(1, 1, infos.size());
+        let (mask, scratch) = scratch_1.take_vec_znx_scratch(infos.n().into(), 1, infos.size());
         (
             LWEViewMut::from_inner(LWE {
                 base2k: infos.base2k(),
-                data: data.into_inner(),
+                body: body.into_inner(),
+                mask: mask.into_inner(),
             }),
             scratch,
         )

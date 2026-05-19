@@ -10,7 +10,6 @@ use poulpy_hal::{
 };
 
 use crate::{
-    ScratchArenaTakeCore,
     layouts::{
         GGLWEInfos, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, LWEInfos,
         prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
@@ -32,7 +31,6 @@ where
     A: GGSWInfos,
     K: GGLWEInfos,
     T: GGLWEInfos,
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     assert_eq!(key_infos.rank_in(), key_infos.rank_out());
     assert_eq!(tsk_infos.rank_in(), tsk_infos.rank_out());
@@ -48,7 +46,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ggsw_keyswitch_default<'s, BE, M, R, A, K, T>(
+pub fn ggsw_keyswitch_default<BE, M, R, A, K, T>(
     module: &M,
     res: &mut R,
     a: &A,
@@ -56,15 +54,14 @@ pub fn ggsw_keyswitch_default<'s, BE, M, R, A, K, T>(
     key_size: usize,
     tsk: &T,
     tsk_size: usize,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + 's,
+    BE: Backend,
     M: GGSWKeyswitchDefault<BE> + ModuleN + GLWEKeyswitchDefault<BE> + ConversionDefault<BE>,
     R: GGSWToBackendMut<BE> + GGSWInfos,
     A: GGSWToBackendRef<BE> + GGSWInfos,
     K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let mut res_backend = res.to_backend_mut();
     let a_backend = a.to_backend_ref();
@@ -88,21 +85,20 @@ pub fn ggsw_keyswitch_default<'s, BE, M, R, A, K, T>(
     module.ggsw_expand_row_default(&mut res_backend, tsk, tsk_size, scratch)
 }
 
-pub fn ggsw_keyswitch_assign_default<'s, BE, M, R, K, T>(
+pub fn ggsw_keyswitch_assign_default<BE, M, R, K, T>(
     module: &M,
     res: &mut R,
     key: &K,
     key_size: usize,
     tsk: &T,
     tsk_size: usize,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + 's,
+    BE: Backend,
     M: GGSWKeyswitchDefault<BE> + ModuleN + GLWEKeyswitchDefault<BE> + ConversionDefault<BE>,
     R: GGSWToBackendMut<BE> + GGSWInfos,
     K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let mut res_backend = res.to_backend_mut();
 
