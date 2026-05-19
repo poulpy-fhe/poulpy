@@ -1,8 +1,8 @@
 use poulpy_hal::{
-    api::VecZnxAutomorphismBackend,
+    api::{ScalarZnxAutomorphismBackend},
     layouts::{
-        Backend, Data, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxAsVecZnxBackendMut, ScalarZnxToBackendMut,
-        ScalarZnxToBackendRef, TransferFrom, VecZnx, ZnxZero, scalar_znx_as_vec_znx_backend_ref_from_ref,
+        Backend, Data, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendMut,
+        ScalarZnxToBackendRef, TransferFrom, ZnxZero,
     },
     oep::HalVecZnxImpl,
     source::Source,
@@ -12,7 +12,7 @@ use crate::{
     GetDistribution,
     api::ModuleTransfer,
     dist::Distribution,
-    layouts::{Base2K, Degree, GLWEInfos, LWEInfos, Rank},
+    layouts::{Base2K, Degree, GLWEInfos, LWEInfos, LWESecretToBackendMut, Rank},
 };
 
 use super::{
@@ -94,6 +94,14 @@ impl<D: HostDataRef> GLWESecret<D> {
 }
 
 impl<D: Data> GLWESecret<D> {
+    pub fn data(&self) -> &ScalarZnx<D> {
+        &self.data
+    }
+
+    pub fn data_mut(&mut self) -> &mut ScalarZnx<D> {
+        &mut self.data
+    }
+
     /// Zero-cost rename when both backends share the same `OwnedBuf`.
     pub fn reinterpret<To>(self) -> GLWESecret<To::OwnedBuf>
     where
@@ -247,10 +255,9 @@ impl<B: Backend + HalVecZnxImpl<B>> SecretConversion<B> for Module<B> {
         assert_eq!(src.n().as_usize(), self.n(), "LWE secret degree must equal module degree");
         let mut res = self.glwe_secret_alloc(Rank(1));
         res.dist = src.dist;
-        {
-            let src_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<B>(&src.data);
-            let mut res_vec = <ScalarZnx<B::OwnedBuf> as ScalarZnxAsVecZnxBackendMut<B>>::as_vec_znx_backend_mut(&mut res.data);
-            self.vec_znx_automorphism_backend(-1, &mut res_vec, 0, &src_vec, 0);
+        {   
+            let mut res_ref = GLWESecretToBackendMut::<B>::to_backend_mut(&mut res);
+            self.scalar_znx_automorphism_backend(-1, res_ref.data_mut(), 0, src.data(), 0);
         }
         res
     }
@@ -266,11 +273,9 @@ impl<B: Backend + HalVecZnxImpl<B>> SecretConversion<B> for Module<B> {
         let mut res = self.lwe_secret_alloc(Degree((n * rank) as u32));
         res.dist = src.dist;
         {
-            let src_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<B>(&src.data);
-            let res_as_backend = <ScalarZnx<B::OwnedBuf> as ScalarZnxToBackendMut<B>>::to_backend_mut(&mut res.data);
-            let mut res_vec = VecZnx::from_data(res_as_backend.data, n, rank, 1);
+            let mut res_ref = LWESecretToBackendMut::<B>::to_backend_mut(&mut res);
             for j in 0..rank {
-                self.vec_znx_automorphism_backend(-1, &mut res_vec, j, &src_vec, j);
+                self.scalar_znx_automorphism_backend(-1, res_ref.data_mut(), j, src.data(), j);
             }
         }
         res

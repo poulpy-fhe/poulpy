@@ -85,7 +85,7 @@ where
         );
 
         let (mut sk_in_lifted, scratch_1) = scratch.borrow().take_scalar_znx_scratch(self.n(), sk_in.rank().into());
-        let sk_in_backend_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(&sk_in.data);
+        let sk_in_backend_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk_in.data());
         for i in 0..sk_in.rank().into() {
             let mut sk_in_lifted_backend_vec = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut sk_in_lifted);
             self.vec_znx_switch_ring_backend(&mut sk_in_lifted_backend_vec, i, &sk_in_backend_vec, i);
@@ -93,9 +93,9 @@ where
 
         let (mut sk_out_lifted, scratch_2) = scratch_1.take_glwe_secret_scratch(self.n().into(), sk_out_ref.rank());
         sk_out_lifted.dist = *sk_out.dist();
-        let sk_out_backend_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(&sk_out_ref.data);
+        let sk_out_backend_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk_out_ref.data());
         for i in 0..sk_out_ref.rank().into() {
-            let mut sk_out_lifted_backend_vec = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut sk_out_lifted.data);
+            let mut sk_out_lifted_backend_vec = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_out_lifted.data_mut());
             self.vec_znx_switch_ring_backend(&mut sk_out_lifted_backend_vec, i, &sk_out_backend_vec, i);
         }
 

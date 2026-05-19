@@ -97,8 +97,8 @@ where
         sk_glwe_out.dist = sk_lwe_out.dist;
         sk_glwe_src.dist = sk_lwe_out.dist;
         {
-            let mut sk_glwe_src_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut sk_glwe_src.data);
-            let sk_lwe_out_backend = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(&sk_lwe_out.data);
+            let mut sk_glwe_src_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_glwe_src.data_mut());
+            let sk_lwe_out_backend = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk_lwe_out.data());
             self.vec_znx_zero_backend(&mut sk_glwe_src_backend, 0);
             self.vec_znx_copy_range_backend(
                 &mut sk_glwe_src_backend,
@@ -113,16 +113,16 @@ where
             );
         }
         {
-            let sk_glwe_src_backend = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(&sk_glwe_src.data);
-            let mut sk_glwe_out_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut sk_glwe_out.data);
+            let sk_glwe_src_backend = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(sk_glwe_src.data());
+            let mut sk_glwe_out_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_glwe_out.data_mut());
             self.vec_znx_automorphism_backend(-1, &mut sk_glwe_out_backend, 0, &sk_glwe_src_backend, 0);
         }
 
         sk_glwe_src.dist = sk_lwe_in.dist;
         sk_glwe_in.dist = sk_lwe_in.dist;
         {
-            let mut sk_glwe_src_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut sk_glwe_src.data);
-            let sk_lwe_in_backend = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(&sk_lwe_in.data);
+            let mut sk_glwe_src_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_glwe_src.data_mut());
+            let sk_lwe_in_backend = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(sk_lwe_in.data());
             self.vec_znx_zero_backend(&mut sk_glwe_src_backend, 0);
             self.vec_znx_copy_range_backend(
                 &mut sk_glwe_src_backend,
@@ -137,8 +137,8 @@ where
             );
         }
         {
-            let sk_glwe_src_backend = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(&sk_glwe_src.data);
-            let mut sk_glwe_in_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut sk_glwe_in.data);
+            let sk_glwe_src_backend = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(sk_glwe_src.data());
+            let mut sk_glwe_in_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(sk_glwe_in.data_mut());
             self.vec_znx_automorphism_backend(-1, &mut sk_glwe_in_backend, 0, &sk_glwe_src_backend, 0);
         }
 

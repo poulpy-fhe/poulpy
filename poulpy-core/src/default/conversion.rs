@@ -24,9 +24,9 @@ use crate::{
     default::{keyswitching::GGLWEProductDefault, operations::GLWECopyDefault},
     layouts::{
         CoeffBound, CoeffMatrixInfos, CoeffMatrixToBackendRef, GGLWEInfos, GGLWEToBackendRef, GGSWAtViewMut, GGSWInfos,
-        GGSWToBackendMut,
-        GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, GLWEViewRef, LWEInfos, LWEMatrixInfos,
-        LWEMatrixToBackendMut, LWEMatrixToBackendRef, LWEToBackendMut, LWEToBackendRef, Rank, glwe_backend_ref_from_mut,
+        GGSWToBackendMut, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, GLWEViewRef, LWEInfos,
+        LWEMatrixInfos, LWEMatrixToBackendMut, LWEMatrixToBackendRef, LWEToBackendMut, LWEToBackendRef, Rank,
+        glwe_backend_ref_from_mut,
         prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
     },
     oep::{ConversionDefault, GLWEKeyswitchDefault},
