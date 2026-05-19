@@ -142,3 +142,55 @@ fn test_convolution_direct() {
     test_convolution_by_const(&module, 12);
     test_convolution_pairwise(&module, 12);
 }
+
+#[test]
+fn lwe_matrix_mul_bounded_u_matches_unbounded() {
+    use poulpy_core::{
+        LWEMatrixMul,
+        layouts::{
+            Base2K, CoeffMatrix, CoeffMatrixLayout, Degree, LWEMatrix, LWEMatrixLayout, ModuleCoreAlloc, TorusPrecision,
+        },
+    };
+    use poulpy_hal::{
+        api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
+        layouts::{ScratchOwned, VecZnx, ZnxView, ZnxViewMut},
+        source::Source,
+    };
+
+    let module = Module::<FFT64Avx>::new(1 << 8);
+    let rows_in = 200usize;
+    let rows_out = 200usize;
+    let lwe_n = 200usize;
+    let base2k = Base2K(12);
+    let size = 3usize;
+    let k = TorusPrecision((base2k.0 as usize * size) as u32);
+
+    let u_infos = CoeffMatrixLayout { n: Degree(rows_in as u32), rows_out, base2k, k };
+    let a_infos = LWEMatrixLayout { rows: rows_in, n: Degree(lwe_n as u32), base2k, k };
+    let res_infos = LWEMatrixLayout { rows: rows_out, n: Degree(lwe_n as u32), base2k, k };
+
+    let mut src = Source::new([0u8; 32]);
+    let mask = (1i64 << base2k.0) - 1;
+    fn fill(v: &mut VecZnx<Vec<u8>>, s: &mut Source, mask: i64) {
+        for x in v.raw_mut() {
+            *x = s.next_i64() & mask;
+        }
+    }
+
+    let mut u16: CoeffMatrix<Vec<u8>, i16> = module.coeff_matrix_alloc_from_infos(&u_infos);
+    let mut u64: CoeffMatrix<Vec<u8>, i64> = module.coeff_matrix_alloc_from_infos(&u_infos);
+    let mut a: LWEMatrix<Vec<u8>> = module.lwe_matrix_alloc_from_infos(&a_infos);
+    fill(u16.data_mut(), &mut src, mask);
+    u64.data_mut().raw_mut().copy_from_slice(u16.data().raw());
+    fill(a.body_mut(), &mut src, mask);
+    fill(a.mask_mut(), &mut src, mask);
+
+    let mut res16: LWEMatrix<Vec<u8>> = module.lwe_matrix_alloc_from_infos(&res_infos);
+    let mut res64: LWEMatrix<Vec<u8>> = module.lwe_matrix_alloc_from_infos(&res_infos);
+    let mut scratch = ScratchOwned::alloc(module.lwe_matrix_mul_tmp_bytes(&res_infos, &u_infos, &a_infos));
+    module.lwe_matrix_mul(&mut res16, &u16, &a, &mut scratch.borrow());
+    module.lwe_matrix_mul(&mut res64, &u64, &a, &mut scratch.borrow());
+
+    assert_eq!(res16.body().raw(), res64.body().raw(), "K16 body != K64 body");
+    assert_eq!(res16.mask().raw(), res64.mask().raw(), "K16 mask != K64 mask");
+}

@@ -745,7 +745,7 @@ where
     let mut lwe_matrix = module.lwe_matrix_alloc_from_infos(&matrix_infos);
     module.glwe_expand_lwe_matrix(&mut lwe_matrix, &glwe_ct, &mut scratch.borrow());
 
-    let mut u = module.coeff_matrix_alloc_from_infos(&u_infos);
+    let mut u = module.coeff_matrix_alloc_from_infos::<i64, _>(&u_infos);
     for row in 0..rows {
         u.data_mut().at_mut(row, 0)[row] = 1;
     }
@@ -829,7 +829,7 @@ where
         glwe_ct.data.at_mut(0, limb).copy_from_slice(glwe_pt.data.at(0, limb));
     }
 
-    let mut u = module.coeff_matrix_alloc_from_infos(&u_infos);
+    let mut u = module.coeff_matrix_alloc_from_infos::<i64, _>(&u_infos);
     for row in 0..rows {
         u.data_mut().at_mut(row, 0)[row] = 1;
         if row > 0 {

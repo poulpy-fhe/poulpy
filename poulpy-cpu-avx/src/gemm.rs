@@ -1,75 +1,63 @@
-//! AVX2 dot-product kernels for the packed coefficient-matrix product.
-//!
-//! These are the backend-specialized `dot` passed to
-//! [`poulpy_cpu_ref::hal_defaults::vec_znx_matmul::matmul_gemm`]:
-//! - `gemm_dot_i32`: FFT64 backends (`i64` accumulator), native signed
-//!   `32x32 -> 64` multiply (`mul_epi32`).
-//! - `gemm_dot_split`: NTT backends (`i128` accumulator), `i64` digits split
-//!   into two signed `i32` halves, exact `i128` reassembly.
+//! AVX2 [`GemmKernel`] implementations for the packed coefficient-matrix
+//! product. `U`/`A` digits are decomposed into `W`-wide balanced pieces by the
+//! shared [`matmul_gemm`] orchestration; this file provides the SIMD per-piece
+//! `W x W` dot:
+//! - `W = 16` (`U` bound <= 16 bits): `_mm256_madd_epi16`.
+//! - `W = 32`: `_mm256_mul_epi32`.
 
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
-/// FFT64 kernel: `sum_i u[i] * a[i]` with `i32` inputs, `i64` accumulator.
+use poulpy_cpu_ref::hal_defaults::vec_znx_matmul::GemmKernel;
+
 #[inline]
-pub fn gemm_dot_i32(u: &[i32], a: &[i32], _s: u32) -> i64 {
-    // SAFETY: this crate is only built with AVX2 enabled (see build check).
-    unsafe { dot_i32_avx2(u, a) }
+fn prep_i16(x: i64, n: usize, out: &mut [i16]) {
+    let mut r: i64 = x;
+    for k in 0..n {
+        if k + 1 == n {
+            out[k] = r as i16;
+        } else {
+            let hi: i64 = (r + (1i64 << 15)) >> 16;
+            out[k] = (r - (hi << 16)) as i16;
+            r = hi;
+        }
+    }
 }
 
-/// NTT kernel: `sum_i u[i] * a[i]` with split `[lo, hi]` `i32` digits
-/// (`v = hi*2^s + lo`), exact `i128` accumulator.
 #[inline]
-pub fn gemm_dot_split(u: &[[i32; 2]], a: &[[i32; 2]], s: u32) -> i128 {
-    // SAFETY: `[i32; 2]` is contiguous; reinterpret as interleaved `i32`.
-    let uf: &[i32] = unsafe { core::slice::from_raw_parts(u.as_ptr() as *const i32, u.len() * 2) };
-    let af: &[i32] = unsafe { core::slice::from_raw_parts(a.as_ptr() as *const i32, a.len() * 2) };
-    // SAFETY: AVX2 guaranteed by the crate build check.
-    unsafe { dot_split_avx2(uf, af, s) }
+fn prep_i32(x: i64, n: usize, out: &mut [i32]) {
+    let mut r: i64 = x;
+    for k in 0..n {
+        if k + 1 == n {
+            out[k] = r as i32;
+        } else {
+            let hi: i64 = (r + (1i64 << 31)) >> 32;
+            out[k] = (r - (hi << 32)) as i32;
+            r = hi;
+        }
+    }
 }
 
+/// AVX2 `i16 x i16 -> i64` dot of one piece plane. `madd_epi16` yields `i32`
+/// pair-sums; they are sign-widened to `i64` so accumulation cannot overflow.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-unsafe fn dot_i32_avx2(u: &[i32], a: &[i32]) -> i64 {
+unsafe fn madd16(u: &[i16], a: &[i16]) -> i64 {
     unsafe {
         let n = u.len();
         let up = u.as_ptr();
         let ap = a.as_ptr();
         let mut acc0 = _mm256_setzero_si256();
         let mut acc1 = _mm256_setzero_si256();
-
-        #[inline(always)]
-        unsafe fn madd8(uv: __m256i, av: __m256i, acc: &mut __m256i) {
-            unsafe {
-                let ev = _mm256_mul_epi32(uv, av);
-                let od = _mm256_mul_epi32(_mm256_srli_epi64(uv, 32), _mm256_srli_epi64(av, 32));
-                *acc = _mm256_add_epi64(*acc, _mm256_add_epi64(ev, od));
-            }
-        }
-
         let mut i = 0;
         while i + 16 <= n {
-            madd8(
-                _mm256_loadu_si256(up.add(i) as *const __m256i),
-                _mm256_loadu_si256(ap.add(i) as *const __m256i),
-                &mut acc0,
-            );
-            madd8(
-                _mm256_loadu_si256(up.add(i + 8) as *const __m256i),
-                _mm256_loadu_si256(ap.add(i + 8) as *const __m256i),
-                &mut acc1,
-            );
+            let uv = _mm256_loadu_si256(up.add(i) as *const __m256i);
+            let av = _mm256_loadu_si256(ap.add(i) as *const __m256i);
+            let m = _mm256_madd_epi16(uv, av); // 8 x i32
+            acc0 = _mm256_add_epi64(acc0, _mm256_cvtepi32_epi64(_mm256_castsi256_si128(m)));
+            acc1 = _mm256_add_epi64(acc1, _mm256_cvtepi32_epi64(_mm256_extracti128_si256(m, 1)));
             i += 16;
         }
-        while i + 8 <= n {
-            madd8(
-                _mm256_loadu_si256(up.add(i) as *const __m256i),
-                _mm256_loadu_si256(ap.add(i) as *const __m256i),
-                &mut acc0,
-            );
-            i += 8;
-        }
-
         let acc = _mm256_add_epi64(acc0, acc1);
         let mut t = [0i64; 4];
         _mm256_storeu_si256(t.as_mut_ptr() as *mut __m256i, acc);
@@ -82,69 +70,135 @@ unsafe fn dot_i32_avx2(u: &[i32], a: &[i32]) -> i64 {
     }
 }
 
+/// AVX2 `i32 x i32` dot of one piece plane, accumulating exactly in `i128`.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
-unsafe fn dot_split_avx2(uf: &[i32], af: &[i32], s: u32) -> i128 {
+unsafe fn mul32_i128(u: &[i32], a: &[i32]) -> i128 {
     unsafe {
-        const CHUNK: usize = 2048;
-        let n = uf.len() / 2;
-        let up = uf.as_ptr();
-        let ap = af.as_ptr();
-        let mut acc0: i128 = 0;
-        let mut acc1: i128 = 0;
-        let mut acc2: i128 = 0;
-
-        #[inline(always)]
-        unsafe fn hsum(v: __m256i) -> i128 {
-            let mut t = [0i64; 4];
-            unsafe { _mm256_storeu_si256(t.as_mut_ptr() as *mut __m256i, v) };
-            t[0] as i128 + t[1] as i128 + t[2] as i128 + t[3] as i128
+        let n = u.len();
+        let up = u.as_ptr();
+        let ap = a.as_ptr();
+        let mut acc: i128 = 0;
+        let mut i = 0;
+        let mut t = [0i64; 4];
+        while i + 8 <= n {
+            let uv = _mm256_loadu_si256(up.add(i) as *const __m256i);
+            let av = _mm256_loadu_si256(ap.add(i) as *const __m256i);
+            // even 32-bit lanes
+            let ev = _mm256_mul_epi32(uv, av);
+            let od = _mm256_mul_epi32(_mm256_srli_epi64(uv, 32), _mm256_srli_epi64(av, 32));
+            let s = _mm256_add_epi64(ev, od);
+            _mm256_storeu_si256(t.as_mut_ptr() as *mut __m256i, s);
+            acc += t[0] as i128 + t[1] as i128 + t[2] as i128 + t[3] as i128;
+            i += 8;
         }
-
-        let mut done = 0;
-        while done < n {
-            let take = CHUNK.min(n - done);
-            let mut l0 = _mm256_setzero_si256();
-            let mut l1 = _mm256_setzero_si256();
-            let mut l2 = _mm256_setzero_si256();
-
-            let mut i = 0;
-            while i + 4 <= take {
-                let off = (done + i) * 2;
-                let uv = _mm256_loadu_si256(up.add(off) as *const __m256i);
-                let av = _mm256_loadu_si256(ap.add(off) as *const __m256i);
-                let av_sw = _mm256_shuffle_epi32(av, 0b10_11_00_01);
-                let uh = _mm256_srli_epi64(uv, 32);
-                let ah = _mm256_srli_epi64(av, 32);
-                let ah_sw = _mm256_srli_epi64(av_sw, 32);
-
-                l0 = _mm256_add_epi64(l0, _mm256_mul_epi32(uv, av));
-                l1 = _mm256_add_epi64(
-                    l1,
-                    _mm256_add_epi64(_mm256_mul_epi32(uv, av_sw), _mm256_mul_epi32(uh, ah_sw)),
-                );
-                l2 = _mm256_add_epi64(l2, _mm256_mul_epi32(uh, ah));
-                i += 4;
-            }
-
-            acc0 += hsum(l0);
-            acc1 += hsum(l1);
-            acc2 += hsum(l2);
-
-            while i < take {
-                let j = (done + i) * 2;
-                let ulo = *up.add(j) as i64;
-                let uhi = *up.add(j + 1) as i64;
-                let alo = *ap.add(j) as i64;
-                let ahi = *ap.add(j + 1) as i64;
-                acc0 += (ulo * alo) as i128;
-                acc1 += (ulo * ahi + uhi * alo) as i128;
-                acc2 += (uhi * ahi) as i128;
-                i += 1;
-            }
-            done += take;
+        while i < n {
+            acc += (*up.add(i) as i128) * (*ap.add(i) as i128);
+            i += 1;
         }
-
-        acc0 + (acc1 << s) + (acc2 << (2 * s))
+        acc
     }
 }
+
+/// AVX2 `i32 x i32 -> i64` dot of one piece plane (FFT64: digits stay small).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn mul32_i64(u: &[i32], a: &[i32]) -> i64 {
+    unsafe {
+        let n = u.len();
+        let up = u.as_ptr();
+        let ap = a.as_ptr();
+        let mut acc0 = _mm256_setzero_si256();
+        let mut acc1 = _mm256_setzero_si256();
+        let mut i = 0;
+        while i + 8 <= n {
+            let uv = _mm256_loadu_si256(up.add(i) as *const __m256i);
+            let av = _mm256_loadu_si256(ap.add(i) as *const __m256i);
+            acc0 = _mm256_add_epi64(acc0, _mm256_mul_epi32(uv, av));
+            acc1 = _mm256_add_epi64(
+                acc1,
+                _mm256_mul_epi32(_mm256_srli_epi64(uv, 32), _mm256_srli_epi64(av, 32)),
+            );
+            i += 8;
+        }
+        let acc = _mm256_add_epi64(acc0, acc1);
+        let mut t = [0i64; 4];
+        _mm256_storeu_si256(t.as_mut_ptr() as *mut __m256i, acc);
+        let mut s = t[0].wrapping_add(t[1]).wrapping_add(t[2]).wrapping_add(t[3]);
+        while i < n {
+            s = s.wrapping_add((*up.add(i) as i64).wrapping_mul(*ap.add(i) as i64));
+            i += 1;
+        }
+        s
+    }
+}
+
+/// `UP = 1` kernel body: a single U-piece, no outer `i` loop.
+macro_rules! avx_kernel_up1 {
+    ($name:ident, $elt:ty, $acc:ty, $w:expr, $prep:ident, $inner:ident, $widen:tt) => {
+        pub struct $name;
+        impl GemmKernel for $name {
+            type Acc = $acc;
+            type Elt = $elt;
+            const W: u32 = $w;
+            const UP: usize = 1;
+            #[inline]
+            fn prep(x: i64, n: usize, out: &mut [$elt]) {
+                $prep(x, n, out)
+            }
+            #[inline]
+            fn dot(u: &[$elt], a: &[$elt], ap: usize, rows_in: usize) -> $acc {
+                let mut acc: $acc = 0;
+                for j in 0..ap {
+                    let p = unsafe { $inner(&u[..rows_in], &a[j * rows_in..j * rows_in + rows_in]) };
+                    acc = acc.wrapping_add(avx_kernel_up1!(@widen $widen, p) << ($w as u32 * j as u32));
+                }
+                acc
+            }
+        }
+    };
+    (@widen i64, $p:ident) => { $p };
+    (@widen i128, $p:ident) => { ($p as i128) };
+    (@widen ident, $p:ident) => { $p };
+}
+
+/// `UP = 2` kernel body: two unrolled U-pieces. NTT only (i128 acc).
+macro_rules! avx_kernel_up2_i128 {
+    ($name:ident, $elt:ty, $w:expr, $prep:ident, $inner:ident, $widen:tt) => {
+        pub struct $name;
+        impl GemmKernel for $name {
+            type Acc = i128;
+            type Elt = $elt;
+            const W: u32 = $w;
+            const UP: usize = 2;
+            #[inline]
+            fn prep(x: i64, n: usize, out: &mut [$elt]) {
+                $prep(x, n, out)
+            }
+            #[inline]
+            fn dot(u: &[$elt], a: &[$elt], ap: usize, rows_in: usize) -> i128 {
+                let u0 = &u[..rows_in];
+                let u1 = &u[rows_in..2 * rows_in];
+                let mut acc: i128 = 0;
+                for j in 0..ap {
+                    let aj = &a[j * rows_in..j * rows_in + rows_in];
+                    let p0 = unsafe { $inner(u0, aj) };
+                    let p1 = unsafe { $inner(u1, aj) };
+                    let w0 = avx_kernel_up2_i128!(@widen $widen, p0);
+                    let w1 = avx_kernel_up2_i128!(@widen $widen, p1);
+                    acc += w0 << ($w as u32 * j as u32);
+                    acc += w1 << ($w as u32 * (1 + j) as u32);
+                }
+                acc
+            }
+        }
+    };
+    (@widen i64, $p:ident) => { ($p as i128) };
+    (@widen i128, $p:ident) => { $p };
+}
+
+avx_kernel_up1!(AvxK16I64, i16, i64, 16, prep_i16, madd16, i64);
+avx_kernel_up1!(AvxK16I128, i16, i128, 16, prep_i16, madd16, i128);
+avx_kernel_up1!(AvxK32I64, i32, i64, 32, prep_i32, mul32_i64, i64);
+avx_kernel_up1!(AvxK32I128S, i32, i128, 32, prep_i32, mul32_i128, i128);
+avx_kernel_up2_i128!(AvxK32I128D, i32, 32, prep_i32, mul32_i128, i128);

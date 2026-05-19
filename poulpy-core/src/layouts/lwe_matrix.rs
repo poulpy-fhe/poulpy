@@ -1,4 +1,4 @@
-use std::mem::size_of;
+use std::{marker::PhantomData, mem::size_of};
 
 use poulpy_hal::layouts::{Backend, Data, HostDataRef, ScalarZnx, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef};
 
@@ -164,8 +164,39 @@ impl<BE: Backend> LWEMatrixToBackendMut<BE> for LWEMatrix<BE::OwnedBuf> {
     }
 }
 
+mod coeff_bound_private {
+    pub trait Sealed {}
+    impl Sealed for i8 {}
+    impl Sealed for i16 {}
+    impl Sealed for i32 {}
+    impl Sealed for i64 {}
+}
+
+/// Compile-time bound on the magnitude of a [`CoeffMatrix`] entry.
+///
+/// Implemented only for `i8`/`i16`/`i32`/`i64`; the type is the guarantee
+/// (no runtime range check). `WIDTH` is the SIMD piece width selected for the
+/// per-limb dot kernel.
+pub trait CoeffBound: coeff_bound_private::Sealed + Copy + 'static {
+    const WIDTH: u32;
+}
+impl CoeffBound for i8 {
+    const WIDTH: u32 = 8;
+}
+impl CoeffBound for i16 {
+    const WIDTH: u32 = 16;
+}
+impl CoeffBound for i32 {
+    const WIDTH: u32 = 32;
+}
+impl CoeffBound for i64 {
+    const WIDTH: u32 = 64;
+}
+
 /// Shape metadata for a plain coefficient matrix used to transform [`LWEMatrix`].
 pub trait CoeffMatrixInfos: LWEInfos {
+    /// Compile-time entry bound (selects the GEMM kernel).
+    type Bound: CoeffBound;
     /// Number of active output rows.
     fn rows_out(&self) -> usize;
 }
@@ -193,25 +224,29 @@ impl LWEInfos for CoeffMatrixLayout {
 }
 
 impl CoeffMatrixInfos for CoeffMatrixLayout {
+    type Bound = i64;
     fn rows_out(&self) -> usize {
         self.rows_out
     }
 }
 
-/// Plain coefficient matrix `U`.
+/// Plain coefficient matrix `U`, with a compile-time entry bound `BU`.
 ///
 /// Column `out` stores the coefficients of output row `out`, i.e.
-/// `data[out][in] = U[out, in]`.
+/// `data[out][in] = U[out, in]`. `BU` declares the magnitude bound of the
+/// entries (default `i64` = unconstrained); it selects the GEMM kernel at
+/// monomorphization with no runtime check.
 #[derive(PartialEq, Eq, Clone)]
-pub struct CoeffMatrix<D: Data> {
+pub struct CoeffMatrix<D: Data, BU: CoeffBound = i64> {
     pub(crate) data: VecZnx<D>,
     pub(crate) base2k: Base2K,
+    pub(crate) _bound: PhantomData<BU>,
 }
 
 pub type CoeffMatrixBackendRef<'a, BE> = CoeffMatrix<<BE as Backend>::BufRef<'a>>;
 pub type CoeffMatrixBackendMut<'a, BE> = CoeffMatrix<<BE as Backend>::BufMut<'a>>;
 
-impl<D: Data> LWEInfos for CoeffMatrix<D> {
+impl<D: Data, BU: CoeffBound> LWEInfos for CoeffMatrix<D, BU> {
     fn n(&self) -> Degree {
         Degree(self.data.n() as u32)
     }
@@ -225,13 +260,14 @@ impl<D: Data> LWEInfos for CoeffMatrix<D> {
     }
 }
 
-impl<D: Data> CoeffMatrixInfos for CoeffMatrix<D> {
+impl<D: Data, BU: CoeffBound> CoeffMatrixInfos for CoeffMatrix<D, BU> {
+    type Bound = BU;
     fn rows_out(&self) -> usize {
         self.data.cols()
     }
 }
 
-impl<D: Data> CoeffMatrix<D> {
+impl<D: Data, BU: CoeffBound> CoeffMatrix<D, BU> {
     pub fn data(&self) -> &VecZnx<D> {
         &self.data
     }
@@ -245,11 +281,12 @@ pub trait CoeffMatrixToBackendRef<BE: Backend> {
     fn to_backend_ref(&self) -> CoeffMatrixBackendRef<'_, BE>;
 }
 
-impl<BE: Backend> CoeffMatrixToBackendRef<BE> for CoeffMatrix<BE::OwnedBuf> {
+impl<BE: Backend, BU: CoeffBound> CoeffMatrixToBackendRef<BE> for CoeffMatrix<BE::OwnedBuf, BU> {
     fn to_backend_ref(&self) -> CoeffMatrixBackendRef<'_, BE> {
         CoeffMatrix {
             data: <VecZnx<BE::OwnedBuf> as VecZnxToBackendRef<BE>>::to_backend_ref(&self.data),
             base2k: self.base2k,
+            _bound: PhantomData,
         }
     }
 }
@@ -258,11 +295,12 @@ pub trait CoeffMatrixToBackendMut<BE: Backend>: CoeffMatrixToBackendRef<BE> {
     fn to_backend_mut(&mut self) -> CoeffMatrixBackendMut<'_, BE>;
 }
 
-impl<BE: Backend> CoeffMatrixToBackendMut<BE> for CoeffMatrix<BE::OwnedBuf> {
+impl<BE: Backend, BU: CoeffBound> CoeffMatrixToBackendMut<BE> for CoeffMatrix<BE::OwnedBuf, BU> {
     fn to_backend_mut(&mut self) -> CoeffMatrixBackendMut<'_, BE> {
         CoeffMatrix {
             data: <VecZnx<BE::OwnedBuf> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut self.data),
             base2k: self.base2k,
+            _bound: PhantomData,
         }
     }
 }

@@ -222,14 +222,14 @@ pub trait ModuleCoreAlloc {
     fn lwe_matrix_alloc_from_infos<A: LWEMatrixInfos>(&self, infos: &A) -> LWEMatrix<Self::OwnedBuf>;
     fn lwe_matrix_alloc(&self, rows: usize, lwe_n: Degree, base2k: Base2K, k: TorusPrecision) -> LWEMatrix<Self::OwnedBuf>;
 
-    fn coeff_matrix_alloc_from_infos<A: CoeffMatrixInfos>(&self, infos: &A) -> CoeffMatrix<Self::OwnedBuf>;
-    fn coeff_matrix_alloc(
+    fn coeff_matrix_alloc_from_infos<BU: CoeffBound, A: CoeffMatrixInfos>(&self, infos: &A) -> CoeffMatrix<Self::OwnedBuf, BU>;
+    fn coeff_matrix_alloc<BU: CoeffBound>(
         &self,
         rows_in: usize,
         rows_out: usize,
         base2k: Base2K,
         k: TorusPrecision,
-    ) -> CoeffMatrix<Self::OwnedBuf>;
+    ) -> CoeffMatrix<Self::OwnedBuf, BU>;
 
     fn lwe_plaintext_alloc_from_infos<A: LWEInfos>(&self, infos: &A) -> LWEPlaintext<Self::OwnedBuf>;
     fn lwe_plaintext_alloc(&self, base2k: Base2K, k: TorusPrecision) -> LWEPlaintext<Self::OwnedBuf>;
@@ -631,7 +631,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         })
     }
 
-    fn coeff_matrix_alloc_from_infos<A: CoeffMatrixInfos>(&self, infos: &A) -> CoeffMatrix<B::OwnedBuf> {
+    fn coeff_matrix_alloc_from_infos<BU: CoeffBound, A: CoeffMatrixInfos>(&self, infos: &A) -> CoeffMatrix<B::OwnedBuf, BU> {
         let size = infos.max_k().as_usize().div_ceil(infos.base2k().as_usize());
         let rows_in = infos.n().as_usize();
         CoeffMatrix {
@@ -642,9 +642,16 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
                 size,
             ),
             base2k: infos.base2k(),
+            _bound: std::marker::PhantomData,
         }
     }
-    fn coeff_matrix_alloc(&self, rows_in: usize, rows_out: usize, base2k: Base2K, k: TorusPrecision) -> CoeffMatrix<B::OwnedBuf> {
+    fn coeff_matrix_alloc<BU: CoeffBound>(
+        &self,
+        rows_in: usize,
+        rows_out: usize,
+        base2k: Base2K,
+        k: TorusPrecision,
+    ) -> CoeffMatrix<B::OwnedBuf, BU> {
         self.coeff_matrix_alloc_from_infos(&CoeffMatrixLayout {
             n: Degree(rows_in as u32),
             rows_out,

@@ -1033,6 +1033,7 @@ pub unsafe trait HalVecZnxMatMulImpl<BE: Backend>: Backend {
         res_base2k: usize,
         u: &crate::layouts::VecZnxBackendRef<'_, BE>,
         u_base2k: usize,
+        u_bound_bits: u32,
         a: &crate::layouts::VecZnxBackendRef<'_, BE>,
         a_col: usize,
         cols: usize,

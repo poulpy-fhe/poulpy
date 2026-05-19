@@ -23,7 +23,8 @@ use crate::{
     GLWERotate, ScratchArenaTakeCore,
     default::{keyswitching::GGLWEProductDefault, operations::GLWECopyDefault},
     layouts::{
-        CoeffMatrixInfos, CoeffMatrixToBackendRef, GGLWEInfos, GGLWEToBackendRef, GGSWAtViewMut, GGSWInfos, GGSWToBackendMut,
+        CoeffBound, CoeffMatrixInfos, CoeffMatrixToBackendRef, GGLWEInfos, GGLWEToBackendRef, GGSWAtViewMut, GGSWInfos,
+        GGSWToBackendMut,
         GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, GLWEViewRef, LWEInfos, LWEMatrixInfos,
         LWEMatrixToBackendMut, LWEMatrixToBackendRef, LWEToBackendMut, LWEToBackendRef, Rank, glwe_backend_ref_from_mut,
         prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
@@ -274,12 +275,16 @@ where
     let a_rows = a.rows();
     let lwe_n = res.n().as_usize();
 
+    // Compile-time entry bound of U: drives the SIMD kernel width.
+    let u_bound_bits: u32 = <<U as CoeffMatrixInfos>::Bound as CoeffBound>::WIDTH;
+
     module.vec_znx_matmul(
         &mut res.body,
         0,
         res_base2k,
         &u.data,
         u_base2k,
+        u_bound_bits,
         &a.body,
         0,
         1,
@@ -295,6 +300,7 @@ where
         res_base2k,
         &u.data,
         u_base2k,
+        u_bound_bits,
         &a.mask,
         0,
         lwe_n,

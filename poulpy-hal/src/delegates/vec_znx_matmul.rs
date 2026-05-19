@@ -39,6 +39,7 @@ impl_vec_znx_matmul_delegate!(
         res_base2k: usize,
         u: &VecZnxBackendRef<'_, B>,
         u_base2k: usize,
+        u_bound_bits: u32,
         a: &VecZnxBackendRef<'_, B>,
         a_col: usize,
         cols: usize,
@@ -48,7 +49,20 @@ impl_vec_znx_matmul_delegate!(
         scratch: &mut ScratchArena<'_, B>,
     ) {
         B::vec_znx_matmul(
-            self, res, res_col, res_base2k, u, u_base2k, a, a_col, cols, a_base2k, rows_in, rows_out, scratch,
+            self,
+            res,
+            res_col,
+            res_base2k,
+            u,
+            u_base2k,
+            u_bound_bits,
+            a,
+            a_col,
+            cols,
+            a_base2k,
+            rows_in,
+            rows_out,
+            scratch,
         )
     }
 );

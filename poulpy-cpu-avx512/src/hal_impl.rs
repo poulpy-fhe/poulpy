@@ -103,6 +103,7 @@ unsafe impl HalVecZnxMatMulImpl<FFT64Avx512> for FFT64Avx512 {
         res_base2k: usize,
         u: &VecZnxBackendRef<'_, Self>,
         u_base2k: usize,
+        u_bound_bits: u32,
         a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
         cols: usize,
@@ -111,21 +112,17 @@ unsafe impl HalVecZnxMatMulImpl<FFT64Avx512> for FFT64Avx512 {
         rows_out: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        poulpy_cpu_ref::hal_defaults::vec_znx_matmul::matmul_gemm::<Self, _>(
-            module,
-            res,
-            res_col,
-            res_base2k,
-            u,
-            u_base2k,
-            a,
-            a_col,
-            cols,
-            a_base2k,
-            rows_in,
-            rows_out,
-            crate::gemm::gemm_dot_i32,
-        );
+        use poulpy_cpu_ref::hal_defaults::vec_znx_matmul::matmul_gemm;
+        let w = u_bound_bits.min(32);
+        if w <= 16 {
+            matmul_gemm::<Self, crate::gemm::Avx512K16I64>(
+                module, res, res_col, res_base2k, u, u_base2k, a, a_col, cols, a_base2k, rows_in, rows_out,
+            );
+        } else {
+            matmul_gemm::<Self, crate::gemm::Avx512K32I64>(
+                module, res, res_col, res_base2k, u, u_base2k, a, a_col, cols, a_base2k, rows_in, rows_out,
+            );
+        }
     }
 }
 
@@ -327,6 +324,7 @@ unsafe impl HalVecZnxMatMulImpl<NTT120Avx512> for NTT120Avx512 {
         res_base2k: usize,
         u: &VecZnxBackendRef<'_, Self>,
         u_base2k: usize,
+        u_bound_bits: u32,
         a: &VecZnxBackendRef<'_, Self>,
         a_col: usize,
         cols: usize,
@@ -335,21 +333,21 @@ unsafe impl HalVecZnxMatMulImpl<NTT120Avx512> for NTT120Avx512 {
         rows_out: usize,
         _scratch: &mut ScratchArena<'_, Self>,
     ) {
-        poulpy_cpu_ref::hal_defaults::vec_znx_matmul::matmul_gemm::<Self, _>(
-            module,
-            res,
-            res_col,
-            res_base2k,
-            u,
-            u_base2k,
-            a,
-            a_col,
-            cols,
-            a_base2k,
-            rows_in,
-            rows_out,
-            crate::gemm::gemm_dot_split,
-        );
+        use poulpy_cpu_ref::hal_defaults::vec_znx_matmul::matmul_gemm;
+        let w = u_bound_bits.min(64);
+        if w <= 16 {
+            matmul_gemm::<Self, crate::gemm::Avx512K16I128>(
+                module, res, res_col, res_base2k, u, u_base2k, a, a_col, cols, a_base2k, rows_in, rows_out,
+            );
+        } else if w <= 32 {
+            matmul_gemm::<Self, crate::gemm::Avx512K32I128S>(
+                module, res, res_col, res_base2k, u, u_base2k, a, a_col, cols, a_base2k, rows_in, rows_out,
+            );
+        } else {
+            matmul_gemm::<Self, crate::gemm::Avx512K32I128D>(
+                module, res, res_col, res_base2k, u, u_base2k, a, a_col, cols, a_base2k, rows_in, rows_out,
+            );
+        }
     }
 }
 

@@ -27,6 +27,8 @@ pub trait VecZnxMatMul<B: Backend> {
         res_base2k: usize,
         u: &VecZnxBackendRef<'_, B>,
         u_base2k: usize,
+        // Compile-time entry bound of `U` in bits (8/16/32/64); selects the kernel width.
+        u_bound_bits: u32,
         a: &VecZnxBackendRef<'_, B>,
         a_col: usize,
         cols: usize,
