@@ -145,11 +145,7 @@ impl ScalarBigHadamardProduct for DelegatingFFT64Ref {
 unsafe impl HalVecZnxImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
     crate::hal_impl_vec_znx!();
 
-    fn vec_znx_transpose_backend(
-        module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
-        a: &VecZnxBackendRef<'_, Self>,
-    ) {
+    fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
         <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
     }
 }

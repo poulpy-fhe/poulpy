@@ -115,10 +115,7 @@ unsafe fn mul32_i64(u: &[i32], a: &[i32]) -> i64 {
             let uv = _mm256_loadu_si256(up.add(i) as *const __m256i);
             let av = _mm256_loadu_si256(ap.add(i) as *const __m256i);
             acc0 = _mm256_add_epi64(acc0, _mm256_mul_epi32(uv, av));
-            acc1 = _mm256_add_epi64(
-                acc1,
-                _mm256_mul_epi32(_mm256_srli_epi64(uv, 32), _mm256_srli_epi64(av, 32)),
-            );
+            acc1 = _mm256_add_epi64(acc1, _mm256_mul_epi32(_mm256_srli_epi64(uv, 32), _mm256_srli_epi64(av, 32)));
             i += 8;
         }
         let acc = _mm256_add_epi64(acc0, acc1);

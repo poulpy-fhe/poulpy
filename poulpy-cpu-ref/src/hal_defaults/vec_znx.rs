@@ -1040,11 +1040,8 @@ where
         vec_znx_copy::<BE>(res, res_col, a, a_col);
     }
 
-    fn vec_znx_transpose_backend_default(
-        _module: &Module<BE>,
-        res: &mut VecZnxBackendMut<'_, BE>,
-        a: &VecZnxBackendRef<'_, BE>,
-    ) where
+    fn vec_znx_transpose_backend_default(_module: &Module<BE>, res: &mut VecZnxBackendMut<'_, BE>, a: &VecZnxBackendRef<'_, BE>)
+    where
         for<'x> BE::BufMut<'x>: HostDataMut,
         for<'x> BE::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
     {

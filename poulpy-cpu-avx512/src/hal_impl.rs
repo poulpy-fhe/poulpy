@@ -38,11 +38,7 @@ unsafe impl HalVecZnxImpl<FFT64Avx512> for FFT64Avx512 {
 
     // TODO: add an AVX-512-accelerated tiled transpose kernel; falls back to
     // the reference impl for now.
-    fn vec_znx_transpose_backend(
-        module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
-        a: &VecZnxBackendRef<'_, Self>,
-    ) {
+    fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
         <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
     }
 }
@@ -157,11 +153,7 @@ unsafe impl HalVecZnxImpl<NTT120Avx512> for NTT120Avx512 {
 
     // TODO: add an AVX-512-accelerated tiled transpose kernel; falls back to
     // the reference impl for now.
-    fn vec_znx_transpose_backend(
-        module: &Module<Self>,
-        res: &mut VecZnxBackendMut<'_, Self>,
-        a: &VecZnxBackendRef<'_, Self>,
-    ) {
+    fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
         <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
     }
 }

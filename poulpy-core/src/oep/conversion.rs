@@ -1,9 +1,9 @@
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::layouts::{
-    CoeffMatrixInfos, CoeffMatrixToBackendRef, GGLWEInfos, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GLWEInfos,
-    GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendMut, LWEMatrixToBackendRef, LWEToBackendMut,
-    LWEToBackendRef,
+    CoeffMatrixInfos, CoeffMatrixToBackendRef, GGLWEInfos, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GLWECompressedSeed,
+    GLWECompressedToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendMut,
+    LWEMatrixToBackendRef, LWEToBackendMut, LWEToBackendRef,
     prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
 };
 
@@ -106,6 +106,30 @@ pub unsafe trait ConversionImpl<BE: Backend>: Backend {
         U: CoeffMatrixToBackendRef<BE> + CoeffMatrixInfos,
         A: LWEMatrixToBackendRef<BE> + LWEMatrixInfos;
 
+    fn lwe_matrix_mul_mask_tmp_bytes<R, U, A>(module: &Module<BE>, res_infos: &R, u_infos: &U, a_infos: &A) -> usize
+    where
+        R: LWEMatrixInfos,
+        U: CoeffMatrixInfos,
+        A: GLWEInfos;
+
+    fn lwe_matrix_mul_mask<R, U, A>(module: &Module<BE>, res: &mut R, u: &U, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
+        U: CoeffMatrixToBackendRef<BE> + CoeffMatrixInfos,
+        A: GLWECompressedToBackendRef<BE> + GLWECompressedSeed + GLWEInfos;
+
+    fn lwe_matrix_mul_body_tmp_bytes<R, U, A>(module: &Module<BE>, res_infos: &R, u_infos: &U, a_infos: &A) -> usize
+    where
+        R: LWEMatrixInfos,
+        U: CoeffMatrixInfos,
+        A: GLWEInfos;
+
+    fn lwe_matrix_mul_body<R, U, A>(module: &Module<BE>, res: &mut R, u: &U, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
+        U: CoeffMatrixToBackendRef<BE> + CoeffMatrixInfos,
+        A: GLWECompressedToBackendRef<BE> + GLWEInfos;
+
     fn ggsw_expand_rows_tmp_bytes<R, A>(module: &Module<BE>, res_infos: &R, tsk_infos: &A) -> usize
     where
         R: GGSWInfos,
@@ -202,6 +226,30 @@ pub trait ConversionDefault<BE: Backend> {
         R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
         U: CoeffMatrixToBackendRef<BE> + CoeffMatrixInfos,
         A: LWEMatrixToBackendRef<BE> + LWEMatrixInfos;
+
+    fn lwe_matrix_mul_mask_tmp_bytes_default<R, U, A>(&self, res_infos: &R, u_infos: &U, a_infos: &A) -> usize
+    where
+        R: LWEMatrixInfos,
+        U: CoeffMatrixInfos,
+        A: GLWEInfos;
+
+    fn lwe_matrix_mul_mask_default<R, U, A>(&self, res: &mut R, u: &U, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
+        U: CoeffMatrixToBackendRef<BE> + CoeffMatrixInfos,
+        A: GLWECompressedToBackendRef<BE> + GLWECompressedSeed + GLWEInfos;
+
+    fn lwe_matrix_mul_body_tmp_bytes_default<R, U, A>(&self, res_infos: &R, u_infos: &U, a_infos: &A) -> usize
+    where
+        R: LWEMatrixInfos,
+        U: CoeffMatrixInfos,
+        A: GLWEInfos;
+
+    fn lwe_matrix_mul_body_default<R, U, A>(&self, res: &mut R, u: &U, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
+        U: CoeffMatrixToBackendRef<BE> + CoeffMatrixInfos,
+        A: GLWECompressedToBackendRef<BE> + GLWEInfos;
 
     fn ggsw_expand_rows_tmp_bytes_default<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
     where
@@ -347,6 +395,42 @@ where
         A: LWEMatrixToBackendRef<BE> + LWEMatrixInfos,
     {
         module.lwe_matrix_mul_default(res, u, a, scratch)
+    }
+
+    fn lwe_matrix_mul_mask_tmp_bytes<R, U, A>(module: &Module<BE>, res_infos: &R, u_infos: &U, a_infos: &A) -> usize
+    where
+        R: LWEMatrixInfos,
+        U: CoeffMatrixInfos,
+        A: GLWEInfos,
+    {
+        module.lwe_matrix_mul_mask_tmp_bytes_default(res_infos, u_infos, a_infos)
+    }
+
+    fn lwe_matrix_mul_mask<R, U, A>(module: &Module<BE>, res: &mut R, u: &U, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
+        U: CoeffMatrixToBackendRef<BE> + CoeffMatrixInfos,
+        A: GLWECompressedToBackendRef<BE> + GLWECompressedSeed + GLWEInfos,
+    {
+        module.lwe_matrix_mul_mask_default(res, u, a, scratch)
+    }
+
+    fn lwe_matrix_mul_body_tmp_bytes<R, U, A>(module: &Module<BE>, res_infos: &R, u_infos: &U, a_infos: &A) -> usize
+    where
+        R: LWEMatrixInfos,
+        U: CoeffMatrixInfos,
+        A: GLWEInfos,
+    {
+        module.lwe_matrix_mul_body_tmp_bytes_default(res_infos, u_infos, a_infos)
+    }
+
+    fn lwe_matrix_mul_body<R, U, A>(module: &Module<BE>, res: &mut R, u: &U, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
+        U: CoeffMatrixToBackendRef<BE> + CoeffMatrixInfos,
+        A: GLWECompressedToBackendRef<BE> + GLWEInfos,
+    {
+        module.lwe_matrix_mul_body_default(res, u, a, scratch)
     }
 
     fn ggsw_expand_rows_tmp_bytes<R, A>(module: &Module<BE>, res_infos: &R, tsk_infos: &A) -> usize
@@ -519,6 +603,58 @@ macro_rules! impl_conversion_defaults_full {
                 A: $crate::layouts::LWEMatrixToBackendRef<$be> + $crate::layouts::LWEMatrixInfos,
             {
                 $crate::default::conversion::lwe_matrix_mul_default::<$be, _, _, _, _>(self, res, u, a, scratch)
+            }
+
+            fn lwe_matrix_mul_mask_tmp_bytes_default<R, U, A>(&self, res_infos: &R, u_infos: &U, a_infos: &A) -> usize
+            where
+                R: $crate::layouts::LWEMatrixInfos,
+                U: $crate::layouts::CoeffMatrixInfos,
+                A: $crate::layouts::GLWEInfos,
+            {
+                $crate::default::conversion::lwe_matrix_mul_mask_tmp_bytes_default::<$be, _, _, _, _>(
+                    self, res_infos, u_infos, a_infos,
+                )
+            }
+
+            fn lwe_matrix_mul_mask_default<R, U, A>(
+                &self,
+                res: &mut R,
+                u: &U,
+                a: &A,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) where
+                R: $crate::layouts::LWEMatrixToBackendMut<$be> + $crate::layouts::LWEMatrixInfos,
+                U: $crate::layouts::CoeffMatrixToBackendRef<$be> + $crate::layouts::CoeffMatrixInfos,
+                A: $crate::layouts::GLWECompressedToBackendRef<$be>
+                    + $crate::layouts::GLWECompressedSeed
+                    + $crate::layouts::GLWEInfos,
+            {
+                $crate::default::conversion::lwe_matrix_mul_mask_default::<$be, _, _, _, _>(self, res, u, a, scratch)
+            }
+
+            fn lwe_matrix_mul_body_tmp_bytes_default<R, U, A>(&self, res_infos: &R, u_infos: &U, a_infos: &A) -> usize
+            where
+                R: $crate::layouts::LWEMatrixInfos,
+                U: $crate::layouts::CoeffMatrixInfos,
+                A: $crate::layouts::GLWEInfos,
+            {
+                $crate::default::conversion::lwe_matrix_mul_body_tmp_bytes_default::<$be, _, _, _, _>(
+                    self, res_infos, u_infos, a_infos,
+                )
+            }
+
+            fn lwe_matrix_mul_body_default<R, U, A>(
+                &self,
+                res: &mut R,
+                u: &U,
+                a: &A,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) where
+                R: $crate::layouts::LWEMatrixToBackendMut<$be> + $crate::layouts::LWEMatrixInfos,
+                U: $crate::layouts::CoeffMatrixToBackendRef<$be> + $crate::layouts::CoeffMatrixInfos,
+                A: $crate::layouts::GLWECompressedToBackendRef<$be> + $crate::layouts::GLWEInfos,
+            {
+                $crate::default::conversion::lwe_matrix_mul_body_default::<$be, _, _, _, _>(self, res, u, a, scratch)
             }
 
             fn ggsw_expand_rows_tmp_bytes_default<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize

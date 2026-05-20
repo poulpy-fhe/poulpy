@@ -1,8 +1,8 @@
 use poulpy_hal::{
-    api::{ScalarZnxAutomorphismBackend},
+    api::ScalarZnxAutomorphismBackend,
     layouts::{
-        Backend, Data, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendMut,
-        ScalarZnxToBackendRef, TransferFrom, ZnxZero,
+        Backend, Data, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendMut, ScalarZnxToBackendRef, TransferFrom,
+        ZnxZero,
     },
     oep::HalVecZnxImpl,
     source::Source,
@@ -255,7 +255,7 @@ impl<B: Backend + HalVecZnxImpl<B>> SecretConversion<B> for Module<B> {
         assert_eq!(src.n().as_usize(), self.n(), "LWE secret degree must equal module degree");
         let mut res = self.glwe_secret_alloc(Rank(1));
         res.dist = src.dist;
-        {   
+        {
             let mut res_ref = GLWESecretToBackendMut::<B>::to_backend_mut(&mut res);
             self.scalar_znx_automorphism_backend(-1, res_ref.data_mut(), 0, src.data(), 0);
         }

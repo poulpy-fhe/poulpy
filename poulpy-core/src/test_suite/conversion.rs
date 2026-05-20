@@ -13,10 +13,11 @@ use crate::{
     GLWENormalize, GLWEToLWESwitchingKeyEncryptSk, LWEDecrypt, LWEEncryptSk, LWEFromGLWE, LWEMatrixDecrypt, LWEMatrixMul,
     LWEToGLWESwitchingKeyEncryptSk, ScratchArenaTakeCore,
     layouts::{
-        Base2K, CoeffMatrixLayout, Degree, Dnum, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory,
-        GLWEToLWEKey, GLWEToLWEKeyLayout, GLWEToLWEKeyPrepared, GLWEToLWEKeyPreparedFactory, LWE, LWEInfos, LWELayout,
-        LWEMatrixLayout, LWEPlaintext, LWESecret, LWEToGLWEKey, LWEToGLWEKeyLayout, LWEToGLWEKeyPrepared,
-        LWEToGLWEKeyPreparedFactory, ModuleCoreAlloc, Rank, SecretConversion, TorusPrecision, prepared::GLWESecretPrepared,
+        Base2K, CoeffMatrixLayout, Degree, Dnum, GLWE, GLWECompressed, GLWECompressedSeedMut, GLWEDecompress, GLWELayout,
+        GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWEToLWEKey, GLWEToLWEKeyLayout, GLWEToLWEKeyPrepared,
+        GLWEToLWEKeyPreparedFactory, LWE, LWEInfos, LWELayout, LWEMatrix, LWEMatrixLayout, LWEPlaintext, LWESecret, LWEToGLWEKey,
+        LWEToGLWEKeyLayout, LWEToGLWEKeyPrepared, LWEToGLWEKeyPreparedFactory, ModuleCoreAlloc, ModuleCoreCompressedAlloc, Rank,
+        SecretConversion, TorusPrecision, prepared::GLWESecretPrepared,
     },
 };
 
@@ -764,6 +765,100 @@ where
             &res_pt.data().at(0, limb)[..rows],
             "limb={limb} failed"
         );
+    }
+}
+
+pub fn test_lwe_matrix_mul_split_matches_lwe_matrix_mul<BE: crate::test_suite::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: GLWEExpandLWEMatrix<BE> + LWEMatrixMul<BE> + GLWEDecompress<Backend = BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+{
+    let n: usize = module.n();
+    let base2k: usize = params.base2k;
+    let k = 4 * base2k + 1;
+
+    for &rank_v in &[1u32, 2] {
+        let rank = Rank(rank_v);
+        let rows: usize = n.min(8);
+
+        let glwe_infos = GLWELayout {
+            n: Degree(n as u32),
+            base2k: Base2K(base2k as u32),
+            k: TorusPrecision(k as u32),
+            rank,
+        };
+
+        let matrix_infos = LWEMatrixLayout {
+            rows,
+            n: Degree(n as u32 * rank.0),
+            base2k: glwe_infos.base2k(),
+            k: glwe_infos.max_k(),
+        };
+
+        let u_infos = CoeffMatrixLayout {
+            n: Degree(rows as u32),
+            rows_out: rows,
+            base2k: Base2K(base2k as u32),
+            k: TorusPrecision((2 * base2k) as u32),
+        };
+
+        let mut compressed: GLWECompressed<Vec<u8>> = module.glwe_compressed_alloc_from_infos(&glwe_infos);
+        let mut source_data: Source = Source::new([7u8; 32]);
+        compressed.fill_uniform(base2k, &mut source_data);
+        *compressed.seed_mut() = [42u8; 32];
+
+        let mut glwe_ct: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_infos);
+        module.decompress_glwe(&mut glwe_ct, &compressed);
+
+        let mut source_u: Source = Source::new([13u8; 32]);
+        let mut u = module.coeff_matrix_alloc_from_infos::<i64, _>(&u_infos);
+        let u_bound = (1_i64 << (base2k as u32)) - 1;
+        for entry in u.data_mut().raw_mut() {
+            *entry = source_u.next_i64() & u_bound;
+        }
+
+        let ref_bytes = module
+            .glwe_expand_lwe_matrix_tmp_bytes(&matrix_infos, &glwe_infos)
+            .max(module.lwe_matrix_mul_tmp_bytes(&matrix_infos, &u_infos, &matrix_infos));
+        let split_bytes = module
+            .lwe_matrix_mul_mask_tmp_bytes(&matrix_infos, &u_infos, &glwe_infos)
+            .max(module.lwe_matrix_mul_body_tmp_bytes(&matrix_infos, &u_infos, &glwe_infos));
+        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(ref_bytes.max(split_bytes));
+
+        let mut lwe_matrix: LWEMatrix<Vec<u8>> = module.lwe_matrix_alloc_from_infos(&matrix_infos);
+        module.glwe_expand_lwe_matrix(&mut lwe_matrix, &glwe_ct, &mut scratch.borrow());
+
+        let mut res_ref: LWEMatrix<Vec<u8>> = module.lwe_matrix_alloc_from_infos(&matrix_infos);
+        module.lwe_matrix_mul(&mut res_ref, &u, &lwe_matrix, &mut scratch.borrow());
+
+        let mut res_split: LWEMatrix<Vec<u8>> = module.lwe_matrix_alloc_from_infos(&matrix_infos);
+        module.lwe_matrix_mul_mask(&mut res_split, &u, &compressed, &mut scratch.borrow());
+        module.lwe_matrix_mul_body(&mut res_split, &u, &compressed, &mut scratch.borrow());
+
+        for limb in 0..res_ref.body().size() {
+            assert_eq!(
+                res_ref.body().at(0, limb),
+                res_split.body().at(0, limb),
+                "body limb={limb} rank={} mismatch",
+                rank_v
+            );
+        }
+        for col in 0..res_ref.mask().cols() {
+            for limb in 0..res_ref.mask().size() {
+                assert_eq!(
+                    res_ref.mask().at(col, limb),
+                    res_split.mask().at(col, limb),
+                    "mask col={col} limb={limb} rank={} mismatch",
+                    rank_v
+                );
+            }
+        }
     }
 }
 

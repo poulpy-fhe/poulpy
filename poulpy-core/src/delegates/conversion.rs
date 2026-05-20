@@ -6,9 +6,9 @@ use crate::{
         LWESampleExtract,
     },
     layouts::{
-        CoeffMatrixInfos, CoeffMatrixToBackendRef, GGLWEInfos, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut,
-        GLWEToBackendRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendMut, LWEMatrixToBackendRef, LWEToBackendMut,
-        LWEToBackendRef,
+        CoeffMatrixInfos, CoeffMatrixToBackendRef, GGLWEInfos, GGSWInfos, GGSWToBackendMut, GLWECompressedSeed,
+        GLWECompressedToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEMatrixInfos,
+        LWEMatrixToBackendMut, LWEMatrixToBackendRef, LWEToBackendMut, LWEToBackendRef,
         prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
     },
     oep::{ConversionDefault, ConversionImpl},
@@ -161,6 +161,42 @@ impl_conversion_delegate!(
         A: LWEMatrixToBackendRef<BE> + LWEMatrixInfos,
     {
         BE::lwe_matrix_mul(self, res, u, a, scratch)
+    }
+
+    fn lwe_matrix_mul_mask_tmp_bytes<R, U, A>(&self, res_infos: &R, u_infos: &U, a_infos: &A) -> usize
+    where
+        R: LWEMatrixInfos,
+        U: CoeffMatrixInfos,
+        A: GLWEInfos,
+    {
+        BE::lwe_matrix_mul_mask_tmp_bytes(self, res_infos, u_infos, a_infos)
+    }
+
+    fn lwe_matrix_mul_mask<R, U, A>(&self, res: &mut R, u: &U, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
+        U: CoeffMatrixToBackendRef<BE> + CoeffMatrixInfos,
+        A: GLWECompressedToBackendRef<BE> + GLWECompressedSeed + GLWEInfos,
+    {
+        BE::lwe_matrix_mul_mask(self, res, u, a, scratch)
+    }
+
+    fn lwe_matrix_mul_body_tmp_bytes<R, U, A>(&self, res_infos: &R, u_infos: &U, a_infos: &A) -> usize
+    where
+        R: LWEMatrixInfos,
+        U: CoeffMatrixInfos,
+        A: GLWEInfos,
+    {
+        BE::lwe_matrix_mul_body_tmp_bytes(self, res_infos, u_infos, a_infos)
+    }
+
+    fn lwe_matrix_mul_body<R, U, A>(&self, res: &mut R, u: &U, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
+        U: CoeffMatrixToBackendRef<BE> + CoeffMatrixInfos,
+        A: GLWECompressedToBackendRef<BE> + GLWEInfos,
+    {
+        BE::lwe_matrix_mul_body(self, res, u, a, scratch)
     }
 );
 

@@ -191,7 +191,7 @@ unsafe fn coeff_mat1col_product_i128(rows_in: usize, nrows: usize, ncols: usize,
             acc = acc.wrapping_add(i128_from_bits(lo[lane], hi[lane]));
         }
     }
-    
+
     for (coeff, ai) in a.iter().enumerate().take(rows_in).skip(4 * blocks) {
         let p_off = packed_col_block_offset(nrows, ncols, col, coeff / 8) + coeff % 8;
         acc = acc.wrapping_add((*ai as i128).wrapping_mul(pmat[p_off] as i128));

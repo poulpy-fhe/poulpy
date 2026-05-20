@@ -1,9 +1,9 @@
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::layouts::{
-    CoeffMatrixInfos, CoeffMatrixToBackendRef, GGLWEInfos, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GLWEInfos,
-    GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendMut, LWEMatrixToBackendRef, LWEToBackendMut,
-    LWEToBackendRef,
+    CoeffMatrixInfos, CoeffMatrixToBackendRef, GGLWEInfos, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GLWECompressedSeed,
+    GLWECompressedToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendMut,
+    LWEMatrixToBackendRef, LWEToBackendMut, LWEToBackendRef,
     prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
 };
 
@@ -98,6 +98,37 @@ pub trait LWEMatrixMul<BE: Backend> {
         R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
         U: CoeffMatrixToBackendRef<BE> + CoeffMatrixInfos,
         A: LWEMatrixToBackendRef<BE> + LWEMatrixInfos;
+
+    /// Precompute `U × A` from a seeded GLWE: writes only the `mask` of `res`.
+    ///
+    /// `A` is regenerated from the seed of the [`GLWECompressed`]; pair with
+    /// [`lwe_matrix_mul_body`](Self::lwe_matrix_mul_body) on the hot path.
+    fn lwe_matrix_mul_mask_tmp_bytes<R, U, A>(&self, res_infos: &R, u_infos: &U, a_infos: &A) -> usize
+    where
+        R: LWEMatrixInfos,
+        U: CoeffMatrixInfos,
+        A: GLWEInfos;
+
+    fn lwe_matrix_mul_mask<R, U, A>(&self, res: &mut R, u: &U, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
+        U: CoeffMatrixToBackendRef<BE> + CoeffMatrixInfos,
+        A: GLWECompressedToBackendRef<BE> + GLWECompressedSeed + GLWEInfos;
+
+    /// Hot-path `U × b`: writes only the `body` of `res`, reading from the body of a [`GLWECompressed`].
+    ///
+    /// Pair with [`lwe_matrix_mul_mask`](Self::lwe_matrix_mul_mask) for the precomputed mask.
+    fn lwe_matrix_mul_body_tmp_bytes<R, U, A>(&self, res_infos: &R, u_infos: &U, a_infos: &A) -> usize
+    where
+        R: LWEMatrixInfos,
+        U: CoeffMatrixInfos,
+        A: GLWEInfos;
+
+    fn lwe_matrix_mul_body<R, U, A>(&self, res: &mut R, u: &U, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
+        U: CoeffMatrixToBackendRef<BE> + CoeffMatrixInfos,
+        A: GLWECompressedToBackendRef<BE> + GLWEInfos;
 }
 
 pub trait GGSWExpandRows<BE: Backend> {

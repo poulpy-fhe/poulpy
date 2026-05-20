@@ -79,10 +79,7 @@ unsafe fn mul32_i64(u: &[i32], a: &[i32]) -> i64 {
             let uv = _mm512_loadu_si512(up.add(i) as *const __m512i);
             let av = _mm512_loadu_si512(ap.add(i) as *const __m512i);
             acc0 = _mm512_add_epi64(acc0, _mm512_mul_epi32(uv, av));
-            acc1 = _mm512_add_epi64(
-                acc1,
-                _mm512_mul_epi32(_mm512_srli_epi64(uv, 32), _mm512_srli_epi64(av, 32)),
-            );
+            acc1 = _mm512_add_epi64(acc1, _mm512_mul_epi32(_mm512_srli_epi64(uv, 32), _mm512_srli_epi64(av, 32)));
             i += 16;
         }
         let mut s = _mm512_reduce_add_epi64(_mm512_add_epi64(acc0, acc1));

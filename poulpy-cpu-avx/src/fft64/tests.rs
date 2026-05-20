@@ -147,9 +147,7 @@ fn test_convolution_direct() {
 fn lwe_matrix_mul_bounded_u_matches_unbounded() {
     use poulpy_core::{
         LWEMatrixMul,
-        layouts::{
-            Base2K, CoeffMatrix, CoeffMatrixLayout, Degree, LWEMatrix, LWEMatrixLayout, ModuleCoreAlloc, TorusPrecision,
-        },
+        layouts::{Base2K, CoeffMatrix, CoeffMatrixLayout, Degree, LWEMatrix, LWEMatrixLayout, ModuleCoreAlloc, TorusPrecision},
     };
     use poulpy_hal::{
         api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -165,9 +163,24 @@ fn lwe_matrix_mul_bounded_u_matches_unbounded() {
     let size = 3usize;
     let k = TorusPrecision((base2k.0 as usize * size) as u32);
 
-    let u_infos = CoeffMatrixLayout { n: Degree(rows_in as u32), rows_out, base2k, k };
-    let a_infos = LWEMatrixLayout { rows: rows_in, n: Degree(lwe_n as u32), base2k, k };
-    let res_infos = LWEMatrixLayout { rows: rows_out, n: Degree(lwe_n as u32), base2k, k };
+    let u_infos = CoeffMatrixLayout {
+        n: Degree(rows_in as u32),
+        rows_out,
+        base2k,
+        k,
+    };
+    let a_infos = LWEMatrixLayout {
+        rows: rows_in,
+        n: Degree(lwe_n as u32),
+        base2k,
+        k,
+    };
+    let res_infos = LWEMatrixLayout {
+        rows: rows_out,
+        n: Degree(lwe_n as u32),
+        base2k,
+        k,
+    };
 
     let mut src = Source::new([0u8; 32]);
     let mask = (1i64 << base2k.0) - 1;
