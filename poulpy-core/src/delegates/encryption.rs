@@ -8,7 +8,7 @@ use crate::{
     api::{
         EncryptionInfos, GGLWECompressedEncryptSk, GGLWEEncryptSk, GGLWEToGGSWKeyCompressedEncryptSk, GGLWEToGGSWKeyEncryptSk,
         GGSWCompressedEncryptSk, GGSWEncryptSk, GLWEAutomorphismKeyCompressedEncryptSk, GLWEAutomorphismKeyEncryptPk,
-        GLWEAutomorphismKeyEncryptSk, GLWECompressedEncryptSk, GLWEEncryptPk, GLWEEncryptSk, GLWEPublicKeyGenerate,
+        GLWEAutomorphismKeyEncryptSk, GLWECompressedEncryptSk, GLWEEncryptPk, GLWEEncryptSk, GLWEMaskFill, GLWEPublicKeyGenerate,
         GLWESwitchingKeyCompressedEncryptSk, GLWESwitchingKeyEncryptPk, GLWESwitchingKeyEncryptSk,
         GLWETensorKeyCompressedEncryptSk, GLWETensorKeyEncryptSk, GLWEToLWESwitchingKeyEncryptSk, LWEEncryptSk,
         LWESwitchingKeyEncrypt, LWEToGLWESwitchingKeyEncryptSk,
@@ -34,6 +34,23 @@ macro_rules! impl_encryption_delegate {
         }
     };
 }
+
+impl_encryption_delegate!(
+    GLWEMaskFill<BE>,
+    GLWEMaskFillDefault<BE>,
+    fn fill_glwe_mask_from_source<R>(&self, base2k: usize, res: &mut R, res_col: usize, rank: usize, source_xa: &mut Source)
+    where
+        R: GLWEToBackendMut<BE>,
+    {
+        BE::fill_glwe_mask_from_source_default(self, base2k, res, res_col, rank, source_xa)
+    },
+    fn fill_glwe_mask_from_seed<R>(&self, base2k: usize, res: &mut R, res_col: usize, rank: usize, seed_xa: [u8; 32])
+    where
+        R: GLWEToBackendMut<BE>,
+    {
+        BE::fill_glwe_mask_from_seed_default(self, base2k, res, res_col, rank, seed_xa)
+    }
+);
 
 impl_encryption_delegate!(
     LWEEncryptSk<BE>,

@@ -13,12 +13,12 @@ use poulpy_cpu_ref::hal_defaults::vec_znx_matmul::GemmKernel;
 #[inline]
 fn prep_i16(x: i64, n: usize, out: &mut [i16]) {
     let mut r: i64 = x;
-    for k in 0..n {
+    for (k, out_i) in out.iter_mut().enumerate().take(n) {
         if k + 1 == n {
-            out[k] = r as i16;
+            *out_i = r as i16;
         } else {
             let hi: i64 = (r + (1i64 << 15)) >> 16;
-            out[k] = (r - (hi << 16)) as i16;
+            *out_i = (r - (hi << 16)) as i16;
             r = hi;
         }
     }
@@ -27,12 +27,12 @@ fn prep_i16(x: i64, n: usize, out: &mut [i16]) {
 #[inline]
 fn prep_i32(x: i64, n: usize, out: &mut [i32]) {
     let mut r: i64 = x;
-    for k in 0..n {
+    for (k, out_i) in out.iter_mut().enumerate().take(n) {
         if k + 1 == n {
-            out[k] = r as i32;
+            *out_i = r as i32;
         } else {
             let hi: i64 = (r + (1i64 << 31)) >> 32;
-            out[k] = (r - (hi << 32)) as i32;
+            *out_i = (r - (hi << 32)) as i32;
             r = hi;
         }
     }

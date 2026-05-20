@@ -421,10 +421,7 @@ where
         u_view.rows_out(),
         "lwe_matrix_mul_mask: result rows != U rows_out"
     );
-    assert!(
-        a_rows <= n,
-        "lwe_matrix_mul_mask: U input rows ({a_rows}) > module.n() ({n})"
-    );
+    assert!(a_rows <= n, "lwe_matrix_mul_mask: U input rows ({a_rows}) > module.n() ({n})");
     assert_eq!(
         res_view.base2k().as_usize(),
         a_base2k,
@@ -540,10 +537,7 @@ where
         u_view.rows_out(),
         "lwe_matrix_mul_body: result rows != U rows_out"
     );
-    assert!(
-        a_rows <= n,
-        "lwe_matrix_mul_body: U input rows ({a_rows}) > module.n() ({n})"
-    );
+    assert!(a_rows <= n, "lwe_matrix_mul_body: U input rows ({a_rows}) > module.n() ({n})");
     assert_eq!(
         res_view.base2k().as_usize(),
         a_base2k,
