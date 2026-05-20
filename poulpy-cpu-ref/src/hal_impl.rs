@@ -40,6 +40,14 @@ pub(crate) mod delegating_backend;
 
 unsafe impl HalVecZnxImpl<FFT64Ref> for FFT64Ref {
     hal_impl_vec_znx!();
+
+    fn vec_znx_transpose_backend(
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self>,
+    ) {
+        <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
+    }
 }
 
 unsafe impl HalModuleImpl<FFT64Ref> for FFT64Ref {
@@ -76,6 +84,14 @@ unsafe impl HalVecZnxDftImpl<FFT64Ref> for FFT64Ref {
 
 unsafe impl HalVecZnxImpl<NTT120Ref> for NTT120Ref {
     hal_impl_vec_znx!();
+
+    fn vec_znx_transpose_backend(
+        module: &Module<Self>,
+        res: &mut VecZnxBackendMut<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self>,
+    ) {
+        <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
+    }
 }
 
 unsafe impl HalModuleImpl<NTT120Ref> for NTT120Ref {

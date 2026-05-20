@@ -18,7 +18,7 @@ use crate::{
         VecZnxRshAddIntoBackend, VecZnxRshAssignBackend, VecZnxRshBackend, VecZnxRshCoeffBackend, VecZnxRshSubBackend,
         VecZnxRshSubCoeffIntoBackend, VecZnxRshTmpBytes, VecZnxSplitRingBackend, VecZnxSplitRingTmpBytes, VecZnxSubAssignBackend,
         VecZnxSubBackend, VecZnxSubNegateAssignBackend, VecZnxSubScalarAssignBackend, VecZnxSubScalarBackend,
-        VecZnxSwitchRingBackend, VecZnxZeroBackend,
+        VecZnxSwitchRingBackend, VecZnxTransposeBackend, VecZnxZeroBackend,
     },
     layouts::{
         Backend, Module, NoiseInfos, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
@@ -772,6 +772,13 @@ impl_vec_znx_delegate!(
     VecZnxCopyBackend<B>,
     fn vec_znx_copy_backend(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize) {
         B::vec_znx_copy_backend(self, res, res_col, a, a_col);
+    }
+);
+
+impl_vec_znx_delegate!(
+    VecZnxTransposeBackend<B>,
+    fn vec_znx_transpose_backend(&self, res: &mut VecZnxBackendMut<'_, B>, a: &VecZnxBackendRef<'_, B>) {
+        B::vec_znx_transpose_backend(self, res, a);
     }
 );
 

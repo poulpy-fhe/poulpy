@@ -622,6 +622,17 @@ pub trait VecZnxCopyBackend<B: Backend> {
     fn vec_znx_copy_backend(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
 }
 
+/// Per-limb square transpose of a `VecZnx`.
+///
+/// For each limb `j`, sets `res.at(c, j)[k] = a.at(k, j)[c]`.
+///
+/// # Panics
+///
+/// Requires `res.n() == a.cols()` and `res.cols() == a.n()`.
+pub trait VecZnxTransposeBackend<B: Backend> {
+    fn vec_znx_transpose_backend(&self, res: &mut VecZnxBackendMut<'_, B>, a: &VecZnxBackendRef<'_, B>);
+}
+
 pub trait ScalarZnxFillTernaryHwSourceBackend<B: Backend> {
     fn scalar_znx_fill_ternary_hw_source_backend(
         &self,
