@@ -9,9 +9,9 @@ use core::arch::x86_64::{__m256i, _mm256_loadu_si256, _mm256_storeu_si256};
 
 use bytemuck::{cast_slice, cast_slice_mut};
 use poulpy_cpu_ref::reference::ntt120::{
+    NttZero,
     types::Q120bScalar,
     vec_znx_dft::{NttAutomorphismPlan, ntt120_vec_znx_dft_automorphism as ntt120_automorphism_ref},
-    NttZero,
 };
 use poulpy_hal::layouts::{Backend, HostDataMut, HostDataRef, VecZnxDftBackendMut, VecZnxDftBackendRef, ZnxView, ZnxViewMut};
 

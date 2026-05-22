@@ -193,18 +193,14 @@ mod tests;
 #[cfg(feature = "enable-avx")]
 mod znx_avx;
 #[cfg(feature = "enable-avx")]
-
-#[cfg(feature = "enable-avx")]
 pub use fft64::{FFT64Avx, FFT64AvxReimTable, ReimFFTAvx, ReimIFFTAvx};
 #[cfg(feature = "enable-avx")]
-#[cfg(feature = "enable-avx")]
 pub use ntt120::NTT120Avx;
-#[cfg(feature = "enable-avx")]
 
 // --- TransferFrom impls ---
 #[cfg(feature = "enable-avx")]
 mod transfer_impls {
-#[cfg(feature = "enable-avx")]
+    #[cfg(feature = "enable-avx")]
     use poulpy_cpu_ref::{FFT64Ref, NTT120Ref};
     use poulpy_hal::layouts::{Backend, TransferFrom};
 

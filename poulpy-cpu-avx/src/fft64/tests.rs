@@ -230,7 +230,12 @@ fn lwe_matrix_mul_bodies_matches_per_column() {
     let num_bodies = 5usize; // not a multiple of the SIMD width; exercises tails
     let bk = base2k.0 as usize;
 
-    let u_infos = CoeffMatrixLayout { n: Degree(rows_in as u32), rows_out, base2k, k: k_prec };
+    let u_infos = CoeffMatrixLayout {
+        n: Degree(rows_in as u32),
+        rows_out,
+        base2k,
+        k: k_prec,
+    };
 
     let mut src = Source::new([0u8; 32]);
     let mask = (1i64 << base2k.0) - 1;
@@ -288,7 +293,12 @@ fn lwe_matrix_mul_bodies_prepared_matches_unprepared() {
         let k_prec = TorusPrecision((base2k.0 as usize * size) as u32);
         let num_bodies = 7usize;
         let bk = base2k.0 as usize;
-        let u_infos = CoeffMatrixLayout { n: Degree(rows_in as u32), rows_out, base2k, k: k_prec };
+        let u_infos = CoeffMatrixLayout {
+            n: Degree(rows_in as u32),
+            rows_out,
+            base2k,
+            k: k_prec,
+        };
 
         let mut src = Source::new([0u8; 32]);
         let mask = (1i64 << base2k.0) - 1;

@@ -223,7 +223,12 @@ fn lwe_matrix_mul_bodies_prepared_matches_unprepared_ntt() {
         let k_prec = TorusPrecision((base2k.0 as usize * size) as u32);
         let num_bodies = 7usize;
         let bk = base2k.0 as usize;
-        let u_infos = CoeffMatrixLayout { n: Degree(rows_in as u32), rows_out, base2k, k: k_prec };
+        let u_infos = CoeffMatrixLayout {
+            n: Degree(rows_in as u32),
+            rows_out,
+            base2k,
+            k: k_prec,
+        };
 
         let mut src = Source::new([0u8; 32]);
         // U entries honor BU; A entries are full base2k=50 i64 digits.

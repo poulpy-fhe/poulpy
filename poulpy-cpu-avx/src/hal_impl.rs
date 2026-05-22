@@ -14,8 +14,8 @@ use poulpy_hal::{
         VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
     },
     oep::{
-        HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl,
-        HalVecZnxMatMulImpl, HalVmpImpl,
+        HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVecZnxMatMulImpl,
+        HalVmpImpl,
     },
 };
 
@@ -57,15 +57,48 @@ macro_rules! avx_matmul_prepared_methods {
             let u_size = panel.u_size();
             match (panel.w(), panel.up()) {
                 (16, _) => apply_prepared::<Self, $k16>(
-                    module, res, res_col, res_base2k, panel.raw_i16(), u_size, u_base2k, a, a_col, cols, a_base2k, rows_in,
+                    module,
+                    res,
+                    res_col,
+                    res_base2k,
+                    panel.raw_i16(),
+                    u_size,
+                    u_base2k,
+                    a,
+                    a_col,
+                    cols,
+                    a_base2k,
+                    rows_in,
                     rows_out,
                 ),
                 (32, 1) => apply_prepared::<Self, $k32s>(
-                    module, res, res_col, res_base2k, panel.raw_i32(), u_size, u_base2k, a, a_col, cols, a_base2k, rows_in,
+                    module,
+                    res,
+                    res_col,
+                    res_base2k,
+                    panel.raw_i32(),
+                    u_size,
+                    u_base2k,
+                    a,
+                    a_col,
+                    cols,
+                    a_base2k,
+                    rows_in,
                     rows_out,
                 ),
                 (32, 2) => apply_prepared::<Self, $k32d>(
-                    module, res, res_col, res_base2k, panel.raw_i32(), u_size, u_base2k, a, a_col, cols, a_base2k, rows_in,
+                    module,
+                    res,
+                    res_col,
+                    res_base2k,
+                    panel.raw_i32(),
+                    u_size,
+                    u_base2k,
+                    a,
+                    a_col,
+                    cols,
+                    a_base2k,
+                    rows_in,
                     rows_out,
                 ),
                 _ => unreachable!("CoeffGemmPanel: invalid (w, up)"),
@@ -170,6 +203,7 @@ unsafe impl HalSvpImpl<FFT64Avx> for FFT64Avx {
 unsafe impl HalVecZnxDftImpl<FFT64Avx> for FFT64Avx {
     poulpy_cpu_ref::hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault, automorphism_with_plan: skip);
 
+    #[inline(always)]
     fn vec_znx_dft_automorphism_with_plan(
         _module: &Module<Self>,
         plan: &Self::AutomorphismPlan,
