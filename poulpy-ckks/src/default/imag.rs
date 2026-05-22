@@ -1,6 +1,6 @@
 use anyhow::Result;
 use poulpy_core::{
-    GLWECopy, GLWENegate, GLWERotate, GLWEShift, ScratchArenaTakeCore,
+    GLWECopy, GLWENegate, GLWERotate, GLWEShift,
     layouts::{GLWEInfos, GLWEToBackendMut, LWEInfos},
 };
 use poulpy_hal::{
@@ -31,7 +31,6 @@ pub trait CKKSImagDefault<BE: Backend> {
         Self: GLWERotate<BE> + GLWEShift<BE> + ModuleN,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         let offset = ckks_offset_unary(dst, src);
         let k = (self.n() / 2) as i64;
@@ -50,7 +49,6 @@ pub trait CKKSImagDefault<BE: Backend> {
     where
         Self: GLWERotate<BE> + ModuleN,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         self.glwe_rotate_assign((self.n() / 2) as i64, dst, scratch);
         Ok(())
@@ -61,7 +59,6 @@ pub trait CKKSImagDefault<BE: Backend> {
         Self: GLWECopy<BE> + GLWENegate<BE> + GLWERotate<BE> + GLWEShift<BE> + ModuleN,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         self.ckks_mul_i_into_default(dst, src, scratch)?;
         self.glwe_negate_assign(dst);
@@ -72,7 +69,6 @@ pub trait CKKSImagDefault<BE: Backend> {
     where
         Self: GLWENegate<BE> + GLWERotate<BE> + ModuleN,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         self.ckks_mul_i_assign_default(dst, scratch)?;
         self.glwe_negate_assign(dst);

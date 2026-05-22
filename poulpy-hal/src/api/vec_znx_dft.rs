@@ -42,13 +42,13 @@ pub trait VecZnxIdftApplyTmpBytes {
 /// Applies the inverse DFT, converting a [`VecZnxDft`](crate::layouts::VecZnxDft)
 /// into a [`VecZnxBig`](crate::layouts::VecZnxBig) (extended precision).
 pub trait VecZnxIdftApply<B: Backend> {
-    fn vec_znx_idft_apply<'s>(
+    fn vec_znx_idft_apply(
         &self,
         res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
         a: &VecZnxDftBackendRef<'_, B>,
         a_col: usize,
-        scratch: &mut ScratchArena<'s, B>,
+        scratch: &mut ScratchArena<'_, B>,
     );
 }
 

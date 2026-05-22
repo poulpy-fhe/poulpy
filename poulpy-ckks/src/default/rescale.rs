@@ -1,7 +1,7 @@
 use anyhow::Result;
 use poulpy_core::layouts::GLWEToBackendMut;
 use poulpy_core::{
-    GLWEShift, ScratchArenaTakeCore,
+    GLWEShift,
     layouts::{GLWEInfos, LWEInfos},
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
@@ -30,7 +30,6 @@ pub trait CKKSRescaleOpsDefault<BE: Backend> {
     where
         Self: GLWEShift<BE>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         let log_budget = checked_log_budget_sub("rescale_assign", ct.log_budget(), k)?;
         self.glwe_lsh_assign(ct, k, scratch);
@@ -49,7 +48,6 @@ pub trait CKKSRescaleOpsDefault<BE: Backend> {
         Self: GLWEShift<BE>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         let log_budget = checked_log_budget_sub("rescale", src.log_budget(), k)?;
         self.glwe_lsh(dst, src, k, scratch);
@@ -63,7 +61,6 @@ pub trait CKKSRescaleOpsDefault<BE: Backend> {
         Self: GLWEShift<BE>,
         A: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         B: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         if a.log_budget() < b.log_budget() {
             self.ckks_rescale_assign_default(b, b.log_budget() - a.log_budget(), scratch)

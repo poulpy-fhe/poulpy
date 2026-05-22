@@ -19,7 +19,7 @@ cargo test -p poulpy-cpu-ref --features enable-core
 ```
 
 `poulpy-core` is backend-agnostic. Concrete execution lives in backend crates such as
-`poulpy-cpu-ref` or `poulpy-cpu-avx`, which provide the backend type `BE` used by
+`poulpy-cpu-ref`, `poulpy-cpu-avx`, or `poulpy-cpu-avx512`, which provide the backend type `BE` used by
 `poulpy_hal::layouts::Module<BE>`. The HAL remains dispatch-only: `poulpy-cpu-ref`
 hosts the default implementations, while accelerated backends override selected methods.
 

@@ -37,7 +37,6 @@ pub trait GGLWEToGGSWKeyEncryptSkDefault<BE: Backend> {
 impl<BE: Backend> GGLWEToGGSWKeyEncryptSkDefault<BE> for Module<BE>
 where
     Self: ModuleN + GGLWEEncryptSk<BE> + GLWESecretTensorFactory<BE> + GLWESecretPreparedFactory<BE> + VecZnxCopyBackend<BE>,
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     fn gglwe_to_ggsw_key_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where

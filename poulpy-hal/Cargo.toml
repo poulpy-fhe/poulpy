@@ -7,7 +7,7 @@ readme = "README.md"
 description = "A crate providing layouts and a trait-based hardware acceleration layer with open extension points, matching the API and types of spqlios-arithmetic."
 repository = "https://github.com/poulpy-fhe/poulpy"
 homepage = "https://github.com/poulpy-fhe/poulpy"
-documentation = "https://docs.rs/poulpy"
+documentation = "https://docs.rs/poulpy-hal"
 
 [dependencies]
 dashu-float = {workspace = true}
@@ -21,6 +21,10 @@ rand_chacha = {workspace = true}
 bytemuck = {workspace = true}
 paste = {workspace = true}
 anyhow = {workspace = true}
+
+# madvise(MADV_HUGEPAGE) in the aligned allocator; Linux only.
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
 
 
 [build-dependencies]

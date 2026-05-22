@@ -30,17 +30,16 @@ where
         lvl_0 + lvl_1
     }
 
-    fn glwe_keyswitch_internal<'s, 'r, A, K>(
+    fn glwe_keyswitch_internal<'r, A, K>(
         &self,
         res: &mut VecZnxDftBackendMut<'r, BE>,
         a: &A,
         key: &K,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         A: GLWEToBackendRef<BE>,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE> + ScratchAvailable,
-        BE: 's,
     {
         let a = a.to_backend_ref();
         let key: GGLWEPreparedBackendRef<'_, BE> = key.to_backend_ref();
@@ -121,16 +120,13 @@ where
         }
     }
 
-    fn gglwe_product_dft_default<'s, 'r, 'a>(
+    fn gglwe_product_dft_default<'r, 'a>(
         &self,
         res: &mut VecZnxDftBackendMut<'r, BE>,
         a: &VecZnxDftBackendRef<'a, BE>,
         key: &GGLWEPreparedBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'s, BE>,
-    ) where
-        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
-        BE: 's,
-    {
+        scratch: &mut ScratchArena<'_, BE>,
+    ) {
         let cols: usize = a.cols();
         let a_size: usize = a.size();
         assert!(
@@ -197,14 +193,14 @@ use crate::{
     oep::GLWEKeyswitchDefault,
 };
 
-fn glwe_keyswitch_dft_fill<'s, 'r, BE, M, A>(
+fn glwe_keyswitch_dft_fill<'r, BE, M, A>(
     module: &M,
     res: &mut VecZnxDftBackendMut<'r, BE>,
     a: &A,
     key: &GGLWEPreparedBackendRef<'_, BE>,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + 's,
+    BE: Backend,
     A: GLWEToBackendRef<BE>,
     M: GLWEKeyswitchInternal<BE> + GGLWEProductDefault<BE> + VecZnxDftApply<BE>,
     for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE> + ScratchAvailable,
@@ -245,7 +241,6 @@ where
     R: GLWEInfos,
     A: GLWEInfos,
     K: GGLWEInfos,
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     assert_eq!(module.n() as u32, res_infos.n());
     assert_eq!(module.n() as u32, a_infos.n());
@@ -285,15 +280,15 @@ where
 }
 
 #[allow(private_bounds)]
-pub fn glwe_keyswitch_default<'s, BE, M, R, A, K>(
+pub fn glwe_keyswitch_default<BE, M, R, A, K>(
     module: &M,
     res: &mut R,
     a: &A,
     key: &K,
     key_size: usize,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + 's,
+    BE: Backend,
     M: GLWEKeyswitchDefault<BE>
         + ModuleN
         + GLWEKeyswitchInternal<BE>
@@ -308,7 +303,6 @@ pub fn glwe_keyswitch_default<'s, BE, M, R, A, K>(
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     assert_eq!(
         a.rank(),
@@ -404,14 +398,14 @@ pub fn glwe_keyswitch_default<'s, BE, M, R, A, K>(
 }
 
 #[allow(private_bounds)]
-pub fn glwe_keyswitch_assign_default<'s, BE, M, R, K>(
+pub fn glwe_keyswitch_assign_default<BE, M, R, K>(
     module: &M,
     res: &mut R,
     key: &K,
     key_size: usize,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend + 's,
+    BE: Backend,
     M: GLWEKeyswitchDefault<BE>
         + ModuleN
         + GLWEKeyswitchInternal<BE>
@@ -426,7 +420,6 @@ pub fn glwe_keyswitch_assign_default<'s, BE, M, R, K>(
         + VecZnxNormalizeAssignBackend<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     assert_eq!(
         res.rank(),

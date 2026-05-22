@@ -8,8 +8,8 @@ use poulpy_core::{
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssignBackend},
     layouts::{
-        Backend, HostBackend, HostDataMut, Module, ScalarZnx, ScalarZnxToBackendRef, ScratchArena, ScratchOwned, VecZnx,
-        VecZnxToBackendMut, ZnxView, ZnxViewMut,
+        Backend, HostBackend, HostDataMut, Module, ScalarZnx, ScalarZnxToBackendRef, ScratchOwned, VecZnx, VecZnxToBackendMut,
+        ZnxView, ZnxViewMut,
     },
     source::Source,
 };
@@ -38,7 +38,6 @@ where
     BE: Backend<OwnedBuf = Vec<u8>> + HostBackend,
     BE: 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> ScratchArena<'a, BE>: poulpy_core::ScratchArenaTakeCore<'a, BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
     for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
 {

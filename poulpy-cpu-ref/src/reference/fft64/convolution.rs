@@ -329,6 +329,16 @@ pub fn convolution_pairwise_apply_dft<BE>(
 }
 
 pub trait I64Ops {
+    fn i64_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
+        debug_assert_eq!(res.len(), a.len());
+        debug_assert_eq!(res.len(), b.len());
+
+        res.iter_mut()
+            .zip(a.iter())
+            .zip(b.iter())
+            .for_each(|((r, &ai), &bi)| *r = ai.wrapping_mul(bi));
+    }
+
     fn i64_extract_1blk_contiguous(n: usize, offset: usize, rows: usize, blk: usize, dst: &mut [i64], src: &[i64]) {
         i64_extract_1blk_contiguous_ref(n, offset, rows, blk, dst, src)
     }

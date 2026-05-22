@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ScratchAvailable, VmpPrepare},
+    api::VmpPrepare,
     layouts::{Backend, Data, HostDataMut, Module, ScratchArena},
 };
 
@@ -99,11 +99,10 @@ pub trait GGLWEToGGSWKeyPreparedFactory<BE: Backend> {
     /// Transforms a standard [`GGLWEToGGSWKey`] into the DFT domain, writing into `res`.
     ///
     /// Iterates over each key element and prepares it individually.
-    fn gglwe_to_ggsw_key_prepare<'s, R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'s, BE>)
+    fn gglwe_to_ggsw_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GGLWEToGGSWKeyPreparedToBackendMut<BE>,
-        O: GGLWEToGGSWKeyToBackendRef<BE>,
-        ScratchArena<'s, BE>: ScratchAvailable;
+        O: GGLWEToGGSWKeyToBackendRef<BE>;
 }
 
 impl<BE: Backend> GGLWEToGGSWKeyPreparedFactory<BE> for Module<BE>
@@ -161,11 +160,10 @@ where
         lvl_0
     }
 
-    fn gglwe_to_ggsw_key_prepare<'s, R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'s, BE>)
+    fn gglwe_to_ggsw_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GGLWEToGGSWKeyPreparedToBackendMut<BE>,
         O: GGLWEToGGSWKeyToBackendRef<BE>,
-        ScratchArena<'s, BE>: ScratchAvailable,
     {
         let needed = {
             let res_infos = res.to_backend_mut();

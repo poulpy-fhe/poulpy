@@ -24,7 +24,7 @@ pub trait GGLWECompressedEncryptSkDefault<BE: Backend> {
     where
         A: GGLWEInfos;
 
-    fn gglwe_compressed_encrypt_sk_default<'s, R, P, S, E>(
+    fn gglwe_compressed_encrypt_sk_default<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -32,13 +32,12 @@ pub trait GGLWECompressedEncryptSkDefault<BE: Backend> {
         seed: [u8; 32],
         enc_infos: &E,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeedMut,
         P: ScalarZnxToBackendRef<BE>,
         E: EncryptionInfos,
-        S: GLWESecretPreparedToBackendRef<BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>;
+        S: GLWESecretPreparedToBackendRef<BE>;
 }
 
 impl<BE: Backend> GGLWECompressedEncryptSkDefault<BE> for Module<BE>
@@ -65,7 +64,7 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn gglwe_compressed_encrypt_sk_default<'s, R, P, S, E>(
+    fn gglwe_compressed_encrypt_sk_default<R, P, S, E>(
         &self,
         res: &mut R,
         pt: &P,
@@ -73,13 +72,12 @@ where
         seed: [u8; 32],
         enc_infos: &E,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGLWECompressedToBackendMut<BE> + GGLWECompressedSeedMut,
         P: ScalarZnxToBackendRef<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     {
         let mut seeds: Vec<[u8; 32]> = vec![[0u8; 32]; res.seed_mut().len()];
 

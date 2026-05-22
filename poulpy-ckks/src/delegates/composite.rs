@@ -1,15 +1,12 @@
 use anyhow::{Result, bail, ensure};
 use poulpy_core::{
-    GLWENormalize, GLWETensoring, ScratchArenaTakeCore,
+    GLWENormalize, GLWETensoring,
     layouts::{
         GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWETensor, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         TorusPrecision,
     },
 };
-use poulpy_hal::{
-    api::ScratchAvailable,
-    layouts::{Backend, Data, Module, ScratchArena},
-};
+use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, CKKSInfos,
@@ -50,7 +47,6 @@ fn ensure_accumulation_fits<D: Data>(op: &'static str, dst: &CKKSCiphertext<D>, 
 impl<BE: Backend> CKKSAddManyOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAddOps<BE> + CKKSRescaleOps<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_add_many_tmp_bytes(&self) -> usize {
         self.ckks_add_tmp_bytes()
@@ -88,7 +84,6 @@ where
 impl<BE: Backend> CKKSMulAddOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + CKKSAddOpsUnnormalized<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_mul_add_ct_tmp_bytes<R, T>(&self, res: &R, tsk: &T) -> usize
     where
@@ -221,7 +216,6 @@ where
 impl<BE: Backend> CKKSAffineOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_affine_pt_const_tmp_bytes<R, A, P>(&self, res: &R, a: &A, affine_const: &P) -> usize
     where
@@ -317,7 +311,6 @@ where
 impl<BE: Backend> CKKSMulSubOps<BE> for Module<BE>
 where
     Module<BE>: CKKSMulOps<BE> + CKKSSubOps<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_mul_sub_ct_tmp_bytes<R, T>(&self, res: &R, tsk: &T) -> usize
     where
@@ -431,7 +424,6 @@ where
     BE: CKKSAddImpl<BE>,
     Module<BE>: GLWENormalize<BE>,
     CKKSCiphertext<D>: GLWEToBackendMut<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
     F: for<'a> FnMut(&mut CKKSCiphertextViewMut<'a, BE>, usize, &mut ScratchArena<'a, BE>) -> Result<()>,
 {
     if n <= 1 {
@@ -453,7 +445,6 @@ where
 impl<BE: Backend + CKKSAddImpl<BE>> CKKSDotProductOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + CKKSRescaleOps<BE> + GLWENormalize<BE> + GLWETensoring<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_dot_product_ct_tmp_bytes<R, T>(&self, n: usize, res: &R, tsk: &T) -> usize
     where

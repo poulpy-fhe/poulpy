@@ -112,9 +112,9 @@ pub fn ntt120_cnv_prepare_right_tmp_bytes(n: usize) -> usize {
 /// Encode a `VecZnx` (i64 coefficients) into a `CnvPVecR` (q120c, NTT domain).
 ///
 /// For each column `col` and each limb `j` of the input `a`:
-/// 1. Map i64 coefficients → q120b via [`b_from_znx64_ref`] into `tmp`.
-/// 2. Apply the forward NTT in-place via [`ntt_ref`].
-/// 3. Convert q120b → q120c via [`c_from_b_ref`] into `res[col, j]`.
+/// 1. Map i64 coefficients → q120b via `b_from_znx64_ref` into `tmp`.
+/// 2. Apply the forward NTT in-place via `ntt_ref`.
+/// 3. Convert q120b → q120c via `c_from_b_ref` into `res\[col, j\]`.
 ///
 /// `tmp` must hold at least `ntt120_cnv_prepare_right_tmp_bytes(n) / size_of::<u64>()` elements.
 /// Limbs of `res` beyond `a.size()` are zeroed.

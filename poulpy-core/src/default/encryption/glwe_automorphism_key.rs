@@ -39,7 +39,6 @@ pub trait GLWEAutomorphismKeyEncryptSkDefault<BE: Backend> {
 impl<BE: Backend> GLWEAutomorphismKeyEncryptSkDefault<BE> for Module<BE>
 where
     Self: GGLWEEncryptSk<BE> + VecZnxAutomorphismBackend<BE> + GaloisElement + SvpPPolBytesOf + GLWESecretPreparedFactory<BE>,
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     fn glwe_automorphism_key_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where

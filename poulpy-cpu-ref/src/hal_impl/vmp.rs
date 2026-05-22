@@ -15,12 +15,12 @@ macro_rules! hal_impl_vmp {
                 + Self::vmp_apply_dft_to_dft_tmp_bytes(module, res_size, a_dft_size, b_rows, b_cols_in, b_cols_out, b_size)
         }
 
-        fn vmp_apply_dft<'s, R>(
+        fn vmp_apply_dft<R>(
             module: &Module<Self>,
             res: &mut R,
             a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
             b: &poulpy_hal::layouts::VmpPMatBackendRef<'_, Self>,
-            scratch: &mut poulpy_hal::layouts::ScratchArena<'s, Self>,
+            scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) where
             R: VecZnxDftToBackendMut<Self>,
         {
@@ -54,11 +54,11 @@ macro_rules! hal_impl_vmp {
             <Self as $defaults<Self>>::vmp_prepare_tmp_bytes_default(module, rows, cols_in, cols_out, size)
         }
 
-        fn vmp_prepare<'s>(
+        fn vmp_prepare(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::VmpPMatBackendMut<'_, Self>,
             a: &poulpy_hal::layouts::MatZnxBackendRef<'_, Self>,
-            scratch: &mut poulpy_hal::layouts::ScratchArena<'s, Self>,
+            scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
             <Self as $defaults<Self>>::vmp_prepare_default(module, res, a, &mut scratch);
@@ -78,16 +78,42 @@ macro_rules! hal_impl_vmp {
             )
         }
 
-        fn vmp_apply_dft_to_dft<'s, 'r>(
+        fn vmp_apply_dft_to_dft(
             module: &Module<Self>,
-            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'r, Self>,
+            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
             a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
             b: &poulpy_hal::layouts::VmpPMatBackendRef<'_, Self>,
             limb_offset: usize,
-            scratch: &mut poulpy_hal::layouts::ScratchArena<'s, Self>,
+            scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
         ) {
             let mut scratch = scratch.borrow();
             <Self as $defaults<Self>>::vmp_apply_dft_to_dft_default(module, res, a, b, limb_offset, &mut scratch);
+        }
+
+        fn vmp_apply_dft_to_dft_accumulate_tmp_bytes(
+            module: &Module<Self>,
+            res_size: usize,
+            a_size: usize,
+            b_rows: usize,
+            b_cols_in: usize,
+            b_cols_out: usize,
+            b_size: usize,
+        ) -> usize {
+            <Self as $defaults<Self>>::vmp_apply_dft_to_dft_accumulate_tmp_bytes_default(
+                module, res_size, a_size, b_rows, b_cols_in, b_cols_out, b_size,
+            )
+        }
+
+        fn vmp_apply_dft_to_dft_accumulate(
+            module: &Module<Self>,
+            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+            a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+            b: &poulpy_hal::layouts::VmpPMatBackendRef<'_, Self>,
+            limb_offset: usize,
+            scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
+        ) {
+            let mut scratch = scratch.borrow();
+            <Self as $defaults<Self>>::vmp_apply_dft_to_dft_accumulate_default(module, res, a, b, limb_offset, &mut scratch);
         }
 
         fn vmp_zero(module: &Module<Self>, res: &mut poulpy_hal::layouts::VmpPMatBackendMut<'_, Self>) {

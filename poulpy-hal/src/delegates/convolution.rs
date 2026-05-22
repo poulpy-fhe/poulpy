@@ -43,24 +43,24 @@ impl_convolution_delegate!(
     fn cnv_prepare_left_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize {
         <BE as HalConvolutionImpl<BE>>::cnv_prepare_left_tmp_bytes(self, res_size, a_size)
     },
-    fn cnv_prepare_left<'s, 'r>(
+    fn cnv_prepare_left(
         &self,
-        res: &mut CnvPVecLBackendMut<'r, BE>,
+        res: &mut CnvPVecLBackendMut<'_, BE>,
         a: &VecZnxBackendRef<'_, BE>,
         mask: i64,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) {
         <BE as HalConvolutionImpl<BE>>::cnv_prepare_left(self, res, a, mask, scratch);
     },
     fn cnv_prepare_right_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize {
         <BE as HalConvolutionImpl<BE>>::cnv_prepare_right_tmp_bytes(self, res_size, a_size)
     },
-    fn cnv_prepare_right<'s, 'r>(
+    fn cnv_prepare_right(
         &self,
-        res: &mut CnvPVecRBackendMut<'r, BE>,
+        res: &mut CnvPVecRBackendMut<'_, BE>,
         a: &VecZnxBackendRef<'_, BE>,
         mask: i64,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) {
         <BE as HalConvolutionImpl<BE>>::cnv_prepare_right(self, res, a, mask, scratch);
     },
@@ -70,7 +70,7 @@ impl_convolution_delegate!(
     fn cnv_by_const_apply_tmp_bytes(&self, res_size: usize, cnv_offset: usize, a_size: usize, b_size: usize) -> usize {
         <BE as HalConvolutionImpl<BE>>::cnv_by_const_apply_tmp_bytes(self, res_size, cnv_offset, a_size, b_size)
     },
-    fn cnv_by_const_apply<'s>(
+    fn cnv_by_const_apply(
         &self,
         cnv_offset: usize,
         res: &mut VecZnxBigBackendMut<'_, BE>,
@@ -80,11 +80,11 @@ impl_convolution_delegate!(
         b: &VecZnxBackendRef<'_, BE>,
         b_col: usize,
         b_coeff: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) {
         <BE as HalConvolutionImpl<BE>>::cnv_by_const_apply(self, cnv_offset, res, res_col, a, a_col, b, b_col, b_coeff, scratch)
     },
-    fn cnv_apply_dft<'s>(
+    fn cnv_apply_dft(
         &self,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -93,14 +93,14 @@ impl_convolution_delegate!(
         a_col: usize,
         b: &CnvPVecRBackendRef<'_, BE>,
         b_col: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) {
         <BE as HalConvolutionImpl<BE>>::cnv_apply_dft(self, cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
     },
     fn cnv_pairwise_apply_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
         <BE as HalConvolutionImpl<BE>>::cnv_pairwise_apply_dft_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)
     },
-    fn cnv_pairwise_apply_dft<'s>(
+    fn cnv_pairwise_apply_dft(
         &self,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, BE>,
@@ -109,20 +109,20 @@ impl_convolution_delegate!(
         b: &CnvPVecRBackendRef<'_, BE>,
         i: usize,
         j: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) {
         <BE as HalConvolutionImpl<BE>>::cnv_pairwise_apply_dft(self, cnv_offset, res, res_col, a, b, i, j, scratch)
     },
     fn cnv_prepare_self_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize {
         <BE as HalConvolutionImpl<BE>>::cnv_prepare_self_tmp_bytes(self, res_size, a_size)
     },
-    fn cnv_prepare_self<'s, 'l, 'r>(
+    fn cnv_prepare_self(
         &self,
-        left: &mut CnvPVecLBackendMut<'l, BE>,
-        right: &mut CnvPVecRBackendMut<'r, BE>,
+        left: &mut CnvPVecLBackendMut<'_, BE>,
+        right: &mut CnvPVecRBackendMut<'_, BE>,
         a: &VecZnxBackendRef<'_, BE>,
         mask: i64,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) {
         <BE as HalConvolutionImpl<BE>>::cnv_prepare_self(self, left, right, a, mask, scratch)
     }

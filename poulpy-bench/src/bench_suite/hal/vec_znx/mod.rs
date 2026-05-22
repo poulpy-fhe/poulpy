@@ -1,4 +1,4 @@
-//! Criterion benchmark harnesses for coefficient-domain [`VecZnx`] operations.
+//! Criterion benchmark harnesses for coefficient-domain [`VecZnx`](poulpy_hal::layouts::VecZnx) operations.
 //!
 //! Each submodule mirrors the corresponding `poulpy-cpu-ref` `vec_znx` implementation
 //! file; the helpers are invoked from `poulpy-bench` harness binaries.

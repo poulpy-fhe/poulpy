@@ -6,7 +6,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    EncryptionInfos, ScratchArenaTakeCore,
+    EncryptionInfos,
     encryption::{GLWEEncryptSk, GLWEEncryptSkInternal},
     layouts::{
         GLWECompressedSeedMut, GLWEInfos, GLWEToBackendRef, LWEInfos, compressed::GLWECompressedToBackendMut,
@@ -20,22 +20,20 @@ pub trait GLWECompressedEncryptSkDefault<BE: Backend> {
     where
         A: GLWEInfos;
 
-    fn glwe_compressed_encrypt_sk_default<'s, R, P, S, E>(
+    fn glwe_compressed_encrypt_sk_default<R, P, S, E>(
         &self,
-        res: &'s mut R,
+        res: &mut R,
         pt: &P,
         sk: &S,
         seed_xa: [u8; 32],
         enc_infos: &E,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
         P: GLWEToBackendRef<BE>,
         E: EncryptionInfos,
-        S: GLWESecretPreparedToBackendRef<BE>,
-        BE: 's,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>;
+        S: GLWESecretPreparedToBackendRef<BE>;
 }
 
 impl<BE: Backend> GLWECompressedEncryptSkDefault<BE> for Module<BE>
@@ -52,22 +50,20 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_compressed_encrypt_sk_default<'s, R, P, S, E>(
+    fn glwe_compressed_encrypt_sk_default<R, P, S, E>(
         &self,
-        res: &'s mut R,
+        res: &mut R,
         pt: &P,
         sk: &S,
         seed_xa: [u8; 32],
         enc_infos: &E,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWECompressedToBackendMut<BE> + GLWECompressedSeedMut,
         P: GLWEToBackendRef<BE>,
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        BE: 's,
-        ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
     {
         res.seed_mut().copy_from_slice(&seed_xa);
 

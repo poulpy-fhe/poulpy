@@ -86,6 +86,12 @@ For maximum performance on x86_64 CPUs with AVX2 + FMA support, consider enablin
 poulpy-cpu-avx (feature: enable-avx)
 ```
 
+For x86_64 CPUs with AVX-512 support, consider the AVX-512 backend:
+
+```
+poulpy-cpu-avx512 (features: enable-avx512f, enable-ifma)
+```
+
 Benchmarks and applications can freely switch between backends without changing source code — backend selection can be handled with feature flags, for example
 
 ```rust
@@ -111,14 +117,13 @@ To implement your own backend (SIMD or accelerator):
 
 At every layer the macro and the direct implementation are mutually exclusive per operation family: the macro opts the backend into the portable `default` path, while a direct OEP impl replaces it entirely. There is no requirement to use the macros — a backend that needs full control can implement every OEP trait by hand.
 
-Your backend will automatically integrate with:
+Your backend will automatically integrate with the backend-generic layers:
 
 * `poulpy-hal`
 * `poulpy-core`
 * `poulpy-ckks`
-* `poulpy-bin-fhe`
 
-No modifications to those crates are necessary — the HAL provides the extension points. Only the operations that need a faster implementation require explicit overrides; everything else is inherited from the `default` layer for free.
+No modifications to those crates are necessary — the HAL provides the extension points. Scheme crates that still carry crate-specific backend glue, such as parts of `poulpy-bin-fhe` in v0.6.0, may need follow-up integration work. Only the operations that need a faster implementation require explicit overrides; everything else is inherited from the `default` layer for free.
 
 ---
 

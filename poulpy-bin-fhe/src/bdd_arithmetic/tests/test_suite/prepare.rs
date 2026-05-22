@@ -4,7 +4,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBackend, HostDataMut, HostDataRef, Module, ScratchArena, ScratchOwned, Stats},
+    layouts::{Backend, HostBackend, HostDataMut, HostDataRef, Module, ScratchOwned, Stats},
     source::Source,
 };
 use rand::Rng;
@@ -35,7 +35,6 @@ pub fn test_bdd_prepare<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>> 
         + ExecuteBDDCircuit2WTo1W<BE>
         + GLWEEncryptSk<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> ScratchArena<'a, BE>: poulpy_core::ScratchArenaTakeCore<'a, BE>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {

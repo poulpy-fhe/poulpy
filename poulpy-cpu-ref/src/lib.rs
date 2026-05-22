@@ -2,7 +2,7 @@
 
 //! Reference (portable) CPU backend for the Poulpy lattice cryptography library.
 //!
-//! This crate provides two backend implementations for [`poulpy_hal`]:
+//! This crate provides two reference implementations for [`poulpy_hal`]:
 //!
 //! - [`FFT64Ref`]: scalar `f64` FFT arithmetic — see the [`fft64`] module.
 //! - [`NTT120Ref`]: scalar Q120 NTT arithmetic (CRT over four ~30-bit primes) — see the [`ntt120`] module.

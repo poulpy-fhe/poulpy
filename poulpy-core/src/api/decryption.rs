@@ -11,21 +11,19 @@ pub trait GLWEDecrypt<BE: Backend> {
     where
         A: GLWEInfos;
 
-    fn glwe_decrypt<'s, R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'s, BE>)
+    fn glwe_decrypt<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendRef<BE> + GLWEInfos,
         P: GLWEToBackendMut<BE> + GLWEInfos + SetLWEInfos,
-        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        for<'a> ScratchArena<'a, BE>: crate::ScratchArenaTakeCore<'a, BE>;
+        S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
 }
 
 pub trait LWEDecrypt<BE: Backend> {
-    fn lwe_decrypt<'s, R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'s, BE>)
+    fn lwe_decrypt<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
         R: LWEToBackendRef<BE> + LWEInfos,
         P: LWEPlaintextToBackendMut<BE> + SetLWEInfos + LWEInfos,
-        S: LWESecretToBackendRef<BE> + LWEInfos,
-        for<'a> ScratchArena<'a, BE>: crate::ScratchArenaTakeCore<'a, BE>;
+        S: LWESecretToBackendRef<BE> + LWEInfos;
 
     fn lwe_decrypt_tmp_bytes<A>(&self, infos: &A) -> usize
     where

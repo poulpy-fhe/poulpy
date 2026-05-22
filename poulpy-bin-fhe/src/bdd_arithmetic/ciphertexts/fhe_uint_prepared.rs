@@ -10,7 +10,7 @@ use poulpy_core::layouts::{
 };
 use poulpy_core::{EncryptionInfos, GLWECopy, GLWEDecrypt, GLWEKeyswitch, GLWEPacking, LWEFromGLWE};
 
-use poulpy_core::{GGSWEncryptSk, ScratchArenaTakeCore, layouts::GLWESecretPreparedToBackendRef};
+use poulpy_core::{GGSWEncryptSk, layouts::GLWESecretPreparedToBackendRef};
 use poulpy_hal::api::{ModuleLogN, ScratchArenaTakeBasic};
 use poulpy_hal::layouts::{Backend, Data, HostBackend, HostDataMut, HostDataRef, Module, ScalarZnx};
 
@@ -252,7 +252,6 @@ impl<T: UnsignedInteger + ToBits, BE: Backend<OwnedBuf = Vec<u8>>> FheUintPrepar
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         M: FheUintPreparedEncryptSk<T, BE>,
         E: EncryptionInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeBasic<'a, BE>,
         for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     {
         module.fhe_uint_prepared_encrypt_sk(self, value, sk, enc_infos, source_xe, source_xa, scratch);
@@ -267,11 +266,10 @@ where
     where
         M: ModuleCoreAlloc<OwnedBuf = Vec<u8>> + ModuleLogN + GLWEDecrypt<BE> + Cmux<BE> + GLWEPacking<BE> + GLWECopy<BE>,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
-        BE::OwnedBuf: HostDataRef,
         BE: 'static,
+        BE::OwnedBuf: HostDataRef + 'static,
         for<'a> BE::BufMut<'a>: HostDataMut,
         for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {
@@ -313,11 +311,9 @@ impl<D: HostDataRef, T: UnsignedInteger, B: Backend> GGSWInfos for FheUintPrepar
 }
 
 impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>>> BDDKeyPrepared<BE::OwnedBuf, BRA, BE> {
-    pub fn prepare<'s, M>(&mut self, module: &M, other: &BDDKey<BE::OwnedBuf, BRA>, scratch: &mut ScratchArena<'s, BE>)
+    pub fn prepare<M>(&mut self, module: &M, other: &BDDKey<BE::OwnedBuf, BRA>, scratch: &mut ScratchArena<'_, BE>)
     where
         M: BDDKeyPreparedFactory<BRA, BE>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
-        BE: 's,
     {
         module.prepare_bdd_key(self, other, scratch);
     }
@@ -389,7 +385,6 @@ pub trait FheUintPrepare<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>>
 impl<BRA: BlindRotationAlgo, BE: Backend> FheUintPrepare<BRA, BE> for Module<BE>
 where
     Self: LWEFromGLWE<BE> + GLWEKeyswitch<BE> + CircuitBootstrappingExecute<BRA, BE> + GGSWPreparedFactory<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     BE: Backend<OwnedBuf = Vec<u8>>,
     BE::OwnedBuf: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,

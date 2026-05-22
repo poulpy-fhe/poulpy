@@ -37,7 +37,7 @@ pub trait CKKSEncrypt<BE: Backend> {
         A: CKKSCtBounds;
 
     #[allow(clippy::too_many_arguments)]
-    fn ckks_encrypt_sk<'s, Dct, Dpt, S, E: EncryptionInfos>(
+    fn ckks_encrypt_sk<Dct, Dpt, S, E: EncryptionInfos>(
         &self,
         ct: &mut Dct,
         pt: &Dpt,
@@ -45,13 +45,12 @@ pub trait CKKSEncrypt<BE: Backend> {
         enc_infos: &E,
         source_xa: &mut Source,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         S: GLWESecretPreparedToBackendRef<BE>,
         Dct: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Dpt: GLWEToBackendRef<BE> + CKKSCtBounds,
-        BE: 's;
+        Dpt: GLWEToBackendRef<BE> + CKKSCtBounds;
 }
 
 /// Secret-key decryption of a CKKS ciphertext.

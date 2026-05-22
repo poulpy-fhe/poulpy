@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphismAssign, VecZnxFillUniformSourceBackend},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAutomorphismAssignBackend, VecZnxFillUniformSourceBackend},
     layouts::{Module, ScratchOwned},
     source::Source,
     test_suite::TestParams,
@@ -31,7 +31,7 @@ where
         + GLWEAutomorphismKeyEncryptSk<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWENoise<BE>
-        + VecZnxAutomorphismAssign<BE>
+        + VecZnxAutomorphismAssignBackend<BE>
         + GLWENormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
@@ -155,7 +155,12 @@ where
             .log2();
 
             module.glwe_normalize(&mut pt_out, &pt_in, &mut scratch.borrow());
-            module.vec_znx_automorphism_assign(p, &mut vec_znx_backend_mut::<BE>(&mut pt_out.data), 0, &mut scratch.borrow());
+            module.vec_znx_automorphism_assign_backend(
+                p,
+                &mut vec_znx_backend_mut::<BE>(&mut pt_out.data),
+                0,
+                &mut scratch.borrow(),
+            );
 
             assert!(
                 module
@@ -182,7 +187,7 @@ where
         + GLWEAutomorphismKeyEncryptSk<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWENoise<BE>
-        + VecZnxAutomorphismAssign<BE>,
+        + VecZnxAutomorphismAssignBackend<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
@@ -288,7 +293,12 @@ where
             .sqrt()
             .log2();
 
-            module.vec_znx_automorphism_assign(p, &mut vec_znx_backend_mut::<BE>(&mut pt_want.data), 0, &mut scratch.borrow());
+            module.vec_znx_automorphism_assign_backend(
+                p,
+                &mut vec_znx_backend_mut::<BE>(&mut pt_want.data),
+                0,
+                &mut scratch.borrow(),
+            );
 
             assert!(
                 module

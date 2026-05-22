@@ -4,12 +4,12 @@ use crate::default::encryption::CKKSEncryptionDefault;
 
 use anyhow::Result;
 use poulpy_core::{
-    EncryptionInfos, ScratchArenaTakeCore,
+    EncryptionInfos,
     layouts::{GLWEInfos, GLWESecretPreparedToBackendRef, LWEInfos},
     oep::{DecryptionDefault, EncryptionDefault},
 };
 use poulpy_hal::{
-    api::{ScratchAvailable, VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddIntoBackend, VecZnxRshBackend, VecZnxRshTmpBytes},
+    api::{VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddIntoBackend, VecZnxRshBackend, VecZnxRshTmpBytes},
     layouts::{Backend, HostBackend, HostDataMut, HostDataRef, Module, ScratchArena},
     oep::{HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl},
     source::Source,
@@ -27,7 +27,7 @@ pub unsafe trait CKKSEncryptionImpl<BE: Backend>: Backend {
     where
         A: GLWEInfos + CKKSInfos;
 
-    fn ckks_encrypt_sk<'s, Dct, S, E, Pt>(
+    fn ckks_encrypt_sk<Dct, S, E, Pt>(
         module: &Module<BE>,
         ct: &mut Dct,
         pt: &Pt,
@@ -35,14 +35,13 @@ pub unsafe trait CKKSEncryptionImpl<BE: Backend>: Backend {
         enc_infos: &E,
         source_xa: &mut Source,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         E: EncryptionInfos,
         Pt: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
         Dct: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
-        S: GLWESecretPreparedToBackendRef<BE>,
-        BE: 's;
+        S: GLWESecretPreparedToBackendRef<BE>;
 
     fn ckks_decrypt_tmp_bytes<A>(module: &Module<BE>, ct_infos: &A) -> usize
     where
@@ -75,7 +74,6 @@ where
         + VecZnxRshBackend<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
     for<'a> BE::BufRef<'a>: HostDataRef,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE> + ScratchAvailable,
 {
     fn ckks_encrypt_sk_tmp_bytes<A>(module: &Module<BE>, ct_infos: &A) -> usize
     where
@@ -84,7 +82,7 @@ where
         module.ckks_encrypt_sk_tmp_bytes_default(ct_infos)
     }
 
-    fn ckks_encrypt_sk<'s, Dct, S, E, Pt>(
+    fn ckks_encrypt_sk<Dct, S, E, Pt>(
         module: &Module<BE>,
         ct: &mut Dct,
         pt: &Pt,
@@ -92,14 +90,13 @@ where
         enc_infos: &E,
         source_xa: &mut Source,
         source_xe: &mut Source,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         E: EncryptionInfos,
         Pt: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
         Dct: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        BE: 's,
     {
         module.ckks_encrypt_sk_default(ct, pt, sk, enc_infos, source_xa, source_xe, scratch)
     }

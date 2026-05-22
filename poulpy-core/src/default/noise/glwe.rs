@@ -16,12 +16,12 @@ use crate::{
     },
 };
 
-pub(crate) fn glwe_noise_backend_inner<'s, M, BE>(
+pub(crate) fn glwe_noise_backend_inner<M, BE>(
     module: &M,
     res_backend: &GLWEBackendRef<'_, BE>,
     pt_want_backend: &GLWEBackendRef<'_, BE>,
     sk_backend: &GLWESecretPreparedBackendRef<'_, BE>,
-    scratch: &mut ScratchArena<'s, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
 ) -> Stats
 where
     M: GLWENoise<BE>
@@ -39,7 +39,6 @@ where
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
     BE: HostBackend,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     assert!(
@@ -78,7 +77,6 @@ where
         + VecZnxBigAddAssign<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     fn glwe_noise_tmp_bytes<A>(&self, infos: &A) -> usize
@@ -91,7 +89,7 @@ where
         lvl_0 + lvl_1
     }
 
-    fn glwe_noise<'s, R, P, S>(&self, res: &R, pt_want: &P, sk_prepared: &S, scratch: &mut ScratchArena<'s, BE>) -> Stats
+    fn glwe_noise<R, P, S>(&self, res: &R, pt_want: &P, sk_prepared: &S, scratch: &mut ScratchArena<'_, BE>) -> Stats
     where
         R: GLWEToBackendRef<BE> + GLWEInfos,
         P: GLWEToBackendRef<BE>,

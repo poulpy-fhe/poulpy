@@ -1,21 +1,83 @@
 use dashu_float::{FBig, round::mode::HalfEven};
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxNormalize},
-    layouts::{FillUniform, Module, ScratchOwned, ZnxView},
+    layouts::{FillUniform, Module, ReaderFrom, ScratchOwned, ZnxView},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut, vec_znx_backend_ref},
 };
 
+use byteorder::{LittleEndian, WriteBytesExt};
+
 use crate::{
-    DEFAULT_SIGMA_XE, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEFromLWE, GLWENoise, GLWENormalize,
+    DEFAULT_SIGMA_XE, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEExpandLWE, GLWEFromLWE, GLWENoise, GLWENormalize,
     GLWEToLWESwitchingKeyEncryptSk, LWEDecrypt, LWEEncryptSk, LWEFromGLWE, LWEToGLWESwitchingKeyEncryptSk, ScratchArenaTakeCore,
     layouts::{
         Base2K, Degree, Dnum, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWEToLWEKey,
         GLWEToLWEKeyLayout, GLWEToLWEKeyPrepared, GLWEToLWEKeyPreparedFactory, LWE, LWEInfos, LWELayout, LWEPlaintext, LWESecret,
         LWEToGLWEKey, LWEToGLWEKeyLayout, LWEToGLWEKeyPrepared, LWEToGLWEKeyPreparedFactory, ModuleCoreAlloc, Rank,
-        TorusPrecision, prepared::GLWESecretPrepared,
+        SecretConversion, TorusPrecision, prepared::GLWESecretPrepared,
     },
 };
+
+fn write_vec_znx_bytes(out: &mut Vec<u8>, n: u64, cols: u64, size: u64, max_size: u64, coeffs: &[i64]) {
+    out.write_u64::<LittleEndian>(n).unwrap();
+    out.write_u64::<LittleEndian>(cols).unwrap();
+    out.write_u64::<LittleEndian>(size).unwrap();
+    out.write_u64::<LittleEndian>(max_size).unwrap();
+
+    let mut raw = Vec::with_capacity(std::mem::size_of_val(coeffs));
+    for coeff in coeffs {
+        raw.write_i64::<LittleEndian>(*coeff).unwrap();
+    }
+
+    out.write_u64::<LittleEndian>(raw.len() as u64).unwrap();
+    out.extend_from_slice(&raw);
+}
+
+pub fn test_lwe_read_from_rejects_malformed_shape<BE: crate::test_suite::TestBackend>(_params: &TestParams, _module: &Module<BE>)
+where
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+{
+    let infos = LWELayout {
+        n: Degree(2),
+        base2k: Base2K(32),
+        k: TorusPrecision(64),
+    };
+
+    let mut lwe = LWE::<Vec<u8>>::alloc_from_infos(&infos);
+    let mut bytes = Vec::new();
+
+    bytes.write_u32::<LittleEndian>(32).unwrap();
+    write_vec_znx_bytes(&mut bytes, 1, 1, 1, 1, &[123]);
+    write_vec_znx_bytes(&mut bytes, 2, 1, 2, 2, &[1, 2, 3, 4]);
+
+    let err = lwe
+        .read_from(&mut &bytes[..])
+        .expect_err("malformed LWE body/mask shape must be rejected");
+
+    assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+}
+
+pub fn test_lwe_secret_from_glwe_secret_flattens_rank_and_preserves_metadata<BE: crate::test_suite::TestBackend>(
+    _params: &TestParams,
+    module: &Module<BE>,
+) where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf> + SecretConversion<BE>,
+{
+    let rank = Rank(2);
+    let mut source = Source::new([9u8; 32]);
+    let mut sk_glwe = module.glwe_secret_alloc(rank);
+    sk_glwe.fill_ternary_hw(3, &mut source);
+
+    let sk_lwe = module.lwe_secret_from_glwe_secret(&sk_glwe);
+
+    assert_eq!(sk_lwe.n(), Degree((module.n() * rank.as_usize()) as u32));
+    assert_eq!(sk_lwe.dist(), crate::dist::Distribution::TernaryFixed(3));
+}
 
 pub fn test_glwe_base2k_conversion<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
 where
@@ -360,4 +422,148 @@ where
     );
 
     assert_eq!(glwe_pt_conv.data.at(0, 0)[a_idx], lwe_pt.data.at(0, 0)[0]);
+}
+
+pub fn test_glwe_expand_lwe<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: GLWEEncryptSk<BE>
+        + LWEDecrypt<BE>
+        + GLWEExpandLWE<BE>
+        + SecretConversion<BE>
+        + GLWESecretPreparedFactory<BE>
+        + VecZnxNormalize<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+{
+    let n: usize = module.n();
+    let base2k: usize = params.base2k;
+    let k = 4 * base2k + 1;
+    let k_pt = TorusPrecision(8);
+
+    for rank in [Rank(1), Rank(2)] {
+        let glwe_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+            n: Degree(n as u32),
+            base2k: Base2K(base2k as u32),
+            k: TorusPrecision(k as u32),
+            rank,
+        })
+        .unwrap();
+
+        let lwe_infos = LWELayout {
+            n: Degree(n as u32 * rank.0),
+            base2k: Base2K(base2k as u32),
+            k: TorusPrecision(k as u32),
+        };
+
+        let mut source_xs: Source = Source::new([0u8; 32]);
+        let mut source_xa: Source = Source::new([0u8; 32]);
+        let mut source_xe: Source = Source::new([0u8; 32]);
+
+        let mut sk_glwe: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank);
+        sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
+
+        let mut sk_glwe_prep: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk_glwe);
+        module.glwe_secret_prepare(&mut sk_glwe_prep, &sk_glwe);
+
+        let sk_lwe = module.lwe_secret_from_glwe_secret(&sk_glwe);
+
+        let a_idx: usize = 3;
+        let mut data: Vec<i64> = vec![0i64; n];
+        data[a_idx] = 17;
+
+        let mut glwe_pt: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+        glwe_pt.encode_vec_i64(&data, k_pt);
+
+        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+            module.glwe_encrypt_sk_tmp_bytes(&glwe_infos)
+                | module.lwe_decrypt_tmp_bytes(&lwe_infos)
+                | module.glwe_expand_lwe_tmp_bytes(&lwe_infos, &glwe_infos),
+        );
+
+        let mut glwe_ct: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_infos);
+        module.glwe_encrypt_sk(
+            &mut glwe_ct,
+            &glwe_pt,
+            &sk_glwe_prep,
+            &glwe_infos,
+            &mut source_xe,
+            &mut source_xa,
+            &mut scratch.borrow(),
+        );
+
+        let mut lwe_cts: Vec<LWE<Vec<u8>>> = (0..n).map(|_| module.lwe_alloc_from_infos(&lwe_infos)).collect();
+        module.glwe_expand_lwe(lwe_cts.as_mut_slice(), &glwe_ct, &mut scratch.borrow());
+
+        let mut lwe_pt: LWEPlaintext<Vec<u8>> = module.lwe_plaintext_alloc_from_infos(&lwe_infos);
+        module.lwe_decrypt(&lwe_cts[a_idx], &mut lwe_pt, &sk_lwe, &mut scratch.borrow());
+
+        let mut glwe_pt_conv = GLWEPlaintext::<Vec<u8>>::alloc(glwe_ct.n(), lwe_pt.base2k(), lwe_pt.max_k());
+        module.vec_znx_normalize(
+            &mut vec_znx_backend_mut::<BE>(&mut glwe_pt_conv.data),
+            lwe_pt.base2k().as_usize(),
+            0,
+            0,
+            &vec_znx_backend_ref::<BE>(&glwe_pt.data),
+            glwe_ct.base2k().as_usize(),
+            0,
+            &mut scratch.borrow(),
+        );
+
+        assert_eq!(
+            glwe_pt_conv.data.at(0, 0)[a_idx],
+            lwe_pt.data.at(0, 0)[0],
+            "rank={} failed",
+            rank.0
+        );
+    }
+}
+
+pub fn test_glwe_expand_lwe_rejects_incompatible_lwe_layout<BE: crate::test_suite::TestBackend>(
+    params: &TestParams,
+    module: &Module<BE>,
+) where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: GLWEExpandLWE<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let base2k = params.base2k;
+    let k = 2 * base2k;
+
+    let glwe_infos = GLWELayout {
+        n: Degree(module.n() as u32),
+        base2k: Base2K(base2k as u32),
+        k: TorusPrecision(k as u32),
+        rank: Rank(1),
+    };
+
+    let bad_lwe_infos = LWELayout {
+        n: Degree(module.n() as u32),
+        base2k: Base2K((base2k - 1) as u32),
+        k: TorusPrecision(k as u32),
+    };
+
+    let glwe_ct = module.glwe_alloc_from_infos(&glwe_infos);
+    let mut lwe_out = module.lwe_alloc_from_infos(&bad_lwe_infos);
+
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            module.glwe_expand_lwe_tmp_bytes(&bad_lwe_infos, &glwe_infos);
+        }))
+        .is_err(),
+        "glwe_expand_lwe_tmp_bytes must reject incompatible LWE layout"
+    );
+
+    let mut scratch = ScratchOwned::<BE>::alloc(0);
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            module.glwe_expand_lwe(std::slice::from_mut(&mut lwe_out), &glwe_ct, &mut scratch.borrow());
+        }))
+        .is_err(),
+        "glwe_expand_lwe must reject incompatible LWE layout"
+    );
 }

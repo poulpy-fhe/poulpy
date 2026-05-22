@@ -2,14 +2,14 @@ use crate::{
     api::{
         VecZnxBigAddAssign, VecZnxBigAddInto, VecZnxBigAddNormal, VecZnxBigAddNormalBackend, VecZnxBigAddSmallAssign,
         VecZnxBigAddSmallIntoBackend, VecZnxBigAlloc, VecZnxBigAutomorphism, VecZnxBigAutomorphismAssign,
-        VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromBytes, VecZnxBigFromSmallBackend, VecZnxBigNegate,
-        VecZnxBigNegateAssign, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign,
-        VecZnxBigSubNegateAssign, VecZnxBigSubSmallABackend, VecZnxBigSubSmallAssign, VecZnxBigSubSmallBBackend,
-        VecZnxBigSubSmallNegateAssign,
+        VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromBytes, VecZnxBigFromSmallBackend,
+        VecZnxBigInnerSumBackend, VecZnxBigNegate, VecZnxBigNegateAssign, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
+        VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallABackend, VecZnxBigSubSmallAssign,
+        VecZnxBigSubSmallBBackend, VecZnxBigSubSmallNegateAssign, VecZnxScalarProduct,
     },
     layouts::{
-        Backend, Module, NoiseInfos, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut,
-        VecZnxBigBackendRef, VecZnxBigOwned,
+        Backend, Module, NoiseInfos, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig,
+        VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigOwned,
     },
     oep::HalVecZnxBigImpl,
     source::Source,
@@ -41,19 +41,31 @@ impl_vec_znx_big_delegate!(
 
 impl<B: Backend> VecZnxBigAlloc<B> for Module<B> {
     fn vec_znx_big_alloc(&self, cols: usize, size: usize) -> VecZnxBigOwned<B> {
-        VecZnxBigOwned::alloc(self.n(), cols, size)
+        self.vec_znx_big_alloc_n(self.n(), cols, size)
+    }
+
+    fn vec_znx_big_alloc_n(&self, n: usize, cols: usize, size: usize) -> VecZnxBigOwned<B> {
+        VecZnxBigOwned::alloc(n, cols, size)
     }
 }
 
 impl<B: Backend> VecZnxBigFromBytes<B> for Module<B> {
     fn vec_znx_big_from_bytes(&self, cols: usize, size: usize, bytes: Vec<u8>) -> VecZnxBigOwned<B> {
-        VecZnxBig::<B::OwnedBuf, B>::from_bytes(self.n(), cols, size, bytes)
+        self.vec_znx_big_from_bytes_n(self.n(), cols, size, bytes)
+    }
+
+    fn vec_znx_big_from_bytes_n(&self, n: usize, cols: usize, size: usize, bytes: Vec<u8>) -> VecZnxBigOwned<B> {
+        VecZnxBig::<B::OwnedBuf, B>::from_bytes(n, cols, size, bytes)
     }
 }
 
 impl<B: Backend> VecZnxBigBytesOf for Module<B> {
     fn bytes_of_vec_znx_big(&self, cols: usize, size: usize) -> usize {
-        B::bytes_of_vec_znx_big(self.n(), cols, size)
+        self.bytes_of_vec_znx_big_n(self.n(), cols, size)
+    }
+
+    fn bytes_of_vec_znx_big_n(&self, n: usize, cols: usize, size: usize) -> usize {
+        B::bytes_of_vec_znx_big(n, cols, size)
     }
 }
 
@@ -130,11 +142,11 @@ impl_vec_znx_big_delegate!(
 
 impl_vec_znx_big_delegate!(
     VecZnxBigAddSmallAssign<B>,
-    fn vec_znx_big_add_small_assign<'r, 'a>(
+    fn vec_znx_big_add_small_assign(
         &self,
-        res: &mut VecZnxBigBackendMut<'r, B>,
+        res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'a, B>,
+        a: &VecZnxBackendRef<'_, B>,
         a_col: usize,
     ) {
         B::vec_znx_big_add_small_assign(self, res, res_col, a, a_col);
@@ -199,11 +211,11 @@ impl_vec_znx_big_delegate!(
 
 impl_vec_znx_big_delegate!(
     VecZnxBigSubSmallAssign<B>,
-    fn vec_znx_big_sub_small_assign<'r, 'a>(
+    fn vec_znx_big_sub_small_assign(
         &self,
-        res: &mut VecZnxBigBackendMut<'r, B>,
+        res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'a, B>,
+        a: &VecZnxBackendRef<'_, B>,
         a_col: usize,
     ) {
         B::vec_znx_big_sub_small_assign(self, res, res_col, a, a_col);
@@ -227,14 +239,43 @@ impl_vec_znx_big_delegate!(
 
 impl_vec_znx_big_delegate!(
     VecZnxBigSubSmallNegateAssign<B>,
-    fn vec_znx_big_sub_small_negate_assign<'r, 'a>(
+    fn vec_znx_big_sub_small_negate_assign(
         &self,
-        res: &mut VecZnxBigBackendMut<'r, B>,
+        res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'a, B>,
+        a: &VecZnxBackendRef<'_, B>,
         a_col: usize,
     ) {
         B::vec_znx_big_sub_small_negate_assign(self, res, res_col, a, a_col);
+    }
+);
+
+impl_vec_znx_big_delegate!(
+    VecZnxBigInnerSumBackend<B>,
+    fn vec_znx_big_inner_sum_backend(
+        &self,
+        res: &mut VecZnxBigBackendMut<'_, B>,
+        res_col: usize,
+        res_coeff: usize,
+        a: &VecZnxBigBackendRef<'_, B>,
+        a_col: usize,
+    ) {
+        B::vec_znx_big_inner_sum_backend(self, res, res_col, res_coeff, a, a_col);
+    }
+);
+
+impl_vec_znx_big_delegate!(
+    VecZnxScalarProduct<B>,
+    fn vec_znx_scalar_product(
+        &self,
+        res: &mut VecZnxBigBackendMut<'_, B>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, B>,
+        a_col: usize,
+        b: &ScalarZnxBackendRef<'_, B>,
+        b_col: usize,
+    ) {
+        B::vec_znx_scalar_product(self, res, res_col, a, a_col, b, b_col);
     }
 );
 
@@ -267,16 +308,16 @@ impl_vec_znx_big_delegate!(
 
 impl_vec_znx_big_delegate!(
     VecZnxBigNormalize<B>,
-    fn vec_znx_big_normalize<'s, 'r, 'a>(
+    fn vec_znx_big_normalize(
         &self,
-        res: &mut VecZnxBackendMut<'r, B>,
+        res: &mut VecZnxBackendMut<'_, B>,
         res_base2k: usize,
         res_offset: i64,
         res_col: usize,
-        a: &VecZnxBigBackendRef<'a, B>,
+        a: &VecZnxBigBackendRef<'_, B>,
         a_base2k: usize,
         a_col: usize,
-        scratch: &mut ScratchArena<'s, B>,
+        scratch: &mut ScratchArena<'_, B>,
     ) {
         B::vec_znx_big_normalize(self, res, res_base2k, res_offset, res_col, a, a_base2k, a_col, scratch)
     }
@@ -305,12 +346,12 @@ impl_vec_znx_big_delegate!(
 
 impl_vec_znx_big_delegate!(
     VecZnxBigAutomorphismAssign<B>,
-    fn vec_znx_big_automorphism_assign<'s>(
+    fn vec_znx_big_automorphism_assign(
         &self,
         k: i64,
         a: &mut VecZnxBigBackendMut<'_, B>,
         a_col: usize,
-        scratch: &mut ScratchArena<'s, B>,
+        scratch: &mut ScratchArena<'_, B>,
     ) {
         B::vec_znx_big_automorphism_assign(self, k, a, a_col, scratch)
     }

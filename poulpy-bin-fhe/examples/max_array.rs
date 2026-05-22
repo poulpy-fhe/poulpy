@@ -9,7 +9,7 @@ use poulpy_bin_fhe::{
     circuit_bootstrapping::CircuitBootstrappingKeyLayout,
 };
 use poulpy_core::{
-    EncryptionLayout, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk, ScratchArenaTakeCore,
+    EncryptionLayout, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGLWEToGGSWKeyLayout, GGSWLayout, GGSWPreparedFactory, GLWEAutomorphismKeyLayout,
         GLWELayout, GLWESecretPreparedFactory, GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, ModuleCoreAlloc, Rank, TorusPrecision,
@@ -17,7 +17,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ModuleN, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssignBackend},
-    layouts::{Backend, HostBackend, HostDataMut, HostDataRef, Module, ScratchArena, ScratchOwned},
+    layouts::{Backend, HostBackend, HostDataMut, HostDataRef, Module, ScratchOwned},
     source::Source,
 };
 use rand::RngExt;
@@ -48,7 +48,6 @@ where
         + ExecuteBDDCircuit2WTo1W<BE>
         + GLWEBlindSelection<u32, BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     BE::OwnedBuf: HostDataRef + HostDataMut,
     for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]> + 'static,
     for<'a> BE::BufMut<'a>: AsMut<[u8]> + AsRef<[u8]> + Sync,

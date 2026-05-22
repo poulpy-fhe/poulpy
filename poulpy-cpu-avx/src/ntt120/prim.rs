@@ -35,7 +35,7 @@ use poulpy_cpu_ref::reference::ntt120::{
     NttAdd, NttAddAssign, NttCFromB, NttCopy, NttDFTExecute, NttExtract1BlkContiguous, NttFromZnx64, NttMulBbb, NttMulBbc,
     NttMulBbc1ColX2, NttMulBbc2ColsX2, NttNegate, NttNegateAssign, NttPackLeft1BlkX2, NttPackRight1BlkX2,
     NttPairwisePackLeft1BlkX2, NttPairwisePackRight1BlkX2, NttSub, NttSubAssign, NttSubNegateAssign, NttToZnx128, NttZero,
-    mat_vec::{BbbMeta, BbcMeta, extract_1blk_from_contiguous_q120b_ref},
+    mat_vec::{BbbMeta, BbcMeta},
     ntt::{NttTable, NttTableInv},
     primes::Primes30,
     types::Q_SHIFTED,
@@ -365,7 +365,7 @@ impl NttMulBbc1ColX2 for NTT120Avx {
     #[inline(always)]
     fn ntt_mul_bbc_1col_x2(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
         // SAFETY: NTT120Avx::new() verifies AVX2 availability at construction time.
-        unsafe { vec_mat1col_product_x2_bbc_avx2(meta, ell, res, a, b) }
+        unsafe { vec_mat1col_product_x2_bbc_avx2::<false>(meta, ell, res, a, b) }
     }
 }
 
@@ -380,7 +380,8 @@ impl NttMulBbc2ColsX2 for NTT120Avx {
 impl NttExtract1BlkContiguous for NTT120Avx {
     #[inline(always)]
     fn ntt_extract_1blk_contiguous(n: usize, row_max: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
-        extract_1blk_from_contiguous_q120b_ref(n, row_max, blk, dst, src);
+        // SAFETY: NTT120Avx::new() verifies AVX2 availability at construction time.
+        unsafe { crate::ntt120::vmp::extract_1blk_from_contiguous_q120b_avx2(n, row_max, blk, dst, src) }
     }
 }
 

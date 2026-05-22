@@ -15,7 +15,7 @@ use crate::{
         GLWEToBackendRef,
         prepared::{
             GLWESecretPreparedFactory, GLWESecretPreparedToBackendMut, GLWESecretPreparedToBackendRef,
-            GLWESecretTensorPreparedToBackendRef, glwe_secret_prepared_backend_ref_from_mut,
+            GLWESecretTensorPreparedToBackendRef,
         },
     },
 };
@@ -64,7 +64,6 @@ pub fn glwe_tensor_decrypt_default<M, BE: Backend, R: Data, P: Data, S0: Data, S
     GLWEPlaintext<P>: GLWEToBackendMut<BE> + GLWEInfos + crate::layouts::SetLWEInfos,
     GLWESecretPrepared<S0, BE>: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     GLWESecretTensorPrepared<S1, BE>: GLWESecretTensorPreparedToBackendRef<BE> + GLWEInfos,
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     assert!(
         scratch.available() >= glwe_tensor_decrypt_tmp_bytes_default::<M, BE, _>(module, res),
@@ -96,6 +95,6 @@ pub fn glwe_tensor_decrypt_default<M, BE: Backend, R: Data, P: Data, S0: Data, S
 
     let res_backend = res.to_backend_ref();
     let mut pt_backend = pt.to_backend_mut();
-    let sk_grouped_ref = glwe_secret_prepared_backend_ref_from_mut(&sk_grouped);
+    let sk_grouped_ref = sk_grouped.to_backend_ref();
     glwe_decrypt_backend_inner(module, &res_backend, &mut pt_backend, &sk_grouped_ref, &mut scratch_1);
 }

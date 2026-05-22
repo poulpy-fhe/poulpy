@@ -69,8 +69,8 @@ That changes the ergonomics in a few important ways:
 - **Easier parameterization:** users specify a modulus budget by size rather than by
   hand-picking an RNS prime chain. In that view, `logQ = 1000` means "about
   1000 bits of total modulus budget," and capacity is then consumed bit by bit.
-- **Compact plaintexts:** plaintexts polynomials do not suffer any expansion unlike 
-  the RNS basis. They stay in an optimal compact representation instead of living 
+- **Compact plaintexts:** plaintexts polynomials do not suffer any expansion unlike
+  the RNS basis. They stay in an optimal compact representation instead of living
   across the full `logQ`.
 - **Circuit-independent evaluation-key parameterization:** because capacity is
   granular at the bit level, evaluation keys are not tied to a specific level
@@ -306,6 +306,8 @@ users will choose one of:
 
 - `poulpy-cpu-ref` for portable reference execution
 - `poulpy-cpu-avx` for optimized x86_64 execution when AVX2/FMA is available
+- `poulpy-cpu-avx512` for AVX-512F and AVX-512-IFMA execution when those
+  target features are available
 
 Backend selection happens through the `BE` parameter of `Module<BE>`. Note that
 the `encoding::Encoder<T>` requires a concrete FFT table type (e.g.
@@ -331,8 +333,8 @@ Higher-level functionality on top of that foundation:
 - additional higher-level circuit and application primitives built on top of the
   leveled and bootstrapped evaluator
 
-The intent is to keep the low-level API modular and agnostic enough of the encoding 
-(for example to easily support the conjugate invariant ring) while progressively adding 
+The intent is to keep the low-level API modular and agnostic enough of the encoding
+(for example to easily support the conjugate invariant ring) while progressively adding
 these higher-level features without changing the backend-agnostic programming model.
 
 ## Where to Look Next

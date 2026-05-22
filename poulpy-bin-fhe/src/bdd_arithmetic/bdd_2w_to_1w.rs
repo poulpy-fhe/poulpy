@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use poulpy_core::{
-    GLWECopy, GLWEPacking, ScratchArenaTakeCore,
+    GLWECopy, GLWEPacking,
     layouts::{
         GGLWEInfos, GGLWEPreparedToBackendRef, GGSWInfos, GLWE, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut,
         GetGaloisElement, ModuleCoreAlloc, prepared::GGSWPrepared,
@@ -46,7 +46,6 @@ where
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
         BE: Backend<OwnedBuf = Vec<u8>>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
         self.execute_bdd_circuit_2w_to_1w_multi_thread(1, out, circuit, a, b, key, scratch);
@@ -117,7 +116,6 @@ where
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
         BE: Backend<OwnedBuf = Vec<u8>>,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
         // Collects inputs into a single array
@@ -180,7 +178,6 @@ macro_rules! define_bdd_2w_to_1w_trait {
                     H: GLWEAutomorphismKeyHelper<K, BE>,
                     BE: Backend<OwnedBuf = Vec<u8>>,
                     Self: GLWEToBackendMut<BE>,
-                    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
                     for<'a> BE::BufMut<'a>: HostDataMut;
 
                 /// Multithreaded version – same vis, method_name + "_multi_thread"
@@ -198,7 +195,6 @@ macro_rules! define_bdd_2w_to_1w_trait {
                     H: GLWEAutomorphismKeyHelper<K, BE>,
                     BE: Backend<OwnedBuf = Vec<u8>>,
                     Self: GLWEToBackendMut<BE>,
-                    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
                     for<'a> BE::BufMut<'a>: HostDataMut;
 
                 fn [<$method_name _tmp_bytes>]<M, R, G, K, H>(
@@ -254,7 +250,6 @@ macro_rules! impl_bdd_2w_to_1w_trait {
                     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
                     H: GLWEAutomorphismKeyHelper<K, BE>,
                     BE: Backend<OwnedBuf = Vec<u8>>,
-                    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
                     for<'a> BE::BufMut<'a>: HostDataMut,
                 {
                     module.execute_bdd_circuit_2w_to_1w(self, &$output_circuits, a, b, key, scratch)
@@ -273,7 +268,6 @@ macro_rules! impl_bdd_2w_to_1w_trait {
                     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
                     H: GLWEAutomorphismKeyHelper<K, BE>,
                     BE: Backend<OwnedBuf = Vec<u8>>,
-                    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
                     for<'a> BE::BufMut<'a>: HostDataMut,
                 {
                     module.execute_bdd_circuit_2w_to_1w_multi_thread(threads, self, &$output_circuits, a, b, key, scratch)

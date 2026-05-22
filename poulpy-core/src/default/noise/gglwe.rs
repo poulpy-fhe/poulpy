@@ -22,14 +22,14 @@ use crate::{
 use crate::{ScratchArenaTakeCore, layouts::GLWEPlaintext};
 
 impl<D: HostDataRef> GGLWE<D> {
-    pub fn noise<'s, M, S, BE>(
+    pub fn noise<M, S, BE>(
         &self,
         module: &M,
         row: usize,
         col: usize,
         pt_want: &ScalarZnx<&[u8]>,
         sk_prepared: &S,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) -> Stats
     where
         GGLWE<D>: GGLWEToBackendRef<BE>,
@@ -37,7 +37,6 @@ impl<D: HostDataRef> GGLWE<D> {
         M: GGLWENoise<BE>,
         BE: HostBackend,
         for<'a> BE::BufRef<'a>: HostDataRef,
-        for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
         module.gglwe_noise(self, row, col, pt_want, sk_prepared, scratch)
@@ -58,7 +57,6 @@ where
         + VecZnxBigAddAssign<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    for<'a> ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -72,14 +70,14 @@ where
         lvl_0 + lvl_1
     }
 
-    fn gglwe_noise<'s, R, S>(
+    fn gglwe_noise<R, S>(
         &self,
         res: &R,
         res_row: usize,
         res_col: usize,
         pt_want: &ScalarZnx<&[u8]>,
         sk_prepared: &S,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) -> Stats
     where
         R: GGLWEToBackendRef<BE> + GGLWEInfos,

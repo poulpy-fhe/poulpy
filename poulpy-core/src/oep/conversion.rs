@@ -1,12 +1,9 @@
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use crate::{
-    ScratchArenaTakeCore,
-    layouts::{
-        GGLWEInfos, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-        LWEToBackendMut, LWEToBackendRef,
-        prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
-    },
+use crate::layouts::{
+    GGLWEInfos, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+    LWEToBackendMut, LWEToBackendRef,
+    prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
 };
 
 /// Backend-provided ciphertext conversion operations.
@@ -28,18 +25,17 @@ pub unsafe trait ConversionImpl<BE: Backend>: Backend {
         A: LWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_from_lwe<'s, R, A, K>(
+    fn glwe_from_lwe<R, A, K>(
         module: &Module<BE>,
         res: &mut R,
         lwe: &A,
         ksk: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: LWEToBackendRef<BE> + LWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
     fn lwe_from_glwe_tmp_bytes<R, A, K>(module: &Module<BE>, lwe_infos: &R, glwe_infos: &A, key_infos: &K) -> usize
     where
@@ -47,44 +43,52 @@ pub unsafe trait ConversionImpl<BE: Backend>: Backend {
         A: GLWEInfos,
         K: GGLWEInfos;
 
-    fn lwe_from_glwe<'s, R, A, K>(
+    fn lwe_from_glwe<R, A, K>(
         module: &Module<BE>,
         res: &mut R,
         a: &A,
         a_idx: usize,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: LWEToBackendMut<BE> + LWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
     fn ggsw_from_gglwe_tmp_bytes<R, A>(module: &Module<BE>, res_infos: &R, tsk_infos: &A) -> usize
     where
         R: GGSWInfos,
         A: GGLWEInfos;
 
-    fn ggsw_from_gglwe<'s, R, A, T>(
+    fn ggsw_from_gglwe<R, A, T>(
         module: &Module<BE>,
         res: &mut R,
         a: &A,
         tsk: &T,
         tsk_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWToBackendMut<BE> + GGSWInfos,
         A: GGLWEToBackendRef<BE> + GGLWEInfos,
-        T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos;
+
+    fn glwe_expand_lwe_tmp_bytes<R, A>(module: &Module<BE>, lwe_infos: &R, a_infos: &A) -> usize
+    where
+        R: LWEInfos,
+        A: GLWEInfos;
+
+    fn glwe_expand_lwe<R, A>(module: &Module<BE>, res: &mut [R], a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEToBackendMut<BE> + LWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos;
 
     fn ggsw_expand_rows_tmp_bytes<R, A>(module: &Module<BE>, res_infos: &R, tsk_infos: &A) -> usize
     where
         R: GGSWInfos,
         A: GGLWEInfos;
 
-    fn ggsw_expand_row<'s, R, T>(module: &Module<BE>, res: &mut R, tsk: &T, tsk_size: usize, scratch: &mut ScratchArena<'s, BE>)
+    fn ggsw_expand_row<R, T>(module: &Module<BE>, res: &mut R, tsk: &T, tsk_size: usize, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GGSWToBackendMut<BE> + GGSWInfos,
         T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos;
@@ -96,10 +100,7 @@ pub unsafe trait ConversionImpl<BE: Backend>: Backend {
 /// for reference algorithms a backend may forward to.
 #[doc(hidden)]
 #[allow(private_bounds)]
-pub trait ConversionDefault<BE: Backend>
-where
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
-{
+pub trait ConversionDefault<BE: Backend> {
     fn lwe_sample_extract_default<R, A>(&self, res: &mut R, a: &A)
     where
         R: LWEToBackendMut<BE> + LWEInfos,
@@ -111,18 +112,11 @@ where
         A: LWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_from_lwe_default<'s, R, A, K>(
-        &self,
-        res: &mut R,
-        lwe: &A,
-        ksk: &K,
-        key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
-    ) where
+    fn glwe_from_lwe_default<R, A, K>(&self, res: &mut R, lwe: &A, ksk: &K, key_size: usize, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: LWEToBackendRef<BE> + LWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
     fn lwe_from_glwe_tmp_bytes_default<R, A, K>(&self, lwe_infos: &R, glwe_infos: &A, key_infos: &K) -> usize
     where
@@ -130,44 +124,46 @@ where
         A: GLWEInfos,
         K: GGLWEInfos;
 
-    fn lwe_from_glwe_default<'s, R, A, K>(
+    fn lwe_from_glwe_default<R, A, K>(
         &self,
         res: &mut R,
         a: &A,
         a_idx: usize,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: LWEToBackendMut<BE> + LWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
     fn ggsw_from_gglwe_tmp_bytes_default<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
     where
         R: GGSWInfos,
         A: GGLWEInfos;
 
-    fn ggsw_from_gglwe_default<'s, R, A, T>(
-        &self,
-        res: &mut R,
-        a: &A,
-        tsk: &T,
-        tsk_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
-    ) where
+    fn ggsw_from_gglwe_default<R, A, T>(&self, res: &mut R, a: &A, tsk: &T, tsk_size: usize, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GGSWToBackendMut<BE> + GGSWInfos,
         A: GGLWEToBackendRef<BE> + GGLWEInfos,
-        T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's;
+        T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos;
+
+    fn glwe_expand_lwe_tmp_bytes_default<R, A>(&self, lwe_infos: &R, a_infos: &A) -> usize
+    where
+        R: LWEInfos,
+        A: GLWEInfos;
+
+    fn glwe_expand_lwe_default<R, A>(&self, res: &mut [R], a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEToBackendMut<BE> + LWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos;
 
     fn ggsw_expand_rows_tmp_bytes_default<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
     where
         R: GGSWInfos,
         A: GGLWEInfos;
 
-    fn ggsw_expand_row_default<'s, R, T>(&self, res: &mut R, tsk: &T, tsk_size: usize, scratch: &mut ScratchArena<'s, BE>)
+    fn ggsw_expand_row_default<R, T>(&self, res: &mut R, tsk: &T, tsk_size: usize, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GGSWToBackendMut<BE> + GGSWInfos,
         T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos;
@@ -177,7 +173,6 @@ where
 unsafe impl<BE: Backend> ConversionImpl<BE> for BE
 where
     Module<BE>: ConversionDefault<BE>,
-    for<'s> ScratchArena<'s, BE>: ScratchArenaTakeCore<'s, BE>,
 {
     fn lwe_sample_extract<R, A>(module: &Module<BE>, res: &mut R, a: &A)
     where
@@ -196,18 +191,17 @@ where
         module.glwe_from_lwe_tmp_bytes_default(glwe_infos, lwe_infos, key_infos)
     }
 
-    fn glwe_from_lwe<'s, R, A, K>(
+    fn glwe_from_lwe<R, A, K>(
         module: &Module<BE>,
         res: &mut R,
         lwe: &A,
         ksk: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: LWEToBackendRef<BE> + LWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's,
     {
         module.glwe_from_lwe_default(res, lwe, ksk, key_size, scratch)
     }
@@ -221,19 +215,18 @@ where
         module.lwe_from_glwe_tmp_bytes_default(lwe_infos, glwe_infos, key_infos)
     }
 
-    fn lwe_from_glwe<'s, R, A, K>(
+    fn lwe_from_glwe<R, A, K>(
         module: &Module<BE>,
         res: &mut R,
         a: &A,
         a_idx: usize,
         key: &K,
         key_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: LWEToBackendMut<BE> + LWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's,
     {
         module.lwe_from_glwe_default(res, a, a_idx, key, key_size, scratch)
     }
@@ -246,20 +239,35 @@ where
         module.ggsw_from_gglwe_tmp_bytes_default(res_infos, tsk_infos)
     }
 
-    fn ggsw_from_gglwe<'s, R, A, T>(
+    fn ggsw_from_gglwe<R, A, T>(
         module: &Module<BE>,
         res: &mut R,
         a: &A,
         tsk: &T,
         tsk_size: usize,
-        scratch: &mut ScratchArena<'s, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GGSWToBackendMut<BE> + GGSWInfos,
         A: GGLWEToBackendRef<BE> + GGLWEInfos,
         T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
-        BE: 's,
     {
         module.ggsw_from_gglwe_default(res, a, tsk, tsk_size, scratch)
+    }
+
+    fn glwe_expand_lwe_tmp_bytes<R, A>(module: &Module<BE>, lwe_infos: &R, a_infos: &A) -> usize
+    where
+        R: LWEInfos,
+        A: GLWEInfos,
+    {
+        module.glwe_expand_lwe_tmp_bytes_default(lwe_infos, a_infos)
+    }
+
+    fn glwe_expand_lwe<R, A>(module: &Module<BE>, res: &mut [R], a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEToBackendMut<BE> + LWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+    {
+        module.glwe_expand_lwe_default(res, a, scratch)
     }
 
     fn ggsw_expand_rows_tmp_bytes<R, A>(module: &Module<BE>, res_infos: &R, tsk_infos: &A) -> usize
@@ -270,7 +278,7 @@ where
         module.ggsw_expand_rows_tmp_bytes_default(res_infos, tsk_infos)
     }
 
-    fn ggsw_expand_row<'s, R, T>(module: &Module<BE>, res: &mut R, tsk: &T, tsk_size: usize, scratch: &mut ScratchArena<'s, BE>)
+    fn ggsw_expand_row<R, T>(module: &Module<BE>, res: &mut R, tsk: &T, tsk_size: usize, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GGSWToBackendMut<BE> + GGSWInfos,
         T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -304,18 +312,17 @@ macro_rules! impl_conversion_defaults_full {
                 )
             }
 
-            fn glwe_from_lwe_default<'s, R, A, K>(
+            fn glwe_from_lwe_default<R, A, K>(
                 &self,
                 res: &mut R,
                 lwe: &A,
                 ksk: &K,
                 key_size: usize,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'s, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 A: $crate::layouts::LWEToBackendRef<$be> + $crate::layouts::LWEInfos,
                 K: $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be> + $crate::layouts::GGLWEInfos,
-                $be: 's,
             {
                 $crate::default::conversion::glwe_from_lwe_default::<$be, _, _, _, _>(self, res, lwe, ksk, key_size, scratch)
             }
@@ -331,19 +338,18 @@ macro_rules! impl_conversion_defaults_full {
                 )
             }
 
-            fn lwe_from_glwe_default<'s, R, A, K>(
+            fn lwe_from_glwe_default<R, A, K>(
                 &self,
                 res: &mut R,
                 a: &A,
                 a_idx: usize,
                 key: &K,
                 key_size: usize,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'s, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 R: $crate::layouts::LWEToBackendMut<$be> + $crate::layouts::LWEInfos,
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
                 K: $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be> + $crate::layouts::GGLWEInfos,
-                $be: 's,
             {
                 $crate::default::conversion::lwe_from_glwe_default::<$be, _, _, _, _>(self, res, a, a_idx, key, key_size, scratch)
             }
@@ -356,20 +362,39 @@ macro_rules! impl_conversion_defaults_full {
                 $crate::default::conversion::ggsw_from_gglwe_tmp_bytes_default::<$be, _, _, _>(self, res_infos, tsk_infos)
             }
 
-            fn ggsw_from_gglwe_default<'s, R, A, T>(
+            fn ggsw_from_gglwe_default<R, A, T>(
                 &self,
                 res: &mut R,
                 a: &A,
                 tsk: &T,
                 tsk_size: usize,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'s, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 R: $crate::layouts::GGSWToBackendMut<$be> + $crate::layouts::GGSWInfos,
                 A: $crate::layouts::GGLWEToBackendRef<$be> + $crate::layouts::GGLWEInfos,
                 T: $crate::layouts::prepared::GGLWEToGGSWKeyPreparedToBackendRef<$be> + $crate::layouts::GGLWEInfos,
-                $be: 's,
             {
                 $crate::default::conversion::ggsw_from_gglwe_default::<$be, _, _, _, _>(self, res, a, tsk, tsk_size, scratch)
+            }
+
+            fn glwe_expand_lwe_tmp_bytes_default<R, A>(&self, lwe_infos: &R, a_infos: &A) -> usize
+            where
+                R: $crate::layouts::LWEInfos,
+                A: $crate::layouts::GLWEInfos,
+            {
+                $crate::default::conversion::glwe_expand_lwe_tmp_bytes_default::<$be, _, _, _>(self, lwe_infos, a_infos)
+            }
+
+            fn glwe_expand_lwe_default<R, A>(
+                &self,
+                res: &mut [R],
+                a: &A,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) where
+                R: $crate::layouts::LWEToBackendMut<$be> + $crate::layouts::LWEInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+            {
+                $crate::default::conversion::glwe_expand_lwe_default::<$be, _, _, _>(self, res, a, scratch)
             }
 
             fn ggsw_expand_rows_tmp_bytes_default<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
@@ -380,12 +405,12 @@ macro_rules! impl_conversion_defaults_full {
                 $crate::default::conversion::ggsw_expand_rows_tmp_bytes_default::<$be, _, _, _>(self, res_infos, tsk_infos)
             }
 
-            fn ggsw_expand_row_default<'s, R, T>(
+            fn ggsw_expand_row_default<R, T>(
                 &self,
                 res: &mut R,
                 tsk: &T,
                 tsk_size: usize,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'s, $be>,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 R: $crate::layouts::GGSWToBackendMut<$be> + $crate::layouts::GGSWInfos,
                 T: $crate::layouts::prepared::GGLWEToGGSWKeyPreparedToBackendRef<$be> + $crate::layouts::GGLWEInfos,

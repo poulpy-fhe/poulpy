@@ -1,9 +1,6 @@
 use std::collections::HashMap;
 
-use poulpy_hal::{
-    api::ScratchAvailable,
-    layouts::{Backend, Data, Module, ScratchArena, vmp_pmat_backend_ref_from_ref},
-};
+use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::layouts::prepared::{GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef};
 use crate::layouts::{
@@ -221,12 +218,10 @@ where
         lvl_0
     }
 
-    fn glwe_automorphism_key_prepare<'s, R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'s, B>)
+    fn glwe_automorphism_key_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, B>)
     where
         R: GGLWEPreparedToBackendMut<B> + SetGaloisElement,
         O: GGLWEToBackendRef<B> + GetGaloisElement,
-        ScratchArena<'s, B>: ScratchAvailable,
-        B: 's,
     {
         let tmp_bytes = {
             let res_infos = res.to_backend_mut();
@@ -267,36 +262,12 @@ where
     }
 }
 
-impl<'b, B: Backend + 'b> GLWEAutomorphismKeyPreparedToBackendRef<B> for &GLWEAutomorphismKeyPrepared<B::BufRef<'b>, B> {
-    fn to_backend_ref(&self) -> GLWEAutomorphismKeyPreparedBackendRef<'_, B> {
-        let key = &self.key;
-        GLWEAutomorphismKeyPrepared {
-            key: GGLWEPrepared {
-                data: vmp_pmat_backend_ref_from_ref::<B>(&key.data),
-                base2k: key.base2k,
-                dsize: key.dsize,
-            },
-            p: self.p,
-        }
-    }
-}
-
 impl<D: Data, B: Backend> GGLWEPreparedToBackendRef<B> for GLWEAutomorphismKeyPrepared<D, B>
 where
     GGLWEPrepared<D, B>: GGLWEPreparedToBackendRef<B>,
 {
     fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
         self.key.to_backend_ref()
-    }
-}
-
-impl<'b, B: Backend + 'b> GGLWEPreparedToBackendRef<B> for &GLWEAutomorphismKeyPrepared<B::BufRef<'b>, B> {
-    fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
-        GGLWEPrepared {
-            data: vmp_pmat_backend_ref_from_ref::<B>(&self.key.data),
-            base2k: self.key.base2k,
-            dsize: self.key.dsize,
-        }
     }
 }
 
