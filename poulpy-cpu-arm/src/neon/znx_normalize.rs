@@ -276,11 +276,13 @@ unsafe fn middle_chunk(
 }
 
 /// Middle step (in-place): two-pass digit/carry chain on `x` with `carry` accumulator.
+/// Processes 8 lanes (4 chunks) per iter to widen the OOO window.
 pub(crate) fn znx_normalize_middle_step_assign_neon(base2k: usize, lsh: usize, x: &mut [i64], carry: &mut [i64]) {
     debug_assert!(x.len() <= carry.len());
     debug_assert!(lsh < base2k);
     let n = x.len();
-    let span = n >> 2;
+    let span4 = n >> 3; // 8-lane (4-chunk) iters
+    let span2_extra = (n >> 2) & 1; // one 4-lane iter if n%8 == 4..7
     unsafe {
         let mut xx = x.as_mut_ptr();
         let mut cc = carry.as_mut_ptr();
@@ -292,7 +294,31 @@ pub(crate) fn znx_normalize_middle_step_assign_neon(base2k: usize, lsh: usize, x
         };
         let lsh_v = vdupq_n_s64(lsh as i64);
         let has_lsh = lsh != 0;
-        for _ in 0..span {
+        for _ in 0..span4 {
+            let x0 = vld1q_s64(xx);
+            let x1 = vld1q_s64(xx.add(2));
+            let x2 = vld1q_s64(xx.add(4));
+            let x3 = vld1q_s64(xx.add(6));
+            let cv0 = vld1q_s64(cc);
+            let cv1 = vld1q_s64(cc.add(2));
+            let cv2 = vld1q_s64(cc.add(4));
+            let cv3 = vld1q_s64(cc.add(6));
+            let (n0, nc0) = middle_chunk(x0, cv0, mask, sign, cnt_neg, mask_lsh, sign_lsh, cnt_neg_lsh, lsh_v, has_lsh);
+            let (n1, nc1) = middle_chunk(x1, cv1, mask, sign, cnt_neg, mask_lsh, sign_lsh, cnt_neg_lsh, lsh_v, has_lsh);
+            let (n2, nc2) = middle_chunk(x2, cv2, mask, sign, cnt_neg, mask_lsh, sign_lsh, cnt_neg_lsh, lsh_v, has_lsh);
+            let (n3, nc3) = middle_chunk(x3, cv3, mask, sign, cnt_neg, mask_lsh, sign_lsh, cnt_neg_lsh, lsh_v, has_lsh);
+            vst1q_s64(xx, n0);
+            vst1q_s64(xx.add(2), n1);
+            vst1q_s64(xx.add(4), n2);
+            vst1q_s64(xx.add(6), n3);
+            vst1q_s64(cc, nc0);
+            vst1q_s64(cc.add(2), nc1);
+            vst1q_s64(cc.add(4), nc2);
+            vst1q_s64(cc.add(6), nc3);
+            xx = xx.add(8);
+            cc = cc.add(8);
+        }
+        if span2_extra == 1 {
             let x0 = vld1q_s64(xx);
             let x1 = vld1q_s64(xx.add(2));
             let cv0 = vld1q_s64(cc);
@@ -303,11 +329,9 @@ pub(crate) fn znx_normalize_middle_step_assign_neon(base2k: usize, lsh: usize, x
             vst1q_s64(xx.add(2), n1);
             vst1q_s64(cc, nc0);
             vst1q_s64(cc.add(2), nc1);
-            xx = xx.add(4);
-            cc = cc.add(4);
         }
     }
-    let tail = span << 2;
+    let tail = (n >> 2) << 2;
     if tail < n {
         znx_normalize_middle_step_assign_ref(base2k, lsh, &mut x[tail..], &mut carry[tail..]);
     }

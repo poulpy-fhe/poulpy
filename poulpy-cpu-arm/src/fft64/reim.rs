@@ -115,13 +115,16 @@ impl ReimFFTExecute<ReimIFFTTable<f64>, f64> for FFT64Neon {
 
 #[cfg(target_arch = "aarch64")]
 impl ReimArith for FFT64Neon {
+    // reim_add / reim_add_assign: defer to the portable autovec impl. The
+    // hand-NEON loop (see neon::reim_arith::reim_add_neon) is memory-bandwidth
+    // bound at large n; the autovec reference is as fast or faster.
     #[inline(always)]
     fn reim_add(res: &mut [f64], a: &[f64], b: &[f64]) {
-        crate::neon::reim_arith::reim_add_neon(res, a, b);
+        poulpy_cpu_ref::reference::fft64::reim::reim_add_ref(res, a, b);
     }
     #[inline(always)]
     fn reim_add_assign(res: &mut [f64], a: &[f64]) {
-        crate::neon::reim_arith::reim_add_assign_neon(res, a);
+        poulpy_cpu_ref::reference::fft64::reim::reim_add_assign_ref(res, a);
     }
     #[inline(always)]
     fn reim_sub(res: &mut [f64], a: &[f64], b: &[f64]) {

@@ -11,8 +11,8 @@
 //! signed count vectors via `vdupq_n_s64` and pass them to `vshlq_*64`.
 
 use core::arch::aarch64::{
-    uint32x2_t, uint64x2_t, vaddq_u64, vandq_u64, vbicq_u64, vcgtq_u64, vdupq_n_u64, vld1q_u64, vmovn_u64, vmull_u32,
-    vshrq_n_u64, vst1q_u64, vsubq_u64,
+    uint32x2_t, uint64x2_t, vaddq_u64, vandq_u64, vbicq_u64, vcgtq_u64, vdupq_n_u64, vld1q_u64, vmlal_u32, vmovn_u64, vmull_u32,
+    vshrq_n_u64, vsraq_n_u64, vst1q_u64, vsubq_u64,
 };
 
 /// One q120 coefficient packed across two NEON registers.
@@ -100,6 +100,22 @@ pub(crate) unsafe fn mul_epu32_q120(a: Q120, b: Q120) -> Q120 {
     }
 }
 
+/// Fused `acc + mul_epu32_q120(a, b)` via `vmlal_u32`. Drops the trailing
+/// `vaddq_u64` pair vs `add_q120(acc, mul_epu32_q120(a, b))`.
+#[inline(always)]
+pub(crate) unsafe fn mla_epu32_q120(acc: Q120, a: Q120, b: Q120) -> Q120 {
+    unsafe {
+        let a_lo32: uint32x2_t = vmovn_u64(a.lo);
+        let b_lo32: uint32x2_t = vmovn_u64(b.lo);
+        let a_hi32: uint32x2_t = vmovn_u64(a.hi);
+        let b_hi32: uint32x2_t = vmovn_u64(b.hi);
+        Q120 {
+            lo: vmlal_u32(acc.lo, a_lo32, b_lo32),
+            hi: vmlal_u32(acc.hi, a_hi32, b_hi32),
+        }
+    }
+}
+
 /// Conditional subtract per lane: `x − q` if `x >= q` (unsigned), else `x`.
 #[inline(always)]
 pub(crate) unsafe fn cond_sub_q120(x: Q120, q: Q120) -> Q120 {
@@ -120,6 +136,18 @@ pub(crate) unsafe fn shr_q120<const N: i32>(x: Q120) -> Q120 {
         Q120 {
             lo: vshrq_n_u64::<N>(x.lo),
             hi: vshrq_n_u64::<N>(x.hi),
+        }
+    }
+}
+
+/// Fused `acc + (x >> N)` via `vsraq_n_u64`. Drops the trailing `vaddq_u64`
+/// pair vs `add_q120(acc, shr_q120::<N>(x))`.
+#[inline(always)]
+pub(crate) unsafe fn acc_shr_q120<const N: i32>(acc: Q120, x: Q120) -> Q120 {
+    unsafe {
+        Q120 {
+            lo: vsraq_n_u64::<N>(acc.lo, x.lo),
+            hi: vsraq_n_u64::<N>(acc.hi, x.hi),
         }
     }
 }

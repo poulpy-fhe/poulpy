@@ -17,67 +17,15 @@ use crate::neon::normalize::{
     nfc_middle_step_neon,
 };
 #[cfg(target_arch = "aarch64")]
-use crate::neon::vec_znx_big::{
-    vi128_add_assign_neon, vi128_add_neon, vi128_add_small_assign_neon, vi128_add_small_neon, vi128_from_small_neon,
-    vi128_neg_from_small_neon, vi128_negate_assign_neon, vi128_negate_neon, vi128_sub_assign_neon, vi128_sub_negate_assign_neon,
-    vi128_sub_neon, vi128_sub_small_a_neon, vi128_sub_small_assign_neon, vi128_sub_small_b_neon,
-    vi128_sub_small_negate_assign_neon,
-};
+use crate::neon::vec_znx_big::{vi128_from_small_neon, vi128_neg_from_small_neon};
 
+// I128 add/sub/negate family: trait defaults (autovec scalar) are used. The
+// hand-NEON paired-register kernels did not beat scalar because aarch64 has
+// no native 128-bit add and no widening i64×i64. The widening i64→i128
+// (`i128_from_small`, `i128_neg_from_small`) keeps a NEON impl since the
+// sign-extension via `vshrq_n_s64::<63>` is a real single-instruction win.
 #[cfg(target_arch = "aarch64")]
 impl I128BigOps for NTT120Neon {
-    #[inline(always)]
-    fn i128_add(res: &mut [i128], a: &[i128], b: &[i128]) {
-        vi128_add_neon(res.len(), res, a, b);
-    }
-    #[inline(always)]
-    fn i128_add_assign(res: &mut [i128], a: &[i128]) {
-        vi128_add_assign_neon(res.len(), res, a);
-    }
-    #[inline(always)]
-    fn i128_add_small(res: &mut [i128], a: &[i128], b: &[i64]) {
-        vi128_add_small_neon(res.len(), res, a, b);
-    }
-    #[inline(always)]
-    fn i128_add_small_assign(res: &mut [i128], a: &[i64]) {
-        vi128_add_small_assign_neon(res.len(), res, a);
-    }
-    #[inline(always)]
-    fn i128_sub(res: &mut [i128], a: &[i128], b: &[i128]) {
-        vi128_sub_neon(res.len(), res, a, b);
-    }
-    #[inline(always)]
-    fn i128_sub_assign(res: &mut [i128], a: &[i128]) {
-        vi128_sub_assign_neon(res.len(), res, a);
-    }
-    #[inline(always)]
-    fn i128_sub_negate_assign(res: &mut [i128], a: &[i128]) {
-        vi128_sub_negate_assign_neon(res.len(), res, a);
-    }
-    #[inline(always)]
-    fn i128_sub_small_a(res: &mut [i128], a: &[i64], b: &[i128]) {
-        vi128_sub_small_a_neon(res.len(), res, a, b);
-    }
-    #[inline(always)]
-    fn i128_sub_small_b(res: &mut [i128], a: &[i128], b: &[i64]) {
-        vi128_sub_small_b_neon(res.len(), res, a, b);
-    }
-    #[inline(always)]
-    fn i128_sub_small_assign(res: &mut [i128], a: &[i64]) {
-        vi128_sub_small_assign_neon(res.len(), res, a);
-    }
-    #[inline(always)]
-    fn i128_sub_small_negate_assign(res: &mut [i128], a: &[i64]) {
-        vi128_sub_small_negate_assign_neon(res.len(), res, a);
-    }
-    #[inline(always)]
-    fn i128_negate(res: &mut [i128], a: &[i128]) {
-        vi128_negate_neon(res.len(), res, a);
-    }
-    #[inline(always)]
-    fn i128_negate_assign(res: &mut [i128]) {
-        vi128_negate_assign_neon(res.len(), res);
-    }
     #[inline(always)]
     fn i128_neg_from_small(res: &mut [i128], a: &[i64]) {
         vi128_neg_from_small_neon(res.len(), res, a);

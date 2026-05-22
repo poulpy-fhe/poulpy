@@ -30,6 +30,11 @@ use poulpy_cpu_ref::reference::fft64::reim::{
 };
 
 /// `res[i] = a[i] + b[i]` for all `i`.
+///
+/// Kept for the unit test below; the `FFT64Neon` `ReimArith::reim_add` impl
+/// routes to the autovec reference because the hand-NEON loop is memory
+/// bandwidth bound at large `n` and the autovec wins.
+#[allow(dead_code)]
 pub(crate) fn reim_add_neon(res: &mut [f64], a: &[f64], b: &[f64]) {
     debug_assert_eq!(res.len(), a.len());
     debug_assert_eq!(res.len(), b.len());
@@ -56,6 +61,9 @@ pub(crate) fn reim_add_neon(res: &mut [f64], a: &[f64], b: &[f64]) {
 }
 
 /// `res[i] = res[i] + a[i]` for all `i`.
+///
+/// See `reim_add_neon`: kept for tests, dispatched to the ref by `FFT64Neon`.
+#[allow(dead_code)]
 pub(crate) fn reim_add_assign_neon(res: &mut [f64], a: &[f64]) {
     debug_assert_eq!(res.len(), a.len());
     let n = res.len();
@@ -217,10 +225,10 @@ pub(crate) fn reim_mul_neon(res: &mut [f64], a: &[f64], b: &[f64]) {
                 let ai_v = vld1q_f64(ai_ptr.add(off));
                 let br_v = vld1q_f64(br_ptr.add(off));
                 let bi_v = vld1q_f64(bi_ptr.add(off));
-                // rr = ar·br − ai·bi
-                let t1 = vmulq_f64(ai_v, bi_v);
-                let rr_out = vfmsq_f64(t1, ar_v, br_v); // t1 − ar·br = ai·bi − ar·br
-                vst1q_f64(rr_p.add(off), vnegq_f64(rr_out));
+                // rr = ar·br − ai·bi  (seed with ar·br; vfmsq subtracts ai·bi)
+                let t1 = vmulq_f64(ar_v, br_v);
+                let rr_out = vfmsq_f64(t1, ai_v, bi_v);
+                vst1q_f64(rr_p.add(off), rr_out);
                 // ri = ar·bi + ai·br
                 let t2 = vmulq_f64(ar_v, bi_v);
                 let ri_out = vfmaq_f64(t2, ai_v, br_v); // t2 + ai·br
@@ -281,9 +289,9 @@ pub(crate) fn reim_mul_assign_neon(res: &mut [f64], a: &[f64]) {
                 let ai_v = vld1q_f64(ai_ptr.add(off));
                 let br_v = vld1q_f64(rr_ptr.add(off));
                 let bi_v = vld1q_f64(ri_ptr.add(off));
-                let t1 = vmulq_f64(ai_v, bi_v);
-                let rr_out = vfmsq_f64(t1, ar_v, br_v);
-                vst1q_f64(rr_ptr.add(off), vnegq_f64(rr_out));
+                let t1 = vmulq_f64(ar_v, br_v);
+                let rr_out = vfmsq_f64(t1, ai_v, bi_v);
+                vst1q_f64(rr_ptr.add(off), rr_out);
                 let t2 = vmulq_f64(ar_v, bi_v);
                 let ri_out = vfmaq_f64(t2, ai_v, br_v);
                 vst1q_f64(ri_ptr.add(off), ri_out);

@@ -14,13 +14,13 @@
 //! --features enable-neon --target aarch64-unknown-linux-musl` once
 //! `qemu-aarch64-static` is installed (see `.cargo/config.toml`).
 
-use core::arch::aarch64::{int64x2_t, vdupq_n_s64, vshlq_u64};
+use core::arch::aarch64::{int64x2_t, vdupq_n_s64, vmlal_u32, vmovn_u64, vmull_u32, vshlq_u64, vshrn_n_u64};
 use poulpy_cpu_ref::reference::ntt120::{
     ntt::{NttReducMeta, NttStepMeta, NttTable, NttTableInv},
     primes::PrimeSet,
 };
 
-use super::q120::{Q120, add_q120, and_q120, load_const, load_q120, mul_epu32_q120, shr_q120, store_q120, sub_q120};
+use super::q120::{Q120, add_q120, and_q120, load_const, load_q120, mla_epu32_q120, store_q120, sub_q120};
 
 const CHANGE_MODE_N: usize = 1024;
 
@@ -29,19 +29,27 @@ const CHANGE_MODE_N: usize = 1024;
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// `(inp & mask) * (po & 0xFFFFFFFF) + (inp >> h) * (po >> 32)` per lane.
-/// Mirrors `split_precompmul_si256` at `ntt.rs:81`.
+/// Mirrors `split_precompmul_si256` at `ntt.rs:81`. Uses `vshrn_n_u64::<32>`
+/// to fold `po >> 32` + truncate-to-u32 into one instruction per half.
 #[inline(always)]
 unsafe fn split_precompmul_q120(inp: Q120, po: Q120, h: int64x2_t, mask: Q120) -> Q120 {
     unsafe {
         let inp_low = and_q120(inp, mask);
-        let t1 = mul_epu32_q120(inp_low, po);
-        let inp_high = Q120 {
-            lo: vshlq_u64(inp.lo, h),
-            hi: vshlq_u64(inp.hi, h),
-        };
-        let po_high = shr_q120::<32>(po);
-        let t2 = mul_epu32_q120(inp_high, po_high);
-        add_q120(t1, t2)
+        let inp_lo32_lo = vmovn_u64(inp_low.lo);
+        let inp_lo32_hi = vmovn_u64(inp_low.hi);
+        let po_lo32_lo = vmovn_u64(po.lo);
+        let po_lo32_hi = vmovn_u64(po.hi);
+        let t1_lo = vmull_u32(inp_lo32_lo, po_lo32_lo);
+        let t1_hi = vmull_u32(inp_lo32_hi, po_lo32_hi);
+
+        let inp_hi_lo32 = vmovn_u64(vshlq_u64(inp.lo, h));
+        let inp_hi_hi32 = vmovn_u64(vshlq_u64(inp.hi, h));
+        let po_hi32_lo = vshrn_n_u64::<32>(po.lo);
+        let po_hi32_hi = vshrn_n_u64::<32>(po.hi);
+        Q120 {
+            lo: vmlal_u32(t1_lo, inp_hi_lo32, po_hi32_lo),
+            hi: vmlal_u32(t1_hi, inp_hi_hi32, po_hi32_hi),
+        }
     }
 }
 
@@ -55,8 +63,7 @@ unsafe fn modq_red_q120(x: Q120, h: int64x2_t, mask: Q120, cst: Q120) -> Q120 {
             hi: vshlq_u64(x.hi, h),
         };
         let xl = and_q120(x, mask);
-        let xh_scaled = mul_epu32_q120(xh, cst);
-        add_q120(xl, xh_scaled)
+        mla_epu32_q120(xl, xh, cst)
     }
 }
 
@@ -111,6 +118,7 @@ unsafe fn ntt_iter_first_red(begin: *mut u64, end: *const u64, meta: &NttStepMet
 }
 
 /// Forward Cooley–Tukey butterfly level (no reduce). Mirrors `ntt_iter` at `ntt.rs:174`.
+/// Inner loop is 2× unrolled.
 #[inline(always)]
 unsafe fn ntt_iter(nn: usize, begin: *mut u64, end: *const u64, meta: &NttStepMeta, po_base: *const u64) {
     unsafe {
@@ -133,16 +141,34 @@ unsafe fn ntt_iter(nn: usize, begin: *mut u64, end: *const u64, meta: &NttStepMe
             p2 = p2.add(4);
 
             let mut po = po_base;
-            for _ in 1..halfnn {
+            let mut remaining = halfnn - 1;
+            while remaining >= 2 {
+                let a0 = load_q120(p1);
+                let b0 = load_q120(p2);
+                let a1 = load_q120(p1.add(4));
+                let b1 = load_q120(p2.add(4));
+                let pw0 = load_q120(po);
+                let pw1 = load_q120(po.add(4));
+
+                store_q120(p1, add_q120(a0, b0));
+                store_q120(p1.add(4), add_q120(a1, b1));
+                let d0 = sub_q120(add_q120(a0, q2bs), b0);
+                let d1 = sub_q120(add_q120(a1, q2bs), b1);
+                store_q120(p2, split_precompmul_q120(d0, pw0, h, mask));
+                store_q120(p2.add(4), split_precompmul_q120(d1, pw1, h, mask));
+
+                p1 = p1.add(8);
+                p2 = p2.add(8);
+                po = po.add(8);
+                remaining -= 2;
+            }
+            if remaining == 1 {
                 let a = load_q120(p1);
                 let b = load_q120(p2);
                 store_q120(p1, add_q120(a, b));
                 let b1 = sub_q120(add_q120(a, q2bs), b);
                 let p = load_q120(po);
                 store_q120(p2, split_precompmul_q120(b1, p, h, mask));
-                p1 = p1.add(4);
-                p2 = p2.add(4);
-                po = po.add(4);
             }
             data = data.add(4 * nn);
         }
@@ -150,6 +176,7 @@ unsafe fn ntt_iter(nn: usize, begin: *mut u64, end: *const u64, meta: &NttStepMe
 }
 
 /// Forward butterfly level with prior lazy reduce. Mirrors `ntt_iter_red` at `ntt.rs:219`.
+/// Inner loop is 2× unrolled.
 #[inline(always)]
 unsafe fn ntt_iter_red(
     nn: usize,
@@ -182,16 +209,34 @@ unsafe fn ntt_iter_red(
             p2 = p2.add(4);
 
             let mut po = po_base;
-            for _ in 1..halfnn {
+            let mut remaining = halfnn - 1;
+            while remaining >= 2 {
+                let a0 = modq_red_q120(load_q120(p1), rh, rmask, rcst);
+                let b0 = modq_red_q120(load_q120(p2), rh, rmask, rcst);
+                let a1 = modq_red_q120(load_q120(p1.add(4)), rh, rmask, rcst);
+                let b1 = modq_red_q120(load_q120(p2.add(4)), rh, rmask, rcst);
+                let pw0 = load_q120(po);
+                let pw1 = load_q120(po.add(4));
+
+                store_q120(p1, add_q120(a0, b0));
+                store_q120(p1.add(4), add_q120(a1, b1));
+                let d0 = sub_q120(add_q120(a0, q2bs), b0);
+                let d1 = sub_q120(add_q120(a1, q2bs), b1);
+                store_q120(p2, split_precompmul_q120(d0, pw0, h, mask));
+                store_q120(p2.add(4), split_precompmul_q120(d1, pw1, h, mask));
+
+                p1 = p1.add(8);
+                p2 = p2.add(8);
+                po = po.add(8);
+                remaining -= 2;
+            }
+            if remaining == 1 {
                 let a = modq_red_q120(load_q120(p1), rh, rmask, rcst);
                 let b = modq_red_q120(load_q120(p2), rh, rmask, rcst);
                 store_q120(p1, add_q120(a, b));
                 let b1 = sub_q120(add_q120(a, q2bs), b);
                 let p = load_q120(po);
                 store_q120(p2, split_precompmul_q120(b1, p, h, mask));
-                p1 = p1.add(4);
-                p2 = p2.add(4);
-                po = po.add(4);
             }
             data = data.add(4 * nn);
         }
@@ -199,6 +244,7 @@ unsafe fn ntt_iter_red(
 }
 
 /// Inverse Gentleman–Sande butterfly level (no reduce). Mirrors `intt_iter` at `ntt.rs:276`.
+/// Inner loop is 2× unrolled.
 #[inline(always)]
 unsafe fn intt_iter(nn: usize, begin: *mut u64, end: *const u64, meta: &NttStepMeta, po_base: *const u64) {
     unsafe {
@@ -221,16 +267,34 @@ unsafe fn intt_iter(nn: usize, begin: *mut u64, end: *const u64, meta: &NttStepM
             p2 = p2.add(4);
 
             let mut po = po_base;
-            for _ in 1..halfnn {
+            let mut remaining = halfnn - 1;
+            while remaining >= 2 {
+                let a0 = load_q120(p1);
+                let b0 = load_q120(p2);
+                let a1 = load_q120(p1.add(4));
+                let b1 = load_q120(p2.add(4));
+                let pw0 = load_q120(po);
+                let pw1 = load_q120(po.add(4));
+
+                let bo0 = split_precompmul_q120(b0, pw0, h, mask);
+                let bo1 = split_precompmul_q120(b1, pw1, h, mask);
+                store_q120(p1, add_q120(a0, bo0));
+                store_q120(p1.add(4), add_q120(a1, bo1));
+                store_q120(p2, sub_q120(add_q120(a0, q2bs), bo0));
+                store_q120(p2.add(4), sub_q120(add_q120(a1, q2bs), bo1));
+
+                p1 = p1.add(8);
+                p2 = p2.add(8);
+                po = po.add(8);
+                remaining -= 2;
+            }
+            if remaining == 1 {
                 let a = load_q120(p1);
                 let b = load_q120(p2);
                 let p = load_q120(po);
                 let bo = split_precompmul_q120(b, p, h, mask);
                 store_q120(p1, add_q120(a, bo));
                 store_q120(p2, sub_q120(add_q120(a, q2bs), bo));
-                p1 = p1.add(4);
-                p2 = p2.add(4);
-                po = po.add(4);
             }
             data = data.add(4 * nn);
         }
@@ -238,6 +302,7 @@ unsafe fn intt_iter(nn: usize, begin: *mut u64, end: *const u64, meta: &NttStepM
 }
 
 /// Inverse butterfly level with prior lazy reduce. Mirrors `intt_iter_red` at `ntt.rs:321`.
+/// Inner loop is 2× unrolled.
 #[inline(always)]
 unsafe fn intt_iter_red(
     nn: usize,
@@ -270,16 +335,34 @@ unsafe fn intt_iter_red(
             p2 = p2.add(4);
 
             let mut po = po_base;
-            for _ in 1..halfnn {
+            let mut remaining = halfnn - 1;
+            while remaining >= 2 {
+                let a0 = modq_red_q120(load_q120(p1), rh, rmask, rcst);
+                let b0 = modq_red_q120(load_q120(p2), rh, rmask, rcst);
+                let a1 = modq_red_q120(load_q120(p1.add(4)), rh, rmask, rcst);
+                let b1 = modq_red_q120(load_q120(p2.add(4)), rh, rmask, rcst);
+                let pw0 = load_q120(po);
+                let pw1 = load_q120(po.add(4));
+
+                let bo0 = split_precompmul_q120(b0, pw0, h, mask);
+                let bo1 = split_precompmul_q120(b1, pw1, h, mask);
+                store_q120(p1, add_q120(a0, bo0));
+                store_q120(p1.add(4), add_q120(a1, bo1));
+                store_q120(p2, sub_q120(add_q120(a0, q2bs), bo0));
+                store_q120(p2.add(4), sub_q120(add_q120(a1, q2bs), bo1));
+
+                p1 = p1.add(8);
+                p2 = p2.add(8);
+                po = po.add(8);
+                remaining -= 2;
+            }
+            if remaining == 1 {
                 let a = modq_red_q120(load_q120(p1), rh, rmask, rcst);
                 let b = modq_red_q120(load_q120(p2), rh, rmask, rcst);
                 let p = load_q120(po);
                 let bo = split_precompmul_q120(b, p, h, mask);
                 store_q120(p1, add_q120(a, bo));
                 store_q120(p2, sub_q120(add_q120(a, q2bs), bo));
-                p1 = p1.add(4);
-                p2 = p2.add(4);
-                po = po.add(4);
             }
             data = data.add(4 * nn);
         }

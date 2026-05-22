@@ -20,7 +20,8 @@ use poulpy_cpu_ref::reference::ntt120::primes::{PrimeSet, Primes30};
 
 #[allow(unused_imports)]
 use super::q120::{
-    Q120, add_q120, and_q120, cond_sub_q120, load_const, load_q120, mul_epu32_q120, shr_q120, store_q120, sub_q120,
+    Q120, add_q120, and_q120, cond_sub_q120, load_const, load_q120, mla_epu32_q120, mul_epu32_q120, shr_q120, store_q120,
+    sub_q120,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -188,7 +189,7 @@ unsafe fn reduce_b_to_canonical_q120(x: Q120, q: Q120, mu: Q120, pow32: Q120) ->
         // x_hi_r ∈ [0, Q) after one cond_sub
         let x_hi_r = cond_sub_q120(x_hi, q);
         // tmp = x_hi_r * pow32 + x_lo  (< 2^61)
-        let tmp = add_q120(mul_epu32_q120(x_hi_r, pow32), x_lo);
+        let tmp = mla_epu32_q120(x_lo, x_hi_r, pow32);
         barrett_reduce_q120(tmp, q, mu)
     }
 }
@@ -220,9 +221,8 @@ unsafe fn reduce_b_and_apply_crt_q120(x: Q120, q: Q120, mu: Q120, pow32_crt: Q12
         };
         let x_lo_lo = and_q120(x_lo, mask16);
         let p1 = mul_epu32_q120(x_hi_r, pow32_crt);
-        let p2 = mul_epu32_q120(x_lo_hi, pow16_crt);
-        let p3 = mul_epu32_q120(x_lo_lo, crt);
-        let tmp = add_q120(add_q120(p1, p2), p3);
+        let tmp = mla_epu32_q120(p1, x_lo_hi, pow16_crt);
+        let tmp = mla_epu32_q120(tmp, x_lo_lo, crt);
         barrett_reduce_q120(tmp, q, mu)
     }
 }

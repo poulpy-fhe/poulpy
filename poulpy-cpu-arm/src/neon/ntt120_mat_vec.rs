@@ -26,7 +26,10 @@ use poulpy_cpu_ref::reference::ntt120::{
     primes::Primes30,
 };
 
-use super::q120::{Q120, add_q120, and_q120, load_const, load_q120, mul_epu32_q120, shr_q120, store_q120, zero_q120};
+use super::q120::{
+    Q120, acc_shr_q120, add_q120, and_q120, load_const, load_q120, mla_epu32_q120, mul_epu32_q120, shr_q120, store_q120,
+    zero_q120,
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // vec_mat1col_product_bbb_neon
@@ -69,13 +72,13 @@ pub(crate) fn vec_mat1col_product_bbb_neon(meta: &BbbMeta<Primes30>, ell: usize,
 
             // Bin accumulation (matches scalar reference)
             s1 = add_q120(s1, and_q120(a, mask32));
-            s2 = add_q120(s2, shr_q120::<32>(a));
+            s2 = acc_shr_q120::<32>(s2, a);
             s2 = add_q120(s2, and_q120(b, mask32));
             s2 = add_q120(s2, and_q120(c, mask32));
-            s3 = add_q120(s3, shr_q120::<32>(b));
-            s3 = add_q120(s3, shr_q120::<32>(c));
+            s3 = acc_shr_q120::<32>(s3, b);
+            s3 = acc_shr_q120::<32>(s3, c);
             s3 = add_q120(s3, and_q120(d, mask32));
-            s4 = add_q120(s4, shr_q120::<32>(d));
+            s4 = acc_shr_q120::<32>(s4, d);
 
             x_ptr = x_ptr.add(4);
             y_ptr = y_ptr.add(4);
@@ -118,13 +121,13 @@ pub(crate) fn vec_mat1col_product_bbb_neon(meta: &BbbMeta<Primes30>, ell: usize,
         // t = s1l + s1h*s1h_pow + s2l*s2l_pow + s2h*s2h_pow
         //       + s3l*s3l_pow + s3h*s3h_pow + s4l*s4l_pow + s4h*s4h_pow
         let mut t = s1l;
-        t = add_q120(t, mul_epu32_q120(s1h, s1h_pow));
-        t = add_q120(t, mul_epu32_q120(s2l, s2l_pow));
-        t = add_q120(t, mul_epu32_q120(s2h, s2h_pow));
-        t = add_q120(t, mul_epu32_q120(s3l, s3l_pow));
-        t = add_q120(t, mul_epu32_q120(s3h, s3h_pow));
-        t = add_q120(t, mul_epu32_q120(s4l, s4l_pow));
-        t = add_q120(t, mul_epu32_q120(s4h, s4h_pow));
+        t = mla_epu32_q120(t, s1h, s1h_pow);
+        t = mla_epu32_q120(t, s2l, s2l_pow);
+        t = mla_epu32_q120(t, s2h, s2h_pow);
+        t = mla_epu32_q120(t, s3l, s3l_pow);
+        t = mla_epu32_q120(t, s3h, s3h_pow);
+        t = mla_epu32_q120(t, s4l, s4l_pow);
+        t = mla_epu32_q120(t, s4h, s4h_pow);
 
         store_q120(res.as_mut_ptr(), t);
     }
@@ -151,8 +154,8 @@ unsafe fn reduce_bbc_neon(
             lo: vshlq_u64(s_hi.lo, neg_h2),
             hi: vshlq_u64(s_hi.hi, neg_h2),
         };
-        let t = add_q120(s_lo, mul_epu32_q120(hi_lo, s2l));
-        add_q120(t, mul_epu32_q120(hi_hi, s2h))
+        let t = mla_epu32_q120(s_lo, hi_lo, s2l);
+        mla_epu32_q120(t, hi_hi, s2h)
     }
 }
 
@@ -188,8 +191,8 @@ pub(crate) fn vec_mat1col_product_bbc_neon(meta: &BbcMeta<Primes30>, ell: usize,
 
             s1 = add_q120(s1, and_q120(a, mask32));
             s1 = add_q120(s1, and_q120(b, mask32));
-            s2 = add_q120(s2, shr_q120::<32>(a));
-            s2 = add_q120(s2, shr_q120::<32>(b));
+            s2 = acc_shr_q120::<32>(s2, a);
+            s2 = acc_shr_q120::<32>(s2, b);
 
             x_ptr = x_ptr.add(4);
             y_ptr = y_ptr.add(4);
@@ -241,8 +244,8 @@ pub(crate) fn vec_mat1col_product_x2_bbc_neon(meta: &BbcMeta<Primes30>, ell: usi
 
             s0 = add_q120(s0, and_q120(pa_lo, mask32));
             s0 = add_q120(s0, and_q120(pa_hi, mask32));
-            s1 = add_q120(s1, shr_q120::<32>(pa_lo));
-            s1 = add_q120(s1, shr_q120::<32>(pa_hi));
+            s1 = acc_shr_q120::<32>(s1, pa_lo);
+            s1 = acc_shr_q120::<32>(s1, pa_hi);
 
             // Pair B: x[2i+1] × y[2i+1]
             let xb = load_q120(x_ptr.add(4));
@@ -255,8 +258,8 @@ pub(crate) fn vec_mat1col_product_x2_bbc_neon(meta: &BbcMeta<Primes30>, ell: usi
 
             s2 = add_q120(s2, and_q120(pb_lo, mask32));
             s2 = add_q120(s2, and_q120(pb_hi, mask32));
-            s3 = add_q120(s3, shr_q120::<32>(pb_lo));
-            s3 = add_q120(s3, shr_q120::<32>(pb_hi));
+            s3 = acc_shr_q120::<32>(s3, pb_lo);
+            s3 = acc_shr_q120::<32>(s3, pb_hi);
 
             x_ptr = x_ptr.add(8);
             y_ptr = y_ptr.add(8);
@@ -315,8 +318,8 @@ pub(crate) fn vec_mat2cols_product_x2_bbc_neon(meta: &BbcMeta<Primes30>, ell: us
             let p0a_hi = mul_epu32_q120(xa_hi, yc0a_hi);
             s0 = add_q120(s0, and_q120(p0a_lo, mask32));
             s0 = add_q120(s0, and_q120(p0a_hi, mask32));
-            s1 = add_q120(s1, shr_q120::<32>(p0a_lo));
-            s1 = add_q120(s1, shr_q120::<32>(p0a_hi));
+            s1 = acc_shr_q120::<32>(s1, p0a_lo);
+            s1 = acc_shr_q120::<32>(s1, p0a_hi);
 
             let yc0b = load_q120(y_ptr.add(4));
             let yc0b_hi = shr_q120::<32>(yc0b);
@@ -324,8 +327,8 @@ pub(crate) fn vec_mat2cols_product_x2_bbc_neon(meta: &BbcMeta<Primes30>, ell: us
             let p0b_hi = mul_epu32_q120(xb_hi, yc0b_hi);
             s2 = add_q120(s2, and_q120(p0b_lo, mask32));
             s2 = add_q120(s2, and_q120(p0b_hi, mask32));
-            s3 = add_q120(s3, shr_q120::<32>(p0b_lo));
-            s3 = add_q120(s3, shr_q120::<32>(p0b_hi));
+            s3 = acc_shr_q120::<32>(s3, p0b_lo);
+            s3 = acc_shr_q120::<32>(s3, p0b_hi);
 
             // Column 1
             let yc1a = load_q120(y_ptr.add(8));
@@ -334,8 +337,8 @@ pub(crate) fn vec_mat2cols_product_x2_bbc_neon(meta: &BbcMeta<Primes30>, ell: us
             let p1a_hi = mul_epu32_q120(xa_hi, yc1a_hi);
             s4 = add_q120(s4, and_q120(p1a_lo, mask32));
             s4 = add_q120(s4, and_q120(p1a_hi, mask32));
-            s5 = add_q120(s5, shr_q120::<32>(p1a_lo));
-            s5 = add_q120(s5, shr_q120::<32>(p1a_hi));
+            s5 = acc_shr_q120::<32>(s5, p1a_lo);
+            s5 = acc_shr_q120::<32>(s5, p1a_hi);
 
             let yc1b = load_q120(y_ptr.add(12));
             let yc1b_hi = shr_q120::<32>(yc1b);
@@ -343,8 +346,8 @@ pub(crate) fn vec_mat2cols_product_x2_bbc_neon(meta: &BbcMeta<Primes30>, ell: us
             let p1b_hi = mul_epu32_q120(xb_hi, yc1b_hi);
             s6 = add_q120(s6, and_q120(p1b_lo, mask32));
             s6 = add_q120(s6, and_q120(p1b_hi, mask32));
-            s7 = add_q120(s7, shr_q120::<32>(p1b_lo));
-            s7 = add_q120(s7, shr_q120::<32>(p1b_hi));
+            s7 = acc_shr_q120::<32>(s7, p1b_lo);
+            s7 = acc_shr_q120::<32>(s7, p1b_hi);
 
             x_ptr = x_ptr.add(8);
             y_ptr = y_ptr.add(16);
