@@ -1,35 +1,39 @@
-//! Single-command sanity + perf check for `poulpy-cpu-arm` vs `poulpy-cpu-ref`.
+//! Single-command sanity + perf check for `poulpy-cpu-avx512` vs `poulpy-cpu-ref`.
 //!
 //! TEMPORARY — fold into proper `poulpy-bench` criterion benches once the
-//! NEON backend is validated on Apple Silicon / Neoverse.
+//! AVX-512 backend is fully validated.
 //!
-//! Usage (native AArch64):
+//! Usage (native x86_64 with AVX-512F):
 //!
-//!   cargo run --release --example bench_neon_vs_ref --features enable-neon
+//!   RUSTFLAGS="-C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx" \
+//!     cargo run --release --example bench_avx512_vs_ref \
+//!     -p poulpy-cpu-avx512 --features enable-avx512f
 //!
 //! Output:
 //!   - stdout (live progress)
-//!   - file `bench_neon_vs_ref.txt` in the current working directory
+//!   - file `bench_avx512_vs_ref.txt` in the current working directory
 //!     (overwritten on each run). Override the path with the
-//!     `POULPY_ARM_BENCH_OUT` environment variable.
+//!     `POULPY_AVX512_BENCH_OUT` environment variable.
 //!
-//! Each kernel is run once for correctness (NEON output vs `_ref` output,
+//! Each kernel is run once for correctness (AVX-512 output vs `_ref` output,
 //! bit-exact for integer kernels, ULP-tolerant for f64). On mismatch the
 //! script panics with a diff. After the correctness gate it times both
 //! variants and prints a speedup table.
 
-#[cfg(not(all(feature = "enable-neon", target_arch = "aarch64")))]
+#[cfg(not(all(feature = "enable-avx512f", target_arch = "x86_64", target_feature = "avx512f")))]
 fn main() {
-    eprintln!("Skipping: bench_neon_vs_ref requires --features enable-neon on target_arch = \"aarch64\".");
+    eprintln!(
+        "Skipping: bench_avx512_vs_ref requires --features enable-avx512f on target_arch = \"x86_64\" with AVX-512F."
+    );
 }
 
-#[cfg(all(feature = "enable-neon", target_arch = "aarch64"))]
+#[cfg(all(feature = "enable-avx512f", target_arch = "x86_64", target_feature = "avx512f"))]
 fn main() {
-    neon::run();
+    avx512::run();
 }
 
-#[cfg(all(feature = "enable-neon", target_arch = "aarch64"))]
-mod neon {
+#[cfg(all(feature = "enable-avx512f", target_arch = "x86_64", target_feature = "avx512f"))]
+mod avx512 {
     use std::fs::File;
     use std::hint::black_box;
     use std::io::Write;
@@ -38,7 +42,7 @@ mod neon {
     use rand::{RngExt, SeedableRng};
     use rand_chacha::ChaCha8Rng;
 
-    use poulpy_cpu_arm::{FFT64Neon, NTT120Neon};
+    use poulpy_cpu_avx512::{FFT64Avx512, NTT120Avx512};
     use poulpy_cpu_ref::{
         FFT64Ref, NTT120Ref,
         reference::{
@@ -52,11 +56,10 @@ mod neon {
         },
     };
 
-    const SEED: [u8; 32] = *b"poulpy-cpu-arm-bench-seed--01234";
+    const SEED: [u8; 32] = *b"poulpy-cpu-avx512-bench-seed--01";
     const SIZES: &[usize] = &[1024, 4096, 16384];
-    const DEFAULT_OUT: &str = "bench_neon_vs_ref.txt";
+    const DEFAULT_OUT: &str = "bench_avx512_vs_ref.txt";
 
-    /// Stdout + file tee. Drop on `run()` exit flushes the file.
     struct Reporter {
         file: Option<File>,
     }
@@ -132,12 +135,12 @@ mod neon {
         total / iters as u128
     }
 
-    fn row(rep: &mut Reporter, name: &str, n: usize, ref_ns: u128, neon_ns: u128, speedups: &mut Vec<f64>) {
-        let s = ref_ns as f64 / neon_ns.max(1) as f64;
+    fn row(rep: &mut Reporter, name: &str, n: usize, ref_ns: u128, avx512_ns: u128, speedups: &mut Vec<f64>) {
+        let s = ref_ns as f64 / avx512_ns.max(1) as f64;
         speedups.push(s);
         rep.line(&format!(
-            "  {:36} n={:>6}   ref={:>9} ns   neon={:>9} ns   {:5.2}×",
-            name, n, ref_ns, neon_ns, s
+            "  {:36} n={:>6}   ref={:>9} ns   avx512={:>9} ns   {:5.2}×",
+            name, n, ref_ns, avx512_ns, s
         ));
     }
 
@@ -151,11 +154,11 @@ mod neon {
         let a = rand_i64s(n);
         let b = rand_i64s(n);
 
-        let mut neon = vec![0i64; n];
+        let mut avx = vec![0i64; n];
         let mut refr = vec![0i64; n];
-        <FFT64Neon as ZnxAdd>::znx_add(&mut neon, &a, &b);
+        <FFT64Avx512 as ZnxAdd>::znx_add(&mut avx, &a, &b);
         <FFT64Ref as ZnxAdd>::znx_add(&mut refr, &a, &b);
-        assert_eq!(neon, refr, "znx_add (n={n})");
+        assert_eq!(avx, refr, "znx_add (n={n})");
 
         let iters = iters_for(n);
         let mut r = vec![0i64; n];
@@ -163,11 +166,11 @@ mod neon {
             <FFT64Ref as ZnxAdd>::znx_add(&mut r, &a, &b);
             black_box(&r);
         });
-        let neon_ns = time(iters, || {
-            <FFT64Neon as ZnxAdd>::znx_add(&mut r, &a, &b);
+        let avx512_ns = time(iters, || {
+            <FFT64Avx512 as ZnxAdd>::znx_add(&mut r, &a, &b);
             black_box(&r);
         });
-        row(rep, "znx_add", n, ref_ns, neon_ns, sp);
+        row(rep, "znx_add", n, ref_ns, avx512_ns, sp);
     }
 
     fn bench_znx_normalize(rep: &mut Reporter, n: usize, sp: &mut Vec<f64>) {
@@ -175,14 +178,14 @@ mod neon {
         let x_init = rand_i64s(n);
         let c_init = rand_i64s(n);
 
-        let mut x_neon = x_init.clone();
-        let mut c_neon = c_init.clone();
+        let mut x_avx = x_init.clone();
+        let mut c_avx = c_init.clone();
         let mut x_ref = x_init.clone();
         let mut c_ref = c_init.clone();
-        <FFT64Neon as ZnxNormalizeMiddleStepAssign>::znx_normalize_middle_step_assign(base2k, 0, &mut x_neon, &mut c_neon);
+        <FFT64Avx512 as ZnxNormalizeMiddleStepAssign>::znx_normalize_middle_step_assign(base2k, 0, &mut x_avx, &mut c_avx);
         <FFT64Ref as ZnxNormalizeMiddleStepAssign>::znx_normalize_middle_step_assign(base2k, 0, &mut x_ref, &mut c_ref);
-        assert_eq!(x_neon, x_ref, "znx_normalize_middle_step_assign x (n={n})");
-        assert_eq!(c_neon, c_ref, "znx_normalize_middle_step_assign c (n={n})");
+        assert_eq!(x_avx, x_ref, "znx_normalize_middle_step_assign x (n={n})");
+        assert_eq!(c_avx, c_ref, "znx_normalize_middle_step_assign c (n={n})");
 
         let iters = iters_for(n);
         let mut x = x_init.clone();
@@ -193,24 +196,24 @@ mod neon {
             <FFT64Ref as ZnxNormalizeMiddleStepAssign>::znx_normalize_middle_step_assign(base2k, 0, &mut x, &mut c);
             black_box((&x, &c));
         });
-        let neon_ns = time(iters, || {
+        let avx512_ns = time(iters, || {
             x.copy_from_slice(&x_init);
             c.copy_from_slice(&c_init);
-            <FFT64Neon as ZnxNormalizeMiddleStepAssign>::znx_normalize_middle_step_assign(base2k, 0, &mut x, &mut c);
+            <FFT64Avx512 as ZnxNormalizeMiddleStepAssign>::znx_normalize_middle_step_assign(base2k, 0, &mut x, &mut c);
             black_box((&x, &c));
         });
-        row(rep, "znx_normalize_middle_step_assign", n, ref_ns, neon_ns, sp);
+        row(rep, "znx_normalize_middle_step_assign", n, ref_ns, avx512_ns, sp);
     }
 
     fn bench_znx_automorphism(rep: &mut Reporter, n: usize, sp: &mut Vec<f64>) {
         let a = rand_i64s(n);
         let p: i64 = 5;
 
-        let mut neon = vec![0i64; n];
+        let mut avx = vec![0i64; n];
         let mut refr = vec![0i64; n];
-        <FFT64Neon as ZnxAutomorphism>::znx_automorphism(p, &mut neon, &a);
+        <FFT64Avx512 as ZnxAutomorphism>::znx_automorphism(p, &mut avx, &a);
         <FFT64Ref as ZnxAutomorphism>::znx_automorphism(p, &mut refr, &a);
-        assert_eq!(neon, refr, "znx_automorphism (n={n})");
+        assert_eq!(avx, refr, "znx_automorphism (n={n})");
 
         let iters = iters_for(n);
         let mut r = vec![0i64; n];
@@ -218,11 +221,11 @@ mod neon {
             <FFT64Ref as ZnxAutomorphism>::znx_automorphism(p, &mut r, &a);
             black_box(&r);
         });
-        let neon_ns = time(iters, || {
-            <FFT64Neon as ZnxAutomorphism>::znx_automorphism(p, &mut r, &a);
+        let avx512_ns = time(iters, || {
+            <FFT64Avx512 as ZnxAutomorphism>::znx_automorphism(p, &mut r, &a);
             black_box(&r);
         });
-        row(rep, "znx_automorphism", n, ref_ns, neon_ns, sp);
+        row(rep, "znx_automorphism", n, ref_ns, avx512_ns, sp);
     }
 
     // ─── Reim (f64) ────────────────────────────────────────────────────────
@@ -231,11 +234,11 @@ mod neon {
         let a = rand_f64s(n);
         let b = rand_f64s(n);
 
-        let mut neon = vec![0f64; n];
+        let mut avx = vec![0f64; n];
         let mut refr = vec![0f64; n];
-        <FFT64Neon as ReimArith>::reim_add(&mut neon, &a, &b);
+        <FFT64Avx512 as ReimArith>::reim_add(&mut avx, &a, &b);
         <FFT64Ref as ReimArith>::reim_add(&mut refr, &a, &b);
-        assert!(close_enough(&neon, &refr, 0.0), "reim_add (n={n})");
+        assert!(close_enough(&avx, &refr, 0.0), "reim_add (n={n})");
 
         let iters = iters_for(n);
         let mut r = vec![0f64; n];
@@ -243,22 +246,22 @@ mod neon {
             <FFT64Ref as ReimArith>::reim_add(&mut r, &a, &b);
             black_box(&r);
         });
-        let neon_ns = time(iters, || {
-            <FFT64Neon as ReimArith>::reim_add(&mut r, &a, &b);
+        let avx512_ns = time(iters, || {
+            <FFT64Avx512 as ReimArith>::reim_add(&mut r, &a, &b);
             black_box(&r);
         });
-        row(rep, "reim_add", n, ref_ns, neon_ns, sp);
+        row(rep, "reim_add", n, ref_ns, avx512_ns, sp);
     }
 
     fn bench_reim_mul(rep: &mut Reporter, n: usize, sp: &mut Vec<f64>) {
         let a = rand_f64s(n);
         let b = rand_f64s(n);
 
-        let mut neon = vec![0f64; n];
+        let mut avx = vec![0f64; n];
         let mut refr = vec![0f64; n];
-        <FFT64Neon as ReimArith>::reim_mul(&mut neon, &a, &b);
+        <FFT64Avx512 as ReimArith>::reim_mul(&mut avx, &a, &b);
         <FFT64Ref as ReimArith>::reim_mul(&mut refr, &a, &b);
-        assert!(close_enough(&neon, &refr, 1e-3), "reim_mul (n={n})");
+        assert!(close_enough(&avx, &refr, 1e-3), "reim_mul (n={n})");
 
         let iters = iters_for(n);
         let mut r = vec![0f64; n];
@@ -266,11 +269,11 @@ mod neon {
             <FFT64Ref as ReimArith>::reim_mul(&mut r, &a, &b);
             black_box(&r);
         });
-        let neon_ns = time(iters, || {
-            <FFT64Neon as ReimArith>::reim_mul(&mut r, &a, &b);
+        let avx512_ns = time(iters, || {
+            <FFT64Avx512 as ReimArith>::reim_mul(&mut r, &a, &b);
             black_box(&r);
         });
-        row(rep, "reim_mul", n, ref_ns, neon_ns, sp);
+        row(rep, "reim_mul", n, ref_ns, avx512_ns, sp);
     }
 
     fn bench_reim_addmul(rep: &mut Reporter, n: usize, sp: &mut Vec<f64>) {
@@ -278,11 +281,11 @@ mod neon {
         let a = rand_f64s(n);
         let b = rand_f64s(n);
 
-        let mut neon = r0.clone();
+        let mut avx = r0.clone();
         let mut refr = r0.clone();
-        <FFT64Neon as ReimArith>::reim_addmul(&mut neon, &a, &b);
+        <FFT64Avx512 as ReimArith>::reim_addmul(&mut avx, &a, &b);
         <FFT64Ref as ReimArith>::reim_addmul(&mut refr, &a, &b);
-        assert!(close_enough(&neon, &refr, 1e-3), "reim_addmul (n={n})");
+        assert!(close_enough(&avx, &refr, 1e-3), "reim_addmul (n={n})");
 
         let iters = iters_for(n);
         let mut r = r0.clone();
@@ -291,12 +294,12 @@ mod neon {
             <FFT64Ref as ReimArith>::reim_addmul(&mut r, &a, &b);
             black_box(&r);
         });
-        let neon_ns = time(iters, || {
+        let avx512_ns = time(iters, || {
             r.copy_from_slice(&r0);
-            <FFT64Neon as ReimArith>::reim_addmul(&mut r, &a, &b);
+            <FFT64Avx512 as ReimArith>::reim_addmul(&mut r, &a, &b);
             black_box(&r);
         });
-        row(rep, "reim_addmul", n, ref_ns, neon_ns, sp);
+        row(rep, "reim_addmul", n, ref_ns, avx512_ns, sp);
     }
 
     // ─── FFT / IFFT ────────────────────────────────────────────────────────
@@ -306,11 +309,11 @@ mod neon {
         let table = ReimFFTTable::<f64>::new(m);
         let data0 = rand_f64s(n);
 
-        let mut neon = data0.clone();
+        let mut avx = data0.clone();
         let mut refr = data0.clone();
-        <FFT64Neon as ReimFFTExecute<ReimFFTTable<f64>, f64>>::reim_dft_execute(&table, &mut neon);
+        <FFT64Avx512 as ReimFFTExecute<ReimFFTTable<f64>, f64>>::reim_dft_execute(&table, &mut avx);
         <FFT64Ref as ReimFFTExecute<ReimFFTTable<f64>, f64>>::reim_dft_execute(&table, &mut refr);
-        let rel = neon
+        let rel = avx
             .iter()
             .zip(&refr)
             .map(|(a, b)| (a - b).abs() / a.abs().max(b.abs()).max(1.0))
@@ -324,12 +327,12 @@ mod neon {
             <FFT64Ref as ReimFFTExecute<ReimFFTTable<f64>, f64>>::reim_dft_execute(&table, &mut d);
             black_box(&d);
         });
-        let neon_ns = time(iters, || {
+        let avx512_ns = time(iters, || {
             d.copy_from_slice(&data0);
-            <FFT64Neon as ReimFFTExecute<ReimFFTTable<f64>, f64>>::reim_dft_execute(&table, &mut d);
+            <FFT64Avx512 as ReimFFTExecute<ReimFFTTable<f64>, f64>>::reim_dft_execute(&table, &mut d);
             black_box(&d);
         });
-        row(rep, "fft", n, ref_ns, neon_ns, sp);
+        row(rep, "fft", n, ref_ns, avx512_ns, sp);
     }
 
     fn bench_ifft(rep: &mut Reporter, n: usize, sp: &mut Vec<f64>) {
@@ -337,11 +340,11 @@ mod neon {
         let table = ReimIFFTTable::<f64>::new(m);
         let data0 = rand_f64s(n);
 
-        let mut neon = data0.clone();
+        let mut avx = data0.clone();
         let mut refr = data0.clone();
-        <FFT64Neon as ReimFFTExecute<ReimIFFTTable<f64>, f64>>::reim_dft_execute(&table, &mut neon);
+        <FFT64Avx512 as ReimFFTExecute<ReimIFFTTable<f64>, f64>>::reim_dft_execute(&table, &mut avx);
         <FFT64Ref as ReimFFTExecute<ReimIFFTTable<f64>, f64>>::reim_dft_execute(&table, &mut refr);
-        let rel = neon
+        let rel = avx
             .iter()
             .zip(&refr)
             .map(|(a, b)| (a - b).abs() / a.abs().max(b.abs()).max(1.0))
@@ -355,12 +358,12 @@ mod neon {
             <FFT64Ref as ReimFFTExecute<ReimIFFTTable<f64>, f64>>::reim_dft_execute(&table, &mut d);
             black_box(&d);
         });
-        let neon_ns = time(iters, || {
+        let avx512_ns = time(iters, || {
             d.copy_from_slice(&data0);
-            <FFT64Neon as ReimFFTExecute<ReimIFFTTable<f64>, f64>>::reim_dft_execute(&table, &mut d);
+            <FFT64Avx512 as ReimFFTExecute<ReimIFFTTable<f64>, f64>>::reim_dft_execute(&table, &mut d);
             black_box(&d);
         });
-        row(rep, "ifft", n, ref_ns, neon_ns, sp);
+        row(rep, "ifft", n, ref_ns, avx512_ns, sp);
     }
 
     // ─── NTT120 ────────────────────────────────────────────────────────────
@@ -368,11 +371,11 @@ mod neon {
     fn bench_ntt_from_znx64(rep: &mut Reporter, n: usize, sp: &mut Vec<f64>) {
         let a = rand_i64s(n);
 
-        let mut neon = vec![0u64; 4 * n];
+        let mut avx = vec![0u64; 4 * n];
         let mut refr = vec![0u64; 4 * n];
-        <NTT120Neon as NttFromZnx64>::ntt_from_znx64(&mut neon, &a);
+        <NTT120Avx512 as NttFromZnx64>::ntt_from_znx64(&mut avx, &a);
         <NTT120Ref as NttFromZnx64>::ntt_from_znx64(&mut refr, &a);
-        assert_eq!(neon, refr, "ntt_from_znx64 (n={n})");
+        assert_eq!(avx, refr, "ntt_from_znx64 (n={n})");
 
         let iters = iters_for(n);
         let mut r = vec![0u64; 4 * n];
@@ -380,22 +383,22 @@ mod neon {
             <NTT120Ref as NttFromZnx64>::ntt_from_znx64(&mut r, &a);
             black_box(&r);
         });
-        let neon_ns = time(iters, || {
-            <NTT120Neon as NttFromZnx64>::ntt_from_znx64(&mut r, &a);
+        let avx512_ns = time(iters, || {
+            <NTT120Avx512 as NttFromZnx64>::ntt_from_znx64(&mut r, &a);
             black_box(&r);
         });
-        row(rep, "ntt_from_znx64", n, ref_ns, neon_ns, sp);
+        row(rep, "ntt_from_znx64", n, ref_ns, avx512_ns, sp);
     }
 
     fn bench_ntt(rep: &mut Reporter, n: usize, sp: &mut Vec<f64>) {
         let table = NttTable::<Primes30>::new(n);
         let data0 = rand_q120b(n);
 
-        let mut neon = data0.clone();
+        let mut avx = data0.clone();
         let mut refr = data0.clone();
-        <NTT120Neon as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut neon);
+        <NTT120Avx512 as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut avx);
         <NTT120Ref as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut refr);
-        assert_eq!(neon, refr, "ntt (n={n})");
+        assert_eq!(avx, refr, "ntt (n={n})");
 
         let iters = iters_for(n);
         let mut d = data0.clone();
@@ -404,23 +407,23 @@ mod neon {
             <NTT120Ref as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut d);
             black_box(&d);
         });
-        let neon_ns = time(iters, || {
+        let avx512_ns = time(iters, || {
             d.copy_from_slice(&data0);
-            <NTT120Neon as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut d);
+            <NTT120Avx512 as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut d);
             black_box(&d);
         });
-        row(rep, "ntt", n, ref_ns, neon_ns, sp);
+        row(rep, "ntt", n, ref_ns, avx512_ns, sp);
     }
 
     fn bench_intt(rep: &mut Reporter, n: usize, sp: &mut Vec<f64>) {
         let table = NttTableInv::<Primes30>::new(n);
         let data0 = rand_q120b(n);
 
-        let mut neon = data0.clone();
+        let mut avx = data0.clone();
         let mut refr = data0.clone();
-        <NTT120Neon as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut neon);
+        <NTT120Avx512 as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut avx);
         <NTT120Ref as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut refr);
-        assert_eq!(neon, refr, "intt (n={n})");
+        assert_eq!(avx, refr, "intt (n={n})");
 
         let iters = iters_for(n);
         let mut d = data0.clone();
@@ -429,12 +432,12 @@ mod neon {
             <NTT120Ref as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut d);
             black_box(&d);
         });
-        let neon_ns = time(iters, || {
+        let avx512_ns = time(iters, || {
             d.copy_from_slice(&data0);
-            <NTT120Neon as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut d);
+            <NTT120Avx512 as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut d);
             black_box(&d);
         });
-        row(rep, "intt", n, ref_ns, neon_ns, sp);
+        row(rep, "intt", n, ref_ns, avx512_ns, sp);
     }
 
     // ─── VecZnxBig (i128) ──────────────────────────────────────────────────
@@ -443,11 +446,11 @@ mod neon {
         let a = rand_i128s(n);
         let b = rand_i128s(n);
 
-        let mut neon = vec![0i128; n];
+        let mut avx = vec![0i128; n];
         let mut refr = vec![0i128; n];
-        <NTT120Neon as I128BigOps>::i128_add(&mut neon, &a, &b);
+        <NTT120Avx512 as I128BigOps>::i128_add(&mut avx, &a, &b);
         <NTT120Ref as I128BigOps>::i128_add(&mut refr, &a, &b);
-        assert_eq!(neon, refr, "i128_add (n={n})");
+        assert_eq!(avx, refr, "i128_add (n={n})");
 
         let iters = iters_for(n);
         let mut r = vec![0i128; n];
@@ -455,11 +458,11 @@ mod neon {
             <NTT120Ref as I128BigOps>::i128_add(&mut r, &a, &b);
             black_box(&r);
         });
-        let neon_ns = time(iters, || {
-            <NTT120Neon as I128BigOps>::i128_add(&mut r, &a, &b);
+        let avx512_ns = time(iters, || {
+            <NTT120Avx512 as I128BigOps>::i128_add(&mut r, &a, &b);
             black_box(&r);
         });
-        row(rep, "i128_add", n, ref_ns, neon_ns, sp);
+        row(rep, "i128_add", n, ref_ns, avx512_ns, sp);
     }
 
     fn bench_nfc_middle_step(rep: &mut Reporter, n: usize, sp: &mut Vec<f64>) {
@@ -467,14 +470,14 @@ mod neon {
         let a = rand_i128s(n);
         let c_init = rand_i128s(n);
 
-        let mut r_neon = vec![0i64; n];
-        let mut c_neon = c_init.clone();
+        let mut r_avx = vec![0i64; n];
+        let mut c_avx = c_init.clone();
         let mut r_ref = vec![0i64; n];
         let mut c_ref = c_init.clone();
-        <NTT120Neon as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r_neon, &a, &mut c_neon);
+        <NTT120Avx512 as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r_avx, &a, &mut c_avx);
         <NTT120Ref as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r_ref, &a, &mut c_ref);
-        assert_eq!(r_neon, r_ref, "nfc_middle_step r (n={n})");
-        assert_eq!(c_neon, c_ref, "nfc_middle_step c (n={n})");
+        assert_eq!(r_avx, r_ref, "nfc_middle_step r (n={n})");
+        assert_eq!(c_avx, c_ref, "nfc_middle_step c (n={n})");
 
         let iters = iters_for(n);
         let mut r = vec![0i64; n];
@@ -484,12 +487,12 @@ mod neon {
             <NTT120Ref as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r, &a, &mut c);
             black_box((&r, &c));
         });
-        let neon_ns = time(iters, || {
+        let avx512_ns = time(iters, || {
             c.copy_from_slice(&c_init);
-            <NTT120Neon as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r, &a, &mut c);
+            <NTT120Avx512 as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r, &a, &mut c);
             black_box((&r, &c));
         });
-        row(rep, "nfc_middle_step (i128)", n, ref_ns, neon_ns, sp);
+        row(rep, "nfc_middle_step (i128)", n, ref_ns, avx512_ns, sp);
     }
 
     // ─── driver ────────────────────────────────────────────────────────────
@@ -521,10 +524,10 @@ mod neon {
     }
 
     pub(super) fn run() {
-        let out_path = std::env::var("POULPY_ARM_BENCH_OUT").unwrap_or_else(|_| DEFAULT_OUT.to_string());
+        let out_path = std::env::var("POULPY_AVX512_BENCH_OUT").unwrap_or_else(|_| DEFAULT_OUT.to_string());
         let mut rep = Reporter::new(&out_path);
 
-        rep.line("== poulpy-cpu-arm: NEON vs cpu-ref ==");
+        rep.line("== poulpy-cpu-avx512: AVX-512 vs cpu-ref ==");
         rep.line(&format!(
             "Host arch: {}, profile: {}, target_os: {}, ts(unix): {}",
             std::env::consts::ARCH,
