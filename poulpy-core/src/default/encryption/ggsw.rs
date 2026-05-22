@@ -8,10 +8,12 @@ use poulpy_hal::{
 };
 
 use crate::{
-    EncryptionInfos, GLWEEncryptSk, GLWEEncryptSkInternal, ScratchArenaTakeCore, encryption::glwe::GLWEMaskFillDefault, layouts::{
+    EncryptionInfos, GLWEEncryptSk, GLWEEncryptSkInternal, ScratchArenaTakeCore,
+    encryption::glwe::GLWEMaskFillDefault,
+    layouts::{
         GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEPlaintext, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         prepared::GLWESecretPreparedToBackendRef,
-    }
+    },
 };
 
 #[doc(hidden)]

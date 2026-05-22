@@ -5,7 +5,6 @@
 //! correctness oracle for backend testing via the
 //! [`poulpy_hal::test_suite`] module.
 
-pub mod coeff_mat;
 pub mod fft64;
 pub mod ntt120;
 pub mod vec_znx;

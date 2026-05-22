@@ -10,7 +10,7 @@
 //! `HostDataRef`/`HostDataMut` capture host-byte-readable buffers for the
 //! portions of the API that still require direct byte access.
 
-mod coeff_mat_pmat;
+mod coeff_gemm_panel;
 mod convolution;
 mod encoding;
 mod mat_znx;
@@ -27,7 +27,7 @@ mod vec_znx_dft;
 mod vmp_pmat;
 mod znx_base;
 
-pub use coeff_mat_pmat::*;
+pub use coeff_gemm_panel::*;
 pub use convolution::*;
 pub use mat_znx::*;
 pub use module::*;

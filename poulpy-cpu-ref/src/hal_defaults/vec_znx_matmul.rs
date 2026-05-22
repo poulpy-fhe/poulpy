@@ -15,8 +15,9 @@ use poulpy_hal::{
         VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes,
     },
     layouts::{
-        Backend, HostDataMut, HostDataRef, Module, ScratchArena, ScratchOwned, VecZnx, VecZnxBackendMut, VecZnxBackendRef,
-        VecZnxBigToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut,
+        Backend, CoeffGemmPanelBackendMut, CoeffGemmPanelBackendRef, HostDataMut, HostDataRef, Module, ScratchArena,
+        ScratchOwned, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef,
+        ZnxView, ZnxViewMut,
     },
 };
 
@@ -110,9 +111,9 @@ ref_gemm_kernel!(RefK32I128D, i32, i128, 32, 2);
 /// never reaches it (its `w` is clamped to 32 -> `U` fits one piece), so its
 /// `K32D` alias is identical to `K32S` and is dead code on fft64.
 pub trait ScalarKernels: Copy + Default {
-    type K16: GemmKernel<Acc = Self>;
-    type K32S: GemmKernel<Acc = Self>;
-    type K32D: GemmKernel<Acc = Self>;
+    type K16: GemmKernel<Acc = Self, Elt = i16>;
+    type K32S: GemmKernel<Acc = Self, Elt = i32>;
+    type K32D: GemmKernel<Acc = Self, Elt = i32>;
     const MAX_W: u32;
 }
 impl ScalarKernels for i64 {
@@ -255,33 +256,84 @@ pub fn matmul_gemm<BE, K>(
     assert!(a_col + cols <= a.cols(), "vec_znx_matmul: input column range out of bounds");
 
     let u_size = u.size();
-    let a_size = a.size();
-    let res_size = res.size();
-    let n = module.n();
+    let mut uprep: Vec<K::Elt> = vec![K::Elt::default(); panel_len::<K>(u_size, rows_in, rows_out)];
+    prepare_panel::<BE, K>(u, rows_in, rows_out, &mut uprep);
+    apply_prepared::<BE, K>(
+        module, res, res_col, res_base2k, &uprep, u_size, u_base2k, a, a_col, cols, a_base2k, rows_in, rows_out,
+    );
+}
 
+/// Element count of the `U` panel produced by [`prepare_panel`].
+pub fn panel_len<K: GemmKernel>(u_size: usize, rows_in: usize, rows_out: usize) -> usize {
+    u_size * rows_out * rows_in * K::UP
+}
+
+/// Decomposes `U` into the piece-major `K::W`-wide panel consumed by
+/// [`apply_prepared`]: `dst[((u_limb*rows_out + out) * UP + piece) * rows_in + in]`.
+/// `dst` must have length `panel_len::<K>(u.size(), rows_in, rows_out)`.
+pub fn prepare_panel<BE, K>(u: &VecZnxBackendRef<'_, BE>, rows_in: usize, rows_out: usize, dst: &mut [K::Elt])
+where
+    BE: Backend,
+    for<'x> BE::BufRef<'x>: HostDataRef,
+    K: GemmKernel,
+{
     let up = K::UP;
-    let ap = K::a_pieces(a_base2k);
-    debug_assert!(up <= 4 && ap <= 4);
-
-    // Prepare U once: uprep[((u_limb*rows_out + out) * up + piece) * rows_in + in].
     let u_stride = rows_in * up;
-    let mut uprep: Vec<K::Elt> = vec![K::Elt::default(); u_size * rows_out * u_stride];
-    {
-        let mut tmp = [K::Elt::default(); 4];
-        for u_limb in 0..u_size {
-            for out in 0..rows_out {
-                let src = &u.at(out, u_limb)[..rows_in];
-                let base = (u_limb * rows_out + out) * u_stride;
-                for (in_, &x) in src.iter().enumerate() {
-                    K::prep(x, up, &mut tmp[..up]);
-                    for piece in 0..up {
-                        uprep[base + piece * rows_in + in_] = tmp[piece];
-                    }
+    let mut tmp = [K::Elt::default(); 4];
+    for u_limb in 0..u.size() {
+        for out in 0..rows_out {
+            let src = &u.at(out, u_limb)[..rows_in];
+            let base = (u_limb * rows_out + out) * u_stride;
+            for (in_, &x) in src.iter().enumerate() {
+                K::prep(x, up, &mut tmp[..up]);
+                for piece in 0..up {
+                    dst[base + piece * rows_in + in_] = tmp[piece];
                 }
             }
         }
     }
-    let uprep: &[K::Elt] = &uprep;
+}
+
+/// Applies a pre-built `U` panel (from [`prepare_panel`]) to `cols` RHS columns
+/// of `a`: threads over columns, one base2k normalize per output column. Shared
+/// by [`matmul_gemm`] and the prepared HAL entry point.
+#[allow(clippy::too_many_arguments)]
+pub fn apply_prepared<BE, K>(
+    module: &Module<BE>,
+    res: &mut VecZnxBackendMut<'_, BE>,
+    res_col: usize,
+    res_base2k: usize,
+    uprep: &[K::Elt],
+    u_size: usize,
+    u_base2k: usize,
+    a: &VecZnxBackendRef<'_, BE>,
+    a_col: usize,
+    cols: usize,
+    a_base2k: usize,
+    rows_in: usize,
+    rows_out: usize,
+) where
+    BE: Backend,
+    BE::OwnedBuf: HostDataMut,
+    for<'x> BE::BufMut<'x>: HostDataMut,
+    for<'x> BE::BufRef<'x>: HostDataRef,
+    Module<BE>: ModuleN
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxBigNormalize<BE>
+        + VecZnxAddAssignBackend<BE>
+        + VecZnxNormalizeAssignBackend<BE>
+        + VecZnxNormalizeTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    K: GemmKernel<Acc = BE::ScalarBig>,
+{
+    let a_size = a.size();
+    let res_size = res.size();
+    let n = module.n();
+    let up = K::UP;
+    let ap = K::a_pieces(a_base2k);
+    debug_assert!(up <= 4 && ap <= 4);
+    let u_stride = rows_in * up;
 
     let araw: &[i64] = a.raw();
     let a_n = a.n();
@@ -412,5 +464,125 @@ pub fn matmul_gemm<BE, K>(
             let src = &out_buf[s0 + limb * rows_out..s0 + limb * rows_out + rows_out];
             res.at_mut(res_col + j, limb)[..rows_out].copy_from_slice(src);
         }
+    }
+}
+
+/// `(w, up)` the scalar backend uses to prepare `U` with the given entry bound.
+pub fn coeff_gemm_panel_wp_default<BE>(u_bound_bits: u32) -> (u32, usize)
+where
+    BE: Backend,
+    BE::ScalarBig: ScalarKernels,
+{
+    let w = u_bound_bits.min(<BE::ScalarBig as ScalarKernels>::MAX_W);
+    if w <= 16 {
+        (16, 1)
+    } else if w <= 32 {
+        (32, 1)
+    } else {
+        (32, 2)
+    }
+}
+
+/// Fills `panel` with the prepared `U` decomposition matching its `(w, up)`.
+pub fn coeff_gemm_prepare_default<BE>(
+    _module: &Module<BE>,
+    panel: &mut CoeffGemmPanelBackendMut<'_, BE>,
+    u: &VecZnxBackendRef<'_, BE>,
+) where
+    BE: Backend,
+    BE::OwnedBuf: HostDataMut,
+    for<'x> BE::BufMut<'x>: HostDataMut,
+    for<'x> BE::BufRef<'x>: HostDataRef,
+    BE::ScalarBig: ScalarKernels,
+{
+    let rows_in = panel.rows_in();
+    let rows_out = panel.rows_out();
+    match (panel.w(), panel.up()) {
+        (16, _) => prepare_panel::<BE, <BE::ScalarBig as ScalarKernels>::K16>(u, rows_in, rows_out, panel.raw_mut_i16()),
+        (32, 1) => prepare_panel::<BE, <BE::ScalarBig as ScalarKernels>::K32S>(u, rows_in, rows_out, panel.raw_mut_i32()),
+        (32, 2) => prepare_panel::<BE, <BE::ScalarBig as ScalarKernels>::K32D>(u, rows_in, rows_out, panel.raw_mut_i32()),
+        _ => unreachable!("CoeffGemmPanel: invalid (w, up)"),
+    }
+}
+
+/// Applies a prepared scalar panel to `cols` RHS columns of `a`.
+#[allow(clippy::too_many_arguments)]
+pub fn vec_znx_matmul_prepared_default<BE>(
+    module: &Module<BE>,
+    res: &mut VecZnxBackendMut<'_, BE>,
+    res_col: usize,
+    res_base2k: usize,
+    panel: &CoeffGemmPanelBackendRef<'_, BE>,
+    u_base2k: usize,
+    a: &VecZnxBackendRef<'_, BE>,
+    a_col: usize,
+    cols: usize,
+    a_base2k: usize,
+    _scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    BE::OwnedBuf: HostDataMut,
+    for<'x> BE::BufMut<'x>: HostDataMut,
+    for<'x> BE::BufRef<'x>: HostDataRef,
+    Module<BE>: ModuleN
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxBigNormalize<BE>
+        + VecZnxAddAssignBackend<BE>
+        + VecZnxNormalizeAssignBackend<BE>
+        + VecZnxNormalizeTmpBytes,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    BE::ScalarBig: ScalarKernels,
+{
+    let rows_in = panel.rows_in();
+    let rows_out = panel.rows_out();
+    let u_size = panel.u_size();
+    match (panel.w(), panel.up()) {
+        (16, _) => apply_prepared::<BE, <BE::ScalarBig as ScalarKernels>::K16>(
+            module,
+            res,
+            res_col,
+            res_base2k,
+            panel.raw_i16(),
+            u_size,
+            u_base2k,
+            a,
+            a_col,
+            cols,
+            a_base2k,
+            rows_in,
+            rows_out,
+        ),
+        (32, 1) => apply_prepared::<BE, <BE::ScalarBig as ScalarKernels>::K32S>(
+            module,
+            res,
+            res_col,
+            res_base2k,
+            panel.raw_i32(),
+            u_size,
+            u_base2k,
+            a,
+            a_col,
+            cols,
+            a_base2k,
+            rows_in,
+            rows_out,
+        ),
+        (32, 2) => apply_prepared::<BE, <BE::ScalarBig as ScalarKernels>::K32D>(
+            module,
+            res,
+            res_col,
+            res_base2k,
+            panel.raw_i32(),
+            u_size,
+            u_base2k,
+            a,
+            a_col,
+            cols,
+            a_base2k,
+            rows_in,
+            rows_out,
+        ),
+        _ => unreachable!("CoeffGemmPanel: invalid (w, up)"),
     }
 }

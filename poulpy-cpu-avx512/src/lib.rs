@@ -194,8 +194,6 @@ pub mod ntt126_ifma_api {
 #[cfg(all(feature = "enable-avx512f", feature = "enable-ckks"))]
 mod ckks_impl;
 #[cfg(feature = "enable-avx512f")]
-mod coeff_mat;
-#[cfg(feature = "enable-avx512f")]
 mod core_impl;
 
 #[cfg(all(test, feature = "enable-avx512f", feature = "enable-ckks"))]

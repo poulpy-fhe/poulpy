@@ -201,3 +201,65 @@ fn test_convolution_direct() {
     test_convolution_by_const(&module, 50);
     test_convolution_pairwise(&module, 50);
 }
+
+#[test]
+fn lwe_matrix_mul_bodies_prepared_matches_unprepared_ntt() {
+    use poulpy_core::{
+        CoeffMatrixPrepare, LWEMatrixMul,
+        layouts::{Base2K, CoeffBound, CoeffMatrix, CoeffMatrixLayout, Degree, ModuleCoreAlloc, TorusPrecision},
+    };
+    use poulpy_hal::{
+        api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
+        layouts::{ScratchOwned, VecZnx, ZnxView, ZnxViewMut},
+        source::Source,
+    };
+
+    fn check<BU: CoeffBound>(module: &Module<NTT120Avx>) {
+        let rows_in = 256usize;
+        let rows_out = 256usize;
+        let base2k = Base2K(50); // NTT large base2k; A digit splits into 2 i32 pieces
+        let size = 1usize;
+        let k_prec = TorusPrecision((base2k.0 as usize * size) as u32);
+        let num_bodies = 7usize;
+        let bk = base2k.0 as usize;
+        let u_infos = CoeffMatrixLayout { n: Degree(rows_in as u32), rows_out, base2k, k: k_prec };
+
+        let mut src = Source::new([0u8; 32]);
+        // U entries honor BU; A entries are full base2k=50 i64 digits.
+        let u_mask = (1i64 << (BU::WIDTH - 1).min(base2k.0 - 1)) - 1;
+        let a_mask = (1i64 << (base2k.0 - 1)) - 1;
+
+        let mut u: CoeffMatrix<Vec<u8>, BU> = module.coeff_matrix_alloc_from_infos(&u_infos);
+        for x in u.data_mut().raw_mut() {
+            *x = src.next_i64() & u_mask;
+        }
+        let mut bodies: VecZnx<Vec<u8>> = module.vec_znx_alloc(num_bodies, size);
+        for x in bodies.raw_mut() {
+            *x = src.next_i64() & a_mask;
+        }
+
+        let mut res_np: VecZnx<Vec<u8>> = module.vec_znx_alloc(num_bodies, size);
+        let mut s1 = ScratchOwned::alloc(module.lwe_matrix_mul_bodies_tmp_bytes(&u_infos, num_bodies, size, size));
+        module.lwe_matrix_mul_bodies(&mut res_np, bk, &u, &bodies, bk, &mut s1.borrow());
+
+        let pu = module.coeff_matrix_prepare(&u);
+        let mut res_p: VecZnx<Vec<u8>> = module.vec_znx_alloc(num_bodies, size);
+        let mut s2 = ScratchOwned::alloc(module.lwe_matrix_mul_bodies_prepared_tmp_bytes(&pu, num_bodies, size, size));
+        module.lwe_matrix_mul_bodies_prepared(&mut res_p, bk, &pu, &bodies, bk, &mut s2.borrow());
+
+        for c in 0..num_bodies {
+            for limb in 0..size {
+                assert_eq!(
+                    &res_p.at(c, limb)[..rows_out],
+                    &res_np.at(c, limb)[..rows_out],
+                    "prepared != unprepared (ntt), col {c} limb {limb}"
+                );
+            }
+        }
+    }
+
+    let module = Module::<NTT120Avx>::new(1 << 8);
+    check::<i16>(&module);
+    check::<i32>(&module);
+    check::<i64>(&module); // exercises K32D (up=2)
+}

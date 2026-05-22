@@ -9,15 +9,70 @@ use poulpy_cpu_ref::hal_defaults::{
 use poulpy_hal::{
     api::{HostBufMut, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
     layouts::{
-        Backend, CoeffMatPMatBackendMut, CoeffMatPMatBackendRef, MatZnxBackendRef, Module, NoiseInfos, ScratchArena,
-        VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
+        Backend, CoeffGemmPanelBackendMut, CoeffGemmPanelBackendRef, MatZnxBackendRef, Module, NoiseInfos, ScratchArena,
+        VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
         VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
     },
     oep::{
-        HalCoeffMatImpl, HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl,
+        HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl,
         HalVecZnxMatMulImpl, HalVmpImpl,
     },
 };
+
+/// Generates the prepared-`U` `HalVecZnxMatMulImpl` methods for an AVX2 backend.
+/// `coeff_gemm_panel_wp`/`coeff_gemm_prepare` reuse the (scalar) ref defaults;
+/// `vec_znx_matmul_prepared` dispatches on the panel's `(w, up)` to the backend
+/// AVX2 kernels (`$k16` / `$k32s` / `$k32d`).
+macro_rules! avx_matmul_prepared_methods {
+    ($k16:ty, $k32s:ty, $k32d:ty) => {
+        fn coeff_gemm_panel_wp(u_bound_bits: u32) -> (u32, usize) {
+            poulpy_cpu_ref::hal_defaults::vec_znx_matmul::coeff_gemm_panel_wp_default::<Self>(u_bound_bits)
+        }
+
+        fn coeff_gemm_prepare(
+            module: &Module<Self>,
+            panel: &mut CoeffGemmPanelBackendMut<'_, Self>,
+            u: &VecZnxBackendRef<'_, Self>,
+        ) {
+            poulpy_cpu_ref::hal_defaults::vec_znx_matmul::coeff_gemm_prepare_default::<Self>(module, panel, u)
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        fn vec_znx_matmul_prepared(
+            module: &Module<Self>,
+            res: &mut VecZnxBackendMut<'_, Self>,
+            res_col: usize,
+            res_base2k: usize,
+            panel: &CoeffGemmPanelBackendRef<'_, Self>,
+            u_base2k: usize,
+            a: &VecZnxBackendRef<'_, Self>,
+            a_col: usize,
+            cols: usize,
+            a_base2k: usize,
+            _scratch: &mut ScratchArena<'_, Self>,
+        ) {
+            use poulpy_cpu_ref::hal_defaults::vec_znx_matmul::apply_prepared;
+            let rows_in = panel.rows_in();
+            let rows_out = panel.rows_out();
+            let u_size = panel.u_size();
+            match (panel.w(), panel.up()) {
+                (16, _) => apply_prepared::<Self, $k16>(
+                    module, res, res_col, res_base2k, panel.raw_i16(), u_size, u_base2k, a, a_col, cols, a_base2k, rows_in,
+                    rows_out,
+                ),
+                (32, 1) => apply_prepared::<Self, $k32s>(
+                    module, res, res_col, res_base2k, panel.raw_i32(), u_size, u_base2k, a, a_col, cols, a_base2k, rows_in,
+                    rows_out,
+                ),
+                (32, 2) => apply_prepared::<Self, $k32d>(
+                    module, res, res_col, res_base2k, panel.raw_i32(), u_size, u_base2k, a, a_col, cols, a_base2k, rows_in,
+                    rows_out,
+                ),
+                _ => unreachable!("CoeffGemmPanel: invalid (w, up)"),
+            }
+        }
+    };
+}
 
 #[inline]
 fn take_host_typed<'a, BE, T>(arena: ScratchArena<'a, BE>, len: usize) -> (&'a mut [T], ScratchArena<'a, BE>)
@@ -49,41 +104,6 @@ unsafe impl HalModuleImpl<FFT64Avx> for FFT64Avx {
 
 unsafe impl HalVmpImpl<FFT64Avx> for FFT64Avx {
     poulpy_cpu_ref::hal_impl_vmp!(FFT64VmpDefault);
-}
-
-unsafe impl HalCoeffMatImpl<FFT64Avx> for FFT64Avx {
-    fn coeff_mat_prepare_tmp_bytes(module: &Module<Self>, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
-        crate::coeff_mat::coeff_mat_prepare_tmp_bytes::<Self>(module, rows, cols_in, cols_out, size)
-    }
-
-    fn coeff_mat_prepare(
-        module: &Module<Self>,
-        res: &mut CoeffMatPMatBackendMut<'_, Self>,
-        matrix: &VecZnxBackendRef<'_, Self>,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) {
-        crate::coeff_mat::coeff_mat_prepare::<Self>(module, res, matrix, scratch)
-    }
-
-    fn coeff_mat_apply_big_tmp_bytes(_module: &Module<Self>, rows_in: usize, rows_out: usize) -> usize {
-        crate::coeff_mat::coeff_mat_apply_big_tmp_bytes(rows_in, rows_out)
-    }
-
-    fn coeff_mat_apply_big(
-        _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
-        res_limb: usize,
-        pmat: &CoeffMatPMatBackendRef<'_, Self>,
-        pmat_limb: usize,
-        a: &VecZnxBackendRef<'_, Self>,
-        a_col: usize,
-        a_limb: usize,
-        rows_in: usize,
-        rows_out: usize,
-        _scratch: &mut ScratchArena<'_, Self>,
-    ) {
-        crate::coeff_mat::coeff_mat_apply_big_i64(res, res_limb, pmat, pmat_limb, a, a_col, a_limb, rows_in, rows_out)
-    }
 }
 
 unsafe impl HalVecZnxMatMulImpl<FFT64Avx> for FFT64Avx {
@@ -131,6 +151,8 @@ unsafe impl HalVecZnxMatMulImpl<FFT64Avx> for FFT64Avx {
             );
         }
     }
+
+    avx_matmul_prepared_methods!(crate::gemm::AvxK16I64, crate::gemm::AvxK32I64, crate::gemm::AvxK32I64);
 }
 
 unsafe impl HalConvolutionImpl<FFT64Avx> for FFT64Avx {
@@ -429,41 +451,6 @@ unsafe impl HalVecZnxBigImpl<NTT120Avx> for NTT120Avx {
     poulpy_cpu_ref::hal_impl_vec_znx_big!(NTT120VecZnxBigDefault);
 }
 
-unsafe impl HalCoeffMatImpl<NTT120Avx> for NTT120Avx {
-    fn coeff_mat_prepare_tmp_bytes(module: &Module<Self>, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
-        crate::coeff_mat::coeff_mat_prepare_tmp_bytes::<Self>(module, rows, cols_in, cols_out, size)
-    }
-
-    fn coeff_mat_prepare(
-        module: &Module<Self>,
-        res: &mut CoeffMatPMatBackendMut<'_, Self>,
-        matrix: &VecZnxBackendRef<'_, Self>,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) {
-        crate::coeff_mat::coeff_mat_prepare::<Self>(module, res, matrix, scratch)
-    }
-
-    fn coeff_mat_apply_big_tmp_bytes(_module: &Module<Self>, rows_in: usize, rows_out: usize) -> usize {
-        crate::coeff_mat::coeff_mat_apply_big_tmp_bytes(rows_in, rows_out)
-    }
-
-    fn coeff_mat_apply_big(
-        _module: &Module<Self>,
-        res: &mut VecZnxBigBackendMut<'_, Self>,
-        res_limb: usize,
-        pmat: &CoeffMatPMatBackendRef<'_, Self>,
-        pmat_limb: usize,
-        a: &VecZnxBackendRef<'_, Self>,
-        a_col: usize,
-        a_limb: usize,
-        rows_in: usize,
-        rows_out: usize,
-        _scratch: &mut ScratchArena<'_, Self>,
-    ) {
-        crate::coeff_mat::coeff_mat_apply_big_i128(res, res_limb, pmat, pmat_limb, a, a_col, a_limb, rows_in, rows_out)
-    }
-}
-
 unsafe impl HalVecZnxMatMulImpl<NTT120Avx> for NTT120Avx {
     fn vec_znx_matmul_tmp_bytes(
         module: &Module<Self>,
@@ -512,6 +499,8 @@ unsafe impl HalVecZnxMatMulImpl<NTT120Avx> for NTT120Avx {
             );
         }
     }
+
+    avx_matmul_prepared_methods!(crate::gemm::AvxK16I128, crate::gemm::AvxK32I128S, crate::gemm::AvxK32I128D);
 }
 
 unsafe impl HalSvpImpl<NTT120Avx> for NTT120Avx {

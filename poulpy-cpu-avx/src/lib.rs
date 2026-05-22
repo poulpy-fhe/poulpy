@@ -174,30 +174,37 @@ compile_error!("feature `enable-avx` requires FMA. Build with RUSTFLAGS=\"-C tar
 #[cfg(all(feature = "enable-avx", feature = "enable-ckks"))]
 mod ckks_impl;
 #[cfg(feature = "enable-avx")]
-mod coeff_mat;
-#[cfg(feature = "enable-avx")]
 mod core_impl;
+#[cfg(feature = "enable-avx")]
 #[cfg(feature = "enable-avx")]
 mod fft64;
 #[cfg(feature = "enable-avx")]
+#[cfg(feature = "enable-avx")]
 mod gemm;
+#[cfg(feature = "enable-avx")]
 #[cfg(feature = "enable-avx")]
 mod hal_impl;
 #[cfg(feature = "enable-avx")]
+#[cfg(feature = "enable-avx")]
 mod ntt120;
+#[cfg(feature = "enable-avx")]
 #[cfg(all(test, feature = "enable-avx", feature = "enable-ckks"))]
 mod tests;
 #[cfg(feature = "enable-avx")]
 mod znx_avx;
+#[cfg(feature = "enable-avx")]
 
 #[cfg(feature = "enable-avx")]
 pub use fft64::{FFT64Avx, FFT64AvxReimTable, ReimFFTAvx, ReimIFFTAvx};
 #[cfg(feature = "enable-avx")]
+#[cfg(feature = "enable-avx")]
 pub use ntt120::NTT120Avx;
+#[cfg(feature = "enable-avx")]
 
 // --- TransferFrom impls ---
 #[cfg(feature = "enable-avx")]
 mod transfer_impls {
+#[cfg(feature = "enable-avx")]
     use poulpy_cpu_ref::{FFT64Ref, NTT120Ref};
     use poulpy_hal::layouts::{Backend, TransferFrom};
 

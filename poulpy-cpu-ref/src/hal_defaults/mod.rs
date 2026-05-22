@@ -1,4 +1,3 @@
-pub mod coeff_mat_pmat;
 pub mod convolution;
 pub mod module;
 pub mod svp_ppol;
@@ -8,7 +7,6 @@ pub mod vec_znx_dft;
 pub mod vec_znx_matmul;
 pub mod vmp_pmat;
 
-pub use coeff_mat_pmat::CoeffMatPMatDefault;
 pub use convolution::{FFT64ConvolutionDefault, NTT120ConvolutionDefault};
 pub use module::{FFT64ModuleDefault, NTT120ModuleDefault};
 pub use svp_ppol::{FFT64SvpDefault, NTT120SvpDefault};

@@ -1,9 +1,9 @@
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, ScratchArena, VecZnxToBackendMut, VecZnxToBackendRef};
 
 use crate::layouts::{
-    CoeffMatrixInfos, CoeffMatrixToBackendRef, GGLWEInfos, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GLWECompressedSeed,
-    GLWECompressedToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendMut,
-    LWEMatrixToBackendRef, LWEToBackendMut, LWEToBackendRef,
+    CoeffBound, CoeffMatrixInfos, CoeffMatrixPreparedOwned, CoeffMatrixToBackendRef, GGLWEInfos, GGLWEToBackendRef, GGSWInfos,
+    GGSWToBackendMut, GLWECompressedSeed, GLWECompressedToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+    LWEMatrixInfos, LWEMatrixToBackendMut, LWEMatrixToBackendRef, LWEToBackendMut, LWEToBackendRef,
     prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
 };
 
@@ -129,6 +129,64 @@ pub trait LWEMatrixMul<BE: Backend> {
         R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
         U: CoeffMatrixToBackendRef<BE> + CoeffMatrixInfos,
         A: GLWECompressedToBackendRef<BE> + GLWEInfos;
+
+    /// Batched hot-path `U × B`: `res_bodies[:, j] = U · bodies[:, j]` for all
+    /// `K = bodies.cols()` packed body columns, in a single matmul (`U` prepared
+    /// once, amortized over all columns). `bodies` is `VecZnx(rows_in, K)`,
+    /// `res_bodies` is `VecZnx(rows_out, K)`. Pair with the shared mask from
+    /// [`lwe_matrix_mul_mask`](Self::lwe_matrix_mul_mask).
+    fn lwe_matrix_mul_bodies_tmp_bytes<U>(&self, u_infos: &U, num_bodies: usize, res_size: usize, a_size: usize) -> usize
+    where
+        U: CoeffMatrixInfos;
+
+    fn lwe_matrix_mul_bodies<R, U, A>(
+        &self,
+        res_bodies: &mut R,
+        res_base2k: usize,
+        u: &U,
+        bodies: &A,
+        a_base2k: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: VecZnxToBackendMut<BE>,
+        U: CoeffMatrixToBackendRef<BE> + CoeffMatrixInfos,
+        A: VecZnxToBackendRef<BE>;
+}
+
+/// Prepare a [`crate::layouts::CoeffMatrix`] once into a reusable
+/// [`crate::layouts::CoeffMatrixPrepared`], then apply it to many batched body
+/// matrices without re-preparing `U`.
+pub trait CoeffMatrixPrepare<BE: Backend> {
+    /// Decompose `U` into a backend panel selected by its compile-time bound `BU`.
+    fn coeff_matrix_prepare<U>(&self, u: &U) -> CoeffMatrixPreparedOwned<BE, <U as CoeffMatrixInfos>::Bound>
+    where
+        U: CoeffMatrixToBackendRef<BE> + CoeffMatrixInfos;
+
+    fn lwe_matrix_mul_bodies_prepared_tmp_bytes<BU>(
+        &self,
+        prepared: &CoeffMatrixPreparedOwned<BE, BU>,
+        num_bodies: usize,
+        res_size: usize,
+        a_size: usize,
+    ) -> usize
+    where
+        BU: CoeffBound;
+
+    /// Hot path with a prepared `U`: `res_bodies[:, j] = U · bodies[:, j]` for all
+    /// `K = bodies.cols()` columns, no `U` re-preparation. Pair with the shared
+    /// mask from [`LWEMatrixMul::lwe_matrix_mul_mask`].
+    fn lwe_matrix_mul_bodies_prepared<R, A, BU>(
+        &self,
+        res_bodies: &mut R,
+        res_base2k: usize,
+        prepared: &CoeffMatrixPreparedOwned<BE, BU>,
+        bodies: &A,
+        a_base2k: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: VecZnxToBackendMut<BE>,
+        A: VecZnxToBackendRef<BE>,
+        BU: CoeffBound;
 }
 
 pub trait GGSWExpandRows<BE: Backend> {

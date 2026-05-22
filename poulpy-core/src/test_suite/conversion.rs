@@ -75,9 +75,10 @@ pub fn test_lwe_secret_from_glwe_secret_flattens_rank_and_preserves_metadata<BE:
     let mut sk_glwe = module.glwe_secret_alloc(rank);
     sk_glwe.fill_ternary_hw(3, &mut source);
 
-    let sk_lwe = module.lwe_secret_from_glwe_secret(&sk_glwe);
+    let lwe_n = Degree((module.n() * rank.as_usize()) as u32);
+    let sk_lwe = module.lwe_secret_from_glwe_secret(&sk_glwe, lwe_n);
 
-    assert_eq!(sk_lwe.n(), Degree((module.n() * rank.as_usize()) as u32));
+    assert_eq!(sk_lwe.n(), lwe_n);
     assert_eq!(sk_lwe.dist(), crate::dist::Distribution::TernaryFixed(3));
 }
 
@@ -470,7 +471,7 @@ where
         let mut sk_glwe_prep: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk_glwe);
         module.glwe_secret_prepare(&mut sk_glwe_prep, &sk_glwe);
 
-        let sk_lwe = module.lwe_secret_from_glwe_secret(&sk_glwe);
+        let sk_lwe = module.lwe_secret_from_glwe_secret(&sk_glwe, lwe_infos.n);
 
         let a_idx: usize = 3;
         let mut data: Vec<i64> = vec![0i64; n];
@@ -614,7 +615,7 @@ where
 
         let mut sk_glwe_prep: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk_glwe);
         module.glwe_secret_prepare(&mut sk_glwe_prep, &sk_glwe);
-        let sk_lwe = module.lwe_secret_from_glwe_secret(&sk_glwe);
+        let sk_lwe = module.lwe_secret_from_glwe_secret(&sk_glwe, matrix_infos.n);
 
         let mut data: Vec<i64> = vec![0i64; n];
         for (i, x) in data.iter_mut().enumerate() {
@@ -715,7 +716,7 @@ where
 
     let mut sk_glwe_prep: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk_glwe);
     module.glwe_secret_prepare(&mut sk_glwe_prep, &sk_glwe);
-    let sk_lwe = module.lwe_secret_from_glwe_secret(&sk_glwe);
+    let sk_lwe = module.lwe_secret_from_glwe_secret(&sk_glwe, matrix_infos.n);
 
     let mut data: Vec<i64> = vec![0i64; n];
     for (i, x) in data.iter_mut().enumerate() {
@@ -902,7 +903,7 @@ where
     let mut source_xs: Source = Source::new([0u8; 32]);
     let mut sk_glwe: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank);
     sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
-    let sk_lwe = module.lwe_secret_from_glwe_secret(&sk_glwe);
+    let sk_lwe = module.lwe_secret_from_glwe_secret(&sk_glwe, matrix_infos.n);
 
     let data: Vec<i64> = (0..n).map(|i| (i as i64 % 3) - 1).collect();
     let mut want_data: Vec<i64> = vec![0; n];

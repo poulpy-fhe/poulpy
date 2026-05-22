@@ -1,8 +1,8 @@
 use poulpy_hal::{
-    api::ScalarZnxAutomorphismBackend,
+    api::{ScalarZnxAutomorphismBackend, VecZnxCopyRangeBackend},
     layouts::{
         Backend, Data, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendMut, ScalarZnxToBackendRef, TransferFrom,
-        ZnxZero,
+        ZnxZero, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_mut,
     },
     oep::HalVecZnxImpl,
     source::Source,
@@ -229,19 +229,23 @@ pub trait SecretConversion<B: Backend> {
     where
         S: LWESecretToBackendRef<B>;
 
-    /// Derives the associated `LWESecret` from a `GLWESecret` by applying the
-    /// X → X⁻¹ automorphism (k = -1) to each rank component.
+    /// Derives an `LWESecret` of the requested flat dimension `lwe_n` from a
+    /// `GLWESecret` by applying the X → X⁻¹ automorphism (k = -1) to each rank
+    /// component and packing the results as consecutive `n`-coefficient blocks.
     ///
-    /// For a GLWE secret of degree `n` and rank `r`, the result is an LWE secret
-    /// of degree `n * r`. Each rank component is automorphed independently and
-    /// written as one contiguous `n`-coefficient block in the output key. For
-    /// rank 1, this is the inverse of `glwe_secret_from_lwe_secret`: applying
-    /// both conversions recovers the original key.
+    /// `lwe_n` must satisfy `lwe_n ≤ rank * n` (the GLWE rank must cover the
+    /// requested LWE dimension); the last block may be a partial slice when
+    /// `lwe_n % n != 0`. The inverse relation `rank = ceil(lwe_n / n)` lets a
+    /// caller size the GLWE just enough for a target LWE dimension.
+    ///
+    /// For `lwe_n == n` and `rank == 1`, this is the inverse of
+    /// `glwe_secret_from_lwe_secret`: applying both conversions recovers the
+    /// original key.
     ///
     /// Distribution metadata is preserved from the source secret. In particular,
     /// fixed-weight metadata denotes the advertised fixed-weight distribution of
     /// the source key and is not multiplied by the rank during flattening.
-    fn lwe_secret_from_glwe_secret<S>(&self, src: &S) -> LWESecret<B::OwnedBuf>
+    fn lwe_secret_from_glwe_secret<S>(&self, src: &S, lwe_n: Degree) -> LWESecret<B::OwnedBuf>
     where
         S: GLWESecretToBackendRef<B>;
 }
@@ -262,20 +266,50 @@ impl<B: Backend + HalVecZnxImpl<B>> SecretConversion<B> for Module<B> {
         res
     }
 
-    fn lwe_secret_from_glwe_secret<S>(&self, src: &S) -> LWESecret<B::OwnedBuf>
+    fn lwe_secret_from_glwe_secret<S>(&self, src: &S, lwe_n: Degree) -> LWESecret<B::OwnedBuf>
     where
         S: GLWESecretToBackendRef<B>,
     {
         let src = src.to_backend_ref();
-        let n = self.n();
+        let n: usize = self.n();
         let rank: usize = src.rank().into();
+        let target: usize = lwe_n.as_usize();
         assert_eq!(src.n().as_usize(), n, "GLWE secret degree must equal module degree");
-        let mut res = self.lwe_secret_alloc(Degree((n * rank) as u32));
+        assert!(
+            target <= rank * n,
+            "lwe_secret_from_glwe_secret: requested LWE dim {} > rank * N ({})",
+            target,
+            rank * n
+        );
+
+        // Scratch buffer shaped like the source (rank cols, ring N) so the
+        // per-column automorphism dimensions match. The result is then packed
+        // into the flat LWE secret via the backend copy op, truncating the
+        // last block when `target % n != 0`.
+        let mut tmp: GLWESecret<B::OwnedBuf> = self.glwe_secret_alloc(src.rank());
+        {
+            let mut tmp_ref = GLWESecretToBackendMut::<B>::to_backend_mut(&mut tmp);
+            for j in 0..rank {
+                self.scalar_znx_automorphism_backend(-1, tmp_ref.data_mut(), j, src.data(), j);
+            }
+        }
+
+        let mut res: LWESecret<B::OwnedBuf> = self.lwe_secret_alloc(lwe_n);
         res.dist = src.dist;
         {
+            let tmp_ref = GLWESecretToBackendMut::<B>::to_backend_mut(&mut tmp);
             let mut res_ref = LWESecretToBackendMut::<B>::to_backend_mut(&mut res);
+            let tmp_vz = scalar_znx_as_vec_znx_backend_ref_from_mut::<B>(tmp_ref.data());
+            let mut res_vz = scalar_znx_as_vec_znx_backend_mut_from_mut::<B>(res_ref.data_mut());
+
+            let mut written: usize = 0;
             for j in 0..rank {
-                self.scalar_znx_automorphism_backend(-1, res_ref.data_mut(), j, src.data(), j);
+                if written >= target {
+                    break;
+                }
+                let take: usize = (target - written).min(n);
+                self.vec_znx_copy_range_backend(&mut res_vz, 0, 0, written, &tmp_vz, j, 0, 0, take);
+                written += take;
             }
         }
         res

@@ -14,7 +14,6 @@
 //! Scheme authors program against these traits; the actual computation is
 //! dispatched to a backend via the [`oep`](crate::oep) extension points.
 
-mod coeff_mat_pmat;
 mod convolution;
 mod module;
 mod reim;
@@ -26,7 +25,6 @@ mod vec_znx_dft;
 mod vec_znx_matmul;
 mod vmp_pmat;
 
-pub use coeff_mat_pmat::*;
 pub use convolution::*;
 pub use module::*;
 pub use reim::*;

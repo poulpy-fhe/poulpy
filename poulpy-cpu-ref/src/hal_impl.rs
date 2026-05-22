@@ -1,7 +1,7 @@
 use crate::{
     FFT64Ref, NTT120Ref,
     hal_defaults::{
-        CoeffMatPMatDefault, FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault,
+        FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault,
         FFT64VecZnxDftDefault, FFT64VmpDefault, HalVecZnxDefault, NTT120ConvolutionDefault, NTT120ModuleDefault,
         NTT120SvpDefault, NTT120VecZnxBigDefault, NTT120VecZnxDftDefault, NTT120VmpDefault, VecZnxMatMulDefault,
     },
@@ -12,7 +12,7 @@ use poulpy_hal::{
         Backend, Module, NoiseInfos, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, ZnxInfos,
     },
     oep::{
-        HalCoeffMatImpl, HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl,
+        HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl,
         HalVecZnxMatMulImpl, HalVmpImpl,
     },
 };
@@ -21,8 +21,6 @@ use poulpy_hal::{
 mod vec_znx;
 #[macro_use]
 mod module;
-#[macro_use]
-mod coeff_mat;
 #[macro_use]
 mod vmp;
 #[macro_use]
@@ -52,10 +50,6 @@ unsafe impl HalModuleImpl<FFT64Ref> for FFT64Ref {
 
 unsafe impl HalVmpImpl<FFT64Ref> for FFT64Ref {
     hal_impl_vmp!(FFT64VmpDefault);
-}
-
-unsafe impl HalCoeffMatImpl<FFT64Ref> for FFT64Ref {
-    hal_impl_coeff_mat!(CoeffMatPMatDefault);
 }
 
 unsafe impl HalVecZnxMatMulImpl<FFT64Ref> for FFT64Ref {
@@ -92,10 +86,6 @@ unsafe impl HalModuleImpl<NTT120Ref> for NTT120Ref {
 
 unsafe impl HalVmpImpl<NTT120Ref> for NTT120Ref {
     hal_impl_vmp!(NTT120VmpDefault);
-}
-
-unsafe impl HalCoeffMatImpl<NTT120Ref> for NTT120Ref {
-    hal_impl_coeff_mat!(CoeffMatPMatDefault);
 }
 
 unsafe impl HalVecZnxMatMulImpl<NTT120Ref> for NTT120Ref {

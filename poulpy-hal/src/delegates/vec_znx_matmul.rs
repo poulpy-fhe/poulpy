@@ -1,6 +1,8 @@
 use crate::{
-    api::{VecZnxMatMul, VecZnxMatMulTmpBytes},
-    layouts::{Backend, Module, ScratchArena, VecZnxBackendMut, VecZnxBackendRef},
+    api::{CoeffGemmPrepare, VecZnxMatMul, VecZnxMatMulPrepared, VecZnxMatMulTmpBytes},
+    layouts::{
+        Backend, CoeffGemmPanelBackendMut, CoeffGemmPanelBackendRef, Module, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
+    },
     oep::HalVecZnxMatMulImpl,
 };
 
@@ -66,3 +68,40 @@ impl_vec_znx_matmul_delegate!(
         )
     }
 );
+
+impl<B> CoeffGemmPrepare<B> for Module<B>
+where
+    B: Backend + HalVecZnxMatMulImpl<B>,
+{
+    fn coeff_gemm_panel_wp(&self, u_bound_bits: u32) -> (u32, usize) {
+        B::coeff_gemm_panel_wp(u_bound_bits)
+    }
+
+    fn coeff_gemm_prepare(&self, panel: &mut CoeffGemmPanelBackendMut<'_, B>, u: &VecZnxBackendRef<'_, B>) {
+        B::coeff_gemm_prepare(self, panel, u)
+    }
+}
+
+impl<B> VecZnxMatMulPrepared<B> for Module<B>
+where
+    B: Backend + HalVecZnxMatMulImpl<B>,
+{
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_matmul_prepared(
+        &self,
+        res: &mut VecZnxBackendMut<'_, B>,
+        res_col: usize,
+        res_base2k: usize,
+        panel: &CoeffGemmPanelBackendRef<'_, B>,
+        u_base2k: usize,
+        a: &VecZnxBackendRef<'_, B>,
+        a_col: usize,
+        cols: usize,
+        a_base2k: usize,
+        scratch: &mut ScratchArena<'_, B>,
+    ) {
+        B::vec_znx_matmul_prepared(
+            self, res, res_col, res_base2k, panel, u_base2k, a, a_col, cols, a_base2k, scratch,
+        )
+    }
+}
