@@ -1,5 +1,49 @@
 #[macro_export]
 macro_rules! hal_impl_vec_znx_dft {
+    // Default form: everything from `$defaults`.
+    ($defaults:ident) => {
+        $crate::hal_impl_vec_znx_dft!($defaults, automorphism_with_plan: default);
+    };
+
+    // `automorphism_with_plan: skip` lets a backend (typically an AVX path)
+    // provide its own SIMD implementation of `vec_znx_dft_automorphism_with_plan`
+    // while keeping every other method on the defaults trait.
+    ($defaults:ident, automorphism_with_plan: skip) => {
+        $crate::__hal_impl_vec_znx_dft_common!($defaults);
+
+        type AutomorphismPlan = <Self as $defaults<Self>>::AutomorphismPlanDefault;
+
+        fn vec_znx_dft_automorphism_plan(module: &Module<Self>, p: i64) -> Self::AutomorphismPlan {
+            <Self as $defaults<Self>>::vec_znx_dft_automorphism_plan_default(module, p)
+        }
+    };
+
+    // Internal: full default form (every method delegated to `$defaults`).
+    ($defaults:ident, automorphism_with_plan: default) => {
+        $crate::__hal_impl_vec_znx_dft_common!($defaults);
+
+        type AutomorphismPlan = <Self as $defaults<Self>>::AutomorphismPlanDefault;
+
+        fn vec_znx_dft_automorphism_plan(module: &Module<Self>, p: i64) -> Self::AutomorphismPlan {
+            <Self as $defaults<Self>>::vec_znx_dft_automorphism_plan_default(module, p)
+        }
+
+        fn vec_znx_dft_automorphism_with_plan(
+            module: &Module<Self>,
+            plan: &Self::AutomorphismPlan,
+            res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+            res_col: usize,
+            a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+            a_col: usize,
+        ) {
+            <Self as $defaults<Self>>::vec_znx_dft_automorphism_with_plan_default(module, plan, res, res_col, a, a_col)
+        }
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __hal_impl_vec_znx_dft_common {
     ($defaults:ident) => {
         fn vec_znx_dft_apply(
             module: &Module<Self>,

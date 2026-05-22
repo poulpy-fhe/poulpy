@@ -7,10 +7,11 @@ use crate::reference::{
         module::FFTModuleHandle,
         reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
         vec_znx_dft::{
+            Fft64AutomorphismPlan, build_fft64_automorphism_plan,
             vec_znx_dft_add_assign as fft64_vec_znx_dft_add_assign, vec_znx_dft_add_into as fft64_vec_znx_dft_add_into,
             vec_znx_dft_add_scaled_assign as fft64_vec_znx_dft_add_scaled_assign, vec_znx_dft_apply as fft64_vec_znx_dft_apply,
-            vec_znx_dft_copy as fft64_vec_znx_dft_copy, vec_znx_dft_sub as fft64_vec_znx_dft_sub,
-            vec_znx_dft_sub_assign as fft64_vec_znx_dft_sub_assign,
+            vec_znx_dft_automorphism as fft64_vec_znx_dft_automorphism, vec_znx_dft_copy as fft64_vec_znx_dft_copy,
+            vec_znx_dft_sub as fft64_vec_znx_dft_sub, vec_znx_dft_sub_assign as fft64_vec_znx_dft_sub_assign,
             vec_znx_dft_sub_negate_assign as fft64_vec_znx_dft_sub_negate_assign, vec_znx_dft_zero as fft64_vec_znx_dft_zero,
             vec_znx_idft_apply as fft64_vec_znx_idft_apply, vec_znx_idft_apply_tmpa as fft64_vec_znx_idft_apply_tmpa,
         },
@@ -22,10 +23,12 @@ use crate::reference::{
         primes::Primes30,
         types::Q120bScalar,
         vec_znx_dft::{
-            NttModuleHandle, ntt120_vec_znx_dft_add_assign as ntt120_default_vec_znx_dft_add_assign,
+            NttAutomorphismPlan, NttModuleHandle, build_ntt120_automorphism_plan,
+            ntt120_vec_znx_dft_add_assign as ntt120_default_vec_znx_dft_add_assign,
             ntt120_vec_znx_dft_add_into as ntt120_default_vec_znx_dft_add_into,
             ntt120_vec_znx_dft_add_scaled_assign as ntt120_default_vec_znx_dft_add_scaled_assign,
             ntt120_vec_znx_dft_apply as ntt120_default_vec_znx_dft_apply,
+            ntt120_vec_znx_dft_automorphism as ntt120_default_vec_znx_dft_automorphism,
             ntt120_vec_znx_dft_copy as ntt120_default_vec_znx_dft_copy, ntt120_vec_znx_dft_sub as ntt120_default_vec_znx_dft_sub,
             ntt120_vec_znx_dft_sub_assign as ntt120_default_vec_znx_dft_sub_assign,
             ntt120_vec_znx_dft_sub_negate_assign as ntt120_default_vec_znx_dft_sub_negate_assign,
@@ -69,6 +72,8 @@ pub trait FFT64VecZnxDftDefault<BE: Backend>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
+    type AutomorphismPlanDefault: Send + Sync;
+
     fn vec_znx_dft_apply_default(
         module: &Module<BE>,
         step: usize,
@@ -235,15 +240,47 @@ where
     {
         fft64_vec_znx_dft_zero(res, res_col);
     }
+
+    fn vec_znx_dft_automorphism_plan_default(module: &Module<BE>, p: i64) -> Fft64AutomorphismPlan
+    where
+        BE: Backend<ScalarPrep = f64>,
+    {
+        build_fft64_automorphism_plan(module.n(), p)
+    }
+
+    fn vec_znx_dft_automorphism_with_plan_default(
+        _module: &Module<BE>,
+        plan: &Fft64AutomorphismPlan,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        a: &VecZnxDftBackendRef<'_, BE>,
+        a_col: usize,
+    ) where
+        BE: Backend<ScalarPrep = f64> + ReimArith,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+    {
+        fft64_vec_znx_dft_automorphism(plan, res, res_col, a, a_col);
+    }
 }
 
-impl<BE: Backend> FFT64VecZnxDftDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
+impl<BE: Backend> FFT64VecZnxDftDefault<BE> for BE
+where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+{
+    type AutomorphismPlanDefault = Fft64AutomorphismPlan;
+}
 
 #[doc(hidden)]
 pub trait NTT120VecZnxDftDefault<BE: Backend>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
+    /// NTT120 automorphism plan type. Implementation lands as a follow-up
+    /// step; the placeholder unit type keeps the OEP wiring consistent
+    /// across backends.
+    type AutomorphismPlanDefault: Send + Sync;
+
     fn vec_znx_dft_apply_default(
         module: &Module<BE>,
         step: usize,
@@ -414,6 +451,33 @@ where
     {
         ntt120_default_vec_znx_dft_zero(res, res_col);
     }
+
+    fn vec_znx_dft_automorphism_plan_default(module: &Module<BE>, p: i64) -> NttAutomorphismPlan
+    where
+        BE: Backend<ScalarPrep = Q120bScalar>,
+    {
+        build_ntt120_automorphism_plan(module.n(), p)
+    }
+
+    fn vec_znx_dft_automorphism_with_plan_default(
+        _module: &Module<BE>,
+        plan: &NttAutomorphismPlan,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        a: &VecZnxDftBackendRef<'_, BE>,
+        a_col: usize,
+    ) where
+        BE: Backend<ScalarPrep = Q120bScalar> + NttZero,
+        for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+    {
+        ntt120_default_vec_znx_dft_automorphism(plan, res, res_col, a, a_col);
+    }
 }
 
-impl<BE: Backend> NTT120VecZnxDftDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
+impl<BE: Backend> NTT120VecZnxDftDefault<BE> for BE
+where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+{
+    type AutomorphismPlanDefault = NttAutomorphismPlan;
+}

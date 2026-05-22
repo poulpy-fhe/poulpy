@@ -168,7 +168,18 @@ unsafe impl HalSvpImpl<FFT64Avx> for FFT64Avx {
 }
 
 unsafe impl HalVecZnxDftImpl<FFT64Avx> for FFT64Avx {
-    poulpy_cpu_ref::hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault);
+    poulpy_cpu_ref::hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault, automorphism_with_plan: skip);
+
+    fn vec_znx_dft_automorphism_with_plan(
+        _module: &Module<Self>,
+        plan: &Self::AutomorphismPlan,
+        res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+        a_col: usize,
+    ) {
+        crate::fft64::fft64_vec_znx_dft_automorphism_avx(plan, res, res_col, a, a_col);
+    }
 }
 
 unsafe impl HalVecZnxImpl<NTT120Avx> for NTT120Avx {
@@ -508,5 +519,16 @@ unsafe impl HalSvpImpl<NTT120Avx> for NTT120Avx {
 }
 
 unsafe impl HalVecZnxDftImpl<NTT120Avx> for NTT120Avx {
-    poulpy_cpu_ref::hal_impl_vec_znx_dft!(NTT120VecZnxDftDefault);
+    poulpy_cpu_ref::hal_impl_vec_znx_dft!(NTT120VecZnxDftDefault, automorphism_with_plan: skip);
+
+    fn vec_znx_dft_automorphism_with_plan(
+        _module: &Module<Self>,
+        plan: &Self::AutomorphismPlan,
+        res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+        a_col: usize,
+    ) {
+        crate::ntt120::automorphism::ntt120_vec_znx_dft_automorphism_avx(plan, res, res_col, a, a_col);
+    }
 }

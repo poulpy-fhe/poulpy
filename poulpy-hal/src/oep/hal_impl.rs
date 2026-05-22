@@ -844,6 +844,21 @@ pub unsafe trait HalVecZnxDftImpl<BE: Backend>: Backend {
     );
 
     fn vec_znx_dft_zero(module: &Module<BE>, res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>, res_col: usize);
+
+    /// Backend-specific automorphism plan (e.g. a `Fft64AutomorphismPlan`
+    /// for FFT64 backends, a pure-permutation plan for NTT backends).
+    type AutomorphismPlan: Send + Sync;
+
+    fn vec_znx_dft_automorphism_plan(module: &Module<BE>, p: i64) -> Self::AutomorphismPlan;
+
+    fn vec_znx_dft_automorphism_with_plan(
+        module: &Module<BE>,
+        plan: &Self::AutomorphismPlan,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        a: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
+        a_col: usize,
+    );
 }
 
 /// Scalar-vector product family extension point.

@@ -153,6 +153,15 @@ cross_backend_test_suite! {
     }
 }
 cross_backend_test_suite! {
+    mod vec_znx_dft_automorphism,
+    backend_ref =  crate::FFT64Ref,
+    backend_test = crate::NTT120Ref,
+    params = TestParams { size: 1<<8, base2k: 12 },
+    tests = {
+        test_vec_znx_dft_automorphism => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism,
+    }
+}
+cross_backend_test_suite! {
     mod vmp,
     backend_ref =  crate::FFT64Ref,
     backend_test = crate::NTT120Ref,
