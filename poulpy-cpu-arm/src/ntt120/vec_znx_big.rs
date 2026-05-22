@@ -91,6 +91,13 @@ impl I128BigOps for NTT120Neon {
 #[cfg(not(target_arch = "aarch64"))]
 impl I128BigOps for NTT120Neon {}
 
+impl poulpy_cpu_ref::hal_defaults::ScalarBigHadamardProduct for NTT120Neon {
+    #[inline(always)]
+    fn scalar_big_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
+        <Self as I128BigOps>::i128_hadamard_product_i64(res, a, b)
+    }
+}
+
 #[cfg(target_arch = "aarch64")]
 impl I128NormalizeOps for NTT120Neon {
     #[inline(always)]

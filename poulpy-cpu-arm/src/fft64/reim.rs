@@ -256,3 +256,10 @@ impl I64Ops for FFT64Neon {
 
 #[cfg(not(target_arch = "aarch64"))]
 impl I64Ops for FFT64Neon {}
+
+impl poulpy_cpu_ref::hal_defaults::ScalarBigHadamardProduct for FFT64Neon {
+    #[inline(always)]
+    fn scalar_big_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
+        <Self as I64Ops>::i64_hadamard_product(res, a, b)
+    }
+}
