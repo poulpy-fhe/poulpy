@@ -3,8 +3,8 @@ use poulpy_core::layouts::{GLWEInfos, GLWEPlaintext, GLWESecretPreparedToBackend
 use poulpy_core::{EncryptionInfos, GLWEDecrypt, GLWEEncryptSk, ScratchArenaTakeCore};
 use poulpy_hal::{
     api::{
-        VecZnxLshAddIntoBackend, VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddIntoBackend,
-        VecZnxRshBackend, VecZnxRshTmpBytes,
+        VecZnxLshAddIntoBackend, VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddIntoBackend, VecZnxRshBackend,
+        VecZnxRshTmpBytes,
     },
     layouts::{Backend, ScratchArena},
     source::Source,

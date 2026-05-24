@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### `poulpy-ckks`
+- Add backend-generic CKKS polynomial evaluation APIs: `Polynomial`, `BSGSPolynomial`, `PowerBasis`, `Basis`, `Parity`, `SplitStrategy`, and `PolynomialEvaluation`, with monomial and Chebyshev bases, Chebyshev interpolation, and BSGS/Paterson-Stockmeyer evaluation from a precomputed power basis.
+- Add default polynomial-evaluation OEP/delegate wiring, including baby-step and giant-step hooks, parity-aware baby-step evaluation, and `MinDepth` / `MinMult` split strategies for evaluation planning.
+- Extend CKKS polynomial-evaluation coverage with conformance tests for monomial and Chebyshev evaluation, power-basis generation, interpolation, metadata errors, and split-strategy behavior.
+- Generalize fused CKKS multiply-add/plaintext paths over backend-owned ciphertext/plaintext layouts and allow plaintext add/sub alignment to left-shift when the encoded plaintext precision exceeds the ciphertext budget, enabling coefficient-indexed plaintext constants used by polynomial evaluation.
+
+### `poulpy-hal` / `poulpy-cpu-ref`
+- Add `VecZnxLshAddCoeffToCoeffBackend` and `VecZnxLshSubCoeffToCoeffBackend` hooks plus portable reference implementations so coefficient-level plaintext accumulation can handle left-shift alignment.
+
+### `poulpy-bench`
+- Add the `ckks_poly_eval` Criterion benchmark, sweeping polynomial degree and `MinDepth` / `MinMult` BSGS split strategies on `ntt120-ref` while reporting baby-step size and observed log-budget/level consumption.
+
+### Build & Docs
+- Add `docs/polynomial-evaluation-spec.md`, a scheme-agnostic design note for power bases, Paterson-Stockmeyer/BSGS decomposition, encoded baby polynomials, and the Poulpy CKKS integration.
+- Refresh the `ckks_poly2` example to use Chebyshev interpolation, `PowerBasis`, and the new BSGS evaluator pipeline.
+
 ## [0.6.0] - 2026-05-18
 
 This release completes the migration from the legacy host-oriented HAL/backend plumbing to backend-generic HAL and core layers, so backends can now own buffers, scratch space, and transfer paths explicitly, and adds a new AVX-512 backend crate (`poulpy-cpu-avx512`) exposing three accelerated backends (`FFT64Avx512`, `NTT120Avx512`, `NTT126Ifma`).

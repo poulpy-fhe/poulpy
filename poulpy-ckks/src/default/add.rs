@@ -5,8 +5,8 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{
-        VecZnxLshAddCoeffToCoeffBackend, VecZnxLshAddIntoBackend, VecZnxLshTmpBytes,
-        VecZnxRshAddCoeffIntoBackend, VecZnxRshAddIntoBackend, VecZnxRshTmpBytes,
+        VecZnxLshAddCoeffToCoeffBackend, VecZnxLshAddIntoBackend, VecZnxLshTmpBytes, VecZnxRshAddCoeffIntoBackend,
+        VecZnxRshAddIntoBackend, VecZnxRshTmpBytes,
     },
     layouts::{Backend, ScratchArena, VecZnx},
 };
