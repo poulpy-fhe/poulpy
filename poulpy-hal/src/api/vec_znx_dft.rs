@@ -153,3 +153,46 @@ pub trait VecZnxDftCopy<B: Backend> {
 pub trait VecZnxDftZero<B: Backend> {
     fn vec_znx_dft_zero(&self, res: &mut VecZnxDftBackendMut<'_, B>, res_col: usize);
 }
+
+/// Builds a backend-specific permutation plan that implements the DFT-domain
+/// automorphism `tau_p: X -> X^p` for odd `p`. The plan captures the
+/// slot↔slot permutation (plus any backend-specific bookkeeping such as a
+/// half-spectrum conjugate flag) and is reusable across columns and limbs.
+///
+/// The associated `Plan` type is the only point in the public API where
+/// the backend leaks its automorphism representation. Callers that want to
+/// keep plans backend-agnostic must own
+/// `<Module<B> as VecZnxDftAutomorphismPlan<B>>::Plan`.
+pub trait VecZnxDftAutomorphismPlan<B: Backend> {
+    type Plan;
+
+    fn vec_znx_dft_automorphism_plan(&self, p: i64) -> Self::Plan;
+}
+
+/// Applies a precomputed DFT-domain automorphism plan to `a`, writing the
+/// result into `res` (out-of-place).
+pub trait VecZnxDftAutomorphism<B: Backend>: VecZnxDftAutomorphismPlan<B> {
+    fn vec_znx_dft_automorphism_with_plan(
+        &self,
+        plan: &Self::Plan,
+        res: &mut VecZnxDftBackendMut<'_, B>,
+        res_col: usize,
+        a: &VecZnxDftBackendRef<'_, B>,
+        a_col: usize,
+    );
+
+    /// Convenience: build the plan and apply in one call. Prefer
+    /// [`vec_znx_dft_automorphism_with_plan`](Self::vec_znx_dft_automorphism_with_plan)
+    /// when the same `p` is used repeatedly.
+    fn vec_znx_dft_automorphism(
+        &self,
+        p: i64,
+        res: &mut VecZnxDftBackendMut<'_, B>,
+        res_col: usize,
+        a: &VecZnxDftBackendRef<'_, B>,
+        a_col: usize,
+    ) {
+        let plan = self.vec_znx_dft_automorphism_plan(p);
+        self.vec_znx_dft_automorphism_with_plan(&plan, res, res_col, a, a_col);
+    }
+}

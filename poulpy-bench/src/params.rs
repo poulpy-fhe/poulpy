@@ -19,6 +19,7 @@
 //!   "hal":  { "sweeps": [[10,2,2],[12,2,8],[14,2,32]] },
 //!   "cnv":  { "sweeps": [[10,1],[12,4],[14,16]] },
 //!   "vmp":  { "sweeps": [[10,2,1,2,3],[12,7,1,2,8]] },
+//!   "coeff_mat": { "sweeps": [[10,1024,1,8,3],[12,4096,2,8,8]] },
 //!   "svp_prepare": { "log_n_values": [10,12,14] },
 //!   "core": { "n": 4096, "base2k": 18, "k": 54, "rank": 1, "dsize": 1 }
 //! }
@@ -78,6 +79,29 @@ impl Default for VmpSweepParams {
                 [12, 7, 1, 2, 8],
                 [13, 15, 1, 2, 16],
                 [14, 31, 1, 2, 32],
+            ],
+        }
+    }
+}
+
+/// Sweep parameters for `CoeffMatrix x LWEMatrix` benchmarks.
+///
+/// Each entry is `[log_n, rows_in, lwe_n, rows_out, size]`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CoeffMatSweepParams {
+    pub sweeps: Vec<[usize; 5]>,
+}
+
+impl Default for CoeffMatSweepParams {
+    fn default() -> Self {
+        Self {
+            sweeps: vec![
+                [10, 1 << 10, 1, 8, 3],
+                [11, 1 << 11, 1, 8, 5],
+                [12, 1 << 12, 2, 8, 8],
+                [13, 1 << 13, 2, 8, 16],
+                [14, 1 << 14, 2, 8, 32],
             ],
         }
     }
@@ -145,11 +169,11 @@ pub struct BenchParams {
     ///
     /// When empty or absent, the script runs its built-in default set.
     /// Available names: `vec_znx`, `vec_znx_big`, `vec_znx_dft`, `convolution`,
-    /// `svp`, `vmp`, `fft`, `ntt`, `operations`, `encryption`, `decryption`,
+    /// `svp`, `vmp`, `coeff_mat`, `fft`, `ntt`, `operations`, `encryption`, `decryption`,
     /// `glwe_tensor`,
     /// `automorphism`, `external_product`, `keyswitch`,
     /// `blind_rotate`, `circuit_bootstrapping`, `bdd_prepare`, `bdd_arithmetic`,
-    /// `ckks_leveled`, `standard`.
+    /// `ckks_leveled`, `ckks_linear_transformation`, `standard`.
     #[serde(default)]
     pub run: Vec<String>,
     #[serde(default)]
@@ -158,6 +182,8 @@ pub struct BenchParams {
     pub cnv: CnvSweepParams,
     #[serde(default)]
     pub vmp: VmpSweepParams,
+    #[serde(default)]
+    pub coeff_mat: CoeffMatSweepParams,
     #[serde(default)]
     pub svp_prepare: SvpPrepareParams,
     #[serde(default)]

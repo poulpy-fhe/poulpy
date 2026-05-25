@@ -2,11 +2,15 @@
 
 ## [Unreleased]
 
+### `poulpy-core`
+- Add the scheme-agnostic GLWE-level linear-transformation engine `GLWELinearTransform` / `GLWELinearTransformGiantStep` / `GLWELinearTransformDiagonal` and the `GLWELinearTransformOps` trait (`glwe_linear_transform`). It evaluates `Σ_i pt_i · φ_{gal(i)}(a)` via a baby-step/giant-step double loop of automorphisms, plaintext products and aggregations over raw GLWE ciphertexts; it carries no CKKS scale notion and receives only base2k-level alignment integers from the caller.
+
 ### `poulpy-ckks`
 - Add backend-generic CKKS polynomial evaluation APIs: `Polynomial`, `BSGSPolynomial`, `PowerBasis`, `Basis`, `Parity`, `SplitStrategy`, and `PolynomialEvaluation`, with monomial and Chebyshev bases, Chebyshev interpolation, and BSGS/Paterson-Stockmeyer evaluation from a precomputed power basis.
 - Add default polynomial-evaluation OEP/delegate wiring, including baby-step and giant-step hooks, parity-aware baby-step evaluation, and `MinDepth` / `MinMult` split strategies for evaluation planning.
 - Extend CKKS polynomial-evaluation coverage with conformance tests for monomial and Chebyshev evaluation, power-basis generation, interpolation, metadata errors, and split-strategy behavior.
 - Generalize fused CKKS multiply-add/plaintext paths over backend-owned ciphertext/plaintext layouts and allow plaintext add/sub alignment to left-shift when the encoded plaintext precision exceeds the ciphertext budget, enabling coefficient-indexed plaintext constants used by polynomial evaluation.
+- Add the CKKS linear-transformation (matrix–vector product over the slots) API `LinearTransformationOps` (with `LinearTransformation` / `GiantStep` / `Diagonal` re-exported from `poulpy-core`). The CKKS layer owns the scale (`log_delta` / `log_budget`) math: it derives the convolution alignment and result metadata and delegates the evaluation to the core engine. A backend-generic conformance test validates the result against the plaintext diagonal sum `Σ_i diag_i ⊙ rot(v, i)`.
 
 ### `poulpy-hal` / `poulpy-cpu-ref`
 - Add `VecZnxLshAddCoeffToCoeffBackend` and `VecZnxLshSubCoeffToCoeffBackend` hooks plus portable reference implementations so coefficient-level plaintext accumulation can handle left-shift alignment.

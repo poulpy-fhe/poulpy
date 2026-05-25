@@ -100,6 +100,7 @@ cross_backend_test_suite! {
         test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
         test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
         test_vec_znx_idft_apply_tmpa => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_tmpa,
+        test_vec_znx_dft_automorphism => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism,
     }
 }
 
@@ -123,6 +124,17 @@ backend_test_suite! {
         test_vec_znx_fill_uniform => poulpy_hal::test_suite::vec_znx::test_vec_znx_fill_uniform,
         test_vec_znx_fill_normal => poulpy_hal::test_suite::vec_znx::test_vec_znx_fill_normal,
         test_vec_znx_add_normal => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_normal,
+    }
+}
+
+backend_test_suite! {
+    mod lwe_matrix,
+    backend = crate::NTT120Avx512,
+    params = TestParams { size: 1<<8, base2k: 50 },
+    tests = {
+        glwe_expand_lwe_matrix_decrypt => poulpy_core::test_suite::test_glwe_expand_lwe_matrix_decrypt,
+        lwe_matrix_mul_identity => poulpy_core::test_suite::test_lwe_matrix_mul_identity,
+        lwe_matrix_mul_decrypts_to_plain_product => poulpy_core::test_suite::test_lwe_matrix_mul_decrypts_to_plain_product,
     }
 }
 

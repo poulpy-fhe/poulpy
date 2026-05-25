@@ -1,9 +1,9 @@
 use crate::{
     FFT64Ref, NTT120Ref,
     hal_defaults::{
-        FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault, FFT64VecZnxDftDefault,
-        FFT64VmpDefault, HalVecZnxDefault, NTT120ConvolutionDefault, NTT120ModuleDefault, NTT120SvpDefault,
-        NTT120VecZnxBigDefault, NTT120VecZnxDftDefault, NTT120VmpDefault,
+        FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault,
+        FFT64VecZnxDftDefault, FFT64VmpDefault, HalVecZnxDefault, NTT120ConvolutionDefault, NTT120ModuleDefault,
+        NTT120SvpDefault, NTT120VecZnxBigDefault, NTT120VecZnxDftDefault, NTT120VmpDefault, VecZnxMatMulDefault,
     },
 };
 use poulpy_hal::{
@@ -11,7 +11,10 @@ use poulpy_hal::{
     layouts::{
         Backend, Module, NoiseInfos, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, ZnxInfos,
     },
-    oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
+    oep::{
+        HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl,
+        HalVecZnxMatMulImpl, HalVmpImpl,
+    },
 };
 
 #[macro_use]
@@ -28,11 +31,17 @@ mod vec_znx_big;
 mod svp;
 #[macro_use]
 mod vec_znx_dft;
+#[macro_use]
+mod vec_znx_matmul;
 #[cfg(all(test, feature = "enable-core"))]
 pub(crate) mod delegating_backend;
 
 unsafe impl HalVecZnxImpl<FFT64Ref> for FFT64Ref {
     hal_impl_vec_znx!();
+
+    fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
+        <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
+    }
 }
 
 unsafe impl HalModuleImpl<FFT64Ref> for FFT64Ref {
@@ -41,6 +50,10 @@ unsafe impl HalModuleImpl<FFT64Ref> for FFT64Ref {
 
 unsafe impl HalVmpImpl<FFT64Ref> for FFT64Ref {
     hal_impl_vmp!(FFT64VmpDefault);
+}
+
+unsafe impl HalVecZnxMatMulImpl<FFT64Ref> for FFT64Ref {
+    hal_impl_vec_znx_matmul!(VecZnxMatMulDefault);
 }
 
 unsafe impl HalConvolutionImpl<FFT64Ref> for FFT64Ref {
@@ -61,6 +74,10 @@ unsafe impl HalVecZnxDftImpl<FFT64Ref> for FFT64Ref {
 
 unsafe impl HalVecZnxImpl<NTT120Ref> for NTT120Ref {
     hal_impl_vec_znx!();
+
+    fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
+        <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
+    }
 }
 
 unsafe impl HalModuleImpl<NTT120Ref> for NTT120Ref {
@@ -69,6 +86,10 @@ unsafe impl HalModuleImpl<NTT120Ref> for NTT120Ref {
 
 unsafe impl HalVmpImpl<NTT120Ref> for NTT120Ref {
     hal_impl_vmp!(NTT120VmpDefault);
+}
+
+unsafe impl HalVecZnxMatMulImpl<NTT120Ref> for NTT120Ref {
+    hal_impl_vec_znx_matmul!(VecZnxMatMulDefault);
 }
 
 unsafe impl HalConvolutionImpl<NTT120Ref> for NTT120Ref {

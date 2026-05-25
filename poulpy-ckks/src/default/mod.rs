@@ -3,6 +3,7 @@ pub mod conjugate;
 pub mod copy;
 pub mod encryption;
 pub mod imag;
+pub mod linear_transformation;
 pub mod mul;
 pub mod neg;
 pub mod plaintext;

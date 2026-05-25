@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena, VmpPMatBackendRef};
 
-use crate::layouts::prepared::{GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef};
+use crate::layouts::prepared::{GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef, GGLWEPreparedVmpPMatRef};
 use crate::layouts::{
     Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWELayout, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef,
     GGLWEPreparedFactory, GGLWEToBackendRef, GLWEAutomorphismKeyHelper, GLWEInfos, GetGaloisElement, LWEInfos, Rank,
@@ -268,6 +268,15 @@ where
 {
     fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
         self.key.to_backend_ref()
+    }
+}
+
+impl<D: Data, B: Backend> GGLWEPreparedVmpPMatRef<B> for GLWEAutomorphismKeyPrepared<D, B>
+where
+    GGLWEPrepared<D, B>: GGLWEPreparedVmpPMatRef<B>,
+{
+    fn vmp_pmat_backend_ref(&self) -> VmpPMatBackendRef<'_, B> {
+        self.key.vmp_pmat_backend_ref()
     }
 }
 

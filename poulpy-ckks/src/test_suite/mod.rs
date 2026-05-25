@@ -352,6 +352,58 @@ macro_rules! ckks_backend_test_suite {
                 rotate_assign_missing_key_error,
                 $crate::test_suite::rotate::test_rotate_assign_missing_key_error
             );
+            run_test!(
+                linear_transformation,
+                $crate::test_suite::linear_transformation::test_linear_transformation
+            );
+            run_test!(
+                linear_transformation_sparse_assign,
+                $crate::test_suite::linear_transformation::test_linear_transformation_sparse_assign
+            );
+            run_test!(
+                linear_transformation_prepared,
+                $crate::test_suite::linear_transformation::test_linear_transformation_prepared
+            );
+            run_test!(
+                linear_transformation_one_shot_matches_prepared,
+                $crate::test_suite::linear_transformation::test_linear_transformation_one_shot_matches_prepared
+            );
+            run_test!(
+                linear_transformation_prepared_big_accumulator_stress,
+                $crate::test_suite::linear_transformation::test_linear_transformation_prepared_big_accumulator_stress
+            );
+            run_test!(
+                linear_transformation_prepared_identity_no_keys,
+                $crate::test_suite::linear_transformation::test_linear_transformation_prepared_identity_no_keys
+            );
+            run_test!(
+                linear_transformation_prepared_direct_matches_bsgs,
+                $crate::test_suite::linear_transformation::test_linear_transformation_prepared_direct_matches_bsgs
+            );
+            run_test!(
+                linear_transformation_prepared_assign,
+                $crate::test_suite::linear_transformation::test_linear_transformation_prepared_assign
+            );
+            run_test!(
+                linear_transformation_prepared_missing_key_error,
+                $crate::test_suite::linear_transformation::test_linear_transformation_prepared_missing_key_error
+            );
+            run_test!(
+                linear_transformation_many_prepared,
+                $crate::test_suite::linear_transformation::test_linear_transformation_many_prepared
+            );
+            run_test!(
+                linear_transformation_sequential_prepared,
+                $crate::test_suite::linear_transformation::test_linear_transformation_sequential_prepared
+            );
+            run_test!(
+                linear_transformation_identity_no_keys,
+                $crate::test_suite::linear_transformation::test_linear_transformation_identity_no_keys
+            );
+            run_test!(
+                linear_transformation_missing_key_error,
+                $crate::test_suite::linear_transformation::test_linear_transformation_missing_key_error
+            );
             run_test!(mul_ct_aligned, $crate::test_suite::mul::test_mul_ct_aligned);
             run_test!(mul_ct_delta_a_gt_b, $crate::test_suite::mul::test_mul_ct_delta_a_gt_b);
             run_test!(mul_ct_delta_a_lt_b, $crate::test_suite::mul::test_mul_ct_delta_a_lt_b);
@@ -607,6 +659,7 @@ pub mod encryption;
 pub mod errors;
 pub mod helpers;
 pub mod imag;
+pub mod linear_transformation;
 pub mod mul;
 pub mod mul_add;
 pub mod mul_pow2;

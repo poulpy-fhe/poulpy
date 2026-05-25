@@ -2,7 +2,8 @@ use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
 use crate::layouts::{
     GLWEInfos, GLWEPlaintext, GLWESecretPrepared, GLWESecretTensorPrepared, GLWETensor, GLWEToBackendMut, GLWEToBackendRef,
-    LWEInfos, LWEPlaintextToBackendMut, LWESecretToBackendRef, LWEToBackendRef, SetLWEInfos,
+    LWEInfos, LWEMatrixInfos, LWEMatrixToBackendRef, LWEPlaintextToBackendMut, LWESecretToBackendRef, LWEToBackendRef,
+    SetLWEInfos,
     prepared::{GLWESecretPreparedToBackendRef, GLWESecretTensorPreparedToBackendRef},
 };
 
@@ -28,6 +29,18 @@ pub trait LWEDecrypt<BE: Backend> {
     fn lwe_decrypt_tmp_bytes<A>(&self, infos: &A) -> usize
     where
         A: LWEInfos;
+}
+
+pub trait LWEMatrixDecrypt<BE: Backend> {
+    fn lwe_matrix_decrypt_tmp_bytes<A>(&self, infos: &A) -> usize
+    where
+        A: LWEMatrixInfos;
+
+    fn lwe_matrix_decrypt<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEMatrixToBackendRef<BE> + LWEMatrixInfos,
+        P: GLWEToBackendMut<BE> + SetLWEInfos + GLWEInfos,
+        S: LWESecretToBackendRef<BE> + LWEInfos;
 }
 
 pub trait GLWETensorDecrypt<BE: Backend> {

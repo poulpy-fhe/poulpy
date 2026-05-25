@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{VecZnxCopyBackend, VecZnxFillUniformSourceBackend},
+    api::VecZnxCopyBackend,
     layouts::{
         Backend, Data, FillUniform, HostDataMut, HostDataRef, Module, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef,
         WriterTo,
@@ -7,7 +7,10 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::layouts::{Base2K, Degree, GLWEInfos, GLWEToBackendMut, GetDegree, LWEInfos, Rank, SetLWEInfos, TorusPrecision};
+use crate::{
+    encryption::glwe::GLWEMaskFillDefault,
+    layouts::{Base2K, Degree, GLWEInfos, GLWEToBackendMut, GetDegree, LWEInfos, Rank, SetLWEInfos, TorusPrecision},
+};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::fmt;
 use std::ops::{Deref, DerefMut};
@@ -276,7 +279,7 @@ impl<D: HostDataRef> WriterTo for GLWECompressed<D> {
 /// the mask polynomials from the stored PRNG seed.
 pub trait GLWEDecompress
 where
-    Self: GetDegree + VecZnxFillUniformSourceBackend<Self::Backend> + VecZnxCopyBackend<Self::Backend>,
+    Self: GetDegree + GLWEMaskFillDefault<Self::Backend> + VecZnxCopyBackend<Self::Backend>,
 {
     type Backend: Backend;
 
@@ -299,13 +302,9 @@ where
 
             assert_eq!(res.glwe_layout(), other.glwe_layout());
 
-            let mut source: Source = Source::new(other.seed);
-
             self.vec_znx_copy_backend(&mut res.data, 0, &other.data, 0);
-            (1..(other.rank() + 1).into()).for_each(|i| {
-                self.vec_znx_fill_uniform_source_backend(other.base2k.into(), &mut res.data, i, &mut source);
-            });
         }
+        self.fill_glwe_mask_from_seed_default(other.base2k.into(), res, 1, other.rank().as_usize(), other.seed);
 
         res.set_base2k(other.base2k());
     }
@@ -313,7 +312,7 @@ where
 
 impl<B: Backend> GLWEDecompress for Module<B>
 where
-    Self: GetDegree + VecZnxFillUniformSourceBackend<B> + VecZnxCopyBackend<B>,
+    Self: GetDegree + GLWEMaskFillDefault<B> + VecZnxCopyBackend<B>,
 {
     type Backend = B;
 }

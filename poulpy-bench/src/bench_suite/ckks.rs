@@ -3,6 +3,7 @@ use std::{collections::HashMap, hint::black_box};
 use criterion::Criterion;
 use poulpy_ckks::{
     CKKSMeta,
+    api::{Diagonal, GiantStep, LinearTransformation, LinearTransformationOps, PreparedLinearTransformation},
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
     leveled::api::{
         CKKSAddManyOps, CKKSAddOps, CKKSConjugateOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps,
@@ -25,7 +26,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, GaloisElement, Module, ScratchOwned, ZnxViewMut},
+    layouts::{Backend, GaloisElement, Module, ScratchArena, ScratchOwned, ZnxViewMut},
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
@@ -36,6 +37,9 @@ const LOG_DELTA: usize = 40;
 const DSIZE: usize = 1;
 const MANY_TERMS: usize = 8;
 const ROTATION: i64 = 1;
+const LT_INTERLEAVED_DIAG_COUNT: usize = 256;
+const LT_INTERLEAVED_DIAG_STRIDE: usize = 64;
+const LT_INTERLEAVED_BSGS_N1: usize = 1024;
 
 pub trait CkksBenchBackend:
     Backend<OwnedBuf = Vec<u8>>
@@ -87,7 +91,8 @@ where
         + CKKSAddManyOps<Self>
         + CKKSMulAddOps<Self>
         + CKKSMulSubOps<Self>
-        + CKKSDotProductOps<Self>,
+        + CKKSDotProductOps<Self>
+        + LinearTransformationOps<Self>,
     ScratchOwned<Self>: ScratchOwnedAlloc<Self> + ScratchOwnedBorrow<Self>,
 {
 }
@@ -141,7 +146,8 @@ where
         + CKKSAddManyOps<BE>
         + CKKSMulAddOps<BE>
         + CKKSMulSubOps<BE>
-        + CKKSDotProductOps<BE>,
+        + CKKSDotProductOps<BE>
+        + LinearTransformationOps<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
 }
@@ -160,6 +166,33 @@ where
     const_full: CKKSPlaintext<Vec<u8>>,
     tsk: poulpy_core::layouts::GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
     atks: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
+}
+
+struct LinearTransformBenchSetup<BE>
+where
+    BE: CkksBenchBackend,
+{
+    module: Module<BE>,
+    scratch: ScratchOwned<BE>,
+    ct_src: CKKSCiphertext<Vec<u8>>,
+    ct_dst: CKKSCiphertext<Vec<u8>>,
+    many_dsts: Vec<CKKSCiphertext<Vec<u8>>>,
+    one_shot_sparse_direct: LinearTransformation<CKKSPlaintext<Vec<u8>>>,
+    one_shot_sparse_bsgs: LinearTransformation<CKKSPlaintext<Vec<u8>>>,
+    one_shot_medium_bsgs: LinearTransformation<CKKSPlaintext<Vec<u8>>>,
+    one_shot_dense_bsgs: LinearTransformation<CKKSPlaintext<Vec<u8>>>,
+    prepared_sparse_direct: PreparedLinearTransformation<BE>,
+    prepared_sparse_bsgs: PreparedLinearTransformation<BE>,
+    prepared_medium_bsgs: PreparedLinearTransformation<BE>,
+    prepared_dense_bsgs: PreparedLinearTransformation<BE>,
+    prepared_interleaved_bsgs_256_lt: LinearTransformation<CKKSPlaintext<Vec<u8>>>,
+    prepared_interleaved_bsgs_256: PreparedLinearTransformation<BE>,
+    prepared_many_lts: Vec<LinearTransformation<CKKSPlaintext<Vec<u8>>>>,
+    prepared_many: Vec<PreparedLinearTransformation<BE>>,
+    atks: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
+    prep_scratch_bytes: usize,
+    eval_scratch_bytes: usize,
+    scratch_bytes: usize,
 }
 
 fn ckks_layout() -> GLWELayout {
@@ -205,6 +238,202 @@ fn atk_layout() -> EncryptionLayout<GLWEAutomorphismKeyLayout> {
 fn reset_dst(dst: &mut CKKSCiphertext<Vec<u8>>) {
     dst.data_mut().raw_mut().fill(0);
     dst.set_meta_checked(ckks_meta()).unwrap();
+}
+
+fn build_linear_transform<BE>(
+    module: &Module<BE>,
+    diag_indices: &[usize],
+    n1: usize,
+) -> LinearTransformation<CKKSPlaintext<Vec<u8>>>
+where
+    BE: CkksBenchBackend,
+{
+    let baby_steps: Vec<i64> = (0..n1).map(|k| k as i64).collect();
+    let n2 = diag_indices.iter().copied().max().map_or(0, |i| (i / n1) + 1);
+    let mut giant_steps: Vec<GiantStep<CKKSPlaintext<Vec<u8>>>> = (0..n2)
+        .map(|j| GiantStep {
+            rot: (n1 * j) as i64,
+            diagonals: Vec::new(),
+        })
+        .collect();
+
+    for &i in diag_indices {
+        let j = i / n1;
+        let k = i % n1;
+        let plaintext = module.ckks_pt_vec_alloc(Base2K(BASE2K as u32), ckks_meta());
+        giant_steps[j].diagonals.push(Diagonal {
+            baby: k as i64,
+            plaintext,
+        });
+    }
+
+    LinearTransformation { baby_steps, giant_steps }
+}
+
+fn prepare_linear_transform<BE>(
+    module: &Module<BE>,
+    lt: &LinearTransformation<CKKSPlaintext<Vec<u8>>>,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> PreparedLinearTransformation<BE>
+where
+    BE: CkksBenchBackend,
+{
+    let mut prepared = PreparedLinearTransformation::default();
+    module.ckks_prepare_linear_transformation(lt, &mut prepared, scratch);
+    prepared
+}
+
+fn interleaved_linear_transform_diagonals() -> Vec<usize> {
+    (0..LT_INTERLEAVED_DIAG_COUNT)
+        .map(|i| i * LT_INTERLEAVED_DIAG_STRIDE)
+        .collect()
+}
+
+fn insert_linear_transform_keys<BE>(
+    module: &Module<BE>,
+    atks: &mut HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
+    rotations: impl IntoIterator<Item = i64>,
+) where
+    BE: CkksBenchBackend,
+{
+    let atk_layout = atk_layout();
+    for rotation in rotations {
+        if rotation == 0 || atks.contains_key(&rotation) {
+            continue;
+        }
+        let mut key = module.glwe_automorphism_key_prepared_alloc_from_infos(&atk_layout);
+        key.set_p(module.galois_element(rotation));
+        atks.insert(rotation, key);
+    }
+}
+
+fn unprepared_linear_transform_diagonal_count<P>(lt: &LinearTransformation<P>) -> usize {
+    lt.giant_steps.iter().map(|gs| gs.diagonals.len()).sum()
+}
+
+fn unprepared_linear_transform_non_empty_giant_count<P>(lt: &LinearTransformation<P>) -> usize {
+    lt.giant_steps.iter().filter(|gs| !gs.diagonals.is_empty()).count()
+}
+
+fn prepared_linear_transform_diagonal_count<BE: Backend>(lt: &PreparedLinearTransformation<BE>) -> usize {
+    lt.giant_steps.iter().map(|gs| gs.diagonals.len()).sum()
+}
+
+fn prepared_linear_transform_non_empty_giant_count<BE: Backend>(lt: &PreparedLinearTransformation<BE>) -> usize {
+    lt.giant_steps.iter().filter(|gs| !gs.diagonals.is_empty()).count()
+}
+
+fn format_bytes(bytes: usize) -> String {
+    const KIB: f64 = 1024.0;
+    const MIB: f64 = 1024.0 * KIB;
+    const GIB: f64 = 1024.0 * MIB;
+    let bytes = bytes as f64;
+    if bytes >= GIB {
+        format!("{:.2} GiB", bytes / GIB)
+    } else if bytes >= MIB {
+        format!("{:.2} MiB", bytes / MIB)
+    } else if bytes >= KIB {
+        format!("{:.2} KiB", bytes / KIB)
+    } else {
+        format!("{bytes:.0} B")
+    }
+}
+
+fn print_linear_transform_metadata<BE>(label: &str, s: &LinearTransformBenchSetup<BE>)
+where
+    BE: CkksBenchBackend,
+{
+    eprintln!(
+        "ckks_linear_transformation::{label}: scratch={} eval_tmp_bound={} prepare_tmp_bound={} key_count={}",
+        format_bytes(s.scratch_bytes),
+        format_bytes(s.eval_scratch_bytes),
+        format_bytes(s.prep_scratch_bytes),
+        s.atks.len(),
+    );
+    eprintln!("case,diagonals,babies,giants,required_rotations");
+    eprintln!(
+        "one_shot_sparse_direct_shape_2,{},{},{},{}",
+        unprepared_linear_transform_diagonal_count(&s.one_shot_sparse_direct),
+        s.one_shot_sparse_direct.baby_steps.len(),
+        unprepared_linear_transform_non_empty_giant_count(&s.one_shot_sparse_direct),
+        s.one_shot_sparse_direct.required_rotations().len()
+    );
+    eprintln!(
+        "one_shot_sparse_bsgs_2,{},{},{},{}",
+        unprepared_linear_transform_diagonal_count(&s.one_shot_sparse_bsgs),
+        s.one_shot_sparse_bsgs.baby_steps.len(),
+        unprepared_linear_transform_non_empty_giant_count(&s.one_shot_sparse_bsgs),
+        s.one_shot_sparse_bsgs.required_rotations().len()
+    );
+    eprintln!(
+        "prepared_sparse_direct_2,{},{},{},{}",
+        prepared_linear_transform_diagonal_count(&s.prepared_sparse_direct),
+        s.prepared_sparse_direct.baby_steps.len(),
+        prepared_linear_transform_non_empty_giant_count(&s.prepared_sparse_direct),
+        s.prepared_sparse_direct.required_rotations().len()
+    );
+    eprintln!(
+        "prepared_sparse_bsgs_2,{},{},{},{}",
+        prepared_linear_transform_diagonal_count(&s.prepared_sparse_bsgs),
+        s.prepared_sparse_bsgs.baby_steps.len(),
+        prepared_linear_transform_non_empty_giant_count(&s.prepared_sparse_bsgs),
+        s.prepared_sparse_bsgs.required_rotations().len()
+    );
+    eprintln!(
+        "prepared_medium_bsgs_5,{},{},{},{}",
+        prepared_linear_transform_diagonal_count(&s.prepared_medium_bsgs),
+        s.prepared_medium_bsgs.baby_steps.len(),
+        prepared_linear_transform_non_empty_giant_count(&s.prepared_medium_bsgs),
+        s.prepared_medium_bsgs.required_rotations().len()
+    );
+    eprintln!(
+        "one_shot_medium_bsgs_5,{},{},{},{}",
+        unprepared_linear_transform_diagonal_count(&s.one_shot_medium_bsgs),
+        s.one_shot_medium_bsgs.baby_steps.len(),
+        unprepared_linear_transform_non_empty_giant_count(&s.one_shot_medium_bsgs),
+        s.one_shot_medium_bsgs.required_rotations().len()
+    );
+    eprintln!(
+        "prepared_dense_bsgs_16,{},{},{},{}",
+        prepared_linear_transform_diagonal_count(&s.prepared_dense_bsgs),
+        s.prepared_dense_bsgs.baby_steps.len(),
+        prepared_linear_transform_non_empty_giant_count(&s.prepared_dense_bsgs),
+        s.prepared_dense_bsgs.required_rotations().len()
+    );
+    eprintln!(
+        "prepared_interleaved_bsgs_256_stride64,{},{},{},{}",
+        prepared_linear_transform_diagonal_count(&s.prepared_interleaved_bsgs_256),
+        s.prepared_interleaved_bsgs_256.baby_steps.len(),
+        prepared_linear_transform_non_empty_giant_count(&s.prepared_interleaved_bsgs_256),
+        s.prepared_interleaved_bsgs_256.required_rotations().len()
+    );
+    eprintln!(
+        "one_shot_dense_bsgs_16,{},{},{},{}",
+        unprepared_linear_transform_diagonal_count(&s.one_shot_dense_bsgs),
+        s.one_shot_dense_bsgs.baby_steps.len(),
+        unprepared_linear_transform_non_empty_giant_count(&s.one_shot_dense_bsgs),
+        s.one_shot_dense_bsgs.required_rotations().len()
+    );
+
+    let many_diagonals: usize = s.prepared_many.iter().map(prepared_linear_transform_diagonal_count).sum();
+    let many_babies: usize = s
+        .prepared_many
+        .iter()
+        .flat_map(|lt| lt.baby_steps.iter().copied())
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
+    let many_giants: usize = s
+        .prepared_many
+        .iter()
+        .map(prepared_linear_transform_non_empty_giant_count)
+        .sum();
+    let many_rotations: usize = s
+        .prepared_many
+        .iter()
+        .flat_map(|lt| lt.required_rotations())
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
+    eprintln!("many_prepared_2_transforms,{many_diagonals},{many_babies},{many_giants},{many_rotations}");
 }
 
 fn setup<BE>() -> CkksBenchSetup<BE>
@@ -275,6 +504,102 @@ where
         const_full,
         tsk,
         atks,
+    }
+}
+
+fn setup_linear_transform<BE>() -> LinearTransformBenchSetup<BE>
+where
+    BE: CkksBenchBackend,
+{
+    let module = Module::<BE>::new(N as u64);
+    let ct_layout = ckks_layout();
+    let meta = ckks_meta();
+
+    let mut ct_src = module.ckks_ciphertext_alloc_from_infos(&ct_layout);
+    let mut ct_dst = module.ckks_ciphertext_alloc_from_infos(&ct_layout);
+    ct_src.set_meta_checked(meta).unwrap();
+    ct_dst.set_meta_checked(meta).unwrap();
+    let mut many_dsts = vec![
+        module.ckks_ciphertext_alloc_from_infos(&ct_layout),
+        module.ckks_ciphertext_alloc_from_infos(&ct_layout),
+    ];
+    for dst in &mut many_dsts {
+        dst.set_meta_checked(meta).unwrap();
+    }
+
+    let one_shot_sparse_direct = build_linear_transform::<BE>(&module, &[2, 5], 1);
+    let one_shot_sparse_bsgs = build_linear_transform::<BE>(&module, &[2, 5], 3);
+    let one_shot_medium_bsgs = build_linear_transform::<BE>(&module, &[0, 1, 2, 5, 7], 3);
+    let one_shot_dense_bsgs = build_linear_transform::<BE>(&module, &(0..16).collect::<Vec<_>>(), 4);
+    let interleaved_diags = interleaved_linear_transform_diagonals();
+    let prepared_interleaved_bsgs_256_lt = build_linear_transform::<BE>(&module, &interleaved_diags, LT_INTERLEAVED_BSGS_N1);
+    let prepared_many_lts = vec![
+        build_linear_transform::<BE>(&module, &[0, 3, 6], 3),
+        build_linear_transform::<BE>(&module, &[1, 2, 5], 2),
+    ];
+
+    let mut atks = HashMap::new();
+    for rotations in [
+        one_shot_sparse_direct.required_rotations(),
+        one_shot_sparse_bsgs.required_rotations(),
+        one_shot_medium_bsgs.required_rotations(),
+        one_shot_dense_bsgs.required_rotations(),
+        prepared_interleaved_bsgs_256_lt.required_rotations(),
+        prepared_many_lts[0].required_rotations(),
+        prepared_many_lts[1].required_rotations(),
+    ] {
+        insert_linear_transform_keys(&module, &mut atks, rotations);
+    }
+
+    let prep_scratch_bytes = module
+        .ckks_prepare_linear_transformation_tmp_bytes(&one_shot_sparse_direct)
+        .max(module.ckks_prepare_linear_transformation_tmp_bytes(&one_shot_sparse_bsgs))
+        .max(module.ckks_prepare_linear_transformation_tmp_bytes(&one_shot_medium_bsgs))
+        .max(module.ckks_prepare_linear_transformation_tmp_bytes(&one_shot_dense_bsgs))
+        .max(module.ckks_prepare_linear_transformation_tmp_bytes(&prepared_interleaved_bsgs_256_lt))
+        .max(module.ckks_prepare_linear_transformation_tmp_bytes(&prepared_many_lts[0]))
+        .max(module.ckks_prepare_linear_transformation_tmp_bytes(&prepared_many_lts[1]));
+    let eval_scratch_bytes = atks
+        .values()
+        .next()
+        .map(|key| module.ckks_eval_linear_transformation_tmp_bytes(&ct_src, key))
+        .unwrap_or(0);
+    let scratch_bytes = prep_scratch_bytes.max(eval_scratch_bytes);
+    let mut scratch = ScratchOwned::<BE>::alloc(scratch_bytes);
+
+    let prepared_sparse_direct = prepare_linear_transform(&module, &one_shot_sparse_direct, &mut scratch.borrow());
+    let prepared_sparse_bsgs = prepare_linear_transform(&module, &one_shot_sparse_bsgs, &mut scratch.borrow());
+    let prepared_medium_bsgs = prepare_linear_transform(&module, &one_shot_medium_bsgs, &mut scratch.borrow());
+    let prepared_dense_bsgs = prepare_linear_transform(&module, &one_shot_dense_bsgs, &mut scratch.borrow());
+    let prepared_interleaved_bsgs_256 =
+        prepare_linear_transform(&module, &prepared_interleaved_bsgs_256_lt, &mut scratch.borrow());
+    let prepared_many = prepared_many_lts
+        .iter()
+        .map(|lt| prepare_linear_transform(&module, lt, &mut scratch.borrow()))
+        .collect::<Vec<_>>();
+
+    LinearTransformBenchSetup {
+        module,
+        scratch,
+        ct_src,
+        ct_dst,
+        many_dsts,
+        one_shot_sparse_direct,
+        one_shot_sparse_bsgs,
+        one_shot_medium_bsgs,
+        one_shot_dense_bsgs,
+        prepared_sparse_direct,
+        prepared_sparse_bsgs,
+        prepared_medium_bsgs,
+        prepared_dense_bsgs,
+        prepared_interleaved_bsgs_256_lt,
+        prepared_interleaved_bsgs_256,
+        prepared_many_lts,
+        prepared_many,
+        atks,
+        prep_scratch_bytes,
+        eval_scratch_bytes,
+        scratch_bytes,
     }
 }
 
@@ -675,5 +1000,165 @@ where
                 .unwrap();
         })
     });
+    group.finish();
+}
+
+pub fn bench_ckks_linear_transformation<BE>(c: &mut Criterion, label: &str)
+where
+    BE: CkksBenchBackend,
+{
+    let mut s = setup_linear_transform::<BE>();
+    print_linear_transform_metadata(label, &s);
+    let mut group = c.benchmark_group(format!("ckks_linear_transformation::{label}"));
+
+    group.bench_function("one_shot_sparse_direct_shape_2", |b| {
+        b.iter(|| {
+            reset_dst(&mut s.ct_dst);
+            s.module
+                .ckks_eval_linear_transformation_into(
+                    &mut s.ct_dst,
+                    black_box(&s.ct_src),
+                    black_box(&s.one_shot_sparse_direct),
+                    &s.atks,
+                    &mut s.scratch.borrow(),
+                )
+                .unwrap();
+        })
+    });
+    group.bench_function("one_shot_sparse_bsgs_2", |b| {
+        b.iter(|| {
+            reset_dst(&mut s.ct_dst);
+            s.module
+                .ckks_eval_linear_transformation_into(
+                    &mut s.ct_dst,
+                    black_box(&s.ct_src),
+                    black_box(&s.one_shot_sparse_bsgs),
+                    &s.atks,
+                    &mut s.scratch.borrow(),
+                )
+                .unwrap();
+        })
+    });
+    group.bench_function("prepared_sparse_direct_2", |b| {
+        b.iter(|| {
+            reset_dst(&mut s.ct_dst);
+            s.module
+                .ckks_eval_prepared_linear_transformation_into(
+                    &mut s.ct_dst,
+                    black_box(&s.ct_src),
+                    black_box(&s.one_shot_sparse_direct),
+                    black_box(&s.prepared_sparse_direct),
+                    &s.atks,
+                    &mut s.scratch.borrow(),
+                )
+                .unwrap();
+        })
+    });
+    group.bench_function("prepared_sparse_bsgs_2", |b| {
+        b.iter(|| {
+            reset_dst(&mut s.ct_dst);
+            s.module
+                .ckks_eval_prepared_linear_transformation_into(
+                    &mut s.ct_dst,
+                    black_box(&s.ct_src),
+                    black_box(&s.one_shot_sparse_bsgs),
+                    black_box(&s.prepared_sparse_bsgs),
+                    &s.atks,
+                    &mut s.scratch.borrow(),
+                )
+                .unwrap();
+        })
+    });
+    group.bench_function("prepared_medium_bsgs_5", |b| {
+        b.iter(|| {
+            reset_dst(&mut s.ct_dst);
+            s.module
+                .ckks_eval_prepared_linear_transformation_into(
+                    &mut s.ct_dst,
+                    black_box(&s.ct_src),
+                    black_box(&s.one_shot_medium_bsgs),
+                    black_box(&s.prepared_medium_bsgs),
+                    &s.atks,
+                    &mut s.scratch.borrow(),
+                )
+                .unwrap();
+        })
+    });
+    group.bench_function("one_shot_medium_bsgs_5", |b| {
+        b.iter(|| {
+            reset_dst(&mut s.ct_dst);
+            s.module
+                .ckks_eval_linear_transformation_into(
+                    &mut s.ct_dst,
+                    black_box(&s.ct_src),
+                    black_box(&s.one_shot_medium_bsgs),
+                    &s.atks,
+                    &mut s.scratch.borrow(),
+                )
+                .unwrap();
+        })
+    });
+    group.bench_function("prepared_dense_bsgs_16", |b| {
+        b.iter(|| {
+            reset_dst(&mut s.ct_dst);
+            s.module
+                .ckks_eval_prepared_linear_transformation_into(
+                    &mut s.ct_dst,
+                    black_box(&s.ct_src),
+                    black_box(&s.one_shot_dense_bsgs),
+                    black_box(&s.prepared_dense_bsgs),
+                    &s.atks,
+                    &mut s.scratch.borrow(),
+                )
+                .unwrap();
+        })
+    });
+    group.bench_function("prepared_interleaved_bsgs_256_stride64", |b| {
+        b.iter(|| {
+            reset_dst(&mut s.ct_dst);
+            s.module
+                .ckks_eval_prepared_linear_transformation_into(
+                    &mut s.ct_dst,
+                    black_box(&s.ct_src),
+                    black_box(&s.prepared_interleaved_bsgs_256_lt),
+                    black_box(&s.prepared_interleaved_bsgs_256),
+                    &s.atks,
+                    &mut s.scratch.borrow(),
+                )
+                .unwrap();
+        })
+    });
+    group.bench_function("one_shot_dense_bsgs_16", |b| {
+        b.iter(|| {
+            reset_dst(&mut s.ct_dst);
+            s.module
+                .ckks_eval_linear_transformation_into(
+                    &mut s.ct_dst,
+                    black_box(&s.ct_src),
+                    black_box(&s.one_shot_dense_bsgs),
+                    &s.atks,
+                    &mut s.scratch.borrow(),
+                )
+                .unwrap();
+        })
+    });
+    group.bench_function("many_prepared_2_transforms", |b| {
+        b.iter(|| {
+            for dst in &mut s.many_dsts {
+                reset_dst(dst);
+            }
+            s.module
+                .ckks_eval_many_prepared_linear_transformations_into(
+                    &mut s.many_dsts,
+                    black_box(&s.ct_src),
+                    black_box(&s.prepared_many_lts),
+                    black_box(&s.prepared_many),
+                    &s.atks,
+                    &mut s.scratch.borrow(),
+                )
+                .unwrap();
+        })
+    });
+
     group.finish();
 }

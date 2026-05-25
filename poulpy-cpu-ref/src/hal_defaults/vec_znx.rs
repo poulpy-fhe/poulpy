@@ -13,7 +13,8 @@ use crate::reference::vec_znx::{
     vec_znx_normalize_tmp_bytes, vec_znx_rotate, vec_znx_rotate_assign, vec_znx_rotate_assign_tmp_bytes, vec_znx_rsh,
     vec_znx_rsh_add_coeff_into, vec_znx_rsh_assign, vec_znx_rsh_coeff, vec_znx_rsh_sub, vec_znx_rsh_sub_coeff_into,
     vec_znx_rsh_tmp_bytes, vec_znx_split_ring, vec_znx_split_ring_tmp_bytes, vec_znx_sub, vec_znx_sub_assign,
-    vec_znx_sub_negate_assign, vec_znx_sub_scalar, vec_znx_sub_scalar_assign, vec_znx_switch_ring, vec_znx_zero,
+    vec_znx_sub_negate_assign, vec_znx_sub_scalar, vec_znx_sub_scalar_assign, vec_znx_switch_ring, vec_znx_transpose,
+    vec_znx_zero,
 };
 use crate::reference::znx::{
     ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign,
@@ -1093,6 +1094,14 @@ where
         for<'x> BE::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
     {
         vec_znx_copy::<BE>(res, res_col, a, a_col);
+    }
+
+    fn vec_znx_transpose_backend_default(_module: &Module<BE>, res: &mut VecZnxBackendMut<'_, BE>, a: &VecZnxBackendRef<'_, BE>)
+    where
+        for<'x> BE::BufMut<'x>: HostDataMut,
+        for<'x> BE::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
+    {
+        vec_znx_transpose::<BE>(res, a);
     }
 
     #[allow(clippy::too_many_arguments)]

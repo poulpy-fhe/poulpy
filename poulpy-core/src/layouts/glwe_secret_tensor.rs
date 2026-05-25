@@ -44,6 +44,16 @@ impl<D: Data> GetDistributionMut for GLWESecretTensor<D> {
     }
 }
 
+impl<D: Data> GLWESecretTensor<D> {
+    pub fn data(&self) -> &ScalarZnx<D> {
+        &self.data
+    }
+
+    pub fn data_mut(&mut self) -> &mut ScalarZnx<D> {
+        &mut self.data
+    }
+}
+
 impl<D: Data> LWEInfos for GLWESecretTensor<D> {
     fn base2k(&self) -> Base2K {
         Base2K(0)
@@ -243,7 +253,7 @@ where
         {
             let mut a_prepared_data = a_prepared.data.reborrow_backend_mut();
             for i in 0..rank {
-                self.svp_prepare(&mut a_prepared_data, i, &a.data, i);
+                self.svp_prepare(&mut a_prepared_data, i, a.data(), i);
             }
         }
         a_prepared.dist = *a.dist();
@@ -251,7 +261,7 @@ where
         let base2k: usize = 17;
 
         let mut a_dft = VecZnxDft::<BE::OwnedBuf, BE>::alloc(self.n(), rank, 1);
-        let a_backend_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(&a.data);
+        let a_backend_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(a.data());
         for i in 0..rank {
             let mut a_dft_backend = a_dft.to_backend_mut();
             self.vec_znx_dft_apply(1, 0, &mut a_dft_backend, i, &a_backend_vec, i);
@@ -264,7 +274,8 @@ where
             data: BE::alloc_bytes(self.vec_znx_big_normalize_tmp_bytes()),
             _phantom: std::marker::PhantomData,
         };
-        let mut res_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut res.data);
+        res.dist = *a.dist();
+        let mut res_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(res.data_mut());
 
         // sk_tensor = sk (x) sk
         // For example: (s0, s1) (x) (s0, s1) = (s0^2, s0s1, s1^2)
@@ -296,7 +307,5 @@ where
                 }
             }
         }
-
-        res.dist = *a.dist();
     }
 }

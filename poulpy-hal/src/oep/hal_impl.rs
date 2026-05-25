@@ -514,6 +514,8 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         a_col: usize,
     );
 
+    fn vec_znx_transpose_backend(module: &Module<BE>, res: &mut VecZnxBackendMut<'_, BE>, a: &VecZnxBackendRef<'_, BE>);
+
     fn vec_znx_copy_range_backend(
         module: &Module<BE>,
         res: &mut VecZnxBackendMut<'_, BE>,
@@ -703,6 +705,17 @@ pub unsafe trait HalVecZnxBigImpl<BE: Backend>: Backend {
         a_col: usize,
     );
 
+    fn vec_znx_big_col_weighted_sum(
+        module: &Module<BE>,
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, BE>,
+        weights: &ScalarZnxBackendRef<'_, BE>,
+        weights_col: usize,
+        cols: usize,
+        coeffs: usize,
+    );
+
     fn vec_znx_scalar_product(
         module: &Module<BE>,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
@@ -857,6 +870,21 @@ pub unsafe trait HalVecZnxDftImpl<BE: Backend>: Backend {
     );
 
     fn vec_znx_dft_zero(module: &Module<BE>, res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>, res_col: usize);
+
+    /// Backend-specific automorphism plan (e.g. a `Fft64AutomorphismPlan`
+    /// for FFT64 backends, a pure-permutation plan for NTT backends).
+    type AutomorphismPlan: Send + Sync;
+
+    fn vec_znx_dft_automorphism_plan(module: &Module<BE>, p: i64) -> Self::AutomorphismPlan;
+
+    fn vec_znx_dft_automorphism_with_plan(
+        module: &Module<BE>,
+        plan: &Self::AutomorphismPlan,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        a: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
+        a_col: usize,
+    );
 }
 
 /// Scalar-vector product family extension point.
@@ -986,6 +1014,65 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend {
     );
 
     fn vmp_zero(module: &Module<BE>, res: &mut crate::layouts::VmpPMatBackendMut<'_, BE>);
+}
+
+/// Packed coefficient-matrix product extension point.
+///
+/// # Safety
+/// Implementations must respect the packed coefficient layout described by
+/// [`crate::api::VecZnxMatMul`], use only the provided scratch region, and
+/// write only the selected result column.
+pub unsafe trait HalVecZnxMatMulImpl<BE: Backend>: Backend {
+    fn vec_znx_matmul_tmp_bytes(
+        module: &Module<BE>,
+        rows_in: usize,
+        rows_out: usize,
+        cols: usize,
+        res_size: usize,
+        u_size: usize,
+        a_size: usize,
+    ) -> usize;
+
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_matmul(
+        module: &Module<BE>,
+        res: &mut crate::layouts::VecZnxBackendMut<'_, BE>,
+        res_col: usize,
+        res_base2k: usize,
+        u: &crate::layouts::VecZnxBackendRef<'_, BE>,
+        u_base2k: usize,
+        u_bound_bits: u32,
+        a: &crate::layouts::VecZnxBackendRef<'_, BE>,
+        a_col: usize,
+        cols: usize,
+        a_base2k: usize,
+        rows_in: usize,
+        rows_out: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+
+    fn coeff_gemm_panel_wp(u_bound_bits: u32) -> (u32, usize);
+
+    fn coeff_gemm_prepare(
+        module: &Module<BE>,
+        panel: &mut crate::layouts::CoeffGemmPanelBackendMut<'_, BE>,
+        u: &crate::layouts::VecZnxBackendRef<'_, BE>,
+    );
+
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_matmul_prepared(
+        module: &Module<BE>,
+        res: &mut crate::layouts::VecZnxBackendMut<'_, BE>,
+        res_col: usize,
+        res_base2k: usize,
+        panel: &crate::layouts::CoeffGemmPanelBackendRef<'_, BE>,
+        u_base2k: usize,
+        a: &crate::layouts::VecZnxBackendRef<'_, BE>,
+        a_col: usize,
+        cols: usize,
+        a_base2k: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
 }
 
 /// Convolution family extension point.

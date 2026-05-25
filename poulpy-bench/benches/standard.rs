@@ -63,6 +63,10 @@ fn std_vec_znx_big_normalize(c: &mut Criterion) {
     poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::hal::vec_znx_big::bench_vec_znx_normalize, &p().hal; c);
 }
 
+fn std_coeff_matmul(c: &mut Criterion) {
+    poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::core::coeff_mat::bench_coeff_matmul, &p().coeff_mat; c);
+}
+
 // ── Layer 2: Core – encryption ───────────────────────────────────────────────
 
 fn std_glwe_encrypt_sk(c: &mut Criterion) {
@@ -209,6 +213,7 @@ criterion_group! {
     std_vec_znx_normalize,
     std_vec_znx_big_add_into,
     std_vec_znx_big_normalize,
+    std_coeff_matmul,
     // Layer 2 – Core,
     std_glwe_encrypt_sk,
     std_ggsw_encrypt_sk,
