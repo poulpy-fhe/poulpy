@@ -35,12 +35,12 @@ where
     let group_name: String = format!("blind_rotate::{label}");
     let mut group = c.benchmark_group(group_name);
 
-    let n_glwe: usize = 2048;
-    let n_lwe: usize = 1160;
-    let rank: usize = 1;
-    let block_size: usize = 8;
-    let extension_factor: usize = 8;
-    let log_message_modulus: usize = 8;
+    let n_glwe: usize = 512;
+    let n_lwe: usize = 687;
+    let rank: usize = 3;
+    let block_size: usize = 3;
+    let extension_factor: usize = 1;
+    let log_message_modulus: usize = 2;
     let message_modulus: usize = 1 << log_message_modulus;
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 24);
