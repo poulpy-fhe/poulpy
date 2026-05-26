@@ -1,13 +1,11 @@
 //! Polynomial convolution AVX2 kernels for [`NTT120Avx`](crate::NTT120Avx).
 //!
 //! Reuses the block-outer pack-then-multiply structure from the generic NTT120
-//! implementation, but commits overwrite-mode results with non-temporal stores
-//! so convolution output lines do not evict the packed operand rows from cache.
+//! implementation.
 
 use std::mem::size_of;
 
 use bytemuck::{cast_slice, cast_slice_mut};
-use core::arch::x86_64::_mm_sfence;
 
 use poulpy_cpu_ref::reference::ntt120::{mat_vec::BbcMeta, primes::Primes30, types::Q120bScalar, vec_znx_dft::NttModuleHandle};
 use poulpy_hal::layouts::{CnvPVecLBackendRef, CnvPVecRBackendRef, Module, VecZnxDftBackendMut, ZnxView, ZnxViewMut};
@@ -95,7 +93,7 @@ pub(crate) unsafe fn cnv_apply_dft_avx(
 
             let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(res_col, k));
             unsafe {
-                vec_mat1col_product_x2_bbc_avx2::<true>(
+                vec_mat1col_product_x2_bbc_avx2(
                     meta,
                     ell,
                     &mut res_u64[8 * blk..8 * blk + 8],
@@ -109,7 +107,6 @@ pub(crate) unsafe fn cnv_apply_dft_avx(
     for j in min_size..res_size {
         res.at_mut(res_col, j).fill(Q120bScalar([0; 4]));
     }
-    _mm_sfence();
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -194,7 +191,7 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft_avx(
 
             let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(res_col, k));
             unsafe {
-                vec_mat1col_product_x2_bbc_avx2::<true>(
+                vec_mat1col_product_x2_bbc_avx2(
                     meta,
                     ell,
                     &mut res_u64[8 * blk..8 * blk + 8],
@@ -208,5 +205,4 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft_avx(
     for j in min_size..res_size {
         res.at_mut(res_col, j).fill(Q120bScalar([0; 4]));
     }
-    _mm_sfence();
 }

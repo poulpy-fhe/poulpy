@@ -365,7 +365,7 @@ impl NttMulBbc1ColX2 for NTT120Avx {
     #[inline(always)]
     fn ntt_mul_bbc_1col_x2(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
         // SAFETY: NTT120Avx::new() verifies AVX2 availability at construction time.
-        unsafe { vec_mat1col_product_x2_bbc_avx2::<false>(meta, ell, res, a, b) }
+        unsafe { vec_mat1col_product_x2_bbc_avx2(meta, ell, res, a, b) }
     }
 }
 
