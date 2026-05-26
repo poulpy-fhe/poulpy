@@ -7,7 +7,7 @@
 use std::mem::size_of;
 
 use bytemuck::{cast_slice, cast_slice_mut};
-use core::arch::x86_64::{__m256i, _mm_sfence, _mm256_loadu_si256, _mm256_set_epi64x, _mm256_storeu_si256, _mm256_stream_si256};
+use core::arch::x86_64::{__m256i, _mm256_loadu_si256, _mm256_set_epi64x, _mm256_storeu_si256};
 
 use poulpy_cpu_ref::reference::ntt120::{
     NttCFromB, NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, types::Q_SHIFTED, vec_znx_dft::NttModuleHandle,
@@ -142,20 +142,16 @@ unsafe fn extract_blk_pair_prime_major_avx2(n: usize, row_max: usize, blk_pair: 
     }
 }
 
-/// Non-temporal write of one x2-block (8 u64) into a q120b vector.
-///
-/// `VecZnxDft` storage is 64-byte aligned, and every x2-block offset is a
-/// multiple of 64 bytes, so both 256-bit stream stores land on aligned cache
-/// line halves.
+/// Overwrite one x2-block (8 u64) of a q120b vector.
 #[target_feature(enable = "avx2")]
-unsafe fn save_blk_overwrite_nt(_n: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
+unsafe fn save_blk_overwrite(_n: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
     debug_assert!(src.len() >= 8);
     let off = 8 * blk;
     let dst_ptr = unsafe { dst.as_mut_ptr().add(off) as *mut __m256i };
     let src_ptr = src.as_ptr() as *const __m256i;
     unsafe {
-        _mm256_stream_si256(dst_ptr, _mm256_loadu_si256(src_ptr));
-        _mm256_stream_si256(dst_ptr.add(1), _mm256_loadu_si256(src_ptr.add(1)));
+        _mm256_storeu_si256(dst_ptr, _mm256_loadu_si256(src_ptr));
+        _mm256_storeu_si256(dst_ptr.add(1), _mm256_loadu_si256(src_ptr.add(1)));
     }
 }
 
@@ -221,8 +217,8 @@ unsafe fn vmp_apply_core_avx_pm<const OVERWRITE: bool>(
             let blk1 = blk0 + 1;
             let base = col_res * 4 * n;
             if OVERWRITE {
-                unsafe { save_blk_overwrite_nt(n, blk0, &mut res_u64[base..], &blkpair_output[0..8]) };
-                unsafe { save_blk_overwrite_nt(n, blk1, &mut res_u64[base..], &blkpair_output[8..16]) };
+                unsafe { save_blk_overwrite(n, blk0, &mut res_u64[base..], &blkpair_output[0..8]) };
+                unsafe { save_blk_overwrite(n, blk1, &mut res_u64[base..], &blkpair_output[8..16]) };
             } else {
                 save_blk_add(n, blk0, &mut res_u64[base..], &blkpair_output[0..8]);
                 save_blk_add(n, blk1, &mut res_u64[base..], &blkpair_output[8..16]);
@@ -235,7 +231,6 @@ unsafe fn vmp_apply_core_avx_pm<const OVERWRITE: bool>(
         for col in active_cols..res_size {
             res_u64[col * 4 * n..(col + 1) * 4 * n].fill(0);
         }
-        _mm_sfence();
     }
 }
 

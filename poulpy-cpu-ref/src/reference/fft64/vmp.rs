@@ -193,16 +193,23 @@ pub fn vmp_apply_dft_to_dft<BE>(
     let a_raw = a.raw();
     let res_raw = res.raw_mut();
 
-    vmp_apply_dft_to_dft_core::<true, BE>(
-        n,
-        res_raw,
-        a_raw,
-        pmat_raw,
-        limb_offset * pmat.cols_out(),
-        nrows,
-        ncols,
-        tmp_bytes,
-    )
+    // Split out the hot zero-offset path so LLVM sees a literal `0` instead of
+    // the runtime expression `limb_offset * pmat.cols_out()`. Blind rotation
+    // always calls this with `limb_offset == 0`.
+    if limb_offset == 0 {
+        vmp_apply_dft_to_dft_core::<true, BE>(n, res_raw, a_raw, pmat_raw, 0, nrows, ncols, tmp_bytes)
+    } else {
+        vmp_apply_dft_to_dft_core::<true, BE>(
+            n,
+            res_raw,
+            a_raw,
+            pmat_raw,
+            limb_offset * pmat.cols_out(),
+            nrows,
+            ncols,
+            tmp_bytes,
+        )
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
