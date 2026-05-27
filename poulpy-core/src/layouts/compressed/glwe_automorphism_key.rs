@@ -170,6 +170,12 @@ impl<D: HostDataMut> GGLWECompressedSeedMut for GLWEAutomorphismKeyCompressed<D>
     }
 }
 
+impl<D: HostDataRef> crate::layouts::GGLWECompressedSeed for GLWEAutomorphismKeyCompressed<D> {
+    fn seed(&self) -> &Vec<[u8; 32]> {
+        &self.key.seed
+    }
+}
+
 impl<D: HostDataMut> SetGaloisElement for GLWEAutomorphismKeyCompressed<D> {
     fn set_p(&mut self, p: i64) {
         self.p = p

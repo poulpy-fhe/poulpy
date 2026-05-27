@@ -151,14 +151,14 @@ where
                         self.vec_znx_normalize_assign_backend(base2k, &mut tmp_pt_backend.data, 0, scratch)
                     });
 
-                    let (seed, mut source_xa_tmp) = source_xa.branch();
+                    let (seed, _) = source_xa.branch();
                     seeds[row_i * rank_in + col_j] = seed;
 
                     let tmp_pt_backend = tmp_pt.to_backend_ref();
                     let base2k = res.base2k().into();
                     let scratch_full = scratch_1.borrow();
                     let (mut full_ct, mut scratch_2) = scratch_full.take_glwe_scratch(&res);
-                    self.fill_glwe_mask_from_source_default(base2k, &mut full_ct, 1, rank_out, &mut source_xa_tmp);
+                    self.fill_glwe_mask_from_seed_default(base2k, &mut full_ct, 1, rank_out, seed);
                     self.glwe_encrypt_sk_internal(
                         base2k,
                         &mut full_ct.data,

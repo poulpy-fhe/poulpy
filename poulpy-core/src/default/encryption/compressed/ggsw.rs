@@ -127,7 +127,7 @@ where
                 for col_j in 0..rank + 1 {
                     // GLWE encrypt of vec_znx_pt into vec_znx_ct
 
-                    let (seed, mut source_xa_tmp) = source.branch();
+                    let (seed, _) = source.branch();
 
                     seeds[row_i * cols + col_j] = seed;
 
@@ -135,7 +135,7 @@ where
                     let base2k = res.base2k().into();
                     let scratch_full = scratch_1.borrow();
                     let (mut full_ct, mut scratch_2) = scratch_full.take_glwe_scratch(&res);
-                    self.fill_glwe_mask_from_source_default(base2k, &mut full_ct, 1, rank, &mut source_xa_tmp);
+                    self.fill_glwe_mask_from_seed_default(base2k, &mut full_ct, 1, rank, seed);
                     self.glwe_encrypt_sk_internal(
                         base2k,
                         &mut full_ct.data,
