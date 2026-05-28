@@ -1,9 +1,11 @@
 //! NEON-accelerated NTT120 CPU backend (Q120 NTT, CRT over four ~30-bit primes).
 
+#[cfg(target_arch = "aarch64")]
 pub(crate) mod convolution;
 mod module;
 mod prim;
 mod vec_znx_big;
+#[cfg(target_arch = "aarch64")]
 pub(crate) mod vmp;
 mod znx;
 

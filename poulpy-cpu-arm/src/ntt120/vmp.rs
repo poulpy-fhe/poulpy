@@ -120,6 +120,7 @@ fn extract_blk_pair_prime_major_neon(n: usize, row_max: usize, blk_pair: usize, 
 fn save_blk_overwrite(_n: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
     debug_assert!(src.len() >= 8);
     let off = 8 * blk;
+    #[cfg(target_arch = "aarch64")]
     unsafe {
         let dst_ptr = dst.as_mut_ptr().add(off);
         let src_ptr = src.as_ptr();
@@ -136,6 +137,10 @@ fn save_blk_overwrite(_n: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
             v3 = out(vreg) _,
             options(nostack, preserves_flags),
         );
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        dst[off..off + 8].copy_from_slice(&src[..8]);
     }
 }
 

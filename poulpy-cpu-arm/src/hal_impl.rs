@@ -1,3 +1,4 @@
+#[allow(unused_imports)]
 use std::mem::size_of;
 
 use crate::{FFT64Neon, NTT120Neon};
@@ -6,6 +7,7 @@ use poulpy_cpu_ref::hal_defaults::{
     HalVecZnxDefault, NTT120ConvolutionDefault, NTT120ModuleDefault, NTT120SvpDefault, NTT120VecZnxBigDefault,
     NTT120VecZnxDftDefault, NTT120VmpDefault,
 };
+#[allow(unused_imports)]
 use poulpy_hal::{
     api::{HostBufMut, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
     layouts::{
@@ -15,6 +17,7 @@ use poulpy_hal::{
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
+#[cfg(target_arch = "aarch64")]
 #[inline]
 fn take_host_typed<'a, BE, T>(arena: ScratchArena<'a, BE>, len: usize) -> (&'a mut [T], ScratchArena<'a, BE>)
 where
@@ -65,6 +68,7 @@ unsafe impl HalModuleImpl<NTT120Neon> for NTT120Neon {
     poulpy_cpu_ref::hal_impl_module!(NTT120ModuleDefault);
 }
 
+#[cfg(target_arch = "aarch64")]
 unsafe impl HalVmpImpl<NTT120Neon> for NTT120Neon {
     fn vmp_apply_dft_tmp_bytes(
         module: &Module<Self>,
@@ -181,6 +185,12 @@ unsafe impl HalVmpImpl<NTT120Neon> for NTT120Neon {
     }
 }
 
+#[cfg(not(target_arch = "aarch64"))]
+unsafe impl HalVmpImpl<NTT120Neon> for NTT120Neon {
+    poulpy_cpu_ref::hal_impl_vmp!(NTT120VmpDefault);
+}
+
+#[cfg(target_arch = "aarch64")]
 unsafe impl HalConvolutionImpl<NTT120Neon> for NTT120Neon {
     fn cnv_prepare_left_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
         <Self as NTT120ConvolutionDefault<Self>>::cnv_prepare_left_tmp_bytes_default(module, res_size, a_size)
@@ -321,6 +331,11 @@ unsafe impl HalConvolutionImpl<NTT120Neon> for NTT120Neon {
         let mut scratch = scratch.borrow();
         <Self as NTT120ConvolutionDefault<Self>>::cnv_prepare_self_default(module, left, right, a, mask, &mut scratch);
     }
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+unsafe impl HalConvolutionImpl<NTT120Neon> for NTT120Neon {
+    poulpy_cpu_ref::hal_impl_convolution!(NTT120ConvolutionDefault);
 }
 
 unsafe impl HalVecZnxBigImpl<NTT120Neon> for NTT120Neon {
