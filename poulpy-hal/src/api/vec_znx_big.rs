@@ -235,6 +235,23 @@ pub trait VecZnxBigColWeightedSum<B: Backend> {
     );
 }
 
+/// Computes a coefficient-wise linear combination of [`VecZnx`](crate::layouts::VecZnx)
+/// columns with scalar weights:
+/// `res[res_col][k] = sum_{j < cols} a[j][k] * weights[weights_col][j]`.
+#[allow(clippy::too_many_arguments)]
+pub trait VecZnxBigColWeightedSum<B: Backend> {
+    fn vec_znx_big_col_weighted_sum<'r, 'a, 'b>(
+        &self,
+        res: &mut VecZnxBigBackendMut<'r, B>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'a, B>,
+        weights: &ScalarZnxBackendRef<'b, B>,
+        weights_col: usize,
+        cols: usize,
+        coeffs: usize,
+    );
+}
+
 /// Computes the element-wise (Hadamard) product `res[k] = a[k] * b[k]` for all `k`
 /// and stores each product as a [`ScalarBig`](Backend::ScalarBig) value in `res`.
 /// Use [`VecZnxBigInnerSumBackend`] afterwards to reduce to a single scalar.
