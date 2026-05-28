@@ -1,6 +1,4 @@
 //! `Znx*` trait impls for [`NTT120Neon`](super::NTT120Neon).
-//!
-//! Mirrors [`crate::fft64::znx`]: same kernels, different backend marker.
 
 use poulpy_cpu_ref::reference::znx::{
     ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo, ZnxMulPowerOfTwo,

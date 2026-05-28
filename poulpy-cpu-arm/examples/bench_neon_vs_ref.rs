@@ -1,22 +1,11 @@
-//! Single-command sanity + perf check for `poulpy-cpu-arm` vs `poulpy-cpu-ref`.
-//!
-//! TEMPORARY — fold into proper `poulpy-bench` criterion benches once the
-//! NEON backend is validated on Apple Silicon / Neoverse.
+//! Sanity + perf check for `poulpy-cpu-arm` vs `poulpy-cpu-ref`.
 //!
 //! Usage (native AArch64):
 //!
 //!   cargo run --release --example bench_neon_vs_ref --features enable-neon
 //!
-//! Output:
-//!   - stdout (live progress)
-//!   - file `bench_neon_vs_ref.txt` in the current working directory
-//!     (overwritten on each run). Override the path with the
-//!     `POULPY_ARM_BENCH_OUT` environment variable.
-//!
-//! Each kernel is run once for correctness (NEON output vs `_ref` output,
-//! bit-exact for integer kernels, ULP-tolerant for f64). On mismatch the
-//! script panics with a diff. After the correctness gate it times both
-//! variants and prints a speedup table.
+//! Writes results to `bench_neon_vs_ref.txt` (override via `POULPY_ARM_BENCH_OUT`).
+//! Each kernel runs once for correctness, then is timed and printed in a speedup table.
 
 #[cfg(not(all(feature = "enable-neon", target_arch = "aarch64")))]
 fn main() {

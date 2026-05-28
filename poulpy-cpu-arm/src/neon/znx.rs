@@ -1,17 +1,6 @@
 //! NEON i64 kernels for `Znx*` ring-element arithmetic.
 //!
-//! Mirrors `poulpy-cpu-avx/src/znx_avx/{add,sub,neg}.rs`. NEON is 128-bit so
-//! each kernel processes two `int64x2_t` registers per iteration (4 i64 per
-//! block), preserving the AVX backend's `n >> 2` block stride for side-by-side
-//! review. The remainder `n % 4` is delegated to the portable reference
-//! functions.
-//!
-//! Aliasing: `_assign` variants tolerate `res == a` (each loop iteration
-//! reads its registers before storing them back). All other variants assume
-//! disjoint slices, matching the reference contract.
-//!
-//! Wired into `crate::fft64::znx` and `crate::ntt120::znx` under
-//! `#[cfg(target_arch = "aarch64")]`.
+//! `_assign` variants tolerate `res == a`; other variants assume disjoint slices.
 
 use core::arch::aarch64::{
     int64x2_t, vaddq_s64, vandq_s64, vcgtq_s64, vdupq_n_s64, veorq_s64, vgetq_lane_s64, vld1q_s64, vnegq_s64,
@@ -25,7 +14,6 @@ use poulpy_cpu_ref::reference::znx::{
 };
 
 /// `res[i] = a[i].wrapping_add(b[i])` for all `i`.
-///
 /// All slices must have the same length. Aliasing across slices is undefined.
 pub(crate) fn znx_add_neon(res: &mut [i64], a: &[i64], b: &[i64]) {
     debug_assert_eq!(res.len(), a.len());
@@ -362,7 +350,6 @@ pub(crate) fn znx_switch_ring_neon(res: &mut [i64], a: &[i64]) {
 }
 
 /// Arithmetic right shift with rounding bias: `(x + bias) >> kp`, `bias = (1<<(kp-1)) - (x>>63)`.
-///
 /// kp in `[1, 63]`; `cnt_right = vdupq_n_s64(-kp)`.
 #[inline(always)]
 unsafe fn rshift_round_neon(x: int64x2_t, bias_base: int64x2_t, cnt_right: int64x2_t) -> int64x2_t {

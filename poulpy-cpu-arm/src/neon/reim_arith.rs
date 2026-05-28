@@ -1,19 +1,7 @@
 //! NEON pointwise REIM arithmetic for the FFT64 backend.
 //!
-//! Mirrors `poulpy-cpu-avx/src/fft64/reim/fft_vec_avx2_fma.rs`. AVX uses 4×f64
-//! per `__m256d`; NEON has 2×f64 per `float64x2_t`, so each block processes
-//! two NEON registers (4 f64 total) to keep the AVX `n >> 2` block stride
-//! and the same scalar tail for `len % 4 != 0`.
-//!
 //! Layout: a complex vector of length `2m` is stored as `[re_0..re_{m-1},
-//! im_0..im_{m-1}]` (split, not interleaved). Multiply / addmul iterate
-//! `m / 4` times, processing 4 complex points per iteration.
-//!
-//! NEON FMA semantics differ from AVX:
-//! - `vfmaq_f64(c, a, b) = c + a*b`  (matches `_mm256_fmadd_pd(a, b, c)`)
-//! - `vfmsq_f64(c, a, b) = c - a*b`  (AVX `_mm256_fmsub_pd(a, b, c) = a*b - c`!)
-//!
-//! Tail of `n % 4` falls back to the portable reference functions.
+//! im_0..im_{m-1}]` (split, not interleaved).
 
 use core::arch::aarch64::{
     float64x2_t, int64x2_t, vaddq_f64, vaddq_s64, vandq_s64, vandq_u64, vdupq_n_f64, vdupq_n_s64, vdupq_n_u64, veorq_s64,
@@ -30,7 +18,6 @@ use poulpy_cpu_ref::reference::fft64::reim::{
 };
 
 /// `res[i] = a[i] + b[i]` for all `i`.
-///
 /// Kept for the unit test below; the `FFT64Neon` `ReimArith::reim_add` impl
 /// routes to the autovec reference because the hand-NEON loop is memory
 /// bandwidth bound at large `n` and the autovec wins.
@@ -61,7 +48,6 @@ pub(crate) fn reim_add_neon(res: &mut [f64], a: &[f64], b: &[f64]) {
 }
 
 /// `res[i] = res[i] + a[i]` for all `i`.
-///
 /// See `reim_add_neon`: kept for tests, dispatched to the ref by `FFT64Neon`.
 #[allow(dead_code)]
 pub(crate) fn reim_add_assign_neon(res: &mut [f64], a: &[f64]) {
@@ -203,7 +189,6 @@ pub(crate) fn reim_negate_assign_neon(res: &mut [f64]) {
 
 /// Complex multiply: `res = a * b` over `m` complex points (split layout).
 /// `(ar + i·ai) * (br + i·bi) = (ar·br − ai·bi) + i·(ar·bi + ai·br)`.
-/// Mirrors `reim_mul_avx2_fma` at `fft_vec_avx2_fma.rs:266`.
 pub(crate) fn reim_mul_neon(res: &mut [f64], a: &[f64], b: &[f64]) {
     debug_assert_eq!(res.len(), a.len());
     debug_assert_eq!(res.len(), b.len());
@@ -378,12 +363,6 @@ pub(crate) fn reim_addmul_neon(res: &mut [f64], a: &[f64], b: &[f64]) {
 }
 
 /// `i64 → f64` exact conversion for `|a[i]| < 2^50` via IEEE 754 bit trick.
-/// Mirrors `reim_from_znx_i64_bnd50_fma` at `conversion.rs:61`.
-///
-/// The algorithm is:
-/// 1. Add `2^51` to each i64 (shifts to non-negative).
-/// 2. Reinterpret as f64 and bitwise-OR with the exponent of `2^52`.
-/// 3. Subtract `3 * 2^51` to recover the signed value.
 ///
 /// Caller must ensure `|a[i]| <= 2^50 - 1`; debug builds assert.
 pub(crate) fn reim_from_znx_i64_bnd50_neon(res: &mut [f64], a: &[i64]) {
@@ -486,7 +465,6 @@ pub(crate) fn reim_from_znx_i64_masked_bnd50_neon(res: &mut [f64], a: &[i64], ma
 /// IEEE 754 exponent-diff bit manipulation. Mirrors the inner block of
 /// `reim_to_znx_i64_bnd63_avx2_fma` at `conversion.rs:223`. Caller supplies
 /// the broadcast constants to avoid recomputation in the hot loop.
-///
 /// Bound: caller guarantees `|a / divisor| < 2^62` (output fits in i64).
 #[inline(always)]
 unsafe fn reim_to_znx_chunk(
@@ -534,7 +512,7 @@ unsafe fn reim_to_znx_chunk(
 }
 
 /// `f64 → i64` conversion with rounding-divide by `divisor`. Bound: output
-/// must fit in i64. Mirrors `reim_to_znx_i64_bnd63_avx2_fma` at `conversion.rs:191`.
+/// must fit in i64.
 pub(crate) fn reim_to_znx_i64_bnd63_neon(res: &mut [i64], divisor: f64, a: &[f64]) {
     debug_assert_eq!(res.len(), a.len());
     let n = res.len();
@@ -590,7 +568,6 @@ pub(crate) fn reim_to_znx_i64_bnd63_neon(res: &mut [i64], divisor: f64, a: &[f64
 }
 
 /// In-place variant: read `f64`, write `i64` (reinterpreted) into the same buffer.
-/// Mirrors `reim_to_znx_i64_assign_bnd63_avx2_fma` at `conversion.rs:273`.
 pub(crate) fn reim_to_znx_i64_assign_bnd63_neon(res: &mut [f64], divisor: f64) {
     let n = res.len();
     let span = n >> 2;

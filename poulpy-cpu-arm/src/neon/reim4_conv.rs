@@ -1,18 +1,8 @@
 //! NEON kernels for the FFT64 `Reim4Convolution` family.
-//!
-//! Mirrors the convolution kernels in
-//! `poulpy-cpu-avx/src/fft64/reim4/arithmetic_avx.rs:295-647`. Each AVX
-//! `__m256d` (4 × f64) is two NEON `float64x2_t` registers; one block iter
-//! processes 4 f64 (8 doubles per complex coeff = 2 NEON pairs).
-//!
-//! Sign convention: AVX uses `_mm256_fnmadd_pd(a, b, c) = c - a*b` for the
-//! `-ai*bi` term in complex multiplication. NEON's matching intrinsic is
-//! `vfmsq_f64(c, a, b) = c - a*b` — same sign as `fnmadd`.
 
 use core::arch::aarch64::{vaddq_f64, vdupq_n_f64, vfmaq_f64, vfmsq_f64, vld1q_f64, vst1q_f64};
 
 /// `dst = Σ_j a[k-j] * b[j]` (complex × complex), one output coefficient.
-/// Mirrors `reim4_convolution_1coeff_avx` at `arithmetic_avx.rs:295`.
 pub(crate) fn reim4_convolution_1coeff_neon(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
     if k >= a_size + b_size {
         for v in dst.iter_mut() {
@@ -59,7 +49,6 @@ pub(crate) fn reim4_convolution_1coeff_neon(k: usize, dst: &mut [f64; 8], a: &[f
 }
 
 /// Two-coefficient complex × complex convolution.
-/// Mirrors `reim4_convolution_2coeffs_avx` at `arithmetic_avx.rs:349`.
 pub(crate) fn reim4_convolution_2coeffs_neon(k: usize, dst: &mut [f64; 16], a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
     debug_assert!(a.len() >= 8 * a_size);
     debug_assert!(b.len() >= 8 * b_size);
@@ -214,7 +203,6 @@ pub(crate) fn reim4_convolution_2coeffs_neon(k: usize, dst: &mut [f64; 16], a: &
 }
 
 /// Single-coefficient complex × real-scalar convolution.
-/// Mirrors `reim4_convolution_by_real_const_1coeff_avx` at `arithmetic_avx.rs:481`.
 pub(crate) fn reim4_convolution_by_real_const_1coeff_neon(k: usize, dst: &mut [f64; 8], a: &[f64], a_size: usize, b: &[f64]) {
     let b_size = b.len();
     if k >= a_size + b_size {
@@ -253,7 +241,6 @@ pub(crate) fn reim4_convolution_by_real_const_1coeff_neon(k: usize, dst: &mut [f
 }
 
 /// Two-coefficient complex × real-scalar convolution.
-/// Mirrors `reim4_convolution_by_real_const_2coeffs_avx` at `arithmetic_avx.rs:532`.
 pub(crate) fn reim4_convolution_by_real_const_2coeffs_neon(k: usize, dst: &mut [f64; 16], a: &[f64], a_size: usize, b: &[f64]) {
     let b_size = b.len();
     debug_assert!(a.len() >= 8 * a_size);

@@ -1,8 +1,4 @@
 //! Backend handle and module initialisation for [`NTT120Neon`](super::NTT120Neon).
-//!
-//! On AArch64, NEON/ASIMD is part of the architectural baseline, so no runtime
-//! CPU feature detection is needed and the [`NttHandleFactory`]'s
-//! `assert_ntt_runtime_support` is left at its default (no-op) implementation.
 
 use std::ptr::NonNull;
 
@@ -21,7 +17,6 @@ use poulpy_hal::{
 use super::NTT120Neon;
 
 /// Opaque handle for the [`NTT120Neon`](super::NTT120Neon) backend.
-///
 /// Holds precomputed twiddle-factor tables for the forward NTT and inverse NTT
 /// of size `n`, and the lazy-accumulation metadata for `q120b × q120c` and
 /// `q120b × q120b` products.
@@ -125,9 +120,7 @@ impl Backend for NTT120Neon {
 }
 
 /// # Safety
-///
 /// The returned handle must be fully initialized for `n`.
-///
 /// NEON/ASIMD is part of the AArch64 baseline; the runtime check is a no-op.
 unsafe impl NttHandleFactory for NTT120NeonHandle {
     fn create_ntt_handle(n: usize) -> Self {
@@ -141,7 +134,6 @@ unsafe impl NttHandleFactory for NTT120NeonHandle {
 }
 
 /// # Safety
-///
 /// The returned references are valid for the lifetime of `&self`.
 unsafe impl NttHandleProvider for NTT120NeonHandle {
     fn get_ntt_table(&self) -> &NttTable<Primes30> {

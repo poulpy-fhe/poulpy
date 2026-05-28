@@ -1,14 +1,4 @@
 //! NEON kernels for `vec_znx_big_normalize`'s i128 carry-propagation.
-//!
-//! Mirrors the AVX2 kernels in
-//! `poulpy-cpu-avx/src/ntt120/vec_znx_big_avx.rs` (`nfc_middle_chunk`,
-//! `nfc_final_chunk`, `nfc_middle_step_avx2`, …). Each NEON chunk processes
-//! two i128 coefficients via a deinterleaved `(lo, hi)` split: a pair of
-//! `int64x2_t` registers per i128. The tail (`n % 2 != 0` or `base2k > 64`)
-//! falls back to the scalar reference defaults from
-//! `poulpy_cpu_ref::reference::ntt120::I128NormalizeOps`.
-//!
-//! Algorithm correctness mirrors the AVX kernel exactly; review side-by-side.
 
 use core::arch::aarch64::{
     int64x2_t, vaddq_s64, vaddq_u64, vcgtq_u64, vdupq_n_s64, vld1q_s64, vorrq_u64, vreinterpretq_s64_u64, vreinterpretq_u64_s64,
@@ -18,7 +8,6 @@ use poulpy_cpu_ref::NTT120Ref;
 use poulpy_cpu_ref::reference::ntt120::{I128NormalizeOps, vec_znx_big::AssignOp};
 
 /// Precomputed shift-count broadcast vectors used by every chunk.
-///
 /// Variable shifts on AArch64 use `vshlq_{s,u}64(value, count)` where each
 /// lane in `count` is the per-lane shift amount: positive = left, negative
 /// = right (arithmetic for `s64`, logical for `u64`).
@@ -65,8 +54,6 @@ impl NfcShifts {
     }
 }
 
-// ─── deinterleaved load/store helpers (2 × i128 per call) ────────────────────
-
 #[inline(always)]
 unsafe fn load2_split_i128(p: *const i128) -> (int64x2_t, int64x2_t) {
     unsafe {
@@ -105,10 +92,7 @@ unsafe fn store2_i64(r_ptr: *mut i64, lo: int64x2_t) {
     unsafe { vst1q_s64(r_ptr, lo) }
 }
 
-// ─── shared per-chunk helpers ────────────────────────────────────────────────
-
 /// Shared body of `nfc_middle_step` for one 2-lane chunk.
-///
 /// Mirrors `nfc_middle_chunk` in the AVX file: input is a deinterleaved
 /// `(lo_a, hi_a)` and previous carry `(lo_c, hi_c)`; output is `(lo_out,
 /// new_lo_c, new_hi_c)`. The math is identical to AVX line-for-line — see
@@ -181,7 +165,6 @@ unsafe fn nfc_middle_chunk(
 }
 
 /// Shared body of `nfc_final_step_assign` for one 2-lane chunk.
-///
 /// Mirrors `nfc_final_chunk` in the AVX file: input is i64 `lo_a`
 /// (sign-extended i128 input) and the low half of i128 carry `lo_c`. Returns
 /// `lo_out` such that `*r = lo_out`. `hi_dpc` is never needed because
@@ -198,10 +181,7 @@ unsafe fn nfc_final_chunk(s: &NfcShifts, lo_a: int64x2_t, lo_c: int64x2_t) -> in
     }
 }
 
-// ─── public NEON kernels ─────────────────────────────────────────────────────
-
 /// `nfc_middle_step` — i128 input + i128 carry → i64 output.
-///
 /// Falls back to the scalar reference default for `n % 2 != 0` or
 /// `base2k > 64`. Caller must satisfy `lsh < base2k`.
 pub(crate) fn nfc_middle_step_neon(base2k: usize, lsh: usize, res: &mut [i64], a: &[i128], carry: &mut [i128]) {

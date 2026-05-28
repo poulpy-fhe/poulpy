@@ -1,10 +1,4 @@
-//! NEON kernels for the FFT64 `I64Ops` family (i64 block move + convolution
-//! by-constant). Mirrors `poulpy-cpu-avx/src/fft64/convolution.rs`.
-//!
-//! AVX uses `__m256i` (4 × i64) and `_mm256_mul_epi32` (low-32 signed mul).
-//! NEON has `int64x2_t` (2 × i64) and `vmull_s32` (signed 32×32→64 widening
-//! multiply on the low halves of `int32x2_t`). To process 4 i64 lanes per
-//! "block" we run two NEON registers per iteration.
+//! NEON kernels for the FFT64 `I64Ops` family (i64 block move + convolution by-constant).
 
 use core::arch::aarch64::{
     int64x2_t, vaddq_s64, vdupq_n_s32, vdupq_n_s64, vget_low_s32, vld1q_s64, vmovn_s64, vmull_s32, vst1q_s64,
@@ -17,8 +11,6 @@ unsafe fn low32_s(v: int64x2_t) -> core::arch::aarch64::int32x2_t {
 }
 
 /// `dst[k0] = Σ_j a[(k-j) * 8 .. + 8] * b[j]` for one output coefficient `k`.
-/// Mirrors `i64_convolution_by_const_1coeff_avx` at `convolution.rs:7`.
-///
 /// Caller must guarantee `|a[i]|, |b[j]| < 2^31` (so i32×i32→i64 is exact).
 pub(crate) fn i64_convolution_by_const_1coeff_neon(k: usize, dst: &mut [i64; 8], a: &[i64], a_size: usize, b: &[i64]) {
     dst.fill(0);
@@ -58,7 +50,6 @@ pub(crate) fn i64_convolution_by_const_1coeff_neon(k: usize, dst: &mut [i64; 8],
 }
 
 /// `dst[k0..k0+2] = Σ_j a[…] * b[j]` for two consecutive output coefficients.
-/// Mirrors `i64_convolution_by_real_const_2coeffs_avx` at `convolution.rs:63`.
 pub(crate) fn i64_convolution_by_const_2coeffs_neon(k: usize, dst: &mut [i64; 16], a: &[i64], a_size: usize, b: &[i64]) {
     let b_size = b.len();
     debug_assert!(a.len() >= 8 * a_size);
@@ -165,14 +156,12 @@ pub(crate) fn i64_convolution_by_const_2coeffs_neon(k: usize, dst: &mut [i64; 16
 }
 
 /// Pure 8-i64 block copy from a contiguous reim-style i64 layout.
-/// Mirrors `i64_extract_1blk_contiguous_avx` at `convolution.rs:194`.
 pub(crate) fn i64_extract_1blk_contiguous_neon(n: usize, offset: usize, rows: usize, blk: usize, dst: &mut [i64], src: &[i64]) {
     unsafe {
         let mut src_ptr = src.as_ptr().add(offset + (blk << 3));
         let mut dst_ptr = dst.as_mut_ptr();
         let step = n;
         for _ in 0..rows {
-            // 8 i64 = 4 NEON registers per row.
             let v0 = vld1q_s64(src_ptr);
             let v1 = vld1q_s64(src_ptr.add(2));
             let v2 = vld1q_s64(src_ptr.add(4));
@@ -188,7 +177,6 @@ pub(crate) fn i64_extract_1blk_contiguous_neon(n: usize, offset: usize, rows: us
 }
 
 /// Pure 8-i64 block copy back into a contiguous reim-style i64 layout.
-/// Mirrors `i64_save_1blk_contiguous_avx` at `convolution.rs:218`.
 pub(crate) fn i64_save_1blk_contiguous_neon(n: usize, offset: usize, rows: usize, blk: usize, dst: &mut [i64], src: &[i64]) {
     unsafe {
         let mut src_ptr = src.as_ptr();

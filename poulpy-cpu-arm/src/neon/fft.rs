@@ -1,31 +1,13 @@
 //! NEON `f64` FFT/IFFT butterfly kernels for [`FFT64Neon`].
 //!
-//! Direct port of `poulpy-cpu-avx/src/fft64/reim/{fft,ifft}_avx2_fma.rs`.
-//! Each AVX `__m256d` (4×f64) becomes two `float64x2_t` registers (`_lo`/`_hi`),
-//! and each AVX iteration (which advances the `f64` pointer by 4) becomes one
-//! NEON iteration that processes both halves explicitly and advances the
-//! pointer by 4 in `f64` units.
-//!
-//! NEON FMA semantics differ from AVX:
-//! - `vfmaq_f64(c, a, b) = c + a*b`  (matches `_mm256_fmadd_pd(a, b, c)`)
-//! - `vfmsq_f64(c, a, b) = c − a*b`  (matches `_mm256_fnmadd_pd(a, b, c)`)
-//! - To compute `a*b − c` (AVX `_mm256_fmsub_pd`) we restructure as
-//!   `vfmsq_f64(vmulq_f64(a, b), x, y)` to materialise `a*b − x*y` directly,
-//!   avoiding the extra `vnegq_f64`.
-//!
-//! Sizes `m < 16` delegate to the scalar reference [`fft_ref`] /
-//! [`ifft_ref`]. `m == 16` and the BFS leaves use the NEON-intrinsic
-//! [`fft16_neon`] / [`ifft16_neon`], a 4-stage radix-2 port of
-//! `fft16_ref` / `ifft16_ref`. An optional hand-written assembly
-//! follow-up is gated on a real-AArch64 bench delta.
+//! Sizes `m < 16` delegate to [`fft_ref`] / [`ifft_ref`]; `m == 16` and BFS leaves
+//! use the NEON-intrinsic [`fft16_neon`] / [`ifft16_neon`].
 
 use core::arch::aarch64::{
     float64x2_t, vaddq_f64, vdupq_n_f64, vfmaq_f64, vfmsq_f64, vld1q_f64, vmulq_f64, vst1q_f64, vsubq_f64, vzip1q_f64, vzip2q_f64,
 };
 
 use poulpy_cpu_ref::reference::fft64::reim::{fft_ref, ifft_ref};
-
-// ─── public dispatchers ────────────────────────────────────────────────────
 
 /// Forward FFT in REIM split layout. Mirrors `fft_avx2_fma`.
 pub(crate) fn fft_neon(m: usize, omg: &[f64], data: &mut [f64]) {
@@ -62,8 +44,6 @@ pub(crate) fn ifft_neon(m: usize, omg: &[f64], data: &mut [f64]) {
     }
 }
 
-// ─── recursive layer ───────────────────────────────────────────────────────
-
 unsafe fn fft_rec_16_neon(m: usize, re: &mut [f64], im: &mut [f64], omg: &[f64], mut pos: usize) -> usize {
     if m <= 2048 {
         return unsafe { fft_bfs_16_neon(m, re, im, omg, pos) };
@@ -87,8 +67,6 @@ unsafe fn ifft_rec_16_neon(m: usize, re: &mut [f64], im: &mut [f64], omg: &[f64]
     pos += 2;
     pos
 }
-
-// ─── BFS layer ─────────────────────────────────────────────────────────────
 
 unsafe fn fft_bfs_16_neon(m: usize, re: &mut [f64], im: &mut [f64], omg: &[f64], mut pos: usize) -> usize {
     let log_m = (usize::BITS - (m - 1).leading_zeros()) as usize;
@@ -145,8 +123,6 @@ unsafe fn ifft_bfs_16_neon(m: usize, re: &mut [f64], im: &mut [f64], omg: &[f64]
 
     pos
 }
-
-// ─── twiddle butterflies ───────────────────────────────────────────────────
 
 /// Forward 2-way (Cooley–Tukey) butterfly. Mirrors `twiddle_fft_avx2_fma`.
 #[inline]
@@ -560,7 +536,6 @@ unsafe fn inv_bitwiddle_ifft_neon(h: usize, re: &mut [f64], im: &mut [f64], omg:
     }
 }
 
-// ─── size-16 leaves (NEON-intrinsic radix-2 over 16 complex points) ────────
 //
 // Layout: each `float64x2_t` holds two consecutive doubles, so reg `rk` =
 // (re[2k], re[2k+1]) for k ∈ [0..8) and likewise for im. Stages 1–3 of the
@@ -902,8 +877,6 @@ unsafe fn ifft16_neon(re: &mut [f64], im: &mut [f64], omg: &[f64]) {
         vst1q_f64(i.add(14), i7);
     }
 }
-
-// ─── tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

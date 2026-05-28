@@ -1,27 +1,9 @@
 //! NEON kernels for q120b lazy modular arithmetic (NTT120 backend).
-//!
-//! Mirrors the AVX2 helpers at the top of
-//! `poulpy-cpu-avx/src/ntt120/prim.rs` (`lazy_reduce`, `ntt_add_avx2`,
-//! `ntt_sub_avx2`, `ntt_negate_avx2`, …).
-//!
-//! A q120b coefficient stores four `u64` residues, one per CRT prime, so a
-//! call processing `n` coefficients walks over `4 * n` u64 lanes. NEON has
-//! 128-bit registers (2 × u64 lanes), so each q120b is two `uint64x2_t`
-//! registers; one iteration handles one full coefficient.
-//!
-//! Lazy reduction: NEON's `vcgeq_u64` directly produces an all-ones mask
-//! where `x >= q_s`, so the AVX sign-flip trick is not needed. We use
-//! `vbslq_u64(mask, x - q_s, x)` to conditionally subtract.
-//!
-//! Wired into the `Ntt{Add,AddAssign,Sub,SubAssign,SubNegateAssign,Negate,
-//! NegateAssign}` impls in `crate::ntt120::prim` under
-//! `#[cfg(target_arch = "aarch64")]`.
 
 use core::arch::aarch64::{uint64x2_t, vaddq_u64, vbslq_u64, vcgeq_u64, vld1q_u64, vst1q_u64, vsubq_u64};
 use poulpy_cpu_ref::reference::ntt120::types::Q_SHIFTED;
 
 /// Lazy reduction: bring each lane of `x ∈ [0, 2·q_s)` into `[0, q_s)`.
-///
 /// Subtracts `q_s` from each lane where `x >= q_s` (unsigned).
 #[inline(always)]
 unsafe fn lazy_reduce(x: uint64x2_t, q_s: uint64x2_t) -> uint64x2_t {
@@ -141,7 +123,6 @@ pub(crate) fn ntt_sub_negate_assign_neon(n: usize, res: &mut [u64], a: &[u64]) {
 }
 
 /// `res[…] = q_s − lazy(a[…])` for `n` q120b coefficients.
-///
 /// **Output range**: For a zero input the result is `Q_SHIFTED[k]` (≡ 0 mod `Q[k]`),
 /// not `0`. Use `val % Q[k] == 0`, not `val == 0`, to test for zero.
 pub(crate) fn ntt_negate_neon(n: usize, res: &mut [u64], a: &[u64]) {
@@ -163,7 +144,6 @@ pub(crate) fn ntt_negate_neon(n: usize, res: &mut [u64], a: &[u64]) {
 }
 
 /// `res[…] = q_s − lazy(res[…])` for `n` q120b coefficients.
-///
 /// **Output range**: same as [`ntt_negate_neon`].
 pub(crate) fn ntt_negate_assign_neon(n: usize, res: &mut [u64]) {
     debug_assert!(res.len() >= 4 * n);

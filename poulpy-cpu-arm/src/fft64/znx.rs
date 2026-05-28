@@ -1,8 +1,4 @@
 //! `Znx*` trait impls for [`FFT64Neon`](super::FFT64Neon).
-//!
-//! On `target_arch = "aarch64"` every kernel is the NEON variant from
-//! [`crate::neon`]; on other targets the impls delegate to the portable
-//! reference functions so the crate still compiles outside aarch64.
 
 use poulpy_cpu_ref::reference::znx::{
     ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo, ZnxMulPowerOfTwo,

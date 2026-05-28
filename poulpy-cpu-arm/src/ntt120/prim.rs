@@ -1,12 +1,4 @@
 //! Trait implementations for [`NTT120Neon`](super::NTT120Neon) — primitive NTT-domain operations.
-//!
-//! On `target_arch = "aarch64"` every method routes to a NEON kernel:
-//! lazy-modular q120b arithmetic ([`crate::neon::ntt120_arithmetic`]),
-//! forward/inverse NTT ([`crate::neon::ntt120_ntt`]), matrix-vector products
-//! ([`crate::neon::ntt120_mat_vec`]), pack kernels and domain conversions
-//! `b_from_znx64` / `b_to_znx128` / `c_from_b`
-//! ([`crate::neon::ntt120_convert`]). On other targets the scalar reference
-//! kernels are used so the crate stays buildable off-aarch64.
 
 // `PrimeSet` is needed in scope on x86 (the scalar fallback paths use
 // `Primes30::Q[prime]`); on aarch64 the NEON kernels never reference it,

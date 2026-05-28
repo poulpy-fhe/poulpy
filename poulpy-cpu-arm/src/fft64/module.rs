@@ -1,8 +1,4 @@
 //! Backend handle and module initialisation for [`FFT64Neon`](super::FFT64Neon).
-//!
-//! On AArch64, NEON/ASIMD is part of the architectural baseline, so no runtime
-//! CPU feature detection is needed and the [`FFT64HandleFactory`]'s
-//! `assert_fft64_runtime_support` is left at its default (no-op) implementation.
 
 use std::ptr::NonNull;
 
@@ -18,7 +14,6 @@ use poulpy_hal::{
 use super::FFT64Neon;
 
 /// Opaque handle for the [`FFT64Neon`](super::FFT64Neon) backend.
-///
 /// Holds precomputed twiddle-factor tables for the forward FFT and inverse FFT
 /// of size `m = n / 2`, where `n` is the ring dimension passed to
 /// [`Module::new`](poulpy_hal::api::ModuleNew::new).
@@ -120,9 +115,7 @@ impl Backend for FFT64Neon {
 }
 
 /// # Safety
-///
 /// The returned handle must be fully initialized for `n`.
-///
 /// NEON/ASIMD is part of the AArch64 baseline; the runtime check is a no-op.
 unsafe impl FFT64HandleFactory for FFT64NeonHandle {
     fn create_fft64_handle(n: usize) -> Self {

@@ -1,31 +1,15 @@
 //! NEON kernels for the Reim4 (4-block) family used by VMP convolution.
-//!
-//! Mirrors `poulpy-cpu-avx/src/fft64/reim4/arithmetic_avx.rs`. AVX uses
-//! `__m256d` (4×f64) per block; NEON has `float64x2_t` (2×f64), so each
-//! AVX block load = 2 NEON loads. The block stride matches the AVX `step`
-//! / `nrows` accounting so reviews can be done side-by-side.
-//!
-//! Where the AVX version uses `fmsub(a, b, c) = a*b - c` to alternate
-//! accumulator sign, the NEON port either:
-//! - splits into two accumulators (one positive, one negative) and combines
-//!   at the end, or
-//! - uses `vnegq_f64(vfmsq_f64(c, a, b)) = a*b - c` when only one
-//!   accumulator is allowed.
-//!
-//! All kernels here ship untested on aarch64 hardware; bit-exactness modulo
-//! FMA fusing rounding is asserted by the per-kernel unit tests below.
 
 use core::arch::aarch64::{
     float64x2_t, vaddq_f64, vdupq_n_f64, vfmaq_f64, vfmsq_f64, vld1q_f64, vnegq_f64, vst1q_f64, vsubq_f64,
 };
 
 /// Extract a 4-double block from a contiguous `2*rows`-row reim layout.
-/// Mirrors `reim4_extract_1blk_from_reim_contiguous_avx` at `arithmetic_avx.rs:21`.
 pub(crate) fn reim4_extract_1blk_contiguous_neon(m: usize, rows: usize, blk: usize, dst: &mut [f64], src: &[f64]) {
     unsafe {
         let mut src_ptr = src.as_ptr().add(blk << 2);
         let mut dst_ptr = dst.as_mut_ptr();
-        let step = m; // step is m doubles between rows (m >> 2 in __m256d units == m doubles).
+        let step = m;
         for _ in 0..2 * rows {
             let lo = vld1q_f64(src_ptr);
             let hi = vld1q_f64(src_ptr.add(2));
@@ -38,7 +22,6 @@ pub(crate) fn reim4_extract_1blk_contiguous_neon(m: usize, rows: usize, blk: usi
 }
 
 /// Save a 4-double block back into a contiguous `2*rows`-row reim layout.
-/// Mirrors `reim4_save_1blk_to_reim_contiguous_avx` at `arithmetic_avx.rs:43`.
 pub(crate) fn reim4_save_1blk_contiguous_neon(m: usize, rows: usize, blk: usize, dst: &mut [f64], src: &[f64]) {
     unsafe {
         let mut src_ptr = src.as_ptr();
@@ -56,7 +39,6 @@ pub(crate) fn reim4_save_1blk_contiguous_neon(m: usize, rows: usize, blk: usize,
 }
 
 /// Save a single 4-double block to a reim destination.
-/// Mirrors `reim4_save_1blk_to_reim_avx` at `arithmetic_avx.rs:65`.
 pub(crate) fn reim4_save_1blk_neon<const OVERWRITE: bool>(m: usize, blk: usize, dst: &mut [f64], src: &[f64]) {
     unsafe {
         let off = blk * 4;
@@ -86,7 +68,6 @@ pub(crate) fn reim4_save_1blk_neon<const OVERWRITE: bool>(m: usize, blk: usize, 
 }
 
 /// Save two 4-double blocks to a reim destination.
-/// Mirrors `reim4_save_2blk_to_reim_avx` at `arithmetic_avx.rs:92`.
 pub(crate) fn reim4_save_2blks_neon<const OVERWRITE: bool>(m: usize, blk: usize, dst: &mut [f64], src: &[f64]) {
     unsafe {
         let off = blk * 4;
@@ -122,12 +103,7 @@ pub(crate) fn reim4_save_2blks_neon<const OVERWRITE: bool>(m: usize, blk: usize,
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Mat-vec products
-// ─────────────────────────────────────────────────────────────────────────────
-
 /// `dst = Σ_row u_row * v_row` (complex), one column.
-/// Mirrors `reim4_vec_mat1col_product_avx` at `arithmetic_avx.rs:134`.
 pub(crate) fn reim4_mat1col_prod_neon(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
     debug_assert!(dst.len() >= 8 && u.len() >= nrows * 8 && v.len() >= nrows * 8);
     unsafe {
@@ -168,18 +144,11 @@ pub(crate) fn reim4_mat1col_prod_neon(nrows: usize, dst: &mut [f64], u: &[f64], 
     }
 }
 
-/// Two-column mat-vec. Mirrors `reim4_vec_mat2cols_product_avx` at `arithmetic_avx.rs:185`.
-///
-/// AVX uses `fmsub(a, b, c) = a*b - c` to fold sign alternation into one
-/// accumulator; NEON has no `fmsub` with that sign, so we use two
-/// accumulators per output (cross-term positive, like-term positive) and
-/// combine at the end.
+/// Two-column mat-vec.
 pub(crate) fn reim4_mat2cols_prod_neon(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
     debug_assert!(dst.len() >= 16 && u.len() >= nrows * 8 && v.len() >= nrows * 16);
     unsafe {
         let zero = vdupq_n_f64(0.0);
-        // For column a: re_a = sum (ur·ar − ui·ai); im_a = sum (ur·ai + ui·ar).
-        // For column b: re_b = sum (ur·br − ui·bi); im_b = sum (ur·bi + ui·br).
         let (mut re_a_pos_lo, mut re_a_pos_hi) = (zero, zero);
         let (mut re_a_neg_lo, mut re_a_neg_hi) = (zero, zero);
         let (mut im_a_lo, mut im_a_hi) = (zero, zero);
@@ -239,7 +208,6 @@ pub(crate) fn reim4_mat2cols_prod_neon(nrows: usize, dst: &mut [f64], u: &[f64],
 }
 
 /// Mat-vec for the 2nd column of a packed `[col0, col1]` v-layout.
-/// Mirrors `reim4_vec_mat2cols_2ndcol_product_avx` at `arithmetic_avx.rs:250`.
 pub(crate) fn reim4_mat2cols_2ndcol_prod_neon(nrows: usize, dst: &mut [f64], u: &[f64], v: &[f64]) {
     debug_assert!(dst.len() >= 16 && u.len() >= nrows * 8 && v.len() >= nrows * 16);
     unsafe {

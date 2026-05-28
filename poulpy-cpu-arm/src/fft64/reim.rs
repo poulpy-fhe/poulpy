@@ -1,11 +1,4 @@
 //! Real/imaginary interleaved FFT primitives for [`FFT64Neon`](super::FFT64Neon).
-//!
-//! Phase 5 (partial): pointwise REIM arithmetic (add/sub/negate/mul/addmul
-//! and their assign variants) is wired to the NEON kernels in
-//! [`crate::neon::reim_arith`]. `reim_from_znx`, `reim_to_znx`, the FFT
-//! butterflies, and the Reim4 (4-block) family stay on the trait defaults
-//! (= scalar reference) — those are deferred until after live aarch64
-//! verification.
 
 #[cfg(not(target_arch = "aarch64"))]
 use poulpy_cpu_ref::reference::fft64::reim::{fft_ref, ifft_ref};
@@ -21,7 +14,6 @@ use super::FFT64Neon;
 /// Precomputed twiddle-factor tables for the negacyclic reim FFT and IFFT,
 /// dispatching to NEON-accelerated kernels on AArch64 and the portable
 /// reference kernels otherwise.
-///
 /// Wraps [`ReimFFTTable`] and [`ReimIFFTTable`] into a single object that
 /// implements [`NegacyclicFFT`], suitable for use as the transform provider
 /// in a CKKS [`poulpy_ckks::encoding::Encoder`].

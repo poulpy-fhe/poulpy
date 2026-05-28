@@ -1,16 +1,4 @@
 //! NEON kernels for q120b ↔ {i64, i128, q120c} domain conversions.
-//!
-//! Mirrors the AVX2 helpers in `poulpy-cpu-avx/src/ntt120/arithmetic_avx.rs`.
-//! AVX uses 4-lane `__m256i` registers (one per Primes30 prime); NEON has
-//! 2-lane `uint64x2_t`, so each q120 vector is two NEON registers — `lo`
-//! holds primes 0/1, `hi` holds primes 2/3. Constants are split the same way.
-//!
-//! All kernels here are **untested on aarch64 hardware**. They are
-//! line-for-line ports of the AVX kernels with NEON intrinsic substitutions.
-//! Run `cargo test -p poulpy-cpu-arm --features enable-neon` on a real
-//! aarch64 host (or qemu + cross-cc) before relying on bit-exactness.
-//!
-//! Wired into `NttFromZnx64`, `NttToZnx128`, `NttCFromB` for `NTT120Neon`.
 
 use core::arch::aarch64::{
     uint32x4_t, vaddq_u32, vaddvq_u64, vcgtq_s64, vdupq_n_s64, vdupq_n_u64, vld1q_u32, vorrq_u64, vreinterpretq_u64_s64,
@@ -23,10 +11,6 @@ use super::q120::{
     Q120, add_q120, and_q120, cond_sub_q120, load_const, load_q120, mla_epu32_q120, mul_epu32_q120, shr_q120, store_q120,
     sub_q120,
 };
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Primes30-specific compile-time constants (mirror arithmetic_avx.rs lines 51-194).
-// ─────────────────────────────────────────────────────────────────────────────
 
 const Q_VEC: [u64; 4] = [
     Primes30::Q[0] as u64,
@@ -133,7 +117,6 @@ const TOTAL_Q: u128 = {
 const TOTAL_Q_MULT: [u128; 4] = [0, TOTAL_Q, TOTAL_Q * 2, TOTAL_Q * 3];
 
 /// Barrett reduction: reduce `tmp < 2^61` to `[0, Q[k])` per lane.
-/// Mirrors `barrett_reduce` at `arithmetic_avx.rs:218`.
 #[inline(always)]
 unsafe fn barrett_reduce_q120(tmp: Q120, q: Q120, mu: Q120) -> Q120 {
     unsafe {
@@ -171,7 +154,6 @@ unsafe fn barrett_reduce_q120(tmp: Q120, q: Q120, mu: Q120) -> Q120 {
 }
 
 /// Reduce a q120b value `x ∈ [0, Q << 33)` to its canonical residue per lane.
-/// Mirrors `reduce_b_to_canonical` at `arithmetic_avx.rs:370`.
 #[inline(always)]
 unsafe fn reduce_b_to_canonical_q120(x: Q120, q: Q120, mu: Q120, pow32: Q120) -> Q120 {
     unsafe {
@@ -195,7 +177,6 @@ unsafe fn reduce_b_to_canonical_q120(x: Q120, q: Q120, mu: Q120, pow32: Q120) ->
 }
 
 /// Fused q120b reduce + CRT multiply: `t[k] = (x[k] * CRT_CST[k]) mod Q[k]`.
-/// Mirrors `reduce_b_and_apply_crt` at `arithmetic_avx.rs:405`.
 #[inline(always)]
 unsafe fn reduce_b_and_apply_crt_q120(x: Q120, q: Q120, mu: Q120, pow32_crt: Q120, pow16_crt: Q120, crt: Q120) -> Q120 {
     unsafe {
@@ -228,7 +209,7 @@ unsafe fn reduce_b_and_apply_crt_q120(x: Q120, q: Q120, mu: Q120, pow32_crt: Q12
 }
 
 /// Vectorized horizontal CRT accumulation: `v = Σ_k t[k] * qm[k]` as `u128`.
-/// Mirrors `crt_accumulate_avx2` at `arithmetic_avx.rs:272`. Uses NEON's
+/// Uses NEON's
 /// `vaddvq_u64` for horizontal sum (no AVX-style hadd shuffle needed).
 #[inline(always)]
 unsafe fn crt_accumulate_q120(t: Q120, qm_hi: Q120, qm_mid: Q120, qm_lo: Q120) -> u128 {
@@ -244,12 +225,7 @@ unsafe fn crt_accumulate_q120(t: Q120, qm_hi: Q120, qm_mid: Q120, qm_lo: Q120) -
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Public NEON kernels
-// ─────────────────────────────────────────────────────────────────────────────
-
 /// `i64 → q120b` conversion. One coefficient per loop iteration; writes 4 × u64.
-/// Mirrors `b_from_znx64_avx2` at `arithmetic_avx.rs:303`.
 pub(crate) fn b_from_znx64_neon(nn: usize, res: &mut [u64], x: &[i64]) {
     assert!(res.len() >= 4 * nn);
     assert!(x.len() >= nn);
@@ -286,7 +262,6 @@ pub(crate) fn b_from_znx64_neon(nn: usize, res: &mut [u64], x: &[i64]) {
 }
 
 /// Masked variant: `(x & mask) → q120b`.
-/// Mirrors `b_from_znx64_masked_avx2` at `arithmetic_avx.rs:336`.
 pub(crate) fn b_from_znx64_masked_neon(nn: usize, res: &mut [u64], x: &[i64], mask: i64) {
     assert!(res.len() >= 4 * nn);
     assert!(x.len() >= nn);
@@ -320,7 +295,6 @@ pub(crate) fn b_from_znx64_masked_neon(nn: usize, res: &mut [u64], x: &[i64], ma
 }
 
 /// `q120b → q120c` (Barrett reduce + pack `[r, r·2^32 mod Q]` per lane as u32 pairs).
-/// Mirrors `c_from_b_avx2` at `arithmetic_avx.rs:442`.
 pub(crate) fn c_from_b_neon(nn: usize, res: &mut [u32], a: &[u64]) {
     assert!(res.len() >= 8 * nn);
     assert!(a.len() >= 4 * nn);
@@ -350,7 +324,6 @@ pub(crate) fn c_from_b_neon(nn: usize, res: &mut [u32], a: &[u64]) {
 }
 
 /// `q120b → i128` via fused CRT reconstruction.
-/// Mirrors `b_to_znx128_avx2` at `arithmetic_avx.rs:742`.
 pub(crate) fn b_to_znx128_neon(nn: usize, res: &mut [i128], a: &[u64]) {
     assert!(res.len() >= nn);
     assert!(a.len() >= 4 * nn);
@@ -387,7 +360,6 @@ pub(crate) fn b_to_znx128_neon(nn: usize, res: &mut [i128], a: &[u64]) {
 }
 
 /// Per-row q120b → q120c packing (canonical reduce + zero-pad upper 32 bits).
-/// Mirrors `pack_left_1blk_x2_avx2` at `arithmetic_avx.rs:481`.
 pub(crate) fn pack_left_1blk_x2_neon(dst: &mut [u32], a: &[u64], row_count: usize, row_stride: usize, blk: usize) {
     debug_assert!(dst.len() >= 16 * row_count);
     debug_assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 8 * blk + 8);
@@ -413,7 +385,6 @@ pub(crate) fn pack_left_1blk_x2_neon(dst: &mut [u32], a: &[u64], row_count: usiz
 }
 
 /// Per-row q120c copy in reversed row order.
-/// Mirrors `pack_right_1blk_x2_avx2` at `arithmetic_avx.rs:513`.
 pub(crate) fn pack_right_1blk_x2_neon(dst: &mut [u32], a: &[u32], row_count: usize, row_stride: usize, blk: usize) {
     debug_assert!(dst.len() >= 16 * row_count);
     debug_assert!(a.len() >= row_stride.saturating_mul(row_count.saturating_sub(1)) + 16 * blk + 16);
@@ -439,7 +410,6 @@ pub(crate) fn pack_right_1blk_x2_neon(dst: &mut [u32], a: &[u32], row_count: usi
 }
 
 /// Per-row pairwise q120b sum → q120c packing.
-/// Mirrors `pairwise_pack_left_1blk_x2_avx2` at `arithmetic_avx.rs:537`.
 pub(crate) fn pairwise_pack_left_1blk_x2_neon(
     dst: &mut [u32],
     a: &[u64],
@@ -476,7 +446,6 @@ pub(crate) fn pairwise_pack_left_1blk_x2_neon(
 }
 
 /// Per-row pairwise q120c sum (lane-wise u32 add, reversed row order).
-/// Mirrors `pairwise_pack_right_1blk_x2_avx2` at `arithmetic_avx.rs:583`.
 pub(crate) fn pairwise_pack_right_1blk_x2_neon(
     dst: &mut [u32],
     a: &[u32],
@@ -506,10 +475,6 @@ pub(crate) fn pairwise_pack_right_1blk_x2_neon(
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// vec_znx_idft_apply_consume: in-place intt + q120b → i128 CRT compaction
-// ─────────────────────────────────────────────────────────────────────────────
-
 use bytemuck::cast_slice_mut;
 use poulpy_cpu_ref::reference::ntt120::{ntt::NttTableInv, vec_znx_dft::NttModuleHandle};
 use poulpy_hal::layouts::{Data, Module, VecZnxBig, VecZnxDft, VecZnxDftToBackendMut, ZnxViewMut};
@@ -520,14 +485,11 @@ use crate::NTT120Neon;
 /// In-place intt + q120b → i128 CRT compaction over `n_blocks` consecutive
 /// blocks of `n` q120b coefficients. Mirrors `compact_all_blocks_avx2` at
 /// `vec_znx_dft_consume.rs:34`.
-///
 /// Each block reads `4 * n` u64 (q120b) at offset `4 * n * k` and writes
 /// `2 * n` u64 (= `n` i128) starting at offset `2 * n * k`. The write window
 /// always precedes the next read window in memory, so the in-place compaction
 /// is safe.
-///
 /// # Safety
-///
 /// `u64_ptr` must cover at least `4 * n * n_blocks` u64 values. No live
 /// reference may alias the buffer for the duration of the call.
 unsafe fn compact_all_blocks_neon(n: usize, n_blocks: usize, u64_ptr: *mut u64, table: &NttTableInv<Primes30>) {
@@ -596,10 +558,6 @@ where
     unsafe { compact_all_blocks_neon(n, n_blocks, u64_ptr, table) };
     a.into_big()
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Tests (require an aarch64 host; they mirror the AVX `*_vs_ref` tests).
-// ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

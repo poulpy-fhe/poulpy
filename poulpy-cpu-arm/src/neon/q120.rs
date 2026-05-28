@@ -1,14 +1,7 @@
-//! Shared NEON helpers for the Q120 layout used by NTT120 kernels.
+//! Shared NEON helpers for the Q120 layout.
 //!
-//! A q120 vector packs four `u64` lanes (one per Primes30 prime). NEON has
-//! 128-bit registers (2 × u64 lanes), so each q120 is two `uint64x2_t`s —
-//! `lo` for primes 0/1 and `hi` for primes 2/3. Constants follow the same
-//! split.
-//!
-//! All routines here are wrappers around stable NEON intrinsics; none of
-//! them take per-call shift immediates outside the function (they would
-//! force a const-generic interface). For variable shifts the kernels build
-//! signed count vectors via `vdupq_n_s64` and pass them to `vshlq_*64`.
+//! A q120 vector packs four `u64` lanes (one per Primes30 prime) across two
+//! `uint64x2_t` registers: `lo` holds primes 0/1, `hi` holds primes 2/3.
 
 use core::arch::aarch64::{
     uint32x2_t, uint64x2_t, vaddq_u64, vandq_u64, vbicq_u64, vcgtq_u64, vdupq_n_u64, vld1q_u64, vmlal_u32, vmovn_u64, vmull_u32,
@@ -84,8 +77,7 @@ pub(crate) unsafe fn and_q120(a: Q120, b: Q120) -> Q120 {
     }
 }
 
-/// Lane-wise unsigned `_mm256_mul_epu32` equivalent: low 32 bits of each
-/// u64 lane of `a` and `b` are multiplied to produce a u64 result per lane.
+/// Lane-wise unsigned mul: low 32 bits of each u64 lane of `a` and `b` multiplied to a u64 result.
 #[inline(always)]
 pub(crate) unsafe fn mul_epu32_q120(a: Q120, b: Q120) -> Q120 {
     unsafe {

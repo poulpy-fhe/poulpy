@@ -1,18 +1,4 @@
 //! Q120 forward / inverse NTT — NEON-accelerated kernels.
-//!
-//! Direct port of `poulpy-cpu-avx/src/ntt120/ntt.rs`. Each q120b coefficient
-//! is two NEON registers (`Q120 { lo, hi }`); the AVX `__m256i` per-element
-//! pointer arithmetic becomes `*const u64` advancing by 4 per coefficient.
-//!
-//! Algorithm correctness follows the AVX backend line-for-line — see
-//! `poulpy-cpu-avx/src/ntt120/ntt.rs`. Variable right shifts are done via
-//! `vshlq_u64(value, vdupq_n_s64(-count))` (NEON's variable-shift intrinsic
-//! treats negative counts as right shifts).
-//!
-//! **Status**: ports the full forward / inverse NTT but is untested on
-//! aarch64 hardware. Verification path: `cargo test -p poulpy-cpu-arm
-//! --features enable-neon --target aarch64-unknown-linux-musl` once
-//! `qemu-aarch64-static` is installed (see `.cargo/config.toml`).
 
 use core::arch::aarch64::{int64x2_t, vdupq_n_s64, vmlal_u32, vmovn_u64, vmull_u32, vshlq_u64, vshrn_n_u64};
 use poulpy_cpu_ref::reference::ntt120::{
@@ -24,12 +10,8 @@ use super::q120::{Q120, add_q120, and_q120, load_const, load_q120, mla_epu32_q12
 
 const CHANGE_MODE_N: usize = 1024;
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Inline NEON arithmetic helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
 /// `(inp & mask) * (po & 0xFFFFFFFF) + (inp >> h) * (po >> 32)` per lane.
-/// Mirrors `split_precompmul_si256` at `ntt.rs:81`. Uses `vshrn_n_u64::<32>`
+/// Uses `vshrn_n_u64::<32>`
 /// to fold `po >> 32` + truncate-to-u32 into one instruction per half.
 #[inline(always)]
 unsafe fn split_precompmul_q120(inp: Q120, po: Q120, h: int64x2_t, mask: Q120) -> Q120 {
@@ -54,7 +36,6 @@ unsafe fn split_precompmul_q120(inp: Q120, po: Q120, h: int64x2_t, mask: Q120) -
 }
 
 /// `(x & mask) + (x >> h) * cst` per lane.
-/// Mirrors `modq_red_si256` at `ntt.rs:99`.
 #[inline(always)]
 unsafe fn modq_red_q120(x: Q120, h: int64x2_t, mask: Q120, cst: Q120) -> Q120 {
     unsafe {
@@ -76,11 +57,7 @@ unsafe fn broadcast_mask(v: u64) -> Q120 {
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// NTT iteration kernels (private)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Level-0 forward pass: `a[i] *= ω^i`. Mirrors `ntt_iter_first` at `ntt.rs:118`.
+/// Level-0 forward pass: `a[i] *= ω^i`.
 #[inline(always)]
 unsafe fn ntt_iter_first(begin: *mut u64, end: *const u64, meta: &NttStepMeta, mut po: *const u64) {
     unsafe {
@@ -97,7 +74,7 @@ unsafe fn ntt_iter_first(begin: *mut u64, end: *const u64, meta: &NttStepMeta, m
     }
 }
 
-/// Level-0 forward pass with prior lazy reduce. Mirrors `ntt_iter_first_red` at `ntt.rs:142`.
+/// Level-0 forward pass with prior lazy reduce.
 #[inline(always)]
 unsafe fn ntt_iter_first_red(begin: *mut u64, end: *const u64, meta: &NttStepMeta, mut po: *const u64, reduc: &NttReducMeta) {
     unsafe {
@@ -117,7 +94,7 @@ unsafe fn ntt_iter_first_red(begin: *mut u64, end: *const u64, meta: &NttStepMet
     }
 }
 
-/// Forward Cooley–Tukey butterfly level (no reduce). Mirrors `ntt_iter` at `ntt.rs:174`.
+/// Forward Cooley–Tukey butterfly level (no reduce).
 /// Inner loop is 2× unrolled.
 #[inline(always)]
 unsafe fn ntt_iter(nn: usize, begin: *mut u64, end: *const u64, meta: &NttStepMeta, po_base: *const u64) {
@@ -175,7 +152,7 @@ unsafe fn ntt_iter(nn: usize, begin: *mut u64, end: *const u64, meta: &NttStepMe
     }
 }
 
-/// Forward butterfly level with prior lazy reduce. Mirrors `ntt_iter_red` at `ntt.rs:219`.
+/// Forward butterfly level with prior lazy reduce.
 /// Inner loop is 2× unrolled.
 #[inline(always)]
 unsafe fn ntt_iter_red(
@@ -243,7 +220,7 @@ unsafe fn ntt_iter_red(
     }
 }
 
-/// Inverse Gentleman–Sande butterfly level (no reduce). Mirrors `intt_iter` at `ntt.rs:276`.
+/// Inverse Gentleman–Sande butterfly level (no reduce).
 /// Inner loop is 2× unrolled.
 #[inline(always)]
 unsafe fn intt_iter(nn: usize, begin: *mut u64, end: *const u64, meta: &NttStepMeta, po_base: *const u64) {
@@ -301,7 +278,7 @@ unsafe fn intt_iter(nn: usize, begin: *mut u64, end: *const u64, meta: &NttStepM
     }
 }
 
-/// Inverse butterfly level with prior lazy reduce. Mirrors `intt_iter_red` at `ntt.rs:321`.
+/// Inverse butterfly level with prior lazy reduce.
 /// Inner loop is 2× unrolled.
 #[inline(always)]
 unsafe fn intt_iter_red(
@@ -369,11 +346,7 @@ unsafe fn intt_iter_red(
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Public entry points
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Forward Q120 NTT — NEON. Mirrors `ntt_avx2` at `ntt.rs:389`.
+/// Forward Q120 NTT — NEON.
 pub(crate) fn ntt_neon<P: PrimeSet>(table: &NttTable<P>, data: &mut [u64]) {
     let n = table.n;
     if n == 1 {
@@ -440,7 +413,7 @@ pub(crate) fn ntt_neon<P: PrimeSet>(table: &NttTable<P>, data: &mut [u64]) {
     }
 }
 
-/// Inverse Q120 NTT — NEON. Mirrors `intt_avx2` at `ntt.rs:478`.
+/// Inverse Q120 NTT — NEON.
 pub(crate) fn intt_neon<P: PrimeSet>(table: &NttTableInv<P>, data: &mut [u64]) {
     let n = table.n;
     if n == 1 {
