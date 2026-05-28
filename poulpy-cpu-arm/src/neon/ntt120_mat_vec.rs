@@ -383,27 +383,57 @@ pub(crate) unsafe fn vec_mat1col_product_blkpair_bbc_pm_neon(
             let mut s_hi_a = vdupq_n_u64(0);
             let mut s_hi_b = vdupq_n_u64(0);
 
-            for row in 0..ell {
+            let ell_pairs = ell / 2;
+            let mut row = 0;
+            for _ in 0..ell_pairs {
+                let off0 = row * 4;
+                let off1 = (row + 1) * 4;
+                row += 2;
+
+                let xv_a0 = vld1q_u64(x_ptr.add(off0));
+                let xv_b0 = vld1q_u64(x_ptr.add(off0 + 2));
+                let xv_a1 = vld1q_u64(x_ptr.add(off1));
+                let xv_b1 = vld1q_u64(x_ptr.add(off1 + 2));
+                let yv_a0 = vld1q_u64(y_ptr.add(off0));
+                let yv_b0 = vld1q_u64(y_ptr.add(off0 + 2));
+                let yv_a1 = vld1q_u64(y_ptr.add(off1));
+                let yv_b1 = vld1q_u64(y_ptr.add(off1 + 2));
+
+                let prod_lo_a0 = vmull_u32(vmovn_u64(vandq_u64(xv_a0, mask32)), vmovn_u64(vandq_u64(yv_a0, mask32)));
+                let prod_lo_b0 = vmull_u32(vmovn_u64(vandq_u64(xv_b0, mask32)), vmovn_u64(vandq_u64(yv_b0, mask32)));
+                let prod_hi_a0 = vmull_u32(vmovn_u64(vshrq_n_u64::<32>(xv_a0)), vmovn_u64(vshrq_n_u64::<32>(yv_a0)));
+                let prod_hi_b0 = vmull_u32(vmovn_u64(vshrq_n_u64::<32>(xv_b0)), vmovn_u64(vshrq_n_u64::<32>(yv_b0)));
+                let prod_lo_a1 = vmull_u32(vmovn_u64(vandq_u64(xv_a1, mask32)), vmovn_u64(vandq_u64(yv_a1, mask32)));
+                let prod_lo_b1 = vmull_u32(vmovn_u64(vandq_u64(xv_b1, mask32)), vmovn_u64(vandq_u64(yv_b1, mask32)));
+                let prod_hi_a1 = vmull_u32(vmovn_u64(vshrq_n_u64::<32>(xv_a1)), vmovn_u64(vshrq_n_u64::<32>(yv_a1)));
+                let prod_hi_b1 = vmull_u32(vmovn_u64(vshrq_n_u64::<32>(xv_b1)), vmovn_u64(vshrq_n_u64::<32>(yv_b1)));
+
+                let part_lo_a = vaddq_u64(vandq_u64(prod_lo_a0, mask32), vandq_u64(prod_hi_a0, mask32));
+                let part_lo_b = vaddq_u64(vandq_u64(prod_lo_b0, mask32), vandq_u64(prod_hi_b0, mask32));
+                let part_lo_a1 = vaddq_u64(vandq_u64(prod_lo_a1, mask32), vandq_u64(prod_hi_a1, mask32));
+                let part_lo_b1 = vaddq_u64(vandq_u64(prod_lo_b1, mask32), vandq_u64(prod_hi_b1, mask32));
+                s_lo_a = vaddq_u64(s_lo_a, vaddq_u64(part_lo_a, part_lo_a1));
+                s_lo_b = vaddq_u64(s_lo_b, vaddq_u64(part_lo_b, part_lo_b1));
+
+                s_hi_a = vsraq_n_u64::<32>(s_hi_a, prod_lo_a0);
+                s_hi_b = vsraq_n_u64::<32>(s_hi_b, prod_lo_b0);
+                s_hi_a = vsraq_n_u64::<32>(s_hi_a, prod_hi_a0);
+                s_hi_b = vsraq_n_u64::<32>(s_hi_b, prod_hi_b0);
+                s_hi_a = vsraq_n_u64::<32>(s_hi_a, prod_lo_a1);
+                s_hi_b = vsraq_n_u64::<32>(s_hi_b, prod_lo_b1);
+                s_hi_a = vsraq_n_u64::<32>(s_hi_a, prod_hi_a1);
+                s_hi_b = vsraq_n_u64::<32>(s_hi_b, prod_hi_b1);
+            }
+            if ell & 1 == 1 {
                 let off = row * 4;
                 let xv_a = vld1q_u64(x_ptr.add(off));
                 let xv_b = vld1q_u64(x_ptr.add(off + 2));
-                let xl_a = vandq_u64(xv_a, mask32);
-                let xl_b = vandq_u64(xv_b, mask32);
-                let xh_a = vshrq_n_u64::<32>(xv_a);
-                let xh_b = vshrq_n_u64::<32>(xv_b);
-
                 let yv_a = vld1q_u64(y_ptr.add(off));
                 let yv_b = vld1q_u64(y_ptr.add(off + 2));
-                let y0_a = vandq_u64(yv_a, mask32);
-                let y0_b = vandq_u64(yv_b, mask32);
-                let y1_a = vshrq_n_u64::<32>(yv_a);
-                let y1_b = vshrq_n_u64::<32>(yv_b);
-
-                let prod_lo_a = vmull_u32(vmovn_u64(xl_a), vmovn_u64(y0_a));
-                let prod_lo_b = vmull_u32(vmovn_u64(xl_b), vmovn_u64(y0_b));
-                let prod_hi_a = vmull_u32(vmovn_u64(xh_a), vmovn_u64(y1_a));
-                let prod_hi_b = vmull_u32(vmovn_u64(xh_b), vmovn_u64(y1_b));
-
+                let prod_lo_a = vmull_u32(vmovn_u64(vandq_u64(xv_a, mask32)), vmovn_u64(vandq_u64(yv_a, mask32)));
+                let prod_lo_b = vmull_u32(vmovn_u64(vandq_u64(xv_b, mask32)), vmovn_u64(vandq_u64(yv_b, mask32)));
+                let prod_hi_a = vmull_u32(vmovn_u64(vshrq_n_u64::<32>(xv_a)), vmovn_u64(vshrq_n_u64::<32>(yv_a)));
+                let prod_hi_b = vmull_u32(vmovn_u64(vshrq_n_u64::<32>(xv_b)), vmovn_u64(vshrq_n_u64::<32>(yv_b)));
                 s_lo_a = vaddq_u64(s_lo_a, vandq_u64(prod_lo_a, mask32));
                 s_lo_a = vaddq_u64(s_lo_a, vandq_u64(prod_hi_a, mask32));
                 s_lo_b = vaddq_u64(s_lo_b, vandq_u64(prod_lo_b, mask32));

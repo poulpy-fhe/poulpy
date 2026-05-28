@@ -113,14 +113,30 @@ fn extract_blk_pair_prime_major_neon(n: usize, row_max: usize, blk_pair: usize, 
     }
 }
 
-/// Plain store of one x2-block (8 u64) into a q120b vector.
-/// `VecZnxDft` storage is 64-byte aligned; NEON has no portable intrinsic
-/// for non-temporal stores, so we use regular stores here.
+/// Non-temporal store of one x2-block (8 u64) into a q120b vector via two
+/// `stnp q, q` pairs. The result is write-once before being read back by the
+/// caller's normalization, so NT stores avoid polluting L1/L2 with output lines.
 #[inline]
 fn save_blk_overwrite(_n: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
     debug_assert!(src.len() >= 8);
     let off = 8 * blk;
-    dst[off..off + 8].copy_from_slice(&src[..8]);
+    unsafe {
+        let dst_ptr = dst.as_mut_ptr().add(off);
+        let src_ptr = src.as_ptr();
+        core::arch::asm!(
+            "ldp  {v0:q}, {v1:q}, [{src}]",
+            "ldp  {v2:q}, {v3:q}, [{src}, #32]",
+            "stnp {v0:q}, {v1:q}, [{dst}]",
+            "stnp {v2:q}, {v3:q}, [{dst}, #32]",
+            src = in(reg) src_ptr,
+            dst = in(reg) dst_ptr,
+            v0 = out(vreg) _,
+            v1 = out(vreg) _,
+            v2 = out(vreg) _,
+            v3 = out(vreg) _,
+            options(nostack, preserves_flags),
+        );
+    }
 }
 
 #[inline(always)]
