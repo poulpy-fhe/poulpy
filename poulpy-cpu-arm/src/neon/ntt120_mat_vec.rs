@@ -189,7 +189,16 @@ pub(crate) fn vec_mat1col_product_bbc_neon(meta: &BbcMeta<Primes30>, ell: usize,
 }
 
 /// x2-block, single column: two paired q120b × q120c inner products.
-pub(crate) fn vec_mat1col_product_x2_bbc_neon(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], x: &[u32], y: &[u32]) {
+///
+/// When `NT_STORE` is true the two 32-byte result writes go through `stnp q, q`
+/// non-temporal stores, matching the AVX path's `_mm256_stream_si256`.
+pub(crate) fn vec_mat1col_product_x2_bbc_neon<const NT_STORE: bool>(
+    meta: &BbcMeta<Primes30>,
+    ell: usize,
+    res: &mut [u64],
+    x: &[u32],
+    y: &[u32],
+) {
     assert!(res.len() >= 8);
     assert!(x.len() >= 16 * ell);
     assert!(y.len() >= 16 * ell);
@@ -207,7 +216,43 @@ pub(crate) fn vec_mat1col_product_x2_bbc_neon(meta: &BbcMeta<Primes30>, ell: usi
         let mut x_ptr = x.as_ptr() as *const u64;
         let mut y_ptr = y.as_ptr() as *const u64;
 
-        for _ in 0..ell {
+        let ell_pairs = ell / 2;
+        for _ in 0..ell_pairs {
+            let xa0 = load_q120(x_ptr);
+            let ya0 = load_q120(y_ptr);
+            let xb0 = load_q120(x_ptr.add(4));
+            let yb0 = load_q120(y_ptr.add(4));
+            let xa1 = load_q120(x_ptr.add(8));
+            let ya1 = load_q120(y_ptr.add(8));
+            let xb1 = load_q120(x_ptr.add(12));
+            let yb1 = load_q120(y_ptr.add(12));
+            x_ptr = x_ptr.add(16);
+            y_ptr = y_ptr.add(16);
+
+            let pa_lo0 = mul_epu32_q120(xa0, ya0);
+            let pa_hi0 = mul_epu32_q120(shr_q120::<32>(xa0), shr_q120::<32>(ya0));
+            let pb_lo0 = mul_epu32_q120(xb0, yb0);
+            let pb_hi0 = mul_epu32_q120(shr_q120::<32>(xb0), shr_q120::<32>(yb0));
+            let pa_lo1 = mul_epu32_q120(xa1, ya1);
+            let pa_hi1 = mul_epu32_q120(shr_q120::<32>(xa1), shr_q120::<32>(ya1));
+            let pb_lo1 = mul_epu32_q120(xb1, yb1);
+            let pb_hi1 = mul_epu32_q120(shr_q120::<32>(xb1), shr_q120::<32>(yb1));
+
+            s0 = add_q120(s0, add_q120(and_q120(pa_lo0, mask32), and_q120(pa_hi0, mask32)));
+            s2 = add_q120(s2, add_q120(and_q120(pb_lo0, mask32), and_q120(pb_hi0, mask32)));
+            s0 = add_q120(s0, add_q120(and_q120(pa_lo1, mask32), and_q120(pa_hi1, mask32)));
+            s2 = add_q120(s2, add_q120(and_q120(pb_lo1, mask32), and_q120(pb_hi1, mask32)));
+
+            s1 = acc_shr_q120::<32>(s1, pa_lo0);
+            s1 = acc_shr_q120::<32>(s1, pa_hi0);
+            s3 = acc_shr_q120::<32>(s3, pb_lo0);
+            s3 = acc_shr_q120::<32>(s3, pb_hi0);
+            s1 = acc_shr_q120::<32>(s1, pa_lo1);
+            s1 = acc_shr_q120::<32>(s1, pa_hi1);
+            s3 = acc_shr_q120::<32>(s3, pb_lo1);
+            s3 = acc_shr_q120::<32>(s3, pb_hi1);
+        }
+        if ell & 1 == 1 {
             let xa = load_q120(x_ptr);
             let xa_hi = shr_q120::<32>(xa);
             let ya = load_q120(y_ptr);
@@ -233,9 +278,6 @@ pub(crate) fn vec_mat1col_product_x2_bbc_neon(meta: &BbcMeta<Primes30>, ell: usi
             s2 = add_q120(s2, and_q120(pb_hi, mask32));
             s3 = acc_shr_q120::<32>(s3, pb_lo);
             s3 = acc_shr_q120::<32>(s3, pb_hi);
-
-            x_ptr = x_ptr.add(8);
-            y_ptr = y_ptr.add(8);
         }
 
         let neg_h2 = vdupq_n_s64(-(meta.h as i64));
@@ -248,8 +290,23 @@ pub(crate) fn vec_mat1col_product_x2_bbc_neon(meta: &BbcMeta<Primes30>, ell: usi
         let s2h = load_const(&meta.s2h_pow_red);
 
         let res_ptr = res.as_mut_ptr();
-        store_q120(res_ptr, reduce_bbc_neon(s0, s1, mask_h2, neg_h2, s2l, s2h));
-        store_q120(res_ptr.add(4), reduce_bbc_neon(s2, s3, mask_h2, neg_h2, s2l, s2h));
+        let out0 = reduce_bbc_neon(s0, s1, mask_h2, neg_h2, s2l, s2h);
+        let out1 = reduce_bbc_neon(s2, s3, mask_h2, neg_h2, s2l, s2h);
+        if NT_STORE {
+            core::arch::asm!(
+                "stnp {v0:q}, {v1:q}, [{p}]",
+                "stnp {v2:q}, {v3:q}, [{p}, #32]",
+                p = in(reg) res_ptr,
+                v0 = in(vreg) out0.lo,
+                v1 = in(vreg) out0.hi,
+                v2 = in(vreg) out1.lo,
+                v3 = in(vreg) out1.hi,
+                options(nostack, preserves_flags),
+            );
+        } else {
+            store_q120(res_ptr, out0);
+            store_q120(res_ptr.add(4), out1);
+        }
     }
 }
 

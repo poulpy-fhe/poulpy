@@ -308,7 +308,7 @@ impl NttMulBbc1ColX2 for NTT120Neon {
     fn ntt_mul_bbc_1col_x2(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
         #[cfg(target_arch = "aarch64")]
         {
-            vec_mat1col_product_x2_bbc_neon(meta, ell, res, a, b);
+            vec_mat1col_product_x2_bbc_neon::<false>(meta, ell, res, a, b);
         }
         #[cfg(not(target_arch = "aarch64"))]
         {

@@ -1,5 +1,6 @@
 //! NEON-accelerated NTT120 CPU backend (Q120 NTT, CRT over four ~30-bit primes).
 
+pub(crate) mod convolution;
 mod module;
 mod prim;
 mod vec_znx_big;
