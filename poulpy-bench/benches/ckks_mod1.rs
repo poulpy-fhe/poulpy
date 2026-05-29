@@ -156,7 +156,7 @@ fn bench_ntt120_ref(c: &mut Criterion) {
 
     let mut group = c.benchmark_group(format!("ckks_mod1::{label}"));
     for case in CASES {
-        let params = Mod1Parameters::from_literal(COEFF_META, Base2K(BASE2K as u32), case.lit, &host_module)
+        let params = Mod1Parameters::from_literal::<f64>(COEFF_META, Base2K(BASE2K as u32), case.lit, &host_module)
             .expect("Mod1Parameters::from_literal");
 
         let (levels, log_budget_in, log_budget_out) = {

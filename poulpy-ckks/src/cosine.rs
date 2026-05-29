@@ -6,6 +6,7 @@
 //! not provide them.
 
 use dashu_float::{Context, DBig, FBig, round::mode::HalfEven};
+use rand_distr::num_traits::FromPrimitive;
 
 pub const ENCODING_PRECISION: usize = 256;
 
@@ -407,15 +408,17 @@ fn solve(
 }
 
 /// Returns Chebyshev coefficients approximating `cos(2π·(x - 1/4)/2^scnum)` on
-/// `[-k, k]` in the standard basis (variable `u = x/k`).
-pub fn approximate_cos(k: usize, degree: usize, dev: f64, scnum: usize) -> Vec<f64> {
+/// `[-k, k]` in the standard basis (variable `u = x/k`). The solve runs in
+/// 256-bit `FBig`; each coefficient is narrowed via `f64` to the target `F`,
+/// so `F` with mantissa wider than 53 bits inherits f64 precision.
+pub fn approximate_cos<F: FromPrimitive>(k: usize, degree: usize, dev: f64, scnum: usize) -> Vec<F> {
     let (deg, totdeg) = gen_degrees(degree, k, dev);
     let (nodes, y) = gen_nodes(&deg, dev, totdeg, k, scnum);
     let coeffs = solve(totdeg, k, scnum, nodes, y);
     coeffs
         .into_iter()
         .take(totdeg)
-        .map(|c| c.to_f64().value())
+        .map(|c| F::from_f64(c.to_f64().value()).expect("finite scalar"))
         .collect()
 }
 
@@ -445,7 +448,7 @@ mod tests {
 
     #[test]
     fn approximate_cos_returns_finite_coefficients() {
-        let coeffs = approximate_cos(12, 30, 256.0, 3);
+        let coeffs: Vec<f64> = approximate_cos(12, 30, 256.0, 3);
         assert!(coeffs.len() >= 23, "expected totdeg >= 2K-1 = 23, got {}", coeffs.len());
         for c in &coeffs {
             assert!(c.is_finite(), "non-finite coefficient: {c}");
@@ -467,7 +470,7 @@ mod tests {
     fn approximate_cos_matches_target_in_standard_basis() {
         let k = 12usize;
         let scnum = 3usize;
-        let coeffs = approximate_cos(k, 30, 256.0, scnum);
+        let coeffs: Vec<f64> = approximate_cos(k, 30, 256.0, scnum);
 
         let sc_fac = (1u64 << scnum) as f64;
         let k_f = k as f64;
@@ -486,7 +489,7 @@ mod tests {
 
     #[test]
     fn approximate_cos_returns_nonzero_odd_coefficients() {
-        let coeffs = approximate_cos(12, 30, 256.0, 3);
+        let coeffs: Vec<f64> = approximate_cos(12, 30, 256.0, 3);
         let any_odd = coeffs.iter().enumerate().any(|(i, c)| !i.is_multiple_of(2) && c.abs() > 1e-12);
         assert!(any_odd, "cos(2π·(x-1/4)/2^r) is not even; odd Chebyshev coefficients must be nonzero");
     }
@@ -495,7 +498,7 @@ mod tests {
     fn approximate_cos_matches_target_at_finer_grid() {
         let k = 12usize;
         let scnum = 3usize;
-        let coeffs = approximate_cos(k, 30, 256.0, scnum);
+        let coeffs: Vec<f64> = approximate_cos(k, 30, 256.0, scnum);
 
         let sc_fac = (1u64 << scnum) as f64;
         let k_f = k as f64;

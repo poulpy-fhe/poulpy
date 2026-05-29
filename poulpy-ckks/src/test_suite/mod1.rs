@@ -237,7 +237,7 @@ fn run_mod1_case<BE, F, E>(
         log_delta,
         log_budget: base2k,
     };
-    let host_params = Mod1Parameters::from_literal(coeff_meta, params.base2k.into(), lit, &host_module)
+    let host_params = Mod1Parameters::from_literal::<F>(coeff_meta, params.base2k.into(), lit, &host_module)
         .expect("Mod1Parameters::from_literal");
     let params_be = upload_params(&module, host_params);
 

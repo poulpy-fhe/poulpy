@@ -8,12 +8,14 @@ use poulpy_hal::{
     layouts::{Backend, HostBytesBackend, Module, ScratchArena},
 };
 
+use rand_distr::num_traits::{Float, FloatConst};
+
 use crate::{
     CKKSCtBounds, CKKSMeta, SetCKKSInfos,
     api::{Basis, CKKSAddOps, CKKSCopyOps, CKKSMulAddOps, CKKSMulOps, CKKSSubOps, Parity},
     cosine,
     default::polynomial_evaluation::PolynomialEvaluationDefault,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, ScratchArenaTakeCKKS},
+    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKS},
     polynomial::{BSGSPolynomial, Polynomial},
     power_basis::PowerBasis,
 };
@@ -47,12 +49,15 @@ pub struct Mod1Parameters<P> {
 }
 
 impl Mod1Parameters<CKKSPlaintext<Vec<u8>>> {
-    pub fn from_literal(
+    pub fn from_literal<F>(
         coeff_meta: CKKSMeta,
         base2k: Base2K,
         lit: Mod1ParametersLiteral,
         module: &Module<HostBytesBackend>,
-    ) -> Result<Self> {
+    ) -> Result<Self>
+    where
+        F: CKKSScalar + Float + FloatConst,
+    {
         ensure!(
             !(lit.mod1_type == Mod1Type::SinContinuous && lit.double_angle != 0),
             "SinContinuous requires double_angle = 0"
@@ -67,34 +72,36 @@ impl Mod1Parameters<CKKSPlaintext<Vec<u8>>> {
             _ => lit.double_angle,
         };
 
-        let scaling = if lit.scaling == 0.0 { 1.0 } else { lit.scaling };
-        let sc_fac = (1u64 << double_angle) as f64;
-        let k_eff = lit.mod1_interval as f64 / sc_fac;
+        let scaling_f64 = if lit.scaling == 0.0 { 1.0 } else { lit.scaling };
+        let scaling = F::from_f64(scaling_f64).expect("scaling must be a finite scalar");
+        let sc_fac = F::from_u64(1u64 << double_angle).expect("2^double_angle must fit");
+        let k_eff = F::from_usize(lit.mod1_interval).expect("mod1_interval must fit") / sc_fac;
 
-        let two_pi = std::f64::consts::TAU;
-        let inv_two_pi = 1.0 / two_pi;
+        let two = F::one() + F::one();
+        let two_pi = two * F::PI();
+        let inv_two_pi = F::one() / two_pi;
 
-        let mut mod1_inv_poly_opt: Option<Polynomial<f64>> = None;
-        let s: f64 = if lit.mod1_inv_degree > 0 {
+        let mut mod1_inv_poly_opt: Option<Polynomial<F>> = None;
+        let s: F = if lit.mod1_inv_degree > 0 {
             let n = lit.mod1_inv_degree;
             ensure!(!n.is_multiple_of(2), "mod1_inv_degree must be odd");
-            let mut coeffs = vec![0f64; n + 1];
+            let mut coeffs = vec![F::zero(); n + 1];
             coeffs[1] = inv_two_pi * scaling;
             let mut i = 1usize;
             while i + 2 <= n {
                 let next = i + 2;
-                let num = ((next as i64 - 2) * (next as i64 - 2)) as f64;
-                let den = (next as i64 * (next as i64 - 1)) as f64;
+                let num = F::from_i64((next as i64 - 2) * (next as i64 - 2)).expect("num fits");
+                let den = F::from_i64(next as i64 * (next as i64 - 1)).expect("den fits");
                 coeffs[next] = coeffs[i] * num / den;
                 i = next;
             }
             mod1_inv_poly_opt = Some(Polynomial::new_with_parity(Basis::Monomial, coeffs, Parity::Odd));
-            1.0
+            F::one()
         } else {
-            (inv_two_pi * scaling).powf(1.0 / sc_fac)
+            (inv_two_pi * scaling).powf(F::one() / sc_fac)
         };
 
-        let mut mod1_poly: Polynomial<f64> = match lit.mod1_type {
+        let mut mod1_poly: Polynomial<F> = match lit.mod1_type {
             Mod1Type::SinContinuous => Polynomial::chebyshev_interpolate(lit.mod1_degree, -k_eff, k_eff, |x| {
                 (two_pi * x).sin()
             })?,
@@ -102,7 +109,7 @@ impl Mod1Parameters<CKKSPlaintext<Vec<u8>>> {
                 (two_pi * x).cos()
             })?,
             Mod1Type::CosDiscrete => {
-                let coeffs = cosine::approximate_cos(
+                let coeffs = cosine::approximate_cos::<F>(
                     lit.mod1_interval,
                     lit.mod1_degree,
                     (1u64 << lit.log_message_ratio) as f64,
@@ -120,7 +127,7 @@ impl Mod1Parameters<CKKSPlaintext<Vec<u8>>> {
         }
 
         for c in mod1_poly.coeffs.iter_mut() {
-            *c *= s;
+            *c = *c * s;
         }
 
         let mod1_bsgs = mod1_poly.encode_bsgs(module, base2k, coeff_meta)?;
@@ -131,8 +138,8 @@ impl Mod1Parameters<CKKSPlaintext<Vec<u8>>> {
 
         let mut double_angle_consts: Vec<CKKSPlaintext<Vec<u8>>> = Vec::with_capacity(double_angle);
         for i in 0..double_angle {
-            let exp = 1u32 << (i + 1);
-            let val = s.powi(exp as i32);
+            let exp = 1i32 << (i + 1);
+            let val = s.powi(exp);
             double_angle_consts.push(encode_scalar(module, base2k, coeff_meta, val)?);
         }
 
@@ -142,7 +149,8 @@ impl Mod1Parameters<CKKSPlaintext<Vec<u8>>> {
         let chebyshev_offset_pt = match lit.mod1_type {
             Mod1Type::SinContinuous | Mod1Type::CosDiscrete => None,
             Mod1Type::CosContinuous => {
-                let off = -0.25 / (lit.mod1_interval as f64);
+                let neg_quarter = F::from_f64(-0.25).expect("-0.25 must fit");
+                let off = neg_quarter / F::from_usize(lit.mod1_interval).expect("mod1_interval must fit");
                 Some(encode_scalar(module, base2k, coeff_meta, off)?)
             }
         };
@@ -194,11 +202,11 @@ impl<P> Mod1Parameters<P> {
     }
 }
 
-fn encode_scalar(
+fn encode_scalar<F: CKKSScalar>(
     module: &Module<HostBytesBackend>,
     base2k: Base2K,
     coeff_meta: CKKSMeta,
-    value: f64,
+    value: F,
 ) -> Result<CKKSPlaintext<Vec<u8>>> {
     let mut pt = module.ckks_pt_coeffs_alloc(1, base2k, coeff_meta);
     pt.encode_host_floats(&[value])
