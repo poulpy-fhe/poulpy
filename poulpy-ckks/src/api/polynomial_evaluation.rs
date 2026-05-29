@@ -42,6 +42,8 @@ pub trait BabyStep<BE: Backend> {
 }
 
 pub trait PowerBasisHelper<BE: Backend, A> {
+    fn basis(&self) -> Basis;
+    fn has_power(&self, power: usize) -> bool;
     fn get(&self, power: usize) -> Result<&A>;
 }
 

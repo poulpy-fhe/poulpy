@@ -15,7 +15,6 @@
 - Add the `ckks_poly_eval` Criterion benchmark, sweeping polynomial degree and `MinDepth` / `MinMult` BSGS split strategies on `ntt120-ref` while reporting baby-step size and observed log-budget/level consumption.
 
 ### Build & Docs
-- Add `docs/polynomial-evaluation-spec.md`, a scheme-agnostic design note for power bases, Paterson-Stockmeyer/BSGS decomposition, encoded baby polynomials, and the Poulpy CKKS integration.
 - Refresh the `ckks_poly2` example to use Chebyshev interpolation, `PowerBasis`, and the new BSGS evaluator pipeline.
 
 ## [0.6.0] - 2026-05-18

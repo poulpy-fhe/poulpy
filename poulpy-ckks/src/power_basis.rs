@@ -26,7 +26,7 @@ pub use crate::api::{Basis, Parity};
 /// Implements [`PowerBasisHelper`] so it can be passed directly to
 /// `ckks_eval_poly_real_const_coeffs_from_power_basis`.
 pub struct PowerBasis<A> {
-    pub basis: Basis,
+    basis: Basis,
     values: HashMap<usize, A>,
 }
 
@@ -38,14 +38,14 @@ impl<A> PowerBasis<A> {
         Self { basis, values }
     }
 
+    /// Returns the polynomial basis represented by the stored powers.
+    pub fn basis(&self) -> Basis {
+        self.basis
+    }
+
     /// Returns a reference to the stored power at degree `n`, if computed.
     pub fn get_stored(&self, n: usize) -> Option<&A> {
         self.values.get(&n)
-    }
-
-    /// Inserts a pre-computed power at degree `n`.
-    pub fn insert(&mut self, n: usize, value: A) {
-        self.values.insert(n, value);
     }
 }
 
@@ -53,6 +53,14 @@ impl<BE: Backend, A> PowerBasisHelper<BE, A> for PowerBasis<A>
 where
     A: GLWEToBackendRef<BE>,
 {
+    fn basis(&self) -> Basis {
+        self.basis
+    }
+
+    fn has_power(&self, power: usize) -> bool {
+        self.values.contains_key(&power)
+    }
+
     fn get(&self, power: usize) -> Result<&A> {
         self.values
             .get(&power)
@@ -61,6 +69,53 @@ where
 }
 
 impl<D: Data> PowerBasis<CKKSCiphertext<D>> {
+    /// Inserts a caller-provided pre-computed ciphertext power.
+    ///
+    /// This checks that the ciphertext storage is compatible with the
+    /// degree-one power created at construction time. The caller is still
+    /// responsible for the semantic invariant: `value` must encrypt `X^n` for a
+    /// monomial basis or `T_n(X)` for a Chebyshev basis, derived from the same
+    /// input ciphertext and compatible CKKS metadata.
+    pub fn insert(&mut self, n: usize, value: CKKSCiphertext<D>) -> Result<()> {
+        ensure!(
+            n >= 2,
+            "PowerBasis::insert: power must be at least 2; power 1 is set at construction"
+        );
+        ensure!(
+            !self.values.contains_key(&n),
+            "PowerBasis::insert: power {n} is already present"
+        );
+
+        let (expected_n, expected_base2k, expected_rank) = {
+            let x = self
+                .values
+                .get(&1)
+                .expect("PowerBasis::new always stores the degree-one power");
+            (x.n(), x.base2k(), x.rank())
+        };
+        ensure!(
+            value.n() == expected_n,
+            "PowerBasis::insert: power {n} ring degree {} does not match degree-one ring degree {}",
+            value.n(),
+            expected_n
+        );
+        ensure!(
+            value.base2k() == expected_base2k,
+            "PowerBasis::insert: power {n} base2k {} does not match degree-one base2k {}",
+            value.base2k(),
+            expected_base2k
+        );
+        ensure!(
+            value.rank() == expected_rank,
+            "PowerBasis::insert: power {n} rank {} does not match degree-one rank {}",
+            value.rank(),
+            expected_rank
+        );
+
+        self.values.insert(n, value);
+        Ok(())
+    }
+
     /// Recursively computes and stores X^`n` using `split_degree` to choose the
     /// multiplication tree: X^n = X^a · X^b where `split_degree(n) = (a, b)`.
     pub fn gen_power<BE>(
@@ -176,12 +231,13 @@ impl<D: Data> PowerBasis<CKKSCiphertext<D>> {
     ///
     /// `log_split` is the baby-step split (`base = 2^log_split`); read it off
     /// the BSGSPolynomial the caller will evaluate via
-    /// `bsgs.base.trailing_zeros() as usize`.
+    /// `bsgs.log_split()`.
     ///
     /// `parity` should match the polynomial to be evaluated:
     /// - [`Parity::Even`]: only even baby-step powers are needed (skip 3, 5, 7, …).
     /// - [`Parity::Odd`]:  only odd baby-step powers are needed (skip 4, 6, 8, …).
-    /// - [`Parity::Full`]: all baby-step powers from 3 to `(2^log_split) − 1`.
+    /// - [`Parity::Full`]: all baby-step powers from 3 through
+    ///   `min(degree, 2^log_split − 1)`.
     ///
     /// Giant-step powers of two up to `2^(⌈log₂ degree⌉−1)` are always computed.
     pub fn populate<BE>(
@@ -221,19 +277,20 @@ impl<D: Data> PowerBasis<CKKSCiphertext<D>> {
 
         // Baby-step intermediate powers: skip parities not used by the evaluator.
         // Power 2 is always computed transitively (gen_power(3) or gen_power(largest_pow2)).
+        let baby_limit = base.min(degree + 1);
         match parity {
             Parity::Even => {
-                for i in (4..base).step_by(2) {
+                for i in (4..baby_limit).step_by(2) {
                     gen_pow!(i)?;
                 }
             }
             Parity::Odd => {
-                for i in (3..base).step_by(2) {
+                for i in (3..baby_limit).step_by(2) {
                     gen_pow!(i)?;
                 }
             }
             Parity::Full => {
-                for i in (3..base).rev() {
+                for i in (3..baby_limit).rev() {
                     gen_pow!(i)?;
                 }
             }
@@ -258,6 +315,7 @@ where
 /// Lee et al. (2020) strategy that maximises the number of odd-degree
 /// Chebyshev terms.
 pub(crate) fn split_degree(n: usize) -> (usize, usize) {
+    assert!(n > 1);
     if n.is_power_of_two() {
         (n / 2, n / 2)
     } else {

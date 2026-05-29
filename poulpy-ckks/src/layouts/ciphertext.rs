@@ -106,11 +106,13 @@ impl<D: Data, S: CKKSNormalizationState> CKKSCiphertext<D, S> {
         self.meta = meta;
         Ok(())
     }
+}
 
+impl<D: Data> CKKSCiphertext<D, Normalized> {
     /// Allocates a fresh backend-owned ciphertext and copies `self` into it.
     ///
-    /// Used to normalize the allocation size after arithmetic operations that
-    /// may leave the buffer over-sized relative to `effective_k`.
+    /// Used to compact the allocation size after arithmetic operations that
+    /// may leave a normalized ciphertext over-sized relative to `effective_k`.
     pub fn compact<M, BE>(&self, module: &M, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSCiphertext<BE::OwnedBuf>>
     where
         BE: Backend,

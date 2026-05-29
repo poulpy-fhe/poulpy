@@ -114,12 +114,18 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
             poly.baby_steps() > 0,
             "ckks_eval_poly_real_const_coeffs_from_power_basis: polynomial must contain at least one baby step"
         );
+        let poly_basis = poly.basis();
+        let power_basis_basis = power_basis.basis();
+        ensure!(
+            poly_basis == power_basis_basis,
+            "ckks_eval_poly_real_const_coeffs_from_power_basis: polynomial basis {poly_basis:?} does not match power basis {power_basis_basis:?}"
+        );
 
         let n_baby = poly.baby_steps();
         let last_coeffs = poly.baby_step(n_baby - 1);
         let trailing_const_only = n_baby >= 2 && last_coeffs.n().as_usize() == 1;
         let fold_power = poly.degree();
-        let can_fold = trailing_const_only && power_basis.get(fold_power).is_ok();
+        let can_fold = trailing_const_only && power_basis.has_power(fold_power);
 
         let n_to_process = if can_fold { n_baby - 1 } else { n_baby };
         let mut baby_steps = Vec::with_capacity(n_to_process);

@@ -121,10 +121,11 @@ fn estimate_power_basis_muls(degree: usize, log_split: usize, parity: Parity, ba
     if largest_pow2 >= 2 {
         targets.push(largest_pow2);
     }
+    let baby_limit = base.min(degree + 1);
     match parity {
-        Parity::Even => targets.extend((4..base).step_by(2)),
-        Parity::Odd => targets.extend((3..base).step_by(2)),
-        Parity::Full => targets.extend(3..base),
+        Parity::Even => targets.extend((4..baby_limit).step_by(2)),
+        Parity::Odd => targets.extend((3..baby_limit).step_by(2)),
+        Parity::Full => targets.extend(3..baby_limit),
     }
 
     let mut needed = std::collections::HashSet::<usize>::new();
@@ -233,6 +234,7 @@ where
     /// polynomials first map `x` from `[a, b]` to the normalized Chebyshev
     /// variable `(2x-a-b)/(b-a)`.
     pub fn evaluate_on_interval(&self, x: F, a: F, b: F) -> F {
+        assert!(a < b);
         match self.basis {
             Basis::Monomial => self.evaluate(x),
             Basis::Chebyshev => {
@@ -460,11 +462,72 @@ where
 ///
 /// Construct via [`Polynomial::encode_bsgs`].
 pub struct BSGSPolynomial<C> {
-    pub basis: Basis,
-    pub degree: usize,
-    pub base: usize,
-    pub baby_steps: Vec<C>,
-    pub parity: Parity,
+    basis: Basis,
+    degree: usize,
+    base: usize,
+    baby_steps: Vec<C>,
+    parity: Parity,
+}
+
+impl<C> BSGSPolynomial<C> {
+    /// Returns the polynomial basis used by this decomposition.
+    pub fn basis(&self) -> Basis {
+        self.basis
+    }
+
+    /// Returns the original polynomial degree.
+    pub fn degree(&self) -> usize {
+        self.degree
+    }
+
+    /// Returns the baby-step base used by this decomposition.
+    pub fn base(&self) -> usize {
+        self.base
+    }
+
+    /// Returns the baby-step split as `log2(base)`.
+    pub fn log_split(&self) -> usize {
+        self.base.trailing_zeros() as usize
+    }
+
+    /// Returns all encoded baby-step coefficient polynomials.
+    pub fn baby_steps(&self) -> &[C] {
+        &self.baby_steps
+    }
+
+    /// Returns one encoded baby-step coefficient polynomial.
+    ///
+    /// Panics if `i >= self.baby_steps().len()`.
+    pub fn baby_step(&self, i: usize) -> &C {
+        &self.baby_steps[i]
+    }
+
+    /// Returns the polynomial parity carried by this decomposition.
+    pub fn parity(&self) -> Parity {
+        self.parity
+    }
+
+    /// Rebuilds this BSGS polynomial by mapping each baby-step coefficient.
+    pub fn map_baby_steps<D>(self, mut f: impl FnMut(C) -> D) -> BSGSPolynomial<D> {
+        BSGSPolynomial {
+            basis: self.basis,
+            degree: self.degree,
+            base: self.base,
+            baby_steps: self.baby_steps.into_iter().map(&mut f).collect(),
+            parity: self.parity,
+        }
+    }
+
+    /// Rebuilds this BSGS polynomial by mapping borrowed baby-step coefficients.
+    pub fn map_baby_steps_ref<D>(&self, mut f: impl FnMut(&C) -> D) -> BSGSPolynomial<D> {
+        BSGSPolynomial {
+            basis: self.basis,
+            degree: self.degree,
+            base: self.base,
+            baby_steps: self.baby_steps.iter().map(&mut f).collect(),
+            parity: self.parity,
+        }
+    }
 }
 
 impl<BE: Backend, C> BSGSPolynomialInfos<BE> for BSGSPolynomial<C>
@@ -527,5 +590,11 @@ mod tests {
             collect_baby_step_degrees(Basis::Chebyshev, 31, log_split, true),
             vec![7, 7, 7, 3, 1, 1]
         );
+    }
+
+    #[test]
+    fn power_basis_estimate_caps_baby_steps_at_degree() {
+        assert_eq!(estimate_power_basis_muls(5, 3, Parity::Full, Basis::Monomial), 4);
+        assert_eq!(estimate_power_basis_muls(5, 3, Parity::Even, Basis::Monomial), 2);
     }
 }
