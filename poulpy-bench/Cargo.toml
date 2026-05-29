@@ -144,6 +144,11 @@ harness = false
 required-features = ["ckks-bench"]
 
 [[bench]]
+name = "ckks_mod1"
+harness = false
+required-features = ["ckks-bench"]
+
+[[bench]]
 name = "ckks_automorphism"
 harness = false
 required-features = ["ckks-bench"]
