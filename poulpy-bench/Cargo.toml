@@ -144,7 +144,7 @@ harness = false
 required-features = ["ckks-bench"]
 
 [[bench]]
-name = "ckks_mod1"
+name = "ckks_eval_mod"
 harness = false
 required-features = ["ckks-bench"]
 

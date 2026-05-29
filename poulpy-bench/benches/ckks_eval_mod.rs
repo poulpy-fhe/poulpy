@@ -1,4 +1,4 @@
-//! Times the homomorphic `x mod 1` evaluation across the three Mod1Type
+//! Times the homomorphic `x mod 1` evaluation across the three EvalModType
 //! variants. Per case, prints the level consumption (log_budget delta)
 //! and the number of CT-CT mul rounds (BSGS depth + r double-angle rounds
 //! + arcsine depth).
@@ -8,8 +8,8 @@ use std::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
 use poulpy_ckks::{
     CKKSInfos, CKKSMeta,
-    api::CKKSMod1Ops,
-    default::mod1::{Mod1Parameters, Mod1ParametersLiteral, Mod1Type},
+    api::CKKSEvalModOps,
+    default::eval_mod::{EvalModParameters, EvalModParametersLiteral, EvalModType},
     layouts::CKKSModuleAlloc,
     leveled::api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps},
 };
@@ -34,55 +34,55 @@ const COEFF_META: CKKSMeta = CKKSMeta {
 
 struct Case {
     label: &'static str,
-    lit: Mod1ParametersLiteral,
+    lit: EvalModParametersLiteral,
 }
 
 const CASES: &[Case] = &[
     Case {
         label: "sin_continuous/d15",
-        lit: Mod1ParametersLiteral {
-            mod1_type: Mod1Type::SinContinuous,
+        lit: EvalModParametersLiteral {
+            eval_mod_type: EvalModType::SinContinuous,
             log_message_ratio: 4,
-            mod1_degree: 15,
-            mod1_interval: 1,
+            eval_mod_degree: 15,
+            eval_mod_interval: 1,
             double_angle: 0,
-            mod1_inv_degree: 0,
+            eval_mod_inv_degree: 0,
             scaling: 1.0,
         },
     },
     Case {
         label: "sin_continuous_arcsine/d31_inv7",
-        lit: Mod1ParametersLiteral {
-            mod1_type: Mod1Type::SinContinuous,
+        lit: EvalModParametersLiteral {
+            eval_mod_type: EvalModType::SinContinuous,
             log_message_ratio: 4,
-            mod1_degree: 31,
-            mod1_interval: 1,
+            eval_mod_degree: 31,
+            eval_mod_interval: 1,
             double_angle: 0,
-            mod1_inv_degree: 7,
+            eval_mod_inv_degree: 7,
             scaling: 1.0,
         },
     },
     Case {
         label: "cos_discrete/d30_K12_r3",
-        lit: Mod1ParametersLiteral {
-            mod1_type: Mod1Type::CosDiscrete,
+        lit: EvalModParametersLiteral {
+            eval_mod_type: EvalModType::CosDiscrete,
             log_message_ratio: 8,
-            mod1_degree: 30,
-            mod1_interval: 12,
+            eval_mod_degree: 30,
+            eval_mod_interval: 12,
             double_angle: 3,
-            mod1_inv_degree: 0,
+            eval_mod_inv_degree: 0,
             scaling: 1.0,
         },
     },
     Case {
         label: "cos_continuous/d31_K4_r2",
-        lit: Mod1ParametersLiteral {
-            mod1_type: Mod1Type::CosContinuous,
+        lit: EvalModParametersLiteral {
+            eval_mod_type: EvalModType::CosContinuous,
             log_message_ratio: 4,
-            mod1_degree: 31,
-            mod1_interval: 4,
+            eval_mod_degree: 31,
+            eval_mod_interval: 4,
             double_angle: 2,
-            mod1_inv_degree: 0,
+            eval_mod_inv_degree: 0,
             scaling: 1.0,
         },
     },
@@ -109,14 +109,14 @@ fn tsk_layout() -> GLWETensorKeyLayout {
     }
 }
 
-fn depth(lit: &Mod1ParametersLiteral) -> usize {
-    let d = lit.mod1_degree.next_power_of_two().trailing_zeros() as usize;
-    let r = match lit.mod1_type {
-        Mod1Type::SinContinuous => 0,
+fn depth(lit: &EvalModParametersLiteral) -> usize {
+    let d = lit.eval_mod_degree.next_power_of_two().trailing_zeros() as usize;
+    let r = match lit.eval_mod_type {
+        EvalModType::SinContinuous => 0,
         _ => lit.double_angle,
     };
-    let inv = if lit.mod1_inv_degree > 0 {
-        lit.mod1_inv_degree.next_power_of_two().trailing_zeros() as usize
+    let inv = if lit.eval_mod_inv_degree > 0 {
+        lit.eval_mod_inv_degree.next_power_of_two().trailing_zeros() as usize
     } else {
         0
     };
@@ -154,10 +154,10 @@ fn bench_ntt120_ref(c: &mut Criterion) {
     let mut ct_x = module.ckks_ciphertext_alloc(Base2K(BASE2K as u32), TorusPrecision(CT_K as u32));
     ct_x.set_meta_checked(input_meta).unwrap();
 
-    let mut group = c.benchmark_group(format!("ckks_mod1::{label}"));
+    let mut group = c.benchmark_group(format!("ckks_eval_mod::{label}"));
     for case in CASES {
-        let params = Mod1Parameters::from_literal::<f64>(COEFF_META, Base2K(BASE2K as u32), case.lit, &host_module)
-            .expect("Mod1Parameters::from_literal");
+        let params = EvalModParameters::from_literal::<f64>(COEFF_META, Base2K(BASE2K as u32), case.lit, &host_module)
+            .expect("EvalModParameters::from_literal");
 
         let (levels, log_budget_in, log_budget_out) = {
             let mut ct_run = module.ckks_ciphertext_alloc(Base2K(BASE2K as u32), TorusPrecision(CT_K as u32));
@@ -170,14 +170,14 @@ fn bench_ntt120_ref(c: &mut Criterion) {
             {
                 let mut sc = scratch.borrow();
                 module
-                    .ckks_eval_mod1(&mut ct_res, &ct_run, &params, &tsk_prepared, &mut sc)
+                    .ckks_eval_mod(&mut ct_res, &ct_run, &params, &tsk_prepared, &mut sc)
                     .unwrap();
             }
             let lb_out = ct_res.log_budget();
             ((lb_in - lb_out) / LOG_DELTA, lb_in, lb_out)
         };
         eprintln!(
-            "[mod1/{label} {case_label}] L={levels} depth_pred={depth} ({lb_in}→{lb_out} budget bits)",
+            "[eval_mod/{label} {case_label}] L={levels} depth_pred={depth} ({lb_in}→{lb_out} budget bits)",
             case_label = case.label,
             depth = depth(&case.lit),
             lb_in = log_budget_in,
@@ -195,7 +195,7 @@ fn bench_ntt120_ref(c: &mut Criterion) {
                 {
                     let mut sc = scratch.borrow();
                     module
-                        .ckks_eval_mod1(black_box(&mut ct_res), &ct_run, black_box(&params), &tsk_prepared, &mut sc)
+                        .ckks_eval_mod(black_box(&mut ct_res), &ct_run, black_box(&params), &tsk_prepared, &mut sc)
                         .unwrap();
                 }
             });
@@ -204,13 +204,13 @@ fn bench_ntt120_ref(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_ckks_mod1(c: &mut Criterion) {
+fn bench_ckks_eval_mod(c: &mut Criterion) {
     bench_ntt120_ref(c);
 }
 
 criterion_group! {
     name = benches;
     config = poulpy_bench::ckks_criterion_config();
-    targets = bench_ckks_mod1
+    targets = bench_ckks_eval_mod
 }
 criterion_main!(benches);

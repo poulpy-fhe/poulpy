@@ -12,8 +12,8 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCtBounds, CKKSMeta, SetCKKSInfos,
-    api::{CKKSAllOpsTmpBytes, CKKSMod1Ops},
-    default::mod1::{Mod1Parameters, Mod1ParametersLiteral, Mod1Type},
+    api::{CKKSAllOpsTmpBytes, CKKSEvalModOps},
+    default::eval_mod::{EvalModParameters, EvalModParametersLiteral, EvalModType},
     encoding::reim::Encoder,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
 };
@@ -24,7 +24,7 @@ use super::helpers::{
 };
 
 #[derive(Clone, Copy, Debug)]
-struct Mod1TestParams {
+struct EvalModTestParams {
     pub n: usize,
     pub base2k: usize,
     pub k: usize,
@@ -33,7 +33,7 @@ struct Mod1TestParams {
     pub dsize: usize,
 }
 
-impl Mod1TestParams {
+impl EvalModTestParams {
     fn glwe_layout(&self) -> EncryptionLayout<GLWELayout> {
         EncryptionLayout::new_from_default_sigma(GLWELayout {
             n: self.n.into(),
@@ -70,10 +70,10 @@ impl Mod1TestParams {
     }
 }
 
-fn mod1_params(n: usize, base2k: usize, log_delta: usize, depth: usize) -> Mod1TestParams {
+fn eval_mod_params(n: usize, base2k: usize, log_delta: usize, depth: usize) -> EvalModTestParams {
     let log_budget = depth * log_delta + base2k + log_delta;
     let k = (log_delta + log_budget).next_multiple_of(base2k);
-    Mod1TestParams {
+    EvalModTestParams {
         n,
         base2k,
         k,
@@ -83,7 +83,7 @@ fn mod1_params(n: usize, base2k: usize, log_delta: usize, depth: usize) -> Mod1T
     }
 }
 
-fn alloc_scratch_mod1<BE>(params: &Mod1TestParams, module: &Module<BE>) -> ScratchOwned<BE>
+fn alloc_scratch_eval_mod<BE>(params: &EvalModTestParams, module: &Module<BE>) -> ScratchOwned<BE>
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
@@ -101,8 +101,8 @@ where
 
 fn upload_params<BE>(
     module: &Module<BE>,
-    host: Mod1Parameters<CKKSPlaintext<Vec<u8>>>,
-) -> Mod1Parameters<CKKSPlaintext<BE::OwnedBuf>>
+    host: EvalModParameters<CKKSPlaintext<Vec<u8>>>,
+) -> EvalModParameters<CKKSPlaintext<BE::OwnedBuf>>
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
@@ -110,14 +110,14 @@ where
     host.map_plaintexts(|pt| upload_pt(module, &pt))
 }
 
-fn depth_of(lit: &Mod1ParametersLiteral) -> usize {
-    let d = lit.mod1_degree.next_power_of_two().trailing_zeros() as usize;
-    let r = match lit.mod1_type {
-        Mod1Type::SinContinuous => 0,
+fn depth_of(lit: &EvalModParametersLiteral) -> usize {
+    let d = lit.eval_mod_degree.next_power_of_two().trailing_zeros() as usize;
+    let r = match lit.eval_mod_type {
+        EvalModType::SinContinuous => 0,
         _ => lit.double_angle,
     };
-    let inv = if lit.mod1_inv_degree > 0 {
-        lit.mod1_inv_degree.next_power_of_two().trailing_zeros() as usize
+    let inv = if lit.eval_mod_inv_degree > 0 {
+        lit.eval_mod_inv_degree.next_power_of_two().trailing_zeros() as usize
     } else {
         0
     };
@@ -133,33 +133,33 @@ fn oracle_sin(x: f64, inv: bool) -> f64 {
     y / two_pi
 }
 
-fn oracle_pipeline(x: f64, lit: &Mod1ParametersLiteral) -> f64 {
+fn oracle_pipeline(x: f64, lit: &EvalModParametersLiteral) -> f64 {
     let two_pi = std::f64::consts::TAU;
     let inv_two_pi = 1.0 / two_pi;
     let scaling = if lit.scaling == 0.0 { 1.0 } else { lit.scaling };
-    let double_angle = match lit.mod1_type {
-        Mod1Type::SinContinuous => 0,
+    let double_angle = match lit.eval_mod_type {
+        EvalModType::SinContinuous => 0,
         _ => lit.double_angle,
     };
     let sc_fac = (1u64 << double_angle) as f64;
-    let k_eff = lit.mod1_interval as f64 / sc_fac;
+    let k_eff = lit.eval_mod_interval as f64 / sc_fac;
 
-    let s: f64 = if lit.mod1_inv_degree > 0 {
+    let s: f64 = if lit.eval_mod_inv_degree > 0 {
         1.0
     } else {
         (inv_two_pi * scaling).powf(1.0 / sc_fac)
     };
 
     let mut v = x;
-    if matches!(lit.mod1_type, Mod1Type::CosContinuous) {
-        v += -0.25 / (lit.mod1_interval as f64);
+    if matches!(lit.eval_mod_type, EvalModType::CosContinuous) {
+        v += -0.25 / (lit.eval_mod_interval as f64);
     }
 
-    let k = lit.mod1_interval as f64;
-    let mut p_val: f64 = match lit.mod1_type {
-        Mod1Type::SinContinuous => s * (two_pi * k_eff * v).sin(),
-        Mod1Type::CosContinuous => s * (two_pi * k_eff * v).cos(),
-        Mod1Type::CosDiscrete => s * (two_pi * (k * v - 0.25) / sc_fac).cos(),
+    let k = lit.eval_mod_interval as f64;
+    let mut p_val: f64 = match lit.eval_mod_type {
+        EvalModType::SinContinuous => s * (two_pi * k_eff * v).sin(),
+        EvalModType::CosContinuous => s * (two_pi * k_eff * v).cos(),
+        EvalModType::CosDiscrete => s * (two_pi * (k * v - 0.25) / sc_fac).cos(),
     };
 
     for i in 0..double_angle {
@@ -168,8 +168,8 @@ fn oracle_pipeline(x: f64, lit: &Mod1ParametersLiteral) -> f64 {
         p_val = 2.0 * p_val * p_val - dac;
     }
 
-    if lit.mod1_inv_degree > 0 {
-        let n = lit.mod1_inv_degree;
+    if lit.eval_mod_inv_degree > 0 {
+        let n = lit.eval_mod_inv_degree;
         let mut coeffs = vec![0f64; n + 1];
         coeffs[1] = inv_two_pi * scaling;
         let mut i = 1usize;
@@ -196,17 +196,17 @@ enum Oracle {
     Pipeline,
 }
 
-fn run_mod1_case<BE, F, E>(
+fn run_eval_mod_case<BE, F, E>(
     label: &str,
     base2k: usize,
     log_delta: usize,
-    lit: Mod1ParametersLiteral,
+    lit: EvalModParametersLiteral,
     domain: f64,
     required_log2_prec: f64,
     oracle: Oracle,
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE> + CKKSMod1Ops<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSEvalModOps<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -214,7 +214,7 @@ fn run_mod1_case<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let depth = depth_of(&lit);
-    let params = mod1_params(256, base2k, log_delta, depth);
+    let params = eval_mod_params(256, base2k, log_delta, depth);
     let host_module = Module::<HostBytesBackend>::new(params.n as u64);
     let module = Module::<BE>::new(params.n as u64);
     let test_params = params.as_test_params();
@@ -234,12 +234,12 @@ fn run_mod1_case<BE, F, E>(
         log_delta,
         log_budget: base2k,
     };
-    let host_params = Mod1Parameters::from_literal::<F>(coeff_meta, params.base2k.into(), lit, &host_module)
-        .expect("Mod1Parameters::from_literal");
+    let host_params = EvalModParameters::from_literal::<F>(coeff_meta, params.base2k.into(), lit, &host_module)
+        .expect("EvalModParameters::from_literal");
     let params_be = upload_params(&module, host_params);
 
     let (sk_raw, sk) = gen_sk_with_raw(&test_params, &module, &host_module, [0u8; 32]);
-    let mut scratch = alloc_scratch_mod1(&params, &module);
+    let mut scratch = alloc_scratch_eval_mod(&params, &module);
     let tsk = gen_tsk(&test_params, &module, &sk_raw, &mut scratch.borrow());
 
     let ct_input = ckks_encrypt_with_prec(
@@ -257,12 +257,12 @@ fn run_mod1_case<BE, F, E>(
 
     let mut res = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
     module
-        .ckks_eval_mod1(&mut res, &ct_input, &params_be, &tsk, &mut scratch.borrow())
-        .expect("ckks_eval_mod1");
+        .ckks_eval_mod(&mut res, &ct_input, &params_be, &tsk, &mut scratch.borrow())
+        .expect("ckks_eval_mod");
 
     let (re_out, _im_out) = ckks_decrypt_decode::<BE, F, E>(&test_params, &module, &encoder, &res, &sk, &mut scratch.borrow());
 
-    let inv = lit.mod1_inv_degree > 0;
+    let inv = lit.eval_mod_inv_degree > 0;
     let want_re: Vec<F> = x_re_raw
         .iter()
         .map(|&x| {
@@ -287,102 +287,102 @@ fn run_mod1_case<BE, F, E>(
     );
 }
 
-pub fn test_mod1_sin_continuous_minimal<BE, F, E>(
+pub fn test_eval_mod_sin_continuous_minimal<BE, F, E>(
     _params_unused: super::CKKSTestParams,
     _module_unused: &Module<BE>,
     _host_unused: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE> + CKKSMod1Ops<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSEvalModOps<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let lit = Mod1ParametersLiteral {
-        mod1_type: Mod1Type::SinContinuous,
+    let lit = EvalModParametersLiteral {
+        eval_mod_type: EvalModType::SinContinuous,
         log_message_ratio: 4,
-        mod1_degree: 15,
-        mod1_interval: 1,
+        eval_mod_degree: 15,
+        eval_mod_interval: 1,
         double_angle: 0,
-        mod1_inv_degree: 0,
+        eval_mod_inv_degree: 0,
         scaling: 1.0,
     };
-    run_mod1_case::<BE, F, E>("mod1_sin_continuous_minimal", 19, 30, lit, 0.5, 5.0, Oracle::Sin);
+    run_eval_mod_case::<BE, F, E>("eval_mod_sin_continuous_minimal", 19, 30, lit, 0.5, 5.0, Oracle::Sin);
 }
 
-pub fn test_mod1_sin_continuous_with_arcsine<BE, F, E>(
+pub fn test_eval_mod_sin_continuous_with_arcsine<BE, F, E>(
     _params_unused: super::CKKSTestParams,
     _module_unused: &Module<BE>,
     _host_unused: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE> + CKKSMod1Ops<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSEvalModOps<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let lit = Mod1ParametersLiteral {
-        mod1_type: Mod1Type::SinContinuous,
+    let lit = EvalModParametersLiteral {
+        eval_mod_type: EvalModType::SinContinuous,
         log_message_ratio: 4,
-        mod1_degree: 31,
-        mod1_interval: 1,
+        eval_mod_degree: 31,
+        eval_mod_interval: 1,
         double_angle: 0,
-        mod1_inv_degree: 7,
+        eval_mod_inv_degree: 7,
         scaling: 1.0,
     };
-    run_mod1_case::<BE, F, E>("mod1_sin_continuous_arcsine", 19, 30, lit, 0.25, 4.0, Oracle::Sin);
+    run_eval_mod_case::<BE, F, E>("eval_mod_sin_continuous_arcsine", 19, 30, lit, 0.25, 4.0, Oracle::Sin);
 }
 
-pub fn test_mod1_cos_discrete<BE, F, E>(
+pub fn test_eval_mod_cos_discrete<BE, F, E>(
     _params_unused: super::CKKSTestParams,
     _module_unused: &Module<BE>,
     _host_unused: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE> + CKKSMod1Ops<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSEvalModOps<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let lit = Mod1ParametersLiteral {
-        mod1_type: Mod1Type::CosDiscrete,
+    let lit = EvalModParametersLiteral {
+        eval_mod_type: EvalModType::CosDiscrete,
         log_message_ratio: 8,
-        mod1_degree: 30,
-        mod1_interval: 12,
+        eval_mod_degree: 30,
+        eval_mod_interval: 12,
         double_angle: 3,
-        mod1_inv_degree: 0,
+        eval_mod_inv_degree: 0,
         scaling: 1.0,
     };
-    run_mod1_case::<BE, F, E>("mod1_cos_discrete", 19, 30, lit, 0.25, 4.0, Oracle::Pipeline);
+    run_eval_mod_case::<BE, F, E>("eval_mod_cos_discrete", 19, 30, lit, 0.25, 4.0, Oracle::Pipeline);
 }
 
-pub fn test_mod1_cos_continuous<BE, F, E>(
+pub fn test_eval_mod_cos_continuous<BE, F, E>(
     _params_unused: super::CKKSTestParams,
     _module_unused: &Module<BE>,
     _host_unused: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE> + CKKSMod1Ops<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSEvalModOps<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let lit = Mod1ParametersLiteral {
-        mod1_type: Mod1Type::CosContinuous,
+    let lit = EvalModParametersLiteral {
+        eval_mod_type: EvalModType::CosContinuous,
         log_message_ratio: 4,
-        mod1_degree: 31,
-        mod1_interval: 4,
+        eval_mod_degree: 31,
+        eval_mod_interval: 4,
         double_angle: 2,
-        mod1_inv_degree: 0,
+        eval_mod_inv_degree: 0,
         scaling: 1.0,
     };
-    run_mod1_case::<BE, F, E>("mod1_cos_continuous", 19, 30, lit, 0.25, 4.0, Oracle::Pipeline);
+    run_eval_mod_case::<BE, F, E>("eval_mod_cos_continuous", 19, 30, lit, 0.25, 4.0, Oracle::Pipeline);
 }
