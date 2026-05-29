@@ -529,6 +529,22 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_chebyshev_degree31_min_mult
             );
             run_test!(
+                mod1_sin_continuous_minimal,
+                $crate::test_suite::mod1::test_mod1_sin_continuous_minimal
+            );
+            run_test!(
+                mod1_sin_continuous_with_arcsine,
+                $crate::test_suite::mod1::test_mod1_sin_continuous_with_arcsine
+            );
+            run_test!(
+                mod1_cos_discrete,
+                $crate::test_suite::mod1::test_mod1_cos_discrete
+            );
+            run_test!(
+                mod1_cos_continuous,
+                $crate::test_suite::mod1::test_mod1_cos_continuous
+            );
+            run_test!(
                 mul_add_const_zero_preserves_dst_meta,
                 $crate::test_suite::mul_add::test_mul_add_const_zero_preserves_dst_meta
             );
@@ -619,6 +635,7 @@ pub mod encryption;
 pub mod errors;
 pub mod helpers;
 pub mod imag;
+pub mod mod1;
 pub mod mul;
 pub mod mul_add;
 pub mod mul_pow2;

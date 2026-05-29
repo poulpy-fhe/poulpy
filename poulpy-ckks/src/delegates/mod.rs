@@ -4,6 +4,7 @@ pub(crate) mod conjugate;
 pub(crate) mod copy;
 pub(crate) mod encryption;
 pub(crate) mod imag;
+pub(crate) mod mod1;
 pub(crate) mod mul;
 pub(crate) mod neg;
 pub(crate) mod plaintext;

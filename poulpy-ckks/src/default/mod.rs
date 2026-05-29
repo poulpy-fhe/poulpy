@@ -3,6 +3,7 @@ pub mod conjugate;
 pub mod copy;
 pub mod encryption;
 pub mod imag;
+pub mod mod1;
 pub mod mul;
 pub mod neg;
 pub mod plaintext;
@@ -13,6 +14,7 @@ pub mod rotate;
 pub mod sub;
 
 pub use add::CKKSAddDefault;
+pub use mod1::{CKKSMod1OpsDefault, Mod1Parameters, Mod1ParametersLiteral, Mod1Type};
 pub use plaintext::CKKSPlaintextDefault;
 pub use polynomial_evaluation::PolynomialEvaluationDefault;
 pub use sub::CKKSSubDefault;

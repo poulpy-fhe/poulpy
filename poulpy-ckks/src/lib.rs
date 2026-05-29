@@ -45,6 +45,7 @@ use poulpy_core::layouts::{Base2K, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef
 use poulpy_hal::layouts::Backend;
 
 pub mod api;
+pub mod cosine;
 pub mod default;
 pub(crate) mod delegates;
 pub mod encoding;

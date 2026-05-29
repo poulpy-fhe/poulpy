@@ -118,18 +118,18 @@ impl<D: Data> PowerBasis<CKKSCiphertext<D>> {
 
     /// Recursively computes and stores X^`n` using `split_degree` to choose the
     /// multiplication tree: X^n = X^a · X^b where `split_degree(n) = (a, b)`.
-    pub fn gen_power<BE>(
+    pub fn gen_power<BE, T>(
         &mut self,
         n: usize,
         module: &Module<BE>,
-        tsk: &poulpy_core::layouts::GLWETensorKeyPrepared<D, BE>,
+        tsk: &T,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         BE: Backend<OwnedBuf = D>,
         Module<BE>: CKKSMulOps<BE> + CKKSModuleAlloc<BE>,
         CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        poulpy_core::layouts::GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
         ensure!(
             self.basis == Basis::Monomial,
@@ -163,18 +163,18 @@ impl<D: Data> PowerBasis<CKKSCiphertext<D>> {
     ///
     /// Generates the plaintext `T_0 = 1` term on demand for
     /// `T_{a+b}(X) = 2*T_a(X)*T_b(X) - T_{|a-b|}(X)`.
-    pub fn gen_power_chebyshev<BE>(
+    pub fn gen_power_chebyshev<BE, T>(
         &mut self,
         n: usize,
         module: &Module<BE>,
-        tsk: &poulpy_core::layouts::GLWETensorKeyPrepared<D, BE>,
+        tsk: &T,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         BE: Backend<OwnedBuf = D>,
         Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
         CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        poulpy_core::layouts::GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
         ensure!(
             self.basis == Basis::Chebyshev,
@@ -240,20 +240,20 @@ impl<D: Data> PowerBasis<CKKSCiphertext<D>> {
     ///   `min(degree, 2^log_split − 1)`.
     ///
     /// Giant-step powers of two up to `2^(⌈log₂ degree⌉−1)` are always computed.
-    pub fn populate<BE>(
+    pub fn populate<BE, T>(
         &mut self,
         degree: usize,
         log_split: usize,
         parity: Parity,
         module: &Module<BE>,
-        tsk: &poulpy_core::layouts::GLWETensorKeyPrepared<D, BE>,
+        tsk: &T,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         BE: Backend<OwnedBuf = D>,
         Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
         CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        poulpy_core::layouts::GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
         ensure!(degree >= 1, "populate: degree must be ≥ 1");
 
