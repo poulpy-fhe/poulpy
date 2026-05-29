@@ -43,7 +43,7 @@
 
 use core::arch::x86_64::{
     __m256i, _mm_cvtsi64_si128, _mm256_add_epi64, _mm256_and_si256, _mm256_loadu_si256, _mm256_mul_epu32, _mm256_set1_epi64x,
-    _mm256_setzero_si256, _mm256_srl_epi64, _mm256_srli_epi64, _mm256_storeu_si256, _mm256_stream_si256,
+    _mm256_setzero_si256, _mm256_srl_epi64, _mm256_srli_epi64, _mm256_storeu_si256,
 };
 
 use poulpy_cpu_ref::reference::ntt120::{mat_vec::BbcMeta, primes::Primes30};
@@ -146,12 +146,8 @@ pub(crate) unsafe fn vec_mat1col_product_bbc_avx2(meta: &BbcMeta<Primes30>, ell:
 ///
 /// Caller must ensure AVX2 support. Slice lengths must satisfy
 /// `x.len() >= 16 * ell`, `y.len() >= 16 * ell`, `res.len() >= 8`.
-///
-/// `NT_STORE`: when `true`, commit the two q120b outputs with
-/// `_mm256_stream_si256`. The caller must then issue one `_mm_sfence`
-/// before any subsequent load from `res`, and `res` must be 32-byte aligned.
 #[target_feature(enable = "avx2")]
-pub(crate) unsafe fn vec_mat1col_product_x2_bbc_avx2<const NT_STORE: bool>(
+pub(crate) unsafe fn vec_mat1col_product_x2_bbc_avx2(
     meta: &BbcMeta<Primes30>,
     ell: usize,
     res: &mut [u64],
@@ -210,13 +206,8 @@ pub(crate) unsafe fn vec_mat1col_product_x2_bbc_avx2<const NT_STORE: bool>(
         let res_ptr = res.as_mut_ptr() as *mut __m256i;
         let out0 = reduce_bbc(s0, s1, mask_h2, meta.h, s2l_pow_red, s2h_pow_red);
         let out1 = reduce_bbc(s2, s3, mask_h2, meta.h, s2l_pow_red, s2h_pow_red);
-        if NT_STORE {
-            _mm256_stream_si256(res_ptr, out0);
-            _mm256_stream_si256(res_ptr.add(1), out1);
-        } else {
-            _mm256_storeu_si256(res_ptr, out0);
-            _mm256_storeu_si256(res_ptr.add(1), out1);
-        }
+        _mm256_storeu_si256(res_ptr, out0);
+        _mm256_storeu_si256(res_ptr.add(1), out1);
     }
 }
 
@@ -504,7 +495,7 @@ mod tests {
         let mut res_avx = vec![0u64; 8];
         let mut res_ref = vec![0u64; 8];
 
-        unsafe { vec_mat1col_product_x2_bbc_avx2::<false>(&meta, ell, &mut res_avx, &x, &y) };
+        unsafe { vec_mat1col_product_x2_bbc_avx2(&meta, ell, &mut res_avx, &x, &y) };
         vec_mat1col_product_x2_bbc_ref::<Primes30>(&meta, ell, &mut res_ref, &x, &y);
 
         assert_eq!(res_avx, res_ref, "vec_mat1col_product_x2_bbc: AVX2 vs ref mismatch");

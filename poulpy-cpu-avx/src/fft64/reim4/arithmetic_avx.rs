@@ -63,7 +63,7 @@ pub fn reim4_save_1blk_to_reim_contiguous_avx(m: usize, rows: usize, blk: usize,
 /// Caller must ensure the CPU supports AVX2 (e.g., via `is_x86_feature_detected!("avx2")`);
 #[target_feature(enable = "avx2,fma")]
 pub fn reim4_save_1blk_to_reim_avx<const OVERWRITE: bool>(m: usize, blk: usize, dst: &mut [f64], src: &[f64]) {
-    use core::arch::x86_64::{__m256d, _mm256_add_pd, _mm256_loadu_pd, _mm256_storeu_pd, _mm256_stream_pd};
+    use core::arch::x86_64::{__m256d, _mm256_add_pd, _mm256_loadu_pd, _mm256_storeu_pd};
     unsafe {
         let off: usize = blk * 4;
         let src_ptr: *const f64 = src.as_ptr();
@@ -75,10 +75,11 @@ pub fn reim4_save_1blk_to_reim_avx<const OVERWRITE: bool>(m: usize, blk: usize, 
         let d1_ptr: *mut f64 = d0_ptr.add(m);
 
         if OVERWRITE {
-            // `dst` allocations are 64-byte aligned and each block starts on a
-            // 32-byte boundary, so overwrite-mode can use non-temporal stores.
-            _mm256_stream_pd(d0_ptr, s0);
-            _mm256_stream_pd(d1_ptr, s1);
+            // Use normal stores: the produced data is reused immediately by the
+            // next operation in the pipeline (e.g. VMP -> SVP/add/sub), so
+            // non-temporal stores would evict still-hot cache lines.
+            _mm256_storeu_pd(d0_ptr, s0);
+            _mm256_storeu_pd(d1_ptr, s1);
         } else {
             let d0: __m256d = _mm256_loadu_pd(d0_ptr);
             let d1: __m256d = _mm256_loadu_pd(d1_ptr);
@@ -97,7 +98,7 @@ pub fn reim4_save_2blk_to_reim_avx<const OVERWRITE: bool>(
     dst: &mut [f64], //
     src: &[f64],     // 16 doubles [re1(4), im1(4), re2(4), im2(4)]
 ) {
-    use core::arch::x86_64::{__m256d, _mm256_add_pd, _mm256_loadu_pd, _mm256_storeu_pd, _mm256_stream_pd};
+    use core::arch::x86_64::{__m256d, _mm256_add_pd, _mm256_loadu_pd, _mm256_storeu_pd};
     unsafe {
         let off: usize = blk * 4;
         let src_ptr: *const f64 = src.as_ptr();
@@ -113,12 +114,13 @@ pub fn reim4_save_2blk_to_reim_avx<const OVERWRITE: bool>(
         let s3: __m256d = _mm256_loadu_pd(src_ptr.add(12));
 
         if OVERWRITE {
-            // `dst` allocations are 64-byte aligned and each block starts on a
-            // 32-byte boundary, so overwrite-mode can use non-temporal stores.
-            _mm256_stream_pd(d0_ptr, s0);
-            _mm256_stream_pd(d1_ptr, s1);
-            _mm256_stream_pd(d2_ptr, s2);
-            _mm256_stream_pd(d3_ptr, s3);
+            // Use normal stores: the produced data is reused immediately by the
+            // next operation in the pipeline (e.g. VMP -> SVP/add/sub), so
+            // non-temporal stores would evict still-hot cache lines.
+            _mm256_storeu_pd(d0_ptr, s0);
+            _mm256_storeu_pd(d1_ptr, s1);
+            _mm256_storeu_pd(d2_ptr, s2);
+            _mm256_storeu_pd(d3_ptr, s3);
         } else {
             let d0: __m256d = _mm256_loadu_pd(d0_ptr);
             let d1: __m256d = _mm256_loadu_pd(d1_ptr);
