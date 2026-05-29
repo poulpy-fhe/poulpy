@@ -10,7 +10,7 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
-    api::{Basis, CKKSAddOps, CKKSAffineOps, CKKSCopyOps, CKKSMulAddOps, CKKSMulOps, CKKSRescaleOps, CKKSSubOps, Parity},
+    api::{Basis, CKKSAddOps, CKKSAffineOps, CKKSCopyOps, CKKSMulAddOps, CKKSMulOps, CKKSSubOps, Parity},
     cosine,
     default::polynomial_evaluation::PolynomialEvaluationDefault,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
@@ -222,7 +222,6 @@ pub trait CKKSMod1OpsDefault<BE: Backend> {
             + CKKSMulOps<BE>
             + CKKSMulAddOps<BE>
             + CKKSCopyOps<BE>
-            + CKKSRescaleOps<BE>
             + CKKSAffineOps<BE>
             + CKKSModuleAlloc<BE>
             + GLWENormalize<BE>
@@ -245,7 +244,6 @@ where
         + CKKSMulOps<BE>
         + CKKSMulAddOps<BE>
         + CKKSCopyOps<BE>
-        + CKKSRescaleOps<BE>
         + CKKSAffineOps<BE>
         + CKKSModuleAlloc<BE>
         + GLWENormalize<BE>
@@ -287,7 +285,6 @@ where
         + CKKSMulOps<BE>
         + CKKSMulAddOps<BE>
         + CKKSCopyOps<BE>
-        + CKKSRescaleOps<BE>
         + CKKSAffineOps<BE>
         + CKKSModuleAlloc<BE>
         + GLWENormalize<BE>
@@ -327,7 +324,6 @@ where
         scratch,
     )?;
 
-    let base2k = ct.base2k().as_usize();
     for i in 0..params.double_angle {
         let dac = &params.double_angle_consts[i];
         scratch.scope(|local| -> Result<()> {
@@ -342,7 +338,6 @@ where
             module.ckks_copy(&mut out, &work, &mut local)?;
             Ok(())
         })?;
-        module.ckks_rescale_assign(&mut out, base2k, scratch)?;
     }
 
     if let Some(inv) = params.mod1_inv_bsgs.as_ref() {

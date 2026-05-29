@@ -70,8 +70,8 @@ impl Mod1TestParams {
     }
 }
 
-fn mod1_params(n: usize, base2k: usize, log_delta: usize, depth: usize, r_rounds: usize) -> Mod1TestParams {
-    let log_budget = depth * log_delta + r_rounds * base2k + log_delta;
+fn mod1_params(n: usize, base2k: usize, log_delta: usize, depth: usize) -> Mod1TestParams {
+    let log_budget = depth * log_delta + base2k + log_delta;
     let k = (log_delta + log_budget).next_multiple_of(base2k);
     Mod1TestParams {
         n,
@@ -217,11 +217,7 @@ fn run_mod1_case<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let depth = depth_of(&lit);
-    let r_rounds = match lit.mod1_type {
-        Mod1Type::SinContinuous => 0,
-        _ => lit.double_angle,
-    };
-    let params = mod1_params(256, base2k, log_delta, depth, r_rounds);
+    let params = mod1_params(256, base2k, log_delta, depth);
     let host_module = Module::<HostBytesBackend>::new(params.n as u64);
     let module = Module::<BE>::new(params.n as u64);
     let test_params = params.as_test_params();

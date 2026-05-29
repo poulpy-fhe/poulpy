@@ -8,7 +8,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
-    api::{CKKSAddOps, CKKSAffineOps, CKKSCopyOps, CKKSMulAddOps, CKKSMulOps, CKKSRescaleOps, CKKSSubOps},
+    api::{CKKSAddOps, CKKSAffineOps, CKKSCopyOps, CKKSMulAddOps, CKKSMulOps, CKKSSubOps},
     default::mod1::{CKKSMod1OpsDefault, Mod1Parameters},
     default::polynomial_evaluation::PolynomialEvaluationDefault,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
@@ -43,7 +43,6 @@ where
         + CKKSMulOps<BE>
         + CKKSMulAddOps<BE>
         + CKKSCopyOps<BE>
-        + CKKSRescaleOps<BE>
         + CKKSAffineOps<BE>
         + CKKSModuleAlloc<BE>
         + GLWENormalize<BE>
