@@ -18,6 +18,22 @@ use crate::{
     power_basis::PowerBasis,
 };
 
+fn scalar_from_f64<F: CKKSScalar>(name: &'static str, v: f64) -> Result<F> {
+    F::from_f64(v).ok_or_else(|| anyhow!("{name}: value {v} not representable in target scalar"))
+}
+
+fn scalar_from_u64<F: CKKSScalar>(name: &'static str, v: u64) -> Result<F> {
+    F::from_u64(v).ok_or_else(|| anyhow!("{name}: value {v} not representable in target scalar"))
+}
+
+fn scalar_from_usize<F: CKKSScalar>(name: &'static str, v: usize) -> Result<F> {
+    F::from_usize(v).ok_or_else(|| anyhow!("{name}: value {v} not representable in target scalar"))
+}
+
+fn scalar_from_i64<F: CKKSScalar>(name: &'static str, v: i64) -> Result<F> {
+    F::from_i64(v).ok_or_else(|| anyhow!("{name}: value {v} not representable in target scalar"))
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EvalModType {
     CosDiscrete,
@@ -56,6 +72,8 @@ impl EvalModParameters<CKKSPlaintext<Vec<u8>>> {
     where
         F: CKKSScalar + Float + FloatConst,
     {
+        ensure!(lit.eval_mod_degree > 0, "eval_mod_degree must be > 0");
+        ensure!(lit.eval_mod_interval > 0, "eval_mod_interval must be > 0");
         ensure!(
             !(lit.eval_mod_type == EvalModType::SinContinuous && lit.double_angle != 0),
             "SinContinuous requires double_angle = 0"
@@ -72,9 +90,9 @@ impl EvalModParameters<CKKSPlaintext<Vec<u8>>> {
         };
 
         let scaling_f64 = if lit.scaling == 0.0 { 1.0 } else { lit.scaling };
-        let scaling = F::from_f64(scaling_f64).expect("scaling must be a finite scalar");
-        let sc_fac = F::from_u64(1u64 << double_angle).expect("2^double_angle must fit");
-        let k_eff = F::from_usize(lit.eval_mod_interval).expect("eval_mod_interval must fit") / sc_fac;
+        let scaling: F = scalar_from_f64("scaling", scaling_f64)?;
+        let sc_fac: F = scalar_from_u64("2^double_angle", 1u64 << double_angle)?;
+        let k_eff = scalar_from_usize::<F>("eval_mod_interval", lit.eval_mod_interval)? / sc_fac;
 
         let two = F::one() + F::one();
         let two_pi = two * F::PI();
@@ -89,8 +107,8 @@ impl EvalModParameters<CKKSPlaintext<Vec<u8>>> {
             let mut i = 1usize;
             while i + 2 <= n {
                 let next = i + 2;
-                let num = F::from_i64((next as i64 - 2) * (next as i64 - 2)).expect("num fits");
-                let den = F::from_i64(next as i64 * (next as i64 - 1)).expect("den fits");
+                let num: F = scalar_from_i64("arcsine num", (next as i64 - 2) * (next as i64 - 2))?;
+                let den: F = scalar_from_i64("arcsine den", next as i64 * (next as i64 - 1))?;
                 coeffs[next] = coeffs[i] * num / den;
                 i = next;
             }
@@ -148,8 +166,8 @@ impl EvalModParameters<CKKSPlaintext<Vec<u8>>> {
         let chebyshev_offset_pt = match lit.eval_mod_type {
             EvalModType::SinContinuous | EvalModType::CosDiscrete => None,
             EvalModType::CosContinuous => {
-                let neg_quarter = F::from_f64(-0.25).expect("-0.25 must fit");
-                let off = neg_quarter / F::from_usize(lit.eval_mod_interval).expect("eval_mod_interval must fit");
+                let neg_quarter: F = scalar_from_f64("-0.25", -0.25)?;
+                let off = neg_quarter / scalar_from_usize::<F>("eval_mod_interval", lit.eval_mod_interval)?;
                 Some(encode_scalar(module, base2k, coeff_meta, off)?)
             }
         };
@@ -167,6 +185,15 @@ impl EvalModParameters<CKKSPlaintext<Vec<u8>>> {
 }
 
 impl<P> EvalModParameters<P> {
+    /// Number of CKKS multiplicative levels the eval_mod pipeline will consume:
+    /// BSGS depth of the main polynomial + `double_angle` squarings + BSGS depth
+    /// of the optional arcsine post-composition.
+    pub fn depth(&self) -> usize {
+        let d = depth_log2(self.eval_mod_bsgs.degree());
+        let inv = self.eval_mod_inv_bsgs.as_ref().map_or(0, |p| depth_log2(p.degree()));
+        d + self.double_angle + inv
+    }
+
     pub fn map_plaintexts<Q>(self, mut f: impl FnMut(P) -> Q) -> EvalModParameters<Q> {
         let Self {
             eval_mod_type,
@@ -186,6 +213,14 @@ impl<P> EvalModParameters<P> {
             eval_mod_bsgs: eval_mod_bsgs.map_baby_steps(&mut f),
             eval_mod_inv_bsgs: eval_mod_inv_bsgs.map(|p| p.map_baby_steps(&mut f)),
         }
+    }
+}
+
+fn depth_log2(degree: usize) -> usize {
+    if degree <= 1 {
+        0
+    } else {
+        degree.next_power_of_two().trailing_zeros() as usize
     }
 }
 
@@ -285,6 +320,15 @@ where
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     for<'b> ScratchArena<'b, BE>: ScratchAvailable + ScratchArenaTakeCore<'b, BE>,
 {
+    let depth = params.depth();
+    let required = depth * ct.log_delta();
+    ensure!(
+        ct.log_budget() >= required,
+        "ckks_eval_mod: input log_budget {got} < {required} bits required ({depth} levels × log_delta {ld})",
+        got = ct.log_budget(),
+        ld = ct.log_delta(),
+    );
+
     let mut t1 = module.ckks_ciphertext_alloc_from_infos(ct);
     module.ckks_copy(&mut t1, ct, scratch)?;
     if let Some(off) = params.chebyshev_offset_pt.as_ref() {

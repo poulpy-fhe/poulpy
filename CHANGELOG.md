@@ -6,6 +6,9 @@
 - Add backend-generic CKKS polynomial evaluation APIs: `Polynomial`, `BSGSPolynomial`, `PowerBasis`, `Basis`, `Parity`, `SplitStrategy`, and `PolynomialEvaluation`, with monomial and Chebyshev bases, Chebyshev interpolation, and BSGS/Paterson-Stockmeyer evaluation from a precomputed power basis.
 - Add default polynomial-evaluation OEP/delegate wiring, including baby-step and giant-step hooks, parity-aware baby-step evaluation, and `MinDepth` / `MinMult` split strategies for evaluation planning.
 - Extend CKKS polynomial-evaluation coverage with conformance tests for monomial and Chebyshev evaluation, power-basis generation, interpolation, metadata errors, and split-strategy behavior.
+- Add backend-generic CKKS `eval_mod` (homomorphic `x mod 1`) API built on the polynomial-evaluation layer: `EvalModParameters`, `EvalModParametersLiteral`, `EvalModType` (`SinContinuous`, `CosContinuous`, `CosDiscrete`), with double-angle composition and optional arcsine post-composition; high-precision Han–Ki Chebyshev interpolation (256-bit `FBig` solve, `cosine::approximate_cos`) for the `CosDiscrete` variant.
+- Add eval_mod OEP/delegate wiring (`CKKSEvalModImpl`, `CKKSEvalModOps`, `CKKSEvalModOpsDefault`) and conformance tests (`SinContinuous` minimal, `SinContinuous` with arcsine, `CosDiscrete` with double-angle, `CosContinuous` with double-angle) on FFT64/f64, NTT120/f64, and NTT120/f128.
+- Validate eval_mod input parameters at `EvalModParameters::from_literal` (non-zero degree/interval, scalar conversions return `Result` instead of panicking) and check `ct.log_budget()` covers the predicted multiplicative depth at the entry of `ckks_eval_mod`; expose `EvalModParameters::depth()`.
 - Generalize fused CKKS multiply-add/plaintext paths over backend-owned ciphertext/plaintext layouts and allow plaintext add/sub alignment to left-shift when the encoded plaintext precision exceeds the ciphertext budget, enabling coefficient-indexed plaintext constants used by polynomial evaluation.
 
 ### `poulpy-hal` / `poulpy-cpu-ref`
@@ -13,6 +16,7 @@
 
 ### `poulpy-bench`
 - Add the `ckks_poly_eval` Criterion benchmark, sweeping polynomial degree and `MinDepth` / `MinMult` BSGS split strategies on `ntt120-ref` while reporting baby-step size and observed log-budget/level consumption.
+- Add the `ckks_eval_mod` Criterion benchmark, timing the three `EvalModType` variants (sin continuous with optional arcsine, cos discrete, cos continuous) on `ntt120-ref` and reporting level consumption and predicted CT–CT mul depth.
 
 ### Build & Docs
 - Refresh the `ckks_poly2` example to use Chebyshev interpolation, `PowerBasis`, and the new BSGS evaluator pipeline.
