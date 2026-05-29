@@ -118,13 +118,7 @@ impl<D: Data> PowerBasis<CKKSCiphertext<D>> {
 
     /// Recursively computes and stores X^`n` using `split_degree` to choose the
     /// multiplication tree: X^n = X^a · X^b where `split_degree(n) = (a, b)`.
-    pub fn gen_power<BE, T>(
-        &mut self,
-        n: usize,
-        module: &Module<BE>,
-        tsk: &T,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    pub fn gen_power<BE, T>(&mut self, n: usize, module: &Module<BE>, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         BE: Backend<OwnedBuf = D>,
         Module<BE>: CKKSMulOps<BE> + CKKSModuleAlloc<BE>,

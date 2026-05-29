@@ -1,8 +1,8 @@
 use poulpy_core::{
     EncryptionLayout,
     layouts::{
-        GGLWEInfos, GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-        Rank, prepared::GLWETensorKeyPreparedToBackendRef,
+        GGLWEInfos, GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
+        prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
 use poulpy_hal::{
@@ -77,10 +77,7 @@ fn mod1_params(n: usize, base2k: usize, log_delta: usize, depth: usize) -> Mod1T
         n,
         base2k,
         k,
-        prec: CKKSMeta {
-            log_delta,
-            log_budget,
-        },
+        prec: CKKSMeta { log_delta, log_budget },
         hw: 192,
         dsize: 1,
     }

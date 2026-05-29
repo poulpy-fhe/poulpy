@@ -1,7 +1,5 @@
 use anyhow::{Result, anyhow, ensure};
-use poulpy_core::layouts::{
-    Base2K, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GLWETensorKeyPreparedToBackendRef,
-};
+use poulpy_core::layouts::{Base2K, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GLWETensorKeyPreparedToBackendRef};
 use poulpy_core::{GLWENormalize, GLWEZero, ScratchArenaTakeCore};
 use poulpy_hal::{
     api::ScratchAvailable,
@@ -66,6 +64,7 @@ impl Mod1Parameters<CKKSPlaintext<Vec<u8>>> {
             !(lit.mod1_type == Mod1Type::CosDiscrete && lit.mod1_degree < 2 * (lit.mod1_interval - 1)),
             "CosDiscrete requires mod1_degree >= 2*(K-1)"
         );
+        ensure!(lit.double_angle < 31, "double_angle must be < 31");
 
         let double_angle = match lit.mod1_type {
             Mod1Type::SinContinuous => 0,
@@ -102,12 +101,8 @@ impl Mod1Parameters<CKKSPlaintext<Vec<u8>>> {
         };
 
         let mut mod1_poly: Polynomial<F> = match lit.mod1_type {
-            Mod1Type::SinContinuous => Polynomial::chebyshev_interpolate(lit.mod1_degree, -k_eff, k_eff, |x| {
-                (two_pi * x).sin()
-            })?,
-            Mod1Type::CosContinuous => Polynomial::chebyshev_interpolate(lit.mod1_degree, -k_eff, k_eff, |x| {
-                (two_pi * x).cos()
-            })?,
+            Mod1Type::SinContinuous => Polynomial::chebyshev_interpolate(lit.mod1_degree, -k_eff, k_eff, |x| (two_pi * x).sin())?,
+            Mod1Type::CosContinuous => Polynomial::chebyshev_interpolate(lit.mod1_degree, -k_eff, k_eff, |x| (two_pi * x).cos())?,
             Mod1Type::CosDiscrete => {
                 let coeffs = cosine::approximate_cos::<F>(
                     lit.mod1_interval,
@@ -209,8 +204,7 @@ fn encode_scalar<F: CKKSScalar>(
     value: F,
 ) -> Result<CKKSPlaintext<Vec<u8>>> {
     let mut pt = module.ckks_pt_coeffs_alloc(1, base2k, coeff_meta);
-    pt.encode_host_floats(&[value])
-        .map_err(|e| anyhow!("encode_scalar: {e}"))?;
+    pt.encode_host_floats(&[value]).map_err(|e| anyhow!("encode_scalar: {e}"))?;
     Ok(pt)
 }
 

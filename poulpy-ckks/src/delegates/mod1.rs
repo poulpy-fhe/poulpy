@@ -2,12 +2,7 @@ use anyhow::Result;
 use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GLWETensorKeyPreparedToBackendRef};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use crate::{
-    CKKSCtBounds, SetCKKSInfos,
-    api::CKKSMod1Ops,
-    default::mod1::Mod1Parameters,
-    oep::CKKSMod1Impl,
-};
+use crate::{CKKSCtBounds, SetCKKSInfos, api::CKKSMod1Ops, default::mod1::Mod1Parameters, oep::CKKSMod1Impl};
 
 impl<BE: Backend + CKKSMod1Impl<BE>> CKKSMod1Ops<BE> for Module<BE> {
     fn ckks_eval_mod1_tmp_bytes<R, P, T>(&self, _res: &R, _params: &Mod1Parameters<P>, _tsk: &T) -> usize

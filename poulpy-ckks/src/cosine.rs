@@ -5,6 +5,8 @@
 //! boundary. `cos` and π are implemented locally because `dashu-float` does
 //! not provide them.
 
+#![allow(clippy::needless_range_loop)]
+
 use dashu_float::{Context, DBig, FBig, round::mode::HalfEven};
 use rand_distr::num_traits::FromPrimitive;
 
@@ -33,9 +35,7 @@ fn two_pi_big() -> FBig<HalfEven> {
 }
 
 fn from_i64(x: i64) -> FBig<HalfEven> {
-    FBig::<HalfEven>::from(x)
-        .with_precision(ENCODING_PRECISION)
-        .value()
+    FBig::<HalfEven>::from(x).with_precision(ENCODING_PRECISION).value()
 }
 
 fn from_f64(x: f64) -> FBig<HalfEven> {
@@ -339,9 +339,7 @@ fn solve(
         p[i] = pi_val;
     }
 
-    let mut t: Vec<Vec<FBig<HalfEven>>> = (0..totdeg_p1)
-        .map(|_| vec![FBig::<HalfEven>::ZERO; totdeg_p1])
-        .collect();
+    let mut t: Vec<Vec<FBig<HalfEven>>> = (0..totdeg_p1).map(|_| vec![FBig::<HalfEven>::ZERO; totdeg_p1]).collect();
     for i in 0..totdeg_p1 {
         t[i][0] = from_i64(1);
         t[i][1] = div(&x[i], &k_big);
@@ -415,6 +413,7 @@ pub fn approximate_cos<F: FromPrimitive>(k: usize, degree: usize, dev: f64, scnu
     let (deg, totdeg) = gen_degrees(degree, k, dev);
     let (nodes, y) = gen_nodes(&deg, dev, totdeg, k, scnum);
     let coeffs = solve(totdeg, k, scnum, nodes, y);
+    // solve returns totdeg+1 coefficients; the trailing one is outside the target polynomial degree.
     coeffs
         .into_iter()
         .take(totdeg)
@@ -480,18 +479,21 @@ mod tests {
             let u = i as f64 / k as f64;
             let got = clenshaw(&coeffs, u);
             let want = target(u);
-            assert!(
-                (got - want).abs() < 1e-6,
-                "u={u:.4}: got={got}, want={want}"
-            );
+            assert!((got - want).abs() < 1e-6, "u={u:.4}: got={got}, want={want}");
         }
     }
 
     #[test]
     fn approximate_cos_returns_nonzero_odd_coefficients() {
         let coeffs: Vec<f64> = approximate_cos(12, 30, 256.0, 3);
-        let any_odd = coeffs.iter().enumerate().any(|(i, c)| !i.is_multiple_of(2) && c.abs() > 1e-12);
-        assert!(any_odd, "cos(2π·(x-1/4)/2^r) is not even; odd Chebyshev coefficients must be nonzero");
+        let any_odd = coeffs
+            .iter()
+            .enumerate()
+            .any(|(i, c)| !i.is_multiple_of(2) && c.abs() > 1e-12);
+        assert!(
+            any_odd,
+            "cos(2π·(x-1/4)/2^r) is not even; odd Chebyshev coefficients must be nonzero"
+        );
     }
 
     #[test]
@@ -509,10 +511,7 @@ mod tests {
             let u = -1.0 + 2.0 * (i as f64) / (n as f64);
             let got = clenshaw(&coeffs, u);
             let want = target(u);
-            assert!(
-                (got - want).abs() < 1e-2,
-                "u={u:.4}: got={got}, want={want}"
-            );
+            assert!((got - want).abs() < 1e-2, "u={u:.4}: got={got}, want={want}");
         }
     }
 }
