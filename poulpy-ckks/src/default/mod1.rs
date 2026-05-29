@@ -1,6 +1,6 @@
 use anyhow::{Result, anyhow, ensure};
 use poulpy_core::layouts::{
-    Base2K, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
+    Base2K, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_core::{GLWENormalize, GLWEZero, ScratchArenaTakeCore};
 use poulpy_hal::{
@@ -9,11 +9,11 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
-    api::{Basis, CKKSAddOps, CKKSAffineOps, CKKSCopyOps, CKKSMulAddOps, CKKSMulOps, CKKSSubOps, Parity},
+    CKKSCtBounds, CKKSMeta, SetCKKSInfos,
+    api::{Basis, CKKSAddOps, CKKSCopyOps, CKKSMulAddOps, CKKSMulOps, CKKSSubOps, Parity},
     cosine,
     default::polynomial_evaluation::PolynomialEvaluationDefault,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
+    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, ScratchArenaTakeCKKS},
     polynomial::{BSGSPolynomial, Polynomial},
     power_basis::PowerBasis,
 };
@@ -222,17 +222,15 @@ pub trait CKKSMod1OpsDefault<BE: Backend> {
             + CKKSMulOps<BE>
             + CKKSMulAddOps<BE>
             + CKKSCopyOps<BE>
-            + CKKSAffineOps<BE>
             + CKKSModuleAlloc<BE>
             + GLWENormalize<BE>
             + GLWEZero<BE>
             + Sized,
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
         CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-        CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
         for<'b> ScratchArena<'b, BE>: ScratchAvailable + ScratchArenaTakeCore<'b, BE>;
 }
 
@@ -244,12 +242,10 @@ where
         + CKKSMulOps<BE>
         + CKKSMulAddOps<BE>
         + CKKSCopyOps<BE>
-        + CKKSAffineOps<BE>
         + CKKSModuleAlloc<BE>
         + GLWENormalize<BE>
         + GLWEZero<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
     for<'b> ScratchArena<'b, BE>: ScratchAvailable + ScratchArenaTakeCore<'b, BE>,
 {
     fn ckks_eval_mod1_default<R, C, P, T>(
@@ -261,7 +257,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
@@ -285,39 +281,34 @@ where
         + CKKSMulOps<BE>
         + CKKSMulAddOps<BE>
         + CKKSCopyOps<BE>
-        + CKKSAffineOps<BE>
         + CKKSModuleAlloc<BE>
         + GLWENormalize<BE>
         + GLWEZero<BE>,
-    R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     P: GLWEToBackendRef<BE> + CKKSCtBounds,
     T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
     for<'b> ScratchArena<'b, BE>: ScratchAvailable + ScratchArenaTakeCore<'b, BE>,
 {
     let mut t1 = module.ckks_ciphertext_alloc_from_infos(ct);
     module.ckks_copy(&mut t1, ct, scratch)?;
-    let mut power_basis = PowerBasis::new(Basis::Chebyshev, t1);
-
     if let Some(off) = params.chebyshev_offset_pt.as_ref() {
-        let x = power_basis
-            .get_stored(1)
-            .ok_or_else(|| anyhow!("PowerBasis::get_stored(1) missing immediately after construction"))?;
-        let mut tmp = module.ckks_ciphertext_alloc_from_infos(x);
-        module.ckks_copy(&mut tmp, x, scratch)?;
-        module.ckks_add_pt_const_assign(&mut tmp, 0, off, 0, scratch)?;
-        power_basis = PowerBasis::new(Basis::Chebyshev, tmp);
+        module.ckks_add_pt_const_assign(&mut t1, 0, off, 0, scratch)?;
     }
 
-    let log_split = params.mod1_bsgs.log_split();
-    let parity = params.mod1_bsgs.parity();
-    power_basis.populate(params.mod1_bsgs.degree(), log_split, parity, module, tsk, scratch)?;
+    let mut power_basis = PowerBasis::new(Basis::Chebyshev, t1);
+    power_basis.populate(
+        params.mod1_bsgs.degree(),
+        params.mod1_bsgs.log_split(),
+        params.mod1_bsgs.parity(),
+        module,
+        tsk,
+        scratch,
+    )?;
 
-    let mut out = module.ckks_ciphertext_alloc_from_infos(ct);
     module.ckks_eval_poly_real_const_coeffs_from_power_basis_default::<_, _, CKKSCiphertext<BE::OwnedBuf>, _, _>(
-        &mut out,
+        res,
         &params.mod1_bsgs,
         &power_basis,
         tsk,
@@ -327,39 +318,29 @@ where
     for i in 0..params.double_angle {
         let dac = &params.double_angle_consts[i];
         scratch.scope(|local| -> Result<()> {
-            use crate::layouts::ScratchArenaTakeCKKS;
-            let (mut work, local) = local.take_compact_ckks_ciphertext_scratch(&out);
-            let (mut snapshot, mut local) = local.take_compact_ckks_ciphertext_scratch(&out);
-            module.ckks_copy(&mut work, &out, &mut local)?;
+            let (mut work, local) = local.take_compact_ckks_ciphertext_scratch(&*res);
+            let (mut snapshot, mut local) = local.take_compact_ckks_ciphertext_scratch(&*res);
+            module.ckks_copy(&mut work, &*res, &mut local)?;
             module.ckks_square_assign(&mut work, tsk, &mut local)?;
             module.ckks_copy(&mut snapshot, &work, &mut local)?;
             module.ckks_add_assign(&mut work, &snapshot, &mut local)?;
             module.ckks_sub_pt_const_assign(&mut work, 0, dac, 0, &mut local)?;
-            module.ckks_copy(&mut out, &work, &mut local)?;
+            module.ckks_copy(res, &work, &mut local)?;
             Ok(())
         })?;
     }
 
     if let Some(inv) = params.mod1_inv_bsgs.as_ref() {
-        let compact_k: usize = out.effective_k();
-        let mut t1_inv = module.ckks_ciphertext_alloc(out.base2k(), compact_k.into());
-        t1_inv.set_meta(out.meta());
-        module.ckks_copy(&mut t1_inv, &out, scratch)?;
+        let compact_k = res.effective_k();
+        let mut t1_inv = module.ckks_ciphertext_alloc(res.base2k(), compact_k.into());
+        t1_inv.set_meta(res.meta());
+        module.ckks_copy(&mut t1_inv, &*res, scratch)?;
         let mut pb = PowerBasis::new(Basis::Monomial, t1_inv);
         pb.populate(inv.degree(), inv.log_split(), inv.parity(), module, tsk, scratch)?;
-        let mut out2 = module.ckks_ciphertext_alloc(out.base2k(), compact_k.into());
-        out2.set_meta(out.meta());
-        module
-            .ckks_eval_poly_real_const_coeffs_from_power_basis_default::<_, _, CKKSCiphertext<BE::OwnedBuf>, _, _>(
-                &mut out2,
-                inv,
-                &pb,
-                tsk,
-                scratch,
-            )?;
-        out = out2;
+        module.ckks_eval_poly_real_const_coeffs_from_power_basis_default::<_, _, CKKSCiphertext<BE::OwnedBuf>, _, _>(
+            res, inv, &pb, tsk, scratch,
+        )?;
     }
 
-    module.ckks_copy(res, &out, scratch)?;
     Ok(())
 }

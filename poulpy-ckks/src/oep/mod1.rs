@@ -1,17 +1,15 @@
 use anyhow::Result;
-use poulpy_core::layouts::{
-    GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
-};
+use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GLWETensorKeyPreparedToBackendRef};
 use poulpy_core::{GLWENormalize, GLWEZero, ScratchArenaTakeCore};
 use poulpy_hal::api::ScratchAvailable;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
-    api::{CKKSAddOps, CKKSAffineOps, CKKSCopyOps, CKKSMulAddOps, CKKSMulOps, CKKSSubOps},
+    api::{CKKSAddOps, CKKSCopyOps, CKKSMulAddOps, CKKSMulOps, CKKSSubOps},
     default::mod1::{CKKSMod1OpsDefault, Mod1Parameters},
     default::polynomial_evaluation::PolynomialEvaluationDefault,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
+    layouts::{CKKSCiphertext, CKKSModuleAlloc},
 };
 
 /// # Safety
@@ -29,7 +27,7 @@ pub unsafe trait CKKSMod1Impl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
@@ -43,13 +41,11 @@ where
         + CKKSMulOps<BE>
         + CKKSMulAddOps<BE>
         + CKKSCopyOps<BE>
-        + CKKSAffineOps<BE>
         + CKKSModuleAlloc<BE>
         + GLWENormalize<BE>
         + GLWEZero<BE>
         + CKKSMod1OpsDefault<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_eval_mod1<R, C, P, T>(
@@ -61,7 +57,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
