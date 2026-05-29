@@ -183,18 +183,6 @@ impl<P> Mod1Parameters<P> {
             mod1_inv_bsgs: mod1_inv_bsgs.map(|p| p.map_baby_steps(&mut f)),
         }
     }
-
-    pub fn map_plaintexts_ref<Q>(&self, mut f: impl FnMut(&P) -> Q) -> Mod1Parameters<Q> {
-        Mod1Parameters {
-            mod1_type: self.mod1_type,
-            log_message_ratio: self.log_message_ratio,
-            double_angle: self.double_angle,
-            chebyshev_offset_pt: self.chebyshev_offset_pt.as_ref().map(&mut f),
-            double_angle_consts: self.double_angle_consts.iter().map(&mut f).collect(),
-            mod1_bsgs: self.mod1_bsgs.map_baby_steps_ref(&mut f),
-            mod1_inv_bsgs: self.mod1_inv_bsgs.as_ref().map(|p| p.map_baby_steps_ref(&mut f)),
-        }
-    }
 }
 
 fn encode_scalar<F: CKKSScalar>(
@@ -320,14 +308,12 @@ where
     for i in 0..params.double_angle {
         let dac = &params.double_angle_consts[i];
         scratch.scope(|local| -> Result<()> {
-            let (mut work, local) = local.take_compact_ckks_ciphertext_scratch(&*res);
-            let (mut snapshot, mut local) = local.take_compact_ckks_ciphertext_scratch(&*res);
+            let (mut work, mut local) = local.take_compact_ckks_ciphertext_scratch(&*res);
             module.ckks_copy(&mut work, &*res, &mut local)?;
             module.ckks_square_assign(&mut work, tsk, &mut local)?;
-            module.ckks_copy(&mut snapshot, &work, &mut local)?;
-            module.ckks_add_assign(&mut work, &snapshot, &mut local)?;
-            module.ckks_sub_pt_const_assign(&mut work, 0, dac, 0, &mut local)?;
             module.ckks_copy(res, &work, &mut local)?;
+            module.ckks_add_assign(res, &work, &mut local)?;
+            module.ckks_sub_pt_const_assign(res, 0, dac, 0, &mut local)?;
             Ok(())
         })?;
     }
