@@ -1,9 +1,9 @@
 use crate::{
     FFT64Ref, NTT120Ref,
     hal_defaults::{
-        FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault,
-        FFT64VecZnxDftDefault, FFT64VmpDefault, HalVecZnxDefault, NTT120ConvolutionDefault, NTT120ModuleDefault,
-        NTT120SvpDefault, NTT120VecZnxBigDefault, NTT120VecZnxDftDefault, NTT120VmpDefault, VecZnxMatMulDefault,
+        FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault, FFT64VecZnxDftDefault,
+        FFT64VmpDefault, HalVecZnxDefault, NTT120ConvolutionDefault, NTT120ModuleDefault, NTT120SvpDefault,
+        NTT120VecZnxBigDefault, NTT120VecZnxDftDefault, NTT120VmpDefault, VecZnxMatMulDefault,
     },
 };
 use poulpy_hal::{
@@ -12,8 +12,8 @@ use poulpy_hal::{
         Backend, Module, NoiseInfos, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, ZnxInfos,
     },
     oep::{
-        HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl,
-        HalVecZnxMatMulImpl, HalVmpImpl,
+        HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVecZnxMatMulImpl,
+        HalVmpImpl,
     },
 };
 

@@ -7,8 +7,7 @@ use poulpy_hal::{
     },
     layouts::{
         CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, GaloisElement, HostDataMut,
-        HostDataRef, Module, ScratchOwned, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
-        VecZnxDftToBackendMut,
+        HostDataRef, Module, ScratchOwned, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut,
     },
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut},

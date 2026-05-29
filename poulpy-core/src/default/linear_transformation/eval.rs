@@ -8,8 +8,8 @@ use poulpy_hal::{
     api::{
         CnvPVecAlloc, Convolution, VecZnxAutomorphismAssignBackend, VecZnxBigAddAssign, VecZnxBigAddSmallAssign, VecZnxBigAlloc,
         VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmallBackend,
-        VecZnxBigNormalize, VecZnxCopyBackend, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApply,
-        VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
+        VecZnxBigNormalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf,
+        VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
     },
     layouts::{Backend, Module, ScratchArena},
 };
@@ -20,8 +20,8 @@ use crate::{
         keyswitching::GGLWEProductDefault,
         linear_transformation::{
             baby_steps::{glwe_prepare_baby_rotations, glwe_prepare_baby_rotations_tmp_bytes},
-            inner_product::glwe_accumulate_prepared_inner_product_big_tmp_bytes,
-            lazy::{glwe_lazy_giant_automorphism_from_big_tmp_bytes, glwe_lazy_giant_automorphism_tmp_bytes},
+            inner_product::glwe_accumulate_prepared_baby_steps_dft_tmp_bytes,
+            lazy::{glwe_lazy_giant_automorphism_from_dft_tmp_bytes, glwe_lazy_giant_automorphism_tmp_bytes},
             ops::GLWELinearTransformOps,
             prepared_giants::glwe_prepared_linear_transform_with_babies as glwe_prepared_linear_transform_with_babies_impl,
         },
@@ -54,8 +54,11 @@ where
         + VecZnxBigFromSmallBackend<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxCopyBackend<BE>
+        + VecZnxDftAddAssign<BE>
         + VecZnxDftApply<BE>
+        + VecZnxDftAutomorphism<BE>
         + VecZnxDftBytesOf
+        + VecZnxDftCopy<BE>
         + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpA<BE>
@@ -68,19 +71,26 @@ where
         B: GLWEInfos,
         K: GGLWEInfos,
     {
-        // The prepared evaluator carries a (r+1)-column BIG `prod_big` over the
-        // giant-step loop and a (r+1)-column BIG `rot_big` per non-zero giant
-        // step; the inner-product hoists its DFT scratch outside the column
-        // loop; the lazy giant variant needs its own DFT/SMALL workspace.
+        // The lazy prepared evaluator keeps PROD, giant rotations, and the
+        // cross-giant accumulator in DFT; incompatible bases normalize through
+        // a one-column BIG scratch before regular GLWE automorphism. Size both
+        // routes and take the larger budget.
         let cols = a.rank().as_usize() + 1;
         let cnv_offset_hi = pt.size().saturating_sub(1);
         let prod_size = a.size() + pt.size() - cnv_offset_hi;
-        let inner = glwe_accumulate_prepared_inner_product_big_tmp_bytes(self, cnv_offset_hi, a.size(), pt.size());
-        let prod_big = self.bytes_of_vec_znx_big(cols, prod_size);
-        let rot_big = self.bytes_of_vec_znx_big(cols, key.size());
+        let inner_dft = glwe_accumulate_prepared_baby_steps_dft_tmp_bytes(self, cnv_offset_hi, a.size(), pt.size());
+        let prod_col_big = self.bytes_of_vec_znx_big(1, prod_size);
+        let prod_dft = self.bytes_of_vec_znx_dft(cols, prod_size);
+        let lazy_size = key.size().max(prod_size);
+        let lazy_acc_dft = self.bytes_of_vec_znx_dft(cols, lazy_size);
+        let lazy_acc_big = self.bytes_of_vec_znx_big(cols, lazy_size);
+        let rot_dft = self.bytes_of_vec_znx_dft(cols, key.size());
         let prepare_right = self.cnv_prepare_right_tmp_bytes(pt.size(), pt.size());
-        let lazy_big =
-            glwe_lazy_giant_automorphism_from_big_tmp_bytes::<BE, _, _>(self, a.rank().as_usize(), prod_size, key, key.size());
+        let lazy_dft =
+            glwe_lazy_giant_automorphism_from_dft_tmp_bytes::<BE, _, _>(self, a.rank().as_usize(), prod_size, key, key.size());
+        let fallback_path = prod_dft + prod_col_big + inner_dft;
+        let lazy_dft_rot = rot_dft + lazy_dft;
+        let lazy_dft_path = prod_dft + lazy_acc_dft + inner_dft + lazy_dft_rot + lazy_acc_big;
 
         self.glwe_automorphism_tmp_bytes(res, a, key)
             .max(self.glwe_mul_plain_tmp_bytes(res, a, pt))
@@ -92,7 +102,8 @@ where
                 key,
                 key.size(),
             ))
-            .max(prod_big + rot_big + inner.max(lazy_big))
+            .max(fallback_path)
+            .max(lazy_dft_path)
     }
 
     fn glwe_prepare_baby_rotations_tmp_bytes<A, K>(&self, a: &A, key: &K) -> usize

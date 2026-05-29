@@ -1,19 +1,21 @@
-//! Lazy BIG-domain giant rotations and final normalization.
+//! Lazy DFT-domain giant rotations and final normalization.
 //!
 //! Implements the ROT and Finalize pieces of docs/lt_bsgs.md §6.3-§6.4. The PROD
-//! result rides through giant rotations in `VecZnxBig`: only the mask columns
-//! are dropped to SMALL because gadget decomposition requires limb-aligned
-//! input. The body lives in BIG the whole way; the sub-limb `cnv_offset_lo`
+//! result rides through giant rotations in `VecZnxDft`: mask columns are still
+//! normalized through scratch BIG/SMALL before key-switching because gadget
+//! decomposition requires limb-aligned input, but the body add, automorphism,
+//! and cross-giant accumulation remain in DFT. The sub-limb `cnv_offset_lo`
 //! shift is folded into the single final normalize at Phase C.
 
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, VecZnxBigAddAssign, VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes,
-        VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApply,
-        VecZnxIdftApplyTmpBytes,
+        ModuleN, ScratchArenaTakeBasic, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigNormalize,
+        VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero,
+        VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
     },
     layouts::{
-        Backend, ScratchArena, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxDftToBackendRef, VecZnxToBackendRef, ZnxInfos,
+        Backend, ScratchArena, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendMut,
+        VecZnxDftBackendRef, VecZnxDftToBackendRef, VecZnxToBackendRef,
     },
 };
 
@@ -45,8 +47,8 @@ where
     lvl_0 + lvl_1
 }
 
-/// Scratch bytes for [`glwe_lazy_giant_automorphism_from_big`].
-pub(super) fn glwe_lazy_giant_automorphism_from_big_tmp_bytes<BE, M, K>(
+/// Scratch bytes for [`glwe_lazy_giant_automorphism_from_dft`].
+pub(super) fn glwe_lazy_giant_automorphism_from_dft_tmp_bytes<BE, M, K>(
     module: &M,
     rank: usize,
     prod_size: usize,
@@ -55,44 +57,32 @@ pub(super) fn glwe_lazy_giant_automorphism_from_big_tmp_bytes<BE, M, K>(
 ) -> usize
 where
     BE: Backend,
-    M: ModuleN
-        + GGLWEProductDefault<BE>
-        + VecZnxBigAutomorphismAssignTmpBytes
-        + VecZnxBigBytesOf
-        + VecZnxDftBytesOf
-        + VecZnxIdftApplyTmpBytes,
+    M: ModuleN + GGLWEProductDefault<BE> + VecZnxBigBytesOf + VecZnxDftBytesOf + VecZnxIdftApplyTmpBytes,
     K: GGLWEInfos,
 {
     let cols = rank + 1;
     let key_size = key_size.min(key_infos.size());
     let mask_small_size = prod_size.min(key_size);
-
-    // Mask DFT (rank cols, mask_small_size limbs) lives alongside a one-column
-    // SMALL workspace used to normalize each mask column before its DFT.
+    let mask_big = module.bytes_of_vec_znx_big(1, prod_size);
     let mask_dft = module.bytes_of_vec_znx_dft(rank, mask_small_size);
     let mask_small = mask_small_size * core::mem::size_of::<i64>() * module.n();
-    // The KS result occupies a (rank+1)-column DFT at key_size, then is IDFT'd
-    // and the automorphism runs on the resulting BIG columns.
-    let res_dft = module.bytes_of_vec_znx_dft(cols, key_size);
-    let inner = module
-        .gglwe_product_dft_tmp_bytes_default(key_size, mask_small_size, key_infos)
-        .max(module.vec_znx_idft_apply_tmp_bytes())
-        .max(module.vec_znx_big_automorphism_assign_tmp_bytes());
+    let ks_dft = module.bytes_of_vec_znx_dft(cols, key_size);
+    let inner = module.gglwe_product_dft_tmp_bytes_default(key_size, mask_small_size, key_infos);
 
-    mask_dft + mask_small + res_dft + inner
+    mask_dft + mask_big + mask_small + module.vec_znx_idft_apply_tmp_bytes() + ks_dft + inner
 }
 
-/// ROT for a giant step whose PROD result is already in `VecZnxBig`.
+/// ROT for a giant step whose PROD result is still in `VecZnxDft`.
 ///
-/// `prod_big` is the `(r+1)`-column BIG output of PROD (un-normalized, in
-/// `prod_base2k`). The mask columns are dropped to SMALL only because the
-/// gadget decomposition needs limb-aligned input; the body rides BIG straight
-/// into `res_big`, exactly as docs/lt_bsgs.md §6.3 prescribes.
+/// Each mask column is IDFT'd into one-column BIG scratch before key-switching,
+/// the body column is added in DFT with `vec_znx_dft_add_assign`, and the giant
+/// automorphism is applied in DFT before the caller folds the contribution into
+/// the accumulator.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn glwe_lazy_giant_automorphism_from_big<BE, M, K>(
+pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M, K>(
     module: &M,
-    res_big: &mut VecZnxBigBackendMut<'_, BE>,
-    prod_big: &VecZnxBigBackendRef<'_, BE>,
+    res_dft: &mut VecZnxDftBackendMut<'_, BE>,
+    prod_dft: &VecZnxDftBackendRef<'_, BE>,
     prod_base2k: usize,
     key: &K,
     key_size: usize,
@@ -101,83 +91,106 @@ pub(super) fn glwe_lazy_giant_automorphism_from_big<BE, M, K>(
     BE: Backend,
     M: ModuleN
         + GGLWEProductDefault<BE>
-        + VecZnxBigAddAssign<BE>
-        + VecZnxBigAutomorphismAssign<BE>
-        + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
+        + VecZnxDftAddAssign<BE>
         + VecZnxDftApply<BE>
+        + VecZnxDftAutomorphism<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
-        + VecZnxIdftApply<BE>
-        + VecZnxIdftApplyTmpBytes,
+        + VecZnxIdftApply<BE>,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    let cols = res_big.cols();
+    let cols = res_dft.cols();
     let rank = cols - 1;
     let key_base2k = key.base2k().as_usize();
-    assert_eq!(prod_base2k, key_base2k, "lazy BIG path requires prod_base2k == key.base2k()");
-    assert_eq!(prod_big.cols(), cols);
+    assert_eq!(prod_base2k, key_base2k, "lazy DFT path requires prod_base2k == key.base2k()");
+    assert_eq!(prod_dft.cols(), cols);
     let key_size = key_size.min(key.size());
-    assert_eq!(res_big.size(), key_size);
-    let mask_small_size = prod_big.size().min(key_size);
+    assert_eq!(res_dft.size(), key_size);
+    let mask_small_size = prod_dft.size().min(key_size);
 
     let scratch = scratch.borrow();
-
-    // Stage the mask columns of `prod_big` as `rank` DFT columns. The body
-    // column is NOT normalized — it stays in BIG, exactly the spec's lt_bsgs.md
-    // §6.3 savings #4 ("body never normalized between steps").
     let (mut a_dft, mut scratch_1) = scratch.take_vec_znx_dft_scratch(module, rank, mask_small_size);
     {
-        let (mut col_small, mut scratch_2) = scratch_1.borrow().take_vec_znx_scratch(module.n(), 1, mask_small_size);
+        let (mut mask_big, scratch_2) = scratch_1.borrow().take_vec_znx_big_scratch(module, 1, prod_dft.size());
+        let (mut col_small, mut scratch_3) = scratch_2.take_vec_znx_scratch(module.n(), 1, mask_small_size);
         for c in 0..rank {
+            module.vec_znx_idft_apply(&mut mask_big, 0, prod_dft, c + 1, &mut scratch_3.borrow());
+            let mask_big_ref = mask_big.to_backend_ref();
             module.vec_znx_big_normalize(
                 &mut col_small,
                 key_base2k,
                 0,
                 0,
-                prod_big,
+                &mask_big_ref,
                 prod_base2k,
-                c + 1,
-                &mut scratch_2.borrow(),
+                0,
+                &mut scratch_3.borrow(),
             );
             module.vec_znx_dft_apply(1, 0, &mut a_dft, c, &col_small.to_backend_ref(), 0);
         }
     }
 
-    let (mut res_dft, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(module, cols, key_size);
-    for col in 0..res_dft.cols() {
-        module.vec_znx_dft_zero(&mut res_dft, col);
+    let (mut ks_dft, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(module, cols, key_size);
+    for col in 0..ks_dft.cols() {
+        module.vec_znx_dft_zero(&mut ks_dft, col);
     }
     let key_ref = key.to_backend_ref();
-    module.gglwe_product_dft_default(&mut res_dft, &a_dft.to_backend_ref(), &key_ref, &mut scratch_2.borrow());
+    module.gglwe_product_dft_default(&mut ks_dft, &a_dft.to_backend_ref(), &key_ref, &mut scratch_2.borrow());
 
-    {
-        let res_dft_ref = res_dft.to_backend_ref();
-        for col in 0..cols {
-            module.vec_znx_idft_apply(res_big, col, &res_dft_ref, col, &mut scratch_2.borrow());
-        }
-    }
+    // Carry the body in DFT. `vec_znx_dft_add_assign` truncates to `key_size`,
+    // matching the existing BIG lazy path's rotated contribution size.
+    module.vec_znx_dft_add_assign(&mut ks_dft, 0, prod_dft, 0);
 
-    // Carry the BIG body and apply the automorphism on every BIG column.
-    module.vec_znx_big_add_assign(res_big, 0, prod_big, 0);
+    let plan = module.vec_znx_dft_automorphism_plan(key.p());
+    let ks_dft_ref = ks_dft.to_backend_ref();
     for col in 0..cols {
-        module.vec_znx_big_automorphism_assign(key.p(), res_big, col, &mut scratch_2.borrow());
+        module.vec_znx_dft_automorphism_with_plan(&plan, res_dft, col, &ks_dft_ref, col);
     }
 }
 
-/// Adds every column of `a` (BIG) into `res` (BIG). Used both to fold a
-/// rotated giant contribution into the lazy accumulator and to absorb a
-/// `j == 0` PROD straight into it without normalizing — see docs/lt_bsgs.md
-/// §8 savings #4 and #6.
-pub(super) fn glwe_big_add_big_assign<BE, M>(module: &M, res: &mut VecZnxBigBackendMut<'_, BE>, a: &VecZnxBigBackendRef<'_, BE>)
+/// Adds every column of `a` (DFT) into `res` (DFT).
+pub(super) fn glwe_dft_add_dft_assign<BE, M>(module: &M, res: &mut VecZnxDftBackendMut<'_, BE>, a: &VecZnxDftBackendRef<'_, BE>)
 where
     BE: Backend,
-    M: VecZnxBigAddAssign<BE>,
+    M: VecZnxDftAddAssign<BE>,
 {
     let cols = res.cols();
+    assert_eq!(a.cols(), cols);
     for col in 0..cols {
-        module.vec_znx_big_add_assign(res, col, a, col);
+        module.vec_znx_dft_add_assign(res, col, a, col);
+    }
+}
+
+/// Copies every column of `a` (DFT) into `res` (DFT), zeroing limbs outside
+/// the source active size.
+pub(super) fn glwe_dft_copy_dft<BE, M>(module: &M, res: &mut VecZnxDftBackendMut<'_, BE>, a: &VecZnxDftBackendRef<'_, BE>)
+where
+    BE: Backend,
+    M: VecZnxDftCopy<BE>,
+{
+    let cols = res.cols();
+    assert_eq!(a.cols(), cols);
+    for col in 0..cols {
+        module.vec_znx_dft_copy(1, 0, res, col, a, col);
+    }
+}
+
+/// IDFTs all DFT columns into a same-shaped BIG buffer.
+pub(super) fn glwe_idft_dft_into_big<BE, M>(
+    module: &M,
+    res_big: &mut VecZnxBigBackendMut<'_, BE>,
+    a: &mut VecZnxDftBackendMut<'_, BE>,
+) where
+    BE: Backend,
+    M: VecZnxIdftApplyTmpA<BE>,
+{
+    let cols = res_big.cols();
+    assert_eq!(a.cols(), cols);
+    assert_eq!(res_big.size(), a.size());
+    for col in 0..cols {
+        module.vec_znx_idft_apply_tmpa(res_big, col, a, col);
     }
 }
 

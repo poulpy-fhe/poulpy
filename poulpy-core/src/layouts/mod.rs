@@ -30,6 +30,7 @@
 #[macro_use]
 mod macros;
 
+mod coeff_matrix_prepared;
 mod gglwe;
 mod gglwe_to_ggsw_key;
 mod ggsw;
@@ -44,7 +45,6 @@ mod glwe_tensor;
 mod glwe_tensor_key;
 mod glwe_to_lwe_key;
 mod lwe;
-mod coeff_matrix_prepared;
 mod lwe_matrix;
 mod lwe_plaintext;
 mod lwe_secret;
@@ -66,6 +66,7 @@ pub use self::compressed::{
     LWECompressedToBackendRef, LWEDecompress, LWESwitchingKeyCompressed, LWESwitchingKeyDecompress, LWEToGLWEKeyCompressed,
     LWEToGLWEKeyDecompress,
 };
+pub use coeff_matrix_prepared::*;
 pub use gglwe::*;
 pub use gglwe_to_ggsw_key::*;
 pub use ggsw::*;
@@ -80,7 +81,6 @@ pub use glwe_tensor::*;
 pub use glwe_tensor_key::*;
 pub use glwe_to_lwe_key::*;
 pub use lwe::*;
-pub use coeff_matrix_prepared::*;
 pub use lwe_matrix::*;
 pub use lwe_plaintext::*;
 pub use lwe_secret::*;

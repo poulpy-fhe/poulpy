@@ -1,20 +1,23 @@
 //! Prepared giant-step evaluation.
 //!
 //! Main loop from docs/lt_bsgs.md §6.3: each giant bucket first runs PROD (a
-//! DFT-domain inner product over prepared baby rotations and prepared
-//! diagonals, IDFT'd into a `VecZnxBig`), then ROT rotates that bucket and
-//! folds it into a BIG accumulator. The PROD result rides BIG end-to-end when
-//! the key base matches the ciphertext base; only the mask columns are dropped
-//! to SMALL inside ROT, because gadget decomposition needs limb-aligned input.
+//! DFT-domain inner product over prepared baby rotations and prepared diagonals),
+//! then ROT rotates that bucket and folds it into a DFT accumulator. The lazy
+//! path keeps body add, DFT automorphism, and cross-giant accumulation in DFT;
+//! only mask preparation uses scratch BIG/SMALL before key-switching. Incompatible
+//! bases fall back to the regular normalized GLWE automorphism path.
 
 use poulpy_hal::{
     api::{
         Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigAddAssign, VecZnxBigAddSmallAssign, VecZnxBigAlloc,
         VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmallBackend,
-        VecZnxBigNormalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero,
-        VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
+        VecZnxBigNormalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf,
+        VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
     },
-    layouts::{Backend, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, ZnxInfos},
+    layouts::{
+        Backend, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
+        ZnxInfos,
+    },
 };
 
 use crate::{
@@ -23,8 +26,11 @@ use crate::{
         keyswitching::{GGLWEProductDefault, GLWEKeyswitchInternal},
         linear_transformation::{
             baby_steps::GLWEPreparedBabyStepHelper,
-            inner_product::glwe_accumulate_prepared_inner_product_big,
-            lazy::{glwe_big_add_big_assign, glwe_lazy_giant_automorphism_from_big, glwe_normalize_big_into},
+            inner_product::glwe_accumulate_prepared_baby_steps_dft,
+            lazy::{
+                glwe_dft_add_dft_assign, glwe_dft_copy_dft, glwe_idft_dft_into_big, glwe_lazy_giant_automorphism_from_dft,
+                glwe_normalize_big_into,
+            },
         },
         operations::cnv_offset_to_limb_offset,
     },
@@ -68,7 +74,9 @@ pub(super) fn glwe_prepared_linear_transform_with_babies<BE, M, R, P, H, K, B>(
         + VecZnxCopyBackend<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftApply<BE>
+        + VecZnxDftAutomorphism<BE>
         + VecZnxDftBytesOf
+        + VecZnxDftCopy<BE>
         + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpA<BE>
@@ -97,13 +105,10 @@ pub(super) fn glwe_prepared_linear_transform_with_babies<BE, M, R, P, H, K, B>(
         .giant_steps
         .split_first()
         .expect("linear transformation has no giant steps");
-    let (&first_baby, first_diag) = first_gs
-        .diagonals
-        .iter()
-        .next()
-        .expect("linear transformation giant step is empty");
-    let baby_size = babies.baby_step(first_baby).size();
-    let diagonal_size = first_diag.size();
+    let first_baby_rot = prepared.baby_step_rotation(first_gs.first_baby_step_index());
+    let sizing_diagonal_operand = first_gs.diagonal(first_baby_rot);
+    let baby_size = babies.baby_step(first_baby_rot).size();
+    let diagonal_size = sizing_diagonal_operand.size();
     let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, prod_base2k.as_usize());
     let prod_size = baby_size + diagonal_size - cnv_offset_hi;
 
@@ -127,112 +132,85 @@ pub(super) fn glwe_prepared_linear_transform_with_babies<BE, M, R, P, H, K, B>(
         res.size().max(prod_size)
     };
 
-    // `prod_big` is per-step scratch: PROD writes a full BIG result every
-    // giant step, overwriting via IDFT, so it doesn't need zero-init.
     let scratch = scratch.borrow();
-    let (mut prod_big, mut scratch_phase) = scratch.take_vec_znx_big_scratch(module, cols, prod_size);
 
-    // The cross-step BIG accumulator and the ROT temp must start zeroed (we
-    // use `vec_znx_big_add_assign` on the first iteration). The HAL has no
-    // `vec_znx_big_zero` primitive yet, so we lean on `vec_znx_big_alloc`'s
-    // `alloc_zeroed_bytes` to get a clean buffer. These are one-per-call,
-    // not per-step (Pass 1 already eliminated the per-step `rot_big` churn).
-    let mut lazy_acc = use_final_lazy_accumulator.then(|| module.vec_znx_big_alloc(cols, lazy_size));
-    let mut rot_big =
-        (use_lazy_giant_rotation && has_nonzero_giant_rotation).then(|| module.vec_znx_big_alloc(cols, key_size_effective));
-    let mut fallback_acc: Option<GLWE<BE::OwnedBuf>> = (!use_final_lazy_accumulator).then(|| module.glwe_alloc_from_infos(res));
-
-    let mut res_initialized = false;
-    let mut terms: Vec<(i64, &B::BabyStep, _)> = Vec::with_capacity(prepared.baby_steps.len());
-
-    for gs in &prepared.giant_steps {
-        // PROD in lt_bsgs.md §6.3: multiply the prepared baby rotations by the
-        // prepared diagonals for this giant bucket and sum in DFT space.
-        terms.clear();
-        for (&baby, prepared_plaintext) in &gs.diagonals {
-            assert_eq!(prepared_plaintext.size(), diagonal_size);
-            terms.push((baby, babies.baby_step(baby), prepared_plaintext));
-        }
-        {
-            let mut prod_big_backend = prod_big.to_backend_mut();
-            glwe_accumulate_prepared_inner_product_big(module, cnv_offset_hi, &mut prod_big_backend, &terms, &mut scratch_phase);
+    if use_final_lazy_accumulator {
+        // Lazy path: PROD, body add, giant automorphism, and cross-giant
+        // accumulation all stay in DFT. The only IDFT is the final one before
+        // the single BIG -> SMALL normalization.
+        let (mut prod_dft, scratch_phase) = scratch.take_vec_znx_dft_scratch(module, cols, prod_size);
+        let (mut lazy_acc_dft, mut scratch_phase) = scratch_phase.take_vec_znx_dft_scratch(module, cols, lazy_size);
+        for col in 0..cols {
+            module.vec_znx_dft_zero(&mut lazy_acc_dft, col);
         }
 
-        if let Some(lazy_acc) = lazy_acc.as_mut() {
-            // ROT in lt_bsgs.md §6.3: keep giant contributions in BIG and defer
-            // the single final normalize to §6.4. `lazy_acc` was zero-initialized
-            // by its `vec_znx_big_alloc`, so the first `add_assign` cleanly
-            // initializes the accumulator.
+        let mut res_initialized = false;
+        for gs in &prepared.giant_steps {
+            {
+                let mut prod_dft_backend = prod_dft.to_backend_mut();
+                glwe_accumulate_prepared_baby_steps_dft(
+                    module,
+                    cnv_offset_hi,
+                    &mut prod_dft_backend,
+                    prepared,
+                    gs,
+                    babies,
+                    &mut scratch_phase,
+                );
+            }
+
             if gs.rot == 0 {
-                let prod_big_ref = prod_big.to_backend_ref();
-                let mut lazy_acc_mut = lazy_acc.to_backend_mut();
-                glwe_big_add_big_assign(module, &mut lazy_acc_mut, &prod_big_ref);
-                res_initialized = true;
+                let prod_dft_ref = prod_dft.to_backend_ref();
+                let mut lazy_acc_dft_backend = lazy_acc_dft.to_backend_mut();
+                if res_initialized {
+                    glwe_dft_add_dft_assign(module, &mut lazy_acc_dft_backend, &prod_dft_ref);
+                } else {
+                    glwe_dft_copy_dft(module, &mut lazy_acc_dft_backend, &prod_dft_ref);
+                }
             } else {
-                let rot_big = rot_big.as_mut().expect("rot_big allocated");
                 let key: &K = keys
                     .get_automorphism_key(gs.rot)
                     .unwrap_or_else(|| panic!("missing automorphism key for giant-step rotation {}", gs.rot));
                 {
-                    let mut rot_big_backend = rot_big.to_backend_mut();
-                    let prod_big_ref = prod_big.to_backend_ref();
-                    glwe_lazy_giant_automorphism_from_big(
-                        module,
-                        &mut rot_big_backend,
-                        &prod_big_ref,
-                        prod_base2k.as_usize(),
-                        key,
-                        key_size,
-                        &mut scratch_phase,
-                    );
-                }
-                let rot_big_ref = rot_big.to_backend_ref();
-                let mut lazy_acc_mut = lazy_acc.to_backend_mut();
-                glwe_big_add_big_assign(module, &mut lazy_acc_mut, &rot_big_ref);
-                res_initialized = true;
-            }
-        } else {
-            // Fallback for incompatible bases: normalize PROD into the SMALL
-            // `fallback_acc` (applying `cnv_offset_lo`), then use the regular
-            // normalized path.
-            let acc = fallback_acc.as_mut().expect("fallback_acc allocated");
-            {
-                let prod_big_ref = prod_big.to_backend_ref();
-                let mut acc_backend = <GLWE<BE::OwnedBuf> as GLWEToBackendMut<BE>>::to_backend_mut(acc);
-                for col in 0..cols {
-                    module.vec_znx_big_normalize(
-                        &mut acc_backend.data,
-                        res_base2k.as_usize(),
-                        cnv_offset_lo,
-                        col,
-                        &prod_big_ref,
-                        prod_base2k.as_usize(),
-                        col,
-                        &mut scratch_phase.borrow(),
-                    );
+                    let (mut rot_dft, mut scratch_rot) =
+                        scratch_phase
+                            .borrow()
+                            .take_vec_znx_dft_scratch(module, cols, key_size_effective);
+                    {
+                        let mut rot_dft_backend = rot_dft.to_backend_mut();
+                        let prod_dft_ref = prod_dft.to_backend_ref();
+                        glwe_lazy_giant_automorphism_from_dft(
+                            module,
+                            &mut rot_dft_backend,
+                            &prod_dft_ref,
+                            prod_base2k.as_usize(),
+                            key,
+                            key_size,
+                            &mut scratch_rot,
+                        );
+                    }
+
+                    let rot_dft_ref = rot_dft.to_backend_ref();
+                    let mut lazy_acc_dft_backend = lazy_acc_dft.to_backend_mut();
+                    if res_initialized {
+                        glwe_dft_add_dft_assign(module, &mut lazy_acc_dft_backend, &rot_dft_ref);
+                    } else {
+                        glwe_dft_copy_dft(module, &mut lazy_acc_dft_backend, &rot_dft_ref);
+                    }
                 }
             }
-
-            if gs.rot != 0 {
-                let key: &K = keys
-                    .get_automorphism_key(gs.rot)
-                    .unwrap_or_else(|| panic!("missing automorphism key for giant-step rotation {}", gs.rot));
-                module.glwe_automorphism_assign(acc, key, key_size, &mut scratch_phase);
-            }
-
-            if res_initialized {
-                module.glwe_add_assign(res, acc);
-            } else {
-                module.glwe_copy(res, acc);
-                res_initialized = true;
-            }
+            res_initialized = true;
         }
-    }
+        assert!(res_initialized, "linear transformation has no giant steps");
 
-    if let Some(lazy_acc) = lazy_acc.as_ref() {
-        // Finalize in lt_bsgs.md §6.4: one BIG -> SMALL normalization, folding
-        // `cnv_offset_lo` (PROD never applied it) into this last rounding.
-        let lazy_acc_ref = lazy_acc.to_backend_ref();
+        let (mut lazy_acc_big, mut scratch_phase) = scratch_phase.take_vec_znx_big_scratch(module, cols, lazy_size);
+        {
+            let mut lazy_acc_dft_backend = lazy_acc_dft.to_backend_mut();
+            let mut lazy_acc_big_backend = lazy_acc_big.to_backend_mut();
+            glwe_idft_dft_into_big(module, &mut lazy_acc_big_backend, &mut lazy_acc_dft_backend);
+        }
+
+        let lazy_acc_ref = lazy_acc_big.to_backend_ref();
         glwe_normalize_big_into(
             module,
             res,
@@ -241,5 +219,58 @@ pub(super) fn glwe_prepared_linear_transform_with_babies<BE, M, R, P, H, K, B>(
             cnv_offset_lo,
             &mut scratch_phase,
         );
+        return;
+    }
+
+    // Fallback for incompatible bases: PROD is still computed in DFT, then each
+    // column is IDFT'd through a one-column BIG scratch only where it is
+    // normalized into the temporary SMALL ciphertext.
+    let (mut prod_dft, scratch_phase) = scratch.take_vec_znx_dft_scratch(module, cols, prod_size);
+    let (mut prod_col_big, mut scratch_phase) = scratch_phase.take_vec_znx_big_scratch(module, 1, prod_size);
+    let mut fallback_acc: GLWE<BE::OwnedBuf> = module.glwe_alloc_from_infos(res);
+    let mut res_initialized = false;
+
+    for gs in &prepared.giant_steps {
+        {
+            let mut prod_dft_backend = prod_dft.to_backend_mut();
+            glwe_accumulate_prepared_baby_steps_dft(
+                module,
+                cnv_offset_hi,
+                &mut prod_dft_backend,
+                prepared,
+                gs,
+                babies,
+                &mut scratch_phase,
+            );
+            let mut acc_backend = <GLWE<BE::OwnedBuf> as GLWEToBackendMut<BE>>::to_backend_mut(&mut fallback_acc);
+            for col in 0..cols {
+                module.vec_znx_idft_apply_tmpa(&mut prod_col_big, 0, &mut prod_dft_backend, col);
+                let prod_col_big_ref = prod_col_big.to_backend_ref();
+                module.vec_znx_big_normalize(
+                    &mut acc_backend.data,
+                    res_base2k.as_usize(),
+                    cnv_offset_lo,
+                    col,
+                    &prod_col_big_ref,
+                    prod_base2k.as_usize(),
+                    0,
+                    &mut scratch_phase.borrow(),
+                );
+            }
+        }
+
+        if gs.rot != 0 {
+            let key: &K = keys
+                .get_automorphism_key(gs.rot)
+                .unwrap_or_else(|| panic!("missing automorphism key for giant-step rotation {}", gs.rot));
+            module.glwe_automorphism_assign(&mut fallback_acc, key, key_size, &mut scratch_phase);
+        }
+
+        if res_initialized {
+            module.glwe_add_assign(res, &fallback_acc);
+        } else {
+            module.glwe_copy(res, &fallback_acc);
+            res_initialized = true;
+        }
     }
 }

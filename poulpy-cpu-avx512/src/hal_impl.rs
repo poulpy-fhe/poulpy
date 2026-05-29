@@ -9,14 +9,13 @@ use poulpy_cpu_ref::hal_defaults::{
 use poulpy_hal::{
     api::{HostBufMut, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
     layouts::{
-        Backend, CoeffGemmPanelBackendMut, CoeffGemmPanelBackendRef,
-        MatZnxBackendRef, Module, NoiseInfos, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
-        VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMatBackendMut,
-        VmpPMatBackendRef, ZnxInfos,
+        Backend, CoeffGemmPanelBackendMut, CoeffGemmPanelBackendRef, MatZnxBackendRef, Module, NoiseInfos, ScratchArena,
+        VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
+        VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
     },
     oep::{
-        HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl,
-        HalVecZnxMatMulImpl, HalVmpImpl,
+        HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVecZnxMatMulImpl,
+        HalVmpImpl,
     },
 };
 
@@ -56,15 +55,48 @@ macro_rules! avx512_matmul_prepared_methods {
             let u_size = panel.u_size();
             match (panel.w(), panel.up()) {
                 (16, _) => apply_prepared::<Self, $k16>(
-                    module, res, res_col, res_base2k, panel.raw_i16(), u_size, u_base2k, a, a_col, cols, a_base2k, rows_in,
+                    module,
+                    res,
+                    res_col,
+                    res_base2k,
+                    panel.raw_i16(),
+                    u_size,
+                    u_base2k,
+                    a,
+                    a_col,
+                    cols,
+                    a_base2k,
+                    rows_in,
                     rows_out,
                 ),
                 (32, 1) => apply_prepared::<Self, $k32s>(
-                    module, res, res_col, res_base2k, panel.raw_i32(), u_size, u_base2k, a, a_col, cols, a_base2k, rows_in,
+                    module,
+                    res,
+                    res_col,
+                    res_base2k,
+                    panel.raw_i32(),
+                    u_size,
+                    u_base2k,
+                    a,
+                    a_col,
+                    cols,
+                    a_base2k,
+                    rows_in,
                     rows_out,
                 ),
                 (32, 2) => apply_prepared::<Self, $k32d>(
-                    module, res, res_col, res_base2k, panel.raw_i32(), u_size, u_base2k, a, a_col, cols, a_base2k, rows_in,
+                    module,
+                    res,
+                    res_col,
+                    res_base2k,
+                    panel.raw_i32(),
+                    u_size,
+                    u_base2k,
+                    a,
+                    a_col,
+                    cols,
+                    a_base2k,
+                    rows_in,
                     rows_out,
                 ),
                 _ => unreachable!("CoeffGemmPanel: invalid (w, up)"),
@@ -150,7 +182,11 @@ unsafe impl HalVecZnxMatMulImpl<FFT64Avx512> for FFT64Avx512 {
         }
     }
 
-    avx512_matmul_prepared_methods!(crate::gemm::Avx512K16I64, crate::gemm::Avx512K32I64, crate::gemm::Avx512K32I64);
+    avx512_matmul_prepared_methods!(
+        crate::gemm::Avx512K16I64,
+        crate::gemm::Avx512K32I64,
+        crate::gemm::Avx512K32I64
+    );
 }
 
 unsafe impl HalConvolutionImpl<FFT64Avx512> for FFT64Avx512 {

@@ -70,6 +70,8 @@ pub struct GLWELinearTransformIndex {
 pub struct GLWEPreparedLinearTransformGiantStep<BE: Backend> {
     /// Slot rotation amount.
     pub rot: i64,
+    /// Indexes into [`GLWEPreparedLinearTransform::baby_steps`] used by this giant step.
+    pub baby_step_indexes: Vec<usize>,
     /// Prepared right convolution operands keyed by real baby-step rotation.
     pub diagonals: BTreeMap<i64, CnvPVecR<BE::OwnedBuf, BE>>,
 }
@@ -115,6 +117,14 @@ impl<P> GLWELinearTransform<P> {
 }
 
 impl<BE: Backend> GLWEPreparedLinearTransform<BE> {
+    /// Returns the real baby-step rotation stored at `baby_step_idx`.
+    pub fn baby_step_rotation(&self, baby_step_idx: usize) -> i64 {
+        self.baby_steps
+            .get(baby_step_idx)
+            .copied()
+            .unwrap_or_else(|| panic!("missing prepared baby-step index {baby_step_idx}"))
+    }
+
     /// The non-zero baby- and giant-step rotations whose automorphism keys are required.
     pub fn required_rotations(&self) -> Vec<i64> {
         let mut rots: Vec<i64> = self.baby_steps.iter().copied().filter(|&r| r != 0).collect();
@@ -122,6 +132,28 @@ impl<BE: Backend> GLWEPreparedLinearTransform<BE> {
         rots.sort_unstable();
         rots.dedup();
         rots
+    }
+}
+
+impl<BE: Backend> GLWEPreparedLinearTransformGiantStep<BE> {
+    /// Indexes into the enclosing transform's prepared baby-step rotation list.
+    pub fn baby_step_indexes(&self) -> &[usize] {
+        &self.baby_step_indexes
+    }
+
+    /// First baby-step index used by this giant step.
+    pub fn first_baby_step_index(&self) -> usize {
+        *self
+            .baby_step_indexes
+            .first()
+            .expect("linear transformation giant step has no terms")
+    }
+
+    /// Prepared diagonal operand for the given real baby-step rotation.
+    pub fn diagonal(&self, baby_rot: i64) -> &CnvPVecR<BE::OwnedBuf, BE> {
+        self.diagonals
+            .get(&baby_rot)
+            .unwrap_or_else(|| panic!("missing prepared diagonal for baby-step rotation {baby_rot}"))
     }
 }
 

@@ -52,8 +52,7 @@ pub trait LinearTransformationOps<BE: Backend> {
         lt: &LinearTransformation<P>,
         prepared: &mut PreparedLinearTransformation<BE>,
         scratch: &mut ScratchArena<'_, BE>,
-    )
-    where
+    ) where
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
     /// Computes and prepares the requested baby-step rotations of `src`.

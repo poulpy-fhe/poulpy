@@ -10,8 +10,8 @@ use anyhow::Result;
 use poulpy_core::{
     GLWECopy, GLWELinearTransformOps, GLWEPrepareLinearTransformOps, GLWEPreparedBabyRotations,
     layouts::{
-        GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef,
-        GetGaloisElement, LWEInfos, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
+        GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
+        LWEInfos, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
     },
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -66,8 +66,7 @@ where
         lt: &LinearTransformation<P>,
         prepared: &mut PreparedLinearTransformation<BE>,
         scratch: &mut ScratchArena<'_, BE>,
-    )
-    where
+    ) where
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         self.glwe_prepare_linear_transform(lt, prepared, scratch)

@@ -32,8 +32,7 @@ pub trait GLWEPrepareLinearTransformOps<BE: Backend> {
         lt: &GLWELinearTransform<P>,
         prepared: &mut GLWEPreparedLinearTransform<BE>,
         scratch: &mut ScratchArena<'_, BE>,
-    )
-    where
+    ) where
         P: GLWEToBackendRef<BE> + GLWEInfos;
 }
 
@@ -58,8 +57,7 @@ where
         lt: &GLWELinearTransform<P>,
         prepared: &mut GLWEPreparedLinearTransform<BE>,
         scratch: &mut ScratchArena<'_, BE>,
-    )
-    where
+    ) where
         P: GLWEToBackendRef<BE> + GLWEInfos,
     {
         if !lt.baby_steps.is_empty() {
@@ -82,7 +80,9 @@ where
             }
         }
 
-        let baby_steps = used_babies.into_iter().collect();
+        let baby_steps: Vec<i64> = used_babies.into_iter().collect();
+        let baby_step_index_by_rotation: BTreeMap<i64, usize> =
+            baby_steps.iter().copied().enumerate().map(|(idx, rot)| (rot, idx)).collect();
 
         let mut giant_steps = Vec::new();
         let mut first_plaintext: Option<&P> = None;
@@ -92,6 +92,7 @@ where
             }
 
             let mut diagonals = BTreeMap::new();
+            let mut baby_step_indexes = Vec::with_capacity(gs.diagonals.len());
             for d in &gs.diagonals {
                 let baby = d.baby;
                 let plaintext = &d.plaintext;
@@ -113,6 +114,9 @@ where
                     !diagonals.contains_key(&baby),
                     "linear transformation giant step contains duplicate baby-step rotation"
                 );
+                let baby_step_idx = *baby_step_index_by_rotation
+                    .get(&baby)
+                    .expect("linear transformation diagonal references missing prepared baby-step index");
 
                 let mut prepared_plaintext = self.cnv_pvec_right_alloc(1, plaintext.size());
                 let plaintext_effective_k = plaintext.max_k().as_usize();
@@ -134,9 +138,14 @@ where
                 }
 
                 diagonals.insert(baby, prepared_plaintext);
+                baby_step_indexes.push(baby_step_idx);
             }
 
-            giant_steps.push(GLWEPreparedLinearTransformGiantStep { rot: gs.rot, diagonals });
+            giant_steps.push(GLWEPreparedLinearTransformGiantStep {
+                rot: gs.rot,
+                baby_step_indexes,
+                diagonals,
+            });
         }
 
         prepared.baby_steps = baby_steps;

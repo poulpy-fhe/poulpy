@@ -26,10 +26,10 @@ use crate::{
     default::{keyswitching::GGLWEProductDefault, operations::GLWECopyDefault},
     layouts::{
         CoeffBound, CoeffMatrixBackendRef, CoeffMatrixInfos, CoeffMatrixPrepared, CoeffMatrixPreparedOwned,
-        CoeffMatrixToBackendRef, GGLWEInfos, GGLWEToBackendRef,
-        GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWE, GLWECompressedSeed, GLWECompressedToBackendRef, GLWEInfos, GLWELayout,
-        GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, GLWEViewRef, LWEInfos, LWEMatrixBackendMut, LWEMatrixInfos,
-        LWEMatrixToBackendMut, LWEMatrixToBackendRef, LWEToBackendMut, LWEToBackendRef, Rank, glwe_backend_ref_from_mut,
+        CoeffMatrixToBackendRef, GGLWEInfos, GGLWEToBackendRef, GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWE,
+        GLWECompressedSeed, GLWECompressedToBackendRef, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut,
+        GLWEViewRef, LWEInfos, LWEMatrixBackendMut, LWEMatrixInfos, LWEMatrixToBackendMut, LWEMatrixToBackendRef,
+        LWEToBackendMut, LWEToBackendRef, Rank, glwe_backend_ref_from_mut,
         prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
     },
     oep::{ConversionDefault, GLWEKeyswitchDefault},
@@ -627,11 +627,7 @@ pub fn lwe_matrix_mul_bodies_default<BE, M, R, U, A>(
     let u_base2k = u_view.base2k().as_usize();
     let u_bound_bits: u32 = <<U as CoeffMatrixInfos>::Bound as CoeffBound>::WIDTH;
 
-    assert_eq!(
-        a_view.n(),
-        rows_in,
-        "lwe_matrix_mul_bodies: bodies.n() != U input rows"
-    );
+    assert_eq!(a_view.n(), rows_in, "lwe_matrix_mul_bodies: bodies.n() != U input rows");
     assert!(
         res_view.cols() >= num_bodies,
         "lwe_matrix_mul_bodies: res_bodies has fewer columns than bodies"
@@ -733,7 +729,9 @@ pub fn lwe_matrix_mul_bodies_prepared_default<BE, M, R, A, BU>(
     for c in 0..num_bodies {
         module.vec_znx_zero_backend(&mut res, c);
     }
-    module.vec_znx_matmul_prepared(&mut res, 0, res_base2k, &panel, u_base2k, &a, 0, num_bodies, a_base2k, scratch);
+    module.vec_znx_matmul_prepared(
+        &mut res, 0, res_base2k, &panel, u_base2k, &a, 0, num_bodies, a_base2k, scratch,
+    );
 }
 
 pub fn glwe_from_lwe_tmp_bytes_default<BE, M, R, A, K>(module: &M, glwe_infos: &R, lwe_infos: &A, key_infos: &K) -> usize

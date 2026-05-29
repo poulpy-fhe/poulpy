@@ -164,8 +164,7 @@ where
         // Batched, `U` re-prepared every iteration.
         {
             let mut res: VecZnx<Vec<u8>> = module.vec_znx_alloc(num_bodies, size);
-            let mut scratch =
-                ScratchOwned::alloc(module.lwe_matrix_mul_bodies_tmp_bytes(&u_infos, num_bodies, size, size));
+            let mut scratch = ScratchOwned::alloc(module.lwe_matrix_mul_bodies_tmp_bytes(&u_infos, num_bodies, size, size));
             group.bench_with_input(BenchmarkId::new("batched_unprepared", &id_label), &(), |b, _| {
                 b.iter(|| {
                     module.lwe_matrix_mul_bodies(&mut res, bk, &u, &bodies, bk, &mut scratch.borrow());
@@ -178,13 +177,11 @@ where
         {
             let prepared = module.coeff_matrix_prepare(&u);
             let mut res: VecZnx<Vec<u8>> = module.vec_znx_alloc(num_bodies, size);
-            let mut scratch = ScratchOwned::alloc(module.lwe_matrix_mul_bodies_prepared_tmp_bytes(
-                &prepared, num_bodies, size, size,
-            ));
+            let mut scratch =
+                ScratchOwned::alloc(module.lwe_matrix_mul_bodies_prepared_tmp_bytes(&prepared, num_bodies, size, size));
             group.bench_with_input(BenchmarkId::new("batched_prepared", &id_label), &(), |b, _| {
                 b.iter(|| {
-                    module
-                        .lwe_matrix_mul_bodies_prepared(&mut res, bk, &prepared, &bodies, bk, &mut scratch.borrow());
+                    module.lwe_matrix_mul_bodies_prepared(&mut res, bk, &prepared, &bodies, bk, &mut scratch.borrow());
                     black_box(());
                 })
             });

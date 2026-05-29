@@ -76,7 +76,17 @@ macro_rules! hal_impl_vec_znx_matmul {
         ) {
             let mut scratch = scratch.borrow();
             $crate::hal_defaults::vec_znx_matmul::vec_znx_matmul_prepared_default::<Self>(
-                module, res, res_col, res_base2k, panel, u_base2k, a, a_col, cols, a_base2k, &mut scratch,
+                module,
+                res,
+                res_col,
+                res_base2k,
+                panel,
+                u_base2k,
+                a,
+                a_col,
+                cols,
+                a_base2k,
+                &mut scratch,
             );
         }
     };

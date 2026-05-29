@@ -130,7 +130,13 @@ pub unsafe trait ConversionImpl<BE: Backend>: Backend {
         U: CoeffMatrixToBackendRef<BE> + CoeffMatrixInfos,
         A: GLWECompressedToBackendRef<BE> + GLWEInfos;
 
-    fn lwe_matrix_mul_bodies_tmp_bytes<U>(module: &Module<BE>, u_infos: &U, num_bodies: usize, res_size: usize, a_size: usize) -> usize
+    fn lwe_matrix_mul_bodies_tmp_bytes<U>(
+        module: &Module<BE>,
+        u_infos: &U,
+        num_bodies: usize,
+        res_size: usize,
+        a_size: usize,
+    ) -> usize
     where
         U: CoeffMatrixInfos;
 
@@ -467,7 +473,13 @@ where
         module.lwe_matrix_mul_body_default(res, u, a, scratch)
     }
 
-    fn lwe_matrix_mul_bodies_tmp_bytes<U>(module: &Module<BE>, u_infos: &U, num_bodies: usize, res_size: usize, a_size: usize) -> usize
+    fn lwe_matrix_mul_bodies_tmp_bytes<U>(
+        module: &Module<BE>,
+        u_infos: &U,
+        num_bodies: usize,
+        res_size: usize,
+        a_size: usize,
+    ) -> usize
     where
         U: CoeffMatrixInfos,
     {
@@ -714,7 +726,13 @@ macro_rules! impl_conversion_defaults_full {
                 $crate::default::conversion::lwe_matrix_mul_body_default::<$be, _, _, _, _>(self, res, u, a, scratch)
             }
 
-            fn lwe_matrix_mul_bodies_tmp_bytes_default<U>(&self, u_infos: &U, num_bodies: usize, res_size: usize, a_size: usize) -> usize
+            fn lwe_matrix_mul_bodies_tmp_bytes_default<U>(
+                &self,
+                u_infos: &U,
+                num_bodies: usize,
+                res_size: usize,
+                a_size: usize,
+            ) -> usize
             where
                 U: $crate::layouts::CoeffMatrixInfos,
             {

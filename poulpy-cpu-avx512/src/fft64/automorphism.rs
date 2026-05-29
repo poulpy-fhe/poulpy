@@ -7,9 +7,9 @@
 //! to AVX2 4-wide (≥4) or scalar (<4).
 
 use core::arch::x86_64::{
-    __m128i, __m256d, __m256i, __m512d, __m512i, _mm_loadu_si128, _mm256_cvtepu32_epi64, _mm256_i64gather_pd,
-    _mm256_loadu_si256, _mm256_set1_pd, _mm256_storeu_pd, _mm256_xor_pd, _mm512_cvtepu32_epi64, _mm512_i64gather_pd,
-    _mm512_set1_pd, _mm512_storeu_pd, _mm512_xor_pd,
+    __m128i, __m256d, __m256i, __m512d, __m512i, _mm_loadu_si128, _mm256_cvtepu32_epi64, _mm256_i64gather_pd, _mm256_loadu_si256,
+    _mm256_set1_pd, _mm256_storeu_pd, _mm256_xor_pd, _mm512_cvtepu32_epi64, _mm512_i64gather_pd, _mm512_set1_pd,
+    _mm512_storeu_pd, _mm512_xor_pd,
 };
 
 use poulpy_cpu_ref::reference::fft64::vec_znx_dft::{Fft64AutomorphismPlan, vec_znx_dft_automorphism as fft64_automorphism_ref};

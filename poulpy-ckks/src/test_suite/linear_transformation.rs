@@ -315,6 +315,14 @@ pub fn test_linear_transformation_prepared<BE, F, E>(
     assert_eq!(prepared.required_rotations(), unprepared_required_rotations);
     assert_eq!(prepared.baby_steps, vec![0, 1, 2]);
     assert_eq!(prepared.giant_steps.len(), 3);
+    assert_eq!(
+        prepared
+            .giant_steps
+            .iter()
+            .map(|gs| gs.baby_step_indexes.clone())
+            .collect::<Vec<_>>(),
+        vec![vec![0, 2], vec![2], vec![1]]
+    );
 
     let mut atks = HashMap::new();
     for r in prepared.required_rotations() {

@@ -10,8 +10,7 @@ use crate::{
     },
     layouts::{
         CoeffBound, CoeffMatrixInfos, CoeffMatrixPreparedOwned, CoeffMatrixToBackendRef, GGLWEInfos, GGSWInfos, GGSWToBackendMut,
-        GLWECompressedSeed,
-        GLWECompressedToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEMatrixInfos,
+        GLWECompressedSeed, GLWECompressedToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEMatrixInfos,
         LWEMatrixToBackendMut, LWEMatrixToBackendRef, LWEToBackendMut, LWEToBackendRef,
         prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
     },
