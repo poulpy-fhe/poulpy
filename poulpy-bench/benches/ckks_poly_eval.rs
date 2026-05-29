@@ -106,7 +106,7 @@ fn bench_ntt120_ref(c: &mut Criterion) {
             let bsgs = poly
                 .encode_bsgs_with(&host_module, Base2K(BASE2K as u32), COEFF_META, strategy)
                 .expect("encode_bsgs_with");
-            let log_split = bsgs.base.trailing_zeros() as usize;
+            let log_split = bsgs.base().trailing_zeros() as usize;
 
             // Untimed dry run for level / log_budget reporting.
             let (levels, log_budget_in, log_budget_out) = {
@@ -140,8 +140,8 @@ fn bench_ntt120_ref(c: &mut Criterion) {
             };
             eprintln!(
                 "[poly_eval/{label} d={degree:3} {strategy_label:>9}] k={k:2} baby_steps={n_baby:2} L={levels} ({lb_in}→{lb_out} budget bits)",
-                k = bsgs.base,
-                n_baby = bsgs.baby_steps.len(),
+                k = bsgs.base(),
+                n_baby = bsgs.baby_steps().len(),
                 lb_in = log_budget_in,
                 lb_out = log_budget_out,
             );
