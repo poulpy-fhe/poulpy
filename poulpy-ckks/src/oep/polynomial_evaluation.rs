@@ -2,7 +2,10 @@ use anyhow::Result;
 use poulpy_core::layouts::{
     BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta, prepared::GLWETensorKeyPreparedToBackendRef,
 };
-use poulpy_core::{GLWEAdd, GLWECopy, GLWEMulConst, GLWENormalize, GLWEShift, GLWETensoring, GLWEZero, ScratchArenaTakeCore};
+use poulpy_core::{
+    GLWEAdd, GLWECopy, GLWEMulConst, GLWENormalize, GLWEShift, GLWETensoring, GLWEZero, GiantStepTensorBounds,
+    ScratchArenaTakeCore,
+};
 use poulpy_hal::api::ScratchAvailable;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
@@ -66,7 +69,8 @@ pub unsafe trait CKKSPolynomialEvaluationImpl<BE: Backend>: Backend {
 
 unsafe impl<BE: Backend> CKKSPolynomialEvaluationImpl<BE> for BE
 where
-    Module<BE>: CKKSAddOps<BE>
+    Module<BE>: GiantStepTensorBounds<BE>
+        + CKKSAddOps<BE>
         + CKKSMulAddOps<BE>
         + GLWEMulConst<BE>
         + GLWEAdd<BE>

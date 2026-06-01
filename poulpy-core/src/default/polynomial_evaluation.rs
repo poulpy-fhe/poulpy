@@ -6,15 +6,58 @@
 //! [`BSGSPrecision`].
 
 use anyhow::{Result, ensure};
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::{
+    api::{
+        CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAddAssignBackend, VecZnxBigBytesOf,
+        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftBytesOf, VecZnxIdftApplyTmpA,
+        VecZnxNegateBackend, VecZnxSubAssignBackend,
+    },
+    layouts::{Backend, ScratchArena},
+};
 
 use crate::{
     GLWEAdd, GLWEMulConst, GLWENormalize, GLWEShift, GLWETensoring, GLWEZero, ScratchArenaTakeCore,
+    default::operations::{glwe_prepare_right, glwe_tensor_apply_prepared_right},
     layouts::{
         BSGSMeta, BabyStep, GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Parity,
         PowerBasisHelper, SetBSGSMeta, prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
+
+/// HAL bounds required to run the hoisted prepared-right tensor product.
+pub trait GiantStepTensorBounds<BE: Backend>:
+    Sized
+    + ModuleN
+    + CnvPVecBytesOf
+    + VecZnxDftBytesOf
+    + VecZnxBigBytesOf
+    + VecZnxIdftApplyTmpA<BE>
+    + VecZnxBigNormalize<BE>
+    + Convolution<BE>
+    + VecZnxSubAssignBackend<BE>
+    + VecZnxAddAssignBackend<BE>
+    + VecZnxBigNormalizeTmpBytes
+    + VecZnxCopyBackend<BE>
+    + VecZnxNegateBackend<BE>
+{
+}
+
+impl<BE: Backend, M> GiantStepTensorBounds<BE> for M where
+    M: Sized
+        + ModuleN
+        + CnvPVecBytesOf
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxBigNormalize<BE>
+        + Convolution<BE>
+        + VecZnxSubAssignBackend<BE>
+        + VecZnxAddAssignBackend<BE>
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxCopyBackend<BE>
+        + VecZnxNegateBackend<BE>
+{
+}
 
 /// Scheme-supplied per-operation precision integers driving the BSGS engine.
 pub trait BSGSPrecision<BE: Backend> {
@@ -194,7 +237,7 @@ pub fn eval_giant_steps<M, R, B, A, G, T, BE: Backend>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    M: GLWEAdd<BE> + GLWEShift<BE> + GLWETensoring<BE> + GLWENormalize<BE> + crate::GLWECopy<BE>,
+    M: GiantStepTensorBounds<BE> + GLWEAdd<BE> + GLWEShift<BE> + GLWETensoring<BE> + GLWENormalize<BE> + crate::GLWECopy<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos + SetBSGSMeta,
     B: BabyStep<BE>,
     A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
@@ -215,21 +258,13 @@ where
 
     while active.len() > 1 {
         let mut next = Vec::with_capacity(active.len().div_ceil(2));
+        let mut pairs: Vec<(usize, usize, usize)> = Vec::with_capacity(active.len() / 2);
         let mut i = 0;
         while i < active.len() {
             let is_last = i + 1 == active.len();
             if !is_last && active[i].0 == active[i + 1].0 {
                 let gsp = giant_step_power(active[i].0);
-                eval_monomial_pair(
-                    module,
-                    precision,
-                    baby_steps,
-                    active[i].1,
-                    active[i + 1].1,
-                    power_basis.get(gsp)?,
-                    tsk,
-                    scratch,
-                )?;
+                pairs.push((gsp, active[i].1, active[i + 1].1));
                 next.push((2 * gsp - 1, active[i + 1].1));
                 i += 2;
             } else if is_last && i > 0 {
@@ -241,6 +276,28 @@ where
                 i += 1;
             }
         }
+
+        // Process pairs left-to-right, hoisting the prepared `X^{gsp}` across
+        // consecutive pairs that share the same giant-step power.
+        let mut p = 0;
+        while p < pairs.len() {
+            let gsp = pairs[p].0;
+            let mut run_end = p + 1;
+            while run_end < pairs.len() && pairs[run_end].0 == gsp {
+                run_end += 1;
+            }
+            eval_monomial_run(
+                module,
+                precision,
+                baby_steps,
+                &pairs[p..run_end],
+                power_basis.get(gsp)?,
+                tsk,
+                scratch,
+            )?;
+            p = run_end;
+        }
+
         active = next;
     }
 
@@ -252,65 +309,79 @@ where
     Ok(())
 }
 
+/// Evaluates a run of `b = b * xpow + a` pairs that share the same `xpow`.
+///
+/// The compacted `xpow` is prepared once into a scratch `CnvPVecR` and reused as
+/// the right tensor operand across every pair in the run.
 #[allow(clippy::too_many_arguments)]
-fn eval_monomial_pair<M, B, A, T, BE: Backend>(
+fn eval_monomial_run<M, B, A, T, BE: Backend>(
     module: &M,
     precision: &impl BSGSPrecision<BE>,
     baby_steps: &mut [B],
-    low_idx: usize,
-    high_idx: usize,
+    pairs: &[(usize, usize, usize)],
     xpow: &A,
     tsk: &T,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    M: GLWEAdd<BE> + GLWEShift<BE> + GLWETensoring<BE> + GLWENormalize<BE> + crate::GLWECopy<BE>,
+    M: GiantStepTensorBounds<BE> + GLWEAdd<BE> + GLWEShift<BE> + GLWETensoring<BE> + GLWENormalize<BE> + crate::GLWECopy<BE>,
     B: BabyStep<BE>,
     A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
     T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
 {
-    ensure!(low_idx != high_idx, "eval_giant_steps: baby-step pair aliases itself");
-    if low_idx < high_idx {
-        let (low_steps, high_steps) = baby_steps.split_at_mut(high_idx);
-        eval_monomial(module, precision, low_steps[low_idx].get(), high_steps[0].get_mut(), xpow, tsk, scratch)
-    } else {
-        let (high_steps, low_steps) = baby_steps.split_at_mut(low_idx);
-        eval_monomial(module, precision, low_steps[0].get(), high_steps[high_idx].get_mut(), xpow, tsk, scratch)
-    }
-}
+    let xpow_log_budget = xpow.bsgs_log_budget();
+    let xpow_log_delta = xpow.bsgs_log_delta();
 
-/// Computes `b = b * xpow + a` (ct × ct) using compact operands.
-fn eval_monomial<M, V, A, T, BE: Backend>(
-    module: &M,
-    precision: &impl BSGSPrecision<BE>,
-    a: &V,
-    b: &mut V,
-    xpow: &A,
-    tsk: &T,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
-    M: GLWEAdd<BE> + GLWEShift<BE> + GLWETensoring<BE> + GLWENormalize<BE> + crate::GLWECopy<BE>,
-    V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta,
-    A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
-    T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-    for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
-{
-    scratch.scope(|scratch_local| {
-        let (mut a_compact, scratch_local) = take_compact_scratch(scratch_local, a, a.bsgs_log_budget(), a.bsgs_log_delta());
-        let (mut b_compact, scratch_local) = take_compact_scratch(scratch_local, b, b.bsgs_log_budget(), b.bsgs_log_delta());
-        let (mut xpow_compact, mut scratch_local) = take_compact_scratch(scratch_local, xpow, xpow.bsgs_log_budget(), xpow.bsgs_log_delta());
-        module.glwe_copy(&mut a_compact, a);
-        module.glwe_copy(&mut b_compact, b);
+    scratch.scope(|run_scratch| {
+        // Hoist: compact `xpow` and prepare it into a reusable right operand.
+        let (mut xpow_compact, run_scratch) = take_compact_scratch(run_scratch, xpow, xpow_log_budget, xpow_log_delta);
         module.glwe_copy(&mut xpow_compact, xpow);
+        let cols = xpow_compact.rank().as_usize() + 1;
+        let xpow_size = xpow_compact.size();
+        let xpow_effective_k = xpow_compact.bsgs_effective_k();
 
-        mul_assign(module, precision, &mut b_compact, &xpow_compact, tsk, &mut scratch_local)?;
-        add_assign(module, &mut b_compact, &a_compact, &mut scratch_local);
+        let (mut xpow_prep, mut run_scratch) = run_scratch.take_cnv_pvec_right_scratch(module, cols, xpow_size);
+        run_scratch = run_scratch.apply_mut(|scratch_prep| {
+            glwe_prepare_right(module, &mut xpow_prep, &xpow_compact, xpow_effective_k, scratch_prep);
+        });
 
-        module.glwe_copy(b, &b_compact);
-        b.set_bsgs_log_budget(b_compact.0);
-        b.set_bsgs_log_delta(b_compact.1);
+        for &(_, low_idx, high_idx) in pairs {
+            ensure!(low_idx != high_idx, "eval_giant_steps: baby-step pair aliases itself");
+            run_scratch.scope(|pair_scratch| {
+                let (a, b) = if low_idx < high_idx {
+                    let (low_steps, high_steps) = baby_steps.split_at_mut(high_idx);
+                    (low_steps[low_idx].get(), high_steps[0].get_mut())
+                } else {
+                    let (high_steps, low_steps) = baby_steps.split_at_mut(low_idx);
+                    (low_steps[0].get(), high_steps[high_idx].get_mut())
+                };
+
+                let (mut a_compact, pair_scratch) =
+                    take_compact_scratch(pair_scratch, a, a.bsgs_log_budget(), a.bsgs_log_delta());
+                let (mut b_compact, mut pair_scratch) =
+                    take_compact_scratch(pair_scratch, b, b.bsgs_log_budget(), b.bsgs_log_delta());
+                module.glwe_copy(&mut a_compact, a);
+                module.glwe_copy(&mut b_compact, b);
+
+                mul_assign_prepared(
+                    module,
+                    precision,
+                    &mut b_compact,
+                    &xpow_compact,
+                    &xpow_prep,
+                    xpow_size,
+                    tsk,
+                    &mut pair_scratch,
+                )?;
+                add_assign(module, &mut b_compact, &a_compact, &mut pair_scratch);
+
+                module.glwe_copy(b, &b_compact);
+                b.set_bsgs_log_budget(b_compact.0);
+                b.set_bsgs_log_delta(b_compact.1);
+                Result::<()>::Ok(())
+            })?;
+        }
         Ok(())
     })
 }
@@ -382,19 +453,26 @@ where
     (CompactCt(log_budget, log_delta, inner), scratch)
 }
 
-/// Computes `dst *= a` (ct × ct) using tensor-product relinearization.
-fn mul_assign<M, V, A, T, BE: Backend>(
+/// Computes `dst *= a` (ct × ct) reusing the caller-prepared right operand `a_prep`.
+///
+/// `a_prep` is the prepared `CnvPVecR` of `a` and `a_size` its limb count, so the
+/// tensor product feeds `mul_ct_params` the same operand metadata as `a`.
+#[allow(clippy::too_many_arguments)]
+fn mul_assign_prepared<M, V, A, AP, T, BE: Backend>(
     module: &M,
     precision: &impl BSGSPrecision<BE>,
     dst: &mut V,
     a: &A,
+    a_prep: &AP,
+    a_size: usize,
     tsk: &T,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    M: GLWETensoring<BE>,
+    M: GiantStepTensorBounds<BE> + GLWETensoring<BE>,
     V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta,
     A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
+    AP: poulpy_hal::layouts::CnvPVecRToBackendRef<BE>,
     T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
 {
@@ -409,13 +487,14 @@ where
     let scratch_local = scratch.borrow();
     let (mut tmp, mut scratch_local) = scratch_local.take_glwe_tensor_scratch(&tensor_layout);
     let dst_effective_k = dst.bsgs_effective_k();
-    module.glwe_tensor_apply(
+    glwe_tensor_apply_prepared_right(
+        module,
         cnv_offset,
         &mut tmp,
         &*dst,
         dst_effective_k,
-        a,
-        a.bsgs_effective_k(),
+        a_prep,
+        a_size,
         &mut scratch_local,
     );
     module.glwe_tensor_relinearize(dst, &tmp, tsk, tmp.size() + tsk.dsize().as_usize(), &mut scratch_local);

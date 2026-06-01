@@ -4,7 +4,7 @@ use poulpy_core::layouts::{
 };
 use poulpy_core::{
     BSGSConstAdd, BSGSPrecision, GLWEAdd, GLWECopy, GLWEMulConst, GLWENormalize, GLWEShift, GLWETensoring, GLWEZero,
-    ScratchArenaTakeCore, eval_baby_step, eval_giant_steps,
+    GiantStepTensorBounds, ScratchArenaTakeCore, eval_baby_step, eval_giant_steps,
 };
 use poulpy_hal::{
     api::ScratchAvailable,
@@ -12,8 +12,9 @@ use poulpy_hal::{
 };
 
 use crate::{
-    SetCKKSInfos, checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget,
+    SetCKKSInfos,
     api::{BSGSPolynomialInfos, BabyStep as BabyStepInfos, CKKSAddOps, CKKSMulAddOps, Parity, PowerBasisHelper},
+    checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget,
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
 };
 use anyhow::{Result, ensure};
@@ -141,7 +142,14 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEAdd<BE> + GLWEShift<BE> + GLWETensoring<BE> + GLWENormalize<BE> + GLWECopy<BE> + CKKSAddOps<BE> + Sized,
+        Self: GiantStepTensorBounds<BE>
+            + GLWEAdd<BE>
+            + GLWEShift<BE>
+            + GLWETensoring<BE>
+            + GLWENormalize<BE>
+            + GLWECopy<BE>
+            + CKKSAddOps<BE>
+            + Sized,
         R: GLWEToBackendMut<BE> + GLWEInfos + SetBSGSMeta,
         B: BabyStepInfos<BE>,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
@@ -158,7 +166,8 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEMulConst<BE>
+        Self: GiantStepTensorBounds<BE>
+            + GLWEMulConst<BE>
             + GLWEAdd<BE>
             + GLWEShift<BE>
             + GLWETensoring<BE>
@@ -208,7 +217,14 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEAdd<BE> + GLWEShift<BE> + GLWETensoring<BE> + GLWENormalize<BE> + GLWECopy<BE> + CKKSAddOps<BE> + Sized,
+        Self: GiantStepTensorBounds<BE>
+            + GLWEAdd<BE>
+            + GLWEShift<BE>
+            + GLWETensoring<BE>
+            + GLWENormalize<BE>
+            + GLWECopy<BE>
+            + CKKSAddOps<BE>
+            + Sized,
         R: GLWEToBackendMut<BE> + GLWEInfos + SetBSGSMeta,
         B: BabyStepInfos<BE>,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
@@ -229,7 +245,8 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEMulConst<BE>
+        Self: GiantStepTensorBounds<BE>
+            + GLWEMulConst<BE>
             + GLWEAdd<BE>
             + GLWEShift<BE>
             + GLWETensoring<BE>
