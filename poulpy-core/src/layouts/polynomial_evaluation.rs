@@ -14,7 +14,7 @@ use anyhow::{Result, anyhow, ensure};
 use poulpy_hal::layouts::Backend;
 use rand_distr::num_traits::{Float, FloatConst, FromPrimitive};
 
-use crate::layouts::GLWEToBackendRef;
+use crate::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
 
 // ── Basis / Parity ───────────────────────────────────────────────────────────
 
@@ -485,6 +485,33 @@ pub struct BSGSPolynomial<C> {
     pub(crate) parity: Parity,
 }
 
+impl<BE: Backend, C> BSGSPolynomialInfos<BE> for BSGSPolynomial<C>
+where
+    C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
+{
+    type Coeffs = C;
+
+    fn degree(&self) -> usize {
+        BSGSPolynomial::degree(self)
+    }
+
+    fn baby_steps(&self) -> usize {
+        BSGSPolynomial::baby_steps(self).len()
+    }
+
+    fn baby_step(&self, i: usize) -> &Self::Coeffs {
+        BSGSPolynomial::baby_step(self, i)
+    }
+
+    fn basis(&self) -> Basis {
+        BSGSPolynomial::basis(self)
+    }
+
+    fn parity(&self) -> Parity {
+        BSGSPolynomial::parity(self)
+    }
+}
+
 impl<C> BSGSPolynomial<C> {
     /// Returns the polynomial basis used by this decomposition.
     pub fn basis(&self) -> Basis {
@@ -544,6 +571,44 @@ impl<C> BSGSPolynomial<C> {
             parity: self.parity,
         }
     }
+}
+
+// ── BSGS evaluation data traits ───────────────────────────────────────────────
+
+/// Per-operation semantic precision carried by a value during BSGS evaluation.
+///
+/// `log_budget` is the remaining homomorphic headroom and `log_delta` the
+/// encoded scaling precision; `effective_k = log_budget + log_delta`.
+pub trait BSGSMeta {
+    fn bsgs_log_budget(&self) -> usize;
+    fn bsgs_log_delta(&self) -> usize;
+    fn bsgs_effective_k(&self) -> usize {
+        self.bsgs_log_budget() + self.bsgs_log_delta()
+    }
+}
+
+/// Mutable semantic precision access.
+pub trait SetBSGSMeta: BSGSMeta {
+    fn set_bsgs_log_budget(&mut self, log_budget: usize);
+    fn set_bsgs_log_delta(&mut self, log_delta: usize);
+}
+
+/// Read access to a decomposed BSGS polynomial during evaluation.
+pub trait BSGSPolynomialInfos<BE: Backend> {
+    type Coeffs: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta;
+    fn degree(&self) -> usize;
+    fn baby_steps(&self) -> usize;
+    fn baby_step(&self, i: usize) -> &Self::Coeffs;
+    fn basis(&self) -> Basis;
+    fn parity(&self) -> Parity;
+}
+
+/// A single evaluated baby step with its degree.
+pub trait BabyStep<BE: Backend> {
+    type Value: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta;
+    fn degree(&self) -> usize;
+    fn get(&self) -> &Self::Value;
+    fn get_mut(&mut self) -> &mut Self::Value;
 }
 
 // ── PowerBasis ────────────────────────────────────────────────────────────────

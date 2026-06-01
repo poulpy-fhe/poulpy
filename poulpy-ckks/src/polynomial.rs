@@ -1,19 +1,16 @@
 use std::fmt::Debug;
 
 use anyhow::{Result, anyhow};
-use poulpy_core::layouts::{Base2K, GLWEInfos, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, HostBytesBackend, Module};
+use poulpy_core::layouts::Base2K;
+use poulpy_hal::layouts::{HostBytesBackend, Module};
 use rand_distr::num_traits::{Float, FloatConst, FromPrimitive};
 
 use crate::{
-    CKKSInfos, CKKSMeta,
-    api::BSGSPolynomialInfos,
+    CKKSMeta,
     layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar},
 };
 
-pub use poulpy_core::layouts::{
-    BSGSPolynomial, Basis, DEFAULT_SPLIT_STRATEGY, Parity, Polynomial, SplitStrategy, split_degree,
-};
+pub use poulpy_core::layouts::{BSGSPolynomial, Basis, DEFAULT_SPLIT_STRATEGY, Parity, Polynomial, SplitStrategy, split_degree};
 
 /// CKKS encoding of a [`Polynomial`] into a [`BSGSPolynomial`] of plaintexts.
 pub trait EncodeBSGS {
@@ -67,29 +64,3 @@ where
     }
 }
 
-impl<BE: Backend, C> BSGSPolynomialInfos<BE> for BSGSPolynomial<C>
-where
-    C: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
-{
-    type Coeffs = C;
-
-    fn degree(&self) -> usize {
-        BSGSPolynomial::degree(self)
-    }
-
-    fn baby_steps(&self) -> usize {
-        BSGSPolynomial::baby_steps(self).len()
-    }
-
-    fn baby_step(&self, i: usize) -> &Self::Coeffs {
-        BSGSPolynomial::baby_step(self, i)
-    }
-
-    fn basis(&self) -> Basis {
-        BSGSPolynomial::basis(self)
-    }
-
-    fn parity(&self) -> Parity {
-        BSGSPolynomial::parity(self)
-    }
-}

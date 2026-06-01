@@ -11,7 +11,8 @@ use std::{
 
 use anyhow::Result;
 use poulpy_core::layouts::{
-    Base2K, Degree, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, LWEInfos, Rank,
+    BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, LWEInfos, Rank,
+    SetBSGSMeta,
 };
 use poulpy_core::{GLWENormalize, ScratchArenaTakeCore};
 use poulpy_hal::layouts::{Backend, Data, HostBackend, HostDataRef, Module, ScratchArena};
@@ -180,6 +181,24 @@ impl<D: Data, S: CKKSNormalizationState> SetCKKSInfos for CKKSCiphertext<D, S> {
     }
 }
 
+impl<D: Data, S: CKKSNormalizationState> BSGSMeta for CKKSCiphertext<D, S> {
+    fn bsgs_log_budget(&self) -> usize {
+        CKKSInfos::log_budget(self)
+    }
+    fn bsgs_log_delta(&self) -> usize {
+        CKKSInfos::log_delta(self)
+    }
+}
+
+impl<D: Data, S: CKKSNormalizationState> SetBSGSMeta for CKKSCiphertext<D, S> {
+    fn set_bsgs_log_budget(&mut self, log_budget: usize) {
+        SetCKKSInfos::set_log_budget(self, log_budget);
+    }
+    fn set_bsgs_log_delta(&mut self, log_delta: usize) {
+        SetCKKSInfos::set_log_delta(self, log_delta);
+    }
+}
+
 impl<D: HostDataRef, S: CKKSNormalizationState> fmt::Display for CKKSCiphertext<D, S> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.inner)
@@ -271,6 +290,24 @@ impl<'a, BE: Backend + 'a> CKKSInfos for CKKSCiphertextViewMut<'a, BE> {
 impl<'a, BE: Backend + 'a> SetCKKSInfos for CKKSCiphertextViewMut<'a, BE> {
     fn set_meta(&mut self, meta: CKKSMeta) {
         self.meta = meta;
+    }
+}
+
+impl<'a, BE: Backend + 'a> BSGSMeta for CKKSCiphertextViewMut<'a, BE> {
+    fn bsgs_log_budget(&self) -> usize {
+        CKKSInfos::log_budget(self)
+    }
+    fn bsgs_log_delta(&self) -> usize {
+        CKKSInfos::log_delta(self)
+    }
+}
+
+impl<'a, BE: Backend + 'a> SetBSGSMeta for CKKSCiphertextViewMut<'a, BE> {
+    fn set_bsgs_log_budget(&mut self, log_budget: usize) {
+        SetCKKSInfos::set_log_budget(self, log_budget);
+    }
+    fn set_bsgs_log_delta(&mut self, log_delta: usize) {
+        SetCKKSInfos::set_log_delta(self, log_delta);
     }
 }
 

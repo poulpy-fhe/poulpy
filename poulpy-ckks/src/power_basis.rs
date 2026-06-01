@@ -1,7 +1,7 @@
 use anyhow::{Result, ensure};
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GLWETensorKeyPrepared, LWEInfos, split_degree,
-    prepared::GLWETensorKeyPreparedToBackendRef,
+    GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+    prepared::GLWETensorKeyPreparedToBackendRef, split_degree,
 };
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
@@ -72,10 +72,7 @@ impl<D: Data> PowerBasisGen<D> for PowerBasis<CKKSCiphertext<D>> {
             n >= 2,
             "PowerBasis::insert: power must be at least 2; power 1 is set at construction"
         );
-        ensure!(
-            !self.contains_power(n),
-            "PowerBasis::insert: power {n} is already present"
-        );
+        ensure!(!self.contains_power(n), "PowerBasis::insert: power {n} is already present");
 
         let (expected_n, expected_base2k, expected_rank) = {
             let x = self

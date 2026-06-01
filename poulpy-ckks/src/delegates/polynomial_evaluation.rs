@@ -1,7 +1,10 @@
 use anyhow::Result;
 use poulpy_core::{
     ScratchArenaTakeCore,
-    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, ModuleCoreAlloc, prepared::GLWETensorKeyPreparedToBackendRef},
+    layouts::{
+        BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, ModuleCoreAlloc, SetBSGSMeta,
+        prepared::GLWETensorKeyPreparedToBackendRef,
+    },
 };
 use poulpy_hal::{
     api::ScratchAvailable,
@@ -28,9 +31,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        C: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
     {
         BE::ckks_eval_baby_step::<R, C, A, G>(self, res, coeffs, parity, power_basis, scratch)
@@ -45,9 +48,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         B: BabyStep<BE>,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     {
@@ -63,9 +66,10 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         B: BSGSPolynomialInfos<BE>,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        B::Coeffs: CKKSCtBounds,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     {

@@ -41,7 +41,7 @@
 //! | [`leveled`] | Leveled arithmetic (add, sub, mul, neg, rotate, conjugate), encryption, decryption, and rescale |
 //! | bootstrapping | Planned CKKS bootstrapping |
 
-use poulpy_core::layouts::{Base2K, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision};
+use poulpy_core::layouts::{BSGSMeta, Base2K, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision};
 use poulpy_hal::layouts::Backend;
 
 pub mod api;
@@ -114,6 +114,16 @@ pub trait CKKSInfos {
     /// storage capacity `max_k()`.
     fn effective_k(&self) -> usize {
         self.log_delta() + self.log_budget()
+    }
+}
+
+impl BSGSMeta for CKKSMeta {
+    fn bsgs_log_budget(&self) -> usize {
+        self.log_budget
+    }
+
+    fn bsgs_log_delta(&self) -> usize {
+        self.log_delta
     }
 }
 

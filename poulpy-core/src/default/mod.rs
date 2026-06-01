@@ -8,3 +8,4 @@ pub mod glwe_trace;
 pub mod keyswitching;
 pub mod noise;
 pub mod operations;
+pub mod polynomial_evaluation;

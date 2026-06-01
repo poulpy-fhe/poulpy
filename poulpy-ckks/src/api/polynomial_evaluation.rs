@@ -1,27 +1,13 @@
 use anyhow::Result;
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GLWETensorKeyPreparedToBackendRef};
+use poulpy_core::layouts::{
+    BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta, prepared::GLWETensorKeyPreparedToBackendRef,
+};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
-pub use poulpy_core::layouts::{Basis, Parity, PowerBasisHelper};
-
-pub trait BSGSPolynomialInfos<BE: Backend> {
-    type Coeffs: GLWEToBackendRef<BE> + CKKSCtBounds;
-    fn degree(&self) -> usize;
-    fn baby_steps(&self) -> usize;
-    fn baby_step(&self, i: usize) -> &Self::Coeffs;
-    fn basis(&self) -> Basis;
-    fn parity(&self) -> Parity;
-}
-
-pub trait BabyStep<BE: Backend> {
-    type Value: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
-    fn degree(&self) -> usize;
-    fn get(&self) -> &Self::Value;
-    fn get_mut(&mut self) -> &mut Self::Value;
-}
+pub use poulpy_core::layouts::{BSGSPolynomialInfos, BabyStep, Basis, Parity, PowerBasisHelper};
 
 pub trait PolynomialEvaluation<BE: Backend> {
     fn ckks_eval_baby_step<R, C, A, G>(
@@ -33,9 +19,9 @@ pub trait PolynomialEvaluation<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        C: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<BE, A>;
 
     fn ckks_eval_giant_steps<R, B, A, G, T>(
@@ -47,9 +33,9 @@ pub trait PolynomialEvaluation<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         B: BabyStep<BE>,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
 
@@ -62,9 +48,10 @@ pub trait PolynomialEvaluation<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         B: BSGSPolynomialInfos<BE>,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        B::Coeffs: CKKSCtBounds,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
 }

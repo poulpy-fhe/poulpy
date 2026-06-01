@@ -1,12 +1,14 @@
 use anyhow::Result;
-use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GLWETensorKeyPreparedToBackendRef};
-use poulpy_core::{GLWENormalize, GLWEZero, ScratchArenaTakeCore};
+use poulpy_core::layouts::{
+    BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta, prepared::GLWETensorKeyPreparedToBackendRef,
+};
+use poulpy_core::{GLWEAdd, GLWECopy, GLWEMulConst, GLWENormalize, GLWEShift, GLWETensoring, GLWEZero, ScratchArenaTakeCore};
 use poulpy_hal::api::ScratchAvailable;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
-    api::{BSGSPolynomialInfos, BabyStep, CKKSAddOps, CKKSCopyOps, CKKSMulAddOps, CKKSMulOps, Parity, PowerBasisHelper},
+    api::{BSGSPolynomialInfos, BabyStep, CKKSAddOps, CKKSMulAddOps, Parity, PowerBasisHelper},
     default::polynomial_evaluation::PolynomialEvaluationDefault,
     layouts::CKKSModuleAlloc,
 };
@@ -25,9 +27,9 @@ pub unsafe trait CKKSPolynomialEvaluationImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        C: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<BE, A>;
 
     fn ckks_eval_giant_steps<R, B, A, G, T>(
@@ -39,9 +41,9 @@ pub unsafe trait CKKSPolynomialEvaluationImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         B: BabyStep<BE>,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
 
@@ -54,9 +56,10 @@ pub unsafe trait CKKSPolynomialEvaluationImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         B: BSGSPolynomialInfos<BE>,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        B::Coeffs: CKKSCtBounds,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
 }
@@ -64,9 +67,12 @@ pub unsafe trait CKKSPolynomialEvaluationImpl<BE: Backend>: Backend {
 unsafe impl<BE: Backend> CKKSPolynomialEvaluationImpl<BE> for BE
 where
     Module<BE>: CKKSAddOps<BE>
-        + CKKSCopyOps<BE>
         + CKKSMulAddOps<BE>
-        + CKKSMulOps<BE>
+        + GLWEMulConst<BE>
+        + GLWEAdd<BE>
+        + GLWEShift<BE>
+        + GLWETensoring<BE>
+        + GLWECopy<BE>
         + GLWENormalize<BE>
         + GLWEZero<BE>
         + CKKSModuleAlloc<BE>
@@ -82,9 +88,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        C: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
     {
         module.ckks_eval_baby_step_default::<R, C, A, G>(res, coeffs, parity, power_basis, scratch)
@@ -99,9 +105,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         B: BabyStep<BE>,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
@@ -117,9 +123,10 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         B: BSGSPolynomialInfos<BE>,
-        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        B::Coeffs: CKKSCtBounds,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
