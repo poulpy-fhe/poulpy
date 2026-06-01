@@ -96,7 +96,7 @@ A table entry of `n` therefore means the evaluation consumes `n` times `log_delt
 For `MinDepth` the consumption equals `ceil(log2(degree + 1))` multiples of `log_delta`.
 For `MinMult` the consumption equals the `MinDepth` value, with one extra multiple of `log_delta` in a band that sits just below each power of two and widens as the degree grows.
 
-| degree range | MinDepth | MinMult |
+| Degree Range | MinDepth | MinMult |
 | --- | --- | --- |
 | 0 | 0 | 0 |
 | 1 | 1 | 1 |

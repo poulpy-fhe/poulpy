@@ -24,6 +24,7 @@
 
 ### Build & Docs
 - Refresh the `ckks_poly2` example to use Chebyshev interpolation, `PowerBasis`, and the new BSGS evaluator pipeline.
+- Add `docs/polynomial_evaluation.md` describing the Baby-Step/Giant-Step method, the `MinDepth` / `MinMult` strategies, the supported polynomial flavors, and a measured table of modulus consumption per degree.
 
 ## [0.6.0] - 2026-05-18
 
