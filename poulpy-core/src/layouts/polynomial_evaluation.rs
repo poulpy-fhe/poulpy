@@ -377,14 +377,6 @@ where
 
     /// Decomposes this polynomial into a [`BSGSPolynomial`], encoding each
     /// baby-step coefficient slice with the scheme-supplied `encode` closure.
-    ///
-    /// Uses [`DEFAULT_SPLIT_STRATEGY`]; call [`Self::decompose_bsgs_with`] to
-    /// pick the strategy explicitly.
-    pub fn decompose_bsgs<C>(&self, encode: impl FnMut(&[F]) -> Result<C>) -> Result<BSGSPolynomial<C>> {
-        self.decompose_bsgs_with(DEFAULT_SPLIT_STRATEGY, encode)
-    }
-
-    /// Same as [`Self::decompose_bsgs`] with an explicit [`SplitStrategy`].
     pub fn decompose_bsgs_with<C>(
         &self,
         strategy: SplitStrategy,
@@ -548,17 +540,6 @@ impl<C> BSGSPolynomial<C> {
     /// Returns the polynomial parity carried by this decomposition.
     pub fn parity(&self) -> Parity {
         self.parity
-    }
-
-    /// Rebuilds this BSGS polynomial by mapping each baby-step coefficient.
-    pub fn map_baby_steps<D>(self, mut f: impl FnMut(C) -> D) -> BSGSPolynomial<D> {
-        BSGSPolynomial {
-            basis: self.basis,
-            degree: self.degree,
-            base: self.base,
-            baby_steps: self.baby_steps.into_iter().map(&mut f).collect(),
-            parity: self.parity,
-        }
     }
 
     /// Rebuilds this BSGS polynomial by mapping borrowed baby-step coefficients.
