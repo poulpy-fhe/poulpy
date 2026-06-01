@@ -1,7 +1,8 @@
-//! Times the homomorphic `x mod 1` evaluation across the three EvalModType
-//! variants. Per case, prints the level consumption (log_budget delta)
-//! and the number of CT-CT mul rounds (BSGS depth + r double-angle rounds
-//! + arcsine depth).
+//! Times the homomorphic `x mod 1` evaluation across the EvalModType variants,
+//! including `CosDiscrete` under both the `MinDepth` and `MinMult` BSGS split
+//! strategies. Per case, prints the level consumption (log_budget delta) and
+//! the number of CT-CT mul rounds (BSGS depth + r double-angle rounds +
+//! arcsine depth).
 
 use std::hint::black_box;
 

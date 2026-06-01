@@ -13,9 +13,9 @@
 - Add complex-coefficient polynomial evaluation (monomial and Chebyshev) via the `ckks_eval_poly_complex_const_coeffs_from_power_basis` driver, combining the matched real/imag baby steps as `re + i·im` through `CKKSImagOps` and folding the trailing complex constant through the highest power when present.
 - Take the complex prepared driver's polynomial as a single `&ComplexBSGSPolynomial`, holding the aligned real/imag BSGS decompositions together.
 - Add the one-shot `ckks_eval_poly_real_const_coeffs` / `ckks_eval_poly_complex_const_coeffs` convenience entry points, which build the power basis internally from the input ciphertext before evaluating.
-- Add backend-generic CKKS `eval_mod` (homomorphic `x mod 1`) API built on the polynomial-evaluation layer: `EvalModParameters`, `EvalModParametersLiteral`, `EvalModType` (`SinContinuous`, `CosContinuous`, `CosDiscrete`), with double-angle composition and optional arcsine post-composition; high-precision Han–Ki Chebyshev interpolation (256-bit `FBig` solve, `cosine::approximate_cos`) for the `CosDiscrete` variant. The pipeline evaluates its Chebyshev/arcsine polynomials through the one-shot `ckks_eval_poly_real_const_coeffs` entry point.
-- Add eval_mod OEP/delegate wiring (`CKKSEvalModImpl`, `CKKSEvalModOps`, `CKKSEvalModOpsDefault`) and conformance tests (`SinContinuous` minimal, `SinContinuous` with arcsine, `CosDiscrete` with double-angle, `CosContinuous` with double-angle) on FFT64/f64, NTT120/f64, and NTT120/f128.
-- Validate eval_mod input parameters at `EvalModParameters::from_literal` (non-zero degree/interval, scalar conversions return `Result` instead of panicking) and check `ct.log_budget()` covers the predicted multiplicative depth at the entry of `ckks_eval_mod`; expose `EvalModParameters::depth()`.
+- Add backend-generic CKKS `eval_mod` (homomorphic `x mod 1`): `EvalModParameters` over `EvalModType` `SinContinuous` / `CosContinuous` / `CosDiscrete` / `Exp`, with double-angle composition, optional arcsine post-composition, and a caller-selected BSGS `split_strategy`.
+- Add the complex-exponential `Exp` variant: `exp(2i·pi·x)` via complex Chebyshev, doubled by squaring into a complex ciphertext; the polynomial is held by the new `EvalModBsgs::{Real, Complex}` enum.
+- Add eval_mod OEP/delegate wiring (`CKKSEvalModImpl`, `CKKSEvalModOps`) and conformance tests for every variant on FFT64/f64, NTT120/f64, and NTT120/f128.
 - Generalize fused CKKS multiply-add/plaintext paths over backend-owned ciphertext/plaintext layouts.
 - Extend CKKS polynomial-evaluation coverage with conformance tests for monomial and Chebyshev evaluation, power-basis generation, interpolation, metadata errors, split-strategy behavior, and complex-coefficient evaluation (even/odd parity and the trailing-constant fold).
 
@@ -24,7 +24,7 @@
 
 ### `poulpy-bench`
 - Add the `ckks_poly_eval` Criterion benchmark, sweeping polynomial degree and `MinDepth` / `MinMult` BSGS split strategies on `ntt120-ref` while reporting baby-step size and observed log-budget/level consumption.
-- Add the `ckks_eval_mod` Criterion benchmark, timing the three `EvalModType` variants (sin continuous with optional arcsine, cos discrete, cos continuous) on `ntt120-ref` and reporting level consumption and predicted CT–CT mul depth.
+- Add the `ckks_eval_mod` Criterion benchmark, timing the `EvalModType` variants (sin continuous with optional arcsine, cos discrete under both `MinDepth` and `MinMult` split strategies, cos continuous) on `ntt120-ref` and reporting level consumption and predicted CT–CT mul depth.
 
 ### Build & Docs
 - Refresh the `ckks_poly2` example to use Chebyshev interpolation, `PowerBasis`, and the new BSGS evaluator pipeline.
