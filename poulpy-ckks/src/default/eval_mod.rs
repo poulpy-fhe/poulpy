@@ -16,7 +16,7 @@ use crate::{
     api::{Basis, CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSSubOps, Parity, PolynomialEvaluation},
     cosine,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKS},
-    polynomial::{BSGSPolynomial, EncodeBSGS, Polynomial},
+    polynomial::{BSGSPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
 };
 
 fn scalar_from_f64<F: CKKSScalar>(name: &'static str, v: f64) -> Result<F> {
@@ -51,6 +51,7 @@ pub struct EvalModParametersLiteral {
     pub double_angle: usize,
     pub eval_mod_inv_degree: usize,
     pub scaling: f64,
+    pub split_strategy: SplitStrategy,
 }
 
 pub struct EvalModParameters<P> {
@@ -148,9 +149,9 @@ impl EvalModParameters<CKKSPlaintext<Vec<u8>>> {
             *c = *c * s;
         }
 
-        let eval_mod_bsgs = eval_mod_poly.encode_bsgs(module, base2k, coeff_meta)?;
+        let eval_mod_bsgs = eval_mod_poly.encode_bsgs_with(module, base2k, coeff_meta, lit.split_strategy)?;
         let eval_mod_inv_bsgs = match eval_mod_inv_poly_opt {
-            Some(p) => Some(p.encode_bsgs(module, base2k, coeff_meta)?),
+            Some(p) => Some(p.encode_bsgs_with(module, base2k, coeff_meta, lit.split_strategy)?),
             None => None,
         };
 

@@ -16,6 +16,7 @@ use crate::{
     default::eval_mod::{EvalModParameters, EvalModParametersLiteral, EvalModType},
     encoding::reim::Encoder,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
+    polynomial::SplitStrategy,
 };
 
 use super::helpers::{
@@ -308,6 +309,7 @@ pub fn test_eval_mod_sin_continuous_minimal<BE, F, E>(
         double_angle: 0,
         eval_mod_inv_degree: 0,
         scaling: 1.0,
+        split_strategy: SplitStrategy::MinDepth,
     };
     run_eval_mod_case::<BE, F, E>("eval_mod_sin_continuous_minimal", 19, 30, lit, 0.5, 5.0, Oracle::Sin);
 }
@@ -333,6 +335,7 @@ pub fn test_eval_mod_sin_continuous_with_arcsine<BE, F, E>(
         double_angle: 0,
         eval_mod_inv_degree: 7,
         scaling: 1.0,
+        split_strategy: SplitStrategy::MinDepth,
     };
     run_eval_mod_case::<BE, F, E>("eval_mod_sin_continuous_arcsine", 19, 30, lit, 0.25, 4.0, Oracle::Sin);
 }
@@ -358,6 +361,7 @@ pub fn test_eval_mod_cos_discrete<BE, F, E>(
         double_angle: 3,
         eval_mod_inv_degree: 0,
         scaling: 1.0,
+        split_strategy: SplitStrategy::MinDepth,
     };
     run_eval_mod_case::<BE, F, E>("eval_mod_cos_discrete", 19, 30, lit, 0.25, 4.0, Oracle::Pipeline);
 }
@@ -383,6 +387,7 @@ pub fn test_eval_mod_cos_continuous<BE, F, E>(
         double_angle: 2,
         eval_mod_inv_degree: 0,
         scaling: 1.0,
+        split_strategy: SplitStrategy::MinDepth,
     };
     run_eval_mod_case::<BE, F, E>("eval_mod_cos_continuous", 19, 30, lit, 0.25, 4.0, Oracle::Pipeline);
 }

@@ -12,6 +12,7 @@ use poulpy_ckks::{
     default::eval_mod::{EvalModParameters, EvalModParametersLiteral, EvalModType},
     layouts::CKKSModuleAlloc,
     leveled::api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps},
+    polynomial::SplitStrategy,
 };
 use poulpy_core::layouts::{
     Base2K, Degree, Dnum, Dsize, GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, Rank, TorusPrecision,
@@ -48,6 +49,7 @@ const CASES: &[Case] = &[
             double_angle: 0,
             eval_mod_inv_degree: 0,
             scaling: 1.0,
+            split_strategy: SplitStrategy::MinDepth,
         },
     },
     Case {
@@ -60,6 +62,7 @@ const CASES: &[Case] = &[
             double_angle: 0,
             eval_mod_inv_degree: 7,
             scaling: 1.0,
+            split_strategy: SplitStrategy::MinDepth,
         },
     },
     Case {
@@ -72,6 +75,20 @@ const CASES: &[Case] = &[
             double_angle: 3,
             eval_mod_inv_degree: 0,
             scaling: 1.0,
+            split_strategy: SplitStrategy::MinDepth,
+        },
+    },
+    Case {
+        label: "cos_discrete/d30_K12_r3_minmult",
+        lit: EvalModParametersLiteral {
+            eval_mod_type: EvalModType::CosDiscrete,
+            log_message_ratio: 8,
+            eval_mod_degree: 30,
+            eval_mod_interval: 12,
+            double_angle: 3,
+            eval_mod_inv_degree: 0,
+            scaling: 1.0,
+            split_strategy: SplitStrategy::MinMult,
         },
     },
     Case {
@@ -84,6 +101,7 @@ const CASES: &[Case] = &[
             double_angle: 2,
             eval_mod_inv_degree: 0,
             scaling: 1.0,
+            split_strategy: SplitStrategy::MinDepth,
         },
     },
 ];
