@@ -17,6 +17,7 @@ mod encryption;
 mod external_product;
 mod keyswitching;
 mod operations;
+mod polynomial_evaluation;
 
 pub use automorphism::*;
 pub use conversion::*;
@@ -25,6 +26,7 @@ pub use encryption::*;
 pub use external_product::*;
 pub use keyswitching::*;
 pub use operations::*;
+pub use polynomial_evaluation::*;
 
 pub use crate::impl_glwe_rotate_impl_from;
 

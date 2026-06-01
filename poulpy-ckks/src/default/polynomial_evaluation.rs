@@ -3,8 +3,8 @@ use poulpy_core::layouts::{
     prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_core::{
-    BSGSConstAdd, BSGSPrecision, GLWEAdd, GLWECopy, GLWEMulConst, GLWENormalize, GLWEShift, GLWETensoring, GLWEZero,
-    GiantStepTensorBounds, ScratchArenaTakeCore, eval_baby_step, eval_giant_steps,
+    BSGSConstAdd, BSGSPrecision, GLWEAdd, GLWECopy, GLWEMulConst, GLWENormalize, GLWEPolynomialEvaluation, GLWEShift,
+    GLWETensoring, GLWEZero, GiantStepTensorBounds, ScratchArenaTakeCore,
 };
 use poulpy_hal::{
     api::ScratchAvailable,
@@ -13,7 +13,7 @@ use poulpy_hal::{
 
 use crate::{
     SetCKKSInfos,
-    api::{BSGSPolynomialInfos, BabyStep as BabyStepInfos, CKKSAddOps, CKKSMulAddOps, Parity, PowerBasisHelper},
+    api::{BSGSPolynomialInfos, BabyStep as BabyStepInfos, CKKSAddOps, CKKSMulAddOps, PowerBasisHelper},
     checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget,
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
 };
@@ -117,46 +117,6 @@ where
 }
 
 pub trait PolynomialEvaluationDefault<BE: Backend> {
-    fn ckks_eval_baby_step_default<R, C, A, G>(
-        &self,
-        res: &mut R,
-        coeffs: &C,
-        parity: Parity,
-        power_basis: &G,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Self: GLWEMulConst<BE> + GLWEAdd<BE> + GLWEShift<BE> + GLWENormalize<BE> + GLWEZero<BE> + CKKSAddOps<BE> + Sized,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + crate::CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<BE> + crate::CKKSCtBounds + BSGSMeta,
-        A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
-        G: PowerBasisHelper<BE, A>,
-        for<'b> ScratchArena<'b, BE>: ScratchAvailable + ScratchArenaTakeCore<'b, BE>;
-
-    fn ckks_eval_giant_steps_default<R, B, A, G, T>(
-        &self,
-        res: &mut R,
-        baby_steps: &mut [B],
-        power_basis: &G,
-        tsk: &T,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Self: GiantStepTensorBounds<BE>
-            + GLWEAdd<BE>
-            + GLWEShift<BE>
-            + GLWETensoring<BE>
-            + GLWENormalize<BE>
-            + GLWECopy<BE>
-            + CKKSAddOps<BE>
-            + Sized,
-        R: GLWEToBackendMut<BE> + GLWEInfos + SetBSGSMeta,
-        B: BabyStepInfos<BE>,
-        A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
-        G: PowerBasisHelper<BE, A>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>;
-
     fn ckks_eval_poly_real_const_coeffs_from_power_basis_default<R, B, A, G, T>(
         &self,
         res: &mut R,
@@ -188,54 +148,6 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
 }
 
 impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
-    fn ckks_eval_baby_step_default<R, C, A, G>(
-        &self,
-        res: &mut R,
-        coeffs: &C,
-        parity: Parity,
-        power_basis: &G,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Self: GLWEMulConst<BE> + GLWEAdd<BE> + GLWEShift<BE> + GLWENormalize<BE> + GLWEZero<BE> + CKKSAddOps<BE> + Sized,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + crate::CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<BE> + crate::CKKSCtBounds + BSGSMeta,
-        A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
-        G: PowerBasisHelper<BE, A>,
-        for<'b> ScratchArena<'b, BE>: ScratchAvailable + ScratchArenaTakeCore<'b, BE>,
-    {
-        let precision = CKKSBSGSPrecision { module: self };
-        eval_baby_step::<_, _, _, _, _, _, BE>(self, &precision, res, parity, coeffs, power_basis, scratch)
-    }
-
-    fn ckks_eval_giant_steps_default<R, B, A, G, T>(
-        &self,
-        res: &mut R,
-        baby_steps: &mut [B],
-        power_basis: &G,
-        tsk: &T,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Self: GiantStepTensorBounds<BE>
-            + GLWEAdd<BE>
-            + GLWEShift<BE>
-            + GLWETensoring<BE>
-            + GLWENormalize<BE>
-            + GLWECopy<BE>
-            + CKKSAddOps<BE>
-            + Sized,
-        R: GLWEToBackendMut<BE> + GLWEInfos + SetBSGSMeta,
-        B: BabyStepInfos<BE>,
-        A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
-        G: PowerBasisHelper<BE, A>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
-    {
-        let precision = CKKSBSGSPrecision { module: self };
-        eval_giant_steps::<_, _, _, _, _, _, BE>(self, &precision, res, baby_steps, power_basis, tsk, scratch)
-    }
-
     fn ckks_eval_poly_real_const_coeffs_from_power_basis_default<R, B, A, G, T>(
         &self,
         res: &mut R,
@@ -253,6 +165,7 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
             + GLWENormalize<BE>
             + GLWEZero<BE>
             + GLWECopy<BE>
+            + GLWEPolynomialEvaluation<BE>
             + CKKSAddOps<BE>
             + CKKSMulAddOps<BE>
             + CKKSModuleAlloc<BE>
@@ -286,16 +199,24 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         let mut baby_steps = Vec::with_capacity(n_to_process);
         let parity = poly.parity();
         let x = power_basis.get(1)?;
+        let precision = CKKSBSGSPrecision { module: self };
         for i in 0..n_to_process {
             let coeffs = poly.baby_step(i);
             let degree = coeffs.n().as_usize() - 1;
             let mut value = self.ckks_ciphertext_alloc_from_infos(x);
             value.set_meta(x.meta());
-            self.ckks_eval_baby_step_default::<_, _, A, G>(&mut value, coeffs, parity, power_basis, &mut scratch.borrow())?;
+            self.glwe_eval_baby_step::<_, _, _, A, G>(
+                &precision,
+                &mut value,
+                parity,
+                coeffs,
+                power_basis,
+                &mut scratch.borrow(),
+            )?;
             baby_steps.push(EvaluatedBabyStep { degree, value });
         }
 
-        self.ckks_eval_giant_steps_default(res, &mut baby_steps, power_basis, tsk, &mut scratch.borrow())?;
+        self.glwe_eval_giant_steps(&precision, res, &mut baby_steps, power_basis, tsk, &mut scratch.borrow())?;
 
         if can_fold {
             let xpow = power_basis.get(fold_power)?;

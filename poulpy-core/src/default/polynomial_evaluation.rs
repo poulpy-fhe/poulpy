@@ -15,13 +15,16 @@ use poulpy_hal::{
     layouts::{Backend, ScratchArena},
 };
 
+use poulpy_hal::layouts::Module;
+
 use crate::{
-    GLWEAdd, GLWEMulConst, GLWENormalize, GLWEShift, GLWETensoring, GLWEZero, ScratchArenaTakeCore,
+    GLWEAdd, GLWECopy, GLWEMulConst, GLWENormalize, GLWEShift, GLWETensoring, GLWEZero, ScratchArenaTakeCore,
     default::operations::{glwe_prepare_right, glwe_tensor_apply_prepared_right},
     layouts::{
         BSGSMeta, BabyStep, GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Parity,
         PowerBasisHelper, SetBSGSMeta, prepared::GLWETensorKeyPreparedToBackendRef,
     },
+    oep::PolynomialEvaluationDefault,
 };
 
 /// HAL bounds required to run the hoisted prepared-right tensor product.
@@ -91,7 +94,7 @@ pub trait BSGSConstAdd<BE: Backend, R, P> {
 
 /// Evaluates a single baby step into `res`.
 #[allow(clippy::too_many_arguments)]
-pub fn eval_baby_step<M, PR, R, C, A, G, BE: Backend>(
+pub(crate) fn eval_baby_step<M, PR, R, C, A, G, BE: Backend>(
     module: &M,
     precision: &PR,
     res: &mut R,
@@ -227,7 +230,7 @@ where
 }
 
 /// Folds the evaluated baby steps into `res` using the giant-step schedule.
-pub fn eval_giant_steps<M, R, B, A, G, T, BE: Backend>(
+pub(crate) fn eval_giant_steps<M, R, B, A, G, T, BE: Backend>(
     module: &M,
     precision: &impl BSGSPrecision<BE>,
     res: &mut R,
@@ -517,4 +520,55 @@ where
 
 fn giant_step_power(degree: usize) -> usize {
     (degree + 1).next_power_of_two()
+}
+
+impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
+    fn glwe_eval_baby_step_default<PR, R, C, A, G>(
+        &self,
+        precision: &PR,
+        res: &mut R,
+        parity: Parity,
+        coeffs: &C,
+        power_basis: &G,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Self: GLWEMulConst<BE> + GLWEAdd<BE> + GLWEShift<BE> + GLWENormalize<BE> + GLWEZero<BE> + Sized,
+        PR: BSGSPrecision<BE> + BSGSConstAdd<BE, R, C>,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta,
+        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
+        A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
+        G: PowerBasisHelper<BE, A>,
+        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
+    {
+        eval_baby_step::<_, PR, R, C, A, G, BE>(self, precision, res, parity, coeffs, power_basis, scratch)
+    }
+
+    fn glwe_eval_giant_steps_default<PR, R, B, A, G, T>(
+        &self,
+        precision: &PR,
+        res: &mut R,
+        baby_steps: &mut [B],
+        power_basis: &G,
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Self: GiantStepTensorBounds<BE>
+            + GLWEAdd<BE>
+            + GLWEShift<BE>
+            + GLWETensoring<BE>
+            + GLWENormalize<BE>
+            + GLWECopy<BE>
+            + Sized,
+        PR: BSGSPrecision<BE>,
+        R: GLWEToBackendMut<BE> + GLWEInfos + SetBSGSMeta,
+        B: BabyStep<BE>,
+        A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
+        G: PowerBasisHelper<BE, A>,
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
+        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
+    {
+        eval_giant_steps::<_, R, B, A, G, T, BE>(self, precision, res, baby_steps, power_basis, tsk, scratch)
+    }
 }
