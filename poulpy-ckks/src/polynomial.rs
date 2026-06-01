@@ -63,3 +63,86 @@ where
         })
     }
 }
+
+/// A plaintext polynomial with complex coefficients `re[k] + i·im[k]`.
+///
+/// `re[k]`/`im[k]` are the real/imaginary parts of the degree-`k` term
+/// (monomial basis) or of `Tₖ(x)` (Chebyshev basis).
+pub struct ComplexPolynomial<F> {
+    pub basis: Basis,
+    pub re: Vec<F>,
+    pub im: Vec<F>,
+}
+
+/// A complex polynomial decomposed for BSGS evaluation.
+///
+/// `re`/`im` share an identical baby-step schedule (same degree split and
+/// parity), so the two halves align step-for-step during evaluation.
+pub struct ComplexBSGSPolynomial<C> {
+    pub re: BSGSPolynomial<C>,
+    pub im: BSGSPolynomial<C>,
+}
+
+impl<F> ComplexPolynomial<F>
+where
+    F: Float + FloatConst + FromPrimitive + Debug + CKKSScalar,
+    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>,
+{
+    /// Constructs a complex polynomial, padding `re`/`im` to equal length.
+    pub fn new(basis: Basis, mut re: Vec<F>, mut im: Vec<F>) -> Self {
+        let len = re.len().max(im.len());
+        re.resize(len, F::zero());
+        im.resize(len, F::zero());
+        Self { basis, re, im }
+    }
+
+    /// Combined parity: index `k` is present if `re[k] != 0 || im[k] != 0`.
+    fn combined_parity(&self) -> Parity {
+        let present = |k: usize| self.re[k] != F::zero() || self.im[k] != F::zero();
+        if (0..self.re.len()).all(|k| k.is_multiple_of(2) || !present(k)) {
+            Parity::Even
+        } else if (0..self.re.len()).all(|k| !k.is_multiple_of(2) || !present(k)) {
+            Parity::Odd
+        } else {
+            Parity::Full
+        }
+    }
+
+    /// Encodes both parts into a [`ComplexBSGSPolynomial`] using
+    /// [`DEFAULT_SPLIT_STRATEGY`].
+    pub fn encode_bsgs(
+        &self,
+        module: &Module<HostBytesBackend>,
+        base2k: Base2K,
+        coeff_meta: CKKSMeta,
+    ) -> Result<ComplexBSGSPolynomial<CKKSPlaintext<Vec<u8>>>> {
+        self.encode_bsgs_with(module, base2k, coeff_meta, DEFAULT_SPLIT_STRATEGY)
+    }
+
+    /// Encodes both parts with a shared parity and `strategy`, yielding two
+    /// `BSGSPolynomial`s with identical baby-step structure.
+    pub fn encode_bsgs_with(
+        &self,
+        module: &Module<HostBytesBackend>,
+        base2k: Base2K,
+        coeff_meta: CKKSMeta,
+        strategy: SplitStrategy,
+    ) -> Result<ComplexBSGSPolynomial<CKKSPlaintext<Vec<u8>>>> {
+        let parity = self.combined_parity();
+        let re_poly = Polynomial::new_with_parity(self.basis, self.re.clone(), parity);
+        let im_poly = Polynomial::new_with_parity(self.basis, self.im.clone(), parity);
+        let re = re_poly.encode_bsgs_with(module, base2k, coeff_meta, strategy)?;
+        let im = im_poly.encode_bsgs_with(module, base2k, coeff_meta, strategy)?;
+        Ok(ComplexBSGSPolynomial { re, im })
+    }
+}
+
+impl<C> ComplexBSGSPolynomial<C> {
+    /// Rebuilds by mapping borrowed baby-step coefficients of both parts.
+    pub fn map_baby_steps_ref<D>(&self, mut f: impl FnMut(&C) -> D) -> ComplexBSGSPolynomial<D> {
+        ComplexBSGSPolynomial {
+            re: self.re.map_baby_steps_ref(&mut f),
+            im: self.im.map_baby_steps_ref(&mut f),
+        }
+    }
+}

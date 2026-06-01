@@ -12,7 +12,9 @@ use crate::{
     encoding::reim::Encoder,
     layouts::{CKKSCiphertext, CKKSPlaintext, CKKSPlaintextVecHostCodec},
     leveled::api::{CKKSMulOps, PolynomialEvaluation},
-    polynomial::{BSGSPolynomial, Basis, EncodeBSGS, Parity, Polynomial, SplitStrategy},
+    polynomial::{
+        BSGSPolynomial, Basis, ComplexBSGSPolynomial, ComplexPolynomial, EncodeBSGS, Parity, Polynomial, SplitStrategy,
+    },
     power_basis::{PowerBasis, PowerBasisGen},
     test_suite::CKKSTestParams,
 };
@@ -122,6 +124,17 @@ fn upload_bsgs<BE>(
     module: &Module<BE>,
     poly: &BSGSPolynomial<CKKSPlaintext<Vec<u8>>>,
 ) -> BSGSPolynomial<CKKSPlaintext<BE::OwnedBuf>>
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+{
+    poly.map_baby_steps_ref(|pt| upload_pt(module, pt))
+}
+
+fn upload_complex_bsgs<BE>(
+    module: &Module<BE>,
+    poly: &ComplexBSGSPolynomial<CKKSPlaintext<Vec<u8>>>,
+) -> ComplexBSGSPolynomial<CKKSPlaintext<BE::OwnedBuf>>
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
@@ -877,6 +890,230 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31_min_mult<BE, F, E>(
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_chebyshev_degree31_min_mult",
+        &params,
+        module,
+        &encoder,
+        &res,
+        &sk,
+        &want_re,
+        &want_im,
+        &mut scratch.borrow(),
+    );
+}
+
+pub fn test_eval_poly_const_coeffs_complex_cubic<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE> + PolynomialEvaluation<BE>,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    // p(z) = Σ_k (a_k + i·b_k)·z^k, evaluated on complex slot values z.
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+
+    let quarter = F::from_f64(0.25).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let x_re_raw: Vec<F> = re1.iter().copied().map(|x| x * quarter).collect();
+    let x_im_raw: Vec<F> = im1.iter().copied().map(|x| x * quarter).collect();
+    let (x_re, x_im) = quantized_slots(host_module, &encoder, params.base2k.into(), params.prec, &x_re_raw, &x_im_raw);
+
+    let re_coeffs = [0.125f64, -0.25, 0.0625, 0.03125];
+    let im_coeffs = [0.0625f64, 0.125, -0.03125, 0.25];
+    let cre: Vec<F> = re_coeffs
+        .iter()
+        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta).0)
+        .collect();
+    let cim: Vec<F> = im_coeffs
+        .iter()
+        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta).0)
+        .collect();
+
+    let poly_ref = ComplexPolynomial::new(Basis::Monomial, re_coeffs.to_vec(), im_coeffs.to_vec());
+    let bsgs_host = poly_ref
+        .encode_bsgs(host_module, params.base2k.into(), PT_PREC)
+        .expect("encode_bsgs should succeed for complex cubic monomial polynomial");
+    let poly = upload_complex_bsgs(module, &bsgs_host);
+
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+
+    let x = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &x_re_raw,
+        &x_im_raw,
+        &mut scratch.borrow(),
+    );
+    let mut x2 = alloc_ct(&params, module, params.k);
+    module.ckks_square_into(&mut x2, &x, &tsk, &mut scratch.borrow()).unwrap();
+
+    let mut power_basis = PowerBasis::new(Basis::Monomial, x);
+    power_basis.insert(2, x2).expect("insert pre-computed X^2");
+
+    // Host complex reference: per slot, Horner over the complex coefficients.
+    let mut want_re = vec![F::zero(); m];
+    let mut want_im = vec![F::zero(); m];
+    for slot in 0..m {
+        let (zr, zi) = (x_re[slot], x_im[slot]);
+        let (mut acc_re, mut acc_im) = (F::zero(), F::zero());
+        for k in (0..cre.len()).rev() {
+            // acc = acc·z + (cre[k] + i·cim[k])
+            let nr = acc_re * zr - acc_im * zi + cre[k];
+            let ni = acc_re * zi + acc_im * zr + cim[k];
+            acc_re = nr;
+            acc_im = ni;
+        }
+        want_re[slot] = acc_re;
+        want_im[slot] = acc_im;
+    }
+
+    let mut res = alloc_ct(&params, module, params.k);
+    module
+        .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<BE::OwnedBuf>, _, _>(
+            &mut res,
+            &poly.re,
+            &poly.im,
+            &power_basis,
+            &tsk,
+            &mut scratch.borrow(),
+        )
+        .expect("ckks_eval_poly_complex_const_coeffs_from_power_basis should succeed");
+
+    assert_decrypt_precision(
+        "eval_poly_const_coeffs_complex_cubic",
+        &params,
+        module,
+        &encoder,
+        &res,
+        &sk,
+        &want_re,
+        &want_im,
+        &mut scratch.borrow(),
+    );
+}
+
+pub fn test_eval_poly_const_coeffs_complex_chebyshev<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE> + PolynomialEvaluation<BE>,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    // p(z) = Σ_k (a_k + i·b_k)·T_k(z), Chebyshev basis, on complex slot values z.
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+
+    let quarter = F::from_f64(0.25).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let x_re_raw: Vec<F> = re1.iter().copied().map(|x| x * quarter).collect();
+    let x_im_raw: Vec<F> = im1.iter().copied().map(|x| x * quarter).collect();
+    let (x_re, x_im) = quantized_slots(host_module, &encoder, params.base2k.into(), params.prec, &x_re_raw, &x_im_raw);
+
+    let re_coeffs = [0.125f64, 0.1875, -0.0625, 0.15625, 0.0625, -0.03125, 0.09375, 0.03125];
+    let im_coeffs = [0.0625f64, -0.125, 0.1875, 0.03125, -0.0625, 0.09375, -0.03125, 0.0625];
+    let cre: Vec<F> = re_coeffs
+        .iter()
+        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta).0)
+        .collect();
+    let cim: Vec<F> = im_coeffs
+        .iter()
+        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta).0)
+        .collect();
+
+    let poly_ref = ComplexPolynomial::new(Basis::Chebyshev, re_coeffs.to_vec(), im_coeffs.to_vec());
+    let bsgs_host = poly_ref
+        .encode_bsgs(host_module, params.base2k.into(), PT_PREC)
+        .expect("encode_bsgs should succeed for complex degree-7 Chebyshev polynomial");
+    let poly = upload_complex_bsgs(module, &bsgs_host);
+
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+
+    let x = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &x_re_raw,
+        &x_im_raw,
+        &mut scratch.borrow(),
+    );
+    let mut pb = PowerBasis::new(Basis::Chebyshev, x);
+    pb.populate(
+        7,
+        bsgs_host.re.log_split(),
+        bsgs_host.re.parity(),
+        module,
+        &tsk,
+        &mut scratch.borrow(),
+    )
+    .expect("populate complex Chebyshev power basis for degree 7");
+
+    // Host complex reference: per slot, Σ_k (cre_k + i·cim_k)·T_k(z) via the
+    // complex Chebyshev recurrence T_k = 2·z·T_{k-1} − T_{k-2}.
+    let two = F::one() + F::one();
+    let mut want_re = vec![F::zero(); m];
+    let mut want_im = vec![F::zero(); m];
+    for slot in 0..m {
+        let (zr, zi) = (x_re[slot], x_im[slot]);
+        let (mut tpp_re, mut tpp_im) = (F::one(), F::zero());
+        let (mut tp_re, mut tp_im) = (zr, zi);
+        let (mut acc_re, mut acc_im) = (cre[0], cim[0]);
+        if cre.len() > 1 {
+            acc_re = acc_re + cre[1] * tp_re - cim[1] * tp_im;
+            acc_im = acc_im + cre[1] * tp_im + cim[1] * tp_re;
+        }
+        for k in 2..cre.len() {
+            let zt_re = zr * tp_re - zi * tp_im;
+            let zt_im = zr * tp_im + zi * tp_re;
+            let tk_re = two * zt_re - tpp_re;
+            let tk_im = two * zt_im - tpp_im;
+            acc_re = acc_re + cre[k] * tk_re - cim[k] * tk_im;
+            acc_im = acc_im + cre[k] * tk_im + cim[k] * tk_re;
+            tpp_re = tp_re;
+            tpp_im = tp_im;
+            tp_re = tk_re;
+            tp_im = tk_im;
+        }
+        want_re[slot] = acc_re;
+        want_im[slot] = acc_im;
+    }
+
+    let mut res = alloc_ct(&params, module, params.k);
+    module
+        .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<BE::OwnedBuf>, _, _>(
+            &mut res,
+            &poly.re,
+            &poly.im,
+            &pb,
+            &tsk,
+            &mut scratch.borrow(),
+        )
+        .expect("ckks_eval_poly_complex_const_coeffs_from_power_basis (Chebyshev) should succeed");
+
+    assert_decrypt_precision(
+        "eval_poly_const_coeffs_complex_chebyshev",
         &params,
         module,
         &encoder,
