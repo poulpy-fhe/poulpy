@@ -564,6 +564,7 @@ macro_rules! ckks_backend_test_suite {
                 eval_mod_cos_continuous,
                 $crate::test_suite::eval_mod::test_eval_mod_cos_continuous
             );
+            run_test!(eval_mod_exp, $crate::test_suite::eval_mod::test_eval_mod_exp);
             run_test!(
                 mul_add_const_zero_preserves_dst_meta,
                 $crate::test_suite::mul_add::test_mul_add_const_zero_preserves_dst_meta

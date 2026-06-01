@@ -161,6 +161,7 @@ fn oracle_pipeline(x: f64, lit: &EvalModParametersLiteral) -> f64 {
         EvalModType::SinContinuous => s * (two_pi * k_eff * v).sin(),
         EvalModType::CosContinuous => s * (two_pi * k_eff * v).cos(),
         EvalModType::CosDiscrete => s * (two_pi * (k * v - 0.25) / sc_fac).cos(),
+        EvalModType::Exp => unreachable!(),
     };
 
     for i in 0..double_angle {
@@ -191,10 +192,31 @@ fn oracle_pipeline(x: f64, lit: &EvalModParametersLiteral) -> f64 {
     p_val
 }
 
+fn oracle_exp(x: f64, lit: &EvalModParametersLiteral) -> (f64, f64) {
+    let two_pi = std::f64::consts::TAU;
+    let inv_two_pi = 1.0 / two_pi;
+    let scaling = if lit.scaling == 0.0 { 1.0 } else { lit.scaling };
+    let r = lit.double_angle;
+    let sc_fac = (1u64 << r) as f64;
+    let k_eff = lit.eval_mod_interval as f64 / sc_fac;
+    let s = (inv_two_pi * scaling).powf(1.0 / sc_fac);
+
+    let theta = two_pi * k_eff * x;
+    let (mut re, mut im) = (s * theta.cos(), s * theta.sin());
+    for _ in 0..r {
+        let nre = re * re - im * im;
+        let nim = 2.0 * re * im;
+        re = nre;
+        im = nim;
+    }
+    (re, im)
+}
+
 #[derive(Clone, Copy)]
 enum Oracle {
     Sin,
     Pipeline,
+    Exp,
 }
 
 fn run_eval_mod_case<BE, F, E>(
@@ -261,7 +283,7 @@ fn run_eval_mod_case<BE, F, E>(
         .ckks_eval_mod(&mut res, &ct_input, &params_be, &tsk, &mut scratch.borrow())
         .expect("ckks_eval_mod");
 
-    let (re_out, _im_out) = ckks_decrypt_decode::<BE, F, E>(&test_params, &module, &encoder, &res, &sk, &mut scratch.borrow());
+    let (re_out, im_out) = ckks_decrypt_decode::<BE, F, E>(&test_params, &module, &encoder, &res, &sk, &mut scratch.borrow());
 
     let inv = lit.eval_mod_inv_degree > 0;
     let want_re: Vec<F> = x_re_raw
@@ -271,6 +293,7 @@ fn run_eval_mod_case<BE, F, E>(
             let want = match oracle {
                 Oracle::Sin => oracle_sin(xf, inv),
                 Oracle::Pipeline => oracle_pipeline(xf, &lit),
+                Oracle::Exp => oracle_exp(xf, &lit).0,
             };
             F::from_f64(want).unwrap()
         })
@@ -286,6 +309,23 @@ fn run_eval_mod_case<BE, F, E>(
         stats.worst_got,
         stats.worst_want
     );
+
+    if matches!(oracle, Oracle::Exp) {
+        let want_im: Vec<F> = x_re_raw
+            .iter()
+            .map(|&x| F::from_f64(oracle_exp(x.to_f64().unwrap(), &lit).1).unwrap())
+            .collect();
+        let stats_im = precision_stats(&im_out, &want_im, log_delta);
+        assert!(
+            stats_im.avg_log2_prec >= required_log2_prec,
+            "{label} (imag): avg precision {:.1} bits < {required_log2_prec:.1} (worst_err={}, worst_idx={}, got={}, want={})",
+            stats_im.avg_log2_prec,
+            stats_im.worst_err,
+            stats_im.worst_idx,
+            stats_im.worst_got,
+            stats_im.worst_want
+        );
+    }
 }
 
 pub fn test_eval_mod_sin_continuous_minimal<BE, F, E>(
@@ -390,4 +430,30 @@ pub fn test_eval_mod_cos_continuous<BE, F, E>(
         split_strategy: SplitStrategy::MinDepth,
     };
     run_eval_mod_case::<BE, F, E>("eval_mod_cos_continuous", 19, 30, lit, 0.25, 4.0, Oracle::Pipeline);
+}
+
+pub fn test_eval_mod_exp<BE, F, E>(
+    _params_unused: super::CKKSTestParams,
+    _module_unused: &Module<BE>,
+    _host_unused: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE> + CKKSEvalModOps<BE>,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let lit = EvalModParametersLiteral {
+        eval_mod_type: EvalModType::Exp,
+        log_message_ratio: 4,
+        eval_mod_degree: 31,
+        eval_mod_interval: 4,
+        double_angle: 2,
+        eval_mod_inv_degree: 0,
+        scaling: 1.0,
+        split_strategy: SplitStrategy::MinDepth,
+    };
+    run_eval_mod_case::<BE, F, E>("eval_mod_exp", 19, 30, lit, 0.25, 4.0, Oracle::Exp);
 }
