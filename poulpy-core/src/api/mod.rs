@@ -22,6 +22,7 @@ mod external_product;
 mod keyswitching;
 mod noise;
 mod operations;
+mod polynomial_evaluation;
 mod transfer;
 
 pub use automorphism::*;
@@ -32,4 +33,5 @@ pub use external_product::*;
 pub use keyswitching::*;
 pub use noise::*;
 pub use operations::*;
+pub use polynomial_evaluation::*;
 pub use transfer::*;

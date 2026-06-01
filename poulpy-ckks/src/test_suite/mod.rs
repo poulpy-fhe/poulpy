@@ -529,6 +529,26 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_chebyshev_degree31_min_mult
             );
             run_test!(
+                eval_poly_const_coeffs_complex_cubic,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_complex_cubic
+            );
+            run_test!(
+                eval_poly_const_coeffs_complex_chebyshev,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_complex_chebyshev
+            );
+            run_test!(
+                eval_poly_const_coeffs_complex_even,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_complex_even
+            );
+            run_test!(
+                eval_poly_const_coeffs_complex_odd,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_complex_odd
+            );
+            run_test!(
+                eval_poly_const_coeffs_complex_fold,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_complex_fold
+            );
+            run_test!(
                 eval_mod_sin_continuous_minimal,
                 $crate::test_suite::eval_mod::test_eval_mod_sin_continuous_minimal
             );

@@ -594,6 +594,7 @@ dependencies = [
  "paste",
  "poulpy-hal",
  "rand",
+ "rand_distr",
 ]
 
 [[package]]

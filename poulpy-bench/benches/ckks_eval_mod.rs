@@ -17,7 +17,7 @@ use poulpy_core::layouts::{
     Base2K, Degree, Dnum, Dsize, GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, Rank, TorusPrecision,
 };
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{CnvPVecBytesOf, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, ScratchOwned},
 };
 
@@ -142,11 +142,13 @@ fn bench_ntt120_ref(c: &mut Criterion) {
     let add_bytes = module.ckks_add_tmp_bytes();
     let copy_bytes = module.ckks_copy_tmp_bytes();
     let ct_block = poulpy_core::layouts::GLWE::<Vec<u8>>::bytes_of_from_infos(&ct_template);
+    // The giant step keeps the prepared `X^{gsp}` right operand alive across relinearization.
+    let hoisted_right = module.bytes_of_cnv_pvec_right(2, CT_K.div_ceil(BASE2K));
     let scratch_bytes = mul_bytes
         .max(mul_pt_bytes)
         .max(add_bytes)
         .max(copy_bytes)
-        .max(mul_bytes + 3 * ct_block);
+        .max(mul_bytes + 3 * ct_block + hoisted_right);
     let mut scratch = ScratchOwned::<BE>::alloc(scratch_bytes);
 
     let tsk_prepared = module.alloc_tensor_key_prepared_from_infos(&tsk_layout);

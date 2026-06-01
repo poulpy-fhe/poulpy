@@ -11,3 +11,4 @@ mod encryption;
 mod external_product;
 mod keyswitching;
 mod operations;
+mod polynomial_evaluation;

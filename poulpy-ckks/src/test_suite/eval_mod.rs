@@ -107,7 +107,7 @@ where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
 {
-    host.map_plaintexts(|pt| upload_pt(module, &pt))
+    host.map_plaintexts(|pt| upload_pt(module, pt))
 }
 
 fn depth_of(lit: &EvalModParametersLiteral) -> usize {

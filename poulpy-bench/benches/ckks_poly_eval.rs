@@ -11,14 +11,14 @@ use poulpy_ckks::{
     CKKSInfos, CKKSMeta,
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
     leveled::api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, PolynomialEvaluation},
-    polynomial::{Basis, Polynomial, SplitStrategy},
-    power_basis::PowerBasis,
+    polynomial::{Basis, ComplexPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
+    power_basis::{PowerBasis, PowerBasisGen},
 };
 use poulpy_core::layouts::{
     Base2K, Degree, Dnum, Dsize, GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, Rank, TorusPrecision,
 };
 use poulpy_hal::{
-    api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{CnvPVecBytesOf, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, ScratchOwned},
 };
 
@@ -84,11 +84,13 @@ fn bench_ntt120_ref(c: &mut Criterion) {
     let add_bytes = module.ckks_add_tmp_bytes();
     let copy_bytes = module.ckks_copy_tmp_bytes();
     let ct_block = poulpy_core::layouts::GLWE::<Vec<u8>>::bytes_of_from_infos(&ct_template);
+    // The giant step keeps the prepared `X^{gsp}` right operand alive across relinearization.
+    let hoisted_right = module.bytes_of_cnv_pvec_right(2, CT_K.div_ceil(BASE2K));
     let scratch_bytes = mul_bytes
         .max(mul_pt_bytes)
         .max(add_bytes)
         .max(copy_bytes)
-        .max(mul_bytes + 3 * ct_block);
+        .max(mul_bytes + 3 * ct_block + hoisted_right);
     let mut scratch = ScratchOwned::<BE>::alloc(scratch_bytes);
 
     let tsk_prepared = module.alloc_tensor_key_prepared_from_infos(&tsk_layout);
@@ -175,6 +177,78 @@ fn bench_ntt120_ref(c: &mut Criterion) {
                 });
             });
         }
+
+        // Complex-coefficient evaluation (dense random re+im, Full parity), MinDepth.
+        let im_coeffs: Vec<f64> = random_coeffs(degree).iter().rev().map(|c| c * 0.5 - 0.05).collect();
+        let complex_poly = ComplexPolynomial::new(Basis::Monomial, random_coeffs(degree), im_coeffs);
+        let complex_bsgs = complex_poly
+            .encode_bsgs_with(&host_module, Base2K(BASE2K as u32), COEFF_META, SplitStrategy::MinDepth)
+            .expect("complex encode_bsgs_with");
+        let complex_log_split = complex_bsgs.re.base().trailing_zeros() as usize;
+
+        let (clevels, clb_in, clb_out) = {
+            let mut ct_x_run = module.ckks_ciphertext_alloc(Base2K(BASE2K as u32), TorusPrecision(CT_K as u32));
+            {
+                let mut sc = scratch.borrow();
+                module.ckks_copy(&mut ct_x_run, &ct_x, &mut sc).unwrap();
+            }
+            let lb_in = ct_x_run.log_budget();
+            let mut pb = PowerBasis::new(Basis::Monomial, ct_x_run);
+            {
+                let mut sc = scratch.borrow();
+                pb.populate(degree, complex_log_split, parity, &module, &tsk_prepared, &mut sc)
+                    .unwrap();
+            }
+            let mut ct_res = module.ckks_ciphertext_alloc(Base2K(BASE2K as u32), TorusPrecision(CT_K as u32));
+            {
+                let mut sc = scratch.borrow();
+                module
+                    .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<Vec<u8>>, _, _>(
+                        &mut ct_res,
+                        &complex_bsgs,
+                        &pb,
+                        &tsk_prepared,
+                        &mut sc,
+                    )
+                    .unwrap();
+            }
+            let lb_out = ct_res.log_budget();
+            ((lb_in - lb_out) / LOG_DELTA, lb_in, lb_out)
+        };
+        eprintln!(
+            "[poly_eval/{label} d={degree:3}   complex] k={k:2} baby_steps={n_baby:2} L={clevels} ({clb_in}→{clb_out} budget bits)",
+            k = complex_bsgs.re.base(),
+            n_baby = complex_bsgs.re.baby_steps().len(),
+        );
+
+        group.bench_function(format!("complex/d{degree}"), |b| {
+            b.iter(|| {
+                let mut ct_x_run = module.ckks_ciphertext_alloc(Base2K(BASE2K as u32), TorusPrecision(CT_K as u32));
+                {
+                    let mut sc = scratch.borrow();
+                    module.ckks_copy(&mut ct_x_run, &ct_x, &mut sc).unwrap();
+                }
+                let mut pb = PowerBasis::new(Basis::Monomial, ct_x_run);
+                {
+                    let mut sc = scratch.borrow();
+                    pb.populate(degree, complex_log_split, parity, &module, &tsk_prepared, &mut sc)
+                        .unwrap();
+                }
+                let mut ct_res = module.ckks_ciphertext_alloc(Base2K(BASE2K as u32), TorusPrecision(CT_K as u32));
+                {
+                    let mut sc = scratch.borrow();
+                    module
+                        .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<Vec<u8>>, _, _>(
+                            black_box(&mut ct_res),
+                            black_box(&complex_bsgs),
+                            &pb,
+                            &tsk_prepared,
+                            &mut sc,
+                        )
+                        .unwrap();
+                }
+            });
+        });
     }
     group.finish();
 }

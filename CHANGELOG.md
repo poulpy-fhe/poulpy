@@ -2,14 +2,22 @@
 
 ## [Unreleased]
 
+### `poulpy-core`
+- Add a backend-generic Baby-Step/Giant-Step polynomial-evaluation engine and public `GLWEPolynomialEvaluation` Module API (baby-step / giant-step methods) wired through the api/oep/delegates/default layers, with per-operation precision and constant-coefficient addition supplied by the scheme through the `BSGSPrecision` / `BSGSConstAdd` traits.
+- Add scheme-agnostic polynomial-evaluation layouts `Polynomial`, `BSGSPolynomial`, `PowerBasis`, `Basis`, `Parity`, and `SplitStrategy`, with monomial and Chebyshev bases, Chebyshev interpolation, and BSGS/Paterson-Stockmeyer decomposition planned by the `MinDepth` / `MinMult` split strategies.
+- Hoist the giant-step multiplier in polynomial evaluation: factor the tensor product into a shared `glwe_tensor_apply_loop` and add `glwe_tensor_apply_prepared_right`, so each `X^{gsp}` is prepared once into a reusable right convolution operand and shared across the baby-step pairs of a giant-step run.
+- Allow GLWE plaintext add/sub alignment to left-shift when the encoded plaintext precision exceeds the ciphertext budget, enabling the coefficient-indexed plaintext constants used by polynomial evaluation.
+
 ### `poulpy-ckks`
-- Add backend-generic CKKS polynomial evaluation APIs: `Polynomial`, `BSGSPolynomial`, `PowerBasis`, `Basis`, `Parity`, `SplitStrategy`, and `PolynomialEvaluation`, with monomial and Chebyshev bases, Chebyshev interpolation, and BSGS/Paterson-Stockmeyer evaluation from a precomputed power basis.
-- Add default polynomial-evaluation OEP/delegate wiring, including baby-step and giant-step hooks, parity-aware baby-step evaluation, and `MinDepth` / `MinMult` split strategies for evaluation planning.
-- Extend CKKS polynomial-evaluation coverage with conformance tests for monomial and Chebyshev evaluation, power-basis generation, interpolation, metadata errors, and split-strategy behavior.
-- Add backend-generic CKKS `eval_mod` (homomorphic `x mod 1`) API built on the polynomial-evaluation layer: `EvalModParameters`, `EvalModParametersLiteral`, `EvalModType` (`SinContinuous`, `CosContinuous`, `CosDiscrete`), with double-angle composition and optional arcsine post-composition; high-precision Han–Ki Chebyshev interpolation (256-bit `FBig` solve, `cosine::approximate_cos`) for the `CosDiscrete` variant.
+- Add a thin scale-aware polynomial-evaluation wrapper over the core engine: the `PolynomialEvaluation` trait and its `ckks_eval_poly_real_const_coeffs_from_power_basis` driver, `CKKSBSGSPrecision` (owns all `log_delta` / `log_budget` → `cnv_offset` math), the `EncodeBSGS` / `PowerBasisGen` extension traits, and re-exports of the core layout types under CKKS module paths.
+- Add complex-coefficient polynomial evaluation (monomial and Chebyshev) via the `ckks_eval_poly_complex_const_coeffs_from_power_basis` driver, combining the matched real/imag baby steps as `re + i·im` through `CKKSImagOps` and folding the trailing complex constant through the highest power when present.
+- Take the complex prepared driver's polynomial as a single `&ComplexBSGSPolynomial`, holding the aligned real/imag BSGS decompositions together.
+- Add the one-shot `ckks_eval_poly_real_const_coeffs` / `ckks_eval_poly_complex_const_coeffs` convenience entry points, which build the power basis internally from the input ciphertext before evaluating.
+- Add backend-generic CKKS `eval_mod` (homomorphic `x mod 1`) API built on the polynomial-evaluation layer: `EvalModParameters`, `EvalModParametersLiteral`, `EvalModType` (`SinContinuous`, `CosContinuous`, `CosDiscrete`), with double-angle composition and optional arcsine post-composition; high-precision Han–Ki Chebyshev interpolation (256-bit `FBig` solve, `cosine::approximate_cos`) for the `CosDiscrete` variant. The pipeline evaluates its Chebyshev/arcsine polynomials through the one-shot `ckks_eval_poly_real_const_coeffs` entry point.
 - Add eval_mod OEP/delegate wiring (`CKKSEvalModImpl`, `CKKSEvalModOps`, `CKKSEvalModOpsDefault`) and conformance tests (`SinContinuous` minimal, `SinContinuous` with arcsine, `CosDiscrete` with double-angle, `CosContinuous` with double-angle) on FFT64/f64, NTT120/f64, and NTT120/f128.
 - Validate eval_mod input parameters at `EvalModParameters::from_literal` (non-zero degree/interval, scalar conversions return `Result` instead of panicking) and check `ct.log_budget()` covers the predicted multiplicative depth at the entry of `ckks_eval_mod`; expose `EvalModParameters::depth()`.
-- Generalize fused CKKS multiply-add/plaintext paths over backend-owned ciphertext/plaintext layouts and allow plaintext add/sub alignment to left-shift when the encoded plaintext precision exceeds the ciphertext budget, enabling coefficient-indexed plaintext constants used by polynomial evaluation.
+- Generalize fused CKKS multiply-add/plaintext paths over backend-owned ciphertext/plaintext layouts.
+- Extend CKKS polynomial-evaluation coverage with conformance tests for monomial and Chebyshev evaluation, power-basis generation, interpolation, metadata errors, split-strategy behavior, and complex-coefficient evaluation (even/odd parity and the trailing-constant fold).
 
 ### `poulpy-hal` / `poulpy-cpu-ref`
 - Add `VecZnxLshAddCoeffToCoeffBackend` and `VecZnxLshSubCoeffToCoeffBackend` hooks plus portable reference implementations so coefficient-level plaintext accumulation can handle left-shift alignment.
@@ -20,6 +28,7 @@
 
 ### Build & Docs
 - Refresh the `ckks_poly2` example to use Chebyshev interpolation, `PowerBasis`, and the new BSGS evaluator pipeline.
+- Add `docs/polynomial_evaluation.md` describing the Baby-Step/Giant-Step method, the `MinDepth` / `MinMult` strategies, the supported polynomial flavors, and a measured table of modulus consumption per degree.
 
 ## [0.6.0] - 2026-05-18
 

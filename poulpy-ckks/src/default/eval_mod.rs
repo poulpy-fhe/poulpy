@@ -1,6 +1,9 @@
 use anyhow::{Result, anyhow, ensure};
-use poulpy_core::layouts::{Base2K, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GLWETensorKeyPreparedToBackendRef};
-use poulpy_core::{GLWENormalize, GLWEZero, ScratchArenaTakeCore};
+use poulpy_core::ScratchArenaTakeCore;
+use poulpy_core::layouts::{
+    BSGSMeta, Base2K, GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta,
+    prepared::GLWETensorKeyPreparedToBackendRef,
+};
 use poulpy_hal::{
     api::ScratchAvailable,
     layouts::{Backend, HostBytesBackend, Module, ScratchArena},
@@ -10,12 +13,10 @@ use rand_distr::num_traits::{Float, FloatConst};
 
 use crate::{
     CKKSCtBounds, CKKSMeta, SetCKKSInfos,
-    api::{Basis, CKKSAddOps, CKKSCopyOps, CKKSMulAddOps, CKKSMulOps, CKKSSubOps, Parity},
+    api::{Basis, CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSSubOps, Parity, PolynomialEvaluation},
     cosine,
-    default::polynomial_evaluation::PolynomialEvaluationDefault,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, ScratchArenaTakeCKKS},
-    polynomial::{BSGSPolynomial, Polynomial},
-    power_basis::PowerBasis,
+    polynomial::{BSGSPolynomial, EncodeBSGS, Polynomial},
 };
 
 fn scalar_from_f64<F: CKKSScalar>(name: &'static str, v: f64) -> Result<F> {
@@ -194,7 +195,7 @@ impl<P> EvalModParameters<P> {
         d + self.double_angle + inv
     }
 
-    pub fn map_plaintexts<Q>(self, mut f: impl FnMut(P) -> Q) -> EvalModParameters<Q> {
+    pub fn map_plaintexts<Q>(self, mut f: impl FnMut(&P) -> Q) -> EvalModParameters<Q> {
         let Self {
             eval_mod_type,
             log_message_ratio,
@@ -208,10 +209,10 @@ impl<P> EvalModParameters<P> {
             eval_mod_type,
             log_message_ratio,
             double_angle,
-            chebyshev_offset_pt: chebyshev_offset_pt.map(&mut f),
-            double_angle_consts: double_angle_consts.into_iter().map(&mut f).collect(),
-            eval_mod_bsgs: eval_mod_bsgs.map_baby_steps(&mut f),
-            eval_mod_inv_bsgs: eval_mod_inv_bsgs.map(|p| p.map_baby_steps(&mut f)),
+            chebyshev_offset_pt: chebyshev_offset_pt.as_ref().map(&mut f),
+            double_angle_consts: double_angle_consts.iter().map(&mut f).collect(),
+            eval_mod_bsgs: eval_mod_bsgs.map_baby_steps_ref(&mut f),
+            eval_mod_inv_bsgs: eval_mod_inv_bsgs.as_ref().map(|p| p.map_baby_steps_ref(&mut f)),
         }
     }
 }
@@ -236,87 +237,70 @@ fn encode_scalar<F: CKKSScalar>(
 }
 
 pub trait CKKSEvalModOpsDefault<BE: Backend> {
-    fn ckks_eval_mod_default<R, C, P, T>(
+    fn ckks_eval_mod_default<R, C, P>(
         &self,
         res: &mut R,
         ct: &C,
         params: &EvalModParameters<P>,
-        tsk: &T,
+        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: PolynomialEvaluationDefault<BE>
+        Self: PolynomialEvaluation<BE>
             + CKKSAddOps<BE>
             + CKKSSubOps<BE>
             + CKKSMulOps<BE>
-            + CKKSMulAddOps<BE>
             + CKKSCopyOps<BE>
             + CKKSModuleAlloc<BE>
-            + GLWENormalize<BE>
-            + GLWEZero<BE>
             + Sized,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-        CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
+        GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
+        CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         for<'b> ScratchArena<'b, BE>: ScratchAvailable + ScratchArenaTakeCore<'b, BE>;
 }
 
 impl<BE: Backend> CKKSEvalModOpsDefault<BE> for Module<BE>
 where
-    Module<BE>: PolynomialEvaluationDefault<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSMulOps<BE>
-        + CKKSMulAddOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWENormalize<BE>
-        + GLWEZero<BE>,
+    Module<BE>:
+        PolynomialEvaluation<BE> + CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSMulOps<BE> + CKKSCopyOps<BE> + CKKSModuleAlloc<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     for<'b> ScratchArena<'b, BE>: ScratchAvailable + ScratchArenaTakeCore<'b, BE>,
 {
-    fn ckks_eval_mod_default<R, C, P, T>(
+    fn ckks_eval_mod_default<R, C, P>(
         &self,
         res: &mut R,
         ct: &C,
         params: &EvalModParameters<P>,
-        tsk: &T,
+        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
     {
         eval_mod(self, res, ct, params, tsk, scratch)
     }
 }
 
-fn eval_mod<R, C, P, T, BE: Backend>(
+fn eval_mod<R, C, P, BE: Backend>(
     module: &Module<BE>,
     res: &mut R,
     ct: &C,
     params: &EvalModParameters<P>,
-    tsk: &T,
+    tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    Module<BE>: PolynomialEvaluationDefault<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSMulOps<BE>
-        + CKKSMulAddOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWENormalize<BE>
-        + GLWEZero<BE>,
-    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    Module<BE>:
+        PolynomialEvaluation<BE> + CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSMulOps<BE> + CKKSCopyOps<BE> + CKKSModuleAlloc<BE>,
+    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
-    P: GLWEToBackendRef<BE> + CKKSCtBounds,
-    T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
+    P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     for<'b> ScratchArena<'b, BE>: ScratchAvailable + ScratchArenaTakeCore<'b, BE>,
 {
@@ -335,23 +319,7 @@ where
         module.ckks_add_pt_const_assign(&mut t1, 0, off, 0, scratch)?;
     }
 
-    let mut power_basis = PowerBasis::new(Basis::Chebyshev, t1);
-    power_basis.populate(
-        params.eval_mod_bsgs.degree(),
-        params.eval_mod_bsgs.log_split(),
-        params.eval_mod_bsgs.parity(),
-        module,
-        tsk,
-        scratch,
-    )?;
-
-    module.ckks_eval_poly_real_const_coeffs_from_power_basis_default::<_, _, CKKSCiphertext<BE::OwnedBuf>, _, _>(
-        res,
-        &params.eval_mod_bsgs,
-        &power_basis,
-        tsk,
-        scratch,
-    )?;
+    module.ckks_eval_poly_real_const_coeffs(res, &t1, &params.eval_mod_bsgs, tsk, scratch)?;
 
     for i in 0..params.double_angle {
         let dac = &params.double_angle_consts[i];
@@ -371,11 +339,7 @@ where
         let mut t1_inv = module.ckks_ciphertext_alloc(res.base2k(), compact_k.into());
         t1_inv.set_meta(res.meta());
         module.ckks_copy(&mut t1_inv, &*res, scratch)?;
-        let mut pb = PowerBasis::new(Basis::Monomial, t1_inv);
-        pb.populate(inv.degree(), inv.log_split(), inv.parity(), module, tsk, scratch)?;
-        module.ckks_eval_poly_real_const_coeffs_from_power_basis_default::<_, _, CKKSCiphertext<BE::OwnedBuf>, _, _>(
-            res, inv, &pb, tsk, scratch,
-        )?;
+        module.ckks_eval_poly_real_const_coeffs(res, &t1_inv, inv, tsk, scratch)?;
     }
 
     Ok(())

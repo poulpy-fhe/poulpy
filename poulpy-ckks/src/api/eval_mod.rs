@@ -1,7 +1,7 @@
 use anyhow::Result;
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepared::GLWETensorKeyPreparedToBackendRef};
+use poulpy_core::layouts::{BSGSMeta, GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
 
 use crate::{CKKSCtBounds, SetCKKSInfos, default::eval_mod::EvalModParameters};
 
@@ -12,17 +12,16 @@ pub trait CKKSEvalModOps<BE: Backend> {
         P: CKKSCtBounds,
         T: GGLWEInfos;
 
-    fn ckks_eval_mod<R, C, P, T>(
+    fn ckks_eval_mod<R, C, P>(
         &self,
         res: &mut R,
         ct: &C,
         params: &EvalModParameters<P>,
-        tsk: &T,
+        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta;
 }
