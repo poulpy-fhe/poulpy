@@ -49,7 +49,7 @@ pub enum SplitStrategy {
     MinMult,
 }
 
-/// Default planner picked by [`Polynomial::decompose_bsgs`].
+/// Default planner picked by [`Polynomial::decompose_bsgs_with`].
 pub const DEFAULT_SPLIT_STRATEGY: SplitStrategy = SplitStrategy::MinDepth;
 
 /// Returns the BSGS log-split that minimises multiplication depth for a
@@ -468,7 +468,7 @@ where
 /// `baby_steps[0]` is the lowest-degree encoded baby polynomial containing the constant and
 /// low-degree terms; `baby_steps[n−1]` is the highest-degree encoded baby polynomial.
 ///
-/// Construct via [`Polynomial::decompose_bsgs`].
+/// Construct via [`Polynomial::decompose_bsgs_with`].
 pub struct BSGSPolynomial<C> {
     pub(crate) basis: Basis,
     pub(crate) degree: usize,
