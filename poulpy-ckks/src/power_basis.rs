@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use anyhow::{Result, anyhow, ensure};
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
+    GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, split_degree,
+    prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
@@ -309,19 +310,3 @@ where
     Ok(log_budget + a.log_delta().min(b.log_delta()))
 }
 
-/// Splits `n` into `(a, b)` with `n = a + b` and `|a – b|` minimised.
-///
-/// When `n` is a power of two `a = b = n/2`; otherwise uses the
-/// Lee et al. (2020) strategy that maximises the number of odd-degree
-/// Chebyshev terms.
-pub(crate) fn split_degree(n: usize) -> (usize, usize) {
-    assert!(n > 1);
-    if n.is_power_of_two() {
-        (n / 2, n / 2)
-    } else {
-        let k = (usize::BITS - (n - 1).leading_zeros()) as usize - 1;
-        let a = (1usize << k) - 1;
-        let b = n + 1 - (1usize << k);
-        (a, b)
-    }
-}

@@ -12,7 +12,7 @@ use crate::{
     encoding::reim::Encoder,
     layouts::{CKKSCiphertext, CKKSPlaintext, CKKSPlaintextVecHostCodec},
     leveled::api::{CKKSMulOps, PolynomialEvaluation},
-    polynomial::{BSGSPolynomial, Basis, Parity, Polynomial, SplitStrategy},
+    polynomial::{BSGSPolynomial, Basis, EncodeBSGS, Parity, Polynomial, SplitStrategy},
     power_basis::PowerBasis,
     test_suite::CKKSTestParams,
 };

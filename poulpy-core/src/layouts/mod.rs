@@ -48,6 +48,7 @@ mod lwe_plaintext;
 mod lwe_secret;
 mod lwe_switching_key;
 mod lwe_to_glwe_key;
+mod polynomial_evaluation;
 mod scratch_views;
 
 pub mod compressed;
@@ -82,6 +83,7 @@ pub use lwe_plaintext::*;
 pub use lwe_secret::*;
 pub use lwe_switching_key::*;
 pub use lwe_to_glwe_key::*;
+pub use polynomial_evaluation::*;
 pub use prepared::*;
 pub use scratch_views::*;
 

@@ -25,4 +25,5 @@ bytemuck = {workspace = true}
 once_cell = {workspace = true}
 paste = {workspace = true}
 rand = {workspace = true}
+rand_distr = {workspace = true}
 anyhow = {workspace = true}

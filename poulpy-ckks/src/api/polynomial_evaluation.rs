@@ -5,25 +5,7 @@ use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepa
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
-/// Polynomial evaluation basis.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Basis {
-    /// Standard monomial basis: {1, X, X², …}
-    Monomial,
-    /// Chebyshev first-kind basis: {T₀(X), T₁(X), T₂(X), …}
-    Chebyshev,
-}
-
-/// Symmetry class of a polynomial.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Parity {
-    /// No symmetry: all powers may be non-zero.
-    Full,
-    /// Even polynomial: only even-degree coefficients are non-zero.
-    Even,
-    /// Odd polynomial: only odd-degree coefficients are non-zero.
-    Odd,
-}
+pub use poulpy_core::layouts::{Basis, Parity};
 
 pub trait BSGSPolynomialInfos<BE: Backend> {
     type Coeffs: GLWEToBackendRef<BE> + CKKSCtBounds;

@@ -25,7 +25,7 @@ use poulpy_ckks::{
     encoding::Encoder,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
     leveled::api::{CKKSAllOpsTmpBytes, CKKSDecrypt, CKKSEncrypt, PolynomialEvaluation},
-    polynomial::{BSGSPolynomial, Basis, Polynomial},
+    polynomial::{BSGSPolynomial, Basis, EncodeBSGS, Polynomial},
     power_basis::PowerBasis,
 };
 use poulpy_core::{

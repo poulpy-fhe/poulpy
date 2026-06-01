@@ -11,7 +11,7 @@ use poulpy_ckks::{
     CKKSInfos, CKKSMeta,
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
     leveled::api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, PolynomialEvaluation},
-    polynomial::{Basis, Polynomial, SplitStrategy},
+    polynomial::{Basis, EncodeBSGS, Polynomial, SplitStrategy},
     power_basis::PowerBasis,
 };
 use poulpy_core::layouts::{
