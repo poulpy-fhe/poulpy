@@ -4,6 +4,7 @@ pub mod copy;
 pub mod encryption;
 pub mod imag;
 pub mod linear_transformation;
+pub mod linear_transformation_diagonals;
 pub mod mul;
 pub mod neg;
 pub mod plaintext;
@@ -14,6 +15,7 @@ pub mod rotate;
 pub mod sub;
 
 pub use add::CKKSAddDefault;
+pub use linear_transformation_diagonals::ckks_encode_linear_transformation_from_diagonals;
 pub use plaintext::CKKSPlaintextDefault;
 pub use polynomial_evaluation::PolynomialEvaluationDefault;
 pub use sub::CKKSSubDefault;

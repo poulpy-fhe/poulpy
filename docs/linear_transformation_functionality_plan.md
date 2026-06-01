@@ -75,7 +75,7 @@ stable, sorted baby and giant rotation lists.
 
 ### Implementation Plan
 
-Implement `bsgs_index(non_zero_diags, slots, giant_step)` and an optimal
+Implement `linear_transformation_schedule(non_zero_diags, slots, giant_step)` and an optimal
 giant-step helper compatible with Lattigo's rule: minimize
 `(N1 + N2) + abs(N1 - N2)`. Add helpers to derive required rotations from the
 index map and strategy.

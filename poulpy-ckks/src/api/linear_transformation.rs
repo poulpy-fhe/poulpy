@@ -8,11 +8,24 @@
 //! All `log_delta` / `log_budget` accounting lives here — the core engine only
 //! receives base2k-level alignment integers. See
 //! [`docs/lt_bsgs.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/lt_bsgs.md).
+//!
+//! # Typical flow
+//!
+//! ```ignore
+//! // setup, once per transform / per input shape
+//! let mut prepared = PreparedLinearTransformationRhs::alloc(module, &layout, &pt_proxy);
+//! module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch);
+//! let mut babies = PreparedLinearTransformationLhs::alloc(module, prepared.baby_steps(), &ct);
+//!
+//! // per evaluation
+//! module.ckks_prepare_linear_transformation_lhs(&mut babies, &ct, &atks, &mut scratch)?;
+//! module.ckks_eval_prepared_linear_transformation_into(&mut dst, &ct, &prepared, &babies, &atks, &mut scratch)?;
+//! ```
 
 use anyhow::Result;
 use poulpy_core::layouts::{
     GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
-    prepared::GLWEAutomorphismKeyPreparedToBackendRef,
+    LWEInfos, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
@@ -20,67 +33,148 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 
 pub use poulpy_core::{
     GLWELinearTransform as LinearTransformation, GLWELinearTransformDiagonal as Diagonal,
-    GLWELinearTransformGiantStep as GiantStep, GLWELinearTransformIndex as LinearTransformationIndex,
-    GLWEPreparedBabyRotations as PreparedBabyRotations, GLWEPreparedBabyStepHelper as PreparedBabyStepHelper,
-    GLWEPreparedLinearTransform as PreparedLinearTransformation, GLWEPreparedLinearTransformGiantStep as PreparedGiantStep,
-    LinearTransformationStrategy, bsgs_index, linear_transform_index, normalize_linear_transform_diagonal,
-    optimal_bsgs_giant_step,
+    GLWELinearTransformGiantStep as GiantStep, GLWELinearTransformationSchedule as LinearTransformationIndex,
+    GLWEPreparedLinearTransformationLhs as PreparedLinearTransformationLhs,
+    GLWEPreparedLinearTransformationRhs as PreparedLinearTransformationRhs,
+    GLWEPreparedLinearTransformationRhsGiantStep as PreparedGiantStep, LinearTransformationLayout, LinearTransformationStrategy,
+    linear_transform_index, optimal_bsgs_giant_step,
 };
 
 /// Homomorphic evaluation of a [`LinearTransformation`] on a CKKS ciphertext.
+///
+/// The API is shaped around three phases:
+/// 1. **Allocate** the prepared caches up-front:
+///    [`PreparedLinearTransformationRhs::alloc`] for the right side,
+///    [`PreparedLinearTransformationLhs::alloc`] for the left side.
+/// 2. **Populate** them whenever the underlying data changes:
+///    [`Self::ckks_prepare_linear_transformation_rhs`] /
+///    [`Self::ckks_prepare_linear_transformation_lhs`].
+/// 3. **Evaluate** with both caches:
+///    [`Self::ckks_eval_prepared_linear_transformation_into`] (or the `_assign`
+///    or `_many_` variants).
+///
+/// A one-shot convenience entry point,
+/// [`Self::ckks_eval_linear_transformation_into`], allocates and populates both
+/// caches internally for code paths that only evaluate a transform once.
 pub trait LinearTransformationOps<BE: Backend> {
-    /// Scratch bytes required by [`Self::ckks_prepare_linear_transformation`].
-    fn ckks_prepare_linear_transformation_tmp_bytes<P>(&self, lt: &LinearTransformation<P>) -> usize
-    where
-        P: CKKSCtBounds;
+    // ----- tmp_bytes -----
 
-    /// Scratch bytes required by [`Self::ckks_eval_linear_transformation_into`].
+    /// Scratch bytes required by [`Self::ckks_prepare_linear_transformation_rhs`].
+    fn ckks_prepare_linear_transformation_rhs_tmp_bytes<P>(&self, pt_infos: &P) -> usize
+    where
+        P: LWEInfos;
+
+    /// Scratch bytes required by [`Self::ckks_prepare_linear_transformation_lhs`].
+    fn ckks_prepare_linear_transformation_lhs_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    where
+        C: CKKSCtBounds,
+        K: GGLWEInfos;
+
+    /// Scratch bytes required by the prepared-eval entry points.
     fn ckks_eval_linear_transformation_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
     where
         C: CKKSCtBounds,
         K: GGLWEInfos;
 
-    /// Scratch bytes required by [`Self::ckks_prepare_baby_rotations`].
-    fn ckks_prepare_baby_rotations_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
-    where
-        C: CKKSCtBounds,
-        K: GGLWEInfos;
+    // ----- populate -----
 
-    /// Prepares `lt` into a reusable right-operand cache for repeated evaluation.
-    fn ckks_prepare_linear_transformation<P>(
+    /// Encodes every diagonal of `lt` into the matching pre-allocated slot
+    /// of `prepared`.
+    ///
+    /// `prepared` must have been sized via
+    /// [`PreparedLinearTransformationRhs::alloc`] for the same BSGS schedule as
+    /// `lt`. Performs zero `CnvPVecR` allocations.
+    fn ckks_prepare_linear_transformation_rhs<P>(
         &self,
+        prepared: &mut PreparedLinearTransformationRhs<BE>,
         lt: &LinearTransformation<P>,
-        prepared: &mut PreparedLinearTransformation<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
-    /// Computes and prepares the requested baby-step rotations of `src`.
+    /// Fills `babies` with the prepared baby-step rotations of `src`.
     ///
-    /// This is the reusable left-operand cache consumed by the prepared BSGS
-    /// inner sums. Only the final `CnvPVecL` baby steps are owned by the return
-    /// value; intermediate rotated ciphertexts are scratch-backed.
-    fn ckks_prepare_baby_rotations<Src, H, K>(
+    /// `babies` must have been sized via
+    /// [`PreparedLinearTransformationLhs::alloc`] for the rotations the caller wants
+    /// populated. Performs zero `CnvPVecL` allocations.
+    fn ckks_prepare_linear_transformation_lhs<Src, H, K>(
         &self,
-        baby_steps: &[i64],
+        babies: &mut PreparedLinearTransformationLhs<BE>,
         src: &Src,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<PreparedBabyRotations<BE>>
+    ) -> Result<()>
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
-    /// Computes `dst = M · src`, where `M` is the linear map encoded by `lt`.
+    // ----- eval -----
+
+    /// Computes `dst = M · src` using the prepared right and left caches.
     ///
-    /// `keys` must contain an automorphism key, keyed by rotation amount, for every
-    /// rotation returned by [`LinearTransformation::required_rotations`].
+    /// `keys` must contain an automorphism key for every non-zero giant
+    /// rotation of `prepared`. `babies` must cover at least
+    /// `prepared.baby_steps`; supersets are allowed (e.g. when sharing a
+    /// cache across several transforms).
+    fn ckks_eval_prepared_linear_transformation_into<Dst, Src, H, K>(
+        &self,
+        dst: &mut Dst,
+        src: &Src,
+        prepared: &PreparedLinearTransformationRhs<BE>,
+        babies: &PreparedLinearTransformationLhs<BE>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        H: GLWEAutomorphismKeyHelper<K, BE>;
+
+    /// Computes `dst = M · dst` using the prepared right and left caches.
+    fn ckks_eval_prepared_linear_transformation_assign<Dst, H, K>(
+        &self,
+        dst: &mut Dst,
+        prepared: &PreparedLinearTransformationRhs<BE>,
+        babies: &PreparedLinearTransformationLhs<BE>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        H: GLWEAutomorphismKeyHelper<K, BE>;
+
+    /// Computes `dsts[i] = M_i · src` for several prepared transforms sharing
+    /// a baby cache.
     ///
-    /// This borrowed one-shot API prepares the transform internally. For
-    /// repeated evaluation, prepare the transform once with
-    /// [`Self::ckks_prepare_linear_transformation`] and call
-    /// [`Self::ckks_eval_prepared_linear_transformation_into`].
+    /// `babies` must cover the union of every transform's baby rotations.
+    /// All transforms must share the same `cnv_offset` (i.e. the same
+    /// plaintext effective precision against `src`); the call returns an
+    /// error otherwise.
+    fn ckks_eval_many_prepared_linear_transformations_into<Dst, Src, H, K>(
+        &self,
+        dsts: &mut [Dst],
+        src: &Src,
+        prepared_transforms: &[PreparedLinearTransformationRhs<BE>],
+        babies: &PreparedLinearTransformationLhs<BE>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        H: GLWEAutomorphismKeyHelper<K, BE>;
+
+    // ----- one-shot convenience -----
+
+    /// Computes `dst = M · src` from a raw [`LinearTransformation`], allocating
+    /// and populating both caches internally.
+    ///
+    /// Use the prepared entry points for repeated evaluation. This form is for
+    /// one-off calls where the alloc cost is acceptable.
     fn ckks_eval_linear_transformation_into<Dst, Src, P, H, K>(
         &self,
         dst: &mut Dst,
@@ -96,46 +190,7 @@ pub trait LinearTransformationOps<BE: Backend> {
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
-    /// Computes `dst = M · src` with `lt` and its prepared cache.
-    fn ckks_eval_prepared_linear_transformation_into<Dst, Src, P, H, K>(
-        &self,
-        dst: &mut Dst,
-        src: &Src,
-        lt: &LinearTransformation<P>,
-        prepared: &PreparedLinearTransformation<BE>,
-        keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
-
-    /// Computes `dst = M · src` with `lt`, its prepared cache, and a
-    /// precomputed baby-step cache for `src`.
-    ///
-    /// `src` is used for CKKS scale/budget metadata; the ciphertext left
-    /// operands consumed by the BSGS inner sums come from `babies`.
-    fn ckks_eval_prepared_linear_transformation_with_babies_into<Dst, Src, P, H, K>(
-        &self,
-        dst: &mut Dst,
-        src: &Src,
-        lt: &LinearTransformation<P>,
-        prepared: &PreparedLinearTransformation<BE>,
-        babies: &PreparedBabyRotations<BE>,
-        keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
-
-    /// Computes `dst = M · dst`.
+    /// One-shot `dst = M · dst`, allocating and populating both caches internally.
     fn ckks_eval_linear_transformation_assign<Dst, P, H, K>(
         &self,
         dst: &mut Dst,
@@ -145,56 +200,6 @@ pub trait LinearTransformationOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
-
-    /// Computes `dst = M · dst` with `lt` and its prepared cache.
-    fn ckks_eval_prepared_linear_transformation_assign<Dst, P, H, K>(
-        &self,
-        dst: &mut Dst,
-        lt: &LinearTransformation<P>,
-        prepared: &PreparedLinearTransformation<BE>,
-        keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
-
-    /// Computes `dsts[i] = transforms[i] · src` for several prepared transform caches.
-    fn ckks_eval_many_prepared_linear_transformations_into<Dst, Src, P, H, K>(
-        &self,
-        dsts: &mut [Dst],
-        src: &Src,
-        transforms: &[LinearTransformation<P>],
-        prepared_transforms: &[PreparedLinearTransformation<BE>],
-        keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
-
-    /// Computes `dst = M_n(...M_1(M_0(src)))` with prepared transform caches,
-    /// using the normal per-step CKKS linear-transform scale handling.
-    fn ckks_eval_sequential_prepared_linear_transformations_into<Dst, Src, P, H, K>(
-        &self,
-        dst: &mut Dst,
-        src: &Src,
-        transforms: &[LinearTransformation<P>],
-        prepared_transforms: &[PreparedLinearTransformation<BE>],
-        keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;

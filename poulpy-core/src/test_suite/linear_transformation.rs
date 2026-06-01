@@ -14,8 +14,8 @@ use poulpy_hal::{
 };
 
 use crate::{
-    EncryptionLayout, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECopy, GLWEEncryptSk, GLWELinearTransformOps,
-    GLWEPreparedBabyStepHelper,
+    EncryptionLayout, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECopy, GLWEEncryptSk, GLWELinearTransformations,
+    GLWEPreparedLinearTransformationLhs,
     layouts::{
         GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory,
         GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
@@ -38,7 +38,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         + Convolution<BE>
         + GLWECopy<BE>
         + GLWEEncryptSk<BE>
-        + GLWELinearTransformOps<BE>
+        + GLWELinearTransformations<BE>
         + GLWESecretPreparedFactory<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
         + VecZnxAlloc<BE>
@@ -89,7 +89,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&atk_infos)
             | module.glwe_automorphism_key_prepare_tmp_bytes(&atk_infos)
             | module.glwe_encrypt_sk_tmp_bytes(&ct_infos)
-            | module.glwe_prepared_linear_transform_tmp_bytes(&ct_infos, &ct_infos, &ct_infos, &atk_infos)
+            | module.glwe_eval_linear_transformation_tmp_bytes(&ct_infos, &ct_infos, &ct_infos, &atk_infos)
             | module.cnv_prepare_right_tmp_bytes(pt.size(), pt.size())
             | module.cnv_apply_dft_tmp_bytes(0, product_size, ct_infos.size(), pt.size())
             | module.vec_znx_big_normalize_tmp_bytes(),
@@ -128,8 +128,15 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         atks.insert(rot, prepared);
     }
 
-    let prepared_babies =
-        module.glwe_prepare_baby_rotations(&baby_steps, &ct, k_in, atk_infos.size(), &atks, &mut scratch.borrow());
+    let mut prepared_babies = GLWEPreparedLinearTransformationLhs::alloc(module, &baby_steps, &ct);
+    module.glwe_prepare_linear_transformation_lhs(
+        &mut prepared_babies,
+        &ct,
+        k_in,
+        atk_infos.size(),
+        &atks,
+        &mut scratch.borrow(),
+    );
     assert_eq!(prepared_babies.baby_steps().collect::<Vec<_>>(), baby_steps);
 
     let mut right_prepared = module.cnv_pvec_right_alloc(1, pt.size());

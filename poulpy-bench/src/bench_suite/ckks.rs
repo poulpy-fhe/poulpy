@@ -3,7 +3,10 @@ use std::{collections::HashMap, hint::black_box};
 use criterion::Criterion;
 use poulpy_ckks::{
     CKKSMeta,
-    api::{Diagonal, GiantStep, LinearTransformation, LinearTransformationOps, PreparedLinearTransformation},
+    api::{
+        Diagonal, GiantStep, LinearTransformation, LinearTransformationOps, PreparedLinearTransformationLhs,
+        PreparedLinearTransformationRhs,
+    },
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
     leveled::api::{
         CKKSAddManyOps, CKKSAddOps, CKKSConjugateOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps,
@@ -21,11 +24,11 @@ use poulpy_core::{
         AutomorphismImpl, ConversionImpl, DecryptionImpl, GGLWEExternalProductImpl, GGLWEKeyswitchImpl, GGSWExternalProductImpl,
         GGSWKeyswitchImpl, GGSWRotateImpl, GLWEAddImpl, GLWECopyImpl, GLWEExternalProductImpl, GLWEKeyswitchImpl,
         GLWEMulConstImpl, GLWEMulPlainImpl, GLWEMulXpMinusOneImpl, GLWENegateImpl, GLWENormalizeImpl, GLWEPackImpl,
-        GLWERotateImpl, GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, GLWETraceImpl, LWEKeyswitchImpl,
+        GLWERotateImpl, GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, GLWETraceImpl, LWEKeyswitchImpl, LinearTransformationImpl,
     },
 };
 use poulpy_hal::{
-    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, GaloisElement, Module, ScratchArena, ScratchOwned, ZnxViewMut},
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
@@ -75,6 +78,7 @@ pub trait CkksBenchBackend:
     + HalSvpImpl<Self>
     + HalVmpImpl<Self>
     + HalConvolutionImpl<Self>
+    + LinearTransformationImpl<Self>
 where
     Self: Sized,
     Module<Self>: ModuleNew<Self>
@@ -92,7 +96,8 @@ where
         + CKKSMulAddOps<Self>
         + CKKSMulSubOps<Self>
         + CKKSDotProductOps<Self>
-        + LinearTransformationOps<Self>,
+        + LinearTransformationOps<Self>
+        + CnvPVecAlloc<Self>,
     ScratchOwned<Self>: ScratchOwnedAlloc<Self> + ScratchOwnedBorrow<Self>,
 {
 }
@@ -131,7 +136,8 @@ where
         + HalVecZnxDftImpl<BE>
         + HalSvpImpl<BE>
         + HalVmpImpl<BE>
-        + HalConvolutionImpl<BE>,
+        + HalConvolutionImpl<BE>
+        + LinearTransformationImpl<BE>,
     Module<BE>: ModuleNew<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
         + GLWETensorKeyPreparedFactory<BE>
@@ -147,7 +153,8 @@ where
         + CKKSMulAddOps<BE>
         + CKKSMulSubOps<BE>
         + CKKSDotProductOps<BE>
-        + LinearTransformationOps<BE>,
+        + LinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
 }
@@ -177,18 +184,14 @@ where
     ct_src: CKKSCiphertext<Vec<u8>>,
     ct_dst: CKKSCiphertext<Vec<u8>>,
     many_dsts: Vec<CKKSCiphertext<Vec<u8>>>,
-    one_shot_sparse_direct: LinearTransformation<CKKSPlaintext<Vec<u8>>>,
-    one_shot_sparse_bsgs: LinearTransformation<CKKSPlaintext<Vec<u8>>>,
-    one_shot_medium_bsgs: LinearTransformation<CKKSPlaintext<Vec<u8>>>,
-    one_shot_dense_bsgs: LinearTransformation<CKKSPlaintext<Vec<u8>>>,
-    prepared_sparse_direct: PreparedLinearTransformation<BE>,
-    prepared_sparse_bsgs: PreparedLinearTransformation<BE>,
-    prepared_medium_bsgs: PreparedLinearTransformation<BE>,
-    prepared_dense_bsgs: PreparedLinearTransformation<BE>,
-    prepared_interleaved_bsgs_256_lt: LinearTransformation<CKKSPlaintext<Vec<u8>>>,
-    prepared_interleaved_bsgs_256: PreparedLinearTransformation<BE>,
-    prepared_many_lts: Vec<LinearTransformation<CKKSPlaintext<Vec<u8>>>>,
-    prepared_many: Vec<PreparedLinearTransformation<BE>>,
+    // Raw (unprepared) transforms only. Each benchmark prepares the operands it
+    // needs locally; the setup keeps just the shared inputs.
+    sparse_direct: LinearTransformation<CKKSPlaintext<Vec<u8>>>,
+    sparse_bsgs: LinearTransformation<CKKSPlaintext<Vec<u8>>>,
+    medium_bsgs: LinearTransformation<CKKSPlaintext<Vec<u8>>>,
+    dense_bsgs: LinearTransformation<CKKSPlaintext<Vec<u8>>>,
+    interleaved_bsgs_256: LinearTransformation<CKKSPlaintext<Vec<u8>>>,
+    many_lts: [LinearTransformation<CKKSPlaintext<Vec<u8>>>; 2],
     atks: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
     prep_scratch_bytes: usize,
     eval_scratch_bytes: usize,
@@ -274,13 +277,41 @@ fn prepare_linear_transform<BE>(
     module: &Module<BE>,
     lt: &LinearTransformation<CKKSPlaintext<Vec<u8>>>,
     scratch: &mut ScratchArena<'_, BE>,
-) -> PreparedLinearTransformation<BE>
+) -> PreparedLinearTransformationRhs<BE>
 where
     BE: CkksBenchBackend,
 {
-    let mut prepared = PreparedLinearTransformation::default();
-    module.ckks_prepare_linear_transformation(lt, &mut prepared, scratch);
+    // Phase 1: size the right-operand cache from the BSGS index and the
+    // plaintext shape; phase 2: encode the diagonals into it.
+    let first_pt = lt
+        .giant_steps
+        .iter()
+        .flat_map(|gs| gs.diagonals.iter())
+        .map(|d| &d.plaintext)
+        .next()
+        .expect("linear transformation has no diagonals");
+    let mut prepared = PreparedLinearTransformationRhs::alloc_from_index(module, &lt.index(), first_pt);
+    module.ckks_prepare_linear_transformation_rhs(&mut prepared, lt, scratch);
     prepared
+}
+
+/// Allocates and populates the prepared left operand (the baby rotations of
+/// `src`) covering `baby_steps`.
+fn prepare_babies<BE>(
+    module: &Module<BE>,
+    baby_steps: &[i64],
+    src: &CKKSCiphertext<Vec<u8>>,
+    atks: &HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> PreparedLinearTransformationLhs<BE>
+where
+    BE: CkksBenchBackend,
+{
+    let mut babies = PreparedLinearTransformationLhs::alloc(module, baby_steps, src);
+    module
+        .ckks_prepare_linear_transformation_lhs(&mut babies, src, atks, scratch)
+        .expect("baby-step preparation failed (missing automorphism key?)");
+    babies
 }
 
 fn interleaved_linear_transform_diagonals() -> Vec<usize> {
@@ -307,20 +338,38 @@ fn insert_linear_transform_keys<BE>(
     }
 }
 
-fn unprepared_linear_transform_diagonal_count<P>(lt: &LinearTransformation<P>) -> usize {
-    lt.giant_steps.iter().map(|gs| gs.diagonals.len()).sum()
+/// Diagonal / baby / giant / rotation counts of a transform, for the metadata
+/// dump. Derived from the raw transform so the setup need not keep prepared
+/// objects around.
+struct LtShape {
+    diagonals: usize,
+    babies: usize,
+    giants: usize,
+    rotations: usize,
 }
 
-fn unprepared_linear_transform_non_empty_giant_count<P>(lt: &LinearTransformation<P>) -> usize {
-    lt.giant_steps.iter().filter(|gs| !gs.diagonals.is_empty()).count()
+/// Shape of the transform evaluated directly (no BSGS pruning).
+fn unprepared_shape<P>(lt: &LinearTransformation<P>) -> LtShape {
+    LtShape {
+        diagonals: lt.giant_steps.iter().map(|gs| gs.diagonals.len()).sum(),
+        babies: lt.baby_steps.len(),
+        giants: lt.giant_steps.iter().filter(|gs| !gs.diagonals.is_empty()).count(),
+        rotations: lt.required_rotations().len(),
+    }
 }
 
-fn prepared_linear_transform_diagonal_count<BE: Backend>(lt: &PreparedLinearTransformation<BE>) -> usize {
-    lt.giant_steps.iter().map(|gs| gs.diagonals.len()).sum()
-}
-
-fn prepared_linear_transform_non_empty_giant_count<BE: Backend>(lt: &PreparedLinearTransformation<BE>) -> usize {
-    lt.giant_steps.iter().filter(|gs| !gs.diagonals.is_empty()).count()
+/// Shape of the pruned BSGS schedule the prepared evaluator actually walks
+/// (matches the prepared right-operand cache built from `lt.index()`).
+fn pruned_shape<P>(lt: &LinearTransformation<P>) -> LtShape {
+    let index = lt.index();
+    let mut rotations: std::collections::BTreeSet<i64> = index.baby_steps.iter().copied().filter(|&r| r != 0).collect();
+    rotations.extend(index.giant_steps.iter().copied().filter(|&r| r != 0));
+    LtShape {
+        diagonals: index.index.iter().map(|babies| babies.len()).sum(),
+        babies: index.baby_steps.len(),
+        giants: index.giant_steps.len(),
+        rotations: rotations.len(),
+    }
 }
 
 fn format_bytes(bytes: usize) -> String {
@@ -351,89 +400,38 @@ where
         s.atks.len(),
     );
     eprintln!("case,diagonals,babies,giants,required_rotations");
-    eprintln!(
-        "one_shot_sparse_direct_shape_2,{},{},{},{}",
-        unprepared_linear_transform_diagonal_count(&s.one_shot_sparse_direct),
-        s.one_shot_sparse_direct.baby_steps.len(),
-        unprepared_linear_transform_non_empty_giant_count(&s.one_shot_sparse_direct),
-        s.one_shot_sparse_direct.required_rotations().len()
+    let row = |case: &str, sh: LtShape| {
+        eprintln!("{case},{},{},{},{}", sh.diagonals, sh.babies, sh.giants, sh.rotations);
+    };
+    row("one_shot_sparse_direct_shape_2", unprepared_shape(&s.sparse_direct));
+    row("one_shot_sparse_bsgs_2", unprepared_shape(&s.sparse_bsgs));
+    row("prepared_sparse_direct_2", pruned_shape(&s.sparse_direct));
+    row("prepared_sparse_bsgs_2", pruned_shape(&s.sparse_bsgs));
+    row("prepared_medium_bsgs_5", pruned_shape(&s.medium_bsgs));
+    row("one_shot_medium_bsgs_5", unprepared_shape(&s.medium_bsgs));
+    row("prepared_dense_bsgs_16", pruned_shape(&s.dense_bsgs));
+    row(
+        "prepared_interleaved_bsgs_256_stride64",
+        pruned_shape(&s.interleaved_bsgs_256),
     );
-    eprintln!(
-        "one_shot_sparse_bsgs_2,{},{},{},{}",
-        unprepared_linear_transform_diagonal_count(&s.one_shot_sparse_bsgs),
-        s.one_shot_sparse_bsgs.baby_steps.len(),
-        unprepared_linear_transform_non_empty_giant_count(&s.one_shot_sparse_bsgs),
-        s.one_shot_sparse_bsgs.required_rotations().len()
-    );
-    eprintln!(
-        "prepared_sparse_direct_2,{},{},{},{}",
-        prepared_linear_transform_diagonal_count(&s.prepared_sparse_direct),
-        s.prepared_sparse_direct.baby_steps.len(),
-        prepared_linear_transform_non_empty_giant_count(&s.prepared_sparse_direct),
-        s.prepared_sparse_direct.required_rotations().len()
-    );
-    eprintln!(
-        "prepared_sparse_bsgs_2,{},{},{},{}",
-        prepared_linear_transform_diagonal_count(&s.prepared_sparse_bsgs),
-        s.prepared_sparse_bsgs.baby_steps.len(),
-        prepared_linear_transform_non_empty_giant_count(&s.prepared_sparse_bsgs),
-        s.prepared_sparse_bsgs.required_rotations().len()
-    );
-    eprintln!(
-        "prepared_medium_bsgs_5,{},{},{},{}",
-        prepared_linear_transform_diagonal_count(&s.prepared_medium_bsgs),
-        s.prepared_medium_bsgs.baby_steps.len(),
-        prepared_linear_transform_non_empty_giant_count(&s.prepared_medium_bsgs),
-        s.prepared_medium_bsgs.required_rotations().len()
-    );
-    eprintln!(
-        "one_shot_medium_bsgs_5,{},{},{},{}",
-        unprepared_linear_transform_diagonal_count(&s.one_shot_medium_bsgs),
-        s.one_shot_medium_bsgs.baby_steps.len(),
-        unprepared_linear_transform_non_empty_giant_count(&s.one_shot_medium_bsgs),
-        s.one_shot_medium_bsgs.required_rotations().len()
-    );
-    eprintln!(
-        "prepared_dense_bsgs_16,{},{},{},{}",
-        prepared_linear_transform_diagonal_count(&s.prepared_dense_bsgs),
-        s.prepared_dense_bsgs.baby_steps.len(),
-        prepared_linear_transform_non_empty_giant_count(&s.prepared_dense_bsgs),
-        s.prepared_dense_bsgs.required_rotations().len()
-    );
-    eprintln!(
-        "prepared_interleaved_bsgs_256_stride64,{},{},{},{}",
-        prepared_linear_transform_diagonal_count(&s.prepared_interleaved_bsgs_256),
-        s.prepared_interleaved_bsgs_256.baby_steps.len(),
-        prepared_linear_transform_non_empty_giant_count(&s.prepared_interleaved_bsgs_256),
-        s.prepared_interleaved_bsgs_256.required_rotations().len()
-    );
-    eprintln!(
-        "one_shot_dense_bsgs_16,{},{},{},{}",
-        unprepared_linear_transform_diagonal_count(&s.one_shot_dense_bsgs),
-        s.one_shot_dense_bsgs.baby_steps.len(),
-        unprepared_linear_transform_non_empty_giant_count(&s.one_shot_dense_bsgs),
-        s.one_shot_dense_bsgs.required_rotations().len()
-    );
+    row("one_shot_dense_bsgs_16", unprepared_shape(&s.dense_bsgs));
 
-    let many_diagonals: usize = s.prepared_many.iter().map(prepared_linear_transform_diagonal_count).sum();
-    let many_babies: usize = s
-        .prepared_many
-        .iter()
-        .flat_map(|lt| lt.baby_steps.iter().copied())
-        .collect::<std::collections::BTreeSet<_>>()
-        .len();
-    let many_giants: usize = s
-        .prepared_many
-        .iter()
-        .map(prepared_linear_transform_non_empty_giant_count)
-        .sum();
-    let many_rotations: usize = s
-        .prepared_many
-        .iter()
-        .flat_map(|lt| lt.required_rotations())
-        .collect::<std::collections::BTreeSet<_>>()
-        .len();
-    eprintln!("many_prepared_2_transforms,{many_diagonals},{many_babies},{many_giants},{many_rotations}");
+    let many_shapes: Vec<LtShape> = s.many_lts.iter().map(pruned_shape).collect();
+    let many_diagonals: usize = many_shapes.iter().map(|sh| sh.diagonals).sum();
+    let many_giants: usize = many_shapes.iter().map(|sh| sh.giants).sum();
+    let mut many_baby_set = std::collections::BTreeSet::new();
+    let mut many_rotation_set = std::collections::BTreeSet::new();
+    for lt in &s.many_lts {
+        let index = lt.index();
+        many_baby_set.extend(index.baby_steps.iter().copied());
+        many_rotation_set.extend(index.baby_steps.iter().copied().filter(|&r| r != 0));
+        many_rotation_set.extend(index.giant_steps.iter().copied().filter(|&r| r != 0));
+    }
+    eprintln!(
+        "many_prepared_2_transforms,{many_diagonals},{},{many_giants},{}",
+        many_baby_set.len(),
+        many_rotation_set.len()
+    );
 }
 
 fn setup<BE>() -> CkksBenchSetup<BE>
@@ -527,56 +525,46 @@ where
         dst.set_meta_checked(meta).unwrap();
     }
 
-    let one_shot_sparse_direct = build_linear_transform::<BE>(&module, &[2, 5], 1);
-    let one_shot_sparse_bsgs = build_linear_transform::<BE>(&module, &[2, 5], 3);
-    let one_shot_medium_bsgs = build_linear_transform::<BE>(&module, &[0, 1, 2, 5, 7], 3);
-    let one_shot_dense_bsgs = build_linear_transform::<BE>(&module, &(0..16).collect::<Vec<_>>(), 4);
+    let sparse_direct = build_linear_transform::<BE>(&module, &[2, 5], 1);
+    let sparse_bsgs = build_linear_transform::<BE>(&module, &[2, 5], 3);
+    let medium_bsgs = build_linear_transform::<BE>(&module, &[0, 1, 2, 5, 7], 3);
+    let dense_bsgs = build_linear_transform::<BE>(&module, &(0..16).collect::<Vec<_>>(), 4);
     let interleaved_diags = interleaved_linear_transform_diagonals();
-    let prepared_interleaved_bsgs_256_lt = build_linear_transform::<BE>(&module, &interleaved_diags, LT_INTERLEAVED_BSGS_N1);
-    let prepared_many_lts = vec![
+    let interleaved_bsgs_256 = build_linear_transform::<BE>(&module, &interleaved_diags, LT_INTERLEAVED_BSGS_N1);
+    let many_lts = [
         build_linear_transform::<BE>(&module, &[0, 3, 6], 3),
         build_linear_transform::<BE>(&module, &[1, 2, 5], 2),
     ];
 
     let mut atks = HashMap::new();
     for rotations in [
-        one_shot_sparse_direct.required_rotations(),
-        one_shot_sparse_bsgs.required_rotations(),
-        one_shot_medium_bsgs.required_rotations(),
-        one_shot_dense_bsgs.required_rotations(),
-        prepared_interleaved_bsgs_256_lt.required_rotations(),
-        prepared_many_lts[0].required_rotations(),
-        prepared_many_lts[1].required_rotations(),
+        sparse_direct.required_rotations(),
+        sparse_bsgs.required_rotations(),
+        medium_bsgs.required_rotations(),
+        dense_bsgs.required_rotations(),
+        interleaved_bsgs_256.required_rotations(),
+        many_lts[0].required_rotations(),
+        many_lts[1].required_rotations(),
     ] {
         insert_linear_transform_keys(&module, &mut atks, rotations);
     }
 
-    let prep_scratch_bytes = module
-        .ckks_prepare_linear_transformation_tmp_bytes(&one_shot_sparse_direct)
-        .max(module.ckks_prepare_linear_transformation_tmp_bytes(&one_shot_sparse_bsgs))
-        .max(module.ckks_prepare_linear_transformation_tmp_bytes(&one_shot_medium_bsgs))
-        .max(module.ckks_prepare_linear_transformation_tmp_bytes(&one_shot_dense_bsgs))
-        .max(module.ckks_prepare_linear_transformation_tmp_bytes(&prepared_interleaved_bsgs_256_lt))
-        .max(module.ckks_prepare_linear_transformation_tmp_bytes(&prepared_many_lts[0]))
-        .max(module.ckks_prepare_linear_transformation_tmp_bytes(&prepared_many_lts[1]));
-    let eval_scratch_bytes = atks
-        .values()
-        .next()
+    // The setup only sizes the shared scratch; each benchmark prepares its own
+    // operands. A representative key sizes the LHS-prepare and eval scratch (both
+    // take a ciphertext shape and one automorphism key); the RHS-prepare scratch
+    // depends only on the plaintext shape, identical across every diagonal.
+    let sizing_key = atks.values().next();
+    let pt_infos = module.ckks_pt_vec_alloc(Base2K(BASE2K as u32), meta);
+    let prep_rhs_scratch_bytes = module.ckks_prepare_linear_transformation_rhs_tmp_bytes(&pt_infos);
+    let prep_lhs_scratch_bytes = sizing_key
+        .map(|key| module.ckks_prepare_linear_transformation_lhs_tmp_bytes(&ct_src, key))
+        .unwrap_or(0);
+    let prep_scratch_bytes = prep_rhs_scratch_bytes.max(prep_lhs_scratch_bytes);
+    let eval_scratch_bytes = sizing_key
         .map(|key| module.ckks_eval_linear_transformation_tmp_bytes(&ct_src, key))
         .unwrap_or(0);
     let scratch_bytes = prep_scratch_bytes.max(eval_scratch_bytes);
-    let mut scratch = ScratchOwned::<BE>::alloc(scratch_bytes);
-
-    let prepared_sparse_direct = prepare_linear_transform(&module, &one_shot_sparse_direct, &mut scratch.borrow());
-    let prepared_sparse_bsgs = prepare_linear_transform(&module, &one_shot_sparse_bsgs, &mut scratch.borrow());
-    let prepared_medium_bsgs = prepare_linear_transform(&module, &one_shot_medium_bsgs, &mut scratch.borrow());
-    let prepared_dense_bsgs = prepare_linear_transform(&module, &one_shot_dense_bsgs, &mut scratch.borrow());
-    let prepared_interleaved_bsgs_256 =
-        prepare_linear_transform(&module, &prepared_interleaved_bsgs_256_lt, &mut scratch.borrow());
-    let prepared_many = prepared_many_lts
-        .iter()
-        .map(|lt| prepare_linear_transform(&module, lt, &mut scratch.borrow()))
-        .collect::<Vec<_>>();
+    let scratch = ScratchOwned::<BE>::alloc(scratch_bytes);
 
     LinearTransformBenchSetup {
         module,
@@ -584,18 +572,12 @@ where
         ct_src,
         ct_dst,
         many_dsts,
-        one_shot_sparse_direct,
-        one_shot_sparse_bsgs,
-        one_shot_medium_bsgs,
-        one_shot_dense_bsgs,
-        prepared_sparse_direct,
-        prepared_sparse_bsgs,
-        prepared_medium_bsgs,
-        prepared_dense_bsgs,
-        prepared_interleaved_bsgs_256_lt,
-        prepared_interleaved_bsgs_256,
-        prepared_many_lts,
-        prepared_many,
+        sparse_direct,
+        sparse_bsgs,
+        medium_bsgs,
+        dense_bsgs,
+        interleaved_bsgs_256,
+        many_lts,
         atks,
         prep_scratch_bytes,
         eval_scratch_bytes,
@@ -1011,6 +993,7 @@ where
     print_linear_transform_metadata(label, &s);
     let mut group = c.benchmark_group(format!("ckks_linear_transformation::{label}"));
 
+    // One-shot cases measure the whole pipeline (alloc + prepare RHS/LHS + eval).
     group.bench_function("one_shot_sparse_direct_shape_2", |b| {
         b.iter(|| {
             reset_dst(&mut s.ct_dst);
@@ -1018,7 +1001,7 @@ where
                 .ckks_eval_linear_transformation_into(
                     &mut s.ct_dst,
                     black_box(&s.ct_src),
-                    black_box(&s.one_shot_sparse_direct),
+                    black_box(&s.sparse_direct),
                     &s.atks,
                     &mut s.scratch.borrow(),
                 )
@@ -1032,52 +1015,7 @@ where
                 .ckks_eval_linear_transformation_into(
                     &mut s.ct_dst,
                     black_box(&s.ct_src),
-                    black_box(&s.one_shot_sparse_bsgs),
-                    &s.atks,
-                    &mut s.scratch.borrow(),
-                )
-                .unwrap();
-        })
-    });
-    group.bench_function("prepared_sparse_direct_2", |b| {
-        b.iter(|| {
-            reset_dst(&mut s.ct_dst);
-            s.module
-                .ckks_eval_prepared_linear_transformation_into(
-                    &mut s.ct_dst,
-                    black_box(&s.ct_src),
-                    black_box(&s.one_shot_sparse_direct),
-                    black_box(&s.prepared_sparse_direct),
-                    &s.atks,
-                    &mut s.scratch.borrow(),
-                )
-                .unwrap();
-        })
-    });
-    group.bench_function("prepared_sparse_bsgs_2", |b| {
-        b.iter(|| {
-            reset_dst(&mut s.ct_dst);
-            s.module
-                .ckks_eval_prepared_linear_transformation_into(
-                    &mut s.ct_dst,
-                    black_box(&s.ct_src),
-                    black_box(&s.one_shot_sparse_bsgs),
-                    black_box(&s.prepared_sparse_bsgs),
-                    &s.atks,
-                    &mut s.scratch.borrow(),
-                )
-                .unwrap();
-        })
-    });
-    group.bench_function("prepared_medium_bsgs_5", |b| {
-        b.iter(|| {
-            reset_dst(&mut s.ct_dst);
-            s.module
-                .ckks_eval_prepared_linear_transformation_into(
-                    &mut s.ct_dst,
-                    black_box(&s.ct_src),
-                    black_box(&s.one_shot_medium_bsgs),
-                    black_box(&s.prepared_medium_bsgs),
+                    black_box(&s.sparse_bsgs),
                     &s.atks,
                     &mut s.scratch.borrow(),
                 )
@@ -1091,37 +1029,7 @@ where
                 .ckks_eval_linear_transformation_into(
                     &mut s.ct_dst,
                     black_box(&s.ct_src),
-                    black_box(&s.one_shot_medium_bsgs),
-                    &s.atks,
-                    &mut s.scratch.borrow(),
-                )
-                .unwrap();
-        })
-    });
-    group.bench_function("prepared_dense_bsgs_16", |b| {
-        b.iter(|| {
-            reset_dst(&mut s.ct_dst);
-            s.module
-                .ckks_eval_prepared_linear_transformation_into(
-                    &mut s.ct_dst,
-                    black_box(&s.ct_src),
-                    black_box(&s.one_shot_dense_bsgs),
-                    black_box(&s.prepared_dense_bsgs),
-                    &s.atks,
-                    &mut s.scratch.borrow(),
-                )
-                .unwrap();
-        })
-    });
-    group.bench_function("prepared_interleaved_bsgs_256_stride64", |b| {
-        b.iter(|| {
-            reset_dst(&mut s.ct_dst);
-            s.module
-                .ckks_eval_prepared_linear_transformation_into(
-                    &mut s.ct_dst,
-                    black_box(&s.ct_src),
-                    black_box(&s.prepared_interleaved_bsgs_256_lt),
-                    black_box(&s.prepared_interleaved_bsgs_256),
+                    black_box(&s.medium_bsgs),
                     &s.atks,
                     &mut s.scratch.borrow(),
                 )
@@ -1135,30 +1043,74 @@ where
                 .ckks_eval_linear_transformation_into(
                     &mut s.ct_dst,
                     black_box(&s.ct_src),
-                    black_box(&s.one_shot_dense_bsgs),
+                    black_box(&s.dense_bsgs),
                     &s.atks,
                     &mut s.scratch.borrow(),
                 )
                 .unwrap();
         })
     });
-    group.bench_function("many_prepared_2_transforms", |b| {
-        b.iter(|| {
-            for dst in &mut s.many_dsts {
-                reset_dst(dst);
-            }
-            s.module
-                .ckks_eval_many_prepared_linear_transformations_into(
-                    &mut s.many_dsts,
-                    black_box(&s.ct_src),
-                    black_box(&s.prepared_many_lts),
-                    black_box(&s.prepared_many),
-                    &s.atks,
-                    &mut s.scratch.borrow(),
-                )
-                .unwrap();
-        })
-    });
+
+    // Prepared cases prepare their own operands once (outside the measured loop)
+    // and measure only the repeated evaluation.
+    for (case, lt) in [
+        ("prepared_sparse_direct_2", &s.sparse_direct),
+        ("prepared_sparse_bsgs_2", &s.sparse_bsgs),
+        ("prepared_medium_bsgs_5", &s.medium_bsgs),
+        ("prepared_dense_bsgs_16", &s.dense_bsgs),
+        ("prepared_interleaved_bsgs_256_stride64", &s.interleaved_bsgs_256),
+    ] {
+        let prepared = prepare_linear_transform(&s.module, lt, &mut s.scratch.borrow());
+        let babies = prepare_babies(&s.module, prepared.baby_steps(), &s.ct_src, &s.atks, &mut s.scratch.borrow());
+        group.bench_function(case, |b| {
+            b.iter(|| {
+                reset_dst(&mut s.ct_dst);
+                s.module
+                    .ckks_eval_prepared_linear_transformation_into(
+                        &mut s.ct_dst,
+                        black_box(&s.ct_src),
+                        black_box(&prepared),
+                        black_box(&babies),
+                        &s.atks,
+                        &mut s.scratch.borrow(),
+                    )
+                    .unwrap();
+            })
+        });
+    }
+
+    // Many-transform case: prepare every right operand and a shared baby cache
+    // over their union, then measure the batched evaluation.
+    {
+        let prepared_many: Vec<_> = s
+            .many_lts
+            .iter()
+            .map(|lt| prepare_linear_transform(&s.module, lt, &mut s.scratch.borrow()))
+            .collect();
+        let mut union = std::collections::BTreeSet::new();
+        for prepared in &prepared_many {
+            union.extend(prepared.baby_steps().iter().copied());
+        }
+        let union_baby_steps: Vec<i64> = union.into_iter().collect();
+        let babies = prepare_babies(&s.module, &union_baby_steps, &s.ct_src, &s.atks, &mut s.scratch.borrow());
+        group.bench_function("many_prepared_2_transforms", |b| {
+            b.iter(|| {
+                for dst in &mut s.many_dsts {
+                    reset_dst(dst);
+                }
+                s.module
+                    .ckks_eval_many_prepared_linear_transformations_into(
+                        &mut s.many_dsts,
+                        black_box(&s.ct_src),
+                        black_box(&prepared_many),
+                        black_box(&babies),
+                        &s.atks,
+                        &mut s.scratch.borrow(),
+                    )
+                    .unwrap();
+            })
+        });
+    }
 
     group.finish();
 }

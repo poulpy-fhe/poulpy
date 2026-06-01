@@ -1,8 +1,7 @@
 #[cfg(test)]
-use super::{
-    LinearTransformationStrategy, bsgs_index, linear_transform_index, normalize_linear_transform_diagonal,
-    optimal_bsgs_giant_step,
-};
+use super::{LinearTransformationStrategy, linear_transform_index, optimal_bsgs_giant_step};
+#[cfg(test)]
+use crate::layouts::{linear_transformation_schedule, normalize_linear_transform_diagonal};
 
 #[test]
 fn normalizes_diagonal_indexes() {
@@ -11,8 +10,8 @@ fn normalizes_diagonal_indexes() {
 }
 
 #[test]
-fn builds_stable_sparse_bsgs_index() {
-    let index = bsgs_index([5, 3, 13, -1], 8, 3);
+fn builds_stable_sparse_linear_transformation_schedule() {
+    let index = linear_transformation_schedule([5, 3, 13, -1], 8, 3);
     assert_eq!(index.baby_steps, vec![0, 1, 2]);
     assert_eq!(index.giant_steps.len(), 2);
     assert_eq!(index.giant_steps, vec![3, 6]);
@@ -21,16 +20,16 @@ fn builds_stable_sparse_bsgs_index() {
 }
 
 #[test]
-fn builds_dense_bsgs_index() {
-    let index = bsgs_index(0..8, 8, 3);
+fn builds_dense_linear_transformation_schedule() {
+    let index = linear_transformation_schedule(0..8, 8, 3);
     assert_eq!(index.baby_steps, vec![0, 1, 2]);
     assert_eq!(index.giant_steps, vec![0, 3, 6]);
     assert_eq!(index.index, vec![vec![0, 1, 2], vec![0, 1, 2], vec![0, 1]]);
 }
 
 #[test]
-fn builds_single_diagonal_bsgs_index() {
-    let index = bsgs_index([6], 8, 3);
+fn builds_single_diagonal_linear_transformation_schedule() {
+    let index = linear_transformation_schedule([6], 8, 3);
     assert_eq!(index.baby_steps, vec![0]);
     assert_eq!(index.giant_steps.len(), 1);
     assert_eq!(index.giant_steps, vec![6]);
@@ -54,10 +53,10 @@ fn auto_uses_direct_for_tiny_sparse_index() {
 }
 
 #[test]
-fn auto_uses_optimal_bsgs_index() {
+fn auto_uses_optimal_linear_transformation_schedule() {
     let diagonals = [0, 1, 2, 3, 6, 7];
     let giant_step = optimal_bsgs_giant_step(diagonals, 8);
     let auto = linear_transform_index(diagonals, 8, LinearTransformationStrategy::Auto);
-    let explicit = bsgs_index(diagonals, 8, giant_step);
+    let explicit = linear_transformation_schedule(diagonals, 8, giant_step);
     assert_eq!(auto, explicit);
 }

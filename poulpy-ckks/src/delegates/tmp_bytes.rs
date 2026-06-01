@@ -6,7 +6,7 @@ use crate::{
     },
 };
 use poulpy_core::{
-    GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWELinearTransformOps, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWEShift,
+    GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWELinearTransformations, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWEShift,
     GLWETensorKeyEncryptSk, GLWETensoring,
     layouts::{GGLWEInfos, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
 };
@@ -33,7 +33,7 @@ where
         + CKKSMulOps<BE>
         + GLWEAutomorphism<BE>
         + GLWEAutomorphismKeyEncryptSk<BE>
-        + GLWELinearTransformOps<BE>
+        + GLWELinearTransformations<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + ModuleN
         + GLWEShift<BE>
@@ -94,7 +94,7 @@ where
         self.ckks_all_ops_tmp_bytes(ct_infos, tsk_infos, pt_prec)
             .max(self.ckks_rotate_tmp_bytes(ct_infos, atk_infos))
             .max(self.ckks_conjugate_tmp_bytes(ct_infos, atk_infos))
-            .max(self.glwe_prepared_linear_transform_tmp_bytes(ct_infos, ct_infos, ct_infos, atk_infos))
+            .max(self.glwe_eval_linear_transformation_tmp_bytes(ct_infos, ct_infos, ct_infos, atk_infos))
             .max(self.glwe_automorphism_key_encrypt_sk_tmp_bytes(atk_infos))
             .max(self.glwe_automorphism_key_prepare_tmp_bytes(atk_infos))
     }

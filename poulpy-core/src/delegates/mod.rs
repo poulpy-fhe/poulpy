@@ -10,4 +10,5 @@ mod decryption;
 mod encryption;
 mod external_product;
 mod keyswitching;
+mod linear_transformation;
 mod operations;

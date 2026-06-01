@@ -9,22 +9,30 @@
 
 mod baby_steps;
 mod eval;
-mod index;
 mod inner_product;
 mod lazy;
-mod ops;
 mod prepare;
 mod prepared_giants;
-mod types;
 
 #[cfg(test)]
 mod tests;
 
-pub use baby_steps::{GLWEPreparedBabyRotations, GLWEPreparedBabyStepHelper};
-pub use index::{bsgs_index, linear_transform_index, normalize_linear_transform_diagonal, optimal_bsgs_giant_step};
-pub use ops::GLWELinearTransformOps;
-pub use prepare::GLWEPrepareLinearTransformOps;
-pub use types::{
-    GLWELinearTransform, GLWELinearTransformDiagonal, GLWELinearTransformGiantStep, GLWELinearTransformIndex,
-    GLWEPreparedLinearTransform, GLWEPreparedLinearTransformGiantStep, LinearTransformationStrategy,
+// The data types and BSGS schedule derivation live in `crate::layouts`; the
+// prepared (convolution-domain) caches live in `crate::layouts::prepared`.
+// This module owns the HAL-dependent allocators and the prepare/eval
+// algorithms. Re-exported here so `poulpy_core::*` keeps exposing them at the
+// crate root.
+pub use crate::layouts::prepared::{
+    GLWEPreparedLinearTransformationLhs, GLWEPreparedLinearTransformationRhs, GLWEPreparedLinearTransformationRhsGiantStep,
 };
+pub use crate::layouts::{
+    GLWELinearTransform, GLWELinearTransformDiagonal, GLWELinearTransformGiantStep, GLWELinearTransformationSchedule,
+    LinearTransformationLayout, LinearTransformationStrategy, linear_transform_index, optimal_bsgs_giant_step,
+};
+
+// Reference implementations forwarded to from `crate::oep::LinearTransformationDefault`.
+pub use eval::{
+    glwe_eval_linear_transformation_into_default, glwe_eval_linear_transformation_tmp_bytes_default,
+    glwe_prepare_linear_transformation_lhs_default, glwe_prepare_linear_transformation_lhs_tmp_bytes_default,
+};
+pub use prepare::{glwe_prepare_linear_transformation_rhs_default, glwe_prepare_linear_transformation_rhs_tmp_bytes_default};

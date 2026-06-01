@@ -5,7 +5,16 @@
 //! -> normalize -> automorphism. The resulting SMALL ciphertexts are prepared as
 //! `CnvPVecL` so every giant step can reuse them in convolution form.
 
-use std::collections::{BTreeMap, BTreeSet};
+//! Baby-step rotation materialization (the prepared LHS).
+//!
+//! Implements docs/lt_bsgs.md §6.2. The non-trivial baby rotations share one
+//! DFT of the input mask columns, then each key performs VMP -> IDFT -> add body
+//! -> normalize -> automorphism. The resulting SMALL ciphertexts are prepared
+//! as `CnvPVecL` and stored in a [`GLWEPreparedLinearTransformationLhs`] (whose
+//! definition lives in [`crate::layouts`]); this module owns the HAL-dependent
+//! allocator and population routines.
+
+use std::collections::BTreeMap;
 
 use poulpy_hal::{
     api::{
@@ -14,8 +23,7 @@ use poulpy_hal::{
         VecZnxIdftApplyTmpBytes,
     },
     layouts::{
-        Backend, CnvPVecL, CnvPVecLToBackendMut, CnvPVecLToBackendRef, ScratchArena, VecZnxBigToBackendRef, VecZnxDftBackendRef,
-        VecZnxDftToBackendRef, ZnxInfos,
+        Backend, CnvPVecLToBackendMut, ScratchArena, VecZnxBigToBackendRef, VecZnxDftBackendRef, VecZnxDftToBackendRef, ZnxInfos,
     },
 };
 
@@ -28,64 +36,42 @@ use crate::{
     },
 };
 
-/// Accessor for prepared baby-step rotations.
-///
-/// The index is the actual baby-step slot rotation `k` used by the current BSGS
-/// transform. This mirrors Lattigo's BSGS index map: the giant-step loop asks
-/// directly for `rot(v, k)`, regardless of whether the cache was prepared for
-/// one transform or for a union of transforms.
-pub trait GLWEPreparedBabyStepHelper<BE: Backend> {
-    type BabyStep: CnvPVecLToBackendRef<BE> + ZnxInfos;
+use super::{GLWEPreparedLinearTransformationLhs, LinearTransformationLayout};
 
-    fn baby_step(&self, baby: i64) -> &Self::BabyStep;
-}
-
-/// Prepared left operands for the baby rotations of one input ciphertext.
-pub struct GLWEPreparedBabyRotations<BE: Backend> {
-    values: BTreeMap<i64, CnvPVecL<BE::OwnedBuf, BE>>,
-}
-
-impl<BE: Backend> GLWEPreparedBabyRotations<BE> {
-    fn new(values: BTreeMap<i64, CnvPVecL<BE::OwnedBuf, BE>>) -> Self {
+impl<BE: Backend> GLWEPreparedLinearTransformationLhs<BE> {
+    /// Pre-allocates a baby-step cache for the given `baby_steps` rotations
+    /// and input ciphertext shape `a`.
+    ///
+    /// Each prepared baby rotation is a `CnvPVecL` with `a.rank() + 1` columns
+    /// and `a.size()` limbs. The `baby_steps` slice typically comes from
+    /// [`LinearTransformationLayout::baby_steps`] (before encoding) or the
+    /// `baby_steps` field of a `GLWEPreparedLinearTransformationRhs` (after encoding).
+    /// Duplicate rotations in `baby_steps` are de-duplicated.
+    pub fn alloc<M, A>(module: &M, baby_steps: &[i64], a: &A) -> Self
+    where
+        M: CnvPVecAlloc<BE>,
+        A: GLWEInfos,
+    {
+        let cols = a.rank().as_usize() + 1;
+        let size = a.size();
+        let mut values = BTreeMap::new();
+        for &rot in baby_steps {
+            values.entry(rot).or_insert_with(|| module.cnv_pvec_left_alloc(cols, size));
+        }
         Self { values }
     }
 
-    /// The slot rotations represented by this prepared baby cache.
-    pub fn baby_steps(&self) -> impl ExactSizeIterator<Item = i64> + '_ {
-        self.values.keys().copied()
-    }
-
-    /// Returns true when `rot` is available in this prepared baby cache.
-    pub fn contains_baby_step(&self, rot: i64) -> bool {
-        self.values.contains_key(&rot)
-    }
-
-    /// Number of prepared baby rotations.
-    pub fn len(&self) -> usize {
-        self.values.len()
-    }
-
-    /// Returns true when no baby rotations are prepared.
-    pub fn is_empty(&self) -> bool {
-        self.values.is_empty()
-    }
-
-    fn baby_step_by_rotation(&self, rot: i64) -> &CnvPVecL<BE::OwnedBuf, BE> {
-        self.values
-            .get(&rot)
-            .unwrap_or_else(|| panic!("missing prepared baby-step rotation {rot}"))
+    /// Convenience: pre-allocates from a [`LinearTransformationLayout`].
+    pub fn alloc_from_layout<M, A>(module: &M, layout: &LinearTransformationLayout, a: &A) -> Self
+    where
+        M: CnvPVecAlloc<BE>,
+        A: GLWEInfos,
+    {
+        Self::alloc(module, &layout.baby_steps(), a)
     }
 }
 
-impl<BE: Backend> GLWEPreparedBabyStepHelper<BE> for GLWEPreparedBabyRotations<BE> {
-    type BabyStep = CnvPVecL<BE::OwnedBuf, BE>;
-
-    fn baby_step(&self, baby: i64) -> &Self::BabyStep {
-        self.baby_step_by_rotation(baby)
-    }
-}
-
-pub(super) fn glwe_prepare_baby_rotations_tmp_bytes<BE, M, A, K>(module: &M, a_infos: &A, key_infos: &K) -> usize
+pub(super) fn glwe_prepare_linear_transformation_lhs_tmp_bytes<BE, M, A, K>(module: &M, a_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
     M: ModuleN
@@ -194,17 +180,23 @@ fn glwe_hoisted_baby_rotation<BE, M, R, A, H, K>(
     }
 }
 
+/// Fills a pre-allocated baby-step cache with `rot(a, k)` for every `k` already
+/// stored in `cache`.
+///
+/// The cache must have been sized via [`GLWEPreparedLinearTransformationLhs::alloc`].
+/// This is the populating counterpart of the old returning variant: it
+/// performs zero `CnvPVecL` allocations because the slots are owned by
+/// `cache`.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn glwe_prepare_baby_rotations<BE, M, A, H, K>(
+pub(super) fn glwe_prepare_linear_transformation_lhs<BE, M, A, H, K>(
     module: &M,
-    baby_steps: &[i64],
+    cache: &mut GLWEPreparedLinearTransformationLhs<BE>,
     a: &A,
     a_effective_k: usize,
     key_size: usize,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
-) -> GLWEPreparedBabyRotations<BE>
-where
+) where
     BE: Backend,
     M: CnvPVecAlloc<BE>
         + Convolution<BE>
@@ -223,11 +215,10 @@ where
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
-    let baby_steps: Vec<i64> = baby_steps.iter().copied().collect::<BTreeSet<_>>().into_iter().collect();
     let cols = a.rank().as_usize() + 1;
     let a_size = a.size();
     let mask = msb_mask_bottom_limb(a.base2k().as_usize(), a_effective_k);
-    let has_nonzero_rotation = baby_steps.iter().any(|&rot| rot != 0);
+    let has_nonzero_rotation = cache.values.keys().any(|&rot| rot != 0);
     let (use_hoisted, key_size) = if has_nonzero_rotation {
         let key_infos = keys.automorphism_key_infos();
         (a.base2k() == key_infos.base2k(), key_size.min(key_infos.size()))
@@ -235,7 +226,6 @@ where
         (false, key_size)
     };
 
-    let mut values = BTreeMap::new();
     if use_hoisted {
         let scratch = scratch.borrow();
         let (mut a_dft, mut loop_scratch) = scratch.take_vec_znx_dft_scratch(module, cols - 1, a_size);
@@ -247,8 +237,9 @@ where
         }
         let a_dft_ref = a_dft.to_backend_ref();
 
-        for &rot in &baby_steps {
-            let mut prepared = module.cnv_pvec_left_alloc(cols, a_size);
+        for (&rot, prepared) in cache.values.iter_mut() {
+            assert_eq!(prepared.cols(), cols, "prepared baby cache has wrong column count");
+            assert_eq!(prepared.size(), a_size, "prepared baby cache has wrong size");
             if rot == 0 {
                 let a_ref = a.to_backend_ref();
                 module.cnv_prepare_left(&mut prepared.to_backend_mut(), &a_ref.data, mask, &mut loop_scratch.borrow());
@@ -272,11 +263,11 @@ where
                     &mut baby_scratch.borrow(),
                 );
             }
-            values.insert(rot, prepared);
         }
     } else {
-        for &rot in &baby_steps {
-            let mut prepared = module.cnv_pvec_left_alloc(cols, a_size);
+        for (&rot, prepared) in cache.values.iter_mut() {
+            assert_eq!(prepared.cols(), cols, "prepared baby cache has wrong column count");
+            assert_eq!(prepared.size(), a_size, "prepared baby cache has wrong size");
             if rot == 0 {
                 let a_ref = a.to_backend_ref();
                 module.cnv_prepare_left(&mut prepared.to_backend_mut(), &a_ref.data, mask, scratch);
@@ -294,9 +285,6 @@ where
                     &mut baby_scratch.borrow(),
                 );
             }
-            values.insert(rot, prepared);
         }
     }
-
-    GLWEPreparedBabyRotations::new(values)
 }

@@ -331,7 +331,7 @@ from poulpy-ckks they are not.
 
 - **Core engine.** `poulpy-core/src/default/linear_transformation/` mirrors the
   `automorphism` and `keyswitching` split. It exposes prepared-transform evaluation
-  through `glwe_prepared_linear_transform`, which takes a prepared transform, prepared
+  through `glwe_eval_linear_transformation`, which takes a prepared transform, prepared
   baby rotations, and the keyed set of GGLWE automorphism keys (`GetGaloisElement`).
   Prepared baby rotations are addressed by the real baby-step rotation `k`, matching
   the BSGS index, not by a dense local list position. The prepared
