@@ -7,10 +7,14 @@
 //! supplied by the scheme layer through the closure passed to
 //! [`Polynomial::decompose_bsgs_with`].
 
+use std::collections::HashMap;
 use std::fmt::Debug;
 
-use anyhow::{Result, ensure};
+use anyhow::{Result, anyhow, ensure};
+use poulpy_hal::layouts::Backend;
 use rand_distr::num_traits::{Float, FloatConst, FromPrimitive};
+
+use crate::layouts::GLWEToBackendRef;
 
 // ── Basis / Parity ───────────────────────────────────────────────────────────
 
@@ -539,6 +543,72 @@ impl<C> BSGSPolynomial<C> {
             baby_steps: self.baby_steps.iter().map(&mut f).collect(),
             parity: self.parity,
         }
+    }
+}
+
+// ── PowerBasis ────────────────────────────────────────────────────────────────
+
+/// Read access to the pre-computed powers feeding a BSGS evaluation.
+pub trait PowerBasisHelper<BE: Backend, A> {
+    fn basis(&self) -> Basis;
+    fn has_power(&self, power: usize) -> bool;
+    fn get(&self, power: usize) -> Result<&A>;
+}
+
+/// Stores pre-computed powers of a ciphertext for BSGS polynomial evaluation.
+///
+/// `values[n]` = X^n (monomial basis) or Tₙ(X) (Chebyshev basis).
+/// `values[1]` must be provided at construction time.
+pub struct PowerBasis<A> {
+    pub(crate) basis: Basis,
+    pub(crate) values: HashMap<usize, A>,
+}
+
+impl<A> PowerBasis<A> {
+    /// Creates a power basis with `x` treated as X (or T₁(X) for Chebyshev).
+    pub fn new(basis: Basis, x: A) -> Self {
+        let mut values = HashMap::new();
+        values.insert(1, x);
+        Self { basis, values }
+    }
+
+    /// Returns the polynomial basis represented by the stored powers.
+    pub fn basis(&self) -> Basis {
+        self.basis
+    }
+
+    /// Returns a reference to the stored power at degree `n`, if computed.
+    pub fn get_stored(&self, n: usize) -> Option<&A> {
+        self.values.get(&n)
+    }
+
+    /// Returns whether the power at degree `n` is stored.
+    pub fn contains_power(&self, n: usize) -> bool {
+        self.values.contains_key(&n)
+    }
+
+    /// Stores `value` as the power at degree `n`, replacing any existing entry.
+    pub fn set_power(&mut self, n: usize, value: A) {
+        self.values.insert(n, value);
+    }
+}
+
+impl<BE: Backend, A> PowerBasisHelper<BE, A> for PowerBasis<A>
+where
+    A: GLWEToBackendRef<BE>,
+{
+    fn basis(&self) -> Basis {
+        self.basis
+    }
+
+    fn has_power(&self, power: usize) -> bool {
+        self.values.contains_key(&power)
+    }
+
+    fn get(&self, power: usize) -> Result<&A> {
+        self.values
+            .get(&power)
+            .ok_or_else(|| anyhow!("PowerBasis: X^{power} not computed; call gen_power or populate first"))
     }
 }
 

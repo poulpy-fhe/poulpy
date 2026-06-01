@@ -13,7 +13,7 @@ use crate::{
     layouts::{CKKSCiphertext, CKKSPlaintext, CKKSPlaintextVecHostCodec},
     leveled::api::{CKKSMulOps, PolynomialEvaluation},
     polynomial::{BSGSPolynomial, Basis, EncodeBSGS, Parity, Polynomial, SplitStrategy},
-    power_basis::PowerBasis,
+    power_basis::{PowerBasis, PowerBasisGen},
     test_suite::CKKSTestParams,
 };
 

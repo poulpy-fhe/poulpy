@@ -12,7 +12,7 @@ use poulpy_ckks::{
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
     leveled::api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, PolynomialEvaluation},
     polynomial::{Basis, EncodeBSGS, Polynomial, SplitStrategy},
-    power_basis::PowerBasis,
+    power_basis::{PowerBasis, PowerBasisGen},
 };
 use poulpy_core::layouts::{
     Base2K, Degree, Dnum, Dsize, GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, Rank, TorusPrecision,

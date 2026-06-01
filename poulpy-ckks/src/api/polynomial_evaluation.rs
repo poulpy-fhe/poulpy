@@ -5,7 +5,7 @@ use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, prepa
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
-pub use poulpy_core::layouts::{Basis, Parity};
+pub use poulpy_core::layouts::{Basis, Parity, PowerBasisHelper};
 
 pub trait BSGSPolynomialInfos<BE: Backend> {
     type Coeffs: GLWEToBackendRef<BE> + CKKSCtBounds;
@@ -21,12 +21,6 @@ pub trait BabyStep<BE: Backend> {
     fn degree(&self) -> usize;
     fn get(&self) -> &Self::Value;
     fn get_mut(&mut self) -> &mut Self::Value;
-}
-
-pub trait PowerBasisHelper<BE: Backend, A> {
-    fn basis(&self) -> Basis;
-    fn has_power(&self, power: usize) -> bool;
-    fn get(&self, power: usize) -> Result<&A>;
 }
 
 pub trait PolynomialEvaluation<BE: Backend> {

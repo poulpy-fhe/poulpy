@@ -26,7 +26,7 @@ use poulpy_ckks::{
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
     leveled::api::{CKKSAllOpsTmpBytes, CKKSDecrypt, CKKSEncrypt, PolynomialEvaluation},
     polynomial::{BSGSPolynomial, Basis, EncodeBSGS, Polynomial},
-    power_basis::PowerBasis,
+    power_basis::{PowerBasis, PowerBasisGen},
 };
 use poulpy_core::{
     EncryptionLayout, GLWETensorKeyEncryptSk,
