@@ -537,6 +537,18 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_complex_chebyshev
             );
             run_test!(
+                eval_poly_const_coeffs_complex_even,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_complex_even
+            );
+            run_test!(
+                eval_poly_const_coeffs_complex_odd,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_complex_odd
+            );
+            run_test!(
+                eval_poly_const_coeffs_complex_fold,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_complex_fold
+            );
+            run_test!(
                 mul_add_const_zero_preserves_dst_meta,
                 $crate::test_suite::mul_add::test_mul_add_const_zero_preserves_dst_meta
             );

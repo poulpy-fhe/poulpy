@@ -11,7 +11,10 @@
 ### `poulpy-ckks`
 - Add a thin scale-aware polynomial-evaluation wrapper over the core engine: the `PolynomialEvaluation` trait and its `ckks_eval_poly_real_const_coeffs_from_power_basis` driver, `CKKSBSGSPrecision` (owns all `log_delta` / `log_budget` → `cnv_offset` math), the `EncodeBSGS` / `PowerBasisGen` extension traits, and re-exports of the core layout types under CKKS module paths.
 - Generalize fused CKKS multiply-add/plaintext paths over backend-owned ciphertext/plaintext layouts.
-- Extend CKKS polynomial-evaluation coverage with conformance tests for monomial and Chebyshev evaluation, power-basis generation, interpolation, metadata errors, and split-strategy behavior.
+- Add complex-coefficient polynomial evaluation (monomial and Chebyshev) via the `ckks_eval_poly_complex_const_coeffs_from_power_basis` driver, combining the matched real/imag baby steps as `re + i·im` through `CKKSImagOps` and folding the trailing complex constant through the highest power when present.
+- Take the complex prepared driver's polynomial as a single `&ComplexBSGSPolynomial`, holding the aligned real/imag BSGS decompositions together.
+- Add the one-shot `ckks_eval_poly_real_const_coeffs` / `ckks_eval_poly_complex_const_coeffs` convenience entry points, which build the power basis internally from the input ciphertext before evaluating.
+- Extend CKKS polynomial-evaluation coverage with conformance tests for monomial and Chebyshev evaluation, power-basis generation, interpolation, metadata errors, split-strategy behavior, and complex-coefficient evaluation (even/odd parity and the trailing-constant fold).
 
 ### `poulpy-hal` / `poulpy-cpu-ref`
 - Add `VecZnxLshAddCoeffToCoeffBackend` and `VecZnxLshSubCoeffToCoeffBackend` hooks plus portable reference implementations so coefficient-level plaintext accumulation can handle left-shift alignment.

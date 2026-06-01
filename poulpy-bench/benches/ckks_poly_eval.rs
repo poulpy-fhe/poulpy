@@ -205,8 +205,7 @@ fn bench_ntt120_ref(c: &mut Criterion) {
                 module
                     .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<Vec<u8>>, _, _>(
                         &mut ct_res,
-                        &complex_bsgs.re,
-                        &complex_bsgs.im,
+                        &complex_bsgs,
                         &pb,
                         &tsk_prepared,
                         &mut sc,
@@ -241,8 +240,7 @@ fn bench_ntt120_ref(c: &mut Criterion) {
                     module
                         .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<Vec<u8>>, _, _>(
                             black_box(&mut ct_res),
-                            black_box(&complex_bsgs.re),
-                            black_box(&complex_bsgs.im),
+                            black_box(&complex_bsgs),
                             &pb,
                             &tsk_prepared,
                             &mut sc,

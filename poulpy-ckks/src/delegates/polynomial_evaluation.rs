@@ -2,8 +2,8 @@ use anyhow::Result;
 use poulpy_core::{
     ScratchArenaTakeCore,
     layouts::{
-        BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, ModuleCoreAlloc, SetBSGSMeta,
-        prepared::GLWETensorKeyPreparedToBackendRef,
+        BSGSMeta, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, ModuleCoreAlloc, SetBSGSMeta,
+        prepared::{GLWETensorKeyPrepared, GLWETensorKeyPreparedToBackendRef},
     },
 };
 use poulpy_hal::{
@@ -14,7 +14,9 @@ use poulpy_hal::{
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{BSGSPolynomialInfos, PolynomialEvaluation, PowerBasisHelper},
+    layouts::CKKSCiphertext,
     oep::CKKSPolynomialEvaluationImpl,
+    polynomial::{BSGSPolynomial, ComplexBSGSPolynomial},
 };
 
 impl<BE: Backend + CKKSPolynomialEvaluationImpl<BE>> PolynomialEvaluation<BE> for Module<BE>
@@ -41,31 +43,57 @@ where
         BE::ckks_eval_poly_real_const_coeffs_from_power_basis::<R, B, A, G, T>(self, res, poly, power_basis, tsk, scratch)
     }
 
-    fn ckks_eval_poly_complex_const_coeffs_from_power_basis<R, B, A, G, T>(
+    fn ckks_eval_poly_complex_const_coeffs_from_power_basis<R, C, A, G, T>(
         &self,
         res: &mut R,
-        poly_re: &B,
-        poly_im: &B,
+        poly: &ComplexBSGSPolynomial<C>,
         power_basis: &G,
         tsk: &T,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        B: BSGSPolynomialInfos<BE>,
-        B::Coeffs: CKKSCtBounds,
+        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     {
-        BE::ckks_eval_poly_complex_const_coeffs_from_power_basis::<R, B, A, G, T>(
-            self,
-            res,
-            poly_re,
-            poly_im,
-            power_basis,
-            tsk,
-            scratch,
-        )
+        BE::ckks_eval_poly_complex_const_coeffs_from_power_basis::<R, C, A, G, T>(self, res, poly, power_basis, tsk, scratch)
+    }
+
+    fn ckks_eval_poly_real_const_coeffs<R, S, C>(
+        &self,
+        dst: &mut R,
+        src: &S,
+        bsgs: &BSGSPolynomial<C>,
+        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        S: GLWEToBackendRef<BE> + CKKSCtBounds,
+        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
+        GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
+        CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    {
+        BE::ckks_eval_poly_real_const_coeffs::<R, S, C>(self, dst, src, bsgs, tsk, scratch)
+    }
+
+    fn ckks_eval_poly_complex_const_coeffs<R, S, C>(
+        &self,
+        dst: &mut R,
+        src: &S,
+        poly: &ComplexBSGSPolynomial<C>,
+        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        S: GLWEToBackendRef<BE> + CKKSCtBounds,
+        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
+        GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
+        CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    {
+        BE::ckks_eval_poly_complex_const_coeffs::<R, S, C>(self, dst, src, poly, tsk, scratch)
     }
 }
