@@ -180,7 +180,6 @@ mod core_impl;
 mod fft64;
 #[cfg(feature = "enable-avx")]
 #[cfg(feature = "enable-avx")]
-mod gemm;
 #[cfg(feature = "enable-avx")]
 #[cfg(feature = "enable-avx")]
 mod hal_impl;
