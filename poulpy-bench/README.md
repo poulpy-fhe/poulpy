@@ -97,9 +97,6 @@ All sweep ranges and layout parameters are overridable at runtime through the `P
   "vmp": {
     "sweeps": [[10,2,1,2,3],[11,4,1,2,5],[12,7,1,2,8],[13,15,1,2,16],[14,31,1,2,32]]
   },
-  "coeff_mat": {
-    "sweeps": [[10,1024,1,8,3],[11,2048,1,8,5],[12,4096,2,8,8]]
-  },
   "svp_prepare": {
     "log_n": [10,11,12,13,14]
   },
@@ -150,7 +147,6 @@ cat > bench_params.json <<'EOF'
   "hal":  { "sweeps": [[10,2,2],[12,2,8],[14,2,32]] },
   "cnv":  { "sweeps": [[10,1],[12,4],[14,16]] },
   "vmp":  { "sweeps": [[10,2,1,2,3],[12,7,1,2,8]] },
-  "coeff_mat": { "sweeps": [[10,1024,1,8,3],[12,4096,2,8,8]] },
   "core": { "n": 4096, "base2k": 18, "k": 54, "rank": 1, "dsize": 1 }
 }
 EOF
