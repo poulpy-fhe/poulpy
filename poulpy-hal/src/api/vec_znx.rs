@@ -512,6 +512,22 @@ pub trait VecZnxAutomorphismAssignBackend<B: Backend> {
     );
 }
 
+pub trait VecZnxAutomorphismRotateBackend<B: Backend> {
+    /// Fused automorphism + rotation: computes `res = X^k * auto(p, a)` on the
+    /// selected column of `a` and stores it in `res_col` of `res`. Equivalent to
+    /// an automorphism with `p` followed by a rotation by `k`, in a single pass.
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_automorphism_rotate_backend(
+        &self,
+        p: i64,
+        k: i64,
+        res: &mut VecZnxBackendMut<'_, B>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, B>,
+        a_col: usize,
+    );
+}
+
 pub trait ScalarZnxAutomorphismBackend<B: Backend> {
     /// Applies the automorphism X^i -> X^ik on the selected column of `a` and stores the result in `res_col` column of `res`.
     fn scalar_znx_automorphism_backend(

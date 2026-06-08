@@ -672,6 +672,19 @@ macro_rules! hal_impl_vec_znx {
             <Self as HalVecZnxDefault<Self>>::vec_znx_automorphism_assign_backend_default(module, k, res, res_col, &mut scratch);
         }
 
+        #[allow(clippy::too_many_arguments)]
+        fn vec_znx_automorphism_rotate_backend(
+            module: &Module<Self>,
+            p: i64,
+            k: i64,
+            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
+            res_col: usize,
+            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
+            a_col: usize,
+        ) {
+            <Self as HalVecZnxDefault<Self>>::vec_znx_automorphism_rotate_backend_default(module, p, k, res, res_col, a, a_col)
+        }
+
         fn vec_znx_mul_xp_minus_one_backend(
             module: &Module<Self>,
             k: i64,

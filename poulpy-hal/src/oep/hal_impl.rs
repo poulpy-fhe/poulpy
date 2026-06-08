@@ -431,6 +431,17 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_automorphism_rotate_backend(
+        module: &Module<BE>,
+        p: i64,
+        k: i64,
+        res: &mut VecZnxBackendMut<'_, BE>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, BE>,
+        a_col: usize,
+    );
+
     fn vec_znx_mul_xp_minus_one_backend(
         module: &Module<BE>,
         k: i64,
