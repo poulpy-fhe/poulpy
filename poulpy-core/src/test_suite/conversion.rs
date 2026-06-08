@@ -9,15 +9,14 @@ use poulpy_hal::{
 use byteorder::{LittleEndian, WriteBytesExt};
 
 use crate::{
-    DEFAULT_SIGMA_XE, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEExpandLWE, GLWEExpandLWEMatrix,
-    GLWEFromLWE, GLWENoise, GLWENormalize, GLWEToLWESwitchingKeyEncryptSk, LWEDecrypt, LWEEncryptSk, LWEFromGLWE,
-    LWEMatrixDecrypt, LWEToGLWESwitchingKeyEncryptSk, ScratchArenaTakeCore,
+    DEFAULT_SIGMA_XE, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE, GLWENoise,
+    GLWENormalize, GLWEToLWESwitchingKeyEncryptSk, LWEDecrypt, LWEEncryptSk, LWEFromGLWE, LWEMatrixDecrypt,
+    LWEToGLWESwitchingKeyEncryptSk, ScratchArenaTakeCore,
     layouts::{
-        Base2K, Degree, Dnum, GLWE, GLWELayout,
-        GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWEToLWEKey, GLWEToLWEKeyLayout, GLWEToLWEKeyPrepared,
-        GLWEToLWEKeyPreparedFactory, LWE, LWEInfos, LWELayout, LWEMatrixLayout, LWEPlaintext, LWESecret, LWEToGLWEKey,
-        LWEToGLWEKeyLayout, LWEToGLWEKeyPrepared, LWEToGLWEKeyPreparedFactory, ModuleCoreAlloc, Rank,
-        SecretConversion, TorusPrecision, prepared::GLWESecretPrepared,
+        Base2K, Degree, Dnum, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWEToLWEKey,
+        GLWEToLWEKeyLayout, GLWEToLWEKeyPrepared, GLWEToLWEKeyPreparedFactory, LWE, LWEInfos, LWELayout, LWEMatrixLayout,
+        LWEPlaintext, LWESecret, LWEToGLWEKey, LWEToGLWEKeyLayout, LWEToGLWEKeyPrepared, LWEToGLWEKeyPreparedFactory,
+        ModuleCoreAlloc, Rank, SecretConversion, TorusPrecision, prepared::GLWESecretPrepared,
     },
 };
 

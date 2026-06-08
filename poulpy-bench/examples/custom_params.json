@@ -1,6 +1,6 @@
 {
   "backends": ["ntt120-avx"],
-  "run": ["vec_znx_big_add_into", "svp_prepare", "vmp", "coeff_mat", "external_product", "automorphism"],
+  "run": ["vec_znx_big_add_into", "svp_prepare", "vmp", "external_product", "automorphism"],
   "hal": {
     "sweeps": [
       [11, 2, 4]
@@ -14,11 +14,6 @@
   "vmp": {
     "sweeps": [
       [11, 4, 1, 2, 5]
-    ]
-  },
-  "coeff_mat": {
-    "sweeps": [
-      [11, 2048, 1, 8, 5]
     ]
   },
   "svp_prepare": {

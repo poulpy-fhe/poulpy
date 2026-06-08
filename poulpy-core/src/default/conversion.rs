@@ -10,12 +10,12 @@ use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxCopyRangeBackend, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero,
-        VecZnxExtractCoeffBackend, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes, VecZnxRotateBackend,
-        VecZnxZeroBackend,
+        VecZnxExtractCoeffBackend, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
+        VecZnxRotateBackend, VecZnxZeroBackend,
     },
     layouts::{
-        Backend, ScratchArena, VecZnx, VecZnxBackendRef,
-        VecZnxBigToBackendRef, VecZnxDftBackendRef, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, ZnxInfos,
+        Backend, ScratchArena, VecZnx, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendRef, VecZnxDftToBackendRef,
+        VecZnxToBackendMut, VecZnxToBackendRef, ZnxInfos,
     },
 };
 
@@ -23,10 +23,9 @@ use crate::{
     GLWERotate, ScratchArenaTakeCore,
     default::{keyswitching::GGLWEProductDefault, operations::GLWECopyDefault},
     layouts::{
-        GGLWEInfos, GGLWEToBackendRef,
-        GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWE, GLWEInfos, GLWELayout,
-        GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, GLWEViewRef, LWEInfos, LWEMatrixInfos,
-        LWEMatrixToBackendMut, LWEToBackendMut, LWEToBackendRef, Rank, glwe_backend_ref_from_mut,
+        GGLWEInfos, GGLWEToBackendRef, GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut,
+        GLWEToBackendRef, GLWEViewMut, GLWEViewRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendMut, LWEToBackendMut,
+        LWEToBackendRef, Rank, glwe_backend_ref_from_mut,
         prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
     },
     oep::{ConversionDefault, GLWEKeyswitchDefault},

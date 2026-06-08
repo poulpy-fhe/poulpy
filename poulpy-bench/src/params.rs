@@ -159,7 +159,6 @@ pub struct BenchParams {
     #[serde(default)]
     pub vmp: VmpSweepParams,
     #[serde(default)]
-    #[serde(default)]
     pub svp_prepare: SvpPrepareParams,
     #[serde(default)]
     pub core: CoreParams,

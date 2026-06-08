@@ -73,11 +73,6 @@ harness = false
 required-features = ["hal-bench"]
 
 [[bench]]
-name = "coeff_mat"
-harness = false
-required-features = ["core-bench"]
-
-[[bench]]
 name = "convolution"
 harness = false
 required-features = ["hal-bench"]

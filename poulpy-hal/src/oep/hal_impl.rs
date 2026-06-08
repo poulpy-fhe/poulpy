@@ -990,6 +990,12 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend {
     fn vmp_zero(module: &Module<BE>, res: &mut crate::layouts::VmpPMatBackendMut<'_, BE>);
 }
 
+
+/// Convolution family extension point.
+///
+/// # Safety
+/// Implementations must uphold the backend safety contract for prepared matrix
+/// layouts, scratch usage, and arithmetic correctness.
 pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend {
     fn cnv_prepare_left_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize;
 

@@ -56,7 +56,6 @@ cargo clippy -p poulpy-bench --all-targets \
 | Binary | Subsystem | Backends |
 |---|---|---|
 | `operations` | GLWE add / sub / normalize / mul-plain | all |
-| `coeff_mat` | `CoeffMatrix x LWEMatrix -> LWEMatrix` | all |
 | `encryption` | GLWE / GGSW / automorphism-key encryption | all |
 | `decryption` | GLWE decryption | all |
 | `automorphism` | GLWE automorphism | all |
@@ -119,7 +118,6 @@ Field reference:
 | `hal.sweeps` | `[[log_n, cols, size], ...]` | `vec_znx_big`, `vec_znx_dft`, `svp` | Sweep points for generic HAL ops |
 | `cnv.sweeps` | `[[log_n, size], ...]` | `convolution` | Sweep points for convolution |
 | `vmp.sweeps` | `[[log_n, rows, cols_in, cols_out, size], ...]` | `vmp` | Sweep points for VMP |
-| `coeff_mat.sweeps` | `[[log_n, rows_in, lwe_n, rows_out, size], ...]` | `coeff_mat` | Sweep points for `CoeffMatrix x LWEMatrix` |
 | `svp_prepare.log_n` | `[log_n, ...]` | `svp` prepare | Ring degrees for SVP prepare |
 | `core.n` | power of two | all core/scheme/standard | Ring degree `N` |
 | `core.base2k` | integer | all core/scheme/standard | Limb bit-width |
