@@ -9,16 +9,11 @@ use poulpy_cpu_ref::hal_defaults::{
 use poulpy_hal::{
     api::{HostBufMut, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
     layouts::{
-        Backend, MatZnxBackendRef, Module, NoiseInfos, ScratchArena,
-        VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
-        VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
+        Backend, MatZnxBackendRef, Module, NoiseInfos, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut,
+        VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
     },
-    oep::{
-        HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl,
-        HalVmpImpl,
-    },
+    oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
-
 
 #[inline]
 fn take_host_typed<'a, BE, T>(arena: ScratchArena<'a, BE>, len: usize) -> (&'a mut [T], ScratchArena<'a, BE>)
@@ -51,7 +46,6 @@ unsafe impl HalModuleImpl<FFT64Avx> for FFT64Avx {
 unsafe impl HalVmpImpl<FFT64Avx> for FFT64Avx {
     poulpy_cpu_ref::hal_impl_vmp!(FFT64VmpDefault);
 }
-
 
 unsafe impl HalConvolutionImpl<FFT64Avx> for FFT64Avx {
     poulpy_cpu_ref::hal_impl_convolution!(FFT64ConvolutionDefault);
@@ -360,7 +354,6 @@ unsafe impl HalConvolutionImpl<NTT120Avx> for NTT120Avx {
 unsafe impl HalVecZnxBigImpl<NTT120Avx> for NTT120Avx {
     poulpy_cpu_ref::hal_impl_vec_znx_big!(NTT120VecZnxBigDefault);
 }
-
 
 unsafe impl HalSvpImpl<NTT120Avx> for NTT120Avx {
     poulpy_cpu_ref::hal_impl_svp!(NTT120SvpDefault);

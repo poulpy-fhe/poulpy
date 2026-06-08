@@ -200,4 +200,3 @@ fn test_convolution_direct() {
     test_convolution_by_const(&module, 50);
     test_convolution_pairwise(&module, 50);
 }
-

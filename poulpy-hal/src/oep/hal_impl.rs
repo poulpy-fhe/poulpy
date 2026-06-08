@@ -990,7 +990,6 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend {
     fn vmp_zero(module: &Module<BE>, res: &mut crate::layouts::VmpPMatBackendMut<'_, BE>);
 }
 
-
 /// Convolution family extension point.
 ///
 /// # Safety

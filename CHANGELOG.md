@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### `poulpy-hal`
+- Add HAL APIs for scalar automorphisms and packed matrix helpers: `ScalarZnxAutomorphismBackend`, `ScalarZnxAutomorphismAssignBackend`, `VecZnxTransposeBackend`, and `VecZnxBigColWeightedSum`.
+- Add reusable DFT-domain automorphism planning and application via `VecZnxDftAutomorphismPlan` and `VecZnxDftAutomorphism`, with backend-specific plan types wired through `HalVecZnxDftImpl`.
+
+### `poulpy-core`
+- Add packed LWE matrix support with `LWEMatrix`, `LWEMatrixLayout`, `LWEMatrixInfos`, `BackendLWEMatrix`, backend ref/mut adapters, and `ModuleCoreAlloc::{lwe_matrix_alloc,lwe_matrix_alloc_from_infos}`.
+- Add core APIs for packed LWE matrix workflows: `GLWEExpandLWEMatrix` expands a GLWE into a matrix of LWE samples, and `LWEMatrixDecrypt` decrypts packed LWE rows into a GLWE plaintext-shaped result.
+- Add `GLWEMaskFill` and `LWEFillMask` traits for backend-generic mask generation from a `Source` or deterministic seed; compressed LWE/GLWE decompression now uses those mask-fill defaults, and `GLWECompressed` exposes `data()` / `data_mut()` accessors for its stored ciphertext data.
+
+### `poulpy-cpu-ref` / `poulpy-cpu-avx` / `poulpy-cpu-avx512`
+- Implement the new transpose, weighted-sum, scalar/DFT automorphism, and packed LWE matrix defaults across the reference backend, with AVX and AVX-512 overrides for the accelerated automorphism paths.
+
 ## [0.6.0] - 2026-05-18
 
 This release completes the migration from the legacy host-oriented HAL/backend plumbing to backend-generic HAL and core layers, so backends can now own buffers, scratch space, and transfer paths explicitly, and adds a new AVX-512 backend crate (`poulpy-cpu-avx512`) exposing three accelerated backends (`FFT64Avx512`, `NTT120Avx512`, `NTT126Ifma`).

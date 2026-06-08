@@ -141,4 +141,3 @@ fn test_convolution_direct() {
     test_convolution_by_const(&module, 12);
     test_convolution_pairwise(&module, 12);
 }
-

@@ -7,8 +7,8 @@ use crate::reference::{
         module::FFTModuleHandle,
         reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
         vec_znx_dft::{
-            Fft64AutomorphismPlan, build_fft64_automorphism_plan,
-            vec_znx_dft_add_assign as fft64_vec_znx_dft_add_assign, vec_znx_dft_add_into as fft64_vec_znx_dft_add_into,
+            Fft64AutomorphismPlan, build_fft64_automorphism_plan, vec_znx_dft_add_assign as fft64_vec_znx_dft_add_assign,
+            vec_znx_dft_add_into as fft64_vec_znx_dft_add_into,
             vec_znx_dft_add_scaled_assign as fft64_vec_znx_dft_add_scaled_assign, vec_znx_dft_apply as fft64_vec_znx_dft_apply,
             vec_znx_dft_automorphism as fft64_vec_znx_dft_automorphism, vec_znx_dft_copy as fft64_vec_znx_dft_copy,
             vec_znx_dft_sub as fft64_vec_znx_dft_sub, vec_znx_dft_sub_assign as fft64_vec_znx_dft_sub_assign,

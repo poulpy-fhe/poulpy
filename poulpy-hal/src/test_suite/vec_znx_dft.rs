@@ -3,9 +3,9 @@ use super::{TestParams, download_vec_znx, upload_vec_znx, vec_znx_backend_mut, v
 use crate::{
     api::{
         ScratchOwnedAlloc, VecZnxAutomorphismBackend, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
-        VecZnxDftAddAssign, VecZnxDftAddInto, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism,
-        VecZnxDftAutomorphismPlan, VecZnxDftCopy, VecZnxDftSub, VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxIdftApply,
-        VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
+        VecZnxDftAddAssign, VecZnxDftAddInto, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan,
+        VecZnxDftCopy, VecZnxDftSub, VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxIdftApply, VecZnxIdftApplyTmpA,
+        VecZnxIdftApplyTmpBytes,
     },
     layouts::{
         Backend, FillUniform, HostBytesBackend, Module, ScratchOwned, VecZnx, VecZnxBig, VecZnxBigToBackendMut,
@@ -681,13 +681,7 @@ fn contract_check_one_backend<BE>(
             let mut res_dft = module.vec_znx_dft_alloc(cols, size);
             let plan = module.vec_znx_dft_automorphism_plan(p);
             for j in 0..cols {
-                module.vec_znx_dft_automorphism_with_plan(
-                    &plan,
-                    &mut res_dft.to_backend_mut(),
-                    j,
-                    &a_dft.to_backend_ref(),
-                    j,
-                );
+                module.vec_znx_dft_automorphism_with_plan(&plan, &mut res_dft.to_backend_mut(), j, &a_dft.to_backend_ref(), j);
             }
             let res_dft_normalized = idft_tmpa_to_host(module, base2k, &mut res_dft, scratch);
             // a_dft is consumed by the pipeline; discard it.

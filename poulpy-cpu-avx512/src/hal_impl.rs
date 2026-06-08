@@ -9,17 +9,11 @@ use poulpy_cpu_ref::hal_defaults::{
 use poulpy_hal::{
     api::{HostBufMut, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
     layouts::{
-        Backend,
-        MatZnxBackendRef, Module, NoiseInfos, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
-        VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMatBackendMut,
-        VmpPMatBackendRef, ZnxInfos,
+        Backend, MatZnxBackendRef, Module, NoiseInfos, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut,
+        VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
     },
-    oep::{
-        HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl,
-        HalVmpImpl,
-    },
+    oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
-
 
 #[inline]
 fn take_host_typed<'a, BE, T>(arena: ScratchArena<'a, BE>, len: usize) -> (&'a mut [T], ScratchArena<'a, BE>)
@@ -52,7 +46,6 @@ unsafe impl HalModuleImpl<FFT64Avx512> for FFT64Avx512 {
 unsafe impl HalVmpImpl<FFT64Avx512> for FFT64Avx512 {
     poulpy_cpu_ref::hal_impl_vmp!(FFT64VmpDefault);
 }
-
 
 unsafe impl HalConvolutionImpl<FFT64Avx512> for FFT64Avx512 {
     poulpy_cpu_ref::hal_impl_convolution!(FFT64ConvolutionDefault);
@@ -210,7 +203,6 @@ unsafe impl HalVmpImpl<NTT120Avx512> for NTT120Avx512 {
         <Self as NTT120VmpDefault<Self>>::vmp_zero_default(module, res)
     }
 }
-
 
 unsafe impl HalConvolutionImpl<NTT120Avx512> for NTT120Avx512 {
     fn cnv_prepare_left_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
@@ -516,10 +508,7 @@ mod ifma_impl {
             VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef,
             VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
         },
-        oep::{
-            HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl,
-            HalVmpImpl,
-        },
+        oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
     };
     use std::mem::size_of;
 
@@ -863,9 +852,6 @@ mod ifma_impl {
             crate::ntt126_ifma::vec_znx_dft::vec_znx_dft_automorphism(plan, res, res_col, a, a_col);
         }
     }
-
-    
-
 
     unsafe impl HalConvolutionImpl<NTT126Ifma> for NTT126Ifma {
         fn cnv_prepare_left_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
