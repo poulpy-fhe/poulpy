@@ -187,3 +187,55 @@ poulpy_core::core_backend_test_suite!(
     backend = crate::NTT120Ref,
     params = TestParams { size: 1<<8, base2k: 52 },
 );
+
+#[test]
+fn test_vec_znx_rsh_assign_multi_limb_matches_rsh() {
+    use poulpy_hal::api::{
+        ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRshAssignBackend, VecZnxRshBackend, VecZnxRshTmpBytes,
+    };
+    use poulpy_hal::layouts::{FillUniform, HostBytesBackend, ScratchOwned, VecZnx};
+    use poulpy_hal::source::Source;
+    use poulpy_hal::test_suite::{download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
+
+    let n = 8usize;
+    let module: Module<NTT120Ref> = Module::<NTT120Ref>::new(n as u64);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(n as u64);
+    let mut scratch: ScratchOwned<NTT120Ref> = ScratchOwned::alloc(module.vec_znx_rsh_tmp_bytes());
+    let base2k = 52usize;
+    let mut source = Source::new([3u8; 32]);
+
+    // shifts spanning >= 2 limbs previously corrupted the in-place variant
+    for size in [2usize, 3, 4] {
+        for k in [60usize, 90, 105, 116] {
+            if k / base2k + 1 > size {
+                continue;
+            }
+            let mut a: VecZnx<Vec<u8>> = module_host.vec_znx_alloc(1, size);
+            a.fill_uniform(base2k, &mut source);
+            let a_be = upload_vec_znx::<NTT120Ref>(&a);
+            let mut want_be = upload_vec_znx::<NTT120Ref>(&module_host.vec_znx_alloc(1, size));
+            module.vec_znx_rsh_backend(
+                base2k,
+                k,
+                &mut vec_znx_backend_mut::<NTT120Ref>(&mut want_be),
+                0,
+                &vec_znx_backend_ref::<NTT120Ref>(&a_be),
+                0,
+                &mut scratch.borrow(),
+            );
+            let mut got_be = upload_vec_znx::<NTT120Ref>(&a);
+            module.vec_znx_rsh_assign_backend(
+                base2k,
+                k,
+                &mut vec_znx_backend_mut::<NTT120Ref>(&mut got_be),
+                0,
+                &mut scratch.borrow(),
+            );
+            assert_eq!(
+                download_vec_znx::<NTT120Ref>(&got_be),
+                download_vec_znx::<NTT120Ref>(&want_be),
+                "vec_znx_rsh_assign mismatch for size={size} k={k}"
+            );
+        }
+    }
+}
