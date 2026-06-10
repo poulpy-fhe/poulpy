@@ -18,7 +18,6 @@ env:
     poulpy-ckks/enable-ckks
     poulpy-cpu-ref/enable-core
     poulpy-cpu-ref/enable-ckks
-    poulpy-cpu-avx/enable-ckks
     poulpy-bin-fhe/enable-bin-fhe
     poulpy-bench/hal-bench
     poulpy-bench/core-bench
