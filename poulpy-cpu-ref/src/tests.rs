@@ -190,9 +190,7 @@ poulpy_core::core_backend_test_suite!(
 
 #[test]
 fn test_vec_znx_rsh_assign_multi_limb_matches_rsh() {
-    use poulpy_hal::api::{
-        ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRshAssignBackend, VecZnxRshBackend, VecZnxRshTmpBytes,
-    };
+    use poulpy_hal::api::{ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRshAssignBackend, VecZnxRshBackend, VecZnxRshTmpBytes};
     use poulpy_hal::layouts::{FillUniform, HostBytesBackend, ScratchOwned, VecZnx};
     use poulpy_hal::source::Source;
     use poulpy_hal::test_suite::{download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
@@ -237,5 +235,84 @@ fn test_vec_znx_rsh_assign_multi_limb_matches_rsh() {
                 "vec_znx_rsh_assign mismatch for size={size} k={k}"
             );
         }
+    }
+}
+
+#[test]
+fn test_ntt120_vmp_apply_truncated_res_matches_full_prefix() {
+    use poulpy_hal::api::{
+        ScratchOwnedAlloc, VecZnxDftAlloc, VecZnxDftApply, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare,
+        VmpPrepareTmpBytes,
+    };
+    use poulpy_hal::layouts::{
+        Backend, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, ScratchOwned, VecZnx, VecZnxDft,
+        VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMat, VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxView,
+    };
+    use poulpy_hal::source::Source;
+    use poulpy_hal::test_suite::{upload_mat_znx, upload_vec_znx, vec_znx_backend_ref};
+
+    let n = 8usize;
+    let base2k = 52usize;
+    let (rows, cols_in, cols_out, mat_size) = (2usize, 1usize, 1usize, 4usize);
+
+    let module: Module<NTT120Ref> = Module::<NTT120Ref>::new(n as u64);
+    let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(n as u64);
+    let mut source = Source::new([7u8; 32]);
+
+    let mut scratch: ScratchOwned<NTT120Ref> = ScratchOwned::alloc(
+        module
+            .vmp_apply_dft_to_dft_tmp_bytes(mat_size, rows, rows, cols_in, cols_out, mat_size)
+            .max(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, mat_size)),
+    );
+
+    let mut a: VecZnx<Vec<u8>> = module_host.vec_znx_alloc(cols_in, rows);
+    a.fill_uniform(base2k, &mut source);
+    let a_be = upload_vec_znx::<NTT120Ref>(&a);
+    let mut a_dft: VecZnxDft<Vec<u8>, NTT120Ref> = module.vec_znx_dft_alloc(cols_in, rows);
+    module.vec_znx_dft_apply(
+        1,
+        0,
+        &mut a_dft.to_backend_mut(),
+        0,
+        &vec_znx_backend_ref::<NTT120Ref>(&a_be),
+        0,
+    );
+
+    let mut mat: MatZnx<Vec<u8>> = module_host.mat_znx_alloc(rows, cols_in, cols_out, mat_size);
+    mat.fill_uniform(base2k, &mut source);
+    let mat_be = upload_mat_znx::<NTT120Ref>(&mat);
+    let mut pmat: VmpPMat<Vec<u8>, NTT120Ref> = module.vmp_pmat_alloc(rows, cols_in, cols_out, mat_size);
+    module.vmp_prepare(
+        &mut pmat.to_backend_mut(),
+        &<MatZnx<<NTT120Ref as Backend>::OwnedBuf> as MatZnxToBackendRef<NTT120Ref>>::to_backend_ref(&mat_be),
+        &mut scratch.arena(),
+    );
+
+    let mut res_full: VecZnxDft<Vec<u8>, NTT120Ref> = module.vec_znx_dft_alloc(cols_out, mat_size);
+    module.vmp_apply_dft_to_dft(
+        &mut res_full.to_backend_mut(),
+        &a_dft.to_backend_ref(),
+        &pmat.to_backend_ref(),
+        0,
+        &mut scratch.arena(),
+    );
+    let full_u64: Vec<u64> = bytemuck::cast_slice(res_full.raw()).to_vec();
+
+    // odd truncated sizes hit the trailing-column path on a paired pmat column
+    for res_size in [1usize, 3] {
+        let mut res_trunc: VecZnxDft<Vec<u8>, NTT120Ref> = module.vec_znx_dft_alloc(cols_out, res_size);
+        module.vmp_apply_dft_to_dft(
+            &mut res_trunc.to_backend_mut(),
+            &a_dft.to_backend_ref(),
+            &pmat.to_backend_ref(),
+            0,
+            &mut scratch.arena(),
+        );
+        let trunc_u64: &[u64] = bytemuck::cast_slice(res_trunc.raw());
+        assert_eq!(
+            trunc_u64,
+            &full_u64[..trunc_u64.len()],
+            "truncated vmp output mismatch for res_size={res_size}"
+        );
     }
 }
