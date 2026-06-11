@@ -20,8 +20,8 @@
 use std::collections::BTreeSet;
 
 use poulpy_core::layouts::{
-    DiagonalArithmetic, Diagonals, Evaluate, GLWELinearTransform, GLWELinearTransformDiagonal, GLWELinearTransformGiantStep,
-    LinearTransformationStrategy, linear_transform_index, rotate_slots_into,
+    DiagonalArithmetic, Diagonals, Evaluate, LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep,
+    LinearTransformationLayout, LinearTransformationStrategy, rotate_slots_into,
 };
 
 /// A complex slot-matrix linear map for CKKS.
@@ -67,7 +67,7 @@ impl<T> ComplexDiagonals<T> {
     }
 }
 
-impl<'a, T: DiagonalArithmetic> Evaluate<(&'a [T], &'a [T]), (Vec<T>, Vec<T>)> for ComplexDiagonals<T> {
+impl<T: DiagonalArithmetic> Evaluate<(&[T], &[T]), (Vec<T>, Vec<T>)> for ComplexDiagonals<T> {
     /// Evaluates the complex `M·(u_re + i·u_im)` in the clear, returning
     /// `(re_out, im_out)`, by decomposing into four real matrix-vector products
     /// on the underlying [`Diagonals`]:
@@ -80,7 +80,7 @@ impl<'a, T: DiagonalArithmetic> Evaluate<(&'a [T], &'a [T]), (Vec<T>, Vec<T>)> f
     /// Each of the four terms is one `Diagonals::evaluate(.., strategy)` call,
     /// keeping the complex math at the scheme layer and the raw 1D matrix-vector
     /// product in the generic core.
-    fn evaluate(&self, (re_in, im_in): (&'a [T], &'a [T]), strategy: LinearTransformationStrategy) -> (Vec<T>, Vec<T>) {
+    fn evaluate(&self, (re_in, im_in): (&[T], &[T]), strategy: LinearTransformationStrategy) -> (Vec<T>, Vec<T>) {
         let slots = self.slots();
         assert_eq!(re_in.len(), slots, "re input length must equal slots");
         assert_eq!(im_in.len(), slots, "im input length must equal slots");
@@ -100,7 +100,7 @@ impl<'a, T: DiagonalArithmetic> Evaluate<(&'a [T], &'a [T]), (Vec<T>, Vec<T>)> f
 }
 
 impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
-    /// Builds the unprepared [`GLWELinearTransform`] for this complex map.
+    /// Builds the unprepared [`LinearTransformation`] for this complex map.
     ///
     /// Performs the BSGS pre-rotation `ũ_{j,k} = rot(diag_{n1·j+k}, −n1·j)` and
     /// the giant-step bucketing; `encode` only turns a pre-rotated `(re, im)`
@@ -110,9 +110,9 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
         &self,
         strategy: LinearTransformationStrategy,
         mut encode: impl FnMut(&[T], &[T]) -> P,
-    ) -> GLWELinearTransform<P> {
+    ) -> LinearTransformation<P> {
         let slots = self.slots();
-        let index = linear_transform_index(self.indexes(), slots, strategy);
+        let index = LinearTransformationLayout { indexes: self.indexes(), slots, strategy }.index();
 
         let mut pre_re = vec![T::zero(); slots];
         let mut pre_im = vec![T::zero(); slots];
@@ -128,15 +128,15 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
                 rotate_slots_into(dre, -giant_rot, &mut pre_re);
                 rotate_slots_into(dim, -giant_rot, &mut pre_im);
                 let plaintext = encode(&pre_re, &pre_im);
-                diagonals.push(GLWELinearTransformDiagonal { baby, plaintext });
+                diagonals.push(LinearTransformationDiagonal { baby, plaintext });
             }
-            giant_steps.push(GLWELinearTransformGiantStep {
+            giant_steps.push(LinearTransformationGiantStep {
                 rot: giant_rot,
                 diagonals,
             });
         }
 
-        GLWELinearTransform {
+        LinearTransformation {
             baby_steps: index.baby_steps,
             giant_steps,
         }

@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use poulpy_core::layouts::{Diagonals, Evaluate, LinearTransformationStrategy};
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchAvailable, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, ScratchArena, TransferFrom},
+    layouts::{CyclotomicOrder, HostBytesBackend, Module, ScratchArena, TransferFrom},
 };
 
 use crate::{
@@ -105,10 +105,12 @@ where
     let lt_left = encode_lt(module, host_module, &encoder, &params, &b, n1, false);
     let lt_right = encode_lt(module, host_module, &encoder, &params, &b, n1, true);
 
+    // Automorphism keys are indexed by Galois element throughout the engine.
+    let order = module.cyclotomic_order();
     let mut atks = HashMap::new();
-    for r in lt_left.required_rotations().into_iter().chain(lt_right.required_rotations()) {
-        atks.entry(r)
-            .or_insert_with(|| gen_atk(&params, module, r, &sk_raw, &mut scratch.borrow()));
+    for p in lt_left.galois_elements(order).into_iter().chain(lt_right.galois_elements(order)) {
+        atks.entry(p)
+            .or_insert_with(|| gen_atk(&params, module, p, &sk_raw, &mut scratch.borrow()));
     }
 
     let ct = ckks_encrypt(

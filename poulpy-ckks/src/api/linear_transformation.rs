@@ -3,7 +3,7 @@
 //! decomposition.
 //!
 //! The transformation itself is the scheme-agnostic GLWE-level engine in
-//! [`poulpy_core`] (`GLWELinearTransform` / `GLWELinearTransformOps`); this layer
+//! [`poulpy_core`] (`LinearTransformation` / `GLWELinearTransformations`); this layer
 //! re-exports the data type under CKKS names and adds the scale-aware entry point.
 //! All `log_delta` / `log_budget` accounting lives here — the core engine only
 //! receives base2k-level alignment integers. See
@@ -32,12 +32,12 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
 pub use poulpy_core::{
-    GLWELinearTransform as LinearTransformation, GLWELinearTransformDiagonal as Diagonal,
-    GLWELinearTransformGiantStep as GiantStep, GLWELinearTransformationSchedule as LinearTransformationIndex,
-    GLWEPreparedLinearTransformationLhs as PreparedLinearTransformationLhs,
-    GLWEPreparedLinearTransformationRhs as PreparedLinearTransformationRhs,
-    GLWEPreparedLinearTransformationRhsGiantStep as PreparedGiantStep, LinearTransformationLayout, LinearTransformationStrategy,
-    linear_transform_index, optimal_bsgs_giant_step,
+    LinearTransformation as LinearTransformation, LinearTransformationDiagonal as Diagonal,
+    LinearTransformationGiantStep as GiantStep, LinearTransformationPlan as LinearTransformationIndex,
+    LinearTransformationLhsPrepared as PreparedLinearTransformationLhs,
+    LinearTransformationRhsPrepared as PreparedLinearTransformationRhs,
+    LinearTransformationRhsGiantStepPrepared as PreparedGiantStep, LinearTransformationLayout, LinearTransformationStrategy,
+    optimal_bsgs_giant_step,
 };
 
 /// Homomorphic evaluation of a [`LinearTransformation`] on a CKKS ciphertext.
@@ -143,28 +143,6 @@ pub trait LinearTransformationOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
-
-    /// Computes `dsts[i] = M_i · src` for several prepared transforms sharing
-    /// a baby cache.
-    ///
-    /// `babies` must cover the union of every transform's baby rotations.
-    /// All transforms must share the same `cnv_offset` (i.e. the same
-    /// plaintext effective precision against `src`); the call returns an
-    /// error otherwise.
-    fn ckks_eval_many_prepared_linear_transformations_into<Dst, Src, H, K>(
-        &self,
-        dsts: &mut [Dst],
-        src: &Src,
-        prepared_transforms: &[PreparedLinearTransformationRhs<BE>],
-        babies: &PreparedLinearTransformationLhs<BE>,
-        keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 

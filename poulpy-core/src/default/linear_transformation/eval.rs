@@ -17,13 +17,13 @@ use poulpy_hal::{
         VecZnxBigNormalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf,
         VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
     },
-    layouts::{Backend, ScratchArena},
+    layouts::{Backend, GaloisElement, ScratchArena},
 };
 
 use crate::{
     GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain,
     default::{
-        keyswitching::GGLWEProductDefault,
+        keyswitching::{GGLWEProductDefault, GLWEKeyswitchInternal},
         linear_transformation::{
             baby_steps::{glwe_prepare_linear_transformation_lhs, glwe_prepare_linear_transformation_lhs_tmp_bytes},
             inner_product::glwe_accumulate_prepared_baby_steps_dft_tmp_bytes,
@@ -37,7 +37,7 @@ use crate::{
     },
 };
 
-use super::{GLWEPreparedLinearTransformationLhs, GLWEPreparedLinearTransformationRhs};
+use super::{LinearTransformationLhsPrepared, LinearTransformationRhsPrepared};
 
 /// HAL/op bounds required by the eval reference path. Repeated on each free
 /// function so backends only pull in what a method actually needs.
@@ -119,7 +119,7 @@ where
 
 pub fn glwe_prepare_linear_transformation_lhs_default<BE, M, A, H, K>(
     module: &M,
-    cache: &mut GLWEPreparedLinearTransformationLhs<BE>,
+    cache: &mut LinearTransformationLhsPrepared<BE>,
     a: &A,
     a_effective_k: usize,
     key_size: usize,
@@ -139,7 +139,7 @@ pub fn glwe_prepare_linear_transformation_lhs_default<BE, M, A, H, K>(
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
-        + VecZnxIdftApply<BE>,
+        + VecZnxIdftApply<BE> + GaloisElement,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
@@ -150,8 +150,8 @@ pub fn glwe_prepare_linear_transformation_lhs_default<BE, M, A, H, K>(
 pub fn glwe_eval_linear_transformation_into_default<BE, M, R, H, K>(
     module: &M,
     res: &mut R,
-    lhs: &GLWEPreparedLinearTransformationLhs<BE>,
-    rhs: &GLWEPreparedLinearTransformationRhs<BE>,
+    lhs: &LinearTransformationLhsPrepared<BE>,
+    rhs: &LinearTransformationRhsPrepared<BE>,
     cnv_offset: usize,
     key_size: usize,
     keys: &H,
@@ -165,7 +165,7 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, H, K>(
         + Convolution<BE>
         + poulpy_hal::api::ModuleN
         + GGLWEProductDefault<BE>
-        + crate::default::keyswitching::GLWEKeyswitchInternal<BE>
+        + GLWEKeyswitchInternal<BE>
         + VecZnxBigAddAssign<BE>
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigAlloc<BE>
@@ -184,7 +184,8 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, H, K>(
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxIdftApplyTmpBytes
-        + GLWEMulPlain<BE>,
+        + GLWEMulPlain<BE>
+        +GaloisElement,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,

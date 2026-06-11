@@ -11,16 +11,16 @@
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::layouts::{
-    GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEInfos, GLWELinearTransform, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
+    GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEInfos, LinearTransformation, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
     LWEInfos,
-    prepared::{GGLWEPreparedToBackendRef, GLWEPreparedLinearTransformationLhs, GLWEPreparedLinearTransformationRhs},
+    prepared::{GGLWEPreparedToBackendRef, LinearTransformationLhsPrepared, LinearTransformationRhsPrepared},
 };
 
-/// GLWE-level setup and evaluation of a [`GLWEPreparedLinearTransformationRhs`].
+/// GLWE-level setup and evaluation of a [`LinearTransformationRhsPrepared`].
 ///
 /// The API is split into three phases (allocate / populate / evaluate); see
-/// [`GLWEPreparedLinearTransformationRhs::alloc`] and
-/// [`GLWEPreparedLinearTransformationLhs::alloc`] for the allocation half.
+/// [`LinearTransformationRhsPrepared::alloc`] and
+/// [`LinearTransformationLhsPrepared::alloc`] for the allocation half.
 pub trait GLWELinearTransformations<BE: Backend> {
     /// Scratch bytes required by [`Self::glwe_eval_linear_transformation_into`].
     fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
@@ -45,12 +45,12 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// slot of `prepared`.
     ///
     /// `prepared` must have been sized via
-    /// [`GLWEPreparedLinearTransformationRhs::alloc`] for the same BSGS schedule as
+    /// [`LinearTransformationRhsPrepared::alloc`] for the same BSGS schedule as
     /// `lt`. Performs zero `CnvPVecR` allocations.
     fn glwe_prepare_linear_transformation_rhs<P>(
         &self,
-        prepared: &mut GLWEPreparedLinearTransformationRhs<BE>,
-        lt: &GLWELinearTransform<P>,
+        prepared: &mut LinearTransformationRhsPrepared<BE>,
+        lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         P: GLWEToBackendRef<BE> + GLWEInfos;
@@ -58,11 +58,11 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// Fills a pre-allocated baby-step cache with the rotated, prepared versions
     /// of `a`.
     ///
-    /// `cache` must have been sized via [`GLWEPreparedLinearTransformationLhs::alloc`].
+    /// `cache` must have been sized via [`LinearTransformationLhsPrepared::alloc`].
     /// Performs zero `CnvPVecL` allocations.
     fn glwe_prepare_linear_transformation_lhs<A, H, K>(
         &self,
-        cache: &mut GLWEPreparedLinearTransformationLhs<BE>,
+        cache: &mut LinearTransformationLhsPrepared<BE>,
         a: &A,
         a_effective_k: usize,
         key_size: usize,
@@ -81,8 +81,8 @@ pub trait GLWELinearTransformations<BE: Backend> {
     fn glwe_eval_linear_transformation_into<R, H, K>(
         &self,
         res: &mut R,
-        lhs: &GLWEPreparedLinearTransformationLhs<BE>,
-        rhs: &GLWEPreparedLinearTransformationRhs<BE>,
+        lhs: &LinearTransformationLhsPrepared<BE>,
+        rhs: &LinearTransformationRhsPrepared<BE>,
         cnv_offset: usize,
         key_size: usize,
         keys: &H,

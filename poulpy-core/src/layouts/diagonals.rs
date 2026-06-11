@@ -30,7 +30,7 @@
 
 use std::collections::BTreeMap;
 
-use super::{LinearTransformationStrategy, linear_transform_index};
+use super::{LinearTransformationLayout, LinearTransformationStrategy};
 
 /// Element-wise arithmetic on the real scalar carried by [`Diagonals`].
 ///
@@ -189,7 +189,7 @@ impl<'a, T: DiagonalArithmetic> Evaluate<&'a [T], Vec<T>> for Diagonals<T> {
     fn evaluate(&self, input: &'a [T], strategy: LinearTransformationStrategy) -> Vec<T> {
         let slots = self.slots;
         assert_eq!(input.len(), slots, "input length must equal slots");
-        let index = linear_transform_index(self.indexes(), slots, strategy);
+        let index = LinearTransformationLayout { indexes: self.indexes(), slots, strategy }.index();
 
         let mut out = vec![T::zero(); slots];
         let mut buff = vec![T::zero(); slots];

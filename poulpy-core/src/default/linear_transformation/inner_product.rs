@@ -14,7 +14,7 @@ use poulpy_hal::{
 };
 
 use super::{
-    GLWEPreparedLinearTransformationLhs, GLWEPreparedLinearTransformationRhs, GLWEPreparedLinearTransformationRhsGiantStep,
+    LinearTransformationLhsPrepared, LinearTransformationRhsPrepared, LinearTransformationRhsGiantStepPrepared,
 };
 
 /// PROD block for one giant step, kept in DFT domain.
@@ -27,9 +27,9 @@ pub(super) fn glwe_accumulate_prepared_baby_steps_dft<BE, M>(
     module: &M,
     cnv_offset_hi: usize,
     prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
-    lhs: &GLWEPreparedLinearTransformationLhs<BE>,
-    rhs: &GLWEPreparedLinearTransformationRhs<BE>,
-    gs: &GLWEPreparedLinearTransformationRhsGiantStep<BE>,
+    lhs: &LinearTransformationLhsPrepared<BE>,
+    rhs: &LinearTransformationRhsPrepared<BE>,
+    gs: &LinearTransformationRhsGiantStepPrepared<BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,

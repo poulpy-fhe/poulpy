@@ -3,9 +3,9 @@
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::layouts::{
-    GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEInfos, GLWELinearTransform, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
+    GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEInfos, LinearTransformation, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
     LWEInfos,
-    prepared::{GGLWEPreparedToBackendRef, GLWEPreparedLinearTransformationLhs, GLWEPreparedLinearTransformationRhs},
+    prepared::{GGLWEPreparedToBackendRef, LinearTransformationLhsPrepared, LinearTransformationRhsPrepared},
 };
 
 /// Backend hook for the linear-transformation family.
@@ -33,15 +33,15 @@ pub unsafe trait LinearTransformationImpl<BE: Backend>: Backend {
 
     fn glwe_prepare_linear_transformation_rhs<P>(
         module: &Module<BE>,
-        prepared: &mut GLWEPreparedLinearTransformationRhs<BE>,
-        lt: &GLWELinearTransform<P>,
+        prepared: &mut LinearTransformationRhsPrepared<BE>,
+        lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         P: GLWEToBackendRef<BE> + GLWEInfos;
 
     fn glwe_prepare_linear_transformation_lhs<A, H, K>(
         module: &Module<BE>,
-        cache: &mut GLWEPreparedLinearTransformationLhs<BE>,
+        cache: &mut LinearTransformationLhsPrepared<BE>,
         a: &A,
         a_effective_k: usize,
         key_size: usize,
@@ -55,8 +55,8 @@ pub unsafe trait LinearTransformationImpl<BE: Backend>: Backend {
     fn glwe_eval_linear_transformation_into<R, H, K>(
         module: &Module<BE>,
         res: &mut R,
-        lhs: &GLWEPreparedLinearTransformationLhs<BE>,
-        rhs: &GLWEPreparedLinearTransformationRhs<BE>,
+        lhs: &LinearTransformationLhsPrepared<BE>,
+        rhs: &LinearTransformationRhsPrepared<BE>,
         cnv_offset: usize,
         key_size: usize,
         keys: &H,
@@ -94,15 +94,15 @@ pub trait LinearTransformationDefault<BE: Backend> {
 
     fn glwe_prepare_linear_transformation_rhs_default<P>(
         &self,
-        prepared: &mut GLWEPreparedLinearTransformationRhs<BE>,
-        lt: &GLWELinearTransform<P>,
+        prepared: &mut LinearTransformationRhsPrepared<BE>,
+        lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         P: GLWEToBackendRef<BE> + GLWEInfos;
 
     fn glwe_prepare_linear_transformation_lhs_default<A, H, K>(
         &self,
-        cache: &mut GLWEPreparedLinearTransformationLhs<BE>,
+        cache: &mut LinearTransformationLhsPrepared<BE>,
         a: &A,
         a_effective_k: usize,
         key_size: usize,
@@ -116,8 +116,8 @@ pub trait LinearTransformationDefault<BE: Backend> {
     fn glwe_eval_linear_transformation_into_default<R, H, K>(
         &self,
         res: &mut R,
-        lhs: &GLWEPreparedLinearTransformationLhs<BE>,
-        rhs: &GLWEPreparedLinearTransformationRhs<BE>,
+        lhs: &LinearTransformationLhsPrepared<BE>,
+        rhs: &LinearTransformationRhsPrepared<BE>,
         cnv_offset: usize,
         key_size: usize,
         keys: &H,
@@ -161,8 +161,8 @@ where
 
     fn glwe_prepare_linear_transformation_rhs<P>(
         module: &Module<BE>,
-        prepared: &mut GLWEPreparedLinearTransformationRhs<BE>,
-        lt: &GLWELinearTransform<P>,
+        prepared: &mut LinearTransformationRhsPrepared<BE>,
+        lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         P: GLWEToBackendRef<BE> + GLWEInfos,
@@ -172,7 +172,7 @@ where
 
     fn glwe_prepare_linear_transformation_lhs<A, H, K>(
         module: &Module<BE>,
-        cache: &mut GLWEPreparedLinearTransformationLhs<BE>,
+        cache: &mut LinearTransformationLhsPrepared<BE>,
         a: &A,
         a_effective_k: usize,
         key_size: usize,
@@ -189,8 +189,8 @@ where
     fn glwe_eval_linear_transformation_into<R, H, K>(
         module: &Module<BE>,
         res: &mut R,
-        lhs: &GLWEPreparedLinearTransformationLhs<BE>,
-        rhs: &GLWEPreparedLinearTransformationRhs<BE>,
+        lhs: &LinearTransformationLhsPrepared<BE>,
+        rhs: &LinearTransformationRhsPrepared<BE>,
         cnv_offset: usize,
         key_size: usize,
         keys: &H,
@@ -247,8 +247,8 @@ macro_rules! impl_linear_transformation_defaults_full {
 
             fn glwe_prepare_linear_transformation_rhs_default<P>(
                 &self,
-                prepared: &mut $crate::layouts::prepared::GLWEPreparedLinearTransformationRhs<$be>,
-                lt: &$crate::layouts::GLWELinearTransform<P>,
+                prepared: &mut $crate::layouts::prepared::LinearTransformationRhsPrepared<$be>,
+                lt: &$crate::layouts::LinearTransformation<P>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
                 P: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
@@ -260,7 +260,7 @@ macro_rules! impl_linear_transformation_defaults_full {
 
             fn glwe_prepare_linear_transformation_lhs_default<A, H, K>(
                 &self,
-                cache: &mut $crate::layouts::prepared::GLWEPreparedLinearTransformationLhs<$be>,
+                cache: &mut $crate::layouts::prepared::LinearTransformationLhsPrepared<$be>,
                 a: &A,
                 a_effective_k: usize,
                 key_size: usize,
@@ -287,8 +287,8 @@ macro_rules! impl_linear_transformation_defaults_full {
             fn glwe_eval_linear_transformation_into_default<R, H, K>(
                 &self,
                 res: &mut R,
-                lhs: &$crate::layouts::prepared::GLWEPreparedLinearTransformationLhs<$be>,
-                rhs: &$crate::layouts::prepared::GLWEPreparedLinearTransformationRhs<$be>,
+                lhs: &$crate::layouts::prepared::LinearTransformationLhsPrepared<$be>,
+                rhs: &$crate::layouts::prepared::LinearTransformationRhsPrepared<$be>,
                 cnv_offset: usize,
                 key_size: usize,
                 keys: &H,

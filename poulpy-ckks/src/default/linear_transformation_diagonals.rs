@@ -35,7 +35,7 @@ use crate::{
 /// for backends other than `HostBytesBackend`.
 ///
 /// `strategy` selects the BSGS schedule (`Auto` / `Bsgs { giant_step }` /
-/// `Direct`). The resulting transform reports `lt.required_rotations()` so the
+/// `Direct`). The resulting transform reports `lt.galois_elements(cyclotomic_order)` so the
 /// caller knows which Galois keys to generate.
 ///
 /// `transpose` selects the orientation of the matrix-vector product applied to

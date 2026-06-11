@@ -621,7 +621,7 @@ where
 pub fn gen_atk<BE>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    index: i64,
+    galois_element: i64,
     sk_raw: &BackendGLWESecret<BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>
@@ -632,7 +632,6 @@ where
     let atk_infos = params.atk_layout();
     let mut xa = Source::new([1u8; 32]);
     let mut xe = Source::new([2u8; 32]);
-    let galois_element = if index == -1 { -1 } else { module.galois_element(index) };
     let mut atk = module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
     module.glwe_automorphism_key_encrypt_sk(&mut atk, galois_element, sk_raw, &atk_infos, &mut xe, &mut xa, scratch);
     let mut atk_prepared = module.glwe_automorphism_key_prepared_alloc_from_infos(&atk_infos);

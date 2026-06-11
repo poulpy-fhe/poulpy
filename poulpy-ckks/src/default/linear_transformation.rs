@@ -3,18 +3,18 @@
 //! Computes the scale-derived convolution parameters (`a_effective_k`,
 //! `cnv_offset`) and the result `log_delta` / `log_budget`, delegates the actual
 //! evaluation to the scheme-agnostic core engine
-//! [`GLWELinearTransformOps`](poulpy_core::GLWELinearTransformOps), and stamps the
+//! [`GLWELinearTransformations`](poulpy_core::GLWELinearTransformations), and stamps the
 //! CKKS metadata onto the result. See `docs/lt_bsgs.md`.
 
 use anyhow::Result;
 use poulpy_core::{
-    GLWECopy, GLWELinearTransformations, GLWEPreparedLinearTransformationLhs, GLWEPreparedLinearTransformationRhs,
+    GLWECopy, GLWELinearTransformations, LinearTransformationLhsPrepared, LinearTransformationRhsPrepared,
     layouts::{
         GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
         LWEInfos, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
     },
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena, galois_element};
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, SetCKKSInfos,
@@ -54,7 +54,7 @@ where
 
 impl<BE: Backend> LinearTransformationOps<BE> for Module<BE>
 where
-    Module<BE>: GLWELinearTransformations<BE> + GLWECopy<BE> + CKKSModuleAlloc<BE>,
+    Module<BE>: GLWELinearTransformations<BE> + GLWECopy<BE> + CKKSModuleAlloc<BE> + CyclotomicOrder,
 {
     // ---------- tmp_bytes ----------
 
@@ -120,9 +120,10 @@ where
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
         let mut has_nonzero = false;
+        let cyclotomic_order = self.cyclotomic_order();
         for rotation in babies.baby_steps().filter(|&rotation| rotation != 0) {
             has_nonzero = true;
-            if keys.get_automorphism_key(rotation).is_none() {
+            if keys.get_automorphism_key(galois_element(rotation, cyclotomic_order)).is_none() {
                 return Err(CKKSCompositionError::MissingAutomorphismKey {
                     op: "linear_transformation",
                     rotation,
@@ -156,7 +157,7 @@ where
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
-        check_required_rotations(prepared, babies, keys)?;
+        check_required_keys(prepared, babies, keys, self.cyclotomic_order())?;
 
         let (res_log_budget, res_log_delta, cnv_offset) = prepared_lt_mul_params(dst, src, prepared)?;
         let key_size = key_size_for_prepared(prepared, src, keys);
@@ -187,80 +188,6 @@ where
         Ok(())
     }
 
-    fn ckks_eval_many_prepared_linear_transformations_into<Dst, Src, H, K>(
-        &self,
-        dsts: &mut [Dst],
-        src: &Src,
-        prepared_transforms: &[PreparedLinearTransformationRhs<BE>],
-        babies: &PreparedLinearTransformationLhs<BE>,
-        keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-    {
-        anyhow::ensure!(
-            dsts.len() == prepared_transforms.len(),
-            "linear transformation output count ({}) does not match transform count ({})",
-            dsts.len(),
-            prepared_transforms.len()
-        );
-        if prepared_transforms.is_empty() {
-            return Ok(());
-        }
-
-        // All required keys present, baby cache covers every needed rotation.
-        let mut required_rotations: Vec<i64> = prepared_transforms.iter().flat_map(|p| p.required_rotations()).collect();
-        required_rotations.sort_unstable();
-        required_rotations.dedup();
-        for rotation in required_rotations {
-            if keys.get_automorphism_key(rotation).is_none() {
-                return Err(CKKSCompositionError::MissingAutomorphismKey {
-                    op: "linear_transformation",
-                    rotation,
-                }
-                .into());
-            }
-        }
-        for prepared in prepared_transforms {
-            for rotation in prepared.baby_steps().iter().copied() {
-                anyhow::ensure!(
-                    babies.contains_baby_step(rotation),
-                    "missing prepared baby-step rotation {rotation}"
-                );
-            }
-        }
-
-        // All transforms share one cnv_offset (same pt scale) by construction.
-        let mut shared_cnv_offset: Option<usize> = None;
-        let mut output_meta = Vec::with_capacity(prepared_transforms.len());
-        for (dst, prepared) in dsts.iter().zip(prepared_transforms) {
-            let (res_log_budget, res_log_delta, cnv_offset) = prepared_lt_mul_params(dst, src, prepared)?;
-            if let Some(shared) = shared_cnv_offset {
-                anyhow::ensure!(
-                    shared == cnv_offset,
-                    "linear transformation convolution offsets are incompatible across outputs"
-                );
-            } else {
-                shared_cnv_offset = Some(cnv_offset);
-            }
-            output_meta.push((res_log_budget, res_log_delta));
-        }
-
-        let key_size = key_size_for_prepared(&prepared_transforms[0], src, keys);
-        for (dst, prepared) in dsts.iter_mut().zip(prepared_transforms) {
-            self.glwe_eval_linear_transformation_into(dst, babies, prepared, shared_cnv_offset.unwrap(), key_size, keys, scratch);
-        }
-        for (dst, (res_log_budget, res_log_delta)) in dsts.iter_mut().zip(output_meta) {
-            dst.set_log_budget(res_log_budget);
-            dst.set_log_delta(res_log_delta);
-        }
-        Ok(())
-    }
-
     // ---------- one-shot ----------
 
     fn ckks_eval_linear_transformation_into<Dst, Src, P, H, K>(
@@ -286,10 +213,10 @@ where
             .next()
             .ok_or_else(|| anyhow::anyhow!("linear transformation has no diagonals"))?;
 
-        let mut prepared = GLWEPreparedLinearTransformationRhs::alloc_from_index(self, &lt.index(), first_plaintext);
+        let mut prepared = LinearTransformationRhsPrepared::alloc_from_index(self, &lt.index(), first_plaintext);
         self.ckks_prepare_linear_transformation_rhs(&mut prepared, lt, scratch);
 
-        let mut babies = GLWEPreparedLinearTransformationLhs::alloc(self, prepared.baby_steps(), src);
+        let mut babies = LinearTransformationLhsPrepared::alloc(self, prepared.baby_steps(), src);
         self.ckks_prepare_linear_transformation_lhs(&mut babies, src, keys, scratch)?;
 
         self.ckks_eval_prepared_linear_transformation_into(dst, src, &prepared, &babies, keys, scratch)
@@ -317,12 +244,14 @@ where
     }
 }
 
-/// Verifies that all keys required by `prepared` are present and that `babies`
-/// covers every baby rotation `prepared` needs.
-fn check_required_rotations<BE: Backend, H, K>(
+/// Verifies that all automorphism keys required by `prepared` are present
+/// (keyed by Galois element) and that `babies` covers every baby rotation
+/// `prepared` needs.
+fn check_required_keys<BE: Backend, H, K>(
     prepared: &PreparedLinearTransformationRhs<BE>,
     babies: &PreparedLinearTransformationLhs<BE>,
     keys: &H,
+    cyclotomic_order: i64,
 ) -> Result<()>
 where
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -335,7 +264,8 @@ where
         );
     }
     for rotation in prepared.giant_steps().iter().map(|gs| gs.rot()).filter(|&r| r != 0) {
-        if keys.get_automorphism_key(rotation).is_none() {
+        let gal_el = galois_element(rotation, cyclotomic_order);
+        if keys.get_automorphism_key(gal_el).is_none() {
             return Err(CKKSCompositionError::MissingAutomorphismKey {
                 op: "linear_transformation",
                 rotation,

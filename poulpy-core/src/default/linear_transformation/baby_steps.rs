@@ -10,7 +10,7 @@
 //! Implements docs/lt_bsgs.md §6.2. The non-trivial baby rotations share one
 //! DFT of the input mask columns, then each key performs VMP -> IDFT -> add body
 //! -> normalize -> automorphism. The resulting SMALL ciphertexts are prepared
-//! as `CnvPVecL` and stored in a [`GLWEPreparedLinearTransformationLhs`] (whose
+//! as `CnvPVecL` and stored in a [`LinearTransformationLhsPrepared`] (whose
 //! definition lives in [`crate::layouts`]); this module owns the HAL-dependent
 //! allocator and population routines.
 
@@ -23,7 +23,8 @@ use poulpy_hal::{
         VecZnxIdftApplyTmpBytes,
     },
     layouts::{
-        Backend, CnvPVecLToBackendMut, ScratchArena, VecZnxBigToBackendRef, VecZnxDftBackendRef, VecZnxDftToBackendRef, ZnxInfos,
+        Backend, CnvPVecLToBackendMut, GaloisElement, ScratchArena, VecZnxBigToBackendRef, VecZnxDftBackendRef,
+        VecZnxDftToBackendRef, ZnxInfos,
     },
 };
 
@@ -36,16 +37,16 @@ use crate::{
     },
 };
 
-use super::{GLWEPreparedLinearTransformationLhs, LinearTransformationLayout};
+use super::{LinearTransformationLhsPrepared, LinearTransformationLayout};
 
-impl<BE: Backend> GLWEPreparedLinearTransformationLhs<BE> {
+impl<BE: Backend> LinearTransformationLhsPrepared<BE> {
     /// Pre-allocates a baby-step cache for the given `baby_steps` rotations
     /// and input ciphertext shape `a`.
     ///
     /// Each prepared baby rotation is a `CnvPVecL` with `a.rank() + 1` columns
     /// and `a.size()` limbs. The `baby_steps` slice typically comes from
     /// [`LinearTransformationLayout::baby_steps`] (before encoding) or the
-    /// `baby_steps` field of a `GLWEPreparedLinearTransformationRhs` (after encoding).
+    /// `baby_steps` field of a `LinearTransformationRhsPrepared` (after encoding).
     /// Duplicate rotations in `baby_steps` are de-duplicated.
     pub fn alloc<M, A>(module: &M, baby_steps: &[i64], a: &A) -> Self
     where
@@ -117,6 +118,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R, A, H, K>(
 ) where
     BE: Backend,
     M: ModuleN
+        + GaloisElement
         + GGLWEProductDefault<BE>
         + VecZnxAutomorphismAssignBackend<BE>
         + VecZnxBigAddSmallAssign<BE>
@@ -132,7 +134,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R, A, H, K>(
 {
     let cols = a.rank().as_usize() + 1;
     let key: &K = keys
-        .get_automorphism_key(rot)
+        .get_automorphism_key(module.galois_element(rot))
         .unwrap_or_else(|| panic!("missing automorphism key for baby-step rotation {rot}"));
     let key_ref = key.to_backend_ref();
     assert_eq!(key_ref.base2k(), a.base2k());
@@ -183,14 +185,14 @@ fn glwe_hoisted_baby_rotation<BE, M, R, A, H, K>(
 /// Fills a pre-allocated baby-step cache with `rot(a, k)` for every `k` already
 /// stored in `cache`.
 ///
-/// The cache must have been sized via [`GLWEPreparedLinearTransformationLhs::alloc`].
+/// The cache must have been sized via [`LinearTransformationLhsPrepared::alloc`].
 /// This is the populating counterpart of the old returning variant: it
 /// performs zero `CnvPVecL` allocations because the slots are owned by
 /// `cache`.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn glwe_prepare_linear_transformation_lhs<BE, M, A, H, K>(
     module: &M,
-    cache: &mut GLWEPreparedLinearTransformationLhs<BE>,
+    cache: &mut LinearTransformationLhsPrepared<BE>,
     a: &A,
     a_effective_k: usize,
     key_size: usize,
@@ -200,6 +202,7 @@ pub(super) fn glwe_prepare_linear_transformation_lhs<BE, M, A, H, K>(
     BE: Backend,
     M: CnvPVecAlloc<BE>
         + Convolution<BE>
+        + GaloisElement
         + GLWEAutomorphism<BE>
         + GGLWEProductDefault<BE>
         + ModuleN
@@ -273,7 +276,7 @@ pub(super) fn glwe_prepare_linear_transformation_lhs<BE, M, A, H, K>(
                 module.cnv_prepare_left(&mut prepared.to_backend_mut(), &a_ref.data, mask, scratch);
             } else {
                 let key: &K = keys
-                    .get_automorphism_key(rot)
+                    .get_automorphism_key(module.galois_element(rot))
                     .unwrap_or_else(|| panic!("missing automorphism key for baby-step rotation {rot}"));
                 let (mut baby, mut baby_scratch) = scratch.borrow().take_glwe_scratch(a);
                 module.glwe_automorphism(&mut baby, a, key, key_size, &mut baby_scratch.borrow());

@@ -10,21 +10,21 @@
 
 use std::collections::BTreeMap;
 
-use poulpy_hal::layouts::{Backend, CnvPVecL, CnvPVecR};
+use poulpy_hal::layouts::{Backend, CnvPVecL, CnvPVecR, galois_element};
 
 use crate::layouts::{Base2K, TorusPrecision};
 
 /// A prepared giant step (right side: the matrix diagonals).
-pub struct GLWEPreparedLinearTransformationRhsGiantStep<BE: Backend> {
+pub struct LinearTransformationRhsGiantStepPrepared<BE: Backend> {
     /// Slot rotation amount.
     pub(crate) rot: i64,
-    /// Indexes into [`GLWEPreparedLinearTransformationRhs::baby_steps`] used by this giant step.
+    /// Indexes into [`LinearTransformationRhsPrepared::baby_steps`] used by this giant step.
     pub(crate) baby_step_indexes: Vec<usize>,
     /// Prepared right convolution operands keyed by real baby-step rotation.
     pub(crate) diagonals: BTreeMap<i64, CnvPVecR<BE::OwnedBuf, BE>>,
 }
 
-impl<BE: Backend> GLWEPreparedLinearTransformationRhsGiantStep<BE> {
+impl<BE: Backend> LinearTransformationRhsGiantStepPrepared<BE> {
     /// Slot rotation amount applied by this giant step.
     pub fn rot(&self) -> i64 {
         self.rot
@@ -65,13 +65,13 @@ impl<BE: Backend> GLWEPreparedLinearTransformationRhsGiantStep<BE> {
 /// (the right operand of the BSGS convolution).
 ///
 /// The cache is allocated up-front by
-/// [`GLWEPreparedLinearTransformationRhs::alloc`] from a
+/// [`LinearTransformationRhsPrepared::alloc`] from a
 /// [`LinearTransformationLayout`](crate::layouts::LinearTransformationLayout)
 /// and a plaintext-shape proxy; the diagonals are then populated by
 /// `glwe_prepare_linear_transformation_rhs`. Eval pulls the plaintext limb
 /// layout ([`Self::pt_base2k`] / [`Self::pt_max_k`]) from this struct, so it no
 /// longer needs the raw
-/// [`GLWELinearTransform`](crate::layouts::GLWELinearTransform) alongside.
+/// [`LinearTransformation`](crate::layouts::LinearTransformation) alongside.
 ///
 /// The struct is scheme-agnostic. Deriving the convolution offset and the output
 /// precision needs exactly one scheme-provided integer beyond the limb layout:
@@ -80,11 +80,11 @@ impl<BE: Backend> GLWEPreparedLinearTransformationRhsGiantStep<BE> {
 /// [`Self::set_pt_log_scale`]) and consumes it when computing `cnv_offset`.
 ///
 /// All fields are private; read them through the accessors below.
-pub struct GLWEPreparedLinearTransformationRhs<BE: Backend> {
+pub struct LinearTransformationRhsPrepared<BE: Backend> {
     /// Baby-step rotations actually used by at least one diagonal.
     pub(crate) baby_steps: Vec<i64>,
     /// Non-empty giant steps.
-    pub(crate) giant_steps: Vec<GLWEPreparedLinearTransformationRhsGiantStep<BE>>,
+    pub(crate) giant_steps: Vec<LinearTransformationRhsGiantStepPrepared<BE>>,
     /// Limb base of the encoded diagonals; same for every diagonal.
     pub(crate) pt_base2k: Base2K,
     /// Storage precision of the encoded diagonals; same for every diagonal.
@@ -96,14 +96,14 @@ pub struct GLWEPreparedLinearTransformationRhs<BE: Backend> {
     pub(crate) pt_log_scale: usize,
 }
 
-impl<BE: Backend> GLWEPreparedLinearTransformationRhs<BE> {
+impl<BE: Backend> LinearTransformationRhsPrepared<BE> {
     /// Baby-step rotations used by at least one diagonal (index `0` first).
     pub fn baby_steps(&self) -> &[i64] {
         &self.baby_steps
     }
 
     /// The non-empty giant steps of this prepared transform.
-    pub fn giant_steps(&self) -> &[GLWEPreparedLinearTransformationRhsGiantStep<BE>] {
+    pub fn giant_steps(&self) -> &[LinearTransformationRhsGiantStepPrepared<BE>] {
         &self.giant_steps
     }
 
@@ -136,25 +136,29 @@ impl<BE: Backend> GLWEPreparedLinearTransformationRhs<BE> {
             .unwrap_or_else(|| panic!("missing prepared baby-step index {baby_step_idx}"))
     }
 
-    /// The non-zero baby- and giant-step rotations whose automorphism keys are required.
-    pub fn required_rotations(&self) -> Vec<i64> {
+    /// The Galois elements whose automorphism keys are required to evaluate this
+    /// prepared transform: one per non-zero baby- and giant-step rotation.
+    pub fn galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
         let mut rots: Vec<i64> = self.baby_steps.iter().copied().filter(|&r| r != 0).collect();
         rots.extend(self.giant_steps.iter().map(|gs| gs.rot).filter(|&r| r != 0));
         rots.sort_unstable();
         rots.dedup();
-        rots
+        let mut gal_els: Vec<i64> = rots.iter().map(|&rot| galois_element(rot, cyclotomic_order)).collect();
+        gal_els.sort_unstable();
+        gal_els.dedup();
+        gal_els
     }
 }
 
 /// Prepared left operands for the baby rotations of one input ciphertext.
 ///
 /// The values are populated by `glwe_prepare_linear_transformation_lhs`; the
-/// cache is sized via [`GLWEPreparedLinearTransformationLhs::alloc`].
-pub struct GLWEPreparedLinearTransformationLhs<BE: Backend> {
+/// cache is sized via [`LinearTransformationLhsPrepared::alloc`].
+pub struct LinearTransformationLhsPrepared<BE: Backend> {
     pub(crate) values: BTreeMap<i64, CnvPVecL<BE::OwnedBuf, BE>>,
 }
 
-impl<BE: Backend> GLWEPreparedLinearTransformationLhs<BE> {
+impl<BE: Backend> LinearTransformationLhsPrepared<BE> {
     /// The slot rotations represented by this prepared baby cache.
     pub fn baby_steps(&self) -> impl ExactSizeIterator<Item = i64> + '_ {
         self.values.keys().copied()

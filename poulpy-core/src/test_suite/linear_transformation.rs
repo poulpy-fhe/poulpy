@@ -15,7 +15,7 @@ use poulpy_hal::{
 
 use crate::{
     EncryptionLayout, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECopy, GLWEEncryptSk, GLWELinearTransformations,
-    GLWEPreparedLinearTransformationLhs,
+    LinearTransformationLhsPrepared,
     layouts::{
         GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory,
         GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
@@ -125,10 +125,11 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         let mut prepared: GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE> =
             module.glwe_automorphism_key_prepared_alloc_from_infos(&atk_infos);
         module.glwe_automorphism_key_prepare(&mut prepared, &atk, &mut scratch.borrow());
-        atks.insert(rot, prepared);
+        // Automorphism keys are indexed by Galois element throughout the engine.
+        atks.insert(module.galois_element(rot), prepared);
     }
 
-    let mut prepared_babies = GLWEPreparedLinearTransformationLhs::alloc(module, &baby_steps, &ct);
+    let mut prepared_babies = LinearTransformationLhsPrepared::alloc(module, &baby_steps, &ct);
     module.glwe_prepare_linear_transformation_lhs(
         &mut prepared_babies,
         &ct,
@@ -154,7 +155,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         if rot == 0 {
             module.glwe_copy(&mut expected, &ct);
         } else {
-            let key = atks.get(&rot).unwrap();
+            let key = atks.get(&module.galois_element(rot)).unwrap();
             module.glwe_automorphism(&mut expected, &ct, key, atk_infos.size(), &mut scratch.borrow());
         }
 

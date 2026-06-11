@@ -3,7 +3,7 @@
 //! Implements docs/lt_bsgs.md §5: diagonals are encoded by the scheme-aware
 //! caller (CKKS), then turned into right convolution operands (`CnvPVecR`).
 //! The cache itself is allocated up-front via
-//! [`GLWEPreparedLinearTransformationRhs::alloc`] from a [`LinearTransformationLayout`]
+//! [`LinearTransformationRhsPrepared::alloc`] from a [`LinearTransformationLayout`]
 //! and a plaintext-shape proxy; this module's `_into` function only fills the
 //! pre-allocated slots, performing zero `CnvPVecR` allocations.
 
@@ -11,7 +11,7 @@
 //!
 //! Diagonals are encoded by the scheme-aware caller (CKKS), then turned into
 //! right convolution operands (`CnvPVecR`). The cache itself is allocated
-//! up-front via [`GLWEPreparedLinearTransformationRhs::alloc`]; the `*_default`
+//! up-front via [`LinearTransformationRhsPrepared::alloc`]; the `*_default`
 //! functions below only fill the pre-allocated slots, performing zero
 //! `CnvPVecR` allocations. Backends forward to them from their
 //! [`crate::oep::LinearTransformationDefault`] impl.
@@ -29,17 +29,17 @@ use crate::{
 };
 
 use super::{
-    GLWELinearTransform, GLWELinearTransformationSchedule, GLWEPreparedLinearTransformationRhs,
-    GLWEPreparedLinearTransformationRhsGiantStep, LinearTransformationLayout,
+    LinearTransformation, LinearTransformationPlan, LinearTransformationRhsPrepared,
+    LinearTransformationRhsGiantStepPrepared, LinearTransformationLayout,
 };
 
-impl<BE: Backend> GLWEPreparedLinearTransformationRhs<BE> {
+impl<BE: Backend> LinearTransformationRhsPrepared<BE> {
     /// Pre-allocates a prepared linear-transformation cache sized for the
     /// given BSGS `layout` and plaintext shape `pt_infos`.
     ///
     /// Convenience for the layout-driven flow: builds the BSGS index via
     /// `layout.index()` and forwards to
-    /// [`Self::alloc_from_index`](GLWEPreparedLinearTransformationRhs::alloc_from_index).
+    /// [`Self::alloc_from_index`](LinearTransformationRhsPrepared::alloc_from_index).
     pub fn alloc<M, P>(module: &M, layout: &LinearTransformationLayout, pt_infos: &P) -> Self
     where
         M: CnvPVecAlloc<BE>,
@@ -51,9 +51,9 @@ impl<BE: Backend> GLWEPreparedLinearTransformationRhs<BE> {
     /// Pre-allocates a prepared cache sized for an explicit BSGS `index`.
     ///
     /// Stores `pt_base2k` / `pt_max_k` so the evaluator never needs the raw
-    /// [`GLWELinearTransform`] again. Diagonal contents are populated by
+    /// [`LinearTransformation`] again. Diagonal contents are populated by
     /// `glwe_prepare_linear_transformation_rhs`.
-    pub fn alloc_from_index<M, P>(module: &M, index: &GLWELinearTransformationSchedule, pt_infos: &P) -> Self
+    pub fn alloc_from_index<M, P>(module: &M, index: &LinearTransformationPlan, pt_infos: &P) -> Self
     where
         M: CnvPVecAlloc<BE>,
         P: LWEInfos,
@@ -79,7 +79,7 @@ impl<BE: Backend> GLWEPreparedLinearTransformationRhs<BE> {
                 diagonals.insert(baby_rot, module.cnv_pvec_right_alloc(1, pt_size));
                 baby_step_indexes.push(baby_step_idx);
             }
-            giant_steps.push(GLWEPreparedLinearTransformationRhsGiantStep {
+            giant_steps.push(LinearTransformationRhsGiantStepPrepared {
                 rot,
                 baby_step_indexes,
                 diagonals,
@@ -109,13 +109,13 @@ where
 /// Reference impl: encodes every diagonal of `lt` into the matching
 /// pre-allocated `CnvPVecR` slot in `prepared`.
 ///
-/// `prepared` must have been sized via [`GLWEPreparedLinearTransformationRhs::alloc`]
+/// `prepared` must have been sized via [`LinearTransformationRhsPrepared::alloc`]
 /// for the same BSGS schedule (giant rotations and baby rotations) that `lt`
 /// follows.
 pub fn glwe_prepare_linear_transformation_rhs_default<BE, M, P>(
     module: &M,
-    prepared: &mut GLWEPreparedLinearTransformationRhs<BE>,
-    lt: &GLWELinearTransform<P>,
+    prepared: &mut LinearTransformationRhsPrepared<BE>,
+    lt: &LinearTransformation<P>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,

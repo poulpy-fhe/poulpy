@@ -23,11 +23,11 @@ mod tests;
 // algorithms. Re-exported here so `poulpy_core::*` keeps exposing them at the
 // crate root.
 pub use crate::layouts::prepared::{
-    GLWEPreparedLinearTransformationLhs, GLWEPreparedLinearTransformationRhs, GLWEPreparedLinearTransformationRhsGiantStep,
+    LinearTransformationLhsPrepared, LinearTransformationRhsPrepared, LinearTransformationRhsGiantStepPrepared,
 };
 pub use crate::layouts::{
-    GLWELinearTransform, GLWELinearTransformDiagonal, GLWELinearTransformGiantStep, GLWELinearTransformationSchedule,
-    LinearTransformationLayout, LinearTransformationStrategy, linear_transform_index, optimal_bsgs_giant_step,
+    LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep, LinearTransformationPlan,
+    LinearTransformationLayout, LinearTransformationStrategy, optimal_bsgs_giant_step,
 };
 
 // Reference implementations forwarded to from `crate::oep::LinearTransformationDefault`.

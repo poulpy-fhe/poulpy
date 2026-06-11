@@ -15,7 +15,8 @@ use poulpy_hal::{
         VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
     },
     layouts::{
-        Backend, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef,
+        Backend, GaloisElement, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut,
+        VecZnxDftToBackendRef,
     },
 };
 
@@ -38,14 +39,14 @@ use crate::{
     },
 };
 
-use super::{GLWEPreparedLinearTransformationLhs, GLWEPreparedLinearTransformationRhs};
+use super::{LinearTransformationLhsPrepared, LinearTransformationRhsPrepared};
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn glwe_eval_linear_transformation_with_babies<BE, M, R, H, K>(
     module: &M,
     res: &mut R,
-    lhs: &GLWEPreparedLinearTransformationLhs<BE>,
-    rhs: &GLWEPreparedLinearTransformationRhs<BE>,
+    lhs: &LinearTransformationLhsPrepared<BE>,
+    rhs: &LinearTransformationRhsPrepared<BE>,
     cnv_offset: usize,
     key_size: usize,
     keys: &H,
@@ -53,6 +54,7 @@ pub(super) fn glwe_eval_linear_transformation_with_babies<BE, M, R, H, K>(
 ) where
     BE: Backend,
     M: GLWEAutomorphism<BE>
+        + GaloisElement
         + GLWEAdd<BE>
         + GLWECopy<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
@@ -157,7 +159,7 @@ pub(super) fn glwe_eval_linear_transformation_with_babies<BE, M, R, H, K>(
                 }
             } else {
                 let key: &K = keys
-                    .get_automorphism_key(gs.rot)
+                    .get_automorphism_key(module.galois_element(gs.rot))
                     .unwrap_or_else(|| panic!("missing automorphism key for giant-step rotation {}", gs.rot));
                 {
                     let (mut rot_dft, mut scratch_rot) =
@@ -249,7 +251,7 @@ pub(super) fn glwe_eval_linear_transformation_with_babies<BE, M, R, H, K>(
 
         if gs.rot != 0 {
             let key: &K = keys
-                .get_automorphism_key(gs.rot)
+                .get_automorphism_key(module.galois_element(gs.rot))
                 .unwrap_or_else(|| panic!("missing automorphism key for giant-step rotation {}", gs.rot));
             module.glwe_automorphism_assign(&mut fallback_acc, key, key_size, &mut scratch_phase);
         }
