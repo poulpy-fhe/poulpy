@@ -19,8 +19,8 @@ use crate::{
             reim4::{Reim4BlkMatVec, Reim4Convolution},
         },
         znx::{
-            ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo, ZnxMulPowerOfTwo,
-            ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
+            ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
+            ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
             ZnxNormalizeFinalStepAssign, ZnxNormalizeFinalStepSub, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign,
             ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign,
             ZnxNormalizeMiddleStepCarryOnly, ZnxNormalizeMiddleStepSub, ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign,
@@ -65,6 +65,7 @@ impl_forward_znx_trait!(ZnxMulAddPowerOfTwo, znx_muladd_power_of_two(k: i64, res
 impl_forward_znx_trait!(ZnxMulPowerOfTwo, znx_mul_power_of_two(k: i64, res: &mut [i64], a: &[i64]));
 impl_forward_znx_trait!(ZnxMulPowerOfTwoAssign, znx_mul_power_of_two_assign(k: i64, res: &mut [i64]));
 impl_forward_znx_trait!(ZnxAutomorphism, znx_automorphism(p: i64, res: &mut [i64], a: &[i64]));
+impl_forward_znx_trait!(ZnxAutomorphismRotate, znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]));
 impl_forward_znx_trait!(ZnxCopy, znx_copy(res: &mut [i64], a: &[i64]));
 impl_forward_znx_trait!(ZnxNegate, znx_negate(res: &mut [i64], src: &[i64]));
 impl_forward_znx_trait!(ZnxNegateAssign, znx_negate_assign(res: &mut [i64]));
