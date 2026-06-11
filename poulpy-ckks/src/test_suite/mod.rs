@@ -223,8 +223,16 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::add::test_add_pt_vec_into_delta_log_delta
             );
             run_test!(
+                add_pt_vec_into_lsh_alignment,
+                $crate::test_suite::add::test_add_pt_vec_into_lsh_alignment
+            );
+            run_test!(
                 add_const_into_aligned,
                 $crate::test_suite::add::test_add_const_into_aligned
+            );
+            run_test!(
+                add_const_into_lsh_alignment,
+                $crate::test_suite::add::test_add_const_into_lsh_alignment
             );
             run_test!(add_const_assign, $crate::test_suite::add::test_add_const_assign);
             run_test!(add_one_assign, $crate::test_suite::add::test_add_one_assign);
@@ -300,6 +308,10 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 sub_pt_const_into_aligned,
                 $crate::test_suite::sub::test_sub_pt_const_into_aligned
+            );
+            run_test!(
+                sub_const_into_lsh_alignment,
+                $crate::test_suite::sub::test_sub_const_into_lsh_alignment
             );
             run_test!(sub_one_assign, $crate::test_suite::sub::test_sub_one_assign);
             run_test!(
