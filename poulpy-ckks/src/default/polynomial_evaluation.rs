@@ -14,7 +14,7 @@ use poulpy_hal::{
 use crate::{
     SetCKKSInfos,
     api::{BSGSPolynomialInfos, BabyStep as BabyStepInfos, CKKSAddOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps, PowerBasisHelper},
-    checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget,
+    default::mul::{mul_ct_params_raw, mul_pt_params_raw},
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
     polynomial::ComplexBSGSPolynomial,
 };
@@ -58,21 +58,15 @@ impl<BE: Backend> BSGSPrecision<BE> for CKKSBSGSPrecision<'_, BE> {
         A: GLWEInfos + BSGSMeta,
         B: GLWEInfos + BSGSMeta,
     {
-        let res_log_budget = checked_mul_ct_log_budget(
-            "mul",
-            a.bsgs_log_budget(),
-            b.bsgs_log_budget(),
+        mul_ct_params_raw(
+            res.max_k().as_usize(),
             a.bsgs_log_delta(),
+            a.bsgs_log_budget(),
+            a.bsgs_effective_k(),
             b.bsgs_log_delta(),
-        )?;
-        let res_log_delta = a.bsgs_log_delta().min(b.bsgs_log_delta());
-        let res_offset = (res_log_budget + res_log_delta).saturating_sub(res.max_k().as_usize());
-        let cnv_offset = a.bsgs_effective_k().max(b.bsgs_effective_k()) + res_offset;
-        Ok((
-            checked_log_budget_sub("mul", res_log_budget, res_offset)?,
-            res_log_delta,
-            cnv_offset,
-        ))
+            b.bsgs_log_budget(),
+            b.bsgs_effective_k(),
+        )
     }
 
     fn mul_pt_params<R, A, P>(&self, res: &R, a: &A, pt: &P) -> Result<(usize, usize, usize)>
@@ -81,21 +75,14 @@ impl<BE: Backend> BSGSPrecision<BE> for CKKSBSGSPrecision<'_, BE> {
         A: GLWEInfos + BSGSMeta,
         P: GLWEInfos + BSGSMeta,
     {
-        let res_log_budget = checked_mul_pt_log_budget(
-            "mul",
-            a.bsgs_log_budget(),
-            pt.bsgs_log_budget(),
+        mul_pt_params_raw(
+            res.max_k().as_usize(),
             a.bsgs_log_delta(),
+            a.bsgs_log_budget(),
             pt.bsgs_log_delta(),
-        )?;
-        let res_log_delta = a.bsgs_log_delta();
-        let res_offset = (res_log_budget + res_log_delta).saturating_sub(res.max_k().as_usize());
-        let cnv_offset = pt.max_k().as_usize() + res_offset;
-        Ok((
-            checked_log_budget_sub("mul", res_log_budget, res_offset)?,
-            res_log_delta,
-            cnv_offset,
-        ))
+            pt.bsgs_log_budget(),
+            pt.max_k().as_usize(),
+        )
     }
 }
 
@@ -299,6 +286,18 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
             BSGSPolynomialInfos::<BE>::baby_steps(poly_im) == n_baby,
             "ckks_eval_poly_complex_const_coeffs_from_power_basis: real/imag baby-step schedules differ"
         );
+        ensure!(
+            BSGSPolynomialInfos::<BE>::degree(poly_im) == BSGSPolynomialInfos::<BE>::degree(poly_re),
+            "ckks_eval_poly_complex_const_coeffs_from_power_basis: real/imag degrees differ"
+        );
+        ensure!(
+            BSGSPolynomialInfos::<BE>::parity(poly_im) == BSGSPolynomialInfos::<BE>::parity(poly_re),
+            "ckks_eval_poly_complex_const_coeffs_from_power_basis: real/imag parities differ"
+        );
+        ensure!(
+            BSGSPolynomialInfos::<BE>::basis(poly_im) == BSGSPolynomialInfos::<BE>::basis(poly_re),
+            "ckks_eval_poly_complex_const_coeffs_from_power_basis: real/imag bases differ"
+        );
         let poly_basis = BSGSPolynomialInfos::<BE>::basis(poly_re);
         let power_basis_basis = power_basis.basis();
         ensure!(
@@ -322,6 +321,10 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         for i in 0..n_to_process {
             let re_coeffs = BSGSPolynomialInfos::<BE>::baby_step(poly_re, i);
             let im_coeffs = BSGSPolynomialInfos::<BE>::baby_step(poly_im, i);
+            ensure!(
+                im_coeffs.n() == re_coeffs.n(),
+                "ckks_eval_poly_complex_const_coeffs_from_power_basis: real/imag baby-step {i} lengths differ"
+            );
             let degree = re_coeffs.n().as_usize() - 1;
 
             let mut value = self.ckks_ciphertext_alloc_from_infos(x);
@@ -356,6 +359,10 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         if can_fold {
             // res += a·x^fold + i·(b·x^fold), with a = last_re[0], b = last_im[0].
             let last_im = BSGSPolynomialInfos::<BE>::baby_step(poly_im, n_baby - 1);
+            ensure!(
+                last_im.n() == last_re.n(),
+                "ckks_eval_poly_complex_const_coeffs_from_power_basis: real/imag trailing baby-step lengths differ"
+            );
             let xpow = power_basis.get(fold_power)?;
             self.ckks_mul_add_pt_const_into(res, xpow, last_re, 0, scratch)?;
             let mut im_fold = self.ckks_ciphertext_alloc_from_infos(res);

@@ -312,6 +312,16 @@ where
     Ok(())
 }
 
+/// Scratch bytes consumed by the giant-step engine on top of the per-pair
+/// mul/add scratch: one compact copy of the hoisted `X^{gsp}` plus its prepared
+/// right operand (both alive across a run), and two per-pair operand compacts.
+///
+/// Kept next to [`eval_monomial_run`] so the buffer count tracks the
+/// `take_compact_scratch` calls it sizes.
+pub fn glwe_eval_giant_steps_extra_tmp_bytes(compact_glwe_bytes: usize, hoisted_right_bytes: usize) -> usize {
+    3 * compact_glwe_bytes + hoisted_right_bytes
+}
+
 /// Evaluates a run of `b = b * xpow + a` pairs that share the same `xpow`.
 ///
 /// The compacted `xpow` is prepared once into a scratch `CnvPVecR` and reused as
