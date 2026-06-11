@@ -39,7 +39,12 @@ fn builds_single_diagonal_linear_transformation_schedule() {
 
 #[test]
 fn derives_direct_index() {
-    let index = LinearTransformationLayout { indexes: vec![2, 5], slots: 8, strategy: LinearTransformationStrategy::Direct }.index();
+    let index = LinearTransformationLayout {
+        indexes: vec![2, 5],
+        slots: 8,
+        strategy: LinearTransformationStrategy::Direct,
+    }
+    .index();
     assert_eq!(index.baby_steps, vec![0]);
     assert_eq!(index.giant_steps, vec![2, 5]);
     assert_eq!(index.index, vec![vec![0], vec![0]]);
@@ -47,8 +52,18 @@ fn derives_direct_index() {
 
 #[test]
 fn auto_uses_direct_for_tiny_sparse_index() {
-    let auto = LinearTransformationLayout { indexes: vec![2, 5], slots: 8, strategy: LinearTransformationStrategy::Auto }.index();
-    let direct = LinearTransformationLayout { indexes: vec![2, 5], slots: 8, strategy: LinearTransformationStrategy::Direct }.index();
+    let auto = LinearTransformationLayout {
+        indexes: vec![2, 5],
+        slots: 8,
+        strategy: LinearTransformationStrategy::Auto,
+    }
+    .index();
+    let direct = LinearTransformationLayout {
+        indexes: vec![2, 5],
+        slots: 8,
+        strategy: LinearTransformationStrategy::Direct,
+    }
+    .index();
     assert_eq!(auto, direct);
 }
 
@@ -56,7 +71,12 @@ fn auto_uses_direct_for_tiny_sparse_index() {
 fn auto_uses_optimal_linear_transformation_schedule() {
     let diagonals = [0, 1, 2, 3, 6, 7];
     let giant_step = optimal_bsgs_giant_step(diagonals, 8);
-    let auto = LinearTransformationLayout { indexes: diagonals.to_vec(), slots: 8, strategy: LinearTransformationStrategy::Auto }.index();
+    let auto = LinearTransformationLayout {
+        indexes: diagonals.to_vec(),
+        slots: 8,
+        strategy: LinearTransformationStrategy::Auto,
+    }
+    .index();
     let explicit = linear_transformation_plan(diagonals, 8, giant_step);
     assert_eq!(auto, explicit);
 }

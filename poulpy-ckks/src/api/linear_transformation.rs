@@ -32,12 +32,10 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 use crate::{CKKSCtBounds, SetCKKSInfos};
 
 pub use poulpy_core::{
-    LinearTransformation as LinearTransformation, LinearTransformationDiagonal as Diagonal,
-    LinearTransformationGiantStep as GiantStep, LinearTransformationPlan as LinearTransformationIndex,
-    LinearTransformationLhsPrepared as PreparedLinearTransformationLhs,
-    LinearTransformationRhsPrepared as PreparedLinearTransformationRhs,
-    LinearTransformationRhsGiantStepPrepared as PreparedGiantStep, LinearTransformationLayout, LinearTransformationStrategy,
-    optimal_bsgs_giant_step,
+    LinearTransformation, LinearTransformationDiagonal as Diagonal, LinearTransformationGiantStep as GiantStep,
+    LinearTransformationLayout, LinearTransformationLhsPrepared as PreparedLinearTransformationLhs,
+    LinearTransformationPlan as LinearTransformationIndex, LinearTransformationRhsGiantStepPrepared as PreparedGiantStep,
+    LinearTransformationRhsPrepared as PreparedLinearTransformationRhs, LinearTransformationStrategy, optimal_bsgs_giant_step,
 };
 
 /// Homomorphic evaluation of a [`LinearTransformation`] on a CKKS ciphertext.
@@ -72,6 +70,13 @@ pub trait LinearTransformationOps<BE: Backend> {
 
     /// Scratch bytes required by the prepared-eval entry points.
     fn ckks_eval_linear_transformation_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    where
+        C: CKKSCtBounds,
+        K: GGLWEInfos;
+
+    /// Scratch bytes required by the streamed (unprepared-RHS) eval entry points
+    /// ([`Self::ckks_eval_linear_transformation_streamed_into`]).
+    fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
     where
         C: CKKSCtBounds,
         K: GGLWEInfos;
@@ -170,6 +175,43 @@ pub trait LinearTransformationOps<BE: Backend> {
 
     /// One-shot `dst = M · dst`, allocating and populating both caches internally.
     fn ckks_eval_linear_transformation_assign<Dst, P, H, K>(
+        &self,
+        dst: &mut Dst,
+        lt: &LinearTransformation<P>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        H: GLWEAutomorphismKeyHelper<K, BE>;
+
+    // ----- streamed (unprepared RHS) -----
+
+    /// Computes `dst = M · src` directly from the unprepared [`LinearTransformation`],
+    /// preparing each matrix diagonal on the fly instead of materializing the full
+    /// prepared RHS. Only the (small) input baby cache is allocated.
+    ///
+    /// Same result as [`Self::ckks_eval_linear_transformation_into`] with lower
+    /// peak memory and higher compute — for memory-bound backends (e.g. GPU).
+    fn ckks_eval_linear_transformation_streamed_into<Dst, Src, P, H, K>(
+        &self,
+        dst: &mut Dst,
+        src: &Src,
+        lt: &LinearTransformation<P>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        H: GLWEAutomorphismKeyHelper<K, BE>;
+
+    /// Streamed `dst = M · dst` (see [`Self::ckks_eval_linear_transformation_streamed_into`]).
+    fn ckks_eval_linear_transformation_streamed_assign<Dst, P, H, K>(
         &self,
         dst: &mut Dst,
         lt: &LinearTransformation<P>,

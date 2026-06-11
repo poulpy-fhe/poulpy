@@ -37,7 +37,7 @@ use crate::{
     },
 };
 
-use super::{LinearTransformationLhsPrepared, LinearTransformationLayout};
+use super::{LinearTransformationLayout, LinearTransformationLhsPrepared};
 
 impl<BE: Backend> LinearTransformationLhsPrepared<BE> {
     /// Pre-allocates a baby-step cache for the given `baby_steps` rotations
@@ -195,8 +195,8 @@ pub(super) fn glwe_prepare_linear_transformation_lhs<BE, M, A, H, K>(
     cache: &mut LinearTransformationLhsPrepared<BE>,
     a: &A,
     a_effective_k: usize,
-    key_size: usize,
     keys: &H,
+    key_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,

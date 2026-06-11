@@ -52,6 +52,26 @@ where
     ))
 }
 
+/// Like [`prepared_lt_mul_params`] but reads the diagonal scale/precision
+/// straight from an (unprepared) plaintext diagonal `pt`, since the streamed
+/// path never builds a [`PreparedLinearTransformationRhs`] to stash them in.
+fn streamed_lt_mul_params<R, A, P>(res: &R, a: &A, pt: &P) -> Result<(usize, usize, usize)>
+where
+    R: LWEInfos,
+    A: CKKSInfos,
+    P: CKKSInfos + LWEInfos,
+{
+    let res_log_budget = checked_mul_pt_log_budget("mul", a.log_budget(), 0, a.log_delta(), pt.log_delta())?;
+    let res_log_delta = a.log_delta();
+    let res_offset = (res_log_budget + res_log_delta).saturating_sub(res.max_k().as_usize());
+    let cnv_offset = pt.max_k().as_usize() + res_offset;
+    Ok((
+        checked_log_budget_sub("mul", res_log_budget, res_offset)?,
+        res_log_delta,
+        cnv_offset,
+    ))
+}
+
 impl<BE: Backend> LinearTransformationOps<BE> for Module<BE>
 where
     Module<BE>: GLWELinearTransformations<BE> + GLWECopy<BE> + CKKSModuleAlloc<BE> + CyclotomicOrder,
@@ -81,6 +101,15 @@ where
         // `ct` doubles as the plaintext-operand proxy: it bounds the convolution
         // sizes from above, so the result is a safe upper bound.
         self.glwe_eval_linear_transformation_tmp_bytes(ct, ct, ct, key)
+    }
+
+    fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    where
+        C: CKKSCtBounds,
+        K: GGLWEInfos,
+    {
+        // `ct` doubles as the plaintext-operand proxy (upper bound on diagonal shape).
+        self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, ct, key)
     }
 
     // ---------- populate ----------
@@ -123,7 +152,10 @@ where
         let cyclotomic_order = self.cyclotomic_order();
         for rotation in babies.baby_steps().filter(|&rotation| rotation != 0) {
             has_nonzero = true;
-            if keys.get_automorphism_key(galois_element(rotation, cyclotomic_order)).is_none() {
+            if keys
+                .get_automorphism_key(galois_element(rotation, cyclotomic_order))
+                .is_none()
+            {
                 return Err(CKKSCompositionError::MissingAutomorphismKey {
                     op: "linear_transformation",
                     rotation,
@@ -136,7 +168,7 @@ where
         } else {
             src.size()
         };
-        self.glwe_prepare_linear_transformation_lhs(babies, src, src.effective_k(), key_size, keys, scratch);
+        self.glwe_prepare_linear_transformation_lhs(babies, src, src.effective_k(), keys, key_size, scratch);
         Ok(())
     }
 
@@ -161,7 +193,7 @@ where
 
         let (res_log_budget, res_log_delta, cnv_offset) = prepared_lt_mul_params(dst, src, prepared)?;
         let key_size = key_size_for_prepared(prepared, src, keys);
-        self.glwe_eval_linear_transformation_into(dst, babies, prepared, cnv_offset, key_size, keys, scratch);
+        self.glwe_eval_linear_transformation_into(cnv_offset, dst, babies, prepared, keys, key_size, scratch);
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
         Ok(())
@@ -238,6 +270,86 @@ where
         let mut tmp = self.ckks_ciphertext_alloc_from_infos(dst);
         tmp.set_meta(dst.meta());
         self.ckks_eval_linear_transformation_into(&mut tmp, dst, lt, keys, scratch)?;
+        self.glwe_copy(dst, &tmp);
+        dst.set_meta(tmp.meta());
+        Ok(())
+    }
+
+    // ---------- streamed (unprepared RHS) ----------
+
+    fn ckks_eval_linear_transformation_streamed_into<Dst, Src, P, H, K>(
+        &self,
+        dst: &mut Dst,
+        src: &Src,
+        lt: &LinearTransformation<P>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        H: GLWEAutomorphismKeyHelper<K, BE>,
+    {
+        let first_plaintext = lt
+            .giant_steps
+            .iter()
+            .flat_map(|gs| gs.diagonals.iter())
+            .map(|d| &d.plaintext)
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("linear transformation has no diagonals"))?;
+
+        // Only the (small) input baby cache is materialized; the matrix streams.
+        let plan = lt.index();
+        let mut babies = LinearTransformationLhsPrepared::alloc(self, &plan.baby_steps, src);
+        self.ckks_prepare_linear_transformation_lhs(&mut babies, src, keys, scratch)?;
+
+        // All non-zero giant rotations must have an automorphism key (keyed by
+        // Galois element); baby keys were checked by the prepare-lhs above.
+        let cyclotomic_order = self.cyclotomic_order();
+        let has_nonzero_giant_rotation = lt
+            .giant_steps
+            .iter()
+            .any(|gs| gs.rot != 0 && !gs.diagonals.is_empty());
+        for gs in &lt.giant_steps {
+            if gs.rot != 0 && !gs.diagonals.is_empty() && keys.get_automorphism_key(galois_element(gs.rot, cyclotomic_order)).is_none() {
+                return Err(CKKSCompositionError::MissingAutomorphismKey {
+                    op: "linear_transformation",
+                    rotation: gs.rot,
+                }
+                .into());
+            }
+        }
+
+        let (res_log_budget, res_log_delta, cnv_offset) = streamed_lt_mul_params(dst, src, first_plaintext)?;
+        let key_size = if has_nonzero_giant_rotation {
+            keys.automorphism_key_infos().size()
+        } else {
+            src.size()
+        };
+        self.glwe_eval_linear_transformation_unprepared_rhs_into(cnv_offset, dst, &babies, lt, keys, key_size, scratch);
+        dst.set_log_budget(res_log_budget);
+        dst.set_log_delta(res_log_delta);
+        Ok(())
+    }
+
+    fn ckks_eval_linear_transformation_streamed_assign<Dst, P, H, K>(
+        &self,
+        dst: &mut Dst,
+        lt: &LinearTransformation<P>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        H: GLWEAutomorphismKeyHelper<K, BE>,
+    {
+        let mut tmp = self.ckks_ciphertext_alloc_from_infos(dst);
+        tmp.set_meta(dst.meta());
+        self.ckks_eval_linear_transformation_streamed_into(&mut tmp, dst, lt, keys, scratch)?;
         self.glwe_copy(dst, &tmp);
         dst.set_meta(tmp.meta());
         Ok(())

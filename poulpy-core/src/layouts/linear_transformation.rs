@@ -212,11 +212,7 @@ pub(crate) fn normalize_linear_transform_diagonal(diagonal: i64, slots: usize) -
 ///
 /// Internal helper; external callers go through
 /// [`LinearTransformationLayout::plan`].
-pub(crate) fn linear_transformation_plan<I>(
-    diagonal_indexes: I,
-    slots: usize,
-    giant_step: usize,
-) -> LinearTransformationPlan
+pub(crate) fn linear_transformation_plan<I>(diagonal_indexes: I, slots: usize, giant_step: usize) -> LinearTransformationPlan
 where
     I: IntoIterator<Item = i64>,
 {

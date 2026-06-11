@@ -29,8 +29,8 @@ use crate::{
 };
 
 use super::{
-    LinearTransformation, LinearTransformationPlan, LinearTransformationRhsPrepared,
-    LinearTransformationRhsGiantStepPrepared, LinearTransformationLayout,
+    LinearTransformation, LinearTransformationLayout, LinearTransformationPlan, LinearTransformationRhsGiantStepPrepared,
+    LinearTransformationRhsPrepared,
 };
 
 impl<BE: Backend> LinearTransformationRhsPrepared<BE> {
@@ -87,7 +87,7 @@ impl<BE: Backend> LinearTransformationRhsPrepared<BE> {
         }
 
         Self {
-            baby_steps: index.baby_steps.clone(),
+            plan: index.clone(),
             giant_steps,
             pt_base2k: pt_infos.base2k(),
             pt_max_k: pt_infos.max_k(),

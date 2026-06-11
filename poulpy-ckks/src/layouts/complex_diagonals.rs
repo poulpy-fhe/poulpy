@@ -112,7 +112,12 @@ impl<T: DiagonalArithmetic> ComplexDiagonals<T> {
         mut encode: impl FnMut(&[T], &[T]) -> P,
     ) -> LinearTransformation<P> {
         let slots = self.slots();
-        let index = LinearTransformationLayout { indexes: self.indexes(), slots, strategy }.index();
+        let index = LinearTransformationLayout {
+            indexes: self.indexes(),
+            slots,
+            strategy,
+        }
+        .index();
 
         let mut pre_re = vec![T::zero(); slots];
         let mut pre_im = vec![T::zero(); slots];

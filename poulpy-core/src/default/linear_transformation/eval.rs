@@ -12,23 +12,24 @@
 
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, Convolution, VecZnxAutomorphismAssignBackend, VecZnxBigAddAssign, VecZnxBigAddSmallAssign, VecZnxBigAlloc,
-        VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmallBackend,
-        VecZnxBigNormalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf,
-        VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
+        CnvPVecAlloc, CnvPVecBytesOf, Convolution, VecZnxAutomorphismAssignBackend, VecZnxBigAddAssign, VecZnxBigAddSmallAssign,
+        VecZnxBigAlloc, VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf,
+        VecZnxBigFromSmallBackend, VecZnxBigNormalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply,
+        VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA,
+        VecZnxIdftApplyTmpBytes,
     },
     layouts::{Backend, GaloisElement, ScratchArena},
 };
 
 use crate::{
-    GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain,
+    GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain, LinearTransformation,
     default::{
         keyswitching::{GGLWEProductDefault, GLWEKeyswitchInternal},
         linear_transformation::{
             baby_steps::{glwe_prepare_linear_transformation_lhs, glwe_prepare_linear_transformation_lhs_tmp_bytes},
             inner_product::glwe_accumulate_prepared_baby_steps_dft_tmp_bytes,
             lazy::{glwe_lazy_giant_automorphism_from_dft_tmp_bytes, glwe_lazy_giant_automorphism_tmp_bytes},
-            prepared_giants::glwe_eval_linear_transformation_with_babies,
+            prepared_giants::glwe_eval_giant_steps,
         },
     },
     layouts::{
@@ -122,8 +123,8 @@ pub fn glwe_prepare_linear_transformation_lhs_default<BE, M, A, H, K>(
     cache: &mut LinearTransformationLhsPrepared<BE>,
     a: &A,
     a_effective_k: usize,
-    key_size: usize,
     keys: &H,
+    key_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
@@ -139,22 +140,23 @@ pub fn glwe_prepare_linear_transformation_lhs_default<BE, M, A, H, K>(
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
         + VecZnxDftZero<BE>
-        + VecZnxIdftApply<BE> + GaloisElement,
+        + VecZnxIdftApply<BE>
+        + GaloisElement,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
-    glwe_prepare_linear_transformation_lhs(module, cache, a, a_effective_k, key_size, keys, scratch);
+    glwe_prepare_linear_transformation_lhs(module, cache, a, a_effective_k, keys, key_size, scratch);
 }
 
 pub fn glwe_eval_linear_transformation_into_default<BE, M, R, H, K>(
     module: &M,
+    cnv_offset: usize,
     res: &mut R,
     lhs: &LinearTransformationLhsPrepared<BE>,
     rhs: &LinearTransformationRhsPrepared<BE>,
-    cnv_offset: usize,
-    key_size: usize,
     keys: &H,
+    key_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
@@ -162,6 +164,7 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, H, K>(
         + GLWEAdd<BE>
         + GLWECopy<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
+        + CnvPVecBytesOf
         + Convolution<BE>
         + poulpy_hal::api::ModuleN
         + GGLWEProductDefault<BE>
@@ -185,7 +188,7 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, H, K>(
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxIdftApplyTmpBytes
         + GLWEMulPlain<BE>
-        +GaloisElement,
+        + GaloisElement,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
@@ -195,5 +198,101 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, H, K>(
         "linear transformation has no non-empty giant steps"
     );
 
-    glwe_eval_linear_transformation_with_babies(module, res, lhs, rhs, cnv_offset, key_size, keys, scratch);
+    glwe_eval_giant_steps(module, cnv_offset, res, lhs, rhs, keys, key_size, scratch);
+}
+
+/// Reference impl: streamed (unprepared-RHS) evaluation.
+///
+/// Same result as [`glwe_eval_linear_transformation_into_default`] but consumes
+/// the unprepared `rhs` directly, preparing each diagonal on the fly instead of
+/// from a materialized [`LinearTransformationRhsPrepared`]. Lower peak memory,
+/// higher compute — for memory-bound backends (e.g. GPU).
+pub fn glwe_eval_linear_transformation_unprepared_rhs_into_default<BE, M, R, P, H, K>(
+    module: &M,
+    cnv_offset: usize,
+    res: &mut R,
+    lhs: &LinearTransformationLhsPrepared<BE>,
+    rhs: &LinearTransformation<P>,
+    keys: &H,
+    key_size: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: GLWEAutomorphism<BE>
+        + GLWEAdd<BE>
+        + GLWECopy<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
+        + CnvPVecBytesOf
+        + Convolution<BE>
+        + poulpy_hal::api::ModuleN
+        + GGLWEProductDefault<BE>
+        + GLWEKeyswitchInternal<BE>
+        + VecZnxBigAddAssign<BE>
+        + VecZnxBigAddSmallAssign<BE>
+        + VecZnxBigAlloc<BE>
+        + VecZnxBigAutomorphismAssign<BE>
+        + VecZnxBigAutomorphismAssignTmpBytes
+        + VecZnxBigBytesOf
+        + VecZnxBigFromSmallBackend<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxCopyBackend<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxDftAutomorphism<BE>
+        + VecZnxDftBytesOf
+        + VecZnxDftCopy<BE>
+        + VecZnxDftZero<BE>
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxIdftApplyTmpBytes
+        + GLWEMulPlain<BE>
+        + GaloisElement,
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+    P: GLWEToBackendRef<BE> + GLWEInfos,
+    K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    H: GLWEAutomorphismKeyHelper<K, BE>,
+{
+    assert!(
+        rhs.giant_steps.iter().any(|gs| !gs.diagonals.is_empty()),
+        "linear transformation has no non-empty giant steps"
+    );
+
+    glwe_eval_giant_steps(module, cnv_offset, res, lhs, rhs, keys, key_size, scratch);
+}
+
+/// Reference impl: scratch bytes for the streamed (unprepared-RHS) evaluation.
+///
+/// The streamed inner product additionally holds one resident `CnvPVecR`
+/// diagonal slot and a `cnv_prepare_right` scratch on top of the prepared
+/// evaluation budget.
+pub fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_default<BE, M, R, A, B, K>(
+    module: &M,
+    res: &R,
+    a: &A,
+    pt: &B,
+    key: &K,
+) -> usize
+where
+    BE: Backend,
+    M: poulpy_hal::api::ModuleN
+        + GLWEAutomorphism<BE>
+        + GLWEMulPlain<BE>
+        + CnvPVecBytesOf
+        + Convolution<BE>
+        + GGLWEProductDefault<BE>
+        + crate::default::keyswitching::GLWEKeyswitchInternal<BE>
+        + VecZnxAutomorphismAssignBackend<BE>
+        + VecZnxBigAutomorphismAssignTmpBytes
+        + VecZnxBigBytesOf
+        + VecZnxDftApply<BE>
+        + VecZnxDftBytesOf
+        + VecZnxIdftApplyTmpBytes,
+    R: GLWEInfos,
+    A: GLWEInfos,
+    B: GLWEInfos,
+    K: GGLWEInfos,
+{
+    glwe_eval_linear_transformation_tmp_bytes_default::<BE, _, _, _, _, _>(module, res, a, pt, key)
+        + module.bytes_of_cnv_pvec_right(1, pt.size())
+        + module.cnv_prepare_right_tmp_bytes(pt.size(), pt.size())
 }

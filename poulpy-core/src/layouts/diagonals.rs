@@ -189,7 +189,12 @@ impl<'a, T: DiagonalArithmetic> Evaluate<&'a [T], Vec<T>> for Diagonals<T> {
     fn evaluate(&self, input: &'a [T], strategy: LinearTransformationStrategy) -> Vec<T> {
         let slots = self.slots;
         assert_eq!(input.len(), slots, "input length must equal slots");
-        let index = LinearTransformationLayout { indexes: self.indexes(), slots, strategy }.index();
+        let index = LinearTransformationLayout {
+            indexes: self.indexes(),
+            slots,
+            strategy,
+        }
+        .index();
 
         let mut out = vec![T::zero(); slots];
         let mut buff = vec![T::zero(); slots];
@@ -199,9 +204,7 @@ impl<'a, T: DiagonalArithmetic> Evaluate<&'a [T], Vec<T>> for Diagonals<T> {
         for (g, &giant_rot) in index.giant_steps.iter().enumerate() {
             buff.iter_mut().for_each(|x| *x = T::zero());
             for &baby in &index.index[g] {
-                let diag = self
-                    .get(giant_rot + baby)
-                    .expect("schedule references a missing diagonal");
+                let diag = self.get(giant_rot + baby).expect("schedule references a missing diagonal");
                 rotate_slots_into(input, baby, &mut rot_in);
                 rotate_slots_into(diag, -giant_rot, &mut rot_diag);
                 for j in 0..slots {

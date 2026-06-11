@@ -108,7 +108,11 @@ where
     // Automorphism keys are indexed by Galois element throughout the engine.
     let order = module.cyclotomic_order();
     let mut atks = HashMap::new();
-    for p in lt_left.galois_elements(order).into_iter().chain(lt_right.galois_elements(order)) {
+    for p in lt_left
+        .galois_elements(order)
+        .into_iter()
+        .chain(lt_right.galois_elements(order))
+    {
         atks.entry(p)
             .or_insert_with(|| gen_atk(&params, module, p, &sk_raw, &mut scratch.borrow()));
     }
@@ -137,6 +141,24 @@ where
         module,
         &encoder,
         &ct_left,
+        &sk,
+        &want_left_re,
+        &want_left_im,
+        &mut scratch.borrow(),
+    );
+
+    // Streamed (unprepared-RHS) path must match the prepared path against the
+    // same reference.
+    let mut ct_left_streamed = alloc_ct(&params, module, params.k);
+    module
+        .ckks_eval_linear_transformation_streamed_into(&mut ct_left_streamed, &ct, &lt_left, &atks, &mut scratch.borrow())
+        .unwrap();
+    assert_decrypt_precision(
+        "linear_transformation_B_times_a_streamed",
+        &params,
+        module,
+        &encoder,
+        &ct_left_streamed,
         &sk,
         &want_left_re,
         &want_left_im,

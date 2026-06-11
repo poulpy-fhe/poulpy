@@ -12,7 +12,10 @@ use std::collections::BTreeMap;
 
 use poulpy_hal::layouts::{Backend, CnvPVecL, CnvPVecR, galois_element};
 
-use crate::layouts::{Base2K, TorusPrecision};
+use crate::{
+    LinearTransformationPlan,
+    layouts::{Base2K, TorusPrecision},
+};
 
 /// A prepared giant step (right side: the matrix diagonals).
 pub struct LinearTransformationRhsGiantStepPrepared<BE: Backend> {
@@ -25,6 +28,18 @@ pub struct LinearTransformationRhsGiantStepPrepared<BE: Backend> {
 }
 
 impl<BE: Backend> LinearTransformationRhsGiantStepPrepared<BE> {
+    /// Number of columns (i.e. GLWE rank+1) of the baby steps.
+    pub fn cols(&self) -> usize {
+        let (_, cnv_pvec) = self.diagonals.first_key_value().unwrap();
+        cnv_pvec.cols()
+    }
+
+    /// Size (i.e. limbs) of the baby steps.
+    pub fn size(&self) -> usize {
+        let (_, cnv_pvec) = self.diagonals.first_key_value().unwrap();
+        cnv_pvec.size()
+    }
+
     /// Slot rotation amount applied by this giant step.
     pub fn rot(&self) -> i64 {
         self.rot
@@ -81,8 +96,7 @@ impl<BE: Backend> LinearTransformationRhsGiantStepPrepared<BE> {
 ///
 /// All fields are private; read them through the accessors below.
 pub struct LinearTransformationRhsPrepared<BE: Backend> {
-    /// Baby-step rotations actually used by at least one diagonal.
-    pub(crate) baby_steps: Vec<i64>,
+    pub(crate) plan: LinearTransformationPlan,
     /// Non-empty giant steps.
     pub(crate) giant_steps: Vec<LinearTransformationRhsGiantStepPrepared<BE>>,
     /// Limb base of the encoded diagonals; same for every diagonal.
@@ -97,9 +111,18 @@ pub struct LinearTransformationRhsPrepared<BE: Backend> {
 }
 
 impl<BE: Backend> LinearTransformationRhsPrepared<BE> {
+
+    pub fn cols(&self) -> usize{
+        self.giant_steps[0].cols()
+    }
+
+    pub fn size(&self) -> usize{
+        self.giant_steps[0].size()
+    }
+
     /// Baby-step rotations used by at least one diagonal (index `0` first).
     pub fn baby_steps(&self) -> &[i64] {
-        &self.baby_steps
+        &self.plan.baby_steps
     }
 
     /// The non-empty giant steps of this prepared transform.
@@ -130,7 +153,8 @@ impl<BE: Backend> LinearTransformationRhsPrepared<BE> {
 
     /// Returns the real baby-step rotation stored at `baby_step_idx`.
     pub fn baby_step_rotation(&self, baby_step_idx: usize) -> i64 {
-        self.baby_steps
+        self.plan
+            .baby_steps
             .get(baby_step_idx)
             .copied()
             .unwrap_or_else(|| panic!("missing prepared baby-step index {baby_step_idx}"))
@@ -139,7 +163,7 @@ impl<BE: Backend> LinearTransformationRhsPrepared<BE> {
     /// The Galois elements whose automorphism keys are required to evaluate this
     /// prepared transform: one per non-zero baby- and giant-step rotation.
     pub fn galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
-        let mut rots: Vec<i64> = self.baby_steps.iter().copied().filter(|&r| r != 0).collect();
+        let mut rots: Vec<i64> = self.plan.baby_steps.iter().copied().filter(|&r| r != 0).collect();
         rots.extend(self.giant_steps.iter().map(|gs| gs.rot).filter(|&r| r != 0));
         rots.sort_unstable();
         rots.dedup();
@@ -159,6 +183,16 @@ pub struct LinearTransformationLhsPrepared<BE: Backend> {
 }
 
 impl<BE: Backend> LinearTransformationLhsPrepared<BE> {
+    pub fn size(&self) -> usize {
+        let (_, cnv_pvec) = self.values.first_key_value().unwrap();
+        cnv_pvec.size()
+    }
+
+    pub fn cols(&self) -> usize {
+        let (_, cnv_pvec) = self.values.first_key_value().unwrap();
+        cnv_pvec.cols()
+    }
+
     /// The slot rotations represented by this prepared baby cache.
     pub fn baby_steps(&self) -> impl ExactSizeIterator<Item = i64> + '_ {
         self.values.keys().copied()

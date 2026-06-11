@@ -134,8 +134,8 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         &mut prepared_babies,
         &ct,
         k_in,
-        atk_infos.size(),
         &atks,
+        atk_infos.size(),
         &mut scratch.borrow(),
     );
     assert_eq!(prepared_babies.baby_steps().collect::<Vec<_>>(), baby_steps);

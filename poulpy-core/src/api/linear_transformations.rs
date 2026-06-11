@@ -11,8 +11,8 @@
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::layouts::{
-    GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEInfos, LinearTransformation, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
-    LWEInfos,
+    GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
+    LinearTransformation,
     prepared::{GGLWEPreparedToBackendRef, LinearTransformationLhsPrepared, LinearTransformationRhsPrepared},
 };
 
@@ -24,6 +24,14 @@ use crate::layouts::{
 pub trait GLWELinearTransformations<BE: Backend> {
     /// Scratch bytes required by [`Self::glwe_eval_linear_transformation_into`].
     fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        B: GLWEInfos,
+        K: GGLWEInfos;
+
+    /// Scratch bytes required by [`Self::glwe_eval_linear_transformation_unprepared_rhs_into`].
+    fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
@@ -65,8 +73,8 @@ pub trait GLWELinearTransformations<BE: Backend> {
         cache: &mut LinearTransformationLhsPrepared<BE>,
         a: &A,
         a_effective_k: usize,
-        key_size: usize,
         keys: &H,
+        key_size: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         A: GLWEToBackendRef<BE> + GLWEInfos,
@@ -80,15 +88,36 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// of baby rotations needed by several transforms).
     fn glwe_eval_linear_transformation_into<R, H, K>(
         &self,
+        cnv_offset: usize,
         res: &mut R,
         lhs: &LinearTransformationLhsPrepared<BE>,
         rhs: &LinearTransformationRhsPrepared<BE>,
-        cnv_offset: usize,
-        key_size: usize,
         keys: &H,
+        key_size: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
+        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+        H: GLWEAutomorphismKeyHelper<K, BE>;
+
+    /// Computes `res = M(a)` from the prepared left cache `lhs` and the
+    /// *unprepared* matrix `rhs`, preparing each diagonal on the fly into scratch
+    /// rather than from a materialized [`LinearTransformationRhsPrepared`].
+    ///
+    /// Same result as [`Self::glwe_eval_linear_transformation_into`] with lower
+    /// peak memory and higher compute — for memory-bound backends (e.g. GPU).
+    fn glwe_eval_linear_transformation_unprepared_rhs_into<R, P, H, K>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        lhs: &LinearTransformationLhsPrepared<BE>,
+        rhs: &LinearTransformation<P>,
+        keys: &H,
+        key_size: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        P: GLWEToBackendRef<BE> + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 }
