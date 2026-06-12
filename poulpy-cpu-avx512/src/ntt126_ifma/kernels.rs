@@ -582,6 +582,87 @@ unsafe fn intt_iter_ifma(
     }
 }
 
+/// Forward mirror of [`intt_radix8_first3_ifma`]: fuses the last three
+/// butterfly levels (`nn = 8, 4, 2`) of each block in one register pass.
+/// Twiddles are block-independent; operations per element match the unfused
+/// per-level sequence exactly.
+#[target_feature(enable = "avx512ifma")]
+#[allow(clippy::too_many_arguments)]
+unsafe fn ntt_radix8_last3_ifma(
+    begin: *mut __m256i,
+    end: *const __m256i,
+    q: __m256i,
+    q4: __m256i,
+    w8: *const __m256i,
+    w8q: *const __m256i,
+    w4: *const __m256i,
+    w4q: *const __m256i,
+) {
+    unsafe {
+        let w8_1 = _mm256_loadu_si256(w8);
+        let w8_2 = _mm256_loadu_si256(w8.add(1));
+        let w8_3 = _mm256_loadu_si256(w8.add(2));
+        let w8_1q = _mm256_loadu_si256(w8q);
+        let w8_2q = _mm256_loadu_si256(w8q.add(1));
+        let w8_3q = _mm256_loadu_si256(w8q.add(2));
+        let w4_1 = _mm256_loadu_si256(w4);
+        let w4_1q = _mm256_loadu_si256(w4q);
+
+        let mut ptr = begin;
+        while (ptr as usize) < (end as usize) {
+            let a0 = _mm256_loadu_si256(ptr);
+            let a1 = _mm256_loadu_si256(ptr.add(1));
+            let a2 = _mm256_loadu_si256(ptr.add(2));
+            let a3 = _mm256_loadu_si256(ptr.add(3));
+            let a4 = _mm256_loadu_si256(ptr.add(4));
+            let a5 = _mm256_loadu_si256(ptr.add(5));
+            let a6 = _mm256_loadu_si256(ptr.add(6));
+            let a7 = _mm256_loadu_si256(ptr.add(7));
+
+            // nn=8: identity at i=0, twiddles w8_{1,2,3} at i=1..3.
+            let u0 = cond_sub_2q_si256(_mm256_add_epi64(a0, a4), q4);
+            let u4 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(a0, q4), a4), q4);
+            let u1 = cond_sub_2q_si256(_mm256_add_epi64(a1, a5), q4);
+            let u5 = harvey_modmul_si256(_mm256_sub_epi64(_mm256_add_epi64(a1, q4), a5), w8_1, w8_1q, q);
+            let u2 = cond_sub_2q_si256(_mm256_add_epi64(a2, a6), q4);
+            let u6 = harvey_modmul_si256(_mm256_sub_epi64(_mm256_add_epi64(a2, q4), a6), w8_2, w8_2q, q);
+            let u3 = cond_sub_2q_si256(_mm256_add_epi64(a3, a7), q4);
+            let u7 = harvey_modmul_si256(_mm256_sub_epi64(_mm256_add_epi64(a3, q4), a7), w8_3, w8_3q, q);
+
+            // nn=4: identity at i=0, twiddle w4 at i=1, per half-block.
+            let v0 = cond_sub_2q_si256(_mm256_add_epi64(u0, u2), q4);
+            let v2 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(u0, q4), u2), q4);
+            let v1 = cond_sub_2q_si256(_mm256_add_epi64(u1, u3), q4);
+            let v3 = harvey_modmul_si256(_mm256_sub_epi64(_mm256_add_epi64(u1, q4), u3), w4_1, w4_1q, q);
+            let v4 = cond_sub_2q_si256(_mm256_add_epi64(u4, u6), q4);
+            let v6 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(u4, q4), u6), q4);
+            let v5 = cond_sub_2q_si256(_mm256_add_epi64(u5, u7), q4);
+            let v7 = harvey_modmul_si256(_mm256_sub_epi64(_mm256_add_epi64(u5, q4), u7), w4_1, w4_1q, q);
+
+            // nn=2: 4 identity butterflies.
+            let o0 = cond_sub_2q_si256(_mm256_add_epi64(v0, v1), q4);
+            let o1 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(v0, q4), v1), q4);
+            let o2 = cond_sub_2q_si256(_mm256_add_epi64(v2, v3), q4);
+            let o3 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(v2, q4), v3), q4);
+            let o4 = cond_sub_2q_si256(_mm256_add_epi64(v4, v5), q4);
+            let o5 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(v4, q4), v5), q4);
+            let o6 = cond_sub_2q_si256(_mm256_add_epi64(v6, v7), q4);
+            let o7 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(v6, q4), v7), q4);
+
+            _mm256_storeu_si256(ptr, o0);
+            _mm256_storeu_si256(ptr.add(1), o1);
+            _mm256_storeu_si256(ptr.add(2), o2);
+            _mm256_storeu_si256(ptr.add(3), o3);
+            _mm256_storeu_si256(ptr.add(4), o4);
+            _mm256_storeu_si256(ptr.add(5), o5);
+            _mm256_storeu_si256(ptr.add(6), o6);
+            _mm256_storeu_si256(ptr.add(7), o7);
+
+            ptr = ptr.add(8);
+        }
+    }
+}
+
 /// Fused iNTT pass covering `nn = 2, 4, 8` in registers.
 ///
 /// Twiddle layout in `po_base` (level-2 has no twiddles):
@@ -784,26 +865,24 @@ unsafe fn ntt_avx512_no_final<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTable<P>,
             let blk_end = begin.add(blk_start + nn) as *const __m256i;
             for i in 0..num_inner {
                 let m = inner_nn[i];
-                let halfm = m / 2;
                 let seg = inner_segs[i];
-                if halfm > 1 {
-                    let count = halfm - 1;
-                    ntt_iter_ifma(m, blk_begin, blk_end, q, q4, po_base.add(seg), po_base.add(seg + count));
-                } else {
-                    // m == 2: add/sub only, no twiddle.
-                    let mut p1 = blk_begin;
-                    let mut p2 = blk_begin.add(1);
-                    while (p1 as usize) < (blk_end as usize) {
-                        let a = _mm256_loadu_si256(p1);
-                        let b = _mm256_loadu_si256(p2);
-                        let sum = cond_sub_2q_si256(_mm256_add_epi64(a, b), q4);
-                        let diff = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(a, q4), b), q4);
-                        _mm256_storeu_si256(p1, sum);
-                        _mm256_storeu_si256(p2, diff);
-                        p1 = p1.add(2);
-                        p2 = p2.add(2);
-                    }
+                if m == 8 {
+                    // Levels nn = 8, 4, 2 fused in one register pass.
+                    let seg4 = inner_segs[i + 1];
+                    ntt_radix8_last3_ifma(
+                        blk_begin,
+                        blk_end,
+                        q,
+                        q4,
+                        po_base.add(seg),
+                        po_base.add(seg + 3),
+                        po_base.add(seg4),
+                        po_base.add(seg4 + 1),
+                    );
+                    break;
                 }
+                let count = m / 2 - 1;
+                ntt_iter_ifma(m, blk_begin, blk_end, q, q4, po_base.add(seg), po_base.add(seg + count));
             }
             blk_start += nn;
         }
