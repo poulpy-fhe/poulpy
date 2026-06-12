@@ -8,6 +8,8 @@
 //! - Harvey multiplication replaces the AVX2 split-precomputed multiply path.
 //! - Two coefficients are processed at a time through 512-bit loads where profitable.
 
+#![allow(dead_code)]
+
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::{
     __m256i, __m512i, _mm256_add_epi64, _mm256_and_si256, _mm256_loadu_si256, _mm256_madd52hi_epu64, _mm256_madd52lo_epu64,
@@ -20,7 +22,7 @@ use std::mem::size_of;
 
 use crate::ntt126_ifma::{
     primes::PrimeSetNtt126Ifma,
-    tables::{Ntt126IfmaTable, Ntt126IfmaTableInv},
+    tables::{Ntt126IfmaTable, Ntt126IfmaTableInv, cond_sub_2q, harvey_modmul},
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -754,6 +756,255 @@ unsafe fn intt_radix8_first3_ifma(begin: *mut __m256i, end: *const __m256i, q: _
 /// parameter set.
 const NTT_BLOCK: usize = 256;
 
+#[target_feature(enable = "avx512f")]
+unsafe fn load_plane_twiddles8(powomega: &[u64], base: usize, idx: usize, prime: usize) -> __m512i {
+    let vals = [
+        powomega[base + 4 * idx + prime],
+        powomega[base + 4 * (idx + 1) + prime],
+        powomega[base + 4 * (idx + 2) + prime],
+        powomega[base + 4 * (idx + 3) + prime],
+        powomega[base + 4 * (idx + 4) + prime],
+        powomega[base + 4 * (idx + 5) + prime],
+        powomega[base + 4 * (idx + 6) + prime],
+        powomega[base + 4 * (idx + 7) + prime],
+    ];
+    unsafe { _mm512_loadu_si512(vals.as_ptr() as *const __m512i) }
+}
+
+#[target_feature(enable = "avx512ifma")]
+unsafe fn harvey_modmul_plane8(a: __m512i, omega: __m512i, omega_quot: __m512i, q: u64) -> __m512i {
+    unsafe { harvey_modmul_si512(a, omega, omega_quot, _mm512_set1_epi64(q as i64)) }
+}
+
+#[target_feature(enable = "avx512ifma,avx512vl")]
+unsafe fn ntt_plane_avx512<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTable<P>, plane: &mut [u64], prime: usize) {
+    let n = table.n;
+    if n <= 1 {
+        return;
+    }
+    debug_assert!(plane.len() >= n);
+
+    unsafe {
+        let q = P::Q[prime];
+        let q2 = table.q2[prime];
+        let q4 = table.q4[prime];
+        let q2v = _mm512_set1_epi64(q2 as i64);
+        let q4v = _mm512_set1_epi64(q4 as i64);
+        let ptr = plane.as_mut_ptr();
+        let powomega = table.powomega.as_slice();
+        let mut seg_base = 0usize;
+
+        {
+            let omega_base = seg_base;
+            let quot_base = seg_base + 4 * n;
+            let mut i = 0usize;
+            while i + 8 <= n {
+                let a = _mm512_loadu_si512(ptr.add(i) as *const __m512i);
+                let omega = load_plane_twiddles8(powomega, omega_base, i, prime);
+                let omega_quot = load_plane_twiddles8(powomega, quot_base, i, prime);
+                _mm512_storeu_si512(ptr.add(i) as *mut __m512i, harvey_modmul_plane8(a, omega, omega_quot, q));
+                i += 8;
+            }
+            while i < n {
+                plane[i] = harvey_modmul(
+                    plane[i],
+                    powomega[omega_base + 4 * i + prime],
+                    powomega[quot_base + 4 * i + prime],
+                    q,
+                );
+                i += 1;
+            }
+            seg_base += 8 * n;
+        }
+
+        let mut nn = n;
+        while nn >= 2 {
+            let halfnn = nn / 2;
+
+            if halfnn > 1 {
+                let count = halfnn - 1;
+                let omega_base = seg_base;
+                let quot_base = seg_base + 4 * count;
+
+                let mut block_start = 0usize;
+                while block_start < n {
+                    {
+                        let p1 = block_start;
+                        let p2 = block_start + halfnn;
+                        let a = plane[p1];
+                        let b = plane[p2];
+                        plane[p1] = cond_sub_2q(a + b, q4);
+                        plane[p2] = cond_sub_2q(a + q4 - b, q4);
+                    }
+
+                    let mut i = 1usize;
+                    while i + 8 <= halfnn {
+                        let p1 = block_start + i;
+                        let p2 = block_start + halfnn + i;
+                        let av = _mm512_loadu_si512(ptr.add(p1) as *const __m512i);
+                        let bv = _mm512_loadu_si512(ptr.add(p2) as *const __m512i);
+                        let sum = cond_sub_2q_si512(_mm512_add_epi64(av, bv), q4v);
+                        let diff = _mm512_sub_epi64(_mm512_add_epi64(av, q4v), bv);
+                        let omega = load_plane_twiddles8(powomega, omega_base, i - 1, prime);
+                        let omega_quot = load_plane_twiddles8(powomega, quot_base, i - 1, prime);
+                        _mm512_storeu_si512(ptr.add(p1) as *mut __m512i, sum);
+                        _mm512_storeu_si512(ptr.add(p2) as *mut __m512i, harvey_modmul_plane8(diff, omega, omega_quot, q));
+                        i += 8;
+                    }
+                    while i < halfnn {
+                        let p1 = block_start + i;
+                        let p2 = block_start + halfnn + i;
+                        let tw_idx = i - 1;
+                        let a = plane[p1];
+                        let b = plane[p2];
+                        plane[p1] = cond_sub_2q(a + b, q4);
+                        plane[p2] = harvey_modmul(
+                            a + q4 - b,
+                            powomega[omega_base + 4 * tw_idx + prime],
+                            powomega[quot_base + 4 * tw_idx + prime],
+                            q,
+                        );
+                        i += 1;
+                    }
+
+                    block_start += nn;
+                }
+
+                seg_base += 8 * count;
+            } else {
+                let mut block_start = 0usize;
+                while block_start < n {
+                    let a = plane[block_start];
+                    let b = plane[block_start + 1];
+                    plane[block_start] = cond_sub_2q(a + b, q4);
+                    plane[block_start + 1] = cond_sub_2q(a + q4 - b, q4);
+                    block_start += 2;
+                }
+            }
+
+            nn /= 2;
+        }
+
+        let mut i = 0usize;
+        while i + 8 <= n {
+            let x = _mm512_loadu_si512(ptr.add(i) as *const __m512i);
+            _mm512_storeu_si512(ptr.add(i) as *mut __m512i, cond_sub_2q_si512(x, q2v));
+            i += 8;
+        }
+        while i < n {
+            plane[i] = cond_sub_2q(plane[i], q2);
+            i += 1;
+        }
+    }
+}
+
+#[target_feature(enable = "avx512ifma,avx512vl")]
+unsafe fn intt_plane_avx512<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTableInv<P>, plane: &mut [u64], prime: usize) {
+    let n = table.n;
+    if n <= 1 {
+        return;
+    }
+    debug_assert!(plane.len() >= n);
+
+    unsafe {
+        let q = P::Q[prime];
+        let q4 = table.q4[prime];
+        let q4v = _mm512_set1_epi64(q4 as i64);
+        let ptr = plane.as_mut_ptr();
+        let powomega = table.powomega.as_slice();
+        let mut seg_base = 0usize;
+
+        let mut nn = 2usize;
+        while nn <= n {
+            let halfnn = nn / 2;
+
+            if halfnn > 1 {
+                let count = halfnn - 1;
+                let omega_base = seg_base;
+                let quot_base = seg_base + 4 * count;
+
+                let mut block_start = 0usize;
+                while block_start < n {
+                    {
+                        let p1 = block_start;
+                        let p2 = block_start + halfnn;
+                        let a = plane[p1];
+                        let b = plane[p2];
+                        plane[p1] = cond_sub_2q(a + b, q4);
+                        plane[p2] = cond_sub_2q(a + q4 - b, q4);
+                    }
+
+                    let mut i = 1usize;
+                    while i + 8 <= halfnn {
+                        let p1 = block_start + i;
+                        let p2 = block_start + halfnn + i;
+                        let av = _mm512_loadu_si512(ptr.add(p1) as *const __m512i);
+                        let bv = _mm512_loadu_si512(ptr.add(p2) as *const __m512i);
+                        let omega = load_plane_twiddles8(powomega, omega_base, i - 1, prime);
+                        let omega_quot = load_plane_twiddles8(powomega, quot_base, i - 1, prime);
+                        let bo = harvey_modmul_plane8(bv, omega, omega_quot, q);
+                        let sum = cond_sub_2q_si512(_mm512_add_epi64(av, bo), q4v);
+                        let diff = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(av, q4v), bo), q4v);
+                        _mm512_storeu_si512(ptr.add(p1) as *mut __m512i, sum);
+                        _mm512_storeu_si512(ptr.add(p2) as *mut __m512i, diff);
+                        i += 8;
+                    }
+                    while i < halfnn {
+                        let p1 = block_start + i;
+                        let p2 = block_start + halfnn + i;
+                        let tw_idx = i - 1;
+                        let a = plane[p1];
+                        let bo = harvey_modmul(
+                            plane[p2],
+                            powomega[omega_base + 4 * tw_idx + prime],
+                            powomega[quot_base + 4 * tw_idx + prime],
+                            q,
+                        );
+                        plane[p1] = cond_sub_2q(a + bo, q4);
+                        plane[p2] = cond_sub_2q(a + q4 - bo, q4);
+                        i += 1;
+                    }
+
+                    block_start += nn;
+                }
+
+                seg_base += 8 * count;
+            } else {
+                let mut block_start = 0usize;
+                while block_start < n {
+                    let a = plane[block_start];
+                    let b = plane[block_start + 1];
+                    plane[block_start] = cond_sub_2q(a + b, q4);
+                    plane[block_start + 1] = cond_sub_2q(a + q4 - b, q4);
+                    block_start += 2;
+                }
+            }
+
+            nn *= 2;
+        }
+
+        let omega_base = seg_base;
+        let quot_base = seg_base + 4 * n;
+        let mut i = 0usize;
+        while i + 8 <= n {
+            let a = _mm512_loadu_si512(ptr.add(i) as *const __m512i);
+            let omega = load_plane_twiddles8(powomega, omega_base, i, prime);
+            let omega_quot = load_plane_twiddles8(powomega, quot_base, i, prime);
+            _mm512_storeu_si512(ptr.add(i) as *mut __m512i, harvey_modmul_plane8(a, omega, omega_quot, q));
+            i += 8;
+        }
+        while i < n {
+            plane[i] = harvey_modmul(
+                plane[i],
+                powomega[omega_base + 4 * i + prime],
+                powomega[quot_base + 4 * i + prime],
+                q,
+            );
+            i += 1;
+        }
+    }
+}
+
 /// Forward NTT — AVX512-IFMA accelerated, split twiddle layout.
 ///
 /// Butterfly values live in `[0, 4q)`; a final pass renormalises to `[0, 2q)`.
@@ -762,20 +1013,11 @@ const NTT_BLOCK: usize = 256;
 /// cache across all remaining levels.
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn ntt_avx512<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTable<P>, data: &mut [u64]) {
+    let n = table.n;
+    debug_assert!(data.len() >= 3 * n);
     unsafe {
-        ntt_avx512_no_final::<P>(table, data);
-
-        let n = table.n;
-        if n == 1 {
-            return;
-        }
-        let q2 = _mm256_loadu_si256(table.q2.as_ptr() as *const __m256i);
-        let q2_512 = pack_512(q2, q2);
-        let ptr_512 = data.as_mut_ptr() as *mut __m512i;
-        let chunks = n / 2;
-        for i in 0..chunks {
-            let x = _mm512_loadu_si512(ptr_512.add(i));
-            _mm512_storeu_si512(ptr_512.add(i), cond_sub_2q_si512(x, q2_512));
+        for prime in 0..3 {
+            ntt_plane_avx512::<P>(table, &mut data[prime * n..(prime + 1) * n], prime);
         }
     }
 }
@@ -901,17 +1143,18 @@ pub(crate) unsafe fn ntt_avx512_to_rows<P: PrimeSetNtt126Ifma>(
     row_off: usize,
 ) {
     unsafe {
-        ntt_avx512_no_final::<P>(table, data);
-
         let n = table.n;
-        let q2 = _mm256_loadu_si256(table.q2.as_ptr() as *const __m256i);
-        let q2_512 = pack_512(q2, q2);
-        let src_512 = data.as_ptr() as *const __m512i;
-        let chunks = n / 2;
-        for i in 0..chunks {
-            let x = _mm512_loadu_si512(src_512.add(i));
-            let out = dst.as_mut_ptr().add(i * row_stride + row_off) as *mut __m512i;
-            _mm512_storeu_si512(out, cond_sub_2q_si512(x, q2_512));
+        ntt_avx512::<P>(table, data);
+        for prime in 0..3 {
+            let src = &data[prime * n..(prime + 1) * n];
+            let plane_off = row_off + prime * row_stride * (n / 8);
+            let mut i = 0usize;
+            while i < n / 8 {
+                let x = _mm512_loadu_si512(src.as_ptr().add(8 * i) as *const __m512i);
+                let out = dst.as_mut_ptr().add(plane_off + i * row_stride) as *mut __m512i;
+                _mm512_storeu_si512(out, x);
+                i += 1;
+            }
         }
     }
 }
@@ -929,96 +1172,11 @@ pub(crate) unsafe fn ntt_avx512_to_rows<P: PrimeSetNtt126Ifma>(
 #[inline]
 pub(crate) unsafe fn intt_avx512<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTableInv<P>, data: &mut [u64]) {
     let n = table.n;
-    if n == 1 {
-        return;
-    }
-
+    debug_assert!(data.len() >= 3 * n);
     unsafe {
-        let begin = data.as_mut_ptr() as *mut __m256i;
-        let end = begin.add(n) as *const __m256i;
-        let po_base = table.powomega.as_ptr() as *const __m256i;
-
-        let q = {
-            let a = P::Q[0];
-            let b = P::Q[1];
-            let c = P::Q[2];
-            use core::arch::x86_64::_mm256_set_epi64x;
-            _mm256_set_epi64x(0, c as i64, b as i64, a as i64)
-        };
-        let q4 = _mm256_loadu_si256(table.q4.as_ptr() as *const __m256i);
-
-        let block = NTT_BLOCK.min(n);
-
-        // Precompute segment offsets for inner (block-local) levels: nn = 2, 4, …, block.
-        let mut inner_segs = [0usize; 17];
-        let mut inner_nn = [0usize; 17];
-        let mut num_inner = 0usize;
-        let mut seg_avx = 0usize;
-        {
-            let mut m = 2usize;
-            while m <= block {
-                inner_nn[num_inner] = m;
-                inner_segs[num_inner] = seg_avx;
-                let halfm = m / 2;
-                if halfm > 1 {
-                    seg_avx += 2 * (halfm - 1);
-                }
-                m *= 2;
-                num_inner += 1;
-            }
+        for prime in 0..3 {
+            intt_plane_avx512::<P>(table, &mut data[prime * n..(prime + 1) * n], prime);
         }
-
-        // Fuse nn=2,4,8 into a single radix-8 pass when available.
-        let radix8_start = num_inner >= 3;
-        let inner_start = if radix8_start { 3 } else { 0 };
-
-        let mut blk_start = 0usize;
-        while blk_start < n {
-            let blk_begin = begin.add(blk_start);
-            let blk_end = begin.add(blk_start + block) as *const __m256i;
-
-            if radix8_start {
-                intt_radix8_first3_ifma(blk_begin, blk_end, q, q4, po_base);
-            }
-
-            for i in inner_start..num_inner {
-                let m = inner_nn[i];
-                let halfm = m / 2;
-                let seg = inner_segs[i];
-                if halfm > 1 {
-                    let count = halfm - 1;
-                    intt_iter_ifma(m, blk_begin, blk_end, q, q4, po_base.add(seg), po_base.add(seg + count));
-                } else {
-                    // m == 2: add/sub only.
-                    let mut p1 = blk_begin;
-                    let mut p2 = blk_begin.add(1);
-                    while (p1 as usize) < (blk_end as usize) {
-                        let a = _mm256_loadu_si256(p1);
-                        let b = _mm256_loadu_si256(p2);
-                        let sum = cond_sub_2q_si256(_mm256_add_epi64(a, b), q4);
-                        let diff = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(a, q4), b), q4);
-                        _mm256_storeu_si256(p1, sum);
-                        _mm256_storeu_si256(p2, diff);
-                        p1 = p1.add(2);
-                        p2 = p2.add(2);
-                    }
-                }
-            }
-            blk_start += block;
-        }
-
-        // Outer butterfly levels (breadth-first) for nn > block.
-        let mut nn = block * 2;
-        while nn <= n {
-            let halfnn = nn / 2;
-            let count = halfnn - 1;
-            intt_iter_ifma(nn, begin, end, q, q4, po_base.add(seg_avx), po_base.add(seg_avx + count));
-            seg_avx += 2 * count;
-            nn *= 2;
-        }
-
-        // Last pass: a[i] *= ω^{-i} / n — Harvey absorbs [0, 4q) → [0, 2q).
-        ntt_iter_first_ifma(begin, end, po_base.add(seg_avx), po_base.add(seg_avx + n), q);
     }
 }
 
@@ -1087,15 +1245,15 @@ mod tests {
 
             let coeffs: Vec<i64> = (0..n as i64).map(|i| (i * 7 + 3) % 201 - 100).collect();
 
-            let mut data_avx = vec![0u64; 4 * n];
-            let mut data_ref = vec![0u64; 4 * n];
+            let mut data_avx = vec![0u64; 3 * n];
+            let mut data_ref = vec![0u64; 3 * n];
             b_ntt126_ifma_from_znx64_ref(n, &mut data_avx, &coeffs);
             b_ntt126_ifma_from_znx64_ref(n, &mut data_ref, &coeffs);
 
             unsafe { ntt_avx512::<Primes42>(&fwd, &mut data_avx) };
             ntt126_ifma_ref::<Primes42>(&fwd, &mut data_ref);
 
-            for i in 0..4 * n {
+            for i in 0..3 * n {
                 assert_eq!(
                     data_avx[i], data_ref[i],
                     "n={n} idx={i}: NTT AVX512 vs ref (avx={}, ref={})",
@@ -1113,7 +1271,7 @@ mod tests {
             let inv = Ntt126IfmaTableInv::<Primes42>::new(n);
 
             let coeffs: Vec<i64> = (0..n as i64).map(|i| (i * 7 + 3) % 201 - 100).collect();
-            let mut data = vec![0u64; 4 * n];
+            let mut data = vec![0u64; 3 * n];
             b_ntt126_ifma_from_znx64_ref(n, &mut data, &coeffs);
             ntt126_ifma_ref::<Primes42>(&fwd, &mut data);
 
@@ -1123,7 +1281,7 @@ mod tests {
             unsafe { intt_avx512::<Primes42>(&inv, &mut data_avx) };
             intt126_ifma_ref::<Primes42>(&inv, &mut data_ref);
 
-            for i in 0..4 * n {
+            for i in 0..3 * n {
                 assert_eq!(
                     data_avx[i], data_ref[i],
                     "n={n} idx={i}: iNTT AVX512 vs ref (avx={}, ref={})",
@@ -1141,7 +1299,7 @@ mod tests {
             let inv = Ntt126IfmaTableInv::<Primes42>::new(n);
 
             let coeffs: Vec<i64> = (0..n as i64).map(|i| (i * 7 + 3) % 201 - 100).collect();
-            let mut data = vec![0u64; 4 * n];
+            let mut data = vec![0u64; 3 * n];
             b_ntt126_ifma_from_znx64_ref(n, &mut data, &coeffs);
             let orig = data.clone();
 
@@ -1152,8 +1310,8 @@ mod tests {
 
             for i in 0..n {
                 for k in 0..3 {
-                    let o = orig[4 * i + k] % Primes42::Q[k];
-                    let g = data[4 * i + k] % Primes42::Q[k];
+                    let o = orig[k * n + i] % Primes42::Q[k];
+                    let g = data[k * n + i] % Primes42::Q[k];
                     assert_eq!(o, g, "n={n} i={i} k={k}: roundtrip mismatch");
                 }
             }

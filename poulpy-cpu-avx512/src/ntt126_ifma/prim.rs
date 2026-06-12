@@ -15,6 +15,7 @@ use crate::ntt126_ifma::{
     },
 };
 
+use super::kernels::{intt_avx512, ntt_avx512};
 use super::mat_vec_ifma::vec_mat1col_product_bbc_ifma;
 
 use poulpy_cpu_ref::reference::ntt120::{
@@ -184,14 +185,14 @@ unsafe fn simd_c_from_b(n: usize, res: &mut [u64], a: &[u64]) {
 impl Ntt126IfmaDFTExecute<Ntt126IfmaTable<Primes42>> for NTT126Ifma {
     #[inline(always)]
     fn ntt126_ifma_dft_execute(table: &Ntt126IfmaTable<Primes42>, data: &mut [u64]) {
-        crate::ntt126_ifma::reference::ntt::ntt126_ifma_ref::<Primes42>(table, data)
+        unsafe { ntt_avx512::<Primes42>(table, data) }
     }
 }
 
 impl Ntt126IfmaDFTExecute<Ntt126IfmaTableInv<Primes42>> for NTT126Ifma {
     #[inline(always)]
     fn ntt126_ifma_dft_execute(table: &Ntt126IfmaTableInv<Primes42>, data: &mut [u64]) {
-        crate::ntt126_ifma::reference::ntt::intt126_ifma_ref::<Primes42>(table, data)
+        unsafe { intt_avx512::<Primes42>(table, data) }
     }
 }
 

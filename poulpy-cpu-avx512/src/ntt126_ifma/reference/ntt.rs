@@ -8,6 +8,8 @@
 //! consumes — the IFMA-native lazy `[0, 4q)` arithmetic, the SoA twiddle
 //! layout, and the `cond_sub_2q` / `harvey_modmul` helpers all live there.
 
+#![allow(clippy::needless_range_loop)]
+
 use super::super::primes::PrimeSetNtt126Ifma;
 use super::super::tables::{Ntt126IfmaTable, Ntt126IfmaTableInv, cond_sub_2q, harvey_modmul};
 
