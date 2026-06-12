@@ -652,6 +652,392 @@ pub unsafe fn reim4_convolution_by_real_const_2coeffs_avx(k: usize, dst: &mut [f
     }
 }
 
+/// Full-row convolution, tiling outputs by 3. Per-output accumulation order
+/// matches `reim4_convolution_2coeffs_avx`.
+///
+/// # Safety
+/// Caller must ensure the CPU supports AVX2 and FMA (e.g. `is_x86_feature_detected!("avx2")`).
+#[target_feature(enable = "avx2", enable = "fma")]
+pub unsafe fn reim4_convolution_avx(
+    dst: &mut [f64],
+    dst_size: usize,
+    offset: usize,
+    a: &[f64],
+    a_size: usize,
+    b: &[f64],
+    b_size: usize,
+) {
+    debug_assert!(a_size > 0);
+    debug_assert!(b_size > 0);
+    debug_assert!(dst.len() >= 8 * dst_size);
+    debug_assert!(a.len() >= 8 * a_size);
+    debug_assert!(b.len() >= 8 * b_size);
+
+    unsafe {
+        let mut k: usize = 0;
+        while k + 3 <= dst_size {
+            reim4_convolution_tile3_avx(k + offset, dst.as_mut_ptr().add(8 * k), a, a_size, b, b_size);
+            k += 3;
+        }
+        while k < dst_size {
+            let dst_blk: &mut [f64; 8] = &mut *(dst.as_mut_ptr().add(8 * k) as *mut [f64; 8]);
+            reim4_convolution_1coeff_avx(k + offset, dst_blk, a, a_size, b, b_size);
+            k += 1;
+        }
+    }
+}
+
+/// One tile of three consecutive output blocks `k_abs..k_abs+3`: head/tail
+/// edges with partial `t` coverage around a full region sliding the `a` window.
+#[target_feature(enable = "avx2", enable = "fma")]
+unsafe fn reim4_convolution_tile3_avx(k_abs: usize, dst: *mut f64, a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+    use core::arch::x86_64::{__m256d, _mm256_fmadd_pd, _mm256_fnmadd_pd, _mm256_loadu_pd, _mm256_setzero_pd, _mm256_storeu_pd};
+
+    unsafe {
+        let j_start: usize = (k_abs + 1).saturating_sub(a_size).min(b_size);
+        let j_end: usize = (k_abs + 3).min(b_size);
+        let j_full_start: usize = (k_abs + 3).saturating_sub(a_size).max(j_start).min(j_end);
+        let j_full_end: usize = (k_abs + 1).min(j_end).max(j_full_start);
+
+        let mut acc_re0: __m256d = _mm256_setzero_pd();
+        let mut acc_im0: __m256d = _mm256_setzero_pd();
+        let mut acc_re1: __m256d = _mm256_setzero_pd();
+        let mut acc_im1: __m256d = _mm256_setzero_pd();
+        let mut acc_re2: __m256d = _mm256_setzero_pd();
+        let mut acc_im2: __m256d = _mm256_setzero_pd();
+
+        let edge = |j: usize,
+                    acc_re0: &mut __m256d,
+                    acc_im0: &mut __m256d,
+                    acc_re1: &mut __m256d,
+                    acc_im1: &mut __m256d,
+                    acc_re2: &mut __m256d,
+                    acc_im2: &mut __m256d| {
+            let br: __m256d = _mm256_loadu_pd(b.as_ptr().add(8 * j));
+            let bi: __m256d = _mm256_loadu_pd(b.as_ptr().add(8 * j + 4));
+            if j <= k_abs && k_abs - j < a_size {
+                let a_ptr: *const f64 = a.as_ptr().add(8 * (k_abs - j));
+                let ar: __m256d = _mm256_loadu_pd(a_ptr);
+                let ai: __m256d = _mm256_loadu_pd(a_ptr.add(4));
+                *acc_re0 = _mm256_fmadd_pd(ar, br, *acc_re0);
+                *acc_re0 = _mm256_fnmadd_pd(ai, bi, *acc_re0);
+                *acc_im0 = _mm256_fmadd_pd(ar, bi, *acc_im0);
+                *acc_im0 = _mm256_fmadd_pd(ai, br, *acc_im0);
+            }
+            if j <= k_abs + 1 && k_abs + 1 - j < a_size {
+                let a_ptr: *const f64 = a.as_ptr().add(8 * (k_abs + 1 - j));
+                let ar: __m256d = _mm256_loadu_pd(a_ptr);
+                let ai: __m256d = _mm256_loadu_pd(a_ptr.add(4));
+                *acc_re1 = _mm256_fmadd_pd(ar, br, *acc_re1);
+                *acc_re1 = _mm256_fnmadd_pd(ai, bi, *acc_re1);
+                *acc_im1 = _mm256_fmadd_pd(ar, bi, *acc_im1);
+                *acc_im1 = _mm256_fmadd_pd(ai, br, *acc_im1);
+            }
+            if j <= k_abs + 2 && k_abs + 2 - j < a_size {
+                let a_ptr: *const f64 = a.as_ptr().add(8 * (k_abs + 2 - j));
+                let ar: __m256d = _mm256_loadu_pd(a_ptr);
+                let ai: __m256d = _mm256_loadu_pd(a_ptr.add(4));
+                *acc_re2 = _mm256_fmadd_pd(ar, br, *acc_re2);
+                *acc_re2 = _mm256_fnmadd_pd(ai, bi, *acc_re2);
+                *acc_im2 = _mm256_fmadd_pd(ar, bi, *acc_im2);
+                *acc_im2 = _mm256_fmadd_pd(ai, br, *acc_im2);
+            }
+        };
+
+        for j in j_start..j_full_start {
+            edge(
+                j,
+                &mut acc_re0,
+                &mut acc_im0,
+                &mut acc_re1,
+                &mut acc_im1,
+                &mut acc_re2,
+                &mut acc_im2,
+            );
+        }
+
+        if j_full_start < j_full_end {
+            let mut a_ptr: *const f64 = a.as_ptr().add(8 * (k_abs - j_full_start));
+            let mut b_ptr: *const f64 = b.as_ptr().add(8 * j_full_start);
+
+            let mut ar0: __m256d = _mm256_loadu_pd(a_ptr);
+            let mut ai0: __m256d = _mm256_loadu_pd(a_ptr.add(4));
+            let mut ar1: __m256d = _mm256_loadu_pd(a_ptr.add(8));
+            let mut ai1: __m256d = _mm256_loadu_pd(a_ptr.add(12));
+            let mut ar2: __m256d = _mm256_loadu_pd(a_ptr.add(16));
+            let mut ai2: __m256d = _mm256_loadu_pd(a_ptr.add(20));
+
+            let mut j: usize = j_full_start;
+            loop {
+                let br: __m256d = _mm256_loadu_pd(b_ptr);
+                let bi: __m256d = _mm256_loadu_pd(b_ptr.add(4));
+
+                acc_re0 = _mm256_fmadd_pd(ar0, br, acc_re0);
+                acc_re0 = _mm256_fnmadd_pd(ai0, bi, acc_re0);
+                acc_im0 = _mm256_fmadd_pd(ar0, bi, acc_im0);
+                acc_im0 = _mm256_fmadd_pd(ai0, br, acc_im0);
+                acc_re1 = _mm256_fmadd_pd(ar1, br, acc_re1);
+                acc_re1 = _mm256_fnmadd_pd(ai1, bi, acc_re1);
+                acc_im1 = _mm256_fmadd_pd(ar1, bi, acc_im1);
+                acc_im1 = _mm256_fmadd_pd(ai1, br, acc_im1);
+                acc_re2 = _mm256_fmadd_pd(ar2, br, acc_re2);
+                acc_re2 = _mm256_fnmadd_pd(ai2, bi, acc_re2);
+                acc_im2 = _mm256_fmadd_pd(ar2, bi, acc_im2);
+                acc_im2 = _mm256_fmadd_pd(ai2, br, acc_im2);
+
+                j += 1;
+                if j == j_full_end {
+                    break;
+                }
+                ar2 = ar1;
+                ai2 = ai1;
+                ar1 = ar0;
+                ai1 = ai0;
+                a_ptr = a_ptr.sub(8);
+                ar0 = _mm256_loadu_pd(a_ptr);
+                ai0 = _mm256_loadu_pd(a_ptr.add(4));
+                b_ptr = b_ptr.add(8);
+            }
+        }
+
+        for j in j_full_end..j_end {
+            edge(
+                j,
+                &mut acc_re0,
+                &mut acc_im0,
+                &mut acc_re1,
+                &mut acc_im1,
+                &mut acc_re2,
+                &mut acc_im2,
+            );
+        }
+
+        _mm256_storeu_pd(dst, acc_re0);
+        _mm256_storeu_pd(dst.add(4), acc_im0);
+        _mm256_storeu_pd(dst.add(8), acc_re1);
+        _mm256_storeu_pd(dst.add(12), acc_im1);
+        _mm256_storeu_pd(dst.add(16), acc_re2);
+        _mm256_storeu_pd(dst.add(20), acc_im2);
+    }
+}
+
+/// Column-level convolution over all `m/4` blocks; AVX2 counterpart of
+/// `reim4_convolution_apply_avx512`. Accumulation order matches
+/// `reim4_convolution_2coeffs_avx`.
+///
+/// `dst` layout: limb `k` re-half at `dst[2*m*k + 4*blk]`, im-half `m` further.
+/// `tmp` must hold at least `8 * (a_size + 4 + b_size + 16 * min_size)` f64.
+///
+/// # Safety
+/// Caller must ensure the CPU supports AVX2 and FMA (e.g. `is_x86_feature_detected!("avx2")`).
+#[allow(clippy::too_many_arguments)]
+#[target_feature(enable = "avx2", enable = "fma")]
+pub unsafe fn reim4_convolution_apply_avx(
+    m: usize,
+    min_size: usize,
+    offset: usize,
+    dst: &mut [f64],
+    a: &[f64],
+    a_size: usize,
+    b: &[f64],
+    b_size: usize,
+    tmp: &mut [f64],
+) {
+    unsafe { reim4_convolution_apply_core_avx::<false>(m, min_size, offset, dst, a, a, a_size, b, b, b_size, tmp) }
+}
+
+/// Pairwise variant of [`reim4_convolution_apply_avx`]: `(a0 + a1) ⊛ (b0 + b1)`.
+///
+/// `tmp` must hold at least `8 * (a_size + 4 + b_size + 16 * min_size)` f64.
+///
+/// # Safety
+/// Caller must ensure the CPU supports AVX2 and FMA (e.g. `is_x86_feature_detected!("avx2")`).
+#[allow(clippy::too_many_arguments)]
+#[target_feature(enable = "avx2", enable = "fma")]
+pub unsafe fn reim4_convolution_pairwise_apply_avx(
+    m: usize,
+    min_size: usize,
+    offset: usize,
+    dst: &mut [f64],
+    a0: &[f64],
+    a1: &[f64],
+    a_size: usize,
+    b0: &[f64],
+    b1: &[f64],
+    b_size: usize,
+    tmp: &mut [f64],
+) {
+    unsafe { reim4_convolution_apply_core_avx::<true>(m, min_size, offset, dst, a0, a1, a_size, b0, b1, b_size, tmp) }
+}
+
+#[allow(clippy::too_many_arguments)]
+#[target_feature(enable = "avx2", enable = "fma")]
+unsafe fn reim4_convolution_apply_core_avx<const PAIRWISE: bool>(
+    m: usize,
+    min_size: usize,
+    offset: usize,
+    dst: &mut [f64],
+    a0: &[f64],
+    a1: &[f64],
+    a_size: usize,
+    b0: &[f64],
+    b1: &[f64],
+    b_size: usize,
+    tmp: &mut [f64],
+) {
+    use core::arch::x86_64::{
+        __m256d, _mm256_add_pd, _mm256_fmadd_pd, _mm256_fnmadd_pd, _mm256_loadu_pd, _mm256_setzero_pd, _mm256_storeu_pd,
+    };
+
+    debug_assert!(a_size > 0);
+    debug_assert!(b_size > 0);
+    debug_assert!(m.is_multiple_of(4));
+    debug_assert!(tmp.len() >= 8 * (a_size + 4 + b_size * (PAIRWISE as usize) + 16 * min_size));
+    debug_assert!(a0.len() >= (m / 4) * 8 * a_size);
+    debug_assert!(b0.len() >= (m / 4) * 8 * b_size);
+    debug_assert!(dst.len() >= 2 * m * min_size);
+
+    const GROUP: usize = 16;
+
+    unsafe {
+        let (a_pad, rest) = tmp.split_at_mut(8 * (a_size + 4));
+        let (b_sum, stage) = rest.split_at_mut(if PAIRWISE { 8 * b_size } else { 0 });
+        let stage: &mut [f64] = &mut stage[..8 * GROUP * min_size];
+
+        // Pad rows are zeroed once and never overwritten.
+        let zero: __m256d = _mm256_setzero_pd();
+        for h in 0..4 {
+            _mm256_storeu_pd(a_pad.as_mut_ptr().add(4 * h), zero);
+            _mm256_storeu_pd(a_pad.as_mut_ptr().add(8 * (a_size + 2) + 4 * h), zero);
+        }
+
+        let n_tiles: usize = min_size.div_ceil(3);
+        let two_m: usize = 2 * m;
+        let dst_ptr: *mut f64 = dst.as_mut_ptr();
+        let n_blocks: usize = m / 4;
+
+        for blk in 0..n_blocks {
+            let stage_ptr: *mut f64 = stage.as_mut_ptr().add(8 * min_size * (blk % GROUP));
+
+            let a_blk: *const f64 = a0.as_ptr().add(blk * 8 * a_size);
+            let b_blk: *const f64 = b0.as_ptr().add(blk * 8 * b_size);
+            let b_src: *const f64 = if PAIRWISE {
+                let a1_blk: *const f64 = a1.as_ptr().add(blk * 8 * a_size);
+                for r in 0..a_size {
+                    let lo: __m256d = _mm256_add_pd(_mm256_loadu_pd(a_blk.add(8 * r)), _mm256_loadu_pd(a1_blk.add(8 * r)));
+                    let hi: __m256d =
+                        _mm256_add_pd(_mm256_loadu_pd(a_blk.add(8 * r + 4)), _mm256_loadu_pd(a1_blk.add(8 * r + 4)));
+                    _mm256_storeu_pd(a_pad.as_mut_ptr().add(8 * (2 + r)), lo);
+                    _mm256_storeu_pd(a_pad.as_mut_ptr().add(8 * (2 + r) + 4), hi);
+                }
+                let b1_blk: *const f64 = b1.as_ptr().add(blk * 8 * b_size);
+                for r in 0..b_size {
+                    let lo: __m256d = _mm256_add_pd(_mm256_loadu_pd(b_blk.add(8 * r)), _mm256_loadu_pd(b1_blk.add(8 * r)));
+                    let hi: __m256d =
+                        _mm256_add_pd(_mm256_loadu_pd(b_blk.add(8 * r + 4)), _mm256_loadu_pd(b1_blk.add(8 * r + 4)));
+                    _mm256_storeu_pd(b_sum.as_mut_ptr().add(8 * r), lo);
+                    _mm256_storeu_pd(b_sum.as_mut_ptr().add(8 * r + 4), hi);
+                }
+                b_sum.as_ptr()
+            } else {
+                for r in 0..a_size {
+                    _mm256_storeu_pd(a_pad.as_mut_ptr().add(8 * (2 + r)), _mm256_loadu_pd(a_blk.add(8 * r)));
+                    _mm256_storeu_pd(a_pad.as_mut_ptr().add(8 * (2 + r) + 4), _mm256_loadu_pd(a_blk.add(8 * r + 4)));
+                }
+                b_blk
+            };
+
+            for tile in 0..n_tiles {
+                let k0: usize = offset + 3 * tile;
+                let j_start: usize = (k0 + 1).saturating_sub(a_size).min(b_size);
+                let j_end: usize = (k0 + 3).min(b_size);
+
+                let mut acc_re0: __m256d = _mm256_setzero_pd();
+                let mut acc_im0: __m256d = _mm256_setzero_pd();
+                let mut acc_re1: __m256d = _mm256_setzero_pd();
+                let mut acc_im1: __m256d = _mm256_setzero_pd();
+                let mut acc_re2: __m256d = _mm256_setzero_pd();
+                let mut acc_im2: __m256d = _mm256_setzero_pd();
+
+                if j_start < j_end {
+                    // w_t = padded row (k0 + t - j) + 2, sliding down one row per j.
+                    let mut a_ptr: *const f64 = a_pad.as_ptr().add(8 * (k0 - j_start + 2));
+                    let mut b_ptr: *const f64 = b_src.add(8 * j_start);
+
+                    let mut wr0: __m256d = _mm256_loadu_pd(a_ptr);
+                    let mut wi0: __m256d = _mm256_loadu_pd(a_ptr.add(4));
+                    let mut wr1: __m256d = _mm256_loadu_pd(a_ptr.add(8));
+                    let mut wi1: __m256d = _mm256_loadu_pd(a_ptr.add(12));
+                    let mut wr2: __m256d = _mm256_loadu_pd(a_ptr.add(16));
+                    let mut wi2: __m256d = _mm256_loadu_pd(a_ptr.add(20));
+
+                    let mut j: usize = j_start;
+                    loop {
+                        let br: __m256d = _mm256_loadu_pd(b_ptr);
+                        let bi: __m256d = _mm256_loadu_pd(b_ptr.add(4));
+
+                        acc_re0 = _mm256_fmadd_pd(wr0, br, acc_re0);
+                        acc_re0 = _mm256_fnmadd_pd(wi0, bi, acc_re0);
+                        acc_im0 = _mm256_fmadd_pd(wr0, bi, acc_im0);
+                        acc_im0 = _mm256_fmadd_pd(wi0, br, acc_im0);
+                        acc_re1 = _mm256_fmadd_pd(wr1, br, acc_re1);
+                        acc_re1 = _mm256_fnmadd_pd(wi1, bi, acc_re1);
+                        acc_im1 = _mm256_fmadd_pd(wr1, bi, acc_im1);
+                        acc_im1 = _mm256_fmadd_pd(wi1, br, acc_im1);
+                        acc_re2 = _mm256_fmadd_pd(wr2, br, acc_re2);
+                        acc_re2 = _mm256_fnmadd_pd(wi2, bi, acc_re2);
+                        acc_im2 = _mm256_fmadd_pd(wr2, bi, acc_im2);
+                        acc_im2 = _mm256_fmadd_pd(wi2, br, acc_im2);
+
+                        j += 1;
+                        if j == j_end {
+                            break;
+                        }
+                        wr2 = wr1;
+                        wi2 = wi1;
+                        wr1 = wr0;
+                        wi1 = wi0;
+                        a_ptr = a_ptr.sub(8);
+                        wr0 = _mm256_loadu_pd(a_ptr);
+                        wi0 = _mm256_loadu_pd(a_ptr.add(4));
+                        b_ptr = b_ptr.add(8);
+                    }
+                }
+
+                let k_rel: usize = 3 * tile;
+                let out: *mut f64 = stage_ptr.add(8 * k_rel);
+                _mm256_storeu_pd(out, acc_re0);
+                _mm256_storeu_pd(out.add(4), acc_im0);
+                if k_rel + 1 < min_size {
+                    _mm256_storeu_pd(out.add(8), acc_re1);
+                    _mm256_storeu_pd(out.add(12), acc_im1);
+                }
+                if k_rel + 2 < min_size {
+                    _mm256_storeu_pd(out.add(16), acc_re2);
+                    _mm256_storeu_pd(out.add(20), acc_im2);
+                }
+            }
+
+            // Flush the group: per limb, consecutive line stores.
+            let in_group: usize = (blk % GROUP) + 1;
+            if in_group == GROUP || blk == n_blocks - 1 {
+                let grp_base: usize = blk + 1 - in_group;
+                let stage_base: *const f64 = stage.as_ptr();
+                for k in 0..min_size {
+                    let row: *const f64 = stage_base.add(8 * k);
+                    let out: *mut f64 = dst_ptr.add(two_m * k + 4 * grp_base);
+                    for p in 0..in_group {
+                        let re: __m256d = _mm256_loadu_pd(row.add(8 * min_size * p));
+                        let im: __m256d = _mm256_loadu_pd(row.add(8 * min_size * p + 4));
+                        _mm256_storeu_pd(out.add(4 * p), re);
+                        _mm256_storeu_pd(out.add(m + 4 * p), im);
+                    }
+                }
+            }
+        }
+    }
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Tests
 // ──────────────────────────────────────────────────────────────────────────────
@@ -786,6 +1172,88 @@ mod tests {
                     dst_avx[i],
                     dst_ref[i]
                 );
+            }
+        }
+    }
+
+    /// Column kernel matches the per-coefficient reference.
+    #[test]
+    fn reim4_convolution_apply_avx_vs_ref() {
+        for &(a_size, b_size) in &[(1usize, 1usize), (2, 3), (4, 4), (5, 2), (14, 14), (14, 1), (3, 14), (7, 9)] {
+            let bound = a_size + b_size - 1;
+            for &m in &[4usize, 16, 144] {
+                let n_blk = m / 4;
+                let a: Vec<f64> = (0..n_blk * 8 * a_size).map(|i| (i as f64 * 0.13 + 1.5).sin()).collect();
+                let b: Vec<f64> = (0..n_blk * 8 * b_size).map(|i| (i as f64 * 0.07 + 2.1).cos()).collect();
+                for offset in [0usize, 1, bound / 2, bound.saturating_sub(1), bound] {
+                    for min_size in [1usize, 2, 3, 4, 5, 8, bound, bound + 2] {
+                        let mut dst_fused = vec![f64::NAN; 2 * m * min_size];
+                        let mut dst_ref = vec![f64::NAN; 2 * m * min_size];
+                        let mut tmp = vec![0f64; 8 * (a_size + 4 + b_size + 16 * min_size)];
+
+                        unsafe {
+                            reim4_convolution_apply_avx(m, min_size, offset, &mut dst_fused, &a, a_size, &b, b_size, &mut tmp)
+                        };
+
+                        let mut blk_out = vec![0f64; 8 * min_size];
+                        for blk in 0..n_blk {
+                            for k in 0..min_size {
+                                let out: &mut [f64; 8] = (&mut blk_out[8 * k..8 * k + 8]).try_into().unwrap();
+                                reim4_convolution_1coeff_ref(
+                                    k + offset,
+                                    out,
+                                    &a[blk * 8 * a_size..],
+                                    a_size,
+                                    &b[blk * 8 * b_size..],
+                                    b_size,
+                                );
+                            }
+                            reim4_save_1blk_to_reim_contiguous_ref(m, min_size, blk, &mut dst_ref, &blk_out);
+                        }
+
+                        let tol = 1e-12f64;
+                        for i in 0..2 * m * min_size {
+                            assert!(
+                                (dst_fused[i] - dst_ref[i]).abs() <= tol,
+                                "conv_apply a={a_size} b={b_size} m={m} offset={offset} min={min_size} i={i}: fused={} ref={}",
+                                dst_fused[i],
+                                dst_ref[i]
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Full-row `reim4_convolution` matches the per-coefficient reference.
+    #[test]
+    fn reim4_convolution_full_avx_vs_ref() {
+        for &(a_size, b_size) in &[(1usize, 1usize), (2, 3), (4, 4), (5, 2), (14, 14), (14, 1), (3, 14), (7, 9)] {
+            let a = reim4_data(a_size, 1.5);
+            let b = reim4_data(b_size, 2.1);
+            let bound = a_size + b_size - 1;
+            for offset in [0usize, 1, 3, bound / 2, bound.saturating_sub(1), bound] {
+                for dst_size in [1usize, 2, 3, 4, 5, 7, 8, bound, bound + 2] {
+                    let mut dst_avx = vec![f64::NAN; 8 * dst_size];
+                    let mut dst_ref = vec![f64::NAN; 8 * dst_size];
+
+                    unsafe { reim4_convolution_avx(&mut dst_avx, dst_size, offset, &a, a_size, &b, b_size) };
+                    for k in 0..dst_size {
+                        let blk: &mut [f64; 8] = (&mut dst_ref[8 * k..8 * k + 8]).try_into().unwrap();
+                        reim4_convolution_1coeff_ref(k + offset, blk, &a, a_size, &b, b_size);
+                    }
+
+                    let tol = 1e-12f64;
+                    for i in 0..8 * dst_size {
+                        assert!(
+                            (dst_avx[i] - dst_ref[i]).abs() <= tol,
+                            "conv_full a={a_size} b={b_size} offset={offset} dst={dst_size} i={i}: AVX={} ref={}",
+                            dst_avx[i],
+                            dst_ref[i]
+                        );
+                    }
+                }
             }
         }
     }

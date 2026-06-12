@@ -581,6 +581,414 @@ pub unsafe fn reim4_convolution_by_real_const_2coeffs_avx512(k: usize, dst: &mut
     }
 }
 
+/// Full-row convolution, tiling outputs by 4. Per-output accumulation order
+/// matches `reim4_convolution_1coeff_avx512` (bit-identical results).
+///
+/// # Safety
+/// Caller must ensure the CPU supports AVX-512F (e.g. `is_x86_feature_detected!("avx512f")`).
+#[target_feature(enable = "avx512f")]
+pub unsafe fn reim4_convolution_avx512(
+    dst: &mut [f64],
+    dst_size: usize,
+    offset: usize,
+    a: &[f64],
+    a_size: usize,
+    b: &[f64],
+    b_size: usize,
+) {
+    debug_assert!(a_size > 0);
+    debug_assert!(b_size > 0);
+    debug_assert!(dst.len() >= 8 * dst_size);
+    debug_assert!(a.len() >= 8 * a_size);
+    debug_assert!(b.len() >= 8 * b_size);
+
+    unsafe {
+        let mut k: usize = 0;
+        while k + 4 <= dst_size {
+            reim4_convolution_tile4_avx512(k + offset, dst.as_mut_ptr().add(8 * k), a, a_size, b, b_size);
+            k += 4;
+        }
+        while k < dst_size {
+            let dst_blk: &mut [f64; 8] = &mut *(dst.as_mut_ptr().add(8 * k) as *mut [f64; 8]);
+            reim4_convolution_1coeff_avx512(k + offset, dst_blk, a, a_size, b, b_size);
+            k += 1;
+        }
+    }
+}
+
+/// One tile of four consecutive output blocks `k_abs..k_abs+4`: head/tail
+/// edges with partial `t` coverage around a full region sliding the `a` window.
+#[target_feature(enable = "avx512f")]
+unsafe fn reim4_convolution_tile4_avx512(k_abs: usize, dst: *mut f64, a: &[f64], a_size: usize, b: &[f64], b_size: usize) {
+    use core::arch::x86_64::{
+        __m256d, __m512d, _mm256_add_pd, _mm256_storeu_pd, _mm256_sub_pd, _mm512_castpd512_pd256, _mm512_extractf64x4_pd,
+        _mm512_fmadd_pd, _mm512_loadu_pd, _mm512_setzero_pd, _mm512_shuffle_f64x2,
+    };
+
+    unsafe {
+        let j_start: usize = (k_abs + 1).saturating_sub(a_size).min(b_size);
+        let j_end: usize = (k_abs + 4).min(b_size);
+        let j_full_start: usize = (k_abs + 4).saturating_sub(a_size).max(j_start).min(j_end);
+        let j_full_end: usize = (k_abs + 1).min(j_end).max(j_full_start);
+
+        let mut acc_a0: __m512d = _mm512_setzero_pd();
+        let mut acc_b0: __m512d = _mm512_setzero_pd();
+        let mut acc_a1: __m512d = _mm512_setzero_pd();
+        let mut acc_b1: __m512d = _mm512_setzero_pd();
+        let mut acc_a2: __m512d = _mm512_setzero_pd();
+        let mut acc_b2: __m512d = _mm512_setzero_pd();
+        let mut acc_a3: __m512d = _mm512_setzero_pd();
+        let mut acc_b3: __m512d = _mm512_setzero_pd();
+
+        let edge = |j: usize,
+                    acc_a0: &mut __m512d,
+                    acc_b0: &mut __m512d,
+                    acc_a1: &mut __m512d,
+                    acc_b1: &mut __m512d,
+                    acc_a2: &mut __m512d,
+                    acc_b2: &mut __m512d,
+                    acc_a3: &mut __m512d,
+                    acc_b3: &mut __m512d| {
+            let b_full: __m512d = _mm512_loadu_pd(b.as_ptr().add(8 * j));
+            let b_swap: __m512d = _mm512_shuffle_f64x2::<0b01_00_11_10>(b_full, b_full);
+            if j <= k_abs && k_abs - j < a_size {
+                let a_full: __m512d = _mm512_loadu_pd(a.as_ptr().add(8 * (k_abs - j)));
+                *acc_a0 = _mm512_fmadd_pd(a_full, b_full, *acc_a0);
+                *acc_b0 = _mm512_fmadd_pd(a_full, b_swap, *acc_b0);
+            }
+            if j <= k_abs + 1 && k_abs + 1 - j < a_size {
+                let a_full: __m512d = _mm512_loadu_pd(a.as_ptr().add(8 * (k_abs + 1 - j)));
+                *acc_a1 = _mm512_fmadd_pd(a_full, b_full, *acc_a1);
+                *acc_b1 = _mm512_fmadd_pd(a_full, b_swap, *acc_b1);
+            }
+            if j <= k_abs + 2 && k_abs + 2 - j < a_size {
+                let a_full: __m512d = _mm512_loadu_pd(a.as_ptr().add(8 * (k_abs + 2 - j)));
+                *acc_a2 = _mm512_fmadd_pd(a_full, b_full, *acc_a2);
+                *acc_b2 = _mm512_fmadd_pd(a_full, b_swap, *acc_b2);
+            }
+            if j <= k_abs + 3 && k_abs + 3 - j < a_size {
+                let a_full: __m512d = _mm512_loadu_pd(a.as_ptr().add(8 * (k_abs + 3 - j)));
+                *acc_a3 = _mm512_fmadd_pd(a_full, b_full, *acc_a3);
+                *acc_b3 = _mm512_fmadd_pd(a_full, b_swap, *acc_b3);
+            }
+        };
+
+        for j in j_start..j_full_start {
+            edge(
+                j,
+                &mut acc_a0,
+                &mut acc_b0,
+                &mut acc_a1,
+                &mut acc_b1,
+                &mut acc_a2,
+                &mut acc_b2,
+                &mut acc_a3,
+                &mut acc_b3,
+            );
+        }
+
+        if j_full_start < j_full_end {
+            let mut a_ptr: *const f64 = a.as_ptr().add(8 * (k_abs - j_full_start));
+            let mut b_ptr: *const f64 = b.as_ptr().add(8 * j_full_start);
+
+            let mut a0: __m512d = _mm512_loadu_pd(a_ptr);
+            let mut a1: __m512d = _mm512_loadu_pd(a_ptr.add(8));
+            let mut a2: __m512d = _mm512_loadu_pd(a_ptr.add(16));
+            let mut a3: __m512d = _mm512_loadu_pd(a_ptr.add(24));
+
+            let mut j: usize = j_full_start;
+            loop {
+                let b_full: __m512d = _mm512_loadu_pd(b_ptr);
+                let b_swap: __m512d = _mm512_shuffle_f64x2::<0b01_00_11_10>(b_full, b_full);
+
+                acc_a0 = _mm512_fmadd_pd(a0, b_full, acc_a0);
+                acc_b0 = _mm512_fmadd_pd(a0, b_swap, acc_b0);
+                acc_a1 = _mm512_fmadd_pd(a1, b_full, acc_a1);
+                acc_b1 = _mm512_fmadd_pd(a1, b_swap, acc_b1);
+                acc_a2 = _mm512_fmadd_pd(a2, b_full, acc_a2);
+                acc_b2 = _mm512_fmadd_pd(a2, b_swap, acc_b2);
+                acc_a3 = _mm512_fmadd_pd(a3, b_full, acc_a3);
+                acc_b3 = _mm512_fmadd_pd(a3, b_swap, acc_b3);
+
+                j += 1;
+                if j == j_full_end {
+                    break;
+                }
+                a3 = a2;
+                a2 = a1;
+                a1 = a0;
+                a_ptr = a_ptr.sub(8);
+                a0 = _mm512_loadu_pd(a_ptr);
+                b_ptr = b_ptr.add(8);
+            }
+        }
+
+        for j in j_full_end..j_end {
+            edge(
+                j,
+                &mut acc_a0,
+                &mut acc_b0,
+                &mut acc_a1,
+                &mut acc_b1,
+                &mut acc_a2,
+                &mut acc_b2,
+                &mut acc_a3,
+                &mut acc_b3,
+            );
+        }
+
+        // re = Σ ar*br - Σ ai*bi, im = Σ ar*bi + Σ ai*br
+        let store = |dst: *mut f64, acc_a: __m512d, acc_b: __m512d| {
+            let lo_a: __m256d = _mm512_castpd512_pd256(acc_a);
+            let hi_a: __m256d = _mm512_extractf64x4_pd::<1>(acc_a);
+            let lo_b: __m256d = _mm512_castpd512_pd256(acc_b);
+            let hi_b: __m256d = _mm512_extractf64x4_pd::<1>(acc_b);
+            _mm256_storeu_pd(dst, _mm256_sub_pd(lo_a, hi_a));
+            _mm256_storeu_pd(dst.add(4), _mm256_add_pd(lo_b, hi_b));
+        };
+        store(dst, acc_a0, acc_b0);
+        store(dst.add(8), acc_a1, acc_b1);
+        store(dst.add(16), acc_a2, acc_b2);
+        store(dst.add(24), acc_a3, acc_b3);
+    }
+}
+
+/// Column-level convolution over all `m/4` blocks: zero-padded `a` window
+/// (branch-free tile loops), outputs staged per 16-block group and flushed as
+/// consecutive cache lines (the `2m*8`-byte limb stride aliases L1 sets).
+/// Accumulation order matches `reim4_convolution_1coeff_avx512`.
+///
+/// `dst` layout: limb `k` re-half at `dst[2*m*k + 4*blk]`, im-half `m` further.
+/// `tmp` must hold at least `8 * (a_size + 6 + b_size + 16 * min_size)` f64.
+///
+/// # Safety
+/// Caller must ensure the CPU supports AVX-512F (e.g. `is_x86_feature_detected!("avx512f")`).
+#[allow(clippy::too_many_arguments)]
+#[target_feature(enable = "avx512f")]
+pub unsafe fn reim4_convolution_apply_avx512(
+    m: usize,
+    min_size: usize,
+    offset: usize,
+    dst: &mut [f64],
+    a: &[f64],
+    a_size: usize,
+    b: &[f64],
+    b_size: usize,
+    tmp: &mut [f64],
+) {
+    unsafe { reim4_convolution_apply_core_avx512::<false>(m, min_size, offset, dst, a, a, a_size, b, b, b_size, tmp) }
+}
+
+/// Pairwise variant of [`reim4_convolution_apply_avx512`]: `(a0 + a1) ⊛ (b0 + b1)`.
+///
+/// `tmp` must hold at least `8 * (a_size + 6 + 2*b_size + 16 * min_size)` f64.
+///
+/// # Safety
+/// Caller must ensure the CPU supports AVX-512F (e.g. `is_x86_feature_detected!("avx512f")`).
+#[allow(clippy::too_many_arguments)]
+#[target_feature(enable = "avx512f")]
+pub unsafe fn reim4_convolution_pairwise_apply_avx512(
+    m: usize,
+    min_size: usize,
+    offset: usize,
+    dst: &mut [f64],
+    a0: &[f64],
+    a1: &[f64],
+    a_size: usize,
+    b0: &[f64],
+    b1: &[f64],
+    b_size: usize,
+    tmp: &mut [f64],
+) {
+    unsafe { reim4_convolution_apply_core_avx512::<true>(m, min_size, offset, dst, a0, a1, a_size, b0, b1, b_size, tmp) }
+}
+
+#[allow(clippy::too_many_arguments)]
+#[target_feature(enable = "avx512f")]
+unsafe fn reim4_convolution_apply_core_avx512<const PAIRWISE: bool>(
+    m: usize,
+    min_size: usize,
+    offset: usize,
+    dst: &mut [f64],
+    a0: &[f64],
+    a1: &[f64],
+    a_size: usize,
+    b0: &[f64],
+    b1: &[f64],
+    b_size: usize,
+    tmp: &mut [f64],
+) {
+    use core::arch::x86_64::{
+        __m256d, __m512d, _mm256_add_pd, _mm256_loadu_pd, _mm256_storeu_pd, _mm256_sub_pd, _mm512_add_pd, _mm512_castpd256_pd512,
+        _mm512_castpd512_pd256, _mm512_extractf64x4_pd, _mm512_fmadd_pd, _mm512_insertf64x4, _mm512_loadu_pd, _mm512_setzero_pd,
+        _mm512_shuffle_f64x2, _mm512_storeu_pd,
+    };
+
+    debug_assert!(a_size > 0);
+    debug_assert!(b_size > 0);
+    debug_assert!(m.is_multiple_of(4));
+    debug_assert!(tmp.len() >= 8 * (a_size + 6 + b_size * (1 + PAIRWISE as usize) + 16 * min_size));
+    debug_assert!(a0.len() >= (m / 4) * 8 * a_size);
+    debug_assert!(b0.len() >= (m / 4) * 8 * b_size);
+    debug_assert!(dst.len() >= 2 * m * min_size);
+
+    const GROUP: usize = 16;
+
+    unsafe {
+        let (a_pad, rest) = tmp.split_at_mut(8 * (a_size + 6));
+        let (b_swp, rest) = rest.split_at_mut(8 * b_size);
+        let (b_sum, stage) = rest.split_at_mut(if PAIRWISE { 8 * b_size } else { 0 });
+        let stage: &mut [f64] = &mut stage[..8 * GROUP * min_size];
+
+        // Pad rows are zeroed once and never overwritten.
+        let zero: __m512d = _mm512_setzero_pd();
+        for r in 0..3 {
+            _mm512_storeu_pd(a_pad.as_mut_ptr().add(8 * r), zero);
+            _mm512_storeu_pd(a_pad.as_mut_ptr().add(8 * (a_size + 3 + r)), zero);
+        }
+
+        let n_tiles: usize = min_size.div_ceil(4);
+        let two_m: usize = 2 * m;
+        let dst_ptr: *mut f64 = dst.as_mut_ptr();
+        let n_blocks: usize = m / 4;
+
+        for blk in 0..n_blocks {
+            let stage_ptr: *mut f64 = stage.as_mut_ptr().add(8 * min_size * (blk % GROUP));
+            let a_blk: *const f64 = a0.as_ptr().add(blk * 8 * a_size);
+            let b_blk: *const f64 = b0.as_ptr().add(blk * 8 * b_size);
+            let b_src: *const f64 = if PAIRWISE {
+                let a1_blk: *const f64 = a1.as_ptr().add(blk * 8 * a_size);
+                for r in 0..a_size {
+                    let s: __m512d = _mm512_add_pd(_mm512_loadu_pd(a_blk.add(8 * r)), _mm512_loadu_pd(a1_blk.add(8 * r)));
+                    _mm512_storeu_pd(a_pad.as_mut_ptr().add(8 * (3 + r)), s);
+                }
+                let b1_blk: *const f64 = b1.as_ptr().add(blk * 8 * b_size);
+                for r in 0..b_size {
+                    let s: __m512d = _mm512_add_pd(_mm512_loadu_pd(b_blk.add(8 * r)), _mm512_loadu_pd(b1_blk.add(8 * r)));
+                    _mm512_storeu_pd(b_sum.as_mut_ptr().add(8 * r), s);
+                    _mm512_storeu_pd(b_swp.as_mut_ptr().add(8 * r), _mm512_shuffle_f64x2::<0b01_00_11_10>(s, s));
+                }
+                b_sum.as_ptr()
+            } else {
+                for r in 0..a_size {
+                    _mm512_storeu_pd(a_pad.as_mut_ptr().add(8 * (3 + r)), _mm512_loadu_pd(a_blk.add(8 * r)));
+                }
+                for r in 0..b_size {
+                    let v: __m512d = _mm512_loadu_pd(b_blk.add(8 * r));
+                    _mm512_storeu_pd(b_swp.as_mut_ptr().add(8 * r), _mm512_shuffle_f64x2::<0b01_00_11_10>(v, v));
+                }
+                b_blk
+            };
+
+            for tile in 0..n_tiles {
+                let k0: usize = offset + 4 * tile;
+                let j_start: usize = (k0 + 1).saturating_sub(a_size).min(b_size);
+                let j_end: usize = (k0 + 4).min(b_size);
+
+                let mut acc_a0: __m512d = _mm512_setzero_pd();
+                let mut acc_b0: __m512d = _mm512_setzero_pd();
+                let mut acc_a1: __m512d = _mm512_setzero_pd();
+                let mut acc_b1: __m512d = _mm512_setzero_pd();
+                let mut acc_a2: __m512d = _mm512_setzero_pd();
+                let mut acc_b2: __m512d = _mm512_setzero_pd();
+                let mut acc_a3: __m512d = _mm512_setzero_pd();
+                let mut acc_b3: __m512d = _mm512_setzero_pd();
+
+                if j_start < j_end {
+                    // w_t = padded row (k0 + t - j) + 3, sliding down one row per j.
+                    let mut a_ptr: *const f64 = a_pad.as_ptr().add(8 * (k0 - j_start + 3));
+                    let mut b_ptr: *const f64 = b_src.add(8 * j_start);
+                    let mut bs_ptr: *const f64 = b_swp.as_ptr().add(8 * j_start);
+
+                    let mut w0: __m512d = _mm512_loadu_pd(a_ptr);
+                    let mut w1: __m512d = _mm512_loadu_pd(a_ptr.add(8));
+                    let mut w2: __m512d = _mm512_loadu_pd(a_ptr.add(16));
+                    let mut w3: __m512d = _mm512_loadu_pd(a_ptr.add(24));
+
+                    let mut j: usize = j_start;
+                    loop {
+                        let b_full: __m512d = _mm512_loadu_pd(b_ptr);
+                        let b_swap: __m512d = _mm512_loadu_pd(bs_ptr);
+
+                        acc_a0 = _mm512_fmadd_pd(w0, b_full, acc_a0);
+                        acc_b0 = _mm512_fmadd_pd(w0, b_swap, acc_b0);
+                        acc_a1 = _mm512_fmadd_pd(w1, b_full, acc_a1);
+                        acc_b1 = _mm512_fmadd_pd(w1, b_swap, acc_b1);
+                        acc_a2 = _mm512_fmadd_pd(w2, b_full, acc_a2);
+                        acc_b2 = _mm512_fmadd_pd(w2, b_swap, acc_b2);
+                        acc_a3 = _mm512_fmadd_pd(w3, b_full, acc_a3);
+                        acc_b3 = _mm512_fmadd_pd(w3, b_swap, acc_b3);
+
+                        j += 1;
+                        if j == j_end {
+                            break;
+                        }
+                        w3 = w2;
+                        w2 = w1;
+                        w1 = w0;
+                        a_ptr = a_ptr.sub(8);
+                        w0 = _mm512_loadu_pd(a_ptr);
+                        b_ptr = b_ptr.add(8);
+                        bs_ptr = bs_ptr.add(8);
+                    }
+                }
+
+                // re = lo(acc_a) - hi(acc_a), im = lo(acc_b) + hi(acc_b)
+                let k_rel: usize = 4 * tile;
+                let store = |t: usize, acc_a: __m512d, acc_b: __m512d| {
+                    let lo_a: __m256d = _mm512_castpd512_pd256(acc_a);
+                    let hi_a: __m256d = _mm512_extractf64x4_pd::<1>(acc_a);
+                    let lo_b: __m256d = _mm512_castpd512_pd256(acc_b);
+                    let hi_b: __m256d = _mm512_extractf64x4_pd::<1>(acc_b);
+                    let out: *mut f64 = stage_ptr.add(8 * (k_rel + t));
+                    _mm256_storeu_pd(out, _mm256_sub_pd(lo_a, hi_a));
+                    _mm256_storeu_pd(out.add(4), _mm256_add_pd(lo_b, hi_b));
+                };
+                store(0, acc_a0, acc_b0);
+                if k_rel + 1 < min_size {
+                    store(1, acc_a1, acc_b1);
+                }
+                if k_rel + 2 < min_size {
+                    store(2, acc_a2, acc_b2);
+                }
+                if k_rel + 3 < min_size {
+                    store(3, acc_a3, acc_b3);
+                }
+            }
+
+            // Flush the group: per limb, consecutive full-line stores.
+            let in_group: usize = (blk % GROUP) + 1;
+            if in_group == GROUP || blk == n_blocks - 1 {
+                let grp_base: usize = blk + 1 - in_group;
+                let stage_base: *const f64 = stage.as_ptr();
+                for k in 0..min_size {
+                    let row: *const f64 = stage_base.add(8 * k);
+                    let out: *mut f64 = dst_ptr.add(two_m * k + 4 * grp_base);
+                    let mut p: usize = 0;
+                    while p + 2 <= in_group {
+                        let re_e: __m256d = _mm256_loadu_pd(row.add(8 * min_size * p));
+                        let im_e: __m256d = _mm256_loadu_pd(row.add(8 * min_size * p + 4));
+                        let re_o: __m256d = _mm256_loadu_pd(row.add(8 * min_size * (p + 1)));
+                        let im_o: __m256d = _mm256_loadu_pd(row.add(8 * min_size * (p + 1) + 4));
+                        _mm512_storeu_pd(out.add(4 * p), _mm512_insertf64x4::<1>(_mm512_castpd256_pd512(re_e), re_o));
+                        _mm512_storeu_pd(
+                            out.add(m + 4 * p),
+                            _mm512_insertf64x4::<1>(_mm512_castpd256_pd512(im_e), im_o),
+                        );
+                        p += 2;
+                    }
+                    if p < in_group {
+                        let re_e: __m256d = _mm256_loadu_pd(row.add(8 * min_size * p));
+                        let im_e: __m256d = _mm256_loadu_pd(row.add(8 * min_size * p + 4));
+                        _mm256_storeu_pd(out.add(4 * p), re_e);
+                        _mm256_storeu_pd(out.add(m + 4 * p), im_e);
+                    }
+                }
+            }
+        }
+    }
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Tests
 // ──────────────────────────────────────────────────────────────────────────────
@@ -715,6 +1123,89 @@ mod tests {
                     dst_avx512[i],
                     dst_ref[i]
                 );
+            }
+        }
+    }
+
+    /// Column kernel matches the per-coefficient reference.
+    #[test]
+    fn reim4_convolution_apply_avx512_vs_ref() {
+        for &(a_size, b_size) in &[(1usize, 1usize), (2, 3), (4, 4), (5, 2), (14, 14), (14, 1), (3, 14), (7, 9)] {
+            let bound = a_size + b_size - 1;
+            for &m in &[4usize, 16] {
+                let n_blk = m / 4;
+                let a: Vec<f64> = (0..n_blk * 8 * a_size).map(|i| (i as f64 * 0.13 + 1.5).sin()).collect();
+                let b: Vec<f64> = (0..n_blk * 8 * b_size).map(|i| (i as f64 * 0.07 + 2.1).cos()).collect();
+                for offset in [0usize, 1, bound / 2, bound.saturating_sub(1), bound] {
+                    for min_size in [1usize, 2, 3, 4, 5, 8, bound, bound + 2] {
+                        let mut dst_fused = vec![f64::NAN; 2 * m * min_size];
+                        let mut dst_ref = vec![f64::NAN; 2 * m * min_size];
+                        let mut tmp = vec![0f64; 8 * (a_size + 6 + b_size + 16 * min_size).max(8 * min_size)];
+
+                        unsafe {
+                            reim4_convolution_apply_avx512(m, min_size, offset, &mut dst_fused, &a, a_size, &b, b_size, &mut tmp)
+                        };
+
+                        // Generic per-block path as reference.
+                        let mut blk_out = vec![0f64; 8 * min_size];
+                        for blk in 0..n_blk {
+                            for k in 0..min_size {
+                                let out: &mut [f64; 8] = (&mut blk_out[8 * k..8 * k + 8]).try_into().unwrap();
+                                reim4_convolution_1coeff_ref(
+                                    k + offset,
+                                    out,
+                                    &a[blk * 8 * a_size..],
+                                    a_size,
+                                    &b[blk * 8 * b_size..],
+                                    b_size,
+                                );
+                            }
+                            reim4_save_1blk_to_reim_contiguous_ref(m, min_size, blk, &mut dst_ref, &blk_out);
+                        }
+
+                        let tol = 1e-12f64;
+                        for i in 0..2 * m * min_size {
+                            assert!(
+                                (dst_fused[i] - dst_ref[i]).abs() <= tol,
+                                "conv_apply a={a_size} b={b_size} m={m} offset={offset} min={min_size} i={i}: fused={} ref={}",
+                                dst_fused[i],
+                                dst_ref[i]
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Full-row `reim4_convolution` matches the per-coefficient reference.
+    #[test]
+    fn reim4_convolution_full_avx512_vs_ref() {
+        for &(a_size, b_size) in &[(1usize, 1usize), (2, 3), (4, 4), (5, 2), (14, 14), (14, 1), (3, 14), (7, 9)] {
+            let a = reim4_data(a_size, 1.5);
+            let b = reim4_data(b_size, 2.1);
+            let bound = a_size + b_size - 1;
+            for offset in [0usize, 1, 3, bound / 2, bound.saturating_sub(1), bound] {
+                for dst_size in [1usize, 2, 3, 4, 5, 7, 8, bound, bound + 2] {
+                    let mut dst_avx512 = vec![f64::NAN; 8 * dst_size];
+                    let mut dst_ref = vec![f64::NAN; 8 * dst_size];
+
+                    unsafe { reim4_convolution_avx512(&mut dst_avx512, dst_size, offset, &a, a_size, &b, b_size) };
+                    for k in 0..dst_size {
+                        let blk: &mut [f64; 8] = (&mut dst_ref[8 * k..8 * k + 8]).try_into().unwrap();
+                        reim4_convolution_1coeff_ref(k + offset, blk, &a, a_size, &b, b_size);
+                    }
+
+                    let tol = 1e-12f64;
+                    for i in 0..8 * dst_size {
+                        assert!(
+                            (dst_avx512[i] - dst_ref[i]).abs() <= tol,
+                            "conv_full a={a_size} b={b_size} offset={offset} dst={dst_size} i={i}: AVX={} ref={}",
+                            dst_avx512[i],
+                            dst_ref[i]
+                        );
+                    }
+                }
             }
         }
     }
