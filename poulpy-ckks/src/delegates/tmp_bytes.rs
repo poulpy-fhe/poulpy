@@ -1,8 +1,8 @@
 use crate::{
     CKKSCtBounds, CKKSInfos,
     leveled::api::{
-        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSDecrypt, CKKSEncrypt, CKKSImagOps, CKKSMulOps, CKKSNegOps,
-        CKKSPow2Ops, CKKSRescaleOps, CKKSRotateOps, CKKSSubOps,
+        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSDecrypt, CKKSEncrypt, CKKSImagOps, CKKSMulAddOps, CKKSMulOps,
+        CKKSMulSubOps, CKKSNegOps, CKKSPow2Ops, CKKSRescaleOps, CKKSRotateOps, CKKSSubOps,
     },
 };
 use poulpy_core::{
@@ -31,6 +31,8 @@ where
         + CKKSRescaleOps<BE>
         + CKKSRotateOps<BE>
         + CKKSMulOps<BE>
+        + CKKSMulAddOps<BE>
+        + CKKSMulSubOps<BE>
         + GLWEAutomorphism<BE>
         + GLWEAutomorphismKeyEncryptSk<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
@@ -80,6 +82,8 @@ where
             .max(self.ckks_rescale_tmp_bytes())
             .max(self.ckks_align_tmp_bytes())
             .max(self.ckks_mul_tmp_bytes(ct_infos, tsk_infos))
+            .max(self.ckks_mul_add_ct_tmp_bytes(ct_infos, tsk_infos))
+            .max(self.ckks_mul_sub_ct_tmp_bytes(ct_infos, tsk_infos))
             .max(self.ckks_square_tmp_bytes(ct_infos, tsk_infos))
             .max(polynomial_giant_steps_tmp_bytes)
             .max(self.ckks_mul_pt_vec_tmp_bytes(ct_infos, ct_infos, pt_prec))

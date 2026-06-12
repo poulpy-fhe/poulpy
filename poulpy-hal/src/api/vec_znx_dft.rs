@@ -87,7 +87,9 @@ pub trait VecZnxDftAddAssign<B: Backend> {
     );
 }
 
-/// In-place scaled addition in DFT domain: `res += a * a_scale`.
+/// In-place LIMB-SHIFTED addition in the DFT domain:
+/// `res += a * 2^(a_scale * base2k)` (`a_scale` is a limb offset, positive
+/// shifts toward the most significant limb — NOT an integer scaling of `a`).
 pub trait VecZnxDftAddScaledAssign<B: Backend> {
     fn vec_znx_dft_add_scaled_assign(
         &self,
