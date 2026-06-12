@@ -1,17 +1,17 @@
 use crate::{
     api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution},
     layouts::{
-        Backend, CnvDftAccTerm, CnvPVecL, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecR, CnvPVecRBackendMut,
-        CnvPVecRBackendRef, Module, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
+        Backend, CnvPVecL, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecR, CnvPVecRBackendMut, CnvPVecRBackendRef, Module,
+        ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
     },
-    oep::{HalConvolutionImpl, HalVecZnxDftImpl},
+    oep::HalConvolutionImpl,
 };
 
 macro_rules! impl_convolution_delegate {
     ($trait:ty, $($body:item),+ $(,)?) => {
         impl<BE: Backend> $trait for Module<BE>
         where
-            BE: HalConvolutionImpl<BE> + HalVecZnxDftImpl<BE>,
+            BE: HalConvolutionImpl<BE>,
         {
             $($body)+
         }
