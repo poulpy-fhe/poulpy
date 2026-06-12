@@ -5,6 +5,8 @@
 //! IFMA reference path with a backend-local 4-column tiled layout and a direct
 //! row-strided apply kernel.
 
+#![allow(dead_code)]
+
 use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::{
     __m512i, _mm_sfence, _mm512_add_epi64, _mm512_loadu_si512, _mm512_madd52hi_epu64, _mm512_madd52lo_epu64,
@@ -16,8 +18,9 @@ use std::mem::size_of;
 use crate::ntt126_ifma::{
     bbc_meta::Bbc126IfmaMeta,
     module::handle,
-    primes::Primes42,
-    traits::{Ntt126IfmaCFromB, Ntt126IfmaDFTExecute, Ntt126IfmaFromZnx64},
+    primes::{PrimeSetNtt126Ifma, Primes42},
+    tables::{harvey_modmul, harvey_quotient},
+    traits::{Ntt126IfmaAddAssign, Ntt126IfmaCFromB, Ntt126IfmaDFTExecute, Ntt126IfmaFromZnx64},
     types::Q_SHIFTED_NTT126IFMA,
 };
 use poulpy_hal::layouts::{
@@ -144,7 +147,7 @@ unsafe fn save_blk_quad_result<const OVERWRITE: bool>(
 // ──────────────────────────────────────────────────────────────────────────────
 
 pub(crate) fn vmp_prepare_tmp_bytes_ifma(n: usize) -> usize {
-    8 * n * size_of::<u64>()
+    6 * n * size_of::<u64>()
 }
 
 pub(crate) fn vmp_apply_tmp_bytes_ifma(a_size: usize, b_rows: usize, b_cols_in: usize) -> usize {
@@ -170,41 +173,77 @@ pub(crate) fn vmp_prepare_ifma(
     let n = res.n();
     let nrows = a.cols_in() * a.rows();
     let ncols = a.cols_out() * a.size();
-    let n_blks = n / 2;
 
-    let (tmp_b, tmp_c_u64) = tmp.split_at_mut(4 * n);
-    let tmp_c: &mut [u32] = cast_slice_mut(tmp_c_u64);
+    let (tmp_b, tmp_c_u64) = tmp.split_at_mut(3 * n);
+    let tmp_c_u64 = &mut tmp_c_u64[..3 * n];
     let mat_i64: &[i64] = a.raw();
     let pmat_u64: &mut [u64] = cast_slice_mut(res.data_mut());
 
-    let bq_stride = ncols * nrows * 24; // u64 per block-quad
-    let col_stride = nrows * 24; // u64 per column within a block-quad
-    let row_stride = 24; // u64 per row: 3 prime vectors
-
-    // tmp_c is in the interleaved prepared format: per coefficient 4 u64 (as 8 u32),
-    // layout [p0, p1, p2, pad] × n coefficients. We scatter each coefficient
-    // into row-local prime vectors at the right block-quad slot.
     for row_i in 0..nrows {
         for col_i in 0..ncols {
             let pos = n * (row_i * ncols + col_i);
             crate::NTT126Ifma::ntt126_ifma_from_znx64(tmp_b, &mat_i64[pos..pos + n]);
             crate::NTT126Ifma::ntt126_ifma_dft_execute(&handle(module).table_ntt, tmp_b);
+            let tmp_c: &mut [u32] = cast_slice_mut(tmp_c_u64);
             crate::NTT126Ifma::ntt126_ifma_c_from_b(n, tmp_c, tmp_b);
 
-            let tmp_c_u64: &[u64] = bytemuck::cast_slice(tmp_c);
+            let entry = row_i * ncols + col_i;
+            pmat_u64[entry * 3 * n..(entry + 1) * 3 * n].copy_from_slice(tmp_c_u64);
+        }
+    }
+}
 
-            for blk_j in 0..n_blks {
-                let bq = blk_j / 4;
-                let slot = blk_j % 4; // 0..3, maps to lanes 2*slot, 2*slot+1
-                let coeff0_base = blk_j * 8; // in tmp_c_u64: 4 u64 per coeff, 2 coeffs per x2-block = 8 u64
-                let dst_base = bq * bq_stride + col_i * col_stride + row_i * row_stride + 2 * slot;
+#[inline(always)]
+fn mul_mod_lazy(a: u64, b: u64, prime: usize) -> u64 {
+    let q = Primes42::Q[prime];
+    let b = b % q;
+    harvey_modmul(a, b, harvey_quotient(b, q), q) % q
+}
 
-                for p in 0..3usize {
-                    let dst = dst_base + p * 8;
-                    pmat_u64[dst] = tmp_c_u64[coeff0_base + p]; // coeff 0
-                    pmat_u64[dst + 1] = tmp_c_u64[coeff0_base + 4 + p]; // coeff 1
+#[allow(clippy::too_many_arguments)]
+fn vmp_apply_planar<const OVERWRITE: bool>(
+    n: usize,
+    res_u64: &mut [u64],
+    a_u64: &[u64],
+    pmat_u64: &[u64],
+    limb_offset: usize,
+    nrows: usize,
+    ncols: usize,
+) {
+    let a_size = a_u64.len() / (3 * n);
+    let res_size = res_u64.len() / (3 * n);
+    let row_max = nrows.min(a_size);
+    let col_max = ncols.min(res_size + limb_offset);
+
+    if OVERWRITE {
+        res_u64.fill(0);
+    }
+    if limb_offset >= col_max {
+        return;
+    }
+
+    let mut tmp = vec![0u64; 3 * n];
+    for col_pmat in limb_offset..col_max {
+        let col_res = col_pmat - limb_offset;
+        tmp.fill(0);
+        for row in 0..row_max {
+            let a_base = row * 3 * n;
+            let p_base = (row * ncols + col_pmat) * 3 * n;
+            for prime in 0..3 {
+                let q = Primes42::Q[prime];
+                let base = prime * n;
+                for i in 0..n {
+                    let prod = mul_mod_lazy(a_u64[a_base + base + i], pmat_u64[p_base + base + i], prime);
+                    tmp[base + i] = ((tmp[base + i] as u128 + prod as u128) % q as u128) as u64;
                 }
             }
+        }
+
+        let dst = &mut res_u64[col_res * 3 * n..(col_res + 1) * 3 * n];
+        if OVERWRITE {
+            dst.copy_from_slice(&tmp);
+        } else {
+            crate::NTT126Ifma::ntt126_ifma_add_assign(dst, &tmp);
         }
     }
 }
@@ -649,19 +688,8 @@ pub(crate) fn vmp_apply_dft_to_dft_ifma(
     let a_u64: &[u64] = cast_slice(a.raw());
     let pmat_u64: &[u64] = cast_slice(pmat.data());
 
-    unsafe {
-        vmp_apply_core_pm::<true>(
-            n,
-            res_u64,
-            a_u64,
-            pmat_u64,
-            limb_offset,
-            nrows,
-            ncols,
-            &handle(module).meta_bbc,
-            tmp,
-        );
-    }
+    let _ = (module, tmp);
+    vmp_apply_planar::<true>(n, res_u64, a_u64, pmat_u64, limb_offset, nrows, ncols);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -684,19 +712,8 @@ pub(crate) fn vmp_apply_dft_to_dft_accumulate_ifma(
     let a_u64: &[u64] = cast_slice(a.raw());
     let pmat_u64: &[u64] = cast_slice(pmat.data());
 
-    unsafe {
-        vmp_apply_core_pm::<false>(
-            n,
-            res_u64,
-            a_u64,
-            pmat_u64,
-            limb_offset,
-            nrows,
-            ncols,
-            &handle(module).meta_bbc,
-            tmp,
-        );
-    }
+    let _ = (module, tmp);
+    vmp_apply_planar::<false>(n, res_u64, a_u64, pmat_u64, limb_offset, nrows, ncols);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

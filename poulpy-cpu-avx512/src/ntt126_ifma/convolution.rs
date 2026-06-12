@@ -7,13 +7,16 @@
 //! tile four output limbs per pass over a zero-padded `a` window, reducing
 //! each output once with [`reduce_bbc_ifma_simd_512`].
 
+#![allow(dead_code)]
+
 use bytemuck::{cast_slice, cast_slice_mut};
 use std::mem::size_of;
 
 use crate::ntt126_ifma::{
     module::handle,
-    primes::Primes42,
+    primes::{PrimeSetNtt126Ifma, Primes42},
     tables::Ntt126IfmaTable,
+    tables::{harvey_modmul, harvey_quotient},
     traits::{Ntt126IfmaAddAssign, Ntt126IfmaCFromB, Ntt126IfmaDFTExecute, Ntt126IfmaFromZnx64},
     types::Q126Scalar,
 };
@@ -255,6 +258,93 @@ fn col_slice(raw: &[Q126Scalar], n: usize, size: usize, col: usize) -> &[u64] {
     &cast_slice(raw)[col * stride..(col + 1) * stride]
 }
 
+#[inline(always)]
+fn col_slice_mut(raw: &mut [Q126Scalar], n: usize, size: usize, col: usize) -> &mut [u64] {
+    let stride = 3 * n * size;
+    &mut cast_slice_mut(raw)[col * stride..(col + 1) * stride]
+}
+
+#[inline(always)]
+fn limb_plane(data: &[u64], n: usize, limb: usize, prime: usize) -> &[u64] {
+    let base = limb * 3 * n + prime * n;
+    &data[base..base + n]
+}
+
+#[inline(always)]
+fn limb_plane_mut(data: &mut [u64], n: usize, limb: usize, prime: usize) -> &mut [u64] {
+    let base = limb * 3 * n + prime * n;
+    &mut data[base..base + n]
+}
+
+#[inline(always)]
+fn mul_mod_lazy(a: u64, b: u64, prime: usize) -> u64 {
+    let q = Primes42::Q[prime];
+    let b = b % q;
+    harvey_modmul(a, b, harvey_quotient(b, q), q) % q
+}
+
+#[allow(clippy::too_many_arguments)]
+fn conv_columns_planar<const ACC: bool, const PAIRWISE: bool>(
+    cnv_offset: usize,
+    res: &mut VecZnxDftBackendMut<'_, NTT126Ifma>,
+    res_col: usize,
+    a0_col: &[u64],
+    a1_col: &[u64],
+    a_size: usize,
+    b0_col: &[u64],
+    b1_col: &[u64],
+    b_size: usize,
+) {
+    let n = res.n();
+    let res_size = res.size();
+    let bound = a_size + b_size - 1;
+    let offset = cnv_offset.min(bound);
+    let min_size = res_size.min((bound + 1).saturating_sub(offset));
+    let mut tmp = vec![0u64; 3 * n];
+
+    for k_rel in 0..min_size {
+        let k_abs = offset + k_rel;
+        tmp.fill(0);
+        let j_min = k_abs.saturating_sub(a_size - 1);
+        let j_max = (k_abs + 1).min(b_size);
+        for prime in 0..3 {
+            let q = Primes42::Q[prime];
+            let out = limb_plane_mut(&mut tmp, n, 0, prime);
+            for j in j_min..j_max {
+                let a_limb = k_abs - j;
+                let a0 = limb_plane(a0_col, n, a_limb, prime);
+                let b0 = limb_plane(b0_col, n, j, prime);
+                if PAIRWISE {
+                    let a1 = limb_plane(a1_col, n, a_limb, prime);
+                    let b1 = limb_plane(b1_col, n, j, prime);
+                    for i in 0..n {
+                        let av = a0[i] + a1[i];
+                        let bv = (b0[i] + b1[i]) % q;
+                        out[i] = ((out[i] as u128 + mul_mod_lazy(av, bv, prime) as u128) % q as u128) as u64;
+                    }
+                } else {
+                    for i in 0..n {
+                        out[i] = ((out[i] as u128 + mul_mod_lazy(a0[i], b0[i], prime) as u128) % q as u128) as u64;
+                    }
+                }
+            }
+        }
+
+        let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(res_col, k_rel));
+        if ACC {
+            NTT126Ifma::ntt126_ifma_add_assign(res_u64, &tmp);
+        } else {
+            res_u64.copy_from_slice(&tmp);
+        }
+    }
+
+    if !ACC {
+        for j in min_size..res_size {
+            cast_slice_mut::<_, u64>(res.at_mut(res_col, j)).fill(0);
+        }
+    }
+}
+
 /// DFT-domain bivariate convolution `res[k] = Σ a[j] ⊙ b[k−j]`.
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
@@ -279,17 +369,15 @@ pub(crate) unsafe fn cnv_apply_dft_ifma(
         return;
     }
 
-    let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
+    let (prefix, _tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
     debug_assert!(prefix.is_empty());
     debug_assert!(suffix.is_empty());
 
     let a_col_u64 = col_slice(a.raw(), n, a_size, a_col);
     let b_col_u64 = col_slice(b.raw(), n, b_size, b_col);
-    unsafe {
-        conv_columns_ifma::<false, false>(
-            cnv_offset, res, res_col, a_col_u64, a_col_u64, a_size, b_col_u64, b_col_u64, b_size, tmp_u64,
-        );
-    }
+    conv_columns_planar::<false, false>(
+        cnv_offset, res, res_col, a_col_u64, a_col_u64, a_size, b_col_u64, b_col_u64, b_size,
+    );
 }
 
 /// Accumulating variant of [`cnv_apply_dft_ifma`]: `res[k] += Σ a[j] ⊙ b[k−j]`
@@ -315,17 +403,15 @@ pub(crate) unsafe fn cnv_apply_dft_accumulate_ifma(
         return;
     }
 
-    let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
+    let (prefix, _tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
     debug_assert!(prefix.is_empty());
     debug_assert!(suffix.is_empty());
 
     let a_col_u64 = col_slice(a.raw(), n, a_size, a_col);
     let b_col_u64 = col_slice(b.raw(), n, b_size, b_col);
-    unsafe {
-        conv_columns_ifma::<true, false>(
-            cnv_offset, res, res_col, a_col_u64, a_col_u64, a_size, b_col_u64, b_col_u64, b_size, tmp_u64,
-        );
-    }
+    conv_columns_planar::<true, false>(
+        cnv_offset, res, res_col, a_col_u64, a_col_u64, a_size, b_col_u64, b_col_u64, b_size,
+    );
 }
 
 /// Pairwise DFT-domain convolution:
@@ -360,7 +446,7 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma(
         return;
     }
 
-    let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
+    let (prefix, _tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
     debug_assert!(prefix.is_empty());
     debug_assert!(suffix.is_empty());
 
@@ -368,9 +454,7 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma(
     let a1 = col_slice(a.raw(), n, a_size, col_1);
     let b0 = col_slice(b.raw(), n, b_size, col_0);
     let b1 = col_slice(b.raw(), n, b_size, col_1);
-    unsafe {
-        conv_columns_ifma::<false, true>(cnv_offset, res, res_col, a0, a1, a_size, b0, b1, b_size, tmp_u64);
-    }
+    conv_columns_planar::<false, true>(cnv_offset, res, res_col, a0, a1, a_size, b0, b1, b_size);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -394,7 +478,7 @@ fn zero_row(dst: &mut [u64], size: usize, row: usize, n_blks: usize) {
 
 /// Scratch bytes required by [`cnv_prepare_left`]: one NTT-domain limb.
 pub(crate) fn cnv_prepare_left_tmp_bytes(n: usize) -> usize {
-    4 * n * size_of::<u64>()
+    3 * n * size_of::<u64>()
 }
 
 pub(crate) fn cnv_prepare_left(
@@ -409,38 +493,33 @@ pub(crate) fn cnv_prepare_left(
     let cols = res.cols();
     let res_size = res.size();
     let min_size = res_size.min(a.size());
-    let n_blks = n / 2;
-    let col_stride = 4 * n * res_size;
 
     let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
     debug_assert!(prefix.is_empty());
     debug_assert!(suffix.is_empty());
-    let limb = &mut tmp_u64[..4 * n];
+    let limb = &mut tmp_u64[..3 * n];
 
-    let res_u64: &mut [u64] = cast_slice_mut(res.raw_mut());
+    let res_raw = res.raw_mut();
     for col in 0..cols {
-        let dst = &mut res_u64[col * col_stride..(col + 1) * col_stride];
+        let dst = col_slice_mut(res_raw, n, res_size, col);
         for j in 0..min_size {
             if j + 1 == min_size {
                 NTT126Ifma::ntt126_ifma_from_znx64_masked(limb, a.at(col, j), mask);
             } else {
                 NTT126Ifma::ntt126_ifma_from_znx64(limb, a.at(col, j));
             }
-            // The NTT writes its final normalised blocks straight to the
-            // block-major rows, skipping a separate scatter pass.
-            unsafe {
-                crate::ntt126_ifma::kernels::ntt_avx512_to_rows::<Primes42>(table, limb, dst, 8 * res_size, 8 * j);
-            }
+            <NTT126Ifma as Ntt126IfmaDFTExecute<Ntt126IfmaTable<Primes42>>>::ntt126_ifma_dft_execute(table, limb);
+            dst[j * 3 * n..(j + 1) * 3 * n].copy_from_slice(limb);
         }
         for j in min_size..res_size {
-            zero_row(dst, res_size, j, n_blks);
+            dst[j * 3 * n..(j + 1) * 3 * n].fill(0);
         }
     }
 }
 
 /// Scratch bytes required by [`cnv_prepare_right`]: NTT and converted limbs.
 pub(crate) fn cnv_prepare_right_tmp_bytes(n: usize) -> usize {
-    8 * n * size_of::<u64>()
+    6 * n * size_of::<u64>()
 }
 
 pub(crate) fn cnv_prepare_right(
@@ -455,14 +534,12 @@ pub(crate) fn cnv_prepare_right(
     let cols = res.cols();
     let res_size = res.size();
     let min_size = res_size.min(a.size());
-    let n_blks = n / 2;
-    let col_stride = 4 * n * res_size;
 
-    let (limb_b, limb_c) = tmp[..8 * n].split_at_mut(4 * n);
+    let (limb_b, limb_c) = tmp[..6 * n].split_at_mut(3 * n);
 
-    let res_u64: &mut [u64] = cast_slice_mut(res.raw_mut());
+    let res_raw = res.raw_mut();
     for col in 0..cols {
-        let dst = &mut res_u64[col * col_stride..(col + 1) * col_stride];
+        let dst = col_slice_mut(res_raw, n, res_size, col);
         for j in 0..min_size {
             if j + 1 == min_size {
                 NTT126Ifma::ntt126_ifma_from_znx64_masked(limb_b, a.at(col, j), mask);
@@ -471,18 +548,17 @@ pub(crate) fn cnv_prepare_right(
             }
             <NTT126Ifma as Ntt126IfmaDFTExecute<Ntt126IfmaTable<Primes42>>>::ntt126_ifma_dft_execute(table, limb_b);
             NTT126Ifma::ntt126_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
-            // Reversed row order: limb j lands on row size-1-j.
-            scatter_limb(dst, limb_c, res_size, res_size - 1 - j, n_blks);
+            dst[j * 3 * n..(j + 1) * 3 * n].copy_from_slice(limb_c);
         }
         for j in min_size..res_size {
-            zero_row(dst, res_size, res_size - 1 - j, n_blks);
+            dst[j * 3 * n..(j + 1) * 3 * n].fill(0);
         }
     }
 }
 
 /// Scratch bytes required by [`cnv_prepare_self`]: NTT and converted limbs.
 pub(crate) fn cnv_prepare_self_tmp_bytes(n: usize) -> usize {
-    8 * n * size_of::<u64>()
+    6 * n * size_of::<u64>()
 }
 
 pub(crate) fn cnv_prepare_self(
@@ -498,19 +574,17 @@ pub(crate) fn cnv_prepare_self(
     let cols = left.cols();
     let res_size = left.size();
     let min_size = res_size.min(a.size());
-    let n_blks = n / 2;
-    let col_stride = 4 * n * res_size;
 
     let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
     debug_assert!(prefix.is_empty());
     debug_assert!(suffix.is_empty());
-    let (limb_b, limb_c) = tmp_u64[..8 * n].split_at_mut(4 * n);
+    let (limb_b, limb_c) = tmp_u64[..6 * n].split_at_mut(3 * n);
 
-    let left_u64: &mut [u64] = cast_slice_mut(left.raw_mut());
-    let right_u64: &mut [u64] = cast_slice_mut(right.raw_mut());
+    let left_raw = left.raw_mut();
+    let right_raw = right.raw_mut();
     for col in 0..cols {
-        let dst_l = &mut left_u64[col * col_stride..(col + 1) * col_stride];
-        let dst_r = &mut right_u64[col * col_stride..(col + 1) * col_stride];
+        let dst_l = col_slice_mut(left_raw, n, res_size, col);
+        let dst_r = col_slice_mut(right_raw, n, res_size, col);
         for j in 0..min_size {
             if j + 1 == min_size {
                 NTT126Ifma::ntt126_ifma_from_znx64_masked(limb_b, a.at(col, j), mask);
@@ -518,13 +592,13 @@ pub(crate) fn cnv_prepare_self(
                 NTT126Ifma::ntt126_ifma_from_znx64(limb_b, a.at(col, j));
             }
             <NTT126Ifma as Ntt126IfmaDFTExecute<Ntt126IfmaTable<Primes42>>>::ntt126_ifma_dft_execute(table, limb_b);
-            scatter_limb(dst_l, limb_b, res_size, j, n_blks);
+            dst_l[j * 3 * n..(j + 1) * 3 * n].copy_from_slice(limb_b);
             NTT126Ifma::ntt126_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
-            scatter_limb(dst_r, limb_c, res_size, res_size - 1 - j, n_blks);
+            dst_r[j * 3 * n..(j + 1) * 3 * n].copy_from_slice(limb_c);
         }
         for j in min_size..res_size {
-            zero_row(dst_l, res_size, j, n_blks);
-            zero_row(dst_r, res_size, res_size - 1 - j, n_blks);
+            dst_l[j * 3 * n..(j + 1) * 3 * n].fill(0);
+            dst_r[j * 3 * n..(j + 1) * 3 * n].fill(0);
         }
     }
 }
