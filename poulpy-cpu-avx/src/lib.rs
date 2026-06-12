@@ -161,6 +161,11 @@
 #[cfg(all(feature = "enable-avx", not(target_arch = "x86_64")))]
 compile_error!("feature `enable-avx` requires target_arch = \"x86_64\".");
 
+#[cfg(all(feature = "enable-ckks", not(feature = "enable-avx")))]
+compile_error!(
+    "feature `enable-ckks` requires feature `enable-avx` (without it nothing is built and test runs are silently empty)."
+);
+
 // If the user enables this backend but AVX2 isn't enabled in the target → abort
 #[cfg(all(feature = "enable-avx", target_arch = "x86_64", not(target_feature = "avx2")))]
 compile_error!("feature `enable-avx` requires AVX2. Build with RUSTFLAGS=\"-C target-feature=+avx2\".");
