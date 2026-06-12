@@ -4,6 +4,7 @@
 
 use crate::NTT126Ifma;
 use crate::ntt126_ifma::{
+    kernels::{cond_sub_2q_si512, harvey_modmul_si512},
     module::handle,
     primes::{PrimeSetNtt126Ifma, Primes42},
     tables::{Ntt126IfmaTable, Ntt126IfmaTableInv},
@@ -14,6 +15,9 @@ use crate::ntt126_ifma::{
     },
 };
 use bytemuck::{cast_slice, cast_slice_mut};
+use core::arch::x86_64::{
+    __m512i, _mm512_add_epi64, _mm512_loadu_si512, _mm512_set1_epi64, _mm512_storeu_si512, _mm512_sub_epi64,
+};
 use poulpy_hal::layouts::{
     Data, HostDataMut, HostDataRef, Module, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDft, VecZnxDftBackendMut,
     VecZnxDftBackendRef, ZnxView, ZnxViewMut,
@@ -87,6 +91,17 @@ fn garner_from_residues(r0: u64, r1: u64, r2: u64) -> i128 {
     }
 }
 
+#[inline(always)]
+fn reconstruct_from_garner_digits(v0: u64, v1: u64, v2: u64) -> i128 {
+    let result_u128 = v0 as u128 + v1 as u128 * Q0 as u128 + v2 as u128 * Q01;
+
+    if result_u128 > HALF_BIG_Q {
+        result_u128 as i128 - BIG_Q as i128
+    } else {
+        result_u128 as i128
+    }
+}
+
 /// CRT reconstruction: planar 3-prime IFMA b-format to i128.
 ///
 /// Input residues must be in `[0, 2q)` (b-format after iNTT).
@@ -100,11 +115,55 @@ fn garner_from_residues(r0: u64, r1: u64, r2: u64) -> i128 {
 pub(crate) unsafe fn simd_b_ntt126_ifma_to_znx128(nn: usize, res: &mut [i128], a: &[u64]) {
     debug_assert!(res.len() >= nn);
     debug_assert!(a.len() >= 3 * nn);
-    for c in 0..nn {
-        let r0 = cond_sub_scalar(a[c], Q0);
-        let r1 = cond_sub_scalar(a[nn + c], Q1);
-        let r2 = cond_sub_scalar(a[2 * nn + c], Q2);
-        res[c] = garner_from_residues(r0, r1, r2);
+
+    unsafe {
+        let q0 = _mm512_set1_epi64(Q0 as i64);
+        let q1 = _mm512_set1_epi64(Q1 as i64);
+        let q2 = _mm512_set1_epi64(Q2 as i64);
+        let inv01 = _mm512_set1_epi64(INV01 as i64);
+        let inv01_quot = _mm512_set1_epi64(INV01_QUOT as i64);
+        let inv012 = _mm512_set1_epi64(INV012 as i64);
+        let inv012_quot = _mm512_set1_epi64(INV012_QUOT as i64);
+        let q0_mod_q2 = _mm512_set1_epi64(Q0_MOD_Q2 as i64);
+        let q0_mod_q2_quot = _mm512_set1_epi64(Q0_MOD_Q2_QUOT as i64);
+        let mut v0_lanes = [0u64; 8];
+        let mut v1_lanes = [0u64; 8];
+        let mut v2_lanes = [0u64; 8];
+
+        let mut c = 0usize;
+        while c + 8 <= nn {
+            let r0 = cond_sub_2q_si512(_mm512_loadu_si512(a.as_ptr().add(c) as *const __m512i), q0);
+            let r1 = cond_sub_2q_si512(_mm512_loadu_si512(a.as_ptr().add(nn + c) as *const __m512i), q1);
+            let r2 = cond_sub_2q_si512(_mm512_loadu_si512(a.as_ptr().add(2 * nn + c) as *const __m512i), q2);
+
+            let v0_mod_q1 = cond_sub_2q_si512(r0, q1);
+            let diff1 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(r1, q1), v0_mod_q1), q1);
+            let v1 = harvey_modmul_si512(diff1, inv01, inv01_quot, q1);
+
+            let v0_mod_q2 = cond_sub_2q_si512(r0, q2);
+            let v1q0_mod_q2 = harvey_modmul_si512(v1, q0_mod_q2, q0_mod_q2_quot, q2);
+            let partial = cond_sub_2q_si512(_mm512_add_epi64(v0_mod_q2, v1q0_mod_q2), q2);
+            let diff2 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(r2, q2), partial), q2);
+            let v2 = harvey_modmul_si512(diff2, inv012, inv012_quot, q2);
+
+            _mm512_storeu_si512(v0_lanes.as_mut_ptr() as *mut __m512i, r0);
+            _mm512_storeu_si512(v1_lanes.as_mut_ptr() as *mut __m512i, v1);
+            _mm512_storeu_si512(v2_lanes.as_mut_ptr() as *mut __m512i, v2);
+
+            for lane in 0..8 {
+                res[c + lane] = reconstruct_from_garner_digits(v0_lanes[lane], v1_lanes[lane], v2_lanes[lane]);
+            }
+
+            c += 8;
+        }
+
+        while c < nn {
+            let r0 = cond_sub_scalar(a[c], Q0);
+            let r1 = cond_sub_scalar(a[nn + c], Q1);
+            let r2 = cond_sub_scalar(a[2 * nn + c], Q2);
+            res[c] = garner_from_residues(r0, r1, r2);
+            c += 1;
+        }
     }
 }
 
