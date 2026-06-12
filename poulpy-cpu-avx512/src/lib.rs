@@ -189,6 +189,11 @@ pub mod ntt126_ifma_api {
     pub use crate::ntt126_ifma::traits::Ntt126IfmaDFTExecute;
 }
 
+#[cfg(all(feature = "enable-ckks", not(any(feature = "enable-avx512f", feature = "enable-ifma"))))]
+compile_error!(
+    "feature `enable-ckks` requires `enable-avx512f` or `enable-ifma` (without them nothing is built and test runs are silently empty)."
+);
+
 #[cfg(all(feature = "enable-avx512f", feature = "enable-ckks"))]
 mod ckks_impl;
 #[cfg(feature = "enable-avx512f")]

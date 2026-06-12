@@ -106,6 +106,21 @@ impl<D: Data, S: CKKSNormalizationState> CKKSCiphertext<D, S> {
     }
 }
 
+// Without this, `ct.clone()` silently resolves through `Deref` to
+// `GLWE::clone` and drops the CKKS metadata.
+impl<D: Data, S: CKKSNormalizationState> Clone for CKKSCiphertext<D, S>
+where
+    GLWE<D>: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            meta: self.meta,
+            _state: PhantomData,
+        }
+    }
+}
+
 impl<D: Data, S: CKKSNormalizationState> Deref for CKKSCiphertext<D, S> {
     type Target = GLWE<D>;
 
