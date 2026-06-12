@@ -142,6 +142,62 @@ unsafe fn save_blk_quad_result<const OVERWRITE: bool>(
     }
 }
 
+#[target_feature(enable = "avx512f")]
+#[inline]
+unsafe fn save_planar_overwrite_nt(dst_base: *mut u64, n: usize, bq: usize, red0: __m512i, red1: __m512i, red2: __m512i) {
+    let off = 8 * bq;
+    unsafe {
+        _mm512_stream_si512(dst_base.add(off) as *mut __m512i, red0);
+        _mm512_stream_si512(dst_base.add(n + off) as *mut __m512i, red1);
+        _mm512_stream_si512(dst_base.add(2 * n + off) as *mut __m512i, red2);
+    }
+}
+
+#[target_feature(enable = "avx512f")]
+#[inline]
+unsafe fn save_planar_add(
+    dst_base: *mut u64,
+    n: usize,
+    bq: usize,
+    pc: &[PrimeConsts512; 3],
+    red0: __m512i,
+    red1: __m512i,
+    red2: __m512i,
+) {
+    let off = 8 * bq;
+    unsafe {
+        let dst0 = dst_base.add(off) as *mut __m512i;
+        let dst1 = dst_base.add(n + off) as *mut __m512i;
+        let dst2 = dst_base.add(2 * n + off) as *mut __m512i;
+        let d0 = _mm512_loadu_si512(dst0 as *const __m512i);
+        let d1 = _mm512_loadu_si512(dst1 as *const __m512i);
+        let d2 = _mm512_loadu_si512(dst2 as *const __m512i);
+        _mm512_storeu_si512(dst0, cond_sub_2q_si512(_mm512_add_epi64(d0, red0), pc[0].q2));
+        _mm512_storeu_si512(dst1, cond_sub_2q_si512(_mm512_add_epi64(d1, red1), pc[1].q2));
+        _mm512_storeu_si512(dst2, cond_sub_2q_si512(_mm512_add_epi64(d2, red2), pc[2].q2));
+    }
+}
+
+#[target_feature(enable = "avx512f")]
+#[inline]
+unsafe fn save_planar_result<const OVERWRITE: bool>(
+    dst_base: *mut u64,
+    n: usize,
+    bq: usize,
+    pc: &[PrimeConsts512; 3],
+    red0: __m512i,
+    red1: __m512i,
+    red2: __m512i,
+) {
+    unsafe {
+        if OVERWRITE {
+            save_planar_overwrite_nt(dst_base, n, bq, red0, red1, red2);
+        } else {
+            save_planar_add(dst_base, n, bq, pc, red0, red1, red2);
+        }
+    }
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // IFMA-local VMP prepare
 // ──────────────────────────────────────────────────────────────────────────────
@@ -173,11 +229,16 @@ pub(crate) fn vmp_prepare_ifma(
     let n = res.n();
     let nrows = a.cols_in() * a.rows();
     let ncols = a.cols_out() * a.size();
+    let n_blk_quads = n / 8;
 
     let (tmp_b, tmp_c_u64) = tmp.split_at_mut(3 * n);
     let tmp_c_u64 = &mut tmp_c_u64[..3 * n];
     let mat_i64: &[i64] = a.raw();
     let pmat_u64: &mut [u64] = cast_slice_mut(res.data_mut());
+
+    let bq_stride = ncols * nrows * 24;
+    let col_stride = nrows * 24;
+    let row_stride = 24;
 
     for row_i in 0..nrows {
         for col_i in 0..ncols {
@@ -187,8 +248,14 @@ pub(crate) fn vmp_prepare_ifma(
             let tmp_c: &mut [u32] = cast_slice_mut(tmp_c_u64);
             crate::NTT126Ifma::ntt126_ifma_c_from_b(n, tmp_c, tmp_b);
 
-            let entry = row_i * ncols + col_i;
-            pmat_u64[entry * 3 * n..(entry + 1) * 3 * n].copy_from_slice(tmp_c_u64);
+            for bq in 0..n_blk_quads {
+                let coeff_base = 8 * bq;
+                let dst_base = bq * bq_stride + col_i * col_stride + row_i * row_stride;
+                for p in 0..3 {
+                    pmat_u64[dst_base + 8 * p..dst_base + 8 * (p + 1)]
+                        .copy_from_slice(&tmp_c_u64[p * n + coeff_base..p * n + coeff_base + 8]);
+                }
+            }
         }
     }
 }
@@ -259,7 +326,7 @@ const IDX_PM_P0: [i64; 8] = [0, 4, 8, 12, 0, 0, 0, 0];
 const IDX_PM_P1: [i64; 8] = [1, 5, 9, 13, 0, 0, 0, 0];
 const IDX_PM_P2: [i64; 8] = [2, 6, 10, 14, 0, 0, 0, 0];
 
-/// Extract a block-quad from interleaved prep scalars into 3 prime-major planes.
+/// Extract a block-quad from planar prep scalars into 3 prime-major planes.
 #[target_feature(enable = "avx512f")]
 #[inline]
 unsafe fn extract_blk_quad_prime_major_row(
@@ -267,74 +334,42 @@ unsafe fn extract_blk_quad_prime_major_row(
     bq: usize,
     row: usize,
     a_u64: &[u64],
-    idx_p0: __m512i,
-    idx_p1: __m512i,
-    idx_p2: __m512i,
+    _idx_p0: __m512i,
+    _idx_p1: __m512i,
+    _idx_p2: __m512i,
 ) -> [__m512i; 3] {
-    use core::arch::x86_64::{_mm512_castsi512_si256, _mm512_inserti64x4, _mm512_permutex2var_epi64};
-
-    let blk_base = bq * 4 * 2;
+    let coeff_base = 8 * bq;
 
     unsafe {
-        let src = a_u64.as_ptr().add(row * 4 * n + 4 * blk_base) as *const __m512i;
-        let s0 = _mm512_loadu_si512(src);
-        let s1 = _mm512_loadu_si512(src.add(1));
-        let s2 = _mm512_loadu_si512(src.add(2));
-        let s3 = _mm512_loadu_si512(src.add(3));
-
-        let lo_p0 = _mm512_permutex2var_epi64(s0, idx_p0, s1);
-        let hi_p0 = _mm512_permutex2var_epi64(s2, idx_p0, s3);
-        let p0 = _mm512_inserti64x4::<1>(lo_p0, _mm512_castsi512_si256(hi_p0));
-
-        let lo_p1 = _mm512_permutex2var_epi64(s0, idx_p1, s1);
-        let hi_p1 = _mm512_permutex2var_epi64(s2, idx_p1, s3);
-        let p1 = _mm512_inserti64x4::<1>(lo_p1, _mm512_castsi512_si256(hi_p1));
-
-        let lo_p2 = _mm512_permutex2var_epi64(s0, idx_p2, s1);
-        let hi_p2 = _mm512_permutex2var_epi64(s2, idx_p2, s3);
-        let p2 = _mm512_inserti64x4::<1>(lo_p2, _mm512_castsi512_si256(hi_p2));
-
-        [p0, p1, p2]
+        let src = a_u64.as_ptr().add(row * 3 * n + coeff_base);
+        [
+            _mm512_loadu_si512(src as *const __m512i),
+            _mm512_loadu_si512(src.add(n) as *const __m512i),
+            _mm512_loadu_si512(src.add(2 * n) as *const __m512i),
+        ]
     }
 }
 
-/// Extract a block-quad from interleaved prep scalars into 3 prime-major planes.
+/// Extract a block-quad from planar prep scalars into 3 prime-major planes.
 #[target_feature(enable = "avx512f")]
 #[inline]
 unsafe fn extract_blk_quad_prime_major(n: usize, row_max: usize, bq: usize, a_u64: &[u64], x_pm: &mut [u64]) {
-    use core::arch::x86_64::{_mm512_castsi512_si256, _mm512_inserti64x4, _mm512_permutex2var_epi64};
-
     let plane_stride = 8 * row_max;
-    let blk_base = bq * 4 * 2;
+    let coeff_base = 8 * bq;
 
     unsafe {
-        let idx_p0 = _mm512_loadu_si512(IDX_PM_P0.as_ptr() as *const __m512i);
-        let idx_p1 = _mm512_loadu_si512(IDX_PM_P1.as_ptr() as *const __m512i);
-        let idx_p2 = _mm512_loadu_si512(IDX_PM_P2.as_ptr() as *const __m512i);
-
         for row in 0..row_max {
-            let src = a_u64.as_ptr().add(row * 4 * n + 4 * blk_base) as *const __m512i;
-            let s0 = _mm512_loadu_si512(src);
-            let s1 = _mm512_loadu_si512(src.add(1));
-            let s2 = _mm512_loadu_si512(src.add(2));
-            let s3 = _mm512_loadu_si512(src.add(3));
-
-            let lo_p0 = _mm512_permutex2var_epi64(s0, idx_p0, s1);
-            let hi_p0 = _mm512_permutex2var_epi64(s2, idx_p0, s3);
-            let p0 = _mm512_inserti64x4::<1>(lo_p0, _mm512_castsi512_si256(hi_p0));
-
-            let lo_p1 = _mm512_permutex2var_epi64(s0, idx_p1, s1);
-            let hi_p1 = _mm512_permutex2var_epi64(s2, idx_p1, s3);
-            let p1 = _mm512_inserti64x4::<1>(lo_p1, _mm512_castsi512_si256(hi_p1));
-
-            let lo_p2 = _mm512_permutex2var_epi64(s0, idx_p2, s1);
-            let hi_p2 = _mm512_permutex2var_epi64(s2, idx_p2, s3);
-            let p2 = _mm512_inserti64x4::<1>(lo_p2, _mm512_castsi512_si256(hi_p2));
-
+            let src = a_u64.as_ptr().add(row * 3 * n + coeff_base);
             let dst = x_pm.as_mut_ptr().add(row * 8);
-            _mm512_storeu_si512(dst as *mut __m512i, p0);
-            _mm512_storeu_si512(dst.add(plane_stride) as *mut __m512i, p1);
-            _mm512_storeu_si512(dst.add(2 * plane_stride) as *mut __m512i, p2);
+            _mm512_storeu_si512(dst as *mut __m512i, _mm512_loadu_si512(src as *const __m512i));
+            _mm512_storeu_si512(
+                dst.add(plane_stride) as *mut __m512i,
+                _mm512_loadu_si512(src.add(n) as *const __m512i),
+            );
+            _mm512_storeu_si512(
+                dst.add(2 * plane_stride) as *mut __m512i,
+                _mm512_loadu_si512(src.add(2 * n) as *const __m512i),
+            );
         }
     }
 }
@@ -353,7 +388,7 @@ unsafe fn vmp_apply_core_pm_small_rows<const ROWS: usize, const OVERWRITE: bool>
     nrows: usize,
     ncols: usize,
     pc: &[PrimeConsts512; 3],
-    q2_512: __m512i,
+    _q2_512: __m512i,
 ) {
     unsafe {
         let n_blk_quads = n / 8;
@@ -424,14 +459,14 @@ unsafe fn vmp_apply_core_pm_small_rows<const ROWS: usize, const OVERWRITE: bool>
                     pc[2].pow52_quot,
                 );
 
-                let dst_base = res_u64.as_mut_ptr().add(col_res * 4 * n);
-                save_blk_quad_result::<OVERWRITE>(dst_base, bq, q2_512, red0, red1, red2);
+                let dst_base = res_u64.as_mut_ptr().add(col_res * 3 * n);
+                save_planar_result::<OVERWRITE>(dst_base, n, bq, pc, red0, red1, red2);
             }
         }
 
         if OVERWRITE {
             for col in active_cols..res_size {
-                res_u64[col * 4 * n..(col + 1) * 4 * n].fill(0);
+                res_u64[col * 3 * n..(col + 1) * 3 * n].fill(0);
             }
             _mm_sfence();
         }
@@ -456,10 +491,9 @@ unsafe fn vmp_apply_core_pm<const OVERWRITE: bool>(
         return;
     }
 
-    let n_blks = n / 2;
-    let n_blk_quads = n_blks / 4;
-    let a_size = a_u64.len() / (4 * n);
-    let res_size = res_u64.len() / (4 * n);
+    let n_blk_quads = n / 8;
+    let a_size = a_u64.len() / (3 * n);
+    let res_size = res_u64.len() / (3 * n);
     let row_max = nrows.min(a_size);
     let col_max = ncols.min(res_size + limb_offset);
 
@@ -638,19 +672,9 @@ unsafe fn vmp_apply_core_pm<const OVERWRITE: bool>(
 
                 // SoA → AoS: interleave 3 prime results into 4 prep-scalar blocks
                 // directly in SIMD registers (no stack round-trip).
-                let base = col_res * 4 * n;
+                let base = col_res * 3 * n;
                 let dst_base = res_u64.as_mut_ptr().add(base);
-                if OVERWRITE {
-                    save_blk_overwrite_nt::<0>(dst_base, bq, red[0], red[1], red[2]);
-                    save_blk_overwrite_nt::<1>(dst_base, bq, red[0], red[1], red[2]);
-                    save_blk_overwrite_nt::<2>(dst_base, bq, red[0], red[1], red[2]);
-                    save_blk_overwrite_nt::<3>(dst_base, bq, red[0], red[1], red[2]);
-                } else {
-                    save_blk_add::<0>(dst_base, bq, q2_512, red[0], red[1], red[2]);
-                    save_blk_add::<1>(dst_base, bq, q2_512, red[0], red[1], red[2]);
-                    save_blk_add::<2>(dst_base, bq, q2_512, red[0], red[1], red[2]);
-                    save_blk_add::<3>(dst_base, bq, q2_512, red[0], red[1], red[2]);
-                }
+                save_planar_result::<OVERWRITE>(dst_base, n, bq, &pc, red[0], red[1], red[2]);
             }
         }
     }
@@ -658,7 +682,7 @@ unsafe fn vmp_apply_core_pm<const OVERWRITE: bool>(
     if OVERWRITE {
         let active_cols = col_max.saturating_sub(limb_offset);
         for col in active_cols..res_size {
-            res_u64[col * 4 * n..(col + 1) * 4 * n].fill(0);
+            res_u64[col * 3 * n..(col + 1) * 3 * n].fill(0);
         }
         _mm_sfence();
     }
@@ -688,8 +712,19 @@ pub(crate) fn vmp_apply_dft_to_dft_ifma(
     let a_u64: &[u64] = cast_slice(a.raw());
     let pmat_u64: &[u64] = cast_slice(pmat.data());
 
-    let _ = (module, tmp);
-    vmp_apply_planar::<true>(n, res_u64, a_u64, pmat_u64, limb_offset, nrows, ncols);
+    unsafe {
+        vmp_apply_core_pm::<true>(
+            n,
+            res_u64,
+            a_u64,
+            pmat_u64,
+            limb_offset,
+            nrows,
+            ncols,
+            &handle(module).meta_bbc,
+            tmp,
+        );
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -712,8 +747,19 @@ pub(crate) fn vmp_apply_dft_to_dft_accumulate_ifma(
     let a_u64: &[u64] = cast_slice(a.raw());
     let pmat_u64: &[u64] = cast_slice(pmat.data());
 
-    let _ = (module, tmp);
-    vmp_apply_planar::<false>(n, res_u64, a_u64, pmat_u64, limb_offset, nrows, ncols);
+    unsafe {
+        vmp_apply_core_pm::<false>(
+            n,
+            res_u64,
+            a_u64,
+            pmat_u64,
+            limb_offset,
+            nrows,
+            ncols,
+            &handle(module).meta_bbc,
+            tmp,
+        );
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

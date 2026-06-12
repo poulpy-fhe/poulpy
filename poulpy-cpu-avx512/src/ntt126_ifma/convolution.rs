@@ -13,6 +13,7 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use std::mem::size_of;
 
 use crate::ntt126_ifma::{
+    kernels::cond_sub_2q_si512,
     module::handle,
     primes::{PrimeSetNtt126Ifma, Primes42},
     tables::Ntt126IfmaTable,
@@ -25,7 +26,7 @@ use poulpy_hal::layouts::{
     VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
 };
 
-use super::mat_vec_ifma::reduce_bbc_ifma_simd_512;
+use super::mat_vec_ifma::{PrimeConsts512, reduce_bbc_ifma_simd_512, reduce_bbc_single_prime_512};
 
 use crate::NTT126Ifma;
 use core::arch::x86_64::{
@@ -265,6 +266,198 @@ fn col_slice_mut(raw: &mut [Q126Scalar], n: usize, size: usize, col: usize) -> &
 }
 
 #[inline(always)]
+fn prepared_row_offset(n: usize, size: usize, limb_row: usize, prime: usize, group: usize) -> usize {
+    prime * n * size + group * size * 8 + limb_row * 8
+}
+
+#[inline(always)]
+fn prepared_row(data: &[u64], n: usize, size: usize, limb_row: usize, prime: usize, group: usize) -> &[u64] {
+    let off = prepared_row_offset(n, size, limb_row, prime, group);
+    &data[off..off + 8]
+}
+
+#[target_feature(enable = "avx512f")]
+unsafe fn scatter_limb_planar(dst: &mut [u64], src: &[u64], n: usize, size: usize, limb_row: usize) {
+    let n_groups = n / 8;
+    for prime in 0..3 {
+        for group in 0..n_groups {
+            let dst_off = prepared_row_offset(n, size, limb_row, prime, group);
+            let src_off = prime * n + 8 * group;
+            dst[dst_off..dst_off + 8].copy_from_slice(&src[src_off..src_off + 8]);
+        }
+    }
+}
+
+#[target_feature(enable = "avx512f")]
+unsafe fn zero_limb_planar(dst: &mut [u64], n: usize, size: usize, limb_row: usize) {
+    let n_groups = n / 8;
+    for prime in 0..3 {
+        for group in 0..n_groups {
+            let dst_off = prepared_row_offset(n, size, limb_row, prime, group);
+            dst[dst_off..dst_off + 8].fill(0);
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+#[target_feature(enable = "avx512ifma,avx512vl")]
+unsafe fn conv_columns_planar<const ACC: bool, const PAIRWISE: bool>(
+    cnv_offset: usize,
+    res: &mut VecZnxDftBackendMut<'_, NTT126Ifma>,
+    res_col: usize,
+    a0_col: &[u64],
+    a1_col: &[u64],
+    a_size: usize,
+    b0_col: &[u64],
+    b1_col: &[u64],
+    b_size: usize,
+    tmp: &mut [u64],
+) {
+    let n = res.n();
+    let res_size = res.size();
+    let bound = a_size + b_size - 1;
+    let offset = cnv_offset.min(bound);
+    let min_size = res_size.min((bound + 1).saturating_sub(offset));
+
+    let pad = TILE - 1;
+    let win_rows = a_size + 2 * pad;
+    let n_groups = n / 8;
+    let n_tiles = min_size.div_ceil(TILE);
+    let pc = unsafe { [PrimeConsts512::new(0), PrimeConsts512::new(1), PrimeConsts512::new(2)] };
+    let (win, rest) = tmp.split_at_mut(8 * win_rows);
+    let b_sum = &mut rest[..if PAIRWISE { 8 * b_size } else { 0 }];
+
+    unsafe {
+        let zero = _mm512_setzero_si512();
+        for r in 0..pad {
+            _mm512_storeu_si512(win.as_mut_ptr().add(8 * r) as *mut __m512i, zero);
+            _mm512_storeu_si512(win.as_mut_ptr().add(8 * (a_size + pad + r)) as *mut __m512i, zero);
+        }
+
+        for (prime, pc_prime) in pc.iter().enumerate() {
+            for group in 0..n_groups {
+                for r in 0..a_size {
+                    let a0 = prepared_row(a0_col, n, a_size, r, prime, group).as_ptr();
+                    let v = if PAIRWISE {
+                        let a1 = prepared_row(a1_col, n, a_size, r, prime, group).as_ptr();
+                        _mm512_add_epi64(
+                            _mm512_loadu_si512(a0 as *const __m512i),
+                            _mm512_loadu_si512(a1 as *const __m512i),
+                        )
+                    } else {
+                        _mm512_loadu_si512(a0 as *const __m512i)
+                    };
+                    _mm512_storeu_si512(win.as_mut_ptr().add(8 * (pad + r)) as *mut __m512i, v);
+                }
+
+                let b_base: *const u64 = if PAIRWISE {
+                    for r in 0..b_size {
+                        let b0 = prepared_row(b0_col, n, b_size, r, prime, group).as_ptr();
+                        let b1 = prepared_row(b1_col, n, b_size, r, prime, group).as_ptr();
+                        let s = _mm512_add_epi64(
+                            _mm512_loadu_si512(b0 as *const __m512i),
+                            _mm512_loadu_si512(b1 as *const __m512i),
+                        );
+                        _mm512_storeu_si512(b_sum.as_mut_ptr().add(8 * r) as *mut __m512i, s);
+                    }
+                    b_sum.as_ptr()
+                } else {
+                    b0_col.as_ptr().add(prepared_row_offset(n, b_size, 0, prime, group))
+                };
+
+                for tile in 0..n_tiles {
+                    let k0 = offset + TILE * tile;
+                    let j_lo = (k0 + 1).saturating_sub(a_size).min(b_size);
+                    let j_hi = (k0 + TILE).min(b_size);
+
+                    let mut acc_lo0 = _mm512_setzero_si512();
+                    let mut acc_hi0 = _mm512_setzero_si512();
+                    let mut acc_lo1 = _mm512_setzero_si512();
+                    let mut acc_hi1 = _mm512_setzero_si512();
+                    let mut acc_lo2 = _mm512_setzero_si512();
+                    let mut acc_hi2 = _mm512_setzero_si512();
+                    let mut acc_lo3 = _mm512_setzero_si512();
+                    let mut acc_hi3 = _mm512_setzero_si512();
+
+                    if j_lo < j_hi {
+                        let r_start = b_size - j_hi;
+                        let r_end = b_size - j_lo;
+                        let mut w_ptr = win.as_ptr().add(8 * ((k0 + pad + 1) - j_hi));
+                        let mut y_ptr = b_base.add(8 * r_start);
+
+                        let mut w0 = _mm512_loadu_si512(w_ptr as *const __m512i);
+                        let mut w1 = _mm512_loadu_si512(w_ptr.add(8) as *const __m512i);
+                        let mut w2 = _mm512_loadu_si512(w_ptr.add(16) as *const __m512i);
+                        let mut w3 = _mm512_loadu_si512(w_ptr.add(24) as *const __m512i);
+
+                        let mut r = r_start;
+                        loop {
+                            let y = _mm512_loadu_si512(y_ptr as *const __m512i);
+
+                            acc_lo0 = _mm512_madd52lo_epu64(acc_lo0, w0, y);
+                            acc_hi0 = _mm512_madd52hi_epu64(acc_hi0, w0, y);
+                            acc_lo1 = _mm512_madd52lo_epu64(acc_lo1, w1, y);
+                            acc_hi1 = _mm512_madd52hi_epu64(acc_hi1, w1, y);
+                            acc_lo2 = _mm512_madd52lo_epu64(acc_lo2, w2, y);
+                            acc_hi2 = _mm512_madd52hi_epu64(acc_hi2, w2, y);
+                            acc_lo3 = _mm512_madd52lo_epu64(acc_lo3, w3, y);
+                            acc_hi3 = _mm512_madd52hi_epu64(acc_hi3, w3, y);
+
+                            r += 1;
+                            if r == r_end {
+                                break;
+                            }
+                            w0 = w1;
+                            w1 = w2;
+                            w2 = w3;
+                            w_ptr = w_ptr.add(8);
+                            w3 = _mm512_loadu_si512(w_ptr.add(24) as *const __m512i);
+                            y_ptr = y_ptr.add(8);
+                        }
+                    }
+
+                    let mut store = |t: usize, lo: __m512i, hi: __m512i| {
+                        let k_rel = TILE * tile + t;
+                        if k_rel >= min_size {
+                            return;
+                        }
+                        let out = reduce_bbc_single_prime_512(
+                            lo,
+                            hi,
+                            pc_prime.q,
+                            pc_prime.q2,
+                            pc_prime.pow42,
+                            pc_prime.pow52,
+                            pc_prime.pow52_quot,
+                        );
+                        let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(res_col, k_rel));
+                        let dst = res_u64.as_mut_ptr().add(prime * n + 8 * group) as *mut __m512i;
+                        if ACC {
+                            let d = _mm512_loadu_si512(dst as *const __m512i);
+                            _mm512_storeu_si512(dst, cond_sub_2q_si512(_mm512_add_epi64(d, out), pc_prime.q2));
+                        } else {
+                            _mm512_stream_si512(dst, out);
+                        }
+                    };
+
+                    store(0, acc_lo0, acc_hi0);
+                    store(1, acc_lo1, acc_hi1);
+                    store(2, acc_lo2, acc_hi2);
+                    store(3, acc_lo3, acc_hi3);
+                }
+            }
+        }
+
+        if !ACC {
+            for j in min_size..res_size {
+                cast_slice_mut::<_, u64>(res.at_mut(res_col, j)).fill(0);
+            }
+            _mm_sfence();
+        }
+    }
+}
+
+#[inline(always)]
 fn limb_plane(data: &[u64], n: usize, limb: usize, prime: usize) -> &[u64] {
     let base = limb * 3 * n + prime * n;
     &data[base..base + n]
@@ -284,7 +477,7 @@ fn mul_mod_lazy(a: u64, b: u64, prime: usize) -> u64 {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn conv_columns_planar<const ACC: bool, const PAIRWISE: bool>(
+fn conv_columns_planar_scalar<const ACC: bool, const PAIRWISE: bool>(
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, NTT126Ifma>,
     res_col: usize,
@@ -369,15 +562,17 @@ pub(crate) unsafe fn cnv_apply_dft_ifma(
         return;
     }
 
-    let (prefix, _tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
+    let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
     debug_assert!(prefix.is_empty());
     debug_assert!(suffix.is_empty());
 
     let a_col_u64 = col_slice(a.raw(), n, a_size, a_col);
     let b_col_u64 = col_slice(b.raw(), n, b_size, b_col);
-    conv_columns_planar::<false, false>(
-        cnv_offset, res, res_col, a_col_u64, a_col_u64, a_size, b_col_u64, b_col_u64, b_size,
-    );
+    unsafe {
+        conv_columns_planar::<false, false>(
+            cnv_offset, res, res_col, a_col_u64, a_col_u64, a_size, b_col_u64, b_col_u64, b_size, tmp_u64,
+        );
+    }
 }
 
 /// Accumulating variant of [`cnv_apply_dft_ifma`]: `res[k] += Σ a[j] ⊙ b[k−j]`
@@ -403,15 +598,17 @@ pub(crate) unsafe fn cnv_apply_dft_accumulate_ifma(
         return;
     }
 
-    let (prefix, _tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
+    let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
     debug_assert!(prefix.is_empty());
     debug_assert!(suffix.is_empty());
 
     let a_col_u64 = col_slice(a.raw(), n, a_size, a_col);
     let b_col_u64 = col_slice(b.raw(), n, b_size, b_col);
-    conv_columns_planar::<true, false>(
-        cnv_offset, res, res_col, a_col_u64, a_col_u64, a_size, b_col_u64, b_col_u64, b_size,
-    );
+    unsafe {
+        conv_columns_planar::<true, false>(
+            cnv_offset, res, res_col, a_col_u64, a_col_u64, a_size, b_col_u64, b_col_u64, b_size, tmp_u64,
+        );
+    }
 }
 
 /// Pairwise DFT-domain convolution:
@@ -446,7 +643,7 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma(
         return;
     }
 
-    let (prefix, _tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
+    let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
     debug_assert!(prefix.is_empty());
     debug_assert!(suffix.is_empty());
 
@@ -454,7 +651,7 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma(
     let a1 = col_slice(a.raw(), n, a_size, col_1);
     let b0 = col_slice(b.raw(), n, b_size, col_0);
     let b1 = col_slice(b.raw(), n, b_size, col_1);
-    conv_columns_planar::<false, true>(cnv_offset, res, res_col, a0, a1, a_size, b0, b1, b_size);
+    unsafe { conv_columns_planar::<false, true>(cnv_offset, res, res_col, a0, a1, a_size, b0, b1, b_size, tmp_u64) };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -509,10 +706,10 @@ pub(crate) fn cnv_prepare_left(
                 NTT126Ifma::ntt126_ifma_from_znx64(limb, a.at(col, j));
             }
             <NTT126Ifma as Ntt126IfmaDFTExecute<Ntt126IfmaTable<Primes42>>>::ntt126_ifma_dft_execute(table, limb);
-            dst[j * 3 * n..(j + 1) * 3 * n].copy_from_slice(limb);
+            unsafe { scatter_limb_planar(dst, limb, n, res_size, j) };
         }
         for j in min_size..res_size {
-            dst[j * 3 * n..(j + 1) * 3 * n].fill(0);
+            unsafe { zero_limb_planar(dst, n, res_size, j) };
         }
     }
 }
@@ -548,10 +745,10 @@ pub(crate) fn cnv_prepare_right(
             }
             <NTT126Ifma as Ntt126IfmaDFTExecute<Ntt126IfmaTable<Primes42>>>::ntt126_ifma_dft_execute(table, limb_b);
             NTT126Ifma::ntt126_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
-            dst[j * 3 * n..(j + 1) * 3 * n].copy_from_slice(limb_c);
+            unsafe { scatter_limb_planar(dst, limb_c, n, res_size, res_size - 1 - j) };
         }
         for j in min_size..res_size {
-            dst[j * 3 * n..(j + 1) * 3 * n].fill(0);
+            unsafe { zero_limb_planar(dst, n, res_size, res_size - 1 - j) };
         }
     }
 }
@@ -592,13 +789,13 @@ pub(crate) fn cnv_prepare_self(
                 NTT126Ifma::ntt126_ifma_from_znx64(limb_b, a.at(col, j));
             }
             <NTT126Ifma as Ntt126IfmaDFTExecute<Ntt126IfmaTable<Primes42>>>::ntt126_ifma_dft_execute(table, limb_b);
-            dst_l[j * 3 * n..(j + 1) * 3 * n].copy_from_slice(limb_b);
+            unsafe { scatter_limb_planar(dst_l, limb_b, n, res_size, j) };
             NTT126Ifma::ntt126_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
-            dst_r[j * 3 * n..(j + 1) * 3 * n].copy_from_slice(limb_c);
+            unsafe { scatter_limb_planar(dst_r, limb_c, n, res_size, res_size - 1 - j) };
         }
         for j in min_size..res_size {
-            dst_l[j * 3 * n..(j + 1) * 3 * n].fill(0);
-            dst_r[j * 3 * n..(j + 1) * 3 * n].fill(0);
+            unsafe { zero_limb_planar(dst_l, n, res_size, j) };
+            unsafe { zero_limb_planar(dst_r, n, res_size, res_size - 1 - j) };
         }
     }
 }
