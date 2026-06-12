@@ -19,18 +19,6 @@ use poulpy_hal::layouts::{
     VecZnxDftBackendRef, ZnxView, ZnxViewMut,
 };
 
-use super::kernels::{cond_sub_2q_si256, intt_avx512};
-
-use core::arch::x86_64::{__m256i, _mm256_loadu_si256, _mm256_set_epi64x, _mm256_storeu_si256};
-
-use std::arch::global_asm;
-
-global_asm!(include_str!("vec_znx_dft_asm.s"), options(att_syntax));
-
-unsafe extern "C" {
-    fn ntt126_ifma_b_to_znx128_asm(nn: usize, dst: *mut i128, src: *const u64);
-}
-
 // 3-prime CRT -> i128 reconstruction helpers.
 
 const Q: [u64; 3] = Primes42::Q;
@@ -72,28 +60,6 @@ fn cond_sub_scalar(x: u64, q: u64) -> u64 {
     if x >= q { x - q } else { x }
 }
 
-/// SIMD-assisted single-coefficient Garner CRT reconstruction.
-///
-/// Reduces one packed residue vector to `[0, q)` and reconstructs one `i128`.
-///
-/// # Safety
-///
-/// - `src` must be valid for reading 4 × u64 (one `__m256i`).
-/// - Caller must ensure AVX512-VL support.
-#[target_feature(enable = "avx512vl")]
-pub(crate) unsafe fn garner_crt_single(src: *const u64, q_vec: __m256i) -> i128 {
-    unsafe {
-        let xv = _mm256_loadu_si256(src as *const __m256i);
-        let reduced = cond_sub_2q_si256(xv, q_vec);
-
-        let mut lanes = [0u64; 4];
-        _mm256_storeu_si256(lanes.as_mut_ptr() as *mut __m256i, reduced);
-        let (r0, r1, r2) = (lanes[0], lanes[1], lanes[2]);
-
-        garner_from_residues(r0, r1, r2)
-    }
-}
-
 /// Scalar Garner CRT reconstruction from 3 reduced residues.
 ///
 /// Input: `r0 ∈ [0, Q0)`, `r1 ∈ [0, Q1)`, `r2 ∈ [0, Q2)`.
@@ -121,40 +87,31 @@ fn garner_from_residues(r0: u64, r1: u64, r2: u64) -> i128 {
     }
 }
 
-/// Vectorized CRT reconstruction: 3-prime IFMA b-format to i128.
-///
-/// Processes coefficients in batches of 4 using SIMD Garner reconstruction.
-/// Falls back to single-coefficient path for the tail.
+/// CRT reconstruction: planar 3-prime IFMA b-format to i128.
 ///
 /// Input residues must be in `[0, 2q)` (b-format after iNTT).
 ///
 /// # Safety
 ///
-/// - `a` must contain at least `4 * nn` u64 values.
+/// - `a` must contain at least `3 * nn` u64 values.
 /// - `res` must have room for at least `nn` i128 values.
 /// - Caller must ensure AVX512-IFMA, AVX512-VL, BMI2, and ADX support.
 #[target_feature(enable = "avx512ifma,avx512vl,bmi2,adx")]
 pub(crate) unsafe fn simd_b_ntt126_ifma_to_znx128(nn: usize, res: &mut [i128], a: &[u64]) {
-    unsafe {
-        let q_vec = _mm256_set_epi64x(0, Q2 as i64, Q1 as i64, Q0 as i64);
-        let dst = res.as_mut_ptr();
-
-        let bulk = nn & !3;
-        ntt126_ifma_b_to_znx128_asm(bulk, dst, a.as_ptr());
-        let mut c = bulk;
-
-        // Tail: remaining coefficients (0-3)
-        while c < nn {
-            res[c] = garner_crt_single(a.as_ptr().add(4 * c), q_vec);
-            c += 1;
-        }
+    debug_assert!(res.len() >= nn);
+    debug_assert!(a.len() >= 3 * nn);
+    for c in 0..nn {
+        let r0 = cond_sub_scalar(a[c], Q0);
+        let r1 = cond_sub_scalar(a[nn + c], Q1);
+        let r2 = cond_sub_scalar(a[2 * nn + c], Q2);
+        res[c] = garner_from_residues(r0, r1, r2);
     }
 }
 
 /// iNTT (in place on `src`) + Garner CRT-compact (writing i128 to `dst`).
 ///
 /// # Safety
-/// - `src_ptr` covers `4 * n * n_blocks` u64; `dst_ptr` covers `n * n_blocks` i128.
+/// - `src_ptr` covers `3 * n * n_blocks` u64; `dst_ptr` covers `n * n_blocks` i128.
 /// - If aliased, the dst window must lie in the first half of the src window.
 /// - AVX-512-IFMA, AVX-512-VL, BMI2 and ADX required at runtime.
 #[target_feature(enable = "avx512ifma,avx512vl,bmi2,adx")]
@@ -167,21 +124,22 @@ unsafe fn intt_then_compact_ifma(
 ) {
     unsafe {
         for k in 0..n_blocks {
-            let src_off_u64 = 4 * n * k;
+            let src_off_u64 = 3 * n * k;
             let dst_off_i128 = n * k;
 
             // Step 1: inverse NTT in-place on `src`.
             {
-                let blk = std::slice::from_raw_parts_mut(src_ptr.add(src_off_u64), 4 * n);
-                intt_avx512::<Primes42>(table, blk);
+                let blk = std::slice::from_raw_parts_mut(src_ptr.add(src_off_u64), 3 * n);
+                crate::ntt126_ifma::reference::ntt::intt126_ifma_ref::<Primes42>(table, blk);
             }
 
-            // Step 2: Garner CRT-compact 4n u64s → n i128s, writing to `dst`.
+            // Step 2: Garner CRT-compact 3n u64s → n i128s, writing to `dst`.
             let src_base = src_ptr.add(src_off_u64);
             let dst_base = dst_ptr.add(dst_off_i128);
+            let src = std::slice::from_raw_parts(src_base, 3 * n);
+            let dst = std::slice::from_raw_parts_mut(dst_base, n);
 
-            debug_assert!(n.is_multiple_of(4));
-            ntt126_ifma_b_to_znx128_asm(n, dst_base, src_base);
+            simd_b_ntt126_ifma_to_znx128(n, dst, src);
         }
     }
 }
@@ -206,7 +164,7 @@ pub(crate) fn vec_znx_idft_apply_tmpa_ifma(
     let dst_base: *mut i128 = res.raw_mut().as_mut_ptr();
 
     for j in 0..min_size {
-        let src_off_u64 = 4 * n * (j * a_cols + a_col);
+        let src_off_u64 = 3 * n * (j * a_cols + a_col);
         let dst_off_i128 = n * (j * res_cols + res_col);
         unsafe {
             intt_then_compact_ifma(n, 1, src_base.add(src_off_u64), dst_base.add(dst_off_i128), table);
@@ -268,7 +226,7 @@ pub(crate) fn vec_znx_dft_apply(
 /// Scratch space (in bytes) for [`vec_znx_idft_apply`].
 pub(crate) fn vec_znx_idft_apply_tmp_bytes(n: usize) -> usize {
     use std::mem::size_of;
-    4 * n * size_of::<u64>()
+    3 * n * size_of::<u64>()
 }
 
 /// Inverse NTT (non-destructive) for the IFMA backend.
@@ -287,7 +245,7 @@ pub(crate) fn vec_znx_idft_apply(
 
     for j in 0..min_size {
         let a_slice: &[u64] = limb_u64(a, a_col, j);
-        let tmp_n: &mut [u64] = &mut tmp[..4 * n];
+        let tmp_n: &mut [u64] = &mut tmp[..3 * n];
         NTT126Ifma::ntt126_ifma_copy(tmp_n, a_slice);
         <NTT126Ifma as Ntt126IfmaDFTExecute<Ntt126IfmaTableInv<Primes42>>>::ntt126_ifma_dft_execute(table, tmp_n);
         NTT126Ifma::ntt126_ifma_to_znx128(res.at_mut(res_col, j), n, tmp_n);

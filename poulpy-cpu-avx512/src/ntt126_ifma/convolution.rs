@@ -15,8 +15,8 @@ use crate::ntt126_ifma::{
     primes::Primes42,
     tables::Ntt126IfmaTable,
     traits::{Ntt126IfmaAddAssign, Ntt126IfmaCFromB, Ntt126IfmaDFTExecute, Ntt126IfmaFromZnx64},
+    types::Q126Scalar,
 };
-use poulpy_cpu_ref::reference::ntt120::types::Q120bScalar;
 use poulpy_hal::layouts::{
     CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, Module, VecZnxBackendRef,
     VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
@@ -238,7 +238,7 @@ unsafe fn conv_columns_ifma<const ACC: bool, const PAIRWISE: bool>(
 
         if !ACC {
             for j in min_size..res_size {
-                res.at_mut(res_col, j).fill(Q120bScalar([0; 4]));
+                res.at_mut(res_col, j).fill(Q126Scalar([0; 3]));
             }
             // Order the non-temporal stores against any subsequent load of `res`.
             _mm_sfence();
@@ -250,8 +250,8 @@ unsafe fn conv_columns_ifma<const ACC: bool, const PAIRWISE: bool>(
 // Entry points
 // ─────────────────────────────────────────────────────────────────────────────
 
-fn col_slice(raw: &[Q120bScalar], n: usize, size: usize, col: usize) -> &[u64] {
-    let stride = 4 * n * size;
+fn col_slice(raw: &[Q126Scalar], n: usize, size: usize, col: usize) -> &[u64] {
+    let stride = 3 * n * size;
     &cast_slice(raw)[col * stride..(col + 1) * stride]
 }
 

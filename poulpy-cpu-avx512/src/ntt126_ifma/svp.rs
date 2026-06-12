@@ -2,7 +2,6 @@
 
 use bytemuck::{cast_slice, cast_slice_mut};
 
-use poulpy_cpu_ref::reference::ntt120::types::Q120bScalar;
 use poulpy_hal::{
     api::{VecZnxDftAlloc, VecZnxDftApply},
     layouts::{
@@ -15,6 +14,7 @@ use crate::NTT126Ifma;
 use crate::ntt126_ifma::{
     module::handle,
     traits::{Ntt126IfmaCFromB, Ntt126IfmaDFTExecute, Ntt126IfmaFromZnx64, Ntt126IfmaMulBbc, Ntt126IfmaZero},
+    types::Q126Scalar,
 };
 
 /// Encode a scalar polynomial into IFMA prepared format.
@@ -106,13 +106,13 @@ pub(crate) fn svp_apply_dft_to_dft_assign(
     let a_u32: &[u32] = cast_slice(a.at(a_col, 0));
 
     for j in 0..res_size {
-        let res_slice: &mut [Q120bScalar] = res.at_mut(res_col, j);
-        let mut product = [0u64; 4];
+        let res_slice: &mut [Q126Scalar] = res.at_mut(res_col, j);
+        let mut product = [0u64; 3];
         for n_i in 0..n {
-            let x_elem: Q120bScalar = res_slice[n_i];
+            let x_elem: Q126Scalar = res_slice[n_i];
             let x_u32: &[u32] = cast_slice(std::slice::from_ref(&x_elem));
             NTT126Ifma::ntt126_ifma_mul_bbc(meta, 1, &mut product, x_u32, &a_u32[8 * n_i..8 * n_i + 8]);
-            res_slice[n_i] = Q120bScalar(product);
+            res_slice[n_i] = Q126Scalar(product);
         }
     }
 }
