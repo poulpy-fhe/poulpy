@@ -13,9 +13,10 @@
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::{
     __m256i, __m512i, _mm256_add_epi64, _mm256_and_si256, _mm256_loadu_si256, _mm256_madd52hi_epu64, _mm256_madd52lo_epu64,
-    _mm256_min_epu64, _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_storeu_si256, _mm256_sub_epi64, _mm512_add_epi64,
-    _mm512_and_si512, _mm512_castsi256_si512, _mm512_inserti64x4, _mm512_loadu_si512, _mm512_madd52hi_epu64,
-    _mm512_madd52lo_epu64, _mm512_min_epu64, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_storeu_si512, _mm512_sub_epi64,
+    _mm256_mask_blend_epi64, _mm256_min_epu64, _mm256_set_epi64x, _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_storeu_si256,
+    _mm256_sub_epi64, _mm512_add_epi64, _mm512_and_si512, _mm512_castsi256_si512, _mm512_inserti64x4, _mm512_loadu_si512,
+    _mm512_madd52hi_epu64, _mm512_madd52lo_epu64, _mm512_min_epu64, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_storeu_si512,
+    _mm512_sub_epi64,
 };
 
 use std::mem::size_of;
@@ -756,6 +757,362 @@ unsafe fn harvey_modmul_plane8(a: __m512i, omega: __m512i, omega_quot: __m512i, 
     unsafe { harvey_modmul_si512(a, omega, omega_quot, _mm512_set1_epi64(q as i64)) }
 }
 
+#[target_feature(enable = "avx512ifma,avx512vl")]
+unsafe fn ntt_plane_radix8_last3(plane: &mut [u64], seg_base: usize, prime: usize, q: u64, q4: u64, powomega: &[u64]) {
+    let mut u0 = [0u64; 4];
+    let mut u4 = [0u64; 4];
+    let ptr = plane.as_mut_ptr();
+
+    unsafe {
+        let qv = _mm256_set1_epi64x(q as i64);
+        let q4v = _mm256_set1_epi64x(q4 as i64);
+
+        let w8_base = seg_base;
+        let w8_quot_base = seg_base + 3 * 3;
+        let w8 = _mm256_set_epi64x(
+            powomega[w8_base + prime * 3 + 2] as i64,
+            powomega[w8_base + prime * 3 + 1] as i64,
+            powomega[w8_base + prime * 3] as i64,
+            1,
+        );
+        let w8q = _mm256_set_epi64x(
+            powomega[w8_quot_base + prime * 3 + 2] as i64,
+            powomega[w8_quot_base + prime * 3 + 1] as i64,
+            powomega[w8_quot_base + prime * 3] as i64,
+            0,
+        );
+
+        let w4_base = seg_base + 6 * 3;
+        let w4_quot_base = w4_base + 3;
+        let w4 = powomega[w4_base + prime];
+        let w4q = powomega[w4_quot_base + prime];
+
+        let mut block = 0usize;
+        while block < plane.len() {
+            let lo = _mm256_loadu_si256(ptr.add(block) as *const __m256i);
+            let hi = _mm256_loadu_si256(ptr.add(block + 4) as *const __m256i);
+
+            let sum = cond_sub_2q_si256(_mm256_add_epi64(lo, hi), q4v);
+            let diff = _mm256_sub_epi64(_mm256_add_epi64(lo, q4v), hi);
+            let diff_id = cond_sub_2q_si256(diff, q4v);
+            let diff_mul = harvey_modmul_si256(diff, w8, w8q, qv);
+            let out_hi = _mm256_mask_blend_epi64(0b1110, diff_id, diff_mul);
+
+            _mm256_storeu_si256(u0.as_mut_ptr() as *mut __m256i, sum);
+            _mm256_storeu_si256(u4.as_mut_ptr() as *mut __m256i, out_hi);
+
+            let v0 = cond_sub_2q(u0[0] + u0[2], q4);
+            let v2 = cond_sub_2q(u0[0] + q4 - u0[2], q4);
+            let v1 = cond_sub_2q(u0[1] + u0[3], q4);
+            let v3 = harvey_modmul(u0[1] + q4 - u0[3], w4, w4q, q);
+            let v4 = cond_sub_2q(u4[0] + u4[2], q4);
+            let v6 = cond_sub_2q(u4[0] + q4 - u4[2], q4);
+            let v5 = cond_sub_2q(u4[1] + u4[3], q4);
+            let v7 = harvey_modmul(u4[1] + q4 - u4[3], w4, w4q, q);
+
+            plane[block] = cond_sub_2q(v0 + v1, q4);
+            plane[block + 1] = cond_sub_2q(v0 + q4 - v1, q4);
+            plane[block + 2] = cond_sub_2q(v2 + v3, q4);
+            plane[block + 3] = cond_sub_2q(v2 + q4 - v3, q4);
+            plane[block + 4] = cond_sub_2q(v4 + v5, q4);
+            plane[block + 5] = cond_sub_2q(v4 + q4 - v5, q4);
+            plane[block + 6] = cond_sub_2q(v6 + v7, q4);
+            plane[block + 7] = cond_sub_2q(v6 + q4 - v7, q4);
+
+            block += 8;
+        }
+    }
+}
+
+#[target_feature(enable = "avx512ifma,avx512vl")]
+unsafe fn intt_plane_radix8_first3(plane: &mut [u64], seg_base: usize, prime: usize, q: u64, q4: u64, powomega: &[u64]) {
+    let mut lo_lanes = [0u64; 4];
+    let mut hi_lanes = [0u64; 4];
+    let mut out = [0u64; 8];
+
+    unsafe {
+        let qv = _mm256_set1_epi64x(q as i64);
+        let q4v = _mm256_set1_epi64x(q4 as i64);
+
+        let w4_base = seg_base;
+        let w4_quot_base = seg_base + 3;
+        let w4 = powomega[w4_base + prime];
+        let w4q = powomega[w4_quot_base + prime];
+
+        let w8_base = seg_base + 6;
+        let w8_quot_base = w8_base + 3 * 3;
+        let w8 = _mm256_set_epi64x(
+            powomega[w8_base + prime * 3 + 2] as i64,
+            powomega[w8_base + prime * 3 + 1] as i64,
+            powomega[w8_base + prime * 3] as i64,
+            1,
+        );
+        let w8q = _mm256_set_epi64x(
+            powomega[w8_quot_base + prime * 3 + 2] as i64,
+            powomega[w8_quot_base + prime * 3 + 1] as i64,
+            powomega[w8_quot_base + prime * 3] as i64,
+            0,
+        );
+
+        let mut block = 0usize;
+        while block < plane.len() {
+            let a0 = plane[block];
+            let a1 = plane[block + 1];
+            let a2 = plane[block + 2];
+            let a3 = plane[block + 3];
+            let a4 = plane[block + 4];
+            let a5 = plane[block + 5];
+            let a6 = plane[block + 6];
+            let a7 = plane[block + 7];
+
+            let t0 = cond_sub_2q(a0 + a1, q4);
+            let t1 = cond_sub_2q(a0 + q4 - a1, q4);
+            let t2 = cond_sub_2q(a2 + a3, q4);
+            let t3 = cond_sub_2q(a2 + q4 - a3, q4);
+            let t4 = cond_sub_2q(a4 + a5, q4);
+            let t5 = cond_sub_2q(a4 + q4 - a5, q4);
+            let t6 = cond_sub_2q(a6 + a7, q4);
+            let t7 = cond_sub_2q(a6 + q4 - a7, q4);
+
+            let u0 = cond_sub_2q(t0 + t2, q4);
+            let u2 = cond_sub_2q(t0 + q4 - t2, q4);
+            let bo13 = harvey_modmul(t3, w4, w4q, q);
+            let u1 = cond_sub_2q(t1 + bo13, q4);
+            let u3 = cond_sub_2q(t1 + q4 - bo13, q4);
+
+            let u4 = cond_sub_2q(t4 + t6, q4);
+            let u6 = cond_sub_2q(t4 + q4 - t6, q4);
+            let bo57 = harvey_modmul(t7, w4, w4q, q);
+            let u5 = cond_sub_2q(t5 + bo57, q4);
+            let u7 = cond_sub_2q(t5 + q4 - bo57, q4);
+
+            lo_lanes[0] = u0;
+            lo_lanes[1] = u1;
+            lo_lanes[2] = u2;
+            lo_lanes[3] = u3;
+            hi_lanes[0] = u4;
+            hi_lanes[1] = u5;
+            hi_lanes[2] = u6;
+            hi_lanes[3] = u7;
+
+            let lo = _mm256_loadu_si256(lo_lanes.as_ptr() as *const __m256i);
+            let hi = _mm256_loadu_si256(hi_lanes.as_ptr() as *const __m256i);
+            let bo_mul = harvey_modmul_si256(hi, w8, w8q, qv);
+            let bo = _mm256_mask_blend_epi64(0b1110, hi, bo_mul);
+            let out_lo = cond_sub_2q_si256(_mm256_add_epi64(lo, bo), q4v);
+            let out_hi = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(lo, q4v), bo), q4v);
+
+            _mm256_storeu_si256(out.as_mut_ptr() as *mut __m256i, out_lo);
+            _mm256_storeu_si256(out.as_mut_ptr().add(4) as *mut __m256i, out_hi);
+            plane[block] = out[0];
+            plane[block + 1] = out[1];
+            plane[block + 2] = out[2];
+            plane[block + 3] = out[3];
+            plane[block + 4] = out[4];
+            plane[block + 5] = out[5];
+            plane[block + 6] = out[6];
+            plane[block + 7] = out[7];
+
+            block += 8;
+        }
+    }
+}
+
+#[target_feature(enable = "avx512ifma,avx512vl")]
+unsafe fn ntt_plane_first_fused(plane: &mut [u64], prime: usize, q: u64, q4: u64, q4v: __m512i, powomega: &[u64]) {
+    let n = plane.len();
+    let halfn = n / 2;
+    let count = halfn - 1;
+    let ptr = plane.as_mut_ptr();
+
+    unsafe {
+        let omega0_base = 0usize;
+        let quot0_base = 3 * n;
+        let omega1_base = 6 * n;
+        let quot1_base = omega1_base + 3 * count;
+
+        {
+            let a = harvey_modmul(
+                plane[0],
+                powomega[omega0_base + prime * n],
+                powomega[quot0_base + prime * n],
+                q,
+            );
+            let b = harvey_modmul(
+                plane[halfn],
+                powomega[omega0_base + prime * n + halfn],
+                powomega[quot0_base + prime * n + halfn],
+                q,
+            );
+            plane[0] = cond_sub_2q(a + b, q4);
+            plane[halfn] = cond_sub_2q(a + q4 - b, q4);
+        }
+
+        let mut i = 1usize;
+        while i + 32 <= halfn {
+            let p1 = i;
+            let p2 = halfn + i;
+
+            let a0 = _mm512_loadu_si512(ptr.add(p1) as *const __m512i);
+            let b0 = _mm512_loadu_si512(ptr.add(p2) as *const __m512i);
+            let a1 = _mm512_loadu_si512(ptr.add(p1 + 8) as *const __m512i);
+            let b1 = _mm512_loadu_si512(ptr.add(p2 + 8) as *const __m512i);
+            let a2 = _mm512_loadu_si512(ptr.add(p1 + 16) as *const __m512i);
+            let b2 = _mm512_loadu_si512(ptr.add(p2 + 16) as *const __m512i);
+            let a3 = _mm512_loadu_si512(ptr.add(p1 + 24) as *const __m512i);
+            let b3 = _mm512_loadu_si512(ptr.add(p2 + 24) as *const __m512i);
+
+            let a0 = harvey_modmul_plane8(
+                a0,
+                load_plane_twiddles8(powomega, omega0_base, n, p1, prime),
+                load_plane_twiddles8(powomega, quot0_base, n, p1, prime),
+                q,
+            );
+            let b0 = harvey_modmul_plane8(
+                b0,
+                load_plane_twiddles8(powomega, omega0_base, n, p2, prime),
+                load_plane_twiddles8(powomega, quot0_base, n, p2, prime),
+                q,
+            );
+            let a1 = harvey_modmul_plane8(
+                a1,
+                load_plane_twiddles8(powomega, omega0_base, n, p1 + 8, prime),
+                load_plane_twiddles8(powomega, quot0_base, n, p1 + 8, prime),
+                q,
+            );
+            let b1 = harvey_modmul_plane8(
+                b1,
+                load_plane_twiddles8(powomega, omega0_base, n, p2 + 8, prime),
+                load_plane_twiddles8(powomega, quot0_base, n, p2 + 8, prime),
+                q,
+            );
+            let a2 = harvey_modmul_plane8(
+                a2,
+                load_plane_twiddles8(powomega, omega0_base, n, p1 + 16, prime),
+                load_plane_twiddles8(powomega, quot0_base, n, p1 + 16, prime),
+                q,
+            );
+            let b2 = harvey_modmul_plane8(
+                b2,
+                load_plane_twiddles8(powomega, omega0_base, n, p2 + 16, prime),
+                load_plane_twiddles8(powomega, quot0_base, n, p2 + 16, prime),
+                q,
+            );
+            let a3 = harvey_modmul_plane8(
+                a3,
+                load_plane_twiddles8(powomega, omega0_base, n, p1 + 24, prime),
+                load_plane_twiddles8(powomega, quot0_base, n, p1 + 24, prime),
+                q,
+            );
+            let b3 = harvey_modmul_plane8(
+                b3,
+                load_plane_twiddles8(powomega, omega0_base, n, p2 + 24, prime),
+                load_plane_twiddles8(powomega, quot0_base, n, p2 + 24, prime),
+                q,
+            );
+
+            let sum0 = cond_sub_2q_si512(_mm512_add_epi64(a0, b0), q4v);
+            let sum1 = cond_sub_2q_si512(_mm512_add_epi64(a1, b1), q4v);
+            let sum2 = cond_sub_2q_si512(_mm512_add_epi64(a2, b2), q4v);
+            let sum3 = cond_sub_2q_si512(_mm512_add_epi64(a3, b3), q4v);
+
+            let diff0 = _mm512_sub_epi64(_mm512_add_epi64(a0, q4v), b0);
+            let diff1 = _mm512_sub_epi64(_mm512_add_epi64(a1, q4v), b1);
+            let diff2 = _mm512_sub_epi64(_mm512_add_epi64(a2, q4v), b2);
+            let diff3 = _mm512_sub_epi64(_mm512_add_epi64(a3, q4v), b3);
+
+            let out0 = harvey_modmul_plane8(
+                diff0,
+                load_plane_twiddles8(powomega, omega1_base, count, i - 1, prime),
+                load_plane_twiddles8(powomega, quot1_base, count, i - 1, prime),
+                q,
+            );
+            let out1 = harvey_modmul_plane8(
+                diff1,
+                load_plane_twiddles8(powomega, omega1_base, count, i + 7, prime),
+                load_plane_twiddles8(powomega, quot1_base, count, i + 7, prime),
+                q,
+            );
+            let out2 = harvey_modmul_plane8(
+                diff2,
+                load_plane_twiddles8(powomega, omega1_base, count, i + 15, prime),
+                load_plane_twiddles8(powomega, quot1_base, count, i + 15, prime),
+                q,
+            );
+            let out3 = harvey_modmul_plane8(
+                diff3,
+                load_plane_twiddles8(powomega, omega1_base, count, i + 23, prime),
+                load_plane_twiddles8(powomega, quot1_base, count, i + 23, prime),
+                q,
+            );
+
+            _mm512_storeu_si512(ptr.add(p1) as *mut __m512i, sum0);
+            _mm512_storeu_si512(ptr.add(p1 + 8) as *mut __m512i, sum1);
+            _mm512_storeu_si512(ptr.add(p1 + 16) as *mut __m512i, sum2);
+            _mm512_storeu_si512(ptr.add(p1 + 24) as *mut __m512i, sum3);
+            _mm512_storeu_si512(ptr.add(p2) as *mut __m512i, out0);
+            _mm512_storeu_si512(ptr.add(p2 + 8) as *mut __m512i, out1);
+            _mm512_storeu_si512(ptr.add(p2 + 16) as *mut __m512i, out2);
+            _mm512_storeu_si512(ptr.add(p2 + 24) as *mut __m512i, out3);
+
+            i += 32;
+        }
+
+        while i + 8 <= halfn {
+            let p1 = i;
+            let p2 = halfn + i;
+            let a = harvey_modmul_plane8(
+                _mm512_loadu_si512(ptr.add(p1) as *const __m512i),
+                load_plane_twiddles8(powomega, omega0_base, n, p1, prime),
+                load_plane_twiddles8(powomega, quot0_base, n, p1, prime),
+                q,
+            );
+            let b = harvey_modmul_plane8(
+                _mm512_loadu_si512(ptr.add(p2) as *const __m512i),
+                load_plane_twiddles8(powomega, omega0_base, n, p2, prime),
+                load_plane_twiddles8(powomega, quot0_base, n, p2, prime),
+                q,
+            );
+            let sum = cond_sub_2q_si512(_mm512_add_epi64(a, b), q4v);
+            let diff = _mm512_sub_epi64(_mm512_add_epi64(a, q4v), b);
+            let out = harvey_modmul_plane8(
+                diff,
+                load_plane_twiddles8(powomega, omega1_base, count, i - 1, prime),
+                load_plane_twiddles8(powomega, quot1_base, count, i - 1, prime),
+                q,
+            );
+            _mm512_storeu_si512(ptr.add(p1) as *mut __m512i, sum);
+            _mm512_storeu_si512(ptr.add(p2) as *mut __m512i, out);
+            i += 8;
+        }
+
+        while i < halfn {
+            let p1 = i;
+            let p2 = halfn + i;
+            let a = harvey_modmul(
+                plane[p1],
+                powomega[omega0_base + prime * n + p1],
+                powomega[quot0_base + prime * n + p1],
+                q,
+            );
+            let b = harvey_modmul(
+                plane[p2],
+                powomega[omega0_base + prime * n + p2],
+                powomega[quot0_base + prime * n + p2],
+                q,
+            );
+            plane[p1] = cond_sub_2q(a + b, q4);
+            plane[p2] = harvey_modmul(
+                a + q4 - b,
+                powomega[omega1_base + prime * count + i - 1],
+                powomega[quot1_base + prime * count + i - 1],
+                q,
+            );
+            i += 1;
+        }
+    }
+}
+
 const NTT_BLOCK: usize = 256;
 
 #[target_feature(enable = "avx512ifma,avx512vl")]
@@ -775,8 +1132,14 @@ unsafe fn ntt_plane_avx512<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTable<P>, pl
         let ptr = plane.as_mut_ptr();
         let powomega = table.powomega_plane.as_slice();
         let mut seg_base = 0usize;
+        let mut nn = n;
 
-        {
+        if n > 8 {
+            ntt_plane_first_fused(plane, prime, q, q4, q4v, powomega);
+            let halfn = n / 2;
+            seg_base = 6 * n + 6 * (halfn - 1);
+            nn = halfn;
+        } else {
             let omega_base = seg_base;
             let quot_base = seg_base + 3 * n;
             let mut i = 0usize;
@@ -799,72 +1162,165 @@ unsafe fn ntt_plane_avx512<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTable<P>, pl
             seg_base += 6 * n;
         }
 
-        let mut nn = n;
-        while nn >= 2 {
+        while nn > 8 {
             let halfnn = nn / 2;
 
-            if halfnn > 1 {
-                let count = halfnn - 1;
-                let omega_base = seg_base;
-                let quot_base = seg_base + 3 * count;
+            let count = halfnn - 1;
+            let omega_base = seg_base;
+            let quot_base = seg_base + 3 * count;
 
-                let mut block_start = 0usize;
-                while block_start < n {
-                    {
-                        let p1 = block_start;
-                        let p2 = block_start + halfnn;
-                        let a = plane[p1];
-                        let b = plane[p2];
-                        plane[p1] = cond_sub_2q(a + b, q4);
-                        plane[p2] = cond_sub_2q(a + q4 - b, q4);
-                    }
-
-                    let mut i = 1usize;
-                    while i + 8 <= halfnn {
-                        let p1 = block_start + i;
-                        let p2 = block_start + halfnn + i;
-                        let av = _mm512_loadu_si512(ptr.add(p1) as *const __m512i);
-                        let bv = _mm512_loadu_si512(ptr.add(p2) as *const __m512i);
-                        let sum = cond_sub_2q_si512(_mm512_add_epi64(av, bv), q4v);
-                        let diff = _mm512_sub_epi64(_mm512_add_epi64(av, q4v), bv);
-                        let omega = load_plane_twiddles8(powomega, omega_base, count, i - 1, prime);
-                        let omega_quot = load_plane_twiddles8(powomega, quot_base, count, i - 1, prime);
-                        _mm512_storeu_si512(ptr.add(p1) as *mut __m512i, sum);
-                        _mm512_storeu_si512(ptr.add(p2) as *mut __m512i, harvey_modmul_plane8(diff, omega, omega_quot, q));
-                        i += 8;
-                    }
-                    while i < halfnn {
-                        let p1 = block_start + i;
-                        let p2 = block_start + halfnn + i;
-                        let tw_idx = i - 1;
-                        let a = plane[p1];
-                        let b = plane[p2];
-                        plane[p1] = cond_sub_2q(a + b, q4);
-                        plane[p2] = harvey_modmul(
-                            a + q4 - b,
-                            powomega[omega_base + prime * count + tw_idx],
-                            powomega[quot_base + prime * count + tw_idx],
-                            q,
-                        );
-                        i += 1;
-                    }
-
-                    block_start += nn;
+            let mut block_start = 0usize;
+            while block_start < n {
+                {
+                    let p1 = block_start;
+                    let p2 = block_start + halfnn;
+                    let a = plane[p1];
+                    let b = plane[p2];
+                    plane[p1] = cond_sub_2q(a + b, q4);
+                    plane[p2] = cond_sub_2q(a + q4 - b, q4);
                 }
 
-                seg_base += 6 * count;
-            } else {
-                let mut block_start = 0usize;
-                while block_start < n {
-                    let a = plane[block_start];
-                    let b = plane[block_start + 1];
-                    plane[block_start] = cond_sub_2q(a + b, q4);
-                    plane[block_start + 1] = cond_sub_2q(a + q4 - b, q4);
-                    block_start += 2;
+                let mut i = 1usize;
+                while i + 32 <= halfnn {
+                    let p1 = block_start + i;
+                    let p2 = block_start + halfnn + i;
+
+                    let av0 = _mm512_loadu_si512(ptr.add(p1) as *const __m512i);
+                    let bv0 = _mm512_loadu_si512(ptr.add(p2) as *const __m512i);
+                    let av1 = _mm512_loadu_si512(ptr.add(p1 + 8) as *const __m512i);
+                    let bv1 = _mm512_loadu_si512(ptr.add(p2 + 8) as *const __m512i);
+                    let av2 = _mm512_loadu_si512(ptr.add(p1 + 16) as *const __m512i);
+                    let bv2 = _mm512_loadu_si512(ptr.add(p2 + 16) as *const __m512i);
+                    let av3 = _mm512_loadu_si512(ptr.add(p1 + 24) as *const __m512i);
+                    let bv3 = _mm512_loadu_si512(ptr.add(p2 + 24) as *const __m512i);
+
+                    let sum0 = cond_sub_2q_si512(_mm512_add_epi64(av0, bv0), q4v);
+                    let sum1 = cond_sub_2q_si512(_mm512_add_epi64(av1, bv1), q4v);
+                    let sum2 = cond_sub_2q_si512(_mm512_add_epi64(av2, bv2), q4v);
+                    let sum3 = cond_sub_2q_si512(_mm512_add_epi64(av3, bv3), q4v);
+
+                    let diff0 = _mm512_sub_epi64(_mm512_add_epi64(av0, q4v), bv0);
+                    let diff1 = _mm512_sub_epi64(_mm512_add_epi64(av1, q4v), bv1);
+                    let diff2 = _mm512_sub_epi64(_mm512_add_epi64(av2, q4v), bv2);
+                    let diff3 = _mm512_sub_epi64(_mm512_add_epi64(av3, q4v), bv3);
+
+                    let omega0 = load_plane_twiddles8(powomega, omega_base, count, i - 1, prime);
+                    let omega1 = load_plane_twiddles8(powomega, omega_base, count, i + 7, prime);
+                    let omega2 = load_plane_twiddles8(powomega, omega_base, count, i + 15, prime);
+                    let omega3 = load_plane_twiddles8(powomega, omega_base, count, i + 23, prime);
+                    let omega_quot0 = load_plane_twiddles8(powomega, quot_base, count, i - 1, prime);
+                    let omega_quot1 = load_plane_twiddles8(powomega, quot_base, count, i + 7, prime);
+                    let omega_quot2 = load_plane_twiddles8(powomega, quot_base, count, i + 15, prime);
+                    let omega_quot3 = load_plane_twiddles8(powomega, quot_base, count, i + 23, prime);
+
+                    let out0 = harvey_modmul_plane8(diff0, omega0, omega_quot0, q);
+                    let out1 = harvey_modmul_plane8(diff1, omega1, omega_quot1, q);
+                    let out2 = harvey_modmul_plane8(diff2, omega2, omega_quot2, q);
+                    let out3 = harvey_modmul_plane8(diff3, omega3, omega_quot3, q);
+
+                    _mm512_storeu_si512(ptr.add(p1) as *mut __m512i, sum0);
+                    _mm512_storeu_si512(ptr.add(p1 + 8) as *mut __m512i, sum1);
+                    _mm512_storeu_si512(ptr.add(p1 + 16) as *mut __m512i, sum2);
+                    _mm512_storeu_si512(ptr.add(p1 + 24) as *mut __m512i, sum3);
+                    _mm512_storeu_si512(ptr.add(p2) as *mut __m512i, out0);
+                    _mm512_storeu_si512(ptr.add(p2 + 8) as *mut __m512i, out1);
+                    _mm512_storeu_si512(ptr.add(p2 + 16) as *mut __m512i, out2);
+                    _mm512_storeu_si512(ptr.add(p2 + 24) as *mut __m512i, out3);
+
+                    i += 32;
                 }
+                while i + 8 <= halfnn {
+                    let p1 = block_start + i;
+                    let p2 = block_start + halfnn + i;
+                    let av = _mm512_loadu_si512(ptr.add(p1) as *const __m512i);
+                    let bv = _mm512_loadu_si512(ptr.add(p2) as *const __m512i);
+                    let sum = cond_sub_2q_si512(_mm512_add_epi64(av, bv), q4v);
+                    let diff = _mm512_sub_epi64(_mm512_add_epi64(av, q4v), bv);
+                    let omega = load_plane_twiddles8(powomega, omega_base, count, i - 1, prime);
+                    let omega_quot = load_plane_twiddles8(powomega, quot_base, count, i - 1, prime);
+                    _mm512_storeu_si512(ptr.add(p1) as *mut __m512i, sum);
+                    _mm512_storeu_si512(ptr.add(p2) as *mut __m512i, harvey_modmul_plane8(diff, omega, omega_quot, q));
+                    i += 8;
+                }
+                while i < halfnn {
+                    let p1 = block_start + i;
+                    let p2 = block_start + halfnn + i;
+                    let tw_idx = i - 1;
+                    let a = plane[p1];
+                    let b = plane[p2];
+                    plane[p1] = cond_sub_2q(a + b, q4);
+                    plane[p2] = harvey_modmul(
+                        a + q4 - b,
+                        powomega[omega_base + prime * count + tw_idx],
+                        powomega[quot_base + prime * count + tw_idx],
+                        q,
+                    );
+                    i += 1;
+                }
+
+                block_start += nn;
             }
 
+            seg_base += 6 * count;
             nn /= 2;
+        }
+
+        if n >= 8 {
+            ntt_plane_radix8_last3(plane, seg_base, prime, q, q4, powomega);
+        } else {
+            while nn >= 2 {
+                let halfnn = nn / 2;
+
+                if halfnn > 1 {
+                    let count = halfnn - 1;
+                    let omega_base = seg_base;
+                    let quot_base = seg_base + 3 * count;
+
+                    let mut block_start = 0usize;
+                    while block_start < n {
+                        {
+                            let p1 = block_start;
+                            let p2 = block_start + halfnn;
+                            let a = plane[p1];
+                            let b = plane[p2];
+                            plane[p1] = cond_sub_2q(a + b, q4);
+                            plane[p2] = cond_sub_2q(a + q4 - b, q4);
+                        }
+
+                        let mut i = 1usize;
+                        while i < halfnn {
+                            let p1 = block_start + i;
+                            let p2 = block_start + halfnn + i;
+                            let tw_idx = i - 1;
+                            let a = plane[p1];
+                            let b = plane[p2];
+                            plane[p1] = cond_sub_2q(a + b, q4);
+                            plane[p2] = harvey_modmul(
+                                a + q4 - b,
+                                powomega[omega_base + prime * count + tw_idx],
+                                powomega[quot_base + prime * count + tw_idx],
+                                q,
+                            );
+                            i += 1;
+                        }
+
+                        block_start += nn;
+                    }
+
+                    seg_base += 6 * count;
+                } else {
+                    let mut block_start = 0usize;
+                    while block_start < n {
+                        let a = plane[block_start];
+                        let b = plane[block_start + 1];
+                        plane[block_start] = cond_sub_2q(a + b, q4);
+                        plane[block_start + 1] = cond_sub_2q(a + q4 - b, q4);
+                        block_start += 2;
+                    }
+                }
+
+                nn /= 2;
+            }
         }
 
         let mut i = 0usize;
@@ -897,6 +1353,12 @@ unsafe fn intt_plane_avx512<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTableInv<P>
         let mut seg_base = 0usize;
 
         let mut nn = 2usize;
+        if n >= 8 {
+            intt_plane_radix8_first3(plane, seg_base, prime, q, q4, powomega);
+            seg_base += 24;
+            nn = 16;
+        }
+
         while nn <= n {
             let halfnn = nn / 2;
 
@@ -917,6 +1379,54 @@ unsafe fn intt_plane_avx512<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTableInv<P>
                     }
 
                     let mut i = 1usize;
+                    while i + 32 <= halfnn {
+                        let p1 = block_start + i;
+                        let p2 = block_start + halfnn + i;
+
+                        let av0 = _mm512_loadu_si512(ptr.add(p1) as *const __m512i);
+                        let bv0 = _mm512_loadu_si512(ptr.add(p2) as *const __m512i);
+                        let av1 = _mm512_loadu_si512(ptr.add(p1 + 8) as *const __m512i);
+                        let bv1 = _mm512_loadu_si512(ptr.add(p2 + 8) as *const __m512i);
+                        let av2 = _mm512_loadu_si512(ptr.add(p1 + 16) as *const __m512i);
+                        let bv2 = _mm512_loadu_si512(ptr.add(p2 + 16) as *const __m512i);
+                        let av3 = _mm512_loadu_si512(ptr.add(p1 + 24) as *const __m512i);
+                        let bv3 = _mm512_loadu_si512(ptr.add(p2 + 24) as *const __m512i);
+
+                        let omega0 = load_plane_twiddles8(powomega, omega_base, count, i - 1, prime);
+                        let omega1 = load_plane_twiddles8(powomega, omega_base, count, i + 7, prime);
+                        let omega2 = load_plane_twiddles8(powomega, omega_base, count, i + 15, prime);
+                        let omega3 = load_plane_twiddles8(powomega, omega_base, count, i + 23, prime);
+                        let omega_quot0 = load_plane_twiddles8(powomega, quot_base, count, i - 1, prime);
+                        let omega_quot1 = load_plane_twiddles8(powomega, quot_base, count, i + 7, prime);
+                        let omega_quot2 = load_plane_twiddles8(powomega, quot_base, count, i + 15, prime);
+                        let omega_quot3 = load_plane_twiddles8(powomega, quot_base, count, i + 23, prime);
+
+                        let bo0 = harvey_modmul_plane8(bv0, omega0, omega_quot0, q);
+                        let bo1 = harvey_modmul_plane8(bv1, omega1, omega_quot1, q);
+                        let bo2 = harvey_modmul_plane8(bv2, omega2, omega_quot2, q);
+                        let bo3 = harvey_modmul_plane8(bv3, omega3, omega_quot3, q);
+
+                        let sum0 = cond_sub_2q_si512(_mm512_add_epi64(av0, bo0), q4v);
+                        let sum1 = cond_sub_2q_si512(_mm512_add_epi64(av1, bo1), q4v);
+                        let sum2 = cond_sub_2q_si512(_mm512_add_epi64(av2, bo2), q4v);
+                        let sum3 = cond_sub_2q_si512(_mm512_add_epi64(av3, bo3), q4v);
+
+                        let diff0 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(av0, q4v), bo0), q4v);
+                        let diff1 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(av1, q4v), bo1), q4v);
+                        let diff2 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(av2, q4v), bo2), q4v);
+                        let diff3 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(av3, q4v), bo3), q4v);
+
+                        _mm512_storeu_si512(ptr.add(p1) as *mut __m512i, sum0);
+                        _mm512_storeu_si512(ptr.add(p1 + 8) as *mut __m512i, sum1);
+                        _mm512_storeu_si512(ptr.add(p1 + 16) as *mut __m512i, sum2);
+                        _mm512_storeu_si512(ptr.add(p1 + 24) as *mut __m512i, sum3);
+                        _mm512_storeu_si512(ptr.add(p2) as *mut __m512i, diff0);
+                        _mm512_storeu_si512(ptr.add(p2 + 8) as *mut __m512i, diff1);
+                        _mm512_storeu_si512(ptr.add(p2 + 16) as *mut __m512i, diff2);
+                        _mm512_storeu_si512(ptr.add(p2 + 24) as *mut __m512i, diff3);
+
+                        i += 32;
+                    }
                     while i + 8 <= halfnn {
                         let p1 = block_start + i;
                         let p2 = block_start + halfnn + i;
@@ -1239,6 +1749,35 @@ mod tests {
                     data_avx[i], data_ref[i]
                 );
             }
+        }
+    }
+
+    #[test]
+    fn ntt_avx512_vs_ref_n4096_pseudorandom() {
+        let n = 4096usize;
+        let fwd = Ntt126IfmaTable::<Primes42>::new(n);
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        let coeffs: Vec<i64> = (0..n)
+            .map(|_| {
+                state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                ((state >> 11) as i64 % 20001) - 10000
+            })
+            .collect();
+
+        let mut data_avx = vec![0u64; 3 * n];
+        let mut data_ref = vec![0u64; 3 * n];
+        b_ntt126_ifma_from_znx64_ref(n, &mut data_avx, &coeffs);
+        b_ntt126_ifma_from_znx64_ref(n, &mut data_ref, &coeffs);
+
+        unsafe { ntt_avx512::<Primes42>(&fwd, &mut data_avx) };
+        ntt126_ifma_ref::<Primes42>(&fwd, &mut data_ref);
+
+        for i in 0..3 * n {
+            assert_eq!(
+                data_avx[i], data_ref[i],
+                "n={n} idx={i}: NTT AVX512 vs ref (avx={}, ref={})",
+                data_avx[i], data_ref[i]
+            );
         }
     }
 
