@@ -843,7 +843,7 @@ pub unsafe fn reim4_convolution_apply_avx(
     b_size: usize,
     tmp: &mut [f64],
 ) {
-    unsafe { reim4_convolution_apply_core_avx::<false>(m, min_size, offset, dst, a, a, a_size, b, b, b_size, tmp) }
+    unsafe { reim4_convolution_apply_core_avx::<false, false>(m, min_size, offset, dst, a, a, a_size, b, b, b_size, tmp) }
 }
 
 /// Pairwise variant of [`reim4_convolution_apply_avx`]: `(a0 + a1) ⊛ (b0 + b1)`.
@@ -867,12 +867,33 @@ pub unsafe fn reim4_convolution_pairwise_apply_avx(
     b_size: usize,
     tmp: &mut [f64],
 ) {
-    unsafe { reim4_convolution_apply_core_avx::<true>(m, min_size, offset, dst, a0, a1, a_size, b0, b1, b_size, tmp) }
+    unsafe { reim4_convolution_apply_core_avx::<true, false>(m, min_size, offset, dst, a0, a1, a_size, b0, b1, b_size, tmp) }
+}
+
+/// Accumulating variant of [`reim4_convolution_apply_avx`]: `dst += a ⊛ b`,
+/// leaving limbs beyond `min_size` untouched.
+///
+/// # Safety
+/// Caller must ensure the CPU supports AVX2 and FMA (e.g. `is_x86_feature_detected!("avx2")`).
+#[allow(clippy::too_many_arguments)]
+#[target_feature(enable = "avx2", enable = "fma")]
+pub unsafe fn reim4_convolution_apply_accumulate_avx(
+    m: usize,
+    min_size: usize,
+    offset: usize,
+    dst: &mut [f64],
+    a: &[f64],
+    a_size: usize,
+    b: &[f64],
+    b_size: usize,
+    tmp: &mut [f64],
+) {
+    unsafe { reim4_convolution_apply_core_avx::<false, true>(m, min_size, offset, dst, a, a, a_size, b, b, b_size, tmp) }
 }
 
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx2", enable = "fma")]
-unsafe fn reim4_convolution_apply_core_avx<const PAIRWISE: bool>(
+unsafe fn reim4_convolution_apply_core_avx<const PAIRWISE: bool, const ACC: bool>(
     m: usize,
     min_size: usize,
     offset: usize,
@@ -1027,8 +1048,12 @@ unsafe fn reim4_convolution_apply_core_avx<const PAIRWISE: bool>(
                     let row: *const f64 = stage_base.add(8 * k);
                     let out: *mut f64 = dst_ptr.add(two_m * k + 4 * grp_base);
                     for p in 0..in_group {
-                        let re: __m256d = _mm256_loadu_pd(row.add(8 * min_size * p));
-                        let im: __m256d = _mm256_loadu_pd(row.add(8 * min_size * p + 4));
+                        let mut re: __m256d = _mm256_loadu_pd(row.add(8 * min_size * p));
+                        let mut im: __m256d = _mm256_loadu_pd(row.add(8 * min_size * p + 4));
+                        if ACC {
+                            re = _mm256_add_pd(_mm256_loadu_pd(out.add(4 * p)), re);
+                            im = _mm256_add_pd(_mm256_loadu_pd(out.add(m + 4 * p)), im);
+                        }
                         _mm256_storeu_pd(out.add(4 * p), re);
                         _mm256_storeu_pd(out.add(m + 4 * p), im);
                     }

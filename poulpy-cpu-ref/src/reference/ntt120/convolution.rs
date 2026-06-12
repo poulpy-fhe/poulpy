@@ -230,11 +230,16 @@ pub fn ntt120_cnv_prepare_self<BE>(
 // Apply DFT  (CnvPVecL × CnvPVecR → VecZnxDft, bbc product)
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Scratch bytes required by [`ntt120_cnv_apply_dft`].
+/// Block-group size of the accumulate flush (see [`ntt120_cnv_apply_dft_accumulate`]).
+pub(crate) const CNV_ACC_GROUP: usize = 16;
+
+/// Scratch bytes required by [`ntt120_cnv_apply_dft`] and its accumulate variant.
 ///
-/// Stores packed full-row x2 blocks for `a` and `b`.
-pub fn ntt120_cnv_apply_dft_tmp_bytes(_res_size: usize, a_size: usize, b_size: usize) -> usize {
-    (16 * (a_size + b_size)) * size_of::<u32>()
+/// Stores packed full-row x2 blocks for `a` and `b`, plus the accumulate
+/// staging group.
+pub fn ntt120_cnv_apply_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
+    let min_size: usize = res_size.min(a_size + b_size);
+    (16 * (a_size + b_size)) * size_of::<u32>() + 8 * CNV_ACC_GROUP * min_size * size_of::<u64>()
 }
 
 /// Compute the DFT-domain bivariate convolution `res[k] = Σ a[j] ⊙ b[k−j]`.
@@ -324,6 +329,95 @@ pub fn ntt120_cnv_apply_dft<BE>(
 
     for j in min_size..res_size {
         cast_slice_mut::<_, u64>(res.at_mut(res_col, j)).fill(0);
+    }
+}
+
+/// Accumulating variant of [`ntt120_cnv_apply_dft`]: `res[k] += Σ a[j] ⊙ b[k−j]`
+/// via the backend `ntt_add_assign` kernel (bit-identical to apply + DFT add).
+/// Limbs `>= min_size` are left untouched.
+#[allow(clippy::too_many_arguments)]
+pub fn ntt120_cnv_apply_dft_accumulate<BE>(
+    module: &impl NttModuleHandle,
+    cnv_offset: usize,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res_col: usize,
+    a: &CnvPVecLBackendRef<'_, BE>,
+    a_col: usize,
+    b: &CnvPVecRBackendRef<'_, BE>,
+    b_col: usize,
+    tmp: &mut [u8],
+) where
+    BE: Backend<ScalarPrep = Q120bScalar> + NttAddAssign + NttMulBbc1ColX2 + NttPackLeft1BlkX2 + NttPackRight1BlkX2,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
+{
+    let n = res.n();
+    let res_size = res.size();
+    let a_size = a.size();
+    let b_size = b.size();
+    if res_size == 0 || a_size == 0 || b_size == 0 {
+        return;
+    }
+
+    let bound = a_size + b_size - 1;
+    let offset = cnv_offset.min(bound);
+    let min_size = res_size.min((bound + 1).saturating_sub(offset));
+
+    let meta = module.get_bbc_meta();
+    let a_cols = a.cols();
+    let b_cols = b.cols();
+    let n_blks = n / 2;
+    let a_row_stride_u64 = 4 * n * a_cols;
+    let b_row_stride_u32 = 8 * n * b_cols;
+    let a_col_offset_u64 = 4 * n * a_col;
+    let b_col_offset_u32 = 8 * n * b_col;
+    let a_raw_u64: &[u64] = cast_slice(a.raw());
+    let b_raw_u32: &[u32] = cast_slice(b.raw());
+
+    let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
+    debug_assert!(prefix.is_empty());
+    debug_assert!(suffix.is_empty());
+    let (stage, pack) = tmp_u64.split_at_mut(8 * CNV_ACC_GROUP * min_size);
+    let pack_u32: &mut [u32] = cast_slice_mut(pack);
+    debug_assert!(pack_u32.len() >= 16 * (a_size + b_size));
+    let (a_tmp, b_tmp) = pack_u32.split_at_mut(16 * a_size);
+
+    for blk in 0..n_blks {
+        BE::ntt_pack_left_1blk_x2(a_tmp, &a_raw_u64[a_col_offset_u64..], a_size, a_row_stride_u64, blk);
+        BE::ntt_pack_right_1blk_x2(b_tmp, &b_raw_u32[b_col_offset_u32..], b_size, b_row_stride_u32, blk);
+
+        let p = blk % CNV_ACC_GROUP;
+        for k in 0..min_size {
+            let k_abs = k + offset;
+            let j_min = k_abs.saturating_sub(a_size - 1);
+            let j_max = (k_abs + 1).min(b_size);
+            let ell = j_max - j_min;
+            let a_start = k_abs + 1 - j_max;
+            let b_start = b_size - j_max;
+
+            // Stage limb-major so each flush run is contiguous in res.
+            let off = 8 * (k * CNV_ACC_GROUP + p);
+            BE::ntt_mul_bbc_1col_x2(
+                meta,
+                ell,
+                &mut stage[off..off + 8],
+                &a_tmp[16 * a_start..],
+                &b_tmp[16 * b_start..],
+            );
+        }
+
+        // Flush the group: per limb, one contiguous add over consecutive lines.
+        let in_group = p + 1;
+        if in_group == CNV_ACC_GROUP || blk == n_blks - 1 {
+            let grp_base = blk + 1 - in_group;
+            for k in 0..min_size {
+                let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(res_col, k));
+                BE::ntt_add_assign(
+                    &mut res_u64[8 * grp_base..8 * (grp_base + in_group)],
+                    &stage[8 * k * CNV_ACC_GROUP..8 * (k * CNV_ACC_GROUP + in_group)],
+                );
+            }
+        }
     }
 }
 

@@ -85,6 +85,40 @@ pub trait Reim4Convolution {
         }
     }
 
+    /// Accumulating variant of [`Reim4Convolution::reim4_convolution_apply`]:
+    /// `dst += a ⊛ b`, leaving limbs beyond `min_size` untouched.
+    #[allow(clippy::too_many_arguments)]
+    fn reim4_convolution_apply_accumulate(
+        m: usize,
+        min_size: usize,
+        offset: usize,
+        dst: &mut [f64],
+        a: &[f64],
+        a_size: usize,
+        b: &[f64],
+        b_size: usize,
+        tmp: &mut [f64],
+    ) where
+        Self: Reim4BlkMatVec + Sized,
+    {
+        let a_stride: usize = a_size * 8;
+        let b_stride: usize = b_size * 8;
+        let mut a_idx: usize = 0;
+        let mut b_idx: usize = 0;
+        for blk_i in 0..m / 4 {
+            Self::reim4_convolution(tmp, min_size, offset, &a[a_idx..], a_size, &b[b_idx..], b_size);
+            for k in 0..min_size {
+                let off: usize = 2 * m * k + 4 * blk_i;
+                for i in 0..4 {
+                    dst[off + i] += tmp[8 * k + i];
+                    dst[off + m + i] += tmp[8 * k + 4 + i];
+                }
+            }
+            a_idx += a_stride;
+            b_idx += b_stride;
+        }
+    }
+
     /// Pairwise column-level convolution `(a0 + a1) ⊛ (b0 + b1)`; `tmp` must
     /// additionally hold `8 * (a_size + b_size)` f64 for the summed rows.
     #[allow(clippy::too_many_arguments)]

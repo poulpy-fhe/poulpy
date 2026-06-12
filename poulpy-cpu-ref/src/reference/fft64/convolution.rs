@@ -249,6 +249,53 @@ pub fn convolution_apply_dft<BE>(
     }
 }
 
+/// Accumulating variant of [`convolution_apply_dft`]: `res[res_col] += a (x) b`,
+/// leaving limbs beyond `min(res.size(), a.size() + b.size() - 1)` untouched.
+#[allow(clippy::too_many_arguments)]
+pub fn convolution_apply_dft_accumulate<BE>(
+    cnv_offset: usize,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    _res_col: usize,
+    a: &CnvPVecLBackendRef<'_, BE>,
+    a_col: usize,
+    b: &CnvPVecRBackendRef<'_, BE>,
+    b_col: usize,
+    tmp: &mut [f64],
+) where
+    BE: Backend<ScalarPrep = f64> + Reim4BlkMatVec + Reim4Convolution,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
+{
+    let n: usize = res.n();
+    assert_eq!(a.n(), n);
+    assert_eq!(b.n(), n);
+    let m: usize = n >> 1;
+
+    let res_size: usize = res.size();
+    let a_size: usize = a.size();
+    let b_size: usize = b.size();
+
+    let bound: usize = a_size + b_size - 1;
+    let min_size: usize = res_size.min(bound);
+    let offset: usize = cnv_offset.min(bound);
+
+    let dst: &mut [f64] = res.raw_mut();
+    let a_raw: &[f64] = a.raw();
+    let b_raw: &[f64] = b.raw();
+
+    BE::reim4_convolution_apply_accumulate(
+        m,
+        min_size,
+        offset,
+        dst,
+        &a_raw[a_col * n * a_size..],
+        a_size,
+        &b_raw[b_col * n * b_size..],
+        b_size,
+        tmp,
+    );
+}
+
 pub fn convolution_pairwise_apply_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
     convolution_apply_dft_tmp_bytes(res_size, a_size, b_size) + (a_size + b_size) * size_of::<f64>() * 8
 }

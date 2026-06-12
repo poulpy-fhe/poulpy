@@ -36,11 +36,12 @@ use crate::{
             reim_sub_negate_assign_avx2_fma, reim_to_znx_i64_assign_bnd63_avx2_fma, reim_to_znx_i64_bnd63_avx2_fma,
         },
         reim4::{
-            reim4_convolution_1coeff_avx, reim4_convolution_2coeffs_avx, reim4_convolution_apply_avx, reim4_convolution_avx,
-            reim4_convolution_by_real_const_1coeff_avx, reim4_convolution_by_real_const_2coeffs_avx,
-            reim4_convolution_pairwise_apply_avx, reim4_extract_1blk_from_reim_contiguous_avx, reim4_save_1blk_to_reim_avx,
-            reim4_save_1blk_to_reim_contiguous_avx, reim4_save_2blk_to_reim_avx, reim4_vec_mat1col_product_avx,
-            reim4_vec_mat2cols_2ndcol_product_avx, reim4_vec_mat2cols_product_avx,
+            reim4_convolution_1coeff_avx, reim4_convolution_2coeffs_avx, reim4_convolution_apply_accumulate_avx,
+            reim4_convolution_apply_avx, reim4_convolution_avx, reim4_convolution_by_real_const_1coeff_avx,
+            reim4_convolution_by_real_const_2coeffs_avx, reim4_convolution_pairwise_apply_avx,
+            reim4_extract_1blk_from_reim_contiguous_avx, reim4_save_1blk_to_reim_avx, reim4_save_1blk_to_reim_contiguous_avx,
+            reim4_save_2blk_to_reim_avx, reim4_vec_mat1col_product_avx, reim4_vec_mat2cols_2ndcol_product_avx,
+            reim4_vec_mat2cols_product_avx,
         },
     },
     znx_avx::{
@@ -608,6 +609,24 @@ impl Reim4Convolution for FFT64Avx {
         assert!(b_size > 0);
         assert!(tmp.len() >= 8 * (a_size + 4 + b_size + 16 * min_size));
         unsafe { reim4_convolution_apply_avx(m, min_size, offset, dst, a, a_size, b, b_size, tmp) }
+    }
+
+    #[inline(always)]
+    fn reim4_convolution_apply_accumulate(
+        m: usize,
+        min_size: usize,
+        offset: usize,
+        dst: &mut [f64],
+        a: &[f64],
+        a_size: usize,
+        b: &[f64],
+        b_size: usize,
+        tmp: &mut [f64],
+    ) {
+        assert!(a_size > 0);
+        assert!(b_size > 0);
+        assert!(tmp.len() >= 8 * (a_size + 4 + b_size + 16 * min_size));
+        unsafe { reim4_convolution_apply_accumulate_avx(m, min_size, offset, dst, a, a_size, b, b_size, tmp) }
     }
 
     #[inline(always)]

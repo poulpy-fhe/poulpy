@@ -19,7 +19,7 @@ use crate::ntt126_ifma::{
     module::handle,
     primes::Primes42,
     tables::Ntt126IfmaTable,
-    traits::{Ntt126IfmaCFromB, Ntt126IfmaDFTExecute, Ntt126IfmaFromZnx64},
+    traits::{Ntt126IfmaAddAssign, Ntt126IfmaCFromB, Ntt126IfmaDFTExecute, Ntt126IfmaFromZnx64},
 };
 use poulpy_cpu_ref::reference::ntt120::types::Q120bScalar;
 use poulpy_hal::layouts::{
@@ -151,11 +151,15 @@ unsafe fn pairwise_pack_right_1blk_x2_ifma(
 // Scratch accounting
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Scratch bytes required by [`cnv_apply_dft_ifma`].
+/// Block-group size of the accumulate flush (see [`cnv_apply_dft_accumulate_ifma`]).
+const CNV_ACC_GROUP: usize = 16;
+
+/// Scratch bytes required by [`cnv_apply_dft_ifma`] and its accumulate variant.
 ///
-/// Stores packed x2-block rows for both operands: 8 u64 per row.
-pub(crate) fn cnv_apply_dft_ifma_tmp_bytes(a_size: usize, b_size: usize) -> usize {
-    8 * (a_size + b_size) * size_of::<u64>()
+/// Stores packed x2-block rows for both operands plus the accumulate staging group.
+pub(crate) fn cnv_apply_dft_ifma_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
+    let min_size: usize = res_size.min(a_size + b_size);
+    (8 * (a_size + b_size) + 8 * CNV_ACC_GROUP * min_size) * size_of::<u64>()
 }
 
 /// Scratch bytes required by [`cnv_pairwise_apply_dft_ifma`].
@@ -166,7 +170,7 @@ pub(crate) fn cnv_pairwise_apply_dft_ifma_tmp_bytes(res_size: usize, a_size: usi
     if a_size == 0 || b_size == 0 || res_size == 0 {
         0
     } else {
-        cnv_apply_dft_ifma_tmp_bytes(a_size, b_size)
+        cnv_apply_dft_ifma_tmp_bytes(res_size, a_size, b_size)
     }
 }
 
@@ -258,6 +262,94 @@ pub(crate) unsafe fn cnv_apply_dft_ifma(
     // Order the non-temporal stores from the kernel against any subsequent
     // load of `res` (e.g. by the next stage of the FHE pipeline).
     _mm_sfence();
+}
+
+/// Accumulating variant of [`cnv_apply_dft_ifma`]: `res[k] += Σ a[j] ⊙ b[k−j]`
+/// via `ntt126_ifma_add_assign` (bit-identical to apply + DFT add).
+/// Limbs `>= min_size` are left untouched.
+#[allow(clippy::too_many_arguments)]
+#[target_feature(enable = "avx512ifma,avx512vl")]
+pub(crate) unsafe fn cnv_apply_dft_accumulate_ifma(
+    res: &mut VecZnxDftBackendMut<'_, NTT126Ifma>,
+    cnv_offset: usize,
+    res_col: usize,
+    a: &CnvPVecLBackendRef<'_, NTT126Ifma>,
+    a_col: usize,
+    b: &CnvPVecRBackendRef<'_, NTT126Ifma>,
+    b_col: usize,
+    tmp: &mut [u8],
+) {
+    let n = res.n();
+    let res_size = res.size();
+    let a_size = a.size();
+    let b_size = b.size();
+    if res_size == 0 || a_size == 0 || b_size == 0 {
+        return;
+    }
+
+    let bound = a_size + b_size - 1;
+    let offset = cnv_offset.min(bound);
+    let min_size = res_size.min((bound + 1).saturating_sub(offset));
+
+    let meta = Bbc126IfmaMeta::<Primes42>::new();
+    let a_cols = a.cols();
+    let b_cols = b.cols();
+    let n_blks = n / 2;
+    let row_stride_a = 4 * n * a_cols;
+    let row_stride_b = 4 * n * b_cols;
+    let a_col_offset = 4 * n * a_col;
+    let b_col_offset = 4 * n * b_col;
+    let a_raw_u64: &[u64] = cast_slice(a.raw());
+    let b_raw_u64: &[u64] = cast_slice(b.raw());
+
+    let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
+    debug_assert!(prefix.is_empty());
+    debug_assert!(suffix.is_empty());
+    let (stage, pack) = tmp_u64.split_at_mut(8 * CNV_ACC_GROUP * min_size);
+    debug_assert!(pack.len() >= 8 * (a_size + b_size));
+    let (a_tmp, b_tmp) = pack.split_at_mut(8 * a_size);
+
+    for blk in 0..n_blks {
+        unsafe {
+            pack_left_1blk_x2_ifma(a_tmp, &a_raw_u64[a_col_offset..], a_size, row_stride_a, blk);
+            pack_right_1blk_x2_ifma(b_tmp, &b_raw_u64[b_col_offset..], b_size, row_stride_b, blk);
+        }
+
+        let p = blk % CNV_ACC_GROUP;
+        for k in 0..min_size {
+            let k_abs = k + offset;
+            let j_min = k_abs.saturating_sub(a_size - 1);
+            let j_max = (k_abs + 1).min(b_size);
+            let ell = j_max - j_min;
+            let a_start = k_abs + 1 - j_max;
+            let b_start = b_size - j_max;
+
+            // Stage limb-major so each flush run is contiguous in res.
+            let off = 8 * (k * CNV_ACC_GROUP + p);
+            unsafe {
+                vec_mat1col_product_x2_bbc_ifma::<false>(
+                    &meta,
+                    ell,
+                    &mut stage[off..off + 8],
+                    cast_slice(&a_tmp[8 * a_start..]),
+                    cast_slice(&b_tmp[8 * b_start..]),
+                );
+            }
+        }
+
+        // Flush the group: per limb, one contiguous add over consecutive lines.
+        let in_group = p + 1;
+        if in_group == CNV_ACC_GROUP || blk == n_blks - 1 {
+            let grp_base = blk + 1 - in_group;
+            for k in 0..min_size {
+                let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(res_col, k));
+                NTT126Ifma::ntt126_ifma_add_assign(
+                    &mut res_u64[8 * grp_base..8 * (grp_base + in_group)],
+                    &stage[8 * k * CNV_ACC_GROUP..8 * (k * CNV_ACC_GROUP + in_group)],
+                );
+            }
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

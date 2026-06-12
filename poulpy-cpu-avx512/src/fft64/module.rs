@@ -33,8 +33,8 @@ use crate::{
             reim_to_znx_i64_bnd63_avx512,
         },
         reim4::{
-            reim4_convolution_1coeff_avx512, reim4_convolution_2coeffs_avx512, reim4_convolution_apply_avx512,
-            reim4_convolution_avx512, reim4_convolution_by_real_const_1coeff_avx512,
+            reim4_convolution_1coeff_avx512, reim4_convolution_2coeffs_avx512, reim4_convolution_apply_accumulate_avx512,
+            reim4_convolution_apply_avx512, reim4_convolution_avx512, reim4_convolution_by_real_const_1coeff_avx512,
             reim4_convolution_by_real_const_2coeffs_avx512, reim4_convolution_pairwise_apply_avx512,
             reim4_extract_1blk_from_reim_contiguous_avx512, reim4_save_1blk_to_reim_avx512,
             reim4_save_1blk_to_reim_contiguous_avx512, reim4_save_2blk_to_reim_avx512, reim4_vec_mat1col_product_avx512,
@@ -601,6 +601,24 @@ impl Reim4Convolution for FFT64Avx512 {
         assert!(b_size > 0);
         assert!(tmp.len() >= 8 * (a_size + 6 + b_size + 16 * min_size));
         unsafe { reim4_convolution_apply_avx512(m, min_size, offset, dst, a, a_size, b, b_size, tmp) }
+    }
+
+    #[inline(always)]
+    fn reim4_convolution_apply_accumulate(
+        m: usize,
+        min_size: usize,
+        offset: usize,
+        dst: &mut [f64],
+        a: &[f64],
+        a_size: usize,
+        b: &[f64],
+        b_size: usize,
+        tmp: &mut [f64],
+    ) {
+        assert!(a_size > 0);
+        assert!(b_size > 0);
+        assert!(tmp.len() >= 8 * (a_size + 6 + b_size + 16 * min_size));
+        unsafe { reim4_convolution_apply_accumulate_avx512(m, min_size, offset, dst, a, a_size, b, b_size, tmp) }
     }
 
     #[inline(always)]

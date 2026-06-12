@@ -776,7 +776,7 @@ pub unsafe fn reim4_convolution_apply_avx512(
     b_size: usize,
     tmp: &mut [f64],
 ) {
-    unsafe { reim4_convolution_apply_core_avx512::<false>(m, min_size, offset, dst, a, a, a_size, b, b, b_size, tmp) }
+    unsafe { reim4_convolution_apply_core_avx512::<false, false>(m, min_size, offset, dst, a, a, a_size, b, b, b_size, tmp) }
 }
 
 /// Pairwise variant of [`reim4_convolution_apply_avx512`]: `(a0 + a1) ⊛ (b0 + b1)`.
@@ -800,12 +800,33 @@ pub unsafe fn reim4_convolution_pairwise_apply_avx512(
     b_size: usize,
     tmp: &mut [f64],
 ) {
-    unsafe { reim4_convolution_apply_core_avx512::<true>(m, min_size, offset, dst, a0, a1, a_size, b0, b1, b_size, tmp) }
+    unsafe { reim4_convolution_apply_core_avx512::<true, false>(m, min_size, offset, dst, a0, a1, a_size, b0, b1, b_size, tmp) }
+}
+
+/// Accumulating variant of [`reim4_convolution_apply_avx512`]: `dst += a ⊛ b`,
+/// leaving limbs beyond `min_size` untouched.
+///
+/// # Safety
+/// Caller must ensure the CPU supports AVX-512F (e.g. `is_x86_feature_detected!("avx512f")`).
+#[allow(clippy::too_many_arguments)]
+#[target_feature(enable = "avx512f")]
+pub unsafe fn reim4_convolution_apply_accumulate_avx512(
+    m: usize,
+    min_size: usize,
+    offset: usize,
+    dst: &mut [f64],
+    a: &[f64],
+    a_size: usize,
+    b: &[f64],
+    b_size: usize,
+    tmp: &mut [f64],
+) {
+    unsafe { reim4_convolution_apply_core_avx512::<false, true>(m, min_size, offset, dst, a, a, a_size, b, b, b_size, tmp) }
 }
 
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512f")]
-unsafe fn reim4_convolution_apply_core_avx512<const PAIRWISE: bool>(
+unsafe fn reim4_convolution_apply_core_avx512<const PAIRWISE: bool, const ACC: bool>(
     m: usize,
     min_size: usize,
     offset: usize,
@@ -970,16 +991,23 @@ unsafe fn reim4_convolution_apply_core_avx512<const PAIRWISE: bool>(
                         let im_e: __m256d = _mm256_loadu_pd(row.add(8 * min_size * p + 4));
                         let re_o: __m256d = _mm256_loadu_pd(row.add(8 * min_size * (p + 1)));
                         let im_o: __m256d = _mm256_loadu_pd(row.add(8 * min_size * (p + 1) + 4));
-                        _mm512_storeu_pd(out.add(4 * p), _mm512_insertf64x4::<1>(_mm512_castpd256_pd512(re_e), re_o));
-                        _mm512_storeu_pd(
-                            out.add(m + 4 * p),
-                            _mm512_insertf64x4::<1>(_mm512_castpd256_pd512(im_e), im_o),
-                        );
+                        let mut re: __m512d = _mm512_insertf64x4::<1>(_mm512_castpd256_pd512(re_e), re_o);
+                        let mut im: __m512d = _mm512_insertf64x4::<1>(_mm512_castpd256_pd512(im_e), im_o);
+                        if ACC {
+                            re = _mm512_add_pd(_mm512_loadu_pd(out.add(4 * p)), re);
+                            im = _mm512_add_pd(_mm512_loadu_pd(out.add(m + 4 * p)), im);
+                        }
+                        _mm512_storeu_pd(out.add(4 * p), re);
+                        _mm512_storeu_pd(out.add(m + 4 * p), im);
                         p += 2;
                     }
                     if p < in_group {
-                        let re_e: __m256d = _mm256_loadu_pd(row.add(8 * min_size * p));
-                        let im_e: __m256d = _mm256_loadu_pd(row.add(8 * min_size * p + 4));
+                        let mut re_e: __m256d = _mm256_loadu_pd(row.add(8 * min_size * p));
+                        let mut im_e: __m256d = _mm256_loadu_pd(row.add(8 * min_size * p + 4));
+                        if ACC {
+                            re_e = _mm256_add_pd(_mm256_loadu_pd(out.add(4 * p)), re_e);
+                            im_e = _mm256_add_pd(_mm256_loadu_pd(out.add(m + 4 * p)), im_e);
+                        }
                         _mm256_storeu_pd(out.add(4 * p), re_e);
                         _mm256_storeu_pd(out.add(m + 4 * p), im_e);
                     }

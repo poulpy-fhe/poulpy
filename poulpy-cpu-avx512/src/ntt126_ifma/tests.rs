@@ -1,6 +1,8 @@
 use poulpy_hal::{
     layouts::Module,
-    test_suite::convolution::{test_convolution, test_convolution_by_const, test_convolution_pairwise},
+    test_suite::convolution::{
+        test_convolution, test_convolution_accumulate, test_convolution_by_const, test_convolution_pairwise,
+    },
 };
 
 use crate::NTT126Ifma;
@@ -267,6 +269,12 @@ fn test_convolution_ntt126_ifma() {
 fn test_convolution_pairwise_ntt126_ifma() {
     let module: Module<NTT126Ifma> = Module::<NTT126Ifma>::new(8);
     test_convolution_pairwise(&module, 12);
+}
+
+#[test]
+fn test_convolution_accumulate_ntt126_ifma() {
+    let module: Module<NTT126Ifma> = Module::<NTT126Ifma>::new(8);
+    test_convolution_accumulate(&module, 12);
 }
 
 #[test]

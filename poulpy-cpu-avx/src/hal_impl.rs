@@ -215,11 +215,12 @@ unsafe impl HalConvolutionImpl<NTT120Avx> for NTT120Avx {
     fn cnv_apply_dft_tmp_bytes(
         _module: &Module<Self>,
         _cnv_offset: usize,
-        _res_size: usize,
+        res_size: usize,
         a_size: usize,
         b_size: usize,
     ) -> usize {
         crate::ntt120::convolution::cnv_apply_dft_avx_tmp_bytes(a_size, b_size)
+            .max(poulpy_cpu_ref::reference::ntt120::convolution::ntt120_cnv_apply_dft_tmp_bytes(res_size, a_size, b_size))
     }
 
     fn cnv_by_const_apply_tmp_bytes(
@@ -279,6 +280,32 @@ unsafe impl HalConvolutionImpl<NTT120Avx> for NTT120Avx {
         unsafe {
             crate::ntt120::convolution::cnv_apply_dft_avx(module, res, cnv_offset, res_col, a, a_col, b, b_col, tmp);
         }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_apply_dft_accumulate(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        mut res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &poulpy_hal::layouts::CnvPVecLBackendRef<'_, Self>,
+        a_col: usize,
+        b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
+        b_col: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let mut scratch = scratch.borrow();
+        <Self as NTT120ConvolutionDefault<Self>>::cnv_apply_dft_accumulate_default(
+            module,
+            cnv_offset,
+            &mut res,
+            res_col,
+            a,
+            a_col,
+            b,
+            b_col,
+            &mut scratch,
+        );
     }
 
     fn cnv_pairwise_apply_dft_tmp_bytes(
