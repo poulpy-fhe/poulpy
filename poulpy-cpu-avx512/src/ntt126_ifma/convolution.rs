@@ -426,8 +426,11 @@ pub(crate) fn cnv_prepare_left(
             } else {
                 NTT126Ifma::ntt126_ifma_from_znx64(limb, a.at(col, j));
             }
-            <NTT126Ifma as Ntt126IfmaDFTExecute<Ntt126IfmaTable<Primes42>>>::ntt126_ifma_dft_execute(table, limb);
-            scatter_limb(dst, limb, res_size, j, n_blks);
+            // The NTT writes its final normalised blocks straight to the
+            // block-major rows, skipping a separate scatter pass.
+            unsafe {
+                crate::ntt126_ifma::kernels::ntt_avx512_to_rows::<Primes42>(table, limb, dst, 8 * res_size, 8 * j);
+            }
         }
         for j in min_size..res_size {
             zero_row(dst, res_size, j, n_blks);

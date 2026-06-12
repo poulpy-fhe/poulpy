@@ -78,6 +78,17 @@ mod ntt126_ifma_tests {
     }
 
     cross_backend_test_suite! {
+        mod vec_znx_dft_large,
+        backend_ref =  poulpy_cpu_ref::NTT120Ref,
+        backend_test = crate::NTT126Ifma,
+        params = TestParams { size: 1<<12, base2k: 50 },
+        tests = {
+            test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
+            test_vec_znx_idft_apply_tmpa => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_tmpa,
+        }
+    }
+
+    cross_backend_test_suite! {
         mod svp,
         backend_ref =  poulpy_cpu_ref::NTT120Ref,
         backend_test = crate::NTT126Ifma,
