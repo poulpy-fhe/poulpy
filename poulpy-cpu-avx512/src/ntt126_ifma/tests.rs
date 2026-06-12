@@ -150,12 +150,10 @@ mod ntt126_ifma_tests {
 
     // NTT size-range coverage.
     //
-    // The IFMA NTT runs outer levels breadth-first while `nn > NTT_BLOCK`,
-    // then switches to block-local depth-first for the inner levels.  For
-    // `n <= NTT_BLOCK` no breadth-first pass runs at all.  These suites
-    // exercise both regimes (block-local only for small `n`; mixed for
-    // larger `n`) and the transition sizes, confirming bit-exact agreement
-    // with the reference backend.
+    // The planar IFMA NTT runs breadth-first level loops with fused head/tail
+    // stages. These sizes cover the scalar-only edges, the fused tail, and
+    // larger mixed-width levels, confirming bit-exact agreement with the
+    // reference backend.
 
     // n = 1024: only block-local inner levels run.
     cross_backend_test_suite! {
