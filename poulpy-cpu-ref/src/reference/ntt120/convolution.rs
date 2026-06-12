@@ -35,6 +35,9 @@ const TILE: usize = 4;
 /// Block-group size of the accumulate flush.
 pub(crate) const CNV_ACC_GROUP: usize = 16;
 
+/// Block-group size of the prepare canonicalize-and-scatter staging.
+const PREP_GROUP: usize = 64;
+
 /// Scratch bytes required by [`ntt120_cnv_apply_dft`] and its accumulate
 /// variant: the padded `a` window plus the accumulate staging group.
 pub fn ntt120_cnv_apply_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
@@ -372,11 +375,15 @@ pub fn ntt120_cnv_prepare_left<BE>(
                 BE::ntt_from_znx64(limb, a.at(col, j));
             }
             BE::ntt_dft_execute(table, limb);
-            // One pack call canonicalizes the whole limb (blocks as rows).
-            BE::ntt_pack_left_1blk_x2(canon, limb, n_blks, 8, 0);
-            for blk in 0..n_blks {
-                let off = (blk * res_size + j) * 16;
-                dst[off..off + 16].copy_from_slice(&canon[16 * blk..16 * blk + 16]);
+            // Canonicalize and scatter per block group so the staging chunk
+            // stays L1-resident.
+            for g in (0..n_blks).step_by(PREP_GROUP) {
+                let gl = PREP_GROUP.min(n_blks - g);
+                BE::ntt_pack_left_1blk_x2(&mut canon[..16 * gl], &limb[8 * g..], gl, 8, 0);
+                for (i, chunk) in canon[..16 * gl].chunks_exact(16).enumerate() {
+                    let off = ((g + i) * res_size + j) * 16;
+                    dst[off..off + 16].copy_from_slice(chunk);
+                }
             }
         }
         for j in min_size..res_size {
@@ -488,10 +495,13 @@ pub fn ntt120_cnv_prepare_self<BE>(
                 BE::ntt_from_znx64(limb_b, a.at(col, j));
             }
             BE::ntt_dft_execute(table, limb_b);
-            BE::ntt_pack_left_1blk_x2(canon, limb_b, n_blks, 8, 0);
-            for blk in 0..n_blks {
-                let off = (blk * res_size + j) * 16;
-                dst_l[off..off + 16].copy_from_slice(&canon[16 * blk..16 * blk + 16]);
+            for g in (0..n_blks).step_by(PREP_GROUP) {
+                let gl = PREP_GROUP.min(n_blks - g);
+                BE::ntt_pack_left_1blk_x2(&mut canon[..16 * gl], &limb_b[8 * g..], gl, 8, 0);
+                for (i, chunk) in canon[..16 * gl].chunks_exact(16).enumerate() {
+                    let off = ((g + i) * res_size + j) * 16;
+                    dst_l[off..off + 16].copy_from_slice(chunk);
+                }
             }
             BE::ntt_c_from_b(n, limb_c, limb_b);
             let row = res_size - 1 - j;
