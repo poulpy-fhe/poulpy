@@ -2,7 +2,8 @@ use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
 use poulpy_hal::{
     layouts::Module,
     test_suite::convolution::{
-        test_convolution, test_convolution_accumulate, test_convolution_by_const, test_convolution_pairwise,
+        test_convolution, test_convolution_accumulate, test_convolution_accumulate_fused, test_convolution_by_const,
+        test_convolution_pairwise,
     },
 };
 
@@ -145,6 +146,7 @@ fn test_convolution_direct() {
     test_convolution_by_const(&module, 12);
     test_convolution_pairwise(&module, 12);
     test_convolution_accumulate(&module, 12);
+    test_convolution_accumulate_fused(&module, 12);
 }
 
 #[test]

@@ -17,7 +17,8 @@ use crate::reference::{
     ntt120::{
         NttAddAssign, NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc1ColX2, NttPackLeft1BlkX2,
         convolution::{
-            ntt120_cnv_apply_dft, ntt120_cnv_apply_dft_accumulate, ntt120_cnv_apply_dft_tmp_bytes, ntt120_cnv_by_const_apply,
+            ntt120_cnv_accumulate_dft, ntt120_cnv_accumulate_dft_tmp_bytes, ntt120_cnv_apply_dft, ntt120_cnv_apply_dft_accumulate,
+            ntt120_cnv_apply_dft_tmp_bytes, ntt120_cnv_by_const_apply,
             ntt120_cnv_by_const_apply_tmp_bytes, ntt120_cnv_pairwise_apply_dft, ntt120_cnv_pairwise_apply_dft_tmp_bytes,
             ntt120_cnv_prepare_left, ntt120_cnv_prepare_left_tmp_bytes, ntt120_cnv_prepare_right,
             ntt120_cnv_prepare_right_tmp_bytes, ntt120_cnv_prepare_self, ntt120_cnv_prepare_self_tmp_bytes,
@@ -430,6 +431,40 @@ where
         let bytes = ntt120_cnv_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
         let (tmp, _) = take_host_typed::<BE, u8>(scratch.borrow(), bytes);
         ntt120_cnv_apply_dft_accumulate::<BE>(module, cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
+    }
+
+    fn cnv_accumulate_dft_tmp_bytes_default(
+        _module: &Module<BE>,
+        _cnv_offset: usize,
+        res_size: usize,
+        a_size: usize,
+        b_size: usize,
+    ) -> usize
+    where
+        BE: Backend<ScalarPrep = Q120bScalar>,
+    {
+        ntt120_cnv_accumulate_dft_tmp_bytes(res_size, a_size, b_size)
+    }
+
+    fn cnv_accumulate_dft_default<'a, R>(
+        module: &Module<BE>,
+        cnv_offset: usize,
+        res: &mut R,
+        res_col: usize,
+        terms: &[poulpy_hal::layouts::CnvDftAccTerm<'a, BE>],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        Module<BE>: NttModuleHandle,
+        BE: Backend<ScalarPrep = Q120bScalar> + 'a,
+        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+        for<'x> <BE as Backend>::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
+        R: VecZnxDftToBackendMut<BE>,
+    {
+        let mut res_ref = res.to_backend_mut();
+        let bytes = ntt120_cnv_accumulate_dft_tmp_bytes(res_ref.size(), 0, 0);
+        let (tmp, _) = take_host_typed::<BE, u8>(scratch.borrow(), bytes);
+        ntt120_cnv_accumulate_dft::<BE>(module, cnv_offset, &mut res_ref, res_col, terms, tmp);
     }
 
     fn cnv_pairwise_apply_dft_tmp_bytes_default(

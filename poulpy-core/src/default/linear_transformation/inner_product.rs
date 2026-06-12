@@ -2,17 +2,14 @@
 //!
 //! This is the PROD block from docs/lt_bsgs.md §6.3: for one giant bucket,
 //! compute `Σ_k ũ_{j,k} ⊙ rot(v,k)` and leave the result in `VecZnxDft`.
-//! `cnv_apply_dft` overwrites its destination, so the first term initializes
-//! each DFT column and following terms are accumulated explicitly.
-
-use std::time::Instant;
+//! The first term overwrites each output column via `cnv_apply_dft` (which also
+//! zeroes the limbs past the convolution bound); the remaining terms accumulate
+//! in place with `cnv_apply_dft_accumulate`, so no per-term result is ever
+//! materialized.
 
 use poulpy_hal::{
-    api::{CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxDftAddAssign, VecZnxDftBytesOf, VecZnxDftCopy},
-    layouts::{
-        Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, ScratchArena, VecZnxDftBackendMut, VecZnxDftToBackendMut,
-        VecZnxDftToBackendRef,
-    },
+    api::{CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic},
+    layouts::{Backend, CnvDftAccTerm, CnvPVecLToBackendRef, CnvPVecRToBackendRef, ScratchArena, VecZnxDftBackendMut},
 };
 
 use crate::{
@@ -25,10 +22,7 @@ use super::{LinearTransformationLhsPrepared, LinearTransformationRhsGiantStepPre
 
 /// PROD block for one giant step, kept in DFT domain.
 ///
-/// Leaves the `(r+1)` output columns in `prod_dft`. Convolution output is staged
-/// through a one-column DFT scratch so all backends follow the same
-/// column-selection path; the first term is copied into `prod_dft`, and later
-/// terms are accumulated with `vec_znx_dft_add_assign`.
+/// Leaves the `(r+1)` output columns in `prod_dft`.
 pub(super) fn glwe_accumulate_prepared_baby_steps_dft<BE, M>(
     module: &M,
     cnv_offset_hi: usize,
@@ -39,62 +33,51 @@ pub(super) fn glwe_accumulate_prepared_baby_steps_dft<BE, M>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: ModuleN + Convolution<BE> + VecZnxDftAddAssign<BE> + VecZnxDftBytesOf + VecZnxDftCopy<BE>,
+    M: Convolution<BE>,
 {
-    let now = Instant::now();
     let cols = lhs.cols();
     let res_dft_size = lhs.size() + rhs.size() - cnv_offset_hi;
     assert_eq!(prod_dft.cols(), cols);
     assert_eq!(prod_dft.size(), res_dft_size);
 
-    let (mut term_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, 1, res_dft_size);
-
-    println!("rhs.baby_step_indexes(): {}", rhs.baby_step_indexes().len());
-
-    // Baby is the outer loop, so the first baby initializes every output column
-    // (copy) and the rest accumulate (add).
-    for (term_idx, &baby_step_idx) in rhs.baby_step_indexes().iter().enumerate() {
-        let now_diag = Instant::now();
-        let baby_rot = plan.baby_steps[baby_step_idx];
-        let diagonal = rhs.diagonal(baby_rot);
-        let baby = lhs.baby_step(baby_rot);
-        assert_eq!(baby.cols(), cols);
-        assert_eq!(baby.size() + diagonal.size() - cnv_offset_hi, res_dft_size);
-        for col in 0..cols {
-            module.cnv_apply_dft(
-                cnv_offset_hi,
-                &mut term_dft.to_backend_mut(),
-                0,
-                &baby.to_backend_ref(),
-                col,
-                &diagonal.to_backend_ref(),
-                0,
-                &mut scratch_1.borrow(),
-            );
-
-            if term_idx == 0 {
-                module.vec_znx_dft_copy(1, 0, prod_dft, col, &term_dft.to_backend_ref(), 0);
-            } else {
-                module.vec_znx_dft_add_assign(prod_dft, col, &term_dft.to_backend_ref(), 0);
-            }
-        }
-        println!("diag_cnv: {:?}", now_diag.elapsed());
+    // One fused accumulation per output column: the whole giant step is handed
+    // to the backend so it can sum all baby ⊛ diagonal terms with a single
+    // reduction per output limb and write `prod_dft` once.
+    for col in 0..cols {
+        let terms: Vec<CnvDftAccTerm<'_, BE>> = rhs
+            .baby_step_indexes()
+            .iter()
+            .map(|&baby_step_idx| {
+                let baby_rot = plan.baby_steps[baby_step_idx];
+                let diagonal = rhs.diagonal(baby_rot);
+                let baby = lhs.baby_step(baby_rot);
+                assert_eq!(baby.cols(), cols);
+                assert_eq!(baby.size() + diagonal.size() - cnv_offset_hi, res_dft_size);
+                CnvDftAccTerm {
+                    a: baby.to_backend_ref(),
+                    a_col: col,
+                    b: diagonal.to_backend_ref(),
+                    b_col: 0,
+                }
+            })
+            .collect();
+        module.cnv_accumulate_dft(cnv_offset_hi, prod_dft, col, &terms, scratch);
     }
-    println!("Accumulate: {:?}", now.elapsed());
 }
 
 /// Scratch bytes required by [`glwe_accumulate_prepared_baby_steps_dft`].
-pub(super) fn glwe_accumulate_prepared_baby_steps_dft_tmp_bytes<M>(
+pub(super) fn glwe_accumulate_prepared_baby_steps_dft_tmp_bytes<BE, M>(
     module: &M,
     cnv_offset_hi: usize,
     baby_size: usize,
     diagonal_size: usize,
 ) -> usize
 where
-    M: ModuleN + VecZnxDftBytesOf,
+    BE: Backend,
+    M: Convolution<BE>,
 {
     let res_dft_size = baby_size + diagonal_size - cnv_offset_hi;
-    module.bytes_of_vec_znx_dft(1, res_dft_size)
+    module.cnv_accumulate_dft_tmp_bytes(cnv_offset_hi, res_dft_size, baby_size, diagonal_size)
 }
 
 /// PROD block for one giant step from an *unprepared* matrix: identical to
@@ -112,7 +95,7 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: CnvPVecBytesOf + Convolution<BE> + ModuleN + VecZnxDftAddAssign<BE> + VecZnxDftBytesOf + VecZnxDftCopy<BE>,
+    M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
     P: GLWEToBackendRef<BE> + GLWEInfos,
 {
     let cols = lhs.cols();
@@ -128,12 +111,11 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
     assert_eq!(prod_dft.cols(), cols);
     assert_eq!(prod_dft.size(), res_dft_size);
 
-    let (mut term_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, 1, res_dft_size);
     // One reused right-operand slot: the whole RHS streams through it.
-    let (mut diagonal, mut scratch_2) = scratch_1.take_cnv_pvec_right_scratch(module, 1, diagonal_size);
+    let (mut diagonal, mut scratch_1) = scratch.borrow().take_cnv_pvec_right_scratch(module, 1, diagonal_size);
 
     // Baby is the outer loop, so the first baby initializes every output column
-    // (copy) and the rest accumulate (add); each diagonal is prepared once.
+    // (overwrite) and the rest accumulate in place; each diagonal is prepared once.
     for (term_idx, d) in gs.diagonals.iter().enumerate() {
         let baby = lhs.baby_step(d.baby);
         assert_eq!(baby.cols(), cols);
@@ -142,25 +124,32 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
         // Stream the RHS: prepare this diagonal on the fly, then reuse the slot.
         {
             let plaintext = d.plaintext.to_backend_ref();
-            module.cnv_prepare_right(&mut diagonal, &plaintext.data, mask, &mut scratch_2.borrow());
+            module.cnv_prepare_right(&mut diagonal, &plaintext.data, mask, &mut scratch_1.borrow());
         }
 
         for col in 0..cols {
-            module.cnv_apply_dft(
-                cnv_offset_hi,
-                &mut term_dft.to_backend_mut(),
-                0,
-                &baby.to_backend_ref(),
-                col,
-                &diagonal.to_backend_ref(),
-                0,
-                &mut scratch_2.borrow(),
-            );
-
             if term_idx == 0 {
-                module.vec_znx_dft_copy(1, 0, prod_dft, col, &term_dft.to_backend_ref(), 0);
+                module.cnv_apply_dft(
+                    cnv_offset_hi,
+                    prod_dft,
+                    col,
+                    &baby.to_backend_ref(),
+                    col,
+                    &diagonal.to_backend_ref(),
+                    0,
+                    &mut scratch_1.borrow(),
+                );
             } else {
-                module.vec_znx_dft_add_assign(prod_dft, col, &term_dft.to_backend_ref(), 0);
+                module.cnv_apply_dft_accumulate(
+                    cnv_offset_hi,
+                    prod_dft,
+                    col,
+                    &baby.to_backend_ref(),
+                    col,
+                    &diagonal.to_backend_ref(),
+                    0,
+                    &mut scratch_1.borrow(),
+                );
             }
         }
     }
