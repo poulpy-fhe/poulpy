@@ -196,7 +196,8 @@ pub fn convolution_by_const_apply<BE>(
 
 pub fn convolution_apply_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
     let min_size: usize = res_size.min(a_size + b_size - 1);
-    size_of::<f64>() * 8 * min_size
+    // Covers both the generic per-block staging and the fused column kernels.
+    size_of::<f64>() * 8 * min_size.max(a_size + 6 + b_size + 16 * min_size)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -231,20 +232,68 @@ pub fn convolution_apply_dft<BE>(
     let a_raw: &[f64] = a.raw();
     let b_raw: &[f64] = b.raw();
 
-    let mut a_idx: usize = a_col * n * a_size;
-    let mut b_idx: usize = b_col * n * b_size;
-    let a_offset: usize = a_size * 8;
-    let b_offset: usize = b_size * 8;
-    for blk_i in 0..m / 4 {
-        BE::reim4_convolution(tmp, min_size, offset, &a_raw[a_idx..], a_size, &b_raw[b_idx..], b_size);
-        BE::reim4_save_1blk_contiguous(m, min_size, blk_i, dst, tmp);
-        a_idx += a_offset;
-        b_idx += b_offset;
-    }
+    BE::reim4_convolution_apply(
+        m,
+        min_size,
+        offset,
+        dst,
+        &a_raw[a_col * n * a_size..],
+        a_size,
+        &b_raw[b_col * n * b_size..],
+        b_size,
+        tmp,
+    );
 
     for j in min_size..res_size {
         res.zero_at(res_col, j);
     }
+}
+
+/// Accumulating variant of [`convolution_apply_dft`]: `res[res_col] += a (x) b`,
+/// leaving limbs beyond `min(res.size(), a.size() + b.size() - 1)` untouched.
+#[allow(clippy::too_many_arguments)]
+pub fn convolution_apply_dft_accumulate<BE>(
+    cnv_offset: usize,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    _res_col: usize,
+    a: &CnvPVecLBackendRef<'_, BE>,
+    a_col: usize,
+    b: &CnvPVecRBackendRef<'_, BE>,
+    b_col: usize,
+    tmp: &mut [f64],
+) where
+    BE: Backend<ScalarPrep = f64> + Reim4BlkMatVec + Reim4Convolution,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
+{
+    let n: usize = res.n();
+    assert_eq!(a.n(), n);
+    assert_eq!(b.n(), n);
+    let m: usize = n >> 1;
+
+    let res_size: usize = res.size();
+    let a_size: usize = a.size();
+    let b_size: usize = b.size();
+
+    let bound: usize = a_size + b_size - 1;
+    let min_size: usize = res_size.min(bound);
+    let offset: usize = cnv_offset.min(bound);
+
+    let dst: &mut [f64] = res.raw_mut();
+    let a_raw: &[f64] = a.raw();
+    let b_raw: &[f64] = b.raw();
+
+    BE::reim4_convolution_apply_accumulate(
+        m,
+        min_size,
+        offset,
+        dst,
+        &a_raw[a_col * n * a_size..],
+        a_size,
+        &b_raw[b_col * n * b_size..],
+        b_size,
+        tmp,
+    );
 }
 
 pub fn convolution_pairwise_apply_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
@@ -294,34 +343,19 @@ pub fn convolution_pairwise_apply_dft<BE>(
     let a_raw: &[f64] = a.raw();
     let b_raw: &[f64] = b.raw();
 
-    let a_row_size: usize = a_size * 8;
-    let b_row_size: usize = b_size * 8;
-
-    let mut a0_idx: usize = col_i * n * a_size;
-    let mut a1_idx: usize = col_j * n * a_size;
-    let mut b0_idx: usize = col_i * n * b_size;
-    let mut b1_idx: usize = col_j * n * b_size;
-
-    let (tmp_a, tmp) = tmp.split_at_mut(a_row_size);
-    let (tmp_b, tmp_res) = tmp.split_at_mut(b_row_size);
-
-    for blk_i in 0..m / 4 {
-        let a0: &[f64] = &a_raw[a0_idx..];
-        let a1: &[f64] = &a_raw[a1_idx..];
-        let b0: &[f64] = &b_raw[b0_idx..];
-        let b1: &[f64] = &b_raw[b1_idx..];
-
-        BE::reim_add(tmp_a, &a0[..a_row_size], &a1[..a_row_size]);
-        BE::reim_add(tmp_b, &b0[..b_row_size], &b1[..b_row_size]);
-
-        BE::reim4_convolution(tmp_res, min_size, offset, tmp_a, a_size, tmp_b, b_size);
-        BE::reim4_save_1blk_contiguous(m, min_size, blk_i, res_raw, tmp_res);
-
-        a0_idx += a_row_size;
-        a1_idx += a_row_size;
-        b0_idx += b_row_size;
-        b1_idx += b_row_size;
-    }
+    BE::reim4_convolution_pairwise_apply(
+        m,
+        min_size,
+        offset,
+        res_raw,
+        &a_raw[col_i * n * a_size..],
+        &a_raw[col_j * n * a_size..],
+        a_size,
+        &b_raw[col_i * n * b_size..],
+        &b_raw[col_j * n * b_size..],
+        b_size,
+        tmp,
+    );
 
     for j in min_size..res_size {
         res.zero_at(res_col, j);

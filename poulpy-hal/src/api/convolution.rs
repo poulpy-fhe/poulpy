@@ -120,6 +120,24 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
+    /// Accumulating variant of [`cnv_apply_dft`](Convolution::cnv_apply_dft):
+    /// `res[res_col] += a[a_col] (x) b[b_col]`, bit-identical to `cnv_apply_dft`
+    /// followed by a DFT-domain add. Limbs `>= min(res.size(), a.size() + b.size())`
+    /// are left untouched. Scratch requirement is
+    /// [`cnv_apply_dft_tmp_bytes`](Convolution::cnv_apply_dft_tmp_bytes).
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_apply_dft_accumulate(
+        &self,
+        cnv_offset: usize,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        a: &CnvPVecLBackendRef<'_, BE>,
+        a_col: usize,
+        b: &CnvPVecRBackendRef<'_, BE>,
+        b_col: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+
     /// Returns scratch bytes required for [`cnv_pairwise_apply_dft`](Convolution::cnv_pairwise_apply_dft).
     fn cnv_pairwise_apply_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
 

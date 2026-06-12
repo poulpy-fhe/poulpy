@@ -1,6 +1,8 @@
 use poulpy_hal::{
     layouts::Module,
-    test_suite::convolution::{test_convolution, test_convolution_by_const, test_convolution_pairwise},
+    test_suite::convolution::{
+        test_convolution, test_convolution_accumulate, test_convolution_by_const, test_convolution_pairwise,
+    },
 };
 
 use crate::{FFT64Ref, NTT120Ref};
@@ -29,6 +31,12 @@ fn test_convolution_pairwise_fft64_ref() {
 }
 
 #[test]
+fn test_convolution_accumulate_fft64_ref() {
+    let module: Module<FFT64Ref> = Module::<FFT64Ref>::new(8);
+    test_convolution_accumulate(&module, 17);
+}
+
+#[test]
 fn test_convolution_by_const_ntt120_ref() {
     let module: Module<NTT120Ref> = Module::<NTT120Ref>::new(8);
     test_convolution_by_const(&module, 50);
@@ -44,6 +52,12 @@ fn test_convolution_ntt120_ref() {
 fn test_convolution_pairwise_ntt120_ref() {
     let module: Module<NTT120Ref> = Module::<NTT120Ref>::new(8);
     test_convolution_pairwise(&module, 50);
+}
+
+#[test]
+fn test_convolution_accumulate_ntt120_ref() {
+    let module: Module<NTT120Ref> = Module::<NTT120Ref>::new(8);
+    test_convolution_accumulate(&module, 50);
 }
 
 use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
