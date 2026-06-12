@@ -6,6 +6,11 @@
 //! files under `linear_transformation/` follow the phases in `docs/lt_bsgs.md`:
 //! schedule construction (§3), setup/preparation (§5), baby hoisting (§6.2),
 //! giant-step products and rotations (§6.3), and final normalization (§6.4).
+//!
+//! `docs/lt_bsgs_impl.md` is a file-by-file walkthrough of this module: how data
+//! flows through the phases, where each spec saving lands, the two evaluation
+//! paths (lazy DFT vs base-mismatch fallback), and the streamed unprepared-RHS
+//! variant.
 
 mod baby_steps;
 mod eval;
@@ -33,7 +38,8 @@ pub use crate::layouts::{
 // Reference implementations forwarded to from `crate::oep::LinearTransformationDefault`.
 pub use eval::{
     glwe_eval_linear_transformation_into_default, glwe_eval_linear_transformation_tmp_bytes_default,
-    glwe_eval_linear_transformation_unprepared_rhs_into_default, glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_default,
-    glwe_prepare_linear_transformation_lhs_default, glwe_prepare_linear_transformation_lhs_tmp_bytes_default,
+    glwe_eval_linear_transformation_unprepared_rhs_into_default,
+    glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_default, glwe_prepare_linear_transformation_lhs_default,
+    glwe_prepare_linear_transformation_lhs_tmp_bytes_default,
 };
 pub use prepare::{glwe_prepare_linear_transformation_rhs_default, glwe_prepare_linear_transformation_rhs_tmp_bytes_default};

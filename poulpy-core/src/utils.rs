@@ -17,6 +17,20 @@ impl<D: HostDataMut> GLWEPlaintext<D> {
         self.data.encode_vec_i128(base2k, 0, k.into(), data);
     }
 
+    /// Strided encode: places `data[j]` at coefficient `j·gap` (the rest zero).
+    /// `data.len() * gap` must equal the ring degree `N`. See
+    /// [`VecZnx::encode_vec_i64_strided`](poulpy_hal::layouts::VecZnx::encode_vec_i64_strided).
+    pub fn encode_vec_i64_strided(&mut self, gap: usize, data: &[i64], k: TorusPrecision) {
+        let base2k: usize = self.base2k().into();
+        self.data.encode_vec_i64_strided(base2k, 0, k.into(), gap, data);
+    }
+
+    /// Strided encode for `i128`. See [`Self::encode_vec_i64_strided`].
+    pub fn encode_vec_i128_strided(&mut self, gap: usize, data: &[i128], k: TorusPrecision) {
+        let base2k: usize = self.base2k().into();
+        self.data.encode_vec_i128_strided(base2k, 0, k.into(), gap, data);
+    }
+
     /// Encodes a single `i64` value into coefficient slot `idx`.
     pub fn encode_coeff_i64(&mut self, data: i64, k: TorusPrecision, idx: usize) {
         let base2k: usize = self.base2k().into();
@@ -33,6 +47,18 @@ impl<D: HostDataRef> GLWEPlaintext<D> {
 
     pub fn decode_vec_i128(&self, data: &mut [i128], k: TorusPrecision) {
         self.data.decode_vec_i128(self.base2k().into(), 0, k.into(), data);
+    }
+
+    /// Strided decode: reads `data[j]` from coefficient `j·gap`. `data.len() * gap`
+    /// must equal the ring degree `N`. See
+    /// [`VecZnx::decode_vec_i64_strided`](poulpy_hal::layouts::VecZnx::decode_vec_i64_strided).
+    pub fn decode_vec_i64_strided(&self, gap: usize, data: &mut [i64], k: TorusPrecision) {
+        self.data.decode_vec_i64_strided(self.base2k().into(), 0, k.into(), gap, data);
+    }
+
+    /// Strided decode for `i128`. See [`Self::decode_vec_i64_strided`].
+    pub fn decode_vec_i128_strided(&self, gap: usize, data: &mut [i128], k: TorusPrecision) {
+        self.data.decode_vec_i128_strided(self.base2k().into(), 0, k.into(), gap, data);
     }
 
     /// Decodes a single coefficient at slot `idx` as an `i64`.

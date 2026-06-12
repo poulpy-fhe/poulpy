@@ -7,6 +7,8 @@
 //! only mask preparation uses scratch BIG/SMALL before key-switching. Incompatible
 //! bases fall back to the regular normalized GLWE automorphism path.
 
+use std::time::Instant;
+
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigAddAssign, VecZnxBigAddSmallAssign, VecZnxBigAlloc,
@@ -158,6 +160,28 @@ impl<P> LinearTransformation<P> {
     }
 }
 
+/// The shared Phase B/C driver: runs the BSGS giant-step loop and finalizes.
+///
+/// Generic over [`LinearTransformationRhs`], so the *same* loop drives both the
+/// prepared cache ([`LinearTransformationRhsPrepared`]) and the streamed
+/// unprepared transform ([`LinearTransformation`]); only the per-giant PROD
+/// block (`accumulate_prod`) differs. Implements docs/lt_bsgs.md §6.3-§6.4 and
+/// the implementation walkthrough in docs/lt_bsgs_impl.md §4.
+///
+/// For each giant step `j` it computes `PROD = Σ_k ũ_{j,k} ⊙ rot(v,k)` in DFT
+/// (§4.2), then rotates by `n1·j` and folds the result into a single
+/// accumulator (§4.3-§4.4). One of two strategies is chosen up front from the
+/// `base2k` agreement of `res`, the PROD output, and the keys:
+///
+/// - **Lazy DFT path** (hot path; bases agree, or no giant rotation): body add,
+///   giant automorphism, and cross-giant accumulation all stay in `VecZnxDft`.
+///   The only IDFT and the only normalize happen once, at the end (savings
+///   #4-#6, #9). `j == 0` skips ROT entirely.
+/// - **Fallback path** (base mismatch): PROD is still in DFT, but each giant
+///   contribution is normalized to SMALL and rotated with the public normalized
+///   `glwe_automorphism`. Correct, but gives up the lazy savings.
+///
+/// Writes the encryption of `M·v` into `res`.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn glwe_eval_giant_steps<BE, M, R, S, H, K>(
     module: &M,
@@ -249,6 +273,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, S, H, K>(
 
         let mut res_initialized = false;
         for g in 0..num_giant_steps {
+            let giant_step_time = Instant::now();
             {
                 let mut prod_dft_backend = prod_dft.to_backend_mut();
                 rhs.accumulate_prod(module, cnv_offset_hi, &mut prod_dft_backend, lhs, g, &mut scratch_phase);
@@ -294,6 +319,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, S, H, K>(
                         glwe_dft_copy_dft(module, &mut lazy_acc_dft_backend, &rot_dft_ref);
                     }
                 }
+                println!("giant_step_time: {:?}", giant_step_time.elapsed());
             }
             res_initialized = true;
         }

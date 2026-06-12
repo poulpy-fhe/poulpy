@@ -13,6 +13,7 @@
 mod alloc;
 pub mod ciphertext;
 pub mod complex_diagonals;
+pub mod dft;
 pub mod plaintext;
 
 pub use alloc::CKKSModuleAlloc;
@@ -21,6 +22,7 @@ pub use ciphertext::{
     Unnormalized, UnnormalizedCKKSCiphertext,
 };
 pub use complex_diagonals::ComplexDiagonals;
+pub use dft::{DFTFormat, DFTMatrix, DFTMatrixLiteral, DFTType};
 pub use plaintext::CKKSPlaintext;
 
 use std::fmt::Debug;

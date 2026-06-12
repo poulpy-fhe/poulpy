@@ -79,6 +79,7 @@ where
         b,
         LinearTransformationStrategy::Bsgs { giant_step: n1 },
         transpose,
+        false,
     )
 }
 

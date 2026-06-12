@@ -111,12 +111,11 @@ pub struct LinearTransformationRhsPrepared<BE: Backend> {
 }
 
 impl<BE: Backend> LinearTransformationRhsPrepared<BE> {
-
-    pub fn cols(&self) -> usize{
+    pub fn cols(&self) -> usize {
         self.giant_steps[0].cols()
     }
 
-    pub fn size(&self) -> usize{
+    pub fn size(&self) -> usize {
         self.giant_steps[0].size()
     }
 

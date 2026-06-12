@@ -12,7 +12,9 @@ diagonal *encoding* and the galois-element map; the `LinearTransformation` /
 `LinearTransformationOps` traits in
 [`poulpy-ckks/src/api/linear_transformation.rs`](../poulpy-ckks/src/api/linear_transformation.rs)
 become a thin wrapper that drives the core engine (§11).
-The diagram [`lt_bsgs.png`](lt_bsgs.png) is the visual companion to this text.
+The diagram [`lt_bsgs.png`](lt_bsgs.png) is the visual companion to this text, and
+[`lt_bsgs_impl.md`](lt_bsgs_impl.md) is a file-by-file walkthrough of the default
+implementation that realizes this specification.
 
 > **Implementation status.** The engine lives in **poulpy-core** as the scheme-agnostic
 > `GLWELinearTransformOps` module tree

@@ -53,6 +53,7 @@ pub fn ckks_encode_linear_transformation_from_diagonals<BE, F, E>(
     diagonals: &ComplexDiagonals<F>,
     strategy: LinearTransformationStrategy,
     transpose: bool,
+    sparse: bool,
 ) -> LinearTransformation<CKKSPlaintext<BE::OwnedBuf>>
 where
     BE: Backend + TransferFrom<HostBytesBackend>,
@@ -72,9 +73,18 @@ where
     };
     cd.build_transform(strategy, |pre_re, pre_im| {
         let mut host_pt = host_module.ckks_pt_vec_alloc(base2k, meta);
-        encoder
-            .encode_reim(&mut host_pt, pre_re, pre_im)
-            .expect("ckks_encode_linear_transformation_from_diagonals: encode_reim slot length mismatch");
+        // `sparse`: the diagonal slot vectors live in the `encoder.m()`-slot sub-ring
+        // and are gap-mapped (`R[Y]→Z[X]`) into the degree-`N` plaintext; otherwise the
+        // dense full-`N/2`-slot encoding is used.
+        if sparse {
+            encoder
+                .encode_reim_sparse(&mut host_pt, pre_re, pre_im)
+                .expect("ckks_encode_linear_transformation_from_diagonals: sparse encode slot mismatch");
+        } else {
+            encoder
+                .encode_reim(&mut host_pt, pre_re, pre_im)
+                .expect("ckks_encode_linear_transformation_from_diagonals: encode_reim slot length mismatch");
+        }
         CKKSPlaintext::from_inner(module.upload_glwe_plaintext(&host_pt.inner), host_pt.meta())
     })
 }

@@ -100,6 +100,10 @@ where
         .max(lazy_dft_path)
 }
 
+/// Reference impl: scratch bytes for [`glwe_prepare_linear_transformation_lhs_default`].
+///
+/// Sizes both the hoisted baby route (DFT the mask once, VMP per key) and the
+/// plain per-baby `glwe_automorphism` fallback, and takes the larger.
 pub fn glwe_prepare_linear_transformation_lhs_tmp_bytes_default<BE, M, A, K>(module: &M, a: &A, key: &K) -> usize
 where
     BE: Backend,
@@ -118,6 +122,15 @@ where
     glwe_prepare_linear_transformation_lhs_tmp_bytes::<BE, _, _, _>(module, a, key)
 }
 
+/// Reference impl: Phase A — materialize the hoisted baby-step rotations.
+///
+/// Fills the pre-allocated `cache` with `rot(a, k)` (prepared as `CnvPVecL`) for
+/// every baby rotation `k` it already holds, reusing one DFT of the input mask
+/// across all keys (docs/lt_bsgs.md §6.2). The LHS is independent of the matrix
+/// diagonals, so the same prepared cache is reused across every giant step and
+/// across transforms that share the input. `a_effective_k` is the CKKS-supplied
+/// base2k alignment for the input. Forwards to the internal
+/// `glwe_prepare_linear_transformation_lhs`.
 pub fn glwe_prepare_linear_transformation_lhs_default<BE, M, A, H, K>(
     module: &M,
     cache: &mut LinearTransformationLhsPrepared<BE>,
@@ -149,6 +162,17 @@ pub fn glwe_prepare_linear_transformation_lhs_default<BE, M, A, H, K>(
     glwe_prepare_linear_transformation_lhs(module, cache, a, a_effective_k, keys, key_size, scratch);
 }
 
+/// Reference impl: prepared BSGS evaluation of a linear transformation.
+///
+/// Evaluates `M·v` from the prepared left operand `lhs` (baby rotations, Phase
+/// A) and the prepared right operand `rhs` (matrix diagonals), writing the
+/// result into `res`. This is Phases B/C of docs/lt_bsgs.md §6: per-giant PROD,
+/// lazy giant rotations, and one final normalization. `cnv_offset` is the
+/// CKKS-supplied limb alignment between the input and diagonal scales. Both
+/// operands must have been prepared for the same BSGS schedule.
+///
+/// Asserts at least one non-empty giant step (a fully-pruned transform is a
+/// caller bug), then delegates to the shared `glwe_eval_giant_steps` loop.
 pub fn glwe_eval_linear_transformation_into_default<BE, M, R, H, K>(
     module: &M,
     cnv_offset: usize,

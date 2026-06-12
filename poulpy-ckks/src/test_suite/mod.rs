@@ -69,6 +69,7 @@ pub const NTT120_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     base2k: 52,
     k: 8 * 40,
     prec: CKKSMeta {
+        log_sparsity: 0,
         log_delta: 40,
         log_budget: 30,
     },
@@ -82,6 +83,7 @@ pub const FFT64_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     base2k: 19,
     k: 8 * 19,
     prec: CKKSMeta {
+        log_sparsity: 0,
         log_delta: 30,
         log_budget: 10,
     },
@@ -95,6 +97,7 @@ pub const NTT120_PARAMS_F128: CKKSTestParams = CKKSTestParams {
     base2k: 52,
     k: 8 * 80,
     prec: CKKSMeta {
+        log_sparsity: 0,
         log_delta: 80,
         log_budget: 30,
     },

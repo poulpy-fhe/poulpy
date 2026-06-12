@@ -1138,6 +1138,73 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
+    /// Returns scratch bytes required for [`HalConvolutionImpl::cnv_accumulate_dft`].
+    ///
+    /// The default sizes the staging fallback: one one-column `VecZnxDft` plus the
+    /// scratch of a single [`HalConvolutionImpl::cnv_apply_dft`] call. Backends with
+    /// a fused kernel should override both methods together.
+    fn cnv_accumulate_dft_tmp_bytes(
+        module: &Module<BE>,
+        cnv_offset: usize,
+        res_size: usize,
+        a_size: usize,
+        b_size: usize,
+    ) -> usize
+    where
+        BE: HalVecZnxDftImpl<BE>,
+    {
+        crate::api::VecZnxDftBytesOf::bytes_of_vec_znx_dft(module, 1, res_size)
+            + Self::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
+    }
+
+    /// Computes `res[res_col] = Σ_t a_t ⊛ b_t` (overwriting), each term behaving
+    /// like one [`HalConvolutionImpl::cnv_apply_dft`] call.
+    ///
+    /// The default implementation stages every term through a one-column scratch
+    /// `VecZnxDft` and accumulates with `vec_znx_dft_add_assign`. Backends should
+    /// override it with a fused kernel that accumulates in registers.
+    fn cnv_accumulate_dft<'a>(
+        module: &Module<BE>,
+        cnv_offset: usize,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        terms: &[crate::layouts::CnvDftAccTerm<'a, BE>],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: HalVecZnxDftImpl<BE> + 'a,
+    {
+        use crate::{
+            api::ScratchArenaTakeBasic,
+            layouts::{VecZnxDftToBackendMut, VecZnxDftToBackendRef},
+        };
+
+        if terms.is_empty() {
+            <BE as HalVecZnxDftImpl<BE>>::vec_znx_dft_zero(module, res, res_col);
+            return;
+        }
+
+        let res_size = res.size();
+        let (mut term_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, 1, res_size);
+        for (idx, term) in terms.iter().enumerate() {
+            Self::cnv_apply_dft(
+                module,
+                cnv_offset,
+                &mut term_dft.to_backend_mut(),
+                0,
+                &term.a,
+                term.a_col,
+                &term.b,
+                term.b_col,
+                &mut scratch_1.borrow(),
+            );
+            if idx == 0 {
+                <BE as HalVecZnxDftImpl<BE>>::vec_znx_dft_copy(module, 1, 0, res, res_col, &term_dft.to_backend_ref(), 0);
+            } else {
+                <BE as HalVecZnxDftImpl<BE>>::vec_znx_dft_add_assign(module, res, res_col, &term_dft.to_backend_ref(), 0);
+            }
+        }
+    }
+
     fn cnv_pairwise_apply_dft_tmp_bytes(
         module: &Module<BE>,
         cnv_offset: usize,

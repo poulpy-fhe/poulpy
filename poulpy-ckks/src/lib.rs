@@ -87,6 +87,12 @@ pub struct CKKSMeta {
     pub log_delta: usize,
     /// Base 2 logarithm of the remaining homomorphic capacity.
     pub log_budget: usize,
+    /// Sparse-packing factor: `log2` of the coefficient gap (equivalently, of the
+    /// slot replication). `0` is dense / full packing (`N/2` slots). For
+    /// `log_sparsity = s` the message polynomial is sparse — `M(X^{2^s})` — and
+    /// carries `(N/2) >> s` distinct slots, each replicated `2^s` times, i.e. a
+    /// coefficient gap of `2^s`.
+    pub log_sparsity: usize,
 }
 
 /// Common metadata accessors for CKKS ciphertext and plaintext containers.
@@ -102,6 +108,12 @@ pub trait CKKSInfos {
 
     /// Returns the base-2 logarithm of the remaining homomorphic capacity.
     fn log_budget(&self) -> usize;
+
+    /// Returns the sparse-packing factor (`log2` of the coefficient gap / slot
+    /// replication); `0` is dense. See [`CKKSMeta::log_sparsity`].
+    fn log_sparsity(&self) -> usize {
+        self.meta().log_sparsity
+    }
 
     /// Returns the next multiple of [`Base2K`] greater than [`Self::log_delta`] + [`Self::log_budget`].
     fn min_k(&self, base2k: Base2K) -> TorusPrecision {
@@ -147,6 +159,13 @@ pub trait SetCKKSInfos: CKKSInfos {
     fn set_log_budget(&mut self, log_budget: usize) {
         let mut meta = self.meta();
         meta.log_budget = log_budget;
+        self.set_meta(meta);
+    }
+
+    /// Updates only the sparse-packing factor. See [`CKKSMeta::log_sparsity`].
+    fn set_log_sparsity(&mut self, log_sparsity: usize) {
+        let mut meta = self.meta();
+        meta.log_sparsity = log_sparsity;
         self.set_meta(meta);
     }
 }

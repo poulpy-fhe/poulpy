@@ -59,12 +59,14 @@ const DSIZE: usize = 1;
 
 /// Encoding precision for the input slot vector.
 const PREC_CT: CKKSMeta = CKKSMeta {
+    log_sparsity: 0,
     log_delta: 45,
     log_budget: 5,
 };
 
 /// Encoding precision for the BSGS polynomial coefficients.
 const COEFF_META: CKKSMeta = CKKSMeta {
+    log_sparsity: 0,
     log_delta: 45,
     log_budget: 1,
 };

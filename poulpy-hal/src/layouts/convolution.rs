@@ -222,6 +222,21 @@ impl<D: Data, B: Backend> CnvPVecL<D, B> {
     }
 }
 
+/// One `(left, right)` operand pair of a fused convolution accumulation.
+///
+/// Consumed by [`Convolution::cnv_accumulate_dft`](crate::api::Convolution::cnv_accumulate_dft),
+/// which computes the sum of the bivariate convolutions of all terms.
+pub struct CnvDftAccTerm<'a, BE: Backend + 'a> {
+    /// Prepared left operand.
+    pub a: CnvPVecL<<BE as Backend>::BufRef<'a>, BE>,
+    /// Column of `a` to convolve.
+    pub a_col: usize,
+    /// Prepared right operand.
+    pub b: CnvPVecR<<BE as Backend>::BufRef<'a>, BE>,
+    /// Column of `b` to convolve.
+    pub b_col: usize,
+}
+
 /// Borrow a `CnvPVecR` as a shared reference view.
 pub type CnvPVecRBackendRef<'a, B> = CnvPVecR<<B as Backend>::BufRef<'a>, B>;
 pub type CnvPVecRBackendMut<'a, B> = CnvPVecR<<B as Backend>::BufMut<'a>, B>;

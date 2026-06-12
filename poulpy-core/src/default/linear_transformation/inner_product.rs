@@ -5,6 +5,8 @@
 //! `cnv_apply_dft` overwrites its destination, so the first term initializes
 //! each DFT column and following terms are accumulated explicitly.
 
+use std::time::Instant;
+
 use poulpy_hal::{
     api::{CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxDftAddAssign, VecZnxDftBytesOf, VecZnxDftCopy},
     layouts::{
@@ -39,6 +41,7 @@ pub(super) fn glwe_accumulate_prepared_baby_steps_dft<BE, M>(
     BE: Backend,
     M: ModuleN + Convolution<BE> + VecZnxDftAddAssign<BE> + VecZnxDftBytesOf + VecZnxDftCopy<BE>,
 {
+    let now = Instant::now();
     let cols = lhs.cols();
     let res_dft_size = lhs.size() + rhs.size() - cnv_offset_hi;
     assert_eq!(prod_dft.cols(), cols);
@@ -46,9 +49,12 @@ pub(super) fn glwe_accumulate_prepared_baby_steps_dft<BE, M>(
 
     let (mut term_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, 1, res_dft_size);
 
+    println!("rhs.baby_step_indexes(): {}", rhs.baby_step_indexes().len());
+
     // Baby is the outer loop, so the first baby initializes every output column
     // (copy) and the rest accumulate (add).
     for (term_idx, &baby_step_idx) in rhs.baby_step_indexes().iter().enumerate() {
+        let now_diag = Instant::now();
         let baby_rot = plan.baby_steps[baby_step_idx];
         let diagonal = rhs.diagonal(baby_rot);
         let baby = lhs.baby_step(baby_rot);
@@ -72,7 +78,9 @@ pub(super) fn glwe_accumulate_prepared_baby_steps_dft<BE, M>(
                 module.vec_znx_dft_add_assign(prod_dft, col, &term_dft.to_backend_ref(), 0);
             }
         }
+        println!("diag_cnv: {:?}", now_diag.elapsed());
     }
+    println!("Accumulate: {:?}", now.elapsed());
 }
 
 /// Scratch bytes required by [`glwe_accumulate_prepared_baby_steps_dft`].

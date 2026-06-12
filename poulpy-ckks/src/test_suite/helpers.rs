@@ -50,6 +50,7 @@ use super::CKKSTestParams;
 
 /// Default plaintext precision used in all tests.
 pub const PT_PREC: CKKSMeta = CKKSMeta {
+    log_sparsity: 0,
     log_delta: 8,
     log_budget: 10,
 };
@@ -390,6 +391,7 @@ pub fn quantize<F: TestScalar>(values: &[F], log_delta: usize) -> Vec<F> {
 /// Returns a `CKKSMeta` at the given `log_delta` with the standard budget from params.
 pub fn precision_at(params: &CKKSTestParams, log_delta: usize) -> CKKSMeta {
     CKKSMeta {
+        log_sparsity: 0,
         log_delta,
         log_budget: params.prec.log_budget(),
     }
@@ -665,6 +667,46 @@ where
     ckks_encrypt_with_prec(params, module, host_module, encoder, sk, k, re, im, params.prec, scratch)
 }
 
+/// Encrypts a real **coefficient** vector directly (no slot/FFT encoding), at the
+/// given `k` and `prec`. `coeffs` has length `n` (the ring degree) and is placed
+/// into the polynomial coefficients. This is the input form for the homomorphic
+/// `CoeffsToSlots` test pipeline, which encrypts `bitReverse(vReal)||bitReverse(vImag)`
+/// coefficient-wise.
+#[allow(clippy::too_many_arguments)]
+pub fn ckks_encrypt_coeffs<BE, F>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
+    k: usize,
+    coeffs: &[F],
+    prec: CKKSMeta,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> CKKSCiphertext<BE::OwnedBuf>
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    Module<HostBytesBackend>: TestContextHostModule,
+    F: TestScalar,
+    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>,
+{
+    let mut host_pt = host_module.ckks_pt_vec_alloc(params.base2k.into(), prec);
+    host_pt.encode_host_floats(coeffs).unwrap();
+    let pt = upload_pt(module, &host_pt);
+
+    let mut layout = params.glwe_layout().layout;
+    layout.k = k.into();
+    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
+
+    let mut ct = alloc_ct(params, module, k);
+    let mut xa = Source::new([5u8; 32]);
+    let mut xe = Source::new([6u8; 32]);
+    module
+        .ckks_encrypt_sk(&mut ct, &pt, sk, &enc_infos, &mut xa, &mut xe, scratch)
+        .unwrap();
+    ct
+}
+
 /// Encrypts `(re, im)` at the given `k` and explicit `prec`.
 #[allow(clippy::too_many_arguments)]
 pub fn ckks_encrypt_with_prec<BE, F, E>(
@@ -736,6 +778,7 @@ where
     E: NegacyclicFFT<F>,
 {
     let prec = CKKSMeta {
+        log_sparsity: 0,
         log_delta: ct.log_delta(),
         log_budget: ct.log_budget().min(params.prec.log_budget()),
     };

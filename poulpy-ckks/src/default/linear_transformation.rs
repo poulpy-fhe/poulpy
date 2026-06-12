@@ -308,12 +308,12 @@ where
         // All non-zero giant rotations must have an automorphism key (keyed by
         // Galois element); baby keys were checked by the prepare-lhs above.
         let cyclotomic_order = self.cyclotomic_order();
-        let has_nonzero_giant_rotation = lt
-            .giant_steps
-            .iter()
-            .any(|gs| gs.rot != 0 && !gs.diagonals.is_empty());
+        let has_nonzero_giant_rotation = lt.giant_steps.iter().any(|gs| gs.rot != 0 && !gs.diagonals.is_empty());
         for gs in &lt.giant_steps {
-            if gs.rot != 0 && !gs.diagonals.is_empty() && keys.get_automorphism_key(galois_element(gs.rot, cyclotomic_order)).is_none() {
+            if gs.rot != 0
+                && !gs.diagonals.is_empty()
+                && keys.get_automorphism_key(galois_element(gs.rot, cyclotomic_order)).is_none()
+            {
                 return Err(CKKSCompositionError::MissingAutomorphismKey {
                     op: "linear_transformation",
                     rotation: gs.rot,

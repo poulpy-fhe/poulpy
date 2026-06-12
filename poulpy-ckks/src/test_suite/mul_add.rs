@@ -481,6 +481,7 @@ pub fn test_mul_add_const_zero_preserves_dst_meta<BE, F, E>(
     );
     let dst_meta = dst.meta();
     let zero_prec = CKKSMeta {
+        log_sparsity: 0,
         log_delta: 0,
         log_budget: PT_PREC.log_budget,
     };
