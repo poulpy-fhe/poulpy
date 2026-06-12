@@ -81,7 +81,7 @@ unsafe fn aos_for_blk<const I: usize>(red0: __m512i, red1: __m512i, red2: __m512
 
 /// Non-temporal writeback of one SoA→AoS block of a block-quad.
 ///
-/// `dst_base` points at `res_u64[col_res * 4 * n]` and is 64-byte aligned
+/// `dst_base` points at `res_u64[col_res * 3 * n]` and is 64-byte aligned
 /// (`VecZnxDft` storage is `DEFAULTALIGN = 64`). Each x2-block stores 8 u64,
 /// and `blk` indexes by x2-block, so `dst_base.add(8 * blk)` stays on a
 /// 64-byte boundary — safe for `_mm512_stream_si512`. The caller must issue
