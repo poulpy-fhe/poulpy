@@ -283,6 +283,15 @@ pub trait NttCFromB {
 pub trait NttMulBbc1ColX2 {
     /// `res[0..8] = sum_{i<ell} a_x2[i] ⊙ b_x2[i]`.
     fn ntt_mul_bbc_1col_x2(meta: &BbcMeta<Primes30>, ell: usize, res: &mut [u64], a: &[u32], b: &[u32]);
+
+    /// Four consecutive bbc products over a sliding window: output `t` is
+    /// `sum_{i<len} a_x2[t + i] ⊙ b_x2[i]` into `res[8t..8t+8]`.
+    /// `a` must hold `len + 3` x2 rows.
+    fn ntt_mul_bbc_tile4_x2(meta: &BbcMeta<Primes30>, len: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
+        for t in 0..4 {
+            Self::ntt_mul_bbc_1col_x2(meta, len, &mut res[8 * t..8 * t + 8], &a[16 * t..], b);
+        }
+    }
 }
 
 /// VMP inner loop: x2-block 2-column bbc product.

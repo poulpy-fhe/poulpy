@@ -15,8 +15,7 @@ use crate::reference::{
         reim4::{Reim4BlkMatVec, Reim4Convolution},
     },
     ntt120::{
-        NttAddAssign, NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc1ColX2, NttMulBbc2ColsX2, NttPackLeft1BlkX2,
-        NttPackRight1BlkX2, NttPairwisePackLeft1BlkX2, NttPairwisePackRight1BlkX2,
+        NttAddAssign, NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc1ColX2, NttPackLeft1BlkX2,
         convolution::{
             ntt120_cnv_apply_dft, ntt120_cnv_apply_dft_accumulate, ntt120_cnv_apply_dft_tmp_bytes, ntt120_cnv_by_const_apply,
             ntt120_cnv_by_const_apply_tmp_bytes, ntt120_cnv_pairwise_apply_dft, ntt120_cnv_pairwise_apply_dft_tmp_bytes,
@@ -299,7 +298,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         Module<BE>: NttModuleHandle,
-        BE: Backend<ScalarPrep = Q120bScalar> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + 'static,
+        BE: Backend<ScalarPrep = Q120bScalar> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + NttPackLeft1BlkX2 + 'static,
         for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
     {
@@ -396,12 +395,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         Module<BE>: NttModuleHandle,
-        BE: Backend<ScalarPrep = Q120bScalar>
-            + NttAddAssign
-            + NttMulBbc1ColX2
-            + NttMulBbc2ColsX2
-            + NttPackLeft1BlkX2
-            + NttPackRight1BlkX2,
+        BE: Backend<ScalarPrep = Q120bScalar> + NttAddAssign + NttMulBbc1ColX2,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
         for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
         for<'x> <BE as Backend>::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
@@ -426,7 +420,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         Module<BE>: NttModuleHandle,
-        BE: Backend<ScalarPrep = Q120bScalar> + NttAddAssign + NttMulBbc1ColX2 + NttPackLeft1BlkX2 + NttPackRight1BlkX2,
+        BE: Backend<ScalarPrep = Q120bScalar> + NttAddAssign + NttMulBbc1ColX2,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
         for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
         for<'x> <BE as Backend>::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
@@ -464,14 +458,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         Module<BE>: NttModuleHandle,
-        BE: Backend<ScalarPrep = Q120bScalar>
-            + NttAddAssign
-            + NttMulBbc1ColX2
-            + NttMulBbc2ColsX2
-            + NttPackLeft1BlkX2
-            + NttPackRight1BlkX2
-            + NttPairwisePackLeft1BlkX2
-            + NttPairwisePackRight1BlkX2,
+        BE: Backend<ScalarPrep = Q120bScalar> + NttAddAssign + NttMulBbc1ColX2,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
         for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
         for<'x> <BE as Backend>::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
@@ -499,7 +486,12 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         Module<BE>: NttModuleHandle,
-        BE: Backend<ScalarPrep = Q120bScalar> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + NttCFromB + 'static,
+        BE: Backend<ScalarPrep = Q120bScalar>
+            + NttFromZnx64
+            + NttDFTExecute<NttTable<Primes30>>
+            + NttCFromB
+            + NttPackLeft1BlkX2
+            + 'static,
         for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
     {

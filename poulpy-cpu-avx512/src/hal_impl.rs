@@ -219,8 +219,7 @@ unsafe impl HalConvolutionImpl<NTT120Avx512> for NTT120Avx512 {
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        crate::ntt120_avx512::convolution::cnv_apply_dft_avx_tmp_bytes(a_size, b_size)
-            .max(poulpy_cpu_ref::reference::ntt120::convolution::ntt120_cnv_apply_dft_tmp_bytes(res_size, a_size, b_size))
+        poulpy_cpu_ref::reference::ntt120::convolution::ntt120_cnv_apply_dft_tmp_bytes(res_size, a_size, b_size)
     }
 
     fn cnv_by_const_apply_tmp_bytes(
@@ -275,11 +274,12 @@ unsafe impl HalConvolutionImpl<NTT120Avx512> for NTT120Avx512 {
         b_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt120_avx512::convolution::cnv_apply_dft_avx_tmp_bytes(a.size(), b.size());
+        let bytes =
+            poulpy_cpu_ref::reference::ntt120::convolution::ntt120_cnv_apply_dft_tmp_bytes(res.size(), a.size(), b.size());
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        unsafe {
-            crate::ntt120_avx512::convolution::cnv_apply_dft_avx(module, res, cnv_offset, res_col, a, a_col, b, b_col, tmp);
-        }
+        poulpy_cpu_ref::reference::ntt120::convolution::ntt120_cnv_apply_dft(
+            module, cnv_offset, res, res_col, a, a_col, b, b_col, tmp,
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -315,7 +315,7 @@ unsafe impl HalConvolutionImpl<NTT120Avx512> for NTT120Avx512 {
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        crate::ntt120_avx512::convolution::cnv_pairwise_apply_dft_avx_tmp_bytes(res_size, a_size, b_size)
+        poulpy_cpu_ref::reference::ntt120::convolution::ntt120_cnv_pairwise_apply_dft_tmp_bytes(res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -330,11 +330,15 @@ unsafe impl HalConvolutionImpl<NTT120Avx512> for NTT120Avx512 {
         j: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt120_avx512::convolution::cnv_pairwise_apply_dft_avx_tmp_bytes(res.size(), a.size(), b.size());
+        let bytes = poulpy_cpu_ref::reference::ntt120::convolution::ntt120_cnv_pairwise_apply_dft_tmp_bytes(
+            res.size(),
+            a.size(),
+            b.size(),
+        );
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        unsafe {
-            crate::ntt120_avx512::convolution::cnv_pairwise_apply_dft_avx(module, res, cnv_offset, res_col, a, b, i, j, tmp);
-        }
+        poulpy_cpu_ref::reference::ntt120::convolution::ntt120_cnv_pairwise_apply_dft(
+            module, cnv_offset, res, res_col, a, b, i, j, tmp,
+        );
     }
 
     fn cnv_prepare_self_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {

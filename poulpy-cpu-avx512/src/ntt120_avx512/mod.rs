@@ -43,7 +43,6 @@
 //! - `ScalarBig  = i128` — CRT-reconstructed large coefficients.
 
 pub(crate) mod arithmetic_avx512;
-pub(crate) mod convolution;
 pub(crate) mod mat_vec_avx512;
 mod module;
 pub(crate) mod ntt;
