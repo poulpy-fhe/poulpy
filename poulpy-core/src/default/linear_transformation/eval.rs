@@ -69,7 +69,7 @@ where
     let cols = a.rank().as_usize() + 1;
     let cnv_offset_hi = pt.size().saturating_sub(1);
     let prod_size = a.size() + pt.size() - cnv_offset_hi;
-    let inner_dft = glwe_accumulate_prepared_baby_steps_dft_tmp_bytes(module, cnv_offset_hi, a.size(), pt.size());
+    let inner_dft = glwe_accumulate_prepared_baby_steps_dft_tmp_bytes::<BE, _>(module, cnv_offset_hi, a.size(), pt.size());
     let prod_col_big = module.bytes_of_vec_znx_big(1, prod_size);
     let prod_dft = module.bytes_of_vec_znx_dft(cols, prod_size);
     let lazy_size = key.size().max(prod_size);

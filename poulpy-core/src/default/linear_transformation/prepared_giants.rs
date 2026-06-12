@@ -7,8 +7,6 @@
 //! only mask preparation uses scratch BIG/SMALL before key-switching. Incompatible
 //! bases fall back to the regular normalized GLWE automorphism path.
 
-use std::time::Instant;
-
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigAddAssign, VecZnxBigAddSmallAssign, VecZnxBigAlloc,
@@ -273,7 +271,6 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, S, H, K>(
 
         let mut res_initialized = false;
         for g in 0..num_giant_steps {
-            let giant_step_time = Instant::now();
             {
                 let mut prod_dft_backend = prod_dft.to_backend_mut();
                 rhs.accumulate_prod(module, cnv_offset_hi, &mut prod_dft_backend, lhs, g, &mut scratch_phase);
@@ -319,7 +316,6 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, S, H, K>(
                         glwe_dft_copy_dft(module, &mut lazy_acc_dft_backend, &rot_dft_ref);
                     }
                 }
-                println!("giant_step_time: {:?}", giant_step_time.elapsed());
             }
             res_initialized = true;
         }
