@@ -48,7 +48,10 @@ struct Cpx<F> {
 impl<F: Float> Cpx<F> {
     #[inline]
     fn zero() -> Self {
-        Cpx { re: F::zero(), im: F::zero() }
+        Cpx {
+            re: F::zero(),
+            im: F::zero(),
+        }
     }
 
     #[inline]
@@ -101,13 +104,11 @@ fn bit_reverse_in_place<F>(v: &mut [Cpx<F>], n: usize) {
     }
 }
 
+/// Butterfly coefficient layers `a,b,c`, each `[log_slots][dslots]`.
+type ButterflyLayers<F> = (Vec<Vec<Cpx<F>>>, Vec<Vec<Cpx<F>>>, Vec<Vec<Cpx<F>>>);
+
 /// FFT (decoding) butterfly coefficient layers `a,b,c`, each `[log_slots][dslots]`.
-fn fft_plain_vec<F: DftScalar>(
-    log_slots: usize,
-    dslots: usize,
-    roots: &[Cpx<F>],
-    pow5: &[usize],
-) -> (Vec<Vec<Cpx<F>>>, Vec<Vec<Cpx<F>>>, Vec<Vec<Cpx<F>>>) {
+fn fft_plain_vec<F: DftScalar>(log_slots: usize, dslots: usize, roots: &[Cpx<F>], pow5: &[usize]) -> ButterflyLayers<F> {
     let big_n = 1usize << log_slots;
     let size = if 2 * big_n == dslots { 2 } else { 1 };
 
@@ -126,8 +127,8 @@ fn fft_plain_vec<F: DftScalar>(
         while i < big_n {
             let gap = big_n / m;
             let mask = (m << 2) - 1;
-            for j in 0..(m >> 1) {
-                let k = (pow5[j] & mask) * gap;
+            for (j, &p5) in pow5.iter().enumerate().take(m >> 1) {
+                let k = (p5 & mask) * gap;
                 let idx1 = i + j;
                 let idx2 = i + j + tt;
                 for u in 0..size {
@@ -150,12 +151,7 @@ fn fft_plain_vec<F: DftScalar>(
 }
 
 /// IFFT (encoding) butterfly coefficient layers.
-fn ifft_plain_vec<F: DftScalar>(
-    log_slots: usize,
-    dslots: usize,
-    roots: &[Cpx<F>],
-    pow5: &[usize],
-) -> (Vec<Vec<Cpx<F>>>, Vec<Vec<Cpx<F>>>, Vec<Vec<Cpx<F>>>) {
+fn ifft_plain_vec<F: DftScalar>(log_slots: usize, dslots: usize, roots: &[Cpx<F>], pow5: &[usize]) -> ButterflyLayers<F> {
     let big_n = 1usize << log_slots;
     let size = if 2 * big_n == dslots { 2 } else { 1 };
 
@@ -174,8 +170,8 @@ fn ifft_plain_vec<F: DftScalar>(
         while i < big_n {
             let gap = big_n / m;
             let mask = (m << 2) - 1;
-            for j in 0..(m >> 1) {
-                let k = ((m << 2) - (pow5[j] & mask)) * gap;
+            for (j, &p5) in pow5.iter().enumerate().take(m >> 1) {
+                let k = ((m << 2) - (p5 & mask)) * gap;
                 let idx1 = i + j;
                 let idx2 = i + j + tt;
                 for u in 0..size {
@@ -624,8 +620,14 @@ mod tests {
             let slots = 1usize << log_slots;
             for bit_reversed in [false, true] {
                 for levels in schedules(log_slots) {
-                    let enc = gen_dft_matrices::<f64>(&literal(DFTType::Encode, log_slots, levels.clone(), bit_reversed), log_slots + 1);
-                    let dec = gen_dft_matrices::<f64>(&literal(DFTType::Decode, log_slots, levels.clone(), bit_reversed), log_slots + 1);
+                    let enc = gen_dft_matrices::<f64>(
+                        &literal(DFTType::Encode, log_slots, levels.clone(), bit_reversed),
+                        log_slots + 1,
+                    );
+                    let dec = gen_dft_matrices::<f64>(
+                        &literal(DFTType::Decode, log_slots, levels.clone(), bit_reversed),
+                        log_slots + 1,
+                    );
 
                     let re: Vec<f64> = (0..slots).map(|j| (0.3 * (j as f64 + 1.0)).sin()).collect();
                     let im: Vec<f64> = (0..slots).map(|j| (0.7 * (j as f64 + 2.0)).cos()).collect();

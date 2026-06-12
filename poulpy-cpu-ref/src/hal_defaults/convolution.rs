@@ -17,8 +17,8 @@ use crate::reference::{
     ntt120::{
         NttAddAssign, NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc1ColX2, NttPackLeft1BlkX2,
         convolution::{
-            ntt120_cnv_accumulate_dft, ntt120_cnv_accumulate_dft_tmp_bytes, ntt120_cnv_apply_dft, ntt120_cnv_apply_dft_accumulate,
-            ntt120_cnv_apply_dft_tmp_bytes, ntt120_cnv_by_const_apply,
+            ntt120_cnv_accumulate_dft, ntt120_cnv_accumulate_dft_tmp_bytes, ntt120_cnv_apply_dft,
+            ntt120_cnv_apply_dft_accumulate, ntt120_cnv_apply_dft_tmp_bytes, ntt120_cnv_by_const_apply,
             ntt120_cnv_by_const_apply_tmp_bytes, ntt120_cnv_pairwise_apply_dft, ntt120_cnv_pairwise_apply_dft_tmp_bytes,
             ntt120_cnv_prepare_left, ntt120_cnv_prepare_left_tmp_bytes, ntt120_cnv_prepare_right,
             ntt120_cnv_prepare_right_tmp_bytes, ntt120_cnv_prepare_self, ntt120_cnv_prepare_self_tmp_bytes,

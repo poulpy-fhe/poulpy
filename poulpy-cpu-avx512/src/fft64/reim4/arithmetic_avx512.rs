@@ -805,7 +805,9 @@ pub unsafe fn reim4_convolution_pairwise_apply_avx512(
     tmp: &mut [f64],
 ) {
     unsafe {
-        reim4_convolution_apply_core_avx512::<true, false>(m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, tmp)
+        reim4_convolution_apply_core_avx512::<true, false>(
+            m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, tmp,
+        )
     }
 }
 

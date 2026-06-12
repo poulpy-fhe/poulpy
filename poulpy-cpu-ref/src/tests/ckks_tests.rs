@@ -154,8 +154,12 @@ fn dft_round_trip_standard() {
         &mut scratch.borrow(),
     );
 
-    module.ckks_coeffs_to_slots(&mut ct, &enc_dft, &atks, &mut scratch.borrow()).unwrap();
-    module.ckks_slots_to_coeffs(&mut ct, &dec_dft, &atks, &mut scratch.borrow()).unwrap();
+    module
+        .ckks_coeffs_to_slots(&mut ct, &enc_dft, &atks, &mut scratch.borrow())
+        .unwrap();
+    module
+        .ckks_slots_to_coeffs(&mut ct, &dec_dft, &atks, &mut scratch.borrow())
+        .unwrap();
 
     let (got_re, got_im) = ckks_decrypt_decode::<FFT64Ref, f64, _>(&params, &module, &encoder, &ct, &sk, &mut scratch.borrow());
 
@@ -676,7 +680,9 @@ fn dft_coeffs_to_slots_repack_sparse() {
         layouts::{DFTFormat, DFTMatrixLiteral, DFTType},
         test_suite::{
             CKKSTestParams,
-            helpers::{alloc_ct, alloc_scratch, ckks_decrypt_with_prec, ckks_encrypt_coeffs, gen_atk, gen_sk_with_raw, test_vector_1},
+            helpers::{
+                alloc_ct, alloc_scratch, ckks_decrypt_with_prec, ckks_encrypt_coeffs, gen_atk, gen_sk_with_raw, test_vector_1,
+            },
         },
     };
     use poulpy_core::layouts::{Base2K, LinearTransformationStrategy};
@@ -685,7 +691,7 @@ fn dft_coeffs_to_slots_repack_sparse() {
         layouts::{CyclotomicOrder, Module},
     };
 
-    use crate::{FFT64ReimTable, FFT64Ref};
+    use crate::{FFT64Ref, FFT64ReimTable};
 
     let base2k = 19usize;
     let log_delta = 30usize;
@@ -694,7 +700,11 @@ fn dft_coeffs_to_slots_repack_sparse() {
         n: 64,
         base2k,
         k: base2k * 14,
-        prec: CKKSMeta { log_delta, log_budget: 10, log_sparsity: 3 },
+        prec: CKKSMeta {
+            log_delta,
+            log_budget: 10,
+            log_sparsity: 3,
+        },
         hw: 32,
         dsize: 1,
     };
@@ -708,7 +718,11 @@ fn dft_coeffs_to_slots_repack_sparse() {
     let (sk_raw, sk) = gen_sk_with_raw(&params, &module, &host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, &module);
 
-    let factor_meta = CKKSMeta { log_delta, log_budget: 10, log_sparsity: 0 };
+    let factor_meta = CKKSMeta {
+        log_delta,
+        log_budget: 10,
+        log_sparsity: 0,
+    };
     let enc_dft = ckks_new_dft_matrix(
         &module,
         &host_module,
@@ -747,11 +761,29 @@ fn dft_coeffs_to_slots_repack_sparse() {
         coeffs[j * gap] = re[bitrev(j)];
         coeffs[params.n / 2 + j * gap] = im[bitrev(j)];
     }
-    let mut ct_in = ckks_encrypt_coeffs(&params, &module, &host_module, &sk, params.k, &coeffs, params.prec, &mut scratch.borrow());
+    let mut ct_in = ckks_encrypt_coeffs(
+        &params,
+        &module,
+        &host_module,
+        &sk,
+        params.k,
+        &coeffs,
+        params.prec,
+        &mut scratch.borrow(),
+    );
     ct_in.set_log_sparsity(3);
 
     let mut ct_out = alloc_ct(&params, &module, params.k);
-    ckks_coeffs_to_slots_repack(&module, &mut ct_out, &ct_in, &enc_dft, &atks, &conj_key, &mut scratch.borrow()).unwrap();
+    ckks_coeffs_to_slots_repack(
+        &module,
+        &mut ct_out,
+        &ct_in,
+        &enc_dft,
+        &atks,
+        &conj_key,
+        &mut scratch.borrow(),
+    )
+    .unwrap();
 
     // Decode at 2·slots resolution: real part = [re | im], imag part ≈ 0.
     let small = Encoder::<FFT64ReimTable<f64>>::new::<f64>(2 * slots).unwrap();
@@ -790,7 +822,9 @@ fn dft_repack_round_trip_sparse() {
         layouts::{CKKSPlaintextVecHostCodec, DFTFormat, DFTMatrixLiteral, DFTType},
         test_suite::{
             CKKSTestParams,
-            helpers::{alloc_ct, alloc_scratch, ckks_decrypt_with_prec, ckks_encrypt_coeffs, gen_atk, gen_sk_with_raw, test_vector_1},
+            helpers::{
+                alloc_ct, alloc_scratch, ckks_decrypt_with_prec, ckks_encrypt_coeffs, gen_atk, gen_sk_with_raw, test_vector_1,
+            },
         },
     };
     use poulpy_core::layouts::{Base2K, LinearTransformationStrategy};
@@ -799,7 +833,7 @@ fn dft_repack_round_trip_sparse() {
         layouts::{CyclotomicOrder, Module},
     };
 
-    use crate::{FFT64ReimTable, FFT64Ref};
+    use crate::{FFT64Ref, FFT64ReimTable};
 
     let base2k = 19usize;
     let log_delta = 30usize;
@@ -807,7 +841,11 @@ fn dft_repack_round_trip_sparse() {
         n: 64,
         base2k,
         k: base2k * 18,
-        prec: CKKSMeta { log_delta, log_budget: 10, log_sparsity: 3 },
+        prec: CKKSMeta {
+            log_delta,
+            log_budget: 10,
+            log_sparsity: 3,
+        },
         hw: 32,
         dsize: 1,
     };
@@ -821,7 +859,11 @@ fn dft_repack_round_trip_sparse() {
     let (sk_raw, sk) = gen_sk_with_raw(&params, &module, &host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, &module);
 
-    let factor_meta = CKKSMeta { log_delta, log_budget: 10, log_sparsity: 0 };
+    let factor_meta = CKKSMeta {
+        log_delta,
+        log_budget: 10,
+        log_sparsity: 0,
+    };
     let mk = |kind| DFTMatrixLiteral {
         kind,
         log_slots,
@@ -830,13 +872,36 @@ fn dft_repack_round_trip_sparse() {
         scaling: None,
         bit_reversed: false,
     };
-    let enc_dft = ckks_new_dft_matrix(&module, &host_module, &encoder, Base2K(base2k as u32), factor_meta, &mk(DFTType::Encode), LinearTransformationStrategy::Auto, &mut scratch.borrow());
-    let dec_dft = ckks_new_dft_matrix(&module, &host_module, &encoder, Base2K(base2k as u32), factor_meta, &mk(DFTType::Decode), LinearTransformationStrategy::Auto, &mut scratch.borrow());
+    let enc_dft = ckks_new_dft_matrix(
+        &module,
+        &host_module,
+        &encoder,
+        Base2K(base2k as u32),
+        factor_meta,
+        &mk(DFTType::Encode),
+        LinearTransformationStrategy::Auto,
+        &mut scratch.borrow(),
+    );
+    let dec_dft = ckks_new_dft_matrix(
+        &module,
+        &host_module,
+        &encoder,
+        Base2K(base2k as u32),
+        factor_meta,
+        &mk(DFTType::Decode),
+        LinearTransformationStrategy::Auto,
+        &mut scratch.borrow(),
+    );
 
     let order = module.cyclotomic_order();
     let mut atks = HashMap::new();
-    for p in enc_dft.galois_elements(order).into_iter().chain(dec_dft.galois_elements(order)) {
-        atks.entry(p).or_insert_with(|| gen_atk(&params, &module, p, &sk_raw, &mut scratch.borrow()));
+    for p in enc_dft
+        .galois_elements(order)
+        .into_iter()
+        .chain(dec_dft.galois_elements(order))
+    {
+        atks.entry(p)
+            .or_insert_with(|| gen_atk(&params, &module, p, &sk_raw, &mut scratch.borrow()));
     }
     let conj_key = gen_atk(&params, &module, -1, &sk_raw, &mut scratch.borrow());
 
@@ -849,11 +914,29 @@ fn dft_repack_round_trip_sparse() {
         coeffs[j * gap] = re[bitrev(j)];
         coeffs[params.n / 2 + j * gap] = im[bitrev(j)];
     }
-    let mut ct_in = ckks_encrypt_coeffs(&params, &module, &host_module, &sk, params.k, &coeffs, params.prec, &mut scratch.borrow());
+    let mut ct_in = ckks_encrypt_coeffs(
+        &params,
+        &module,
+        &host_module,
+        &sk,
+        params.k,
+        &coeffs,
+        params.prec,
+        &mut scratch.borrow(),
+    );
     ct_in.set_log_sparsity(3);
 
     let mut ct_mid = alloc_ct(&params, &module, params.k);
-    ckks_coeffs_to_slots_repack(&module, &mut ct_mid, &ct_in, &enc_dft, &atks, &conj_key, &mut scratch.borrow()).unwrap();
+    ckks_coeffs_to_slots_repack(
+        &module,
+        &mut ct_mid,
+        &ct_in,
+        &enc_dft,
+        &atks,
+        &conj_key,
+        &mut scratch.borrow(),
+    )
+    .unwrap();
     assert_eq!(ct_mid.log_sparsity(), 2, "slots doubled");
 
     let mut ct_out = alloc_ct(&params, &module, params.k);
@@ -889,7 +972,14 @@ fn reim_sparse_codec_roundtrip() {
     let host = Module::<HostBytesBackend>::new(n as u64);
     let encoder = Encoder::<FFT64ReimTable<f64>>::new::<f64>(m_small).unwrap();
 
-    let mut pt = host.ckks_pt_vec_alloc(Base2K(50), CKKSMeta { log_delta: 40, log_budget: 8, log_sparsity: 0 });
+    let mut pt = host.ckks_pt_vec_alloc(
+        Base2K(50),
+        CKKSMeta {
+            log_delta: 40,
+            log_budget: 8,
+            log_sparsity: 0,
+        },
+    );
     assert_eq!(pt.n().as_usize(), n);
 
     let re = [1.0_f64, -2.0, 0.5, 3.0];

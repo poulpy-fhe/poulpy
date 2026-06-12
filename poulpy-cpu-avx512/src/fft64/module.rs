@@ -641,7 +641,9 @@ impl Reim4Convolution for FFT64Avx512 {
         assert!(a_size > 0);
         assert!(b_size > 0);
         assert!(tmp.len() >= 8 * (a_size + 6 + 2 * b_size + 16 * min_size));
-        unsafe { reim4_convolution_pairwise_apply_avx512(m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, tmp) }
+        unsafe {
+            reim4_convolution_pairwise_apply_avx512(m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, tmp)
+        }
     }
 
     #[inline(always)]

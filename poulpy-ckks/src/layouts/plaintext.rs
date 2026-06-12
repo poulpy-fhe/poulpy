@@ -173,7 +173,10 @@ pub trait CKKSPlaintextVecHostCodec<F: CKKSScalar>: CKKSInfos + LWEInfos {
 /// `[0, n/2)` and the imaginary parts in `[n/2, n)` (since `slots·g = n/2`).
 fn sparse_gap<F>(coeffs: &[F], n: usize) -> Result<usize> {
     let l = coeffs.len();
-    anyhow::ensure!(l >= 2 && l.is_power_of_two(), "sparse coeffs length must be a power of two ≥ 2, got {l}");
+    anyhow::ensure!(
+        l >= 2 && l.is_power_of_two(),
+        "sparse coeffs length must be a power of two ≥ 2, got {l}"
+    );
     anyhow::ensure!(l <= n && n.is_multiple_of(l), "sparse coeffs length {l} must divide n {n}");
     Ok(n / l)
 }

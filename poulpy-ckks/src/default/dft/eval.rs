@@ -311,7 +311,10 @@ where
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
     assert_eq!(dft.literal.kind, DFTType::Encode, "coeffs_to_slots requires an Encode matrix");
-    assert!(dft.is_sparse(), "coeffs_to_slots_repack requires a sparse RepackImagAsReal matrix");
+    assert!(
+        dft.is_sparse(),
+        "coeffs_to_slots_repack requires a sparse RepackImagAsReal matrix"
+    );
     let slots = 1i64 << dft.literal.log_slots;
 
     // ct_out := z = Encode(ct_in).
@@ -360,7 +363,10 @@ where
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
     assert_eq!(dft.literal.kind, DFTType::Decode, "slots_to_coeffs requires a Decode matrix");
-    assert!(dft.is_sparse(), "slots_to_coeffs_repack requires a sparse RepackImagAsReal matrix");
+    assert!(
+        dft.is_sparse(),
+        "slots_to_coeffs_repack requires a sparse RepackImagAsReal matrix"
+    );
 
     module.ckks_copy(op_out, ct_in, scratch)?;
     ckks_dft_evaluate_assign(module, op_out, dft, keys, scratch)?;

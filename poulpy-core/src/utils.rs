@@ -58,7 +58,8 @@ impl<D: HostDataRef> GLWEPlaintext<D> {
 
     /// Strided decode for `i128`. See [`Self::decode_vec_i64_strided`].
     pub fn decode_vec_i128_strided(&self, gap: usize, data: &mut [i128], k: TorusPrecision) {
-        self.data.decode_vec_i128_strided(self.base2k().into(), 0, k.into(), gap, data);
+        self.data
+            .decode_vec_i128_strided(self.base2k().into(), 0, k.into(), gap, data);
     }
 
     /// Decodes a single coefficient at slot `idx` as an `i64`.

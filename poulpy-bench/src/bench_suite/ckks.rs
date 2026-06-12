@@ -263,7 +263,7 @@ where
     for &i in diag_indices {
         let j = i / n1;
         let k = i % n1;
-        let plaintext = module.ckks_pt_vec_alloc(Base2K(BASE2K as u32), ckks_ct_meta());
+        let plaintext = module.ckks_pt_vec_alloc(Base2K(BASE2K as u32), ckks_pt_meta());
         giant_steps[j].diagonals.push(Diagonal {
             baby: k as i64,
             plaintext,

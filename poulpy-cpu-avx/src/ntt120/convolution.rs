@@ -16,8 +16,7 @@ use std::mem::size_of;
 use bytemuck::{cast_slice, cast_slice_mut};
 
 use poulpy_cpu_ref::reference::ntt120::{
-    convolution::cnv_accumulate_schedule, mat_vec::BbcMeta, primes::Primes30, types::Q120bScalar,
-    vec_znx_dft::NttModuleHandle,
+    convolution::cnv_accumulate_schedule, mat_vec::BbcMeta, primes::Primes30, types::Q120bScalar, vec_znx_dft::NttModuleHandle,
 };
 use poulpy_hal::layouts::{CnvDftAccTerm, Module, VecZnxDftBackendMut, ZnxView, ZnxViewMut};
 
