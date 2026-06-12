@@ -367,6 +367,15 @@ impl NttMulBbc1ColX2 for NTT120Avx {
         // SAFETY: NTT120Avx::new() verifies AVX2 availability at construction time.
         unsafe { vec_mat1col_product_x2_bbc_avx2(meta, ell, res, a, b) }
     }
+
+    #[inline(always)]
+    fn ntt_mul_bbc_tile4_x2(meta: &BbcMeta<Primes30>, len: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
+        // SAFETY: NTT120Avx::new() verifies AVX2 availability at construction time.
+        unsafe {
+            crate::ntt120::mat_vec_avx::vec_mat_tile2_bbc_canonical_avx2(meta, len, &mut res[..16], a, b);
+            crate::ntt120::mat_vec_avx::vec_mat_tile2_bbc_canonical_avx2(meta, len, &mut res[16..32], &a[32..], b);
+        }
+    }
 }
 
 impl NttMulBbc2ColsX2 for NTT120Avx {
