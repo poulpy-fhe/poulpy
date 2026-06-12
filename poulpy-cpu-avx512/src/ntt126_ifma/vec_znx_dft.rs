@@ -130,7 +130,7 @@ unsafe fn intt_then_compact_ifma(
             // Step 1: inverse NTT in-place on `src`.
             {
                 let blk = std::slice::from_raw_parts_mut(src_ptr.add(src_off_u64), 3 * n);
-                crate::ntt126_ifma::reference::ntt::intt126_ifma_ref::<Primes42>(table, blk);
+                <NTT126Ifma as Ntt126IfmaDFTExecute<Ntt126IfmaTableInv<Primes42>>>::ntt126_ifma_dft_execute(table, blk);
             }
 
             // Step 2: Garner CRT-compact 3n u64s → n i128s, writing to `dst`.

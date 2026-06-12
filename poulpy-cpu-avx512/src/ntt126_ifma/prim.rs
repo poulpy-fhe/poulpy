@@ -15,7 +15,13 @@ use crate::ntt126_ifma::{
     },
 };
 
-use super::kernels::{intt_avx512, ntt_avx512};
+use core::arch::x86_64::{
+    __m256i, __m512i, _mm256_add_epi64, _mm256_and_si256, _mm256_cmpgt_epi64, _mm256_loadu_si256, _mm256_mul_epu32,
+    _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_srli_epi64, _mm256_storeu_si256, _mm512_loadu_si512, _mm512_set1_epi64,
+    _mm512_storeu_si512,
+};
+
+use super::kernels::{cond_sub_2q_si256, cond_sub_2q_si512, intt_avx512, ntt_avx512};
 use super::mat_vec_ifma::vec_mat1col_product_bbc_ifma;
 
 use poulpy_cpu_ref::reference::ntt120::{
@@ -127,6 +133,13 @@ const OQ_IFMA: [u64; 4] = {
     oq
 };
 
+/// `2^42 mod Q[k]` for two-pass reduction of signed 64-bit inputs.
+const POW42_MOD_Q_IFMA: [u64; 4] = {
+    let q = <Primes42 as crate::ntt126_ifma::primes::PrimeSetNtt126Ifma>::Q;
+    let pow42 = 1u64 << 42;
+    [pow42 - q[0], pow42 - q[1], pow42 - q[2], 0]
+};
+
 /// Convert n i64 coefficients to planar 3-prime CRT b format.
 ///
 /// For each i64 x:
@@ -151,16 +164,36 @@ unsafe fn simd_b_from_znx64_masked(n: usize, res: &mut [u64], a: &[i64], mask: i
 unsafe fn simd_b_from_znx64_impl(n: usize, res: &mut [u64], a: &[i64], mask: i64) {
     debug_assert!(res.len() >= 3 * n);
     debug_assert!(a.len() >= n);
-    for i in 0..n {
-        let x = a[i] & mask;
-        for p in 0..3 {
-            let q = Primes42::Q[p];
-            res[p * n + i] = if x >= 0 {
-                (x as u64) % q
-            } else {
-                let pos = (x as u64) & (i64::MAX as u64);
-                (pos + OQ_IFMA[p]) % q
-            };
+    unsafe {
+        let oq_vec = _mm256_loadu_si256(OQ_IFMA.as_ptr() as *const __m256i);
+        let i64_max = _mm256_set1_epi64x(i64::MAX);
+        let zero = _mm256_setzero_si256();
+        let mask42 = _mm256_set1_epi64x((1i64 << 42) - 1);
+        let pow42 = _mm256_loadu_si256(POW42_MOD_Q_IFMA.as_ptr() as *const __m256i);
+        let q = _mm256_loadu_si256(Primes42::Q.as_ptr() as *const __m256i);
+        let mask_vec = _mm256_set1_epi64x(mask);
+        let mut lanes = [0u64; 4];
+        let lanes_ptr = lanes.as_mut_ptr() as *mut __m256i;
+
+        for i in 0..n {
+            let xv = _mm256_and_si256(_mm256_set1_epi64x(a[i]), mask_vec);
+            let xl = _mm256_and_si256(xv, i64_max);
+            let sign = _mm256_cmpgt_epi64(zero, xv);
+            let add = _mm256_and_si256(sign, oq_vec);
+            let val = _mm256_add_epi64(xl, add);
+
+            let hi = _mm256_srli_epi64::<42>(val);
+            let lo = _mm256_and_si256(val, mask42);
+            let y = _mm256_add_epi64(_mm256_mul_epu32(hi, pow42), lo);
+
+            let hi2 = _mm256_srli_epi64::<42>(y);
+            let lo2 = _mm256_and_si256(y, mask42);
+            let z = _mm256_add_epi64(_mm256_mul_epu32(hi2, pow42), lo2);
+
+            _mm256_storeu_si256(lanes_ptr, cond_sub_2q_si256(z, q));
+            res[i] = lanes[0];
+            res[n + i] = lanes[1];
+            res[2 * n + i] = lanes[2];
         }
     }
 }
@@ -168,12 +201,21 @@ unsafe fn simd_b_from_znx64_impl(n: usize, res: &mut [u64], a: &[i64], mask: i64
 /// Reduce planar b-format values in [0, 2q) to planar c-format values in [0, q).
 #[target_feature(enable = "avx512f")]
 unsafe fn simd_c_from_b(n: usize, res: &mut [u64], a: &[u64]) {
-    for p in 0..3 {
-        let q = Primes42::Q[p];
-        let base = p * n;
-        for i in 0..n {
-            let x = a[base + i];
-            res[base + i] = if x >= q { x - q } else { x };
+    unsafe {
+        for p in 0..3 {
+            let q = _mm512_set1_epi64(Primes42::Q[p] as i64);
+            let base = p * n;
+            let mut i = 0usize;
+            while i + 8 <= n {
+                let av = _mm512_loadu_si512(a.as_ptr().add(base + i) as *const __m512i);
+                _mm512_storeu_si512(res.as_mut_ptr().add(base + i) as *mut __m512i, cond_sub_2q_si512(av, q));
+                i += 8;
+            }
+            while i < n {
+                let x = a[base + i];
+                res[base + i] = if x >= Primes42::Q[p] { x - Primes42::Q[p] } else { x };
+                i += 1;
+            }
         }
     }
 }
