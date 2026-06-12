@@ -1,32 +1,13 @@
-//! Bivariate convolution operations for the NTT120 backend.
+//! Bivariate convolution operations for the NTT120 backend family.
 //!
-//! Implements the five-function convolution pipeline used by
-//! `poulpy-cpu-ref`:
-//!
-//! | Step | Function | Description |
-//! |------|----------|-------------|
-//! | 1a | [`ntt120_cnv_prepare_left`]  | Encode `VecZnx` → `CnvPVecL` (q120b, NTT domain) |
-//! | 1b | [`ntt120_cnv_prepare_right`] | Encode `VecZnx` → `CnvPVecR` (q120c, NTT domain) |
-//! | 2  | [`ntt120_cnv_apply_dft`]     | `res[k] = Σ a[j] ⊙ b[k−j]` (bbc product) |
-//! | 2p | [`ntt120_cnv_pairwise_apply_dft`] | `res = (a[:,i]+a[:,j]) ⊙ (b[:,i]+b[:,j])` |
-//! | 3  | [`ntt120_cnv_by_const_apply`] | Coefficient-domain negacyclic convolution into i128 |
-//!
-//! # Prepared-format asymmetry
-//!
-//! The bbc kernel (`accum_mul_q120_bc` in `mat_vec`) expects its
-//! left operand in **q120b** (4 × u64 per NTT coefficient) and its right
-//! operand in **q120c** (8 × u32: `(r mod Qₖ, r·2³² mod Qₖ)` per prime).
-//! `CnvPVecL` stores q120b; `CnvPVecR` stores q120c.  Both are 32 bytes
-//! per NTT coefficient — the same as `size_of::<Q120bScalar>()`.
-//!
-//! # Memory layout (Option A)
-//!
-//! Both `CnvPVecL` and `CnvPVecR` use the same flat layout as
-//! `vec_znx_dft`: for column `col`, limb `j`, and NTT
-//! coefficient index `n_i`, the element lives at
-//! `(col * size + j) * n + n_i` in [`Q120bScalar`] units.  Access via
-//! [`ZnxView::at`] / `at_mut` is identical
-//! to `VecZnxDft`.
+//! Prepared operands use a block-major layout: for column `col` and x2 NTT
+//! block `blk`, all `size` limb rows (16 u32 each) are stored contiguously at
+//! `col * (n/2) * size * 16 + blk * size * 16` in u32 units. `CnvPVecL` rows
+//! hold the canonical (`% q`, kernel-ready) u32 encoding produced by
+//! [`NttPackLeft1BlkX2`]; `CnvPVecR` rows hold q120c in reversed limb order.
+//! The apply kernels read both operands sequentially and tile four output
+//! limbs per pass over a zero-padded `a` window via
+//! [`NttMulBbc1ColX2::ntt_mul_bbc_tile4_x2`].
 
 use bytemuck::{cast_slice, cast_slice_mut};
 
@@ -36,88 +17,388 @@ use crate::{
         VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
     },
     reference::ntt120::{
-        NttAddAssign, NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc1ColX2, NttMulBbc2ColsX2, NttPackLeft1BlkX2,
-        NttPackRight1BlkX2, NttPairwisePackLeft1BlkX2, NttPairwisePackRight1BlkX2, ntt::NttTable, primes::Primes30,
-        types::Q120bScalar, vec_znx_dft::NttModuleHandle,
+        NttAddAssign, NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc1ColX2, NttPackLeft1BlkX2,
+        ntt::NttTable,
+        primes::{PrimeSet, Primes30},
+        types::Q120bScalar,
+        vec_znx_dft::NttModuleHandle,
     },
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Prepare left  (VecZnx → CnvPVecL, q120b)
+// Scratch accounting
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Scratch bytes required by [`ntt120_cnv_prepare_left`].
-///
-/// Returns 0: the function writes the NTT directly into the output buffer.
-pub fn ntt120_cnv_prepare_left_tmp_bytes(_n: usize) -> usize {
-    0
+/// Output-tile width of the apply kernels (padded window rows on each side).
+const TILE: usize = 4;
+
+/// Block-group size of the accumulate flush.
+pub(crate) const CNV_ACC_GROUP: usize = 16;
+
+/// Block-group size of the prepare canonicalize-and-scatter staging.
+const PREP_GROUP: usize = 64;
+
+/// Scratch bytes required by [`ntt120_cnv_apply_dft`] and its accumulate
+/// variant: the padded `a` window plus the accumulate staging group.
+pub fn ntt120_cnv_apply_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
+    let min_size: usize = res_size.min(a_size + b_size);
+    16 * (a_size + 2 * (TILE - 1)) * size_of::<u32>() + 8 * CNV_ACC_GROUP * min_size * size_of::<u64>()
 }
 
-/// Encode a `VecZnx` (i64 coefficients) into a `CnvPVecL` (q120b, NTT domain).
+/// Scratch bytes required by [`ntt120_cnv_pairwise_apply_dft`]: the apply
+/// scratch plus the summed `b` rows.
+pub fn ntt120_cnv_pairwise_apply_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
+    if a_size == 0 || b_size == 0 || res_size == 0 {
+        0
+    } else {
+        ntt120_cnv_apply_dft_tmp_bytes(res_size, a_size, b_size) + 16 * b_size * size_of::<u32>()
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Tiled column kernel
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Canonical modular sum of one window row: `dst = (a + b) mod q` per active
+/// u32 lane (odd lanes are zero in the canonical encoding).
+fn canonical_sum_row(dst: &mut [u32], a: &[u32], b: &[u32]) {
+    for i in 0..16 {
+        let q = Primes30::Q[(i % 8) / 2];
+        let mut s = a[i] + b[i];
+        if s >= q {
+            s -= q;
+        }
+        dst[i] = s;
+    }
+}
+
+/// Convolve one column pair into `res[res_col]`, tiling [`TILE`] output limbs
+/// per pass over the zero-padded `a` window.
 ///
-/// For each column `col` and each limb `j` of the input `a`:
-/// 1. Map i64 coefficients → q120b via `BE::ntt_from_znx64`.
-/// 2. Apply the forward NTT in-place via `BE::ntt_dft_execute`.
-/// 3. Store the result directly in `res[col, j]` as q120b.
+/// - `ACC`: accumulate into `res` (via group-staged `ntt_add_assign`) instead
+///   of overwriting.
+/// - `PAIRWISE`: operands are `(a0 + a1) mod q` and the lazy sum `b0 + b1`.
+#[allow(clippy::too_many_arguments)]
+fn ntt120_conv_columns<BE, const ACC: bool, const PAIRWISE: bool>(
+    module: &impl NttModuleHandle,
+    cnv_offset: usize,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res_col: usize,
+    a0_col: &[u32],
+    a1_col: &[u32],
+    a_size: usize,
+    b0_col: &[u32],
+    b1_col: &[u32],
+    b_size: usize,
+    tmp: &mut [u8],
+) where
+    BE: Backend<ScalarPrep = Q120bScalar> + NttAddAssign + NttMulBbc1ColX2,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
+{
+    let n = res.n();
+    let res_size = res.size();
+
+    let bound = a_size + b_size - 1;
+    let offset = cnv_offset.min(bound);
+    let min_size = res_size.min((bound + 1).saturating_sub(offset));
+
+    let meta = module.get_bbc_meta();
+    let n_blks = n / 2;
+    let pad = TILE - 1;
+    let win_rows = a_size + 2 * pad;
+
+    let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
+    debug_assert!(prefix.is_empty());
+    debug_assert!(suffix.is_empty());
+    let (stage, rest) = tmp_u64.split_at_mut(8 * CNV_ACC_GROUP * min_size);
+    let rest_u32: &mut [u32] = cast_slice_mut(rest);
+    let (win, rest_u32) = rest_u32.split_at_mut(16 * win_rows);
+    let b_sum: &mut [u32] = &mut rest_u32[..if PAIRWISE { 16 * b_size } else { 0 }];
+
+    win[..16 * pad].fill(0);
+    win[16 * (a_size + pad)..].fill(0);
+
+    let n_tiles = min_size.div_ceil(TILE);
+    let mut out = [0u64; 8 * TILE];
+
+    for blk in 0..n_blks {
+        // Stage this block's a rows (or the canonical pairwise sum) into the
+        // padded window; b rows are read in place (lazy-summed when PAIRWISE).
+        let a_blk = &a0_col[blk * 16 * a_size..(blk + 1) * 16 * a_size];
+        if PAIRWISE {
+            let a1_blk = &a1_col[blk * 16 * a_size..(blk + 1) * 16 * a_size];
+            for r in 0..a_size {
+                canonical_sum_row(
+                    &mut win[16 * (pad + r)..16 * (pad + r + 1)],
+                    &a_blk[16 * r..],
+                    &a1_blk[16 * r..],
+                );
+            }
+        } else {
+            win[16 * pad..16 * (pad + a_size)].copy_from_slice(a_blk);
+        }
+        let b_blk: &[u32] = if PAIRWISE {
+            let b0_blk = &b0_col[blk * 16 * b_size..(blk + 1) * 16 * b_size];
+            let b1_blk = &b1_col[blk * 16 * b_size..(blk + 1) * 16 * b_size];
+            for (d, (x, y)) in b_sum.iter_mut().zip(b0_blk.iter().zip(b1_blk.iter())) {
+                *d = x + y;
+            }
+            b_sum
+        } else {
+            &b0_col[blk * 16 * b_size..(blk + 1) * 16 * b_size]
+        };
+
+        let grp_pos = blk % CNV_ACC_GROUP;
+
+        for tile in 0..n_tiles {
+            let k0 = offset + TILE * tile;
+            let j_lo = (k0 + 1).saturating_sub(a_size).min(b_size);
+            let j_hi = (k0 + TILE).min(b_size);
+            let len = j_hi.saturating_sub(j_lo);
+
+            // b row r holds limb j = b_size-1-r; output t reads window rows
+            // starting at (k0 + pad + 1 - j_hi) + t over `len` rows.
+            let win_base = (k0 + pad + 1)
+                .saturating_sub(j_hi)
+                .min(win_rows.saturating_sub(TILE - 1 + len));
+            let r_start = b_size - j_hi;
+            BE::ntt_mul_bbc_tile4_x2(meta, len, &mut out, &win[16 * win_base..], &b_blk[16 * r_start..]);
+
+            let k_rel = TILE * tile;
+            for t in 0..TILE.min(min_size - k_rel) {
+                // Limb-major staging keeps each flush run contiguous in res
+                // (direct per-limb stores would alias one L1 set).
+                let off = 8 * ((k_rel + t) * CNV_ACC_GROUP + grp_pos);
+                for q in 0..8 {
+                    stage[off + q] = out[8 * t + q];
+                }
+            }
+        }
+
+        // Flush the group per limb as one contiguous run.
+        let in_group = grp_pos + 1;
+        if in_group == CNV_ACC_GROUP || blk == n_blks - 1 {
+            let grp_base = blk + 1 - in_group;
+            for k in 0..min_size {
+                let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(res_col, k));
+                let run = &stage[8 * k * CNV_ACC_GROUP..8 * (k * CNV_ACC_GROUP + in_group)];
+                if ACC {
+                    BE::ntt_add_assign(&mut res_u64[8 * grp_base..8 * (grp_base + in_group)], run);
+                } else {
+                    res_u64[8 * grp_base..8 * (grp_base + in_group)].copy_from_slice(run);
+                }
+            }
+        }
+    }
+
+    if !ACC {
+        for j in min_size..res_size {
+            cast_slice_mut::<_, u64>(res.at_mut(res_col, j)).fill(0);
+        }
+    }
+}
+
+fn col_slice_u32(raw: &[Q120bScalar], n: usize, size: usize, col: usize) -> &[u32] {
+    let stride = 8 * n * size;
+    &cast_slice(raw)[col * stride..(col + 1) * stride]
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Apply DFT entry points
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Compute the DFT-domain bivariate convolution `res[k] = Σ a[j] ⊙ b[k−j]`.
+///
+/// Output limbs `min_size..res.size()` are zeroed.
+#[allow(clippy::too_many_arguments)]
+pub fn ntt120_cnv_apply_dft<BE>(
+    module: &impl NttModuleHandle,
+    cnv_offset: usize,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res_col: usize,
+    a: &CnvPVecLBackendRef<'_, BE>,
+    a_col: usize,
+    b: &CnvPVecRBackendRef<'_, BE>,
+    b_col: usize,
+    tmp: &mut [u8],
+) where
+    BE: Backend<ScalarPrep = Q120bScalar> + NttAddAssign + NttMulBbc1ColX2,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
+{
+    let n = res.n();
+    let res_size = res.size();
+    let a_size = a.size();
+    let b_size = b.size();
+    if res_size == 0 || a_size == 0 || b_size == 0 {
+        for j in 0..res_size {
+            cast_slice_mut::<_, u64>(res.at_mut(res_col, j)).fill(0);
+        }
+        return;
+    }
+
+    let a_col_u32 = col_slice_u32(a.raw(), n, a_size, a_col);
+    let b_col_u32 = col_slice_u32(b.raw(), n, b_size, b_col);
+    ntt120_conv_columns::<BE, false, false>(
+        module, cnv_offset, res, res_col, a_col_u32, a_col_u32, a_size, b_col_u32, b_col_u32, b_size, tmp,
+    );
+}
+
+/// Accumulating variant of [`ntt120_cnv_apply_dft`]: `res[k] += Σ a[j] ⊙ b[k−j]`
+/// via the backend `ntt_add_assign` kernel (bit-identical to apply + DFT add).
+/// Limbs `>= min_size` are left untouched.
+#[allow(clippy::too_many_arguments)]
+pub fn ntt120_cnv_apply_dft_accumulate<BE>(
+    module: &impl NttModuleHandle,
+    cnv_offset: usize,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res_col: usize,
+    a: &CnvPVecLBackendRef<'_, BE>,
+    a_col: usize,
+    b: &CnvPVecRBackendRef<'_, BE>,
+    b_col: usize,
+    tmp: &mut [u8],
+) where
+    BE: Backend<ScalarPrep = Q120bScalar> + NttAddAssign + NttMulBbc1ColX2,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
+{
+    let n = res.n();
+    let res_size = res.size();
+    let a_size = a.size();
+    let b_size = b.size();
+    if res_size == 0 || a_size == 0 || b_size == 0 {
+        return;
+    }
+
+    let a_col_u32 = col_slice_u32(a.raw(), n, a_size, a_col);
+    let b_col_u32 = col_slice_u32(b.raw(), n, b_size, b_col);
+    ntt120_conv_columns::<BE, true, false>(
+        module, cnv_offset, res, res_col, a_col_u32, a_col_u32, a_size, b_col_u32, b_col_u32, b_size, tmp,
+    );
+}
+
+/// Compute the pairwise DFT-domain convolution
+/// `res = (a[:,i] + a[:,j]) ⊙ (b[:,i] + b[:,j])`.
+///
+/// When `col_i == col_j` this delegates to [`ntt120_cnv_apply_dft`].
+#[allow(clippy::too_many_arguments)]
+pub fn ntt120_cnv_pairwise_apply_dft<BE>(
+    module: &impl NttModuleHandle,
+    cnv_offset: usize,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res_col: usize,
+    a: &CnvPVecLBackendRef<'_, BE>,
+    b: &CnvPVecRBackendRef<'_, BE>,
+    col_i: usize,
+    col_j: usize,
+    tmp: &mut [u8],
+) where
+    BE: Backend<ScalarPrep = Q120bScalar> + NttAddAssign + NttMulBbc1ColX2,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
+{
+    if col_i == col_j {
+        ntt120_cnv_apply_dft(module, cnv_offset, res, res_col, a, col_i, b, col_j, tmp);
+        return;
+    }
+
+    let n = res.n();
+    let res_size = res.size();
+    let a_size = a.size();
+    let b_size = b.size();
+    if res_size == 0 || a_size == 0 || b_size == 0 {
+        for j in 0..res_size {
+            cast_slice_mut::<_, u64>(res.at_mut(res_col, j)).fill(0);
+        }
+        return;
+    }
+
+    let a0 = col_slice_u32(a.raw(), n, a_size, col_i);
+    let a1 = col_slice_u32(a.raw(), n, a_size, col_j);
+    let b0 = col_slice_u32(b.raw(), n, b_size, col_i);
+    let b1 = col_slice_u32(b.raw(), n, b_size, col_j);
+    ntt120_conv_columns::<BE, false, true>(module, cnv_offset, res, res_col, a0, a1, a_size, b0, b1, b_size, tmp);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Prepare paths
+// ──────────────────────────────────────────────────────────────────────────────
+
+fn zero_row_u32(dst: &mut [u32], size: usize, row: usize, n_blks: usize) {
+    for blk in 0..n_blks {
+        let off = (blk * size + row) * 16;
+        dst[off..off + 16].fill(0);
+    }
+}
+
+/// Scratch bytes required by [`ntt120_cnv_prepare_left`]: NTT and canonical limbs.
+pub fn ntt120_cnv_prepare_left_tmp_bytes(n: usize) -> usize {
+    8 * n * size_of::<u64>()
+}
+
+/// Encode a `VecZnx` into a `CnvPVecL` (canonical u32 rows, block-major).
 ///
 /// Limbs of `res` beyond `a.size()` are zeroed.
-/// No scratch buffer is needed; `_tmp` is unused.
 pub fn ntt120_cnv_prepare_left<BE>(
     module: &impl NttModuleHandle,
     res: &mut CnvPVecLBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
     mask: i64,
-    _tmp: &mut [u8],
+    tmp: &mut [u8],
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + 'static,
+    BE: Backend<ScalarPrep = Q120bScalar> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + NttPackLeft1BlkX2 + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
 {
+    let n = res.n();
     let table = module.get_ntt_table();
     let cols = res.cols();
     let res_size = res.size();
     let min_size = res_size.min(a.size());
+    let n_blks = n / 2;
+    let col_stride = 8 * n * res_size;
 
+    let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
+    debug_assert!(prefix.is_empty());
+    debug_assert!(suffix.is_empty());
+    let (limb, canon_u64) = tmp_u64[..8 * n].split_at_mut(4 * n);
+    let canon: &mut [u32] = cast_slice_mut(canon_u64);
+
+    let res_u32: &mut [u32] = cast_slice_mut(res.raw_mut());
     for col in 0..cols {
-        // All limbs except the last: unmasked fast path.
-        for j in 0..min_size.saturating_sub(1) {
-            let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(col, j));
-            BE::ntt_from_znx64(res_u64, a.at(col, j));
-            BE::ntt_dft_execute(table, res_u64);
-        }
-        // Last active limb: masked path.
-        if min_size > 0 {
-            let last = min_size - 1;
-            let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(col, last));
-            BE::ntt_from_znx64_masked(res_u64, a.at(col, last), mask);
-            BE::ntt_dft_execute(table, res_u64);
+        let dst = &mut res_u32[col * col_stride..(col + 1) * col_stride];
+        for j in 0..min_size {
+            if j + 1 == min_size {
+                BE::ntt_from_znx64_masked(limb, a.at(col, j), mask);
+            } else {
+                BE::ntt_from_znx64(limb, a.at(col, j));
+            }
+            BE::ntt_dft_execute(table, limb);
+            // Canonicalize and scatter per block group so the staging chunk
+            // stays L1-resident.
+            for g in (0..n_blks).step_by(PREP_GROUP) {
+                let gl = PREP_GROUP.min(n_blks - g);
+                BE::ntt_pack_left_1blk_x2(&mut canon[..16 * gl], &limb[8 * g..], gl, 8, 0);
+                for (i, chunk) in canon[..16 * gl].chunks_exact(16).enumerate() {
+                    let off = ((g + i) * res_size + j) * 16;
+                    dst[off..off + 16].copy_from_slice(chunk);
+                }
+            }
         }
         for j in min_size..res_size {
-            cast_slice_mut::<_, u64>(res.at_mut(col, j)).fill(0);
+            zero_row_u32(dst, res_size, j, n_blks);
         }
     }
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Prepare right  (VecZnx → CnvPVecR, q120c)
-// ──────────────────────────────────────────────────────────────────────────────
-
-/// Scratch bytes required by [`ntt120_cnv_prepare_right`].
-///
-/// Returns `4 * n * 8` bytes — one intermediate q120b buffer of `4 * n` u64
-/// values used for the NTT before the q120b → q120c conversion.
+/// Scratch bytes required by [`ntt120_cnv_prepare_right`]: NTT and converted limbs.
 pub fn ntt120_cnv_prepare_right_tmp_bytes(n: usize) -> usize {
-    4 * n * size_of::<u64>()
+    8 * n * size_of::<u64>()
 }
 
-/// Encode a `VecZnx` (i64 coefficients) into a `CnvPVecR` (q120c, NTT domain).
-///
-/// For each column `col` and each limb `j` of the input `a`:
-/// 1. Map i64 coefficients → q120b via `b_from_znx64_ref` into `tmp`.
-/// 2. Apply the forward NTT in-place via `ntt_ref`.
-/// 3. Convert q120b → q120c via `c_from_b_ref` into `res\[col, j\]`.
-///
-/// `tmp` must hold at least `ntt120_cnv_prepare_right_tmp_bytes(n) / size_of::<u64>()` elements.
-/// Limbs of `res` beyond `a.size()` are zeroed.
+/// Encode a `VecZnx` into a `CnvPVecR` (q120c rows, block-major, reversed
+/// limb order). Limbs of `res` beyond `a.size()` are zeroed.
 pub fn ntt120_cnv_prepare_right<BE>(
     module: &impl NttModuleHandle,
     res: &mut CnvPVecRBackendMut<'_, BE>,
@@ -133,197 +414,106 @@ pub fn ntt120_cnv_prepare_right<BE>(
     let cols = res.cols();
     let res_size = res.size();
     let min_size = res_size.min(a.size());
+    let n_blks = n / 2;
+    let col_stride = 8 * n * res_size;
 
+    let (limb_b, limb_c_u64) = tmp[..8 * n].split_at_mut(4 * n);
+    let limb_c: &mut [u32] = cast_slice_mut(limb_c_u64);
+
+    let res_u32: &mut [u32] = cast_slice_mut(res.raw_mut());
     for col in 0..cols {
-        // All limbs except the last: unmasked fast path.
-        for j in 0..min_size.saturating_sub(1) {
-            BE::ntt_from_znx64(tmp, a.at(col, j));
-            BE::ntt_dft_execute(table, tmp);
-            let res_u32: &mut [u32] = cast_slice_mut(res.at_mut(col, j));
-            BE::ntt_c_from_b(n, res_u32, tmp);
-        }
-        // Last active limb: masked path.
-        if min_size > 0 {
-            let last = min_size - 1;
-            BE::ntt_from_znx64_masked(tmp, a.at(col, last), mask);
-            BE::ntt_dft_execute(table, tmp);
-            let res_u32: &mut [u32] = cast_slice_mut(res.at_mut(col, last));
-            BE::ntt_c_from_b(n, res_u32, tmp);
+        let dst = &mut res_u32[col * col_stride..(col + 1) * col_stride];
+        for j in 0..min_size {
+            if j + 1 == min_size {
+                BE::ntt_from_znx64_masked(limb_b, a.at(col, j), mask);
+            } else {
+                BE::ntt_from_znx64(limb_b, a.at(col, j));
+            }
+            BE::ntt_dft_execute(table, limb_b);
+            BE::ntt_c_from_b(n, limb_c, limb_b);
+            // Reversed row order: limb j lands on row size-1-j.
+            let row = res_size - 1 - j;
+            for blk in 0..n_blks {
+                let off = (blk * res_size + row) * 16;
+                dst[off..off + 16].copy_from_slice(&limb_c[16 * blk..16 * blk + 16]);
+            }
         }
         for j in min_size..res_size {
-            cast_slice_mut::<_, u32>(res.at_mut(col, j)).fill(0);
+            zero_row_u32(dst, res_size, res_size - 1 - j, n_blks);
         }
     }
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Prepare self  (VecZnx → CnvPVecL + CnvPVecR, shared NTT)
-// ──────────────────────────────────────────────────────────────────────────────
-
-/// Scratch bytes required by [`ntt120_cnv_prepare_self`].
-///
-/// Returns 0: the function writes the NTT into the left buffer first,
-/// then derives the right buffer from it.
-pub fn ntt120_cnv_prepare_self_tmp_bytes(_n: usize) -> usize {
-    0
+/// Scratch bytes required by [`ntt120_cnv_prepare_self`]: NTT, canonical and
+/// converted limbs.
+pub fn ntt120_cnv_prepare_self_tmp_bytes(n: usize) -> usize {
+    12 * n * size_of::<u64>()
 }
 
-/// Encode a `VecZnx` into both `CnvPVecL` (q120b) and `CnvPVecR` (q120c)
-/// sharing the NTT computation.
-///
-/// For each column and limb:
-/// 1. Map i64 → q120b via `BE::ntt_from_znx64` into the left buffer.
-/// 2. Apply forward NTT in-place on the left buffer via `BE::ntt_dft_execute`.
-/// 3. Convert the NTT-domain q120b (left) → q120c (right) via `BE::ntt_c_from_b`.
-///
-/// This saves one full `b_from_znx64 + NTT` per (col, limb) compared to
-/// calling `prepare_left` + `prepare_right` separately.
+/// Encode a `VecZnx` into both `CnvPVecL` and `CnvPVecR` sharing the NTT.
 pub fn ntt120_cnv_prepare_self<BE>(
     module: &impl NttModuleHandle,
     left: &mut CnvPVecLBackendMut<'_, BE>,
     right: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
     mask: i64,
-    _tmp: &mut [u8],
+    tmp: &mut [u8],
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + NttCFromB + 'static,
+    BE: Backend<ScalarPrep = Q120bScalar>
+        + NttFromZnx64
+        + NttDFTExecute<NttTable<Primes30>>
+        + NttCFromB
+        + NttPackLeft1BlkX2
+        + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
 {
-    let table = module.get_ntt_table();
     let n = left.n();
+    let table = module.get_ntt_table();
     let cols = left.cols();
     let res_size = left.size();
     let min_size = res_size.min(a.size());
-
-    for col in 0..cols {
-        // All limbs except the last: unmasked fast path.
-        for j in 0..min_size.saturating_sub(1) {
-            {
-                let left_u64: &mut [u64] = cast_slice_mut(left.at_mut(col, j));
-                BE::ntt_from_znx64(left_u64, a.at(col, j));
-                BE::ntt_dft_execute(table, left_u64);
-            }
-            let left_u64: &[u64] = cast_slice(left.at(col, j));
-            let right_u32: &mut [u32] = cast_slice_mut(right.at_mut(col, j));
-            BE::ntt_c_from_b(n, right_u32, left_u64);
-        }
-        // Last active limb: masked path.
-        if min_size > 0 {
-            let last = min_size - 1;
-            {
-                let left_u64: &mut [u64] = cast_slice_mut(left.at_mut(col, last));
-                BE::ntt_from_znx64_masked(left_u64, a.at(col, last), mask);
-                BE::ntt_dft_execute(table, left_u64);
-            }
-            let left_u64: &[u64] = cast_slice(left.at(col, last));
-            let right_u32: &mut [u32] = cast_slice_mut(right.at_mut(col, last));
-            BE::ntt_c_from_b(n, right_u32, left_u64);
-        }
-        for j in min_size..res_size {
-            cast_slice_mut::<_, u64>(left.at_mut(col, j)).fill(0);
-            cast_slice_mut::<_, u32>(right.at_mut(col, j)).fill(0);
-        }
-    }
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Apply DFT  (CnvPVecL × CnvPVecR → VecZnxDft, bbc product)
-// ──────────────────────────────────────────────────────────────────────────────
-
-/// Scratch bytes required by [`ntt120_cnv_apply_dft`].
-///
-/// Stores packed full-row x2 blocks for `a` and `b`.
-pub fn ntt120_cnv_apply_dft_tmp_bytes(_res_size: usize, a_size: usize, b_size: usize) -> usize {
-    (16 * (a_size + b_size)) * size_of::<u32>()
-}
-
-/// Compute the DFT-domain bivariate convolution `res[k] = Σ a[j] ⊙ b[k−j]`.
-///
-/// For each output limb `k ∈ [0, min_size)` and each x2 NTT block:
-///
-/// ```text
-/// res[res_col, k, blk] = Σ_{j=j_min}^{j_max-1}  bbc_x2( a[a_col, k_abs−j, blk],
-///                                                         b[b_col,       j, blk] )
-/// ```
-///
-/// where `k_abs = k + cnv_offset`, `j_min = max(0, k_abs − a.size() + 1)`,
-/// `j_max = min(k_abs + 1, b.size())`, and `bbc_x2` denotes the backend
-/// x2 q120b × q120c dot-product kernel.
-///
-/// Output limbs `min_size..res.size()` are zeroed.
-#[allow(clippy::too_many_arguments)]
-pub fn ntt120_cnv_apply_dft<BE>(
-    module: &impl NttModuleHandle,
-    cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
-    res_col: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
-    a_col: usize,
-    b: &CnvPVecRBackendRef<'_, BE>,
-    b_col: usize,
-    tmp: &mut [u8],
-) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttMulBbc1ColX2 + NttPackLeft1BlkX2 + NttPackRight1BlkX2,
-    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
-    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
-{
-    let n = res.n();
-    let res_size = res.size();
-    let a_size = a.size();
-    let b_size = b.size();
-    if res_size == 0 || a_size == 0 || b_size == 0 {
-        for j in 0..res_size {
-            cast_slice_mut::<_, u64>(res.at_mut(res_col, j)).fill(0);
-        }
-        return;
-    }
-
-    let bound = a_size + b_size - 1;
-    let offset = cnv_offset.min(bound);
-    let min_size = res_size.min((bound + 1).saturating_sub(offset));
-
-    let meta = module.get_bbc_meta();
-    let a_cols = a.cols();
-    let b_cols = b.cols();
     let n_blks = n / 2;
-    let a_row_stride_u64 = 4 * n * a_cols;
-    let b_row_stride_u32 = 8 * n * b_cols;
-    let a_col_offset_u64 = 4 * n * a_col;
-    let b_col_offset_u32 = 8 * n * b_col;
-    let a_raw_u64: &[u64] = cast_slice(a.raw());
-    let b_raw_u32: &[u32] = cast_slice(b.raw());
+    let col_stride = 8 * n * res_size;
 
-    let (prefix, tmp_u32, suffix) = unsafe { tmp.align_to_mut::<u32>() };
+    let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
     debug_assert!(prefix.is_empty());
     debug_assert!(suffix.is_empty());
-    debug_assert!(tmp_u32.len() >= 16 * (a_size + b_size));
-    let (a_tmp, b_tmp) = tmp_u32.split_at_mut(16 * a_size);
+    let (limb_b, rest) = tmp_u64[..12 * n].split_at_mut(4 * n);
+    let (canon_u64, limb_c_u64) = rest.split_at_mut(4 * n);
+    let canon: &mut [u32] = cast_slice_mut(canon_u64);
+    let limb_c: &mut [u32] = cast_slice_mut(limb_c_u64);
 
-    for blk in 0..n_blks {
-        BE::ntt_pack_left_1blk_x2(a_tmp, &a_raw_u64[a_col_offset_u64..], a_size, a_row_stride_u64, blk);
-        BE::ntt_pack_right_1blk_x2(b_tmp, &b_raw_u32[b_col_offset_u32..], b_size, b_row_stride_u32, blk);
-
-        for k in 0..min_size {
-            let k_abs = k + offset;
-            let j_min = k_abs.saturating_sub(a_size - 1);
-            let j_max = (k_abs + 1).min(b_size);
-            let ell = j_max - j_min;
-            let a_start = k_abs + 1 - j_max;
-            let b_start = b_size - j_max;
-
-            let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(res_col, k));
-            BE::ntt_mul_bbc_1col_x2(
-                meta,
-                ell,
-                &mut res_u64[8 * blk..8 * blk + 8],
-                &a_tmp[16 * a_start..],
-                &b_tmp[16 * b_start..],
-            );
+    let left_u32: &mut [u32] = cast_slice_mut(left.raw_mut());
+    let right_u32: &mut [u32] = cast_slice_mut(right.raw_mut());
+    for col in 0..cols {
+        let dst_l = &mut left_u32[col * col_stride..(col + 1) * col_stride];
+        let dst_r = &mut right_u32[col * col_stride..(col + 1) * col_stride];
+        for j in 0..min_size {
+            if j + 1 == min_size {
+                BE::ntt_from_znx64_masked(limb_b, a.at(col, j), mask);
+            } else {
+                BE::ntt_from_znx64(limb_b, a.at(col, j));
+            }
+            BE::ntt_dft_execute(table, limb_b);
+            for g in (0..n_blks).step_by(PREP_GROUP) {
+                let gl = PREP_GROUP.min(n_blks - g);
+                BE::ntt_pack_left_1blk_x2(&mut canon[..16 * gl], &limb_b[8 * g..], gl, 8, 0);
+                for (i, chunk) in canon[..16 * gl].chunks_exact(16).enumerate() {
+                    let off = ((g + i) * res_size + j) * 16;
+                    dst_l[off..off + 16].copy_from_slice(chunk);
+                }
+            }
+            BE::ntt_c_from_b(n, limb_c, limb_b);
+            let row = res_size - 1 - j;
+            for blk in 0..n_blks {
+                let off = (blk * res_size + row) * 16;
+                dst_r[off..off + 16].copy_from_slice(&limb_c[16 * blk..16 * blk + 16]);
+            }
         }
-    }
-
-    for j in min_size..res_size {
-        cast_slice_mut::<_, u64>(res.at_mut(res_col, j)).fill(0);
+        for j in min_size..res_size {
+            zero_row_u32(dst_l, res_size, j, n_blks);
+            zero_row_u32(dst_r, res_size, res_size - 1 - j, n_blks);
+        }
     }
 }
 
@@ -332,28 +522,14 @@ pub fn ntt120_cnv_apply_dft<BE>(
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// Scratch bytes required by [`ntt120_cnv_by_const_apply`].
-///
-/// Returns 0: the function uses `i128` stack accumulators.
 pub fn ntt120_cnv_by_const_apply_tmp_bytes(_res_size: usize, _a_size: usize, _b_size: usize) -> usize {
     0
 }
 
 /// Coefficient-domain negacyclic convolution: `res[k] = Σ a[k_abs−j] * b[j]`.
 ///
-/// Unlike [`ntt120_cnv_apply_dft`], this function operates entirely in
-/// the **coefficient domain** (no NTT).  Each output limb is computed as
-/// an `i128` inner product, suitable for accumulation into a
-/// [`VecZnxBig`] with `ScalarBig = i128`.
-///
-/// For each output limb `k ∈ [0, min_size)` and ring coefficient `n_i`:
-///
-/// ```text
-/// res[res_col, k, n_i] = Σ_{j=j_min}^{j_max-1}  a[a_col, k_abs−j, n_i]  ×  b[j]
-/// ```
-///
-/// where `k_abs = k + cnv_offset`.
-/// Output limbs `min_size..res.size()` are zeroed.
-/// `_tmp` is unused.
+/// Each output limb is computed as an `i128` inner product. Output limbs
+/// `min_size..res.size()` are zeroed. `_tmp` is unused.
 #[allow(clippy::too_many_arguments)]
 pub fn ntt120_cnv_by_const_apply<BE>(
     cnv_offset: usize,
@@ -401,148 +577,5 @@ pub fn ntt120_cnv_by_const_apply<BE>(
 
     for j in min_size..res_size {
         res.at_mut(res_col, j).fill(0i128);
-    }
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Pairwise apply DFT
-// ──────────────────────────────────────────────────────────────────────────────
-
-/// Scratch bytes required by [`ntt120_cnv_pairwise_apply_dft`].
-///
-/// Stores one packed x2-block row-set for the summed left operand and one
-/// reversed packed x2-block row-set for the summed right operand.
-pub fn ntt120_cnv_pairwise_apply_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
-    if a_size == 0 || b_size == 0 || res_size == 0 {
-        0
-    } else {
-        (16 * (a_size + b_size) * size_of::<u32>()).max(ntt120_cnv_apply_dft_tmp_bytes(res_size, a_size, b_size))
-    }
-}
-
-/// Compute the pairwise DFT-domain convolution:
-/// `res = (a[:,col_i] + a[:,col_j]) ⊙ (b[:,col_i] + b[:,col_j])`.
-///
-/// This mirrors the FFT64 reference: both `a` columns are summed first,
-/// both `b` columns are summed first, then a single bbc convolution is
-/// performed on the sums. This is **not** the same as
-/// `a[:,i]⊙b[:,i] + a[:,j]⊙b[:,j]` — cross-terms are present by design.
-///
-/// When `col_i == col_j` this delegates to [`ntt120_cnv_apply_dft`].
-///
-/// For each x2 NTT block, the pairwise sums are packed once:
-/// ```text
-/// a_blk[row] = block_x2(a[col_i, row] + a[col_j, row]) mod Q
-/// b_blk[row] = block_x2(b[col_i, b_size-1-row] + b[col_j, b_size-1-row])
-/// ```
-///
-/// Then each output limb consumes contiguous windows from those packed rows:
-/// ```text
-/// res[res_col, k, blk] =
-///     Σ_{row=a_start}^{a_start+ell-1} bbc_x2(a_blk[row], b_blk[b_size-j_max + (row-a_start)])
-/// ```
-///
-/// Output limbs `min_size..res.size()` are zeroed.
-#[allow(clippy::too_many_arguments)]
-pub fn ntt120_cnv_pairwise_apply_dft<BE>(
-    module: &impl NttModuleHandle,
-    cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, BE>,
-    res_col: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
-    b: &CnvPVecRBackendRef<'_, BE>,
-    col_i: usize,
-    col_j: usize,
-    tmp: &mut [u8],
-) where
-    BE: Backend<ScalarPrep = Q120bScalar>
-        + NttAddAssign
-        + NttMulBbc1ColX2
-        + NttMulBbc2ColsX2
-        + NttPackLeft1BlkX2
-        + NttPackRight1BlkX2
-        + NttPairwisePackLeft1BlkX2
-        + NttPairwisePackRight1BlkX2,
-    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
-    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
-{
-    if col_i == col_j {
-        ntt120_cnv_apply_dft(module, cnv_offset, res, res_col, a, col_i, b, col_j, tmp);
-        return;
-    }
-
-    let meta = module.get_bbc_meta();
-    let n = res.n();
-    let res_size = res.size();
-    let a_size = a.size();
-    let b_size = b.size();
-    if res_size == 0 || a_size == 0 || b_size == 0 {
-        for j in 0..res_size {
-            cast_slice_mut::<_, u64>(res.at_mut(res_col, j)).fill(0);
-        }
-        return;
-    }
-
-    let a_cols = a.cols();
-    let b_cols = b.cols();
-
-    let bound = a_size + b_size - 1;
-    let offset = cnv_offset.min(bound);
-    let min_size = res_size.min((bound + 1).saturating_sub(offset));
-    let n_blks = n / 2;
-    let a_row_stride_u64 = 4 * n * a_cols;
-    let b_row_stride_u32 = 8 * n * b_cols;
-    let a_col_offset_u64_i = 4 * n * col_i;
-    let a_col_offset_u64_j = 4 * n * col_j;
-    let b_col_offset_u32_i = 8 * n * col_i;
-    let b_col_offset_u32_j = 8 * n * col_j;
-    let a_raw_u64: &[u64] = cast_slice(a.raw());
-    let b_raw_u32: &[u32] = cast_slice(b.raw());
-
-    let (prefix, tmp_u32, suffix) = unsafe { tmp.align_to_mut::<u32>() };
-    debug_assert!(prefix.is_empty());
-    debug_assert!(suffix.is_empty());
-    debug_assert!(tmp_u32.len() >= 16 * (a_size + b_size));
-    let (a_tmp, b_tmp) = tmp_u32.split_at_mut(16 * a_size);
-
-    for blk in 0..n_blks {
-        BE::ntt_pairwise_pack_left_1blk_x2(
-            a_tmp,
-            &a_raw_u64[a_col_offset_u64_i..],
-            &a_raw_u64[a_col_offset_u64_j..],
-            a_size,
-            a_row_stride_u64,
-            blk,
-        );
-        BE::ntt_pairwise_pack_right_1blk_x2(
-            b_tmp,
-            &b_raw_u32[b_col_offset_u32_i..],
-            &b_raw_u32[b_col_offset_u32_j..],
-            b_size,
-            b_row_stride_u32,
-            blk,
-        );
-
-        for k in 0..min_size {
-            let k_abs = k + offset;
-            let j_min = k_abs.saturating_sub(a_size - 1);
-            let j_max = (k_abs + 1).min(b_size);
-            let ell = j_max - j_min;
-            let a_start = k_abs + 1 - j_max;
-            let b_start = b_size - j_max;
-            let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(res_col, k));
-
-            BE::ntt_mul_bbc_1col_x2(
-                meta,
-                ell,
-                &mut res_u64[8 * blk..8 * blk + 8],
-                &a_tmp[16 * a_start..],
-                &b_tmp[16 * b_start..],
-            );
-        }
-    }
-
-    for j in min_size..res_size {
-        cast_slice_mut::<_, u64>(res.at_mut(res_col, j)).fill(0);
     }
 }

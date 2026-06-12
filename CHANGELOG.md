@@ -22,6 +22,19 @@
 - Add `docs/polynomial-evaluation-spec.md`, a scheme-agnostic design note for power bases, Paterson-Stockmeyer/BSGS decomposition, encoded baby polynomials, and the Poulpy CKKS integration.
 - Refresh the `ckks_poly2` example to use Chebyshev interpolation, `PowerBasis`, and the new BSGS evaluator pipeline.
 
+### `poulpy-hal`
+- Add the accumulating convolution apply `Convolution::cnv_apply_dft_accumulate` (`res += a (x) b` in the DFT domain), wired through the api/oep/delegate layers and implemented by every backend; it is bit-identical to `cnv_apply_dft` followed by a DFT-domain add (asserted raw-byte-exact by a new cross-backend conformance test), leaves limbs beyond the convolution bound untouched, and reuses the `cnv_apply_dft_tmp_bytes` scratch contract.
+
+### `poulpy-cpu-ref` / `poulpy-cpu-avx` / `poulpy-cpu-avx512`
+- Rework the FFT64 convolution applies into fused column kernels behind the new `Reim4Convolution::reim4_convolution_apply` / `reim4_convolution_pairwise_apply` hooks (the reference default keeps the previous per-block path): the AVX/AVX-512 kernels tile 3/4 output limbs over a zero-padded sliding window of the left operand and stage outputs per 16-block group so each destination cache line is written exactly once — the limb stride is a multiple of 4 KiB, so the previous per-limb half-line stores all aliased a single L1 set. `cnv_apply_dft` and `cnv_pairwise_apply_dft` are 2.3-3.5x faster on `FFT64Avx512`/`FFT64Avx` across n = 2^13..2^15.
+- Interleave the `NTT120Avx512` VMP prepared-matrix prime planes per (block-pair, output-column) chunk so the apply streams the matrix as one sequential run instead of four planes hundreds of MB apart (which defeated the hardware prefetcher): `vmp_apply_dft_to_dft` improves up to 3.4x (77 ms to 23 ms at 16384x(1x31)x(2x32)), and `glwe_keyswitch` at n = 2^15 drops from 41.5 ms to 24.7 ms.
+- Switch the NTT-family prepared convolution operands (`CnvPVecL` / `CnvPVecR`) to block-major rows with the right operand in reversed limb order, deleting the per-apply pack/gather passes; `CnvPVecL` now stores the canonical kernel-ready encoding so the per-apply `% q` reduction of the left operand happens once at prepare time (ntt120 family), and the prepare NTT writes its final normalised blocks straight into the prepared rows (`NTT126Ifma`). The applies tile four output limbs per pass over a zero-padded window (`NttMulBbc1ColX2::ntt_mul_bbc_tile4_x2`, defaulted for any backend, with canonical-x AVX-512/AVX2 kernels that skip the identically-zero `x_hi` product path), reduce once per output, and group-stage their output flush. Measured at 32768x14: `NTT126Ifma` apply -36% / pairwise -62%, `NTT120Avx512` CKKS `mul_ct` -15%.
+- Fuse the `NTT126Ifma` forward NTT level-0 twist into the first butterfly level and run the last three levels (`nn = 8, 4, 2`) as a single radix-8 register pass mirroring the existing inverse head, making the forward transform ~5% faster; add n = 2^12 cross-backend idft conformance tests, since the breadth-first levels above `NTT_BLOCK` were previously uncovered by the n = 2^8 suites.
+
+### `poulpy-bench`
+- Enable the `poulpy-cpu-avx` CKKS implementations in the `ckks-bench` feature so the CKKS benchmarks compile with `enable-avx`.
+- Add the `cnv_apply_dft_accumulate` sweep to the convolution Criterion benchmark.
+
 ## [0.6.0] - 2026-05-18
 
 This release completes the migration from the legacy host-oriented HAL/backend plumbing to backend-generic HAL and core layers, so backends can now own buffers, scratch space, and transfer paths explicitly, and adds a new AVX-512 backend crate (`poulpy-cpu-avx512`) exposing three accelerated backends (`FFT64Avx512`, `NTT120Avx512`, `NTT126Ifma`).

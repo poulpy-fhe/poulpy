@@ -30,6 +30,7 @@ ckks-bench = [
     "core-bench",
     "dep:poulpy-ckks",
     "poulpy-cpu-ref/enable-ckks",
+    "poulpy-cpu-avx?/enable-ckks",
     "poulpy-cpu-avx512?/enable-ckks",
 ]
 # enable-gpu = ["dep:poulpy-gpu", "poulpy-gpu/enable-gpu"]

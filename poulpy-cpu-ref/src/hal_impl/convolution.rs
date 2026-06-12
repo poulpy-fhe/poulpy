@@ -105,6 +105,32 @@ macro_rules! hal_impl_convolution {
             );
         }
 
+        #[allow(clippy::too_many_arguments)]
+        fn cnv_apply_dft_accumulate(
+            module: &Module<Self>,
+            cnv_offset: usize,
+            mut res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+            res_col: usize,
+            a: &poulpy_hal::layouts::CnvPVecLBackendRef<'_, Self>,
+            a_col: usize,
+            b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
+            b_col: usize,
+            scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
+        ) {
+            let mut scratch = scratch.borrow();
+            <Self as $defaults<Self>>::cnv_apply_dft_accumulate_default(
+                module,
+                cnv_offset,
+                &mut res,
+                res_col,
+                a,
+                a_col,
+                b,
+                b_col,
+                &mut scratch,
+            );
+        }
+
         fn cnv_pairwise_apply_dft_tmp_bytes(
             module: &Module<Self>,
             cnv_offset: usize,
