@@ -556,7 +556,9 @@ where
     // Propagates carry on the rest of the limbs of res
     for j in 0..steps {
         BE::znx_zero(res.at_mut(res_col, j));
-        if j == 0 {
+    }
+    for j in 0..steps {
+        if j == steps - 1 {
             BE::znx_normalize_final_step_assign(base2k, lsh, res.at_mut(res_col, steps - j - 1), carry);
         } else {
             BE::znx_normalize_middle_step_assign(base2k, lsh, res.at_mut(res_col, steps - j - 1), carry);
