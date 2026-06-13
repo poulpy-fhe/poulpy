@@ -17,8 +17,9 @@ use crate::ntt126_ifma::{
 
 use core::arch::x86_64::{
     __m256i, __m512i, _mm256_add_epi64, _mm256_and_si256, _mm256_cmpgt_epi64, _mm256_loadu_si256, _mm256_mul_epu32,
-    _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_srli_epi64, _mm256_storeu_si256, _mm512_loadu_si512, _mm512_set1_epi64,
-    _mm512_storeu_si512,
+    _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_srli_epi64, _mm256_storeu_si256, _mm512_add_epi64, _mm512_and_si512,
+    _mm512_cmpgt_epi64_mask, _mm512_loadu_si512, _mm512_maskz_mov_epi64, _mm512_mul_epu32, _mm512_set1_epi64,
+    _mm512_setzero_si512, _mm512_srli_epi64, _mm512_storeu_si512,
 };
 
 use super::kernels::{cond_sub_2q_si256, cond_sub_2q_si512, intt_avx512, ntt_avx512};
@@ -160,7 +161,7 @@ unsafe fn simd_b_from_znx64_masked(n: usize, res: &mut [u64], a: &[i64], mask: i
 }
 
 #[inline]
-#[target_feature(enable = "avx512vl")]
+#[target_feature(enable = "avx512f,avx512vl")]
 unsafe fn simd_b_from_znx64_impl(n: usize, res: &mut [u64], a: &[i64], mask: i64) {
     debug_assert!(res.len() >= 3 * n);
     debug_assert!(a.len() >= n);
@@ -175,7 +176,47 @@ unsafe fn simd_b_from_znx64_impl(n: usize, res: &mut [u64], a: &[i64], mask: i64
         let mut lanes = [0u64; 4];
         let lanes_ptr = lanes.as_mut_ptr() as *mut __m256i;
 
-        for i in 0..n {
+        let i64_max512 = _mm512_set1_epi64(i64::MAX);
+        let zero512 = _mm512_setzero_si512();
+        let mask42_512 = _mm512_set1_epi64((1i64 << 42) - 1);
+        let mask512 = _mm512_set1_epi64(mask);
+        let mut i = 0usize;
+        while i + 8 <= n {
+            let xv = _mm512_and_si512(_mm512_loadu_si512(a.as_ptr().add(i) as *const __m512i), mask512);
+            let xl = _mm512_and_si512(xv, i64_max512);
+            let sign = _mm512_cmpgt_epi64_mask(zero512, xv);
+
+            let reduce = |oq: u64, pow42: u64, q: u64| {
+                let val = _mm512_add_epi64(xl, _mm512_maskz_mov_epi64(sign, _mm512_set1_epi64(oq as i64)));
+                let pow42 = _mm512_set1_epi64(pow42 as i64);
+                let q = _mm512_set1_epi64(q as i64);
+
+                let hi = _mm512_srli_epi64::<42>(val);
+                let lo = _mm512_and_si512(val, mask42_512);
+                let y = _mm512_add_epi64(_mm512_mul_epu32(hi, pow42), lo);
+
+                let hi2 = _mm512_srli_epi64::<42>(y);
+                let lo2 = _mm512_and_si512(y, mask42_512);
+                let z = _mm512_add_epi64(_mm512_mul_epu32(hi2, pow42), lo2);
+                cond_sub_2q_si512(z, q)
+            };
+
+            _mm512_storeu_si512(
+                res.as_mut_ptr().add(i) as *mut __m512i,
+                reduce(OQ_IFMA[0], POW42_MOD_Q_IFMA[0], Primes42::Q[0]),
+            );
+            _mm512_storeu_si512(
+                res.as_mut_ptr().add(n + i) as *mut __m512i,
+                reduce(OQ_IFMA[1], POW42_MOD_Q_IFMA[1], Primes42::Q[1]),
+            );
+            _mm512_storeu_si512(
+                res.as_mut_ptr().add(2 * n + i) as *mut __m512i,
+                reduce(OQ_IFMA[2], POW42_MOD_Q_IFMA[2], Primes42::Q[2]),
+            );
+            i += 8;
+        }
+
+        while i < n {
             let xv = _mm256_and_si256(_mm256_set1_epi64x(a[i]), mask_vec);
             let xl = _mm256_and_si256(xv, i64_max);
             let sign = _mm256_cmpgt_epi64(zero, xv);
@@ -194,6 +235,7 @@ unsafe fn simd_b_from_znx64_impl(n: usize, res: &mut [u64], a: &[i64], mask: i64
             res[i] = lanes[0];
             res[n + i] = lanes[1];
             res[2 * n + i] = lanes[2];
+            i += 1;
         }
     }
 }
