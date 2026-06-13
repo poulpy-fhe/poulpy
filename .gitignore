@@ -3,3 +3,5 @@
 /.vscode
 .codex
 /ci-local.md
+
+*.patch

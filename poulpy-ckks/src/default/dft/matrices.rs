@@ -26,7 +26,7 @@ use rand_distr::num_traits::{Float, FloatConst};
 
 use crate::layouts::{
     ComplexDiagonals,
-    dft::{DFTFormat, DFTMatrixLiteral, DFTType},
+    dft::{DFTOutputFormat, DFTPlan, DFTType},
 };
 
 /// Real scalar used for plaintext DFT-matrix generation: any float carrying the
@@ -313,23 +313,6 @@ fn merge_next_layer<F: DftScalar>(
     new_vec
 }
 
-/// Distributes `log_slots` butterfly layers across `max_depth` factor matrices.
-/// The order is reversed for Decode (this collapses the layers so the transform
-/// needs fewer distinct rotations / keys).
-fn merge_schedule(log_slots: usize, max_depth: usize, kind: DFTType) -> Vec<usize> {
-    let mut merge = vec![0usize; max_depth];
-    let mut level = log_slots;
-    for i in 0..max_depth {
-        let depth = (level as f64 / (max_depth - i) as f64).ceil() as usize;
-        if kind == DFTType::Encode {
-            merge[i] = depth;
-        } else {
-            merge[max_depth - i - 1] = depth;
-        }
-        level -= depth;
-    }
-    merge
-}
 
 /// The special initial matrix for sparse Decode repack.
 ///
@@ -366,17 +349,17 @@ fn gen_repack_matrix<F: DftScalar>(log_l: usize, dslots: usize) -> ComplexDiagon
 /// matrix zeroed. Otherwise the dense path is used (and full-packing
 /// `RepackImagAsReal` ≡ `SplitRealAndImag`). Panics on an invalid literal
 /// (`log_slots < depth`).
-pub fn gen_dft_matrices<F: DftScalar>(literal: &DFTMatrixLiteral, log_n: usize) -> Vec<ComplexDiagonals<F>> {
+pub fn gen_dft_matrices<F: DftScalar>(literal: &DFTPlan, log_n: usize) -> Vec<ComplexDiagonals<F>> {
     literal.check().expect("invalid DFTMatrixLiteral");
 
-    let log_slots = literal.log_slots;
+    let log_slots = literal.log_slots();
     let slots = 1usize << log_slots;
-    let max_depth = literal.depth(false);
+    let max_depth = literal.num_factors();
     let kind = literal.kind;
     let bit_reversed = literal.bit_reversed;
 
     let log_max_slots = log_n.saturating_sub(1);
-    let imag_repack = literal.format == DFTFormat::RepackImagAsReal;
+    let imag_repack = literal.format == DFTOutputFormat::RepackImagAsReal;
     let sparse = log_slots < log_max_slots;
     // dslots == 2·slots only for the sparse repack path; otherwise dense.
     let dslots = if sparse && imag_repack { slots << 1 } else { slots };
@@ -389,11 +372,13 @@ pub fn gen_dft_matrices<F: DftScalar>(literal: &DFTMatrixLiteral, log_n: usize) 
         DFTType::Decode => fft_plain_vec(log_slots, dslots, &roots, &pow5),
     };
 
-    let merge = merge_schedule(log_slots, max_depth, kind);
-
+    // `factorization_depth` is consumed in evaluation order (factor 0 applied
+    // first; see the convention on [`DFTPlan::factorization_depth`]). No implicit
+    // reordering by `kind`: a Decode that inverts an Encode is the same schedule
+    // reversed, which is the caller's responsibility.
     let mut plain_vector: Vec<ComplexDiagonals<F>> = Vec::with_capacity(max_depth);
     let mut fft_level = log_slots;
-    for (i, &m) in merge.iter().enumerate() {
+    for (i, &m) in literal.factorization_depth.iter().enumerate() {
         let repack_first = sparse && imag_repack && kind == DFTType::Decode && i == 0;
         // Sparse-repack merges wrap rotation indices mod `2·slots`; otherwise mod `slots`.
         let merge_n = if repack_first { slots << 1 } else { slots };
@@ -470,16 +455,16 @@ pub fn gen_dft_matrices<F: DftScalar>(literal: &DFTMatrixLiteral, log_n: usize) 
 
 /// Applies the DFT `1/N` normalization (Encode only) and the caller `scaling`,
 /// spread as the `depth`-th root across all factor matrices.
-fn apply_scaling<F: DftScalar>(factors: &mut [ComplexDiagonals<F>], literal: &DFTMatrixLiteral) {
-    let slots = 1usize << literal.log_slots;
-    let depth = literal.depth(false);
+fn apply_scaling<F: DftScalar>(factors: &mut [ComplexDiagonals<F>], literal: &DFTPlan) {
+    let slots = 1usize << literal.log_slots();
+    let depth = literal.num_factors();
 
     let mut scaling = literal.scaling.unwrap_or(1.0);
     if literal.kind == DFTType::Encode {
         // Real/imag extraction carries an extra 1/2 factor.
         let denom = match literal.format {
-            DFTFormat::Standard => slots as f64,
-            DFTFormat::SplitRealAndImag | DFTFormat::RepackImagAsReal => 2.0 * slots as f64,
+            DFTOutputFormat::Standard => slots as f64,
+            DFTOutputFormat::SplitRealAndImag | DFTOutputFormat::RepackImagAsReal => 2.0 * slots as f64,
         };
         scaling /= denom;
     }
@@ -512,14 +497,14 @@ mod tests {
     use super::*;
     use poulpy_core::layouts::{Evaluate, LinearTransformationStrategy};
 
-    fn literal(kind: DFTType, log_slots: usize, levels: Vec<usize>, bit_reversed: bool) -> DFTMatrixLiteral {
-        DFTMatrixLiteral {
+    fn literal(kind: DFTType, factorization_depth: Vec<usize>, bit_reversed: bool) -> DFTPlan {
+        DFTPlan {
             kind,
-            log_slots,
-            levels,
-            format: DFTFormat::Standard,
+            factorization_depth,
+            format: DFTOutputFormat::Standard,
             scaling: Some(1.0),
             bit_reversed,
+            factor_log_delta: 0,
         }
     }
 
@@ -539,11 +524,11 @@ mod tests {
     #[test]
     fn repack_equals_split_when_dense() {
         for kind in [DFTType::Encode, DFTType::Decode] {
-            let mut split = literal(kind, 4, vec![1, 1, 1, 1], false);
-            split.format = DFTFormat::SplitRealAndImag;
+            let mut split = literal(kind, vec![1, 1, 1, 1], false);
+            split.format = DFTOutputFormat::SplitRealAndImag;
             split.scaling = None;
             let mut repack = split.clone();
-            repack.format = DFTFormat::RepackImagAsReal;
+            repack.format = DFTOutputFormat::RepackImagAsReal;
 
             let fs = gen_dft_matrices::<f64>(&split, 5);
             let fr = gen_dft_matrices::<f64>(&repack, 5);
@@ -564,14 +549,14 @@ mod tests {
     #[test]
     fn sparse_repack_generation_structure() {
         // N = 64 (log_n = 6, log_max_slots = 5); log_slots = 2 < 5 → sparse.
-        let (log_n, log_slots, slots, dslots) = (6usize, 2usize, 4usize, 8usize);
-        let mk = |kind| DFTMatrixLiteral {
+        let (log_n, slots, dslots) = (6usize, 4usize, 8usize);
+        let mk = |kind| DFTPlan {
             kind,
-            log_slots,
-            levels: vec![1, 1],
-            format: DFTFormat::RepackImagAsReal,
+            factorization_depth: vec![1, 1], // sum = log_slots = 2
+            format: DFTOutputFormat::RepackImagAsReal,
             scaling: None,
             bit_reversed: false,
+            factor_log_delta: 0,
         };
 
         let dec = gen_dft_matrices::<f64>(&mk(DFTType::Decode), log_n);
@@ -597,13 +582,13 @@ mod tests {
     fn dense_repack_not_sparse() {
         // log_n = 5 → log_max_slots = 4; log_slots = 4 → dense.
         let f = gen_dft_matrices::<f64>(
-            &DFTMatrixLiteral {
+            &DFTPlan {
                 kind: DFTType::Encode,
-                log_slots: 4,
-                levels: vec![1, 1, 1, 1],
-                format: DFTFormat::RepackImagAsReal,
+                factorization_depth: vec![1, 1, 1, 1], // sum = log_slots = 4
+                format: DFTOutputFormat::RepackImagAsReal,
                 scaling: None,
                 bit_reversed: false,
+                factor_log_delta: 0,
             },
             5,
         );
@@ -621,11 +606,14 @@ mod tests {
             for bit_reversed in [false, true] {
                 for levels in schedules(log_slots) {
                     let enc = gen_dft_matrices::<f64>(
-                        &literal(DFTType::Encode, log_slots, levels.clone(), bit_reversed),
+                        &literal(DFTType::Encode, levels.clone(), bit_reversed),
                         log_slots + 1,
                     );
+                    // Decode inverts Encode, so it uses the reversed schedule
+                    // (evaluation-order convention; see `DFTPlan::factorization_depth`).
+                    let dec_levels: Vec<usize> = levels.iter().rev().copied().collect();
                     let dec = gen_dft_matrices::<f64>(
-                        &literal(DFTType::Decode, log_slots, levels.clone(), bit_reversed),
+                        &literal(DFTType::Decode, dec_levels, bit_reversed),
                         log_slots + 1,
                     );
 
@@ -655,9 +643,9 @@ mod tests {
     /// diagonals. Sanity-checks the merge does not explode.
     #[test]
     fn factor_sparsity() {
-        let log_slots = 5;
-        let enc = gen_dft_matrices::<f64>(&literal(DFTType::Encode, log_slots, vec![2, 2, 1], false), log_slots + 1);
-        assert_eq!(enc.len(), 5, "sum(levels) factors");
+        // 3 factors merging 2, 2, 1 layers (log_slots = 2+2+1 = 5).
+        let enc = gen_dft_matrices::<f64>(&literal(DFTType::Encode, vec![2, 2, 1], false), 6);
+        assert_eq!(enc.len(), 3, "one factor per schedule entry");
         // First factor merges 2 layers -> at most 3^2 = 9 diagonals.
         assert!(enc[0].indexes().len() <= 9);
     }

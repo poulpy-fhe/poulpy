@@ -5,7 +5,7 @@ use poulpy_ckks::{
     CKKSMeta,
     api::{
         Diagonal, GiantStep, LinearTransformation, LinearTransformationOps, LinearTransformationStrategy,
-        PreparedLinearTransformationLhs, PreparedLinearTransformationRhs, optimal_bsgs_giant_step,
+        PreparedLinearTransformationLhs, LinearTransformationRhsPrepared, optimal_bsgs_giant_step,
     },
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
     leveled::api::{
@@ -277,7 +277,7 @@ fn prepare_linear_transform<BE>(
     module: &Module<BE>,
     lt: &LinearTransformation<CKKSPlaintext<Vec<u8>>>,
     scratch: &mut ScratchArena<'_, BE>,
-) -> PreparedLinearTransformationRhs<BE>
+) -> LinearTransformationRhsPrepared<BE>
 where
     BE: CkksBenchBackend,
 {
@@ -290,7 +290,7 @@ where
         .map(|d| &d.plaintext)
         .next()
         .expect("linear transformation has no diagonals");
-    let mut prepared = PreparedLinearTransformationRhs::alloc_from_index(module, &lt.index(), first_pt);
+    let mut prepared = LinearTransformationRhsPrepared::alloc_from_index(module, &lt.index(), first_pt);
     module.ckks_prepare_linear_transformation_rhs(&mut prepared, lt, scratch);
     prepared
 }

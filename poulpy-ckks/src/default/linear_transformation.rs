@@ -9,6 +9,7 @@
 use anyhow::Result;
 use poulpy_core::{
     GLWECopy, GLWELinearTransformations, LinearTransformationLhsPrepared, LinearTransformationRhsPrepared,
+    default::keyswitching::truncated_keyswitch_size,
     layouts::{
         GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
         LWEInfos, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
@@ -18,7 +19,7 @@ use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena, galois
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, SetCKKSInfos,
-    api::{LinearTransformation, LinearTransformationOps, PreparedLinearTransformationRhs},
+    api::{LinearTransformation, LinearTransformationOps},
     checked_log_budget_sub, checked_mul_pt_log_budget,
     layouts::CKKSModuleAlloc,
 };
@@ -34,7 +35,7 @@ use crate::{
 fn prepared_lt_mul_params<R, A, BE>(
     res: &R,
     a: &A,
-    prepared: &PreparedLinearTransformationRhs<BE>,
+    prepared: &LinearTransformationRhsPrepared<BE>,
 ) -> Result<(usize, usize, usize)>
 where
     R: LWEInfos,
@@ -54,7 +55,7 @@ where
 
 /// Like [`prepared_lt_mul_params`] but reads the diagonal scale/precision
 /// straight from an (unprepared) plaintext diagonal `pt`, since the streamed
-/// path never builds a [`PreparedLinearTransformationRhs`] to stash them in.
+/// path never builds a [`LinearTransformationRhsPrepared`] to stash them in.
 fn streamed_lt_mul_params<R, A, P>(res: &R, a: &A, pt: &P) -> Result<(usize, usize, usize)>
 where
     R: LWEInfos,
@@ -116,7 +117,7 @@ where
 
     fn ckks_prepare_linear_transformation_rhs<P>(
         &self,
-        prepared: &mut PreparedLinearTransformationRhs<BE>,
+        prepared: &mut LinearTransformationRhsPrepared<BE>,
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -164,7 +165,9 @@ where
             }
         }
         let key_size = if has_nonzero {
-            keys.automorphism_key_infos().size()
+            // Baby-step rotation errors are amplified by the diagonal scale in
+            // PROD, so no allowance: keep every limb that can reach the output.
+            truncated_keyswitch_size(self.n(), src.size(), src.size(), &keys.automorphism_key_infos(), 0)
         } else {
             src.size()
         };
@@ -178,7 +181,7 @@ where
         &self,
         dst: &mut Dst,
         src: &Src,
-        prepared: &PreparedLinearTransformationRhs<BE>,
+        prepared: &LinearTransformationRhsPrepared<BE>,
         babies: &PreparedLinearTransformationLhs<BE>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -192,7 +195,7 @@ where
         check_required_keys(prepared, babies, keys, self.cyclotomic_order())?;
 
         let (res_log_budget, res_log_delta, cnv_offset) = prepared_lt_mul_params(dst, src, prepared)?;
-        let key_size = key_size_for_prepared(prepared, src, keys);
+        let key_size = key_size_for_prepared(self.n(), prepared, dst, src, keys, cnv_offset);
         self.glwe_eval_linear_transformation_into(cnv_offset, dst, babies, prepared, keys, key_size, scratch);
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
@@ -202,7 +205,7 @@ where
     fn ckks_eval_prepared_linear_transformation_assign<Dst, H, K>(
         &self,
         dst: &mut Dst,
-        prepared: &PreparedLinearTransformationRhs<BE>,
+        prepared: &LinearTransformationRhsPrepared<BE>,
         babies: &PreparedLinearTransformationLhs<BE>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -275,12 +278,13 @@ where
         Ok(())
     }
 
-    // ---------- streamed (unprepared RHS) ----------
+    // ---------- unprepared RHS, caller-supplied baby cache ----------
 
-    fn ckks_eval_linear_transformation_streamed_into<Dst, Src, P, H, K>(
+    fn ckks_eval_linear_transformation_unprepared_into<Dst, Src, P, H, K>(
         &self,
         dst: &mut Dst,
         src: &Src,
+        babies: &LinearTransformationLhsPrepared<BE>,
         lt: &LinearTransformation<P>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -300,13 +304,9 @@ where
             .next()
             .ok_or_else(|| anyhow::anyhow!("linear transformation has no diagonals"))?;
 
-        // Only the (small) input baby cache is materialized; the matrix streams.
-        let plan = lt.index();
-        let mut babies = LinearTransformationLhsPrepared::alloc(self, &plan.baby_steps, src);
-        self.ckks_prepare_linear_transformation_lhs(&mut babies, src, keys, scratch)?;
-
         // All non-zero giant rotations must have an automorphism key (keyed by
-        // Galois element); baby keys were checked by the prepare-lhs above.
+        // Galois element); the caller is responsible for `babies` covering the
+        // baby rotations.
         let cyclotomic_order = self.cyclotomic_order();
         let has_nonzero_giant_rotation = lt.giant_steps.iter().any(|gs| gs.rot != 0 && !gs.diagonals.is_empty());
         for gs in &lt.giant_steps {
@@ -324,14 +324,70 @@ where
 
         let (res_log_budget, res_log_delta, cnv_offset) = streamed_lt_mul_params(dst, src, first_plaintext)?;
         let key_size = if has_nonzero_giant_rotation {
-            keys.automorphism_key_infos().size()
+            // Same truncation as `key_size_for_prepared`, reading the diagonal
+            // scale straight from the plaintext.
+            let res_offset = cnv_offset.saturating_sub(first_plaintext.max_k().as_usize());
+            let allowance = first_plaintext.log_delta().saturating_sub(res_offset);
+            truncated_keyswitch_size(
+                self.n(),
+                dst.size(),
+                src.size() + 1,
+                &keys.automorphism_key_infos(),
+                allowance,
+            )
         } else {
             src.size()
         };
-        self.glwe_eval_linear_transformation_unprepared_rhs_into(cnv_offset, dst, &babies, lt, keys, key_size, scratch);
+        self.glwe_eval_linear_transformation_unprepared_rhs_into(cnv_offset, dst, babies, lt, keys, key_size, scratch);
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
         Ok(())
+    }
+
+    fn ckks_eval_linear_transformation_unprepared_assign<Dst, P, H, K>(
+        &self,
+        dst: &mut Dst,
+        babies: &LinearTransformationLhsPrepared<BE>,
+        lt: &LinearTransformation<P>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        H: GLWEAutomorphismKeyHelper<K, BE>,
+    {
+        let mut tmp = self.ckks_ciphertext_alloc_from_infos(dst);
+        tmp.set_meta(dst.meta());
+        self.ckks_eval_linear_transformation_unprepared_into(&mut tmp, dst, babies, lt, keys, scratch)?;
+        self.glwe_copy(dst, &tmp);
+        dst.set_meta(tmp.meta());
+        Ok(())
+    }
+
+    // ---------- streamed (unprepared RHS, self-allocated baby cache) ----------
+
+    fn ckks_eval_linear_transformation_streamed_into<Dst, Src, P, H, K>(
+        &self,
+        dst: &mut Dst,
+        src: &Src,
+        lt: &LinearTransformation<P>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        H: GLWEAutomorphismKeyHelper<K, BE>,
+    {
+        // Only the (small) input baby cache is materialized; the matrix streams.
+        let plan = lt.index();
+        let mut babies = LinearTransformationLhsPrepared::alloc(self, &plan.baby_steps, src);
+        self.ckks_prepare_linear_transformation_lhs(&mut babies, src, keys, scratch)?;
+        self.ckks_eval_linear_transformation_unprepared_into(dst, src, &babies, lt, keys, scratch)
     }
 
     fn ckks_eval_linear_transformation_streamed_assign<Dst, P, H, K>(
@@ -360,7 +416,7 @@ where
 /// (keyed by Galois element) and that `babies` covers every baby rotation
 /// `prepared` needs.
 fn check_required_keys<BE: Backend, H, K>(
-    prepared: &PreparedLinearTransformationRhs<BE>,
+    prepared: &LinearTransformationRhsPrepared<BE>,
     babies: &PreparedLinearTransformationLhs<BE>,
     keys: &H,
     cyclotomic_order: i64,
@@ -390,16 +446,35 @@ where
 
 /// Resolves the `key_size` argument used by the core eval entry point. Falls
 /// back to `src.size()` when no giant rotation is needed (identity-only
-/// transforms with an empty key map).
-fn key_size_for_prepared<BE: Backend, Src, H, K>(prepared: &PreparedLinearTransformationRhs<BE>, src: &Src, keys: &H) -> usize
+/// transforms with an empty key map). When giant rotations are needed, the
+/// keyswitch output is truncated: errors introduced by the giant rotations sit
+/// under the diagonal scale (the convolution happened first), minus whatever
+/// slack `res_offset` already consumed to fit the result precision in `max_k`.
+fn key_size_for_prepared<BE: Backend, Dst, Src, H, K>(
+    n: usize,
+    prepared: &LinearTransformationRhsPrepared<BE>,
+    dst: &Dst,
+    src: &Src,
+    keys: &H,
+    cnv_offset: usize,
+) -> usize
 where
+    Dst: LWEInfos,
     Src: CKKSCtBounds,
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
     let has_nonzero_giant_rotation = prepared.giant_steps().iter().any(|gs| gs.rot() != 0);
     if has_nonzero_giant_rotation {
-        keys.automorphism_key_infos().size()
+        let res_offset = cnv_offset.saturating_sub(prepared.pt_max_k().as_usize());
+        let allowance = prepared.pt_log_scale().saturating_sub(res_offset);
+        truncated_keyswitch_size(
+            n,
+            dst.size(),
+            src.size() + 1,
+            &keys.automorphism_key_infos(),
+            allowance,
+        )
     } else {
         src.size()
     }

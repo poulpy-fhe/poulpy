@@ -13,7 +13,7 @@
 //!
 //! ```ignore
 //! // setup, once per transform / per input shape
-//! let mut prepared = PreparedLinearTransformationRhs::alloc(module, &layout, &pt_proxy);
+//! let mut prepared = LinearTransformationRhsPrepared::alloc(module, &layout, &pt_proxy);
 //! module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch);
 //! let mut babies = PreparedLinearTransformationLhs::alloc(module, prepared.baby_steps(), &ct);
 //!
@@ -35,14 +35,14 @@ pub use poulpy_core::{
     LinearTransformation, LinearTransformationDiagonal as Diagonal, LinearTransformationGiantStep as GiantStep,
     LinearTransformationLayout, LinearTransformationLhsPrepared as PreparedLinearTransformationLhs,
     LinearTransformationPlan as LinearTransformationIndex, LinearTransformationRhsGiantStepPrepared as PreparedGiantStep,
-    LinearTransformationRhsPrepared as PreparedLinearTransformationRhs, LinearTransformationStrategy, optimal_bsgs_giant_step,
+    LinearTransformationRhsPrepared as LinearTransformationRhsPrepared, LinearTransformationStrategy, optimal_bsgs_giant_step,
 };
 
 /// Homomorphic evaluation of a [`LinearTransformation`] on a CKKS ciphertext.
 ///
 /// The API is shaped around three phases:
 /// 1. **Allocate** the prepared caches up-front:
-///    [`PreparedLinearTransformationRhs::alloc`] for the right side,
+///    [`LinearTransformationRhsPrepared::alloc`] for the right side,
 ///    [`PreparedLinearTransformationLhs::alloc`] for the left side.
 /// 2. **Populate** them whenever the underlying data changes:
 ///    [`Self::ckks_prepare_linear_transformation_rhs`] /
@@ -87,11 +87,11 @@ pub trait LinearTransformationOps<BE: Backend> {
     /// of `prepared`.
     ///
     /// `prepared` must have been sized via
-    /// [`PreparedLinearTransformationRhs::alloc`] for the same BSGS schedule as
+    /// [`LinearTransformationRhsPrepared::alloc`] for the same BSGS schedule as
     /// `lt`. Performs zero `CnvPVecR` allocations.
     fn ckks_prepare_linear_transformation_rhs<P>(
         &self,
-        prepared: &mut PreparedLinearTransformationRhs<BE>,
+        prepared: &mut LinearTransformationRhsPrepared<BE>,
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -126,7 +126,7 @@ pub trait LinearTransformationOps<BE: Backend> {
         &self,
         dst: &mut Dst,
         src: &Src,
-        prepared: &PreparedLinearTransformationRhs<BE>,
+        prepared: &LinearTransformationRhsPrepared<BE>,
         babies: &PreparedLinearTransformationLhs<BE>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -141,7 +141,7 @@ pub trait LinearTransformationOps<BE: Backend> {
     fn ckks_eval_prepared_linear_transformation_assign<Dst, H, K>(
         &self,
         dst: &mut Dst,
-        prepared: &PreparedLinearTransformationRhs<BE>,
+        prepared: &LinearTransformationRhsPrepared<BE>,
         babies: &PreparedLinearTransformationLhs<BE>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -187,14 +187,58 @@ pub trait LinearTransformationOps<BE: Backend> {
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
-    // ----- streamed (unprepared RHS) -----
+    // ----- unprepared RHS, caller-supplied baby cache -----
+
+    /// Computes `dst = M · src` from the unprepared [`LinearTransformation`]
+    /// (diagonals prepared on the fly), reusing a caller-supplied, already
+    /// prepared baby cache `babies`. This is the unprepared-RHS analogue of
+    /// [`Self::ckks_eval_prepared_linear_transformation_into`]: the caller owns
+    /// the baby cache (allocate via [`PreparedLinearTransformationLhs::alloc`] and
+    /// populate via [`Self::ckks_prepare_linear_transformation_lhs`]), so it can
+    /// be sized/reused under the caller's control. `babies` must cover the
+    /// transform's baby rotations for `src`.
+    fn ckks_eval_linear_transformation_unprepared_into<Dst, Src, P, H, K>(
+        &self,
+        dst: &mut Dst,
+        src: &Src,
+        babies: &PreparedLinearTransformationLhs<BE>,
+        lt: &LinearTransformation<P>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        H: GLWEAutomorphismKeyHelper<K, BE>;
+
+    /// Unprepared `dst = M · dst` with a caller-supplied baby cache (see
+    /// [`Self::ckks_eval_linear_transformation_unprepared_into`]).
+    fn ckks_eval_linear_transformation_unprepared_assign<Dst, P, H, K>(
+        &self,
+        dst: &mut Dst,
+        babies: &PreparedLinearTransformationLhs<BE>,
+        lt: &LinearTransformation<P>,
+        keys: &H,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        H: GLWEAutomorphismKeyHelper<K, BE>;
+
+    // ----- streamed (unprepared RHS, self-allocated baby cache) -----
 
     /// Computes `dst = M · src` directly from the unprepared [`LinearTransformation`],
     /// preparing each matrix diagonal on the fly instead of materializing the full
-    /// prepared RHS. Only the (small) input baby cache is allocated.
+    /// prepared RHS. Only the (small) input baby cache is allocated (internally).
     ///
     /// Same result as [`Self::ckks_eval_linear_transformation_into`] with lower
-    /// peak memory and higher compute — for memory-bound backends (e.g. GPU).
+    /// peak memory and higher compute — for memory-bound backends (e.g. GPU). When
+    /// the caller wants to own the baby cache, use
+    /// [`Self::ckks_eval_linear_transformation_unprepared_into`].
     fn ckks_eval_linear_transformation_streamed_into<Dst, Src, P, H, K>(
         &self,
         dst: &mut Dst,

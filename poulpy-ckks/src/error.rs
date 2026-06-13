@@ -54,6 +54,13 @@ pub enum CKKSCompositionError {
         lhs_log_delta: usize,
         rhs_log_delta: usize,
     },
+    /// A homomorphic-DFT evaluation received a prepared matrix whose
+    /// kind/format/sparsity does not match the entry point.
+    DftMatrixMismatch {
+        op: &'static str,
+        expected: &'static str,
+        got: String,
+    },
 }
 
 impl fmt::Display for CKKSCompositionError {
@@ -122,6 +129,9 @@ impl fmt::Display for CKKSCompositionError {
                 lhs_log_budget.min(rhs_log_budget),
                 lhs_log_delta.min(rhs_log_delta)
             ),
+            Self::DftMatrixMismatch { op, expected, got } => {
+                write!(f, "{op} requires a {expected} DFT matrix, got {got}")
+            }
         }
     }
 }

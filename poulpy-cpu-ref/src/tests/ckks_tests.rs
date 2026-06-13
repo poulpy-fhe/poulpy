@@ -55,7 +55,7 @@ fn dft_round_trip_standard() {
         CKKSMeta,
         api::DFTOps,
         encoding::reim::Encoder,
-        layouts::{DFTFormat, DFTMatrixLiteral, DFTType},
+        layouts::{DFTOutputFormat, DFTPlan, DFTType},
         test_suite::{
             CKKSTestParams,
             helpers::{alloc_scratch, ckks_decrypt_decode, ckks_encrypt, gen_atk, gen_sk_with_raw, test_vector_1},
@@ -101,13 +101,13 @@ fn dft_round_trip_standard() {
         log_delta,
         log_budget: 10,
     };
-    let make = |kind| DFTMatrixLiteral {
+    let make = |kind| DFTPlan {
         kind,
-        log_slots,
-        levels: vec![1usize; log_slots],
-        format: DFTFormat::Standard,
+        factorization_depth: vec![1usize; log_slots],
+        format: DFTOutputFormat::Standard,
         scaling: None,
         bit_reversed: false,
+        factor_log_delta: 0,
     };
     let enc_dft = module.ckks_new_dft_matrix(
         &host_module,
@@ -172,6 +172,133 @@ fn dft_round_trip_standard() {
     assert!(max_err < 1e-4, "dft round-trip max_err={max_err:.3e} exceeds 1e-4");
 }
 
+/// Same Standard `CoeffsToSlots` → `SlotsToCoeffs` round-trip as
+/// [`dft_round_trip_standard`], but built with the **streamed** (unprepared-RHS)
+/// constructor: the diagonals are materialized per factor at eval time instead
+/// of kept resident. Exercises the generic `DFTMatrix<BE, R>` eval path over the
+/// streamed `R` and confirms it matches the prepared result to CKKS precision.
+#[test]
+fn dft_round_trip_standard_streamed() {
+    use std::collections::HashMap;
+
+    use poulpy_ckks::{
+        CKKSMeta,
+        api::DFTOps,
+        encoding::reim::Encoder,
+        layouts::{DFTOutputFormat, DFTPlan, DFTType},
+        test_suite::{
+            CKKSTestParams,
+            helpers::{alloc_scratch, ckks_decrypt_decode, ckks_encrypt, gen_atk, gen_sk_with_raw, test_vector_1},
+        },
+    };
+    use poulpy_core::layouts::{Base2K, LinearTransformationStrategy};
+    use poulpy_hal::{
+        api::ScratchOwnedBorrow,
+        layouts::{CyclotomicOrder, Module},
+    };
+
+    use crate::{FFT64Ref, FFT64ReimTable};
+
+    let base2k = 19usize;
+    let log_delta = 30usize;
+    let params = CKKSTestParams {
+        n: 32,
+        base2k,
+        k: base2k * 18,
+        prec: CKKSMeta {
+            log_sparsity: 0,
+            log_delta,
+            log_budget: 10,
+        },
+        hw: 16,
+        dsize: 1,
+    };
+    let m = params.n / 2;
+    let log_slots = m.trailing_zeros() as usize;
+
+    let module = Module::<FFT64Ref>::new(params.n as u64);
+    let host_module = Module::<poulpy_hal::layouts::HostBytesBackend>::new(params.n as u64);
+    let encoder = Encoder::<FFT64ReimTable<f64>>::new::<f64>(m).unwrap();
+
+    let (sk_raw, sk) = gen_sk_with_raw(&params, &module, &host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, &module);
+
+    let factor_meta = CKKSMeta {
+        log_sparsity: 0,
+        log_delta,
+        log_budget: 10,
+    };
+    let make = |kind| DFTPlan {
+        kind,
+        factorization_depth: vec![1usize; log_slots],
+        format: DFTOutputFormat::Standard,
+        scaling: None,
+        bit_reversed: false,
+        factor_log_delta: 0,
+    };
+    // Streamed constructors: note no `scratch` argument (nothing is prepared).
+    let enc_dft = module.ckks_new_dft_matrix_streamed(
+        &host_module,
+        &encoder,
+        Base2K(base2k as u32),
+        factor_meta,
+        &make(DFTType::Encode),
+        LinearTransformationStrategy::Auto,
+        &mut scratch.borrow(),
+    );
+    let dec_dft = module.ckks_new_dft_matrix_streamed(
+        &host_module,
+        &encoder,
+        Base2K(base2k as u32),
+        factor_meta,
+        &make(DFTType::Decode),
+        LinearTransformationStrategy::Auto,
+        &mut scratch.borrow(),
+    );
+
+    let order = module.cyclotomic_order();
+    let mut atks = HashMap::new();
+    for p in enc_dft
+        .galois_elements(order)
+        .into_iter()
+        .chain(dec_dft.galois_elements(order))
+    {
+        atks.entry(p)
+            .or_insert_with(|| gen_atk(&params, &module, p, &sk_raw, &mut scratch.borrow()));
+    }
+
+    let (a_re, a_im) = test_vector_1::<f64>(m);
+    let mut ct = ckks_encrypt(
+        &params,
+        &module,
+        &host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &a_re,
+        &a_im,
+        &mut scratch.borrow(),
+    );
+
+    // Same generic eval entry points accept the streamed matrix.
+    module
+        .ckks_coeffs_to_slots(&mut ct, &enc_dft, &atks, &mut scratch.borrow())
+        .unwrap();
+    module
+        .ckks_slots_to_coeffs(&mut ct, &dec_dft, &atks, &mut scratch.borrow())
+        .unwrap();
+
+    let (got_re, got_im) = ckks_decrypt_decode::<FFT64Ref, f64, _>(&params, &module, &encoder, &ct, &sk, &mut scratch.borrow());
+
+    let max_err = a_re
+        .iter()
+        .zip(&got_re)
+        .chain(a_im.iter().zip(&got_im))
+        .map(|(want, got)| (want - got).abs())
+        .fold(0.0_f64, f64::max);
+    assert!(max_err < 1e-4, "streamed dft round-trip max_err={max_err:.3e} exceeds 1e-4");
+}
+
 /// Proper homomorphic `CoeffsToSlots` test: encode the input **coefficient-wise** as
 /// `bitReverse(re) || bitReverse(im)`, encrypt, apply CoeffsToSlots (Encode/IDFT),
 /// then **slot**-decode and check it recovers `(re, im)`. This is basis-sensitive
@@ -185,7 +312,7 @@ fn dft_coeffs_to_slots_standard() {
         CKKSMeta,
         default::dft::{ckks_coeffs_to_slots_assign, ckks_new_dft_matrix},
         encoding::reim::Encoder,
-        layouts::{DFTFormat, DFTMatrixLiteral, DFTType},
+        layouts::{DFTOutputFormat, DFTPlan, DFTType},
         test_suite::{
             CKKSTestParams,
             helpers::{alloc_scratch, ckks_decrypt_decode, ckks_encrypt_coeffs, gen_atk, gen_sk_with_raw, test_vector_1},
@@ -234,13 +361,13 @@ fn dft_coeffs_to_slots_standard() {
         &encoder,
         Base2K(base2k as u32),
         factor_meta,
-        &DFTMatrixLiteral {
+        &DFTPlan {
             kind: DFTType::Encode,
-            log_slots,
-            levels: vec![1usize; log_slots],
-            format: DFTFormat::Standard,
+            factorization_depth: vec![1usize; log_slots],
+            format: DFTOutputFormat::Standard,
             scaling: None,
             bit_reversed: false,
+            factor_log_delta: 0,
         },
         LinearTransformationStrategy::Auto,
         &mut scratch.borrow(),
@@ -296,7 +423,7 @@ fn dft_coeffs_to_slots_split() {
         CKKSMeta,
         default::dft::{ckks_coeffs_to_slots_split, ckks_new_dft_matrix},
         encoding::reim::Encoder,
-        layouts::{DFTFormat, DFTMatrixLiteral, DFTType},
+        layouts::{DFTOutputFormat, DFTPlan, DFTType},
         test_suite::{
             CKKSTestParams,
             helpers::{
@@ -347,13 +474,13 @@ fn dft_coeffs_to_slots_split() {
         &encoder,
         Base2K(base2k as u32),
         factor_meta,
-        &DFTMatrixLiteral {
+        &DFTPlan {
             kind: DFTType::Encode,
-            log_slots,
-            levels: vec![1usize; log_slots],
-            format: DFTFormat::SplitRealAndImag,
+            factorization_depth: vec![1usize; log_slots],
+            format: DFTOutputFormat::SplitRealAndImag,
             scaling: None,
             bit_reversed: false,
+            factor_log_delta: 0,
         },
         LinearTransformationStrategy::Auto,
         &mut scratch.borrow(),
@@ -422,7 +549,7 @@ fn dft_split_round_trip() {
         CKKSInfos, CKKSMeta,
         default::dft::{ckks_coeffs_to_slots_split, ckks_new_dft_matrix, ckks_slots_to_coeffs_split},
         encoding::reim::Encoder,
-        layouts::{CKKSPlaintextVecHostCodec, DFTFormat, DFTMatrixLiteral, DFTType},
+        layouts::{CKKSPlaintextVecHostCodec, DFTOutputFormat, DFTPlan, DFTType},
         test_suite::{
             CKKSTestParams,
             helpers::{
@@ -467,13 +594,13 @@ fn dft_split_round_trip() {
         log_delta,
         log_budget: 10,
     };
-    let make = |kind| DFTMatrixLiteral {
+    let make = |kind| DFTPlan {
         kind,
-        log_slots,
-        levels: vec![1usize; log_slots],
-        format: DFTFormat::SplitRealAndImag,
+        factorization_depth: vec![1usize; log_slots],
+        format: DFTOutputFormat::SplitRealAndImag,
         scaling: None,
         bit_reversed: false,
+        factor_log_delta: 0,
     };
     let enc_dft = ckks_new_dft_matrix(
         &module,
@@ -584,7 +711,7 @@ fn dft_encode_matches_encoder_basis() {
         CKKSMeta,
         default::gen_dft_matrices,
         encoding::reim::Encoder,
-        layouts::{CKKSModuleAlloc, CKKSPlaintextVecHostCodec, DFTFormat, DFTMatrixLiteral, DFTType},
+        layouts::{CKKSModuleAlloc, CKKSPlaintextVecHostCodec, DFTOutputFormat, DFTPlan, DFTType},
     };
     use poulpy_core::layouts::{Base2K, Evaluate, LinearTransformationStrategy};
     use poulpy_hal::layouts::{HostBytesBackend, Module};
@@ -617,13 +744,13 @@ fn dft_encode_matches_encoder_basis() {
     let gt: Vec<(f64, f64)> = (0..m).map(|j| (coeffs[j], coeffs[j + m])).collect();
 
     // The generated Encode (IDFT) matrix, applied in the clear.
-    let enc_lit = DFTMatrixLiteral {
+    let enc_lit = DFTPlan {
         kind: DFTType::Encode,
-        log_slots,
-        levels: vec![1usize; log_slots],
-        format: DFTFormat::Standard,
+        factorization_depth: vec![1usize; log_slots],
+        format: DFTOutputFormat::Standard,
         scaling: None,
         bit_reversed: false,
+        factor_log_delta: 0,
     };
     // Dense full packing for this clear-text basis check: log_n = log_slots + 1.
     let factors = gen_dft_matrices(&enc_lit, log_slots + 1);
@@ -677,7 +804,7 @@ fn dft_coeffs_to_slots_repack_sparse() {
         CKKSInfos, CKKSMeta, SetCKKSInfos,
         default::dft::{ckks_coeffs_to_slots_repack, ckks_new_dft_matrix},
         encoding::reim::Encoder,
-        layouts::{DFTFormat, DFTMatrixLiteral, DFTType},
+        layouts::{DFTOutputFormat, DFTPlan, DFTType},
         test_suite::{
             CKKSTestParams,
             helpers::{
@@ -729,13 +856,13 @@ fn dft_coeffs_to_slots_repack_sparse() {
         &encoder,
         Base2K(base2k as u32),
         factor_meta,
-        &DFTMatrixLiteral {
+        &DFTPlan {
             kind: DFTType::Encode,
-            log_slots,
-            levels: vec![1usize; log_slots],
-            format: DFTFormat::RepackImagAsReal,
+            factorization_depth: vec![1usize; log_slots],
+            format: DFTOutputFormat::RepackImagAsReal,
             scaling: None,
             bit_reversed: false,
+            factor_log_delta: 0,
         },
         LinearTransformationStrategy::Auto,
         &mut scratch.borrow(),
@@ -819,7 +946,7 @@ fn dft_repack_round_trip_sparse() {
         CKKSInfos, CKKSMeta, SetCKKSInfos,
         default::dft::{ckks_coeffs_to_slots_repack, ckks_new_dft_matrix, ckks_slots_to_coeffs_repack},
         encoding::reim::Encoder,
-        layouts::{CKKSPlaintextVecHostCodec, DFTFormat, DFTMatrixLiteral, DFTType},
+        layouts::{CKKSPlaintextVecHostCodec, DFTOutputFormat, DFTPlan, DFTType},
         test_suite::{
             CKKSTestParams,
             helpers::{
@@ -864,13 +991,13 @@ fn dft_repack_round_trip_sparse() {
         log_budget: 10,
         log_sparsity: 0,
     };
-    let mk = |kind| DFTMatrixLiteral {
+    let mk = |kind| DFTPlan {
         kind,
-        log_slots,
-        levels: vec![1usize; log_slots],
-        format: DFTFormat::RepackImagAsReal,
+        factorization_depth: vec![1usize; log_slots],
+        format: DFTOutputFormat::RepackImagAsReal,
         scaling: None,
         bit_reversed: false,
+        factor_log_delta: 0,
     };
     let enc_dft = ckks_new_dft_matrix(
         &module,

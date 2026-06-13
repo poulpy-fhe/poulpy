@@ -7,9 +7,10 @@
 //! See [`docs/ckks_dft.md`](https://github.com/poulpy-fhe/poulpy) for the full
 //! design.
 
-use poulpy_hal::layouts::{Backend, galois_element};
+use poulpy_core::layouts::LinearTransformation;
+use poulpy_hal::layouts::Backend;
 
-use crate::api::PreparedLinearTransformationRhs;
+use crate::{api::LinearTransformationRhsPrepared, error::CKKSCompositionError, layouts::CKKSPlaintext};
 
 /// Distinguishes the two homomorphic transforms.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -25,7 +26,7 @@ pub enum DFTType {
 /// `Standard` is the regular complex transform; the other two split the real and
 /// imaginary parts (needed for bootstrapping).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DFTFormat {
+pub enum DFTOutputFormat {
     /// Regular DFT: `[a+bi, c+di] -> DFT([a+bi, c+di])`.
     Standard,
     /// `Encode` returns the real and imaginary parts as two separate real
@@ -40,111 +41,232 @@ pub enum DFTFormat {
 
 /// Parameters describing a factorized homomorphic (I)DFT.
 ///
-/// `levels` is the factorization schedule. Its **sum** is the number of factor
-/// matrices: the `log_slots` radix-2 FFT layers are distributed across `sum(levels)`
-/// matrices, so each matrix merges roughly `log_slots / sum(levels)` layers. (The
-/// partition itself — the individual `levels[i]` — only matters for RNS rescale
-/// grouping, which has no analog in poulpy's bit-granular scale model; here a single
-/// uniform per-factor scale is used, see `docs/ckks_dft.md` §6.) Must satisfy
-/// `sum(levels) <= log_slots`.
+/// `factorization_depth` is the factorization schedule: one entry per factor
+/// matrix, giving how many radix-2 FFT layers that matrix merges. The total
+/// number of layers — and hence `log_slots` — is its **sum**, and the number of
+/// factor matrices is its **length**. The schedule is free: pick the granularity
+/// you want (`vec![1; log_slots]` = one layer per matrix, no merging;
+/// `vec![log_slots]` = a single fully-merged matrix; anything in between). A
+/// single uniform per-factor scale is used (see `docs/ckks_dft.md` §6).
+///
+/// **Convention: the schedule is in evaluation order** — the factor matrices are
+/// applied to the ciphertext left-to-right, so `factorization_depth[0]` is the
+/// first matrix evaluated and `factorization_depth[len-1]` the last. This holds
+/// for both `Encode` and `Decode`; the generator does **no** implicit reordering
+/// by `kind`. Because `Decode` is the inverse of `Encode`, a `Decode` plan that
+/// undoes an `Encode` plan with schedule `s` uses the **reversed** schedule
+/// (`s` read right-to-left) — that reversal is the caller's, not the library's.
+/// (Symmetric schedules such as `vec![1; log_slots]` are their own reverse, so
+/// the same schedule round-trips.)
 #[derive(Clone, Debug)]
-pub struct DFTMatrixLiteral {
+pub struct DFTPlan {
     /// Encode (IDFT) or Decode (DFT).
     pub kind: DFTType,
-    /// `log2` of the number of complex slots the transform acts on.
-    pub log_slots: usize,
-    /// Factorization schedule; `sum()` = number of factor matrices. Must satisfy
-    /// `sum(levels) <= log_slots`. See the struct docs.
-    pub levels: Vec<usize>,
+    /// Factorization schedule in **evaluation order**: `factorization_depth[i]`
+    /// is the number of FFT layers merged into the `i`-th matrix applied to the
+    /// ciphertext. `log_slots` is the sum (see [`Self::log_slots`]); the factor
+    /// count is the length. Every entry must be `>= 1`. See the struct docs for
+    /// the Encode/Decode reverse relationship.
+    pub factorization_depth: Vec<usize>,
     /// Post-processing format. Default [`DFTFormat::Standard`].
-    pub format: DFTFormat,
+    ///
+    /// On a *resolved* plan (one stored inside a [`DFTMatrix`]) this is
+    /// canonical: a dense (non-sparse) `RepackImagAsReal` request is normalized
+    /// to [`DFTOutputFormat::SplitRealAndImag`] by the constructor, so
+    /// `RepackImagAsReal` here always means the sparse repack (see
+    /// [`DFTMatrix::is_sparse`]).
+    pub format: DFTOutputFormat,
     /// Constant the matrix is multiplied by. Default `1.0`.
     pub scaling: Option<f64>,
     /// If true, applies the transform bit-reversed (and expects bit-reversed
     /// inputs). Default false.
     pub bit_reversed: bool,
+    /// `log_budget` bits each factor consumes (the per-factor plaintext
+    /// `log_delta`). Meaningless on an input literal; the constructor fills it
+    /// from `factor_meta` on the resolved plan stored in a [`DFTMatrix`].
+    pub factor_log_delta: usize,
 }
 
-impl DFTMatrixLiteral {
-    /// Number of factor matrices (`sum(levels)`) when `actual == false`, or the
-    /// schedule length (`levels.len()`) when `actual == true`.
-    pub fn depth(&self, actual: bool) -> usize {
-        if actual { self.levels.len() } else { self.levels.iter().sum() }
+impl DFTPlan {
+    /// `log2` of the number of complex slots the transform acts on: the sum of
+    /// the factorization schedule (total FFT layers).
+    pub fn log_slots(&self) -> usize {
+        self.factorization_depth.iter().sum()
     }
 
-    /// Validates the basic shape invariant shared by generation and evaluation.
+    /// Number of factor matrices (the schedule length).
+    pub fn num_factors(&self) -> usize {
+        self.factorization_depth.len()
+    }
+
+    /// Validates the basic shape invariant shared by generation and evaluation:
+    /// at least one factor, and every factor merges at least one FFT layer.
     pub fn check(&self) -> Result<(), String> {
-        let max_depth = self.depth(false);
-        if self.log_slots < max_depth {
+        if self.factorization_depth.is_empty() {
+            return Err("invalid DFTPlan: empty factorization_depth (no factor matrices)".to_string());
+        }
+        if self.factorization_depth.contains(&0) {
             return Err(format!(
-                "invalid DFTMatrixLiteral: log_slots={} < factorization depth={}",
-                self.log_slots, max_depth
+                "invalid DFTPlan: factorization_depth has a zero-layer factor: {:?}",
+                self.factorization_depth
             ));
         }
         Ok(())
     }
 }
 
-/// A generated, ready-to-evaluate homomorphic (I)DFT.
+/// The factor operands shared by every [`DFTMatrix`] variant: the per-factor
+/// right operands (one [`DFTPlan`] factor each), in evaluation order, plus the
+/// resolved plan they were generated from.
 ///
-/// Holds the prepared right operands (convolution-domain diagonals) of each
-/// factor matrix, in evaluation order, plus the per-factor scale. Built once via
-/// `ckks_new_dft_matrix`; the evaluator chains one prepared linear transformation
-/// per factor (no explicit rescale — the torus plaintext-multiply realigns to the
-/// input `log_delta`). The required Galois keys are reported by
-/// [`Self::galois_elements`].
-pub struct DFTMatrix<BE: Backend> {
-    /// The parameters this matrix was generated from.
-    pub literal: DFTMatrixLiteral,
-    /// Prepared right operands, one per factor matrix, in evaluation order.
-    pub(crate) factors: Vec<PreparedLinearTransformationRhs<BE>>,
-    /// The per-factor plaintext scale: each factor consumes this many bits of
-    /// `log_budget`.
-    pub(crate) factor_log_delta: usize,
-    /// True for the sparse `RepackImagAsReal` path (`log_slots < log_max_slots`):
-    /// the imag-into-right-half repack needs an extra rotation by `slots` and the
-    /// output's `log_sparsity` drops by one.
-    pub(crate) sparse: bool,
+/// Generic over the factor representation `R`: a prepared
+/// [`LinearTransformationRhsPrepared`] (convolution-domain, resident — the
+/// default) or an unprepared [`LinearTransformation`] whose diagonals are
+/// materialized on the fly at eval time (streamed). See [`DFTMatrix`].
+pub struct DFTMatrixFactors<BE: Backend, R = LinearTransformationRhsPrepared<BE>> {
+    /// The resolved parameters this matrix was generated from (canonical
+    /// `format`, populated `factor_log_delta`).
+    pub plan: DFTPlan,
+    /// Per-factor right operands, one per factor matrix, in evaluation order.
+    pub(crate) factors: Vec<R>,
+    _backend: core::marker::PhantomData<BE>,
 }
 
-impl<BE: Backend> DFTMatrix<BE> {
+impl<BE: Backend, R> DFTMatrixFactors<BE, R> {
+    pub(crate) fn new(plan: DFTPlan, factors: Vec<R>) -> Self {
+        Self {
+            plan,
+            factors,
+            _backend: core::marker::PhantomData,
+        }
+    }
+}
+
+/// A generated, ready-to-evaluate homomorphic (I)DFT, tagged by output format
+/// and generic over the factor representation `R`.
+///
+/// The variant is the canonical witness of the matrix's output format, so the
+/// three loosely-coupled `(kind, format, sparse)` flags collapse into one
+/// exhaustively-matchable value and illegal combinations (e.g. sparse
+/// `Standard`) are unrepresentable. The transform **direction**
+/// ([`DFTType::Encode`]/[`Decode`]) stays in [`DFTPlan::kind`] and is checked at
+/// the evaluation entry points; the format variant is what dispatch keys on.
+///
+/// `R` selects how each factor's RHS is stored, trading memory for compute:
+/// [`LinearTransformationRhsPrepared`] (the default, [`DFTMatrix<BE>`]) keeps
+/// the convolution-domain diagonals resident; the streamed alias
+/// [`DFTMatrixStreamed`] keeps unprepared plaintext diagonals and materializes
+/// them per factor at eval time (for bandwidth-limited backends). Both build via
+/// `ckks_new_dft_matrix` / `ckks_new_dft_matrix_streamed` and evaluate through
+/// the same entry points (generic over `R`). The required Galois keys are
+/// reported by `galois_elements`.
+pub enum DFTMatrix<BE: Backend, R = LinearTransformationRhsPrepared<BE>> {
+    /// Regular complex transform ([`DFTOutputFormat::Standard`]).
+    Standard(DFTMatrixFactors<BE, R>),
+    /// Real/imag split ([`DFTOutputFormat::SplitRealAndImag`], or a dense
+    /// `RepackImagAsReal` canonicalized to it).
+    Split(DFTMatrixFactors<BE, R>),
+    /// Sparse `RepackImagAsReal` (imag repacked into the right half); the only
+    /// variant carrying the `slots` repack rotation.
+    Repack(DFTMatrixFactors<BE, R>),
+}
+
+/// Streamed (unprepared-RHS) [`DFTMatrix`]: each factor's diagonals are kept as
+/// plaintexts and prepared on the fly at eval time, minimizing resident memory
+/// at the cost of recomputation. For bandwidth-limited backends (e.g. GPU).
+pub type DFTMatrixStreamed<BE> = DFTMatrix<BE, LinearTransformation<CKKSPlaintext<<BE as Backend>::OwnedBuf>>>;
+
+/// Format discriminant an evaluation entry point requires, mirroring the
+/// [`DFTMatrix`] variants. Paired with a [`DFTType`] direction in
+/// [`DFTMatrix::ensure`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum DftFormatTag {
+    Standard,
+    Split,
+    Repack,
+}
+
+impl<BE: Backend, R> DFTMatrix<BE, R> {
+    /// The factor operands common to every variant.
+    pub(crate) fn inner(&self) -> &DFTMatrixFactors<BE, R> {
+        match self {
+            Self::Standard(f) | Self::Split(f) | Self::Repack(f) => f,
+        }
+    }
+
+    /// The resolved plan (canonical `format`, populated `factor_log_delta`).
+    pub fn plan(&self) -> &DFTPlan {
+        &self.inner().plan
+    }
+
+    /// The per-factor right operands, in evaluation order.
+    pub(crate) fn factor_operands(&self) -> &[R] {
+        &self.inner().factors
+    }
+
     /// Number of factor matrices (one prepared linear transformation each).
     pub fn num_factors(&self) -> usize {
-        self.factors.len()
+        self.inner().factors.len()
     }
 
     /// `log_budget` bits consumed per factor (the per-factor plaintext `log_delta`).
     pub fn factor_log_delta(&self) -> usize {
-        self.factor_log_delta
+        self.inner().plan.factor_log_delta
     }
 
     /// Total `log_budget` bits the whole transform consumes: `num_factors ×
     /// factor_log_delta`. The input ciphertext must have at least this much.
     pub fn consumed_bits(&self) -> usize {
-        self.factors.len() * self.factor_log_delta
+        self.num_factors() * self.factor_log_delta()
     }
 
     /// Whether this is the sparse `RepackImagAsReal` path (needs the `slots`
     /// repack rotation and updates `log_sparsity`).
     pub fn is_sparse(&self) -> bool {
-        self.sparse
+        matches!(self, Self::Repack(_))
     }
 
-    /// The distinct Galois elements whose automorphism keys evaluating this
-    /// transform requires (the union over all factors, plus the `slots` repack
-    /// rotation for the sparse path).
-    pub fn galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
-        let mut set: std::collections::BTreeSet<i64> = std::collections::BTreeSet::new();
-        for f in &self.factors {
-            // `galois_elements` already maps non-zero baby/giant rotations to
-            // Galois elements; union across factors.
-            set.extend(f.galois_elements(cyclotomic_order));
+    /// Validates that this matrix matches the `format`/`kind` an evaluation entry
+    /// point requires, returning a descriptive error instead of panicking. The
+    /// single gate every `coeffs_to_slots` / `slots_to_coeffs` variant goes
+    /// through; the dense-`RepackImagAsReal`≡`Split` rule was already resolved at
+    /// construction (it lives in the variant, not here).
+    pub(crate) fn ensure(&self, op: &'static str, format: DftFormatTag, kind: DFTType) -> Result<(), CKKSCompositionError> {
+        let format_ok = match format {
+            DftFormatTag::Standard => matches!(self, Self::Standard(_)),
+            DftFormatTag::Split => matches!(self, Self::Split(_)),
+            DftFormatTag::Repack => matches!(self, Self::Repack(_)),
+        };
+        if format_ok && self.plan().kind == kind {
+            return Ok(());
         }
-        if self.sparse {
-            set.insert(galois_element(1i64 << self.literal.log_slots, cyclotomic_order));
-        }
-        // Defensive: drop the identity element if present.
-        set.remove(&galois_element(0, cyclotomic_order));
-        set.into_iter().collect()
+
+        let expected: &'static str = match (kind, format) {
+            (DFTType::Encode, DftFormatTag::Standard) => "CoeffsToSlots (Encode/Standard)",
+            (DFTType::Encode, DftFormatTag::Split) => "CoeffsToSlotsSplit (Encode/Split)",
+            (DFTType::Encode, DftFormatTag::Repack) => "CoeffsToSlotsRepack (Encode/sparse Repack)",
+            (DFTType::Decode, DftFormatTag::Standard) => "SlotsToCoeffs (Decode/Standard)",
+            (DFTType::Decode, DftFormatTag::Split) => "SlotsToCoeffsSplit (Decode/Split)",
+            (DFTType::Decode, DftFormatTag::Repack) => "SlotsToCoeffsRepack (Decode/sparse Repack)",
+        };
+        Err(CKKSCompositionError::DftMatrixMismatch {
+            op,
+            expected,
+            got: self.describe(),
+        })
+    }
+
+    /// Human-readable `direction/format` description for error messages.
+    fn describe(&self) -> String {
+        let dir = match self.plan().kind {
+            DFTType::Encode => "CoeffsToSlots",
+            DFTType::Decode => "SlotsToCoeffs",
+        };
+        let fmt = match self {
+            Self::Standard(_) => "Standard",
+            Self::Split(_) => "Split",
+            Self::Repack(_) => "sparse Repack",
+        };
+        format!("{dir}/{fmt}")
     }
 }
