@@ -10,7 +10,7 @@ use poulpy_hal::{
     api::{HostBufMut, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
     layouts::{
         Backend, CoeffGemmPanelBackendMut, CoeffGemmPanelBackendRef, MatZnxBackendRef, Module, NoiseInfos, ScratchArena,
-        VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
+        VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut,
         VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
     },
     oep::{

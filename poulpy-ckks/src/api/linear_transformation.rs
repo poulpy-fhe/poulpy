@@ -35,7 +35,7 @@ pub use poulpy_core::{
     LinearTransformation, LinearTransformationDiagonal as Diagonal, LinearTransformationGiantStep as GiantStep,
     LinearTransformationLayout, LinearTransformationLhsPrepared as PreparedLinearTransformationLhs,
     LinearTransformationPlan as LinearTransformationIndex, LinearTransformationRhsGiantStepPrepared as PreparedGiantStep,
-    LinearTransformationRhsPrepared as LinearTransformationRhsPrepared, LinearTransformationStrategy, optimal_bsgs_giant_step,
+    LinearTransformationRhsPrepared, LinearTransformationStrategy, optimal_bsgs_giant_step,
 };
 
 /// Homomorphic evaluation of a [`LinearTransformation`] on a CKKS ciphertext.

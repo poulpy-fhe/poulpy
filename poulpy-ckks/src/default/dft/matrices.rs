@@ -313,7 +313,6 @@ fn merge_next_layer<F: DftScalar>(
     new_vec
 }
 
-
 /// The special initial matrix for sparse Decode repack.
 ///
 /// Two diagonals over `dslots = 2·slots`: index `0` with value `(1 | i)` (real 1
@@ -605,17 +604,11 @@ mod tests {
             let slots = 1usize << log_slots;
             for bit_reversed in [false, true] {
                 for levels in schedules(log_slots) {
-                    let enc = gen_dft_matrices::<f64>(
-                        &literal(DFTType::Encode, levels.clone(), bit_reversed),
-                        log_slots + 1,
-                    );
+                    let enc = gen_dft_matrices::<f64>(&literal(DFTType::Encode, levels.clone(), bit_reversed), log_slots + 1);
                     // Decode inverts Encode, so it uses the reversed schedule
                     // (evaluation-order convention; see `DFTPlan::factorization_depth`).
                     let dec_levels: Vec<usize> = levels.iter().rev().copied().collect();
-                    let dec = gen_dft_matrices::<f64>(
-                        &literal(DFTType::Decode, dec_levels, bit_reversed),
-                        log_slots + 1,
-                    );
+                    let dec = gen_dft_matrices::<f64>(&literal(DFTType::Decode, dec_levels, bit_reversed), log_slots + 1);
 
                     let re: Vec<f64> = (0..slots).map(|j| (0.3 * (j as f64 + 1.0)).sin()).collect();
                     let im: Vec<f64> = (0..slots).map(|j| (0.7 * (j as f64 + 2.0)).cos()).collect();

@@ -4,8 +4,8 @@ use criterion::Criterion;
 use poulpy_ckks::{
     CKKSMeta,
     api::{
-        Diagonal, GiantStep, LinearTransformation, LinearTransformationOps, LinearTransformationStrategy,
-        PreparedLinearTransformationLhs, LinearTransformationRhsPrepared, optimal_bsgs_giant_step,
+        Diagonal, GiantStep, LinearTransformation, LinearTransformationOps, LinearTransformationRhsPrepared,
+        LinearTransformationStrategy, PreparedLinearTransformationLhs, optimal_bsgs_giant_step,
     },
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
     leveled::api::{

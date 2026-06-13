@@ -32,7 +32,8 @@ use poulpy_hal::{
 use crate::{
     CKKSCtBounds, CKKSMeta, SetCKKSInfos,
     api::{
-        CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSImagOps, CKKSRotateOps, CKKSSubOps, DFTOps, LinearTransformationOps, LinearTransformationRhsPrepared, PreparedLinearTransformationLhs
+        CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSImagOps, CKKSRotateOps, CKKSSubOps, DFTOps, LinearTransformationOps,
+        LinearTransformationRhsPrepared, PreparedLinearTransformationLhs,
     },
     default::dft::matrices::{DftScalar, gen_dft_matrices},
     encoding::reim::Encoder,

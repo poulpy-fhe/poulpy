@@ -468,13 +468,7 @@ where
     if has_nonzero_giant_rotation {
         let res_offset = cnv_offset.saturating_sub(prepared.pt_max_k().as_usize());
         let allowance = prepared.pt_log_scale().saturating_sub(res_offset);
-        truncated_keyswitch_size(
-            n,
-            dst.size(),
-            src.size() + 1,
-            &keys.automorphism_key_infos(),
-            allowance,
-        )
+        truncated_keyswitch_size(n, dst.size(), src.size() + 1, &keys.automorphism_key_infos(), allowance)
     } else {
         src.size()
     }

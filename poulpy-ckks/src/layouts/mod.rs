@@ -22,8 +22,8 @@ pub use ciphertext::{
     Unnormalized, UnnormalizedCKKSCiphertext,
 };
 pub use complex_diagonals::ComplexDiagonals;
-pub use dft::{DFTMatrix, DFTMatrixFactors, DFTMatrixStreamed, DFTOutputFormat, DFTPlan, DFTType};
 pub(crate) use dft::DftFormatTag;
+pub use dft::{DFTMatrix, DFTMatrixFactors, DFTMatrixStreamed, DFTOutputFormat, DFTPlan, DFTType};
 pub use plaintext::CKKSPlaintext;
 
 use std::fmt::Debug;
