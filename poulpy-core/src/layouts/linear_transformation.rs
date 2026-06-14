@@ -13,7 +13,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use poulpy_hal::layouts::galois_element;
+use poulpy_hal::layouts::galois_elements_from_rotations;
 
 // ===================================================================
 // Unprepared transform
@@ -51,31 +51,48 @@ pub struct LinearTransformation<P> {
 }
 
 impl<P> LinearTransformation<P> {
+    /// The first encoded diagonal across all giant steps, or `None` if the
+    /// transform is empty. The diagonals share a uniform plaintext shape, so this
+    /// is the canonical place callers read `base2k` / `max_k` / `log_delta` from.
+    pub fn first_diagonal_plaintext(&self) -> Option<&P> {
+        self.giant_steps
+            .iter()
+            .flat_map(|gs| gs.diagonals.iter())
+            .map(|d| &d.plaintext)
+            .next()
+    }
+
     /// Derives the BSGS index schedule implied by this transform's actual
     /// baby/giant rotations. Useful for one-shot allocation of the prepared
     /// cache directly from an unprepared transform.
     ///
-    /// Only baby rotations actually referenced by at least one non-empty
+    /// The output is canonical — giant steps sorted, per-giant baby rotations
+    /// sorted and de-duplicated — so it matches the schedule
+    /// [`LinearTransformationLayout::index`] would derive from the same diagonal
+    /// set. Only baby rotations actually referenced by at least one non-empty
     /// giant step are included; the field `self.baby_steps` may declare more
     /// rotations than the transform's data populates, and those extras would
     /// otherwise force the caller to provide automorphism keys that the
     /// schedule does not actually need.
     pub fn index(&self) -> LinearTransformationPlan {
+        let mut by_giant: BTreeMap<i64, BTreeSet<i64>> = BTreeMap::new();
         let mut used_babies: BTreeSet<i64> = BTreeSet::new();
-        for gs in &self.giant_steps {
-            for d in &gs.diagonals {
-                used_babies.insert(d.baby);
-            }
-        }
-        let baby_steps: Vec<i64> = used_babies.into_iter().collect();
-        let mut giant_steps = Vec::with_capacity(self.giant_steps.len());
-        let mut index = Vec::with_capacity(self.giant_steps.len());
         for gs in &self.giant_steps {
             if gs.diagonals.is_empty() {
                 continue;
             }
-            giant_steps.push(gs.rot);
-            index.push(gs.diagonals.iter().map(|d| d.baby).collect());
+            let babies = by_giant.entry(gs.rot).or_default();
+            for d in &gs.diagonals {
+                used_babies.insert(d.baby);
+                babies.insert(d.baby);
+            }
+        }
+        let baby_steps: Vec<i64> = used_babies.into_iter().collect();
+        let mut giant_steps = Vec::with_capacity(by_giant.len());
+        let mut index = Vec::with_capacity(by_giant.len());
+        for (rot, babies) in by_giant {
+            giant_steps.push(rot);
+            index.push(babies.into_iter().collect());
         }
         LinearTransformationPlan {
             baby_steps,
@@ -91,26 +108,9 @@ impl<P> LinearTransformation<P> {
     /// [`LinearTransformationPlan::galois_elements`]); pass the result here to
     /// index the key store the eval entry points look up.
     pub fn galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
-        let mut rots: Vec<i64> = self
-            .giant_steps
-            .iter()
-            .flat_map(|gs| gs.diagonals.iter())
-            .map(|d| d.baby)
-            .filter(|&r| r != 0)
-            .collect();
-        rots.extend(
-            self.giant_steps
-                .iter()
-                .filter(|gs| !gs.diagonals.is_empty())
-                .map(|gs| gs.rot)
-                .filter(|&r| r != 0),
-        );
-        rots.sort_unstable();
-        rots.dedup();
-        let mut gal_els: Vec<i64> = rots.iter().map(|&rot| galois_element(rot, cyclotomic_order)).collect();
-        gal_els.sort_unstable();
-        gal_els.dedup();
-        gal_els
+        let babies = self.giant_steps.iter().flat_map(|gs| gs.diagonals.iter()).map(|d| d.baby);
+        let giants = self.giant_steps.iter().filter(|gs| !gs.diagonals.is_empty()).map(|gs| gs.rot);
+        galois_elements_from_rotations(babies.chain(giants), cyclotomic_order)
     }
 }
 
@@ -122,9 +122,8 @@ impl<P> LinearTransformation<P> {
 /// non-zero diagonal indexes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LinearTransformationStrategy {
-    /// Pick a BSGS giant step with the best cost rule.
-    Auto,
-    /// Use an explicit BSGS giant-step width.
+    /// Use an explicit BSGS giant-step width. For the cost-optimal width, call
+    /// [`optimal_bsgs_giant_step`] and pass the result here.
     Bsgs { giant_step: usize },
     /// Use one giant step per diagonal and no baby rotations.
     Direct,
@@ -188,14 +187,8 @@ pub struct LinearTransformationPlan {
 impl LinearTransformationPlan {
     /// Galois elements required for all non-zero baby- and giant-step rotations.
     pub fn galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
-        let mut rots: Vec<i64> = self.baby_steps.iter().copied().filter(|&k| k != 0).collect();
-        rots.extend(self.giant_steps.iter().copied().filter(|&r| r != 0));
-        rots.sort_unstable();
-        rots.dedup();
-        let mut gal_els: Vec<i64> = rots.iter().map(|&rot| galois_element(rot, cyclotomic_order)).collect();
-        gal_els.sort_unstable();
-        gal_els.dedup();
-        gal_els
+        let rots = self.baby_steps.iter().copied().chain(self.giant_steps.iter().copied());
+        galois_elements_from_rotations(rots, cyclotomic_order)
     }
 }
 
@@ -300,12 +293,6 @@ where
     best_step
 }
 
-/// Returns whether the direct diagonal schedule is preferable to BSGS before
-/// backend-specific benchmarks are available.
-fn should_use_direct_linear_transform(diagonal_count: usize) -> bool {
-    diagonal_count <= 2
-}
-
 /// Derives an index schedule from diagonal indexes and a strategy.
 fn linear_transform_index<I>(
     diagonal_indexes: I,
@@ -315,21 +302,7 @@ fn linear_transform_index<I>(
 where
     I: IntoIterator<Item = i64>,
 {
-    let diagonal_indexes: Vec<i64> = diagonal_indexes.into_iter().collect();
     match strategy {
-        LinearTransformationStrategy::Auto => {
-            let diagonal_count = diagonal_indexes
-                .iter()
-                .map(|&diagonal| normalize_linear_transform_diagonal(diagonal, slots))
-                .collect::<BTreeSet<_>>()
-                .len();
-            if should_use_direct_linear_transform(diagonal_count) {
-                linear_transform_index(diagonal_indexes, slots, LinearTransformationStrategy::Direct)
-            } else {
-                let giant_step = optimal_bsgs_giant_step(diagonal_indexes.iter().copied(), slots);
-                linear_transformation_plan(diagonal_indexes, slots, giant_step)
-            }
-        }
         LinearTransformationStrategy::Bsgs { giant_step } => linear_transformation_plan(diagonal_indexes, slots, giant_step),
         LinearTransformationStrategy::Direct => {
             let diagonals: BTreeSet<usize> = diagonal_indexes

@@ -61,7 +61,7 @@ fn dft_round_trip_standard() {
             helpers::{alloc_scratch, ckks_decrypt_decode, ckks_encrypt, gen_atk, gen_sk_with_raw, test_vector_1},
         },
     };
-    use poulpy_core::layouts::{Base2K, LinearTransformationStrategy};
+    use poulpy_core::layouts::Base2K;
     use poulpy_hal::{
         api::ScratchOwnedBorrow,
         layouts::{CyclotomicOrder, Module},
@@ -104,6 +104,7 @@ fn dft_round_trip_standard() {
     let make = |kind| DFTPlan {
         kind,
         factorization_depth: vec![1usize; log_slots],
+        factor_giant_steps: vec![2usize; log_slots],
         format: DFTOutputFormat::Standard,
         scaling: None,
         bit_reversed: false,
@@ -115,7 +116,6 @@ fn dft_round_trip_standard() {
         Base2K(base2k as u32),
         factor_meta,
         &make(DFTType::Encode),
-        LinearTransformationStrategy::Auto,
         &mut scratch.borrow(),
     );
     let dec_dft = module.ckks_new_dft_matrix(
@@ -124,7 +124,6 @@ fn dft_round_trip_standard() {
         Base2K(base2k as u32),
         factor_meta,
         &make(DFTType::Decode),
-        LinearTransformationStrategy::Auto,
         &mut scratch.borrow(),
     );
 
@@ -191,7 +190,7 @@ fn dft_round_trip_standard_streamed() {
             helpers::{alloc_scratch, ckks_decrypt_decode, ckks_encrypt, gen_atk, gen_sk_with_raw, test_vector_1},
         },
     };
-    use poulpy_core::layouts::{Base2K, LinearTransformationStrategy};
+    use poulpy_core::layouts::Base2K;
     use poulpy_hal::{
         api::ScratchOwnedBorrow,
         layouts::{CyclotomicOrder, Module},
@@ -231,6 +230,7 @@ fn dft_round_trip_standard_streamed() {
     let make = |kind| DFTPlan {
         kind,
         factorization_depth: vec![1usize; log_slots],
+        factor_giant_steps: vec![2usize; log_slots],
         format: DFTOutputFormat::Standard,
         scaling: None,
         bit_reversed: false,
@@ -243,7 +243,6 @@ fn dft_round_trip_standard_streamed() {
         Base2K(base2k as u32),
         factor_meta,
         &make(DFTType::Encode),
-        LinearTransformationStrategy::Auto,
         &mut scratch.borrow(),
     );
     let dec_dft = module.ckks_new_dft_matrix_streamed(
@@ -252,7 +251,6 @@ fn dft_round_trip_standard_streamed() {
         Base2K(base2k as u32),
         factor_meta,
         &make(DFTType::Decode),
-        LinearTransformationStrategy::Auto,
         &mut scratch.borrow(),
     );
 
@@ -318,7 +316,7 @@ fn dft_coeffs_to_slots_standard() {
             helpers::{alloc_scratch, ckks_decrypt_decode, ckks_encrypt_coeffs, gen_atk, gen_sk_with_raw, test_vector_1},
         },
     };
-    use poulpy_core::layouts::{Base2K, LinearTransformationStrategy};
+    use poulpy_core::layouts::Base2K;
     use poulpy_hal::{
         api::ScratchOwnedBorrow,
         layouts::{CyclotomicOrder, Module},
@@ -364,12 +362,12 @@ fn dft_coeffs_to_slots_standard() {
         &DFTPlan {
             kind: DFTType::Encode,
             factorization_depth: vec![1usize; log_slots],
+            factor_giant_steps: vec![2usize; log_slots],
             format: DFTOutputFormat::Standard,
             scaling: None,
             bit_reversed: false,
             factor_log_delta: 0,
         },
-        LinearTransformationStrategy::Auto,
         &mut scratch.borrow(),
     );
 
@@ -431,7 +429,7 @@ fn dft_coeffs_to_slots_split() {
             },
         },
     };
-    use poulpy_core::layouts::{Base2K, LinearTransformationStrategy};
+    use poulpy_core::layouts::Base2K;
     use poulpy_hal::{
         api::ScratchOwnedBorrow,
         layouts::{CyclotomicOrder, Module},
@@ -477,12 +475,12 @@ fn dft_coeffs_to_slots_split() {
         &DFTPlan {
             kind: DFTType::Encode,
             factorization_depth: vec![1usize; log_slots],
+            factor_giant_steps: vec![2usize; log_slots],
             format: DFTOutputFormat::SplitRealAndImag,
             scaling: None,
             bit_reversed: false,
             factor_log_delta: 0,
         },
-        LinearTransformationStrategy::Auto,
         &mut scratch.borrow(),
     );
 
@@ -557,7 +555,7 @@ fn dft_split_round_trip() {
             },
         },
     };
-    use poulpy_core::layouts::{Base2K, LinearTransformationStrategy};
+    use poulpy_core::layouts::Base2K;
     use poulpy_hal::{
         api::ScratchOwnedBorrow,
         layouts::{CyclotomicOrder, Module},
@@ -597,6 +595,7 @@ fn dft_split_round_trip() {
     let make = |kind| DFTPlan {
         kind,
         factorization_depth: vec![1usize; log_slots],
+        factor_giant_steps: vec![2usize; log_slots],
         format: DFTOutputFormat::SplitRealAndImag,
         scaling: None,
         bit_reversed: false,
@@ -609,7 +608,6 @@ fn dft_split_round_trip() {
         Base2K(base2k as u32),
         factor_meta,
         &make(DFTType::Encode),
-        LinearTransformationStrategy::Auto,
         &mut scratch.borrow(),
     );
     let dec_dft = ckks_new_dft_matrix(
@@ -619,7 +617,6 @@ fn dft_split_round_trip() {
         Base2K(base2k as u32),
         factor_meta,
         &make(DFTType::Decode),
-        LinearTransformationStrategy::Auto,
         &mut scratch.borrow(),
     );
 
@@ -747,6 +744,7 @@ fn dft_encode_matches_encoder_basis() {
     let enc_lit = DFTPlan {
         kind: DFTType::Encode,
         factorization_depth: vec![1usize; log_slots],
+        factor_giant_steps: vec![2usize; log_slots],
         format: DFTOutputFormat::Standard,
         scaling: None,
         bit_reversed: false,
@@ -812,7 +810,7 @@ fn dft_coeffs_to_slots_repack_sparse() {
             },
         },
     };
-    use poulpy_core::layouts::{Base2K, LinearTransformationStrategy};
+    use poulpy_core::layouts::Base2K;
     use poulpy_hal::{
         api::ScratchOwnedBorrow,
         layouts::{CyclotomicOrder, Module},
@@ -859,12 +857,12 @@ fn dft_coeffs_to_slots_repack_sparse() {
         &DFTPlan {
             kind: DFTType::Encode,
             factorization_depth: vec![1usize; log_slots],
+            factor_giant_steps: vec![2usize; log_slots],
             format: DFTOutputFormat::RepackImagAsReal,
             scaling: None,
             bit_reversed: false,
             factor_log_delta: 0,
         },
-        LinearTransformationStrategy::Auto,
         &mut scratch.borrow(),
     );
     assert!(enc_dft.is_sparse(), "expected sparse path");
@@ -954,7 +952,7 @@ fn dft_repack_round_trip_sparse() {
             },
         },
     };
-    use poulpy_core::layouts::{Base2K, LinearTransformationStrategy};
+    use poulpy_core::layouts::Base2K;
     use poulpy_hal::{
         api::ScratchOwnedBorrow,
         layouts::{CyclotomicOrder, Module},
@@ -994,6 +992,7 @@ fn dft_repack_round_trip_sparse() {
     let mk = |kind| DFTPlan {
         kind,
         factorization_depth: vec![1usize; log_slots],
+        factor_giant_steps: vec![2usize; log_slots],
         format: DFTOutputFormat::RepackImagAsReal,
         scaling: None,
         bit_reversed: false,
@@ -1006,7 +1005,6 @@ fn dft_repack_round_trip_sparse() {
         Base2K(base2k as u32),
         factor_meta,
         &mk(DFTType::Encode),
-        LinearTransformationStrategy::Auto,
         &mut scratch.borrow(),
     );
     let dec_dft = ckks_new_dft_matrix(
@@ -1016,7 +1014,6 @@ fn dft_repack_round_trip_sparse() {
         Base2K(base2k as u32),
         factor_meta,
         &mk(DFTType::Decode),
-        LinearTransformationStrategy::Auto,
         &mut scratch.borrow(),
     );
 

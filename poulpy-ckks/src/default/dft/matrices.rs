@@ -325,7 +325,7 @@ fn gen_repack_matrix<F: DftScalar>(log_l: usize, dslots: usize) -> ComplexDiagon
 /// `RepackImagAsReal` ≡ `SplitRealAndImag`). Panics on an invalid literal
 /// (`log_slots < depth`).
 pub fn gen_dft_matrices<F: DftScalar>(literal: &DFTPlan, log_n: usize) -> Vec<ComplexDiagonals<F>> {
-    literal.check().expect("invalid DFTMatrixLiteral");
+    literal.check().expect("invalid DFTPlan");
 
     let log_slots = literal.log_slots();
     let slots = 1usize << log_slots;
@@ -444,9 +444,11 @@ mod tests {
     use poulpy_core::layouts::{Evaluate, LinearTransformationStrategy};
 
     fn literal(kind: DFTType, factorization_depth: Vec<usize>, bit_reversed: bool) -> DFTPlan {
+        let factor_giant_steps = vec![1usize; factorization_depth.len()];
         DFTPlan {
             kind,
             factorization_depth,
+            factor_giant_steps,
             format: DFTOutputFormat::Standard,
             scaling: Some(1.0),
             bit_reversed,
@@ -499,6 +501,7 @@ mod tests {
         let mk = |kind| DFTPlan {
             kind,
             factorization_depth: vec![1, 1], // sum = log_slots = 2
+            factor_giant_steps: vec![1, 1],
             format: DFTOutputFormat::RepackImagAsReal,
             scaling: None,
             bit_reversed: false,
@@ -531,6 +534,7 @@ mod tests {
             &DFTPlan {
                 kind: DFTType::Encode,
                 factorization_depth: vec![1, 1, 1, 1], // sum = log_slots = 4
+                factor_giant_steps: vec![1, 1, 1, 1],
                 format: DFTOutputFormat::RepackImagAsReal,
                 scaling: None,
                 bit_reversed: false,

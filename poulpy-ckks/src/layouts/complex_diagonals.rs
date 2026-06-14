@@ -195,7 +195,6 @@ mod tests {
         for strategy in [
             LinearTransformationStrategy::Direct,
             LinearTransformationStrategy::Bsgs { giant_step: 2 },
-            LinearTransformationStrategy::Auto,
         ] {
             let (got_re, got_im) = cd.evaluate((vre.as_slice(), vim.as_slice()), strategy);
             for j in 0..s {
@@ -240,7 +239,6 @@ mod tests {
         for strategy in [
             LinearTransformationStrategy::Direct,
             LinearTransformationStrategy::Bsgs { giant_step: 2 },
-            LinearTransformationStrategy::Auto,
         ] {
             let (got_re, got_im) = cdt.evaluate((vre.as_slice(), vim.as_slice()), strategy);
             for j in 0..s {

@@ -7,7 +7,7 @@
 use anyhow::Result;
 use poulpy_core::layouts::{
     Base2K, GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef,
-    GetGaloisElement, LinearTransformationStrategy, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
+    GetGaloisElement, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
     api::{ModuleNew, NegacyclicFFT, NegacyclicFFTNew},
@@ -30,7 +30,8 @@ use crate::{
 /// path that packs the imaginary part into the right half of a single ciphertext.
 pub trait DFTOps<BE: Backend> {
     /// Builds the prepared homomorphic (I)DFT described by `literal` (see
-    /// [`crate::default::dft::ckks_new_dft_matrix`]).
+    /// [`crate::default::dft::ckks_new_dft_matrix`]). The BSGS schedule is chosen
+    /// cost-optimally per factor matrix.
     #[allow(clippy::too_many_arguments)]
     fn ckks_new_dft_matrix<E, F>(
         &self,
@@ -39,7 +40,6 @@ pub trait DFTOps<BE: Backend> {
         base2k: Base2K,
         factor_meta: CKKSMeta,
         literal: &DFTPlan,
-        strategy: LinearTransformationStrategy,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> DFTMatrix<BE>
     where
@@ -52,7 +52,9 @@ pub trait DFTOps<BE: Backend> {
     /// Builds the **streamed** (unprepared-RHS) homomorphic (I)DFT (see
     /// [`crate::default::dft::ckks_new_dft_matrix_streamed`]). For
     /// bandwidth-limited backends: the diagonals are materialized per factor at
-    /// eval time instead of kept resident. No `scratch` is needed at construction.
+    /// eval time instead of kept resident. The host-backed reference build does
+    /// not touch `scratch`, but the parameter is kept for backends whose
+    /// encode/upload path needs device scratch.
     #[allow(clippy::too_many_arguments)]
     fn ckks_new_dft_matrix_streamed<E, F>(
         &self,
@@ -61,7 +63,6 @@ pub trait DFTOps<BE: Backend> {
         base2k: Base2K,
         factor_meta: CKKSMeta,
         literal: &DFTPlan,
-        strategy: LinearTransformationStrategy,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> DFTMatrixStreamed<BE>
     where

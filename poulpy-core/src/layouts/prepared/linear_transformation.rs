@@ -10,7 +10,7 @@
 
 use std::collections::BTreeMap;
 
-use poulpy_hal::layouts::{Backend, CnvPVecL, CnvPVecR, galois_element};
+use poulpy_hal::layouts::{Backend, CnvPVecL, CnvPVecR, galois_elements_from_rotations};
 
 use crate::{
     LinearTransformationPlan,
@@ -162,14 +162,13 @@ impl<BE: Backend> LinearTransformationRhsPrepared<BE> {
     /// The Galois elements whose automorphism keys are required to evaluate this
     /// prepared transform: one per non-zero baby- and giant-step rotation.
     pub fn galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
-        let mut rots: Vec<i64> = self.plan.baby_steps.iter().copied().filter(|&r| r != 0).collect();
-        rots.extend(self.giant_steps.iter().map(|gs| gs.rot).filter(|&r| r != 0));
-        rots.sort_unstable();
-        rots.dedup();
-        let mut gal_els: Vec<i64> = rots.iter().map(|&rot| galois_element(rot, cyclotomic_order)).collect();
-        gal_els.sort_unstable();
-        gal_els.dedup();
-        gal_els
+        let rots = self
+            .plan
+            .baby_steps
+            .iter()
+            .copied()
+            .chain(self.giant_steps.iter().map(|gs| gs.rot));
+        galois_elements_from_rotations(rots, cyclotomic_order)
     }
 }
 

@@ -358,6 +358,24 @@ pub fn galois_element(generator: i64, cyclotomic_order: i64) -> i64 {
     g_exp as i64 * generator.signum()
 }
 
+/// Maps a set of slot rotations to the distinct Galois elements whose
+/// automorphism keys realize them: drops the identity (`0`) rotation, applies
+/// [`galois_element`], and returns the result sorted and de-duplicated.
+///
+/// Shared by the linear-transformation / DFT layers, which all need "the Galois
+/// keys required by these rotations" and would otherwise each re-spell the
+/// filter/map/sort/dedup.
+pub fn galois_elements_from_rotations(rotations: impl IntoIterator<Item = i64>, cyclotomic_order: i64) -> Vec<i64> {
+    let mut gal_els: Vec<i64> = rotations
+        .into_iter()
+        .filter(|&rot| rot != 0)
+        .map(|rot| galois_element(rot, cyclotomic_order))
+        .collect();
+    gal_els.sort_unstable();
+    gal_els.dedup();
+    gal_els
+}
+
 /// Galois group operations on the cyclotomic ring `Z[X]/(X^N + 1)`.
 ///
 /// The Galois group `(Z/2NZ)*` acts on polynomials via the automorphisms

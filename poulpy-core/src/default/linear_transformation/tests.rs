@@ -51,32 +51,16 @@ fn derives_direct_index() {
 }
 
 #[test]
-fn auto_uses_direct_for_tiny_sparse_index() {
-    let auto = LinearTransformationLayout {
-        indexes: vec![2, 5],
-        slots: 8,
-        strategy: LinearTransformationStrategy::Auto,
-    }
-    .index();
-    let direct = LinearTransformationLayout {
-        indexes: vec![2, 5],
-        slots: 8,
-        strategy: LinearTransformationStrategy::Direct,
-    }
-    .index();
-    assert_eq!(auto, direct);
-}
-
-#[test]
-fn auto_uses_optimal_linear_transformation_schedule() {
+fn optimal_bsgs_giant_step_matches_explicit_schedule() {
+    // The heuristic width produces the same schedule as spelling it out.
     let diagonals = [0, 1, 2, 3, 6, 7];
     let giant_step = optimal_bsgs_giant_step(diagonals, 8);
-    let auto = LinearTransformationLayout {
+    let from_width = LinearTransformationLayout {
         indexes: diagonals.to_vec(),
         slots: 8,
-        strategy: LinearTransformationStrategy::Auto,
+        strategy: LinearTransformationStrategy::Bsgs { giant_step },
     }
     .index();
     let explicit = linear_transformation_plan(diagonals, 8, giant_step);
-    assert_eq!(auto, explicit);
+    assert_eq!(from_width, explicit);
 }

@@ -15,7 +15,7 @@
 //! // setup, once per transform / per input shape
 //! let mut prepared = LinearTransformationRhsPrepared::alloc(module, &layout, &pt_proxy);
 //! module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch);
-//! let mut babies = PreparedLinearTransformationLhs::alloc(module, prepared.baby_steps(), &ct);
+//! let mut babies = LinearTransformationLhsPrepared::alloc(module, prepared.baby_steps(), &ct);
 //!
 //! // per evaluation
 //! module.ckks_prepare_linear_transformation_lhs(&mut babies, &ct, &atks, &mut scratch)?;
@@ -33,9 +33,8 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 
 pub use poulpy_core::{
     LinearTransformation, LinearTransformationDiagonal as Diagonal, LinearTransformationGiantStep as GiantStep,
-    LinearTransformationLayout, LinearTransformationLhsPrepared as PreparedLinearTransformationLhs,
-    LinearTransformationPlan as LinearTransformationIndex, LinearTransformationRhsGiantStepPrepared as PreparedGiantStep,
-    LinearTransformationRhsPrepared, LinearTransformationStrategy, optimal_bsgs_giant_step,
+    LinearTransformationLayout, LinearTransformationLhsPrepared, LinearTransformationPlan, LinearTransformationRhsPrepared,
+    LinearTransformationStrategy, optimal_bsgs_giant_step,
 };
 
 /// Homomorphic evaluation of a [`LinearTransformation`] on a CKKS ciphertext.
@@ -43,7 +42,7 @@ pub use poulpy_core::{
 /// The API is shaped around three phases:
 /// 1. **Allocate** the prepared caches up-front:
 ///    [`LinearTransformationRhsPrepared::alloc`] for the right side,
-///    [`PreparedLinearTransformationLhs::alloc`] for the left side.
+///    [`LinearTransformationLhsPrepared::alloc`] for the left side.
 /// 2. **Populate** them whenever the underlying data changes:
 ///    [`Self::ckks_prepare_linear_transformation_rhs`] /
 ///    [`Self::ckks_prepare_linear_transformation_lhs`].
@@ -100,11 +99,11 @@ pub trait LinearTransformationOps<BE: Backend> {
     /// Fills `babies` with the prepared baby-step rotations of `src`.
     ///
     /// `babies` must have been sized via
-    /// [`PreparedLinearTransformationLhs::alloc`] for the rotations the caller wants
+    /// [`LinearTransformationLhsPrepared::alloc`] for the rotations the caller wants
     /// populated. Performs zero `CnvPVecL` allocations.
     fn ckks_prepare_linear_transformation_lhs<Src, H, K>(
         &self,
-        babies: &mut PreparedLinearTransformationLhs<BE>,
+        babies: &mut LinearTransformationLhsPrepared<BE>,
         src: &Src,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -127,7 +126,7 @@ pub trait LinearTransformationOps<BE: Backend> {
         dst: &mut Dst,
         src: &Src,
         prepared: &LinearTransformationRhsPrepared<BE>,
-        babies: &PreparedLinearTransformationLhs<BE>,
+        babies: &LinearTransformationLhsPrepared<BE>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -142,7 +141,7 @@ pub trait LinearTransformationOps<BE: Backend> {
         &self,
         dst: &mut Dst,
         prepared: &LinearTransformationRhsPrepared<BE>,
-        babies: &PreparedLinearTransformationLhs<BE>,
+        babies: &LinearTransformationLhsPrepared<BE>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -193,7 +192,7 @@ pub trait LinearTransformationOps<BE: Backend> {
     /// (diagonals prepared on the fly), reusing a caller-supplied, already
     /// prepared baby cache `babies`. This is the unprepared-RHS analogue of
     /// [`Self::ckks_eval_prepared_linear_transformation_into`]: the caller owns
-    /// the baby cache (allocate via [`PreparedLinearTransformationLhs::alloc`] and
+    /// the baby cache (allocate via [`LinearTransformationLhsPrepared::alloc`] and
     /// populate via [`Self::ckks_prepare_linear_transformation_lhs`]), so it can
     /// be sized/reused under the caller's control. `babies` must cover the
     /// transform's baby rotations for `src`.
@@ -201,7 +200,7 @@ pub trait LinearTransformationOps<BE: Backend> {
         &self,
         dst: &mut Dst,
         src: &Src,
-        babies: &PreparedLinearTransformationLhs<BE>,
+        babies: &LinearTransformationLhsPrepared<BE>,
         lt: &LinearTransformation<P>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -218,7 +217,7 @@ pub trait LinearTransformationOps<BE: Backend> {
     fn ckks_eval_linear_transformation_unprepared_assign<Dst, P, H, K>(
         &self,
         dst: &mut Dst,
-        babies: &PreparedLinearTransformationLhs<BE>,
+        babies: &LinearTransformationLhsPrepared<BE>,
         lt: &LinearTransformation<P>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,

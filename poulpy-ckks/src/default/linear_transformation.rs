@@ -24,28 +24,25 @@ use crate::{
     layouts::CKKSModuleAlloc,
 };
 
-/// Output `(log_budget, log_delta, cnv_offset)` for `dst = M·src` where `M` is a
-/// prepared linear transformation.
+/// Output `(log_budget, log_delta, cnv_offset)` for `dst = M·src`, given the
+/// matrix diagonals' scale exponent (`pt_log_scale`) and storage precision
+/// (`pt_max_k`).
 ///
 /// This is `get_mul_pt_params(res, a, pt)` specialized to a plaintext operand
-/// whose shape is stashed in the prepared cache: `pt.max_k() == pt_max_k()` and
-/// `pt.log_delta() == pt_log_scale()` (the plaintext `log_budget` is dead in
-/// this math). Reading those two integers directly avoids materializing a
-/// throwaway plaintext-proxy value at eval time.
-fn prepared_lt_mul_params<R, A, BE>(
-    res: &R,
-    a: &A,
-    prepared: &LinearTransformationRhsPrepared<BE>,
-) -> Result<(usize, usize, usize)>
+/// described by just those two integers (its `log_budget` is dead in this math),
+/// which avoids materializing a throwaway plaintext-proxy value at eval time.
+/// The prepared path reads them off the cache (`pt_log_scale()` / `pt_max_k()`),
+/// the streamed path off the first plaintext diagonal (`log_delta()` /
+/// `max_k()`); both share this body.
+fn lt_mul_params<R, A>(res: &R, a: &A, pt_log_scale: usize, pt_max_k: usize) -> Result<(usize, usize, usize)>
 where
     R: LWEInfos,
     A: CKKSInfos,
-    BE: Backend,
 {
-    let res_log_budget = checked_mul_pt_log_budget("mul", a.log_budget(), 0, a.log_delta(), prepared.pt_log_scale())?;
+    let res_log_budget = checked_mul_pt_log_budget("mul", a.log_budget(), 0, a.log_delta(), pt_log_scale)?;
     let res_log_delta = a.log_delta();
     let res_offset = (res_log_budget + res_log_delta).saturating_sub(res.max_k().as_usize());
-    let cnv_offset = prepared.pt_max_k().as_usize() + res_offset;
+    let cnv_offset = pt_max_k + res_offset;
     Ok((
         checked_log_budget_sub("mul", res_log_budget, res_offset)?,
         res_log_delta,
@@ -53,24 +50,30 @@ where
     ))
 }
 
-/// Like [`prepared_lt_mul_params`] but reads the diagonal scale/precision
-/// straight from an (unprepared) plaintext diagonal `pt`, since the streamed
-/// path never builds a [`LinearTransformationRhsPrepared`] to stash them in.
-fn streamed_lt_mul_params<R, A, P>(res: &R, a: &A, pt: &P) -> Result<(usize, usize, usize)>
+/// Truncated keyswitch output size for a linear-transformation giant rotation.
+///
+/// Errors introduced by the giant rotations sit under the diagonal scale (the
+/// convolution happened first), minus whatever slack `res_offset` already
+/// consumed to fit the result precision in `max_k`. `pt_log_scale` / `pt_max_k`
+/// describe the diagonals (the cache for the prepared path, the first plaintext
+/// for the streamed one).
+fn truncated_lt_key_size<H, K, BE>(
+    n: usize,
+    dst_size: usize,
+    src_size: usize,
+    keys: &H,
+    pt_log_scale: usize,
+    pt_max_k: usize,
+    cnv_offset: usize,
+) -> usize
 where
-    R: LWEInfos,
-    A: CKKSInfos,
-    P: CKKSInfos + LWEInfos,
+    BE: Backend,
+    K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+    H: GLWEAutomorphismKeyHelper<K, BE>,
 {
-    let res_log_budget = checked_mul_pt_log_budget("mul", a.log_budget(), 0, a.log_delta(), pt.log_delta())?;
-    let res_log_delta = a.log_delta();
-    let res_offset = (res_log_budget + res_log_delta).saturating_sub(res.max_k().as_usize());
-    let cnv_offset = pt.max_k().as_usize() + res_offset;
-    Ok((
-        checked_log_budget_sub("mul", res_log_budget, res_offset)?,
-        res_log_delta,
-        cnv_offset,
-    ))
+    let res_offset = cnv_offset.saturating_sub(pt_max_k);
+    let allowance = pt_log_scale.saturating_sub(res_offset);
+    truncated_keyswitch_size(n, dst_size, src_size + 1, &keys.automorphism_key_infos(), allowance)
 }
 
 impl<BE: Backend> LinearTransformationOps<BE> for Module<BE>
@@ -125,13 +128,7 @@ where
     {
         // Stash the plaintext scale exponent while filling the diagonals so eval
         // no longer needs `lt` for `cnv_offset` math.
-        if let Some(first_pt) = lt
-            .giant_steps
-            .iter()
-            .flat_map(|gs| gs.diagonals.iter())
-            .map(|d| &d.plaintext)
-            .next()
-        {
+        if let Some(first_pt) = lt.first_diagonal_plaintext() {
             prepared.set_pt_log_scale(first_pt.log_delta());
         }
         self.glwe_prepare_linear_transformation_rhs(prepared, lt, scratch);
@@ -139,7 +136,7 @@ where
 
     fn ckks_prepare_linear_transformation_lhs<Src, H, K>(
         &self,
-        babies: &mut PreparedLinearTransformationLhs<BE>,
+        babies: &mut LinearTransformationLhsPrepared<BE>,
         src: &Src,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -182,7 +179,7 @@ where
         dst: &mut Dst,
         src: &Src,
         prepared: &LinearTransformationRhsPrepared<BE>,
-        babies: &PreparedLinearTransformationLhs<BE>,
+        babies: &LinearTransformationLhsPrepared<BE>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -194,7 +191,8 @@ where
     {
         check_required_keys(prepared, babies, keys, self.cyclotomic_order())?;
 
-        let (res_log_budget, res_log_delta, cnv_offset) = prepared_lt_mul_params(dst, src, prepared)?;
+        let (res_log_budget, res_log_delta, cnv_offset) =
+            lt_mul_params(dst, src, prepared.pt_log_scale(), prepared.pt_max_k().as_usize())?;
         let key_size = key_size_for_prepared(self.n(), prepared, dst, src, keys, cnv_offset);
         self.glwe_eval_linear_transformation_into(cnv_offset, dst, babies, prepared, keys, key_size, scratch);
         dst.set_log_budget(res_log_budget);
@@ -206,7 +204,7 @@ where
         &self,
         dst: &mut Dst,
         prepared: &LinearTransformationRhsPrepared<BE>,
-        babies: &PreparedLinearTransformationLhs<BE>,
+        babies: &LinearTransformationLhsPrepared<BE>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -241,11 +239,7 @@ where
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
         let first_plaintext = lt
-            .giant_steps
-            .iter()
-            .flat_map(|gs| gs.diagonals.iter())
-            .map(|d| &d.plaintext)
-            .next()
+            .first_diagonal_plaintext()
             .ok_or_else(|| anyhow::anyhow!("linear transformation has no diagonals"))?;
 
         let mut prepared = LinearTransformationRhsPrepared::alloc_from_index(self, &lt.index(), first_plaintext);
@@ -297,11 +291,7 @@ where
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
         let first_plaintext = lt
-            .giant_steps
-            .iter()
-            .flat_map(|gs| gs.diagonals.iter())
-            .map(|d| &d.plaintext)
-            .next()
+            .first_diagonal_plaintext()
             .ok_or_else(|| anyhow::anyhow!("linear transformation has no diagonals"))?;
 
         // All non-zero giant rotations must have an automorphism key (keyed by
@@ -322,18 +312,17 @@ where
             }
         }
 
-        let (res_log_budget, res_log_delta, cnv_offset) = streamed_lt_mul_params(dst, src, first_plaintext)?;
+        let (res_log_budget, res_log_delta, cnv_offset) =
+            lt_mul_params(dst, src, first_plaintext.log_delta(), first_plaintext.max_k().as_usize())?;
         let key_size = if has_nonzero_giant_rotation {
-            // Same truncation as `key_size_for_prepared`, reading the diagonal
-            // scale straight from the plaintext.
-            let res_offset = cnv_offset.saturating_sub(first_plaintext.max_k().as_usize());
-            let allowance = first_plaintext.log_delta().saturating_sub(res_offset);
-            truncated_keyswitch_size(
+            truncated_lt_key_size(
                 self.n(),
                 dst.size(),
-                src.size() + 1,
-                &keys.automorphism_key_infos(),
-                allowance,
+                src.size(),
+                keys,
+                first_plaintext.log_delta(),
+                first_plaintext.max_k().as_usize(),
+                cnv_offset,
             )
         } else {
             src.size()
@@ -417,7 +406,7 @@ where
 /// `prepared` needs.
 fn check_required_keys<BE: Backend, H, K>(
     prepared: &LinearTransformationRhsPrepared<BE>,
-    babies: &PreparedLinearTransformationLhs<BE>,
+    babies: &LinearTransformationLhsPrepared<BE>,
     keys: &H,
     cyclotomic_order: i64,
 ) -> Result<()>
@@ -466,13 +455,16 @@ where
 {
     let has_nonzero_giant_rotation = prepared.giant_steps().iter().any(|gs| gs.rot() != 0);
     if has_nonzero_giant_rotation {
-        let res_offset = cnv_offset.saturating_sub(prepared.pt_max_k().as_usize());
-        let allowance = prepared.pt_log_scale().saturating_sub(res_offset);
-        truncated_keyswitch_size(n, dst.size(), src.size() + 1, &keys.automorphism_key_infos(), allowance)
+        truncated_lt_key_size(
+            n,
+            dst.size(),
+            src.size(),
+            keys,
+            prepared.pt_log_scale(),
+            prepared.pt_max_k().as_usize(),
+            cnv_offset,
+        )
     } else {
         src.size()
     }
 }
-
-// Bring `PreparedLinearTransformationLhs` into scope under its CKKS name for the impl.
-use crate::api::PreparedLinearTransformationLhs;

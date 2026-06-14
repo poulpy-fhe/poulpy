@@ -120,10 +120,14 @@ where
     P: GLWEToBackendRef<BE> + GLWEInfos,
 {
     fn pt_base2k(&self) -> Base2K {
-        self.first_diagonal_plaintext().base2k()
+        self.first_diagonal_plaintext()
+            .expect("linear transformation has no diagonals")
+            .base2k()
     }
     fn diagonal_size(&self) -> usize {
-        self.first_diagonal_plaintext().size()
+        self.first_diagonal_plaintext()
+            .expect("linear transformation has no diagonals")
+            .size()
     }
     fn num_giant_steps(&self) -> usize {
         self.giant_steps.len()
@@ -143,18 +147,6 @@ where
         M: ProdModule<BE>,
     {
         glwe_accumulate_unprepared_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, &self.giant_steps[giant_idx], scratch);
-    }
-}
-
-impl<P> LinearTransformation<P> {
-    /// The first encoded diagonal across all giant steps (their shape is uniform).
-    fn first_diagonal_plaintext(&self) -> &P {
-        self.giant_steps
-            .iter()
-            .flat_map(|gs| gs.diagonals.iter())
-            .map(|d| &d.plaintext)
-            .next()
-            .expect("linear transformation has no diagonals")
     }
 }
 

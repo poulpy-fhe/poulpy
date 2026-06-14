@@ -257,7 +257,6 @@ mod tests {
         for strategy in [
             LinearTransformationStrategy::Direct,
             LinearTransformationStrategy::Bsgs { giant_step: 2 },
-            LinearTransformationStrategy::Auto,
         ] {
             let got = d.evaluate(&v, strategy);
             for (a, b) in got.iter().zip(&want) {
@@ -283,7 +282,6 @@ mod tests {
         for strategy in [
             LinearTransformationStrategy::Direct,
             LinearTransformationStrategy::Bsgs { giant_step: 2 },
-            LinearTransformationStrategy::Auto,
         ] {
             let got = dt.evaluate(&v, strategy);
             for (a, b) in got.iter().zip(&want) {

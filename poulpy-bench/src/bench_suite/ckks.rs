@@ -4,8 +4,8 @@ use criterion::Criterion;
 use poulpy_ckks::{
     CKKSMeta,
     api::{
-        Diagonal, GiantStep, LinearTransformation, LinearTransformationOps, LinearTransformationRhsPrepared,
-        LinearTransformationStrategy, PreparedLinearTransformationLhs, optimal_bsgs_giant_step,
+        Diagonal, GiantStep, LinearTransformation, LinearTransformationLhsPrepared, LinearTransformationOps,
+        LinearTransformationRhsPrepared, LinearTransformationStrategy,
     },
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
     leveled::api::{
@@ -229,12 +229,12 @@ fn reset_dst(dst: &mut CKKSCiphertext<Vec<u8>>) {
 
 /// Resolves a [`LinearTransformationStrategy`] to the concrete baby-step count
 /// `n1` used to factor the diagonals. `Direct` is `n1 = 1` (one giant step per
-/// diagonal, no baby sharing); `Auto` uses the structure-aware optimum.
-fn strategy_giant_step(strategy: LinearTransformationStrategy, diag_indices: &[usize], slots: usize) -> usize {
+/// diagonal, no baby sharing). For the structure-aware optimum, build the
+/// strategy with [`LinearTransformationStrategy::optimal`].
+fn strategy_giant_step(strategy: LinearTransformationStrategy) -> usize {
     match strategy {
         LinearTransformationStrategy::Direct => 1,
         LinearTransformationStrategy::Bsgs { giant_step } => giant_step,
-        LinearTransformationStrategy::Auto => optimal_bsgs_giant_step(diag_indices.iter().map(|&i| i as i64), slots),
     }
     .max(1)
 }
@@ -250,7 +250,7 @@ fn build_linear_transform<BE>(
 where
     BE: CkksBenchBackend,
 {
-    let n1 = strategy_giant_step(strategy, diag_indices, N >> 1);
+    let n1 = strategy_giant_step(strategy);
     let baby_steps: Vec<i64> = (0..n1).map(|k| k as i64).collect();
     let n2 = diag_indices.iter().copied().max().map_or(0, |i| (i / n1) + 1);
     let mut giant_steps: Vec<GiantStep<CKKSPlaintext<Vec<u8>>>> = (0..n2)
@@ -303,11 +303,11 @@ fn prepare_babies<BE>(
     src: &CKKSCiphertext<Vec<u8>>,
     atks: &HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
     scratch: &mut ScratchArena<'_, BE>,
-) -> PreparedLinearTransformationLhs<BE>
+) -> LinearTransformationLhsPrepared<BE>
 where
     BE: CkksBenchBackend,
 {
-    let mut babies = PreparedLinearTransformationLhs::alloc(module, baby_steps, src);
+    let mut babies = LinearTransformationLhsPrepared::alloc(module, baby_steps, src);
     module
         .ckks_prepare_linear_transformation_lhs(&mut babies, src, atks, scratch)
         .expect("baby-step preparation failed (missing automorphism key?)");

@@ -68,7 +68,19 @@ pub struct DFTPlan {
     /// count is the length. Every entry must be `>= 1`. See the struct docs for
     /// the Encode/Decode reverse relationship.
     pub factorization_depth: Vec<usize>,
-    /// Post-processing format. Default [`DFTFormat::Standard`].
+    /// BSGS giant-step width for each factor matrix, parallel to
+    /// `factorization_depth` (same length). `factor_giant_steps[i]` is the width
+    /// the `i`-th factor's diagonals are decomposed with; `1` means the direct
+    /// schedule (one giant rotation per diagonal, no baby sharing).
+    ///
+    /// The schedule choice is the caller's: the library applies no implicit
+    /// optimum, since the cost-optimal width depends on the backend. To compute a
+    /// heuristic width, generate the factor's diagonal indexes and pass them to
+    /// [`optimal_bsgs_giant_step`](poulpy_core::layouts::optimal_bsgs_giant_step).
+    /// Each width is interpreted modulo that factor's own slot count (which is
+    /// `2·slots` for the sparse-repack factors).
+    pub factor_giant_steps: Vec<usize>,
+    /// Post-processing format. Default [`DFTOutputFormat::Standard`].
     ///
     /// On a *resolved* plan (one stored inside a [`DFTMatrix`]) this is
     /// canonical: a dense (non-sparse) `RepackImagAsReal` request is normalized
@@ -100,7 +112,8 @@ impl DFTPlan {
     }
 
     /// Validates the basic shape invariant shared by generation and evaluation:
-    /// at least one factor, and every factor merges at least one FFT layer.
+    /// at least one factor, every factor merges at least one FFT layer, and the
+    /// per-factor BSGS widths line up with the factorization schedule.
     pub fn check(&self) -> Result<(), String> {
         if self.factorization_depth.is_empty() {
             return Err("invalid DFTPlan: empty factorization_depth (no factor matrices)".to_string());
@@ -109,6 +122,19 @@ impl DFTPlan {
             return Err(format!(
                 "invalid DFTPlan: factorization_depth has a zero-layer factor: {:?}",
                 self.factorization_depth
+            ));
+        }
+        if self.factor_giant_steps.len() != self.factorization_depth.len() {
+            return Err(format!(
+                "invalid DFTPlan: factor_giant_steps (len {}) must match factorization_depth (len {})",
+                self.factor_giant_steps.len(),
+                self.factorization_depth.len()
+            ));
+        }
+        if self.factor_giant_steps.contains(&0) {
+            return Err(format!(
+                "invalid DFTPlan: factor_giant_steps has a zero-width factor (use 1 for the direct schedule): {:?}",
+                self.factor_giant_steps
             ));
         }
         Ok(())
