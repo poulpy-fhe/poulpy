@@ -104,93 +104,75 @@ fn bit_reverse_in_place<F>(v: &mut [Cpx<F>], n: usize) {
     }
 }
 
-/// Butterfly coefficient layers `a,b,c`, each `[log_slots][dslots]`.
-type ButterflyLayers<F> = (Vec<Vec<Cpx<F>>>, Vec<Vec<Cpx<F>>>, Vec<Vec<Cpx<F>>>);
+/// Butterfly coefficient triple `(a, b, c)` for one (I)FFT layer; each part is
+/// `dslots` wide.
+type ButterflyLayer<F> = (Vec<Cpx<F>>, Vec<Cpx<F>>, Vec<Cpx<F>>);
 
-/// FFT (decoding) butterfly coefficient layers `a,b,c`, each `[log_slots][dslots]`.
-fn fft_plain_vec<F: DftScalar>(log_slots: usize, dslots: usize, roots: &[Cpx<F>], pow5: &[usize]) -> ButterflyLayers<F> {
-    let big_n = 1usize << log_slots;
-    let size = if 2 * big_n == dslots { 2 } else { 1 };
+/// Coefficients `(a, b, c)` of one (I)FFT butterfly layer at `level`
+/// (`0`-indexed in evaluation order: `level == 0` is the first layer applied).
+///
+/// `kind` selects the direction; the two variants differ only in three things:
+/// - butterfly width `m`: `2 << level` for Decode (FFT), `slots >> level` for
+///   Encode (IFFT) — both walk `2 → slots` in opposite orders;
+/// - twiddle index: the IFFT conjugates the FFT one (`(4m − raw)` instead of
+///   `raw`, equivalent to `roots[-raw·gap]`);
+/// - twiddle slot: FFT writes it at `b[idx1]`, IFFT at `c[idx2]`; the other
+///   slot gets the identity `roots[0]`.
+///
+/// Always `slots = 2^log_slots` wide: in the sparse-repack case the layer
+/// values are identical in the two halves of the `dslots = 2·slots` working
+/// vector (the butterfly acts the same on `[Re | Im]`), so the merge can simply
+/// replicate the layer via modular indexing — see [`rotate_and_mul`]. Produced
+/// on demand so [`gen_dft_matrices`] can merge layer-by-layer without holding
+/// all `log_slots` layers in memory at once.
+fn plain_layer<F: DftScalar>(
+    kind: DFTType,
+    log_slots: usize,
+    roots: &[Cpx<F>],
+    pow5: &[usize],
+    level: usize,
+) -> ButterflyLayer<F> {
+    let slots = 1usize << log_slots;
+    let m = match kind {
+        DFTType::Decode => 2usize << level,
+        DFTType::Encode => slots >> level,
+    };
+    debug_assert!(
+        (2..=slots).contains(&m),
+        "layer level {level} out of range for log_slots {log_slots}"
+    );
 
-    let mut a = Vec::with_capacity(log_slots);
-    let mut b = Vec::with_capacity(log_slots);
-    let mut c = Vec::with_capacity(log_slots);
+    let mut a_m = vec![Cpx::zero(); slots];
+    let mut b_m = vec![Cpx::zero(); slots];
+    let mut c_m = vec![Cpx::zero(); slots];
+    let tt = m >> 1;
+    let gap = slots / m;
+    let mask = (m << 2) - 1;
+    let four_m = m << 2;
+    let decode = kind == DFTType::Decode;
 
-    let mut m = 2;
-    while m <= big_n {
-        let mut a_m = vec![Cpx::zero(); dslots];
-        let mut b_m = vec![Cpx::zero(); dslots];
-        let mut c_m = vec![Cpx::zero(); dslots];
-        let tt = m >> 1;
-
-        let mut i = 0;
-        while i < big_n {
-            let gap = big_n / m;
-            let mask = (m << 2) - 1;
-            for (j, &p5) in pow5.iter().enumerate().take(m >> 1) {
-                let k = (p5 & mask) * gap;
-                let idx1 = i + j;
-                let idx2 = i + j + tt;
-                for u in 0..size {
-                    a_m[idx1 + u * big_n] = roots[0];
-                    a_m[idx2 + u * big_n] = roots[k].neg();
-                    b_m[idx1 + u * big_n] = roots[k];
-                    c_m[idx2 + u * big_n] = roots[0];
-                }
+    let mut i = 0;
+    while i < slots {
+        for (j, &p5) in pow5.iter().enumerate().take(m >> 1) {
+            let raw = p5 & mask;
+            let k = if decode { raw } else { four_m - raw } * gap;
+            let idx1 = i + j;
+            let idx2 = i + j + tt;
+            a_m[idx1] = roots[0];
+            a_m[idx2] = roots[k].neg();
+            // FFT puts the twiddle at b[idx1]; IFFT puts it at c[idx2].
+            if decode {
+                b_m[idx1] = roots[k];
+                c_m[idx2] = roots[0];
+            } else {
+                b_m[idx1] = roots[0];
+                c_m[idx2] = roots[k];
             }
-            i += m;
         }
-
-        a.push(a_m);
-        b.push(b_m);
-        c.push(c_m);
-        m <<= 1;
+        i += m;
     }
 
-    (a, b, c)
-}
-
-/// IFFT (encoding) butterfly coefficient layers.
-fn ifft_plain_vec<F: DftScalar>(log_slots: usize, dslots: usize, roots: &[Cpx<F>], pow5: &[usize]) -> ButterflyLayers<F> {
-    let big_n = 1usize << log_slots;
-    let size = if 2 * big_n == dslots { 2 } else { 1 };
-
-    let mut a = Vec::with_capacity(log_slots);
-    let mut b = Vec::with_capacity(log_slots);
-    let mut c = Vec::with_capacity(log_slots);
-
-    let mut m = big_n;
-    while m >= 2 {
-        let mut a_m = vec![Cpx::zero(); dslots];
-        let mut b_m = vec![Cpx::zero(); dslots];
-        let mut c_m = vec![Cpx::zero(); dslots];
-        let tt = m >> 1;
-
-        let mut i = 0;
-        while i < big_n {
-            let gap = big_n / m;
-            let mask = (m << 2) - 1;
-            for (j, &p5) in pow5.iter().enumerate().take(m >> 1) {
-                let k = ((m << 2) - (p5 & mask)) * gap;
-                let idx1 = i + j;
-                let idx2 = i + j + tt;
-                for u in 0..size {
-                    a_m[idx1 + u * big_n] = roots[0];
-                    a_m[idx2 + u * big_n] = roots[k].neg();
-                    b_m[idx1 + u * big_n] = roots[0];
-                    c_m[idx2 + u * big_n] = roots[k];
-                }
-            }
-            i += m;
-        }
-
-        a.push(a_m);
-        b.push(b_m);
-        c.push(c_m);
-        m >>= 1;
-    }
-
-    (a, b, c)
+    (a_m, b_m, c_m)
 }
 
 /// `true` when the layer's rotation uses `1 << (level-1)` (vs `1 << (logL-level)`).
@@ -229,14 +211,28 @@ fn empty_cd<F: DftScalar>(dslots: usize) -> ComplexDiagonals<F> {
     ComplexDiagonals::new(Diagonals::<F>::new(dslots), Diagonals::<F>::new(dslots))
 }
 
-/// `c[i] = b[i] · a[(i+k) mod len]`.
-fn rotate_and_mul<F: DftScalar>(a: &[Cpx<F>], k: i64, b: &[Cpx<F>]) -> Vec<Cpx<F>> {
-    let len = a.len();
-    let mask = (len - 1) as i64;
-    (0..len).map(|i| b[i].mul(a[((i as i64 + k) & mask) as usize])).collect()
+/// Element-wise `out[i] = multiplier[i & (multiplier.len() − 1)] · rotated[(i + k) & (rotated.len() − 1)]`,
+/// `out.len() == rotated.len()`.
+///
+/// The multiplier mask is what makes the sparse-repack path work with a
+/// `slots`-wide butterfly layer (`multiplier`) against a `dslots = 2·slots`-wide
+/// factor diagonal (`rotated`): indexing `multiplier` modulo its own length
+/// replicates the layer across both halves of the working vector, exactly
+/// matching the previous expanded representation.
+fn rotate_and_mul<F: DftScalar>(rotated: &[Cpx<F>], k: i64, multiplier: &[Cpx<F>]) -> Vec<Cpx<F>> {
+    let rot_mask = (rotated.len() - 1) as i64;
+    let mul_mask = (multiplier.len() - 1) as i64;
+    (0..rotated.len())
+        .map(|i| {
+            let m = multiplier[(i as i64 & mul_mask) as usize];
+            let r = rotated[((i as i64 + k) & rot_mask) as usize];
+            m.mul(r)
+        })
+        .collect()
 }
 
-/// Maybe-bit-reverse a butterfly coefficient layer (both halves if `dslots > slots`).
+/// Bit-reverses a `slots`-wide butterfly coefficient layer (no-op when
+/// `bit_reversed == false`).
 fn maybe_bit_reverse<F: DftScalar>(v: &[Cpx<F>], log_l: usize, bit_reversed: bool) -> Vec<Cpx<F>> {
     if !bit_reversed {
         return v.to_vec();
@@ -244,38 +240,18 @@ fn maybe_bit_reverse<F: DftScalar>(v: &[Cpx<F>], log_l: usize, bit_reversed: boo
     let slots = 1usize << log_l;
     let mut out = v.to_vec();
     bit_reverse_in_place(&mut out, slots);
-    if out.len() > slots {
-        let (_, hi) = out.split_at_mut(slots);
-        bit_reverse_in_place(hi, slots);
-    }
     out
 }
 
-/// First layer of a factor matrix.
-#[allow(clippy::too_many_arguments)]
-fn gen_fft_diag_matrix<F: DftScalar>(
-    log_l: usize,
-    fft_level: usize,
-    a: &[Cpx<F>],
-    b: &[Cpx<F>],
-    c: &[Cpx<F>],
-    kind: DFTType,
-    bit_reversed: bool,
-    dslots: usize,
-) -> ComplexDiagonals<F> {
-    let rot = if rot_uses_level(kind, bit_reversed) {
-        1i64 << (fft_level - 1)
-    } else {
-        1i64 << (log_l - fft_level)
-    };
-    let a = maybe_bit_reverse(a, log_l, bit_reversed);
-    let b = maybe_bit_reverse(b, log_l, bit_reversed);
-    let c = maybe_bit_reverse(c, log_l, bit_reversed);
-
+/// The `slots × slots` identity diagonal matrix as a [`ComplexDiagonals`]:
+/// one diagonal at index `0` with all-ones real part (imaginary part empty).
+///
+/// Used as the merge accumulator's initial state, so every butterfly layer —
+/// including the first of each factor — flows through [`merge_next_layer`]
+/// uniformly.
+fn identity_diag<F: DftScalar>(dslots: usize) -> ComplexDiagonals<F> {
     let mut diag = empty_cd(dslots);
-    cd_accumulate(&mut diag, 0, &a);
-    cd_accumulate(&mut diag, rot, &b);
-    cd_accumulate(&mut diag, (1i64 << log_l) - rot, &c);
+    diag.re.set(0, vec![F::one(); dslots]);
     diag
 }
 
@@ -366,10 +342,9 @@ pub fn gen_dft_matrices<F: DftScalar>(literal: &DFTPlan, log_n: usize) -> Vec<Co
     let roots = roots_of_unity::<F>(slots << 2);
     let pow5 = pow5_table(slots);
 
-    let (a, b, c) = match kind {
-        DFTType::Encode => ifft_plain_vec(log_slots, dslots, &roots, &pow5),
-        DFTType::Decode => fft_plain_vec(log_slots, dslots, &roots, &pow5),
-    };
+    // Fetch one butterfly layer on demand (peak memory drops by ~log_slots
+    // vs. materializing every layer up front).
+    let layer = |level: usize| -> ButterflyLayer<F> { plain_layer(kind, log_slots, &roots, &pow5, level) };
 
     // `factorization_depth` is consumed in evaluation order (factor 0 applied
     // first; see the convention on [`DFTPlan::factorization_depth`]). No implicit
@@ -382,53 +357,25 @@ pub fn gen_dft_matrices<F: DftScalar>(literal: &DFTPlan, log_n: usize) -> Vec<Co
         // Sparse-repack merges wrap rotation indices mod `2·slots`; otherwise mod `slots`.
         let merge_n = if repack_first { slots << 1 } else { slots };
 
-        let (mut factor, mut next) = if repack_first {
-            // Special repack matrix, then merge the first DFT layer into it.
-            let repack = gen_repack_matrix(log_slots, dslots);
-            let merged = merge_next_layer(
-                &repack,
-                log_slots,
-                merge_n,
-                fft_level,
-                &a[log_slots - fft_level],
-                &b[log_slots - fft_level],
-                &c[log_slots - fft_level],
-                kind,
-                bit_reversed,
-                dslots,
-            );
-            (merged, fft_level as i64 - 1)
+        // Start the factor from the repack matrix (sparse Decode, first factor)
+        // or the slot-identity; every butterfly layer of the factor is then
+        // merged in uniformly via `merge_next_layer`.
+        let mut factor = if repack_first {
+            gen_repack_matrix(log_slots, dslots)
         } else {
-            let f = gen_fft_diag_matrix(
-                log_slots,
-                fft_level,
-                &a[log_slots - fft_level],
-                &b[log_slots - fft_level],
-                &c[log_slots - fft_level],
-                kind,
-                bit_reversed,
-                dslots,
-            );
-            (f, fft_level as i64 - 1)
+            identity_diag(dslots)
         };
+        let mut next_level = fft_level as i64;
 
-        // Merge the remaining `m - 1` layers of this factor.
-        for _ in 0..(m.saturating_sub(1)) {
-            let nl = next as usize;
-            factor = merge_next_layer(
-                &factor,
-                log_slots,
-                merge_n,
-                nl,
-                &a[log_slots - nl],
-                &b[log_slots - nl],
-                &c[log_slots - nl],
-                kind,
-                bit_reversed,
-                dslots,
-            );
-            next -= 1;
+        // Merge the factor's `m` butterfly layers one at a time; each layer's
+        // coefficient buffers are dropped at the end of its iteration.
+        for _ in 0..m {
+            let nl = next_level as usize;
+            let (a_l, b_l, c_l) = layer(log_slots - nl);
+            factor = merge_next_layer(&factor, log_slots, merge_n, nl, &a_l, &b_l, &c_l, kind, bit_reversed, dslots);
+            next_level -= 1;
         }
+
         plain_vector.push(factor);
         fft_level -= m;
     }
