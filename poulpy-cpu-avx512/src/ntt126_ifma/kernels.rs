@@ -841,6 +841,7 @@ unsafe fn ntt_plane_radix8_last3(plane: &mut [u64], seg_base: usize, prime: usiz
         // blocks; the radix-8 butterflies are then permute-free vertical ops
         // with broadcast twiddles.
         let q4w = _mm512_set1_epi64(q4 as i64);
+        let q2w = _mm512_set1_epi64((q4 >> 1) as i64);
         let w8_1 = _mm512_set1_epi64(powomega[w8_base + prime * 3] as i64);
         let w8_2 = _mm512_set1_epi64(powomega[w8_base + prime * 3 + 1] as i64);
         let w8_3 = _mm512_set1_epi64(powomega[w8_base + prime * 3 + 2] as i64);
@@ -884,15 +885,17 @@ unsafe fn ntt_plane_radix8_last3(plane: &mut [u64], seg_base: usize, prime: usiz
             let v5 = cond_sub_2q_si512(_mm512_add_epi64(d1, d3), q4w);
             let v7 = harvey_modmul_plane8(_mm512_sub_epi64(_mm512_add_epi64(d1, q4w), d3), w4v, w4qv, q);
 
-            // nn = 2: pairs (v0,v1),(v2,v3),(v4,v5),(v6,v7), twiddle 1.
-            let o0 = cond_sub_2q_si512(_mm512_add_epi64(v0, v1), q4w);
-            let o1 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(v0, q4w), v1), q4w);
-            let o2 = cond_sub_2q_si512(_mm512_add_epi64(v2, v3), q4w);
-            let o3 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(v2, q4w), v3), q4w);
-            let o4 = cond_sub_2q_si512(_mm512_add_epi64(v4, v5), q4w);
-            let o5 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(v4, q4w), v5), q4w);
-            let o6 = cond_sub_2q_si512(_mm512_add_epi64(v6, v7), q4w);
-            let o7 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(v6, q4w), v7), q4w);
+            // nn = 2: pairs (v0,v1),(v2,v3),(v4,v5),(v6,v7), twiddle 1. The final
+            // [0,4q) -> [0,2q) normalization is folded in here (q2w), removing a
+            // separate full pass over the plane.
+            let o0 = cond_sub_2q_si512(cond_sub_2q_si512(_mm512_add_epi64(v0, v1), q4w), q2w);
+            let o1 = cond_sub_2q_si512(cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(v0, q4w), v1), q4w), q2w);
+            let o2 = cond_sub_2q_si512(cond_sub_2q_si512(_mm512_add_epi64(v2, v3), q4w), q2w);
+            let o3 = cond_sub_2q_si512(cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(v2, q4w), v3), q4w), q2w);
+            let o4 = cond_sub_2q_si512(cond_sub_2q_si512(_mm512_add_epi64(v4, v5), q4w), q2w);
+            let o5 = cond_sub_2q_si512(cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(v4, q4w), v5), q4w), q2w);
+            let o6 = cond_sub_2q_si512(cond_sub_2q_si512(_mm512_add_epi64(v6, v7), q4w), q2w);
+            let o7 = cond_sub_2q_si512(cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(v6, q4w), v7), q4w), q2w);
 
             let out = transpose8x8_epi64([o0, o1, o2, o3, o4, o5, o6, o7]);
             _mm512_storeu_si512(ptr.add(base) as *mut __m512i, out[0]);
@@ -928,14 +931,15 @@ unsafe fn ntt_plane_radix8_last3(plane: &mut [u64], seg_base: usize, prime: usiz
             let v5 = cond_sub_2q(u4[1] + u4[3], q4);
             let v7 = harvey_modmul(u4[1] + q4 - u4[3], w4, w4q, q);
 
-            plane[block] = cond_sub_2q(v0 + v1, q4);
-            plane[block + 1] = cond_sub_2q(v0 + q4 - v1, q4);
-            plane[block + 2] = cond_sub_2q(v2 + v3, q4);
-            plane[block + 3] = cond_sub_2q(v2 + q4 - v3, q4);
-            plane[block + 4] = cond_sub_2q(v4 + v5, q4);
-            plane[block + 5] = cond_sub_2q(v4 + q4 - v5, q4);
-            plane[block + 6] = cond_sub_2q(v6 + v7, q4);
-            plane[block + 7] = cond_sub_2q(v6 + q4 - v7, q4);
+            let q2 = q4 >> 1;
+            plane[block] = cond_sub_2q(cond_sub_2q(v0 + v1, q4), q2);
+            plane[block + 1] = cond_sub_2q(cond_sub_2q(v0 + q4 - v1, q4), q2);
+            plane[block + 2] = cond_sub_2q(cond_sub_2q(v2 + v3, q4), q2);
+            plane[block + 3] = cond_sub_2q(cond_sub_2q(v2 + q4 - v3, q4), q2);
+            plane[block + 4] = cond_sub_2q(cond_sub_2q(v4 + v5, q4), q2);
+            plane[block + 5] = cond_sub_2q(cond_sub_2q(v4 + q4 - v5, q4), q2);
+            plane[block + 6] = cond_sub_2q(cond_sub_2q(v6 + v7, q4), q2);
+            plane[block + 7] = cond_sub_2q(cond_sub_2q(v6 + q4 - v7, q4), q2);
 
             block += 8;
         }
@@ -1515,15 +1519,20 @@ unsafe fn ntt_plane_avx512<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTable<P>, pl
             }
         }
 
-        let mut i = 0usize;
-        while i + 8 <= n {
-            let x = _mm512_loadu_si512(ptr.add(i) as *const __m512i);
-            _mm512_storeu_si512(ptr.add(i) as *mut __m512i, cond_sub_2q_si512(x, q2v));
-            i += 8;
-        }
-        while i < n {
-            plane[i] = cond_sub_2q(plane[i], q2);
-            i += 1;
+        // For n >= 8 the radix-8 tail already folds the [0,4q) -> [0,2q)
+        // normalization into its output store; only the small-n path needs a
+        // separate pass.
+        if n < 8 {
+            let mut i = 0usize;
+            while i + 8 <= n {
+                let x = _mm512_loadu_si512(ptr.add(i) as *const __m512i);
+                _mm512_storeu_si512(ptr.add(i) as *mut __m512i, cond_sub_2q_si512(x, q2v));
+                i += 8;
+            }
+            while i < n {
+                plane[i] = cond_sub_2q(plane[i], q2);
+                i += 1;
+            }
         }
     }
 }
