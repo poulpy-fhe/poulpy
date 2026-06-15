@@ -13,9 +13,9 @@
 //!
 //! ```ignore
 //! // setup, once per transform / per input shape
-//! let mut prepared = LinearTransformationRhsPrepared::alloc(module, &layout, &pt_proxy);
+//! let mut prepared = LinearTransformation::alloc_prepared(module, &layout, &pt_proxy);
 //! module.ckks_prepare_linear_transformation_rhs(&mut prepared, &lt, &mut scratch);
-//! let mut babies = LinearTransformationLhsPrepared::alloc(module, prepared.baby_steps(), &ct);
+//! let mut babies = LinearTransformationLhsPrepared::alloc(module, &prepared.baby_steps, &ct);
 //!
 //! // per evaluation
 //! module.ckks_prepare_linear_transformation_lhs(&mut babies, &ct, &atks, &mut scratch)?;
@@ -23,9 +23,12 @@
 //! ```
 
 use anyhow::Result;
-use poulpy_core::layouts::{
-    GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
-    LWEInfos, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
+use poulpy_core::{
+    default::linear_transformation::DiagonalProd,
+    layouts::{
+        GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
+        LWEInfos, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
+    },
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
@@ -33,15 +36,15 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 
 pub use poulpy_core::{
     LinearTransformation, LinearTransformationDiagonal as Diagonal, LinearTransformationGiantStep as GiantStep,
-    LinearTransformationLayout, LinearTransformationLhsPrepared, LinearTransformationPlan, LinearTransformationRhsPrepared,
-    LinearTransformationStrategy, optimal_bsgs_giant_step,
+    LinearTransformationLayout, LinearTransformationLhsPrepared, LinearTransformationPlan, LinearTransformationPrepared,
+    LinearTransformationStrategy, layouts::prepared::PreparedDiagonal, optimal_bsgs_giant_step,
 };
 
 /// Homomorphic evaluation of a [`LinearTransformation`] on a CKKS ciphertext.
 ///
 /// The API is shaped around three phases:
 /// 1. **Allocate** the prepared caches up-front:
-///    [`LinearTransformationRhsPrepared::alloc`] for the right side,
+///    [`LinearTransformation::alloc_prepared`] for the right side,
 ///    [`LinearTransformationLhsPrepared::alloc`] for the left side.
 /// 2. **Populate** them whenever the underlying data changes:
 ///    [`Self::ckks_prepare_linear_transformation_rhs`] /
@@ -86,15 +89,15 @@ pub trait LinearTransformationOps<BE: Backend> {
     /// of `prepared`.
     ///
     /// `prepared` must have been sized via
-    /// [`LinearTransformationRhsPrepared::alloc`] for the same BSGS schedule as
+    /// [`LinearTransformation::alloc_prepared`] for the same BSGS schedule as
     /// `lt`. Performs zero `CnvPVecR` allocations.
     fn ckks_prepare_linear_transformation_rhs<P>(
         &self,
-        prepared: &mut LinearTransformationRhsPrepared<BE>,
+        prepared: &mut LinearTransformationPrepared<BE>,
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        P: GLWEToBackendRef<BE> + CKKSCtBounds;
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>;
 
     /// Fills `babies` with the prepared baby-step rotations of `src`.
     ///
@@ -125,7 +128,7 @@ pub trait LinearTransformationOps<BE: Backend> {
         &self,
         dst: &mut Dst,
         src: &Src,
-        prepared: &LinearTransformationRhsPrepared<BE>,
+        prepared: &LinearTransformationPrepared<BE>,
         babies: &LinearTransformationLhsPrepared<BE>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -140,7 +143,7 @@ pub trait LinearTransformationOps<BE: Backend> {
     fn ckks_eval_prepared_linear_transformation_assign<Dst, H, K>(
         &self,
         dst: &mut Dst,
-        prepared: &LinearTransformationRhsPrepared<BE>,
+        prepared: &LinearTransformationPrepared<BE>,
         babies: &LinearTransformationLhsPrepared<BE>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -168,7 +171,7 @@ pub trait LinearTransformationOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
@@ -182,7 +185,7 @@ pub trait LinearTransformationOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
@@ -208,7 +211,7 @@ pub trait LinearTransformationOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
@@ -224,7 +227,7 @@ pub trait LinearTransformationOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
@@ -249,7 +252,7 @@ pub trait LinearTransformationOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
@@ -263,7 +266,7 @@ pub trait LinearTransformationOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 }

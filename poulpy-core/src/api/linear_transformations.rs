@@ -13,13 +13,14 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 use crate::layouts::{
     GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
     LinearTransformation,
-    prepared::{GGLWEPreparedToBackendRef, LinearTransformationLhsPrepared, LinearTransformationRhsPrepared},
+    prepared::{GGLWEPreparedToBackendRef, LinearTransformationLhsPrepared, PreparedDiagonal},
 };
 
-/// GLWE-level setup and evaluation of a [`LinearTransformationRhsPrepared`].
+/// GLWE-level setup and evaluation of a resident (prepared) linear
+/// transformation (`LinearTransformation<PreparedDiagonal<…>>`).
 ///
 /// The API is split into three phases (allocate / populate / evaluate); see
-/// [`LinearTransformationRhsPrepared::alloc`] and
+/// [`LinearTransformation::alloc_prepared`] and
 /// [`LinearTransformationLhsPrepared::alloc`] for the allocation half.
 pub trait GLWELinearTransformations<BE: Backend> {
     /// Scratch bytes required by [`Self::glwe_eval_linear_transformation_into`].
@@ -53,11 +54,11 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// slot of `prepared`.
     ///
     /// `prepared` must have been sized via
-    /// [`LinearTransformationRhsPrepared::alloc`] for the same BSGS schedule as
+    /// [`LinearTransformation::alloc_prepared`] for the same BSGS schedule as
     /// `lt`. Performs zero `CnvPVecR` allocations.
     fn glwe_prepare_linear_transformation_rhs<P>(
         &self,
-        prepared: &mut LinearTransformationRhsPrepared<BE>,
+        prepared: &mut LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>>,
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -91,7 +92,7 @@ pub trait GLWELinearTransformations<BE: Backend> {
         cnv_offset: usize,
         res: &mut R,
         lhs: &LinearTransformationLhsPrepared<BE>,
-        rhs: &LinearTransformationRhsPrepared<BE>,
+        rhs: &LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>>,
         keys: &H,
         key_size: usize,
         scratch: &mut ScratchArena<'_, BE>,
@@ -102,7 +103,7 @@ pub trait GLWELinearTransformations<BE: Backend> {
 
     /// Computes `res = M(a)` from the prepared left cache `lhs` and the
     /// *unprepared* matrix `rhs`, preparing each diagonal on the fly into scratch
-    /// rather than from a materialized [`LinearTransformationRhsPrepared`].
+    /// rather than from a materialized `LinearTransformation<PreparedDiagonal>`.
     ///
     /// Same result as [`Self::glwe_eval_linear_transformation_into`] with lower
     /// peak memory and higher compute — for memory-bound backends (e.g. GPU).
@@ -117,7 +118,7 @@ pub trait GLWELinearTransformations<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: GLWEToBackendRef<BE> + GLWEInfos,
+        P: GLWEToBackendRef<BE> + GLWEInfos + crate::default::linear_transformation::DiagonalProd<BE>,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 }

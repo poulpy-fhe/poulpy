@@ -23,7 +23,7 @@ pub use ciphertext::{
 };
 pub use complex_diagonals::ComplexDiagonals;
 pub(crate) use dft::DftFormatTag;
-pub use dft::{DFTMatrix, DFTMatrixFactors, DFTMatrixStreamed, DFTOutputFormat, DFTPlan, DFTType};
+pub use dft::{DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTOutputFormat, DFTPlan, DFTType};
 pub use plaintext::CKKSPlaintext;
 
 use std::fmt::Debug;

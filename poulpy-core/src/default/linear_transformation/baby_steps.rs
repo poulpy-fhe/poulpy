@@ -46,7 +46,7 @@ impl<BE: Backend> LinearTransformationLhsPrepared<BE> {
     /// Each prepared baby rotation is a `CnvPVecL` with `a.rank() + 1` columns
     /// and `a.size()` limbs. The `baby_steps` slice typically comes from
     /// [`LinearTransformationLayout::baby_steps`] (before encoding) or the
-    /// `baby_steps` field of a `LinearTransformationRhsPrepared` (after encoding).
+    /// `baby_steps` field of a resident `LinearTransformation<PreparedDiagonal>` (after encoding).
     /// Duplicate rotations in `baby_steps` are de-duplicated.
     pub fn alloc<M, A>(module: &M, baby_steps: &[i64], a: &A) -> Self
     where

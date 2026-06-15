@@ -7,7 +7,7 @@ use crate::{
     layouts::{
         GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
         LinearTransformation,
-        prepared::{GGLWEPreparedToBackendRef, LinearTransformationLhsPrepared, LinearTransformationRhsPrepared},
+        prepared::{GGLWEPreparedToBackendRef, LinearTransformationLhsPrepared, PreparedDiagonal},
     },
     oep::LinearTransformationImpl,
 };
@@ -53,7 +53,7 @@ where
 
     fn glwe_prepare_linear_transformation_rhs<P>(
         &self,
-        prepared: &mut LinearTransformationRhsPrepared<BE>,
+        prepared: &mut LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>>,
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -83,7 +83,7 @@ where
         cnv_offset: usize,
         res: &mut R,
         lhs: &LinearTransformationLhsPrepared<BE>,
-        rhs: &LinearTransformationRhsPrepared<BE>,
+        rhs: &LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>>,
         keys: &H,
         key_size: usize,
         scratch: &mut ScratchArena<'_, BE>,
@@ -106,7 +106,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: GLWEToBackendRef<BE> + GLWEInfos,
+        P: GLWEToBackendRef<BE> + GLWEInfos + crate::default::linear_transformation::DiagonalProd<BE>,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {

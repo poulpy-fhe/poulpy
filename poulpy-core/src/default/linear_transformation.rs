@@ -27,9 +27,7 @@ mod tests;
 // This module owns the HAL-dependent allocators and the prepare/eval
 // algorithms. Re-exported here so `poulpy_core::*` keeps exposing them at the
 // crate root.
-pub use crate::layouts::prepared::{
-    LinearTransformationLhsPrepared, LinearTransformationRhsGiantStepPrepared, LinearTransformationRhsPrepared,
-};
+pub use crate::layouts::prepared::{LinearTransformationLhsPrepared, LinearTransformationPrepared, PreparedDiagonal};
 pub use crate::layouts::{
     LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep, LinearTransformationLayout,
     LinearTransformationPlan, LinearTransformationStrategy, optimal_bsgs_giant_step,
@@ -43,3 +41,4 @@ pub use eval::{
     glwe_prepare_linear_transformation_lhs_tmp_bytes_default,
 };
 pub use prepare::{glwe_prepare_linear_transformation_rhs_default, glwe_prepare_linear_transformation_rhs_tmp_bytes_default};
+pub use prepared_giants::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft};

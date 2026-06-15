@@ -7,10 +7,10 @@
 //! See [`docs/ckks_dft.md`](https://github.com/poulpy-fhe/poulpy) for the full
 //! design.
 
-use poulpy_core::layouts::LinearTransformation;
+use poulpy_core::{LinearTransformationPrepared, layouts::LinearTransformation};
 use poulpy_hal::layouts::Backend;
 
-use crate::{api::LinearTransformationRhsPrepared, error::CKKSCompositionError, layouts::CKKSPlaintext};
+use crate::{error::CKKSCompositionError, layouts::CKKSPlaintext};
 
 /// Distinguishes the two homomorphic transforms.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -145,11 +145,12 @@ impl DFTPlan {
 /// right operands (one [`DFTPlan`] factor each), in evaluation order, plus the
 /// resolved plan they were generated from.
 ///
-/// Generic over the factor representation `R`: a prepared
-/// [`LinearTransformationRhsPrepared`] (convolution-domain, resident — the
-/// default) or an unprepared [`LinearTransformation`] whose diagonals are
-/// materialized on the fly at eval time (streamed). See [`DFTMatrix`].
-pub struct DFTMatrixFactors<BE: Backend, R = LinearTransformationRhsPrepared<BE>> {
+/// Generic over the factor representation `R`: an unprepared
+/// [`LinearTransformation`] whose plaintext diagonals are materialized on the fly
+/// at eval time (the default — host-resident, streamed) or a prepared
+/// [`LinearTransformationPrepared`] keeping the convolution-domain diagonals
+/// resident ([`DFTMatrixPrepared`]). See [`DFTMatrix`].
+pub struct DFTMatrixFactors<BE: Backend, R = LinearTransformation<CKKSPlaintext<<BE as Backend>::OwnedBuf>>> {
     /// The resolved parameters this matrix was generated from (canonical
     /// `format`, populated `factor_log_delta`).
     pub plan: DFTPlan,
@@ -179,14 +180,18 @@ impl<BE: Backend, R> DFTMatrixFactors<BE, R> {
 /// the evaluation entry points; the format variant is what dispatch keys on.
 ///
 /// `R` selects how each factor's RHS is stored, trading memory for compute:
-/// [`LinearTransformationRhsPrepared`] (the default, [`DFTMatrix<BE>`]) keeps
-/// the convolution-domain diagonals resident; the streamed alias
-/// [`DFTMatrixStreamed`] keeps unprepared plaintext diagonals and materializes
-/// them per factor at eval time (for bandwidth-limited backends). Both build via
-/// `ckks_new_dft_matrix` / `ckks_new_dft_matrix_streamed` and evaluate through
-/// the same entry points (generic over `R`). The required Galois keys are
+/// the default `DFTMatrix<BE>` keeps unprepared plaintext diagonals
+/// ([`LinearTransformation`]) and materializes them per factor at eval time
+/// (minimal resident memory — for bandwidth-limited backends); the prepared
+/// alias [`DFTMatrixPrepared`] keeps the convolution-domain diagonals resident
+/// for faster repeated evaluation. The default builds via [`ckks_new_dft_matrix`]
+/// and the prepared form via [`ckks_new_dft_matrix_prepared`]; both evaluate
+/// through the same entry points (generic over `R`). The required Galois keys are
 /// reported by `galois_elements`.
-pub enum DFTMatrix<BE: Backend, R = LinearTransformationRhsPrepared<BE>> {
+///
+/// [`ckks_new_dft_matrix`]: crate::default::dft::ckks_new_dft_matrix
+/// [`ckks_new_dft_matrix_prepared`]: crate::default::dft::ckks_new_dft_matrix_prepared
+pub enum DFTMatrix<BE: Backend, R = LinearTransformation<CKKSPlaintext<<BE as Backend>::OwnedBuf>>> {
     /// Regular complex transform ([`DFTOutputFormat::Standard`]).
     Standard(DFTMatrixFactors<BE, R>),
     /// Real/imag split ([`DFTOutputFormat::SplitRealAndImag`], or a dense
@@ -197,10 +202,11 @@ pub enum DFTMatrix<BE: Backend, R = LinearTransformationRhsPrepared<BE>> {
     Repack(DFTMatrixFactors<BE, R>),
 }
 
-/// Streamed (unprepared-RHS) [`DFTMatrix`]: each factor's diagonals are kept as
-/// plaintexts and prepared on the fly at eval time, minimizing resident memory
-/// at the cost of recomputation. For bandwidth-limited backends (e.g. GPU).
-pub type DFTMatrixStreamed<BE> = DFTMatrix<BE, LinearTransformation<CKKSPlaintext<<BE as Backend>::OwnedBuf>>>;
+/// Prepared (resident-RHS) [`DFTMatrix`]: each factor's diagonals are kept in the
+/// convolution domain ([`LinearTransformationPrepared`]) rather than materialized
+/// per factor, trading resident memory for faster repeated evaluation. Built via
+/// [`ckks_new_dft_matrix_prepared`](crate::default::dft::ckks_new_dft_matrix_prepared).
+pub type DFTMatrixPrepared<BE> = DFTMatrix<BE, LinearTransformationPrepared<BE>>;
 
 /// Format discriminant an evaluation entry point requires, mirroring the
 /// [`DFTMatrix`] variants. Paired with a [`DFTType`] direction in

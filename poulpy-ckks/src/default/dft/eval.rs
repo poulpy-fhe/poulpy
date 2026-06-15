@@ -32,13 +32,13 @@ use poulpy_hal::{
 use crate::{
     CKKSCtBounds, CKKSMeta, SetCKKSInfos,
     api::{
-        CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSImagOps, CKKSRotateOps, CKKSSubOps, DFTOps,
-        LinearTransformationLhsPrepared, LinearTransformationOps, LinearTransformationRhsPrepared,
+        CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSImagOps, CKKSRotateOps, CKKSSubOps, LinearTransformationLhsPrepared,
+        LinearTransformationOps, LinearTransformationPrepared,
     },
     default::dft::matrices::{DftScalar, gen_dft_matrices},
     encoding::reim::Encoder,
     layouts::{
-        CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, DFTMatrix, DFTMatrixFactors, DFTMatrixStreamed,
+        CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared,
         DFTOutputFormat, DFTPlan, DFTType, DftFormatTag,
     },
 };
@@ -130,9 +130,9 @@ fn wrap_dft_matrix<BE: Backend, R>(plan: DFTPlan, factors: Vec<R>) -> DFTMatrix<
 /// operand (resident). The BSGS schedule is chosen cost-optimally per factor.
 /// Evaluating the resulting [`DFTMatrix`] consumes `factor_meta.log_delta` bits
 /// of `log_budget` per factor. For a memory-light alternative, see
-/// [`ckks_new_dft_matrix_streamed`].
+/// [`ckks_new_dft_matrix`].
 #[allow(clippy::too_many_arguments)]
-pub fn ckks_new_dft_matrix<BE, E, F>(
+pub fn ckks_new_dft_matrix_prepared<BE, E, F>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
     encoder: &Encoder<E>,
@@ -140,7 +140,7 @@ pub fn ckks_new_dft_matrix<BE, E, F>(
     factor_meta: CKKSMeta,
     literal: &DFTPlan,
     scratch: &mut ScratchArena<'_, BE>,
-) -> DFTMatrix<BE>
+) -> DFTMatrixPrepared<BE>
 where
     BE: Backend + TransferFrom<HostBytesBackend>,
     Module<BE>: CnvPVecAlloc<BE> + LinearTransformationOps<BE> + CKKSModuleAlloc<BE>,
@@ -154,7 +154,7 @@ where
     let mut factors = Vec::with_capacity(lts.len());
     for lt in &lts {
         let first_pt = lt.first_diagonal_plaintext().expect("dft factor has no diagonals");
-        let mut prepared = LinearTransformationRhsPrepared::alloc_from_index(module, &lt.index(), first_pt);
+        let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first_pt);
         module.ckks_prepare_linear_transformation_rhs(&mut prepared, lt, scratch);
         factors.push(prepared);
     }
@@ -165,22 +165,22 @@ where
 /// Builds the **streamed** (unprepared-RHS) homomorphic (I)DFT described by
 /// `literal`.
 ///
-/// Identical generation to [`ckks_new_dft_matrix`], but each factor's diagonals
-/// are kept as plaintexts ([`DFTMatrixStreamed`]) rather than prepared into a
+/// Identical generation to [`ckks_new_dft_matrix_prepared`], but each factor's diagonals
+/// are kept as plaintexts (the default [`DFTMatrix`]) rather than prepared into a
 /// resident `CnvPVec`; the prepare happens on the fly (through scratch) per
 /// factor at eval time. Minimizes resident memory at the cost of recomputation
 /// — for bandwidth-bound backends. The convolution-domain RHS is never
 /// materialized; the per-diagonal prepare at eval time reuses a single scratch
 /// `CnvPVecR` (see `glwe_accumulate_unprepared_baby_steps_dft`).
 #[allow(clippy::too_many_arguments)]
-pub fn ckks_new_dft_matrix_streamed<BE, E, F>(
+pub fn ckks_new_dft_matrix<BE, E, F>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
     encoder: &Encoder<E>,
     base2k: Base2K,
     factor_meta: CKKSMeta,
     literal: &DFTPlan,
-) -> DFTMatrixStreamed<BE>
+) -> DFTMatrix<BE>
 where
     BE: Backend + TransferFrom<HostBytesBackend>,
     Module<BE>: CnvPVecAlloc<BE> + LinearTransformationOps<BE> + CKKSModuleAlloc<BE>,
@@ -194,7 +194,7 @@ where
 }
 
 /// Abstracts a single homomorphic-DFT factor over its storage representation: a
-/// prepared [`LinearTransformationRhsPrepared`] (resident, the default) or an
+/// prepared [`LinearTransformationPrepared`] (resident, the default) or an
 /// unprepared [`LinearTransformation`] (streamed, materialized per factor at
 /// eval time). Implemented for exactly those two; [`DFTMatrix<BE, R>`] evaluates
 /// by delegating each factor to [`Self::dft_eval_assign`], so the prepared and
@@ -227,13 +227,13 @@ pub trait DftFactor<BE: Backend> {
         H: GLWEAutomorphismKeyHelper<K, BE>;
 }
 
-impl<BE: Backend> DftFactor<BE> for LinearTransformationRhsPrepared<BE> {
+impl<BE: Backend> DftFactor<BE> for LinearTransformationPrepared<BE> {
     fn galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
-        LinearTransformationRhsPrepared::galois_elements(self, cyclotomic_order)
+        LinearTransformation::galois_elements(self, cyclotomic_order)
     }
 
     fn dft_baby_steps(&self) -> Vec<i64> {
-        self.baby_steps().to_vec()
+        self.baby_steps.clone()
     }
 
     fn eval_assign<Dst, H, K>(
@@ -555,180 +555,4 @@ where
     // The repack-decode halves the live slot count.
     op_out.set_log_sparsity(ct_in.log_sparsity() + 1);
     Ok(())
-}
-
-/// `Module`-method surface over the free functions above.
-impl<BE: Backend> DFTOps<BE> for Module<BE>
-where
-    Module<BE>: LinearTransformationOps<BE>
-        + CnvPVecAlloc<BE>
-        + CKKSModuleAlloc<BE>
-        + CKKSCopyOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSImagOps<BE>
-        + CKKSRotateOps<BE>,
-{
-    fn ckks_new_dft_matrix<E, F>(
-        &self,
-        host_module: &Module<HostBytesBackend>,
-        encoder: &Encoder<E>,
-        base2k: Base2K,
-        factor_meta: CKKSMeta,
-        literal: &DFTPlan,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> DFTMatrix<BE>
-    where
-        F: CKKSScalar + DftScalar,
-        BE: TransferFrom<HostBytesBackend>,
-        Module<HostBytesBackend>: ModuleNew<HostBytesBackend> + CKKSModuleAlloc<HostBytesBackend>,
-        E: NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
-        CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<f64>,
-    {
-        ckks_new_dft_matrix(self, host_module, encoder, base2k, factor_meta, literal, scratch)
-    }
-
-    fn ckks_new_dft_matrix_streamed<E, F>(
-        &self,
-        host_module: &Module<HostBytesBackend>,
-        encoder: &Encoder<E>,
-        base2k: Base2K,
-        factor_meta: CKKSMeta,
-        literal: &DFTPlan,
-        _scratch: &mut ScratchArena<'_, BE>,
-    ) -> DFTMatrixStreamed<BE>
-    where
-        F: CKKSScalar + DftScalar,
-        BE: TransferFrom<HostBytesBackend>,
-        Module<HostBytesBackend>: ModuleNew<HostBytesBackend> + CKKSModuleAlloc<HostBytesBackend>,
-        E: NegacyclicFFT<F> + poulpy_hal::api::NegacyclicFFTNew<F>,
-        CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<f64>,
-    {
-        ckks_new_dft_matrix_streamed(self, host_module, encoder, base2k, factor_meta, literal)
-    }
-
-    fn ckks_dft_evaluate_assign<R, Dst, H, K>(
-        &self,
-        ct: &mut Dst,
-        dft: &DFTMatrix<BE, R>,
-        keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        R: DftFactor<BE>,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-    {
-        ckks_dft_evaluate_assign(self, ct, dft, keys, scratch)
-    }
-
-    fn ckks_coeffs_to_slots<R, Dst, H, K>(
-        &self,
-        ct: &mut Dst,
-        dft: &DFTMatrix<BE, R>,
-        keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        R: DftFactor<BE>,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-    {
-        ckks_coeffs_to_slots_assign(self, ct, dft, keys, scratch)
-    }
-
-    fn ckks_slots_to_coeffs<R, Dst, H, K>(
-        &self,
-        ct: &mut Dst,
-        dft: &DFTMatrix<BE, R>,
-        keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        R: DftFactor<BE>,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-    {
-        ckks_slots_to_coeffs_assign(self, ct, dft, keys, scratch)
-    }
-
-    fn ckks_coeffs_to_slots_split<R, Dst, Src, H, K>(
-        &self,
-        ct_real: &mut Dst,
-        ct_imag: &mut Dst,
-        ct_in: &Src,
-        dft: &DFTMatrix<BE, R>,
-        keys: &H,
-        conj_key: &K,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        R: DftFactor<BE>,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-    {
-        ckks_coeffs_to_slots_split(self, ct_real, ct_imag, ct_in, dft, keys, conj_key, scratch)
-    }
-
-    fn ckks_slots_to_coeffs_split<R, Dst, Src, H, K>(
-        &self,
-        op_out: &mut Dst,
-        ct_real: &Src,
-        ct_imag: &Src,
-        dft: &DFTMatrix<BE, R>,
-        keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        R: DftFactor<BE>,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-    {
-        ckks_slots_to_coeffs_split(self, op_out, ct_real, ct_imag, dft, keys, scratch)
-    }
-
-    fn ckks_coeffs_to_slots_repack<R, Dst, Src, H, K>(
-        &self,
-        ct_out: &mut Dst,
-        ct_in: &Src,
-        dft: &DFTMatrix<BE, R>,
-        keys: &H,
-        conj_key: &K,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        R: DftFactor<BE>,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-    {
-        ckks_coeffs_to_slots_repack(self, ct_out, ct_in, dft, keys, conj_key, scratch)
-    }
-
-    fn ckks_slots_to_coeffs_repack<R, Dst, Src, H, K>(
-        &self,
-        op_out: &mut Dst,
-        ct_in: &Src,
-        dft: &DFTMatrix<BE, R>,
-        keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        R: DftFactor<BE>,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-    {
-        ckks_slots_to_coeffs_repack(self, op_out, ct_in, dft, keys, scratch)
-    }
 }

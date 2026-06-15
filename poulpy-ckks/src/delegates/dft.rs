@@ -1,8 +1,8 @@
-//! Public CKKS-facing API for the homomorphic DFT (CoeffsToSlots / SlotsToCoeffs).
-//!
-//! A thin trait on [`Module`] over the free functions in
-//! [`crate::default::dft`], so callers write `module.ckks_coeffs_to_slots(...)`.
-//! See [`docs/ckks_dft.md`](https://github.com/poulpy-fhe/poulpy) for the design.
+//! Delegating impl of the public [`DFTOps`] API onto the [`DFTImpl`] backend
+//! hook, completing the `api → oep → delegates ← default` chain for the
+//! homomorphic DFT.
+
+#![allow(clippy::too_many_arguments)]
 
 use anyhow::Result;
 use poulpy_core::layouts::{
@@ -16,23 +16,14 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCtBounds, CKKSMeta, SetCKKSInfos,
+    api::DFTOps,
     default::dft::{DftFactor, matrices::DftScalar},
     encoding::reim::Encoder,
     layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, DFTMatrix, DFTMatrixPrepared, DFTPlan},
+    oep::DFTImpl,
 };
 
-/// Homomorphic DFT operations on a CKKS [`Module`].
-///
-/// Setup ([`Self::ckks_new_dft_matrix_prepared`]) builds the prepared factor operands once;
-/// the evaluation methods then apply them. The `*_assign` methods are the
-/// `Standard` format; `*_split` returns the real/imaginary parts in two
-/// ciphertexts (`SplitRealAndImag`); `*_repack` is the sparse `RepackImagAsReal`
-/// path that packs the imaginary part into the right half of a single ciphertext.
-pub trait DFTOps<BE: Backend> {
-    /// Builds the prepared homomorphic (I)DFT described by `literal` (see
-    /// [`crate::default::dft::ckks_new_dft_matrix_prepared`]). The BSGS schedule is chosen
-    /// cost-optimally per factor matrix.
-    #[allow(clippy::too_many_arguments)]
+impl<BE: Backend + DFTImpl<BE>> DFTOps<BE> for Module<BE> {
     fn ckks_new_dft_matrix_prepared<E, F>(
         &self,
         host_module: &Module<HostBytesBackend>,
@@ -47,15 +38,11 @@ pub trait DFTOps<BE: Backend> {
         BE: TransferFrom<HostBytesBackend>,
         Module<HostBytesBackend>: ModuleNew<HostBytesBackend> + CKKSModuleAlloc<HostBytesBackend>,
         E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
-        CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>;
+        CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>,
+    {
+        BE::ckks_new_dft_matrix_prepared::<E, F>(self, host_module, encoder, base2k, factor_meta, literal, scratch)
+    }
 
-    /// Builds the **streamed** (unprepared-RHS) homomorphic (I)DFT (see
-    /// [`crate::default::dft::ckks_new_dft_matrix`]). For
-    /// bandwidth-limited backends: the diagonals are materialized per factor at
-    /// eval time instead of kept resident. The host-backed reference build does
-    /// not touch `scratch`, but the parameter is kept for backends whose
-    /// encode/upload path needs device scratch.
-    #[allow(clippy::too_many_arguments)]
     fn ckks_new_dft_matrix<E, F>(
         &self,
         host_module: &Module<HostBytesBackend>,
@@ -70,9 +57,11 @@ pub trait DFTOps<BE: Backend> {
         BE: TransferFrom<HostBytesBackend>,
         Module<HostBytesBackend>: ModuleNew<HostBytesBackend> + CKKSModuleAlloc<HostBytesBackend>,
         E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
-        CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>;
+        CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>,
+    {
+        BE::ckks_new_dft_matrix::<E, F>(self, host_module, encoder, base2k, factor_meta, literal, scratch)
+    }
 
-    /// Evaluates the homomorphic (I)DFT in place (raw chain, no format wrapper).
     fn ckks_dft_evaluate_assign<R, Dst, H, K>(
         &self,
         ct: &mut Dst,
@@ -84,9 +73,11 @@ pub trait DFTOps<BE: Backend> {
         R: DftFactor<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyHelper<K, BE>,
+    {
+        BE::ckks_dft_evaluate_assign(self, ct, dft, keys, scratch)
+    }
 
-    /// `CoeffsToSlots`, `Standard` format (in place).
     fn ckks_coeffs_to_slots<R, Dst, H, K>(
         &self,
         ct: &mut Dst,
@@ -98,9 +89,11 @@ pub trait DFTOps<BE: Backend> {
         R: DftFactor<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyHelper<K, BE>,
+    {
+        BE::ckks_coeffs_to_slots(self, ct, dft, keys, scratch)
+    }
 
-    /// `SlotsToCoeffs`, `Standard` format (in place).
     fn ckks_slots_to_coeffs<R, Dst, H, K>(
         &self,
         ct: &mut Dst,
@@ -112,10 +105,11 @@ pub trait DFTOps<BE: Backend> {
         R: DftFactor<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyHelper<K, BE>,
+    {
+        BE::ckks_slots_to_coeffs(self, ct, dft, keys, scratch)
+    }
 
-    /// `CoeffsToSlots`, `SplitRealAndImag` — real/imag in two ciphertexts.
-    #[allow(clippy::too_many_arguments)]
     fn ckks_coeffs_to_slots_split<R, Dst, Src, H, K>(
         &self,
         ct_real: &mut Dst,
@@ -131,9 +125,11 @@ pub trait DFTOps<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyHelper<K, BE>,
+    {
+        BE::ckks_coeffs_to_slots_split(self, ct_real, ct_imag, ct_in, dft, keys, conj_key, scratch)
+    }
 
-    /// `SlotsToCoeffs`, `SplitRealAndImag` — combine two ciphertexts then Decode.
     fn ckks_slots_to_coeffs_split<R, Dst, Src, H, K>(
         &self,
         op_out: &mut Dst,
@@ -148,10 +144,11 @@ pub trait DFTOps<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyHelper<K, BE>,
+    {
+        BE::ckks_slots_to_coeffs_split(self, op_out, ct_real, ct_imag, dft, keys, scratch)
+    }
 
-    /// `CoeffsToSlots`, sparse `RepackImagAsReal` — imag packed into the right half.
-    #[allow(clippy::too_many_arguments)]
     fn ckks_coeffs_to_slots_repack<R, Dst, Src, H, K>(
         &self,
         ct_out: &mut Dst,
@@ -166,9 +163,11 @@ pub trait DFTOps<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyHelper<K, BE>,
+    {
+        BE::ckks_coeffs_to_slots_repack(self, ct_out, ct_in, dft, keys, conj_key, scratch)
+    }
 
-    /// `SlotsToCoeffs`, sparse `RepackImagAsReal` — inverse of [`Self::ckks_coeffs_to_slots_repack`].
     fn ckks_slots_to_coeffs_repack<R, Dst, Src, H, K>(
         &self,
         op_out: &mut Dst,
@@ -182,5 +181,8 @@ pub trait DFTOps<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
+        H: GLWEAutomorphismKeyHelper<K, BE>,
+    {
+        BE::ckks_slots_to_coeffs_repack(self, op_out, ct_in, dft, keys, scratch)
+    }
 }

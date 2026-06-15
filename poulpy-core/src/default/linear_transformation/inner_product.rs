@@ -13,44 +13,50 @@ use poulpy_hal::{
 };
 
 use crate::{
-    LinearTransformationGiantStep, LinearTransformationPlan,
+    LinearTransformationGiantStep,
     default::operations::msb_mask_bottom_limb,
-    layouts::{GLWEInfos, GLWEToBackendRef},
+    layouts::{GLWEInfos, GLWEToBackendRef, prepared::PreparedDiagonal},
 };
 
-use super::{LinearTransformationLhsPrepared, LinearTransformationRhsGiantStepPrepared};
+use super::LinearTransformationLhsPrepared;
 
-/// PROD block for one giant step, kept in DFT domain.
+/// PROD block for one giant step of a resident (prepared) transform, kept in DFT
+/// domain.
 ///
-/// Leaves the `(r+1)` output columns in `prod_dft`.
+/// The diagonals are already in convolution domain, so the whole giant step is
+/// handed to the backend as a single fused accumulation per output column: it
+/// sums all `baby ⊛ diagonal` terms with one reduction per output limb and
+/// writes `prod_dft` once. Leaves the `(r+1)` output columns in `prod_dft`.
 pub(super) fn glwe_accumulate_prepared_baby_steps_dft<BE, M>(
     module: &M,
     cnv_offset_hi: usize,
     prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
     lhs: &LinearTransformationLhsPrepared<BE>,
-    rhs: &LinearTransformationRhsGiantStepPrepared<BE>,
-    plan: &LinearTransformationPlan,
+    gs: &LinearTransformationGiantStep<PreparedDiagonal<BE::OwnedBuf, BE>>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
     M: Convolution<BE>,
 {
     let cols = lhs.cols();
-    let res_dft_size = lhs.size() + rhs.size() - cnv_offset_hi;
+    let diagonal_size = gs
+        .diagonals
+        .first()
+        .expect("prepared linear transformation giant step has no diagonals")
+        .plaintext
+        .cnv()
+        .size();
+    let res_dft_size = lhs.size() + diagonal_size - cnv_offset_hi;
     assert_eq!(prod_dft.cols(), cols);
     assert_eq!(prod_dft.size(), res_dft_size);
 
-    // One fused accumulation per output column: the whole giant step is handed
-    // to the backend so it can sum all baby ⊛ diagonal terms with a single
-    // reduction per output limb and write `prod_dft` once.
     for col in 0..cols {
-        let terms: Vec<CnvDftAccTerm<'_, BE>> = rhs
-            .baby_step_indexes()
+        let terms: Vec<CnvDftAccTerm<'_, BE>> = gs
+            .diagonals
             .iter()
-            .map(|&baby_step_idx| {
-                let baby_rot = plan.baby_steps[baby_step_idx];
-                let diagonal = rhs.diagonal(baby_rot);
-                let baby = lhs.baby_step(baby_rot);
+            .map(|d| {
+                let diagonal = d.plaintext.cnv();
+                let baby = lhs.baby_step(d.baby);
                 assert_eq!(baby.cols(), cols);
                 assert_eq!(baby.size() + diagonal.size() - cnv_offset_hi, res_dft_size);
                 CnvDftAccTerm {

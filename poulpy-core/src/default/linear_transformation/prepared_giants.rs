@@ -21,7 +21,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain, LinearTransformation,
+    GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain, LinearTransformation, LinearTransformationGiantStep,
     default::{
         keyswitching::{GGLWEProductDefault, GLWEKeyswitchInternal},
         linear_transformation::{
@@ -34,129 +34,85 @@ use crate::{
         operations::cnv_offset_to_limb_offset,
     },
     layouts::{
-        Base2K, GGLWEInfos, GLWE, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
-        LWEInfos, ModuleCoreAlloc, prepared::GGLWEPreparedToBackendRef,
+        GGLWEInfos, GLWE, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
+        LWEInfos, ModuleCoreAlloc, prepared::{GGLWEPreparedToBackendRef, PreparedDiagonal},
     },
 };
 
-use super::{LinearTransformationLhsPrepared, LinearTransformationRhsPrepared};
+use super::LinearTransformationLhsPrepared;
 
-/// HAL/op bounds the PROD block needs, shared by both RHS flavors.
-pub(super) trait ProdModule<BE: Backend>:
-    CnvPVecBytesOf + Convolution<BE> + ModuleN + VecZnxDftAddAssign<BE> + VecZnxDftBytesOf + VecZnxDftCopy<BE>
-{
-}
-impl<BE: Backend, M> ProdModule<BE> for M where
-    M: CnvPVecBytesOf + Convolution<BE> + ModuleN + VecZnxDftAddAssign<BE> + VecZnxDftBytesOf + VecZnxDftCopy<BE>
-{
-}
-
-/// The RHS (matrix diagonals) seen by the shared giant-step evaluation loop.
+/// Per-giant PROD, provided by the diagonal representation itself.
 ///
-/// Implemented both by the fully materialized [`LinearTransformationRhsPrepared`]
-/// and by the unprepared [`LinearTransformation`] (which streams each diagonal
-/// through scratch). Only the per-giant PROD block differs; the rotate /
-/// key-switch / accumulate tail in [`glwe_eval_giant_steps`] is shared.
-pub(super) trait LinearTransformationRhs<BE: Backend> {
-    /// base2k of the encoded diagonals (the domain PROD writes in).
-    fn pt_base2k(&self) -> Base2K;
-    /// Size in limbs of one diagonal operand (uniform across diagonals).
-    fn diagonal_size(&self) -> usize;
-    /// Number of giant steps.
-    fn num_giant_steps(&self) -> usize;
-    /// Slot rotation of giant step `giant_idx`.
-    fn giant_rotation(&self, giant_idx: usize) -> i64;
-    /// Runs the PROD inner product of giant step `giant_idx` into `prod_dft`.
-    fn accumulate_prod<M>(
-        &self,
+/// The shared evaluator [`glwe_eval_giant_steps`] is generic over the diagonal
+/// type `P` stored in the [`LinearTransformation`]; the only per-flavor step is
+/// how one giant step's `Σ_k ũ_{j,k} ⊙ rot(v,k)` is computed. Each concrete
+/// diagonal type implements this once:
+///
+/// - [`PreparedDiagonal`] (resident): diagonals are already in convolution
+///   domain, so the whole giant step is one fused accumulation
+///   ([`glwe_accumulate_prepared_baby_steps_dft`]).
+/// - a plaintext diagonal (streamed): each diagonal is prepared on the fly
+///   through one reused scratch slot
+///   ([`glwe_accumulate_unprepared_baby_steps_dft`]); implemented by the scheme
+///   layer for its plaintext type.
+///
+/// Dispatching per concrete type — rather than via a blanket keyed on
+/// [`GLWEToBackendRef`] — is what keeps the impls coherent: the backend type
+/// parameter prevents the compiler from ruling out a downstream
+/// `GLWEToBackendRef` impl for [`PreparedDiagonal`], so a blanket would clash
+/// with the resident impl.
+pub trait DiagonalProd<BE: Backend>: LWEInfos + Sized {
+    /// Runs the PROD inner product of one giant step into `prod_dft`.
+    fn accumulate_giant_prod<M>(
         module: &M,
         cnv_offset_hi: usize,
         prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
         lhs: &LinearTransformationLhsPrepared<BE>,
-        giant_idx: usize,
+        gs: &LinearTransformationGiantStep<Self>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        M: ProdModule<BE>;
+        M: CnvPVecBytesOf + Convolution<BE> + ModuleN;
 }
 
-impl<BE: Backend> LinearTransformationRhs<BE> for LinearTransformationRhsPrepared<BE> {
-    fn pt_base2k(&self) -> Base2K {
-        self.pt_base2k
-    }
-    fn diagonal_size(&self) -> usize {
-        self.size()
-    }
-    fn num_giant_steps(&self) -> usize {
-        self.giant_steps.len()
-    }
-    fn giant_rotation(&self, giant_idx: usize) -> i64 {
-        self.giant_steps[giant_idx].rot
-    }
-    fn accumulate_prod<M>(
-        &self,
+impl<BE: Backend> DiagonalProd<BE> for PreparedDiagonal<BE::OwnedBuf, BE> {
+    fn accumulate_giant_prod<M>(
         module: &M,
         cnv_offset_hi: usize,
         prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
         lhs: &LinearTransformationLhsPrepared<BE>,
-        giant_idx: usize,
+        gs: &LinearTransformationGiantStep<Self>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        M: ProdModule<BE>,
+        M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
     {
-        glwe_accumulate_prepared_baby_steps_dft(
-            module,
-            cnv_offset_hi,
-            prod_dft,
-            lhs,
-            &self.giant_steps[giant_idx],
-            &self.plan,
-            scratch,
-        );
+        glwe_accumulate_prepared_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, gs, scratch);
     }
 }
 
-impl<BE: Backend, P> LinearTransformationRhs<BE> for LinearTransformation<P>
-where
+/// Reference streamed PROD, exposed for the scheme layer to wire into its
+/// [`DiagonalProd`] impl for its own plaintext diagonal type.
+pub fn glwe_accumulate_streamed_baby_steps_dft<BE, M, P>(
+    module: &M,
+    cnv_offset_hi: usize,
+    prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
+    lhs: &LinearTransformationLhsPrepared<BE>,
+    gs: &LinearTransformationGiantStep<P>,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
     P: GLWEToBackendRef<BE> + GLWEInfos,
 {
-    fn pt_base2k(&self) -> Base2K {
-        self.first_diagonal_plaintext()
-            .expect("linear transformation has no diagonals")
-            .base2k()
-    }
-    fn diagonal_size(&self) -> usize {
-        self.first_diagonal_plaintext()
-            .expect("linear transformation has no diagonals")
-            .size()
-    }
-    fn num_giant_steps(&self) -> usize {
-        self.giant_steps.len()
-    }
-    fn giant_rotation(&self, giant_idx: usize) -> i64 {
-        self.giant_steps[giant_idx].rot
-    }
-    fn accumulate_prod<M>(
-        &self,
-        module: &M,
-        cnv_offset_hi: usize,
-        prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
-        lhs: &LinearTransformationLhsPrepared<BE>,
-        giant_idx: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        M: ProdModule<BE>,
-    {
-        glwe_accumulate_unprepared_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, &self.giant_steps[giant_idx], scratch);
-    }
+    glwe_accumulate_unprepared_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, gs, scratch);
 }
 
 /// The shared Phase B/C driver: runs the BSGS giant-step loop and finalizes.
 ///
-/// Generic over [`LinearTransformationRhs`], so the *same* loop drives both the
-/// prepared cache ([`LinearTransformationRhsPrepared`]) and the streamed
-/// unprepared transform ([`LinearTransformation`]); only the per-giant PROD
-/// block (`accumulate_prod`) differs. Implements docs/lt_bsgs.md §6.3-§6.4 and
-/// the implementation walkthrough in docs/lt_bsgs_impl.md §4.
+/// Generic over the diagonal type `P: DiagonalProd`, so the *same* loop drives
+/// both the resident transform (`P = PreparedDiagonal`) and the streamed
+/// unprepared transform (`P` a plaintext); only the per-giant PROD block
+/// ([`DiagonalProd::accumulate_giant_prod`]) differs. Implements docs/lt_bsgs.md
+/// §6.3-§6.4 and the implementation walkthrough in docs/lt_bsgs_impl.md §4.
 ///
 /// For each giant step `j` it computes `PROD = Σ_k ũ_{j,k} ⊙ rot(v,k)` in DFT
 /// (§4.2), then rotates by `n1·j` and folds the result into a single
@@ -173,12 +129,12 @@ where
 ///
 /// Writes the encryption of `M·v` into `res`.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn glwe_eval_giant_steps<BE, M, R, S, H, K>(
+pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
     module: &M,
     cnv_offset: usize,
     res: &mut R,
     lhs: &LinearTransformationLhsPrepared<BE>,
-    rhs: &S,
+    rhs: &LinearTransformation<P>,
     keys: &H,
     key_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
@@ -214,7 +170,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, S, H, K>(
         + VecZnxIdftApplyTmpBytes
         + GLWEMulPlain<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    S: LinearTransformationRhs<BE>,
+    P: DiagonalProd<BE>,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
@@ -222,14 +178,17 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, S, H, K>(
     let res_base2k = res.base2k();
 
     // PROD writes its result in the diagonals' base2k.
-    let prod_base2k = rhs.pt_base2k();
+    let first_diagonal = rhs
+        .first_diagonal_plaintext()
+        .expect("linear transformation has no diagonals");
+    let prod_base2k = first_diagonal.base2k();
     let baby_size = lhs.size();
-    let diagonal_size = rhs.diagonal_size();
+    let diagonal_size = first_diagonal.size();
     let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, prod_base2k.as_usize());
     let prod_size = baby_size + diagonal_size - cnv_offset_hi;
 
-    let num_giant_steps = rhs.num_giant_steps();
-    let has_nonzero_giant_rotation = (0..num_giant_steps).any(|g| rhs.giant_rotation(g) != 0);
+    let num_giant_steps = rhs.giant_steps.len();
+    let has_nonzero_giant_rotation = rhs.giant_steps.iter().any(|gs| gs.rot != 0);
     // `automorphism_key_infos()` panics on an empty key map (legitimate for
     // an identity-only transform), so only consult it when at least one giant
     // rotation actually needs a key.
@@ -265,10 +224,10 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, S, H, K>(
         for g in 0..num_giant_steps {
             {
                 let mut prod_dft_backend = prod_dft.to_backend_mut();
-                rhs.accumulate_prod(module, cnv_offset_hi, &mut prod_dft_backend, lhs, g, &mut scratch_phase);
+                P::accumulate_giant_prod(module, cnv_offset_hi, &mut prod_dft_backend, lhs, &rhs.giant_steps[g], &mut scratch_phase);
             }
 
-            let rot = rhs.giant_rotation(g);
+            let rot = rhs.giant_steps[g].rot;
             if rot == 0 {
                 let prod_dft_ref = prod_dft.to_backend_ref();
                 let mut lazy_acc_dft_backend = lazy_acc_dft.to_backend_mut();
@@ -343,7 +302,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, S, H, K>(
     for g in 0..num_giant_steps {
         {
             let mut prod_dft_backend = prod_dft.to_backend_mut();
-            rhs.accumulate_prod(module, cnv_offset_hi, &mut prod_dft_backend, lhs, g, &mut scratch_phase);
+            P::accumulate_giant_prod(module, cnv_offset_hi, &mut prod_dft_backend, lhs, &rhs.giant_steps[g], &mut scratch_phase);
             let mut acc_backend = <GLWE<BE::OwnedBuf> as GLWEToBackendMut<BE>>::to_backend_mut(&mut fallback_acc);
             for col in 0..cols {
                 module.vec_znx_idft_apply_tmpa(&mut prod_col_big, 0, &mut prod_dft_backend, col);
@@ -361,7 +320,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, S, H, K>(
             }
         }
 
-        let rot = rhs.giant_rotation(g);
+        let rot = rhs.giant_steps[g].rot;
         if rot != 0 {
             let key: &K = keys
                 .get_automorphism_key(module.galois_element(rot))

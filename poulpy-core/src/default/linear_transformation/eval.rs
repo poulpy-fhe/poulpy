@@ -29,7 +29,7 @@ use crate::{
             baby_steps::{glwe_prepare_linear_transformation_lhs, glwe_prepare_linear_transformation_lhs_tmp_bytes},
             inner_product::glwe_accumulate_prepared_baby_steps_dft_tmp_bytes,
             lazy::{glwe_lazy_giant_automorphism_from_dft_tmp_bytes, glwe_lazy_giant_automorphism_tmp_bytes},
-            prepared_giants::glwe_eval_giant_steps,
+            prepared_giants::{DiagonalProd, glwe_eval_giant_steps},
         },
     },
     layouts::{
@@ -38,7 +38,8 @@ use crate::{
     },
 };
 
-use super::{LinearTransformationLhsPrepared, LinearTransformationRhsPrepared};
+use super::LinearTransformationLhsPrepared;
+use crate::layouts::prepared::PreparedDiagonal;
 
 /// HAL/op bounds required by the eval reference path. Repeated on each free
 /// function so backends only pull in what a method actually needs.
@@ -178,7 +179,7 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, H, K>(
     cnv_offset: usize,
     res: &mut R,
     lhs: &LinearTransformationLhsPrepared<BE>,
-    rhs: &LinearTransformationRhsPrepared<BE>,
+    rhs: &LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>>,
     keys: &H,
     key_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
@@ -229,7 +230,7 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, H, K>(
 ///
 /// Same result as [`glwe_eval_linear_transformation_into_default`] but consumes
 /// the unprepared `rhs` directly, preparing each diagonal on the fly instead of
-/// from a materialized [`LinearTransformationRhsPrepared`]. Lower peak memory,
+/// from a materialized `LinearTransformation<PreparedDiagonal>`. Lower peak memory,
 /// higher compute — for memory-bound backends (e.g. GPU).
 pub fn glwe_eval_linear_transformation_unprepared_rhs_into_default<BE, M, R, P, H, K>(
     module: &M,
@@ -272,7 +273,7 @@ pub fn glwe_eval_linear_transformation_unprepared_rhs_into_default<BE, M, R, P, 
         + GLWEMulPlain<BE>
         + GaloisElement,
     R: GLWEToBackendMut<BE> + GLWEInfos,
-    P: GLWEToBackendRef<BE> + GLWEInfos,
+    P: GLWEToBackendRef<BE> + GLWEInfos + DiagonalProd<BE>,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
