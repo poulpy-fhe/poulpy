@@ -16,7 +16,8 @@ use core::arch::x86_64::{
     _mm256_mask_blend_epi64, _mm256_min_epu64, _mm256_set_epi64x, _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_storeu_si256,
     _mm256_sub_epi64, _mm512_add_epi64, _mm512_and_si512, _mm512_castsi256_si512, _mm512_inserti64x4, _mm512_loadu_si512,
     _mm512_madd52hi_epu64, _mm512_madd52lo_epu64, _mm512_mask_storeu_epi64, _mm512_maskz_loadu_epi64, _mm512_min_epu64,
-    _mm512_set1_epi64, _mm512_setzero_si512, _mm512_storeu_si512, _mm512_sub_epi64,
+    _mm512_set1_epi64, _mm512_setzero_si512, _mm512_shuffle_i64x2, _mm512_storeu_si512, _mm512_sub_epi64, _mm512_unpackhi_epi64,
+    _mm512_unpacklo_epi64,
 };
 
 use std::mem::size_of;
@@ -766,6 +767,45 @@ unsafe fn harvey_modmul_plane8(a: __m512i, omega: __m512i, omega_quot: __m512i, 
     unsafe { harvey_modmul_si512(a, omega, omega_quot, _mm512_set1_epi64(q as i64)) }
 }
 
+/// In-register 8×8 transpose of u64 lanes across eight `__m512i` rows.
+/// Row `k` holds 8 consecutive coefficients of block `k`; after the transpose
+/// lane vector `j` holds coefficient position `j` across the eight blocks, so
+/// the radix-8 butterflies become permute-free vertical ops with broadcast
+/// twiddles. The transpose is its own inverse.
+#[target_feature(enable = "avx512f")]
+#[inline]
+unsafe fn transpose8x8_epi64(r: [__m512i; 8]) -> [__m512i; 8] {
+    // Stage 1: interleave 64-bit lanes within 128-bit groups.
+    let a0 = _mm512_unpacklo_epi64(r[0], r[1]);
+    let a1 = _mm512_unpackhi_epi64(r[0], r[1]);
+    let a2 = _mm512_unpacklo_epi64(r[2], r[3]);
+    let a3 = _mm512_unpackhi_epi64(r[2], r[3]);
+    let a4 = _mm512_unpacklo_epi64(r[4], r[5]);
+    let a5 = _mm512_unpackhi_epi64(r[4], r[5]);
+    let a6 = _mm512_unpacklo_epi64(r[6], r[7]);
+    let a7 = _mm512_unpackhi_epi64(r[6], r[7]);
+    // Stage 2: interleave 128-bit chunks (0x88 picks chunks 0,2; 0xDD picks 1,3).
+    let b0 = _mm512_shuffle_i64x2::<0x88>(a0, a2);
+    let b1 = _mm512_shuffle_i64x2::<0x88>(a1, a3);
+    let b2 = _mm512_shuffle_i64x2::<0xDD>(a0, a2);
+    let b3 = _mm512_shuffle_i64x2::<0xDD>(a1, a3);
+    let b4 = _mm512_shuffle_i64x2::<0x88>(a4, a6);
+    let b5 = _mm512_shuffle_i64x2::<0x88>(a5, a7);
+    let b6 = _mm512_shuffle_i64x2::<0xDD>(a4, a6);
+    let b7 = _mm512_shuffle_i64x2::<0xDD>(a5, a7);
+    // Stage 3: interleave 256-bit halves.
+    [
+        _mm512_shuffle_i64x2::<0x88>(b0, b4),
+        _mm512_shuffle_i64x2::<0x88>(b1, b5),
+        _mm512_shuffle_i64x2::<0x88>(b2, b6),
+        _mm512_shuffle_i64x2::<0x88>(b3, b7),
+        _mm512_shuffle_i64x2::<0xDD>(b0, b4),
+        _mm512_shuffle_i64x2::<0xDD>(b1, b5),
+        _mm512_shuffle_i64x2::<0xDD>(b2, b6),
+        _mm512_shuffle_i64x2::<0xDD>(b3, b7),
+    ]
+}
+
 #[target_feature(enable = "avx512ifma,avx512vl")]
 unsafe fn ntt_plane_radix8_last3(plane: &mut [u64], seg_base: usize, prime: usize, q: u64, q4: u64, powomega: &[u64]) {
     let mut u0 = [0u64; 4];
@@ -796,7 +836,76 @@ unsafe fn ntt_plane_radix8_last3(plane: &mut [u64], seg_base: usize, prime: usiz
         let w4 = powomega[w4_base + prime];
         let w4q = powomega[w4_quot_base + prime];
 
-        let mut block = 0usize;
+        // Vectorized path: process 8 blocks (64 coefficients) per iteration.
+        // Transpose so each zmm holds one coefficient position across the 8
+        // blocks; the radix-8 butterflies are then permute-free vertical ops
+        // with broadcast twiddles.
+        let q4w = _mm512_set1_epi64(q4 as i64);
+        let w8_1 = _mm512_set1_epi64(powomega[w8_base + prime * 3] as i64);
+        let w8_2 = _mm512_set1_epi64(powomega[w8_base + prime * 3 + 1] as i64);
+        let w8_3 = _mm512_set1_epi64(powomega[w8_base + prime * 3 + 2] as i64);
+        let w8q_1 = _mm512_set1_epi64(powomega[w8_quot_base + prime * 3] as i64);
+        let w8q_2 = _mm512_set1_epi64(powomega[w8_quot_base + prime * 3 + 1] as i64);
+        let w8q_3 = _mm512_set1_epi64(powomega[w8_quot_base + prime * 3 + 2] as i64);
+        let w4v = _mm512_set1_epi64(w4 as i64);
+        let w4qv = _mm512_set1_epi64(w4q as i64);
+
+        let ngroups = plane.len() / 64;
+        for g in 0..ngroups {
+            let base = g * 64;
+            let c = transpose8x8_epi64([
+                _mm512_loadu_si512(ptr.add(base) as *const __m512i),
+                _mm512_loadu_si512(ptr.add(base + 8) as *const __m512i),
+                _mm512_loadu_si512(ptr.add(base + 16) as *const __m512i),
+                _mm512_loadu_si512(ptr.add(base + 24) as *const __m512i),
+                _mm512_loadu_si512(ptr.add(base + 32) as *const __m512i),
+                _mm512_loadu_si512(ptr.add(base + 40) as *const __m512i),
+                _mm512_loadu_si512(ptr.add(base + 48) as *const __m512i),
+                _mm512_loadu_si512(ptr.add(base + 56) as *const __m512i),
+            ]);
+
+            // nn = 8: pairs (j, j+4), twiddles [1, w8_1, w8_2, w8_3].
+            let s0 = cond_sub_2q_si512(_mm512_add_epi64(c[0], c[4]), q4w);
+            let d0 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(c[0], q4w), c[4]), q4w);
+            let s1 = cond_sub_2q_si512(_mm512_add_epi64(c[1], c[5]), q4w);
+            let d1 = harvey_modmul_plane8(_mm512_sub_epi64(_mm512_add_epi64(c[1], q4w), c[5]), w8_1, w8q_1, q);
+            let s2 = cond_sub_2q_si512(_mm512_add_epi64(c[2], c[6]), q4w);
+            let d2 = harvey_modmul_plane8(_mm512_sub_epi64(_mm512_add_epi64(c[2], q4w), c[6]), w8_2, w8q_2, q);
+            let s3 = cond_sub_2q_si512(_mm512_add_epi64(c[3], c[7]), q4w);
+            let d3 = harvey_modmul_plane8(_mm512_sub_epi64(_mm512_add_epi64(c[3], q4w), c[7]), w8_3, w8q_3, q);
+
+            // nn = 4: pairs (s0,s2),(s1,s3),(d0,d2),(d1,d3), twiddles [1, w4].
+            let v0 = cond_sub_2q_si512(_mm512_add_epi64(s0, s2), q4w);
+            let v2 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(s0, q4w), s2), q4w);
+            let v1 = cond_sub_2q_si512(_mm512_add_epi64(s1, s3), q4w);
+            let v3 = harvey_modmul_plane8(_mm512_sub_epi64(_mm512_add_epi64(s1, q4w), s3), w4v, w4qv, q);
+            let v4 = cond_sub_2q_si512(_mm512_add_epi64(d0, d2), q4w);
+            let v6 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(d0, q4w), d2), q4w);
+            let v5 = cond_sub_2q_si512(_mm512_add_epi64(d1, d3), q4w);
+            let v7 = harvey_modmul_plane8(_mm512_sub_epi64(_mm512_add_epi64(d1, q4w), d3), w4v, w4qv, q);
+
+            // nn = 2: pairs (v0,v1),(v2,v3),(v4,v5),(v6,v7), twiddle 1.
+            let o0 = cond_sub_2q_si512(_mm512_add_epi64(v0, v1), q4w);
+            let o1 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(v0, q4w), v1), q4w);
+            let o2 = cond_sub_2q_si512(_mm512_add_epi64(v2, v3), q4w);
+            let o3 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(v2, q4w), v3), q4w);
+            let o4 = cond_sub_2q_si512(_mm512_add_epi64(v4, v5), q4w);
+            let o5 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(v4, q4w), v5), q4w);
+            let o6 = cond_sub_2q_si512(_mm512_add_epi64(v6, v7), q4w);
+            let o7 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(v6, q4w), v7), q4w);
+
+            let out = transpose8x8_epi64([o0, o1, o2, o3, o4, o5, o6, o7]);
+            _mm512_storeu_si512(ptr.add(base) as *mut __m512i, out[0]);
+            _mm512_storeu_si512(ptr.add(base + 8) as *mut __m512i, out[1]);
+            _mm512_storeu_si512(ptr.add(base + 16) as *mut __m512i, out[2]);
+            _mm512_storeu_si512(ptr.add(base + 24) as *mut __m512i, out[3]);
+            _mm512_storeu_si512(ptr.add(base + 32) as *mut __m512i, out[4]);
+            _mm512_storeu_si512(ptr.add(base + 40) as *mut __m512i, out[5]);
+            _mm512_storeu_si512(ptr.add(base + 48) as *mut __m512i, out[6]);
+            _mm512_storeu_si512(ptr.add(base + 56) as *mut __m512i, out[7]);
+        }
+
+        let mut block = ngroups * 64;
         while block < plane.len() {
             let lo = _mm256_loadu_si256(ptr.add(block) as *const __m256i);
             let hi = _mm256_loadu_si256(ptr.add(block + 4) as *const __m256i);
@@ -863,7 +972,81 @@ unsafe fn intt_plane_radix8_first3(plane: &mut [u64], seg_base: usize, prime: us
             0,
         );
 
-        let mut block = 0usize;
+        // Vectorized path: 8 blocks (64 coefficients) per iteration, transposed
+        // so each zmm is one coefficient position across the 8 blocks.
+        let q4w = _mm512_set1_epi64(q4 as i64);
+        let w4v = _mm512_set1_epi64(w4 as i64);
+        let w4qv = _mm512_set1_epi64(w4q as i64);
+        let w8_1 = _mm512_set1_epi64(powomega[w8_base + prime * 3] as i64);
+        let w8_2 = _mm512_set1_epi64(powomega[w8_base + prime * 3 + 1] as i64);
+        let w8_3 = _mm512_set1_epi64(powomega[w8_base + prime * 3 + 2] as i64);
+        let w8q_1 = _mm512_set1_epi64(powomega[w8_quot_base + prime * 3] as i64);
+        let w8q_2 = _mm512_set1_epi64(powomega[w8_quot_base + prime * 3 + 1] as i64);
+        let w8q_3 = _mm512_set1_epi64(powomega[w8_quot_base + prime * 3 + 2] as i64);
+
+        let ptr = plane.as_mut_ptr();
+        let ngroups = plane.len() / 64;
+        for g in 0..ngroups {
+            let base = g * 64;
+            let c = transpose8x8_epi64([
+                _mm512_loadu_si512(ptr.add(base) as *const __m512i),
+                _mm512_loadu_si512(ptr.add(base + 8) as *const __m512i),
+                _mm512_loadu_si512(ptr.add(base + 16) as *const __m512i),
+                _mm512_loadu_si512(ptr.add(base + 24) as *const __m512i),
+                _mm512_loadu_si512(ptr.add(base + 32) as *const __m512i),
+                _mm512_loadu_si512(ptr.add(base + 40) as *const __m512i),
+                _mm512_loadu_si512(ptr.add(base + 48) as *const __m512i),
+                _mm512_loadu_si512(ptr.add(base + 56) as *const __m512i),
+            ]);
+
+            // nn = 2: pairs (j, j+1), twiddle 1.
+            let t0 = cond_sub_2q_si512(_mm512_add_epi64(c[0], c[1]), q4w);
+            let t1 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(c[0], q4w), c[1]), q4w);
+            let t2 = cond_sub_2q_si512(_mm512_add_epi64(c[2], c[3]), q4w);
+            let t3 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(c[2], q4w), c[3]), q4w);
+            let t4 = cond_sub_2q_si512(_mm512_add_epi64(c[4], c[5]), q4w);
+            let t5 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(c[4], q4w), c[5]), q4w);
+            let t6 = cond_sub_2q_si512(_mm512_add_epi64(c[6], c[7]), q4w);
+            let t7 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(c[6], q4w), c[7]), q4w);
+
+            // nn = 4: twiddle w4 applied to t3, t7 before combining.
+            let u0 = cond_sub_2q_si512(_mm512_add_epi64(t0, t2), q4w);
+            let u2 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(t0, q4w), t2), q4w);
+            let bo13 = harvey_modmul_plane8(t3, w4v, w4qv, q);
+            let u1 = cond_sub_2q_si512(_mm512_add_epi64(t1, bo13), q4w);
+            let u3 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(t1, q4w), bo13), q4w);
+            let u4 = cond_sub_2q_si512(_mm512_add_epi64(t4, t6), q4w);
+            let u6 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(t4, q4w), t6), q4w);
+            let bo57 = harvey_modmul_plane8(t7, w4v, w4qv, q);
+            let u5 = cond_sub_2q_si512(_mm512_add_epi64(t5, bo57), q4w);
+            let u7 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(t5, q4w), bo57), q4w);
+
+            // nn = 8: pairs (j, j+4), twiddles [1, w8_1, w8_2, w8_3] on the high half.
+            let bo0 = u4;
+            let bo1 = harvey_modmul_plane8(u5, w8_1, w8q_1, q);
+            let bo2 = harvey_modmul_plane8(u6, w8_2, w8q_2, q);
+            let bo3 = harvey_modmul_plane8(u7, w8_3, w8q_3, q);
+            let o0 = cond_sub_2q_si512(_mm512_add_epi64(u0, bo0), q4w);
+            let o4 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(u0, q4w), bo0), q4w);
+            let o1 = cond_sub_2q_si512(_mm512_add_epi64(u1, bo1), q4w);
+            let o5 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(u1, q4w), bo1), q4w);
+            let o2 = cond_sub_2q_si512(_mm512_add_epi64(u2, bo2), q4w);
+            let o6 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(u2, q4w), bo2), q4w);
+            let o3 = cond_sub_2q_si512(_mm512_add_epi64(u3, bo3), q4w);
+            let o7 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(u3, q4w), bo3), q4w);
+
+            let outv = transpose8x8_epi64([o0, o1, o2, o3, o4, o5, o6, o7]);
+            _mm512_storeu_si512(ptr.add(base) as *mut __m512i, outv[0]);
+            _mm512_storeu_si512(ptr.add(base + 8) as *mut __m512i, outv[1]);
+            _mm512_storeu_si512(ptr.add(base + 16) as *mut __m512i, outv[2]);
+            _mm512_storeu_si512(ptr.add(base + 24) as *mut __m512i, outv[3]);
+            _mm512_storeu_si512(ptr.add(base + 32) as *mut __m512i, outv[4]);
+            _mm512_storeu_si512(ptr.add(base + 40) as *mut __m512i, outv[5]);
+            _mm512_storeu_si512(ptr.add(base + 48) as *mut __m512i, outv[6]);
+            _mm512_storeu_si512(ptr.add(base + 56) as *mut __m512i, outv[7]);
+        }
+
+        let mut block = ngroups * 64;
         while block < plane.len() {
             let a0 = plane[block];
             let a1 = plane[block + 1];
