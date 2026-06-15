@@ -16,7 +16,8 @@ use crate::ntt126_ifma::{
 };
 use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::{
-    __m512i, _mm512_add_epi64, _mm512_loadu_si512, _mm512_set1_epi64, _mm512_storeu_si512, _mm512_sub_epi64,
+    __m512i, _mm512_add_epi64, _mm512_and_si512, _mm512_loadu_si512, _mm512_madd52hi_epu64, _mm512_madd52lo_epu64,
+    _mm512_set1_epi64, _mm512_setzero_si512, _mm512_slli_epi64, _mm512_srli_epi64, _mm512_storeu_si512, _mm512_sub_epi64,
 };
 use poulpy_hal::layouts::{
     Data, HostDataMut, HostDataRef, Module, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDft, VecZnxDftBackendMut,
@@ -34,6 +35,8 @@ const Q2: u64 = Q[2];
 const Q01: u128 = Q0 as u128 * Q1 as u128;
 const BIG_Q: u128 = Q01 * Q2 as u128;
 const HALF_BIG_Q: u128 = BIG_Q / 2;
+const Q01_LO: u64 = (Q01 & ((1u128 << 52) - 1)) as u64;
+const Q01_HI: u64 = (Q01 >> 52) as u64;
 
 // Harvey quotients for the Garner steps.
 const INV01_QUOT: u64 = ((INV01 as u128 * (1u128 << 52)) / Q1 as u128) as u64;
@@ -91,17 +94,6 @@ fn garner_from_residues(r0: u64, r1: u64, r2: u64) -> i128 {
     }
 }
 
-#[inline(always)]
-fn reconstruct_from_garner_digits(v0: u64, v1: u64, v2: u64) -> i128 {
-    let result_u128 = v0 as u128 + v1 as u128 * Q0 as u128 + v2 as u128 * Q01;
-
-    if result_u128 > HALF_BIG_Q {
-        result_u128 as i128 - BIG_Q as i128
-    } else {
-        result_u128 as i128
-    }
-}
-
 /// CRT reconstruction: planar 3-prime IFMA b-format to i128.
 ///
 /// Input residues must be in `[0, 2q)` (b-format after iNTT).
@@ -126,9 +118,13 @@ pub(crate) unsafe fn simd_b_ntt126_ifma_to_znx128(nn: usize, res: &mut [i128], a
         let inv012_quot = _mm512_set1_epi64(INV012_QUOT as i64);
         let q0_mod_q2 = _mm512_set1_epi64(Q0_MOD_Q2 as i64);
         let q0_mod_q2_quot = _mm512_set1_epi64(Q0_MOD_Q2_QUOT as i64);
-        let mut v0_lanes = [0u64; 8];
-        let mut v1_lanes = [0u64; 8];
-        let mut v2_lanes = [0u64; 8];
+        let q01_lo = _mm512_set1_epi64(Q01_LO as i64);
+        let q01_hi = _mm512_set1_epi64(Q01_HI as i64);
+        let mask52 = _mm512_set1_epi64(((1u64 << 52) - 1) as i64);
+        let mask12 = _mm512_set1_epi64(0xFFF);
+        let zero = _mm512_setzero_si512();
+        let mut lo_lanes = [0u64; 8];
+        let mut hi_lanes = [0u64; 8];
 
         let mut c = 0usize;
         while c + 8 <= nn {
@@ -146,12 +142,30 @@ pub(crate) unsafe fn simd_b_ntt126_ifma_to_znx128(nn: usize, res: &mut [i128], a
             let diff2 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(r2, q2), partial), q2);
             let v2 = harvey_modmul_si512(diff2, inv012, inv012_quot, q2);
 
-            _mm512_storeu_si512(v0_lanes.as_mut_ptr() as *mut __m512i, r0);
-            _mm512_storeu_si512(v1_lanes.as_mut_ptr() as *mut __m512i, v1);
-            _mm512_storeu_si512(v2_lanes.as_mut_ptr() as *mut __m512i, v2);
-
+            // result = v0 + v1*Q0 + v2*Q01, accumulated in base-2^52 limbs.
+            let p10 = _mm512_madd52lo_epu64(zero, v1, q0);
+            let p1h = _mm512_madd52hi_epu64(zero, v1, q0);
+            let p2ll = _mm512_madd52lo_epu64(zero, v2, q01_lo);
+            let p2lh = _mm512_madd52hi_epu64(zero, v2, q01_lo);
+            let p2hl = _mm512_madd52lo_epu64(zero, v2, q01_hi);
+            let p2hh = _mm512_madd52hi_epu64(zero, v2, q01_hi);
+            let a0 = _mm512_add_epi64(_mm512_add_epi64(r0, p10), p2ll);
+            let a1 = _mm512_add_epi64(_mm512_add_epi64(p1h, p2lh), p2hl);
+            let a1 = _mm512_add_epi64(a1, _mm512_srli_epi64::<52>(a0));
+            let a0 = _mm512_and_si512(a0, mask52);
+            let a2 = _mm512_add_epi64(p2hh, _mm512_srli_epi64::<52>(a1));
+            let a1 = _mm512_and_si512(a1, mask52);
+            let lo = _mm512_add_epi64(a0, _mm512_slli_epi64::<52>(_mm512_and_si512(a1, mask12)));
+            let hi = _mm512_add_epi64(_mm512_srli_epi64::<12>(a1), _mm512_slli_epi64::<40>(a2));
+            _mm512_storeu_si512(lo_lanes.as_mut_ptr() as *mut __m512i, lo);
+            _mm512_storeu_si512(hi_lanes.as_mut_ptr() as *mut __m512i, hi);
             for lane in 0..8 {
-                res[c + lane] = reconstruct_from_garner_digits(v0_lanes[lane], v1_lanes[lane], v2_lanes[lane]);
+                let result = lo_lanes[lane] as u128 | ((hi_lanes[lane] as u128) << 64);
+                res[c + lane] = if result > HALF_BIG_Q {
+                    result as i128 - BIG_Q as i128
+                } else {
+                    result as i128
+                };
             }
 
             c += 8;
