@@ -119,6 +119,8 @@ poulpy-cpu-ref = "0.6"
 
 ## Documentation
 
+* [Getting Started](./docs/getting-started.md) is a map of the codebase: what each crate contains, how the layers fit together, how to build and test, and how the code's parameters relate to the usual FHE notation.
+* [Backends](./docs/backends.md) explains the three arithmetic families (`FFT64`, `NTT120`, `NTT126`) and how to pick one.
 * Crate package pages and generated Rust documentation are linked from the crates.io entries above.
 * Architecture diagrams and design notes live in the [`/docs`](./docs) folder.
 * Crate-specific READMEs provide more focused usage notes, especially [`poulpy-ckks`](./poulpy-ckks/README.md) and [`poulpy-bench`](./poulpy-bench/README.md).

@@ -65,7 +65,8 @@ A *prepared* variant such as `GLWEPrepared` or `GGSWPrepared` stores the data in
 A *compressed* variant stores only a 32-byte seed for the uniform mask, which it regenerates on decompression, to cut serialized size.
 
 The operations under `api/` cover secret-key and public-key encryption, decryption, the external product, key-switching, Galois automorphisms, the trace (a sum of automorphisms), GLWE arithmetic (add, subtract, normalize, multiply by a plaintext or a constant, rotate), the tensoring and relinearization used by ciphertext-ciphertext products, noise measurement, and conversions such as LWE sample extraction from a GLWE.
-Encryption takes three explicit randomness streams through `Source`, one for the secret, one for the Gaussian error, and one for the uniform mask, and a `NoiseInfos` carrying the sigma, with `DEFAULT_SIGMA_XE = 3.2` as the default.
+Encryption takes explicit randomness streams through `Source`, one per role, and a `NoiseInfos` carrying the sigma, with `DEFAULT_SIGMA_XE = 3.2` as the default.
+Secret-key encryption takes two, one for the Gaussian error and one for the uniform mask, while public-key encryption takes a third for the public-key randomness.
 No operation allocates on the heap: the caller passes a scratch arena, and every operation has a companion `*_tmp_bytes` method that reports how large that arena must be.
 The crate also ships a generic conformance suite under `test_suite/` that any backend can run to prove it implements the operations correctly.
 
@@ -74,7 +75,7 @@ The crate also ships a generic conformance suite under `test_suite/` that any ba
 The leveled CKKS evaluator built on core.
 It uses the same bivariate base-`2^K` representation rather than an RNS one, and exposes precision through `CKKSMeta`, which tracks `log_delta`, the base-2 log of the encoding scale, and `log_budget`, the remaining homomorphic headroom in bits.
 The `encoding/` folder maps complex slots to and from a plaintext polynomial through a negacyclic FFT packing of real and imaginary parts.
-The `leveled/` arithmetic tracks that metadata for you: addition and subtraction align operands by budget and do not consume capacity, while multiplication is the main consumer and is followed by rescaling, which is a bit shift rather than a division by a prime.% which metadata? mispositioned sentence before
+The `leveled/` arithmetic tracks the `CKKSMeta` precision metadata for you: addition and subtraction align operands by budget and do not consume capacity, while multiplication does in rescaling, which is a bit shift rather than a division by a prime.
 The public operations include add, subtract, negate, multiply, fused multiply-add and multiply-subtract, affine maps, slot rotation, conjugation, and multiplication or division by `i` or by powers of two, plus maintenance helpers that compact or resize a ciphertext's limb storage.
 
 ### poulpy-bin-fhe
