@@ -180,17 +180,23 @@ unsafe fn simd_b_from_znx64_impl(n: usize, res: &mut [u64], a: &[i64], mask: i64
         let zero512 = _mm512_setzero_si512();
         let mask42_512 = _mm512_set1_epi64((1i64 << 42) - 1);
         let mask512 = _mm512_set1_epi64(mask);
+        let oq0_512 = _mm512_set1_epi64(OQ_IFMA[0] as i64);
+        let oq1_512 = _mm512_set1_epi64(OQ_IFMA[1] as i64);
+        let oq2_512 = _mm512_set1_epi64(OQ_IFMA[2] as i64);
+        let pow42_0_512 = _mm512_set1_epi64(POW42_MOD_Q_IFMA[0] as i64);
+        let pow42_1_512 = _mm512_set1_epi64(POW42_MOD_Q_IFMA[1] as i64);
+        let pow42_2_512 = _mm512_set1_epi64(POW42_MOD_Q_IFMA[2] as i64);
+        let q0_512 = _mm512_set1_epi64(Primes42::Q[0] as i64);
+        let q1_512 = _mm512_set1_epi64(Primes42::Q[1] as i64);
+        let q2_512 = _mm512_set1_epi64(Primes42::Q[2] as i64);
         let mut i = 0usize;
         while i + 8 <= n {
             let xv = _mm512_and_si512(_mm512_loadu_si512(a.as_ptr().add(i) as *const __m512i), mask512);
             let xl = _mm512_and_si512(xv, i64_max512);
             let sign = _mm512_cmpgt_epi64_mask(zero512, xv);
 
-            let reduce = |oq: u64, pow42: u64, q: u64| {
-                let val = _mm512_add_epi64(xl, _mm512_maskz_mov_epi64(sign, _mm512_set1_epi64(oq as i64)));
-                let pow42 = _mm512_set1_epi64(pow42 as i64);
-                let q = _mm512_set1_epi64(q as i64);
-
+            let reduce = |oq: __m512i, pow42: __m512i, q: __m512i| {
+                let val = _mm512_add_epi64(xl, _mm512_maskz_mov_epi64(sign, oq));
                 let hi = _mm512_srli_epi64::<42>(val);
                 let lo = _mm512_and_si512(val, mask42_512);
                 let y = _mm512_add_epi64(_mm512_mul_epu32(hi, pow42), lo);
@@ -201,17 +207,14 @@ unsafe fn simd_b_from_znx64_impl(n: usize, res: &mut [u64], a: &[i64], mask: i64
                 cond_sub_2q_si512(z, q)
             };
 
-            _mm512_storeu_si512(
-                res.as_mut_ptr().add(i) as *mut __m512i,
-                reduce(OQ_IFMA[0], POW42_MOD_Q_IFMA[0], Primes42::Q[0]),
-            );
+            _mm512_storeu_si512(res.as_mut_ptr().add(i) as *mut __m512i, reduce(oq0_512, pow42_0_512, q0_512));
             _mm512_storeu_si512(
                 res.as_mut_ptr().add(n + i) as *mut __m512i,
-                reduce(OQ_IFMA[1], POW42_MOD_Q_IFMA[1], Primes42::Q[1]),
+                reduce(oq1_512, pow42_1_512, q1_512),
             );
             _mm512_storeu_si512(
                 res.as_mut_ptr().add(2 * n + i) as *mut __m512i,
-                reduce(OQ_IFMA[2], POW42_MOD_Q_IFMA[2], Primes42::Q[2]),
+                reduce(oq2_512, pow42_2_512, q2_512),
             );
             i += 8;
         }
