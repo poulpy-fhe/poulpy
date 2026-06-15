@@ -110,22 +110,28 @@ fn dft_round_trip_standard() {
         bit_reversed: false,
         factor_log_delta: 0,
     };
-    let enc_dft = module.ckks_new_dft_matrix_prepared(
-        &host_module,
-        &encoder,
-        Base2K(base2k as u32),
-        factor_meta,
-        &make(DFTType::Encode),
-        &mut scratch.borrow(),
-    );
-    let dec_dft = module.ckks_new_dft_matrix_prepared(
-        &host_module,
-        &encoder,
-        Base2K(base2k as u32),
-        factor_meta,
-        &make(DFTType::Decode),
-        &mut scratch.borrow(),
-    );
+    let enc_lt = module
+        .ckks_new_dft_matrix(
+            &host_module,
+            &encoder,
+            Base2K(base2k as u32),
+            factor_meta,
+            &make(DFTType::Encode),
+            &mut scratch.borrow(),
+        )
+        .unwrap();
+    let enc_dft = module.ckks_prepare_dft_matrix(&enc_lt, &mut scratch.borrow());
+    let dec_lt = module
+        .ckks_new_dft_matrix(
+            &host_module,
+            &encoder,
+            Base2K(base2k as u32),
+            factor_meta,
+            &make(DFTType::Decode),
+            &mut scratch.borrow(),
+        )
+        .unwrap();
+    let dec_dft = module.ckks_prepare_dft_matrix(&dec_lt, &mut scratch.borrow());
 
     // Automorphism keys: union of both matrices' Galois elements.
     let order = module.cyclotomic_order();
@@ -237,22 +243,26 @@ fn dft_round_trip_standard_streamed() {
         factor_log_delta: 0,
     };
     // Streamed constructors: note no `scratch` argument (nothing is prepared).
-    let enc_dft = module.ckks_new_dft_matrix(
-        &host_module,
-        &encoder,
-        Base2K(base2k as u32),
-        factor_meta,
-        &make(DFTType::Encode),
-        &mut scratch.borrow(),
-    );
-    let dec_dft = module.ckks_new_dft_matrix(
-        &host_module,
-        &encoder,
-        Base2K(base2k as u32),
-        factor_meta,
-        &make(DFTType::Decode),
-        &mut scratch.borrow(),
-    );
+    let enc_dft = module
+        .ckks_new_dft_matrix(
+            &host_module,
+            &encoder,
+            Base2K(base2k as u32),
+            factor_meta,
+            &make(DFTType::Encode),
+            &mut scratch.borrow(),
+        )
+        .unwrap();
+    let dec_dft = module
+        .ckks_new_dft_matrix(
+            &host_module,
+            &encoder,
+            Base2K(base2k as u32),
+            factor_meta,
+            &make(DFTType::Decode),
+            &mut scratch.borrow(),
+        )
+        .unwrap();
 
     let order = module.cyclotomic_order();
     let mut atks = HashMap::new();
@@ -308,7 +318,7 @@ fn dft_coeffs_to_slots_standard() {
 
     use poulpy_ckks::{
         CKKSMeta,
-        default::dft::{ckks_coeffs_to_slots_assign, ckks_new_dft_matrix_prepared},
+        default::dft::{ckks_coeffs_to_slots_assign, ckks_new_dft_matrix, ckks_prepare_dft_matrix},
         encoding::reim::Encoder,
         layouts::{DFTOutputFormat, DFTPlan, DFTType},
         test_suite::{
@@ -353,7 +363,7 @@ fn dft_coeffs_to_slots_standard() {
         log_delta,
         log_budget: 10,
     };
-    let enc_dft = ckks_new_dft_matrix_prepared(
+    let enc_dft_lt = ckks_new_dft_matrix(
         &module,
         &host_module,
         &encoder,
@@ -368,8 +378,9 @@ fn dft_coeffs_to_slots_standard() {
             bit_reversed: false,
             factor_log_delta: 0,
         },
-        &mut scratch.borrow(),
-    );
+    )
+    .unwrap();
+    let enc_dft = ckks_prepare_dft_matrix(&module, &enc_dft_lt, &mut scratch.borrow());
 
     let order = module.cyclotomic_order();
     let mut atks = HashMap::new();
@@ -419,7 +430,7 @@ fn dft_coeffs_to_slots_split() {
 
     use poulpy_ckks::{
         CKKSMeta,
-        default::dft::{ckks_coeffs_to_slots_split, ckks_new_dft_matrix_prepared},
+        default::dft::{ckks_coeffs_to_slots_split, ckks_new_dft_matrix, ckks_prepare_dft_matrix},
         encoding::reim::Encoder,
         layouts::{DFTOutputFormat, DFTPlan, DFTType},
         test_suite::{
@@ -466,7 +477,7 @@ fn dft_coeffs_to_slots_split() {
         log_delta,
         log_budget: 10,
     };
-    let enc_dft = ckks_new_dft_matrix_prepared(
+    let enc_dft_lt = ckks_new_dft_matrix(
         &module,
         &host_module,
         &encoder,
@@ -481,8 +492,9 @@ fn dft_coeffs_to_slots_split() {
             bit_reversed: false,
             factor_log_delta: 0,
         },
-        &mut scratch.borrow(),
-    );
+    )
+    .unwrap();
+    let enc_dft = ckks_prepare_dft_matrix(&module, &enc_dft_lt, &mut scratch.borrow());
 
     let order = module.cyclotomic_order();
     let mut atks = HashMap::new();
@@ -545,7 +557,7 @@ fn dft_split_round_trip() {
 
     use poulpy_ckks::{
         CKKSInfos, CKKSMeta,
-        default::dft::{ckks_coeffs_to_slots_split, ckks_new_dft_matrix_prepared, ckks_slots_to_coeffs_split},
+        default::dft::{ckks_coeffs_to_slots_split, ckks_new_dft_matrix, ckks_prepare_dft_matrix, ckks_slots_to_coeffs_split},
         encoding::reim::Encoder,
         layouts::{CKKSPlaintextVecHostCodec, DFTOutputFormat, DFTPlan, DFTType},
         test_suite::{
@@ -601,24 +613,26 @@ fn dft_split_round_trip() {
         bit_reversed: false,
         factor_log_delta: 0,
     };
-    let enc_dft = ckks_new_dft_matrix_prepared(
+    let enc_dft_lt = ckks_new_dft_matrix(
         &module,
         &host_module,
         &encoder,
         Base2K(base2k as u32),
         factor_meta,
         &make(DFTType::Encode),
-        &mut scratch.borrow(),
-    );
-    let dec_dft = ckks_new_dft_matrix_prepared(
+    )
+    .unwrap();
+    let enc_dft = ckks_prepare_dft_matrix(&module, &enc_dft_lt, &mut scratch.borrow());
+    let dec_dft_lt = ckks_new_dft_matrix(
         &module,
         &host_module,
         &encoder,
         Base2K(base2k as u32),
         factor_meta,
         &make(DFTType::Decode),
-        &mut scratch.borrow(),
-    );
+    )
+    .unwrap();
+    let dec_dft = ckks_prepare_dft_matrix(&module, &dec_dft_lt, &mut scratch.borrow());
 
     let order = module.cyclotomic_order();
     let mut atks = HashMap::new();
@@ -800,7 +814,7 @@ fn dft_coeffs_to_slots_repack_sparse() {
 
     use poulpy_ckks::{
         CKKSInfos, CKKSMeta, SetCKKSInfos,
-        default::dft::{ckks_coeffs_to_slots_repack, ckks_new_dft_matrix_prepared},
+        default::dft::{ckks_coeffs_to_slots_repack, ckks_new_dft_matrix, ckks_prepare_dft_matrix},
         encoding::reim::Encoder,
         layouts::{DFTOutputFormat, DFTPlan, DFTType},
         test_suite::{
@@ -848,7 +862,7 @@ fn dft_coeffs_to_slots_repack_sparse() {
         log_budget: 10,
         log_sparsity: 0,
     };
-    let enc_dft = ckks_new_dft_matrix_prepared(
+    let enc_dft_lt = ckks_new_dft_matrix(
         &module,
         &host_module,
         &encoder,
@@ -863,8 +877,9 @@ fn dft_coeffs_to_slots_repack_sparse() {
             bit_reversed: false,
             factor_log_delta: 0,
         },
-        &mut scratch.borrow(),
-    );
+    )
+    .unwrap();
+    let enc_dft = ckks_prepare_dft_matrix(&module, &enc_dft_lt, &mut scratch.borrow());
     assert!(enc_dft.is_sparse(), "expected sparse path");
 
     let order = module.cyclotomic_order();
@@ -942,7 +957,7 @@ fn dft_repack_round_trip_sparse() {
 
     use poulpy_ckks::{
         CKKSInfos, CKKSMeta, SetCKKSInfos,
-        default::dft::{ckks_coeffs_to_slots_repack, ckks_new_dft_matrix_prepared, ckks_slots_to_coeffs_repack},
+        default::dft::{ckks_coeffs_to_slots_repack, ckks_new_dft_matrix, ckks_prepare_dft_matrix, ckks_slots_to_coeffs_repack},
         encoding::reim::Encoder,
         layouts::{CKKSPlaintextVecHostCodec, DFTOutputFormat, DFTPlan, DFTType},
         test_suite::{
@@ -998,24 +1013,26 @@ fn dft_repack_round_trip_sparse() {
         bit_reversed: false,
         factor_log_delta: 0,
     };
-    let enc_dft = ckks_new_dft_matrix_prepared(
+    let enc_dft_lt = ckks_new_dft_matrix(
         &module,
         &host_module,
         &encoder,
         Base2K(base2k as u32),
         factor_meta,
         &mk(DFTType::Encode),
-        &mut scratch.borrow(),
-    );
-    let dec_dft = ckks_new_dft_matrix_prepared(
+    )
+    .unwrap();
+    let enc_dft = ckks_prepare_dft_matrix(&module, &enc_dft_lt, &mut scratch.borrow());
+    let dec_dft_lt = ckks_new_dft_matrix(
         &module,
         &host_module,
         &encoder,
         Base2K(base2k as u32),
         factor_meta,
         &mk(DFTType::Decode),
-        &mut scratch.borrow(),
-    );
+    )
+    .unwrap();
+    let dec_dft = ckks_prepare_dft_matrix(&module, &dec_dft_lt, &mut scratch.borrow());
 
     let order = module.cyclotomic_order();
     let mut atks = HashMap::new();

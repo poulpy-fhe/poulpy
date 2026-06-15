@@ -8,7 +8,7 @@
 
 use anyhow::Result;
 use poulpy_core::{
-    GLWECopy, GLWELinearTransformations, LinearTransformationGiantStep, LinearTransformationLhsPrepared,
+    GLWECopy, GLWELinearTransformations, LinearTransformationBabySteps, LinearTransformationGiantStep,
     LinearTransformationPrepared,
     default::{
         keyswitching::truncated_keyswitch_size,
@@ -47,7 +47,7 @@ where
         module: &M,
         cnv_offset_hi: usize,
         prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
-        lhs: &LinearTransformationLhsPrepared<BE>,
+        lhs: &LinearTransformationBabySteps<BE>,
         gs: &LinearTransformationGiantStep<Self>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -169,7 +169,7 @@ where
 
     fn ckks_prepare_linear_transformation_lhs<Src, H, K>(
         &self,
-        babies: &mut LinearTransformationLhsPrepared<BE>,
+        babies: &mut LinearTransformationBabySteps<BE>,
         src: &Src,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -212,7 +212,7 @@ where
         dst: &mut Dst,
         src: &Src,
         prepared: &LinearTransformationPrepared<BE>,
-        babies: &LinearTransformationLhsPrepared<BE>,
+        babies: &LinearTransformationBabySteps<BE>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -227,8 +227,7 @@ where
         let first = prepared
             .first_diagonal_plaintext()
             .expect("prepared linear transformation has no diagonals");
-        let (res_log_budget, res_log_delta, cnv_offset) =
-            lt_mul_params(dst, src, first.log_scale(), first.max_k().as_usize())?;
+        let (res_log_budget, res_log_delta, cnv_offset) = lt_mul_params(dst, src, first.log_scale(), first.max_k().as_usize())?;
         let key_size = key_size_for_prepared(self.n(), prepared, dst, src, keys, cnv_offset);
         self.glwe_eval_linear_transformation_into(cnv_offset, dst, babies, prepared, keys, key_size, scratch);
         dst.set_log_budget(res_log_budget);
@@ -240,7 +239,7 @@ where
         &self,
         dst: &mut Dst,
         prepared: &LinearTransformationPrepared<BE>,
-        babies: &LinearTransformationLhsPrepared<BE>,
+        babies: &LinearTransformationBabySteps<BE>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -281,7 +280,7 @@ where
         let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(self, &lt.index(), first_plaintext);
         self.ckks_prepare_linear_transformation_rhs(&mut prepared, lt, scratch);
 
-        let mut babies = LinearTransformationLhsPrepared::alloc(self, &prepared.baby_steps, src);
+        let mut babies = LinearTransformationBabySteps::alloc(self, prepared.baby_steps(), src);
         self.ckks_prepare_linear_transformation_lhs(&mut babies, src, keys, scratch)?;
 
         self.ckks_eval_prepared_linear_transformation_into(dst, src, &prepared, &babies, keys, scratch)
@@ -314,7 +313,7 @@ where
         &self,
         dst: &mut Dst,
         src: &Src,
-        babies: &LinearTransformationLhsPrepared<BE>,
+        babies: &LinearTransformationBabySteps<BE>,
         lt: &LinearTransformation<P>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -372,7 +371,7 @@ where
     fn ckks_eval_linear_transformation_unprepared_assign<Dst, P, H, K>(
         &self,
         dst: &mut Dst,
-        babies: &LinearTransformationLhsPrepared<BE>,
+        babies: &LinearTransformationBabySteps<BE>,
         lt: &LinearTransformation<P>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
@@ -410,7 +409,7 @@ where
     {
         // Only the (small) input baby cache is materialized; the matrix streams.
         let plan = lt.index();
-        let mut babies = LinearTransformationLhsPrepared::alloc(self, &plan.baby_steps, src);
+        let mut babies = LinearTransformationBabySteps::alloc(self, &plan.baby_steps, src);
         self.ckks_prepare_linear_transformation_lhs(&mut babies, src, keys, scratch)?;
         self.ckks_eval_linear_transformation_unprepared_into(dst, src, &babies, lt, keys, scratch)
     }
@@ -442,7 +441,7 @@ where
 /// `prepared` needs.
 fn check_required_keys<BE: Backend, H, K>(
     prepared: &LinearTransformationPrepared<BE>,
-    babies: &LinearTransformationLhsPrepared<BE>,
+    babies: &LinearTransformationBabySteps<BE>,
     keys: &H,
     cyclotomic_order: i64,
 ) -> Result<()>
@@ -450,7 +449,7 @@ where
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
-    for rotation in prepared.baby_steps.iter().copied() {
+    for rotation in prepared.baby_steps().iter().copied() {
         anyhow::ensure!(
             babies.contains_baby_step(rotation),
             "missing prepared baby-step rotation {rotation}"

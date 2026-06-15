@@ -34,12 +34,13 @@ use crate::{
         operations::cnv_offset_to_limb_offset,
     },
     layouts::{
-        GGLWEInfos, GLWE, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
-        LWEInfos, ModuleCoreAlloc, prepared::{GGLWEPreparedToBackendRef, PreparedDiagonal},
+        GGLWEInfos, GLWE, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
+        ModuleCoreAlloc,
+        prepared::{GGLWEPreparedToBackendRef, PreparedDiagonal},
     },
 };
 
-use super::LinearTransformationLhsPrepared;
+use super::LinearTransformationBabySteps;
 
 /// Per-giant PROD, provided by the diagonal representation itself.
 ///
@@ -67,7 +68,7 @@ pub trait DiagonalProd<BE: Backend>: LWEInfos + Sized {
         module: &M,
         cnv_offset_hi: usize,
         prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
-        lhs: &LinearTransformationLhsPrepared<BE>,
+        lhs: &LinearTransformationBabySteps<BE>,
         gs: &LinearTransformationGiantStep<Self>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -79,7 +80,7 @@ impl<BE: Backend> DiagonalProd<BE> for PreparedDiagonal<BE::OwnedBuf, BE> {
         module: &M,
         cnv_offset_hi: usize,
         prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
-        lhs: &LinearTransformationLhsPrepared<BE>,
+        lhs: &LinearTransformationBabySteps<BE>,
         gs: &LinearTransformationGiantStep<Self>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
@@ -95,7 +96,7 @@ pub fn glwe_accumulate_streamed_baby_steps_dft<BE, M, P>(
     module: &M,
     cnv_offset_hi: usize,
     prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
-    lhs: &LinearTransformationLhsPrepared<BE>,
+    lhs: &LinearTransformationBabySteps<BE>,
     gs: &LinearTransformationGiantStep<P>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
@@ -133,7 +134,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
     module: &M,
     cnv_offset: usize,
     res: &mut R,
-    lhs: &LinearTransformationLhsPrepared<BE>,
+    lhs: &LinearTransformationBabySteps<BE>,
     rhs: &LinearTransformation<P>,
     keys: &H,
     key_size: usize,
@@ -224,7 +225,14 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
         for g in 0..num_giant_steps {
             {
                 let mut prod_dft_backend = prod_dft.to_backend_mut();
-                P::accumulate_giant_prod(module, cnv_offset_hi, &mut prod_dft_backend, lhs, &rhs.giant_steps[g], &mut scratch_phase);
+                P::accumulate_giant_prod(
+                    module,
+                    cnv_offset_hi,
+                    &mut prod_dft_backend,
+                    lhs,
+                    &rhs.giant_steps[g],
+                    &mut scratch_phase,
+                );
             }
 
             let rot = rhs.giant_steps[g].rot;
@@ -302,7 +310,14 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
     for g in 0..num_giant_steps {
         {
             let mut prod_dft_backend = prod_dft.to_backend_mut();
-            P::accumulate_giant_prod(module, cnv_offset_hi, &mut prod_dft_backend, lhs, &rhs.giant_steps[g], &mut scratch_phase);
+            P::accumulate_giant_prod(
+                module,
+                cnv_offset_hi,
+                &mut prod_dft_backend,
+                lhs,
+                &rhs.giant_steps[g],
+                &mut scratch_phase,
+            );
             let mut acc_backend = <GLWE<BE::OwnedBuf> as GLWEToBackendMut<BE>>::to_backend_mut(&mut fallback_acc);
             for col in 0..cols {
                 module.vec_znx_idft_apply_tmpa(&mut prod_col_big, 0, &mut prod_dft_backend, col);

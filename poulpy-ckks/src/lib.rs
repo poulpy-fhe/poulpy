@@ -47,6 +47,14 @@ use poulpy_hal::layouts::Backend;
 pub mod api;
 pub mod default;
 pub(crate) mod delegates;
+
+/// Re-exports for use inside this crate's exported macros (e.g.
+/// [`impl_ckks_dft_defaults`]), so an invoking backend crate does not need
+/// `anyhow` as a direct dependency. Not part of the public API.
+#[doc(hidden)]
+pub mod __macro_reexports {
+    pub use anyhow;
+}
 pub mod encoding;
 mod error;
 pub mod layouts;

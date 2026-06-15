@@ -7,10 +7,12 @@
 //! See [`docs/ckks_dft.md`](https://github.com/poulpy-fhe/poulpy) for the full
 //! design.
 
+use core::marker::PhantomData;
+
 use poulpy_core::{LinearTransformationPrepared, layouts::LinearTransformation};
 use poulpy_hal::layouts::Backend;
 
-use crate::{error::CKKSCompositionError, layouts::CKKSPlaintext};
+use crate::layouts::CKKSPlaintext;
 
 /// Distinguishes the two homomorphic transforms.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -169,81 +171,128 @@ impl<BE: Backend, R> DFTMatrixFactors<BE, R> {
     }
 }
 
-/// A generated, ready-to-evaluate homomorphic (I)DFT, tagged by output format
-/// and generic over the factor representation `R`.
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// Transform-direction marker: homomorphic encoding (`CoeffsToSlots`, the IDFT).
+pub struct Encode;
+/// Transform-direction marker: homomorphic decoding (`SlotsToCoeffs`, the DFT).
+pub struct Decode;
+impl sealed::Sealed for Encode {}
+impl sealed::Sealed for Decode {}
+
+/// Compile-time transform direction carried in a [`DFTMatrix`] type parameter.
+/// Implemented by [`Encode`] / [`Decode`]; sealed.
+pub trait DftDirection: sealed::Sealed {
+    /// The runtime [`DFTType`] this marker stands for.
+    const KIND: DFTType;
+}
+impl DftDirection for Encode {
+    const KIND: DFTType = DFTType::Encode;
+}
+impl DftDirection for Decode {
+    const KIND: DFTType = DFTType::Decode;
+}
+
+/// Output-format marker: regular complex transform ([`DFTOutputFormat::Standard`]).
+pub struct Standard;
+/// Output-format marker: real/imag split ([`DFTOutputFormat::SplitRealAndImag`]).
+pub struct Split;
+/// Output-format marker: sparse `RepackImagAsReal` (imag repacked into the right
+/// half).
+pub struct Repack;
+impl sealed::Sealed for Standard {}
+impl sealed::Sealed for Split {}
+impl sealed::Sealed for Repack {}
+
+/// Compile-time output format carried in a [`DFTMatrix`] type parameter.
+/// Implemented by [`Standard`] / [`Split`] / [`Repack`]; sealed.
+pub trait DftFormat: sealed::Sealed {
+    /// The runtime [`DFTOutputFormat`] this marker stands for.
+    const FORMAT: DFTOutputFormat;
+}
+impl DftFormat for Standard {
+    const FORMAT: DFTOutputFormat = DFTOutputFormat::Standard;
+}
+impl DftFormat for Split {
+    const FORMAT: DFTOutputFormat = DFTOutputFormat::SplitRealAndImag;
+}
+impl DftFormat for Repack {
+    const FORMAT: DFTOutputFormat = DFTOutputFormat::RepackImagAsReal;
+}
+
+/// A generated, ready-to-evaluate homomorphic (I)DFT, carrying its transform
+/// **direction** `Dir` ([`Encode`]/[`Decode`]) and output **format** `Fmt`
+/// ([`Standard`]/[`Split`]/[`Repack`]) as compile-time type-state, and generic
+/// over the factor representation `R`.
 ///
-/// The variant is the canonical witness of the matrix's output format, so the
-/// three loosely-coupled `(kind, format, sparse)` flags collapse into one
-/// exhaustively-matchable value and illegal combinations (e.g. sparse
-/// `Standard`) are unrepresentable. The transform **direction**
-/// ([`DFTType::Encode`]/[`Decode`]) stays in [`DFTPlan::kind`] and is checked at
-/// the evaluation entry points; the format variant is what dispatch keys on.
+/// Because direction and format live in the type, the evaluation entry points
+/// require the exact matrix — e.g. [`ckks_coeffs_to_slots_repack`] only accepts a
+/// `DFTMatrix<BE, Encode, Repack, R>` — so a direction/format mismatch is a
+/// **compile error** rather than a runtime check. The single runtime resolution
+/// (the dense-`RepackImagAsReal`≡`Split` rule, which depends on `log_slots` vs
+/// `log_n`) happens once, when [`ckks_new_dft_matrix`] establishes the markers
+/// (it errors if `Repack` is requested for dense parameters).
 ///
-/// `R` selects how each factor's RHS is stored, trading memory for compute:
-/// the default `DFTMatrix<BE>` keeps unprepared plaintext diagonals
-/// ([`LinearTransformation`]) and materializes them per factor at eval time
-/// (minimal resident memory — for bandwidth-limited backends); the prepared
-/// alias [`DFTMatrixPrepared`] keeps the convolution-domain diagonals resident
-/// for faster repeated evaluation. The default builds via [`ckks_new_dft_matrix`]
-/// and the prepared form via [`ckks_new_dft_matrix_prepared`]; both evaluate
-/// through the same entry points (generic over `R`). The required Galois keys are
-/// reported by `galois_elements`.
+/// `R` selects how each factor's RHS is stored, trading memory for compute: the
+/// default keeps unprepared plaintext diagonals ([`LinearTransformation`]) and
+/// materializes them per factor at eval time (minimal resident memory); the
+/// prepared alias [`DFTMatrixPrepared`] keeps the convolution-domain diagonals
+/// resident. Build via [`ckks_new_dft_matrix`], then optionally
+/// [`ckks_prepare_dft_matrix`]. The required Galois keys are reported by
+/// `galois_elements`.
 ///
 /// [`ckks_new_dft_matrix`]: crate::default::dft::ckks_new_dft_matrix
-/// [`ckks_new_dft_matrix_prepared`]: crate::default::dft::ckks_new_dft_matrix_prepared
-pub enum DFTMatrix<BE: Backend, R = LinearTransformation<CKKSPlaintext<<BE as Backend>::OwnedBuf>>> {
-    /// Regular complex transform ([`DFTOutputFormat::Standard`]).
-    Standard(DFTMatrixFactors<BE, R>),
-    /// Real/imag split ([`DFTOutputFormat::SplitRealAndImag`], or a dense
-    /// `RepackImagAsReal` canonicalized to it).
-    Split(DFTMatrixFactors<BE, R>),
-    /// Sparse `RepackImagAsReal` (imag repacked into the right half); the only
-    /// variant carrying the `slots` repack rotation.
-    Repack(DFTMatrixFactors<BE, R>),
+/// [`ckks_prepare_dft_matrix`]: crate::default::dft::ckks_prepare_dft_matrix
+/// [`ckks_coeffs_to_slots_repack`]: crate::default::dft::ckks_coeffs_to_slots_repack
+pub struct DFTMatrix<BE: Backend, Dir, Fmt, R = LinearTransformation<CKKSPlaintext<<BE as Backend>::OwnedBuf>>> {
+    pub(crate) inner: DFTMatrixFactors<BE, R>,
+    _marker: PhantomData<(Dir, Fmt)>,
 }
 
 /// Prepared (resident-RHS) [`DFTMatrix`]: each factor's diagonals are kept in the
 /// convolution domain ([`LinearTransformationPrepared`]) rather than materialized
-/// per factor, trading resident memory for faster repeated evaluation. Built via
-/// [`ckks_new_dft_matrix_prepared`](crate::default::dft::ckks_new_dft_matrix_prepared).
-pub type DFTMatrixPrepared<BE> = DFTMatrix<BE, LinearTransformationPrepared<BE>>;
+/// per factor, trading resident memory for faster repeated evaluation. Preserves
+/// the `Dir`/`Fmt` type-state of the matrix it was prepared from. Obtained by
+/// preparing a [`DFTMatrix`] via
+/// [`ckks_prepare_dft_matrix`](crate::default::dft::ckks_prepare_dft_matrix).
+pub type DFTMatrixPrepared<BE, Dir, Fmt> = DFTMatrix<BE, Dir, Fmt, LinearTransformationPrepared<BE>>;
 
-/// Format discriminant an evaluation entry point requires, mirroring the
-/// [`DFTMatrix`] variants. Paired with a [`DFTType`] direction in
-/// [`DFTMatrix::ensure`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum DftFormatTag {
-    Standard,
-    Split,
-    Repack,
-}
-
-impl<BE: Backend, R> DFTMatrix<BE, R> {
-    /// The factor operands common to every variant.
-    pub(crate) fn inner(&self) -> &DFTMatrixFactors<BE, R> {
-        match self {
-            Self::Standard(f) | Self::Split(f) | Self::Repack(f) => f,
+impl<BE: Backend, Dir, Fmt, R> DFTMatrix<BE, Dir, Fmt, R> {
+    /// Wraps factor operands into the typed matrix. Internal: the caller asserts
+    /// the `Dir`/`Fmt` markers describe the resolved plan (see
+    /// `ckks_new_dft_matrix`, which validates this at construction).
+    pub(crate) fn from_factors(inner: DFTMatrixFactors<BE, R>) -> Self {
+        Self {
+            inner,
+            _marker: PhantomData,
         }
+    }
+
+    /// The factor operands.
+    pub(crate) fn inner(&self) -> &DFTMatrixFactors<BE, R> {
+        &self.inner
     }
 
     /// The resolved plan (canonical `format`, populated `factor_log_delta`).
     pub fn plan(&self) -> &DFTPlan {
-        &self.inner().plan
+        &self.inner.plan
     }
 
     /// The per-factor right operands, in evaluation order.
     pub(crate) fn factor_operands(&self) -> &[R] {
-        &self.inner().factors
+        &self.inner.factors
     }
 
-    /// Number of factor matrices (one prepared linear transformation each).
+    /// Number of factor matrices (one linear transformation each).
     pub fn num_factors(&self) -> usize {
-        self.inner().factors.len()
+        self.inner.factors.len()
     }
 
     /// `log_budget` bits consumed per factor (the per-factor plaintext `log_delta`).
     pub fn factor_log_delta(&self) -> usize {
-        self.inner().plan.factor_log_delta
+        self.inner.plan.factor_log_delta
     }
 
     /// Total `log_budget` bits the whole transform consumes: `num_factors ×
@@ -251,54 +300,13 @@ impl<BE: Backend, R> DFTMatrix<BE, R> {
     pub fn consumed_bits(&self) -> usize {
         self.num_factors() * self.factor_log_delta()
     }
+}
 
+impl<BE: Backend, Dir, Fmt: DftFormat, R> DFTMatrix<BE, Dir, Fmt, R> {
     /// Whether this is the sparse `RepackImagAsReal` path (needs the `slots`
-    /// repack rotation and updates `log_sparsity`).
+    /// repack rotation and updates `log_sparsity`). A compile-time property of the
+    /// `Fmt` type-state.
     pub fn is_sparse(&self) -> bool {
-        matches!(self, Self::Repack(_))
-    }
-
-    /// Validates that this matrix matches the `format`/`kind` an evaluation entry
-    /// point requires, returning a descriptive error instead of panicking. The
-    /// single gate every `coeffs_to_slots` / `slots_to_coeffs` variant goes
-    /// through; the dense-`RepackImagAsReal`≡`Split` rule was already resolved at
-    /// construction (it lives in the variant, not here).
-    pub(crate) fn ensure(&self, op: &'static str, format: DftFormatTag, kind: DFTType) -> Result<(), CKKSCompositionError> {
-        let format_ok = match format {
-            DftFormatTag::Standard => matches!(self, Self::Standard(_)),
-            DftFormatTag::Split => matches!(self, Self::Split(_)),
-            DftFormatTag::Repack => matches!(self, Self::Repack(_)),
-        };
-        if format_ok && self.plan().kind == kind {
-            return Ok(());
-        }
-
-        let expected: &'static str = match (kind, format) {
-            (DFTType::Encode, DftFormatTag::Standard) => "CoeffsToSlots (Encode/Standard)",
-            (DFTType::Encode, DftFormatTag::Split) => "CoeffsToSlotsSplit (Encode/Split)",
-            (DFTType::Encode, DftFormatTag::Repack) => "CoeffsToSlotsRepack (Encode/sparse Repack)",
-            (DFTType::Decode, DftFormatTag::Standard) => "SlotsToCoeffs (Decode/Standard)",
-            (DFTType::Decode, DftFormatTag::Split) => "SlotsToCoeffsSplit (Decode/Split)",
-            (DFTType::Decode, DftFormatTag::Repack) => "SlotsToCoeffsRepack (Decode/sparse Repack)",
-        };
-        Err(CKKSCompositionError::DftMatrixMismatch {
-            op,
-            expected,
-            got: self.describe(),
-        })
-    }
-
-    /// Human-readable `direction/format` description for error messages.
-    fn describe(&self) -> String {
-        let dir = match self.plan().kind {
-            DFTType::Encode => "CoeffsToSlots",
-            DFTType::Decode => "SlotsToCoeffs",
-        };
-        let fmt = match self {
-            Self::Standard(_) => "Standard",
-            Self::Split(_) => "Split",
-            Self::Repack(_) => "sparse Repack",
-        };
-        format!("{dir}/{fmt}")
+        Fmt::FORMAT == DFTOutputFormat::RepackImagAsReal
     }
 }

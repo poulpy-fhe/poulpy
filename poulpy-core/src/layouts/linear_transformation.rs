@@ -51,6 +51,13 @@ pub struct LinearTransformation<P> {
 }
 
 impl<P> LinearTransformation<P> {
+    /// The distinct baby-step slot rotations `k` (`baby_steps[0] == 0`, the
+    /// identity); the set the prepared baby cache must hold. Accessor over the
+    /// [`baby_steps`](Self::baby_steps) field for callers that prefer a method.
+    pub fn baby_steps(&self) -> &[i64] {
+        &self.baby_steps
+    }
+
     /// The first encoded diagonal across all giant steps, or `None` if the
     /// transform is empty. The diagonals share a uniform plaintext shape, so this
     /// is the canonical place callers read `base2k` / `max_k` / `log_delta` from.
@@ -158,7 +165,7 @@ impl LinearTransformationLayout {
     /// Distinct baby-step rotations (`k`) used by the schedule.
     ///
     /// This is the set of rotations the prepared baby cache must hold; pass it
-    /// to `LinearTransformationLhsPrepared::alloc` to size the cache up-front.
+    /// to `LinearTransformationBabySteps::alloc` to size the cache up-front.
     pub fn baby_steps(&self) -> Vec<i64> {
         self.index().baby_steps
     }

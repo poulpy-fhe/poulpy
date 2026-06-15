@@ -13,7 +13,7 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 use crate::layouts::{
     GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
     LinearTransformation,
-    prepared::{GGLWEPreparedToBackendRef, LinearTransformationLhsPrepared, PreparedDiagonal},
+    prepared::{GGLWEPreparedToBackendRef, LinearTransformationBabySteps, PreparedDiagonal},
 };
 
 /// GLWE-level setup and evaluation of a resident (prepared) linear
@@ -21,7 +21,7 @@ use crate::layouts::{
 ///
 /// The API is split into three phases (allocate / populate / evaluate); see
 /// [`LinearTransformation::alloc_prepared`] and
-/// [`LinearTransformationLhsPrepared::alloc`] for the allocation half.
+/// [`LinearTransformationBabySteps::alloc`] for the allocation half.
 pub trait GLWELinearTransformations<BE: Backend> {
     /// Scratch bytes required by [`Self::glwe_eval_linear_transformation_into`].
     fn glwe_eval_linear_transformation_tmp_bytes<R, A, B, K>(&self, res: &R, a: &A, pt: &B, key: &K) -> usize
@@ -67,11 +67,11 @@ pub trait GLWELinearTransformations<BE: Backend> {
     /// Fills a pre-allocated baby-step cache with the rotated, prepared versions
     /// of `a`.
     ///
-    /// `cache` must have been sized via [`LinearTransformationLhsPrepared::alloc`].
+    /// `cache` must have been sized via [`LinearTransformationBabySteps::alloc`].
     /// Performs zero `CnvPVecL` allocations.
     fn glwe_prepare_linear_transformation_lhs<A, H, K>(
         &self,
-        cache: &mut LinearTransformationLhsPrepared<BE>,
+        cache: &mut LinearTransformationBabySteps<BE>,
         a: &A,
         a_effective_k: usize,
         keys: &H,
@@ -91,7 +91,7 @@ pub trait GLWELinearTransformations<BE: Backend> {
         &self,
         cnv_offset: usize,
         res: &mut R,
-        lhs: &LinearTransformationLhsPrepared<BE>,
+        lhs: &LinearTransformationBabySteps<BE>,
         rhs: &LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>>,
         keys: &H,
         key_size: usize,
@@ -111,7 +111,7 @@ pub trait GLWELinearTransformations<BE: Backend> {
         &self,
         cnv_offset: usize,
         res: &mut R,
-        lhs: &LinearTransformationLhsPrepared<BE>,
+        lhs: &LinearTransformationBabySteps<BE>,
         rhs: &LinearTransformation<P>,
         keys: &H,
         key_size: usize,

@@ -38,7 +38,7 @@ use crate::{
     },
 };
 
-use super::LinearTransformationLhsPrepared;
+use super::LinearTransformationBabySteps;
 use crate::layouts::prepared::PreparedDiagonal;
 
 /// HAL/op bounds required by the eval reference path. Repeated on each free
@@ -134,7 +134,7 @@ where
 /// `glwe_prepare_linear_transformation_lhs`.
 pub fn glwe_prepare_linear_transformation_lhs_default<BE, M, A, H, K>(
     module: &M,
-    cache: &mut LinearTransformationLhsPrepared<BE>,
+    cache: &mut LinearTransformationBabySteps<BE>,
     a: &A,
     a_effective_k: usize,
     keys: &H,
@@ -178,7 +178,7 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, H, K>(
     module: &M,
     cnv_offset: usize,
     res: &mut R,
-    lhs: &LinearTransformationLhsPrepared<BE>,
+    lhs: &LinearTransformationBabySteps<BE>,
     rhs: &LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>>,
     keys: &H,
     key_size: usize,
@@ -236,7 +236,7 @@ pub fn glwe_eval_linear_transformation_unprepared_rhs_into_default<BE, M, R, P, 
     module: &M,
     cnv_offset: usize,
     res: &mut R,
-    lhs: &LinearTransformationLhsPrepared<BE>,
+    lhs: &LinearTransformationBabySteps<BE>,
     rhs: &LinearTransformation<P>,
     keys: &H,
     key_size: usize,

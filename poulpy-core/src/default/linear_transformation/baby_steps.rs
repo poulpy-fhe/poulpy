@@ -10,7 +10,7 @@
 //! Implements docs/lt_bsgs.md §6.2. The non-trivial baby rotations share one
 //! DFT of the input mask columns, then each key performs VMP -> IDFT -> add body
 //! -> normalize -> automorphism. The resulting SMALL ciphertexts are prepared
-//! as `CnvPVecL` and stored in a [`LinearTransformationLhsPrepared`] (whose
+//! as `CnvPVecL` and stored in a [`LinearTransformationBabySteps`] (whose
 //! definition lives in [`crate::layouts`]); this module owns the HAL-dependent
 //! allocator and population routines.
 
@@ -37,9 +37,9 @@ use crate::{
     },
 };
 
-use super::{LinearTransformationLayout, LinearTransformationLhsPrepared};
+use super::{LinearTransformationBabySteps, LinearTransformationLayout};
 
-impl<BE: Backend> LinearTransformationLhsPrepared<BE> {
+impl<BE: Backend> LinearTransformationBabySteps<BE> {
     /// Pre-allocates a baby-step cache for the given `baby_steps` rotations
     /// and input ciphertext shape `a`.
     ///
@@ -185,14 +185,14 @@ fn glwe_hoisted_baby_rotation<BE, M, R, A, H, K>(
 /// Fills a pre-allocated baby-step cache with `rot(a, k)` for every `k` already
 /// stored in `cache`.
 ///
-/// The cache must have been sized via [`LinearTransformationLhsPrepared::alloc`].
+/// The cache must have been sized via [`LinearTransformationBabySteps::alloc`].
 /// This is the populating counterpart of the old returning variant: it
 /// performs zero `CnvPVecL` allocations because the slots are owned by
 /// `cache`.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn glwe_prepare_linear_transformation_lhs<BE, M, A, H, K>(
     module: &M,
-    cache: &mut LinearTransformationLhsPrepared<BE>,
+    cache: &mut LinearTransformationBabySteps<BE>,
     a: &A,
     a_effective_k: usize,
     keys: &H,

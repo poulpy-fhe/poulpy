@@ -18,7 +18,7 @@ use crate::{
     layouts::{GLWEInfos, GLWEToBackendRef, prepared::PreparedDiagonal},
 };
 
-use super::LinearTransformationLhsPrepared;
+use super::LinearTransformationBabySteps;
 
 /// PROD block for one giant step of a resident (prepared) transform, kept in DFT
 /// domain.
@@ -31,7 +31,7 @@ pub(super) fn glwe_accumulate_prepared_baby_steps_dft<BE, M>(
     module: &M,
     cnv_offset_hi: usize,
     prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
-    lhs: &LinearTransformationLhsPrepared<BE>,
+    lhs: &LinearTransformationBabySteps<BE>,
     gs: &LinearTransformationGiantStep<PreparedDiagonal<BE::OwnedBuf, BE>>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
@@ -96,7 +96,7 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
     module: &M,
     cnv_offset_hi: usize,
     prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
-    lhs: &LinearTransformationLhsPrepared<BE>,
+    lhs: &LinearTransformationBabySteps<BE>,
     gs: &LinearTransformationGiantStep<P>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where

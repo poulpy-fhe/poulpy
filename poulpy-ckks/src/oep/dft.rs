@@ -13,9 +13,12 @@
 #![allow(clippy::too_many_arguments)]
 
 use anyhow::Result;
-use poulpy_core::layouts::{
-    Base2K, GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef,
-    GetGaloisElement, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
+use poulpy_core::{
+    default::linear_transformation::DiagonalProd,
+    layouts::{
+        Base2K, GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef,
+        GetGaloisElement, LinearTransformation, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
+    },
 };
 use poulpy_hal::{
     api::{ModuleNew, NegacyclicFFT, NegacyclicFFTNew},
@@ -26,7 +29,10 @@ use crate::{
     CKKSCtBounds, CKKSMeta, SetCKKSInfos,
     default::dft::{DftFactor, matrices::DftScalar},
     encoding::reim::Encoder,
-    layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, DFTMatrix, DFTMatrixPrepared, DFTPlan},
+    layouts::{
+        CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, DFTMatrix, DFTMatrixPrepared, DFTPlan, Decode,
+        DftDirection, DftFormat, Encode, Repack, Split, Standard,
+    },
 };
 
 /// Backend hook for the homomorphic-DFT family.
@@ -35,7 +41,15 @@ use crate::{
 /// Implementors must preserve the semantics, scratch requirements, aliasing
 /// guarantees, and backend bit-parity contract expected by end-to-end pipelines.
 pub unsafe trait DFTImpl<BE: Backend>: Backend {
-    fn ckks_new_dft_matrix_prepared<E, F>(
+    fn ckks_prepare_dft_matrix<Dir, Fmt, P>(
+        module: &Module<BE>,
+        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> DFTMatrixPrepared<BE, Dir, Fmt>
+    where
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>;
+
+    fn ckks_new_dft_matrix<Dir, Fmt, E, F>(
         module: &Module<BE>,
         host_module: &Module<HostBytesBackend>,
         encoder: &Encoder<E>,
@@ -43,34 +57,20 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
         factor_meta: CKKSMeta,
         literal: &DFTPlan,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> DFTMatrixPrepared<BE>
+    ) -> ::anyhow::Result<DFTMatrix<BE, Dir, Fmt>>
     where
+        Dir: DftDirection,
+        Fmt: DftFormat,
         F: CKKSScalar + DftScalar,
         BE: TransferFrom<HostBytesBackend>,
         Module<HostBytesBackend>: ModuleNew<HostBytesBackend> + CKKSModuleAlloc<HostBytesBackend>,
         E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
         CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>;
 
-    fn ckks_new_dft_matrix<E, F>(
-        module: &Module<BE>,
-        host_module: &Module<HostBytesBackend>,
-        encoder: &Encoder<E>,
-        base2k: Base2K,
-        factor_meta: CKKSMeta,
-        literal: &DFTPlan,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> DFTMatrix<BE>
-    where
-        F: CKKSScalar + DftScalar,
-        BE: TransferFrom<HostBytesBackend>,
-        Module<HostBytesBackend>: ModuleNew<HostBytesBackend> + CKKSModuleAlloc<HostBytesBackend>,
-        E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
-        CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>;
-
-    fn ckks_dft_evaluate_assign<R, Dst, H, K>(
+    fn ckks_dft_evaluate_assign<Dir, Fmt, R, Dst, H, K>(
         module: &Module<BE>,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Dir, Fmt, R>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -83,7 +83,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
     fn ckks_coeffs_to_slots<R, Dst, H, K>(
         module: &Module<BE>,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Encode, Standard, R>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -96,7 +96,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
     fn ckks_slots_to_coeffs<R, Dst, H, K>(
         module: &Module<BE>,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Decode, Standard, R>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -111,7 +111,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
         ct_real: &mut Dst,
         ct_imag: &mut Dst,
         ct_in: &Src,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Encode, Split, R>,
         keys: &H,
         conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -128,7 +128,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
         op_out: &mut Dst,
         ct_real: &Src,
         ct_imag: &Src,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Decode, Split, R>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -143,7 +143,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
         module: &Module<BE>,
         ct_out: &mut Dst,
         ct_in: &Src,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Encode, Repack, R>,
         keys: &H,
         conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -159,7 +159,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
         module: &Module<BE>,
         op_out: &mut Dst,
         ct_in: &Src,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Decode, Repack, R>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -179,7 +179,15 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
 /// format, write the impl block by hand and forward only the methods you keep.
 #[doc(hidden)]
 pub trait DFTDefault<BE: Backend> {
-    fn ckks_new_dft_matrix_prepared_default<E, F>(
+    fn ckks_prepare_dft_matrix_default<Dir, Fmt, P>(
+        &self,
+        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> DFTMatrixPrepared<BE, Dir, Fmt>
+    where
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>;
+
+    fn ckks_new_dft_matrix_default<Dir, Fmt, E, F>(
         &self,
         host_module: &Module<HostBytesBackend>,
         encoder: &Encoder<E>,
@@ -187,34 +195,20 @@ pub trait DFTDefault<BE: Backend> {
         factor_meta: CKKSMeta,
         literal: &DFTPlan,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> DFTMatrixPrepared<BE>
+    ) -> ::anyhow::Result<DFTMatrix<BE, Dir, Fmt>>
     where
+        Dir: DftDirection,
+        Fmt: DftFormat,
         F: CKKSScalar + DftScalar,
         BE: TransferFrom<HostBytesBackend>,
         Module<HostBytesBackend>: ModuleNew<HostBytesBackend> + CKKSModuleAlloc<HostBytesBackend>,
         E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
         CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>;
 
-    fn ckks_new_dft_matrix_default<E, F>(
-        &self,
-        host_module: &Module<HostBytesBackend>,
-        encoder: &Encoder<E>,
-        base2k: Base2K,
-        factor_meta: CKKSMeta,
-        literal: &DFTPlan,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> DFTMatrix<BE>
-    where
-        F: CKKSScalar + DftScalar,
-        BE: TransferFrom<HostBytesBackend>,
-        Module<HostBytesBackend>: ModuleNew<HostBytesBackend> + CKKSModuleAlloc<HostBytesBackend>,
-        E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
-        CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>;
-
-    fn ckks_dft_evaluate_assign_default<R, Dst, H, K>(
+    fn ckks_dft_evaluate_assign_default<Dir, Fmt, R, Dst, H, K>(
         &self,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Dir, Fmt, R>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -227,7 +221,7 @@ pub trait DFTDefault<BE: Backend> {
     fn ckks_coeffs_to_slots_default<R, Dst, H, K>(
         &self,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Encode, Standard, R>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -240,7 +234,7 @@ pub trait DFTDefault<BE: Backend> {
     fn ckks_slots_to_coeffs_default<R, Dst, H, K>(
         &self,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Decode, Standard, R>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -255,7 +249,7 @@ pub trait DFTDefault<BE: Backend> {
         ct_real: &mut Dst,
         ct_imag: &mut Dst,
         ct_in: &Src,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Encode, Split, R>,
         keys: &H,
         conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -272,7 +266,7 @@ pub trait DFTDefault<BE: Backend> {
         op_out: &mut Dst,
         ct_real: &Src,
         ct_imag: &Src,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Decode, Split, R>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -287,7 +281,7 @@ pub trait DFTDefault<BE: Backend> {
         &self,
         ct_out: &mut Dst,
         ct_in: &Src,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Encode, Repack, R>,
         keys: &H,
         conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -303,7 +297,7 @@ pub trait DFTDefault<BE: Backend> {
         &self,
         op_out: &mut Dst,
         ct_in: &Src,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Decode, Repack, R>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -320,7 +314,18 @@ where
     BE: Backend,
     Module<BE>: DFTDefault<BE>,
 {
-    fn ckks_new_dft_matrix_prepared<E, F>(
+    fn ckks_prepare_dft_matrix<Dir, Fmt, P>(
+        module: &Module<BE>,
+        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> DFTMatrixPrepared<BE, Dir, Fmt>
+    where
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
+    {
+        module.ckks_prepare_dft_matrix_default::<Dir, Fmt, P>(dft, scratch)
+    }
+
+    fn ckks_new_dft_matrix<Dir, Fmt, E, F>(
         module: &Module<BE>,
         host_module: &Module<HostBytesBackend>,
         encoder: &Encoder<E>,
@@ -328,40 +333,23 @@ where
         factor_meta: CKKSMeta,
         literal: &DFTPlan,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> DFTMatrixPrepared<BE>
+    ) -> ::anyhow::Result<DFTMatrix<BE, Dir, Fmt>>
     where
+        Dir: DftDirection,
+        Fmt: DftFormat,
         F: CKKSScalar + DftScalar,
         BE: TransferFrom<HostBytesBackend>,
         Module<HostBytesBackend>: ModuleNew<HostBytesBackend> + CKKSModuleAlloc<HostBytesBackend>,
         E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
         CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>,
     {
-        module.ckks_new_dft_matrix_prepared_default::<E, F>(host_module, encoder, base2k, factor_meta, literal, scratch)
+        module.ckks_new_dft_matrix_default::<Dir, Fmt, E, F>(host_module, encoder, base2k, factor_meta, literal, scratch)
     }
 
-    fn ckks_new_dft_matrix<E, F>(
-        module: &Module<BE>,
-        host_module: &Module<HostBytesBackend>,
-        encoder: &Encoder<E>,
-        base2k: Base2K,
-        factor_meta: CKKSMeta,
-        literal: &DFTPlan,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> DFTMatrix<BE>
-    where
-        F: CKKSScalar + DftScalar,
-        BE: TransferFrom<HostBytesBackend>,
-        Module<HostBytesBackend>: ModuleNew<HostBytesBackend> + CKKSModuleAlloc<HostBytesBackend>,
-        E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
-        CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>,
-    {
-        module.ckks_new_dft_matrix_default::<E, F>(host_module, encoder, base2k, factor_meta, literal, scratch)
-    }
-
-    fn ckks_dft_evaluate_assign<R, Dst, H, K>(
+    fn ckks_dft_evaluate_assign<Dir, Fmt, R, Dst, H, K>(
         module: &Module<BE>,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Dir, Fmt, R>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -377,7 +365,7 @@ where
     fn ckks_coeffs_to_slots<R, Dst, H, K>(
         module: &Module<BE>,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Encode, Standard, R>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -393,7 +381,7 @@ where
     fn ckks_slots_to_coeffs<R, Dst, H, K>(
         module: &Module<BE>,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Decode, Standard, R>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -411,7 +399,7 @@ where
         ct_real: &mut Dst,
         ct_imag: &mut Dst,
         ct_in: &Src,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Encode, Split, R>,
         keys: &H,
         conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -431,7 +419,7 @@ where
         op_out: &mut Dst,
         ct_real: &Src,
         ct_imag: &Src,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Decode, Split, R>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -449,7 +437,7 @@ where
         module: &Module<BE>,
         ct_out: &mut Dst,
         ct_in: &Src,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Encode, Repack, R>,
         keys: &H,
         conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -468,7 +456,7 @@ where
         module: &Module<BE>,
         op_out: &mut Dst,
         ct_in: &Src,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Decode, Repack, R>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -492,36 +480,20 @@ where
 macro_rules! impl_ckks_dft_defaults {
     ($be:ty) => {
         impl $crate::oep::DFTDefault<$be> for ::poulpy_hal::layouts::Module<$be> {
-            fn ckks_new_dft_matrix_prepared_default<E, F>(
+            fn ckks_prepare_dft_matrix_default<Dir, Fmt, P>(
                 &self,
-                host_module: &::poulpy_hal::layouts::Module<::poulpy_hal::layouts::HostBytesBackend>,
-                encoder: &$crate::encoding::reim::Encoder<E>,
-                base2k: ::poulpy_core::layouts::Base2K,
-                factor_meta: $crate::CKKSMeta,
-                literal: &$crate::layouts::DFTPlan,
+                dft: &$crate::layouts::DFTMatrix<$be, Dir, Fmt, ::poulpy_core::layouts::LinearTransformation<P>>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
-            ) -> $crate::layouts::DFTMatrixPrepared<$be>
+            ) -> $crate::layouts::DFTMatrixPrepared<$be, Dir, Fmt>
             where
-                F: $crate::layouts::CKKSScalar + $crate::default::dft::matrices::DftScalar,
-                $be: ::poulpy_hal::layouts::TransferFrom<::poulpy_hal::layouts::HostBytesBackend>,
-                ::poulpy_hal::layouts::Module<::poulpy_hal::layouts::HostBytesBackend>:
-                    ::poulpy_hal::api::ModuleNew<::poulpy_hal::layouts::HostBytesBackend>
-                        + $crate::layouts::CKKSModuleAlloc<::poulpy_hal::layouts::HostBytesBackend>,
-                E: ::poulpy_hal::api::NegacyclicFFT<F> + ::poulpy_hal::api::NegacyclicFFTNew<F>,
-                $crate::layouts::CKKSPlaintext<Vec<u8>>: $crate::layouts::CKKSPlaintextVecHostCodec<f64>,
+                P: ::poulpy_core::layouts::GLWEToBackendRef<$be>
+                    + $crate::CKKSCtBounds
+                    + ::poulpy_core::default::linear_transformation::DiagonalProd<$be>,
             {
-                $crate::default::dft::ckks_new_dft_matrix_prepared::<$be, E, F>(
-                    self,
-                    host_module,
-                    encoder,
-                    base2k,
-                    factor_meta,
-                    literal,
-                    scratch,
-                )
+                $crate::default::dft::ckks_prepare_dft_matrix::<Dir, Fmt, $be, P>(self, dft, scratch)
             }
 
-            fn ckks_new_dft_matrix_default<E, F>(
+            fn ckks_new_dft_matrix_default<Dir, Fmt, E, F>(
                 &self,
                 host_module: &::poulpy_hal::layouts::Module<::poulpy_hal::layouts::HostBytesBackend>,
                 encoder: &$crate::encoding::reim::Encoder<E>,
@@ -529,8 +501,10 @@ macro_rules! impl_ckks_dft_defaults {
                 factor_meta: $crate::CKKSMeta,
                 literal: &$crate::layouts::DFTPlan,
                 _scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
-            ) -> $crate::layouts::DFTMatrix<$be>
+            ) -> $crate::__macro_reexports::anyhow::Result<$crate::layouts::DFTMatrix<$be, Dir, Fmt>>
             where
+                Dir: $crate::layouts::DftDirection,
+                Fmt: $crate::layouts::DftFormat,
                 F: $crate::layouts::CKKSScalar + $crate::default::dft::matrices::DftScalar,
                 $be: ::poulpy_hal::layouts::TransferFrom<::poulpy_hal::layouts::HostBytesBackend>,
                 ::poulpy_hal::layouts::Module<::poulpy_hal::layouts::HostBytesBackend>:
@@ -539,7 +513,7 @@ macro_rules! impl_ckks_dft_defaults {
                 E: ::poulpy_hal::api::NegacyclicFFT<F> + ::poulpy_hal::api::NegacyclicFFTNew<F>,
                 $crate::layouts::CKKSPlaintext<Vec<u8>>: $crate::layouts::CKKSPlaintextVecHostCodec<f64>,
             {
-                $crate::default::dft::ckks_new_dft_matrix::<$be, E, F>(
+                $crate::default::dft::ckks_new_dft_matrix::<Dir, Fmt, $be, E, F>(
                     self,
                     host_module,
                     encoder,
@@ -549,13 +523,13 @@ macro_rules! impl_ckks_dft_defaults {
                 )
             }
 
-            fn ckks_dft_evaluate_assign_default<R, Dst, H, K>(
+            fn ckks_dft_evaluate_assign_default<Dir, Fmt, R, Dst, H, K>(
                 &self,
                 ct: &mut Dst,
-                dft: &$crate::layouts::DFTMatrix<$be, R>,
+                dft: &$crate::layouts::DFTMatrix<$be, Dir, Fmt, R>,
                 keys: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
-            ) -> ::anyhow::Result<()>
+            ) -> $crate::__macro_reexports::anyhow::Result<()>
             where
                 R: $crate::default::dft::DftFactor<$be>,
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
@@ -571,10 +545,10 @@ macro_rules! impl_ckks_dft_defaults {
             fn ckks_coeffs_to_slots_default<R, Dst, H, K>(
                 &self,
                 ct: &mut Dst,
-                dft: &$crate::layouts::DFTMatrix<$be, R>,
+                dft: &$crate::layouts::DFTMatrix<$be, $crate::layouts::Encode, $crate::layouts::Standard, R>,
                 keys: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
-            ) -> ::anyhow::Result<()>
+            ) -> $crate::__macro_reexports::anyhow::Result<()>
             where
                 R: $crate::default::dft::DftFactor<$be>,
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
@@ -590,10 +564,10 @@ macro_rules! impl_ckks_dft_defaults {
             fn ckks_slots_to_coeffs_default<R, Dst, H, K>(
                 &self,
                 ct: &mut Dst,
-                dft: &$crate::layouts::DFTMatrix<$be, R>,
+                dft: &$crate::layouts::DFTMatrix<$be, $crate::layouts::Decode, $crate::layouts::Standard, R>,
                 keys: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
-            ) -> ::anyhow::Result<()>
+            ) -> $crate::__macro_reexports::anyhow::Result<()>
             where
                 R: $crate::default::dft::DftFactor<$be>,
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
@@ -611,11 +585,11 @@ macro_rules! impl_ckks_dft_defaults {
                 ct_real: &mut Dst,
                 ct_imag: &mut Dst,
                 ct_in: &Src,
-                dft: &$crate::layouts::DFTMatrix<$be, R>,
+                dft: &$crate::layouts::DFTMatrix<$be, $crate::layouts::Encode, $crate::layouts::Split, R>,
                 keys: &H,
                 conj_key: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
-            ) -> ::anyhow::Result<()>
+            ) -> $crate::__macro_reexports::anyhow::Result<()>
             where
                 R: $crate::default::dft::DftFactor<$be>,
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
@@ -634,10 +608,10 @@ macro_rules! impl_ckks_dft_defaults {
                 op_out: &mut Dst,
                 ct_real: &Src,
                 ct_imag: &Src,
-                dft: &$crate::layouts::DFTMatrix<$be, R>,
+                dft: &$crate::layouts::DFTMatrix<$be, $crate::layouts::Decode, $crate::layouts::Split, R>,
                 keys: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
-            ) -> ::anyhow::Result<()>
+            ) -> $crate::__macro_reexports::anyhow::Result<()>
             where
                 R: $crate::default::dft::DftFactor<$be>,
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
@@ -655,11 +629,11 @@ macro_rules! impl_ckks_dft_defaults {
                 &self,
                 ct_out: &mut Dst,
                 ct_in: &Src,
-                dft: &$crate::layouts::DFTMatrix<$be, R>,
+                dft: &$crate::layouts::DFTMatrix<$be, $crate::layouts::Encode, $crate::layouts::Repack, R>,
                 keys: &H,
                 conj_key: &K,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
-            ) -> ::anyhow::Result<()>
+            ) -> $crate::__macro_reexports::anyhow::Result<()>
             where
                 R: $crate::default::dft::DftFactor<$be>,
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
@@ -677,10 +651,10 @@ macro_rules! impl_ckks_dft_defaults {
                 &self,
                 op_out: &mut Dst,
                 ct_in: &Src,
-                dft: &$crate::layouts::DFTMatrix<$be, R>,
+                dft: &$crate::layouts::DFTMatrix<$be, $crate::layouts::Decode, $crate::layouts::Repack, R>,
                 keys: &H,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
-            ) -> ::anyhow::Result<()>
+            ) -> $crate::__macro_reexports::anyhow::Result<()>
             where
                 R: $crate::default::dft::DftFactor<$be>,
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,

@@ -5,9 +5,12 @@
 //! See [`docs/ckks_dft.md`](https://github.com/poulpy-fhe/poulpy) for the design.
 
 use anyhow::Result;
-use poulpy_core::layouts::{
-    Base2K, GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef,
-    GetGaloisElement, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
+use poulpy_core::{
+    default::linear_transformation::DiagonalProd,
+    layouts::{
+        Base2K, GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef,
+        GetGaloisElement, LinearTransformation, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
+    },
 };
 use poulpy_hal::{
     api::{ModuleNew, NegacyclicFFT, NegacyclicFFTNew},
@@ -18,45 +21,46 @@ use crate::{
     CKKSCtBounds, CKKSMeta, SetCKKSInfos,
     default::dft::{DftFactor, matrices::DftScalar},
     encoding::reim::Encoder,
-    layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, DFTMatrix, DFTMatrixPrepared, DFTPlan},
+    layouts::{
+        CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, DFTMatrix, DFTMatrixPrepared, DFTPlan, Decode,
+        DftDirection, DftFormat, Encode, Repack, Split, Standard,
+    },
 };
 
 /// Homomorphic DFT operations on a CKKS [`Module`].
 ///
-/// Setup ([`Self::ckks_new_dft_matrix_prepared`]) builds the prepared factor operands once;
-/// the evaluation methods then apply them. The `*_assign` methods are the
-/// `Standard` format; `*_split` returns the real/imaginary parts in two
+/// Setup ([`Self::ckks_new_dft_matrix`]) builds the factor operands once (as a
+/// host, unprepared [`DFTMatrix`]); [`Self::ckks_prepare_dft_matrix`] optionally
+/// promotes that to the resident [`DFTMatrixPrepared`] for faster repeated
+/// evaluation. The evaluation methods apply either form. The `*_assign` methods
+/// are the `Standard` format; `*_split` returns the real/imaginary parts in two
 /// ciphertexts (`SplitRealAndImag`); `*_repack` is the sparse `RepackImagAsReal`
 /// path that packs the imaginary part into the right half of a single ciphertext.
 pub trait DFTOps<BE: Backend> {
-    /// Builds the prepared homomorphic (I)DFT described by `literal` (see
-    /// [`crate::default::dft::ckks_new_dft_matrix_prepared`]). The BSGS schedule is chosen
-    /// cost-optimally per factor matrix.
-    #[allow(clippy::too_many_arguments)]
-    fn ckks_new_dft_matrix_prepared<E, F>(
+    /// Prepares a host, unprepared [`DFTMatrix`] into its resident
+    /// convolution-domain form [`DFTMatrixPrepared`] (see
+    /// [`crate::default::dft::ckks_prepare_dft_matrix`]): each factor's plaintext
+    /// diagonals are prepared into a `CnvPVec` right operand, trading resident
+    /// memory for faster repeated evaluation. The plan and output-format variant
+    /// are preserved.
+    fn ckks_prepare_dft_matrix<Dir, Fmt, P>(
         &self,
-        host_module: &Module<HostBytesBackend>,
-        encoder: &Encoder<E>,
-        base2k: Base2K,
-        factor_meta: CKKSMeta,
-        literal: &DFTPlan,
+        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> DFTMatrixPrepared<BE>
+    ) -> DFTMatrixPrepared<BE, Dir, Fmt>
     where
-        F: CKKSScalar + DftScalar,
-        BE: TransferFrom<HostBytesBackend>,
-        Module<HostBytesBackend>: ModuleNew<HostBytesBackend> + CKKSModuleAlloc<HostBytesBackend>,
-        E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
-        CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>;
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>;
 
-    /// Builds the **streamed** (unprepared-RHS) homomorphic (I)DFT (see
-    /// [`crate::default::dft::ckks_new_dft_matrix`]). For
-    /// bandwidth-limited backends: the diagonals are materialized per factor at
-    /// eval time instead of kept resident. The host-backed reference build does
-    /// not touch `scratch`, but the parameter is kept for backends whose
-    /// encode/upload path needs device scratch.
+    /// Builds the (host, unprepared) homomorphic (I)DFT described by `literal`
+    /// (see [`crate::default::dft::ckks_new_dft_matrix`]): each factor matrix is
+    /// encoded into a CKKS linear transformation with plaintext diagonals,
+    /// materialized per factor at eval time. Promote it to the resident form with
+    /// [`Self::ckks_prepare_dft_matrix`]. The BSGS schedule is chosen
+    /// cost-optimally per factor matrix. The host-backed reference build does not
+    /// touch `scratch`, but the parameter is kept for backends whose encode/upload
+    /// path needs device scratch.
     #[allow(clippy::too_many_arguments)]
-    fn ckks_new_dft_matrix<E, F>(
+    fn ckks_new_dft_matrix<Dir, Fmt, E, F>(
         &self,
         host_module: &Module<HostBytesBackend>,
         encoder: &Encoder<E>,
@@ -64,8 +68,10 @@ pub trait DFTOps<BE: Backend> {
         factor_meta: CKKSMeta,
         literal: &DFTPlan,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> DFTMatrix<BE>
+    ) -> Result<DFTMatrix<BE, Dir, Fmt>>
     where
+        Dir: DftDirection,
+        Fmt: DftFormat,
         F: CKKSScalar + DftScalar,
         BE: TransferFrom<HostBytesBackend>,
         Module<HostBytesBackend>: ModuleNew<HostBytesBackend> + CKKSModuleAlloc<HostBytesBackend>,
@@ -73,10 +79,10 @@ pub trait DFTOps<BE: Backend> {
         CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>;
 
     /// Evaluates the homomorphic (I)DFT in place (raw chain, no format wrapper).
-    fn ckks_dft_evaluate_assign<R, Dst, H, K>(
+    fn ckks_dft_evaluate_assign<Dir, Fmt, R, Dst, H, K>(
         &self,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Dir, Fmt, R>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -90,7 +96,7 @@ pub trait DFTOps<BE: Backend> {
     fn ckks_coeffs_to_slots<R, Dst, H, K>(
         &self,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Encode, Standard, R>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -104,7 +110,7 @@ pub trait DFTOps<BE: Backend> {
     fn ckks_slots_to_coeffs<R, Dst, H, K>(
         &self,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Decode, Standard, R>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -121,7 +127,7 @@ pub trait DFTOps<BE: Backend> {
         ct_real: &mut Dst,
         ct_imag: &mut Dst,
         ct_in: &Src,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Encode, Split, R>,
         keys: &H,
         conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -139,7 +145,7 @@ pub trait DFTOps<BE: Backend> {
         op_out: &mut Dst,
         ct_real: &Src,
         ct_imag: &Src,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Decode, Split, R>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -156,7 +162,7 @@ pub trait DFTOps<BE: Backend> {
         &self,
         ct_out: &mut Dst,
         ct_in: &Src,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Encode, Repack, R>,
         keys: &H,
         conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -173,7 +179,7 @@ pub trait DFTOps<BE: Backend> {
         &self,
         op_out: &mut Dst,
         ct_in: &Src,
-        dft: &DFTMatrix<BE, R>,
+        dft: &DFTMatrix<BE, Decode, Repack, R>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>

@@ -7,7 +7,7 @@ use crate::{
     layouts::{
         GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
         LinearTransformation,
-        prepared::{GGLWEPreparedToBackendRef, LinearTransformationLhsPrepared, PreparedDiagonal},
+        prepared::{GGLWEPreparedToBackendRef, LinearTransformationBabySteps, PreparedDiagonal},
     },
     oep::LinearTransformationImpl,
 };
@@ -64,7 +64,7 @@ where
 
     fn glwe_prepare_linear_transformation_lhs<A, H, K>(
         &self,
-        cache: &mut LinearTransformationLhsPrepared<BE>,
+        cache: &mut LinearTransformationBabySteps<BE>,
         a: &A,
         a_effective_k: usize,
         keys: &H,
@@ -82,7 +82,7 @@ where
         &self,
         cnv_offset: usize,
         res: &mut R,
-        lhs: &LinearTransformationLhsPrepared<BE>,
+        lhs: &LinearTransformationBabySteps<BE>,
         rhs: &LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>>,
         keys: &H,
         key_size: usize,
@@ -99,7 +99,7 @@ where
         &self,
         cnv_offset: usize,
         res: &mut R,
-        lhs: &LinearTransformationLhsPrepared<BE>,
+        lhs: &LinearTransformationBabySteps<BE>,
         rhs: &LinearTransformation<P>,
         keys: &H,
         key_size: usize,

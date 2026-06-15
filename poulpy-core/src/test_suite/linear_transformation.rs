@@ -15,7 +15,7 @@ use poulpy_hal::{
 
 use crate::{
     EncryptionLayout, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECopy, GLWEEncryptSk, GLWELinearTransformations,
-    LinearTransformationLhsPrepared,
+    LinearTransformationBabySteps,
     layouts::{
         GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory,
         GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
@@ -129,7 +129,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         atks.insert(module.galois_element(rot), prepared);
     }
 
-    let mut prepared_babies = LinearTransformationLhsPrepared::alloc(module, &baby_steps, &ct);
+    let mut prepared_babies = LinearTransformationBabySteps::alloc(module, &baby_steps, &ct);
     module.glwe_prepare_linear_transformation_lhs(
         &mut prepared_babies,
         &ct,

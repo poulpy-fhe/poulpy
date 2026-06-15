@@ -45,7 +45,7 @@ and so the layout/schedule math stays free of any backend.
 - [`LinearTransformationRhsPrepared<BE>`](../poulpy-core/src/layouts/prepared/linear_transformation.rs)
   — the prepared **right** operand: pruned giant steps, each holding `CnvPVecR` diagonals
   keyed by the real baby rotation `k`, plus the plaintext limb layout the evaluator needs.
-- [`LinearTransformationLhsPrepared<BE>`](../poulpy-core/src/layouts/prepared/linear_transformation.rs)
+- [`LinearTransformationBabySteps<BE>`](../poulpy-core/src/layouts/prepared/linear_transformation.rs)
   — the prepared **left** operand: a `BTreeMap<i64, CnvPVecL>` of baby rotations
   `rot(v,k)`, addressed by the real BSGS index `k` (not a dense position).
 
@@ -121,7 +121,7 @@ cache. This is **Phase A** of the spec, and it carries three savings:
   otherwise it falls back to the public `glwe_automorphism` per baby (still correct, just
   un-hoisted).
 
-The result of Phase A is `LinearTransformationLhsPrepared`: `n1` prepared `CnvPVecL`
+The result of Phase A is `LinearTransformationBabySteps`: `n1` prepared `CnvPVecL`
 rotations reused across **all** `n2` giant steps.
 
 ---

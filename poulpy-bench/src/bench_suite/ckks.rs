@@ -4,7 +4,7 @@ use criterion::Criterion;
 use poulpy_ckks::{
     CKKSMeta,
     api::{
-        Diagonal, GiantStep, LinearTransformation, LinearTransformationLhsPrepared, LinearTransformationOps,
+        Diagonal, GiantStep, LinearTransformation, LinearTransformationBabySteps, LinearTransformationOps,
         LinearTransformationPrepared, LinearTransformationStrategy,
     },
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
@@ -303,11 +303,11 @@ fn prepare_babies<BE>(
     src: &CKKSCiphertext<Vec<u8>>,
     atks: &HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
     scratch: &mut ScratchArena<'_, BE>,
-) -> LinearTransformationLhsPrepared<BE>
+) -> LinearTransformationBabySteps<BE>
 where
     BE: CkksBenchBackend,
 {
-    let mut babies = LinearTransformationLhsPrepared::alloc(module, baby_steps, src);
+    let mut babies = LinearTransformationBabySteps::alloc(module, baby_steps, src);
     module
         .ckks_prepare_linear_transformation_lhs(&mut babies, src, atks, scratch)
         .expect("baby-step preparation failed (missing automorphism key?)");

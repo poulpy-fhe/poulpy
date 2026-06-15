@@ -18,8 +18,8 @@ use poulpy_hal::{
 use crate::{
     default::operations::msb_mask_bottom_limb,
     layouts::{
-        GLWEInfos, GLWEToBackendRef, LWEInfos, LinearTransformation, LinearTransformationDiagonal,
-        LinearTransformationGiantStep, LinearTransformationLayout, LinearTransformationPlan, prepared::PreparedDiagonal,
+        GLWEInfos, GLWEToBackendRef, LWEInfos, LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep,
+        LinearTransformationLayout, LinearTransformationPlan, prepared::PreparedDiagonal,
     },
 };
 
