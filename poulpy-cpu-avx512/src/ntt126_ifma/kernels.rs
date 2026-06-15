@@ -1560,7 +1560,15 @@ unsafe fn intt_plane_avx512<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTableInv<P>
             nn = 16;
         }
 
+        // When the last butterfly level (nn = n) is produced by this loop
+        // (n >= 16), fuse the level-0 untwist into its output store instead of
+        // running a separate full pass over the plane.
+        let fuse_untwist = n >= 16;
+
         while nn <= n {
+            if fuse_untwist && nn == n {
+                break;
+            }
             let halfnn = nn / 2;
 
             if halfnn > 1 {
@@ -1676,24 +1684,113 @@ unsafe fn intt_plane_avx512<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTableInv<P>
             nn *= 2;
         }
 
-        let omega_base = seg_base;
-        let quot_base = seg_base + 3 * n;
-        let mut i = 0usize;
-        while i + 8 <= n {
-            let a = _mm512_loadu_si512(ptr.add(i) as *const __m512i);
-            let omega = load_plane_twiddles8(powomega, omega_base, n, i, prime);
-            let omega_quot = load_plane_twiddles8(powomega, quot_base, n, i, prime);
-            _mm512_storeu_si512(ptr.add(i) as *mut __m512i, harvey_modmul_plane8(a, omega, omega_quot, q));
-            i += 8;
-        }
-        while i < n {
-            plane[i] = harvey_modmul(
-                plane[i],
-                powomega[omega_base + prime * n + i],
-                powomega[quot_base + prime * n + i],
+        if fuse_untwist {
+            // Last level (nn = n, single block) fused with the level-0 untwist:
+            // the butterfly outputs are multiplied by their untwist twiddle on
+            // the way to memory, removing a separate full pass over the plane.
+            let halfnn = n / 2;
+            let count = halfnn - 1;
+            let bf_omega = seg_base;
+            let bf_quot = seg_base + 3 * count;
+            let ut_omega = seg_base + 6 * count;
+            let ut_quot = ut_omega + 3 * n;
+
+            // i = 0: butterfly without twiddle, then untwist both outputs.
+            let a = plane[0];
+            let b = plane[halfnn];
+            plane[0] = harvey_modmul(
+                cond_sub_2q(a + b, q4),
+                powomega[ut_omega + prime * n],
+                powomega[ut_quot + prime * n],
                 q,
             );
-            i += 1;
+            plane[halfnn] = harvey_modmul(
+                cond_sub_2q(a + q4 - b, q4),
+                powomega[ut_omega + prime * n + halfnn],
+                powomega[ut_quot + prime * n + halfnn],
+                q,
+            );
+
+            let mut i = 1usize;
+            while i + 8 <= halfnn {
+                let p1 = i;
+                let p2 = halfnn + i;
+                let av = _mm512_loadu_si512(ptr.add(p1) as *const __m512i);
+                let bv = _mm512_loadu_si512(ptr.add(p2) as *const __m512i);
+                let bo = harvey_modmul_plane8(
+                    bv,
+                    load_plane_twiddles8(powomega, bf_omega, count, i - 1, prime),
+                    load_plane_twiddles8(powomega, bf_quot, count, i - 1, prime),
+                    q,
+                );
+                let sum = cond_sub_2q_si512(_mm512_add_epi64(av, bo), q4v);
+                let diff = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(av, q4v), bo), q4v);
+                let out_lo = harvey_modmul_plane8(
+                    sum,
+                    load_plane_twiddles8(powomega, ut_omega, n, p1, prime),
+                    load_plane_twiddles8(powomega, ut_quot, n, p1, prime),
+                    q,
+                );
+                let out_hi = harvey_modmul_plane8(
+                    diff,
+                    load_plane_twiddles8(powomega, ut_omega, n, p2, prime),
+                    load_plane_twiddles8(powomega, ut_quot, n, p2, prime),
+                    q,
+                );
+                _mm512_storeu_si512(ptr.add(p1) as *mut __m512i, out_lo);
+                _mm512_storeu_si512(ptr.add(p2) as *mut __m512i, out_hi);
+                i += 8;
+            }
+            if i < halfnn {
+                let r = halfnn - i;
+                let mask = ((1u32 << r) - 1) as u8;
+                let p1 = i;
+                let p2 = halfnn + i;
+                let av = _mm512_maskz_loadu_epi64(mask, ptr.add(p1) as *const i64);
+                let bv = _mm512_maskz_loadu_epi64(mask, ptr.add(p2) as *const i64);
+                let bo = harvey_modmul_plane8(
+                    bv,
+                    maskz_load_plane_twiddles8(mask, powomega, bf_omega, count, i - 1, prime),
+                    maskz_load_plane_twiddles8(mask, powomega, bf_quot, count, i - 1, prime),
+                    q,
+                );
+                let sum = cond_sub_2q_si512(_mm512_add_epi64(av, bo), q4v);
+                let diff = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(av, q4v), bo), q4v);
+                let out_lo = harvey_modmul_plane8(
+                    sum,
+                    maskz_load_plane_twiddles8(mask, powomega, ut_omega, n, p1, prime),
+                    maskz_load_plane_twiddles8(mask, powomega, ut_quot, n, p1, prime),
+                    q,
+                );
+                let out_hi = harvey_modmul_plane8(
+                    diff,
+                    maskz_load_plane_twiddles8(mask, powomega, ut_omega, n, p2, prime),
+                    maskz_load_plane_twiddles8(mask, powomega, ut_quot, n, p2, prime),
+                    q,
+                );
+                _mm512_mask_storeu_epi64(ptr.add(p1) as *mut i64, mask, out_lo);
+                _mm512_mask_storeu_epi64(ptr.add(p2) as *mut i64, mask, out_hi);
+            }
+        } else {
+            let omega_base = seg_base;
+            let quot_base = seg_base + 3 * n;
+            let mut i = 0usize;
+            while i + 8 <= n {
+                let a = _mm512_loadu_si512(ptr.add(i) as *const __m512i);
+                let omega = load_plane_twiddles8(powomega, omega_base, n, i, prime);
+                let omega_quot = load_plane_twiddles8(powomega, quot_base, n, i, prime);
+                _mm512_storeu_si512(ptr.add(i) as *mut __m512i, harvey_modmul_plane8(a, omega, omega_quot, q));
+                i += 8;
+            }
+            while i < n {
+                plane[i] = harvey_modmul(
+                    plane[i],
+                    powomega[omega_base + prime * n + i],
+                    powomega[quot_base + prime * n + i],
+                    q,
+                );
+                i += 1;
+            }
         }
     }
 }
