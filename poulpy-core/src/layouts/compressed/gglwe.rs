@@ -8,7 +8,7 @@ use poulpy_hal::{
 };
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEToBackendMut, GLWEInfos, LWEInfos, Rank, TorusPrecision,
+    Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEInfos, GGLWEToBackendMut, GLWEInfos, LWEInfos, Rank, TorusPrecision,
     compressed::{GLWECompressed, GLWECompressedBackendMut, GLWECompressedViewMut, GLWECompressedViewRef, GLWEDecompress},
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -47,6 +47,19 @@ impl<'a, BE: Backend + 'a> GGLWECompressedBackendRef<'a, BE> {
 
     pub fn at_view(&self, row: usize, col: usize) -> GLWECompressedViewRef<'_, BE> {
         GLWECompressedViewRef::from_inner(gglwe_compressed_at_backend_ref_from_ref::<BE>(&self.inner, row, col))
+    }
+
+    /// Views the stored compressed bodies as a rank-0 GGLWE.
+    ///
+    /// Compressed GGLWE data stores exactly the body column. Callers that need to
+    /// prepare or copy only that body can use this view without expanding seeded
+    /// mask columns.
+    pub fn body_as_gglwe(&self) -> GGLWE<BE::BufRef<'_>> {
+        GGLWE {
+            data: poulpy_hal::layouts::mat_znx_backend_ref_from_ref::<BE>(&self.inner.data),
+            base2k: self.inner.base2k,
+            dsize: self.inner.dsize,
+        }
     }
 }
 

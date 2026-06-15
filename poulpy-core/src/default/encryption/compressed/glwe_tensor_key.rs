@@ -83,7 +83,7 @@ where
         self.glwe_secret_tensor_prepare(&mut sk_tensor, sk, &mut tensor_scratch);
 
         let (mut enc_scratch, _scratch_4) = scratch_3.split_at(self.gglwe_compressed_encrypt_sk_tmp_bytes(res));
-        let sk_tensor_data = &mut sk_tensor.data;
+        let sk_tensor_data = sk_tensor.data_mut();
         self.gglwe_compressed_encrypt_sk(
             res,
             &sk_tensor_data,

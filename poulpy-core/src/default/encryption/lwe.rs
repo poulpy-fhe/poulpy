@@ -13,6 +13,39 @@ use crate::{
 };
 
 #[doc(hidden)]
+pub trait LWEFillMaskDefault<BE: Backend> {
+    fn fill_lwe_mask_from_source_default<R>(&self, base2k: usize, res: &mut R, source_xa: &mut Source)
+    where
+        R: LWEToBackendMut<BE>;
+
+    fn fill_lwe_mask_from_seed_default<R>(&self, base2k: usize, res: &mut R, seed_xa: [u8; 32])
+    where
+        R: LWEToBackendMut<BE>;
+}
+
+impl<BE: Backend> LWEFillMaskDefault<BE> for Module<BE>
+where
+    Self: VecZnxFillUniformSourceBackend<BE>,
+{
+    fn fill_lwe_mask_from_source_default<R>(&self, base2k: usize, res: &mut R, source_xa: &mut Source)
+    where
+        R: LWEToBackendMut<BE>,
+    {
+        let mut res = res.to_backend_mut();
+        assert_eq!(res.mask.cols(), 1, "fill_lwe_mask_from_source: LWE mask cols must be 1");
+        self.vec_znx_fill_uniform_source_backend(base2k, &mut res.mask, 0, source_xa);
+    }
+
+    fn fill_lwe_mask_from_seed_default<R>(&self, base2k: usize, res: &mut R, seed_xa: [u8; 32])
+    where
+        R: LWEToBackendMut<BE>,
+    {
+        let mut source_xa = Source::new(seed_xa);
+        self.fill_lwe_mask_from_source_default(base2k, res, &mut source_xa);
+    }
+}
+
+#[doc(hidden)]
 pub trait LWEEncryptSkDefault<BE: Backend> {
     fn lwe_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where
@@ -37,7 +70,7 @@ pub trait LWEEncryptSkDefault<BE: Backend> {
 impl<BE: Backend> LWEEncryptSkDefault<BE> for Module<BE>
 where
     Self: Sized
-        + VecZnxFillUniformSourceBackend<BE>
+        + LWEFillMaskDefault<BE>
         + VecZnxBigAddNormal<BE>
         + VecZnxBigBytesOf
         + VecZnxBigInnerSumBackend<BE>
@@ -92,11 +125,7 @@ where
         let base2k: usize = res.base2k().into();
         let res_n: usize = res.n().into();
         let res_size = res.size();
-        {
-            // Sample the mask directly into res.mask.
-            let mut res_mut = res.to_backend_mut();
-            self.vec_znx_fill_uniform_source_backend(base2k, &mut res_mut.mask, 0, source_xa);
-        }
+        self.fill_lwe_mask_from_source_default(base2k, res, source_xa);
 
         // tmp_hadamard[limb][k] = mask[limb][k] * sk[k]  (element-wise, BigScalar)
         let (mut tmp_hadamard, scratch_1) = scratch.borrow().take_vec_znx_big_scratch_n(res_n, 1, res_size);

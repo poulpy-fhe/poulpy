@@ -1,8 +1,8 @@
 use crate::{
     api::{
-        VecZnxDftAddAssign, VecZnxDftAddInto, VecZnxDftAddScaledAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf,
-        VecZnxDftCopy, VecZnxDftFromBytes, VecZnxDftSub, VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxDftZero,
-        VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
+        VecZnxDftAddAssign, VecZnxDftAddInto, VecZnxDftAddScaledAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism,
+        VecZnxDftAutomorphismPlan, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftFromBytes, VecZnxDftSub, VecZnxDftSubAssign,
+        VecZnxDftSubNegateAssign, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
     },
     layouts::{
         Backend, Module, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDft, VecZnxDftBackendMut,
@@ -193,3 +193,30 @@ impl_vec_znx_dft_delegate!(
         B::vec_znx_dft_zero(self, res, res_col);
     }
 );
+
+impl<B> VecZnxDftAutomorphismPlan<B> for Module<B>
+where
+    B: Backend + HalVecZnxDftImpl<B>,
+{
+    type Plan = <B as HalVecZnxDftImpl<B>>::AutomorphismPlan;
+
+    fn vec_znx_dft_automorphism_plan(&self, p: i64) -> Self::Plan {
+        B::vec_znx_dft_automorphism_plan(self, p)
+    }
+}
+
+impl<B> VecZnxDftAutomorphism<B> for Module<B>
+where
+    B: Backend + HalVecZnxDftImpl<B>,
+{
+    fn vec_znx_dft_automorphism_with_plan(
+        &self,
+        plan: &Self::Plan,
+        res: &mut VecZnxDftBackendMut<'_, B>,
+        res_col: usize,
+        a: &VecZnxDftBackendRef<'_, B>,
+        a_col: usize,
+    ) {
+        B::vec_znx_dft_automorphism_with_plan(self, plan, res, res_col, a, a_col);
+    }
+}

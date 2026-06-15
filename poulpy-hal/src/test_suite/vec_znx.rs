@@ -1,12 +1,13 @@
 use super::{
-    TestParams, download_scalar_znx, download_vec_znx, scalar_znx_backend_ref, upload_scalar_znx, upload_vec_znx,
-    vec_znx_backend_mut, vec_znx_backend_ref,
+    TestParams, download_scalar_znx, download_vec_znx, scalar_znx_backend_mut, scalar_znx_backend_ref, upload_scalar_znx,
+    upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref,
 };
 use std::f64::consts::SQRT_2;
 
 use crate::{
     api::{
-        ModuleNew, ScalarZnxFillBinaryBlockBackend, ScalarZnxFillBinaryBlockSourceBackend, ScalarZnxFillBinaryHwBackend,
+        ModuleNew, ScalarZnxAutomorphismAssignBackend, ScalarZnxAutomorphismAssignTmpBytes, ScalarZnxAutomorphismBackend,
+        ScalarZnxFillBinaryBlockBackend, ScalarZnxFillBinaryBlockSourceBackend, ScalarZnxFillBinaryHwBackend,
         ScalarZnxFillBinaryHwSourceBackend, ScalarZnxFillBinaryProbBackend, ScalarZnxFillBinaryProbSourceBackend,
         ScalarZnxFillTernaryHwBackend, ScalarZnxFillTernaryHwSourceBackend, ScalarZnxFillTernaryProbBackend,
         ScalarZnxFillTernaryProbSourceBackend, ScratchOwnedAlloc, VecZnxAddAssignBackend, VecZnxAddConstAssignBackend,
@@ -913,6 +914,110 @@ pub fn test_vec_znx_merge_rings<BR: crate::test_suite::TestBackend, BT: crate::t
                 download_vec_znx::<BT>(&res_test_backend)
             );
         }
+    }
+}
+
+pub fn test_scalar_znx_automorphism<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+    params: &TestParams,
+    module_host: &Module<HostBytesBackend>,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
+    Module<BR>: ScalarZnxAutomorphismBackend<BR>,
+    Module<BT>: ScalarZnxAutomorphismBackend<BT>,
+{
+    let base2k = params.base2k;
+    assert_eq!(module_ref.n(), module_test.n());
+
+    let mut source: Source = Source::new([0u8; 32]);
+    let cols: usize = 2;
+
+    let mut a: ScalarZnx<Vec<u8>> = module_host.scalar_znx_alloc(cols);
+    a.fill_uniform(base2k, &mut source);
+    let a_digest: u64 = a.digest_u64();
+    let a_ref = upload_scalar_znx::<BR>(&a);
+    let a_test = upload_scalar_znx::<BT>(&a);
+
+    let mut res_ref: ScalarZnx<Vec<u8>> = module_host.scalar_znx_alloc(cols);
+    let mut res_test: ScalarZnx<Vec<u8>> = module_host.scalar_znx_alloc(cols);
+    res_ref.fill_uniform(base2k, &mut source);
+    res_test.fill_uniform(base2k, &mut source);
+    let mut res_ref_backend = upload_scalar_znx::<BR>(&res_ref);
+    let mut res_test_backend = upload_scalar_znx::<BT>(&res_test);
+
+    for p in [-5, 5] {
+        for i in 0..cols {
+            module_ref.scalar_znx_automorphism_backend(
+                p,
+                &mut scalar_znx_backend_mut::<BR>(&mut res_ref_backend),
+                i,
+                &scalar_znx_backend_ref::<BR>(&a_ref),
+                i,
+            );
+            module_test.scalar_znx_automorphism_backend(
+                p,
+                &mut scalar_znx_backend_mut::<BT>(&mut res_test_backend),
+                i,
+                &scalar_znx_backend_ref::<BT>(&a_test),
+                i,
+            );
+        }
+
+        assert_eq!(a.digest_u64(), a_digest);
+        assert_eq!(
+            download_scalar_znx::<BR>(&res_ref_backend),
+            download_scalar_znx::<BT>(&res_test_backend)
+        );
+    }
+}
+
+pub fn test_scalar_znx_automorphism_assign<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+    params: &TestParams,
+    module_host: &Module<HostBytesBackend>,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
+    Module<BR>: ScalarZnxAutomorphismAssignBackend<BR> + ScalarZnxAutomorphismAssignTmpBytes,
+    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
+    Module<BT>: ScalarZnxAutomorphismAssignBackend<BT> + ScalarZnxAutomorphismAssignTmpBytes,
+    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
+{
+    let base2k = params.base2k;
+    assert_eq!(module_ref.n(), module_test.n());
+
+    let mut source: Source = Source::new([0u8; 32]);
+    let cols: usize = 2;
+
+    let mut scratch_ref: ScratchOwned<BR> = ScratchOwned::alloc(module_ref.scalar_znx_automorphism_assign_tmp_bytes());
+    let mut scratch_test: ScratchOwned<BT> = ScratchOwned::alloc(module_test.scalar_znx_automorphism_assign_tmp_bytes());
+
+    let mut res_ref: ScalarZnx<Vec<u8>> = module_host.scalar_znx_alloc(cols);
+    let mut res_test: ScalarZnx<Vec<u8>> = module_host.scalar_znx_alloc(cols);
+    res_ref.fill_uniform(base2k, &mut source);
+    res_test.raw_mut().copy_from_slice(res_ref.raw());
+    let mut res_ref_backend = upload_scalar_znx::<BR>(&res_ref);
+    let mut res_test_backend = upload_scalar_znx::<BT>(&res_test);
+
+    for p in [-7, 7] {
+        for i in 0..cols {
+            module_ref.scalar_znx_automorphism_assign_backend(
+                p,
+                &mut scalar_znx_backend_mut::<BR>(&mut res_ref_backend),
+                i,
+                &mut scratch_ref.arena(),
+            );
+            module_test.scalar_znx_automorphism_assign_backend(
+                p,
+                &mut scalar_znx_backend_mut::<BT>(&mut res_test_backend),
+                i,
+                &mut scratch_test.arena(),
+            );
+        }
+
+        assert_eq!(
+            download_scalar_znx::<BR>(&res_ref_backend),
+            download_scalar_znx::<BT>(&res_test_backend)
+        );
     }
 }
 

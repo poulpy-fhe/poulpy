@@ -457,6 +457,17 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_automorphism_rotate_backend(
+        module: &Module<BE>,
+        p: i64,
+        k: i64,
+        res: &mut VecZnxBackendMut<'_, BE>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, BE>,
+        a_col: usize,
+    );
+
     fn vec_znx_mul_xp_minus_one_backend(
         module: &Module<BE>,
         k: i64,
@@ -513,6 +524,8 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         a: &VecZnxBackendRef<'_, BE>,
         a_col: usize,
     );
+
+    fn vec_znx_transpose_backend(module: &Module<BE>, res: &mut VecZnxBackendMut<'_, BE>, a: &VecZnxBackendRef<'_, BE>);
 
     fn vec_znx_copy_range_backend(
         module: &Module<BE>,
@@ -703,6 +716,17 @@ pub unsafe trait HalVecZnxBigImpl<BE: Backend>: Backend {
         a_col: usize,
     );
 
+    fn vec_znx_big_col_weighted_sum(
+        module: &Module<BE>,
+        res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, BE>,
+        weights: &ScalarZnxBackendRef<'_, BE>,
+        weights_col: usize,
+        cols: usize,
+        coeffs: usize,
+    );
+
     fn vec_znx_scalar_product(
         module: &Module<BE>,
         res: &mut crate::layouts::VecZnxBigBackendMut<'_, BE>,
@@ -857,6 +881,21 @@ pub unsafe trait HalVecZnxDftImpl<BE: Backend>: Backend {
     );
 
     fn vec_znx_dft_zero(module: &Module<BE>, res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>, res_col: usize);
+
+    /// Backend-specific automorphism plan (e.g. a `Fft64AutomorphismPlan`
+    /// for FFT64 backends, a pure-permutation plan for NTT backends).
+    type AutomorphismPlan: Send + Sync;
+
+    fn vec_znx_dft_automorphism_plan(module: &Module<BE>, p: i64) -> Self::AutomorphismPlan;
+
+    fn vec_znx_dft_automorphism_with_plan(
+        module: &Module<BE>,
+        plan: &Self::AutomorphismPlan,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        a: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
+        a_col: usize,
+    );
 }
 
 /// Scalar-vector product family extension point.
@@ -991,8 +1030,8 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend {
 /// Convolution family extension point.
 ///
 /// # Safety
-/// Implementations must uphold the backend safety contract for prepared
-/// convolution layouts, scratch usage, and arithmetic correctness.
+/// Implementations must uphold the backend safety contract for prepared matrix
+/// layouts, scratch usage, and arithmetic correctness.
 pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend {
     fn cnv_prepare_left_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize;
 

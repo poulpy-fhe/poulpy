@@ -7,6 +7,7 @@
 //! - **vec\_znx\_dft** -- DFT-domain operations (forward/inverse transform, arithmetic).
 //! - **svp\_ppol** -- scalar-vector product preparation and application.
 //! - **vmp\_pmat** -- vector-matrix product preparation and application.
+//! - **coeff\_mat\_pmat** -- coefficient-matrix preparation and application.
 //! - **convolution** -- bivariate convolution preparation and application.
 //! - **scratch** -- scratch buffer management.
 //!

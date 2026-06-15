@@ -9,13 +9,14 @@ use poulpy_hal::{
 use byteorder::{LittleEndian, WriteBytesExt};
 
 use crate::{
-    DEFAULT_SIGMA_XE, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEExpandLWE, GLWEFromLWE, GLWENoise, GLWENormalize,
-    GLWEToLWESwitchingKeyEncryptSk, LWEDecrypt, LWEEncryptSk, LWEFromGLWE, LWEToGLWESwitchingKeyEncryptSk, ScratchArenaTakeCore,
+    DEFAULT_SIGMA_XE, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE, GLWENoise,
+    GLWENormalize, GLWEToLWESwitchingKeyEncryptSk, LWEDecrypt, LWEEncryptSk, LWEFromGLWE, LWEMatrixDecrypt,
+    LWEToGLWESwitchingKeyEncryptSk, ScratchArenaTakeCore,
     layouts::{
         Base2K, Degree, Dnum, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWEToLWEKey,
-        GLWEToLWEKeyLayout, GLWEToLWEKeyPrepared, GLWEToLWEKeyPreparedFactory, LWE, LWEInfos, LWELayout, LWEPlaintext, LWESecret,
-        LWEToGLWEKey, LWEToGLWEKeyLayout, LWEToGLWEKeyPrepared, LWEToGLWEKeyPreparedFactory, ModuleCoreAlloc, Rank,
-        SecretConversion, TorusPrecision, prepared::GLWESecretPrepared,
+        GLWEToLWEKeyLayout, GLWEToLWEKeyPrepared, GLWEToLWEKeyPreparedFactory, LWE, LWEInfos, LWELayout, LWEMatrixLayout,
+        LWEPlaintext, LWESecret, LWEToGLWEKey, LWEToGLWEKeyLayout, LWEToGLWEKeyPrepared, LWEToGLWEKeyPreparedFactory,
+        ModuleCoreAlloc, Rank, SecretConversion, TorusPrecision, prepared::GLWESecretPrepared,
     },
 };
 
@@ -73,9 +74,10 @@ pub fn test_lwe_secret_from_glwe_secret_flattens_rank_and_preserves_metadata<BE:
     let mut sk_glwe = module.glwe_secret_alloc(rank);
     sk_glwe.fill_ternary_hw(3, &mut source);
 
-    let sk_lwe = module.lwe_secret_from_glwe_secret(&sk_glwe);
+    let lwe_n = Degree((module.n() * rank.as_usize()) as u32);
+    let sk_lwe = module.lwe_secret_from_glwe_secret(&sk_glwe, lwe_n);
 
-    assert_eq!(sk_lwe.n(), Degree((module.n() * rank.as_usize()) as u32));
+    assert_eq!(sk_lwe.n(), lwe_n);
     assert_eq!(sk_lwe.dist(), crate::dist::Distribution::TernaryFixed(3));
 }
 
@@ -468,7 +470,7 @@ where
         let mut sk_glwe_prep: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk_glwe);
         module.glwe_secret_prepare(&mut sk_glwe_prep, &sk_glwe);
 
-        let sk_lwe = module.lwe_secret_from_glwe_secret(&sk_glwe);
+        let sk_lwe = module.lwe_secret_from_glwe_secret(&sk_glwe, lwe_infos.n);
 
         let a_idx: usize = 3;
         let mut data: Vec<i64> = vec![0i64; n];
@@ -566,4 +568,97 @@ pub fn test_glwe_expand_lwe_rejects_incompatible_lwe_layout<BE: crate::test_suit
         .is_err(),
         "glwe_expand_lwe must reject incompatible LWE layout"
     );
+}
+
+pub fn test_glwe_expand_lwe_matrix_decrypt<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
+where
+    BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
+    for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: GLWEEncryptSk<BE>
+        + GLWEDecrypt<BE>
+        + GLWEExpandLWEMatrix<BE>
+        + LWEMatrixDecrypt<BE>
+        + SecretConversion<BE>
+        + GLWESecretPreparedFactory<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
+{
+    let n: usize = module.n();
+    let base2k: usize = params.base2k;
+    let k = 4 * base2k + 1;
+    let k_pt = TorusPrecision(8);
+
+    for rank in [Rank(1), Rank(2)] {
+        let glwe_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
+            n: Degree(n as u32),
+            base2k: Base2K(base2k as u32),
+            k: TorusPrecision(k as u32),
+            rank,
+        })
+        .unwrap();
+
+        let matrix_infos = LWEMatrixLayout {
+            rows: n,
+            n: Degree(n as u32 * rank.0),
+            base2k: glwe_infos.base2k(),
+            k: glwe_infos.max_k(),
+        };
+
+        let mut source_xs: Source = Source::new([0u8; 32]);
+        let mut source_xa: Source = Source::new([0u8; 32]);
+        let mut source_xe: Source = Source::new([0u8; 32]);
+
+        let mut sk_glwe: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank);
+        sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
+
+        let mut sk_glwe_prep: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk_glwe);
+        module.glwe_secret_prepare(&mut sk_glwe_prep, &sk_glwe);
+        let sk_lwe = module.lwe_secret_from_glwe_secret(&sk_glwe, matrix_infos.n);
+
+        let mut data: Vec<i64> = vec![0i64; n];
+        for (i, x) in data.iter_mut().enumerate() {
+            *x = (i as i64 % 7) - 3;
+        }
+
+        let mut glwe_pt: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+        glwe_pt.encode_vec_i64(&data, k_pt);
+
+        let scratch_bytes = module
+            .glwe_encrypt_sk_tmp_bytes(&glwe_infos)
+            .max(module.glwe_decrypt_tmp_bytes(&glwe_infos))
+            .max(module.glwe_expand_lwe_matrix_tmp_bytes(&matrix_infos, &glwe_infos))
+            .max(module.lwe_matrix_decrypt_tmp_bytes(&matrix_infos));
+        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(scratch_bytes);
+
+        let mut glwe_ct: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_infos);
+        module.glwe_encrypt_sk(
+            &mut glwe_ct,
+            &glwe_pt,
+            &sk_glwe_prep,
+            &glwe_infos,
+            &mut source_xe,
+            &mut source_xa,
+            &mut scratch.borrow(),
+        );
+
+        let mut glwe_pt_dec: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+        module.glwe_decrypt(&glwe_ct, &mut glwe_pt_dec, &sk_glwe_prep, &mut scratch.borrow());
+
+        let mut lwe_matrix = module.lwe_matrix_alloc_from_infos(&matrix_infos);
+        module.glwe_expand_lwe_matrix(&mut lwe_matrix, &glwe_ct, &mut scratch.borrow());
+
+        let mut matrix_pt = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+        module.lwe_matrix_decrypt(&lwe_matrix, &mut matrix_pt, &sk_lwe, &mut scratch.borrow());
+
+        for limb in 0..glwe_pt_dec.data.size() {
+            assert_eq!(
+                &glwe_pt_dec.data.at(0, limb)[..n],
+                &matrix_pt.data().at(0, limb)[..n],
+                "rank={} limb={} failed",
+                rank.0,
+                limb
+            );
+        }
+    }
 }

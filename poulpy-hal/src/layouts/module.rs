@@ -253,11 +253,23 @@ impl<B: Backend> Module<B> {
         self.vec_znx_alloc_with_max_size(cols, size, size)
     }
 
+    /// Returns the byte size of a [`VecZnx`] with this module's ring degree.
+    #[inline]
+    pub fn bytes_of_vec_znx(&self, cols: usize, size: usize) -> usize {
+        self.bytes_of_vec_znx_n(self.n(), cols, size)
+    }
+
+    /// Returns the byte size of a [`VecZnx`] with an explicit coefficient degree.
+    #[inline]
+    pub fn bytes_of_vec_znx_n(&self, n: usize, cols: usize, size: usize) -> usize {
+        VecZnx::<Vec<u8>>::bytes_of(n, cols, size)
+    }
+
     /// Allocates a zero-initialized backend-owned [`VecZnx`] with explicit limb capacity.
     #[inline]
     pub fn vec_znx_alloc_with_max_size(&self, cols: usize, size: usize, max_size: usize) -> VecZnx<B::OwnedBuf> {
         let n = self.n();
-        let len = VecZnx::<Vec<u8>>::bytes_of(n, cols, max_size);
+        let len = self.bytes_of_vec_znx_n(n, cols, max_size);
         let bytes = B::alloc_zeroed_bytes(len);
         VecZnx::from_data_with_max_size(bytes, n, cols, size, max_size)
     }
