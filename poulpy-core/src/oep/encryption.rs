@@ -11,10 +11,11 @@ use crate::{
         GGLWECompressedEncryptSkDefault, GGLWEEncryptSkDefault, GGLWEToGGSWKeyCompressedEncryptSkDefault,
         GGLWEToGGSWKeyEncryptSkDefault, GGSWCompressedEncryptSkDefault, GGSWEncryptSkDefault,
         GLWEAutomorphismKeyCompressedEncryptSkDefault, GLWEAutomorphismKeyEncryptPkDefault, GLWEAutomorphismKeyEncryptSkDefault,
-        GLWECompressedEncryptSkDefault, GLWEEncryptPkDefault, GLWEEncryptSkDefault, GLWEPublicKeyGenerateDefault,
-        GLWESwitchingKeyCompressedEncryptSkDefault, GLWESwitchingKeyEncryptPkDefault, GLWESwitchingKeyEncryptSkDefault,
-        GLWETensorKeyCompressedEncryptSkDefault, GLWETensorKeyEncryptSkDefault, GLWEToLWESwitchingKeyEncryptSkDefault,
-        LWEEncryptSkDefault, LWESwitchingKeyEncryptDefault, LWEToGLWESwitchingKeyEncryptSkDefault,
+        GLWECompressedEncryptSkDefault, GLWEEncryptPkDefault, GLWEEncryptSkDefault, GLWEMaskFillDefault,
+        GLWEPublicKeyGenerateDefault, GLWESwitchingKeyCompressedEncryptSkDefault, GLWESwitchingKeyEncryptPkDefault,
+        GLWESwitchingKeyEncryptSkDefault, GLWETensorKeyCompressedEncryptSkDefault, GLWETensorKeyEncryptSkDefault,
+        GLWEToLWESwitchingKeyEncryptSkDefault, LWEEncryptSkDefault, LWEFillMaskDefault, LWESwitchingKeyEncryptDefault,
+        LWEToGLWESwitchingKeyEncryptSkDefault,
     },
     layouts::{
         GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GGLWEToBackendMut, GGLWEToGGSWKeyCompressedToBackendMut,
@@ -32,6 +33,34 @@ use crate::{
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
 pub unsafe trait EncryptionImpl<BE: Backend>: Backend {
+    fn fill_glwe_mask_from_source_default<R>(
+        module: &Module<BE>,
+        base2k: usize,
+        res: &mut R,
+        res_col: usize,
+        rank: usize,
+        source_xa: &mut Source,
+    ) where
+        R: GLWEToBackendMut<BE>;
+
+    fn fill_glwe_mask_from_seed_default<R>(
+        module: &Module<BE>,
+        base2k: usize,
+        res: &mut R,
+        res_col: usize,
+        rank: usize,
+        seed_xa: [u8; 32],
+    ) where
+        R: GLWEToBackendMut<BE>;
+
+    fn fill_lwe_mask_from_source_default<R>(module: &Module<BE>, base2k: usize, res: &mut R, source_xa: &mut Source)
+    where
+        R: LWEToBackendMut<BE>;
+
+    fn fill_lwe_mask_from_seed_default<R>(module: &Module<BE>, base2k: usize, res: &mut R, seed_xa: [u8; 32])
+    where
+        R: LWEToBackendMut<BE>;
+
     fn lwe_encrypt_sk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: LWEInfos;
@@ -433,7 +462,9 @@ pub unsafe trait EncryptionImpl<BE: Backend>: Backend {
 #[doc(hidden)]
 #[allow(private_bounds)]
 pub trait EncryptionDefault<BE: Backend>:
-    LWEEncryptSkDefault<BE>
+    GLWEMaskFillDefault<BE>
+    + LWEFillMaskDefault<BE>
+    + LWEEncryptSkDefault<BE>
     + GLWEEncryptSkDefault<BE>
     + GLWEEncryptPkDefault<BE>
     + GLWEPublicKeyGenerateDefault<BE>
@@ -462,6 +493,46 @@ unsafe impl<BE: Backend> EncryptionImpl<BE> for BE
 where
     Module<BE>: EncryptionDefault<BE>,
 {
+    fn fill_glwe_mask_from_source_default<R>(
+        module: &Module<BE>,
+        base2k: usize,
+        res: &mut R,
+        res_col: usize,
+        rank: usize,
+        source_xa: &mut Source,
+    ) where
+        R: GLWEToBackendMut<BE>,
+    {
+        module.fill_glwe_mask_from_source_default(base2k, res, res_col, rank, source_xa)
+    }
+
+    fn fill_glwe_mask_from_seed_default<R>(
+        module: &Module<BE>,
+        base2k: usize,
+        res: &mut R,
+        res_col: usize,
+        rank: usize,
+        seed_xa: [u8; 32],
+    ) where
+        R: GLWEToBackendMut<BE>,
+    {
+        module.fill_glwe_mask_from_seed_default(base2k, res, res_col, rank, seed_xa)
+    }
+
+    fn fill_lwe_mask_from_source_default<R>(module: &Module<BE>, base2k: usize, res: &mut R, source_xa: &mut Source)
+    where
+        R: LWEToBackendMut<BE>,
+    {
+        module.fill_lwe_mask_from_source_default(base2k, res, source_xa)
+    }
+
+    fn fill_lwe_mask_from_seed_default<R>(module: &Module<BE>, base2k: usize, res: &mut R, seed_xa: [u8; 32])
+    where
+        R: LWEToBackendMut<BE>,
+    {
+        module.fill_lwe_mask_from_seed_default(base2k, res, seed_xa)
+    }
+
     fn lwe_encrypt_sk_tmp_bytes_default<A>(module: &Module<BE>, infos: &A) -> usize
     where
         A: LWEInfos,

@@ -1,11 +1,12 @@
 use crate::reference::znx::{
-    ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo, ZnxMulPowerOfTwo,
-    ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep, ZnxNormalizeFinalStepAssign,
-    ZnxNormalizeFinalStepSub, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly,
-    ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxNormalizeMiddleStepSub, ZnxRotate,
-    ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero,
+    ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
+    ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
+    ZnxNormalizeFinalStepAssign, ZnxNormalizeFinalStepSub, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign,
+    ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly,
+    ZnxNormalizeMiddleStepSub, ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero,
     add::{znx_add_assign_ref, znx_add_ref},
     automorphism::znx_automorphism_ref,
+    automorphism_rotate::znx_automorphism_rotate_ref,
     copy::znx_copy_ref,
     neg::{znx_negate_assign_ref, znx_negate_ref},
     normalization::{
@@ -69,6 +70,13 @@ impl ZnxAutomorphism for ZnxRef {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
         znx_automorphism_ref(p, res, a);
+    }
+}
+
+impl ZnxAutomorphismRotate for ZnxRef {
+    #[inline(always)]
+    fn znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
+        znx_automorphism_rotate_ref(p, k, res, a);
     }
 }
 

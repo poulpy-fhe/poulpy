@@ -519,3 +519,43 @@ pub(crate) fn vec_znx_dft_zero(res: &mut VecZnxDftBackendMut<'_, NTT126Ifma>, re
         NTT126Ifma::ntt126_ifma_zero(limb_u64_mut(res, res_col, j));
     }
 }
+
+/// NTT126 automorphism on the planar layout: each limb stores three contiguous
+/// `n`-element residue planes, and the NTT slot action is a pure permutation, so
+/// for every output slot `i` we copy the source slot `perm[i]` within each plane.
+pub(crate) fn vec_znx_dft_automorphism(
+    plan: &poulpy_cpu_ref::reference::ntt120::vec_znx_dft::NttAutomorphismPlan,
+    res: &mut VecZnxDftBackendMut<'_, NTT126Ifma>,
+    res_col: usize,
+    a: &VecZnxDftBackendRef<'_, NTT126Ifma>,
+    a_col: usize,
+) {
+    #[cfg(debug_assertions)]
+    {
+        assert_eq!(a.n(), res.n());
+        assert_eq!(plan.perm.len(), res.n());
+    }
+
+    let n: usize = res.n();
+    let res_size: usize = res.size();
+    let a_size: usize = a.size();
+    let min_size: usize = res_size.min(a_size);
+    let perm: &[u32] = &plan.perm;
+
+    for limb in 0..min_size {
+        let a_slice: &[u64] = limb_u64(a, a_col, limb);
+        let res_slice: &mut [u64] = limb_u64_mut(res, res_col, limb);
+        for plane in 0..3 {
+            let base: usize = plane * n;
+            let src: &[u64] = &a_slice[base..base + n];
+            let dst: &mut [u64] = &mut res_slice[base..base + n];
+            for i in 0..n {
+                dst[i] = src[perm[i] as usize];
+            }
+        }
+    }
+
+    for limb in min_size..res_size {
+        NTT126Ifma::ntt126_ifma_zero(limb_u64_mut(res, res_col, limb));
+    }
+}

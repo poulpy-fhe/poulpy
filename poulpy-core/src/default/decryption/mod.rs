@@ -15,6 +15,7 @@
 pub mod glwe;
 pub mod glwe_tensor;
 pub mod lwe;
+pub mod lwe_matrix;
 
 pub(crate) use glwe::glwe_decrypt_backend_inner;
 pub use glwe::*;

@@ -1,10 +1,10 @@
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    api::{GGSWExpandRows, GGSWFromGGLWE, GLWEExpandLWE, GLWEFromLWE, LWEFromGLWE, LWESampleExtract},
+    api::{GGSWExpandRows, GGSWFromGGLWE, GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE, LWEFromGLWE, LWESampleExtract},
     layouts::{
-        GGLWEInfos, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEToBackendMut,
-        LWEToBackendRef,
+        GGLWEInfos, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEMatrixInfos,
+        LWEMatrixToBackendMut, LWEToBackendMut, LWEToBackendRef,
         prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
     },
     oep::{ConversionDefault, ConversionImpl},
@@ -109,6 +109,29 @@ impl_conversion_delegate!(
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_expand_lwe(self, res, a, scratch)
+    }
+);
+
+impl_conversion_delegate!(
+    GLWEExpandLWEMatrix<BE>,
+    [
+        BE: Backend + ConversionImpl<BE>,
+        Module<BE>: ConversionDefault<BE>
+    ],
+    fn glwe_expand_lwe_matrix_tmp_bytes<R, A>(&self, res_infos: &R, a_infos: &A) -> usize
+    where
+        R: LWEMatrixInfos,
+        A: GLWEInfos,
+    {
+        BE::glwe_expand_lwe_matrix_tmp_bytes(self, res_infos, a_infos)
+    }
+
+    fn glwe_expand_lwe_matrix<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+    {
+        BE::glwe_expand_lwe_matrix(self, res, a, scratch)
     }
 );
 

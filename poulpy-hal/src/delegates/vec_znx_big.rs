@@ -2,10 +2,10 @@ use crate::{
     api::{
         VecZnxBigAddAssign, VecZnxBigAddInto, VecZnxBigAddNormal, VecZnxBigAddNormalBackend, VecZnxBigAddSmallAssign,
         VecZnxBigAddSmallIntoBackend, VecZnxBigAlloc, VecZnxBigAutomorphism, VecZnxBigAutomorphismAssign,
-        VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromBytes, VecZnxBigFromSmallBackend,
-        VecZnxBigInnerSumBackend, VecZnxBigNegate, VecZnxBigNegateAssign, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
-        VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallABackend, VecZnxBigSubSmallAssign,
-        VecZnxBigSubSmallBBackend, VecZnxBigSubSmallNegateAssign, VecZnxScalarProduct,
+        VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigColWeightedSum, VecZnxBigFromBytes,
+        VecZnxBigFromSmallBackend, VecZnxBigInnerSumBackend, VecZnxBigNegate, VecZnxBigNegateAssign, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxBigSub, VecZnxBigSubAssign, VecZnxBigSubNegateAssign, VecZnxBigSubSmallABackend,
+        VecZnxBigSubSmallAssign, VecZnxBigSubSmallBBackend, VecZnxBigSubSmallNegateAssign, VecZnxScalarProduct,
     },
     layouts::{
         Backend, Module, NoiseInfos, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig,
@@ -261,6 +261,22 @@ impl_vec_znx_big_delegate!(
         a_col: usize,
     ) {
         B::vec_znx_big_inner_sum_backend(self, res, res_col, res_coeff, a, a_col);
+    }
+);
+
+impl_vec_znx_big_delegate!(
+    VecZnxBigColWeightedSum<B>,
+    fn vec_znx_big_col_weighted_sum(
+        &self,
+        res: &mut VecZnxBigBackendMut<'_, B>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, B>,
+        weights: &ScalarZnxBackendRef<'_, B>,
+        weights_col: usize,
+        cols: usize,
+        coeffs: usize,
+    ) {
+        B::vec_znx_big_col_weighted_sum(self, res, res_col, a, weights, weights_col, cols, coeffs);
     }
 );
 

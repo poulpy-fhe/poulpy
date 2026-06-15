@@ -1,8 +1,8 @@
 use poulpy_hal::{
-    api::VecZnxAutomorphismBackend,
+    api::{ScalarZnxAutomorphismBackend, VecZnxCopyRangeBackend},
     layouts::{
-        Backend, Data, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxAsVecZnxBackendMut, ScalarZnxToBackendMut,
-        ScalarZnxToBackendRef, TransferFrom, VecZnx, ZnxZero, scalar_znx_as_vec_znx_backend_ref_from_ref,
+        Backend, Data, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendMut, ScalarZnxToBackendRef, TransferFrom,
+        ZnxZero, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_mut,
     },
     oep::HalVecZnxImpl,
     source::Source,
@@ -12,7 +12,7 @@ use crate::{
     GetDistribution,
     api::ModuleTransfer,
     dist::Distribution,
-    layouts::{Base2K, Degree, GLWEInfos, LWEInfos, Rank},
+    layouts::{Base2K, Degree, GLWEInfos, LWEInfos, LWESecretToBackendMut, Rank},
 };
 
 use super::{
@@ -68,20 +68,6 @@ impl<D: Data> LWEInfos for GLWESecret<D> {
     }
 }
 
-impl<D: Data> LWEInfos for &mut GLWESecret<D> {
-    fn base2k(&self) -> Base2K {
-        (**self).base2k()
-    }
-
-    fn n(&self) -> Degree {
-        (**self).n()
-    }
-
-    fn size(&self) -> usize {
-        (**self).size()
-    }
-}
-
 impl<D: Data> GetDistribution for GLWESecret<D> {
     fn dist(&self) -> &Distribution {
         &self.dist
@@ -91,12 +77,6 @@ impl<D: Data> GetDistribution for GLWESecret<D> {
 impl<D: Data> GLWEInfos for GLWESecret<D> {
     fn rank(&self) -> Rank {
         Rank(self.data.cols() as u32)
-    }
-}
-
-impl<D: Data> GLWEInfos for &mut GLWESecret<D> {
-    fn rank(&self) -> Rank {
-        (**self).rank()
     }
 }
 
@@ -114,6 +94,14 @@ impl<D: HostDataRef> GLWESecret<D> {
 }
 
 impl<D: Data> GLWESecret<D> {
+    pub fn data(&self) -> &ScalarZnx<D> {
+        &self.data
+    }
+
+    pub fn data_mut(&mut self) -> &mut ScalarZnx<D> {
+        &mut self.data
+    }
+
     /// Zero-cost rename when both backends share the same `OwnedBuf`.
     pub fn reinterpret<To>(self) -> GLWESecret<To::OwnedBuf>
     where
@@ -219,17 +207,6 @@ impl<BE: Backend> GLWESecretToBackendMut<BE> for GLWESecret<BE::OwnedBuf> {
     }
 }
 
-impl<'b, BE: Backend + 'b> GLWESecretToBackendMut<BE> for &mut GLWESecret<BE::BufMut<'b>> {
-    fn to_backend_mut(&mut self) -> GLWESecretBackendMut<'_, BE> {
-        let n = self.data.n();
-        let cols = self.data.cols();
-        GLWESecret {
-            dist: self.dist,
-            data: ScalarZnx::from_data(BE::view_mut_ref(&mut self.data.data), n, cols),
-        }
-    }
-}
-
 pub trait GLWESecretToBackendRef<BE: Backend> {
     fn to_backend_ref(&self) -> GLWESecretBackendRef<'_, BE>;
 }
@@ -238,24 +215,6 @@ impl<BE: Backend> GLWESecretToBackendRef<BE> for GLWESecret<BE::OwnedBuf> {
     fn to_backend_ref(&self) -> GLWESecretBackendRef<'_, BE> {
         GLWESecret {
             data: <ScalarZnx<BE::OwnedBuf> as ScalarZnxToBackendRef<BE>>::to_backend_ref(&self.data),
-            dist: self.dist,
-        }
-    }
-}
-
-impl<'b, BE: Backend + 'b> GLWESecretToBackendRef<BE> for &GLWESecret<BE::BufRef<'b>> {
-    fn to_backend_ref(&self) -> GLWESecretBackendRef<'_, BE> {
-        GLWESecret {
-            data: ScalarZnx::from_data(BE::view_ref(&self.data.data), self.data.n(), self.data.cols()),
-            dist: self.dist,
-        }
-    }
-}
-
-impl<'b, BE: Backend + 'b> GLWESecretToBackendRef<BE> for &mut GLWESecret<BE::BufMut<'b>> {
-    fn to_backend_ref(&self) -> GLWESecretBackendRef<'_, BE> {
-        GLWESecret {
-            data: ScalarZnx::from_data(BE::view_ref_mut(&self.data.data), self.data.n(), self.data.cols()),
             dist: self.dist,
         }
     }
@@ -270,19 +229,23 @@ pub trait SecretConversion<B: Backend> {
     where
         S: LWESecretToBackendRef<B>;
 
-    /// Derives the associated `LWESecret` from a `GLWESecret` by applying the
-    /// X → X⁻¹ automorphism (k = -1) to each rank component.
+    /// Derives an `LWESecret` of the requested flat dimension `lwe_n` from a
+    /// `GLWESecret` by applying the X → X⁻¹ automorphism (k = -1) to each rank
+    /// component and packing the results as consecutive `n`-coefficient blocks.
     ///
-    /// For a GLWE secret of degree `n` and rank `r`, the result is an LWE secret
-    /// of degree `n * r`. Each rank component is automorphed independently and
-    /// written as one contiguous `n`-coefficient block in the output key. For
-    /// rank 1, this is the inverse of `glwe_secret_from_lwe_secret`: applying
-    /// both conversions recovers the original key.
+    /// `lwe_n` must satisfy `lwe_n ≤ rank * n` (the GLWE rank must cover the
+    /// requested LWE dimension); the last block may be a partial slice when
+    /// `lwe_n % n != 0`. The inverse relation `rank = ceil(lwe_n / n)` lets a
+    /// caller size the GLWE just enough for a target LWE dimension.
+    ///
+    /// For `lwe_n == n` and `rank == 1`, this is the inverse of
+    /// `glwe_secret_from_lwe_secret`: applying both conversions recovers the
+    /// original key.
     ///
     /// Distribution metadata is preserved from the source secret. In particular,
     /// fixed-weight metadata denotes the advertised fixed-weight distribution of
     /// the source key and is not multiplied by the rank during flattening.
-    fn lwe_secret_from_glwe_secret<S>(&self, src: &S) -> LWESecret<B::OwnedBuf>
+    fn lwe_secret_from_glwe_secret<S>(&self, src: &S, lwe_n: Degree) -> LWESecret<B::OwnedBuf>
     where
         S: GLWESecretToBackendRef<B>;
 }
@@ -297,29 +260,56 @@ impl<B: Backend + HalVecZnxImpl<B>> SecretConversion<B> for Module<B> {
         let mut res = self.glwe_secret_alloc(Rank(1));
         res.dist = src.dist;
         {
-            let src_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<B>(&src.data);
-            let mut res_vec = <ScalarZnx<B::OwnedBuf> as ScalarZnxAsVecZnxBackendMut<B>>::as_vec_znx_backend_mut(&mut res.data);
-            self.vec_znx_automorphism_backend(-1, &mut res_vec, 0, &src_vec, 0);
+            let mut res_ref = GLWESecretToBackendMut::<B>::to_backend_mut(&mut res);
+            self.scalar_znx_automorphism_backend(-1, res_ref.data_mut(), 0, src.data(), 0);
         }
         res
     }
 
-    fn lwe_secret_from_glwe_secret<S>(&self, src: &S) -> LWESecret<B::OwnedBuf>
+    fn lwe_secret_from_glwe_secret<S>(&self, src: &S, lwe_n: Degree) -> LWESecret<B::OwnedBuf>
     where
         S: GLWESecretToBackendRef<B>,
     {
         let src = src.to_backend_ref();
-        let n = self.n();
+        let n: usize = self.n();
         let rank: usize = src.rank().into();
+        let target: usize = lwe_n.as_usize();
         assert_eq!(src.n().as_usize(), n, "GLWE secret degree must equal module degree");
-        let mut res = self.lwe_secret_alloc(Degree((n * rank) as u32));
+        assert!(
+            target <= rank * n,
+            "lwe_secret_from_glwe_secret: requested LWE dim {} > rank * N ({})",
+            target,
+            rank * n
+        );
+
+        // Scratch buffer shaped like the source (rank cols, ring N) so the
+        // per-column automorphism dimensions match. The result is then packed
+        // into the flat LWE secret via the backend copy op, truncating the
+        // last block when `target % n != 0`.
+        let mut tmp: GLWESecret<B::OwnedBuf> = self.glwe_secret_alloc(src.rank());
+        {
+            let mut tmp_ref = GLWESecretToBackendMut::<B>::to_backend_mut(&mut tmp);
+            for j in 0..rank {
+                self.scalar_znx_automorphism_backend(-1, tmp_ref.data_mut(), j, src.data(), j);
+            }
+        }
+
+        let mut res: LWESecret<B::OwnedBuf> = self.lwe_secret_alloc(lwe_n);
         res.dist = src.dist;
         {
-            let src_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<B>(&src.data);
-            let res_as_backend = <ScalarZnx<B::OwnedBuf> as ScalarZnxToBackendMut<B>>::to_backend_mut(&mut res.data);
-            let mut res_vec = VecZnx::from_data(res_as_backend.data, n, rank, 1);
+            let tmp_ref = GLWESecretToBackendMut::<B>::to_backend_mut(&mut tmp);
+            let mut res_ref = LWESecretToBackendMut::<B>::to_backend_mut(&mut res);
+            let tmp_vz = scalar_znx_as_vec_znx_backend_ref_from_mut::<B>(tmp_ref.data());
+            let mut res_vz = scalar_znx_as_vec_znx_backend_mut_from_mut::<B>(res_ref.data_mut());
+
+            let mut written: usize = 0;
             for j in 0..rank {
-                self.vec_znx_automorphism_backend(-1, &mut res_vec, j, &src_vec, j);
+                if written >= target {
+                    break;
+                }
+                let take: usize = (target - written).min(n);
+                self.vec_znx_copy_range_backend(&mut res_vz, 0, 0, written, &tmp_vz, j, 0, 0, take);
+                written += take;
             }
         }
         res

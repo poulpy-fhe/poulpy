@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{VecZnxCopyBackend, VecZnxFillUniformSourceBackend},
+    api::VecZnxCopyBackend,
     layouts::{
         Backend, Data, FillUniform, HostDataMut, HostDataRef, Module, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef,
         WriterTo,
@@ -7,14 +7,17 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::layouts::{Base2K, Degree, GLWEInfos, GLWEToBackendMut, GetDegree, LWEInfos, Rank, SetLWEInfos, TorusPrecision};
+use crate::{
+    encryption::glwe::GLWEMaskFillDefault,
+    layouts::{Base2K, Degree, GLWEInfos, GLWEToBackendMut, GetDegree, LWEInfos, Rank, SetLWEInfos, TorusPrecision},
+};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 
 /// Seed-compressed GLWE ciphertext layout.
 ///
-/// Stores only the body component of a [`GLWE`] ciphertext; the mask
+/// Stores only the compressed [`VecZnx`] data of a [`GLWE`] ciphertext; the mask
 /// polynomials are regenerated deterministically from a 32-byte PRNG
 /// seed during decompression. This reduces the serialized size by a
 /// factor proportional to the rank.
@@ -188,6 +191,18 @@ impl<D: HostDataRef> fmt::Debug for GLWECompressed<D> {
     }
 }
 
+impl<D: Data> GLWECompressed<D> {
+    /// Returns a shared reference to the underlying [`VecZnx`] storage.
+    pub fn data(&self) -> &VecZnx<D> {
+        &self.data
+    }
+
+    /// Returns a mutable reference to the underlying [`VecZnx`] storage.
+    pub fn data_mut(&mut self) -> &mut VecZnx<D> {
+        &mut self.data
+    }
+}
+
 impl<D: HostDataRef> fmt::Display for GLWECompressed<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -250,7 +265,7 @@ impl GLWECompressed<Vec<u8>> {
     }
 }
 
-/// Deserializes the metadata (k, base2k, rank, seed) followed by the body data.
+/// Deserializes the metadata (k, base2k, rank, seed) followed by the stored data.
 impl<D: HostDataMut> ReaderFrom for GLWECompressed<D> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.base2k = Base2K(reader.read_u32::<LittleEndian>()?);
@@ -260,7 +275,7 @@ impl<D: HostDataMut> ReaderFrom for GLWECompressed<D> {
     }
 }
 
-/// Serializes the metadata (k, base2k, rank, seed) followed by the body data.
+/// Serializes the metadata (k, base2k, rank, seed) followed by the stored data.
 impl<D: HostDataRef> WriterTo for GLWECompressed<D> {
     fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         writer.write_u32::<LittleEndian>(self.base2k.into())?;
@@ -272,15 +287,15 @@ impl<D: HostDataRef> WriterTo for GLWECompressed<D> {
 
 /// Trait for decompressing a [`GLWECompressed`] into a standard [`GLWE`].
 ///
-/// Copies the body from the compressed ciphertext and regenerates
+/// Copies the stored data from the compressed ciphertext and regenerates
 /// the mask polynomials from the stored PRNG seed.
 pub trait GLWEDecompress
 where
-    Self: GetDegree + VecZnxFillUniformSourceBackend<Self::Backend> + VecZnxCopyBackend<Self::Backend>,
+    Self: GetDegree + GLWEMaskFillDefault<Self::Backend> + VecZnxCopyBackend<Self::Backend>,
 {
     type Backend: Backend;
 
-    /// Decompresses `other` into `res` by copying the body and regenerating the mask.
+    /// Decompresses `other` into `res` by copying the stored data and regenerating the mask.
     fn decompress_glwe<R, O>(&self, res: &mut R, other: &O)
     where
         R: GLWEToBackendMut<Self::Backend> + SetLWEInfos,
@@ -299,13 +314,9 @@ where
 
             assert_eq!(res.glwe_layout(), other.glwe_layout());
 
-            let mut source: Source = Source::new(other.seed);
-
             self.vec_znx_copy_backend(&mut res.data, 0, &other.data, 0);
-            (1..(other.rank() + 1).into()).for_each(|i| {
-                self.vec_znx_fill_uniform_source_backend(other.base2k.into(), &mut res.data, i, &mut source);
-            });
         }
+        self.fill_glwe_mask_from_seed_default(other.base2k.into(), res, 1, other.rank().as_usize(), other.seed);
 
         res.set_base2k(other.base2k());
     }
@@ -313,7 +324,7 @@ where
 
 impl<B: Backend> GLWEDecompress for Module<B>
 where
-    Self: GetDegree + VecZnxFillUniformSourceBackend<B> + VecZnxCopyBackend<B>,
+    Self: GetDegree + GLWEMaskFillDefault<B> + VecZnxCopyBackend<B>,
 {
     type Backend = B;
 }
