@@ -885,9 +885,8 @@ unsafe fn ntt_plane_radix8_last3(plane: &mut [u64], seg_base: usize, prime: usiz
             let v5 = cond_sub_2q_si512(_mm512_add_epi64(d1, d3), q4w);
             let v7 = harvey_modmul_plane8(_mm512_sub_epi64(_mm512_add_epi64(d1, q4w), d3), w4v, w4qv, q);
 
-            // nn = 2: pairs (v0,v1),(v2,v3),(v4,v5),(v6,v7), twiddle 1. The final
-            // [0,4q) -> [0,2q) normalization is folded in here (q2w), removing a
-            // separate full pass over the plane.
+            // nn = 2: twiddle 1. The final [0,4q) -> [0,2q) normalization is
+            // folded into q2w here, removing a separate pass.
             let o0 = cond_sub_2q_si512(cond_sub_2q_si512(_mm512_add_epi64(v0, v1), q4w), q2w);
             let o1 = cond_sub_2q_si512(cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(v0, q4w), v1), q4w), q2w);
             let o2 = cond_sub_2q_si512(cond_sub_2q_si512(_mm512_add_epi64(v2, v3), q4w), q2w);
@@ -1651,9 +1650,8 @@ unsafe fn ntt_plane_avx512<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTable<P>, pl
             }
         }
 
-        // For n >= 8 the radix-8 tail already folds the [0,4q) -> [0,2q)
-        // normalization into its output store; only the small-n path needs a
-        // separate pass.
+        // For n >= 8 the radix-8 tail folds the final normalization; only the
+        // small-n path needs a separate pass.
         if n < 8 {
             let mut i = 0usize;
             while i + 8 <= n {
@@ -1955,9 +1953,7 @@ unsafe fn intt_plane_avx512<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTableInv<P>
         }
 
         if fuse_untwist {
-            // Last level (nn = n, single block) fused with the level-0 untwist:
-            // the butterfly outputs are multiplied by their untwist twiddle on
-            // the way to memory, removing a separate full pass over the plane.
+            // Last level (nn = n) fused with the level-0 untwist.
             let halfnn = n / 2;
             let count = halfnn - 1;
             let bf_omega = seg_base;

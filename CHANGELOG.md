@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### `poulpy-cpu-avx512`
+- Optimize the `NTT126Ifma` planar transforms for pass efficiency: mask the sub-8 butterfly remainders in the upper levels, process the radix-8 tail and head as eight transposed blocks per pass, fuse pairs of upper levels into single load/store radix-4 passes (forward DIF, inverse DIT), and fold the forward final normalization and the inverse level-0 untwist into adjacent butterfly stores. Together these roughly halve the raw NTT/iNTT cost at n=32768 and let the planar backend outperform the previous 4-lane AoS layout on CKKS multiplication.
+- Vectorize the planar 3-prime CRT-to-i128 reconstruction in the iNTT consume path (`simd_b_ntt126_ifma_to_znx128`), replacing the per-lane scalar Garner reconstruction with an AVX-512-IFMA base-2^52 limb accumulation plus a scalar symmetric-range fix.
+
+### `poulpy-bench`
+- Add a `glwe_tensor_relinearize` benchmark covering the relinearization (keyswitch) phase of CKKS multiplication.
+
 ## [0.6.0] - 2026-05-18
 
 This release completes the migration from the legacy host-oriented HAL/backend plumbing to backend-generic HAL and core layers, so backends can now own buffers, scratch space, and transfer paths explicitly, and adds a new AVX-512 backend crate (`poulpy-cpu-avx512`) exposing three accelerated backends (`FFT64Avx512`, `NTT120Avx512`, `NTT126Ifma`).
