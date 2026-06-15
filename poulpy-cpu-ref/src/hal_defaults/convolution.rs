@@ -5,22 +5,22 @@ use std::mem::size_of;
 use crate::reference::{
     fft64::{
         convolution::{
-            I64Ops, convolution_apply_dft, convolution_apply_dft_tmp_bytes, convolution_by_const_apply,
-            convolution_by_const_apply_tmp_bytes, convolution_pairwise_apply_dft, convolution_pairwise_apply_dft_tmp_bytes,
-            convolution_prepare_left, convolution_prepare_right, convolution_prepare_self,
+            I64Ops, convolution_apply_dft, convolution_apply_dft_accumulate, convolution_apply_dft_tmp_bytes,
+            convolution_by_const_apply, convolution_by_const_apply_tmp_bytes, convolution_pairwise_apply_dft,
+            convolution_pairwise_apply_dft_tmp_bytes, convolution_prepare_left, convolution_prepare_right,
+            convolution_prepare_self,
         },
         module::FFTModuleHandle,
         reim::{ReimArith, ReimFFTExecute, ReimFFTTable},
         reim4::{Reim4BlkMatVec, Reim4Convolution},
     },
     ntt120::{
-        NttAddAssign, NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc1ColX2, NttMulBbc2ColsX2, NttPackLeft1BlkX2,
-        NttPackRight1BlkX2, NttPairwisePackLeft1BlkX2, NttPairwisePackRight1BlkX2,
+        NttAddAssign, NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc1ColX2, NttPackLeft1BlkX2,
         convolution::{
-            ntt120_cnv_apply_dft, ntt120_cnv_apply_dft_tmp_bytes, ntt120_cnv_by_const_apply, ntt120_cnv_by_const_apply_tmp_bytes,
-            ntt120_cnv_pairwise_apply_dft, ntt120_cnv_pairwise_apply_dft_tmp_bytes, ntt120_cnv_prepare_left,
-            ntt120_cnv_prepare_left_tmp_bytes, ntt120_cnv_prepare_right, ntt120_cnv_prepare_right_tmp_bytes,
-            ntt120_cnv_prepare_self, ntt120_cnv_prepare_self_tmp_bytes,
+            ntt120_cnv_apply_dft, ntt120_cnv_apply_dft_accumulate, ntt120_cnv_apply_dft_tmp_bytes, ntt120_cnv_by_const_apply,
+            ntt120_cnv_by_const_apply_tmp_bytes, ntt120_cnv_pairwise_apply_dft, ntt120_cnv_pairwise_apply_dft_tmp_bytes,
+            ntt120_cnv_prepare_left, ntt120_cnv_prepare_left_tmp_bytes, ntt120_cnv_prepare_right,
+            ntt120_cnv_prepare_right_tmp_bytes, ntt120_cnv_prepare_self, ntt120_cnv_prepare_self_tmp_bytes,
         },
         ntt::NttTable,
         primes::Primes30,
@@ -187,6 +187,30 @@ where
         convolution_apply_dft(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_apply_dft_accumulate_default<R>(
+        _module: &Module<BE>,
+        cnv_offset: usize,
+        res: &mut R,
+        res_col: usize,
+        a: &CnvPVecLBackendRef<'_, BE>,
+        a_col: usize,
+        b: &CnvPVecRBackendRef<'_, BE>,
+        b_col: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: Backend<ScalarPrep = f64> + Reim4BlkMatVec + Reim4Convolution,
+        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+        for<'x> <BE as Backend>::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
+        R: VecZnxDftToBackendMut<BE>,
+    {
+        let mut res_ref = res.to_backend_mut();
+        let bytes = convolution_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let (tmp, _) = take_host_typed::<BE, f64>(scratch.borrow(), bytes / size_of::<f64>());
+        convolution_apply_dft_accumulate(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
+    }
+
     fn cnv_pairwise_apply_dft_tmp_bytes_default(
         _module: &Module<BE>,
         _cnv_offset: usize,
@@ -274,7 +298,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         Module<BE>: NttModuleHandle,
-        BE: Backend<ScalarPrep = Q120bScalar> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + 'static,
+        BE: Backend<ScalarPrep = Q120bScalar> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + NttPackLeft1BlkX2 + 'static,
         for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
     {
@@ -371,12 +395,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         Module<BE>: NttModuleHandle,
-        BE: Backend<ScalarPrep = Q120bScalar>
-            + NttAddAssign
-            + NttMulBbc1ColX2
-            + NttMulBbc2ColsX2
-            + NttPackLeft1BlkX2
-            + NttPackRight1BlkX2,
+        BE: Backend<ScalarPrep = Q120bScalar> + NttAddAssign + NttMulBbc1ColX2,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
         for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
         for<'x> <BE as Backend>::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
@@ -386,6 +405,31 @@ where
         let bytes = ntt120_cnv_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
         let (tmp, _) = take_host_typed::<BE, u8>(scratch.borrow(), bytes);
         ntt120_cnv_apply_dft::<BE>(module, cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_apply_dft_accumulate_default<R>(
+        module: &Module<BE>,
+        cnv_offset: usize,
+        res: &mut R,
+        res_col: usize,
+        a: &CnvPVecLBackendRef<'_, BE>,
+        a_col: usize,
+        b: &CnvPVecRBackendRef<'_, BE>,
+        b_col: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        Module<BE>: NttModuleHandle,
+        BE: Backend<ScalarPrep = Q120bScalar> + NttAddAssign + NttMulBbc1ColX2,
+        for<'x> BE::BufMut<'x>: HostBufMut<'x>,
+        for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+        for<'x> <BE as Backend>::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
+        R: VecZnxDftToBackendMut<BE>,
+    {
+        let mut res_ref = res.to_backend_mut();
+        let bytes = ntt120_cnv_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let (tmp, _) = take_host_typed::<BE, u8>(scratch.borrow(), bytes);
+        ntt120_cnv_apply_dft_accumulate::<BE>(module, cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
     }
 
     fn cnv_pairwise_apply_dft_tmp_bytes_default(
@@ -414,14 +458,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         Module<BE>: NttModuleHandle,
-        BE: Backend<ScalarPrep = Q120bScalar>
-            + NttAddAssign
-            + NttMulBbc1ColX2
-            + NttMulBbc2ColsX2
-            + NttPackLeft1BlkX2
-            + NttPackRight1BlkX2
-            + NttPairwisePackLeft1BlkX2
-            + NttPairwisePackRight1BlkX2,
+        BE: Backend<ScalarPrep = Q120bScalar> + NttAddAssign + NttMulBbc1ColX2,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
         for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
         for<'x> <BE as Backend>::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
@@ -449,7 +486,12 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         Module<BE>: NttModuleHandle,
-        BE: Backend<ScalarPrep = Q120bScalar> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + NttCFromB + 'static,
+        BE: Backend<ScalarPrep = Q120bScalar>
+            + NttFromZnx64
+            + NttDFTExecute<NttTable<Primes30>>
+            + NttCFromB
+            + NttPackLeft1BlkX2
+            + 'static,
         for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
     {

@@ -22,7 +22,6 @@
 
 pub(crate) mod arithmetic_avx;
 pub(crate) mod automorphism;
-pub(crate) mod convolution;
 pub(crate) mod mat_vec_avx;
 mod module;
 pub(crate) mod ntt;

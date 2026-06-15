@@ -129,6 +129,86 @@ pub(crate) unsafe fn vec_mat1col_product_bbc_avx2(meta: &BbcMeta<Primes30>, ell:
 // x2-block, single column: two q120b × q120c pairs → two q120b results
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Tiled canonical-x bbc product: two sliding-window outputs per pass
+/// (chained twice by the tile-4 entry). `x` rows hold the canonical u32
+/// encoding (odd lanes zero), so the `x_hi * y_hi` product path is
+/// identically zero and skipped.
+#[target_feature(enable = "avx2")]
+pub(crate) unsafe fn vec_mat_tile2_bbc_canonical_avx2(
+    meta: &BbcMeta<Primes30>,
+    len: usize,
+    res: &mut [u64],
+    x: &[u32],
+    y: &[u32],
+) {
+    unsafe {
+        debug_assert!(res.len() >= 16);
+        debug_assert!(len == 0 || x.len() >= 16 * (len + 1));
+        debug_assert!(y.len() >= 16 * len);
+
+        let mask32 = _mm256_set1_epi64x(u32::MAX as i64);
+
+        // Per output t and x2 pair half: (low, high) accumulators.
+        let mut s0a = _mm256_setzero_si256();
+        let mut s1a = _mm256_setzero_si256();
+        let mut s0b = _mm256_setzero_si256();
+        let mut s1b = _mm256_setzero_si256();
+        let mut t0a = _mm256_setzero_si256();
+        let mut t1a = _mm256_setzero_si256();
+        let mut t0b = _mm256_setzero_si256();
+        let mut t1b = _mm256_setzero_si256();
+
+        let mut x_ptr = x.as_ptr() as *const __m256i;
+        let mut y_ptr = y.as_ptr() as *const __m256i;
+
+        for _ in 0..len {
+            let ya = _mm256_loadu_si256(y_ptr);
+            let yb = _mm256_loadu_si256(y_ptr.add(1));
+
+            let x0a = _mm256_loadu_si256(x_ptr);
+            let x0b = _mm256_loadu_si256(x_ptr.add(1));
+            let x1a = _mm256_loadu_si256(x_ptr.add(2));
+            let x1b = _mm256_loadu_si256(x_ptr.add(3));
+
+            let p0a = _mm256_mul_epu32(x0a, ya);
+            let p0b = _mm256_mul_epu32(x0b, yb);
+            let p1a = _mm256_mul_epu32(x1a, ya);
+            let p1b = _mm256_mul_epu32(x1b, yb);
+
+            s0a = _mm256_add_epi64(s0a, _mm256_and_si256(p0a, mask32));
+            s1a = _mm256_add_epi64(s1a, _mm256_srli_epi64::<32>(p0a));
+            s0b = _mm256_add_epi64(s0b, _mm256_and_si256(p0b, mask32));
+            s1b = _mm256_add_epi64(s1b, _mm256_srli_epi64::<32>(p0b));
+            t0a = _mm256_add_epi64(t0a, _mm256_and_si256(p1a, mask32));
+            t1a = _mm256_add_epi64(t1a, _mm256_srli_epi64::<32>(p1a));
+            t0b = _mm256_add_epi64(t0b, _mm256_and_si256(p1b, mask32));
+            t1b = _mm256_add_epi64(t1b, _mm256_srli_epi64::<32>(p1b));
+
+            x_ptr = x_ptr.add(2);
+            y_ptr = y_ptr.add(2);
+        }
+
+        let mask_h2 = _mm256_set1_epi64x(((1u64 << meta.h) - 1) as i64);
+        let s2l_pow_red = _mm256_loadu_si256(meta.s2l_pow_red.as_ptr() as *const __m256i);
+        let s2h_pow_red = _mm256_loadu_si256(meta.s2h_pow_red.as_ptr() as *const __m256i);
+
+        let res_ptr = res.as_mut_ptr() as *mut __m256i;
+        _mm256_storeu_si256(res_ptr, reduce_bbc(s0a, s1a, mask_h2, meta.h, s2l_pow_red, s2h_pow_red));
+        _mm256_storeu_si256(
+            res_ptr.add(1),
+            reduce_bbc(s0b, s1b, mask_h2, meta.h, s2l_pow_red, s2h_pow_red),
+        );
+        _mm256_storeu_si256(
+            res_ptr.add(2),
+            reduce_bbc(t0a, t1a, mask_h2, meta.h, s2l_pow_red, s2h_pow_red),
+        );
+        _mm256_storeu_si256(
+            res_ptr.add(3),
+            reduce_bbc(t0b, t1b, mask_h2, meta.h, s2l_pow_red, s2h_pow_red),
+        );
+    }
+}
+
 /// AVX2 x2-block inner product: one column, two paired rows.
 ///
 /// Port of `q120x2_vec_mat1col_product_bbc_avx2`.

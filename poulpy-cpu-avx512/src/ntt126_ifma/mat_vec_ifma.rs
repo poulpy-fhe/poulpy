@@ -430,6 +430,7 @@ pub(crate) unsafe fn vec_mat1col_product_bbc_ifma(
 /// be 64-byte aligned. Use this when the kernel writes a hot output buffer
 /// that won't be re-read in the current loop and would otherwise evict
 /// matrix cache lines.
+#[allow(dead_code)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn vec_mat1col_product_x2_bbc_ifma<const NT_STORE: bool>(
     _meta: &Bbc126IfmaMeta<Primes42>,
