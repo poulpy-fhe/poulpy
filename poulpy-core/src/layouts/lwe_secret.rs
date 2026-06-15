@@ -52,6 +52,14 @@ impl<D: HostDataRef> LWESecret<D> {
 }
 
 impl<D: Data> LWESecret<D> {
+    pub fn data(&self) -> &ScalarZnx<D> {
+        &self.data
+    }
+
+    pub fn data_mut(&mut self) -> &mut ScalarZnx<D> {
+        &mut self.data
+    }
+
     /// Zero-cost rename when both backends share the same `OwnedBuf`.
     pub fn reinterpret<To>(self) -> LWESecret<To::OwnedBuf>
     where
@@ -80,10 +88,6 @@ impl<D: HostDataRef> LWESecret<D> {
 
     pub fn dist(&self) -> Distribution {
         self.dist
-    }
-
-    pub fn data(&self) -> &ScalarZnx<D> {
-        &self.data
     }
 }
 

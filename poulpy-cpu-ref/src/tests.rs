@@ -101,6 +101,8 @@ cross_backend_test_suite! {
         test_vec_znx_rotate_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_rotate_assign,
         test_vec_znx_automorphism => poulpy_hal::test_suite::vec_znx::test_vec_znx_automorphism,
         test_vec_znx_automorphism_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_automorphism_assign,
+        test_scalar_znx_automorphism => poulpy_hal::test_suite::vec_znx::test_scalar_znx_automorphism,
+        test_scalar_znx_automorphism_assign => poulpy_hal::test_suite::vec_znx::test_scalar_znx_automorphism_assign,
         test_vec_znx_mul_xp_minus_one => poulpy_hal::test_suite::vec_znx::test_vec_znx_mul_xp_minus_one,
         test_vec_znx_mul_xp_minus_one_assign => poulpy_hal::test_suite::vec_znx::test_vec_znx_mul_xp_minus_one_assign,
         test_vec_znx_normalize => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize,
@@ -162,6 +164,15 @@ cross_backend_test_suite! {
         test_vec_znx_dft_copy => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_copy,
         test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
         test_vec_znx_idft_apply_tmpa => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_tmpa,
+    }
+}
+cross_backend_test_suite! {
+    mod vec_znx_dft_automorphism,
+    backend_ref =  crate::FFT64Ref,
+    backend_test = crate::NTT120Ref,
+    params = TestParams { size: 1<<8, base2k: 12 },
+    tests = {
+        test_vec_znx_dft_automorphism => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism,
     }
 }
 cross_backend_test_suite! {

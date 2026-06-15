@@ -1,7 +1,7 @@
 use poulpy_hal::{
     api::{
-        ModuleN, VecZnxAddScalarAssignBackend, VecZnxDftBytesOf, VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes,
-        VecZnxZeroBackend,
+        ModuleN, VecZnxAddScalarAssignBackend, VecZnxDftBytesOf, VecZnxFillUniformSourceBackend, VecZnxNormalizeAssignBackend,
+        VecZnxNormalizeTmpBytes, VecZnxZeroBackend,
     },
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena, ZnxInfos},
     source::Source,
@@ -9,7 +9,7 @@ use poulpy_hal::{
 
 use crate::{
     EncryptionInfos, GLWEEncryptSk, GLWEEncryptSkInternal, ScratchArenaTakeCore,
-    encryption::glwe::normalize_scratch_vec_znx,
+    encryption::glwe::GLWEMaskFillDefault,
     layouts::{
         GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEPlaintext, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         prepared::GLWESecretPreparedToBackendRef,
@@ -43,6 +43,7 @@ where
     Self: ModuleN
         + GLWEEncryptSkInternal<BE>
         + GLWEEncryptSk<BE>
+        + VecZnxFillUniformSourceBackend<BE>
         + VecZnxDftBytesOf
         + VecZnxNormalizeAssignBackend<BE>
         + VecZnxAddScalarAssignBackend<BE>
@@ -89,9 +90,7 @@ where
         let base2k: usize = res.base2k().into();
         let rank: usize = res.rank().into();
         let dsize: usize = res.dsize().into();
-        let cols: usize = rank + 1;
-        let scratch = scratch.borrow();
-        let (mut tmp_pt, mut scratch_1) = scratch.take_glwe_plaintext_scratch(res);
+        let (mut tmp_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(res);
 
         for row_i in 0..res.dnum().into() {
             self.vec_znx_zero_backend(&mut tmp_pt.data, 0);
@@ -106,22 +105,18 @@ where
                     0,
                 );
             }
-            scratch_1.scope(|mut scratch| {
-                normalize_scratch_vec_znx(self, base2k, &mut tmp_pt.data, &mut scratch);
-            });
+
+            self.vec_znx_normalize_assign_backend(base2k, &mut tmp_pt.data, 0, &mut scratch_1.borrow());
             for col_j in 0..rank + 1 {
-                let tmp_pt_backend = tmp_pt.to_backend_ref();
                 let mut ct = res.at_view_mut(row_i, col_j);
+                self.fill_glwe_mask_from_source_default(base2k, &mut ct, 1, rank, source_xa);
                 self.glwe_encrypt_sk_internal(
                     base2k,
                     &mut ct.data,
-                    cols,
-                    false,
-                    Some((tmp_pt_backend, col_j)),
+                    Some((tmp_pt.to_backend_ref(), col_j)),
                     sk,
                     enc_infos,
                     source_xe,
-                    source_xa,
                     &mut scratch_1.borrow(),
                 );
             }

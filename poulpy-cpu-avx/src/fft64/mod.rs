@@ -1,3 +1,4 @@
+mod automorphism;
 mod convolution;
 mod module;
 mod reim;
@@ -56,6 +57,7 @@ pub struct FFT64Avx {}
 #[cfg(test)]
 pub mod tests;
 
+pub use automorphism::fft64_vec_znx_dft_automorphism_avx;
 #[allow(unused_imports)]
 pub use poulpy_cpu_ref::reference::fft64::module::FFTModuleHandle;
 pub use reim::{FFT64AvxReimTable, ReimFFTAvx, ReimIFFTAvx};

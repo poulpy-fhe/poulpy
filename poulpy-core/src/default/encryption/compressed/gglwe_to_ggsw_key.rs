@@ -95,7 +95,7 @@ where
         self.glwe_secret_tensor_prepare(&mut sk_tensor, sk, &mut tensor_scratch);
 
         let (mut enc_scratch, _scratch_5) = scratch_4.split_at(self.gglwe_compressed_encrypt_sk_tmp_bytes(&res));
-        let sk_tensor_backend = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(&sk_tensor.data);
+        let sk_tensor_backend = scalar_znx_as_vec_znx_backend_ref_from_mut::<BE>(sk_tensor.data());
 
         let mut source_xa = Source::new(seed_xa);
 

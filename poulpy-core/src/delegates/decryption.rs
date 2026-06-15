@@ -1,10 +1,11 @@
-use poulpy_hal::layouts::{Backend, Data, HostBackend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::{
-    api::{GLWEDecrypt, GLWETensorDecrypt, LWEDecrypt},
+    api::{GLWEDecrypt, GLWETensorDecrypt, LWEDecrypt, LWEMatrixDecrypt},
     layouts::{
         GLWEInfos, GLWEPlaintext, GLWESecretPrepared, GLWESecretTensorPrepared, GLWETensor, GLWEToBackendMut, GLWEToBackendRef,
-        LWEInfos, LWEPlaintextToBackendMut, LWESecretToBackendRef, LWEToBackendRef, SetLWEInfos,
+        LWEInfos, LWEMatrixInfos, LWEMatrixToBackendRef, LWEPlaintextToBackendMut, LWESecretToBackendRef, LWEToBackendRef,
+        SetLWEInfos,
         prepared::{GLWESecretPreparedToBackendRef, GLWESecretTensorPreparedToBackendRef},
     },
     oep::DecryptionImpl,
@@ -14,7 +15,7 @@ macro_rules! impl_decryption_delegate {
     ($trait:ty, $($body:item),+ $(,)?) => {
         impl<BE> $trait for Module<BE>
         where
-            BE: Backend + HostBackend + DecryptionImpl<BE>,
+            BE: Backend + DecryptionImpl<BE>,
         {
             $($body)+
         }
@@ -54,6 +55,24 @@ impl_decryption_delegate!(
         A: LWEInfos,
     {
         BE::lwe_decrypt_tmp_bytes(self, infos)
+    }
+);
+
+impl_decryption_delegate!(
+    LWEMatrixDecrypt<BE>,
+    fn lwe_matrix_decrypt_tmp_bytes<A>(&self, infos: &A) -> usize
+    where
+        A: LWEMatrixInfos,
+    {
+        BE::lwe_matrix_decrypt_tmp_bytes(self, infos)
+    },
+    fn lwe_matrix_decrypt<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEMatrixToBackendRef<BE> + LWEMatrixInfos,
+        P: GLWEToBackendMut<BE> + SetLWEInfos + GLWEInfos,
+        S: LWESecretToBackendRef<BE> + LWEInfos,
+    {
+        BE::lwe_matrix_decrypt(self, res, pt, sk, scratch)
     }
 );
 

@@ -1,13 +1,14 @@
 #![allow(clippy::too_many_arguments)]
 
 use poulpy_hal::{
+    api::{VecZnxCopyBackend, VecZnxFillUniformSourceBackend},
     layouts::{Backend, Module, ScratchArena},
     source::Source,
 };
 
 use crate::{
-    EncryptionInfos,
-    encryption::{GLWEEncryptSk, GLWEEncryptSkInternal},
+    EncryptionInfos, ScratchArenaTakeCore,
+    encryption::{GLWEEncryptSk, GLWEEncryptSkInternal, glwe::GLWEMaskFillDefault},
     layouts::{
         GLWECompressedSeedMut, GLWEInfos, GLWEToBackendRef, LWEInfos, compressed::GLWECompressedToBackendMut,
         prepared::GLWESecretPreparedToBackendRef,
@@ -38,15 +39,15 @@ pub trait GLWECompressedEncryptSkDefault<BE: Backend> {
 
 impl<BE: Backend> GLWECompressedEncryptSkDefault<BE> for Module<BE>
 where
-    Self: GLWEEncryptSkInternal<BE> + GLWEEncryptSk<BE>,
+    Self: GLWEEncryptSkInternal<BE> + GLWEEncryptSk<BE> + VecZnxCopyBackend<BE> + VecZnxFillUniformSourceBackend<BE>,
 {
     fn glwe_compressed_encrypt_sk_tmp_bytes_default<A>(&self, infos: &A) -> usize
     where
         A: GLWEInfos,
     {
         assert_eq!(self.n() as u32, infos.n());
-        let lvl_0: usize = self.glwe_encrypt_sk_tmp_bytes(infos);
-        lvl_0
+        let full_ct = self.bytes_of_vec_znx(infos.rank().as_usize() + 1, infos.size());
+        full_ct + self.glwe_encrypt_sk_tmp_bytes(infos)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -69,8 +70,6 @@ where
 
         {
             let mut res_backend = res.to_backend_mut();
-            let mut source_xa: Source = Source::new(seed_xa);
-            let cols: usize = (res_backend.rank() + 1).into();
             assert!(
                 scratch.available() >= self.glwe_compressed_encrypt_sk_tmp_bytes_default(&res_backend),
                 "scratch.available(): {} < GLWECompressedEncryptSk::glwe_compressed_encrypt_sk_tmp_bytes: {}",
@@ -78,18 +77,25 @@ where
                 self.glwe_compressed_encrypt_sk_tmp_bytes_default(&res_backend)
             );
 
+            let (mut full_ct, mut scratch_1) = scratch.borrow().take_glwe_scratch(&res_backend);
+            self.fill_glwe_mask_from_seed_default(
+                res_backend.base2k().into(),
+                &mut full_ct,
+                1,
+                res_backend.rank().as_usize(),
+                seed_xa,
+            );
             self.glwe_encrypt_sk_internal(
                 res_backend.base2k().into(),
-                &mut res_backend.data,
-                cols,
-                true,
+                &mut full_ct.data,
                 Some((pt.to_backend_ref(), 0)),
                 sk,
                 enc_infos,
                 source_xe,
-                &mut source_xa,
-                scratch,
+                &mut scratch_1,
             );
+            let full_ct_ref = full_ct.to_backend_ref();
+            self.vec_znx_copy_backend(&mut res_backend.data, 0, &full_ct_ref.data, 0);
         }
     }
 }

@@ -138,6 +138,48 @@ fn vec_znx_scalar_product_default_impl<R, BE>(
     }
 }
 
+fn vec_znx_big_col_weighted_sum_default_impl<R, BE>(
+    res: &mut R,
+    res_col: usize,
+    a: &VecZnxBackendRef<'_, BE>,
+    weights: &ScalarZnxBackendRef<'_, BE>,
+    weights_col: usize,
+    cols: usize,
+    coeffs: usize,
+) where
+    BE: Backend,
+    BE::ScalarBig: Copy + From<i64>,
+    Wrapping<BE::ScalarBig>: Add<Output = Wrapping<BE::ScalarBig>> + Mul<Output = Wrapping<BE::ScalarBig>>,
+    for<'x> BE::BufMut<'x>: HostDataMut,
+    for<'x> BE::BufRef<'x>: HostDataRef,
+    R: VecZnxBigToBackendMut<BE>,
+{
+    let mut res = res.to_backend_mut();
+
+    assert!(cols <= a.cols());
+    assert!(cols <= weights.n());
+    assert!(weights_col < weights.cols());
+    assert!(coeffs <= a.n());
+    assert!(coeffs <= res.n());
+    assert!(res.size() <= a.size());
+
+    let weights_slice = weights.at(weights_col, 0);
+    let zero = BE::ScalarBig::from(0);
+
+    for limb in 0..res.size() {
+        let res_slice = res.at_mut(res_col, limb);
+        res_slice.fill(zero);
+
+        for (col, slice) in weights_slice.iter().enumerate().take(cols) {
+            let weight = BE::ScalarBig::from(*slice);
+            let a_slice = a.at(col, limb);
+            for k in 0..coeffs {
+                res_slice[k] = (Wrapping(res_slice[k]) + Wrapping(BE::ScalarBig::from(a_slice[k])) * Wrapping(weight)).0;
+            }
+        }
+    }
+}
+
 #[doc(hidden)]
 pub trait FFT64VecZnxBigDefault<BE: Backend>: Backend
 where
@@ -384,6 +426,24 @@ where
         R: VecZnxBigToBackendMut<BE>,
     {
         vec_znx_scalar_product_default_impl::<R, BE>(res, res_col, a, a_col, b, b_col);
+    }
+
+    fn vec_znx_big_col_weighted_sum_default<R>(
+        _module: &Module<BE>,
+        res: &mut R,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, BE>,
+        weights: &ScalarZnxBackendRef<'_, BE>,
+        weights_col: usize,
+        cols: usize,
+        coeffs: usize,
+    ) where
+        BE: Backend<ScalarBig = i64>,
+        for<'x> BE::BufMut<'x>: HostDataMut,
+        for<'x> BE::BufRef<'x>: HostDataRef,
+        R: VecZnxBigToBackendMut<BE>,
+    {
+        vec_znx_big_col_weighted_sum_default_impl::<R, BE>(res, res_col, a, weights, weights_col, cols, coeffs);
     }
 
     fn vec_znx_big_negate_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
@@ -728,6 +788,24 @@ where
         R: VecZnxBigToBackendMut<BE>,
     {
         vec_znx_scalar_product_default_impl::<R, BE>(res, res_col, a, a_col, b, b_col);
+    }
+
+    fn vec_znx_big_col_weighted_sum_default<R>(
+        _module: &Module<BE>,
+        res: &mut R,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, BE>,
+        weights: &ScalarZnxBackendRef<'_, BE>,
+        weights_col: usize,
+        cols: usize,
+        coeffs: usize,
+    ) where
+        BE: Backend<ScalarBig = i128>,
+        for<'x> BE::BufMut<'x>: HostDataMut,
+        for<'x> BE::BufRef<'x>: HostDataRef,
+        R: VecZnxBigToBackendMut<BE>,
+    {
+        vec_znx_big_col_weighted_sum_default_impl::<R, BE>(res, res_col, a, weights, weights_col, cols, coeffs);
     }
 
     fn vec_znx_big_negate_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
