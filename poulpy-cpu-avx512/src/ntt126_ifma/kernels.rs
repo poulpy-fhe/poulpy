@@ -15,8 +15,8 @@ use core::arch::x86_64::{
     __m256i, __m512i, _mm256_add_epi64, _mm256_and_si256, _mm256_loadu_si256, _mm256_madd52hi_epu64, _mm256_madd52lo_epu64,
     _mm256_mask_blend_epi64, _mm256_min_epu64, _mm256_set_epi64x, _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_storeu_si256,
     _mm256_sub_epi64, _mm512_add_epi64, _mm512_and_si512, _mm512_castsi256_si512, _mm512_inserti64x4, _mm512_loadu_si512,
-    _mm512_madd52hi_epu64, _mm512_madd52lo_epu64, _mm512_min_epu64, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_storeu_si512,
-    _mm512_sub_epi64,
+    _mm512_madd52hi_epu64, _mm512_madd52lo_epu64, _mm512_mask_storeu_epi64, _mm512_maskz_loadu_epi64, _mm512_min_epu64,
+    _mm512_set1_epi64, _mm512_setzero_si512, _mm512_storeu_si512, _mm512_sub_epi64,
 };
 
 use std::mem::size_of;
@@ -753,6 +753,13 @@ unsafe fn load_plane_twiddles8(powomega: &[u64], base: usize, count: usize, idx:
     unsafe { _mm512_loadu_si512(powomega.as_ptr().add(base + prime * count + idx) as *const __m512i) }
 }
 
+/// Masked (zeroing, fault-suppressing) twiddle load for sub-8 remainders.
+#[target_feature(enable = "avx512f")]
+#[inline]
+unsafe fn maskz_load_plane_twiddles8(mask: u8, powomega: &[u64], base: usize, count: usize, idx: usize, prime: usize) -> __m512i {
+    unsafe { _mm512_maskz_loadu_epi64(mask, powomega.as_ptr().add(base + prime * count + idx) as *const i64) }
+}
+
 #[target_feature(enable = "avx512ifma")]
 #[inline]
 unsafe fn harvey_modmul_plane8(a: __m512i, omega: __m512i, omega_quot: __m512i, q: u64) -> __m512i {
@@ -1244,20 +1251,20 @@ unsafe fn ntt_plane_avx512<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTable<P>, pl
                     _mm512_storeu_si512(ptr.add(p2) as *mut __m512i, harvey_modmul_plane8(diff, omega, omega_quot, q));
                     i += 8;
                 }
-                while i < halfnn {
+                if i < halfnn {
+                    let r = halfnn - i;
+                    let mask = ((1u32 << r) - 1) as u8;
                     let p1 = block_start + i;
                     let p2 = block_start + halfnn + i;
-                    let tw_idx = i - 1;
-                    let a = plane[p1];
-                    let b = plane[p2];
-                    plane[p1] = cond_sub_2q(a + b, q4);
-                    plane[p2] = harvey_modmul(
-                        a + q4 - b,
-                        powomega[omega_base + prime * count + tw_idx],
-                        powomega[quot_base + prime * count + tw_idx],
-                        q,
-                    );
-                    i += 1;
+                    let av = _mm512_maskz_loadu_epi64(mask, ptr.add(p1) as *const i64);
+                    let bv = _mm512_maskz_loadu_epi64(mask, ptr.add(p2) as *const i64);
+                    let sum = cond_sub_2q_si512(_mm512_add_epi64(av, bv), q4v);
+                    let diff = _mm512_sub_epi64(_mm512_add_epi64(av, q4v), bv);
+                    let omega = maskz_load_plane_twiddles8(mask, powomega, omega_base, count, i - 1, prime);
+                    let omega_quot = maskz_load_plane_twiddles8(mask, powomega, quot_base, count, i - 1, prime);
+                    let out = harvey_modmul_plane8(diff, omega, omega_quot, q);
+                    _mm512_mask_storeu_epi64(ptr.add(p1) as *mut i64, mask, sum);
+                    _mm512_mask_storeu_epi64(ptr.add(p2) as *mut i64, mask, out);
                 }
 
                 block_start += nn;
@@ -1443,20 +1450,20 @@ unsafe fn intt_plane_avx512<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTableInv<P>
                         _mm512_storeu_si512(ptr.add(p2) as *mut __m512i, diff);
                         i += 8;
                     }
-                    while i < halfnn {
+                    if i < halfnn {
+                        let r = halfnn - i;
+                        let mask = ((1u32 << r) - 1) as u8;
                         let p1 = block_start + i;
                         let p2 = block_start + halfnn + i;
-                        let tw_idx = i - 1;
-                        let a = plane[p1];
-                        let bo = harvey_modmul(
-                            plane[p2],
-                            powomega[omega_base + prime * count + tw_idx],
-                            powomega[quot_base + prime * count + tw_idx],
-                            q,
-                        );
-                        plane[p1] = cond_sub_2q(a + bo, q4);
-                        plane[p2] = cond_sub_2q(a + q4 - bo, q4);
-                        i += 1;
+                        let av = _mm512_maskz_loadu_epi64(mask, ptr.add(p1) as *const i64);
+                        let bv = _mm512_maskz_loadu_epi64(mask, ptr.add(p2) as *const i64);
+                        let omega = maskz_load_plane_twiddles8(mask, powomega, omega_base, count, i - 1, prime);
+                        let omega_quot = maskz_load_plane_twiddles8(mask, powomega, quot_base, count, i - 1, prime);
+                        let bo = harvey_modmul_plane8(bv, omega, omega_quot, q);
+                        let sum = cond_sub_2q_si512(_mm512_add_epi64(av, bo), q4v);
+                        let diff = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(av, q4v), bo), q4v);
+                        _mm512_mask_storeu_epi64(ptr.add(p1) as *mut i64, mask, sum);
+                        _mm512_mask_storeu_epi64(ptr.add(p2) as *mut i64, mask, diff);
                     }
 
                     block_start += nn;
