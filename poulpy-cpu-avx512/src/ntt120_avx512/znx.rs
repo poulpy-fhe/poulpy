@@ -6,21 +6,23 @@
 //! backend-independent.
 
 use poulpy_cpu_ref::reference::znx::{
-    ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo, ZnxMulPowerOfTwo,
-    ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep, ZnxNormalizeFinalStepAssign,
-    ZnxNormalizeFinalStepSub, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly,
-    ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxNormalizeMiddleStepSub, ZnxRotate,
-    ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero, znx_copy_ref, znx_rotate, znx_zero_ref,
+    ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
+    ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
+    ZnxNormalizeFinalStepAssign, ZnxNormalizeFinalStepSub, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign,
+    ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly,
+    ZnxNormalizeMiddleStepSub, ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero, znx_copy_ref,
+    znx_rotate, znx_zero_ref,
 };
 
 use crate::znx_avx512::{
-    znx_add_assign_avx512, znx_add_avx512, znx_automorphism_avx512, znx_extract_digit_addmul_avx512,
-    znx_mul_add_power_of_two_avx512, znx_mul_power_of_two_assign_avx512, znx_mul_power_of_two_avx512, znx_negate_assign_avx512,
-    znx_negate_avx512, znx_normalize_digit_avx512, znx_normalize_final_step_assign_avx512, znx_normalize_final_step_avx512,
-    znx_normalize_final_step_sub_avx512, znx_normalize_first_step_assign_avx512, znx_normalize_first_step_avx512,
-    znx_normalize_first_step_carry_only_avx512, znx_normalize_middle_step_assign_avx512, znx_normalize_middle_step_avx512,
-    znx_normalize_middle_step_carry_only_avx512, znx_normalize_middle_step_sub_avx512, znx_sub_assign_avx512, znx_sub_avx512,
-    znx_sub_negate_assign_avx512, znx_switch_ring_avx512,
+    znx_add_assign_avx512, znx_add_avx512, znx_automorphism_avx512, znx_automorphism_rotate_avx512,
+    znx_extract_digit_addmul_avx512, znx_mul_add_power_of_two_avx512, znx_mul_power_of_two_assign_avx512,
+    znx_mul_power_of_two_avx512, znx_negate_assign_avx512, znx_negate_avx512, znx_normalize_digit_avx512,
+    znx_normalize_final_step_assign_avx512, znx_normalize_final_step_avx512, znx_normalize_final_step_sub_avx512,
+    znx_normalize_first_step_assign_avx512, znx_normalize_first_step_avx512, znx_normalize_first_step_carry_only_avx512,
+    znx_normalize_middle_step_assign_avx512, znx_normalize_middle_step_avx512, znx_normalize_middle_step_carry_only_avx512,
+    znx_normalize_middle_step_sub_avx512, znx_sub_assign_avx512, znx_sub_avx512, znx_sub_negate_assign_avx512,
+    znx_switch_ring_avx512,
 };
 
 use super::NTT120Avx512;
@@ -85,6 +87,13 @@ impl ZnxAutomorphism for NTT120Avx512 {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
         unsafe { znx_automorphism_avx512(p, res, a) }
+    }
+}
+
+impl ZnxAutomorphismRotate for NTT120Avx512 {
+    #[inline(always)]
+    fn znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
+        unsafe { znx_automorphism_rotate_avx512(p, k, res, a) }
     }
 }
 

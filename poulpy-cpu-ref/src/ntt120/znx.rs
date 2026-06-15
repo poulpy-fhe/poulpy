@@ -5,18 +5,18 @@
 //! `&[i64]` slices, which are backend-independent.
 
 use crate::reference::znx::{
-    ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo, ZnxMulPowerOfTwo,
-    ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep, ZnxNormalizeFinalStepAssign,
-    ZnxNormalizeFinalStepSub, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign, ZnxNormalizeFirstStepCarryOnly,
-    ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxNormalizeMiddleStepSub, ZnxRotate,
-    ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero, znx_add_assign_ref, znx_add_ref, znx_automorphism_ref,
-    znx_copy_ref, znx_extract_digit_addmul_ref, znx_mul_add_power_of_two_ref, znx_mul_power_of_two_assign_ref,
-    znx_mul_power_of_two_ref, znx_negate_assign_ref, znx_negate_ref, znx_normalize_digit_ref,
-    znx_normalize_final_step_assign_ref, znx_normalize_final_step_ref, znx_normalize_final_step_sub_ref,
-    znx_normalize_first_step_assign_ref, znx_normalize_first_step_carry_only_ref, znx_normalize_first_step_ref,
-    znx_normalize_middle_step_assign_ref, znx_normalize_middle_step_carry_only_ref, znx_normalize_middle_step_ref,
-    znx_normalize_middle_step_sub_ref, znx_rotate, znx_sub_assign_ref, znx_sub_negate_assign_ref, znx_sub_ref,
-    znx_switch_ring_ref, znx_zero_ref,
+    ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
+    ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
+    ZnxNormalizeFinalStepAssign, ZnxNormalizeFinalStepSub, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign,
+    ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly,
+    ZnxNormalizeMiddleStepSub, ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero, znx_add_assign_ref,
+    znx_add_ref, znx_automorphism_ref, znx_automorphism_rotate_ref, znx_copy_ref, znx_extract_digit_addmul_ref,
+    znx_mul_add_power_of_two_ref, znx_mul_power_of_two_assign_ref, znx_mul_power_of_two_ref, znx_negate_assign_ref,
+    znx_negate_ref, znx_normalize_digit_ref, znx_normalize_final_step_assign_ref, znx_normalize_final_step_ref,
+    znx_normalize_final_step_sub_ref, znx_normalize_first_step_assign_ref, znx_normalize_first_step_carry_only_ref,
+    znx_normalize_first_step_ref, znx_normalize_middle_step_assign_ref, znx_normalize_middle_step_carry_only_ref,
+    znx_normalize_middle_step_ref, znx_normalize_middle_step_sub_ref, znx_rotate, znx_sub_assign_ref, znx_sub_negate_assign_ref,
+    znx_sub_ref, znx_switch_ring_ref, znx_zero_ref,
 };
 
 use crate::NTT120Ref;
@@ -81,6 +81,13 @@ impl ZnxAutomorphism for NTT120Ref {
     #[inline(always)]
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
         znx_automorphism_ref(p, res, a);
+    }
+}
+
+impl ZnxAutomorphismRotate for NTT120Ref {
+    #[inline(always)]
+    fn znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
+        znx_automorphism_rotate_ref(p, k, res, a);
     }
 }
 

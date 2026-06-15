@@ -457,6 +457,17 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_automorphism_rotate_backend(
+        module: &Module<BE>,
+        p: i64,
+        k: i64,
+        res: &mut VecZnxBackendMut<'_, BE>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, BE>,
+        a_col: usize,
+    );
+
     fn vec_znx_mul_xp_minus_one_backend(
         module: &Module<BE>,
         k: i64,
@@ -1016,70 +1027,11 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend {
     fn vmp_zero(module: &Module<BE>, res: &mut crate::layouts::VmpPMatBackendMut<'_, BE>);
 }
 
-/// Packed coefficient-matrix product extension point.
-///
-/// # Safety
-/// Implementations must respect the packed coefficient layout described by
-/// [`crate::api::VecZnxMatMul`], use only the provided scratch region, and
-/// write only the selected result column.
-pub unsafe trait HalVecZnxMatMulImpl<BE: Backend>: Backend {
-    fn vec_znx_matmul_tmp_bytes(
-        module: &Module<BE>,
-        rows_in: usize,
-        rows_out: usize,
-        cols: usize,
-        res_size: usize,
-        u_size: usize,
-        a_size: usize,
-    ) -> usize;
-
-    #[allow(clippy::too_many_arguments)]
-    fn vec_znx_matmul(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        res_base2k: usize,
-        u: &crate::layouts::VecZnxBackendRef<'_, BE>,
-        u_base2k: usize,
-        u_bound_bits: u32,
-        a: &crate::layouts::VecZnxBackendRef<'_, BE>,
-        a_col: usize,
-        cols: usize,
-        a_base2k: usize,
-        rows_in: usize,
-        rows_out: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
-    fn coeff_gemm_panel_wp(u_bound_bits: u32) -> (u32, usize);
-
-    fn coeff_gemm_prepare(
-        module: &Module<BE>,
-        panel: &mut crate::layouts::CoeffGemmPanelBackendMut<'_, BE>,
-        u: &crate::layouts::VecZnxBackendRef<'_, BE>,
-    );
-
-    #[allow(clippy::too_many_arguments)]
-    fn vec_znx_matmul_prepared(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxBackendMut<'_, BE>,
-        res_col: usize,
-        res_base2k: usize,
-        panel: &crate::layouts::CoeffGemmPanelBackendRef<'_, BE>,
-        u_base2k: usize,
-        a: &crate::layouts::VecZnxBackendRef<'_, BE>,
-        a_col: usize,
-        cols: usize,
-        a_base2k: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-}
-
 /// Convolution family extension point.
 ///
 /// # Safety
-/// Implementations must uphold the backend safety contract for prepared
-/// convolution layouts, scratch usage, and arithmetic correctness.
+/// Implementations must uphold the backend safety contract for prepared matrix
+/// layouts, scratch usage, and arithmetic correctness.
 pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend {
     fn cnv_prepare_left_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize;
 

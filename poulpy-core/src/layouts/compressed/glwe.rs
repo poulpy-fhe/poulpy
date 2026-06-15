@@ -17,7 +17,7 @@ use std::ops::{Deref, DerefMut};
 
 /// Seed-compressed GLWE ciphertext layout.
 ///
-/// Stores only the body component of a [`GLWE`] ciphertext; the mask
+/// Stores only the compressed [`VecZnx`] data of a [`GLWE`] ciphertext; the mask
 /// polynomials are regenerated deterministically from a 32-byte PRNG
 /// seed during decompression. This reduces the serialized size by a
 /// factor proportional to the rank.
@@ -191,6 +191,18 @@ impl<D: HostDataRef> fmt::Debug for GLWECompressed<D> {
     }
 }
 
+impl<D: Data> GLWECompressed<D> {
+    /// Returns a shared reference to the underlying [`VecZnx`] storage.
+    pub fn data(&self) -> &VecZnx<D> {
+        &self.data
+    }
+
+    /// Returns a mutable reference to the underlying [`VecZnx`] storage.
+    pub fn data_mut(&mut self) -> &mut VecZnx<D> {
+        &mut self.data
+    }
+}
+
 impl<D: HostDataRef> fmt::Display for GLWECompressed<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -253,7 +265,7 @@ impl GLWECompressed<Vec<u8>> {
     }
 }
 
-/// Deserializes the metadata (k, base2k, rank, seed) followed by the body data.
+/// Deserializes the metadata (k, base2k, rank, seed) followed by the stored data.
 impl<D: HostDataMut> ReaderFrom for GLWECompressed<D> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.base2k = Base2K(reader.read_u32::<LittleEndian>()?);
@@ -263,7 +275,7 @@ impl<D: HostDataMut> ReaderFrom for GLWECompressed<D> {
     }
 }
 
-/// Serializes the metadata (k, base2k, rank, seed) followed by the body data.
+/// Serializes the metadata (k, base2k, rank, seed) followed by the stored data.
 impl<D: HostDataRef> WriterTo for GLWECompressed<D> {
     fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         writer.write_u32::<LittleEndian>(self.base2k.into())?;
@@ -275,7 +287,7 @@ impl<D: HostDataRef> WriterTo for GLWECompressed<D> {
 
 /// Trait for decompressing a [`GLWECompressed`] into a standard [`GLWE`].
 ///
-/// Copies the body from the compressed ciphertext and regenerates
+/// Copies the stored data from the compressed ciphertext and regenerates
 /// the mask polynomials from the stored PRNG seed.
 pub trait GLWEDecompress
 where
@@ -283,7 +295,7 @@ where
 {
     type Backend: Backend;
 
-    /// Decompresses `other` into `res` by copying the body and regenerating the mask.
+    /// Decompresses `other` into `res` by copying the stored data and regenerating the mask.
     fn decompress_glwe<R, O>(&self, res: &mut R, other: &O)
     where
         R: GLWEToBackendMut<Self::Backend> + SetLWEInfos,

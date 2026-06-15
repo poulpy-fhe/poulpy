@@ -9,8 +9,8 @@ use poulpy_cpu_ref::reference::{
         reim4::{Reim4BlkMatVec, Reim4Convolution},
     },
     znx::{
-        ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo, ZnxMulPowerOfTwo,
-        ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
+        ZnxAdd, ZnxAddAssign, ZnxAutomorphism, ZnxAutomorphismRotate, ZnxCopy, ZnxExtractDigitAddMul, ZnxMulAddPowerOfTwo,
+        ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
         ZnxNormalizeFinalStepAssign, ZnxNormalizeFinalStepSub, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign,
         ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly,
         ZnxNormalizeMiddleStepSub, ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero, znx_copy_ref,
@@ -42,13 +42,14 @@ use crate::{
         },
     },
     znx_avx512::{
-        znx_add_assign_avx512, znx_add_avx512, znx_automorphism_avx512, znx_extract_digit_addmul_avx512,
-        znx_mul_add_power_of_two_avx512, znx_mul_power_of_two_assign_avx512, znx_mul_power_of_two_avx512,
-        znx_negate_assign_avx512, znx_negate_avx512, znx_normalize_digit_avx512, znx_normalize_final_step_assign_avx512,
-        znx_normalize_final_step_avx512, znx_normalize_final_step_sub_avx512, znx_normalize_first_step_assign_avx512,
-        znx_normalize_first_step_avx512, znx_normalize_first_step_carry_only_avx512, znx_normalize_middle_step_assign_avx512,
-        znx_normalize_middle_step_avx512, znx_normalize_middle_step_carry_only_avx512, znx_normalize_middle_step_sub_avx512,
-        znx_sub_assign_avx512, znx_sub_avx512, znx_sub_negate_assign_avx512, znx_switch_ring_avx512,
+        znx_add_assign_avx512, znx_add_avx512, znx_automorphism_avx512, znx_automorphism_rotate_avx512,
+        znx_extract_digit_addmul_avx512, znx_mul_add_power_of_two_avx512, znx_mul_power_of_two_assign_avx512,
+        znx_mul_power_of_two_avx512, znx_negate_assign_avx512, znx_negate_avx512, znx_normalize_digit_avx512,
+        znx_normalize_final_step_assign_avx512, znx_normalize_final_step_avx512, znx_normalize_final_step_sub_avx512,
+        znx_normalize_first_step_assign_avx512, znx_normalize_first_step_avx512, znx_normalize_first_step_carry_only_avx512,
+        znx_normalize_middle_step_assign_avx512, znx_normalize_middle_step_avx512, znx_normalize_middle_step_carry_only_avx512,
+        znx_normalize_middle_step_sub_avx512, znx_sub_assign_avx512, znx_sub_avx512, znx_sub_negate_assign_avx512,
+        znx_switch_ring_avx512,
     },
 };
 
@@ -252,6 +253,15 @@ impl ZnxAutomorphism for FFT64Avx512 {
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]) {
         unsafe {
             znx_automorphism_avx512(p, res, a);
+        }
+    }
+}
+
+impl ZnxAutomorphismRotate for FFT64Avx512 {
+    #[inline(always)]
+    fn znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
+        unsafe {
+            znx_automorphism_rotate_avx512(p, k, res, a);
         }
     }
 }

@@ -30,7 +30,6 @@
 #[macro_use]
 mod macros;
 
-mod coeff_matrix_prepared;
 mod diagonals;
 mod gglwe;
 mod gglwe_to_ggsw_key;
@@ -68,7 +67,6 @@ pub use self::compressed::{
     LWECompressedToBackendRef, LWEDecompress, LWESwitchingKeyCompressed, LWESwitchingKeyDecompress, LWEToGLWEKeyCompressed,
     LWEToGLWEKeyDecompress,
 };
-pub use coeff_matrix_prepared::*;
 pub use diagonals::*;
 pub use gglwe::*;
 pub use gglwe_to_ggsw_key::*;
@@ -109,7 +107,6 @@ pub type BackendGGLWE<BE> = GGLWE<<BE as Backend>::OwnedBuf>;
 pub type BackendGGSW<BE> = GGSW<<BE as Backend>::OwnedBuf>;
 pub type BackendLWE<BE> = LWE<<BE as Backend>::OwnedBuf>;
 pub type BackendLWEMatrix<BE> = LWEMatrix<<BE as Backend>::OwnedBuf>;
-pub type BackendCoeffMatrix<BE> = CoeffMatrix<<BE as Backend>::OwnedBuf>;
 pub type BackendGLWESecret<BE> = GLWESecret<<BE as Backend>::OwnedBuf>;
 pub type BackendLWESecret<BE> = LWESecret<<BE as Backend>::OwnedBuf>;
 pub type BackendGLWEPlaintext<BE> = GLWEPlaintext<<BE as Backend>::OwnedBuf>;
@@ -229,15 +226,6 @@ pub trait ModuleCoreAlloc {
 
     fn lwe_matrix_alloc_from_infos<A: LWEMatrixInfos>(&self, infos: &A) -> LWEMatrix<Self::OwnedBuf>;
     fn lwe_matrix_alloc(&self, rows: usize, lwe_n: Degree, base2k: Base2K, k: TorusPrecision) -> LWEMatrix<Self::OwnedBuf>;
-
-    fn coeff_matrix_alloc_from_infos<BU: CoeffBound, A: CoeffMatrixInfos>(&self, infos: &A) -> CoeffMatrix<Self::OwnedBuf, BU>;
-    fn coeff_matrix_alloc<BU: CoeffBound>(
-        &self,
-        rows_in: usize,
-        rows_out: usize,
-        base2k: Base2K,
-        k: TorusPrecision,
-    ) -> CoeffMatrix<Self::OwnedBuf, BU>;
 
     fn lwe_plaintext_alloc_from_infos<A: LWEInfos>(&self, infos: &A) -> LWEPlaintext<Self::OwnedBuf>;
     fn lwe_plaintext_alloc(&self, base2k: Base2K, k: TorusPrecision) -> LWEPlaintext<Self::OwnedBuf>;
@@ -634,35 +622,6 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         self.lwe_matrix_alloc_from_infos(&LWEMatrixLayout {
             rows,
             n: lwe_n,
-            base2k,
-            k,
-        })
-    }
-
-    fn coeff_matrix_alloc_from_infos<BU: CoeffBound, A: CoeffMatrixInfos>(&self, infos: &A) -> CoeffMatrix<B::OwnedBuf, BU> {
-        let size = infos.max_k().as_usize().div_ceil(infos.base2k().as_usize());
-        let rows_in = infos.n().as_usize();
-        CoeffMatrix {
-            data: VecZnx::from_data(
-                B::alloc_zeroed_bytes(self.bytes_of_vec_znx_n(rows_in, infos.rows_out(), size)),
-                rows_in,
-                infos.rows_out(),
-                size,
-            ),
-            base2k: infos.base2k(),
-            _bound: std::marker::PhantomData,
-        }
-    }
-    fn coeff_matrix_alloc<BU: CoeffBound>(
-        &self,
-        rows_in: usize,
-        rows_out: usize,
-        base2k: Base2K,
-        k: TorusPrecision,
-    ) -> CoeffMatrix<B::OwnedBuf, BU> {
-        self.coeff_matrix_alloc_from_infos(&CoeffMatrixLayout {
-            n: Degree(rows_in as u32),
-            rows_out,
             base2k,
             k,
         })

@@ -3,7 +3,7 @@ use crate::{
     hal_defaults::{
         FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault, FFT64VecZnxDftDefault,
         FFT64VmpDefault, HalVecZnxDefault, NTT120ConvolutionDefault, NTT120ModuleDefault, NTT120SvpDefault,
-        NTT120VecZnxBigDefault, NTT120VecZnxDftDefault, NTT120VmpDefault, VecZnxMatMulDefault,
+        NTT120VecZnxBigDefault, NTT120VecZnxDftDefault, NTT120VmpDefault,
     },
 };
 use poulpy_hal::{
@@ -11,10 +11,7 @@ use poulpy_hal::{
     layouts::{
         Backend, Module, NoiseInfos, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, ZnxInfos,
     },
-    oep::{
-        HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVecZnxMatMulImpl,
-        HalVmpImpl,
-    },
+    oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
 #[macro_use]
@@ -32,7 +29,6 @@ mod svp;
 #[macro_use]
 mod vec_znx_dft;
 #[macro_use]
-mod vec_znx_matmul;
 #[cfg(all(test, feature = "enable-core"))]
 pub(crate) mod delegating_backend;
 
@@ -50,10 +46,6 @@ unsafe impl HalModuleImpl<FFT64Ref> for FFT64Ref {
 
 unsafe impl HalVmpImpl<FFT64Ref> for FFT64Ref {
     hal_impl_vmp!(FFT64VmpDefault);
-}
-
-unsafe impl HalVecZnxMatMulImpl<FFT64Ref> for FFT64Ref {
-    hal_impl_vec_znx_matmul!(VecZnxMatMulDefault);
 }
 
 unsafe impl HalConvolutionImpl<FFT64Ref> for FFT64Ref {
@@ -86,10 +78,6 @@ unsafe impl HalModuleImpl<NTT120Ref> for NTT120Ref {
 
 unsafe impl HalVmpImpl<NTT120Ref> for NTT120Ref {
     hal_impl_vmp!(NTT120VmpDefault);
-}
-
-unsafe impl HalVecZnxMatMulImpl<NTT120Ref> for NTT120Ref {
-    hal_impl_vec_znx_matmul!(VecZnxMatMulDefault);
 }
 
 unsafe impl HalConvolutionImpl<NTT120Ref> for NTT120Ref {

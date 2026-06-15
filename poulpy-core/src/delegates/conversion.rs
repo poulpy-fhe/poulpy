@@ -1,17 +1,10 @@
-use poulpy_hal::{
-    api::{CoeffGemmPrepare, ModuleN, VecZnxMatMulPrepared, VecZnxMatMulTmpBytes, VecZnxZeroBackend},
-    layouts::{Backend, HostDataMut, HostDataRef, Module, ScratchArena, VecZnxToBackendMut, VecZnxToBackendRef},
-};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    api::{
-        CoeffMatrixPrepare, GGSWExpandRows, GGSWFromGGLWE, GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE, LWEFromGLWE,
-        LWEMatrixMul, LWESampleExtract,
-    },
+    api::{GGSWExpandRows, GGSWFromGGLWE, GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE, LWEFromGLWE, LWESampleExtract},
     layouts::{
-        CoeffBound, CoeffMatrixInfos, CoeffMatrixPreparedOwned, CoeffMatrixToBackendRef, GGLWEInfos, GGSWInfos, GGSWToBackendMut,
-        GLWECompressedSeed, GLWECompressedToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEMatrixInfos,
-        LWEMatrixToBackendMut, LWEMatrixToBackendRef, LWEToBackendMut, LWEToBackendRef,
+        GGLWEInfos, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEMatrixInfos,
+        LWEMatrixToBackendMut, LWEToBackendMut, LWEToBackendRef,
         prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
     },
     oep::{ConversionDefault, ConversionImpl},
@@ -143,90 +136,6 @@ impl_conversion_delegate!(
 );
 
 impl_conversion_delegate!(
-    LWEMatrixMul<BE>,
-    [
-        BE: Backend + ConversionImpl<BE>,
-        Module<BE>: ConversionDefault<BE>
-    ],
-    fn lwe_matrix_mul_tmp_bytes<R, U, A>(&self, res_infos: &R, u_infos: &U, a_infos: &A) -> usize
-    where
-        R: LWEMatrixInfos,
-        U: CoeffMatrixInfos,
-        A: LWEMatrixInfos,
-    {
-        BE::lwe_matrix_mul_tmp_bytes(self, res_infos, u_infos, a_infos)
-    }
-
-    fn lwe_matrix_mul<R, U, A>(&self, res: &mut R, u: &U, a: &A, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
-        U: CoeffMatrixToBackendRef<BE> + CoeffMatrixInfos,
-        A: LWEMatrixToBackendRef<BE> + LWEMatrixInfos,
-    {
-        BE::lwe_matrix_mul(self, res, u, a, scratch)
-    }
-
-    fn lwe_matrix_mul_mask_tmp_bytes<R, U, A>(&self, res_infos: &R, u_infos: &U, a_infos: &A) -> usize
-    where
-        R: LWEMatrixInfos,
-        U: CoeffMatrixInfos,
-        A: GLWEInfos,
-    {
-        BE::lwe_matrix_mul_mask_tmp_bytes(self, res_infos, u_infos, a_infos)
-    }
-
-    fn lwe_matrix_mul_mask<R, U, A>(&self, res: &mut R, u: &U, a: &A, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
-        U: CoeffMatrixToBackendRef<BE> + CoeffMatrixInfos,
-        A: GLWECompressedToBackendRef<BE> + GLWECompressedSeed + GLWEInfos,
-    {
-        BE::lwe_matrix_mul_mask(self, res, u, a, scratch)
-    }
-
-    fn lwe_matrix_mul_body_tmp_bytes<R, U, A>(&self, res_infos: &R, u_infos: &U, a_infos: &A) -> usize
-    where
-        R: LWEMatrixInfos,
-        U: CoeffMatrixInfos,
-        A: GLWEInfos,
-    {
-        BE::lwe_matrix_mul_body_tmp_bytes(self, res_infos, u_infos, a_infos)
-    }
-
-    fn lwe_matrix_mul_body<R, U, A>(&self, res: &mut R, u: &U, a: &A, scratch: &mut ScratchArena<'_, BE>)
-    where
-        R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
-        U: CoeffMatrixToBackendRef<BE> + CoeffMatrixInfos,
-        A: GLWECompressedToBackendRef<BE> + GLWEInfos,
-    {
-        BE::lwe_matrix_mul_body(self, res, u, a, scratch)
-    }
-
-    fn lwe_matrix_mul_bodies_tmp_bytes<U>(&self, u_infos: &U, num_bodies: usize, res_size: usize, a_size: usize) -> usize
-    where
-        U: CoeffMatrixInfos,
-    {
-        BE::lwe_matrix_mul_bodies_tmp_bytes(self, u_infos, num_bodies, res_size, a_size)
-    }
-
-    fn lwe_matrix_mul_bodies<R, U, A>(
-        &self,
-        res_bodies: &mut R,
-        res_base2k: usize,
-        u: &U,
-        bodies: &A,
-        a_base2k: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: VecZnxToBackendMut<BE>,
-        U: CoeffMatrixToBackendRef<BE> + CoeffMatrixInfos,
-        A: VecZnxToBackendRef<BE>,
-    {
-        BE::lwe_matrix_mul_bodies(self, res_bodies, res_base2k, u, bodies, a_base2k, scratch)
-    }
-);
-
-impl_conversion_delegate!(
     GGSWFromGGLWE<BE>,
     [BE: Backend + ConversionImpl<BE>, Module<BE>: ConversionDefault<BE>],
     fn ggsw_from_gglwe_tmp_bytes<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
@@ -279,52 +188,3 @@ impl_conversion_delegate!(
         BE::ggsw_expand_row(self, res, tsk, tsk_size, scratch)
     }
 );
-
-impl<BE> CoeffMatrixPrepare<BE> for Module<BE>
-where
-    BE: Backend,
-    BE::OwnedBuf: HostDataMut,
-    for<'x> BE::BufMut<'x>: HostDataMut,
-    for<'x> BE::BufRef<'x>: HostDataRef,
-    Module<BE>: ModuleN + CoeffGemmPrepare<BE> + VecZnxZeroBackend<BE> + VecZnxMatMulPrepared<BE> + VecZnxMatMulTmpBytes,
-{
-    fn coeff_matrix_prepare<U>(&self, u: &U) -> CoeffMatrixPreparedOwned<BE, <U as CoeffMatrixInfos>::Bound>
-    where
-        U: CoeffMatrixToBackendRef<BE> + CoeffMatrixInfos,
-    {
-        crate::default::conversion::coeff_matrix_prepare_default::<BE, _, _>(self, u)
-    }
-
-    fn lwe_matrix_mul_bodies_prepared_tmp_bytes<BU>(
-        &self,
-        prepared: &CoeffMatrixPreparedOwned<BE, BU>,
-        num_bodies: usize,
-        res_size: usize,
-        a_size: usize,
-    ) -> usize
-    where
-        BU: CoeffBound,
-    {
-        crate::default::conversion::lwe_matrix_mul_bodies_prepared_tmp_bytes_default::<BE, _, BU>(
-            self, prepared, num_bodies, res_size, a_size,
-        )
-    }
-
-    fn lwe_matrix_mul_bodies_prepared<R, A, BU>(
-        &self,
-        res_bodies: &mut R,
-        res_base2k: usize,
-        prepared: &CoeffMatrixPreparedOwned<BE, BU>,
-        bodies: &A,
-        a_base2k: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: VecZnxToBackendMut<BE>,
-        A: VecZnxToBackendRef<BE>,
-        BU: CoeffBound,
-    {
-        crate::default::conversion::lwe_matrix_mul_bodies_prepared_default::<BE, _, _, _, BU>(
-            self, res_bodies, res_base2k, prepared, bodies, a_base2k, scratch,
-        )
-    }
-}

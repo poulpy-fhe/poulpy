@@ -7,8 +7,8 @@ use crate::{
         ScalarZnxFillTernaryProbSourceBackend, VecZnxAddAssignBackend, VecZnxAddConstAssignBackend, VecZnxAddConstIntoBackend,
         VecZnxAddIntoBackend, VecZnxAddNormalBackend, VecZnxAddNormalSourceBackend, VecZnxAddScalarAssignBackend,
         VecZnxAddScalarIntoBackend, VecZnxAutomorphismAssignBackend, VecZnxAutomorphismAssignTmpBytes, VecZnxAutomorphismBackend,
-        VecZnxCopyBackend, VecZnxCopyRangeBackend, VecZnxExtractCoeffBackend, VecZnxFillNormalBackend,
-        VecZnxFillNormalSourceBackend, VecZnxFillUniformBackend, VecZnxFillUniformSourceBackend,
+        VecZnxAutomorphismRotateBackend, VecZnxCopyBackend, VecZnxCopyRangeBackend, VecZnxExtractCoeffBackend,
+        VecZnxFillNormalBackend, VecZnxFillNormalSourceBackend, VecZnxFillUniformBackend, VecZnxFillUniformSourceBackend,
         VecZnxHadamardProductScalarZnxBackend, VecZnxLshAddCoeffIntoBackend, VecZnxLshAddCoeffToCoeffBackend,
         VecZnxLshAddIntoBackend, VecZnxLshAssignBackend, VecZnxLshBackend, VecZnxLshCoeffBackend, VecZnxLshSubBackend,
         VecZnxLshSubCoeffToCoeffBackend, VecZnxLshTmpBytes, VecZnxMergeRingsBackend, VecZnxMergeRingsTmpBytes,
@@ -676,6 +676,21 @@ impl_vec_znx_delegate!(
         scratch: &mut ScratchArena<'_, B>,
     ) {
         B::vec_znx_automorphism_assign_backend(self, k, res, res_col, scratch)
+    }
+);
+
+impl_vec_znx_delegate!(
+    VecZnxAutomorphismRotateBackend<B>,
+    fn vec_znx_automorphism_rotate_backend(
+        &self,
+        p: i64,
+        k: i64,
+        res: &mut VecZnxBackendMut<'_, B>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, B>,
+        a_col: usize,
+    ) {
+        B::vec_znx_automorphism_rotate_backend(self, p, k, res, res_col, a, a_col)
     }
 );
 

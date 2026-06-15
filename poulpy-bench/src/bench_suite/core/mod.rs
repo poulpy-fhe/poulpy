@@ -1,5 +1,4 @@
 pub mod automorphism;
-pub mod coeff_mat;
 pub mod decryption;
 pub mod encryption;
 pub mod external_product;

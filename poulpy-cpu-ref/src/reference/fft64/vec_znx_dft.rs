@@ -456,11 +456,11 @@ pub fn build_fft64_automorphism_plan(n: usize, p: i64) -> Fft64AutomorphismPlan 
     let ir = |i: u32| -> u32 { i.reverse_bits() >> (32 - log_n) };
 
     let mut perm: Vec<u32> = vec![0u32; m];
-    for (i, slot) in perm.iter_mut().enumerate() {
+    for (i, mi) in perm.iter_mut().enumerate().take(m) {
         let e: i64 = 2 * ir(i as u32) as i64 + 1;
         let e_src: i64 = (p_eff * e) & mask;
         let src: u32 = ((e_src - 1) >> 1) as u32;
-        *slot = ir(src);
+        *mi = ir(src);
     }
     Fft64AutomorphismPlan { p, perm, conj }
 }

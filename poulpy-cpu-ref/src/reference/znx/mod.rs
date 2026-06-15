@@ -1,6 +1,7 @@
 mod add;
 mod arithmetic_ref;
 mod automorphism;
+mod automorphism_rotate;
 mod copy;
 mod mul;
 mod neg;
@@ -14,6 +15,7 @@ mod zero;
 pub use add::*;
 pub use arithmetic_ref::*;
 pub use automorphism::*;
+pub use automorphism_rotate::*;
 pub use copy::*;
 pub use mul::*;
 pub use neg::*;
@@ -47,6 +49,11 @@ pub trait ZnxSubNegateAssign {
 
 pub trait ZnxAutomorphism {
     fn znx_automorphism(p: i64, res: &mut [i64], a: &[i64]);
+}
+
+pub trait ZnxAutomorphismRotate {
+    /// Computes `res = X^k * auto(p, a)` (fused automorphism + rotation).
+    fn znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]);
 }
 
 pub trait ZnxCopy {

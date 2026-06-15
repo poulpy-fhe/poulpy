@@ -156,7 +156,6 @@ compile_error!(
 #[cfg(feature = "enable-avx512f")]
 mod fft64;
 #[cfg(feature = "enable-avx512f")]
-mod gemm;
 #[cfg(feature = "enable-avx512f")]
 mod hal_impl;
 #[cfg(feature = "enable-avx512f")]

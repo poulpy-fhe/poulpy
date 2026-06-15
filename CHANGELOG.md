@@ -2,11 +2,20 @@
 
 ## [Unreleased]
 
+### `poulpy-hal`
+- Add HAL APIs for scalar automorphisms and packed matrix helpers: `ScalarZnxAutomorphismBackend`, `ScalarZnxAutomorphismAssignBackend`, `VecZnxTransposeBackend`, and `VecZnxBigColWeightedSum`.
+- Add reusable DFT-domain automorphism planning and application via `VecZnxDftAutomorphismPlan` and `VecZnxDftAutomorphism`, with backend-specific plan types wired through `HalVecZnxDftImpl`.
+- Add the accumulating convolution apply `Convolution::cnv_apply_dft_accumulate` (`res += a (x) b` in the DFT domain), wired through the api/oep/delegate layers and implemented by every backend; it is bit-identical to `cnv_apply_dft` followed by a DFT-domain add (asserted raw-byte-exact by a new cross-backend conformance test), leaves limbs beyond the convolution bound untouched, and reuses the `cnv_apply_dft_tmp_bytes` scratch contract.
+- Add `VecZnxLshAddCoeffToCoeffBackend` and `VecZnxLshSubCoeffToCoeffBackend` hooks plus portable reference implementations so coefficient-level plaintext accumulation can handle left-shift alignment.
+
 ### `poulpy-core`
 - Add the scheme-agnostic GLWE-level linear-transformation (matrix–vector product over the slots) engine: the unprepared `LinearTransformation` / `LinearTransformationGiantStep` / `LinearTransformationDiagonal` (encoded diagonals bucketed by giant step), the integer-level BSGS schedule types (`LinearTransformationLayout`, `LinearTransformationPlan`, `LinearTransformationStrategy` (`Bsgs { giant_step }` / `Direct`), `optimal_bsgs_giant_step`), and the `GLWELinearTransformations` trait. It evaluates `M·v = Σ_k diag_k ⊙ rot(v, k)` via a baby-step/giant-step double loop over raw GLWE ciphertexts, carries no CKKS scale notion, and receives only base2k-level alignment integers from the caller (docs/lt_bsgs.md).
 - Add the convolution-domain prepared caches `LinearTransformationRhsPrepared` (matrix diagonals, the right operand) and `LinearTransformationLhsPrepared` (hoisted baby rotations of the input, the left operand), allocated up front and populated separately so a giant-step schedule reuses one baby cache across factors and evaluations. The prepared evaluator keeps the per-giant product, giant rotations, and cross-giant accumulation in the DFT / `VecZnxBig` domain with a single final normalization.
 - Add a streamed (unprepared-RHS) evaluation path that prepares each diagonal on the fly through scratch instead of materializing the full prepared right operand, trading recompute for lower resident memory (for bandwidth-bound backends); both paths share one giant-step driver.
 - Add the scheme-agnostic clear evaluator `Diagonals<T>` with the `Evaluate` / `DiagonalArithmetic` traits (and an in-place `transpose`), used as the plaintext reference the homomorphic engine matches bit-for-bit up to scheme precision.
+- Add packed LWE matrix support with `LWEMatrix`, `LWEMatrixLayout`, `LWEMatrixInfos`, `BackendLWEMatrix`, backend ref/mut adapters, and `ModuleCoreAlloc::{lwe_matrix_alloc,lwe_matrix_alloc_from_infos}`.
+- Add core APIs for packed LWE matrix workflows: `GLWEExpandLWEMatrix` expands a GLWE into a matrix of LWE samples, and `LWEMatrixDecrypt` decrypts packed LWE rows into a GLWE plaintext-shaped result.
+- Add `GLWEMaskFill` and `LWEFillMask` traits for backend-generic mask generation from a `Source` or deterministic seed; compressed LWE/GLWE decompression now uses those mask-fill defaults, and `GLWECompressed` exposes `data()` / `data_mut()` accessors for its stored ciphertext data.
 
 ### `poulpy-ckks`
 - Add backend-generic CKKS polynomial evaluation APIs: `Polynomial`, `BSGSPolynomial`, `PowerBasis`, `Basis`, `Parity`, `SplitStrategy`, and `PolynomialEvaluation`, with monomial and Chebyshev bases, Chebyshev interpolation, and BSGS/Paterson-Stockmeyer evaluation from a precomputed power basis.
@@ -16,29 +25,22 @@
 - Add the CKKS linear-transformation (matrix–vector product over the slots) API `LinearTransformationOps` (with `LinearTransformation` / `GiantStep` / `Diagonal` and the prepared caches re-exported from `poulpy-core`). The CKKS layer owns the scale (`log_delta` / `log_budget`) math: it derives the convolution alignment and result metadata and delegates evaluation to the core engine. It exposes prepared, one-shot, caller-cached-unprepared, and self-allocating streamed entry points; `ComplexDiagonals<T>` plus `ckks_encode_linear_transformation_from_diagonals` build the encoded transform (with optional transpose for the `a·B` orientation) from a raw complex diagonal map. A backend-generic conformance test validates both the prepared and streamed results against the plaintext `ComplexDiagonals::evaluate`.
 - Add the homomorphic DFT (CoeffsToSlots / SlotsToCoeffs) via the `DFTOps` trait. `ckks_new_dft_matrix` / `ckks_new_dft_matrix_streamed` build a factorized (I)DFT from a `DFTPlan` (per-factor `factorization_depth` schedule, per-factor BSGS `factor_giant_steps`, `bit_reversed`, `scaling`), and `ckks_coeffs_to_slots` / `ckks_slots_to_coeffs` (plus `_split` and sparse `_repack` variants) evaluate it by chaining one prepared linear transformation per factor with no explicit rescale between them (the plaintext-multiply realigns to the input scale). Output formats `Standard` / `SplitRealAndImag` / `RepackImagAsReal` are encoded as the `DFTMatrix` variants (`DFTType`, `DFTOutputFormat`), so illegal direction/format combinations are unrepresentable; the prepared and streamed (`DFTMatrixStreamed`) factor storage share one evaluator. The BSGS schedule is caller-supplied per factor — the library applies no implicit optimum, since the cost-optimal width is backend-dependent.
 
-### `poulpy-hal` / `poulpy-cpu-ref`
-- Add `VecZnxLshAddCoeffToCoeffBackend` and `VecZnxLshSubCoeffToCoeffBackend` hooks plus portable reference implementations so coefficient-level plaintext accumulation can handle left-shift alignment.
-
-### `poulpy-bench`
-- Add the `ckks_poly_eval` Criterion benchmark, sweeping polynomial degree and `MinDepth` / `MinMult` BSGS split strategies on `ntt120-ref` while reporting baby-step size and observed log-budget/level consumption.
-
-### Build & Docs
-- Add `docs/lt_bsgs.md` (+ `docs/lt_bsgs_impl.md`, `docs/lt_bsgs.png`), the design note for the baby-step/giant-step linear transformation: the diagonal decomposition, the prepared convolution-domain caches, the hoisted-baby / lazy-giant evaluation, and the CKKS scale accounting.
-- Add `docs/polynomial-evaluation-spec.md`, a scheme-agnostic design note for power bases, Paterson-Stockmeyer/BSGS decomposition, encoded baby polynomials, and the Poulpy CKKS integration.
-- Refresh the `ckks_poly2` example to use Chebyshev interpolation, `PowerBasis`, and the new BSGS evaluator pipeline.
-
-### `poulpy-hal`
-- Add the accumulating convolution apply `Convolution::cnv_apply_dft_accumulate` (`res += a (x) b` in the DFT domain), wired through the api/oep/delegate layers and implemented by every backend; it is bit-identical to `cnv_apply_dft` followed by a DFT-domain add (asserted raw-byte-exact by a new cross-backend conformance test), leaves limbs beyond the convolution bound untouched, and reuses the `cnv_apply_dft_tmp_bytes` scratch contract.
-
 ### `poulpy-cpu-ref` / `poulpy-cpu-avx` / `poulpy-cpu-avx512`
+- Implement the new transpose, weighted-sum, scalar/DFT automorphism, and packed LWE matrix defaults across the reference backend, with AVX and AVX-512 overrides for the accelerated automorphism paths.
 - Rework the FFT64 convolution applies into fused column kernels behind the new `Reim4Convolution::reim4_convolution_apply` / `reim4_convolution_pairwise_apply` hooks (the reference default keeps the previous per-block path): the AVX/AVX-512 kernels tile 3/4 output limbs over a zero-padded sliding window of the left operand and stage outputs per 16-block group so each destination cache line is written exactly once — the limb stride is a multiple of 4 KiB, so the previous per-limb half-line stores all aliased a single L1 set. `cnv_apply_dft` and `cnv_pairwise_apply_dft` are 2.3-3.5x faster on `FFT64Avx512`/`FFT64Avx` across n = 2^13..2^15.
 - Interleave the `NTT120Avx512` VMP prepared-matrix prime planes per (block-pair, output-column) chunk so the apply streams the matrix as one sequential run instead of four planes hundreds of MB apart (which defeated the hardware prefetcher): `vmp_apply_dft_to_dft` improves up to 3.4x (77 ms to 23 ms at 16384x(1x31)x(2x32)), and `glwe_keyswitch` at n = 2^15 drops from 41.5 ms to 24.7 ms.
 - Switch the NTT-family prepared convolution operands (`CnvPVecL` / `CnvPVecR`) to block-major rows with the right operand in reversed limb order, deleting the per-apply pack/gather passes; `CnvPVecL` now stores the canonical kernel-ready encoding so the per-apply `% q` reduction of the left operand happens once at prepare time (ntt120 family), and the prepare NTT writes its final normalised blocks straight into the prepared rows (`NTT126Ifma`). The applies tile four output limbs per pass over a zero-padded window (`NttMulBbc1ColX2::ntt_mul_bbc_tile4_x2`, defaulted for any backend, with canonical-x AVX-512/AVX2 kernels that skip the identically-zero `x_hi` product path), reduce once per output, and group-stage their output flush. Measured at 32768x14: `NTT126Ifma` apply -36% / pairwise -62%, `NTT120Avx512` CKKS `mul_ct` -15%.
 - Fuse the `NTT126Ifma` forward NTT level-0 twist into the first butterfly level and run the last three levels (`nn = 8, 4, 2`) as a single radix-8 register pass mirroring the existing inverse head, making the forward transform ~5% faster; add n = 2^12 cross-backend idft conformance tests, since the breadth-first levels above `NTT_BLOCK` were previously uncovered by the n = 2^8 suites.
 
 ### `poulpy-bench`
+- Add the `ckks_poly_eval` Criterion benchmark, sweeping polynomial degree and `MinDepth` / `MinMult` BSGS split strategies on `ntt120-ref` while reporting baby-step size and observed log-budget/level consumption.
 - Enable the `poulpy-cpu-avx` CKKS implementations in the `ckks-bench` feature so the CKKS benchmarks compile with `enable-avx`.
 - Add the `cnv_apply_dft_accumulate` sweep to the convolution Criterion benchmark.
+
+### Build & Docs
+- Add `docs/lt_bsgs.md` (+ `docs/lt_bsgs_impl.md`, `docs/lt_bsgs.png`), the design note for the baby-step/giant-step linear transformation: the diagonal decomposition, the prepared convolution-domain caches, the hoisted-baby / lazy-giant evaluation, and the CKKS scale accounting.
+- Add `docs/polynomial-evaluation-spec.md`, a scheme-agnostic design note for power bases, Paterson-Stockmeyer/BSGS decomposition, encoded baby polynomials, and the Poulpy CKKS integration.
+- Refresh the `ckks_poly2` example to use Chebyshev interpolation, `PowerBasis`, and the new BSGS evaluator pipeline.
 
 ## [0.6.0] - 2026-05-18
 

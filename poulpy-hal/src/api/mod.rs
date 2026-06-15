@@ -22,7 +22,6 @@ mod svp_ppol;
 mod vec_znx;
 mod vec_znx_big;
 mod vec_znx_dft;
-mod vec_znx_matmul;
 mod vmp_pmat;
 
 pub use convolution::*;
@@ -33,5 +32,4 @@ pub use svp_ppol::*;
 pub use vec_znx::*;
 pub use vec_znx_big::*;
 pub use vec_znx_dft::*;
-pub use vec_znx_matmul::*;
 pub use vmp_pmat::*;
