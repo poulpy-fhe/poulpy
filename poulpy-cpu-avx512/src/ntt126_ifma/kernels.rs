@@ -748,11 +748,13 @@ unsafe fn intt_radix8_first3_ifma(begin: *mut __m256i, end: *const __m256i, q: _
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[target_feature(enable = "avx512f")]
+#[inline]
 unsafe fn load_plane_twiddles8(powomega: &[u64], base: usize, count: usize, idx: usize, prime: usize) -> __m512i {
     unsafe { _mm512_loadu_si512(powomega.as_ptr().add(base + prime * count + idx) as *const __m512i) }
 }
 
 #[target_feature(enable = "avx512ifma")]
+#[inline]
 unsafe fn harvey_modmul_plane8(a: __m512i, omega: __m512i, omega_quot: __m512i, q: u64) -> __m512i {
     unsafe { harvey_modmul_si512(a, omega, omega_quot, _mm512_set1_epi64(q as i64)) }
 }
