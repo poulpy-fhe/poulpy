@@ -159,6 +159,10 @@ macro_rules! ckks_backend_test_suite {
                 };
             }
 
+            run_test!(
+                encode_decode_reim_roundtrip,
+                $crate::test_suite::encoding::test_encode_decode_reim_roundtrip
+            );
             run_test!(encrypt_decrypt, $crate::test_suite::encryption::test_encrypt_decrypt);
             run_test!(
                 decrypt_extract_same_meta,
@@ -358,6 +362,30 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 linear_transformation,
                 $crate::test_suite::linear_transformation::test_linear_transformation
+            );
+            run_test!(
+                dft_coeffs_to_slots_standard,
+                $crate::test_suite::dft::test_dft_coeffs_to_slots_standard
+            );
+            run_test!(
+                dft_slots_to_coeffs_standard,
+                $crate::test_suite::dft::test_dft_slots_to_coeffs_standard
+            );
+            run_test!(
+                dft_coeffs_to_slots_split,
+                $crate::test_suite::dft::test_dft_coeffs_to_slots_split
+            );
+            run_test!(
+                dft_slots_to_coeffs_split,
+                $crate::test_suite::dft::test_dft_slots_to_coeffs_split
+            );
+            run_test!(
+                dft_coeffs_to_slots_repack_sparse,
+                $crate::test_suite::dft::test_dft_coeffs_to_slots_repack_sparse
+            );
+            run_test!(
+                dft_slots_to_coeffs_repack_sparse,
+                $crate::test_suite::dft::test_dft_slots_to_coeffs_repack_sparse
             );
             run_test!(mul_ct_aligned, $crate::test_suite::mul::test_mul_ct_aligned);
             run_test!(mul_ct_delta_a_gt_b, $crate::test_suite::mul::test_mul_ct_delta_a_gt_b);
@@ -609,7 +637,9 @@ pub mod affine;
 pub mod composition;
 pub mod conjugate;
 pub mod copy;
+pub mod dft;
 pub mod dot_product;
+pub mod encoding;
 pub mod encryption;
 pub mod errors;
 pub mod helpers;

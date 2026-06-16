@@ -745,6 +745,36 @@ where
     ct
 }
 
+/// Encrypts an already-encoded host plaintext at the given `k`. Use this when the
+/// slot encoding is not a plain dense `(re, im)` or coefficient vector — e.g. a
+/// sparse / repacked layout the caller built with [`Encoder::encode_reim_sparse`].
+pub fn ckks_encrypt_pt<BE>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
+    k: usize,
+    host_pt: &CKKSPlaintext<Vec<u8>>,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> CKKSCiphertext<BE::OwnedBuf>
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+{
+    let pt = upload_pt(module, host_pt);
+
+    let mut layout = params.glwe_layout().layout;
+    layout.k = k.into();
+    let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
+
+    let mut ct = alloc_ct(params, module, k);
+    let mut xa = Source::new([3u8; 32]);
+    let mut xe = Source::new([4u8; 32]);
+    module
+        .ckks_encrypt_sk(&mut ct, &pt, sk, &enc_infos, &mut xa, &mut xe, scratch)
+        .unwrap();
+    ct
+}
+
 /// Decrypts `ct` with `prec` metadata and returns the host-side plaintext.
 pub fn ckks_decrypt_with_prec<BE>(
     module: &Module<BE>,
