@@ -6,7 +6,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    EncryptionLayout, LWEDecrypt, LWEEncryptSk, LWEKeyswitch, LWESwitchingKeyEncrypt, ScratchArenaTakeCore,
+    EncryptionLayout, LWEDecrypt, LWEEncryptSk, LWEKeyswitch, LWESwitchingKeyEncrypt,
     layouts::{
         LWE, LWEInfos, LWELayout, LWEPlaintext, LWESecret, LWESwitchingKey, LWESwitchingKeyLayout,
         LWESwitchingKeyPreparedFactory, ModuleCoreAlloc, prepared::LWESwitchingKeyPrepared,
@@ -25,7 +25,6 @@ where
         + LWEDecrypt<BE>
         + VecZnxNormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let n: usize = module.n();
     let base2k: usize = params.base2k;

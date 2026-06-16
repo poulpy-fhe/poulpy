@@ -71,15 +71,6 @@ pub unsafe trait CKKSAddImpl<BE: Backend>: Backend {
         Dst: Data,
         CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSInfos;
-    fn ckks_add_assign_unnormalized_generic<Dst, A>(
-        module: &Module<BE>,
-        dst: &mut Dst,
-        a: &A,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSInfos;
     fn ckks_add_one_assign<Dst>(module: &Module<BE>, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos;
@@ -263,19 +254,6 @@ where
         A: GLWEToBackendRef<BE> + CKKSInfos,
     {
         module.ckks_add_assign_unsafe_default(dst.inner, a, scratch)
-    }
-
-    fn ckks_add_assign_unnormalized_generic<Dst, A>(
-        module: &Module<BE>,
-        dst: &mut Dst,
-        a: &A,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSInfos,
-    {
-        module.ckks_add_assign_unsafe_default(dst, a, scratch)
     }
 
     fn ckks_add_one_assign<Dst>(module: &Module<BE>, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

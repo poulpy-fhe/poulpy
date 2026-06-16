@@ -18,6 +18,7 @@ mod external_product;
 mod keyswitching;
 mod linear_transformation;
 mod operations;
+mod polynomial_evaluation;
 
 pub use automorphism::*;
 pub use conversion::*;
@@ -27,6 +28,7 @@ pub use external_product::*;
 pub use keyswitching::*;
 pub use linear_transformation::*;
 pub use operations::*;
+pub use polynomial_evaluation::*;
 
 pub use crate::impl_glwe_rotate_impl_from;
 

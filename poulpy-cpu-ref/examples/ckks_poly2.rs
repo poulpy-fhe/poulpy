@@ -25,8 +25,8 @@ use poulpy_ckks::{
     encoding::Encoder,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
     leveled::api::{CKKSAllOpsTmpBytes, CKKSDecrypt, CKKSEncrypt, PolynomialEvaluation},
-    polynomial::{BSGSPolynomial, Basis, Polynomial},
-    power_basis::PowerBasis,
+    polynomial::{BSGSPolynomial, Basis, EncodeBSGS, Polynomial},
+    power_basis::{PowerBasis, PowerBasisGen},
 };
 use poulpy_core::{
     EncryptionLayout, GLWETensorKeyEncryptSk,
@@ -50,9 +50,8 @@ const DEGREE: usize = 31;
 const N: usize = 1024;
 const M: usize = N / 2;
 const BASE2K: usize = 52;
-/// Seven limbs of 52 bits = 364 bits total capacity.
-/// After encryption, log_budget = 364 - 51 = 313 bits. The degree-63 BSGS path
-/// needs about 6-7 rescale levels at log_delta=51.
+/// Ciphertext capacity for the degree-31 Chebyshev BSGS path at log_delta=45.
+/// This stores six 52-bit limbs and uses 300 of the available 312 bits.
 const CT_K: usize = 300;
 const HW: usize = 192;
 const DSIZE: usize = 1;
@@ -70,6 +69,7 @@ const COEFF_META: CKKSMeta = CKKSMeta {
     log_delta: 45,
     log_budget: 1,
 };
+const ABS_ERROR_TOLERANCE: f64 = 5e-5;
 
 /// Long-lived objects prepared during setup.
 struct SetupArtifacts {
@@ -239,7 +239,7 @@ fn encoding(setup: &SetupArtifacts) -> Result<EncodingArtifacts> {
 
     let host_module = Module::<HostBytesBackend>::new(N as u64);
     let bsgs = poly.encode_bsgs(&host_module, BASE2K.into(), COEFF_META)?;
-    println!("  BSGS baby steps: {}, parity={:?}", bsgs.baby_steps.len(), bsgs.parity);
+    println!("  BSGS baby steps: {}, parity={:?}", bsgs.baby_steps().len(), bsgs.parity());
 
     let mut pt_znx = setup.module.ckks_pt_vec_alloc(BASE2K.into(), PREC_CT);
     setup.encoder.encode_reim(&mut pt_znx, &x_re, &x_im)?;
@@ -294,11 +294,11 @@ fn evaluation(
     let mut pb = PowerBasis::new(Basis::Chebyshev, encryption.ct_x);
     {
         let mut scratch = setup.scratch.borrow();
-        let log_split = encoding.bsgs.base.trailing_zeros() as usize;
+        let log_split = encoding.bsgs.log_split();
         pb.populate(
             DEGREE,
             log_split,
-            encoding.bsgs.parity,
+            encoding.bsgs.parity(),
             &setup.module,
             &setup.tsk_prepared,
             &mut scratch,
@@ -360,8 +360,8 @@ fn verification(encoding: &EncodingArtifacts, evaluation: &EvaluationArtifacts, 
         .iter()
         .map(|&x| encoding.poly.evaluate_on_interval(x, -1.0, 1.0))
         .collect();
-    let avg_err_re = avg_err(&decryption.have_re, &want_re).log2();
-    let max_err_re = max_err(&decryption.have_re, &want_re).log2();
+    let avg_err_re = avg_err(&decryption.have_re, &want_re);
+    let max_err_re = max_err(&decryption.have_re, &want_re);
 
     print_ct_meta("verified sin(x)", &evaluation.ct_sin);
     println!("  max |have − sin(x)| = {max_err_re:.15}");
@@ -370,7 +370,10 @@ fn verification(encoding: &EncodingArtifacts, evaluation: &EvaluationArtifacts, 
     println!("  want   = {:.15}", want_re[0]);
     println!("  have   = {:.15}", decryption.have_re[0]);
 
-    assert!(avg_err_re < 5e-5, "max error {avg_err_re:.15} exceeds 5e-5");
+    assert!(
+        max_err_re <= ABS_ERROR_TOLERANCE,
+        "max error {max_err_re:.15} exceeds {ABS_ERROR_TOLERANCE:.15}"
+    );
     println!("  status: PASS");
 
     Ok(())

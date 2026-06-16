@@ -27,6 +27,7 @@
 //! | [`test_add_pt_vec_into_aligned`] | out-of-place, `offset == 0` |
 //! | [`test_add_pt_vec_into_delta_log_delta`] | out-of-place, plaintext encoded at lower `log_delta` |
 //! | [`test_add_pt_vec_into_smaller_output`] | out-of-place, `offset > 0` (output one limb narrower) |
+//! | [`test_add_pt_vec_into_lsh_alignment`] | out-of-place, plaintext `max_k` above budget → left-shift alignment |
 //!
 //! ## Operations-layer ct + packed plaintext constants (`GLWE<_, CKKS>::add_pt_const[_assign]`)
 //!
@@ -37,7 +38,8 @@
 //! | [`test_add_const_into_delta_log_delta`] | out-of-place, constant encoded at lower `log_delta` |
 //! | [`test_add_const_into_smaller_output`] | out-of-place, smaller output with packed-cst precision |
 //! | [`test_add_const_into_real_only`] | out-of-place, real coefficient only |
-use crate::{CKKSCompositionError, CKKSInfos, layouts::CKKSModuleAlloc, leveled::api::CKKSAddOps};
+//! | [`test_add_const_into_lsh_alignment`] | out-of-place, constant `max_k` above budget → left-shift alignment |
+use crate::{CKKSCompositionError, CKKSInfos, CKKSMeta, layouts::CKKSModuleAlloc, leveled::api::CKKSAddOps};
 
 use super::helpers::{
     ADD_SUB_CONST, PT_PREC, TestContextBackend, TestContextModule, TestScalar, TestVector, add_sub_const_pt, alloc_ct,
@@ -46,7 +48,7 @@ use super::helpers::{
     encode_and_upload_pt, gen_sk, precision_at, quantize, quantized_const, quantized_vector, test_vector_1, test_vector_2,
     want_add, want_add_const,
 };
-use poulpy_core::layouts::Base2K;
+use poulpy_core::layouts::{Base2K, LWEInfos};
 use poulpy_hal::api::ScratchOwnedBorrow;
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew},
@@ -665,6 +667,74 @@ pub fn test_add_pt_vec_into_delta_log_delta<BE, F, E>(
     );
 }
 
+/// ct + ZNX plaintext whose `max_k` exceeds the available precision → left-shift alignment path.
+pub fn test_add_pt_vec_into_lsh_alignment<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (re2, im2) = test_vector_2::<F>(m);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    let (a_re, a_im) = quantized_vector(host_module, &encoder, &params, TestVector::First, params.prec.log_delta);
+    let ct1 = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &a_re,
+        &a_im,
+        &mut scratch.borrow(),
+    );
+    // Padding the plaintext with the full ciphertext budget makes its allocated
+    // max_k round up past the available precision, forcing PlaintextShift::Lsh.
+    let pt_prec = CKKSMeta {
+        log_delta: PT_PREC.log_delta,
+        log_budget: ct1.log_budget(),
+        ..Default::default()
+    };
+    let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), pt_prec, &re2, &im2);
+    assert!(
+        pt.max_k().as_usize() > ct1.log_budget() + pt.log_delta(),
+        "test setup no longer triggers the Lsh alignment path (max_k={} <= available={})",
+        pt.max_k().as_usize(),
+        ct1.log_budget() + pt.log_delta()
+    );
+    let (want_re, want_im) = want_add(
+        &a_re,
+        &a_im,
+        &quantize(&re2, pt_prec.log_delta),
+        &quantize(&im2, pt_prec.log_delta),
+    );
+    let mut ct_res = alloc_ct(&params, module, params.k);
+    module
+        .ckks_add_pt_vec_into(&mut ct_res, &ct1, &pt, &mut scratch.borrow())
+        .unwrap();
+    assert_unary_output_meta("add_pt_vec lsh_alignment", &ct_res, &ct1);
+    assert_decrypt_precision_at_log_delta(
+        "add_pt_vec lsh_alignment",
+        &params,
+        module,
+        &encoder,
+        &ct_res,
+        &sk,
+        &want_re,
+        &want_im,
+        pt_prec.log_delta,
+        &mut scratch.borrow(),
+    );
+}
+
 /// ct + complex constant, out-of-place.
 pub fn test_add_const_into_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
@@ -703,6 +773,78 @@ where
     assert_unary_output_meta("add_const_into_aligned", &ct_res, &ct);
     assert_decrypt_precision(
         "add_const_into_aligned",
+        &params,
+        module,
+        &encoder,
+        &ct_res,
+        &sk,
+        &want_re,
+        &want_im,
+        &mut scratch.borrow(),
+    );
+}
+
+/// ct + complex constant whose `max_k` exceeds the available precision → left-shift alignment path.
+pub fn test_add_const_into_lsh_alignment<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    let ct = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re1,
+        &im1,
+        &mut scratch.borrow(),
+    );
+    let (const_re, const_im) = quantized_const::<F>(ADD_SUB_CONST.0, ADD_SUB_CONST.1, PT_PREC.log_delta);
+    let (want_re, want_im) = want_add_const(&re1, &im1, const_re, const_im);
+    let mut ct_res = alloc_ct(&params, module, params.k);
+    // Padding the constant with the full ciphertext budget makes its allocated
+    // max_k round up past the available precision, forcing PlaintextShift::Lsh.
+    let cst_prec = CKKSMeta {
+        log_delta: PT_PREC.log_delta,
+        log_budget: ct.log_budget(),
+        ..Default::default()
+    };
+    let cst = ckks_pt_cst::<BE, F>(
+        host_module,
+        module,
+        params.base2k.into(),
+        cst_prec,
+        Some(ADD_SUB_CONST.0),
+        Some(ADD_SUB_CONST.1),
+    );
+    assert!(
+        cst.max_k().as_usize() > ct.log_budget() + cst.log_delta(),
+        "test setup no longer triggers the Lsh alignment path (max_k={} <= available={})",
+        cst.max_k().as_usize(),
+        ct.log_budget() + cst.log_delta()
+    );
+    module
+        .ckks_add_pt_const_into(&mut ct_res, &ct, 0, &cst, 0, &mut scratch.borrow())
+        .unwrap();
+    module
+        .ckks_add_pt_const_assign(&mut ct_res, m, &cst, 1, &mut scratch.borrow())
+        .unwrap();
+    assert_unary_output_meta("add_const_into_lsh_alignment", &ct_res, &ct);
+    assert_decrypt_precision(
+        "add_const_into_lsh_alignment",
         &params,
         module,
         &encoder,

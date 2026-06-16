@@ -230,8 +230,16 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::add::test_add_pt_vec_into_delta_log_delta
             );
             run_test!(
+                add_pt_vec_into_lsh_alignment,
+                $crate::test_suite::add::test_add_pt_vec_into_lsh_alignment
+            );
+            run_test!(
                 add_const_into_aligned,
                 $crate::test_suite::add::test_add_const_into_aligned
+            );
+            run_test!(
+                add_const_into_lsh_alignment,
+                $crate::test_suite::add::test_add_const_into_lsh_alignment
             );
             run_test!(add_const_assign, $crate::test_suite::add::test_add_const_assign);
             run_test!(add_one_assign, $crate::test_suite::add::test_add_one_assign);
@@ -307,6 +315,10 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 sub_pt_const_into_aligned,
                 $crate::test_suite::sub::test_sub_pt_const_into_aligned
+            );
+            run_test!(
+                sub_const_into_lsh_alignment,
+                $crate::test_suite::sub::test_sub_const_into_lsh_alignment
             );
             run_test!(sub_one_assign, $crate::test_suite::sub::test_sub_one_assign);
             run_test!(
@@ -532,8 +544,16 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::polynomial_evaluation::test_chebyshev_interpolation_quadratic
             );
             run_test!(
+                encode_bsgs_preserves_chebyshev_eval,
+                $crate::test_suite::polynomial_evaluation::test_encode_bsgs_preserves_chebyshev_eval
+            );
+            run_test!(
                 eval_poly_const_coeffs_cubic,
                 $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_cubic
+            );
+            run_test!(
+                eval_poly_rejects_power_basis_mismatch,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_rejects_power_basis_mismatch
             );
             run_test!(
                 eval_poly_const_coeffs_exp7,
@@ -550,6 +570,30 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 eval_poly_const_coeffs_chebyshev_degree31,
                 $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_chebyshev_degree31
+            );
+            run_test!(
+                eval_poly_const_coeffs_chebyshev_degree31_min_mult,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_chebyshev_degree31_min_mult
+            );
+            run_test!(
+                eval_poly_const_coeffs_complex_cubic,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_complex_cubic
+            );
+            run_test!(
+                eval_poly_const_coeffs_complex_chebyshev,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_complex_chebyshev
+            );
+            run_test!(
+                eval_poly_const_coeffs_complex_even,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_complex_even
+            );
+            run_test!(
+                eval_poly_const_coeffs_complex_odd,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_complex_odd
+            );
+            run_test!(
+                eval_poly_const_coeffs_complex_fold,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_complex_fold
             );
             run_test!(
                 mul_add_const_zero_preserves_dst_meta,

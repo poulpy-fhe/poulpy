@@ -61,6 +61,7 @@ pub trait CKKSAddDefault<BE: Backend> {
     {
         self.glwe_shift_tmp_bytes()
             .max(self.vec_znx_rsh_tmp_bytes())
+            .max(self.vec_znx_lsh_tmp_bytes())
             .max(self.glwe_normalize_tmp_bytes())
     }
 
@@ -71,6 +72,7 @@ pub trait CKKSAddDefault<BE: Backend> {
         self.glwe_shift_tmp_bytes()
             .max(self.glwe_normalize_tmp_bytes())
             .max(self.vec_znx_rsh_tmp_bytes())
+            .max(self.vec_znx_lsh_tmp_bytes())
     }
 
     fn ckks_add_into_default<Dst, A, B>(&self, dst: &mut Dst, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

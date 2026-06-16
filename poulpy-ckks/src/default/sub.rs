@@ -23,6 +23,7 @@ pub trait CKKSSubDefault<BE: Backend> {
     {
         self.glwe_shift_tmp_bytes()
             .max(self.vec_znx_rsh_tmp_bytes())
+            .max(self.vec_znx_lsh_tmp_bytes())
             .max(self.glwe_normalize_tmp_bytes())
     }
 
@@ -35,11 +36,12 @@ pub trait CKKSSubDefault<BE: Backend> {
 
     fn ckks_sub_pt_const_tmp_bytes_default(&self) -> usize
     where
-        Self: GLWEShift<BE> + GLWENormalize<BE> + VecZnxRshTmpBytes,
+        Self: GLWEShift<BE> + GLWENormalize<BE> + VecZnxLshTmpBytes + VecZnxRshTmpBytes,
     {
         self.glwe_shift_tmp_bytes()
             .max(self.glwe_normalize_tmp_bytes())
             .max(self.vec_znx_rsh_tmp_bytes())
+            .max(self.vec_znx_lsh_tmp_bytes())
     }
 
     fn ckks_sub_into_default<Dst, A, B>(&self, dst: &mut Dst, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

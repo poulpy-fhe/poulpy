@@ -23,6 +23,7 @@ mod keyswitching;
 mod linear_transformations;
 mod noise;
 mod operations;
+mod polynomial_evaluation;
 mod transfer;
 
 pub use automorphism::*;
@@ -34,4 +35,5 @@ pub use keyswitching::*;
 pub use linear_transformations::*;
 pub use noise::*;
 pub use operations::*;
+pub use polynomial_evaluation::*;
 pub use transfer::*;

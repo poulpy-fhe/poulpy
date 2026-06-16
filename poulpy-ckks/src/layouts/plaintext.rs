@@ -5,7 +5,8 @@ use std::{
 
 use anyhow::Result;
 use poulpy_core::layouts::{
-    Base2K, Degree, GLWE, GLWEInfos, GLWEPlaintext, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetLWEInfos,
+    BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEPlaintext, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBSGSMeta,
+    SetLWEInfos,
 };
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef};
 use rand_distr::num_traits::{Float, ToPrimitive};
@@ -121,6 +122,15 @@ impl<D: Data> SetCKKSInfos for CKKSPlaintext<D> {
     }
 }
 
+impl<D: Data> SetBSGSMeta for CKKSPlaintext<D> {
+    fn set_bsgs_log_budget(&mut self, log_budget: usize) {
+        SetCKKSInfos::set_log_budget(self, log_budget);
+    }
+    fn set_bsgs_log_delta(&mut self, log_delta: usize) {
+        SetCKKSInfos::set_log_delta(self, log_delta);
+    }
+}
+
 impl<D: HostDataMut> SetLWEInfos for CKKSPlaintext<D> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.inner.set_base2k(base2k);
@@ -144,6 +154,15 @@ impl<D: Data> CKKSInfos for CKKSPlaintext<D> {
 
     fn log_budget(&self) -> usize {
         self.meta.log_budget()
+    }
+}
+
+impl<D: Data> BSGSMeta for CKKSPlaintext<D> {
+    fn bsgs_log_budget(&self) -> usize {
+        CKKSInfos::log_budget(self)
+    }
+    fn bsgs_log_delta(&self) -> usize {
+        CKKSInfos::log_delta(self)
     }
 }
 

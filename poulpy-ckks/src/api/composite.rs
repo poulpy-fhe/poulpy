@@ -5,7 +5,10 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
-use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSCiphertext};
+use crate::{
+    CKKSCtBounds, CKKSInfos, SetCKKSInfos,
+    layouts::{CKKSCiphertext, UnnormalizedCKKSCiphertext},
+};
 
 /// Tree-reduction sum over a slice of ciphertexts.
 pub trait CKKSAddManyOps<BE: Backend> {
@@ -140,16 +143,16 @@ pub trait CKKSMulAddOps<BE: Backend> {
     /// Use this to fuse several multiply-add steps before a single
     /// normalization pass.  See [`crate::api::CKKSAddOps`] for
     /// the digit-growth analysis and safety bound.
-    fn ckks_mul_add_pt_const_into_unnormalized<Dst, A, P>(
+    fn ckks_mul_add_pt_const_into_unnormalized<Dst: Data, A, P>(
         &self,
-        dst: &mut Dst,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst>,
         a: &A,
         pt: &P,
         pt_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
@@ -157,15 +160,15 @@ pub trait CKKSMulAddOps<BE: Backend> {
     ///
     /// Metadata follows the same rule as
     /// [`Self::ckks_mul_add_pt_const_into_unnormalized`].
-    fn ckks_mul_add_pt_vec_into_unnormalized<Dst, A, P>(
+    fn ckks_mul_add_pt_vec_into_unnormalized<Dst: Data, A, P>(
         &self,
-        dst: &mut Dst,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst>,
         a: &A,
         pt: &P,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 }
