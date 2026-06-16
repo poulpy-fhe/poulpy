@@ -1,15 +1,9 @@
 use anyhow::Result;
-use poulpy_core::{
-    ScratchArenaTakeCore,
-    layouts::{
-        BSGSMeta, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, ModuleCoreAlloc, SetBSGSMeta,
-        prepared::{GLWETensorKeyPrepared, GLWETensorKeyPreparedToBackendRef},
-    },
+use poulpy_core::layouts::{
+    BSGSMeta, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, ModuleCoreAlloc, SetBSGSMeta,
+    prepared::{GLWETensorKeyPrepared, GLWETensorKeyPreparedToBackendRef},
 };
-use poulpy_hal::{
-    api::ScratchAvailable,
-    layouts::{Backend, Module, ScratchArena},
-};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
@@ -22,7 +16,6 @@ use crate::{
 impl<BE: Backend + CKKSPolynomialEvaluationImpl<BE>> PolynomialEvaluation<BE> for Module<BE>
 where
     Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>,
-    for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_eval_poly_real_const_coeffs_from_power_basis<R, B, A, G, T>(
         &self,

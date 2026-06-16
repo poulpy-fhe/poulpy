@@ -5,9 +5,9 @@ use poulpy_core::layouts::{
 };
 use poulpy_core::{
     GLWEAdd, GLWECopy, GLWEMulConst, GLWENormalize, GLWEPolynomialEvaluation, GLWEShift, GLWETensoring, GLWEZero,
-    GiantStepTensorBounds, ScratchArenaTakeCore,
+    GiantStepTensorBounds,
 };
-use poulpy_hal::api::ScratchAvailable;
+
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
@@ -105,7 +105,6 @@ where
         + GLWEPolynomialEvaluation<BE>
         + CKKSModuleAlloc<BE>
         + PolynomialEvaluationDefault<BE>,
-    for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
 {
     fn ckks_eval_poly_real_const_coeffs_from_power_basis<R, B, A, G, T>(
         module: &Module<BE>,
