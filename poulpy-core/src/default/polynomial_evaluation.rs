@@ -111,7 +111,6 @@ where
     C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
     A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
     G: PowerBasisHelper<BE, A>,
-    for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
 {
     let degree = coeffs.n().as_usize() - 1;
     let x = power_basis.get(1)?;
@@ -189,7 +188,6 @@ where
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta,
     A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
     P: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
-    for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
 {
     scratch.scope(|scratch_local| {
         let tmp_layout = GLWELayout {
@@ -247,7 +245,6 @@ where
     A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
     G: PowerBasisHelper<BE, A>,
     T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-    for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
 {
     ensure!(
         !baby_steps.is_empty(),
@@ -342,7 +339,6 @@ where
     B: BabyStep<BE>,
     A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
     T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-    for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
 {
     let xpow_log_budget = xpow.bsgs_log_budget();
     let xpow_log_delta = xpow.bsgs_log_delta();
@@ -488,7 +484,6 @@ where
     A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
     AP: poulpy_hal::layouts::CnvPVecRToBackendRef<BE>,
     T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-    for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
 {
     let (log_budget, log_delta, cnv_offset) = precision.mul_ct_params(dst, dst, a)?;
 
@@ -550,7 +545,6 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
-        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
     {
         eval_baby_step::<PR, R, C, A, G, BE>(self, precision, res, parity, coeffs, power_basis, scratch)
     }
@@ -578,7 +572,6 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
     {
         eval_giant_steps::<_, R, B, A, G, T, BE>(self, precision, res, baby_steps, power_basis, tsk, scratch)
     }

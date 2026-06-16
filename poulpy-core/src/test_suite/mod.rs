@@ -35,8 +35,6 @@ use poulpy_hal::{
     test_suite::{download_scalar_znx as hal_download_scalar_znx, upload_scalar_znx as hal_upload_scalar_znx},
 };
 
-use crate::ScratchArenaTakeCore;
-
 pub trait TestBackend:
     HalTestBackend
     + GLWEKeyswitchImpl<Self>
@@ -68,7 +66,6 @@ where
     Self: HostBackend<OwnedBuf = Vec<u8>>,
     for<'a> Self::BufRef<'a>: HostDataRef,
     for<'a> Self::BufMut<'a>: HostDataMut,
-    for<'a> ScratchArena<'a, Self>: ScratchArenaTakeCore<'a, Self>,
 {
 }
 
