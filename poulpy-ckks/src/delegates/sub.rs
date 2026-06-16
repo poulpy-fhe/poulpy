@@ -3,7 +3,7 @@ use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::layouts::UnnormalizedCKKSCiphertext;
-use crate::leveled::api::{CKKSSubOps, CKKSSubOpsUnnormalized};
+use crate::leveled::api::CKKSSubOps;
 
 use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, oep::CKKSSubImpl};
 
@@ -92,9 +92,6 @@ impl<BE: Backend + CKKSSubImpl<BE>> CKKSSubOps<BE> for Module<BE> {
     {
         BE::ckks_sub_pt_const_assign(self, dst, dst_coeff, pt, pt_coeff, scratch)
     }
-}
-
-impl<BE: Backend + CKKSSubImpl<BE>> CKKSSubOpsUnnormalized<BE> for Module<BE> {
     fn ckks_sub_into_unnormalized<Dst, A, B>(
         &self,
         dst: &mut UnnormalizedCKKSCiphertext<Dst>,

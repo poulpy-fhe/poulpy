@@ -3,6 +3,10 @@ use std::{collections::HashMap, hint::black_box};
 use criterion::Criterion;
 use poulpy_ckks::{
     CKKSMeta,
+    api::{
+        Diagonal, GiantStep, LinearTransformation, LinearTransformationBabySteps, LinearTransformationOps,
+        LinearTransformationPrepared, LinearTransformationStrategy,
+    },
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
     leveled::api::{
         CKKSAddManyOps, CKKSAddOps, CKKSConjugateOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps,
@@ -11,7 +15,7 @@ use poulpy_ckks::{
     oep::CKKSImpl,
 };
 use poulpy_core::{
-    EncryptionLayout, ScratchArenaTakeCore,
+    EncryptionLayout,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
         GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, ModuleCoreAlloc, Rank, SetGaloisElement, TorusPrecision,
@@ -20,20 +24,21 @@ use poulpy_core::{
         AutomorphismImpl, ConversionImpl, DecryptionImpl, GGLWEExternalProductImpl, GGLWEKeyswitchImpl, GGSWExternalProductImpl,
         GGSWKeyswitchImpl, GGSWRotateImpl, GLWEAddImpl, GLWECopyImpl, GLWEExternalProductImpl, GLWEKeyswitchImpl,
         GLWEMulConstImpl, GLWEMulPlainImpl, GLWEMulXpMinusOneImpl, GLWENegateImpl, GLWENormalizeImpl, GLWEPackImpl,
-        GLWERotateImpl, GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, GLWETraceImpl, LWEKeyswitchImpl,
+        GLWERotateImpl, GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, GLWETraceImpl, LWEKeyswitchImpl, LinearTransformationImpl,
     },
 };
 use poulpy_hal::{
-    api::{ModuleNew, ScratchAvailable, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, GaloisElement, Module, ScratchArena, ScratchOwned, ZnxViewMut},
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
-const N: usize = 1 << 15;
+const N: usize = 1 << 16;
 const BASE2K: usize = 52;
-const K: usize = 728;
+const K: usize = BASE2K * 24;
 const LOG_DELTA: usize = 40;
-const DSIZE: usize = 1;
+const DSIZE: usize = 6;
+const DNUM: usize = 4;
 const MANY_TERMS: usize = 8;
 const ROTATION: i64 = 1;
 
@@ -71,6 +76,7 @@ pub trait CkksBenchBackend:
     + HalSvpImpl<Self>
     + HalVmpImpl<Self>
     + HalConvolutionImpl<Self>
+    + LinearTransformationImpl<Self>
 where
     Self: Sized,
     Module<Self>: ModuleNew<Self>
@@ -87,9 +93,10 @@ where
         + CKKSAddManyOps<Self>
         + CKKSMulAddOps<Self>
         + CKKSMulSubOps<Self>
-        + CKKSDotProductOps<Self>,
+        + CKKSDotProductOps<Self>
+        + LinearTransformationOps<Self>
+        + CnvPVecAlloc<Self>,
     ScratchOwned<Self>: ScratchOwnedAlloc<Self> + ScratchOwnedBorrow<Self>,
-    for<'a> ScratchArena<'a, Self>: ScratchAvailable + ScratchArenaTakeCore<'a, Self>,
 {
 }
 
@@ -127,7 +134,8 @@ where
         + HalVecZnxDftImpl<BE>
         + HalSvpImpl<BE>
         + HalVmpImpl<BE>
-        + HalConvolutionImpl<BE>,
+        + HalConvolutionImpl<BE>
+        + LinearTransformationImpl<BE>,
     Module<BE>: ModuleNew<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
         + GLWETensorKeyPreparedFactory<BE>
@@ -142,12 +150,17 @@ where
         + CKKSAddManyOps<BE>
         + CKKSMulAddOps<BE>
         + CKKSMulSubOps<BE>
-        + CKKSDotProductOps<BE>,
+        + CKKSDotProductOps<BE>
+        + LinearTransformationOps<BE>
+        + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
 }
 
-struct CkksBenchSetup<BE: CkksBenchBackend> {
+struct CkksBenchSetup<BE>
+where
+    BE: CkksBenchBackend,
+{
     module: Module<BE>,
     scratch: ScratchOwned<BE>,
     ct_a: CKKSCiphertext<Vec<u8>>,
@@ -169,10 +182,19 @@ fn ckks_layout() -> GLWELayout {
     }
 }
 
-fn ckks_meta() -> CKKSMeta {
+fn ckks_ct_meta() -> CKKSMeta {
     CKKSMeta {
+        log_sparsity: 0,
         log_delta: LOG_DELTA,
         log_budget: K - LOG_DELTA,
+    }
+}
+
+fn ckks_pt_meta() -> CKKSMeta {
+    CKKSMeta {
+        log_sparsity: 0,
+        log_delta: LOG_DELTA,
+        log_budget: BASE2K - LOG_DELTA,
     }
 }
 
@@ -195,22 +217,176 @@ fn atk_layout() -> EncryptionLayout<GLWEAutomorphismKeyLayout> {
         k: TorusPrecision(k as u32),
         rank: Rank(1),
         dsize: Dsize(DSIZE as u32),
-        dnum: Dnum(k.div_ceil(DSIZE * BASE2K) as u32),
+        dnum: Dnum(DNUM as u32),
     })
     .unwrap()
 }
 
 fn reset_dst(dst: &mut CKKSCiphertext<Vec<u8>>) {
     dst.data_mut().raw_mut().fill(0);
-    dst.set_meta_checked(ckks_meta()).unwrap();
+    dst.set_meta_checked(ckks_ct_meta()).unwrap();
 }
 
-fn setup<BE: CkksBenchBackend>() -> CkksBenchSetup<BE> {
+/// Resolves a [`LinearTransformationStrategy`] to the concrete baby-step count
+/// `n1` used to factor the diagonals. `Direct` is `n1 = 1` (one giant step per
+/// diagonal, no baby sharing). For the structure-aware optimum, build the
+/// strategy with [`LinearTransformationStrategy::optimal`].
+fn strategy_giant_step(strategy: LinearTransformationStrategy) -> usize {
+    match strategy {
+        LinearTransformationStrategy::Direct => 1,
+        LinearTransformationStrategy::Bsgs { giant_step } => giant_step,
+    }
+    .max(1)
+}
+
+/// Builds an (unprepared) linear transformation over `diag_indices` whose BSGS
+/// schedule follows `strategy`. The diagonal plaintexts are left zero — only the
+/// schedule shape matters for benchmarking.
+fn build_linear_transform<BE>(
+    module: &Module<BE>,
+    diag_indices: &[usize],
+    strategy: LinearTransformationStrategy,
+) -> LinearTransformation<CKKSPlaintext<Vec<u8>>>
+where
+    BE: CkksBenchBackend,
+{
+    let n1 = strategy_giant_step(strategy);
+    let baby_steps: Vec<i64> = (0..n1).map(|k| k as i64).collect();
+    let n2 = diag_indices.iter().copied().max().map_or(0, |i| (i / n1) + 1);
+    let mut giant_steps: Vec<GiantStep<CKKSPlaintext<Vec<u8>>>> = (0..n2)
+        .map(|j| GiantStep {
+            rot: (n1 * j) as i64,
+            diagonals: Vec::new(),
+        })
+        .collect();
+
+    for &i in diag_indices {
+        let j = i / n1;
+        let k = i % n1;
+        let plaintext = module.ckks_pt_vec_alloc(Base2K(BASE2K as u32), ckks_pt_meta());
+        giant_steps[j].diagonals.push(Diagonal {
+            baby: k as i64,
+            plaintext,
+        });
+    }
+
+    LinearTransformation { baby_steps, giant_steps }
+}
+
+fn prepare_linear_transform<BE>(
+    module: &Module<BE>,
+    lt: &LinearTransformation<CKKSPlaintext<Vec<u8>>>,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> LinearTransformationPrepared<BE>
+where
+    BE: CkksBenchBackend,
+{
+    // Phase 1: size the right-operand cache from the BSGS index and the
+    // plaintext shape; phase 2: encode the diagonals into it.
+    let first_pt = lt
+        .giant_steps
+        .iter()
+        .flat_map(|gs| gs.diagonals.iter())
+        .map(|d| &d.plaintext)
+        .next()
+        .expect("linear transformation has no diagonals");
+    let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first_pt);
+    module.ckks_prepare_linear_transformation_rhs(&mut prepared, lt, scratch);
+    prepared
+}
+
+/// Allocates and populates the prepared left operand (the baby rotations of
+/// `src`) covering `baby_steps`.
+fn prepare_babies<BE>(
+    module: &Module<BE>,
+    baby_steps: &[i64],
+    src: &CKKSCiphertext<Vec<u8>>,
+    atks: &HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> LinearTransformationBabySteps<BE>
+where
+    BE: CkksBenchBackend,
+{
+    let mut babies = LinearTransformationBabySteps::alloc(module, baby_steps, src);
+    module
+        .ckks_prepare_linear_transformation_baby_steps(&mut babies, src, atks, scratch)
+        .expect("baby-step preparation failed (missing automorphism key?)");
+    babies
+}
+
+fn insert_linear_transform_keys<BE>(
+    module: &Module<BE>,
+    atks: &mut HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
+    rotations: impl IntoIterator<Item = i64>,
+) where
+    BE: CkksBenchBackend,
+{
+    let atk_layout = atk_layout();
+    for rotation in rotations {
+        if rotation == 0 {
+            continue;
+        }
+        // The linear-transformation eval and baby-prep look keys up by Galois
+        // element (`get_automorphism_key(galois_element(rot))`), so the map must
+        // be keyed by Galois element, not by the raw slot rotation.
+        let gal_el = module.galois_element(rotation);
+        if atks.contains_key(&gal_el) {
+            continue;
+        }
+        let mut key = module.glwe_automorphism_key_prepared_alloc_from_infos(&atk_layout);
+        key.set_p(gal_el);
+        atks.insert(gal_el, key);
+    }
+}
+
+/// Distinct non-zero slot rotations a transform actually references: the babies
+/// used by non-empty giant steps plus those giant steps' rotations. Replaces the
+/// removed `LinearTransformation::required_rotations`; the engine now exposes
+/// `galois_elements` (already mapped to Galois elements), but the key-setup path
+/// here wants raw rotations.
+fn required_rotations<P>(lt: &LinearTransformation<P>) -> Vec<i64> {
+    let mut rotations: std::collections::BTreeSet<i64> = lt
+        .giant_steps
+        .iter()
+        .flat_map(|gs| gs.diagonals.iter())
+        .map(|d| d.baby)
+        .filter(|&r| r != 0)
+        .collect();
+    rotations.extend(
+        lt.giant_steps
+            .iter()
+            .filter(|gs| !gs.diagonals.is_empty())
+            .map(|gs| gs.rot)
+            .filter(|&r| r != 0),
+    );
+    rotations.into_iter().collect()
+}
+
+fn format_bytes(bytes: usize) -> String {
+    const KIB: f64 = 1024.0;
+    const MIB: f64 = 1024.0 * KIB;
+    const GIB: f64 = 1024.0 * MIB;
+    let bytes = bytes as f64;
+    if bytes >= GIB {
+        format!("{:.2} GiB", bytes / GIB)
+    } else if bytes >= MIB {
+        format!("{:.2} MiB", bytes / MIB)
+    } else if bytes >= KIB {
+        format!("{:.2} KiB", bytes / KIB)
+    } else {
+        format!("{bytes:.0} B")
+    }
+}
+
+fn setup<BE>() -> CkksBenchSetup<BE>
+where
+    BE: CkksBenchBackend,
+{
     let module = Module::<BE>::new(N as u64);
     let ct_layout = ckks_layout();
     let tsk_layout = tsk_layout();
     let atk_layout = atk_layout();
-    let meta = ckks_meta();
+    let meta = ckks_ct_meta();
 
     let mut ct_a = module.ckks_ciphertext_alloc_from_infos(&ct_layout);
     let mut ct_b = module.ckks_ciphertext_alloc_from_infos(&ct_layout);
@@ -273,7 +449,87 @@ fn setup<BE: CkksBenchBackend>() -> CkksBenchSetup<BE> {
     }
 }
 
-pub fn bench_ckks_add<BE: CkksBenchBackend>(c: &mut Criterion, label: &str) {
+/// Benchmarks the prepared evaluation of a single linear transformation defined
+/// by its non-zero diagonal `diag_indices` and a BSGS `strategy`.
+///
+/// Self-contained: builds the transform, its automorphism keys, scratch, and
+/// prepares both operands once (outside the measured loop), then measures only
+/// `ckks_eval_linear_transformation_into` (resident `P = PreparedDiagonal`). A one-line shape summary of
+/// the pruned BSGS schedule is printed before benchmarking.
+fn bench_lt_case<BE>(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+    module: &Module<BE>,
+    ct_src: &CKKSCiphertext<Vec<u8>>,
+    label: &str,
+    diag_indices: &[usize],
+    strategy: LinearTransformationStrategy,
+) where
+    BE: CkksBenchBackend,
+{
+    let meta_ct = ckks_ct_meta();
+    let meta_pt = ckks_pt_meta();
+    let lt = build_linear_transform::<BE>(module, diag_indices, strategy);
+
+    let mut atks = HashMap::new();
+    insert_linear_transform_keys(module, &mut atks, required_rotations(&lt));
+
+    // Scratch must cover the largest of RHS-prepare, LHS-prepare, and eval.
+    let sizing_key = atks.values().next();
+    let pt_infos = module.ckks_pt_vec_alloc(Base2K(BASE2K as u32), meta_pt);
+    let scratch_bytes = module
+        .ckks_prepare_linear_transformation_rhs_tmp_bytes(&pt_infos)
+        .max(
+            sizing_key
+                .map(|key| module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(ct_src, key))
+                .unwrap_or(0),
+        )
+        .max(
+            sizing_key
+                .map(|key| module.ckks_eval_linear_transformation_tmp_bytes(ct_src, key))
+                .unwrap_or(0),
+        );
+    let mut scratch = ScratchOwned::<BE>::alloc(scratch_bytes);
+
+    let prepared = prepare_linear_transform(module, &lt, &mut scratch.borrow());
+    let babies = prepare_babies(module, prepared.baby_steps(), ct_src, &atks, &mut scratch.borrow());
+
+    let index = lt.index();
+    let mut rotations: std::collections::BTreeSet<i64> = index.baby_steps.iter().copied().filter(|&r| r != 0).collect();
+    rotations.extend(index.giant_steps.iter().copied().filter(|&r| r != 0));
+    eprintln!(
+        "ckks_linear_transformation/{label}: diagonals={} babies={} giants={} rotations={} keys={} scratch={}",
+        index.index.iter().map(|babies| babies.len()).sum::<usize>(),
+        index.baby_steps.len(),
+        index.giant_steps.len(),
+        rotations.len(),
+        atks.len(),
+        format_bytes(scratch_bytes),
+    );
+
+    let mut ct_dst = module.ckks_ciphertext_alloc_from_infos(&ckks_layout());
+    ct_dst.set_meta_checked(meta_ct).unwrap();
+
+    group.bench_function(label, |b| {
+        b.iter(|| {
+            reset_dst(&mut ct_dst);
+            module
+                .ckks_eval_linear_transformation_into(
+                    &mut ct_dst,
+                    black_box(ct_src),
+                    black_box(&babies),
+                    black_box(&prepared),
+                    &atks,
+                    &mut scratch.borrow(),
+                )
+                .unwrap();
+        })
+    });
+}
+
+pub fn bench_ckks_add<BE>(c: &mut Criterion, label: &str)
+where
+    BE: CkksBenchBackend,
+{
     let mut s = setup::<BE>();
     let mut group = c.benchmark_group(format!("ckks_add_into::{label}"));
     group.bench_function("add_ct", |b| {
@@ -318,7 +574,10 @@ pub fn bench_ckks_add<BE: CkksBenchBackend>(c: &mut Criterion, label: &str) {
     group.finish();
 }
 
-pub fn bench_ckks_sub<BE: CkksBenchBackend>(c: &mut Criterion, label: &str) {
+pub fn bench_ckks_sub<BE>(c: &mut Criterion, label: &str)
+where
+    BE: CkksBenchBackend,
+{
     let mut s = setup::<BE>();
     let mut group = c.benchmark_group(format!("ckks_sub_into::{label}"));
     group.bench_function("sub_ct", |b| {
@@ -363,7 +622,10 @@ pub fn bench_ckks_sub<BE: CkksBenchBackend>(c: &mut Criterion, label: &str) {
     group.finish();
 }
 
-pub fn bench_ckks_unary<BE: CkksBenchBackend>(c: &mut Criterion, label: &str) {
+pub fn bench_ckks_unary<BE>(c: &mut Criterion, label: &str)
+where
+    BE: CkksBenchBackend,
+{
     let mut s = setup::<BE>();
     let mut group = c.benchmark_group(format!("ckks_unary::{label}"));
     group.bench_function("neg", |b| {
@@ -413,7 +675,10 @@ pub fn bench_ckks_unary<BE: CkksBenchBackend>(c: &mut Criterion, label: &str) {
     group.finish();
 }
 
-pub fn bench_ckks_mul<BE: CkksBenchBackend>(c: &mut Criterion, label: &str) {
+pub fn bench_ckks_mul<BE>(c: &mut Criterion, label: &str)
+where
+    BE: CkksBenchBackend,
+{
     let mut s = setup::<BE>();
     let mut group = c.benchmark_group(format!("ckks_mul_into::{label}"));
     group.bench_function("mul_ct", |b| {
@@ -479,7 +744,10 @@ pub fn bench_ckks_mul<BE: CkksBenchBackend>(c: &mut Criterion, label: &str) {
     group.finish();
 }
 
-pub fn bench_ckks_automorphism<BE: CkksBenchBackend>(c: &mut Criterion, label: &str) {
+pub fn bench_ckks_automorphism<BE>(c: &mut Criterion, label: &str)
+where
+    BE: CkksBenchBackend,
+{
     let mut s = setup::<BE>();
     let mut group = c.benchmark_group(format!("ckks_automorphism::{label}"));
     group.bench_function("rotate", |b| {
@@ -522,7 +790,10 @@ pub fn bench_ckks_automorphism<BE: CkksBenchBackend>(c: &mut Criterion, label: &
     group.finish();
 }
 
-pub fn bench_ckks_composite<BE: CkksBenchBackend>(c: &mut Criterion, label: &str) {
+pub fn bench_ckks_composite<BE>(c: &mut Criterion, label: &str)
+where
+    BE: CkksBenchBackend,
+{
     let mut s = setup::<BE>();
     let many_a: Vec<&CKKSCiphertext<Vec<u8>>> = (0..MANY_TERMS).map(|_| &s.ct_a).collect();
     let many_b: Vec<&CKKSCiphertext<Vec<u8>>> = (0..MANY_TERMS).map(|_| &s.ct_b).collect();
@@ -652,5 +923,29 @@ pub fn bench_ckks_composite<BE: CkksBenchBackend>(c: &mut Criterion, label: &str
                 .unwrap();
         })
     });
+    group.finish();
+}
+
+pub fn bench_ckks_linear_transformation<BE>(c: &mut Criterion, label: &str)
+where
+    BE: CkksBenchBackend,
+{
+    let module = Module::<BE>::new(N as u64);
+    let mut ct_src = module.ckks_ciphertext_alloc_from_infos(&ckks_layout());
+    ct_src.set_meta_checked(ckks_ct_meta()).unwrap();
+    let mut group = c.benchmark_group(format!("ckks_linear_transformation::{label}"));
+
+    use LinearTransformationStrategy::Bsgs;
+
+    // Each case is a (label, non-zero diagonal indexes, BSGS strategy) triple.
+    bench_lt_case(
+        &mut group,
+        &module,
+        &ct_src,
+        "bsgs_256",
+        &(0..256).collect::<Vec<_>>(),
+        Bsgs { giant_step: 16 },
+    );
+
     group.finish();
 }

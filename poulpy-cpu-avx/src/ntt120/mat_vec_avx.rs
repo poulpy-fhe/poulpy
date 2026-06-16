@@ -57,7 +57,7 @@ use poulpy_cpu_ref::reference::ntt120::{mat_vec::BbcMeta, primes::Primes30};
 /// Computes `res = s_lo + (s_hi & mask_h2) * S2L + (s_hi >> H2) * S2H`,
 /// matching the final-reduction step shared by all three BBC functions.
 #[inline(always)]
-unsafe fn reduce_bbc(s_lo: __m256i, s_hi: __m256i, mask_h2: __m256i, h2: u64, s2l: __m256i, s2h: __m256i) -> __m256i {
+pub(crate) unsafe fn reduce_bbc(s_lo: __m256i, s_hi: __m256i, mask_h2: __m256i, h2: u64, s2l: __m256i, s2h: __m256i) -> __m256i {
     unsafe {
         let h2_count = _mm_cvtsi64_si128(h2 as i64);
         let hi_lo = _mm256_and_si256(s_hi, mask_h2);

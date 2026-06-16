@@ -58,41 +58,18 @@ pub trait Reim4Convolution {
     }
 
     /// Column-level convolution over all `m/4` blocks into `dst` (limb stride
-    /// `2m`, re/im halves `m` apart, block offset `4*blk`).
+    /// `dst_stride`, re/im halves `m` apart, block offset `4*blk`).
+    ///
+    /// `dst_stride` is the distance, in f64, between consecutive limbs of the
+    /// destination column: `2m` for a one-column `VecZnxDft`, `2m * cols` for a
+    /// column of a multi-column (column-interleaved) one.
     #[allow(clippy::too_many_arguments)]
     fn reim4_convolution_apply(
         m: usize,
         min_size: usize,
         offset: usize,
         dst: &mut [f64],
-        a: &[f64],
-        a_size: usize,
-        b: &[f64],
-        b_size: usize,
-        tmp: &mut [f64],
-    ) where
-        Self: Reim4BlkMatVec + Sized,
-    {
-        let a_stride: usize = a_size * 8;
-        let b_stride: usize = b_size * 8;
-        let mut a_idx: usize = 0;
-        let mut b_idx: usize = 0;
-        for blk_i in 0..m / 4 {
-            Self::reim4_convolution(tmp, min_size, offset, &a[a_idx..], a_size, &b[b_idx..], b_size);
-            Self::reim4_save_1blk_contiguous(m, min_size, blk_i, dst, tmp);
-            a_idx += a_stride;
-            b_idx += b_stride;
-        }
-    }
-
-    /// Accumulating variant of [`Reim4Convolution::reim4_convolution_apply`]:
-    /// `dst += a ⊛ b`, leaving limbs beyond `min_size` untouched.
-    #[allow(clippy::too_many_arguments)]
-    fn reim4_convolution_apply_accumulate(
-        m: usize,
-        min_size: usize,
-        offset: usize,
-        dst: &mut [f64],
+        dst_stride: usize,
         a: &[f64],
         a_size: usize,
         b: &[f64],
@@ -108,7 +85,40 @@ pub trait Reim4Convolution {
         for blk_i in 0..m / 4 {
             Self::reim4_convolution(tmp, min_size, offset, &a[a_idx..], a_size, &b[b_idx..], b_size);
             for k in 0..min_size {
-                let off: usize = 2 * m * k + 4 * blk_i;
+                let off: usize = dst_stride * k + 4 * blk_i;
+                dst[off..off + 4].copy_from_slice(&tmp[8 * k..8 * k + 4]);
+                dst[off + m..off + m + 4].copy_from_slice(&tmp[8 * k + 4..8 * k + 8]);
+            }
+            a_idx += a_stride;
+            b_idx += b_stride;
+        }
+    }
+
+    /// Accumulating variant of [`Reim4Convolution::reim4_convolution_apply`]:
+    /// `dst += a ⊛ b`, leaving limbs beyond `min_size` untouched.
+    #[allow(clippy::too_many_arguments)]
+    fn reim4_convolution_apply_accumulate(
+        m: usize,
+        min_size: usize,
+        offset: usize,
+        dst: &mut [f64],
+        dst_stride: usize,
+        a: &[f64],
+        a_size: usize,
+        b: &[f64],
+        b_size: usize,
+        tmp: &mut [f64],
+    ) where
+        Self: Reim4BlkMatVec + Sized,
+    {
+        let a_stride: usize = a_size * 8;
+        let b_stride: usize = b_size * 8;
+        let mut a_idx: usize = 0;
+        let mut b_idx: usize = 0;
+        for blk_i in 0..m / 4 {
+            Self::reim4_convolution(tmp, min_size, offset, &a[a_idx..], a_size, &b[b_idx..], b_size);
+            for k in 0..min_size {
+                let off: usize = dst_stride * k + 4 * blk_i;
                 for i in 0..4 {
                     dst[off + i] += tmp[8 * k + i];
                     dst[off + m + i] += tmp[8 * k + 4 + i];
@@ -127,6 +137,7 @@ pub trait Reim4Convolution {
         min_size: usize,
         offset: usize,
         dst: &mut [f64],
+        dst_stride: usize,
         a0: &[f64],
         a1: &[f64],
         a_size: usize,
@@ -148,7 +159,11 @@ pub trait Reim4Convolution {
             Self::reim_add(tmp_a, &a0[idx_a..idx_a + a_row], &a1[idx_a..idx_a + a_row]);
             Self::reim_add(tmp_b, &b0[idx_b..idx_b + b_row], &b1[idx_b..idx_b + b_row]);
             Self::reim4_convolution(tmp_res, min_size, offset, tmp_a, a_size, tmp_b, b_size);
-            Self::reim4_save_1blk_contiguous(m, min_size, blk_i, dst, tmp_res);
+            for k in 0..min_size {
+                let off: usize = dst_stride * k + 4 * blk_i;
+                dst[off..off + 4].copy_from_slice(&tmp_res[8 * k..8 * k + 4]);
+                dst[off + m..off + m + 4].copy_from_slice(&tmp_res[8 * k + 4..8 * k + 8]);
+            }
             idx_a += a_row;
             idx_b += b_row;
         }

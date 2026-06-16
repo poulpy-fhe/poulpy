@@ -144,63 +144,13 @@ pub trait CKKSAddOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
-}
 
-/// Unnormalized add variants for explicit fusion loops.
-///
-/// Each method writes into an [`UnnormalizedCKKSCiphertext`], whose limb
-/// digits may hold un-propagated carries (wider than `base2k` bits).  An
-/// unnormalized ciphertext cannot be passed as an operand to any primitive
-/// that works in the DFT domain (keyswitching, convolution, automorphisms).
-/// Call [`UnnormalizedCKKSCiphertext::normalize`] to propagate carries and
-/// recover a [`CKKSCiphertext`] safe to pass to those operations.
-///
-/// # Metadata
-///
-/// Metadata rules are identical to the corresponding normalized variants in
-/// [`CKKSAddOps`]; the output `UnnormalizedCKKSCiphertext` carries the same
-/// `log_delta` and `log_budget` as its normalized counterpart would.
-///
-/// # Digit growth under repeated addition
-///
-/// Limb digits are signed integers in `[−2^(base2k−1), 2^(base2k−1))`.
-/// Each un-normalized addition accumulates one more term per digit without
-/// propagating carries.
-///
-/// **Worst case** — adversarial inputs all having the same sign: digit
-/// magnitude grows linearly as `n · 2^(base2k−1)`.  This overflows a 64-bit
-/// signed word when `n · 2^(base2k−1) ≥ 2^63`, i.e. `n ≥ 2^(64 − base2k)`.
-///
-/// **Average / typical case** — CKKS torus values are signed and centered at
-/// zero, so each per-digit summand is approximately a uniform variable on
-/// `[−2^(base2k−1), 2^(base2k−1))`.  The sum of `n` such variables follows
-/// an [Irwin–Hall](https://en.wikipedia.org/wiki/Irwin%E2%80%93Hall_distribution)
-/// distribution whose standard deviation grows as
-/// `sqrt(n) · 2^(base2k−1) / sqrt(3)` — far below the worst-case linear
-/// bound for realistic `n`.
-///
-/// Higher-level operations that accept an explicit accumulation count
-/// (e.g. [`CKKSAddManyOps`](crate::api::CKKSAddManyOps),
-/// [`CKKSDotProductOps`](crate::api::CKKSDotProductOps)) enforce the
-/// conservative safety bound `n ≤ 2^(63 − base2k)` — half the worst-case
-/// overflow threshold — to guarantee no digit can overflow `i64` even in the
-/// worst case.  When the caller knows inputs are sign-balanced, the bound
-/// can effectively be relaxed by `sqrt(n)` in expectation, but that is not
-/// checked here.
-///
-/// # When to use
-///
-/// These variants avoid the normalize pass after every individual addition.
-/// A typical use case is accumulating a sum of many terms, normalizing once
-/// at the end:
-///
-/// ```text
-/// for term in &terms {
-///     module.ckks_add_assign_unnormalized(&mut acc, term, scratch)?;
-/// }
-/// let normalized = acc.normalize(&module, &mut scratch)?;
-/// ```
-pub trait CKKSAddOpsUnnormalized<BE: Backend> {
+    /// Computes `dst = a + b` without normalizing `dst`.
+    ///
+    /// Unnormalized variants are for explicit fusion loops. They write into
+    /// an [`UnnormalizedCKKSCiphertext`], whose limb digits may hold
+    /// un-propagated carries. Normalize before passing the value to DFT-domain
+    /// operations such as keyswitching, convolution, or automorphisms.
     fn ckks_add_into_unnormalized<Dst, A, B>(
         &self,
         dst: &mut UnnormalizedCKKSCiphertext<Dst>,
@@ -214,6 +164,7 @@ pub trait CKKSAddOpsUnnormalized<BE: Backend> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: GLWEToBackendRef<BE> + CKKSCtBounds;
 
+    /// Computes `dst += a` without normalizing `dst`.
     fn ckks_add_assign_unnormalized<Dst, A>(
         &self,
         dst: &mut UnnormalizedCKKSCiphertext<Dst>,
@@ -225,6 +176,7 @@ pub trait CKKSAddOpsUnnormalized<BE: Backend> {
         UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSInfos;
 
+    /// Computes `dst = a + pt` without normalizing `dst`.
     fn ckks_add_pt_vec_into_unnormalized<Dst, A, P>(
         &self,
         dst: &mut UnnormalizedCKKSCiphertext<Dst>,
@@ -238,6 +190,7 @@ pub trait CKKSAddOpsUnnormalized<BE: Backend> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
+    /// Computes `dst += pt` without normalizing `dst`.
     fn ckks_add_pt_vec_assign_unnormalized<Dst, P>(
         &self,
         dst: &mut UnnormalizedCKKSCiphertext<Dst>,
@@ -249,6 +202,7 @@ pub trait CKKSAddOpsUnnormalized<BE: Backend> {
         UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
+    /// Computes `dst = a + pt[pt_coeff]` without normalizing `dst`.
     fn ckks_add_pt_const_into_unnormalized<Dst, A, P>(
         &self,
         dst: &mut UnnormalizedCKKSCiphertext<Dst>,
@@ -264,6 +218,7 @@ pub trait CKKSAddOpsUnnormalized<BE: Backend> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
+    /// Computes `dst += pt[pt_coeff]` without normalizing `dst`.
     fn ckks_add_pt_const_assign_unnormalized<Dst, P>(
         &self,
         dst: &mut UnnormalizedCKKSCiphertext<Dst>,

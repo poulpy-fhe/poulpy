@@ -11,7 +11,7 @@ use byteorder::{LittleEndian, WriteBytesExt};
 use crate::{
     DEFAULT_SIGMA_XE, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE, GLWENoise,
     GLWENormalize, GLWEToLWESwitchingKeyEncryptSk, LWEDecrypt, LWEEncryptSk, LWEFromGLWE, LWEMatrixDecrypt,
-    LWEToGLWESwitchingKeyEncryptSk, ScratchArenaTakeCore,
+    LWEToGLWESwitchingKeyEncryptSk,
     layouts::{
         Base2K, Degree, Dnum, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWEToLWEKey,
         GLWEToLWEKeyLayout, GLWEToLWEKeyPrepared, GLWEToLWEKeyPreparedFactory, LWE, LWEInfos, LWELayout, LWEMatrixLayout,
@@ -88,7 +88,6 @@ where
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: GLWEEncryptSk<BE> + GLWEDecrypt<BE> + GLWENormalize<BE> + GLWESecretPreparedFactory<BE> + GLWENoise<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let n_glwe: Degree = Degree(module.n() as u32);
 
@@ -179,7 +178,6 @@ where
         + LWEToGLWEKeyPreparedFactory<BE>
         + VecZnxNormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let n_glwe: Degree = Degree(module.n() as u32);
     let n_lwe: Degree = Degree(22);
@@ -309,7 +307,6 @@ where
         + GLWEToLWEKeyPreparedFactory<BE>
         + VecZnxNormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let n_glwe: Degree = Degree(module.n() as u32);
     let n_lwe: Degree = Degree(22);
@@ -438,7 +435,6 @@ where
         + GLWESecretPreparedFactory<BE>
         + VecZnxNormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let n: usize = module.n();
     let base2k: usize = params.base2k;
@@ -582,7 +578,6 @@ where
         + SecretConversion<BE>
         + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let n: usize = module.n();
     let base2k: usize = params.base2k;

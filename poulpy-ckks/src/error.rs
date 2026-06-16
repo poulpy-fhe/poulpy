@@ -60,6 +60,13 @@ pub enum CKKSCompositionError {
         lhs_log_delta: usize,
         rhs_log_delta: usize,
     },
+    /// A homomorphic-DFT evaluation received a prepared matrix whose
+    /// kind/format/sparsity does not match the entry point.
+    DftMatrixMismatch {
+        op: &'static str,
+        expected: &'static str,
+        got: String,
+    },
 }
 
 impl fmt::Display for CKKSCompositionError {
@@ -136,6 +143,9 @@ impl fmt::Display for CKKSCompositionError {
                 lhs_log_budget.min(rhs_log_budget),
                 lhs_log_delta.min(rhs_log_delta)
             ),
+            Self::DftMatrixMismatch { op, expected, got } => {
+                write!(f, "{op} requires a {expected} DFT matrix, got {got}")
+            }
         }
     }
 }
@@ -194,19 +204,19 @@ pub(crate) fn ensure_plaintext_alignment(
     op: &'static str,
     ct_log_budget: usize,
     pt_log_delta: usize,
-    pt_k: usize,
-) -> Result<usize> {
+    pt_effective_k: usize,
+) -> Result<()> {
     let available = ct_log_budget + pt_log_delta;
-    if available < pt_k {
+    if available < pt_effective_k {
         return Err(CKKSCompositionError::PlaintextAlignmentImpossible {
             op,
             ct_log_budget,
             pt_log_delta,
-            pt_k,
+            pt_k: pt_effective_k,
         }
         .into());
     }
-    Ok(available - pt_k)
+    Ok(())
 }
 
 pub(crate) fn checked_mul_ct_log_budget(

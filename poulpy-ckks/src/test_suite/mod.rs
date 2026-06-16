@@ -69,6 +69,7 @@ pub const NTT120_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     base2k: 52,
     k: 8 * 40,
     prec: CKKSMeta {
+        log_sparsity: 0,
         log_delta: 40,
         log_budget: 30,
     },
@@ -82,6 +83,7 @@ pub const FFT64_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     base2k: 19,
     k: 8 * 19,
     prec: CKKSMeta {
+        log_sparsity: 0,
         log_delta: 30,
         log_budget: 10,
     },
@@ -95,6 +97,7 @@ pub const NTT120_PARAMS_F128: CKKSTestParams = CKKSTestParams {
     base2k: 52,
     k: 8 * 80,
     prec: CKKSMeta {
+        log_sparsity: 0,
         log_delta: 80,
         log_budget: 30,
     },
@@ -156,6 +159,10 @@ macro_rules! ckks_backend_test_suite {
                 };
             }
 
+            run_test!(
+                encode_decode_reim_roundtrip,
+                $crate::test_suite::encoding::test_encode_decode_reim_roundtrip
+            );
             run_test!(encrypt_decrypt, $crate::test_suite::encryption::test_encrypt_decrypt);
             run_test!(
                 decrypt_extract_same_meta,
@@ -223,8 +230,16 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::add::test_add_pt_vec_into_delta_log_delta
             );
             run_test!(
+                add_pt_vec_into_lsh_alignment,
+                $crate::test_suite::add::test_add_pt_vec_into_lsh_alignment
+            );
+            run_test!(
                 add_const_into_aligned,
                 $crate::test_suite::add::test_add_const_into_aligned
+            );
+            run_test!(
+                add_const_into_lsh_alignment,
+                $crate::test_suite::add::test_add_const_into_lsh_alignment
             );
             run_test!(add_const_assign, $crate::test_suite::add::test_add_const_assign);
             run_test!(add_one_assign, $crate::test_suite::add::test_add_one_assign);
@@ -301,6 +316,10 @@ macro_rules! ckks_backend_test_suite {
                 sub_pt_const_into_aligned,
                 $crate::test_suite::sub::test_sub_pt_const_into_aligned
             );
+            run_test!(
+                sub_const_into_lsh_alignment,
+                $crate::test_suite::sub::test_sub_const_into_lsh_alignment
+            );
             run_test!(sub_one_assign, $crate::test_suite::sub::test_sub_one_assign);
             run_test!(
                 sub_ct_aligned_unsafe,
@@ -351,6 +370,34 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 rotate_assign_missing_key_error,
                 $crate::test_suite::rotate::test_rotate_assign_missing_key_error
+            );
+            run_test!(
+                linear_transformation,
+                $crate::test_suite::linear_transformation::test_linear_transformation
+            );
+            run_test!(
+                dft_coeffs_to_slots_standard,
+                $crate::test_suite::dft::test_dft_coeffs_to_slots_standard
+            );
+            run_test!(
+                dft_slots_to_coeffs_standard,
+                $crate::test_suite::dft::test_dft_slots_to_coeffs_standard
+            );
+            run_test!(
+                dft_coeffs_to_slots_split,
+                $crate::test_suite::dft::test_dft_coeffs_to_slots_split
+            );
+            run_test!(
+                dft_slots_to_coeffs_split,
+                $crate::test_suite::dft::test_dft_slots_to_coeffs_split
+            );
+            run_test!(
+                dft_coeffs_to_slots_repack_sparse,
+                $crate::test_suite::dft::test_dft_coeffs_to_slots_repack_sparse
+            );
+            run_test!(
+                dft_slots_to_coeffs_repack_sparse,
+                $crate::test_suite::dft::test_dft_slots_to_coeffs_repack_sparse
             );
             run_test!(mul_ct_aligned, $crate::test_suite::mul::test_mul_ct_aligned);
             run_test!(mul_ct_delta_a_gt_b, $crate::test_suite::mul::test_mul_ct_delta_a_gt_b);
@@ -496,6 +543,70 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::mul_add::test_mul_add_const_into_aligned
             );
             run_test!(
+                power_basis_populate_degree7,
+                $crate::test_suite::polynomial_evaluation::test_power_basis_populate_degree7
+            );
+            run_test!(
+                power_basis_populate_chebyshev_degree7,
+                $crate::test_suite::polynomial_evaluation::test_power_basis_populate_chebyshev_degree7
+            );
+            run_test!(
+                chebyshev_interpolation_quadratic,
+                $crate::test_suite::polynomial_evaluation::test_chebyshev_interpolation_quadratic
+            );
+            run_test!(
+                encode_bsgs_preserves_chebyshev_eval,
+                $crate::test_suite::polynomial_evaluation::test_encode_bsgs_preserves_chebyshev_eval
+            );
+            run_test!(
+                eval_poly_const_coeffs_cubic,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_cubic
+            );
+            run_test!(
+                eval_poly_rejects_power_basis_mismatch,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_rejects_power_basis_mismatch
+            );
+            run_test!(
+                eval_poly_const_coeffs_exp7,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_exp7
+            );
+            run_test!(
+                eval_poly_const_coeffs_even_monomial,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_even_monomial
+            );
+            run_test!(
+                eval_poly_const_coeffs_odd_monomial,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_odd_monomial
+            );
+            run_test!(
+                eval_poly_const_coeffs_chebyshev_degree31,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_chebyshev_degree31
+            );
+            run_test!(
+                eval_poly_const_coeffs_chebyshev_degree31_min_mult,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_chebyshev_degree31_min_mult
+            );
+            run_test!(
+                eval_poly_const_coeffs_complex_cubic,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_complex_cubic
+            );
+            run_test!(
+                eval_poly_const_coeffs_complex_chebyshev,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_complex_chebyshev
+            );
+            run_test!(
+                eval_poly_const_coeffs_complex_even,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_complex_even
+            );
+            run_test!(
+                eval_poly_const_coeffs_complex_odd,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_complex_odd
+            );
+            run_test!(
+                eval_poly_const_coeffs_complex_fold,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_complex_fold
+            );
+            run_test!(
                 mul_add_const_zero_preserves_dst_meta,
                 $crate::test_suite::mul_add::test_mul_add_const_zero_preserves_dst_meta
             );
@@ -581,16 +692,20 @@ pub mod affine;
 pub mod composition;
 pub mod conjugate;
 pub mod copy;
+pub mod dft;
 pub mod dot_product;
+pub mod encoding;
 pub mod encryption;
 pub mod errors;
 pub mod helpers;
 pub mod imag;
+pub mod linear_transformation;
 pub mod mul;
 pub mod mul_add;
 pub mod mul_pow2;
 pub mod mul_sub;
 pub mod neg;
+pub mod polynomial_evaluation;
 pub mod rotate;
 pub mod scale;
 pub mod sub;

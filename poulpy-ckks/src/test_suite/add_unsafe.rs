@@ -1,11 +1,11 @@
-//! Addition tests for the `CKKSAddOpsUnnormalized` API.
+//! Addition tests for the unnormalized `CKKSAddOps` API.
 
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module},
 };
 
-use crate::{CKKSInfos, layouts::UnnormalizedCKKSCiphertext, leveled::api::CKKSAddOpsUnnormalized};
+use crate::{CKKSInfos, layouts::UnnormalizedCKKSCiphertext, leveled::api::CKKSAddOps};
 
 use super::helpers::{
     ADD_SUB_CONST, PT_PREC, TestContextBackend, TestContextModule, TestScalar, add_sub_const_pt, alloc_ct, alloc_scratch,

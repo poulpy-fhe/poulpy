@@ -589,10 +589,12 @@ dependencies = [
  "byteorder",
  "dashu-float",
  "itertools 0.14.0",
+ "num-traits",
  "once_cell",
  "paste",
  "poulpy-hal",
  "rand",
+ "rand_distr",
 ]
 
 [[package]]

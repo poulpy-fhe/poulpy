@@ -15,6 +15,21 @@ impl<D: HostDataMut> VecZnx<D> {
     /// - `col >= self.cols()()`
     /// - `data.len() != N`
     pub fn encode_vec_i64(&mut self, base2k: usize, col: usize, k: usize, data: &[i64]) {
+        self.encode_vec_i64_strided(base2k, col, k, 1, data);
+    }
+
+    /// Strided variant of [`encode_vec_i64`](VecZnx::encode_vec_i64): places
+    /// `data[j]` at coefficient `j·gap` (all other coefficients zero), so a
+    /// sparsely-packed (gap-interleaved) `data` of length `N/gap` is encoded
+    /// directly — no length-`N` scratch. `gap == 1` is the dense case
+    /// (`data.len() == N`, contiguous copy).
+    ///
+    /// # Panics (debug)
+    ///
+    /// - `k.div_ceil(base2k) > self.size()`
+    /// - `col >= self.cols()`
+    /// - `gap == 0` or `data.len() * gap != N`
+    pub fn encode_vec_i64_strided(&mut self, base2k: usize, col: usize, k: usize, gap: usize, data: &[i64]) {
         let size: usize = k.div_ceil(base2k);
 
         #[cfg(debug_assertions)]
@@ -28,20 +43,33 @@ impl<D: HostDataMut> VecZnx<D> {
                 a.size()
             );
             assert!(col < a.cols());
-            assert!(data.len() == a.n())
+            assert!(gap >= 1, "gap must be >= 1");
+            assert!(
+                data.len() * gap == a.n(),
+                "data.len()*gap={} must equal N={}",
+                data.len() * gap,
+                a.n()
+            );
         }
 
         let shape = self.shape();
         let mut a = VecZnx::from_data_with_max_size(self.data.as_mut(), shape.n(), shape.cols(), shape.size(), shape.max_size());
         let a_size: usize = a.size();
 
-        // Zeroes coefficients of the i-th column
+        // Zeroes coefficients of the col-th column
         for i in 0..a_size {
             znx_zero_ref(a.at_mut(col, i));
         }
 
-        // Copies the data on the correct limb
-        a.at_mut(col, size - 1).copy_from_slice(data);
+        // Places the data on the correct limb, gap-strided.
+        let top = a.at_mut(col, size - 1);
+        if gap == 1 {
+            top.copy_from_slice(data);
+        } else {
+            for (j, &v) in data.iter().enumerate() {
+                top[j * gap] = v;
+            }
+        }
 
         let mut carry: Vec<i64> = vec![0i64; a.n()];
         let k_rem: usize = (base2k - (k % base2k)) % base2k;
@@ -63,6 +91,12 @@ impl<D: HostDataMut> VecZnx<D> {
     /// Analogous to [`encode_vec_i64`](VecZnx::encode_vec_i64) but accepts wider
     /// input values.
     pub fn encode_vec_i128(&mut self, base2k: usize, col: usize, k: usize, data: &[i128]) {
+        self.encode_vec_i128_strided(base2k, col, k, 1, data);
+    }
+
+    /// Strided variant of [`encode_vec_i128`](VecZnx::encode_vec_i128); see
+    /// [`encode_vec_i64_strided`](VecZnx::encode_vec_i64_strided).
+    pub fn encode_vec_i128_strided(&mut self, base2k: usize, col: usize, k: usize, gap: usize, data: &[i128]) {
         let size: usize = k.div_ceil(base2k);
 
         #[cfg(debug_assertions)]
@@ -76,7 +110,13 @@ impl<D: HostDataMut> VecZnx<D> {
                 a.size()
             );
             assert!(col < a.cols());
-            assert!(data.len() == a.n())
+            assert!(gap >= 1, "gap must be >= 1");
+            assert!(
+                data.len() * gap == a.n(),
+                "data.len()*gap={} must equal N={}",
+                data.len() * gap,
+                a.n()
+            );
         }
 
         let shape = self.shape();
@@ -85,7 +125,13 @@ impl<D: HostDataMut> VecZnx<D> {
 
         {
             let mut carry_i128: Vec<i128> = vec![0i128; a.n()];
-            carry_i128.copy_from_slice(data);
+            if gap == 1 {
+                carry_i128.copy_from_slice(data);
+            } else {
+                for (j, &v) in data.iter().enumerate() {
+                    carry_i128[j * gap] = v;
+                }
+            }
 
             for j in (0..size).rev() {
                 for (x, a) in izip!(a.at_mut(col, j).iter_mut(), carry_i128.iter_mut()) {
@@ -165,15 +211,24 @@ impl<D: HostDataRef> VecZnx<D> {
     /// Decodes column `col` from the limb-decomposed representation back into
     /// an `i64` slice, reconstructing values up to `k` bits of precision.
     pub fn decode_vec_i64(&self, base2k: usize, col: usize, k: usize, data: &mut [i64]) {
+        self.decode_vec_i64_strided(base2k, col, k, 1, data);
+    }
+
+    /// Strided variant of [`decode_vec_i64`](VecZnx::decode_vec_i64): reads
+    /// `data[j]` from coefficient `j·gap`, reconstructing only the `N/gap`
+    /// gap-interleaved coefficients — no length-`N` scratch. `gap == 1` is the
+    /// dense case.
+    pub fn decode_vec_i64_strided(&self, base2k: usize, col: usize, k: usize, gap: usize, data: &mut [i64]) {
         let size: usize = k.div_ceil(base2k);
         #[cfg(debug_assertions)]
         {
             let shape = self.shape();
             let a = VecZnx::from_data_with_max_size(self.data.as_ref(), shape.n(), shape.cols(), shape.size(), shape.max_size());
+            assert!(gap >= 1, "gap must be >= 1");
             assert!(
-                data.len() >= a.n(),
-                "invalid data: data.len()={} < a.n()={}",
-                data.len(),
+                data.len() * gap == a.n(),
+                "data.len()*gap={} must equal N={}",
+                data.len() * gap,
                 a.n()
             );
             assert!(col < a.cols());
@@ -181,38 +236,49 @@ impl<D: HostDataRef> VecZnx<D> {
 
         let shape = self.shape();
         let a = VecZnx::from_data_with_max_size(self.data.as_ref(), shape.n(), shape.cols(), shape.size(), shape.max_size());
-        data.copy_from_slice(a.at(col, 0));
+        let limb0 = a.at(col, 0);
+        for (j, d) in data.iter_mut().enumerate() {
+            *d = limb0[j * gap];
+        }
         let rem: usize = base2k - (k % base2k);
         if k < base2k {
             let scale = 1 << rem as i64;
             data.iter_mut().for_each(|x| *x = div_round_i64(*x, scale));
         } else {
             (1..size).for_each(|i| {
+                let limb = a.at(col, i);
                 if i == size - 1 && rem != base2k {
                     let k_rem: usize = (base2k - rem) % base2k;
                     let scale: i64 = 1 << rem as i64;
-                    izip!(a.at(col, i).iter(), data.iter_mut()).for_each(|(x, y)| {
-                        *y = (*y << k_rem) + div_round_i64(*x, scale);
-                    });
+                    for (j, y) in data.iter_mut().enumerate() {
+                        *y = (*y << k_rem) + div_round_i64(limb[j * gap], scale);
+                    }
                 } else {
-                    izip!(a.at(col, i).iter(), data.iter_mut()).for_each(|(x, y)| {
-                        *y = (*y << base2k) + x;
-                    });
+                    for (j, y) in data.iter_mut().enumerate() {
+                        *y = (*y << base2k) + limb[j * gap];
+                    }
                 }
             })
         }
     }
 
     pub fn decode_vec_i128(&self, base2k: usize, col: usize, k: usize, data: &mut [i128]) {
+        self.decode_vec_i128_strided(base2k, col, k, 1, data);
+    }
+
+    /// Strided variant of [`decode_vec_i128`](VecZnx::decode_vec_i128); see
+    /// [`decode_vec_i64_strided`](VecZnx::decode_vec_i64_strided).
+    pub fn decode_vec_i128_strided(&self, base2k: usize, col: usize, k: usize, gap: usize, data: &mut [i128]) {
         let size: usize = k.div_ceil(base2k);
         #[cfg(debug_assertions)]
         {
             let shape = self.shape();
             let a = VecZnx::from_data_with_max_size(self.data.as_ref(), shape.n(), shape.cols(), shape.size(), shape.max_size());
+            assert!(gap >= 1, "gap must be >= 1");
             assert!(
-                data.len() >= a.n(),
-                "invalid data: data.len()={} < a.n()={}",
-                data.len(),
+                data.len() * gap == a.n(),
+                "data.len()*gap={} must equal N={}",
+                data.len() * gap,
                 a.n()
             );
             assert!(col < a.cols());
@@ -220,9 +286,10 @@ impl<D: HostDataRef> VecZnx<D> {
 
         let shape = self.shape();
         let a = VecZnx::from_data_with_max_size(self.data.as_ref(), shape.n(), shape.cols(), shape.size(), shape.max_size());
-        data.iter_mut()
-            .zip(a.at(col, 0).iter())
-            .for_each(|(bi, ai)| *bi = *ai as i128);
+        let limb0 = a.at(col, 0);
+        for (j, d) in data.iter_mut().enumerate() {
+            *d = limb0[j * gap] as i128;
+        }
 
         let rem: usize = base2k - (k % base2k);
         if k < base2k {
@@ -230,16 +297,17 @@ impl<D: HostDataRef> VecZnx<D> {
             data.iter_mut().for_each(|x| *x = div_round_i128(*x, scale));
         } else {
             (1..size).for_each(|i| {
+                let limb = a.at(col, i);
                 if i == size - 1 && rem != base2k {
                     let k_rem: usize = (base2k - rem) % base2k;
                     let scale: i128 = 1 << rem as i128;
-                    izip!(a.at(col, i).iter(), data.iter_mut()).for_each(|(x, y)| {
-                        *y = (*y << k_rem) + div_round_i128(*x as i128, scale);
-                    });
+                    for (j, y) in data.iter_mut().enumerate() {
+                        *y = (*y << k_rem) + div_round_i128(limb[j * gap] as i128, scale);
+                    }
                 } else {
-                    izip!(a.at(col, i).iter(), data.iter_mut()).for_each(|(x, y)| {
-                        *y = (*y << base2k) + *x as i128;
-                    });
+                    for (j, y) in data.iter_mut().enumerate() {
+                        *y = (*y << base2k) + limb[j * gap] as i128;
+                    }
                 }
             })
         }
