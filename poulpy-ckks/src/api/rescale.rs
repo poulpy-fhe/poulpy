@@ -40,6 +40,27 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 ///
 /// After the call both operands share the same `log_budget`.  If they already
 /// have equal budgets neither is modified.
+///
+/// ## Re-scale by `bits` (`ckks_scale_down_assign` / `ckks_scale_up_assign`)
+///
+/// These move the boundary between precision and headroom **without changing
+/// the encrypted value**, by shifting the torus polynomial to compensate.
+/// They keep `effective_k = log_delta + log_budget` constant, so storage is
+/// never reallocated:
+///
+/// ```text
+/// // ckks_scale_down_assign: trade precision for headroom
+/// log_delta_out  = ct.log_delta  − bits
+/// log_budget_out = ct.log_budget + bits
+///
+/// // ckks_scale_up_assign: trade headroom for precision
+/// log_delta_out  = ct.log_delta  + bits
+/// log_budget_out = ct.log_budget − bits
+/// ```
+///
+/// `ckks_scale_down_assign` errors with `InsufficientScalePrecision` if
+/// `bits > ct.log_delta`; `ckks_scale_up_assign` errors with
+/// `InsufficientHomomorphicCapacity` if `bits > ct.log_budget`.
 pub trait CKKSRescaleOps<BE: Backend> {
     /// Returns scratch bytes required by [`Self::ckks_rescale_into`].
     fn ckks_rescale_tmp_bytes(&self) -> usize;
@@ -59,6 +80,30 @@ pub trait CKKSRescaleOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds;
+
+    /// Lowers `ct`'s working scale by `bits`, preserving the encrypted value.
+    ///
+    /// Right-shifts the polynomial by `bits`, discarding that many
+    /// least-significant precision bits and turning the freed space into
+    /// budget.  A subsequent multiplication then consumes only the reduced
+    /// scale.
+    ///
+    /// Errors with `InsufficientScalePrecision` if `bits > ct.log_delta`.
+    /// Uses the scratch reported by [`Self::ckks_rescale_tmp_bytes`].
+    fn ckks_scale_down_assign<Dst>(&self, ct: &mut Dst, bits: usize, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
+
+    /// Inverse of [`Self::ckks_scale_down_assign`]: raises `ct`'s working scale
+    /// by `bits`, preserving the encrypted value.
+    ///
+    /// Left-shifts the polynomial into the budget headroom.
+    ///
+    /// Errors with `InsufficientHomomorphicCapacity` if `bits > ct.log_budget`.
+    /// Uses the scratch reported by [`Self::ckks_rescale_tmp_bytes`].
+    fn ckks_scale_up_assign<Dst>(&self, ct: &mut Dst, bits: usize, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 
     /// Returns scratch bytes required by [`Self::ckks_align_pair`].
     fn ckks_align_tmp_bytes(&self) -> usize;

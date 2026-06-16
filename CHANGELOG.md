@@ -12,6 +12,9 @@
 - Add core APIs for packed LWE matrix workflows: `GLWEExpandLWEMatrix` expands a GLWE into a matrix of LWE samples, and `LWEMatrixDecrypt` decrypts packed LWE rows into a GLWE plaintext-shaped result.
 - Add `GLWEMaskFill` and `LWEFillMask` traits for backend-generic mask generation from a `Source` or deterministic seed; compressed LWE/GLWE decompression now uses those mask-fill defaults, and `GLWECompressed` exposes `data()` / `data_mut()` accessors for its stored ciphertext data.
 
+### `poulpy-ckks`
+- Add value-preserving working-scale adjustment to `CKKSRescaleOps`: `ckks_scale_down_assign` trades `bits` of precision for budget (right-shift, `log_delta -= bits`, `log_budget += bits`) and `ckks_scale_up_assign` does the inverse (left-shift into the budget headroom). Both keep `effective_k` constant, reuse the `ckks_rescale_tmp_bytes` scratch contract, and report the new `InsufficientScalePrecision` error when `scale_down` would drop more than `log_delta` bits.
+
 ### `poulpy-cpu-ref` / `poulpy-cpu-avx` / `poulpy-cpu-avx512`
 - Implement the new transpose, weighted-sum, scalar/DFT automorphism, and packed LWE matrix defaults across the reference backend, with AVX and AVX-512 overrides for the accelerated automorphism paths.
 - Rework the FFT64 convolution applies into fused column kernels behind the new `Reim4Convolution::reim4_convolution_apply` / `reim4_convolution_pairwise_apply` hooks (the reference default keeps the previous per-block path): the AVX/AVX-512 kernels tile 3/4 output limbs over a zero-padded sliding window of the left operand and stage outputs per 16-block group so each destination cache line is written exactly once — the limb stride is a multiple of 4 KiB, so the previous per-limb half-line stores all aliased a single L1 set. `cnv_apply_dft` and `cnv_pairwise_apply_dft` are 2.3-3.5x faster on `FFT64Avx512`/`FFT64Avx` across n = 2^13..2^15.

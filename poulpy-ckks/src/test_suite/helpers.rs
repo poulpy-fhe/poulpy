@@ -18,7 +18,7 @@ use crate::{
     api::{
         CKKSAddManyOps, CKKSAddOps, CKKSAddOpsUnnormalized, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps,
         CKKSDotProductOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps, CKKSPlaintextVecOps, CKKSPow2Ops,
-        CKKSRotateOps, CKKSSubOps, CKKSSubOpsUnnormalized,
+        CKKSRescaleOps, CKKSRotateOps, CKKSSubOps, CKKSSubOpsUnnormalized,
     },
     encoding::reim::Encoder,
     layouts::{
@@ -98,6 +98,7 @@ pub trait TestContextModule<BE: Backend>:
     + CKKSConjugateOps<BE>
     + CKKSImagOps<BE>
     + CKKSPow2Ops<BE>
+    + CKKSRescaleOps<BE>
     + CKKSPlaintextVecOps<BE>
     + CKKSAddManyOps<BE>
     + CKKSMulAddOps<BE>
@@ -134,6 +135,7 @@ impl<BE: Backend, M> TestContextModule<BE> for M where
         + CKKSConjugateOps<BE>
         + CKKSImagOps<BE>
         + CKKSPow2Ops<BE>
+        + CKKSRescaleOps<BE>
         + CKKSPlaintextVecOps<BE>
         + CKKSAddManyOps<BE>
         + CKKSMulAddOps<BE>

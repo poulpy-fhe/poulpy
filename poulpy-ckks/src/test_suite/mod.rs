@@ -427,6 +427,17 @@ macro_rules! ckks_backend_test_suite {
                 div_pow2_assign_explicit_error,
                 $crate::test_suite::mul_pow2::test_div_pow2_assign_explicit_error
             );
+            run_test!(scale_down_assign, $crate::test_suite::scale::test_scale_down_assign);
+            run_test!(scale_up_assign, $crate::test_suite::scale::test_scale_up_assign);
+            run_test!(scale_round_trip, $crate::test_suite::scale::test_scale_round_trip);
+            run_test!(
+                scale_up_insufficient_budget_error,
+                $crate::test_suite::scale::test_scale_up_insufficient_budget_error
+            );
+            run_test!(
+                scale_down_insufficient_precision_error,
+                $crate::test_suite::scale::test_scale_down_insufficient_precision_error
+            );
             run_test!(mul_i_aligned, $crate::test_suite::imag::test_mul_i_aligned);
             run_test!(
                 mul_i_smaller_output,
@@ -581,5 +592,6 @@ pub mod mul_pow2;
 pub mod mul_sub;
 pub mod neg;
 pub mod rotate;
+pub mod scale;
 pub mod sub;
 pub mod sub_unsafe;

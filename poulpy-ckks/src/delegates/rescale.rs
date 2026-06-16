@@ -30,6 +30,20 @@ where
         BE::ckks_rescale_into(self, dst, k, src, scratch)
     }
 
+    fn ckks_scale_down_assign<Dst>(&self, ct: &mut Dst, bits: usize, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    {
+        BE::ckks_scale_down_assign(self, ct, bits, scratch)
+    }
+
+    fn ckks_scale_up_assign<Dst>(&self, ct: &mut Dst, bits: usize, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    {
+        BE::ckks_scale_up_assign(self, ct, bits, scratch)
+    }
+
     fn ckks_align_pair<A, B>(&self, a: &mut A, b: &mut B, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         A: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,

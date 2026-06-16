@@ -29,6 +29,22 @@ pub unsafe trait CKKSRescaleImpl<BE: Backend>: Backend {
     where
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos;
+    fn ckks_scale_down_assign<Dst>(
+        module: &Module<BE>,
+        ct: &mut Dst,
+        bits: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos;
+    fn ckks_scale_up_assign<Dst>(
+        module: &Module<BE>,
+        ct: &mut Dst,
+        bits: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos;
     fn ckks_align_pair<A, B>(module: &Module<BE>, a: &mut A, b: &mut B, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         A: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
@@ -64,6 +80,25 @@ where
         Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos,
     {
         module.ckks_rescale_into_default(dst, k, src, scratch)
+    }
+
+    fn ckks_scale_down_assign<Dst>(
+        module: &Module<BE>,
+        ct: &mut Dst,
+        bits: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
+    {
+        module.ckks_scale_down_assign_default(ct, bits, scratch)
+    }
+
+    fn ckks_scale_up_assign<Dst>(module: &Module<BE>, ct: &mut Dst, bits: usize, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
+    {
+        module.ckks_scale_up_assign_default(ct, bits, scratch)
     }
 
     fn ckks_align_pair<A, B>(module: &Module<BE>, a: &mut A, b: &mut B, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

@@ -55,7 +55,7 @@ pub mod oep;
 pub mod test_suite;
 pub use error::CKKSCompositionError;
 pub(crate) use error::{
-    checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget, ensure_base2k_match,
+    checked_log_budget_sub, checked_log_delta_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget, ensure_base2k_match,
     ensure_plaintext_alignment, ensure_plaintext_coeff_in_range, ensure_plaintext_degree_match,
 };
 

@@ -22,6 +22,12 @@ pub enum CKKSCompositionError {
         available_log_budget: usize,
         required_bits: usize,
     },
+    /// An operation would lower `log_delta` below zero, discarding the whole encoded value.
+    InsufficientScalePrecision {
+        op: &'static str,
+        available_log_delta: usize,
+        required_bits: usize,
+    },
     /// A plaintext and ciphertext use different limb radices.
     PlaintextBase2KMismatch {
         op: &'static str,
@@ -76,6 +82,14 @@ impl fmt::Display for CKKSCompositionError {
             } => write!(
                 f,
                 "{op} cannot consume {required_bits} bits of log_budget: only {available_log_budget} bits remain"
+            ),
+            Self::InsufficientScalePrecision {
+                op,
+                available_log_delta,
+                required_bits,
+            } => write!(
+                f,
+                "{op} cannot consume {required_bits} bits of log_delta: only {available_log_delta} bits remain"
             ),
             Self::PlaintextBase2KMismatch {
                 op,
@@ -133,6 +147,17 @@ pub(crate) fn checked_log_budget_sub(op: &'static str, available_log_budget: usi
         CKKSCompositionError::InsufficientHomomorphicCapacity {
             op,
             available_log_budget,
+            required_bits,
+        }
+        .into()
+    })
+}
+
+pub(crate) fn checked_log_delta_sub(op: &'static str, available_log_delta: usize, required_bits: usize) -> Result<usize> {
+    available_log_delta.checked_sub(required_bits).ok_or_else(|| {
+        CKKSCompositionError::InsufficientScalePrecision {
+            op,
+            available_log_delta,
             required_bits,
         }
         .into()

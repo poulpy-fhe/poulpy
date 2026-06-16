@@ -8,7 +8,7 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::GLWEToBackendRef;
 
-use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub};
+use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub, checked_log_delta_sub};
 
 #[doc(hidden)]
 pub trait CKKSRescaleOpsDefault<BE: Backend> {
@@ -53,6 +53,30 @@ pub trait CKKSRescaleOpsDefault<BE: Backend> {
         self.glwe_lsh(dst, src, k, scratch);
         dst.set_meta(src.meta());
         dst.set_log_budget(log_budget);
+        Ok(())
+    }
+
+    fn ckks_scale_down_assign_default<Dst>(&self, ct: &mut Dst, bits: usize, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        Self: GLWEShift<BE>,
+        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
+    {
+        let log_delta = checked_log_delta_sub("scale_down", ct.log_delta(), bits)?;
+        self.glwe_rsh(bits, ct, scratch);
+        ct.set_log_delta(log_delta);
+        ct.set_log_budget(ct.log_budget() + bits);
+        Ok(())
+    }
+
+    fn ckks_scale_up_assign_default<Dst>(&self, ct: &mut Dst, bits: usize, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        Self: GLWEShift<BE>,
+        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
+    {
+        let log_budget = checked_log_budget_sub("scale_up", ct.log_budget(), bits)?;
+        self.glwe_lsh_assign(ct, bits, scratch);
+        ct.set_log_delta(ct.log_delta() + bits);
+        ct.set_log_budget(log_budget);
         Ok(())
     }
 
