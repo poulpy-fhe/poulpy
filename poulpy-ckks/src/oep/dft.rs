@@ -27,6 +27,7 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCtBounds, CKKSMeta, SetCKKSInfos,
+    api::LtDiagonalScale,
     default::dft::matrices::DftScalar,
     encoding::reim::Encoder,
     layouts::{
@@ -75,7 +76,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
@@ -88,7 +89,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
@@ -101,7 +102,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
@@ -117,7 +118,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -133,7 +134,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -149,7 +150,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -164,7 +165,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -213,7 +214,7 @@ pub trait DFTDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
@@ -226,7 +227,7 @@ pub trait DFTDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
@@ -239,7 +240,7 @@ pub trait DFTDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
@@ -255,7 +256,7 @@ pub trait DFTDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -271,7 +272,7 @@ pub trait DFTDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -287,7 +288,7 @@ pub trait DFTDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -302,7 +303,7 @@ pub trait DFTDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -354,7 +355,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
@@ -370,7 +371,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
@@ -386,7 +387,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
@@ -405,7 +406,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -424,7 +425,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -443,7 +444,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -461,7 +462,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -531,7 +532,7 @@ macro_rules! impl_ckks_dft_defaults {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) -> $crate::__macro_reexports::anyhow::Result<()>
             where
-                P: ::poulpy_core::default::linear_transformation::DiagonalProd<$be>,
+                P: ::poulpy_core::default::linear_transformation::DiagonalProd<$be> + $crate::api::LtDiagonalScale,
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
                 K: ::poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef<$be>
                     + ::poulpy_core::layouts::GGLWEPreparedToBackendRef<$be>
@@ -550,7 +551,7 @@ macro_rules! impl_ckks_dft_defaults {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) -> $crate::__macro_reexports::anyhow::Result<()>
             where
-                P: ::poulpy_core::default::linear_transformation::DiagonalProd<$be>,
+                P: ::poulpy_core::default::linear_transformation::DiagonalProd<$be> + $crate::api::LtDiagonalScale,
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
                 K: ::poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef<$be>
                     + ::poulpy_core::layouts::GGLWEPreparedToBackendRef<$be>
@@ -569,7 +570,7 @@ macro_rules! impl_ckks_dft_defaults {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) -> $crate::__macro_reexports::anyhow::Result<()>
             where
-                P: ::poulpy_core::default::linear_transformation::DiagonalProd<$be>,
+                P: ::poulpy_core::default::linear_transformation::DiagonalProd<$be> + $crate::api::LtDiagonalScale,
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
                 K: ::poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef<$be>
                     + ::poulpy_core::layouts::GGLWEPreparedToBackendRef<$be>
@@ -591,7 +592,7 @@ macro_rules! impl_ckks_dft_defaults {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) -> $crate::__macro_reexports::anyhow::Result<()>
             where
-                P: ::poulpy_core::default::linear_transformation::DiagonalProd<$be>,
+                P: ::poulpy_core::default::linear_transformation::DiagonalProd<$be> + $crate::api::LtDiagonalScale,
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds,
                 K: ::poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef<$be>
@@ -613,7 +614,7 @@ macro_rules! impl_ckks_dft_defaults {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) -> $crate::__macro_reexports::anyhow::Result<()>
             where
-                P: ::poulpy_core::default::linear_transformation::DiagonalProd<$be>,
+                P: ::poulpy_core::default::linear_transformation::DiagonalProd<$be> + $crate::api::LtDiagonalScale,
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds,
                 K: ::poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef<$be>
@@ -635,7 +636,7 @@ macro_rules! impl_ckks_dft_defaults {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) -> $crate::__macro_reexports::anyhow::Result<()>
             where
-                P: ::poulpy_core::default::linear_transformation::DiagonalProd<$be>,
+                P: ::poulpy_core::default::linear_transformation::DiagonalProd<$be> + $crate::api::LtDiagonalScale,
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds,
                 K: ::poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef<$be>
@@ -656,7 +657,7 @@ macro_rules! impl_ckks_dft_defaults {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) -> $crate::__macro_reexports::anyhow::Result<()>
             where
-                P: ::poulpy_core::default::linear_transformation::DiagonalProd<$be>,
+                P: ::poulpy_core::default::linear_transformation::DiagonalProd<$be> + $crate::api::LtDiagonalScale,
                 Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds,
                 K: ::poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef<$be>

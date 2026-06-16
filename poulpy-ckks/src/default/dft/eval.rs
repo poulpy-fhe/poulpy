@@ -36,7 +36,7 @@ use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSMeta, SetCKKSInfos,
     api::{
         CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSImagOps, CKKSRotateOps, CKKSSubOps, LinearTransformationBabySteps,
-        LinearTransformationOps, LinearTransformationPrepared,
+        LinearTransformationOps, LinearTransformationPrepared, LtDiagonalScale,
     },
     default::dft::matrices::{DftScalar, gen_dft_matrices},
     encoding::reim::Encoder,
@@ -242,7 +242,7 @@ pub fn ckks_dft_evaluate_assign<BE, Dir, Fmt, P, Dst, H, K>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE>,
+    P: DiagonalProd<BE> + LtDiagonalScale,
     Module<BE>: LinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -273,7 +273,7 @@ pub fn ckks_coeffs_to_slots_assign<BE, P, Dst, H, K>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE>,
+    P: DiagonalProd<BE> + LtDiagonalScale,
     Module<BE>: LinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -293,7 +293,7 @@ pub fn ckks_slots_to_coeffs_assign<BE, P, Dst, H, K>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE>,
+    P: DiagonalProd<BE> + LtDiagonalScale,
     Module<BE>: LinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -324,7 +324,7 @@ pub fn ckks_coeffs_to_slots_split<BE, P, Dst, Src, H, K>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE>,
+    P: DiagonalProd<BE> + LtDiagonalScale,
     Module<BE>: LinearTransformationOps<BE>
         + CnvPVecAlloc<BE>
         + CKKSModuleAlloc<BE>
@@ -369,7 +369,7 @@ pub fn ckks_slots_to_coeffs_split<BE, P, Dst, Src, H, K>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE>,
+    P: DiagonalProd<BE> + LtDiagonalScale,
     Module<BE>: LinearTransformationOps<BE> + CnvPVecAlloc<BE> + CKKSAddOps<BE> + CKKSImagOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
@@ -401,7 +401,7 @@ pub fn ckks_coeffs_to_slots_repack<BE, P, Dst, Src, H, K>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE>,
+    P: DiagonalProd<BE> + LtDiagonalScale,
     Module<BE>: LinearTransformationOps<BE>
         + CnvPVecAlloc<BE>
         + CKKSModuleAlloc<BE>
@@ -457,7 +457,7 @@ pub fn ckks_slots_to_coeffs_repack<BE, P, Dst, Src, H, K>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE>,
+    P: DiagonalProd<BE> + LtDiagonalScale,
     Module<BE>: LinearTransformationOps<BE> + CnvPVecAlloc<BE> + CKKSCopyOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,

@@ -63,13 +63,6 @@ use super::LinearTransformationBabySteps;
 /// `GLWEToBackendRef` impl for [`PreparedDiagonal`], so a blanket would clash
 /// with the resident impl.
 pub trait DiagonalProd<BE: Backend>: LWEInfos + Sized {
-    /// The encoding scale (`log2` of the scaling factor) of this diagonal's
-    /// plaintext. The CKKS scale/key-size bookkeeping reads it (together with
-    /// [`LWEInfos::max_k`]) off the transform's first diagonal, uniformly across
-    /// the resident ([`PreparedDiagonal::log_scale`]) and streamed (the plaintext
-    /// `log_delta`) representations.
-    fn diag_log_scale(&self) -> usize;
-
     /// Runs the PROD inner product of one giant step into `prod_dft`.
     fn accumulate_giant_prod<M>(
         module: &M,
@@ -83,10 +76,6 @@ pub trait DiagonalProd<BE: Backend>: LWEInfos + Sized {
 }
 
 impl<BE: Backend> DiagonalProd<BE> for PreparedDiagonal<BE::OwnedBuf, BE> {
-    fn diag_log_scale(&self) -> usize {
-        self.log_scale()
-    }
-
     fn accumulate_giant_prod<M>(
         module: &M,
         cnv_offset_hi: usize,

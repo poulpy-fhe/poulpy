@@ -10,13 +10,11 @@ use anyhow::Result;
 use poulpy_core::{
     GLWECopy, GLWELinearTransformations, LinearTransformationBabySteps, LinearTransformationGiantStep,
     LinearTransformationPrepared,
-    default::{
-        keyswitching::truncated_keyswitch_size,
-        linear_transformation::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft},
-    },
+    default::linear_transformation::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft},
     layouts::{
         GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
-        LWEInfos, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
+        LWEInfos,
+        prepared::{GLWEAutomorphismKeyPreparedToBackendRef, PreparedDiagonal},
     },
 };
 use poulpy_hal::{
@@ -26,7 +24,7 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, SetCKKSInfos,
-    api::{LinearTransformation, LinearTransformationOps},
+    api::{LinearTransformation, LinearTransformationOps, LtDiagonalScale},
     checked_log_budget_sub, checked_mul_pt_log_budget,
     layouts::{CKKSModuleAlloc, CKKSPlaintext},
 };
@@ -43,10 +41,6 @@ impl<BE: Backend, D: Data> DiagonalProd<BE> for CKKSPlaintext<D>
 where
     CKKSPlaintext<D>: GLWEToBackendRef<BE>,
 {
-    fn diag_log_scale(&self) -> usize {
-        self.log_delta()
-    }
-
     fn accumulate_giant_prod<M>(
         module: &M,
         cnv_offset_hi: usize,
@@ -58,6 +52,21 @@ where
         M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
     {
         glwe_accumulate_streamed_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, gs, scratch);
+    }
+}
+
+/// Streamed-diagonal scale: a [`CKKSPlaintext`] carries its scale as `log_delta`.
+impl<D: Data> LtDiagonalScale for CKKSPlaintext<D> {
+    fn lt_log_scale(&self) -> usize {
+        self.log_delta()
+    }
+}
+
+/// Resident-diagonal scale: a core [`PreparedDiagonal`] carries the (opaque to the
+/// core engine) scale the CKKS prepare step stashed on it via `set_log_scale`.
+impl<D: Data, BE: Backend> LtDiagonalScale for PreparedDiagonal<D, BE> {
+    fn lt_log_scale(&self) -> usize {
+        self.log_scale()
     }
 }
 
@@ -85,32 +94,6 @@ where
         res_log_delta,
         cnv_offset,
     ))
-}
-
-/// Truncated keyswitch output size for a linear-transformation giant rotation.
-///
-/// Errors introduced by the giant rotations sit under the diagonal scale (the
-/// convolution happened first), minus whatever slack `res_offset` already
-/// consumed to fit the result precision in `max_k`. `pt_log_scale` / `pt_max_k`
-/// describe the diagonals (the cache for the prepared path, the first plaintext
-/// for the streamed one).
-fn truncated_lt_key_size<H, K, BE>(
-    n: usize,
-    dst_size: usize,
-    src_size: usize,
-    keys: &H,
-    pt_log_scale: usize,
-    pt_max_k: usize,
-    cnv_offset: usize,
-) -> usize
-where
-    BE: Backend,
-    K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-    H: GLWEAutomorphismKeyHelper<K, BE>,
-{
-    let res_offset = cnv_offset.saturating_sub(pt_max_k);
-    let allowance = pt_log_scale.saturating_sub(res_offset);
-    truncated_keyswitch_size(n, dst_size, src_size + 1, &keys.automorphism_key_infos(), allowance)
 }
 
 impl<BE: Backend> LinearTransformationOps<BE> for Module<BE>
@@ -198,10 +181,13 @@ where
                 .into());
             }
         }
+        // Canonical keyswitch output size: the operand plus `key.dsize()` guard
+        // limbs (the keyswitch adds ~`dsize·base2k` bits of noise; see
+        // `ckks_rotate_into_default`). Only read `dsize` when a baby rotation
+        // actually needs a key — `automorphism_key_infos()` panics on an empty key
+        // map, and with no rotation the value is unused anyway.
         let key_size = if has_nonzero {
-            // Baby-step rotation errors are amplified by the diagonal scale in
-            // PROD, so no allowance: keep every limb that can reach the output.
-            truncated_keyswitch_size(self.n(), src.size(), src.size(), &keys.automorphism_key_infos(), 0)
+            src.size() + keys.automorphism_key_infos().dsize().as_usize()
         } else {
             src.size()
         };
@@ -223,7 +209,7 @@ where
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
@@ -232,12 +218,13 @@ where
         let first = lt
             .first_diagonal_plaintext()
             .ok_or_else(|| anyhow::anyhow!("linear transformation has no diagonals"))?;
-        // The diagonal scale (`diag_log_scale`) and storage precision (`max_k`) are
-        // read uniformly off the first diagonal, regardless of `P` (resident or
-        // streamed) — the only representation-dependent step in this wrapper.
-        let (pt_log_scale, pt_max_k) = (first.diag_log_scale(), first.max_k().as_usize());
+        // The diagonal scale (`lt_log_scale`, the CKKS-layer accessor) and storage
+        // precision (the scheme-agnostic `max_k`) are read uniformly off the first
+        // diagonal, regardless of `P` (resident or streamed) — the only
+        // representation-dependent step in this wrapper.
+        let (pt_log_scale, pt_max_k) = (first.lt_log_scale(), first.max_k().as_usize());
         let (res_log_budget, res_log_delta, cnv_offset) = lt_mul_params(dst, src, pt_log_scale, pt_max_k)?;
-        let key_size = lt_key_size(self.n(), lt, dst, src, keys, cnv_offset, pt_log_scale, pt_max_k);
+        let key_size = lt_key_size(lt, dst, keys);
         self.glwe_eval_linear_transformation_into(cnv_offset, dst, babies, lt, keys, key_size, scratch);
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
@@ -254,7 +241,7 @@ where
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
@@ -279,7 +266,7 @@ where
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
@@ -299,7 +286,7 @@ where
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
@@ -349,35 +336,26 @@ where
     Ok(())
 }
 
-/// Resolves the `key_size` argument used by the core eval entry point. Falls
-/// back to `src.size()` when no giant rotation is needed (identity-only
-/// transforms with an empty key map). When giant rotations are needed, the
-/// keyswitch output is truncated: errors introduced by the giant rotations sit
-/// under the diagonal scale (the convolution happened first), minus whatever
-/// slack `res_offset` already consumed to fit the result precision in `max_k`.
-/// `pt_log_scale` / `pt_max_k` describe the transform's first diagonal (read via
-/// [`DiagonalProd::diag_log_scale`] / [`LWEInfos::max_k`]).
-#[allow(clippy::too_many_arguments)]
-fn lt_key_size<BE: Backend, P, Dst, Src, H, K>(
-    n: usize,
-    lt: &LinearTransformation<P>,
-    dst: &Dst,
-    src: &Src,
-    keys: &H,
-    cnv_offset: usize,
-    pt_log_scale: usize,
-    pt_max_k: usize,
-) -> usize
+/// Resolves the `key_size` (giant-rotation keyswitch output size) for the core
+/// eval entry point.
+///
+/// Canonical sizing, consistent with the rest of the crate
+/// (`ckks_rotate_into_default` etc.): the result operand plus `key.dsize()` guard
+/// limbs, since a keyswitch adds ~`dsize·base2k` bits of noise. The core eval caps
+/// this at the key's own size, so over-asking is safe. Falls back to `dst.size()`
+/// when no giant rotation is needed (the eval skips ROT for `rot == 0`, so
+/// `key_size` is unused — and `automorphism_key_infos()` would panic on the
+/// possibly-empty key map of such an identity-only transform).
+fn lt_key_size<BE: Backend, P, Dst, H, K>(lt: &LinearTransformation<P>, dst: &Dst, keys: &H) -> usize
 where
     Dst: LWEInfos,
-    Src: CKKSCtBounds,
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
     let has_nonzero_giant_rotation = lt.giant_steps.iter().any(|gs| gs.rot != 0 && !gs.diagonals.is_empty());
     if has_nonzero_giant_rotation {
-        truncated_lt_key_size(n, dst.size(), src.size(), keys, pt_log_scale, pt_max_k, cnv_offset)
+        dst.size() + keys.automorphism_key_infos().dsize().as_usize()
     } else {
-        src.size()
+        dst.size()
     }
 }

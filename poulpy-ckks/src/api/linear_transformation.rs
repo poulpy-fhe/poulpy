@@ -50,6 +50,25 @@ pub use poulpy_core::{
     LinearTransformationPrepared, LinearTransformationStrategy, layouts::prepared::PreparedDiagonal, optimal_bsgs_giant_step,
 };
 
+/// The CKKS encoding scale (`log_delta`) of a linear-transformation diagonal.
+///
+/// The CKKS scale / key-size bookkeeping reads it (together with the
+/// scheme-agnostic [`LWEInfos::max_k`]) off the transform's first diagonal,
+/// uniformly across the resident and streamed representations. Keeping it here —
+/// rather than on `poulpy-core`'s `DiagonalProd` engine trait — is deliberate:
+/// the core engine is scheme-agnostic (a scheme encoding values mod `P` has no
+/// `log_delta`), so it treats a prepared diagonal's scale as an *opaque* integer
+/// (stashed via [`PreparedDiagonal::set_log_scale`] during preparation) and
+/// carries no scale concept of its own.
+///
+/// Implemented for the two diagonal representations: [`CKKSPlaintext`] (streamed)
+/// via its `log_delta`, and the core [`PreparedDiagonal`] (resident) via that
+/// stashed scale.
+pub trait LtDiagonalScale {
+    /// `log2` of the diagonal plaintext's scaling factor.
+    fn lt_log_scale(&self) -> usize;
+}
+
 /// Homomorphic evaluation of a [`LinearTransformation`] on a CKKS ciphertext.
 ///
 /// The API is shaped around three phases:
@@ -151,7 +170,7 @@ pub trait LinearTransformationOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
@@ -167,7 +186,7 @@ pub trait LinearTransformationOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
@@ -191,7 +210,7 @@ pub trait LinearTransformationOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
@@ -206,7 +225,7 @@ pub trait LinearTransformationOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: DiagonalProd<BE>,
+        P: DiagonalProd<BE> + LtDiagonalScale,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 }
