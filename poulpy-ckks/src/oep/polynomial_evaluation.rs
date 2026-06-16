@@ -12,7 +12,10 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
-    api::{BSGSPolynomialInfos, CKKSAddOps, CKKSCopyOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps, CKKSSubOps, PowerBasisHelper},
+    api::{
+        BSGSPolynomialInfos, CKKSAddOps, CKKSCopyOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps, CKKSPow2Ops, CKKSSubOps,
+        PowerBasisHelper,
+    },
     default::polynomial_evaluation::PolynomialEvaluationDefault,
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
     polynomial::ComplexBSGSPolynomial,
@@ -95,6 +98,7 @@ where
         + CKKSCopyOps<BE>
         + CKKSImagOps<BE>
         + CKKSMulOps<BE>
+        + CKKSPow2Ops<BE>
         + CKKSSubOps<BE>
         + CKKSMulAddOps<BE>
         + GLWEMulConst<BE>

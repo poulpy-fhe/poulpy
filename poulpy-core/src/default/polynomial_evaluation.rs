@@ -311,13 +311,15 @@ where
 }
 
 /// Scratch bytes consumed by the giant-step engine on top of the per-pair
-/// mul/add scratch: one compact copy of the hoisted `X^{gsp}` plus its prepared
-/// right operand (both alive across a run), and two per-pair operand compacts.
+/// mul/add scratch: the prepared hoisted `X^{gsp}` right operand (alive across a
+/// run) plus the two per-pair operand compacts. `X^{gsp}` itself is prepared
+/// directly from the power basis (no compact copy), as `glwe_prepare_right` reads
+/// only its top effective-precision limbs.
 ///
 /// Kept next to [`eval_monomial_run`] so the buffer count tracks the
 /// `take_compact_scratch` calls it sizes.
 pub fn glwe_eval_giant_steps_extra_tmp_bytes(compact_glwe_bytes: usize, hoisted_right_bytes: usize) -> usize {
-    3 * compact_glwe_bytes + hoisted_right_bytes
+    2 * compact_glwe_bytes + hoisted_right_bytes
 }
 
 /// Evaluates a run of `b = b * xpow + a` pairs that share the same `xpow`.
@@ -340,20 +342,17 @@ where
     A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
     T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
 {
-    let xpow_log_budget = xpow.bsgs_log_budget();
-    let xpow_log_delta = xpow.bsgs_log_delta();
-
     scratch.scope(|run_scratch| {
-        // Hoist: compact `xpow` and prepare it into a reusable right operand.
-        let (mut xpow_compact, run_scratch) = take_compact_scratch(run_scratch, xpow, xpow_log_budget, xpow_log_delta);
-        module.glwe_copy(&mut xpow_compact, xpow);
-        let cols = xpow_compact.rank().as_usize() + 1;
-        let xpow_size = xpow_compact.size();
-        let xpow_effective_k = xpow_compact.bsgs_effective_k();
+        // Hoist: prepare `xpow` into a reusable right operand. `glwe_prepare_right`
+        // reads only the top `xpow_size` (effective_k) limbs, so the operand does not
+        // need to be pre-compacted into its own scratch buffer.
+        let cols = xpow.rank().as_usize() + 1;
+        let xpow_effective_k = xpow.bsgs_effective_k();
+        let xpow_size = xpow_effective_k.div_ceil(xpow.base2k().as_usize());
 
         let (mut xpow_prep, mut run_scratch) = run_scratch.take_cnv_pvec_right_scratch(module, cols, xpow_size);
         run_scratch = run_scratch.apply_mut(|scratch_prep| {
-            glwe_prepare_right(module, &mut xpow_prep, &xpow_compact, xpow_effective_k, scratch_prep);
+            glwe_prepare_right(module, &mut xpow_prep, xpow, xpow_effective_k, scratch_prep);
         });
 
         for &(_, low_idx, high_idx) in pairs {
@@ -378,7 +377,7 @@ where
                     module,
                     precision,
                     &mut b_compact,
-                    &xpow_compact,
+                    xpow,
                     &xpow_prep,
                     xpow_size,
                     tsk,
@@ -487,10 +486,13 @@ where
 {
     let (log_budget, log_delta, cnv_offset) = precision.mul_ct_params(dst, dst, a)?;
 
+    // Size from `a`'s effective_k rather than its full `max_k`: the tensor product only
+    // consumes the top effective_k limbs of `a` (via the prepared right operand), so a
+    // non-compacted `a` must not inflate the intermediate buffer.
     let tensor_layout = GLWELayout {
         n: dst.n(),
         base2k: dst.base2k(),
-        k: dst.max_k().max(a.max_k()),
+        k: dst.max_k().max(a.bsgs_effective_k().into()),
         rank: dst.rank(),
     };
     let scratch_local = scratch.borrow();
