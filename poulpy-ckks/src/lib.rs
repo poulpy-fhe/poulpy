@@ -45,7 +45,7 @@ use poulpy_core::layouts::{BSGSMeta, Base2K, GLWEInfos, GLWEToBackendMut, GLWETo
 use poulpy_hal::layouts::Backend;
 
 pub mod api;
-pub mod cosine;
+pub(crate) mod cosine;
 pub mod default;
 pub(crate) mod delegates;
 

@@ -176,7 +176,7 @@ impl EvalModParameters<CKKSPlaintext<Vec<u8>>> {
 
         // CosContinuous polynomial approximates cos(2π·x); the −1/4 phase
         // shift needed by the double-angle composition is added externally.
-        // CosDiscrete bakes that shift into cosine_approx's target function.
+        // CosDiscrete bakes that shift into approximate_cos's target function.
         let chebyshev_offset_pt = match lit.eval_mod_type {
             EvalModType::SinContinuous | EvalModType::CosDiscrete | EvalModType::Exp => None,
             EvalModType::CosContinuous => {
@@ -408,8 +408,7 @@ where
                 scratch.scope(|local| -> Result<()> {
                     let (mut work, mut local) = local.take_compact_ckks_ciphertext_scratch(&*res);
                     module.ckks_copy(&mut work, &*res, &mut local)?;
-                    module.ckks_square_assign(&mut work, tsk, &mut local)?;
-                    module.ckks_copy(res, &work, &mut local)?;
+                    module.ckks_square_into(res, &work, tsk, &mut local)?;
                     Ok(())
                 })?;
             }

@@ -5,6 +5,8 @@ use poulpy_core::layouts::{BSGSMeta, GGLWEInfos, GLWETensorKeyPrepared, GLWEToBa
 
 use crate::{CKKSCtBounds, SetCKKSInfos, default::eval_mod::EvalModParameters};
 
+/// Homomorphic modular reduction (`x mod 1`) via a trigonometric polynomial
+/// approximation, the core non-linear step of CKKS bootstrapping.
 pub trait CKKSEvalModOps<BE: Backend> {
     fn ckks_eval_mod_tmp_bytes<R, P, T>(&self, res: &R, params: &EvalModParameters<P>, tsk: &T) -> usize
     where
@@ -12,6 +14,10 @@ pub trait CKKSEvalModOps<BE: Backend> {
         P: CKKSCtBounds,
         T: GGLWEInfos;
 
+    /// Evaluates the configured `x mod 1` approximation of `ct` into `res`.
+    ///
+    /// Consumes `params.depth() * log_delta` bits of `log_budget`; errors if
+    /// `ct` has insufficient remaining capacity.
     fn ckks_eval_mod<R, C, P>(
         &self,
         res: &mut R,
