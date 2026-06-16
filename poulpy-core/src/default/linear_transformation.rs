@@ -3,14 +3,9 @@
 //!
 //! This module is scheme-agnostic: CKKS derives scale/capacity metadata and
 //! passes only base2k alignment integers (`a_effective_k`, `cnv_offset`). The
-//! files under `linear_transformation/` follow the phases in `docs/lt_bsgs.md`:
-//! schedule construction (§3), setup/preparation (§5), baby hoisting (§6.2),
-//! giant-step products and rotations (§6.3), and final normalization (§6.4).
-//!
-//! `docs/lt_bsgs_impl.md` is a file-by-file walkthrough of this module: how data
-//! flows through the phases, where each spec saving lands, the two evaluation
-//! paths (lazy DFT vs base-mismatch fallback), and the streamed unprepared-RHS
-//! variant.
+//! files under `linear_transformation/` follow the phases in `docs/linear_transformation.md`:
+//! schedule construction, setup/preparation, baby hoisting, giant-step products
+//! and rotations, and final normalization.
 
 mod baby_steps;
 mod eval;

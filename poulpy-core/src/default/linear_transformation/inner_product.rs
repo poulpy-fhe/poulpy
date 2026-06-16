@@ -1,6 +1,6 @@
 //! Per-giant DFT-domain inner products.
 //!
-//! This is the PROD block from docs/lt_bsgs.md §6.3: for one giant bucket,
+//! This is the PROD block from docs/linear_transformation.md: for one giant bucket,
 //! compute `Σ_k ũ_{j,k} ⊙ rot(v,k)` and leave the result in `VecZnxDft`.
 //! The first term overwrites each output column via `cnv_apply_dft` (which also
 //! zeroes the limbs past the convolution bound); the remaining terms accumulate

@@ -1,6 +1,6 @@
 //! Prepared giant-step evaluation.
 //!
-//! Main loop from docs/lt_bsgs.md §6.3: each giant bucket first runs PROD (a
+//! Main loop from docs/linear_transformation.md: each giant bucket first runs PROD (a
 //! DFT-domain inner product over prepared baby rotations and prepared diagonals),
 //! then ROT rotates that bucket and folds it into a DFT accumulator. The lazy
 //! path keeps body add, DFT automorphism, and cross-giant accumulation in DFT;
@@ -44,17 +44,17 @@ use super::LinearTransformationBabySteps;
 
 /// Per-giant PROD, provided by the diagonal representation itself.
 ///
-/// The shared evaluator [`glwe_eval_giant_steps`] is generic over the diagonal
+/// The shared evaluator `glwe_eval_giant_steps` is generic over the diagonal
 /// type `P` stored in the [`LinearTransformation`]; the only per-flavor step is
 /// how one giant step's `Σ_k ũ_{j,k} ⊙ rot(v,k)` is computed. Each concrete
 /// diagonal type implements this once:
 ///
 /// - [`PreparedDiagonal`] (resident): diagonals are already in convolution
 ///   domain, so the whole giant step is one fused accumulation
-///   ([`glwe_accumulate_prepared_baby_steps_dft`]).
+///   (`glwe_accumulate_prepared_baby_steps_dft`).
 /// - a plaintext diagonal (streamed): each diagonal is prepared on the fly
 ///   through one reused scratch slot
-///   ([`glwe_accumulate_unprepared_baby_steps_dft`]); implemented by the scheme
+///   (`glwe_accumulate_unprepared_baby_steps_dft`); implemented by the scheme
 ///   layer for its plaintext type.
 ///
 /// Dispatching per concrete type — rather than via a blanket keyed on
@@ -112,18 +112,18 @@ pub fn glwe_accumulate_streamed_baby_steps_dft<BE, M, P>(
 /// Generic over the diagonal type `P: DiagonalProd`, so the *same* loop drives
 /// both the resident transform (`P = PreparedDiagonal`) and the streamed
 /// unprepared transform (`P` a plaintext); only the per-giant PROD block
-/// ([`DiagonalProd::accumulate_giant_prod`]) differs. Implements docs/lt_bsgs.md
-/// §6.3-§6.4 and the implementation walkthrough in docs/lt_bsgs_impl.md §4.
+/// ([`DiagonalProd::accumulate_giant_prod`]) differs. Implements the giant-step
+/// products, rotations, and final normalization of docs/linear_transformation.md.
 ///
-/// For each giant step `j` it computes `PROD = Σ_k ũ_{j,k} ⊙ rot(v,k)` in DFT
-/// (§4.2), then rotates by `n1·j` and folds the result into a single
-/// accumulator (§4.3-§4.4). One of two strategies is chosen up front from the
+/// For each giant step `j` it computes `PROD = Σ_k ũ_{j,k} ⊙ rot(v,k)` in DFT,
+/// then rotates by `n1·j` and folds the result into a single accumulator. One of
+/// two strategies is chosen up front from the
 /// `base2k` agreement of `res`, the PROD output, and the keys:
 ///
 /// - **Lazy DFT path** (hot path; bases agree, or no giant rotation): body add,
 ///   giant automorphism, and cross-giant accumulation all stay in `VecZnxDft`.
-///   The only IDFT and the only normalize happen once, at the end (savings
-///   #4-#6, #9). `j == 0` skips ROT entirely.
+///   The only IDFT and the only normalize happen once, at the end. `j == 0`
+///   skips ROT entirely.
 /// - **Fallback path** (base mismatch): PROD is still in DFT, but each giant
 ///   contribution is normalized to SMALL and rotated with the public normalized
 ///   `glwe_automorphism`. Correct, but gives up the lazy savings.

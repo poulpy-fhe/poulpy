@@ -4,7 +4,7 @@
 //! `cnv_offset`) and the result `log_delta` / `log_budget`, delegates the actual
 //! evaluation to the scheme-agnostic core engine
 //! [`GLWELinearTransformations`](poulpy_core::GLWELinearTransformations), and stamps the
-//! CKKS metadata onto the result. See `docs/lt_bsgs.md`.
+//! CKKS metadata onto the result. See `docs/linear_transformation.md`.
 
 use anyhow::Result;
 use poulpy_core::{
@@ -32,7 +32,7 @@ use crate::{
 /// Per-giant streamed PROD for CKKS plaintext diagonals.
 ///
 /// The scheme-side half of [`DiagonalProd`]: where the resident path (core's
-/// [`PreparedDiagonal`](poulpy_core::layouts::prepared::PreparedDiagonal)) fuses
+/// [`PreparedDiagonal`]) fuses
 /// already-prepared diagonals, the streamed path prepares each
 /// [`CKKSPlaintext`] diagonal on the fly. Implementing it here (per concrete
 /// plaintext type) is what lets the resident and streamed transforms share the

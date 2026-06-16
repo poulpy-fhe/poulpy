@@ -1,13 +1,13 @@
 //! Baby-step rotation materialization.
 //!
-//! Implements docs/lt_bsgs.md §6.2. The non-trivial baby rotations share one
+//! Implements docs/linear_transformation.md. The non-trivial baby rotations share one
 //! DFT of the input mask columns, then each key performs VMP -> IDFT -> add body
 //! -> normalize -> automorphism. The resulting SMALL ciphertexts are prepared as
 //! `CnvPVecL` so every giant step can reuse them in convolution form.
 
 //! Baby-step rotation materialization (the prepared LHS).
 //!
-//! Implements docs/lt_bsgs.md §6.2. The non-trivial baby rotations share one
+//! Implements docs/linear_transformation.md. The non-trivial baby rotations share one
 //! DFT of the input mask columns, then each key performs VMP -> IDFT -> add body
 //! -> normalize -> automorphism. The resulting SMALL ciphertexts are prepared
 //! as `CnvPVecL` and stored in a [`LinearTransformationBabySteps`] (whose

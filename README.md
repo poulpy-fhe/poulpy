@@ -10,7 +10,7 @@
 **Poulpy** is a **fast and modular** FHE library that implements Ring-Learning-With-Errors based homomorphic encryption over the Torus. It adopts the bivariate polynomial representation proposed in [Revisiting Key Decomposition Techniques for FHE: Simpler, Faster and More Generic](https://eprint.iacr.org/2023/771) to represent Torus polynomials. Compared with the residue number system (RNS), this representation provides simpler and more reusable arithmetic, a **common plaintext space** for all schemes, and native bridges between schemes. Poulpy also decouples scheme implementations from the polynomial arithmetic backend by being built from the ground up around a **hardware abstraction layer** that closely matches the API of [spqlios-arithmetic](https://github.com/tfhe/spqlios-arithmetic). Leveraging the HAL, users can develop applications generic over the backend and choose a backend at runtime.
 
 <p align="center">
-<img src="docs/lib_diagram.png" />
+<img src="docs/img/lib_diagram.png" />
 </p>
 
 ## Library Crates
