@@ -11,12 +11,12 @@ use std::collections::HashMap;
 
 use poulpy_core::layouts::{Diagonals, Evaluate, LinearTransformationStrategy};
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchAvailable, ScratchOwnedBorrow},
+    api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchAvailable, ScratchOwnedBorrow},
     layouts::{CyclotomicOrder, HostBytesBackend, Module, ScratchArena, TransferFrom},
 };
 
 use crate::{
-    api::{LinearTransformation, LinearTransformationOps},
+    api::{LinearTransformation, LinearTransformationOps, LinearTransformationPrepared},
     encoding::reim::Encoder,
     layouts::{CKKSPlaintext, ComplexDiagonals},
     test_suite::{
@@ -83,11 +83,29 @@ where
     )
 }
 
+/// Materializes the prepared (resident-RHS) form of a plaintext linear
+/// transformation, so the same unified evaluator can be exercised on both the
+/// resident (`P = PreparedDiagonal`) and streamed (`P = CKKSPlaintext`) paths.
+fn prepare_lt<BE>(
+    module: &Module<BE>,
+    lt: &LinearTransformation<CKKSPlaintext<BE::OwnedBuf>>,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> LinearTransformationPrepared<BE>
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE> + LinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+{
+    let first = lt.first_diagonal_plaintext().expect("linear transformation has no diagonals");
+    let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first);
+    module.ckks_prepare_linear_transformation_rhs(&mut prepared, lt, scratch);
+    prepared
+}
+
 /// `dec(lt(enc(a), B)) ≈ B·a` for a complex matrix `B` in BSGS form.
 pub fn test_linear_transformation<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE> + LinearTransformationOps<BE>,
+    Module<BE>: TestContextModule<BE> + LinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
@@ -130,10 +148,11 @@ where
         &mut scratch.borrow(),
     );
 
-    // transpose = false: dec(lt(enc(a), B)) ≈ B·a.
+    // transpose = false: dec(lt(enc(a), B)) ≈ B·a. Resident path (prepared RHS).
+    let prepared_left = prepare_lt(module, &lt_left, &mut scratch.borrow());
     let mut ct_left = alloc_ct(&params, module, params.k);
     module
-        .ckks_eval_linear_transformation_into(&mut ct_left, &ct, &lt_left, &atks, &mut scratch.borrow())
+        .ckks_eval_linear_transformation_self_into(&mut ct_left, &ct, &prepared_left, &atks, &mut scratch.borrow())
         .unwrap();
     let (want_left_re, want_left_im) = b.evaluate((a_re.as_slice(), a_im.as_slice()), strategy);
     assert_decrypt_precision(
@@ -148,11 +167,11 @@ where
         &mut scratch.borrow(),
     );
 
-    // Streamed (unprepared-RHS) path must match the prepared path against the
-    // same reference.
+    // Streamed (plaintext-RHS) path must match the resident path against the
+    // same reference — same unified evaluator, different `P`.
     let mut ct_left_streamed = alloc_ct(&params, module, params.k);
     module
-        .ckks_eval_linear_transformation_streamed_into(&mut ct_left_streamed, &ct, &lt_left, &atks, &mut scratch.borrow())
+        .ckks_eval_linear_transformation_self_into(&mut ct_left_streamed, &ct, &lt_left, &atks, &mut scratch.borrow())
         .unwrap();
     assert_decrypt_precision(
         "linear_transformation_B_times_a_streamed",
@@ -166,10 +185,11 @@ where
         &mut scratch.borrow(),
     );
 
-    // transpose = true: dec(lt(enc(a), Bᵀ)) ≈ Bᵀ·a = a·B.
+    // transpose = true: dec(lt(enc(a), Bᵀ)) ≈ Bᵀ·a = a·B. Resident path.
+    let prepared_right = prepare_lt(module, &lt_right, &mut scratch.borrow());
     let mut ct_right = alloc_ct(&params, module, params.k);
     module
-        .ckks_eval_linear_transformation_into(&mut ct_right, &ct, &lt_right, &atks, &mut scratch.borrow())
+        .ckks_eval_linear_transformation_self_into(&mut ct_right, &ct, &prepared_right, &atks, &mut scratch.borrow())
         .unwrap();
     let mut b_t = b.clone();
     b_t.transpose();

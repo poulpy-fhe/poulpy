@@ -105,7 +105,7 @@ the CKKS layer — the core engine is scheme-agnostic.
 
 ### 3.2 LHS — baby rotations → `CnvPVecL` ([`baby_steps.rs`](../poulpy-core/src/default/linear_transformation/baby_steps.rs), Phase A)
 
-`glwe_prepare_linear_transformation_lhs` materializes `rot(v,k)` for every baby `k` in the
+`glwe_prepare_linear_transformation_baby_steps` materializes `rot(v,k)` for every baby `k` in the
 cache. This is **Phase A** of the spec, and it carries three savings:
 
 - **Saving #3 (free identity).** `k == 0` skips the key-switch and automorphism entirely:
@@ -192,7 +192,7 @@ this final normalize.
 | Saving (spec §8) | Implementation site |
 |---|---|
 | #1 BSGS `O(√\|I\|)` | `linear_transformation_plan` + `optimal_bsgs_giant_step` |
-| #2 Hoisting | `glwe_prepare_linear_transformation_lhs` (`a_dft` computed once) |
+| #2 Hoisting | `glwe_prepare_linear_transformation_baby_steps` (`a_dft` computed once) |
 | #3 Free identities | `rot == 0` branches in baby_steps.rs **and** prepared_giants.rs |
 | #4 Lazy normalize across giants | DFT accumulator + single final normalize (lazy.rs) |
 | #5 Lazy normalize inside PROD | DFT accumulation in inner_product.rs |
@@ -211,7 +211,7 @@ These `*_default` free functions are what a backend forwards to from its
 | Function | Does |
 |---|---|
 | `glwe_prepare_linear_transformation_rhs_default` | Setup §3.1 (prepare.rs). |
-| `glwe_prepare_linear_transformation_lhs_default` | Setup §3.2 / Phase A (baby_steps.rs). |
+| `glwe_prepare_linear_transformation_baby_steps_default` | Setup §3.2 / Phase A (baby_steps.rs). |
 | `glwe_eval_linear_transformation_into_default` | Prepared eval (§4) — asserts ≥ 1 non-empty giant step, then `glwe_eval_giant_steps`. |
 | `glwe_eval_linear_transformation_unprepared_rhs_into_default` | Streamed eval (§6). |
 | `*_tmp_bytes_default` siblings | Scratch sizing. |

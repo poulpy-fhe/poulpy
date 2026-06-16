@@ -36,9 +36,8 @@ pub use crate::layouts::{
 // Reference implementations forwarded to from `crate::oep::LinearTransformationDefault`.
 pub use eval::{
     glwe_eval_linear_transformation_into_default, glwe_eval_linear_transformation_tmp_bytes_default,
-    glwe_eval_linear_transformation_unprepared_rhs_into_default,
-    glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_default, glwe_prepare_linear_transformation_lhs_default,
-    glwe_prepare_linear_transformation_lhs_tmp_bytes_default,
+    glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_default, glwe_prepare_linear_transformation_baby_steps_default,
+    glwe_prepare_linear_transformation_baby_steps_tmp_bytes_default,
 };
 pub use prepare::{glwe_prepare_linear_transformation_rhs_default, glwe_prepare_linear_transformation_rhs_tmp_bytes_default};
 pub use prepared_giants::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft};

@@ -20,7 +20,7 @@ use poulpy_hal::{
 use crate::{
     CKKSCtBounds, CKKSMeta, SetCKKSInfos,
     api::DFTOps,
-    default::dft::{DftFactor, matrices::DftScalar},
+    default::dft::matrices::DftScalar,
     encoding::reim::Encoder,
     layouts::{
         CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, DFTMatrix, DFTMatrixPrepared, DFTPlan, Decode,
@@ -62,15 +62,15 @@ impl<BE: Backend + DFTImpl<BE>> DFTOps<BE> for Module<BE> {
         BE::ckks_new_dft_matrix::<Dir, Fmt, E, F>(self, host_module, encoder, base2k, factor_meta, literal, scratch)
     }
 
-    fn ckks_dft_evaluate_assign<Dir, Fmt, R, Dst, H, K>(
+    fn ckks_dft_evaluate_assign<Dir, Fmt, P, Dst, H, K>(
         &self,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, Dir, Fmt, R>,
+        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: DftFactor<BE>,
+        P: DiagonalProd<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
@@ -78,15 +78,15 @@ impl<BE: Backend + DFTImpl<BE>> DFTOps<BE> for Module<BE> {
         BE::ckks_dft_evaluate_assign(self, ct, dft, keys, scratch)
     }
 
-    fn ckks_coeffs_to_slots<R, Dst, H, K>(
+    fn ckks_coeffs_to_slots<P, Dst, H, K>(
         &self,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, Encode, Standard, R>,
+        dft: &DFTMatrix<BE, Encode, Standard, LinearTransformation<P>>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: DftFactor<BE>,
+        P: DiagonalProd<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
@@ -94,15 +94,15 @@ impl<BE: Backend + DFTImpl<BE>> DFTOps<BE> for Module<BE> {
         BE::ckks_coeffs_to_slots(self, ct, dft, keys, scratch)
     }
 
-    fn ckks_slots_to_coeffs<R, Dst, H, K>(
+    fn ckks_slots_to_coeffs<P, Dst, H, K>(
         &self,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, Decode, Standard, R>,
+        dft: &DFTMatrix<BE, Decode, Standard, LinearTransformation<P>>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: DftFactor<BE>,
+        P: DiagonalProd<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
@@ -110,18 +110,18 @@ impl<BE: Backend + DFTImpl<BE>> DFTOps<BE> for Module<BE> {
         BE::ckks_slots_to_coeffs(self, ct, dft, keys, scratch)
     }
 
-    fn ckks_coeffs_to_slots_split<R, Dst, Src, H, K>(
+    fn ckks_coeffs_to_slots_split<P, Dst, Src, H, K>(
         &self,
         ct_real: &mut Dst,
         ct_imag: &mut Dst,
         ct_in: &Src,
-        dft: &DFTMatrix<BE, Encode, Split, R>,
+        dft: &DFTMatrix<BE, Encode, Split, LinearTransformation<P>>,
         keys: &H,
         conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: DftFactor<BE>,
+        P: DiagonalProd<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -130,17 +130,17 @@ impl<BE: Backend + DFTImpl<BE>> DFTOps<BE> for Module<BE> {
         BE::ckks_coeffs_to_slots_split(self, ct_real, ct_imag, ct_in, dft, keys, conj_key, scratch)
     }
 
-    fn ckks_slots_to_coeffs_split<R, Dst, Src, H, K>(
+    fn ckks_slots_to_coeffs_split<P, Dst, Src, H, K>(
         &self,
         op_out: &mut Dst,
         ct_real: &Src,
         ct_imag: &Src,
-        dft: &DFTMatrix<BE, Decode, Split, R>,
+        dft: &DFTMatrix<BE, Decode, Split, LinearTransformation<P>>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: DftFactor<BE>,
+        P: DiagonalProd<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -149,17 +149,17 @@ impl<BE: Backend + DFTImpl<BE>> DFTOps<BE> for Module<BE> {
         BE::ckks_slots_to_coeffs_split(self, op_out, ct_real, ct_imag, dft, keys, scratch)
     }
 
-    fn ckks_coeffs_to_slots_repack<R, Dst, Src, H, K>(
+    fn ckks_coeffs_to_slots_repack<P, Dst, Src, H, K>(
         &self,
         ct_out: &mut Dst,
         ct_in: &Src,
-        dft: &DFTMatrix<BE, Encode, Repack, R>,
+        dft: &DFTMatrix<BE, Encode, Repack, LinearTransformation<P>>,
         keys: &H,
         conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: DftFactor<BE>,
+        P: DiagonalProd<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -168,16 +168,16 @@ impl<BE: Backend + DFTImpl<BE>> DFTOps<BE> for Module<BE> {
         BE::ckks_coeffs_to_slots_repack(self, ct_out, ct_in, dft, keys, conj_key, scratch)
     }
 
-    fn ckks_slots_to_coeffs_repack<R, Dst, Src, H, K>(
+    fn ckks_slots_to_coeffs_repack<P, Dst, Src, H, K>(
         &self,
         op_out: &mut Dst,
         ct_in: &Src,
-        dft: &DFTMatrix<BE, Decode, Repack, R>,
+        dft: &DFTMatrix<BE, Decode, Repack, LinearTransformation<P>>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: DftFactor<BE>,
+        P: DiagonalProd<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,

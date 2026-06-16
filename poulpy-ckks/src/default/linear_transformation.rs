@@ -43,6 +43,10 @@ impl<BE: Backend, D: Data> DiagonalProd<BE> for CKKSPlaintext<D>
 where
     CKKSPlaintext<D>: GLWEToBackendRef<BE>,
 {
+    fn diag_log_scale(&self) -> usize {
+        self.log_delta()
+    }
+
     fn accumulate_giant_prod<M>(
         module: &M,
         cnv_offset_hi: usize,
@@ -122,12 +126,12 @@ where
         self.glwe_prepare_linear_transformation_rhs_tmp_bytes(pt_infos)
     }
 
-    fn ckks_prepare_linear_transformation_lhs_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
+    fn ckks_prepare_linear_transformation_baby_steps_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
     where
         C: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        self.glwe_prepare_linear_transformation_lhs_tmp_bytes(ct, key)
+        self.glwe_prepare_linear_transformation_baby_steps_tmp_bytes(ct, key)
     }
 
     fn ckks_eval_linear_transformation_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
@@ -167,7 +171,7 @@ where
         self.glwe_prepare_linear_transformation_rhs(prepared, lt, scratch);
     }
 
-    fn ckks_prepare_linear_transformation_lhs<Src, H, K>(
+    fn ckks_prepare_linear_transformation_baby_steps<Src, H, K>(
         &self,
         babies: &mut LinearTransformationBabySteps<BE>,
         src: &Src,
@@ -201,118 +205,16 @@ where
         } else {
             src.size()
         };
-        self.glwe_prepare_linear_transformation_lhs(babies, src, src.effective_k(), keys, key_size, scratch);
+        self.glwe_prepare_linear_transformation_baby_steps(babies, src, src.effective_k(), keys, key_size, scratch);
         Ok(())
     }
 
-    // ---------- eval (prepared) ----------
-
-    fn ckks_eval_prepared_linear_transformation_into<Dst, Src, H, K>(
-        &self,
-        dst: &mut Dst,
-        src: &Src,
-        prepared: &LinearTransformationPrepared<BE>,
-        babies: &LinearTransformationBabySteps<BE>,
-        keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-    {
-        check_required_keys(prepared, babies, keys, self.cyclotomic_order())?;
-
-        let first = prepared
-            .first_diagonal_plaintext()
-            .expect("prepared linear transformation has no diagonals");
-        let (res_log_budget, res_log_delta, cnv_offset) = lt_mul_params(dst, src, first.log_scale(), first.max_k().as_usize())?;
-        let key_size = key_size_for_prepared(self.n(), prepared, dst, src, keys, cnv_offset);
-        self.glwe_eval_linear_transformation_into(cnv_offset, dst, babies, prepared, keys, key_size, scratch);
-        dst.set_log_budget(res_log_budget);
-        dst.set_log_delta(res_log_delta);
-        Ok(())
-    }
-
-    fn ckks_eval_prepared_linear_transformation_assign<Dst, H, K>(
-        &self,
-        dst: &mut Dst,
-        prepared: &LinearTransformationPrepared<BE>,
-        babies: &LinearTransformationBabySteps<BE>,
-        keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-    {
-        let mut tmp = self.ckks_ciphertext_alloc_from_infos(dst);
-        tmp.set_meta(dst.meta());
-        self.ckks_eval_prepared_linear_transformation_into(&mut tmp, dst, prepared, babies, keys, scratch)?;
-        self.glwe_copy(dst, &tmp);
-        dst.set_meta(tmp.meta());
-        Ok(())
-    }
-
-    // ---------- one-shot ----------
+    // ---------- eval (caller-supplied baby cache) ----------
 
     fn ckks_eval_linear_transformation_into<Dst, Src, P, H, K>(
         &self,
         dst: &mut Dst,
         src: &Src,
-        lt: &LinearTransformation<P>,
-        keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-    {
-        let first_plaintext = lt
-            .first_diagonal_plaintext()
-            .ok_or_else(|| anyhow::anyhow!("linear transformation has no diagonals"))?;
-
-        let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(self, &lt.index(), first_plaintext);
-        self.ckks_prepare_linear_transformation_rhs(&mut prepared, lt, scratch);
-
-        let mut babies = LinearTransformationBabySteps::alloc(self, prepared.baby_steps(), src);
-        self.ckks_prepare_linear_transformation_lhs(&mut babies, src, keys, scratch)?;
-
-        self.ckks_eval_prepared_linear_transformation_into(dst, src, &prepared, &babies, keys, scratch)
-    }
-
-    fn ckks_eval_linear_transformation_assign<Dst, P, H, K>(
-        &self,
-        dst: &mut Dst,
-        lt: &LinearTransformation<P>,
-        keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-    {
-        let mut tmp = self.ckks_ciphertext_alloc_from_infos(dst);
-        tmp.set_meta(dst.meta());
-        self.ckks_eval_linear_transformation_into(&mut tmp, dst, lt, keys, scratch)?;
-        self.glwe_copy(dst, &tmp);
-        dst.set_meta(tmp.meta());
-        Ok(())
-    }
-
-    // ---------- unprepared RHS, caller-supplied baby cache ----------
-
-    fn ckks_eval_linear_transformation_unprepared_into<Dst, Src, P, H, K>(
-        &self,
-        dst: &mut Dst,
-        src: &Src,
         babies: &LinearTransformationBabySteps<BE>,
         lt: &LinearTransformation<P>,
         keys: &H,
@@ -321,54 +223,28 @@ where
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
+        P: DiagonalProd<BE>,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
-        let first_plaintext = lt
+        check_required_keys(lt, babies, keys, self.cyclotomic_order())?;
+
+        let first = lt
             .first_diagonal_plaintext()
             .ok_or_else(|| anyhow::anyhow!("linear transformation has no diagonals"))?;
-
-        // All non-zero giant rotations must have an automorphism key (keyed by
-        // Galois element); the caller is responsible for `babies` covering the
-        // baby rotations.
-        let cyclotomic_order = self.cyclotomic_order();
-        let has_nonzero_giant_rotation = lt.giant_steps.iter().any(|gs| gs.rot != 0 && !gs.diagonals.is_empty());
-        for gs in &lt.giant_steps {
-            if gs.rot != 0
-                && !gs.diagonals.is_empty()
-                && keys.get_automorphism_key(galois_element(gs.rot, cyclotomic_order)).is_none()
-            {
-                return Err(CKKSCompositionError::MissingAutomorphismKey {
-                    op: "linear_transformation",
-                    rotation: gs.rot,
-                }
-                .into());
-            }
-        }
-
-        let (res_log_budget, res_log_delta, cnv_offset) =
-            lt_mul_params(dst, src, first_plaintext.log_delta(), first_plaintext.max_k().as_usize())?;
-        let key_size = if has_nonzero_giant_rotation {
-            truncated_lt_key_size(
-                self.n(),
-                dst.size(),
-                src.size(),
-                keys,
-                first_plaintext.log_delta(),
-                first_plaintext.max_k().as_usize(),
-                cnv_offset,
-            )
-        } else {
-            src.size()
-        };
-        self.glwe_eval_linear_transformation_unprepared_rhs_into(cnv_offset, dst, babies, lt, keys, key_size, scratch);
+        // The diagonal scale (`diag_log_scale`) and storage precision (`max_k`) are
+        // read uniformly off the first diagonal, regardless of `P` (resident or
+        // streamed) — the only representation-dependent step in this wrapper.
+        let (pt_log_scale, pt_max_k) = (first.diag_log_scale(), first.max_k().as_usize());
+        let (res_log_budget, res_log_delta, cnv_offset) = lt_mul_params(dst, src, pt_log_scale, pt_max_k)?;
+        let key_size = lt_key_size(self.n(), lt, dst, src, keys, cnv_offset, pt_log_scale, pt_max_k);
+        self.glwe_eval_linear_transformation_into(cnv_offset, dst, babies, lt, keys, key_size, scratch);
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
         Ok(())
     }
 
-    fn ckks_eval_linear_transformation_unprepared_assign<Dst, P, H, K>(
+    fn ckks_eval_linear_transformation_assign<Dst, P, H, K>(
         &self,
         dst: &mut Dst,
         babies: &LinearTransformationBabySteps<BE>,
@@ -378,21 +254,21 @@ where
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
+        P: DiagonalProd<BE>,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
         let mut tmp = self.ckks_ciphertext_alloc_from_infos(dst);
         tmp.set_meta(dst.meta());
-        self.ckks_eval_linear_transformation_unprepared_into(&mut tmp, dst, babies, lt, keys, scratch)?;
+        self.ckks_eval_linear_transformation_into(&mut tmp, dst, babies, lt, keys, scratch)?;
         self.glwe_copy(dst, &tmp);
         dst.set_meta(tmp.meta());
         Ok(())
     }
 
-    // ---------- streamed (unprepared RHS, self-allocated baby cache) ----------
+    // ---------- eval (self-allocated baby cache) ----------
 
-    fn ckks_eval_linear_transformation_streamed_into<Dst, Src, P, H, K>(
+    fn ckks_eval_linear_transformation_self_into<Dst, Src, P, H, K>(
         &self,
         dst: &mut Dst,
         src: &Src,
@@ -403,18 +279,18 @@ where
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
+        P: DiagonalProd<BE>,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
-        // Only the (small) input baby cache is materialized; the matrix streams.
-        let plan = lt.index();
-        let mut babies = LinearTransformationBabySteps::alloc(self, &plan.baby_steps, src);
-        self.ckks_prepare_linear_transformation_lhs(&mut babies, src, keys, scratch)?;
-        self.ckks_eval_linear_transformation_unprepared_into(dst, src, &babies, lt, keys, scratch)
+        // Only the (small) input baby cache is materialized here; with a plaintext
+        // `lt` the matrix RHS itself is streamed inside the eval.
+        let mut babies = LinearTransformationBabySteps::alloc(self, lt.baby_steps(), src);
+        self.ckks_prepare_linear_transformation_baby_steps(&mut babies, src, keys, scratch)?;
+        self.ckks_eval_linear_transformation_into(dst, src, &babies, lt, keys, scratch)
     }
 
-    fn ckks_eval_linear_transformation_streamed_assign<Dst, P, H, K>(
+    fn ckks_eval_linear_transformation_self_assign<Dst, P, H, K>(
         &self,
         dst: &mut Dst,
         lt: &LinearTransformation<P>,
@@ -423,24 +299,23 @@ where
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
+        P: DiagonalProd<BE>,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
         let mut tmp = self.ckks_ciphertext_alloc_from_infos(dst);
         tmp.set_meta(dst.meta());
-        self.ckks_eval_linear_transformation_streamed_into(&mut tmp, dst, lt, keys, scratch)?;
+        self.ckks_eval_linear_transformation_self_into(&mut tmp, dst, lt, keys, scratch)?;
         self.glwe_copy(dst, &tmp);
         dst.set_meta(tmp.meta());
         Ok(())
     }
 }
 
-/// Verifies that all automorphism keys required by `prepared` are present
-/// (keyed by Galois element) and that `babies` covers every baby rotation
-/// `prepared` needs.
-fn check_required_keys<BE: Backend, H, K>(
-    prepared: &LinearTransformationPrepared<BE>,
+/// Verifies that all automorphism keys required by `lt` are present (keyed by
+/// Galois element) and that `babies` covers every baby rotation `lt` needs.
+fn check_required_keys<BE: Backend, P, H, K>(
+    lt: &LinearTransformation<P>,
     babies: &LinearTransformationBabySteps<BE>,
     keys: &H,
     cyclotomic_order: i64,
@@ -449,13 +324,19 @@ where
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
-    for rotation in prepared.baby_steps().iter().copied() {
+    for rotation in lt.baby_steps().iter().copied() {
         anyhow::ensure!(
             babies.contains_baby_step(rotation),
             "missing prepared baby-step rotation {rotation}"
         );
     }
-    for rotation in prepared.giant_steps.iter().map(|gs| gs.rot).filter(|&r| r != 0) {
+    for rotation in lt
+        .giant_steps
+        .iter()
+        .filter(|gs| !gs.diagonals.is_empty())
+        .map(|gs| gs.rot)
+        .filter(|&r| r != 0)
+    {
         let gal_el = galois_element(rotation, cyclotomic_order);
         if keys.get_automorphism_key(gal_el).is_none() {
             return Err(CKKSCompositionError::MissingAutomorphismKey {
@@ -474,13 +355,18 @@ where
 /// keyswitch output is truncated: errors introduced by the giant rotations sit
 /// under the diagonal scale (the convolution happened first), minus whatever
 /// slack `res_offset` already consumed to fit the result precision in `max_k`.
-fn key_size_for_prepared<BE: Backend, Dst, Src, H, K>(
+/// `pt_log_scale` / `pt_max_k` describe the transform's first diagonal (read via
+/// [`DiagonalProd::diag_log_scale`] / [`LWEInfos::max_k`]).
+#[allow(clippy::too_many_arguments)]
+fn lt_key_size<BE: Backend, P, Dst, Src, H, K>(
     n: usize,
-    prepared: &LinearTransformationPrepared<BE>,
+    lt: &LinearTransformation<P>,
     dst: &Dst,
     src: &Src,
     keys: &H,
     cnv_offset: usize,
+    pt_log_scale: usize,
+    pt_max_k: usize,
 ) -> usize
 where
     Dst: LWEInfos,
@@ -488,20 +374,9 @@ where
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
-    let has_nonzero_giant_rotation = prepared.giant_steps.iter().any(|gs| gs.rot != 0);
+    let has_nonzero_giant_rotation = lt.giant_steps.iter().any(|gs| gs.rot != 0 && !gs.diagonals.is_empty());
     if has_nonzero_giant_rotation {
-        let first = prepared
-            .first_diagonal_plaintext()
-            .expect("prepared linear transformation has no diagonals");
-        truncated_lt_key_size(
-            n,
-            dst.size(),
-            src.size(),
-            keys,
-            first.log_scale(),
-            first.max_k().as_usize(),
-            cnv_offset,
-        )
+        truncated_lt_key_size(n, dst.size(), src.size(), keys, pt_log_scale, pt_max_k, cnv_offset)
     } else {
         src.size()
     }

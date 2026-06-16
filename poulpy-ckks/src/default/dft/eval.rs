@@ -202,103 +202,14 @@ where
     Ok(DFTMatrix::from_factors(DFTMatrixFactors::new(plan, lts)))
 }
 
-/// Abstracts a single homomorphic-DFT factor over its storage representation: a
-/// prepared [`LinearTransformationPrepared`] (resident, the default) or an
-/// unprepared [`LinearTransformation`] (streamed, materialized per factor at
-/// eval time). Implemented for exactly those two; [`DFTMatrix`] evaluates
-/// by delegating each factor to [`Self::dft_eval_assign`], so the prepared and
-/// streamed paths share one evaluator.
-pub trait DftFactor<BE: Backend> {
-    /// Galois elements whose automorphism keys this factor's evaluation needs.
-    fn galois_elements(&self, cyclotomic_order: i64) -> Vec<i64>;
-
-    /// The baby-step rotations this factor needs, so the caller can size and
-    /// populate the input baby cache ([`LinearTransformationBabySteps`]).
-    fn dft_baby_steps(&self) -> Vec<i64>;
-
-    /// Applies this factor in place to `ct` (one DFT factor's linear transform),
-    /// reusing the caller-supplied, already prepared `babies` cache. Baby cache
-    /// allocation/preparation is the caller's responsibility (it depends on the
-    /// running `ct`, not on this factor's storage), which is why the prepared and
-    /// streamed branches share one signature and neither allocates here.
-    fn eval_assign<Dst, H, K>(
-        &self,
-        module: &Module<BE>,
-        ct: &mut Dst,
-        babies: &LinearTransformationBabySteps<BE>,
-        keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Module<BE>: LinearTransformationOps<BE>,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
-}
-
-impl<BE: Backend> DftFactor<BE> for LinearTransformationPrepared<BE> {
-    fn galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
-        LinearTransformation::galois_elements(self, cyclotomic_order)
-    }
-
-    fn dft_baby_steps(&self) -> Vec<i64> {
-        self.baby_steps().to_vec()
-    }
-
-    fn eval_assign<Dst, H, K>(
-        &self,
-        module: &Module<BE>,
-        ct: &mut Dst,
-        babies: &LinearTransformationBabySteps<BE>,
-        keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Module<BE>: LinearTransformationOps<BE>,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-    {
-        module.ckks_eval_prepared_linear_transformation_assign(ct, self, babies, keys, scratch)
-    }
-}
-
-impl<BE: Backend> DftFactor<BE> for DftFactorLt<BE> {
-    fn galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
-        LinearTransformation::galois_elements(self, cyclotomic_order)
-    }
-
-    fn dft_baby_steps(&self) -> Vec<i64> {
-        self.index().baby_steps
-    }
-
-    fn eval_assign<Dst, H, K>(
-        &self,
-        module: &Module<BE>,
-        ct: &mut Dst,
-        babies: &LinearTransformationBabySteps<BE>,
-        keys: &H,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        Module<BE>: LinearTransformationOps<BE>,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-    {
-        // Streams the diagonals: each is prepared on the fly inside the eval.
-        module.ckks_eval_linear_transformation_unprepared_assign(ct, babies, self, keys, scratch)
-    }
-}
-
-impl<BE: Backend, Dir, Fmt: DftFormat, R: DftFactor<BE>> DFTMatrix<BE, Dir, Fmt, R> {
+impl<BE: Backend, Dir, Fmt: DftFormat, P> DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>> {
     /// The distinct Galois elements whose automorphism keys evaluating this
     /// transform requires (the union over all factors, plus the `slots` repack
     /// rotation for the sparse path).
     pub fn galois_elements(&self, cyclotomic_order: i64) -> Vec<i64> {
         let mut set: std::collections::BTreeSet<i64> = std::collections::BTreeSet::new();
         for f in self.factor_operands() {
-            set.extend(DftFactor::galois_elements(f, cyclotomic_order));
+            set.extend(f.galois_elements(cyclotomic_order));
         }
         if self.is_sparse() {
             set.insert(poulpy_hal::layouts::galois_element(
@@ -314,20 +225,24 @@ impl<BE: Backend, Dir, Fmt: DftFormat, R: DftFactor<BE>> DFTMatrix<BE, Dir, Fmt,
 
 /// Evaluates the homomorphic (I)DFT `dft` in place on `ct`.
 ///
-/// Chains one prepared linear transformation per factor, preparing the baby
-/// rotations of the running ciphertext each time. No explicit rescale is needed
-/// (the plaintext-multiply realigns to the input `log_delta`, see the module
-/// docs). The input `ct.log_budget()` must be at least `dft.consumed_bits()`.
-pub fn ckks_dft_evaluate_assign<BE, Dir, Fmt, R, Dst, H, K>(
+/// Chains one linear transformation per factor — generic over the diagonal
+/// representation `P` (resident `PreparedDiagonal` or streamed plaintext),
+/// dispatched by the single unified
+/// [`ckks_eval_linear_transformation_assign`](LinearTransformationOps::ckks_eval_linear_transformation_assign)
+/// — preparing the baby rotations of the running ciphertext each time. No
+/// explicit rescale is needed (the plaintext-multiply realigns to the input
+/// `log_delta`, see the module docs). The input `ct.log_budget()` must be at
+/// least `dft.consumed_bits()`.
+pub fn ckks_dft_evaluate_assign<BE, Dir, Fmt, P, Dst, H, K>(
     module: &Module<BE>,
     ct: &mut Dst,
-    dft: &DFTMatrix<BE, Dir, Fmt, R>,
+    dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
-    R: DftFactor<BE>,
+    P: DiagonalProd<BE>,
     Module<BE>: LinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -335,12 +250,12 @@ where
 {
     // One factor at a time. The input baby cache depends on the running `ct`
     // (mutated each factor), so it is (re)allocated and prepared here per factor;
-    // the representation (prepared/streamed) only decides how each factor's RHS is
-    // materialized — see [`DftFactor::eval_assign`].
+    // `P` only decides how each factor's RHS is materialized inside the unified
+    // linear-transformation eval (resident vs streamed).
     for factor in dft.factor_operands() {
-        let mut babies = LinearTransformationBabySteps::alloc(module, &factor.dft_baby_steps(), ct);
-        module.ckks_prepare_linear_transformation_lhs(&mut babies, ct, keys, scratch)?;
-        factor.eval_assign(module, ct, &babies, keys, scratch)?;
+        let mut babies = LinearTransformationBabySteps::alloc(module, factor.baby_steps(), ct);
+        module.ckks_prepare_linear_transformation_baby_steps(&mut babies, ct, keys, scratch)?;
+        module.ckks_eval_linear_transformation_assign(ct, &babies, factor, keys, scratch)?;
     }
     Ok(())
 }
@@ -349,16 +264,16 @@ where
 /// (IDFT) matrix in place. `dft.literal.kind` must be [`DFTType::Encode`] and the
 /// format [`DFTOutputFormat::Standard`] (the real/imag-splitting formats are a later
 /// increment).
-pub fn ckks_coeffs_to_slots_assign<BE, R, Dst, H, K>(
+pub fn ckks_coeffs_to_slots_assign<BE, P, Dst, H, K>(
     module: &Module<BE>,
     ct: &mut Dst,
-    dft: &DFTMatrix<BE, Encode, Standard, R>,
+    dft: &DFTMatrix<BE, Encode, Standard, LinearTransformation<P>>,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
-    R: DftFactor<BE>,
+    P: DiagonalProd<BE>,
     Module<BE>: LinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -369,16 +284,16 @@ where
 
 /// Homomorphic decoding (SlotsToCoeffs), `Standard` format: evaluates the Decode
 /// (DFT) matrix in place. `dft.literal.kind` must be [`DFTType::Decode`].
-pub fn ckks_slots_to_coeffs_assign<BE, R, Dst, H, K>(
+pub fn ckks_slots_to_coeffs_assign<BE, P, Dst, H, K>(
     module: &Module<BE>,
     ct: &mut Dst,
-    dft: &DFTMatrix<BE, Decode, Standard, R>,
+    dft: &DFTMatrix<BE, Decode, Standard, LinearTransformation<P>>,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
-    R: DftFactor<BE>,
+    P: DiagonalProd<BE>,
     Module<BE>: LinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -397,19 +312,19 @@ where
 /// key (Galois element `−1`). On return, `ct_real` holds the real parts and
 /// `ct_imag` the imaginary parts. Consumes `ct_in` by reference (copied).
 #[allow(clippy::too_many_arguments)]
-pub fn ckks_coeffs_to_slots_split<BE, R, Dst, Src, H, K>(
+pub fn ckks_coeffs_to_slots_split<BE, P, Dst, Src, H, K>(
     module: &Module<BE>,
     ct_real: &mut Dst,
     ct_imag: &mut Dst,
     ct_in: &Src,
-    dft: &DFTMatrix<BE, Encode, Split, R>,
+    dft: &DFTMatrix<BE, Encode, Split, LinearTransformation<P>>,
     keys: &H,
     conj_key: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
-    R: DftFactor<BE>,
+    P: DiagonalProd<BE>,
     Module<BE>: LinearTransformationOps<BE>
         + CnvPVecAlloc<BE>
         + CKKSModuleAlloc<BE>
@@ -443,18 +358,18 @@ where
 ///
 /// Combines `ct_real + i·ct_imag`, then evaluates the Decode matrix. Writes the
 /// result into `op_out`.
-pub fn ckks_slots_to_coeffs_split<BE, R, Dst, Src, H, K>(
+pub fn ckks_slots_to_coeffs_split<BE, P, Dst, Src, H, K>(
     module: &Module<BE>,
     op_out: &mut Dst,
     ct_real: &Src,
     ct_imag: &Src,
-    dft: &DFTMatrix<BE, Decode, Split, R>,
+    dft: &DFTMatrix<BE, Decode, Split, LinearTransformation<P>>,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
-    R: DftFactor<BE>,
+    P: DiagonalProd<BE>,
     Module<BE>: LinearTransformationOps<BE> + CnvPVecAlloc<BE> + CKKSAddOps<BE> + CKKSImagOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
@@ -475,18 +390,18 @@ where
 /// `Re` in the left `slots` and `Im` in the right `slots` of each `2·slots` period.
 /// The live slot count doubles, so `ct_out.log_sparsity` is decremented by one.
 #[allow(clippy::too_many_arguments)]
-pub fn ckks_coeffs_to_slots_repack<BE, R, Dst, Src, H, K>(
+pub fn ckks_coeffs_to_slots_repack<BE, P, Dst, Src, H, K>(
     module: &Module<BE>,
     ct_out: &mut Dst,
     ct_in: &Src,
-    dft: &DFTMatrix<BE, Encode, Repack, R>,
+    dft: &DFTMatrix<BE, Encode, Repack, LinearTransformation<P>>,
     keys: &H,
     conj_key: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
-    R: DftFactor<BE>,
+    P: DiagonalProd<BE>,
     Module<BE>: LinearTransformationOps<BE>
         + CnvPVecAlloc<BE>
         + CKKSModuleAlloc<BE>
@@ -532,17 +447,17 @@ where
 /// `[Re | Im]` real packing into the complex form, so this is just an in-place
 /// evaluation. The live slot count halves, so `op_out.log_sparsity` is incremented
 /// by one.
-pub fn ckks_slots_to_coeffs_repack<BE, R, Dst, Src, H, K>(
+pub fn ckks_slots_to_coeffs_repack<BE, P, Dst, Src, H, K>(
     module: &Module<BE>,
     op_out: &mut Dst,
     ct_in: &Src,
-    dft: &DFTMatrix<BE, Decode, Repack, R>,
+    dft: &DFTMatrix<BE, Decode, Repack, LinearTransformation<P>>,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
-    R: DftFactor<BE>,
+    P: DiagonalProd<BE>,
     Module<BE>: LinearTransformationOps<BE> + CnvPVecAlloc<BE> + CKKSCopyOps<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,

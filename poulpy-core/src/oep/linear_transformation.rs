@@ -35,7 +35,7 @@ pub unsafe trait LinearTransformationImpl<BE: Backend>: Backend {
         B: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_prepare_linear_transformation_lhs_tmp_bytes<A, K>(module: &Module<BE>, a: &A, key: &K) -> usize
+    fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(module: &Module<BE>, a: &A, key: &K) -> usize
     where
         A: GLWEInfos,
         K: GGLWEInfos;
@@ -52,7 +52,7 @@ pub unsafe trait LinearTransformationImpl<BE: Backend>: Backend {
     ) where
         P: GLWEToBackendRef<BE> + GLWEInfos;
 
-    fn glwe_prepare_linear_transformation_lhs<A, H, K>(
+    fn glwe_prepare_linear_transformation_baby_steps<A, H, K>(
         module: &Module<BE>,
         cache: &mut LinearTransformationBabySteps<BE>,
         a: &A,
@@ -65,21 +65,7 @@ pub unsafe trait LinearTransformationImpl<BE: Backend>: Backend {
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
-    fn glwe_eval_linear_transformation_into<R, H, K>(
-        module: &Module<BE>,
-        cnv_offset: usize,
-        res: &mut R,
-        lhs: &LinearTransformationBabySteps<BE>,
-        rhs: &LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>>,
-        keys: &H,
-        key_size: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
-
-    fn glwe_eval_linear_transformation_unprepared_rhs_into<R, P, H, K>(
+    fn glwe_eval_linear_transformation_into<R, P, H, K>(
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut R,
@@ -90,7 +76,7 @@ pub unsafe trait LinearTransformationImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: GLWEToBackendRef<BE> + GLWEInfos + crate::default::linear_transformation::DiagonalProd<BE>,
+        P: crate::default::linear_transformation::DiagonalProd<BE>,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 }
@@ -124,7 +110,7 @@ pub trait LinearTransformationDefault<BE: Backend> {
         B: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_prepare_linear_transformation_lhs_tmp_bytes_default<A, K>(&self, a: &A, key: &K) -> usize
+    fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes_default<A, K>(&self, a: &A, key: &K) -> usize
     where
         A: GLWEInfos,
         K: GGLWEInfos;
@@ -141,7 +127,7 @@ pub trait LinearTransformationDefault<BE: Backend> {
     ) where
         P: GLWEToBackendRef<BE> + GLWEInfos;
 
-    fn glwe_prepare_linear_transformation_lhs_default<A, H, K>(
+    fn glwe_prepare_linear_transformation_baby_steps_default<A, H, K>(
         &self,
         cache: &mut LinearTransformationBabySteps<BE>,
         a: &A,
@@ -154,21 +140,7 @@ pub trait LinearTransformationDefault<BE: Backend> {
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
-    fn glwe_eval_linear_transformation_into_default<R, H, K>(
-        &self,
-        cnv_offset: usize,
-        res: &mut R,
-        lhs: &LinearTransformationBabySteps<BE>,
-        rhs: &LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>>,
-        keys: &H,
-        key_size: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>;
-
-    fn glwe_eval_linear_transformation_unprepared_rhs_into_default<R, P, H, K>(
+    fn glwe_eval_linear_transformation_into_default<R, P, H, K>(
         &self,
         cnv_offset: usize,
         res: &mut R,
@@ -179,7 +151,7 @@ pub trait LinearTransformationDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: GLWEToBackendRef<BE> + GLWEInfos + crate::default::linear_transformation::DiagonalProd<BE>,
+        P: crate::default::linear_transformation::DiagonalProd<BE>,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 }
@@ -216,12 +188,12 @@ where
         module.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_default(res, a, pt, key)
     }
 
-    fn glwe_prepare_linear_transformation_lhs_tmp_bytes<A, K>(module: &Module<BE>, a: &A, key: &K) -> usize
+    fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<A, K>(module: &Module<BE>, a: &A, key: &K) -> usize
     where
         A: GLWEInfos,
         K: GGLWEInfos,
     {
-        module.glwe_prepare_linear_transformation_lhs_tmp_bytes_default(a, key)
+        module.glwe_prepare_linear_transformation_baby_steps_tmp_bytes_default(a, key)
     }
 
     fn glwe_prepare_linear_transformation_rhs_tmp_bytes<P>(module: &Module<BE>, pt_infos: &P) -> usize
@@ -242,7 +214,7 @@ where
         module.glwe_prepare_linear_transformation_rhs_default(prepared, lt, scratch)
     }
 
-    fn glwe_prepare_linear_transformation_lhs<A, H, K>(
+    fn glwe_prepare_linear_transformation_baby_steps<A, H, K>(
         module: &Module<BE>,
         cache: &mut LinearTransformationBabySteps<BE>,
         a: &A,
@@ -255,27 +227,10 @@ where
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
-        module.glwe_prepare_linear_transformation_lhs_default(cache, a, a_effective_k, keys, key_size, scratch)
+        module.glwe_prepare_linear_transformation_baby_steps_default(cache, a, a_effective_k, keys, key_size, scratch)
     }
 
-    fn glwe_eval_linear_transformation_into<R, H, K>(
-        module: &Module<BE>,
-        cnv_offset: usize,
-        res: &mut R,
-        lhs: &LinearTransformationBabySteps<BE>,
-        rhs: &LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>>,
-        keys: &H,
-        key_size: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        H: GLWEAutomorphismKeyHelper<K, BE>,
-    {
-        module.glwe_eval_linear_transformation_into_default(cnv_offset, res, lhs, rhs, keys, key_size, scratch)
-    }
-
-    fn glwe_eval_linear_transformation_unprepared_rhs_into<R, P, H, K>(
+    fn glwe_eval_linear_transformation_into<R, P, H, K>(
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut R,
@@ -286,11 +241,11 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        P: GLWEToBackendRef<BE> + GLWEInfos + crate::default::linear_transformation::DiagonalProd<BE>,
+        P: crate::default::linear_transformation::DiagonalProd<BE>,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
-        module.glwe_eval_linear_transformation_unprepared_rhs_into_default(cnv_offset, res, lhs, rhs, keys, key_size, scratch)
+        module.glwe_eval_linear_transformation_into_default(cnv_offset, res, lhs, rhs, keys, key_size, scratch)
     }
 }
 
@@ -339,14 +294,17 @@ macro_rules! impl_linear_transformation_defaults_full {
                 >(self, res, a, pt, key)
             }
 
-            fn glwe_prepare_linear_transformation_lhs_tmp_bytes_default<A, K>(&self, a: &A, key: &K) -> usize
+            fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes_default<A, K>(&self, a: &A, key: &K) -> usize
             where
                 A: $crate::layouts::GLWEInfos,
                 K: $crate::layouts::GGLWEInfos,
             {
-                $crate::default::linear_transformation::glwe_prepare_linear_transformation_lhs_tmp_bytes_default::<$be, _, _, _>(
-                    self, a, key,
-                )
+                $crate::default::linear_transformation::glwe_prepare_linear_transformation_baby_steps_tmp_bytes_default::<
+                    $be,
+                    _,
+                    _,
+                    _,
+                >(self, a, key)
             }
 
             fn glwe_prepare_linear_transformation_rhs_tmp_bytes_default<P>(&self, pt_infos: &P) -> usize
@@ -373,7 +331,7 @@ macro_rules! impl_linear_transformation_defaults_full {
                 )
             }
 
-            fn glwe_prepare_linear_transformation_lhs_default<A, H, K>(
+            fn glwe_prepare_linear_transformation_baby_steps_default<A, H, K>(
                 &self,
                 cache: &mut $crate::layouts::prepared::LinearTransformationBabySteps<$be>,
                 a: &A,
@@ -388,7 +346,7 @@ macro_rules! impl_linear_transformation_defaults_full {
                     + $crate::layouts::GGLWEInfos,
                 H: $crate::layouts::GLWEAutomorphismKeyHelper<K, $be>,
             {
-                $crate::default::linear_transformation::glwe_prepare_linear_transformation_lhs_default::<$be, _, _, _, _>(
+                $crate::default::linear_transformation::glwe_prepare_linear_transformation_baby_steps_default::<$be, _, _, _, _>(
                     self,
                     cache,
                     a,
@@ -399,30 +357,7 @@ macro_rules! impl_linear_transformation_defaults_full {
                 )
             }
 
-            fn glwe_eval_linear_transformation_into_default<R, H, K>(
-                &self,
-                cnv_offset: usize,
-                res: &mut R,
-                lhs: &$crate::layouts::prepared::LinearTransformationBabySteps<$be>,
-                rhs: &$crate::layouts::LinearTransformation<
-                    $crate::layouts::prepared::PreparedDiagonal<<$be as ::poulpy_hal::layouts::Backend>::OwnedBuf, $be>,
-                >,
-                keys: &H,
-                key_size: usize,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
-            ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                K: $crate::layouts::GetGaloisElement
-                    + $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be>
-                    + $crate::layouts::GGLWEInfos,
-                H: $crate::layouts::GLWEAutomorphismKeyHelper<K, $be>,
-            {
-                $crate::default::linear_transformation::glwe_eval_linear_transformation_into_default::<$be, _, _, _, _>(
-                    self, cnv_offset, res, lhs, rhs, keys, key_size, scratch,
-                )
-            }
-
-            fn glwe_eval_linear_transformation_unprepared_rhs_into_default<R, P, H, K>(
+            fn glwe_eval_linear_transformation_into_default<R, P, H, K>(
                 &self,
                 cnv_offset: usize,
                 res: &mut R,
@@ -433,22 +368,15 @@ macro_rules! impl_linear_transformation_defaults_full {
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                P: $crate::layouts::GLWEToBackendRef<$be>
-                    + $crate::layouts::GLWEInfos
-                    + $crate::default::linear_transformation::DiagonalProd<$be>,
+                P: $crate::default::linear_transformation::DiagonalProd<$be>,
                 K: $crate::layouts::GetGaloisElement
                     + $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be>
                     + $crate::layouts::GGLWEInfos,
                 H: $crate::layouts::GLWEAutomorphismKeyHelper<K, $be>,
             {
-                $crate::default::linear_transformation::glwe_eval_linear_transformation_unprepared_rhs_into_default::<
-                    $be,
-                    _,
-                    _,
-                    _,
-                    _,
-                    _,
-                >(self, cnv_offset, res, lhs, rhs, keys, key_size, scratch)
+                $crate::default::linear_transformation::glwe_eval_linear_transformation_into_default::<$be, _, _, _, _, _>(
+                    self, cnv_offset, res, lhs, rhs, keys, key_size, scratch,
+                )
             }
         }
     };

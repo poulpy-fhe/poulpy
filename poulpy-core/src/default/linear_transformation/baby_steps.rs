@@ -72,7 +72,11 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
     }
 }
 
-pub(super) fn glwe_prepare_linear_transformation_lhs_tmp_bytes<BE, M, A, K>(module: &M, a_infos: &A, key_infos: &K) -> usize
+pub(super) fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<BE, M, A, K>(
+    module: &M,
+    a_infos: &A,
+    key_infos: &K,
+) -> usize
 where
     BE: Backend,
     M: ModuleN
@@ -190,7 +194,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R, A, H, K>(
 /// performs zero `CnvPVecL` allocations because the slots are owned by
 /// `cache`.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn glwe_prepare_linear_transformation_lhs<BE, M, A, H, K>(
+pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
     module: &M,
     cache: &mut LinearTransformationBabySteps<BE>,
     a: &A,

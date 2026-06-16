@@ -309,7 +309,7 @@ where
 {
     let mut babies = LinearTransformationBabySteps::alloc(module, baby_steps, src);
     module
-        .ckks_prepare_linear_transformation_lhs(&mut babies, src, atks, scratch)
+        .ckks_prepare_linear_transformation_baby_steps(&mut babies, src, atks, scratch)
         .expect("baby-step preparation failed (missing automorphism key?)");
     babies
 }
@@ -454,7 +454,7 @@ where
 ///
 /// Self-contained: builds the transform, its automorphism keys, scratch, and
 /// prepares both operands once (outside the measured loop), then measures only
-/// `ckks_eval_prepared_linear_transformation_into`. A one-line shape summary of
+/// `ckks_eval_linear_transformation_into` (resident `P = PreparedDiagonal`). A one-line shape summary of
 /// the pruned BSGS schedule is printed before benchmarking.
 fn bench_lt_case<BE>(
     group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
@@ -480,7 +480,7 @@ fn bench_lt_case<BE>(
         .ckks_prepare_linear_transformation_rhs_tmp_bytes(&pt_infos)
         .max(
             sizing_key
-                .map(|key| module.ckks_prepare_linear_transformation_lhs_tmp_bytes(ct_src, key))
+                .map(|key| module.ckks_prepare_linear_transformation_baby_steps_tmp_bytes(ct_src, key))
                 .unwrap_or(0),
         )
         .max(
@@ -513,11 +513,11 @@ fn bench_lt_case<BE>(
         b.iter(|| {
             reset_dst(&mut ct_dst);
             module
-                .ckks_eval_prepared_linear_transformation_into(
+                .ckks_eval_linear_transformation_into(
                     &mut ct_dst,
                     black_box(ct_src),
-                    black_box(&prepared),
                     black_box(&babies),
+                    black_box(&prepared),
                     &atks,
                     &mut scratch.borrow(),
                 )

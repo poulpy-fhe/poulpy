@@ -102,7 +102,7 @@ impl<D: Data, BE: Backend> GLWEInfos for PreparedDiagonal<D, BE> {
 
 /// Prepared left operands for the baby rotations of one input ciphertext.
 ///
-/// The values are populated by `glwe_prepare_linear_transformation_lhs`; the
+/// The values are populated by `glwe_prepare_linear_transformation_baby_steps`; the
 /// cache is sized via [`LinearTransformationBabySteps::alloc`].
 pub struct LinearTransformationBabySteps<BE: Backend> {
     pub(crate) values: BTreeMap<i64, CnvPVecL<BE::OwnedBuf, BE>>,

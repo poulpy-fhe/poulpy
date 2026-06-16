@@ -19,7 +19,7 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCtBounds, CKKSMeta, SetCKKSInfos,
-    default::dft::{DftFactor, matrices::DftScalar},
+    default::dft::matrices::DftScalar,
     encoding::reim::Encoder,
     layouts::{
         CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, DFTMatrix, DFTMatrixPrepared, DFTPlan, Decode,
@@ -79,78 +79,78 @@ pub trait DFTOps<BE: Backend> {
         CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>;
 
     /// Evaluates the homomorphic (I)DFT in place (raw chain, no format wrapper).
-    fn ckks_dft_evaluate_assign<Dir, Fmt, R, Dst, H, K>(
+    fn ckks_dft_evaluate_assign<Dir, Fmt, P, Dst, H, K>(
         &self,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, Dir, Fmt, R>,
+        dft: &DFTMatrix<BE, Dir, Fmt, LinearTransformation<P>>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: DftFactor<BE>,
+        P: DiagonalProd<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
     /// `CoeffsToSlots`, `Standard` format (in place).
-    fn ckks_coeffs_to_slots<R, Dst, H, K>(
+    fn ckks_coeffs_to_slots<P, Dst, H, K>(
         &self,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, Encode, Standard, R>,
+        dft: &DFTMatrix<BE, Encode, Standard, LinearTransformation<P>>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: DftFactor<BE>,
+        P: DiagonalProd<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
     /// `SlotsToCoeffs`, `Standard` format (in place).
-    fn ckks_slots_to_coeffs<R, Dst, H, K>(
+    fn ckks_slots_to_coeffs<P, Dst, H, K>(
         &self,
         ct: &mut Dst,
-        dft: &DFTMatrix<BE, Decode, Standard, R>,
+        dft: &DFTMatrix<BE, Decode, Standard, LinearTransformation<P>>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: DftFactor<BE>,
+        P: DiagonalProd<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
     /// `CoeffsToSlots`, `SplitRealAndImag` — real/imag in two ciphertexts.
     #[allow(clippy::too_many_arguments)]
-    fn ckks_coeffs_to_slots_split<R, Dst, Src, H, K>(
+    fn ckks_coeffs_to_slots_split<P, Dst, Src, H, K>(
         &self,
         ct_real: &mut Dst,
         ct_imag: &mut Dst,
         ct_in: &Src,
-        dft: &DFTMatrix<BE, Encode, Split, R>,
+        dft: &DFTMatrix<BE, Encode, Split, LinearTransformation<P>>,
         keys: &H,
         conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: DftFactor<BE>,
+        P: DiagonalProd<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
     /// `SlotsToCoeffs`, `SplitRealAndImag` — combine two ciphertexts then Decode.
-    fn ckks_slots_to_coeffs_split<R, Dst, Src, H, K>(
+    fn ckks_slots_to_coeffs_split<P, Dst, Src, H, K>(
         &self,
         op_out: &mut Dst,
         ct_real: &Src,
         ct_imag: &Src,
-        dft: &DFTMatrix<BE, Decode, Split, R>,
+        dft: &DFTMatrix<BE, Decode, Split, LinearTransformation<P>>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: DftFactor<BE>,
+        P: DiagonalProd<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -158,33 +158,33 @@ pub trait DFTOps<BE: Backend> {
 
     /// `CoeffsToSlots`, sparse `RepackImagAsReal` — imag packed into the right half.
     #[allow(clippy::too_many_arguments)]
-    fn ckks_coeffs_to_slots_repack<R, Dst, Src, H, K>(
+    fn ckks_coeffs_to_slots_repack<P, Dst, Src, H, K>(
         &self,
         ct_out: &mut Dst,
         ct_in: &Src,
-        dft: &DFTMatrix<BE, Encode, Repack, R>,
+        dft: &DFTMatrix<BE, Encode, Repack, LinearTransformation<P>>,
         keys: &H,
         conj_key: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: DftFactor<BE>,
+        P: DiagonalProd<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
     /// `SlotsToCoeffs`, sparse `RepackImagAsReal` — inverse of [`Self::ckks_coeffs_to_slots_repack`].
-    fn ckks_slots_to_coeffs_repack<R, Dst, Src, H, K>(
+    fn ckks_slots_to_coeffs_repack<P, Dst, Src, H, K>(
         &self,
         op_out: &mut Dst,
         ct_in: &Src,
-        dft: &DFTMatrix<BE, Decode, Repack, R>,
+        dft: &DFTMatrix<BE, Decode, Repack, LinearTransformation<P>>,
         keys: &H,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: DftFactor<BE>,
+        P: DiagonalProd<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,

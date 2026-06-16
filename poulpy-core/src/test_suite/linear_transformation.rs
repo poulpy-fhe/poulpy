@@ -130,7 +130,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     }
 
     let mut prepared_babies = LinearTransformationBabySteps::alloc(module, &baby_steps, &ct);
-    module.glwe_prepare_linear_transformation_lhs(
+    module.glwe_prepare_linear_transformation_baby_steps(
         &mut prepared_babies,
         &ct,
         k_in,
