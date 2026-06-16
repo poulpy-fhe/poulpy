@@ -84,6 +84,7 @@ pub trait BSGSConstAdd<BE: Backend, R, P> {
     /// Computes `res[res_coeff] += coeffs[idx]`, normalizing `res`.
     fn add_pt_const_assign(
         &self,
+        module: &Module<BE>,
         res: &mut R,
         res_coeff: usize,
         coeffs: &P,
@@ -94,8 +95,8 @@ pub trait BSGSConstAdd<BE: Backend, R, P> {
 
 /// Evaluates a single baby step into `res`.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn eval_baby_step<M, PR, R, C, A, G, BE: Backend>(
-    module: &M,
+pub(crate) fn eval_baby_step<PR, R, C, A, G, BE: Backend>(
+    module: &Module<BE>,
     precision: &PR,
     res: &mut R,
     parity: Parity,
@@ -104,7 +105,7 @@ pub(crate) fn eval_baby_step<M, PR, R, C, A, G, BE: Backend>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    M: GLWEMulConst<BE> + GLWEAdd<BE> + GLWEShift<BE> + GLWENormalize<BE> + GLWEZero<BE>,
+    Module<BE>: GLWEMulConst<BE> + GLWEAdd<BE> + GLWEShift<BE> + GLWENormalize<BE> + GLWEZero<BE>,
     PR: BSGSPrecision<BE> + BSGSConstAdd<BE, R, C>,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta,
     C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
@@ -121,7 +122,7 @@ where
     let mut has_value = false;
     let mut must_normalize = false;
     if parity != Parity::Odd {
-        precision.add_pt_const_assign(res, 0, coeffs, 0, scratch)?;
+        precision.add_pt_const_assign(module, res, 0, coeffs, 0, scratch)?;
         has_value = true;
         must_normalize = true;
     }
@@ -551,7 +552,7 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         G: PowerBasisHelper<BE, A>,
         for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
     {
-        eval_baby_step::<_, PR, R, C, A, G, BE>(self, precision, res, parity, coeffs, power_basis, scratch)
+        eval_baby_step::<PR, R, C, A, G, BE>(self, precision, res, parity, coeffs, power_basis, scratch)
     }
 
     fn glwe_eval_giant_steps_default<PR, R, B, A, G, T>(

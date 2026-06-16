@@ -47,11 +47,9 @@ where
 }
 
 /// CKKS precision and plaintext-coupled ops for the core BSGS engine.
-pub struct CKKSBSGSPrecision<'m, BE: Backend> {
-    module: &'m Module<BE>,
-}
+struct CKKSBSGSPrecision;
 
-impl<BE: Backend> BSGSPrecision<BE> for CKKSBSGSPrecision<'_, BE> {
+impl<BE: Backend> BSGSPrecision<BE> for CKKSBSGSPrecision {
     fn mul_ct_params<R, A, B>(&self, res: &R, a: &A, b: &B) -> Result<(usize, usize, usize)>
     where
         R: GLWEInfos + BSGSMeta,
@@ -86,7 +84,7 @@ impl<BE: Backend> BSGSPrecision<BE> for CKKSBSGSPrecision<'_, BE> {
     }
 }
 
-impl<BE: Backend, R, P> BSGSConstAdd<BE, R, P> for CKKSBSGSPrecision<'_, BE>
+impl<BE: Backend, R, P> BSGSConstAdd<BE, R, P> for CKKSBSGSPrecision
 where
     Module<BE>: CKKSAddOps<BE>,
     R: GLWEToBackendMut<BE> + crate::CKKSCtBounds + SetCKKSInfos,
@@ -94,13 +92,14 @@ where
 {
     fn add_pt_const_assign(
         &self,
+        module: &Module<BE>,
         res: &mut R,
         res_coeff: usize,
         coeffs: &P,
         idx: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()> {
-        self.module.ckks_add_pt_const_assign(res, res_coeff, coeffs, idx, scratch)
+        module.ckks_add_pt_const_assign(res, res_coeff, coeffs, idx, scratch)
     }
 }
 
@@ -217,7 +216,7 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         let mut baby_steps = Vec::with_capacity(n_to_process);
         let parity = poly.parity();
         let x = power_basis.get(1)?;
-        let precision = CKKSBSGSPrecision { module: self };
+        let precision = CKKSBSGSPrecision;
         for i in 0..n_to_process {
             let coeffs = poly.baby_step(i);
             let degree = coeffs.n().as_usize() - 1;
@@ -316,7 +315,7 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         // over baby_i runs the relinearizations once.
         let parity = BSGSPolynomialInfos::<BE>::parity(poly_re);
         let x = power_basis.get(1)?;
-        let precision = CKKSBSGSPrecision { module: self };
+        let precision = CKKSBSGSPrecision;
         let mut baby_steps = Vec::with_capacity(n_to_process);
         for i in 0..n_to_process {
             let re_coeffs = BSGSPolynomialInfos::<BE>::baby_step(poly_re, i);
