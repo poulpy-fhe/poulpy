@@ -149,7 +149,7 @@ pub struct BenchParams {
     /// `glwe_tensor`,
     /// `automorphism`, `external_product`, `keyswitch`,
     /// `blind_rotate`, `circuit_bootstrapping`, `bdd_prepare`, `bdd_arithmetic`,
-    /// `ckks_leveled`, `standard`.
+    /// `ckks_leveled`, `ckks_linear_transformation`, `standard`.
     #[serde(default)]
     pub run: Vec<String>,
     #[serde(default)]

@@ -353,6 +353,32 @@ pub unsafe trait HalVecZnxImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
+    fn vec_znx_lsh_add_coeff_to_coeff_backend(
+        module: &Module<BE>,
+        base2k: usize,
+        k: usize,
+        res: &mut VecZnxBackendMut<'_, BE>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, BE>,
+        a_col: usize,
+        a_coeff: usize,
+        res_coeff: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+
+    fn vec_znx_lsh_sub_coeff_to_coeff_backend(
+        module: &Module<BE>,
+        base2k: usize,
+        k: usize,
+        res: &mut VecZnxBackendMut<'_, BE>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, BE>,
+        a_col: usize,
+        a_coeff: usize,
+        res_coeff: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+
     fn vec_znx_lsh_sub_backend(
         module: &Module<BE>,
         base2k: usize,
@@ -1130,6 +1156,55 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend {
         b_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     );
+
+    /// Returns scratch bytes required for [`HalConvolutionImpl::cnv_accumulate_dft`].
+    ///
+    /// The default sizes the per-term fallback (one `cnv_apply_dft` /
+    /// `cnv_apply_dft_accumulate` scratch). Backends with a fused kernel should
+    /// override both methods together.
+    fn cnv_accumulate_dft_tmp_bytes(
+        module: &Module<BE>,
+        cnv_offset: usize,
+        res_size: usize,
+        a_size: usize,
+        b_size: usize,
+    ) -> usize {
+        Self::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
+    }
+
+    /// Computes `res[res_col] = Σ_t a_t ⊛ b_t` (overwriting).
+    ///
+    /// The default implementation overwrites with the first term
+    /// (`cnv_apply_dft`, which also zeroes the limbs past the convolution
+    /// bound) and folds the remaining terms with `cnv_apply_dft_accumulate`.
+    /// Backends should override it with a fused kernel that keeps the lazy
+    /// accumulators live across terms.
+    fn cnv_accumulate_dft<'a>(
+        module: &Module<BE>,
+        cnv_offset: usize,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        terms: &[crate::layouts::CnvDftAccTerm<'a, BE>],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: HalVecZnxDftImpl<BE> + 'a,
+    {
+        if terms.is_empty() {
+            <BE as HalVecZnxDftImpl<BE>>::vec_znx_dft_zero(module, res, res_col);
+            return;
+        }
+        for (idx, term) in terms.iter().enumerate() {
+            if idx == 0 {
+                Self::cnv_apply_dft(
+                    module, cnv_offset, res, res_col, &term.a, term.a_col, &term.b, term.b_col, scratch,
+                );
+            } else {
+                Self::cnv_apply_dft_accumulate(
+                    module, cnv_offset, res, res_col, &term.a, term.a_col, &term.b, term.b_col, scratch,
+                );
+            }
+        }
+    }
 
     fn cnv_pairwise_apply_dft_tmp_bytes(
         module: &Module<BE>,

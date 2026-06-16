@@ -5,7 +5,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    GLWERotate, ScratchArenaTakeCore,
+    GLWERotate,
     layouts::{GLWE, GLWEInfos, GLWELayout},
 };
 
@@ -34,7 +34,6 @@ where
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: GLWERotate<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let layout = GLWELayout {
         n: module.n().into(),

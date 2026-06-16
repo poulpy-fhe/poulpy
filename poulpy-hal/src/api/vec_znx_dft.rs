@@ -23,13 +23,13 @@ pub trait VecZnxDftBytesOf {
 /// The `step` and `offset` parameters select which limbs of the input
 /// are transformed: limbs `offset, offset + step, offset + 2*step, ...`.
 pub trait VecZnxDftApply<B: Backend> {
-    fn vec_znx_dft_apply<'a>(
+    fn vec_znx_dft_apply(
         &self,
         step: usize,
         offset: usize,
         res: &mut VecZnxDftBackendMut<'_, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'a, B>,
+        a: &VecZnxBackendRef<'_, B>,
         a_col: usize,
     );
 }

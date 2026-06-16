@@ -1,7 +1,8 @@
 use poulpy_hal::{
     layouts::Module,
     test_suite::convolution::{
-        test_convolution, test_convolution_accumulate, test_convolution_by_const, test_convolution_pairwise,
+        test_convolution, test_convolution_accumulate, test_convolution_accumulate_fused, test_convolution_by_const,
+        test_convolution_pairwise,
     },
 };
 
@@ -37,6 +38,12 @@ fn test_convolution_accumulate_fft64_ref() {
 }
 
 #[test]
+fn test_convolution_accumulate_fused_fft64_ref() {
+    let module: Module<FFT64Ref> = Module::<FFT64Ref>::new(8);
+    test_convolution_accumulate_fused(&module, 17);
+}
+
+#[test]
 fn test_convolution_by_const_ntt120_ref() {
     let module: Module<NTT120Ref> = Module::<NTT120Ref>::new(8);
     test_convolution_by_const(&module, 50);
@@ -60,6 +67,12 @@ fn test_convolution_accumulate_ntt120_ref() {
     test_convolution_accumulate(&module, 50);
 }
 
+#[test]
+fn test_convolution_accumulate_fused_ntt120_ref() {
+    let module: Module<NTT120Ref> = Module::<NTT120Ref>::new(8);
+    test_convolution_accumulate_fused(&module, 50);
+}
+
 use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
 
 cross_backend_test_suite! {
@@ -79,6 +92,8 @@ cross_backend_test_suite! {
         test_vec_znx_normalize_coeff_assign_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize_coeff_assign_backend,
         test_vec_znx_lsh_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_coeff_backend,
         test_vec_znx_lsh_add_coeff_into_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_add_coeff_into_backend,
+        test_vec_znx_lsh_add_coeff_to_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_add_coeff_to_coeff_backend,
+        test_vec_znx_lsh_sub_coeff_to_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_sub_coeff_to_coeff_backend,
         test_vec_znx_rsh_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_coeff_backend,
         test_vec_znx_rsh_add_coeff_into_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_add_coeff_into_backend,
         test_vec_znx_rsh_sub_coeff_into_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_sub_coeff_into_backend,

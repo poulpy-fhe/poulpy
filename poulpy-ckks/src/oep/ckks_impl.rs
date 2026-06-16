@@ -2,7 +2,7 @@ use poulpy_hal::layouts::Backend;
 
 use super::{
     CKKSAddImpl, CKKSConjugateImpl, CKKSCopyImpl, CKKSEncryptionImpl, CKKSImagImpl, CKKSMulImpl, CKKSNegImpl,
-    CKKSPlaintextZnxImpl, CKKSPow2Impl, CKKSRescaleImpl, CKKSRotateImpl, CKKSSubImpl,
+    CKKSPlaintextZnxImpl, CKKSPolynomialEvaluationImpl, CKKSPow2Impl, CKKSRescaleImpl, CKKSRotateImpl, CKKSSubImpl,
 };
 
 /// Aggregate CKKS dispatch surface.
@@ -30,6 +30,7 @@ pub unsafe trait CKKSImpl<BE: Backend>:
     + CKKSRotateImpl<BE>
     + CKKSConjugateImpl<BE>
     + CKKSMulImpl<BE>
+    + CKKSPolynomialEvaluationImpl<BE>
 {
 }
 
@@ -46,5 +47,6 @@ unsafe impl<BE: Backend> CKKSImpl<BE> for BE where
         + CKKSRotateImpl<BE>
         + CKKSConjugateImpl<BE>
         + CKKSMulImpl<BE>
+        + CKKSPolynomialEvaluationImpl<BE>
 {
 }

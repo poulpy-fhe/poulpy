@@ -144,7 +144,7 @@ pub fn test_add_pt_vec_alignment_error<BE, F, E>(
             op: "ckks_add_pt_vec",
             ct_log_budget: 0,
             pt_log_delta: params.prec.log_delta,
-            pt_k: pt.max_k().as_usize(),
+            pt_k: pt.effective_k(),
         },
     );
 }

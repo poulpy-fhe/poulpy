@@ -228,7 +228,10 @@ pub fn convolution_apply_dft<BE>(
     let min_size: usize = res_size.min(bound);
     let offset: usize = cnv_offset.min(bound);
 
-    let dst: &mut [f64] = res.raw_mut();
+    // `res` is column-interleaved: limb `j` of column `i` is at `n * (j * cols + i)`.
+    let dst_stride: usize = n * res.cols();
+    let dst: &mut [f64] = &mut res.raw_mut()[res_col * n..];
+
     let a_raw: &[f64] = a.raw();
     let b_raw: &[f64] = b.raw();
 
@@ -237,6 +240,7 @@ pub fn convolution_apply_dft<BE>(
         min_size,
         offset,
         dst,
+        dst_stride,
         &a_raw[a_col * n * a_size..],
         a_size,
         &b_raw[b_col * n * b_size..],
@@ -255,7 +259,7 @@ pub fn convolution_apply_dft<BE>(
 pub fn convolution_apply_dft_accumulate<BE>(
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
-    _res_col: usize,
+    res_col: usize,
     a: &CnvPVecLBackendRef<'_, BE>,
     a_col: usize,
     b: &CnvPVecRBackendRef<'_, BE>,
@@ -279,7 +283,10 @@ pub fn convolution_apply_dft_accumulate<BE>(
     let min_size: usize = res_size.min(bound);
     let offset: usize = cnv_offset.min(bound);
 
-    let dst: &mut [f64] = res.raw_mut();
+    // `res` is column-interleaved: limb `j` of column `i` is at `n * (j * cols + i)`.
+    let dst_stride: usize = n * res.cols();
+    let dst: &mut [f64] = &mut res.raw_mut()[res_col * n..];
+
     let a_raw: &[f64] = a.raw();
     let b_raw: &[f64] = b.raw();
 
@@ -288,6 +295,7 @@ pub fn convolution_apply_dft_accumulate<BE>(
         min_size,
         offset,
         dst,
+        dst_stride,
         &a_raw[a_col * n * a_size..],
         a_size,
         &b_raw[b_col * n * b_size..],
@@ -339,7 +347,10 @@ pub fn convolution_pairwise_apply_dft<BE>(
     let min_size: usize = res_size.min(bound);
     let offset: usize = cnv_offset.min(bound);
 
-    let res_raw: &mut [f64] = res.raw_mut();
+    // `res` is column-interleaved: limb `j` of column `i` is at `n * (j * cols + i)`.
+    let dst_stride: usize = n * res.cols();
+    let res_raw: &mut [f64] = &mut res.raw_mut()[res_col * n..];
+
     let a_raw: &[f64] = a.raw();
     let b_raw: &[f64] = b.raw();
 
@@ -348,6 +359,7 @@ pub fn convolution_pairwise_apply_dft<BE>(
         min_size,
         offset,
         res_raw,
+        dst_stride,
         &a_raw[col_i * n * a_size..],
         &a_raw[col_j * n * a_size..],
         a_size,

@@ -9,8 +9,9 @@ use poulpy_hal::{
         VecZnxSubAssignBackend, VecZnxSubBackend, VecZnxSubNegateAssignBackend, VecZnxZeroBackend,
     },
     layouts::{
-        Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Module, ScratchArena, VecZnx, VecZnxBigToBackendMut,
-        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef,
+        Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, CnvPVecRViewMut, Module, ScratchArena, VecZnx,
+        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut,
+        VecZnxToBackendRef,
     },
 };
 
@@ -110,11 +111,7 @@ where
         let res_base2k: usize = res.base2k().as_usize();
         let a_backend = a.to_backend_ref();
 
-        let (cnv_offset_hi, cnv_offset_lo) = if cnv_offset < a_base2k {
-            (0, -((a_base2k - (cnv_offset % a_base2k)) as i64))
-        } else {
-            ((cnv_offset / a_base2k).saturating_sub(1), (cnv_offset % a_base2k) as i64)
-        };
+        let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, a_base2k);
 
         let res_dft_size = a.size() + b_size - cnv_offset_hi;
 
@@ -179,11 +176,7 @@ where
         let cols: usize = res.rank().as_usize() + 1;
         let res_base2k: usize = res.base2k().as_usize();
 
-        let (cnv_offset_hi, cnv_offset_lo) = if cnv_offset < res_base2k {
-            (0, -((res_base2k - (cnv_offset % res_base2k)) as i64))
-        } else {
-            ((cnv_offset / res_base2k).saturating_sub(1), (cnv_offset % res_base2k) as i64)
-        };
+        let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, res_base2k);
 
         let (mut res_big, scratch) = scratch.take_vec_znx_big_scratch(self, 1, res.size());
         let (mut res_tmp, mut scratch) = scratch.take_vec_znx_scratch(self.n(), 1, res.size());
@@ -303,7 +296,6 @@ where
         assert_eq!(a_effective_k.div_ceil(ab_base2k), a.size());
         assert_eq!(b_effective_k.div_ceil(ab_base2k), b.size());
         let res_base2k: usize = res.base2k().as_usize();
-
         let cols: usize = res.rank().as_usize() + 1;
 
         let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, a.size());
@@ -317,11 +309,7 @@ where
         scratch = scratch.apply_mut(|scratch| self.cnv_prepare_left_lazy(&mut a_prep, &a_backend.data, a_mask, scratch));
         scratch = scratch.apply_mut(|scratch| self.cnv_prepare_right_lazy(&mut b_prep, &b_backend.data, b_mask, scratch));
 
-        let (cnv_offset_hi, cnv_offset_lo) = if cnv_offset < ab_base2k {
-            (0, -((ab_base2k - (cnv_offset % ab_base2k)) as i64))
-        } else {
-            ((cnv_offset / ab_base2k).saturating_sub(1), (cnv_offset % ab_base2k) as i64)
-        };
+        let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, ab_base2k);
 
         let res_dft_size = a.size() + b.size() - cnv_offset_hi;
         let (mut res_tmp, mut scratch) = scratch.take_vec_znx_scratch(self.n(), 1, res.size());
@@ -408,11 +396,7 @@ where
         });
         scratch = scratch.apply_mut(|scratch| self.cnv_prepare_right_lazy(&mut a_prep, &a_backend.data, mask_a, scratch));
 
-        let (cnv_offset_hi, cnv_offset_lo) = if cnv_offset < ab_base2k {
-            (0, -((ab_base2k - (cnv_offset % ab_base2k)) as i64))
-        } else {
-            ((cnv_offset / ab_base2k).saturating_sub(1), (cnv_offset % ab_base2k) as i64)
-        };
+        let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, ab_base2k);
 
         let res_dft_size = a.size() + res.size() - cnv_offset_hi;
         let (mut res_tmp, mut scratch) = scratch.take_vec_znx_scratch(self.n(), 1, res.size());
@@ -825,11 +809,7 @@ where
         self.cnv_prepare_self(&mut a_prep, &mut b_prep, &a_backend.data, a_mask, &mut prep_scratch);
         let (mut diag_terms, mut scratch) = scratch.take_vec_znx_scratch(self.n(), cols, res.size());
 
-        let (cnv_offset_hi, cnv_offset_lo) = if cnv_offset < a_base2k {
-            (0, -((a_base2k - (cnv_offset % a_base2k)) as i64))
-        } else {
-            ((cnv_offset / a_base2k).saturating_sub(1), (cnv_offset % a_base2k) as i64)
-        };
+        let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, a_base2k);
 
         let diag_dft_size =
             normalize_input_limb_bound_with_offset(2 * a.size() - cnv_offset_hi, res.size(), res_base2k, a_base2k, cnv_offset_lo);
@@ -965,8 +945,6 @@ where
         assert_eq!(a_effective_k.div_ceil(ab_base2k), a.size());
         assert_eq!(b_effective_k.div_ceil(ab_base2k), b.size());
 
-        let res_base2k: usize = res.base2k().as_usize();
-
         let cols: usize = res.rank().as_usize() + 1;
 
         let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, a.size());
@@ -980,153 +958,343 @@ where
         let mut prep_scratch = scratch.borrow();
         self.cnv_prepare_left(&mut a_prep, &a_backend.data, a_mask, &mut prep_scratch);
         self.cnv_prepare_right(&mut b_prep, &b_backend.data, b_mask, &mut prep_scratch);
-        // Example for rank=3
-        //
-        // (a0, a1, a2, a3) x (b0, b1, b2, a3)
-        //   L   L  L   L       R   R   R   R
-        //
-        // c(1)    = a0 * b0 				<- (L(a0) * R(b0))
-        // c(s1)   = a0 * b1 + a1 * b0 		<- (L(a0) + L(a1)) * (R(b0) + R(b1)) + NEG(L(a0) * R(b0)) + SUB(L(a1) * R(b1))
-        // c(s2)   = a0 * b2 + a2 * b0		<- (L(a0) + L(a2)) * (R(b0) + R(b2)) + NEG(L(a0) * R(b0)) + SUB(L(a2) * R(b2))
-        // c(s3)   = a0 * b3 + a3 * b0		<- (L(a0) + L(a3)) * (R(b0) + R(b3)) + NEG(L(a0) * R(b0)) + SUB(L(a3) * R(b3))
-        // c(s1^2) = a1 * b1 				<- (L(a1) * R(b1))
-        // c(s1s2) = a1 * b2 + b2 * a1		<- (L(a1) + L(a2)) * (R(b1) + R(b2)) + NEG(L(a1) * R(b1)) + SUB(L(a2) * R(b2))
-        // c(s1s3) = a1 * b3 + b3 * a1		<- (L(a1) + L(a3)) * (R(b1) + R(b3)) + NEG(L(a1) * R(b1)) + SUB(L(a3) * R(b3))
-        // c(s2^2) = a2 * b2 				<- (L(a2) * R(b2))
-        // c(s2s3) = a2 * b3 + a3 * b2 	    <- (L(a2) + L(a3)) * (R(b2) + R(b3)) + NEG(L(a2) * R(b2)) + SUB(L(a3) * R(b3))
-        // c(s3^2) = a3 * b3				<- (L(a3) * R(b3))
 
-        // Derive the offset. If cnv_offset < a_base2k, then we shift to a negative offset
-        // since the convolution doesn't support negative offset (yet).
-        let (cnv_offset_hi, cnv_offset_lo) = if cnv_offset < ab_base2k {
-            (0, -((ab_base2k - (cnv_offset % ab_base2k)) as i64))
-        } else {
-            ((cnv_offset / ab_base2k).saturating_sub(1), (cnv_offset % ab_base2k) as i64)
-        };
-
-        let diag_dft_size = normalize_input_limb_bound_with_offset(
-            a.size() + b.size() - cnv_offset_hi,
-            res.size(),
-            res_base2k,
+        glwe_tensor_apply_loop(
+            self,
+            cnv_offset,
+            res,
+            &a_prep,
+            &b_prep,
+            a.size(),
+            b.size(),
             ab_base2k,
-            cnv_offset_lo,
+            &mut scratch,
         );
-        let pairwise_dft_size = normalize_input_limb_bound_with_offset(
-            a.size() + b.size() - cnv_offset_hi,
-            res.size(),
-            res_base2k,
-            ab_base2k,
-            cnv_offset_lo,
-        );
+    }
+}
 
-        for i in 0..cols {
-            let col_i: usize = i * cols - (i * (i + 1) / 2);
+/// Shared tensor-product loop over already-prepared operands.
+///
+/// Computes the rank-symmetric product of `a_prep` (left) and `b_prep` (right)
+/// into `res`, staging each term through scratch DFT/big buffers.
+//
+// Example for rank=3
+//
+// (a0, a1, a2, a3) x (b0, b1, b2, a3)
+//   L   L  L   L       R   R   R   R
+//
+// c(1)    = a0 * b0 				<- (L(a0) * R(b0))
+// c(s1)   = a0 * b1 + a1 * b0 		<- (L(a0) + L(a1)) * (R(b0) + R(b1)) + NEG(L(a0) * R(b0)) + SUB(L(a1) * R(b1))
+// c(s2)   = a0 * b2 + a2 * b0		<- (L(a0) + L(a2)) * (R(b0) + R(b2)) + NEG(L(a0) * R(b0)) + SUB(L(a2) * R(b2))
+// c(s3)   = a0 * b3 + a3 * b0		<- (L(a0) + L(a3)) * (R(b0) + R(b3)) + NEG(L(a0) * R(b0)) + SUB(L(a3) * R(b3))
+// c(s1^2) = a1 * b1 				<- (L(a1) * R(b1))
+// c(s1s2) = a1 * b2 + b2 * a1		<- (L(a1) + L(a2)) * (R(b1) + R(b2)) + NEG(L(a1) * R(b1)) + SUB(L(a2) * R(b2))
+// c(s1s3) = a1 * b3 + b3 * a1		<- (L(a1) + L(a3)) * (R(b1) + R(b3)) + NEG(L(a1) * R(b1)) + SUB(L(a3) * R(b3))
+// c(s2^2) = a2 * b2 				<- (L(a2) * R(b2))
+// c(s2s3) = a2 * b3 + a3 * b2 	    <- (L(a2) + L(a3)) * (R(b2) + R(b3)) + NEG(L(a2) * R(b2)) + SUB(L(a3) * R(b3))
+// c(s3^2) = a3 * b3				<- (L(a3) * R(b3))
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn glwe_tensor_apply_loop<BE, M, R, AP, BP>(
+    module: &M,
+    cnv_offset: usize,
+    res: &mut R,
+    a_prep: &AP,
+    b_prep: &BP,
+    a_size: usize,
+    b_size: usize,
+    ab_base2k: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: Sized
+        + ModuleN
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxBigNormalize<BE>
+        + Convolution<BE>
+        + VecZnxSubAssignBackend<BE>
+        + VecZnxAddAssignBackend<BE>
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxCopyBackend<BE>
+        + VecZnxNegateBackend<BE>,
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+    AP: CnvPVecLToBackendRef<BE>,
+    BP: CnvPVecRToBackendRef<BE>,
+{
+    let res_base2k: usize = res.base2k().as_usize();
+    let cols: usize = res.rank().as_usize() + 1;
 
-            let (mut res_dft, mut scratch_3) = scratch.borrow().take_vec_znx_dft_scratch(self, 1, diag_dft_size);
-            {
-                let mut res_dft_backend = res_dft.to_backend_mut();
-                self.cnv_apply_dft(
-                    cnv_offset_hi,
-                    &mut res_dft_backend,
-                    0,
-                    &a_prep.to_backend_ref(),
-                    i,
-                    &b_prep.to_backend_ref(),
-                    i,
-                    &mut scratch_3,
-                );
-            }
-            let (mut res_big, scratch_4) = scratch_3.take_vec_znx_big_scratch(self, 1, diag_dft_size);
-            {
-                let mut res_big_backend = res_big.to_backend_mut();
-                let mut res_dft_backend = res_dft.to_backend_mut();
-                self.vec_znx_idft_apply_tmpa(&mut res_big_backend, 0, &mut res_dft_backend, 0);
-            }
-            let (mut tmp, mut scratch_5) = scratch_4.take_vec_znx_scratch(self.n(), 1, res.size());
-            let res_big_ref = res_big.to_backend_ref();
-            let mut scratch_iter = scratch_5.borrow();
-            self.vec_znx_big_normalize(
-                &mut tmp,
-                res_base2k,
-                cnv_offset_lo,
+    // Derive the offset. If cnv_offset < ab_base2k, then we shift to a negative offset
+    // since the convolution doesn't support negative offset (yet).
+    let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, ab_base2k);
+
+    let diag_dft_size = normalize_input_limb_bound_with_offset(
+        a_size + b_size - cnv_offset_hi,
+        res.size(),
+        res_base2k,
+        ab_base2k,
+        cnv_offset_lo,
+    );
+    let pairwise_dft_size = normalize_input_limb_bound_with_offset(
+        a_size + b_size - cnv_offset_hi,
+        res.size(),
+        res_base2k,
+        ab_base2k,
+        cnv_offset_lo,
+    );
+
+    for i in 0..cols {
+        let col_i: usize = i * cols - (i * (i + 1) / 2);
+
+        let (mut res_dft, mut scratch_3) = scratch.borrow().take_vec_znx_dft_scratch(module, 1, diag_dft_size);
+        {
+            let mut res_dft_backend = res_dft.to_backend_mut();
+            module.cnv_apply_dft(
+                cnv_offset_hi,
+                &mut res_dft_backend,
                 0,
-                &res_big_ref,
-                ab_base2k,
-                0,
-                &mut scratch_iter,
+                &a_prep.to_backend_ref(),
+                i,
+                &b_prep.to_backend_ref(),
+                i,
+                &mut scratch_3,
             );
+        }
+        let (mut res_big, scratch_4) = scratch_3.take_vec_znx_big_scratch(module, 1, diag_dft_size);
+        {
+            let mut res_big_backend = res_big.to_backend_mut();
+            let mut res_dft_backend = res_dft.to_backend_mut();
+            module.vec_znx_idft_apply_tmpa(&mut res_big_backend, 0, &mut res_dft_backend, 0);
+        }
+        let (mut tmp, mut scratch_5) = scratch_4.take_vec_znx_scratch(module.n(), 1, res.size());
+        let res_big_ref = res_big.to_backend_ref();
+        let mut scratch_iter = scratch_5.borrow();
+        module.vec_znx_big_normalize(
+            &mut tmp,
+            res_base2k,
+            cnv_offset_lo,
+            0,
+            &res_big_ref,
+            ab_base2k,
+            0,
+            &mut scratch_iter,
+        );
 
-            {
-                let mut res_backend = res.to_backend_mut();
-                let tmp_ref = tmp.to_backend_ref();
-                self.vec_znx_copy_backend(&mut res_backend.data, col_i + i, &tmp_ref, 0);
-            }
-
-            // Pre-subtracts
-            // res[i!=j] = NEG(a[i] * b[i]) + SUB(a[j] * b[j])
-            for j in 0..cols {
-                if j != i {
-                    if j < i {
-                        let col_j = j * cols - (j * (j + 1) / 2);
-                        let mut res_backend = res.to_backend_mut();
-                        let tmp_ref = tmp.to_backend_ref();
-                        self.vec_znx_sub_assign_backend(&mut res_backend.data, col_j + i, &tmp_ref, 0);
-                    } else {
-                        let mut res_backend = res.to_backend_mut();
-                        let tmp_ref = tmp.to_backend_ref();
-                        self.vec_znx_negate_backend(&mut res_backend.data, col_i + j, &tmp_ref, 0);
-                    }
-                }
-            }
+        {
+            let mut res_backend = res.to_backend_mut();
+            let tmp_ref = tmp.to_backend_ref();
+            module.vec_znx_copy_backend(&mut res_backend.data, col_i + i, &tmp_ref, 0);
         }
 
-        for i in 0..cols {
-            let col_i: usize = i * cols - (i * (i + 1) / 2);
-
-            for j in i..cols {
-                if j != i {
-                    // res_dft = (a[i] + a[j]) * (b[i] + b[j])
-                    let (mut res_dft, mut scratch_3) = scratch.borrow().take_vec_znx_dft_scratch(self, 1, pairwise_dft_size);
-                    {
-                        let mut res_dft_backend = res_dft.to_backend_mut();
-                        self.cnv_pairwise_apply_dft(
-                            cnv_offset_hi,
-                            &mut res_dft_backend,
-                            0,
-                            &a_prep.to_backend_ref(),
-                            &b_prep.to_backend_ref(),
-                            i,
-                            j,
-                            &mut scratch_3,
-                        );
-                    }
-                    let (mut res_big, scratch_4) = scratch_3.take_vec_znx_big_scratch(self, 1, pairwise_dft_size);
-                    {
-                        let mut res_big_backend = res_big.to_backend_mut();
-                        let mut res_dft_backend = res_dft.to_backend_mut();
-                        self.vec_znx_idft_apply_tmpa(&mut res_big_backend, 0, &mut res_dft_backend, 0);
-                    }
-                    let (mut tmp, mut scratch_5) = scratch_4.take_vec_znx_scratch(self.n(), 1, res.size());
-                    let res_big_ref = res_big.to_backend_ref();
-                    let mut scratch_iter = scratch_5.borrow();
-                    self.vec_znx_big_normalize(
-                        &mut tmp,
-                        res_base2k,
-                        cnv_offset_lo,
-                        0,
-                        &res_big_ref,
-                        ab_base2k,
-                        0,
-                        &mut scratch_iter,
-                    );
-
+        // Pre-subtracts
+        // res[i!=j] = NEG(a[i] * b[i]) + SUB(a[j] * b[j])
+        for j in 0..cols {
+            if j != i {
+                if j < i {
+                    let col_j = j * cols - (j * (j + 1) / 2);
                     let mut res_backend = res.to_backend_mut();
                     let tmp_ref = tmp.to_backend_ref();
-                    self.vec_znx_add_assign_backend(&mut res_backend.data, col_i + j, &tmp_ref, 0);
+                    module.vec_znx_sub_assign_backend(&mut res_backend.data, col_j + i, &tmp_ref, 0);
+                } else {
+                    let mut res_backend = res.to_backend_mut();
+                    let tmp_ref = tmp.to_backend_ref();
+                    module.vec_znx_negate_backend(&mut res_backend.data, col_i + j, &tmp_ref, 0);
                 }
             }
         }
     }
+
+    for i in 0..cols {
+        let col_i: usize = i * cols - (i * (i + 1) / 2);
+
+        for j in i..cols {
+            if j != i {
+                // res_dft = (a[i] + a[j]) * (b[i] + b[j])
+                let (mut res_dft, mut scratch_3) = scratch.borrow().take_vec_znx_dft_scratch(module, 1, pairwise_dft_size);
+                {
+                    let mut res_dft_backend = res_dft.to_backend_mut();
+                    module.cnv_pairwise_apply_dft(
+                        cnv_offset_hi,
+                        &mut res_dft_backend,
+                        0,
+                        &a_prep.to_backend_ref(),
+                        &b_prep.to_backend_ref(),
+                        i,
+                        j,
+                        &mut scratch_3,
+                    );
+                }
+                let (mut res_big, scratch_4) = scratch_3.take_vec_znx_big_scratch(module, 1, pairwise_dft_size);
+                {
+                    let mut res_big_backend = res_big.to_backend_mut();
+                    let mut res_dft_backend = res_dft.to_backend_mut();
+                    module.vec_znx_idft_apply_tmpa(&mut res_big_backend, 0, &mut res_dft_backend, 0);
+                }
+                let (mut tmp, mut scratch_5) = scratch_4.take_vec_znx_scratch(module.n(), 1, res.size());
+                let res_big_ref = res_big.to_backend_ref();
+                let mut scratch_iter = scratch_5.borrow();
+                module.vec_znx_big_normalize(
+                    &mut tmp,
+                    res_base2k,
+                    cnv_offset_lo,
+                    0,
+                    &res_big_ref,
+                    ab_base2k,
+                    0,
+                    &mut scratch_iter,
+                );
+
+                let mut res_backend = res.to_backend_mut();
+                let tmp_ref = tmp.to_backend_ref();
+                module.vec_znx_add_assign_backend(&mut res_backend.data, col_i + j, &tmp_ref, 0);
+            }
+        }
+    }
+}
+
+/// Scratch bytes for [`glwe_tensor_apply_prepared_right`].
+///
+/// `a` is prepared into a `CnvPVecL`; `b_prep` is supplied already prepared.
+pub(crate) fn glwe_tensor_apply_prepared_right_tmp_bytes<BE, M, R, A>(
+    module: &M,
+    res: &R,
+    a: &A,
+    a_size: usize,
+    b_size: usize,
+) -> usize
+where
+    BE: Backend,
+    M: Sized + ModuleN + CnvPVecBytesOf + VecZnxDftBytesOf + VecZnxBigBytesOf + Convolution<BE> + VecZnxBigNormalizeTmpBytes,
+    R: GLWEInfos,
+    A: GLWEInfos,
+{
+    let cols: usize = res.rank().as_usize() + 1;
+
+    let res_size: usize = res.size();
+    let ab_base2k: usize = a.base2k().as_usize();
+    let cnv_offset = a_size.min(b_size);
+
+    let lvl_0: usize = module.bytes_of_cnv_pvec_left(cols, a_size);
+    let lvl_1: usize = module.cnv_prepare_left_tmp_bytes(a_size, a_size);
+    let diag_dft_size = normalize_input_limb_bound_worst_case(a_size + b_size, res_size, res.base2k().as_usize(), ab_base2k);
+    let lvl_2_apply: usize = module.cnv_apply_dft_tmp_bytes(cnv_offset, diag_dft_size, a_size, b_size);
+    let pairwise_dft_size = normalize_input_limb_bound_worst_case(a_size + b_size, res_size, res.base2k().as_usize(), ab_base2k);
+    let lvl_2_pairwise: usize = module.cnv_pairwise_apply_dft_tmp_bytes(cnv_offset, pairwise_dft_size, a_size, b_size);
+
+    let lvl_2a: usize = module.bytes_of_vec_znx_dft(1, diag_dft_size)
+        + module.bytes_of_vec_znx_big(1, diag_dft_size)
+        + VecZnx::bytes_of(module.n(), 1, res_size)
+        + lvl_2_apply.max(module.vec_znx_big_normalize_tmp_bytes());
+    let lvl_2b: usize = module.bytes_of_vec_znx_dft(1, pairwise_dft_size)
+        + module.bytes_of_vec_znx_big(1, pairwise_dft_size)
+        + VecZnx::bytes_of(module.n(), 1, res_size)
+        + lvl_2_pairwise.max(module.vec_znx_big_normalize_tmp_bytes());
+    let lvl_2: usize = lvl_2a.max(lvl_2b);
+
+    lvl_0 + lvl_1.max(lvl_2)
+}
+
+/// Tensor product reusing a caller-prepared right operand `b_prep`.
+///
+/// Prepares only `a` into a scratch `CnvPVecL` and runs [`glwe_tensor_apply_loop`]
+/// against the supplied `b_prep`. `a_effective_k` masks `a`'s bottom limb and
+/// `b_size` is the limb count of the operand `b_prep` was prepared from.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
+    module: &M,
+    cnv_offset: usize,
+    res: &mut R,
+    a: &A,
+    a_effective_k: usize,
+    b_prep: &BP,
+    b_size: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: Sized
+        + ModuleN
+        + CnvPVecBytesOf
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxBigNormalize<BE>
+        + Convolution<BE>
+        + VecZnxSubAssignBackend<BE>
+        + VecZnxAddAssignBackend<BE>
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxCopyBackend<BE>
+        + VecZnxNegateBackend<BE>,
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+    A: GLWEToBackendRef<BE> + GLWEInfos,
+    BP: CnvPVecRToBackendRef<BE>,
+{
+    let ab_base2k: usize = a.base2k().as_usize();
+    let a_size: usize = a_effective_k.div_ceil(ab_base2k);
+    // Relaxed input: `a` may carry more limbs than `a_effective_k` requires; the prepared left
+    // operand is sized to the effective limb count and `cnv_prepare_left` clamps to it, reading
+    // only the top (most-significant) effective limbs.
+    assert!(a_size <= a.size(), "a_effective_k limbs ({a_size}) > a.size() ({})", a.size());
+
+    let scratch = scratch.borrow();
+    assert!(
+        scratch.available() >= glwe_tensor_apply_prepared_right_tmp_bytes(module, res, a, a_size, b_size),
+        "scratch.available(): {} < glwe_tensor_apply_prepared_right_tmp_bytes: {}",
+        scratch.available(),
+        glwe_tensor_apply_prepared_right_tmp_bytes(module, res, a, a_size, b_size)
+    );
+
+    let cols: usize = res.rank().as_usize() + 1;
+
+    let (mut a_prep, mut scratch) = scratch.take_cnv_pvec_left_scratch(module, cols, a_size);
+
+    let a_mask = msb_mask_bottom_limb(ab_base2k, a_effective_k);
+    let a_backend = a.to_backend_ref();
+
+    let mut prep_scratch = scratch.borrow();
+    module.cnv_prepare_left(&mut a_prep, &a_backend.data, a_mask, &mut prep_scratch);
+
+    glwe_tensor_apply_loop(
+        module,
+        cnv_offset,
+        res,
+        &a_prep,
+        b_prep,
+        a_size,
+        b_size,
+        ab_base2k,
+        &mut scratch,
+    );
+}
+
+/// Prepares GLWE `b` into the caller-owned scratch `CnvPVecR` `b_prep`.
+///
+/// `b_effective_k` masks the bottom limb of `b`. The prepared operand can then be
+/// reused across several [`glwe_tensor_apply_prepared_right`] calls.
+pub(crate) fn glwe_prepare_right<BE, M, B>(
+    module: &M,
+    b_prep: &mut CnvPVecRViewMut<'_, BE>,
+    b: &B,
+    b_effective_k: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: Convolution<BE>,
+    B: GLWEToBackendRef<BE> + GLWEInfos,
+{
+    let b_base2k: usize = b.base2k().as_usize();
+    // Relaxed input: `b` may carry more limbs than `b_effective_k` requires; the prepared
+    // operand `b_prep` is sized to the effective limb count, and `cnv_prepare_right` clamps to
+    // `min(b_prep.size(), b.size())`, reading only the top (most-significant) effective limbs.
+    assert!(
+        b_effective_k.div_ceil(b_base2k) <= b.size(),
+        "b_effective_k limbs ({}) > b.size() ({})",
+        b_effective_k.div_ceil(b_base2k),
+        b.size()
+    );
+    let b_mask = msb_mask_bottom_limb(b_base2k, b_effective_k);
+    let b_backend = b.to_backend_ref();
+    module.cnv_prepare_right(b_prep, &b_backend.data, b_mask, scratch);
 }
 
 #[inline]
@@ -1134,6 +1302,15 @@ pub fn msb_mask_bottom_limb(base2k: usize, k: usize) -> i64 {
     match k % base2k {
         0 => !0i64,
         r => (!0i64) << (base2k - r),
+    }
+}
+
+pub(crate) fn cnv_offset_to_limb_offset(cnv_offset: usize, base2k: usize) -> (usize, i64) {
+    assert_ne!(base2k, 0);
+    if cnv_offset < base2k {
+        (0, -((base2k - (cnv_offset % base2k)) as i64))
+    } else {
+        ((cnv_offset / base2k).saturating_sub(1), (cnv_offset % base2k) as i64)
     }
 }
 
