@@ -44,7 +44,7 @@
 - Add the `cnv_apply_dft_accumulate` sweep to the convolution Criterion benchmark.
 
 ### Build & Docs
-- Add `docs/linear_transformation.md` (+ `docs/img/lt_bsgs.png`), the design note for the baby-step/giant-step linear transformation: the diagonal decomposition, the prepared convolution-domain caches, the hoisted-baby / lazy-giant evaluation, and the CKKS scale accounting.
+- Add `docs/linear_transformation.md` (+ `docs/img/linear_transformation.png`), the design note for the baby-step/giant-step linear transformation: the diagonal decomposition, the prepared convolution-domain caches, the hoisted-baby / lazy-giant evaluation, and the CKKS scale accounting.
 - Add `docs/polynomial_evaluation.md` describing the Baby-Step/Giant-Step method, the `MinDepth` / `MinMult` strategies, the supported polynomial flavors, and a measured table of modulus consumption per degree.
 - Refresh the `ckks_poly2` example to use Chebyshev interpolation, `PowerBasis`, and the new BSGS evaluator pipeline.
 

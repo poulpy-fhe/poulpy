@@ -78,7 +78,7 @@ The accumulator carries the body and the mask in an un-normalized extended-preci
 The body is never normalized between steps; only the mask is dropped to normalized limbs where a giant key-switch needs them, because gadget decomposition requires limb-aligned input.
 A single normalization at the end produces the result, so the whole transform consumes one rescale level.
 
-![Baby-step giant-step dataflow: the top row hoists the input into the baby rotations and feeds the giant-step products; the lower insets detail the per-giant product (PROD) and the giant rotation (ROT).](img/lt_bsgs.png)
+![Baby-step giant-step dataflow: the top row hoists the input into the baby rotations and feeds the giant-step products; the lower insets detail the per-giant product (PROD) and the giant rotation (ROT).](img/linear_transformation.png)
 
 The diagram reads left to right.
 The top row is the baby-step pipeline: the input mask is transformed once (DFT), each baby rotation is a key-switch (VMP, IDFT, add body, normalize, automorphism) prepared as a left convolution operand, and the crossbar feeds those rotations into the per-giant products.
