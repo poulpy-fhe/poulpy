@@ -3,6 +3,7 @@ pub mod encryption;
 pub mod external_product;
 pub mod glwe_tensor;
 pub mod keyswitch;
+pub mod linear_transformation;
 
 mod conversion;
 mod glwe_packing;
@@ -271,6 +272,8 @@ macro_rules! core_backend_test_suite {
                 glwe_external_product_assign => $crate::test_suite::external_product::test_glwe_external_product_assign,
                 glwe_rotate => $crate::test_suite::test_glwe_rotate,
                 glwe_trace_assign => $crate::test_suite::test_glwe_trace_assign,
+                glwe_hoisted_baby_rotations_match_automorphism =>
+                    $crate::test_suite::linear_transformation::test_glwe_hoisted_baby_rotations_match_automorphism,
                 glwe_packing => $crate::test_suite::test_glwe_packing,
                 gglwe_switching_key_encrypt_sk => $crate::test_suite::encryption::test_gglwe_switching_key_encrypt_sk,
                 gglwe_switching_key_compressed_encrypt_sk =>

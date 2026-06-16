@@ -56,6 +56,7 @@ cargo clippy -p poulpy-bench --all-targets \
 | Binary | Subsystem | Backends |
 |---|---|---|
 | `operations` | GLWE add / sub / normalize / mul-plain | all |
+| `coeff_mat` | `CoeffMatrix x LWEMatrix -> LWEMatrix` | all |
 | `encryption` | GLWE / GGSW / automorphism-key encryption | all |
 | `decryption` | GLWE decryption | all |
 | `automorphism` | GLWE automorphism | all |
@@ -66,6 +67,8 @@ cargo clippy -p poulpy-bench --all-targets \
 
 | Binary | Subsystem | Backends |
 |---|---|---|
+| `ckks_add`, `ckks_sub`, `ckks_mul`, `ckks_unary`, `ckks_automorphism`, `ckks_composite` | CKKS arithmetic and automorphism primitives | NTT family |
+| `ckks_linear_transformation` | CKKS linear transformation: one-shot, prepared BSGS, direct sparse, dense, and many-prepared evaluation | NTT family |
 | `blind_rotate` | Blind rotation (CGGI / AP) | hardcoded |
 | `circuit_bootstrapping` | Circuit bootstrapping | hardcoded |
 | `bdd_prepare` | BDD key preparation | hardcoded |
@@ -97,6 +100,9 @@ All sweep ranges and layout parameters are overridable at runtime through the `P
   "vmp": {
     "sweeps": [[10,2,1,2,3],[11,4,1,2,5],[12,7,1,2,8],[13,15,1,2,16],[14,31,1,2,32]]
   },
+  "coeff_mat": {
+    "sweeps": [[10,1024,1,8,3],[11,2048,1,8,5],[12,4096,2,8,8]]
+  },
   "svp_prepare": {
     "log_n": [10,11,12,13,14]
   },
@@ -115,6 +121,7 @@ Field reference:
 | `hal.sweeps` | `[[log_n, cols, size], ...]` | `vec_znx_big`, `vec_znx_dft`, `svp` | Sweep points for generic HAL ops |
 | `cnv.sweeps` | `[[log_n, size], ...]` | `convolution` | Sweep points for convolution |
 | `vmp.sweeps` | `[[log_n, rows, cols_in, cols_out, size], ...]` | `vmp` | Sweep points for VMP |
+| `coeff_mat.sweeps` | `[[log_n, rows_in, lwe_n, rows_out, size], ...]` | `coeff_mat` | Sweep points for `CoeffMatrix x LWEMatrix` |
 | `svp_prepare.log_n` | `[log_n, ...]` | `svp` prepare | Ring degrees for SVP prepare |
 | `core.n` | power of two | all core/scheme/standard | Ring degree `N` |
 | `core.base2k` | integer | all core/scheme/standard | Limb bit-width |
@@ -147,6 +154,7 @@ cat > bench_params.json <<'EOF'
   "hal":  { "sweeps": [[10,2,2],[12,2,8],[14,2,32]] },
   "cnv":  { "sweeps": [[10,1],[12,4],[14,16]] },
   "vmp":  { "sweeps": [[10,2,1,2,3],[12,7,1,2,8]] },
+  "coeff_mat": { "sweeps": [[10,1024,1,8,3],[12,4096,2,8,8]] },
   "core": { "n": 4096, "base2k": 18, "k": 54, "rank": 1, "dsize": 1 }
 }
 EOF
@@ -205,6 +213,9 @@ cargo bench -p poulpy-bench --bench vec_znx --features hal-bench -- ntt120-ref
 # only the add benchmark, all backends
 cargo bench -p poulpy-bench --bench vec_znx --features hal-bench -- vec_znx_add_into
 
+# CKKS linear transformation, reference NTT backend
+cargo bench -p poulpy-bench --bench ckks_linear_transformation --features ckks-bench -- ntt120-ref
+
 # one specific backend × operation
 cargo bench -p poulpy-bench --bench vec_znx --features hal-bench -- "vec_znx_add_into::fft64-ref"
 
@@ -212,6 +223,32 @@ cargo bench -p poulpy-bench --bench vec_znx --features hal-bench -- "vec_znx_add
 RUSTFLAGS="-C target-feature=+avx2,+fma" \
 cargo bench -p poulpy-bench --bench encryption --features core-bench,enable-avx -- avx
 ```
+
+### CKKS linear transformation metadata
+
+The `ckks_linear_transformation` binary prints a small CSV-style manifest once
+per backend before Criterion timing starts. It records:
+
+| Field | Meaning |
+|---|---|
+| `diagonals` | Number of non-zero linear-transform diagonals in the case |
+| `babies` | Distinct baby-step rotations materialized for the case |
+| `giants` | Non-empty giant-step buckets |
+| `required_rotations` | Unique non-zero automorphism keys required by the schedule |
+| `scratch` | Allocated scratch arena, with `eval_tmp_bound` and `prepare_tmp_bound` |
+
+The timing rows are still Criterion benchmark IDs. The manifest is there to make
+runtime comparisons easier to read alongside schedule shape and scratch pressure.
+
+Precision behavior is validated by the CKKS linear-transformation tests on
+`FFT64/f64`, `NTT120/f64`, and `NTT120/f128`. The benchmark binary itself runs on
+the NTT family, including `ntt120-avx` when `enable-avx` and AVX2/FMA
+`RUSTFLAGS` are used.
+
+For production use, the prepared CKKS linear-transformation API is the promoted
+performance path: prepare once, then evaluate one or many times. The borrowed
+one-shot API remains in the benchmark as the convenience path and prepares a
+temporary cache from the borrowed transform internally.
 
 ### Standard regression binary
 

@@ -22,6 +22,7 @@ where
     BE: Backend,
 {
     let meta = CKKSMeta {
+        log_sparsity: 0,
         log_delta: 1,
         log_budget: 0,
     };

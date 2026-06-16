@@ -69,6 +69,7 @@ pub const NTT120_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     base2k: 52,
     k: 8 * 40,
     prec: CKKSMeta {
+        log_sparsity: 0,
         log_delta: 40,
         log_budget: 30,
     },
@@ -82,6 +83,7 @@ pub const FFT64_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     base2k: 19,
     k: 8 * 19,
     prec: CKKSMeta {
+        log_sparsity: 0,
         log_delta: 30,
         log_budget: 10,
     },
@@ -95,6 +97,7 @@ pub const NTT120_PARAMS_F128: CKKSTestParams = CKKSTestParams {
     base2k: 52,
     k: 8 * 80,
     prec: CKKSMeta {
+        log_sparsity: 0,
         log_delta: 80,
         log_budget: 30,
     },
@@ -156,6 +159,10 @@ macro_rules! ckks_backend_test_suite {
                 };
             }
 
+            run_test!(
+                encode_decode_reim_roundtrip,
+                $crate::test_suite::encoding::test_encode_decode_reim_roundtrip
+            );
             run_test!(encrypt_decrypt, $crate::test_suite::encryption::test_encrypt_decrypt);
             run_test!(
                 decrypt_extract_same_meta,
@@ -363,6 +370,34 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 rotate_assign_missing_key_error,
                 $crate::test_suite::rotate::test_rotate_assign_missing_key_error
+            );
+            run_test!(
+                linear_transformation,
+                $crate::test_suite::linear_transformation::test_linear_transformation
+            );
+            run_test!(
+                dft_coeffs_to_slots_standard,
+                $crate::test_suite::dft::test_dft_coeffs_to_slots_standard
+            );
+            run_test!(
+                dft_slots_to_coeffs_standard,
+                $crate::test_suite::dft::test_dft_slots_to_coeffs_standard
+            );
+            run_test!(
+                dft_coeffs_to_slots_split,
+                $crate::test_suite::dft::test_dft_coeffs_to_slots_split
+            );
+            run_test!(
+                dft_slots_to_coeffs_split,
+                $crate::test_suite::dft::test_dft_slots_to_coeffs_split
+            );
+            run_test!(
+                dft_coeffs_to_slots_repack_sparse,
+                $crate::test_suite::dft::test_dft_coeffs_to_slots_repack_sparse
+            );
+            run_test!(
+                dft_slots_to_coeffs_repack_sparse,
+                $crate::test_suite::dft::test_dft_slots_to_coeffs_repack_sparse
             );
             run_test!(mul_ct_aligned, $crate::test_suite::mul::test_mul_ct_aligned);
             run_test!(mul_ct_delta_a_gt_b, $crate::test_suite::mul::test_mul_ct_delta_a_gt_b);
@@ -646,11 +681,14 @@ pub mod affine;
 pub mod composition;
 pub mod conjugate;
 pub mod copy;
+pub mod dft;
 pub mod dot_product;
+pub mod encoding;
 pub mod encryption;
 pub mod errors;
 pub mod helpers;
 pub mod imag;
+pub mod linear_transformation;
 pub mod mul;
 pub mod mul_add;
 pub mod mul_pow2;

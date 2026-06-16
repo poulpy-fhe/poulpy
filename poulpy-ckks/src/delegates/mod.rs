@@ -2,6 +2,7 @@ pub(crate) mod add;
 pub(crate) mod composite;
 pub(crate) mod conjugate;
 pub(crate) mod copy;
+pub(crate) mod dft;
 pub(crate) mod encryption;
 pub(crate) mod imag;
 pub(crate) mod mul;

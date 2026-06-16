@@ -31,6 +31,7 @@ const DEGREES: &[usize] = &[7, 15, 31, 63, 127];
 const STRATEGIES: &[(SplitStrategy, &str)] = &[(SplitStrategy::MinDepth, "min-depth"), (SplitStrategy::MinMult, "min-mult")];
 
 const COEFF_META: CKKSMeta = CKKSMeta {
+    log_sparsity: 0,
     log_delta: LOG_DELTA,
     log_budget: 1,
 };
@@ -74,6 +75,7 @@ fn bench_ntt120_ref(c: &mut Criterion) {
     let glwe_layout = glwe_layout();
     let tsk_layout = tsk_layout();
     let input_meta = CKKSMeta {
+        log_sparsity: 0,
         log_delta: LOG_DELTA,
         log_budget: CT_K - LOG_DELTA,
     };

@@ -332,6 +332,31 @@ unsafe impl HalConvolutionImpl<NTT120Avx> for NTT120Avx {
         );
     }
 
+    fn cnv_accumulate_dft_tmp_bytes(
+        _module: &Module<Self>,
+        _cnv_offset: usize,
+        res_size: usize,
+        _a_size: usize,
+        _b_size: usize,
+    ) -> usize {
+        crate::ntt120::convolution::cnv_accumulate_dft_avx_tmp_bytes(res_size)
+    }
+
+    fn cnv_accumulate_dft<'a>(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        terms: &[poulpy_hal::layouts::CnvDftAccTerm<'a, Self>],
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        Self: poulpy_hal::oep::HalVecZnxDftImpl<Self> + 'a,
+    {
+        let bytes = crate::ntt120::convolution::cnv_accumulate_dft_avx_tmp_bytes(res.size());
+        let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
+        unsafe { crate::ntt120::convolution::cnv_accumulate_dft_avx(module, cnv_offset, res, res_col, terms, tmp) };
+    }
+
     fn cnv_pairwise_apply_dft_tmp_bytes(
         _module: &Module<Self>,
         _cnv_offset: usize,

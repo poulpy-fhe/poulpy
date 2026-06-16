@@ -1,4 +1,7 @@
 /target
+/poulpy-bench/target/
 /.vscode
 .codex
 /ci-local.md
+
+*.patch

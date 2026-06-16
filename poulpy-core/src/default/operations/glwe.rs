@@ -111,11 +111,7 @@ where
         let res_base2k: usize = res.base2k().as_usize();
         let a_backend = a.to_backend_ref();
 
-        let (cnv_offset_hi, cnv_offset_lo) = if cnv_offset < a_base2k {
-            (0, -((a_base2k - (cnv_offset % a_base2k)) as i64))
-        } else {
-            ((cnv_offset / a_base2k).saturating_sub(1), (cnv_offset % a_base2k) as i64)
-        };
+        let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, a_base2k);
 
         let res_dft_size = a.size() + b_size - cnv_offset_hi;
 
@@ -180,11 +176,7 @@ where
         let cols: usize = res.rank().as_usize() + 1;
         let res_base2k: usize = res.base2k().as_usize();
 
-        let (cnv_offset_hi, cnv_offset_lo) = if cnv_offset < res_base2k {
-            (0, -((res_base2k - (cnv_offset % res_base2k)) as i64))
-        } else {
-            ((cnv_offset / res_base2k).saturating_sub(1), (cnv_offset % res_base2k) as i64)
-        };
+        let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, res_base2k);
 
         let (mut res_big, scratch) = scratch.take_vec_znx_big_scratch(self, 1, res.size());
         let (mut res_tmp, mut scratch) = scratch.take_vec_znx_scratch(self.n(), 1, res.size());
@@ -304,7 +296,6 @@ where
         assert_eq!(a_effective_k.div_ceil(ab_base2k), a.size());
         assert_eq!(b_effective_k.div_ceil(ab_base2k), b.size());
         let res_base2k: usize = res.base2k().as_usize();
-
         let cols: usize = res.rank().as_usize() + 1;
 
         let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, a.size());
@@ -318,11 +309,7 @@ where
         scratch = scratch.apply_mut(|scratch| self.cnv_prepare_left(&mut a_prep, &a_backend.data, a_mask, scratch));
         scratch = scratch.apply_mut(|scratch| self.cnv_prepare_right(&mut b_prep, &b_backend.data, b_mask, scratch));
 
-        let (cnv_offset_hi, cnv_offset_lo) = if cnv_offset < ab_base2k {
-            (0, -((ab_base2k - (cnv_offset % ab_base2k)) as i64))
-        } else {
-            ((cnv_offset / ab_base2k).saturating_sub(1), (cnv_offset % ab_base2k) as i64)
-        };
+        let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, ab_base2k);
 
         let res_dft_size = a.size() + b.size() - cnv_offset_hi;
         let (mut res_tmp, mut scratch) = scratch.take_vec_znx_scratch(self.n(), 1, res.size());
@@ -409,11 +396,7 @@ where
         });
         scratch = scratch.apply_mut(|scratch| self.cnv_prepare_right(&mut a_prep, &a_backend.data, mask_a, scratch));
 
-        let (cnv_offset_hi, cnv_offset_lo) = if cnv_offset < ab_base2k {
-            (0, -((ab_base2k - (cnv_offset % ab_base2k)) as i64))
-        } else {
-            ((cnv_offset / ab_base2k).saturating_sub(1), (cnv_offset % ab_base2k) as i64)
-        };
+        let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, ab_base2k);
 
         let res_dft_size = a.size() + res.size() - cnv_offset_hi;
         let (mut res_tmp, mut scratch) = scratch.take_vec_znx_scratch(self.n(), 1, res.size());
@@ -826,11 +809,7 @@ where
         self.cnv_prepare_self(&mut a_prep, &mut b_prep, &a_backend.data, a_mask, &mut prep_scratch);
         let (mut diag_terms, mut scratch) = scratch.take_vec_znx_scratch(self.n(), cols, res.size());
 
-        let (cnv_offset_hi, cnv_offset_lo) = if cnv_offset < a_base2k {
-            (0, -((a_base2k - (cnv_offset % a_base2k)) as i64))
-        } else {
-            ((cnv_offset / a_base2k).saturating_sub(1), (cnv_offset % a_base2k) as i64)
-        };
+        let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, a_base2k);
 
         let diag_dft_size =
             normalize_input_limb_bound_with_offset(2 * a.size() - cnv_offset_hi, res.size(), res_base2k, a_base2k, cnv_offset_lo);
@@ -1048,11 +1027,7 @@ pub(crate) fn glwe_tensor_apply_loop<BE, M, R, AP, BP>(
 
     // Derive the offset. If cnv_offset < ab_base2k, then we shift to a negative offset
     // since the convolution doesn't support negative offset (yet).
-    let (cnv_offset_hi, cnv_offset_lo) = if cnv_offset < ab_base2k {
-        (0, -((ab_base2k - (cnv_offset % ab_base2k)) as i64))
-    } else {
-        ((cnv_offset / ab_base2k).saturating_sub(1), (cnv_offset % ab_base2k) as i64)
-    };
+    let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, ab_base2k);
 
     let diag_dft_size = normalize_input_limb_bound_with_offset(
         a_size + b_size - cnv_offset_hi,
@@ -1327,6 +1302,15 @@ pub fn msb_mask_bottom_limb(base2k: usize, k: usize) -> i64 {
     match k % base2k {
         0 => !0i64,
         r => (!0i64) << (base2k - r),
+    }
+}
+
+pub(crate) fn cnv_offset_to_limb_offset(cnv_offset: usize, base2k: usize) -> (usize, i64) {
+    assert_ne!(base2k, 0);
+    if cnv_offset < base2k {
+        (0, -((base2k - (cnv_offset % base2k)) as i64))
+    } else {
+        ((cnv_offset / base2k).saturating_sub(1), (cnv_offset % base2k) as i64)
     }
 }
 

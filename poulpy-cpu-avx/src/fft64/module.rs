@@ -608,6 +608,7 @@ impl Reim4Convolution for FFT64Avx {
         min_size: usize,
         offset: usize,
         dst: &mut [f64],
+        dst_stride: usize,
         a: &[f64],
         a_size: usize,
         b: &[f64],
@@ -617,7 +618,7 @@ impl Reim4Convolution for FFT64Avx {
         assert!(a_size > 0);
         assert!(b_size > 0);
         assert!(tmp.len() >= 8 * (a_size + 4 + b_size + 16 * min_size));
-        unsafe { reim4_convolution_apply_avx(m, min_size, offset, dst, a, a_size, b, b_size, tmp) }
+        unsafe { reim4_convolution_apply_avx(m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, tmp) }
     }
 
     #[inline(always)]
@@ -626,6 +627,7 @@ impl Reim4Convolution for FFT64Avx {
         min_size: usize,
         offset: usize,
         dst: &mut [f64],
+        dst_stride: usize,
         a: &[f64],
         a_size: usize,
         b: &[f64],
@@ -635,7 +637,7 @@ impl Reim4Convolution for FFT64Avx {
         assert!(a_size > 0);
         assert!(b_size > 0);
         assert!(tmp.len() >= 8 * (a_size + 4 + b_size + 16 * min_size));
-        unsafe { reim4_convolution_apply_accumulate_avx(m, min_size, offset, dst, a, a_size, b, b_size, tmp) }
+        unsafe { reim4_convolution_apply_accumulate_avx(m, min_size, offset, dst, dst_stride, a, a_size, b, b_size, tmp) }
     }
 
     #[inline(always)]
@@ -644,6 +646,7 @@ impl Reim4Convolution for FFT64Avx {
         min_size: usize,
         offset: usize,
         dst: &mut [f64],
+        dst_stride: usize,
         a0: &[f64],
         a1: &[f64],
         a_size: usize,
@@ -655,7 +658,7 @@ impl Reim4Convolution for FFT64Avx {
         assert!(a_size > 0);
         assert!(b_size > 0);
         assert!(tmp.len() >= 8 * (a_size + 4 + b_size + 16 * min_size));
-        unsafe { reim4_convolution_pairwise_apply_avx(m, min_size, offset, dst, a0, a1, a_size, b0, b1, b_size, tmp) }
+        unsafe { reim4_convolution_pairwise_apply_avx(m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, tmp) }
     }
 
     #[inline(always)]

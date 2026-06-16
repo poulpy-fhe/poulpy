@@ -748,6 +748,7 @@ pub fn test_sub_const_into_lsh_alignment<BE, F, E>(
     let cst_prec = CKKSMeta {
         log_delta: PT_PREC.log_delta,
         log_budget: ct.log_budget(),
+        ..Default::default()
     };
     let cst = ckks_pt_cst::<BE, F>(
         host_module,

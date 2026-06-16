@@ -770,13 +770,16 @@ pub unsafe fn reim4_convolution_apply_avx512(
     min_size: usize,
     offset: usize,
     dst: &mut [f64],
+    dst_stride: usize,
     a: &[f64],
     a_size: usize,
     b: &[f64],
     b_size: usize,
     tmp: &mut [f64],
 ) {
-    unsafe { reim4_convolution_apply_core_avx512::<false, false>(m, min_size, offset, dst, a, a, a_size, b, b, b_size, tmp) }
+    unsafe {
+        reim4_convolution_apply_core_avx512::<false, false>(m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, tmp)
+    }
 }
 
 /// Pairwise variant of [`reim4_convolution_apply_avx512`]: `(a0 + a1) ⊛ (b0 + b1)`.
@@ -792,6 +795,7 @@ pub unsafe fn reim4_convolution_pairwise_apply_avx512(
     min_size: usize,
     offset: usize,
     dst: &mut [f64],
+    dst_stride: usize,
     a0: &[f64],
     a1: &[f64],
     a_size: usize,
@@ -800,7 +804,11 @@ pub unsafe fn reim4_convolution_pairwise_apply_avx512(
     b_size: usize,
     tmp: &mut [f64],
 ) {
-    unsafe { reim4_convolution_apply_core_avx512::<true, false>(m, min_size, offset, dst, a0, a1, a_size, b0, b1, b_size, tmp) }
+    unsafe {
+        reim4_convolution_apply_core_avx512::<true, false>(
+            m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, tmp,
+        )
+    }
 }
 
 /// Accumulating variant of [`reim4_convolution_apply_avx512`]: `dst += a ⊛ b`,
@@ -815,13 +823,16 @@ pub unsafe fn reim4_convolution_apply_accumulate_avx512(
     min_size: usize,
     offset: usize,
     dst: &mut [f64],
+    dst_stride: usize,
     a: &[f64],
     a_size: usize,
     b: &[f64],
     b_size: usize,
     tmp: &mut [f64],
 ) {
-    unsafe { reim4_convolution_apply_core_avx512::<false, true>(m, min_size, offset, dst, a, a, a_size, b, b, b_size, tmp) }
+    unsafe {
+        reim4_convolution_apply_core_avx512::<false, true>(m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, tmp)
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -831,6 +842,7 @@ unsafe fn reim4_convolution_apply_core_avx512<const PAIRWISE: bool, const ACC: b
     min_size: usize,
     offset: usize,
     dst: &mut [f64],
+    dst_stride: usize,
     a0: &[f64],
     a1: &[f64],
     a_size: usize,
@@ -851,7 +863,8 @@ unsafe fn reim4_convolution_apply_core_avx512<const PAIRWISE: bool, const ACC: b
     debug_assert!(tmp.len() >= 8 * (a_size + 6 + b_size * (1 + PAIRWISE as usize) + 16 * min_size));
     debug_assert!(a0.len() >= (m / 4) * 8 * a_size);
     debug_assert!(b0.len() >= (m / 4) * 8 * b_size);
-    debug_assert!(dst.len() >= 2 * m * min_size);
+    debug_assert!(dst_stride >= 2 * m);
+    debug_assert!(dst.len() >= dst_stride * (min_size - 1) + 2 * m);
 
     const GROUP: usize = 16;
 
@@ -869,7 +882,6 @@ unsafe fn reim4_convolution_apply_core_avx512<const PAIRWISE: bool, const ACC: b
         }
 
         let n_tiles: usize = min_size.div_ceil(4);
-        let two_m: usize = 2 * m;
         let dst_ptr: *mut f64 = dst.as_mut_ptr();
         let n_blocks: usize = m / 4;
 
@@ -984,7 +996,7 @@ unsafe fn reim4_convolution_apply_core_avx512<const PAIRWISE: bool, const ACC: b
                 let stage_base: *const f64 = stage.as_ptr();
                 for k in 0..min_size {
                     let row: *const f64 = stage_base.add(8 * k);
-                    let out: *mut f64 = dst_ptr.add(two_m * k + 4 * grp_base);
+                    let out: *mut f64 = dst_ptr.add(dst_stride * k + 4 * grp_base);
                     let mut p: usize = 0;
                     while p + 2 <= in_group {
                         let re_e: __m256d = _mm256_loadu_pd(row.add(8 * min_size * p));
@@ -1171,7 +1183,18 @@ mod tests {
                         let mut tmp = vec![0f64; 8 * (a_size + 6 + b_size + 16 * min_size).max(8 * min_size)];
 
                         unsafe {
-                            reim4_convolution_apply_avx512(m, min_size, offset, &mut dst_fused, &a, a_size, &b, b_size, &mut tmp)
+                            reim4_convolution_apply_avx512(
+                                m,
+                                min_size,
+                                offset,
+                                &mut dst_fused,
+                                2 * m,
+                                &a,
+                                a_size,
+                                &b,
+                                b_size,
+                                &mut tmp,
+                            )
                         };
 
                         // Generic per-block path as reference.

@@ -279,6 +279,148 @@ pub fn ntt120_cnv_apply_dft_accumulate<BE>(
     );
 }
 
+/// Scratch bytes required by [`ntt120_cnv_accumulate_dft`]: the group staging.
+pub fn ntt120_cnv_accumulate_dft_tmp_bytes(res_size: usize, _a_size: usize, _b_size: usize) -> usize {
+    8 * CNV_ACC_GROUP * res_size * size_of::<u64>()
+}
+
+/// One window contribution of one term to one output limb: `len` row pairs
+/// starting at `a_row` (canonical left rows, ascending) and `b_row` (reversed
+/// q120c rows, ascending).
+pub struct CnvAccEntry {
+    pub term: usize,
+    pub a_row: usize,
+    pub b_row: usize,
+    pub len: usize,
+}
+
+/// Builds the per-output-limb window schedule of a fused convolution
+/// accumulation. Entry windows are exact (no padding), so kernels read the
+/// block-major operand rows in place. Returns `sched[k]` for `k ∈ 0..res_size`.
+pub fn cnv_accumulate_schedule(cnv_offset: usize, res_size: usize, term_sizes: &[(usize, usize)]) -> Vec<Vec<CnvAccEntry>> {
+    let mut sched: Vec<Vec<CnvAccEntry>> = (0..res_size).map(|_| Vec::new()).collect();
+    for (t, &(a_size, b_size)) in term_sizes.iter().enumerate() {
+        if a_size == 0 || b_size == 0 {
+            continue;
+        }
+        let bound = a_size + b_size - 1;
+        let offset = cnv_offset.min(bound);
+        let min_size = res_size.min((bound + 1).saturating_sub(offset));
+        for (k, sched_k) in sched.iter_mut().enumerate().take(min_size) {
+            let k_abs = k + offset;
+            let j_min = k_abs.saturating_sub(a_size - 1);
+            let j_max = (k_abs + 1).min(b_size);
+            // Iterating j from j_max-1 down to j_min walks both the `a` limb
+            // rows (k_abs - j) and the reversed `b` rows (b_size - 1 - j)
+            // ascending, so a single contiguous window covers the pair.
+            sched_k.push(CnvAccEntry {
+                term: t,
+                a_row: k_abs + 1 - j_max,
+                b_row: b_size - j_max,
+                len: j_max - j_min,
+            });
+        }
+    }
+    // The q120 bbc reduction is designed for < 10 000 lazily accumulated rows.
+    for sched_k in &sched {
+        debug_assert!(sched_k.iter().map(|e| e.len).sum::<usize>() < 10_000);
+    }
+    sched
+}
+
+/// Fused convolution accumulation: `res[res_col] = Σ_t a_t ⊛ b_t` (overwriting).
+///
+/// All terms of one output limb are summed in the lazy q120 accumulators and
+/// reduced once, and the destination column is written exactly once through the
+/// staged group flush — the result is congruent to, but not bit-identical with,
+/// a sequence of [`ntt120_cnv_apply_dft_accumulate`] calls.
+pub fn ntt120_cnv_accumulate_dft<BE>(
+    module: &impl NttModuleHandle,
+    cnv_offset: usize,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res_col: usize,
+    terms: &[crate::layouts::CnvDftAccTerm<'_, BE>],
+    tmp: &mut [u8],
+) where
+    BE: Backend<ScalarPrep = Q120bScalar>,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
+{
+    use crate::reference::ntt120::mat_vec::{accum_mul_q120_bc, accum_to_q120b};
+
+    let n = res.n();
+    let res_size = res.size();
+    if res_size == 0 {
+        return;
+    }
+    if terms.is_empty() {
+        for j in 0..res_size {
+            cast_slice_mut::<_, u64>(res.at_mut(res_col, j)).fill(0);
+        }
+        return;
+    }
+
+    let meta = module.get_bbc_meta();
+    let n_blks = n / 2;
+
+    let term_cols: Vec<(&[u32], &[u32], usize, usize)> = terms
+        .iter()
+        .map(|t| {
+            let a_size = t.a.size();
+            let b_size = t.b.size();
+            (
+                col_slice_u32(t.a.raw(), n, a_size, t.a_col),
+                col_slice_u32(t.b.raw(), n, b_size, t.b_col),
+                a_size,
+                b_size,
+            )
+        })
+        .collect();
+    let sched = cnv_accumulate_schedule(
+        cnv_offset,
+        res_size,
+        &term_cols.iter().map(|&(_, _, a, b)| (a, b)).collect::<Vec<_>>(),
+    );
+
+    let (prefix, tmp_u64, suffix) = unsafe { tmp.align_to_mut::<u64>() };
+    debug_assert!(prefix.is_empty());
+    debug_assert!(suffix.is_empty());
+    let stage = &mut tmp_u64[..8 * CNV_ACC_GROUP * res_size];
+
+    for blk in 0..n_blks {
+        let grp_pos = blk % CNV_ACC_GROUP;
+
+        for (k, sched_k) in sched.iter().enumerate() {
+            let mut s = [[0u64; 8]; 2];
+            for e in sched_k {
+                let (a_col, b_col, a_size, b_size) = term_cols[e.term];
+                let a_blk = &a_col[blk * 16 * a_size..];
+                let b_blk = &b_col[blk * 16 * b_size..];
+                for i in 0..e.len {
+                    let x = &a_blk[16 * (e.a_row + i)..16 * (e.a_row + i) + 16];
+                    let y = &b_blk[16 * (e.b_row + i)..16 * (e.b_row + i) + 16];
+                    accum_mul_q120_bc(&mut s[0], x[..8].try_into().unwrap(), y[..8].try_into().unwrap());
+                    accum_mul_q120_bc(&mut s[1], x[8..].try_into().unwrap(), y[8..].try_into().unwrap());
+                }
+            }
+            let out = &mut stage[8 * (k * CNV_ACC_GROUP + grp_pos)..];
+            accum_to_q120b::<Primes30>((&mut out[..4]).try_into().unwrap(), &s[0], meta);
+            accum_to_q120b::<Primes30>((&mut out[4..8]).try_into().unwrap(), &s[1], meta);
+        }
+
+        // Flush the group per limb as one contiguous run.
+        let in_group = grp_pos + 1;
+        if in_group == CNV_ACC_GROUP || blk == n_blks - 1 {
+            let grp_base = blk + 1 - in_group;
+            for k in 0..res_size {
+                let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(res_col, k));
+                res_u64[8 * grp_base..8 * (grp_base + in_group)]
+                    .copy_from_slice(&stage[8 * k * CNV_ACC_GROUP..8 * (k * CNV_ACC_GROUP + in_group)]);
+            }
+        }
+    }
+}
+
 /// Compute the pairwise DFT-domain convolution
 /// `res = (a[:,i] + a[:,j]) ⊙ (b[:,i] + b[:,j])`.
 ///

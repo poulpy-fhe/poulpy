@@ -701,6 +701,7 @@ pub fn test_add_pt_vec_into_lsh_alignment<BE, F, E>(
     let pt_prec = CKKSMeta {
         log_delta: PT_PREC.log_delta,
         log_budget: ct1.log_budget(),
+        ..Default::default()
     };
     let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), pt_prec, &re2, &im2);
     assert!(
@@ -819,6 +820,7 @@ pub fn test_add_const_into_lsh_alignment<BE, F, E>(
     let cst_prec = CKKSMeta {
         log_delta: PT_PREC.log_delta,
         log_budget: ct.log_budget(),
+        ..Default::default()
     };
     let cst = ckks_pt_cst::<BE, F>(
         host_module,

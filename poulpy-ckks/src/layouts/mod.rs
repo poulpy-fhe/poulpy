@@ -12,12 +12,19 @@
 
 mod alloc;
 pub mod ciphertext;
+pub mod complex_diagonals;
+pub mod dft;
 pub mod plaintext;
 
 pub use alloc::CKKSModuleAlloc;
 pub use ciphertext::{
     CKKSCiphertext, CKKSCiphertextViewMut, CKKSMaintainOps, CKKSNormalizationState, Normalized, ScratchArenaTakeCKKS,
     Unnormalized, UnnormalizedCKKSCiphertext,
+};
+pub use complex_diagonals::ComplexDiagonals;
+pub use dft::{
+    DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTOutputFormat, DFTPlan, DFTType, Decode, DftDirection, DftFormat, Encode,
+    Repack, Split, Standard,
 };
 pub use plaintext::CKKSPlaintext;
 

@@ -30,6 +30,7 @@
 #[macro_use]
 mod macros;
 
+mod diagonals;
 mod gglwe;
 mod gglwe_to_ggsw_key;
 mod ggsw;
@@ -43,6 +44,7 @@ mod glwe_switching_key;
 mod glwe_tensor;
 mod glwe_tensor_key;
 mod glwe_to_lwe_key;
+mod linear_transformation;
 mod lwe;
 mod lwe_matrix;
 mod lwe_plaintext;
@@ -66,6 +68,7 @@ pub use self::compressed::{
     LWECompressedToBackendRef, LWEDecompress, LWESwitchingKeyCompressed, LWESwitchingKeyDecompress, LWEToGLWEKeyCompressed,
     LWEToGLWEKeyDecompress,
 };
+pub use diagonals::*;
 pub use gglwe::*;
 pub use gglwe_to_ggsw_key::*;
 pub use ggsw::*;
@@ -79,6 +82,9 @@ pub use glwe_switching_key::*;
 pub use glwe_tensor::*;
 pub use glwe_tensor_key::*;
 pub use glwe_to_lwe_key::*;
+pub use linear_transformation::*;
+#[cfg(test)]
+pub(crate) use linear_transformation::{linear_transformation_plan, normalize_linear_transform_diagonal};
 pub use lwe::*;
 pub use lwe_matrix::*;
 pub use lwe_plaintext::*;

@@ -337,7 +337,7 @@ pub(crate) fn mul_ct_params_raw(
     ))
 }
 
-fn get_mul_pt_params<R, A, B>(res: &R, a: &A, b: &B) -> Result<(usize, usize, usize)>
+pub(crate) fn get_mul_pt_params<R, A, B>(res: &R, a: &A, b: &B) -> Result<(usize, usize, usize)>
 where
     R: LWEInfos + CKKSInfos,
     A: LWEInfos + CKKSInfos,

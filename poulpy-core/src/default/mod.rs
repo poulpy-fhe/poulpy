@@ -6,6 +6,7 @@ pub mod external_product;
 pub mod glwe_packing;
 pub mod glwe_trace;
 pub mod keyswitching;
+pub mod linear_transformation;
 pub mod noise;
 pub mod operations;
 pub mod polynomial_evaluation;
