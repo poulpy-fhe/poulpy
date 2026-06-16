@@ -3,7 +3,7 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{
     BSGSConstAdd, BSGSPrecision, GLWEAdd, GLWECopy, GLWEMulConst, GLWENormalize, GLWEShift, GLWETensoring, GLWEZero,
-    GiantStepTensorBounds, ScratchArenaTakeCore,
+    GiantStepTensorBounds,
     layouts::{
         BSGSMeta, BabyStep, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper, SetBSGSMeta,
         prepared::GLWETensorKeyPreparedToBackendRef,
@@ -32,8 +32,7 @@ pub trait GLWEPolynomialEvaluation<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
-        G: PowerBasisHelper<BE, A>,
-        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>;
+        G: PowerBasisHelper<BE, A>;
 
     /// Folds the evaluated baby steps into `res` using the giant-step schedule.
     fn glwe_eval_giant_steps<PR, R, B, A, G, T>(
@@ -58,6 +57,5 @@ pub trait GLWEPolynomialEvaluation<BE: Backend> {
         B: BabyStep<BE>,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>;
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
 }

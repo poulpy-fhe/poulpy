@@ -11,7 +11,7 @@ use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     layouts::{
-        CKKSCiphertext, CKKSCiphertextViewMut, ScratchArenaTakeCKKS,
+        CKKSCiphertext, CKKSCiphertextViewMut, ScratchArenaTakeCKKS, UnnormalizedCKKSCiphertext,
         ciphertext::{CKKSOffset, UnnormalizedCKKSCiphertextRefMut},
     },
     leveled::api::{
@@ -165,42 +165,42 @@ where
         })
     }
 
-    fn ckks_mul_add_pt_const_into_unnormalized<Dst, A, P>(
+    fn ckks_mul_add_pt_const_into_unnormalized<Dst: Data, A, P>(
         &self,
-        dst: &mut Dst,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst>,
         a: &A,
         pt: &P,
         pt_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         scratch.scope(|scratch_local| {
             let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
             self.ckks_mul_pt_const_into(&mut tmp, a, pt, pt_coeff, &mut scratch_local)?;
-            BE::ckks_add_assign_unnormalized_generic(self, dst, &tmp, &mut scratch_local)
+            self.ckks_add_assign_unnormalized(dst, &tmp, &mut scratch_local)
         })
     }
 
-    fn ckks_mul_add_pt_vec_into_unnormalized<Dst, A, P>(
+    fn ckks_mul_add_pt_vec_into_unnormalized<Dst: Data, A, P>(
         &self,
-        dst: &mut Dst,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst>,
         a: &A,
         pt: &P,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         scratch.scope(|scratch_local| {
             let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
             self.ckks_mul_pt_vec_into(&mut tmp, a, pt, &mut scratch_local)?;
-            BE::ckks_add_assign_unnormalized_generic(self, dst, &tmp, &mut scratch_local)
+            self.ckks_add_assign_unnormalized(dst, &tmp, &mut scratch_local)
         })
     }
 }

@@ -1,15 +1,15 @@
 use anyhow::{Result, ensure};
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+    GGLWEInfos, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
     prepared::GLWETensorKeyPreparedToBackendRef, split_degree,
 };
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
-    api::{CKKSAddOps, CKKSMulOps, CKKSSubOps},
+    api::{CKKSMulOps, CKKSPow2Ops, CKKSSubOps},
     checked_mul_ct_log_budget,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, ScratchArenaTakeCKKS},
+    layouts::{CKKSCiphertext, CKKSModuleAlloc},
 };
 
 pub use crate::api::{Basis, Parity};
@@ -44,7 +44,7 @@ pub trait PowerBasisGen<D: Data> {
     ) -> Result<()>
     where
         BE: Backend<OwnedBuf = D>,
-        Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
+        Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
         CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
 
@@ -61,7 +61,7 @@ pub trait PowerBasisGen<D: Data> {
     ) -> Result<()>
     where
         BE: Backend<OwnedBuf = D>,
-        Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
+        Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
         CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
 }
@@ -153,7 +153,7 @@ impl<D: Data> PowerBasisGen<D> for PowerBasis<CKKSCiphertext<D>> {
     ) -> Result<()>
     where
         BE: Backend<OwnedBuf = D>,
-        Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
+        Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
         CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
@@ -177,21 +177,16 @@ impl<D: Data> PowerBasisGen<D> for PowerBasis<CKKSCiphertext<D>> {
             self.gen_power_chebyshev(c, module, tsk, scratch)?;
         }
 
-        let result = scratch.scope(|scratch| -> Result<CKKSCiphertext<D>> {
+        let result = scratch.scope(|mut scratch| -> Result<CKKSCiphertext<D>> {
             let a_val = self.get_stored(a).expect("gen_power_chebyshev(a) just succeeded");
             let b_val = self.get_stored(b).expect("gen_power_chebyshev(b) just succeeded");
             let k = mul_ct_effective_k(a_val, b_val)?;
-            let product_layout = GLWELayout {
-                n: a_val.n(),
-                base2k: a_val.base2k(),
-                k: k.into(),
-                rank: a_val.rank(),
-            };
-            let (mut product, mut scratch) = scratch.take_ckks_ciphertext_scratch(&product_layout, a_val.meta());
-            module.ckks_mul_into(&mut product, a_val, b_val, tsk, &mut scratch)?;
 
-            let mut doubled = module.ckks_ciphertext_alloc(product.base2k(), product.effective_k().into());
-            module.ckks_add_into(&mut doubled, &product, &product, &mut scratch)?;
+            // `2·T_a·T_b − T_c`: compute the product directly into the owned result and
+            // double it in place, rather than into a separate scratch buffer then copying.
+            let mut doubled = module.ckks_ciphertext_alloc(a_val.base2k(), k.into());
+            module.ckks_mul_into(&mut doubled, a_val, b_val, tsk, &mut scratch)?;
+            module.ckks_mul_pow2_assign(&mut doubled, 1, &mut scratch)?;
 
             if c == 0 {
                 module.ckks_sub_one_assign(&mut doubled, &mut scratch)?;
@@ -218,7 +213,7 @@ impl<D: Data> PowerBasisGen<D> for PowerBasis<CKKSCiphertext<D>> {
     ) -> Result<()>
     where
         BE: Backend<OwnedBuf = D>,
-        Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
+        Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
         CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {

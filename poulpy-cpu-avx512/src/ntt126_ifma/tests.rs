@@ -1,6 +1,8 @@
 use poulpy_hal::{
     layouts::Module,
-    test_suite::convolution::{test_convolution, test_convolution_by_const, test_convolution_pairwise},
+    test_suite::convolution::{
+        test_convolution, test_convolution_accumulate, test_convolution_by_const, test_convolution_pairwise,
+    },
 };
 
 use crate::NTT126Ifma;
@@ -27,6 +29,8 @@ mod ntt126_ifma_tests {
             test_vec_znx_normalize_coeff_assign_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize_coeff_assign_backend,
             test_vec_znx_lsh_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_coeff_backend,
             test_vec_znx_lsh_add_coeff_into_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_add_coeff_into_backend,
+            test_vec_znx_lsh_add_coeff_to_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_add_coeff_to_coeff_backend,
+            test_vec_znx_lsh_sub_coeff_to_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_sub_coeff_to_coeff_backend,
             test_vec_znx_rsh_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_coeff_backend,
             test_vec_znx_rsh_add_coeff_into_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_add_coeff_into_backend,
             test_vec_znx_rsh_sub_coeff_into_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_sub_coeff_into_backend,
@@ -71,6 +75,18 @@ mod ntt126_ifma_tests {
             test_vec_znx_dft_sub_negate_assign => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_sub_negate_assign,
             test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
             test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
+            test_vec_znx_idft_apply_tmpa => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_tmpa,
+            test_vec_znx_dft_automorphism => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism,
+        }
+    }
+
+    cross_backend_test_suite! {
+        mod vec_znx_dft_large,
+        backend_ref =  poulpy_cpu_ref::NTT120Ref,
+        backend_test = crate::NTT126Ifma,
+        params = TestParams { size: 1<<12, base2k: 50 },
+        tests = {
+            test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
             test_vec_znx_idft_apply_tmpa => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_tmpa,
         }
     }
@@ -267,6 +283,12 @@ fn test_convolution_ntt126_ifma() {
 fn test_convolution_pairwise_ntt126_ifma() {
     let module: Module<NTT126Ifma> = Module::<NTT126Ifma>::new(8);
     test_convolution_pairwise(&module, 12);
+}
+
+#[test]
+fn test_convolution_accumulate_ntt126_ifma() {
+    let module: Module<NTT126Ifma> = Module::<NTT126Ifma>::new(8);
+    test_convolution_accumulate(&module, 12);
 }
 
 #[test]

@@ -3,7 +3,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     BSGSConstAdd, BSGSPrecision, GLWEAdd, GLWECopy, GLWEMulConst, GLWENormalize, GLWEShift, GLWETensoring, GLWEZero,
-    GiantStepTensorBounds, ScratchArenaTakeCore,
+    GiantStepTensorBounds,
     layouts::{
         BSGSMeta, BabyStep, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper, SetBSGSMeta,
         prepared::GLWETensorKeyPreparedToBackendRef,
@@ -32,8 +32,7 @@ pub unsafe trait PolynomialEvaluationImpl<BE: Backend>: Backend {
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
-        G: PowerBasisHelper<BE, A>,
-        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>;
+        G: PowerBasisHelper<BE, A>;
 
     #[allow(clippy::too_many_arguments)]
     fn glwe_eval_giant_steps<PR, R, B, A, G, T>(
@@ -53,8 +52,7 @@ pub unsafe trait PolynomialEvaluationImpl<BE: Backend>: Backend {
         B: BabyStep<BE>,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>;
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
 }
 
 /// Override surface carrying the reference BSGS phase implementations.
@@ -75,8 +73,7 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
-        G: PowerBasisHelper<BE, A>,
-        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>;
+        G: PowerBasisHelper<BE, A>;
 
     fn glwe_eval_giant_steps_default<PR, R, B, A, G, T>(
         &self,
@@ -100,8 +97,7 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
         B: BabyStep<BE>,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
-        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>;
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
 }
 
 unsafe impl<BE: Backend> PolynomialEvaluationImpl<BE> for BE
@@ -124,7 +120,6 @@ where
         C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
-        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
     {
         module.glwe_eval_baby_step_default::<PR, R, C, A, G>(precision, res, parity, coeffs, power_basis, scratch)
     }
@@ -147,7 +142,6 @@ where
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
     {
         module.glwe_eval_giant_steps_default::<PR, R, B, A, G, T>(precision, res, baby_steps, power_basis, tsk, scratch)
     }

@@ -1,16 +1,18 @@
 use std::fmt;
 
 use poulpy_hal::{
-    api::VecZnxFillUniformSourceBackend,
+    api::VecZnxCopyBackend,
     layouts::{
-        Backend, Data, DataView, DataViewMut, FillUniform, HostBytesBackend, HostDataMut, HostDataRef, Module, ReaderFrom,
-        VecZnx, VecZnxToBackendMut, VecZnxToBackendRef, WriterTo, ZnxView, ZnxViewMut, vec_znx_backend_mut_from_mut,
-        vec_znx_backend_ref_from_mut, vec_znx_backend_ref_from_ref,
+        Backend, Data, FillUniform, HostDataMut, HostDataRef, Module, ReaderFrom, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef,
+        WriterTo, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_mut, vec_znx_backend_ref_from_ref,
     },
     source::Source,
 };
 
-use crate::layouts::{Base2K, Degree, LWE, LWEInfos, LWEToBackendMut, TorusPrecision};
+use crate::{
+    encryption::lwe::LWEFillMaskDefault,
+    layouts::{Base2K, Degree, LWEInfos, LWEToBackendMut, SetLWEInfos, TorusPrecision},
+};
 
 /// Seed-compressed LWE ciphertext layout.
 ///
@@ -129,45 +131,31 @@ impl<D: HostDataRef> WriterTo for LWECompressed<D> {
 
 pub trait LWEDecompress
 where
-    Self: VecZnxFillUniformSourceBackend<Self::Backend>,
+    Self: LWEFillMaskDefault<Self::Backend> + VecZnxCopyBackend<Self::Backend>,
 {
     type Backend: Backend;
 
     fn decompress_lwe<R, O>(&self, res: &mut R, other: &O)
     where
-        R: LWEToBackendMut<HostBytesBackend>,
-        O: LWECompressedToBackendRef<HostBytesBackend>,
+        R: LWEToBackendMut<Self::Backend> + LWEInfos + SetLWEInfos,
+        O: LWECompressedToBackendRef<Self::Backend>,
     {
-        let mut res_ref = res.to_backend_mut();
-        let res: &mut LWE<&mut [u8]> = &mut res_ref;
         let other = other.to_backend_ref();
 
-        assert_eq!(res.lwe_layout(), other.lwe_layout());
-
-        let mut source: Source = Source::new(other.seed);
-        let mut res_backend = VecZnx::from_data(
-            <Self::Backend as Backend>::from_host_bytes(res.mask.data()),
-            res.mask.n(),
-            res.mask.cols(),
-            res.mask.size(),
-        );
         {
-            let mut res_backend_mut =
-                <VecZnx<<Self::Backend as Backend>::OwnedBuf> as VecZnxToBackendMut<Self::Backend>>::to_backend_mut(
-                    &mut res_backend,
-                );
-            self.vec_znx_fill_uniform_source_backend(other.base2k().into(), &mut res_backend_mut, 0, &mut source);
+            let mut res = res.to_backend_mut();
+            assert_eq!(res.base2k(), other.base2k(), "decompress_lwe: base2k mismatch");
+            assert_eq!(res.size(), other.size(), "decompress_lwe: limb count mismatch");
+            self.vec_znx_copy_backend(&mut res.body, 0, &other.data, 0);
         }
-        <Self::Backend as Backend>::copy_to_host(res_backend.data(), res.mask.data_mut());
-        for i in 0..res.size() {
-            res.body.at_mut(0, i)[0] = other.data.at(0, i)[0];
-        }
+        self.fill_lwe_mask_from_seed_default(other.base2k().into(), res, other.seed);
+        res.set_base2k(other.base2k());
     }
 }
 
 impl<B: Backend> LWEDecompress for Module<B>
 where
-    Self: VecZnxFillUniformSourceBackend<B>,
+    Self: LWEFillMaskDefault<B> + VecZnxCopyBackend<B>,
 {
     type Backend = B;
 }

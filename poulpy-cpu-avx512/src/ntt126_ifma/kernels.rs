@@ -99,6 +99,144 @@ unsafe fn pack_512(lo: __m256i, hi: __m256i) -> __m512i {
     unsafe { _mm512_inserti64x4::<1>(_mm512_castsi256_si512(lo), hi) }
 }
 
+/// Fused level-0 twist and first butterfly level: for each pair
+/// `(i, i + n/2)`, twist both elements by their level-0 omegas, then apply
+/// the level-1 butterfly, saving one full store/reload pass over the data.
+/// Operations per element match the unfused sequence exactly.
+#[target_feature(enable = "avx512ifma")]
+#[allow(clippy::too_many_arguments)]
+unsafe fn ntt_iter_first_fused_ifma(
+    begin: *mut __m256i,
+    halfn: usize,
+    po0_omega: *const __m256i,
+    po0_quot: *const __m256i,
+    po1_omega: *const __m256i,
+    po1_quot: *const __m256i,
+    q: __m256i,
+    q4: __m256i,
+) {
+    unsafe {
+        let mut ptr1 = begin;
+        let mut ptr2 = begin.add(halfn);
+
+        // i = 0: twist both halves, butterfly without a level-1 twiddle.
+        {
+            let a = harvey_modmul_si256(
+                _mm256_loadu_si256(ptr1),
+                _mm256_loadu_si256(po0_omega),
+                _mm256_loadu_si256(po0_quot),
+                q,
+            );
+            let b = harvey_modmul_si256(
+                _mm256_loadu_si256(ptr2),
+                _mm256_loadu_si256(po0_omega.add(halfn)),
+                _mm256_loadu_si256(po0_quot.add(halfn)),
+                q,
+            );
+            let sum = cond_sub_2q_si256(_mm256_add_epi64(a, b), q4);
+            let diff = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(a, q4), b), q4);
+            _mm256_storeu_si256(ptr1, sum);
+            _mm256_storeu_si256(ptr2, diff);
+            ptr1 = ptr1.add(1);
+            ptr2 = ptr2.add(1);
+        }
+
+        // i = 1: peel so the 512-bit loop starts on even indices.
+        {
+            let a = harvey_modmul_si256(
+                _mm256_loadu_si256(ptr1),
+                _mm256_loadu_si256(po0_omega.add(1)),
+                _mm256_loadu_si256(po0_quot.add(1)),
+                q,
+            );
+            let b = harvey_modmul_si256(
+                _mm256_loadu_si256(ptr2),
+                _mm256_loadu_si256(po0_omega.add(halfn + 1)),
+                _mm256_loadu_si256(po0_quot.add(halfn + 1)),
+                q,
+            );
+            let sum = cond_sub_2q_si256(_mm256_add_epi64(a, b), q4);
+            let diff = _mm256_sub_epi64(_mm256_add_epi64(a, q4), b);
+            _mm256_storeu_si256(ptr1, sum);
+            _mm256_storeu_si256(
+                ptr2,
+                harvey_modmul_si256(diff, _mm256_loadu_si256(po1_omega), _mm256_loadu_si256(po1_quot), q),
+            );
+            ptr1 = ptr1.add(1);
+            ptr2 = ptr2.add(1);
+        }
+
+        // i = 2..halfn: 512-bit pairs.
+        let q_512 = pack_512(q, q);
+        let q4_512 = pack_512(q4, q4);
+        let pairs = (halfn - 2) / 2;
+        let tw0a_512 = po0_omega.add(2) as *const __m512i;
+        let tw0aq_512 = po0_quot.add(2) as *const __m512i;
+        let tw0b_512 = po0_omega.add(halfn + 2) as *const __m512i;
+        let tw0bq_512 = po0_quot.add(halfn + 2) as *const __m512i;
+        let tw1_512 = po1_omega.add(1) as *const __m512i;
+        let tw1q_512 = po1_quot.add(1) as *const __m512i;
+        for p in 0..pairs {
+            let a = harvey_modmul_si512(
+                _mm512_loadu_si512(ptr1 as *const __m512i),
+                _mm512_loadu_si512(tw0a_512.add(p)),
+                _mm512_loadu_si512(tw0aq_512.add(p)),
+                q_512,
+            );
+            let b = harvey_modmul_si512(
+                _mm512_loadu_si512(ptr2 as *const __m512i),
+                _mm512_loadu_si512(tw0b_512.add(p)),
+                _mm512_loadu_si512(tw0bq_512.add(p)),
+                q_512,
+            );
+            let sum = cond_sub_2q_si512(_mm512_add_epi64(a, b), q4_512);
+            let diff = _mm512_sub_epi64(_mm512_add_epi64(a, q4_512), b);
+            _mm512_storeu_si512(ptr1 as *mut __m512i, sum);
+            _mm512_storeu_si512(
+                ptr2 as *mut __m512i,
+                harvey_modmul_si512(
+                    diff,
+                    _mm512_loadu_si512(tw1_512.add(p)),
+                    _mm512_loadu_si512(tw1q_512.add(p)),
+                    q_512,
+                ),
+            );
+            ptr1 = ptr1.add(2);
+            ptr2 = ptr2.add(2);
+        }
+
+        // 256-bit tail.
+        for i in (2 + 2 * pairs)..halfn {
+            let a = harvey_modmul_si256(
+                _mm256_loadu_si256(ptr1),
+                _mm256_loadu_si256(po0_omega.add(i)),
+                _mm256_loadu_si256(po0_quot.add(i)),
+                q,
+            );
+            let b = harvey_modmul_si256(
+                _mm256_loadu_si256(ptr2),
+                _mm256_loadu_si256(po0_omega.add(halfn + i)),
+                _mm256_loadu_si256(po0_quot.add(halfn + i)),
+                q,
+            );
+            let sum = cond_sub_2q_si256(_mm256_add_epi64(a, b), q4);
+            let diff = _mm256_sub_epi64(_mm256_add_epi64(a, q4), b);
+            _mm256_storeu_si256(ptr1, sum);
+            _mm256_storeu_si256(
+                ptr2,
+                harvey_modmul_si256(
+                    diff,
+                    _mm256_loadu_si256(po1_omega.add(i - 1)),
+                    _mm256_loadu_si256(po1_quot.add(i - 1)),
+                    q,
+                ),
+            );
+            ptr1 = ptr1.add(1);
+            ptr2 = ptr2.add(1);
+        }
+    }
+}
+
 /// Level-0: `a[i] *= ω^i` using Harvey multiply.
 /// Uses 512-bit main loop with split twiddle layout.
 ///
@@ -444,6 +582,87 @@ unsafe fn intt_iter_ifma(
     }
 }
 
+/// Forward mirror of [`intt_radix8_first3_ifma`]: fuses the last three
+/// butterfly levels (`nn = 8, 4, 2`) of each block in one register pass.
+/// Twiddles are block-independent; operations per element match the unfused
+/// per-level sequence exactly.
+#[target_feature(enable = "avx512ifma")]
+#[allow(clippy::too_many_arguments)]
+unsafe fn ntt_radix8_last3_ifma(
+    begin: *mut __m256i,
+    end: *const __m256i,
+    q: __m256i,
+    q4: __m256i,
+    w8: *const __m256i,
+    w8q: *const __m256i,
+    w4: *const __m256i,
+    w4q: *const __m256i,
+) {
+    unsafe {
+        let w8_1 = _mm256_loadu_si256(w8);
+        let w8_2 = _mm256_loadu_si256(w8.add(1));
+        let w8_3 = _mm256_loadu_si256(w8.add(2));
+        let w8_1q = _mm256_loadu_si256(w8q);
+        let w8_2q = _mm256_loadu_si256(w8q.add(1));
+        let w8_3q = _mm256_loadu_si256(w8q.add(2));
+        let w4_1 = _mm256_loadu_si256(w4);
+        let w4_1q = _mm256_loadu_si256(w4q);
+
+        let mut ptr = begin;
+        while (ptr as usize) < (end as usize) {
+            let a0 = _mm256_loadu_si256(ptr);
+            let a1 = _mm256_loadu_si256(ptr.add(1));
+            let a2 = _mm256_loadu_si256(ptr.add(2));
+            let a3 = _mm256_loadu_si256(ptr.add(3));
+            let a4 = _mm256_loadu_si256(ptr.add(4));
+            let a5 = _mm256_loadu_si256(ptr.add(5));
+            let a6 = _mm256_loadu_si256(ptr.add(6));
+            let a7 = _mm256_loadu_si256(ptr.add(7));
+
+            // nn=8: identity at i=0, twiddles w8_{1,2,3} at i=1..3.
+            let u0 = cond_sub_2q_si256(_mm256_add_epi64(a0, a4), q4);
+            let u4 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(a0, q4), a4), q4);
+            let u1 = cond_sub_2q_si256(_mm256_add_epi64(a1, a5), q4);
+            let u5 = harvey_modmul_si256(_mm256_sub_epi64(_mm256_add_epi64(a1, q4), a5), w8_1, w8_1q, q);
+            let u2 = cond_sub_2q_si256(_mm256_add_epi64(a2, a6), q4);
+            let u6 = harvey_modmul_si256(_mm256_sub_epi64(_mm256_add_epi64(a2, q4), a6), w8_2, w8_2q, q);
+            let u3 = cond_sub_2q_si256(_mm256_add_epi64(a3, a7), q4);
+            let u7 = harvey_modmul_si256(_mm256_sub_epi64(_mm256_add_epi64(a3, q4), a7), w8_3, w8_3q, q);
+
+            // nn=4: identity at i=0, twiddle w4 at i=1, per half-block.
+            let v0 = cond_sub_2q_si256(_mm256_add_epi64(u0, u2), q4);
+            let v2 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(u0, q4), u2), q4);
+            let v1 = cond_sub_2q_si256(_mm256_add_epi64(u1, u3), q4);
+            let v3 = harvey_modmul_si256(_mm256_sub_epi64(_mm256_add_epi64(u1, q4), u3), w4_1, w4_1q, q);
+            let v4 = cond_sub_2q_si256(_mm256_add_epi64(u4, u6), q4);
+            let v6 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(u4, q4), u6), q4);
+            let v5 = cond_sub_2q_si256(_mm256_add_epi64(u5, u7), q4);
+            let v7 = harvey_modmul_si256(_mm256_sub_epi64(_mm256_add_epi64(u5, q4), u7), w4_1, w4_1q, q);
+
+            // nn=2: 4 identity butterflies.
+            let o0 = cond_sub_2q_si256(_mm256_add_epi64(v0, v1), q4);
+            let o1 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(v0, q4), v1), q4);
+            let o2 = cond_sub_2q_si256(_mm256_add_epi64(v2, v3), q4);
+            let o3 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(v2, q4), v3), q4);
+            let o4 = cond_sub_2q_si256(_mm256_add_epi64(v4, v5), q4);
+            let o5 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(v4, q4), v5), q4);
+            let o6 = cond_sub_2q_si256(_mm256_add_epi64(v6, v7), q4);
+            let o7 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(v6, q4), v7), q4);
+
+            _mm256_storeu_si256(ptr, o0);
+            _mm256_storeu_si256(ptr.add(1), o1);
+            _mm256_storeu_si256(ptr.add(2), o2);
+            _mm256_storeu_si256(ptr.add(3), o3);
+            _mm256_storeu_si256(ptr.add(4), o4);
+            _mm256_storeu_si256(ptr.add(5), o5);
+            _mm256_storeu_si256(ptr.add(6), o6);
+            _mm256_storeu_si256(ptr.add(7), o7);
+
+            ptr = ptr.add(8);
+        }
+    }
+}
+
 /// Fused iNTT pass covering `nn = 2, 4, 8` in registers.
 ///
 /// Twiddle layout in `po_base` (level-2 has no twiddles):
@@ -543,6 +762,27 @@ const NTT_BLOCK: usize = 256;
 /// cache across all remaining levels.
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn ntt_avx512<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTable<P>, data: &mut [u64]) {
+    unsafe {
+        ntt_avx512_no_final::<P>(table, data);
+
+        let n = table.n;
+        if n == 1 {
+            return;
+        }
+        let q2 = _mm256_loadu_si256(table.q2.as_ptr() as *const __m256i);
+        let q2_512 = pack_512(q2, q2);
+        let ptr_512 = data.as_mut_ptr() as *mut __m512i;
+        let chunks = n / 2;
+        for i in 0..chunks {
+            let x = _mm512_loadu_si512(ptr_512.add(i));
+            _mm512_storeu_si512(ptr_512.add(i), cond_sub_2q_si512(x, q2_512));
+        }
+    }
+}
+
+/// Forward NTT without the final `[0, 4q) -> [0, 2q)` normalisation pass.
+#[target_feature(enable = "avx512ifma,avx512vl")]
+unsafe fn ntt_avx512_no_final<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTable<P>, data: &mut [u64]) {
     let n = table.n;
     if n == 1 {
         return;
@@ -560,18 +800,35 @@ pub(crate) unsafe fn ntt_avx512<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTable<P
             use core::arch::x86_64::_mm256_set_epi64x;
             _mm256_set_epi64x(0, c as i64, b as i64, a as i64)
         };
-        let q2 = _mm256_loadu_si256(table.q2.as_ptr() as *const __m256i);
         let q4 = _mm256_loadu_si256(table.q4.as_ptr() as *const __m256i);
 
         let mut seg_avx = 0usize;
-
-        // Level 0: a[i] *= ω^i.
-        ntt_iter_first_ifma(begin, end, po_base.add(seg_avx), po_base.add(seg_avx + n), q);
-        seg_avx += 2 * n;
-
-        // Upper butterfly levels (breadth-first) while nn > NTT_BLOCK.
         let block = NTT_BLOCK.min(n);
         let mut nn = n;
+
+        if n > block {
+            // Level 0 (a[i] *= ω^i) fused with the first butterfly level.
+            let halfn = n / 2;
+            let count = halfn - 1;
+            ntt_iter_first_fused_ifma(
+                begin,
+                halfn,
+                po_base,
+                po_base.add(n),
+                po_base.add(2 * n),
+                po_base.add(2 * n + count),
+                q,
+                q4,
+            );
+            seg_avx = 2 * n + 2 * count;
+            nn = halfn;
+        } else {
+            // Level 0: a[i] *= ω^i.
+            ntt_iter_first_ifma(begin, end, po_base.add(seg_avx), po_base.add(seg_avx + n), q);
+            seg_avx += 2 * n;
+        }
+
+        // Upper butterfly levels (breadth-first) while nn > NTT_BLOCK.
         while nn > block {
             let halfnn = nn / 2;
             let count = halfnn - 1;
@@ -608,38 +865,53 @@ pub(crate) unsafe fn ntt_avx512<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTable<P
             let blk_end = begin.add(blk_start + nn) as *const __m256i;
             for i in 0..num_inner {
                 let m = inner_nn[i];
-                let halfm = m / 2;
                 let seg = inner_segs[i];
-                if halfm > 1 {
-                    let count = halfm - 1;
-                    ntt_iter_ifma(m, blk_begin, blk_end, q, q4, po_base.add(seg), po_base.add(seg + count));
-                } else {
-                    // m == 2: add/sub only, no twiddle.
-                    let mut p1 = blk_begin;
-                    let mut p2 = blk_begin.add(1);
-                    while (p1 as usize) < (blk_end as usize) {
-                        let a = _mm256_loadu_si256(p1);
-                        let b = _mm256_loadu_si256(p2);
-                        let sum = cond_sub_2q_si256(_mm256_add_epi64(a, b), q4);
-                        let diff = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(a, q4), b), q4);
-                        _mm256_storeu_si256(p1, sum);
-                        _mm256_storeu_si256(p2, diff);
-                        p1 = p1.add(2);
-                        p2 = p2.add(2);
-                    }
+                if m == 8 {
+                    // Levels nn = 8, 4, 2 fused in one register pass.
+                    let seg4 = inner_segs[i + 1];
+                    ntt_radix8_last3_ifma(
+                        blk_begin,
+                        blk_end,
+                        q,
+                        q4,
+                        po_base.add(seg),
+                        po_base.add(seg + 3),
+                        po_base.add(seg4),
+                        po_base.add(seg4 + 1),
+                    );
+                    break;
                 }
+                let count = m / 2 - 1;
+                ntt_iter_ifma(m, blk_begin, blk_end, q, q4, po_base.add(seg), po_base.add(seg + count));
             }
             blk_start += nn;
         }
+    }
+}
 
-        // Final normalisation: [0, 4q) → [0, 2q).  n is always a power of two
-        // ≥ 2 here, so iterating 512-bit (= 2 coefficients of 4×u64) is safe.
+/// [`ntt_avx512`] variant that writes the final normalised x2-blocks to
+/// strided rows: block `i` lands at `dst[i * row_stride + row_off]` (u64
+/// units). Used by the convolution prepare to skip a separate scatter pass.
+#[target_feature(enable = "avx512ifma,avx512vl")]
+pub(crate) unsafe fn ntt_avx512_to_rows<P: PrimeSetNtt126Ifma>(
+    table: &Ntt126IfmaTable<P>,
+    data: &mut [u64],
+    dst: &mut [u64],
+    row_stride: usize,
+    row_off: usize,
+) {
+    unsafe {
+        ntt_avx512_no_final::<P>(table, data);
+
+        let n = table.n;
+        let q2 = _mm256_loadu_si256(table.q2.as_ptr() as *const __m256i);
         let q2_512 = pack_512(q2, q2);
-        let ptr_512 = begin as *mut __m512i;
+        let src_512 = data.as_ptr() as *const __m512i;
         let chunks = n / 2;
         for i in 0..chunks {
-            let x = _mm512_loadu_si512(ptr_512.add(i));
-            _mm512_storeu_si512(ptr_512.add(i), cond_sub_2q_si512(x, q2_512));
+            let x = _mm512_loadu_si512(src_512.add(i));
+            let out = dst.as_mut_ptr().add(i * row_stride + row_off) as *mut __m512i;
+            _mm512_storeu_si512(out, cond_sub_2q_si512(x, q2_512));
         }
     }
 }

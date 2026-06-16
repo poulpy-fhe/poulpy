@@ -11,8 +11,7 @@ use std::{
 
 use anyhow::Result;
 use poulpy_core::layouts::{
-    BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, LWEInfos, Rank,
-    SetBSGSMeta,
+    BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, LWEInfos, Rank, SetBSGSMeta,
 };
 use poulpy_core::{GLWENormalize, ScratchArenaTakeCore};
 use poulpy_hal::layouts::{Backend, Data, HostBackend, HostDataRef, Module, ScratchArena};
@@ -124,6 +123,21 @@ impl<D: Data> CKKSCiphertext<D, Normalized> {
         let mut out = module.ckks_ciphertext_alloc(self.base2k(), self.effective_k().into());
         module.ckks_copy(&mut out, self, scratch)?;
         Ok(out)
+    }
+}
+
+// Without this, `ct.clone()` silently resolves through `Deref` to
+// `GLWE::clone` and drops the CKKS metadata.
+impl<D: Data, S: CKKSNormalizationState> Clone for CKKSCiphertext<D, S>
+where
+    GLWE<D>: Clone,
+{
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            meta: self.meta,
+            _state: PhantomData,
+        }
     }
 }
 
@@ -340,20 +354,6 @@ pub trait ScratchArenaTakeCKKS<'a, BE: Backend>: ScratchArenaTakeCore<'a, BE> + 
         C: GLWEInfos + CKKSInfos,
     {
         self.take_ckks_ciphertext_scratch(ct, ct.meta())
-    }
-
-    fn take_compact_ckks_ciphertext_scratch<C>(self, ct: &C) -> (CKKSCiphertextViewMut<'a, BE>, Self)
-    where
-        BE: 'a,
-        C: GLWEInfos + CKKSInfos,
-    {
-        let layout = GLWELayout {
-            n: ct.n(),
-            base2k: ct.base2k(),
-            k: ct.effective_k().into(),
-            rank: ct.rank(),
-        };
-        self.take_ckks_ciphertext_scratch(&layout, ct.meta())
     }
 
     fn take_unnormalized_ckks_ciphertext_scratch<I>(

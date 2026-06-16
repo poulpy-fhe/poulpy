@@ -171,6 +171,28 @@ macro_rules! hal_impl_vec_znx_big {
             <Self as $defaults<Self>>::vec_znx_scalar_product_default(module, &mut res, res_col, a, a_col, b, b_col)
         }
 
+        fn vec_znx_big_col_weighted_sum(
+            module: &Module<Self>,
+            mut res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,
+            res_col: usize,
+            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
+            weights: &poulpy_hal::layouts::ScalarZnxBackendRef<'_, Self>,
+            weights_col: usize,
+            cols: usize,
+            coeffs: usize,
+        ) {
+            <Self as $defaults<Self>>::vec_znx_big_col_weighted_sum_default(
+                module,
+                &mut res,
+                res_col,
+                a,
+                weights,
+                weights_col,
+                cols,
+                coeffs,
+            )
+        }
+
         fn vec_znx_big_negate(
             module: &Module<Self>,
             mut res: &mut poulpy_hal::layouts::VecZnxBigBackendMut<'_, Self>,

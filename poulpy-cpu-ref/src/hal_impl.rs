@@ -28,11 +28,16 @@ mod vec_znx_big;
 mod svp;
 #[macro_use]
 mod vec_znx_dft;
+#[macro_use]
 #[cfg(all(test, feature = "enable-core"))]
 pub(crate) mod delegating_backend;
 
 unsafe impl HalVecZnxImpl<FFT64Ref> for FFT64Ref {
     hal_impl_vec_znx!();
+
+    fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
+        <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
+    }
 }
 
 unsafe impl HalModuleImpl<FFT64Ref> for FFT64Ref {
@@ -61,6 +66,10 @@ unsafe impl HalVecZnxDftImpl<FFT64Ref> for FFT64Ref {
 
 unsafe impl HalVecZnxImpl<NTT120Ref> for NTT120Ref {
     hal_impl_vec_znx!();
+
+    fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
+        <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
+    }
 }
 
 unsafe impl HalModuleImpl<NTT120Ref> for NTT120Ref {
@@ -73,6 +82,39 @@ unsafe impl HalVmpImpl<NTT120Ref> for NTT120Ref {
 
 unsafe impl HalConvolutionImpl<NTT120Ref> for NTT120Ref {
     hal_impl_convolution!(NTT120ConvolutionDefault);
+
+    fn cnv_accumulate_dft_tmp_bytes(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res_size: usize,
+        a_size: usize,
+        b_size: usize,
+    ) -> usize {
+        <Self as NTT120ConvolutionDefault<Self>>::cnv_accumulate_dft_tmp_bytes_default(
+            module, cnv_offset, res_size, a_size, b_size,
+        )
+    }
+
+    fn cnv_accumulate_dft<'a>(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        mut res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        terms: &[poulpy_hal::layouts::CnvDftAccTerm<'a, Self>],
+        scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
+    ) where
+        Self: HalVecZnxDftImpl<Self> + 'a,
+    {
+        let mut scratch = scratch.borrow();
+        <Self as NTT120ConvolutionDefault<Self>>::cnv_accumulate_dft_default(
+            module,
+            cnv_offset,
+            &mut res,
+            res_col,
+            terms,
+            &mut scratch,
+        );
+    }
 }
 
 unsafe impl HalVecZnxBigImpl<NTT120Ref> for NTT120Ref {

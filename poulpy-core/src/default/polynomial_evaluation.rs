@@ -84,6 +84,7 @@ pub trait BSGSConstAdd<BE: Backend, R, P> {
     /// Computes `res[res_coeff] += coeffs[idx]`, normalizing `res`.
     fn add_pt_const_assign(
         &self,
+        module: &Module<BE>,
         res: &mut R,
         res_coeff: usize,
         coeffs: &P,
@@ -94,8 +95,8 @@ pub trait BSGSConstAdd<BE: Backend, R, P> {
 
 /// Evaluates a single baby step into `res`.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn eval_baby_step<M, PR, R, C, A, G, BE: Backend>(
-    module: &M,
+pub(crate) fn eval_baby_step<PR, R, C, A, G, BE: Backend>(
+    module: &Module<BE>,
     precision: &PR,
     res: &mut R,
     parity: Parity,
@@ -104,13 +105,12 @@ pub(crate) fn eval_baby_step<M, PR, R, C, A, G, BE: Backend>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    M: GLWEMulConst<BE> + GLWEAdd<BE> + GLWEShift<BE> + GLWENormalize<BE> + GLWEZero<BE>,
+    Module<BE>: GLWEMulConst<BE> + GLWEAdd<BE> + GLWEShift<BE> + GLWENormalize<BE> + GLWEZero<BE>,
     PR: BSGSPrecision<BE> + BSGSConstAdd<BE, R, C>,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta,
     C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
     A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
     G: PowerBasisHelper<BE, A>,
-    for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
 {
     let degree = coeffs.n().as_usize() - 1;
     let x = power_basis.get(1)?;
@@ -121,7 +121,7 @@ where
     let mut has_value = false;
     let mut must_normalize = false;
     if parity != Parity::Odd {
-        precision.add_pt_const_assign(res, 0, coeffs, 0, scratch)?;
+        precision.add_pt_const_assign(module, res, 0, coeffs, 0, scratch)?;
         has_value = true;
         must_normalize = true;
     }
@@ -188,7 +188,6 @@ where
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta,
     A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
     P: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
-    for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
 {
     scratch.scope(|scratch_local| {
         let tmp_layout = GLWELayout {
@@ -246,7 +245,6 @@ where
     A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
     G: PowerBasisHelper<BE, A>,
     T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-    for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
 {
     ensure!(
         !baby_steps.is_empty(),
@@ -312,6 +310,18 @@ where
     Ok(())
 }
 
+/// Scratch bytes consumed by the giant-step engine on top of the per-pair
+/// mul/add scratch: the prepared hoisted `X^{gsp}` right operand (alive across a
+/// run) plus the two per-pair operand compacts. `X^{gsp}` itself is prepared
+/// directly from the power basis (no compact copy), as `glwe_prepare_right` reads
+/// only its top effective-precision limbs.
+///
+/// Kept next to [`eval_monomial_run`] so the buffer count tracks the
+/// `take_compact_scratch` calls it sizes.
+pub fn glwe_eval_giant_steps_extra_tmp_bytes(compact_glwe_bytes: usize, hoisted_right_bytes: usize) -> usize {
+    2 * compact_glwe_bytes + hoisted_right_bytes
+}
+
 /// Evaluates a run of `b = b * xpow + a` pairs that share the same `xpow`.
 ///
 /// The compacted `xpow` is prepared once into a scratch `CnvPVecR` and reused as
@@ -331,22 +341,18 @@ where
     B: BabyStep<BE>,
     A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
     T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-    for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
 {
-    let xpow_log_budget = xpow.bsgs_log_budget();
-    let xpow_log_delta = xpow.bsgs_log_delta();
-
     scratch.scope(|run_scratch| {
-        // Hoist: compact `xpow` and prepare it into a reusable right operand.
-        let (mut xpow_compact, run_scratch) = take_compact_scratch(run_scratch, xpow, xpow_log_budget, xpow_log_delta);
-        module.glwe_copy(&mut xpow_compact, xpow);
-        let cols = xpow_compact.rank().as_usize() + 1;
-        let xpow_size = xpow_compact.size();
-        let xpow_effective_k = xpow_compact.bsgs_effective_k();
+        // Hoist: prepare `xpow` into a reusable right operand. `glwe_prepare_right`
+        // reads only the top `xpow_size` (effective_k) limbs, so the operand does not
+        // need to be pre-compacted into its own scratch buffer.
+        let cols = xpow.rank().as_usize() + 1;
+        let xpow_effective_k = xpow.bsgs_effective_k();
+        let xpow_size = xpow_effective_k.div_ceil(xpow.base2k().as_usize());
 
         let (mut xpow_prep, mut run_scratch) = run_scratch.take_cnv_pvec_right_scratch(module, cols, xpow_size);
         run_scratch = run_scratch.apply_mut(|scratch_prep| {
-            glwe_prepare_right(module, &mut xpow_prep, &xpow_compact, xpow_effective_k, scratch_prep);
+            glwe_prepare_right(module, &mut xpow_prep, xpow, xpow_effective_k, scratch_prep);
         });
 
         for &(_, low_idx, high_idx) in pairs {
@@ -371,7 +377,7 @@ where
                     module,
                     precision,
                     &mut b_compact,
-                    &xpow_compact,
+                    xpow,
                     &xpow_prep,
                     xpow_size,
                     tsk,
@@ -477,14 +483,16 @@ where
     A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
     AP: poulpy_hal::layouts::CnvPVecRToBackendRef<BE>,
     T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-    for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
 {
     let (log_budget, log_delta, cnv_offset) = precision.mul_ct_params(dst, dst, a)?;
 
+    // Size from `a`'s effective_k rather than its full `max_k`: the tensor product only
+    // consumes the top effective_k limbs of `a` (via the prepared right operand), so a
+    // non-compacted `a` must not inflate the intermediate buffer.
     let tensor_layout = GLWELayout {
         n: dst.n(),
         base2k: dst.base2k(),
-        k: dst.max_k().max(a.max_k()),
+        k: dst.max_k().max(a.bsgs_effective_k().into()),
         rank: dst.rank(),
     };
     let scratch_local = scratch.borrow();
@@ -539,9 +547,8 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
-        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
     {
-        eval_baby_step::<_, PR, R, C, A, G, BE>(self, precision, res, parity, coeffs, power_basis, scratch)
+        eval_baby_step::<PR, R, C, A, G, BE>(self, precision, res, parity, coeffs, power_basis, scratch)
     }
 
     fn glwe_eval_giant_steps_default<PR, R, B, A, G, T>(
@@ -567,7 +574,6 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE>,
     {
         eval_giant_steps::<_, R, B, A, G, T, BE>(self, precision, res, baby_steps, power_basis, tsk, scratch)
     }

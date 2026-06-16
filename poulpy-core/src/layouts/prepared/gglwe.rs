@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes},
-    layouts::{Backend, Data, Module, ScratchArena, VmpPMat, VmpPMatToBackendMut, VmpPMatToBackendRef},
+    layouts::{Backend, Data, Module, ScratchArena, VmpPMat, VmpPMatBackendRef, VmpPMatToBackendMut, VmpPMatToBackendRef},
 };
 
 use crate::layouts::{
@@ -219,6 +219,22 @@ pub trait GGLWEPreparedToBackendRef<B: Backend> {
     fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B>;
 }
 
+/// Read-only access to the prepared VMP matrix stored inside a GGLWE-like key.
+///
+/// This is intentionally narrower than exposing the prepared key internals as
+/// mutable state. `VmpPMat` is the backend-prepared representation obtained from
+/// a coefficient-domain matrix; callers that need different contents should
+/// rebuild and prepare a new key/matrix instead of modifying this view.
+///
+/// The PIR collapse precompute uses this to run a specialized `1 x 1` VMP over
+/// fixed mask data while still reusing the same prepared matrix representation
+/// as the generic key-switch pipeline.
+pub trait GGLWEPreparedVmpPMatRef<B: Backend> {
+    /// Returns an immutable backend-native view of the underlying prepared VMP
+    /// matrix.
+    fn vmp_pmat_backend_ref(&self) -> VmpPMatBackendRef<'_, B>;
+}
+
 impl<B: Backend> GGLWEPreparedToBackendRef<B> for GGLWEPrepared<B::OwnedBuf, B> {
     fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
         GGLWEPrepared {
@@ -226,6 +242,12 @@ impl<B: Backend> GGLWEPreparedToBackendRef<B> for GGLWEPrepared<B::OwnedBuf, B> 
             dsize: self.dsize,
             data: self.data.to_backend_ref(),
         }
+    }
+}
+
+impl<B: Backend> GGLWEPreparedVmpPMatRef<B> for GGLWEPrepared<B::OwnedBuf, B> {
+    fn vmp_pmat_backend_ref(&self) -> VmpPMatBackendRef<'_, B> {
+        self.data.to_backend_ref()
     }
 }
 

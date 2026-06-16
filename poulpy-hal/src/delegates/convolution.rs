@@ -1,17 +1,17 @@
 use crate::{
     api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution},
     layouts::{
-        Backend, CnvPVecL, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecR, CnvPVecRBackendMut, CnvPVecRBackendRef, Module,
-        ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
+        Backend, CnvDftAccTerm, CnvPVecL, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecR, CnvPVecRBackendMut,
+        CnvPVecRBackendRef, Module, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
     },
-    oep::HalConvolutionImpl,
+    oep::{HalConvolutionImpl, HalVecZnxDftImpl},
 };
 
 macro_rules! impl_convolution_delegate {
     ($trait:ty, $($body:item),+ $(,)?) => {
         impl<BE: Backend> $trait for Module<BE>
         where
-            BE: HalConvolutionImpl<BE>,
+            BE: HalConvolutionImpl<BE> + HalVecZnxDftImpl<BE>,
         {
             $($body)+
         }
@@ -96,6 +96,34 @@ impl_convolution_delegate!(
         scratch: &mut ScratchArena<'_, BE>,
     ) {
         <BE as HalConvolutionImpl<BE>>::cnv_apply_dft(self, cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
+    },
+    fn cnv_apply_dft_accumulate(
+        &self,
+        cnv_offset: usize,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        a: &CnvPVecLBackendRef<'_, BE>,
+        a_col: usize,
+        b: &CnvPVecRBackendRef<'_, BE>,
+        b_col: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) {
+        <BE as HalConvolutionImpl<BE>>::cnv_apply_dft_accumulate(self, cnv_offset, res, res_col, a, a_col, b, b_col, scratch)
+    },
+    fn cnv_accumulate_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
+        <BE as HalConvolutionImpl<BE>>::cnv_accumulate_dft_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)
+    },
+    fn cnv_accumulate_dft<'a>(
+        &self,
+        cnv_offset: usize,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        terms: &[CnvDftAccTerm<'a, BE>],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: 'a,
+    {
+        <BE as HalConvolutionImpl<BE>>::cnv_accumulate_dft(self, cnv_offset, res, res_col, terms, scratch)
     },
     fn cnv_pairwise_apply_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
         <BE as HalConvolutionImpl<BE>>::cnv_pairwise_apply_dft_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)

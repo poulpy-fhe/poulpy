@@ -2,8 +2,8 @@
 
 use poulpy_hal::{
     api::{
-        ModuleN, VecZnxAddScalarAssignBackend, VecZnxDftBytesOf, VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes,
-        VecZnxZeroBackend,
+        ModuleN, VecZnxAddScalarAssignBackend, VecZnxCopyBackend, VecZnxDftBytesOf, VecZnxFillUniformSourceBackend,
+        VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes, VecZnxZeroBackend,
     },
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena},
     source::Source,
@@ -11,7 +11,7 @@ use poulpy_hal::{
 
 use crate::{
     EncryptionInfos, ScratchArenaTakeCore,
-    encryption::{GLWEEncryptSk, GLWEEncryptSkInternal},
+    encryption::{GLWEEncryptSk, GLWEEncryptSkInternal, glwe::GLWEMaskFillDefault},
     layouts::{
         GGLWECompressedSeedMut, GGLWEInfos, GLWEPlaintext, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         compressed::GGLWECompressedToBackendMut, prepared::GLWESecretPreparedToBackendRef,
@@ -45,6 +45,8 @@ where
     Self: ModuleN
         + GLWEEncryptSkInternal<BE>
         + GLWEEncryptSk<BE>
+        + VecZnxCopyBackend<BE>
+        + VecZnxFillUniformSourceBackend<BE>
         + VecZnxDftBytesOf
         + VecZnxNormalizeAssignBackend<BE>
         + VecZnxAddScalarAssignBackend<BE>
@@ -58,7 +60,8 @@ where
         assert_eq!(self.n() as u32, infos.n());
 
         let lvl_0: usize = GLWEPlaintext::<Vec<u8>>::bytes_of_from_infos(infos);
-        let lvl_1: usize = self.glwe_encrypt_sk_tmp_bytes(infos).max(self.vec_znx_normalize_tmp_bytes());
+        let full_ct = self.bytes_of_vec_znx(infos.rank_out().as_usize() + 1, infos.size());
+        let lvl_1: usize = (full_ct + self.glwe_encrypt_sk_tmp_bytes(infos)).max(self.vec_znx_normalize_tmp_bytes());
 
         lvl_0 + lvl_1
     }
@@ -122,7 +125,7 @@ where
             let dsize: usize = res.dsize().into();
             let base2k: usize = res.base2k().into();
             let rank_in: usize = res.rank_in().into();
-            let cols: usize = (res.rank_out() + 1).into();
+            let rank_out: usize = res.rank_out().into();
 
             let mut source_xa = Source::new(seed);
 
@@ -148,24 +151,26 @@ where
                         self.vec_znx_normalize_assign_backend(base2k, &mut tmp_pt_backend.data, 0, scratch)
                     });
 
-                    let (seed, mut source_xa_tmp) = source_xa.branch();
+                    let (seed, _) = source_xa.branch();
                     seeds[row_i * rank_in + col_j] = seed;
 
                     let tmp_pt_backend = tmp_pt.to_backend_ref();
                     let base2k = res.base2k().into();
-                    let mut ct = res.at_view_mut(row_i, col_j);
+                    let scratch_full = scratch_1.borrow();
+                    let (mut full_ct, mut scratch_2) = scratch_full.take_glwe_scratch(&res);
+                    self.fill_glwe_mask_from_seed_default(base2k, &mut full_ct, 1, rank_out, seed);
                     self.glwe_encrypt_sk_internal(
                         base2k,
-                        &mut ct.data,
-                        cols,
-                        true,
+                        &mut full_ct.data,
                         Some((tmp_pt_backend, 0)),
                         sk,
                         enc_infos,
                         source_xe,
-                        &mut source_xa_tmp,
-                        &mut scratch_1,
+                        &mut scratch_2,
                     );
+                    let full_ct_ref = full_ct.to_backend_ref();
+                    let mut ct = res.at_view_mut(row_i, col_j);
+                    self.vec_znx_copy_backend(&mut ct.data, 0, &full_ct_ref.data, 0);
                 }
             }
         };

@@ -10,7 +10,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use poulpy_ckks::{
     CKKSInfos, CKKSMeta,
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
-    leveled::api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, PolynomialEvaluation},
+    leveled::api::{CKKSAllOpsTmpBytes, CKKSCopyOps, PolynomialEvaluation},
     polynomial::{Basis, ComplexPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
     power_basis::{PowerBasis, PowerBasisGen},
 };
@@ -18,7 +18,7 @@ use poulpy_core::layouts::{
     Base2K, Degree, Dnum, Dsize, GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, Rank, TorusPrecision,
 };
 use poulpy_hal::{
-    api::{CnvPVecBytesOf, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, ScratchOwned},
 };
 
@@ -31,6 +31,7 @@ const DEGREES: &[usize] = &[7, 15, 31, 63, 127];
 const STRATEGIES: &[(SplitStrategy, &str)] = &[(SplitStrategy::MinDepth, "min-depth"), (SplitStrategy::MinMult, "min-mult")];
 
 const COEFF_META: CKKSMeta = CKKSMeta {
+    log_sparsity: 0,
     log_delta: LOG_DELTA,
     log_budget: 1,
 };
@@ -74,23 +75,16 @@ fn bench_ntt120_ref(c: &mut Criterion) {
     let glwe_layout = glwe_layout();
     let tsk_layout = tsk_layout();
     let input_meta = CKKSMeta {
+        log_sparsity: 0,
         log_delta: LOG_DELTA,
         log_budget: CT_K - LOG_DELTA,
     };
 
     let ct_template = module.ckks_ciphertext_alloc_from_infos(&glwe_layout);
-    let mul_bytes = module.ckks_mul_tmp_bytes(&ct_template, &tsk_layout);
-    let mul_pt_bytes = module.ckks_mul_pt_const_tmp_bytes(&ct_template, &ct_template, &COEFF_META);
-    let add_bytes = module.ckks_add_tmp_bytes();
-    let copy_bytes = module.ckks_copy_tmp_bytes();
-    let ct_block = poulpy_core::layouts::GLWE::<Vec<u8>>::bytes_of_from_infos(&ct_template);
-    // The giant step keeps the prepared `X^{gsp}` right operand alive across relinearization.
-    let hoisted_right = module.bytes_of_cnv_pvec_right(2, CT_K.div_ceil(BASE2K));
-    let scratch_bytes = mul_bytes
-        .max(mul_pt_bytes)
-        .max(add_bytes)
-        .max(copy_bytes)
-        .max(mul_bytes + 3 * ct_block + hoisted_right);
+    // The all-ops aggregate already includes the giant-step engine's scratch.
+    let scratch_bytes = module
+        .ckks_all_ops_tmp_bytes(&ct_template, &tsk_layout, &COEFF_META)
+        .max(module.ckks_copy_tmp_bytes());
     let mut scratch = ScratchOwned::<BE>::alloc(scratch_bytes);
 
     let tsk_prepared = module.alloc_tensor_key_prepared_from_infos(&tsk_layout);

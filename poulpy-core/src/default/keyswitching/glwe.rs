@@ -1,7 +1,7 @@
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, ScratchAvailable, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy,
-        VecZnxDftZero, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
+        ModuleN, ScratchArenaTakeBasic, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero,
+        VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
     },
     layouts::{Backend, Module, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendRef},
 };
@@ -39,7 +39,6 @@ where
     ) where
         A: GLWEToBackendRef<BE>,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-        for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE> + ScratchAvailable,
     {
         let a = a.to_backend_ref();
         let key: GGLWEPreparedBackendRef<'_, BE> = key.to_backend_ref();
@@ -203,7 +202,6 @@ fn glwe_keyswitch_dft_fill<'r, BE, M, A>(
     BE: Backend,
     A: GLWEToBackendRef<BE>,
     M: GLWEKeyswitchInternal<BE> + GGLWEProductDefault<BE> + VecZnxDftApply<BE>,
-    for<'b> ScratchArena<'b, BE>: ScratchArenaTakeCore<'b, BE> + ScratchAvailable,
 {
     let a = a.to_backend_ref();
     assert_eq!(a.base2k(), key.base2k());

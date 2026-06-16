@@ -16,6 +16,7 @@ bin-fhe-bench = ["core-bench"]
 enable-avx = [
     "dep:poulpy-cpu-avx",
     "poulpy-cpu-avx/enable-avx",
+    "poulpy-cpu-avx/enable-ckks",
 ]
 enable-avx512f = [
     "dep:poulpy-cpu-avx512",
@@ -150,6 +151,11 @@ required-features = ["ckks-bench"]
 
 [[bench]]
 name = "ckks_automorphism"
+harness = false
+required-features = ["ckks-bench"]
+
+[[bench]]
+name = "ckks_linear_transformation"
 harness = false
 required-features = ["ckks-bench"]
 

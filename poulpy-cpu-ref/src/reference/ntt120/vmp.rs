@@ -261,13 +261,17 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, BE>(
             let last_col = col_max - 1;
             if last_col >= limb_offset {
                 let col_offset = last_col * (nrows * 16);
-                BE::ntt_mul_bbc_1col_x2(
-                    meta,
-                    row_max,
-                    &mut mat2cols_output[0..8],
-                    extracted_u32,
-                    &mat_blk_u32[col_offset..],
-                );
+                if ncols == col_max {
+                    BE::ntt_mul_bbc_1col_x2(
+                        meta,
+                        row_max,
+                        &mut mat2cols_output[0..8],
+                        extracted_u32,
+                        &mat_blk_u32[col_offset..],
+                    );
+                } else {
+                    BE::ntt_mul_bbc_2cols_x2(meta, row_max, mat2cols_output, extracted_u32, &mat_blk_u32[col_offset..]);
+                }
 
                 let col_res = last_col - limb_offset;
                 let base = col_res * 4 * n;

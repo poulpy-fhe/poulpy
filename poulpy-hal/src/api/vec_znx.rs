@@ -544,6 +544,49 @@ pub trait VecZnxAutomorphismAssignBackend<B: Backend> {
     );
 }
 
+pub trait VecZnxAutomorphismRotateBackend<B: Backend> {
+    /// Fused automorphism + rotation: computes `res = X^k * auto(p, a)` on the
+    /// selected column of `a` and stores it in `res_col` of `res`. Equivalent to
+    /// an automorphism with `p` followed by a rotation by `k`, in a single pass.
+    #[allow(clippy::too_many_arguments)]
+    fn vec_znx_automorphism_rotate_backend(
+        &self,
+        p: i64,
+        k: i64,
+        res: &mut VecZnxBackendMut<'_, B>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, B>,
+        a_col: usize,
+    );
+}
+
+pub trait ScalarZnxAutomorphismBackend<B: Backend> {
+    /// Applies the automorphism X^i -> X^ik on the selected column of `a` and stores the result in `res_col` column of `res`.
+    fn scalar_znx_automorphism_backend(
+        &self,
+        k: i64,
+        res: &mut ScalarZnxBackendMut<'_, B>,
+        res_col: usize,
+        a: &ScalarZnxBackendRef<'_, B>,
+        a_col: usize,
+    );
+}
+
+pub trait ScalarZnxAutomorphismAssignTmpBytes {
+    fn scalar_znx_automorphism_assign_tmp_bytes(&self) -> usize;
+}
+
+pub trait ScalarZnxAutomorphismAssignBackend<B: Backend> {
+    /// Applies the automorphism X^i -> X^ik on the selected column of `a`.
+    fn scalar_znx_automorphism_assign_backend(
+        &self,
+        k: i64,
+        res: &mut ScalarZnxBackendMut<'_, B>,
+        res_col: usize,
+        scratch: &mut ScratchArena<'_, B>,
+    );
+}
+
 /// Multiplies the selected column by `(X^p - 1)` in `Z[X]/(X^N + 1)`.
 pub trait VecZnxMulXpMinusOneBackend<B: Backend> {
     fn vec_znx_mul_xp_minus_one_backend(
@@ -625,6 +668,17 @@ pub trait VecZnxSwitchRingBackend<B: Backend> {
 
 pub trait VecZnxCopyBackend<B: Backend> {
     fn vec_znx_copy_backend(&self, res: &mut VecZnxBackendMut<'_, B>, res_col: usize, a: &VecZnxBackendRef<'_, B>, a_col: usize);
+}
+
+/// Per-limb square transpose of a `VecZnx`.
+///
+/// For each limb `j`, sets `res.at(c, j)[k] = a.at(k, j)[c]`.
+///
+/// # Panics
+///
+/// Requires `res.n() == a.cols()` and `res.cols() == a.n()`.
+pub trait VecZnxTransposeBackend<B: Backend> {
+    fn vec_znx_transpose_backend(&self, res: &mut VecZnxBackendMut<'_, B>, a: &VecZnxBackendRef<'_, B>);
 }
 
 pub trait ScalarZnxFillTernaryHwSourceBackend<B: Backend> {

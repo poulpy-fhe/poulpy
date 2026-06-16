@@ -1,9 +1,12 @@
 pub mod add;
 pub mod conjugate;
 pub mod copy;
+pub mod dft;
 pub mod encryption;
 pub mod eval_mod;
 pub mod imag;
+pub mod linear_transformation;
+pub mod linear_transformation_diagonals;
 pub mod mul;
 pub mod neg;
 pub mod plaintext;
@@ -14,7 +17,9 @@ pub mod rotate;
 pub mod sub;
 
 pub use add::CKKSAddDefault;
+pub use dft::gen_dft_matrices;
 pub use eval_mod::{CKKSEvalModOpsDefault, EvalModParameters, EvalModParametersLiteral, EvalModType};
+pub use linear_transformation_diagonals::ckks_encode_linear_transformation_from_diagonals;
 pub use plaintext::CKKSPlaintextDefault;
 pub use polynomial_evaluation::PolynomialEvaluationDefault;
 pub use sub::CKKSSubDefault;

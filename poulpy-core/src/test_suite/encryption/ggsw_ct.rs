@@ -6,7 +6,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    EncryptionLayout, GGSWCompressedEncryptSk, GGSWEncryptSk, GGSWNoise, ScratchArenaTakeCore,
+    EncryptionLayout, GGSWCompressedEncryptSk, GGSWEncryptSk, GGSWNoise,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GGSW, GGSWDecompress, GGSWInfos, GGSWLayout, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
@@ -20,7 +20,6 @@ where
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     Module<BE>: GGSWEncryptSk<BE> + GLWESecretPreparedFactory<BE> + GGSWNoise<BE>,
 {
     let base2k: usize = params.base2k;
@@ -104,7 +103,6 @@ where
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
     Module<BE>: GGSWCompressedEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
         + GGSWNoise<BE>

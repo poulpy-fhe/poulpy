@@ -6,11 +6,7 @@ use poulpy_core::layouts::{
     prepared::{GLWETensorKeyPrepared, GLWETensorKeyPreparedToBackendRef},
 };
 
-use crate::{
-    CKKSCtBounds, SetCKKSInfos,
-    layouts::CKKSCiphertext,
-    polynomial::{BSGSPolynomial, ComplexBSGSPolynomial},
-};
+use crate::{CKKSCtBounds, SetCKKSInfos, layouts::CKKSCiphertext, polynomial::ComplexBSGSPolynomial};
 
 pub use poulpy_core::layouts::{BSGSPolynomialInfos, BabyStep, Basis, Parity, PowerBasisHelper};
 
@@ -51,11 +47,11 @@ pub trait PolynomialEvaluation<BE: Backend> {
 
     /// Builds the power basis internally then evaluates a real-coefficient
     /// polynomial.
-    fn ckks_eval_poly_real_const_coeffs<R, S, C>(
+    fn ckks_eval_poly_real_const_coeffs<R, S, C, B>(
         &self,
         dst: &mut R,
         src: &S,
-        bsgs: &BSGSPolynomial<C>,
+        bsgs: &B,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -63,6 +59,8 @@ pub trait PolynomialEvaluation<BE: Backend> {
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         S: GLWEToBackendRef<BE> + CKKSCtBounds,
         C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
+        B: BSGSPolynomialInfos<BE>,
+        B::Coeffs: CKKSCtBounds,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
         CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
 

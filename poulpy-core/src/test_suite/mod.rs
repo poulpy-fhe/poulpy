@@ -3,6 +3,7 @@ pub mod encryption;
 pub mod external_product;
 pub mod glwe_tensor;
 pub mod keyswitch;
+pub mod linear_transformation;
 
 mod conversion;
 mod glwe_packing;
@@ -35,8 +36,6 @@ use poulpy_hal::{
     test_suite::{download_scalar_znx as hal_download_scalar_znx, upload_scalar_znx as hal_upload_scalar_znx},
 };
 
-use crate::ScratchArenaTakeCore;
-
 pub trait TestBackend:
     HalTestBackend
     + GLWEKeyswitchImpl<Self>
@@ -68,7 +67,6 @@ where
     Self: HostBackend<OwnedBuf = Vec<u8>>,
     for<'a> Self::BufRef<'a>: HostDataRef,
     for<'a> Self::BufMut<'a>: HostDataMut,
-    for<'a> ScratchArena<'a, Self>: ScratchArenaTakeCore<'a, Self>,
 {
 }
 
@@ -274,6 +272,8 @@ macro_rules! core_backend_test_suite {
                 glwe_external_product_assign => $crate::test_suite::external_product::test_glwe_external_product_assign,
                 glwe_rotate => $crate::test_suite::test_glwe_rotate,
                 glwe_trace_assign => $crate::test_suite::test_glwe_trace_assign,
+                glwe_hoisted_baby_rotations_match_automorphism =>
+                    $crate::test_suite::linear_transformation::test_glwe_hoisted_baby_rotations_match_automorphism,
                 glwe_packing => $crate::test_suite::test_glwe_packing,
                 gglwe_switching_key_encrypt_sk => $crate::test_suite::encryption::test_gglwe_switching_key_encrypt_sk,
                 gglwe_switching_key_compressed_encrypt_sk =>
@@ -308,6 +308,7 @@ macro_rules! core_backend_test_suite {
                 glwe_to_lwe => $crate::test_suite::test_glwe_to_lwe,
                 lwe_to_glwe => $crate::test_suite::test_lwe_to_glwe,
                 glwe_expand_lwe => $crate::test_suite::test_glwe_expand_lwe,
+                glwe_expand_lwe_matrix_decrypt => $crate::test_suite::test_glwe_expand_lwe_matrix_decrypt,
                 glwe_expand_lwe_rejects_incompatible_lwe_layout =>
                     $crate::test_suite::test_glwe_expand_lwe_rejects_incompatible_lwe_layout,
                 lwe_read_from_rejects_malformed_shape => $crate::test_suite::test_lwe_read_from_rejects_malformed_shape,

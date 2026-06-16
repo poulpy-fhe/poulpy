@@ -305,6 +305,95 @@ pub(crate) unsafe fn vec_mat1col_product_x2_bbc_avx512<const NT_STORE: bool>(
     }
 }
 
+/// Tiled canonical-x bbc product: four sliding-window outputs per pass.
+///
+/// `x` rows hold the canonical u32 encoding (odd lanes zero), so the
+/// `x_hi * y_hi` product path of the 1col kernel is identically zero and
+/// skipped. Output `t` is `sum_{i<len} x[t + i] * y[i]` into `res[8t..8t+8]`.
+#[target_feature(enable = "avx512f")]
+pub(crate) unsafe fn vec_mat_tile4_bbc_canonical_avx512(
+    meta: &BbcMeta<Primes30>,
+    len: usize,
+    res: &mut [u64],
+    x: &[u32],
+    y: &[u32],
+) {
+    unsafe {
+        debug_assert!(res.len() >= 32);
+        debug_assert!(len == 0 || x.len() >= 16 * (len + 3));
+        debug_assert!(y.len() >= 16 * len);
+
+        let mask32_512 = _mm512_set1_epi64(u32::MAX as i64);
+
+        let mut s_lo0 = _mm512_setzero_si512();
+        let mut s_hi0 = _mm512_setzero_si512();
+        let mut s_lo1 = _mm512_setzero_si512();
+        let mut s_hi1 = _mm512_setzero_si512();
+        let mut s_lo2 = _mm512_setzero_si512();
+        let mut s_hi2 = _mm512_setzero_si512();
+        let mut s_lo3 = _mm512_setzero_si512();
+        let mut s_hi3 = _mm512_setzero_si512();
+
+        if len > 0 {
+            let mut x_ptr = x.as_ptr() as *const __m512i;
+            let mut y_ptr = y.as_ptr() as *const __m512i;
+
+            let mut x0 = _mm512_loadu_si512(x_ptr);
+            let mut x1 = _mm512_loadu_si512(x_ptr.add(1));
+            let mut x2 = _mm512_loadu_si512(x_ptr.add(2));
+            let mut x3 = _mm512_loadu_si512(x_ptr.add(3));
+
+            let mut i = 0usize;
+            loop {
+                let yv = _mm512_loadu_si512(y_ptr);
+
+                let p0 = _mm512_mul_epu32(x0, yv);
+                let p1 = _mm512_mul_epu32(x1, yv);
+                let p2 = _mm512_mul_epu32(x2, yv);
+                let p3 = _mm512_mul_epu32(x3, yv);
+
+                s_lo0 = _mm512_add_epi64(s_lo0, _mm512_and_si512(p0, mask32_512));
+                s_hi0 = _mm512_add_epi64(s_hi0, _mm512_srli_epi64::<32>(p0));
+                s_lo1 = _mm512_add_epi64(s_lo1, _mm512_and_si512(p1, mask32_512));
+                s_hi1 = _mm512_add_epi64(s_hi1, _mm512_srli_epi64::<32>(p1));
+                s_lo2 = _mm512_add_epi64(s_lo2, _mm512_and_si512(p2, mask32_512));
+                s_hi2 = _mm512_add_epi64(s_hi2, _mm512_srli_epi64::<32>(p2));
+                s_lo3 = _mm512_add_epi64(s_lo3, _mm512_and_si512(p3, mask32_512));
+                s_hi3 = _mm512_add_epi64(s_hi3, _mm512_srli_epi64::<32>(p3));
+
+                i += 1;
+                if i == len {
+                    break;
+                }
+                x0 = x1;
+                x1 = x2;
+                x2 = x3;
+                x_ptr = x_ptr.add(1);
+                x3 = _mm512_loadu_si512(x_ptr.add(3));
+                y_ptr = y_ptr.add(1);
+            }
+        }
+
+        let mask_h2 = _mm256_set1_epi64x(((1u64 << meta.h) - 1) as i64);
+        let s2l_pow_red = _mm256_loadu_si256(meta.s2l_pow_red.as_ptr() as *const __m256i);
+        let s2h_pow_red = _mm256_loadu_si256(meta.s2h_pow_red.as_ptr() as *const __m256i);
+
+        let mut store = |t: usize, s_lo: __m512i, s_hi: __m512i| {
+            let s0 = _mm512_extracti64x4_epi64::<0>(s_lo);
+            let s2 = _mm512_extracti64x4_epi64::<1>(s_lo);
+            let s1 = _mm512_extracti64x4_epi64::<0>(s_hi);
+            let s3 = _mm512_extracti64x4_epi64::<1>(s_hi);
+            let res_ptr = res.as_mut_ptr().add(8 * t) as *mut __m256i;
+            _mm256_storeu_si256(res_ptr, reduce_bbc(s0, s1, mask_h2, meta.h, s2l_pow_red, s2h_pow_red));
+            _mm256_storeu_si256(res_ptr.add(1), reduce_bbc(s2, s3, mask_h2, meta.h, s2l_pow_red, s2h_pow_red));
+        };
+        store(0, s_lo0, s_hi0);
+        store(1, s_lo1, s_hi1);
+        store(2, s_lo2, s_hi2);
+        store(3, s_lo3, s_hi3);
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Block-pair, single column, prime-major: four q120b × q120c prime streams
 // ─────────────────────────────────────────────────────────────────────────────

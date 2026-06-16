@@ -303,6 +303,7 @@ pub fn test_encode_bsgs_preserves_chebyshev_eval<BE, F, E>(
     let coeff_meta = CKKSMeta {
         log_delta: 40,
         log_budget: 8,
+        ..Default::default()
     };
     let bsgs = poly
         .encode_bsgs(host_module, params.base2k.into(), coeff_meta)

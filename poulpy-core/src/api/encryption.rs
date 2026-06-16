@@ -26,6 +26,30 @@ pub trait EncryptionInfos {
     fn noise_infos(&self) -> NoiseInfos;
 }
 
+pub trait GLWEMaskFill<BE: Backend> {
+    /// Fill `rank` GLWE mask columns starting at `res_col` from `source_xa`.
+    fn fill_glwe_mask_from_source<R>(&self, base2k: usize, res: &mut R, res_col: usize, rank: usize, source_xa: &mut Source)
+    where
+        R: GLWEToBackendMut<BE>;
+
+    /// Fill `rank` GLWE mask columns starting at `res_col` from a deterministic seed.
+    fn fill_glwe_mask_from_seed<R>(&self, base2k: usize, res: &mut R, res_col: usize, rank: usize, seed_xa: [u8; 32])
+    where
+        R: GLWEToBackendMut<BE>;
+}
+
+pub trait LWEFillMask<BE: Backend> {
+    /// Fill the LWE mask from `source_xa`.
+    fn fill_lwe_mask_from_source<R>(&self, base2k: usize, res: &mut R, source_xa: &mut Source)
+    where
+        R: LWEToBackendMut<BE>;
+
+    /// Fill the LWE mask from a deterministic seed.
+    fn fill_lwe_mask_from_seed<R>(&self, base2k: usize, res: &mut R, seed_xa: [u8; 32])
+    where
+        R: LWEToBackendMut<BE>;
+}
+
 pub trait LWEEncryptSk<BE: Backend> {
     fn lwe_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
