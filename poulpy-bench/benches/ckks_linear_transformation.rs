@@ -1,6 +1,5 @@
-//! RUSTFLAGS="-C target-feature=+avx2,+fma" \
 //!  cargo bench -p poulpy-bench --bench ckks_linear_transformation \
-//!  --features ckks-bench,enable-avx
+//!  --features ckks-bench
 use criterion::{Criterion, criterion_group, criterion_main};
 
 #[cfg(feature = "enable-avx")]
