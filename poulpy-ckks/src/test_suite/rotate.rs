@@ -25,7 +25,7 @@ use poulpy_core::layouts::GLWEAutomorphismKeyPrepared;
 use poulpy_core::{GLWEAutomorphism, GLWEShift};
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchAvailable, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, ScratchArena},
+    layouts::{GaloisElement, HostBytesBackend, Module, ScratchArena},
 };
 
 use crate::{encoding::reim::Encoder, test_suite::CKKSTestParams};
@@ -50,8 +50,9 @@ pub fn test_rotate_aligned<BE, F, E>(
 
     let mut atks = HashMap::new();
     for &r in rotations {
-        let atk = gen_atk(&params, module, r, &sk_raw, &mut scratch.borrow());
-        atks.insert(r, atk);
+        let gal = module.galois_element(r);
+        let atk = gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow());
+        atks.insert(gal, atk);
     }
 
     let ct = ckks_encrypt(
@@ -106,8 +107,9 @@ pub fn test_rotate_smaller_output<BE, F, E>(
 
     let mut atks = HashMap::new();
     for &r in rotations {
-        let atk = gen_atk(&params, module, r, &sk_raw, &mut scratch.borrow());
-        atks.insert(r, atk);
+        let gal = module.galois_element(r);
+        let atk = gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow());
+        atks.insert(gal, atk);
     }
 
     let ct = ckks_encrypt(
@@ -162,8 +164,9 @@ pub fn test_rotate_assign<BE, F, E>(
 
     let mut atks = HashMap::new();
     for &r in rotations {
-        let atk = gen_atk(&params, module, r, &sk_raw, &mut scratch.borrow());
-        atks.insert(r, atk);
+        let gal = module.galois_element(r);
+        let atk = gen_atk(&params, module, gal, &sk_raw, &mut scratch.borrow());
+        atks.insert(gal, atk);
     }
 
     for &r in rotations {

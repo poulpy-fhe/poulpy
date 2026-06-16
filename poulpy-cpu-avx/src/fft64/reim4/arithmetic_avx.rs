@@ -828,7 +828,9 @@ unsafe fn reim4_convolution_tile3_avx(k_abs: usize, dst: *mut f64, a: &[f64], a_
 /// `reim4_convolution_apply_avx512`. Accumulation order matches
 /// `reim4_convolution_2coeffs_avx`.
 ///
-/// `dst` layout: limb `k` re-half at `dst[2*m*k + 4*blk]`, im-half `m` further.
+/// `dst` layout: limb `k` re-half at `dst[dst_stride*k + 4*blk]`, im-half `m`
+/// further; `dst_stride` is `2m` for a one-column destination, `2m * cols` for
+/// a column of a column-interleaved `VecZnxDft`.
 /// `tmp` must hold at least `8 * (a_size + 4 + b_size + 16 * min_size)` f64.
 ///
 /// # Safety
@@ -840,13 +842,16 @@ pub unsafe fn reim4_convolution_apply_avx(
     min_size: usize,
     offset: usize,
     dst: &mut [f64],
+    dst_stride: usize,
     a: &[f64],
     a_size: usize,
     b: &[f64],
     b_size: usize,
     tmp: &mut [f64],
 ) {
-    unsafe { reim4_convolution_apply_core_avx::<false, false>(m, min_size, offset, dst, a, a, a_size, b, b, b_size, tmp) }
+    unsafe {
+        reim4_convolution_apply_core_avx::<false, false>(m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, tmp)
+    }
 }
 
 /// Pairwise variant of [`reim4_convolution_apply_avx`]: `(a0 + a1) ⊛ (b0 + b1)`.
@@ -862,6 +867,7 @@ pub unsafe fn reim4_convolution_pairwise_apply_avx(
     min_size: usize,
     offset: usize,
     dst: &mut [f64],
+    dst_stride: usize,
     a0: &[f64],
     a1: &[f64],
     a_size: usize,
@@ -870,7 +876,9 @@ pub unsafe fn reim4_convolution_pairwise_apply_avx(
     b_size: usize,
     tmp: &mut [f64],
 ) {
-    unsafe { reim4_convolution_apply_core_avx::<true, false>(m, min_size, offset, dst, a0, a1, a_size, b0, b1, b_size, tmp) }
+    unsafe {
+        reim4_convolution_apply_core_avx::<true, false>(m, min_size, offset, dst, dst_stride, a0, a1, a_size, b0, b1, b_size, tmp)
+    }
 }
 
 /// Accumulating variant of [`reim4_convolution_apply_avx`]: `dst += a ⊛ b`,
@@ -885,13 +893,16 @@ pub unsafe fn reim4_convolution_apply_accumulate_avx(
     min_size: usize,
     offset: usize,
     dst: &mut [f64],
+    dst_stride: usize,
     a: &[f64],
     a_size: usize,
     b: &[f64],
     b_size: usize,
     tmp: &mut [f64],
 ) {
-    unsafe { reim4_convolution_apply_core_avx::<false, true>(m, min_size, offset, dst, a, a, a_size, b, b, b_size, tmp) }
+    unsafe {
+        reim4_convolution_apply_core_avx::<false, true>(m, min_size, offset, dst, dst_stride, a, a, a_size, b, b, b_size, tmp)
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -901,6 +912,7 @@ unsafe fn reim4_convolution_apply_core_avx<const PAIRWISE: bool, const ACC: bool
     min_size: usize,
     offset: usize,
     dst: &mut [f64],
+    dst_stride: usize,
     a0: &[f64],
     a1: &[f64],
     a_size: usize,
@@ -919,7 +931,8 @@ unsafe fn reim4_convolution_apply_core_avx<const PAIRWISE: bool, const ACC: bool
     debug_assert!(tmp.len() >= 8 * (a_size + 4 + b_size * (PAIRWISE as usize) + 16 * min_size));
     debug_assert!(a0.len() >= (m / 4) * 8 * a_size);
     debug_assert!(b0.len() >= (m / 4) * 8 * b_size);
-    debug_assert!(dst.len() >= 2 * m * min_size);
+    debug_assert!(dst_stride >= 2 * m);
+    debug_assert!(dst.len() >= dst_stride * (min_size - 1) + 2 * m);
 
     const GROUP: usize = 16;
 
@@ -936,7 +949,6 @@ unsafe fn reim4_convolution_apply_core_avx<const PAIRWISE: bool, const ACC: bool
         }
 
         let n_tiles: usize = min_size.div_ceil(3);
-        let two_m: usize = 2 * m;
         let dst_ptr: *mut f64 = dst.as_mut_ptr();
         let n_blocks: usize = m / 4;
 
@@ -1049,7 +1061,7 @@ unsafe fn reim4_convolution_apply_core_avx<const PAIRWISE: bool, const ACC: bool
                 let stage_base: *const f64 = stage.as_ptr();
                 for k in 0..min_size {
                     let row: *const f64 = stage_base.add(8 * k);
-                    let out: *mut f64 = dst_ptr.add(two_m * k + 4 * grp_base);
+                    let out: *mut f64 = dst_ptr.add(dst_stride * k + 4 * grp_base);
                     for p in 0..in_group {
                         let mut re: __m256d = _mm256_loadu_pd(row.add(8 * min_size * p));
                         let mut im: __m256d = _mm256_loadu_pd(row.add(8 * min_size * p + 4));
@@ -1220,7 +1232,18 @@ mod tests {
                         let mut tmp = vec![0f64; 8 * (a_size + 4 + b_size + 16 * min_size)];
 
                         unsafe {
-                            reim4_convolution_apply_avx(m, min_size, offset, &mut dst_fused, &a, a_size, &b, b_size, &mut tmp)
+                            reim4_convolution_apply_avx(
+                                m,
+                                min_size,
+                                offset,
+                                &mut dst_fused,
+                                2 * m,
+                                &a,
+                                a_size,
+                                &b,
+                                b_size,
+                                &mut tmp,
+                            )
                         };
 
                         let mut blk_out = vec![0f64; 8 * min_size];

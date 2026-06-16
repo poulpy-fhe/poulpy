@@ -550,7 +550,61 @@ macro_rules! hal_impl_vec_znx {
             );
         }
 
-        fn vec_znx_lsh_sub_backend(
+        fn vec_znx_lsh_add_coeff_to_coeff_backend<'s, 'r, 'a>(
+            module: &Module<Self>,
+            base2k: usize,
+            k: usize,
+            res: &mut VecZnxBackendMut<'r, Self>,
+            res_col: usize,
+            a: &VecZnxBackendRef<'a, Self>,
+            a_col: usize,
+            a_coeff: usize,
+            res_coeff: usize,
+            scratch: &mut poulpy_hal::layouts::ScratchArena<'s, Self>,
+        ) {
+            let mut scratch = scratch.borrow();
+            <Self as HalVecZnxDefault<Self>>::vec_znx_lsh_add_coeff_to_coeff_backend_default(
+                module,
+                base2k,
+                k,
+                res,
+                res_col,
+                a,
+                a_col,
+                a_coeff,
+                res_coeff,
+                &mut scratch,
+            );
+        }
+
+        fn vec_znx_lsh_sub_coeff_to_coeff_backend<'s, 'r, 'a>(
+            module: &Module<Self>,
+            base2k: usize,
+            k: usize,
+            res: &mut VecZnxBackendMut<'r, Self>,
+            res_col: usize,
+            a: &VecZnxBackendRef<'a, Self>,
+            a_col: usize,
+            a_coeff: usize,
+            res_coeff: usize,
+            scratch: &mut poulpy_hal::layouts::ScratchArena<'s, Self>,
+        ) {
+            let mut scratch = scratch.borrow();
+            <Self as HalVecZnxDefault<Self>>::vec_znx_lsh_sub_coeff_to_coeff_backend_default(
+                module,
+                base2k,
+                k,
+                res,
+                res_col,
+                a,
+                a_col,
+                a_coeff,
+                res_coeff,
+                &mut scratch,
+            );
+        }
+
+        fn vec_znx_lsh_sub_backend<'s, 'r, 'a>(
             module: &Module<Self>,
             base2k: usize,
             k: usize,
@@ -670,6 +724,19 @@ macro_rules! hal_impl_vec_znx {
         ) {
             let mut scratch = scratch.borrow();
             <Self as HalVecZnxDefault<Self>>::vec_znx_automorphism_assign_backend_default(module, k, res, res_col, &mut scratch);
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        fn vec_znx_automorphism_rotate_backend(
+            module: &Module<Self>,
+            p: i64,
+            k: i64,
+            res: &mut poulpy_hal::layouts::VecZnxBackendMut<'_, Self>,
+            res_col: usize,
+            a: &poulpy_hal::layouts::VecZnxBackendRef<'_, Self>,
+            a_col: usize,
+        ) {
+            <Self as HalVecZnxDefault<Self>>::vec_znx_automorphism_rotate_backend_default(module, p, k, res, res_col, a, a_col)
         }
 
         fn vec_znx_mul_xp_minus_one_backend(

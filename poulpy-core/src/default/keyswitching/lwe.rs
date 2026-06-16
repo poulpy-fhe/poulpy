@@ -64,7 +64,6 @@ pub fn lwe_keyswitch_default<BE, M, R, A, K>(
     R: LWEToBackendMut<BE> + LWEInfos,
     A: LWEToBackendRef<BE> + LWEInfos,
     K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    for<'x> ScratchArena<'x, BE>: ScratchArenaTakeCore<'x, BE>,
 {
     assert!(res.n().as_usize() <= module.n());
     assert!(a.n().as_usize() <= module.n());

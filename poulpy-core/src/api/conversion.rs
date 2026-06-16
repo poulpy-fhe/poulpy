@@ -2,7 +2,7 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::layouts::{
     GGLWEInfos, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-    LWEToBackendMut, LWEToBackendRef,
+    LWEMatrixInfos, LWEMatrixToBackendMut, LWEToBackendMut, LWEToBackendRef,
     prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
 };
 
@@ -70,6 +70,18 @@ pub trait GLWEExpandLWE<BE: Backend> {
     fn glwe_expand_lwe<R, A>(&self, res: &mut [R], a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: LWEToBackendMut<BE> + LWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos;
+}
+
+pub trait GLWEExpandLWEMatrix<BE: Backend> {
+    fn glwe_expand_lwe_matrix_tmp_bytes<R, A>(&self, res_infos: &R, a_infos: &A) -> usize
+    where
+        R: LWEMatrixInfos,
+        A: GLWEInfos;
+
+    fn glwe_expand_lwe_matrix<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos;
 }
 

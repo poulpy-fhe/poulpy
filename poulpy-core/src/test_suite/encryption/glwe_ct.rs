@@ -7,7 +7,6 @@ use poulpy_hal::{
 
 use crate::{
     EncryptionLayout, GLWECompressedEncryptSk, GLWEEncryptPk, GLWEEncryptSk, GLWENoise, GLWEPublicKeyGenerate, GLWESub,
-    ScratchArenaTakeCore,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GLWE, GLWELayout, GLWEPlaintext, GLWEPlaintextLayout, GLWEPreparedFactory, GLWEPublicKey, GLWEPublicKeyPreparedFactory,
@@ -25,7 +24,6 @@ where
     Module<BE>:
         GLWEEncryptSk<BE> + GLWENoise<BE> + GLWESecretPreparedFactory<BE> + VecZnxFillUniformSourceBackend<BE> + GLWESub<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let base2k: usize = params.base2k;
     let k_ct: usize = base2k * 4 + 1;
@@ -104,7 +102,6 @@ where
         + GLWESub<BE>
         + GLWEDecompress<Backend = BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let base2k: usize = params.base2k;
     let k_ct: usize = base2k * 4 + 1;
@@ -184,7 +181,6 @@ where
     Module<BE>:
         GLWEEncryptSk<BE> + GLWENoise<BE> + GLWESecretPreparedFactory<BE> + VecZnxFillUniformSourceBackend<BE> + GLWESub<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let base2k: usize = params.base2k;
     let k_ct: usize = base2k * 4 + 1;
@@ -251,7 +247,6 @@ where
         + VecZnxFillUniformSourceBackend<BE>
         + GLWESub<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let base2k: usize = params.base2k;
     let k_ct: usize = base2k * 4 + 1;

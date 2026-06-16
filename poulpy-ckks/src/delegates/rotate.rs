@@ -6,7 +6,7 @@ use poulpy_core::{
         prepared::GLWEAutomorphismKeyPreparedToBackendRef,
     },
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, GaloisElement, Module, ScratchArena};
 
 use crate::{CKKSCompositionError, CKKSCtBounds, SetCKKSInfos, oep::CKKSRotateImpl};
 
@@ -14,7 +14,7 @@ use crate::api::CKKSRotateOps;
 
 impl<BE: Backend + CKKSRotateImpl<BE>> CKKSRotateOps<BE> for Module<BE>
 where
-    Module<BE>: GLWEAutomorphism<BE> + GLWEShift<BE>,
+    Module<BE>: GLWEAutomorphism<BE> + GLWEShift<BE> + GaloisElement,
 {
     fn ckks_rotate_tmp_bytes<C, K>(&self, ct_infos: &C, key_infos: &K) -> usize
     where
@@ -39,7 +39,7 @@ where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         let key = keys
-            .get_automorphism_key(k)
+            .get_automorphism_key(self.galois_element(k))
             .ok_or(CKKSCompositionError::MissingAutomorphismKey {
                 op: "rotate",
                 rotation: k,
@@ -54,7 +54,7 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
         let key = keys
-            .get_automorphism_key(k)
+            .get_automorphism_key(self.galois_element(k))
             .ok_or(CKKSCompositionError::MissingAutomorphismKey {
                 op: "rotate_assign",
                 rotation: k,

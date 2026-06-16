@@ -488,3 +488,53 @@ pub(crate) fn vec_znx_dft_zero(res: &mut VecZnxDftBackendMut<'_, NTT126Ifma>, re
         NTT126Ifma::ntt126_ifma_zero(limb_u64_mut(res, res_col, j));
     }
 }
+
+/// AVX2 hot loop for NTT126 automorphism: one 256-bit slot load from
+/// `a[4*perm[i]..]` (Q120bScalar layout: 4 × u64 per slot, with three
+/// active CRT residues and one padding lane) → one 256-bit store to
+/// `res[4*i..]`. Pure copy — full-spectrum NTT layout makes the action
+/// a pure permutation.
+pub(crate) fn vec_znx_dft_automorphism(
+    plan: &poulpy_cpu_ref::reference::ntt120::vec_znx_dft::NttAutomorphismPlan,
+    res: &mut VecZnxDftBackendMut<'_, NTT126Ifma>,
+    res_col: usize,
+    a: &VecZnxDftBackendRef<'_, NTT126Ifma>,
+    a_col: usize,
+) {
+    #[cfg(debug_assertions)]
+    {
+        assert_eq!(a.n(), res.n());
+        assert_eq!(plan.perm.len(), res.n());
+    }
+
+    let n: usize = res.n();
+    let res_size: usize = res.size();
+    let a_size: usize = a.size();
+    let min_size: usize = res_size.min(a_size);
+    let perm: &[u32] = &plan.perm;
+
+    for limb in 0..min_size {
+        let a_slice: &[u64] = limb_u64(a, a_col, limb);
+        let res_slice: &mut [u64] = limb_u64_mut(res, res_col, limb);
+        unsafe {
+            automorphism_inner(n, perm, a_slice, res_slice);
+        }
+    }
+
+    for limb in min_size..res_size {
+        NTT126Ifma::ntt126_ifma_zero(limb_u64_mut(res, res_col, limb));
+    }
+}
+
+#[target_feature(enable = "avx2")]
+unsafe fn automorphism_inner(n: usize, perm: &[u32], a: &[u64], res: &mut [u64]) {
+    unsafe {
+        let a_ptr = a.as_ptr() as *const __m256i;
+        let res_ptr = res.as_mut_ptr() as *mut __m256i;
+        for i in 0..n {
+            let s = *perm.get_unchecked(i) as usize;
+            let v = _mm256_loadu_si256(a_ptr.add(s));
+            _mm256_storeu_si256(res_ptr.add(i), v);
+        }
+    }
+}

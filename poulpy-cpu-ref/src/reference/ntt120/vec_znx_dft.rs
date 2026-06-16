@@ -637,3 +637,88 @@ where
         BE::ntt_zero(limb_u64_mut(res, res_col, j));
     }
 }
+
+/// Precomputed permutation for `VecZnxDft` automorphism `tau_p : X -> X^p`
+/// in the NTT120 layout.
+///
+/// `perm[i]` is the source slot (in q120b units of 4 u64) that supplies
+/// output slot `i`. NTT120 stores all `n` evaluations, so the action is a
+/// pure permutation with no sign / conjugate flag.
+#[derive(Clone, Debug)]
+pub struct NttAutomorphismPlan {
+    pub p: i64,
+    pub perm: Vec<u32>,
+}
+
+/// Builds the [`NttAutomorphismPlan`] for ring dimension `n` and odd `p`.
+///
+/// The DIF NTT places output slot `i` at the evaluation point
+/// `omega^{2 * bitrev(i) + 1}` mod `2n`, where `bitrev` is the bit-reversal
+/// of `i` over `log2(n)` bits and `omega` is a primitive `2n`-th root.
+/// The set `{1, 3, …, 2n - 1}` is closed under multiplication by any odd
+/// `p`, so the action is a pure permutation — no closure trick or
+/// conjugation flag is needed.
+pub fn build_ntt120_automorphism_plan(n: usize, p: i64) -> NttAutomorphismPlan {
+    assert!(n.is_power_of_two(), "n must be a power of two, got {n}");
+    assert!(p & 1 == 1, "p must be odd for an R/(X^N+1) automorphism, got {p}");
+
+    let mask = (2 * n - 1) as i64;
+    let p_mod_2n = p & mask;
+    let log_n = n.trailing_zeros();
+    let ir = |i: u32| -> u32 { i.reverse_bits() >> (32 - log_n) };
+
+    let mut perm: Vec<u32> = vec![0u32; n];
+    for (i, mi) in perm.iter_mut().enumerate().take(n) {
+        let e_out: i64 = 2 * ir(i as u32) as i64 + 1;
+        let e_src: i64 = (p_mod_2n * e_out) & mask;
+        let src: u32 = ((e_src - 1) >> 1) as u32;
+        *mi = ir(src);
+    }
+    NttAutomorphismPlan { p, perm }
+}
+
+/// Applies a precomputed NTT120 automorphism plan to `a`, writing the
+/// result into `res` (out-of-place).
+///
+/// Per output slot, one 4-u64 q120b copy from the indexed source slot.
+/// No modular arithmetic, no negation — full-spectrum NTT layout makes
+/// the action a pure permutation.
+pub fn ntt120_vec_znx_dft_automorphism<BE>(
+    plan: &NttAutomorphismPlan,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res_col: usize,
+    a: &VecZnxDftBackendRef<'_, BE>,
+    a_col: usize,
+) where
+    BE: Backend<ScalarPrep = Q120bScalar> + NttZero,
+    for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+{
+    #[cfg(debug_assertions)]
+    {
+        assert_eq!(a.n(), res.n());
+        assert_eq!(plan.perm.len(), res.n());
+    }
+
+    let n: usize = res.n();
+    let res_size: usize = res.size();
+    let a_size: usize = a.size();
+    let min_size: usize = res_size.min(a_size);
+    let perm: &[u32] = &plan.perm;
+
+    for limb in 0..min_size {
+        let a_slice: &[u64] = limb_u64(a, a_col, limb);
+        let res_slice: &mut [u64] = limb_u64_mut(res, res_col, limb);
+
+        for i in 0..n {
+            let s = perm[i] as usize;
+            // 4-u64 q120b slot copy. The destination is sequential, the
+            // source is gathered through `perm`.
+            res_slice[4 * i..4 * i + 4].copy_from_slice(&a_slice[4 * s..4 * s + 4]);
+        }
+    }
+
+    for limb in min_size..res_size {
+        BE::ntt_zero(limb_u64_mut(res, res_col, limb));
+    }
+}

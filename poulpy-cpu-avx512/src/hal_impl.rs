@@ -15,7 +15,6 @@ use poulpy_hal::{
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
-#[inline]
 fn take_host_typed<'a, BE, T>(arena: ScratchArena<'a, BE>, len: usize) -> (&'a mut [T], ScratchArena<'a, BE>)
 where
     BE: Backend + 'a,
@@ -31,6 +30,12 @@ where
 
 unsafe impl HalVecZnxImpl<FFT64Avx512> for FFT64Avx512 {
     poulpy_cpu_ref::hal_impl_vec_znx!();
+
+    // TODO: add an AVX-512-accelerated tiled transpose kernel; falls back to
+    // the reference impl for now.
+    fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
+        <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
+    }
 }
 
 unsafe impl HalModuleImpl<FFT64Avx512> for FFT64Avx512 {
@@ -54,11 +59,28 @@ unsafe impl HalSvpImpl<FFT64Avx512> for FFT64Avx512 {
 }
 
 unsafe impl HalVecZnxDftImpl<FFT64Avx512> for FFT64Avx512 {
-    poulpy_cpu_ref::hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault);
+    poulpy_cpu_ref::hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault, automorphism_with_plan: skip);
+
+    fn vec_znx_dft_automorphism_with_plan(
+        _module: &Module<Self>,
+        plan: &Self::AutomorphismPlan,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxDftBackendRef<'_, Self>,
+        a_col: usize,
+    ) {
+        crate::fft64::fft64_vec_znx_dft_automorphism_avx512(plan, res, res_col, a, a_col);
+    }
 }
 
 unsafe impl HalVecZnxImpl<NTT120Avx512> for NTT120Avx512 {
     poulpy_cpu_ref::hal_impl_vec_znx!();
+
+    // TODO: add an AVX-512-accelerated tiled transpose kernel; falls back to
+    // the reference impl for now.
+    fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
+        <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
+    }
 }
 
 unsafe impl HalModuleImpl<NTT120Avx512> for NTT120Avx512 {
@@ -485,6 +507,23 @@ unsafe impl HalVecZnxDftImpl<NTT120Avx512> for NTT120Avx512 {
     fn vec_znx_dft_zero(module: &Module<Self>, res: &mut VecZnxDftBackendMut<'_, Self>, res_col: usize) {
         <Self as NTT120VecZnxDftDefault<Self>>::vec_znx_dft_zero_default(module, res, res_col)
     }
+
+    type AutomorphismPlan = <Self as NTT120VecZnxDftDefault<Self>>::AutomorphismPlanDefault;
+
+    fn vec_znx_dft_automorphism_plan(module: &Module<Self>, p: i64) -> Self::AutomorphismPlan {
+        <Self as NTT120VecZnxDftDefault<Self>>::vec_znx_dft_automorphism_plan_default(module, p)
+    }
+
+    fn vec_znx_dft_automorphism_with_plan(
+        module: &Module<Self>,
+        plan: &Self::AutomorphismPlan,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &VecZnxDftBackendRef<'_, Self>,
+        a_col: usize,
+    ) {
+        <Self as NTT120VecZnxDftDefault<Self>>::vec_znx_dft_automorphism_with_plan_default(module, plan, res, res_col, a, a_col)
+    }
 }
 
 #[cfg(feature = "enable-ifma")]
@@ -505,6 +544,16 @@ mod ifma_impl {
 
     unsafe impl HalVecZnxImpl<NTT126Ifma> for NTT126Ifma {
         poulpy_cpu_ref::hal_impl_vec_znx!();
+
+        // TODO: add an AVX-512/IFMA-accelerated tiled transpose kernel; falls
+        // back to the reference impl for now.
+        fn vec_znx_transpose_backend(
+            module: &Module<Self>,
+            res: &mut VecZnxBackendMut<'_, Self>,
+            a: &VecZnxBackendRef<'_, Self>,
+        ) {
+            <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
+        }
     }
 
     unsafe impl HalModuleImpl<NTT126Ifma> for NTT126Ifma {
@@ -810,6 +859,27 @@ mod ifma_impl {
 
         fn vec_znx_dft_zero(_module: &Module<Self>, res: &mut VecZnxDftBackendMut<'_, Self>, res_col: usize) {
             crate::ntt126_ifma::vec_znx_dft::vec_znx_dft_zero(res, res_col);
+        }
+
+        type AutomorphismPlan = poulpy_cpu_ref::reference::ntt120::vec_znx_dft::NttAutomorphismPlan;
+
+        fn vec_znx_dft_automorphism_plan(module: &Module<Self>, p: i64) -> Self::AutomorphismPlan {
+            // The slot↔exponent map is determined by the DIF NTT structure
+            // (bit-reversal over log2(n) bits + level-0 ω^i twiddle), not by
+            // the prime set, so the NTT120 closed-form builder is identical
+            // for NTT126.
+            poulpy_cpu_ref::reference::ntt120::vec_znx_dft::build_ntt120_automorphism_plan(module.n(), p)
+        }
+
+        fn vec_znx_dft_automorphism_with_plan(
+            _module: &Module<Self>,
+            plan: &Self::AutomorphismPlan,
+            res: &mut VecZnxDftBackendMut<'_, Self>,
+            res_col: usize,
+            a: &VecZnxDftBackendRef<'_, Self>,
+            a_col: usize,
+        ) {
+            crate::ntt126_ifma::vec_znx_dft::vec_znx_dft_automorphism(plan, res, res_col, a, a_col);
         }
     }
 
