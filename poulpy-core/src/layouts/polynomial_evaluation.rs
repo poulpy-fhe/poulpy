@@ -502,6 +502,10 @@ where
     fn parity(&self) -> Parity {
         BSGSPolynomial::parity(self)
     }
+
+    fn log_split(&self) -> usize {
+        BSGSPolynomial::log_split(self)
+    }
 }
 
 impl<C> BSGSPolynomial<C> {
@@ -582,6 +586,7 @@ pub trait BSGSPolynomialInfos<BE: Backend> {
     fn baby_step(&self, i: usize) -> &Self::Coeffs;
     fn basis(&self) -> Basis;
     fn parity(&self) -> Parity;
+    fn log_split(&self) -> usize;
 }
 
 /// A single evaluated baby step with its degree.
