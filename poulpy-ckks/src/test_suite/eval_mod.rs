@@ -78,7 +78,11 @@ fn eval_mod_params(n: usize, base2k: usize, log_delta: usize, depth: usize) -> E
         n,
         base2k,
         k,
-        prec: CKKSMeta { log_delta, log_budget },
+        prec: CKKSMeta {
+            log_delta,
+            log_budget,
+            log_sparsity: 0,
+        },
         hw: 192,
         dsize: 1,
     }
@@ -95,6 +99,7 @@ where
     let pt_prec = CKKSMeta {
         log_delta: 8,
         log_budget: 10,
+        log_sparsity: 0,
     };
     let scratch_size = module.ckks_all_ops_tmp_bytes(&ct, &params.tsk_layout(), &pt_prec);
     ScratchOwned::<BE>::alloc(scratch_size)
@@ -256,6 +261,7 @@ fn run_eval_mod_case<BE, F, E>(
     let coeff_meta = CKKSMeta {
         log_delta,
         log_budget: base2k,
+        log_sparsity: 0,
     };
     let host_params = EvalModParameters::from_literal::<F>(coeff_meta, params.base2k.into(), lit, &host_module)
         .expect("EvalModParameters::from_literal");

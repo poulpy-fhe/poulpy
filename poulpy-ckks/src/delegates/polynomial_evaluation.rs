@@ -54,7 +54,7 @@ where
         BE::ckks_eval_poly_complex_const_coeffs_from_power_basis::<R, C, A, G, T>(self, res, poly, power_basis, tsk, scratch)
     }
 
-    fn ckks_eval_poly_real_const_coeffs<R, S, C, B>(
+    fn ckks_eval_poly_real_const_coeffs<R, S, B>(
         &self,
         dst: &mut R,
         src: &S,
@@ -65,13 +65,12 @@ where
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         S: GLWEToBackendRef<BE> + CKKSCtBounds,
-        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
         CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        BE::ckks_eval_poly_real_const_coeffs::<R, S, C, B>(self, dst, src, bsgs, tsk, scratch)
+        BE::ckks_eval_poly_real_const_coeffs::<R, S, B>(self, dst, src, bsgs, tsk, scratch)
     }
 
     fn ckks_eval_poly_complex_const_coeffs<R, S, C>(
