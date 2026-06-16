@@ -32,6 +32,7 @@ const DSIZE: usize = 1;
 const COEFF_META: CKKSMeta = CKKSMeta {
     log_delta: LOG_DELTA,
     log_budget: BASE2K,
+    log_sparsity: 0,
 };
 
 struct Case {
@@ -153,6 +154,7 @@ fn bench_ntt120_ref(c: &mut Criterion) {
     let input_meta = CKKSMeta {
         log_delta: LOG_DELTA,
         log_budget: CT_K - LOG_DELTA,
+        log_sparsity: 0,
     };
 
     let ct_template = module.ckks_ciphertext_alloc_from_infos(&glwe_layout);
