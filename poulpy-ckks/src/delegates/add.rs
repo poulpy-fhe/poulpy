@@ -3,7 +3,7 @@ use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::layouts::UnnormalizedCKKSCiphertext;
-use crate::leveled::api::{CKKSAddOps, CKKSAddOpsUnnormalized};
+use crate::leveled::api::CKKSAddOps;
 
 use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, oep::CKKSAddImpl};
 
@@ -92,9 +92,6 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOps<BE> for Module<BE> {
     {
         BE::ckks_add_pt_const_assign(self, dst, dst_coeff, pt, pt_coeff, scratch)
     }
-}
-
-impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOpsUnnormalized<BE> for Module<BE> {
     fn ckks_add_into_unnormalized<Dst, A, B>(
         &self,
         dst: &mut UnnormalizedCKKSCiphertext<Dst>,

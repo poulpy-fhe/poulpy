@@ -7,7 +7,7 @@ use poulpy_hal::{
 
 use crate::{
     EncryptionLayout, GGLWEKeyswitch, GLWEAutomorphismKeyCompressedEncryptSk, GLWEAutomorphismKeyEncryptSk,
-    GLWESwitchingKeyCompressedEncryptSk, GLWESwitchingKeyEncryptSk, ScratchArenaTakeCore,
+    GLWESwitchingKeyCompressedEncryptSk, GLWESwitchingKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GGLWEInfos, GLWEAutomorphismKey, GLWEAutomorphismKeyDecompress, GLWEAutomorphismKeyLayout, GLWEInfos, GLWESecret,
@@ -35,7 +35,6 @@ pub fn test_gglwe_automorphism_key_encrypt_sk<BE: crate::test_suite::TestBackend
         + VecZnxFillUniformSourceBackend<BE>
         + VecZnxAutomorphismBackend<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let base2k: usize = params.base2k;
     let k_ksk: usize = 4 * base2k + 1;
@@ -143,7 +142,6 @@ pub fn test_gglwe_automorphism_key_compressed_encrypt_sk<BE: crate::test_suite::
         + VecZnxFillUniformSourceBackend<BE>
         + GGLWENoise<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let base2k: usize = params.base2k;
     let k_ksk: usize = 4 * base2k + 1;

@@ -294,10 +294,33 @@ where
     A: LWEInfos + CKKSInfos,
     B: LWEInfos + CKKSInfos,
 {
-    let res_log_budget = checked_mul_ct_log_budget("mul", a.log_budget(), b.log_budget(), a.log_delta(), b.log_delta())?;
-    let res_log_delta = a.log_delta().min(b.log_delta());
+    mul_ct_params_raw(
+        res.max_k().as_usize(),
+        a.log_delta(),
+        a.log_budget(),
+        a.effective_k(),
+        b.log_delta(),
+        b.log_budget(),
+        b.effective_k(),
+    )
+}
 
-    let res_offset = (res_log_budget + res_log_delta).saturating_sub(res.max_k().as_usize());
+/// Shared `(log_budget, log_delta, cnv_offset)` rule for ct × ct multiplication,
+/// expressed on raw values so the BSGS driver computes bit-identical parameters.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn mul_ct_params_raw(
+    res_max_k: usize,
+    a_log_delta: usize,
+    a_log_budget: usize,
+    a_effective_k: usize,
+    b_log_delta: usize,
+    b_log_budget: usize,
+    b_effective_k: usize,
+) -> Result<(usize, usize, usize)> {
+    let res_log_budget = checked_mul_ct_log_budget("mul", a_log_budget, b_log_budget, a_log_delta, b_log_delta)?;
+    let res_log_delta = a_log_delta.min(b_log_delta);
+
+    let res_offset = (res_log_budget + res_log_delta).saturating_sub(res_max_k);
     // Addition/subtraction align to the shared, lower effective precision
     // (`ckks_offset_binary` uses `min`). Multiplication is different: the
     // bivariate convolution must traverse every live input limb, so the
@@ -305,7 +328,7 @@ where
     // extra limbs that cannot fit in `res`. This matches the already-rescaled
     // multiplication rule documented by `CKKSMulOps` and the bivariate Torus
     // analysis cited in the README/ePrint 2023/771.
-    let cnv_offset = a.effective_k().max(b.effective_k()) + res_offset;
+    let cnv_offset = a_effective_k.max(b_effective_k) + res_offset;
 
     Ok((
         checked_log_budget_sub("mul", res_log_budget, res_offset)?,
@@ -320,10 +343,30 @@ where
     A: LWEInfos + CKKSInfos,
     B: LWEInfos + CKKSInfos,
 {
-    let res_log_budget = checked_mul_pt_log_budget("mul", a.log_budget(), b.log_budget(), a.log_delta(), b.log_delta())?;
-    let res_log_delta = a.log_delta();
-    let res_offset = (res_log_budget + res_log_delta).saturating_sub(res.max_k().as_usize());
-    let cnv_offset = b.max_k().as_usize() + res_offset;
+    mul_pt_params_raw(
+        res.max_k().as_usize(),
+        a.log_delta(),
+        a.log_budget(),
+        b.log_delta(),
+        b.log_budget(),
+        b.max_k().as_usize(),
+    )
+}
+
+/// Shared `(log_budget, log_delta, cnv_offset)` rule for ct × pt multiplication,
+/// expressed on raw values so the BSGS driver computes bit-identical parameters.
+pub(crate) fn mul_pt_params_raw(
+    res_max_k: usize,
+    a_log_delta: usize,
+    a_log_budget: usize,
+    b_log_delta: usize,
+    b_log_budget: usize,
+    b_max_k: usize,
+) -> Result<(usize, usize, usize)> {
+    let res_log_budget = checked_mul_pt_log_budget("mul", a_log_budget, b_log_budget, a_log_delta, b_log_delta)?;
+    let res_log_delta = a_log_delta;
+    let res_offset = (res_log_budget + res_log_delta).saturating_sub(res_max_k);
+    let cnv_offset = b_max_k + res_offset;
 
     Ok((
         checked_log_budget_sub("mul", res_log_budget, res_offset)?,

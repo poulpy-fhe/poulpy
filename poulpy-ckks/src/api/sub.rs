@@ -117,15 +117,13 @@ pub trait CKKSSubOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
-}
 
-/// Unnormalized subtraction variants for explicit fusion loops.
-///
-/// See [`CKKSAddOpsUnnormalized`](crate::api::CKKSAddOpsUnnormalized) for
-/// the full contract, motivation, metadata rules, and digit-growth analysis
-/// (worst-case linear, typical-case Irwin–Hall O(√n)).  Everything stated
-/// there applies here with `+` replaced by `−`.
-pub trait CKKSSubOpsUnnormalized<BE: Backend> {
+    /// Computes `dst = a - b` without normalizing `dst`.
+    ///
+    /// Unnormalized variants are for explicit fusion loops. They write into
+    /// an [`UnnormalizedCKKSCiphertext`], whose limb digits may hold
+    /// un-propagated carries. Normalize before passing the value to DFT-domain
+    /// operations such as keyswitching, convolution, or automorphisms.
     fn ckks_sub_into_unnormalized<Dst, A, B>(
         &self,
         dst: &mut UnnormalizedCKKSCiphertext<Dst>,
@@ -139,6 +137,7 @@ pub trait CKKSSubOpsUnnormalized<BE: Backend> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: GLWEToBackendRef<BE> + CKKSCtBounds;
 
+    /// Computes `dst -= a` without normalizing `dst`.
     fn ckks_sub_assign_unnormalized<Dst, A>(
         &self,
         dst: &mut UnnormalizedCKKSCiphertext<Dst>,
@@ -150,6 +149,7 @@ pub trait CKKSSubOpsUnnormalized<BE: Backend> {
         UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSInfos;
 
+    /// Computes `dst = a - pt` without normalizing `dst`.
     fn ckks_sub_pt_vec_into_unnormalized<Dst, A, P>(
         &self,
         dst: &mut UnnormalizedCKKSCiphertext<Dst>,
@@ -163,6 +163,7 @@ pub trait CKKSSubOpsUnnormalized<BE: Backend> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
+    /// Computes `dst -= pt` without normalizing `dst`.
     fn ckks_sub_pt_vec_assign_unnormalized<Dst, P>(
         &self,
         dst: &mut UnnormalizedCKKSCiphertext<Dst>,
@@ -174,6 +175,7 @@ pub trait CKKSSubOpsUnnormalized<BE: Backend> {
         UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
+    /// Computes `dst = a - pt[pt_coeff]` without normalizing `dst`.
     fn ckks_sub_pt_const_into_unnormalized<Dst, A, P>(
         &self,
         dst: &mut UnnormalizedCKKSCiphertext<Dst>,
@@ -189,6 +191,7 @@ pub trait CKKSSubOpsUnnormalized<BE: Backend> {
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
+    /// Computes `dst -= pt[pt_coeff]` without normalizing `dst`.
     fn ckks_sub_pt_const_assign_unnormalized<Dst, P>(
         &self,
         dst: &mut UnnormalizedCKKSCiphertext<Dst>,

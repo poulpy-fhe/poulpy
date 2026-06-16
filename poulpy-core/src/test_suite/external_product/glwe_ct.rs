@@ -6,7 +6,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    EncryptionLayout, GGSWEncryptSk, GLWEEncryptSk, GLWEExternalProduct, GLWENoise, GLWENormalize, ScratchArenaTakeCore,
+    EncryptionLayout, GGSWEncryptSk, GLWEEncryptSk, GLWEExternalProduct, GLWENoise, GLWENormalize,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, LWEInfos,
@@ -32,7 +32,6 @@ where
         + GLWESecretPreparedFactory<BE>
         + GLWENormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let base2k: usize = params.base2k;
     let in_base2k: usize = base2k - 1;
@@ -195,7 +194,6 @@ where
         + VecZnxRotateAssignBackend<BE>
         + GLWESecretPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let base2k: usize = params.base2k;
     let out_base2k: usize = base2k - 1;

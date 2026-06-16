@@ -10,11 +10,13 @@ use std::{
 };
 
 use anyhow::Result;
-use poulpy_core::layouts::{Base2K, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, LWEInfos, Rank};
+use poulpy_core::layouts::{
+    BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, LWEInfos, Rank, SetBSGSMeta,
+};
 use poulpy_core::{GLWENormalize, ScratchArenaTakeCore};
 use poulpy_hal::layouts::{Backend, Data, HostBackend, HostDataRef, Module, ScratchArena};
 
-use crate::{CKKSInfos, CKKSMeta, SetCKKSInfos, error::CKKSCompositionError, layouts::CKKSModuleAlloc};
+use crate::{CKKSInfos, CKKSMeta, SetCKKSInfos, api::CKKSCopyOps, error::CKKSCompositionError, layouts::CKKSModuleAlloc};
 
 mod sealed {
     pub trait Sealed {}
@@ -106,6 +108,24 @@ impl<D: Data, S: CKKSNormalizationState> CKKSCiphertext<D, S> {
     }
 }
 
+impl<D: Data> CKKSCiphertext<D, Normalized> {
+    /// Allocates a fresh backend-owned ciphertext and copies `self` into it.
+    ///
+    /// Used to compact the allocation size after arithmetic operations that
+    /// may leave a normalized ciphertext over-sized relative to `effective_k`.
+    pub fn compact<M, BE>(&self, module: &M, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSCiphertext<BE::OwnedBuf>>
+    where
+        BE: Backend,
+        M: CKKSCopyOps<BE> + CKKSModuleAlloc<BE>,
+        Self: GLWEToBackendRef<BE>,
+        CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE>,
+    {
+        let mut out = module.ckks_ciphertext_alloc(self.base2k(), self.effective_k().into());
+        module.ckks_copy(&mut out, self, scratch)?;
+        Ok(out)
+    }
+}
+
 // Without this, `ct.clone()` silently resolves through `Deref` to
 // `GLWE::clone` and drops the CKKS metadata.
 impl<D: Data, S: CKKSNormalizationState> Clone for CKKSCiphertext<D, S>
@@ -172,6 +192,24 @@ impl<D: Data, S: CKKSNormalizationState> CKKSInfos for CKKSCiphertext<D, S> {
 impl<D: Data, S: CKKSNormalizationState> SetCKKSInfos for CKKSCiphertext<D, S> {
     fn set_meta(&mut self, meta: CKKSMeta) {
         self.meta = meta;
+    }
+}
+
+impl<D: Data, S: CKKSNormalizationState> BSGSMeta for CKKSCiphertext<D, S> {
+    fn bsgs_log_budget(&self) -> usize {
+        CKKSInfos::log_budget(self)
+    }
+    fn bsgs_log_delta(&self) -> usize {
+        CKKSInfos::log_delta(self)
+    }
+}
+
+impl<D: Data, S: CKKSNormalizationState> SetBSGSMeta for CKKSCiphertext<D, S> {
+    fn set_bsgs_log_budget(&mut self, log_budget: usize) {
+        SetCKKSInfos::set_log_budget(self, log_budget);
+    }
+    fn set_bsgs_log_delta(&mut self, log_delta: usize) {
+        SetCKKSInfos::set_log_delta(self, log_delta);
     }
 }
 
@@ -266,6 +304,24 @@ impl<'a, BE: Backend + 'a> CKKSInfos for CKKSCiphertextViewMut<'a, BE> {
 impl<'a, BE: Backend + 'a> SetCKKSInfos for CKKSCiphertextViewMut<'a, BE> {
     fn set_meta(&mut self, meta: CKKSMeta) {
         self.meta = meta;
+    }
+}
+
+impl<'a, BE: Backend + 'a> BSGSMeta for CKKSCiphertextViewMut<'a, BE> {
+    fn bsgs_log_budget(&self) -> usize {
+        CKKSInfos::log_budget(self)
+    }
+    fn bsgs_log_delta(&self) -> usize {
+        CKKSInfos::log_delta(self)
+    }
+}
+
+impl<'a, BE: Backend + 'a> SetBSGSMeta for CKKSCiphertextViewMut<'a, BE> {
+    fn set_bsgs_log_budget(&mut self, log_budget: usize) {
+        SetCKKSInfos::set_log_budget(self, log_budget);
+    }
+    fn set_bsgs_log_delta(&mut self, log_delta: usize) {
+        SetCKKSInfos::set_log_delta(self, log_delta);
     }
 }
 

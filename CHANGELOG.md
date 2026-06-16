@@ -2,7 +2,22 @@
 
 ## [Unreleased]
 
+### `poulpy-core`
+- Add a backend-generic Baby-Step/Giant-Step polynomial-evaluation engine and public `GLWEPolynomialEvaluation` Module API (baby-step / giant-step methods) wired through the api/oep/delegates/default layers, with per-operation precision and constant-coefficient addition supplied by the scheme through the `BSGSPrecision` / `BSGSConstAdd` traits.
+- Add scheme-agnostic polynomial-evaluation layouts `Polynomial`, `BSGSPolynomial`, `PowerBasis`, `Basis`, `Parity`, and `SplitStrategy`, with monomial and Chebyshev bases, Chebyshev interpolation, and BSGS/Paterson-Stockmeyer decomposition planned by the `MinDepth` / `MinMult` split strategies.
+- Hoist the giant-step multiplier in polynomial evaluation: factor the tensor product into a shared `glwe_tensor_apply_loop` and add `glwe_tensor_apply_prepared_right`, so each `X^{gsp}` is prepared once into a reusable right convolution operand and shared across the baby-step pairs of a giant-step run.
+- Allow GLWE plaintext add/sub alignment to left-shift when the encoded plaintext precision exceeds the ciphertext budget, enabling the coefficient-indexed plaintext constants used by polynomial evaluation.
+
+### `poulpy-ckks`
+- Add a thin scale-aware polynomial-evaluation wrapper over the core engine: the `PolynomialEvaluation` trait and its `ckks_eval_poly_real_const_coeffs_from_power_basis` driver, `CKKSBSGSPrecision` (owns all `log_delta` / `log_budget` → `cnv_offset` math), the `EncodeBSGS` / `PowerBasisGen` extension traits, and re-exports of the core layout types under CKKS module paths.
+- Generalize fused CKKS multiply-add/plaintext paths over backend-owned ciphertext/plaintext layouts.
+- Add complex-coefficient polynomial evaluation (monomial and Chebyshev) via the `ckks_eval_poly_complex_const_coeffs_from_power_basis` driver, combining the matched real/imag baby steps as `re + i·im` through `CKKSImagOps` and folding the trailing complex constant through the highest power when present.
+- Take the complex prepared driver's polynomial as a single `&ComplexBSGSPolynomial`, holding the aligned real/imag BSGS decompositions together.
+- Add the one-shot `ckks_eval_poly_real_const_coeffs` / `ckks_eval_poly_complex_const_coeffs` convenience entry points, which build the power basis internally from the input ciphertext before evaluating.
+- Extend CKKS polynomial-evaluation coverage with conformance tests for monomial and Chebyshev evaluation, power-basis generation, interpolation, metadata errors, split-strategy behavior, and complex-coefficient evaluation (even/odd parity and the trailing-constant fold).
+
 ### `poulpy-hal`
+- Add `VecZnxLshAddCoeffToCoeffBackend` and `VecZnxLshSubCoeffToCoeffBackend` hooks plus portable reference implementations so coefficient-level plaintext accumulation can handle left-shift alignment.
 - Add HAL APIs for scalar automorphisms and packed matrix helpers: `ScalarZnxAutomorphismBackend`, `ScalarZnxAutomorphismAssignBackend`, `VecZnxTransposeBackend`, and `VecZnxBigColWeightedSum`.
 - Add reusable DFT-domain automorphism planning and application via `VecZnxDftAutomorphismPlan` and `VecZnxDftAutomorphism`, with backend-specific plan types wired through `HalVecZnxDftImpl`.
 - Add the accumulating convolution apply `Convolution::cnv_apply_dft_accumulate` (`res += a (x) b` in the DFT domain), wired through the api/oep/delegate layers and implemented by every backend; it is bit-identical to `cnv_apply_dft` followed by a DFT-domain add (asserted raw-byte-exact by a new cross-backend conformance test), leaves limbs beyond the convolution bound untouched, and reuses the `cnv_apply_dft_tmp_bytes` scratch contract.
@@ -20,8 +35,13 @@
 - Fuse the `NTT126Ifma` forward NTT level-0 twist into the first butterfly level and run the last three levels (`nn = 8, 4, 2`) as a single radix-8 register pass mirroring the existing inverse head, making the forward transform ~5% faster; add n = 2^12 cross-backend idft conformance tests, since the breadth-first levels above `NTT_BLOCK` were previously uncovered by the n = 2^8 suites.
 
 ### `poulpy-bench`
+- Add the `ckks_poly_eval` Criterion benchmark, sweeping polynomial degree and `MinDepth` / `MinMult` BSGS split strategies on `ntt120-ref` while reporting baby-step size and observed log-budget/level consumption.
 - Enable the `poulpy-cpu-avx` CKKS implementations in the `ckks-bench` feature so the CKKS benchmarks compile with `enable-avx`.
 - Add the `cnv_apply_dft_accumulate` sweep to the convolution Criterion benchmark.
+
+### Build & Docs
+- Refresh the `ckks_poly2` example to use Chebyshev interpolation, `PowerBasis`, and the new BSGS evaluator pipeline.
+- Add `docs/polynomial_evaluation.md` describing the Baby-Step/Giant-Step method, the `MinDepth` / `MinMult` strategies, the supported polynomial flavors, and a measured table of modulus consumption per degree.
 
 ## [0.6.0] - 2026-05-18
 

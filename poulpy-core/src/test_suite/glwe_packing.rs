@@ -10,7 +10,6 @@ use poulpy_hal::{
 
 use crate::{
     EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWENoise, GLWEPacking, GLWERotate, GLWESub,
-    ScratchArenaTakeCore,
     layouts::{
         GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWEPlaintext,
         GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc,
@@ -33,7 +32,6 @@ where
         + GLWERotate<BE>
         + GLWENoise<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
-    for<'a> poulpy_hal::layouts::ScratchArena<'a, BE>: ScratchArenaTakeCore<'a, BE>,
 {
     let mut source_xs: Source = Source::new([0u8; 32]);
     let mut source_xe: Source = Source::new([0u8; 32]);

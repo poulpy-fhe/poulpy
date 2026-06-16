@@ -4,7 +4,10 @@ use poulpy_core::{
     layouts::{Base2K, GLWEPlaintext, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
-    api::{VecZnxRshAddCoeffIntoBackend, VecZnxRshAddIntoBackend, VecZnxRshTmpBytes},
+    api::{
+        VecZnxLshAddCoeffToCoeffBackend, VecZnxLshAddIntoBackend, VecZnxLshTmpBytes, VecZnxRshAddCoeffIntoBackend,
+        VecZnxRshAddIntoBackend, VecZnxRshTmpBytes,
+    },
     layouts::{Backend, ScratchArena, VecZnx},
 };
 
@@ -53,20 +56,22 @@ pub trait CKKSAddDefault<BE: Backend> {
 
     fn ckks_add_pt_vec_tmp_bytes_default(&self) -> usize
     where
-        Self: GLWEShift<BE> + GLWENormalize<BE> + VecZnxRshTmpBytes,
+        Self: GLWEShift<BE> + GLWENormalize<BE> + VecZnxLshTmpBytes + VecZnxRshTmpBytes,
     {
         self.glwe_shift_tmp_bytes()
             .max(self.vec_znx_rsh_tmp_bytes())
+            .max(self.vec_znx_lsh_tmp_bytes())
             .max(self.glwe_normalize_tmp_bytes())
     }
 
     fn ckks_add_pt_const_tmp_bytes_default(&self) -> usize
     where
-        Self: GLWEShift<BE> + GLWENormalize<BE> + VecZnxRshTmpBytes,
+        Self: GLWEShift<BE> + GLWENormalize<BE> + VecZnxLshTmpBytes + VecZnxRshTmpBytes,
     {
         self.glwe_shift_tmp_bytes()
             .max(self.glwe_normalize_tmp_bytes())
             .max(self.vec_znx_rsh_tmp_bytes())
+            .max(self.vec_znx_lsh_tmp_bytes())
     }
 
     fn ckks_add_into_default<Dst, A, B>(&self, dst: &mut Dst, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -147,7 +152,8 @@ pub trait CKKSAddDefault<BE: Backend> {
 
     fn ckks_add_one_assign_default<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Self: GLWENormalize<BE> + VecZnxRshAddCoeffIntoBackend<BE> + CKKSPlaintextDefault<BE>,
+        Self:
+            GLWENormalize<BE> + VecZnxLshAddCoeffToCoeffBackend<BE> + VecZnxRshAddCoeffIntoBackend<BE> + CKKSPlaintextDefault<BE>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos,
     {
         let one = ckks_one_pt::<BE>(dst.base2k())?;
@@ -162,7 +168,11 @@ pub trait CKKSAddDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: VecZnxRshAddIntoBackend<BE> + GLWEShift<BE> + GLWENormalize<BE> + CKKSPlaintextDefault<BE>,
+        Self: VecZnxLshAddIntoBackend<BE>
+            + VecZnxRshAddIntoBackend<BE>
+            + GLWEShift<BE>
+            + GLWENormalize<BE>
+            + CKKSPlaintextDefault<BE>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
@@ -180,7 +190,7 @@ pub trait CKKSAddDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: VecZnxRshAddIntoBackend<BE> + GLWEShift<BE> + CKKSPlaintextDefault<BE>,
+        Self: VecZnxLshAddIntoBackend<BE> + VecZnxRshAddIntoBackend<BE> + GLWEShift<BE> + CKKSPlaintextDefault<BE>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
@@ -195,7 +205,7 @@ pub trait CKKSAddDefault<BE: Backend> {
 
     fn ckks_add_pt_vec_assign_default<Dst, P>(&self, dst: &mut Dst, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Self: VecZnxRshAddIntoBackend<BE> + GLWENormalize<BE> + CKKSPlaintextDefault<BE>,
+        Self: VecZnxLshAddIntoBackend<BE> + VecZnxRshAddIntoBackend<BE> + GLWENormalize<BE> + CKKSPlaintextDefault<BE>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
     {
@@ -211,7 +221,7 @@ pub trait CKKSAddDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: VecZnxRshAddIntoBackend<BE> + CKKSPlaintextDefault<BE>,
+        Self: VecZnxLshAddIntoBackend<BE> + VecZnxRshAddIntoBackend<BE> + CKKSPlaintextDefault<BE>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
     {
@@ -229,7 +239,11 @@ pub trait CKKSAddDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEShift<BE> + GLWENormalize<BE> + VecZnxRshAddCoeffIntoBackend<BE> + CKKSPlaintextDefault<BE>,
+        Self: GLWEShift<BE>
+            + GLWENormalize<BE>
+            + VecZnxLshAddCoeffToCoeffBackend<BE>
+            + VecZnxRshAddCoeffIntoBackend<BE>
+            + CKKSPlaintextDefault<BE>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
@@ -249,7 +263,7 @@ pub trait CKKSAddDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEShift<BE> + VecZnxRshAddCoeffIntoBackend<BE> + CKKSPlaintextDefault<BE>,
+        Self: GLWEShift<BE> + VecZnxLshAddCoeffToCoeffBackend<BE> + VecZnxRshAddCoeffIntoBackend<BE> + CKKSPlaintextDefault<BE>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
@@ -270,7 +284,8 @@ pub trait CKKSAddDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWENormalize<BE> + VecZnxRshAddCoeffIntoBackend<BE> + CKKSPlaintextDefault<BE>,
+        Self:
+            GLWENormalize<BE> + VecZnxLshAddCoeffToCoeffBackend<BE> + VecZnxRshAddCoeffIntoBackend<BE> + CKKSPlaintextDefault<BE>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
     {
@@ -288,7 +303,7 @@ pub trait CKKSAddDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: VecZnxRshAddCoeffIntoBackend<BE> + CKKSPlaintextDefault<BE>,
+        Self: VecZnxLshAddCoeffToCoeffBackend<BE> + VecZnxRshAddCoeffIntoBackend<BE> + CKKSPlaintextDefault<BE>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos,
         P: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
     {

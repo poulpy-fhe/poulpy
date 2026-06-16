@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    ScratchArenaTakeCore,
     default::{glwe_packing::GLWEPackingDefault, glwe_trace::GLWETraceDefault},
     layouts::{
         GGLWEInfos, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWE, GLWEAutomorphismKeyHelper,
@@ -725,7 +724,6 @@ where
 unsafe impl<BE: Backend> GLWEShiftImpl<BE> for BE
 where
     Module<BE>: GLWEShiftDefault<BE>,
-    for<'x> ScratchArena<'x, BE>: ScratchArenaTakeCore<'x, BE>,
 {
     fn glwe_shift_tmp_bytes(module: &Module<BE>) -> usize {
         module.glwe_shift_tmp_bytes_default()
@@ -774,7 +772,6 @@ where
 unsafe impl<BE: Backend> GLWENormalizeImpl<BE> for BE
 where
     Module<BE>: GLWENormalizeDefault<BE>,
-    for<'x> ScratchArena<'x, BE>: ScratchArenaTakeCore<'x, BE>,
 {
     fn glwe_normalize_tmp_bytes(module: &Module<BE>) -> usize {
         module.glwe_normalize_tmp_bytes_default()
@@ -800,7 +797,6 @@ where
 unsafe impl<BE: Backend> GGSWRotateImpl<BE> for BE
 where
     Module<BE>: GGSWRotateDefault<BE>,
-    for<'x> ScratchArena<'x, BE>: ScratchArenaTakeCore<'x, BE>,
 {
     fn ggsw_rotate_tmp_bytes(module: &Module<BE>) -> usize {
         module.ggsw_rotate_tmp_bytes_default()
@@ -827,7 +823,6 @@ where
 unsafe impl<BE: Backend> GLWETraceImpl<BE> for BE
 where
     Module<BE>: crate::default::glwe_trace::GLWETraceDefault<BE>,
-    for<'x> ScratchArena<'x, BE>: ScratchArenaTakeCore<'x, BE>,
 {
     fn glwe_trace_galois_elements(module: &Module<BE>) -> Vec<i64> {
         module.glwe_trace_galois_elements_default()
@@ -882,7 +877,6 @@ unsafe impl<BE: Backend> GLWEPackImpl<BE> for BE
 where
     Module<BE>: crate::default::glwe_packing::GLWEPackingDefault<BE>,
     GLWE<Vec<u8>>: GLWEToBackendMut<BE>,
-    for<'x> ScratchArena<'x, BE>: ScratchArenaTakeCore<'x, BE>,
 {
     fn glwe_pack_galois_elements(module: &Module<BE>) -> Vec<i64> {
         module.glwe_pack_galois_elements_default()

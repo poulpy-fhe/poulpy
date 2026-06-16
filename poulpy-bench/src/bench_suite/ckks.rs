@@ -11,7 +11,7 @@ use poulpy_ckks::{
     oep::CKKSImpl,
 };
 use poulpy_core::{
-    EncryptionLayout, ScratchArenaTakeCore,
+    EncryptionLayout,
     layouts::{
         Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
         GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, ModuleCoreAlloc, Rank, SetGaloisElement, TorusPrecision,
@@ -24,8 +24,8 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{ModuleNew, ScratchAvailable, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, GaloisElement, Module, ScratchArena, ScratchOwned, ZnxViewMut},
+    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    layouts::{Backend, GaloisElement, Module, ScratchOwned, ZnxViewMut},
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
@@ -89,7 +89,6 @@ where
         + CKKSMulSubOps<Self>
         + CKKSDotProductOps<Self>,
     ScratchOwned<Self>: ScratchOwnedAlloc<Self> + ScratchOwnedBorrow<Self>,
-    for<'a> ScratchArena<'a, Self>: ScratchAvailable + ScratchArenaTakeCore<'a, Self>,
 {
 }
 
@@ -147,7 +146,10 @@ where
 {
 }
 
-struct CkksBenchSetup<BE: CkksBenchBackend> {
+struct CkksBenchSetup<BE>
+where
+    BE: CkksBenchBackend,
+{
     module: Module<BE>,
     scratch: ScratchOwned<BE>,
     ct_a: CKKSCiphertext<Vec<u8>>,
@@ -205,7 +207,10 @@ fn reset_dst(dst: &mut CKKSCiphertext<Vec<u8>>) {
     dst.set_meta_checked(ckks_meta()).unwrap();
 }
 
-fn setup<BE: CkksBenchBackend>() -> CkksBenchSetup<BE> {
+fn setup<BE>() -> CkksBenchSetup<BE>
+where
+    BE: CkksBenchBackend,
+{
     let module = Module::<BE>::new(N as u64);
     let ct_layout = ckks_layout();
     let tsk_layout = tsk_layout();
@@ -273,7 +278,10 @@ fn setup<BE: CkksBenchBackend>() -> CkksBenchSetup<BE> {
     }
 }
 
-pub fn bench_ckks_add<BE: CkksBenchBackend>(c: &mut Criterion, label: &str) {
+pub fn bench_ckks_add<BE>(c: &mut Criterion, label: &str)
+where
+    BE: CkksBenchBackend,
+{
     let mut s = setup::<BE>();
     let mut group = c.benchmark_group(format!("ckks_add_into::{label}"));
     group.bench_function("add_ct", |b| {
@@ -318,7 +326,10 @@ pub fn bench_ckks_add<BE: CkksBenchBackend>(c: &mut Criterion, label: &str) {
     group.finish();
 }
 
-pub fn bench_ckks_sub<BE: CkksBenchBackend>(c: &mut Criterion, label: &str) {
+pub fn bench_ckks_sub<BE>(c: &mut Criterion, label: &str)
+where
+    BE: CkksBenchBackend,
+{
     let mut s = setup::<BE>();
     let mut group = c.benchmark_group(format!("ckks_sub_into::{label}"));
     group.bench_function("sub_ct", |b| {
@@ -363,7 +374,10 @@ pub fn bench_ckks_sub<BE: CkksBenchBackend>(c: &mut Criterion, label: &str) {
     group.finish();
 }
 
-pub fn bench_ckks_unary<BE: CkksBenchBackend>(c: &mut Criterion, label: &str) {
+pub fn bench_ckks_unary<BE>(c: &mut Criterion, label: &str)
+where
+    BE: CkksBenchBackend,
+{
     let mut s = setup::<BE>();
     let mut group = c.benchmark_group(format!("ckks_unary::{label}"));
     group.bench_function("neg", |b| {
@@ -413,7 +427,10 @@ pub fn bench_ckks_unary<BE: CkksBenchBackend>(c: &mut Criterion, label: &str) {
     group.finish();
 }
 
-pub fn bench_ckks_mul<BE: CkksBenchBackend>(c: &mut Criterion, label: &str) {
+pub fn bench_ckks_mul<BE>(c: &mut Criterion, label: &str)
+where
+    BE: CkksBenchBackend,
+{
     let mut s = setup::<BE>();
     let mut group = c.benchmark_group(format!("ckks_mul_into::{label}"));
     group.bench_function("mul_ct", |b| {
@@ -479,7 +496,10 @@ pub fn bench_ckks_mul<BE: CkksBenchBackend>(c: &mut Criterion, label: &str) {
     group.finish();
 }
 
-pub fn bench_ckks_automorphism<BE: CkksBenchBackend>(c: &mut Criterion, label: &str) {
+pub fn bench_ckks_automorphism<BE>(c: &mut Criterion, label: &str)
+where
+    BE: CkksBenchBackend,
+{
     let mut s = setup::<BE>();
     let mut group = c.benchmark_group(format!("ckks_automorphism::{label}"));
     group.bench_function("rotate", |b| {
@@ -522,7 +542,10 @@ pub fn bench_ckks_automorphism<BE: CkksBenchBackend>(c: &mut Criterion, label: &
     group.finish();
 }
 
-pub fn bench_ckks_composite<BE: CkksBenchBackend>(c: &mut Criterion, label: &str) {
+pub fn bench_ckks_composite<BE>(c: &mut Criterion, label: &str)
+where
+    BE: CkksBenchBackend,
+{
     let mut s = setup::<BE>();
     let many_a: Vec<&CKKSCiphertext<Vec<u8>>> = (0..MANY_TERMS).map(|_| &s.ct_a).collect();
     let many_b: Vec<&CKKSCiphertext<Vec<u8>>> = (0..MANY_TERMS).map(|_| &s.ct_b).collect();

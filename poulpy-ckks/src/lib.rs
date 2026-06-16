@@ -20,17 +20,17 @@
 //! metadata for you, while maintenance helpers let you compact or resize owned
 //! buffers without violating those invariants.
 //!
-//! Safe add/sub operations return K-normalized ciphertexts. The paired
-//! unnormalized traits ([`api::CKKSAddOpsUnnormalized`] and
-//! [`api::CKKSSubOpsUnnormalized`]) write into an
-//! [`layouts::UnnormalizedCKKSCiphertext`] for callers who want to fuse
-//! several linear steps before normalizing explicitly. Limb digits in that
-//! wrapper may hold un-propagated carries (wider than `base2k` bits), so
-//! passing it to any DFT-domain primitive (keyswitching, convolution,
-//! automorphisms) would produce incorrect decryptions. The wrapper does not
-//! implement [`GLWEToBackendRef`] or [`GLWEToBackendMut`], making such misuse
-//! a compile error. Call [`layouts::UnnormalizedCKKSCiphertext::normalize`]
-//! before the next keyswitching or convolution step.
+//! Safe add/sub operations return K-normalized ciphertexts. Their
+//! unnormalized variants live on [`api::CKKSAddOps`] and [`api::CKKSSubOps`]
+//! and write into an [`layouts::UnnormalizedCKKSCiphertext`] for callers who
+//! want to fuse several linear steps before normalizing explicitly. Limb
+//! digits in that wrapper may hold un-propagated carries (wider than `base2k`
+//! bits), so passing it to any DFT-domain primitive (keyswitching,
+//! convolution, automorphisms) would produce incorrect decryptions. The
+//! wrapper does not implement [`GLWEToBackendRef`] or [`GLWEToBackendMut`],
+//! making such misuse a compile error. Call
+//! [`layouts::UnnormalizedCKKSCiphertext::normalize`] before the next
+//! keyswitching or convolution step.
 //!
 //! ## Modules
 //!
@@ -41,7 +41,7 @@
 //! | [`leveled`] | Leveled arithmetic (add, sub, mul, neg, rotate, conjugate), encryption, decryption, and rescale |
 //! | bootstrapping | Planned CKKS bootstrapping |
 
-use poulpy_core::layouts::{Base2K, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision};
+use poulpy_core::layouts::{BSGSMeta, Base2K, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision};
 use poulpy_hal::layouts::Backend;
 
 pub mod api;
@@ -52,6 +52,8 @@ mod error;
 pub mod layouts;
 pub mod leveled;
 pub mod oep;
+pub mod polynomial;
+pub mod power_basis;
 pub mod test_suite;
 pub use error::CKKSCompositionError;
 pub(crate) use error::{
@@ -112,6 +114,16 @@ pub trait CKKSInfos {
     /// storage capacity `max_k()`.
     fn effective_k(&self) -> usize {
         self.log_delta() + self.log_budget()
+    }
+}
+
+impl BSGSMeta for CKKSMeta {
+    fn bsgs_log_budget(&self) -> usize {
+        self.log_budget
+    }
+
+    fn bsgs_log_delta(&self) -> usize {
+        self.log_delta
     }
 }
 

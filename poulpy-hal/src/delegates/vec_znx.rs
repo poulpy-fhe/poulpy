@@ -9,16 +9,17 @@ use crate::{
         VecZnxAddScalarIntoBackend, VecZnxAutomorphismAssignBackend, VecZnxAutomorphismAssignTmpBytes, VecZnxAutomorphismBackend,
         VecZnxAutomorphismRotateBackend, VecZnxCopyBackend, VecZnxCopyRangeBackend, VecZnxExtractCoeffBackend,
         VecZnxFillNormalBackend, VecZnxFillNormalSourceBackend, VecZnxFillUniformBackend, VecZnxFillUniformSourceBackend,
-        VecZnxHadamardProductScalarZnxBackend, VecZnxLshAddCoeffIntoBackend, VecZnxLshAddIntoBackend, VecZnxLshAssignBackend,
-        VecZnxLshBackend, VecZnxLshCoeffBackend, VecZnxLshSubBackend, VecZnxLshTmpBytes, VecZnxMergeRingsBackend,
-        VecZnxMergeRingsTmpBytes, VecZnxMulXpMinusOneAssignBackend, VecZnxMulXpMinusOneAssignTmpBytes,
-        VecZnxMulXpMinusOneBackend, VecZnxNegateAssignBackend, VecZnxNegateBackend, VecZnxNormalize,
-        VecZnxNormalizeAssignBackend, VecZnxNormalizeCoeffAssignBackend, VecZnxNormalizeCoeffBackend, VecZnxNormalizeTmpBytes,
-        VecZnxRotateAssignBackend, VecZnxRotateAssignTmpBytes, VecZnxRotateBackend, VecZnxRshAddCoeffIntoBackend,
-        VecZnxRshAddIntoBackend, VecZnxRshAssignBackend, VecZnxRshBackend, VecZnxRshCoeffBackend, VecZnxRshSubBackend,
-        VecZnxRshSubCoeffIntoBackend, VecZnxRshTmpBytes, VecZnxSplitRingBackend, VecZnxSplitRingTmpBytes, VecZnxSubAssignBackend,
-        VecZnxSubBackend, VecZnxSubNegateAssignBackend, VecZnxSubScalarAssignBackend, VecZnxSubScalarBackend,
-        VecZnxSwitchRingBackend, VecZnxTransposeBackend, VecZnxZeroBackend,
+        VecZnxHadamardProductScalarZnxBackend, VecZnxLshAddCoeffIntoBackend, VecZnxLshAddCoeffToCoeffBackend,
+        VecZnxLshAddIntoBackend, VecZnxLshAssignBackend, VecZnxLshBackend, VecZnxLshCoeffBackend, VecZnxLshSubBackend,
+        VecZnxLshSubCoeffToCoeffBackend, VecZnxLshTmpBytes, VecZnxMergeRingsBackend, VecZnxMergeRingsTmpBytes,
+        VecZnxMulXpMinusOneAssignBackend, VecZnxMulXpMinusOneAssignTmpBytes, VecZnxMulXpMinusOneBackend,
+        VecZnxNegateAssignBackend, VecZnxNegateBackend, VecZnxNormalize, VecZnxNormalizeAssignBackend,
+        VecZnxNormalizeCoeffAssignBackend, VecZnxNormalizeCoeffBackend, VecZnxNormalizeTmpBytes, VecZnxRotateAssignBackend,
+        VecZnxRotateAssignTmpBytes, VecZnxRotateBackend, VecZnxRshAddCoeffIntoBackend, VecZnxRshAddIntoBackend,
+        VecZnxRshAssignBackend, VecZnxRshBackend, VecZnxRshCoeffBackend, VecZnxRshSubBackend, VecZnxRshSubCoeffIntoBackend,
+        VecZnxRshTmpBytes, VecZnxSplitRingBackend, VecZnxSplitRingTmpBytes, VecZnxSubAssignBackend, VecZnxSubBackend,
+        VecZnxSubNegateAssignBackend, VecZnxSubScalarAssignBackend, VecZnxSubScalarBackend, VecZnxSwitchRingBackend,
+        VecZnxTransposeBackend, VecZnxZeroBackend,
     },
     layouts::{
         Backend, Module, NoiseInfos, ScalarZnxBackendMut, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
@@ -426,6 +427,42 @@ impl_vec_znx_delegate!(
         scratch: &mut ScratchArena<'_, B>,
     ) {
         B::vec_znx_lsh_add_coeff_into_backend(self, base2k, k, res, res_col, a, a_col, a_coeff, scratch)
+    }
+);
+
+impl_vec_znx_delegate!(
+    VecZnxLshAddCoeffToCoeffBackend<B>,
+    fn vec_znx_lsh_add_coeff_to_coeff_backend(
+        &self,
+        base2k: usize,
+        k: usize,
+        res: &mut VecZnxBackendMut<'_, B>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, B>,
+        a_col: usize,
+        a_coeff: usize,
+        res_coeff: usize,
+        scratch: &mut ScratchArena<'_, B>,
+    ) {
+        B::vec_znx_lsh_add_coeff_to_coeff_backend(self, base2k, k, res, res_col, a, a_col, a_coeff, res_coeff, scratch)
+    }
+);
+
+impl_vec_znx_delegate!(
+    VecZnxLshSubCoeffToCoeffBackend<B>,
+    fn vec_znx_lsh_sub_coeff_to_coeff_backend(
+        &self,
+        base2k: usize,
+        k: usize,
+        res: &mut VecZnxBackendMut<'_, B>,
+        res_col: usize,
+        a: &VecZnxBackendRef<'_, B>,
+        a_col: usize,
+        a_coeff: usize,
+        res_coeff: usize,
+        scratch: &mut ScratchArena<'_, B>,
+    ) {
+        B::vec_znx_lsh_sub_coeff_to_coeff_backend(self, base2k, k, res, res_col, a, a_col, a_coeff, res_coeff, scratch)
     }
 );
 

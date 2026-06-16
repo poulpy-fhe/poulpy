@@ -89,6 +89,135 @@ pub fn vec_znx_lsh_coeff<'r, 'a, BE, const OVERWRITE: bool>(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+pub fn vec_znx_lsh_add_coeff_to_coeff<'r, 'a, BE>(
+    base2k: usize,
+    k: usize,
+    res: &mut VecZnxBackendMut<'r, BE>,
+    res_col: usize,
+    a: &VecZnxBackendRef<'a, BE>,
+    a_col: usize,
+    a_coeff: usize,
+    res_coeff: usize,
+    carry: &mut [i64],
+) where
+    BE: Backend,
+    BE::BufMut<'r>: HostDataMut,
+    BE::BufRef<'a>: HostDataRef,
+    BE: ZnxZero
+        + ZnxNormalizeFirstStep
+        + ZnxNormalizeMiddleStep
+        + ZnxNormalizeFinalStep
+        + ZnxNormalizeFirstStepCarryOnly
+        + ZnxNormalizeMiddleStepCarryOnly,
+{
+    #[cfg(debug_assertions)]
+    {
+        assert!(!carry.is_empty());
+        assert!(res_coeff < res.n(), "res_coeff: {res_coeff} >= res.n(): {}", res.n());
+        assert!(a_coeff < a.n(), "a_coeff: {a_coeff} >= a.n(): {}", a.n());
+    }
+
+    let res_size: usize = res.size();
+    let a_size = a.size();
+    let (steps, k_rem) = k.div_rem_euclid(base2k);
+
+    if steps >= res_size.max(a_size) {
+        return;
+    }
+
+    let min_size: usize = res_size.min(a_size.saturating_sub(steps));
+    let carry_only_start: usize = (steps + min_size).min(a_size);
+    let carry = &mut carry[..1];
+
+    for j in (carry_only_start..a_size).rev() {
+        let src = [a.at(a_col, j)[a_coeff]];
+        if j == a_size - 1 {
+            BE::znx_normalize_first_step_carry_only(base2k, k_rem, &src, carry);
+        } else {
+            BE::znx_normalize_middle_step_carry_only(base2k, k_rem, &src, carry);
+        }
+    }
+
+    if carry_only_start == a_size {
+        carry[0] = 0;
+    }
+
+    for j in (0..min_size).rev() {
+        let src = [a.at(a_col, j + steps)[a_coeff]];
+        let dst = &mut res.at_mut(res_col, j)[res_coeff..res_coeff + 1];
+        if j == 0 {
+            BE::znx_normalize_final_step::<false>(base2k, k_rem, dst, &src, carry);
+        } else {
+            BE::znx_normalize_middle_step::<false>(base2k, k_rem, dst, &src, carry);
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn vec_znx_lsh_sub_coeff_to_coeff<'r, 'a, BE>(
+    base2k: usize,
+    k: usize,
+    res: &mut VecZnxBackendMut<'r, BE>,
+    res_col: usize,
+    a: &VecZnxBackendRef<'a, BE>,
+    a_col: usize,
+    a_coeff: usize,
+    res_coeff: usize,
+    carry: &mut [i64],
+) where
+    BE: Backend,
+    BE::BufMut<'r>: HostDataMut,
+    BE::BufRef<'a>: HostDataRef,
+    BE: ZnxZero
+        + ZnxNormalizeFirstStepCarryOnly
+        + ZnxNormalizeMiddleStepSub
+        + ZnxNormalizeFinalStepSub
+        + ZnxNormalizeMiddleStepCarryOnly,
+{
+    #[cfg(debug_assertions)]
+    {
+        assert!(!carry.is_empty());
+        assert!(res_coeff < res.n(), "res_coeff: {res_coeff} >= res.n(): {}", res.n());
+        assert!(a_coeff < a.n(), "a_coeff: {a_coeff} >= a.n(): {}", a.n());
+    }
+
+    let res_size: usize = res.size();
+    let a_size = a.size();
+    let (steps, k_rem) = k.div_rem_euclid(base2k);
+
+    if steps >= res_size.max(a_size) {
+        return;
+    }
+
+    let min_size: usize = res_size.min(a_size.saturating_sub(steps));
+    let carry_only_start: usize = (steps + min_size).min(a_size);
+    let carry = &mut carry[..1];
+
+    for j in (carry_only_start..a_size).rev() {
+        let src = [a.at(a_col, j)[a_coeff]];
+        if j == a_size - 1 {
+            BE::znx_normalize_first_step_carry_only(base2k, k_rem, &src, carry);
+        } else {
+            BE::znx_normalize_middle_step_carry_only(base2k, k_rem, &src, carry);
+        }
+    }
+
+    if carry_only_start == a_size {
+        carry[0] = 0;
+    }
+
+    for j in (0..min_size).rev() {
+        let src = [a.at(a_col, j + steps)[a_coeff]];
+        let dst = &mut res.at_mut(res_col, j)[res_coeff..res_coeff + 1];
+        if j == 0 {
+            BE::znx_normalize_final_step_sub(base2k, k_rem, dst, &src, carry);
+        } else {
+            BE::znx_normalize_middle_step_sub(base2k, k_rem, dst, &src, carry);
+        }
+    }
+}
+
 pub fn vec_znx_lsh_assign<'r, BE>(base2k: usize, k: usize, res: &mut VecZnxBackendMut<'r, BE>, res_col: usize, carry: &mut [i64])
 where
     BE: Backend,
