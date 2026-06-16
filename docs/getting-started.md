@@ -64,7 +64,7 @@ Two cross-cutting variants exist for most of these types.
 A *prepared* variant such as `GLWEPrepared` or `GGSWPrepared` stores the data in the backend's transform domain so repeated products are cheap, and is produced from the standard form by a `prepare` step.
 A *compressed* variant stores only a 32-byte seed for the uniform mask, which it regenerates on decompression, to cut serialized size.
 
-The operations under `api/` cover secret-key and public-key encryption, decryption, the external product, key-switching, Galois automorphisms, the trace (a sum of automorphisms), GLWE arithmetic (add, subtract, normalize, multiply by a plaintext or a constant, rotate), the tensoring and relinearization used by ciphertext-ciphertext products, noise measurement, and conversions such as LWE sample extraction from a GLWE.
+The operations under `api/` cover secret-key and public-key encryption, decryption, the external product, key-switching, Galois automorphisms, the trace (a sum of automorphisms), GLWE arithmetic (add, subtract, normalize, multiply by a plaintext or a constant, rotate), the tensoring and relinearization used by ciphertext-ciphertext products, the baby-step/giant-step engines for polynomial evaluation and linear transformations (matrix-vector products), noise measurement, and conversions such as LWE sample extraction from a GLWE.
 Encryption takes explicit randomness streams through `Source`, one per role, and a `NoiseInfos` carrying the sigma, with `DEFAULT_SIGMA_XE = 3.2` as the default.
 Secret-key encryption takes two, one for the Gaussian error and one for the uniform mask, while public-key encryption takes a third for the public-key randomness.
 No operation allocates on the heap: the caller passes a scratch arena, and every operation has a companion `*_tmp_bytes` method that reports how large that arena must be.
@@ -77,6 +77,7 @@ It uses the same bivariate base-`2^K` representation rather than an RNS one, and
 The `encoding/` folder maps complex slots to and from a plaintext polynomial through a negacyclic FFT packing of real and imaginary parts.
 The `leveled/` arithmetic tracks the `CKKSMeta` precision metadata for you: addition and subtraction align operands by budget and do not consume capacity, while multiplication does in rescaling, which is a bit shift rather than a division by a prime.
 The public operations include add, subtract, negate, multiply, fused multiply-add and multiply-subtract, affine maps, slot rotation, conjugation, and multiplication or division by `i` or by powers of two, plus maintenance helpers that compact or resize a ciphertext's limb storage.
+Higher-level evaluators build on these: polynomial evaluation, linear transformations (matrix-vector products over the slots), and the homomorphic DFT (`CoeffsToSlots` / `SlotsToCoeffs`) built as a chain of those linear transformations.
 
 ### poulpy-bin-fhe
 
@@ -207,4 +208,5 @@ let ggsw_layout = GGSWLayout {
 - For a GLWE encrypt and decrypt roundtrip, read `poulpy-cpu-ref/examples/core_encryption.rs`.
 - For the gate and encrypted integer API, read `poulpy-bin-fhe/examples/bdd_arithmetic.rs`.
 - For CKKS, read `poulpy-cpu-ref/examples/ckks_poly2.rs`.
+- For CKKS polynomial evaluation and homomorphic linear transformations, read [polynomial_evaluation.md](polynomial_evaluation.md) and [linear_transformation.md](linear_transformation.md).
 - For the choice of arithmetic backend, read [backends.md](backends.md).
