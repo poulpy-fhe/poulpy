@@ -47,8 +47,6 @@ use poulpy_hal::{
     source::Source,
 };
 
-use anyhow::Result;
-
 use super::CKKSTestParams;
 
 // ─── constants ───────────────────────────────────────────────────────────────
@@ -952,8 +950,7 @@ pub fn assert_decrypt_precision<BE, F, E>(
     want_re: &[F],
     want_im: &[F],
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
+) where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
@@ -1004,8 +1001,7 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
     want_im: &[F],
     log_delta: usize,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
+) where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
@@ -1024,7 +1020,7 @@ where
             log_budget: ct.log_budget(),
         },
     );
-    encoder.encode_reim(&mut pt_want, want_re, want_im)?;
+    encoder.encode_reim(&mut pt_want, want_re, want_im).unwrap();
 
     // Compact the ciphertext to its `effective_k` limbs first: the decryption is
     // sized like its input, so without this the noise would be measured over the
@@ -1046,7 +1042,7 @@ where
     // the decode below, this does *not* clip the limbs above the plaintext
     // head-room, so any corruption there fails here.
     let mut pt_noise = module.ckks_plaintext_alloc_from_infos(&ct_compact);
-    module.ckks_extract_pt(&mut pt_noise, &full_pt, scratch)?;
+    module.ckks_extract_pt(&mut pt_noise, &full_pt, scratch).unwrap();
     module.glwe_sub_assign(&mut pt_noise, &pt_want);
 
     let noise = pt_noise.inner.data().stats(pt_noise.base2k().into(), 0);
@@ -1078,13 +1074,11 @@ where
             log_budget: ct.log_budget().min(params.prec.log_budget()),
         },
     );
-    module.ckks_extract_pt(&mut pt_decode, &full_pt, scratch)?;
+    module.ckks_extract_pt(&mut pt_decode, &full_pt, scratch).unwrap();
     let pt_host = download_pt::<BE>(&pt_decode);
     let (re_out, im_out) = ckks_decode_pt(encoder, params.n / 2, &pt_host);
     assert_precision(&format!("{label} re"), &re_out, want_re, log_delta, params.n);
     assert_precision(&format!("{label} im"), &im_out, want_im, log_delta, params.n);
-
-    Ok(())
 }
 
 // ─── metadata assertion helpers ───────────────────────────────────────────────
