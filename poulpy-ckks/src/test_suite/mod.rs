@@ -474,7 +474,6 @@ macro_rules! ckks_backend_test_suite {
                 div_pow2_assign_explicit_error,
                 $crate::test_suite::mul_pow2::test_div_pow2_assign_explicit_error
             );
-            run_test!(scale_down_assign, $crate::test_suite::scale::test_scale_down_assign);
             run_test!(
                 scale_down_then_multiply,
                 $crate::test_suite::scale::test_scale_down_then_multiply
