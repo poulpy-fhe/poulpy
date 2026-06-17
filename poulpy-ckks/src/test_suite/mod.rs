@@ -550,6 +550,14 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::polynomial_evaluation::test_encode_bsgs_adaptive_reconstructs
             );
             run_test!(
+                encode_bsgs_adaptive_rejects_invalid_args,
+                $crate::test_suite::polynomial_evaluation::test_encode_bsgs_adaptive_rejects_invalid_args
+            );
+            run_test!(
+                eval_poly_adaptive_drop_granularity,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_adaptive_drop_granularity
+            );
+            run_test!(
                 eval_poly_adaptive_chebyshev,
                 $crate::test_suite::polynomial_evaluation::test_eval_poly_adaptive_chebyshev
             );

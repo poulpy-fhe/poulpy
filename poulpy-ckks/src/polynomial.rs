@@ -14,12 +14,24 @@ pub use poulpy_core::layouts::{BSGSPolynomial, Basis, DEFAULT_SPLIT_STRATEGY, Pa
 
 /// Adaptive Chebyshev split: full-scale low branch, compensated high branch.
 pub struct AdaptiveBSGS<C> {
-    pub low: BSGSPolynomial<C>,
-    pub high: BSGSPolynomial<C>,
-    pub drop: usize,
+    low: BSGSPolynomial<C>,
+    high: BSGSPolynomial<C>,
+    drop: usize,
 }
 
 impl<C> AdaptiveBSGS<C> {
+    pub fn low(&self) -> &BSGSPolynomial<C> {
+        &self.low
+    }
+
+    pub fn high(&self) -> &BSGSPolynomial<C> {
+        &self.high
+    }
+
+    pub fn drop(&self) -> usize {
+        self.drop
+    }
+
     /// Rebuilds by mapping borrowed baby-step coefficients of both branches.
     pub fn map_baby_steps_ref<D>(&self, mut f: impl FnMut(&C) -> D) -> AdaptiveBSGS<D> {
         AdaptiveBSGS {
