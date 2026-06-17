@@ -4,8 +4,8 @@ use crate::{CKKSCompositionError, CKKSInfos, CKKSMeta, api::CKKSScaleManage, lev
 
 use super::helpers::{
     TestContextBackend, TestContextModule, TestScalar, alloc_scratch, assert_ckks_error, assert_ct_meta,
-    assert_decrypt_precision, assert_decrypt_precision_at_log_delta, assert_precision, ckks_decode_pt, ckks_decrypt_decode,
-    ckks_decrypt_with_prec, ckks_encrypt, ckks_encrypt_with_prec, gen_sk, gen_sk_with_raw, gen_tsk, test_vector_1,
+    assert_decrypt_precision, assert_decrypt_precision_at_log_delta, assert_precision, ckks_decode_pt, ckks_decrypt_with_prec,
+    ckks_encrypt, ckks_encrypt_with_prec, gen_sk, gen_sk_with_raw, gen_tsk, test_vector_1,
 };
 use poulpy_core::layouts::LWEInfos;
 use poulpy_hal::{
@@ -102,17 +102,15 @@ where
     assert_precision("scale_down_assign message preserved (im)", &im_msg, &im1, ld - bits, params.n);
 }
 
-/// A *single* multiply after `scale_down` keeps the message clean, for both
-/// `2·bits ≤ log_delta` and `2·bits > log_delta` (no `2·bits` requirement). This
-/// only pins the single-multiply case: the overflow sits at the top of the live
-/// range and each further multiply rescales it down toward the message, so deeper
-/// chains are not covered here.
+/// scale_down → multiply → scale_up
 pub fn test_scale_down_then_multiply<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -145,19 +143,18 @@ pub fn test_scale_down_then_multiply<BE, F, E>(
         );
         module.ckks_scale_down_assign(&mut ct, bits, &mut scratch.borrow()).unwrap();
         module.ckks_square_assign(&mut ct, &tsk, &mut scratch.borrow()).unwrap();
-        let (re_sq, im_sq) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &ct, &sk, &mut scratch.borrow());
-        let err = (0..m)
-            .map(|j| {
-                (re_sq[j] - want_re[j])
-                    .to_f64()
-                    .unwrap()
-                    .abs()
-                    .max((im_sq[j] - want_im[j]).to_f64().unwrap().abs())
-            })
-            .fold(0.0f64, f64::max);
-        assert!(
-            err < 0.1,
-            "bits={bits} (log_delta={ld}): square err {err:.3e} — multiply must not leak the overflow into the message"
+        module.ckks_scale_up_assign(&mut ct, bits, &mut scratch.borrow()).unwrap();
+        assert_decrypt_precision_at_log_delta(
+            &format!("scale_down_then_multiply bits={bits}"),
+            &params,
+            module,
+            &encoder,
+            &ct,
+            &sk,
+            &want_re,
+            &want_im,
+            ld - bits,
+            &mut scratch.borrow(),
         );
     }
 }

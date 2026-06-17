@@ -23,8 +23,8 @@ use crate::{
 
 use super::helpers::{
     PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_decrypt_precision,
-    ckks_decrypt_decode, ckks_encrypt, ckks_encrypt_with_prec, gen_sk_with_raw, gen_tsk, precision_at, quantized_const,
-    quantized_slots, test_vector_1, upload_pt,
+    assert_decrypt_precision_at_log_delta, ckks_encrypt, ckks_encrypt_with_prec, gen_sk_with_raw, gen_tsk, precision_at,
+    quantized_const, quantized_slots, test_vector_1, upload_pt,
 };
 
 fn scale_add<F: TestScalar>(acc: &mut [F], src: &[F], scale: F) {
@@ -520,7 +520,6 @@ pub fn test_eval_poly_adaptive_chebyshev<BE, F, E>(
 
     type ScalarFn<F> = fn(F) -> F;
     let funcs: [(&str, ScalarFn<F>); 3] = [("exp", |x| x.exp()), ("sin", |x| x.sin()), ("cos", |x| x.cos())];
-    let bits = |e: f64| if e > 0.0 { -e.log2() } else { 99.0 };
 
     for (name, f) in funcs {
         for &degree in &[31usize, 63usize] {
@@ -580,17 +579,33 @@ pub fn test_eval_poly_adaptive_chebyshev<BE, F, E>(
             let mut res_ad = alloc_ct(&params, module, k);
             ckks_eval_poly_real_const_coeffs_adaptive(module, &mut res_ad, &x_ct, &adaptive, &tsk, &mut scratch.borrow())
                 .unwrap();
-            let (got_ad, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res_ad, &sk, &mut scratch.borrow());
-            let err_ad = got_ad
-                .iter()
-                .zip(want.iter())
-                .map(|(g, w)| (*g - *w).to_f64().unwrap().abs())
-                .fold(0.0f64, f64::max);
 
-            assert!(
-                bits(err_ad) >= (log_delta - drop) as f64 - 12.0,
-                "{name} deg={degree}: adaptive precision {:.1}b below the reduced-scale floor",
-                bits(err_ad)
+            let zeros = vec![F::zero(); m];
+            // Both results are full-width clean (ring-domain noise check); the scale_up
+            // at the end of the high branch flushes the overflow.
+            assert_decrypt_precision_at_log_delta(
+                &format!("{name} deg={degree} mono"),
+                &params,
+                module,
+                &encoder,
+                &res_mono,
+                &sk,
+                &want,
+                &zeros,
+                log_delta,
+                &mut scratch.borrow(),
+            );
+            assert_decrypt_precision_at_log_delta(
+                &format!("{name} deg={degree} adaptive"),
+                &params,
+                module,
+                &encoder,
+                &res_ad,
+                &sk,
+                &want,
+                &zeros,
+                log_delta - drop,
+                &mut scratch.borrow(),
             );
             assert!(
                 res_ad.log_budget() > res_mono.log_budget(),
