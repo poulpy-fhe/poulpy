@@ -5,7 +5,11 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use crate::{CKKSCtBounds, SetCKKSInfos, api::CKKSRescaleOps, oep::CKKSRescaleImpl};
+use crate::{
+    CKKSCtBounds, SetCKKSInfos,
+    api::{CKKSRescaleOps, CKKSScaleManage},
+    oep::CKKSRescaleImpl,
+};
 
 impl<BE: Backend + CKKSRescaleImpl<BE>> CKKSRescaleOps<BE> for Module<BE>
 where
@@ -30,6 +34,23 @@ where
         BE::ckks_rescale_into(self, dst, k, src, scratch)
     }
 
+    fn ckks_align_pair<A, B>(&self, a: &mut A, b: &mut B, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        A: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        B: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    {
+        BE::ckks_align_pair(self, a, b, scratch)
+    }
+
+    fn ckks_align_tmp_bytes(&self) -> usize {
+        BE::ckks_align_tmp_bytes(self)
+    }
+}
+
+impl<BE: Backend + CKKSRescaleImpl<BE>> CKKSScaleManage<BE> for Module<BE>
+where
+    Module<BE>: GLWEShift<BE>,
+{
     fn ckks_scale_down_assign<Dst>(&self, ct: &mut Dst, bits: usize, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -42,17 +63,5 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
         BE::ckks_scale_up_assign(self, ct, bits, scratch)
-    }
-
-    fn ckks_align_pair<A, B>(&self, a: &mut A, b: &mut B, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
-    where
-        A: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        B: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-    {
-        BE::ckks_align_pair(self, a, b, scratch)
-    }
-
-    fn ckks_align_tmp_bytes(&self) -> usize {
-        BE::ckks_align_tmp_bytes(self)
     }
 }

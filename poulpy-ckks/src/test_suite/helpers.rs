@@ -18,7 +18,7 @@ use crate::{
     api::{
         CKKSAddManyOps, CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSDotProductOps,
         CKKSImagOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps, CKKSPlaintextVecOps, CKKSPow2Ops, CKKSRescaleOps,
-        CKKSRotateOps, CKKSSubOps,
+        CKKSRotateOps, CKKSScaleManage, CKKSSubOps,
     },
     encoding::reim::Encoder,
     layouts::{
@@ -80,6 +80,7 @@ where
 }
 
 /// Aggregates all `Module<BE>` capabilities needed by the CKKS test suite.
+#[allow(private_bounds)]
 pub trait TestContextModule<BE: Backend>:
     ModuleNew<BE>
     + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
@@ -98,6 +99,7 @@ pub trait TestContextModule<BE: Backend>:
     + CKKSImagOps<BE>
     + CKKSPow2Ops<BE>
     + CKKSRescaleOps<BE>
+    + CKKSScaleManage<BE>
     + CKKSPlaintextVecOps<BE>
     + CKKSAddManyOps<BE>
     + CKKSMulAddOps<BE>
@@ -133,6 +135,7 @@ impl<BE: Backend, M> TestContextModule<BE> for M where
         + CKKSImagOps<BE>
         + CKKSPow2Ops<BE>
         + CKKSRescaleOps<BE>
+        + CKKSScaleManage<BE>
         + CKKSPlaintextVecOps<BE>
         + CKKSAddManyOps<BE>
         + CKKSMulAddOps<BE>

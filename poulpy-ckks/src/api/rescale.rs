@@ -41,26 +41,10 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// After the call both operands share the same `log_budget`.  If they already
 /// have equal budgets neither is modified.
 ///
-/// ## Re-scale by `bits` (`ckks_scale_down_assign` / `ckks_scale_up_assign`)
-///
-/// These move the boundary between precision and headroom **without changing
-/// the encrypted value**, by shifting the torus polynomial to compensate.
-/// They keep `effective_k = log_delta + log_budget` constant, so storage is
-/// never reallocated:
-///
-/// ```text
-/// // ckks_scale_down_assign: trade precision for headroom
-/// log_delta_out  = ct.log_delta  − bits
-/// log_budget_out = ct.log_budget + bits
-///
-/// // ckks_scale_up_assign: trade headroom for precision
-/// log_delta_out  = ct.log_delta  + bits
-/// log_budget_out = ct.log_budget − bits
-/// ```
-///
-/// `ckks_scale_down_assign` errors with `InsufficientScalePrecision` if
-/// `bits > ct.log_delta`; `ckks_scale_up_assign` errors with
-/// `InsufficientHomomorphicCapacity` if `bits > ct.log_budget`.
+/// Scale-management (moving the precision/headroom boundary without dropping the
+/// modulus) lives on the crate-private [`CKKSScaleManage`] trait, not here: its
+/// `scale_down` is not value-preserving over the full modulus and is only safe
+/// under the internal flush discipline its docs describe.
 pub trait CKKSRescaleOps<BE: Backend> {
     /// Returns scratch bytes required by [`Self::ckks_rescale_into`].
     fn ckks_rescale_tmp_bytes(&self) -> usize;
@@ -81,30 +65,6 @@ pub trait CKKSRescaleOps<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds;
 
-    /// Lowers `ct`'s working scale by `bits`, preserving the encrypted value.
-    ///
-    /// Right-shifts the polynomial by `bits`, discarding that many
-    /// least-significant precision bits and turning the freed space into
-    /// budget.  A subsequent multiplication then consumes only the reduced
-    /// scale.
-    ///
-    /// Errors with `InsufficientScalePrecision` if `bits > ct.log_delta`.
-    /// Uses the scratch reported by [`Self::ckks_rescale_tmp_bytes`].
-    fn ckks_scale_down_assign<Dst>(&self, ct: &mut Dst, bits: usize, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
-
-    /// Inverse of [`Self::ckks_scale_down_assign`]: raises `ct`'s working scale
-    /// by `bits`, preserving the encrypted value.
-    ///
-    /// Left-shifts the polynomial into the budget headroom.
-    ///
-    /// Errors with `InsufficientHomomorphicCapacity` if `bits > ct.log_budget`.
-    /// Uses the scratch reported by [`Self::ckks_rescale_tmp_bytes`].
-    fn ckks_scale_up_assign<Dst>(&self, ct: &mut Dst, bits: usize, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
-    where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
-
     /// Returns scratch bytes required by [`Self::ckks_align_pair`].
     fn ckks_align_tmp_bytes(&self) -> usize;
 
@@ -118,4 +78,61 @@ pub trait CKKSRescaleOps<BE: Backend> {
     where
         A: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         B: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
+}
+
+/// Crate-private scale management: move the precision/headroom boundary by
+/// shifting the torus, keeping `effective_k = log_delta + log_budget` (and the
+/// modulus) constant, so storage is never reallocated:
+///
+/// ```text
+/// // ckks_scale_down_assign: trade precision for headroom
+/// log_delta_out  = ct.log_delta  − bits
+/// log_budget_out = ct.log_budget + bits
+///
+/// // ckks_scale_up_assign: trade headroom for precision
+/// log_delta_out  = ct.log_delta  + bits
+/// log_budget_out = ct.log_budget − bits
+/// ```
+///
+/// These are **not** exposed publicly because `scale_down` is not value-preserving
+/// over the full modulus: unlike [`CKKSRescaleOps::ckks_rescale_assign`] it does
+/// not drop the modulus, so right-shifting the mask `a` leaves a residual `a·s`
+/// wraparound in the **top `bits`** of the modulus. Only the message region is
+/// preserved; the result survives a *single* multiply and must be flushed by
+/// `ckks_scale_up_assign` before any full-range read. The overflow sits at the top
+/// of the live range and each further multiply rescales it down toward the message,
+/// so callers must honour that discipline — which is why this trait is crate-internal.
+pub(crate) trait CKKSScaleManage<BE: Backend> {
+    /// Lowers `ct`'s working scale by `bits`, preserving only the message region.
+    ///
+    /// Right-shifts the polynomial by `bits`, discarding that many
+    /// least-significant precision bits and turning the freed space into budget.
+    /// A subsequent multiplication then consumes only the reduced scale.
+    ///
+    /// The modulus is **not** dropped, so the right-shifted mask leaves an `a·s`
+    /// overflow in the **top `bits`** of the modulus. The message survives a single
+    /// following multiply (the overflow stays high) and is flushed by
+    /// [`Self::ckks_scale_up_assign`], but until then the value is dirty above the
+    /// message: never decode, keyswitch, or relinearize the result over its full
+    /// range, and never assume the freed budget bits are zero. For a genuinely
+    /// value-preserving reduction over the full modulus use
+    /// [`CKKSRescaleOps::ckks_rescale_assign`] (which drops the modulus).
+    ///
+    /// Errors with `InsufficientScalePrecision` if `bits > ct.log_delta`.
+    /// Uses the scratch reported by [`CKKSRescaleOps::ckks_rescale_tmp_bytes`].
+    fn ckks_scale_down_assign<Dst>(&self, ct: &mut Dst, bits: usize, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
+
+    /// Inverse of [`Self::ckks_scale_down_assign`]: raises `ct`'s working scale
+    /// by `bits`, flushing the `scale_down` overflow and restoring the value.
+    ///
+    /// Left-shifts the polynomial into the budget headroom, pushing any top-`bits`
+    /// overflow to bit `≥ max_k` (`≡ 0 mod q`).
+    ///
+    /// Errors with `InsufficientHomomorphicCapacity` if `bits > ct.log_budget`.
+    /// Uses the scratch reported by [`CKKSRescaleOps::ckks_rescale_tmp_bytes`].
+    fn ckks_scale_up_assign<Dst>(&self, ct: &mut Dst, bits: usize, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 }

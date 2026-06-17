@@ -30,6 +30,7 @@ pub use plaintext::CKKSPlaintextVecOps;
 pub use polynomial_evaluation::*;
 pub use pow2::CKKSPow2Ops;
 pub use rescale::CKKSRescaleOps;
+pub(crate) use rescale::CKKSScaleManage;
 pub use rotate::CKKSRotateOps;
 pub use sub::CKKSSubOps;
 pub use tmp_bytes::CKKSAllOpsTmpBytes;
