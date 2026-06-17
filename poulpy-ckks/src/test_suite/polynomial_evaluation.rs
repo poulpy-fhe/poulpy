@@ -384,11 +384,13 @@ pub fn test_encode_bsgs_adaptive_reconstructs<BE, F, E>(
     );
     assert_eq!(adaptive.drop, drop);
 
-    // High branch is encoded `drop` bits below the working scale.
-    let tolerance = (-F::from_usize(coeff_meta.log_delta - drop).unwrap()).exp2() * F::from_usize(1024).unwrap();
+    // High branch coefficients are compensated by `2^drop` before lower-scale
+    // encoding; undo that compensation for the plaintext reconstruction check.
+    let compensation = F::from_f64(2.0).unwrap().powi(drop as i32);
+    let tolerance = (-F::from_usize(coeff_meta.log_delta).unwrap()).exp2() * F::from_usize(1024).unwrap();
     for i in 0..=64 {
         let x = -F::one() + (F::one() + F::one()) * F::from_usize(i).unwrap() / F::from_usize(64).unwrap();
-        let got = eval_encoded_bsgs_chebyshev(&adaptive.low, x) + eval_encoded_bsgs_chebyshev(&adaptive.high, x);
+        let got = eval_encoded_bsgs_chebyshev(&adaptive.low, x) + eval_encoded_bsgs_chebyshev(&adaptive.high, x) / compensation;
         let want = poly.evaluate(x);
         let err = (got - want).abs();
         assert!(
@@ -581,8 +583,8 @@ pub fn test_eval_poly_adaptive_chebyshev<BE, F, E>(
                 .unwrap();
 
             let zeros = vec![F::zero(); m];
-            // Both results are full-width clean (ring-domain noise check); the scale_up
-            // at the end of the high branch flushes the overflow.
+            // Both results are full-width clean (ring-domain noise check). The
+            // adaptive path should preserve the original target precision.
             assert_decrypt_precision_at_log_delta(
                 &format!("{name} deg={degree} mono"),
                 &params,
@@ -604,7 +606,7 @@ pub fn test_eval_poly_adaptive_chebyshev<BE, F, E>(
                 &sk,
                 &want,
                 &zeros,
-                log_delta - drop,
+                log_delta,
                 &mut scratch.borrow(),
             );
             assert!(

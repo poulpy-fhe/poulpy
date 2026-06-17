@@ -7,8 +7,9 @@ use poulpy_core::layouts::{
 };
 
 use crate::{
-    CKKSCtBounds, SetCKKSInfos,
+    CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::{CKKSAddOps, CKKSCopyOps, CKKSScaleManage},
+    checked_log_budget_sub,
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
     polynomial::{AdaptiveBSGS, ComplexBSGSPolynomial},
 };
@@ -16,8 +17,9 @@ use crate::{
 pub use poulpy_core::layouts::{BSGSPolynomialInfos, BabyStep, Basis, Parity, PowerBasisHelper};
 
 /// Modulus-preserving adaptive Chebyshev evaluation: evaluates the low branch at
-/// the working scale and the high branch on a `scale_down`-ed input, lifting it
-/// back and summing. Build `adaptive` with
+/// the working scale and the compensated high branch on a `scale_down`-ed input,
+/// reinterpreting the high branch at the target scale before summing. Build
+/// `adaptive` with
 /// [`crate::polynomial::EncodeBSGS::encode_bsgs_adaptive`].
 #[allow(private_bounds)] // CKKSScaleManage is crate-private; this is its sanctioned consumer.
 pub fn ckks_eval_poly_real_const_coeffs_adaptive<BE, R, S, P>(
@@ -52,7 +54,12 @@ where
             tsk,
             scratch,
         )?;
-        module.ckks_scale_up_assign(&mut res_hi, adaptive.drop, scratch)?;
+        res_hi.set_log_delta(res_hi.log_delta() + adaptive.drop);
+        res_hi.set_log_budget(checked_log_budget_sub(
+            "adaptive polynomial high-branch compensation",
+            res_hi.log_budget(),
+            adaptive.drop,
+        )?);
         module.ckks_add_assign(res, &res_hi, scratch)?;
     }
     Ok(())

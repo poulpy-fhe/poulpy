@@ -13,7 +13,8 @@ use crate::{
 pub use poulpy_core::layouts::{BSGSPolynomial, Basis, DEFAULT_SPLIT_STRATEGY, Parity, Polynomial, SplitStrategy, split_degree};
 
 /// Adaptive-precision split of a Chebyshev polynomial: low-degree terms at the
-/// working scale, high-degree terms `drop` bits below. See
+/// working scale, high-degree terms compensated by `2^drop` and encoded `drop`
+/// bits below. See
 /// [`EncodeBSGS::encode_bsgs_adaptive`].
 pub struct AdaptiveBSGS<C> {
     pub low: BSGSPolynomial<C>,
@@ -53,8 +54,9 @@ pub trait EncodeBSGS {
 
     /// Splits a Chebyshev polynomial at degree `split` for modulus-preserving
     /// adaptive evaluation: low branch `[0, split)` at `coeff_meta`, high branch
-    /// `[split, degree]` encoded `drop` bits below. Errors unless the basis is
-    /// Chebyshev, `0 < split <= degree`, and `0 < drop < coeff_meta.log_delta`.
+    /// `[split, degree]` multiplied by `2^drop` and encoded `drop` bits below.
+    /// Errors unless the basis is Chebyshev, `0 < split <= degree`, and
+    /// `0 < drop < coeff_meta.log_delta`.
     fn encode_bsgs_adaptive(
         &self,
         module: &Module<HostBytesBackend>,
@@ -121,12 +123,19 @@ where
             coeff_meta.log_delta
         );
 
-        // Low branch truncated (shallower); high branch keeps full degree, low coeffs zeroed.
+        // Low branch is truncated (shallower). High branch keeps the full degree
+        // with low terms zeroed, and its small high-degree coefficients are
+        // compensated before lower-scale encoding so their integer precision stays
+        // comparable to the full-scale branch.
+        let compensation = F::from_f64(2.0).expect("f64 → scalar").powi(drop as i32);
         let mut low_coeffs = self.coeffs.clone();
         low_coeffs.truncate(split);
         let mut high_coeffs = self.coeffs.clone();
         for c in high_coeffs.iter_mut().take(split) {
             *c = F::zero();
+        }
+        for c in high_coeffs.iter_mut().skip(split) {
+            *c = *c * compensation;
         }
 
         let high_meta = CKKSMeta {
