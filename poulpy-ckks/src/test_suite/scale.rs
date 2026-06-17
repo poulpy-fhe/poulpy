@@ -165,6 +165,8 @@ pub fn test_scale_down_then_multiply<BE, F, E>(
 pub fn test_scale_up_assign<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -211,6 +213,8 @@ where
 pub fn test_scale_round_trip<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -234,12 +238,13 @@ where
     );
     let original_log_delta = ct.log_delta();
     let original_log_budget = ct.log_budget();
-    // Scaling up then back down restores both the metadata and the value.
-    module
-        .ckks_scale_up_assign(&mut ct, SCALE_BITS, &mut scratch.borrow())
-        .unwrap();
+    // scale_down then scale_up restores the metadata and flushes the overflow
+    // (the reverse order would leave the scale_down overflow in the head-room).
     module
         .ckks_scale_down_assign(&mut ct, SCALE_BITS, &mut scratch.borrow())
+        .unwrap();
+    module
+        .ckks_scale_up_assign(&mut ct, SCALE_BITS, &mut scratch.borrow())
         .unwrap();
     assert_ct_meta("scale_round_trip", &ct, original_log_delta, original_log_budget);
     assert_decrypt_precision(
