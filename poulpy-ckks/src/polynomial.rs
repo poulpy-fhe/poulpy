@@ -12,10 +12,7 @@ use crate::{
 
 pub use poulpy_core::layouts::{BSGSPolynomial, Basis, DEFAULT_SPLIT_STRATEGY, Parity, Polynomial, SplitStrategy, split_degree};
 
-/// Adaptive-precision split of a Chebyshev polynomial: low-degree terms at the
-/// working scale, high-degree terms compensated by `2^drop` and encoded `drop`
-/// bits below. See
-/// [`EncodeBSGS::encode_bsgs_adaptive`].
+/// Adaptive Chebyshev split: full-scale low branch, compensated high branch.
 pub struct AdaptiveBSGS<C> {
     pub low: BSGSPolynomial<C>,
     pub high: BSGSPolynomial<C>,
@@ -52,9 +49,7 @@ pub trait EncodeBSGS {
         strategy: SplitStrategy,
     ) -> Result<BSGSPolynomial<CKKSPlaintext<Vec<u8>>>>;
 
-    /// Splits a Chebyshev polynomial at degree `split` for modulus-preserving
-    /// adaptive evaluation: low branch `[0, split)` at `coeff_meta`, high branch
-    /// `[split, degree]` multiplied by `2^drop` and encoded `drop` bits below.
+    /// Splits a Chebyshev polynomial at degree `split` for adaptive evaluation.
     /// Errors unless the basis is Chebyshev, `0 < split <= degree`, and
     /// `0 < drop < coeff_meta.log_delta`.
     fn encode_bsgs_adaptive(
@@ -123,11 +118,7 @@ where
             coeff_meta.log_delta
         );
 
-        // Low branch is truncated (shallower). High branch keeps the full degree
-        // with low terms zeroed, and its small high-degree coefficients are
-        // compensated before lower-scale encoding so their integer precision stays
-        // comparable to the full-scale branch.
-        let compensation = F::from_f64(2.0).expect("f64 → scalar").powi(drop as i32);
+        let compensation = F::from_f64(2.0).expect("f64 to scalar").powi(drop as i32);
         let mut low_coeffs = self.coeffs.clone();
         low_coeffs.truncate(split);
         let mut high_coeffs = self.coeffs.clone();

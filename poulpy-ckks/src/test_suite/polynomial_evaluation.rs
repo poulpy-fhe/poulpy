@@ -342,9 +342,7 @@ pub fn test_encode_bsgs_preserves_chebyshev_eval<BE, F, E>(
     }
 }
 
-/// The adaptive split reconstructs the polynomial (low + high evaluated in
-/// plaintext) and keeps the full degree on the high branch while the low branch
-/// is shallower.
+/// The adaptive split reconstructs the polynomial with a shallower low branch.
 pub fn test_encode_bsgs_adaptive_reconstructs<BE, F, E>(
     params: CKKSTestParams,
     _module: &Module<BE>,
@@ -384,8 +382,7 @@ pub fn test_encode_bsgs_adaptive_reconstructs<BE, F, E>(
     );
     assert_eq!(adaptive.drop, drop);
 
-    // High branch coefficients are compensated by `2^drop` before lower-scale
-    // encoding; undo that compensation for the plaintext reconstruction check.
+    // Undo high-branch compensation for plaintext reconstruction.
     let compensation = F::from_f64(2.0).unwrap().powi(drop as i32);
     let tolerance = (-F::from_usize(coeff_meta.log_delta).unwrap()).exp2() * F::from_usize(1024).unwrap();
     for i in 0..=64 {
@@ -489,8 +486,7 @@ pub fn test_eval_poly_const_coeffs_cubic<BE, F, E>(
     );
 }
 
-/// Adaptive Chebyshev evaluation stays correct and consumes less modulus than the
-/// monolithic path, across several functions and degrees.
+/// Adaptive Chebyshev evaluation stays correct while consuming less modulus.
 pub fn test_eval_poly_adaptive_chebyshev<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -572,7 +568,6 @@ pub fn test_eval_poly_adaptive_chebyshev<BE, F, E>(
                     &mut scratch.borrow(),
                 )
                 .unwrap();
-            // Adaptive (modulus-preserving) path.
             let adaptive_host = poly
                 .encode_bsgs_adaptive(host_module, base2k.into(), coeff_meta, split, drop, DEFAULT_SPLIT_STRATEGY)
                 .unwrap();
@@ -583,8 +578,6 @@ pub fn test_eval_poly_adaptive_chebyshev<BE, F, E>(
                 .unwrap();
 
             let zeros = vec![F::zero(); m];
-            // Both results are full-width clean (ring-domain noise check). The
-            // adaptive path should preserve the original target precision.
             assert_decrypt_precision_at_log_delta(
                 &format!("{name} deg={degree} mono"),
                 &params,

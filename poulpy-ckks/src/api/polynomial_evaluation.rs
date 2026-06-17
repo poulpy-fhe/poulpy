@@ -16,10 +16,7 @@ use crate::{
 
 pub use poulpy_core::layouts::{BSGSPolynomialInfos, BabyStep, Basis, Parity, PowerBasisHelper};
 
-/// Modulus-preserving adaptive Chebyshev evaluation: evaluates the low branch at
-/// the working scale and the compensated high branch on a `scale_down`-ed input,
-/// reinterpreting the high branch at the target scale before summing. Build
-/// `adaptive` with
+/// Adaptive Chebyshev evaluation built from
 /// [`crate::polynomial::EncodeBSGS::encode_bsgs_adaptive`].
 #[allow(private_bounds)] // CKKSScaleManage is crate-private; this is its sanctioned consumer.
 pub fn ckks_eval_poly_real_const_coeffs_adaptive<BE, R, S, P>(
