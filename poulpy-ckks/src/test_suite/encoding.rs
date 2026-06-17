@@ -25,6 +25,8 @@ pub fn test_encode_decode_reim_roundtrip<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     Module<HostBytesBackend>: TestContextHostModule,
