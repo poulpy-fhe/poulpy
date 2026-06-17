@@ -8,20 +8,23 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSMeta, SetCKKSInfos,
+    CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
+    api::ckks_eval_poly_real_const_coeffs_adaptive,
     encoding::reim::Encoder,
     layouts::{CKKSCiphertext, CKKSPlaintext, CKKSPlaintextVecHostCodec},
     leveled::api::{CKKSMulOps, PolynomialEvaluation},
     polynomial::{
-        BSGSPolynomial, Basis, ComplexBSGSPolynomial, ComplexPolynomial, EncodeBSGS, Parity, Polynomial, SplitStrategy,
+        AdaptiveBSGS, BSGSPolynomial, Basis, ComplexBSGSPolynomial, ComplexPolynomial, DEFAULT_SPLIT_STRATEGY, EncodeBSGS,
+        Parity, Polynomial, SplitStrategy,
     },
     power_basis::{PowerBasis, PowerBasisGen},
     test_suite::CKKSTestParams,
 };
 
 use super::helpers::{
-    PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_decrypt_precision, ckks_encrypt,
-    ckks_encrypt_with_prec, gen_sk_with_raw, gen_tsk, precision_at, quantized_const, quantized_slots, test_vector_1, upload_pt,
+    PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_decrypt_precision,
+    ckks_decrypt_decode, ckks_encrypt, ckks_encrypt_with_prec, gen_sk_with_raw, gen_tsk, precision_at, quantized_const,
+    quantized_slots, test_vector_1, upload_pt,
 };
 
 fn scale_add<F: TestScalar>(acc: &mut [F], src: &[F], scale: F) {
@@ -327,6 +330,62 @@ pub fn test_encode_bsgs_preserves_chebyshev_eval<BE, F, E>(
     }
 }
 
+/// The adaptive split reconstructs the polynomial (low + high evaluated in
+/// plaintext) and keeps the full degree on the high branch while the low branch
+/// is shallower.
+pub fn test_encode_bsgs_adaptive_reconstructs<BE, F, E>(
+    params: CKKSTestParams,
+    _module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    F: TestScalar,
+    E: NegacyclicFFT<F>,
+{
+    let degree = 31usize;
+    let split = 16usize;
+    let drop = 10usize;
+    let poly = Polynomial::chebyshev_interpolate(degree, -F::one(), F::one(), |x: F| x.sin())
+        .expect("degree-31 Chebyshev interpolation of sin(x) should succeed");
+    let coeff_meta = CKKSMeta {
+        log_delta: 40,
+        log_budget: 8,
+        ..Default::default()
+    };
+    let adaptive = poly
+        .encode_bsgs_adaptive(
+            host_module,
+            params.base2k.into(),
+            coeff_meta,
+            split,
+            drop,
+            DEFAULT_SPLIT_STRATEGY,
+        )
+        .expect("adaptive split should succeed");
+
+    assert_eq!(adaptive.high.degree(), degree, "high branch must keep the full degree");
+    assert!(
+        adaptive.low.degree() < adaptive.high.degree(),
+        "low branch must be shallower (low degree {} >= high degree {})",
+        adaptive.low.degree(),
+        adaptive.high.degree()
+    );
+    assert_eq!(adaptive.drop, drop);
+
+    // High branch is encoded `drop` bits below the working scale.
+    let tolerance = (-F::from_usize(coeff_meta.log_delta - drop).unwrap()).exp2() * F::from_usize(1024).unwrap();
+    for i in 0..=64 {
+        let x = -F::one() + (F::one() + F::one()) * F::from_usize(i).unwrap() / F::from_usize(64).unwrap();
+        let got = eval_encoded_bsgs_chebyshev(&adaptive.low, x) + eval_encoded_bsgs_chebyshev(&adaptive.high, x);
+        let want = poly.evaluate(x);
+        let err = (got - want).abs();
+        assert!(
+            err <= tolerance,
+            "adaptive reconstruction mismatch at {x:?}: got {got:?}, want {want:?}, err {err:?}, tolerance {tolerance:?}"
+        );
+    }
+}
+
 pub fn test_eval_poly_const_coeffs_cubic<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -412,6 +471,119 @@ pub fn test_eval_poly_const_coeffs_cubic<BE, F, E>(
         &want_im,
         &mut scratch.borrow(),
     );
+}
+
+/// Adaptive Chebyshev evaluation stays correct and consumes less modulus than the
+/// monolithic path, across several functions and degrees.
+pub fn test_eval_poly_adaptive_chebyshev<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE> + PolynomialEvaluation<BE>,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos + poulpy_core::layouts::BSGSMeta + CKKSCtBounds,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = Encoder::<E>::new(m).unwrap();
+    let base2k = params.base2k;
+    let (x_re_raw, _) = test_vector_1::<F>(m); // x in [-1, 1]
+    let x_im_raw = vec![F::zero(); m];
+
+    let split = 8usize;
+    let drop = 3usize;
+    let log_delta = 40usize;
+
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+
+    type ScalarFn<F> = fn(F) -> F;
+    let funcs: [(&str, ScalarFn<F>); 3] = [("exp", |x| x.exp()), ("sin", |x| x.sin()), ("cos", |x| x.cos())];
+    let bits = |e: f64| if e > 0.0 { -e.log2() } else { 99.0 };
+
+    for (name, f) in funcs {
+        for &degree in &[31usize, 63usize] {
+            let depth = (degree + 1).next_power_of_two().trailing_zeros() as usize;
+            let k = log_delta * (2 + depth);
+            if k > params.k {
+                continue;
+            }
+            let coeff_meta = CKKSMeta {
+                log_delta,
+                log_budget: 8,
+                log_sparsity: 0,
+            };
+
+            let poly = Polynomial::chebyshev_interpolate(degree, -F::one(), F::one(), f).unwrap();
+            let want: Vec<F> = x_re_raw
+                .iter()
+                .map(|&x| {
+                    poly.coeffs
+                        .iter()
+                        .enumerate()
+                        .fold(F::zero(), |acc, (k, &c)| acc + c * chebyshev_value(x, k))
+                })
+                .collect();
+
+            let x_ct = ckks_encrypt_with_prec::<BE, F, E>(
+                &params,
+                module,
+                host_module,
+                &encoder,
+                &sk,
+                k,
+                &x_re_raw,
+                &x_im_raw,
+                coeff_meta,
+                &mut scratch.borrow(),
+            );
+
+            // Monolithic baseline.
+            let mono = upload_bsgs(module, &poly.encode_bsgs(host_module, base2k.into(), coeff_meta).unwrap());
+            let mut res_mono = alloc_ct(&params, module, k);
+            module
+                .ckks_eval_poly_real_const_coeffs::<_, _, CKKSCiphertext<BE::OwnedBuf>, _>(
+                    &mut res_mono,
+                    &x_ct,
+                    &mono,
+                    &tsk,
+                    &mut scratch.borrow(),
+                )
+                .unwrap();
+            // Adaptive (modulus-preserving) path.
+            let adaptive_host = poly
+                .encode_bsgs_adaptive(host_module, base2k.into(), coeff_meta, split, drop, DEFAULT_SPLIT_STRATEGY)
+                .unwrap();
+            let adaptive: AdaptiveBSGS<CKKSPlaintext<BE::OwnedBuf>> =
+                adaptive_host.map_baby_steps_ref(|pt| upload_pt(module, pt));
+            let mut res_ad = alloc_ct(&params, module, k);
+            ckks_eval_poly_real_const_coeffs_adaptive(module, &mut res_ad, &x_ct, &adaptive, &tsk, &mut scratch.borrow())
+                .unwrap();
+            let (got_ad, _) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &res_ad, &sk, &mut scratch.borrow());
+            let err_ad = got_ad
+                .iter()
+                .zip(want.iter())
+                .map(|(g, w)| (*g - *w).to_f64().unwrap().abs())
+                .fold(0.0f64, f64::max);
+
+            assert!(
+                bits(err_ad) >= (log_delta - drop) as f64 - 12.0,
+                "{name} deg={degree}: adaptive precision {:.1}b below the reduced-scale floor",
+                bits(err_ad)
+            );
+            assert!(
+                res_ad.log_budget() > res_mono.log_budget(),
+                "{name} deg={degree}: adaptive must consume less modulus (adaptive budget={}, mono budget={})",
+                res_ad.log_budget(),
+                res_mono.log_budget()
+            );
+        }
+    }
 }
 
 pub fn test_eval_poly_rejects_power_basis_mismatch<BE, F, E>(

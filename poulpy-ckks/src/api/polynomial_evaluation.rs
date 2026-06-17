@@ -1,14 +1,62 @@
 use anyhow::Result;
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use poulpy_core::layouts::{
     BSGSMeta, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta,
     prepared::{GLWETensorKeyPrepared, GLWETensorKeyPreparedToBackendRef},
 };
 
-use crate::{CKKSCtBounds, SetCKKSInfos, layouts::CKKSCiphertext, polynomial::ComplexBSGSPolynomial};
+use crate::{
+    CKKSCtBounds, SetCKKSInfos,
+    api::{CKKSAddOps, CKKSCopyOps, CKKSScaleManage},
+    layouts::{CKKSCiphertext, CKKSModuleAlloc},
+    polynomial::{AdaptiveBSGS, ComplexBSGSPolynomial},
+};
 
 pub use poulpy_core::layouts::{BSGSPolynomialInfos, BabyStep, Basis, Parity, PowerBasisHelper};
+
+/// Modulus-preserving adaptive Chebyshev evaluation: evaluates the low branch at
+/// the working scale and the high branch on a `scale_down`-ed input, lifting it
+/// back and summing. Build `adaptive` with
+/// [`crate::polynomial::EncodeBSGS::encode_bsgs_adaptive`].
+#[allow(private_bounds)] // CKKSScaleManage is crate-private; this is its sanctioned consumer.
+pub fn ckks_eval_poly_real_const_coeffs_adaptive<BE, R, S, P>(
+    module: &Module<BE>,
+    res: &mut R,
+    src: &S,
+    adaptive: &AdaptiveBSGS<P>,
+    tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: PolynomialEvaluation<BE> + CKKSScaleManage<BE> + CKKSAddOps<BE> + CKKSCopyOps<BE> + CKKSModuleAlloc<BE>,
+    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+    S: GLWEToBackendRef<BE> + CKKSCtBounds,
+    P: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+{
+    module.ckks_eval_poly_real_const_coeffs::<R, S, CKKSCiphertext<BE::OwnedBuf>, _>(res, src, &adaptive.low, tsk, scratch)?;
+
+    if adaptive.drop > 0 {
+        let mut x_hi = module.ckks_ciphertext_alloc_from_infos(src);
+        module.ckks_copy(&mut x_hi, src, scratch)?;
+        module.ckks_scale_down_assign(&mut x_hi, adaptive.drop, scratch)?;
+
+        let mut res_hi = module.ckks_ciphertext_alloc_from_infos(&x_hi);
+        module.ckks_eval_poly_real_const_coeffs::<_, _, CKKSCiphertext<BE::OwnedBuf>, _>(
+            &mut res_hi,
+            &x_hi,
+            &adaptive.high,
+            tsk,
+            scratch,
+        )?;
+        module.ckks_scale_up_assign(&mut res_hi, adaptive.drop, scratch)?;
+        module.ckks_add_assign(res, &res_hi, scratch)?;
+    }
+    Ok(())
+}
 
 pub trait PolynomialEvaluation<BE: Backend> {
     fn ckks_eval_poly_real_const_coeffs_from_power_basis<R, B, A, G, T>(

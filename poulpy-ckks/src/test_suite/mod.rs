@@ -547,6 +547,14 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::mul_add::test_mul_add_const_into_aligned
             );
             run_test!(
+                encode_bsgs_adaptive_reconstructs,
+                $crate::test_suite::polynomial_evaluation::test_encode_bsgs_adaptive_reconstructs
+            );
+            run_test!(
+                eval_poly_adaptive_chebyshev,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_adaptive_chebyshev
+            );
+            run_test!(
                 power_basis_populate_degree7,
                 $crate::test_suite::polynomial_evaluation::test_power_basis_populate_degree7
             );

@@ -1,10 +1,6 @@
 //! Value-preserving re-scaling of a ciphertext's working scale.
 
-use crate::{
-    CKKSCompositionError, CKKSInfos, CKKSMeta,
-    api::CKKSScaleManage,
-    leveled::api::CKKSMulOps,
-};
+use crate::{CKKSCompositionError, CKKSInfos, CKKSMeta, api::CKKSScaleManage, leveled::api::CKKSMulOps};
 
 use super::helpers::{
     TestContextBackend, TestContextModule, TestScalar, alloc_scratch, assert_ckks_error, assert_ct_meta,
@@ -59,9 +55,7 @@ where
     let (ld, max_k) = (ct.log_delta(), ct.max_k().as_usize());
     let expected_log_delta = ld - bits;
     let expected_log_budget = ct.log_budget() + bits;
-    module
-        .ckks_scale_down_assign(&mut ct, bits, &mut scratch.borrow())
-        .unwrap();
+    module.ckks_scale_down_assign(&mut ct, bits, &mut scratch.borrow()).unwrap();
     assert_ct_meta("scale_down_assign", &ct, expected_log_delta, expected_log_budget);
 
     // Not value-preserving over the full modulus: a full-range decode shows the
