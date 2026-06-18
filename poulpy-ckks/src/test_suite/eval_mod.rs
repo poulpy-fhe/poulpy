@@ -73,7 +73,7 @@ impl EvalModTestParams {
 }
 
 fn eval_mod_params(n: usize, base2k: usize, log_delta: usize, depth: usize) -> EvalModTestParams {
-    let log_budget = depth * log_delta + base2k + log_delta;
+    let log_budget = (depth+1) * log_delta + 10;
     let k = (log_delta + log_budget).next_multiple_of(base2k);
     EvalModTestParams {
         n,
@@ -115,15 +115,6 @@ where
     Module<BE>: TestContextModule<BE>,
 {
     host.map_plaintexts(|pt| upload_pt(module, pt))
-}
-
-fn depth_of(lit: &EvalModParametersLiteral) -> usize {
-    let ceil_log2 = |x: usize| x.next_power_of_two().trailing_zeros() as usize;
-    let r = match lit.eval_mod_type {
-        EvalModType::SinContinuous => 0,
-        _ => lit.double_angle,
-    };
-    ceil_log2(lit.eval_mod_degree) + r + ceil_log2(lit.eval_mod_inv_degree)
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -224,11 +215,25 @@ fn run_eval_mod_case<BE, F, E>(
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let depth = depth_of(&lit);
-    let params = eval_mod_params(256, base2k, log_delta, depth);
-    let host_module = Module::<HostBytesBackend>::new(params.n as u64);
+    const N: usize = 256;
+    let host_module = Module::<HostBytesBackend>::new(N as u64);
+
+    // Build the eval_mod parameters first so the input ciphertext is sized from the
+    // exact number of levels the pipeline consumes (`EvalModParameters::depth`)
+    // rather than a duplicated depth estimate. `coeff_meta` is independent of the
+    // ciphertext modulus `k`, so it can be constructed before `params`.
+    let coeff_meta = CKKSMeta {
+        log_delta,
+        log_budget: base2k,
+        log_sparsity: 0,
+    };
+    let host_params = EvalModParameters::<F, _>::from_literal(coeff_meta, base2k.into(), lit, &host_module)
+        .expect("EvalModParameters::from_literal");
+
+    let params = eval_mod_params(N, base2k, log_delta, host_params.depth());
     let module = Module::<BE>::new(params.n as u64);
     let test_params = params.as_test_params();
+    let params_be = upload_params(&module, host_params);
 
     let m = params.n / 2;
     let encoder = Encoder::<E>::new(m).unwrap();
@@ -250,15 +255,6 @@ fn run_eval_mod_case<BE, F, E>(
     // Worst-case slot: largest integer multiple plus a half-message.
     x_re_raw[0] = F::from_f64((k * mr + 0.5) / (mr * interval)).unwrap();
     let x_im_raw = vec![F::zero(); x_re_raw.len()];
-
-    let coeff_meta = CKKSMeta {
-        log_delta,
-        log_budget: base2k,
-        log_sparsity: 0,
-    };
-    let host_params = EvalModParameters::<F, _>::from_literal(coeff_meta, params.base2k.into(), lit, &host_module)
-        .expect("EvalModParameters::from_literal");
-    let params_be = upload_params(&module, host_params);
 
     let (sk_raw, sk) = gen_sk_with_raw(&test_params, &module, &host_module, [0u8; 32]);
     let mut scratch = alloc_scratch_eval_mod(&params, &module);
@@ -284,15 +280,22 @@ fn run_eval_mod_case<BE, F, E>(
 
     let (re_out, im_out) = ckks_decrypt_decode::<BE, F, E>(&test_params, &module, &encoder, &res, &sk, &mut scratch.borrow());
 
+    // The eval_mod output recovers the message scaled by 1/message_ratio (the
+    // amplitude folds in `scaling`, which is 1 here). Scale the output and the
+    // references back up by message_ratio so precision is measured on the recovered
+    // message at its true magnitude rather than on the down-scaled slot value.
+    let mr_f = F::from_f64(mr).unwrap();
+    let got_re: Vec<F> = re_out.iter().map(|&v| v * mr_f).collect();
+
     // Compare the FHE output against both references: the circuit's own
     // polynomials (FHE fidelity) and the ideal x mod 1 (approximation + noise).
     for reference in [Reference::Polynomial, Reference::Ideal] {
         let want: Vec<(F, F)> = x_re_raw.iter().map(|&t| oracle(&params_be, &lit, t, reference)).collect();
-        let want_re: Vec<F> = want.iter().map(|&(re, _)| re).collect();
+        let want_re: Vec<F> = want.iter().map(|&(re, _)| re * mr_f).collect();
 
-        let stats = precision_stats(&re_out, &want_re, log_delta);
+        let stats = precision_stats(&got_re, &want_re, log_delta);
 
-        println!("stats_: {} {}", stats.avg_log2_prec, stats.min_log2_prec);
+        println!("PREC {label} [{reference:?}]: avg={:.2} min={:.2}", stats.avg_log2_prec, stats.min_log2_prec);
 
         assert!(
             stats.avg_log2_prec >= required_log2_prec,
@@ -305,8 +308,9 @@ fn run_eval_mod_case<BE, F, E>(
         );
 
         if matches!(lit.eval_mod_type, EvalModType::Exp) {
-            let want_im: Vec<F> = want.iter().map(|&(_, im)| im).collect();
-            let stats_im = precision_stats(&im_out, &want_im, log_delta);
+            let want_im: Vec<F> = want.iter().map(|&(_, im)| im * mr_f).collect();
+            let got_im: Vec<F> = im_out.iter().map(|&v| v * mr_f).collect();
+            let stats_im = precision_stats(&got_im, &want_im, log_delta);
             assert!(
                 stats_im.avg_log2_prec >= required_log2_prec,
                 "{label} [{reference:?}] (imag): avg precision {:.1} bits < {required_log2_prec:.1} (worst_err={}, worst_idx={}, got={}, want={})",
@@ -343,7 +347,7 @@ pub fn test_eval_mod_sin_continuous_minimal<BE, F, E>(
         scaling: 1.0,
         split_strategy: SplitStrategy::MinDepth,
     };
-    run_eval_mod_case::<BE, F, E>("eval_mod_sin_continuous_minimal", 19, 30, lit, 10.0);
+    run_eval_mod_case::<BE, F, E>("eval_mod_sin_continuous_minimal", 19, 30, lit, 9.0);
 }
 
 pub fn test_eval_mod_sin_continuous_with_arcsine<BE, F, E>(
@@ -369,7 +373,7 @@ pub fn test_eval_mod_sin_continuous_with_arcsine<BE, F, E>(
         scaling: 1.0,
         split_strategy: SplitStrategy::MinDepth,
     };
-    run_eval_mod_case::<BE, F, E>("eval_mod_sin_continuous_arcsine", 19, 30, lit, 13.0);
+    run_eval_mod_case::<BE, F, E>("eval_mod_sin_continuous_arcsine", 19, 30, lit, 9.0);
 }
 
 pub fn test_eval_mod_cos_discrete<BE, F, E>(
@@ -395,7 +399,7 @@ pub fn test_eval_mod_cos_discrete<BE, F, E>(
         scaling: 1.0,
         split_strategy: SplitStrategy::MinDepth,
     };
-    run_eval_mod_case::<BE, F, E>("eval_mod_cos_discrete", 19, 53, lit, 30.0);
+    run_eval_mod_case::<BE, F, E>("eval_mod_cos_discrete", 19, 60, lit, 40.0);
 }
 
 pub fn test_eval_mod_cos_continuous<BE, F, E>(

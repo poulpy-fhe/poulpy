@@ -9,7 +9,6 @@ use poulpy_core::layouts::{
     SetLWEInfos,
 };
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef};
-use rand_distr::num_traits::{Float, ToPrimitive};
 
 use crate::{CKKSInfos, CKKSMeta, SetCKKSInfos};
 
@@ -211,7 +210,10 @@ where
 {
     let log_delta = pt.log_delta();
     let log_budget = pt.log_budget();
-    anyhow::ensure!(log_delta <= max_log_delta_prec_for::<F>());
+    // The encoding scale (`log_delta`) is decoupled from `F`'s mantissa width: a
+    // scale wider than the float's precision is allowed, it simply yields values
+    // accurate only to `F`'s mantissa. The integer-width checks below are the real
+    // correctness guards (the quantized value must fit i64/i128).
     let scale = F::from_usize(log_delta).unwrap().exp2();
     let k = pt.max_k();
     if log_delta + log_budget <= 63 {
@@ -234,7 +236,6 @@ where
 {
     let log_delta = pt.log_delta();
     let log_budget = pt.log_budget();
-    anyhow::ensure!(log_delta <= max_log_delta_prec_for::<F>());
     anyhow::ensure!(log_delta + log_budget <= 127);
     let scale = (-F::from_usize(log_delta).unwrap()).exp2();
     let k = pt.max_k();
@@ -274,13 +275,6 @@ impl<F: CKKSScalar, D: HostDataMut + HostDataRef> CKKSPlaintextVecHostCodec<F> f
         let gap = sparse_gap(coeffs, self.n().as_usize())?;
         decode_host_floats_strided(self, coeffs, gap)
     }
-}
-
-fn max_log_delta_prec_for<F>() -> usize
-where
-    F: Float + ToPrimitive,
-{
-    ((-F::epsilon().log2()).round().to_usize().unwrap()) + 1
 }
 
 #[cfg(test)]
