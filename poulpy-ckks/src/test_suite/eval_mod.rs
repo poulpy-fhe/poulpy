@@ -1,9 +1,5 @@
-use poulpy_core::{
-    EncryptionLayout,
-    layouts::{
-        GGLWEInfos, GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
-        prepared::GLWETensorKeyPreparedToBackendRef,
-    },
+use poulpy_core::layouts::{
+    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -25,71 +21,26 @@ use super::helpers::{
     precision_stats, upload_pt,
 };
 
-#[derive(Clone, Copy, Debug)]
-struct EvalModTestParams {
-    pub n: usize,
-    pub base2k: usize,
-    pub k: usize,
-    pub prec: CKKSMeta,
-    pub hw: usize,
-    pub dsize: usize,
-}
-
-impl EvalModTestParams {
-    fn glwe_layout(&self) -> EncryptionLayout<GLWELayout> {
-        EncryptionLayout::new_from_default_sigma(GLWELayout {
-            n: self.n.into(),
-            base2k: self.base2k.into(),
-            k: self.k.into(),
-            rank: Rank(1),
-        })
-        .unwrap()
-    }
-
-    fn tsk_layout(&self) -> EncryptionLayout<GLWETensorKeyLayout> {
-        let k = self.k + self.dsize * self.base2k;
-        let dnum = k.div_ceil(self.dsize * self.base2k);
-        EncryptionLayout::new_from_default_sigma(GLWETensorKeyLayout {
-            n: self.n.into(),
-            base2k: self.base2k.into(),
-            k: k.into(),
-            rank: Rank(1),
-            dsize: self.dsize.into(),
-            dnum: dnum.into(),
-        })
-        .unwrap()
-    }
-
-    fn as_test_params(&self) -> super::CKKSTestParams {
-        super::CKKSTestParams {
-            n: self.n,
-            base2k: self.base2k,
-            k: self.k,
-            prec: self.prec,
-            hw: self.hw,
-            dsize: self.dsize,
-        }
-    }
-}
-
-fn eval_mod_params(n: usize, base2k: usize, log_delta: usize, depth: usize) -> EvalModTestParams {
-    let log_budget = (depth+1) * log_delta + 10;
-    let k = (log_delta + log_budget).next_multiple_of(base2k);
-    EvalModTestParams {
-        n,
-        base2k,
+/// Returns the macro's official parameter set with the scale `log_delta` applied
+/// and the ciphertext modulus `k` (and its matching `log_budget`) enlarged to hold
+/// `depth` eval_mod levels. Every other field — `n`, `base2k`, `hw`, `dsize` — is
+/// taken from `CKKSTestParams` unchanged, so each backend runs eval_mod at its
+/// real-world parameterization (with `log_delta` optionally overridden per case).
+fn with_eval_mod_depth(params: super::CKKSTestParams, log_delta: usize, depth: usize) -> super::CKKSTestParams {
+    let log_budget = (depth + 1) * log_delta + 10;
+    let k = (log_delta + log_budget).next_multiple_of(params.base2k);
+    super::CKKSTestParams {
         k,
         prec: CKKSMeta {
             log_delta,
             log_budget,
-            log_sparsity: 0,
+            ..params.prec
         },
-        hw: 192,
-        dsize: 1,
+        ..params
     }
 }
 
-fn alloc_scratch_eval_mod<BE>(params: &EvalModTestParams, module: &Module<BE>) -> ScratchOwned<BE>
+fn alloc_scratch_eval_mod<BE>(params: &super::CKKSTestParams, module: &Module<BE>) -> ScratchOwned<BE>
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
@@ -201,8 +152,10 @@ where
 }
 
 fn run_eval_mod_case<BE, F, E>(
+    params: super::CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
     label: &str,
-    base2k: usize,
     log_delta: usize,
     lit: EvalModParametersLiteral,
     required_log2_prec: f64,
@@ -215,27 +168,27 @@ fn run_eval_mod_case<BE, F, E>(
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    const N: usize = 256;
-    let host_module = Module::<HostBytesBackend>::new(N as u64);
+    // The limb width comes from the macro's official params; the scale defaults to
+    // the official `log_delta` but can be overridden per case, and the ciphertext
+    // modulus is overridden (below) to fit the eval_mod depth.
+    let base2k = params.base2k;
 
     // Build the eval_mod parameters first so the input ciphertext is sized from the
     // exact number of levels the pipeline consumes (`EvalModParameters::depth`)
     // rather than a duplicated depth estimate. `coeff_meta` is independent of the
-    // ciphertext modulus `k`, so it can be constructed before `params`.
+    // ciphertext modulus `k`, so it can be constructed before `test_params`.
     let coeff_meta = CKKSMeta {
         log_delta,
         log_budget: base2k,
         log_sparsity: 0,
     };
-    let host_params = EvalModParameters::<F, _>::from_literal(coeff_meta, base2k.into(), lit, &host_module)
+    let host_params = EvalModParameters::<F, _>::from_literal(coeff_meta, base2k.into(), lit, host_module)
         .expect("EvalModParameters::from_literal");
 
-    let params = eval_mod_params(N, base2k, log_delta, host_params.depth());
-    let module = Module::<BE>::new(params.n as u64);
-    let test_params = params.as_test_params();
-    let params_be = upload_params(&module, host_params);
+    let test_params = with_eval_mod_depth(params, log_delta, host_params.depth());
+    let params_be = upload_params(module, host_params);
 
-    let m = params.n / 2;
+    let m = test_params.n / 2;
     let encoder = Encoder::<E>::new(m).unwrap();
 
     // Sample the plaintext as I·q + m (Lattigo's `mod1_evaluator_test`): I is a
@@ -256,29 +209,29 @@ fn run_eval_mod_case<BE, F, E>(
     x_re_raw[0] = F::from_f64((k * mr + 0.5) / (mr * interval)).unwrap();
     let x_im_raw = vec![F::zero(); x_re_raw.len()];
 
-    let (sk_raw, sk) = gen_sk_with_raw(&test_params, &module, &host_module, [0u8; 32]);
-    let mut scratch = alloc_scratch_eval_mod(&params, &module);
-    let tsk = gen_tsk(&test_params, &module, &sk_raw, &mut scratch.borrow());
+    let (sk_raw, sk) = gen_sk_with_raw(&test_params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch_eval_mod(&test_params, module);
+    let tsk = gen_tsk(&test_params, module, &sk_raw, &mut scratch.borrow());
 
     let ct_input = ckks_encrypt_with_prec(
         &test_params,
-        &module,
-        &host_module,
+        module,
+        host_module,
         &encoder,
         &sk,
-        params.k,
+        test_params.k,
         &x_re_raw,
         &x_im_raw,
-        params.prec,
+        test_params.prec,
         &mut scratch.borrow(),
     );
 
-    let mut res = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
+    let mut res = module.ckks_ciphertext_alloc(test_params.base2k.into(), test_params.k.into());
     module
         .ckks_eval_mod(&mut res, &ct_input, &params_be, &tsk, &mut scratch.borrow())
         .expect("ckks_eval_mod");
 
-    let (re_out, im_out) = ckks_decrypt_decode::<BE, F, E>(&test_params, &module, &encoder, &res, &sk, &mut scratch.borrow());
+    let (re_out, im_out) = ckks_decrypt_decode::<BE, F, E>(&test_params, module, &encoder, &res, &sk, &mut scratch.borrow());
 
     // The eval_mod output recovers the message scaled by 1/message_ratio (the
     // amplitude folds in `scaling`, which is 1 here). Scale the output and the
@@ -295,7 +248,10 @@ fn run_eval_mod_case<BE, F, E>(
 
         let stats = precision_stats(&got_re, &want_re, log_delta);
 
-        println!("PREC {label} [{reference:?}]: avg={:.2} min={:.2}", stats.avg_log2_prec, stats.min_log2_prec);
+        println!(
+            "PREC {label} [{reference:?}]: avg={:.2} min={:.2}",
+            stats.avg_log2_prec, stats.min_log2_prec
+        );
 
         assert!(
             stats.avg_log2_prec >= required_log2_prec,
@@ -325,35 +281,9 @@ fn run_eval_mod_case<BE, F, E>(
 }
 
 pub fn test_eval_mod_sin_continuous_minimal<BE, F, E>(
-    _params_unused: super::CKKSTestParams,
-    _module_unused: &Module<BE>,
-    _host_unused: &Module<HostBytesBackend>,
-) where
-    BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE> + CKKSEvalModOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
-    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
-    F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
-{
-    let lit = EvalModParametersLiteral {
-        eval_mod_type: EvalModType::SinContinuous,
-        log_message_ratio: 4,
-        eval_mod_degree: 31,
-        eval_mod_interval: 4,
-        double_angle: 0,
-        eval_mod_inv_degree: 0,
-        scaling: 1.0,
-        split_strategy: SplitStrategy::MinDepth,
-    };
-    run_eval_mod_case::<BE, F, E>("eval_mod_sin_continuous_minimal", 19, 30, lit, 9.0);
-}
-
-pub fn test_eval_mod_sin_continuous_with_arcsine<BE, F, E>(
-    _params_unused: super::CKKSTestParams,
-    _module_unused: &Module<BE>,
-    _host_unused: &Module<HostBytesBackend>,
+    params: super::CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSEvalModOps<BE>,
@@ -366,20 +296,46 @@ pub fn test_eval_mod_sin_continuous_with_arcsine<BE, F, E>(
     let lit = EvalModParametersLiteral {
         eval_mod_type: EvalModType::SinContinuous,
         log_message_ratio: 8,
-        eval_mod_degree: 63,
-        eval_mod_interval: 8,
+        eval_mod_degree: 127,
+        eval_mod_interval: 14,
+        double_angle: 0,
+        eval_mod_inv_degree: 0,
+        scaling: 1.0,
+        split_strategy: SplitStrategy::MinDepth,
+    };
+    run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_sin_continuous_minimal", 60, lit, 36.0);
+}
+
+pub fn test_eval_mod_sin_continuous_with_arcsine<BE, F, E>(
+    params: super::CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE> + CKKSEvalModOps<BE>,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let lit = EvalModParametersLiteral {
+        eval_mod_type: EvalModType::SinContinuous,
+        log_message_ratio: 8,
+        eval_mod_degree: 127,
+        eval_mod_interval: 14,
         double_angle: 0,
         eval_mod_inv_degree: 7,
         scaling: 1.0,
         split_strategy: SplitStrategy::MinDepth,
     };
-    run_eval_mod_case::<BE, F, E>("eval_mod_sin_continuous_arcsine", 19, 30, lit, 9.0);
+    run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_sin_continuous_arcsine", 60, lit, 36.0);
 }
 
 pub fn test_eval_mod_cos_discrete<BE, F, E>(
-    _params_unused: super::CKKSTestParams,
-    _module_unused: &Module<BE>,
-    _host_unused: &Module<HostBytesBackend>,
+    params: super::CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSEvalModOps<BE>,
@@ -399,13 +355,13 @@ pub fn test_eval_mod_cos_discrete<BE, F, E>(
         scaling: 1.0,
         split_strategy: SplitStrategy::MinDepth,
     };
-    run_eval_mod_case::<BE, F, E>("eval_mod_cos_discrete", 19, 60, lit, 40.0);
+    run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_discrete", 60, lit, 40.0);
 }
 
 pub fn test_eval_mod_cos_continuous<BE, F, E>(
-    _params_unused: super::CKKSTestParams,
-    _module_unused: &Module<BE>,
-    _host_unused: &Module<HostBytesBackend>,
+    params: super::CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSEvalModOps<BE>,
@@ -419,20 +375,17 @@ pub fn test_eval_mod_cos_continuous<BE, F, E>(
         eval_mod_type: EvalModType::CosContinuous,
         log_message_ratio: 4,
         eval_mod_degree: 31,
-        eval_mod_interval: 8,
+        eval_mod_interval: 12,
         double_angle: 3,
         eval_mod_inv_degree: 0,
         scaling: 1.0,
         split_strategy: SplitStrategy::MinDepth,
     };
-    run_eval_mod_case::<BE, F, E>("eval_mod_cos_continuous", 19, 30, lit, 16.0);
+    run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_continuous", 60, lit, 40.0);
 }
 
-pub fn test_eval_mod_exp<BE, F, E>(
-    _params_unused: super::CKKSTestParams,
-    _module_unused: &Module<BE>,
-    _host_unused: &Module<HostBytesBackend>,
-) where
+pub fn test_eval_mod_exp<BE, F, E>(params: super::CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSEvalModOps<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -451,5 +404,5 @@ pub fn test_eval_mod_exp<BE, F, E>(
         scaling: 1.0,
         split_strategy: SplitStrategy::MinDepth,
     };
-    run_eval_mod_case::<BE, F, E>("eval_mod_exp", 19, 30, lit, 16.0);
+    run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_exp", 60, lit, 40.0);
 }
