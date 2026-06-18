@@ -14,7 +14,7 @@ pub trait Ntt126IfmaDFTExecute<Table> {
 
 /// Load a polynomial from i64 coefficients into 3-prime CRT format.
 ///
-/// `res` has length `4 * a.len()` (3 active residues + 1 padding per coefficient).
+/// `res` has length `3 * a.len()` (one plane per CRT prime).
 pub trait Ntt126IfmaFromZnx64 {
     fn ntt126_ifma_from_znx64(res: &mut [u64], a: &[i64]);
 
@@ -76,6 +76,7 @@ pub trait Ntt126IfmaCopy {
 /// Pointwise product: b × c → b (overwrite).
 ///
 /// `ntt_coeff` is in b format (as u32 view), `prepared` is in Harvey-prepared c format.
+#[allow(dead_code)]
 pub trait Ntt126IfmaMulBbc {
     fn ntt126_ifma_mul_bbc(meta: &Bbc126IfmaMeta<Primes42>, ell: usize, res: &mut [u64], ntt_coeff: &[u32], prepared: &[u32]);
 }

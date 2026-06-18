@@ -29,7 +29,7 @@
 //!
 //! - `FFT64Avx512`: `ScalarPrep = f64`, `ScalarBig = i64`.
 //! - `NTT120Avx512`: `ScalarPrep = Q120bScalar`, `ScalarBig = i128`.
-//! - `NTT126Ifma`: `ScalarPrep = Q120bScalar`, `ScalarBig = i128`.
+//! - `NTT126Ifma`: `ScalarPrep = Q126Scalar`, `ScalarBig = i128`.
 //!
 //! # CPU requirements
 //!
