@@ -575,6 +575,7 @@ dependencies = [
  "anyhow",
  "bytemuck",
  "dashu-float",
+ "f128",
  "poulpy-core",
  "poulpy-hal",
  "rand",

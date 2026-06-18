@@ -179,7 +179,7 @@ fn bench_ntt120_ref(c: &mut Criterion) {
 
     let mut group = c.benchmark_group(format!("ckks_eval_mod::{label}"));
     for case in CASES {
-        let params = EvalModParameters::from_literal::<f64>(COEFF_META, Base2K(BASE2K as u32), case.lit, &host_module)
+        let params = EvalModParameters::<f64, _>::from_literal(COEFF_META, Base2K(BASE2K as u32), case.lit, &host_module)
             .expect("EvalModParameters::from_literal");
 
         let (levels, log_budget_in, log_budget_out) = {

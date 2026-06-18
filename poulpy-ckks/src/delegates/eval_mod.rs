@@ -14,7 +14,7 @@ impl<BE: Backend + CKKSEvalModImpl<BE>> CKKSEvalModOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSMulOps<BE> + CKKSCopyOps<BE> + CnvPVecBytesOf,
 {
-    fn ckks_eval_mod_tmp_bytes<R, P, T>(&self, res: &R, _params: &EvalModParameters<P>, tsk: &T) -> usize
+    fn ckks_eval_mod_tmp_bytes<R, P, F, T>(&self, res: &R, _params: &EvalModParameters<F, P>, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         P: CKKSCtBounds,
@@ -34,11 +34,11 @@ where
             .max(square_scope)
     }
 
-    fn ckks_eval_mod<R, C, P>(
+    fn ckks_eval_mod<R, C, P, F>(
         &self,
         res: &mut R,
         ct: &C,
-        params: &EvalModParameters<P>,
+        params: &EvalModParameters<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -47,6 +47,6 @@ where
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
     {
-        BE::ckks_eval_mod::<R, C, P>(self, res, ct, params, tsk, scratch)
+        BE::ckks_eval_mod::<R, C, P, F>(self, res, ct, params, tsk, scratch)
     }
 }

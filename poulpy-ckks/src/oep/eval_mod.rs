@@ -20,11 +20,11 @@ use crate::{
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
 pub unsafe trait CKKSEvalModImpl<BE: Backend>: Backend {
-    fn ckks_eval_mod<R, C, P>(
+    fn ckks_eval_mod<R, C, P, F>(
         module: &Module<BE>,
         res: &mut R,
         ct: &C,
-        params: &EvalModParameters<P>,
+        params: &EvalModParameters<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -47,11 +47,11 @@ where
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable + ScratchArenaTakeCore<'a, BE>,
 {
-    fn ckks_eval_mod<R, C, P>(
+    fn ckks_eval_mod<R, C, P, F>(
         module: &Module<BE>,
         res: &mut R,
         ct: &C,
-        params: &EvalModParameters<P>,
+        params: &EvalModParameters<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>

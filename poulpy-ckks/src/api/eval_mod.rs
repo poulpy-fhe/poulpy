@@ -8,7 +8,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos, default::eval_mod::EvalModParameters};
 /// Homomorphic modular reduction (`x mod 1`) via a trigonometric polynomial
 /// approximation, the core non-linear step of CKKS bootstrapping.
 pub trait CKKSEvalModOps<BE: Backend> {
-    fn ckks_eval_mod_tmp_bytes<R, P, T>(&self, res: &R, params: &EvalModParameters<P>, tsk: &T) -> usize
+    fn ckks_eval_mod_tmp_bytes<R, P, F, T>(&self, res: &R, params: &EvalModParameters<F, P>, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         P: CKKSCtBounds,
@@ -18,11 +18,11 @@ pub trait CKKSEvalModOps<BE: Backend> {
     ///
     /// Consumes `params.depth() * log_delta` bits of `log_budget`; errors if
     /// `ct` has insufficient remaining capacity.
-    fn ckks_eval_mod<R, C, P>(
+    fn ckks_eval_mod<R, C, P, F>(
         &self,
         res: &mut R,
         ct: &C,
-        params: &EvalModParameters<P>,
+        params: &EvalModParameters<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>

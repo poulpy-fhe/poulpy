@@ -60,28 +60,43 @@ pub enum EvalModBsgs<P> {
     Complex(ComplexBSGSPolynomial<P>),
 }
 
-pub struct EvalModParameters<P> {
+/// Host-side polynomials retained alongside their BSGS-encoded counterparts in
+/// [`EvalModParameters`]. These are the exact functions the circuit evaluates,
+/// usable for reference evaluation via [`Polynomial::evaluate`].
+pub enum EvalModPoly<F> {
+    Real(Polynomial<F>),
+    Complex(ComplexPolynomial<F>),
+}
+
+pub struct EvalModParameters<F, P> {
     pub eval_mod_type: EvalModType,
     pub log_message_ratio: usize,
     pub double_angle: usize,
+    /// Normalized target scaling (`lit.scaling`, defaulting to `1.0`).
+    pub scaling: f64,
     pub chebyshev_offset_pt: Option<P>,
     pub double_angle_consts: Vec<P>,
     pub eval_mod_bsgs: EvalModBsgs<P>,
     pub eval_mod_inv_bsgs: Option<BSGSPolynomial<P>>,
+    /// Host-side base polynomial that `eval_mod_bsgs` encodes.
+    pub eval_mod_poly: EvalModPoly<F>,
+    /// Host-side arcsine post-composition polynomial that `eval_mod_inv_bsgs`
+    /// encodes, when present.
+    pub eval_mod_inv_poly: Option<Polynomial<F>>,
 }
 
-impl EvalModParameters<CKKSPlaintext<Vec<u8>>> {
-    pub fn from_literal<F>(
+impl<F> EvalModParameters<F, CKKSPlaintext<Vec<u8>>>
+where
+    F: CKKSScalar + Float + FloatConst,
+{
+    pub fn from_literal(
         coeff_meta: CKKSMeta,
         base2k: Base2K,
         lit: EvalModParametersLiteral,
         module: &Module<HostBytesBackend>,
-    ) -> Result<Self>
-    where
-        F: CKKSScalar + Float + FloatConst,
-    {
+    ) -> Result<Self> {
         if lit.eval_mod_type == EvalModType::Exp {
-            return Self::from_literal_exp::<F>(coeff_meta, base2k, lit, module);
+            return Self::from_literal_exp(coeff_meta, base2k, lit, module);
         }
 
         ensure!(lit.eval_mod_degree > 0, "eval_mod_degree must be > 0");
@@ -162,10 +177,10 @@ impl EvalModParameters<CKKSPlaintext<Vec<u8>>> {
         }
 
         let eval_mod_bsgs = eval_mod_poly.encode_bsgs_with(module, base2k, coeff_meta, lit.split_strategy)?;
-        let eval_mod_inv_bsgs = match eval_mod_inv_poly_opt {
-            Some(p) => Some(p.encode_bsgs_with(module, base2k, coeff_meta, lit.split_strategy)?),
-            None => None,
-        };
+        let eval_mod_inv_bsgs = eval_mod_inv_poly_opt
+            .as_ref()
+            .map(|p| p.encode_bsgs_with(module, base2k, coeff_meta, lit.split_strategy))
+            .transpose()?;
 
         let mut double_angle_consts: Vec<CKKSPlaintext<Vec<u8>>> = Vec::with_capacity(double_angle);
         for i in 0..double_angle {
@@ -190,22 +205,22 @@ impl EvalModParameters<CKKSPlaintext<Vec<u8>>> {
             eval_mod_type: lit.eval_mod_type,
             log_message_ratio: lit.log_message_ratio,
             double_angle,
+            scaling: scaling_f64,
             chebyshev_offset_pt,
             double_angle_consts,
             eval_mod_bsgs: EvalModBsgs::Real(eval_mod_bsgs),
             eval_mod_inv_bsgs,
+            eval_mod_poly: EvalModPoly::Real(eval_mod_poly),
+            eval_mod_inv_poly: eval_mod_inv_poly_opt,
         })
     }
 
-    fn from_literal_exp<F>(
+    fn from_literal_exp(
         coeff_meta: CKKSMeta,
         base2k: Base2K,
         lit: EvalModParametersLiteral,
         module: &Module<HostBytesBackend>,
-    ) -> Result<Self>
-    where
-        F: CKKSScalar + Float + FloatConst,
-    {
+    ) -> Result<Self> {
         ensure!(lit.eval_mod_degree > 0, "eval_mod_degree must be > 0");
         ensure!(lit.eval_mod_interval > 0, "eval_mod_interval must be > 0");
         ensure!(lit.double_angle < 31, "double_angle must be < 31");
@@ -228,15 +243,18 @@ impl EvalModParameters<CKKSPlaintext<Vec<u8>>> {
             eval_mod_type: lit.eval_mod_type,
             log_message_ratio: lit.log_message_ratio,
             double_angle: lit.double_angle,
+            scaling: scaling_f64,
             chebyshev_offset_pt: None,
             double_angle_consts: Vec::new(),
             eval_mod_bsgs: EvalModBsgs::Complex(exp_bsgs),
             eval_mod_inv_bsgs: None,
+            eval_mod_poly: EvalModPoly::Complex(exp_poly),
+            eval_mod_inv_poly: None,
         })
     }
 }
 
-impl<P> EvalModParameters<P> {
+impl<F, P> EvalModParameters<F, P> {
     /// Number of CKKS multiplicative levels the eval_mod pipeline will consume:
     /// BSGS depth of the main polynomial + `double_angle` squarings + BSGS depth
     /// of the optional arcsine post-composition.
@@ -250,20 +268,34 @@ impl<P> EvalModParameters<P> {
         d + self.double_angle + inv
     }
 
-    pub fn map_plaintexts<Q>(self, mut f: impl FnMut(&P) -> Q) -> EvalModParameters<Q> {
+    /// Per-double-angle scaling `s`: the base polynomial bakes `s` into its
+    /// coefficients, and each squaring step subtracts `s^(2^(i+1))`. When an
+    /// arcsine post-composition is used the base is unscaled (`s = 1`).
+    pub fn double_angle_scale(&self) -> f64 {
+        if self.eval_mod_inv_poly.is_some() {
+            return 1.0;
+        }
+        (std::f64::consts::TAU.recip() * self.scaling).powf(1.0 / (1u64 << self.double_angle) as f64)
+    }
+
+    pub fn map_plaintexts<Q>(self, mut f: impl FnMut(&P) -> Q) -> EvalModParameters<F, Q> {
         let Self {
             eval_mod_type,
             log_message_ratio,
             double_angle,
+            scaling,
             chebyshev_offset_pt,
             double_angle_consts,
             eval_mod_bsgs,
             eval_mod_inv_bsgs,
+            eval_mod_poly,
+            eval_mod_inv_poly,
         } = self;
         EvalModParameters {
             eval_mod_type,
             log_message_ratio,
             double_angle,
+            scaling,
             chebyshev_offset_pt: chebyshev_offset_pt.as_ref().map(&mut f),
             double_angle_consts: double_angle_consts.iter().map(&mut f).collect(),
             eval_mod_bsgs: match eval_mod_bsgs {
@@ -271,6 +303,8 @@ impl<P> EvalModParameters<P> {
                 EvalModBsgs::Complex(p) => EvalModBsgs::Complex(p.map_baby_steps_ref(&mut f)),
             },
             eval_mod_inv_bsgs: eval_mod_inv_bsgs.as_ref().map(|p| p.map_baby_steps_ref(&mut f)),
+            eval_mod_poly,
+            eval_mod_inv_poly,
         }
     }
 }
@@ -295,11 +329,11 @@ fn encode_scalar<F: CKKSScalar>(
 }
 
 pub trait CKKSEvalModOpsDefault<BE: Backend> {
-    fn ckks_eval_mod_default<R, C, P>(
+    fn ckks_eval_mod_default<R, C, P, F>(
         &self,
         res: &mut R,
         ct: &C,
-        params: &EvalModParameters<P>,
+        params: &EvalModParameters<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -327,11 +361,11 @@ where
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     for<'b> ScratchArena<'b, BE>: ScratchAvailable + ScratchArenaTakeCore<'b, BE>,
 {
-    fn ckks_eval_mod_default<R, C, P>(
+    fn ckks_eval_mod_default<R, C, P, F>(
         &self,
         res: &mut R,
         ct: &C,
-        params: &EvalModParameters<P>,
+        params: &EvalModParameters<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -344,11 +378,11 @@ where
     }
 }
 
-fn eval_mod<R, C, P, BE: Backend>(
+fn eval_mod<R, C, P, F, BE: Backend>(
     module: &Module<BE>,
     res: &mut R,
     ct: &C,
-    params: &EvalModParameters<P>,
+    params: &EvalModParameters<F, P>,
     tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>

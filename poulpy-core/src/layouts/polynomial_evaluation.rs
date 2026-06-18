@@ -330,33 +330,7 @@ where
     /// Uses Horner's method (monomial) or Clenshaw's algorithm (Chebyshev).
     /// For Chebyshev, `x` should lie in `[−1, 1]`.
     pub fn evaluate(&self, x: F) -> F {
-        match self.basis {
-            Basis::Monomial => {
-                let mut y = F::zero();
-                for &c in self.coeffs.iter().rev() {
-                    y = y * x + c;
-                }
-                y
-            }
-            Basis::Chebyshev => {
-                let n = self.coeffs.len();
-                if n == 0 {
-                    return F::zero();
-                }
-                if n == 1 {
-                    return self.coeffs[0];
-                }
-                let two = F::one() + F::one();
-                let mut b2 = F::zero();
-                let mut b1 = F::zero();
-                for i in (1..n).rev() {
-                    let tmp = two * x * b1 - b2 + self.coeffs[i];
-                    b2 = b1;
-                    b1 = tmp;
-                }
-                self.coeffs[0] + x * b1 - b2
-            }
-        }
+        evaluate_coeffs(self.basis, &self.coeffs, x)
     }
 
     /// Evaluates this polynomial on an input interval.
@@ -410,6 +384,45 @@ where
             baby_steps,
             parity: self.parity,
         })
+    }
+}
+
+/// Evaluates the polynomial with coefficients `coeffs` (in `basis`) at `x`.
+///
+/// Horner's method (monomial) or Clenshaw's algorithm (Chebyshev); for
+/// Chebyshev, `x` should lie in `[−1, 1]`. Operates on a borrowed slice so
+/// callers (e.g. complex polynomials) can evaluate their components without
+/// allocating intermediate [`Polynomial`]s.
+pub fn evaluate_coeffs<F>(basis: Basis, coeffs: &[F], x: F) -> F
+where
+    F: Float,
+{
+    match basis {
+        Basis::Monomial => {
+            let mut y = F::zero();
+            for &c in coeffs.iter().rev() {
+                y = y * x + c;
+            }
+            y
+        }
+        Basis::Chebyshev => {
+            let n = coeffs.len();
+            if n == 0 {
+                return F::zero();
+            }
+            if n == 1 {
+                return coeffs[0];
+            }
+            let two = F::one() + F::one();
+            let mut b2 = F::zero();
+            let mut b1 = F::zero();
+            for i in (1..n).rev() {
+                let tmp = two * x * b1 - b2 + coeffs[i];
+                b2 = b1;
+                b1 = tmp;
+            }
+            coeffs[0] + x * b1 - b2
+        }
     }
 }
 

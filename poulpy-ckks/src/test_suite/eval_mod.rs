@@ -8,12 +8,13 @@ use poulpy_core::{
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module, ScratchOwned},
+    source::Source,
 };
 
 use crate::{
     CKKSCtBounds, CKKSMeta, SetCKKSInfos,
     api::{CKKSAllOpsTmpBytes, CKKSEvalModOps},
-    default::eval_mod::{EvalModParameters, EvalModParametersLiteral, EvalModType},
+    default::eval_mod::{EvalModParameters, EvalModParametersLiteral, EvalModPoly, EvalModType},
     encoding::reim::Encoder,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
     polynomial::SplitStrategy,
@@ -105,10 +106,10 @@ where
     ScratchOwned::<BE>::alloc(scratch_size)
 }
 
-fn upload_params<BE>(
+fn upload_params<BE, F>(
     module: &Module<BE>,
-    host: EvalModParameters<CKKSPlaintext<Vec<u8>>>,
-) -> EvalModParameters<CKKSPlaintext<BE::OwnedBuf>>
+    host: EvalModParameters<F, CKKSPlaintext<Vec<u8>>>,
+) -> EvalModParameters<F, CKKSPlaintext<BE::OwnedBuf>>
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
@@ -117,111 +118,95 @@ where
 }
 
 fn depth_of(lit: &EvalModParametersLiteral) -> usize {
-    let d = lit.eval_mod_degree.next_power_of_two().trailing_zeros() as usize;
+    let ceil_log2 = |x: usize| x.next_power_of_two().trailing_zeros() as usize;
     let r = match lit.eval_mod_type {
         EvalModType::SinContinuous => 0,
         _ => lit.double_angle,
     };
-    let inv = if lit.eval_mod_inv_degree > 0 {
-        lit.eval_mod_inv_degree.next_power_of_two().trailing_zeros() as usize
-    } else {
-        0
-    };
-    d + r + inv
+    ceil_log2(lit.eval_mod_degree) + r + ceil_log2(lit.eval_mod_inv_degree)
 }
 
-fn oracle_sin(x: f64, inv: bool) -> f64 {
-    let two_pi = std::f64::consts::TAU;
-    let mut y = (two_pi * x).sin();
-    if inv {
+#[derive(Clone, Copy, Debug)]
+enum Reference {
+    /// The retained circuit polynomials — isolates FHE/BSGS fidelity.
+    Polynomial,
+    /// The ideal trigonometric `x mod 1` — tests approximation + noise end-to-end.
+    Ideal,
+}
+
+fn two_pi<F: TestScalar>() -> F {
+    F::PI() + F::PI()
+}
+
+/// Reference evaluation of the `x mod 1` pipeline at the normalized Chebyshev
+/// variable `t` (the encrypted value, in `[-1, 1]`).
+fn oracle<F, P>(params: &EvalModParameters<F, P>, lit: &EvalModParametersLiteral, t: F, reference: Reference) -> (F, F)
+where
+    F: TestScalar,
+{
+    match reference {
+        Reference::Polynomial => oracle_polynomial(params, lit, t),
+        Reference::Ideal => oracle_ideal(params, lit, t),
+    }
+}
+
+/// Replays the circuit on its retained polynomials: base polynomial, then the
+/// double-angle squarings, then the optional arcsine post-composition. The
+/// circuit feeds the encrypted value straight into the bare Chebyshev
+/// recurrence, so the polynomial is evaluated directly at `t`.
+fn oracle_polynomial<F, P>(params: &EvalModParameters<F, P>, lit: &EvalModParametersLiteral, t: F) -> (F, F)
+where
+    F: TestScalar,
+{
+    let two = F::one() + F::one();
+    match &params.eval_mod_poly {
+        EvalModPoly::Complex(poly) => {
+            let (mut re, mut im) = poly.evaluate(t);
+            for _ in 0..params.double_angle {
+                (re, im) = (re * re - im * im, two * re * im);
+            }
+            (re, im)
+        }
+        EvalModPoly::Real(poly) => {
+            let mut v = t;
+            if matches!(lit.eval_mod_type, EvalModType::CosContinuous) {
+                v = v + F::from_f64(-0.25 / lit.eval_mod_interval as f64).unwrap();
+            }
+            let mut p = poly.evaluate(v);
+            let s = params.double_angle_scale();
+            for i in 0..params.double_angle {
+                let dac = F::from_f64(s.powi(1i32 << (i + 1))).unwrap();
+                p = two * p * p - dac;
+            }
+            if let Some(inv) = &params.eval_mod_inv_poly {
+                p = inv.evaluate(p);
+            }
+            (p, F::zero())
+        }
+    }
+}
+
+/// The exact target the pipeline approximates. The encrypted value `t` is the
+/// normalized Chebyshev variable; the modular coordinate is `x = interval·t =
+/// I + m/MessageRatio`. Regardless of the sin/cos/double-angle path, the final
+/// amplitude is `(1/2π)·scaling` and the function reduces to `sin(2π·x)`
+/// (`exp` returns the complex exponential), post-composed with `asin` when an
+/// arcsine inverse is configured.
+fn oracle_ideal<F, P>(params: &EvalModParameters<F, P>, lit: &EvalModParametersLiteral, t: F) -> (F, F)
+where
+    F: TestScalar,
+{
+    let amp = F::from_f64(params.scaling * std::f64::consts::TAU.recip()).unwrap();
+    let x = F::from_usize(lit.eval_mod_interval).unwrap() * t;
+    let theta = two_pi::<F>() * x;
+    if matches!(lit.eval_mod_type, EvalModType::Exp) {
+        return (amp * theta.cos(), amp * theta.sin());
+    }
+    let mut y = theta.sin();
+    if params.eval_mod_inv_poly.is_some() {
         y = y.asin();
     }
-    y / two_pi
-}
-
-fn oracle_pipeline(x: f64, lit: &EvalModParametersLiteral) -> f64 {
-    let two_pi = std::f64::consts::TAU;
-    let inv_two_pi = 1.0 / two_pi;
-    let scaling = if lit.scaling == 0.0 { 1.0 } else { lit.scaling };
-    let double_angle = match lit.eval_mod_type {
-        EvalModType::SinContinuous => 0,
-        _ => lit.double_angle,
-    };
-    let sc_fac = (1u64 << double_angle) as f64;
-    let k_eff = lit.eval_mod_interval as f64 / sc_fac;
-
-    let s: f64 = if lit.eval_mod_inv_degree > 0 {
-        1.0
-    } else {
-        (inv_two_pi * scaling).powf(1.0 / sc_fac)
-    };
-
-    let mut v = x;
-    if matches!(lit.eval_mod_type, EvalModType::CosContinuous) {
-        v += -0.25 / (lit.eval_mod_interval as f64);
-    }
-
-    let k = lit.eval_mod_interval as f64;
-    let mut p_val: f64 = match lit.eval_mod_type {
-        EvalModType::SinContinuous => s * (two_pi * k_eff * v).sin(),
-        EvalModType::CosContinuous => s * (two_pi * k_eff * v).cos(),
-        EvalModType::CosDiscrete => s * (two_pi * (k * v - 0.25) / sc_fac).cos(),
-        EvalModType::Exp => unreachable!(),
-    };
-
-    for i in 0..double_angle {
-        let exp = 1u32 << (i + 1);
-        let dac = s.powi(exp as i32);
-        p_val = 2.0 * p_val * p_val - dac;
-    }
-
-    if lit.eval_mod_inv_degree > 0 {
-        let n = lit.eval_mod_inv_degree;
-        let mut coeffs = vec![0f64; n + 1];
-        coeffs[1] = inv_two_pi * scaling;
-        let mut i = 1usize;
-        while i + 2 <= n {
-            let next = i + 2;
-            let num = ((next as i64 - 2) * (next as i64 - 2)) as f64;
-            let den = (next as i64 * (next as i64 - 1)) as f64;
-            coeffs[next] = coeffs[i] * num / den;
-            i = next;
-        }
-        let mut acc = 0f64;
-        for c in coeffs.iter().rev() {
-            acc = acc * p_val + c;
-        }
-        p_val = acc;
-    }
-
-    p_val
-}
-
-fn oracle_exp(x: f64, lit: &EvalModParametersLiteral) -> (f64, f64) {
-    let two_pi = std::f64::consts::TAU;
-    let inv_two_pi = 1.0 / two_pi;
-    let scaling = if lit.scaling == 0.0 { 1.0 } else { lit.scaling };
-    let r = lit.double_angle;
-    let sc_fac = (1u64 << r) as f64;
-    let k_eff = lit.eval_mod_interval as f64 / sc_fac;
-    let s = (inv_two_pi * scaling).powf(1.0 / sc_fac);
-
-    let theta = two_pi * k_eff * x;
-    let (mut re, mut im) = (s * theta.cos(), s * theta.sin());
-    for _ in 0..r {
-        let nre = re * re - im * im;
-        let nim = 2.0 * re * im;
-        re = nre;
-        im = nim;
-    }
-    (re, im)
-}
-
-#[derive(Clone, Copy)]
-enum Oracle {
-    Sin,
-    Pipeline,
-    Exp,
+    (amp * y, F::zero())
 }
 
 fn run_eval_mod_case<BE, F, E>(
@@ -229,9 +214,7 @@ fn run_eval_mod_case<BE, F, E>(
     base2k: usize,
     log_delta: usize,
     lit: EvalModParametersLiteral,
-    domain: f64,
     required_log2_prec: f64,
-    oracle: Oracle,
 ) where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSEvalModOps<BE>,
@@ -250,12 +233,22 @@ fn run_eval_mod_case<BE, F, E>(
     let m = params.n / 2;
     let encoder = Encoder::<E>::new(m).unwrap();
 
-    let x_re_raw: Vec<F> = (0..m)
-        .map(|i| {
-            let t = ((i as f64 + 0.5) / m as f64 - 0.5) * (2.0 * domain);
-            F::from_f64(t).unwrap()
+    // Sample the plaintext as I·q + m (Lattigo's `mod1_evaluator_test`): I is a
+    // random integer multiple in [-(interval-1), interval-1], m a message in
+    // [-1, 1], and q = MessageRatio (QDiff = 1 since poulpy's Q = 2^k). The
+    // encrypted value is the normalized Chebyshev variable t = (I·q + m)/(q·interval).
+    let mr = (1u64 << lit.log_message_ratio) as f64;
+    let interval = lit.eval_mod_interval as f64;
+    let k = (lit.eval_mod_interval - 1) as f64;
+    let mut source = Source::new([0u8; 32]);
+    let mut x_re_raw: Vec<F> = (0..m)
+        .map(|_| {
+            let value = source.next_f64(-k, k).round() * mr + source.next_f64(-1.0, 1.0);
+            F::from_f64(value / (mr * interval)).unwrap()
         })
         .collect();
+    // Worst-case slot: largest integer multiple plus a half-message.
+    x_re_raw[0] = F::from_f64((k * mr + 0.5) / (mr * interval)).unwrap();
     let x_im_raw = vec![F::zero(); x_re_raw.len()];
 
     let coeff_meta = CKKSMeta {
@@ -263,7 +256,7 @@ fn run_eval_mod_case<BE, F, E>(
         log_budget: base2k,
         log_sparsity: 0,
     };
-    let host_params = EvalModParameters::from_literal::<F>(coeff_meta, params.base2k.into(), lit, &host_module)
+    let host_params = EvalModParameters::<F, _>::from_literal(coeff_meta, params.base2k.into(), lit, &host_module)
         .expect("EvalModParameters::from_literal");
     let params_be = upload_params(&module, host_params);
 
@@ -291,46 +284,39 @@ fn run_eval_mod_case<BE, F, E>(
 
     let (re_out, im_out) = ckks_decrypt_decode::<BE, F, E>(&test_params, &module, &encoder, &res, &sk, &mut scratch.borrow());
 
-    let inv = lit.eval_mod_inv_degree > 0;
-    let want_re: Vec<F> = x_re_raw
-        .iter()
-        .map(|&x| {
-            let xf = x.to_f64().unwrap();
-            let want = match oracle {
-                Oracle::Sin => oracle_sin(xf, inv),
-                Oracle::Pipeline => oracle_pipeline(xf, &lit),
-                Oracle::Exp => oracle_exp(xf, &lit).0,
-            };
-            F::from_f64(want).unwrap()
-        })
-        .collect();
+    // Compare the FHE output against both references: the circuit's own
+    // polynomials (FHE fidelity) and the ideal x mod 1 (approximation + noise).
+    for reference in [Reference::Polynomial, Reference::Ideal] {
+        let want: Vec<(F, F)> = x_re_raw.iter().map(|&t| oracle(&params_be, &lit, t, reference)).collect();
+        let want_re: Vec<F> = want.iter().map(|&(re, _)| re).collect();
 
-    let stats = precision_stats(&re_out, &want_re, log_delta);
-    assert!(
-        stats.avg_log2_prec >= required_log2_prec,
-        "{label}: avg precision {:.1} bits < {required_log2_prec:.1} (worst_err={}, worst_idx={}, got={}, want={})",
-        stats.avg_log2_prec,
-        stats.worst_err,
-        stats.worst_idx,
-        stats.worst_got,
-        stats.worst_want
-    );
+        let stats = precision_stats(&re_out, &want_re, log_delta);
 
-    if matches!(oracle, Oracle::Exp) {
-        let want_im: Vec<F> = x_re_raw
-            .iter()
-            .map(|&x| F::from_f64(oracle_exp(x.to_f64().unwrap(), &lit).1).unwrap())
-            .collect();
-        let stats_im = precision_stats(&im_out, &want_im, log_delta);
+        println!("stats_: {} {}", stats.avg_log2_prec, stats.min_log2_prec);
+
         assert!(
-            stats_im.avg_log2_prec >= required_log2_prec,
-            "{label} (imag): avg precision {:.1} bits < {required_log2_prec:.1} (worst_err={}, worst_idx={}, got={}, want={})",
-            stats_im.avg_log2_prec,
-            stats_im.worst_err,
-            stats_im.worst_idx,
-            stats_im.worst_got,
-            stats_im.worst_want
+            stats.avg_log2_prec >= required_log2_prec,
+            "{label} [{reference:?}]: avg precision {:.1} bits < {required_log2_prec:.1} (worst_err={}, worst_idx={}, got={}, want={})",
+            stats.avg_log2_prec,
+            stats.worst_err,
+            stats.worst_idx,
+            stats.worst_got,
+            stats.worst_want
         );
+
+        if matches!(lit.eval_mod_type, EvalModType::Exp) {
+            let want_im: Vec<F> = want.iter().map(|&(_, im)| im).collect();
+            let stats_im = precision_stats(&im_out, &want_im, log_delta);
+            assert!(
+                stats_im.avg_log2_prec >= required_log2_prec,
+                "{label} [{reference:?}] (imag): avg precision {:.1} bits < {required_log2_prec:.1} (worst_err={}, worst_idx={}, got={}, want={})",
+                stats_im.avg_log2_prec,
+                stats_im.worst_err,
+                stats_im.worst_idx,
+                stats_im.worst_got,
+                stats_im.worst_want
+            );
+        }
     }
 }
 
@@ -350,14 +336,14 @@ pub fn test_eval_mod_sin_continuous_minimal<BE, F, E>(
     let lit = EvalModParametersLiteral {
         eval_mod_type: EvalModType::SinContinuous,
         log_message_ratio: 4,
-        eval_mod_degree: 15,
-        eval_mod_interval: 1,
+        eval_mod_degree: 31,
+        eval_mod_interval: 4,
         double_angle: 0,
         eval_mod_inv_degree: 0,
         scaling: 1.0,
         split_strategy: SplitStrategy::MinDepth,
     };
-    run_eval_mod_case::<BE, F, E>("eval_mod_sin_continuous_minimal", 19, 30, lit, 0.5, 5.0, Oracle::Sin);
+    run_eval_mod_case::<BE, F, E>("eval_mod_sin_continuous_minimal", 19, 30, lit, 10.0);
 }
 
 pub fn test_eval_mod_sin_continuous_with_arcsine<BE, F, E>(
@@ -375,15 +361,15 @@ pub fn test_eval_mod_sin_continuous_with_arcsine<BE, F, E>(
 {
     let lit = EvalModParametersLiteral {
         eval_mod_type: EvalModType::SinContinuous,
-        log_message_ratio: 4,
-        eval_mod_degree: 31,
-        eval_mod_interval: 1,
+        log_message_ratio: 8,
+        eval_mod_degree: 63,
+        eval_mod_interval: 8,
         double_angle: 0,
         eval_mod_inv_degree: 7,
         scaling: 1.0,
         split_strategy: SplitStrategy::MinDepth,
     };
-    run_eval_mod_case::<BE, F, E>("eval_mod_sin_continuous_arcsine", 19, 30, lit, 0.25, 4.0, Oracle::Sin);
+    run_eval_mod_case::<BE, F, E>("eval_mod_sin_continuous_arcsine", 19, 30, lit, 13.0);
 }
 
 pub fn test_eval_mod_cos_discrete<BE, F, E>(
@@ -409,7 +395,7 @@ pub fn test_eval_mod_cos_discrete<BE, F, E>(
         scaling: 1.0,
         split_strategy: SplitStrategy::MinDepth,
     };
-    run_eval_mod_case::<BE, F, E>("eval_mod_cos_discrete", 19, 30, lit, 0.25, 4.0, Oracle::Pipeline);
+    run_eval_mod_case::<BE, F, E>("eval_mod_cos_discrete", 19, 53, lit, 30.0);
 }
 
 pub fn test_eval_mod_cos_continuous<BE, F, E>(
@@ -429,13 +415,13 @@ pub fn test_eval_mod_cos_continuous<BE, F, E>(
         eval_mod_type: EvalModType::CosContinuous,
         log_message_ratio: 4,
         eval_mod_degree: 31,
-        eval_mod_interval: 4,
-        double_angle: 2,
+        eval_mod_interval: 8,
+        double_angle: 3,
         eval_mod_inv_degree: 0,
         scaling: 1.0,
         split_strategy: SplitStrategy::MinDepth,
     };
-    run_eval_mod_case::<BE, F, E>("eval_mod_cos_continuous", 19, 30, lit, 0.25, 4.0, Oracle::Pipeline);
+    run_eval_mod_case::<BE, F, E>("eval_mod_cos_continuous", 19, 30, lit, 16.0);
 }
 
 pub fn test_eval_mod_exp<BE, F, E>(
@@ -455,11 +441,11 @@ pub fn test_eval_mod_exp<BE, F, E>(
         eval_mod_type: EvalModType::Exp,
         log_message_ratio: 4,
         eval_mod_degree: 31,
-        eval_mod_interval: 4,
-        double_angle: 2,
+        eval_mod_interval: 8,
+        double_angle: 3,
         eval_mod_inv_degree: 0,
         scaling: 1.0,
         split_strategy: SplitStrategy::MinDepth,
     };
-    run_eval_mod_case::<BE, F, E>("eval_mod_exp", 19, 30, lit, 0.25, 4.0, Oracle::Exp);
+    run_eval_mod_case::<BE, F, E>("eval_mod_exp", 19, 30, lit, 16.0);
 }
