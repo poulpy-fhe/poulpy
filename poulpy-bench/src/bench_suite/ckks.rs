@@ -1,6 +1,6 @@
 use std::{collections::HashMap, hint::black_box};
 
-use criterion::Criterion;
+use criterion::{BenchmarkId, Criterion};
 use poulpy_ckks::{
     CKKSMeta,
     api::{
@@ -41,6 +41,53 @@ const DSIZE: usize = 6;
 const DNUM: usize = 4;
 const MANY_TERMS: usize = 8;
 const ROTATION: i64 = 1;
+
+/// One point of the `ckks_mul` size sweep.
+///
+/// The number of limbs (`k = limbs * base2k`) and the gadget split (`dsize`,
+/// `dnum`) are scaled down with `n`, so the benchmark shape stays representative
+/// across sizes (smaller rings support smaller moduli / fewer limbs). `dnum` is
+/// derived as `⌈k / (dsize * base2k)⌉`, matching `tsk_layout`.
+#[derive(Clone, Copy)]
+struct CkksMulParams {
+    n: usize,
+    base2k: usize,
+    k: usize,
+    log_delta: usize,
+    dsize: usize,
+    /// Short parameter label used in the criterion benchmark id (e.g. `logn=16`).
+    label: &'static str,
+}
+
+/// `ckks_mul` size sweep: n = 2^14 .. 2^16 with limbs 6/12/24 and dsize 1/3/6.
+/// At n = 2^16 this reproduces the legacy hardcoded shape (24 limbs, dsize 6,
+/// dnum 4). Radix-4 NTT fusion is active only for n ≥ 2^15.
+const CKKS_MUL_SWEEP: &[CkksMulParams] = &[
+    CkksMulParams {
+        n: 1 << 14,
+        base2k: 52,
+        k: 52 * 6,
+        log_delta: 40,
+        dsize: 1,
+        label: "logn=14",
+    },
+    CkksMulParams {
+        n: 1 << 15,
+        base2k: 52,
+        k: 52 * 12,
+        log_delta: 40,
+        dsize: 3,
+        label: "logn=15",
+    },
+    CkksMulParams {
+        n: 1 << 16,
+        base2k: 52,
+        k: 52 * 24,
+        log_delta: 40,
+        dsize: 6,
+        label: "logn=16",
+    },
+];
 
 pub trait CkksBenchBackend:
     Backend<OwnedBuf = Vec<u8>>
@@ -675,72 +722,154 @@ where
     group.finish();
 }
 
+fn mul_ckks_layout(p: &CkksMulParams) -> GLWELayout {
+    GLWELayout {
+        n: Degree(p.n as u32),
+        base2k: Base2K(p.base2k as u32),
+        k: TorusPrecision(p.k as u32),
+        rank: Rank(1),
+    }
+}
+
+fn mul_ckks_ct_meta(p: &CkksMulParams) -> CKKSMeta {
+    CKKSMeta {
+        log_sparsity: 0,
+        log_delta: p.log_delta,
+        log_budget: p.k - p.log_delta,
+    }
+}
+
+fn mul_tsk_layout(p: &CkksMulParams) -> GLWETensorKeyLayout {
+    GLWETensorKeyLayout {
+        n: Degree(p.n as u32),
+        base2k: Base2K(p.base2k as u32),
+        k: TorusPrecision((p.k + p.dsize * p.base2k) as u32),
+        rank: Rank(1),
+        dsize: Dsize(p.dsize as u32),
+        dnum: Dnum(p.k.div_ceil(p.dsize * p.base2k) as u32),
+    }
+}
+
+fn reset_dst_meta(dst: &mut CKKSCiphertext<Vec<u8>>, meta: CKKSMeta) {
+    dst.data_mut().raw_mut().fill(0);
+    dst.set_meta_checked(meta).unwrap();
+}
+
+/// Lean per-size setup for the `ckks_mul` sweep: only the operands, plaintexts,
+/// tensor key and scratch the six multiplication functions need (no automorphism
+/// keys), built for the given [`CkksMulParams`].
+fn mul_setup<BE>(p: &CkksMulParams) -> CkksBenchSetup<BE>
+where
+    BE: CkksBenchBackend,
+{
+    let module = Module::<BE>::new(p.n as u64);
+    let ct_layout = mul_ckks_layout(p);
+    let tsk_layout = mul_tsk_layout(p);
+    let meta = mul_ckks_ct_meta(p);
+
+    let mut ct_a = module.ckks_ciphertext_alloc_from_infos(&ct_layout);
+    let mut ct_b = module.ckks_ciphertext_alloc_from_infos(&ct_layout);
+    let mut ct_dst = module.ckks_ciphertext_alloc_from_infos(&ct_layout);
+    ct_a.set_meta_checked(meta).unwrap();
+    ct_b.set_meta_checked(meta).unwrap();
+    ct_dst.set_meta_checked(meta).unwrap();
+
+    let pt = module.ckks_pt_vec_alloc(Base2K(p.base2k as u32), meta);
+    let cst = module.ckks_pt_coeffs_alloc(2, Base2K(p.base2k as u32), meta);
+    let const_full = module.ckks_pt_vec_alloc(Base2K(p.base2k as u32), meta);
+
+    let tsk = module.alloc_tensor_key_prepared_from_infos(&tsk_layout);
+
+    let scratch_bytes = module
+        .ckks_mul_tmp_bytes(&ct_a, &tsk)
+        .max(module.ckks_square_tmp_bytes(&ct_a, &tsk))
+        .max(module.ckks_mul_pt_vec_tmp_bytes(&ct_dst, &ct_a, &pt))
+        .max(module.ckks_mul_pt_const_tmp_bytes(&ct_dst, &ct_a, &const_full));
+
+    CkksBenchSetup {
+        module,
+        scratch: ScratchOwned::<BE>::alloc(scratch_bytes),
+        ct_a,
+        ct_b,
+        ct_dst,
+        pt,
+        cst,
+        const_full,
+        tsk,
+        atks: HashMap::new(),
+    }
+}
+
 pub fn bench_ckks_mul<BE>(c: &mut Criterion, label: &str)
 where
     BE: CkksBenchBackend,
 {
-    let mut s = setup::<BE>();
     let mut group = c.benchmark_group(format!("ckks_mul_into::{label}"));
-    group.bench_function("mul_ct", |b| {
-        b.iter(|| {
-            reset_dst(&mut s.ct_dst);
-            s.module
-                .ckks_mul_into(
-                    &mut s.ct_dst,
-                    black_box(&s.ct_a),
-                    black_box(&s.ct_b),
-                    &s.tsk,
-                    &mut s.scratch.borrow(),
-                )
-                .unwrap();
-        })
-    });
-    group.bench_function("mul_ct_assign", |b| {
-        b.iter(|| {
-            reset_dst(&mut s.ct_dst);
-            s.module
-                .ckks_mul_assign(&mut s.ct_dst, black_box(&s.ct_a), &s.tsk, &mut s.scratch.borrow())
-                .unwrap();
-        })
-    });
-    group.bench_function("square", |b| {
-        b.iter(|| {
-            reset_dst(&mut s.ct_dst);
-            s.module
-                .ckks_square_into(&mut s.ct_dst, black_box(&s.ct_a), &s.tsk, &mut s.scratch.borrow())
-                .unwrap();
-        })
-    });
-    group.bench_function("square_assign", |b| {
-        b.iter(|| {
-            reset_dst(&mut s.ct_dst);
-            s.module
-                .ckks_square_assign(&mut s.ct_dst, &s.tsk, &mut s.scratch.borrow())
-                .unwrap();
-        })
-    });
-    group.bench_function("mul_pt_vec", |b| {
-        b.iter(|| {
-            reset_dst(&mut s.ct_dst);
-            s.module
-                .ckks_mul_pt_vec_into(&mut s.ct_dst, black_box(&s.ct_a), black_box(&s.pt), &mut s.scratch.borrow())
-                .unwrap();
-        })
-    });
-    group.bench_function("mul_const", |b| {
-        b.iter(|| {
-            reset_dst(&mut s.ct_dst);
-            s.module
-                .ckks_mul_pt_const_into(
-                    &mut s.ct_dst,
-                    black_box(&s.ct_a),
-                    black_box(&s.const_full),
-                    0,
-                    &mut s.scratch.borrow(),
-                )
-                .unwrap();
-        })
-    });
+    for p in CKKS_MUL_SWEEP {
+        let mut s = mul_setup::<BE>(p);
+        let meta = mul_ckks_ct_meta(p);
+
+        group.bench_function(BenchmarkId::new("mul_ct", p.label), |b| {
+            b.iter(|| {
+                reset_dst_meta(&mut s.ct_dst, meta);
+                s.module
+                    .ckks_mul_into(
+                        &mut s.ct_dst,
+                        black_box(&s.ct_a),
+                        black_box(&s.ct_b),
+                        &s.tsk,
+                        &mut s.scratch.borrow(),
+                    )
+                    .unwrap();
+            })
+        });
+        group.bench_function(BenchmarkId::new("mul_ct_assign", p.label), |b| {
+            b.iter(|| {
+                reset_dst_meta(&mut s.ct_dst, meta);
+                s.module
+                    .ckks_mul_assign(&mut s.ct_dst, black_box(&s.ct_a), &s.tsk, &mut s.scratch.borrow())
+                    .unwrap();
+            })
+        });
+        group.bench_function(BenchmarkId::new("square", p.label), |b| {
+            b.iter(|| {
+                reset_dst_meta(&mut s.ct_dst, meta);
+                s.module
+                    .ckks_square_into(&mut s.ct_dst, black_box(&s.ct_a), &s.tsk, &mut s.scratch.borrow())
+                    .unwrap();
+            })
+        });
+        group.bench_function(BenchmarkId::new("square_assign", p.label), |b| {
+            b.iter(|| {
+                reset_dst_meta(&mut s.ct_dst, meta);
+                s.module
+                    .ckks_square_assign(&mut s.ct_dst, &s.tsk, &mut s.scratch.borrow())
+                    .unwrap();
+            })
+        });
+        group.bench_function(BenchmarkId::new("mul_pt_vec", p.label), |b| {
+            b.iter(|| {
+                reset_dst_meta(&mut s.ct_dst, meta);
+                s.module
+                    .ckks_mul_pt_vec_into(&mut s.ct_dst, black_box(&s.ct_a), black_box(&s.pt), &mut s.scratch.borrow())
+                    .unwrap();
+            })
+        });
+        group.bench_function(BenchmarkId::new("mul_const", p.label), |b| {
+            b.iter(|| {
+                reset_dst_meta(&mut s.ct_dst, meta);
+                s.module
+                    .ckks_mul_pt_const_into(
+                        &mut s.ct_dst,
+                        black_box(&s.ct_a),
+                        black_box(&s.const_full),
+                        0,
+                        &mut s.scratch.borrow(),
+                    )
+                    .unwrap();
+            })
+        });
+    }
     group.finish();
 }
 

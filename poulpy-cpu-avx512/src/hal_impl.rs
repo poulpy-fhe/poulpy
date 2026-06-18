@@ -304,6 +304,68 @@ unsafe impl HalConvolutionImpl<NTT120Avx512> for NTT120Avx512 {
         );
     }
 
+    fn cnv_prepare_left_lazy_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+        poulpy_cpu_ref::reference::ntt120::convolution::ntt120_cnv_prepare_left_lazy_tmp_bytes(module.n())
+    }
+
+    fn cnv_prepare_left_lazy(
+        module: &Module<Self>,
+        res: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self>,
+        mask: i64,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let bytes = poulpy_cpu_ref::reference::ntt120::convolution::ntt120_cnv_prepare_left_lazy_tmp_bytes(module.n());
+        let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
+        poulpy_cpu_ref::reference::ntt120::convolution::ntt120_cnv_prepare_left_lazy(module, res, a, mask, tmp);
+    }
+
+    fn cnv_prepare_right_lazy_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+        poulpy_cpu_ref::reference::ntt120::convolution::ntt120_cnv_prepare_right_lazy_tmp_bytes(module.n())
+    }
+
+    fn cnv_prepare_right_lazy(
+        module: &Module<Self>,
+        res: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
+        a: &VecZnxBackendRef<'_, Self>,
+        mask: i64,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let n_u64 = poulpy_cpu_ref::reference::ntt120::convolution::ntt120_cnv_prepare_right_lazy_tmp_bytes(module.n())
+            / size_of::<u64>();
+        let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), n_u64);
+        poulpy_cpu_ref::reference::ntt120::convolution::ntt120_cnv_prepare_right_lazy(module, res, a, mask, tmp);
+    }
+
+    fn cnv_apply_dft_lazy_tmp_bytes(
+        _module: &Module<Self>,
+        _cnv_offset: usize,
+        _res_size: usize,
+        a_size: usize,
+        b_size: usize,
+    ) -> usize {
+        crate::ntt120_avx512::convolution::cnv_apply_dft_lazy_avx_tmp_bytes(a_size, b_size)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_apply_dft_lazy(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &poulpy_hal::layouts::CnvPVecLBackendRef<'_, Self>,
+        a_col: usize,
+        b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
+        b_col: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let bytes = crate::ntt120_avx512::convolution::cnv_apply_dft_lazy_avx_tmp_bytes(a.size(), b.size());
+        let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
+        unsafe {
+            crate::ntt120_avx512::convolution::cnv_apply_dft_lazy_avx(module, res, cnv_offset, res_col, a, a_col, b, b_col, tmp);
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn cnv_apply_dft_accumulate(
         module: &Module<Self>,

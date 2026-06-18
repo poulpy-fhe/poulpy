@@ -1,7 +1,7 @@
 //! Element-wise CRT conversions for the 3-prime IFMA representation.
 //!
 //! Provides:
-//! - `b_ntt126_ifma_from_znx64_ref`: i64 → 3-prime CRT (4 × u64 per coefficient, lane 3 = 0)
+//! - `b_ntt126_ifma_from_znx64_ref`: i64 → 3-prime CRT (three `n`-coefficient planes)
 //! - `b_ntt126_ifma_to_znx128_ref`: 3-prime CRT → i128 via Garner's algorithm
 //! - `c_ntt126_ifma_from_b_ref`: b → prepared c format (Harvey quotient pairs)
 
@@ -46,15 +46,14 @@ const BIG_Q: u128 = Q01 * Q2 as u128;
 
 /// Encode `n` i64 coefficients into the 3-prime CRT b format.
 ///
-/// Output layout: `res[4*i + k] = a[i] mod Q[k]` for k ∈ {0,1,2},
-/// and `res[4*i + 3] = 0` (padding).
+/// Output layout: `res[k*n + i] = a[i] mod Q[k]` for k ∈ {0,1,2}.
 pub fn b_ntt126_ifma_from_znx64_ref(n: usize, res: &mut [u64], a: &[i64]) {
-    debug_assert!(res.len() >= 4 * n);
+    debug_assert!(res.len() >= 3 * n);
     debug_assert!(a.len() >= n);
     for i in 0..n {
         let x = a[i];
         for k in 0..3 {
-            res[4 * i + k] = if x >= 0 {
+            res[k * n + i] = if x >= 0 {
                 (x as u64) % Q[k]
             } else {
                 // x as u64 = x + 2^64. We want x mod Q[k].
@@ -63,25 +62,23 @@ pub fn b_ntt126_ifma_from_znx64_ref(n: usize, res: &mut [u64], a: &[i64]) {
                 (pos + OQ[k]) % Q[k]
             };
         }
-        res[4 * i + 3] = 0; // padding
     }
 }
 
 /// Equivalent to [`b_ntt126_ifma_from_znx64_ref`] on `a[j] & mask`.
 pub fn b_ntt126_ifma_from_znx64_masked_ref(n: usize, res: &mut [u64], a: &[i64], mask: i64) {
-    debug_assert!(res.len() >= 4 * n);
+    debug_assert!(res.len() >= 3 * n);
     debug_assert!(a.len() >= n);
     for i in 0..n {
         let x = a[i] & mask;
         for k in 0..3 {
-            res[4 * i + k] = if x >= 0 {
+            res[k * n + i] = if x >= 0 {
                 (x as u64) % Q[k]
             } else {
                 let pos = (x as u64) & (i64::MAX as u64);
                 (pos + OQ[k]) % Q[k]
             };
         }
-        res[4 * i + 3] = 0;
     }
 }
 
@@ -105,13 +102,13 @@ pub fn b_ntt126_ifma_from_znx64_masked_ref(n: usize, res: &mut [u64], a: &[i64],
 /// twiddle factors, so no extra division is needed.
 pub fn b_ntt126_ifma_to_znx128_ref(nn: usize, res: &mut [i128], a: &[u64]) {
     debug_assert!(res.len() >= nn);
-    debug_assert!(a.len() >= 4 * nn);
+    debug_assert!(a.len() >= 3 * nn);
 
     for i in 0..nn {
         // Read and reduce residues
         let mut r = [0u64; 3];
         for k in 0..3 {
-            r[k] = a[4 * i + k] % Q[k];
+            r[k] = a[k * nn + i] % Q[k];
         }
 
         // Garner step 1: v0 = r[0]
@@ -155,12 +152,11 @@ pub fn b_ntt126_ifma_to_znx128_ref(nn: usize, res: &mut [i128], a: &[u64]) {
 ///
 /// Output: `res[4*j+k] = a[4*j+k] mod Q[k]` for k ∈ {0,1,2}, res[4*j+3] = 0.
 ///
-/// The `res` parameter is typed as `&mut [u32]` for trait compatibility with
-/// the HAL's `cast_slice_mut` from `Q120bScalar`, but the data is actually
-/// written as u64 values (each u32 pair forms one u64).
+/// The `res` parameter is typed as `&mut [u32]` for trait compatibility, but
+/// the data is actually written as u64 values (each u32 pair forms one u64).
 pub fn c_ntt126_ifma_from_b_ref(n: usize, res: &mut [u32], a: &[u64]) {
-    debug_assert!(res.len() >= 8 * n);
-    debug_assert!(a.len() >= 4 * n);
+    debug_assert!(res.len() >= 6 * n);
+    debug_assert!(a.len() >= 3 * n);
 
     // Reinterpret as u64 slice
     let res_u64: &mut [u64] = unsafe { std::slice::from_raw_parts_mut(res.as_mut_ptr() as *mut u64, res.len() / 2) };
@@ -168,9 +164,8 @@ pub fn c_ntt126_ifma_from_b_ref(n: usize, res: &mut [u32], a: &[u64]) {
     for j in 0..n {
         for k in 0..3 {
             // Store reduced residue as u64
-            res_u64[4 * j + k] = a[4 * j + k] % Q[k];
+            res_u64[k * n + j] = a[k * n + j] % Q[k];
         }
-        res_u64[4 * j + 3] = 0;
     }
 }
 
@@ -187,7 +182,7 @@ mod tests {
         let n = 8;
         let coeffs: Vec<i64> = vec![0, 1, -1, 42, -42, i64::MAX / 2, i64::MIN / 2 + 1, 12345];
 
-        let mut b = vec![0u64; 4 * n];
+        let mut b = vec![0u64; 3 * n];
         b_ntt126_ifma_from_znx64_ref(n, &mut b, &coeffs);
 
         let mut result = vec![0i128; n];
