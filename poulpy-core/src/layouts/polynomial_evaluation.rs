@@ -380,14 +380,40 @@ where
     pub fn decompose_bsgs_with<C>(
         &self,
         strategy: SplitStrategy,
+        encode: impl FnMut(&[F]) -> Result<C>,
+    ) -> Result<BSGSPolynomial<C>> {
+        let log_split = split_for_strategy(strategy, self.degree(), self.parity, self.basis);
+        let split_leading = matches!(strategy, SplitStrategy::MinDepth);
+        self.decompose_bsgs_inner(log_split, split_leading, encode)
+    }
+
+    /// Returns the BSGS `log_split` (so `base = 1 << log_split`) the given
+    /// `strategy` selects for this polynomial.
+    pub fn bsgs_log_split(&self, strategy: SplitStrategy) -> usize {
+        split_for_strategy(strategy, self.degree(), self.parity, self.basis)
+    }
+
+    /// Like [`Self::decompose_bsgs_with`] but with a caller-supplied `log_split`
+    /// instead of one chosen by a [`SplitStrategy`]. Used by adaptive evaluation
+    /// to force the low branch onto the high branch's baby-step `base`.
+    pub fn decompose_bsgs_with_log_split<C>(
+        &self,
+        log_split: usize,
+        encode: impl FnMut(&[F]) -> Result<C>,
+    ) -> Result<BSGSPolynomial<C>> {
+        self.decompose_bsgs_inner(log_split, false, encode)
+    }
+
+    fn decompose_bsgs_inner<C>(
+        &self,
+        log_split: usize,
+        split_leading: bool,
         mut encode: impl FnMut(&[F]) -> Result<C>,
     ) -> Result<BSGSPolynomial<C>> {
         ensure!(self.degree() >= 1, "polynomial must have degree ≥ 1");
 
         let degree = self.degree();
-        let log_split = split_for_strategy(strategy, degree, self.parity, self.basis);
         let base = 1usize << log_split;
-        let split_leading = matches!(strategy, SplitStrategy::MinDepth);
 
         let mut baby_steps = Vec::new();
         decompose_bsgs_coeffs(

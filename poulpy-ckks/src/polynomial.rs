@@ -61,15 +61,15 @@ pub trait EncodeBSGS {
         strategy: SplitStrategy,
     ) -> Result<BSGSPolynomial<CKKSPlaintext<Vec<u8>>>>;
 
-    /// Splits a Chebyshev polynomial at degree `split` for adaptive evaluation.
-    /// Errors unless the basis is Chebyshev, `0 < split <= degree`, and
-    /// `0 < drop < coeff_meta.log_delta`.
+    /// Splits a Chebyshev polynomial for adaptive evaluation at the BSGS
+    /// baby-step `base`: the low branch (degrees `< base`) stays full-scale, the
+    /// high branch is compensated by `2^drop` at reduced scale. Errors unless the
+    /// basis is Chebyshev, `base <= degree`, and `0 < drop < coeff_meta.log_delta`.
     fn encode_bsgs_adaptive(
         &self,
         module: &Module<HostBytesBackend>,
         base2k: Base2K,
         coeff_meta: CKKSMeta,
-        split: usize,
         drop: usize,
         strategy: SplitStrategy,
     ) -> Result<AdaptiveBSGS<CKKSPlaintext<Vec<u8>>>>;
@@ -111,7 +111,6 @@ where
         module: &Module<HostBytesBackend>,
         base2k: Base2K,
         coeff_meta: CKKSMeta,
-        split: usize,
         drop: usize,
         strategy: SplitStrategy,
     ) -> Result<AdaptiveBSGS<CKKSPlaintext<Vec<u8>>>> {
@@ -121,23 +120,28 @@ where
             "encode_bsgs_adaptive: requires the Chebyshev basis"
         );
         ensure!(
-            split > 0 && split <= degree,
-            "encode_bsgs_adaptive: split must be in (0, degree={degree}]"
-        );
-        ensure!(
             drop > 0 && drop < coeff_meta.log_delta,
             "encode_bsgs_adaptive: drop must be in (0, coeff_meta.log_delta={})",
             coeff_meta.log_delta
         );
 
+        // Split at the BSGS baby-step boundary so the low branch is a single
+        // baby block (degrees < base).
+        let log_split = self.bsgs_log_split(strategy);
+        let base = 1usize << log_split;
+        ensure!(
+            base <= degree,
+            "encode_bsgs_adaptive: baby-step base={base} exceeds degree={degree}; polynomial too small for adaptive split"
+        );
+
         let compensation = F::from_f64(2.0).expect("f64 to scalar").powi(drop as i32);
         let mut low_coeffs = self.coeffs.clone();
-        low_coeffs.truncate(split);
+        low_coeffs.truncate(base);
         let mut high_coeffs = self.coeffs.clone();
-        for c in high_coeffs.iter_mut().take(split) {
+        for c in high_coeffs.iter_mut().take(base) {
             *c = F::zero();
         }
-        for c in high_coeffs.iter_mut().skip(split) {
+        for c in high_coeffs.iter_mut().skip(base) {
             *c = *c * compensation;
         }
 
@@ -146,8 +150,14 @@ where
             log_budget: coeff_meta.log_budget,
             log_sparsity: coeff_meta.log_sparsity,
         };
+        // Force the low branch onto the high branch's `base` (a single baby step).
         let low = Polynomial::new_with_parity(self.basis, low_coeffs, self.parity)
-            .encode_bsgs_with(module, base2k, coeff_meta, strategy)?;
+            .decompose_bsgs_with_log_split(log_split, |baby_coeffs| {
+                let mut pt = module.ckks_pt_coeffs_alloc(baby_coeffs.len(), base2k, coeff_meta);
+                pt.encode_host_floats(baby_coeffs)
+                    .map_err(|e| anyhow!("encode_bsgs_adaptive: low branch: {e}"))?;
+                Ok(pt)
+            })?;
         let high = Polynomial::new_with_parity(self.basis, high_coeffs, self.parity)
             .encode_bsgs_with(module, base2k, high_meta, strategy)?;
         Ok(AdaptiveBSGS { low, high, drop })

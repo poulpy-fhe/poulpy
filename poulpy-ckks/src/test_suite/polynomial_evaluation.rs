@@ -9,7 +9,7 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
-    api::CKKSAdaptivePolynomialEvaluation,
+    api::{AdaptiveEvalMode, CKKSAdaptivePolynomialEvaluation},
     encoding::reim::Encoder,
     layouts::{CKKSCiphertext, CKKSPlaintext, CKKSPlaintextVecHostCodec},
     leveled::api::{CKKSMulOps, PolynomialEvaluation},
@@ -353,7 +353,6 @@ pub fn test_encode_bsgs_adaptive_reconstructs<BE, F, E>(
     E: NegacyclicFFT<F>,
 {
     let degree = 31usize;
-    let split = 16usize;
     let drop = 10usize;
     let poly = Polynomial::chebyshev_interpolate(degree, -F::one(), F::one(), |x: F| x.sin())
         .expect("degree-31 Chebyshev interpolation of sin(x) should succeed");
@@ -363,14 +362,7 @@ pub fn test_encode_bsgs_adaptive_reconstructs<BE, F, E>(
         ..Default::default()
     };
     let adaptive = poly
-        .encode_bsgs_adaptive(
-            host_module,
-            params.base2k.into(),
-            coeff_meta,
-            split,
-            drop,
-            DEFAULT_SPLIT_STRATEGY,
-        )
+        .encode_bsgs_adaptive(host_module, params.base2k.into(), coeff_meta, drop, DEFAULT_SPLIT_STRATEGY)
         .expect("adaptive split should succeed");
 
     assert_eq!(adaptive.high().degree(), degree, "high branch must keep the full degree");
@@ -406,8 +398,7 @@ pub fn test_encode_bsgs_adaptive_rejects_invalid_args<BE, F, E>(
     F: TestScalar,
     E: NegacyclicFFT<F>,
 {
-    let degree = 7usize;
-    let split = 4usize;
+    let degree = 31usize;
     let drop = 3usize;
     let coeff_meta = CKKSMeta {
         log_delta: 20,
@@ -417,43 +408,22 @@ pub fn test_encode_bsgs_adaptive_rejects_invalid_args<BE, F, E>(
     let cheb = Polynomial::chebyshev_interpolate(degree, -F::one(), F::one(), |x: F| x.sin()).unwrap();
     let monomial = Polynomial::new(Basis::Monomial, vec![F::one(), F::one()]);
 
-    let err = match monomial.encode_bsgs_adaptive(
-        host_module,
-        params.base2k.into(),
-        coeff_meta,
-        split,
-        drop,
-        DEFAULT_SPLIT_STRATEGY,
-    ) {
+    let err = match monomial.encode_bsgs_adaptive(host_module, params.base2k.into(), coeff_meta, drop, DEFAULT_SPLIT_STRATEGY) {
         Ok(_) => panic!("monomial adaptive encoding should fail"),
         Err(err) => err,
     };
     assert!(err.to_string().contains("requires the Chebyshev basis"));
 
-    for bad_split in [0usize, degree + 1] {
-        let err = match cheb.encode_bsgs_adaptive(
-            host_module,
-            params.base2k.into(),
-            coeff_meta,
-            bad_split,
-            drop,
-            DEFAULT_SPLIT_STRATEGY,
-        ) {
-            Ok(_) => panic!("adaptive encoding should reject split={bad_split}"),
-            Err(err) => err,
-        };
-        assert!(err.to_string().contains("split must be in"));
-    }
+    // A polynomial whose degree is below the baby-step base has no high branch.
+    let tiny = Polynomial::chebyshev_interpolate(1usize, -F::one(), F::one(), |x: F| x.sin()).unwrap();
+    let err = match tiny.encode_bsgs_adaptive(host_module, params.base2k.into(), coeff_meta, drop, DEFAULT_SPLIT_STRATEGY) {
+        Ok(_) => panic!("adaptive encoding should reject a degree below the baby-step base"),
+        Err(err) => err,
+    };
+    assert!(err.to_string().contains("exceeds degree"));
 
     for bad_drop in [0usize, coeff_meta.log_delta] {
-        let err = match cheb.encode_bsgs_adaptive(
-            host_module,
-            params.base2k.into(),
-            coeff_meta,
-            split,
-            bad_drop,
-            DEFAULT_SPLIT_STRATEGY,
-        ) {
+        let err = match cheb.encode_bsgs_adaptive(host_module, params.base2k.into(), coeff_meta, bad_drop, DEFAULT_SPLIT_STRATEGY) {
             Ok(_) => panic!("adaptive encoding should reject drop={bad_drop}"),
             Err(err) => err,
         };
@@ -566,7 +536,6 @@ pub fn test_eval_poly_adaptive_drop_granularity<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let degree = 31usize;
-    let split = 4usize;
     let log_delta = params.prec.log_delta;
     let depth = (degree + 1).next_power_of_two().trailing_zeros() as usize;
     let k = log_delta * (2 + depth);
@@ -614,23 +583,25 @@ pub fn test_eval_poly_adaptive_drop_granularity<BE, F, E>(
         )
         .unwrap();
 
+    for mode in [AdaptiveEvalMode::Default, AdaptiveEvalMode::DoubleModulusSaving] {
     let mut previous_budget = res_mono.log_budget();
     for drop in [1usize, 2, 3, 4] {
         let adaptive_host = poly
-            .encode_bsgs_adaptive(host_module, base2k.into(), coeff_meta, split, drop, DEFAULT_SPLIT_STRATEGY)
+            .encode_bsgs_adaptive(host_module, base2k.into(), coeff_meta, drop, DEFAULT_SPLIT_STRATEGY)
             .unwrap();
         let adaptive: AdaptiveBSGS<CKKSPlaintext<BE::OwnedBuf>> = adaptive_host.map_baby_steps_ref(|pt| upload_pt(module, pt));
         let mut res_ad = alloc_ct(&params, module, k);
         module
-            .ckks_eval_poly_real_const_coeffs_adaptive(&mut res_ad, &x_ct, &adaptive, &tsk, &mut scratch.borrow())
+            .ckks_eval_poly_real_const_coeffs_adaptive(&mut res_ad, &x_ct, &adaptive, mode, &tsk, &mut scratch.borrow())
             .unwrap();
         assert!(
             res_ad.log_budget() > previous_budget,
-            "drop={drop}: expected strictly increasing output budget (prev={}, got={})",
+            "mode={mode:?} drop={drop}: expected strictly increasing output budget (prev={}, got={})",
             previous_budget,
             res_ad.log_budget()
         );
         previous_budget = res_ad.log_budget();
+    }
     }
 }
 
@@ -656,7 +627,6 @@ pub fn test_eval_poly_adaptive_chebyshev<BE, F, E>(
     let (x_re_raw, _) = test_vector_1::<F>(m); // x in [-1, 1]
     let x_im_raw = vec![F::zero(); m];
 
-    let split = 8usize;
     let drop = 3usize;
     let log_delta = 40usize;
 
@@ -716,16 +686,6 @@ pub fn test_eval_poly_adaptive_chebyshev<BE, F, E>(
                     &mut scratch.borrow(),
                 )
                 .unwrap();
-            let adaptive_host = poly
-                .encode_bsgs_adaptive(host_module, base2k.into(), coeff_meta, split, drop, DEFAULT_SPLIT_STRATEGY)
-                .unwrap();
-            let adaptive: AdaptiveBSGS<CKKSPlaintext<BE::OwnedBuf>> =
-                adaptive_host.map_baby_steps_ref(|pt| upload_pt(module, pt));
-            let mut res_ad = alloc_ct(&params, module, k);
-            module
-                .ckks_eval_poly_real_const_coeffs_adaptive(&mut res_ad, &x_ct, &adaptive, &tsk, &mut scratch.borrow())
-                .unwrap();
-
             let zeros = vec![F::zero(); m];
             assert_decrypt_precision_at_log_delta(
                 &format!("{name} deg={degree} mono"),
@@ -739,24 +699,36 @@ pub fn test_eval_poly_adaptive_chebyshev<BE, F, E>(
                 log_delta,
                 &mut scratch.borrow(),
             );
-            assert_decrypt_precision_at_log_delta(
-                &format!("{name} deg={degree} adaptive"),
-                &params,
-                module,
-                &encoder,
-                &res_ad,
-                &sk,
-                &want,
-                &zeros,
-                log_delta,
-                &mut scratch.borrow(),
-            );
-            assert!(
-                res_ad.log_budget() > res_mono.log_budget(),
-                "{name} deg={degree}: adaptive must consume less modulus (adaptive budget={}, mono budget={})",
-                res_ad.log_budget(),
-                res_mono.log_budget()
-            );
+
+            let adaptive_host = poly
+                .encode_bsgs_adaptive(host_module, base2k.into(), coeff_meta, drop, DEFAULT_SPLIT_STRATEGY)
+                .unwrap();
+            let adaptive: AdaptiveBSGS<CKKSPlaintext<BE::OwnedBuf>> =
+                adaptive_host.map_baby_steps_ref(|pt| upload_pt(module, pt));
+            for mode in [AdaptiveEvalMode::Default, AdaptiveEvalMode::DoubleModulusSaving] {
+                let mut res_ad = alloc_ct(&params, module, k);
+                module
+                    .ckks_eval_poly_real_const_coeffs_adaptive(&mut res_ad, &x_ct, &adaptive, mode, &tsk, &mut scratch.borrow())
+                    .unwrap();
+                assert_decrypt_precision_at_log_delta(
+                    &format!("{name} deg={degree} adaptive {mode:?}"),
+                    &params,
+                    module,
+                    &encoder,
+                    &res_ad,
+                    &sk,
+                    &want,
+                    &zeros,
+                    log_delta,
+                    &mut scratch.borrow(),
+                );
+                assert!(
+                    res_ad.log_budget() > res_mono.log_budget(),
+                    "{name} deg={degree} {mode:?}: adaptive must consume less modulus (adaptive budget={}, mono budget={})",
+                    res_ad.log_budget(),
+                    res_mono.log_budget()
+                );
+            }
         }
     }
 }
