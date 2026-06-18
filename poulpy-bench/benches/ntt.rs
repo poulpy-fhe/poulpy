@@ -132,7 +132,7 @@ pub fn bench_ntt_ifma(c: &mut Criterion) {
     let mut group = c.benchmark_group(group_name);
 
     fn runner(n: usize) -> impl FnMut() {
-        let mut values: Vec<u64> = vec![0u64; 4 * n];
+        let mut values: Vec<u64> = vec![0u64; 3 * n];
         values.iter_mut().enumerate().for_each(|(i, x)| *x = (i + 1) as u64);
         let table: Ntt126IfmaTable<Primes42> = Ntt126IfmaTable::<Primes42>::new(n);
         move || {
@@ -179,7 +179,7 @@ pub fn bench_intt_ifma(c: &mut Criterion) {
     let mut group = c.benchmark_group(group_name);
 
     fn runner(n: usize) -> impl FnMut() {
-        let mut values: Vec<u64> = vec![0u64; 4 * n];
+        let mut values: Vec<u64> = vec![0u64; 3 * n];
         values.iter_mut().enumerate().for_each(|(i, x)| *x = (i + 1) as u64);
         let table: Ntt126IfmaTableInv<Primes42> = Ntt126IfmaTableInv::<Primes42>::new(n);
         move || {

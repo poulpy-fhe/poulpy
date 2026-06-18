@@ -153,12 +153,10 @@ mod ntt126_ifma_tests {
 
     // NTT size-range coverage.
     //
-    // The IFMA NTT runs outer levels breadth-first while `nn > NTT_BLOCK`,
-    // then switches to block-local depth-first for the inner levels.  For
-    // `n <= NTT_BLOCK` no breadth-first pass runs at all.  These suites
-    // exercise both regimes (block-local only for small `n`; mixed for
-    // larger `n`) and the transition sizes, confirming bit-exact agreement
-    // with the reference backend.
+    // The planar IFMA NTT runs breadth-first level loops with fused head/tail
+    // stages. These sizes cover the scalar-only edges, the fused tail, and
+    // larger mixed-width levels, confirming bit-exact agreement with the
+    // reference backend.
 
     // n = 1024: only block-local inner levels run.
     cross_backend_test_suite! {
@@ -239,12 +237,12 @@ mod ntt126_ifma_tests {
         ];
 
         fn fill_b_format(dst: &mut [u64], values: &[u128], q: &[u64; 3]) {
+            let n = values.len();
             for (i, &value) in values.iter().enumerate() {
                 for k in 0..3 {
                     let residue = (value % q[k] as u128) as u64;
-                    dst[4 * i + k] = if (i + k).is_multiple_of(2) { residue } else { residue + q[k] };
+                    dst[k * n + i] = if (i + k).is_multiple_of(2) { residue } else { residue + q[k] };
                 }
-                dst[4 * i + 3] = 0;
             }
         }
 
@@ -257,11 +255,11 @@ mod ntt126_ifma_tests {
         }
 
         let n = values.len();
-        let mut b = vec![0u64; 4 * n];
+        let mut b = vec![0u64; 3 * n];
         fill_b_format(&mut b, &values, &Q);
         assert_matches_ref(n, &b);
 
-        let mut skewed = vec![0u64; 4 * n + 1];
+        let mut skewed = vec![0u64; 3 * n + 1];
         fill_b_format(&mut skewed[1..], &values, &Q);
         assert_matches_ref(n, &skewed[1..]);
     }

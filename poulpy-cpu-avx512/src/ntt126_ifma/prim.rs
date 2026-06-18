@@ -2,29 +2,28 @@
 //!
 //! This module connects the IFMA backend type to the low-level reference IFMA traits:
 //! NTT execution, b/c domain conversion, BBC multiply-accumulate, and basic
-//! transform-domain arithmetic on the shared 4-lane prep scalar.
+//! transform-domain arithmetic on the planar 3-prime prep representation.
 
 use crate::ntt126_ifma::{
     bbc_meta::Bbc126IfmaMeta,
-    primes::Primes42,
+    primes::{PrimeSetNtt126Ifma, Primes42},
     tables::{Ntt126IfmaTable, Ntt126IfmaTableInv},
     traits::{
         Ntt126IfmaAdd, Ntt126IfmaAddAssign, Ntt126IfmaCFromB, Ntt126IfmaCopy, Ntt126IfmaDFTExecute, Ntt126IfmaFromZnx64,
         Ntt126IfmaMulBbc, Ntt126IfmaNegate, Ntt126IfmaNegateAssign, Ntt126IfmaSub, Ntt126IfmaSubAssign,
         Ntt126IfmaSubNegateAssign, Ntt126IfmaToZnx128, Ntt126IfmaZero,
     },
-    types::Q_SHIFTED_NTT126IFMA,
 };
-
-use super::mat_vec_ifma::vec_mat1col_product_bbc_ifma;
-
-use super::kernels::{cond_sub_2q_si256, cond_sub_2q_si512, intt_avx512, ntt_avx512};
 
 use core::arch::x86_64::{
     __m256i, __m512i, _mm256_add_epi64, _mm256_and_si256, _mm256_cmpgt_epi64, _mm256_loadu_si256, _mm256_mul_epu32,
-    _mm256_set_epi64x, _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_srli_epi64, _mm256_storeu_si256, _mm256_sub_epi64,
-    _mm512_add_epi64, _mm512_loadu_si512, _mm512_storeu_si512, _mm512_sub_epi64,
+    _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_srli_epi64, _mm256_storeu_si256, _mm512_add_epi64, _mm512_and_si512,
+    _mm512_cmpgt_epi64_mask, _mm512_loadu_si512, _mm512_maskz_mov_epi64, _mm512_mul_epu32, _mm512_set1_epi64,
+    _mm512_setzero_si512, _mm512_srli_epi64, _mm512_storeu_si512,
 };
+
+use super::kernels::{cond_sub_2q_si256, cond_sub_2q_si512, intt_avx512, ntt_avx512};
+use super::mat_vec_ifma::vec_mat1col_product_bbc_ifma;
 
 use poulpy_cpu_ref::reference::ntt120::{
     NttAdd, NttAddAssign, NttCopy, NttNegate, NttNegateAssign, NttSub, NttSubAssign, NttSubNegateAssign, NttZero,
@@ -32,177 +31,95 @@ use poulpy_cpu_ref::reference::ntt120::{
 
 use crate::NTT126Ifma;
 
-/// Q_SHIFTED_NTT126IFMA as 256-bit: `[2*Q[0], 2*Q[1], 2*Q[2], 0]`.
-fn q2_vec() -> __m256i {
-    unsafe { _mm256_loadu_si256(Q_SHIFTED_NTT126IFMA.as_ptr() as *const __m256i) }
-}
-
-/// Q_SHIFTED_NTT126IFMA duplicated for 512-bit: `[2Q0,2Q1,2Q2,0, 2Q0,2Q1,2Q2,0]`.
-const Q2_512: [u64; 8] = {
-    let q = <Primes42 as crate::ntt126_ifma::primes::PrimeSetNtt126Ifma>::Q;
-    [2 * q[0], 2 * q[1], 2 * q[2], 0, 2 * q[0], 2 * q[1], 2 * q[2], 0]
-};
-
-/// Generic pattern for DFT-domain operations: 512-bit main loop + 256-bit tail.
-/// This macro avoids repeating the 512/256 dispatch for each operation variant.
-macro_rules! dft_op_512 {
-    // 3-operand: res = f(a, b)
-    (res=$res:ident, a=$a:ident, b=$b:ident, op512=$op512:expr, op256=$op256:expr) => {{
-        let n = $res.len() / 4;
-        let pairs = n / 2;
-        let res_512 = $res.as_mut_ptr() as *mut __m512i;
-        let a_512 = $a.as_ptr() as *const __m512i;
-        let b_512 = $b.as_ptr() as *const __m512i;
-        let q2_512v = _mm512_loadu_si512(Q2_512.as_ptr() as *const __m512i);
-        for i in 0..pairs {
-            let av = _mm512_loadu_si512(a_512.add(i));
-            let bv = _mm512_loadu_si512(b_512.add(i));
-            _mm512_storeu_si512(res_512.add(i), $op512(av, bv, q2_512v));
-        }
-        if n % 2 != 0 {
-            let idx = n - 1;
-            let res_256 = $res.as_mut_ptr() as *mut __m256i;
-            let a_256 = $a.as_ptr() as *const __m256i;
-            let b_256 = $b.as_ptr() as *const __m256i;
-            let q2 = q2_vec();
-            let av = _mm256_loadu_si256(a_256.add(idx));
-            let bv = _mm256_loadu_si256(b_256.add(idx));
-            _mm256_storeu_si256(res_256.add(idx), $op256(av, bv, q2));
-        }
-    }};
-    // 2-operand inplace: res = f(res, a)
-    (res_assign=$res:ident, a=$a:ident, op512=$op512:expr, op256=$op256:expr) => {{
-        let n = $res.len() / 4;
-        let pairs = n / 2;
-        let res_512 = $res.as_mut_ptr() as *mut __m512i;
-        let a_512 = $a.as_ptr() as *const __m512i;
-        let q2_512v = _mm512_loadu_si512(Q2_512.as_ptr() as *const __m512i);
-        for i in 0..pairs {
-            let rv = _mm512_loadu_si512(res_512.add(i) as *const __m512i);
-            let av = _mm512_loadu_si512(a_512.add(i));
-            _mm512_storeu_si512(res_512.add(i), $op512(rv, av, q2_512v));
-        }
-        if n % 2 != 0 {
-            let idx = n - 1;
-            let res_256 = $res.as_mut_ptr() as *mut __m256i;
-            let a_256 = $a.as_ptr() as *const __m256i;
-            let q2 = q2_vec();
-            let rv = _mm256_loadu_si256(res_256.add(idx) as *const __m256i);
-            let av = _mm256_loadu_si256(a_256.add(idx));
-            _mm256_storeu_si256(res_256.add(idx), $op256(rv, av, q2));
-        }
-    }};
-    // 1-operand inplace negate: res = f(res)
-    (negate_assign=$res:ident, op512=$op512:expr, op256=$op256:expr) => {{
-        let n = $res.len() / 4;
-        let pairs = n / 2;
-        let res_512 = $res.as_mut_ptr() as *mut __m512i;
-        let q2_512v = _mm512_loadu_si512(Q2_512.as_ptr() as *const __m512i);
-        for i in 0..pairs {
-            let rv = _mm512_loadu_si512(res_512.add(i) as *const __m512i);
-            _mm512_storeu_si512(res_512.add(i), $op512(rv, q2_512v));
-        }
-        if n % 2 != 0 {
-            let idx = n - 1;
-            let res_256 = $res.as_mut_ptr() as *mut __m256i;
-            let q2 = q2_vec();
-            let rv = _mm256_loadu_si256(res_256.add(idx) as *const __m256i);
-            _mm256_storeu_si256(res_256.add(idx), $op256(rv, q2));
-        }
-    }};
-}
-
 #[target_feature(enable = "avx512f")]
 unsafe fn simd_add(res: &mut [u64], a: &[u64], b: &[u64]) {
-    unsafe {
-        dft_op_512!(
-            res = res,
-            a = a,
-            b = b,
-            op512 = |av: __m512i, bv: __m512i, q2: __m512i| cond_sub_2q_si512(_mm512_add_epi64(av, bv), q2),
-            op256 = |av: __m256i, bv: __m256i, q2: __m256i| cond_sub_2q_si256(_mm256_add_epi64(av, bv), q2)
-        );
+    let n = res.len() / 3;
+    for p in 0..3 {
+        let q2 = 2 * Primes42::Q[p];
+        let base = p * n;
+        for i in 0..n {
+            let x = a[base + i] + b[base + i];
+            res[base + i] = if x >= q2 { x - q2 } else { x };
+        }
     }
 }
 
 #[target_feature(enable = "avx512f")]
 unsafe fn simd_add_assign(res: &mut [u64], a: &[u64]) {
-    unsafe {
-        dft_op_512!(
-            res_assign = res,
-            a = a,
-            op512 = |rv: __m512i, av: __m512i, q2: __m512i| cond_sub_2q_si512(_mm512_add_epi64(rv, av), q2),
-            op256 = |rv: __m256i, av: __m256i, q2: __m256i| cond_sub_2q_si256(_mm256_add_epi64(rv, av), q2)
-        );
+    let n = res.len() / 3;
+    for p in 0..3 {
+        let q2 = 2 * Primes42::Q[p];
+        let base = p * n;
+        for i in 0..n {
+            let x = res[base + i] + a[base + i];
+            res[base + i] = if x >= q2 { x - q2 } else { x };
+        }
     }
 }
 
 #[target_feature(enable = "avx512f")]
 unsafe fn simd_sub(res: &mut [u64], a: &[u64], b: &[u64]) {
-    unsafe {
-        dft_op_512!(
-            res = res,
-            a = a,
-            b = b,
-            op512 = |av: __m512i, bv: __m512i, q2: __m512i| cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(av, q2), bv), q2),
-            op256 = |av: __m256i, bv: __m256i, q2: __m256i| cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(av, q2), bv), q2)
-        );
+    let n = res.len() / 3;
+    for p in 0..3 {
+        let q2 = 2 * Primes42::Q[p];
+        let base = p * n;
+        for i in 0..n {
+            let x = a[base + i] + q2 - b[base + i];
+            res[base + i] = if x >= q2 { x - q2 } else { x };
+        }
     }
 }
 
 #[target_feature(enable = "avx512f")]
 unsafe fn simd_sub_assign(res: &mut [u64], a: &[u64]) {
-    unsafe {
-        dft_op_512!(
-            res_assign = res,
-            a = a,
-            op512 = |rv: __m512i, av: __m512i, q2: __m512i| cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(rv, q2), av), q2),
-            op256 = |rv: __m256i, av: __m256i, q2: __m256i| cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(rv, q2), av), q2)
-        );
+    let n = res.len() / 3;
+    for p in 0..3 {
+        let q2 = 2 * Primes42::Q[p];
+        let base = p * n;
+        for i in 0..n {
+            let x = res[base + i] + q2 - a[base + i];
+            res[base + i] = if x >= q2 { x - q2 } else { x };
+        }
     }
 }
 
 #[target_feature(enable = "avx512f")]
 unsafe fn simd_sub_negate_assign(res: &mut [u64], a: &[u64]) {
-    unsafe {
-        dft_op_512!(
-            res_assign = res,
-            a = a,
-            op512 = |rv: __m512i, av: __m512i, q2: __m512i| cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(av, q2), rv), q2),
-            op256 = |rv: __m256i, av: __m256i, q2: __m256i| cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(av, q2), rv), q2)
-        );
+    let n = res.len() / 3;
+    for p in 0..3 {
+        let q2 = 2 * Primes42::Q[p];
+        let base = p * n;
+        for i in 0..n {
+            let x = a[base + i] + q2 - res[base + i];
+            res[base + i] = if x >= q2 { x - q2 } else { x };
+        }
     }
 }
 
 #[target_feature(enable = "avx512f")]
 unsafe fn simd_negate(res: &mut [u64], a: &[u64]) {
-    unsafe {
-        dft_op_512!(
-            res = res,
-            a = a,
-            b = a,
-            op512 = |av: __m512i, _bv: __m512i, q2: __m512i| cond_sub_2q_si512(_mm512_sub_epi64(q2, av), q2),
-            op256 = |av: __m256i, _bv: __m256i, q2: __m256i| cond_sub_2q_si256(_mm256_sub_epi64(q2, av), q2)
-        );
+    let n = res.len() / 3;
+    for p in 0..3 {
+        let q2 = 2 * Primes42::Q[p];
+        let base = p * n;
+        for i in 0..n {
+            let x = q2 - a[base + i];
+            res[base + i] = if x >= q2 { x - q2 } else { x };
+        }
     }
 }
 
 #[target_feature(enable = "avx512f")]
 unsafe fn simd_negate_assign(res: &mut [u64]) {
-    unsafe {
-        dft_op_512!(
-            negate_assign = res,
-            op512 = |rv: __m512i, q2: __m512i| cond_sub_2q_si512(_mm512_sub_epi64(q2, rv), q2),
-            op256 = |rv: __m256i, q2: __m256i| cond_sub_2q_si256(_mm256_sub_epi64(q2, rv), q2)
-        );
+    let n = res.len() / 3;
+    for p in 0..3 {
+        let q2 = 2 * Primes42::Q[p];
+        let base = p * n;
+        for i in 0..n {
+            let x = q2 - res[base + i];
+            res[base + i] = if x >= q2 { x - q2 } else { x };
+        }
     }
-}
-
-/// Q vector (not 2Q) for c_from_b reduction: `[Q[0], Q[1], Q[2], 0]`.
-fn q_vec() -> __m256i {
-    use crate::ntt126_ifma::primes::{PrimeSetNtt126Ifma, Primes42};
-    let q = <Primes42 as PrimeSetNtt126Ifma>::Q;
-    unsafe { _mm256_set_epi64x(0, q[2] as i64, q[1] as i64, q[0] as i64) }
 }
 
 /// `oq[k] = Q[k] - (2^63 mod Q[k])` for negative i64 handling.
@@ -217,24 +134,21 @@ const OQ_IFMA: [u64; 4] = {
     oq
 };
 
-/// `2^42 mod Q[k]` — used for two-pass modular reduction of values up to 2^63.
-///
-/// Since Q[k] ≈ 2^42, `2^42 mod Q[k] = 2^42 - Q[k]` which is small (< 2^23).
+/// `2^42 mod Q[k]` for two-pass reduction of signed 64-bit inputs.
 const POW42_MOD_Q_IFMA: [u64; 4] = {
     let q = <Primes42 as crate::ntt126_ifma::primes::PrimeSetNtt126Ifma>::Q;
     let pow42 = 1u64 << 42;
-    // All three primes are < 2^43, so pow42 mod Q[k] = pow42 - Q[k]
     [pow42 - q[0], pow42 - q[1], pow42 - q[2], 0]
 };
 
-/// SIMD: convert n i64 coefficients to 3-prime CRT b format.
+/// Convert n i64 coefficients to planar 3-prime CRT b format.
 ///
 /// For each i64 x:
 /// 1. Strip sign bit, conditionally add oq[k] for negative inputs
 /// 2. Two-pass reduction: split at bit 42, multiply high part by (2^42 mod Q),
 ///    add to low part, repeat. Final conditional subtract gives [0, Q).
 ///
-/// Result: `res[4*i+k] = a[i] mod Q[k]` for k in {0,1,2}, `res[4*i+3] = 0`.
+/// Result: `res[k*n+i] = a[i] mod Q[k]` for k in {0,1,2}.
 #[target_feature(enable = "avx512vl")]
 unsafe fn simd_b_from_znx64(n: usize, res: &mut [u64], a: &[i64]) {
     unsafe { simd_b_from_znx64_impl(n, res, a, !0i64) }
@@ -247,21 +161,66 @@ unsafe fn simd_b_from_znx64_masked(n: usize, res: &mut [u64], a: &[i64], mask: i
 }
 
 #[inline]
-#[target_feature(enable = "avx512vl")]
+#[target_feature(enable = "avx512f,avx512vl")]
 unsafe fn simd_b_from_znx64_impl(n: usize, res: &mut [u64], a: &[i64], mask: i64) {
+    debug_assert!(res.len() >= 3 * n);
+    debug_assert!(a.len() >= n);
     unsafe {
         let oq_vec = _mm256_loadu_si256(OQ_IFMA.as_ptr() as *const __m256i);
         let i64_max = _mm256_set1_epi64x(i64::MAX);
         let zero = _mm256_setzero_si256();
         let mask42 = _mm256_set1_epi64x((1i64 << 42) - 1);
         let pow42 = _mm256_loadu_si256(POW42_MOD_Q_IFMA.as_ptr() as *const __m256i);
-        let q = q_vec();
-        let lane3_zero = _mm256_set_epi64x(0, -1, -1, -1);
+        let q = _mm256_loadu_si256(Primes42::Q.as_ptr() as *const __m256i);
         let mask_vec = _mm256_set1_epi64x(mask);
-        let mut r_ptr = res.as_mut_ptr() as *mut __m256i;
+        let mut lanes = [0u64; 4];
+        let lanes_ptr = lanes.as_mut_ptr() as *mut __m256i;
 
-        for &xval in &a[..n] {
-            let xv = _mm256_and_si256(_mm256_set1_epi64x(xval), mask_vec);
+        let i64_max512 = _mm512_set1_epi64(i64::MAX);
+        let zero512 = _mm512_setzero_si512();
+        let mask42_512 = _mm512_set1_epi64((1i64 << 42) - 1);
+        let mask512 = _mm512_set1_epi64(mask);
+        let oq0_512 = _mm512_set1_epi64(OQ_IFMA[0] as i64);
+        let oq1_512 = _mm512_set1_epi64(OQ_IFMA[1] as i64);
+        let oq2_512 = _mm512_set1_epi64(OQ_IFMA[2] as i64);
+        let pow42_0_512 = _mm512_set1_epi64(POW42_MOD_Q_IFMA[0] as i64);
+        let pow42_1_512 = _mm512_set1_epi64(POW42_MOD_Q_IFMA[1] as i64);
+        let pow42_2_512 = _mm512_set1_epi64(POW42_MOD_Q_IFMA[2] as i64);
+        let q0_512 = _mm512_set1_epi64(Primes42::Q[0] as i64);
+        let q1_512 = _mm512_set1_epi64(Primes42::Q[1] as i64);
+        let q2_512 = _mm512_set1_epi64(Primes42::Q[2] as i64);
+        let mut i = 0usize;
+        while i + 8 <= n {
+            let xv = _mm512_and_si512(_mm512_loadu_si512(a.as_ptr().add(i) as *const __m512i), mask512);
+            let xl = _mm512_and_si512(xv, i64_max512);
+            let sign = _mm512_cmpgt_epi64_mask(zero512, xv);
+
+            let reduce = |oq: __m512i, pow42: __m512i, q: __m512i| {
+                let val = _mm512_add_epi64(xl, _mm512_maskz_mov_epi64(sign, oq));
+                let hi = _mm512_srli_epi64::<42>(val);
+                let lo = _mm512_and_si512(val, mask42_512);
+                let y = _mm512_add_epi64(_mm512_mul_epu32(hi, pow42), lo);
+
+                let hi2 = _mm512_srli_epi64::<42>(y);
+                let lo2 = _mm512_and_si512(y, mask42_512);
+                let z = _mm512_add_epi64(_mm512_mul_epu32(hi2, pow42), lo2);
+                cond_sub_2q_si512(z, q)
+            };
+
+            _mm512_storeu_si512(res.as_mut_ptr().add(i) as *mut __m512i, reduce(oq0_512, pow42_0_512, q0_512));
+            _mm512_storeu_si512(
+                res.as_mut_ptr().add(n + i) as *mut __m512i,
+                reduce(oq1_512, pow42_1_512, q1_512),
+            );
+            _mm512_storeu_si512(
+                res.as_mut_ptr().add(2 * n + i) as *mut __m512i,
+                reduce(oq2_512, pow42_2_512, q2_512),
+            );
+            i += 8;
+        }
+
+        while i < n {
+            let xv = _mm256_and_si256(_mm256_set1_epi64x(a[i]), mask_vec);
             let xl = _mm256_and_si256(xv, i64_max);
             let sign = _mm256_cmpgt_epi64(zero, xv);
             let add = _mm256_and_si256(sign, oq_vec);
@@ -275,39 +234,33 @@ unsafe fn simd_b_from_znx64_impl(n: usize, res: &mut [u64], a: &[i64], mask: i64
             let lo2 = _mm256_and_si256(y, mask42);
             let z = _mm256_add_epi64(_mm256_mul_epu32(hi2, pow42), lo2);
 
-            let result = cond_sub_2q_si256(z, q);
-            let result = _mm256_and_si256(result, lane3_zero);
-
-            _mm256_storeu_si256(r_ptr, result);
-            r_ptr = r_ptr.add(1);
+            _mm256_storeu_si256(lanes_ptr, cond_sub_2q_si256(z, q));
+            res[i] = lanes[0];
+            res[n + i] = lanes[1];
+            res[2 * n + i] = lanes[2];
+            i += 1;
         }
     }
 }
 
-/// AVX-512: reduce b-format values in [0, 2q) to c-format values in [0, q).
-/// Uses 512-bit main loop (2 coefficients per iteration).
+/// Reduce planar b-format values in [0, 2q) to planar c-format values in [0, q).
 #[target_feature(enable = "avx512f")]
 unsafe fn simd_c_from_b(n: usize, res: &mut [u64], a: &[u64]) {
     unsafe {
-        let q_512 = {
-            let q = <Primes42 as crate::ntt126_ifma::primes::PrimeSetNtt126Ifma>::Q;
-            let arr: [u64; 8] = [q[0], q[1], q[2], 0, q[0], q[1], q[2], 0];
-            _mm512_loadu_si512(arr.as_ptr() as *const __m512i)
-        };
-        let res_512 = res.as_mut_ptr() as *mut __m512i;
-        let a_512 = a.as_ptr() as *const __m512i;
-        let pairs = n / 2;
-        for i in 0..pairs {
-            let av = _mm512_loadu_si512(a_512.add(i));
-            _mm512_storeu_si512(res_512.add(i), cond_sub_2q_si512(av, q_512));
-        }
-        if !n.is_multiple_of(2) {
-            let idx = n - 1;
-            let res_256 = res.as_mut_ptr() as *mut __m256i;
-            let a_256 = a.as_ptr() as *const __m256i;
-            let q = q_vec();
-            let av = _mm256_loadu_si256(a_256.add(idx));
-            _mm256_storeu_si256(res_256.add(idx), cond_sub_2q_si256(av, q));
+        for p in 0..3 {
+            let q = _mm512_set1_epi64(Primes42::Q[p] as i64);
+            let base = p * n;
+            let mut i = 0usize;
+            while i + 8 <= n {
+                let av = _mm512_loadu_si512(a.as_ptr().add(base + i) as *const __m512i);
+                _mm512_storeu_si512(res.as_mut_ptr().add(base + i) as *mut __m512i, cond_sub_2q_si512(av, q));
+                i += 8;
+            }
+            while i < n {
+                let x = a[base + i];
+                res[base + i] = if x >= Primes42::Q[p] { x - Primes42::Q[p] } else { x };
+                i += 1;
+            }
         }
     }
 }

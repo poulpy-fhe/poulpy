@@ -16,7 +16,7 @@
 //!
 //! # Scalar types
 //!
-//! - `ScalarPrep = Q120bScalar` — shared 4-lane prep scalar (three active residues plus padding).
+//! - `ScalarPrep = Q126Scalar` — 24-byte marker for three planar prime residues.
 //! - `ScalarBig  = i128` — CRT-reconstructed large coefficients.
 
 pub(crate) mod bbc_meta;
@@ -48,7 +48,7 @@ mod tests;
 ///
 /// # Backend characteristics
 ///
-/// - **ScalarPrep**: `Q120bScalar` — shared 4-lane prep scalar with three CRT residues plus one padding lane.
+/// - **ScalarPrep**: `Q126Scalar` — 24-byte marker for three planar prime residues.
 /// - **ScalarBig**: `i128` — large-coefficient ring elements use 128-bit signed integers.
 /// - **Prime set**: `Primes42` (three ~42-bit primes, Q ≈ 2^126).
 ///

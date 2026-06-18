@@ -51,6 +51,9 @@ pub struct Ntt126IfmaTable<P: PrimeSetNtt126Ifma> {
     /// Packed twiddle factors: each entry is 8 u64.
     /// Layout: level-0 (n entries), then butterfly levels (halfnn-1 entries each).
     pub powomega: Vec<u64>,
+    /// Plane-contiguous twiddle factors for planar kernels.
+    /// Each segment is `[p0 omega][p1 omega][p2 omega][p0 quotient][p1 quotient][p2 quotient]`.
+    pub powomega_plane: Vec<u64>,
     _phantom: PhantomData<P>,
 }
 
@@ -62,6 +65,9 @@ pub struct Ntt126IfmaTableInv<P: PrimeSetNtt126Ifma> {
     /// Packed twiddle factors: butterfly levels (halfnn-1 entries each),
     /// then last-pass (n entries with ω^{-i}/n baked in).
     pub powomega: Vec<u64>,
+    /// Plane-contiguous twiddle factors for planar kernels.
+    /// Each segment is `[p0 omega][p1 omega][p2 omega][p0 quotient][p1 quotient][p2 quotient]`.
+    pub powomega_plane: Vec<u64>,
     _phantom: PhantomData<P>,
 }
 
@@ -126,6 +132,20 @@ fn store_twiddle_split<P: PrimeSetNtt126Ifma>(
     powomega[q + 3] = 0;
 }
 
+fn store_twiddle_plane<P: PrimeSetNtt126Ifma>(
+    powomega: &mut [u64],
+    omega_base: usize,
+    quot_base: usize,
+    count: usize,
+    idx: usize,
+    omega_vals: &[u64; 3],
+) {
+    for k in 0..3 {
+        powomega[omega_base + k * count + idx] = omega_vals[k];
+        powomega[quot_base + k * count + idx] = harvey_quotient(omega_vals[k], P::Q[k]);
+    }
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Forward NTT table construction
 // ──────────────────────────────────────────────────────────────────────────────
@@ -159,7 +179,10 @@ impl<P: PrimeSetNtt126Ifma> Ntt126IfmaTable<P> {
         // Total u64 count is same: 8 * total_entries
         let mut powomega: Vec<u64> = alloc_aligned::<u64>(8 * total_entries);
         powomega.resize(8 * total_entries, 0);
+        let mut powomega_plane: Vec<u64> = alloc_aligned::<u64>(6 * total_entries);
+        powomega_plane.resize(6 * total_entries, 0);
         let mut seg_base = 0usize; // base offset (in u64) for current segment
+        let mut plane_seg_base = 0usize;
 
         if n <= 1 {
             return Self {
@@ -167,6 +190,7 @@ impl<P: PrimeSetNtt126Ifma> Ntt126IfmaTable<P> {
                 q2,
                 q4,
                 powomega,
+                powomega_plane,
                 _phantom: PhantomData,
             };
         }
@@ -175,14 +199,18 @@ impl<P: PrimeSetNtt126Ifma> Ntt126IfmaTable<P> {
         {
             let omega_base = seg_base;
             let quot_base = seg_base + 4 * n;
+            let plane_omega_base = plane_seg_base;
+            let plane_quot_base = plane_seg_base + 3 * n;
             let mut pow_om: [u64; 3] = [1; 3]; // ω^0 = 1
             for i in 0..n {
                 store_twiddle_split::<P>(&mut powomega, omega_base, quot_base, i, &pow_om);
+                store_twiddle_plane::<P>(&mut powomega_plane, plane_omega_base, plane_quot_base, n, i, &pow_om);
                 for k in 0..3 {
                     pow_om[k] = ((pow_om[k] as u128 * omega_vec[k] as u128) % P::Q[k] as u128) as u64;
                 }
             }
             seg_base += 8 * n;
+            plane_seg_base += 6 * n;
         }
 
         // ── Butterfly levels: nn = n, n/2, …, 2 ─────────────────────────
@@ -193,16 +221,20 @@ impl<P: PrimeSetNtt126Ifma> Ntt126IfmaTable<P> {
                 let count = halfnn - 1;
                 let omega_base = seg_base;
                 let quot_base = seg_base + 4 * count;
+                let plane_omega_base = plane_seg_base;
+                let plane_quot_base = plane_seg_base + 3 * count;
                 let m = n / halfnn;
                 let omega_m: [u64; 3] = std::array::from_fn(|k| modq_pow64(omega_vec[k], m as i64, P::Q[k]));
                 let mut pow_om = omega_m;
                 for i in 0..count {
                     store_twiddle_split::<P>(&mut powomega, omega_base, quot_base, i, &pow_om);
+                    store_twiddle_plane::<P>(&mut powomega_plane, plane_omega_base, plane_quot_base, count, i, &pow_om);
                     for k in 0..3 {
                         pow_om[k] = ((pow_om[k] as u128 * omega_m[k] as u128) % P::Q[k] as u128) as u64;
                     }
                 }
                 seg_base += 8 * count;
+                plane_seg_base += 6 * count;
             }
             nn /= 2;
         }
@@ -212,6 +244,7 @@ impl<P: PrimeSetNtt126Ifma> Ntt126IfmaTable<P> {
             q2,
             q4,
             powomega,
+            powomega_plane,
             _phantom: PhantomData,
         }
     }
@@ -247,7 +280,10 @@ impl<P: PrimeSetNtt126Ifma> Ntt126IfmaTableInv<P> {
 
         let mut powomega: Vec<u64> = alloc_aligned::<u64>(8 * total_entries);
         powomega.resize(8 * total_entries, 0);
+        let mut powomega_plane: Vec<u64> = alloc_aligned::<u64>(6 * total_entries);
+        powomega_plane.resize(6 * total_entries, 0);
         let mut seg_base = 0usize;
+        let mut plane_seg_base = 0usize;
 
         if n <= 1 {
             return Self {
@@ -255,6 +291,7 @@ impl<P: PrimeSetNtt126Ifma> Ntt126IfmaTableInv<P> {
                 q2,
                 q4,
                 powomega,
+                powomega_plane,
                 _phantom: PhantomData,
             };
         }
@@ -267,16 +304,20 @@ impl<P: PrimeSetNtt126Ifma> Ntt126IfmaTableInv<P> {
                 let count = halfnn - 1;
                 let omega_base = seg_base;
                 let quot_base = seg_base + 4 * count;
+                let plane_omega_base = plane_seg_base;
+                let plane_quot_base = plane_seg_base + 3 * count;
                 let m = n / halfnn;
                 let omega_neg_m: [u64; 3] = std::array::from_fn(|k| modq_pow64(omega_vec[k], -(m as i64), P::Q[k]));
                 let mut pow_om = omega_neg_m;
                 for i in 0..count {
                     store_twiddle_split::<P>(&mut powomega, omega_base, quot_base, i, &pow_om);
+                    store_twiddle_plane::<P>(&mut powomega_plane, plane_omega_base, plane_quot_base, count, i, &pow_om);
                     for k in 0..3 {
                         pow_om[k] = ((pow_om[k] as u128 * omega_neg_m[k] as u128) % P::Q[k] as u128) as u64;
                     }
                 }
                 seg_base += 8 * count;
+                plane_seg_base += 6 * count;
             }
             nn *= 2;
         }
@@ -285,11 +326,14 @@ impl<P: PrimeSetNtt126Ifma> Ntt126IfmaTableInv<P> {
         {
             let omega_base = seg_base;
             let quot_base = seg_base + 4 * n;
+            let plane_omega_base = plane_seg_base;
+            let plane_quot_base = plane_seg_base + 3 * n;
             let omega_inv: [u64; 3] = std::array::from_fn(|k| modq_pow64(omega_vec[k], -1, P::Q[k]));
             let n_inv: [u64; 3] = std::array::from_fn(|k| modq_pow64(n as u64, -1, P::Q[k]));
             let mut pow_om = n_inv; // i=0: just n^{-1}
             for i in 0..n {
                 store_twiddle_split::<P>(&mut powomega, omega_base, quot_base, i, &pow_om);
+                store_twiddle_plane::<P>(&mut powomega_plane, plane_omega_base, plane_quot_base, n, i, &pow_om);
                 for k in 0..3 {
                     pow_om[k] = ((pow_om[k] as u128 * omega_inv[k] as u128) % P::Q[k] as u128) as u64;
                 }
@@ -301,6 +345,7 @@ impl<P: PrimeSetNtt126Ifma> Ntt126IfmaTableInv<P> {
             q2,
             q4,
             powomega,
+            powomega_plane,
             _phantom: PhantomData,
         }
     }
