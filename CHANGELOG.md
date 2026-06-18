@@ -45,7 +45,7 @@
 
 ### `poulpy-cpu-avx512`
 - Migrate the `NTT126Ifma` DFT-domain representation from the 4-lane array-of-structs layout (one `[u64; 4]` per coefficient, with three CRT residues and a padding lane) to a planar 3-prime layout (three contiguous residue planes per limb), removing the wasted fourth lane and the hand-written assembly CRT kernel (`vec_znx_dft_asm.s`).
-- Optimize the planar transforms for pass efficiency: mask the sub-8 butterfly remainders in the upper levels, process the radix-8 tail and head as eight transposed blocks per pass, fuse pairs of upper levels into single load/store radix-4 passes (forward DIF, inverse DIT), and fold the forward final normalization and the inverse level-0 untwist into adjacent butterfly stores. Together these roughly halve the raw NTT/iNTT cost at n = 2^15 and let the planar backend outperform the previous 4-lane layout on CKKS multiplication.
+- Optimize the planar transforms for pass efficiency: mask the sub-8 butterfly remainders in the upper levels, process the radix-8 tail and head as eight transposed blocks per pass, fuse pairs of upper levels into single load/store radix-4 passes (forward DIF, inverse DIT), and fold the forward final normalization and the inverse level-0 untwist into adjacent butterfly stores. Together these roughly halve the raw NTT/iNTT cost at log n = 15 and let the planar backend outperform the previous 4-lane layout on CKKS multiplication.
 - Vectorize the planar 3-prime CRT-to-i128 reconstruction in the iNTT consume path (`simd_b_ntt126_ifma_to_znx128`), replacing the per-lane scalar Garner reconstruction with an AVX-512-IFMA base-2^52 limb accumulation plus a scalar symmetric-range fix.
 
 ### `poulpy-bench`
