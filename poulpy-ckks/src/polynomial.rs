@@ -151,13 +151,15 @@ where
             log_sparsity: coeff_meta.log_sparsity,
         };
         // Force the low branch onto the high branch's `base` (a single baby step).
-        let low = Polynomial::new_with_parity(self.basis, low_coeffs, self.parity)
-            .decompose_bsgs_with_log_split(log_split, |baby_coeffs| {
+        let low = Polynomial::new_with_parity(self.basis, low_coeffs, self.parity).decompose_bsgs_with_log_split(
+            log_split,
+            |baby_coeffs| {
                 let mut pt = module.ckks_pt_coeffs_alloc(baby_coeffs.len(), base2k, coeff_meta);
                 pt.encode_host_floats(baby_coeffs)
                     .map_err(|e| anyhow!("encode_bsgs_adaptive: low branch: {e}"))?;
                 Ok(pt)
-            })?;
+            },
+        )?;
         let high = Polynomial::new_with_parity(self.basis, high_coeffs, self.parity)
             .encode_bsgs_with(module, base2k, high_meta, strategy)?;
         Ok(AdaptiveBSGS { low, high, drop })

@@ -423,7 +423,13 @@ pub fn test_encode_bsgs_adaptive_rejects_invalid_args<BE, F, E>(
     assert!(err.to_string().contains("exceeds degree"));
 
     for bad_drop in [0usize, coeff_meta.log_delta] {
-        let err = match cheb.encode_bsgs_adaptive(host_module, params.base2k.into(), coeff_meta, bad_drop, DEFAULT_SPLIT_STRATEGY) {
+        let err = match cheb.encode_bsgs_adaptive(
+            host_module,
+            params.base2k.into(),
+            coeff_meta,
+            bad_drop,
+            DEFAULT_SPLIT_STRATEGY,
+        ) {
             Ok(_) => panic!("adaptive encoding should reject drop={bad_drop}"),
             Err(err) => err,
         };
@@ -584,24 +590,25 @@ pub fn test_eval_poly_adaptive_drop_granularity<BE, F, E>(
         .unwrap();
 
     for mode in [AdaptiveEvalMode::Default, AdaptiveEvalMode::DoubleModulusSaving] {
-    let mut previous_budget = res_mono.log_budget();
-    for drop in [1usize, 2, 3, 4] {
-        let adaptive_host = poly
-            .encode_bsgs_adaptive(host_module, base2k.into(), coeff_meta, drop, DEFAULT_SPLIT_STRATEGY)
-            .unwrap();
-        let adaptive: AdaptiveBSGS<CKKSPlaintext<BE::OwnedBuf>> = adaptive_host.map_baby_steps_ref(|pt| upload_pt(module, pt));
-        let mut res_ad = alloc_ct(&params, module, k);
-        module
-            .ckks_eval_poly_real_const_coeffs_adaptive(&mut res_ad, &x_ct, &adaptive, mode, &tsk, &mut scratch.borrow())
-            .unwrap();
-        assert!(
-            res_ad.log_budget() > previous_budget,
-            "mode={mode:?} drop={drop}: expected strictly increasing output budget (prev={}, got={})",
-            previous_budget,
-            res_ad.log_budget()
-        );
-        previous_budget = res_ad.log_budget();
-    }
+        let mut previous_budget = res_mono.log_budget();
+        for drop in [1usize, 2, 3, 4] {
+            let adaptive_host = poly
+                .encode_bsgs_adaptive(host_module, base2k.into(), coeff_meta, drop, DEFAULT_SPLIT_STRATEGY)
+                .unwrap();
+            let adaptive: AdaptiveBSGS<CKKSPlaintext<BE::OwnedBuf>> =
+                adaptive_host.map_baby_steps_ref(|pt| upload_pt(module, pt));
+            let mut res_ad = alloc_ct(&params, module, k);
+            module
+                .ckks_eval_poly_real_const_coeffs_adaptive(&mut res_ad, &x_ct, &adaptive, mode, &tsk, &mut scratch.borrow())
+                .unwrap();
+            assert!(
+                res_ad.log_budget() > previous_budget,
+                "mode={mode:?} drop={drop}: expected strictly increasing output budget (prev={}, got={})",
+                previous_budget,
+                res_ad.log_budget()
+            );
+            previous_budget = res_ad.log_budget();
+        }
     }
 }
 
