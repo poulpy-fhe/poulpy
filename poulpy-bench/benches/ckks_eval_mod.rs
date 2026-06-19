@@ -1,8 +1,8 @@
 //! Times the homomorphic `x mod 1` evaluation across the EvalModType variants,
-//! including `CosDiscrete` under both the `MinDepth` and `MinMult` BSGS split
+//! including `CosHK` under both the `MinDepth` and `MinMult` BSGS split
 //! strategies. Per case, prints the level consumption (log_budget delta) and
-//! the number of CT-CT mul rounds (BSGS depth + r double-angle rounds +
-//! arcsine depth).
+//! the number of CT-CT mul rounds (BSGS depth + r range-extension rounds +
+//! inverse depth).
 
 use std::hint::black_box;
 
@@ -10,8 +10,10 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use poulpy_ckks::{
     CKKSInfos, CKKSMeta,
     api::CKKSEvalModOps,
-    default::eval_mod::{EvalModParameters, EvalModParametersLiteral, EvalModType},
-    layouts::CKKSModuleAlloc,
+    layouts::{
+        CKKSModuleAlloc,
+        eval_mod::{EvalMod, EvalModPlan, EvalModType},
+    },
     leveled::api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps},
     polynomial::SplitStrategy,
 };
@@ -37,72 +39,72 @@ const COEFF_META: CKKSMeta = CKKSMeta {
 
 struct Case {
     label: &'static str,
-    lit: EvalModParametersLiteral,
+    lit: EvalModPlan,
 }
 
 const CASES: &[Case] = &[
     Case {
         label: "sin_continuous/d15",
-        lit: EvalModParametersLiteral {
-            eval_mod_type: EvalModType::SinContinuous,
+        lit: EvalModPlan {
+            eval_mod_type: EvalModType::SinCheby,
             log_message_ratio: 4,
-            eval_mod_degree: 15,
-            eval_mod_interval: 1,
-            double_angle: 0,
-            eval_mod_inv_degree: 0,
-            scaling: 1.0,
+            f_mod_degree: 15,
+            f_mod_interval: 1,
+            f_mod_log_interval_reduction: 0,
+            f_mod_inv_degree: None,
+            scaling: None,
             split_strategy: SplitStrategy::MinDepth,
         },
     },
     Case {
         label: "sin_continuous_arcsine/d31_inv7",
-        lit: EvalModParametersLiteral {
-            eval_mod_type: EvalModType::SinContinuous,
+        lit: EvalModPlan {
+            eval_mod_type: EvalModType::SinCheby,
             log_message_ratio: 4,
-            eval_mod_degree: 31,
-            eval_mod_interval: 1,
-            double_angle: 0,
-            eval_mod_inv_degree: 7,
-            scaling: 1.0,
+            f_mod_degree: 31,
+            f_mod_interval: 1,
+            f_mod_log_interval_reduction: 0,
+            f_mod_inv_degree: Some(7),
+            scaling: None,
             split_strategy: SplitStrategy::MinDepth,
         },
     },
     Case {
         label: "cos_discrete/d30_K12_r3",
-        lit: EvalModParametersLiteral {
-            eval_mod_type: EvalModType::CosDiscrete,
+        lit: EvalModPlan {
+            eval_mod_type: EvalModType::CosHK,
             log_message_ratio: 8,
-            eval_mod_degree: 30,
-            eval_mod_interval: 12,
-            double_angle: 3,
-            eval_mod_inv_degree: 0,
-            scaling: 1.0,
+            f_mod_degree: 30,
+            f_mod_interval: 12,
+            f_mod_log_interval_reduction: 3,
+            f_mod_inv_degree: None,
+            scaling: None,
             split_strategy: SplitStrategy::MinDepth,
         },
     },
     Case {
         label: "cos_discrete/d30_K12_r3_minmult",
-        lit: EvalModParametersLiteral {
-            eval_mod_type: EvalModType::CosDiscrete,
+        lit: EvalModPlan {
+            eval_mod_type: EvalModType::CosHK,
             log_message_ratio: 8,
-            eval_mod_degree: 30,
-            eval_mod_interval: 12,
-            double_angle: 3,
-            eval_mod_inv_degree: 0,
-            scaling: 1.0,
+            f_mod_degree: 30,
+            f_mod_interval: 12,
+            f_mod_log_interval_reduction: 3,
+            f_mod_inv_degree: None,
+            scaling: None,
             split_strategy: SplitStrategy::MinMult,
         },
     },
     Case {
         label: "cos_continuous/d31_K4_r2",
-        lit: EvalModParametersLiteral {
-            eval_mod_type: EvalModType::CosContinuous,
+        lit: EvalModPlan {
+            eval_mod_type: EvalModType::CosCheby,
             log_message_ratio: 4,
-            eval_mod_degree: 31,
-            eval_mod_interval: 4,
-            double_angle: 2,
-            eval_mod_inv_degree: 0,
-            scaling: 1.0,
+            f_mod_degree: 31,
+            f_mod_interval: 4,
+            f_mod_log_interval_reduction: 2,
+            f_mod_inv_degree: None,
+            scaling: None,
             split_strategy: SplitStrategy::MinDepth,
         },
     },
@@ -127,20 +129,6 @@ fn tsk_layout() -> GLWETensorKeyLayout {
         dsize: Dsize(DSIZE as u32),
         dnum: Dnum(k.div_ceil(DSIZE * BASE2K) as u32),
     }
-}
-
-fn depth(lit: &EvalModParametersLiteral) -> usize {
-    let d = lit.eval_mod_degree.next_power_of_two().trailing_zeros() as usize;
-    let r = match lit.eval_mod_type {
-        EvalModType::SinContinuous => 0,
-        _ => lit.double_angle,
-    };
-    let inv = if lit.eval_mod_inv_degree > 0 {
-        lit.eval_mod_inv_degree.next_power_of_two().trailing_zeros() as usize
-    } else {
-        0
-    };
-    d + r + inv
 }
 
 fn bench_ntt120_ref(c: &mut Criterion) {
@@ -179,8 +167,8 @@ fn bench_ntt120_ref(c: &mut Criterion) {
 
     let mut group = c.benchmark_group(format!("ckks_eval_mod::{label}"));
     for case in CASES {
-        let params = EvalModParameters::<f64, _>::from_literal(COEFF_META, Base2K(BASE2K as u32), case.lit, &host_module)
-            .expect("EvalModParameters::from_literal");
+        let params = EvalMod::<f64, _>::from_literal(COEFF_META, Base2K(BASE2K as u32), case.lit, &host_module)
+            .expect("EvalMod::from_literal");
 
         let (levels, log_budget_in, log_budget_out) = {
             let mut ct_run = module.ckks_ciphertext_alloc(Base2K(BASE2K as u32), TorusPrecision(CT_K as u32));
@@ -202,7 +190,7 @@ fn bench_ntt120_ref(c: &mut Criterion) {
         eprintln!(
             "[eval_mod/{label} {case_label}] L={levels} depth_pred={depth} ({lb_in}→{lb_out} budget bits)",
             case_label = case.label,
-            depth = depth(&case.lit),
+            depth = params.eval_depth(),
             lb_in = log_budget_in,
             lb_out = log_budget_out,
         );

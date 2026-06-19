@@ -278,6 +278,29 @@ pub fn split_degree(n: usize) -> (usize, usize) {
     }
 }
 
+/// Multiplicative depth (CT-CT multiplication levels) consumed by a BSGS
+/// evaluation of a degree-`degree` polynomial under `strategy`.
+///
+/// The depth-optimal [`SplitStrategy::MinDepth`] split reaches `bit_len(degree)`
+/// (`= ceil(log2(degree + 1))`). [`SplitStrategy::MinMult`] minimises the
+/// multiplication count instead, which for the upper part of each
+/// `[2^(b-1), 2^b)` band costs one extra level. The threshold within a band of
+/// `b = bit_len(degree)` bits is `2^b − 2^((b-1)/2) + 1` (matching the giant-step
+/// structure of `eval_giant_steps`).
+pub(crate) fn bsgs_eval_depth(degree: usize, strategy: SplitStrategy) -> usize {
+    if degree == 0 {
+        return 0;
+    }
+    let b = bit_len(degree);
+    match strategy {
+        SplitStrategy::MinDepth => b,
+        SplitStrategy::MinMult => {
+            let threshold = (1usize << b) - (1usize << ((b - 1) / 2)) + 1;
+            if degree >= threshold { b + 1 } else { b }
+        }
+    }
+}
+
 // ── Polynomial ───────────────────────────────────────────────────────────────
 
 /// A plaintext polynomial with real coefficients.
@@ -383,6 +406,7 @@ where
             base,
             baby_steps,
             parity: self.parity,
+            eval_depth: bsgs_eval_depth(degree, strategy),
         })
     }
 }
@@ -488,6 +512,9 @@ pub struct BSGSPolynomial<C> {
     pub(crate) base: usize,
     pub(crate) baby_steps: Vec<C>,
     pub(crate) parity: Parity,
+    /// Multiplicative depth this decomposition consumes, computed from the
+    /// `SplitStrategy` at decomposition time (see [`bsgs_eval_depth`]).
+    pub(crate) eval_depth: usize,
 }
 
 impl<BE: Backend, C> BSGSPolynomialInfos<BE> for BSGSPolynomial<C>
@@ -542,6 +569,17 @@ impl<C> BSGSPolynomial<C> {
         self.base.trailing_zeros() as usize
     }
 
+    /// Multiplicative depth (number of CT-CT multiplication levels) a BSGS
+    /// evaluation of this polynomial consumes.
+    ///
+    /// Computed from the [`SplitStrategy`] at decomposition time, so it is exact
+    /// for any strategy. In particular it is **not** simply `ceil(log2(degree))`:
+    /// a `MinMult` split can cost one level more than the depth-optimal `MinDepth`
+    /// split.
+    pub fn eval_depth(&self) -> usize {
+        self.eval_depth
+    }
+
     /// Returns all encoded baby-step coefficient polynomials.
     pub fn baby_steps(&self) -> &[C] {
         &self.baby_steps
@@ -567,6 +605,7 @@ impl<C> BSGSPolynomial<C> {
             base: self.base,
             baby_steps: self.baby_steps.iter().map(&mut f).collect(),
             parity: self.parity,
+            eval_depth: self.eval_depth,
         }
     }
 }
@@ -709,6 +748,37 @@ mod tests {
             collect_baby_step_degrees(Basis::Chebyshev, 31, log_split, true),
             vec![7, 7, 7, 3, 1, 1]
         );
+    }
+
+    #[test]
+    fn bsgs_eval_depth_matches_reference_table() {
+        // Reference depth table (degree range → MinDepth, MinMult).
+        let bands: &[(usize, usize, usize, usize)] = &[
+            (0, 0, 0, 0),
+            (1, 1, 1, 1),
+            (2, 3, 2, 2),
+            (4, 6, 3, 3),
+            (7, 7, 3, 4),
+            (8, 14, 4, 4),
+            (15, 15, 4, 5),
+            (16, 28, 5, 5),
+            (29, 31, 5, 6),
+            (32, 60, 6, 6),
+            (61, 63, 6, 7),
+            (64, 120, 7, 7),
+            (121, 127, 7, 8),
+            (128, 248, 8, 8),
+            (249, 255, 8, 9),
+            (256, 496, 9, 9),
+            (497, 511, 9, 10),
+            (512, 512, 10, 10),
+        ];
+        for &(lo, hi, min_depth, min_mult) in bands {
+            for d in lo..=hi {
+                assert_eq!(bsgs_eval_depth(d, SplitStrategy::MinDepth), min_depth, "MinDepth degree {d}");
+                assert_eq!(bsgs_eval_depth(d, SplitStrategy::MinMult), min_mult, "MinMult degree {d}");
+            }
+        }
     }
 
     #[test]

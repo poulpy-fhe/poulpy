@@ -10,9 +10,11 @@ use poulpy_hal::{
 use crate::{
     CKKSCtBounds, CKKSMeta, SetCKKSInfos,
     api::{CKKSAllOpsTmpBytes, CKKSEvalModOps},
-    default::eval_mod::{EvalModParameters, EvalModParametersLiteral, EvalModPoly, EvalModType},
     encoding::reim::Encoder,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
+    layouts::{
+        CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext,
+        eval_mod::{EvalMod, EvalModPlan, EvalModPoly, EvalModType},
+    },
     polynomial::SplitStrategy,
 };
 
@@ -57,10 +59,7 @@ where
     ScratchOwned::<BE>::alloc(scratch_size)
 }
 
-fn upload_params<BE, F>(
-    module: &Module<BE>,
-    host: EvalModParameters<F, CKKSPlaintext<Vec<u8>>>,
-) -> EvalModParameters<F, CKKSPlaintext<BE::OwnedBuf>>
+fn upload_params<BE, F>(module: &Module<BE>, host: EvalMod<F, CKKSPlaintext<Vec<u8>>>) -> EvalMod<F, CKKSPlaintext<BE::OwnedBuf>>
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
@@ -82,7 +81,7 @@ fn two_pi<F: TestScalar>() -> F {
 
 /// Reference evaluation of the `x mod 1` pipeline at the normalized Chebyshev
 /// variable `t` (the encrypted value, in `[-1, 1]`).
-fn oracle<F, P>(params: &EvalModParameters<F, P>, lit: &EvalModParametersLiteral, t: F, reference: Reference) -> (F, F)
+fn oracle<F, P>(params: &EvalMod<F, P>, lit: &EvalModPlan, t: F, reference: Reference) -> (F, F)
 where
     F: TestScalar,
 {
@@ -93,34 +92,31 @@ where
 }
 
 /// Replays the circuit on its retained polynomials: base polynomial, then the
-/// double-angle squarings, then the optional arcsine post-composition. The
+/// range-extension squarings, then the optional arcsine post-composition. The
 /// circuit feeds the encrypted value straight into the bare Chebyshev
 /// recurrence, so the polynomial is evaluated directly at `t`.
-fn oracle_polynomial<F, P>(params: &EvalModParameters<F, P>, lit: &EvalModParametersLiteral, t: F) -> (F, F)
+fn oracle_polynomial<F, P>(params: &EvalMod<F, P>, _lit: &EvalModPlan, t: F) -> (F, F)
 where
     F: TestScalar,
 {
     let two = F::one() + F::one();
-    match &params.eval_mod_poly {
+    match &params.f_mod_poly {
         EvalModPoly::Complex(poly) => {
             let (mut re, mut im) = poly.evaluate(t);
-            for _ in 0..params.double_angle {
+            for _ in 0..params.plan.f_mod_log_interval_reduction {
                 (re, im) = (re * re - im * im, two * re * im);
             }
             (re, im)
         }
         EvalModPoly::Real(poly) => {
-            let mut v = t;
-            if matches!(lit.eval_mod_type, EvalModType::CosContinuous) {
-                v = v + F::from_f64(-0.25 / lit.eval_mod_interval as f64).unwrap();
-            }
-            let mut p = poly.evaluate(v);
-            let s = params.double_angle_scale();
-            for i in 0..params.double_angle {
+            // The CosCheby phase shift is baked into `poly`, so evaluate at `t` directly.
+            let mut p = poly.evaluate(t);
+            let s = params.range_extension_scale();
+            for i in 0..params.plan.f_mod_log_interval_reduction {
                 let dac = F::from_f64(s.powi(1i32 << (i + 1))).unwrap();
                 p = two * p * p - dac;
             }
-            if let Some(inv) = &params.eval_mod_inv_poly {
+            if let Some(inv) = &params.f_mod_inv_poly {
                 p = inv.evaluate(p);
             }
             (p, F::zero())
@@ -130,22 +126,22 @@ where
 
 /// The exact target the pipeline approximates. The encrypted value `t` is the
 /// normalized Chebyshev variable; the modular coordinate is `x = interval·t =
-/// I + m/MessageRatio`. Regardless of the sin/cos/double-angle path, the final
+/// I + m/MessageRatio`. Regardless of the variant, the final
 /// amplitude is `(1/2π)·scaling` and the function reduces to `sin(2π·x)`
 /// (`exp` returns the complex exponential), post-composed with `asin` when an
 /// arcsine inverse is configured.
-fn oracle_ideal<F, P>(params: &EvalModParameters<F, P>, lit: &EvalModParametersLiteral, t: F) -> (F, F)
+fn oracle_ideal<F, P>(params: &EvalMod<F, P>, lit: &EvalModPlan, t: F) -> (F, F)
 where
     F: TestScalar,
 {
-    let amp = F::from_f64(params.scaling * std::f64::consts::TAU.recip()).unwrap();
-    let x = F::from_usize(lit.eval_mod_interval).unwrap() * t;
+    let amp = F::from_f64(params.plan.scaling.unwrap_or(1.0) * std::f64::consts::TAU.recip()).unwrap();
+    let x = F::from_usize(lit.f_mod_interval).unwrap() * t;
     let theta = two_pi::<F>() * x;
-    if matches!(lit.eval_mod_type, EvalModType::Exp) {
+    if matches!(lit.eval_mod_type, EvalModType::ExpCmplx) {
         return (amp * theta.cos(), amp * theta.sin());
     }
     let mut y = theta.sin();
-    if params.eval_mod_inv_poly.is_some() {
+    if params.f_mod_inv_poly.is_some() {
         y = y.asin();
     }
     (amp * y, F::zero())
@@ -157,7 +153,7 @@ fn run_eval_mod_case<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     label: &str,
     log_delta: usize,
-    lit: EvalModParametersLiteral,
+    lit: EvalModPlan,
     required_log2_prec: f64,
 ) where
     BE: TestContextBackend,
@@ -174,7 +170,7 @@ fn run_eval_mod_case<BE, F, E>(
     let base2k = params.base2k;
 
     // Build the eval_mod parameters first so the input ciphertext is sized from the
-    // exact number of levels the pipeline consumes (`EvalModParameters::depth`)
+    // exact number of levels the pipeline consumes (`EvalMod::eval_depth`)
     // rather than a duplicated depth estimate. `coeff_meta` is independent of the
     // ciphertext modulus `k`, so it can be constructed before `test_params`.
     let coeff_meta = CKKSMeta {
@@ -182,10 +178,9 @@ fn run_eval_mod_case<BE, F, E>(
         log_budget: base2k,
         log_sparsity: 0,
     };
-    let host_params = EvalModParameters::<F, _>::from_literal(coeff_meta, base2k.into(), lit, host_module)
-        .expect("EvalModParameters::from_literal");
+    let host_params = EvalMod::<F, _>::from_literal(coeff_meta, base2k.into(), lit, host_module).expect("EvalMod::from_literal");
 
-    let test_params = with_eval_mod_depth(params, log_delta, host_params.depth());
+    let test_params = with_eval_mod_depth(params, log_delta, host_params.eval_depth());
     let params_be = upload_params(module, host_params);
 
     let m = test_params.n / 2;
@@ -196,8 +191,8 @@ fn run_eval_mod_case<BE, F, E>(
     // [-1, 1], and q = MessageRatio (QDiff = 1 since poulpy's Q = 2^k). The
     // encrypted value is the normalized Chebyshev variable t = (I·q + m)/(q·interval).
     let mr = (1u64 << lit.log_message_ratio) as f64;
-    let interval = lit.eval_mod_interval as f64;
-    let k = (lit.eval_mod_interval - 1) as f64;
+    let interval = lit.f_mod_interval as f64;
+    let k = (lit.f_mod_interval - 1) as f64;
     let mut source = Source::new([0u8; 32]);
     let mut x_re_raw: Vec<F> = (0..m)
         .map(|_| {
@@ -263,7 +258,7 @@ fn run_eval_mod_case<BE, F, E>(
             stats.worst_want
         );
 
-        if matches!(lit.eval_mod_type, EvalModType::Exp) {
+        if matches!(lit.eval_mod_type, EvalModType::ExpCmplx) {
             let want_im: Vec<F> = want.iter().map(|&(_, im)| im * mr_f).collect();
             let got_im: Vec<F> = im_out.iter().map(|&v| v * mr_f).collect();
             let stats_im = precision_stats(&got_im, &want_im, log_delta);
@@ -293,14 +288,14 @@ pub fn test_eval_mod_sin_continuous_minimal<BE, F, E>(
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let lit = EvalModParametersLiteral {
-        eval_mod_type: EvalModType::SinContinuous,
+    let lit = EvalModPlan {
+        eval_mod_type: EvalModType::SinCheby,
         log_message_ratio: 8,
-        eval_mod_degree: 127,
-        eval_mod_interval: 14,
-        double_angle: 0,
-        eval_mod_inv_degree: 0,
-        scaling: 1.0,
+        f_mod_degree: 127,
+        f_mod_interval: 14,
+        f_mod_log_interval_reduction: 0,
+        f_mod_inv_degree: None,
+        scaling: None,
         split_strategy: SplitStrategy::MinDepth,
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_sin_continuous_minimal", 60, lit, 36.0);
@@ -319,14 +314,14 @@ pub fn test_eval_mod_sin_continuous_with_arcsine<BE, F, E>(
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let lit = EvalModParametersLiteral {
-        eval_mod_type: EvalModType::SinContinuous,
+    let lit = EvalModPlan {
+        eval_mod_type: EvalModType::SinCheby,
         log_message_ratio: 8,
-        eval_mod_degree: 127,
-        eval_mod_interval: 14,
-        double_angle: 0,
-        eval_mod_inv_degree: 7,
-        scaling: 1.0,
+        f_mod_degree: 127,
+        f_mod_interval: 14,
+        f_mod_log_interval_reduction: 0,
+        f_mod_inv_degree: Some(7),
+        scaling: None,
         split_strategy: SplitStrategy::MinDepth,
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_sin_continuous_arcsine", 60, lit, 36.0);
@@ -345,14 +340,14 @@ pub fn test_eval_mod_cos_discrete<BE, F, E>(
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let lit = EvalModParametersLiteral {
-        eval_mod_type: EvalModType::CosDiscrete,
+    let lit = EvalModPlan {
+        eval_mod_type: EvalModType::CosHK,
         log_message_ratio: 8,
-        eval_mod_degree: 30,
-        eval_mod_interval: 12,
-        double_angle: 3,
-        eval_mod_inv_degree: 0,
-        scaling: 1.0,
+        f_mod_degree: 30,
+        f_mod_interval: 12,
+        f_mod_log_interval_reduction: 3,
+        f_mod_inv_degree: None,
+        scaling: None,
         split_strategy: SplitStrategy::MinDepth,
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_discrete", 60, lit, 40.0);
@@ -371,14 +366,14 @@ pub fn test_eval_mod_cos_continuous<BE, F, E>(
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let lit = EvalModParametersLiteral {
-        eval_mod_type: EvalModType::CosContinuous,
+    let lit = EvalModPlan {
+        eval_mod_type: EvalModType::CosCheby,
         log_message_ratio: 4,
-        eval_mod_degree: 31,
-        eval_mod_interval: 12,
-        double_angle: 3,
-        eval_mod_inv_degree: 0,
-        scaling: 1.0,
+        f_mod_degree: 31,
+        f_mod_interval: 12,
+        f_mod_log_interval_reduction: 3,
+        f_mod_inv_degree: None,
+        scaling: None,
         split_strategy: SplitStrategy::MinDepth,
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_continuous", 60, lit, 40.0);
@@ -394,14 +389,14 @@ where
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    let lit = EvalModParametersLiteral {
-        eval_mod_type: EvalModType::Exp,
+    let lit = EvalModPlan {
+        eval_mod_type: EvalModType::ExpCmplx,
         log_message_ratio: 4,
-        eval_mod_degree: 31,
-        eval_mod_interval: 8,
-        double_angle: 3,
-        eval_mod_inv_degree: 0,
-        scaling: 1.0,
+        f_mod_degree: 31,
+        f_mod_interval: 8,
+        f_mod_log_interval_reduction: 3,
+        f_mod_inv_degree: None,
+        scaling: None,
         split_strategy: SplitStrategy::MinDepth,
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_exp", 60, lit, 40.0);

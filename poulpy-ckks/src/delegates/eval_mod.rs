@@ -6,7 +6,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena, VecZnx};
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSAddOps, CKKSCopyOps, CKKSEvalModOps, CKKSMulOps, CKKSSubOps},
-    default::eval_mod::EvalModParameters,
+    layouts::eval_mod::EvalMod,
     oep::CKKSEvalModImpl,
 };
 
@@ -14,7 +14,7 @@ impl<BE: Backend + CKKSEvalModImpl<BE>> CKKSEvalModOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSMulOps<BE> + CKKSCopyOps<BE> + CnvPVecBytesOf,
 {
-    fn ckks_eval_mod_tmp_bytes<R, P, F, T>(&self, res: &R, _params: &EvalModParameters<F, P>, tsk: &T) -> usize
+    fn ckks_eval_mod_tmp_bytes<R, P, F, T>(&self, res: &R, _params: &EvalMod<F, P>, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
         P: CKKSCtBounds,
@@ -38,7 +38,7 @@ where
         &self,
         res: &mut R,
         ct: &C,
-        params: &EvalModParameters<F, P>,
+        params: &EvalMod<F, P>,
         tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
