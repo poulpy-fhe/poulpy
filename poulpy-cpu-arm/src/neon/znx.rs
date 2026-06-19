@@ -8,9 +8,9 @@ use core::arch::aarch64::{
 };
 
 use poulpy_cpu_ref::reference::znx::{
-    znx_add_assign_ref, znx_add_ref, znx_automorphism_ref, znx_copy_ref, znx_mul_add_power_of_two_ref,
-    znx_mul_power_of_two_assign_ref, znx_mul_power_of_two_ref, znx_negate_assign_ref, znx_negate_ref, znx_sub_assign_ref,
-    znx_sub_negate_assign_ref, znx_sub_ref, znx_switch_ring_ref, znx_zero_ref,
+    znx_add_assign_ref, znx_add_ref, znx_automorphism_ref, znx_automorphism_rotate_ref, znx_copy_ref,
+    znx_mul_add_power_of_two_ref, znx_mul_power_of_two_assign_ref, znx_mul_power_of_two_ref, znx_negate_assign_ref,
+    znx_negate_ref, znx_sub_assign_ref, znx_sub_negate_assign_ref, znx_sub_ref, znx_switch_ring_ref, znx_zero_ref,
 };
 
 /// `res[i] = a[i].wrapping_add(b[i])` for all `i`.
@@ -251,6 +251,84 @@ pub(crate) fn znx_automorphism_neon(p: i64, res: &mut [i64], a: &[i64]) {
         let off23: int64x2_t = vsetq_lane_s64::<1>(((inv * 3) & mask_2n) as i64, vdupq_n_s64(((inv * 2) & mask_2n) as i64));
 
         let mut t_base: usize = 0;
+        let step: usize = (inv << 2) & mask_2n;
+
+        let mut rr: *mut i64 = res.as_mut_ptr();
+        let aa: *const i64 = a.as_ptr();
+
+        for _ in 0..span {
+            let tb: int64x2_t = vdupq_n_s64(t_base as i64);
+            let t01: int64x2_t = vandq_s64(vaddq_s64(tb, off01), mask_2n_v);
+            let t23: int64x2_t = vandq_s64(vaddq_s64(tb, off23), mask_2n_v);
+
+            let idx01: int64x2_t = vandq_s64(t01, mask_1n_v);
+            let idx23: int64x2_t = vandq_s64(t23, mask_1n_v);
+
+            let i0 = vgetq_lane_s64::<0>(idx01) as usize;
+            let i1 = vgetq_lane_s64::<1>(idx01) as usize;
+            let i2 = vgetq_lane_s64::<0>(idx23) as usize;
+            let i3 = vgetq_lane_s64::<1>(idx23) as usize;
+
+            let v0 = *aa.add(i0);
+            let v1 = *aa.add(i1);
+            let v2 = *aa.add(i2);
+            let v3 = *aa.add(i3);
+            let vals01: int64x2_t = vsetq_lane_s64::<1>(v1, vdupq_n_s64(v0));
+            let vals23: int64x2_t = vsetq_lane_s64::<1>(v3, vdupq_n_s64(v2));
+
+            // sign = (t >= n) ? -1 : 0  (cmpgt against n-1)
+            let sign01: int64x2_t = vreinterpretq_s64_u64(vcgtq_s64(t01, n_minus1_v));
+            let sign23: int64x2_t = vreinterpretq_s64_u64(vcgtq_s64(t23, n_minus1_v));
+
+            // conditional negate: (val ^ sign) - sign
+            let out01: int64x2_t = vsubq_s64(veorq_s64(vals01, sign01), sign01);
+            let out23: int64x2_t = vsubq_s64(veorq_s64(vals23, sign23), sign23);
+
+            vst1q_s64(rr, out01);
+            vst1q_s64(rr.add(2), out23);
+
+            rr = rr.add(4);
+            t_base = (t_base + step) & mask_2n;
+        }
+    }
+}
+
+/// `res = X^k * auto(p, a)`: the negacyclic automorphism by `p` fused with a rotation by `k`.
+pub(crate) fn znx_automorphism_rotate_neon(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
+    debug_assert_eq!(res.len(), a.len());
+    let n: usize = res.len();
+    if n == 0 {
+        return;
+    }
+    assert!(n.is_power_of_two(), "Polynomial degree {} must be power of 2", n);
+    debug_assert!(p & 1 == 1, "p must be odd (invertible mod 2n)");
+
+    if n < 4 {
+        znx_automorphism_rotate_ref(p, k, res, a);
+        return;
+    }
+
+    let two_n: usize = n << 1;
+    let span: usize = n >> 2;
+    let bits: u32 = (two_n as u64).trailing_zeros();
+    let mask_2n: usize = two_n - 1;
+    let mask_1n: usize = n - 1;
+
+    let p_2n: usize = (((p & mask_2n as i64) + two_n as i64) as usize) & mask_2n;
+    let inv: usize = inv_mod_pow2(p_2n, bits);
+
+    unsafe {
+        let mask_2n_v: int64x2_t = vdupq_n_s64(mask_2n as i64);
+        let mask_1n_v: int64x2_t = vdupq_n_s64(mask_1n as i64);
+        let n_minus1_v: int64x2_t = vdupq_n_s64((n as i64) - 1);
+
+        // lane offsets: [0, inv] and [2*inv, 3*inv] (mod 2n)
+        let off01: int64x2_t = vsetq_lane_s64::<1>(inv as i64, vdupq_n_s64(0));
+        let off23: int64x2_t = vsetq_lane_s64::<1>(((inv * 3) & mask_2n) as i64, vdupq_n_s64(((inv * 2) & mask_2n) as i64));
+
+        // Start the running index at (-k * inv) mod 2n so output j gathers from (j - k) * inv mod 2n.
+        let k_2n: usize = (((k & mask_2n as i64) + two_n as i64) as usize) & mask_2n;
+        let mut t_base: usize = (two_n - ((k_2n.wrapping_mul(inv)) & mask_2n)) & mask_2n;
         let step: usize = (inv << 2) & mask_2n;
 
         let mut rr: *mut i64 = res.as_mut_ptr();
@@ -638,5 +716,25 @@ mod tests {
         znx_negate_neon(&mut got, &a);
         znx_negate_ref(&mut want, &a);
         assert_eq!(got, want);
+    }
+
+    #[test]
+    fn test_znx_automorphism_rotate_neon_matches_ref() {
+        let mut rng = rng();
+        // `n` must be a power of two; include the n < 4 scalar fallback (1, 2)
+        // and several sizes that exercise the NEON span loop.
+        const N_POW2: &[usize] = &[1, 2, 4, 8, 16, 256, 1024];
+        for &n in N_POW2 {
+            let a = random_vec(&mut rng, n);
+            for p in [1i64, 3, 5, -5, 7, -11, 13, -17] {
+                for k in [0i64, 1, 3, 8, 31, -1, -7, 64, -40] {
+                    let mut got = vec![0i64; n];
+                    let mut want = vec![0i64; n];
+                    znx_automorphism_rotate_neon(p, k, &mut got, &a);
+                    znx_automorphism_rotate_ref(p, k, &mut want, &a);
+                    assert_eq!(got, want, "znx_automorphism_rotate_neon mismatch at n={n}, p={p}, k={k}");
+                }
+            }
+        }
     }
 }

@@ -5,8 +5,8 @@ use poulpy_cpu_ref::reference::znx::{
     ZnxMulPowerOfTwo, ZnxMulPowerOfTwoAssign, ZnxNegate, ZnxNegateAssign, ZnxNormalizeDigit, ZnxNormalizeFinalStep,
     ZnxNormalizeFinalStepAssign, ZnxNormalizeFinalStepSub, ZnxNormalizeFirstStep, ZnxNormalizeFirstStepAssign,
     ZnxNormalizeFirstStepCarryOnly, ZnxNormalizeMiddleStep, ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly,
-    ZnxNormalizeMiddleStepSub, ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero,
-    znx_automorphism_rotate_ref, znx_copy_ref, znx_rotate, znx_zero_ref,
+    ZnxNormalizeMiddleStepSub, ZnxRotate, ZnxSub, ZnxSubAssign, ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero, znx_copy_ref,
+    znx_rotate, znx_zero_ref,
 };
 
 use super::NTT120Neon;
@@ -15,10 +15,10 @@ use super::NTT120Neon;
 use crate::neon::{
     znx::{
         znx_add_assign_neon as kn_add_assign, znx_add_neon as kn_add, znx_automorphism_neon as kn_automorphism,
-        znx_mul_add_power_of_two_neon as kn_mul_add_p2, znx_mul_power_of_two_assign_neon as kn_mul_p2_assign,
-        znx_mul_power_of_two_neon as kn_mul_p2, znx_negate_assign_neon as kn_negate_assign, znx_negate_neon as kn_negate,
-        znx_sub_assign_neon as kn_sub_assign, znx_sub_negate_assign_neon as kn_sub_negate_assign, znx_sub_neon as kn_sub,
-        znx_switch_ring_neon as kn_switch_ring,
+        znx_automorphism_rotate_neon as kn_automorphism_rotate, znx_mul_add_power_of_two_neon as kn_mul_add_p2,
+        znx_mul_power_of_two_assign_neon as kn_mul_p2_assign, znx_mul_power_of_two_neon as kn_mul_p2,
+        znx_negate_assign_neon as kn_negate_assign, znx_negate_neon as kn_negate, znx_sub_assign_neon as kn_sub_assign,
+        znx_sub_negate_assign_neon as kn_sub_negate_assign, znx_sub_neon as kn_sub, znx_switch_ring_neon as kn_switch_ring,
     },
     znx_normalize::{
         znx_extract_digit_addmul_neon as kn_extract_digit_addmul, znx_normalize_digit_neon as kn_normalize_digit,
@@ -37,10 +37,10 @@ use crate::neon::{
 #[cfg(not(target_arch = "aarch64"))]
 use poulpy_cpu_ref::reference::znx::{
     znx_add_assign_ref as kn_add_assign, znx_add_ref as kn_add, znx_automorphism_ref as kn_automorphism,
-    znx_extract_digit_addmul_ref as kn_extract_digit_addmul, znx_mul_add_power_of_two_ref as kn_mul_add_p2,
-    znx_mul_power_of_two_assign_ref as kn_mul_p2_assign, znx_mul_power_of_two_ref as kn_mul_p2,
-    znx_negate_assign_ref as kn_negate_assign, znx_negate_ref as kn_negate, znx_normalize_digit_ref as kn_normalize_digit,
-    znx_normalize_final_step_assign_ref as kn_normalize_final_step_assign,
+    znx_automorphism_rotate_ref as kn_automorphism_rotate, znx_extract_digit_addmul_ref as kn_extract_digit_addmul,
+    znx_mul_add_power_of_two_ref as kn_mul_add_p2, znx_mul_power_of_two_assign_ref as kn_mul_p2_assign,
+    znx_mul_power_of_two_ref as kn_mul_p2, znx_negate_assign_ref as kn_negate_assign, znx_negate_ref as kn_negate,
+    znx_normalize_digit_ref as kn_normalize_digit, znx_normalize_final_step_assign_ref as kn_normalize_final_step_assign,
     znx_normalize_final_step_ref as kn_normalize_final_step, znx_normalize_final_step_sub_ref as kn_normalize_final_step_sub,
     znx_normalize_first_step_assign_ref as kn_normalize_first_step_assign,
     znx_normalize_first_step_carry_only_ref as kn_normalize_first_step_carry_only,
@@ -118,7 +118,7 @@ impl ZnxAutomorphism for NTT120Neon {
 impl ZnxAutomorphismRotate for NTT120Neon {
     #[inline(always)]
     fn znx_automorphism_rotate(p: i64, k: i64, res: &mut [i64], a: &[i64]) {
-        znx_automorphism_rotate_ref(p, k, res, a);
+        kn_automorphism_rotate(p, k, res, a);
     }
 }
 
