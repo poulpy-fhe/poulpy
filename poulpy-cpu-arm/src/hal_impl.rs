@@ -230,14 +230,8 @@ unsafe impl HalConvolutionImpl<NTT120Neon> for NTT120Neon {
         <Self as NTT120ConvolutionDefault<Self>>::cnv_prepare_right_default(module, res, a, mask, &mut scratch);
     }
 
-    fn cnv_apply_dft_tmp_bytes(
-        _module: &Module<Self>,
-        _cnv_offset: usize,
-        _res_size: usize,
-        a_size: usize,
-        b_size: usize,
-    ) -> usize {
-        crate::ntt120::convolution::cnv_apply_dft_neon_tmp_bytes(a_size, b_size)
+    fn cnv_apply_dft_tmp_bytes(module: &Module<Self>, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
+        <Self as NTT120ConvolutionDefault<Self>>::cnv_apply_dft_tmp_bytes_default(module, cnv_offset, res_size, a_size, b_size)
     }
 
     fn cnv_by_const_apply_tmp_bytes(
@@ -284,7 +278,7 @@ unsafe impl HalConvolutionImpl<NTT120Neon> for NTT120Neon {
     fn cnv_apply_dft(
         module: &Module<Self>,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        mut res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
         a: &poulpy_hal::layouts::CnvPVecLBackendRef<'_, Self>,
         a_col: usize,
@@ -292,9 +286,18 @@ unsafe impl HalConvolutionImpl<NTT120Neon> for NTT120Neon {
         b_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt120::convolution::cnv_apply_dft_neon_tmp_bytes(a.size(), b.size());
-        let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        crate::ntt120::convolution::cnv_apply_dft_neon(module, res, cnv_offset, res_col, a, a_col, b, b_col, tmp);
+        let mut scratch = scratch.borrow();
+        <Self as NTT120ConvolutionDefault<Self>>::cnv_apply_dft_default(
+            module,
+            cnv_offset,
+            &mut res,
+            res_col,
+            a,
+            a_col,
+            b,
+            b_col,
+            &mut scratch,
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -324,20 +327,22 @@ unsafe impl HalConvolutionImpl<NTT120Neon> for NTT120Neon {
     }
 
     fn cnv_pairwise_apply_dft_tmp_bytes(
-        _module: &Module<Self>,
-        _cnv_offset: usize,
+        module: &Module<Self>,
+        cnv_offset: usize,
         res_size: usize,
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        crate::ntt120::convolution::cnv_pairwise_apply_dft_neon_tmp_bytes(res_size, a_size, b_size)
+        <Self as NTT120ConvolutionDefault<Self>>::cnv_pairwise_apply_dft_tmp_bytes_default(
+            module, cnv_offset, res_size, a_size, b_size,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
     fn cnv_pairwise_apply_dft(
         module: &Module<Self>,
         cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
+        mut res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
         a: &poulpy_hal::layouts::CnvPVecLBackendRef<'_, Self>,
         b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
@@ -345,9 +350,18 @@ unsafe impl HalConvolutionImpl<NTT120Neon> for NTT120Neon {
         j: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt120::convolution::cnv_pairwise_apply_dft_neon_tmp_bytes(res.size(), a.size(), b.size());
-        let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        crate::ntt120::convolution::cnv_pairwise_apply_dft_neon(module, res, cnv_offset, res_col, a, b, i, j, tmp);
+        let mut scratch = scratch.borrow();
+        <Self as NTT120ConvolutionDefault<Self>>::cnv_pairwise_apply_dft_default(
+            module,
+            cnv_offset,
+            &mut res,
+            res_col,
+            a,
+            b,
+            i,
+            j,
+            &mut scratch,
+        );
     }
 
     fn cnv_prepare_self_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {

@@ -35,8 +35,8 @@ use crate::neon::{
         pack_right_1blk_x2_neon, pairwise_pack_left_1blk_x2_neon, pairwise_pack_right_1blk_x2_neon,
     },
     ntt120_mat_vec::{
-        vec_mat1col_product_bbb_neon, vec_mat1col_product_bbc_neon, vec_mat1col_product_x2_bbc_neon,
-        vec_mat2cols_product_x2_bbc_neon,
+        vec_mat_tile2_bbc_canonical_neon, vec_mat1col_product_bbb_neon, vec_mat1col_product_bbc_neon,
+        vec_mat1col_product_x2_bbc_neon, vec_mat2cols_product_x2_bbc_neon,
     },
     ntt120_ntt::{intt_neon, ntt_neon},
 };
@@ -313,6 +313,21 @@ impl NttMulBbc1ColX2 for NTT120Neon {
         #[cfg(not(target_arch = "aarch64"))]
         {
             vec_mat1col_product_x2_bbc_ref::<Primes30>(meta, ell, res, a, b);
+        }
+    }
+
+    #[inline(always)]
+    fn ntt_mul_bbc_tile4_x2(meta: &BbcMeta<Primes30>, len: usize, res: &mut [u64], a: &[u32], b: &[u32]) {
+        #[cfg(target_arch = "aarch64")]
+        {
+            vec_mat_tile2_bbc_canonical_neon(meta, len, &mut res[..16], a, b);
+            vec_mat_tile2_bbc_canonical_neon(meta, len, &mut res[16..32], &a[32..], b);
+        }
+        #[cfg(not(target_arch = "aarch64"))]
+        {
+            for t in 0..4 {
+                Self::ntt_mul_bbc_1col_x2(meta, len, &mut res[8 * t..8 * t + 8], &a[16 * t..], b);
+            }
         }
     }
 }

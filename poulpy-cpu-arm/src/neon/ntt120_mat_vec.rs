@@ -3,6 +3,7 @@
 //! - [`vec_mat1col_product_bbb_neon`] — q120b × q120b → q120b (single column).
 //! - [`vec_mat1col_product_bbc_neon`] — q120b × q120c → q120b (single column).
 //! - [`vec_mat1col_product_x2_bbc_neon`] — single column, two paired rows.
+//! - [`vec_mat_tile2_bbc_canonical_neon`] — canonical-x tiled, two sliding outputs.
 //! - [`vec_mat2cols_product_x2_bbc_neon`] — two columns, two paired rows.
 //! - [`vec_mat1col_product_blkpair_bbc_pm_neon`] — block-pair over prime-major VMP layout.
 
@@ -307,6 +308,78 @@ pub(crate) fn vec_mat1col_product_x2_bbc_neon<const NT_STORE: bool>(
             store_q120(res_ptr, out0);
             store_q120(res_ptr.add(4), out1);
         }
+    }
+}
+
+/// Tiled canonical-x bbc product: two sliding-window outputs per pass.
+///
+/// NEON port of `vec_mat_tile2_bbc_canonical_avx2`. The `x` rows use the
+/// canonical u32 encoding (odd lanes zero), so the `x_hi * y_hi` term is
+/// identically zero and a single `mul_epu32` per lane suffices. Output `t`
+/// is `Σ_i x[t + i] ⊙ y[i]` into `res[16t..16t+16]` for `t ∈ {0, 1}`.
+pub(crate) fn vec_mat_tile2_bbc_canonical_neon(meta: &BbcMeta<Primes30>, len: usize, res: &mut [u64], x: &[u32], y: &[u32]) {
+    debug_assert!(res.len() >= 16);
+    debug_assert!(len == 0 || x.len() >= 16 * (len + 1));
+    debug_assert!(y.len() >= 16 * len);
+    unsafe {
+        let mask32_v = vdupq_n_u64(u32::MAX as u64);
+        let mask32 = Q120 {
+            lo: mask32_v,
+            hi: mask32_v,
+        };
+        let mut s0a = zero_q120();
+        let mut s1a = zero_q120();
+        let mut s0b = zero_q120();
+        let mut s1b = zero_q120();
+        let mut t0a = zero_q120();
+        let mut t1a = zero_q120();
+        let mut t0b = zero_q120();
+        let mut t1b = zero_q120();
+
+        let mut x_ptr = x.as_ptr() as *const u64;
+        let mut y_ptr = y.as_ptr() as *const u64;
+
+        for _ in 0..len {
+            let ya = load_q120(y_ptr);
+            let yb = load_q120(y_ptr.add(4));
+
+            let x0a = load_q120(x_ptr);
+            let x0b = load_q120(x_ptr.add(4));
+            let x1a = load_q120(x_ptr.add(8));
+            let x1b = load_q120(x_ptr.add(12));
+
+            let p0a = mul_epu32_q120(x0a, ya);
+            let p0b = mul_epu32_q120(x0b, yb);
+            let p1a = mul_epu32_q120(x1a, ya);
+            let p1b = mul_epu32_q120(x1b, yb);
+
+            s0a = add_q120(s0a, and_q120(p0a, mask32));
+            s1a = acc_shr_q120::<32>(s1a, p0a);
+            s0b = add_q120(s0b, and_q120(p0b, mask32));
+            s1b = acc_shr_q120::<32>(s1b, p0b);
+            t0a = add_q120(t0a, and_q120(p1a, mask32));
+            t1a = acc_shr_q120::<32>(t1a, p1a);
+            t0b = add_q120(t0b, and_q120(p1b, mask32));
+            t1b = acc_shr_q120::<32>(t1b, p1b);
+
+            x_ptr = x_ptr.add(8);
+            y_ptr = y_ptr.add(8);
+        }
+
+        let neg_h2 = vdupq_n_s64(-(meta.h as i64));
+        let mask_h2_v = vdupq_n_u64((1u64 << meta.h) - 1);
+        let mask_h2 = Q120 {
+            lo: mask_h2_v,
+            hi: mask_h2_v,
+        };
+        let s2l = load_const(&meta.s2l_pow_red);
+        let s2h = load_const(&meta.s2h_pow_red);
+
+        let res_ptr = res.as_mut_ptr();
+        store_q120(res_ptr, reduce_bbc_neon(s0a, s1a, mask_h2, neg_h2, s2l, s2h));
+        store_q120(res_ptr.add(4), reduce_bbc_neon(s0b, s1b, mask_h2, neg_h2, s2l, s2h));
+        store_q120(res_ptr.add(8), reduce_bbc_neon(t0a, t1a, mask_h2, neg_h2, s2l, s2h));
+        store_q120(res_ptr.add(12), reduce_bbc_neon(t0b, t1b, mask_h2, neg_h2, s2l, s2h));
     }
 }
 
