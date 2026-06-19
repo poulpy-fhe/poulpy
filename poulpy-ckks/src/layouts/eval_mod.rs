@@ -1,0 +1,473 @@
+//! EvalMod parameterization: the periodic-function approximation of the CKKS
+//! bootstrapping `x mod 1` step, and its host-side encoding.
+//!
+//! Bootstrapping's modulus-raising (ModUp) step leaves a ciphertext holding
+//! `I(X)·q + Δ·m`, where `m ∈ [-1, 1]` is the payload at encoding scale `Δ`, `q`
+//! (a power of two) is the raised-from modulus, and `I` is the unwanted integer
+//! multiple of `q` that ModUp introduces; their separation is the *message ratio*
+//! `q/Δ = 2^log_message_ratio`.
+//! In CKKS-meta terms `Δ = 2^log_delta` and `q = 2^(log_delta + log_budget)`, so
+//! the ratio is `2^log_budget`. Normalized by `q` the value is `I + m·Δ/q`, so
+//! removing `I` is exactly `x mod 1`. No low-degree polynomial computes `mod`, so
+//! the circuit approximates it with a **periodic function** `f` whose period
+//! matches `q`: periodicity collapses every `I·q`, so `f(I·q + Δ·m)` depends on
+//! `m` alone. Since `f` is only locally linear in `m`, it is optionally
+//! post-composed with its **inverse** `f⁻¹` to recover a value linear in `m`
+//! across the whole interval — e.g. for the trigonometric family
+//! `f⁻¹(f(x)) = (1/2π)·arcsin(sin(2π·x))`. The implemented `f` are trigonometric
+//! (`sin`, `cos`, or the complex exponential `exp(2πi·)`, each scaled by `1/(2π)`
+//! times the optional `scaling`), with `f⁻¹` the arcsine; other periodic families
+//! or direct approximations may be added at a later time.
+//!
+//! The pipeline has up to three stages, all described by [`EvalMod`]:
+//!
+//! 1. **Base polynomial.** A polynomial approximation of `f` over the *reduced*
+//!    range `[-K/2^r, K/2^r]`, evaluated homomorphically by baby-step/giant-step
+//!    ([`EvalModBsgs`]). `K = f_mod_interval`, `r = f_mod_log_interval_reduction`.
+//! 2. **Range extension.** `r` applications of a doubling identity specific to `f`
+//!    (for the trigonometric families `cos 2θ = 2cos²θ − 1` and `exp 2θ = (exp θ)²`)
+//!    extend the reduced range back to the full `[-K, K]`. This trades
+//!    multiplicative depth for a lower-degree — hence cheaper — base polynomial.
+//! 3. **Inverse.** An optional post-composition with `f⁻¹`
+//!    ([`EvalMod::f_mod_inv_poly`]; the arcsine for the trigonometric
+//!    families) that recovers a value linear in `m` rather than only near the
+//!    origin.
+//!
+//! [`EvalModPlan`] is the user-facing recipe; [`EvalMod`]
+//! is its compiled, plaintext-encoded form built by
+//! [`EvalMod::from_literal`]. The encoded plaintexts are host-side;
+//! [`EvalMod::map_plaintexts`] moves them onto a backend, after which
+//! they are evaluated through the [`CKKSEvalModOps`](crate::api::CKKSEvalModOps)
+//! trait (see [`crate::default::eval_mod`] for the evaluation itself).
+
+use anyhow::{Result, anyhow, ensure};
+use poulpy_core::layouts::Base2K;
+use poulpy_hal::layouts::{HostBytesBackend, Module};
+
+use rand_distr::num_traits::{Float, FloatConst};
+
+use crate::{
+    CKKSMeta,
+    api::{Basis, Parity},
+    cosine,
+    polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
+};
+
+use super::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar};
+
+// Fallible scalar conversions: building the host-side polynomials goes through
+// the generic float `F`, and a conversion that is not exactly representable in
+// the target scalar is reported as an error (with the offending value's role in
+// `name`) rather than silently truncated.
+
+fn scalar_from_f64<F: CKKSScalar>(name: &'static str, v: f64) -> Result<F> {
+    F::from_f64(v).ok_or_else(|| anyhow!("{name}: value {v} not representable in target scalar"))
+}
+
+fn scalar_from_u64<F: CKKSScalar>(name: &'static str, v: u64) -> Result<F> {
+    F::from_u64(v).ok_or_else(|| anyhow!("{name}: value {v} not representable in target scalar"))
+}
+
+fn scalar_from_usize<F: CKKSScalar>(name: &'static str, v: usize) -> Result<F> {
+    F::from_usize(v).ok_or_else(|| anyhow!("{name}: value {v} not representable in target scalar"))
+}
+
+fn scalar_from_i64<F: CKKSScalar>(name: &'static str, v: i64) -> Result<F> {
+    F::from_i64(v).ok_or_else(|| anyhow!("{name}: value {v} not representable in target scalar"))
+}
+
+/// Which periodic-function approximation of `x mod 1` the circuit evaluates, and
+/// in what form the result is produced.
+///
+/// The variants below are the trigonometric families; each realizes its function
+/// scaled by `1/(2π)` (times the optional `scaling`), with that factor folded into
+/// the polynomial coefficients and the range-extension constants rather than applied
+/// separately, so the recovered value sits at amplitude `scaling/(2π)`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EvalModType {
+    /// Discrete cosine approximation following Han & Ki method (*Better Bootstrapping
+    /// for Approximate Homomorphic Encryption*). Targets `1/(2π)·cos(2π·(x − 1/4)/2^r)`
+    /// but fits the polynomial only at the finitely many points `x` can actually
+    /// take (it is `≈ I(X)·q + Δ·m(X)`, near multiples of `q`) instead of
+    /// over the whole continuous interval. This is more efficient than
+    /// [`CosCheby`](Self::CosCheby) for **small `K`**; the continuous fit overtakes
+    /// it as `K` grows due to the requirement `f_mod_degree ≥ 2·(K − 1)`.
+    /// Can be paired with `f_mod_log_interval_reduction`.
+    CosHK,
+    /// Continuous Chebyshev approximation of `1/(2π)·sin(2π·x)` over `[−K, K]`.
+    /// `sin` is odd, so it is *already* anti-symmetric around the message and
+    /// needs no phase offset; Typically combined with an arcsine post-composition
+    /// to linearize the output.
+    /// Cannot be paired with `f_mod_log_interval_reduction` (must be set to 0).
+    SinCheby,
+    /// Direct Chebyshev approximation of `1/(2π)·cos(2π·x)` over the reduced range
+    /// — the same target as [`CosHK`](Self::CosHK), but fit continuously rather
+    /// than at discrete points, which is more efficient for **large `K`**. `cos` is
+    /// even, so a `−1/4`-period phase shift is baked into the interpolated function
+    /// to make it odd around the message (this makes the polynomial non-even, hence
+    /// `Parity::Full`). Can be paired with `f_mod_log_interval_reduction`.
+    CosCheby,
+    /// Complex exponential `1/(2π)·exp(2πi·x) = 1/(2π)·(cos(2π·x) + i·sin(2π·x))`,
+    /// a variant built as a genuine complex polynomial. Produces both real
+    /// and imaginary slot components.
+    ///
+    /// Unlike the real variants it is generated directly — no parity forcing, phase
+    /// offset, or per-step constants, since complex squaring is self-contained:
+    ///
+    /// 1. **Per-step scaling** `s = (scaling/(2π))^(1/2^r)` (`r = f_mod_log_interval_reduction`):
+    ///    the `2^r`-th root of the target amplitude, so the `r` squarings compound
+    ///    it back to exactly `scaling/(2π)` (`s^(2^r) = scaling/(2π)`).
+    /// 2. **Reduced half-range** `k_eff = K/2^r` (`K = f_mod_interval`).
+    /// 3. Two real degree-`f_mod_degree` **Chebyshev interpolants** over
+    ///    `[−k_eff, k_eff]`: `re(x) ≈ s·cos(2π·x)` and `im(x) ≈ s·sin(2π·x)` — the
+    ///    real and imaginary parts of `s·exp(2πi·x)`.
+    /// 4. Packed into a [`ComplexBSGSPolynomial`] (Chebyshev basis) and BSGS-encoded.
+    ///
+    /// At evaluation the base polynomial yields `s·exp(2πi·t)` for `|t| ≤ k_eff`,
+    /// and the `r` complex squarings (`exp(iθ)² = exp(2iθ)`) extend it to the
+    /// full-range `(scaling/(2π))·exp(2πi·x)`.
+    ExpCmplx,
+}
+
+/// User-facing recipe for an `x mod 1` evaluation. Compiled into the encoded
+/// [`EvalMod`] by [`EvalMod::from_literal`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EvalModPlan {
+    /// Which periodic-function approximation and output form to use.
+    pub eval_mod_type: EvalModType,
+    /// `log2` of the *message ratio* `q/Δ`: the cleartext is `I(X)·q + Δ·m` with
+    /// `m ∈ [-1, 1]`. In CKKS-meta terms the encoding scale is `Δ = 2^log_delta` and
+    /// the integer part wraps at the plaintext modulus `q = 2^effective_k =
+    /// 2^(log_delta + log_budget)`, so the ratio is `q/Δ = 2^log_budget` — i.e.
+    /// `log_message_ratio` is the `log_budget` of the value being reduced, the bit
+    /// gap between the payload and the integer part.
+    pub log_message_ratio: usize,
+    /// Degree of the base polynomial approximation.
+    pub f_mod_degree: usize,
+    /// `K`, the number of message intervals the reduction spans: the approximation
+    /// must remain valid for integer parts `|I| ≲ K`.
+    pub f_mod_interval: usize,
+    /// `r`, the number of range-extension steps. The base polynomial is built on
+    /// the `2^r`-times-smaller range `[-K/2^r, K/2^r]`, and `r` range-extension
+    /// steps extend it back to `[-K, K]`.
+    pub f_mod_log_interval_reduction: usize,
+    /// Degree of the optional inverse `f⁻¹` post-composition (the arcsine for the
+    /// trigonometric families; `None` disables it). Must be odd. The base `f` is
+    /// only linear in `m` near the origin; composing with `f⁻¹` recovers a value
+    /// linear in `m` across the whole interval.
+    pub f_mod_inv_degree: Option<usize>,
+    /// Optional output amplitude scaling: the recovered value is scaled by
+    /// `scaling / (2π)`. `None` uses the default `1.0`.
+    pub scaling: Option<f64>,
+    /// Baby-step/giant-step split strategy used to encode the polynomials (depth
+    /// vs. number-of-rotations trade-off).
+    pub split_strategy: SplitStrategy,
+}
+
+/// BSGS-encoded base polynomial driving the homomorphic evaluation. Its
+/// coefficients are stored as the plaintexts `P` (host-side after
+/// [`EvalMod::from_literal`], backend-resident after
+/// [`EvalMod::map_plaintexts`]).
+pub enum EvalModBsgs<P> {
+    /// Real-valued `f` (e.g. the `sin`/`cos` families).
+    Real(BSGSPolynomial<P>),
+    /// Complex-valued `f` (e.g. [`EvalModType::ExpCmplx`]).
+    Complex(ComplexBSGSPolynomial<P>),
+}
+
+/// Host-side polynomials retained alongside their BSGS-encoded counterparts in
+/// [`EvalMod`]. These are the exact functions the circuit evaluates,
+/// usable for reference evaluation via [`Polynomial::evaluate`].
+pub enum EvalModPoly<F> {
+    /// Real-valued `f` (e.g. the `sin`/`cos` families).
+    Real(Polynomial<F>),
+    /// Complex-valued `f` (e.g. [`EvalModType::ExpCmplx`]).
+    Complex(ComplexPolynomial<F>),
+}
+
+/// Compiled `x mod 1` parameters: the periodic-function approximation polynomials
+/// of an [`EvalModPlan`], encoded into plaintexts `P` ready for
+/// homomorphic evaluation, plus the host-side polynomials kept for reference.
+///
+/// `F` is the host floating-point scalar the polynomials were built in; `P` is
+/// the plaintext storage type — a host [`CKKSPlaintext`] right after
+/// [`Self::from_literal`], or a backend-resident plaintext after
+/// [`Self::map_plaintexts`]. Evaluate it with
+/// [`CKKSEvalModOps::ckks_eval_mod`](crate::api::CKKSEvalModOps::ckks_eval_mod).
+pub struct EvalMod<F, P> {
+    /// Copy of [`EvalModPlan`].
+    pub plan: EvalModPlan,
+    /// Encoded constants subtracted at each real range-extension step, packed one
+    /// per coefficient: coefficient `i` holds the step-`i` constant `s^(2^(i+1))`
+    /// (see [`Self::range_extension_scale`]) — for the trigonometric families the
+    /// `cos 2θ = 2cos²θ − dac` identity, with the baked-in scaling. A single
+    /// plaintext suffices since every constant shares the same metadata. `None`
+    /// when no per-step constant is needed (no range extension, or the complex
+    /// [`EvalModType::ExpCmplx`] path, whose squaring is exact).
+    pub range_extension_consts: Option<P>,
+    /// BSGS-encoded base polynomial actually evaluated on the ciphertext.
+    pub f_mod_bsgs: EvalModBsgs<P>,
+    /// BSGS-encoded inverse `f⁻¹` post-composition (the arcsine for the
+    /// trigonometric families), present when `f_mod_inv_degree` is `Some`.
+    pub f_mod_inv_bsgs: Option<BSGSPolynomial<P>>,
+    /// Host-side base polynomial that `f_mod_bsgs` encodes.
+    pub f_mod_poly: EvalModPoly<F>,
+    /// Host-side inverse `f⁻¹` post-composition polynomial that `f_mod_inv_bsgs`
+    /// encodes, when present.
+    pub f_mod_inv_poly: Option<Polynomial<F>>,
+}
+
+impl<F> EvalMod<F, CKKSPlaintext<Vec<u8>>>
+where
+    F: CKKSScalar + Float + FloatConst,
+{
+    /// Compiles an [`EvalModPlan`] into encoded parameters.
+    ///
+    /// On the host `module`, builds the polynomial approximating the base function
+    /// `f`, the optional inverse `f⁻¹`, and the range-extension constants, then
+    /// encodes each as a BSGS plaintext at scale `coeff_meta` and limb width
+    /// `base2k`. Plaintexts are host-resident; use
+    /// [`Self::map_plaintexts`] to move them onto an evaluation backend.
+    ///
+    /// Which `f`/`f⁻¹` are built — and how — is selected by
+    /// [`EvalModPlan::eval_mod_type`]. For the trigonometric families
+    /// `f` is a Chebyshev interpolation of `sin`/`cos` (or a discrete-cosine fit)
+    /// and `f⁻¹` is the arcsine series; [`EvalModType::ExpCmplx`] is delegated to
+    /// `from_literal_exp`.
+    ///
+    /// The range-extension scaling `s` (see [`Self::range_extension_scale`]) is
+    /// baked into the base coefficients; when an inverse `f⁻¹` is requested the
+    /// base is left unscaled (`s = 1`) and the scaling is carried by the inverse
+    /// instead.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the literal is inconsistent — e.g. a zero degree or
+    /// interval, `SinCheby` with `f_mod_log_interval_reduction ≠ 0`, `CosHK` with
+    /// `f_mod_degree < 2·(K − 1)`, an even `f_mod_inv_degree`,
+    /// `f_mod_log_interval_reduction ≥ 31` — or if a coefficient is not representable in `F`.
+    pub fn from_literal(
+        coeff_meta: CKKSMeta,
+        base2k: Base2K,
+        lit: EvalModPlan,
+        module: &Module<HostBytesBackend>,
+    ) -> Result<Self> {
+        if lit.eval_mod_type == EvalModType::ExpCmplx {
+            return Self::from_literal_exp(coeff_meta, base2k, lit, module);
+        }
+
+        ensure!(lit.f_mod_degree > 0, "f_mod_degree must be > 0");
+        ensure!(lit.f_mod_interval > 0, "f_mod_interval must be > 0");
+        ensure!(
+            !(lit.eval_mod_type == EvalModType::SinCheby && lit.f_mod_log_interval_reduction != 0),
+            "SinCheby requires f_mod_log_interval_reduction = 0"
+        );
+        ensure!(
+            !(lit.eval_mod_type == EvalModType::CosHK && lit.f_mod_degree < 2 * (lit.f_mod_interval - 1)),
+            "CosHK requires f_mod_degree >= 2*(K-1)"
+        );
+        ensure!(
+            lit.f_mod_log_interval_reduction < 31,
+            "f_mod_log_interval_reduction must be < 31"
+        );
+
+        let f_mod_log_interval_reduction = match lit.eval_mod_type {
+            EvalModType::SinCheby => 0,
+            _ => lit.f_mod_log_interval_reduction,
+        };
+
+        let scaling_f64 = lit.scaling.unwrap_or(1.0);
+        let scaling: F = scalar_from_f64("scaling", scaling_f64)?;
+        let sc_fac: F = scalar_from_u64("2^f_mod_log_interval_reduction", 1u64 << f_mod_log_interval_reduction)?;
+        let k_eff = scalar_from_usize::<F>("f_mod_interval", lit.f_mod_interval)? / sc_fac;
+
+        let two = F::one() + F::one();
+        let two_pi = two * F::PI();
+        let inv_two_pi = F::one() / two_pi;
+
+        let mut f_mod_inv_poly_opt: Option<Polynomial<F>> = None;
+        let s: F = if let Some(n) = lit.f_mod_inv_degree {
+            ensure!(!n.is_multiple_of(2), "f_mod_inv_degree must be odd");
+            let mut coeffs = vec![F::zero(); n + 1];
+            coeffs[1] = inv_two_pi * scaling;
+            let mut i = 1usize;
+            while i + 2 <= n {
+                let next = i + 2;
+                let num: F = scalar_from_i64("arcsine num", (next as i64 - 2) * (next as i64 - 2))?;
+                let den: F = scalar_from_i64("arcsine den", next as i64 * (next as i64 - 1))?;
+                coeffs[next] = coeffs[i] * num / den;
+                i = next;
+            }
+            f_mod_inv_poly_opt = Some(Polynomial::new_with_parity(Basis::Monomial, coeffs, Parity::Odd));
+            F::one()
+        } else {
+            (inv_two_pi * scaling).powf(F::one() / sc_fac)
+        };
+
+        let mut f_mod_poly: Polynomial<F> = match lit.eval_mod_type {
+            EvalModType::SinCheby => Polynomial::chebyshev_interpolate(lit.f_mod_degree, -k_eff, k_eff, |x| (two_pi * x).sin())?,
+            EvalModType::CosCheby => {
+                // Bake the −1/4-period phase shift into the interpolated function so
+                // no separate offset is added at evaluation time. The polynomial is
+                // applied to the reduced argument and the `2^r` range-extension
+                // squarings then scale the argument by `2^r`, so the baked shift is
+                // `−1/4 / 2^r` (it reaches the full `−1/4` after the squarings). The
+                // shifted cosine is no longer even in `x`, hence `Parity::Full` below.
+                let off =
+                    scalar_from_f64::<F>("-0.25", -0.25)? / scalar_from_u64::<F>("2^r", 1u64 << f_mod_log_interval_reduction)?;
+                Polynomial::chebyshev_interpolate(lit.f_mod_degree, -k_eff, k_eff, |x| (two_pi * (x + off)).cos())?
+            }
+            EvalModType::CosHK => {
+                let coeffs = cosine::approximate_cos::<F>(
+                    lit.f_mod_interval,
+                    lit.f_mod_degree,
+                    (1u64 << lit.log_message_ratio) as f64,
+                    f_mod_log_interval_reduction,
+                );
+                // cos(2π·(x-1/4)/2^r) is not even in x; Parity::Full preserves
+                // the odd-degree Chebyshev coefficients in BSGS evaluation.
+                Polynomial::new_with_parity(Basis::Chebyshev, coeffs, Parity::Full)
+            }
+            EvalModType::ExpCmplx => unreachable!(),
+        };
+        match lit.eval_mod_type {
+            EvalModType::SinCheby => f_mod_poly.parity = Parity::Odd,
+            // The phase-shifted cosine is not even, so keep all coefficients.
+            EvalModType::CosCheby => f_mod_poly.parity = Parity::Full,
+            EvalModType::CosHK => {}
+            EvalModType::ExpCmplx => unreachable!(),
+        }
+
+        for c in f_mod_poly.coeffs.iter_mut() {
+            *c = *c * s;
+        }
+
+        let f_mod_bsgs = f_mod_poly.encode_bsgs_with(module, base2k, coeff_meta, lit.split_strategy)?;
+        let f_mod_inv_bsgs = f_mod_inv_poly_opt
+            .as_ref()
+            .map(|p| p.encode_bsgs_with(module, base2k, coeff_meta, lit.split_strategy))
+            .transpose()?;
+
+        // Pack the per-step constants `s^(2^(i+1))` one per coefficient into a
+        // single plaintext (they all share `coeff_meta`); the evaluator reads
+        // coefficient `i` at step `i`.
+        let range_extension_consts = if f_mod_log_interval_reduction > 0 {
+            let vals: Vec<F> = (0..f_mod_log_interval_reduction).map(|i| s.powi(1i32 << (i + 1))).collect();
+            let mut pt = module.ckks_pt_coeffs_alloc(f_mod_log_interval_reduction, base2k, coeff_meta);
+            pt.encode_host_floats(&vals)
+                .map_err(|e| anyhow!("range_extension_consts: {e}"))?;
+            Some(pt)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            plan: lit,
+            range_extension_consts,
+            f_mod_bsgs: EvalModBsgs::Real(f_mod_bsgs),
+            f_mod_inv_bsgs,
+            f_mod_poly: EvalModPoly::Real(f_mod_poly),
+            f_mod_inv_poly: f_mod_inv_poly_opt,
+        })
+    }
+
+    /// [`EvalModType::ExpCmplx`] specialization of [`Self::from_literal`]: interpolates
+    /// the real and imaginary parts of `s·exp(2πi·x)` on the reduced range as a
+    /// single [`ComplexPolynomial`] and BSGS-encodes it. The `r` range-extension
+    /// steps are plain complex squarings (`exp 2θ = (exp θ)²`), so no offset or
+    /// per-step constant is needed.
+    fn from_literal_exp(
+        coeff_meta: CKKSMeta,
+        base2k: Base2K,
+        lit: EvalModPlan,
+        module: &Module<HostBytesBackend>,
+    ) -> Result<Self> {
+        ensure!(lit.f_mod_degree > 0, "f_mod_degree must be > 0");
+        ensure!(lit.f_mod_interval > 0, "f_mod_interval must be > 0");
+        ensure!(
+            lit.f_mod_log_interval_reduction < 31,
+            "f_mod_log_interval_reduction must be < 31"
+        );
+
+        let scaling_f64 = lit.scaling.unwrap_or(1.0);
+        let scaling: F = scalar_from_f64("scaling", scaling_f64)?;
+        let sc_fac: F = scalar_from_u64("2^f_mod_log_interval_reduction", 1u64 << lit.f_mod_log_interval_reduction)?;
+        let k_eff = scalar_from_usize::<F>("f_mod_interval", lit.f_mod_interval)? / sc_fac;
+
+        let two = F::one() + F::one();
+        let two_pi = two * F::PI();
+        let s: F = (F::one() / two_pi * scaling).powf(F::one() / sc_fac);
+
+        let re = Polynomial::chebyshev_interpolate(lit.f_mod_degree, -k_eff, k_eff, |x| s * (two_pi * x).cos())?;
+        let im = Polynomial::chebyshev_interpolate(lit.f_mod_degree, -k_eff, k_eff, |x| s * (two_pi * x).sin())?;
+        let exp_poly = ComplexPolynomial::new(Basis::Chebyshev, re.coeffs, im.coeffs);
+        let exp_bsgs = exp_poly.encode_bsgs_with(module, base2k, coeff_meta, lit.split_strategy)?;
+
+        Ok(Self {
+            plan: lit,
+            range_extension_consts: None,
+            f_mod_bsgs: EvalModBsgs::Complex(exp_bsgs),
+            f_mod_inv_bsgs: None,
+            f_mod_poly: EvalModPoly::Complex(exp_poly),
+            f_mod_inv_poly: None,
+        })
+    }
+}
+
+impl<F, P> EvalMod<F, P> {
+    /// Number of CKKS multiplicative levels the eval_mod pipeline will consume:
+    /// BSGS eval depth of the base `f` polynomial + `f_mod_log_interval_reduction`
+    /// range-extension steps + BSGS eval depth of the optional inverse `f⁻¹`
+    /// post-composition.
+    ///
+    /// The BSGS depths come from [`BSGSPolynomial::eval_depth`], which accounts for
+    /// the chosen [`SplitStrategy`] — so this is exact for `MinMult` as well as
+    /// `MinDepth` (a `MinMult` split can cost one extra level).
+    pub fn eval_depth(&self) -> usize {
+        let base = match &self.f_mod_bsgs {
+            EvalModBsgs::Real(p) => p.eval_depth(),
+            EvalModBsgs::Complex(p) => p.re.eval_depth(),
+        };
+        let inv = self.f_mod_inv_bsgs.as_ref().map_or(0, |p| p.eval_depth());
+        base + self.plan.f_mod_log_interval_reduction + inv
+    }
+
+    /// Per-step range-extension scaling `s`: the base polynomial bakes `s` into its
+    /// coefficients, and each range-extension step folds in `s^(2^(i+1))`. When an
+    /// inverse `f⁻¹` post-composition is used the base is unscaled (`s = 1`).
+    pub fn range_extension_scale(&self) -> f64 {
+        if self.f_mod_inv_poly.is_some() {
+            return 1.0;
+        }
+        (std::f64::consts::TAU.recip() * self.plan.scaling.unwrap_or(1.0))
+            .powf(1.0 / (1u64 << self.plan.f_mod_log_interval_reduction) as f64)
+    }
+
+    /// Re-encodes every plaintext field from storage `P` to storage `Q`, leaving
+    /// the host-side polynomials untouched. The typical use is uploading the
+    /// host-encoded parameters from [`Self::from_literal`] onto an evaluation
+    /// backend (e.g. mapping each host [`CKKSPlaintext`] to a device-resident
+    /// plaintext) before calling
+    /// [`CKKSEvalModOps::ckks_eval_mod`](crate::api::CKKSEvalModOps::ckks_eval_mod).
+    pub fn map_plaintexts<Q>(self, mut f: impl FnMut(&P) -> Q) -> EvalMod<F, Q> {
+        let Self {
+            plan,
+            range_extension_consts,
+            f_mod_bsgs,
+            f_mod_inv_bsgs,
+            f_mod_poly,
+            f_mod_inv_poly,
+        } = self;
+        EvalMod {
+            plan,
+            range_extension_consts: range_extension_consts.as_ref().map(&mut f),
+            f_mod_bsgs: match f_mod_bsgs {
+                EvalModBsgs::Real(p) => EvalModBsgs::Real(p.map_baby_steps_ref(&mut f)),
+                EvalModBsgs::Complex(p) => EvalModBsgs::Complex(p.map_baby_steps_ref(&mut f)),
+            },
+            f_mod_inv_bsgs: f_mod_inv_bsgs.as_ref().map(|p| p.map_baby_steps_ref(&mut f)),
+            f_mod_poly,
+            f_mod_inv_poly,
+        }
+    }
+}

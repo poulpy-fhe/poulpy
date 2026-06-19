@@ -21,3 +21,6 @@ rand = {workspace = true}
 rand_distr = {workspace = true}
 anyhow = {workspace = true}
 bytemuck = {workspace = true}
+dashu-float = {workspace = true}
+
+f128 = "0.2"

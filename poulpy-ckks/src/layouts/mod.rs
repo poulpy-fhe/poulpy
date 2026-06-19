@@ -14,6 +14,7 @@ mod alloc;
 pub mod ciphertext;
 pub mod complex_diagonals;
 pub mod dft;
+pub mod eval_mod;
 pub mod plaintext;
 
 pub use alloc::CKKSModuleAlloc;
@@ -26,6 +27,7 @@ pub use dft::{
     DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTOutputFormat, DFTPlan, DFTType, Decode, DftDirection, DftFormat, Encode,
     Repack, Split, Standard,
 };
+pub use eval_mod::{EvalMod, EvalModBsgs, EvalModPlan, EvalModPoly, EvalModType};
 pub use plaintext::CKKSPlaintext;
 
 use std::fmt::Debug;
