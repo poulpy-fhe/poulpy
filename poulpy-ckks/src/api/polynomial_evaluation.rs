@@ -47,7 +47,7 @@ pub trait PolynomialEvaluation<BE: Backend> {
 
     /// Builds the power basis internally then evaluates a real-coefficient
     /// polynomial.
-    fn ckks_eval_poly_real_const_coeffs<R, S, C, B>(
+    fn ckks_eval_poly_real_const_coeffs<R, S, B>(
         &self,
         dst: &mut R,
         src: &S,
@@ -58,7 +58,6 @@ pub trait PolynomialEvaluation<BE: Backend> {
     where
         R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         S: GLWEToBackendRef<BE> + CKKSCtBounds,
-        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,

@@ -596,6 +596,23 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_complex_fold
             );
             run_test!(
+                eval_mod_sin_continuous_minimal,
+                $crate::test_suite::eval_mod::test_eval_mod_sin_continuous_minimal
+            );
+            run_test!(
+                eval_mod_sin_continuous_with_arcsine,
+                $crate::test_suite::eval_mod::test_eval_mod_sin_continuous_with_arcsine
+            );
+            run_test!(
+                eval_mod_cos_discrete,
+                $crate::test_suite::eval_mod::test_eval_mod_cos_discrete
+            );
+            run_test!(
+                eval_mod_cos_continuous,
+                $crate::test_suite::eval_mod::test_eval_mod_cos_continuous
+            );
+            run_test!(eval_mod_exp, $crate::test_suite::eval_mod::test_eval_mod_exp);
+            run_test!(
                 mul_add_const_zero_preserves_dst_meta,
                 $crate::test_suite::mul_add::test_mul_add_const_zero_preserves_dst_meta
             );
@@ -686,6 +703,7 @@ pub mod dot_product;
 pub mod encoding;
 pub mod encryption;
 pub mod errors;
+pub mod eval_mod;
 pub mod helpers;
 pub mod imag;
 pub mod linear_transformation;
