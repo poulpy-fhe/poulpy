@@ -22,9 +22,7 @@
 
 #[cfg(not(all(feature = "enable-avx512f", target_arch = "x86_64", target_feature = "avx512f")))]
 fn main() {
-    eprintln!(
-        "Skipping: bench_avx512_vs_ref requires --features enable-avx512f on target_arch = \"x86_64\" with AVX-512F."
-    );
+    eprintln!("Skipping: bench_avx512_vs_ref requires --features enable-avx512f on target_arch = \"x86_64\" with AVX-512F.");
 }
 
 #[cfg(all(feature = "enable-avx512f", target_arch = "x86_64", target_feature = "avx512f"))]

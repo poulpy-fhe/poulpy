@@ -34,6 +34,10 @@ where
 
 unsafe impl HalVecZnxImpl<FFT64Neon> for FFT64Neon {
     poulpy_cpu_ref::hal_impl_vec_znx!();
+
+    fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
+        <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
+    }
 }
 
 unsafe impl HalModuleImpl<FFT64Neon> for FFT64Neon {
@@ -62,6 +66,10 @@ unsafe impl HalVecZnxDftImpl<FFT64Neon> for FFT64Neon {
 
 unsafe impl HalVecZnxImpl<NTT120Neon> for NTT120Neon {
     poulpy_cpu_ref::hal_impl_vec_znx!();
+
+    fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
+        <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
+    }
 }
 
 unsafe impl HalModuleImpl<NTT120Neon> for NTT120Neon {
@@ -287,6 +295,32 @@ unsafe impl HalConvolutionImpl<NTT120Neon> for NTT120Neon {
         let bytes = crate::ntt120::convolution::cnv_apply_dft_neon_tmp_bytes(a.size(), b.size());
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         crate::ntt120::convolution::cnv_apply_dft_neon(module, res, cnv_offset, res_col, a, a_col, b, b_col, tmp);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_apply_dft_accumulate(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        mut res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &poulpy_hal::layouts::CnvPVecLBackendRef<'_, Self>,
+        a_col: usize,
+        b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
+        b_col: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let mut scratch = scratch.borrow();
+        <Self as NTT120ConvolutionDefault<Self>>::cnv_apply_dft_accumulate_default(
+            module,
+            cnv_offset,
+            &mut res,
+            res_col,
+            a,
+            a_col,
+            b,
+            b_col,
+            &mut scratch,
+        );
     }
 
     fn cnv_pairwise_apply_dft_tmp_bytes(

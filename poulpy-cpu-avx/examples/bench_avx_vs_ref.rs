@@ -20,19 +20,32 @@
 //! script panics with a diff. After the correctness gate it times both
 //! variants and prints a speedup table.
 
-#[cfg(not(all(feature = "enable-avx", target_arch = "x86_64", target_feature = "avx2", target_feature = "fma")))]
+#[cfg(not(all(
+    feature = "enable-avx",
+    target_arch = "x86_64",
+    target_feature = "avx2",
+    target_feature = "fma"
+)))]
 fn main() {
-    eprintln!(
-        "Skipping: bench_avx_vs_ref requires --features enable-avx on target_arch = \"x86_64\" with AVX2 + FMA."
-    );
+    eprintln!("Skipping: bench_avx_vs_ref requires --features enable-avx on target_arch = \"x86_64\" with AVX2 + FMA.");
 }
 
-#[cfg(all(feature = "enable-avx", target_arch = "x86_64", target_feature = "avx2", target_feature = "fma"))]
+#[cfg(all(
+    feature = "enable-avx",
+    target_arch = "x86_64",
+    target_feature = "avx2",
+    target_feature = "fma"
+))]
 fn main() {
     avx::run();
 }
 
-#[cfg(all(feature = "enable-avx", target_arch = "x86_64", target_feature = "avx2", target_feature = "fma"))]
+#[cfg(all(
+    feature = "enable-avx",
+    target_arch = "x86_64",
+    target_feature = "avx2",
+    target_feature = "fma"
+))]
 mod avx {
     use std::fs::File;
     use std::hint::black_box;
