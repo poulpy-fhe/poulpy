@@ -819,10 +819,19 @@ where
     F: TestScalar,
     E: NegacyclicFFT<F>,
 {
+    // Cap the integer headroom so the centered plaintext fits the i128 decode codec
+    // (`log_delta + log_budget <= 127`). This is the decode-time equivalent of
+    // rescaling the ciphertext to a smaller modulus before decoding: the decoded
+    // values are bounded, so dropping the unused high-order budget is lossless and
+    // lets the suite exercise scales (`log_delta`) wider than would otherwise leave
+    // room for the full noise budget.
     let prec = CKKSMeta {
         log_sparsity: 0,
         log_delta: ct.log_delta(),
-        log_budget: ct.log_budget().min(params.prec.log_budget()),
+        log_budget: ct
+            .log_budget()
+            .min(params.prec.log_budget())
+            .min(127usize.saturating_sub(ct.log_delta())),
     };
     let pt = ckks_decrypt_with_prec(module, ct, sk, prec, scratch).unwrap();
     ckks_decode_pt(encoder, params.n / 2, &pt)

@@ -10,7 +10,9 @@ use crate::{
     layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar},
 };
 
-pub use poulpy_core::layouts::{BSGSPolynomial, Basis, DEFAULT_SPLIT_STRATEGY, Parity, Polynomial, SplitStrategy, split_degree};
+pub use poulpy_core::layouts::{
+    BSGSPolynomial, Basis, DEFAULT_SPLIT_STRATEGY, Parity, Polynomial, SplitStrategy, evaluate_coeffs, split_degree,
+};
 
 /// Adaptive Chebyshev split: full-scale low branch, compensated high branch.
 pub struct AdaptiveBSGS<C> {
@@ -236,6 +238,22 @@ where
         let re = re_poly.encode_bsgs_with(module, base2k, coeff_meta, strategy)?;
         let im = im_poly.encode_bsgs_with(module, base2k, coeff_meta, strategy)?;
         Ok(ComplexBSGSPolynomial { re, im })
+    }
+}
+
+impl<F> ComplexPolynomial<F>
+where
+    F: Float,
+{
+    /// Evaluates both components at real `x`, returning `(re, im)`.
+    ///
+    /// Mirrors the bare per-component evaluation the homomorphic circuit
+    /// performs (no interval remapping); see [`Polynomial::evaluate`].
+    pub fn evaluate(&self, x: F) -> (F, F) {
+        (
+            evaluate_coeffs(self.basis, &self.re, x),
+            evaluate_coeffs(self.basis, &self.im, x),
+        )
     }
 }
 

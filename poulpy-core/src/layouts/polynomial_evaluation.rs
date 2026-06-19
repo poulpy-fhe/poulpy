@@ -278,6 +278,29 @@ pub fn split_degree(n: usize) -> (usize, usize) {
     }
 }
 
+/// Multiplicative depth (CT-CT multiplication levels) consumed by a BSGS
+/// evaluation of a degree-`degree` polynomial under `strategy`.
+///
+/// The depth-optimal [`SplitStrategy::MinDepth`] split reaches `bit_len(degree)`
+/// (`= ceil(log2(degree + 1))`). [`SplitStrategy::MinMult`] minimises the
+/// multiplication count instead, which for the upper part of each
+/// `[2^(b-1), 2^b)` band costs one extra level. The threshold within a band of
+/// `b = bit_len(degree)` bits is `2^b − 2^((b-1)/2) + 1` (matching the giant-step
+/// structure of `eval_giant_steps`).
+pub(crate) fn bsgs_eval_depth(degree: usize, strategy: SplitStrategy) -> usize {
+    if degree == 0 {
+        return 0;
+    }
+    let b = bit_len(degree);
+    match strategy {
+        SplitStrategy::MinDepth => b,
+        SplitStrategy::MinMult => {
+            let threshold = (1usize << b) - (1usize << ((b - 1) / 2)) + 1;
+            if degree >= threshold { b + 1 } else { b }
+        }
+    }
+}
+
 // ── Polynomial ───────────────────────────────────────────────────────────────
 
 /// A plaintext polynomial with real coefficients.
@@ -330,33 +353,7 @@ where
     /// Uses Horner's method (monomial) or Clenshaw's algorithm (Chebyshev).
     /// For Chebyshev, `x` should lie in `[−1, 1]`.
     pub fn evaluate(&self, x: F) -> F {
-        match self.basis {
-            Basis::Monomial => {
-                let mut y = F::zero();
-                for &c in self.coeffs.iter().rev() {
-                    y = y * x + c;
-                }
-                y
-            }
-            Basis::Chebyshev => {
-                let n = self.coeffs.len();
-                if n == 0 {
-                    return F::zero();
-                }
-                if n == 1 {
-                    return self.coeffs[0];
-                }
-                let two = F::one() + F::one();
-                let mut b2 = F::zero();
-                let mut b1 = F::zero();
-                for i in (1..n).rev() {
-                    let tmp = two * x * b1 - b2 + self.coeffs[i];
-                    b2 = b1;
-                    b1 = tmp;
-                }
-                self.coeffs[0] + x * b1 - b2
-            }
-        }
+        evaluate_coeffs(self.basis, &self.coeffs, x)
     }
 
     /// Evaluates this polynomial on an input interval.
@@ -384,7 +381,8 @@ where
     ) -> Result<BSGSPolynomial<C>> {
         let log_split = split_for_strategy(strategy, self.degree(), self.parity, self.basis);
         let split_leading = matches!(strategy, SplitStrategy::MinDepth);
-        self.decompose_bsgs_inner(log_split, split_leading, encode)
+        let eval_depth = bsgs_eval_depth(self.degree(), strategy);
+        self.decompose_bsgs_inner(log_split, split_leading, eval_depth, encode)
     }
 
     /// Returns the BSGS `log_split` (so `base = 1 << log_split`) the given
@@ -401,13 +399,16 @@ where
         log_split: usize,
         encode: impl FnMut(&[F]) -> Result<C>,
     ) -> Result<BSGSPolynomial<C>> {
-        self.decompose_bsgs_inner(log_split, false, encode)
+        // Forced-split (adaptive low) branches never feed eval_mod's depth check.
+        let eval_depth = bsgs_eval_depth(self.degree(), SplitStrategy::MinDepth);
+        self.decompose_bsgs_inner(log_split, false, eval_depth, encode)
     }
 
     fn decompose_bsgs_inner<C>(
         &self,
         log_split: usize,
         split_leading: bool,
+        eval_depth: usize,
         mut encode: impl FnMut(&[F]) -> Result<C>,
     ) -> Result<BSGSPolynomial<C>> {
         ensure!(self.degree() >= 1, "polynomial must have degree ≥ 1");
@@ -435,7 +436,47 @@ where
             base,
             baby_steps,
             parity: self.parity,
+            eval_depth,
         })
+    }
+}
+
+/// Evaluates the polynomial with coefficients `coeffs` (in `basis`) at `x`.
+///
+/// Horner's method (monomial) or Clenshaw's algorithm (Chebyshev); for
+/// Chebyshev, `x` should lie in `[−1, 1]`. Operates on a borrowed slice so
+/// callers (e.g. complex polynomials) can evaluate their components without
+/// allocating intermediate [`Polynomial`]s.
+pub fn evaluate_coeffs<F>(basis: Basis, coeffs: &[F], x: F) -> F
+where
+    F: Float,
+{
+    match basis {
+        Basis::Monomial => {
+            let mut y = F::zero();
+            for &c in coeffs.iter().rev() {
+                y = y * x + c;
+            }
+            y
+        }
+        Basis::Chebyshev => {
+            let n = coeffs.len();
+            if n == 0 {
+                return F::zero();
+            }
+            if n == 1 {
+                return coeffs[0];
+            }
+            let two = F::one() + F::one();
+            let mut b2 = F::zero();
+            let mut b1 = F::zero();
+            for i in (1..n).rev() {
+                let tmp = two * x * b1 - b2 + coeffs[i];
+                b2 = b1;
+                b1 = tmp;
+            }
+            coeffs[0] + x * b1 - b2
+        }
     }
 }
 
@@ -501,6 +542,9 @@ pub struct BSGSPolynomial<C> {
     pub(crate) base: usize,
     pub(crate) baby_steps: Vec<C>,
     pub(crate) parity: Parity,
+    /// Multiplicative depth this decomposition consumes, computed from the
+    /// `SplitStrategy` at decomposition time (see [`bsgs_eval_depth`]).
+    pub(crate) eval_depth: usize,
 }
 
 impl<BE: Backend, C> BSGSPolynomialInfos<BE> for BSGSPolynomial<C>
@@ -555,6 +599,17 @@ impl<C> BSGSPolynomial<C> {
         self.base.trailing_zeros() as usize
     }
 
+    /// Multiplicative depth (number of CT-CT multiplication levels) a BSGS
+    /// evaluation of this polynomial consumes.
+    ///
+    /// Computed from the [`SplitStrategy`] at decomposition time, so it is exact
+    /// for any strategy. In particular it is **not** simply `ceil(log2(degree))`:
+    /// a `MinMult` split can cost one level more than the depth-optimal `MinDepth`
+    /// split.
+    pub fn eval_depth(&self) -> usize {
+        self.eval_depth
+    }
+
     /// Returns all encoded baby-step coefficient polynomials.
     pub fn baby_steps(&self) -> &[C] {
         &self.baby_steps
@@ -580,6 +635,7 @@ impl<C> BSGSPolynomial<C> {
             base: self.base,
             baby_steps: self.baby_steps.iter().map(&mut f).collect(),
             parity: self.parity,
+            eval_depth: self.eval_depth,
         }
     }
 }
@@ -722,6 +778,25 @@ mod tests {
             collect_baby_step_degrees(Basis::Chebyshev, 31, log_split, true),
             vec![7, 7, 7, 3, 1, 1]
         );
+    }
+
+    #[test]
+    fn bsgs_eval_depth_matches_closed_form() {
+        assert_eq!(bsgs_eval_depth(0, SplitStrategy::MinDepth), 0);
+        assert_eq!(bsgs_eval_depth(0, SplitStrategy::MinMult), 0);
+        // MinDepth reaches `k = bit_len(d) = ceil(log2(d + 1))`. MinMult costs one
+        // extra level on the upper part of each `[2^(k-1), 2^k)` band, where
+        // `2^k - d <= 2^((k-1)/2) - 1`.
+        for d in 1..1024 {
+            let k = bit_len(d);
+            let min_mult = if (1usize << k) - d < (1usize << ((k - 1) / 2)) {
+                k + 1
+            } else {
+                k
+            };
+            assert_eq!(bsgs_eval_depth(d, SplitStrategy::MinDepth), k, "MinDepth degree {d}");
+            assert_eq!(bsgs_eval_depth(d, SplitStrategy::MinMult), min_mult, "MinMult degree {d}");
+        }
     }
 
     #[test]
