@@ -34,7 +34,6 @@ paste = {workspace = true}
 
 [dev-dependencies]
 anyhow = {workspace = true}
-f128 = "0.2"
 
 [package.metadata.docs.rs]
 all-features = true

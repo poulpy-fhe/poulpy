@@ -1,3 +1,4 @@
+#![feature(f128)]
 //! # poulpy-ckks
 //!
 //! Backend-agnostic implementation of the CKKS (Cheon-Kim-Kim-Song)
@@ -63,12 +64,14 @@ pub mod leveled;
 pub mod oep;
 pub mod polynomial;
 pub mod power_basis;
+pub mod scalar;
 pub mod test_suite;
 pub use error::CKKSCompositionError;
 pub(crate) use error::{
     checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget, ensure_base2k_match,
     ensure_plaintext_alignment, ensure_plaintext_coeff_in_range, ensure_plaintext_degree_match,
 };
+pub use scalar::Quad;
 
 pub type CKKSCiphertextRef<'a, BE> = layouts::CKKSCiphertext<<BE as Backend>::BufRef<'a>>;
 pub type CKKSCiphertextMut<'a, BE> = layouts::CKKSCiphertext<<BE as Backend>::BufMut<'a>>;

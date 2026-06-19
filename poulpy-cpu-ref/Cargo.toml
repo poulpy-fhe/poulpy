@@ -28,9 +28,6 @@ byteorder = {workspace = true}
 once_cell = {workspace = true}
 rand_chacha = {workspace = true}
 
-[dev-dependencies]
-f128 = "0.2"
-
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]

@@ -30,8 +30,8 @@ ckks_backend_test_suite!(
 ckks_backend_test_suite!(
     mod ntt120_f128,
     backend = crate::NTT120Ref,
-    scalar = f128::f128,
-    encoder = crate::FFT64ReimTable<f128::f128>,
+    scalar = poulpy_ckks::Quad,
+    encoder = crate::FFT64ReimTable<poulpy_ckks::Quad>,
     params = poulpy_ckks::test_suite::NTT120_PARAMS_F128,
     rotations = super::ATK_ROTATIONS,
 );

@@ -19,3 +19,13 @@ ckks_backend_test_suite!(
     params = poulpy_ckks::test_suite::NTT120_PARAMS_F64,
     rotations = super::ATK_ROTATIONS,
 );
+
+// binary128 path on aarch64: `Quad` scalar with the reference encoder.
+ckks_backend_test_suite!(
+    mod ntt120_f128,
+    backend = crate::NTT120Neon,
+    scalar = poulpy_ckks::Quad,
+    encoder = poulpy_cpu_ref::FFT64ReimTable<poulpy_ckks::Quad>,
+    params = poulpy_ckks::test_suite::NTT120_PARAMS_F128,
+    rotations = super::ATK_ROTATIONS,
+);
