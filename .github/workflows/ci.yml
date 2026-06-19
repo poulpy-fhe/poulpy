@@ -230,6 +230,9 @@ jobs:
     env:
       CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
       CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER: qemu-aarch64-static
+      # Let qemu-user find the aarch64 glibc loader/libs from the cross sysroot
+      # installed by gcc-aarch64-linux-gnu.
+      QEMU_LD_PREFIX: /usr/aarch64-linux-gnu
 
     steps:
       - name: Checkout
