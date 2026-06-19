@@ -31,6 +31,12 @@ where
 
 unsafe impl HalVecZnxImpl<FFT64Avx> for FFT64Avx {
     poulpy_cpu_ref::hal_impl_vec_znx!();
+
+    // TODO: add an AVX-accelerated tiled transpose kernel; falls back to the
+    // reference impl for now.
+    fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
+        <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
+    }
 }
 
 unsafe impl HalModuleImpl<FFT64Avx> for FFT64Avx {
@@ -54,11 +60,29 @@ unsafe impl HalSvpImpl<FFT64Avx> for FFT64Avx {
 }
 
 unsafe impl HalVecZnxDftImpl<FFT64Avx> for FFT64Avx {
-    poulpy_cpu_ref::hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault);
+    poulpy_cpu_ref::hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault, automorphism_with_plan: skip);
+
+    #[inline(always)]
+    fn vec_znx_dft_automorphism_with_plan(
+        _module: &Module<Self>,
+        plan: &Self::AutomorphismPlan,
+        res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+        a_col: usize,
+    ) {
+        crate::fft64::fft64_vec_znx_dft_automorphism_avx(plan, res, res_col, a, a_col);
+    }
 }
 
 unsafe impl HalVecZnxImpl<NTT120Avx> for NTT120Avx {
     poulpy_cpu_ref::hal_impl_vec_znx!();
+
+    // TODO: add an AVX-accelerated tiled transpose kernel; falls back to the
+    // reference impl for now.
+    fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
+        <Self as HalVecZnxDefault<Self>>::vec_znx_transpose_backend_default(module, res, a)
+    }
 }
 
 unsafe impl HalModuleImpl<NTT120Avx> for NTT120Avx {
@@ -215,11 +239,11 @@ unsafe impl HalConvolutionImpl<NTT120Avx> for NTT120Avx {
     fn cnv_apply_dft_tmp_bytes(
         _module: &Module<Self>,
         _cnv_offset: usize,
-        _res_size: usize,
+        res_size: usize,
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        crate::ntt120::convolution::cnv_apply_dft_avx_tmp_bytes(a_size, b_size)
+        poulpy_cpu_ref::reference::ntt120::convolution::ntt120_cnv_apply_dft_tmp_bytes(res_size, a_size, b_size)
     }
 
     fn cnv_by_const_apply_tmp_bytes(
@@ -274,11 +298,66 @@ unsafe impl HalConvolutionImpl<NTT120Avx> for NTT120Avx {
         b_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt120::convolution::cnv_apply_dft_avx_tmp_bytes(a.size(), b.size());
+        let bytes =
+            poulpy_cpu_ref::reference::ntt120::convolution::ntt120_cnv_apply_dft_tmp_bytes(res.size(), a.size(), b.size());
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        unsafe {
-            crate::ntt120::convolution::cnv_apply_dft_avx(module, res, cnv_offset, res_col, a, a_col, b, b_col, tmp);
-        }
+        poulpy_cpu_ref::reference::ntt120::convolution::ntt120_cnv_apply_dft(
+            module, cnv_offset, res, res_col, a, a_col, b, b_col, tmp,
+        );
+    }
+
+    // glwe_mul_plain keeps the eager block-major path on AVX2 (faster than the
+    // fused apply here), so the lazy methods inherit the eager default.
+
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_apply_dft_accumulate(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        mut res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &poulpy_hal::layouts::CnvPVecLBackendRef<'_, Self>,
+        a_col: usize,
+        b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
+        b_col: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let mut scratch = scratch.borrow();
+        <Self as NTT120ConvolutionDefault<Self>>::cnv_apply_dft_accumulate_default(
+            module,
+            cnv_offset,
+            &mut res,
+            res_col,
+            a,
+            a_col,
+            b,
+            b_col,
+            &mut scratch,
+        );
+    }
+
+    fn cnv_accumulate_dft_tmp_bytes(
+        _module: &Module<Self>,
+        _cnv_offset: usize,
+        res_size: usize,
+        _a_size: usize,
+        _b_size: usize,
+    ) -> usize {
+        crate::ntt120::convolution::cnv_accumulate_dft_avx_tmp_bytes(res_size)
+    }
+
+    fn cnv_accumulate_dft<'a>(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        terms: &[poulpy_hal::layouts::CnvDftAccTerm<'a, Self>],
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        Self: poulpy_hal::oep::HalVecZnxDftImpl<Self> + 'a,
+    {
+        let bytes = crate::ntt120::convolution::cnv_accumulate_dft_avx_tmp_bytes(res.size());
+        let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
+        unsafe { crate::ntt120::convolution::cnv_accumulate_dft_avx(module, cnv_offset, res, res_col, terms, tmp) };
     }
 
     fn cnv_pairwise_apply_dft_tmp_bytes(
@@ -288,7 +367,7 @@ unsafe impl HalConvolutionImpl<NTT120Avx> for NTT120Avx {
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        crate::ntt120::convolution::cnv_pairwise_apply_dft_avx_tmp_bytes(res_size, a_size, b_size)
+        poulpy_cpu_ref::reference::ntt120::convolution::ntt120_cnv_pairwise_apply_dft_tmp_bytes(res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -303,11 +382,15 @@ unsafe impl HalConvolutionImpl<NTT120Avx> for NTT120Avx {
         j: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt120::convolution::cnv_pairwise_apply_dft_avx_tmp_bytes(res.size(), a.size(), b.size());
+        let bytes = poulpy_cpu_ref::reference::ntt120::convolution::ntt120_cnv_pairwise_apply_dft_tmp_bytes(
+            res.size(),
+            a.size(),
+            b.size(),
+        );
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        unsafe {
-            crate::ntt120::convolution::cnv_pairwise_apply_dft_avx(module, res, cnv_offset, res_col, a, b, i, j, tmp);
-        }
+        poulpy_cpu_ref::reference::ntt120::convolution::ntt120_cnv_pairwise_apply_dft(
+            module, cnv_offset, res, res_col, a, b, i, j, tmp,
+        );
     }
 
     fn cnv_prepare_self_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
@@ -336,5 +419,16 @@ unsafe impl HalSvpImpl<NTT120Avx> for NTT120Avx {
 }
 
 unsafe impl HalVecZnxDftImpl<NTT120Avx> for NTT120Avx {
-    poulpy_cpu_ref::hal_impl_vec_znx_dft!(NTT120VecZnxDftDefault);
+    poulpy_cpu_ref::hal_impl_vec_znx_dft!(NTT120VecZnxDftDefault, automorphism_with_plan: skip);
+
+    fn vec_znx_dft_automorphism_with_plan(
+        _module: &Module<Self>,
+        plan: &Self::AutomorphismPlan,
+        res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
+        a_col: usize,
+    ) {
+        crate::ntt120::automorphism::ntt120_vec_znx_dft_automorphism_avx(plan, res, res_col, a, a_col);
+    }
 }

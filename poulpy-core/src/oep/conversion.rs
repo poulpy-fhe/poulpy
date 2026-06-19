@@ -2,7 +2,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::layouts::{
     GGLWEInfos, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-    LWEToBackendMut, LWEToBackendRef,
+    LWEMatrixInfos, LWEMatrixToBackendMut, LWEToBackendMut, LWEToBackendRef,
     prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
 };
 
@@ -83,6 +83,16 @@ pub unsafe trait ConversionImpl<BE: Backend>: Backend {
         R: LWEToBackendMut<BE> + LWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos;
 
+    fn glwe_expand_lwe_matrix_tmp_bytes<R, A>(module: &Module<BE>, res_infos: &R, a_infos: &A) -> usize
+    where
+        R: LWEMatrixInfos,
+        A: GLWEInfos;
+
+    fn glwe_expand_lwe_matrix<R, A>(module: &Module<BE>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos;
+
     fn ggsw_expand_rows_tmp_bytes<R, A>(module: &Module<BE>, res_infos: &R, tsk_infos: &A) -> usize
     where
         R: GGSWInfos,
@@ -156,6 +166,16 @@ pub trait ConversionDefault<BE: Backend> {
     fn glwe_expand_lwe_default<R, A>(&self, res: &mut [R], a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: LWEToBackendMut<BE> + LWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos;
+
+    fn glwe_expand_lwe_matrix_tmp_bytes_default<R, A>(&self, res_infos: &R, a_infos: &A) -> usize
+    where
+        R: LWEMatrixInfos,
+        A: GLWEInfos;
+
+    fn glwe_expand_lwe_matrix_default<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos;
 
     fn ggsw_expand_rows_tmp_bytes_default<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize
@@ -268,6 +288,22 @@ where
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
         module.glwe_expand_lwe_default(res, a, scratch)
+    }
+
+    fn glwe_expand_lwe_matrix_tmp_bytes<R, A>(module: &Module<BE>, res_infos: &R, a_infos: &A) -> usize
+    where
+        R: LWEMatrixInfos,
+        A: GLWEInfos,
+    {
+        module.glwe_expand_lwe_matrix_tmp_bytes_default(res_infos, a_infos)
+    }
+
+    fn glwe_expand_lwe_matrix<R, A>(module: &Module<BE>, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEMatrixToBackendMut<BE> + LWEMatrixInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+    {
+        module.glwe_expand_lwe_matrix_default(res, a, scratch)
     }
 
     fn ggsw_expand_rows_tmp_bytes<R, A>(module: &Module<BE>, res_infos: &R, tsk_infos: &A) -> usize
@@ -395,6 +431,26 @@ macro_rules! impl_conversion_defaults_full {
                 A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
             {
                 $crate::default::conversion::glwe_expand_lwe_default::<$be, _, _, _>(self, res, a, scratch)
+            }
+
+            fn glwe_expand_lwe_matrix_tmp_bytes_default<R, A>(&self, res_infos: &R, a_infos: &A) -> usize
+            where
+                R: $crate::layouts::LWEMatrixInfos,
+                A: $crate::layouts::GLWEInfos,
+            {
+                $crate::default::conversion::glwe_expand_lwe_matrix_tmp_bytes_default::<$be, _, _, _>(self, res_infos, a_infos)
+            }
+
+            fn glwe_expand_lwe_matrix_default<R, A>(
+                &self,
+                res: &mut R,
+                a: &A,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) where
+                R: $crate::layouts::LWEMatrixToBackendMut<$be> + $crate::layouts::LWEMatrixInfos,
+                A: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+            {
+                $crate::default::conversion::glwe_expand_lwe_matrix_default::<$be, _, _, _>(self, res, a, scratch)
             }
 
             fn ggsw_expand_rows_tmp_bytes_default<R, A>(&self, res_infos: &R, tsk_infos: &A) -> usize

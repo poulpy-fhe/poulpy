@@ -1,10 +1,11 @@
-use super::{TestParams, download_vec_znx, upload_vec_znx};
+use super::{TestParams, download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
 
 use crate::{
     api::{
-        ScratchOwnedAlloc, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign, VecZnxDftAddInto,
-        VecZnxDftAlloc, VecZnxDftApply, VecZnxDftCopy, VecZnxDftSub, VecZnxDftSubAssign, VecZnxDftSubNegateAssign,
-        VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
+        ScratchOwnedAlloc, VecZnxAutomorphismBackend, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
+        VecZnxDftAddAssign, VecZnxDftAddInto, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan,
+        VecZnxDftCopy, VecZnxDftSub, VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxIdftApply, VecZnxIdftApplyTmpA,
+        VecZnxIdftApplyTmpBytes,
     },
     layouts::{
         Backend, FillUniform, HostBytesBackend, Module, ScratchOwned, VecZnx, VecZnxBig, VecZnxBigToBackendMut,
@@ -644,4 +645,109 @@ pub fn test_vec_znx_dft_sub_negate_assign<BR: crate::test_suite::TestBackend, BT
             assert_eq!(res_ref, res_test);
         }
     }
+}
+
+/// Runs the contract check `IDFT(DFT_aut(DFT(a))) == coeff_aut(a)` on a
+/// single backend, for a list of automorphism exponents. Used by
+/// [`test_vec_znx_dft_automorphism`] which exercises both backends.
+fn contract_check_one_backend<BE>(
+    base2k: usize,
+    module_host: &Module<HostBytesBackend>,
+    module: &Module<BE>,
+    scratch: &mut ScratchOwned<BE>,
+    cols: usize,
+    p_values: &[i64],
+) where
+    BE: Backend,
+    Module<BE>: VecZnxDftAlloc<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxDftAutomorphism<BE>
+        + VecZnxBigAlloc<BE>
+        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxAutomorphismBackend<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+{
+    let mut source = Source::new([0u8; 32]);
+
+    for size in [1, 2, 3, 4] {
+        let mut a = module_host.vec_znx_alloc(cols, size);
+        a.fill_uniform(base2k, &mut source);
+
+        for &p in p_values {
+            // Pipeline A: DFT → automorphism with plan → IDFT → normalize.
+            let mut a_dft = dft_of_uploaded_vec_znx(module, &a, 1, 0);
+            let mut res_dft = module.vec_znx_dft_alloc(cols, size);
+            let plan = module.vec_znx_dft_automorphism_plan(p);
+            for j in 0..cols {
+                module.vec_znx_dft_automorphism_with_plan(&plan, &mut res_dft.to_backend_mut(), j, &a_dft.to_backend_ref(), j);
+            }
+            let res_dft_normalized = idft_tmpa_to_host(module, base2k, &mut res_dft, scratch);
+            // a_dft is consumed by the pipeline; discard it.
+            let _ = idft_tmpa_to_host(module, base2k, &mut a_dft, scratch);
+
+            // Pipeline B: coefficient-domain automorphism on the same backend.
+            let a_backend = upload_vec_znx::<BE>(&a);
+            let res_coeff_backend_host = module_host.vec_znx_alloc(cols, size);
+            let mut res_coeff_backend = upload_vec_znx::<BE>(&res_coeff_backend_host);
+            for j in 0..cols {
+                module.vec_znx_automorphism_backend(
+                    p,
+                    &mut vec_znx_backend_mut::<BE>(&mut res_coeff_backend),
+                    j,
+                    &vec_znx_backend_ref::<BE>(&a_backend),
+                    j,
+                );
+            }
+            let res_coeff = download_vec_znx::<BE>(&res_coeff_backend);
+
+            assert_eq!(
+                res_dft_normalized, res_coeff,
+                "DFT-domain automorphism != coefficient-domain automorphism for p={p}, size={size}"
+            );
+        }
+    }
+}
+
+/// Verifies that for every odd `p`, `IDFT(VecZnxDftAutomorphism(p, DFT(a)))`
+/// matches `VecZnxAutomorphism(p, a)` after normalization. Runs the contract
+/// on both `module_ref` and `module_test`.
+pub fn test_vec_znx_dft_automorphism<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(
+    params: &TestParams,
+    module_host: &Module<HostBytesBackend>,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
+    Module<BR>: VecZnxDftAlloc<BR>
+        + VecZnxDftApply<BR>
+        + VecZnxDftAutomorphism<BR>
+        + VecZnxBigAlloc<BR>
+        + VecZnxIdftApplyTmpA<BR>
+        + VecZnxBigNormalize<BR>
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxAutomorphismBackend<BR>,
+    Module<BT>: VecZnxDftAlloc<BT>
+        + VecZnxDftApply<BT>
+        + VecZnxDftAutomorphism<BT>
+        + VecZnxBigAlloc<BT>
+        + VecZnxIdftApplyTmpA<BT>
+        + VecZnxBigNormalize<BT>
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxAutomorphismBackend<BT>,
+    ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
+    ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
+{
+    let base2k = params.base2k;
+    assert_eq!(module_ref.n(), module_test.n());
+    let cols = 2;
+    let mut scratch_ref = ScratchOwned::alloc(module_ref.vec_znx_big_normalize_tmp_bytes());
+    let mut scratch_test = ScratchOwned::alloc(module_test.vec_znx_big_normalize_tmp_bytes());
+
+    // Cover both residue classes mod 4 to exercise the conj/no-conj arms
+    // of the FFT64 plan and a range of orbits under odd-p multiplication.
+    let p_values: &[i64] = &[1, 5, 9, 13, 3, 7, 11, 15, -1, -5];
+
+    contract_check_one_backend::<BR>(base2k, module_host, module_ref, &mut scratch_ref, cols, p_values);
+    contract_check_one_backend::<BT>(base2k, module_host, module_test, &mut scratch_test, cols, p_values);
 }

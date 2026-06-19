@@ -13,8 +13,8 @@ use crate::ntt126_ifma::{
     bbc_meta::Bbc126IfmaMeta,
     primes::Primes42,
     tables::{Ntt126IfmaTable, Ntt126IfmaTableInv},
+    types::Q126Scalar,
 };
-use poulpy_cpu_ref::reference::ntt120::types::Q120bScalar;
 use poulpy_hal::{
     alloc_aligned, assert_alignment,
     layouts::{Backend, Module},
@@ -36,7 +36,7 @@ pub struct NTT126IfmaHandle {
 }
 
 impl Backend for NTT126Ifma {
-    type ScalarPrep = Q120bScalar;
+    type ScalarPrep = Q126Scalar;
     type ScalarBig = i128;
     type OwnedBuf = Vec<u8>;
     type BufRef<'a> = &'a [u8];

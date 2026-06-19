@@ -415,3 +415,107 @@ where
         BE::reim_zero(res.at_mut(res_col, j))
     }
 }
+
+/// Precomputed permutation for `VecZnxDft` automorphism `tau_p : X -> X^p`
+/// in the FFT64 half-spectrum layout.
+///
+/// `perm[i]` is the source complex slot that supplies output slot `i`. If
+/// `conj` is set, the imaginary half is globally negated on apply (driven
+/// by `p mod 4`).
+#[derive(Clone, Debug)]
+pub struct Fft64AutomorphismPlan {
+    pub p: i64,
+    pub perm: Vec<u32>,
+    pub conj: bool,
+}
+
+/// Builds the [`Fft64AutomorphismPlan`] for ring dimension `n` and odd `p`.
+///
+/// Closed-form derivation: the DIF FFT places output slot `i` at the
+/// evaluation point `omega^{2 * ir(i) + 1}` mod `2n`, where `ir(i)` is the
+/// bit-reversal of `i` over `log2(n)` bits. For odd `p`:
+///
+/// - `p ≡ 1 (mod 4)` keeps the stored half-spectrum closed under
+///   `e -> p*e mod 2n`: pure permutation.
+/// - `p ≡ 3 (mod 4)` maps into the conjugate half. Substituting `-p`
+///   (now `≡ 1 mod 4`) brings the action back at the cost of a single
+///   global imag negation, signalled by `conj`.
+pub fn build_fft64_automorphism_plan(n: usize, p: i64) -> Fft64AutomorphismPlan {
+    assert!(n.is_power_of_two(), "n must be a power of two, got {n}");
+    assert!(p & 1 == 1, "p must be odd for an R/(X^N+1) automorphism, got {p}");
+
+    let m = n >> 1;
+    let mask = (2 * n - 1) as i64;
+    let conj = (p & 3) != 1;
+    // p_eff: positive representative in [0, 2n) of either p or -p, chosen
+    // so that p_eff ≡ 1 (mod 4) and the stored half-spectrum is closed
+    // under multiplication by p_eff.
+    let p_eff = if conj { (-p) & mask } else { p & mask };
+
+    let log_n = n.trailing_zeros();
+    let ir = |i: u32| -> u32 { i.reverse_bits() >> (32 - log_n) };
+
+    let mut perm: Vec<u32> = vec![0u32; m];
+    for (i, mi) in perm.iter_mut().enumerate().take(m) {
+        let e: i64 = 2 * ir(i as u32) as i64 + 1;
+        let e_src: i64 = (p_eff * e) & mask;
+        let src: u32 = ((e_src - 1) >> 1) as u32;
+        *mi = ir(src);
+    }
+    Fft64AutomorphismPlan { p, perm, conj }
+}
+
+/// Applies a precomputed DFT-domain automorphism plan to `a`, writing the
+/// result into `res` (out-of-place).
+///
+/// This is a pure data movement op: one source-side gather and one
+/// destination-side contiguous store per complex slot, plus an optional
+/// global imaginary-half sign flip selected outside the inner loop on
+/// `plan.conj`.
+pub fn vec_znx_dft_automorphism<BE>(
+    plan: &Fft64AutomorphismPlan,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    res_col: usize,
+    a: &VecZnxDftBackendRef<'_, BE>,
+    a_col: usize,
+) where
+    BE: Backend<ScalarPrep = f64> + ReimArith,
+    for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+{
+    #[cfg(debug_assertions)]
+    {
+        assert_eq!(a.n(), res.n());
+        assert_eq!(plan.perm.len(), res.n() >> 1);
+    }
+
+    let m: usize = res.n() >> 1;
+    let res_size: usize = res.size();
+    let a_size: usize = a.size();
+    let min_size: usize = res_size.min(a_size);
+    let perm: &[u32] = &plan.perm;
+
+    for limb in 0..min_size {
+        let (res_re, res_im) = res.at_mut(res_col, limb).split_at_mut(m);
+        let a_limb = a.at(a_col, limb);
+        let (a_re, a_im) = a_limb.split_at(m);
+
+        if plan.conj {
+            for i in 0..m {
+                let s = perm[i] as usize;
+                res_re[i] = a_re[s];
+                res_im[i] = -a_im[s];
+            }
+        } else {
+            for i in 0..m {
+                let s = perm[i] as usize;
+                res_re[i] = a_re[s];
+                res_im[i] = a_im[s];
+            }
+        }
+    }
+
+    for limb in min_size..res_size {
+        BE::reim_zero(res.at_mut(res_col, limb));
+    }
+}

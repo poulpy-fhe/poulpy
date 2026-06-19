@@ -3,7 +3,7 @@ use std::hint::black_box;
 use criterion::Criterion;
 use poulpy_core::{
     GLWETensoring,
-    layouts::{GLWEInfos, LWEInfos, ModuleCoreAlloc},
+    layouts::{GLWEInfos, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc},
 };
 use poulpy_hal::{
     api::{
@@ -39,6 +39,39 @@ fn normalize_input_limb_bound_with_offset(
     }
 
     full_size.min((res_size * res_base2k + offset_bits as usize).div_ceil(in_base2k))
+}
+
+/// Relinearization (the keyswitch phase of `ckks_mul`). The tensor key is left
+/// zeroed: the op is data-independent, so this times the real kernel path.
+pub fn bench_glwe_tensor_relinearize<BE: Backend<OwnedBuf = Vec<u8>>>(
+    glwe_infos: &impl GLWEInfos,
+    tsk_infos: &GLWETensorKeyLayout,
+    dsize: usize,
+    c: &mut Criterion,
+    label: &str,
+) where
+    Module<BE>: ModuleNew<BE> + GLWETensoring<BE> + GLWETensorKeyPreparedFactory<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    for<'x> BE::BufMut<'x>: HostDataMut + AsRef<[u8]> + AsMut<[u8]> + Sync,
+{
+    let n: usize = glwe_infos.n().into();
+    let module = Module::<BE>::new(n as u64);
+
+    let mut res = module.glwe_alloc_from_infos(glwe_infos);
+    let tensor = module.glwe_tensor_alloc_from_infos(glwe_infos);
+    let tsk = module.alloc_tensor_key_prepared_from_infos(tsk_infos);
+    let tsk_size = tensor.size() + dsize;
+    let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_tensor_relinearize_tmp_bytes(&res, &tensor, &tsk));
+
+    let group_name = format!("glwe_tensor_relinearize::{label}");
+    let mut group = c.benchmark_group(group_name);
+    group.bench_function(format!("n={n}"), |bench| {
+        bench.iter(|| {
+            module.glwe_tensor_relinearize(&mut res, &tensor, &tsk, tsk_size, &mut scratch.borrow());
+            black_box(());
+        })
+    });
+    group.finish();
 }
 
 pub fn bench_glwe_tensor_apply<BE: Backend<OwnedBuf = Vec<u8>>>(glwe_infos: &impl GLWEInfos, c: &mut Criterion, label: &str)

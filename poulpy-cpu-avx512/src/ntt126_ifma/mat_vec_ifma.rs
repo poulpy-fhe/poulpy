@@ -28,6 +28,8 @@
 //! fit within the 52-bit input window. After `ell` iterations, `acc_lo < ell × 2^52`
 //! which fits in u64 for ell < 4096.
 
+#![allow(dead_code)]
+
 use core::arch::x86_64::{
     __m256i, __m512i, _mm256_add_epi64, _mm256_and_si256, _mm256_loadu_si256, _mm256_madd52hi_epu64, _mm256_madd52lo_epu64,
     _mm256_mul_epu32, _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_srli_epi64, _mm256_storeu_si256, _mm512_add_epi64,
@@ -53,6 +55,9 @@ const Q_VEC: [u64; 4] = [Q_IFMA[0], Q_IFMA[1], Q_IFMA[2], 0];
 
 /// 2Q vector: `[2*Q[0], 2*Q[1], 2*Q[2], 0]`.
 const Q2_VEC: [u64; 4] = [2 * Q_IFMA[0], 2 * Q_IFMA[1], 2 * Q_IFMA[2], 0];
+
+/// Mask preserving the three active CRT lanes while clearing the padding lane.
+const ACTIVE_LANES_VEC: [u64; 4] = [u64::MAX, u64::MAX, u64::MAX, 0];
 
 /// `2^42 mod Q[k]` — for two-pass modular reduction of wide values.
 /// Since Q[k] < 2^42, this equals `2^42 - Q[k]` (small, < 2^22).
@@ -101,6 +106,9 @@ const Q2_VEC_512: [u64; 8] = [
     2 * Q_IFMA[2],
     0,
 ];
+
+/// Active CRT lane mask duplicated for two prep scalars.
+const ACTIVE_LANES_VEC_512: [u64; 8] = [u64::MAX, u64::MAX, u64::MAX, 0, u64::MAX, u64::MAX, u64::MAX, 0];
 
 /// `2^42 mod Q[k]` duplicated for 512-bit.
 const POW42_MOD_Q_512: [u64; 8] = {
@@ -400,7 +408,8 @@ pub(crate) unsafe fn vec_mat1col_product_bbc_ifma(
 
         let acc_lo = _mm256_add_epi64(_mm256_add_epi64(acc_lo0, acc_lo1), _mm256_add_epi64(acc_lo2, acc_lo3));
         let acc_hi = _mm256_add_epi64(_mm256_add_epi64(acc_hi0, acc_hi1), _mm256_add_epi64(acc_hi2, acc_hi3));
-        let r = reduce_bbc_ifma_simd(acc_lo, acc_hi);
+        let active_lanes = _mm256_loadu_si256(ACTIVE_LANES_VEC.as_ptr() as *const __m256i);
+        let r = _mm256_and_si256(reduce_bbc_ifma_simd(acc_lo, acc_hi), active_lanes);
         _mm256_storeu_si256(res.as_mut_ptr() as *mut __m256i, r);
     }
 }
@@ -430,6 +439,7 @@ pub(crate) unsafe fn vec_mat1col_product_bbc_ifma(
 /// be 64-byte aligned. Use this when the kernel writes a hot output buffer
 /// that won't be re-read in the current loop and would otherwise evict
 /// matrix cache lines.
+#[allow(dead_code)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn vec_mat1col_product_x2_bbc_ifma<const NT_STORE: bool>(
     _meta: &Bbc126IfmaMeta<Primes42>,
@@ -472,7 +482,11 @@ pub(crate) unsafe fn vec_mat1col_product_x2_bbc_ifma<const NT_STORE: bool>(
         }
 
         // Reduce both pairs in one call.
-        let result = reduce_bbc_ifma_simd_512(_mm512_add_epi64(acc_lo0, acc_lo1), _mm512_add_epi64(acc_hi0, acc_hi1));
+        let active_lanes = _mm512_loadu_si512(ACTIVE_LANES_VEC_512.as_ptr() as *const __m512i);
+        let result = _mm512_and_si512(
+            reduce_bbc_ifma_simd_512(_mm512_add_epi64(acc_lo0, acc_lo1), _mm512_add_epi64(acc_hi0, acc_hi1)),
+            active_lanes,
+        );
         let res_ptr = res.as_mut_ptr() as *mut __m512i;
         if NT_STORE {
             _mm512_stream_si512(res_ptr, result);
@@ -564,18 +578,25 @@ pub(crate) unsafe fn vec_mat2cols_product_x2_bbc_ifma(
         }
 
         let res_ptr = res.as_mut_ptr() as *mut __m512i;
+        let active_lanes = _mm512_loadu_si512(ACTIVE_LANES_VEC_512.as_ptr() as *const __m512i);
         _mm512_storeu_si512(
             res_ptr,
-            reduce_bbc_ifma_simd_512(
-                _mm512_add_epi64(acc_lo_c0_0, acc_lo_c0_1),
-                _mm512_add_epi64(acc_hi_c0_0, acc_hi_c0_1),
+            _mm512_and_si512(
+                reduce_bbc_ifma_simd_512(
+                    _mm512_add_epi64(acc_lo_c0_0, acc_lo_c0_1),
+                    _mm512_add_epi64(acc_hi_c0_0, acc_hi_c0_1),
+                ),
+                active_lanes,
             ),
         );
         _mm512_storeu_si512(
             res_ptr.add(1),
-            reduce_bbc_ifma_simd_512(
-                _mm512_add_epi64(acc_lo_c1_0, acc_lo_c1_1),
-                _mm512_add_epi64(acc_hi_c1_0, acc_hi_c1_1),
+            _mm512_and_si512(
+                reduce_bbc_ifma_simd_512(
+                    _mm512_add_epi64(acc_lo_c1_0, acc_lo_c1_1),
+                    _mm512_add_epi64(acc_hi_c1_0, acc_hi_c1_1),
+                ),
+                active_lanes,
             ),
         );
     }

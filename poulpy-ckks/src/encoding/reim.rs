@@ -139,4 +139,40 @@ impl<T> Encoder<T> {
         pt.decode_host_floats(&mut coeffs)?;
         self.unpack_reim_coeffs(&coeffs, re, im)
     }
+
+    /// Sparse encode: this encoder's `m` complex slots live in the sub-ring
+    /// `R[Y]`, `Y = X^{N/(2m)}`; they are reim-encoded into the small `2m`
+    /// coefficient vector and then mapped into the larger degree-`N` plaintext
+    /// `Z[X]` by the gap placement of
+    /// [`encode_host_floats_sparse`](CKKSPlaintextVecHostCodec::encode_host_floats_sparse).
+    /// No `N/2` slot expansion happens — the homomorphic ops stay in the `m`-slot
+    /// space; sparsity is realized purely at this codec boundary. `pt.n()` must be
+    /// a power-of-two multiple of `2m`.
+    pub fn encode_reim_sparse<F, P>(&self, pt: &mut P, re: &[F], im: &[F]) -> Result<()>
+    where
+        F: CKKSScalar + Float + FloatConst + Debug + NumCast,
+        T: NegacyclicFFT<F>,
+        P: CKKSPlaintextVecHostCodec<F>,
+    {
+        let m = self.table.m();
+        anyhow::ensure!(re.len() == m && im.len() == m, "sparse encode expects m = {m} slots");
+        let mut small = vec![F::zero(); 2 * m];
+        self.pack_reim_coeffs(&mut small, re, im)?;
+        pt.encode_host_floats_sparse(&small)
+    }
+
+    /// Inverse of [`Self::encode_reim_sparse`]: reads the gap-placed sub-ring
+    /// coefficients of the larger plaintext and decodes the `m` complex slots.
+    pub fn decode_reim_sparse<F, P>(&self, pt: &P, re: &mut [F], im: &mut [F]) -> Result<()>
+    where
+        F: CKKSScalar + Float + FloatConst + Debug,
+        T: NegacyclicFFT<F>,
+        P: CKKSPlaintextVecHostCodec<F>,
+    {
+        let m = self.table.m();
+        anyhow::ensure!(re.len() == m && im.len() == m, "sparse decode expects m = {m} slots");
+        let mut small = vec![F::zero(); 2 * m];
+        pt.decode_host_floats_sparse(&mut small)?;
+        self.unpack_reim_coeffs(&small, re, im)
+    }
 }

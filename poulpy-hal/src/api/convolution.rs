@@ -1,6 +1,6 @@
 use crate::layouts::{
-    Backend, CnvPVecL, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecR, CnvPVecRBackendMut, CnvPVecRBackendRef, ScratchArena,
-    VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
+    Backend, CnvDftAccTerm, CnvPVecL, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecR, CnvPVecRBackendMut, CnvPVecRBackendRef,
+    ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
 };
 
 /// Allocates prepared convolution operands ([`CnvPVecL`], [`CnvPVecR`]).
@@ -119,6 +119,80 @@ pub trait Convolution<BE: Backend> {
         b_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     );
+
+    /// Lazy-canonicalization convolution used by `glwe_mul_plain`; bit-identical to
+    /// the eager `cnv_prepare_left/right` + `cnv_apply_dft`.
+    fn cnv_prepare_left_lazy_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
+    fn cnv_prepare_left_lazy(
+        &self,
+        res: &mut CnvPVecLBackendMut<'_, BE>,
+        a: &VecZnxBackendRef<'_, BE>,
+        mask: i64,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+    fn cnv_prepare_right_lazy_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
+    fn cnv_prepare_right_lazy(
+        &self,
+        res: &mut CnvPVecRBackendMut<'_, BE>,
+        a: &VecZnxBackendRef<'_, BE>,
+        mask: i64,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+    fn cnv_apply_dft_lazy_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_apply_dft_lazy(
+        &self,
+        cnv_offset: usize,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        a: &CnvPVecLBackendRef<'_, BE>,
+        a_col: usize,
+        b: &CnvPVecRBackendRef<'_, BE>,
+        b_col: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+
+    /// Accumulating variant of [`cnv_apply_dft`](Convolution::cnv_apply_dft):
+    /// `res[res_col] += a[a_col] (x) b[b_col]`, bit-identical to `cnv_apply_dft`
+    /// followed by a DFT-domain add. Limbs `>= min(res.size(), a.size() + b.size())`
+    /// are left untouched. Scratch requirement is
+    /// [`cnv_apply_dft_tmp_bytes`](Convolution::cnv_apply_dft_tmp_bytes).
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_apply_dft_accumulate(
+        &self,
+        cnv_offset: usize,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        a: &CnvPVecLBackendRef<'_, BE>,
+        a_col: usize,
+        b: &CnvPVecRBackendRef<'_, BE>,
+        b_col: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+
+    /// Returns scratch bytes required for [`cnv_accumulate_dft`](Convolution::cnv_accumulate_dft).
+    ///
+    /// `a_size` and `b_size` are upper bounds over the sizes of the term operands.
+    fn cnv_accumulate_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
+
+    /// Evaluates a sum of bivariate convolutions: `res[res_col] = Σ_t a_t ⊛ b_t`,
+    /// scaled by `2^{cnv_offset * Base2K}`, overwriting `res[res_col]`.
+    ///
+    /// Each term behaves like one [`Convolution::cnv_apply_dft`] call over the
+    /// selected columns and the per-term results are summed; with an empty
+    /// `terms` slice the output column is zeroed. Backends may fuse the
+    /// accumulation (one lazy reduction per output limb, destination written
+    /// once), so the result is congruent to — but not necessarily bit-identical
+    /// with — a sequence of [`Convolution::cnv_apply_dft_accumulate`] calls.
+    fn cnv_accumulate_dft<'a>(
+        &self,
+        cnv_offset: usize,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        terms: &[CnvDftAccTerm<'a, BE>],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        BE: 'a;
 
     /// Returns scratch bytes required for [`cnv_pairwise_apply_dft`](Convolution::cnv_pairwise_apply_dft).
     fn cnv_pairwise_apply_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;

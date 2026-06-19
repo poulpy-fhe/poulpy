@@ -28,11 +28,11 @@ pub(crate) fn vmp_prepare_tmp_bytes_avx(n: usize) -> usize {
     8 * n * size_of::<u64>()
 }
 
-/// AVX-local VMP prepare into a 4-plane prime-major layout.
-///
-/// The prepared matrix uses one plane per CRT prime. Within each plane the
-/// layout is `block_pair -> output_column -> input_row`, and every row stores
-/// four u64 values in lane order `[blk0.c0, blk0.c1, blk1.c0, blk1.c1]`.
+/// AVX-local VMP prepare into a prime-major layout interleaved per
+/// `(block_pair, output_column)`: `block_pair -> output_column -> prime ->
+/// input_row`, every row storing `[blk0.c0, blk0.c1, blk1.c0, blk1.c1]`.
+/// Keeping the four prime planes adjacent per chunk makes the apply read the
+/// matrix as a single sequential stream.
 pub(crate) fn vmp_prepare_avx_pm(
     module: &Module<NTT120Avx512>,
     res: &mut VmpPMatBackendMut<'_, NTT120Avx512>,
@@ -52,9 +52,9 @@ pub(crate) fn vmp_prepare_avx_pm(
     let nrows = a.cols_in() * a.rows();
     let ncols = a.cols_out() * a.size();
     let n_block_pairs = n / 4;
-    let plane_stride = n_block_pairs * ncols * nrows * 4;
-    let bp_stride = ncols * nrows * 4;
-    let col_stride = nrows * 4;
+    let plane_stride = nrows * 4;
+    let col_stride = nrows * 16;
+    let bp_stride = ncols * nrows * 16;
 
     let (tmp_b, tmp_c_u64) = tmp.split_at_mut(4 * n);
     let tmp_c: &mut [u32] = cast_slice_mut(tmp_c_u64);
@@ -74,7 +74,7 @@ pub(crate) fn vmp_prepare_avx_pm(
             for bp in 0..n_block_pairs {
                 let coeff_base = 16 * bp;
                 for p in 0..4usize {
-                    let dst = p * plane_stride + bp * bp_stride + col_i * col_stride + row_i * 4;
+                    let dst = bp * bp_stride + col_i * col_stride + p * plane_stride + row_i * 4;
                     pmat_u64[dst..dst + 4].copy_from_slice(&[
                         tmp_c_u64[coeff_base + p],
                         tmp_c_u64[coeff_base + 4 + p],
@@ -218,9 +218,9 @@ unsafe fn vmp_apply_core_avx_pm<const OVERWRITE: bool>(
 
     let (blkpair_output, x_pm) = tmp.split_at_mut(16);
     let x_pm = &mut x_pm[..16 * row_max];
-    let plane_stride = n_block_pairs * ncols * nrows * 4;
-    let bp_stride = ncols * nrows * 4;
-    let col_stride = nrows * 4;
+    let plane_stride = nrows * 4;
+    let col_stride = nrows * 16;
+    let bp_stride = ncols * nrows * 16;
 
     for bp in 0..n_block_pairs {
         unsafe { extract_blk_pair_prime_major_avx512(n, row_max, bp, a_u64, x_pm) };

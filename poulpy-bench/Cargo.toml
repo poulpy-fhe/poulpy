@@ -16,6 +16,7 @@ bin-fhe-bench = ["core-bench"]
 enable-avx = [
     "dep:poulpy-cpu-avx",
     "poulpy-cpu-avx/enable-avx",
+    "poulpy-cpu-avx/enable-ckks",
 ]
 enable-neon = [
     "dep:poulpy-cpu-arm",
@@ -33,6 +34,7 @@ ckks-bench = [
     "core-bench",
     "dep:poulpy-ckks",
     "poulpy-cpu-ref/enable-ckks",
+    "poulpy-cpu-avx?/enable-ckks",
     "poulpy-cpu-avx512?/enable-ckks",
     "poulpy-cpu-arm?/enable-ckks",
 ]
@@ -144,7 +146,17 @@ harness = false
 required-features = ["ckks-bench"]
 
 [[bench]]
+name = "ckks_poly_eval"
+harness = false
+required-features = ["ckks-bench"]
+
+[[bench]]
 name = "ckks_automorphism"
+harness = false
+required-features = ["ckks-bench"]
+
+[[bench]]
+name = "ckks_linear_transformation"
 harness = false
 required-features = ["ckks-bench"]
 
@@ -182,3 +194,7 @@ required-features = ["bin-fhe-bench"]
 name = "standard"
 harness = false
 required-features = ["hal-bench", "core-bench", "bin-fhe-bench"]
+
+[[example]]
+name = "ckks_mul_phase"
+required-features = ["core-bench", "enable-ifma"]

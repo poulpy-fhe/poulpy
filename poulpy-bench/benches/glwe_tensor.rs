@@ -1,5 +1,5 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use poulpy_core::layouts::GLWELayout;
+use poulpy_core::layouts::{Base2K, Degree, Dnum, Dsize, GLWELayout, GLWETensorKeyLayout, Rank, TorusPrecision};
 
 fn glwe_infos() -> GLWELayout {
     let p = &poulpy_bench::params::BenchParams::get().core;
@@ -9,6 +9,27 @@ fn glwe_infos() -> GLWELayout {
         k: p.k.into(),
         rank: p.rank.into(),
     }
+}
+
+fn tsk_infos() -> GLWETensorKeyLayout {
+    let p = &poulpy_bench::params::BenchParams::get().core;
+    GLWETensorKeyLayout {
+        n: Degree(p.n),
+        base2k: Base2K(p.base2k),
+        k: TorusPrecision(p.k + p.dsize * p.base2k),
+        rank: Rank(p.rank),
+        dsize: Dsize(p.dsize),
+        dnum: Dnum(p.k.div_ceil(p.dsize * p.base2k)),
+    }
+}
+
+fn bench_glwe_tensor_relinearize(c: &mut Criterion) {
+    let p = &poulpy_bench::params::BenchParams::get().core;
+    poulpy_bench::for_each_backend!(
+        poulpy_bench::bench_suite::core::glwe_tensor::bench_glwe_tensor_relinearize,
+        &glwe_infos(), &tsk_infos(), p.dsize as usize;
+        c
+    );
 }
 
 fn bench_glwe_tensor_apply(c: &mut Criterion) {
@@ -59,6 +80,7 @@ criterion_group! {
     name = benches;
     config = poulpy_bench::criterion_config();
     targets = bench_glwe_tensor_apply,
+    bench_glwe_tensor_relinearize,
     bench_glwe_tensor_prepare_left,
     bench_glwe_tensor_prepare_right,
     bench_glwe_tensor_diag_lane,

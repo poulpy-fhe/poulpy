@@ -1,11 +1,12 @@
 use poulpy_hal::{
-    layouts::{Backend, Data, HostBackend, HostDataMut, HostDataRef, Module, ScratchArena},
+    layouts::{Backend, Data, Module, ScratchArena},
     oep::{HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl},
 };
 
 use crate::layouts::{
     GLWEInfos, GLWEPlaintext, GLWESecretPrepared, GLWESecretTensorPrepared, GLWETensor, GLWEToBackendMut, GLWEToBackendRef,
-    LWEInfos, LWEPlaintextToBackendMut, LWESecretToBackendRef, LWEToBackendRef, SetLWEInfos,
+    LWEInfos, LWEMatrixInfos, LWEMatrixToBackendRef, LWEPlaintextToBackendMut, LWESecretToBackendRef, LWEToBackendRef,
+    SetLWEInfos,
     prepared::{GLWESecretPreparedToBackendRef, GLWESecretTensorPreparedToBackendRef},
 };
 
@@ -34,6 +35,16 @@ pub unsafe trait DecryptionImpl<BE: Backend>: Backend {
     where
         R: LWEToBackendRef<BE> + LWEInfos,
         P: LWEPlaintextToBackendMut<BE> + SetLWEInfos + LWEInfos,
+        S: LWESecretToBackendRef<BE> + LWEInfos;
+
+    fn lwe_matrix_decrypt_tmp_bytes<A>(module: &Module<BE>, infos: &A) -> usize
+    where
+        A: LWEMatrixInfos;
+
+    fn lwe_matrix_decrypt<R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEMatrixToBackendRef<BE> + LWEMatrixInfos,
+        P: GLWEToBackendMut<BE> + SetLWEInfos + GLWEInfos,
         S: LWESecretToBackendRef<BE> + LWEInfos;
 
     fn glwe_tensor_decrypt<R: Data, P: Data, S0: Data, S1: Data>(
@@ -79,10 +90,17 @@ pub trait DecryptionDefault<BE: Backend> {
     where
         R: LWEToBackendRef<BE> + LWEInfos,
         P: LWEPlaintextToBackendMut<BE> + SetLWEInfos + LWEInfos,
-        S: LWESecretToBackendRef<BE> + LWEInfos,
-        BE: HostBackend,
-        for<'a> BE::BufMut<'a>: HostDataMut,
-        for<'a> BE::BufRef<'a>: HostDataRef;
+        S: LWESecretToBackendRef<BE> + LWEInfos;
+
+    fn lwe_matrix_decrypt_tmp_bytes_default<A>(&self, infos: &A) -> usize
+    where
+        A: LWEMatrixInfos;
+
+    fn lwe_matrix_decrypt_default<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEMatrixToBackendRef<BE> + LWEMatrixInfos,
+        P: GLWEToBackendMut<BE> + SetLWEInfos + GLWEInfos,
+        S: LWESecretToBackendRef<BE> + LWEInfos;
 
     fn glwe_tensor_decrypt_default<R: Data, P: Data, S0: Data, S1: Data>(
         &self,
@@ -146,9 +164,29 @@ macro_rules! impl_decryption_defaults_full {
                 R: $crate::layouts::LWEToBackendRef<$be> + $crate::layouts::LWEInfos,
                 P: $crate::layouts::LWEPlaintextToBackendMut<$be> + $crate::layouts::SetLWEInfos + $crate::layouts::LWEInfos,
                 S: $crate::layouts::LWESecretToBackendRef<$be> + $crate::layouts::LWEInfos,
-                $be: ::poulpy_hal::layouts::HostBackend,
             {
                 $crate::default::decryption::lwe::lwe_decrypt_default::<Self, $be, _, _, _>(self, res, pt, sk, scratch)
+            }
+
+            fn lwe_matrix_decrypt_tmp_bytes_default<A>(&self, infos: &A) -> usize
+            where
+                A: $crate::layouts::LWEMatrixInfos,
+            {
+                $crate::default::decryption::lwe_matrix::lwe_matrix_decrypt_tmp_bytes_default::<$be, _>(self, infos)
+            }
+
+            fn lwe_matrix_decrypt_default<R, P, S>(
+                &self,
+                res: &R,
+                pt: &mut P,
+                sk: &S,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
+            ) where
+                R: $crate::layouts::LWEMatrixToBackendRef<$be> + $crate::layouts::LWEMatrixInfos,
+                P: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::SetLWEInfos + $crate::layouts::GLWEInfos,
+                S: $crate::layouts::LWESecretToBackendRef<$be> + $crate::layouts::LWEInfos,
+            {
+                $crate::default::decryption::lwe_matrix::lwe_matrix_decrypt_default::<$be, _, _, _>(self, res, pt, sk, scratch)
             }
 
             fn glwe_tensor_decrypt_default<
@@ -188,12 +226,10 @@ macro_rules! impl_decryption_defaults_full {
 }
 
 #[allow(private_bounds)]
-unsafe impl<BE: Backend + HostBackend + HalVecZnxImpl<BE> + HalVecZnxBigImpl<BE> + HalVecZnxDftImpl<BE> + HalSvpImpl<BE>>
-    DecryptionImpl<BE> for BE
+unsafe impl<BE: Backend + HalVecZnxImpl<BE> + HalVecZnxBigImpl<BE> + HalVecZnxDftImpl<BE> + HalSvpImpl<BE>> DecryptionImpl<BE>
+    for BE
 where
     Module<BE>: DecryptionDefault<BE>,
-    for<'a> BE::BufMut<'a>: HostDataMut,
-    for<'a> BE::BufRef<'a>: HostDataRef,
 {
     fn glwe_decrypt_tmp_bytes<A>(module: &Module<BE>, infos: &A) -> usize
     where
@@ -225,6 +261,22 @@ where
         S: LWESecretToBackendRef<BE> + LWEInfos,
     {
         <Module<BE> as DecryptionDefault<BE>>::lwe_decrypt_default(module, res, pt, sk, scratch)
+    }
+
+    fn lwe_matrix_decrypt_tmp_bytes<A>(module: &Module<BE>, infos: &A) -> usize
+    where
+        A: LWEMatrixInfos,
+    {
+        <Module<BE> as DecryptionDefault<BE>>::lwe_matrix_decrypt_tmp_bytes_default(module, infos)
+    }
+
+    fn lwe_matrix_decrypt<R, P, S>(module: &Module<BE>, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: LWEMatrixToBackendRef<BE> + LWEMatrixInfos,
+        P: GLWEToBackendMut<BE> + SetLWEInfos + GLWEInfos,
+        S: LWESecretToBackendRef<BE> + LWEInfos,
+    {
+        <Module<BE> as DecryptionDefault<BE>>::lwe_matrix_decrypt_default(module, res, pt, sk, scratch)
     }
 
     fn glwe_tensor_decrypt<R: Data, P: Data, S0: Data, S1: Data>(

@@ -7,8 +7,9 @@
 //! [`poulpy-cpu-ref`](https://docs.rs/poulpy-cpu-ref).
 
 use crate::layouts::{
-    Backend, DataView, HostBytesBackend, HostDataRef, MatZnx, ScalarZnx, ScalarZnxBackendRef, ScalarZnxToBackendRef, VecZnx,
-    VecZnxBackendMut, VecZnxBackendRef, VecZnxToBackendMut, VecZnxToBackendRef,
+    Backend, DataView, HostBytesBackend, HostDataRef, MatZnx, ScalarZnx, ScalarZnxBackendMut, ScalarZnxBackendRef,
+    ScalarZnxToBackendMut, ScalarZnxToBackendRef, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxToBackendMut,
+    VecZnxToBackendRef,
 };
 
 pub mod convolution;
@@ -56,6 +57,10 @@ pub fn vec_znx_backend_mut<'a, BE: Backend>(vec: &'a mut VecZnx<BE::OwnedBuf>) -
 
 pub fn scalar_znx_backend_ref<'a, BE: Backend>(scalar: &'a ScalarZnx<BE::OwnedBuf>) -> ScalarZnxBackendRef<'a, BE> {
     <ScalarZnx<BE::OwnedBuf> as ScalarZnxToBackendRef<BE>>::to_backend_ref(scalar)
+}
+
+pub fn scalar_znx_backend_mut<'a, BE: Backend>(scalar: &'a mut ScalarZnx<BE::OwnedBuf>) -> ScalarZnxBackendMut<'a, BE> {
+    <ScalarZnx<BE::OwnedBuf> as ScalarZnxToBackendMut<BE>>::to_backend_mut(scalar)
 }
 
 pub fn upload_scalar_znx<BE: Backend>(host: &ScalarZnx<impl HostDataRef>) -> ScalarZnx<BE::OwnedBuf> {

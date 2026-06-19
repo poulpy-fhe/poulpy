@@ -113,11 +113,11 @@ pub trait VecZnxBigAddSmallIntoBackend<B: Backend> {
 
 pub trait VecZnxBigAddSmallAssign<B: Backend> {
     /// Adds `a` to `b` and stores the result on `b`.
-    fn vec_znx_big_add_small_assign<'r, 'a>(
+    fn vec_znx_big_add_small_assign(
         &self,
-        res: &mut VecZnxBigBackendMut<'r, B>,
+        res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'a, B>,
+        a: &VecZnxBackendRef<'_, B>,
         a_col: usize,
     );
 }
@@ -172,11 +172,11 @@ pub trait VecZnxBigSubSmallABackend<B: Backend> {
 
 pub trait VecZnxBigSubSmallAssign<B: Backend> {
     /// Subtracts `a` from `res` and stores the result on `res`.
-    fn vec_znx_big_sub_small_assign<'r, 'a>(
+    fn vec_znx_big_sub_small_assign(
         &self,
-        res: &mut VecZnxBigBackendMut<'r, B>,
+        res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'a, B>,
+        a: &VecZnxBackendRef<'_, B>,
         a_col: usize,
     );
 }
@@ -196,11 +196,11 @@ pub trait VecZnxBigSubSmallBBackend<B: Backend> {
 
 pub trait VecZnxBigSubSmallNegateAssign<B: Backend> {
     /// Subtracts `res` from `a` and stores the result on `res`.
-    fn vec_znx_big_sub_small_negate_assign<'r, 'a>(
+    fn vec_znx_big_sub_small_negate_assign(
         &self,
-        res: &mut VecZnxBigBackendMut<'r, B>,
+        res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'a, B>,
+        a: &VecZnxBackendRef<'_, B>,
         a_col: usize,
     );
 }
@@ -208,13 +208,30 @@ pub trait VecZnxBigSubSmallNegateAssign<B: Backend> {
 /// Sums coefficients from a selected [`VecZnxBig`](crate::layouts::VecZnxBig)
 /// column and stores each limb's result in one destination coefficient.
 pub trait VecZnxBigInnerSumBackend<B: Backend> {
-    fn vec_znx_big_inner_sum_backend<'r, 'a>(
+    fn vec_znx_big_inner_sum_backend(
+        &self,
+        res: &mut VecZnxBigBackendMut<'_, B>,
+        res_col: usize,
+        res_coeff: usize,
+        a: &VecZnxBigBackendRef<'_, B>,
+        a_col: usize,
+    );
+}
+
+/// Computes a coefficient-wise linear combination of [`VecZnx`](crate::layouts::VecZnx)
+/// columns with scalar weights:
+/// `res[res_col][k] = sum_{j < cols} a[j][k] * weights[weights_col][j]`.
+#[allow(clippy::too_many_arguments)]
+pub trait VecZnxBigColWeightedSum<B: Backend> {
+    fn vec_znx_big_col_weighted_sum<'r, 'a, 'b>(
         &self,
         res: &mut VecZnxBigBackendMut<'r, B>,
         res_col: usize,
-        res_coeff: usize,
-        a: &VecZnxBigBackendRef<'a, B>,
-        a_col: usize,
+        a: &VecZnxBackendRef<'a, B>,
+        weights: &ScalarZnxBackendRef<'b, B>,
+        weights_col: usize,
+        cols: usize,
+        coeffs: usize,
     );
 }
 
@@ -222,13 +239,13 @@ pub trait VecZnxBigInnerSumBackend<B: Backend> {
 /// and stores each product as a [`ScalarBig`](Backend::ScalarBig) value in `res`.
 /// Use [`VecZnxBigInnerSumBackend`] afterwards to reduce to a single scalar.
 pub trait VecZnxScalarProduct<B: Backend> {
-    fn vec_znx_scalar_product<'r, 'a, 'b>(
+    fn vec_znx_scalar_product(
         &self,
-        res: &mut VecZnxBigBackendMut<'r, B>,
+        res: &mut VecZnxBigBackendMut<'_, B>,
         res_col: usize,
-        a: &VecZnxBackendRef<'a, B>,
+        a: &VecZnxBackendRef<'_, B>,
         a_col: usize,
-        b: &ScalarZnxBackendRef<'b, B>,
+        b: &ScalarZnxBackendRef<'_, B>,
         b_col: usize,
     );
 }

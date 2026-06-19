@@ -16,11 +16,13 @@ use crate::{encoding::reim::Encoder, test_suite::CKKSTestParams};
 fn extract_src_prec(params: &CKKSTestParams) -> CKKSMeta {
     if params.base2k == 19 {
         CKKSMeta {
+            log_sparsity: 0,
             log_delta: 40,
             log_budget: 17,
         }
     } else {
         CKKSMeta {
+            log_sparsity: 0,
             log_delta: 40,
             log_budget: 12,
         }
@@ -36,6 +38,8 @@ fn assert_decrypt_extract_success<BE, F, E>(
     dst_prec: CKKSMeta,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -82,6 +86,8 @@ fn assert_decrypt_extract_success<BE, F, E>(
 pub fn test_encrypt_decrypt<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -120,6 +126,8 @@ pub fn test_decrypt_extract_same_meta<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -143,6 +151,8 @@ pub fn test_decrypt_extract_truncates_log_budget<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -158,6 +168,7 @@ pub fn test_decrypt_extract_truncates_log_budget<BE, F, E>(
         host_module,
         &encoder,
         CKKSMeta {
+            log_sparsity: 0,
             log_delta: src_prec.log_delta,
             log_budget: 0,
         },
@@ -170,6 +181,8 @@ pub fn test_decrypt_extract_rsh_for_smaller_log_delta<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -185,6 +198,7 @@ pub fn test_decrypt_extract_rsh_for_smaller_log_delta<BE, F, E>(
         host_module,
         &encoder,
         CKKSMeta {
+            log_sparsity: 0,
             log_delta: src_prec.log_delta - 8,
             log_budget: src_prec.log_budget,
         },
@@ -197,6 +211,8 @@ pub fn test_decrypt_extract_lsh_for_larger_log_delta<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -212,6 +228,7 @@ pub fn test_decrypt_extract_lsh_for_larger_log_delta<BE, F, E>(
         host_module,
         &encoder,
         CKKSMeta {
+            log_sparsity: 0,
             log_delta: src_prec.log_delta,
             log_budget: src_prec.log_budget - 8,
         },
@@ -224,6 +241,8 @@ pub fn test_decrypt_extract_output_hom_rem_too_large<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -250,6 +269,7 @@ pub fn test_decrypt_extract_output_hom_rem_too_large<BE, F, E>(
     let mut pt = module.ckks_pt_vec_alloc(
         params.base2k.into(),
         CKKSMeta {
+            log_sparsity: 0,
             log_delta: src_prec.log_delta,
             log_budget: src_prec.log_budget + 1,
         },
@@ -273,6 +293,8 @@ pub fn test_decrypt_extract_base2k_mismatch_error<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,

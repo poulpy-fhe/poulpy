@@ -29,7 +29,7 @@
 //!
 //! - `FFT64Avx512`: `ScalarPrep = f64`, `ScalarBig = i64`.
 //! - `NTT120Avx512`: `ScalarPrep = Q120bScalar`, `ScalarBig = i128`.
-//! - `NTT126Ifma`: `ScalarPrep = Q120bScalar`, `ScalarBig = i128`.
+//! - `NTT126Ifma`: `ScalarPrep = Q126Scalar`, `ScalarBig = i128`.
 //!
 //! # CPU requirements
 //!
@@ -156,6 +156,7 @@ compile_error!(
 #[cfg(feature = "enable-avx512f")]
 mod fft64;
 #[cfg(feature = "enable-avx512f")]
+#[cfg(feature = "enable-avx512f")]
 mod hal_impl;
 #[cfg(feature = "enable-avx512f")]
 mod ntt120_avx512;
@@ -188,6 +189,11 @@ pub mod ntt126_ifma_api {
     pub use crate::ntt126_ifma::tables::{Ntt126IfmaTable, Ntt126IfmaTableInv};
     pub use crate::ntt126_ifma::traits::Ntt126IfmaDFTExecute;
 }
+
+#[cfg(all(feature = "enable-ckks", not(any(feature = "enable-avx512f", feature = "enable-ifma"))))]
+compile_error!(
+    "feature `enable-ckks` requires `enable-avx512f` or `enable-ifma` (without them nothing is built and test runs are silently empty)."
+);
 
 #[cfg(all(feature = "enable-avx512f", feature = "enable-ckks"))]
 mod ckks_impl;

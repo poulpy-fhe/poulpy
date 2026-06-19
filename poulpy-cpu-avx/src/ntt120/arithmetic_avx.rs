@@ -34,8 +34,9 @@
 use core::arch::x86_64::{
     __m256i, _mm_add_epi64, _mm_cvtsi64_si128, _mm_cvtsi128_si64, _mm_unpackhi_epi64, _mm256_add_epi32, _mm256_add_epi64,
     _mm256_and_si256, _mm256_andnot_si256, _mm256_castsi256_si128, _mm256_cmpgt_epi64, _mm256_extracti128_si256,
-    _mm256_loadu_si256, _mm256_mul_epu32, _mm256_or_si256, _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_slli_epi64,
-    _mm256_srl_epi64, _mm256_srli_epi64, _mm256_storeu_si256, _mm256_sub_epi64,
+    _mm256_loadu_si256, _mm256_mul_epu32, _mm256_or_si256, _mm256_permute2x128_si256, _mm256_set1_epi64x, _mm256_setzero_si256,
+    _mm256_slli_epi64, _mm256_srl_epi64, _mm256_srli_epi64, _mm256_storeu_si256, _mm256_sub_epi64, _mm256_unpackhi_epi64,
+    _mm256_unpacklo_epi64,
 };
 
 use poulpy_cpu_ref::reference::ntt120::{
@@ -728,12 +729,35 @@ pub(crate) unsafe fn vec_mat1col_product_bbb_avx2(meta: &BbbMeta<Primes30>, ell:
 // b_to_znx128_avx2
 // ─────────────────────────────────────────────────────────────────────────────
 
+/// Final modular reduction + symmetric lift shared by both reconstruction paths.
+///
+/// Given the raw CRT sum `v = Σ_k t[k]·qm[k] < 4·total_Q`, reduces it mod
+/// `total_Q` (table-based, `q_approx = ⌊v / 2^120⌋ ∈ {0,1,2,3}`, then ≤1
+/// correction) and lifts to the symmetric range `(-total_Q/2, total_Q/2]`.
+#[inline(always)]
+fn crt_finalize(mut v: u128, half_q: u128) -> i128 {
+    let q_approx = (v >> 120) as usize;
+    v -= TOTAL_Q_MULT[q_approx]; // unconditional subtract (never underflows)
+    if v >= TOTAL_Q {
+        v -= TOTAL_Q; // at most 1 correction (proved: q_real - q_approx ≤ 1)
+    }
+    if v >= half_q { v as i128 - TOTAL_Q as i128 } else { v as i128 }
+}
+
 /// Hybrid AVX2 / scalar CRT reconstruction: q120b → i128 coefficients.
 ///
 /// For each of `nn` ring elements:
 /// - **AVX2**: Computes `t[k] = (x[4*j+k] % Q[k] * CRT_CST[k]) % Q[k]` for k=0..3.
-/// - **Scalar**: Accumulates `tmp = Σ_k t[k] * (Q/Q[k])` in i128, reduces mod `total_Q`,
-///   and applies a symmetric lift to `(-total_Q/2, total_Q/2]`.
+/// - Accumulates `tmp = Σ_k t[k] * (Q/Q[k])` and applies the final reduction +
+///   symmetric lift via [`crt_finalize`].
+///
+/// The main loop processes **four coefficients per iteration**: it transposes the
+/// 4×4 (coefficient × prime) residue block in registers so the CRT weighted sum
+/// accumulates *vertically* across the four prime lanes (4 coefficients' sums land
+/// in one `__m256i`), replacing the per-coefficient horizontal reductions of
+/// [`crt_accumulate_avx2`] with a single transpose amortized over four outputs.
+/// A scalar-per-coefficient tail (still using [`crt_accumulate_avx2`]) handles
+/// `nn % 4`. The reconstructed values are bit-identical to the per-coefficient path.
 ///
 /// # Safety
 ///
@@ -754,27 +778,88 @@ pub(crate) unsafe fn b_to_znx128_avx2(nn: usize, res: &mut [i128], a: &[u64]) {
         let qm_mid_vec = _mm256_loadu_si256(QM_MID.as_ptr() as *const __m256i);
         let qm_lo_vec = _mm256_loadu_si256(QM_LO.as_ptr() as *const __m256i);
 
-        let mut a_ptr = a.as_ptr() as *const __m256i;
+        // Per-prime broadcast of each qm limb, for the vertical (transposed) accumulation.
+        let qm_lo_b: [__m256i; 4] = std::array::from_fn(|k| _mm256_set1_epi64x(QM_LO[k] as i64));
+        let qm_mid_b: [__m256i; 4] = std::array::from_fn(|k| _mm256_set1_epi64x(QM_MID[k] as i64));
+        let qm_hi_b: [__m256i; 4] = std::array::from_fn(|k| _mm256_set1_epi64x(QM_HI[k] as i64));
 
-        for r in &mut res[..nn] {
-            let xv = _mm256_loadu_si256(a_ptr);
+        let a_ptr = a.as_ptr() as *const __m256i;
 
-            // Fused: t[k] = (x[k] * CRT_CST[k]) mod Q[k] in one Barrett pass.
-            let t = reduce_b_and_apply_crt(xv, q_vec, mu_vec, pow32_crt_vec, pow16_crt_vec, crt_vec);
+        let mut c = 0usize;
+        while c + 4 <= nn {
+            let base = a_ptr.add(c);
+            let t0 = reduce_b_and_apply_crt(_mm256_loadu_si256(base), q_vec, mu_vec, pow32_crt_vec, pow16_crt_vec, crt_vec);
+            let t1 = reduce_b_and_apply_crt(
+                _mm256_loadu_si256(base.add(1)),
+                q_vec,
+                mu_vec,
+                pow32_crt_vec,
+                pow16_crt_vec,
+                crt_vec,
+            );
+            let t2 = reduce_b_and_apply_crt(
+                _mm256_loadu_si256(base.add(2)),
+                q_vec,
+                mu_vec,
+                pow32_crt_vec,
+                pow16_crt_vec,
+                crt_vec,
+            );
+            let t3 = reduce_b_and_apply_crt(
+                _mm256_loadu_si256(base.add(3)),
+                q_vec,
+                mu_vec,
+                pow32_crt_vec,
+                pow16_crt_vec,
+                crt_vec,
+            );
 
-            // Vectorized CRT accumulation: v = Σ t[k] * qm[k] (no store-to-stack round-trip).
-            let mut v = crt_accumulate_avx2(t, qm_hi_vec, qm_mid_vec, qm_lo_vec);
+            // Transpose the 4×4 (coeff × prime) block: u_k = [t0[k], t1[k], t2[k], t3[k]].
+            let lo01 = _mm256_unpacklo_epi64(t0, t1);
+            let hi01 = _mm256_unpackhi_epi64(t0, t1);
+            let lo23 = _mm256_unpacklo_epi64(t2, t3);
+            let hi23 = _mm256_unpackhi_epi64(t2, t3);
+            let u0 = _mm256_permute2x128_si256::<0x20>(lo01, lo23); // prime 0 across the 4 coeffs
+            let u1 = _mm256_permute2x128_si256::<0x20>(hi01, hi23); // prime 1
+            let u2 = _mm256_permute2x128_si256::<0x31>(lo01, lo23); // prime 2
+            let u3 = _mm256_permute2x128_si256::<0x31>(hi01, hi23); // prime 3
 
-            // Table-based modular reduction: q_approx = floor(v / 2^120) ∈ {0,1,2,3}.
-            let q_approx = (v >> 120) as usize;
-            v -= TOTAL_Q_MULT[q_approx]; // unconditional subtract (never underflows)
-            if v >= TOTAL_Q {
-                v -= TOTAL_Q; // at most 1 correction (proved: q_real - q_approx ≤ 1)
+            // Vertical accumulation of the three 32-bit limbs of v = Σ_k t[k]·qm[k];
+            // lane i holds the limb sum for coefficient i (same bounds as crt_accumulate_avx2).
+            let acc_lo = _mm256_add_epi64(
+                _mm256_add_epi64(_mm256_mul_epu32(u0, qm_lo_b[0]), _mm256_mul_epu32(u1, qm_lo_b[1])),
+                _mm256_add_epi64(_mm256_mul_epu32(u2, qm_lo_b[2]), _mm256_mul_epu32(u3, qm_lo_b[3])),
+            );
+            let acc_mid = _mm256_add_epi64(
+                _mm256_add_epi64(_mm256_mul_epu32(u0, qm_mid_b[0]), _mm256_mul_epu32(u1, qm_mid_b[1])),
+                _mm256_add_epi64(_mm256_mul_epu32(u2, qm_mid_b[2]), _mm256_mul_epu32(u3, qm_mid_b[3])),
+            );
+            let acc_hi = _mm256_add_epi64(
+                _mm256_add_epi64(_mm256_mul_epu32(u0, qm_hi_b[0]), _mm256_mul_epu32(u1, qm_hi_b[1])),
+                _mm256_add_epi64(_mm256_mul_epu32(u2, qm_hi_b[2]), _mm256_mul_epu32(u3, qm_hi_b[3])),
+            );
+
+            let mut slo = [0u64; 4];
+            let mut smid = [0u64; 4];
+            let mut shi = [0u64; 4];
+            _mm256_storeu_si256(slo.as_mut_ptr() as *mut __m256i, acc_lo);
+            _mm256_storeu_si256(smid.as_mut_ptr() as *mut __m256i, acc_mid);
+            _mm256_storeu_si256(shi.as_mut_ptr() as *mut __m256i, acc_hi);
+
+            for i in 0..4 {
+                let v = ((shi[i] as u128) << 64) + ((smid[i] as u128) << 32) + (slo[i] as u128);
+                res[c + i] = crt_finalize(v, half_q);
             }
+            c += 4;
+        }
 
-            *r = if v >= half_q { v as i128 - TOTAL_Q as i128 } else { v as i128 };
-
-            a_ptr = a_ptr.add(1);
+        // Scalar-per-coefficient tail (nn % 4).
+        while c < nn {
+            let xv = _mm256_loadu_si256(a_ptr.add(c));
+            let t = reduce_b_and_apply_crt(xv, q_vec, mu_vec, pow32_crt_vec, pow16_crt_vec, crt_vec);
+            let v = crt_accumulate_avx2(t, qm_hi_vec, qm_mid_vec, qm_lo_vec);
+            res[c] = crt_finalize(v, half_q);
+            c += 1;
         }
     }
 }
@@ -882,20 +967,24 @@ mod tests {
     }
 
     /// AVX2 `b_to_znx128` matches reference for valid q120b input.
+    ///
+    /// Sweeps several lengths — including non-multiples of 4 and < 4 — to cover the
+    /// batched-by-4 main loop as well as the scalar `nn % 4` tail.
     #[test]
     fn b_to_znx128_avx2_vs_ref() {
-        let n = 64usize;
-        let coeffs: Vec<i64> = (0..n as i64).map(|i| i * 5 - 160).collect();
+        for n in [1usize, 2, 3, 4, 5, 7, 8, 13, 63, 64, 65, 66, 67, 256] {
+            let coeffs: Vec<i64> = (0..n as i64).map(|i| i * 5 - 160).collect();
 
-        let mut b = vec![0u64; 4 * n];
-        b_from_znx64_ref::<Primes30>(n, &mut b, &coeffs);
+            let mut b = vec![0u64; 4 * n];
+            b_from_znx64_ref::<Primes30>(n, &mut b, &coeffs);
 
-        let mut res_avx = vec![0i128; n];
-        let mut res_ref = vec![0i128; n];
+            let mut res_avx = vec![0i128; n];
+            let mut res_ref = vec![0i128; n];
 
-        unsafe { b_to_znx128_avx2(n, &mut res_avx, &b) };
-        b_to_znx128_ref::<Primes30>(n, &mut res_ref, &b);
+            unsafe { b_to_znx128_avx2(n, &mut res_avx, &b) };
+            b_to_znx128_ref::<Primes30>(n, &mut res_ref, &b);
 
-        assert_eq!(res_avx, res_ref, "b_to_znx128: AVX2 vs ref mismatch");
+            assert_eq!(res_avx, res_ref, "b_to_znx128: AVX2 vs ref mismatch at n={n}");
+        }
     }
 }

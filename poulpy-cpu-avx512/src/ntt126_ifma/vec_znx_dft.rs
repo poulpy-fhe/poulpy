@@ -4,6 +4,7 @@
 
 use crate::NTT126Ifma;
 use crate::ntt126_ifma::{
+    kernels::{cond_sub_2q_si512, harvey_modmul_si512},
     module::handle,
     primes::{PrimeSetNtt126Ifma, Primes42},
     tables::{Ntt126IfmaTable, Ntt126IfmaTableInv},
@@ -14,22 +15,14 @@ use crate::ntt126_ifma::{
     },
 };
 use bytemuck::{cast_slice, cast_slice_mut};
+use core::arch::x86_64::{
+    __m512i, _mm512_add_epi64, _mm512_and_si512, _mm512_loadu_si512, _mm512_madd52hi_epu64, _mm512_madd52lo_epu64,
+    _mm512_set1_epi64, _mm512_setzero_si512, _mm512_slli_epi64, _mm512_srli_epi64, _mm512_storeu_si512, _mm512_sub_epi64,
+};
 use poulpy_hal::layouts::{
     Data, HostDataMut, HostDataRef, Module, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDft, VecZnxDftBackendMut,
     VecZnxDftBackendRef, ZnxView, ZnxViewMut,
 };
-
-use super::kernels::{cond_sub_2q_si256, intt_avx512};
-
-use core::arch::x86_64::{__m256i, _mm256_loadu_si256, _mm256_set_epi64x, _mm256_storeu_si256};
-
-use std::arch::global_asm;
-
-global_asm!(include_str!("vec_znx_dft_asm.s"), options(att_syntax));
-
-unsafe extern "C" {
-    fn ntt126_ifma_b_to_znx128_asm(nn: usize, dst: *mut i128, src: *const u64);
-}
 
 // 3-prime CRT -> i128 reconstruction helpers.
 
@@ -42,6 +35,8 @@ const Q2: u64 = Q[2];
 const Q01: u128 = Q0 as u128 * Q1 as u128;
 const BIG_Q: u128 = Q01 * Q2 as u128;
 const HALF_BIG_Q: u128 = BIG_Q / 2;
+const Q01_LO: u64 = (Q01 & ((1u128 << 52) - 1)) as u64;
+const Q01_HI: u64 = (Q01 >> 52) as u64;
 
 // Harvey quotients for the Garner steps.
 const INV01_QUOT: u64 = ((INV01 as u128 * (1u128 << 52)) / Q1 as u128) as u64;
@@ -72,28 +67,6 @@ fn cond_sub_scalar(x: u64, q: u64) -> u64 {
     if x >= q { x - q } else { x }
 }
 
-/// SIMD-assisted single-coefficient Garner CRT reconstruction.
-///
-/// Reduces one packed residue vector to `[0, q)` and reconstructs one `i128`.
-///
-/// # Safety
-///
-/// - `src` must be valid for reading 4 × u64 (one `__m256i`).
-/// - Caller must ensure AVX512-VL support.
-#[target_feature(enable = "avx512vl")]
-pub(crate) unsafe fn garner_crt_single(src: *const u64, q_vec: __m256i) -> i128 {
-    unsafe {
-        let xv = _mm256_loadu_si256(src as *const __m256i);
-        let reduced = cond_sub_2q_si256(xv, q_vec);
-
-        let mut lanes = [0u64; 4];
-        _mm256_storeu_si256(lanes.as_mut_ptr() as *mut __m256i, reduced);
-        let (r0, r1, r2) = (lanes[0], lanes[1], lanes[2]);
-
-        garner_from_residues(r0, r1, r2)
-    }
-}
-
 /// Scalar Garner CRT reconstruction from 3 reduced residues.
 ///
 /// Input: `r0 ∈ [0, Q0)`, `r1 ∈ [0, Q1)`, `r2 ∈ [0, Q2)`.
@@ -121,31 +94,88 @@ fn garner_from_residues(r0: u64, r1: u64, r2: u64) -> i128 {
     }
 }
 
-/// Vectorized CRT reconstruction: 3-prime IFMA b-format to i128.
-///
-/// Processes coefficients in batches of 4 using SIMD Garner reconstruction.
-/// Falls back to single-coefficient path for the tail.
+/// CRT reconstruction: planar 3-prime IFMA b-format to i128.
 ///
 /// Input residues must be in `[0, 2q)` (b-format after iNTT).
 ///
 /// # Safety
 ///
-/// - `a` must contain at least `4 * nn` u64 values.
+/// - `a` must contain at least `3 * nn` u64 values.
 /// - `res` must have room for at least `nn` i128 values.
 /// - Caller must ensure AVX512-IFMA, AVX512-VL, BMI2, and ADX support.
 #[target_feature(enable = "avx512ifma,avx512vl,bmi2,adx")]
 pub(crate) unsafe fn simd_b_ntt126_ifma_to_znx128(nn: usize, res: &mut [i128], a: &[u64]) {
+    debug_assert!(res.len() >= nn);
+    debug_assert!(a.len() >= 3 * nn);
+
     unsafe {
-        let q_vec = _mm256_set_epi64x(0, Q2 as i64, Q1 as i64, Q0 as i64);
-        let dst = res.as_mut_ptr();
+        let q0 = _mm512_set1_epi64(Q0 as i64);
+        let q1 = _mm512_set1_epi64(Q1 as i64);
+        let q2 = _mm512_set1_epi64(Q2 as i64);
+        let inv01 = _mm512_set1_epi64(INV01 as i64);
+        let inv01_quot = _mm512_set1_epi64(INV01_QUOT as i64);
+        let inv012 = _mm512_set1_epi64(INV012 as i64);
+        let inv012_quot = _mm512_set1_epi64(INV012_QUOT as i64);
+        let q0_mod_q2 = _mm512_set1_epi64(Q0_MOD_Q2 as i64);
+        let q0_mod_q2_quot = _mm512_set1_epi64(Q0_MOD_Q2_QUOT as i64);
+        let q01_lo = _mm512_set1_epi64(Q01_LO as i64);
+        let q01_hi = _mm512_set1_epi64(Q01_HI as i64);
+        let mask52 = _mm512_set1_epi64(((1u64 << 52) - 1) as i64);
+        let mask12 = _mm512_set1_epi64(0xFFF);
+        let zero = _mm512_setzero_si512();
+        let mut lo_lanes = [0u64; 8];
+        let mut hi_lanes = [0u64; 8];
 
-        let bulk = nn & !3;
-        ntt126_ifma_b_to_znx128_asm(bulk, dst, a.as_ptr());
-        let mut c = bulk;
+        let mut c = 0usize;
+        while c + 8 <= nn {
+            let r0 = cond_sub_2q_si512(_mm512_loadu_si512(a.as_ptr().add(c) as *const __m512i), q0);
+            let r1 = cond_sub_2q_si512(_mm512_loadu_si512(a.as_ptr().add(nn + c) as *const __m512i), q1);
+            let r2 = cond_sub_2q_si512(_mm512_loadu_si512(a.as_ptr().add(2 * nn + c) as *const __m512i), q2);
 
-        // Tail: remaining coefficients (0-3)
+            let v0_mod_q1 = cond_sub_2q_si512(r0, q1);
+            let diff1 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(r1, q1), v0_mod_q1), q1);
+            let v1 = harvey_modmul_si512(diff1, inv01, inv01_quot, q1);
+
+            let v0_mod_q2 = cond_sub_2q_si512(r0, q2);
+            let v1q0_mod_q2 = harvey_modmul_si512(v1, q0_mod_q2, q0_mod_q2_quot, q2);
+            let partial = cond_sub_2q_si512(_mm512_add_epi64(v0_mod_q2, v1q0_mod_q2), q2);
+            let diff2 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(r2, q2), partial), q2);
+            let v2 = harvey_modmul_si512(diff2, inv012, inv012_quot, q2);
+
+            // result = v0 + v1*Q0 + v2*Q01, accumulated in base-2^52 limbs.
+            let p10 = _mm512_madd52lo_epu64(zero, v1, q0);
+            let p1h = _mm512_madd52hi_epu64(zero, v1, q0);
+            let p2ll = _mm512_madd52lo_epu64(zero, v2, q01_lo);
+            let p2lh = _mm512_madd52hi_epu64(zero, v2, q01_lo);
+            let p2hl = _mm512_madd52lo_epu64(zero, v2, q01_hi);
+            let p2hh = _mm512_madd52hi_epu64(zero, v2, q01_hi);
+            let a0 = _mm512_add_epi64(_mm512_add_epi64(r0, p10), p2ll);
+            let a1 = _mm512_add_epi64(_mm512_add_epi64(p1h, p2lh), p2hl);
+            let a1 = _mm512_add_epi64(a1, _mm512_srli_epi64::<52>(a0));
+            let a0 = _mm512_and_si512(a0, mask52);
+            let a2 = _mm512_add_epi64(p2hh, _mm512_srli_epi64::<52>(a1));
+            let a1 = _mm512_and_si512(a1, mask52);
+            let lo = _mm512_add_epi64(a0, _mm512_slli_epi64::<52>(_mm512_and_si512(a1, mask12)));
+            let hi = _mm512_add_epi64(_mm512_srli_epi64::<12>(a1), _mm512_slli_epi64::<40>(a2));
+            _mm512_storeu_si512(lo_lanes.as_mut_ptr() as *mut __m512i, lo);
+            _mm512_storeu_si512(hi_lanes.as_mut_ptr() as *mut __m512i, hi);
+            for lane in 0..8 {
+                let result = lo_lanes[lane] as u128 | ((hi_lanes[lane] as u128) << 64);
+                res[c + lane] = if result > HALF_BIG_Q {
+                    result as i128 - BIG_Q as i128
+                } else {
+                    result as i128
+                };
+            }
+
+            c += 8;
+        }
+
         while c < nn {
-            res[c] = garner_crt_single(a.as_ptr().add(4 * c), q_vec);
+            let r0 = cond_sub_scalar(a[c], Q0);
+            let r1 = cond_sub_scalar(a[nn + c], Q1);
+            let r2 = cond_sub_scalar(a[2 * nn + c], Q2);
+            res[c] = garner_from_residues(r0, r1, r2);
             c += 1;
         }
     }
@@ -154,7 +184,7 @@ pub(crate) unsafe fn simd_b_ntt126_ifma_to_znx128(nn: usize, res: &mut [i128], a
 /// iNTT (in place on `src`) + Garner CRT-compact (writing i128 to `dst`).
 ///
 /// # Safety
-/// - `src_ptr` covers `4 * n * n_blocks` u64; `dst_ptr` covers `n * n_blocks` i128.
+/// - `src_ptr` covers `3 * n * n_blocks` u64; `dst_ptr` covers `n * n_blocks` i128.
 /// - If aliased, the dst window must lie in the first half of the src window.
 /// - AVX-512-IFMA, AVX-512-VL, BMI2 and ADX required at runtime.
 #[target_feature(enable = "avx512ifma,avx512vl,bmi2,adx")]
@@ -167,21 +197,22 @@ unsafe fn intt_then_compact_ifma(
 ) {
     unsafe {
         for k in 0..n_blocks {
-            let src_off_u64 = 4 * n * k;
+            let src_off_u64 = 3 * n * k;
             let dst_off_i128 = n * k;
 
             // Step 1: inverse NTT in-place on `src`.
             {
-                let blk = std::slice::from_raw_parts_mut(src_ptr.add(src_off_u64), 4 * n);
-                intt_avx512::<Primes42>(table, blk);
+                let blk = std::slice::from_raw_parts_mut(src_ptr.add(src_off_u64), 3 * n);
+                <NTT126Ifma as Ntt126IfmaDFTExecute<Ntt126IfmaTableInv<Primes42>>>::ntt126_ifma_dft_execute(table, blk);
             }
 
-            // Step 2: Garner CRT-compact 4n u64s → n i128s, writing to `dst`.
+            // Step 2: Garner CRT-compact 3n u64s → n i128s, writing to `dst`.
             let src_base = src_ptr.add(src_off_u64);
             let dst_base = dst_ptr.add(dst_off_i128);
+            let src = std::slice::from_raw_parts(src_base, 3 * n);
+            let dst = std::slice::from_raw_parts_mut(dst_base, n);
 
-            debug_assert!(n.is_multiple_of(4));
-            ntt126_ifma_b_to_znx128_asm(n, dst_base, src_base);
+            simd_b_ntt126_ifma_to_znx128(n, dst, src);
         }
     }
 }
@@ -206,7 +237,7 @@ pub(crate) fn vec_znx_idft_apply_tmpa_ifma(
     let dst_base: *mut i128 = res.raw_mut().as_mut_ptr();
 
     for j in 0..min_size {
-        let src_off_u64 = 4 * n * (j * a_cols + a_col);
+        let src_off_u64 = 3 * n * (j * a_cols + a_col);
         let dst_off_i128 = n * (j * res_cols + res_col);
         unsafe {
             intt_then_compact_ifma(n, 1, src_base.add(src_off_u64), dst_base.add(dst_off_i128), table);
@@ -268,7 +299,7 @@ pub(crate) fn vec_znx_dft_apply(
 /// Scratch space (in bytes) for [`vec_znx_idft_apply`].
 pub(crate) fn vec_znx_idft_apply_tmp_bytes(n: usize) -> usize {
     use std::mem::size_of;
-    4 * n * size_of::<u64>()
+    3 * n * size_of::<u64>()
 }
 
 /// Inverse NTT (non-destructive) for the IFMA backend.
@@ -287,7 +318,7 @@ pub(crate) fn vec_znx_idft_apply(
 
     for j in 0..min_size {
         let a_slice: &[u64] = limb_u64(a, a_col, j);
-        let tmp_n: &mut [u64] = &mut tmp[..4 * n];
+        let tmp_n: &mut [u64] = &mut tmp[..3 * n];
         NTT126Ifma::ntt126_ifma_copy(tmp_n, a_slice);
         <NTT126Ifma as Ntt126IfmaDFTExecute<Ntt126IfmaTableInv<Primes42>>>::ntt126_ifma_dft_execute(table, tmp_n);
         NTT126Ifma::ntt126_ifma_to_znx128(res.at_mut(res_col, j), n, tmp_n);
@@ -486,5 +517,45 @@ pub(crate) fn vec_znx_dft_copy(
 pub(crate) fn vec_znx_dft_zero(res: &mut VecZnxDftBackendMut<'_, NTT126Ifma>, res_col: usize) {
     for j in 0..res.size() {
         NTT126Ifma::ntt126_ifma_zero(limb_u64_mut(res, res_col, j));
+    }
+}
+
+/// NTT126 automorphism on the planar layout: each limb stores three contiguous
+/// `n`-element residue planes, and the NTT slot action is a pure permutation, so
+/// for every output slot `i` we copy the source slot `perm[i]` within each plane.
+pub(crate) fn vec_znx_dft_automorphism(
+    plan: &poulpy_cpu_ref::reference::ntt120::vec_znx_dft::NttAutomorphismPlan,
+    res: &mut VecZnxDftBackendMut<'_, NTT126Ifma>,
+    res_col: usize,
+    a: &VecZnxDftBackendRef<'_, NTT126Ifma>,
+    a_col: usize,
+) {
+    #[cfg(debug_assertions)]
+    {
+        assert_eq!(a.n(), res.n());
+        assert_eq!(plan.perm.len(), res.n());
+    }
+
+    let n: usize = res.n();
+    let res_size: usize = res.size();
+    let a_size: usize = a.size();
+    let min_size: usize = res_size.min(a_size);
+    let perm: &[u32] = &plan.perm;
+
+    for limb in 0..min_size {
+        let a_slice: &[u64] = limb_u64(a, a_col, limb);
+        let res_slice: &mut [u64] = limb_u64_mut(res, res_col, limb);
+        for plane in 0..3 {
+            let base: usize = plane * n;
+            let src: &[u64] = &a_slice[base..base + n];
+            let dst: &mut [u64] = &mut res_slice[base..base + n];
+            for i in 0..n {
+                dst[i] = src[perm[i] as usize];
+            }
+        }
+    }
+
+    for limb in min_size..res_size {
+        NTT126Ifma::ntt126_ifma_zero(limb_u64_mut(res, res_col, limb));
     }
 }

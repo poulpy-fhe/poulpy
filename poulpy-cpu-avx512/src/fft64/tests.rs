@@ -1,7 +1,9 @@
 use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
 use poulpy_hal::{
     layouts::Module,
-    test_suite::convolution::{test_convolution, test_convolution_by_const, test_convolution_pairwise},
+    test_suite::convolution::{
+        test_convolution, test_convolution_accumulate, test_convolution_by_const, test_convolution_pairwise,
+    },
 };
 
 use crate::FFT64Avx512;
@@ -19,6 +21,8 @@ cross_backend_test_suite! {
         test_vec_znx_normalize_coeff_assign_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_normalize_coeff_assign_backend,
         test_vec_znx_lsh_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_coeff_backend,
         test_vec_znx_lsh_add_coeff_into_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_add_coeff_into_backend,
+        test_vec_znx_lsh_add_coeff_to_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_add_coeff_to_coeff_backend,
+        test_vec_znx_lsh_sub_coeff_to_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_lsh_sub_coeff_to_coeff_backend,
         test_vec_znx_rsh_coeff_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_coeff_backend,
         test_vec_znx_rsh_add_coeff_into_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_add_coeff_into_backend,
         test_vec_znx_rsh_sub_coeff_into_backend => poulpy_hal::test_suite::vec_znx::test_vec_znx_rsh_sub_coeff_into_backend,
@@ -100,6 +104,7 @@ cross_backend_test_suite! {
         test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
         test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
         test_vec_znx_idft_apply_tmpa => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_tmpa,
+        test_vec_znx_dft_automorphism => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism,
     }
 }
 
@@ -125,10 +130,20 @@ backend_test_suite! {
     }
 }
 
+backend_test_suite! {
+    mod lwe_matrix,
+    backend = crate::FFT64Avx512,
+    params = TestParams { size: 1<<8, base2k: 17 },
+    tests = {
+        glwe_expand_lwe_matrix_decrypt => poulpy_core::test_suite::test_glwe_expand_lwe_matrix_decrypt,
+    }
+}
+
 #[test]
 fn test_convolution_direct() {
     let module = Module::<FFT64Avx512>::new(1 << 8);
     test_convolution(&module, 12);
     test_convolution_by_const(&module, 12);
     test_convolution_pairwise(&module, 12);
+    test_convolution_accumulate(&module, 12);
 }

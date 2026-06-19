@@ -1,7 +1,7 @@
 use poulpy_hal::{
     api::{
-        ModuleN, VecZnxAddScalarAssignBackend, VecZnxDftBytesOf, VecZnxNormalizeAssignBackend, VecZnxNormalizeTmpBytes,
-        VecZnxZeroBackend,
+        ModuleN, VecZnxAddScalarAssignBackend, VecZnxDftBytesOf, VecZnxFillUniformSourceBackend, VecZnxNormalizeAssignBackend,
+        VecZnxNormalizeTmpBytes, VecZnxZeroBackend,
     },
     layouts::{Backend, Module, ScalarZnxToBackendRef, ScratchArena},
     source::Source,
@@ -10,9 +10,9 @@ use poulpy_hal::{
 pub use crate::api::GGLWEEncryptSk;
 use crate::{
     EncryptionInfos, GLWEEncryptSk, GLWEEncryptSkInternal, ScratchArenaTakeCore,
-    encryption::glwe::normalize_scratch_vec_znx,
+    encryption::glwe::GLWEMaskFillDefault,
     layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GLWEPlaintext, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, LWEInfos,
+        GGLWEInfos, GGLWEToBackendMut, GLWEPlaintext, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         prepared::GLWESecretPreparedToBackendRef,
     },
 };
@@ -44,6 +44,7 @@ where
     Self: ModuleN
         + GLWEEncryptSkInternal<BE>
         + GLWEEncryptSk<BE>
+        + VecZnxFillUniformSourceBackend<BE>
         + VecZnxNormalizeTmpBytes
         + VecZnxDftBytesOf
         + VecZnxAddScalarAssignBackend<BE>
@@ -118,9 +119,8 @@ where
         let dsize: usize = res.dsize().into();
         let base2k: usize = res.base2k().into();
         let rank_in: usize = res.rank_in().into();
-        let cols: usize = (res.rank_out() + 1).into();
-        let scratch = scratch.borrow();
-        let (mut tmp_pt, mut scratch_1) = scratch.take_glwe_plaintext_scratch(res);
+        let rank_out = res.rank_out().as_usize();
+        let (mut tmp_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(res);
 
         // For each input column (i.e. rank) produces a GGLWE of rank_out+1 columns
         //
@@ -137,37 +137,25 @@ where
             for row_i in 0..dnum {
                 // Adds the scalar_znx_pt to the i-th limb of the vec_znx_pt
                 self.vec_znx_zero_backend(&mut tmp_pt.data, 0);
-                {
-                    let mut tmp_pt_backend = tmp_pt.to_backend_mut();
-                    self.vec_znx_add_scalar_assign_backend(
-                        &mut tmp_pt_backend.data,
-                        0,
-                        (dsize - 1) + row_i * dsize,
-                        &pt_backend,
-                        col_i,
-                    );
-                }
-                scratch_1.scope(|mut scratch| {
-                    normalize_scratch_vec_znx(self, base2k, &mut tmp_pt.data, &mut scratch);
-                });
-                {
-                    let mut scratch = scratch_1.borrow();
-                    let tmp_pt_backend = tmp_pt.to_backend_ref();
-                    let mut ct: GLWEViewMut<'_, BE> = res.at_view_mut(row_i, col_i);
-                    <Module<BE> as GLWEEncryptSkInternal<BE>>::glwe_encrypt_sk_internal(
-                        self,
-                        base2k,
-                        &mut ct.data,
-                        cols,
-                        false,
-                        Some((tmp_pt_backend, 0)),
-                        sk,
-                        enc_infos,
-                        source_xe,
-                        source_xa,
-                        &mut scratch,
-                    );
-                }
+                self.vec_znx_add_scalar_assign_backend(
+                    &mut tmp_pt.to_backend_mut().data,
+                    0,
+                    (dsize - 1) + row_i * dsize,
+                    &pt_backend,
+                    col_i,
+                );
+                self.vec_znx_normalize_assign_backend(base2k, &mut tmp_pt.data, 0, &mut scratch_1.borrow());
+                let mut res_view = res.at_view_mut(row_i, col_i);
+                self.fill_glwe_mask_from_source_default(base2k, &mut res_view, 1, rank_out, source_xa);
+                self.glwe_encrypt_sk_internal(
+                    base2k,
+                    &mut res_view.data,
+                    Some((tmp_pt.to_backend_ref(), 0)),
+                    sk,
+                    enc_infos,
+                    source_xe,
+                    &mut scratch_1.borrow(),
+                );
             }
         }
     }
