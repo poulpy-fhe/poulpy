@@ -759,7 +759,7 @@ mod tests {
         // `2^k - d <= 2^((k-1)/2) - 1`.
         for d in 1..1024 {
             let k = bit_len(d);
-            let min_mult = if (1usize << k) - d <= (1usize << ((k - 1) / 2)) - 1 {
+            let min_mult = if (1usize << k) - d < (1usize << ((k - 1) / 2)) {
                 k + 1
             } else {
                 k
