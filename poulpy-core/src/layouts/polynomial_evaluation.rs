@@ -751,33 +751,21 @@ mod tests {
     }
 
     #[test]
-    fn bsgs_eval_depth_matches_reference_table() {
-        // Reference depth table (degree range → MinDepth, MinMult).
-        let bands: &[(usize, usize, usize, usize)] = &[
-            (0, 0, 0, 0),
-            (1, 1, 1, 1),
-            (2, 3, 2, 2),
-            (4, 6, 3, 3),
-            (7, 7, 3, 4),
-            (8, 14, 4, 4),
-            (15, 15, 4, 5),
-            (16, 28, 5, 5),
-            (29, 31, 5, 6),
-            (32, 60, 6, 6),
-            (61, 63, 6, 7),
-            (64, 120, 7, 7),
-            (121, 127, 7, 8),
-            (128, 248, 8, 8),
-            (249, 255, 8, 9),
-            (256, 496, 9, 9),
-            (497, 511, 9, 10),
-            (512, 512, 10, 10),
-        ];
-        for &(lo, hi, min_depth, min_mult) in bands {
-            for d in lo..=hi {
-                assert_eq!(bsgs_eval_depth(d, SplitStrategy::MinDepth), min_depth, "MinDepth degree {d}");
-                assert_eq!(bsgs_eval_depth(d, SplitStrategy::MinMult), min_mult, "MinMult degree {d}");
-            }
+    fn bsgs_eval_depth_matches_closed_form() {
+        assert_eq!(bsgs_eval_depth(0, SplitStrategy::MinDepth), 0);
+        assert_eq!(bsgs_eval_depth(0, SplitStrategy::MinMult), 0);
+        // MinDepth reaches `k = bit_len(d) = ceil(log2(d + 1))`. MinMult costs one
+        // extra level on the upper part of each `[2^(k-1), 2^k)` band, where
+        // `2^k - d <= 2^((k-1)/2) - 1`.
+        for d in 1..1024 {
+            let k = bit_len(d);
+            let min_mult = if (1usize << k) - d <= (1usize << ((k - 1) / 2)) - 1 {
+                k + 1
+            } else {
+                k
+            };
+            assert_eq!(bsgs_eval_depth(d, SplitStrategy::MinDepth), k, "MinDepth degree {d}");
+            assert_eq!(bsgs_eval_depth(d, SplitStrategy::MinMult), min_mult, "MinMult degree {d}");
         }
     }
 
