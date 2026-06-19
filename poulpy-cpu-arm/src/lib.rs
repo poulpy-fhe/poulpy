@@ -19,10 +19,9 @@
 //! | `module`        | Backend handle lifecycle, FFT/NTT table management        |
 //! | `neon`          | Low-level NEON kernels (FFT, NTT, mat-vec, conversions)   |
 //! | `fft64`         | f64 complex-FFT backend wiring (`FFT64Neon`)              |
-//! | `ntt120`        | Q120 NTT backend wiring (`NTT120Neon`), VMP, convolution  |
+//! | `ntt120`        | Q120 NTT backend wiring (`NTT120Neon`), VMP                |
 //! | `znx`           | Single ring element (`Z[X]/(X^n+1)`) SIMD arithmetic      |
 //! | `vec_znx_big`   | Large-coefficient (i128) ring element vectors             |
-//! | `convolution`   | Polynomial convolution with stnp non-temporal stores      |
 //!
 //! # Scalar types
 //!
@@ -66,8 +65,7 @@
 //!
 //! All data layouts enforce 64-byte alignment (matching cache line size) as specified by
 //! `poulpy_hal::DEFAULTALIGN`. This alignment enables aligned SIMD loads/stores and
-//! the use of `stnp` non-temporal pair stores in the VMP overwrite-apply and
-//! convolution result paths.
+//! the use of `stnp` non-temporal pair stores in the VMP overwrite-apply path.
 //!
 //! ## Safety invariants
 //!
@@ -98,8 +96,9 @@
 //! on the target host for representative numbers. Qualitative trends:
 //!
 //! - **Ring element arithmetic** (add/sub/negate): bandwidth-bound, modest gains.
-//! - **NTT/INTT and mat-vec products**: noticeable gains from hand-tuned NEON kernels.
-//! - **VMP and convolution** (large degree): the largest gains, scaling with coefficient size;
+//! - **NTT/INTT, mat-vec, and convolution**: noticeable gains from hand-tuned NEON kernels;
+//!   the convolution apply path dispatches to the fused canonical `ntt_mul_bbc_tile4_x2` kernel.
+//! - **VMP** (large degree): the largest gains, scaling with coefficient size;
 //!   uses `stnp` non-temporal stores to avoid cache pollution.
 //!
 //! ## Memory layout

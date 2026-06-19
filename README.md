@@ -22,6 +22,7 @@
 - **`poulpy-cpu-ref`**: the reference CPU implementation of **`poulpy-hal`**.
 - **`poulpy-cpu-avx`**: an AVX2/FMA accelerated CPU implementation of **`poulpy-hal`**. Enable it with the `enable-avx` feature on crates that expose that feature.
 - **`poulpy-cpu-avx512`**: an AVX-512 accelerated CPU implementation of **`poulpy-hal`**, exposing three backends: `FFT64Avx512` and `NTT120Avx512` (AVX-512F, via `enable-avx512f`) and `NTT126Ifma` (AVX-512F + IFMA + VL + BMI2 + ADX, via `enable-ifma`).
+- **`poulpy-cpu-arm`**: a NEON/ASIMD accelerated CPU implementation of **`poulpy-hal`** for AArch64, exposing two backends: `FFT64Neon` and `NTT120Neon`. Enable it with the `enable-neon` feature on crates that expose that feature.
 - **`poulpy-bench`**: the consolidated Criterion benchmark suite for the workspace. It is an internal workspace crate and is not published to crates.io.
 
 ## Architecture
@@ -37,9 +38,10 @@ poulpy-hal                  ← hardware abstraction: layouts and operation trai
 poulpy-cpu-ref              ← portable reference backend
 poulpy-cpu-avx              ← AVX2/FMA-accelerated backend
 poulpy-cpu-avx512           ← AVX-512/IFMA-accelerated backend
+poulpy-cpu-arm              ← NEON/ASIMD-accelerated backend (AArch64)
 ```
 
-Backend crates (`poulpy-cpu-ref`, `poulpy-cpu-avx`, `poulpy-cpu-avx512`, …) implement the open extension points defined in `poulpy-hal/oep`. The CKKS and core layers keep concrete backend wiring in backend crates; `poulpy-bin-fhe` still carries a few reference-backend ties in v0.6.0 while that cleanup continues.
+Backend crates (`poulpy-cpu-ref`, `poulpy-cpu-avx`, `poulpy-cpu-avx512`, `poulpy-cpu-arm`, …) implement the open extension points defined in `poulpy-hal/oep`. The CKKS and core layers keep concrete backend wiring in backend crates; `poulpy-bin-fhe` still carries a few reference-backend ties in v0.6.0 while that cleanup continues.
 
 ### Layer Anatomy
 
@@ -100,6 +102,7 @@ This provides the following benefits:
 - **`poulpy-cpu-ref`**: https://crates.io/crates/poulpy-cpu-ref
 - **`poulpy-cpu-avx`**: https://crates.io/crates/poulpy-cpu-avx
 - **`poulpy-cpu-avx512`**: https://crates.io/crates/poulpy-cpu-avx512
+- **`poulpy-cpu-arm`**: https://crates.io/crates/poulpy-cpu-arm
 
 For example, a CKKS application can depend on:
 
