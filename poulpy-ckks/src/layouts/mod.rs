@@ -11,6 +11,7 @@
 //! | `CKKSPlaintext<D>` | Quantized CKKS plaintext in the torus / ZNX domain |
 
 mod alloc;
+pub mod bootstrapping;
 pub mod ciphertext;
 pub mod complex_diagonals;
 pub mod dft;
@@ -18,6 +19,7 @@ pub mod eval_mod;
 pub mod plaintext;
 
 pub use alloc::CKKSModuleAlloc;
+pub use bootstrapping::{BootstrappingContext, BootstrappingPlan};
 pub use ciphertext::{
     CKKSCiphertext, CKKSCiphertextViewMut, CKKSMaintainOps, CKKSNormalizationState, Normalized, ScratchArenaTakeCKKS,
     Unnormalized, UnnormalizedCKKSCiphertext,

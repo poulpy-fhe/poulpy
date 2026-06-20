@@ -1,4 +1,5 @@
 mod add;
+mod bootstrapping;
 mod ckks_impl;
 mod conjugate;
 mod copy;
@@ -17,6 +18,8 @@ mod sub;
 
 pub use add::CKKSAddImpl;
 pub use add::impl_ckks_add_defaults;
+pub use bootstrapping::CKKSBootstrappingImpl;
+pub use bootstrapping::impl_ckks_bootstrapping_defaults;
 pub use ckks_impl::CKKSImpl;
 pub use conjugate::CKKSConjugateImpl;
 pub use conjugate::impl_ckks_conjugate_defaults;

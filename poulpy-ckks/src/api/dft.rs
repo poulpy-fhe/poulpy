@@ -18,7 +18,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSMeta, SetCKKSInfos,
+    CKKSCtBounds, SetCKKSInfos,
     api::LtDiagonalScale,
     default::dft::matrices::DftScalar,
     encoding::reim::Encoder,
@@ -60,13 +60,11 @@ pub trait DFTOps<BE: Backend> {
     /// cost-optimally per factor matrix. The host-backed reference build does not
     /// touch `scratch`, but the parameter is kept for backends whose encode/upload
     /// path needs device scratch.
-    #[allow(clippy::too_many_arguments)]
     fn ckks_new_dft_matrix<Dir, Fmt, E, F>(
         &self,
         host_module: &Module<HostBytesBackend>,
         encoder: &Encoder<E>,
         base2k: Base2K,
-        factor_meta: CKKSMeta,
         literal: &DFTPlan,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<DFTMatrix<BE, Dir, Fmt>>

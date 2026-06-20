@@ -375,6 +375,7 @@ macro_rules! ckks_backend_test_suite {
                 linear_transformation,
                 $crate::test_suite::linear_transformation::test_linear_transformation
             );
+            run_test!(scale_up, $crate::test_suite::rescale::test_scale_up);
             run_test!(
                 dft_coeffs_to_slots_standard,
                 $crate::test_suite::dft::test_dft_coeffs_to_slots_standard
@@ -613,6 +614,14 @@ macro_rules! ckks_backend_test_suite {
             );
             run_test!(eval_mod_exp, $crate::test_suite::eval_mod::test_eval_mod_exp);
             run_test!(
+                eval_mod_consumed_bits_matches_built,
+                $crate::test_suite::eval_mod::test_eval_mod_consumed_bits_matches_built
+            );
+            run_test!(
+                bootstrapping_e2e,
+                $crate::test_suite::bootstrapping::test_bootstrapping_e2e
+            );
+            run_test!(
                 mul_add_const_zero_preserves_dst_meta,
                 $crate::test_suite::mul_add::test_mul_add_const_zero_preserves_dst_meta
             );
@@ -695,6 +704,7 @@ pub mod add;
 pub mod add_many;
 pub mod add_unsafe;
 pub mod affine;
+pub mod bootstrapping;
 pub mod composition;
 pub mod conjugate;
 pub mod copy;
@@ -713,6 +723,7 @@ pub mod mul_pow2;
 pub mod mul_sub;
 pub mod neg;
 pub mod polynomial_evaluation;
+pub mod rescale;
 pub mod rotate;
 pub mod sub;
 pub mod sub_unsafe;

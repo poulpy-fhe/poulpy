@@ -2,7 +2,7 @@ use anyhow::Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::{CKKSCtBounds, SetCKKSInfos};
+use crate::{CKKSCtBounds, SetCKKSInfos, layouts::CKKSCiphertext};
 
 /// CKKS rescaling and level-alignment.
 ///
@@ -73,4 +73,13 @@ pub trait CKKSRescaleOps<BE: Backend> {
     where
         A: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         B: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
+
+    /// Raises the encoding scale of `ct` by `bits`: `log_delta += bits` while the
+    /// encoded message and `log_budget` are preserved, so `effective_k` grows by
+    /// `bits` (the added low-order precision bits are zero).
+    ///
+    /// The inverse of [`Self::ckks_rescale_assign`] (which lowers `log_budget`).
+    /// If the storage `max_k` already covers the new `effective_k` this is a pure
+    /// metadata update; otherwise the owned buffer is reallocated wider.
+    fn ckks_scale_up(&self, ct: &mut CKKSCiphertext<Vec<u8>>, bits: usize) -> Result<()>;
 }

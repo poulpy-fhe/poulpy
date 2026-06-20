@@ -7,7 +7,7 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use crate::{CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
+use crate::{CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos, layouts::CKKSCiphertext};
 
 /// # Safety
 ///
@@ -34,12 +34,15 @@ pub unsafe trait CKKSRescaleImpl<BE: Backend>: Backend {
         A: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         B: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos;
     fn ckks_align_tmp_bytes(module: &Module<BE>) -> usize;
+    fn ckks_scale_up(module: &Module<BE>, ct: &mut CKKSCiphertext<Vec<u8>>, bits: usize) -> Result<()>;
 }
 
 unsafe impl<BE: Backend> CKKSRescaleImpl<BE> for BE
 where
     BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
-    Module<BE>: crate::default::rescale::CKKSRescaleOpsDefault<BE> + GLWEShift<BE>,
+    Module<BE>: crate::default::rescale::CKKSRescaleOpsDefault<BE>
+        + GLWEShift<BE>
+        + crate::layouts::ciphertext::CKKSMaintainOpsDefault<BE>,
 {
     fn ckks_rescale_tmp_bytes(module: &Module<BE>) -> usize {
         module.ckks_rescale_tmp_bytes_default()
@@ -76,6 +79,10 @@ where
 
     fn ckks_align_tmp_bytes(module: &Module<BE>) -> usize {
         module.ckks_align_tmp_bytes_default()
+    }
+
+    fn ckks_scale_up(module: &Module<BE>, ct: &mut CKKSCiphertext<Vec<u8>>, bits: usize) -> Result<()> {
+        module.ckks_scale_up_default(ct, bits)
     }
 }
 

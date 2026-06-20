@@ -1,0 +1,146 @@
+//! Bootstrapping parameterization.
+//!
+//! [`BootstrappingPlan`] bundles the parameters of the three homomorphic
+//! sub-circuits that make up CKKS bootstrapping — CoeffsToSlots (an `Encode`
+//! [`DFTPlan`]), EvalMod (an [`EvalModPlan`]) and SlotsToCoeffs (a `Decode`
+//! [`DFTPlan`]).
+//!
+//! Only the per-stage circuit descriptions live here. The torus widths
+//! (`base2k`, the encoding scale `log_delta`, and the input/raised moduli) are
+//! per-ciphertext metadata supplied at call time — ModUp reads them from its
+//! source and destination ciphertexts — and the message ratio is already part of
+//! the [`EvalModPlan`]. See
+//! [`CKKSBootstrappingOps`](crate::api::CKKSBootstrappingOps) for the ModUp
+//! semantics (a digit shift in the base-`2^base2k` torus model, not an RNS
+//! prime-basis extension).
+//!
+//! This crate provides no orchestrator: the plan is a parameter bundle the
+//! caller reads while composing `ModUp → CoeffsToSlots → EvalMod →
+//! SlotsToCoeffs` from the respective op traits, passing the relinearization and
+//! rotation keys to the stages that need them.
+//!
+//! [`BootstrappingContext`] is the *compiled* form of a [`BootstrappingPlan`]:
+//! the prepared, backend-resident homomorphic DFT matrices and the encoded,
+//! uploaded EvalMod, built once and reused across bootstraps.
+
+use anyhow::Result;
+use poulpy_core::{
+    ModuleTransfer,
+    default::linear_transformation::DiagonalProd,
+    layouts::{Base2K, GLWEToBackendRef},
+};
+use poulpy_hal::{
+    api::{ModuleNew, NegacyclicFFT, NegacyclicFFTNew},
+    layouts::{Backend, HostBytesBackend, Module, ScratchArena, TransferFrom},
+};
+
+use crate::{
+    CKKSCtBounds, CKKSInfos,
+    api::DFTOps,
+    default::dft::matrices::DftScalar,
+    encoding::reim::Encoder,
+    layouts::{
+        CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, DFTMatrix, DFTMatrixPrepared, DFTPlan, Decode,
+        Encode, EvalMod, EvalModPlan, Split,
+    },
+};
+
+/// End-to-end parameterization of CKKS bootstrapping.
+///
+/// See the [module docs](self) for the overall role.
+#[derive(Clone, Debug)]
+pub struct BootstrappingPlan {
+    /// CoeffsToSlots: homomorphic encoding ([`DFTType::Encode`](crate::layouts::DFTType)).
+    pub coeffs_to_slots: DFTPlan,
+
+    /// EvalMod: approximate `x mod 1`.
+    pub eval_mod: EvalModPlan,
+
+    /// SlotsToCoeffs: homomorphic decoding ([`DFTType::Decode`](crate::layouts::DFTType)).
+    pub slots_to_coeffs: DFTPlan,
+}
+
+impl BootstrappingPlan{
+    pub fn consumed_bits(&self) -> usize{
+        self.coeffs_to_slots.consumed_bits() + self.eval_mod.consumed_bits() + self.slots_to_coeffs.consumed_bits()
+    }
+}
+
+/// Compiled [`BootstrappingPlan`]: the resident DFT matrices and encoded EvalMod
+/// the bootstrapping pipeline evaluates.
+///
+/// Built once by [`Self::compile`] and reused across bootstraps. The
+/// `SplitRealAndImag` format is used for both transforms so the real and
+/// imaginary coefficient halves can be reduced independently by EvalMod.
+///
+/// ## CoeffsToSlots scaling
+///
+/// EvalMod approximates its periodic function over the normalized Chebyshev
+/// interval `[-1, 1]`, but the slot values produced by CoeffsToSlots span the
+/// `f_mod_interval` (`K`) message intervals `[-K, K]`. [`Self::compile`]
+/// therefore folds a `1/K` factor into the CoeffsToSlots matrix (composed with
+/// any [`DFTPlan::scaling`] the caller already set), mapping the input into the
+/// `[-1, 1]` range EvalMod expects — the base-`2^base2k` analogue of Lattigo's
+/// `C2SScaling = qDiv / (Mod1Interval · qDiff)` with `qDiff = 1` (the modulus is
+/// an exact power of two).
+pub struct BootstrappingContext<BE: Backend, F> {
+    /// Prepared CoeffsToSlots matrix (homomorphic encoding), pre-scaled by `1/K`.
+    pub coeffs_to_slots: DFTMatrixPrepared<BE, Encode, Split>,
+
+    /// Prepared SlotsToCoeffs matrix (homomorphic decoding).
+    pub slots_to_coeffs: DFTMatrixPrepared<BE, Decode, Split>,
+
+    /// Encoded, backend-resident EvalMod (`x mod 1`).
+    pub eval_mod: EvalMod<F, CKKSPlaintext<BE::OwnedBuf>>,
+}
+
+impl<BE: Backend, F> BootstrappingContext<BE, F>
+where
+    F: CKKSScalar + DftScalar,
+{
+    /// Compiles `plan` into resident matrices and an uploaded EvalMod.
+    ///
+    /// Each stage carries its own coefficient metadata (`DFTPlan::meta` /
+    /// `EvalModPlan::meta`), read directly off the plan. The CoeffsToSlots matrix
+    /// is scaled by `1/f_mod_interval` (see the struct docs).
+    pub fn compile<E>(
+        module: &Module<BE>,
+        host_module: &Module<HostBytesBackend>,
+        encoder: &Encoder<E>,
+        base2k: Base2K,
+        plan: &BootstrappingPlan,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<Self>
+    where
+        E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+        BE: TransferFrom<HostBytesBackend>,
+        Module<BE>: DFTOps<BE> + ModuleTransfer<BE>,
+        Module<HostBytesBackend>: ModuleNew<HostBytesBackend> + CKKSModuleAlloc<HostBytesBackend>,
+        CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
+    {
+        // Map the [-K, K] CoeffsToSlots output into EvalMod's [-1, 1] Chebyshev
+        // domain (composed with any caller-set scaling).
+        let k = plan.eval_mod.f_mod_interval as f64;
+        let mut c2s_plan = plan.coeffs_to_slots.clone();
+        c2s_plan.scaling = Some(c2s_plan.scaling.unwrap_or(1.0) / k);
+
+        let c2s_lt: DFTMatrix<BE, Encode, Split> =
+            module.ckks_new_dft_matrix(host_module, encoder, base2k, &c2s_plan, scratch)?;
+        let coeffs_to_slots = module.ckks_prepare_dft_matrix(&c2s_lt, scratch);
+
+        let s2c_lt: DFTMatrix<BE, Decode, Split> =
+            module.ckks_new_dft_matrix(host_module, encoder, base2k, &plan.slots_to_coeffs, scratch)?;
+        let slots_to_coeffs = module.ckks_prepare_dft_matrix(&s2c_lt, scratch);
+
+        let host_eval_mod = EvalMod::<F, _>::from_literal(base2k, plan.eval_mod, host_module)?;
+        let eval_mod =
+            host_eval_mod.map_plaintexts(|pt| CKKSPlaintext::from_inner(module.upload_glwe_plaintext(&pt.inner), pt.meta()));
+
+        Ok(Self {
+            coeffs_to_slots,
+            slots_to_coeffs,
+            eval_mod,
+        })
+    }
+}

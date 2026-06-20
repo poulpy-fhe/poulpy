@@ -26,7 +26,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSMeta, SetCKKSInfos,
+    CKKSCtBounds, SetCKKSInfos,
     api::LtDiagonalScale,
     default::dft::matrices::DftScalar,
     encoding::reim::Encoder,
@@ -55,7 +55,6 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
         host_module: &Module<HostBytesBackend>,
         encoder: &Encoder<E>,
         base2k: Base2K,
-        factor_meta: CKKSMeta,
         literal: &DFTPlan,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> ::anyhow::Result<DFTMatrix<BE, Dir, Fmt>>
@@ -193,7 +192,6 @@ pub trait DFTDefault<BE: Backend> {
         host_module: &Module<HostBytesBackend>,
         encoder: &Encoder<E>,
         base2k: Base2K,
-        factor_meta: CKKSMeta,
         literal: &DFTPlan,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> ::anyhow::Result<DFTMatrix<BE, Dir, Fmt>>
@@ -331,7 +329,6 @@ where
         host_module: &Module<HostBytesBackend>,
         encoder: &Encoder<E>,
         base2k: Base2K,
-        factor_meta: CKKSMeta,
         literal: &DFTPlan,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> ::anyhow::Result<DFTMatrix<BE, Dir, Fmt>>
@@ -344,7 +341,7 @@ where
         E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
         CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>,
     {
-        module.ckks_new_dft_matrix_default::<Dir, Fmt, E, F>(host_module, encoder, base2k, factor_meta, literal, scratch)
+        module.ckks_new_dft_matrix_default::<Dir, Fmt, E, F>(host_module, encoder, base2k, literal, scratch)
     }
 
     fn ckks_dft_evaluate_assign<Dir, Fmt, P, Dst, H, K>(
@@ -499,7 +496,6 @@ macro_rules! impl_ckks_dft_defaults {
                 host_module: &::poulpy_hal::layouts::Module<::poulpy_hal::layouts::HostBytesBackend>,
                 encoder: &$crate::encoding::reim::Encoder<E>,
                 base2k: ::poulpy_core::layouts::Base2K,
-                factor_meta: $crate::CKKSMeta,
                 literal: &$crate::layouts::DFTPlan,
                 _scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
             ) -> $crate::__macro_reexports::anyhow::Result<$crate::layouts::DFTMatrix<$be, Dir, Fmt>>
@@ -514,14 +510,7 @@ macro_rules! impl_ckks_dft_defaults {
                 E: ::poulpy_hal::api::NegacyclicFFT<F> + ::poulpy_hal::api::NegacyclicFFTNew<F>,
                 $crate::layouts::CKKSPlaintext<Vec<u8>>: $crate::layouts::CKKSPlaintextVecHostCodec<f64>,
             {
-                $crate::default::dft::ckks_new_dft_matrix::<Dir, Fmt, $be, E, F>(
-                    self,
-                    host_module,
-                    encoder,
-                    base2k,
-                    factor_meta,
-                    literal,
-                )
+                $crate::default::dft::ckks_new_dft_matrix::<Dir, Fmt, $be, E, F>(self, host_module, encoder, base2k, literal)
             }
 
             fn ckks_dft_evaluate_assign_default<Dir, Fmt, P, Dst, H, K>(

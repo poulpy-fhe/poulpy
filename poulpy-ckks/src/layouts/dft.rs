@@ -12,7 +12,7 @@ use core::marker::PhantomData;
 use poulpy_core::{LinearTransformationPrepared, layouts::LinearTransformation};
 use poulpy_hal::layouts::Backend;
 
-use crate::layouts::CKKSPlaintext;
+use crate::{CKKSMeta, layouts::CKKSPlaintext};
 
 /// Distinguishes the two homomorphic transforms.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -81,7 +81,7 @@ pub struct DFTPlan {
     /// [`optimal_bsgs_giant_step`](poulpy_core::layouts::optimal_bsgs_giant_step).
     /// Each width is interpreted modulo that factor's own slot count (which is
     /// `2·slots` for the sparse-repack factors).
-    pub factor_giant_steps: Vec<usize>,
+    pub giant_steps: Vec<usize>,
     /// Post-processing format. Default [`DFTOutputFormat::Standard`].
     ///
     /// On a *resolved* plan (one stored inside a [`DFTMatrix`]) this is
@@ -98,7 +98,7 @@ pub struct DFTPlan {
     /// `log_budget` bits each factor consumes (the per-factor plaintext
     /// `log_delta`). Meaningless on an input literal; the constructor fills it
     /// from `factor_meta` on the resolved plan stored in a [`DFTMatrix`].
-    pub factor_log_delta: usize,
+    pub meta: CKKSMeta,
 }
 
 impl DFTPlan {
@@ -126,20 +126,24 @@ impl DFTPlan {
                 self.factorization_depth
             ));
         }
-        if self.factor_giant_steps.len() != self.factorization_depth.len() {
+        if self.giant_steps.len() != self.factorization_depth.len() {
             return Err(format!(
                 "invalid DFTPlan: factor_giant_steps (len {}) must match factorization_depth (len {})",
-                self.factor_giant_steps.len(),
+                self.giant_steps.len(),
                 self.factorization_depth.len()
             ));
         }
-        if self.factor_giant_steps.contains(&0) {
+        if self.giant_steps.contains(&0) {
             return Err(format!(
                 "invalid DFTPlan: factor_giant_steps has a zero-width factor (use 1 for the direct schedule): {:?}",
-                self.factor_giant_steps
+                self.giant_steps
             ));
         }
         Ok(())
+    }
+    
+    pub fn consumed_bits(&self) -> usize{
+        self.num_factors() * self.meta.log_delta
     }
 }
 
@@ -291,14 +295,14 @@ impl<BE: Backend, Dir, Fmt, R> DFTMatrix<BE, Dir, Fmt, R> {
     }
 
     /// `log_budget` bits consumed per factor (the per-factor plaintext `log_delta`).
-    pub fn factor_log_delta(&self) -> usize {
-        self.inner.plan.factor_log_delta
+    pub fn meta(&self) -> CKKSMeta {
+        self.inner.plan.meta
     }
 
     /// Total `log_budget` bits the whole transform consumes: `num_factors ×
     /// factor_log_delta`. The input ciphertext must have at least this much.
     pub fn consumed_bits(&self) -> usize {
-        self.num_factors() * self.factor_log_delta()
+        self.plan().consumed_bits()
     }
 }
 

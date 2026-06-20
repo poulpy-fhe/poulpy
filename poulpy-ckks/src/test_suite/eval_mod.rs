@@ -12,7 +12,7 @@ use crate::{
     api::{CKKSAllOpsTmpBytes, CKKSEvalModOps},
     encoding::reim::Encoder,
     layouts::{
-        CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext,
+        CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec,
         eval_mod::{EvalMod, EvalModPlan, EvalModPoly, EvalModType},
     },
     polynomial::SplitStrategy,
@@ -178,7 +178,9 @@ fn run_eval_mod_case<BE, F, E>(
         log_budget: base2k,
         log_sparsity: 0,
     };
-    let host_params = EvalMod::<F, _>::from_literal(coeff_meta, base2k.into(), lit, host_module).expect("EvalMod::from_literal");
+    let mut lit = lit;
+    lit.meta = coeff_meta;
+    let host_params = EvalMod::<F, _>::from_literal(base2k.into(), lit, host_module).expect("EvalMod::from_literal");
 
     let test_params = with_eval_mod_depth(params, log_delta, host_params.eval_depth());
     let params_be = upload_params(module, host_params);
@@ -297,6 +299,7 @@ pub fn test_eval_mod_sin_continuous_minimal<BE, F, E>(
         f_mod_inv_degree: None,
         scaling: None,
         split_strategy: SplitStrategy::MinDepth,
+        meta: CKKSMeta::default(),
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_sin_continuous_minimal", 60, lit, 36.0);
 }
@@ -323,6 +326,7 @@ pub fn test_eval_mod_sin_continuous_with_arcsine<BE, F, E>(
         f_mod_inv_degree: Some(7),
         scaling: None,
         split_strategy: SplitStrategy::MinDepth,
+        meta: CKKSMeta::default(),
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_sin_continuous_arcsine", 60, lit, 36.0);
 }
@@ -349,6 +353,7 @@ pub fn test_eval_mod_cos_discrete<BE, F, E>(
         f_mod_inv_degree: None,
         scaling: None,
         split_strategy: SplitStrategy::MinDepth,
+        meta: CKKSMeta::default(),
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_discrete", 60, lit, 40.0);
 }
@@ -375,6 +380,7 @@ pub fn test_eval_mod_cos_continuous<BE, F, E>(
         f_mod_inv_degree: None,
         scaling: None,
         split_strategy: SplitStrategy::MinDepth,
+        meta: CKKSMeta::default(),
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_continuous", 60, lit, 40.0);
 }
@@ -398,6 +404,62 @@ where
         f_mod_inv_degree: None,
         scaling: None,
         split_strategy: SplitStrategy::MinDepth,
+        meta: CKKSMeta::default(),
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_exp", 60, lit, 40.0);
+}
+
+/// The analytic [`EvalModPlan::eval_depth`] / [`EvalModPlan::consumed_bits`]
+/// (computed from the plan alone, used to size the bootstrap modulus) must equal
+/// the depth of the actually-compiled [`EvalMod`] for every variant — otherwise
+/// budget sizing would silently under- or over-shoot.
+pub fn test_eval_mod_consumed_bits_matches_built<BE, F, E>(
+    params: super::CKKSTestParams,
+    _module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    Module<HostBytesBackend>: super::helpers::TestContextHostModule,
+    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let base2k = params.base2k;
+    let plan = |eval_mod_type, log_message_ratio, f_mod_degree, f_mod_interval, f_mod_log_interval_reduction, f_mod_inv_degree| {
+        EvalModPlan {
+            eval_mod_type,
+            log_message_ratio,
+            f_mod_degree,
+            f_mod_interval,
+            f_mod_log_interval_reduction,
+            f_mod_inv_degree,
+            scaling: None,
+            split_strategy: SplitStrategy::MinDepth,
+            meta: CKKSMeta {
+                log_sparsity: 0,
+                log_delta: base2k,
+                log_budget: 10,
+            },
+        }
+    };
+
+    let cases = [
+        ("sin_continuous", plan(EvalModType::SinCheby, 8, 127, 14, 0, None)),
+        ("sin_arcsine", plan(EvalModType::SinCheby, 8, 127, 14, 0, Some(7))),
+        ("cos_discrete", plan(EvalModType::CosHK, 8, 30, 12, 3, None)),
+        ("cos_continuous", plan(EvalModType::CosCheby, 4, 31, 12, 3, None)),
+        ("exp", plan(EvalModType::ExpCmplx, 4, 31, 8, 3, None)),
+    ];
+
+    for (label, lit) in cases {
+        let built = EvalMod::<F, _>::from_literal(base2k.into(), lit, host_module).expect("EvalMod::from_literal");
+        assert_eq!(lit.eval_depth(), built.eval_depth(), "{label}: plan eval_depth != built eval_depth");
+        assert_eq!(lit.consumed_bits(), built.consumed_bits(), "{label}: plan consumed_bits != built consumed_bits");
+        assert_eq!(
+            lit.consumed_bits(),
+            lit.eval_depth() * lit.meta.log_delta,
+            "{label}: consumed_bits != eval_depth * log_delta"
+        );
+    }
 }

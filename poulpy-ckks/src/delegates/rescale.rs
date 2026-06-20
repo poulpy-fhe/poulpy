@@ -5,7 +5,7 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use crate::{CKKSCtBounds, SetCKKSInfos, api::CKKSRescaleOps, oep::CKKSRescaleImpl};
+use crate::{CKKSCtBounds, SetCKKSInfos, api::CKKSRescaleOps, layouts::CKKSCiphertext, oep::CKKSRescaleImpl};
 
 impl<BE: Backend + CKKSRescaleImpl<BE>> CKKSRescaleOps<BE> for Module<BE>
 where
@@ -40,5 +40,9 @@ where
 
     fn ckks_align_tmp_bytes(&self) -> usize {
         BE::ckks_align_tmp_bytes(self)
+    }
+
+    fn ckks_scale_up(&self, ct: &mut CKKSCiphertext<Vec<u8>>, bits: usize) -> Result<()> {
+        BE::ckks_scale_up(self, ct, bits)
     }
 }

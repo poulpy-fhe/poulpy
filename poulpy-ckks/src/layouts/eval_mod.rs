@@ -41,7 +41,7 @@
 //! trait (see [`crate::default::eval_mod`] for the evaluation itself).
 
 use anyhow::{Result, anyhow, ensure};
-use poulpy_core::layouts::Base2K;
+use poulpy_core::layouts::{Base2K, bsgs_eval_depth};
 use poulpy_hal::layouts::{HostBytesBackend, Module};
 
 use rand_distr::num_traits::{Float, FloatConst};
@@ -162,6 +162,45 @@ pub struct EvalModPlan {
     /// Baby-step/giant-step split strategy used to encode the polynomials (depth
     /// vs. number-of-rotations trade-off).
     pub split_strategy: SplitStrategy,
+
+    /// CKKS metadata of the coefficients
+    pub meta: CKKSMeta,
+}
+
+impl EvalModPlan {
+    /// Multiplicative levels the eval_mod pipeline consumes: BSGS depth of the
+    /// base `f` polynomial + `f_mod_log_interval_reduction` range-extension steps
+    /// + BSGS depth of the optional inverse `f⁻¹` post-composition.
+    ///
+    /// Computed analytically from the plan via
+    /// [`bsgs_eval_depth`](poulpy_core::layouts::bsgs_eval_depth) (which accounts
+    /// for the [`SplitStrategy`], so this is exact for `MinMult` as well as
+    /// `MinDepth`); it matches the depth of the compiled [`EvalMod::eval_depth`].
+    pub fn eval_depth(&self) -> usize {
+        let base = bsgs_eval_depth(self.base_degree(), self.split_strategy);
+        let inv = self.f_mod_inv_degree.map_or(0, |d| bsgs_eval_depth(d, self.split_strategy));
+        base + self.f_mod_log_interval_reduction + inv
+    }
+
+    /// `log_budget` bits the eval_mod pipeline consumes: [`Self::eval_depth`]
+    /// levels at the coefficient scale [`Self::meta`]`.log_delta`.
+    pub fn consumed_bits(&self) -> usize {
+        self.eval_depth() * self.meta.log_delta
+    }
+
+    /// Degree of the base `f` polynomial actually encoded, so its BSGS depth can
+    /// be derived without building it. For `CosHK` this is the minimax degree
+    /// chosen by [`cosine::approximate_cos`]; otherwise the interpolation degree
+    /// `f_mod_degree`.
+    fn base_degree(&self) -> usize {
+        match self.eval_mod_type {
+            EvalModType::CosHK => {
+                cosine::approximate_cos_len(self.f_mod_interval, self.f_mod_degree, (1u64 << self.log_message_ratio) as f64)
+                    .saturating_sub(1)
+            }
+            _ => self.f_mod_degree,
+        }
+    }
 }
 
 /// BSGS-encoded base polynomial driving the homomorphic evaluation. Its
@@ -246,15 +285,11 @@ where
     /// interval, `SinCheby` with `f_mod_log_interval_reduction ≠ 0`, `CosHK` with
     /// `f_mod_degree < 2·(K − 1)`, an even `f_mod_inv_degree`,
     /// `f_mod_log_interval_reduction ≥ 31` — or if a coefficient is not representable in `F`.
-    pub fn from_literal(
-        coeff_meta: CKKSMeta,
-        base2k: Base2K,
-        lit: EvalModPlan,
-        module: &Module<HostBytesBackend>,
-    ) -> Result<Self> {
+    pub fn from_literal(base2k: Base2K, lit: EvalModPlan, module: &Module<HostBytesBackend>) -> Result<Self> {
         if lit.eval_mod_type == EvalModType::ExpCmplx {
-            return Self::from_literal_exp(coeff_meta, base2k, lit, module);
+            return Self::from_literal_exp(base2k, lit, module);
         }
+        let coeff_meta = lit.meta;
 
         ensure!(lit.f_mod_degree > 0, "f_mod_degree must be > 0");
         ensure!(lit.f_mod_interval > 0, "f_mod_interval must be > 0");
@@ -376,12 +411,8 @@ where
     /// single [`ComplexPolynomial`] and BSGS-encodes it. The `r` range-extension
     /// steps are plain complex squarings (`exp 2θ = (exp θ)²`), so no offset or
     /// per-step constant is needed.
-    fn from_literal_exp(
-        coeff_meta: CKKSMeta,
-        base2k: Base2K,
-        lit: EvalModPlan,
-        module: &Module<HostBytesBackend>,
-    ) -> Result<Self> {
+    fn from_literal_exp(base2k: Base2K, lit: EvalModPlan, module: &Module<HostBytesBackend>) -> Result<Self> {
+        let coeff_meta = lit.meta;
         ensure!(lit.f_mod_degree > 0, "f_mod_degree must be > 0");
         ensure!(lit.f_mod_interval > 0, "f_mod_interval must be > 0");
         ensure!(
@@ -430,6 +461,12 @@ impl<F, P> EvalMod<F, P> {
         };
         let inv = self.f_mod_inv_bsgs.as_ref().map_or(0, |p| p.eval_depth());
         base + self.plan.f_mod_log_interval_reduction + inv
+    }
+
+    /// `log_budget` bits consumed: [`Self::eval_depth`] levels at the coefficient
+    /// scale `plan.meta.log_delta`. Matches [`EvalModPlan::consumed_bits`].
+    pub fn consumed_bits(&self) -> usize {
+        self.eval_depth() * self.plan.meta.log_delta
     }
 
     /// Per-step range-extension scaling `s`: the base polynomial bakes `s` into its

@@ -287,7 +287,7 @@ pub fn split_degree(n: usize) -> (usize, usize) {
 /// `[2^(b-1), 2^b)` band costs one extra level. The threshold within a band of
 /// `b = bit_len(degree)` bits is `2^b − 2^((b-1)/2) + 1` (matching the giant-step
 /// structure of `eval_giant_steps`).
-pub(crate) fn bsgs_eval_depth(degree: usize, strategy: SplitStrategy) -> usize {
+pub fn bsgs_eval_depth(degree: usize, strategy: SplitStrategy) -> usize {
     if degree == 0 {
         return 0;
     }
@@ -376,15 +376,15 @@ where
     /// baby-step coefficient slice with the scheme-supplied `encode` closure.
     pub fn decompose_bsgs_with<C>(
         &self,
-        strategy: SplitStrategy,
+        split_strategy: SplitStrategy,
         mut encode: impl FnMut(&[F]) -> Result<C>,
     ) -> Result<BSGSPolynomial<C>> {
         ensure!(self.degree() >= 1, "polynomial must have degree ≥ 1");
 
         let degree = self.degree();
-        let log_split = split_for_strategy(strategy, degree, self.parity, self.basis);
+        let log_split = split_for_strategy(split_strategy, degree, self.parity, self.basis);
         let base = 1usize << log_split;
-        let split_leading = matches!(strategy, SplitStrategy::MinDepth);
+        let split_leading = matches!(split_strategy, SplitStrategy::MinDepth);
 
         let mut baby_steps = Vec::new();
         decompose_bsgs_coeffs(
@@ -406,7 +406,7 @@ where
             base,
             baby_steps,
             parity: self.parity,
-            eval_depth: bsgs_eval_depth(degree, strategy),
+            split_strategy,
         })
     }
 }
@@ -507,14 +507,12 @@ where
 ///
 /// Construct via [`Polynomial::decompose_bsgs_with`].
 pub struct BSGSPolynomial<C> {
-    pub(crate) basis: Basis,
-    pub(crate) degree: usize,
-    pub(crate) base: usize,
-    pub(crate) baby_steps: Vec<C>,
-    pub(crate) parity: Parity,
-    /// Multiplicative depth this decomposition consumes, computed from the
-    /// `SplitStrategy` at decomposition time (see [`bsgs_eval_depth`]).
-    pub(crate) eval_depth: usize,
+    basis: Basis,
+    degree: usize,
+    base: usize,
+    baby_steps: Vec<C>,
+    parity: Parity,
+    split_strategy: SplitStrategy,
 }
 
 impl<BE: Backend, C> BSGSPolynomialInfos<BE> for BSGSPolynomial<C>
@@ -546,6 +544,10 @@ where
     fn log_split(&self) -> usize {
         BSGSPolynomial::log_split(self)
     }
+
+    fn split_strategy(&self) -> SplitStrategy{
+        self.split_strategy
+    }
 }
 
 impl<C> BSGSPolynomial<C> {
@@ -569,15 +571,9 @@ impl<C> BSGSPolynomial<C> {
         self.base.trailing_zeros() as usize
     }
 
-    /// Multiplicative depth (number of CT-CT multiplication levels) a BSGS
-    /// evaluation of this polynomial consumes.
-    ///
-    /// Computed from the [`SplitStrategy`] at decomposition time, so it is exact
-    /// for any strategy. In particular it is **not** simply `ceil(log2(degree))`:
-    /// a `MinMult` split can cost one level more than the depth-optimal `MinDepth`
-    /// split.
+    /// Number consecutives multiplications needed to evaluate this polynomial.
     pub fn eval_depth(&self) -> usize {
-        self.eval_depth
+        bsgs_eval_depth(self.degree(), self.split_strategy)
     }
 
     /// Returns all encoded baby-step coefficient polynomials.
@@ -605,7 +601,7 @@ impl<C> BSGSPolynomial<C> {
             base: self.base,
             baby_steps: self.baby_steps.iter().map(&mut f).collect(),
             parity: self.parity,
-            eval_depth: self.eval_depth,
+            split_strategy: self.split_strategy,
         }
     }
 }
@@ -639,6 +635,7 @@ pub trait BSGSPolynomialInfos<BE: Backend> {
     fn basis(&self) -> Basis;
     fn parity(&self) -> Parity;
     fn log_split(&self) -> usize;
+    fn split_strategy(&self) -> SplitStrategy;
 }
 
 /// A single evaluated baby step with its degree.

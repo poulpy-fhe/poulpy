@@ -1,4 +1,5 @@
 mod add;
+mod bootstrapping;
 mod composite;
 mod conjugate;
 mod copy;
@@ -18,6 +19,7 @@ mod sub;
 mod tmp_bytes;
 
 pub use add::CKKSAddOps;
+pub use bootstrapping::CKKSBootstrappingOps;
 pub use composite::{CKKSAddManyOps, CKKSAffineOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulSubOps};
 pub use conjugate::CKKSConjugateOps;
 pub use copy::CKKSCopyOps;

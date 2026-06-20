@@ -33,7 +33,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSMeta, SetCKKSInfos,
+    CKKSCompositionError, CKKSCtBounds, SetCKKSInfos,
     api::{
         CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSImagOps, CKKSRotateOps, CKKSSubOps, LinearTransformationBabySteps,
         LinearTransformationOps, LinearTransformationPrepared, LtDiagonalScale,
@@ -60,7 +60,6 @@ fn dft_factor_lts<BE, E, F>(
     host_module: &Module<HostBytesBackend>,
     encoder: &Encoder<E>,
     base2k: Base2K,
-    factor_meta: CKKSMeta,
     literal: &DFTPlan,
 ) -> (DFTPlan, Vec<DftFactorLt<BE>>)
 where
@@ -76,10 +75,9 @@ where
     // Resolve the plan: sparsity is decided against the ring degree, then a dense
     // `RepackImagAsReal` is canonicalized to `SplitRealAndImag` (the two coincide)
     // so the stored `format` is canonical and `plan.is_sparse()` is exact. The
-    // per-factor scale is recorded from `factor_meta`.
+    // per-factor scale is carried by `literal.meta`.
     let sparse = literal.log_slots() < module.log_n().saturating_sub(1) && literal.format == DFTOutputFormat::RepackImagAsReal;
     let mut plan = literal.clone();
-    plan.factor_log_delta = factor_meta.log_delta;
     if literal.format == DFTOutputFormat::RepackImagAsReal && !sparse {
         plan.format = DFTOutputFormat::SplitRealAndImag;
     }
@@ -94,7 +92,7 @@ where
     // parallel length, and `giant_step == 1` is the direct schedule.
     let lts = factors_cd
         .iter()
-        .zip(&plan.factor_giant_steps)
+        .zip(&plan.giant_steps)
         .map(|(cd, &giant_step)| {
             let strategy = LinearTransformationStrategy::Bsgs { giant_step };
             crate::default::ckks_encode_linear_transformation_from_diagonals::<BE, F, E>(
@@ -102,7 +100,7 @@ where
                 host_module,
                 enc_ref,
                 base2k,
-                factor_meta,
+                plan.meta,
                 cd,
                 strategy,
                 false,
@@ -167,7 +165,6 @@ pub fn ckks_new_dft_matrix<Dir, Fmt, BE, E, F>(
     host_module: &Module<HostBytesBackend>,
     encoder: &Encoder<E>,
     base2k: Base2K,
-    factor_meta: CKKSMeta,
     literal: &DFTPlan,
 ) -> Result<DFTMatrix<BE, Dir, Fmt>>
 where
@@ -185,7 +182,7 @@ where
     literal.kind = Dir::KIND;
     literal.format = Fmt::FORMAT;
 
-    let (plan, lts) = dft_factor_lts::<BE, E, F>(module, host_module, encoder, base2k, factor_meta, &literal);
+    let (plan, lts) = dft_factor_lts::<BE, E, F>(module, host_module, encoder, base2k, &literal);
 
     // The dense-`RepackImagAsReal` → `Split` canonicalization is the only runtime
     // format resolution; if it changed the requested format, the request was

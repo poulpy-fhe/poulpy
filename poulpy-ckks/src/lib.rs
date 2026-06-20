@@ -39,7 +39,7 @@
 //! | [`encoding`] | CKKS encoders/decoders, including slot-wise real/imaginary packing |
 //! | [`layouts`] | CKKS ciphertext/plaintext wrappers and metadata-aware allocation helpers |
 //! | [`leveled`] | Leveled arithmetic (add, sub, mul, neg, rotate, conjugate), encryption, decryption, and rescale |
-//! | bootstrapping | Planned CKKS bootstrapping |
+//! | [`api::CKKSBootstrappingOps`] | The CKKS bootstrapping pipeline: its one native primitive ModUp (modulus raise), plus CoeffsToSlots / SlotsToCoeffs and EvalMod re-exported as supertraits ([`api::DFTOps`] / [`api::CKKSEvalModOps`]); parameterized by [`layouts::BootstrappingPlan`] |
 
 use poulpy_core::layouts::{BSGSMeta, Base2K, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision};
 use poulpy_hal::layouts::Backend;

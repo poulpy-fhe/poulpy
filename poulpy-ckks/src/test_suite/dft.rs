@@ -108,15 +108,15 @@ fn factor_meta(log_delta: usize) -> CKKSMeta {
 
 /// A factorized (I)DFT plan over `log_slots` factors: one FFT layer per factor
 /// (no merging), BSGS width 2.
-fn plan(log_slots: usize, kind: DFTType, format: DFTOutputFormat) -> DFTPlan {
+fn plan(log_slots: usize, kind: DFTType, format: DFTOutputFormat, log_delta: usize) -> DFTPlan {
     DFTPlan {
         kind,
         factorization_depth: vec![1usize; log_slots],
-        factor_giant_steps: vec![2usize; log_slots],
+        giant_steps: vec![2usize; log_slots],
         format,
         scaling: None,
         bit_reversed: false,
-        factor_log_delta: 0,
+        meta: factor_meta(log_delta),
     }
 }
 
@@ -202,8 +202,7 @@ pub fn test_dft_coeffs_to_slots_standard<BE, F, E>(
             &host_module,
             &encoder,
             Base2K(base2k as u32),
-            factor_meta(log_delta),
-            &plan(DENSE_LOG_SLOTS, DFTType::Encode, DFTOutputFormat::Standard),
+            &plan(DENSE_LOG_SLOTS, DFTType::Encode, DFTOutputFormat::Standard, log_delta),
             &mut scratch.borrow(),
         )
         .unwrap();
@@ -282,8 +281,7 @@ pub fn test_dft_slots_to_coeffs_standard<BE, F, E>(
             &host_module,
             &encoder,
             Base2K(base2k as u32),
-            factor_meta(log_delta),
-            &plan(DENSE_LOG_SLOTS, DFTType::Decode, DFTOutputFormat::Standard),
+            &plan(DENSE_LOG_SLOTS, DFTType::Decode, DFTOutputFormat::Standard, log_delta),
             &mut scratch.borrow(),
         )
         .unwrap();
@@ -362,8 +360,7 @@ pub fn test_dft_coeffs_to_slots_split<BE, F, E>(
             &host_module,
             &encoder,
             Base2K(base2k as u32),
-            factor_meta(log_delta),
-            &plan(DENSE_LOG_SLOTS, DFTType::Encode, DFTOutputFormat::SplitRealAndImag),
+            &plan(DENSE_LOG_SLOTS, DFTType::Encode, DFTOutputFormat::SplitRealAndImag, log_delta),
             &mut scratch.borrow(),
         )
         .unwrap();
@@ -458,8 +455,7 @@ pub fn test_dft_coeffs_to_slots_repack_sparse<BE, F, E>(
             &host_module,
             &encoder,
             Base2K(base2k as u32),
-            factor_meta(log_delta),
-            &plan(log_slots, DFTType::Encode, DFTOutputFormat::RepackImagAsReal),
+            &plan(log_slots, DFTType::Encode, DFTOutputFormat::RepackImagAsReal, log_delta),
             &mut scratch.borrow(),
         )
         .unwrap();
@@ -554,8 +550,7 @@ pub fn test_dft_slots_to_coeffs_split<BE, F, E>(
             &host_module,
             &encoder,
             Base2K(base2k as u32),
-            factor_meta(log_delta),
-            &plan(DENSE_LOG_SLOTS, DFTType::Decode, DFTOutputFormat::SplitRealAndImag),
+            &plan(DENSE_LOG_SLOTS, DFTType::Decode, DFTOutputFormat::SplitRealAndImag, log_delta),
             &mut scratch.borrow(),
         )
         .unwrap();
@@ -648,8 +643,7 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
             &host_module,
             &encoder,
             Base2K(base2k as u32),
-            factor_meta(log_delta),
-            &plan(log_slots, DFTType::Decode, DFTOutputFormat::RepackImagAsReal),
+            &plan(log_slots, DFTType::Decode, DFTOutputFormat::RepackImagAsReal, log_delta),
             &mut scratch.borrow(),
         )
         .unwrap();

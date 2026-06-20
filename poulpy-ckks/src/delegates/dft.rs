@@ -18,7 +18,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSMeta, SetCKKSInfos,
+    CKKSCtBounds, SetCKKSInfos,
     api::{DFTOps, LtDiagonalScale},
     default::dft::matrices::DftScalar,
     encoding::reim::Encoder,
@@ -46,7 +46,6 @@ impl<BE: Backend + DFTImpl<BE>> DFTOps<BE> for Module<BE> {
         host_module: &Module<HostBytesBackend>,
         encoder: &Encoder<E>,
         base2k: Base2K,
-        factor_meta: CKKSMeta,
         literal: &DFTPlan,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<DFTMatrix<BE, Dir, Fmt>>
@@ -59,7 +58,7 @@ impl<BE: Backend + DFTImpl<BE>> DFTOps<BE> for Module<BE> {
         E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
         CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>,
     {
-        BE::ckks_new_dft_matrix::<Dir, Fmt, E, F>(self, host_module, encoder, base2k, factor_meta, literal, scratch)
+        BE::ckks_new_dft_matrix::<Dir, Fmt, E, F>(self, host_module, encoder, base2k, literal, scratch)
     }
 
     fn ckks_dft_evaluate_assign<Dir, Fmt, P, Dst, H, K>(
