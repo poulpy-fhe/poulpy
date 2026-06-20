@@ -580,13 +580,7 @@ pub fn test_eval_poly_adaptive_drop_granularity<BE, F, E>(
     let mono = upload_bsgs(module, &poly.encode_bsgs(host_module, base2k.into(), coeff_meta).unwrap());
     let mut res_mono = alloc_ct(&params, module, k);
     module
-        .ckks_eval_poly_real_const_coeffs(
-            &mut res_mono,
-            &x_ct,
-            &mono,
-            &tsk,
-            &mut scratch.borrow(),
-        )
+        .ckks_eval_poly_real_const_coeffs(&mut res_mono, &x_ct, &mono, &tsk, &mut scratch.borrow())
         .unwrap();
 
     for mode in [AdaptiveEvalMode::Default, AdaptiveEvalMode::DoubleModulusSaving] {
@@ -685,13 +679,7 @@ pub fn test_eval_poly_adaptive_chebyshev<BE, F, E>(
             let mono = upload_bsgs(module, &poly.encode_bsgs(host_module, base2k.into(), coeff_meta).unwrap());
             let mut res_mono = alloc_ct(&params, module, k);
             module
-                .ckks_eval_poly_real_const_coeffs(
-                    &mut res_mono,
-                    &x_ct,
-                    &mono,
-                    &tsk,
-                    &mut scratch.borrow(),
-                )
+                .ckks_eval_poly_real_const_coeffs(&mut res_mono, &x_ct, &mono, &tsk, &mut scratch.borrow())
                 .unwrap();
             let zeros = vec![F::zero(); m];
             assert_decrypt_precision_at_log_delta(
