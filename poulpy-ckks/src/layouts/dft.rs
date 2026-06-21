@@ -8,9 +8,13 @@
 //! design.
 
 use core::marker::PhantomData;
+use std::collections::BTreeSet;
 
-use poulpy_core::{LinearTransformationPrepared, layouts::LinearTransformation};
-use poulpy_hal::layouts::Backend;
+use poulpy_core::{
+    LinearTransformationPrepared,
+    layouts::{LinearTransformation, LinearTransformationLayout, LinearTransformationStrategy},
+};
+use poulpy_hal::layouts::{Backend, galois_element};
 
 use crate::{CKKSMeta, layouts::CKKSPlaintext};
 
@@ -144,6 +148,111 @@ impl DFTPlan {
 
     pub fn consumed_bits(&self) -> usize {
         self.num_factors() * self.meta.log_delta
+    }
+
+    /// Whether this plan resolves to the sparse `RepackImagAsReal` path on a ring
+    /// of degree `2^log_n` (a repack format with `log_slots < log_n − 1`). A dense
+    /// `RepackImagAsReal` collapses to `SplitRealAndImag`, so it is **not** sparse.
+    /// Matches [`DFTMatrix::is_sparse`] on the compiled matrix.
+    pub fn is_sparse_repack(&self, log_n: usize) -> bool {
+        self.format == DFTOutputFormat::RepackImagAsReal && self.log_slots() < log_n.saturating_sub(1)
+    }
+
+    /// Non-zero diagonal indexes of each factor matrix, in evaluation order
+    /// (`diagonal_indexes(..)[i]` sorted ascending), **derived without generating
+    /// any diagonal value**.
+    ///
+    /// The radix-2 butterfly merge spreads every diagonal `d` of a factor to
+    /// `{d, (d+rot), (d−rot)}` (modulo the factor's slot count) for each merged
+    /// FFT layer, where `rot` depends only on the layer level, `kind` and
+    /// `bit_reversed` — never on the twiddle values. This replays exactly that
+    /// index arithmetic, so it mirrors the diagonals the `default::dft` generator
+    /// produces. `log_n` (ring degree exponent) is needed only to decide the
+    /// sparse-repack path (which prepends the `{0, slots}` repack diagonals and
+    /// widens the first `Decode` factor to `2·slots`).
+    pub fn diagonal_indexes(&self, log_n: usize) -> Vec<Vec<i64>> {
+        self.check().expect("invalid DFTPlan");
+
+        let log_slots = self.log_slots();
+        let slots = 1i64 << log_slots;
+        let sparse = self.is_sparse_repack(log_n);
+        // `rot` uses the absolute level for Encode-forward / Decode-bit-reversed,
+        // and `log_slots − level` otherwise (cf. `default::dft::rot_uses_level`).
+        let uses_level =
+            (self.kind == DFTType::Encode && !self.bit_reversed) || (self.kind == DFTType::Decode && self.bit_reversed);
+
+        let mut out = Vec::with_capacity(self.num_factors());
+        let mut fft_level = log_slots as i64;
+        for (i, &m) in self.factorization_depth.iter().enumerate() {
+            // Only the sparse-repack first Decode factor starts from the repack
+            // matrix ({0, slots}) and wraps its rotations modulo 2·slots.
+            let repack_first = sparse && self.kind == DFTType::Decode && i == 0;
+            let merge_n = if repack_first { slots << 1 } else { slots };
+            let mask = merge_n - 1;
+
+            let mut set: BTreeSet<i64> = if repack_first {
+                BTreeSet::from([0, slots])
+            } else {
+                BTreeSet::from([0])
+            };
+            let mut level = fft_level;
+            for _ in 0..m {
+                let rot = if uses_level {
+                    (1i64 << (level - 1)) & mask
+                } else {
+                    (1i64 << (log_slots as i64 - level)) & mask
+                };
+                let mut next: BTreeSet<i64> = BTreeSet::new();
+                for &d in &set {
+                    next.insert(d);
+                    next.insert((d + rot) & mask);
+                    next.insert((d - rot) & mask);
+                }
+                set = next;
+                level -= 1;
+            }
+            out.push(set.into_iter().collect());
+            fft_level -= m as i64;
+        }
+        out
+    }
+
+    /// Number of non-zero diagonals of each factor matrix, in evaluation order
+    /// (the per-factor lengths of [`diagonal_indexes`](Self::diagonal_indexes)).
+    pub fn num_diagonals(&self, log_n: usize) -> Vec<usize> {
+        self.diagonal_indexes(log_n).iter().map(Vec::len).collect()
+    }
+
+    /// Distinct Galois elements whose automorphism keys evaluating this transform
+    /// requires, on a ring of degree `2^log_n` with the given `cyclotomic_order`.
+    ///
+    /// Derived from the per-factor [`diagonal_indexes`](Self::diagonal_indexes) and
+    /// per-factor BSGS `giant_steps` (plus the `slots` repack rotation on the
+    /// sparse path), without generating any diagonal. Equals
+    /// [`DFTMatrix::galois_elements`] on the compiled matrix. The conjugation key
+    /// used by the split forward transform is separate and not included here.
+    pub fn galois_elements(&self, log_n: usize, cyclotomic_order: i64) -> Vec<i64> {
+        let sparse = self.is_sparse_repack(log_n);
+        let slots = 1i64 << self.log_slots();
+        // The factor diagonals (and thus the BSGS schedule) live in the `2·slots`
+        // working ring on the sparse path, else in `slots`.
+        let slot_count = if sparse { (slots << 1) as usize } else { slots as usize };
+
+        let mut set: BTreeSet<i64> = BTreeSet::new();
+        for (indexes, &giant_step) in self.diagonal_indexes(log_n).into_iter().zip(&self.giant_steps) {
+            let layout = LinearTransformationLayout {
+                indexes,
+                slots: slot_count,
+                strategy: LinearTransformationStrategy::Bsgs { giant_step },
+            };
+            set.extend(layout.galois_elements(cyclotomic_order));
+        }
+        if sparse {
+            set.insert(galois_element(slots, cyclotomic_order));
+        }
+        // Defensive: the identity automorphism is never key-switched.
+        set.remove(&galois_element(0, cyclotomic_order));
+        set.into_iter().collect()
     }
 }
 

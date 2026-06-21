@@ -84,6 +84,18 @@ impl BootstrappingPlan {
     pub fn consumed_bits(&self) -> usize {
         self.coeffs_to_slots.consumed_bits() + self.eval_mod.consumed_bits() + self.slots_to_coeffs.consumed_bits()
     }
+
+    /// Distinct Galois elements the pipeline's rotation keys must cover: the union
+    /// of the CoeffsToSlots and SlotsToCoeffs transforms
+    /// ([`DFTPlan::galois_elements`]), for a ring of degree `2^log_n` and the given
+    /// `cyclotomic_order`. The split forward transform's conjugation key is
+    /// separate (generate it from Galois element `−1`) and not included here.
+    pub fn galois_elements(&self, log_n: usize, cyclotomic_order: i64) -> Vec<i64> {
+        let mut set: std::collections::BTreeSet<i64> = std::collections::BTreeSet::new();
+        set.extend(self.coeffs_to_slots.galois_elements(log_n, cyclotomic_order));
+        set.extend(self.slots_to_coeffs.galois_elements(log_n, cyclotomic_order));
+        set.into_iter().collect()
+    }
 }
 
 /// Compiled [`BootstrappingPlan`]: the resident DFT matrices and encoded EvalMod

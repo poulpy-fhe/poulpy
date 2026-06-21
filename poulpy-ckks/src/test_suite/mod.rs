@@ -418,6 +418,10 @@ macro_rules! ckks_backend_test_suite {
                 dft_slots_to_coeffs_repack_sparse,
                 $crate::test_suite::dft::test_dft_slots_to_coeffs_repack_sparse
             );
+            run_test!(
+                dft_plan_helpers_match_compiled,
+                $crate::test_suite::dft::test_dft_plan_helpers_match_compiled
+            );
             run_test!(mul_ct_aligned, $crate::test_suite::mul::test_mul_ct_aligned);
             run_test!(mul_ct_delta_a_gt_b, $crate::test_suite::mul::test_mul_ct_delta_a_gt_b);
             run_test!(mul_ct_delta_a_lt_b, $crate::test_suite::mul::test_mul_ct_delta_a_lt_b);

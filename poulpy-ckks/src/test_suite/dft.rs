@@ -33,7 +33,7 @@ use crate::{
     encoding::reim::Encoder,
     layouts::{
         CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, DFTMatrix, DFTOutputFormat, DFTPlan, DFTType,
-        Encode, Standard,
+        Decode, Encode, Repack, Split, Standard,
     },
     test_suite::{
         CKKSTestParams,
@@ -701,4 +701,78 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
         noise < bound,
         "slots_to_coeffs (Repack) noise log2={noise:.1} (bound {bound:.1})"
     );
+}
+
+/// The plan-level [`DFTPlan`] helpers — [`DFTPlan::galois_elements`],
+/// [`DFTPlan::diagonal_indexes`], [`DFTPlan::num_diagonals`] — are derived
+/// structurally from the factorization schedule, without generating any diagonal.
+/// This pins them to the compiled [`DFTMatrix`]: the Galois elements must match
+/// exactly (keys are addressed by Galois element), for both directions and the
+/// dense and sparse-repack paths.
+pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
+    params: CKKSTestParams,
+    _module: &Module<BE>,
+    _host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE> + DFTOps<BE>,
+    Module<HostBytesBackend>: TestContextHostModule,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
+    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<f64>,
+{
+    // ---- dense (full slot count): Split, Encode + Decode ----
+    {
+        let p = dense_params(&params);
+        let module = Module::<BE>::new(p.n as u64);
+        let host_module = Module::<HostBytesBackend>::new(p.n as u64);
+        let encoder = Encoder::<E>::new::<F>(p.n / 2).unwrap();
+        let mut scratch = alloc_scratch(&p, &module);
+        let log_n = p.n.ilog2() as usize;
+        let order = module.cyclotomic_order();
+        let base2k = Base2K(p.base2k as u32);
+        let ld = p.prec.log_delta;
+
+        let pe = plan(DENSE_LOG_SLOTS, DFTType::Encode, DFTOutputFormat::SplitRealAndImag, ld);
+        let me: DFTMatrix<BE, Encode, Split> = module
+            .ckks_new_dft_matrix(&host_module, &encoder, base2k, &pe, &mut scratch.borrow())
+            .unwrap();
+        assert_eq!(pe.galois_elements(log_n, order), me.galois_elements(order), "dense encode galois");
+        assert!(!pe.is_sparse_repack(log_n));
+        assert_eq!(pe.num_diagonals(log_n).len(), pe.num_factors());
+
+        let pd = plan(DENSE_LOG_SLOTS, DFTType::Decode, DFTOutputFormat::SplitRealAndImag, ld);
+        let md: DFTMatrix<BE, Decode, Split> = module
+            .ckks_new_dft_matrix(&host_module, &encoder, base2k, &pd, &mut scratch.borrow())
+            .unwrap();
+        assert_eq!(pd.galois_elements(log_n, order), md.galois_elements(order), "dense decode galois");
+    }
+
+    // ---- sparse RepackImagAsReal: Encode + Decode ----
+    {
+        let p = sparse_params(&params);
+        let module = Module::<BE>::new(p.n as u64);
+        let host_module = Module::<HostBytesBackend>::new(p.n as u64);
+        let encoder = Encoder::<E>::new::<F>(1 << SPARSE_LOG_SLOTS).unwrap();
+        let mut scratch = alloc_scratch(&p, &module);
+        let log_n = p.n.ilog2() as usize;
+        let order = module.cyclotomic_order();
+        let base2k = Base2K(p.base2k as u32);
+        let ld = p.prec.log_delta;
+
+        let pe = plan(SPARSE_LOG_SLOTS, DFTType::Encode, DFTOutputFormat::RepackImagAsReal, ld);
+        assert!(pe.is_sparse_repack(log_n), "expected the sparse repack path");
+        let me: DFTMatrix<BE, Encode, Repack> = module
+            .ckks_new_dft_matrix(&host_module, &encoder, base2k, &pe, &mut scratch.borrow())
+            .unwrap();
+        assert_eq!(pe.galois_elements(log_n, order), me.galois_elements(order), "sparse encode galois");
+
+        let pd = plan(SPARSE_LOG_SLOTS, DFTType::Decode, DFTOutputFormat::RepackImagAsReal, ld);
+        let md: DFTMatrix<BE, Decode, Repack> = module
+            .ckks_new_dft_matrix(&host_module, &encoder, base2k, &pd, &mut scratch.borrow())
+            .unwrap();
+        assert_eq!(pd.galois_elements(log_n, order), md.galois_elements(order), "sparse decode galois");
+    }
 }
