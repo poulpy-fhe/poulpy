@@ -41,7 +41,7 @@
 //! trait (see [`crate::default::eval_mod`] for the evaluation itself).
 
 use anyhow::{Result, anyhow, ensure};
-use poulpy_core::layouts::{Base2K, bsgs_eval_depth};
+use poulpy_core::layouts::{Base2K, bsgs_consumed_bits, bsgs_eval_depth};
 use poulpy_hal::layouts::{HostBytesBackend, Module};
 
 use rand_distr::num_traits::{Float, FloatConst};
@@ -182,10 +182,28 @@ impl EvalModPlan {
         base + self.f_mod_log_interval_reduction + inv
     }
 
-    /// `log_budget` bits the eval_mod pipeline consumes: [`Self::eval_depth`]
-    /// levels at the coefficient scale [`Self::meta`]`.log_delta`.
-    pub fn consumed_bits(&self) -> usize {
-        self.eval_depth() * self.meta.log_delta
+    /// `log_budget` bits the eval_mod pipeline consumes on an input ciphertext of
+    /// scale `input_log_delta`: the base polynomial evaluation
+    /// ([`bsgs_consumed_bits`](poulpy_core::layouts::bsgs_consumed_bits) with the
+    /// coefficient scale [`Self::meta`]`.log_delta`), plus
+    /// `f_mod_log_interval_reduction` range-extension squarings (each a `ct×ct`
+    /// consuming `input_log_delta`), plus the optional arcsine inverse. Computed
+    /// analytically; matches the compiled [`EvalMod::consumed_bits`].
+    pub fn consumed_bits(&self, input_log_delta: usize) -> usize {
+        let coeff = self.meta.log_delta;
+        let base = bsgs_consumed_bits(
+            self.base_degree(),
+            self.split_strategy,
+            self.base_parity(),
+            Basis::Chebyshev,
+            input_log_delta,
+            coeff,
+        );
+        let range_ext = self.f_mod_log_interval_reduction * input_log_delta;
+        let inv = self.f_mod_inv_degree.map_or(0, |d| {
+            bsgs_consumed_bits(d, self.split_strategy, Parity::Odd, Basis::Monomial, input_log_delta, coeff)
+        });
+        base + range_ext + inv
     }
 
     /// Degree of the base `f` polynomial actually encoded, so its BSGS depth can
@@ -199,6 +217,15 @@ impl EvalModPlan {
                     .saturating_sub(1)
             }
             _ => self.f_mod_degree,
+        }
+    }
+
+    /// Parity of the base `f` polynomial (matches `from_literal`): `sin` is odd,
+    /// the cosine/exp families keep all coefficients.
+    fn base_parity(&self) -> Parity {
+        match self.eval_mod_type {
+            EvalModType::SinCheby => Parity::Odd,
+            _ => Parity::Full,
         }
     }
 }
@@ -463,10 +490,23 @@ impl<F, P> EvalMod<F, P> {
         base + self.plan.f_mod_log_interval_reduction + inv
     }
 
-    /// `log_budget` bits consumed: [`Self::eval_depth`] levels at the coefficient
-    /// scale `plan.meta.log_delta`. Matches [`EvalModPlan::consumed_bits`].
-    pub fn consumed_bits(&self) -> usize {
-        self.eval_depth() * self.plan.meta.log_delta
+    /// `log_budget` bits consumed evaluating the pipeline on an input ciphertext
+    /// of scale `input_log_delta`: base polynomial (heaviest BSGS chain) + the
+    /// `f_mod_log_interval_reduction` range-extension squarings (`ct×ct`,
+    /// `input_log_delta` each) + the optional arcsine inverse. Matches the actual
+    /// runtime consumption and [`EvalModPlan::consumed_bits`].
+    pub fn consumed_bits(&self, input_log_delta: usize) -> usize {
+        let coeff = self.plan.meta.log_delta;
+        let base = match &self.f_mod_bsgs {
+            EvalModBsgs::Real(p) => p.consumed_bits(input_log_delta, coeff),
+            EvalModBsgs::Complex(p) => p.re.consumed_bits(input_log_delta, coeff),
+        };
+        let range_ext = self.plan.f_mod_log_interval_reduction * input_log_delta;
+        let inv = self
+            .f_mod_inv_bsgs
+            .as_ref()
+            .map_or(0, |p| p.consumed_bits(input_log_delta, coeff));
+        base + range_ext + inv
     }
 
     /// Per-step range-extension scaling `s`: the base polynomial bakes `s` into its

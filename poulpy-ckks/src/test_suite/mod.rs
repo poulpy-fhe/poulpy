@@ -375,7 +375,7 @@ macro_rules! ckks_backend_test_suite {
                 linear_transformation,
                 $crate::test_suite::linear_transformation::test_linear_transformation
             );
-            run_test!(scale_up, $crate::test_suite::rescale::test_scale_up);
+            run_test!(increase_log_delta, $crate::test_suite::rescale::test_increase_log_delta);
             run_test!(
                 dft_coeffs_to_slots_standard,
                 $crate::test_suite::dft::test_dft_coeffs_to_slots_standard
@@ -575,6 +575,10 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 eval_poly_const_coeffs_chebyshev_degree31_min_mult,
                 $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_chebyshev_degree31_min_mult
+            );
+            run_test!(
+                eval_poly_consumed_bits_sweep,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_consumed_bits_sweep
             );
             run_test!(
                 eval_poly_const_coeffs_complex_cubic,

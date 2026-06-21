@@ -78,8 +78,7 @@ pub trait CKKSRescaleOps<BE: Backend> {
     /// encoded message and `log_budget` are preserved, so `effective_k` grows by
     /// `bits` (the added low-order precision bits are zero).
     ///
-    /// The inverse of [`Self::ckks_rescale_assign`] (which lowers `log_budget`).
     /// If the storage `max_k` already covers the new `effective_k` this is a pure
     /// metadata update; otherwise the owned buffer is reallocated wider.
-    fn ckks_scale_up(&self, ct: &mut CKKSCiphertext<Vec<u8>>, bits: usize) -> Result<()>;
+    fn ckks_increase_log_delta(&self, ct: &mut CKKSCiphertext<Vec<u8>>, bits: usize) -> Result<()>;
 }

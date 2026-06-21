@@ -287,6 +287,192 @@ pub fn split_degree(n: usize) -> (usize, usize) {
 /// `[2^(b-1), 2^b)` band costs one extra level. The threshold within a band of
 /// `b = bit_len(degree)` bits is `2^b − 2^((b-1)/2) + 1` (matching the giant-step
 /// structure of `eval_giant_steps`).
+/// `log_budget` bits a BSGS evaluation of a degree-`degree` polynomial consumes:
+/// the multiplicative depth of the heaviest chain through its data-dependency
+/// graph. Each `ct×ct` (power-basis build step and giant-step multiply) weighs
+/// `input_log_delta`; the single baby-step `ct×pt` inner product weighs
+/// `coeff_log_delta`.
+///
+/// Closed form. Any single path contains at most one `ct×pt` (build powers → one
+/// baby-step inner product → giant `ct×ct`s), so the heaviest path is the larger
+/// of the longest **pure** `ct×ct` chain and the longest chain ending in a
+/// `ct×pt`:
+///
+/// ```text
+/// consumed = max( P·Δ_in , R·Δ_in + Δ_coeff )
+/// ```
+///
+/// `P`, the longest pure `ct×ct` chain, is `bit_len(degree)`, minus one when
+/// `degree` is a power of two: then its leading term is a lone constant reached
+/// only through a `ct×pt` (a `MinDepth` fold, or the deepest `MinMult` baby step),
+/// so no pure chain reaches the top. For `MinMult` with `degree ≥ threshold` —
+/// where [`bsgs_eval_depth`] already adds the extra level — `P = bit_len =
+/// eval_depth − 1` drops out automatically, so this one expression covers both
+/// strategies.
+///
+/// `R`, the `ct×ct` count of the longest `ct×pt`-terminated chain, is
+/// `eval_depth − 1` (the highest term realises a `ct×pt` chain of the full
+/// critical-path length [`bsgs_eval_depth`]) for every degree, with one
+/// exception: `MinMult` degree 5, whose `[1,1,1]` baby-step layout strands the
+/// third step as an additive carry, capping `R` at 1 (verified the sole exception
+/// for all degrees up to 8191).
+///
+/// Parity- and basis-independent: those affect op *counts*, not critical-path
+/// depth. Validated exhaustively against a faithful replay of the evaluator for
+/// every degree `2..=511`, both strategies and bases (see the `consumed_bits_*`
+/// tests).
+pub fn bsgs_consumed_bits(
+    degree: usize,
+    strategy: SplitStrategy,
+    _parity: Parity,
+    _basis: Basis,
+    input_log_delta: usize,
+    coeff_log_delta: usize,
+) -> usize {
+    if degree == 0 {
+        return 0;
+    }
+    let eval_depth = bsgs_eval_depth(degree, strategy);
+    let pure_depth = bit_len(degree) - degree.is_power_of_two() as usize;
+    let ctpt_depth = if matches!(strategy, SplitStrategy::MinMult) && degree == 5 {
+        1
+    } else {
+        eval_depth - 1
+    };
+    (pure_depth * input_log_delta).max(ctpt_depth * input_log_delta + coeff_log_delta)
+}
+
+/// Faithful replay of the homomorphic BSGS schedule — flat baby-step list,
+/// iterative giant-step pairing (`b = b·Xᵍˢᵖ + a`), trailing-constant fold —
+/// computing the same heaviest-chain weight as [`bsgs_consumed_bits`]. Kept as the
+/// structure-exact reference the closed form is tested against.
+#[cfg(test)]
+fn bsgs_consumed_bits_reference(
+    degree: usize,
+    strategy: SplitStrategy,
+    parity: Parity,
+    basis: Basis,
+    input_log_delta: usize,
+    coeff_log_delta: usize,
+) -> usize {
+    if degree == 0 {
+        return 0;
+    }
+    let log_split = split_for_strategy(strategy, degree, parity, basis);
+    // Accurate flat baby-step degree list, mirroring `decompose_bsgs_coeffs`
+    // (including the `MinDepth` leading-split recursion).
+    let split_leading = matches!(strategy, SplitStrategy::MinDepth);
+    let mut baby_degrees: Vec<usize> = Vec::new();
+    collect_baby_step_degrees(degree, log_split, degree, true, split_leading, &mut baby_degrees);
+
+    // A trailing lone constant is folded into the top power as a `ct×pt` (see the
+    // ckks evaluator); its fold power `degree` is a built giant power iff `degree`
+    // is a power of two.
+    let n_baby = baby_degrees.len();
+    let trailing_const = n_baby >= 2 && baby_degrees[n_baby - 1] == 0;
+    let can_fold = trailing_const && degree.is_power_of_two();
+    let n_to_process = if can_fold { n_baby - 1 } else { n_baby };
+
+    // Weight of one evaluated baby step: the build depth of its deepest used power
+    // (`ct×ct`s) plus the single `ct×pt` inner product. A lone constant is free
+    // (it is just an encoded plaintext at full budget).
+    let baby_weight = |d: usize| -> usize {
+        let highest = match parity {
+            Parity::Full => d,
+            Parity::Odd => d - (d + 1) % 2,
+            Parity::Even => d - d % 2,
+        };
+        if highest == 0 {
+            0
+        } else {
+            power_basis_depth(highest) * input_log_delta + coeff_log_delta
+        }
+    };
+
+    let mut active: Vec<(usize, usize)> = baby_degrees[..n_to_process]
+        .iter()
+        .map(|&d| (d, baby_weight(d)))
+        .collect();
+
+    // Replay the giant-step pairing of `eval_giant_steps`: adjacent equal-degree
+    // steps combine as `b = b·Xᵍˢᵖ + a` (one `ct×ct`); the odd one out carries.
+    while active.len() > 1 {
+        let mut next: Vec<(usize, usize)> = Vec::with_capacity(active.len().div_ceil(2));
+        let mut i = 0;
+        while i < active.len() {
+            let is_last = i + 1 == active.len();
+            if !is_last && active[i].0 == active[i + 1].0 {
+                let gsp = (active[i].0 + 1).next_power_of_two();
+                let x_pow = power_basis_depth(gsp) * input_log_delta;
+                // b = b·Xᵍˢᵖ (ct×ct) then + a.
+                let combined = (x_pow.max(active[i + 1].1) + input_log_delta).max(active[i].1);
+                next.push((2 * gsp - 1, combined));
+                i += 2;
+            } else if is_last && i > 0 {
+                let degree_carry = next.last().map_or(active[i].0, |&(d, _)| d);
+                next.push((degree_carry, active[i].1));
+                i += 1;
+            } else {
+                next.push(active[i]);
+                i += 1;
+            }
+        }
+        active = next;
+    }
+
+    let mut consumed = active[0].1;
+    if can_fold {
+        // res += X^degree · last_const (build `ct×ct`s + one `ct×pt`).
+        consumed = consumed.max(power_basis_depth(degree) * input_log_delta + coeff_log_delta);
+    }
+    consumed
+}
+
+/// Degree-only replay of [`decompose_bsgs_coeffs`] collecting the flat baby-step
+/// degree list (basis-independent: both monomial and Chebyshev factorizations
+/// split at the same `next_power`). Honors the `MinDepth` leading-split recursion.
+#[cfg(test)]
+fn collect_baby_step_degrees(
+    degree: usize,
+    log_split: usize,
+    max_degree: usize,
+    lead: bool,
+    split_leading: bool,
+    out: &mut Vec<usize>,
+) {
+    let base = 1usize << log_split;
+    if degree < base {
+        if split_leading && should_split_leading_baby_step(degree, log_split, max_degree, lead) {
+            let smaller = min_depth_split(bit_len(degree));
+            if smaller < log_split {
+                collect_baby_step_degrees(degree, smaller, max_degree, lead, split_leading, out);
+                return;
+            }
+        }
+        out.push(degree);
+        return;
+    }
+    let mut next_power = base;
+    while next_power < (degree >> 1) + 1 {
+        next_power <<= 1;
+    }
+    collect_baby_step_degrees(next_power - 1, log_split, max_degree, false, split_leading, out);
+    collect_baby_step_degrees(degree - next_power, log_split, max_degree, lead, split_leading, out);
+}
+
+/// Multiplicative depth (chained `ct×ct`) to build the power-basis element of
+/// index `i`, via the same balanced [`split_degree`] recursion the evaluator
+/// uses. `X¹` (the input) has depth 0.
+#[cfg(test)]
+fn power_basis_depth(i: usize) -> usize {
+    if i <= 1 {
+        0
+    } else {
+        let (a, b) = split_degree(i);
+        power_basis_depth(a).max(power_basis_depth(b)) + 1
+    }
+}
+
 pub fn bsgs_eval_depth(degree: usize, strategy: SplitStrategy) -> usize {
     if degree == 0 {
         return 0;
@@ -303,6 +489,28 @@ pub fn bsgs_eval_depth(degree: usize, strategy: SplitStrategy) -> usize {
 
 // ── Polynomial ───────────────────────────────────────────────────────────────
 
+/// Affine change of basis `(u, w)` such that `y = u·x + w` maps an evaluation
+/// point `x` in the approximation interval `[a, b]` to the variable the
+/// coefficients of `basis` are expressed in.
+///
+/// - [`Basis::Monomial`]: identity — `(1, 0)` (coefficients are in `x` directly).
+/// - [`Basis::Chebyshev`]: normalization of `[a, b]` onto the canonical `[-1, 1]`
+///   — `u = 2/(b−a)`, `w = −(a+b)/(b−a)`, i.e. `y = (2x − a − b)/(b − a)`.
+///
+/// The pair lets a caller apply the remap to a ciphertext (`ct ← u·ct + w`)
+/// before a homomorphic evaluation that assumes coefficients in the normalized
+/// variable. See [`Polynomial::change_of_basis`].
+pub fn change_of_basis<F: Float>(basis: Basis, a: F, b: F) -> (F, F) {
+    match basis {
+        Basis::Monomial => (F::one(), F::zero()),
+        Basis::Chebyshev => {
+            let two = F::one() + F::one();
+            let span = b - a;
+            (two / span, -(a + b) / span)
+        }
+    }
+}
+
 /// A plaintext polynomial with real coefficients.
 ///
 /// `coeffs[i]` is the coefficient of the degree-`i` term (monomial basis) or
@@ -311,6 +519,17 @@ pub struct Polynomial<F> {
     pub basis: Basis,
     pub coeffs: Vec<F>,
     pub parity: Parity,
+    /// Lower bound of the interval `[a, b]` the approximation is valid over.
+    pub a: F,
+    /// Upper bound of the interval `[a, b]` the approximation is valid over.
+    ///
+    /// The coefficients are expressed in the variable `y = u·x + w` of
+    /// [`change_of_basis`](Self::change_of_basis): for `Chebyshev` this maps
+    /// `[a, b]` onto `[-1, 1]`, for `Monomial` it is the identity (so `[a, b]` is
+    /// pure metadata). Defaults to `[-1, 1]`; set via
+    /// [`with_interval`](Self::with_interval) or
+    /// [`chebyshev_interpolate`](Self::chebyshev_interpolate).
+    pub b: F,
 }
 
 impl<F> Polynomial<F>
@@ -334,7 +553,35 @@ where
     }
 
     pub fn new_with_parity(basis: Basis, coeffs: Vec<F>, parity: Parity) -> Self {
-        Self { basis, coeffs, parity }
+        let one = F::one();
+        Self {
+            basis,
+            coeffs,
+            parity,
+            a: -one,
+            b: one,
+        }
+    }
+
+    /// Sets the approximation interval `[a, b]` (see the [`a`](Self::a)/[`b`](Self::b)
+    /// fields). For `Chebyshev` this is the domain remapped onto `[-1, 1]`; for
+    /// `Monomial` it is metadata only.
+    pub fn with_interval(mut self, a: F, b: F) -> Self {
+        self.a = a;
+        self.b = b;
+        self
+    }
+
+    /// The approximation interval `[a, b]`.
+    pub fn interval(&self) -> (F, F) {
+        (self.a, self.b)
+    }
+
+    /// Affine change of basis `(u, w)` mapping `x ∈ [a, b]` to the variable the
+    /// coefficients are expressed in (`y = u·x + w`). See the free function
+    /// [`change_of_basis`].
+    pub fn change_of_basis(&self) -> (F, F) {
+        change_of_basis(self.basis, self.a, self.b)
     }
 
     pub fn chebyshev_interpolate<Fun>(degree: usize, a: F, b: F, f: Fun) -> Result<Self>
@@ -356,20 +603,12 @@ where
         evaluate_coeffs(self.basis, &self.coeffs, x)
     }
 
-    /// Evaluates this polynomial on an input interval.
-    ///
-    /// Monomial polynomials are evaluated directly at `x`. Chebyshev
-    /// polynomials first map `x` from `[a, b]` to the normalized Chebyshev
-    /// variable `(2x-a-b)/(b-a)`.
-    pub fn evaluate_on_interval(&self, x: F, a: F, b: F) -> F {
-        assert!(a < b);
-        match self.basis {
-            Basis::Monomial => self.evaluate(x),
-            Basis::Chebyshev => {
-                let two = F::one() + F::one();
-                self.evaluate((two * x - a - b) / (b - a))
-            }
-        }
+    /// Evaluates this polynomial at `x` in its original interval `[a, b]`,
+    /// applying [`change_of_basis`](Self::change_of_basis) first: identity for
+    /// `Monomial`, the `[a,b]→[-1,1]` remap for `Chebyshev`.
+    pub fn evaluate_on_interval(&self, x: F) -> F {
+        let (u, w) = self.change_of_basis();
+        self.evaluate(u * x + w)
     }
 
     /// Decomposes this polynomial into a [`BSGSPolynomial`], encoding each
@@ -407,6 +646,8 @@ where
             baby_steps,
             parity: self.parity,
             split_strategy,
+            a: self.a.to_f64().expect("interval lower bound must convert to f64"),
+            b: self.b.to_f64().expect("interval upper bound must convert to f64"),
         })
     }
 }
@@ -495,7 +736,7 @@ where
         *coeff = *coeff * two_over_n;
     }
 
-    Ok(Polynomial::new(Basis::Chebyshev, coeffs))
+    Ok(Polynomial::new(Basis::Chebyshev, coeffs).with_interval(a, b))
 }
 
 // ── BSGSPolynomial ────────────────────────────────────────────────────────────
@@ -513,6 +754,11 @@ pub struct BSGSPolynomial<C> {
     baby_steps: Vec<C>,
     parity: Parity,
     split_strategy: SplitStrategy,
+    /// Approximation interval `[a, b]`, carried from the source [`Polynomial`]
+    /// (stored as `f64`, decoupled from the erased coefficient type `C`). See
+    /// [`change_of_basis`](Self::change_of_basis).
+    a: f64,
+    b: f64,
 }
 
 impl<BE: Backend, C> BSGSPolynomialInfos<BE> for BSGSPolynomial<C>
@@ -576,6 +822,37 @@ impl<C> BSGSPolynomial<C> {
         bsgs_eval_depth(self.degree(), self.split_strategy)
     }
 
+    /// `log_budget` bits consumed evaluating this polynomial on a ciphertext, as
+    /// the longest (heaviest) chain through the BSGS data-dependency graph.
+    ///
+    /// `input_log_delta` is the scale of the input ciphertext / its powers
+    /// (consumed by every `ct×ct` along the chain — power basis and giant steps);
+    /// `coeff_log_delta` is the scale of the encoded polynomial coefficients
+    /// (consumed by the single `ct×pt` baby-step inner product on the chain).
+    ///
+    /// The chain has `eval_depth` multiplications; `eval_depth - 1` of them are
+    /// `ct×ct` (weight `input_log_delta`). The weight of the deepest level
+    /// depends on whether a full-depth all-`ct×ct` chain exists:
+    ///
+    /// - **`MinDepth`, non-degenerate**: the recursion keeps the baby-step
+    ///   `ct×pt` shallow, so the deepest chain is all `ct×ct` (a giant squaring);
+    ///   the top weight is `max(input, coeff)` (the `coeff` only wins if it
+    ///   exceeds `input`).
+    /// - **`MinMult`, or the degenerate `MinDepth` case** where the leading chunk
+    ///   is a bare constant (a power-of-two degree with a trailing-constant
+    ///   split): the deepest chain includes the baby-step `ct×pt`, so the top
+    ///   weight is `coeff`.
+    pub fn consumed_bits(&self, input_log_delta: usize, coeff_log_delta: usize) -> usize {
+        bsgs_consumed_bits(
+            self.degree,
+            self.split_strategy,
+            self.parity,
+            self.basis,
+            input_log_delta,
+            coeff_log_delta,
+        )
+    }
+
     /// Returns all encoded baby-step coefficient polynomials.
     pub fn baby_steps(&self) -> &[C] {
         &self.baby_steps
@@ -593,6 +870,17 @@ impl<C> BSGSPolynomial<C> {
         self.parity
     }
 
+    /// The approximation interval `[a, b]` carried from the source polynomial.
+    pub fn interval(&self) -> (f64, f64) {
+        (self.a, self.b)
+    }
+
+    /// Affine change of basis `(u, w)` mapping `x ∈ [a, b]` to the coefficient
+    /// variable (`y = u·x + w`). See the free function [`change_of_basis`].
+    pub fn change_of_basis(&self) -> (f64, f64) {
+        change_of_basis(self.basis, self.a, self.b)
+    }
+
     /// Rebuilds this BSGS polynomial by mapping borrowed baby-step coefficients.
     pub fn map_baby_steps_ref<D>(&self, mut f: impl FnMut(&C) -> D) -> BSGSPolynomial<D> {
         BSGSPolynomial {
@@ -602,6 +890,8 @@ impl<C> BSGSPolynomial<C> {
             baby_steps: self.baby_steps.iter().map(&mut f).collect(),
             parity: self.parity,
             split_strategy: self.split_strategy,
+            a: self.a,
+            b: self.b,
         }
     }
 }
@@ -725,6 +1015,72 @@ mod tests {
         })
         .unwrap();
         degrees
+    }
+
+    /// The closed-form [`bsgs_consumed_bits`] must equal the structure-exact
+    /// schedule replay [`bsgs_consumed_bits_reference`] for every degree, both
+    /// strategies, both bases, and a spread of `(Δ_in, Δ_coeff)` orderings
+    /// (including `Δ_in < Δ_coeff`, equal, and zeros).
+    #[test]
+    fn consumed_bits_closed_form_matches_reference_full_parity() {
+        let deltas = [(6, 3), (3, 6), (1, 1), (10, 1), (1, 10), (5, 5), (7, 2), (0, 5), (5, 0)];
+        for strategy in [SplitStrategy::MinDepth, SplitStrategy::MinMult] {
+            for basis in [Basis::Monomial, Basis::Chebyshev] {
+                for degree in 2..=511usize {
+                    for &(din, dco) in &deltas {
+                        let got = bsgs_consumed_bits(degree, strategy, Parity::Full, basis, din, dco);
+                        let want = bsgs_consumed_bits_reference(degree, strategy, Parity::Full, basis, din, dco);
+                        assert_eq!(got, want, "degree {degree} {strategy:?} {basis:?} din={din} dco={dco}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// Same, restricted to odd-degree odd-parity polynomials (the eval_mod
+    /// sine/arcsine families) to confirm the closed form is parity-independent.
+    #[test]
+    fn consumed_bits_closed_form_matches_reference_odd_parity() {
+        let deltas = [(6, 3), (3, 6), (1, 1), (10, 1), (1, 10)];
+        for strategy in [SplitStrategy::MinDepth, SplitStrategy::MinMult] {
+            for basis in [Basis::Monomial, Basis::Chebyshev] {
+                for degree in (3..=511usize).step_by(2) {
+                    for &(din, dco) in &deltas {
+                        let got = bsgs_consumed_bits(degree, strategy, Parity::Odd, basis, din, dco);
+                        let want = bsgs_consumed_bits_reference(degree, strategy, Parity::Odd, basis, din, dco);
+                        assert_eq!(got, want, "degree {degree} {strategy:?} {basis:?} din={din} dco={dco}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn change_of_basis_maps_interval_endpoints() {
+        // Monomial: identity regardless of interval.
+        assert_eq!(change_of_basis(Basis::Monomial, -3.0_f64, 7.0), (1.0, 0.0));
+
+        // Chebyshev: y = u·x + w must send a → −1 and b → +1.
+        for &(a, b) in &[(-1.0_f64, 1.0), (0.0, 2.0), (-8.0, 8.0), (3.0, 11.0)] {
+            let (u, w) = change_of_basis(Basis::Chebyshev, a, b);
+            assert!((u * a + w + 1.0).abs() < 1e-12, "a→-1 failed for [{a},{b}]");
+            assert!((u * b + w - 1.0).abs() < 1e-12, "b→+1 failed for [{a},{b}]");
+        }
+
+        // Canonical Chebyshev domain is the identity.
+        assert_eq!(change_of_basis(Basis::Chebyshev, -1.0_f64, 1.0), (1.0, 0.0));
+
+        // The interval propagates Polynomial → BSGSPolynomial, and both expose the
+        // same change of basis.
+        let poly = Polynomial::chebyshev_interpolate(8, 0.0_f64, 4.0, |x| x).unwrap();
+        assert_eq!(poly.interval(), (0.0, 4.0));
+        let (u, w) = poly.change_of_basis();
+        assert_eq!((u, w), change_of_basis(Basis::Chebyshev, 0.0, 4.0));
+        let bsgs = poly
+            .decompose_bsgs_with(SplitStrategy::MinDepth, |c| Ok::<_, anyhow::Error>(c.to_vec()))
+            .unwrap();
+        assert_eq!(bsgs.interval(), (0.0, 4.0));
+        assert_eq!(bsgs.change_of_basis(), (u, w));
     }
 
     #[test]

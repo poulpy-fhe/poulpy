@@ -8,7 +8,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSMeta, SetCKKSInfos,
+    CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
     api::{CKKSAllOpsTmpBytes, CKKSEvalModOps},
     encoding::reim::Encoder,
     layouts::{
@@ -223,10 +223,20 @@ fn run_eval_mod_case<BE, F, E>(
         &mut scratch.borrow(),
     );
 
+    let (in_ld, in_lb) = (ct_input.log_delta(), ct_input.log_budget());
     let mut res = module.ckks_ciphertext_alloc(test_params.base2k.into(), test_params.k.into());
     module
         .ckks_eval_mod(&mut res, &ct_input, &params_be, &tsk, &mut scratch.borrow())
         .expect("ckks_eval_mod");
+
+    // Exact bit-consumption: eval_mod preserves the input scale and consumes
+    // exactly `consumed_bits(input_log_delta)` of `log_budget`.
+    assert_eq!(res.log_delta(), in_ld, "{label}: eval_mod should preserve log_delta");
+    assert_eq!(
+        in_lb - res.log_budget(),
+        params_be.consumed_bits(in_ld),
+        "{label}: eval_mod consumed bits mismatch"
+    );
 
     let (re_out, im_out) = ckks_decrypt_decode::<BE, F, E>(&test_params, module, &encoder, &res, &sk, &mut scratch.borrow());
 
@@ -426,40 +436,82 @@ pub fn test_eval_mod_consumed_bits_matches_built<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let base2k = params.base2k;
-    let plan = |eval_mod_type, log_message_ratio, f_mod_degree, f_mod_interval, f_mod_log_interval_reduction, f_mod_inv_degree| {
-        EvalModPlan {
-            eval_mod_type,
-            log_message_ratio,
-            f_mod_degree,
-            f_mod_interval,
-            f_mod_log_interval_reduction,
-            f_mod_inv_degree,
-            scaling: None,
-            split_strategy: SplitStrategy::MinDepth,
-            meta: CKKSMeta {
-                log_sparsity: 0,
-                log_delta: base2k,
-                log_budget: 10,
-            },
-        }
-    };
+    // Coefficient encoding scale, kept modest and backend-independent so
+    // `from_literal`'s plaintext quantization never overflows (a wide `base2k`
+    // would push `coeff·2^scale` past i64). The `consumed_bits` comparison only
+    // needs a fixed scale shared by plan and built, not `base2k`.
+    let coeff_log_delta = 20usize;
 
-    let cases = [
-        ("sin_continuous", plan(EvalModType::SinCheby, 8, 127, 14, 0, None)),
-        ("sin_arcsine", plan(EvalModType::SinCheby, 8, 127, 14, 0, Some(7))),
-        ("cos_discrete", plan(EvalModType::CosHK, 8, 30, 12, 3, None)),
-        ("cos_continuous", plan(EvalModType::CosCheby, 4, 31, 12, 3, None)),
-        ("exp", plan(EvalModType::ExpCmplx, 4, 31, 8, 3, None)),
+    // Parameter sweep (host-only, so cheap): both split strategies, base-`f`
+    // families, degrees straddling power-of-two boundaries, range-extension
+    // reductions, and the optional arcsine inverse. Each combination drives the
+    // analytic [`EvalModPlan::consumed_bits`] (which feeds the closed-form
+    // [`bsgs_consumed_bits`] via `base_degree`/`base_parity`) and the built
+    // [`EvalMod::consumed_bits`] (which reads the actual encoded BSGS); they must
+    // agree for every input scale. Invalid `(type, params)` combinations are
+    // skipped (`from_literal` rejects them); `checked` guards against the sweep
+    // silently covering nothing.
+    let families = [
+        (EvalModType::SinCheby, 8usize, 14usize, [31usize, 32, 63, 127].as_slice()),
+        (EvalModType::CosCheby, 4, 12, [16, 31, 32, 63].as_slice()),
+        (EvalModType::CosHK, 8, 12, [30, 31, 63].as_slice()),
+        (EvalModType::ExpCmplx, 4, 8, [31, 32, 63].as_slice()),
     ];
 
-    for (label, lit) in cases {
-        let built = EvalMod::<F, _>::from_literal(base2k.into(), lit, host_module).expect("EvalMod::from_literal");
-        assert_eq!(lit.eval_depth(), built.eval_depth(), "{label}: plan eval_depth != built eval_depth");
-        assert_eq!(lit.consumed_bits(), built.consumed_bits(), "{label}: plan consumed_bits != built consumed_bits");
-        assert_eq!(
-            lit.consumed_bits(),
-            lit.eval_depth() * lit.meta.log_delta,
-            "{label}: consumed_bits != eval_depth * log_delta"
-        );
+    let mut checked = 0usize;
+    for strategy in [SplitStrategy::MinDepth, SplitStrategy::MinMult] {
+        for &(eval_mod_type, log_message_ratio, f_mod_interval, degrees) in &families {
+            for &f_mod_degree in degrees {
+                for &f_mod_log_interval_reduction in &[0usize, 1, 3] {
+                    // The arcsine inverse post-composition only applies to the sine family.
+                    let inv_options: &[Option<usize>] = if matches!(eval_mod_type, EvalModType::SinCheby) {
+                        &[None, Some(7), Some(15)]
+                    } else {
+                        &[None]
+                    };
+                    for &f_mod_inv_degree in inv_options {
+                        let lit = EvalModPlan {
+                            eval_mod_type,
+                            log_message_ratio,
+                            f_mod_degree,
+                            f_mod_interval,
+                            f_mod_log_interval_reduction,
+                            f_mod_inv_degree,
+                            scaling: None,
+                            split_strategy: strategy,
+                            meta: CKKSMeta {
+                                log_sparsity: 0,
+                                log_delta: coeff_log_delta,
+                                log_budget: 10,
+                            },
+                        };
+                        let built = match EvalMod::<F, _>::from_literal(base2k.into(), lit, host_module) {
+                            Ok(built) => built,
+                            Err(_) => continue,
+                        };
+                        let label = format!(
+                            "{eval_mod_type:?} {strategy:?} deg={f_mod_degree} red={f_mod_log_interval_reduction} inv={f_mod_inv_degree:?}"
+                        );
+                        assert_eq!(lit.eval_depth(), built.eval_depth(), "{label}: plan eval_depth != built eval_depth");
+                        // Exercise input scales equal to, above, and below the coefficient
+                        // scale so the input/coeff distinction is actually covered.
+                        for input_log_delta in [
+                            coeff_log_delta,
+                            coeff_log_delta + 8,
+                            coeff_log_delta.saturating_sub(8).max(1),
+                            coeff_log_delta + 16,
+                        ] {
+                            assert_eq!(
+                                lit.consumed_bits(input_log_delta),
+                                built.consumed_bits(input_log_delta),
+                                "{label}: plan consumed_bits != built consumed_bits @ input_log_delta={input_log_delta}"
+                            );
+                        }
+                        checked += 1;
+                    }
+                }
+            }
+        }
     }
+    assert!(checked >= 40, "eval_mod consumed_bits sweep covered too few cases ({checked})");
 }

@@ -60,9 +60,16 @@ pub struct BootstrappingPlan {
     pub slots_to_coeffs: DFTPlan,
 }
 
-impl BootstrappingPlan{
-    pub fn consumed_bits(&self) -> usize{
-        self.coeffs_to_slots.consumed_bits() + self.eval_mod.consumed_bits() + self.slots_to_coeffs.consumed_bits()
+impl BootstrappingPlan {
+    /// Total `log_budget` bits the pipeline consumes. The DFT stages are pure
+    /// `ct×pt` (consume their own factor scale, independent of the input), while
+    /// EvalMod's cost depends on `eval_mod_input_log_delta` — the scale of the
+    /// ciphertext entering EvalMod (the CoeffsToSlots output, which preserves the
+    /// post-ModUp scale).
+    pub fn consumed_bits(&self, eval_mod_input_log_delta: usize) -> usize {
+        self.coeffs_to_slots.consumed_bits()
+            + self.eval_mod.consumed_bits(eval_mod_input_log_delta)
+            + self.slots_to_coeffs.consumed_bits()
     }
 }
 

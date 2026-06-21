@@ -1,4 +1,4 @@
-//! Rescale-family tests (currently: `ckks_scale_up`).
+//! Rescale-family tests (currently: `ckks_increase_log_delta`).
 
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
@@ -21,10 +21,10 @@ use crate::{
     },
 };
 
-/// `ckks_scale_up(ct, bits)` must raise `log_delta` by `bits`, preserve
+/// `ckks_increase_log_delta(ct, bits)` must raise `log_delta` by `bits`, preserve
 /// `log_budget` and the decoded message, grow `effective_k` by `bits`, and
 /// reallocate storage only when the current `max_k` cannot hold it.
-pub fn test_scale_up<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+pub fn test_increase_log_delta<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSRescaleOps<BE>,
@@ -50,15 +50,15 @@ where
     let mut ct = ckks_encrypt(&params, module, host_module, &encoder, &sk, params.k, &re, &im, &mut scratch.borrow());
     let (d0, b0) = (ct.log_delta(), ct.log_budget());
 
-    module.ckks_scale_up(&mut ct, bits).unwrap();
+    module.ckks_increase_log_delta(&mut ct, bits).unwrap();
 
     // log_delta raised by `bits`, log_budget preserved, effective_k grown.
-    assert_eq!(ct.log_delta(), d0 + bits, "scale_up: log_delta");
-    assert_eq!(ct.log_budget(), b0, "scale_up: log_budget preserved");
-    assert!(ct.max_k().as_usize() >= ct.effective_k(), "scale_up: storage holds effective_k");
+    assert_eq!(ct.log_delta(), d0 + bits, "increase_log_delta: log_delta");
+    assert_eq!(ct.log_budget(), b0, "increase_log_delta: log_budget preserved");
+    assert!(ct.max_k().as_usize() >= ct.effective_k(), "increase_log_delta: storage holds effective_k");
 
     // The decoded message is unchanged (measured at the original scale).
     let (re_out, im_out) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &ct, &sk, &mut scratch.borrow());
-    assert_precision("scale_up re", &re_out, &re, params.prec.log_delta, params.n);
-    assert_precision("scale_up im", &im_out, &im, params.prec.log_delta, params.n);
+    assert_precision("increase_log_delta re", &re_out, &re, params.prec.log_delta, params.n);
+    assert_precision("increase_log_delta im", &im_out, &im, params.prec.log_delta, params.n);
 }

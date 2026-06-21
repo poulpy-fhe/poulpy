@@ -8,7 +8,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSMeta, SetCKKSInfos,
+    CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
     encoding::reim::Encoder,
     layouts::{CKKSCiphertext, CKKSPlaintext, CKKSPlaintextVecHostCodec},
     leveled::api::{CKKSMulOps, PolynomialEvaluation},
@@ -23,6 +23,29 @@ use super::helpers::{
     PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_decrypt_precision, ckks_encrypt,
     ckks_encrypt_with_prec, gen_sk_with_raw, gen_tsk, precision_at, quantized_const, quantized_slots, test_vector_1, upload_pt,
 };
+
+/// Asserts the eval consumed exactly `bsgs.consumed_bits(input_ld, coeff_ld)`
+/// of `log_budget` and preserved `log_delta`. `input_log_budget`/`input_log_delta`
+/// are the original input ciphertext's metadata (level 0).
+fn assert_consumed_bits<BE, C>(
+    label: &str,
+    bsgs: &BSGSPolynomial<C>,
+    input_log_delta: usize,
+    input_log_budget: usize,
+    coeff_log_delta: usize,
+    res: &CKKSCiphertext<BE::OwnedBuf>,
+) where
+    BE: poulpy_hal::layouts::Backend,
+{
+    let expected = bsgs.consumed_bits(input_log_delta, coeff_log_delta);
+    assert_eq!(res.log_delta(), input_log_delta, "{label}: result log_delta should equal input");
+    assert_eq!(
+        input_log_budget - res.log_budget(),
+        expected,
+        "{label}: consumed bits mismatch (depth={}, input_ld={input_log_delta}, coeff_ld={coeff_log_delta})",
+        bsgs.eval_depth(),
+    );
+}
 
 fn scale_add<F: TestScalar>(acc: &mut [F], src: &[F], scale: F) {
     for (a, s) in acc.iter_mut().zip(src.iter()) {
@@ -286,7 +309,7 @@ pub fn test_chebyshev_interpolation_quadratic<BE, F, E>(
     for i in 0..17 {
         let x = two * F::from_usize(i).unwrap() / F::from_usize(16).unwrap();
         let want = x * x - two * x + one;
-        let got = poly.evaluate_on_interval(x, zero, two);
+        let got = poly.evaluate_on_interval(x);
         let err = (got - want).abs();
         assert!(
             err < F::epsilon() * F::from_usize(256).unwrap(),
@@ -390,6 +413,7 @@ pub fn test_eval_poly_const_coeffs_cubic<BE, F, E>(
         &x_im_raw,
         &mut scratch.borrow(),
     );
+    let (x_ld, x_lb) = (x.log_delta(), x.log_budget());
     let mut x2 = alloc_ct(&params, module, params.k);
     module.ckks_square_into(&mut x2, &x, &tsk, &mut scratch.borrow()).unwrap();
 
@@ -414,6 +438,8 @@ pub fn test_eval_poly_const_coeffs_cubic<BE, F, E>(
             &mut scratch.borrow(),
         )
         .unwrap();
+
+    assert_consumed_bits::<BE, _>("cubic", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta, &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_cubic",
@@ -550,6 +576,7 @@ pub fn test_eval_poly_const_coeffs_exp7<BE, F, E>(
         &x_im_raw,
         &mut scratch.borrow(),
     );
+    let (x_ld, x_lb) = (x_ct.log_delta(), x_ct.log_budget());
     let mut pb = PowerBasis::new(Basis::Monomial, x_ct);
     pb.populate(7, bsgs_host.log_split(), Parity::Full, module, &tsk, &mut scratch.borrow())
         .expect("populate power basis for degree 7");
@@ -564,6 +591,8 @@ pub fn test_eval_poly_const_coeffs_exp7<BE, F, E>(
             &mut scratch.borrow(),
         )
         .expect("ckks_eval_poly_real_const_coeffs_from_power_basis should succeed");
+
+    assert_consumed_bits::<BE, _>("exp7", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta, &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_exp7",
@@ -636,6 +665,7 @@ pub fn test_eval_poly_const_coeffs_even_monomial<BE, F, E>(
         &x_im_raw,
         &mut scratch.borrow(),
     );
+    let (x_ld, x_lb) = (x_ct.log_delta(), x_ct.log_budget());
     let mut pb = PowerBasis::new(Basis::Monomial, x_ct);
     pb.populate(
         4,
@@ -657,6 +687,8 @@ pub fn test_eval_poly_const_coeffs_even_monomial<BE, F, E>(
             &mut scratch.borrow(),
         )
         .expect("ckks_eval_poly_real_const_coeffs_from_power_basis should succeed");
+
+    assert_consumed_bits::<BE, _>("even_monomial", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta, &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_even_monomial",
@@ -729,6 +761,7 @@ pub fn test_eval_poly_const_coeffs_odd_monomial<BE, F, E>(
         &x_im_raw,
         &mut scratch.borrow(),
     );
+    let (x_ld, x_lb) = (x_ct.log_delta(), x_ct.log_budget());
     let mut pb = PowerBasis::new(Basis::Monomial, x_ct);
     pb.populate(
         5,
@@ -750,6 +783,8 @@ pub fn test_eval_poly_const_coeffs_odd_monomial<BE, F, E>(
             &mut scratch.borrow(),
         )
         .expect("ckks_eval_poly_real_const_coeffs_from_power_basis should succeed");
+
+    assert_consumed_bits::<BE, _>("odd_monomial", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta, &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_odd_monomial",
@@ -811,6 +846,7 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31<BE, F, E>(
         input_meta,
         &mut scratch.borrow(),
     );
+    let (x_ld, x_lb) = (x_ct.log_delta(), x_ct.log_budget());
     let mut pb = PowerBasis::new(Basis::Chebyshev, x_ct);
     pb.populate(
         31,
@@ -832,6 +868,8 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31<BE, F, E>(
             &mut scratch.borrow(),
         )
         .expect("ckks_eval_poly_real_const_coeffs_from_power_basis should succeed");
+
+    assert_consumed_bits::<BE, _>("chebyshev31", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta, &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_chebyshev_degree31",
@@ -893,6 +931,7 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31_min_mult<BE, F, E>(
         input_meta,
         &mut scratch.borrow(),
     );
+    let (x_ld, x_lb) = (x_ct.log_delta(), x_ct.log_budget());
     let mut pb = PowerBasis::new(Basis::Chebyshev, x_ct);
     pb.populate(
         31,
@@ -914,6 +953,8 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31_min_mult<BE, F, E>(
             &mut scratch.borrow(),
         )
         .expect("ckks_eval_poly_real_const_coeffs_from_power_basis should succeed with MinMult split");
+
+    assert_consumed_bits::<BE, _>("chebyshev31_min_mult", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta, &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_chebyshev_degree31_min_mult",
@@ -988,6 +1029,7 @@ pub fn test_eval_poly_const_coeffs_complex_cubic<BE, F, E>(
     let mut x2 = alloc_ct(&params, module, params.k);
     module.ckks_square_into(&mut x2, &x, &tsk, &mut scratch.borrow()).unwrap();
 
+    let (x_ld, x_lb) = (x.log_delta(), x.log_budget());
     let mut power_basis = PowerBasis::new(Basis::Monomial, x);
     power_basis.insert(2, x2).expect("insert pre-computed X^2");
 
@@ -1018,6 +1060,8 @@ pub fn test_eval_poly_const_coeffs_complex_cubic<BE, F, E>(
             &mut scratch.borrow(),
         )
         .expect("ckks_eval_poly_complex_const_coeffs_from_power_basis should succeed");
+
+    assert_consumed_bits::<BE, _>("complex_cubic", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta, &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_complex_cubic",
@@ -1089,6 +1133,7 @@ pub fn test_eval_poly_const_coeffs_complex_chebyshev<BE, F, E>(
         &x_im_raw,
         &mut scratch.borrow(),
     );
+    let (x_ld, x_lb) = (x.log_delta(), x.log_budget());
     let mut pb = PowerBasis::new(Basis::Chebyshev, x);
     pb.populate(
         7,
@@ -1140,6 +1185,8 @@ pub fn test_eval_poly_const_coeffs_complex_chebyshev<BE, F, E>(
             &mut scratch.borrow(),
         )
         .expect("ckks_eval_poly_complex_const_coeffs_from_power_basis (Chebyshev) should succeed");
+
+    assert_consumed_bits::<BE, _>("complex_chebyshev", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta, &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_complex_chebyshev",
@@ -1225,6 +1272,7 @@ pub fn test_eval_poly_const_coeffs_complex_even<BE, F, E>(
         &x_im_raw,
         &mut scratch.borrow(),
     );
+    let (x_ld, x_lb) = (x.log_delta(), x.log_budget());
     let mut pb = PowerBasis::new(Basis::Monomial, x);
     pb.populate(
         4,
@@ -1254,6 +1302,8 @@ pub fn test_eval_poly_const_coeffs_complex_even<BE, F, E>(
             &mut scratch.borrow(),
         )
         .expect("ckks_eval_poly_complex_const_coeffs_from_power_basis (even) should succeed");
+
+    assert_consumed_bits::<BE, _>("complex_even", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta, &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_complex_even",
@@ -1327,6 +1377,7 @@ pub fn test_eval_poly_const_coeffs_complex_odd<BE, F, E>(
         &x_im_raw,
         &mut scratch.borrow(),
     );
+    let (x_ld, x_lb) = (x.log_delta(), x.log_budget());
     let mut pb = PowerBasis::new(Basis::Monomial, x);
     pb.populate(
         5,
@@ -1356,6 +1407,8 @@ pub fn test_eval_poly_const_coeffs_complex_odd<BE, F, E>(
             &mut scratch.borrow(),
         )
         .expect("ckks_eval_poly_complex_const_coeffs_from_power_basis (odd) should succeed");
+
+    assert_consumed_bits::<BE, _>("complex_odd", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta, &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_complex_odd",
@@ -1448,10 +1501,13 @@ pub fn test_eval_poly_const_coeffs_complex_fold<BE, F, E>(
         want_im[slot] = acc_im;
     }
 
+    let (x_ld, x_lb) = (x.log_delta(), x.log_budget());
     let mut res = alloc_ct(&params, module, params.k);
     module
         .ckks_eval_poly_complex_const_coeffs(&mut res, &x, &poly, &tsk, &mut scratch.borrow())
         .expect("ckks_eval_poly_complex_const_coeffs (fold) should succeed");
+
+    assert_consumed_bits::<BE, _>("complex_fold", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta, &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_complex_fold",
@@ -1464,4 +1520,112 @@ pub fn test_eval_poly_const_coeffs_complex_fold<BE, F, E>(
         &want_im,
         &mut scratch.borrow(),
     );
+}
+
+/// Sweeps degree `2..=511` for both split strategies and checks the *actual*
+/// `log_budget` consumed by a homomorphic evaluation equals the analytic
+/// [`BSGSPolynomial::consumed_bits`], and that the output scale is preserved.
+///
+/// Uses distinct input (`6`) and coefficient (`3`) scales so the input/coeff
+/// distinction is exercised: `MinDepth` charges the deepest level at `Δ_input`
+/// (`max(6,3)`), `MinMult` at `Δ_coeffs` (`3`). Toy parameters (`n = 16`) keep
+/// the full sweep cheap.
+pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
+    _params: CKKSTestParams,
+    _module: &Module<BE>,
+    _host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + PolynomialEvaluation<BE>,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let n = 16usize;
+    let base2k = 16usize;
+    let m = n / 2;
+    let (input_log_delta, coeff_log_delta) = (6usize, 3usize);
+
+    let module = Module::<BE>::new(n as u64);
+    let host_module = Module::<HostBytesBackend>::new(n as u64);
+    let encoder = Encoder::<E>::new::<F>(m).unwrap();
+
+    // Budget comfortably above the worst-case consumption (degree 511, MinMult).
+    let k = (input_log_delta + 12 * input_log_delta + 16).next_multiple_of(base2k);
+    let params = CKKSTestParams {
+        n,
+        base2k,
+        k,
+        prec: CKKSMeta {
+            log_sparsity: 0,
+            log_delta: input_log_delta,
+            log_budget: k - input_log_delta,
+        },
+        hw: m,
+        dsize: 1,
+    };
+    let coeff_meta = CKKSMeta {
+        log_sparsity: 0,
+        log_delta: coeff_log_delta,
+        log_budget: 10,
+    };
+
+    let (sk_raw, sk) = gen_sk_with_raw(&params, &module, &host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, &module);
+    let tsk = gen_tsk(&params, &module, &sk_raw, &mut scratch.borrow());
+
+    let (re, im) = test_vector_1::<F>(m);
+    let src = ckks_encrypt_with_prec(
+        &params,
+        &module,
+        &host_module,
+        &encoder,
+        &sk,
+        k,
+        &re,
+        &im,
+        params.prec,
+        &mut scratch.borrow(),
+    );
+    let (in_ld, in_lb) = (src.log_delta(), src.log_budget());
+
+    for strategy in [SplitStrategy::MinDepth, SplitStrategy::MinMult] {
+        for degree in 2..=511usize {
+            let coeffs: Vec<F> = (0..=degree)
+                .map(|i| F::from_f64(((i % 7) + 1) as f64 / 16.0).unwrap())
+                .collect();
+            let bsgs_host = Polynomial::new(Basis::Monomial, coeffs)
+                .encode_bsgs_with(&host_module, base2k.into(), coeff_meta, strategy)
+                .expect("encode_bsgs_with");
+            let bsgs = upload_bsgs(&module, &bsgs_host);
+
+            let mut pb = PowerBasis::new(Basis::Monomial, src.clone());
+            pb.populate(degree, bsgs_host.log_split(), bsgs_host.parity(), &module, &tsk, &mut scratch.borrow())
+                .expect("populate power basis");
+
+            let mut res = alloc_ct(&params, &module, k);
+            module
+                .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<BE::OwnedBuf>, _, _>(
+                    &mut res,
+                    &bsgs,
+                    &pb,
+                    &tsk,
+                    &mut scratch.borrow(),
+                )
+                .expect("eval poly");
+
+            assert_eq!(res.log_delta(), in_ld, "degree {degree} {strategy:?}: log_delta not preserved");
+            assert_eq!(
+                in_lb - res.log_budget(),
+                bsgs_host.consumed_bits(in_ld, coeff_log_delta),
+                "degree {degree} {strategy:?}: consumed-bits mismatch (depth={})",
+                bsgs_host.eval_depth(),
+            );
+        }
+    }
 }

@@ -124,7 +124,7 @@ where
     // Size the bootstrap modulus straight from the plan (no need to compile
     // first): input modulus + the bits the three stages consume + output
     // head-room.
-    let k_boot = (log_modulus_in + plan.consumed_bits() + 4 * log_delta).next_multiple_of(base2k);
+    let k_boot = (log_modulus_in + plan.consumed_bits(log_modulus_in) + 4 * log_delta).next_multiple_of(base2k);
 
     let module = Module::<BE>::new(n as u64);
     let host_module = Module::<HostBytesBackend>::new(n as u64);

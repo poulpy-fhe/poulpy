@@ -17,7 +17,7 @@ pub trait CKKSRescaleOpsDefault<BE: Backend> {
     /// are zero LSBs). When the storage `max_k` cannot hold the new `effective_k`
     /// the owned buffer is reallocated wider; otherwise it is a pure metadata
     /// update.
-    fn ckks_scale_up_default(&self, ct: &mut CKKSCiphertext<Vec<u8>>, bits: usize) -> Result<()>
+    fn ckks_increase_log_delta_default(&self, ct: &mut CKKSCiphertext<Vec<u8>>, bits: usize) -> Result<()>
     where
         Self: CKKSMaintainOpsDefault<BE>,
     {

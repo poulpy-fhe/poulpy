@@ -11,7 +11,8 @@ use crate::{
 };
 
 pub use poulpy_core::layouts::{
-    BSGSPolynomial, Basis, DEFAULT_SPLIT_STRATEGY, Parity, Polynomial, SplitStrategy, evaluate_coeffs, split_degree,
+    BSGSPolynomial, Basis, DEFAULT_SPLIT_STRATEGY, Parity, Polynomial, SplitStrategy, change_of_basis, evaluate_coeffs,
+    split_degree,
 };
 
 /// CKKS encoding of a [`Polynomial`] into a [`BSGSPolynomial`] of plaintexts.
@@ -74,6 +75,11 @@ pub struct ComplexPolynomial<F> {
     pub basis: Basis,
     pub re: Vec<F>,
     pub im: Vec<F>,
+    /// Lower/upper bounds of the approximation interval `[a, b]`, expressed in the
+    /// [`change_of_basis`] variable (Chebyshev maps `[a, b]→[-1, 1]`; Monomial is
+    /// identity). Defaults to `[-1, 1]`; set via [`ComplexPolynomial::with_interval`].
+    pub a: F,
+    pub b: F,
 }
 
 /// A complex polynomial decomposed for BSGS evaluation.
@@ -90,12 +96,39 @@ where
     F: Float + FloatConst + FromPrimitive + Debug + CKKSScalar,
     CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>,
 {
-    /// Constructs a complex polynomial, padding `re`/`im` to equal length.
+    /// Constructs a complex polynomial, padding `re`/`im` to equal length. The
+    /// interval defaults to `[-1, 1]`; set it with [`Self::with_interval`].
     pub fn new(basis: Basis, mut re: Vec<F>, mut im: Vec<F>) -> Self {
         let len = re.len().max(im.len());
         re.resize(len, F::zero());
         im.resize(len, F::zero());
-        Self { basis, re, im }
+        let one = F::one();
+        Self {
+            basis,
+            re,
+            im,
+            a: -one,
+            b: one,
+        }
+    }
+
+    /// Sets the approximation interval `[a, b]` (see the [`a`](Self::a)/[`b`](Self::b)
+    /// fields).
+    pub fn with_interval(mut self, a: F, b: F) -> Self {
+        self.a = a;
+        self.b = b;
+        self
+    }
+
+    /// The approximation interval `[a, b]`.
+    pub fn interval(&self) -> (F, F) {
+        (self.a, self.b)
+    }
+
+    /// Affine change of basis `(u, w)` mapping `x ∈ [a, b]` to the coefficient
+    /// variable (`y = u·x + w`); see [`change_of_basis`].
+    pub fn change_of_basis(&self) -> (F, F) {
+        change_of_basis(self.basis, self.a, self.b)
     }
 
     /// Combined parity: index `k` is present if `re[k] != 0 || im[k] != 0`.
@@ -131,8 +164,8 @@ where
         strategy: SplitStrategy,
     ) -> Result<ComplexBSGSPolynomial<CKKSPlaintext<Vec<u8>>>> {
         let parity = self.combined_parity();
-        let re_poly = Polynomial::new_with_parity(self.basis, self.re.clone(), parity);
-        let im_poly = Polynomial::new_with_parity(self.basis, self.im.clone(), parity);
+        let re_poly = Polynomial::new_with_parity(self.basis, self.re.clone(), parity).with_interval(self.a, self.b);
+        let im_poly = Polynomial::new_with_parity(self.basis, self.im.clone(), parity).with_interval(self.a, self.b);
         let re = re_poly.encode_bsgs_with(module, base2k, coeff_meta, strategy)?;
         let im = im_poly.encode_bsgs_with(module, base2k, coeff_meta, strategy)?;
         Ok(ComplexBSGSPolynomial { re, im })
@@ -156,6 +189,17 @@ where
 }
 
 impl<C> ComplexBSGSPolynomial<C> {
+    /// The approximation interval `[a, b]` (shared by both `re`/`im` halves).
+    pub fn interval(&self) -> (f64, f64) {
+        self.re.interval()
+    }
+
+    /// Affine change of basis `(u, w)` mapping `x ∈ [a, b]` to the coefficient
+    /// variable (`y = u·x + w`); see [`change_of_basis`].
+    pub fn change_of_basis(&self) -> (f64, f64) {
+        self.re.change_of_basis()
+    }
+
     /// Rebuilds by mapping borrowed baby-step coefficients of both parts.
     pub fn map_baby_steps_ref<D>(&self, mut f: impl FnMut(&C) -> D) -> ComplexBSGSPolynomial<D> {
         ComplexBSGSPolynomial {

@@ -34,7 +34,7 @@ pub unsafe trait CKKSRescaleImpl<BE: Backend>: Backend {
         A: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         B: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos;
     fn ckks_align_tmp_bytes(module: &Module<BE>) -> usize;
-    fn ckks_scale_up(module: &Module<BE>, ct: &mut CKKSCiphertext<Vec<u8>>, bits: usize) -> Result<()>;
+    fn ckks_increase_log_delta(module: &Module<BE>, ct: &mut CKKSCiphertext<Vec<u8>>, bits: usize) -> Result<()>;
 }
 
 unsafe impl<BE: Backend> CKKSRescaleImpl<BE> for BE
@@ -81,8 +81,8 @@ where
         module.ckks_align_tmp_bytes_default()
     }
 
-    fn ckks_scale_up(module: &Module<BE>, ct: &mut CKKSCiphertext<Vec<u8>>, bits: usize) -> Result<()> {
-        module.ckks_scale_up_default(ct, bits)
+    fn ckks_increase_log_delta(module: &Module<BE>, ct: &mut CKKSCiphertext<Vec<u8>>, bits: usize) -> Result<()> {
+        module.ckks_increase_log_delta_default(ct, bits)
     }
 }
 

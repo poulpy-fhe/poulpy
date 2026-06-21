@@ -358,7 +358,7 @@ fn verification(encoding: &EncodingArtifacts, evaluation: &EvaluationArtifacts, 
     let want_re: Vec<f64> = encoding
         .x_re
         .iter()
-        .map(|&x| encoding.poly.evaluate_on_interval(x, -1.0, 1.0))
+        .map(|&x| encoding.poly.evaluate_on_interval(x))
         .collect();
     let avg_err_re = avg_err(&decryption.have_re, &want_re);
     let max_err_re = max_err(&decryption.have_re, &want_re);
