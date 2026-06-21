@@ -21,10 +21,10 @@ use crate::{
     },
 };
 
-/// `ckks_increase_log_delta(ct, bits)` must raise `log_delta` by `bits`, preserve
-/// `log_budget` and the decoded message, grow `effective_k` by `bits`, and
-/// reallocate storage only when the current `max_k` cannot hold it.
-pub fn test_increase_log_delta<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
+/// `ckks_set_log_delta(ct, target)` must move `log_delta` to `target` (up or
+/// down), preserve `log_budget` and the decoded message, and grow/compact the
+/// storage accordingly.
+pub fn test_set_log_delta<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSRescaleOps<BE>,
@@ -41,24 +41,43 @@ where
     let mut scratch = alloc_scratch(&params, module);
     let (re, im) = test_vector_1::<F>(m);
 
-    // `bits` scales `log_delta` up; keep it small enough that the raised
-    // `log_delta` still fits the i128 decode codec on every backend. Any positive
-    // `bits` crosses a limb boundary here (encryption fills `effective_k = max_k`),
-    // so this still exercises the reallocation path.
+    // `bits` is the scale delta exercised in each direction; keep it small enough
+    // that the raised `log_delta` still fits the i128 decode codec on every
+    // backend. Any positive `bits` crosses a limb boundary here (encryption fills
+    // `effective_k = max_k`), so this exercises the realloc/compact paths.
     let bits = 8;
 
-    let mut ct = ckks_encrypt(&params, module, host_module, &encoder, &sk, params.k, &re, &im, &mut scratch.borrow());
+    let mut ct = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re,
+        &im,
+        &mut scratch.borrow(),
+    );
     let (d0, b0) = (ct.log_delta(), ct.log_budget());
 
-    module.ckks_increase_log_delta(&mut ct, bits).unwrap();
+    // Increase: log_delta raised, log_budget preserved, effective_k grown.
+    module.ckks_set_log_delta(&mut ct, d0 + bits).unwrap();
+    assert_eq!(ct.log_delta(), d0 + bits, "set_log_delta up: log_delta");
+    assert_eq!(ct.log_budget(), b0, "set_log_delta up: log_budget preserved");
+    assert!(
+        ct.max_k().as_usize() >= ct.effective_k(),
+        "set_log_delta up: storage holds effective_k"
+    );
+    let (re_up, im_up) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &ct, &sk, &mut scratch.borrow());
+    assert_precision("set_log_delta up re", &re_up, &re, params.prec.log_delta, params.n);
+    assert_precision("set_log_delta up im", &im_up, &im, params.prec.log_delta, params.n);
 
-    // log_delta raised by `bits`, log_budget preserved, effective_k grown.
-    assert_eq!(ct.log_delta(), d0 + bits, "increase_log_delta: log_delta");
-    assert_eq!(ct.log_budget(), b0, "increase_log_delta: log_budget preserved");
-    assert!(ct.max_k().as_usize() >= ct.effective_k(), "increase_log_delta: storage holds effective_k");
-
-    // The decoded message is unchanged (measured at the original scale).
-    let (re_out, im_out) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &ct, &sk, &mut scratch.borrow());
-    assert_precision("increase_log_delta re", &re_out, &re, params.prec.log_delta, params.n);
-    assert_precision("increase_log_delta im", &im_out, &im, params.prec.log_delta, params.n);
+    // Decrease back to the original scale: log_budget preserved, storage compacted,
+    // and the message recovered (dropping only the zero low-order padding bits).
+    module.ckks_set_log_delta(&mut ct, d0).unwrap();
+    assert_eq!(ct.log_delta(), d0, "set_log_delta down: log_delta");
+    assert_eq!(ct.log_budget(), b0, "set_log_delta down: log_budget preserved");
+    let (re_dn, im_dn) = ckks_decrypt_decode::<BE, F, E>(&params, module, &encoder, &ct, &sk, &mut scratch.borrow());
+    assert_precision("set_log_delta down re", &re_dn, &re, params.prec.log_delta, params.n);
+    assert_precision("set_log_delta down im", &im_dn, &im, params.prec.log_delta, params.n);
 }

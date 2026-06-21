@@ -389,10 +389,7 @@ fn bsgs_consumed_bits_reference(
         }
     };
 
-    let mut active: Vec<(usize, usize)> = baby_degrees[..n_to_process]
-        .iter()
-        .map(|&d| (d, baby_weight(d)))
-        .collect();
+    let mut active: Vec<(usize, usize)> = baby_degrees[..n_to_process].iter().map(|&d| (d, baby_weight(d))).collect();
 
     // Replay the giant-step pairing of `eval_giant_steps`: adjacent equal-degree
     // steps combine as `b = b·Xᵍˢᵖ + a` (one `ct×ct`); the odd one out carries.
@@ -791,7 +788,7 @@ where
         BSGSPolynomial::log_split(self)
     }
 
-    fn split_strategy(&self) -> SplitStrategy{
+    fn split_strategy(&self) -> SplitStrategy {
         self.split_strategy
     }
 }

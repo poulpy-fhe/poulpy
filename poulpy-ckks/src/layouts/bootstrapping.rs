@@ -50,10 +50,27 @@ use crate::{
 /// See the [module docs](self) for the overall role.
 #[derive(Clone, Debug)]
 pub struct BootstrappingPlan {
+    /// Hamming weight of the ephemeral **sparse** secret used to encapsulate the
+    /// ModUp (sparse-secret encapsulation, <https://eprint.iacr.org/2022/024>).
+    ///
+    /// `0` disables the trick. Otherwise the pipeline key-switches the ciphertext
+    /// from the dense secret to a sparse secret of this weight *before* ModUp and
+    /// back to the dense secret *after* — `denseToSparse → ModUp → sparseToDense`.
+    /// Under a sparse key the integer wrap-around `I·q` exposed by ModUp is bounded
+    /// by this weight instead of the dense weight, so EvalMod can use a much
+    /// smaller interval `K` (`f_mod_interval`) with negligible failure probability.
+    /// The two key-switching keys are generated from the dense secret (see the
+    /// reference composition); they are not part of the secret-independent
+    /// [`BootstrappingContext`].
+    pub ephemeral_secret_weight: usize,
+
     /// CoeffsToSlots: homomorphic encoding ([`DFTType::Encode`](crate::layouts::DFTType)).
     pub coeffs_to_slots: DFTPlan,
 
-    /// EvalMod: approximate `x mod 1`.
+    /// EvalMod: approximate `x mod 1`. EvalMod runs at its own
+    /// ([`EvalModPlan::f_mod_log_delta`]) scale — `ckks_eval_mod` sets the
+    /// ciphertext to it on entry and restores the input scale on exit (a pure,
+    /// budget-neutral reinterpretation), so it can keep more `ct×ct` precision.
     pub eval_mod: EvalModPlan,
 
     /// SlotsToCoeffs: homomorphic decoding ([`DFTType::Decode`](crate::layouts::DFTType)).
@@ -61,15 +78,11 @@ pub struct BootstrappingPlan {
 }
 
 impl BootstrappingPlan {
-    /// Total `log_budget` bits the pipeline consumes. The DFT stages are pure
-    /// `ct×pt` (consume their own factor scale, independent of the input), while
-    /// EvalMod's cost depends on `eval_mod_input_log_delta` — the scale of the
-    /// ciphertext entering EvalMod (the CoeffsToSlots output, which preserves the
-    /// post-ModUp scale).
-    pub fn consumed_bits(&self, eval_mod_input_log_delta: usize) -> usize {
-        self.coeffs_to_slots.consumed_bits()
-            + self.eval_mod.consumed_bits(eval_mod_input_log_delta)
-            + self.slots_to_coeffs.consumed_bits()
+    /// Total `log_budget` bits the pipeline consumes: the two DFT stages plus
+    /// EvalMod (charged at its own `f_mod_log_delta` scale; the surrounding
+    /// set-scale round-trip is budget-neutral).
+    pub fn consumed_bits(&self) -> usize {
+        self.coeffs_to_slots.consumed_bits() + self.eval_mod.consumed_bits() + self.slots_to_coeffs.consumed_bits()
     }
 }
 
@@ -126,14 +139,8 @@ where
         CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>,
         CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
     {
-        // Map the [-K, K] CoeffsToSlots output into EvalMod's [-1, 1] Chebyshev
-        // domain (composed with any caller-set scaling).
-        let k = plan.eval_mod.f_mod_interval as f64;
-        let mut c2s_plan = plan.coeffs_to_slots.clone();
-        c2s_plan.scaling = Some(c2s_plan.scaling.unwrap_or(1.0) / k);
-
         let c2s_lt: DFTMatrix<BE, Encode, Split> =
-            module.ckks_new_dft_matrix(host_module, encoder, base2k, &c2s_plan, scratch)?;
+            module.ckks_new_dft_matrix(host_module, encoder, base2k, &plan.coeffs_to_slots, scratch)?;
         let coeffs_to_slots = module.ckks_prepare_dft_matrix(&c2s_lt, scratch);
 
         let s2c_lt: DFTMatrix<BE, Decode, Split> =

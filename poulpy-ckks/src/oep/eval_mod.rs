@@ -7,7 +7,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
-    api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSSubOps, PolynomialEvaluation},
+    api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSRescaleOps, CKKSSubOps, PolynomialEvaluation},
     default::eval_mod::CKKSEvalModOpsDefault,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, eval_mod::EvalMod},
 };
@@ -41,7 +41,7 @@ pub unsafe trait CKKSEvalModImpl<BE: Backend>: Backend {
         P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta;
 }
 
-unsafe impl<BE: Backend> CKKSEvalModImpl<BE> for BE
+unsafe impl<BE: Backend<OwnedBuf = Vec<u8>>> CKKSEvalModImpl<BE> for BE
 where
     Module<BE>: PolynomialEvaluation<BE>
         + CKKSAddOps<BE>
@@ -49,6 +49,7 @@ where
         + CKKSMulOps<BE>
         + CKKSCopyOps<BE>
         + CKKSModuleAlloc<BE>
+        + CKKSRescaleOps<BE>
         + CKKSEvalModOpsDefault<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,

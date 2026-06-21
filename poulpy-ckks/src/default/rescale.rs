@@ -8,29 +8,39 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::GLWEToBackendRef;
 
-use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub, layouts::CKKSCiphertext, layouts::ciphertext::CKKSMaintainOpsDefault};
+use crate::{
+    CKKSInfos, SetCKKSInfos, checked_log_budget_sub, layouts::CKKSCiphertext, layouts::ciphertext::CKKSMaintainOpsDefault,
+};
 
 #[doc(hidden)]
 pub trait CKKSRescaleOpsDefault<BE: Backend> {
-    /// Increases `ct`'s `log_delta` by `bits`, keeping the encoded message and
-    /// `log_budget`, so `effective_k` grows by `bits` (the added precision bits
-    /// are zero LSBs). When the storage `max_k` cannot hold the new `effective_k`
-    /// the owned buffer is reallocated wider; otherwise it is a pure metadata
-    /// update.
-    fn ckks_increase_log_delta_default(&self, ct: &mut CKKSCiphertext<Vec<u8>>, bits: usize) -> Result<()>
+    /// Sets `ct`'s encoding scale to `log_delta`, preserving the encoded message
+    /// and `log_budget`.
+    ///
+    /// - **Increase** (`log_delta` larger): extends the precision window with zero
+    ///   low-order bits, reallocating the owned buffer wider when the storage
+    ///   `max_k` cannot hold the larger `effective_k` (otherwise a metadata-only
+    ///   update).
+    /// - **Decrease** (`log_delta` smaller): drops the low-order precision bits and
+    ///   compacts the storage to the new (smaller) `effective_k`.
+    ///
+    /// A no-op when `ct` is already at `log_delta`.
+    fn ckks_set_log_delta_default(&self, ct: &mut CKKSCiphertext<Vec<u8>>, log_delta: usize) -> Result<()>
     where
         Self: CKKSMaintainOpsDefault<BE>,
     {
-        if bits == 0 {
-            return Ok(());
+        let current = ct.log_delta();
+        if log_delta > current {
+            let new_effective_k = log_delta + ct.log_budget();
+            let required_limbs = new_effective_k.div_ceil(ct.base2k().as_usize());
+            if ct.size() < required_limbs {
+                self.ckks_reallocate_limbs_checked_default(ct, required_limbs)?;
+            }
+            ct.set_log_delta(log_delta);
+        } else if log_delta < current {
+            ct.set_log_delta(log_delta);
+            self.ckks_compact_limbs_default(ct)?;
         }
-        let new_log_delta = ct.log_delta() + bits;
-        let new_effective_k = new_log_delta + ct.log_budget();
-        let required_limbs = new_effective_k.div_ceil(ct.base2k().as_usize());
-        if ct.size() < required_limbs {
-            self.ckks_reallocate_limbs_checked_default(ct, required_limbs)?;
-        }
-        ct.set_log_delta(new_log_delta);
         Ok(())
     }
 

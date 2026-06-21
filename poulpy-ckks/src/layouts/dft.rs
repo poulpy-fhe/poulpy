@@ -141,8 +141,8 @@ impl DFTPlan {
         }
         Ok(())
     }
-    
-    pub fn consumed_bits(&self) -> usize{
+
+    pub fn consumed_bits(&self) -> usize {
         self.num_factors() * self.meta.log_delta
     }
 }

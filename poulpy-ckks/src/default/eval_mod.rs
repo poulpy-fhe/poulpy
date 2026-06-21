@@ -21,7 +21,7 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
-    api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSSubOps, PolynomialEvaluation},
+    api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSRescaleOps, CKKSSubOps, PolynomialEvaluation},
     layouts::{
         CKKSCiphertext, CKKSModuleAlloc, ScratchArenaTakeCKKS,
         eval_mod::{EvalMod, EvalModBsgs},
@@ -56,7 +56,9 @@ pub trait CKKSEvalModOpsDefault<BE: Backend> {
             + CKKSMulOps<BE>
             + CKKSCopyOps<BE>
             + CKKSModuleAlloc<BE>
+            + CKKSRescaleOps<BE>
             + Sized,
+        BE: poulpy_hal::layouts::Backend<OwnedBuf = Vec<u8>>,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
@@ -65,10 +67,15 @@ pub trait CKKSEvalModOpsDefault<BE: Backend> {
         for<'b> ScratchArena<'b, BE>: ScratchAvailable + ScratchArenaTakeCore<'b, BE>;
 }
 
-impl<BE: Backend> CKKSEvalModOpsDefault<BE> for Module<BE>
+impl<BE: Backend<OwnedBuf = Vec<u8>>> CKKSEvalModOpsDefault<BE> for Module<BE>
 where
-    Module<BE>:
-        PolynomialEvaluation<BE> + CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSMulOps<BE> + CKKSCopyOps<BE> + CKKSModuleAlloc<BE>,
+    Module<BE>: PolynomialEvaluation<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSMulOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSModuleAlloc<BE>
+        + CKKSRescaleOps<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     for<'b> ScratchArena<'b, BE>: ScratchAvailable + ScratchArenaTakeCore<'b, BE>,
@@ -105,7 +112,7 @@ where
 /// `res` receives the result; `tsk` is the relinearization (tensor) key for the
 /// squarings, and `scratch` supplies the working memory sized by
 /// [`CKKSEvalModOps::ckks_eval_mod_tmp_bytes`](crate::api::CKKSEvalModOps::ckks_eval_mod_tmp_bytes).
-fn eval_mod<R, C, P, F, BE: Backend>(
+fn eval_mod<R, C, P, F, BE: Backend<OwnedBuf = Vec<u8>>>(
     module: &Module<BE>,
     res: &mut R,
     ct: &C,
@@ -114,8 +121,13 @@ fn eval_mod<R, C, P, F, BE: Backend>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    Module<BE>:
-        PolynomialEvaluation<BE> + CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSMulOps<BE> + CKKSCopyOps<BE> + CKKSModuleAlloc<BE>,
+    Module<BE>: PolynomialEvaluation<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSMulOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSModuleAlloc<BE>
+        + CKKSRescaleOps<BE>,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
@@ -123,17 +135,27 @@ where
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     for<'b> ScratchArena<'b, BE>: ScratchAvailable + ScratchArenaTakeCore<'b, BE>,
 {
-    let depth = params.eval_depth();
-    let required = depth * ct.log_delta();
+    // EvalMod runs at its own (typically wider) plan scale `f_mod_log_delta`, not
+    // the input scale: set the working ciphertext to it at the start and restore
+    // the input scale on the result at the end (value-preserving). Running at the
+    // wider scale lets the `ct×ct` chain keep more precision. `s_eval` never drops
+    // below the input scale, so the restore is always a (cheap, generic) downscale.
+    let s_in = ct.log_delta();
+    let s_eval = params.plan.f_mod_log_delta.max(s_in);
+
+    // `set_log_delta` only reinterprets the scale (it never shifts the data or
+    // touches `log_budget`), so the start/end scale round-trip is budget-neutral:
+    // EvalMod consumes exactly `consumed_bits()` (charged at `s_eval`).
+    let required = params.consumed_bits();
     ensure!(
         ct.log_budget() >= required,
-        "ckks_eval_mod: input log_budget {got} < {required} bits required ({depth} levels × log_delta {ld})",
+        "ckks_eval_mod: input log_budget {got} < {required} bits required (consumed at scale {s_eval})",
         got = ct.log_budget(),
-        ld = ct.log_delta(),
     );
 
     let mut t1 = module.ckks_ciphertext_alloc_from_infos(ct);
     module.ckks_copy(&mut t1, ct, scratch)?;
+    module.ckks_set_log_delta(&mut t1, s_eval)?; // → plan scale (reinterpret only)
 
     match &params.f_mod_bsgs {
         EvalModBsgs::Real(bsgs) => {
@@ -173,6 +195,11 @@ where
                 })?;
             }
         }
+    }
+
+    // Restore the input scale on the result (reinterpret only, `log_budget` kept).
+    if s_eval != s_in {
+        res.set_log_delta(s_in);
     }
 
     Ok(())

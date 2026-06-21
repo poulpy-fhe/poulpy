@@ -29,11 +29,12 @@ use crate::{
     leveled::api::{CKKSDecrypt, CKKSEncrypt},
 };
 use poulpy_core::{
-    EncryptionLayout, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWENormalize, GLWESub,
-    GLWETensorKeyEncryptSk, ModuleTransfer, ScratchArenaTakeCore,
+    EncryptionLayout, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEKeyswitch, GLWENormalize, GLWESub,
+    GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ModuleTransfer, ScratchArenaTakeCore,
     layouts::{
         BackendGLWESecret, Base2K, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory,
-        GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, prepared::GLWESecretPrepared,
+        GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, LWEInfos,
+        ModuleCoreAlloc, prepared::GLWESecretPrepared,
     },
 };
 use rand_distr::num_traits::{Float, FloatConst, FromPrimitive, ToPrimitive};
@@ -115,6 +116,9 @@ pub trait TestContextModule<BE: Backend>:
     + GLWEAutomorphismKeyPreparedFactory<BE>
     + GLWETensorKeyEncryptSk<BE>
     + GLWEAutomorphismKeyEncryptSk<BE>
+    + GLWESwitchingKeyEncryptSk<BE>
+    + GLWESwitchingKeyPreparedFactory<BE>
+    + GLWEKeyswitch<BE>
     + GaloisElement
 {
 }
@@ -151,6 +155,9 @@ impl<BE: Backend, M> TestContextModule<BE> for M where
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWETensorKeyEncryptSk<BE>
         + GLWEAutomorphismKeyEncryptSk<BE>
+        + GLWESwitchingKeyEncryptSk<BE>
+        + GLWESwitchingKeyPreparedFactory<BE>
+        + GLWEKeyswitch<BE>
         + GaloisElement
 {
 }
@@ -646,6 +653,65 @@ where
     let mut atk_prepared = module.glwe_automorphism_key_prepared_alloc_from_infos(&atk_infos);
     module.glwe_automorphism_key_prepare(&mut atk_prepared, &atk, scratch);
     atk_prepared
+}
+
+/// Generates a prepared rank-1 GLWE key-switching key from `sk_in` to `sk_out`,
+/// sized for an input ciphertext of modulus `k_in` bits.
+pub fn gen_switching_key<BE>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    sk_in: &BackendGLWESecret<BE>,
+    sk_out: &BackendGLWESecret<BE>,
+    k_in: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> GLWESwitchingKeyPrepared<BE::OwnedBuf, BE>
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+{
+    let infos = params.ksk_layout(k_in);
+    let mut xa = Source::new([1u8; 32]);
+    let mut xe = Source::new([2u8; 32]);
+    let mut ksk = module.glwe_switching_key_alloc_from_infos(&infos);
+    module.glwe_switching_key_encrypt_sk(&mut ksk, sk_in, sk_out, &infos, &mut xe, &mut xa, scratch);
+    let mut ksk_prepared = module.glwe_switching_key_prepared_alloc_from_infos(&ksk);
+    module.glwe_switching_key_prepare(&mut ksk_prepared, &ksk, scratch);
+    ksk_prepared
+}
+
+/// Generates the sparse-secret encapsulation key-switching keys
+/// (<https://eprint.iacr.org/2022/024>): samples a fresh sparse ephemeral secret
+/// of Hamming weight `ephemeral_secret_weight`, then returns the prepared
+/// `denseToSparse` key (sized at the input modulus `k_in`) and `sparseToDense` key
+/// (sized at the bootstrap modulus `k_out`), both derived from `sk_dense_raw`.
+#[allow(clippy::too_many_arguments)]
+pub fn gen_encapsulation_keys<BE>(
+    params: &CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+    sk_dense_raw: &BackendGLWESecret<BE>,
+    ephemeral_secret_weight: usize,
+    k_in: usize,
+    k_out: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> (
+    GLWESwitchingKeyPrepared<BE::OwnedBuf, BE>,
+    GLWESwitchingKeyPrepared<BE::OwnedBuf, BE>,
+)
+where
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE>,
+    Module<HostBytesBackend>: TestContextHostModule,
+{
+    // Sparse ephemeral secret skSparse (fixed Hamming weight).
+    let mut source = Source::new([7u8; 32]);
+    let mut sk_sparse_host = host_module.glwe_secret_alloc_from_infos(&params.glwe_layout());
+    sk_sparse_host.fill_ternary_hw(ephemeral_secret_weight, &mut source);
+    let sk_sparse_raw = module.upload_glwe_secret(&sk_sparse_host);
+
+    let dense_to_sparse = gen_switching_key(params, module, sk_dense_raw, &sk_sparse_raw, k_in, scratch);
+    let sparse_to_dense = gen_switching_key(params, module, &sk_sparse_raw, sk_dense_raw, k_out, scratch);
+    (dense_to_sparse, sparse_to_dense)
 }
 
 // ─── encrypt / decrypt ────────────────────────────────────────────────────────

@@ -162,9 +162,10 @@ pub struct EvalModPlan {
     /// Baby-step/giant-step split strategy used to encode the polynomials (depth
     /// vs. number-of-rotations trade-off).
     pub split_strategy: SplitStrategy,
-
     /// CKKS metadata of the coefficients
-    pub meta: CKKSMeta,
+    pub coeffs_meta: CKKSMeta,
+    /// Logscale used during EvalMod
+    pub f_mod_log_delta: usize,
 }
 
 impl EvalModPlan {
@@ -189,8 +190,9 @@ impl EvalModPlan {
     /// `f_mod_log_interval_reduction` range-extension squarings (each a `ct×ct`
     /// consuming `input_log_delta`), plus the optional arcsine inverse. Computed
     /// analytically; matches the compiled [`EvalMod::consumed_bits`].
-    pub fn consumed_bits(&self, input_log_delta: usize) -> usize {
-        let coeff = self.meta.log_delta;
+    pub fn consumed_bits(&self) -> usize {
+        let coeff = self.coeffs_meta.log_delta;
+        let input_log_delta = self.f_mod_log_delta;
         let base = bsgs_consumed_bits(
             self.base_degree(),
             self.split_strategy,
@@ -212,10 +214,12 @@ impl EvalModPlan {
     /// `f_mod_degree`.
     fn base_degree(&self) -> usize {
         match self.eval_mod_type {
-            EvalModType::CosHK => {
-                cosine::approximate_cos_len(self.f_mod_interval, self.f_mod_degree, (1u64 << self.log_message_ratio) as f64)
-                    .saturating_sub(1)
-            }
+            EvalModType::CosHK => cosine::approximate_cos_len(
+                self.f_mod_interval,
+                self.f_mod_degree,
+                (1u64 << self.log_message_ratio) as f64,
+            )
+            .saturating_sub(1),
             _ => self.f_mod_degree,
         }
     }
@@ -316,7 +320,7 @@ where
         if lit.eval_mod_type == EvalModType::ExpCmplx {
             return Self::from_literal_exp(base2k, lit, module);
         }
-        let coeff_meta = lit.meta;
+        let coeff_meta = lit.coeffs_meta;
 
         ensure!(lit.f_mod_degree > 0, "f_mod_degree must be > 0");
         ensure!(lit.f_mod_interval > 0, "f_mod_interval must be > 0");
@@ -439,7 +443,7 @@ where
     /// steps are plain complex squarings (`exp 2θ = (exp θ)²`), so no offset or
     /// per-step constant is needed.
     fn from_literal_exp(base2k: Base2K, lit: EvalModPlan, module: &Module<HostBytesBackend>) -> Result<Self> {
-        let coeff_meta = lit.meta;
+        let coeff_meta = lit.coeffs_meta;
         ensure!(lit.f_mod_degree > 0, "f_mod_degree must be > 0");
         ensure!(lit.f_mod_interval > 0, "f_mod_interval must be > 0");
         ensure!(
@@ -495,17 +499,15 @@ impl<F, P> EvalMod<F, P> {
     /// `f_mod_log_interval_reduction` range-extension squarings (`ct×ct`,
     /// `input_log_delta` each) + the optional arcsine inverse. Matches the actual
     /// runtime consumption and [`EvalModPlan::consumed_bits`].
-    pub fn consumed_bits(&self, input_log_delta: usize) -> usize {
-        let coeff = self.plan.meta.log_delta;
+    pub fn consumed_bits(&self) -> usize {
+        let coeff = self.plan.coeffs_meta.log_delta;
+        let log_delta = self.plan.f_mod_log_delta;
         let base = match &self.f_mod_bsgs {
-            EvalModBsgs::Real(p) => p.consumed_bits(input_log_delta, coeff),
-            EvalModBsgs::Complex(p) => p.re.consumed_bits(input_log_delta, coeff),
+            EvalModBsgs::Real(p) => p.consumed_bits(log_delta, coeff),
+            EvalModBsgs::Complex(p) => p.re.consumed_bits(log_delta, coeff),
         };
-        let range_ext = self.plan.f_mod_log_interval_reduction * input_log_delta;
-        let inv = self
-            .f_mod_inv_bsgs
-            .as_ref()
-            .map_or(0, |p| p.consumed_bits(input_log_delta, coeff));
+        let range_ext = self.plan.f_mod_log_interval_reduction * log_delta;
+        let inv = self.f_mod_inv_bsgs.as_ref().map_or(0, |p| p.consumed_bits(log_delta, coeff));
         base + range_ext + inv
     }
 

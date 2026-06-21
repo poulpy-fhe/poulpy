@@ -96,6 +96,7 @@ impl DeclaredK for GGSWLayout {
     }
 }
 
+#[derive(Debug)]
 pub struct EncryptionLayout<L> {
     pub layout: L,
     pub noise: NoiseInfos,

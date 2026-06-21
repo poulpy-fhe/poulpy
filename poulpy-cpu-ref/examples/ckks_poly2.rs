@@ -355,11 +355,7 @@ fn decryption(setup: &mut SetupArtifacts, evaluation: &EvaluationArtifacts) -> R
 fn verification(encoding: &EncodingArtifacts, evaluation: &EvaluationArtifacts, decryption: &DecryptionArtifacts) -> Result<()> {
     print_phase("verification");
 
-    let want_re: Vec<f64> = encoding
-        .x_re
-        .iter()
-        .map(|&x| encoding.poly.evaluate_on_interval(x))
-        .collect();
+    let want_re: Vec<f64> = encoding.x_re.iter().map(|&x| encoding.poly.evaluate_on_interval(x)).collect();
     let avg_err_re = avg_err(&decryption.have_re, &want_re);
     let max_err_re = max_err(&decryption.have_re, &want_re);
 

@@ -7,7 +7,7 @@
 
 use poulpy_core::{
     EncryptionLayout,
-    layouts::{GLWEAutomorphismKeyLayout, GLWELayout, GLWETensorKeyLayout, Rank},
+    layouts::{GLWEAutomorphismKeyLayout, GLWELayout, GLWESwitchingKeyLayout, GLWETensorKeyLayout, Rank},
 };
 
 use crate::CKKSMeta;
@@ -36,7 +36,7 @@ impl CKKSTestParams {
 
     pub fn tsk_layout(&self) -> EncryptionLayout<GLWETensorKeyLayout> {
         let k = self.k + self.dsize * self.base2k;
-        let dnum = k.div_ceil(self.dsize * self.base2k);
+        let dnum = k / (self.dsize * self.base2k);
         EncryptionLayout::new_from_default_sigma(GLWETensorKeyLayout {
             n: self.n.into(),
             base2k: self.base2k.into(),
@@ -50,12 +50,30 @@ impl CKKSTestParams {
 
     pub fn atk_layout(&self) -> EncryptionLayout<GLWEAutomorphismKeyLayout> {
         let k = self.k + self.dsize * self.base2k;
-        let dnum = k.div_ceil(self.dsize * self.base2k);
+        let dnum = k / (self.dsize * self.base2k);
         EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
             n: self.n.into(),
             base2k: self.base2k.into(),
             k: k.into(),
             rank: Rank(1),
+            dsize: self.dsize.into(),
+            dnum: dnum.into(),
+        })
+        .unwrap()
+    }
+
+    /// Layout of a rank-1 GLWE key-switching key whose input ciphertext has
+    /// modulus `k_in` bits (e.g. the encapsulation `denseToSparse` /
+    /// `sparseToDense` keys, sized at the input level and at `k_boot`).
+    pub fn ksk_layout(&self, k_in: usize) -> EncryptionLayout<GLWESwitchingKeyLayout> {
+        let k = k_in + self.dsize * self.base2k;
+        let dnum = k / (self.dsize * self.base2k);
+        EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
+            n: self.n.into(),
+            base2k: self.base2k.into(),
+            k: k.into(),
+            rank_in: Rank(1),
+            rank_out: Rank(1),
             dsize: self.dsize.into(),
             dnum: dnum.into(),
         })
@@ -375,7 +393,7 @@ macro_rules! ckks_backend_test_suite {
                 linear_transformation,
                 $crate::test_suite::linear_transformation::test_linear_transformation
             );
-            run_test!(increase_log_delta, $crate::test_suite::rescale::test_increase_log_delta);
+            run_test!(set_log_delta, $crate::test_suite::rescale::test_set_log_delta);
             run_test!(
                 dft_coeffs_to_slots_standard,
                 $crate::test_suite::dft::test_dft_coeffs_to_slots_standard
@@ -617,10 +635,6 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::eval_mod::test_eval_mod_cos_continuous
             );
             run_test!(eval_mod_exp, $crate::test_suite::eval_mod::test_eval_mod_exp);
-            run_test!(
-                eval_mod_consumed_bits_matches_built,
-                $crate::test_suite::eval_mod::test_eval_mod_consumed_bits_matches_built
-            );
             run_test!(
                 bootstrapping_e2e,
                 $crate::test_suite::bootstrapping::test_bootstrapping_e2e

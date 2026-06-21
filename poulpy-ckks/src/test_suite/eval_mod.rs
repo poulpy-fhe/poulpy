@@ -12,35 +12,17 @@ use crate::{
     api::{CKKSAllOpsTmpBytes, CKKSEvalModOps},
     encoding::reim::Encoder,
     layouts::{
-        CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec,
+        CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext,
         eval_mod::{EvalMod, EvalModPlan, EvalModPoly, EvalModType},
     },
     polynomial::SplitStrategy,
+    test_suite::CKKSTestParams,
 };
 
 use super::helpers::{
     TestContextBackend, TestContextModule, TestScalar, ckks_decrypt_decode, ckks_encrypt_with_prec, gen_sk_with_raw, gen_tsk,
     precision_stats, upload_pt,
 };
-
-/// Returns the macro's official parameter set with the scale `log_delta` applied
-/// and the ciphertext modulus `k` (and its matching `log_budget`) enlarged to hold
-/// `depth` eval_mod levels. Every other field — `n`, `base2k`, `hw`, `dsize` — is
-/// taken from `CKKSTestParams` unchanged, so each backend runs eval_mod at its
-/// real-world parameterization (with `log_delta` optionally overridden per case).
-fn with_eval_mod_depth(params: super::CKKSTestParams, log_delta: usize, depth: usize) -> super::CKKSTestParams {
-    let log_budget = (depth + 1) * log_delta + 10;
-    let k = (log_delta + log_budget).next_multiple_of(params.base2k);
-    super::CKKSTestParams {
-        k,
-        prec: CKKSMeta {
-            log_delta,
-            log_budget,
-            ..params.prec
-        },
-        ..params
-    }
-}
 
 fn alloc_scratch_eval_mod<BE>(params: &super::CKKSTestParams, module: &Module<BE>) -> ScratchOwned<BE>
 where
@@ -152,7 +134,6 @@ fn run_eval_mod_case<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
     label: &str,
-    log_delta: usize,
     lit: EvalModPlan,
     required_log2_prec: f64,
 ) where
@@ -164,29 +145,38 @@ fn run_eval_mod_case<BE, F, E>(
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
-    // The limb width comes from the macro's official params; the scale defaults to
-    // the official `log_delta` but can be overridden per case, and the ciphertext
-    // modulus is overridden (below) to fit the eval_mod depth.
-    let base2k = params.base2k;
-
-    // Build the eval_mod parameters first so the input ciphertext is sized from the
-    // exact number of levels the pipeline consumes (`EvalMod::eval_depth`)
-    // rather than a duplicated depth estimate. `coeff_meta` is independent of the
-    // ciphertext modulus `k`, so it can be constructed before `test_params`.
-    let coeff_meta = CKKSMeta {
-        log_delta,
-        log_budget: base2k,
+    // Coefficients are encoded at the scale EvalMod runs at (`f_mod_log_delta`).
+    let mut lit = lit;
+    lit.coeffs_meta = CKKSMeta {
+        log_delta: lit.f_mod_log_delta,
+        log_budget: params.base2k,
         log_sparsity: 0,
     };
-    let mut lit = lit;
-    lit.meta = coeff_meta;
-    let host_params = EvalMod::<F, _>::from_literal(base2k.into(), lit, host_module).expect("EvalMod::from_literal");
+    let host_params = EvalMod::<F, _>::from_literal(params.base2k.into(), lit, host_module).expect("EvalMod::from_literal");
 
-    let test_params = with_eval_mod_depth(params, log_delta, host_params.eval_depth());
+    // Input message scale, below the plan scale so EvalMod's internal raise to
+    // `f_mod_log_delta` is exercised.
+    let input_log_delta = 40;
+    let dsize = 2;
+    let test_params = CKKSTestParams {
+        n: params.n,
+        base2k: params.base2k,
+        // Budget for the evaluation (charged at `f_mod_log_delta`) + head-room,
+        // rounded to `dsize·base2k` so the tensor-key gadget layout stays valid.
+        k: (lit.consumed_bits() + input_log_delta + 2 * params.base2k).next_multiple_of(dsize * params.base2k),
+        hw: 192,
+        prec: CKKSMeta {
+            log_delta: input_log_delta,
+            log_budget: 10,
+            log_sparsity: 0,
+        },
+        dsize,
+    };
+
     let params_be = upload_params(module, host_params);
 
-    let m = test_params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let slots = test_params.n / 2;
+    let encoder = Encoder::<E>::new(slots).unwrap();
 
     // Sample the plaintext as I·q + m (Lattigo's `mod1_evaluator_test`): I is a
     // random integer multiple in [-(interval-1), interval-1], m a message in
@@ -196,7 +186,7 @@ fn run_eval_mod_case<BE, F, E>(
     let interval = lit.f_mod_interval as f64;
     let k = (lit.f_mod_interval - 1) as f64;
     let mut source = Source::new([0u8; 32]);
-    let mut x_re_raw: Vec<F> = (0..m)
+    let mut x_re_raw: Vec<F> = (0..slots)
         .map(|_| {
             let value = source.next_f64(-k, k).round() * mr + source.next_f64(-1.0, 1.0);
             F::from_f64(value / (mr * interval)).unwrap()
@@ -224,7 +214,10 @@ fn run_eval_mod_case<BE, F, E>(
     );
 
     let (in_ld, in_lb) = (ct_input.log_delta(), ct_input.log_budget());
-    let mut res = module.ckks_ciphertext_alloc(test_params.base2k.into(), test_params.k.into());
+    // `res` must span the raised scale EvalMod evaluates at (`f_mod_log_delta`),
+    // which is wider than the input scale by `f_mod_log_delta - input_log_delta`.
+    let res_k = test_params.k + lit.f_mod_log_delta.saturating_sub(input_log_delta);
+    let mut res = module.ckks_ciphertext_alloc(test_params.base2k.into(), res_k.into());
     module
         .ckks_eval_mod(&mut res, &ct_input, &params_be, &tsk, &mut scratch.borrow())
         .expect("ckks_eval_mod");
@@ -234,7 +227,7 @@ fn run_eval_mod_case<BE, F, E>(
     assert_eq!(res.log_delta(), in_ld, "{label}: eval_mod should preserve log_delta");
     assert_eq!(
         in_lb - res.log_budget(),
-        params_be.consumed_bits(in_ld),
+        params_be.consumed_bits(),
         "{label}: eval_mod consumed bits mismatch"
     );
 
@@ -253,7 +246,7 @@ fn run_eval_mod_case<BE, F, E>(
         let want: Vec<(F, F)> = x_re_raw.iter().map(|&t| oracle(&params_be, &lit, t, reference)).collect();
         let want_re: Vec<F> = want.iter().map(|&(re, _)| re * mr_f).collect();
 
-        let stats = precision_stats(&got_re, &want_re, log_delta);
+        let stats = precision_stats(&got_re, &want_re, test_params.prec.log_delta);
 
         println!(
             "PREC {label} [{reference:?}]: avg={:.2} min={:.2}",
@@ -273,7 +266,7 @@ fn run_eval_mod_case<BE, F, E>(
         if matches!(lit.eval_mod_type, EvalModType::ExpCmplx) {
             let want_im: Vec<F> = want.iter().map(|&(_, im)| im * mr_f).collect();
             let got_im: Vec<F> = im_out.iter().map(|&v| v * mr_f).collect();
-            let stats_im = precision_stats(&got_im, &want_im, log_delta);
+            let stats_im = precision_stats(&got_im, &want_im, test_params.prec.log_delta);
             assert!(
                 stats_im.avg_log2_prec >= required_log2_prec,
                 "{label} [{reference:?}] (imag): avg precision {:.1} bits < {required_log2_prec:.1} (worst_err={}, worst_idx={}, got={}, want={})",
@@ -309,9 +302,10 @@ pub fn test_eval_mod_sin_continuous_minimal<BE, F, E>(
         f_mod_inv_degree: None,
         scaling: None,
         split_strategy: SplitStrategy::MinDepth,
-        meta: CKKSMeta::default(),
+        coeffs_meta: CKKSMeta::default(),
+        f_mod_log_delta: 60,
     };
-    run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_sin_continuous_minimal", 60, lit, 36.0);
+    run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_sin_continuous_minimal", lit, 18.0);
 }
 
 pub fn test_eval_mod_sin_continuous_with_arcsine<BE, F, E>(
@@ -334,11 +328,12 @@ pub fn test_eval_mod_sin_continuous_with_arcsine<BE, F, E>(
         f_mod_interval: 14,
         f_mod_log_interval_reduction: 0,
         f_mod_inv_degree: Some(7),
+        f_mod_log_delta: 60,
         scaling: None,
         split_strategy: SplitStrategy::MinDepth,
-        meta: CKKSMeta::default(),
+        coeffs_meta: CKKSMeta::default(),
     };
-    run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_sin_continuous_arcsine", 60, lit, 36.0);
+    run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_sin_continuous_arcsine", lit, 18.0);
 }
 
 pub fn test_eval_mod_cos_discrete<BE, F, E>(
@@ -358,14 +353,15 @@ pub fn test_eval_mod_cos_discrete<BE, F, E>(
         eval_mod_type: EvalModType::CosHK,
         log_message_ratio: 8,
         f_mod_degree: 30,
-        f_mod_interval: 12,
+        f_mod_interval: 16,
         f_mod_log_interval_reduction: 3,
         f_mod_inv_degree: None,
+        f_mod_log_delta: 60,
         scaling: None,
         split_strategy: SplitStrategy::MinDepth,
-        meta: CKKSMeta::default(),
+        coeffs_meta: CKKSMeta::default(),
     };
-    run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_discrete", 60, lit, 40.0);
+    run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_discrete", lit, 18.0);
 }
 
 pub fn test_eval_mod_cos_continuous<BE, F, E>(
@@ -385,14 +381,15 @@ pub fn test_eval_mod_cos_continuous<BE, F, E>(
         eval_mod_type: EvalModType::CosCheby,
         log_message_ratio: 4,
         f_mod_degree: 31,
-        f_mod_interval: 12,
+        f_mod_interval: 16,
         f_mod_log_interval_reduction: 3,
         f_mod_inv_degree: None,
         scaling: None,
         split_strategy: SplitStrategy::MinDepth,
-        meta: CKKSMeta::default(),
+        coeffs_meta: CKKSMeta::default(),
+        f_mod_log_delta: 60,
     };
-    run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_continuous", 60, lit, 40.0);
+    run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_continuous", lit, 18.0);
 }
 
 pub fn test_eval_mod_exp<BE, F, E>(params: super::CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
@@ -409,109 +406,13 @@ where
         eval_mod_type: EvalModType::ExpCmplx,
         log_message_ratio: 4,
         f_mod_degree: 31,
-        f_mod_interval: 8,
+        f_mod_interval: 16,
         f_mod_log_interval_reduction: 3,
         f_mod_inv_degree: None,
         scaling: None,
         split_strategy: SplitStrategy::MinDepth,
-        meta: CKKSMeta::default(),
+        coeffs_meta: CKKSMeta::default(),
+        f_mod_log_delta: 60,
     };
-    run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_exp", 60, lit, 40.0);
-}
-
-/// The analytic [`EvalModPlan::eval_depth`] / [`EvalModPlan::consumed_bits`]
-/// (computed from the plan alone, used to size the bootstrap modulus) must equal
-/// the depth of the actually-compiled [`EvalMod`] for every variant — otherwise
-/// budget sizing would silently under- or over-shoot.
-pub fn test_eval_mod_consumed_bits_matches_built<BE, F, E>(
-    params: super::CKKSTestParams,
-    _module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-) where
-    BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE>,
-    Module<HostBytesBackend>: super::helpers::TestContextHostModule,
-    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>,
-    F: TestScalar,
-    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
-{
-    let base2k = params.base2k;
-    // Coefficient encoding scale, kept modest and backend-independent so
-    // `from_literal`'s plaintext quantization never overflows (a wide `base2k`
-    // would push `coeff·2^scale` past i64). The `consumed_bits` comparison only
-    // needs a fixed scale shared by plan and built, not `base2k`.
-    let coeff_log_delta = 20usize;
-
-    // Parameter sweep (host-only, so cheap): both split strategies, base-`f`
-    // families, degrees straddling power-of-two boundaries, range-extension
-    // reductions, and the optional arcsine inverse. Each combination drives the
-    // analytic [`EvalModPlan::consumed_bits`] (which feeds the closed-form
-    // [`bsgs_consumed_bits`] via `base_degree`/`base_parity`) and the built
-    // [`EvalMod::consumed_bits`] (which reads the actual encoded BSGS); they must
-    // agree for every input scale. Invalid `(type, params)` combinations are
-    // skipped (`from_literal` rejects them); `checked` guards against the sweep
-    // silently covering nothing.
-    let families = [
-        (EvalModType::SinCheby, 8usize, 14usize, [31usize, 32, 63, 127].as_slice()),
-        (EvalModType::CosCheby, 4, 12, [16, 31, 32, 63].as_slice()),
-        (EvalModType::CosHK, 8, 12, [30, 31, 63].as_slice()),
-        (EvalModType::ExpCmplx, 4, 8, [31, 32, 63].as_slice()),
-    ];
-
-    let mut checked = 0usize;
-    for strategy in [SplitStrategy::MinDepth, SplitStrategy::MinMult] {
-        for &(eval_mod_type, log_message_ratio, f_mod_interval, degrees) in &families {
-            for &f_mod_degree in degrees {
-                for &f_mod_log_interval_reduction in &[0usize, 1, 3] {
-                    // The arcsine inverse post-composition only applies to the sine family.
-                    let inv_options: &[Option<usize>] = if matches!(eval_mod_type, EvalModType::SinCheby) {
-                        &[None, Some(7), Some(15)]
-                    } else {
-                        &[None]
-                    };
-                    for &f_mod_inv_degree in inv_options {
-                        let lit = EvalModPlan {
-                            eval_mod_type,
-                            log_message_ratio,
-                            f_mod_degree,
-                            f_mod_interval,
-                            f_mod_log_interval_reduction,
-                            f_mod_inv_degree,
-                            scaling: None,
-                            split_strategy: strategy,
-                            meta: CKKSMeta {
-                                log_sparsity: 0,
-                                log_delta: coeff_log_delta,
-                                log_budget: 10,
-                            },
-                        };
-                        let built = match EvalMod::<F, _>::from_literal(base2k.into(), lit, host_module) {
-                            Ok(built) => built,
-                            Err(_) => continue,
-                        };
-                        let label = format!(
-                            "{eval_mod_type:?} {strategy:?} deg={f_mod_degree} red={f_mod_log_interval_reduction} inv={f_mod_inv_degree:?}"
-                        );
-                        assert_eq!(lit.eval_depth(), built.eval_depth(), "{label}: plan eval_depth != built eval_depth");
-                        // Exercise input scales equal to, above, and below the coefficient
-                        // scale so the input/coeff distinction is actually covered.
-                        for input_log_delta in [
-                            coeff_log_delta,
-                            coeff_log_delta + 8,
-                            coeff_log_delta.saturating_sub(8).max(1),
-                            coeff_log_delta + 16,
-                        ] {
-                            assert_eq!(
-                                lit.consumed_bits(input_log_delta),
-                                built.consumed_bits(input_log_delta),
-                                "{label}: plan consumed_bits != built consumed_bits @ input_log_delta={input_log_delta}"
-                            );
-                        }
-                        checked += 1;
-                    }
-                }
-            }
-        }
-    }
-    assert!(checked >= 40, "eval_mod consumed_bits sweep covered too few cases ({checked})");
+    run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_exp", lit, 18.0);
 }

@@ -38,7 +38,11 @@ fn assert_consumed_bits<BE, C>(
     BE: poulpy_hal::layouts::Backend,
 {
     let expected = bsgs.consumed_bits(input_log_delta, coeff_log_delta);
-    assert_eq!(res.log_delta(), input_log_delta, "{label}: result log_delta should equal input");
+    assert_eq!(
+        res.log_delta(),
+        input_log_delta,
+        "{label}: result log_delta should equal input"
+    );
     assert_eq!(
         input_log_budget - res.log_budget(),
         expected,
@@ -1605,8 +1609,15 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
             let bsgs = upload_bsgs(&module, &bsgs_host);
 
             let mut pb = PowerBasis::new(Basis::Monomial, src.clone());
-            pb.populate(degree, bsgs_host.log_split(), bsgs_host.parity(), &module, &tsk, &mut scratch.borrow())
-                .expect("populate power basis");
+            pb.populate(
+                degree,
+                bsgs_host.log_split(),
+                bsgs_host.parity(),
+                &module,
+                &tsk,
+                &mut scratch.borrow(),
+            )
+            .expect("populate power basis");
 
             let mut res = alloc_ct(&params, &module, k);
             module
@@ -1619,7 +1630,11 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
                 )
                 .expect("eval poly");
 
-            assert_eq!(res.log_delta(), in_ld, "degree {degree} {strategy:?}: log_delta not preserved");
+            assert_eq!(
+                res.log_delta(),
+                in_ld,
+                "degree {degree} {strategy:?}: log_delta not preserved"
+            );
             assert_eq!(
                 in_lb - res.log_budget(),
                 bsgs_host.consumed_bits(in_ld, coeff_log_delta),

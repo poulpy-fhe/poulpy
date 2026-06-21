@@ -74,11 +74,13 @@ pub trait CKKSRescaleOps<BE: Backend> {
         A: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         B: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 
-    /// Raises the encoding scale of `ct` by `bits`: `log_delta += bits` while the
-    /// encoded message and `log_budget` are preserved, so `effective_k` grows by
-    /// `bits` (the added low-order precision bits are zero).
+    /// Sets `ct`'s encoding scale to `log_delta`, preserving the encoded message
+    /// and `log_budget`.
     ///
-    /// If the storage `max_k` already covers the new `effective_k` this is a pure
-    /// metadata update; otherwise the owned buffer is reallocated wider.
-    fn ckks_increase_log_delta(&self, ct: &mut CKKSCiphertext<Vec<u8>>, bits: usize) -> Result<()>;
+    /// - **Increase** (`log_delta` larger): extends the precision window with zero
+    ///   low-order bits; reallocates the owned buffer wider if the storage `max_k`
+    ///   cannot hold the larger `effective_k`, otherwise a pure metadata update.
+    /// - **Decrease** (`log_delta` smaller): drops the low-order precision bits and
+    ///   compacts the storage to the new (smaller) `effective_k`.
+    fn ckks_set_log_delta(&self, ct: &mut CKKSCiphertext<Vec<u8>>, log_delta: usize) -> Result<()>;
 }

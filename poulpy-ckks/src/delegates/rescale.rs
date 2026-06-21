@@ -42,7 +42,7 @@ where
         BE::ckks_align_tmp_bytes(self)
     }
 
-    fn ckks_increase_log_delta(&self, ct: &mut CKKSCiphertext<Vec<u8>>, bits: usize) -> Result<()> {
-        BE::ckks_increase_log_delta(self, ct, bits)
+    fn ckks_set_log_delta(&self, ct: &mut CKKSCiphertext<Vec<u8>>, log_delta: usize) -> Result<()> {
+        BE::ckks_set_log_delta(self, ct, log_delta)
     }
 }
