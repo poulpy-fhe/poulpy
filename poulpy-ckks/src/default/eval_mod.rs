@@ -126,17 +126,15 @@ where
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
-    // EvalMod runs at its own (typically wider) plan scale `f_mod_log_delta`, not
-    // the input scale: set the working ciphertext to it at the start and restore
-    // the input scale on the result at the end (value-preserving). Running at the
-    // wider scale lets the `ct×ct` chain keep more precision. `s_eval` never drops
-    // below the input scale, so the restore is always a (cheap, generic) downscale.
+    // EvalMod runs at its own plan scale `f_mod_log_delta`: reinterpret the working
+    // ciphertext to it on entry and back to the input scale on the result. Both are
+    // pure `set_log_delta` reinterpretations (no data shift, `log_budget` kept), so
+    // the round-trip is budget-neutral and EvalMod consumes exactly
+    // `consumed_bits()` — charged deterministically at `f_mod_log_delta`, regardless
+    // of the input scale.
     let s_in = ct.log_delta();
-    let s_eval = params.plan.f_mod_log_delta.max(s_in);
+    let s_eval = params.plan.f_mod_log_delta;
 
-    // `set_log_delta` only reinterprets the scale (it never shifts the data or
-    // touches `log_budget`), so the start/end scale round-trip is budget-neutral:
-    // EvalMod consumes exactly `consumed_bits()` (charged at `s_eval`).
     let required = params.consumed_bits();
     ensure!(
         ct.log_budget() >= required,
@@ -162,6 +160,7 @@ where
 
             if let Some(inv) = params.f_mod_inv_bsgs.as_ref() {
                 module.ckks_copy(&mut t1, &*res, scratch)?;
+                SetCKKSInfos::compact_in_place(&mut t1);
                 module.ckks_eval_poly_real_const_coeffs(res, &t1, inv, tsk, scratch)?;
             }
         }

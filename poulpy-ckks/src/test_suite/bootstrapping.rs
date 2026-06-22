@@ -114,7 +114,7 @@ where
             scaling: None,
             split_strategy: SplitStrategy::MinDepth,
             coeffs_meta: meta(45, 5), //~log_message_ratio+log(f_mod_interval)+log_final_prec
-            f_mod_log_delta: 60, //TODO: fix bug, bit-consumption assertion fails when this is different
+            f_mod_log_delta: 59, // ~ log(f_mod_interval) + log_message_ratio + log_delta_in
         },
         slots_to_coeffs: DFTPlan {
             kind: DFTType::Decode,
