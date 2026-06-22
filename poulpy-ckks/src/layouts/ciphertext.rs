@@ -194,6 +194,13 @@ impl<D: Data, S: CKKSNormalizationState> SetCKKSInfos for CKKSCiphertext<D, S> {
     fn set_meta(&mut self, meta: CKKSMeta) {
         self.meta = meta;
     }
+
+    fn compact_in_place(&mut self) {
+        // Only ever shrink: a value whose `effective_k` already exceeds its
+        // storage (e.g. a deliberately undersized output) stays at `size()`.
+        let limbs = self.effective_k().div_ceil(self.base2k().as_usize()).max(1).min(self.size());
+        self.inner.data_mut().set_size(limbs);
+    }
 }
 
 impl<D: Data, S: CKKSNormalizationState> BSGSMeta for CKKSCiphertext<D, S> {
@@ -211,6 +218,9 @@ impl<D: Data, S: CKKSNormalizationState> SetBSGSMeta for CKKSCiphertext<D, S> {
     }
     fn set_bsgs_log_delta(&mut self, log_delta: usize) {
         SetCKKSInfos::set_log_delta(self, log_delta);
+    }
+    fn compact_in_place(&mut self) {
+        SetCKKSInfos::compact_in_place(self);
     }
 }
 
@@ -306,6 +316,11 @@ impl<'a, BE: Backend + 'a> SetCKKSInfos for CKKSCiphertextViewMut<'a, BE> {
     fn set_meta(&mut self, meta: CKKSMeta) {
         self.meta = meta;
     }
+
+    fn compact_in_place(&mut self) {
+        let limbs = self.effective_k().div_ceil(self.base2k().as_usize()).max(1).min(self.size());
+        self.inner.data_mut().set_size(limbs);
+    }
 }
 
 impl<'a, BE: Backend + 'a> BSGSMeta for CKKSCiphertextViewMut<'a, BE> {
@@ -323,6 +338,9 @@ impl<'a, BE: Backend + 'a> SetBSGSMeta for CKKSCiphertextViewMut<'a, BE> {
     }
     fn set_bsgs_log_delta(&mut self, log_delta: usize) {
         SetCKKSInfos::set_log_delta(self, log_delta);
+    }
+    fn compact_in_place(&mut self) {
+        SetCKKSInfos::compact_in_place(self);
     }
 }
 

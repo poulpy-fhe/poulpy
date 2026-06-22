@@ -9,21 +9,15 @@
 //! [`CKKSEvalModOps`](crate::api::CKKSEvalModOps).
 
 use anyhow::{Result, ensure};
-use poulpy_core::ScratchArenaTakeCore;
 use poulpy_core::layouts::{
     BSGSMeta, GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta,
     prepared::GLWETensorKeyPreparedToBackendRef,
 };
-use poulpy_hal::{
-    api::ScratchAvailable,
-    layouts::{Backend, Module, ScratchArena},
-};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    CKKSCtBounds, SetCKKSInfos,
-    api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSRescaleOps, CKKSSubOps, PolynomialEvaluation},
-    layouts::{
-        CKKSCiphertext, CKKSModuleAlloc, ScratchArenaTakeCKKS,
+    CKKSCtBounds, SetCKKSInfos, api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSPow2Ops, CKKSRescaleOps, CKKSSubOps, PolynomialEvaluation}, layouts::{
+        CKKSCiphertext, CKKSModuleAlloc,
         eval_mod::{EvalMod, EvalModBsgs},
     },
 };
@@ -63,8 +57,7 @@ pub trait CKKSEvalModOpsDefault<BE: Backend> {
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-        CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        for<'b> ScratchArena<'b, BE>: ScratchAvailable + ScratchArenaTakeCore<'b, BE>;
+        CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
 }
 
 impl<BE: Backend<OwnedBuf = Vec<u8>>> CKKSEvalModOpsDefault<BE> for Module<BE>
@@ -75,10 +68,9 @@ where
         + CKKSMulOps<BE>
         + CKKSCopyOps<BE>
         + CKKSModuleAlloc<BE>
-        + CKKSRescaleOps<BE>,
+        + CKKSRescaleOps<BE> + CKKSPow2Ops<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-    for<'b> ScratchArena<'b, BE>: ScratchAvailable + ScratchArenaTakeCore<'b, BE>,
 {
     fn ckks_eval_mod_default<R, C, P, F>(
         &self,
@@ -127,13 +119,12 @@ where
         + CKKSMulOps<BE>
         + CKKSCopyOps<BE>
         + CKKSModuleAlloc<BE>
-        + CKKSRescaleOps<BE>,
+        + CKKSRescaleOps<BE> + CKKSPow2Ops<BE>,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    for<'b> ScratchArena<'b, BE>: ScratchAvailable + ScratchArenaTakeCore<'b, BE>,
 {
     // EvalMod runs at its own (typically wider) plan scale `f_mod_log_delta`, not
     // the input scale: set the working ciphertext to it at the start and restore
@@ -161,38 +152,23 @@ where
         EvalModBsgs::Real(bsgs) => {
             module.ckks_eval_poly_real_const_coeffs(res, &t1, bsgs, tsk, scratch)?;
 
-            let consts = params.range_extension_consts.as_ref();
-            for i in 0..params.plan.f_mod_log_interval_reduction {
-                // Step `i` subtracts coefficient `i` of the packed constants plaintext.
-                let dac = consts.expect("range_extension_consts present when range extension is used");
-                scratch.scope(|local| -> Result<()> {
-                    let (mut work, mut local) = local.take_compact_ckks_ciphertext_scratch(&*res);
-                    module.ckks_copy(&mut work, &*res, &mut local)?;
-                    module.ckks_square_assign(&mut work, tsk, &mut local)?;
-                    module.ckks_add_into(res, &work, &work, &mut local)?;
-                    module.ckks_sub_pt_const_assign(res, 0, dac, i, &mut local)?;
-                    Ok(())
-                })?;
+            if let Some(consts) = params.range_extension_consts.as_ref(){
+                for i in 0..params.plan.f_mod_log_interval_reduction {
+                    module.ckks_square_assign(res, tsk, scratch)?;
+                    module.ckks_mul_pow2_assign(res, 1, scratch)?;
+                    module.ckks_sub_pt_const_assign(res, 0, consts, i,scratch)?;
+                }
             }
 
             if let Some(inv) = params.f_mod_inv_bsgs.as_ref() {
-                let compact_k = res.effective_k();
-                let mut t1_inv = module.ckks_ciphertext_alloc(res.base2k(), compact_k.into());
-                t1_inv.set_meta(res.meta());
-                module.ckks_copy(&mut t1_inv, &*res, scratch)?;
-                module.ckks_eval_poly_real_const_coeffs(res, &t1_inv, inv, tsk, scratch)?;
+                module.ckks_copy(&mut t1, &*res, scratch)?;
+                module.ckks_eval_poly_real_const_coeffs(res, &t1, inv, tsk, scratch)?;
             }
         }
         EvalModBsgs::Complex(bsgs) => {
             module.ckks_eval_poly_complex_const_coeffs(res, &t1, bsgs, tsk, scratch)?;
-
             for _ in 0..params.plan.f_mod_log_interval_reduction {
-                scratch.scope(|local| -> Result<()> {
-                    let (mut work, mut local) = local.take_compact_ckks_ciphertext_scratch(&*res);
-                    module.ckks_copy(&mut work, &*res, &mut local)?;
-                    module.ckks_square_into(res, &work, tsk, &mut local)?;
-                    Ok(())
-                })?;
+                module.ckks_square_assign(res, tsk, scratch)?;
             }
         }
     }
@@ -201,6 +177,8 @@ where
     if s_eval != s_in {
         res.set_log_delta(s_in);
     }
+
+    SetCKKSInfos::compact_in_place(res);
 
     Ok(())
 }

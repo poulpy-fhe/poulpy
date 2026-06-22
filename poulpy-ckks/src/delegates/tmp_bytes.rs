@@ -15,7 +15,7 @@ use poulpy_hal::{
         CnvPVecBytesOf, ModuleN, VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddIntoBackend, VecZnxRshBackend,
         VecZnxRshSubBackend, VecZnxRshTmpBytes,
     },
-    layouts::{Backend, Module, VecZnx},
+    layouts::{Backend, Module},
 };
 
 impl<BE: Backend> CKKSAllOpsTmpBytes<BE> for Module<BE>
@@ -60,12 +60,11 @@ where
         P: CKKSInfos,
     {
         let cols: usize = (ct_infos.rank() + 1).into();
-        let compact_ct_scratch_bytes = VecZnx::bytes_of(ct_infos.n().into(), cols, ct_infos.size());
         // The giant step hoists the prepared `X^{gsp}` right operand, kept alive
         // across the pairs sharing it.
         let hoisted_right_scratch_bytes = self.bytes_of_cnv_pvec_right(cols, ct_infos.size());
         let polynomial_giant_steps_tmp_bytes = self.ckks_mul_tmp_bytes(ct_infos, tsk_infos).max(self.ckks_add_tmp_bytes())
-            + glwe_eval_giant_steps_extra_tmp_bytes(compact_ct_scratch_bytes, hoisted_right_scratch_bytes);
+            + glwe_eval_giant_steps_extra_tmp_bytes(hoisted_right_scratch_bytes);
 
         self.ckks_encrypt_sk_tmp_bytes(ct_infos)
             .max(self.ckks_decrypt_tmp_bytes(ct_infos))

@@ -230,6 +230,18 @@ impl<BE: Backend, Dir, Fmt: DftFormat, P> DFTMatrix<BE, Dir, Fmt, LinearTransfor
 /// explicit rescale is needed (the plaintext-multiply realigns to the input
 /// `log_delta`, see the module docs). The input `ct.log_budget()` must be at
 /// least `dft.consumed_bits()`.
+///
+/// ## Progressive compaction
+///
+/// Each factor consumes `factor_log_delta` bits of budget, so after a factor the
+/// running ciphertext's `effective_k` (and therefore the work of the next
+/// factor's baby-step keyswitches, which scale with the operand limb count) is
+/// smaller than its storage. After every factor `ct` is therefore compacted in
+/// place — [`SetCKKSInfos::compact_in_place`] drops the limbs below the (now
+/// smaller) `effective_k`, an `O(1)` logical resize keeping the most-significant
+/// limbs (the prefix of the limb array), so no scratch ciphertext, copy, or
+/// re-allocation is involved. The first factor runs at full width (a full-budget
+/// input has `effective_k == max_k`, so its compaction is a no-op).
 pub fn ckks_dft_evaluate_assign<BE, Dir, Fmt, P, Dst, H, K>(
     module: &Module<BE>,
     ct: &mut Dst,
@@ -245,15 +257,37 @@ where
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
-    // One factor at a time. The input baby cache depends on the running `ct`
-    // (mutated each factor), so it is (re)allocated and prepared here per factor;
-    // `P` only decides how each factor's RHS is materialized inside the unified
-    // linear-transformation eval (resident vs streamed).
+    // One factor at a time, in place on `ct`; compact `ct` after each so the next
+    // factor's baby-step keyswitches operate on fewer limbs as the budget shrinks.
     for factor in dft.factor_operands() {
-        let mut babies = LinearTransformationBabySteps::alloc(module, factor.baby_steps(), ct);
-        module.ckks_prepare_linear_transformation_baby_steps(&mut babies, ct, keys, scratch)?;
-        module.ckks_eval_linear_transformation_assign(ct, &babies, factor, keys, scratch)?;
+        eval_factor(module, ct, factor, keys, scratch)?;
+        ct.compact_in_place();
     }
+    Ok(())
+}
+
+/// Evaluates a single homomorphic-DFT factor in place on `running`: (re)allocates
+/// and prepares the baby rotations of the current operand, then applies the
+/// unified linear-transformation eval. `P` only decides how the factor's RHS is
+/// materialized inside the eval (resident vs streamed).
+fn eval_factor<BE, P, Dst, H, K>(
+    module: &Module<BE>,
+    running: &mut Dst,
+    factor: &LinearTransformation<P>,
+    keys: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    P: DiagonalProd<BE> + LtDiagonalScale,
+    Module<BE>: LinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+    H: GLWEAutomorphismKeyHelper<K, BE>,
+{
+    let mut babies = LinearTransformationBabySteps::alloc(module, factor.baby_steps(), running);
+    module.ckks_prepare_linear_transformation_baby_steps(&mut babies, running, keys, scratch)?;
+    module.ckks_eval_linear_transformation_assign(running, &babies, factor, keys, scratch)?;
     Ok(())
 }
 

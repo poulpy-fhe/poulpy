@@ -187,6 +187,18 @@ pub trait SetCKKSInfos: CKKSInfos {
         meta.log_sparsity = log_sparsity;
         self.set_meta(meta);
     }
+
+    /// Compacts the live limb storage in place to the fewest limbs that still
+    /// represent the current [`effective_k`](CKKSInfos::effective_k), dropping the
+    /// sub-precision low limbs.
+    ///
+    /// Compaction is a pure storage operation: it keeps the most-significant
+    /// limbs, which are stored as the prefix of the limb array, so it is an `O(1)`
+    /// logical resize — no copy, no re-allocation — and the semantic metadata
+    /// (`log_delta`, `log_budget`, hence `effective_k`) is left **unchanged**.
+    /// There is nothing to update at the metadata level; only the concrete
+    /// container can reach its backing storage, so each implements this directly.
+    fn compact_in_place(&mut self);
 }
 
 pub(crate) fn ckks_offset_binary<R, A, B>(res: &R, a: &A, b: &B) -> usize

@@ -911,6 +911,7 @@ pub trait BSGSMeta {
 pub trait SetBSGSMeta: BSGSMeta {
     fn set_bsgs_log_budget(&mut self, log_budget: usize);
     fn set_bsgs_log_delta(&mut self, log_delta: usize);
+    fn compact_in_place(&mut self);
 }
 
 /// Read access to a decomposed BSGS polynomial during evaluation.

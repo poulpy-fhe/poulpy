@@ -119,6 +119,11 @@ impl<D: Data> SetCKKSInfos for CKKSPlaintext<D> {
     fn set_meta(&mut self, meta: CKKSMeta) {
         self.meta = meta;
     }
+
+    fn compact_in_place(&mut self) {
+        let limbs = self.effective_k().div_ceil(self.base2k().as_usize()).max(1).min(self.size());
+        self.inner.data.set_size(limbs);
+    }
 }
 
 impl<D: Data> SetBSGSMeta for CKKSPlaintext<D> {
@@ -127,6 +132,9 @@ impl<D: Data> SetBSGSMeta for CKKSPlaintext<D> {
     }
     fn set_bsgs_log_delta(&mut self, log_delta: usize) {
         SetCKKSInfos::set_log_delta(self, log_delta);
+    }
+    fn compact_in_place(&mut self) {
+        SetCKKSInfos::compact_in_place(self);
     }
 }
 

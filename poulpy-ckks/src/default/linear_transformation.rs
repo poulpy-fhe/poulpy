@@ -24,7 +24,7 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, SetCKKSInfos,
-    api::{LinearTransformation, LinearTransformationOps, LtDiagonalScale},
+    api::{CKKSCopyOps, LinearTransformation, LinearTransformationOps, LtDiagonalScale},
     checked_log_budget_sub, checked_mul_pt_log_budget,
     layouts::{CKKSModuleAlloc, CKKSPlaintext},
 };
@@ -98,7 +98,7 @@ where
 
 impl<BE: Backend> LinearTransformationOps<BE> for Module<BE>
 where
-    Module<BE>: GLWELinearTransformations<BE> + GLWECopy<BE> + CKKSModuleAlloc<BE> + CyclotomicOrder,
+    Module<BE>: GLWELinearTransformations<BE> + GLWECopy<BE> + CKKSCopyOps<BE> + CKKSModuleAlloc<BE> + CyclotomicOrder,
 {
     // ---------- tmp_bytes ----------
 
@@ -228,6 +228,7 @@ where
         self.glwe_eval_linear_transformation_into(cnv_offset, dst, babies, lt, keys, key_size, scratch);
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
+        dst.compact_in_place();
         Ok(())
     }
 
@@ -248,8 +249,9 @@ where
         let mut tmp = self.ckks_ciphertext_alloc_from_infos(dst);
         tmp.set_meta(dst.meta());
         self.ckks_eval_linear_transformation_into(&mut tmp, dst, babies, lt, keys, scratch)?;
-        self.glwe_copy(dst, &tmp);
-        dst.set_meta(tmp.meta());
+        // `ckks_copy` moves both the limbs and the CKKS metadata the eval consumed
+        // into `dst` (a plain `glwe_copy` would leave the budget/scale stale).
+        self.ckks_copy(dst, &tmp, scratch)?;
         Ok(())
     }
 
@@ -293,8 +295,9 @@ where
         let mut tmp = self.ckks_ciphertext_alloc_from_infos(dst);
         tmp.set_meta(dst.meta());
         self.ckks_eval_linear_transformation_self_into(&mut tmp, dst, lt, keys, scratch)?;
-        self.glwe_copy(dst, &tmp);
-        dst.set_meta(tmp.meta());
+        // `ckks_copy` moves both the limbs and the CKKS metadata the eval consumed
+        // into `dst` (a plain `glwe_copy` would leave the budget/scale stale).
+        self.ckks_copy(dst, &tmp, scratch)?;
         Ok(())
     }
 }

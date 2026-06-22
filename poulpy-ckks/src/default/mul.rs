@@ -73,6 +73,7 @@ pub trait CKKSMulDefault<BE: Backend> {
 
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
+        dst.compact_in_place();
         Ok(())
     }
 
@@ -106,6 +107,7 @@ pub trait CKKSMulDefault<BE: Backend> {
 
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
+        dst.compact_in_place();
         Ok(())
     }
 
@@ -152,6 +154,7 @@ pub trait CKKSMulDefault<BE: Backend> {
 
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
+        dst.compact_in_place();
         Ok(())
     }
 
@@ -176,6 +179,7 @@ pub trait CKKSMulDefault<BE: Backend> {
 
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
+        dst.compact_in_place();
         Ok(())
     }
 
@@ -227,6 +231,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         self.glwe_mul_plain(cnv_offset, dst, a, a.effective_k(), pt, pt.max_k().as_usize(), scratch);
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
+        dst.compact_in_place();
         Ok(())
     }
 
@@ -241,6 +246,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         self.glwe_mul_plain_assign(cnv_offset, dst, dst_effective_k, pt, pt.max_k().as_usize(), scratch);
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
+        dst.compact_in_place();
         Ok(())
     }
 
@@ -263,6 +269,7 @@ pub trait CKKSMulDefault<BE: Backend> {
 
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
+        dst.compact_in_place();
         Ok(())
     }
 
@@ -284,6 +291,7 @@ pub trait CKKSMulDefault<BE: Backend> {
 
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
+        dst.compact_in_place();
         Ok(())
     }
 }

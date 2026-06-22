@@ -3,7 +3,7 @@ use poulpy_core::layouts::{
     prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_core::{
-    BSGSConstAdd, BSGSPrecision, GLWEAdd, GLWECopy, GLWEMulConst, GLWENormalize, GLWEPolynomialEvaluation, GLWEShift,
+    BSGSCoeffOps, BSGSPrecision, GLWEAdd, GLWECopy, GLWEMulConst, GLWENormalize, GLWEPolynomialEvaluation, GLWEShift,
     GLWETensoring, GLWEZero, GiantStepTensorBounds,
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -12,7 +12,7 @@ use crate::CKKSCtBounds;
 use crate::{
     SetCKKSInfos,
     api::{BSGSPolynomialInfos, BabyStep as BabyStepInfos, CKKSAddOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps, PowerBasisHelper},
-    default::mul::{mul_ct_params_raw, mul_pt_params_raw},
+    default::mul::mul_ct_params_raw,
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
     polynomial::ComplexBSGSPolynomial,
 };
@@ -65,28 +65,14 @@ impl<BE: Backend> BSGSPrecision<BE> for CKKSBSGSPrecision {
         )
     }
 
-    fn mul_pt_params<R, A, P>(&self, res: &R, a: &A, pt: &P) -> Result<(usize, usize, usize)>
-    where
-        R: GLWEInfos + BSGSMeta,
-        A: GLWEInfos + BSGSMeta,
-        P: GLWEInfos + BSGSMeta,
-    {
-        mul_pt_params_raw(
-            res.max_k().as_usize(),
-            a.bsgs_log_delta(),
-            a.bsgs_log_budget(),
-            pt.bsgs_log_delta(),
-            pt.bsgs_log_budget(),
-            pt.max_k().as_usize(),
-        )
-    }
 }
 
-impl<BE: Backend, R, P> BSGSConstAdd<BE, R, P> for CKKSBSGSPrecision
+impl<BE: Backend, R, P, A> BSGSCoeffOps<BE, R, P, A> for CKKSBSGSPrecision
 where
-    Module<BE>: CKKSAddOps<BE>,
+    Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + CKKSMulAddOps<BE>,
     R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     P: GLWEToBackendRef<BE> + CKKSCtBounds,
+    A: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     fn add_pt_const_assign(
         &self,
@@ -98,6 +84,30 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()> {
         module.ckks_add_pt_const_assign(res, res_coeff, coeffs, idx, scratch)
+    }
+
+    fn mul_pt_const(
+        &self,
+        module: &Module<BE>,
+        res: &mut R,
+        a: &A,
+        coeffs: &P,
+        idx: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()> {
+        module.ckks_mul_pt_const_into(res, a, coeffs, idx, scratch)
+    }
+
+    fn mul_add_pt_const(
+        &self,
+        module: &Module<BE>,
+        res: &mut R,
+        a: &A,
+        coeffs: &P,
+        idx: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()> {
+        module.ckks_mul_add_pt_const_into(res, a, coeffs, idx, scratch)
     }
 }
 
@@ -120,6 +130,7 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
             + GLWEZero<BE>
             + GLWECopy<BE>
             + CKKSAddOps<BE>
+            + CKKSMulOps<BE>
             + CKKSMulAddOps<BE>
             + CKKSModuleAlloc<BE>
             + Sized,
@@ -180,6 +191,7 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
             + GLWECopy<BE>
             + GLWEPolynomialEvaluation<BE>
             + CKKSAddOps<BE>
+            + CKKSMulOps<BE>
             + CKKSMulAddOps<BE>
             + CKKSModuleAlloc<BE>
             + Sized,
@@ -217,7 +229,7 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
             let degree = coeffs.n().as_usize() - 1;
             let mut value = self.ckks_ciphertext_alloc_from_infos(x);
             value.set_meta(x.meta());
-            self.glwe_eval_baby_step::<_, _, _, A, G>(
+            self.glwe_eval_baby_step(
                 &precision,
                 &mut value,
                 parity,
@@ -228,7 +240,7 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
             baby_steps.push(EvaluatedBabyStep { degree, value });
         }
 
-        self.glwe_eval_giant_steps(&precision, res, &mut baby_steps, power_basis, tsk, &mut scratch.borrow())?;
+        self.glwe_eval_giant_steps(&precision, res, &mut baby_steps, power_basis, tsk, &mut scratch.borrow())?; //TODO: ensure each giant-step intermediate state is compacted
 
         if can_fold {
             let xpow = power_basis.get(fold_power)?;

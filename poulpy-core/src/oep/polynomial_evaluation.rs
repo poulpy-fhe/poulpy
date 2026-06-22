@@ -2,8 +2,7 @@ use anyhow::Result;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    BSGSConstAdd, BSGSPrecision, GLWEAdd, GLWECopy, GLWEMulConst, GLWENormalize, GLWEShift, GLWETensoring, GLWEZero,
-    GiantStepTensorBounds,
+    BSGSCoeffOps, BSGSPrecision, GLWEAdd, GLWECopy, GLWENormalize, GLWEShift, GLWETensoring, GLWEZero, GiantStepTensorBounds,
     layouts::{
         BSGSMeta, BabyStep, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper, SetBSGSMeta,
         prepared::GLWETensorKeyPreparedToBackendRef,
@@ -27,8 +26,8 @@ pub unsafe trait PolynomialEvaluationImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Module<BE>: GLWEMulConst<BE> + GLWEAdd<BE> + GLWEShift<BE> + GLWENormalize<BE> + GLWEZero<BE>,
-        PR: BSGSPrecision<BE> + BSGSConstAdd<BE, R, C>,
+        Module<BE>: GLWEZero<BE>,
+        PR: BSGSCoeffOps<BE, R, C, A>,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
@@ -68,8 +67,8 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEMulConst<BE> + GLWEAdd<BE> + GLWEShift<BE> + GLWENormalize<BE> + GLWEZero<BE> + Sized,
-        PR: BSGSPrecision<BE> + BSGSConstAdd<BE, R, C>,
+        Self: GLWEZero<BE> + Sized,
+        PR: BSGSCoeffOps<BE, R, C, A>,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
@@ -114,8 +113,8 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Module<BE>: GLWEMulConst<BE> + GLWEAdd<BE> + GLWEShift<BE> + GLWENormalize<BE> + GLWEZero<BE>,
-        PR: BSGSPrecision<BE> + BSGSConstAdd<BE, R, C>,
+        Module<BE>: GLWEZero<BE>,
+        PR: BSGSCoeffOps<BE, R, C, A>,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,

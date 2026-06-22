@@ -18,7 +18,7 @@ use poulpy_hal::{
 use poulpy_hal::layouts::Module;
 
 use crate::{
-    GLWEAdd, GLWECopy, GLWEMulConst, GLWENormalize, GLWEShift, GLWETensoring, GLWEZero, ScratchArenaTakeCore,
+    GLWEAdd, GLWECopy, GLWENormalize, GLWEShift, GLWETensoring, GLWEZero, ScratchArenaTakeCore,
     default::operations::{glwe_prepare_right, glwe_tensor_apply_prepared_right},
     layouts::{
         BSGSMeta, BabyStep, GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Parity,
@@ -62,7 +62,8 @@ impl<BE: Backend, M> GiantStepTensorBounds<BE> for M where
 {
 }
 
-/// Scheme-supplied per-operation precision integers driving the BSGS engine.
+/// Scheme-supplied per-operation precision integers for the engine-owned
+/// giant-step `ct × ct` multiply.
 pub trait BSGSPrecision<BE: Backend> {
     /// Returns `(log_budget, log_delta, cnv_offset)` for `res = a * b` (ct × ct).
     fn mul_ct_params<R, A, B>(&self, res: &R, a: &A, b: &B) -> Result<(usize, usize, usize)>
@@ -70,17 +71,19 @@ pub trait BSGSPrecision<BE: Backend> {
         R: GLWEInfos + BSGSMeta,
         A: GLWEInfos + BSGSMeta,
         B: GLWEInfos + BSGSMeta;
-
-    /// Returns `(log_budget, log_delta, cnv_offset)` for `res = a * pt` (ct × pt).
-    fn mul_pt_params<R, A, P>(&self, res: &R, a: &A, pt: &P) -> Result<(usize, usize, usize)>
-    where
-        R: GLWEInfos + BSGSMeta,
-        A: GLWEInfos + BSGSMeta,
-        P: GLWEInfos + BSGSMeta;
 }
 
-/// Scheme-supplied constant-coefficient addition into `R` from `P`.
-pub trait BSGSConstAdd<BE: Backend, R, P> {
+/// Scheme-supplied baby-step coefficient operations.
+///
+/// The engine only sequences these calls; the scheme owns the scratch buffers,
+/// precision bookkeeping, and normalization. This keeps the BSGS engine free of
+/// any local ciphertext type — it operates purely through scheme-provided values
+/// implementing the [`BSGSMeta`]/[`SetBSGSMeta`] traits.
+///
+/// `R` is the accumulator (baby-step value), `P` the encoded coefficients, and
+/// `A` the power-basis entry type. `A` is a trait parameter (not a method generic)
+/// so the scheme can constrain it to its own ciphertext bounds in the impl.
+pub trait BSGSCoeffOps<BE: Backend, R, P, A> {
     /// Computes `res[res_coeff] += coeffs[idx]`, normalizing `res`.
     fn add_pt_const_assign(
         &self,
@@ -91,9 +94,35 @@ pub trait BSGSConstAdd<BE: Backend, R, P> {
         idx: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>;
+
+    /// Computes `res = a · coeffs[idx]` (ct × pt), setting `res`'s precision metadata.
+    fn mul_pt_const(
+        &self,
+        module: &Module<BE>,
+        res: &mut R,
+        a: &A,
+        coeffs: &P,
+        idx: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>;
+
+    /// Computes `res += a · coeffs[idx]` (ct × pt), keeping `res` normalized.
+    fn mul_add_pt_const(
+        &self,
+        module: &Module<BE>,
+        res: &mut R,
+        a: &A,
+        coeffs: &P,
+        idx: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>;
 }
 
 /// Evaluates a single baby step into `res`.
+///
+/// The `ct × pt` term products are delegated to the scheme via [`BSGSCoeffOps`]
+/// (which owns their scratch and normalization); the engine only zeroes `res`,
+/// sequences the terms, and compacts at the boundaries.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn eval_baby_step<PR, R, C, A, G, BE: Backend>(
     module: &Module<BE>,
@@ -105,26 +134,14 @@ pub(crate) fn eval_baby_step<PR, R, C, A, G, BE: Backend>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    Module<BE>: GLWEMulConst<BE> + GLWEAdd<BE> + GLWEShift<BE> + GLWENormalize<BE> + GLWEZero<BE>,
-    PR: BSGSPrecision<BE> + BSGSConstAdd<BE, R, C>,
+    Module<BE>: GLWEZero<BE>,
+    PR: BSGSCoeffOps<BE, R, C, A>,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta,
     C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
     A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
     G: PowerBasisHelper<BE, A>,
 {
     let degree = coeffs.n().as_usize() - 1;
-    let x = power_basis.get(1)?;
-    res.set_bsgs_log_budget(x.bsgs_log_budget());
-    res.set_bsgs_log_delta(x.bsgs_log_delta());
-    module.glwe_zero(res);
-
-    let mut has_value = false;
-    let mut must_normalize = false;
-    if parity != Parity::Odd {
-        precision.add_pt_const_assign(module, res, 0, coeffs, 0, scratch)?;
-        has_value = true;
-        must_normalize = true;
-    }
 
     let (first, step) = match parity {
         Parity::Even => (2, 2),
@@ -132,77 +149,37 @@ where
         Parity::Full => (1, 1),
     };
 
+    // Seed `res` from the *highest* power this baby step uses (the lowest-budget
+    // operand): the inner product `Σ cᵢ·xⁱ` is bounded by that term's budget, so
+    // every `ct×pt` writes (and accumulates) at the final compact limb count
+    // rather than starting at `x¹`'s width and only compacting at the end. A
+    // constant-only baby step (no power term) falls back to `x¹`.
+    let init_power = (first..=degree).step_by(step).last().unwrap_or(1);
+    let x = power_basis.get(init_power)?;
+    res.set_bsgs_log_budget(x.bsgs_log_budget());
+    res.set_bsgs_log_delta(x.bsgs_log_delta());
+    res.compact_in_place();
+    module.glwe_zero(res);
+
+    let mut has_value = false;
+    if parity != Parity::Odd {
+        precision.add_pt_const_assign(module, res, 0, coeffs, 0, scratch)?;
+        has_value = true;
+    }
+
     for i in (first..=degree).step_by(step) {
         let xpow = power_basis.get(i)?;
         if has_value {
-            mul_add_pt_const_unnormalized(module, precision, res, xpow, coeffs, i, scratch)?;
-            must_normalize = true;
+            precision.mul_add_pt_const(module, res, xpow, coeffs, i, scratch)?;
         } else {
-            mul_pt_const(module, precision, res, xpow, coeffs, i, scratch)?;
+            precision.mul_pt_const(module, res, xpow, coeffs, i, scratch)?;
             has_value = true;
         }
     }
 
-    if must_normalize {
-        module.glwe_normalize_assign(res, scratch);
-    }
+    res.compact_in_place();
 
     Ok(())
-}
-
-/// Computes `res = a * coeffs[idx]`, setting `res` precision metadata.
-fn mul_pt_const<M, R, A, P, BE: Backend>(
-    module: &M,
-    precision: &impl BSGSPrecision<BE>,
-    res: &mut R,
-    a: &A,
-    coeffs: &P,
-    idx: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
-    M: GLWEMulConst<BE>,
-    R: GLWEToBackendMut<BE> + GLWEInfos + SetBSGSMeta,
-    A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
-    P: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
-{
-    let (log_budget, log_delta, cnv_offset) = precision.mul_pt_params(res, a, coeffs)?;
-    module.glwe_mul_const(cnv_offset, res, a, coeffs, idx, scratch);
-    res.set_bsgs_log_budget(log_budget);
-    res.set_bsgs_log_delta(log_delta);
-    Ok(())
-}
-
-/// Computes `res += a * coeffs[idx]` without normalizing `res`.
-fn mul_add_pt_const_unnormalized<M, R, A, P, BE: Backend>(
-    module: &M,
-    precision: &impl BSGSPrecision<BE>,
-    res: &mut R,
-    a: &A,
-    coeffs: &P,
-    idx: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
-    M: GLWEMulConst<BE> + GLWEAdd<BE> + GLWEShift<BE>,
-    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta,
-    A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
-    P: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
-{
-    scratch.scope(|scratch_local| {
-        let tmp_layout = GLWELayout {
-            n: res.n(),
-            base2k: res.base2k(),
-            k: res.max_k(),
-            rank: res.rank(),
-        };
-        let (tmp_inner, mut scratch_local) = scratch_local.take_glwe_scratch(&tmp_layout);
-        let (tmp_log_budget, tmp_log_delta, cnv_offset) = precision.mul_pt_params(res, a, coeffs)?;
-        let mut tmp = CompactCt(tmp_log_budget, tmp_log_delta, tmp_inner);
-        module.glwe_mul_const(cnv_offset, &mut tmp, a, coeffs, idx, &mut scratch_local);
-        add_assign_unnormalized(module, res, &tmp, &mut scratch_local);
-        Ok(())
-    })
 }
 
 /// Computes `res += a` with budget alignment, without normalizing `res`.
@@ -306,20 +283,23 @@ where
     module.glwe_copy(res, evaluated.get());
     res.set_bsgs_log_budget(evaluated.get().bsgs_log_budget());
     res.set_bsgs_log_delta(evaluated.get().bsgs_log_delta());
+    // Return a compacted result: `res` is the caller's (full-width) buffer, but the
+    // evaluated value only spans `effective_k`. Compacting here means consumers
+    // (e.g. the EvalMod squarings, which require a compacted square input) get a
+    // tight ciphertext without an extra copy.
+    res.compact_in_place();
 
     Ok(())
 }
 
 /// Scratch bytes consumed by the giant-step engine on top of the per-pair
-/// mul/add scratch: the prepared hoisted `X^{gsp}` right operand (alive across a
-/// run) plus the two per-pair operand compacts. `X^{gsp}` itself is prepared
-/// directly from the power basis (no compact copy), as `glwe_prepare_right` reads
-/// only its top effective-precision limbs.
-///
-/// Kept next to [`eval_monomial_run`] so the buffer count tracks the
-/// `take_compact_scratch` calls it sizes.
-pub fn glwe_eval_giant_steps_extra_tmp_bytes(compact_glwe_bytes: usize, hoisted_right_bytes: usize) -> usize {
-    2 * compact_glwe_bytes + hoisted_right_bytes
+/// mul/add scratch: the prepared hoisted `X^{gsp}` right operand, kept alive
+/// across a run. The per-pair operands are no longer copied into compact scratch
+/// — `b` is compacted in place and `a` is read directly — so this is just the
+/// hoisted right operand. `X^{gsp}` is prepared straight from the power basis, as
+/// `glwe_prepare_right` reads only its top effective-precision limbs.
+pub fn glwe_eval_giant_steps_extra_tmp_bytes(hoisted_right_bytes: usize) -> usize {
+    hoisted_right_bytes
 }
 
 /// Evaluates a run of `b = b * xpow + a` pairs that share the same `xpow`.
@@ -357,7 +337,7 @@ where
 
         for &(_, low_idx, high_idx) in pairs {
             ensure!(low_idx != high_idx, "eval_giant_steps: baby-step pair aliases itself");
-            run_scratch.scope(|pair_scratch| {
+            run_scratch.scope(|mut pair_scratch| {
                 let (a, b) = if low_idx < high_idx {
                     let (low_steps, high_steps) = baby_steps.split_at_mut(high_idx);
                     (low_steps[low_idx].get(), high_steps[0].get_mut())
@@ -366,100 +346,18 @@ where
                     (low_steps[0].get(), high_steps[high_idx].get_mut())
                 };
 
-                let (mut a_compact, pair_scratch) =
-                    take_compact_scratch(pair_scratch, a, a.bsgs_log_budget(), a.bsgs_log_delta());
-                let (mut b_compact, mut pair_scratch) =
-                    take_compact_scratch(pair_scratch, b, b.bsgs_log_budget(), b.bsgs_log_delta());
-                module.glwe_copy(&mut a_compact, a);
-                module.glwe_copy(&mut b_compact, b);
-
-                mul_assign_prepared(
-                    module,
-                    precision,
-                    &mut b_compact,
-                    xpow,
-                    &xpow_prep,
-                    xpow_size,
-                    tsk,
-                    &mut pair_scratch,
-                )?;
-                add_assign(module, &mut b_compact, &a_compact, &mut pair_scratch);
-
-                module.glwe_copy(b, &b_compact);
-                b.set_bsgs_log_budget(b_compact.0);
-                b.set_bsgs_log_delta(b_compact.1);
+                // `b·Xᵍˢᵖ` (ct×ct) compacts `b` to the consumed budget in place
+                // (see `mul_assign_prepared`); `a` is read at its `effective_k` by
+                // the add (the MSB prefix), so it needs no compaction. The
+                // incoming `b` is already compact — a baby step (compacted by
+                // `eval_baby_step`) or a prior round's compacted result.
+                mul_assign_prepared(module, precision, b, xpow, &xpow_prep, xpow_size, tsk, &mut pair_scratch)?;
+                add_assign(module, b, a, &mut pair_scratch);
                 Result::<()>::Ok(())
             })?;
         }
         Ok(())
     })
-}
-
-/// A compact GLWE scratch buffer carrying its own precision metadata locally.
-struct CompactCt<'a, BE: Backend>(usize, usize, crate::layouts::GLWEViewMut<'a, BE>);
-
-impl<'a, BE: Backend> BSGSMeta for CompactCt<'a, BE> {
-    fn bsgs_log_budget(&self) -> usize {
-        self.0
-    }
-    fn bsgs_log_delta(&self) -> usize {
-        self.1
-    }
-}
-
-impl<'a, BE: Backend> SetBSGSMeta for CompactCt<'a, BE> {
-    fn set_bsgs_log_budget(&mut self, log_budget: usize) {
-        self.0 = log_budget;
-    }
-    fn set_bsgs_log_delta(&mut self, log_delta: usize) {
-        self.1 = log_delta;
-    }
-}
-
-impl<'a, BE: Backend> LWEInfos for CompactCt<'a, BE> {
-    fn base2k(&self) -> crate::layouts::Base2K {
-        self.2.base2k()
-    }
-    fn n(&self) -> crate::layouts::Degree {
-        self.2.n()
-    }
-    fn size(&self) -> usize {
-        self.2.size()
-    }
-}
-
-impl<'a, BE: Backend> GLWEInfos for CompactCt<'a, BE> {
-    fn rank(&self) -> crate::layouts::Rank {
-        self.2.rank()
-    }
-}
-
-impl<'a, BE: Backend> GLWEToBackendRef<BE> for CompactCt<'a, BE> {
-    fn to_backend_ref(&self) -> crate::layouts::GLWE<BE::BufRef<'_>> {
-        self.2.to_backend_ref()
-    }
-}
-
-impl<'a, BE: Backend> GLWEToBackendMut<BE> for CompactCt<'a, BE> {
-    fn to_backend_mut(&mut self) -> crate::layouts::GLWE<BE::BufMut<'_>> {
-        self.2.to_backend_mut()
-    }
-}
-
-fn take_compact_scratch<'a, S, C, BE>(scratch: S, ct: &C, log_budget: usize, log_delta: usize) -> (CompactCt<'a, BE>, S)
-where
-    S: ScratchArenaTakeCore<'a, BE>,
-    C: GLWEInfos + BSGSMeta,
-    BE: Backend + 'a,
-{
-    let layout = GLWELayout {
-        n: ct.n(),
-        base2k: ct.base2k(),
-        k: ct.bsgs_effective_k().into(),
-        rank: ct.rank(),
-    };
-    let (inner, scratch) = scratch.take_glwe_scratch(&layout);
-    (CompactCt(log_budget, log_delta, inner), scratch)
 }
 
 /// Computes `dst *= a` (ct × ct) reusing the caller-prepared right operand `a_prep`.
@@ -512,6 +410,10 @@ where
 
     dst.set_bsgs_log_budget(log_budget);
     dst.set_bsgs_log_delta(log_delta);
+    // Compact the ct×ct result to the consumed budget: the relinearize wrote it
+    // at the (larger) operand storage, so dropping the now sub-precision low limbs
+    // keeps the next round's multiply — and the trailing copy into `res` — tight.
+    dst.compact_in_place();
     Ok(())
 }
 
@@ -541,8 +443,8 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEMulConst<BE> + GLWEAdd<BE> + GLWEShift<BE> + GLWENormalize<BE> + GLWEZero<BE> + Sized,
-        PR: BSGSPrecision<BE> + BSGSConstAdd<BE, R, C>,
+        Self: GLWEZero<BE> + Sized,
+        PR: BSGSCoeffOps<BE, R, C, A>,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
