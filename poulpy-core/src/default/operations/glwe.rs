@@ -9,7 +9,7 @@ use poulpy_hal::{
         VecZnxSubAssignBackend, VecZnxSubBackend, VecZnxSubNegateAssignBackend, VecZnxZeroBackend,
     },
     layouts::{
-        Backend, CnvPVecLToBackendRef, CnvPVecRToBackendRef, CnvPVecRViewMut, Module, ScratchArena, VecZnx,
+        Backend, CnvPVecLToBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, Module, ScratchArena, VecZnx,
         VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut,
         VecZnxToBackendRef,
     },
@@ -1156,7 +1156,7 @@ pub(crate) fn glwe_tensor_apply_loop<BE, M, R, AP, BP>(
 /// Scratch bytes for [`glwe_tensor_apply_prepared_right`].
 ///
 /// `a` is prepared into a `CnvPVecL`; `b_prep` is supplied already prepared.
-pub(crate) fn glwe_tensor_apply_prepared_right_tmp_bytes<BE, M, R, A>(
+pub fn glwe_tensor_apply_prepared_right_tmp_bytes<BE, M, R, A>(
     module: &M,
     res: &R,
     a: &A,
@@ -1201,7 +1201,7 @@ where
 /// against the supplied `b_prep`. `a_effective_k` masks `a`'s bottom limb and
 /// `b_size` is the limb count of the operand `b_prep` was prepared from.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
+pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
     module: &M,
     cnv_offset: usize,
     res: &mut R,
@@ -1271,9 +1271,9 @@ pub(crate) fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
 ///
 /// `b_effective_k` masks the bottom limb of `b`. The prepared operand can then be
 /// reused across several [`glwe_tensor_apply_prepared_right`] calls.
-pub(crate) fn glwe_prepare_right<BE, M, B>(
+pub fn glwe_prepare_right<BE, M, B, BP>(
     module: &M,
-    b_prep: &mut CnvPVecRViewMut<'_, BE>,
+    b_prep: &mut BP,
     b: &B,
     b_effective_k: usize,
     scratch: &mut ScratchArena<'_, BE>,
@@ -1281,6 +1281,7 @@ pub(crate) fn glwe_prepare_right<BE, M, B>(
     BE: Backend,
     M: Convolution<BE>,
     B: GLWEToBackendRef<BE> + GLWEInfos,
+    BP: CnvPVecRToBackendMut<BE>,
 {
     let b_base2k: usize = b.base2k().as_usize();
     // Relaxed input: `b` may carry more limbs than `b_effective_k` requires; the prepared
@@ -1294,7 +1295,7 @@ pub(crate) fn glwe_prepare_right<BE, M, B>(
     );
     let b_mask = msb_mask_bottom_limb(b_base2k, b_effective_k);
     let b_backend = b.to_backend_ref();
-    module.cnv_prepare_right(b_prep, &b_backend.data, b_mask, scratch);
+    module.cnv_prepare_right(&mut b_prep.to_backend_mut(), &b_backend.data, b_mask, scratch);
 }
 
 #[inline]

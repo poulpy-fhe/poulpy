@@ -2,11 +2,8 @@ use anyhow::Result;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    BSGSCoeffOps, BSGSPrecision, GLWEAdd, GLWECopy, GLWENormalize, GLWEShift, GLWETensoring, GLWEZero, GiantStepTensorBounds,
-    layouts::{
-        BSGSMeta, BabyStep, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper, SetBSGSMeta,
-        prepared::GLWETensorKeyPreparedToBackendRef,
-    },
+    BSGSBabyOps, BSGSGiantOps,
+    layouts::{BabyStep, GGLWEInfos, GLWEInfos, Parity, PowerBasisHelper, prepared::GLWETensorKeyPreparedToBackendRef},
 };
 
 /// Backend-provided Baby-Step / Giant-Step polynomial-evaluation phases.
@@ -16,25 +13,22 @@ use crate::{
 /// metadata contract expected by the scheme-supplied `precision` provider.
 pub unsafe trait PolynomialEvaluationImpl<BE: Backend>: Backend {
     #[allow(clippy::too_many_arguments)]
-    fn glwe_eval_baby_step<PR, R, C, A, G>(
+    fn glwe_eval_baby_step<PR, V, P, A, G>(
         module: &Module<BE>,
         precision: &PR,
-        res: &mut R,
+        res: &mut V,
         parity: Parity,
-        coeffs: &C,
+        coeffs: &P,
         power_basis: &G,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Module<BE>: GLWEZero<BE>,
-        PR: BSGSCoeffOps<BE, R, C, A>,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
-        A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
+        PR: BSGSBabyOps<BE, V, P, A>,
+        P: GLWEInfos,
         G: PowerBasisHelper<BE, A>;
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_eval_giant_steps<PR, R, B, A, G, T>(
+    fn glwe_eval_giant_steps<PR, R, B, V, A, G, T>(
         module: &Module<BE>,
         precision: &PR,
         res: &mut R,
@@ -44,12 +38,8 @@ pub unsafe trait PolynomialEvaluationImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Module<BE>:
-            GiantStepTensorBounds<BE> + GLWEAdd<BE> + GLWEShift<BE> + GLWETensoring<BE> + GLWENormalize<BE> + GLWECopy<BE>,
-        PR: BSGSPrecision<BE>,
-        R: GLWEToBackendMut<BE> + GLWEInfos + SetBSGSMeta,
-        B: BabyStep<BE>,
-        A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
+        PR: BSGSGiantOps<BE, V, A, R>,
+        B: BabyStep<BE, Value = V>,
         G: PowerBasisHelper<BE, A>,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
 }
@@ -57,24 +47,21 @@ pub unsafe trait PolynomialEvaluationImpl<BE: Backend>: Backend {
 /// Override surface carrying the reference BSGS phase implementations.
 pub trait PolynomialEvaluationDefault<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
-    fn glwe_eval_baby_step_default<PR, R, C, A, G>(
+    fn glwe_eval_baby_step_default<PR, V, P, A, G>(
         &self,
         precision: &PR,
-        res: &mut R,
+        res: &mut V,
         parity: Parity,
-        coeffs: &C,
+        coeffs: &P,
         power_basis: &G,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEZero<BE> + Sized,
-        PR: BSGSCoeffOps<BE, R, C, A>,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
-        A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
+        PR: BSGSBabyOps<BE, V, P, A>,
+        P: GLWEInfos,
         G: PowerBasisHelper<BE, A>;
 
-    fn glwe_eval_giant_steps_default<PR, R, B, A, G, T>(
+    fn glwe_eval_giant_steps_default<PR, R, B, V, A, G, T>(
         &self,
         precision: &PR,
         res: &mut R,
@@ -84,17 +71,8 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GiantStepTensorBounds<BE>
-            + GLWEAdd<BE>
-            + GLWEShift<BE>
-            + GLWETensoring<BE>
-            + GLWENormalize<BE>
-            + GLWECopy<BE>
-            + Sized,
-        PR: BSGSPrecision<BE>,
-        R: GLWEToBackendMut<BE> + GLWEInfos + SetBSGSMeta,
-        B: BabyStep<BE>,
-        A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
+        PR: BSGSGiantOps<BE, V, A, R>,
+        B: BabyStep<BE, Value = V>,
         G: PowerBasisHelper<BE, A>,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
 }
@@ -103,27 +81,24 @@ unsafe impl<BE: Backend> PolynomialEvaluationImpl<BE> for BE
 where
     Module<BE>: PolynomialEvaluationDefault<BE>,
 {
-    fn glwe_eval_baby_step<PR, R, C, A, G>(
+    fn glwe_eval_baby_step<PR, V, P, A, G>(
         module: &Module<BE>,
         precision: &PR,
-        res: &mut R,
+        res: &mut V,
         parity: Parity,
-        coeffs: &C,
+        coeffs: &P,
         power_basis: &G,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Module<BE>: GLWEZero<BE>,
-        PR: BSGSCoeffOps<BE, R, C, A>,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
-        A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
+        PR: BSGSBabyOps<BE, V, P, A>,
+        P: GLWEInfos,
         G: PowerBasisHelper<BE, A>,
     {
-        module.glwe_eval_baby_step_default::<PR, R, C, A, G>(precision, res, parity, coeffs, power_basis, scratch)
+        module.glwe_eval_baby_step_default::<PR, V, P, A, G>(precision, res, parity, coeffs, power_basis, scratch)
     }
 
-    fn glwe_eval_giant_steps<PR, R, B, A, G, T>(
+    fn glwe_eval_giant_steps<PR, R, B, V, A, G, T>(
         module: &Module<BE>,
         precision: &PR,
         res: &mut R,
@@ -133,15 +108,11 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Module<BE>:
-            GiantStepTensorBounds<BE> + GLWEAdd<BE> + GLWEShift<BE> + GLWETensoring<BE> + GLWENormalize<BE> + GLWECopy<BE>,
-        PR: BSGSPrecision<BE>,
-        R: GLWEToBackendMut<BE> + GLWEInfos + SetBSGSMeta,
-        B: BabyStep<BE>,
-        A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
+        PR: BSGSGiantOps<BE, V, A, R>,
+        B: BabyStep<BE, Value = V>,
         G: PowerBasisHelper<BE, A>,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     {
-        module.glwe_eval_giant_steps_default::<PR, R, B, A, G, T>(precision, res, baby_steps, power_basis, tsk, scratch)
+        module.glwe_eval_giant_steps_default::<PR, R, B, V, A, G, T>(precision, res, baby_steps, power_basis, tsk, scratch)
     }
 }

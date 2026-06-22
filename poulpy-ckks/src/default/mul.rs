@@ -1,17 +1,21 @@
 use anyhow::Result;
 use poulpy_core::{
-    GLWECopy, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWETensoring, ScratchArenaTakeCore,
+    GLWECopy, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWETensoring, GiantStepTensorBounds, ScratchArenaTakeCore,
+    glwe_prepare_right, glwe_tensor_apply_prepared_right,
     layouts::{
         GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEPlaintextLayout, GLWETensor, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         ModuleCoreAlloc, TorusPrecision, prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
 use poulpy_hal::{
-    api::VecZnxCopyBackend,
+    api::{CnvPVecAlloc, Convolution, VecZnxCopyBackend},
     layouts::{Backend, ScratchArena},
 };
 
-use crate::{CKKSInfos, CKKSMeta, SetCKKSInfos, checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget};
+use crate::{
+    CKKSInfos, CKKSMeta, SetCKKSInfos, checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget,
+    layouts::CKKSPreparedRight,
+};
 
 pub trait CKKSMulDefault<BE: Backend> {
     fn ckks_mul_tmp_bytes_default<R, T>(&self, res: &R, tsk: &T) -> usize
@@ -101,6 +105,80 @@ pub trait CKKSMulDefault<BE: Backend> {
             dst.effective_k(),
             a,
             a.effective_k(),
+            &mut scratch_local,
+        );
+        self.glwe_tensor_relinearize(dst, &tmp, tsk, tmp.size() + tsk.dsize().as_usize(), &mut scratch_local);
+
+        dst.set_log_budget(res_log_budget);
+        dst.set_log_delta(res_log_delta);
+        dst.compact_in_place();
+        Ok(())
+    }
+
+    fn ckks_prepare_right_default<A>(&self, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
+    where
+        Self: Convolution<BE> + CnvPVecAlloc<BE> + Sized,
+        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+    {
+        // Hoist `a` once into a backend-resident right operand. `glwe_prepare_right`
+        // reads only the top `effective_k` limbs, so the operand is sized to that
+        // effective limb count.
+        let cols = a.rank().as_usize() + 1;
+        let effective_k = a.effective_k();
+        let size = effective_k.div_ceil(a.base2k().as_usize());
+        let mut prep = self.cnv_pvec_right_alloc(cols, size);
+        glwe_prepare_right(self, &mut prep, a, effective_k, scratch);
+        Ok(CKKSPreparedRight {
+            prep,
+            size,
+            log_delta: a.log_delta(),
+            log_budget: a.log_budget(),
+            effective_k,
+        })
+    }
+
+    fn ckks_mul_prepared_assign_default<Dst, T>(
+        &self,
+        dst: &mut Dst,
+        prepared: &CKKSPreparedRight<BE>,
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Self: GLWETensoring<BE> + GiantStepTensorBounds<BE>,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        let (res_log_budget, res_log_delta, cnv_offset) = mul_ct_params_raw(
+            dst.max_k().as_usize(),
+            dst.log_delta(),
+            dst.log_budget(),
+            dst.effective_k(),
+            prepared.log_delta,
+            prepared.log_budget,
+            prepared.effective_k,
+        )?;
+
+        // Size the intermediate from the right operand's `effective_k` rather than
+        // its full `max_k`: the tensor product only consumes the top `effective_k`
+        // limbs (via the prepared operand).
+        let tensor_layout = GLWELayout {
+            n: dst.n(),
+            base2k: dst.base2k(),
+            k: dst.max_k().max(TorusPrecision(prepared.effective_k as u32)),
+            rank: dst.rank(),
+        };
+        let scratch_local = scratch.borrow();
+        let (mut tmp, mut scratch_local) = scratch_local.take_glwe_tensor_scratch(&tensor_layout);
+        let dst_effective_k = dst.effective_k();
+        glwe_tensor_apply_prepared_right(
+            self,
+            cnv_offset,
+            &mut tmp,
+            &*dst,
+            dst_effective_k,
+            &prepared.prep,
+            prepared.size,
             &mut scratch_local,
         );
         self.glwe_tensor_relinearize(dst, &tmp, tsk, tmp.size() + tsk.dsize().as_usize(), &mut scratch_local);

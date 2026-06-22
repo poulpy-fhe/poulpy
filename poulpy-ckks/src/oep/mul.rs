@@ -2,15 +2,15 @@ use crate::default::mul::CKKSMulDefault;
 
 use anyhow::Result;
 use poulpy_core::{
-    GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWETensoring,
+    GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWETensoring, GiantStepTensorBounds,
     layouts::{GGLWEInfos, GLWEInfos, LWEInfos, ModuleCoreAlloc, prepared::GLWETensorKeyPreparedToBackendRef},
 };
 use poulpy_hal::{
-    api::VecZnxCopyBackend,
+    api::{CnvPVecAlloc, VecZnxCopyBackend},
     layouts::{Backend, Module, ScratchArena},
 };
 
-use crate::{CKKSInfos, CKKSMeta, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
+use crate::{CKKSInfos, CKKSMeta, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos, layouts::CKKSPreparedRight};
 
 /// # Safety
 ///
@@ -45,6 +45,19 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
+    fn ckks_prepare_right<A>(module: &Module<BE>, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
+    where
+        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos;
+    fn ckks_mul_prepared_assign<Dst, T>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        prepared: &CKKSPreparedRight<BE>,
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
     fn ckks_square_into<Dst, A, T>(
         module: &Module<BE>,
@@ -115,6 +128,8 @@ where
         + GLWEMulPlain<BE>
         + GLWERotate<BE>
         + GLWETensoring<BE>
+        + GiantStepTensorBounds<BE>
+        + CnvPVecAlloc<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
         + VecZnxCopyBackend<BE>,
 {
@@ -164,6 +179,27 @@ where
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
         module.ckks_mul_assign_default(dst, a, tsk, scratch)
+    }
+
+    fn ckks_prepare_right<A>(module: &Module<BE>, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
+    where
+        A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
+    {
+        module.ckks_prepare_right_default(a, scratch)
+    }
+
+    fn ckks_mul_prepared_assign<Dst, T>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        prepared: &CKKSPreparedRight<BE>,
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        module.ckks_mul_prepared_assign_default(dst, prepared, tsk, scratch)
     }
 
     fn ckks_square_into<Dst, A, T>(

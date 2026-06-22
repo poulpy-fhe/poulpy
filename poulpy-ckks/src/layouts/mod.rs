@@ -16,6 +16,7 @@ pub mod ciphertext;
 pub mod complex_diagonals;
 pub mod dft;
 pub mod eval_mod;
+pub mod mul;
 pub mod plaintext;
 
 pub use alloc::CKKSModuleAlloc;
@@ -30,6 +31,7 @@ pub use dft::{
     Repack, Split, Standard,
 };
 pub use eval_mod::{EvalMod, EvalModBsgs, EvalModPlan, EvalModPoly, EvalModType};
+pub use mul::CKKSPreparedRight;
 pub use plaintext::CKKSPlaintext;
 
 use std::fmt::Debug;

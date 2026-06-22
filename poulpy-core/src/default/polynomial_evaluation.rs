@@ -1,33 +1,34 @@
 //! Scheme-agnostic Baby-Step / Giant-Step polynomial-evaluation engine.
 //!
-//! Owns the BSGS schedule, parity loop and giant-step folding, composing core
-//! GLWE primitives. Per-operation precision integers and the
-//! plaintext-coefficient addition are supplied by the scheme through
-//! [`BSGSPrecision`].
+//! Owns the BSGS schedule, parity loop and giant-step folding **only** — the
+//! combinatorial structure of the evaluation. It has no concept of scale: every
+//! arithmetic operation (the `ct×pt` baby-step terms, the hoisted `ct×ct`
+//! giant-step multiply, the `ct+ct` add, the accumulator seed and the final
+//! copy) is supplied by the scheme through [`BSGSBabyOps`] and [`BSGSGiantOps`],
+//! which own all precision bookkeeping, normalization and compaction.
 
 use anyhow::{Result, ensure};
 use poulpy_hal::{
     api::{
-        CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAddAssignBackend, VecZnxBigBytesOf,
-        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftBytesOf, VecZnxIdftApplyTmpA,
-        VecZnxNegateBackend, VecZnxSubAssignBackend,
+        CnvPVecBytesOf, Convolution, ModuleN, VecZnxAddAssignBackend, VecZnxBigBytesOf, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxNegateBackend,
+        VecZnxSubAssignBackend,
     },
-    layouts::{Backend, ScratchArena},
+    layouts::{Backend, Module, ScratchArena},
 };
 
-use poulpy_hal::layouts::Module;
-
 use crate::{
-    GLWEAdd, GLWECopy, GLWENormalize, GLWEShift, GLWETensoring, GLWEZero, ScratchArenaTakeCore,
-    default::operations::{glwe_prepare_right, glwe_tensor_apply_prepared_right},
     layouts::{
-        BSGSMeta, BabyStep, GGLWEInfos, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Parity,
-        PowerBasisHelper, SetBSGSMeta, prepared::GLWETensorKeyPreparedToBackendRef,
+        BabyStep, GGLWEInfos, GLWEInfos, Parity, PowerBasisHelper, prepared::GLWETensorKeyPreparedToBackendRef,
     },
     oep::PolynomialEvaluationDefault,
 };
 
 /// HAL bounds required to run the hoisted prepared-right tensor product.
+///
+/// Retained as a convenience bundle for the **scheme** implementations of
+/// [`BSGSGiantOps::mul_prepared_assign`] (the engine itself no longer touches
+/// these primitives).
 pub trait GiantStepTensorBounds<BE: Backend>:
     Sized
     + ModuleN
@@ -62,33 +63,27 @@ impl<BE: Backend, M> GiantStepTensorBounds<BE> for M where
 {
 }
 
-/// Scheme-supplied per-operation precision integers for the engine-owned
-/// giant-step `ct × ct` multiply.
-pub trait BSGSPrecision<BE: Backend> {
-    /// Returns `(log_budget, log_delta, cnv_offset)` for `res = a * b` (ct × ct).
-    fn mul_ct_params<R, A, B>(&self, res: &R, a: &A, b: &B) -> Result<(usize, usize, usize)>
-    where
-        R: GLWEInfos + BSGSMeta,
-        A: GLWEInfos + BSGSMeta,
-        B: GLWEInfos + BSGSMeta;
-}
-
-/// Scheme-supplied baby-step coefficient operations.
+/// Scheme-supplied baby-step operations.
 ///
 /// The engine only sequences these calls; the scheme owns the scratch buffers,
-/// precision bookkeeping, and normalization. This keeps the BSGS engine free of
-/// any local ciphertext type — it operates purely through scheme-provided values
-/// implementing the [`BSGSMeta`]/[`SetBSGSMeta`] traits.
+/// precision bookkeeping, normalization and compaction. This keeps the BSGS
+/// engine free of any local ciphertext type and of the concept of scale — it
+/// operates purely through scheme-provided values.
 ///
-/// `R` is the accumulator (baby-step value), `P` the encoded coefficients, and
-/// `A` the power-basis entry type. `A` is a trait parameter (not a method generic)
-/// so the scheme can constrain it to its own ciphertext bounds in the impl.
-pub trait BSGSCoeffOps<BE: Backend, R, P, A> {
+/// `V` is the accumulator (baby-step value), `P` the encoded coefficients, and
+/// `A` the power-basis entry type. They are trait parameters (not method
+/// generics) so the scheme can constrain them to its own ciphertext bounds in
+/// the impl.
+pub trait BSGSBabyOps<BE: Backend, V, P, A> {
+    /// Initializes the accumulator `res` from `seed`'s precision: sets `res`'s
+    /// metadata to that of `seed`, compacts it, and zeroes its data.
+    fn init_accumulator(&self, module: &Module<BE>, res: &mut V, seed: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>;
+
     /// Computes `res[res_coeff] += coeffs[idx]`, normalizing `res`.
     fn add_pt_const_assign(
         &self,
         module: &Module<BE>,
-        res: &mut R,
+        res: &mut V,
         res_coeff: usize,
         coeffs: &P,
         idx: usize,
@@ -99,7 +94,7 @@ pub trait BSGSCoeffOps<BE: Backend, R, P, A> {
     fn mul_pt_const(
         &self,
         module: &Module<BE>,
-        res: &mut R,
+        res: &mut V,
         a: &A,
         coeffs: &P,
         idx: usize,
@@ -110,35 +105,73 @@ pub trait BSGSCoeffOps<BE: Backend, R, P, A> {
     fn mul_add_pt_const(
         &self,
         module: &Module<BE>,
-        res: &mut R,
+        res: &mut V,
         a: &A,
         coeffs: &P,
         idx: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>;
+
+    /// Compacts `res` to its effective precision.
+    fn compact(&self, res: &mut V);
+}
+
+/// Scheme-supplied giant-step operations.
+///
+/// The engine owns the giant-step *schedule* (the pairing tree and the hoisting
+/// of `X^{gsp}` across the sibling pairs of one level); the scheme owns the
+/// actual `ct×ct` / `ct+ct` arithmetic and the precision bookkeeping. The
+/// [`Self::Prepared`] right operand is produced once per level by the engine and
+/// reused across every pair of that level.
+///
+/// `V` is the baby-step value type, `A` the power-basis entry type, and `R` the
+/// caller's result buffer.
+pub trait BSGSGiantOps<BE: Backend, V, A, R> {
+    /// Backend-resident prepared right multiply operand, reusable across a
+    /// giant-step level.
+    type Prepared;
+
+    /// Prepares `a` as a reusable right operand for [`Self::mul_prepared_assign`].
+    fn prepare_right(&self, module: &Module<BE>, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<Self::Prepared>;
+
+    /// Computes `dst *= prepared` (ct × ct), relinearizing with `tsk` and
+    /// compacting the result to the consumed budget.
+    fn mul_prepared_assign<T>(
+        &self,
+        module: &Module<BE>,
+        dst: &mut V,
+        prepared: &Self::Prepared,
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
+
+    /// Computes `dst += a` with budget alignment, normalizing `dst`.
+    fn add_assign(&self, module: &Module<BE>, dst: &mut V, a: &V, scratch: &mut ScratchArena<'_, BE>) -> Result<()>;
+
+    /// Computes `res = src`, returning `res` compacted to its effective precision.
+    fn copy(&self, module: &Module<BE>, res: &mut R, src: &V, scratch: &mut ScratchArena<'_, BE>) -> Result<()>;
 }
 
 /// Evaluates a single baby step into `res`.
 ///
-/// The `ct × pt` term products are delegated to the scheme via [`BSGSCoeffOps`]
-/// (which owns their scratch and normalization); the engine only zeroes `res`,
-/// sequences the terms, and compacts at the boundaries.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn eval_baby_step<PR, R, C, A, G, BE: Backend>(
+/// All arithmetic is delegated to the scheme via [`BSGSBabyOps`]; the engine only
+/// computes the parity schedule, seeds the accumulator from the *highest* power
+/// (the lowest-budget operand, so every term writes at the final compact width),
+/// sequences the terms and compacts at the end.
+pub(crate) fn eval_baby_step<OPS, V, P, A, G, BE: Backend>(
     module: &Module<BE>,
-    precision: &PR,
-    res: &mut R,
+    ops: &OPS,
+    res: &mut V,
     parity: Parity,
-    coeffs: &C,
+    coeffs: &P,
     power_basis: &G,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    Module<BE>: GLWEZero<BE>,
-    PR: BSGSCoeffOps<BE, R, C, A>,
-    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta,
-    C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
-    A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
+    OPS: BSGSBabyOps<BE, V, P, A>,
+    P: GLWEInfos,
     G: PowerBasisHelper<BE, A>,
 {
     let degree = coeffs.n().as_usize() - 1;
@@ -155,60 +188,38 @@ where
     // rather than starting at `x¹`'s width and only compacting at the end. A
     // constant-only baby step (no power term) falls back to `x¹`.
     let init_power = (first..=degree).step_by(step).last().unwrap_or(1);
-    let x = power_basis.get(init_power)?;
-    res.set_bsgs_log_budget(x.bsgs_log_budget());
-    res.set_bsgs_log_delta(x.bsgs_log_delta());
-    res.compact_in_place();
-    module.glwe_zero(res);
+    ops.init_accumulator(module, res, power_basis.get(init_power)?, scratch)?;
 
     let mut has_value = false;
     if parity != Parity::Odd {
-        precision.add_pt_const_assign(module, res, 0, coeffs, 0, scratch)?;
+        ops.add_pt_const_assign(module, res, 0, coeffs, 0, scratch)?;
         has_value = true;
     }
 
     for i in (first..=degree).step_by(step) {
         let xpow = power_basis.get(i)?;
         if has_value {
-            precision.mul_add_pt_const(module, res, xpow, coeffs, i, scratch)?;
+            ops.mul_add_pt_const(module, res, xpow, coeffs, i, scratch)?;
         } else {
-            precision.mul_pt_const(module, res, xpow, coeffs, i, scratch)?;
+            ops.mul_pt_const(module, res, xpow, coeffs, i, scratch)?;
             has_value = true;
         }
     }
 
-    res.compact_in_place();
+    ops.compact(res);
 
     Ok(())
 }
 
-/// Computes `res += a` with budget alignment, without normalizing `res`.
-fn add_assign_unnormalized<M, R, A, BE: Backend>(module: &M, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
-where
-    M: GLWEAdd<BE> + GLWEShift<BE>,
-    R: GLWEToBackendMut<BE> + GLWEInfos + SetBSGSMeta,
-    A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
-{
-    let res_log_budget = res.bsgs_log_budget();
-    let a_log_budget = a.bsgs_log_budget();
-
-    if res_log_budget < a_log_budget {
-        module.glwe_lsh_add(res, a, a_log_budget - res_log_budget, scratch);
-    } else if res_log_budget > a_log_budget {
-        module.glwe_lsh_assign(res, res_log_budget - a_log_budget, scratch);
-        module.glwe_add_assign(res, a);
-    } else {
-        module.glwe_add_assign(res, a);
-    }
-
-    res.set_bsgs_log_budget(res_log_budget.min(a_log_budget));
-    res.set_bsgs_log_delta(res.bsgs_log_delta().min(a.bsgs_log_delta()));
-}
-
 /// Folds the evaluated baby steps into `res` using the giant-step schedule.
-pub(crate) fn eval_giant_steps<M, R, B, A, G, T, BE: Backend>(
-    module: &M,
-    precision: &impl BSGSPrecision<BE>,
+///
+/// The engine owns the schedule and the hoisting (`X^{gsp}` is prepared once per
+/// level via [`BSGSGiantOps::prepare_right`] and reused across the level's
+/// sibling pairs); the per-pair `ct×ct`/`ct+ct` arithmetic and the final copy are
+/// delegated to the scheme.
+pub(crate) fn eval_giant_steps<OPS, R, B, V, A, G, T, BE: Backend>(
+    ops: &OPS,
+    module: &Module<BE>,
     res: &mut R,
     baby_steps: &mut [B],
     power_basis: &G,
@@ -216,10 +227,8 @@ pub(crate) fn eval_giant_steps<M, R, B, A, G, T, BE: Backend>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    M: GiantStepTensorBounds<BE> + GLWEAdd<BE> + GLWEShift<BE> + GLWETensoring<BE> + GLWENormalize<BE> + crate::GLWECopy<BE>,
-    R: GLWEToBackendMut<BE> + GLWEInfos + SetBSGSMeta,
-    B: BabyStep<BE>,
-    A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
+    OPS: BSGSGiantOps<BE, V, A, R>,
+    B: BabyStep<BE, Value = V>,
     G: PowerBasisHelper<BE, A>,
     T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
 {
@@ -256,7 +265,8 @@ where
         }
 
         // Process pairs left-to-right, hoisting the prepared `X^{gsp}` across
-        // consecutive pairs that share the same giant-step power.
+        // consecutive pairs that share the same giant-step power: one
+        // `prepare_right` per run, reused across every `mul_prepared_assign`.
         let mut p = 0;
         while p < pairs.len() {
             let gsp = pairs[p].0;
@@ -264,80 +274,10 @@ where
             while run_end < pairs.len() && pairs[run_end].0 == gsp {
                 run_end += 1;
             }
-            eval_monomial_run(
-                module,
-                precision,
-                baby_steps,
-                &pairs[p..run_end],
-                power_basis.get(gsp)?,
-                tsk,
-                scratch,
-            )?;
-            p = run_end;
-        }
 
-        active = next;
-    }
-
-    let evaluated = baby_steps.last().expect("non-empty baby step vector");
-    module.glwe_copy(res, evaluated.get());
-    res.set_bsgs_log_budget(evaluated.get().bsgs_log_budget());
-    res.set_bsgs_log_delta(evaluated.get().bsgs_log_delta());
-    // Return a compacted result: `res` is the caller's (full-width) buffer, but the
-    // evaluated value only spans `effective_k`. Compacting here means consumers
-    // (e.g. the EvalMod squarings, which require a compacted square input) get a
-    // tight ciphertext without an extra copy.
-    res.compact_in_place();
-
-    Ok(())
-}
-
-/// Scratch bytes consumed by the giant-step engine on top of the per-pair
-/// mul/add scratch: the prepared hoisted `X^{gsp}` right operand, kept alive
-/// across a run. The per-pair operands are no longer copied into compact scratch
-/// — `b` is compacted in place and `a` is read directly — so this is just the
-/// hoisted right operand. `X^{gsp}` is prepared straight from the power basis, as
-/// `glwe_prepare_right` reads only its top effective-precision limbs.
-pub fn glwe_eval_giant_steps_extra_tmp_bytes(hoisted_right_bytes: usize) -> usize {
-    hoisted_right_bytes
-}
-
-/// Evaluates a run of `b = b * xpow + a` pairs that share the same `xpow`.
-///
-/// The compacted `xpow` is prepared once into a scratch `CnvPVecR` and reused as
-/// the right tensor operand across every pair in the run.
-#[allow(clippy::too_many_arguments)]
-fn eval_monomial_run<M, B, A, T, BE: Backend>(
-    module: &M,
-    precision: &impl BSGSPrecision<BE>,
-    baby_steps: &mut [B],
-    pairs: &[(usize, usize, usize)],
-    xpow: &A,
-    tsk: &T,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
-    M: GiantStepTensorBounds<BE> + GLWEAdd<BE> + GLWEShift<BE> + GLWETensoring<BE> + GLWENormalize<BE> + crate::GLWECopy<BE>,
-    B: BabyStep<BE>,
-    A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
-    T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-{
-    scratch.scope(|run_scratch| {
-        // Hoist: prepare `xpow` into a reusable right operand. `glwe_prepare_right`
-        // reads only the top `xpow_size` (effective_k) limbs, so the operand does not
-        // need to be pre-compacted into its own scratch buffer.
-        let cols = xpow.rank().as_usize() + 1;
-        let xpow_effective_k = xpow.bsgs_effective_k();
-        let xpow_size = xpow_effective_k.div_ceil(xpow.base2k().as_usize());
-
-        let (mut xpow_prep, mut run_scratch) = run_scratch.take_cnv_pvec_right_scratch(module, cols, xpow_size);
-        run_scratch = run_scratch.apply_mut(|scratch_prep| {
-            glwe_prepare_right(module, &mut xpow_prep, xpow, xpow_effective_k, scratch_prep);
-        });
-
-        for &(_, low_idx, high_idx) in pairs {
-            ensure!(low_idx != high_idx, "eval_giant_steps: baby-step pair aliases itself");
-            run_scratch.scope(|mut pair_scratch| {
+            let prepared = ops.prepare_right(module, power_basis.get(gsp)?, scratch)?;
+            for &(_, low_idx, high_idx) in &pairs[p..run_end] {
+                ensure!(low_idx != high_idx, "eval_giant_steps: baby-step pair aliases itself");
                 let (a, b) = if low_idx < high_idx {
                     let (low_steps, high_steps) = baby_steps.split_at_mut(high_idx);
                     (low_steps[low_idx].get(), high_steps[0].get_mut())
@@ -346,86 +286,26 @@ where
                     (low_steps[0].get(), high_steps[high_idx].get_mut())
                 };
 
-                // `b·Xᵍˢᵖ` (ct×ct) compacts `b` to the consumed budget in place
-                // (see `mul_assign_prepared`); `a` is read at its `effective_k` by
-                // the add (the MSB prefix), so it needs no compaction. The
-                // incoming `b` is already compact — a baby step (compacted by
-                // `eval_baby_step`) or a prior round's compacted result.
-                mul_assign_prepared(module, precision, b, xpow, &xpow_prep, xpow_size, tsk, &mut pair_scratch)?;
-                add_assign(module, b, a, &mut pair_scratch);
-                Result::<()>::Ok(())
-            })?;
+                // `b·Xᵍˢᵖ` (ct×ct, the scheme compacts `b` to the consumed budget);
+                // then `b += a`. The incoming `b` is already compact — a baby step
+                // (compacted by `eval_baby_step`) or a prior round's compacted result.
+                ops.mul_prepared_assign(module, b, &prepared, tsk, scratch)?;
+                ops.add_assign(module, b, a, scratch)?;
+            }
+            p = run_end;
         }
-        Ok(())
-    })
-}
 
-/// Computes `dst *= a` (ct × ct) reusing the caller-prepared right operand `a_prep`.
-///
-/// `a_prep` is the prepared `CnvPVecR` of `a` and `a_size` its limb count, so the
-/// tensor product feeds `mul_ct_params` the same operand metadata as `a`.
-#[allow(clippy::too_many_arguments)]
-fn mul_assign_prepared<M, V, A, AP, T, BE: Backend>(
-    module: &M,
-    precision: &impl BSGSPrecision<BE>,
-    dst: &mut V,
-    a: &A,
-    a_prep: &AP,
-    a_size: usize,
-    tsk: &T,
-    scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
-where
-    M: GiantStepTensorBounds<BE> + GLWETensoring<BE>,
-    V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta,
-    A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
-    AP: poulpy_hal::layouts::CnvPVecRToBackendRef<BE>,
-    T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-{
-    let (log_budget, log_delta, cnv_offset) = precision.mul_ct_params(dst, dst, a)?;
+        active = next;
+    }
 
-    // Size from `a`'s effective_k rather than its full `max_k`: the tensor product only
-    // consumes the top effective_k limbs of `a` (via the prepared right operand), so a
-    // non-compacted `a` must not inflate the intermediate buffer.
-    let tensor_layout = GLWELayout {
-        n: dst.n(),
-        base2k: dst.base2k(),
-        k: dst.max_k().max(a.bsgs_effective_k().into()),
-        rank: dst.rank(),
-    };
-    let scratch_local = scratch.borrow();
-    let (mut tmp, mut scratch_local) = scratch_local.take_glwe_tensor_scratch(&tensor_layout);
-    let dst_effective_k = dst.bsgs_effective_k();
-    glwe_tensor_apply_prepared_right(
-        module,
-        cnv_offset,
-        &mut tmp,
-        &*dst,
-        dst_effective_k,
-        a_prep,
-        a_size,
-        &mut scratch_local,
-    );
-    module.glwe_tensor_relinearize(dst, &tmp, tsk, tmp.size() + tsk.dsize().as_usize(), &mut scratch_local);
+    let evaluated = baby_steps.last().expect("non-empty baby step vector");
+    // Return a compacted result: `res` is the caller's (full-width) buffer, but the
+    // evaluated value only spans `effective_k`. The scheme's `copy` compacts so
+    // consumers (e.g. the EvalMod squarings, which require a compacted square
+    // input) get a tight ciphertext without an extra copy.
+    ops.copy(module, res, evaluated.get(), scratch)?;
 
-    dst.set_bsgs_log_budget(log_budget);
-    dst.set_bsgs_log_delta(log_delta);
-    // Compact the ct×ct result to the consumed budget: the relinearize wrote it
-    // at the (larger) operand storage, so dropping the now sub-precision low limbs
-    // keeps the next round's multiply — and the trailing copy into `res` — tight.
-    dst.compact_in_place();
     Ok(())
-}
-
-/// Computes `dst += a` with budget alignment, normalizing `dst`.
-fn add_assign<M, V, A, BE: Backend>(module: &M, dst: &mut V, a: &A, scratch: &mut ScratchArena<'_, BE>)
-where
-    M: GLWEAdd<BE> + GLWEShift<BE> + GLWENormalize<BE>,
-    V: GLWEToBackendMut<BE> + GLWEInfos + SetBSGSMeta,
-    A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
-{
-    add_assign_unnormalized(module, dst, a, scratch);
-    module.glwe_normalize_assign(dst, scratch);
 }
 
 fn giant_step_power(degree: usize) -> usize {
@@ -433,27 +313,24 @@ fn giant_step_power(degree: usize) -> usize {
 }
 
 impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
-    fn glwe_eval_baby_step_default<PR, R, C, A, G>(
+    fn glwe_eval_baby_step_default<PR, V, P, A, G>(
         &self,
         precision: &PR,
-        res: &mut R,
+        res: &mut V,
         parity: Parity,
-        coeffs: &C,
+        coeffs: &P,
         power_basis: &G,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEZero<BE> + Sized,
-        PR: BSGSCoeffOps<BE, R, C, A>,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta,
-        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
-        A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
+        PR: BSGSBabyOps<BE, V, P, A>,
+        P: GLWEInfos,
         G: PowerBasisHelper<BE, A>,
     {
-        eval_baby_step::<PR, R, C, A, G, BE>(self, precision, res, parity, coeffs, power_basis, scratch)
+        eval_baby_step::<PR, V, P, A, G, BE>(self, precision, res, parity, coeffs, power_basis, scratch)
     }
 
-    fn glwe_eval_giant_steps_default<PR, R, B, A, G, T>(
+    fn glwe_eval_giant_steps_default<PR, R, B, V, A, G, T>(
         &self,
         precision: &PR,
         res: &mut R,
@@ -463,20 +340,11 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GiantStepTensorBounds<BE>
-            + GLWEAdd<BE>
-            + GLWEShift<BE>
-            + GLWETensoring<BE>
-            + GLWENormalize<BE>
-            + GLWECopy<BE>
-            + Sized,
-        PR: BSGSPrecision<BE>,
-        R: GLWEToBackendMut<BE> + GLWEInfos + SetBSGSMeta,
-        B: BabyStep<BE>,
-        A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
+        PR: BSGSGiantOps<BE, V, A, R>,
+        B: BabyStep<BE, Value = V>,
         G: PowerBasisHelper<BE, A>,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     {
-        eval_giant_steps::<_, R, B, A, G, T, BE>(self, precision, res, baby_steps, power_basis, tsk, scratch)
+        eval_giant_steps::<PR, R, B, V, A, G, T, BE>(precision, self, res, baby_steps, power_basis, tsk, scratch)
     }
 }

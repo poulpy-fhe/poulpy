@@ -3,7 +3,7 @@ use poulpy_core::layouts::GLWEToBackendMut;
 use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendRef, prepared::GLWETensorKeyPreparedToBackendRef};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos};
+use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight};
 
 /// Ciphertext–ciphertext and ciphertext–plaintext multiplication.
 ///
@@ -106,6 +106,34 @@ pub trait CKKSMulOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
+
+    /// Prepares `a` as a reusable right operand for [`Self::ckks_mul_prepared_assign`].
+    ///
+    /// Hoists the forward transform of `a` so the same operand can multiply many
+    /// destinations without re-preparing it (e.g. one `X^{gsp}` across a BSGS
+    /// giant-step level). The returned [`CKKSPreparedRight`] is backend-resident
+    /// (heap-owned), so it draws no scratch once produced. The scratch needed to
+    /// produce it is bounded by [`Self::ckks_mul_tmp_bytes`].
+    fn ckks_prepare_right<A>(&self, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
+    where
+        A: GLWEToBackendRef<BE> + CKKSCtBounds;
+
+    /// Computes `dst *= prepared` in-place against a caller-prepared right operand,
+    /// relinearizing via `tsk`.
+    ///
+    /// Equivalent to [`Self::ckks_mul_assign`] with `a` pre-prepared by
+    /// [`Self::ckks_prepare_right`]; same metadata rule and scratch bound
+    /// ([`Self::ckks_mul_tmp_bytes`]).
+    fn ckks_mul_prepared_assign<Dst, T>(
+        &self,
+        dst: &mut Dst,
+        prepared: &CKKSPreparedRight<BE>,
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
 
     /// Computes `dst = a * a` (squaring) using tensor-product keyswitching.

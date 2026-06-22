@@ -7,7 +7,7 @@ use crate::{
 };
 use poulpy_core::{
     GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWELinearTransformations, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWEShift,
-    GLWETensorKeyEncryptSk, GLWETensoring, glwe_eval_giant_steps_extra_tmp_bytes,
+    GLWETensorKeyEncryptSk, GLWETensoring,
     layouts::{GGLWEInfos, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
 };
 use poulpy_hal::{
@@ -59,12 +59,10 @@ where
         T: GGLWEInfos,
         P: CKKSInfos,
     {
-        let cols: usize = (ct_infos.rank() + 1).into();
-        // The giant step hoists the prepared `X^{gsp}` right operand, kept alive
-        // across the pairs sharing it.
-        let hoisted_right_scratch_bytes = self.bytes_of_cnv_pvec_right(cols, ct_infos.size());
-        let polynomial_giant_steps_tmp_bytes = self.ckks_mul_tmp_bytes(ct_infos, tsk_infos).max(self.ckks_add_tmp_bytes())
-            + glwe_eval_giant_steps_extra_tmp_bytes(hoisted_right_scratch_bytes);
+        // The giant step hoists the prepared `X^{gsp}` right operand into a
+        // backend-resident (heap) buffer, so it no longer draws on scratch; the
+        // per-pair `ct×ct` multiply and `ct+ct` add bound the scratch.
+        let polynomial_giant_steps_tmp_bytes = self.ckks_mul_tmp_bytes(ct_infos, tsk_infos).max(self.ckks_add_tmp_bytes());
 
         self.ckks_encrypt_sk_tmp_bytes(ct_infos)
             .max(self.ckks_decrypt_tmp_bytes(ct_infos))

@@ -10,7 +10,7 @@ use poulpy_hal::{
 
 use crate::api::CKKSMulOps;
 
-use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, oep::CKKSMulImpl};
+use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight, oep::CKKSMulImpl};
 
 impl<BE: Backend + CKKSMulImpl<BE>> CKKSMulOps<BE> for Module<BE>
 where
@@ -77,6 +77,27 @@ where
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     {
         BE::ckks_mul_assign(self, dst, a, tsk, scratch)
+    }
+
+    fn ckks_prepare_right<A>(&self, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
+    where
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+    {
+        BE::ckks_prepare_right(self, a, scratch)
+    }
+
+    fn ckks_mul_prepared_assign<Dst, T>(
+        &self,
+        dst: &mut Dst,
+        prepared: &CKKSPreparedRight<BE>,
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
+    {
+        BE::ckks_mul_prepared_assign(self, dst, prepared, tsk, scratch)
     }
 
     fn ckks_square_into<Dst, A, T>(&self, dst: &mut Dst, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
