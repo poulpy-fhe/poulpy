@@ -155,13 +155,7 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWEZero<BE>
-            + CKKSAddOps<BE>
-            + CKKSMulOps<BE>
-            + CKKSMulAddOps<BE>
-            + CKKSModuleAlloc<BE>
-            + CKKSCopyOps<BE>
-            + Sized,
+        Self: GLWEZero<BE> + CKKSAddOps<BE> + CKKSMulOps<BE> + CKKSMulAddOps<BE> + CKKSModuleAlloc<BE> + CKKSCopyOps<BE> + Sized,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds,
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
@@ -245,14 +239,7 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
             let degree = coeffs.n().as_usize() - 1;
             let mut value = self.ckks_ciphertext_alloc_from_infos(x);
             value.set_meta(x.meta());
-            self.glwe_eval_baby_step(
-                &precision,
-                &mut value,
-                parity,
-                coeffs,
-                power_basis,
-                &mut scratch.borrow(),
-            )?;
+            self.glwe_eval_baby_step(&precision, &mut value, parity, coeffs, power_basis, &mut scratch.borrow())?;
             baby_steps.push(EvaluatedBabyStep { degree, value });
         }
 

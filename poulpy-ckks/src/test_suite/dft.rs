@@ -739,7 +739,11 @@ pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
         let me: DFTMatrix<BE, Encode, Split> = module
             .ckks_new_dft_matrix(&host_module, &encoder, base2k, &pe, &mut scratch.borrow())
             .unwrap();
-        assert_eq!(pe.galois_elements(log_n, order), me.galois_elements(order), "dense encode galois");
+        assert_eq!(
+            pe.galois_elements(log_n, order),
+            me.galois_elements(order),
+            "dense encode galois"
+        );
         assert!(!pe.is_sparse_repack(log_n));
         assert_eq!(pe.num_diagonals(log_n).len(), pe.num_factors());
 
@@ -747,7 +751,11 @@ pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
         let md: DFTMatrix<BE, Decode, Split> = module
             .ckks_new_dft_matrix(&host_module, &encoder, base2k, &pd, &mut scratch.borrow())
             .unwrap();
-        assert_eq!(pd.galois_elements(log_n, order), md.galois_elements(order), "dense decode galois");
+        assert_eq!(
+            pd.galois_elements(log_n, order),
+            md.galois_elements(order),
+            "dense decode galois"
+        );
     }
 
     // ---- sparse RepackImagAsReal: Encode + Decode ----
@@ -767,12 +775,20 @@ pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
         let me: DFTMatrix<BE, Encode, Repack> = module
             .ckks_new_dft_matrix(&host_module, &encoder, base2k, &pe, &mut scratch.borrow())
             .unwrap();
-        assert_eq!(pe.galois_elements(log_n, order), me.galois_elements(order), "sparse encode galois");
+        assert_eq!(
+            pe.galois_elements(log_n, order),
+            me.galois_elements(order),
+            "sparse encode galois"
+        );
 
         let pd = plan(SPARSE_LOG_SLOTS, DFTType::Decode, DFTOutputFormat::RepackImagAsReal, ld);
         let md: DFTMatrix<BE, Decode, Repack> = module
             .ckks_new_dft_matrix(&host_module, &encoder, base2k, &pd, &mut scratch.borrow())
             .unwrap();
-        assert_eq!(pd.galois_elements(log_n, order), md.galois_elements(order), "sparse decode galois");
+        assert_eq!(
+            pd.galois_elements(log_n, order),
+            md.galois_elements(order),
+            "sparse decode galois"
+        );
     }
 }

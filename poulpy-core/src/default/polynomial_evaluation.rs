@@ -18,9 +18,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    layouts::{
-        BabyStep, GGLWEInfos, GLWEInfos, Parity, PowerBasisHelper, prepared::GLWETensorKeyPreparedToBackendRef,
-    },
+    layouts::{BabyStep, GGLWEInfos, GLWEInfos, Parity, PowerBasisHelper, prepared::GLWETensorKeyPreparedToBackendRef},
     oep::PolynomialEvaluationDefault,
 };
 

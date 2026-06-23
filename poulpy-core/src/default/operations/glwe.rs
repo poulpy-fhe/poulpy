@@ -1156,13 +1156,7 @@ pub(crate) fn glwe_tensor_apply_loop<BE, M, R, AP, BP>(
 /// Scratch bytes for [`glwe_tensor_apply_prepared_right`].
 ///
 /// `a` is prepared into a `CnvPVecL`; `b_prep` is supplied already prepared.
-pub fn glwe_tensor_apply_prepared_right_tmp_bytes<BE, M, R, A>(
-    module: &M,
-    res: &R,
-    a: &A,
-    a_size: usize,
-    b_size: usize,
-) -> usize
+pub fn glwe_tensor_apply_prepared_right_tmp_bytes<BE, M, R, A>(module: &M, res: &R, a: &A, a_size: usize, b_size: usize) -> usize
 where
     BE: Backend,
     M: Sized + ModuleN + CnvPVecBytesOf + VecZnxDftBytesOf + VecZnxBigBytesOf + Convolution<BE> + VecZnxBigNormalizeTmpBytes,

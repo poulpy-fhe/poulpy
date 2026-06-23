@@ -16,7 +16,9 @@ use poulpy_core::layouts::{
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    CKKSCtBounds, SetCKKSInfos, api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSPow2Ops, CKKSRescaleOps, CKKSSubOps, PolynomialEvaluation}, layouts::{
+    CKKSCtBounds, SetCKKSInfos,
+    api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSPow2Ops, CKKSRescaleOps, CKKSSubOps, PolynomialEvaluation},
+    layouts::{
         CKKSCiphertext, CKKSModuleAlloc,
         eval_mod::{EvalMod, EvalModBsgs},
     },
@@ -68,7 +70,8 @@ where
         + CKKSMulOps<BE>
         + CKKSCopyOps<BE>
         + CKKSModuleAlloc<BE>
-        + CKKSRescaleOps<BE> + CKKSPow2Ops<BE>,
+        + CKKSRescaleOps<BE>
+        + CKKSPow2Ops<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
 {
@@ -119,7 +122,8 @@ where
         + CKKSMulOps<BE>
         + CKKSCopyOps<BE>
         + CKKSModuleAlloc<BE>
-        + CKKSRescaleOps<BE> + CKKSPow2Ops<BE>,
+        + CKKSRescaleOps<BE>
+        + CKKSPow2Ops<BE>,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
@@ -150,11 +154,11 @@ where
         EvalModBsgs::Real(bsgs) => {
             module.ckks_eval_poly_real_const_coeffs(res, &t1, bsgs, tsk, scratch)?;
 
-            if let Some(consts) = params.range_extension_consts.as_ref(){
+            if let Some(consts) = params.range_extension_consts.as_ref() {
                 for i in 0..params.plan.f_mod_log_interval_reduction {
                     module.ckks_square_assign(res, tsk, scratch)?;
                     module.ckks_mul_pow2_assign(res, 1, scratch)?;
-                    module.ckks_sub_pt_const_assign(res, 0, consts, i,scratch)?;
+                    module.ckks_sub_pt_const_assign(res, 0, consts, i, scratch)?;
                 }
             }
 
