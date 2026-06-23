@@ -2,13 +2,13 @@ use crate::{
     CKKSCtBounds, CKKSInfos,
     leveled::api::{
         CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSDecrypt, CKKSEncrypt, CKKSImagOps, CKKSMulAddOps, CKKSMulOps,
-        CKKSMulSubOps, CKKSNegOps, CKKSPow2Ops, CKKSRescaleOps, CKKSRotateOps, CKKSSubOps,
+        CKKSMulSubOps, CKKSNegOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
     },
 };
 use poulpy_core::{
     GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWELinearTransformations, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWEShift,
     GLWETensorKeyEncryptSk, GLWETensoring,
-    layouts::{GGLWEInfos, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
+    layouts::{GGLWEInfos, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory, LWEInfos},
 };
 use poulpy_hal::{
     api::{
@@ -28,7 +28,6 @@ where
         + CKKSNegOps<BE>
         + CKKSPow2Ops<BE>
         + CKKSImagOps<BE>
-        + CKKSRescaleOps<BE>
         + CKKSRotateOps<BE>
         + CKKSMulOps<BE>
         + CKKSMulAddOps<BE>
@@ -57,7 +56,7 @@ where
     where
         C: CKKSCtBounds,
         T: GGLWEInfos,
-        P: CKKSInfos,
+        P: CKKSInfos + LWEInfos,
     {
         // The giant step hoists the prepared `X^{gsp}` right operand into a
         // backend-resident (heap) buffer, so it no longer draws on scratch; the
@@ -77,8 +76,6 @@ where
             .max(self.ckks_div_pow2_tmp_bytes())
             .max(self.ckks_mul_i_tmp_bytes())
             .max(self.ckks_div_i_tmp_bytes())
-            .max(self.ckks_rescale_tmp_bytes())
-            .max(self.ckks_align_tmp_bytes())
             .max(self.ckks_mul_tmp_bytes(ct_infos, tsk_infos))
             .max(self.ckks_mul_add_ct_tmp_bytes(ct_infos, tsk_infos))
             .max(self.ckks_mul_sub_ct_tmp_bytes(ct_infos, tsk_infos))
@@ -95,7 +92,7 @@ where
         C: CKKSCtBounds,
         T: GGLWEInfos,
         A: GGLWEInfos,
-        P: CKKSInfos,
+        P: CKKSInfos + LWEInfos,
     {
         self.ckks_all_ops_tmp_bytes(ct_infos, tsk_infos, pt_prec)
             .max(self.ckks_rotate_tmp_bytes(ct_infos, atk_infos))

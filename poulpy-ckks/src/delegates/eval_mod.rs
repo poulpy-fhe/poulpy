@@ -1,32 +1,100 @@
 use anyhow::Result;
-use poulpy_core::layouts::{BSGSMeta, GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta};
+use poulpy_core::layouts::{
+    BSGSMeta, Base2K, Compact, Degree, GGLWEInfos, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
+    LWEInfos, Rank, SetBSGSMeta, TorusPrecision,
+};
 use poulpy_hal::api::CnvPVecBytesOf;
 use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena, TransferFrom, VecZnx};
 
 use crate::{
-    CKKSCtBounds, SetCKKSInfos,
+    CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
     api::{CKKSAddOps, CKKSCopyOps, CKKSEvalModOps, CKKSMulOps, CKKSSubOps},
     layouts::eval_mod::EvalMod,
     oep::CKKSEvalModImpl,
 };
 
+#[derive(Clone, Copy)]
+struct EvalModWorkCtInfos {
+    n: Degree,
+    base2k: Base2K,
+    rank: Rank,
+    max_size: usize,
+    k: TorusPrecision,
+    meta: CKKSMeta,
+}
+
+impl LWEInfos for EvalModWorkCtInfos {
+    fn base2k(&self) -> Base2K {
+        self.base2k
+    }
+
+    fn n(&self) -> Degree {
+        self.n
+    }
+
+    fn max_size(&self) -> usize {
+        self.max_size
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.k
+    }
+}
+
+impl GLWEInfos for EvalModWorkCtInfos {
+    fn rank(&self) -> Rank {
+        self.rank
+    }
+}
+
+impl CKKSInfos for EvalModWorkCtInfos {
+    fn meta(&self) -> CKKSMeta {
+        self.meta
+    }
+
+    fn log_delta(&self) -> usize {
+        self.meta.log_delta
+    }
+
+    fn log_budget(&self) -> usize {
+        self.k.as_usize().saturating_sub(self.meta.log_delta)
+    }
+}
+
 impl<BE: Backend + CKKSEvalModImpl<BE>> CKKSEvalModOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAddOps<BE> + CKKSSubOps<BE> + CKKSMulOps<BE> + CKKSCopyOps<BE> + CnvPVecBytesOf,
 {
-    fn ckks_eval_mod_tmp_bytes<R, P, F, T>(&self, res: &R, _params: &EvalMod<F, P>, tsk: &T) -> usize
+    fn ckks_eval_mod_tmp_bytes<R, C, P, F, T>(&self, res: &R, ct: &C, params: &EvalMod<F, P>, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
+        C: CKKSCtBounds,
         P: CKKSCtBounds,
         T: GGLWEInfos,
     {
-        let cols: usize = (res.rank() + 1).into();
-        let compact_ct = VecZnx::bytes_of(res.n().into(), cols, res.max_size());
+        let work_k = ct.k().as_usize().max(ct.log_budget() + params.plan.f_mod_log_delta);
+        let work = EvalModWorkCtInfos {
+            n: ct.n(),
+            base2k: ct.base2k(),
+            rank: ct.rank(),
+            max_size: work_k.div_ceil(ct.base2k().as_usize()).max(1),
+            // Total torus width = budget carried into eval_mod + the plan scale.
+            k: (ct.log_budget() + params.plan.f_mod_log_delta).into(),
+            meta: CKKSMeta {
+                log_sparsity: ct.log_sparsity(),
+                log_delta: params.plan.f_mod_log_delta,
+            },
+        };
+
+        let cols: usize = (work.rank() + 1).into();
+        let compact_work = VecZnx::bytes_of(work.n().into(), cols, work.max_size());
         // The giant step hoists the prepared `X^{gsp}` right operand, kept alive
         // across the baby-step pairs that share it.
-        let hoisted_right = self.bytes_of_cnv_pvec_right(cols, res.max_size());
-        let bsgs_giant = self.ckks_mul_tmp_bytes(res, tsk).max(self.ckks_add_tmp_bytes()) + 3 * compact_ct + hoisted_right;
-        let square_scope = self.ckks_square_tmp_bytes(res, tsk) + compact_ct;
+        let hoisted_right = self.bytes_of_cnv_pvec_right(cols, work.max_size());
+        let bsgs_giant = self.ckks_mul_tmp_bytes(&work, tsk).max(self.ckks_add_tmp_bytes()) + 3 * compact_work + hoisted_right;
+        let square_scope = (self.ckks_square_tmp_bytes(&work, tsk) + compact_work).max(
+            self.ckks_square_tmp_bytes(res, tsk) + VecZnx::bytes_of(res.n().into(), (res.rank() + 1).into(), res.max_size()),
+        );
         self.ckks_copy_tmp_bytes()
             .max(self.ckks_add_pt_const_tmp_bytes())
             .max(self.ckks_sub_pt_const_tmp_bytes())
@@ -44,7 +112,7 @@ where
     ) -> Result<()>
     where
         BE: TransferFrom<HostBytesBackend>,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
     {

@@ -8,7 +8,7 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use poulpy_ckks::{
-    CKKSInfos, CKKSMeta,
+    CKKSInfos, CKKSLayout, CKKSMeta,
     api::CKKSEvalModOps,
     layouts::{
         CKKSModuleAlloc,
@@ -32,10 +32,17 @@ const LOG_DELTA: usize = 30;
 const EVAL_MOD_LOG_DELTA: usize = 60;
 const DSIZE: usize = 1;
 
-const COEFF_META: CKKSMeta = CKKSMeta {
-    log_delta: EVAL_MOD_LOG_DELTA,
-    log_budget: BASE2K,
-    log_sparsity: 0,
+const COEFF_META: CKKSLayout = CKKSLayout {
+    glwe_layout: GLWELayout {
+        n: Degree(N as u32),
+        base2k: Base2K(BASE2K as u32),
+        k: TorusPrecision((EVAL_MOD_LOG_DELTA + BASE2K) as u32),
+        rank: Rank(1),
+    },
+    meta: CKKSMeta {
+        log_delta: EVAL_MOD_LOG_DELTA,
+        log_sparsity: 0,
+    },
 };
 
 struct Case {
@@ -152,7 +159,6 @@ fn bench_ntt120_ref(c: &mut Criterion) {
     let tsk_layout = tsk_layout();
     let input_meta = CKKSMeta {
         log_delta: LOG_DELTA,
-        log_budget: CT_K - LOG_DELTA,
         log_sparsity: 0,
     };
 

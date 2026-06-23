@@ -7,7 +7,7 @@ use poulpy_hal::{
 };
 
 use crate::api::ModuleTransfer;
-use crate::layouts::{Base2K, Degree, LWEInfos, Rank, SetLWEInfos, TorusPrecision};
+use crate::layouts::{Base2K, Degree, LWEInfos, Rank, SetBase2k, SetK, TorusPrecision};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::fmt;
 
@@ -98,15 +98,27 @@ pub struct GLWE<D: Data> {
 pub type GLWEBackendRef<'a, BE> = GLWE<<BE as Backend>::BufRef<'a>>;
 pub type GLWEBackendMut<'a, BE> = GLWE<<BE as Backend>::BufMut<'a>>;
 
-impl<D: Data> SetLWEInfos for GLWE<D> {
+impl<D: Data> SetBase2k for GLWE<D> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k
     }
 }
 
-impl<D: Data> SetLWEInfos for &mut GLWE<D> {
+impl<D: Data> SetBase2k for &mut GLWE<D> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k
+    }
+}
+
+impl<D: Data> SetK for GLWE<D> {
+    fn set_k(&mut self, k: TorusPrecision) {
+        self.k = k
+    }
+}
+
+impl<D: Data> SetK for &mut GLWE<D> {
+    fn set_k(&mut self, k: TorusPrecision) {
+        self.k = k
     }
 }
 

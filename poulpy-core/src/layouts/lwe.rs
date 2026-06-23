@@ -89,9 +89,22 @@ impl<T: LWEInfos + ?Sized> LWEInfos for &mut T {
 }
 
 /// Trait for mutating LWE parameters in place.
-pub trait SetLWEInfos {
+pub trait SetBase2k {
     /// Sets the limb width `base2k`.
     fn set_base2k(&mut self, base2k: Base2K);
+}
+
+/// Trait for mutating the Torus precision `k` in place.
+///
+/// `k` is a metadata label (the effective torus width); it is independent of the
+/// underlying buffer's active size, which `compact()`/`set_size` manage on use.
+pub trait SetK {
+    /// Sets the Torus precision `k`.
+    fn set_k(&mut self, k: TorusPrecision);
+}
+
+pub trait Compact {
+    fn compact(&mut self);
 }
 
 /// Plain-data snapshot of the parameters that describe an [`LWE`] ciphertext.
@@ -159,7 +172,7 @@ impl<D: Data> LWEInfos for LWE<D> {
     }
 }
 
-impl<D: Data> SetLWEInfos for LWE<D> {
+impl<D: Data> SetBase2k for LWE<D> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k
     }

@@ -2,20 +2,23 @@ use anyhow::Result;
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{
-    BSGSBabyOps, BSGSGiantOps,
-    layouts::{BabyStep, GGLWEInfos, GLWEInfos, Parity, PowerBasisHelper, prepared::GLWETensorKeyPreparedToBackendRef},
+    BSGSOps,
+    layouts::{
+        BabyStep, Compact, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper,
+        prepared::GLWETensorKeyPreparedToBackendRef,
+    },
 };
 
 /// Baby-Step / Giant-Step polynomial-evaluation phases.
 ///
-/// All arithmetic is supplied by the scheme through `precision`
-/// ([`BSGSBabyOps`] / [`BSGSGiantOps`]); the engine only sequences the schedule.
+/// All arithmetic is supplied by the scheme through `ops`; the engine only
+/// sequences the GLWE BSGS schedule.
 pub trait GLWEPolynomialEvaluation<BE: Backend> {
     /// Evaluates a single baby step into `res`.
     #[allow(clippy::too_many_arguments)]
-    fn glwe_eval_baby_step<PR, V, P, A, G>(
+    fn glwe_eval_baby_step<Ops, V, P, A, G>(
         &self,
-        precision: &PR,
+        ops: &Ops,
         res: &mut V,
         parity: Parity,
         coeffs: &P,
@@ -23,14 +26,16 @@ pub trait GLWEPolynomialEvaluation<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        PR: BSGSBabyOps<BE, V, P, A>,
-        P: GLWEInfos,
+        Ops: BSGSOps<BE, V, P, A, V>,
+        V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact,
+        P: GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>;
 
     /// Folds the evaluated baby steps into `res` using the giant-step schedule.
-    fn glwe_eval_giant_steps<PR, R, B, V, A, G, T>(
+    fn glwe_eval_giant_steps<Ops, R, B, V, P, A, G, T>(
         &self,
-        precision: &PR,
+        ops: &Ops,
         res: &mut R,
         baby_steps: &mut [B],
         power_basis: &G,
@@ -38,8 +43,12 @@ pub trait GLWEPolynomialEvaluation<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        PR: BSGSGiantOps<BE, V, A, R>,
+        Ops: BSGSOps<BE, V, P, A, R>,
+        R: GLWEToBackendMut<BE>,
         B: BabyStep<BE, Value = V>,
+        V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
+        P: GLWEToBackendRef<BE>,
+        A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
 }

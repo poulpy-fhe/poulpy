@@ -25,6 +25,9 @@ pub trait CKKSCopyDefault<BE: Backend> {
         if offset == 0 {
             self.glwe_copy(dst, src);
             dst.set_meta(src.meta());
+            // `set_meta` no longer carries the budget (it lives in the GLWE `k`),
+            // so propagate `src`'s width explicitly.
+            dst.set_log_budget(src.log_budget());
         } else {
             self.glwe_lsh(dst, src, offset, scratch);
             dst.set_meta(src.meta());

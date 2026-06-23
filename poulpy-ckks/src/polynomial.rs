@@ -6,9 +6,10 @@ use poulpy_hal::layouts::{HostBytesBackend, Module};
 use rand_distr::num_traits::{Float, FloatConst, FromPrimitive};
 
 use crate::{
-    CKKSMeta,
+    CKKSInfos, CKKSLayout, SetCKKSInfos,
     layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar},
 };
+use poulpy_core::layouts::LWEInfos;
 
 pub use poulpy_core::layouts::{
     BSGSPolynomial, Basis, DEFAULT_SPLIT_STRATEGY, Parity, Polynomial, SplitStrategy, change_of_basis, evaluate_coeffs,
@@ -22,7 +23,7 @@ pub trait EncodeBSGS {
         &self,
         module: &Module<HostBytesBackend>,
         base2k: Base2K,
-        coeff_meta: CKKSMeta,
+        coeff_meta: CKKSLayout,
     ) -> Result<BSGSPolynomial<CKKSPlaintext<Vec<u8>>>>;
 
     /// Decomposes and encodes using an explicit [`SplitStrategy`].
@@ -30,7 +31,7 @@ pub trait EncodeBSGS {
         &self,
         module: &Module<HostBytesBackend>,
         base2k: Base2K,
-        coeff_meta: CKKSMeta,
+        coeff_meta: CKKSLayout,
         strategy: SplitStrategy,
     ) -> Result<BSGSPolynomial<CKKSPlaintext<Vec<u8>>>>;
 }
@@ -44,7 +45,7 @@ where
         &self,
         module: &Module<HostBytesBackend>,
         base2k: Base2K,
-        coeff_meta: CKKSMeta,
+        coeff_meta: CKKSLayout,
     ) -> Result<BSGSPolynomial<CKKSPlaintext<Vec<u8>>>> {
         self.encode_bsgs_with(module, base2k, coeff_meta, DEFAULT_SPLIT_STRATEGY)
     }
@@ -53,12 +54,13 @@ where
         &self,
         module: &Module<HostBytesBackend>,
         base2k: Base2K,
-        coeff_meta: CKKSMeta,
+        coeff_meta: CKKSLayout,
         strategy: SplitStrategy,
     ) -> Result<BSGSPolynomial<CKKSPlaintext<Vec<u8>>>> {
         let mut step_idx = 0usize;
         self.decompose_bsgs_with(strategy, |baby_coeffs| {
-            let mut pt = module.ckks_pt_coeffs_alloc(baby_coeffs.len(), base2k, coeff_meta);
+            let mut pt = module.ckks_pt_coeffs_alloc(baby_coeffs.len(), base2k, coeff_meta.k());
+            pt.set_meta(coeff_meta.meta());
             pt.encode_host_floats(baby_coeffs)
                 .map_err(|e| anyhow!("encode_bsgs: step {step_idx}: {e}"))?;
             step_idx += 1;
@@ -149,7 +151,7 @@ where
         &self,
         module: &Module<HostBytesBackend>,
         base2k: Base2K,
-        coeff_meta: CKKSMeta,
+        coeff_meta: CKKSLayout,
     ) -> Result<ComplexBSGSPolynomial<CKKSPlaintext<Vec<u8>>>> {
         self.encode_bsgs_with(module, base2k, coeff_meta, DEFAULT_SPLIT_STRATEGY)
     }
@@ -160,7 +162,7 @@ where
         &self,
         module: &Module<HostBytesBackend>,
         base2k: Base2K,
-        coeff_meta: CKKSMeta,
+        coeff_meta: CKKSLayout,
         strategy: SplitStrategy,
     ) -> Result<ComplexBSGSPolynomial<CKKSPlaintext<Vec<u8>>>> {
         let parity = self.combined_parity();

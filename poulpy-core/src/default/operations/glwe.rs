@@ -273,9 +273,9 @@ where
         cnv_offset: usize,
         res: &mut R,
         a: &A,
-        a_effective_k: usize,
+        a_k: usize,
         b: &B,
-        b_effective_k: usize,
+        b_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -293,16 +293,16 @@ where
 
         let ab_base2k: usize = a.base2k().as_usize();
         assert_eq!(b.base2k().as_usize(), ab_base2k);
-        assert_eq!(a_effective_k.div_ceil(ab_base2k), a.size());
-        assert_eq!(b_effective_k.div_ceil(ab_base2k), b.size());
+        assert_eq!(a_k.div_ceil(ab_base2k), a.size());
+        assert_eq!(b_k.div_ceil(ab_base2k), b.size());
         let res_base2k: usize = res.base2k().as_usize();
         let cols: usize = res.rank().as_usize() + 1;
 
         let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, a.size());
         let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, 1, b.size());
 
-        let a_mask = msb_mask_bottom_limb(ab_base2k, a_effective_k);
-        let b_mask = msb_mask_bottom_limb(ab_base2k, b_effective_k);
+        let a_mask = msb_mask_bottom_limb(ab_base2k, a_k);
+        let b_mask = msb_mask_bottom_limb(ab_base2k, b_k);
         let a_backend = a.to_backend_ref();
         let b_backend = b.to_backend_ref();
 
@@ -360,9 +360,9 @@ where
         &self,
         cnv_offset: usize,
         res: &mut R,
-        res_effective_k: usize,
+        res_k: usize,
         a: &A,
-        a_effective_k: usize,
+        a_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -378,16 +378,16 @@ where
 
         let ab_base2k: usize = a.base2k().as_usize();
         assert_eq!(res.base2k().as_usize(), ab_base2k);
-        assert_eq!(res_effective_k.div_ceil(ab_base2k), res.size());
-        assert_eq!(a_effective_k.div_ceil(ab_base2k), a.size());
+        assert_eq!(res_k.div_ceil(ab_base2k), res.size());
+        assert_eq!(a_k.div_ceil(ab_base2k), a.size());
 
         let cols: usize = res.rank().as_usize() + 1;
 
         let (mut res_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, res.size());
         let (mut a_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, 1, a.size());
 
-        let mask_res = msb_mask_bottom_limb(ab_base2k, res_effective_k);
-        let mask_a = msb_mask_bottom_limb(ab_base2k, a_effective_k);
+        let mask_res = msb_mask_bottom_limb(ab_base2k, res_k);
+        let mask_a = msb_mask_bottom_limb(ab_base2k, a_k);
         let a_backend = a.to_backend_ref();
 
         scratch = scratch.apply_mut(|scratch| {
@@ -457,9 +457,9 @@ pub trait GLWEMulPlainDefault<BE: Backend> {
         cnv_offset: usize,
         res: &mut R,
         a: &A,
-        a_effective_k: usize,
+        a_k: usize,
         b: &B,
-        b_effective_k: usize,
+        b_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -470,9 +470,9 @@ pub trait GLWEMulPlainDefault<BE: Backend> {
         &self,
         cnv_offset: usize,
         res: &mut R,
-        res_effective_k: usize,
+        res_k: usize,
         a: &A,
-        a_effective_k: usize,
+        a_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -510,27 +510,22 @@ pub trait GLWETensoringDefault<BE: Backend> {
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
 
-    #[allow(clippy::too_many_arguments)]
     fn glwe_tensor_square_apply_default<R, A>(
         &self,
         cnv_offset: usize,
         res: &mut R,
         a: &A,
-        a_effective_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos;
 
-    #[allow(clippy::too_many_arguments)]
     fn glwe_tensor_apply_default<R, A, B>(
         &self,
         cnv_offset: usize,
         res: &mut R,
         a: &A,
-        a_effective_k: usize,
         b: &B,
-        b_effective_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -778,7 +773,6 @@ where
         cnv_offset: usize,
         res: &mut R,
         a: &A,
-        a_effective_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -792,9 +786,11 @@ where
             self.glwe_tensor_square_apply_tmp_bytes_default(res, a)
         );
 
+        // The operand's effective torus width is its GLWE `k`.
+        let a_k: usize = a.k().as_usize();
         let a_base2k: usize = a.base2k().as_usize();
 
-        let a_size = a_effective_k.div_ceil(a_base2k);
+        let a_size = a_k.div_ceil(a_base2k);
 
         let res_base2k: usize = res.base2k().as_usize();
         let cols: usize = res.rank().as_usize() + 1;
@@ -802,7 +798,7 @@ where
         let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, a_size);
         let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, cols, a_size);
 
-        let a_mask = msb_mask_bottom_limb(a_base2k, a_effective_k);
+        let a_mask = msb_mask_bottom_limb(a_base2k, a_k);
         let a_backend = a.to_backend_ref();
 
         let mut prep_scratch = scratch.borrow();
@@ -923,9 +919,7 @@ where
         cnv_offset: usize,
         res: &mut R,
         a: &A,
-        a_effective_k: usize,
         b: &B,
-        b_effective_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -940,20 +934,23 @@ where
             self.glwe_tensor_apply_tmp_bytes_default(res, a, b)
         );
 
+        // The operands' effective torus widths are their GLWE `k`.
+        let a_k: usize = a.k().as_usize();
+        let b_k: usize = b.k().as_usize();
         let ab_base2k: usize = a.base2k().as_usize();
         assert_eq!(b.base2k().as_usize(), ab_base2k);
-        let a_size = a_effective_k.div_ceil(ab_base2k);
-        let b_size = b_effective_k.div_ceil(ab_base2k);
-        assert!(a_size <= a.size(), "a_effective_k limbs ({a_size}) > a.size() ({})", a.size());
-        assert!(b_size <= b.size(), "b_effective_k limbs ({b_size}) > b.size() ({})", b.size());
+        let a_size = a_k.div_ceil(ab_base2k);
+        let b_size = b_k.div_ceil(ab_base2k);
+        assert!(a_size <= a.size(), "a_k limbs ({a_size}) > a.size() ({})", a.size());
+        assert!(b_size <= b.size(), "b_k limbs ({b_size}) > b.size() ({})", b.size());
 
         let cols: usize = res.rank().as_usize() + 1;
 
         let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, a_size);
         let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, cols, b_size);
 
-        let a_mask = msb_mask_bottom_limb(ab_base2k, a_effective_k);
-        let b_mask = msb_mask_bottom_limb(ab_base2k, b_effective_k);
+        let a_mask = msb_mask_bottom_limb(ab_base2k, a_k);
+        let b_mask = msb_mask_bottom_limb(ab_base2k, b_k);
         let a_backend = a.to_backend_ref();
         let b_backend = b.to_backend_ref();
 
@@ -1194,7 +1191,7 @@ where
 /// Tensor product reusing a caller-prepared right operand `b_prep`.
 ///
 /// Prepares only `a` into a scratch `CnvPVecL` and runs [`glwe_tensor_apply_loop`]
-/// against the supplied `b_prep`. `a_effective_k` masks `a`'s bottom limb and
+/// against the supplied `b_prep`. `a_k` masks `a`'s bottom limb and
 /// `b_size` is the limb count of the operand `b_prep` was prepared from.
 #[allow(clippy::too_many_arguments)]
 pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
@@ -1202,7 +1199,7 @@ pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
     cnv_offset: usize,
     res: &mut R,
     a: &A,
-    a_effective_k: usize,
+    a_k: usize,
     b_prep: &BP,
     b_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
@@ -1226,11 +1223,11 @@ pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
     BP: CnvPVecRToBackendRef<BE>,
 {
     let ab_base2k: usize = a.base2k().as_usize();
-    let a_size: usize = a_effective_k.div_ceil(ab_base2k);
-    // Relaxed input: `a` may carry more limbs than `a_effective_k` requires; the prepared left
+    let a_size: usize = a_k.div_ceil(ab_base2k);
+    // Relaxed input: `a` may carry more limbs than `a_k` requires; the prepared left
     // operand is sized to the effective limb count and `cnv_prepare_left` clamps to it, reading
     // only the top (most-significant) effective limbs.
-    assert!(a_size <= a.size(), "a_effective_k limbs ({a_size}) > a.size() ({})", a.size());
+    assert!(a_size <= a.size(), "a_k limbs ({a_size}) > a.size() ({})", a.size());
 
     let scratch = scratch.borrow();
     assert!(
@@ -1244,7 +1241,7 @@ pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
 
     let (mut a_prep, mut scratch) = scratch.take_cnv_pvec_left_scratch(module, cols, a_size);
 
-    let a_mask = msb_mask_bottom_limb(ab_base2k, a_effective_k);
+    let a_mask = msb_mask_bottom_limb(ab_base2k, a_k);
     let a_backend = a.to_backend_ref();
 
     let mut prep_scratch = scratch.borrow();
@@ -1265,31 +1262,26 @@ pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
 
 /// Prepares GLWE `b` into the caller-owned scratch `CnvPVecR` `b_prep`.
 ///
-/// `b_effective_k` masks the bottom limb of `b`. The prepared operand can then be
+/// `b_k` masks the bottom limb of `b`. The prepared operand can then be
 /// reused across several [`glwe_tensor_apply_prepared_right`] calls.
-pub fn glwe_prepare_right<BE, M, B, BP>(
-    module: &M,
-    b_prep: &mut BP,
-    b: &B,
-    b_effective_k: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
+pub fn glwe_prepare_right<BE, M, B, BP>(module: &M, b_prep: &mut BP, b: &B, b_k: usize, scratch: &mut ScratchArena<'_, BE>)
+where
     BE: Backend,
     M: Convolution<BE>,
     B: GLWEToBackendRef<BE> + GLWEInfos,
     BP: CnvPVecRToBackendMut<BE>,
 {
     let b_base2k: usize = b.base2k().as_usize();
-    // Relaxed input: `b` may carry more limbs than `b_effective_k` requires; the prepared
+    // Relaxed input: `b` may carry more limbs than `b_k` requires; the prepared
     // operand `b_prep` is sized to the effective limb count, and `cnv_prepare_right` clamps to
     // `min(b_prep.size(), b.size())`, reading only the top (most-significant) effective limbs.
     assert!(
-        b_effective_k.div_ceil(b_base2k) <= b.size(),
-        "b_effective_k limbs ({}) > b.size() ({})",
-        b_effective_k.div_ceil(b_base2k),
+        b_k.div_ceil(b_base2k) <= b.size(),
+        "b_k limbs ({}) > b.size() ({})",
+        b_k.div_ceil(b_base2k),
         b.size()
     );
-    let b_mask = msb_mask_bottom_limb(b_base2k, b_effective_k);
+    let b_mask = msb_mask_bottom_limb(b_base2k, b_k);
     let b_backend = b.to_backend_ref();
     module.cnv_prepare_right(&mut b_prep.to_backend_mut(), &b_backend.data, b_mask, scratch);
 }

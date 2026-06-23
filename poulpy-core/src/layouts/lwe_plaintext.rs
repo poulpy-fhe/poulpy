@@ -5,7 +5,7 @@ use poulpy_hal::layouts::{
 };
 
 use crate::api::ModuleTransfer;
-use crate::layouts::{Base2K, Degree, LWEInfos, SetLWEInfos, TorusPrecision};
+use crate::layouts::{Base2K, Degree, LWEInfos, SetBase2k, TorusPrecision};
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub struct LWEPlaintextLayout {
@@ -40,7 +40,7 @@ pub struct LWEPlaintext<D: Data> {
 pub type LWEPlaintextBackendRef<'a, BE> = LWEPlaintext<<BE as Backend>::BufRef<'a>>;
 pub type LWEPlaintextBackendMut<'a, BE> = LWEPlaintext<<BE as Backend>::BufMut<'a>>;
 
-impl<D: HostDataMut> SetLWEInfos for LWEPlaintext<D> {
+impl<D: HostDataMut> SetBase2k for LWEPlaintext<D> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k
     }

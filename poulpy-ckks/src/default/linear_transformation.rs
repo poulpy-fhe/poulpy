@@ -1,6 +1,6 @@
 //! CKKS wrapper for the GLWE-level linear transformation.
 //!
-//! Computes the scale-derived convolution parameters (`a_effective_k`,
+//! Computes the scale-derived convolution parameters (`a_k`,
 //! `cnv_offset`) and the result `log_delta` / `log_budget`, delegates the actual
 //! evaluation to the scheme-agnostic core engine
 //! [`GLWELinearTransformations`](poulpy_core::GLWELinearTransformations), and stamps the
@@ -12,8 +12,8 @@ use poulpy_core::{
     LinearTransformationPrepared,
     default::linear_transformation::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft},
     layouts::{
-        GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
-        LWEInfos,
+        Compact, GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef,
+        GetGaloisElement, LWEInfos,
         prepared::{GLWEAutomorphismKeyPreparedToBackendRef, PreparedDiagonal},
     },
 };
@@ -25,7 +25,7 @@ use poulpy_hal::{
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::{CKKSCopyOps, LinearTransformation, LinearTransformationOps, LtDiagonalScale},
-    checked_log_budget_sub, checked_mul_pt_log_budget,
+    default::mul::mul_pt_params_raw,
     layouts::{CKKSModuleAlloc, CKKSPlaintext},
 };
 
@@ -68,32 +68,6 @@ impl<D: Data, BE: Backend> LtDiagonalScale for PreparedDiagonal<D, BE> {
     fn lt_log_scale(&self) -> usize {
         self.log_scale()
     }
-}
-
-/// Output `(log_budget, log_delta, cnv_offset)` for `dst = M·src`, given the
-/// matrix diagonals' scale exponent (`pt_log_scale`) and storage precision
-/// (`pt_max_k`).
-///
-/// This is `get_mul_pt_params(res, a, pt)` specialized to a plaintext operand
-/// described by just those two integers (its `log_budget` is dead in this math),
-/// which avoids materializing a throwaway plaintext-proxy value at eval time.
-/// The prepared path reads them off the cache (`pt_log_scale()` / `pt_max_k()`),
-/// the streamed path off the first plaintext diagonal (`log_delta()` /
-/// `max_k()`); both share this body.
-fn lt_mul_params<R, A>(res: &R, a: &A, pt_log_scale: usize, pt_k: usize) -> Result<(usize, usize, usize)>
-where
-    R: LWEInfos,
-    A: CKKSInfos,
-{
-    let res_log_budget = checked_mul_pt_log_budget("mul", a.log_budget(), 0, a.log_delta(), pt_log_scale)?;
-    let res_log_delta = a.log_delta();
-    let res_offset = (res_log_budget + res_log_delta).saturating_sub(res.max_k().as_usize());
-    let cnv_offset = pt_k + res_offset;
-    Ok((
-        checked_log_budget_sub("mul", res_log_budget, res_offset)?,
-        res_log_delta,
-        cnv_offset,
-    ))
 }
 
 impl<BE: Backend> LinearTransformationOps<BE> for Module<BE>
@@ -191,7 +165,7 @@ where
         } else {
             src.max_size()
         };
-        self.glwe_prepare_linear_transformation_baby_steps(babies, src, src.effective_k(), keys, key_size, scratch);
+        self.glwe_prepare_linear_transformation_baby_steps(babies, src, src.k().as_usize(), keys, key_size, scratch);
         Ok(())
     }
 
@@ -207,7 +181,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalScale,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -218,17 +192,28 @@ where
         let first = lt
             .first_diagonal_plaintext()
             .ok_or_else(|| anyhow::anyhow!("linear transformation has no diagonals"))?;
-        // The diagonal scale (`lt_log_scale`, the CKKS-layer accessor) and storage
-        // precision (the scheme-agnostic `max_k`) are read uniformly off the first
-        // diagonal, regardless of `P` (resident or streamed) — the only
-        // representation-dependent step in this wrapper.
+        // The diagonal scale (`lt_log_scale`) and its effective torus width `k` are
+        // read off the first diagonal. The convolution offset must match the width
+        // the diagonal data was masked/positioned at in `cnv_prepare_right` (its
+        // effective `k`), which can be below the rounded physical `max_k`.
         let (pt_log_scale, pt_max_k) = (first.lt_log_scale(), first.max_k().as_usize());
-        let (res_log_budget, res_log_delta, cnv_offset) = lt_mul_params(dst, src, pt_log_scale, pt_max_k)?;
+        // ct × (plaintext diagonal): the ct × pt convolution rule, with the diagonal
+        // described by just its scale (`pt_log_scale` → rhs `log_delta`) and storage
+        // width (`pt_max_k` → rhs `max_k`). Its `log_budget` is dead in this math
+        // (`checked_mul_pt_log_budget` reads the rhs budget only for diagnostics), so 0.
+        let (res_log_budget, res_log_delta, cnv_offset) = mul_pt_params_raw(
+            dst.max_k().as_usize(),
+            src.log_delta(),
+            src.log_budget(),
+            pt_log_scale,
+            0,
+            pt_max_k,
+        )?;
         let key_size = lt_key_size(lt, dst, keys);
         self.glwe_eval_linear_transformation_into(cnv_offset, dst, babies, lt, keys, key_size, scratch);
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
-        dst.compact_in_place();
+        dst.compact();
         Ok(())
     }
 
@@ -266,7 +251,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalScale,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,

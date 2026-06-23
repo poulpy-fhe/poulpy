@@ -11,7 +11,7 @@ use poulpy_hal::{
 
 use crate::{
     encryption::lwe::LWEFillMaskDefault,
-    layouts::{Base2K, Degree, LWEInfos, LWEToBackendMut, SetLWEInfos, TorusPrecision},
+    layouts::{Base2K, Degree, LWEInfos, LWEToBackendMut, SetBase2k, TorusPrecision},
 };
 
 /// Seed-compressed LWE ciphertext layout.
@@ -140,7 +140,7 @@ where
 
     fn decompress_lwe<R, O>(&self, res: &mut R, other: &O)
     where
-        R: LWEToBackendMut<Self::Backend> + LWEInfos + SetLWEInfos,
+        R: LWEToBackendMut<Self::Backend> + LWEInfos + SetBase2k,
         O: LWECompressedToBackendRef<Self::Backend>,
     {
         let other = other.to_backend_ref();

@@ -1,6 +1,6 @@
 use poulpy_hal::layouts::{Backend, Data, HostDataRef, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef};
 
-use crate::layouts::{Base2K, Degree, LWEInfos, SetLWEInfos, TorusPrecision};
+use crate::layouts::{Base2K, Degree, LWEInfos, SetBase2k, TorusPrecision};
 
 /// Shape metadata for a packed matrix of LWE ciphertexts.
 pub trait LWEMatrixInfos: LWEInfos {
@@ -79,7 +79,7 @@ impl<D: Data> LWEMatrixInfos for LWEMatrix<D> {
     }
 }
 
-impl<D: Data> SetLWEInfos for LWEMatrix<D> {
+impl<D: Data> SetBase2k for LWEMatrix<D> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k;
     }

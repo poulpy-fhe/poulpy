@@ -137,7 +137,10 @@ pub fn glwe_prepare_linear_transformation_rhs_default<BE, M, P>(
     let pt_k = first.k();
     let pt_base2k_usize = pt_base2k.as_usize();
     let pt_k_usize = pt_k.as_usize();
-    let mask = msb_mask_bottom_limb(pt_base2k_usize, pt_k_usize);
+    // The diagonal is an integer poly encoded across its full physical width
+    // (`max_k`), so the bottom-limb mask must span `max_k`, not the (possibly
+    // smaller) effective `k`, otherwise the low limb's data is truncated.
+    let mask = msb_mask_bottom_limb(pt_base2k_usize, first.max_k().as_usize());
 
     for gs in &lt.giant_steps {
         if gs.diagonals.is_empty() {

@@ -9,7 +9,7 @@ use poulpy_hal::{
 
 use crate::{
     encryption::glwe::GLWEMaskFillDefault,
-    layouts::{Base2K, Degree, GLWEInfos, GLWEToBackendMut, GetDegree, LWEInfos, Rank, SetLWEInfos, TorusPrecision},
+    layouts::{Base2K, Degree, GLWEInfos, GLWEToBackendMut, GetDegree, LWEInfos, Rank, SetBase2k, TorusPrecision},
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::fmt;
@@ -292,7 +292,7 @@ where
     /// Decompresses `other` into `res` by copying the stored data and regenerating the mask.
     fn decompress_glwe<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GLWEToBackendMut<Self::Backend> + SetLWEInfos,
+        R: GLWEToBackendMut<Self::Backend> + SetBase2k,
         O: GLWECompressedToBackendRef<Self::Backend> + GLWEInfos,
     {
         let other = other.to_backend_ref();

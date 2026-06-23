@@ -59,10 +59,8 @@ fn main() {
         }
     } else {
         let mut scratch = ScratchOwned::<NTT126Ifma>::alloc(module.glwe_tensor_apply_tmp_bytes(&tensor, &a, &b));
-        let ak = a.k().as_usize();
-        let bk = b.k().as_usize();
         for _ in 0..iters {
-            module.glwe_tensor_apply(0, &mut tensor, &a, ak, &b, bk, &mut scratch.borrow());
+            module.glwe_tensor_apply(0, &mut tensor, &a, &b, &mut scratch.borrow());
             black_box(&tensor);
         }
     }

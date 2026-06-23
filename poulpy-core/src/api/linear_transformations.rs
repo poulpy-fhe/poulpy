@@ -75,7 +75,7 @@ pub trait GLWELinearTransformations<BE: Backend> {
         &self,
         cache: &mut LinearTransformationBabySteps<BE>,
         a: &A,
-        a_effective_k: usize,
+        a_k: usize,
         keys: &H,
         key_size: usize,
         scratch: &mut ScratchArena<'_, BE>,

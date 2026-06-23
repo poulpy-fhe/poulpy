@@ -13,7 +13,6 @@ pub mod neg;
 pub mod plaintext;
 pub mod polynomial_evaluation;
 pub mod pow2;
-pub mod rescale;
 pub mod rotate;
 pub mod sub;
 

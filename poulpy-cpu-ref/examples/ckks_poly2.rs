@@ -21,7 +21,7 @@
 
 use anyhow::Result;
 use poulpy_ckks::{
-    CKKSInfos, CKKSMeta,
+    CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos,
     encoding::Encoder,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
     leveled::api::{CKKSAllOpsTmpBytes, CKKSDecrypt, CKKSEncrypt, PolynomialEvaluation},
@@ -31,7 +31,8 @@ use poulpy_ckks::{
 use poulpy_core::{
     EncryptionLayout, GLWETensorKeyEncryptSk,
     layouts::{
-        GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, Rank,
+        Base2K, Degree, GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, Rank,
+        TorusPrecision,
         prepared::{GLWESecretPrepared, GLWESecretPreparedFactory, GLWETensorKeyPrepared},
     },
 };
@@ -57,17 +58,31 @@ const HW: usize = 192;
 const DSIZE: usize = 1;
 
 /// Encoding precision for the input slot vector.
-const PREC_CT: CKKSMeta = CKKSMeta {
-    log_sparsity: 0,
-    log_delta: 45,
-    log_budget: 5,
+const PREC_CT: CKKSLayout = CKKSLayout {
+    glwe_layout: GLWELayout {
+        n: Degree(N as u32),
+        base2k: Base2K(BASE2K as u32),
+        k: TorusPrecision(45 + 5),
+        rank: Rank(1),
+    },
+    meta: CKKSMeta {
+        log_sparsity: 0,
+        log_delta: 45,
+    },
 };
 
 /// Encoding precision for the BSGS polynomial coefficients.
-const COEFF_META: CKKSMeta = CKKSMeta {
-    log_sparsity: 0,
-    log_delta: 45,
-    log_budget: 1,
+const COEFF_META: CKKSLayout = CKKSLayout {
+    glwe_layout: GLWELayout {
+        n: Degree(N as u32),
+        base2k: Base2K(BASE2K as u32),
+        k: TorusPrecision(45 + 1),
+        rank: Rank(1),
+    },
+    meta: CKKSMeta {
+        log_sparsity: 0,
+        log_delta: 45,
+    },
 };
 const ABS_ERROR_TOLERANCE: f64 = 5e-5;
 
@@ -147,10 +162,10 @@ fn print_phase(name: &str) {
 
 fn print_ct_meta(label: &str, ct: &CKKSCiphertext<Vec<u8>>) {
     println!(
-        "  {label:<28} log_delta={:>2} log_budget={:>3} effective_k={:>3} limbs={:>2} max_k={:>3}",
+        "  {label:<28} log_delta={:>2} log_budget={:>3} k={:>3} limbs={:>2} max_k={:>3}",
         ct.log_delta(),
         ct.log_budget(),
-        ct.effective_k(),
+        ct.k(),
         ct.size(),
         ct.max_k().as_usize()
     );
@@ -158,10 +173,10 @@ fn print_ct_meta(label: &str, ct: &CKKSCiphertext<Vec<u8>>) {
 
 fn print_pt_meta(label: &str, pt: &CKKSPlaintext<Vec<u8>>) {
     println!(
-        "  {label:<28} log_delta={:>2} log_budget={:>3} effective_k={:>3} limbs={:>2} max_k={:>3}",
+        "  {label:<28} log_delta={:>2} log_budget={:>3} k={:>3} limbs={:>2} max_k={:>3}",
         pt.log_delta(),
         pt.log_budget(),
-        pt.effective_k(),
+        pt.k(),
         pt.size(),
         pt.max_k().as_usize()
     );
@@ -173,7 +188,10 @@ fn setup() -> Result<SetupArtifacts> {
     println!("  polynomial: sin(x) via degree-{DEGREE} Chebyshev interpolation on [-1, 1]");
     println!(
         "  params: n={N}, slots={M}, base2k={BASE2K}, ct_k={CT_K}, prec_ct=({}, {}), coeff=({}, {})",
-        PREC_CT.log_delta, PREC_CT.log_budget, COEFF_META.log_delta, COEFF_META.log_budget
+        PREC_CT.log_delta(),
+        PREC_CT.log_budget(),
+        COEFF_META.log_delta(),
+        COEFF_META.log_budget()
     );
 
     let module = Module::<BackendImpl>::new(N as u64);
@@ -241,7 +259,8 @@ fn encoding(setup: &SetupArtifacts) -> Result<EncodingArtifacts> {
     let bsgs = poly.encode_bsgs(&host_module, BASE2K.into(), COEFF_META)?;
     println!("  BSGS baby steps: {}, parity={:?}", bsgs.baby_steps().len(), bsgs.parity());
 
-    let mut pt_znx = setup.module.ckks_pt_vec_alloc(BASE2K.into(), PREC_CT);
+    let mut pt_znx = setup.module.ckks_pt_vec_alloc(BASE2K.into(), PREC_CT.k());
+    pt_znx.set_meta(PREC_CT.meta());
     setup.encoder.encode_reim(&mut pt_znx, &x_re, &x_im)?;
     print_pt_meta("encoded plaintext x", &pt_znx);
     println!("  x[0] = {:.6}", x_re[0]);

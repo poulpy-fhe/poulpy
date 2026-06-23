@@ -16,7 +16,7 @@ use anyhow::Result;
 use poulpy_core::{
     default::linear_transformation::DiagonalProd,
     layouts::{
-        Base2K, GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef,
+        Base2K, Compact, GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef,
         GetGaloisElement, LinearTransformation, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
     },
 };
@@ -76,7 +76,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
@@ -89,7 +89,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
@@ -102,7 +102,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
@@ -118,7 +118,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
@@ -134,7 +134,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
@@ -150,7 +150,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
@@ -165,7 +165,7 @@ pub unsafe trait DFTImpl<BE: Backend>: Backend {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
@@ -213,7 +213,7 @@ pub trait DFTDefault<BE: Backend> {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
@@ -226,7 +226,7 @@ pub trait DFTDefault<BE: Backend> {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
@@ -239,7 +239,7 @@ pub trait DFTDefault<BE: Backend> {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
@@ -255,7 +255,7 @@ pub trait DFTDefault<BE: Backend> {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
@@ -271,7 +271,7 @@ pub trait DFTDefault<BE: Backend> {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
@@ -287,7 +287,7 @@ pub trait DFTDefault<BE: Backend> {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
@@ -302,7 +302,7 @@ pub trait DFTDefault<BE: Backend> {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
@@ -353,7 +353,7 @@ where
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
@@ -369,7 +369,7 @@ where
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
@@ -385,7 +385,7 @@ where
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
@@ -404,7 +404,7 @@ where
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
@@ -423,7 +423,7 @@ where
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
@@ -442,7 +442,7 @@ where
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
@@ -460,7 +460,7 @@ where
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
@@ -522,7 +522,11 @@ macro_rules! impl_ckks_dft_defaults {
             ) -> $crate::__macro_reexports::anyhow::Result<()>
             where
                 P: ::poulpy_core::default::linear_transformation::DiagonalProd<$be> + $crate::api::LtDiagonalScale,
-                Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
+                Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be>
+                    + ::poulpy_core::layouts::GLWEToBackendRef<$be>
+                    + $crate::CKKSCtBounds
+                    + $crate::SetCKKSInfos
+                    + ::poulpy_core::layouts::Compact,
                 K: ::poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef<$be>
                     + ::poulpy_core::layouts::GGLWEPreparedToBackendRef<$be>
                     + ::poulpy_core::layouts::GetGaloisElement
@@ -541,7 +545,11 @@ macro_rules! impl_ckks_dft_defaults {
             ) -> $crate::__macro_reexports::anyhow::Result<()>
             where
                 P: ::poulpy_core::default::linear_transformation::DiagonalProd<$be> + $crate::api::LtDiagonalScale,
-                Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
+                Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be>
+                    + ::poulpy_core::layouts::GLWEToBackendRef<$be>
+                    + $crate::CKKSCtBounds
+                    + $crate::SetCKKSInfos
+                    + ::poulpy_core::layouts::Compact,
                 K: ::poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef<$be>
                     + ::poulpy_core::layouts::GGLWEPreparedToBackendRef<$be>
                     + ::poulpy_core::layouts::GetGaloisElement
@@ -560,7 +568,11 @@ macro_rules! impl_ckks_dft_defaults {
             ) -> $crate::__macro_reexports::anyhow::Result<()>
             where
                 P: ::poulpy_core::default::linear_transformation::DiagonalProd<$be> + $crate::api::LtDiagonalScale,
-                Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
+                Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be>
+                    + ::poulpy_core::layouts::GLWEToBackendRef<$be>
+                    + $crate::CKKSCtBounds
+                    + $crate::SetCKKSInfos
+                    + ::poulpy_core::layouts::Compact,
                 K: ::poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef<$be>
                     + ::poulpy_core::layouts::GGLWEPreparedToBackendRef<$be>
                     + ::poulpy_core::layouts::GetGaloisElement
@@ -582,7 +594,11 @@ macro_rules! impl_ckks_dft_defaults {
             ) -> $crate::__macro_reexports::anyhow::Result<()>
             where
                 P: ::poulpy_core::default::linear_transformation::DiagonalProd<$be> + $crate::api::LtDiagonalScale,
-                Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
+                Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be>
+                    + ::poulpy_core::layouts::GLWEToBackendRef<$be>
+                    + $crate::CKKSCtBounds
+                    + $crate::SetCKKSInfos
+                    + ::poulpy_core::layouts::Compact,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds,
                 K: ::poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef<$be>
                     + ::poulpy_core::layouts::GGLWEPreparedToBackendRef<$be>
@@ -604,7 +620,11 @@ macro_rules! impl_ckks_dft_defaults {
             ) -> $crate::__macro_reexports::anyhow::Result<()>
             where
                 P: ::poulpy_core::default::linear_transformation::DiagonalProd<$be> + $crate::api::LtDiagonalScale,
-                Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
+                Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be>
+                    + ::poulpy_core::layouts::GLWEToBackendRef<$be>
+                    + $crate::CKKSCtBounds
+                    + $crate::SetCKKSInfos
+                    + ::poulpy_core::layouts::Compact,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds,
                 K: ::poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef<$be>
                     + ::poulpy_core::layouts::GGLWEPreparedToBackendRef<$be>
@@ -626,7 +646,11 @@ macro_rules! impl_ckks_dft_defaults {
             ) -> $crate::__macro_reexports::anyhow::Result<()>
             where
                 P: ::poulpy_core::default::linear_transformation::DiagonalProd<$be> + $crate::api::LtDiagonalScale,
-                Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
+                Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be>
+                    + ::poulpy_core::layouts::GLWEToBackendRef<$be>
+                    + $crate::CKKSCtBounds
+                    + $crate::SetCKKSInfos
+                    + ::poulpy_core::layouts::Compact,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds,
                 K: ::poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef<$be>
                     + ::poulpy_core::layouts::GGLWEPreparedToBackendRef<$be>
@@ -647,7 +671,11 @@ macro_rules! impl_ckks_dft_defaults {
             ) -> $crate::__macro_reexports::anyhow::Result<()>
             where
                 P: ::poulpy_core::default::linear_transformation::DiagonalProd<$be> + $crate::api::LtDiagonalScale,
-                Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be> + ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds + $crate::SetCKKSInfos,
+                Dst: ::poulpy_core::layouts::GLWEToBackendMut<$be>
+                    + ::poulpy_core::layouts::GLWEToBackendRef<$be>
+                    + $crate::CKKSCtBounds
+                    + $crate::SetCKKSInfos
+                    + ::poulpy_core::layouts::Compact,
                 Src: ::poulpy_core::layouts::GLWEToBackendRef<$be> + $crate::CKKSCtBounds,
                 K: ::poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef<$be>
                     + ::poulpy_core::layouts::GGLWEPreparedToBackendRef<$be>

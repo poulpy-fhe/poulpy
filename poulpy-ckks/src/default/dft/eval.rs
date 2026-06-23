@@ -23,7 +23,7 @@ use anyhow::Result;
 use poulpy_core::{
     default::linear_transformation::DiagonalProd,
     layouts::{
-        Base2K, GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef,
+        Base2K, Compact, GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef,
         GetGaloisElement, LinearTransformation, LinearTransformationStrategy, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
     },
 };
@@ -234,14 +234,10 @@ impl<BE: Backend, Dir, Fmt: DftFormat, P> DFTMatrix<BE, Dir, Fmt, LinearTransfor
 /// ## Progressive compaction
 ///
 /// Each factor consumes `factor_log_delta` bits of budget, so after a factor the
-/// running ciphertext's `effective_k` (and therefore the work of the next
+/// running ciphertext's `k` (and therefore the work of the next
 /// factor's baby-step keyswitches, which scale with the operand limb count) is
 /// smaller than its storage. After every factor `ct` is therefore compacted in
-/// place — [`SetCKKSInfos::compact_in_place`] drops the limbs below the (now
-/// smaller) `effective_k`, an `O(1)` logical resize keeping the most-significant
-/// limbs (the prefix of the limb array), so no scratch ciphertext, copy, or
-/// re-allocation is involved. The first factor runs at full width (a full-budget
-/// input has `effective_k == max_k`, so its compaction is a no-op).
+/// place.
 pub fn ckks_dft_evaluate_assign<BE, Dir, Fmt, P, Dst, H, K>(
     module: &Module<BE>,
     ct: &mut Dst,
@@ -253,7 +249,7 @@ where
     BE: Backend,
     P: DiagonalProd<BE> + LtDiagonalScale,
     Module<BE>: LinearTransformationOps<BE> + CnvPVecAlloc<BE>,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
@@ -261,7 +257,7 @@ where
     // factor's baby-step keyswitches operate on fewer limbs as the budget shrinks.
     for factor in dft.factor_operands() {
         eval_factor(module, ct, factor, keys, scratch)?;
-        ct.compact_in_place();
+        ct.compact();
     }
     Ok(())
 }
@@ -281,7 +277,7 @@ where
     BE: Backend,
     P: DiagonalProd<BE> + LtDiagonalScale,
     Module<BE>: LinearTransformationOps<BE> + CnvPVecAlloc<BE>,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
@@ -306,7 +302,7 @@ where
     BE: Backend,
     P: DiagonalProd<BE> + LtDiagonalScale,
     Module<BE>: LinearTransformationOps<BE> + CnvPVecAlloc<BE>,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
@@ -326,7 +322,7 @@ where
     BE: Backend,
     P: DiagonalProd<BE> + LtDiagonalScale,
     Module<BE>: LinearTransformationOps<BE> + CnvPVecAlloc<BE>,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
@@ -364,7 +360,7 @@ where
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSImagOps<BE>,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
@@ -402,7 +398,7 @@ where
     BE: Backend,
     P: DiagonalProd<BE> + LtDiagonalScale,
     Module<BE>: LinearTransformationOps<BE> + CnvPVecAlloc<BE> + CKKSAddOps<BE> + CKKSImagOps<BE>,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
@@ -442,7 +438,7 @@ where
         + CKKSSubOps<BE>
         + CKKSImagOps<BE>
         + CKKSRotateOps<BE>,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
@@ -490,7 +486,7 @@ where
     BE: Backend,
     P: DiagonalProd<BE> + LtDiagonalScale,
     Module<BE>: LinearTransformationOps<BE> + CnvPVecAlloc<BE> + CKKSCopyOps<BE>,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,

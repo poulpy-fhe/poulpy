@@ -6,7 +6,7 @@ use poulpy_hal::{
     layouts::{Backend, ScratchArena, VecZnxBigToBackendRef},
 };
 
-use crate::layouts::{LWEInfos, LWEPlaintextToBackendMut, LWESecretToBackendRef, LWEToBackendRef, SetLWEInfos};
+use crate::layouts::{LWEInfos, LWEPlaintextToBackendMut, LWESecretToBackendRef, LWEToBackendRef, SetBase2k};
 
 pub fn lwe_decrypt_tmp_bytes_default<M, BE: Backend, A>(module: &M, infos: &A) -> usize
 where
@@ -28,7 +28,7 @@ where
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes,
     R: LWEToBackendRef<BE> + LWEInfos,
-    P: LWEPlaintextToBackendMut<BE> + SetLWEInfos + LWEInfos,
+    P: LWEPlaintextToBackendMut<BE> + SetBase2k + LWEInfos,
     S: LWESecretToBackendRef<BE> + LWEInfos,
     BE: Backend,
 {

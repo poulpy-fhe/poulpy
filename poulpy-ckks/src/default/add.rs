@@ -25,13 +25,12 @@ where
     let meta = CKKSMeta {
         log_sparsity: 0,
         log_delta: 1,
-        log_budget: 0,
     };
 
-    let mut host_pt = CKKSPlaintext::from_inner(
-        GLWEPlaintext::alloc_with_meta(1usize.into(), base2k, meta.min_k(base2k)),
-        meta,
-    );
+    // Monomial plaintext: total torus width is `log_delta` (budget 0).
+    let k_total: usize = meta.log_delta;
+
+    let mut host_pt = CKKSPlaintext::from_inner(GLWEPlaintext::alloc_with_meta(1usize.into(), base2k, k_total.into()), meta);
     host_pt.encode_host_floats(&[1.0f64])?;
 
     Ok(CKKSPlaintext::from_inner(module.upload_glwe_plaintext(&host_pt.inner), meta))

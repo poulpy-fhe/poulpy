@@ -16,12 +16,12 @@ use poulpy_hal::layouts::{Backend, CnvPVecR};
 pub struct CKKSPreparedRight<BE: Backend> {
     /// Backend-resident prepared convolution operand.
     pub(crate) prep: CnvPVecR<BE::OwnedBuf, BE>,
-    /// Limb count the operand was prepared at (its `effective_k`).
+    /// Limb count the operand was prepared at (its `k`).
     pub(crate) size: usize,
     /// `log_delta` of the source ciphertext.
     pub(crate) log_delta: usize,
     /// `log_budget` of the source ciphertext.
     pub(crate) log_budget: usize,
-    /// `effective_k` of the source ciphertext.
-    pub(crate) effective_k: usize,
+    /// `k` of the source ciphertext.
+    pub(crate) k: usize,
 }

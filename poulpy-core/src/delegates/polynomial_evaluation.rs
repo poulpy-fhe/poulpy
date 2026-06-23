@@ -2,15 +2,18 @@ use anyhow::Result;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    BSGSBabyOps, BSGSGiantOps, GLWEPolynomialEvaluation,
-    layouts::{BabyStep, GGLWEInfos, GLWEInfos, Parity, PowerBasisHelper, prepared::GLWETensorKeyPreparedToBackendRef},
+    BSGSOps, GLWEPolynomialEvaluation,
+    layouts::{
+        BabyStep, Compact, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper,
+        prepared::GLWETensorKeyPreparedToBackendRef,
+    },
     oep::PolynomialEvaluationImpl,
 };
 
 impl<BE: Backend + PolynomialEvaluationImpl<BE>> GLWEPolynomialEvaluation<BE> for Module<BE> {
-    fn glwe_eval_baby_step<PR, V, P, A, G>(
+    fn glwe_eval_baby_step<Ops, V, P, A, G>(
         &self,
-        precision: &PR,
+        ops: &Ops,
         res: &mut V,
         parity: Parity,
         coeffs: &P,
@@ -18,16 +21,18 @@ impl<BE: Backend + PolynomialEvaluationImpl<BE>> GLWEPolynomialEvaluation<BE> fo
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        PR: BSGSBabyOps<BE, V, P, A>,
-        P: GLWEInfos,
+        Ops: BSGSOps<BE, V, P, A, V>,
+        V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact,
+        P: GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,
     {
-        BE::glwe_eval_baby_step::<PR, V, P, A, G>(self, precision, res, parity, coeffs, power_basis, scratch)
+        BE::glwe_eval_baby_step::<Ops, V, P, A, G>(self, ops, res, parity, coeffs, power_basis, scratch)
     }
 
-    fn glwe_eval_giant_steps<PR, R, B, V, A, G, T>(
+    fn glwe_eval_giant_steps<Ops, R, B, V, P, A, G, T>(
         &self,
-        precision: &PR,
+        ops: &Ops,
         res: &mut R,
         baby_steps: &mut [B],
         power_basis: &G,
@@ -35,11 +40,15 @@ impl<BE: Backend + PolynomialEvaluationImpl<BE>> GLWEPolynomialEvaluation<BE> fo
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        PR: BSGSGiantOps<BE, V, A, R>,
+        Ops: BSGSOps<BE, V, P, A, R>,
+        R: GLWEToBackendMut<BE>,
         B: BabyStep<BE, Value = V>,
+        V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
+        P: GLWEToBackendRef<BE>,
+        A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     {
-        BE::glwe_eval_giant_steps::<PR, R, B, V, A, G, T>(self, precision, res, baby_steps, power_basis, tsk, scratch)
+        BE::glwe_eval_giant_steps::<Ops, R, B, V, P, A, G, T>(self, ops, res, baby_steps, power_basis, tsk, scratch)
     }
 }

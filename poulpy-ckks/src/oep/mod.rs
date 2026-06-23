@@ -12,7 +12,6 @@ mod neg;
 mod plaintext;
 mod polynomial_evaluation;
 mod pow2;
-mod rescale;
 mod rotate;
 mod sub;
 
@@ -40,8 +39,6 @@ pub use plaintext::impl_ckks_plaintext_defaults;
 pub use polynomial_evaluation::CKKSPolynomialEvaluationImpl;
 pub use pow2::CKKSPow2Impl;
 pub use pow2::impl_ckks_pow2_defaults;
-pub use rescale::CKKSRescaleImpl;
-pub use rescale::impl_ckks_rescale_defaults;
 pub use rotate::CKKSRotateImpl;
 pub use rotate::impl_ckks_rotate_default;
 pub use sub::CKKSSubImpl;

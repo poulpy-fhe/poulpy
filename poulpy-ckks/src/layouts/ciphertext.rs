@@ -11,11 +11,11 @@ use std::{
 
 use anyhow::Result;
 use poulpy_core::layouts::{
-    BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, LWEInfos, Rank,
-    SetBSGSMeta,
+    BSGSMeta, Base2K, Compact, Degree, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, LWEInfos,
+    Rank, SetBSGSMeta,
 };
 use poulpy_core::{GLWENormalize, ScratchArenaTakeCore};
-use poulpy_hal::layouts::{Backend, Data, HostBackend, HostDataRef, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data, HostDataRef, ScratchArena};
 
 use crate::{CKKSInfos, CKKSMeta, SetCKKSInfos, api::CKKSCopyOps, error::CKKSCompositionError, layouts::CKKSModuleAlloc};
 
@@ -95,11 +95,14 @@ impl<D: Data, S: CKKSNormalizationState> CKKSCiphertext<D, S> {
     /// This is intended for callers that build ciphertext buffers manually.
     /// Normal CKKS operations update metadata themselves.
     pub fn set_meta_checked(&mut self, meta: CKKSMeta) -> Result<()> {
+        // The budget now lives in the wrapped GLWE's torus width `k`; this only
+        // validates that the stored width fits the allocated storage and that the
+        // requested scale fits within it.
         anyhow::ensure!(
-            meta.effective_k() <= self.max_k().as_usize(),
+            self.k().as_usize() <= self.max_k().as_usize() && meta.log_delta <= self.k().as_usize(),
             CKKSCompositionError::LimbReallocationShrinksBelowMetadata {
                 max_k: self.max_k().as_usize(),
-                log_delta: meta.log_delta(),
+                log_delta: meta.log_delta,
                 base2k: self.base2k().as_usize(),
                 requested_limbs: self.max_size(),
             }
@@ -113,7 +116,7 @@ impl<D: Data> CKKSCiphertext<D, Normalized> {
     /// Allocates a fresh backend-owned ciphertext and copies `self` into it.
     ///
     /// Used to compact the allocation size after arithmetic operations that
-    /// may leave a normalized ciphertext over-sized relative to `effective_k`.
+    /// may leave a normalized ciphertext over-sized relative to `k`.
     pub fn compact<M, BE>(&self, module: &M, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSCiphertext<BE::OwnedBuf>>
     where
         BE: Backend,
@@ -121,7 +124,7 @@ impl<D: Data> CKKSCiphertext<D, Normalized> {
         Self: GLWEToBackendRef<BE>,
         CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE>,
     {
-        let mut out = module.ckks_ciphertext_alloc(self.base2k(), self.effective_k().into());
+        let mut out = module.ckks_ciphertext_alloc(self.base2k(), self.k());
         module.ckks_copy(&mut out, self, scratch)?;
         Ok(out)
     }
@@ -186,11 +189,12 @@ impl<D: Data, S: CKKSNormalizationState> CKKSInfos for CKKSCiphertext<D, S> {
     }
 
     fn log_delta(&self) -> usize {
-        self.meta.log_delta()
+        self.meta.log_delta
     }
 
     fn log_budget(&self) -> usize {
-        self.meta.log_budget()
+        // Derived from the wrapped GLWE's torus width: `log_budget = k - log_delta`.
+        self.inner.k().as_usize().saturating_sub(self.meta.log_delta)
     }
 }
 
@@ -199,10 +203,18 @@ impl<D: Data, S: CKKSNormalizationState> SetCKKSInfos for CKKSCiphertext<D, S> {
         self.meta = meta;
     }
 
-    fn compact_in_place(&mut self) {
-        // Only ever shrink: a value whose `effective_k` already exceeds its
-        // storage (e.g. a deliberately undersized output) stays at `size()`.
-        let limbs = (self.effective_k() + self.log_n())
+    fn set_k(&mut self, k: poulpy_core::layouts::TorusPrecision) {
+        poulpy_core::layouts::SetK::set_k(&mut self.inner, k);
+    }
+}
+
+impl<D: Data, S: CKKSNormalizationState> Compact for CKKSCiphertext<D, S> {
+    fn compact(&mut self) {
+        // Clamp to `[1, max_size()]`: a value whose `k` (plus the
+        // `log_n` carry) already exceeds its storage (e.g. a deliberately
+        // undersized output) must stay within the allocated limbs, and the
+        // result always keeps at least one limb.
+        let limbs = (self.k().as_usize() + self.log_n())
             .div_ceil(self.base2k().as_usize())
             .max(1)
             .min(self.max_size());
@@ -225,9 +237,6 @@ impl<D: Data, S: CKKSNormalizationState> SetBSGSMeta for CKKSCiphertext<D, S> {
     }
     fn set_bsgs_log_delta(&mut self, log_delta: usize) {
         SetCKKSInfos::set_log_delta(self, log_delta);
-    }
-    fn compact_in_place(&mut self) {
-        SetCKKSInfos::compact_in_place(self);
     }
 }
 
@@ -315,11 +324,11 @@ impl<'a, BE: Backend + 'a> CKKSInfos for CKKSCiphertextViewMut<'a, BE> {
     }
 
     fn log_delta(&self) -> usize {
-        self.meta.log_delta()
+        self.meta.log_delta
     }
 
     fn log_budget(&self) -> usize {
-        self.meta.log_budget()
+        self.inner.k().as_usize().saturating_sub(self.meta.log_delta)
     }
 }
 
@@ -328,8 +337,14 @@ impl<'a, BE: Backend + 'a> SetCKKSInfos for CKKSCiphertextViewMut<'a, BE> {
         self.meta = meta;
     }
 
-    fn compact_in_place(&mut self) {
-        //let limbs = self.effective_k().div_ceil(self.base2k().as_usize()).max(1).min(self.size());
+    fn set_k(&mut self, k: poulpy_core::layouts::TorusPrecision) {
+        poulpy_core::layouts::SetK::set_k(&mut self.inner, k);
+    }
+}
+
+impl<'a, BE: Backend + 'a> Compact for CKKSCiphertextViewMut<'a, BE> {
+    fn compact(&mut self) {
+        //let limbs = self.k().div_ceil(self.base2k().as_usize()).max(1).min(self.size());
         //self.inner.data_mut().set_size(limbs);
     }
 }
@@ -349,9 +364,6 @@ impl<'a, BE: Backend + 'a> SetBSGSMeta for CKKSCiphertextViewMut<'a, BE> {
     }
     fn set_bsgs_log_delta(&mut self, log_delta: usize) {
         SetCKKSInfos::set_log_delta(self, log_delta);
-    }
-    fn compact_in_place(&mut self) {
-        SetCKKSInfos::compact_in_place(self);
     }
 }
 
@@ -394,7 +406,7 @@ pub trait ScratchArenaTakeCKKS<'a, BE: Backend>: ScratchArenaTakeCore<'a, BE> + 
         let layout = GLWELayout {
             n: ct.n(),
             base2k: ct.base2k(),
-            k: ct.effective_k().into(),
+            k: ct.k(),
             rank: ct.rank(),
         };
         self.take_ckks_ciphertext_scratch(&layout, ct.meta())
@@ -479,66 +491,6 @@ pub trait CKKSMaintainOps {
     fn ckks_compact_limbs_copy<D>(&self, ct: &CKKSCiphertext<D>) -> Result<CKKSCiphertext<Vec<u8>>>
     where
         D: HostDataRef;
-}
-
-#[doc(hidden)]
-pub trait CKKSMaintainOpsDefault<BE: Backend> {
-    fn ckks_reallocate_limbs_checked_default(&self, ct: &mut CKKSCiphertext<Vec<u8>>, size: usize) -> Result<()> {
-        let base2k = ct.base2k().as_usize();
-        let required_limbs = ct.effective_k().div_ceil(base2k);
-        anyhow::ensure!(
-            size >= required_limbs,
-            CKKSCompositionError::LimbReallocationShrinksBelowMetadata {
-                max_k: ct.max_k().as_usize(),
-                log_delta: ct.log_delta(),
-                base2k,
-                requested_limbs: size,
-            }
-        );
-        ct.data_mut().reallocate_limbs(size);
-        Ok(())
-    }
-
-    fn ckks_compact_limbs_default(&self, ct: &mut CKKSCiphertext<Vec<u8>>) -> Result<()> {
-        let size = ct.effective_k().div_ceil(ct.base2k().as_usize());
-        self.ckks_reallocate_limbs_checked_default(ct, size)?;
-        Ok(())
-    }
-}
-
-#[macro_export]
-macro_rules! impl_ckks_maintain_ops_defaults {
-    ($be:ty) => {
-        impl $crate::layouts::ciphertext::CKKSMaintainOpsDefault<$be> for ::poulpy_hal::layouts::Module<$be> {}
-    };
-}
-pub use crate::impl_ckks_maintain_ops_defaults;
-
-impl<BE: Backend> CKKSMaintainOps for Module<BE>
-where
-    BE: HostBackend<OwnedBuf = Vec<u8>>,
-    Module<BE>: CKKSMaintainOpsDefault<BE> + CKKSModuleAlloc<BE>,
-{
-    fn ckks_reallocate_limbs_checked(&self, ct: &mut CKKSCiphertext<Vec<u8>>, size: usize) -> Result<()> {
-        self.ckks_reallocate_limbs_checked_default(ct, size)
-    }
-
-    fn ckks_compact_limbs(&self, ct: &mut CKKSCiphertext<Vec<u8>>) -> Result<()> {
-        self.ckks_compact_limbs_default(ct)
-    }
-
-    fn ckks_compact_limbs_copy<D>(&self, ct: &CKKSCiphertext<D>) -> Result<CKKSCiphertext<Vec<u8>>>
-    where
-        D: HostDataRef,
-    {
-        let size = ct.effective_k().div_ceil(ct.base2k().as_usize());
-        let mut compact = self.ckks_ciphertext_alloc_from_infos(ct);
-        compact.meta = ct.meta();
-        self.ckks_reallocate_limbs_checked_default(&mut compact, size)?;
-        let dst_len = compact.data().data.len();
-        compact.data_mut().data.copy_from_slice(&ct.data().data.as_ref()[..dst_len]);
-        Ok(compact)
-    }
 }
 
 /// A CKKS ciphertext produced by an unnormalized linear operation.

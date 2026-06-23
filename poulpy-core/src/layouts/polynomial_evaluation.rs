@@ -898,20 +898,16 @@ impl<C> BSGSPolynomial<C> {
 /// Per-operation semantic precision carried by a value during BSGS evaluation.
 ///
 /// `log_budget` is the remaining homomorphic headroom and `log_delta` the
-/// encoded scaling precision; `effective_k = log_budget + log_delta`.
+/// encoded scaling precision; `k = log_budget + log_delta`.
 pub trait BSGSMeta {
     fn bsgs_log_budget(&self) -> usize;
     fn bsgs_log_delta(&self) -> usize;
-    fn bsgs_effective_k(&self) -> usize {
-        self.bsgs_log_budget() + self.bsgs_log_delta()
-    }
 }
 
 /// Mutable semantic precision access.
 pub trait SetBSGSMeta: BSGSMeta {
     fn set_bsgs_log_budget(&mut self, log_budget: usize);
     fn set_bsgs_log_delta(&mut self, log_delta: usize);
-    fn compact_in_place(&mut self);
 }
 
 /// Read access to a decomposed BSGS polynomial during evaluation.

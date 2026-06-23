@@ -106,9 +106,9 @@ pub trait GLWEMulPlain<BE: Backend> {
         cnv_offset: usize,
         res: &mut R,
         a: &A,
-        a_effective_k: usize,
+        a_k: usize,
         b: &B,
-        b_effective_k: usize,
+        b_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -120,9 +120,9 @@ pub trait GLWEMulPlain<BE: Backend> {
         &self,
         cnv_offset: usize,
         res: &mut R,
-        res_effective_k: usize,
+        res_k: usize,
         a: &A,
-        a_effective_k: usize,
+        a_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -141,28 +141,23 @@ pub trait GLWETensoring<BE: Backend> {
         R: GLWEInfos,
         A: GLWEInfos;
 
-    #[allow(clippy::too_many_arguments)]
     fn glwe_tensor_apply<R, A, B>(
         &self,
         cnv_offset: usize,
         res: &mut R,
         a: &A,
-        a_effective_k: usize,
         b: &B,
-        b_effective_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos;
 
-    #[allow(clippy::too_many_arguments)]
     fn glwe_tensor_square_apply<R, A>(
         &self,
         cnv_offset: usize,
         res: &mut R,
         a: &A,
-        a_effective_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,

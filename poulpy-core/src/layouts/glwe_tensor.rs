@@ -5,7 +5,7 @@ use poulpy_hal::{
 
 use crate::layouts::{
     Base2K, Degree, GLWE, GLWEBackendMut, GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
-    SetLWEInfos, TorusPrecision,
+    SetBase2k, TorusPrecision,
 };
 use std::fmt;
 
@@ -20,7 +20,7 @@ pub struct GLWETensor<D: Data> {
 pub type GLWETensorBackendRef<'a, BE> = GLWETensor<<BE as Backend>::BufRef<'a>>;
 pub type GLWETensorBackendMut<'a, BE> = GLWETensor<<BE as Backend>::BufMut<'a>>;
 
-impl<D: HostDataMut> SetLWEInfos for GLWETensor<D> {
+impl<D: HostDataMut> SetBase2k for GLWETensor<D> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k
     }

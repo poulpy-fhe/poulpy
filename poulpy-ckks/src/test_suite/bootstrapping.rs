@@ -44,8 +44,8 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
-    api::{CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDecrypt, CKKSEvalModOps, CKKSRescaleOps, DFTOps},
+    CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos,
+    api::{CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDecrypt, CKKSEvalModOps, DFTOps},
     encoding::reim::Encoder,
     layouts::{
         BootstrappingContext, BootstrappingPlan, CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec,
@@ -56,7 +56,7 @@ use crate::{
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextHostModule, TestContextModule, TestScalar, ckks_encrypt_with_prec, gen_atk,
+            TestContextBackend, TestContextHostModule, TestContextModule, TestScalar, ckks_encrypt_with_prec, ckks_spec, gen_atk,
             gen_encapsulation_keys, gen_sk_with_raw, gen_tsk, precision_stats, test_vector_1,
         },
     },
@@ -66,19 +66,16 @@ use crate::{
 /// small to bound the depth — and modulus width — of a self-contained test.
 const LOG_SLOTS: usize = 13;
 
-fn meta(log_delta: usize, log_budget: usize) -> CKKSMeta {
-    CKKSMeta {
-        log_sparsity: 0,
-        log_delta,
-        log_budget,
-    }
+fn meta(log_delta: usize, log_budget: usize) -> CKKSLayout {
+    // n/base2k are placeholders; consumers pass an explicit base2k/n and read k()/meta().
+    ckks_spec(0, 0, log_delta, log_budget)
 }
 
 /// End-to-end bootstrapping: encrypt at level 0, refresh, check the slots return.
 pub fn test_bootstrapping_e2e<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend + Backend<OwnedBuf = Vec<u8>>,
-    Module<BE>: TestContextModule<BE> + CKKSBootstrappingOps<BE> + CKKSRescaleOps<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSBootstrappingOps<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -148,7 +145,11 @@ where
         n,
         base2k,
         k: k_boot,
-        prec: meta(log_delta, 8),
+        prec_meta: CKKSMeta {
+            log_sparsity: 0,
+            log_delta,
+        },
+        prec_log_budget: 8,
         hw: 192,
         dsize: 7,
     };
@@ -162,21 +163,26 @@ where
 
     // One scratch for the whole pipeline (plaintext precision sized for the
     // largest plaintext op, EvalMod).
+    let scratch_size;
     let mut scratch = {
         let mut c = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
-        c.set_meta(tp.prec);
-        ScratchOwned::<BE>::alloc(module.ckks_all_ops_with_atk_tmp_bytes(
-            &c,
-            &tp.tsk_layout(),
-            &tp.atk_layout(),
-            &plan.eval_mod.coeffs_meta,
-        ))
+        c.set_meta(tp.prec().meta);
+        scratch_size = module.ckks_all_ops_with_atk_tmp_bytes(&c, &tp.tsk_layout(), &tp.atk_layout(), &plan.eval_mod.coeffs_meta);
+        ScratchOwned::<BE>::alloc(scratch_size)
     };
 
     let now = Instant::now();
     let ctx =
         BootstrappingContext::<BE, F>::compile(&module, &host_module, &encoder, base2k.into(), &plan, &mut scratch.borrow())
             .unwrap();
+    {
+        let mut eval_ct = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+        eval_ct.set_meta(meta(log_delta, k_boot - log_delta).meta);
+        let eval_tmp = module.ckks_eval_mod_tmp_bytes(&eval_ct, &eval_ct, &ctx.eval_mod, &tp.tsk_layout());
+        if eval_tmp > scratch_size {
+            scratch = ScratchOwned::<BE>::alloc(eval_tmp);
+        }
+    }
     println!("BootstrappingContext::compile: {:?}", now.elapsed());
 
     let now = Instant::now();
@@ -250,7 +256,7 @@ where
     if let Some((_, sparse_to_dense)) = &encaps {
         module.glwe_keyswitch_assign(&mut ct, sparse_to_dense, sparse_to_dense.max_size(), &mut scratch.borrow());
     }
-    ct.set_meta(meta(log_modulus_in, k_boot - log_modulus_in));
+    ct.set_meta(meta(log_modulus_in, k_boot - log_modulus_in).meta);
     println!("ckks_mod_up_into: {:?}", now.elapsed());
 
     let mut log_budget_check = k_boot - ct.log_delta();
@@ -283,7 +289,7 @@ where
     // 3) EvalMod each half. EvalMod raises the ciphertext to its own plan scale
     //    (`f_mod_log_delta`) internally and restores the input scale on the result,
     //    so no manual set_scale is needed here. Compact first: the ct×ct squaring
-    //    needs compact operands (storage == effective_k).
+    //    needs compact operands (storage == k).
     let ct_real = ct_real.compact(&module, &mut scratch.borrow()).unwrap();
     let ct_imag = ct_imag.compact(&module, &mut scratch.borrow()).unwrap();
     let mut res_real = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
@@ -331,7 +337,8 @@ where
         ct_out.log_delta(),
         ct_out.log_budget().min(127usize.saturating_sub(ct_out.log_delta())),
     );
-    let mut pt_out = module.ckks_pt_vec_alloc(base2k.into(), prec);
+    let mut pt_out = module.ckks_pt_vec_alloc(base2k.into(), prec.k());
+    pt_out.set_meta(prec.meta());
     module.ckks_decrypt(&mut pt_out, &ct_out, &sk, &mut scratch.borrow()).unwrap();
 
     let pt_host = pt_out.to_host_owned::<BE>();

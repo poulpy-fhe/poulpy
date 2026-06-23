@@ -7,7 +7,7 @@ use poulpy_hal::layouts::{
 
 use crate::api::ModuleTransfer;
 use crate::layouts::{
-    Base2K, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetLWEInfos, TorusPrecision,
+    Base2K, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBase2k, SetK, TorusPrecision,
 };
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
@@ -50,15 +50,27 @@ pub struct GLWEPlaintext<D: Data> {
 pub type GLWEPlaintextBackendRef<'a, BE> = GLWEPlaintext<<BE as Backend>::BufRef<'a>>;
 pub type GLWEPlaintextBackendMut<'a, BE> = GLWEPlaintext<<BE as Backend>::BufMut<'a>>;
 
-impl<D: Data> SetLWEInfos for GLWEPlaintext<D> {
+impl<D: Data> SetBase2k for GLWEPlaintext<D> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k
     }
 }
 
-impl<D: Data> SetLWEInfos for &mut GLWEPlaintext<D> {
+impl<D: Data> SetBase2k for &mut GLWEPlaintext<D> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k
+    }
+}
+
+impl<D: Data> SetK for GLWEPlaintext<D> {
+    fn set_k(&mut self, k: TorusPrecision) {
+        self.k = k
+    }
+}
+
+impl<D: Data> SetK for &mut GLWEPlaintext<D> {
+    fn set_k(&mut self, k: TorusPrecision) {
+        self.k = k
     }
 }
 
@@ -100,6 +112,16 @@ impl<D: HostDataRef> GLWEPlaintext<D> {
 }
 
 impl<D: Data> GLWEPlaintext<D> {
+    /// Replaces this plaintext's backing storage with host bytes uploaded into
+    /// backend `BE`. The shape and metadata are preserved.
+    pub fn copy_from_host_bytes<BE>(&mut self, bytes: &[u8])
+    where
+        BE: Backend<OwnedBuf = D>,
+    {
+        assert_eq!(bytes.len(), BE::len_bytes(&self.data.data));
+        BE::copy_from_host(&mut self.data.data, bytes);
+    }
+
     /// Rebuilds this backend-owned plaintext as a host-owned [`GLWEPlaintext<Vec<u8>>`].
     pub fn to_host_owned<BE>(&self) -> GLWEPlaintext<Vec<u8>>
     where

@@ -8,7 +8,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
+    CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos,
     api::{CKKSAllOpsTmpBytes, CKKSEvalModOps},
     encoding::reim::Encoder,
     layouts::{
@@ -20,24 +20,29 @@ use crate::{
 };
 
 use super::helpers::{
-    TestContextBackend, TestContextModule, TestScalar, ckks_decrypt_decode, ckks_encrypt_with_prec, gen_sk_with_raw, gen_tsk,
-    precision_stats, upload_pt,
+    TestContextBackend, TestContextModule, TestScalar, ckks_decrypt_decode, ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw,
+    gen_tsk, precision_stats, upload_pt,
 };
 
-fn alloc_scratch_eval_mod<BE>(params: &super::CKKSTestParams, module: &Module<BE>, res_k: usize) -> ScratchOwned<BE>
+fn alloc_scratch_eval_mod<BE, F>(
+    params: &super::CKKSTestParams,
+    module: &Module<BE>,
+    eval_mod: &EvalMod<F, CKKSPlaintext<BE::OwnedBuf>>,
+    res_k: usize,
+) -> ScratchOwned<BE>
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
-    let mut ct = module.ckks_ciphertext_alloc(params.base2k.into(), res_k.into());
-    ct.set_meta(params.prec);
-    let pt_prec = CKKSMeta {
-        log_delta: 8,
-        log_budget: 10,
-        log_sparsity: 0,
-    };
-    let scratch_size = module.ckks_all_ops_tmp_bytes(&ct, &params.tsk_layout(), &pt_prec);
+    let mut ct = module.ckks_ciphertext_alloc(params.base2k.into(), params.k.into());
+    ct.set_meta(params.prec().meta);
+    let mut res = module.ckks_ciphertext_alloc(params.base2k.into(), res_k.into());
+    res.set_meta(params.prec().meta);
+    let pt_prec = ckks_spec(params.n, params.base2k, 8, 10);
+    let scratch_size = module
+        .ckks_all_ops_tmp_bytes(&res, &params.tsk_layout(), &pt_prec)
+        .max(module.ckks_eval_mod_tmp_bytes(&res, &ct, eval_mod, &params.tsk_layout()));
     ScratchOwned::<BE>::alloc(scratch_size)
 }
 
@@ -147,11 +152,7 @@ fn run_eval_mod_case<BE, F, E>(
 {
     // Coefficients are encoded at the scale EvalMod runs at (`f_mod_log_delta`).
     let mut lit = lit;
-    lit.coeffs_meta = CKKSMeta {
-        log_delta: lit.f_mod_log_delta,
-        log_budget: params.base2k,
-        log_sparsity: 0,
-    };
+    lit.coeffs_meta = ckks_spec(params.n, params.base2k, lit.f_mod_log_delta, params.base2k);
     let host_params = EvalMod::<F, _>::from_literal(params.base2k.into(), lit, host_module).expect("EvalMod::from_literal");
 
     // Input message scale, below the plan scale so EvalMod's internal raise to
@@ -165,11 +166,11 @@ fn run_eval_mod_case<BE, F, E>(
         // rounded to `dsize·base2k` so the tensor-key gadget layout stays valid.
         k: (lit.consumed_bits() + input_log_delta + 2 * params.base2k).next_multiple_of(dsize * params.base2k),
         hw: 192,
-        prec: CKKSMeta {
-            log_delta: input_log_delta,
-            log_budget: 10,
+        prec_meta: CKKSMeta {
             log_sparsity: 0,
+            log_delta: input_log_delta,
         },
+        prec_log_budget: 10,
         dsize,
     };
 
@@ -200,7 +201,7 @@ fn run_eval_mod_case<BE, F, E>(
     // `res` must span the raised scale EvalMod evaluates at (`f_mod_log_delta`),
     // which is wider than the input scale by `f_mod_log_delta - input_log_delta`.
     let res_k = test_params.k + lit.f_mod_log_delta.saturating_sub(input_log_delta);
-    let mut scratch = alloc_scratch_eval_mod(&test_params, module, res_k);
+    let mut scratch = alloc_scratch_eval_mod(&test_params, module, &params_be, res_k);
     let tsk = gen_tsk(&test_params, module, &sk_raw, &mut scratch.borrow());
 
     let ct_input = ckks_encrypt_with_prec(
@@ -212,7 +213,7 @@ fn run_eval_mod_case<BE, F, E>(
         test_params.k,
         &x_re_raw,
         &x_im_raw,
-        test_params.prec,
+        test_params.prec(),
         &mut scratch.borrow(),
     );
 
@@ -223,13 +224,12 @@ fn run_eval_mod_case<BE, F, E>(
         .expect("ckks_eval_mod");
 
     // Exact externally visible bit-consumption: EvalMod arithmetic is charged at
-    // the plan scale, and returning from that raised scale to the input scale
-    // drops the extra precision gap.
-    let scale_gap = lit.f_mod_log_delta.saturating_sub(in_ld);
+    // the plan scale. Returning from that raised scale to the input scale
+    // preserves the remaining budget, matching `ckks_set_log_delta`.
     assert_eq!(res.log_delta(), in_ld, "{label}: eval_mod should preserve log_delta");
     assert_eq!(
         in_lb - res.log_budget(),
-        params_be.consumed_bits() + scale_gap,
+        params_be.consumed_bits(),
         "{label}: eval_mod consumed bits mismatch"
     );
 
@@ -248,7 +248,7 @@ fn run_eval_mod_case<BE, F, E>(
         let want: Vec<(F, F)> = x_re_raw.iter().map(|&t| oracle(&params_be, &lit, t, reference)).collect();
         let want_re: Vec<F> = want.iter().map(|&(re, _)| re * mr_f).collect();
 
-        let stats = precision_stats(&got_re, &want_re, test_params.prec.log_delta);
+        let stats = precision_stats(&got_re, &want_re, test_params.prec().log_delta());
 
         println!(
             "PREC {label} [{reference:?}]: avg={:.2} min={:.2}",
@@ -268,7 +268,7 @@ fn run_eval_mod_case<BE, F, E>(
         if matches!(lit.eval_mod_type, EvalModType::ExpCmplx) {
             let want_im: Vec<F> = want.iter().map(|&(_, im)| im * mr_f).collect();
             let got_im: Vec<F> = im_out.iter().map(|&v| v * mr_f).collect();
-            let stats_im = precision_stats(&got_im, &want_im, test_params.prec.log_delta);
+            let stats_im = precision_stats(&got_im, &want_im, test_params.prec().log_delta());
             assert!(
                 stats_im.avg_log2_prec >= required_log2_prec,
                 "{label} [{reference:?}] (imag): avg precision {:.1} bits < {required_log2_prec:.1} (worst_err={}, worst_idx={}, got={}, want={})",
@@ -304,7 +304,7 @@ pub fn test_eval_mod_sin_continuous_minimal<BE, F, E>(
         f_mod_inv_degree: None,
         scaling: None,
         split_strategy: SplitStrategy::MinDepth,
-        coeffs_meta: CKKSMeta::default(),
+        coeffs_meta: CKKSLayout::default(),
         f_mod_log_delta: 60,
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_sin_continuous_minimal", lit, 18.0);
@@ -333,7 +333,7 @@ pub fn test_eval_mod_sin_continuous_with_arcsine<BE, F, E>(
         f_mod_log_delta: 60,
         scaling: None,
         split_strategy: SplitStrategy::MinDepth,
-        coeffs_meta: CKKSMeta::default(),
+        coeffs_meta: CKKSLayout::default(),
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_sin_continuous_arcsine", lit, 18.0);
 }
@@ -361,7 +361,7 @@ pub fn test_eval_mod_cos_discrete<BE, F, E>(
         f_mod_log_delta: 60,
         scaling: None,
         split_strategy: SplitStrategy::MinDepth,
-        coeffs_meta: CKKSMeta::default(),
+        coeffs_meta: CKKSLayout::default(),
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_discrete", lit, 18.0);
 }
@@ -388,7 +388,7 @@ pub fn test_eval_mod_cos_continuous<BE, F, E>(
         f_mod_inv_degree: None,
         scaling: None,
         split_strategy: SplitStrategy::MinDepth,
-        coeffs_meta: CKKSMeta::default(),
+        coeffs_meta: CKKSLayout::default(),
         f_mod_log_delta: 60,
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_cos_continuous", lit, 18.0);
@@ -413,7 +413,7 @@ where
         f_mod_inv_degree: None,
         scaling: None,
         split_strategy: SplitStrategy::MinDepth,
-        coeffs_meta: CKKSMeta::default(),
+        coeffs_meta: CKKSLayout::default(),
         f_mod_log_delta: 60,
     };
     run_eval_mod_case::<BE, F, E>(params, module, host_module, "eval_mod_exp", lit, 18.0);

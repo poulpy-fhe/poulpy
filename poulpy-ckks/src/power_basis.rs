@@ -1,72 +1,72 @@
 use anyhow::{Result, ensure};
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-    prepared::GLWETensorKeyPreparedToBackendRef, split_degree,
+    Base2K, GGLWEInfos, GLWEInfos, GLWEPlaintext, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+    TorusPrecision, prepared::GLWETensorKeyPreparedToBackendRef, split_degree,
 };
-use poulpy_hal::layouts::{Backend, Data, HostBytesBackend, Module, ScratchArena, TransferFrom};
+use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, SetCKKSInfos,
+    CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
     api::{CKKSMulOps, CKKSPow2Ops, CKKSSubOps},
     checked_mul_ct_log_budget,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc},
+    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
 };
 
 pub use crate::api::{Basis, Parity};
 pub use poulpy_core::layouts::{PowerBasis, PowerBasisHelper};
 
 /// CKKS computation of the power basis entries used by BSGS evaluation.
-pub trait PowerBasisGen<D: Data> {
+pub trait PowerBasisInsert<D: Data> {
     /// Inserts a caller-provided pre-computed ciphertext power.
     fn insert(&mut self, n: usize, value: CKKSCiphertext<D>) -> Result<()>;
+}
 
+/// CKKS computation of the power basis entries used by BSGS evaluation.
+pub trait PowerBasisGen<BE: Backend> {
     /// Recursively computes and stores X^`n` (monomial basis).
-    fn gen_power<BE>(
+    fn gen_power(
         &mut self,
         n: usize,
         module: &Module<BE>,
-        tsk: &GLWETensorKeyPrepared<D, BE>,
+        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: Backend<OwnedBuf = D>,
         Module<BE>: CKKSMulOps<BE> + CKKSModuleAlloc<BE>,
-        CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
+        CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
 
     /// Recursively computes and stores `T_n(X)` (Chebyshev basis).
-    fn gen_power_chebyshev<BE>(
+    fn gen_power_chebyshev(
         &mut self,
         n: usize,
         module: &Module<BE>,
-        tsk: &GLWETensorKeyPrepared<D, BE>,
+        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: Backend<OwnedBuf = D> + TransferFrom<HostBytesBackend>,
         Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
-        CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
+        CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
 
     /// Pre-computes all powers required to evaluate a polynomial of the given
     /// `degree` using BSGS, for the basis stored in `self`.
-    fn populate<BE>(
+    fn populate(
         &mut self,
         degree: usize,
         log_split: usize,
         parity: Parity,
         module: &Module<BE>,
-        tsk: &GLWETensorKeyPrepared<D, BE>,
+        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: Backend<OwnedBuf = D> + TransferFrom<HostBytesBackend>,
         Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
-        CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
+        CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
 }
 
-impl<D: Data> PowerBasisGen<D> for PowerBasis<CKKSCiphertext<D>> {
+impl<D: Data> PowerBasisInsert<D> for PowerBasis<CKKSCiphertext<D>> {
     fn insert(&mut self, n: usize, value: CKKSCiphertext<D>) -> Result<()> {
         ensure!(
             n >= 2,
@@ -102,19 +102,20 @@ impl<D: Data> PowerBasisGen<D> for PowerBasis<CKKSCiphertext<D>> {
         self.set_power(n, value);
         Ok(())
     }
+}
 
-    fn gen_power<BE>(
+impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertext<BE::OwnedBuf>> {
+    fn gen_power(
         &mut self,
         n: usize,
         module: &Module<BE>,
-        tsk: &GLWETensorKeyPrepared<D, BE>,
+        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: Backend<OwnedBuf = D>,
         Module<BE>: CKKSMulOps<BE> + CKKSModuleAlloc<BE>,
-        CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+        CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
         ensure!(
             self.basis() == Basis::Monomial,
@@ -135,7 +136,7 @@ impl<D: Data> PowerBasisGen<D> for PowerBasis<CKKSCiphertext<D>> {
         let result = {
             let a_val = self.get_stored(a).expect("gen_power(a) just succeeded");
             let b_val = self.get_stored(b).expect("gen_power(b) just succeeded");
-            let k = mul_ct_effective_k(a_val, b_val)?;
+            let k = mul_ct_k(a_val, b_val)?;
             let mut r = module.ckks_ciphertext_alloc(a_val.base2k(), k.into());
             module.ckks_mul_into(&mut r, a_val, b_val, tsk, scratch)?;
             r
@@ -144,18 +145,17 @@ impl<D: Data> PowerBasisGen<D> for PowerBasis<CKKSCiphertext<D>> {
         Ok(())
     }
 
-    fn gen_power_chebyshev<BE>(
+    fn gen_power_chebyshev(
         &mut self,
         n: usize,
         module: &Module<BE>,
-        tsk: &GLWETensorKeyPrepared<D, BE>,
+        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: Backend<OwnedBuf = D> + TransferFrom<HostBytesBackend>,
         Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
-        CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+        CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
         ensure!(
             self.basis() == Basis::Chebyshev,
@@ -177,10 +177,10 @@ impl<D: Data> PowerBasisGen<D> for PowerBasis<CKKSCiphertext<D>> {
             self.gen_power_chebyshev(c, module, tsk, scratch)?;
         }
 
-        let result = scratch.scope(|mut scratch| -> Result<CKKSCiphertext<D>> {
+        let result = scratch.scope(|mut scratch| -> Result<CKKSCiphertext<BE::OwnedBuf>> {
             let a_val = self.get_stored(a).expect("gen_power_chebyshev(a) just succeeded");
             let b_val = self.get_stored(b).expect("gen_power_chebyshev(b) just succeeded");
-            let k = mul_ct_effective_k(a_val, b_val)?;
+            let k = mul_ct_k(a_val, b_val)?;
 
             // `2·T_a·T_b − T_c`: compute the product directly into the owned result and
             // double it in place, rather than into a separate scratch buffer then copying.
@@ -189,7 +189,8 @@ impl<D: Data> PowerBasisGen<D> for PowerBasis<CKKSCiphertext<D>> {
             module.ckks_mul_pow2_assign(&mut doubled, 1, &mut scratch)?;
 
             if c == 0 {
-                module.ckks_sub_one_assign(&mut doubled, &mut scratch)?;
+                let one = ckks_one_pt(module, doubled.base2k())?;
+                module.ckks_sub_pt_const_assign(&mut doubled, 0, &one, 0, &mut scratch)?;
             } else {
                 let c_val = self.get_stored(c).expect("gen_power_chebyshev(c) just succeeded");
                 module.ckks_sub_assign(&mut doubled, c_val, &mut scratch)?;
@@ -202,20 +203,19 @@ impl<D: Data> PowerBasisGen<D> for PowerBasis<CKKSCiphertext<D>> {
         Ok(())
     }
 
-    fn populate<BE>(
+    fn populate(
         &mut self,
         degree: usize,
         log_split: usize,
         parity: Parity,
         module: &Module<BE>,
-        tsk: &GLWETensorKeyPrepared<D, BE>,
+        tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: Backend<OwnedBuf = D> + TransferFrom<HostBytesBackend>,
         Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
-        CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+        CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
         ensure!(degree >= 1, "populate: degree must be ≥ 1");
 
@@ -259,7 +259,29 @@ impl<D: Data> PowerBasisGen<D> for PowerBasis<CKKSCiphertext<D>> {
     }
 }
 
-fn mul_ct_effective_k<A, B>(a: &A, b: &B) -> Result<usize>
+fn ckks_one_pt<BE>(module: &Module<BE>, base2k: Base2K) -> Result<CKKSPlaintext<BE::OwnedBuf>>
+where
+    BE: Backend,
+    Module<BE>: CKKSModuleAlloc<BE>,
+{
+    let meta = CKKSMeta {
+        log_sparsity: 0,
+        log_delta: 1,
+    };
+
+    // Monomial plaintext: effective torus width is `log_delta` (budget 0).
+    let k_total: TorusPrecision = meta.log_delta.into();
+
+    let mut host_pt = CKKSPlaintext::from_inner(GLWEPlaintext::alloc_with_meta(1usize.into(), base2k, k_total), meta);
+    host_pt.encode_host_floats(&[1.0f64])?;
+
+    let mut pt = module.ckks_pt_coeffs_alloc(1, base2k, k_total);
+    pt.set_meta(meta);
+    pt.copy_from_host_bytes::<BE>(host_pt.data().data.as_slice());
+    Ok(pt)
+}
+
+fn mul_ct_k<A, B>(a: &A, b: &B) -> Result<usize>
 where
     A: GLWEInfos + CKKSInfos,
     B: GLWEInfos + CKKSInfos,

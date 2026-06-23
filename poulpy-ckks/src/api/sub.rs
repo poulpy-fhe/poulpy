@@ -14,7 +14,7 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::UnnormalizedCKKSCiph
 /// ## Ciphertext–ciphertext subtraction (`ckks_sub_into` / `ckks_sub_assign`)
 ///
 /// ```text
-/// offset         = max(0, min(a.effective_k(), b.effective_k()) − dst.max_k())
+/// offset         = max(0, min(a.k(), b.k()) − dst.max_k())
 ///
 /// log_delta_out  = min(a.log_delta,  b.log_delta)
 /// log_budget_out = min(a.log_budget, b.log_budget) − offset
@@ -25,13 +25,13 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::UnnormalizedCKKSCiph
 /// ## Ciphertext–plaintext-vector subtraction (`ckks_sub_pt_vec_*`)
 ///
 /// ```text
-/// offset         = max(0, a.effective_k() − dst.max_k())
+/// offset         = max(0, a.k() − dst.max_k())
 ///
 /// log_delta_out  = a.log_delta
 /// log_budget_out = a.log_budget − offset
 /// ```
 ///
-/// **Precondition**: `a.log_budget + pt.log_delta >= pt.effective_k()`.
+/// **Precondition**: `a.log_budget + pt.log_delta >= pt.k()`.
 /// Returns `PlaintextAlignmentImpossible` otherwise.
 ///
 /// ## Ciphertext–plaintext-constant subtraction (`ckks_sub_pt_const_*`)

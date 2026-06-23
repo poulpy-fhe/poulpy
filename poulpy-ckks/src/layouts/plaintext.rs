@@ -5,8 +5,8 @@ use std::{
 
 use anyhow::Result;
 use poulpy_core::layouts::{
-    BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEPlaintext, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBSGSMeta,
-    SetLWEInfos, TorusPrecision,
+    BSGSMeta, Base2K, Compact, Degree, GLWE, GLWEInfos, GLWEPlaintext, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
+    SetBSGSMeta, SetBase2k, TorusPrecision,
 };
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef};
 
@@ -50,10 +50,10 @@ impl<D: Data> CKKSPlaintext<D> {
     /// Normal CKKS operations update metadata themselves.
     pub fn set_meta_checked(&mut self, meta: CKKSMeta) -> Result<()> {
         anyhow::ensure!(
-            meta.effective_k() <= self.max_k().as_usize(),
+            self.k().as_usize() <= self.max_k().as_usize() && meta.log_delta <= self.k().as_usize(),
             crate::CKKSCompositionError::LimbReallocationShrinksBelowMetadata {
                 max_k: self.max_k().as_usize(),
-                log_delta: meta.log_delta(),
+                log_delta: meta.log_delta,
                 base2k: self.base2k().as_usize(),
                 requested_limbs: self.max_size(),
             }
@@ -124,8 +124,14 @@ impl<D: Data> SetCKKSInfos for CKKSPlaintext<D> {
         self.meta = meta;
     }
 
-    fn compact_in_place(&mut self) {
-        //let limbs = self.effective_k().div_ceil(self.base2k().as_usize()).max(1).min(self.size());
+    fn set_k(&mut self, k: TorusPrecision) {
+        poulpy_core::layouts::SetK::set_k(&mut self.inner, k);
+    }
+}
+
+impl<D: Data> Compact for CKKSPlaintext<D> {
+    fn compact(&mut self) {
+        //let limbs = self.k().div_ceil(self.base2k().as_usize()).max(1).min(self.size());
         //self.inner.data.set_size(limbs);
     }
 }
@@ -137,12 +143,9 @@ impl<D: Data> SetBSGSMeta for CKKSPlaintext<D> {
     fn set_bsgs_log_delta(&mut self, log_delta: usize) {
         SetCKKSInfos::set_log_delta(self, log_delta);
     }
-    fn compact_in_place(&mut self) {
-        SetCKKSInfos::compact_in_place(self);
-    }
 }
 
-impl<D: HostDataMut> SetLWEInfos for CKKSPlaintext<D> {
+impl<D: HostDataMut> SetBase2k for CKKSPlaintext<D> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.inner.set_base2k(base2k);
     }
@@ -160,11 +163,12 @@ impl<D: Data> CKKSInfos for CKKSPlaintext<D> {
     }
 
     fn log_delta(&self) -> usize {
-        self.meta.log_delta()
+        self.meta.log_delta
     }
 
     fn log_budget(&self) -> usize {
-        self.meta.log_budget()
+        // Derived from the wrapped GLWE plaintext's torus width: `k - log_delta`.
+        self.inner.k().as_usize().saturating_sub(self.meta.log_delta)
     }
 }
 
@@ -300,17 +304,17 @@ mod tests {
         let module = Module::<HostBytesBackend>::new(16);
         let prec = CKKSMeta {
             log_sparsity: 0,
-            log_budget: 12,
             log_delta: 40,
         };
         let base2k: Base2K = 52usize.into();
 
-        let pt = module.ckks_pt_coeffs_alloc(3, base2k, prec);
+        let mut pt = module.ckks_pt_coeffs_alloc(3, base2k, (12usize + 40).into());
+        pt.set_meta(prec);
 
         assert_eq!(pt.n().as_usize(), 3);
         assert_eq!(pt.base2k(), base2k);
         assert_eq!(pt.meta(), prec);
-        assert!(pt.effective_k() <= pt.max_k().as_usize());
+        assert!(pt.k() <= pt.max_k());
     }
 
     /// Sparse coefficient pack/unpack round-trips, and places values at the
@@ -321,14 +325,14 @@ mod tests {
         let module = Module::<HostBytesBackend>::new(n as u64);
         let prec = CKKSMeta {
             log_sparsity: 0,
-            log_budget: 10,
             log_delta: 40,
         };
         let base2k: Base2K = 50usize.into();
 
         // L = 4 (slots = 2), so gap = n/L = 4.
         let small = vec![1.0_f64, 2.0, 3.0, 4.0]; // re=[1,2], im=[3,4]
-        let mut pt = module.ckks_pt_vec_alloc(base2k, prec);
+        let mut pt = module.ckks_pt_vec_alloc(base2k, (10usize + 40).into());
+        pt.set_meta(prec);
         pt.encode_host_floats_sparse(&small).unwrap();
 
         // Full coefficients: re at 0,4; im at n/2=8, 12; rest zero.

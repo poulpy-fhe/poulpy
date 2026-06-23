@@ -210,14 +210,14 @@ module.ckks_compact_limbs(&mut ct_x2)?;
 // build left branch a + b*x and right branch c + d*x
 // using packed_coeffs: a at index 0, b at 2, c at 4, d at 6 (real parts)
 //                      and at indices 1, 3, 5, 7 (imaginary parts)
-let linear_k = ct_x.effective_k() - PREC_PT.log_delta;
+let linear_k = ct_x.k() - PREC_PT.log_delta;
 let left_linear  = build_complex_affine(&module, &ct_x, &packed_coeffs,
                                         COEFF_A, COEFF_B, linear_k)?;
 let right_linear = build_complex_affine(&module, &ct_x, &packed_coeffs,
                                         COEFF_C, COEFF_D, linear_k)?;
 
 // multiply right branch by x^2 and add the two branches
-let right_branch_k = ct_x2.effective_k() - ct_x2.log_delta();
+let right_branch_k = ct_x2.k() - ct_x2.log_delta();
 let mut right_branch = module.ckks_ciphertext_alloc(BASE2K.into(), right_branch_k.into());
 module.ckks_mul(&mut right_branch, &right_linear, &ct_x2, &tsk_prepared, scratch.borrow())?;
 module.ckks_compact_limbs(&mut right_branch)?;

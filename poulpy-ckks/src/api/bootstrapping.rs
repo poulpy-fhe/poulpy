@@ -39,8 +39,8 @@ use crate::{
 ///
 /// Concretely, [`Self::ckks_mod_up_into`] copies the input (MSB-aligned) into a
 /// caller-allocated wider destination and right-shifts by `dst.max_k() −
-/// src.effective_k()`. After decryption the secret-dependent term that used to
-/// wrap modulo the input modulus `q = 2^{src.effective_k()}` is no longer
+/// src.k()`. After decryption the secret-dependent term that used to
+/// wrap modulo the input modulus `q = 2^{src.k()}` is no longer
 /// reduced, so the cleartext is `I(X)·q + Δ·m`: exactly the input
 /// [`CKKSEvalModOps`](crate::api::CKKSEvalModOps) expects, with message ratio
 /// `q/Δ = 2^{src.log_budget()}`.
@@ -50,10 +50,10 @@ use crate::{
 /// ```text
 /// log_delta_out  = src.log_delta                 (unchanged)
 /// log_budget_out = dst.max_k() − src.log_delta   (the full raised headroom)
-/// // effective_k_out = dst.max_k()
+/// // k_out = dst.max_k()
 /// ```
 ///
-/// Errors if `dst.max_k() < src.effective_k()` (ModUp must widen the modulus).
+/// Errors if `dst.max_k() < src.k()` (ModUp must widen the modulus).
 pub trait CKKSBootstrappingOps<BE: Backend>: DFTOps<BE> + CKKSEvalModOps<BE> {
     /// Returns scratch bytes required by [`Self::ckks_mod_up_into`].
     fn ckks_mod_up_tmp_bytes(&self) -> usize;
@@ -61,7 +61,7 @@ pub trait CKKSBootstrappingOps<BE: Backend>: DFTOps<BE> + CKKSEvalModOps<BE> {
     /// Raises the modulus of `src` into the wider `dst`.
     ///
     /// `dst` must be allocated at the target (raised) modulus: `dst.max_k() ≥
-    /// src.effective_k()`. See the trait docs for the exact semantics and
+    /// src.k()`. See the trait docs for the exact semantics and
     /// metadata effect.
     fn ckks_mod_up_into<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where

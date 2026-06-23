@@ -19,7 +19,7 @@ use crate::{
         GLWESecretPreparedToBackendRef, GLWESecretTensor, GLWESecretToBackendMut, GLWESecretToBackendRef, GLWETensor,
         GLWEToBackendMut, GLWEToBackendRef, LWE, LWEBackendMut, LWEBackendRef, LWEInfos, LWEPlaintext, LWEPlaintextBackendMut,
         LWEPlaintextBackendRef, LWEPlaintextToBackendMut, LWEPlaintextToBackendRef, LWEToBackendMut, LWEToBackendRef, Rank,
-        SetGGLWEInfos, SetLWEInfos,
+        SetBase2k, SetGGLWEInfos, SetK, TorusPrecision,
     },
 };
 
@@ -99,7 +99,7 @@ impl<'a, BE: Backend + 'a> GGLWEViewMut<'a, BE> {
 
 macro_rules! impl_set_lwe_infos {
     ($name:ident) => {
-        impl<'a, BE: Backend + 'a> SetLWEInfos for $name<'a, BE> {
+        impl<'a, BE: Backend + 'a> SetBase2k for $name<'a, BE> {
             fn set_base2k(&mut self, base2k: Base2K) {
                 self.inner.set_base2k(base2k);
             }
@@ -111,7 +111,13 @@ impl_set_lwe_infos!(LWEViewMut);
 impl_set_lwe_infos!(GLWEViewMut);
 impl_set_lwe_infos!(GLWEPlaintextViewMut);
 
-impl<'a, BE: Backend + 'a> SetLWEInfos for LWEPlaintextViewMut<'a, BE> {
+impl<'a, BE: Backend + 'a> SetK for GLWEViewMut<'a, BE> {
+    fn set_k(&mut self, k: TorusPrecision) {
+        self.inner.set_k(k);
+    }
+}
+
+impl<'a, BE: Backend + 'a> SetBase2k for LWEPlaintextViewMut<'a, BE> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.inner.base2k = base2k;
     }

@@ -9,15 +9,18 @@
 //! [`CKKSEvalModOps`](crate::api::CKKSEvalModOps).
 
 use anyhow::{Result, ensure};
-use poulpy_core::layouts::{
-    BSGSMeta, GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta,
-    prepared::GLWETensorKeyPreparedToBackendRef,
+use poulpy_core::{
+    GLWECopy,
+    layouts::{
+        BSGSMeta, Compact, GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta,
+        prepared::GLWETensorKeyPreparedToBackendRef,
+    },
 };
-use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena, TransferFrom};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
-    api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSPow2Ops, CKKSRescaleOps, CKKSSubOps, PolynomialEvaluation},
+    api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSPow2Ops, CKKSSubOps, PolynomialEvaluation},
     layouts::{
         CKKSCiphertext, CKKSModuleAlloc,
         eval_mod::{EvalMod, EvalModBsgs},
@@ -52,17 +55,16 @@ pub trait CKKSEvalModOpsDefault<BE: Backend> {
             + CKKSMulOps<BE>
             + CKKSCopyOps<BE>
             + CKKSModuleAlloc<BE>
-            + CKKSRescaleOps<BE>
             + Sized,
-        BE: Backend<OwnedBuf = Vec<u8>> + TransferFrom<HostBytesBackend>,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        BE: Backend,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
         CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
 }
 
-impl<BE: Backend<OwnedBuf = Vec<u8>>> CKKSEvalModOpsDefault<BE> for Module<BE>
+impl<BE: Backend> CKKSEvalModOpsDefault<BE> for Module<BE>
 where
     Module<BE>: PolynomialEvaluation<BE>
         + CKKSAddOps<BE>
@@ -70,8 +72,8 @@ where
         + CKKSMulOps<BE>
         + CKKSCopyOps<BE>
         + CKKSModuleAlloc<BE>
-        + CKKSRescaleOps<BE>
-        + CKKSPow2Ops<BE>,
+        + CKKSPow2Ops<BE>
+        + GLWECopy<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
 {
@@ -84,8 +86,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: TransferFrom<HostBytesBackend>,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
     {
@@ -117,16 +118,16 @@ fn eval_mod<R, C, P, F, BE>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend<OwnedBuf = Vec<u8>> + TransferFrom<HostBytesBackend>,
+    BE: Backend,
     Module<BE>: PolynomialEvaluation<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSMulOps<BE>
         + CKKSCopyOps<BE>
         + CKKSModuleAlloc<BE>
-        + CKKSRescaleOps<BE>
-        + CKKSPow2Ops<BE>,
-    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        + CKKSPow2Ops<BE>
+        + GLWECopy<BE>,
+    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
@@ -139,6 +140,7 @@ where
     // scale also drops that extra precision from the externally visible budget.
     let s_in = ct.log_delta();
     let s_eval = params.plan.f_mod_log_delta;
+    let s_budget = ct.log_budget();
 
     let required = params.consumed_bits();
     ensure!(
@@ -147,9 +149,10 @@ where
         got = ct.log_budget(),
     );
 
-    let mut t1 = module.ckks_ciphertext_alloc_from_infos(ct);
-    module.ckks_copy(&mut t1, ct, scratch)?;
-    module.ckks_set_log_delta(&mut t1, s_eval)?; // → plan scale (reinterpret only)
+    let mut t1 = module.ckks_ciphertext_alloc(ct.base2k(), (s_budget + s_eval).into());
+    module.glwe_copy(&mut t1, ct);
+    t1.set_log_budget(s_budget);
+    t1.set_log_delta(s_eval);
 
     match &params.f_mod_bsgs {
         EvalModBsgs::Real(bsgs) => {
@@ -165,7 +168,7 @@ where
 
             if let Some(inv) = params.f_mod_inv_bsgs.as_ref() {
                 module.ckks_copy(&mut t1, &*res, scratch)?;
-                SetCKKSInfos::compact_in_place(&mut t1);
+                Compact::compact(&mut t1);
                 module.ckks_eval_poly_real_const_coeffs(res, &t1, inv, tsk, scratch)?;
             }
         }
@@ -177,12 +180,18 @@ where
         }
     }
 
-    // Restore the input scale on the result (reinterpret only, `log_budget` kept).
+    // Restore the input scale on the result. This is a pure metadata relabel
+    // (`set_log_delta`), not a rescale: entry raised the scale `s_in -> s_eval`
+    // without spending budget (`set_log_budget(s_budget)` on an MSB-aligned copy,
+    // which reinterprets the value at `2^-(s_eval - s_in)`); relabelling back to
+    // `s_in` here undoes exactly that, so the scale round-trip is budget-neutral
+    // and the only consumption is the EvalMod arithmetic, which `consumed_bits()`
+    // accounts for in full.
     if s_eval != s_in {
         res.set_log_delta(s_in);
     }
 
-    SetCKKSInfos::compact_in_place(res);
+    res.compact();
 
     Ok(())
 }

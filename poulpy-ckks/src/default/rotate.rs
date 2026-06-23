@@ -40,7 +40,7 @@ pub trait CKKSRotateDefault<BE: Backend> {
         }
 
         dst.set_meta(src.meta());
-        dst.set_log_budget(checked_log_budget_sub("rotate", dst.log_budget(), offset)?);
+        dst.set_log_budget(checked_log_budget_sub("rotate", src.log_budget(), offset)?);
         Ok(())
     }
 

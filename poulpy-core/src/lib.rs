@@ -80,7 +80,7 @@ pub use default::encryption::*;
 pub use default::linear_transformation::*;
 pub(crate) use default::noise::var_noise_gglwe_product_v2;
 pub use default::operations::*;
-pub use default::polynomial_evaluation::{BSGSBabyOps, BSGSGiantOps, GiantStepTensorBounds};
+pub use default::polynomial_evaluation::{BSGSOps, GiantStepTensorBounds};
 pub use dist::*;
 pub use scratch::*;
 

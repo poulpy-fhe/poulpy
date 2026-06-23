@@ -16,7 +16,7 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, galois_element};
 
-use crate::{CKKSMeta, layouts::CKKSPlaintext};
+use crate::{CKKSLayout, CKKSMeta, layouts::CKKSPlaintext};
 
 /// Distinguishes the two homomorphic transforms.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -102,7 +102,7 @@ pub struct DFTPlan {
     /// `log_budget` bits each factor consumes (the per-factor plaintext
     /// `log_delta`). Meaningless on an input literal; the constructor fills it
     /// from `factor_meta` on the resolved plan stored in a [`DFTMatrix`].
-    pub meta: CKKSMeta,
+    pub meta: CKKSLayout,
 }
 
 impl DFTPlan {
@@ -147,7 +147,7 @@ impl DFTPlan {
     }
 
     pub fn consumed_bits(&self) -> usize {
-        self.num_factors() * self.meta.log_delta
+        self.num_factors() * self.meta.meta.log_delta
     }
 
     /// Whether this plan resolves to the sparse `RepackImagAsReal` path on a ring
@@ -405,7 +405,7 @@ impl<BE: Backend, Dir, Fmt, R> DFTMatrix<BE, Dir, Fmt, R> {
 
     /// `log_budget` bits consumed per factor (the per-factor plaintext `log_delta`).
     pub fn meta(&self) -> CKKSMeta {
-        self.inner.plan.meta
+        self.inner.plan.meta.meta
     }
 
     /// Total `log_budget` bits the whole transform consumes: `num_factors ×

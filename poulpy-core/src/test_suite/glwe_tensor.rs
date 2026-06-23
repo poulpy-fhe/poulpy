@@ -130,7 +130,7 @@ where
         pt_in.encode_vec_i64(&data, TorusPrecision(scale as u32));
         // Active precision can end in a partial bottom limb; tensoring masks it,
         // which contributes one rounding bit compared with limb-capacity precision.
-        let active_limb_rounding = if k % in_base2k == 0 { 0.0 } else { 1.0 };
+        let active_limb_rounding = if k.is_multiple_of(in_base2k) { 0.0 } else { 1.0 };
 
         let mut pt_want_base2k_in: VecZnx<Vec<u8>> = module.vec_znx_alloc(1, pt_in.size());
         bivariate_convolution_naive::<_, BE>(
@@ -166,15 +166,7 @@ where
         );
 
         for res_offset in 0..scale {
-            module.glwe_tensor_apply(
-                scale + res_offset,
-                &mut res_tensor,
-                &a,
-                a.k().as_usize(),
-                &b,
-                b.k().as_usize(),
-                &mut scratch.borrow(),
-            );
+            module.glwe_tensor_apply(scale + res_offset, &mut res_tensor, &a, &b, &mut scratch.borrow());
 
             module.glwe_tensor_decrypt(&res_tensor, &mut pt_have, &sk_dft, &sk_tensor_prep, &mut scratch.borrow());
             module.vec_znx_normalize(
@@ -340,22 +332,8 @@ where
         );
 
         for res_offset in 0..scale {
-            module.glwe_tensor_square_apply(
-                scale + res_offset,
-                &mut res_square,
-                &a,
-                a.k().as_usize(),
-                &mut scratch.borrow(),
-            );
-            module.glwe_tensor_apply(
-                scale + res_offset,
-                &mut res_tensor,
-                &a,
-                a.k().as_usize(),
-                &a,
-                a.k().as_usize(),
-                &mut scratch.borrow(),
-            );
+            module.glwe_tensor_square_apply(scale + res_offset, &mut res_square, &a, &mut scratch.borrow());
+            module.glwe_tensor_apply(scale + res_offset, &mut res_tensor, &a, &a, &mut scratch.borrow());
 
             assert_eq!(res_square.data().raw(), res_tensor.data().raw());
 

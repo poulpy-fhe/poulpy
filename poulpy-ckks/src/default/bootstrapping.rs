@@ -30,12 +30,16 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
     {
-        let k_large: usize = dst.k().as_usize();
-        let k_small: usize = src.effective_k();
+        // `dst` is the (freshly-allocated) widened target: ModUp raises the modulus
+        // into its full allocated capacity, so the widening width is `dst.max_k()`.
+        // `dst.k()` is meta-derived and is `0` on a fresh ciphertext, which would
+        // spuriously fail the "must widen" check below.
+        let k_large: usize = dst.max_k().as_usize();
+        let k_small: usize = src.k().as_usize();
 
         ensure!(
             k_large >= k_small,
-            "ckks_mod_up: dst.k ({k_large}) < src.effective_k ({k_small}); ModUp must widen, not shrink, the modulus"
+            "ckks_mod_up: dst.k ({k_large}) < src.k ({k_small}); ModUp must widen, not shrink, the modulus"
         );
 
         // MSB-align `src` into the wider `dst`: the value occupies the top
@@ -50,12 +54,13 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
         self.glwe_rsh(k_large - k_small, dst, scratch);
 
         // `log_delta` is unchanged (the integer `Δ·m` keeps its scale); the
-        // remaining headroom now spans the full raised modulus.
+        // remaining headroom now spans the full raised modulus, so the torus
+        // width `k` becomes `k_large` and `log_budget = k_large - log_delta`.
         dst.set_meta(CKKSMeta {
             log_delta: src.log_delta(),
-            log_budget: k_large - src.log_delta(),
             log_sparsity: src.log_sparsity(),
         });
+        dst.set_k(k_large.into());
 
         Ok(())
     }

@@ -92,15 +92,7 @@ where
     let mut group = c.benchmark_group(group_name);
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
-            module.glwe_tensor_apply(
-                0,
-                &mut tensor,
-                &a,
-                a.max_k().as_usize(),
-                &b,
-                b.max_k().as_usize(),
-                &mut scratch.borrow(),
-            );
+            module.glwe_tensor_apply(0, &mut tensor, &a, &b, &mut scratch.borrow());
             black_box(());
         })
     });
@@ -455,7 +447,7 @@ pub fn bench_glwe_tensor_square_apply<BE: Backend<OwnedBuf = Vec<u8>>>(
     let mut group = c.benchmark_group(group_name);
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
-            module.glwe_tensor_square_apply(0, &mut tensor, &a, a.max_k().as_usize(), &mut scratch.borrow());
+            module.glwe_tensor_square_apply(0, &mut tensor, &a, &mut scratch.borrow());
             black_box(());
         })
     });

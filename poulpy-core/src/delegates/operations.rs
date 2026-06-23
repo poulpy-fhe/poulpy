@@ -189,30 +189,30 @@ impl_operations_delegate!(
         cnv_offset: usize,
         res: &mut R,
         a: &A,
-        a_effective_k: usize,
+        a_k: usize,
         b: &B,
-        b_effective_k: usize,
+        b_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        BE::glwe_mul_plain(self, cnv_offset, res, a, a_effective_k, b, b_effective_k, scratch)
+        BE::glwe_mul_plain(self, cnv_offset, res, a, a_k, b, b_k, scratch)
     },
     fn glwe_mul_plain_assign<R, A>(
         &self,
         cnv_offset: usize,
         res: &mut R,
-        res_effective_k: usize,
+        res_k: usize,
         a: &A,
-        a_effective_k: usize,
+        a_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        BE::glwe_mul_plain_assign(self, cnv_offset, res, res_effective_k, a, a_effective_k, scratch)
+        BE::glwe_mul_plain_assign(self, cnv_offset, res, res_k, a, a_k, scratch)
     }
 );
 
@@ -240,29 +240,26 @@ impl_operations_delegate!(
         cnv_offset: usize,
         res: &mut R,
         a: &A,
-        a_effective_k: usize,
         b: &B,
-        b_effective_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        BE::glwe_tensor_apply(self, cnv_offset, res, a, a_effective_k, b, b_effective_k, scratch)
+        BE::glwe_tensor_apply(self, cnv_offset, res, a, b, scratch)
     },
     fn glwe_tensor_square_apply<R, A>(
         &self,
         cnv_offset: usize,
         res: &mut R,
         a: &A,
-        a_effective_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        BE::glwe_tensor_square_apply(self, cnv_offset, res, a, a_effective_k, scratch)
+        BE::glwe_tensor_square_apply(self, cnv_offset, res, a, scratch)
     },
     fn glwe_tensor_relinearize<R, A, T>(&self, res: &mut R, a: &A, tsk: &T, tsk_size: usize, scratch: &mut ScratchArena<'_, BE>)
     where

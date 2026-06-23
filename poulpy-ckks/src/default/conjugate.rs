@@ -39,7 +39,7 @@ pub trait CKKSConjugateDefault<BE: Backend> {
         }
 
         dst.set_meta(src.meta());
-        dst.set_log_budget(checked_log_budget_sub("conjugate", dst.log_budget(), offset)?);
+        dst.set_log_budget(checked_log_budget_sub("conjugate", src.log_budget(), offset)?);
         Ok(())
     }
 

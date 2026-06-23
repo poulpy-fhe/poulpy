@@ -15,13 +15,14 @@ use crate::{
     polynomial::{
         BSGSPolynomial, Basis, ComplexBSGSPolynomial, ComplexPolynomial, EncodeBSGS, Parity, Polynomial, SplitStrategy,
     },
-    power_basis::{PowerBasis, PowerBasisGen},
+    power_basis::{PowerBasis, PowerBasisGen, PowerBasisInsert},
     test_suite::CKKSTestParams,
 };
 
 use super::helpers::{
     PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_decrypt_precision, ckks_encrypt,
-    ckks_encrypt_with_prec, gen_sk_with_raw, gen_tsk, precision_at, quantized_const, quantized_slots, test_vector_1, upload_pt,
+    ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, gen_tsk, precision_at, quantized_const, quantized_slots, test_vector_1,
+    upload_pt,
 };
 
 /// Asserts the eval consumed exactly `bsgs.consumed_bits(input_ld, coeff_ld)`
@@ -191,7 +192,14 @@ pub fn test_power_basis_populate_degree7<BE, F, E>(
     let encoder = Encoder::<E>::new(m).unwrap();
     let (x_re_raw, _x_im_raw) = test_vector_1::<F>(m);
     let x_im_raw = vec![F::zero(); x_re_raw.len()];
-    let (x_re, _) = quantized_slots(host_module, &encoder, params.base2k.into(), params.prec, &x_re_raw, &x_im_raw);
+    let (x_re, _) = quantized_slots(
+        host_module,
+        &encoder,
+        params.base2k.into(),
+        params.prec(),
+        &x_re_raw,
+        &x_im_raw,
+    );
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -251,7 +259,14 @@ pub fn test_power_basis_populate_chebyshev_degree7<BE, F, E>(
     let encoder = Encoder::<E>::new(m).unwrap();
     let (x_re_raw, _x_im_raw) = test_vector_1::<F>(m);
     let x_im_raw = vec![F::zero(); x_re_raw.len()];
-    let (x_re, _) = quantized_slots(host_module, &encoder, params.base2k.into(), params.prec, &x_re_raw, &x_im_raw);
+    let (x_re, _) = quantized_slots(
+        host_module,
+        &encoder,
+        params.base2k.into(),
+        params.prec(),
+        &x_re_raw,
+        &x_im_raw,
+    );
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -339,15 +354,11 @@ pub fn test_encode_bsgs_preserves_chebyshev_eval<BE, F, E>(
 {
     let poly = Polynomial::chebyshev_interpolate(31, -F::one(), F::one(), |x: F| x.sin())
         .expect("degree-31 Chebyshev interpolation of sin(x) should succeed");
-    let coeff_meta = CKKSMeta {
-        log_delta: 40,
-        log_budget: 8,
-        ..Default::default()
-    };
+    let coeff_meta = ckks_spec(params.n, params.base2k, 40, 8);
     let bsgs = poly
         .encode_bsgs(host_module, params.base2k.into(), coeff_meta)
         .expect("encode_bsgs should succeed for degree-31 Chebyshev polynomial");
-    let tolerance = (-F::from_usize(coeff_meta.log_delta).unwrap()).exp2() * F::from_usize(1024).unwrap();
+    let tolerance = (-F::from_usize(coeff_meta.meta.log_delta).unwrap()).exp2() * F::from_usize(1024).unwrap();
 
     for i in 0..=64 {
         let x = -F::one() + (F::one() + F::one()) * F::from_usize(i).unwrap() / F::from_usize(64).unwrap();
@@ -388,13 +399,20 @@ pub fn test_eval_poly_const_coeffs_cubic<BE, F, E>(
     let (re1, _im1) = test_vector_1::<F>(m);
     let x_re_raw: Vec<F> = re1.iter().copied().map(|x| x * quarter).collect();
     let x_im_raw = vec![F::zero(); x_re_raw.len()];
-    let (x_re, x_im) = quantized_slots(host_module, &encoder, params.base2k.into(), params.prec, &x_re_raw, &x_im_raw);
+    let (x_re, x_im) = quantized_slots(
+        host_module,
+        &encoder,
+        params.base2k.into(),
+        params.prec(),
+        &x_re_raw,
+        &x_im_raw,
+    );
 
     let raw_coeffs = [0.125f64, -0.25, 0.0625, 0.03125];
-    let c0 = quantized_const::<F>(raw_coeffs[0], 0.0, PT_PREC.log_delta).0;
-    let c1 = quantized_const::<F>(raw_coeffs[1], 0.0, PT_PREC.log_delta).0;
-    let c2 = quantized_const::<F>(raw_coeffs[2], 0.0, PT_PREC.log_delta).0;
-    let c3 = quantized_const::<F>(raw_coeffs[3], 0.0, PT_PREC.log_delta).0;
+    let c0 = quantized_const::<F>(raw_coeffs[0], 0.0, PT_PREC.log_delta()).0;
+    let c1 = quantized_const::<F>(raw_coeffs[1], 0.0, PT_PREC.log_delta()).0;
+    let c2 = quantized_const::<F>(raw_coeffs[2], 0.0, PT_PREC.log_delta()).0;
+    let c3 = quantized_const::<F>(raw_coeffs[3], 0.0, PT_PREC.log_delta()).0;
 
     let poly_ref = Polynomial::new(Basis::Monomial, raw_coeffs.to_vec());
     let bsgs_host = poly_ref
@@ -443,7 +461,7 @@ pub fn test_eval_poly_const_coeffs_cubic<BE, F, E>(
         )
         .unwrap();
 
-    assert_consumed_bits::<BE, _>("cubic", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta, &res);
+    assert_consumed_bits::<BE, _>("cubic", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_cubic",
@@ -551,7 +569,7 @@ pub fn test_eval_poly_const_coeffs_exp7<BE, F, E>(
 
     let encoded_coeffs: Vec<F> = raw_coeffs
         .iter()
-        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta).0)
+        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta()).0)
         .collect();
     let want_re: Vec<F> = x_re_raw
         .iter()
@@ -596,7 +614,7 @@ pub fn test_eval_poly_const_coeffs_exp7<BE, F, E>(
         )
         .expect("ckks_eval_poly_real_const_coeffs_from_power_basis should succeed");
 
-    assert_consumed_bits::<BE, _>("exp7", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta, &res);
+    assert_consumed_bits::<BE, _>("exp7", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_exp7",
@@ -638,7 +656,7 @@ pub fn test_eval_poly_const_coeffs_even_monomial<BE, F, E>(
 
     let encoded_coeffs: Vec<F> = raw_coeffs
         .iter()
-        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta).0)
+        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta()).0)
         .collect();
     let want_re: Vec<F> = x_re_raw
         .iter()
@@ -692,7 +710,7 @@ pub fn test_eval_poly_const_coeffs_even_monomial<BE, F, E>(
         )
         .expect("ckks_eval_poly_real_const_coeffs_from_power_basis should succeed");
 
-    assert_consumed_bits::<BE, _>("even_monomial", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta, &res);
+    assert_consumed_bits::<BE, _>("even_monomial", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_even_monomial",
@@ -734,7 +752,7 @@ pub fn test_eval_poly_const_coeffs_odd_monomial<BE, F, E>(
 
     let encoded_coeffs: Vec<F> = raw_coeffs
         .iter()
-        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta).0)
+        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta()).0)
         .collect();
     let want_re: Vec<F> = x_re_raw
         .iter()
@@ -788,7 +806,7 @@ pub fn test_eval_poly_const_coeffs_odd_monomial<BE, F, E>(
         )
         .expect("ckks_eval_poly_real_const_coeffs_from_power_basis should succeed");
 
-    assert_consumed_bits::<BE, _>("odd_monomial", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta, &res);
+    assert_consumed_bits::<BE, _>("odd_monomial", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_odd_monomial",
@@ -822,7 +840,7 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31<BE, F, E>(
     let encoder = Encoder::<E>::new(m).unwrap();
     let (x_re_raw, _x_im_raw) = test_vector_1::<F>(m);
     let x_im_raw = vec![F::zero(); x_re_raw.len()];
-    let input_meta = precision_at(&params, params.prec.log_delta.min(20));
+    let input_meta = precision_at(&params, params.prec().log_delta().min(20));
     let (x_re, _) = quantized_slots(host_module, &encoder, params.base2k.into(), input_meta, &x_re_raw, &x_im_raw);
 
     let poly = Polynomial::chebyshev_interpolate(31, -F::one(), F::one(), |x: F| x.sin())
@@ -873,7 +891,7 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31<BE, F, E>(
         )
         .expect("ckks_eval_poly_real_const_coeffs_from_power_basis should succeed");
 
-    assert_consumed_bits::<BE, _>("chebyshev31", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta, &res);
+    assert_consumed_bits::<BE, _>("chebyshev31", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_chebyshev_degree31",
@@ -907,7 +925,7 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31_min_mult<BE, F, E>(
     let encoder = Encoder::<E>::new(m).unwrap();
     let (x_re_raw, _x_im_raw) = test_vector_1::<F>(m);
     let x_im_raw = vec![F::zero(); x_re_raw.len()];
-    let input_meta = precision_at(&params, params.prec.log_delta.min(20));
+    let input_meta = precision_at(&params, params.prec().log_delta().min(20));
     let (x_re, _) = quantized_slots(host_module, &encoder, params.base2k.into(), input_meta, &x_re_raw, &x_im_raw);
 
     let poly = Polynomial::chebyshev_interpolate(31, -F::one(), F::one(), |x: F| x.sin())
@@ -958,7 +976,7 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31_min_mult<BE, F, E>(
         )
         .expect("ckks_eval_poly_real_const_coeffs_from_power_basis should succeed with MinMult split");
 
-    assert_consumed_bits::<BE, _>("chebyshev31_min_mult", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta, &res);
+    assert_consumed_bits::<BE, _>("chebyshev31_min_mult", &bsgs_host, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_chebyshev_degree31_min_mult",
@@ -996,17 +1014,24 @@ pub fn test_eval_poly_const_coeffs_complex_cubic<BE, F, E>(
     let (re1, im1) = test_vector_1::<F>(m);
     let x_re_raw: Vec<F> = re1.iter().copied().map(|x| x * quarter).collect();
     let x_im_raw: Vec<F> = im1.iter().copied().map(|x| x * quarter).collect();
-    let (x_re, x_im) = quantized_slots(host_module, &encoder, params.base2k.into(), params.prec, &x_re_raw, &x_im_raw);
+    let (x_re, x_im) = quantized_slots(
+        host_module,
+        &encoder,
+        params.base2k.into(),
+        params.prec(),
+        &x_re_raw,
+        &x_im_raw,
+    );
 
     let re_coeffs = [0.125f64, -0.25, 0.0625, 0.03125];
     let im_coeffs = [0.0625f64, 0.125, -0.03125, 0.25];
     let cre: Vec<F> = re_coeffs
         .iter()
-        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta).0)
+        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta()).0)
         .collect();
     let cim: Vec<F> = im_coeffs
         .iter()
-        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta).0)
+        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta()).0)
         .collect();
 
     let poly_ref = ComplexPolynomial::new(Basis::Monomial, re_coeffs.to_vec(), im_coeffs.to_vec());
@@ -1065,7 +1090,7 @@ pub fn test_eval_poly_const_coeffs_complex_cubic<BE, F, E>(
         )
         .expect("ckks_eval_poly_complex_const_coeffs_from_power_basis should succeed");
 
-    assert_consumed_bits::<BE, _>("complex_cubic", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta, &res);
+    assert_consumed_bits::<BE, _>("complex_cubic", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_complex_cubic",
@@ -1103,17 +1128,24 @@ pub fn test_eval_poly_const_coeffs_complex_chebyshev<BE, F, E>(
     let (re1, im1) = test_vector_1::<F>(m);
     let x_re_raw: Vec<F> = re1.iter().copied().map(|x| x * quarter).collect();
     let x_im_raw: Vec<F> = im1.iter().copied().map(|x| x * quarter).collect();
-    let (x_re, x_im) = quantized_slots(host_module, &encoder, params.base2k.into(), params.prec, &x_re_raw, &x_im_raw);
+    let (x_re, x_im) = quantized_slots(
+        host_module,
+        &encoder,
+        params.base2k.into(),
+        params.prec(),
+        &x_re_raw,
+        &x_im_raw,
+    );
 
     let re_coeffs = [0.125f64, 0.1875, -0.0625, 0.15625, 0.0625, -0.03125, 0.09375, 0.03125];
     let im_coeffs = [0.0625f64, -0.125, 0.1875, 0.03125, -0.0625, 0.09375, -0.03125, 0.0625];
     let cre: Vec<F> = re_coeffs
         .iter()
-        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta).0)
+        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta()).0)
         .collect();
     let cim: Vec<F> = im_coeffs
         .iter()
-        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta).0)
+        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta()).0)
         .collect();
 
     let poly_ref = ComplexPolynomial::new(Basis::Chebyshev, re_coeffs.to_vec(), im_coeffs.to_vec());
@@ -1190,7 +1222,7 @@ pub fn test_eval_poly_const_coeffs_complex_chebyshev<BE, F, E>(
         )
         .expect("ckks_eval_poly_complex_const_coeffs_from_power_basis (Chebyshev) should succeed");
 
-    assert_consumed_bits::<BE, _>("complex_chebyshev", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta, &res);
+    assert_consumed_bits::<BE, _>("complex_chebyshev", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_complex_chebyshev",
@@ -1240,17 +1272,24 @@ pub fn test_eval_poly_const_coeffs_complex_even<BE, F, E>(
     let (re1, im1) = test_vector_1::<F>(m);
     let x_re_raw: Vec<F> = re1.iter().copied().map(|x| x * quarter).collect();
     let x_im_raw: Vec<F> = im1.iter().copied().map(|x| x * quarter).collect();
-    let (x_re, x_im) = quantized_slots(host_module, &encoder, params.base2k.into(), params.prec, &x_re_raw, &x_im_raw);
+    let (x_re, x_im) = quantized_slots(
+        host_module,
+        &encoder,
+        params.base2k.into(),
+        params.prec(),
+        &x_re_raw,
+        &x_im_raw,
+    );
 
     let re_coeffs = [0.5f64, 0.0, 0.25, 0.0, 0.125];
     let im_coeffs = [0.1875f64, 0.0, -0.0625, 0.0, 0.09375];
     let cre: Vec<F> = re_coeffs
         .iter()
-        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta).0)
+        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta()).0)
         .collect();
     let cim: Vec<F> = im_coeffs
         .iter()
-        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta).0)
+        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta()).0)
         .collect();
 
     let poly_ref = ComplexPolynomial::new(Basis::Monomial, re_coeffs.to_vec(), im_coeffs.to_vec());
@@ -1307,7 +1346,7 @@ pub fn test_eval_poly_const_coeffs_complex_even<BE, F, E>(
         )
         .expect("ckks_eval_poly_complex_const_coeffs_from_power_basis (even) should succeed");
 
-    assert_consumed_bits::<BE, _>("complex_even", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta, &res);
+    assert_consumed_bits::<BE, _>("complex_even", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_complex_even",
@@ -1345,17 +1384,24 @@ pub fn test_eval_poly_const_coeffs_complex_odd<BE, F, E>(
     let (re1, im1) = test_vector_1::<F>(m);
     let x_re_raw: Vec<F> = re1.iter().copied().map(|x| x * quarter).collect();
     let x_im_raw: Vec<F> = im1.iter().copied().map(|x| x * quarter).collect();
-    let (x_re, x_im) = quantized_slots(host_module, &encoder, params.base2k.into(), params.prec, &x_re_raw, &x_im_raw);
+    let (x_re, x_im) = quantized_slots(
+        host_module,
+        &encoder,
+        params.base2k.into(),
+        params.prec(),
+        &x_re_raw,
+        &x_im_raw,
+    );
 
     let re_coeffs = [0.0f64, 0.25, 0.0, 0.125, 0.0, 0.0625];
     let im_coeffs = [0.0f64, -0.0625, 0.0, 0.1875, 0.0, -0.03125];
     let cre: Vec<F> = re_coeffs
         .iter()
-        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta).0)
+        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta()).0)
         .collect();
     let cim: Vec<F> = im_coeffs
         .iter()
-        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta).0)
+        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta()).0)
         .collect();
 
     let poly_ref = ComplexPolynomial::new(Basis::Monomial, re_coeffs.to_vec(), im_coeffs.to_vec());
@@ -1412,7 +1458,7 @@ pub fn test_eval_poly_const_coeffs_complex_odd<BE, F, E>(
         )
         .expect("ckks_eval_poly_complex_const_coeffs_from_power_basis (odd) should succeed");
 
-    assert_consumed_bits::<BE, _>("complex_odd", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta, &res);
+    assert_consumed_bits::<BE, _>("complex_odd", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_complex_odd",
@@ -1452,7 +1498,14 @@ pub fn test_eval_poly_const_coeffs_complex_fold<BE, F, E>(
     let (re1, im1) = test_vector_1::<F>(m);
     let x_re_raw: Vec<F> = re1.iter().copied().map(|x| x * quarter).collect();
     let x_im_raw: Vec<F> = im1.iter().copied().map(|x| x * quarter).collect();
-    let (x_re, x_im) = quantized_slots(host_module, &encoder, params.base2k.into(), params.prec, &x_re_raw, &x_im_raw);
+    let (x_re, x_im) = quantized_slots(
+        host_module,
+        &encoder,
+        params.base2k.into(),
+        params.prec(),
+        &x_re_raw,
+        &x_im_raw,
+    );
 
     let re_coeffs = [0.125f64, -0.0625, 0.09375, 0.03125, -0.0625, 0.125, 0.03125, -0.0625, 0.0625];
     let im_coeffs = [
@@ -1460,11 +1513,11 @@ pub fn test_eval_poly_const_coeffs_complex_fold<BE, F, E>(
     ];
     let cre: Vec<F> = re_coeffs
         .iter()
-        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta).0)
+        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta()).0)
         .collect();
     let cim: Vec<F> = im_coeffs
         .iter()
-        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta).0)
+        .map(|&c| quantized_const::<F>(c, 0.0, PT_PREC.log_delta()).0)
         .collect();
 
     let poly_ref = ComplexPolynomial::new(Basis::Monomial, re_coeffs.to_vec(), im_coeffs.to_vec());
@@ -1511,7 +1564,7 @@ pub fn test_eval_poly_const_coeffs_complex_fold<BE, F, E>(
         .ckks_eval_poly_complex_const_coeffs(&mut res, &x, &poly, &tsk, &mut scratch.borrow())
         .expect("ckks_eval_poly_complex_const_coeffs (fold) should succeed");
 
-    assert_consumed_bits::<BE, _>("complex_fold", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta, &res);
+    assert_consumed_bits::<BE, _>("complex_fold", &bsgs_host.re, x_ld, x_lb, PT_PREC.log_delta(), &res);
 
     assert_decrypt_precision(
         "eval_poly_const_coeffs_complex_fold",
@@ -1565,19 +1618,15 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
         n,
         base2k,
         k,
-        prec: CKKSMeta {
+        prec_meta: CKKSMeta {
             log_sparsity: 0,
             log_delta: input_log_delta,
-            log_budget: k - input_log_delta,
         },
+        prec_log_budget: k - input_log_delta,
         hw: m,
         dsize: 1,
     };
-    let coeff_meta = CKKSMeta {
-        log_sparsity: 0,
-        log_delta: coeff_log_delta,
-        log_budget: 10,
-    };
+    let coeff_meta = ckks_spec(n, base2k, coeff_log_delta, 10);
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, &module, &host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, &module);
@@ -1593,7 +1642,7 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
         k,
         &re,
         &im,
-        params.prec,
+        params.prec(),
         &mut scratch.borrow(),
     );
     let (in_ld, in_lb) = (src.log_delta(), src.log_budget());

@@ -71,9 +71,9 @@ pub unsafe trait GLWEMulPlainImpl<BE: Backend>: Backend {
         cnv_offset: usize,
         res: &mut R,
         a: &A,
-        a_effective_k: usize,
+        a_k: usize,
         b: &B,
-        b_effective_k: usize,
+        b_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -84,9 +84,9 @@ pub unsafe trait GLWEMulPlainImpl<BE: Backend>: Backend {
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut R,
-        res_effective_k: usize,
+        res_k: usize,
         a: &A,
-        a_effective_k: usize,
+        a_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -110,15 +110,12 @@ pub unsafe trait GLWETensoringImpl<BE: Backend>: Backend {
         R: GLWEInfos,
         A: GLWEInfos;
 
-    #[allow(clippy::too_many_arguments)]
     fn glwe_tensor_apply<R, A, B>(
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut R,
         a: &A,
-        a_effective_k: usize,
         b: &B,
-        b_effective_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -130,7 +127,6 @@ pub unsafe trait GLWETensoringImpl<BE: Backend>: Backend {
         cnv_offset: usize,
         res: &mut R,
         a: &A,
-        a_effective_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -466,31 +462,31 @@ where
         cnv_offset: usize,
         res: &mut R,
         a: &A,
-        a_effective_k: usize,
+        a_k: usize,
         b: &B,
-        b_effective_k: usize,
+        b_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        module.glwe_mul_plain_default(cnv_offset, res, a, a_effective_k, b, b_effective_k, scratch)
+        module.glwe_mul_plain_default(cnv_offset, res, a, a_k, b, b_k, scratch)
     }
 
     fn glwe_mul_plain_assign<R, A>(
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut R,
-        res_effective_k: usize,
+        res_k: usize,
         a: &A,
-        a_effective_k: usize,
+        a_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        module.glwe_mul_plain_assign_default(cnv_offset, res, res_effective_k, a, a_effective_k, scratch)
+        module.glwe_mul_plain_assign_default(cnv_offset, res, res_k, a, a_k, scratch)
     }
 }
 
@@ -521,16 +517,14 @@ where
         cnv_offset: usize,
         res: &mut R,
         a: &A,
-        a_effective_k: usize,
         b: &B,
-        b_effective_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        module.glwe_tensor_apply_default(cnv_offset, res, a, a_effective_k, b, b_effective_k, scratch)
+        module.glwe_tensor_apply_default(cnv_offset, res, a, b, scratch)
     }
 
     fn glwe_tensor_square_apply<R, A>(
@@ -538,13 +532,12 @@ where
         cnv_offset: usize,
         res: &mut R,
         a: &A,
-        a_effective_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        module.glwe_tensor_square_apply_default(cnv_offset, res, a, a_effective_k, scratch)
+        module.glwe_tensor_square_apply_default(cnv_offset, res, a, scratch)
     }
 
     fn glwe_tensor_relinearize<R, A, T>(

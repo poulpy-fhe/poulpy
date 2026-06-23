@@ -41,13 +41,13 @@
 //! trait (see [`crate::default::eval_mod`] for the evaluation itself).
 
 use anyhow::{Result, anyhow, ensure};
-use poulpy_core::layouts::{Base2K, bsgs_consumed_bits, bsgs_eval_depth};
+use poulpy_core::layouts::{Base2K, LWEInfos, bsgs_consumed_bits, bsgs_eval_depth};
 use poulpy_hal::layouts::{HostBytesBackend, Module};
 
 use rand_distr::num_traits::{Float, FloatConst};
 
 use crate::{
-    CKKSMeta,
+    CKKSInfos, CKKSLayout, SetCKKSInfos,
     api::{Basis, Parity},
     cosine,
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
@@ -137,7 +137,7 @@ pub struct EvalModPlan {
     pub eval_mod_type: EvalModType,
     /// `log2` of the *message ratio* `q/Δ`: the cleartext is `I(X)·q + Δ·m` with
     /// `m ∈ [-1, 1]`. In CKKS-meta terms the encoding scale is `Δ = 2^log_delta` and
-    /// the integer part wraps at the plaintext modulus `q = 2^effective_k =
+    /// the integer part wraps at the plaintext modulus `q = 2^k =
     /// 2^(log_delta + log_budget)`, so the ratio is `q/Δ = 2^log_budget` — i.e.
     /// `log_message_ratio` is the `log_budget` of the value being reduced, the bit
     /// gap between the payload and the integer part.
@@ -163,7 +163,7 @@ pub struct EvalModPlan {
     /// vs. number-of-rotations trade-off).
     pub split_strategy: SplitStrategy,
     /// CKKS metadata of the coefficients
-    pub coeffs_meta: CKKSMeta,
+    pub coeffs_meta: CKKSLayout,
     /// Logscale used during EvalMod
     pub f_mod_log_delta: usize,
 }
@@ -191,7 +191,7 @@ impl EvalModPlan {
     /// consuming `input_log_delta`), plus the optional arcsine inverse. Computed
     /// analytically; matches the compiled [`EvalMod::consumed_bits`].
     pub fn consumed_bits(&self) -> usize {
-        let coeff = self.coeffs_meta.log_delta;
+        let coeff = self.coeffs_meta.meta.log_delta;
         let input_log_delta = self.f_mod_log_delta;
         let base = bsgs_consumed_bits(
             self.base_degree(),
@@ -425,7 +425,8 @@ where
         // coefficient `i` at step `i`.
         let range_extension_consts = if f_mod_log_interval_reduction > 0 {
             let vals: Vec<F> = (0..f_mod_log_interval_reduction).map(|i| s.powi(1i32 << (i + 1))).collect();
-            let mut pt = module.ckks_pt_coeffs_alloc(f_mod_log_interval_reduction, base2k, coeff_meta);
+            let mut pt = module.ckks_pt_coeffs_alloc(f_mod_log_interval_reduction, base2k, coeff_meta.k());
+            pt.set_meta(coeff_meta.meta());
             pt.encode_host_floats(&vals)
                 .map_err(|e| anyhow!("range_extension_consts: {e}"))?;
             Some(pt)
@@ -506,7 +507,7 @@ impl<F, P> EvalMod<F, P> {
     /// `input_log_delta` each) + the optional arcsine inverse. Matches the actual
     /// runtime consumption and [`EvalModPlan::consumed_bits`].
     pub fn consumed_bits(&self) -> usize {
-        let coeff = self.plan.coeffs_meta.log_delta;
+        let coeff = self.plan.coeffs_meta.meta.log_delta;
         let log_delta = self.plan.f_mod_log_delta;
         let base = match &self.f_mod_bsgs {
             EvalModBsgs::Real(p) => p.consumed_bits(log_delta, coeff),

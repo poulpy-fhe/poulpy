@@ -56,7 +56,7 @@ pub unsafe trait LinearTransformationImpl<BE: Backend>: Backend {
         module: &Module<BE>,
         cache: &mut LinearTransformationBabySteps<BE>,
         a: &A,
-        a_effective_k: usize,
+        a_k: usize,
         keys: &H,
         key_size: usize,
         scratch: &mut ScratchArena<'_, BE>,
@@ -131,7 +131,7 @@ pub trait LinearTransformationDefault<BE: Backend> {
         &self,
         cache: &mut LinearTransformationBabySteps<BE>,
         a: &A,
-        a_effective_k: usize,
+        a_k: usize,
         keys: &H,
         key_size: usize,
         scratch: &mut ScratchArena<'_, BE>,
@@ -218,7 +218,7 @@ where
         module: &Module<BE>,
         cache: &mut LinearTransformationBabySteps<BE>,
         a: &A,
-        a_effective_k: usize,
+        a_k: usize,
         keys: &H,
         key_size: usize,
         scratch: &mut ScratchArena<'_, BE>,
@@ -227,7 +227,7 @@ where
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
-        module.glwe_prepare_linear_transformation_baby_steps_default(cache, a, a_effective_k, keys, key_size, scratch)
+        module.glwe_prepare_linear_transformation_baby_steps_default(cache, a, a_k, keys, key_size, scratch)
     }
 
     fn glwe_eval_linear_transformation_into<R, P, H, K>(
@@ -335,7 +335,7 @@ macro_rules! impl_linear_transformation_defaults_full {
                 &self,
                 cache: &mut $crate::layouts::prepared::LinearTransformationBabySteps<$be>,
                 a: &A,
-                a_effective_k: usize,
+                a_k: usize,
                 keys: &H,
                 key_size: usize,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
@@ -347,13 +347,7 @@ macro_rules! impl_linear_transformation_defaults_full {
                 H: $crate::layouts::GLWEAutomorphismKeyHelper<K, $be>,
             {
                 $crate::default::linear_transformation::glwe_prepare_linear_transformation_baby_steps_default::<$be, _, _, _, _>(
-                    self,
-                    cache,
-                    a,
-                    a_effective_k,
-                    keys,
-                    key_size,
-                    scratch,
+                    self, cache, a, a_k, keys, key_size, scratch,
                 )
             }
 
