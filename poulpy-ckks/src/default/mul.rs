@@ -73,7 +73,7 @@ pub trait CKKSMulDefault<BE: Backend> {
             b.effective_k(),
             &mut scratch_local,
         );
-        self.glwe_tensor_relinearize(dst, &tmp, tsk, tmp.size() + tsk.dsize().as_usize(), &mut scratch_local);
+        self.glwe_tensor_relinearize(dst, &tmp, tsk, tmp.max_size() + tsk.dsize().as_usize(), &mut scratch_local);
 
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
@@ -107,7 +107,7 @@ pub trait CKKSMulDefault<BE: Backend> {
             a.effective_k(),
             &mut scratch_local,
         );
-        self.glwe_tensor_relinearize(dst, &tmp, tsk, tmp.size() + tsk.dsize().as_usize(), &mut scratch_local);
+        self.glwe_tensor_relinearize(dst, &tmp, tsk, tmp.max_size() + tsk.dsize().as_usize(), &mut scratch_local);
 
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
@@ -181,7 +181,7 @@ pub trait CKKSMulDefault<BE: Backend> {
             prepared.size,
             &mut scratch_local,
         );
-        self.glwe_tensor_relinearize(dst, &tmp, tsk, tmp.size() + tsk.dsize().as_usize(), &mut scratch_local);
+        self.glwe_tensor_relinearize(dst, &tmp, tsk, tmp.max_size() + tsk.dsize().as_usize(), &mut scratch_local);
 
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
@@ -228,7 +228,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         let scratch_local = scratch.borrow();
         let (mut tmp, mut scratch_local) = scratch_local.take_glwe_tensor_scratch(&tensor_layout);
         self.glwe_tensor_square_apply(cnv_offset, &mut tmp, a, a.effective_k(), &mut scratch_local);
-        self.glwe_tensor_relinearize(dst, &tmp, tsk, tmp.size() + tsk.dsize().as_usize(), &mut scratch_local);
+        self.glwe_tensor_relinearize(dst, &tmp, tsk, tmp.max_size() + tsk.dsize().as_usize(), &mut scratch_local);
 
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
@@ -253,7 +253,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         let scratch_local = scratch.borrow();
         let (mut tmp, mut scratch_local) = scratch_local.take_glwe_tensor_scratch(&tensor_layout);
         self.glwe_tensor_square_apply(cnv_offset, &mut tmp, &*dst, dst.effective_k(), &mut scratch_local);
-        self.glwe_tensor_relinearize(dst, &tmp, tsk, tmp.size() + tsk.dsize().as_usize(), &mut scratch_local);
+        self.glwe_tensor_relinearize(dst, &tmp, tsk, tmp.max_size() + tsk.dsize().as_usize(), &mut scratch_local);
 
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);

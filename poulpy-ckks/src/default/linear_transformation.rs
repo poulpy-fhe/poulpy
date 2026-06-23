@@ -80,7 +80,7 @@ impl<D: Data, BE: Backend> LtDiagonalScale for PreparedDiagonal<D, BE> {
 /// The prepared path reads them off the cache (`pt_log_scale()` / `pt_max_k()`),
 /// the streamed path off the first plaintext diagonal (`log_delta()` /
 /// `max_k()`); both share this body.
-fn lt_mul_params<R, A>(res: &R, a: &A, pt_log_scale: usize, pt_max_k: usize) -> Result<(usize, usize, usize)>
+fn lt_mul_params<R, A>(res: &R, a: &A, pt_log_scale: usize, pt_k: usize) -> Result<(usize, usize, usize)>
 where
     R: LWEInfos,
     A: CKKSInfos,
@@ -88,7 +88,7 @@ where
     let res_log_budget = checked_mul_pt_log_budget("mul", a.log_budget(), 0, a.log_delta(), pt_log_scale)?;
     let res_log_delta = a.log_delta();
     let res_offset = (res_log_budget + res_log_delta).saturating_sub(res.max_k().as_usize());
-    let cnv_offset = pt_max_k + res_offset;
+    let cnv_offset = pt_k + res_offset;
     Ok((
         checked_log_budget_sub("mul", res_log_budget, res_offset)?,
         res_log_delta,
@@ -187,9 +187,9 @@ where
         // actually needs a key — `automorphism_key_infos()` panics on an empty key
         // map, and with no rotation the value is unused anyway.
         let key_size = if has_nonzero {
-            src.size() + keys.automorphism_key_infos().dsize().as_usize()
+            src.max_size() + keys.automorphism_key_infos().dsize().as_usize()
         } else {
-            src.size()
+            src.max_size()
         };
         self.glwe_prepare_linear_transformation_baby_steps(babies, src, src.effective_k(), keys, key_size, scratch);
         Ok(())
@@ -357,8 +357,8 @@ where
 {
     let has_nonzero_giant_rotation = lt.giant_steps.iter().any(|gs| gs.rot != 0 && !gs.diagonals.is_empty());
     if has_nonzero_giant_rotation {
-        dst.size() + keys.automorphism_key_infos().dsize().as_usize()
+        dst.max_size() + keys.automorphism_key_infos().dsize().as_usize()
     } else {
-        dst.size()
+        dst.max_size()
     }
 }

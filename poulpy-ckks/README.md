@@ -222,7 +222,7 @@ let mut right_branch = module.ckks_ciphertext_alloc(BASE2K.into(), right_branch_
 module.ckks_mul(&mut right_branch, &right_linear, &ct_x2, &tsk_prepared, scratch.borrow())?;
 module.ckks_compact_limbs(&mut right_branch)?;
 
-let mut poly = module.ckks_ciphertext_alloc(BASE2K.into(), right_branch.max_k());
+let mut poly = module.ckks_ciphertext_alloc(BASE2K.into(), right_branch.k());
 module.ckks_add_into(&mut poly, &right_branch, &left_linear, scratch.borrow())?;
 ```
 

@@ -16,7 +16,7 @@
 //! Together they define the semantic torus width of a value:
 //! `effective_k() = log_delta + log_budget`.
 //! Storage is rounded up to the next multiple of `base2k`, so the allocated
-//! width `max_k()` may exceed `effective_k()`. Arithmetic APIs update this
+//! width `k()` may exceed `effective_k()`. Arithmetic APIs update this
 //! metadata for you, while maintenance helpers let you compact or resize owned
 //! buffers without violating those invariants.
 //!
@@ -130,9 +130,6 @@ pub trait CKKSInfos {
     }
 
     /// Returns the semantic torus width carried by the value.
-    ///
-    /// This is `log_delta + log_budget` and may differ from the rounded
-    /// storage capacity `max_k()`.
     fn effective_k(&self) -> usize {
         self.log_delta() + self.log_budget()
     }

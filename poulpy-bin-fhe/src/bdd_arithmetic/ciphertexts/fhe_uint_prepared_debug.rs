@@ -45,7 +45,7 @@ impl<D: Data, T: UnsignedInteger> FheUintPreparedDebug<D, T> {
         Self::alloc(
             module,
             infos.base2k(),
-            infos.max_k(),
+            infos.k(),
             infos.dnum(),
             infos.dsize(),
             infos.rank(),
@@ -74,8 +74,12 @@ impl<D: HostDataRef, T: UnsignedInteger> LWEInfos for FheUintPreparedDebug<D, T>
         self.bits[0].n()
     }
 
-    fn size(&self) -> usize {
-        self.bits[0].size()
+    fn max_size(&self) -> usize {
+        self.bits[0].max_size()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.bits[0].k()
     }
 }
 

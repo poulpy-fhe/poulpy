@@ -15,6 +15,7 @@ use crate::layouts::{
 #[derive(PartialEq, Eq)]
 pub struct GGSWPrepared<D: Data, B: Backend> {
     pub(crate) data: VmpPMat<D, B>,
+    pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) dsize: Dsize,
 }
@@ -31,22 +32,12 @@ impl<D: Data, B: Backend> LWEInfos for GGSWPrepared<D, B> {
         self.base2k
     }
 
-    fn size(&self) -> usize {
+    fn max_size(&self) -> usize {
         self.data.size()
     }
-}
 
-impl<D: Data, B: Backend> LWEInfos for &GGSWPrepared<D, B> {
-    fn n(&self) -> Degree {
-        Degree(self.data.n() as u32)
-    }
-
-    fn base2k(&self) -> Base2K {
-        self.base2k
-    }
-
-    fn size(&self) -> usize {
-        self.data.size()
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 
@@ -56,23 +47,7 @@ impl<D: Data, B: Backend> GLWEInfos for GGSWPrepared<D, B> {
     }
 }
 
-impl<D: Data, B: Backend> GLWEInfos for &GGSWPrepared<D, B> {
-    fn rank(&self) -> Rank {
-        Rank(self.data.cols_out() as u32 - 1)
-    }
-}
-
 impl<D: Data, B: Backend> GGSWInfos for GGSWPrepared<D, B> {
-    fn dsize(&self) -> Dsize {
-        self.dsize
-    }
-
-    fn dnum(&self) -> Dnum {
-        Dnum(self.data.rows() as u32)
-    }
-}
-
-impl<D: Data, B: Backend> GGSWInfos for &GGSWPrepared<D, B> {
     fn dsize(&self) -> Dsize {
         self.dsize
     }
@@ -119,6 +94,7 @@ where
             ),
             base2k,
             dsize,
+            k,
         }
     }
 
@@ -127,7 +103,7 @@ where
         A: GGSWInfos,
     {
         assert_eq!(self.ring_degree(), infos.n());
-        self.ggsw_prepared_alloc(infos.base2k(), infos.max_k(), infos.dnum(), infos.dsize(), infos.rank())
+        self.ggsw_prepared_alloc(infos.base2k(), infos.k(), infos.dnum(), infos.dsize(), infos.rank())
     }
 
     fn ggsw_prepared_bytes_of(&self, base2k: Base2K, k: TorusPrecision, dnum: Dnum, dsize: Dsize, rank: Rank) -> usize {
@@ -153,7 +129,7 @@ where
         A: GGSWInfos,
     {
         assert_eq!(self.ring_degree(), infos.n());
-        self.ggsw_prepared_bytes_of(infos.base2k(), infos.max_k(), infos.dnum(), infos.dsize(), infos.rank())
+        self.ggsw_prepared_bytes_of(infos.base2k(), infos.k(), infos.dnum(), infos.dsize(), infos.rank())
     }
 
     fn ggsw_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
@@ -223,6 +199,7 @@ impl<B: Backend> GGSWPreparedToBackendRef<B> for GGSWPrepared<B::OwnedBuf, B> {
     fn to_backend_ref(&self) -> GGSWPreparedBackendRef<'_, B> {
         GGSWPrepared {
             base2k: self.base2k,
+            k: self.k,
             dsize: self.dsize,
             data: self.data.to_backend_ref(),
         }
@@ -237,6 +214,7 @@ impl<B: Backend> GGSWPreparedToBackendMut<B> for GGSWPrepared<B::OwnedBuf, B> {
     fn to_backend_mut(&mut self) -> GGSWPreparedBackendMut<'_, B> {
         GGSWPrepared {
             base2k: self.base2k,
+            k: self.k,
             dsize: self.dsize,
             data: self.data.to_backend_mut(),
         }

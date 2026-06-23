@@ -146,8 +146,9 @@ pub fn download_glwe<BE: HostBackend<OwnedBuf = Vec<u8>>>(_module: &Module<BE>, 
             shape.n(),
             shape.cols(),
             shape.size(),
-            shape.max_size(),
+            shape.size(),
         ),
+        k: src.k,
         base2k: src.base2k,
     }
 }
@@ -173,8 +174,9 @@ pub fn download_glwe_plaintext<BE: HostBackend<OwnedBuf = Vec<u8>>>(
             shape.n(),
             shape.cols(),
             shape.size(),
-            shape.max_size(),
+            shape.size(),
         ),
+        k: src.k,
         base2k: src.base2k,
     }
 }
@@ -213,6 +215,7 @@ pub fn download_ggsw<BE: HostBackend<OwnedBuf = Vec<u8>>>(_module: &Module<BE>, 
             src.data.cols_out(),
             src.data.size(),
         ),
+        k: src.k,
         base2k: src.base2k,
         dsize: src.dsize,
     }

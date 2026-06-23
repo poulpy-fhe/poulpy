@@ -53,7 +53,7 @@ pub use poulpy_core::{
 /// The CKKS encoding scale (`log_delta`) of a linear-transformation diagonal.
 ///
 /// The CKKS scale / key-size bookkeeping reads it (together with the
-/// scheme-agnostic [`LWEInfos::max_k`]) off the transform's first diagonal,
+/// scheme-agnostic [`LWEInfos::k`]) off the transform's first diagonal,
 /// uniformly across the resident and streamed representations. Keeping it here —
 /// rather than on `poulpy-core`'s `DiagonalProd` engine trait — is deliberate:
 /// the core engine is scheme-agnostic (a scheme encoding values mod `P` has no

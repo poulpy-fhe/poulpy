@@ -112,13 +112,13 @@ where
                 self.gglwe_compressed_encrypt_sk_tmp_bytes_default(&res)
             );
             assert!(
-                res.dnum().0 * res.dsize().0 * res.base2k().0 <= res.max_k().0,
+                res.dnum().0 * res.dsize().0 * res.base2k().0 <= res.k().0,
                 "res.dnum() : {} * res.dsize() : {} * res.base2k() : {} = {} >= res.k() = {}",
                 res.dnum(),
                 res.dsize(),
                 res.base2k(),
                 res.dnum().0 * res.dsize().0 * res.base2k().0,
-                res.max_k()
+                res.k()
             );
 
             let dnum: usize = res.dnum().into();

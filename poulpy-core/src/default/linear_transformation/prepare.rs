@@ -39,7 +39,7 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
 
     /// Pre-allocates a resident transform sized for an explicit BSGS `index`.
     ///
-    /// Each diagonal carries the plaintext's `base2k` / `max_k` so the evaluator
+    /// Each diagonal carries the plaintext's `base2k` / `k` so the evaluator
     /// never needs the raw plaintext transform again; the convolution buffers are
     /// zeroed and populated by `glwe_prepare_linear_transformation_rhs`. The
     /// per-diagonal `log_scale` is left at `0` for the scheme layer to set.
@@ -50,7 +50,7 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
     {
         let pt_size = pt_infos.size();
         let base2k = pt_infos.base2k();
-        let max_k = pt_infos.max_k();
+        let k = pt_infos.k();
 
         let mut giant_steps = Vec::with_capacity(index.giant_steps.len());
         for (g, &rot) in index.giant_steps.iter().enumerate() {
@@ -62,7 +62,7 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
                     plaintext: PreparedDiagonal {
                         cnv: module.cnv_pvec_right_alloc(1, pt_size),
                         base2k,
-                        max_k,
+                        k,
                         log_scale: 0,
                     },
                 });
@@ -134,10 +134,10 @@ pub fn glwe_prepare_linear_transformation_rhs_default<BE, M, P>(
         .first_diagonal_plaintext()
         .expect("prepared linear transformation has no diagonals");
     let pt_base2k = first.base2k();
-    let pt_max_k = first.max_k();
+    let pt_k = first.k();
     let pt_base2k_usize = pt_base2k.as_usize();
-    let pt_max_k_usize = pt_max_k.as_usize();
-    let mask = msb_mask_bottom_limb(pt_base2k_usize, pt_max_k_usize);
+    let pt_k_usize = pt_k.as_usize();
+    let mask = msb_mask_bottom_limb(pt_base2k_usize, pt_k_usize);
 
     for gs in &lt.giant_steps {
         if gs.diagonals.is_empty() {
@@ -157,12 +157,12 @@ pub fn glwe_prepare_linear_transformation_rhs_default<BE, M, P>(
                 "linear transformation diagonal base2k does not match prepared cache"
             );
             assert_eq!(
-                plaintext.max_k(),
-                pt_max_k,
-                "linear transformation diagonal max_k does not match prepared cache"
+                plaintext.k(),
+                pt_k,
+                "linear transformation diagonal k does not match prepared cache"
             );
             assert_eq!(
-                pt_max_k_usize.div_ceil(pt_base2k_usize),
+                pt_k_usize.div_ceil(pt_base2k_usize),
                 plaintext.size(),
                 "linear transformation plaintext size does not match its effective precision"
             );

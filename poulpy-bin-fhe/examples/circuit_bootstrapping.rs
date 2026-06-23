@@ -181,7 +181,7 @@ fn main() {
     // LWE ciphertext
     let mut ct_lwe: LWE<Vec<u8>> = module.lwe_alloc_from_infos(&lwe_infos);
 
-    let lwe_enc_infos = NoiseInfos::new(lwe_infos.max_k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
+    let lwe_enc_infos = NoiseInfos::new(lwe_infos.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
     let cbt_enc_infos = CircuitBootstrappingEncryptionInfos::from_default_sigma(&cbt_layout).unwrap();
 
     // Encrypt LWE Plaintext
@@ -274,7 +274,7 @@ fn main() {
     println!("{}", pt_glwe);
 
     // Encrypt
-    let glwe_enc_infos = NoiseInfos::new(glwe_infos.max_k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
+    let glwe_enc_infos = NoiseInfos::new(glwe_infos.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
     module.glwe_encrypt_sk(
         &mut ct_glwe,
         &pt_glwe,
@@ -300,5 +300,5 @@ fn main() {
     let mut pt_res: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
     module.glwe_decrypt(&ct_glwe, &mut pt_res, &sk_glwe_prepared, &mut scratch.borrow());
 
-    println!("pt_res: {:?}", &pt_res.data.at(0, 0)[..64]);
+    println!("pt_res: {:?}", &pt_res.data().at(0, 0)[..64]);
 }

@@ -7,7 +7,7 @@ use poulpy_hal::{
 use std::{fmt, marker::PhantomData};
 
 use poulpy_core::{
-    DeclaredK, Distribution, EncryptionLayout,
+    Distribution, EncryptionLayout,
     layouts::{Base2K, Degree, Dnum, Dsize, GGSW, GGSWInfos, GLWEInfos, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision},
 };
 
@@ -40,12 +40,6 @@ pub struct BlindRotationKeyLayout {
     pub k: TorusPrecision,
     pub dnum: Dnum,
     pub rank: Rank,
-}
-
-impl DeclaredK for BlindRotationKeyLayout {
-    fn k(&self) -> TorusPrecision {
-        self.k
-    }
 }
 
 impl BlindRotationKeyInfos for BlindRotationKeyLayout {
@@ -93,8 +87,12 @@ impl LWEInfos for BlindRotationKeyLayout {
         self.n_glwe
     }
 
-    fn size(&self) -> usize {
-        self.k.as_usize().div_ceil(self.base2k().as_usize())
+    fn max_size(&self) -> usize {
+        unimplemented!("this method is only defined for concrete ojbect (you are calling it from a layout definition)")
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 
@@ -260,8 +258,12 @@ impl<D: HostDataRef, BRT: BlindRotationAlgo> LWEInfos for BlindRotationKey<D, BR
         self.keys[0].n()
     }
 
-    fn size(&self) -> usize {
-        self.keys[0].size()
+    fn max_size(&self) -> usize {
+        self.keys[0].max_size()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.keys[0].k()
     }
 }
 

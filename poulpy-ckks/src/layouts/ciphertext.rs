@@ -101,7 +101,7 @@ impl<D: Data, S: CKKSNormalizationState> CKKSCiphertext<D, S> {
                 max_k: self.max_k().as_usize(),
                 log_delta: meta.log_delta(),
                 base2k: self.base2k().as_usize(),
-                requested_limbs: self.size(),
+                requested_limbs: self.max_size(),
             }
         );
         self.meta = meta;
@@ -165,8 +165,12 @@ impl<D: Data, S: CKKSNormalizationState> LWEInfos for CKKSCiphertext<D, S> {
         self.inner.n()
     }
 
-    fn size(&self) -> usize {
-        self.inner.size()
+    fn max_size(&self) -> usize {
+        self.inner.max_size()
+    }
+
+    fn k(&self) -> poulpy_core::layouts::TorusPrecision {
+        self.inner.k()
     }
 }
 
@@ -198,7 +202,10 @@ impl<D: Data, S: CKKSNormalizationState> SetCKKSInfos for CKKSCiphertext<D, S> {
     fn compact_in_place(&mut self) {
         // Only ever shrink: a value whose `effective_k` already exceeds its
         // storage (e.g. a deliberately undersized output) stays at `size()`.
-        let limbs = self.effective_k().div_ceil(self.base2k().as_usize()).max(1).min(self.size());
+        let limbs = (self.effective_k() + self.log_n())
+            .div_ceil(self.base2k().as_usize())
+            .max(1)
+            .min(self.max_size());
         self.inner.data_mut().set_size(limbs);
     }
 }
@@ -287,8 +294,12 @@ impl<'a, BE: Backend + 'a> LWEInfos for CKKSCiphertextViewMut<'a, BE> {
         self.inner.n()
     }
 
-    fn size(&self) -> usize {
-        self.inner.size()
+    fn max_size(&self) -> usize {
+        self.inner.max_size()
+    }
+
+    fn k(&self) -> poulpy_core::layouts::TorusPrecision {
+        self.inner.k()
     }
 }
 
@@ -318,8 +329,8 @@ impl<'a, BE: Backend + 'a> SetCKKSInfos for CKKSCiphertextViewMut<'a, BE> {
     }
 
     fn compact_in_place(&mut self) {
-        let limbs = self.effective_k().div_ceil(self.base2k().as_usize()).max(1).min(self.size());
-        self.inner.data_mut().set_size(limbs);
+        //let limbs = self.effective_k().div_ceil(self.base2k().as_usize()).max(1).min(self.size());
+        //self.inner.data_mut().set_size(limbs);
     }
 }
 

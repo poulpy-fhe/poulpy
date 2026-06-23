@@ -3,13 +3,10 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::{
-    DeclaredK,
-    layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos,
-        GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos, GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut,
-        GLWEViewMut, GLWEViewRef, LWEInfos, Rank, TorusPrecision,
-    },
+use crate::layouts::{
+    Base2K, Degree, Dnum, Dsize, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos, GGLWEToBackendMut,
+    GGLWEToBackendRef, GLWEInfos, GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, GLWEViewMut,
+    GLWEViewRef, LWEInfos, Rank, TorusPrecision,
 };
 
 use std::fmt;
@@ -22,13 +19,6 @@ pub struct GLWEToLWEKeyLayout {
     pub rank_in: Rank,
     pub dnum: Dnum,
 }
-
-impl DeclaredK for GLWEToLWEKeyLayout {
-    fn k(&self) -> TorusPrecision {
-        self.k
-    }
-}
-
 impl LWEInfos for GLWEToLWEKeyLayout {
     fn n(&self) -> Degree {
         self.n
@@ -38,8 +28,12 @@ impl LWEInfos for GLWEToLWEKeyLayout {
         self.base2k
     }
 
-    fn size(&self) -> usize {
-        self.k.as_usize().div_ceil(self.base2k.as_usize())
+    fn max_size(&self) -> usize {
+        unimplemented!("this method is only defined for concrete ojbect (you are calling it from a layout definition)")
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 
@@ -80,8 +74,12 @@ impl<D: Data> LWEInfos for GLWEToLWEKey<D> {
         self.0.n()
     }
 
-    fn size(&self) -> usize {
-        self.0.size()
+    fn max_size(&self) -> usize {
+        self.0.max_size()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.0.k()
     }
 }
 
@@ -149,7 +147,7 @@ impl GLWEToLWEKey<Vec<u8>> {
     {
         assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for GLWEToLWEKey");
         assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for GLWEToLWEKey");
-        Self::alloc(infos.n(), infos.base2k(), infos.max_k(), infos.rank_in(), infos.dnum())
+        Self::alloc(infos.n(), infos.base2k(), infos.k(), infos.rank_in(), infos.dnum())
     }
 
     pub(crate) fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision, rank_in: Rank, dnum: Dnum) -> Self {
@@ -162,7 +160,7 @@ impl GLWEToLWEKey<Vec<u8>> {
     {
         assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for GLWEToLWEKey");
         assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for GLWEToLWEKey");
-        Self::bytes_of(infos.n(), infos.base2k(), infos.max_k(), infos.rank_in(), infos.dnum())
+        Self::bytes_of(infos.n(), infos.base2k(), infos.k(), infos.rank_in(), infos.dnum())
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision, rank_in: Rank, dnum: Dnum) -> usize {

@@ -13,7 +13,7 @@ use poulpy_core::layouts::{
     BSGSMeta, GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta,
     prepared::GLWETensorKeyPreparedToBackendRef,
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena, TransferFrom};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
@@ -54,7 +54,7 @@ pub trait CKKSEvalModOpsDefault<BE: Backend> {
             + CKKSModuleAlloc<BE>
             + CKKSRescaleOps<BE>
             + Sized,
-        BE: poulpy_hal::layouts::Backend<OwnedBuf = Vec<u8>>,
+        BE: Backend<OwnedBuf = Vec<u8>> + TransferFrom<HostBytesBackend>,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
@@ -84,6 +84,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
+        BE: TransferFrom<HostBytesBackend>,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
@@ -107,7 +108,7 @@ where
 /// `res` receives the result; `tsk` is the relinearization (tensor) key for the
 /// squarings, and `scratch` supplies the working memory sized by
 /// [`CKKSEvalModOps::ckks_eval_mod_tmp_bytes`](crate::api::CKKSEvalModOps::ckks_eval_mod_tmp_bytes).
-fn eval_mod<R, C, P, F, BE: Backend<OwnedBuf = Vec<u8>>>(
+fn eval_mod<R, C, P, F, BE>(
     module: &Module<BE>,
     res: &mut R,
     ct: &C,
@@ -116,6 +117,7 @@ fn eval_mod<R, C, P, F, BE: Backend<OwnedBuf = Vec<u8>>>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
+    BE: Backend<OwnedBuf = Vec<u8>> + TransferFrom<HostBytesBackend>,
     Module<BE>: PolynomialEvaluation<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
@@ -130,12 +132,11 @@ where
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
-    // EvalMod runs at its own plan scale `f_mod_log_delta`: reinterpret the working
-    // ciphertext to it on entry and back to the input scale on the result. Both are
-    // pure `set_log_delta` reinterpretations (no data shift, `log_budget` kept), so
-    // the round-trip is budget-neutral and EvalMod consumes exactly
-    // `consumed_bits()` — charged deterministically at `f_mod_log_delta`, regardless
-    // of the input scale.
+    // EvalMod runs at its own plan scale `f_mod_log_delta`: reinterpret the
+    // working ciphertext to it on entry, then return the result to the input
+    // scale. `consumed_bits()` accounts for the arithmetic at the plan scale;
+    // if the plan scale is higher than the input scale, returning to the input
+    // scale also drops that extra precision from the externally visible budget.
     let s_in = ct.log_delta();
     let s_eval = params.plan.f_mod_log_delta;
 

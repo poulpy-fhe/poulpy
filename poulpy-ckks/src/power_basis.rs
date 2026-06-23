@@ -3,7 +3,7 @@ use poulpy_core::layouts::{
     GGLWEInfos, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
     prepared::GLWETensorKeyPreparedToBackendRef, split_degree,
 };
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data, HostBytesBackend, Module, ScratchArena, TransferFrom};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
@@ -43,7 +43,7 @@ pub trait PowerBasisGen<D: Data> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: Backend<OwnedBuf = D>,
+        BE: Backend<OwnedBuf = D> + TransferFrom<HostBytesBackend>,
         Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
         CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
@@ -60,7 +60,7 @@ pub trait PowerBasisGen<D: Data> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: Backend<OwnedBuf = D>,
+        BE: Backend<OwnedBuf = D> + TransferFrom<HostBytesBackend>,
         Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
         CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
@@ -152,7 +152,7 @@ impl<D: Data> PowerBasisGen<D> for PowerBasis<CKKSCiphertext<D>> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: Backend<OwnedBuf = D>,
+        BE: Backend<OwnedBuf = D> + TransferFrom<HostBytesBackend>,
         Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
         CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -212,7 +212,7 @@ impl<D: Data> PowerBasisGen<D> for PowerBasis<CKKSCiphertext<D>> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: Backend<OwnedBuf = D>,
+        BE: Backend<OwnedBuf = D> + TransferFrom<HostBytesBackend>,
         Module<BE>: CKKSPow2Ops<BE> + CKKSMulOps<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
         CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,

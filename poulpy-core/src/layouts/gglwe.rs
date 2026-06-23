@@ -29,7 +29,7 @@ where
         GGLWELayout {
             n: self.n(),
             base2k: self.base2k(),
-            k: self.max_k(),
+            k: self.k(),
             rank_in: self.rank_in(),
             rank_out: self.rank_out(),
             dsize: self.dsize(),
@@ -62,8 +62,12 @@ impl LWEInfos for GGLWELayout {
         self.n
     }
 
-    fn size(&self) -> usize {
-        self.k.as_usize().div_ceil(self.base2k.as_usize())
+    fn max_size(&self) -> usize {
+        unimplemented!("this method is only defined for concrete ojbect (you are calling it from a layout definition)")
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 
@@ -94,6 +98,7 @@ impl GGLWEInfos for GGLWELayout {
 #[derive(PartialEq, Eq, Clone)]
 pub struct GGLWE<D: Data> {
     pub(crate) data: MatZnx<D>,
+    pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) dsize: Dsize,
 }
@@ -167,6 +172,7 @@ impl<'a, BE: Backend + 'a> GGLWEToBackendRef<BE> for GGLWEBackendRef<'a, BE> {
     fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE> {
         GGLWEBackendRef::from_inner(GGLWE {
             base2k: self.inner.base2k,
+            k: self.inner.k,
             dsize: self.inner.dsize,
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_ref::<BE>(&self.inner.data),
         })
@@ -183,6 +189,7 @@ impl<'a, BE: Backend + 'a> GGLWEToBackendRef<BE> for GGLWEBackendMut<'a, BE> {
     fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE> {
         GGLWEBackendRef::from_inner(GGLWE {
             base2k: self.inner.base2k,
+            k: self.inner.k,
             dsize: self.inner.dsize,
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_mut::<BE>(&self.inner.data),
         })
@@ -193,6 +200,7 @@ impl<'a, BE: Backend + 'a> GGLWEToBackendMut<BE> for GGLWEBackendMut<'a, BE> {
     fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE> {
         GGLWEBackendMut::from_inner(GGLWE {
             base2k: self.inner.base2k,
+            k: self.inner.k,
             dsize: self.inner.dsize,
             data: poulpy_hal::layouts::mat_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
         })
@@ -208,22 +216,12 @@ impl<D: Data> LWEInfos for GGLWE<D> {
         Degree(self.data.n() as u32)
     }
 
-    fn size(&self) -> usize {
+    fn max_size(&self) -> usize {
         self.data.size()
     }
-}
 
-impl<D: Data> LWEInfos for &GGLWE<D> {
-    fn base2k(&self) -> Base2K {
-        self.base2k
-    }
-
-    fn n(&self) -> Degree {
-        Degree(self.data.n() as u32)
-    }
-
-    fn size(&self) -> usize {
-        self.data.size()
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 
@@ -233,69 +231,7 @@ impl<D: Data> GLWEInfos for GGLWE<D> {
     }
 }
 
-impl<D: Data> GLWEInfos for &GGLWE<D> {
-    fn rank(&self) -> Rank {
-        self.rank_out()
-    }
-}
-
 impl<D: Data> GGLWEInfos for GGLWE<D> {
-    fn rank_in(&self) -> Rank {
-        Rank(self.data.cols_in() as u32)
-    }
-
-    fn rank_out(&self) -> Rank {
-        Rank(self.data.cols_out() as u32 - 1)
-    }
-
-    fn dsize(&self) -> Dsize {
-        self.dsize
-    }
-
-    fn dnum(&self) -> Dnum {
-        Dnum(self.data.rows() as u32)
-    }
-}
-
-impl<D: Data> GGLWEInfos for &GGLWE<D> {
-    fn rank_in(&self) -> Rank {
-        Rank(self.data.cols_in() as u32)
-    }
-
-    fn rank_out(&self) -> Rank {
-        Rank(self.data.cols_out() as u32 - 1)
-    }
-
-    fn dsize(&self) -> Dsize {
-        self.dsize
-    }
-
-    fn dnum(&self) -> Dnum {
-        Dnum(self.data.rows() as u32)
-    }
-}
-
-impl<D: Data> LWEInfos for &mut GGLWE<D> {
-    fn base2k(&self) -> Base2K {
-        self.base2k
-    }
-
-    fn n(&self) -> Degree {
-        Degree(self.data.n() as u32)
-    }
-
-    fn size(&self) -> usize {
-        self.data.size()
-    }
-}
-
-impl<D: Data> GLWEInfos for &mut GGLWE<D> {
-    fn rank(&self) -> Rank {
-        self.rank_out()
-    }
-}
-
-impl<D: Data> GGLWEInfos for &mut GGLWE<D> {
     fn rank_in(&self) -> Rank {
         Rank(self.data.cols_in() as u32)
     }
@@ -328,6 +264,7 @@ impl<BE: Backend> GGLWEAtBackendRef<BE> for GGLWE<BE::OwnedBuf> {
         let data = <MatZnx<BE::OwnedBuf> as MatZnxAtBackendRef<BE>>::at_backend(&self.data, row, col);
         GLWE {
             base2k: self.base2k,
+            k: self.k,
             data,
         }
     }
@@ -341,6 +278,7 @@ pub(crate) fn gglwe_at_backend_ref_from_ref<'a, 'b, BE: Backend>(
     let data = poulpy_hal::layouts::mat_znx_at_backend_ref_from_ref::<BE>(&gglwe.data, row, col);
     GLWE {
         base2k: gglwe.base2k,
+        k: gglwe.k,
         data,
     }
 }
@@ -355,12 +293,6 @@ impl<BE: Backend> GGLWEAtViewRef<BE> for GGLWE<BE::OwnedBuf> {
     }
 }
 
-impl<'b, BE: Backend + 'b> GGLWEAtViewRef<BE> for &GGLWE<BE::BufRef<'b>> {
-    fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE> {
-        GLWEViewRef::from_inner(gglwe_at_backend_ref_from_ref::<BE>(self, row, col))
-    }
-}
-
 pub(crate) fn gglwe_at_backend_ref_from_mut<'a, 'b, BE: Backend>(
     gglwe: &'a GGLWE<BE::BufMut<'b>>,
     row: usize,
@@ -369,6 +301,7 @@ pub(crate) fn gglwe_at_backend_ref_from_mut<'a, 'b, BE: Backend>(
     let data = poulpy_hal::layouts::mat_znx_at_backend_ref_from_mut::<BE>(&gglwe.data, row, col);
     GLWE {
         base2k: gglwe.base2k,
+        k: gglwe.k,
         data,
     }
 }
@@ -386,8 +319,9 @@ pub(crate) trait GGLWEAtBackendMut<BE: Backend> {
 impl<BE: Backend> GGLWEAtBackendMut<BE> for GGLWE<BE::OwnedBuf> {
     fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>> {
         let base2k = self.base2k;
+        let k = self.k;
         let data = <MatZnx<BE::OwnedBuf> as MatZnxAtBackendMut<BE>>::at_backend_mut(&mut self.data, row, col);
-        GLWE { base2k, data }
+        GLWE { base2k, k, data }
     }
 }
 
@@ -397,8 +331,9 @@ pub(crate) fn gglwe_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
     col: usize,
 ) -> GLWE<BE::BufMut<'a>> {
     let base2k = gglwe.base2k;
+    let k = gglwe.k;
     let data = poulpy_hal::layouts::mat_znx_at_backend_mut_from_mut::<BE>(&mut gglwe.data, row, col);
-    GLWE { base2k, data }
+    GLWE { base2k, k, data }
 }
 
 pub trait GGLWEAtViewMut<BE: Backend> {
@@ -434,7 +369,7 @@ impl<D: HostDataRef> fmt::Display for GGLWE<D> {
         write!(
             f,
             "(GGLWE: k={} base2k={} dsize={}) {}",
-            self.max_k().0,
+            self.k().0,
             self.base2k().0,
             self.dsize().0,
             self.data
@@ -447,6 +382,7 @@ impl<D: HostDataRef> GGLWE<D> {
         let data = self.data.at(row, col);
         GLWE {
             base2k: self.base2k,
+            k: self.k,
             data,
         }
     }
@@ -455,8 +391,9 @@ impl<D: HostDataRef> GGLWE<D> {
 impl<D: HostDataMut> GGLWE<D> {
     pub fn at_mut(&mut self, row: usize, col: usize) -> GLWE<&mut [u8]> {
         let base2k = self.base2k;
+        let k = self.k;
         let data = self.data.at_mut(row, col);
-        GLWE { base2k, data }
+        GLWE { base2k, k, data }
     }
 }
 
@@ -490,6 +427,7 @@ impl<D: Data> GGLWE<D> {
             data: MatZnx::from_data(self.data.into_data(), n, rows, cols_in, cols_out, size),
             base2k: self.base2k,
             dsize: self.dsize,
+            k: self.k,
         }
     }
 }
@@ -506,7 +444,7 @@ impl GGLWE<Vec<u8>> {
         Self::alloc(
             infos.n(),
             infos.base2k(),
-            infos.max_k(),
+            infos.k(),
             infos.rank_in(),
             infos.rank_out(),
             infos.dnum(),
@@ -554,6 +492,7 @@ impl GGLWE<Vec<u8>> {
             ),
             base2k,
             dsize,
+            k,
         }
     }
 
@@ -564,7 +503,7 @@ impl GGLWE<Vec<u8>> {
         Self::bytes_of(
             infos.n(),
             infos.base2k(),
-            infos.max_k(),
+            infos.k(),
             infos.rank_in(),
             infos.rank_out(),
             infos.dnum(),
@@ -617,6 +556,7 @@ where
         GGLWEBackendMut::from_inner(GGLWE {
             base2k: self.base2k(),
             dsize: self.dsize(),
+            k: self.k(),
             data: self.data.to_backend_mut(),
         })
     }
@@ -627,6 +567,7 @@ impl<'b, BE: Backend + 'b> GGLWEToBackendRef<BE> for &mut GGLWE<BE::BufMut<'b>> 
         GGLWEBackendRef::from_inner(GGLWE {
             base2k: self.base2k(),
             dsize: self.dsize(),
+            k: self.k(),
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_mut::<BE>(&self.data),
         })
     }
@@ -637,6 +578,7 @@ impl<'b, BE: Backend + 'b> GGLWEToBackendMut<BE> for &mut GGLWE<BE::BufMut<'b>> 
         GGLWEBackendMut::from_inner(GGLWE {
             base2k: self.base2k(),
             dsize: self.dsize(),
+            k: self.k(),
             data: poulpy_hal::layouts::mat_znx_backend_mut_from_mut::<BE>(&mut self.data),
         })
     }
@@ -654,6 +596,7 @@ where
         GGLWEBackendRef::from_inner(GGLWE {
             base2k: self.base2k(),
             dsize: self.dsize(),
+            k: self.k(),
             data: self.data.to_backend_ref(),
         })
     }

@@ -51,7 +51,7 @@ fn main() {
         };
         let tsk = module.alloc_tensor_key_prepared_from_infos(&tsk_layout);
         let mut res = module.glwe_alloc_from_infos(&glwe);
-        let tsk_size = tensor.size() + dsize as usize;
+        let tsk_size = tensor.max_size() + dsize as usize;
         let mut scratch = ScratchOwned::<NTT126Ifma>::alloc(module.glwe_tensor_relinearize_tmp_bytes(&res, &tensor, &tsk));
         for _ in 0..iters {
             module.glwe_tensor_relinearize(&mut res, &tensor, &tsk, tsk_size, &mut scratch.borrow());
@@ -59,8 +59,8 @@ fn main() {
         }
     } else {
         let mut scratch = ScratchOwned::<NTT126Ifma>::alloc(module.glwe_tensor_apply_tmp_bytes(&tensor, &a, &b));
-        let ak = a.max_k().as_usize();
-        let bk = b.max_k().as_usize();
+        let ak = a.k().as_usize();
+        let bk = b.k().as_usize();
         for _ in 0..iters {
             module.glwe_tensor_apply(0, &mut tensor, &a, ak, &b, bk, &mut scratch.borrow());
             black_box(&tensor);

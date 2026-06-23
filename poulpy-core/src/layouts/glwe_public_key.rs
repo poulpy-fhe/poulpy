@@ -41,8 +41,12 @@ impl<D: Data> LWEInfos for GLWEPublicKey<D> {
         self.key.n()
     }
 
-    fn size(&self) -> usize {
-        self.key.size()
+    fn max_size(&self) -> usize {
+        self.key.max_size()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.key.k()
     }
 }
 
@@ -61,8 +65,12 @@ impl LWEInfos for GLWEPublicKeyLayout {
         self.n
     }
 
-    fn size(&self) -> usize {
-        self.k.0.div_ceil(self.base2k.0) as usize
+    fn max_size(&self) -> usize {
+        unimplemented!("this method is only defined for concrete ojbect (you are calling it from a layout definition)")
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 
@@ -81,7 +89,7 @@ impl GLWEPublicKey<Vec<u8>> {
     where
         A: GLWEInfos,
     {
-        Self::alloc(infos.n(), infos.base2k(), infos.max_k(), infos.rank())
+        Self::alloc(infos.n(), infos.base2k(), infos.k(), infos.rank())
     }
 
     pub(crate) fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank) -> Self {
@@ -95,7 +103,7 @@ impl GLWEPublicKey<Vec<u8>> {
     where
         A: GLWEInfos,
     {
-        Self::bytes_of(infos.n(), infos.base2k(), infos.max_k(), infos.rank())
+        Self::bytes_of(infos.n(), infos.base2k(), infos.k(), infos.rank())
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank) -> usize {

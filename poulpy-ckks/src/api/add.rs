@@ -1,6 +1,6 @@
 use anyhow::Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, Data, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data, HostBytesBackend, ScratchArena, TransferFrom};
 
 use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::UnnormalizedCKKSCiphertext};
 
@@ -83,6 +83,7 @@ pub trait CKKSAddOps<BE: Backend> {
     /// Metadata is preserved.
     fn ckks_add_one_assign<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
+        BE: TransferFrom<HostBytesBackend>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 
     fn ckks_add_pt_vec_tmp_bytes(&self) -> usize;

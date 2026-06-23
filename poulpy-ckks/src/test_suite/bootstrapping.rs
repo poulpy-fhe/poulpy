@@ -64,7 +64,7 @@ use crate::{
 
 /// `log2` of the live complex slot count (ring degree `n = 2·2^LOG_SLOTS`), kept
 /// small to bound the depth — and modulus width — of a self-contained test.
-const LOG_SLOTS: usize = 10;
+const LOG_SLOTS: usize = 13;
 
 fn meta(log_delta: usize, log_budget: usize) -> CKKSMeta {
     CKKSMeta {
@@ -91,14 +91,14 @@ where
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let f_mod_interval = 16;
-    let log_message_ratio = 11usize;
+    let log_message_ratio = 10usize;
 
     let plan = BootstrappingPlan {
         ephemeral_secret_weight: 32,
         coeffs_to_slots: DFTPlan {
             kind: DFTType::Encode,
-            factorization_depth: vec![2, 2, 3, 3],
-            giant_steps: vec![8, 16, 16, 16],
+            factorization_depth: vec![4, 4, 5],
+            giant_steps: vec![16, 16, 16],
             format: DFTOutputFormat::SplitRealAndImag,
             scaling: Some(1. / f_mod_interval as f64),
             bit_reversed: false,
@@ -113,13 +113,13 @@ where
             f_mod_inv_degree: None,
             scaling: None,
             split_strategy: SplitStrategy::MinDepth,
-            coeffs_meta: meta(45, 5), //~log_message_ratio+log(f_mod_interval)+log_final_prec
-            f_mod_log_delta: 59,      // ~ log(f_mod_interval) + log_message_ratio + log_delta_in
+            coeffs_meta: meta(48, 4), //~log_message_ratio+log(f_mod_interval)+log_final_prec
+            f_mod_log_delta: 60,      // ~ log(f_mod_interval) + log_message_ratio + log_delta_in
         },
         slots_to_coeffs: DFTPlan {
             kind: DFTType::Decode,
-            factorization_depth: vec![3, 3, 2, 2],
-            giant_steps: vec![16, 16, 16, 8],
+            factorization_depth: vec![5, 4, 4],
+            giant_steps: vec![16, 16, 16],
             format: DFTOutputFormat::SplitRealAndImag,
             scaling: Some((log_message_ratio as f64).exp2()),
             bit_reversed: false,
@@ -240,7 +240,7 @@ where
     //    /message-ratio): `I(X)·q` becomes the integer part, the message the
     //    residue `Δ·c/q`.
     if let Some((dense_to_sparse, _)) = &encaps {
-        module.glwe_keyswitch_assign(&mut ct0, dense_to_sparse, dense_to_sparse.size(), &mut scratch.borrow());
+        module.glwe_keyswitch_assign(&mut ct0, dense_to_sparse, dense_to_sparse.max_size(), &mut scratch.borrow());
     }
     println!("denseToSparse: {:?}", now.elapsed());
 
@@ -248,7 +248,7 @@ where
     let mut ct = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     module.ckks_mod_up_into(&mut ct, &ct0, &mut scratch.borrow()).unwrap();
     if let Some((_, sparse_to_dense)) = &encaps {
-        module.glwe_keyswitch_assign(&mut ct, sparse_to_dense, sparse_to_dense.size(), &mut scratch.borrow());
+        module.glwe_keyswitch_assign(&mut ct, sparse_to_dense, sparse_to_dense.max_size(), &mut scratch.borrow());
     }
     ct.set_meta(meta(log_modulus_in, k_boot - log_modulus_in));
     println!("ckks_mod_up_into: {:?}", now.elapsed());

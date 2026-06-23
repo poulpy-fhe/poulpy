@@ -95,9 +95,9 @@ pub enum EvalModType {
     /// Can be paired with `f_mod_log_interval_reduction`.
     CosHK,
     /// Continuous Chebyshev approximation of `1/(2π)·sin(2π·x)` over `[−K, K]`.
-    /// `sin` is odd, so it is *already* anti-symmetric around the message and
-    /// needs no phase offset; Typically combined with an arcsine post-composition
-    /// to linearize the output.
+    /// Implemented as the equivalent shifted cosine
+    /// `cos(2π·(x − 1/4))`, which keeps the same target while using the full
+    /// Chebyshev path.
     /// Cannot be paired with `f_mod_log_interval_reduction` (must be set to 0).
     SinCheby,
     /// Direct Chebyshev approximation of `1/(2π)·cos(2π·x)` over the reduced range
@@ -228,7 +228,7 @@ impl EvalModPlan {
     /// the cosine/exp families keep all coefficients.
     fn base_parity(&self) -> Parity {
         match self.eval_mod_type {
-            EvalModType::SinCheby => Parity::Odd,
+            EvalModType::SinCheby => Parity::Full,
             _ => Parity::Full,
         }
     }
@@ -371,7 +371,13 @@ where
         };
 
         let mut f_mod_poly: Polynomial<F> = match lit.eval_mod_type {
-            EvalModType::SinCheby => Polynomial::chebyshev_interpolate(lit.f_mod_degree, -k_eff, k_eff, |x| (two_pi * x).sin())?,
+            EvalModType::SinCheby => {
+                // Use the equivalent shifted cosine rather than an odd-only sine
+                // polynomial: it evaluates the same periodic target and exercises
+                // the full Chebyshev BSGS path used by the other real variants.
+                let off = scalar_from_f64::<F>("-0.25", -0.25)?;
+                Polynomial::chebyshev_interpolate(lit.f_mod_degree, -k_eff, k_eff, |x| (two_pi * (x + off)).cos())?
+            }
             EvalModType::CosCheby => {
                 // Bake the −1/4-period phase shift into the interpolated function so
                 // no separate offset is added at evaluation time. The polynomial is
@@ -397,7 +403,7 @@ where
             EvalModType::ExpCmplx => unreachable!(),
         };
         match lit.eval_mod_type {
-            EvalModType::SinCheby => f_mod_poly.parity = Parity::Odd,
+            EvalModType::SinCheby => f_mod_poly.parity = Parity::Full,
             // The phase-shifted cosine is not even, so keep all coefficients.
             EvalModType::CosCheby => f_mod_poly.parity = Parity::Full,
             EvalModType::CosHK => {}

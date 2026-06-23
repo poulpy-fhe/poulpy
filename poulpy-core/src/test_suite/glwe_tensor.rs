@@ -128,6 +128,9 @@ where
         }
 
         pt_in.encode_vec_i64(&data, TorusPrecision(scale as u32));
+        // Active precision can end in a partial bottom limb; tensoring masks it,
+        // which contributes one rounding bit compared with limb-capacity precision.
+        let active_limb_rounding = if k % in_base2k == 0 { 0.0 } else { 1.0 };
 
         let mut pt_want_base2k_in: VecZnx<Vec<u8>> = module.vec_znx_alloc(1, pt_in.size());
         bivariate_convolution_naive::<_, BE>(
@@ -167,9 +170,9 @@ where
                 scale + res_offset,
                 &mut res_tensor,
                 &a,
-                a.max_k().as_usize(),
+                a.k().as_usize(),
                 &b,
-                b.max_k().as_usize(),
+                b.k().as_usize(),
                 &mut scratch.borrow(),
             );
 
@@ -194,7 +197,8 @@ where
             );
 
             let noise_have: f64 = pt_tmp.stats().std().log2();
-            let noise_want = -((k - scale - res_offset - module.log_n()) as f64 - ((rank - 1) as f64) / SQRT_2);
+            let noise_want =
+                -((k - scale - res_offset - module.log_n()) as f64 - ((rank - 1) as f64) / SQRT_2) + active_limb_rounding;
 
             assert!(noise_have - noise_want <= 0.5, "{} > {}", noise_have, noise_want);
 
@@ -340,16 +344,16 @@ where
                 scale + res_offset,
                 &mut res_square,
                 &a,
-                a.max_k().as_usize(),
+                a.k().as_usize(),
                 &mut scratch.borrow(),
             );
             module.glwe_tensor_apply(
                 scale + res_offset,
                 &mut res_tensor,
                 &a,
-                a.max_k().as_usize(),
+                a.k().as_usize(),
                 &a,
-                a.max_k().as_usize(),
+                a.k().as_usize(),
                 &mut scratch.borrow(),
             );
 
@@ -484,9 +488,9 @@ where
                 scale + res_offset,
                 &mut res,
                 &a,
-                a.max_k().as_usize(),
+                a.k().as_usize(),
                 &pt_b,
-                pt_b.max_k().as_usize(),
+                pt_b.k().as_usize(),
                 &mut scratch_cnv.borrow(),
             );
 

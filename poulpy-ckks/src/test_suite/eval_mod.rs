@@ -24,13 +24,13 @@ use super::helpers::{
     precision_stats, upload_pt,
 };
 
-fn alloc_scratch_eval_mod<BE>(params: &super::CKKSTestParams, module: &Module<BE>) -> ScratchOwned<BE>
+fn alloc_scratch_eval_mod<BE>(params: &super::CKKSTestParams, module: &Module<BE>, res_k: usize) -> ScratchOwned<BE>
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
-    let mut ct = module.ckks_ciphertext_alloc_from_infos(&params.glwe_layout());
+    let mut ct = module.ckks_ciphertext_alloc(params.base2k.into(), res_k.into());
     ct.set_meta(params.prec);
     let pt_prec = CKKSMeta {
         log_delta: 8,
@@ -197,7 +197,10 @@ fn run_eval_mod_case<BE, F, E>(
     let x_im_raw = vec![F::zero(); x_re_raw.len()];
 
     let (sk_raw, sk) = gen_sk_with_raw(&test_params, module, host_module, [0u8; 32]);
-    let mut scratch = alloc_scratch_eval_mod(&test_params, module);
+    // `res` must span the raised scale EvalMod evaluates at (`f_mod_log_delta`),
+    // which is wider than the input scale by `f_mod_log_delta - input_log_delta`.
+    let res_k = test_params.k + lit.f_mod_log_delta.saturating_sub(input_log_delta);
+    let mut scratch = alloc_scratch_eval_mod(&test_params, module, res_k);
     let tsk = gen_tsk(&test_params, module, &sk_raw, &mut scratch.borrow());
 
     let ct_input = ckks_encrypt_with_prec(
@@ -214,20 +217,19 @@ fn run_eval_mod_case<BE, F, E>(
     );
 
     let (in_ld, in_lb) = (ct_input.log_delta(), ct_input.log_budget());
-    // `res` must span the raised scale EvalMod evaluates at (`f_mod_log_delta`),
-    // which is wider than the input scale by `f_mod_log_delta - input_log_delta`.
-    let res_k = test_params.k + lit.f_mod_log_delta.saturating_sub(input_log_delta);
     let mut res = module.ckks_ciphertext_alloc(test_params.base2k.into(), res_k.into());
     module
         .ckks_eval_mod(&mut res, &ct_input, &params_be, &tsk, &mut scratch.borrow())
         .expect("ckks_eval_mod");
 
-    // Exact bit-consumption: eval_mod preserves the input scale and consumes
-    // exactly `consumed_bits(input_log_delta)` of `log_budget`.
+    // Exact externally visible bit-consumption: EvalMod arithmetic is charged at
+    // the plan scale, and returning from that raised scale to the input scale
+    // drops the extra precision gap.
+    let scale_gap = lit.f_mod_log_delta.saturating_sub(in_ld);
     assert_eq!(res.log_delta(), in_ld, "{label}: eval_mod should preserve log_delta");
     assert_eq!(
         in_lb - res.log_budget(),
-        params_be.consumed_bits(),
+        params_be.consumed_bits() + scale_gap,
         "{label}: eval_mod consumed bits mismatch"
     );
 
@@ -327,7 +329,7 @@ pub fn test_eval_mod_sin_continuous_with_arcsine<BE, F, E>(
         f_mod_degree: 127,
         f_mod_interval: 14,
         f_mod_log_interval_reduction: 0,
-        f_mod_inv_degree: Some(7),
+        f_mod_inv_degree: Some(3),
         f_mod_log_delta: 60,
         scaling: None,
         split_strategy: SplitStrategy::MinDepth,

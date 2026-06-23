@@ -794,13 +794,13 @@ where
 
         let a_base2k: usize = a.base2k().as_usize();
 
-        assert_eq!(a_effective_k.div_ceil(a_base2k), a.size());
+        let a_size = a_effective_k.div_ceil(a_base2k);
 
         let res_base2k: usize = res.base2k().as_usize();
         let cols: usize = res.rank().as_usize() + 1;
 
-        let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, a.size());
-        let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, cols, a.size());
+        let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, a_size);
+        let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, cols, a_size);
 
         let a_mask = msb_mask_bottom_limb(a_base2k, a_effective_k);
         let a_backend = a.to_backend_ref();
@@ -812,9 +812,9 @@ where
         let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, a_base2k);
 
         let diag_dft_size =
-            normalize_input_limb_bound_with_offset(2 * a.size() - cnv_offset_hi, res.size(), res_base2k, a_base2k, cnv_offset_lo);
+            normalize_input_limb_bound_with_offset(2 * a_size - cnv_offset_hi, res.size(), res_base2k, a_base2k, cnv_offset_lo);
         let pairwise_dft_size =
-            normalize_input_limb_bound_with_offset(2 * a.size() - cnv_offset_hi, res.size(), res_base2k, a_base2k, cnv_offset_lo);
+            normalize_input_limb_bound_with_offset(2 * a_size - cnv_offset_hi, res.size(), res_base2k, a_base2k, cnv_offset_lo);
 
         for i in 0..cols {
             let col_i: usize = i * cols - (i * (i + 1) / 2);
@@ -942,13 +942,15 @@ where
 
         let ab_base2k: usize = a.base2k().as_usize();
         assert_eq!(b.base2k().as_usize(), ab_base2k);
-        assert_eq!(a_effective_k.div_ceil(ab_base2k), a.size());
-        assert_eq!(b_effective_k.div_ceil(ab_base2k), b.size());
+        let a_size = a_effective_k.div_ceil(ab_base2k);
+        let b_size = b_effective_k.div_ceil(ab_base2k);
+        assert!(a_size <= a.size(), "a_effective_k limbs ({a_size}) > a.size() ({})", a.size());
+        assert!(b_size <= b.size(), "b_effective_k limbs ({b_size}) > b.size() ({})", b.size());
 
         let cols: usize = res.rank().as_usize() + 1;
 
-        let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, a.size());
-        let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, cols, b.size());
+        let (mut a_prep, scratch) = scratch.take_cnv_pvec_left_scratch(self, cols, a_size);
+        let (mut b_prep, mut scratch) = scratch.take_cnv_pvec_right_scratch(self, cols, b_size);
 
         let a_mask = msb_mask_bottom_limb(ab_base2k, a_effective_k);
         let b_mask = msb_mask_bottom_limb(ab_base2k, b_effective_k);
@@ -965,8 +967,8 @@ where
             res,
             &a_prep,
             &b_prep,
-            a.size(),
-            b.size(),
+            a_size,
+            b_size,
             ab_base2k,
             &mut scratch,
         );

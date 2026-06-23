@@ -26,8 +26,12 @@ impl LWEInfos for LWEMatrixLayout {
         self.n
     }
 
-    fn size(&self) -> usize {
-        self.k.as_usize().div_ceil(self.base2k.as_usize())
+    fn max_size(&self) -> usize {
+        unimplemented!("this method is only defined for concrete ojbect (you are calling it from a layout definition)")
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 
@@ -44,6 +48,7 @@ impl LWEMatrixInfos for LWEMatrixLayout {
 pub struct LWEMatrix<D: Data> {
     pub(crate) body: VecZnx<D>,
     pub(crate) mask: VecZnx<D>,
+    pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
 }
 
@@ -59,8 +64,12 @@ impl<D: Data> LWEInfos for LWEMatrix<D> {
         self.base2k
     }
 
-    fn size(&self) -> usize {
+    fn max_size(&self) -> usize {
         self.body.size()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 
@@ -107,16 +116,17 @@ impl<D: Data> LWEMatrix<D> {
                 body_shape.n(),
                 body_shape.cols(),
                 body_shape.size(),
-                body_shape.max_size(),
+                body_shape.size(),
             ),
             mask: VecZnx::from_data_with_max_size(
                 self.mask.data,
                 mask_shape.n(),
                 mask_shape.cols(),
                 mask_shape.size(),
-                mask_shape.max_size(),
+                mask_shape.size(),
             ),
             base2k: self.base2k,
+            k: self.k,
         }
     }
 }
@@ -130,6 +140,7 @@ impl<D: HostDataRef> LWEMatrix<D> {
             body: self.body.to_host_owned::<BE>(),
             mask: self.mask.to_host_owned::<BE>(),
             base2k: self.base2k,
+            k: self.k,
         }
     }
 }
@@ -144,6 +155,7 @@ impl<BE: Backend> LWEMatrixToBackendRef<BE> for LWEMatrix<BE::OwnedBuf> {
             body: <VecZnx<BE::OwnedBuf> as VecZnxToBackendRef<BE>>::to_backend_ref(&self.body),
             mask: <VecZnx<BE::OwnedBuf> as VecZnxToBackendRef<BE>>::to_backend_ref(&self.mask),
             base2k: self.base2k,
+            k: self.k,
         }
     }
 }
@@ -158,6 +170,7 @@ impl<BE: Backend> LWEMatrixToBackendMut<BE> for LWEMatrix<BE::OwnedBuf> {
             body: <VecZnx<BE::OwnedBuf> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut self.body),
             mask: <VecZnx<BE::OwnedBuf> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut self.mask),
             base2k: self.base2k,
+            k: self.k,
         }
     }
 }

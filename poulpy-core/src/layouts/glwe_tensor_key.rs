@@ -3,12 +3,9 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::{
-    DeclaredK,
-    layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos,
-        GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos, GLWEViewMut, GLWEViewRef, LWEInfos, Rank, TorusPrecision,
-    },
+use crate::layouts::{
+    Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos,
+    GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos, GLWEViewMut, GLWEViewRef, LWEInfos, Rank, TorusPrecision,
 };
 
 use std::fmt;
@@ -27,12 +24,6 @@ pub struct GLWETensorKeyLayout {
     pub rank: Rank,
     pub dnum: Dnum,
     pub dsize: Dsize,
-}
-
-impl DeclaredK for GLWETensorKeyLayout {
-    fn k(&self) -> TorusPrecision {
-        self.k
-    }
 }
 
 /// GLWE tensor key used for relinearisation after a tensor product.
@@ -54,8 +45,12 @@ impl<D: Data> LWEInfos for GLWETensorKey<D> {
         self.0.base2k()
     }
 
-    fn size(&self) -> usize {
-        self.0.size()
+    fn max_size(&self) -> usize {
+        self.0.max_size()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.0.k()
     }
 }
 
@@ -94,8 +89,12 @@ impl LWEInfos for GLWETensorKeyLayout {
         self.base2k
     }
 
-    fn size(&self) -> usize {
-        self.k.as_usize().div_ceil(self.base2k.as_usize())
+    fn max_size(&self) -> usize {
+        unimplemented!("this method is only defined for concrete ojbect (you are calling it from a layout definition)")
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 
@@ -158,7 +157,7 @@ impl GLWETensorKey<Vec<u8>> {
         Self::alloc(
             infos.n(),
             infos.base2k(),
-            infos.max_k(),
+            infos.k(),
             infos.rank(),
             infos.dnum(),
             infos.dsize(),
@@ -179,7 +178,7 @@ impl GLWETensorKey<Vec<u8>> {
         Self::bytes_of(
             infos.n(),
             infos.base2k(),
-            infos.max_k(),
+            infos.k(),
             infos.rank(),
             infos.dnum(),
             infos.dsize(),

@@ -44,7 +44,7 @@ where
     // Their scratch layout is: res_dft | res_conv | max(ks_internal_tmp, res_big + compute).
     // Since glwe_keyswitch_tmp_bytes = dft + max(ks_internal, big + compute), the total is
     // lvl_conv + glwe_keyswitch_tmp_bytes, which also dominates the plain default/assign variants.
-    let lvl_conv: usize = if res_infos.max_k() > a_infos.max_k() {
+    let lvl_conv: usize = if res_infos.k() > a_infos.k() {
         GLWE::<Vec<u8>>::bytes_of_from_infos(res_infos)
     } else {
         GLWE::<Vec<u8>>::bytes_of_from_infos(a_infos)

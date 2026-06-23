@@ -34,9 +34,9 @@ pub trait CKKSRotateDefault<BE: Backend> {
 
         if offset != 0 {
             self.glwe_lsh(dst, src, offset, scratch);
-            self.glwe_automorphism_assign(dst, key, dst.size() + key.dsize().as_usize(), scratch);
+            self.glwe_automorphism_assign(dst, key, dst.max_size() + key.dsize().as_usize(), scratch);
         } else {
-            self.glwe_automorphism(dst, src, key, src.size() + key.dsize().as_usize(), scratch);
+            self.glwe_automorphism(dst, src, key, src.max_size() + key.dsize().as_usize(), scratch);
         }
 
         dst.set_meta(src.meta());
@@ -50,7 +50,7 @@ pub trait CKKSRotateDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEInfos + LWEInfos + CKKSInfos + SetCKKSInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
-        self.glwe_automorphism_assign(dst, key, dst.size() + key.dsize().as_usize(), scratch);
+        self.glwe_automorphism_assign(dst, key, dst.max_size() + key.dsize().as_usize(), scratch);
         Ok(())
     }
 }

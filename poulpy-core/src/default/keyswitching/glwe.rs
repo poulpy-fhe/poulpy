@@ -256,7 +256,7 @@ where
         let a_conv_infos: GLWELayout = GLWELayout {
             n: a_infos.n(),
             base2k: key_infos.base2k(),
-            k: a_infos.max_k(),
+            k: a_infos.k(),
             rank: a_infos.rank(),
         };
         let lvl_2_0: usize = GLWE::<Vec<u8>>::bytes_of_from_infos(&a_conv_infos);
@@ -347,7 +347,7 @@ pub fn glwe_keyswitch_default<BE, M, R, A, K>(
             let (mut a_conv, mut scratch_2) = scratch_phase.take_glwe_scratch(&GLWELayout {
                 n: a.n(),
                 base2k: key.base2k(),
-                k: a.max_k(),
+                k: a.k(),
                 rank: a.rank(),
             });
             module.glwe_normalize_default(&mut a_conv, a, &mut scratch_2.borrow());
@@ -459,7 +459,7 @@ pub fn glwe_keyswitch_assign_default<BE, M, R, K>(
         let (mut res_conv, mut scratch_3) = scratch.take_glwe_scratch(&GLWELayout {
             n: res.n(),
             base2k: key.base2k(),
-            k: res.max_k(),
+            k: res.k(),
             rank: res.rank(),
         });
         module.glwe_normalize_default(&mut res_conv, res, &mut scratch_3.borrow());

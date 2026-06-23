@@ -43,8 +43,12 @@ impl<D: Data, B: Backend> LWEInfos for GLWESecretTensorPrepared<D, B> {
         Degree(self.data.n() as u32)
     }
 
-    fn size(&self) -> usize {
+    fn max_size(&self) -> usize {
         self.data.size()
+    }
+
+    fn k(&self) -> crate::layouts::TorusPrecision {
+        unimplemented!("this method is not defined on secrets")
     }
 }
 impl<D: Data, B: Backend> GLWEInfos for GLWESecretTensorPrepared<D, B> {

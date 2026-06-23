@@ -6,7 +6,7 @@ use std::{
 use anyhow::Result;
 use poulpy_core::layouts::{
     BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEPlaintext, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBSGSMeta,
-    SetLWEInfos,
+    SetLWEInfos, TorusPrecision,
 };
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef};
 
@@ -55,7 +55,7 @@ impl<D: Data> CKKSPlaintext<D> {
                 max_k: self.max_k().as_usize(),
                 log_delta: meta.log_delta(),
                 base2k: self.base2k().as_usize(),
-                requested_limbs: self.size(),
+                requested_limbs: self.max_size(),
             }
         );
         self.meta = meta;
@@ -100,12 +100,16 @@ impl<D: Data> LWEInfos for CKKSPlaintext<D> {
         self.inner.base2k()
     }
 
-    fn size(&self) -> usize {
-        self.inner.size()
+    fn max_size(&self) -> usize {
+        self.inner.max_size()
     }
 
     fn n(&self) -> Degree {
         self.inner.n()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.inner.k()
     }
 }
 
@@ -121,8 +125,8 @@ impl<D: Data> SetCKKSInfos for CKKSPlaintext<D> {
     }
 
     fn compact_in_place(&mut self) {
-        let limbs = self.effective_k().div_ceil(self.base2k().as_usize()).max(1).min(self.size());
-        self.inner.data.set_size(limbs);
+        //let limbs = self.effective_k().div_ceil(self.base2k().as_usize()).max(1).min(self.size());
+        //self.inner.data.set_size(limbs);
     }
 }
 

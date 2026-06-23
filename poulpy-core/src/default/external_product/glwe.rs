@@ -113,7 +113,7 @@ where
         B: GGSWInfos,
     {
         let align: usize = BE::SCRATCH_ALIGN;
-        let in_size: usize = a_infos.max_k().div_ceil(b_infos.base2k()).div_ceil(b_infos.dsize().into()) as usize;
+        let in_size: usize = a_infos.k().div_ceil(b_infos.base2k()).div_ceil(b_infos.dsize().into()) as usize;
         let ggsw_size: usize = b_infos.size();
         let cols: usize = (b_infos.rank() + 1).into();
         let lvl_0: usize = self.bytes_of_vec_znx_dft(cols, in_size);
@@ -155,10 +155,7 @@ where
     G: GGSWInfos,
 {
     let align: usize = BE::SCRATCH_ALIGN;
-    let in_size: usize = a_infos
-        .max_k()
-        .div_ceil(ggsw_infos.base2k())
-        .div_ceil(ggsw_infos.dsize().into()) as usize;
+    let in_size: usize = a_infos.k().div_ceil(ggsw_infos.base2k()).div_ceil(ggsw_infos.dsize().into()) as usize;
     let ggsw_size: usize = ggsw_infos.size();
     let cols: usize = (ggsw_infos.rank() + 1).into();
     let lvl_0: usize = module.bytes_of_vec_znx_dft(cols, in_size);
@@ -198,7 +195,7 @@ where
         let a_conv_infos = GLWELayout {
             n: a_infos.n(),
             base2k: ggsw_infos.base2k(),
-            k: a_infos.max_k(),
+            k: a_infos.k(),
             rank: a_infos.rank(),
         };
         let lvl_2_0: usize = GLWE::<Vec<u8>>::bytes_of_from_infos(&a_conv_infos);
@@ -264,7 +261,7 @@ pub fn glwe_external_product_default<BE, M, R, A, G>(
             let (mut a_conv, mut scratch_2) = scratch_phase.take_glwe_scratch(&GLWELayout {
                 n: a.n(),
                 base2k: ggsw.base2k(),
-                k: a.max_k(),
+                k: a.k(),
                 rank: a.rank(),
             });
             module.glwe_normalize_default(&mut a_conv, a, &mut scratch_2.borrow());
@@ -340,7 +337,7 @@ pub fn glwe_external_product_assign_default<BE, M, R, G>(
             let (mut res_conv, mut scratch_2) = scratch_phase.take_glwe_scratch(&GLWELayout {
                 n: res.n(),
                 base2k: ggsw.base2k(),
-                k: res.max_k(),
+                k: res.k(),
                 rank: res.rank(),
             });
             module.glwe_normalize_default(&mut res_conv, res, &mut scratch_2.borrow());

@@ -30,12 +30,12 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
     {
-        let k_large: usize = dst.max_k().as_usize();
+        let k_large: usize = dst.k().as_usize();
         let k_small: usize = src.effective_k();
 
         ensure!(
             k_large >= k_small,
-            "ckks_mod_up: dst.max_k ({k_large}) < src.effective_k ({k_small}); ModUp must widen, not shrink, the modulus"
+            "ckks_mod_up: dst.k ({k_large}) < src.effective_k ({k_small}); ModUp must widen, not shrink, the modulus"
         );
 
         // MSB-align `src` into the wider `dst`: the value occupies the top

@@ -39,8 +39,11 @@ impl<D: Data> LWEInfos for LWECompressed<D> {
         Degree(self.data.n() as u32)
     }
 
-    fn size(&self) -> usize {
+    fn max_size(&self) -> usize {
         self.data.size()
+    }
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 
@@ -56,7 +59,7 @@ impl<D: HostDataRef> fmt::Display for LWECompressed<D> {
             f,
             "LWECompressed: base2k={} k={} seed={:?}: {}",
             self.base2k(),
-            self.max_k(),
+            self.k(),
             self.seed,
             self.data
         )
@@ -75,7 +78,7 @@ impl LWECompressed<Vec<u8>> {
     where
         A: LWEInfos,
     {
-        Self::alloc(infos.base2k(), infos.max_k())
+        Self::alloc(infos.base2k(), infos.k())
     }
 
     /// Allocates a new compressed LWE with the given parameters.
@@ -101,7 +104,7 @@ impl LWECompressed<Vec<u8>> {
     where
         A: LWEInfos,
     {
-        Self::bytes_of(infos.base2k(), infos.max_k())
+        Self::bytes_of(infos.base2k(), infos.k())
     }
 
     pub fn bytes_of(base2k: Base2K, k: TorusPrecision) -> usize {
