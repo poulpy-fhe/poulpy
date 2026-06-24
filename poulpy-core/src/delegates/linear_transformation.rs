@@ -66,7 +66,6 @@ where
         &self,
         cache: &mut LinearTransformationBabySteps<BE>,
         a: &A,
-        a_k: usize,
         keys: &H,
         key_size: usize,
         scratch: &mut ScratchArena<'_, BE>,
@@ -75,7 +74,7 @@ where
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
-        BE::glwe_prepare_linear_transformation_baby_steps(self, cache, a, a_k, keys, key_size, scratch)
+        BE::glwe_prepare_linear_transformation_baby_steps(self, cache, a, keys, key_size, scratch)
     }
 
     fn glwe_eval_linear_transformation_into<R, P, H, K>(

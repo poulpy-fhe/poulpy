@@ -1,6 +1,6 @@
 use poulpy_core::{
     GLWEAdd, GLWEMulPlain, GLWENormalize, GLWESub,
-    layouts::{GLWE, GLWEInfos, GLWEPlaintext, LWEInfos, ModuleCoreAlloc},
+    layouts::{GLWE, GLWEInfos, GLWEPlaintext, ModuleCoreAlloc},
 };
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -166,9 +166,7 @@ where
                 0,
                 &mut ct_out,
                 &ct_in,
-                ct_in.max_k().as_usize(),
                 &pt,
-                pt.max_k().as_usize(),
                 &mut scratch.borrow(),
             );
             black_box(());
@@ -197,9 +195,7 @@ where
             module.glwe_mul_plain_assign(
                 0,
                 &mut ct,
-                infos.max_k().as_usize(),
                 &pt,
-                pt.max_k().as_usize(),
                 &mut scratch.borrow(),
             );
             black_box(());

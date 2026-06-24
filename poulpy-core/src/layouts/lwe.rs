@@ -31,15 +31,29 @@ pub trait LWEInfos {
     /// Returns the Torus precision used by the object.
     fn k(&self) -> TorusPrecision;
 
-    /// Returns the number of limbs needed to represent the object, i.e. `ceil(k / base2k)`.
-    fn size(&self) -> usize {
+    /// Returns the number of limbs needed to represent the object's semantic
+    /// torus precision, i.e. `ceil(k / base2k)`.
+    ///
+    /// Most objects use this as their active processing width. Scheme wrappers
+    /// that need evaluation head-room may report a larger [`Self::size`] while
+    /// this method remains the honest precision width.
+    fn precision_size(&self) -> usize {
         self.k().div_ceil(self.base2k()) as usize
+    }
+
+    /// Returns the limb width generic core operations should process.
+    ///
+    /// By default this is exactly [`Self::precision_size`]. Scheme wrappers may
+    /// override it when their working representation intentionally carries
+    /// extra limbs above the semantic torus precision.
+    fn size(&self) -> usize {
+        self.precision_size()
     }
 
     /// Returns the base-2-log of the limb width used for the RNS/CRT representation.
     fn base2k(&self) -> Base2K;
 
-    /// Returns the number of limbs owned by the object, i.e. `ceil(k / base2k)`.
+    /// Returns the maximum limb width this object can expose through [`Self::size`].
     fn max_size(&self) -> usize;
 
     /// Returns a plain-data [`LWELayout`] snapshot of the current parameters.

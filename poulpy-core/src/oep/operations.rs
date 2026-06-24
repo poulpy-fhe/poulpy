@@ -71,9 +71,7 @@ pub unsafe trait GLWEMulPlainImpl<BE: Backend>: Backend {
         cnv_offset: usize,
         res: &mut R,
         a: &A,
-        a_k: usize,
         b: &B,
-        b_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -84,9 +82,7 @@ pub unsafe trait GLWEMulPlainImpl<BE: Backend>: Backend {
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut R,
-        res_k: usize,
         a: &A,
-        a_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -462,31 +458,27 @@ where
         cnv_offset: usize,
         res: &mut R,
         a: &A,
-        a_k: usize,
         b: &B,
-        b_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        module.glwe_mul_plain_default(cnv_offset, res, a, a_k, b, b_k, scratch)
+        module.glwe_mul_plain_default(cnv_offset, res, a, b, scratch)
     }
 
     fn glwe_mul_plain_assign<R, A>(
         module: &Module<BE>,
         cnv_offset: usize,
         res: &mut R,
-        res_k: usize,
         a: &A,
-        a_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
-        module.glwe_mul_plain_assign_default(cnv_offset, res, res_k, a, a_k, scratch)
+        module.glwe_mul_plain_assign_default(cnv_offset, res, a, scratch)
     }
 }
 

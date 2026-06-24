@@ -466,9 +466,7 @@ where
                 scale + res_offset,
                 &mut res,
                 &a,
-                a.k().as_usize(),
                 &pt_b,
-                pt_b.k().as_usize(),
                 &mut scratch_cnv.borrow(),
             );
 

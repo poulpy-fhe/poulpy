@@ -165,7 +165,7 @@ where
         } else {
             src.max_size()
         };
-        self.glwe_prepare_linear_transformation_baby_steps(babies, src, src.k().as_usize(), keys, key_size, scratch);
+        self.glwe_prepare_linear_transformation_baby_steps(babies, src, keys, key_size, scratch);
         Ok(())
     }
 

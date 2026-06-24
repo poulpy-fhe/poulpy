@@ -11,13 +11,12 @@ use std::{
 
 use anyhow::Result;
 use poulpy_core::layouts::{
-    BSGSMeta, Base2K, Compact, Degree, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, LWEInfos,
-    Rank, SetBSGSMeta,
+    BSGSMeta, Base2K, Compact, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, LWEInfos, Rank, SetBSGSMeta, SetK, TorusPrecision,
 };
 use poulpy_core::{GLWENormalize, ScratchArenaTakeCore};
 use poulpy_hal::layouts::{Backend, Data, HostDataRef, ScratchArena};
 
-use crate::{CKKSInfos, CKKSMeta, SetCKKSInfos, api::CKKSCopyOps, error::CKKSCompositionError, layouts::CKKSModuleAlloc};
+use crate::{CKKSInfos, CKKSMeta, SetCKKSInfos, error::CKKSCompositionError};
 
 mod sealed {
     pub trait Sealed {}
@@ -112,24 +111,6 @@ impl<D: Data, S: CKKSNormalizationState> CKKSCiphertext<D, S> {
     }
 }
 
-impl<D: Data> CKKSCiphertext<D, Normalized> {
-    /// Allocates a fresh backend-owned ciphertext and copies `self` into it.
-    ///
-    /// Used to compact the allocation size after arithmetic operations that
-    /// may leave a normalized ciphertext over-sized relative to `k`.
-    pub fn compact<M, BE>(&self, module: &M, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSCiphertext<BE::OwnedBuf>>
-    where
-        BE: Backend,
-        M: CKKSCopyOps<BE> + CKKSModuleAlloc<BE>,
-        Self: GLWEToBackendRef<BE>,
-        CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE>,
-    {
-        let mut out = module.ckks_ciphertext_alloc(self.base2k(), self.k());
-        module.ckks_copy(&mut out, self, scratch)?;
-        Ok(out)
-    }
-}
-
 // Without this, `ct.clone()` silently resolves through `Deref` to
 // `GLWE::clone` and drops the CKKS metadata.
 impl<D: Data, S: CKKSNormalizationState> Clone for CKKSCiphertext<D, S>
@@ -172,7 +153,15 @@ impl<D: Data, S: CKKSNormalizationState> LWEInfos for CKKSCiphertext<D, S> {
         self.inner.max_size()
     }
 
-    fn k(&self) -> poulpy_core::layouts::TorusPrecision {
+    // A CKKS ciphertext's processing limb count: the `precision_size()` limbs
+    // that carry meaningful precision, plus one limb of keyswitch head-room
+    // (capped at `max_size`). The `+1` is load-bearing; see the rationale and
+    // the rejected localized alternative in `docs/issues/ckks_size_headroom.md`.
+    fn size(&self) -> usize {
+        (self.precision_size() + 1).max(1).min(self.max_size())
+    }
+
+    fn k(&self) -> TorusPrecision {
         self.inner.k()
     }
 }
@@ -193,7 +182,6 @@ impl<D: Data, S: CKKSNormalizationState> CKKSInfos for CKKSCiphertext<D, S> {
     }
 
     fn log_budget(&self) -> usize {
-        // Derived from the wrapped GLWE's torus width: `log_budget = k - log_delta`.
         self.inner.k().as_usize().saturating_sub(self.meta.log_delta)
     }
 }
@@ -203,17 +191,17 @@ impl<D: Data, S: CKKSNormalizationState> SetCKKSInfos for CKKSCiphertext<D, S> {
         self.meta = meta;
     }
 
-    fn set_k(&mut self, k: poulpy_core::layouts::TorusPrecision) {
-        poulpy_core::layouts::SetK::set_k(&mut self.inner, k);
+    fn set_k(&mut self, k: TorusPrecision) {
+        SetK::set_k(&mut self.inner, k);
     }
 }
 
 impl<D: Data, S: CKKSNormalizationState> Compact for CKKSCiphertext<D, S> {
     fn compact(&mut self) {
-        // Clamp to `[1, max_size()]`: a value whose `k` (plus the
-        // `log_n` carry) already exceeds its storage (e.g. a deliberately
-        // undersized output) must stay within the allocated limbs, and the
-        // result always keeps at least one limb.
+        // Drop the active limbs below `k + log_n` (the `size()` working width):
+        // the limbs beyond that hold only spent keyswitch noise, and leaving them
+        // active lets carry-domain ops (normalize/copy) fold that noise back in.
+        // Clamp to `[1, max_size()]`. `k()` / `log_budget` are unchanged.
         let limbs = (self.k().as_usize() + self.log_n())
             .div_ceil(self.base2k().as_usize())
             .max(1)
@@ -307,7 +295,13 @@ impl<'a, BE: Backend + 'a> LWEInfos for CKKSCiphertextViewMut<'a, BE> {
         self.inner.max_size()
     }
 
-    fn k(&self) -> poulpy_core::layouts::TorusPrecision {
+    // One limb of keyswitch head-room above `precision_size()`; see
+    // `CKKSCiphertext::size`.
+    fn size(&self) -> usize {
+        (self.precision_size() + 1).max(1).min(self.inner.max_size())
+    }
+
+    fn k(&self) -> TorusPrecision {
         self.inner.k()
     }
 }
@@ -337,8 +331,8 @@ impl<'a, BE: Backend + 'a> SetCKKSInfos for CKKSCiphertextViewMut<'a, BE> {
         self.meta = meta;
     }
 
-    fn set_k(&mut self, k: poulpy_core::layouts::TorusPrecision) {
-        poulpy_core::layouts::SetK::set_k(&mut self.inner, k);
+    fn set_k(&mut self, k: TorusPrecision) {
+        SetK::set_k(&mut self.inner, k);
     }
 }
 
@@ -398,20 +392,6 @@ pub trait ScratchArenaTakeCKKS<'a, BE: Backend>: ScratchArenaTakeCore<'a, BE> + 
         self.take_ckks_ciphertext_scratch(ct, ct.meta())
     }
 
-    fn take_compact_ckks_ciphertext_scratch<C>(self, ct: &C) -> (CKKSCiphertextViewMut<'a, BE>, Self)
-    where
-        BE: 'a,
-        C: GLWEInfos + CKKSInfos,
-    {
-        let layout = GLWELayout {
-            n: ct.n(),
-            base2k: ct.base2k(),
-            k: ct.k(),
-            rank: ct.rank(),
-        };
-        self.take_ckks_ciphertext_scratch(&layout, ct.meta())
-    }
-
     fn take_unnormalized_ckks_ciphertext_scratch<I>(
         self,
         infos: &I,
@@ -439,58 +419,6 @@ where
     BE: Backend + 'a,
     T: ScratchArenaTakeCore<'a, BE>,
 {
-}
-
-/// Maintenance operations for resizing ciphertext limb storage.
-pub trait CKKSMaintainOps {
-    /// Reallocates the owned backing buffer to exactly `size` limbs.
-    ///
-    /// Inputs:
-    /// - `ct`: ciphertext whose owned limb buffer should be resized
-    /// - `size`: requested number of limbs
-    ///
-    /// Output:
-    /// - returns `Ok(())` after resizing `ct`
-    ///
-    /// Behavior:
-    /// - preserves ciphertext metadata
-    /// - rejects shrink operations that would make the buffer too small for the
-    ///   current semantic precision
-    ///
-    /// Errors:
-    /// - `LimbReallocationShrinksBelowMetadata` if the requested limb count
-    ///   cannot represent the current metadata
-    fn ckks_reallocate_limbs_checked(&self, ct: &mut CKKSCiphertext<Vec<u8>>, size: usize) -> Result<()>;
-
-    /// Shrinks an owned ciphertext buffer to the minimum limb count that still
-    /// preserves its current metadata.
-    ///
-    /// Inputs:
-    /// - `ct`: ciphertext whose limb storage should be compacted
-    ///
-    /// Output:
-    /// - returns `Ok(())` after compacting `ct`
-    ///
-    /// Errors:
-    /// - propagates `ckks_reallocate_limbs_checked` if the computed compact
-    ///   size would violate metadata constraints
-    fn ckks_compact_limbs(&self, ct: &mut CKKSCiphertext<Vec<u8>>) -> Result<()>;
-
-    /// Returns a newly allocated owned ciphertext holding a compacted copy of
-    /// `ct`.
-    ///
-    /// Inputs:
-    /// - `ct`: ciphertext to copy and compact
-    ///
-    /// Output:
-    /// - a fresh owned ciphertext with the same metadata and the minimum limb
-    ///   count needed to preserve it
-    ///
-    /// Errors:
-    /// - `LimbReallocationShrinksBelowMetadata` if the compacted size would undercut the current metadata
-    fn ckks_compact_limbs_copy<D>(&self, ct: &CKKSCiphertext<D>) -> Result<CKKSCiphertext<Vec<u8>>>
-    where
-        D: HostDataRef;
 }
 
 /// A CKKS ciphertext produced by an unnormalized linear operation.

@@ -273,9 +273,7 @@ where
         cnv_offset: usize,
         res: &mut R,
         a: &A,
-        a_k: usize,
         b: &B,
-        b_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -290,7 +288,9 @@ where
             scratch.available(),
             self.glwe_mul_plain_tmp_bytes_default(res, a, b)
         );
-
+        
+        let a_k = a.k().as_usize();
+        let b_k = b.k().as_usize();
         let ab_base2k: usize = a.base2k().as_usize();
         assert_eq!(b.base2k().as_usize(), ab_base2k);
         assert_eq!(a_k.div_ceil(ab_base2k), a.size());
@@ -360,9 +360,7 @@ where
         &self,
         cnv_offset: usize,
         res: &mut R,
-        res_k: usize,
         a: &A,
-        a_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -375,7 +373,9 @@ where
             scratch.available(),
             self.glwe_mul_plain_tmp_bytes_default(res, res, a)
         );
-
+        
+        let res_k = res.k().as_usize();
+        let a_k = a.k().as_usize();
         let ab_base2k: usize = a.base2k().as_usize();
         assert_eq!(res.base2k().as_usize(), ab_base2k);
         assert_eq!(res_k.div_ceil(ab_base2k), res.size());
@@ -457,9 +457,7 @@ pub trait GLWEMulPlainDefault<BE: Backend> {
         cnv_offset: usize,
         res: &mut R,
         a: &A,
-        a_k: usize,
         b: &B,
-        b_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -470,9 +468,7 @@ pub trait GLWEMulPlainDefault<BE: Backend> {
         &self,
         cnv_offset: usize,
         res: &mut R,
-        res_k: usize,
         a: &A,
-        a_k: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -510,13 +506,8 @@ pub trait GLWETensoringDefault<BE: Backend> {
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
 
-    fn glwe_tensor_square_apply_default<R, A>(
-        &self,
-        cnv_offset: usize,
-        res: &mut R,
-        a: &A,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_tensor_square_apply_default<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos;
 
@@ -768,13 +759,8 @@ where
         }
     }
 
-    fn glwe_tensor_square_apply_default<R, A>(
-        &self,
-        cnv_offset: usize,
-        res: &mut R,
-        a: &A,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_tensor_square_apply_default<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
@@ -914,14 +900,8 @@ where
         }
     }
 
-    fn glwe_tensor_apply_default<R, A, B>(
-        &self,
-        cnv_offset: usize,
-        res: &mut R,
-        a: &A,
-        b: &B,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_tensor_apply_default<R, A, B>(&self, cnv_offset: usize, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
@@ -1199,7 +1179,6 @@ pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
     cnv_offset: usize,
     res: &mut R,
     a: &A,
-    a_k: usize,
     b_prep: &BP,
     b_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
@@ -1223,6 +1202,7 @@ pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
     BP: CnvPVecRToBackendRef<BE>,
 {
     let ab_base2k: usize = a.base2k().as_usize();
+    let a_k = a.k().as_usize();
     let a_size: usize = a_k.div_ceil(ab_base2k);
     // Relaxed input: `a` may carry more limbs than `a_k` requires; the prepared left
     // operand is sized to the effective limb count and `cnv_prepare_left` clamps to it, reading

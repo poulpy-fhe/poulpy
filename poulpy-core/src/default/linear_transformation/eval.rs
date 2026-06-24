@@ -145,7 +145,6 @@ pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H, K>(
     module: &M,
     cache: &mut LinearTransformationBabySteps<BE>,
     a: &A,
-    a_k: usize,
     keys: &H,
     key_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
@@ -169,7 +168,7 @@ pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H, K>(
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
-    glwe_prepare_linear_transformation_baby_steps(module, cache, a, a_k, keys, key_size, scratch);
+    glwe_prepare_linear_transformation_baby_steps(module, cache, a, keys, key_size, scratch);
 }
 
 /// Reference impl: BSGS evaluation of a linear transformation, generic over the

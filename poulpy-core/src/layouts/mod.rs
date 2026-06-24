@@ -149,6 +149,13 @@ pub trait ModuleCoreAlloc {
     fn glwe_alloc_from_infos<A: GLWEInfos>(&self, infos: &A) -> GLWE<Self::OwnedBuf>;
     fn glwe_alloc(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> GLWE<Self::OwnedBuf>;
 
+    /// Allocates a GLWE with exactly `size` limbs (so `max_size() == size`),
+    /// labelling `k` as the full physical width `size · base2k`. Unlike
+    /// [`Self::glwe_alloc`] (which derives `size = ceil(k / base2k)` from a target
+    /// `k`), this takes the limb count directly, decoupling the buffer size from
+    /// the effective `k` — relabel the effective `k` afterwards with [`SetK`].
+    fn glwe_alloc_with_size(&self, base2k: Base2K, size: usize, rank: Rank) -> GLWE<Self::OwnedBuf>;
+
     fn gglwe_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GGLWE<Self::OwnedBuf>;
     fn gglwe_alloc(
         &self,
@@ -277,6 +284,16 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
             k,
             rank,
         })
+    }
+
+    fn glwe_alloc_with_size(&self, base2k: Base2K, size: usize, rank: Rank) -> GLWE<B::OwnedBuf> {
+        let n = self.ring_degree().as_usize();
+        let cols = (rank + 1).as_usize();
+        GLWE {
+            data: VecZnx::from_data(B::alloc_zeroed_bytes(self.bytes_of_vec_znx_n(n, cols, size)), n, cols, size),
+            k: TorusPrecision((size * base2k.as_usize()) as u32),
+            base2k,
+        }
     }
 
     fn gglwe_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GGLWE<B::OwnedBuf> {

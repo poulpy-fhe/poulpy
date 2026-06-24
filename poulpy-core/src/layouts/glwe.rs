@@ -298,11 +298,6 @@ impl GLWE<Vec<u8>> {
     pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank) -> usize {
         VecZnx::bytes_of(n.into(), (rank + 1).into(), k.0.div_ceil(base2k.0) as usize)
     }
-
-    /// Reallocates the backing buffer so capacity matches `size` limb count.
-    pub fn reallocate_limbs(&mut self, size: usize) {
-        self.data.reallocate_limbs(size);
-    }
 }
 
 impl<D: HostDataMut> ReaderFrom for GLWE<D> {

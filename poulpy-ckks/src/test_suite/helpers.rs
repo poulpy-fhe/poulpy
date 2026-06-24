@@ -1158,26 +1158,20 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
     });
     encoder.encode_reim(&mut pt_want, want_re, want_im).unwrap();
 
-    // Compact the ciphertext to its `k` limbs first: the decryption is
-    // sized like its input, so without this the noise would be measured over the
-    // rounded `max_k` storage (including the sub-head-room padding) rather than
-    // the semantic `k` head-room the bound targets.
-    let ct_compact = ct.compact(module, scratch).unwrap();
-
     // Decrypt once into the raw full-width plaintext; both checks below extract
     // their own view from it (re-extracting an already-extracted plaintext would
     // shift the message scale twice). `full_pt` carries `ct_compact`'s metadata so
     // the extracts re-precision it exactly as `ckks_decrypt` would.
-    let mut full_pt = module.glwe_plaintext_alloc_from_infos(&ct_compact);
-    module.glwe_decrypt(&ct_compact, &mut full_pt, sk, scratch);
-    let full_pt = CKKSPlaintext::from_inner(full_pt, ct_compact.meta());
+    let mut full_pt = module.glwe_plaintext_alloc_from_infos(ct);
+    module.glwe_decrypt(ct, &mut full_pt, sk, scratch);
+    let full_pt = CKKSPlaintext::from_inner(full_pt, ct.meta());
 
     // ── Ring-domain check: the decryption is a valid plaintext. ──────────────
     // Re-precision the decryption at full width, subtract the reference and bound
     // the residual noise `std` directly over the polynomial coefficients. Unlike
     // the decode below, this does *not* clip the limbs above the plaintext
     // head-room, so any corruption there fails here.
-    let mut pt_noise = module.ckks_plaintext_alloc_from_infos(&ct_compact);
+    let mut pt_noise = module.ckks_plaintext_alloc_from_infos(ct);
     module.ckks_extract_pt(&mut pt_noise, &full_pt, scratch).unwrap();
     module.glwe_sub_assign(&mut pt_noise, &pt_want);
 
@@ -1188,14 +1182,14 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
         noise.std().log2()
     };
 
-    let k = log_delta + ct_compact.log_budget();
+    let k = log_delta + ct.log_budget();
     let log_n = params.n.ilog2() as f64;
     let bound = -(k as f64) + log_n + NOISE_GUARD_BITS;
     assert!(
         noise_log2 <= bound,
         "{label}: ring noise std {noise_log2:.1} bits > bound {bound:.1} \
          (k={k}, log_delta={log_delta}, log_budget={}, log_n={log_n})",
-        ct_compact.log_budget(),
+        ct.log_budget(),
     );
 
     // ── Canonical-embedding check: the decoded slots match at `log_delta`. ───

@@ -339,8 +339,7 @@ fn evaluation(
                     &mut scratch,
                 )?;
         }
-        let mut scratch = setup.scratch.borrow();
-        ct_sin.compact(&setup.module, &mut scratch)?
+        ct_sin
     };
     print_ct_meta("sin(x)", &ct_sin);
 

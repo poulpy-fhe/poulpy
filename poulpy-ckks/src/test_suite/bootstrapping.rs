@@ -34,13 +34,13 @@ use std::{collections::HashMap, time::Instant};
 use poulpy_core::{
     GLWEKeyswitch,
     layouts::{
-        GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-        prepared::GLWETensorKeyPreparedToBackendRef,
+        GGLWEInfos, GLWEInfos, GLWESecretPreparedToBackendRef, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
+        LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchOwned},
+    layouts::{Backend, CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchArena, ScratchOwned},
 };
 
 use crate::{
@@ -226,6 +226,28 @@ where
 
     // Encrypt z at the input ("level 0") modulus.
     let (re, im) = test_vector_1::<F>(m);
+
+    // Per-step reference: the message's polynomial coefficients. The homomorphic
+    // DFT shuttles these between the coefficient and slot domains, so `decode_reim`
+    // of a CoeffsToSlots / EvalMod output recovers them in `bitrev` slot order
+    // (real half in `ct_real`, imag half in `ct_imag`). Computed once in cleartext
+    // by encoding `(re, im)` and reading back the coefficients.
+    let (ref_real, ref_imag): (Vec<f64>, Vec<f64>) = {
+        let mut pt = module.ckks_pt_vec_alloc(base2k.into(), meta(log_delta, 8).k());
+        pt.set_meta(meta(log_delta, 8).meta());
+        encoder.encode_reim(&mut pt, &re, &im).unwrap();
+        let mut c = vec![F::zero(); n];
+        pt.decode_host_floats(&mut c).unwrap();
+        let c: Vec<f64> = c.iter().map(|x| x.to_f64().unwrap()).collect();
+        let (mut rr, mut ri) = (vec![0f64; m], vec![0f64; m]);
+        for j in 0..m {
+            let b = bitrev(j, LOG_SLOTS);
+            rr[j] = c[b];
+            ri[j] = c[m + b];
+        }
+        (rr, ri)
+    };
+
     let mut ct0 = ckks_encrypt_with_prec(
         &tp,
         &module,
@@ -279,19 +301,42 @@ where
         )
         .unwrap();
     println!("ckks_coeffs_to_slots_split: {:?}", now.elapsed());
+    println!("ct: {} {}", ct.k(), ct.size());
+    println!("ct_real: {} {}", ct_real.k(), ct_real.size());
+    println!("ct_imag: {} {}", ct_imag.k(), ct_imag.size());
 
     log_budget_check -= plan.coeffs_to_slots.consumed_bits();
 
     assert_eq!(ct_real.log_budget(), log_budget_check);
     assert_eq!(ct_imag.log_budget(), log_budget_check);
 
+    // C2S accuracy: reference the C2S slot output against the *actual* coefficients
+    // of the modup'd `ct` (integer parts `I_j` included), so this isolates C2S from
+    // EvalMod. `decode_reim(ct_real)[j] = ct_coeffs[bitrev(j)]` (real half / imag half).
+    {
+        let ct_coeffs = decrypt_coeffs(&module, &ct, &sk, &mut scratch.borrow());
+        let (mut cref_re, mut cref_im) = (vec![0f64; m], vec![0f64; m]);
+        for j in 0..m {
+            let b = bitrev(j, LOG_SLOTS);
+            cref_re[j] = ct_coeffs[b];
+            cref_im[j] = ct_coeffs[m + b];
+        }
+        let (re_c, _) = decrypt(&module, &encoder, &ct_real, &sk, &mut scratch.borrow());
+        let (im_c, _) = decrypt(&module, &encoder, &ct_imag, &sk, &mut scratch.borrow());
+        let re_c: Vec<f64> = re_c.iter().map(|x| x.to_f64().unwrap()).collect();
+        let im_c: Vec<f64> = im_c.iter().map(|x| x.to_f64().unwrap()).collect();
+        println!(
+            "C2S-PREC   (re) snr={:.2} (im) snr={:.2} bits",
+            snr_bits(&re_c, &cref_re),
+            snr_bits(&im_c, &cref_im)
+        );
+    }
+
     let now = Instant::now();
     // 3) EvalMod each half. EvalMod raises the ciphertext to its own plan scale
     //    (`f_mod_log_delta`) internally and restores the input scale on the result,
     //    so no manual set_scale is needed here. Compact first: the ct×ct squaring
     //    needs compact operands (storage == k).
-    let ct_real = ct_real.compact(&module, &mut scratch.borrow()).unwrap();
-    let ct_imag = ct_imag.compact(&module, &mut scratch.borrow()).unwrap();
     let mut res_real = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let mut res_imag = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     module
@@ -308,6 +353,21 @@ where
 
     assert_eq!(res_real.log_budget(), log_budget_check);
     assert_eq!(res_imag.log_budget(), log_budget_check);
+
+    // After EvalMod the integer parts are removed, so the slots hold the clean
+    // message coefficients: this SNR is a genuine precision of the C2S→EvalMod
+    // chain (vs. the cleartext coefficient reference, scale-aligned).
+    {
+        let (re_e, _) = decrypt(&module, &encoder, &res_real, &sk, &mut scratch.borrow());
+        let (im_e, _) = decrypt(&module, &encoder, &res_imag, &sk, &mut scratch.borrow());
+        let re_e: Vec<f64> = re_e.iter().map(|x| x.to_f64().unwrap()).collect();
+        let im_e: Vec<f64> = im_e.iter().map(|x| x.to_f64().unwrap()).collect();
+        println!(
+            "EVALMOD-PREC (re) snr={:.2} (im) snr={:.2} bits",
+            snr_bits(&re_e, &ref_real),
+            snr_bits(&im_e, &ref_imag)
+        );
+    }
 
     let now = Instant::now();
     // 4) SlotsToCoeffs (split), then restore the message ratio EvalMod divided out.
@@ -330,20 +390,7 @@ where
     assert_eq!(log_budget_check, k_boot - plan.consumed_bits() - ct_out.log_delta());
     assert_eq!(ct_out.log_budget(), log_budget_check);
 
-    // Decrypt, decode, and confirm the slots are recovered. Cap the budget so
-    // `log_delta + log_budget <= 127` fits the i128 decode codec (the unused
-    // high-order budget is dropped losslessly).
-    let prec = meta(
-        ct_out.log_delta(),
-        ct_out.log_budget().min(127usize.saturating_sub(ct_out.log_delta())),
-    );
-    let mut pt_out = module.ckks_pt_vec_alloc(base2k.into(), prec.k());
-    pt_out.set_meta(prec.meta());
-    module.ckks_decrypt(&mut pt_out, &ct_out, &sk, &mut scratch.borrow()).unwrap();
-
-    let pt_host = pt_out.to_host_owned::<BE>();
-    let (mut re_out, mut im_out) = (vec![F::zero(); m], vec![F::zero(); m]);
-    encoder.decode_reim(&pt_host, &mut re_out, &mut im_out).unwrap();
+    let (re_out, im_out) = decrypt(&module, &encoder, &ct_out, &sk, &mut scratch.borrow());
 
     for (got, want, tag) in [(&re_out, &re, "re"), (&im_out, &im, "im")] {
         let s = precision_stats(got, want, log_delta);
@@ -359,4 +406,73 @@ where
             s.worst_want,
         );
     }
+}
+
+fn decrypt<BE: Backend, C, F, E, S>(
+    module: &Module<BE>,
+    encoder: &Encoder<E>,
+    ct: &C,
+    sk: &S,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> (Vec<F>, Vec<F>)
+where
+    C: GLWEToBackendRef<BE> + CKKSInfos + CKKSCtBounds,
+    F: TestScalar,
+    Module<BE>: CKKSDecrypt<BE>,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
+{
+    // Decrypt, decode, and confirm the slots are recovered. Cap the budget so
+    // `log_delta + log_budget <= 127` fits the i128 decode codec (the unused
+    // high-order budget is dropped losslessly).
+    let prec = meta(ct.log_delta(), ct.log_budget().min(127usize.saturating_sub(ct.log_delta())));
+    let mut pt_out = module.ckks_pt_vec_alloc(ct.base2k(), prec.k());
+    pt_out.set_meta(prec.meta());
+    module.ckks_decrypt(&mut pt_out, ct, sk, &mut scratch.borrow()).unwrap();
+    let m = 1 << (ct.log_n() - ct.log_sparsity() - 1);
+
+    let pt_host = pt_out.to_host_owned::<BE>();
+    let (mut re_out, mut im_out) = (vec![F::zero(); m], vec![F::zero(); m]);
+    encoder.decode_reim(&pt_host, &mut re_out, &mut im_out).unwrap();
+
+    (re_out, im_out)
+}
+
+/// Decrypts `ct` and returns its raw polynomial coefficients (length `n`).
+fn decrypt_coeffs<BE, C, S>(module: &Module<BE>, ct: &C, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Vec<f64>
+where
+    BE: Backend<OwnedBuf = Vec<u8>>,
+    C: GLWEToBackendRef<BE> + CKKSInfos + CKKSCtBounds,
+    Module<BE>: CKKSDecrypt<BE>,
+    S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
+    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<f64>,
+{
+    let prec = meta(ct.log_delta(), ct.log_budget().min(127usize.saturating_sub(ct.log_delta())));
+    let mut pt = module.ckks_pt_vec_alloc(ct.base2k(), prec.k());
+    pt.set_meta(prec.meta());
+    module.ckks_decrypt(&mut pt, ct, sk, &mut scratch.borrow()).unwrap();
+    let mut c = vec![0f64; ct.n().as_usize()];
+    pt.decode_host_floats(&mut c).unwrap();
+    c
+}
+
+/// Bit-reversal of `j` over `bits` bits (poulpy's slot-map / coefficient order).
+fn bitrev(j: usize, bits: usize) -> usize {
+    ((j as u32).reverse_bits() >> (u32::BITS - bits as u32)) as usize
+}
+
+/// Scale-invariant signal-to-noise ratio in bits: best-fit a global scale `s`
+/// between `got` and `want`, then report `-0.5·log2(||got - s·want||² / ||s·want||²)`.
+/// Robust to the per-step scale bookkeeping (`1/K`, message ratio, eval scale),
+/// so it measures only how well the recovered *shape* matches the reference.
+fn snr_bits(got: &[f64], want: &[f64]) -> f64 {
+    let dot_gw: f64 = got.iter().zip(want).map(|(g, w)| g * w).sum();
+    let dot_ww: f64 = want.iter().map(|w| w * w).sum();
+    let s = if dot_ww > 0.0 { dot_gw / dot_ww } else { 0.0 };
+    let err2: f64 = got.iter().zip(want).map(|(g, w)| (g - s * w).powi(2)).sum();
+    let sig2: f64 = want.iter().map(|w| (s * w).powi(2)).sum();
+    if err2 <= 0.0 || sig2 <= 0.0 {
+        return f64::INFINITY;
+    }
+    -0.5 * (err2 / sig2).log2()
 }

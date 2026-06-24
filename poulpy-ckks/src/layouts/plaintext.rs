@@ -132,7 +132,7 @@ impl<D: Data> SetCKKSInfos for CKKSPlaintext<D> {
 impl<D: Data> Compact for CKKSPlaintext<D> {
     fn compact(&mut self) {
         //let limbs = self.k().div_ceil(self.base2k().as_usize()).max(1).min(self.size());
-        //self.inner.data.set_size(limbs);
+        //self.inner.data().set_size(limbs);
     }
 }
 

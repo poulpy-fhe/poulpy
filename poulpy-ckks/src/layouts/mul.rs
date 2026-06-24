@@ -20,8 +20,6 @@ pub struct CKKSPreparedRight<BE: Backend> {
     pub(crate) size: usize,
     /// `log_delta` of the source ciphertext.
     pub(crate) log_delta: usize,
-    /// `log_budget` of the source ciphertext.
-    pub(crate) log_budget: usize,
     /// `k` of the source ciphertext.
     pub(crate) k: usize,
 }

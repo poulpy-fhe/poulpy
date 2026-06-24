@@ -121,7 +121,6 @@ pub trait CKKSMulDefault<BE: Backend> {
             prep,
             size,
             log_delta: a.log_delta(),
-            log_budget: a.log_budget(),
             k,
         })
     }
@@ -141,10 +140,8 @@ pub trait CKKSMulDefault<BE: Backend> {
         let (res_log_budget, res_log_delta, cnv_offset) = mul_ct_params_raw(
             dst.max_k().as_usize(),
             dst.log_delta(),
-            dst.log_budget(),
             dst.k().into(),
             prepared.log_delta,
-            prepared.log_budget,
             prepared.k,
         )?;
 
@@ -159,13 +156,11 @@ pub trait CKKSMulDefault<BE: Backend> {
         };
         let scratch_local = scratch.borrow();
         let (mut tmp, mut scratch_local) = scratch_local.take_glwe_tensor_scratch(&tensor_layout);
-        let dst_k = dst.k();
         glwe_tensor_apply_prepared_right(
             self,
             cnv_offset,
             &mut tmp,
             &*dst,
-            dst_k.into(),
             &prepared.prep,
             prepared.size,
             &mut scratch_local,
@@ -305,7 +300,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         // limbs) would otherwise produce an empty output.
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
-        self.glwe_mul_plain(cnv_offset, dst, a, a.k().into(), pt, pt.max_k().as_usize(), scratch);
+        self.glwe_mul_plain(cnv_offset, dst, a, pt, scratch);
         dst.compact();
         Ok(())
     }
@@ -317,8 +312,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, dst, pt)?;
-        let dst_k = dst.k();
-        self.glwe_mul_plain_assign(cnv_offset, dst, dst_k.into(), pt, pt.max_k().as_usize(), scratch);
+        self.glwe_mul_plain_assign(cnv_offset, dst, pt, scratch);
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
         dst.compact();
@@ -383,10 +377,8 @@ where
     mul_ct_params_raw(
         res.max_k().as_usize(),
         a.log_delta(),
-        a.log_budget(),
         a.k().into(),
         b.log_delta(),
-        b.log_budget(),
         b.k().into(),
     )
 }
@@ -397,12 +389,14 @@ where
 pub(crate) fn mul_ct_params_raw(
     res_max_k: usize,
     a_log_delta: usize,
-    a_log_budget: usize,
     a_k: usize,
     b_log_delta: usize,
-    b_log_budget: usize,
     b_k: usize,
 ) -> Result<(usize, usize, usize)> {
+
+    let a_log_budget = a_k.saturating_sub(a_log_delta);
+    let b_log_budget = b_k.saturating_sub(b_log_delta);
+
     let res_log_budget = checked_mul_ct_log_budget("mul", a_log_budget, b_log_budget, a_log_delta, b_log_delta)?;
     let res_log_delta = a_log_delta.min(b_log_delta);
 

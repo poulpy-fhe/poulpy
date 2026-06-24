@@ -22,7 +22,7 @@ pub mod plaintext;
 pub use alloc::CKKSModuleAlloc;
 pub use bootstrapping::{BootstrappingContext, BootstrappingPlan};
 pub use ciphertext::{
-    CKKSCiphertext, CKKSCiphertextViewMut, CKKSMaintainOps, CKKSNormalizationState, Normalized, ScratchArenaTakeCKKS,
+    CKKSCiphertext, CKKSCiphertextViewMut, CKKSNormalizationState, Normalized, ScratchArenaTakeCKKS,
     Unnormalized, UnnormalizedCKKSCiphertext,
 };
 pub use complex_diagonals::ComplexDiagonals;
