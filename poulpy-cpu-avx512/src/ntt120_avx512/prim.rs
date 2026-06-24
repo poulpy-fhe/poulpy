@@ -84,7 +84,7 @@ unsafe fn lazy_reduce(x: __m256i, q_s: __m256i, msb: __m256i) -> __m256i {
 /// when `q_s_i > x_i (signed)`. We subtract `q_s` only where the mask bit is **clear**
 /// (i.e., `x ≥ q_s` after the sign-flip), via `_mm512_mask_sub_epi64` with the inverted mask.
 #[inline(always)]
-unsafe fn lazy_reduce_512(x: __m512i, q_s: __m512i, msb: __m512i) -> __m512i {
+pub(crate) unsafe fn lazy_reduce_512(x: __m512i, q_s: __m512i, msb: __m512i) -> __m512i {
     unsafe {
         let x_xor = _mm512_xor_si512(x, msb);
         let q_xor = _mm512_xor_si512(q_s, msb);
@@ -104,7 +104,7 @@ unsafe fn lazy_reduce_512(x: __m512i, q_s: __m512i, msb: __m512i) -> __m512i {
 
 /// Broadcast the 4 × u64 `Q_SHIFTED` constant into both halves of an `__m512i`.
 #[inline(always)]
-unsafe fn q_shifted_512() -> __m512i {
+pub(crate) unsafe fn q_shifted_512() -> __m512i {
     unsafe { _mm512_broadcast_i64x4(_mm256_loadu_si256(Q_SHIFTED.as_ptr() as *const __m256i)) }
 }
 
