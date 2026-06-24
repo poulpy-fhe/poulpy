@@ -36,15 +36,14 @@
 //! have verified CPU support at module construction time.
 
 use core::arch::x86_64::{
-    _MM_CMPINT_LT, _MM_CMPINT_NLT, __m256i, __m512i, __mmask8, _mm_add_epi64, _mm_cvtsi64_si128, _mm_cvtsi128_si64,
-    _mm_unpackhi_epi64, _mm256_add_epi64, _mm256_and_si256, _mm256_andnot_si256, _mm256_castsi256_si128,
-    _mm256_cmpgt_epi64, _mm256_extracti128_si256, _mm256_loadu_si256, _mm256_mul_epu32, _mm256_or_si256,
-    _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_slli_epi64, _mm256_srl_epi64, _mm256_srli_epi64,
-    _mm256_storeu_si256, _mm256_sub_epi64, _mm512_add_epi32, _mm512_add_epi64, _mm512_and_si512, _mm512_broadcast_i64x4,
-    _mm512_cmp_epu64_mask, _mm512_cmpeq_epi64_mask, _mm512_cmpgt_epi64_mask, _mm512_extracti64x4_epi64,
-    _mm512_loadu_si512, _mm512_mask_add_epi64, _mm512_mask_sub_epi64, _mm512_mul_epu32, _mm512_or_si512,
-    _mm512_permutex2var_epi64, _mm512_set_epi64, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_slli_epi64,
-    _mm512_srli_epi64, _mm512_storeu_si512, _mm512_sub_epi64, _mm512_test_epi64_mask,
+    __m256i, __m512i, __mmask8, _MM_CMPINT_LT, _MM_CMPINT_NLT, _mm_add_epi64, _mm_cvtsi64_si128, _mm_cvtsi128_si64,
+    _mm_unpackhi_epi64, _mm256_add_epi64, _mm256_and_si256, _mm256_andnot_si256, _mm256_castsi256_si128, _mm256_cmpgt_epi64,
+    _mm256_extracti128_si256, _mm256_loadu_si256, _mm256_mul_epu32, _mm256_or_si256, _mm256_set1_epi64x, _mm256_setzero_si256,
+    _mm256_slli_epi64, _mm256_srl_epi64, _mm256_srli_epi64, _mm256_storeu_si256, _mm256_sub_epi64, _mm512_add_epi32,
+    _mm512_add_epi64, _mm512_and_si512, _mm512_broadcast_i64x4, _mm512_cmp_epu64_mask, _mm512_cmpeq_epi64_mask,
+    _mm512_cmpgt_epi64_mask, _mm512_extracti64x4_epi64, _mm512_loadu_si512, _mm512_mask_add_epi64, _mm512_mask_sub_epi64,
+    _mm512_mul_epu32, _mm512_or_si512, _mm512_permutex2var_epi64, _mm512_set_epi64, _mm512_set1_epi64, _mm512_setzero_si512,
+    _mm512_slli_epi64, _mm512_srli_epi64, _mm512_storeu_si512, _mm512_sub_epi64, _mm512_test_epi64_mask,
 };
 
 use poulpy_cpu_ref::reference::ntt120::{
@@ -1042,7 +1041,11 @@ pub(crate) unsafe fn fold_8_planar(t01: __m512i, t23: __m512i, t45: __m512i, t67
         _mm512_storeu_si512(hi_lanes.as_mut_ptr() as *mut __m512i, v_hi);
         for lane in 0..8 {
             let vv = (lo_lanes[lane] as u128) | ((hi_lanes[lane] as u128) << 64);
-            let signed = if vv >= half_q { vv as i128 - TOTAL_Q as i128 } else { vv as i128 };
+            let signed = if vv >= half_q {
+                vv as i128 - TOTAL_Q as i128
+            } else {
+                vv as i128
+            };
             out.add(lane).write_unaligned(signed);
         }
     }
@@ -1060,8 +1063,18 @@ pub(crate) unsafe fn fold_8_planar(t01: __m512i, t23: __m512i, t45: __m512i, t67
 /// AVX-512F; `res.len() >= nn`, `a.len() >= 4 * nn`.
 #[target_feature(enable = "avx512f")]
 pub(crate) unsafe fn b_to_znx128_avx512_planar(nn: usize, res: &mut [i128], a: &[u64]) {
-    assert!(res.len() >= nn, "b_to_znx128_avx512_planar: res.len()={} < nn={}", res.len(), nn);
-    assert!(a.len() >= 4 * nn, "b_to_znx128_avx512_planar: a.len()={} < 4*nn={}", a.len(), 4 * nn);
+    assert!(
+        res.len() >= nn,
+        "b_to_znx128_avx512_planar: res.len()={} < nn={}",
+        res.len(),
+        nn
+    );
+    assert!(
+        a.len() >= 4 * nn,
+        "b_to_znx128_avx512_planar: a.len()={} < 4*nn={}",
+        a.len(),
+        4 * nn
+    );
     let half_q: u128 = TOTAL_Q.div_ceil(2);
 
     unsafe {
@@ -1390,11 +1403,7 @@ mod tests {
         let boundaries: [(u64, u64); 4] = [(0, 0), (u64::MAX, 0), (0, u64::MAX), (u64::MAX, u64::MAX)];
         let mut out = [0u128; 8];
         for (i, o) in out.iter_mut().enumerate() {
-            let (lo, hi) = if i < 4 {
-                boundaries[i]
-            } else {
-                (xs(state), xs(state))
-            };
+            let (lo, hi) = if i < 4 { boundaries[i] } else { (xs(state), xs(state)) };
             *o = (lo as u128) | ((hi as u128) << 64);
         }
         out

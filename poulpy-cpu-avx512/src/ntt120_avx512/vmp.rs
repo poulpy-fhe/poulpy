@@ -9,7 +9,7 @@ use std::mem::size_of;
 use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::{
     __m256i, __m512i, _mm_sfence, _mm256_loadu_si256, _mm256_storeu_si256, _mm256_stream_si256, _mm512_add_epi64,
-    _mm512_castsi512_si256, _mm512_loadu_si512, _mm512_permutex2var_epi64, _mm512_set1_epi64, _mm512_set_epi64,
+    _mm512_castsi512_si256, _mm512_loadu_si512, _mm512_permutex2var_epi64, _mm512_set_epi64, _mm512_set1_epi64,
     _mm512_storeu_si512,
 };
 

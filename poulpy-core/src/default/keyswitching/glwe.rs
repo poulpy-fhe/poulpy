@@ -142,7 +142,6 @@ where
         } else {
             let dsize: usize = key.dsize().into();
             let dnum: usize = key.dnum().into();
-            let cols_out: usize = res.cols();
 
             for di in 0..dsize {
                 let (mut ai_dft, mut scratch_1) =

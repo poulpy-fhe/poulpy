@@ -8,11 +8,11 @@
 
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::{
-    __m128i, __m256i, __m512i, _mm256_and_si256, _mm256_loadu_si256, _mm256_madd52hi_epu64, _mm256_madd52lo_epu64, _mm256_min_epu64,
-    _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_storeu_si256, _mm256_sub_epi64, _mm512_add_epi64, _mm512_and_si512,
-    _mm512_broadcast_i64x2, _mm512_broadcast_i64x4, _mm512_extracti64x4_epi64, _mm512_loadu_si512, _mm512_madd52hi_epu64,
-    _mm512_madd52lo_epu64, _mm512_mask_blend_epi64, _mm512_min_epu64, _mm512_permutexvar_epi64, _mm512_set1_epi64, _mm512_set_epi64,
-    _mm512_setzero_si512, _mm512_storeu_si512, _mm512_sub_epi64, _mm_loadu_si128,
+    __m128i, __m256i, __m512i, _mm_loadu_si128, _mm256_and_si256, _mm256_loadu_si256, _mm256_madd52hi_epu64,
+    _mm256_madd52lo_epu64, _mm256_min_epu64, _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_storeu_si256, _mm256_sub_epi64,
+    _mm512_add_epi64, _mm512_and_si512, _mm512_broadcast_i64x2, _mm512_broadcast_i64x4, _mm512_extracti64x4_epi64,
+    _mm512_loadu_si512, _mm512_madd52hi_epu64, _mm512_madd52lo_epu64, _mm512_mask_blend_epi64, _mm512_min_epu64,
+    _mm512_permutexvar_epi64, _mm512_set_epi64, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_storeu_si512, _mm512_sub_epi64,
 };
 
 use crate::ntt126_ifma::{
@@ -393,7 +393,20 @@ unsafe fn fwd_plane(
         // Recurse into the two halves.
         let half_n = n_sub / 2;
         fwd_plane(ptr, half_n, depth + 1, half * 2, root, precon, tail, tail_p, q, q2, q_v, q2_v);
-        fwd_plane(ptr.add(half_n), half_n, depth + 1, half * 2 + 1, root, precon, tail, tail_p, q, q2, q_v, q2_v);
+        fwd_plane(
+            ptr.add(half_n),
+            half_n,
+            depth + 1,
+            half * 2 + 1,
+            root,
+            precon,
+            tail,
+            tail_p,
+            q,
+            q2,
+            q_v,
+            q2_v,
+        );
     }
 }
 
@@ -582,7 +595,16 @@ unsafe fn load_w_op_t4(arg: *const u64) -> __m512i {
 #[inline]
 #[target_feature(enable = "avx512ifma,avx512vl")]
 #[allow(clippy::too_many_arguments)]
-unsafe fn inv_broadcast_stage(ptr: *mut u64, t: usize, m: usize, inv: &[u64], ip: &[u64], wi: usize, q_v: __m512i, q2_v: __m512i) {
+unsafe fn inv_broadcast_stage(
+    ptr: *mut u64,
+    t: usize,
+    m: usize,
+    inv: &[u64],
+    ip: &[u64],
+    wi: usize,
+    q_v: __m512i,
+    q2_v: __m512i,
+) {
     unsafe {
         for i in 0..m {
             let w_v = _mm512_set1_epi64(inv[wi + i] as i64);
@@ -934,7 +956,8 @@ mod tests {
                     data_avx[i] % q,
                     data_ref[i] % q,
                     "n={n} idx={i}: NTT AVX512 vs ref (avx={}, ref={})",
-                    data_avx[i], data_ref[i]
+                    data_avx[i],
+                    data_ref[i]
                 );
             }
         }
@@ -973,7 +996,8 @@ mod tests {
                 data_avx[i] % q,
                 data_ref[i] % q,
                 "n={n} idx={i}: NTT AVX512 vs ref (avx={}, ref={})",
-                data_avx[i], data_ref[i]
+                data_avx[i],
+                data_ref[i]
             );
         }
     }
@@ -1001,7 +1025,8 @@ mod tests {
                 data_avx[i] % q,
                 data_ref[i] % q,
                 "n={n} idx={i}: iNTT AVX512 vs ref (avx={}, ref={})",
-                data_avx[i], data_ref[i]
+                data_avx[i],
+                data_ref[i]
             );
         }
     }
@@ -1061,7 +1086,8 @@ mod tests {
                     data_avx[i] % q,
                     data_ref[i] % q,
                     "n={n} idx={i}: iNTT AVX512 vs ref (avx={}, ref={})",
-                    data_avx[i], data_ref[i]
+                    data_avx[i],
+                    data_ref[i]
                 );
             }
         }
