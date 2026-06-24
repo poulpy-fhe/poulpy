@@ -36,13 +36,15 @@
 //! have verified CPU support at module construction time.
 
 use core::arch::x86_64::{
-    __m256i, __m512i, _mm_add_epi64, _mm_cvtsi64_si128, _mm_cvtsi128_si64, _mm_unpackhi_epi64, _mm256_add_epi64,
-    _mm256_and_si256, _mm256_andnot_si256, _mm256_castsi256_si128, _mm256_cmpgt_epi64, _mm256_extracti128_si256,
-    _mm256_loadu_si256, _mm256_mul_epu32, _mm256_or_si256, _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_slli_epi64,
-    _mm256_srl_epi64, _mm256_srli_epi64, _mm256_storeu_si256, _mm256_sub_epi64, _mm512_add_epi32, _mm512_add_epi64,
-    _mm512_and_si512, _mm512_broadcast_i64x4, _mm512_cmpgt_epi64_mask, _mm512_extracti64x4_epi64, _mm512_loadu_si512,
-    _mm512_mask_add_epi64, _mm512_mask_sub_epi64, _mm512_mul_epu32, _mm512_or_si512, _mm512_set_epi64, _mm512_set1_epi64,
-    _mm512_setzero_si512, _mm512_slli_epi64, _mm512_srli_epi64, _mm512_storeu_si512, _mm512_sub_epi64,
+    _MM_CMPINT_LT, _MM_CMPINT_NLT, __m256i, __m512i, __mmask8, _mm_add_epi64, _mm_cvtsi64_si128, _mm_cvtsi128_si64,
+    _mm_unpackhi_epi64, _mm256_add_epi64, _mm256_and_si256, _mm256_andnot_si256, _mm256_castsi256_si128,
+    _mm256_cmpgt_epi64, _mm256_extracti128_si256, _mm256_loadu_si256, _mm256_mul_epu32, _mm256_or_si256,
+    _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_slli_epi64, _mm256_srl_epi64, _mm256_srli_epi64,
+    _mm256_storeu_si256, _mm256_sub_epi64, _mm512_add_epi32, _mm512_add_epi64, _mm512_and_si512, _mm512_broadcast_i64x4,
+    _mm512_cmp_epu64_mask, _mm512_cmpeq_epi64_mask, _mm512_cmpgt_epi64_mask, _mm512_extracti64x4_epi64,
+    _mm512_loadu_si512, _mm512_mask_add_epi64, _mm512_mask_sub_epi64, _mm512_mul_epu32, _mm512_or_si512,
+    _mm512_permutex2var_epi64, _mm512_set_epi64, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_slli_epi64,
+    _mm512_srli_epi64, _mm512_storeu_si512, _mm512_sub_epi64, _mm512_test_epi64_mask,
 };
 
 use poulpy_cpu_ref::reference::ntt120::{
@@ -373,6 +375,85 @@ pub(crate) unsafe fn crt_accumulate_avx512(t: __m256i, qm_hi: __m256i, qm_mid: _
 
         // v = s_hi·2^64 + s_mid·2^32 + s_lo  (no u128 overflow: v < 4·total_q < 2^122)
         ((s_hi as u128) << 64) + ((s_mid as u128) << 32) + (s_lo as u128)
+    }
+}
+
+// Planar (8-wide) CRT-fold helpers: each u128 lane is a (lo, hi) `__m512i` pair.
+
+/// Unsigned 128-bit `>=` across 8 lanes (non-strict, as in `b_to_znx128_ref`).
+#[inline(always)]
+unsafe fn cmp_ge_u128(hi: __m512i, lo: __m512i, chi: __m512i, clo: __m512i) -> __mmask8 {
+    unsafe {
+        let hi_gt = _mm512_cmp_epu64_mask(chi, hi, _MM_CMPINT_LT);
+        let hi_eq = _mm512_cmpeq_epi64_mask(hi, chi);
+        let lo_ge = _mm512_cmp_epu64_mask(lo, clo, _MM_CMPINT_NLT);
+        hi_gt | (hi_eq & lo_ge)
+    }
+}
+
+/// Masked 128-bit add across 8 lanes: where `m` is set, `(lo,hi) += (alo,ahi)`.
+#[inline(always)]
+unsafe fn add128_masked(lo: __m512i, hi: __m512i, alo: __m512i, ahi: __m512i, m: __mmask8) -> (__m512i, __m512i) {
+    unsafe {
+        let nlo = _mm512_mask_add_epi64(lo, m, lo, alo);
+        let carry = m & _mm512_cmp_epu64_mask(nlo, lo, _MM_CMPINT_LT);
+        let one = _mm512_set1_epi64(1);
+        let nhi = _mm512_mask_add_epi64(hi, m, hi, ahi);
+        let nhi = _mm512_mask_add_epi64(nhi, carry, nhi, one);
+        (nlo, nhi)
+    }
+}
+
+/// Masked 128-bit subtract across 8 lanes: where `m` is set, `(lo,hi) -= (slo,shi)`.
+#[inline(always)]
+unsafe fn sub128_masked(lo: __m512i, hi: __m512i, slo: __m512i, shi: __m512i, m: __mmask8) -> (__m512i, __m512i) {
+    unsafe {
+        let borrow = m & _mm512_cmp_epu64_mask(lo, slo, _MM_CMPINT_LT);
+        let one = _mm512_set1_epi64(1);
+        let nlo = _mm512_mask_sub_epi64(lo, m, lo, slo);
+        let nhi = _mm512_mask_sub_epi64(hi, m, hi, shi);
+        let nhi = _mm512_mask_sub_epi64(nhi, borrow, nhi, one);
+        (nlo, nhi)
+    }
+}
+
+/// Transpose 4 × (2 coeff × 4 prime) residue vectors (the `reduce_b_and_apply_crt_512`
+/// lane order `[c0:k0..k3 | c1:k0..k3]`) into 4 prime-planar vectors `TPk =
+/// [t0_k..t7_k]` (8 coefficients of one prime each), via two `vpermt2q` layers.
+#[inline(always)]
+unsafe fn transpose_t_8(t01: __m512i, t23: __m512i, t45: __m512i, t67: __m512i) -> (__m512i, __m512i, __m512i, __m512i) {
+    unsafe {
+        // Layer 1: lo_k = prime k of coeffs 0..3 in the low 4 lanes (high 4 are dup).
+        macro_rules! idx_lo {
+            ($k:expr) => {
+                _mm512_set_epi64(
+                    (12 + $k) as i64,
+                    (8 + $k) as i64,
+                    (4 + $k) as i64,
+                    $k as i64,
+                    (12 + $k) as i64,
+                    (8 + $k) as i64,
+                    (4 + $k) as i64,
+                    $k as i64,
+                )
+            };
+        }
+        let lo0 = _mm512_permutex2var_epi64(t01, idx_lo!(0), t23);
+        let lo1 = _mm512_permutex2var_epi64(t01, idx_lo!(1), t23);
+        let lo2 = _mm512_permutex2var_epi64(t01, idx_lo!(2), t23);
+        let lo3 = _mm512_permutex2var_epi64(t01, idx_lo!(3), t23);
+        let hi0 = _mm512_permutex2var_epi64(t45, idx_lo!(0), t67);
+        let hi1 = _mm512_permutex2var_epi64(t45, idx_lo!(1), t67);
+        let hi2 = _mm512_permutex2var_epi64(t45, idx_lo!(2), t67);
+        let hi3 = _mm512_permutex2var_epi64(t45, idx_lo!(3), t67);
+
+        // Layer 2: interleave coeffs 0..3 (lo) with 4..7 (hi) into 8 lanes.
+        let idx_merge = _mm512_set_epi64(11, 10, 9, 8, 3, 2, 1, 0);
+        let tp0 = _mm512_permutex2var_epi64(lo0, idx_merge, hi0);
+        let tp1 = _mm512_permutex2var_epi64(lo1, idx_merge, hi1);
+        let tp2 = _mm512_permutex2var_epi64(lo2, idx_merge, hi2);
+        let tp3 = _mm512_permutex2var_epi64(lo3, idx_merge, hi3);
+        (tp0, tp1, tp2, tp3)
     }
 }
 
@@ -876,6 +957,201 @@ pub(crate) unsafe fn vec_mat1col_product_bbb_avx512(meta: &BbbMeta<Primes30>, el
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// b_to_znx128 — planar (8-wide) CRT fold
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Planar CRT fold of 8 coefficients (`reduce_b_and_apply_crt_512` outputs over
+/// coeffs 0..1,2..3,4..5,6..7) into `out[0..8]`. Bit-identical to `b_to_znx128_ref`.
+///
+/// # Safety
+/// AVX-512F; `out[0..8]` writable.
+#[inline(always)]
+pub(crate) unsafe fn fold_8_planar(t01: __m512i, t23: __m512i, t45: __m512i, t67: __m512i, out: *mut i128) {
+    unsafe {
+        // Planar broadcasts (one set1 per prime limb).
+        let qmhi0 = _mm512_set1_epi64(QM_HI[0] as i64);
+        let qmhi1 = _mm512_set1_epi64(QM_HI[1] as i64);
+        let qmhi2 = _mm512_set1_epi64(QM_HI[2] as i64);
+        let qmhi3 = _mm512_set1_epi64(QM_HI[3] as i64);
+        let qmmid0 = _mm512_set1_epi64(QM_MID[0] as i64);
+        let qmmid1 = _mm512_set1_epi64(QM_MID[1] as i64);
+        let qmmid2 = _mm512_set1_epi64(QM_MID[2] as i64);
+        let qmmid3 = _mm512_set1_epi64(QM_MID[3] as i64);
+        let qmlo0 = _mm512_set1_epi64(QM_LO[0] as i64);
+        let qmlo1 = _mm512_set1_epi64(QM_LO[1] as i64);
+        let qmlo2 = _mm512_set1_epi64(QM_LO[2] as i64);
+        let qmlo3 = _mm512_set1_epi64(QM_LO[3] as i64);
+        let mask32 = _mm512_set1_epi64(u32::MAX as i64);
+        let one = _mm512_set1_epi64(1);
+        let two = _mm512_set1_epi64(2);
+        let tq_lo = _mm512_set1_epi64(TOTAL_Q as u64 as i64);
+        let tq_hi = _mm512_set1_epi64((TOTAL_Q >> 64) as u64 as i64);
+        let tq2 = TOTAL_Q << 1;
+        let tq2_lo = _mm512_set1_epi64(tq2 as u64 as i64);
+        let tq2_hi = _mm512_set1_epi64((tq2 >> 64) as u64 as i64);
+        let zero = _mm512_setzero_si512();
+
+        // transpose to prime-planar (8 coeffs per prime)
+        let (tp0, tp1, tp2, tp3) = transpose_t_8(t01, t23, t45, t67);
+
+        // vertical 4-prime limb dot product
+        // s_* = Σ_k TP_k * QM_*[k]   (proven bounds: s_hi<2^59, s_mid/s_lo<2^64).
+        let mut s_hi = _mm512_mul_epu32(tp0, qmhi0);
+        let mut s_mid = _mm512_mul_epu32(tp0, qmmid0);
+        let mut s_lo = _mm512_mul_epu32(tp0, qmlo0);
+        s_hi = _mm512_add_epi64(s_hi, _mm512_mul_epu32(tp1, qmhi1));
+        s_mid = _mm512_add_epi64(s_mid, _mm512_mul_epu32(tp1, qmmid1));
+        s_lo = _mm512_add_epi64(s_lo, _mm512_mul_epu32(tp1, qmlo1));
+        s_hi = _mm512_add_epi64(s_hi, _mm512_mul_epu32(tp2, qmhi2));
+        s_mid = _mm512_add_epi64(s_mid, _mm512_mul_epu32(tp2, qmmid2));
+        s_lo = _mm512_add_epi64(s_lo, _mm512_mul_epu32(tp2, qmlo2));
+        s_hi = _mm512_add_epi64(s_hi, _mm512_mul_epu32(tp3, qmhi3));
+        s_mid = _mm512_add_epi64(s_mid, _mm512_mul_epu32(tp3, qmmid3));
+        s_lo = _mm512_add_epi64(s_lo, _mm512_mul_epu32(tp3, qmlo3));
+
+        // carry-propagate (s_lo,s_mid,s_hi) → (v_lo,v_hi)
+        let smid_lo = _mm512_and_si512(s_mid, mask32);
+        let smid_hi = _mm512_srli_epi64::<32>(s_mid);
+        let midlo_sh = _mm512_slli_epi64::<32>(smid_lo);
+        let v_lo = _mm512_add_epi64(s_lo, midlo_sh);
+        let carry0 = _mm512_cmp_epu64_mask(v_lo, s_lo, _MM_CMPINT_LT); // wrap detect
+        let v_hi0 = _mm512_add_epi64(s_hi, smid_hi);
+        let v_hi = _mm512_mask_add_epi64(v_hi0, carry0, v_hi0, one);
+
+        // vectorized Barrett table fold mod TOTAL_Q (q_approx ∈ {0,1,2,3})
+        let qapx = _mm512_srli_epi64::<56>(v_hi); // == v >> 120
+        let mb0 = _mm512_test_epi64_mask(qapx, one); // bit0 → +1·TQ
+        let mb1 = _mm512_test_epi64_mask(qapx, two); // bit1 → +2·TQ
+        let (sub_lo, sub_hi) = add128_masked(zero, zero, tq_lo, tq_hi, mb0);
+        let (sub_lo, sub_hi) = add128_masked(sub_lo, sub_hi, tq2_lo, tq2_hi, mb1);
+        // v -= sub  (128-bit, unconditional)
+        let n_lo = _mm512_sub_epi64(v_lo, sub_lo);
+        let borrow = _mm512_cmp_epu64_mask(v_lo, sub_lo, _MM_CMPINT_LT);
+        let v_hi = _mm512_sub_epi64(v_hi, sub_hi);
+        let v_hi = _mm512_mask_sub_epi64(v_hi, borrow, v_hi, one);
+        let v_lo = n_lo;
+        // one correction cond-sub of TOTAL_Q where v >= TOTAL_Q.
+        let ge = cmp_ge_u128(v_hi, v_lo, tq_hi, tq_lo);
+        let (v_lo, v_hi) = sub128_masked(v_lo, v_hi, tq_lo, tq_hi, ge);
+
+        // store lanes, scalar symmetric sign lift (mirror ref's `>=`)
+        let half_q: u128 = TOTAL_Q.div_ceil(2);
+        let mut lo_lanes = [0u64; 8];
+        let mut hi_lanes = [0u64; 8];
+        _mm512_storeu_si512(lo_lanes.as_mut_ptr() as *mut __m512i, v_lo);
+        _mm512_storeu_si512(hi_lanes.as_mut_ptr() as *mut __m512i, v_hi);
+        for lane in 0..8 {
+            let vv = (lo_lanes[lane] as u128) | ((hi_lanes[lane] as u128) << 64);
+            let signed = if vv >= half_q { vv as i128 - TOTAL_Q as i128 } else { vv as i128 };
+            out.add(lane).write_unaligned(signed);
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// b_to_znx128_avx512_planar
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Planar AVX-512F CRT reconstruction (q120b → i128): 8 coeffs/iteration via
+/// [`fold_8_planar`], with the `< 8` remainder on the scalar 2-coeff + odd tail.
+/// Byte-identical to `b_to_znx128_ref` for every `nn`.
+///
+/// # Safety
+/// AVX-512F; `res.len() >= nn`, `a.len() >= 4 * nn`.
+#[target_feature(enable = "avx512f")]
+pub(crate) unsafe fn b_to_znx128_avx512_planar(nn: usize, res: &mut [i128], a: &[u64]) {
+    assert!(res.len() >= nn, "b_to_znx128_avx512_planar: res.len()={} < nn={}", res.len(), nn);
+    assert!(a.len() >= 4 * nn, "b_to_znx128_avx512_planar: a.len()={} < 4*nn={}", a.len(), 4 * nn);
+    let half_q: u128 = TOTAL_Q.div_ceil(2);
+
+    unsafe {
+        let q_512 = bcast_quad(Q_VEC.as_ptr());
+        let mu_512 = bcast_quad(BARRETT_MU.as_ptr());
+        let pow32_crt_512 = bcast_quad(POW32_CRT.as_ptr());
+        let pow16_crt_512 = bcast_quad(POW16_CRT.as_ptr());
+        let crt_512 = bcast_quad(CRT_VEC.as_ptr());
+
+        let res_ptr = res.as_mut_ptr();
+        let mut base = 0usize;
+
+        // main loop: 8 coefficients per iteration
+        while base + 8 <= nn {
+            let a_ptr = a.as_ptr().add(4 * base) as *const __m512i;
+            let x01 = _mm512_loadu_si512(a_ptr);
+            let x23 = _mm512_loadu_si512(a_ptr.add(1));
+            let x45 = _mm512_loadu_si512(a_ptr.add(2));
+            let x67 = _mm512_loadu_si512(a_ptr.add(3));
+            let t01 = reduce_b_and_apply_crt_512(x01, q_512, mu_512, pow32_crt_512, pow16_crt_512, crt_512);
+            let t23 = reduce_b_and_apply_crt_512(x23, q_512, mu_512, pow32_crt_512, pow16_crt_512, crt_512);
+            let t45 = reduce_b_and_apply_crt_512(x45, q_512, mu_512, pow32_crt_512, pow16_crt_512, crt_512);
+            let t67 = reduce_b_and_apply_crt_512(x67, q_512, mu_512, pow32_crt_512, pow16_crt_512, crt_512);
+            fold_8_planar(t01, t23, t45, t67, res_ptr.add(base));
+            base += 8;
+        }
+
+        // remainder (< 8 coeffs): 2-coefficient loop + odd tail
+        let qm_hi_512 = bcast_quad(QM_HI.as_ptr());
+        let qm_mid_512 = bcast_quad(QM_MID.as_ptr());
+        let qm_lo_512 = bcast_quad(QM_LO.as_ptr());
+
+        let mut a_ptr = a.as_ptr().add(4 * base) as *const __m512i;
+        let mut idx = base;
+        while idx + 2 <= nn {
+            let xv = _mm512_loadu_si512(a_ptr);
+            let t = reduce_b_and_apply_crt_512(xv, q_512, mu_512, pow32_crt_512, pow16_crt_512, crt_512);
+            let p_hi = _mm512_mul_epu32(t, qm_hi_512);
+            let p_mid = _mm512_mul_epu32(t, qm_mid_512);
+            let p_lo = _mm512_mul_epu32(t, qm_lo_512);
+            let p_hi_a = _mm512_extracti64x4_epi64::<0>(p_hi);
+            let p_hi_b = _mm512_extracti64x4_epi64::<1>(p_hi);
+            let p_mid_a = _mm512_extracti64x4_epi64::<0>(p_mid);
+            let p_mid_b = _mm512_extracti64x4_epi64::<1>(p_mid);
+            let p_lo_a = _mm512_extracti64x4_epi64::<0>(p_lo);
+            let p_lo_b = _mm512_extracti64x4_epi64::<1>(p_lo);
+
+            for (k, (p_hi_h, (p_mid_h, p_lo_h))) in [(p_hi_a, (p_mid_a, p_lo_a)), (p_hi_b, (p_mid_b, p_lo_b))]
+                .into_iter()
+                .enumerate()
+            {
+                let s_hi = hadd64(p_hi_h);
+                let s_mid = hadd64(p_mid_h);
+                let s_lo = hadd64(p_lo_h);
+                let mut v: u128 = ((s_hi as u128) << 64) + ((s_mid as u128) << 32) + (s_lo as u128);
+                let q_approx = (v >> 120) as usize;
+                v -= TOTAL_Q_MULT[q_approx];
+                if v >= TOTAL_Q {
+                    v -= TOTAL_Q;
+                }
+                let signed = if v >= half_q { v as i128 - TOTAL_Q as i128 } else { v as i128 };
+                *res.get_unchecked_mut(idx + k) = signed;
+            }
+            a_ptr = a_ptr.add(1);
+            idx += 2;
+        }
+
+        if idx < nn {
+            let q_vec = _mm256_loadu_si256(Q_VEC.as_ptr() as *const __m256i);
+            let mu_vec = _mm256_loadu_si256(BARRETT_MU.as_ptr() as *const __m256i);
+            let pow32_crt_vec = _mm256_loadu_si256(POW32_CRT.as_ptr() as *const __m256i);
+            let pow16_crt_vec = _mm256_loadu_si256(POW16_CRT.as_ptr() as *const __m256i);
+            let crt_vec = _mm256_loadu_si256(CRT_VEC.as_ptr() as *const __m256i);
+            let qm_hi_vec = _mm256_loadu_si256(QM_HI.as_ptr() as *const __m256i);
+            let qm_mid_vec = _mm256_loadu_si256(QM_MID.as_ptr() as *const __m256i);
+            let qm_lo_vec = _mm256_loadu_si256(QM_LO.as_ptr() as *const __m256i);
+            let xv = _mm256_loadu_si256(a_ptr as *const __m256i);
+            let t = reduce_b_and_apply_crt(xv, q_vec, mu_vec, pow32_crt_vec, pow16_crt_vec, crt_vec);
+            let mut v = crt_accumulate_avx512(t, qm_hi_vec, qm_mid_vec, qm_lo_vec);
+            let q_approx = (v >> 120) as usize;
+            v -= TOTAL_Q_MULT[q_approx];
+            if v >= TOTAL_Q {
+                v -= TOTAL_Q;
+            }
+            *res.get_unchecked_mut(idx) = if v >= half_q { v as i128 - TOTAL_Q as i128 } else { v as i128 };
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // b_to_znx128_avx512
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -893,6 +1169,9 @@ pub(crate) unsafe fn vec_mat1col_product_bbb_avx512(meta: &BbbMeta<Primes30>, el
 /// # Safety
 ///
 /// Caller must ensure AVX-512F support. `res.len() >= nn`, `a.len() >= 4 * nn`.
+///
+/// Superseded by [`b_to_znx128_avx512_planar`]; retained as the byte-exact reference.
+#[allow(dead_code)]
 #[target_feature(enable = "avx512f")]
 pub(crate) unsafe fn b_to_znx128_avx512(nn: usize, res: &mut [i128], a: &[u64]) {
     assert!(res.len() >= nn, "b_to_znx128_avx512: res.len()={} < nn={}", res.len(), nn);
@@ -1092,5 +1371,230 @@ mod tests {
         b_to_znx128_ref::<Primes30>(n, &mut res_ref, &b);
 
         assert_eq!(res_avx, res_ref, "b_to_znx128: AVX-512F vs ref mismatch");
+    }
+
+    // ── Planar fold helper tests ────────────────────────────────────────────
+
+    /// Pseudo-random u64 generator (xorshift) for helper boundary tests.
+    fn xs(state: &mut u64) -> u64 {
+        let mut x = *state;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        *state = x;
+        x
+    }
+
+    /// Build 8 lanes of `(lo,hi)` u128 inputs, deliberately including boundary values.
+    fn random_lanes(state: &mut u64) -> [u128; 8] {
+        let boundaries: [(u64, u64); 4] = [(0, 0), (u64::MAX, 0), (0, u64::MAX), (u64::MAX, u64::MAX)];
+        let mut out = [0u128; 8];
+        for (i, o) in out.iter_mut().enumerate() {
+            let (lo, hi) = if i < 4 {
+                boundaries[i]
+            } else {
+                (xs(state), xs(state))
+            };
+            *o = (lo as u128) | ((hi as u128) << 64);
+        }
+        out
+    }
+
+    #[inline(always)]
+    unsafe fn load_lohi(vals: &[u128; 8]) -> (__m512i, __m512i) {
+        let mut lo = [0u64; 8];
+        let mut hi = [0u64; 8];
+        for i in 0..8 {
+            lo[i] = vals[i] as u64;
+            hi[i] = (vals[i] >> 64) as u64;
+        }
+        unsafe {
+            (
+                _mm512_loadu_si512(lo.as_ptr() as *const __m512i),
+                _mm512_loadu_si512(hi.as_ptr() as *const __m512i),
+            )
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn store_lohi(lo: __m512i, hi: __m512i) -> [u128; 8] {
+        let mut lo_a = [0u64; 8];
+        let mut hi_a = [0u64; 8];
+        unsafe {
+            _mm512_storeu_si512(lo_a.as_mut_ptr() as *mut __m512i, lo);
+            _mm512_storeu_si512(hi_a.as_mut_ptr() as *mut __m512i, hi);
+        }
+        let mut out = [0u128; 8];
+        for i in 0..8 {
+            out[i] = (lo_a[i] as u128) | ((hi_a[i] as u128) << 64);
+        }
+        out
+    }
+
+    #[test]
+    fn cmp_ge_u128_vs_scalar() {
+        let mut state = 0x1234_5678_9abc_def0u64;
+        for _ in 0..2000 {
+            let a = random_lanes(&mut state);
+            let b = random_lanes(&mut state);
+            let mut expected: u8 = 0;
+            for i in 0..8 {
+                if a[i] >= b[i] {
+                    expected |= 1 << i;
+                }
+            }
+            let got = unsafe {
+                let (alo, ahi) = load_lohi(&a);
+                let (blo, bhi) = load_lohi(&b);
+                cmp_ge_u128(ahi, alo, bhi, blo)
+            };
+            assert_eq!(got, expected, "cmp_ge_u128 mismatch\na={a:?}\nb={b:?}");
+        }
+    }
+
+    #[test]
+    fn add128_masked_vs_scalar() {
+        let mut state = 0xdead_beef_cafe_babeu64;
+        for _ in 0..2000 {
+            let a = random_lanes(&mut state);
+            let add = random_lanes(&mut state);
+            let mask: u8 = xs(&mut state) as u8;
+            let mut expected = [0u128; 8];
+            for i in 0..8 {
+                expected[i] = if (mask >> i) & 1 == 1 {
+                    a[i].wrapping_add(add[i])
+                } else {
+                    a[i]
+                };
+            }
+            let got = unsafe {
+                let (alo, ahi) = load_lohi(&a);
+                let (addlo, addhi) = load_lohi(&add);
+                let (rlo, rhi) = add128_masked(alo, ahi, addlo, addhi, mask);
+                store_lohi(rlo, rhi)
+            };
+            assert_eq!(got, expected, "add128_masked mismatch mask={mask:08b}\na={a:?}\nadd={add:?}");
+        }
+    }
+
+    #[test]
+    fn sub128_masked_vs_scalar() {
+        let mut state = 0x0f0f_0f0f_1234_5678u64;
+        for _ in 0..2000 {
+            let a = random_lanes(&mut state);
+            let sub = random_lanes(&mut state);
+            let mask: u8 = xs(&mut state) as u8;
+            let mut expected = [0u128; 8];
+            for i in 0..8 {
+                expected[i] = if (mask >> i) & 1 == 1 {
+                    a[i].wrapping_sub(sub[i])
+                } else {
+                    a[i]
+                };
+            }
+            let got = unsafe {
+                let (alo, ahi) = load_lohi(&a);
+                let (sublo, subhi) = load_lohi(&sub);
+                let (rlo, rhi) = sub128_masked(alo, ahi, sublo, subhi, mask);
+                store_lohi(rlo, rhi)
+            };
+            assert_eq!(got, expected, "sub128_masked mismatch mask={mask:08b}\na={a:?}\nsub={sub:?}");
+        }
+    }
+
+    #[test]
+    fn transpose_t_8_sentinel() {
+        // Encode each lane as value = 1000*coeff + prime so we can assert TPk[c] == 1000*c + k.
+        // Build the 4 source vectors with the same lane layout as reduce_b_and_apply_crt_512:
+        //   tXY lane = 4*coeff_within_pair + prime.
+        let mut srcs = [[0i64; 8]; 4];
+        for (pair, s) in srcs.iter_mut().enumerate() {
+            for cwp in 0..2 {
+                for k in 0..4 {
+                    let coeff = 2 * pair + cwp;
+                    s[4 * cwp + k] = (1000 * coeff + k) as i64;
+                }
+            }
+        }
+        let (tp0, tp1, tp2, tp3) = unsafe {
+            let t01 = _mm512_loadu_si512(srcs[0].as_ptr() as *const __m512i);
+            let t23 = _mm512_loadu_si512(srcs[1].as_ptr() as *const __m512i);
+            let t45 = _mm512_loadu_si512(srcs[2].as_ptr() as *const __m512i);
+            let t67 = _mm512_loadu_si512(srcs[3].as_ptr() as *const __m512i);
+            transpose_t_8(t01, t23, t45, t67)
+        };
+        let dump = |v: __m512i| -> [i64; 8] {
+            let mut o = [0i64; 8];
+            unsafe { _mm512_storeu_si512(o.as_mut_ptr() as *mut __m512i, v) };
+            o
+        };
+        let planes = [dump(tp0), dump(tp1), dump(tp2), dump(tp3)];
+        for (k, plane) in planes.iter().enumerate() {
+            for c in 0..8 {
+                assert_eq!(plane[c], (1000 * c + k) as i64, "transpose TP{k}[{c}] wrong");
+            }
+        }
+    }
+
+    /// Planar `b_to_znx128` matches reference for both nn%8==0 and nn%8!=0 (odd tail).
+    #[test]
+    fn b_to_znx128_planar_vs_ref() {
+        for &n in &[1usize, 7, 8, 15, 16, 17, 23, 64, 1024, 1031] {
+            let coeffs: Vec<i64> = (0..n as i64).map(|i| (i * 2_654_435_761i64).wrapping_sub(160)).collect();
+            let mut b = vec![0u64; 4 * n];
+            b_from_znx64_ref::<Primes30>(n, &mut b, &coeffs);
+
+            let mut res_avx = vec![0i128; n];
+            let mut res_ref = vec![0i128; n];
+
+            unsafe { b_to_znx128_avx512_planar(n, &mut res_avx, &b) };
+            b_to_znx128_ref::<Primes30>(n, &mut res_ref, &b);
+
+            assert_eq!(res_avx, res_ref, "b_to_znx128_planar vs ref mismatch at n={n}");
+        }
+    }
+
+    /// Focused in-crate A/B microbench: old scalar-fold kernel vs planar kernel on a
+    /// fixed n=4096 buffer. Reports min-over-runs ns/coeff for each (min ≈ unthrottled).
+    /// Ignored by default (run with `--ignored --nocapture`).
+    #[test]
+    #[ignore]
+    fn b_to_znx128_kernel_ab_bench() {
+        use std::time::Instant;
+        let n = 4096usize;
+        let coeffs: Vec<i64> = (0..n as i64).map(|i| (i * 2_654_435_761i64).wrapping_sub(160)).collect();
+        let mut b = vec![0u64; 4 * n];
+        b_from_znx64_ref::<Primes30>(n, &mut b, &coeffs);
+        let mut out = vec![0i128; n];
+
+        let reps = 4000usize;
+        let rounds = 12usize;
+        // warm up
+        for _ in 0..200 {
+            unsafe { b_to_znx128_avx512(n, &mut out, &b) };
+            unsafe { b_to_znx128_avx512_planar(n, &mut out, &b) };
+        }
+        let mut old_min = f64::INFINITY;
+        let mut new_min = f64::INFINITY;
+        for _ in 0..rounds {
+            let t0 = Instant::now();
+            for _ in 0..reps {
+                unsafe { b_to_znx128_avx512(n, &mut out, &b) };
+                std::hint::black_box(&out);
+            }
+            let old_ns = t0.elapsed().as_nanos() as f64 / (reps * n) as f64;
+            let t1 = Instant::now();
+            for _ in 0..reps {
+                unsafe { b_to_znx128_avx512_planar(n, &mut out, &b) };
+                std::hint::black_box(&out);
+            }
+            let new_ns = t1.elapsed().as_nanos() as f64 / (reps * n) as f64;
+            old_min = old_min.min(old_ns);
+            new_min = new_min.min(new_ns);
+        }
+        println!(
+            "b_to_znx128 kernel  OLD={old_min:.4} ns/coeff  NEW={new_min:.4} ns/coeff  speedup={:.3}x",
+            old_min / new_min
+        );
     }
 }

@@ -43,7 +43,7 @@ use poulpy_cpu_ref::reference::ntt120::{
 };
 
 use super::arithmetic_avx512::{
-    b_from_znx64_avx512, b_from_znx64_masked_avx512, b_to_znx128_avx512, c_from_b_avx512, pack_left_1blk_x2_avx512,
+    b_from_znx64_avx512, b_from_znx64_masked_avx512, b_to_znx128_avx512_planar, c_from_b_avx512, pack_left_1blk_x2_avx512,
     pack_right_1blk_x2_avx512, pairwise_pack_left_1blk_x2_avx512, pairwise_pack_right_1blk_x2_avx512,
     vec_mat1col_product_bbb_avx512,
 };
@@ -336,7 +336,7 @@ impl NttToZnx128 for NTT120Avx512 {
     #[inline(always)]
     fn ntt_to_znx128(res: &mut [i128], divisor_is_n: usize, a: &[u64]) {
         // SAFETY: NTT120Avx512::new() verifies AVX-512F availability at construction time.
-        unsafe { b_to_znx128_avx512(divisor_is_n, res, a) }
+        unsafe { b_to_znx128_avx512_planar(divisor_is_n, res, a) }
     }
 }
 

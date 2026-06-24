@@ -9,7 +9,7 @@ use super::{
     NTT120Avx512,
     arithmetic_avx512::{
         BARRETT_MU, CRT_VEC, POW16_CRT, POW32_CRT, Q_VEC, QM_HI, QM_LO, QM_MID, TOTAL_Q, TOTAL_Q_MULT, bcast_quad,
-        crt_accumulate_avx512, hadd64_pub, reduce_b_and_apply_crt, reduce_b_and_apply_crt_512,
+        crt_accumulate_avx512, fold_8_planar, hadd64_pub, reduce_b_and_apply_crt, reduce_b_and_apply_crt_512,
     },
     ntt::intt_avx512,
 };
@@ -61,11 +61,28 @@ unsafe fn intt_then_compact_avx512(
             unsafe { intt_avx512::<Primes30>(table, blk) };
         }
 
-        // Pair-packed compaction: 2 q120b coefficients per __m512i load → 2 i128 stores.
+        // Planar compaction: 8 q120b coefficients per iteration via the vectorized CRT fold,
+        // then a 2-coefficient remainder + odd-coefficient tail (byte-identical to ref).
         unsafe {
-            let pairs = n / 2;
             let mut c = 0usize;
-            for _ in 0..pairs {
+
+            // 8-wide planar main loop (4 __m512i loads → 8 i128 stores).
+            while c + 8 <= n {
+                let a_ptr = src_ptr.add(src_off_u64 + 4 * c) as *const __m512i;
+                let x01 = _mm512_loadu_si512(a_ptr);
+                let x23 = _mm512_loadu_si512(a_ptr.add(1));
+                let x45 = _mm512_loadu_si512(a_ptr.add(2));
+                let x67 = _mm512_loadu_si512(a_ptr.add(3));
+                let t01 = reduce_b_and_apply_crt_512(x01, q_512, mu_512, pow32_crt_512, pow16_crt_512, crt_512);
+                let t23 = reduce_b_and_apply_crt_512(x23, q_512, mu_512, pow32_crt_512, pow16_crt_512, crt_512);
+                let t45 = reduce_b_and_apply_crt_512(x45, q_512, mu_512, pow32_crt_512, pow16_crt_512, crt_512);
+                let t67 = reduce_b_and_apply_crt_512(x67, q_512, mu_512, pow32_crt_512, pow16_crt_512, crt_512);
+                fold_8_planar(t01, t23, t45, t67, dst_ptr.add(dst_off_i128 + c));
+                c += 8;
+            }
+
+            // 2-coefficient remainder.
+            while c + 2 <= n {
                 let xv: __m512i = _mm512_loadu_si512(src_ptr.add(src_off_u64 + 4 * c) as *const __m512i);
                 let t = reduce_b_and_apply_crt_512(xv, q_512, mu_512, pow32_crt_512, pow16_crt_512, crt_512);
                 let p_hi = _mm512_mul_epu32(t, qm_hi_512);
