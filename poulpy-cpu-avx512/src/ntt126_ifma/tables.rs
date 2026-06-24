@@ -1,14 +1,5 @@
 //! Precomputed twiddle tables and Harvey arithmetic helpers for the 3-prime IFMA NTT.
 //!
-//! # IFMA-native arithmetic model
-//!
-//! Lazy Harvey reduction: butterfly values are kept in `[0, 4q)` internally,
-//! and normalised to `[0, 2q)` at NTT boundaries.  On the difference path of
-//! each butterfly the Harvey multiplier absorbs the wider range directly —
-//! inputs up to `2^52` yield outputs in `[0, 2q)` because `q < 2^42` — so a
-//! pre-reduction `cond_sub` before the multiply is unnecessary.  Only the sum
-//! path keeps one `cond_sub` (of `4q`) per butterfly pair.
-//!
 //! # Twiddle factor layout
 //!
 //! Twiddle factors use a **split (SoA) layout** within each NTT level segment.
@@ -41,12 +32,9 @@ use super::primes::{PrimeSetNtt126Ifma, modq_pow64};
 pub struct Ntt126IfmaTable<P: PrimeSetNtt126Ifma> {
     /// NTT size (power of two, ≤ 2^16).
     pub n: usize,
-    /// `2q[k]` for each prime (lane 3 = 0).  Used for the final `[0, 4q)` → `[0, 2q)`
-    /// normalisation pass and by external consumers that expect `[0, 2q)` input.
+    /// `2q[k]` for each prime (lane 3 = 0); used for the final `[0, 4q)` → `[0, 2q)` pass.
     pub q2: [u64; 4],
-    /// `4q[k]` for each prime (lane 3 = 0).  Used inside butterflies under the
-    /// lazy `[0, 4q)` invariant: sum path subtracts `4q`, diff path adds `4q`
-    /// before subtracting `b`.
+    /// `4q[k]` for each prime (lane 3 = 0); used inside butterflies under the lazy `[0, 4q)` invariant.
     pub q4: [u64; 4],
     /// Packed twiddle factors: each entry is 8 u64.
     /// Layout: level-0 (n entries), then butterfly levels (halfnn-1 entries each).
