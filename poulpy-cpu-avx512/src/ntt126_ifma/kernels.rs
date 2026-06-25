@@ -6,6 +6,21 @@
 //! `[0, 2q)` inverse); the forward kernel ends with a single pass renormalising
 //! to `[0, q)`.
 
+// ----------------------------------------------------------------------
+// DISCLAIMER
+//
+// This module contains code that has been adapted from the Intel HEXL
+// library (https://github.com/intel/hexl), which is licensed under the
+// Apache License, Version 2.0.
+//
+// Unlike the spqlios-arithmetic ports, this is not a 1-to-1 port: the
+// kernels were reworked for Poulpy's three-prime CRT layout.
+//
+// Both Poulpy and HEXL are distributed under the terms of the Apache
+// License, Version 2.0. See the LICENSE file for details.
+//
+// ----------------------------------------------------------------------
+
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::{
     __m128i, __m256i, __m512i, _mm_loadu_si128, _mm256_and_si256, _mm256_loadu_si256, _mm256_madd52hi_epu64,
@@ -345,10 +360,12 @@ unsafe fn fwd_plane_base(
 /// For `n_sub > BASE_NTT_SIZE`, runs the single top broadcast stage (distance
 /// `n_sub/2`, one twiddle group) then recurses into the two halves. For
 /// `n_sub <= BASE_NTT_SIZE`, falls through to the breadth-first base case.
+///
+/// `ILM` (depth-0 only): top-stage input is canonical, so its precondition is skipped.
 #[inline]
 #[target_feature(enable = "avx512ifma,avx512vl")]
 #[allow(clippy::too_many_arguments)]
-unsafe fn fwd_plane(
+unsafe fn fwd_plane<const ILM: bool>(
     ptr: *mut u64,
     n_sub: usize,
     depth: u32,
@@ -364,6 +381,7 @@ unsafe fn fwd_plane(
 ) {
     unsafe {
         if n_sub <= BASE_NTT_SIZE {
+            // Base case keeps the precondition (small-n top stage isn't worth a split).
             fwd_plane_base(ptr, n_sub, depth, half, root, precon, tail, tail_p, q, q2, q_v, q2_v);
             return;
         }
@@ -381,7 +399,7 @@ unsafe fn fwd_plane(
             let yp = ptr.add(j + t) as *mut __m512i;
             let x_in = _mm512_loadu_si512(xp as *const __m512i);
             let y_in = _mm512_loadu_si512(yp as *const __m512i);
-            let x_red = cond_sub_2q_si512(x_in, q2_v);
+            let x_red = if ILM { x_in } else { cond_sub_2q_si512(x_in, q2_v) };
             let tt = harvey_modmul_si512(y_in, w_v, w_precon_v, q_v);
             let x_out = _mm512_add_epi64(x_red, tt);
             let y_out = _mm512_sub_epi64(_mm512_add_epi64(x_red, q2_v), tt);
@@ -390,10 +408,10 @@ unsafe fn fwd_plane(
             j += 8;
         }
 
-        // Recurse into the two halves.
+        // Recurse into the two halves (inputs now [0, 4q): no ILM).
         let half_n = n_sub / 2;
-        fwd_plane(ptr, half_n, depth + 1, half * 2, root, precon, tail, tail_p, q, q2, q_v, q2_v);
-        fwd_plane(
+        fwd_plane::<false>(ptr, half_n, depth + 1, half * 2, root, precon, tail, tail_p, q, q2, q_v, q2_v);
+        fwd_plane::<false>(
             ptr.add(half_n),
             half_n,
             depth + 1,
@@ -414,14 +432,12 @@ unsafe fn fwd_plane(
 /// negacyclic).
 ///
 /// `data` holds 3 contiguous planes of length `n` (`data[k*n .. (k+1)*n]`); each
-/// plane is transformed in place with prime `Q[k]` and that plane's scrambled
-/// roots from `table.root` / `table.root_quot`. Input must be in `[0, q)`;
-/// output is fully reduced to `[0, q)`.
-///
-/// Each plane is transformed via [`fwd_plane`] (depth-first split above
-/// `BASE_NTT_SIZE`), then a single `[0, 4q)` → `[0, q)` reduction over the plane.
+/// plane is transformed in place with prime `Q[k]` and its scrambled roots.
+/// Input is assumed canonical (`[0, q)`). `lazy_output` leaves the result in
+/// `[0, 4q)` instead of `[0, q)`, skipping the final reduction; use it for
+/// consumers that re-reduce (`c_from_b`, the BBC product, whose bound is `2^44 > 4q`).
 #[target_feature(enable = "avx512ifma,avx512vl")]
-pub(crate) unsafe fn ntt_avx512<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTable<P>, data: &mut [u64]) {
+pub(crate) unsafe fn ntt_avx512<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTable<P>, data: &mut [u64], lazy_output: bool) {
     let n = table.n;
     debug_assert_eq!(data.len(), 3 * n, "data must hold 3 planes of length n");
     if n < 2 {
@@ -452,18 +468,19 @@ pub(crate) unsafe fn ntt_avx512<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTable<P
                 (&[], &[])
             };
 
-            // Depth-first transform from the full plane (depth 0, half 0).
-            fwd_plane(ptr, n, 0, 0, root, precon, tail, tail_p, q, q2, q_v, q2_v);
+            // Depth-first transform; the depth-0 top stage skips its precondition.
+            fwd_plane::<true>(ptr, n, 0, 0, root, precon, tail, tail_p, q, q2, q_v, q2_v);
 
-            // Final reduction: [0, 4q) -> [0, q), vectorized over the plane.
-            let mut off = 0usize;
-            while off < n {
-                let xp = ptr.add(off) as *mut __m512i;
-                let x = _mm512_loadu_si512(xp as *const __m512i);
-                let x = cond_sub_2q_si512(x, q2_v);
-                let x = cond_sub_2q_si512(x, q_v);
-                _mm512_storeu_si512(xp, x);
-                off += 8;
+            // Final reduction [0, 4q) -> [0, q), skipped on lazy output.
+            if !lazy_output {
+                let mut off = 0usize;
+                while off < n {
+                    let xp = ptr.add(off) as *mut __m512i;
+                    let x = cond_sub_2q_si512(_mm512_loadu_si512(xp as *const __m512i), q2_v);
+                    let x = cond_sub_2q_si512(x, q_v);
+                    _mm512_storeu_si512(xp, x);
+                    off += 8;
+                }
             }
         }
     }
@@ -945,7 +962,7 @@ mod tests {
             b_ntt126_ifma_from_znx64_ref(n, &mut data_avx, &coeffs);
             b_ntt126_ifma_from_znx64_ref(n, &mut data_ref, &coeffs);
 
-            unsafe { ntt_avx512::<Primes42>(&fwd, &mut data_avx) };
+            unsafe { ntt_avx512::<Primes42>(&fwd, &mut data_avx, false) };
             ntt126_ifma_ref::<Primes42>(&fwd, &mut data_ref);
 
             // The AVX512 forward reduces fully to [0, q); the reference leaves
@@ -959,6 +976,33 @@ mod tests {
                     data_avx[i],
                     data_ref[i]
                 );
+            }
+        }
+    }
+
+    /// Lazy forward output reduced mod q must equal the fully-reduced forward,
+    /// and stay within `[0, 4q)`.
+    #[test]
+    fn ntt_avx512_lazy_output_matches_full() {
+        for log_n in [4usize, 8, 11, 13] {
+            let n = 1 << log_n;
+            let fwd = Ntt126IfmaTable::<Primes42>::new(n);
+            let coeffs = pseudorandom_coeffs(n);
+
+            let mut full = vec![0u64; 3 * n];
+            let mut lazy = vec![0u64; 3 * n];
+            b_ntt126_ifma_from_znx64_ref(n, &mut full, &coeffs);
+            b_ntt126_ifma_from_znx64_ref(n, &mut lazy, &coeffs);
+
+            unsafe {
+                ntt_avx512::<Primes42>(&fwd, &mut full, false);
+                ntt_avx512::<Primes42>(&fwd, &mut lazy, true);
+            }
+
+            for i in 0..3 * n {
+                let q = Primes42::Q[i / n];
+                assert!(lazy[i] < 4 * q, "n={n} idx={i}: lazy {} not in [0,4q)", lazy[i]);
+                assert_eq!(full[i], lazy[i] % q, "n={n} idx={i}: lazy%q != full");
             }
         }
     }
@@ -985,7 +1029,7 @@ mod tests {
         b_ntt126_ifma_from_znx64_ref(n, &mut data_avx, &coeffs);
         b_ntt126_ifma_from_znx64_ref(n, &mut data_ref, &coeffs);
 
-        unsafe { ntt_avx512::<Primes42>(&fwd, &mut data_avx) };
+        unsafe { ntt_avx512::<Primes42>(&fwd, &mut data_avx, false) };
         ntt126_ifma_ref::<Primes42>(&fwd, &mut data_ref);
 
         // The AVX512 forward reduces fully to [0, q); the reference leaves
@@ -1108,7 +1152,7 @@ mod tests {
             let orig = data.clone();
 
             unsafe {
-                ntt_avx512::<Primes42>(&fwd, &mut data);
+                ntt_avx512::<Primes42>(&fwd, &mut data, false);
                 intt_avx512::<Primes42>(&inv, &mut data);
             }
 
