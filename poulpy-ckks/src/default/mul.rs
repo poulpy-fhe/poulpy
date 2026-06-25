@@ -393,7 +393,6 @@ pub(crate) fn mul_ct_params_raw(
     b_log_delta: usize,
     b_k: usize,
 ) -> Result<(usize, usize, usize)> {
-
     let a_log_budget = a_k.saturating_sub(a_log_delta);
     let b_log_budget = b_k.saturating_sub(b_log_delta);
 

@@ -710,8 +710,6 @@ where
     let pi_over_n = F::PI() / F::from_usize(n).expect("n must fit in scalar");
 
     let mut coeffs = vec![F::zero(); n];
-    // Iterate nodes in ascending x order (k = n..1) to match Lattigo's convention.
-    // u = cos(theta_k) is the normalized Chebyshev variable; x is only needed for f.
     for k in (1..=n).rev() {
         let theta = (F::from_usize(k).expect("k must fit in scalar") - half) * pi_over_n;
         let u = theta.cos();

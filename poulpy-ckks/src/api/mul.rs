@@ -56,6 +56,12 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight};
 /// **Capacity consumed**: `pt.log_delta` bits (precision of the plaintext
 /// multiplier), plus `offset`.
 ///
+/// **Plaintext operand**: `pt` is multiplied in as a full-width **integer
+/// polynomial** (bottom-up encoding) — every stored limb participates
+/// (the convolution masks it at `pt.max_k()`, not its effective `k`).
+/// Allocate `pt` at exactly the precision you want folded in;
+/// a reduced `pt.k()` / `log_budget` does not narrow it.
+///
 /// ## Ciphertext–plaintext-constant multiplication (`ckks_mul_pt_const_*`)
 ///
 /// Identical metadata rule to the `pt_vec` variant above, using

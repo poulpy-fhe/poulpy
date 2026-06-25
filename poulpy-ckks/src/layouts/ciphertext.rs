@@ -11,7 +11,8 @@ use std::{
 
 use anyhow::Result;
 use poulpy_core::layouts::{
-    BSGSMeta, Base2K, Compact, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, LWEInfos, Rank, SetBSGSMeta, SetK, TorusPrecision,
+    BSGSMeta, Base2K, Compact, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, LWEInfos, Rank,
+    SetBSGSMeta, SetK, SetSize, TorusPrecision,
 };
 use poulpy_core::{GLWENormalize, ScratchArenaTakeCore};
 use poulpy_hal::layouts::{Backend, Data, HostDataRef, ScratchArena};
@@ -153,14 +154,6 @@ impl<D: Data, S: CKKSNormalizationState> LWEInfos for CKKSCiphertext<D, S> {
         self.inner.max_size()
     }
 
-    // A CKKS ciphertext's processing limb count: the `precision_size()` limbs
-    // that carry meaningful precision, plus one limb of keyswitch head-room
-    // (capped at `max_size`). The `+1` is load-bearing; see the rationale and
-    // the rejected localized alternative in `docs/issues/ckks_size_headroom.md`.
-    fn size(&self) -> usize {
-        (self.precision_size() + 1).max(1).min(self.max_size())
-    }
-
     fn k(&self) -> TorusPrecision {
         self.inner.k()
     }
@@ -196,19 +189,19 @@ impl<D: Data, S: CKKSNormalizationState> SetCKKSInfos for CKKSCiphertext<D, S> {
     }
 }
 
-impl<D: Data, S: CKKSNormalizationState> Compact for CKKSCiphertext<D, S> {
-    fn compact(&mut self) {
-        // Drop the active limbs below `k + log_n` (the `size()` working width):
-        // the limbs beyond that hold only spent keyswitch noise, and leaving them
-        // active lets carry-domain ops (normalize/copy) fold that noise back in.
-        // Clamp to `[1, max_size()]`. `k()` / `log_budget` are unchanged.
-        let limbs = (self.k().as_usize() + self.log_n())
-            .div_ceil(self.base2k().as_usize())
-            .max(1)
-            .min(self.max_size());
-        self.inner.data_mut().set_size(limbs);
+impl<D: Data, S: CKKSNormalizationState> SetK for CKKSCiphertext<D, S> {
+    fn set_k(&mut self, k: TorusPrecision) {
+        SetK::set_k(&mut self.inner, k);
     }
 }
+
+impl<D: Data, S: CKKSNormalizationState> SetSize for CKKSCiphertext<D, S> {
+    fn set_size(&mut self, size: usize) {
+        self.inner.data_mut().set_size(size);
+    }
+}
+
+impl<D: Data, S: CKKSNormalizationState> Compact for CKKSCiphertext<D, S> {}
 
 impl<D: Data, S: CKKSNormalizationState> BSGSMeta for CKKSCiphertext<D, S> {
     fn bsgs_log_budget(&self) -> usize {
@@ -295,12 +288,6 @@ impl<'a, BE: Backend + 'a> LWEInfos for CKKSCiphertextViewMut<'a, BE> {
         self.inner.max_size()
     }
 
-    // One limb of keyswitch head-room above `precision_size()`; see
-    // `CKKSCiphertext::size`.
-    fn size(&self) -> usize {
-        (self.precision_size() + 1).max(1).min(self.inner.max_size())
-    }
-
     fn k(&self) -> TorusPrecision {
         self.inner.k()
     }
@@ -336,11 +323,22 @@ impl<'a, BE: Backend + 'a> SetCKKSInfos for CKKSCiphertextViewMut<'a, BE> {
     }
 }
 
-impl<'a, BE: Backend + 'a> Compact for CKKSCiphertextViewMut<'a, BE> {
-    fn compact(&mut self) {
-        //let limbs = self.k().div_ceil(self.base2k().as_usize()).max(1).min(self.size());
-        //self.inner.data_mut().set_size(limbs);
+impl<'a, BE: Backend + 'a> SetK for CKKSCiphertextViewMut<'a, BE> {
+    fn set_k(&mut self, k: TorusPrecision) {
+        SetK::set_k(&mut self.inner, k);
     }
+}
+
+impl<'a, BE: Backend + 'a> SetSize for CKKSCiphertextViewMut<'a, BE> {
+    fn set_size(&mut self, size: usize) {
+        SetSize::set_size(&mut self.inner, size);
+    }
+}
+
+impl<'a, BE: Backend + 'a> Compact for CKKSCiphertextViewMut<'a, BE> {
+    // Scratch-backed views intentionally skip compaction; the borrowed limb
+    // count is fixed for the lifetime of the arena allocation.
+    fn compact(&mut self) {}
 }
 
 impl<'a, BE: Backend + 'a> BSGSMeta for CKKSCiphertextViewMut<'a, BE> {

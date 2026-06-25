@@ -184,27 +184,16 @@ impl_operations_delegate!(
     {
         BE::glwe_mul_plain_tmp_bytes(self, res, a, b)
     },
-    fn glwe_mul_plain<R, A, B>(
-        &self,
-        cnv_offset: usize,
-        res: &mut R,
-        a: &A,
-        b: &B,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_mul_plain<R, A, B>(&self, cnv_offset: usize, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_mul_plain(self, cnv_offset, res, a, b, scratch)
     },
-    fn glwe_mul_plain_assign<R, A>(
-        &self,
-        cnv_offset: usize,
-        res: &mut R,
-        a: &A,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_mul_plain_assign<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {

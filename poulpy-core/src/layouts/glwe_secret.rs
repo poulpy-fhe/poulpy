@@ -36,7 +36,7 @@ impl LWEInfos for GLWESecretLayout {
     }
 
     fn max_size(&self) -> usize {
-        unimplemented!("this method is only defined for concrete ojbect (you are calling it from a layout definition)")
+        unimplemented!("this method is not defined for secrets)")
     }
 
     fn k(&self) -> super::TorusPrecision {

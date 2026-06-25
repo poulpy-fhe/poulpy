@@ -45,7 +45,7 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos,
-    api::{CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDecrypt, CKKSEvalModOps, DFTOps},
+    api::{CKKSAddOps, CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDecrypt, CKKSEvalModOps, CKKSPow2Ops, CKKSSubOps, DFTOps},
     encoding::reim::Encoder,
     layouts::{
         BootstrappingContext, BootstrappingPlan, CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec,
@@ -64,7 +64,9 @@ use crate::{
 
 /// `log2` of the live complex slot count (ring degree `n = 2·2^LOG_SLOTS`), kept
 /// small to bound the depth — and modulus width — of a self-contained test.
-const LOG_SLOTS: usize = 13;
+const LOG_SLOTS: usize = 10;
+const FMOD_INTERVAL: usize = 16;
+const LOG_MSG_RATIO: usize = 11;
 
 fn meta(log_delta: usize, log_budget: usize) -> CKKSLayout {
     // n/base2k are placeholders; consumers pass an explicit base2k/n and read k()/meta().
@@ -72,8 +74,11 @@ fn meta(log_delta: usize, log_budget: usize) -> CKKSLayout {
 }
 
 /// End-to-end bootstrapping: encrypt at level 0, refresh, check the slots return.
-pub fn test_bootstrapping_e2e<BE, F, E>(params: CKKSTestParams, _module: &Module<BE>, _host_module: &Module<HostBytesBackend>)
-where
+pub fn test_bootstrapping_standard_e2e<BE, F, E>(
+    params: CKKSTestParams,
+    _module: &Module<BE>,
+    _host_module: &Module<HostBytesBackend>,
+) where
     BE: TestContextBackend + Backend<OwnedBuf = Vec<u8>>,
     Module<BE>: TestContextModule<BE> + CKKSBootstrappingOps<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
@@ -87,25 +92,23 @@ where
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    let f_mod_interval = 16;
-    let log_message_ratio = 10usize;
-
     let plan = BootstrappingPlan {
         ephemeral_secret_weight: 32,
         coeffs_to_slots: DFTPlan {
             kind: DFTType::Encode,
-            factorization_depth: vec![4, 4, 5],
-            giant_steps: vec![16, 16, 16],
+            factorization_depth: vec![2, 2, 3, 3],
+            giant_steps: vec![4, 4, 4, 4],
             format: DFTOutputFormat::SplitRealAndImag,
-            scaling: Some(1. / f_mod_interval as f64),
+            scaling: Some(1. / FMOD_INTERVAL as f64),
             bit_reversed: false,
-            meta: meta(58, 10),
+            meta: meta(58, 2),
         },
+        coeffs_to_slots_bypass: None,
         eval_mod: EvalModPlan {
             eval_mod_type: EvalModType::CosHK,
-            log_message_ratio,
+            log_msg_ratio: LOG_MSG_RATIO,
             f_mod_degree: 30,
-            f_mod_interval,
+            f_mod_interval: FMOD_INTERVAL,
             f_mod_log_interval_reduction: 3,
             f_mod_inv_degree: None,
             scaling: None,
@@ -115,12 +118,12 @@ where
         },
         slots_to_coeffs: DFTPlan {
             kind: DFTType::Decode,
-            factorization_depth: vec![5, 4, 4],
-            giant_steps: vec![16, 16, 16],
+            factorization_depth: vec![3, 3, 2, 2],
+            giant_steps: vec![4, 4, 4, 4],
             format: DFTOutputFormat::SplitRealAndImag,
-            scaling: Some((log_message_ratio as f64).exp2()),
+            scaling: Some((LOG_MSG_RATIO as f64).exp2()),
             bit_reversed: false,
-            meta: meta(39, 10),
+            meta: meta(39, 2),
         },
     };
 
@@ -129,13 +132,13 @@ where
     let base2k = params.base2k;
     let log_delta = 45;
     // Scale of the ciphertext entering the pipeline.
-    let log_modulus_in = log_delta + plan.eval_mod.log_message_ratio;
+    let log_modulus_in = log_delta + plan.eval_mod.log_msg_ratio;
 
     // Size the bootstrap modulus from the plan: the ciphertext enters at
     // `log_modulus_in`, the pipeline consumes `consumed_bits` of budget (EvalMod
     // charged at the scale it runs — `f_mod_log_delta`, not the message scale, the
     // set-scale round-trip being budget-neutral), plus output head-room.
-    let k_boot = (log_modulus_in + plan.consumed_bits() + 4 * log_delta).next_multiple_of(base2k);
+    let k_boot = (log_modulus_in + plan.consumed_bits() + 2 * log_delta).next_multiple_of(base2k);
 
     let module = Module::<BE>::new(n as u64);
     let host_module = Module::<HostBytesBackend>::new(n as u64);
@@ -401,6 +404,292 @@ where
         assert!(
             s.avg_log2_prec >= 5.0,
             "bootstrap_e2e ({tag}): {:.1} bits < 5.0 (worst got={} want={})",
+            s.avg_log2_prec,
+            s.worst_got,
+            s.worst_want,
+        );
+    }
+}
+
+/// End-to-end **slot-domain EvalRound+** bootstrapping (eprint 2024/1379).
+///
+/// ```text
+/// ModUp ─► CoeffsToSlots(split) ×2 : LP (low-prec) and HP (high-prec)
+///       ─► r1 = r0_hp − K·r0_lp + EvalMod(r0_lp) = IDFT(Δ·m)
+///       ─► SlotsToCoeffs(split) = m(X)
+/// ```
+///
+/// EvalMod runs on the **low-precision** CoeffsToSlots (`log_delta = 29`); its DFT
+/// error `e` cancels in `r0_hp − K·r0_lp + EvalMod(r0_lp)` (the `−e` from `K·r0_lp`
+/// and the `+e` from `EvalMod` annihilate), so the message is reconstructed at the
+/// **high-precision** CoeffsToSlots' (`log_delta = 58`) precision. Because EvalMod
+/// only needs to resolve the large integer part, halving its CoeffsToSlots
+/// precision shrinks the bootstrap modulus without hurting the message.
+///
+/// The HP CoeffsToSlots (the "bypass") runs in the modulus depth the LP+EvalMod
+/// path already occupies, so it does not enlarge `k_boot`.
+///
+/// Scale bridge: the LP C2S folds in `1/K` (EvalMod's `[-1,1]` domain) while EvalMod
+/// emits the residue at natural scale, so `r0_lp` is scaled up by `K`; the HP C2S
+/// uses natural (`1.0`) scaling, and SlotsToCoeffs the standard `2^log_message_ratio`.
+pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
+    params: CKKSTestParams,
+    _module: &Module<BE>,
+    _host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend + Backend<OwnedBuf = Vec<u8>>,
+    Module<BE>: TestContextModule<BE> + CKKSBootstrappingOps<BE>,
+    Module<HostBytesBackend>: TestContextHostModule,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<f64> + CKKSPlaintextVecHostCodec<F>,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    // `coeffs_to_slots` here is the LP transform feeding EvalMod: `log_delta = 29`
+    // (half precision) — its error `e` cancels in the round, so it does not reach
+    // the message and the bootstrap modulus shrinks by `num_factors × (58 − 29)`
+    // bits. The HP CoeffsToSlots is compiled separately below.
+    let plan = BootstrappingPlan {
+        ephemeral_secret_weight: 32,
+        coeffs_to_slots: DFTPlan {
+            kind: DFTType::Encode,
+            factorization_depth: vec![2, 2, 3, 3],
+            giant_steps: vec![4, 4, 4, 4],
+            format: DFTOutputFormat::SplitRealAndImag,
+            scaling: Some(1. / FMOD_INTERVAL as f64),
+            bit_reversed: false,
+            meta: meta(29, 2),
+        },
+        coeffs_to_slots_bypass: Some(DFTPlan {
+            kind: DFTType::Encode,
+            factorization_depth: vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            giant_steps: vec![1; 10],
+            format: DFTOutputFormat::SplitRealAndImag,
+            scaling: Some(1.0),
+            bit_reversed: false,
+            meta: meta(58, 2),
+        }),
+        eval_mod: EvalModPlan {
+            eval_mod_type: EvalModType::CosHK,
+            log_msg_ratio: LOG_MSG_RATIO,
+            f_mod_degree: 30,
+            f_mod_interval: FMOD_INTERVAL,
+            f_mod_log_interval_reduction: 3,
+            f_mod_inv_degree: None,
+            scaling: None,
+            split_strategy: SplitStrategy::MinDepth,
+            coeffs_meta: meta(48, 4),
+            f_mod_log_delta: 60,
+        },
+        slots_to_coeffs: DFTPlan {
+            kind: DFTType::Decode,
+            factorization_depth: vec![3, 3, 2, 2],
+            giant_steps: vec![4, 4, 4, 4],
+            format: DFTOutputFormat::SplitRealAndImag,
+            // `r1 = IDFT(Δ·m)` at natural scale (the residue scale EvalMod emits);
+            // the standard `2^log_message_ratio` S2C scaling maps it to `m`.
+            scaling: Some((LOG_MSG_RATIO as f64).exp2()),
+            bit_reversed: false,
+            meta: meta(39, 2),
+        },
+    };
+
+    let n = 1 << (LOG_SLOTS + 1);
+    let m = n / 2;
+    let base2k = params.base2k;
+    let log_delta = 45;
+    let log_modulus_in = log_delta + plan.eval_mod.log_msg_ratio;
+
+    let k_boot = (log_modulus_in + plan.consumed_bits() + 2 * log_delta).next_multiple_of(base2k);
+
+    let module = Module::<BE>::new(n as u64);
+    let host_module = Module::<HostBytesBackend>::new(n as u64);
+    let encoder = Encoder::<E>::new::<F>(m).unwrap();
+
+    let tp = CKKSTestParams {
+        n,
+        base2k,
+        k: k_boot,
+        prec_meta: CKKSMeta {
+            log_sparsity: 0,
+            log_delta,
+        },
+        prec_log_budget: 8,
+        hw: 192,
+        dsize: 7,
+    };
+
+    println!("[evalround] n={n} base2k={base2k} log_delta={log_delta} k_boot={k_boot}");
+    println!("[evalround] plan.consumed_bits()={}", plan.consumed_bits());
+
+    let scratch_size;
+    let mut scratch = {
+        let mut c = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+        c.set_meta(tp.prec().meta);
+        scratch_size = module.ckks_all_ops_with_atk_tmp_bytes(&c, &tp.tsk_layout(), &tp.atk_layout(), &plan.eval_mod.coeffs_meta);
+        ScratchOwned::<BE>::alloc(scratch_size)
+    };
+
+    let ctx =
+        BootstrappingContext::<BE, F>::compile(&module, &host_module, &encoder, base2k.into(), &plan, &mut scratch.borrow())
+            .unwrap();
+    {
+        let mut eval_ct = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+        eval_ct.set_meta(meta(log_delta, k_boot - log_delta).meta);
+        let eval_tmp = module.ckks_eval_mod_tmp_bytes(&eval_ct, &eval_ct, &ctx.eval_mod, &tp.tsk_layout());
+        if eval_tmp > scratch_size {
+            scratch = ScratchOwned::<BE>::alloc(eval_tmp);
+        }
+    }
+
+    let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
+    let tsk = gen_tsk(&tp, &module, &sk_raw, &mut scratch.borrow());
+
+    let order = module.cyclotomic_order();
+    let mut gal_els = Vec::new();
+    gal_els.extend_from_slice(&ctx.coeffs_to_slots.galois_elements(order));
+    gal_els.extend_from_slice(&ctx.coeffs_to_slots_bypass.as_ref().unwrap().galois_elements(order));
+    gal_els.extend_from_slice(&ctx.slots_to_coeffs.galois_elements(order));
+    gal_els.sort_unstable();
+    gal_els.dedup();
+
+    let mut atks = HashMap::new();
+    for el in gal_els {
+        atks.entry(el)
+            .or_insert_with(|| gen_atk(&tp, &module, el, &sk_raw, &mut scratch.borrow()));
+    }
+    let conj_key = gen_atk(&tp, &module, -1, &sk_raw, &mut scratch.borrow());
+
+    let encaps = (plan.ephemeral_secret_weight > 0).then(|| {
+        gen_encapsulation_keys(
+            &tp,
+            &module,
+            &host_module,
+            &sk_raw,
+            plan.ephemeral_secret_weight,
+            log_modulus_in,
+            k_boot,
+            &mut scratch.borrow(),
+        )
+    });
+
+    let (re, im) = test_vector_1::<F>(m);
+
+    let mut ct0 = ckks_encrypt_with_prec(
+        &tp,
+        &module,
+        &host_module,
+        &encoder,
+        &sk,
+        log_modulus_in,
+        &re,
+        &im,
+        meta(log_delta, log_modulus_in - log_delta),
+        &mut scratch.borrow(),
+    );
+
+    // 1) (encapsulate) denseToSparse, ModUp, sparseToDense.
+    if let Some((dense_to_sparse, _)) = &encaps {
+        module.glwe_keyswitch_assign(&mut ct0, dense_to_sparse, dense_to_sparse.max_size(), &mut scratch.borrow());
+    }
+    let mut ct = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+    module.ckks_mod_up_into(&mut ct, &ct0, &mut scratch.borrow()).unwrap();
+    if let Some((_, sparse_to_dense)) = &encaps {
+        module.glwe_keyswitch_assign(&mut ct, sparse_to_dense, sparse_to_dense.max_size(), &mut scratch.borrow());
+    }
+    ct.set_meta(meta(log_modulus_in, k_boot - log_modulus_in).meta);
+
+    // 2) CoeffsToSlots (split): LP (low precision, `1/K` scaling) for the round, and
+    //    HP (full precision, natural scaling) for the high-precision `Δm + I·q`.
+    let now = Instant::now();
+    let mut r0_lp = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+    let mut i0_lp = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+    module
+        .ckks_coeffs_to_slots_split(
+            &mut r0_lp,
+            &mut i0_lp,
+            &ct,
+            &ctx.coeffs_to_slots,
+            &atks,
+            &conj_key,
+            &mut scratch.borrow(),
+        )
+        .unwrap();
+    let mut r0_hp = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+    let mut i0_hp = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+    module
+        .ckks_coeffs_to_slots_split(
+            &mut r0_hp,
+            &mut i0_hp,
+            &ct,
+            &ctx.coeffs_to_slots_bypass.unwrap(),
+            &atks,
+            &conj_key,
+            &mut scratch.borrow(),
+        )
+        .unwrap();
+    println!("[evalround] coeffs_to_slots (LP+HP): {:?}", now.elapsed());
+
+    // 3) EvalMod each LP half: the residue `Δm + e` at natural scale.
+    let mut res_real = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+    let mut res_imag = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+    let now = Instant::now();
+    module
+        .ckks_eval_mod(&mut res_real, &r0_lp, &ctx.eval_mod, &tsk, &mut scratch.borrow())
+        .unwrap();
+    module
+        .ckks_eval_mod(&mut res_imag, &i0_lp, &ctx.eval_mod, &tsk, &mut scratch.borrow())
+        .unwrap();
+    println!("[evalround] eval_mod x2: {:?}", now.elapsed());
+
+    // 4) r1 = r0_hp − K·r0_lp + EvalMod(r0_lp) = IDFT(Δ·m).
+    //    EvalMod emits the residue at natural scale while the LP C2S is at `1/K`, so
+    //    `r0_lp` is scaled up by K first. Then
+    //    `(Δm+I·q) − (Δm+I·q+e) + (Δm+e) = Δm`: the integer part and the LP error `e`
+    //    both cancel, leaving the message at the HP CoeffsToSlots' precision.
+    let log2_k = FMOD_INTERVAL.trailing_zeros() as usize;
+    module
+        .ckks_mul_pow2_assign(&mut r0_lp, log2_k, &mut scratch.borrow())
+        .unwrap();
+    module
+        .ckks_mul_pow2_assign(&mut i0_lp, log2_k, &mut scratch.borrow())
+        .unwrap();
+    module.ckks_sub_assign(&mut r0_hp, &r0_lp, &mut scratch.borrow()).unwrap();
+    module.ckks_sub_assign(&mut i0_hp, &i0_lp, &mut scratch.borrow()).unwrap();
+    module.ckks_add_assign(&mut r0_hp, &res_real, &mut scratch.borrow()).unwrap();
+    module.ckks_add_assign(&mut i0_hp, &res_imag, &mut scratch.borrow()).unwrap();
+
+    // 5) SlotsToCoeffs (split): IDFT(Δ·m) slots → refreshed message coefficients.
+    let now = Instant::now();
+    let mut ct_out = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+    module
+        .ckks_slots_to_coeffs_split(
+            &mut ct_out,
+            &r0_hp,
+            &i0_hp,
+            &ctx.slots_to_coeffs,
+            &atks,
+            &mut scratch.borrow(),
+        )
+        .unwrap();
+    println!("[evalround] slots_to_coeffs: {:?}", now.elapsed());
+
+    let (re_out, im_out) = decrypt(&module, &encoder, &ct_out, &sk, &mut scratch.borrow());
+
+    for (got, want, tag) in [(&re_out, &re, "re"), (&im_out, &im, "im")] {
+        let s = precision_stats(got, want, log_delta);
+        println!(
+            "[evalround] BOOTSTRAP-PREC ({tag}) avg={:.2} min={:.2} bits",
+            s.avg_log2_prec, s.min_log2_prec,
+        );
+        assert!(
+            s.avg_log2_prec >= 5.0,
+            "bootstrapping_evalround_e2e ({tag}): {:.1} bits < 5.0 (worst got={} want={})",
             s.avg_log2_prec,
             s.worst_got,
             s.worst_want,

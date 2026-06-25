@@ -25,7 +25,7 @@
 //! - `cargo flamegraph -p poulpy-cpu-ref --example bootstrap_trace --features enable-ckks`
 //!   (SVG, open in any browser).
 
-use poulpy_ckks::test_suite::{NTT120_PARAMS_F64, bootstrapping::test_bootstrapping_e2e};
+use poulpy_ckks::test_suite::{NTT120_PARAMS_F64, bootstrapping::test_bootstrapping_standard_e2e};
 use poulpy_cpu_ref::{
     FFT64ReimTable, NTT120Ref,
     layouts::{HostBytesBackend, Module},
@@ -39,5 +39,5 @@ fn main() {
     let module = Module::<NTT120Ref>::new(params.n as u64);
     let host_module = Module::<HostBytesBackend>::new(params.n as u64);
 
-    test_bootstrapping_e2e::<NTT120Ref, f64, FFT64ReimTable<f64>>(params, &module, &host_module);
+    test_bootstrapping_standard_e2e::<NTT120Ref, f64, FFT64ReimTable<f64>>(params, &module, &host_module);
 }

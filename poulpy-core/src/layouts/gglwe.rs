@@ -63,7 +63,7 @@ impl LWEInfos for GGLWELayout {
     }
 
     fn max_size(&self) -> usize {
-        unimplemented!("this method is only defined for concrete ojbect (you are calling it from a layout definition)")
+        self.k.div_ceil(self.base2k) as usize
     }
 
     fn k(&self) -> TorusPrecision {

@@ -183,7 +183,7 @@ fn run_eval_mod_case<BE, F, E>(
     // random integer multiple in [-(interval-1), interval-1], m a message in
     // [-1, 1], and q = MessageRatio (QDiff = 1 since poulpy's Q = 2^k). The
     // encrypted value is the normalized Chebyshev variable t = (I·q + m)/(q·interval).
-    let mr = (1u64 << lit.log_message_ratio) as f64;
+    let mr = (1u64 << lit.log_msg_ratio) as f64;
     let interval = lit.f_mod_interval as f64;
     let k = (lit.f_mod_interval - 1) as f64;
     let mut source = Source::new([0u8; 32]);
@@ -297,7 +297,7 @@ pub fn test_eval_mod_sin_continuous_minimal<BE, F, E>(
 {
     let lit = EvalModPlan {
         eval_mod_type: EvalModType::SinCheby,
-        log_message_ratio: 8,
+        log_msg_ratio: 8,
         f_mod_degree: 127,
         f_mod_interval: 14,
         f_mod_log_interval_reduction: 0,
@@ -325,7 +325,7 @@ pub fn test_eval_mod_sin_continuous_with_arcsine<BE, F, E>(
 {
     let lit = EvalModPlan {
         eval_mod_type: EvalModType::SinCheby,
-        log_message_ratio: 8,
+        log_msg_ratio: 8,
         f_mod_degree: 127,
         f_mod_interval: 14,
         f_mod_log_interval_reduction: 0,
@@ -353,7 +353,7 @@ pub fn test_eval_mod_cos_discrete<BE, F, E>(
 {
     let lit = EvalModPlan {
         eval_mod_type: EvalModType::CosHK,
-        log_message_ratio: 8,
+        log_msg_ratio: 8,
         f_mod_degree: 30,
         f_mod_interval: 16,
         f_mod_log_interval_reduction: 3,
@@ -381,7 +381,7 @@ pub fn test_eval_mod_cos_continuous<BE, F, E>(
 {
     let lit = EvalModPlan {
         eval_mod_type: EvalModType::CosCheby,
-        log_message_ratio: 4,
+        log_msg_ratio: 4,
         f_mod_degree: 31,
         f_mod_interval: 16,
         f_mod_log_interval_reduction: 3,
@@ -406,7 +406,7 @@ where
 {
     let lit = EvalModPlan {
         eval_mod_type: EvalModType::ExpCmplx,
-        log_message_ratio: 4,
+        log_msg_ratio: 4,
         f_mod_degree: 31,
         f_mod_interval: 16,
         f_mod_log_interval_reduction: 3,

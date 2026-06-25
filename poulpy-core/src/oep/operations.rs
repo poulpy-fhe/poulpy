@@ -468,13 +468,8 @@ where
         module.glwe_mul_plain_default(cnv_offset, res, a, b, scratch)
     }
 
-    fn glwe_mul_plain_assign<R, A>(
-        module: &Module<BE>,
-        cnv_offset: usize,
-        res: &mut R,
-        a: &A,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_mul_plain_assign<R, A>(module: &Module<BE>, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {

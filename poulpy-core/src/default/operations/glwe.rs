@@ -268,14 +268,8 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_mul_plain_default<R, A, B>(
-        &self,
-        cnv_offset: usize,
-        res: &mut R,
-        a: &A,
-        b: &B,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_mul_plain_default<R, A, B>(&self, cnv_offset: usize, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos,
@@ -288,9 +282,13 @@ where
             scratch.available(),
             self.glwe_mul_plain_tmp_bytes_default(res, a, b)
         );
-        
+
         let a_k = a.k().as_usize();
-        let b_k = b.k().as_usize();
+        // `b` is the plaintext (a full-width integer polynomial), so its bottom-limb
+        // mask must span its full `max_k`, not the effective `k` — masking at `k`
+        // would zero the low bits of the last limb and lose precision in the
+        // convolution (see the effective-k vs max-k invariant).
+        let b_k = b.max_k().as_usize();
         let ab_base2k: usize = a.base2k().as_usize();
         assert_eq!(b.base2k().as_usize(), ab_base2k);
         assert_eq!(a_k.div_ceil(ab_base2k), a.size());
@@ -356,13 +354,8 @@ where
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_mul_plain_assign_default<R, A>(
-        &self,
-        cnv_offset: usize,
-        res: &mut R,
-        a: &A,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_mul_plain_assign_default<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
     {
@@ -373,9 +366,12 @@ where
             scratch.available(),
             self.glwe_mul_plain_tmp_bytes_default(res, res, a)
         );
-        
+
         let res_k = res.k().as_usize();
-        let a_k = a.k().as_usize();
+        // `a` is the plaintext (a full-width integer polynomial): mask its bottom
+        // limb at `max_k`, not the effective `k`, to avoid zeroing the last limb's
+        // low bits and losing convolution precision (effective-k vs max-k invariant).
+        let a_k = a.max_k().as_usize();
         let ab_base2k: usize = a.base2k().as_usize();
         assert_eq!(res.base2k().as_usize(), ab_base2k);
         assert_eq!(res_k.div_ceil(ab_base2k), res.size());
@@ -452,25 +448,14 @@ pub trait GLWEMulPlainDefault<BE: Backend> {
         B: GLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_mul_plain_default<R, A, B>(
-        &self,
-        cnv_offset: usize,
-        res: &mut R,
-        a: &A,
-        b: &B,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_mul_plain_default<R, A, B>(&self, cnv_offset: usize, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos;
 
-    fn glwe_mul_plain_assign_default<R, A>(
-        &self,
-        cnv_offset: usize,
-        res: &mut R,
-        a: &A,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_mul_plain_assign_default<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos;
 }

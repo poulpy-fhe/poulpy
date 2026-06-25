@@ -141,7 +141,7 @@ pub struct EvalModPlan {
     /// 2^(log_delta + log_budget)`, so the ratio is `q/Δ = 2^log_budget` — i.e.
     /// `log_message_ratio` is the `log_budget` of the value being reduced, the bit
     /// gap between the payload and the integer part.
-    pub log_message_ratio: usize,
+    pub log_msg_ratio: usize,
     /// Degree of the base polynomial approximation.
     pub f_mod_degree: usize,
     /// `K`, the number of message intervals the reduction spans: the approximation
@@ -214,12 +214,10 @@ impl EvalModPlan {
     /// `f_mod_degree`.
     fn base_degree(&self) -> usize {
         match self.eval_mod_type {
-            EvalModType::CosHK => cosine::approximate_cos_len(
-                self.f_mod_interval,
-                self.f_mod_degree,
-                (1u64 << self.log_message_ratio) as f64,
-            )
-            .saturating_sub(1),
+            EvalModType::CosHK => {
+                cosine::approximate_cos_len(self.f_mod_interval, self.f_mod_degree, (1u64 << self.log_msg_ratio) as f64)
+                    .saturating_sub(1)
+            }
             _ => self.f_mod_degree,
         }
     }
@@ -393,7 +391,7 @@ where
                 let coeffs = cosine::approximate_cos::<F>(
                     lit.f_mod_interval,
                     lit.f_mod_degree,
-                    (1u64 << lit.log_message_ratio) as f64,
+                    (1u64 << lit.log_msg_ratio) as f64,
                     f_mod_log_interval_reduction,
                 );
                 // cos(2π·(x-1/4)/2^r) is not even in x; Parity::Full preserves

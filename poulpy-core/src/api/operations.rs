@@ -93,6 +93,17 @@ pub trait GLWEMulConst<BE: Backend> {
         B: GLWEToBackendRef<BE> + GLWEInfos;
 }
 
+/// Multiplication of a GLWE ciphertext by a **plaintext** operand.
+///
+/// The plain operand — `b` in [`Self::glwe_mul_plain`], `a` in
+/// [`Self::glwe_mul_plain_assign`] — is treated as a full-width **integer
+/// polynomial** (bottom-up encoding): the convolution masks it at its full
+/// `max_k()` (every stored limb), , *not* at its effective `k()`.
+/// Consequently a plaintext's reported `k` / `log_budget` does **not** narrow
+/// the operand — callers must allocate it at exactly the limb width they want
+/// folded into the product (masking at the effective `k` would zero the low
+/// bits of the last limb and silently lose precision). The ciphertext operand,
+/// by contrast, is processed at its effective `k`.
 pub trait GLWEMulPlain<BE: Backend> {
     fn glwe_mul_plain_tmp_bytes<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
@@ -101,26 +112,15 @@ pub trait GLWEMulPlain<BE: Backend> {
         B: GLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_mul_plain<R, A, B>(
-        &self,
-        cnv_offset: usize,
-        res: &mut R,
-        a: &A,
-        b: &B,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_mul_plain<R, A, B>(&self, cnv_offset: usize, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GLWEToBackendRef<BE> + GLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
-    fn glwe_mul_plain_assign<R, A>(
-        &self,
-        cnv_offset: usize,
-        res: &mut R,
-        a: &A,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_mul_plain_assign<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos;
 }

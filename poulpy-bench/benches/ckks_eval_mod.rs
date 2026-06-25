@@ -55,7 +55,7 @@ const CASES: &[Case] = &[
         label: "sin_continuous/d15",
         lit: EvalModPlan {
             eval_mod_type: EvalModType::SinCheby,
-            log_message_ratio: 4,
+            log_msg_ratio: 4,
             f_mod_degree: 15,
             f_mod_interval: 1,
             f_mod_log_interval_reduction: 0,
@@ -70,7 +70,7 @@ const CASES: &[Case] = &[
         label: "sin_continuous_arcsine/d31_inv7",
         lit: EvalModPlan {
             eval_mod_type: EvalModType::SinCheby,
-            log_message_ratio: 4,
+            log_msg_ratio: 4,
             f_mod_degree: 31,
             f_mod_interval: 1,
             f_mod_log_interval_reduction: 0,
@@ -85,7 +85,7 @@ const CASES: &[Case] = &[
         label: "cos_discrete/d30_K12_r3",
         lit: EvalModPlan {
             eval_mod_type: EvalModType::CosHK,
-            log_message_ratio: 8,
+            log_msg_ratio: 8,
             f_mod_degree: 30,
             f_mod_interval: 12,
             f_mod_log_interval_reduction: 3,
@@ -100,7 +100,7 @@ const CASES: &[Case] = &[
         label: "cos_discrete/d30_K12_r3_minmult",
         lit: EvalModPlan {
             eval_mod_type: EvalModType::CosHK,
-            log_message_ratio: 8,
+            log_msg_ratio: 8,
             f_mod_degree: 30,
             f_mod_interval: 12,
             f_mod_log_interval_reduction: 3,
@@ -115,7 +115,7 @@ const CASES: &[Case] = &[
         label: "cos_continuous/d31_K4_r2",
         lit: EvalModPlan {
             eval_mod_type: EvalModType::CosCheby,
-            log_message_ratio: 4,
+            log_msg_ratio: 4,
             f_mod_degree: 31,
             f_mod_interval: 4,
             f_mod_log_interval_reduction: 2,

@@ -656,8 +656,12 @@ macro_rules! ckks_backend_test_suite {
             );
             run_test!(eval_mod_exp, $crate::test_suite::eval_mod::test_eval_mod_exp);
             run_test!(
-                bootstrapping_e2e,
-                $crate::test_suite::bootstrapping::test_bootstrapping_e2e
+                bootstrapping_standard_e2e,
+                $crate::test_suite::bootstrapping::test_bootstrapping_standard_e2e
+            );
+            run_test!(
+                bootstrapping_evalround_e2e,
+                $crate::test_suite::bootstrapping::test_bootstrapping_evalround_e2e
             );
             run_test!(
                 mul_add_const_zero_preserves_dst_meta,

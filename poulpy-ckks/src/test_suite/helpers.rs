@@ -1001,48 +1001,56 @@ pub fn expected_log2_precision(log_delta: usize, degree: usize) -> f64 {
     (log_delta as f64 - degree.ilog2() as f64 - PRECISION_GUARD_BITS).max(0.0)
 }
 
-/// Computes per-slot log2 precision statistics.
+/// Computes log2 precision statistics: precisions are derived from **aggregate**
+/// errors via `−log₂(error)`, *not* as the mean of per-slot `−log₂`.
+///
+/// * `avg_log2_prec = −log₂(mean|err|)` — the precision of the average error
+///   (`AVG Prec`), which is `≤` the mean of per-slot precisions by Jensen.
+/// * `min_log2_prec = −log₂(max|err|)` — the worst slot (`MIN Prec`).
+/// * `max_log2_prec = −log₂(min|err|)` — the best slot (`MAX Prec`).
+///
+/// A non-positive aggregate error is floored to `2^−log_delta` before the `−log₂`,
+/// so an exact-zero error reads as `log_delta` bits rather than `+∞`.
+///  Positive errors are **not** capped.
 pub fn precision_stats<F>(got: &[F], want: &[F], log_delta: usize) -> PrecisionStats
 where
     F: Float + ToPrimitive + Debug,
 {
     assert_eq!(got.len(), want.len(), "precision_stats: vector length mismatch");
-    let capped_prec = log_delta as f64;
-    let mut min_log2_prec = f64::INFINITY;
-    let mut max_log2_prec: f64 = 0.0;
-    let mut sum_log2_prec = 0.0;
+    let mut sum_err = 0.0f64;
+    let mut max_err = 0.0f64;
+    let mut min_err = f64::INFINITY;
     let mut worst_idx = 0usize;
     let mut worst_got = 0.0f64;
     let mut worst_want = 0.0f64;
-    let mut worst_err = 0.0f64;
 
     for (idx, (g, w)) in got.iter().zip(want.iter()).enumerate() {
-        let err = (*g - *w).abs();
-        let err_f64 = err.to_f64().unwrap();
-        let prec = if err.is_zero() {
-            capped_prec
-        } else {
-            (-err.log2().to_f64().unwrap()).min(capped_prec)
-        };
-        if err_f64 > worst_err {
-            worst_err = err_f64;
+        let err = (*g - *w).abs().to_f64().unwrap();
+        sum_err += err;
+        if err > max_err {
+            max_err = err;
             worst_idx = idx;
             worst_got = g.to_f64().unwrap();
             worst_want = w.to_f64().unwrap();
         }
-        min_log2_prec = min_log2_prec.min(prec);
-        max_log2_prec = max_log2_prec.max(prec);
-        sum_log2_prec += prec;
+        min_err = min_err.min(err);
     }
 
+    let log_scale = log_delta as f64;
+
+    let to_prec = |err: f64| -> f64 {
+        let err = if err <= 0.0 { (-log_scale).exp2() } else { err };
+        -err.log2()
+    };
+
     PrecisionStats {
-        min_log2_prec,
-        max_log2_prec,
-        avg_log2_prec: sum_log2_prec / got.len() as f64,
+        min_log2_prec: to_prec(max_err),
+        max_log2_prec: to_prec(min_err),
+        avg_log2_prec: to_prec(sum_err / got.len() as f64),
         worst_idx,
         worst_got,
         worst_want,
-        worst_err,
+        worst_err: max_err,
     }
 }
 

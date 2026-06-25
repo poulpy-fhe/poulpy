@@ -462,13 +462,7 @@ where
         let mut scratch_cnv = ScratchOwned::alloc(module.glwe_mul_plain_tmp_bytes(&res, &a, &pt_b));
 
         for res_offset in 0..scale {
-            module.glwe_mul_plain(
-                scale + res_offset,
-                &mut res,
-                &a,
-                &pt_b,
-                &mut scratch_cnv.borrow(),
-            );
+            module.glwe_mul_plain(scale + res_offset, &mut res, &a, &pt_b, &mut scratch_cnv.borrow());
 
             module.glwe_decrypt(&res, &mut pt_have, &sk_dft, &mut scratch.borrow());
             module.vec_znx_normalize(

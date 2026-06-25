@@ -7,7 +7,7 @@ use poulpy_hal::{
 };
 
 use crate::api::ModuleTransfer;
-use crate::layouts::{Base2K, Degree, LWEInfos, Rank, SetBase2k, SetK, TorusPrecision};
+use crate::layouts::{Base2K, Compact, Degree, LWEInfos, Rank, SetBase2k, SetK, SetSize, TorusPrecision};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::fmt;
 
@@ -68,7 +68,7 @@ impl LWEInfos for GLWELayout {
     }
 
     fn max_size(&self) -> usize {
-        unimplemented!("this method is only defined for concrete ojbect (you are calling it from a layout definition)")
+        self.k.div_ceil(self.base2k) as usize
     }
 
     fn k(&self) -> TorusPrecision {
@@ -121,6 +121,14 @@ impl<D: Data> SetK for &mut GLWE<D> {
         self.k = k
     }
 }
+
+impl<D: Data> SetSize for GLWE<D> {
+    fn set_size(&mut self, size: usize) {
+        self.data.set_size(size);
+    }
+}
+
+impl<D: Data> Compact for GLWE<D> {}
 
 impl<D: Data> GLWE<D> {
     /// Returns a shared reference to the underlying [`VecZnx`].

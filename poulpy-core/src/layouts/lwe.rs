@@ -31,23 +31,9 @@ pub trait LWEInfos {
     /// Returns the Torus precision used by the object.
     fn k(&self) -> TorusPrecision;
 
-    /// Returns the number of limbs needed to represent the object's semantic
-    /// torus precision, i.e. `ceil(k / base2k)`.
-    ///
-    /// Most objects use this as their active processing width. Scheme wrappers
-    /// that need evaluation head-room may report a larger [`Self::size`] while
-    /// this method remains the honest precision width.
-    fn precision_size(&self) -> usize {
-        self.k().div_ceil(self.base2k()) as usize
-    }
-
     /// Returns the limb width generic core operations should process.
-    ///
-    /// By default this is exactly [`Self::precision_size`]. Scheme wrappers may
-    /// override it when their working representation intentionally carries
-    /// extra limbs above the semantic torus precision.
     fn size(&self) -> usize {
-        self.precision_size()
+        self.k().div_ceil(self.base2k()) as usize
     }
 
     /// Returns the base-2-log of the limb width used for the RNS/CRT representation.
@@ -117,8 +103,21 @@ pub trait SetK {
     fn set_k(&mut self, k: TorusPrecision);
 }
 
-pub trait Compact {
-    fn compact(&mut self);
+pub trait SetSize {
+    fn set_size(&mut self, size: usize);
+}
+
+pub trait Compact
+where
+    Self: LWEInfos + SetK + SetSize,
+{
+    fn compact(&mut self) {
+        let limbs = (self.k().as_usize() + self.log_n())
+            .div_ceil(self.base2k().as_usize())
+            .max(1)
+            .min(self.max_size());
+        self.set_size(limbs);
+    }
 }
 
 /// Plain-data snapshot of the parameters that describe an [`LWE`] ciphertext.
@@ -142,7 +141,7 @@ impl LWEInfos for LWELayout {
     }
 
     fn max_size(&self) -> usize {
-        unimplemented!("this method is only defined for concrete ojbect (you are calling it from a layout definition)")
+        self.k.div_ceil(self.base2k) as usize
     }
 
     fn k(&self) -> TorusPrecision {

@@ -6,7 +6,7 @@ use std::{
 use anyhow::Result;
 use poulpy_core::layouts::{
     BSGSMeta, Base2K, Compact, Degree, GLWE, GLWEInfos, GLWEPlaintext, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
-    SetBSGSMeta, SetBase2k, TorusPrecision,
+    SetBSGSMeta, SetBase2k, SetK, SetSize, TorusPrecision,
 };
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef};
 
@@ -129,11 +129,22 @@ impl<D: Data> SetCKKSInfos for CKKSPlaintext<D> {
     }
 }
 
-impl<D: Data> Compact for CKKSPlaintext<D> {
-    fn compact(&mut self) {
-        //let limbs = self.k().div_ceil(self.base2k().as_usize()).max(1).min(self.size());
-        //self.inner.data().set_size(limbs);
+impl<D: Data> SetK for CKKSPlaintext<D> {
+    fn set_k(&mut self, k: TorusPrecision) {
+        SetK::set_k(&mut self.inner, k);
     }
+}
+
+impl<D: Data> SetSize for CKKSPlaintext<D> {
+    fn set_size(&mut self, size: usize) {
+        SetSize::set_size(&mut self.inner, size);
+    }
+}
+
+impl<D: Data> Compact for CKKSPlaintext<D> {
+    // Plaintexts hold full-width integer polynomials; compaction would shed
+    // limbs that carry meaningful precision, so it is intentionally a no-op.
+    fn compact(&mut self) {}
 }
 
 impl<D: Data> SetBSGSMeta for CKKSPlaintext<D> {

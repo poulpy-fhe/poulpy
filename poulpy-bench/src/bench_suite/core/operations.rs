@@ -162,13 +162,7 @@ where
     let mut group = c.benchmark_group(group_name);
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
-            module.glwe_mul_plain(
-                0,
-                &mut ct_out,
-                &ct_in,
-                &pt,
-                &mut scratch.borrow(),
-            );
+            module.glwe_mul_plain(0, &mut ct_out, &ct_in, &pt, &mut scratch.borrow());
             black_box(());
         })
     });
@@ -192,12 +186,7 @@ where
     let mut group = c.benchmark_group(group_name);
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
-            module.glwe_mul_plain_assign(
-                0,
-                &mut ct,
-                &pt,
-                &mut scratch.borrow(),
-            );
+            module.glwe_mul_plain_assign(0, &mut ct, &pt, &mut scratch.borrow());
             black_box(());
         })
     });

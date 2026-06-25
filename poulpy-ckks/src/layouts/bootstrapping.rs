@@ -67,6 +67,9 @@ pub struct BootstrappingPlan {
     /// CoeffsToSlots: homomorphic encoding ([`DFTType::Encode`](crate::layouts::DFTType)).
     pub coeffs_to_slots: DFTPlan,
 
+    /// CoeffsToSlots high precision for bypass.
+    pub coeffs_to_slots_bypass: Option<DFTPlan>,
+
     /// EvalMod: approximate `x mod 1`. EvalMod runs at its own
     /// ([`EvalModPlan::f_mod_log_delta`]) scale — `ckks_eval_mod` sets the
     /// ciphertext to it on entry and restores the input scale on exit (a pure,
@@ -104,20 +107,12 @@ impl BootstrappingPlan {
 /// Built once by [`Self::compile`] and reused across bootstraps. The
 /// `SplitRealAndImag` format is used for both transforms so the real and
 /// imaginary coefficient halves can be reduced independently by EvalMod.
-///
-/// ## CoeffsToSlots scaling
-///
-/// EvalMod approximates its periodic function over the normalized Chebyshev
-/// interval `[-1, 1]`, but the slot values produced by CoeffsToSlots span the
-/// `f_mod_interval` (`K`) message intervals `[-K, K]`. [`Self::compile`]
-/// therefore folds a `1/K` factor into the CoeffsToSlots matrix (composed with
-/// any [`DFTPlan::scaling`] the caller already set), mapping the input into the
-/// `[-1, 1]` range EvalMod expects — the base-`2^base2k` analogue of Lattigo's
-/// `C2SScaling = qDiv / (Mod1Interval · qDiff)` with `qDiff = 1` (the modulus is
-/// an exact power of two).
 pub struct BootstrappingContext<BE: Backend, F> {
     /// Prepared CoeffsToSlots matrix (homomorphic encoding), pre-scaled by `1/K`.
     pub coeffs_to_slots: DFTMatrixPrepared<BE, Encode, Split>,
+
+    /// Prepared bypass CoeffsToSlots matrix
+    pub coeffs_to_slots_bypass: Option<DFTMatrixPrepared<BE, Encode, Split>>,
 
     /// Prepared SlotsToCoeffs matrix (homomorphic decoding).
     pub slots_to_coeffs: DFTMatrixPrepared<BE, Decode, Split>,
@@ -163,8 +158,18 @@ where
         let eval_mod =
             host_eval_mod.map_plaintexts(|pt| CKKSPlaintext::from_inner(module.upload_glwe_plaintext(&pt.inner), pt.meta()));
 
+        let coeffs_to_slots_bypass = if let Some(bypass) = &plan.coeffs_to_slots_bypass {
+            let c2s_lt: DFTMatrix<BE, Encode, Split> =
+                module.ckks_new_dft_matrix(host_module, encoder, base2k, bypass, scratch)?;
+
+            Some(module.ckks_prepare_dft_matrix(&c2s_lt, scratch))
+        } else {
+            None
+        };
+
         Ok(Self {
             coeffs_to_slots,
+            coeffs_to_slots_bypass,
             slots_to_coeffs,
             eval_mod,
         })
