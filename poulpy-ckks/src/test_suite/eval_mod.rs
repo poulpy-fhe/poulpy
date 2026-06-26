@@ -179,7 +179,7 @@ fn run_eval_mod_case<BE, F, E>(
     let slots = test_params.n / 2;
     let encoder = Encoder::<E>::new(slots).unwrap();
 
-    // Sample the plaintext as I·q + m (Lattigo's `mod1_evaluator_test`): I is a
+    // Sample the plaintext as I·q + m : I is a
     // random integer multiple in [-(interval-1), interval-1], m a message in
     // [-1, 1], and q = MessageRatio (QDiff = 1 since poulpy's Q = 2^k). The
     // encrypted value is the normalized Chebyshev variable t = (I·q + m)/(q·interval).

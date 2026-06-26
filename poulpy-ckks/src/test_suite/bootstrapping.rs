@@ -29,7 +29,7 @@
 //! RUSTFLAGS="-C target-feature=+avx2,+fma" cargo test -p poulpy-cpu-avx --release --features enable-avx,enable-ckks ntt120_f64::bootstrapping -- --nocapture
 //! cargo test -p poulpy-cpu-ref --features enable-ckks --release ntt120_f64::bootstrapping_e2e -- --nocapture
 
-use std::{collections::HashMap, time::Instant};
+use std::time::Instant;
 
 use poulpy_core::{
     GLWEKeyswitch,
@@ -40,7 +40,8 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, CyclotomicOrder, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchArena, ScratchOwned},
+    layouts::{Backend, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchArena, ScratchOwned},
+    source::Source,
 };
 
 use crate::{
@@ -48,16 +49,16 @@ use crate::{
     api::{CKKSAddOps, CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDecrypt, CKKSEvalModOps, CKKSPow2Ops, CKKSSubOps, DFTOps},
     encoding::reim::Encoder,
     layouts::{
-        BootstrappingContext, BootstrappingPlan, CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec,
-        DFTOutputFormat, DFTPlan, DFTType,
+        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPlan, CKKSCiphertext, CKKSModuleAlloc,
+        CKKSPlaintext, CKKSPlaintextVecHostCodec, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout,
         eval_mod::{EvalModPlan, EvalModType},
     },
     polynomial::SplitStrategy,
     test_suite::{
         CKKSTestParams,
         helpers::{
-            TestContextBackend, TestContextHostModule, TestContextModule, TestScalar, ckks_encrypt_with_prec, ckks_spec, gen_atk,
-            gen_encapsulation_keys, gen_sk_with_raw, gen_tsk, precision_stats, test_vector_1,
+            TestContextBackend, TestContextHostModule, TestContextModule, TestScalar, ckks_encrypt_with_prec, ckks_spec,
+            gen_sk_with_raw, precision_stats, test_vector_1,
         },
     },
 };
@@ -190,41 +191,36 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
 
     let now = Instant::now();
     let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
-    let tsk = gen_tsk(&tp, &module, &sk_raw, &mut scratch.borrow());
 
-    // Galois keys: both transforms' rotations + the split forward conjugation.
-    let order = module.cyclotomic_order();
-
-    let mut gal_els = Vec::new();
-    gal_els.extend_from_slice(&ctx.coeffs_to_slots.galois_elements(order));
-    gal_els.extend_from_slice(&ctx.slots_to_coeffs.galois_elements(order));
-    gal_els.sort_unstable();
-    gal_els.dedup();
-
-    println!("gal_els: {}", gal_els.len());
-
-    let mut atks = HashMap::new();
-    for el in gal_els {
-        atks.entry(el)
-            .or_insert_with(|| gen_atk(&tp, &module, el, &sk_raw, &mut scratch.borrow()));
-    }
-    let conj_key = gen_atk(&tp, &module, -1, &sk_raw, &mut scratch.borrow());
-
-    // Sparse-secret encapsulation keys (https://eprint.iacr.org/2022/024):
-    // `denseToSparse` at the input modulus, `sparseToDense` at the bootstrap
-    // modulus. `None` when the trick is disabled.
-    let encaps = (plan.ephemeral_secret_weight > 0).then(|| {
-        gen_encapsulation_keys(
-            &tp,
+    // All evaluation keys via the bootstrapping-context helper: rotations (read off
+    // the compiled DFT matrices), conjugation, EvalMod's tensor key, and — when the
+    // sparse-secret encapsulation trick is enabled — the `denseToSparse` (input
+    // modulus) / `sparseToDense` (bootstrap modulus) key-switching keys.
+    let keys_layout = BootstrappingKeysLayout {
+        automorphism_key: tp.atk_layout().layout,
+        tensor_key: tp.tsk_layout().layout,
+        encapsulation: (plan.ephemeral_secret_weight > 0).then(|| EncapsulationKeysLayout {
+            ephemeral_secret_weight: plan.ephemeral_secret_weight,
+            dense_to_sparse: tp.ksk_layout(log_modulus_in).layout,
+            sparse_to_dense: tp.ksk_layout(k_boot).layout,
+        }),
+    };
+    let (mut src_xs, mut src_xa, mut src_xe) = (Source::new([7u8; 32]), Source::new([1u8; 32]), Source::new([2u8; 32]));
+    // `generate_keys` returns the keys *unprepared* (the serializable / GPU-resident
+    // form); `prepare` preprocesses the whole set up front for this CPU path.
+    let bsk = ctx
+        .generate_keys(
             &module,
             &host_module,
             &sk_raw,
-            plan.ephemeral_secret_weight,
-            log_modulus_in,
-            k_boot,
+            &keys_layout,
+            &mut src_xs,
+            &mut src_xa,
+            &mut src_xe,
             &mut scratch.borrow(),
         )
-    });
+        .unwrap()
+        .prepare(&module, &mut scratch.borrow());
     println!("KeyGen: {:?}", now.elapsed());
 
     // Encrypt z at the input ("level 0") modulus.
@@ -264,13 +260,36 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
         &mut scratch.borrow(),
     );
 
+    // Cross-check the one-shot orchestrator (the public API) against the explicit
+    // pipeline below — run first, on the fresh input, since the manual path mutates
+    // `ct0` in place for the encapsulation key-switch.
+    {
+        let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+        module
+            .ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, &mut scratch.borrow())
+            .unwrap();
+        let (re_bs, im_bs) = decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow());
+        for (got, want, tag) in [(&re_bs, &re, "re"), (&im_bs, &im, "im")] {
+            let s = precision_stats(got, want, log_delta);
+            println!(
+                "ckks_bootstrap (standard) ({tag}) avg={:.2} min={:.2} bits",
+                s.avg_log2_prec, s.min_log2_prec
+            );
+            assert!(
+                s.avg_log2_prec >= 5.0,
+                "ckks_bootstrap standard ({tag}): {:.1} bits < 5.0",
+                s.avg_log2_prec
+            );
+        }
+    }
+
     let now = Instant::now();
     // 1) (encapsulate) denseToSparse, ModUp, sparseToDense — so the integer
     //    wrap-around `I(X)·q` ModUp exposes is bounded by the *sparse* secret's
     //    Hamming weight. Then relabel at the input-modulus scale (free
     //    /message-ratio): `I(X)·q` becomes the integer part, the message the
     //    residue `Δ·c/q`.
-    if let Some((dense_to_sparse, _)) = &encaps {
+    if let Some((dense_to_sparse, _)) = bsk.encapsulation_keys() {
         module.glwe_keyswitch_assign(&mut ct0, dense_to_sparse, dense_to_sparse.max_size(), &mut scratch.borrow());
     }
     println!("denseToSparse: {:?}", now.elapsed());
@@ -278,7 +297,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     let now = Instant::now();
     let mut ct = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     module.ckks_mod_up_into(&mut ct, &ct0, &mut scratch.borrow()).unwrap();
-    if let Some((_, sparse_to_dense)) = &encaps {
+    if let Some((_, sparse_to_dense)) = bsk.encapsulation_keys() {
         module.glwe_keyswitch_assign(&mut ct, sparse_to_dense, sparse_to_dense.max_size(), &mut scratch.borrow());
     }
     ct.set_meta(meta(log_modulus_in, k_boot - log_modulus_in).meta);
@@ -298,8 +317,8 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
             &mut ct_imag,
             &ct,
             &ctx.coeffs_to_slots,
-            &atks,
-            &conj_key,
+            bsk.rotation_keys(),
+            bsk.conjugation_key(),
             &mut scratch.borrow(),
         )
         .unwrap();
@@ -343,12 +362,24 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     let mut res_real = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let mut res_imag = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     module
-        .ckks_eval_mod(&mut res_real, &ct_real, &ctx.eval_mod, &tsk, &mut scratch.borrow())
+        .ckks_eval_mod(
+            &mut res_real,
+            &ct_real,
+            &ctx.eval_mod,
+            bsk.tensor_key(),
+            &mut scratch.borrow(),
+        )
         .unwrap();
     println!("ckks_eval_mod: {:?}", now.elapsed());
     let now = Instant::now();
     module
-        .ckks_eval_mod(&mut res_imag, &ct_imag, &ctx.eval_mod, &tsk, &mut scratch.borrow())
+        .ckks_eval_mod(
+            &mut res_imag,
+            &ct_imag,
+            &ctx.eval_mod,
+            bsk.tensor_key(),
+            &mut scratch.borrow(),
+        )
         .unwrap();
     println!("ckks_eval_mod: {:?}", now.elapsed());
 
@@ -381,7 +412,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
             &res_real,
             &res_imag,
             &ctx.slots_to_coeffs,
-            &atks,
+            bsk.rotation_keys(),
             &mut scratch.borrow(),
         )
         .unwrap();
@@ -548,35 +579,35 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
     }
 
     let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
-    let tsk = gen_tsk(&tp, &module, &sk_raw, &mut scratch.borrow());
 
-    let order = module.cyclotomic_order();
-    let mut gal_els = Vec::new();
-    gal_els.extend_from_slice(&ctx.coeffs_to_slots.galois_elements(order));
-    gal_els.extend_from_slice(&ctx.coeffs_to_slots_bypass.as_ref().unwrap().galois_elements(order));
-    gal_els.extend_from_slice(&ctx.slots_to_coeffs.galois_elements(order));
-    gal_els.sort_unstable();
-    gal_els.dedup();
-
-    let mut atks = HashMap::new();
-    for el in gal_els {
-        atks.entry(el)
-            .or_insert_with(|| gen_atk(&tp, &module, el, &sk_raw, &mut scratch.borrow()));
-    }
-    let conj_key = gen_atk(&tp, &module, -1, &sk_raw, &mut scratch.borrow());
-
-    let encaps = (plan.ephemeral_secret_weight > 0).then(|| {
-        gen_encapsulation_keys(
-            &tp,
+    // All evaluation keys via the bootstrapping-context helper. The generator reads
+    // the rotation Galois elements off the compiled DFT matrices — including the
+    // high-precision `coeffs_to_slots_bypass` — so the LP+HP CoeffsToSlots, the
+    // conjugation, EvalMod's tensor key, and the encapsulation keys are all covered.
+    let keys_layout = BootstrappingKeysLayout {
+        automorphism_key: tp.atk_layout().layout,
+        tensor_key: tp.tsk_layout().layout,
+        encapsulation: (plan.ephemeral_secret_weight > 0).then(|| EncapsulationKeysLayout {
+            ephemeral_secret_weight: plan.ephemeral_secret_weight,
+            dense_to_sparse: tp.ksk_layout(log_modulus_in).layout,
+            sparse_to_dense: tp.ksk_layout(k_boot).layout,
+        }),
+    };
+    let (mut src_xs, mut src_xa, mut src_xe) = (Source::new([7u8; 32]), Source::new([1u8; 32]), Source::new([2u8; 32]));
+    // Generated unprepared (serializable / GPU-resident), then prepared up front.
+    let bsk = ctx
+        .generate_keys(
             &module,
             &host_module,
             &sk_raw,
-            plan.ephemeral_secret_weight,
-            log_modulus_in,
-            k_boot,
+            &keys_layout,
+            &mut src_xs,
+            &mut src_xa,
+            &mut src_xe,
             &mut scratch.borrow(),
         )
-    });
+        .unwrap()
+        .prepare(&module, &mut scratch.borrow());
 
     let (re, im) = test_vector_1::<F>(m);
 
@@ -593,13 +624,36 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
         &mut scratch.borrow(),
     );
 
+    // Cross-check the one-shot EvalRound+ orchestrator (the public API) against the
+    // explicit pipeline below — run first, on the fresh input, since the manual path
+    // mutates `ct0` in place for the encapsulation key-switch.
+    {
+        let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+        module
+            .ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, &mut scratch.borrow())
+            .unwrap();
+        let (re_bs, im_bs) = decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow());
+        for (got, want, tag) in [(&re_bs, &re, "re"), (&im_bs, &im, "im")] {
+            let s = precision_stats(got, want, log_delta);
+            println!(
+                "ckks_bootstrap (evalround) ({tag}) avg={:.2} min={:.2} bits",
+                s.avg_log2_prec, s.min_log2_prec
+            );
+            assert!(
+                s.avg_log2_prec >= 5.0,
+                "ckks_bootstrap evalround ({tag}): {:.1} bits < 5.0",
+                s.avg_log2_prec
+            );
+        }
+    }
+
     // 1) (encapsulate) denseToSparse, ModUp, sparseToDense.
-    if let Some((dense_to_sparse, _)) = &encaps {
+    if let Some((dense_to_sparse, _)) = bsk.encapsulation_keys() {
         module.glwe_keyswitch_assign(&mut ct0, dense_to_sparse, dense_to_sparse.max_size(), &mut scratch.borrow());
     }
     let mut ct = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     module.ckks_mod_up_into(&mut ct, &ct0, &mut scratch.borrow()).unwrap();
-    if let Some((_, sparse_to_dense)) = &encaps {
+    if let Some((_, sparse_to_dense)) = bsk.encapsulation_keys() {
         module.glwe_keyswitch_assign(&mut ct, sparse_to_dense, sparse_to_dense.max_size(), &mut scratch.borrow());
     }
     ct.set_meta(meta(log_modulus_in, k_boot - log_modulus_in).meta);
@@ -615,8 +669,8 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
             &mut i0_lp,
             &ct,
             &ctx.coeffs_to_slots,
-            &atks,
-            &conj_key,
+            bsk.rotation_keys(),
+            bsk.conjugation_key(),
             &mut scratch.borrow(),
         )
         .unwrap();
@@ -628,8 +682,8 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
             &mut i0_hp,
             &ct,
             &ctx.coeffs_to_slots_bypass.unwrap(),
-            &atks,
-            &conj_key,
+            bsk.rotation_keys(),
+            bsk.conjugation_key(),
             &mut scratch.borrow(),
         )
         .unwrap();
@@ -640,10 +694,10 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
     let mut res_imag = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let now = Instant::now();
     module
-        .ckks_eval_mod(&mut res_real, &r0_lp, &ctx.eval_mod, &tsk, &mut scratch.borrow())
+        .ckks_eval_mod(&mut res_real, &r0_lp, &ctx.eval_mod, bsk.tensor_key(), &mut scratch.borrow())
         .unwrap();
     module
-        .ckks_eval_mod(&mut res_imag, &i0_lp, &ctx.eval_mod, &tsk, &mut scratch.borrow())
+        .ckks_eval_mod(&mut res_imag, &i0_lp, &ctx.eval_mod, bsk.tensor_key(), &mut scratch.borrow())
         .unwrap();
     println!("[evalround] eval_mod x2: {:?}", now.elapsed());
 
@@ -673,7 +727,7 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
             &r0_hp,
             &i0_hp,
             &ctx.slots_to_coeffs,
-            &atks,
+            bsk.rotation_keys(),
             &mut scratch.borrow(),
         )
         .unwrap();

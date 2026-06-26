@@ -1,13 +1,14 @@
 use anyhow::Result;
-use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, ScratchArena};
+use poulpy_core::layouts::{GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef};
+use poulpy_hal::layouts::{Backend, HostBytesBackend, ScratchArena, TransferFrom};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSEvalModOps, DFTOps},
+    layouts::{BootstrappingContext, BootstrappingKeys, CKKSCiphertext},
 };
 
-/// CKKS bootstrapping primitives.
+/// CKKS bootstrapping.
 ///
 /// Bootstrapping is the pipeline `ModUp → CoeffsToSlots → EvalMod →
 /// SlotsToCoeffs`. Of those, only **ModUp** (the modulus raise) is a new
@@ -22,38 +23,14 @@ use crate::{
 /// - EvalMod via [`CKKSEvalModOps`](crate::api::CKKSEvalModOps)
 ///   ([`ckks_eval_mod`](CKKSEvalModOps::ckks_eval_mod)).
 ///
-/// So a value bounded by `CKKSBootstrappingOps` can drive the entire pipeline
-/// through one bound. This crate intentionally provides **no orchestrator** —
-/// these stay composable building blocks; assemble them (with the keys for the
-/// rotation/relinearization steps) at a higher level.
-/// [`BootstrappingPlan`](crate::layouts::BootstrappingPlan) carries the
-/// per-stage parameterization.
-///
-/// # ModUp (modulus raise) in the base-`2^base2k` torus model
-///
-/// Unlike RNS schemes there is no prime-basis extension: raising the modulus is
-/// a digit shift. A CKKS ciphertext stores its torus digits most-significant
-/// first, normalized by its modulus `2^k`. Reinterpreting the *same* integer
-/// coefficients under a wider modulus `2^{k'}` (`k' ≥ k`) divides the normalized
-/// value by `2^{k'−k}`, i.e. right-shifts the digits.
-///
-/// Concretely, [`Self::ckks_mod_up_into`] copies the input (MSB-aligned) into a
-/// caller-allocated wider destination and right-shifts by `dst.max_k() −
-/// src.k()`. After decryption the secret-dependent term that used to
-/// wrap modulo the input modulus `q = 2^{src.k()}` is no longer
-/// reduced, so the cleartext is `I(X)·q + Δ·m`: exactly the input
-/// [`CKKSEvalModOps`](crate::api::CKKSEvalModOps) expects, with message ratio
-/// `q/Δ = 2^{src.log_budget()}`.
-///
-/// ## Metadata
-///
-/// ```text
-/// log_delta_out  = src.log_delta                 (unchanged)
-/// log_budget_out = dst.max_k() − src.log_delta   (the full raised headroom)
-/// // k_out = dst.max_k()
-/// ```
-///
-/// Errors if `dst.max_k() < src.k()` (ModUp must widen the modulus).
+/// The composable stages stay public so callers can assemble custom pipelines,
+/// but a ready-made orchestrator is provided: [`ckks_bootstrap`](Self::ckks_bootstrap).
+/// It consumes a compiled [`BootstrappingContext`] and a prepared
+/// [`BootstrappingKeys`], and selects the pipeline from the context — the classic
+/// refresh when [`coeffs_to_slots_bypass`](BootstrappingContext::coeffs_to_slots_bypass)
+/// is absent, the EvalRound+ variant (<https://eprint.iacr.org/2024/1379>) when it
+/// is present. Sparse-secret encapsulation of ModUp is applied automatically when
+/// the keys carry [encapsulation keys](BootstrappingKeys::encapsulation_keys).
 pub trait CKKSBootstrappingOps<BE: Backend>: DFTOps<BE> + CKKSEvalModOps<BE> {
     /// Returns scratch bytes required by [`Self::ckks_mod_up_into`].
     fn ckks_mod_up_tmp_bytes(&self) -> usize;
@@ -67,4 +44,36 @@ pub trait CKKSBootstrappingOps<BE: Backend>: DFTOps<BE> + CKKSEvalModOps<BE> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds;
+
+    /// One-shot CKKS bootstrap, driven by the compiled context.
+    ///
+    /// `ct_in` is at the input ("level 0") modulus; `ct_out` must be allocated at
+    /// the bootstrap modulus (its `k()` sets the working width). When `keys` carries
+    /// [encapsulation keys](BootstrappingKeys::encapsulation_keys), the sparse-secret
+    /// trick wraps ModUp (`denseToSparse → ModUp → sparseToDense`). The `1/K` and
+    /// message-ratio scale bridges are baked into the compiled DFT matrices, and
+    /// EvalMod applies its own scale round-trip, so no manual scaling is needed here.
+    ///
+    /// The pipeline is selected from the context:
+    ///
+    /// - **standard** (`ModUp → CoeffsToSlots → EvalMod → SlotsToCoeffs`) when
+    ///   [`coeffs_to_slots_bypass`](BootstrappingContext::coeffs_to_slots_bypass) is
+    ///   `None`;
+    /// - **EvalRound+** (<https://eprint.iacr.org/2024/1379>) when it is `Some`: EvalMod
+    ///   runs on the low-precision CoeffsToSlots whose DFT error `e` cancels in the
+    ///   round `r0_hp − K·r0_lp + EvalMod(r0_lp)`, recovering the message at the
+    ///   high-precision bypass transform's precision (`K = f_mod_interval`, read from
+    ///   the compiled EvalMod, must be a power of two).
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_bootstrap<F, K>(
+        &self,
+        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
+        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ctx: &BootstrappingContext<BE, F>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        BE: TransferFrom<HostBytesBackend>,
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
 }

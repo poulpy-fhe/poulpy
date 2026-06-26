@@ -1,13 +1,14 @@
 use anyhow::Result;
 use poulpy_core::{
     GLWECopy, GLWEShift,
-    layouts::{GLWEToBackendMut, GLWEToBackendRef},
+    layouts::{GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef},
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena, TransferFrom};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSBootstrappingOps, CKKSEvalModOps, DFTOps},
+    layouts::{BootstrappingContext, BootstrappingKeys, CKKSCiphertext},
     oep::CKKSBootstrappingImpl,
 };
 
@@ -25,5 +26,20 @@ where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         BE::ckks_mod_up_into(self, dst, src, scratch)
+    }
+
+    fn ckks_bootstrap<F, K>(
+        &self,
+        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
+        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ctx: &BootstrappingContext<BE, F>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        BE: TransferFrom<HostBytesBackend>,
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
+    {
+        BE::ckks_bootstrap::<F, K>(self, ct_out, ct_in, ctx, keys, scratch)
     }
 }

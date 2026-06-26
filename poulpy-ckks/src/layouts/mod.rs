@@ -12,6 +12,7 @@
 
 mod alloc;
 pub mod bootstrapping;
+pub mod bootstrapping_keys;
 pub mod ciphertext;
 pub mod complex_diagonals;
 pub mod dft;
@@ -21,6 +22,9 @@ pub mod plaintext;
 
 pub use alloc::CKKSModuleAlloc;
 pub use bootstrapping::{BootstrappingContext, BootstrappingPlan};
+pub use bootstrapping_keys::{
+    BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, EncapsulationKeysLayout,
+};
 pub use ciphertext::{
     CKKSCiphertext, CKKSCiphertextViewMut, CKKSNormalizationState, Normalized, ScratchArenaTakeCKKS, Unnormalized,
     UnnormalizedCKKSCiphertext,
