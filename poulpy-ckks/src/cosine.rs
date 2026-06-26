@@ -409,6 +409,13 @@ fn solve(
 /// `[-k, k]` in the standard basis (variable `u = x/k`). The solve runs in
 /// 256-bit `FBig`; each coefficient is narrowed via `f64` to the target `F`,
 /// so `F` with mantissa wider than 53 bits inherits f64 precision.
+/// Number of coefficients [`approximate_cos`] produces for `(k, degree, dev)`
+/// (its polynomial has degree `len − 1`). Lets callers size the BSGS depth of the
+/// CosHK base polynomial without solving for the coefficients.
+pub fn approximate_cos_len(k: usize, degree: usize, dev: f64) -> usize {
+    gen_degrees(degree, k, dev).1
+}
+
 pub fn approximate_cos<F: FromPrimitive>(k: usize, degree: usize, dev: f64, scnum: usize) -> Vec<F> {
     let (deg, totdeg) = gen_degrees(degree, k, dev);
     let (nodes, y) = gen_nodes(&deg, dev, totdeg, k, scnum);

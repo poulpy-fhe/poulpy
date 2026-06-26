@@ -3,7 +3,7 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::layouts::{Backend, Module};
 
-use crate::{CKKSInfos, CKKSMeta};
+use crate::{CKKSInfos, CKKSMeta, SetCKKSInfos};
 
 use super::{CKKSCiphertext, CKKSPlaintext};
 
@@ -22,13 +22,16 @@ pub trait CKKSModuleAlloc<BE: Backend>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
     where
         A: LWEInfos + CKKSInfos;
 
-    fn ckks_plaintext_alloc(&self, n: Degree, base2k: Base2K, meta: CKKSMeta) -> CKKSPlaintext<BE::OwnedBuf>;
+    /// Allocates a default-meta plaintext sized to `k` over `base2k`. The semantic
+    /// [`CKKSMeta`] is not needed to size the buffer — set it afterwards with
+    /// [`SetCKKSInfos::set_meta`] (the `_from_infos` variants do this for you).
+    fn ckks_plaintext_alloc(&self, n: Degree, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintext<BE::OwnedBuf>;
 
-    fn ckks_pt_coeffs_alloc(&self, coeff_count: usize, base2k: Base2K, meta: CKKSMeta) -> CKKSPlaintext<BE::OwnedBuf> {
-        self.ckks_plaintext_alloc(coeff_count.into(), base2k, meta)
+    fn ckks_pt_coeffs_alloc(&self, coeff_count: usize, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintext<BE::OwnedBuf> {
+        self.ckks_plaintext_alloc(coeff_count.into(), base2k, k)
     }
 
-    fn ckks_pt_vec_alloc(&self, base2k: Base2K, meta: CKKSMeta) -> CKKSPlaintext<BE::OwnedBuf>;
+    fn ckks_pt_vec_alloc(&self, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintext<BE::OwnedBuf>;
 }
 
 impl<BE: Backend> CKKSModuleAlloc<BE> for Module<BE>
@@ -57,21 +60,23 @@ where
     where
         A: LWEInfos + CKKSInfos,
     {
-        self.ckks_plaintext_alloc(infos.n(), infos.base2k(), infos.meta())
+        let mut pt = self.ckks_plaintext_alloc(infos.n(), infos.base2k(), infos.k());
+        pt.set_meta(infos.meta());
+        pt
     }
 
-    fn ckks_plaintext_alloc(&self, n: Degree, base2k: Base2K, meta: CKKSMeta) -> CKKSPlaintext<BE::OwnedBuf> {
+    fn ckks_plaintext_alloc(&self, n: Degree, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintext<BE::OwnedBuf> {
+        // `k` is the effective torus width (`log_delta + log_budget`); the buffer
+        // auto-sizes to `ceil(k / base2k)` limbs, so the integer-poly storage spans
+        // `max_k` while `k` records the meaningful precision. The semantic meta is
+        // independent of sizing and defaults here; callers set it via `set_meta`.
         CKKSPlaintext::from_inner(
-            self.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout {
-                n,
-                base2k,
-                k: meta.min_k(base2k),
-            }),
-            meta,
+            self.glwe_plaintext_alloc_from_infos(&GLWEPlaintextLayout { n, base2k, k }),
+            CKKSMeta::default(),
         )
     }
 
-    fn ckks_pt_vec_alloc(&self, base2k: Base2K, meta: CKKSMeta) -> CKKSPlaintext<BE::OwnedBuf> {
-        self.ckks_plaintext_alloc(self.ring_degree(), base2k, meta)
+    fn ckks_pt_vec_alloc(&self, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintext<BE::OwnedBuf> {
+        self.ckks_plaintext_alloc(self.ring_degree(), base2k, k)
     }
 }

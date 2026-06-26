@@ -9,7 +9,7 @@ use poulpy_hal::{
 
 use crate::{
     encryption::glwe::GLWEMaskFillDefault,
-    layouts::{Base2K, Degree, GLWEInfos, GLWEToBackendMut, GetDegree, LWEInfos, Rank, SetLWEInfos, TorusPrecision},
+    layouts::{Base2K, Degree, GLWEInfos, GLWEToBackendMut, GetDegree, LWEInfos, Rank, SetBase2k, TorusPrecision},
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::fmt;
@@ -24,6 +24,7 @@ use std::ops::{Deref, DerefMut};
 #[derive(PartialEq, Eq, Clone)]
 pub struct GLWECompressed<D: Data> {
     pub(crate) data: VecZnx<D>,
+    pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) rank: Rank,
     pub(crate) seed: [u8; 32],
@@ -87,12 +88,16 @@ impl<'a, BE: Backend + 'a> LWEInfos for GLWECompressedViewRef<'a, BE> {
         self.inner.base2k()
     }
 
-    fn size(&self) -> usize {
-        self.inner.size()
+    fn max_size(&self) -> usize {
+        self.inner.max_size()
     }
 
     fn n(&self) -> Degree {
         self.inner.n()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.inner.k()
     }
 }
 
@@ -101,12 +106,16 @@ impl<'a, BE: Backend + 'a> LWEInfos for GLWECompressedViewMut<'a, BE> {
         self.inner.base2k()
     }
 
-    fn size(&self) -> usize {
-        self.inner.size()
+    fn max_size(&self) -> usize {
+        self.inner.max_size()
     }
 
     fn n(&self) -> Degree {
         self.inner.n()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.inner.k()
     }
 }
 
@@ -151,37 +160,21 @@ impl<D: Data> LWEInfos for GLWECompressed<D> {
         self.base2k
     }
 
-    fn size(&self) -> usize {
+    fn max_size(&self) -> usize {
         self.data.size()
     }
 
     fn n(&self) -> Degree {
         Degree(self.data.n() as u32)
     }
+
+    fn k(&self) -> TorusPrecision {
+        self.k
+    }
 }
 impl<D: Data> GLWEInfos for GLWECompressed<D> {
     fn rank(&self) -> Rank {
         self.rank
-    }
-}
-
-impl<D: Data> LWEInfos for &GLWECompressed<D> {
-    fn n(&self) -> Degree {
-        (*self).n()
-    }
-
-    fn base2k(&self) -> Base2K {
-        (*self).base2k()
-    }
-
-    fn size(&self) -> usize {
-        (*self).size()
-    }
-}
-
-impl<D: Data> GLWEInfos for &GLWECompressed<D> {
-    fn rank(&self) -> Rank {
-        (*self).rank()
     }
 }
 
@@ -209,7 +202,7 @@ impl<D: HostDataRef> fmt::Display for GLWECompressed<D> {
             f,
             "GLWECompressed: base2k={} k={} rank={} seed={:?}: {}",
             self.base2k(),
-            self.max_k(),
+            self.k(),
             self.rank(),
             self.seed,
             self.data
@@ -229,7 +222,7 @@ impl GLWECompressed<Vec<u8>> {
     where
         A: GLWEInfos,
     {
-        Self::alloc(infos.n(), infos.base2k(), infos.max_k(), infos.rank())
+        Self::alloc(infos.n(), infos.base2k(), infos.k(), infos.rank())
     }
 
     /// Allocates a new compressed GLWE with the given parameters.
@@ -246,6 +239,7 @@ impl GLWECompressed<Vec<u8>> {
                 size,
             ),
             base2k,
+            k,
             rank,
             seed: [0u8; 32],
         }
@@ -256,7 +250,7 @@ impl GLWECompressed<Vec<u8>> {
     where
         A: GLWEInfos,
     {
-        Self::bytes_of(infos.n(), infos.base2k(), infos.max_k())
+        Self::bytes_of(infos.n(), infos.base2k(), infos.k())
     }
 
     /// Returns the serialized byte size for a compressed GLWE with the given parameters.
@@ -298,7 +292,7 @@ where
     /// Decompresses `other` into `res` by copying the stored data and regenerating the mask.
     fn decompress_glwe<R, O>(&self, res: &mut R, other: &O)
     where
-        R: GLWEToBackendMut<Self::Backend> + SetLWEInfos,
+        R: GLWEToBackendMut<Self::Backend> + SetBase2k,
         O: GLWECompressedToBackendRef<Self::Backend> + GLWEInfos,
     {
         let other = other.to_backend_ref();
@@ -339,6 +333,7 @@ impl<BE: Backend> GLWECompressedToBackendRef<BE> for GLWECompressed<BE::OwnedBuf
     fn to_backend_ref(&self) -> GLWECompressedBackendRef<'_, BE> {
         GLWECompressed {
             seed: self.seed,
+            k: self.k,
             base2k: self.base2k,
             rank: self.rank,
             data: <VecZnx<BE::OwnedBuf> as VecZnxToBackendRef<BE>>::to_backend_ref(&self.data),
@@ -350,6 +345,7 @@ impl<'a, BE: Backend + 'a> GLWECompressedToBackendRef<BE> for GLWECompressedView
     fn to_backend_ref(&self) -> GLWECompressedBackendRef<'_, BE> {
         GLWECompressed {
             seed: self.inner.seed,
+            k: self.k,
             base2k: self.inner.base2k,
             rank: self.inner.rank,
             data: poulpy_hal::layouts::vec_znx_backend_ref_from_ref::<BE>(&self.inner.data),
@@ -361,6 +357,7 @@ impl<'a, BE: Backend + 'a> GLWECompressedToBackendRef<BE> for GLWECompressedView
     fn to_backend_ref(&self) -> GLWECompressedBackendRef<'_, BE> {
         GLWECompressed {
             seed: self.inner.seed,
+            k: self.k,
             base2k: self.inner.base2k,
             rank: self.inner.rank,
             data: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE>(&self.inner.data),
@@ -376,6 +373,7 @@ impl<BE: Backend> GLWECompressedToBackendMut<BE> for GLWECompressed<BE::OwnedBuf
     fn to_backend_mut(&mut self) -> GLWECompressedBackendMut<'_, BE> {
         GLWECompressed {
             seed: self.seed,
+            k: self.k,
             base2k: self.base2k,
             rank: self.rank,
             data: <VecZnx<BE::OwnedBuf> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut self.data),

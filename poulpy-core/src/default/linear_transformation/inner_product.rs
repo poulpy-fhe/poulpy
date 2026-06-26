@@ -110,9 +110,12 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
         .first()
         .expect("streamed linear transformation giant step has no diagonals");
     let pt_base2k = first.plaintext.base2k().as_usize();
-    let pt_max_k = first.plaintext.max_k().as_usize();
-    let diagonal_size = first.plaintext.size();
-    let mask = msb_mask_bottom_limb(pt_base2k, pt_max_k);
+    // The streamed diagonal is an integer poly encoded across its full physical
+    // width, so mask/size use `max_k`/`max_size`, not the (possibly smaller)
+    // effective `k`/`size`.
+    let pt_k = first.plaintext.max_k().as_usize();
+    let diagonal_size = first.plaintext.max_size();
+    let mask = msb_mask_bottom_limb(pt_base2k, pt_k);
     let res_dft_size = lhs.size() + diagonal_size - cnv_offset_hi;
     assert_eq!(prod_dft.cols(), cols);
     assert_eq!(prod_dft.size(), res_dft_size);

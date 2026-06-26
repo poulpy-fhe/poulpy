@@ -2,7 +2,7 @@
 //! baby-step / giant-step (BSGS) form.
 //!
 //! This module is scheme-agnostic: CKKS derives scale/capacity metadata and
-//! passes only base2k alignment integers (`a_effective_k`, `cnv_offset`). The
+//! passes only base2k alignment integers (`a_k`, `cnv_offset`). The
 //! files under `linear_transformation/` follow the phases in `docs/lt_bsgs.md`:
 //! schedule construction (§3), setup/preparation (§5), baby hoisting (§6.2),
 //! giant-step products and rotations (§6.3), and final normalization (§6.4).

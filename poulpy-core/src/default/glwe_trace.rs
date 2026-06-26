@@ -82,7 +82,7 @@ fn trace_assign_internal<M, K, H, R, BE: Backend>(
         let res_conv_layout = GLWELayout {
             n: module.n().into(),
             base2k: ksk_infos.base2k(),
-            k: res.max_k(),
+            k: res.k(),
             rank: res.rank(),
         };
         let scratch_local = scratch.borrow();
@@ -181,7 +181,7 @@ pub mod glwe_trace_defaults_impl {
             let a_conv_infos: GLWELayout = GLWELayout {
                 n: a_infos.n(),
                 base2k: key_infos.base2k(),
-                k: a_infos.max_k(),
+                k: a_infos.k(),
                 rank: a_infos.rank(),
             };
             let lvl_0: usize = GLWE::<Vec<u8>>::bytes_of_from_infos(&a_conv_infos);
@@ -226,7 +226,7 @@ pub mod glwe_trace_defaults_impl {
         let tmp_infos: GLWELayout = GLWELayout {
             n: res_infos.n(),
             base2k: key_infos.base2k(),
-            k: a_infos.max_k().max(res_infos.max_k()),
+            k: a_infos.k().max(res_infos.k()),
             rank: res_infos.rank(),
         };
         let lvl_0: usize = GLWE::<Vec<u8>>::bytes_of_from_infos(&tmp_infos);
@@ -280,7 +280,7 @@ pub mod glwe_trace_defaults_impl {
         let (mut tmp, scratch_1) = scratch_local.take_glwe_scratch(&GLWELayout {
             n: res.n(),
             base2k: atk_layout.base2k(),
-            k: a.max_k().max(res.max_k()),
+            k: a.k().max(res.k()),
             rank: res.rank(),
         });
         let mut scratch_1 = scratch_1;

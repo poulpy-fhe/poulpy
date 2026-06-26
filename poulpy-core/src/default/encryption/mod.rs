@@ -43,7 +43,7 @@ pub mod lwe;
 pub mod lwe_switching_key;
 pub mod lwe_to_glwe_key;
 
-pub use crate::api::{DeclaredK, EncryptionInfos, GGSWEncryptSk, GLWEEncryptSk, GLWEMaskFill, LWEFillMask};
+pub use crate::api::{EncryptionInfos, GGSWEncryptSk, GLWEEncryptSk, GLWEMaskFill, LWEFillMask};
 pub use compressed::*;
 pub use gglwe::*;
 pub use gglwe_to_ggsw_key::*;
@@ -59,9 +59,7 @@ pub use lwe_switching_key::*;
 pub use lwe_to_glwe_key::*;
 use poulpy_hal::layouts::NoiseInfos;
 
-use crate::layouts::{
-    GGLWEInfos, GGLWELayout, GGSWInfos, GGSWLayout, GLWEInfos, GLWELayout, LWEInfos, LWELayout, TorusPrecision,
-};
+use crate::layouts::{GGLWEInfos, GGSWInfos, GLWEInfos, LWEInfos, TorusPrecision};
 use anyhow::Result;
 
 /// Standard deviation of the discrete Gaussian distribution used for error sampling
@@ -72,42 +70,19 @@ pub const DEFAULT_SIGMA_XE: f64 = 3.2;
 /// Samples are rejected if their absolute value exceeds this bound.
 pub const DEFAULT_BOUND_XE: f64 = 6.0 * DEFAULT_SIGMA_XE;
 
-impl DeclaredK for LWELayout {
-    fn k(&self) -> TorusPrecision {
-        self.k
-    }
-}
-
-impl DeclaredK for GLWELayout {
-    fn k(&self) -> TorusPrecision {
-        self.k
-    }
-}
-
-impl DeclaredK for GGLWELayout {
-    fn k(&self) -> TorusPrecision {
-        self.k
-    }
-}
-
-impl DeclaredK for GGSWLayout {
-    fn k(&self) -> TorusPrecision {
-        self.k
-    }
-}
-
+#[derive(Debug)]
 pub struct EncryptionLayout<L> {
     pub layout: L,
     pub noise: NoiseInfos,
 }
 
-impl<L: DeclaredK> EncryptionLayout<L> {
+impl<L: LWEInfos> EncryptionLayout<L> {
     pub fn new(layout: L, noise: NoiseInfos) -> Result<Self> {
         anyhow::ensure!(
-            noise.k <= layout.max_k().as_usize(),
-            "k_xe: {} > layout.max_k(): {}",
+            noise.k <= layout.k().as_usize(),
+            "k_xe: {} > layout.k(): {}",
             noise.k,
-            layout.max_k()
+            layout.k()
         );
         Ok(Self { layout, noise })
     }
@@ -139,8 +114,12 @@ impl<L: LWEInfos> LWEInfos for EncryptionLayout<L> {
         self.layout.n()
     }
 
-    fn size(&self) -> usize {
-        self.layout.size()
+    fn max_size(&self) -> usize {
+        self.layout.max_size()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.layout.k()
     }
 }
 

@@ -7,7 +7,7 @@ use poulpy_hal::{
         VecZnxLshAddCoeffToCoeffBackend, VecZnxLshAddIntoBackend, VecZnxLshTmpBytes, VecZnxRshAddCoeffIntoBackend,
         VecZnxRshAddIntoBackend, VecZnxRshTmpBytes,
     },
-    layouts::{Backend, Data, Module, ScratchArena},
+    layouts::{Backend, Data, HostBytesBackend, Module, ScratchArena, TransferFrom},
     oep::HalVecZnxImpl,
 };
 
@@ -73,6 +73,7 @@ pub unsafe trait CKKSAddImpl<BE: Backend>: Backend {
         A: GLWEToBackendRef<BE> + CKKSInfos;
     fn ckks_add_one_assign<Dst>(module: &Module<BE>, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
+        BE: TransferFrom<HostBytesBackend>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos;
     fn ckks_add_pt_vec_tmp_bytes(module: &Module<BE>) -> usize;
     fn ckks_add_pt_vec_into<Dst, A, P>(
@@ -258,6 +259,7 @@ where
 
     fn ckks_add_one_assign<Dst>(module: &Module<BE>, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
+        BE: TransferFrom<HostBytesBackend>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos,
     {
         module.ckks_add_one_assign_default(dst, scratch)

@@ -31,8 +31,12 @@ impl<D: Data, BE: Backend> LWEInfos for GGLWEToGGSWKeyPrepared<D, BE> {
         self.keys[0].base2k()
     }
 
-    fn size(&self) -> usize {
-        self.keys[0].size()
+    fn max_size(&self) -> usize {
+        self.keys[0].max_size()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.keys[0].k()
     }
 }
 
@@ -118,7 +122,7 @@ where
             infos.rank_out(),
             "rank_in != rank_out is not supported for GGLWEToGGSWKeyPrepared"
         );
-        self.gglwe_to_ggsw_key_prepared_alloc(infos.base2k(), infos.max_k(), infos.rank(), infos.dnum(), infos.dsize())
+        self.gglwe_to_ggsw_key_prepared_alloc(infos.base2k(), infos.k(), infos.rank(), infos.dnum(), infos.dsize())
     }
 
     fn gglwe_to_ggsw_key_prepared_alloc(
@@ -145,7 +149,7 @@ where
             infos.rank_out(),
             "rank_in != rank_out is not supported for GGLWEToGGSWKeyPrepared"
         );
-        self.bytes_of_gglwe_to_ggsw(infos.base2k(), infos.max_k(), infos.rank(), infos.dnum(), infos.dsize())
+        self.bytes_of_gglwe_to_ggsw(infos.base2k(), infos.k(), infos.rank(), infos.dnum(), infos.dsize())
     }
 
     fn bytes_of_gglwe_to_ggsw(&self, base2k: Base2K, k: TorusPrecision, rank: Rank, dnum: Dnum, dsize: Dsize) -> usize {

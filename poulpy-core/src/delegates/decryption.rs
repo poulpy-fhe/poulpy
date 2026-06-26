@@ -5,7 +5,7 @@ use crate::{
     layouts::{
         GLWEInfos, GLWEPlaintext, GLWESecretPrepared, GLWESecretTensorPrepared, GLWETensor, GLWEToBackendMut, GLWEToBackendRef,
         LWEInfos, LWEMatrixInfos, LWEMatrixToBackendRef, LWEPlaintextToBackendMut, LWESecretToBackendRef, LWEToBackendRef,
-        SetLWEInfos,
+        SetBase2k,
         prepared::{GLWESecretPreparedToBackendRef, GLWESecretTensorPreparedToBackendRef},
     },
     oep::DecryptionImpl,
@@ -33,7 +33,7 @@ impl_decryption_delegate!(
     fn glwe_decrypt<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendRef<BE> + GLWEInfos,
-        P: GLWEToBackendMut<BE> + GLWEInfos + SetLWEInfos,
+        P: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     {
         BE::glwe_decrypt(self, res, pt, sk, scratch)
@@ -45,7 +45,7 @@ impl_decryption_delegate!(
     fn lwe_decrypt<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
         R: LWEToBackendRef<BE> + LWEInfos,
-        P: LWEPlaintextToBackendMut<BE> + SetLWEInfos + LWEInfos,
+        P: LWEPlaintextToBackendMut<BE> + SetBase2k + LWEInfos,
         S: LWESecretToBackendRef<BE> + LWEInfos,
     {
         BE::lwe_decrypt(self, res, pt, sk, scratch)
@@ -69,7 +69,7 @@ impl_decryption_delegate!(
     fn lwe_matrix_decrypt<R, P, S>(&self, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
     where
         R: LWEMatrixToBackendRef<BE> + LWEMatrixInfos,
-        P: GLWEToBackendMut<BE> + SetLWEInfos + GLWEInfos,
+        P: GLWEToBackendMut<BE> + SetBase2k + GLWEInfos,
         S: LWESecretToBackendRef<BE> + LWEInfos,
     {
         BE::lwe_matrix_decrypt(self, res, pt, sk, scratch)
@@ -93,7 +93,7 @@ impl_decryption_delegate!(
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         GLWETensor<R>: GLWEToBackendRef<BE> + GLWEInfos,
-        GLWEPlaintext<P>: GLWEToBackendMut<BE> + GLWEInfos + SetLWEInfos,
+        GLWEPlaintext<P>: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
         GLWESecretPrepared<S0, BE>: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         GLWESecretTensorPrepared<S1, BE>: GLWESecretTensorPreparedToBackendRef<BE> + GLWEInfos,
     {

@@ -61,7 +61,7 @@ pub fn glwe_tensor_decrypt_default<M, BE: Backend, R: Data, P: Data, S0: Data, S
         + SvpPPolCopyBackend<BE>
         + GLWESecretPreparedFactory<BE>,
     GLWETensor<R>: GLWEToBackendRef<BE> + GLWEInfos,
-    GLWEPlaintext<P>: GLWEToBackendMut<BE> + GLWEInfos + crate::layouts::SetLWEInfos,
+    GLWEPlaintext<P>: GLWEToBackendMut<BE> + GLWEInfos + crate::layouts::SetBase2k,
     GLWESecretPrepared<S0, BE>: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     GLWESecretTensorPrepared<S1, BE>: GLWESecretTensorPreparedToBackendRef<BE> + GLWEInfos,
 {

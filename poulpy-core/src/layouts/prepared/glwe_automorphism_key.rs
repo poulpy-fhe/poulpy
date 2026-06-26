@@ -38,48 +38,16 @@ impl<D: Data, B: Backend> LWEInfos for GLWEAutomorphismKeyPrepared<D, B> {
         self.key.base2k()
     }
 
-    fn size(&self) -> usize {
-        self.key.size()
+    fn max_size(&self) -> usize {
+        self.key.max_size()
     }
-}
 
-impl<D: Data, B: Backend> LWEInfos for &GLWEAutomorphismKeyPrepared<D, B> {
-    fn n(&self) -> Degree {
-        self.key.n()
-    }
-    fn base2k(&self) -> Base2K {
-        self.key.base2k()
-    }
-    fn size(&self) -> usize {
-        self.key.size()
-    }
-}
-
-impl<D: Data, B: Backend> LWEInfos for &mut GLWEAutomorphismKeyPrepared<D, B> {
-    fn n(&self) -> Degree {
-        self.key.n()
-    }
-    fn base2k(&self) -> Base2K {
-        self.key.base2k()
-    }
-    fn size(&self) -> usize {
-        self.key.size()
+    fn k(&self) -> TorusPrecision {
+        self.key.k()
     }
 }
 
 impl<D: Data, B: Backend> GetGaloisElement for GLWEAutomorphismKeyPrepared<D, B> {
-    fn p(&self) -> i64 {
-        self.p
-    }
-}
-
-impl<D: Data, B: Backend> GetGaloisElement for &GLWEAutomorphismKeyPrepared<D, B> {
-    fn p(&self) -> i64 {
-        self.p
-    }
-}
-
-impl<D: Data, B: Backend> GetGaloisElement for &mut GLWEAutomorphismKeyPrepared<D, B> {
     fn p(&self) -> i64 {
         self.p
     }
@@ -92,18 +60,6 @@ impl<D: Data, B: Backend> SetGaloisElement for GLWEAutomorphismKeyPrepared<D, B>
 }
 
 impl<D: Data, B: Backend> GLWEInfos for GLWEAutomorphismKeyPrepared<D, B> {
-    fn rank(&self) -> Rank {
-        self.rank_out()
-    }
-}
-
-impl<D: Data, B: Backend> GLWEInfos for &GLWEAutomorphismKeyPrepared<D, B> {
-    fn rank(&self) -> Rank {
-        self.rank_out()
-    }
-}
-
-impl<D: Data, B: Backend> GLWEInfos for &mut GLWEAutomorphismKeyPrepared<D, B> {
     fn rank(&self) -> Rank {
         self.rank_out()
     }
@@ -122,36 +78,6 @@ impl<D: Data, B: Backend> GGLWEInfos for GLWEAutomorphismKeyPrepared<D, B> {
         self.key.dsize()
     }
 
-    fn dnum(&self) -> Dnum {
-        self.key.dnum()
-    }
-}
-
-impl<D: Data, B: Backend> GGLWEInfos for &GLWEAutomorphismKeyPrepared<D, B> {
-    fn rank_in(&self) -> Rank {
-        self.key.rank_in()
-    }
-    fn rank_out(&self) -> Rank {
-        self.key.rank_out()
-    }
-    fn dsize(&self) -> Dsize {
-        self.key.dsize()
-    }
-    fn dnum(&self) -> Dnum {
-        self.key.dnum()
-    }
-}
-
-impl<D: Data, B: Backend> GGLWEInfos for &mut GLWEAutomorphismKeyPrepared<D, B> {
-    fn rank_in(&self) -> Rank {
-        self.key.rank_in()
-    }
-    fn rank_out(&self) -> Rank {
-        self.key.rank_out()
-    }
-    fn dsize(&self) -> Dsize {
-        self.key.dsize()
-    }
     fn dnum(&self) -> Dnum {
         self.key.dnum()
     }
@@ -184,7 +110,7 @@ where
             infos.rank_out(),
             "rank_in != rank_out is not supported for AutomorphismKeyPrepared"
         );
-        self.glwe_automorphism_key_prepared_alloc(infos.base2k(), infos.max_k(), infos.rank(), infos.dnum(), infos.dsize())
+        self.glwe_automorphism_key_prepared_alloc(infos.base2k(), infos.k(), infos.rank(), infos.dnum(), infos.dsize())
     }
 
     fn glwe_automorphism_key_prepared_bytes_of(
@@ -207,7 +133,7 @@ where
             infos.rank_out(),
             "rank_in != rank_out is not supported for AutomorphismKeyPrepared"
         );
-        self.glwe_automorphism_key_prepared_bytes_of(infos.base2k(), infos.max_k(), infos.rank(), infos.dnum(), infos.dsize())
+        self.glwe_automorphism_key_prepared_bytes_of(infos.base2k(), infos.k(), infos.rank(), infos.dnum(), infos.dsize())
     }
 
     fn glwe_automorphism_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize

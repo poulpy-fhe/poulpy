@@ -448,11 +448,11 @@ mod tests {
         DFTPlan {
             kind,
             factorization_depth,
-            factor_giant_steps,
+            giant_steps: factor_giant_steps,
             format: DFTOutputFormat::Standard,
             scaling: Some(1.0),
             bit_reversed,
-            factor_log_delta: 0,
+            meta: Default::default(),
         }
     }
 
@@ -501,11 +501,11 @@ mod tests {
         let mk = |kind| DFTPlan {
             kind,
             factorization_depth: vec![1, 1], // sum = log_slots = 2
-            factor_giant_steps: vec![1, 1],
+            giant_steps: vec![1, 1],
             format: DFTOutputFormat::RepackImagAsReal,
             scaling: None,
             bit_reversed: false,
-            factor_log_delta: 0,
+            meta: Default::default(),
         };
 
         let dec = gen_dft_matrices::<f64>(&mk(DFTType::Decode), log_n);
@@ -534,11 +534,11 @@ mod tests {
             &DFTPlan {
                 kind: DFTType::Encode,
                 factorization_depth: vec![1, 1, 1, 1], // sum = log_slots = 4
-                factor_giant_steps: vec![1, 1, 1, 1],
+                giant_steps: vec![1, 1, 1, 1],
                 format: DFTOutputFormat::RepackImagAsReal,
                 scaling: None,
                 bit_reversed: false,
-                factor_log_delta: 0,
+                meta: Default::default(),
             },
             5,
         );
