@@ -128,6 +128,9 @@ where
         }
 
         pt_in.encode_vec_i64(&data, TorusPrecision(scale as u32));
+        // Active precision can end in a partial bottom limb; tensoring masks it,
+        // which contributes one rounding bit compared with limb-capacity precision.
+        let active_limb_rounding = if k.is_multiple_of(in_base2k) { 0.0 } else { 1.0 };
 
         let mut pt_want_base2k_in: VecZnx<Vec<u8>> = module.vec_znx_alloc(1, pt_in.size());
         bivariate_convolution_naive::<_, BE>(
@@ -163,15 +166,7 @@ where
         );
 
         for res_offset in 0..scale {
-            module.glwe_tensor_apply(
-                scale + res_offset,
-                &mut res_tensor,
-                &a,
-                a.max_k().as_usize(),
-                &b,
-                b.max_k().as_usize(),
-                &mut scratch.borrow(),
-            );
+            module.glwe_tensor_apply(scale + res_offset, &mut res_tensor, &a, &b, &mut scratch.borrow());
 
             module.glwe_tensor_decrypt(&res_tensor, &mut pt_have, &sk_dft, &sk_tensor_prep, &mut scratch.borrow());
             module.vec_znx_normalize(
@@ -194,7 +189,8 @@ where
             );
 
             let noise_have: f64 = pt_tmp.stats().std().log2();
-            let noise_want = -((k - scale - res_offset - module.log_n()) as f64 - ((rank - 1) as f64) / SQRT_2);
+            let noise_want =
+                -((k - scale - res_offset - module.log_n()) as f64 - ((rank - 1) as f64) / SQRT_2) + active_limb_rounding;
 
             assert!(noise_have - noise_want <= 0.5, "{} > {}", noise_have, noise_want);
 
@@ -336,22 +332,8 @@ where
         );
 
         for res_offset in 0..scale {
-            module.glwe_tensor_square_apply(
-                scale + res_offset,
-                &mut res_square,
-                &a,
-                a.max_k().as_usize(),
-                &mut scratch.borrow(),
-            );
-            module.glwe_tensor_apply(
-                scale + res_offset,
-                &mut res_tensor,
-                &a,
-                a.max_k().as_usize(),
-                &a,
-                a.max_k().as_usize(),
-                &mut scratch.borrow(),
-            );
+            module.glwe_tensor_square_apply(scale + res_offset, &mut res_square, &a, &mut scratch.borrow());
+            module.glwe_tensor_apply(scale + res_offset, &mut res_tensor, &a, &a, &mut scratch.borrow());
 
             assert_eq!(res_square.data().raw(), res_tensor.data().raw());
 
@@ -480,15 +462,7 @@ where
         let mut scratch_cnv = ScratchOwned::alloc(module.glwe_mul_plain_tmp_bytes(&res, &a, &pt_b));
 
         for res_offset in 0..scale {
-            module.glwe_mul_plain(
-                scale + res_offset,
-                &mut res,
-                &a,
-                a.max_k().as_usize(),
-                &pt_b,
-                pt_b.max_k().as_usize(),
-                &mut scratch_cnv.borrow(),
-            );
+            module.glwe_mul_plain(scale + res_offset, &mut res, &a, &pt_b, &mut scratch_cnv.borrow());
 
             module.glwe_decrypt(&res, &mut pt_have, &sk_dft, &mut scratch.borrow());
             module.vec_znx_normalize(

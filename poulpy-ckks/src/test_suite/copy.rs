@@ -7,13 +7,14 @@
 //! | [`test_copy_aligned`] | CKKS copy into an equally-sized output |
 //! | [`test_copy_smaller_output`] | CKKS copy into a smaller output, forcing the left-shift path |
 
-use crate::{CKKSInfos, leveled::api::CKKSCopyOps};
+use crate::leveled::api::CKKSCopyOps;
 
 use super::helpers::{
     TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_decrypt_precision,
     assert_unary_output_meta, ckks_encrypt, gen_sk, test_vector_1,
 };
 use anyhow::Result;
+use poulpy_core::layouts::LWEInfos;
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module},
@@ -98,7 +99,7 @@ where
         &im1,
         &mut scratch.borrow(),
     );
-    let mut ct_res = alloc_ct(&params, module, ct.effective_k() - 1);
+    let mut ct_res = alloc_ct(&params, module, ct.k().as_usize() - 1);
     module.ckks_copy(&mut ct_res, &ct, &mut scratch.borrow())?;
     assert_unary_output_meta("copy smaller_output", &ct_res, &ct);
     assert_decrypt_precision(

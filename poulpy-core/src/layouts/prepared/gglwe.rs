@@ -18,6 +18,7 @@ use crate::layouts::{
 #[derive(PartialEq, Eq)]
 pub struct GGLWEPrepared<D: Data, B: Backend> {
     pub(crate) data: VmpPMat<D, B>,
+    pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) dsize: Dsize,
 }
@@ -35,8 +36,11 @@ impl<D: Data, B: Backend> LWEInfos for GGLWEPrepared<D, B> {
         self.base2k
     }
 
-    fn size(&self) -> usize {
+    fn max_size(&self) -> usize {
         self.data.size()
+    }
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 
@@ -104,6 +108,7 @@ where
             data: self.vmp_pmat_alloc(dnum.into(), rank_in.into(), (rank_out + 1).into(), size),
             base2k,
             dsize,
+            k,
         }
     }
 
@@ -115,7 +120,7 @@ where
         assert_eq!(self.ring_degree(), infos.n());
         self.gglwe_prepared_alloc(
             infos.base2k(),
-            infos.max_k(),
+            infos.k(),
             infos.rank_in(),
             infos.rank_out(),
             infos.dnum(),
@@ -158,7 +163,7 @@ where
         assert_eq!(self.ring_degree(), infos.n());
         self.gglwe_prepared_bytes_of(
             infos.base2k(),
-            infos.max_k(),
+            infos.k(),
             infos.rank_in(),
             infos.rank_out(),
             infos.dnum(),
@@ -239,6 +244,7 @@ impl<B: Backend> GGLWEPreparedToBackendRef<B> for GGLWEPrepared<B::OwnedBuf, B> 
     fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
         GGLWEPrepared {
             base2k: self.base2k,
+            k: self.k,
             dsize: self.dsize,
             data: self.data.to_backend_ref(),
         }
@@ -259,6 +265,7 @@ impl<B: Backend> GGLWEPreparedToBackendMut<B> for GGLWEPrepared<B::OwnedBuf, B> 
     fn to_backend_mut(&mut self) -> GGLWEPreparedBackendMut<'_, B> {
         GGLWEPrepared {
             base2k: self.base2k,
+            k: self.k,
             dsize: self.dsize,
             data: self.data.to_backend_mut(),
         }

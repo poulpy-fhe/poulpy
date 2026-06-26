@@ -102,8 +102,12 @@ impl<'a, BE: Backend + 'a> LWEInfos for GGSWCompressedBackendRef<'a, BE> {
         self.inner.n()
     }
 
-    fn size(&self) -> usize {
-        self.inner.size()
+    fn max_size(&self) -> usize {
+        self.inner.max_size()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.inner.k()
     }
 }
 
@@ -132,8 +136,12 @@ impl<'a, BE: Backend + 'a> LWEInfos for GGSWCompressedBackendMut<'a, BE> {
         self.inner.n()
     }
 
-    fn size(&self) -> usize {
-        self.inner.size()
+    fn max_size(&self) -> usize {
+        self.inner.max_size()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.inner.k()
     }
 }
 
@@ -192,8 +200,12 @@ impl<D: Data> LWEInfos for GGSWCompressed<D> {
         self.base2k
     }
 
-    fn size(&self) -> usize {
+    fn max_size(&self) -> usize {
         self.data.size()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 impl<D: Data> GLWEInfos for GGSWCompressed<D> {
@@ -209,36 +221,6 @@ impl<D: Data> GGSWInfos for GGSWCompressed<D> {
 
     fn dnum(&self) -> Dnum {
         Dnum(self.data.rows() as u32)
-    }
-}
-
-impl<D: Data> LWEInfos for &GGSWCompressed<D> {
-    fn n(&self) -> Degree {
-        (**self).n()
-    }
-
-    fn base2k(&self) -> Base2K {
-        (**self).base2k()
-    }
-
-    fn size(&self) -> usize {
-        (**self).size()
-    }
-}
-
-impl<D: Data> GLWEInfos for &GGSWCompressed<D> {
-    fn rank(&self) -> Rank {
-        (**self).rank()
-    }
-}
-
-impl<D: Data> GGSWInfos for &GGSWCompressed<D> {
-    fn dsize(&self) -> Dsize {
-        (**self).dsize()
-    }
-
-    fn dnum(&self) -> Dnum {
-        (**self).dnum()
     }
 }
 
@@ -273,7 +255,7 @@ impl GGSWCompressed<Vec<u8>> {
         Self::alloc(
             infos.n(),
             infos.base2k(),
-            infos.max_k(),
+            infos.k(),
             infos.rank(),
             infos.dnum(),
             infos.dsize(),
@@ -327,7 +309,7 @@ impl GGSWCompressed<Vec<u8>> {
         Self::bytes_of(
             infos.n(),
             infos.base2k(),
-            infos.max_k(),
+            infos.k(),
             infos.rank(),
             infos.dnum(),
             infos.dsize(),
@@ -360,6 +342,7 @@ impl<D: HostDataRef> GGSWCompressed<D> {
         let rank: usize = self.rank().into();
         GLWECompressed {
             data: self.data.at(row, col),
+            k: self.k,
             base2k: self.base2k,
             rank: self.rank,
             seed: self.seed[row * (rank + 1) + col],
@@ -373,6 +356,7 @@ impl<D: HostDataMut> GGSWCompressed<D> {
         let rank: usize = self.rank().into();
         GLWECompressed {
             data: self.data.at_mut(row, col),
+            k: self.k,
             base2k: self.base2k,
             rank: self.rank,
             seed: self.seed[row * (rank + 1) + col],
@@ -451,7 +435,7 @@ pub trait GGSWCompressedToBackendRef<BE: Backend> {
 impl<BE: Backend> GGSWCompressedToBackendRef<BE> for GGSWCompressed<BE::OwnedBuf> {
     fn to_backend_ref(&self) -> GGSWCompressedBackendRef<'_, BE> {
         GGSWCompressedBackendRef::from_inner(GGSWCompressed {
-            k: self.max_k(),
+            k: self.k(),
             base2k: self.base2k(),
             dsize: self.dsize(),
             rank: self.rank(),
@@ -464,7 +448,7 @@ impl<BE: Backend> GGSWCompressedToBackendRef<BE> for GGSWCompressed<BE::OwnedBuf
 impl<'b, BE: Backend + 'b> GGSWCompressedToBackendRef<BE> for &GGSWCompressed<BE::BufRef<'b>> {
     fn to_backend_ref(&self) -> GGSWCompressedBackendRef<'_, BE> {
         GGSWCompressedBackendRef::from_inner(GGSWCompressed {
-            k: self.max_k(),
+            k: self.k(),
             base2k: self.base2k(),
             dsize: self.dsize(),
             rank: self.rank(),
@@ -477,7 +461,7 @@ impl<'b, BE: Backend + 'b> GGSWCompressedToBackendRef<BE> for &GGSWCompressed<BE
 impl<'b, BE: Backend + 'b> GGSWCompressedToBackendRef<BE> for &mut GGSWCompressed<BE::BufMut<'b>> {
     fn to_backend_ref(&self) -> GGSWCompressedBackendRef<'_, BE> {
         GGSWCompressedBackendRef::from_inner(GGSWCompressed {
-            k: self.max_k(),
+            k: self.k(),
             base2k: self.base2k(),
             dsize: self.dsize(),
             rank: self.rank(),
@@ -494,7 +478,7 @@ pub trait GGSWCompressedToBackendMut<BE: Backend>: GGSWCompressedToBackendRef<BE
 impl<BE: Backend> GGSWCompressedToBackendMut<BE> for GGSWCompressed<BE::OwnedBuf> {
     fn to_backend_mut(&mut self) -> GGSWCompressedBackendMut<'_, BE> {
         GGSWCompressedBackendMut::from_inner(GGSWCompressed {
-            k: self.max_k(),
+            k: self.k(),
             base2k: self.base2k(),
             dsize: self.dsize(),
             rank: self.rank(),
@@ -507,7 +491,7 @@ impl<BE: Backend> GGSWCompressedToBackendMut<BE> for GGSWCompressed<BE::OwnedBuf
 impl<'b, BE: Backend + 'b> GGSWCompressedToBackendMut<BE> for &mut GGSWCompressed<BE::BufMut<'b>> {
     fn to_backend_mut(&mut self) -> GGSWCompressedBackendMut<'_, BE> {
         GGSWCompressedBackendMut::from_inner(GGSWCompressed {
-            k: self.max_k(),
+            k: self.k(),
             base2k: self.base2k(),
             dsize: self.dsize(),
             rank: self.rank(),
@@ -525,6 +509,7 @@ fn ggsw_compressed_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
     let rank: usize = ggsw.rank().into();
     GLWECompressed {
         data: mat_znx_at_backend_mut_from_mut::<BE>(&mut ggsw.data, row, col),
+        k: ggsw.k,
         base2k: ggsw.base2k,
         rank: ggsw.rank,
         seed: ggsw.seed[row * (rank + 1) + col],
@@ -539,6 +524,7 @@ fn ggsw_compressed_at_backend_ref_from_ref<'a, 'b, BE: Backend>(
     let rank: usize = ggsw.rank().into();
     GLWECompressed {
         data: mat_znx_at_backend_ref_from_ref::<BE>(&ggsw.data, row, col),
+        k: ggsw.k,
         base2k: ggsw.base2k,
         rank: ggsw.rank,
         seed: ggsw.seed[row * (rank + 1) + col],

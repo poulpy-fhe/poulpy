@@ -2,7 +2,7 @@ use anyhow::Result;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use poulpy_core::layouts::{
-    BSGSMeta, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta,
+    BSGSMeta, Compact, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta,
     prepared::{GLWETensorKeyPrepared, GLWETensorKeyPreparedToBackendRef},
 };
 
@@ -12,7 +12,7 @@ use crate::{
     checked_log_budget_sub,
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
     polynomial::{AdaptiveBSGS, ComplexBSGSPolynomial},
-    power_basis::{PowerBasis, PowerBasisGen},
+    power_basis::{PowerBasis, PowerBasisGen, PowerBasisInsert},
 };
 
 pub use poulpy_core::layouts::{BSGSPolynomialInfos, BabyStep, Basis, Parity, PowerBasisHelper};
@@ -45,7 +45,7 @@ pub trait CKKSAdaptivePolynomialEvaluation<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
         S: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
@@ -73,7 +73,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
         S: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
@@ -130,12 +130,14 @@ where
             tsk,
             scratch,
         )?;
-        res.set_log_delta(res.log_delta() + drop);
-        res.set_log_budget(checked_log_budget_sub(
-            "adaptive polynomial high-branch compensation",
-            res.log_budget(),
-            drop,
-        )?);
+        // The high branch was evaluated against coefficients pre-divided by `2^drop`
+        // at reduced scale; relabel its scale up by `drop` to restore the true
+        // value. `log_budget = k − log_delta` follows for free (k untouched), so
+        // this consumes `drop` bits of budget — error if it isn't there.
+        checked_log_budget_sub("adaptive polynomial high-branch compensation", res.log_budget(), drop)?;
+        let mut res_meta = res.meta();
+        res_meta.log_delta += drop;
+        res.set_meta(res_meta);
 
         let mut res_low = self.ckks_ciphertext_alloc_from_infos(src);
         self.ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<BE::OwnedBuf>, _, _>(
@@ -160,7 +162,7 @@ pub trait PolynomialEvaluation<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
         A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
@@ -179,7 +181,7 @@ pub trait PolynomialEvaluation<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
         C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
@@ -196,7 +198,7 @@ pub trait PolynomialEvaluation<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
         S: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
@@ -214,7 +216,7 @@ pub trait PolynomialEvaluation<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
         S: GLWEToBackendRef<BE> + CKKSCtBounds,
         C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,

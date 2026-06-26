@@ -1,19 +1,19 @@
+use poulpy_core::layouts::Compact;
 use poulpy_core::layouts::{
     BSGSMeta, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta,
     prepared::GLWETensorKeyPreparedToBackendRef,
 };
-use poulpy_core::{
-    BSGSConstAdd, BSGSPrecision, GLWEAdd, GLWECopy, GLWEMulConst, GLWENormalize, GLWEPolynomialEvaluation, GLWEShift,
-    GLWETensoring, GLWEZero, GiantStepTensorBounds,
-};
+use poulpy_core::{BSGSOps, GLWEPolynomialEvaluation, GLWEZero};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::CKKSCtBounds;
 use crate::{
     SetCKKSInfos,
-    api::{BSGSPolynomialInfos, BabyStep as BabyStepInfos, CKKSAddOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps, PowerBasisHelper},
-    default::mul::{mul_ct_params_raw, mul_pt_params_raw},
-    layouts::{CKKSCiphertext, CKKSModuleAlloc},
+    api::{
+        BSGSPolynomialInfos, BabyStep as BabyStepInfos, CKKSAddOps, CKKSCopyOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps,
+        PowerBasisHelper,
+    },
+    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPreparedRight},
     polynomial::ComplexBSGSPolynomial,
 };
 use anyhow::{Result, ensure};
@@ -44,60 +44,93 @@ where
     }
 }
 
-/// CKKS precision and plaintext-coupled ops for the core BSGS engine.
-struct CKKSBSGSPrecision;
+/// CKKS scale-aware operations for the scale-agnostic core BSGS engine.
+///
+/// Every method is a thin dispatch to the CKKS API ([`CKKSMulOps`], [`CKKSAddOps`],
+/// [`CKKSCopyOps`]); the only non-dispatch bits are the accumulator seed and
+/// compaction, which have no single existing API equivalent.
+struct CKKSBSGSOps;
 
-impl<BE: Backend> BSGSPrecision<BE> for CKKSBSGSPrecision {
-    fn mul_ct_params<R, A, B>(&self, res: &R, a: &A, b: &B) -> Result<(usize, usize, usize)>
-    where
-        R: GLWEInfos + BSGSMeta,
-        A: GLWEInfos + BSGSMeta,
-        B: GLWEInfos + BSGSMeta,
-    {
-        mul_ct_params_raw(
-            res.max_k().as_usize(),
-            a.bsgs_log_delta(),
-            a.bsgs_log_budget(),
-            a.bsgs_effective_k(),
-            b.bsgs_log_delta(),
-            b.bsgs_log_budget(),
-            b.bsgs_effective_k(),
-        )
-    }
-
-    fn mul_pt_params<R, A, P>(&self, res: &R, a: &A, pt: &P) -> Result<(usize, usize, usize)>
-    where
-        R: GLWEInfos + BSGSMeta,
-        A: GLWEInfos + BSGSMeta,
-        P: GLWEInfos + BSGSMeta,
-    {
-        mul_pt_params_raw(
-            res.max_k().as_usize(),
-            a.bsgs_log_delta(),
-            a.bsgs_log_budget(),
-            pt.bsgs_log_delta(),
-            pt.bsgs_log_budget(),
-            pt.max_k().as_usize(),
-        )
-    }
-}
-
-impl<BE: Backend, R, P> BSGSConstAdd<BE, R, P> for CKKSBSGSPrecision
+impl<BE: Backend, V, P, A, R> BSGSOps<BE, V, P, A, R> for CKKSBSGSOps
 where
-    Module<BE>: CKKSAddOps<BE>,
-    R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+    Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + CKKSMulAddOps<BE> + CKKSCopyOps<BE> + GLWEZero<BE>,
+    V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
     P: GLWEToBackendRef<BE> + CKKSCtBounds,
+    A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
+    R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
 {
+    type Prepared = CKKSPreparedRight<BE>;
+
+    fn init_accumulator(&self, module: &Module<BE>, res: &mut V, seed: &A, _scratch: &mut ScratchArena<'_, BE>) -> Result<()> {
+        res.set_log_delta(seed.log_delta());
+        res.set_log_budget(seed.log_budget());
+        res.compact();
+        module.glwe_zero(res);
+        Ok(())
+    }
+
     fn add_pt_const_assign(
         &self,
         module: &Module<BE>,
-        res: &mut R,
+        res: &mut V,
         res_coeff: usize,
         coeffs: &P,
         idx: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()> {
         module.ckks_add_pt_const_assign(res, res_coeff, coeffs, idx, scratch)
+    }
+
+    fn mul_pt_const(
+        &self,
+        module: &Module<BE>,
+        res: &mut V,
+        a: &A,
+        coeffs: &P,
+        idx: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()> {
+        module.ckks_mul_pt_const_into(res, a, coeffs, idx, scratch)
+    }
+
+    fn mul_add_pt_const(
+        &self,
+        module: &Module<BE>,
+        res: &mut V,
+        a: &A,
+        coeffs: &P,
+        idx: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()> {
+        module.ckks_mul_add_pt_const_into(res, a, coeffs, idx, scratch)
+    }
+
+    fn prepare_right(&self, module: &Module<BE>, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<Self::Prepared> {
+        module.ckks_prepare_right(a, scratch)
+    }
+
+    fn mul_prepared_assign<T>(
+        &self,
+        module: &Module<BE>,
+        dst: &mut V,
+        prepared: &Self::Prepared,
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
+    {
+        module.ckks_mul_prepared_assign(dst, prepared, tsk, scratch)
+    }
+
+    fn add_assign(&self, module: &Module<BE>, dst: &mut V, a: &V, scratch: &mut ScratchArena<'_, BE>) -> Result<()> {
+        module.ckks_add_assign(dst, a, scratch)
+    }
+
+    fn copy(&self, module: &Module<BE>, res: &mut R, src: &V, scratch: &mut ScratchArena<'_, BE>) -> Result<()> {
+        module.ckks_copy(res, src, scratch)?;
+        res.compact();
+        Ok(())
     }
 }
 
@@ -111,19 +144,8 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GiantStepTensorBounds<BE>
-            + GLWEMulConst<BE>
-            + GLWEAdd<BE>
-            + GLWEShift<BE>
-            + GLWETensoring<BE>
-            + GLWENormalize<BE>
-            + GLWEZero<BE>
-            + GLWECopy<BE>
-            + CKKSAddOps<BE>
-            + CKKSMulAddOps<BE>
-            + CKKSModuleAlloc<BE>
-            + Sized,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds,
+        Self: GLWEZero<BE> + CKKSAddOps<BE> + CKKSMulOps<BE> + CKKSMulAddOps<BE> + CKKSModuleAlloc<BE> + CKKSCopyOps<BE> + Sized,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds + Compact,
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
@@ -139,21 +161,15 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GiantStepTensorBounds<BE>
-            + GLWEMulConst<BE>
-            + GLWEAdd<BE>
-            + GLWEShift<BE>
-            + GLWETensoring<BE>
-            + GLWENormalize<BE>
-            + GLWEZero<BE>
-            + GLWECopy<BE>
+        Self: GLWEZero<BE>
             + CKKSAddOps<BE>
             + CKKSImagOps<BE>
             + CKKSMulOps<BE>
             + CKKSMulAddOps<BE>
             + CKKSModuleAlloc<BE>
+            + CKKSCopyOps<BE>
             + Sized,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds + Compact,
         C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         G: PowerBasisHelper<BE, A>,
@@ -170,20 +186,15 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GiantStepTensorBounds<BE>
-            + GLWEMulConst<BE>
-            + GLWEAdd<BE>
-            + GLWEShift<BE>
-            + GLWETensoring<BE>
-            + GLWENormalize<BE>
-            + GLWEZero<BE>
-            + GLWECopy<BE>
+        Self: GLWEZero<BE>
             + GLWEPolynomialEvaluation<BE>
             + CKKSAddOps<BE>
+            + CKKSMulOps<BE>
             + CKKSMulAddOps<BE>
             + CKKSModuleAlloc<BE>
+            + CKKSCopyOps<BE>
             + Sized,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds + Compact,
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
@@ -211,24 +222,24 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         let mut baby_steps = Vec::with_capacity(n_to_process);
         let parity = poly.parity();
         let x = power_basis.get(1)?;
-        let precision = CKKSBSGSPrecision;
+        let precision = CKKSBSGSOps;
         for i in 0..n_to_process {
             let coeffs = poly.baby_step(i);
             let degree = coeffs.n().as_usize() - 1;
             let mut value = self.ckks_ciphertext_alloc_from_infos(x);
             value.set_meta(x.meta());
-            self.glwe_eval_baby_step::<_, _, _, A, G>(
-                &precision,
-                &mut value,
-                parity,
-                coeffs,
-                power_basis,
-                &mut scratch.borrow(),
-            )?;
+            self.glwe_eval_baby_step(&precision, &mut value, parity, coeffs, power_basis, &mut scratch.borrow())?;
             baby_steps.push(EvaluatedBabyStep { degree, value });
         }
 
-        self.glwe_eval_giant_steps(&precision, res, &mut baby_steps, power_basis, tsk, &mut scratch.borrow())?;
+        self.glwe_eval_giant_steps::<_, R, _, _, B::Coeffs, A, G, T>(
+            &precision,
+            res,
+            &mut baby_steps,
+            power_basis,
+            tsk,
+            &mut scratch.borrow(),
+        )?; //TODO: ensure each giant-step intermediate state is compacted
 
         if can_fold {
             let xpow = power_basis.get(fold_power)?;
@@ -247,22 +258,16 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GiantStepTensorBounds<BE>
-            + GLWEMulConst<BE>
-            + GLWEAdd<BE>
-            + GLWEShift<BE>
-            + GLWETensoring<BE>
-            + GLWENormalize<BE>
-            + GLWEZero<BE>
-            + GLWECopy<BE>
+        Self: GLWEZero<BE>
             + GLWEPolynomialEvaluation<BE>
             + CKKSAddOps<BE>
             + CKKSImagOps<BE>
             + CKKSMulOps<BE>
             + CKKSMulAddOps<BE>
             + CKKSModuleAlloc<BE>
+            + CKKSCopyOps<BE>
             + Sized,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds + Compact,
         C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         G: PowerBasisHelper<BE, A>,
@@ -309,7 +314,7 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
         // over baby_i runs the relinearizations once.
         let parity = BSGSPolynomialInfos::<BE>::parity(poly_re);
         let x = power_basis.get(1)?;
-        let precision = CKKSBSGSPrecision;
+        let precision = CKKSBSGSOps;
         let mut baby_steps = Vec::with_capacity(n_to_process);
         for i in 0..n_to_process {
             let re_coeffs = BSGSPolynomialInfos::<BE>::baby_step(poly_re, i);
@@ -322,7 +327,7 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
 
             let mut value = self.ckks_ciphertext_alloc_from_infos(x);
             value.set_meta(x.meta());
-            self.glwe_eval_baby_step::<_, _, _, A, G>(
+            self.glwe_eval_baby_step::<_, _, C, A, G>(
                 &precision,
                 &mut value,
                 parity,
@@ -333,7 +338,7 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
 
             let mut im_value = self.ckks_ciphertext_alloc_from_infos(x);
             im_value.set_meta(x.meta());
-            self.glwe_eval_baby_step::<_, _, _, A, G>(
+            self.glwe_eval_baby_step::<_, _, C, A, G>(
                 &precision,
                 &mut im_value,
                 parity,
@@ -347,7 +352,14 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
             baby_steps.push(EvaluatedBabyStep { degree, value });
         }
 
-        self.glwe_eval_giant_steps(&precision, res, &mut baby_steps, power_basis, tsk, &mut scratch.borrow())?;
+        self.glwe_eval_giant_steps::<_, R, _, _, C, A, G, T>(
+            &precision,
+            res,
+            &mut baby_steps,
+            power_basis,
+            tsk,
+            &mut scratch.borrow(),
+        )?;
 
         if can_fold {
             // res += a·x^fold + i·(b·x^fold), with a = last_re[0], b = last_im[0].

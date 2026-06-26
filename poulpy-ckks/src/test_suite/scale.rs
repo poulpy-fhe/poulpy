@@ -4,7 +4,7 @@ use crate::{CKKSCompositionError, CKKSInfos, api::CKKSScaleManage, leveled::api:
 
 use super::helpers::{
     TestContextBackend, TestContextModule, TestScalar, alloc_scratch, assert_ckks_error, assert_ct_meta,
-    assert_decrypt_precision, assert_decrypt_precision_at_log_delta, ckks_encrypt, ckks_encrypt_with_prec, gen_sk,
+    assert_decrypt_precision_at_log_delta, ckks_encrypt, ckks_encrypt_with_prec, gen_sk,
     gen_sk_with_raw, gen_tsk, test_vector_1,
 };
 use poulpy_hal::{
@@ -39,7 +39,7 @@ pub fn test_scale_down_then_multiply<BE, F, E>(
     let want_re: Vec<F> = (0..m).map(|j| re1[j] * re1[j] - im1[j] * im1[j]).collect();
     let want_im: Vec<F> = (0..m).map(|j| F::from_f64(2.0).unwrap() * re1[j] * im1[j]).collect();
 
-    let ld = params.prec.log_delta;
+    let ld = params.prec_meta.log_delta;
     for &bits in &[ld / 4, ld / 2 + 1] {
         assert!(bits < ld, "test setup");
         let mut ct = ckks_encrypt_with_prec::<BE, F, E>(
@@ -51,7 +51,7 @@ pub fn test_scale_down_then_multiply<BE, F, E>(
             params.k,
             &re1,
             &im1,
-            params.prec,
+            params.prec(),
             &mut scratch.borrow(),
         );
         module.ckks_scale_down_assign(&mut ct, bits, &mut scratch.borrow()).unwrap();
@@ -157,7 +157,11 @@ where
         .ckks_scale_up_assign(&mut ct, SCALE_BITS, &mut scratch.borrow())
         .unwrap();
     assert_ct_meta("scale_round_trip", &ct, original_log_delta, original_log_budget);
-    assert_decrypt_precision(
+    // The round trip re-zeros the `SCALE_BITS` low torus bits (right-shift then
+    // left-shift), so the recovered precision sits ~1 bit below a fresh
+    // encryption on an inexact backend (FFT64); allow that margin while still
+    // proving the value survived. Decoding is still at the full `original_log_delta`.
+    assert_decrypt_precision_at_log_delta(
         "scale_round_trip",
         &params,
         module,
@@ -166,6 +170,7 @@ where
         &sk,
         &re1,
         &im1,
+        original_log_delta - 1,
         &mut scratch.borrow(),
     );
 }

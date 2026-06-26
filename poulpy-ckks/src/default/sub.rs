@@ -1,6 +1,6 @@
 use anyhow::Result;
 use poulpy_core::{
-    GLWENormalize, GLWEShift, GLWESub,
+    GLWENormalize, GLWEShift, GLWESub, ModuleTransfer,
     layouts::{GLWEToBackendMut, LWEInfos},
 };
 use poulpy_hal::{
@@ -8,7 +8,7 @@ use poulpy_hal::{
         VecZnxLshSubBackend, VecZnxLshSubCoeffToCoeffBackend, VecZnxLshTmpBytes, VecZnxRshSubBackend,
         VecZnxRshSubCoeffIntoBackend, VecZnxRshTmpBytes,
     },
-    layouts::{Backend, ScratchArena},
+    layouts::{Backend, HostBytesBackend, ScratchArena, TransferFrom},
 };
 
 use crate::{
@@ -122,11 +122,15 @@ pub trait CKKSSubDefault<BE: Backend> {
 
     fn ckks_sub_one_assign_default<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Self:
-            VecZnxLshSubCoeffToCoeffBackend<BE> + VecZnxRshSubCoeffIntoBackend<BE> + CKKSPlaintextDefault<BE> + GLWENormalize<BE>,
+        Self: VecZnxLshSubCoeffToCoeffBackend<BE>
+            + VecZnxRshSubCoeffIntoBackend<BE>
+            + CKKSPlaintextDefault<BE>
+            + GLWENormalize<BE>
+            + ModuleTransfer<BE>,
+        BE: TransferFrom<HostBytesBackend>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + LWEInfos,
     {
-        let one = ckks_one_pt::<BE>(dst.base2k())?;
+        let one = ckks_one_pt::<BE, Self>(self, dst.base2k())?;
         self.ckks_sub_pt_const_assign_default(dst, 0, &one, 0, scratch)
     }
 

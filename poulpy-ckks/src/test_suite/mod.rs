@@ -7,10 +7,12 @@
 
 use poulpy_core::{
     EncryptionLayout,
-    layouts::{GLWEAutomorphismKeyLayout, GLWELayout, GLWETensorKeyLayout, Rank},
+    layouts::{
+        Base2K, Degree, GLWEAutomorphismKeyLayout, GLWELayout, GLWESwitchingKeyLayout, GLWETensorKeyLayout, Rank, TorusPrecision,
+    },
 };
 
-use crate::CKKSMeta;
+use crate::{CKKSLayout, CKKSMeta};
 
 /// Shared CKKS parameter set for test instantiation.
 #[derive(Clone, Copy)]
@@ -18,12 +20,32 @@ pub struct CKKSTestParams {
     pub n: usize,
     pub base2k: usize,
     pub k: usize,
-    pub prec: CKKSMeta,
+    /// Plaintext precision metadata (`log_delta`, `log_sparsity`). The effective
+    /// torus width is `log_delta + prec_log_budget`; see [`Self::prec`].
+    pub prec_meta: CKKSMeta,
+    /// Plaintext budget bits, i.e. `prec.k - prec_meta.log_delta`.
+    pub prec_log_budget: usize,
     pub hw: usize,
     pub dsize: usize,
 }
 
 impl CKKSTestParams {
+    /// Derives the full plaintext [`CKKSLayout`] from `prec_meta`/`prec_log_budget`,
+    /// reusing the param set's `n`/`base2k` (rank-1). This is the single source of
+    /// truth for the test plaintext precision; storing it would duplicate `n`,
+    /// `base2k`, and the `log_delta + log_budget` sum.
+    pub fn prec(&self) -> CKKSLayout {
+        CKKSLayout {
+            glwe_layout: GLWELayout {
+                n: Degree(self.n as u32),
+                base2k: Base2K(self.base2k as u32),
+                k: TorusPrecision((self.prec_meta.log_delta + self.prec_log_budget) as u32),
+                rank: Rank(1),
+            },
+            meta: self.prec_meta,
+        }
+    }
+
     pub fn glwe_layout(&self) -> EncryptionLayout<GLWELayout> {
         EncryptionLayout::new_from_default_sigma(GLWELayout {
             n: self.n.into(),
@@ -36,7 +58,7 @@ impl CKKSTestParams {
 
     pub fn tsk_layout(&self) -> EncryptionLayout<GLWETensorKeyLayout> {
         let k = self.k + self.dsize * self.base2k;
-        let dnum = k.div_ceil(self.dsize * self.base2k);
+        let dnum = k / (self.dsize * self.base2k);
         EncryptionLayout::new_from_default_sigma(GLWETensorKeyLayout {
             n: self.n.into(),
             base2k: self.base2k.into(),
@@ -50,12 +72,30 @@ impl CKKSTestParams {
 
     pub fn atk_layout(&self) -> EncryptionLayout<GLWEAutomorphismKeyLayout> {
         let k = self.k + self.dsize * self.base2k;
-        let dnum = k.div_ceil(self.dsize * self.base2k);
+        let dnum = k / (self.dsize * self.base2k);
         EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
             n: self.n.into(),
             base2k: self.base2k.into(),
             k: k.into(),
             rank: Rank(1),
+            dsize: self.dsize.into(),
+            dnum: dnum.into(),
+        })
+        .unwrap()
+    }
+
+    /// Layout of a rank-1 GLWE key-switching key whose input ciphertext has
+    /// modulus `k_in` bits (e.g. the encapsulation `denseToSparse` /
+    /// `sparseToDense` keys, sized at the input level and at `k_boot`).
+    pub fn ksk_layout(&self, k_in: usize) -> EncryptionLayout<GLWESwitchingKeyLayout> {
+        let k = k_in + self.dsize * self.base2k;
+        let dnum = k / (self.dsize * self.base2k);
+        EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
+            n: self.n.into(),
+            base2k: self.base2k.into(),
+            k: k.into(),
+            rank_in: Rank(1),
+            rank_out: Rank(1),
             dsize: self.dsize.into(),
             dnum: dnum.into(),
         })
@@ -68,11 +108,11 @@ pub const NTT120_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     n: 256,
     base2k: 52,
     k: 8 * 40,
-    prec: CKKSMeta {
+    prec_meta: CKKSMeta {
         log_sparsity: 0,
         log_delta: 40,
-        log_budget: 30,
     },
+    prec_log_budget: 30,
     hw: 192,
     dsize: 1,
 };
@@ -82,11 +122,11 @@ pub const FFT64_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     n: 256,
     base2k: 19,
     k: 8 * 19,
-    prec: CKKSMeta {
+    prec_meta: CKKSMeta {
         log_sparsity: 0,
         log_delta: 30,
-        log_budget: 10,
     },
+    prec_log_budget: 10,
     hw: 192,
     dsize: 1,
 };
@@ -96,11 +136,11 @@ pub const NTT120_PARAMS_F128: CKKSTestParams = CKKSTestParams {
     n: 256,
     base2k: 52,
     k: 8 * 80,
-    prec: CKKSMeta {
+    prec_meta: CKKSMeta {
         log_sparsity: 0,
         log_delta: 80,
-        log_budget: 30,
     },
+    prec_log_budget: 30,
     hw: 192,
     dsize: 1,
 };
@@ -188,11 +228,6 @@ macro_rules! ckks_backend_test_suite {
                 decrypt_extract_base2k_mismatch_error,
                 $crate::test_suite::encryption::test_decrypt_extract_base2k_mismatch_error
             );
-            run_test!(
-                reallocate_limbs_checked_error,
-                $crate::test_suite::errors::test_reallocate_limbs_checked_error
-            );
-            run_test!(compact_limbs_copy, $crate::test_suite::errors::test_compact_limbs_copy);
             run_test!(
                 add_pt_vec_alignment_error,
                 $crate::test_suite::errors::test_add_pt_vec_alignment_error
@@ -398,6 +433,10 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 dft_slots_to_coeffs_repack_sparse,
                 $crate::test_suite::dft::test_dft_slots_to_coeffs_repack_sparse
+            );
+            run_test!(
+                dft_plan_helpers_match_compiled,
+                $crate::test_suite::dft::test_dft_plan_helpers_match_compiled
             );
             run_test!(mul_ct_aligned, $crate::test_suite::mul::test_mul_ct_aligned);
             run_test!(mul_ct_delta_a_gt_b, $crate::test_suite::mul::test_mul_ct_delta_a_gt_b);
@@ -606,6 +645,10 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_chebyshev_degree31_min_mult
             );
             run_test!(
+                eval_poly_consumed_bits_sweep,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_consumed_bits_sweep
+            );
+            run_test!(
                 eval_poly_const_coeffs_complex_cubic,
                 $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_complex_cubic
             );
@@ -642,6 +685,14 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::eval_mod::test_eval_mod_cos_continuous
             );
             run_test!(eval_mod_exp, $crate::test_suite::eval_mod::test_eval_mod_exp);
+            run_test!(
+                bootstrapping_standard_e2e,
+                $crate::test_suite::bootstrapping::test_bootstrapping_standard_e2e
+            );
+            run_test!(
+                bootstrapping_evalround_e2e,
+                $crate::test_suite::bootstrapping::test_bootstrapping_evalround_e2e
+            );
             run_test!(
                 mul_add_const_zero_preserves_dst_meta,
                 $crate::test_suite::mul_add::test_mul_add_const_zero_preserves_dst_meta
@@ -725,6 +776,7 @@ pub mod add;
 pub mod add_many;
 pub mod add_unsafe;
 pub mod affine;
+pub mod bootstrapping;
 pub mod composition;
 pub mod conjugate;
 pub mod copy;

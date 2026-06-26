@@ -198,7 +198,6 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
     module: &M,
     cache: &mut LinearTransformationBabySteps<BE>,
     a: &A,
-    a_effective_k: usize,
     keys: &H,
     key_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
@@ -224,7 +223,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
 {
     let cols = a.rank().as_usize() + 1;
     let a_size = a.size();
-    let mask = msb_mask_bottom_limb(a.base2k().as_usize(), a_effective_k);
+    let mask = msb_mask_bottom_limb(a.base2k().as_usize(), a.k().as_usize());
     let has_nonzero_rotation = cache.values.keys().any(|&rot| rot != 0);
     let (use_hoisted, key_size) = if has_nonzero_rotation {
         let key_infos = keys.automorphism_key_infos();

@@ -15,7 +15,7 @@ where
         src.n(),
         src.cols(),
         src.size(),
-        src.max_size(),
+        src.size(),
     )
 }
 
@@ -133,6 +133,7 @@ impl<To: Backend> ModuleTransfer<To> for Module<To> {
         let _ = self;
         GLWE {
             data: transfer_vec_znx::<From, To>(&src.data),
+            k: src.k,
             base2k: src.base2k,
         }
     }
@@ -154,6 +155,7 @@ impl<To: Backend> ModuleTransfer<To> for Module<To> {
         LWE {
             body: transfer_vec_znx::<From, To>(&src.body),
             mask: transfer_vec_znx::<From, To>(&src.mask),
+            k: src.k,
             base2k: src.base2k,
         }
     }
@@ -174,6 +176,7 @@ impl<To: Backend> ModuleTransfer<To> for Module<To> {
         let _ = self;
         GGLWE {
             data: transfer_mat_znx::<From, To>(&src.data),
+            k: src.k,
             base2k: src.base2k,
             dsize: src.dsize,
         }
@@ -195,6 +198,7 @@ impl<To: Backend> ModuleTransfer<To> for Module<To> {
         let _ = self;
         GGSW {
             data: transfer_mat_znx::<From, To>(&src.data),
+            k: src.k,
             base2k: src.base2k,
             dsize: src.dsize,
         }
@@ -256,6 +260,7 @@ impl<To: Backend> ModuleTransfer<To> for Module<To> {
         let _ = self;
         GLWEPlaintext {
             data: transfer_vec_znx::<From, To>(&src.data),
+            k: src.k,
             base2k: src.base2k,
         }
     }
@@ -276,6 +281,7 @@ impl<To: Backend> ModuleTransfer<To> for Module<To> {
         let _ = self;
         LWEPlaintext {
             data: transfer_vec_znx::<From, To>(&src.data),
+            k: src.k,
             base2k: src.base2k,
         }
     }

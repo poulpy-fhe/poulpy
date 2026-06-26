@@ -1,6 +1,6 @@
 use poulpy_core::{
     GLWEAdd, GLWEMulPlain, GLWENormalize, GLWESub,
-    layouts::{GLWE, GLWEInfos, GLWEPlaintext, LWEInfos, ModuleCoreAlloc},
+    layouts::{GLWE, GLWEInfos, GLWEPlaintext, ModuleCoreAlloc},
 };
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -162,15 +162,7 @@ where
     let mut group = c.benchmark_group(group_name);
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
-            module.glwe_mul_plain(
-                0,
-                &mut ct_out,
-                &ct_in,
-                ct_in.max_k().as_usize(),
-                &pt,
-                pt.max_k().as_usize(),
-                &mut scratch.borrow(),
-            );
+            module.glwe_mul_plain(0, &mut ct_out, &ct_in, &pt, &mut scratch.borrow());
             black_box(());
         })
     });
@@ -194,14 +186,7 @@ where
     let mut group = c.benchmark_group(group_name);
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
-            module.glwe_mul_plain_assign(
-                0,
-                &mut ct,
-                infos.max_k().as_usize(),
-                &pt,
-                pt.max_k().as_usize(),
-                &mut scratch.borrow(),
-            );
+            module.glwe_mul_plain_assign(0, &mut ct, &pt, &mut scratch.borrow());
             black_box(());
         })
     });

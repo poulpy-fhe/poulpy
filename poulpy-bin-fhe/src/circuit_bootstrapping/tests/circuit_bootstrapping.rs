@@ -207,7 +207,7 @@ pub fn test_circuit_bootstrapping_to_exponent<BE: Backend<OwnedBuf = Vec<u8>> + 
     let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(ggsw_infos).unwrap();
     let mut ct_glwe: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&ggsw_infos);
     let mut pt_glwe: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&ggsw_infos);
-    pt_glwe.data.at_mut(0, 0)[0] = 1 << (res_base2k - 2);
+    pt_glwe.data_mut().at_mut(0, 0)[0] = 1 << (res_base2k - 2);
 
     module.glwe_encrypt_sk(
         &mut ct_glwe,
@@ -231,8 +231,8 @@ pub fn test_circuit_bootstrapping_to_exponent<BE: Backend<OwnedBuf = Vec<u8>> + 
 
     // Parameters are set such that the first limb should be noiseless.
     let mut pt_want: Vec<i64> = vec![0i64; module.n()];
-    pt_want[data as usize * (1 << log_gap_out)] = pt_glwe.data.at(0, 0)[0];
-    assert_eq!(pt_res.data.at(0, 0), pt_want);
+    pt_want[data as usize * (1 << log_gap_out)] = pt_glwe.data().at(0, 0)[0];
+    assert_eq!(pt_res.data().at(0, 0), pt_want);
 }
 
 pub fn test_circuit_bootstrapping_to_constant<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend, M, BRA: BlindRotationAlgo>(
@@ -404,7 +404,7 @@ pub fn test_circuit_bootstrapping_to_constant<BE: Backend<OwnedBuf = Vec<u8>> + 
     let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(ggsw_infos).unwrap();
     let mut ct_glwe: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&ggsw_infos);
     let mut pt_glwe: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&ggsw_infos);
-    pt_glwe.data.at_mut(0, 0)[0] = 1 << (res_base2k - k_lwe_pt - 1);
+    pt_glwe.data_mut().at_mut(0, 0)[0] = 1 << (res_base2k - k_lwe_pt - 1);
 
     module.glwe_encrypt_sk(
         &mut ct_glwe,
@@ -428,7 +428,7 @@ pub fn test_circuit_bootstrapping_to_constant<BE: Backend<OwnedBuf = Vec<u8>> + 
 
     // Parameters are set such that the first limb should be noiseless.
     let mut pt_want: Vec<i64> = vec![0i64; module.n()];
-    pt_want[0] = pt_glwe.data.at(0, 0)[0] * data;
+    pt_want[0] = pt_glwe.data_mut().at(0, 0)[0] * data;
     println!("pt_res: {pt_res}");
-    assert_eq!(pt_res.data.at(0, 0), pt_want);
+    assert_eq!(pt_res.data().at(0, 0), pt_want);
 }

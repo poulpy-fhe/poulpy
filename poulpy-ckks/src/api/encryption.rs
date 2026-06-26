@@ -26,7 +26,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// log_budget_out = k − pt.log_delta
 /// ```
 ///
-/// `effective_k_out = k` (the full encryption budget).
+/// `k_out = k` (the full encryption budget).
 ///
 /// Errors with `InsufficientHomomorphicCapacity` if `k < pt.log_delta`
 /// (i.e., the encryption key does not provide enough headroom for the

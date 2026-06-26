@@ -35,8 +35,12 @@ impl LWEInfos for GLWESecretLayout {
         self.n
     }
 
-    fn size(&self) -> usize {
-        1
+    fn max_size(&self) -> usize {
+        unimplemented!("this method is not defined for secrets)")
+    }
+
+    fn k(&self) -> super::TorusPrecision {
+        unimplemented!("this method is not defined for secrets")
     }
 }
 impl GLWEInfos for GLWESecretLayout {
@@ -63,8 +67,12 @@ impl<D: Data> LWEInfos for GLWESecret<D> {
         Degree(self.data.n() as u32)
     }
 
-    fn size(&self) -> usize {
+    fn max_size(&self) -> usize {
         1
+    }
+
+    fn k(&self) -> super::TorusPrecision {
+        unimplemented!("this method is not defined for secrets")
     }
 }
 

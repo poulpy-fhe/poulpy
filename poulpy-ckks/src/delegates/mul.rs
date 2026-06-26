@@ -1,7 +1,10 @@
 use anyhow::Result;
 use poulpy_core::{
     GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWETensoring,
-    layouts::{GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, ModuleCoreAlloc, prepared::GLWETensorKeyPreparedToBackendRef},
+    layouts::{
+        Compact, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
+        prepared::GLWETensorKeyPreparedToBackendRef,
+    },
 };
 use poulpy_hal::{
     api::{ModuleN, VecZnxCopyBackend},
@@ -10,7 +13,7 @@ use poulpy_hal::{
 
 use crate::api::CKKSMulOps;
 
-use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, oep::CKKSMulImpl};
+use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight, oep::CKKSMulImpl};
 
 impl<BE: Backend + CKKSMulImpl<BE>> CKKSMulOps<BE> for Module<BE>
 where
@@ -44,25 +47,23 @@ where
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos,
+        P: CKKSInfos + LWEInfos,
     {
-        let b = b.meta();
-        BE::ckks_mul_pt_vec_tmp_bytes(self, res, a, &b)
+        BE::ckks_mul_pt_vec_tmp_bytes(self, res, a, b.k())
     }
 
     fn ckks_mul_pt_const_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos,
+        P: CKKSInfos + LWEInfos,
     {
-        let b = b.meta();
-        BE::ckks_mul_pt_const_tmp_bytes(self, res, a, &b)
+        BE::ckks_mul_pt_const_tmp_bytes(self, res, a, b.k())
     }
 
     fn ckks_mul_into<Dst, A, B, T>(&self, dst: &mut Dst, a: &A, b: &B, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
@@ -72,16 +73,37 @@ where
 
     fn ckks_mul_assign<Dst, A, T>(&self, dst: &mut Dst, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     {
         BE::ckks_mul_assign(self, dst, a, tsk, scratch)
     }
 
+    fn ckks_prepare_right<A>(&self, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
+    where
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+    {
+        BE::ckks_prepare_right(self, a, scratch)
+    }
+
+    fn ckks_mul_prepared_assign<Dst, T>(
+        &self,
+        dst: &mut Dst,
+        prepared: &CKKSPreparedRight<BE>,
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
+    {
+        BE::ckks_mul_prepared_assign(self, dst, prepared, tsk, scratch)
+    }
+
     fn ckks_square_into<Dst, A, T>(&self, dst: &mut Dst, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     {
@@ -90,7 +112,7 @@ where
 
     fn ckks_square_assign<Dst, T>(&self, dst: &mut Dst, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     {
         BE::ckks_square_assign(self, dst, tsk, scratch)
@@ -98,7 +120,7 @@ where
 
     fn ckks_mul_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
@@ -107,7 +129,7 @@ where
 
     fn ckks_mul_pt_vec_assign<Dst, P>(&self, dst: &mut Dst, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         BE::ckks_mul_pt_vec_assign(self, dst, pt, scratch)
@@ -122,7 +144,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
@@ -137,7 +159,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         BE::ckks_mul_pt_const_assign(self, dst, pt, pt_coeff, scratch)

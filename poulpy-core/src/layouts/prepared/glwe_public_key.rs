@@ -39,12 +39,16 @@ impl<D: Data, B: Backend> LWEInfos for GLWEPublicKeyPrepared<D, B> {
         self.key.base2k()
     }
 
-    fn size(&self) -> usize {
-        self.key.size()
+    fn max_size(&self) -> usize {
+        self.key.max_size()
     }
 
     fn n(&self) -> Degree {
         self.key.n()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.key.k()
     }
 }
 
@@ -74,7 +78,7 @@ where
     where
         A: GLWEInfos,
     {
-        self.glwe_public_key_prepared_alloc(infos.base2k(), infos.max_k(), infos.rank())
+        self.glwe_public_key_prepared_alloc(infos.base2k(), infos.k(), infos.rank())
     }
 
     fn glwe_public_key_prepared_bytes_of(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> usize {
@@ -85,7 +89,7 @@ where
     where
         A: GLWEInfos,
     {
-        self.glwe_public_key_prepared_bytes_of(infos.base2k(), infos.max_k(), infos.rank())
+        self.glwe_public_key_prepared_bytes_of(infos.base2k(), infos.k(), infos.rank())
     }
 
     fn glwe_public_key_prepare<R, O>(&self, res: &mut R, other: &O)

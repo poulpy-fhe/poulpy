@@ -1,4 +1,5 @@
 mod add;
+mod bootstrapping;
 mod composite;
 mod conjugate;
 mod copy;
@@ -18,6 +19,7 @@ mod sub;
 mod tmp_bytes;
 
 pub use add::CKKSAddOps;
+pub use bootstrapping::CKKSBootstrappingOps;
 pub use composite::{CKKSAddManyOps, CKKSAffineOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulSubOps};
 pub use conjugate::CKKSConjugateOps;
 pub use copy::CKKSCopyOps;
@@ -31,7 +33,6 @@ pub use neg::CKKSNegOps;
 pub use plaintext::CKKSPlaintextVecOps;
 pub use polynomial_evaluation::*;
 pub use pow2::CKKSPow2Ops;
-pub use rescale::CKKSRescaleOps;
 pub(crate) use rescale::CKKSScaleManage;
 pub use rotate::CKKSRotateOps;
 pub use sub::CKKSSubOps;

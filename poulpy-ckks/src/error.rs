@@ -200,19 +200,14 @@ pub(crate) fn ensure_plaintext_coeff_in_range(op: &'static str, role: &'static s
     Ok(())
 }
 
-pub(crate) fn ensure_plaintext_alignment(
-    op: &'static str,
-    ct_log_budget: usize,
-    pt_log_delta: usize,
-    pt_effective_k: usize,
-) -> Result<()> {
+pub(crate) fn ensure_plaintext_alignment(op: &'static str, ct_log_budget: usize, pt_log_delta: usize, pt_k: usize) -> Result<()> {
     let available = ct_log_budget + pt_log_delta;
-    if available < pt_effective_k {
+    if available < pt_k {
         return Err(CKKSCompositionError::PlaintextAlignmentImpossible {
             op,
             ct_log_budget,
             pt_log_delta,
-            pt_k: pt_effective_k,
+            pt_k,
         }
         .into());
     }

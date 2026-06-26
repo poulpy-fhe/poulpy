@@ -8,7 +8,7 @@ use anyhow::Result;
 use poulpy_core::{
     default::linear_transformation::DiagonalProd,
     layouts::{
-        Base2K, GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef,
+        Base2K, Compact, GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef,
         GetGaloisElement, LinearTransformation, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
     },
 };
@@ -18,7 +18,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSMeta, SetCKKSInfos,
+    CKKSCtBounds, SetCKKSInfos,
     api::LtDiagonalScale,
     default::dft::matrices::DftScalar,
     encoding::reim::Encoder,
@@ -60,13 +60,11 @@ pub trait DFTOps<BE: Backend> {
     /// cost-optimally per factor matrix. The host-backed reference build does not
     /// touch `scratch`, but the parameter is kept for backends whose encode/upload
     /// path needs device scratch.
-    #[allow(clippy::too_many_arguments)]
     fn ckks_new_dft_matrix<Dir, Fmt, E, F>(
         &self,
         host_module: &Module<HostBytesBackend>,
         encoder: &Encoder<E>,
         base2k: Base2K,
-        factor_meta: CKKSMeta,
         literal: &DFTPlan,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<DFTMatrix<BE, Dir, Fmt>>
@@ -89,7 +87,7 @@ pub trait DFTOps<BE: Backend> {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
@@ -103,7 +101,7 @@ pub trait DFTOps<BE: Backend> {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
@@ -117,7 +115,7 @@ pub trait DFTOps<BE: Backend> {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
@@ -135,7 +133,7 @@ pub trait DFTOps<BE: Backend> {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
@@ -152,7 +150,7 @@ pub trait DFTOps<BE: Backend> {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
@@ -170,7 +168,7 @@ pub trait DFTOps<BE: Backend> {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
@@ -186,7 +184,7 @@ pub trait DFTOps<BE: Backend> {
     ) -> Result<()>
     where
         P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;

@@ -232,7 +232,7 @@ where
     module
         .ckks_div_pow2_into(&mut ct_res, &ct, SHIFT_BITS, &mut scratch.borrow())
         .unwrap();
-    let offset = ct.effective_k().saturating_sub(ct_res.max_k().as_usize());
+    let offset = ct.k().as_usize().saturating_sub(ct_res.max_k().as_usize());
     assert_ct_meta(
         "div_pow2 smaller_output",
         &ct_res,

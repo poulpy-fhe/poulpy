@@ -57,6 +57,7 @@ impl<'a, BE: Backend + 'a> GGLWECompressedBackendRef<'a, BE> {
     pub fn body_as_gglwe(&self) -> GGLWE<BE::BufRef<'_>> {
         GGLWE {
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_ref::<BE>(&self.inner.data),
+            k: self.inner.k,
             base2k: self.inner.base2k,
             dsize: self.inner.dsize,
         }
@@ -189,8 +190,12 @@ impl<D: Data> LWEInfos for GGLWECompressed<D> {
         self.base2k
     }
 
-    fn size(&self) -> usize {
+    fn max_size(&self) -> usize {
         self.data.size()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 impl<D: Data> GLWEInfos for GGLWECompressed<D> {
@@ -214,44 +219,6 @@ impl<D: Data> GGLWEInfos for GGLWECompressed<D> {
 
     fn dnum(&self) -> Dnum {
         Dnum(self.data.rows() as u32)
-    }
-}
-
-impl<D: Data> LWEInfos for &GGLWECompressed<D> {
-    fn n(&self) -> Degree {
-        (*self).n()
-    }
-
-    fn base2k(&self) -> Base2K {
-        (*self).base2k()
-    }
-
-    fn size(&self) -> usize {
-        (*self).size()
-    }
-}
-
-impl<D: Data> GLWEInfos for &GGLWECompressed<D> {
-    fn rank(&self) -> Rank {
-        (*self).rank()
-    }
-}
-
-impl<D: Data> GGLWEInfos for &GGLWECompressed<D> {
-    fn rank_in(&self) -> Rank {
-        (*self).rank_in()
-    }
-
-    fn rank_out(&self) -> Rank {
-        (*self).rank_out()
-    }
-
-    fn dsize(&self) -> Dsize {
-        (*self).dsize()
-    }
-
-    fn dnum(&self) -> Dnum {
-        (*self).dnum()
     }
 }
 
@@ -286,7 +253,7 @@ impl GGLWECompressed<Vec<u8>> {
         Self::alloc(
             infos.n(),
             infos.base2k(),
-            infos.max_k(),
+            infos.k(),
             infos.rank_in(),
             infos.rank_out(),
             infos.dnum(),
@@ -349,7 +316,7 @@ impl GGLWECompressed<Vec<u8>> {
         Self::bytes_of(
             infos.n(),
             infos.base2k(),
-            infos.max_k(),
+            infos.k(),
             infos.rank_in(),
             infos.dnum(),
             infos.dsize(),
@@ -448,7 +415,7 @@ pub trait GGLWECompressedToBackendRef<BE: Backend> {
 impl<BE: Backend> GGLWECompressedToBackendRef<BE> for GGLWECompressed<BE::OwnedBuf> {
     fn to_backend_ref(&self) -> GGLWECompressedBackendRef<'_, BE> {
         GGLWECompressedBackendRef::from_inner(GGLWECompressed {
-            k: self.max_k(),
+            k: self.k(),
             base2k: self.base2k(),
             dsize: self.dsize(),
             seed: self.seed.clone(),
@@ -461,7 +428,7 @@ impl<BE: Backend> GGLWECompressedToBackendRef<BE> for GGLWECompressed<BE::OwnedB
 impl<'b, BE: Backend + 'b> GGLWECompressedToBackendRef<BE> for &GGLWECompressed<BE::BufRef<'b>> {
     fn to_backend_ref(&self) -> GGLWECompressedBackendRef<'_, BE> {
         GGLWECompressedBackendRef::from_inner(GGLWECompressed {
-            k: self.max_k(),
+            k: self.k(),
             base2k: self.base2k(),
             dsize: self.dsize(),
             seed: self.seed.clone(),
@@ -474,7 +441,7 @@ impl<'b, BE: Backend + 'b> GGLWECompressedToBackendRef<BE> for &GGLWECompressed<
 impl<'b, BE: Backend + 'b> GGLWECompressedToBackendRef<BE> for &mut GGLWECompressed<BE::BufMut<'b>> {
     fn to_backend_ref(&self) -> GGLWECompressedBackendRef<'_, BE> {
         GGLWECompressedBackendRef::from_inner(GGLWECompressed {
-            k: self.max_k(),
+            k: self.k(),
             base2k: self.base2k(),
             dsize: self.dsize(),
             seed: self.seed.clone(),
@@ -491,7 +458,7 @@ pub trait GGLWECompressedToBackendMut<BE: Backend>: GGLWECompressedToBackendRef<
 impl<BE: Backend> GGLWECompressedToBackendMut<BE> for GGLWECompressed<BE::OwnedBuf> {
     fn to_backend_mut(&mut self) -> GGLWECompressedBackendMut<'_, BE> {
         GGLWECompressedBackendMut::from_inner(GGLWECompressed {
-            k: self.max_k(),
+            k: self.k(),
             base2k: self.base2k(),
             dsize: self.dsize(),
             seed: self.seed.clone(),
@@ -504,7 +471,7 @@ impl<BE: Backend> GGLWECompressedToBackendMut<BE> for GGLWECompressed<BE::OwnedB
 impl<'b, BE: Backend + 'b> GGLWECompressedToBackendMut<BE> for &mut GGLWECompressed<BE::BufMut<'b>> {
     fn to_backend_mut(&mut self) -> GGLWECompressedBackendMut<'_, BE> {
         GGLWECompressedBackendMut::from_inner(GGLWECompressed {
-            k: self.max_k(),
+            k: self.k(),
             base2k: self.base2k(),
             dsize: self.dsize(),
             seed: self.seed.clone(),
@@ -522,6 +489,7 @@ fn gglwe_compressed_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
     let rank_in: usize = gglwe.rank_in().into();
     GLWECompressed {
         base2k: gglwe.base2k,
+        k: gglwe.k,
         rank: gglwe.rank_out,
         data: mat_znx_at_backend_mut_from_mut::<BE>(&mut gglwe.data, row, col),
         seed: gglwe.seed[rank_in * row + col],
@@ -536,6 +504,7 @@ fn gglwe_compressed_at_backend_ref_from_ref<'a, 'b, BE: Backend>(
     let rank_in: usize = gglwe.rank_in().into();
     GLWECompressed {
         base2k: gglwe.base2k,
+        k: gglwe.k,
         rank: gglwe.rank_out,
         data: mat_znx_at_backend_ref_from_ref::<BE>(&gglwe.data, row, col),
         seed: gglwe.seed[rank_in * row + col],

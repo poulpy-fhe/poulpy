@@ -154,7 +154,7 @@ where
     where
         A: GGSWInfos,
     {
-        self.alloc_fhe_uint_prepared(infos.base2k(), infos.max_k(), infos.dnum(), infos.dsize(), infos.rank())
+        self.alloc_fhe_uint_prepared(infos.base2k(), infos.k(), infos.dnum(), infos.dsize(), infos.rank())
     }
 }
 
@@ -285,12 +285,16 @@ impl<D: HostDataRef, T: UnsignedInteger, B: Backend> LWEInfos for FheUintPrepare
         self.bits[0].base2k()
     }
 
-    fn size(&self) -> usize {
-        self.bits[0].size()
+    fn max_size(&self) -> usize {
+        self.bits[0].max_size()
     }
 
     fn n(&self) -> poulpy_core::layouts::Degree {
         self.bits[0].n()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.bits[0].k()
     }
 }
 

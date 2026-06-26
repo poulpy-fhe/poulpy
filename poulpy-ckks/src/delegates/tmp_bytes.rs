@@ -2,20 +2,20 @@ use crate::{
     CKKSCtBounds, CKKSInfos,
     leveled::api::{
         CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSDecrypt, CKKSEncrypt, CKKSImagOps, CKKSMulAddOps, CKKSMulOps,
-        CKKSMulSubOps, CKKSNegOps, CKKSPow2Ops, CKKSRescaleOps, CKKSRotateOps, CKKSSubOps,
+        CKKSMulSubOps, CKKSNegOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
     },
 };
 use poulpy_core::{
     GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWELinearTransformations, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWEShift,
-    GLWETensorKeyEncryptSk, GLWETensoring, glwe_eval_giant_steps_extra_tmp_bytes,
-    layouts::{GGLWEInfos, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
+    GLWETensorKeyEncryptSk, GLWETensoring,
+    layouts::{GGLWEInfos, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory, LWEInfos},
 };
 use poulpy_hal::{
     api::{
         CnvPVecBytesOf, ModuleN, VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddIntoBackend, VecZnxRshBackend,
         VecZnxRshSubBackend, VecZnxRshTmpBytes,
     },
-    layouts::{Backend, Module, VecZnx},
+    layouts::{Backend, Module},
 };
 
 impl<BE: Backend> CKKSAllOpsTmpBytes<BE> for Module<BE>
@@ -28,7 +28,6 @@ where
         + CKKSNegOps<BE>
         + CKKSPow2Ops<BE>
         + CKKSImagOps<BE>
-        + CKKSRescaleOps<BE>
         + CKKSRotateOps<BE>
         + CKKSMulOps<BE>
         + CKKSMulAddOps<BE>
@@ -57,15 +56,12 @@ where
     where
         C: CKKSCtBounds,
         T: GGLWEInfos,
-        P: CKKSInfos,
+        P: CKKSInfos + LWEInfos,
     {
-        let cols: usize = (ct_infos.rank() + 1).into();
-        let compact_ct_scratch_bytes = VecZnx::bytes_of(ct_infos.n().into(), cols, ct_infos.size());
-        // The giant step hoists the prepared `X^{gsp}` right operand, kept alive
-        // across the pairs sharing it.
-        let hoisted_right_scratch_bytes = self.bytes_of_cnv_pvec_right(cols, ct_infos.size());
-        let polynomial_giant_steps_tmp_bytes = self.ckks_mul_tmp_bytes(ct_infos, tsk_infos).max(self.ckks_add_tmp_bytes())
-            + glwe_eval_giant_steps_extra_tmp_bytes(compact_ct_scratch_bytes, hoisted_right_scratch_bytes);
+        // The giant step hoists the prepared `X^{gsp}` right operand into a
+        // backend-resident (heap) buffer, so it no longer draws on scratch; the
+        // per-pair `ct×ct` multiply and `ct+ct` add bound the scratch.
+        let polynomial_giant_steps_tmp_bytes = self.ckks_mul_tmp_bytes(ct_infos, tsk_infos).max(self.ckks_add_tmp_bytes());
 
         self.ckks_encrypt_sk_tmp_bytes(ct_infos)
             .max(self.ckks_decrypt_tmp_bytes(ct_infos))
@@ -80,8 +76,6 @@ where
             .max(self.ckks_div_pow2_tmp_bytes())
             .max(self.ckks_mul_i_tmp_bytes())
             .max(self.ckks_div_i_tmp_bytes())
-            .max(self.ckks_rescale_tmp_bytes())
-            .max(self.ckks_align_tmp_bytes())
             .max(self.ckks_mul_tmp_bytes(ct_infos, tsk_infos))
             .max(self.ckks_mul_add_ct_tmp_bytes(ct_infos, tsk_infos))
             .max(self.ckks_mul_sub_ct_tmp_bytes(ct_infos, tsk_infos))
@@ -98,7 +92,7 @@ where
         C: CKKSCtBounds,
         T: GGLWEInfos,
         A: GGLWEInfos,
-        P: CKKSInfos,
+        P: CKKSInfos + LWEInfos,
     {
         self.ckks_all_ops_tmp_bytes(ct_infos, tsk_infos, pt_prec)
             .max(self.ckks_rotate_tmp_bytes(ct_infos, atk_infos))
