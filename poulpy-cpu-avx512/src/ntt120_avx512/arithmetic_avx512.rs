@@ -1539,8 +1539,8 @@ mod tests {
         };
         let planes = [dump(tp0), dump(tp1), dump(tp2), dump(tp3)];
         for (k, plane) in planes.iter().enumerate() {
-            for c in 0..8 {
-                assert_eq!(plane[c], (1000 * c + k) as i64, "transpose TP{k}[{c}] wrong");
+            for (c, &val) in plane.iter().enumerate() {
+                assert_eq!(val, (1000 * c + k) as i64, "transpose TP{k}[{c}] wrong");
             }
         }
     }
