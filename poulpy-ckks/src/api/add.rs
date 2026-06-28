@@ -1,6 +1,6 @@
 use anyhow::Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, Data, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data, HostBytesBackend, ScratchArena, TransferFrom};
 
 use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::UnnormalizedCKKSCiphertext};
 
@@ -21,7 +21,7 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::UnnormalizedCKKSCiph
 /// For `_into` variants the destination capacity can reduce the result:
 ///
 /// ```text
-/// offset         = max(0, min(a.effective_k(), b.effective_k()) − dst.max_k())
+/// offset         = max(0, min(a.k(), b.k()) − dst.max_k())
 ///
 /// log_delta_out  = min(a.log_delta,  b.log_delta)
 /// log_budget_out = min(a.log_budget, b.log_budget) − offset
@@ -42,13 +42,13 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::UnnormalizedCKKSCiph
 /// The full plaintext polynomial is added coefficient-wise in the ZNX domain.
 ///
 /// ```text
-/// offset         = max(0, a.effective_k() − dst.max_k())
+/// offset         = max(0, a.k() − dst.max_k())
 ///
 /// log_delta_out  = a.log_delta
 /// log_budget_out = a.log_budget − offset
 /// ```
 ///
-/// **Precondition**: `a.log_budget + pt.log_delta >= pt.effective_k()`.
+/// **Precondition**: `a.log_budget + pt.log_delta >= pt.k()`.
 /// Returns `PlaintextAlignmentImpossible` otherwise.
 ///
 /// ## Ciphertext–plaintext-constant addition (`ckks_add_pt_const_*`)
@@ -83,6 +83,7 @@ pub trait CKKSAddOps<BE: Backend> {
     /// Metadata is preserved.
     fn ckks_add_one_assign<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
+        BE: TransferFrom<HostBytesBackend>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 
     fn ckks_add_pt_vec_tmp_bytes(&self) -> usize;

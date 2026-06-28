@@ -7,7 +7,7 @@ use poulpy_hal::{
 };
 
 use crate::layouts::{
-    GLWEInfos, GLWEToBackendMut, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendRef, LWESecretToBackendRef, Rank, SetLWEInfos,
+    GLWEInfos, GLWEToBackendMut, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendRef, LWESecretToBackendRef, Rank, SetBase2k,
 };
 
 pub fn lwe_matrix_decrypt_tmp_bytes_default<BE: Backend, A>(module: &Module<BE>, infos: &A) -> usize
@@ -36,7 +36,7 @@ pub fn lwe_matrix_decrypt_default<BE, R, P, S>(
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes,
     R: LWEMatrixToBackendRef<BE> + LWEMatrixInfos,
-    P: GLWEToBackendMut<BE> + SetLWEInfos + GLWEInfos,
+    P: GLWEToBackendMut<BE> + SetBase2k + GLWEInfos,
     S: LWESecretToBackendRef<BE> + LWEInfos,
     BE: Backend,
 {

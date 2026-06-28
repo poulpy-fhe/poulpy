@@ -1,4 +1,5 @@
 pub(crate) mod add;
+pub(crate) mod bootstrapping;
 pub(crate) mod composite;
 pub(crate) mod conjugate;
 pub(crate) mod copy;
@@ -11,7 +12,6 @@ pub(crate) mod neg;
 pub(crate) mod plaintext;
 pub(crate) mod polynomial_evaluation;
 pub(crate) mod pow2;
-pub(crate) mod rescale;
 pub(crate) mod rotate;
 pub(crate) mod sub;
 pub(crate) mod tmp_bytes;

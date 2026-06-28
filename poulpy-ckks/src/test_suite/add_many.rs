@@ -209,9 +209,9 @@ pub fn test_add_many_delta_log_delta<BE, F, E>(
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
 
-    let low_log_delta = params.prec.log_delta - DELTA_LOG_DELTA;
+    let low_log_delta = params.prec().log_delta() - DELTA_LOG_DELTA;
     let low_prec = precision_at(&params, low_log_delta);
-    let (hi_re, hi_im) = quantized_vector(host_module, &encoder, &params, TestVector::First, params.prec.log_delta);
+    let (hi_re, hi_im) = quantized_vector(host_module, &encoder, &params, TestVector::First, params.prec().log_delta());
     let (lo_re, lo_im) = quantized_vector(host_module, &encoder, &params, TestVector::Second, low_log_delta);
 
     let scale = F::from_f64(1.0 / (2.0 * N as f64)).unwrap();

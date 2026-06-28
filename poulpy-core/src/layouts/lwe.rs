@@ -23,30 +23,101 @@ pub trait LWEInfos {
     fn log_n(&self) -> usize {
         self.n().log2()
     }
-    /// Returns the maximum torus precision representable with the current limb decomposition.
+    /// Returns the maximum Torus precision representable by the object.
     fn max_k(&self) -> TorusPrecision {
-        TorusPrecision(self.size() as u32 * self.base2k().as_u32())
+        TorusPrecision(self.max_size() as u32 * self.base2k().as_u32())
+    }
+
+    /// Returns the Torus precision used by the object.
+    fn k(&self) -> TorusPrecision;
+
+    /// Returns the limb width generic core operations should process.
+    fn size(&self) -> usize {
+        self.k().div_ceil(self.base2k()) as usize
     }
 
     /// Returns the base-2-log of the limb width used for the RNS/CRT representation.
     fn base2k(&self) -> Base2K;
-    /// Returns the number of limbs, i.e. `ceil(k / base2k)`.
-    fn size(&self) -> usize;
+
+    /// Returns the maximum limb width this object can expose through [`Self::size`].
+    fn max_size(&self) -> usize;
 
     /// Returns a plain-data [`LWELayout`] snapshot of the current parameters.
     fn lwe_layout(&self) -> LWELayout {
         LWELayout {
             n: self.n(),
-            k: self.max_k(),
+            k: self.k(),
             base2k: self.base2k(),
         }
     }
 }
 
+impl<T: LWEInfos + ?Sized> LWEInfos for &T {
+    fn n(&self) -> Degree {
+        (**self).n()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        (**self).k()
+    }
+
+    fn base2k(&self) -> Base2K {
+        (**self).base2k()
+    }
+
+    fn max_size(&self) -> usize {
+        (**self).max_size()
+    }
+}
+
+impl<T: LWEInfos + ?Sized> LWEInfos for &mut T {
+    fn n(&self) -> Degree {
+        (**self).n()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        (**self).k()
+    }
+
+    fn base2k(&self) -> Base2K {
+        (**self).base2k()
+    }
+
+    fn max_size(&self) -> usize {
+        (**self).max_size()
+    }
+}
+
 /// Trait for mutating LWE parameters in place.
-pub trait SetLWEInfos {
+pub trait SetBase2k {
     /// Sets the limb width `base2k`.
     fn set_base2k(&mut self, base2k: Base2K);
+}
+
+/// Trait for mutating the Torus precision `k` in place.
+///
+/// `k` is a metadata label (the effective torus width); it is independent of the
+/// underlying buffer's active size, which `compact()`/`set_size` manage on use.
+pub trait SetK {
+    /// Sets the Torus precision `k`.
+    fn set_k(&mut self, k: TorusPrecision);
+}
+
+pub trait SetSize {
+    fn set_size(&mut self, size: usize);
+}
+
+pub trait Compact
+where
+    Self: LWEInfos + SetK + SetSize,
+{
+    fn compact(&mut self) {
+        let limbs = (self.k().as_usize() + self.log_n())
+            .div_ceil(self.base2k().as_usize())
+            .max(1)
+            .min(self.max_size());
+        self.set_size(limbs);
+    }
 }
 
 /// Plain-data snapshot of the parameters that describe an [`LWE`] ciphertext.
@@ -69,8 +140,12 @@ impl LWEInfos for LWELayout {
         self.n
     }
 
-    fn size(&self) -> usize {
-        self.k.as_usize().div_ceil(self.base2k.into())
+    fn max_size(&self) -> usize {
+        self.k.div_ceil(self.base2k) as usize
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 
@@ -85,6 +160,7 @@ impl LWEInfos for LWELayout {
 pub struct LWE<D: Data> {
     pub(crate) body: VecZnx<D>,
     pub(crate) mask: VecZnx<D>,
+    pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
 }
 
@@ -100,12 +176,16 @@ impl<D: Data> LWEInfos for LWE<D> {
         Degree(self.mask.n() as u32)
     }
 
-    fn size(&self) -> usize {
+    fn max_size(&self) -> usize {
         self.mask.size()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 
-impl<D: Data> SetLWEInfos for LWE<D> {
+impl<D: Data> SetBase2k for LWE<D> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k
     }
@@ -220,16 +300,17 @@ impl<D: Data> LWE<D> {
                 body_shape.n(),
                 body_shape.cols(),
                 body_shape.size(),
-                body_shape.max_size(),
+                body_shape.size(),
             ),
             mask: VecZnx::from_data_with_max_size(
                 mask_data,
                 mask_shape.n(),
                 mask_shape.cols(),
                 mask_shape.size(),
-                mask_shape.max_size(),
+                mask_shape.size(),
             ),
             base2k: self.base2k,
+            k: self.k,
         }
     }
 }
@@ -246,7 +327,7 @@ impl<D: HostDataRef> fmt::Display for LWE<D> {
             f,
             "LWE: base2k={} k={}: body={} mask={}",
             self.base2k().0,
-            self.max_k().0,
+            self.k().0,
             self.body,
             self.mask
         )
@@ -268,7 +349,7 @@ impl LWE<Vec<u8>> {
     where
         A: LWEInfos,
     {
-        Self::alloc(infos.n(), infos.base2k(), infos.max_k())
+        Self::alloc(infos.n(), infos.base2k(), infos.k())
     }
 
     /// Allocates a new [`LWE`] with the given parameters.
@@ -292,6 +373,7 @@ impl LWE<Vec<u8>> {
                 size,
             ),
             base2k,
+            k,
         }
     }
 
@@ -300,7 +382,7 @@ impl LWE<Vec<u8>> {
     where
         A: LWEInfos,
     {
-        Self::bytes_of(infos.n(), infos.base2k(), infos.max_k())
+        Self::bytes_of(infos.n(), infos.base2k(), infos.k())
     }
 
     /// Returns the byte count required for an [`LWE`] with the given parameters.
@@ -325,6 +407,7 @@ where
     fn to_backend_ref(&self) -> LWEBackendRef<'_, BE> {
         LWE {
             base2k: self.base2k,
+            k: self.k,
             body: self.body.to_backend_ref(),
             mask: self.mask.to_backend_ref(),
         }
@@ -342,6 +425,7 @@ where
     fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE> {
         LWE {
             base2k: self.base2k,
+            k: self.k,
             body: self.body.to_backend_mut(),
             mask: self.mask.to_backend_mut(),
         }
@@ -352,6 +436,7 @@ impl<'b, BE: Backend + 'b> LWEToBackendRef<BE> for &mut LWE<BE::BufMut<'b>> {
     fn to_backend_ref(&self) -> LWEBackendRef<'_, BE> {
         LWE {
             base2k: self.base2k,
+            k: self.k,
             body: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE>(&self.body),
             mask: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE>(&self.mask),
         }
@@ -362,6 +447,7 @@ impl<'b, BE: Backend + 'b> LWEToBackendMut<BE> for &mut LWE<BE::BufMut<'b>> {
     fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE> {
         LWE {
             base2k: self.base2k,
+            k: self.k,
             body: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut self.body),
             mask: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut self.mask),
         }

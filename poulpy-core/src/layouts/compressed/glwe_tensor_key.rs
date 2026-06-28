@@ -34,8 +34,11 @@ impl<D: Data> LWEInfos for GLWETensorKeyCompressed<D> {
         self.0.base2k()
     }
 
-    fn size(&self) -> usize {
-        self.0.size()
+    fn max_size(&self) -> usize {
+        self.0.max_size()
+    }
+    fn k(&self) -> TorusPrecision {
+        self.0.k()
     }
 }
 impl<D: Data> GLWEInfos for GLWETensorKeyCompressed<D> {
@@ -90,7 +93,7 @@ impl GLWETensorKeyCompressed<Vec<u8>> {
         Self::alloc(
             infos.n(),
             infos.base2k(),
-            infos.max_k(),
+            infos.k(),
             infos.rank(),
             infos.dnum(),
             infos.dsize(),
@@ -109,7 +112,7 @@ impl GLWETensorKeyCompressed<Vec<u8>> {
         Self::bytes_of(
             infos.n(),
             infos.base2k(),
-            infos.max_k(),
+            infos.k(),
             infos.rank(),
             infos.dnum(),
             infos.dsize(),

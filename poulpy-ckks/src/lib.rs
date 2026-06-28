@@ -15,9 +15,9 @@
 //! - `log_budget`: remaining homomorphic headroom, also tracked in bits
 //!
 //! Together they define the semantic torus width of a value:
-//! `effective_k() = log_delta + log_budget`.
+//! `k() = log_delta + log_budget`.
 //! Storage is rounded up to the next multiple of `base2k`, so the allocated
-//! width `max_k()` may exceed `effective_k()`. Arithmetic APIs update this
+//! width `k()` may exceed `k()`. Arithmetic APIs update this
 //! metadata for you, while maintenance helpers let you compact or resize owned
 //! buffers without violating those invariants.
 //!
@@ -40,9 +40,11 @@
 //! | [`encoding`] | CKKS encoders/decoders, including slot-wise real/imaginary packing |
 //! | [`layouts`] | CKKS ciphertext/plaintext wrappers and metadata-aware allocation helpers |
 //! | [`leveled`] | Leveled arithmetic (add, sub, mul, neg, rotate, conjugate), encryption, decryption, and rescale |
-//! | bootstrapping | Planned CKKS bootstrapping |
+//! | [`api::CKKSBootstrappingOps`] | The CKKS bootstrapping pipeline: its one native primitive ModUp (modulus raise), plus CoeffsToSlots / SlotsToCoeffs and EvalMod re-exported as supertraits ([`api::DFTOps`] / [`api::CKKSEvalModOps`]); parameterized by [`layouts::BootstrappingPlan`] |
 
-use poulpy_core::layouts::{BSGSMeta, Base2K, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision};
+use poulpy_core::layouts::{
+    Base2K, Degree, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, TorusPrecision,
+};
 use poulpy_hal::layouts::Backend;
 
 pub mod api;
@@ -92,13 +94,12 @@ impl<T: GLWEInfos + CKKSInfos> CKKSCtBounds for T {}
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 /// CKKS semantic precision metadata carried by ciphertexts and plaintexts.
 ///
-/// `log_delta` is the scaling precision of the encoded value and
-/// `log_budget` is the remaining homomorphic headroom available above `log_delta`.
+/// `log_delta` is the scaling precision of the encoded value. The remaining
+/// homomorphic headroom (`log_budget`) is *not* stored here: it is derived from
+/// the wrapped GLWE's torus width `k` as `log_budget = k - log_delta`.
 pub struct CKKSMeta {
     /// Base 2 logarithm of the decimal precision.
     pub log_delta: usize,
-    /// Base 2 logarithm of the remaining homomorphic capacity.
-    pub log_budget: usize,
     /// Sparse-packing factor: `log2` of the coefficient gap (equivalently, of the
     /// slot replication). `0` is dense / full packing (`N/2` slots). For
     /// `log_sparsity = s` the message polynomial is sparse — `M(X^{2^s})` — and
@@ -110,7 +111,9 @@ pub struct CKKSMeta {
 /// Common metadata accessors for CKKS ciphertext and plaintext containers.
 ///
 /// This trait exposes the semantic precision of a value independently from the
-/// raw limb storage used by the underlying torus representation.
+/// raw limb storage used by the underlying torus representation. `log_budget` is
+/// derived from the container's torus width `k` (from the wrapped GLWE) and
+/// `log_delta`, so it is only available on containers, not on a bare [`CKKSMeta`].
 pub trait CKKSInfos {
     /// Returns the complete metadata pair.
     fn meta(&self) -> CKKSMeta;
@@ -126,62 +129,33 @@ pub trait CKKSInfos {
     fn log_sparsity(&self) -> usize {
         self.meta().log_sparsity
     }
-
-    /// Returns the next multiple of [`Base2K`] greater than [`Self::log_delta`] + [`Self::log_budget`].
-    fn min_k(&self, base2k: Base2K) -> TorusPrecision {
-        ((self.log_delta() + self.log_budget()).next_multiple_of(base2k.as_usize())).into()
-    }
-
-    /// Returns the semantic torus width carried by the value.
-    ///
-    /// This is `log_delta + log_budget` and may differ from the rounded
-    /// storage capacity `max_k()`.
-    fn effective_k(&self) -> usize {
-        self.log_delta() + self.log_budget()
-    }
-}
-
-impl BSGSMeta for CKKSMeta {
-    fn bsgs_log_budget(&self) -> usize {
-        self.log_budget
-    }
-
-    fn bsgs_log_delta(&self) -> usize {
-        self.log_delta
-    }
-}
-
-impl CKKSInfos for CKKSMeta {
-    fn meta(&self) -> CKKSMeta {
-        *self
-    }
-
-    fn log_delta(&self) -> usize {
-        self.log_delta
-    }
-
-    fn log_budget(&self) -> usize {
-        self.log_budget
-    }
 }
 
 /// Mutable CKKS metadata access for ciphertext/plaintext containers.
 pub trait SetCKKSInfos: CKKSInfos {
-    /// Replaces the semantic CKKS metadata.
+    /// Replaces the semantic CKKS metadata (`log_delta`, `log_sparsity`). Does not
+    /// touch the wrapped GLWE's torus width `k`, so `log_budget` is re-derived
+    /// against the (unchanged) `k`. Use [`Self::set_log_delta`] to relabel the
+    /// scale while preserving `log_budget`.
     fn set_meta(&mut self, meta: CKKSMeta);
 
-    /// Updates only the base-2 logarithm of the encoded scaling factor.
+    /// Sets the wrapped GLWE's torus width `k` (the total `log_delta + log_budget`).
+    fn set_k(&mut self, k: TorusPrecision);
+
+    /// Updates only the base-2 logarithm of the encoded scaling factor, preserving
+    /// `log_budget` by shifting the torus width `k` accordingly.
     fn set_log_delta(&mut self, log_delta: usize) {
+        let log_budget = self.log_budget();
         let mut meta = self.meta();
         meta.log_delta = log_delta;
         self.set_meta(meta);
+        self.set_k((log_budget + log_delta).into());
     }
 
-    /// Updates only the base-2 logarithm of the remaining homomorphic budget.
+    /// Updates only the base-2 logarithm of the remaining homomorphic budget by
+    /// setting the torus width `k = log_budget + log_delta`.
     fn set_log_budget(&mut self, log_budget: usize) {
-        let mut meta = self.meta();
-        meta.log_budget = log_budget;
-        self.set_meta(meta);
+        self.set_k((log_budget + self.log_delta()).into());
     }
 
     /// Updates only the sparse-packing factor. See [`CKKSMeta::log_sparsity`].
@@ -192,13 +166,77 @@ pub trait SetCKKSInfos: CKKSInfos {
     }
 }
 
+/// Allocation / precision spec for a CKKS value.
+///
+/// Bundles a core [`GLWELayout`] — which carries `n`, `base2k`, the torus width
+/// `k`, and `rank` — with the [`CKKSMeta`] (`log_delta`, `log_sparsity`). The
+/// budget is derived as `log_budget = k - log_delta`, so `k` lives in the GLWE
+/// layout exactly as it does on a wrapped ciphertext/plaintext.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CKKSLayout {
+    pub glwe_layout: GLWELayout,
+    pub meta: CKKSMeta,
+}
+
+impl Default for CKKSLayout {
+    fn default() -> Self {
+        Self {
+            glwe_layout: GLWELayout {
+                n: Degree(0),
+                base2k: Base2K(0),
+                k: TorusPrecision(0),
+                rank: Rank(1),
+            },
+            meta: CKKSMeta::default(),
+        }
+    }
+}
+
+impl LWEInfos for CKKSLayout {
+    fn n(&self) -> Degree {
+        self.glwe_layout.n()
+    }
+
+    fn base2k(&self) -> Base2K {
+        self.glwe_layout.base2k()
+    }
+
+    fn max_size(&self) -> usize {
+        self.glwe_layout.max_size()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.glwe_layout.k()
+    }
+}
+
+impl GLWEInfos for CKKSLayout {
+    fn rank(&self) -> Rank {
+        self.glwe_layout.rank()
+    }
+}
+
+impl CKKSInfos for CKKSLayout {
+    fn meta(&self) -> CKKSMeta {
+        self.meta
+    }
+
+    fn log_delta(&self) -> usize {
+        self.meta.log_delta
+    }
+
+    fn log_budget(&self) -> usize {
+        self.glwe_layout.k().as_usize().saturating_sub(self.meta.log_delta)
+    }
+}
+
 pub(crate) fn ckks_offset_binary<R, A, B>(res: &R, a: &A, b: &B) -> usize
 where
     R: LWEInfos + CKKSInfos + ?Sized,
     A: LWEInfos + CKKSInfos + ?Sized,
     B: LWEInfos + CKKSInfos + ?Sized,
 {
-    a.effective_k().min(b.effective_k()).saturating_sub(res.max_k().as_usize())
+    a.k().min(b.k()).as_usize().saturating_sub(res.max_k().as_usize())
 }
 
 pub(crate) fn ckks_offset_unary<R, A>(res: &R, a: &A) -> usize
@@ -206,5 +244,5 @@ where
     R: LWEInfos + CKKSInfos + ?Sized,
     A: LWEInfos + CKKSInfos + ?Sized,
 {
-    a.effective_k().saturating_sub(res.max_k().as_usize())
+    a.k().as_usize().saturating_sub(res.max_k().as_usize())
 }

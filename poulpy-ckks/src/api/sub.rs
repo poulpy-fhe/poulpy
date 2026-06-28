@@ -1,6 +1,6 @@
 use anyhow::Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, Data, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data, HostBytesBackend, ScratchArena, TransferFrom};
 
 use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::UnnormalizedCKKSCiphertext};
 
@@ -14,7 +14,7 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::UnnormalizedCKKSCiph
 /// ## Ciphertext–ciphertext subtraction (`ckks_sub_into` / `ckks_sub_assign`)
 ///
 /// ```text
-/// offset         = max(0, min(a.effective_k(), b.effective_k()) − dst.max_k())
+/// offset         = max(0, min(a.k(), b.k()) − dst.max_k())
 ///
 /// log_delta_out  = min(a.log_delta,  b.log_delta)
 /// log_budget_out = min(a.log_budget, b.log_budget) − offset
@@ -25,13 +25,13 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::UnnormalizedCKKSCiph
 /// ## Ciphertext–plaintext-vector subtraction (`ckks_sub_pt_vec_*`)
 ///
 /// ```text
-/// offset         = max(0, a.effective_k() − dst.max_k())
+/// offset         = max(0, a.k() − dst.max_k())
 ///
 /// log_delta_out  = a.log_delta
 /// log_budget_out = a.log_budget − offset
 /// ```
 ///
-/// **Precondition**: `a.log_budget + pt.log_delta >= pt.effective_k()`.
+/// **Precondition**: `a.log_budget + pt.log_delta >= pt.k()`.
 /// Returns `PlaintextAlignmentImpossible` otherwise.
 ///
 /// ## Ciphertext–plaintext-constant subtraction (`ckks_sub_pt_const_*`)
@@ -62,6 +62,7 @@ pub trait CKKSSubOps<BE: Backend> {
     /// Metadata is preserved.
     fn ckks_sub_one_assign<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
+        BE: TransferFrom<HostBytesBackend>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 
     /// Computes `dst = a - pt` where `pt` is a full plaintext polynomial.

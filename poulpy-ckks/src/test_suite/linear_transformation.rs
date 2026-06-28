@@ -75,7 +75,7 @@ where
         host_module,
         encoder,
         params.base2k.into(),
-        params.prec,
+        params.prec(),
         b,
         LinearTransformationStrategy::Bsgs { giant_step: n1 },
         transpose,

@@ -13,6 +13,7 @@ use crate::layouts::{Base2K, Degree, GLWEInfos, GLWEToBackendRef, GetDegree, LWE
 #[derive(PartialEq, Eq)]
 pub struct GLWEPrepared<D: Data, B: Backend> {
     pub(crate) data: VecZnxDft<D, B>,
+    pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
 }
 
@@ -24,12 +25,16 @@ impl<D: Data, B: Backend> LWEInfos for GLWEPrepared<D, B> {
         self.base2k
     }
 
-    fn size(&self) -> usize {
+    fn max_size(&self) -> usize {
         self.data.size()
     }
 
     fn n(&self) -> Degree {
         Degree(self.data.n() as u32)
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 
@@ -49,6 +54,7 @@ where
         GLWEPrepared {
             data: self.vec_znx_dft_alloc((rank + 1).into(), k.0.div_ceil(base2k.0) as usize),
             base2k,
+            k,
         }
     }
 
@@ -56,7 +62,7 @@ where
     where
         A: GLWEInfos,
     {
-        self.glwe_prepared_alloc(infos.base2k(), infos.max_k(), infos.rank())
+        self.glwe_prepared_alloc(infos.base2k(), infos.k(), infos.rank())
     }
 
     fn glwe_prepared_bytes_of(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> usize {
@@ -67,7 +73,7 @@ where
     where
         A: GLWEInfos,
     {
-        self.glwe_prepared_bytes_of(infos.base2k(), infos.max_k(), infos.rank())
+        self.glwe_prepared_bytes_of(infos.base2k(), infos.k(), infos.rank())
     }
 
     fn glwe_prepare<R, O>(&self, res: &mut R, other: &O)
@@ -81,7 +87,7 @@ where
         assert_eq!(res.n(), self.ring_degree());
         assert_eq!(other.n(), self.ring_degree());
         assert_eq!(res.size(), other.size());
-        assert_eq!(res.max_k(), other.max_k());
+        assert_eq!(res.k(), other.k());
         assert_eq!(res.base2k(), other.base2k());
 
         for i in 0..(res.rank() + 1).into() {
@@ -105,6 +111,7 @@ impl<B: Backend> GLWEPreparedToBackendRef<B> for GLWEPrepared<B::OwnedBuf, B> {
         GLWEPrepared {
             data: self.data.to_backend_ref(),
             base2k: self.base2k,
+            k: self.k,
         }
     }
 }
@@ -118,6 +125,7 @@ impl<B: Backend> GLWEPreparedToBackendMut<B> for GLWEPrepared<B::OwnedBuf, B> {
         GLWEPrepared {
             data: self.data.to_backend_mut(),
             base2k: self.base2k,
+            k: self.k,
         }
     }
 }

@@ -8,7 +8,7 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use poulpy_ckks::{
-    CKKSInfos, CKKSMeta,
+    CKKSInfos, CKKSLayout, CKKSMeta,
     api::CKKSEvalModOps,
     layouts::{
         CKKSModuleAlloc,
@@ -29,12 +29,20 @@ const N: usize = 4096;
 const BASE2K: usize = 52;
 const CT_K: usize = 520;
 const LOG_DELTA: usize = 30;
+const EVAL_MOD_LOG_DELTA: usize = 60;
 const DSIZE: usize = 1;
 
-const COEFF_META: CKKSMeta = CKKSMeta {
-    log_delta: LOG_DELTA,
-    log_budget: BASE2K,
-    log_sparsity: 0,
+const COEFF_META: CKKSLayout = CKKSLayout {
+    glwe_layout: GLWELayout {
+        n: Degree(N as u32),
+        base2k: Base2K(BASE2K as u32),
+        k: TorusPrecision((EVAL_MOD_LOG_DELTA + BASE2K) as u32),
+        rank: Rank(1),
+    },
+    meta: CKKSMeta {
+        log_delta: EVAL_MOD_LOG_DELTA,
+        log_sparsity: 0,
+    },
 };
 
 struct Case {
@@ -47,65 +55,75 @@ const CASES: &[Case] = &[
         label: "sin_continuous/d15",
         lit: EvalModPlan {
             eval_mod_type: EvalModType::SinCheby,
-            log_message_ratio: 4,
+            log_msg_ratio: 4,
             f_mod_degree: 15,
             f_mod_interval: 1,
             f_mod_log_interval_reduction: 0,
             f_mod_inv_degree: None,
             scaling: None,
             split_strategy: SplitStrategy::MinDepth,
+            coeffs_meta: COEFF_META,
+            f_mod_log_delta: EVAL_MOD_LOG_DELTA,
         },
     },
     Case {
         label: "sin_continuous_arcsine/d31_inv7",
         lit: EvalModPlan {
             eval_mod_type: EvalModType::SinCheby,
-            log_message_ratio: 4,
+            log_msg_ratio: 4,
             f_mod_degree: 31,
             f_mod_interval: 1,
             f_mod_log_interval_reduction: 0,
             f_mod_inv_degree: Some(7),
             scaling: None,
             split_strategy: SplitStrategy::MinDepth,
+            coeffs_meta: COEFF_META,
+            f_mod_log_delta: EVAL_MOD_LOG_DELTA,
         },
     },
     Case {
         label: "cos_discrete/d30_K12_r3",
         lit: EvalModPlan {
             eval_mod_type: EvalModType::CosHK,
-            log_message_ratio: 8,
+            log_msg_ratio: 8,
             f_mod_degree: 30,
             f_mod_interval: 12,
             f_mod_log_interval_reduction: 3,
             f_mod_inv_degree: None,
             scaling: None,
             split_strategy: SplitStrategy::MinDepth,
+            coeffs_meta: COEFF_META,
+            f_mod_log_delta: EVAL_MOD_LOG_DELTA,
         },
     },
     Case {
         label: "cos_discrete/d30_K12_r3_minmult",
         lit: EvalModPlan {
             eval_mod_type: EvalModType::CosHK,
-            log_message_ratio: 8,
+            log_msg_ratio: 8,
             f_mod_degree: 30,
             f_mod_interval: 12,
             f_mod_log_interval_reduction: 3,
             f_mod_inv_degree: None,
             scaling: None,
             split_strategy: SplitStrategy::MinMult,
+            coeffs_meta: COEFF_META,
+            f_mod_log_delta: EVAL_MOD_LOG_DELTA,
         },
     },
     Case {
         label: "cos_continuous/d31_K4_r2",
         lit: EvalModPlan {
             eval_mod_type: EvalModType::CosCheby,
-            log_message_ratio: 4,
+            log_msg_ratio: 4,
             f_mod_degree: 31,
             f_mod_interval: 4,
             f_mod_log_interval_reduction: 2,
             f_mod_inv_degree: None,
             scaling: None,
             split_strategy: SplitStrategy::MinDepth,
+            coeffs_meta: COEFF_META,
+            f_mod_log_delta: EVAL_MOD_LOG_DELTA,
         },
     },
 ];
@@ -141,7 +159,6 @@ fn bench_ntt120_ref(c: &mut Criterion) {
     let tsk_layout = tsk_layout();
     let input_meta = CKKSMeta {
         log_delta: LOG_DELTA,
-        log_budget: CT_K - LOG_DELTA,
         log_sparsity: 0,
     };
 
@@ -167,8 +184,8 @@ fn bench_ntt120_ref(c: &mut Criterion) {
 
     let mut group = c.benchmark_group(format!("ckks_eval_mod::{label}"));
     for case in CASES {
-        let params = EvalMod::<f64, _>::from_literal(COEFF_META, Base2K(BASE2K as u32), case.lit, &host_module)
-            .expect("EvalMod::from_literal");
+        let params =
+            EvalMod::<f64, _>::from_literal(Base2K(BASE2K as u32), case.lit, &host_module).expect("EvalMod::from_literal");
 
         let (levels, log_budget_in, log_budget_out) = {
             let mut ct_run = module.ckks_ciphertext_alloc(Base2K(BASE2K as u32), TorusPrecision(CT_K as u32));

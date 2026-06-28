@@ -390,7 +390,7 @@ where
         let tmp_c_infos = GLWELayout {
             n: s_infos.n(),
             base2k: s_infos.base2k(),
-            k: res_a_infos.max_k().max(res_b_infos.max_k()),
+            k: res_a_infos.k().max(res_b_infos.k()),
             rank: s_infos.rank(),
         };
         let mut tot = res_dft
@@ -402,13 +402,13 @@ where
             tot += GLWE::<Vec<u8>>::bytes_of_from_infos(&GLWELayout {
                 n: res_a_infos.n(),
                 base2k: s_infos.base2k(),
-                k: res_a_infos.max_k(),
+                k: res_a_infos.k(),
                 rank: res_a_infos.rank(),
             });
             tot += GLWE::<Vec<u8>>::bytes_of_from_infos(&GLWELayout {
                 n: res_b_infos.n(),
                 base2k: s_infos.base2k(),
-                k: res_b_infos.max_k(),
+                k: res_b_infos.k(),
                 rank: res_b_infos.rank(),
             });
         } else {
@@ -457,7 +457,7 @@ where
                 let tmp_c_infos = GLWELayout {
                     n: s.n(),
                     base2k: s.base2k(),
-                    k: res_a.max_k().max(res_b.max_k()),
+                    k: res_a.k().max(res_b.k()),
                     rank: s.rank(),
                 };
                 let (mut tmp_c, scratch_5) = scratch_4.take_glwe_scratch(&tmp_c_infos);
@@ -524,13 +524,13 @@ where
             let (mut tmp_a, scratch_1) = scratch.take_glwe_scratch(&GLWELayout {
                 n: res_a.n(),
                 base2k: s.base2k(),
-                k: res_a.max_k(),
+                k: res_a.k(),
                 rank: res_a.rank(),
             });
             let (mut tmp_b, mut scratch_2) = scratch_1.take_glwe_scratch(&GLWELayout {
                 n: res_b.n(),
                 base2k: s.base2k(),
-                k: res_b.max_k(),
+                k: res_b.k(),
                 rank: res_b.rank(),
             });
 
@@ -545,7 +545,7 @@ where
                 let tmp_c_infos = GLWELayout {
                     n: s.n(),
                     base2k: s.base2k(),
-                    k: res_a.max_k().max(res_b.max_k()),
+                    k: res_a.k().max(res_b.k()),
                     rank: s.rank(),
                 };
                 let (mut tmp_c, scratch_5) = scratch_4.take_glwe_scratch(&tmp_c_infos);
@@ -726,7 +726,7 @@ where
         let (mut tmp, scratch_1) = scratch.take_glwe_scratch(&GLWELayout {
             n: s.n(),
             base2k: res.base2k(),
-            k: res.max_k().max(a_backend.max_k()),
+            k: res.k().max(a_backend.k()),
             rank: res.rank(),
         });
         let (mut res_prev, scratch_2) = scratch_1.take_glwe_scratch(res);

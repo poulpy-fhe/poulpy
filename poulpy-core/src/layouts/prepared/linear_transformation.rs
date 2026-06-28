@@ -31,7 +31,7 @@ pub type LinearTransformationPrepared<BE> = LinearTransformation<PreparedDiagona
 /// This is the prepared analogue of an encoded plaintext diagonal. The streamed
 /// transform stores each diagonal as a `CKKSPlaintext`; the resident transform
 /// stores it as a `PreparedDiagonal`. Because this type implements [`LWEInfos`],
-/// the shared evaluator reads `base2k` / `max_k` / `size` off it exactly as it
+/// the shared evaluator reads `base2k` / `k` / `size` off it exactly as it
 /// does off a plaintext — which is what lets both flavors share the single
 /// [`LinearTransformation`](crate::layouts::LinearTransformation) container
 /// (`LinearTransformation<PreparedDiagonal<…>>` vs
@@ -45,7 +45,7 @@ pub struct PreparedDiagonal<D: Data, BE: Backend> {
     /// Limb base of the diagonal it was encoded from.
     pub(crate) base2k: Base2K,
     /// Storage precision of the diagonal it was encoded from.
-    pub(crate) max_k: TorusPrecision,
+    pub(crate) k: TorusPrecision,
     /// Base-2 log of the plaintext scaling factor. The only scheme-provided
     /// quantity the convolution-offset computation needs; the core engine treats
     /// it as opaque and never reads it. Mirrors the streamed plaintext's
@@ -85,12 +85,12 @@ impl<D: Data, BE: Backend> LWEInfos for PreparedDiagonal<D, BE> {
         self.base2k
     }
 
-    fn size(&self) -> usize {
+    fn max_size(&self) -> usize {
         self.cnv.size()
     }
 
-    fn max_k(&self) -> TorusPrecision {
-        self.max_k
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 

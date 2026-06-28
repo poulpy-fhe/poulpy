@@ -1,7 +1,7 @@
 use poulpy_core::{
     DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWEEncryptSk,
     layouts::{
-        GGLWEInfos, GLWE, GLWEAutomorphismKey, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc,
+        GGLWEInfos, GLWE, GLWEAutomorphismKey, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWESecretPrepared},
     },
 };
@@ -56,7 +56,7 @@ pub fn bench_glwe_automorphism<BE: Backend<OwnedBuf = Vec<u8>>>(
             | module.glwe_automorphism_tmp_bytes(glwe_infos, glwe_infos, atk_infos),
     );
 
-    let atk_enc_infos = NoiseInfos::new(atk_infos.max_k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
+    let atk_enc_infos = NoiseInfos::new(atk_infos.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
     module.glwe_automorphism_key_encrypt_sk(
         &mut atk,
         p,
@@ -74,7 +74,7 @@ pub fn bench_glwe_automorphism<BE: Backend<OwnedBuf = Vec<u8>>>(
     let mut ct_in: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(glwe_infos);
     let mut ct_out: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(glwe_infos);
 
-    let glwe_enc_infos = NoiseInfos::new(glwe_infos.max_k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
+    let glwe_enc_infos = NoiseInfos::new(glwe_infos.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
     module.glwe_encrypt_zero_sk(
         &mut ct_in,
         &sk_prepared,
@@ -92,7 +92,7 @@ pub fn bench_glwe_automorphism<BE: Backend<OwnedBuf = Vec<u8>>>(
                 &mut ct_out,
                 &ct_in,
                 &atk_prepared,
-                ct_in.size() + atk_prepared.dsize().as_usize(),
+                ct_in.max_size() + atk_prepared.dsize().as_usize(),
                 &mut scratch.borrow(),
             );
             black_box(());

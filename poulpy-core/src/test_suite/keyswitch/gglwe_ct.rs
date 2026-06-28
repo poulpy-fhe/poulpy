@@ -259,13 +259,13 @@ where
                 println!(
                     "{} {} {}",
                     gglwe_s0s1_infos.base2k(),
-                    gglwe_s0s1_infos.max_k(),
+                    gglwe_s0s1_infos.k(),
                     gglwe_s0s1_infos.size()
                 );
                 println!(
                     "{} {} {}",
                     gglwe_s1s2_infos.base2k(),
-                    gglwe_s1s2_infos.max_k(),
+                    gglwe_s1s2_infos.k(),
                     gglwe_s1s2_infos.size()
                 );
                 println!(
@@ -314,11 +314,11 @@ where
                 module.glwe_switching_key_prepare(&mut gglwe_s1s2_prepared, &gglwe_s1s2, &mut scratch_apply.borrow());
 
                 // gglwe_{s1}(s0) (x) gglwe_{s2}(s1) = gglwe_{s2}(s0)
-                println!("{} {} {}", gglwe_s0s1.base2k(), gglwe_s0s1.max_k(), gglwe_s0s1.size());
+                println!("{} {} {}", gglwe_s0s1.base2k(), gglwe_s0s1.k(), gglwe_s0s1.size());
                 println!(
                     "{} {} {}",
                     gglwe_s1s2_prepared.base2k(),
-                    gglwe_s1s2_prepared.max_k(),
+                    gglwe_s1s2_prepared.k(),
                     gglwe_s1s2_prepared.size()
                 );
                 module.gglwe_keyswitch_assign(

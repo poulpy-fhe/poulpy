@@ -63,8 +63,12 @@ macro_rules! impl_gglwe_infos_for_inner {
                 self.$($field)+.base2k()
             }
 
-            fn size(&self) -> usize {
-                self.$($field)+.size()
+            fn max_size(&self) -> usize {
+                self.$($field)+.max_size()
+            }
+
+            fn k(&self) -> TorusPrecision{
+                self.$($field)+.k()
             }
         }
 

@@ -40,7 +40,7 @@ pub trait CKKSPow2Default<BE: Backend> {
         let offset = ckks_offset_unary(dst, src);
         self.glwe_lsh(dst, src, bits + offset, scratch);
         dst.set_meta(src.meta());
-        dst.set_log_budget(checked_log_budget_sub("mul_pow2", dst.log_budget(), offset)?);
+        dst.set_log_budget(checked_log_budget_sub("mul_pow2", src.log_budget(), offset)?);
         Ok(())
     }
 
@@ -68,7 +68,7 @@ pub trait CKKSPow2Default<BE: Backend> {
         let offset = ckks_offset_unary(dst, src);
         self.glwe_lsh(dst, src, offset, scratch);
         dst.set_meta(src.meta());
-        dst.set_log_budget(checked_log_budget_sub("div_pow2", dst.log_budget(), bits + offset)?);
+        dst.set_log_budget(checked_log_budget_sub("div_pow2", src.log_budget(), bits + offset)?);
         dst.set_log_delta(dst.log_delta() + bits);
         Ok(())
     }

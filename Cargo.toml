@@ -3,6 +3,13 @@ members = ["poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-cpu-avx512", "
 default-members = ["poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-cpu-arm", "poulpy-bin-fhe", "poulpy-cpu-ref", "poulpy-bench", "poulpy-ckks"]
 resolver = "3"
 
+# Optimized build that keeps debug symbols, for sampling profilers (samply, perf,
+# cargo-flamegraph). Realistic timings + resolvable function names.
+[profile.profiling]
+inherits = "release"
+debug = true
+strip = false
+
 [workspace.dependencies]
 poulpy-hal = {path = "poulpy-hal"}
 poulpy-core = {path = "poulpy-core"}

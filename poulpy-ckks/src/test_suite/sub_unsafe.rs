@@ -163,12 +163,12 @@ where
         &im1,
         &mut scratch.borrow(),
     );
-    let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), params.prec, &re2, &im2);
+    let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), params.prec(), &re2, &im2);
     let (want_re, want_im) = want_sub(
         &re1,
         &im1,
-        &quantize(&re2, params.prec.log_delta),
-        &quantize(&im2, params.prec.log_delta),
+        &quantize(&re2, params.prec().log_delta()),
+        &quantize(&im2, params.prec().log_delta()),
     );
     let mut ct_res = UnnormalizedCKKSCiphertext::new(alloc_ct(&params, module, params.k));
     module
@@ -218,7 +218,7 @@ pub fn test_sub_pt_const_into_aligned_unsafe<BE, F, E>(
         &im1,
         &mut scratch.borrow(),
     );
-    let (const_re, const_im) = quantized_const::<F>(ADD_SUB_CONST.0, ADD_SUB_CONST.1, PT_PREC.log_delta);
+    let (const_re, const_im) = quantized_const::<F>(ADD_SUB_CONST.0, ADD_SUB_CONST.1, PT_PREC.log_delta());
     let want_re: Vec<F> = re1.iter().map(|x| *x - const_re).collect();
     let want_im: Vec<F> = im1.iter().map(|x| *x - const_im).collect();
     let mut ct_res = UnnormalizedCKKSCiphertext::new(alloc_ct(&params, module, params.k));

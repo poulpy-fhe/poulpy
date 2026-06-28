@@ -39,7 +39,7 @@ where
     let mut scratch: ScratchOwned<BE> =
         ScratchOwned::alloc(module.glwe_encrypt_sk_tmp_bytes(infos) | module.glwe_decrypt_tmp_bytes(infos));
 
-    let enc_infos = NoiseInfos::new(infos.max_k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
+    let enc_infos = NoiseInfos::new(infos.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
     module.glwe_encrypt_zero_sk(
         &mut ct,
         &sk_prepared,

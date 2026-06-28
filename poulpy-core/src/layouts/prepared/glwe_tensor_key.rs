@@ -22,54 +22,17 @@ impl<D: Data, B: Backend> LWEInfos for GLWETensorKeyPrepared<D, B> {
         self.0.base2k()
     }
 
-    fn size(&self) -> usize {
-        self.0.size()
+    fn max_size(&self) -> usize {
+        self.0.max_size()
     }
-}
-
-impl<D: Data, B: Backend> LWEInfos for &GLWETensorKeyPrepared<D, B> {
-    fn n(&self) -> Degree {
-        (*self).n()
-    }
-
-    fn base2k(&self) -> Base2K {
-        (*self).base2k()
-    }
-
-    fn size(&self) -> usize {
-        (*self).size()
-    }
-}
-
-impl<D: Data, B: Backend> LWEInfos for &mut GLWETensorKeyPrepared<D, B> {
-    fn n(&self) -> Degree {
-        (**self).n()
-    }
-
-    fn base2k(&self) -> Base2K {
-        (**self).base2k()
-    }
-
-    fn size(&self) -> usize {
-        (**self).size()
+    fn k(&self) -> TorusPrecision {
+        self.0.k()
     }
 }
 
 impl<D: Data, B: Backend> GLWEInfos for GLWETensorKeyPrepared<D, B> {
     fn rank(&self) -> Rank {
         self.rank_out()
-    }
-}
-
-impl<D: Data, B: Backend> GLWEInfos for &GLWETensorKeyPrepared<D, B> {
-    fn rank(&self) -> Rank {
-        (*self).rank()
-    }
-}
-
-impl<D: Data, B: Backend> GLWEInfos for &mut GLWETensorKeyPrepared<D, B> {
-    fn rank(&self) -> Rank {
-        (**self).rank()
     }
 }
 
@@ -88,42 +51,6 @@ impl<D: Data, B: Backend> GGLWEInfos for GLWETensorKeyPrepared<D, B> {
 
     fn dnum(&self) -> Dnum {
         self.0.dnum()
-    }
-}
-
-impl<D: Data, B: Backend> GGLWEInfos for &GLWETensorKeyPrepared<D, B> {
-    fn rank_in(&self) -> Rank {
-        (*self).rank_in()
-    }
-
-    fn rank_out(&self) -> Rank {
-        (*self).rank_out()
-    }
-
-    fn dsize(&self) -> Dsize {
-        (*self).dsize()
-    }
-
-    fn dnum(&self) -> Dnum {
-        (*self).dnum()
-    }
-}
-
-impl<D: Data, B: Backend> GGLWEInfos for &mut GLWETensorKeyPrepared<D, B> {
-    fn rank_in(&self) -> Rank {
-        (**self).rank_in()
-    }
-
-    fn rank_out(&self) -> Rank {
-        (**self).rank_out()
-    }
-
-    fn dsize(&self) -> Dsize {
-        (**self).dsize()
-    }
-
-    fn dnum(&self) -> Dnum {
-        (**self).dnum()
     }
 }
 
@@ -147,7 +74,7 @@ where
     where
         A: GGLWEInfos,
     {
-        self.alloc_tensor_key_prepared(infos.base2k(), infos.max_k(), infos.dnum(), infos.dsize(), infos.rank_out())
+        self.alloc_tensor_key_prepared(infos.base2k(), infos.k(), infos.dnum(), infos.dsize(), infos.rank_out())
     }
 
     fn bytes_of_tensor_key_prepared(&self, base2k: Base2K, k: TorusPrecision, rank: Rank, dnum: Dnum, dsize: Dsize) -> usize {
@@ -159,7 +86,7 @@ where
     where
         A: GGLWEInfos,
     {
-        self.bytes_of_tensor_key_prepared(infos.base2k(), infos.max_k(), infos.rank(), infos.dnum(), infos.dsize())
+        self.bytes_of_tensor_key_prepared(infos.base2k(), infos.k(), infos.rank(), infos.dnum(), infos.dsize())
     }
 
     fn prepare_tensor_key_tmp_bytes<A>(&self, infos: &A) -> usize

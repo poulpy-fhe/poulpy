@@ -33,6 +33,10 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [[example]]
+name = "bootstrap_trace"
+required-features = ["enable-ckks"]
+
+[[example]]
 name = "ckks_poly2"
 required-features = ["enable-ckks"]
 
