@@ -63,22 +63,12 @@ impl<D: Data> LWEInfos for GLWESecretTensor<D> {
         Degree(self.data.n() as u32)
     }
 
-    fn size(&self) -> usize {
+    fn max_size(&self) -> usize {
         1
     }
-}
 
-impl<D: Data> LWEInfos for &mut GLWESecretTensor<D> {
-    fn base2k(&self) -> Base2K {
-        (**self).base2k()
-    }
-
-    fn n(&self) -> Degree {
-        (**self).n()
-    }
-
-    fn size(&self) -> usize {
-        (**self).size()
+    fn k(&self) -> super::TorusPrecision {
+        unimplemented!("this method is not defined on secrets")
     }
 }
 
@@ -117,12 +107,6 @@ impl<D: Data> GLWEInfos for GLWESecretTensor<D> {
     }
 }
 
-impl<D: Data> GLWEInfos for &mut GLWESecretTensor<D> {
-    fn rank(&self) -> Rank {
-        (**self).rank()
-    }
-}
-
 impl<BE: Backend> GLWESecretToBackendRef<BE> for GLWESecretTensor<BE::OwnedBuf> {
     fn to_backend_ref(&self) -> GLWESecretBackendRef<'_, BE> {
         GLWESecret {
@@ -132,30 +116,10 @@ impl<BE: Backend> GLWESecretToBackendRef<BE> for GLWESecretTensor<BE::OwnedBuf> 
     }
 }
 
-impl<'b, BE: Backend + 'b> GLWESecretToBackendRef<BE> for &mut GLWESecretTensor<BE::BufMut<'b>> {
-    fn to_backend_ref(&self) -> GLWESecretBackendRef<'_, BE> {
-        GLWESecret {
-            data: ScalarZnx::from_data(BE::view_ref_mut(&self.data.data), self.data.n(), self.data.cols()),
-            dist: self.dist,
-        }
-    }
-}
-
 impl<BE: Backend> GLWESecretToBackendMut<BE> for GLWESecretTensor<BE::OwnedBuf> {
     fn to_backend_mut(&mut self) -> GLWESecretBackendMut<'_, BE> {
         GLWESecret {
             data: <ScalarZnx<BE::OwnedBuf> as poulpy_hal::layouts::ScalarZnxToBackendMut<BE>>::to_backend_mut(&mut self.data),
-            dist: self.dist,
-        }
-    }
-}
-
-impl<'b, BE: Backend + 'b> GLWESecretToBackendMut<BE> for &mut GLWESecretTensor<BE::BufMut<'b>> {
-    fn to_backend_mut(&mut self) -> GLWESecretBackendMut<'_, BE> {
-        let n = self.data.n();
-        let cols = self.data.cols();
-        GLWESecret {
-            data: ScalarZnx::from_data(BE::view_mut_ref(&mut self.data.data), n, cols),
             dist: self.dist,
         }
     }

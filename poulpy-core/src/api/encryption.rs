@@ -12,15 +12,10 @@ use crate::{
         GGSWCompressedSeedMut, GGSWCompressedToBackendMut, GGSWInfos, GGSWToBackendMut, GLWECompressedSeedMut,
         GLWECompressedToBackendMut, GLWEInfos, GLWESecretToBackendRef, GLWESwitchingKeyDegreesMut, GLWEToBackendMut,
         GLWEToBackendRef, LWEInfos, LWEPlaintextToBackendRef, LWESecretToBackendRef, LWEToBackendMut, SetGaloisElement,
-        TorusPrecision,
         compressed::{GGLWECompressedSeedMut, GGLWECompressedToBackendMut},
         prepared::{GLWEPreparedToBackendRef, GLWESecretPreparedToBackendRef},
     },
 };
-
-pub trait DeclaredK: LWEInfos {
-    fn k(&self) -> TorusPrecision;
-}
 
 pub trait EncryptionInfos {
     fn noise_infos(&self) -> NoiseInfos;

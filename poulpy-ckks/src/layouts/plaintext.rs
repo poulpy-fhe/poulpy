@@ -5,8 +5,8 @@ use std::{
 
 use anyhow::Result;
 use poulpy_core::layouts::{
-    BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEPlaintext, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBSGSMeta,
-    SetLWEInfos,
+    BSGSMeta, Base2K, Compact, Degree, GLWE, GLWEInfos, GLWEPlaintext, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
+    SetBSGSMeta, SetBase2k, SetK, SetSize, TorusPrecision,
 };
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef};
 
@@ -50,12 +50,12 @@ impl<D: Data> CKKSPlaintext<D> {
     /// Normal CKKS operations update metadata themselves.
     pub fn set_meta_checked(&mut self, meta: CKKSMeta) -> Result<()> {
         anyhow::ensure!(
-            meta.effective_k() <= self.max_k().as_usize(),
+            self.k().as_usize() <= self.max_k().as_usize() && meta.log_delta <= self.k().as_usize(),
             crate::CKKSCompositionError::LimbReallocationShrinksBelowMetadata {
                 max_k: self.max_k().as_usize(),
-                log_delta: meta.log_delta(),
+                log_delta: meta.log_delta,
                 base2k: self.base2k().as_usize(),
-                requested_limbs: self.size(),
+                requested_limbs: self.max_size(),
             }
         );
         self.meta = meta;
@@ -100,12 +100,16 @@ impl<D: Data> LWEInfos for CKKSPlaintext<D> {
         self.inner.base2k()
     }
 
-    fn size(&self) -> usize {
-        self.inner.size()
+    fn max_size(&self) -> usize {
+        self.inner.max_size()
     }
 
     fn n(&self) -> Degree {
         self.inner.n()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.inner.k()
     }
 }
 
@@ -119,6 +123,28 @@ impl<D: Data> SetCKKSInfos for CKKSPlaintext<D> {
     fn set_meta(&mut self, meta: CKKSMeta) {
         self.meta = meta;
     }
+
+    fn set_k(&mut self, k: TorusPrecision) {
+        poulpy_core::layouts::SetK::set_k(&mut self.inner, k);
+    }
+}
+
+impl<D: Data> SetK for CKKSPlaintext<D> {
+    fn set_k(&mut self, k: TorusPrecision) {
+        SetK::set_k(&mut self.inner, k);
+    }
+}
+
+impl<D: Data> SetSize for CKKSPlaintext<D> {
+    fn set_size(&mut self, size: usize) {
+        SetSize::set_size(&mut self.inner, size);
+    }
+}
+
+impl<D: Data> Compact for CKKSPlaintext<D> {
+    // Plaintexts hold full-width integer polynomials; compaction would shed
+    // limbs that carry meaningful precision, so it is intentionally a no-op.
+    fn compact(&mut self) {}
 }
 
 impl<D: Data> SetBSGSMeta for CKKSPlaintext<D> {
@@ -130,7 +156,7 @@ impl<D: Data> SetBSGSMeta for CKKSPlaintext<D> {
     }
 }
 
-impl<D: HostDataMut> SetLWEInfos for CKKSPlaintext<D> {
+impl<D: HostDataMut> SetBase2k for CKKSPlaintext<D> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.inner.set_base2k(base2k);
     }
@@ -148,11 +174,12 @@ impl<D: Data> CKKSInfos for CKKSPlaintext<D> {
     }
 
     fn log_delta(&self) -> usize {
-        self.meta.log_delta()
+        self.meta.log_delta
     }
 
     fn log_budget(&self) -> usize {
-        self.meta.log_budget()
+        // Derived from the wrapped GLWE plaintext's torus width: `k - log_delta`.
+        self.inner.k().as_usize().saturating_sub(self.meta.log_delta)
     }
 }
 
@@ -288,17 +315,17 @@ mod tests {
         let module = Module::<HostBytesBackend>::new(16);
         let prec = CKKSMeta {
             log_sparsity: 0,
-            log_budget: 12,
             log_delta: 40,
         };
         let base2k: Base2K = 52usize.into();
 
-        let pt = module.ckks_pt_coeffs_alloc(3, base2k, prec);
+        let mut pt = module.ckks_pt_coeffs_alloc(3, base2k, (12usize + 40).into());
+        pt.set_meta(prec);
 
         assert_eq!(pt.n().as_usize(), 3);
         assert_eq!(pt.base2k(), base2k);
         assert_eq!(pt.meta(), prec);
-        assert!(pt.effective_k() <= pt.max_k().as_usize());
+        assert!(pt.k() <= pt.max_k());
     }
 
     /// Sparse coefficient pack/unpack round-trips, and places values at the
@@ -309,14 +336,14 @@ mod tests {
         let module = Module::<HostBytesBackend>::new(n as u64);
         let prec = CKKSMeta {
             log_sparsity: 0,
-            log_budget: 10,
             log_delta: 40,
         };
         let base2k: Base2K = 50usize.into();
 
         // L = 4 (slots = 2), so gap = n/L = 4.
         let small = vec![1.0_f64, 2.0, 3.0, 4.0]; // re=[1,2], im=[3,4]
-        let mut pt = module.ckks_pt_vec_alloc(base2k, prec);
+        let mut pt = module.ckks_pt_vec_alloc(base2k, (10usize + 40).into());
+        pt.set_meta(prec);
         pt.encode_host_floats_sparse(&small).unwrap();
 
         // Full coefficients: re at 0,4; im at n/2=8, 12; rest zero.

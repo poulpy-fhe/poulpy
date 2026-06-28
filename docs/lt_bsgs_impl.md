@@ -96,7 +96,7 @@ once, at setup (**saving #8**).
 
 `LinearTransformationRhsPrepared::alloc{,_from_index}` sizes the cache from the schedule
 and a plaintext-shape proxy (one `CnvPVecR(1, pt_size)` per real diagonal), recording the
-diagonals' `pt_base2k` / `pt_max_k` so the evaluator never needs the raw transform again.
+diagonals' `pt_base2k` / `pt_k` so the evaluator never needs the raw transform again.
 
 `glwe_prepare_linear_transformation_rhs_default` then fills each pre-allocated slot with
 `cnv_prepare_right(plaintext)`. Zero allocations happen here; it only populates. The

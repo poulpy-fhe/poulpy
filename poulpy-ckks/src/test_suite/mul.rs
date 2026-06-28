@@ -55,11 +55,11 @@ use poulpy_hal::{
 use super::helpers::{
     MUL_CONST, PT_PREC, TestContextBackend, TestContextModule, TestScalar, TestVector, alloc_ct, alloc_scratch,
     assert_ckks_error, assert_decrypt_precision, assert_decrypt_precision_at_log_delta, assert_mul_ct_output_meta,
-    assert_mul_pt_output_meta, ckks_encrypt, ckks_encrypt_with_prec, ckks_pt_cst_full, encode_and_upload_pt, gen_sk_with_raw,
-    gen_tsk, precision_at, quantize, quantized_const, quantized_vector, want_mul, want_square,
+    assert_mul_pt_output_meta, ckks_encrypt, ckks_encrypt_with_prec, ckks_pt_cst_full, ckks_snapshot, encode_and_upload_pt,
+    gen_sk_with_raw, gen_tsk, precision_at, quantize, quantized_const, quantized_vector, want_mul, want_square,
 };
 
-use crate::{encoding::reim::Encoder, test_suite::CKKSTestParams};
+use crate::{SetCKKSInfos, encoding::reim::Encoder, test_suite::CKKSTestParams};
 
 const DELTA_LOG_DELTA: usize = 8;
 
@@ -254,9 +254,9 @@ where
     let mut scratch = alloc_scratch(&params, module);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
 
-    let low_log_delta = params.prec.log_delta - DELTA_LOG_DELTA;
+    let low_log_delta = params.prec().log_delta() - DELTA_LOG_DELTA;
     let low_prec = precision_at(&params, low_log_delta);
-    let (a_re, a_im) = quantized_vector(host_module, &encoder, &params, TestVector::First, params.prec.log_delta);
+    let (a_re, a_im) = quantized_vector(host_module, &encoder, &params, TestVector::First, params.prec().log_delta());
     let (b_re, b_im) = quantized_vector(host_module, &encoder, &params, TestVector::Second, low_log_delta);
     let ct1 = ckks_encrypt(
         &params,
@@ -401,7 +401,7 @@ where
         &mut scratch.borrow(),
     );
     let (want_re, want_im) = want_mul(&re1, &im1, &re2, &im2);
-    let ct_res_meta = ct_res.meta();
+    let ct_res_meta = ckks_snapshot(&ct_res);
     module
         .ckks_mul_assign(&mut ct_res, &ct1, &tsk, &mut scratch.borrow())
         .unwrap();
@@ -459,7 +459,7 @@ where
         &mut scratch.borrow(),
     );
     let (want_re, want_im) = want_mul(&re1, &im1, &re2, &im2);
-    let ct_res_meta = ct_res.meta();
+    let ct_res_meta = ckks_snapshot(&ct_res);
     module
         .ckks_mul_assign(&mut ct_res, &ct1, &tsk, &mut scratch.borrow())
         .unwrap();
@@ -517,7 +517,7 @@ where
         &mut scratch.borrow(),
     );
     let (want_re, want_im) = want_mul(&re1, &im1, &re2, &im2);
-    let ct_res_meta = ct_res.meta();
+    let ct_res_meta = ckks_snapshot(&ct_res);
     module
         .ckks_mul_assign(&mut ct_res, &ct1, &tsk, &mut scratch.borrow())
         .unwrap();
@@ -705,7 +705,7 @@ where
         &mut scratch.borrow(),
     );
     let (want_re, want_im) = want_square(&re1, &im1);
-    let ct_in_meta = ct.meta();
+    let ct_in_meta = ckks_snapshot(&ct);
     module.ckks_square_assign(&mut ct, &tsk, &mut scratch.borrow()).unwrap();
     assert_mul_ct_output_meta("square_assign", &ct, &ct_in_meta, &ct_in_meta);
     assert_decrypt_precision(
@@ -750,12 +750,12 @@ where
         &im1,
         &mut scratch.borrow(),
     );
-    let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), params.prec, &re2, &im2);
+    let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), params.prec(), &re2, &im2);
     let (want_re, want_im) = want_mul(
         &re1,
         &im1,
-        &quantize(&re2, params.prec.log_delta),
-        &quantize(&im2, params.prec.log_delta),
+        &quantize(&re2, params.prec().log_delta()),
+        &quantize(&im2, params.prec().log_delta()),
     );
     let mut ct_res = alloc_ct(&params, module, params.k);
     module
@@ -793,7 +793,7 @@ pub fn test_mul_pt_vec_into_delta_log_delta<BE, F, E>(
     let sk = super::helpers::gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
 
-    let (a_re, a_im) = quantized_vector(host_module, &encoder, &params, TestVector::First, params.prec.log_delta);
+    let (a_re, a_im) = quantized_vector(host_module, &encoder, &params, TestVector::First, params.prec().log_delta());
     let ct = ckks_encrypt(
         &params,
         module,
@@ -809,8 +809,8 @@ pub fn test_mul_pt_vec_into_delta_log_delta<BE, F, E>(
     let (want_re, want_im) = want_mul(
         &a_re,
         &a_im,
-        &quantize(&re2, PT_PREC.log_delta),
-        &quantize(&im2, PT_PREC.log_delta),
+        &quantize(&re2, PT_PREC.log_delta()),
+        &quantize(&im2, PT_PREC.log_delta()),
     );
     let mut ct_res = alloc_ct(&params, module, params.k);
     module
@@ -826,7 +826,7 @@ pub fn test_mul_pt_vec_into_delta_log_delta<BE, F, E>(
         &sk,
         &want_re,
         &want_im,
-        PT_PREC.log_delta,
+        PT_PREC.log_delta(),
         &mut scratch.borrow(),
     );
 }
@@ -861,12 +861,12 @@ pub fn test_mul_pt_vec_into_smaller_output<BE, F, E>(
         &im1,
         &mut scratch.borrow(),
     );
-    let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), params.prec, &re2, &im2);
+    let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), params.prec(), &re2, &im2);
     let (want_re, want_im) = want_mul(
         &re1,
         &im1,
-        &quantize(&re2, params.prec.log_delta),
-        &quantize(&im2, params.prec.log_delta),
+        &quantize(&re2, params.prec().log_delta()),
+        &quantize(&im2, params.prec().log_delta()),
     );
     let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
     module
@@ -915,14 +915,14 @@ where
         &im1,
         &mut scratch.borrow(),
     );
-    let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), params.prec, &re2, &im2);
+    let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), params.prec(), &re2, &im2);
     let (want_re, want_im) = want_mul(
         &re1,
         &im1,
-        &quantize(&re2, params.prec.log_delta),
-        &quantize(&im2, params.prec.log_delta),
+        &quantize(&re2, params.prec().log_delta()),
+        &quantize(&im2, params.prec().log_delta()),
     );
-    let ct_meta = ct.meta();
+    let ct_meta = ckks_snapshot(&ct);
     module.ckks_mul_pt_vec_assign(&mut ct, &pt, &mut scratch.borrow()).unwrap();
     assert_mul_pt_output_meta("mul_pt_vec_assign", &ct, &ct_meta, &pt);
     assert_decrypt_precision(
@@ -959,7 +959,7 @@ pub fn test_mul_pt_const_into_aligned<BE, F, E>(
     let mut scratch = alloc_scratch(&params, module);
 
     let const_re_f64 = MUL_CONST.0;
-    let (const_re, const_im) = quantized_const::<F>(const_re_f64, 0.0, PT_PREC.log_delta);
+    let (const_re, const_im) = quantized_const::<F>(const_re_f64, 0.0, PT_PREC.log_delta());
     let ct = ckks_encrypt(
         &params,
         module,
@@ -1015,7 +1015,7 @@ where
     let mut scratch = alloc_scratch(&params, module);
 
     let const_re_f64 = MUL_CONST.0;
-    let (const_re, const_im) = quantized_const::<F>(const_re_f64, 0.0, PT_PREC.log_delta);
+    let (const_re, const_im) = quantized_const::<F>(const_re_f64, 0.0, PT_PREC.log_delta());
     let mut ct = ckks_encrypt(
         &params,
         module,
@@ -1028,7 +1028,7 @@ where
         &mut scratch.borrow(),
     );
     let (want_re, want_im) = super::helpers::want_mul_const(&re1, &im1, const_re, const_im);
-    let ct_meta = ct.meta();
+    let ct_meta = ckks_snapshot(&ct);
     let cst = ckks_pt_cst_full::<BE, F>(
         host_module,
         module,
@@ -1073,8 +1073,8 @@ pub fn test_mul_pt_const_into_delta_log_delta<BE, F, E>(
     let mut scratch = alloc_scratch(&params, module);
 
     let const_re_f64 = MUL_CONST.0;
-    let (const_re, const_im) = quantized_const::<F>(const_re_f64, 0.0, PT_PREC.log_delta);
-    let (a_re, a_im) = quantized_vector(host_module, &encoder, &params, TestVector::First, params.prec.log_delta);
+    let (const_re, const_im) = quantized_const::<F>(const_re_f64, 0.0, PT_PREC.log_delta());
+    let (a_re, a_im) = quantized_vector(host_module, &encoder, &params, TestVector::First, params.prec().log_delta());
     let ct = ckks_encrypt(
         &params,
         module,
@@ -1110,7 +1110,7 @@ pub fn test_mul_pt_const_into_delta_log_delta<BE, F, E>(
         &sk,
         &want_re,
         &want_im,
-        PT_PREC.log_delta,
+        PT_PREC.log_delta(),
         &mut scratch.borrow(),
     );
 }
@@ -1159,8 +1159,8 @@ pub fn test_mul_ct_explicit_metadata_error<BE, F, E>(
         &im2,
         &mut scratch.borrow(),
     );
-    ct1.meta.log_budget = 8;
-    ct2.meta.log_budget = 9;
+    ct1.set_log_budget(8);
+    ct2.set_log_budget(9);
     let mut ct_res = alloc_ct(&params, module, params.k);
     let err = module
         .ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, &mut scratch.borrow())
@@ -1172,8 +1172,8 @@ pub fn test_mul_ct_explicit_metadata_error<BE, F, E>(
             op: "mul",
             lhs_log_budget: 8,
             rhs_log_budget: 9,
-            lhs_log_delta: params.prec.log_delta,
-            rhs_log_delta: params.prec.log_delta,
+            lhs_log_delta: params.prec().log_delta(),
+            rhs_log_delta: params.prec().log_delta(),
         },
     );
 }

@@ -42,14 +42,7 @@ impl<D: Data, T: UnsignedInteger> FheUintPreparedDebug<D, T> {
         M: ModuleN + ModuleCoreAlloc<OwnedBuf = D>,
         A: GGSWInfos,
     {
-        Self::alloc(
-            module,
-            infos.base2k(),
-            infos.max_k(),
-            infos.dnum(),
-            infos.dsize(),
-            infos.rank(),
-        )
+        Self::alloc(module, infos.base2k(), infos.k(), infos.dnum(), infos.dsize(), infos.rank())
     }
 
     pub fn alloc<M>(module: &M, base2k: Base2K, k: TorusPrecision, dnum: Dnum, dsize: Dsize, rank: Rank) -> Self
@@ -74,8 +67,12 @@ impl<D: HostDataRef, T: UnsignedInteger> LWEInfos for FheUintPreparedDebug<D, T>
         self.bits[0].n()
     }
 
-    fn size(&self) -> usize {
-        self.bits[0].size()
+    fn max_size(&self) -> usize {
+        self.bits[0].max_size()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.bits[0].k()
     }
 }
 

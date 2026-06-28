@@ -1,6 +1,6 @@
 use poulpy_hal::layouts::{Backend, Data, HostDataRef, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef};
 
-use crate::layouts::{Base2K, Degree, LWEInfos, SetLWEInfos, TorusPrecision};
+use crate::layouts::{Base2K, Degree, LWEInfos, SetBase2k, TorusPrecision};
 
 /// Shape metadata for a packed matrix of LWE ciphertexts.
 pub trait LWEMatrixInfos: LWEInfos {
@@ -26,8 +26,12 @@ impl LWEInfos for LWEMatrixLayout {
         self.n
     }
 
-    fn size(&self) -> usize {
-        self.k.as_usize().div_ceil(self.base2k.as_usize())
+    fn max_size(&self) -> usize {
+        self.k.div_ceil(self.base2k) as usize
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 
@@ -44,6 +48,7 @@ impl LWEMatrixInfos for LWEMatrixLayout {
 pub struct LWEMatrix<D: Data> {
     pub(crate) body: VecZnx<D>,
     pub(crate) mask: VecZnx<D>,
+    pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
 }
 
@@ -59,8 +64,12 @@ impl<D: Data> LWEInfos for LWEMatrix<D> {
         self.base2k
     }
 
-    fn size(&self) -> usize {
+    fn max_size(&self) -> usize {
         self.body.size()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 
@@ -70,7 +79,7 @@ impl<D: Data> LWEMatrixInfos for LWEMatrix<D> {
     }
 }
 
-impl<D: Data> SetLWEInfos for LWEMatrix<D> {
+impl<D: Data> SetBase2k for LWEMatrix<D> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k;
     }
@@ -107,16 +116,17 @@ impl<D: Data> LWEMatrix<D> {
                 body_shape.n(),
                 body_shape.cols(),
                 body_shape.size(),
-                body_shape.max_size(),
+                body_shape.size(),
             ),
             mask: VecZnx::from_data_with_max_size(
                 self.mask.data,
                 mask_shape.n(),
                 mask_shape.cols(),
                 mask_shape.size(),
-                mask_shape.max_size(),
+                mask_shape.size(),
             ),
             base2k: self.base2k,
+            k: self.k,
         }
     }
 }
@@ -130,6 +140,7 @@ impl<D: HostDataRef> LWEMatrix<D> {
             body: self.body.to_host_owned::<BE>(),
             mask: self.mask.to_host_owned::<BE>(),
             base2k: self.base2k,
+            k: self.k,
         }
     }
 }
@@ -144,6 +155,7 @@ impl<BE: Backend> LWEMatrixToBackendRef<BE> for LWEMatrix<BE::OwnedBuf> {
             body: <VecZnx<BE::OwnedBuf> as VecZnxToBackendRef<BE>>::to_backend_ref(&self.body),
             mask: <VecZnx<BE::OwnedBuf> as VecZnxToBackendRef<BE>>::to_backend_ref(&self.mask),
             base2k: self.base2k,
+            k: self.k,
         }
     }
 }
@@ -158,6 +170,7 @@ impl<BE: Backend> LWEMatrixToBackendMut<BE> for LWEMatrix<BE::OwnedBuf> {
             body: <VecZnx<BE::OwnedBuf> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut self.body),
             mask: <VecZnx<BE::OwnedBuf> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut self.mask),
             base2k: self.base2k,
+            k: self.k,
         }
     }
 }

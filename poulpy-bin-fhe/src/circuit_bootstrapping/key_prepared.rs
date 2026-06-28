@@ -173,7 +173,7 @@ impl<D: Data, BRA: BlindRotationAlgo, B: Backend> CircuitBootstrappingKeyInfos f
         GLWEAutomorphismKeyLayout {
             n: atk.n(),
             base2k: atk.base2k(),
-            k: atk.max_k(),
+            k: atk.k(),
             dnum: atk.dnum(),
             dsize: atk.dsize(),
             rank: atk.rank(),
@@ -185,7 +185,7 @@ impl<D: Data, BRA: BlindRotationAlgo, B: Backend> CircuitBootstrappingKeyInfos f
             n_glwe: self.brk.n_glwe(),
             n_lwe: self.brk.n_lwe(),
             base2k: self.brk.base2k(),
-            k: self.brk.max_k(),
+            k: self.brk.k(),
             dnum: self.brk.dnum(),
             rank: self.brk.rank(),
         }
@@ -195,7 +195,7 @@ impl<D: Data, BRA: BlindRotationAlgo, B: Backend> CircuitBootstrappingKeyInfos f
         GGLWEToGGSWKeyLayout {
             n: self.tsk.n(),
             base2k: self.tsk.base2k(),
-            k: self.tsk.max_k(),
+            k: self.tsk.k(),
             dnum: self.tsk.dnum(),
             dsize: self.tsk.dsize(),
             rank: self.tsk.rank(),

@@ -43,32 +43,17 @@ impl<D: Data, B: Backend> LWEInfos for GLWESecretPrepared<D, B> {
         Degree(self.data.n() as u32)
     }
 
-    fn size(&self) -> usize {
+    fn max_size(&self) -> usize {
         self.data.size()
     }
-}
-impl<D: Data, B: Backend> LWEInfos for &mut GLWESecretPrepared<D, B> {
-    fn base2k(&self) -> Base2K {
-        (**self).base2k()
-    }
-
-    fn n(&self) -> Degree {
-        (**self).n()
-    }
-
-    fn size(&self) -> usize {
-        (**self).size()
+    fn k(&self) -> crate::layouts::TorusPrecision {
+        unimplemented!("this method is not defined on secrets")
     }
 }
+
 impl<D: Data, B: Backend> GLWEInfos for GLWESecretPrepared<D, B> {
     fn rank(&self) -> Rank {
         Rank(self.data.cols() as u32)
-    }
-}
-
-impl<D: Data, B: Backend> GLWEInfos for &mut GLWESecretPrepared<D, B> {
-    fn rank(&self) -> Rank {
-        (**self).rank()
     }
 }
 

@@ -100,8 +100,12 @@ impl<D: Data> LWEInfos for LWESecret<D> {
         Degree(self.data.n() as u32)
     }
 
-    fn size(&self) -> usize {
+    fn max_size(&self) -> usize {
         1
+    }
+
+    fn k(&self) -> super::TorusPrecision {
+        unimplemented!("this method is not defined on secrets")
     }
 }
 

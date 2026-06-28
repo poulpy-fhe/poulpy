@@ -133,7 +133,6 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     module.glwe_prepare_linear_transformation_baby_steps(
         &mut prepared_babies,
         &ct,
-        k_in,
         &atks,
         atk_infos.size(),
         &mut scratch.borrow(),

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data, HostBytesBackend, Module, ScratchArena, TransferFrom};
 
 use crate::layouts::UnnormalizedCKKSCiphertext;
 use crate::leveled::api::CKKSAddOps;
@@ -31,6 +31,7 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOps<BE> for Module<BE> {
 
     fn ckks_add_one_assign<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
+        BE: TransferFrom<HostBytesBackend>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
         BE::ckks_add_one_assign(self, dst, scratch)

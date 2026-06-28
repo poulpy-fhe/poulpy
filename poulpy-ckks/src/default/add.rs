@@ -1,6 +1,6 @@
 use anyhow::Result;
 use poulpy_core::{
-    GLWEAdd, GLWENormalize, GLWEShift,
+    GLWEAdd, GLWENormalize, GLWEShift, ModuleTransfer,
     layouts::{Base2K, GLWEPlaintext, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
 };
 use poulpy_hal::{
@@ -8,7 +8,7 @@ use poulpy_hal::{
         VecZnxLshAddCoeffToCoeffBackend, VecZnxLshAddIntoBackend, VecZnxLshTmpBytes, VecZnxRshAddCoeffIntoBackend,
         VecZnxRshAddIntoBackend, VecZnxRshTmpBytes,
     },
-    layouts::{Backend, ScratchArena, VecZnx},
+    layouts::{Backend, HostBytesBackend, ScratchArena, TransferFrom},
 };
 
 use crate::{
@@ -17,34 +17,23 @@ use crate::{
     layouts::{CKKSPlaintext, CKKSPlaintextVecHostCodec},
 };
 
-pub(crate) fn ckks_one_pt<BE>(base2k: Base2K) -> Result<CKKSPlaintext<BE::OwnedBuf>>
+pub(crate) fn ckks_one_pt<BE, M>(module: &M, base2k: Base2K) -> Result<CKKSPlaintext<BE::OwnedBuf>>
 where
-    BE: Backend,
+    BE: Backend + TransferFrom<HostBytesBackend>,
+    M: ModuleTransfer<BE> + ?Sized,
 {
     let meta = CKKSMeta {
         log_sparsity: 0,
         log_delta: 1,
-        log_budget: 0,
     };
 
-    let mut host_pt = CKKSPlaintext::from_inner(
-        GLWEPlaintext::alloc_with_meta(1usize.into(), base2k, meta.min_k(base2k)),
-        meta,
-    );
+    // Monomial plaintext: total torus width is `log_delta` (budget 0).
+    let k_total: usize = meta.log_delta;
+
+    let mut host_pt = CKKSPlaintext::from_inner(GLWEPlaintext::alloc_with_meta(1usize.into(), base2k, k_total.into()), meta);
     host_pt.encode_host_floats(&[1.0f64])?;
 
-    let shape = host_pt.inner.data.shape();
-    let backend_inner = GLWEPlaintext {
-        data: VecZnx::from_data_with_max_size(
-            BE::from_host_bytes(host_pt.inner.data.data.as_ref()),
-            shape.n(),
-            shape.cols(),
-            shape.size(),
-            shape.max_size(),
-        ),
-        base2k,
-    };
-    Ok(CKKSPlaintext::from_inner(backend_inner, meta))
+    Ok(CKKSPlaintext::from_inner(module.upload_glwe_plaintext(&host_pt.inner), meta))
 }
 
 pub trait CKKSAddDefault<BE: Backend> {
@@ -153,11 +142,15 @@ pub trait CKKSAddDefault<BE: Backend> {
 
     fn ckks_add_one_assign_default<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Self:
-            GLWENormalize<BE> + VecZnxLshAddCoeffToCoeffBackend<BE> + VecZnxRshAddCoeffIntoBackend<BE> + CKKSPlaintextDefault<BE>,
+        Self: GLWENormalize<BE>
+            + VecZnxLshAddCoeffToCoeffBackend<BE>
+            + VecZnxRshAddCoeffIntoBackend<BE>
+            + CKKSPlaintextDefault<BE>
+            + ModuleTransfer<BE>,
+        BE: TransferFrom<HostBytesBackend>,
         Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos,
     {
-        let one = ckks_one_pt::<BE>(dst.base2k())?;
+        let one = ckks_one_pt::<BE, Self>(self, dst.base2k())?;
         self.ckks_add_pt_const_assign_default(dst, 0, &one, 0, scratch)
     }
 

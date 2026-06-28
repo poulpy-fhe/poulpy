@@ -8,7 +8,7 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use poulpy_ckks::{
-    CKKSInfos, CKKSMeta,
+    CKKSInfos, CKKSLayout, CKKSMeta,
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
     leveled::api::{CKKSAllOpsTmpBytes, CKKSCopyOps, PolynomialEvaluation},
     polynomial::{Basis, ComplexPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
@@ -30,10 +30,17 @@ const DSIZE: usize = 1;
 const DEGREES: &[usize] = &[7, 15, 31, 63, 127];
 const STRATEGIES: &[(SplitStrategy, &str)] = &[(SplitStrategy::MinDepth, "min-depth"), (SplitStrategy::MinMult, "min-mult")];
 
-const COEFF_META: CKKSMeta = CKKSMeta {
-    log_sparsity: 0,
-    log_delta: LOG_DELTA,
-    log_budget: 1,
+const COEFF_META: CKKSLayout = CKKSLayout {
+    glwe_layout: GLWELayout {
+        n: Degree(N as u32),
+        base2k: Base2K(BASE2K as u32),
+        k: TorusPrecision((LOG_DELTA + 1) as u32),
+        rank: Rank(1),
+    },
+    meta: CKKSMeta {
+        log_sparsity: 0,
+        log_delta: LOG_DELTA,
+    },
 };
 
 fn glwe_layout() -> GLWELayout {
@@ -78,7 +85,6 @@ fn $fn(c: &mut Criterion) {
     let input_meta = CKKSMeta {
         log_sparsity: 0,
         log_delta: LOG_DELTA,
-        log_budget: CT_K - LOG_DELTA,
     };
 
     let ct_template = module.ckks_ciphertext_alloc_from_infos(&glwe_layout);

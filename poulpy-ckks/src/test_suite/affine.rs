@@ -16,10 +16,11 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSInfos, CKKSMeta,
+    CKKSInfos, CKKSLayout, SetCKKSInfos,
     layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
     leveled::api::CKKSAffineOps,
 };
+use poulpy_core::layouts::LWEInfos;
 
 use super::helpers::{
     ADD_SUB_CONST, MUL_CONST, PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch,
@@ -37,12 +38,13 @@ fn encode_affine_const<F: TestScalar>(
     base2k: poulpy_core::layouts::Base2K,
     offset: F,
     scale: F,
-    prec: CKKSMeta,
+    prec: CKKSLayout,
 ) -> CKKSPlaintext<Vec<u8>>
 where
     Module<HostBytesBackend>: CKKSModuleAlloc<HostBytesBackend>,
 {
-    let mut pt = host_module.ckks_pt_coeffs_alloc(2, base2k, prec);
+    let mut pt = host_module.ckks_pt_coeffs_alloc(2, base2k, prec.k());
+    pt.set_meta(prec.meta());
     pt.encode_host_floats(&[offset, scale]).unwrap();
     pt
 }
@@ -71,8 +73,8 @@ pub fn test_affine_pt_const_into_aligned<BE, F, E>(
 
     let offset_f64 = ADD_SUB_CONST.0;
     let scale_f64 = MUL_CONST.0;
-    let offset = quantized_const::<F>(offset_f64, 0.0, PT_PREC.log_delta).0;
-    let scale = quantized_const::<F>(scale_f64, 0.0, PT_PREC.log_delta).0;
+    let offset = quantized_const::<F>(offset_f64, 0.0, PT_PREC.log_delta()).0;
+    let scale = quantized_const::<F>(scale_f64, 0.0, PT_PREC.log_delta()).0;
     let want_re: Vec<F> = a_re.iter().map(|x| *x * scale + offset).collect();
     let want_im: Vec<F> = vec![F::zero(); a_re.len()];
 
@@ -129,7 +131,7 @@ pub fn test_affine_pt_const_zero_bias_matches_mul<BE, F, E>(
     let a_im = vec![F::zero(); a_re.len()];
 
     let scale_f64 = MUL_CONST.0;
-    let scale = quantized_const::<F>(scale_f64, 0.0, PT_PREC.log_delta).0;
+    let scale = quantized_const::<F>(scale_f64, 0.0, PT_PREC.log_delta()).0;
     let want_re: Vec<F> = a_re.iter().map(|x| *x * scale).collect();
     let want_im: Vec<F> = vec![F::zero(); a_re.len()];
 
@@ -155,7 +157,7 @@ pub fn test_affine_pt_const_zero_bias_matches_mul<BE, F, E>(
         "affine_pt_const_zero_bias",
         &dst,
         a.log_delta(),
-        a.log_budget() - PT_PREC.log_delta,
+        a.log_budget() - PT_PREC.log_delta(),
     );
     assert_decrypt_precision(
         "affine_pt_const_zero_bias",
@@ -194,8 +196,8 @@ pub fn test_affine_pt_const_assign_aligned<BE, F, E>(
 
     let offset_f64 = ADD_SUB_CONST.0;
     let scale_f64 = MUL_CONST.0;
-    let offset = quantized_const::<F>(offset_f64, 0.0, PT_PREC.log_delta).0;
-    let scale = quantized_const::<F>(scale_f64, 0.0, PT_PREC.log_delta).0;
+    let offset = quantized_const::<F>(offset_f64, 0.0, PT_PREC.log_delta()).0;
+    let scale = quantized_const::<F>(scale_f64, 0.0, PT_PREC.log_delta()).0;
     let want_re: Vec<F> = a_re.iter().map(|x| *x * scale + offset).collect();
     let want_im: Vec<F> = vec![F::zero(); a_re.len()];
 
@@ -252,8 +254,8 @@ pub fn test_affine_pt_vec_into_aligned<BE, F, E>(
 
     let offset_f64 = ADD_SUB_CONST.0;
     let scale_f64 = MUL_CONST.0;
-    let offset = quantized_const::<F>(offset_f64, 0.0, PT_PREC.log_delta).0;
-    let scale = quantized_const::<F>(scale_f64, 0.0, PT_PREC.log_delta).0;
+    let offset = quantized_const::<F>(offset_f64, 0.0, PT_PREC.log_delta()).0;
+    let scale = quantized_const::<F>(scale_f64, 0.0, PT_PREC.log_delta()).0;
     let want_re: Vec<F> = a_re.iter().map(|x| *x * scale + offset).collect();
     let want_im: Vec<F> = vec![F::zero(); a_re.len()];
 
@@ -312,8 +314,8 @@ pub fn test_affine_pt_vec_assign_aligned<BE, F, E>(
 
     let offset_f64 = ADD_SUB_CONST.0;
     let scale_f64 = MUL_CONST.0;
-    let offset = quantized_const::<F>(offset_f64, 0.0, PT_PREC.log_delta).0;
-    let scale = quantized_const::<F>(scale_f64, 0.0, PT_PREC.log_delta).0;
+    let offset = quantized_const::<F>(offset_f64, 0.0, PT_PREC.log_delta()).0;
+    let scale = quantized_const::<F>(scale_f64, 0.0, PT_PREC.log_delta()).0;
     let want_re: Vec<F> = a_re.iter().map(|x| *x * scale + offset).collect();
     let want_im: Vec<F> = vec![F::zero(); a_re.len()];
 

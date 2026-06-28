@@ -3,13 +3,9 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::{
-    DeclaredK,
-    layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos,
-        GGLWELayout, GGLWEToBackendMut, GGLWEToBackendRef, GLWE, GLWEInfos, GLWEViewMut, GLWEViewRef, LWEInfos, Rank,
-        TorusPrecision,
-    },
+use crate::layouts::{
+    Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos,
+    GGLWELayout, GGLWEToBackendMut, GGLWEToBackendRef, GLWE, GLWEInfos, GLWEViewMut, GLWEViewRef, LWEInfos, Rank, TorusPrecision,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
@@ -39,13 +35,6 @@ pub struct GLWEAutomorphismKeyLayout {
     pub dnum: Dnum,
     pub dsize: Dsize,
 }
-
-impl DeclaredK for GLWEAutomorphismKeyLayout {
-    fn k(&self) -> TorusPrecision {
-        self.k
-    }
-}
-
 /// GLWE automorphism (Galois) key.
 ///
 /// Wraps a [`GGLWE`] together with the Galois element index `p` that
@@ -99,8 +88,12 @@ impl<D: Data> LWEInfos for GLWEAutomorphismKey<D> {
         self.key.base2k()
     }
 
-    fn size(&self) -> usize {
-        self.key.size()
+    fn max_size(&self) -> usize {
+        self.key.max_size()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.key.k()
     }
 }
 
@@ -137,8 +130,12 @@ impl LWEInfos for GLWEAutomorphismKeyLayout {
         self.n
     }
 
-    fn size(&self) -> usize {
-        self.k.as_usize().div_ceil(self.base2k.as_usize())
+    fn max_size(&self) -> usize {
+        self.k.div_ceil(self.base2k) as usize
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 
@@ -197,7 +194,7 @@ impl GLWEAutomorphismKey<Vec<u8>> {
         Self::alloc(
             infos.n(),
             infos.base2k(),
-            infos.max_k(),
+            infos.k(),
             infos.rank(),
             infos.dnum(),
             infos.dsize(),
@@ -225,7 +222,7 @@ impl GLWEAutomorphismKey<Vec<u8>> {
         Self::bytes_of(
             infos.n(),
             infos.base2k(),
-            infos.max_k(),
+            infos.k(),
             infos.rank(),
             infos.dnum(),
             infos.dsize(),

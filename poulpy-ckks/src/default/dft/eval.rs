@@ -23,7 +23,7 @@ use anyhow::Result;
 use poulpy_core::{
     default::linear_transformation::DiagonalProd,
     layouts::{
-        Base2K, GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef,
+        Base2K, Compact, GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef,
         GetGaloisElement, LinearTransformation, LinearTransformationStrategy, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
     },
 };
@@ -33,7 +33,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSMeta, SetCKKSInfos,
+    CKKSCompositionError, CKKSCtBounds, SetCKKSInfos,
     api::{
         CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSImagOps, CKKSRotateOps, CKKSSubOps, LinearTransformationBabySteps,
         LinearTransformationOps, LinearTransformationPrepared, LtDiagonalScale,
@@ -60,7 +60,6 @@ fn dft_factor_lts<BE, E, F>(
     host_module: &Module<HostBytesBackend>,
     encoder: &Encoder<E>,
     base2k: Base2K,
-    factor_meta: CKKSMeta,
     literal: &DFTPlan,
 ) -> (DFTPlan, Vec<DftFactorLt<BE>>)
 where
@@ -76,10 +75,9 @@ where
     // Resolve the plan: sparsity is decided against the ring degree, then a dense
     // `RepackImagAsReal` is canonicalized to `SplitRealAndImag` (the two coincide)
     // so the stored `format` is canonical and `plan.is_sparse()` is exact. The
-    // per-factor scale is recorded from `factor_meta`.
+    // per-factor scale is carried by `literal.meta`.
     let sparse = literal.log_slots() < module.log_n().saturating_sub(1) && literal.format == DFTOutputFormat::RepackImagAsReal;
     let mut plan = literal.clone();
-    plan.factor_log_delta = factor_meta.log_delta;
     if literal.format == DFTOutputFormat::RepackImagAsReal && !sparse {
         plan.format = DFTOutputFormat::SplitRealAndImag;
     }
@@ -94,7 +92,7 @@ where
     // parallel length, and `giant_step == 1` is the direct schedule.
     let lts = factors_cd
         .iter()
-        .zip(&plan.factor_giant_steps)
+        .zip(&plan.giant_steps)
         .map(|(cd, &giant_step)| {
             let strategy = LinearTransformationStrategy::Bsgs { giant_step };
             crate::default::ckks_encode_linear_transformation_from_diagonals::<BE, F, E>(
@@ -102,7 +100,7 @@ where
                 host_module,
                 enc_ref,
                 base2k,
-                factor_meta,
+                plan.meta,
                 cd,
                 strategy,
                 false,
@@ -167,7 +165,6 @@ pub fn ckks_new_dft_matrix<Dir, Fmt, BE, E, F>(
     host_module: &Module<HostBytesBackend>,
     encoder: &Encoder<E>,
     base2k: Base2K,
-    factor_meta: CKKSMeta,
     literal: &DFTPlan,
 ) -> Result<DFTMatrix<BE, Dir, Fmt>>
 where
@@ -185,7 +182,7 @@ where
     literal.kind = Dir::KIND;
     literal.format = Fmt::FORMAT;
 
-    let (plan, lts) = dft_factor_lts::<BE, E, F>(module, host_module, encoder, base2k, factor_meta, &literal);
+    let (plan, lts) = dft_factor_lts::<BE, E, F>(module, host_module, encoder, base2k, &literal);
 
     // The dense-`RepackImagAsReal` → `Split` canonicalization is the only runtime
     // format resolution; if it changed the requested format, the request was
@@ -233,6 +230,14 @@ impl<BE: Backend, Dir, Fmt: DftFormat, P> DFTMatrix<BE, Dir, Fmt, LinearTransfor
 /// explicit rescale is needed (the plaintext-multiply realigns to the input
 /// `log_delta`, see the module docs). The input `ct.log_budget()` must be at
 /// least `dft.consumed_bits()`.
+///
+/// ## Progressive compaction
+///
+/// Each factor consumes `factor_log_delta` bits of budget, so after a factor the
+/// running ciphertext's `k` (and therefore the work of the next
+/// factor's baby-step keyswitches, which scale with the operand limb count) is
+/// smaller than its storage. After every factor `ct` is therefore compacted in
+/// place.
 pub fn ckks_dft_evaluate_assign<BE, Dir, Fmt, P, Dst, H, K>(
     module: &Module<BE>,
     ct: &mut Dst,
@@ -244,19 +249,41 @@ where
     BE: Backend,
     P: DiagonalProd<BE> + LtDiagonalScale,
     Module<BE>: LinearTransformationOps<BE> + CnvPVecAlloc<BE>,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
-    // One factor at a time. The input baby cache depends on the running `ct`
-    // (mutated each factor), so it is (re)allocated and prepared here per factor;
-    // `P` only decides how each factor's RHS is materialized inside the unified
-    // linear-transformation eval (resident vs streamed).
+    // One factor at a time, in place on `ct`; compact `ct` after each so the next
+    // factor's baby-step keyswitches operate on fewer limbs as the budget shrinks.
     for factor in dft.factor_operands() {
-        let mut babies = LinearTransformationBabySteps::alloc(module, factor.baby_steps(), ct);
-        module.ckks_prepare_linear_transformation_baby_steps(&mut babies, ct, keys, scratch)?;
-        module.ckks_eval_linear_transformation_assign(ct, &babies, factor, keys, scratch)?;
+        eval_factor(module, ct, factor, keys, scratch)?;
+        ct.compact();
     }
+    Ok(())
+}
+
+/// Evaluates a single homomorphic-DFT factor in place on `running`: (re)allocates
+/// and prepares the baby rotations of the current operand, then applies the
+/// unified linear-transformation eval. `P` only decides how the factor's RHS is
+/// materialized inside the eval (resident vs streamed).
+fn eval_factor<BE, P, Dst, H, K>(
+    module: &Module<BE>,
+    running: &mut Dst,
+    factor: &LinearTransformation<P>,
+    keys: &H,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    P: DiagonalProd<BE> + LtDiagonalScale,
+    Module<BE>: LinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+    K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+    H: GLWEAutomorphismKeyHelper<K, BE>,
+{
+    let mut babies = LinearTransformationBabySteps::alloc(module, factor.baby_steps(), running);
+    module.ckks_prepare_linear_transformation_baby_steps(&mut babies, running, keys, scratch)?;
+    module.ckks_eval_linear_transformation_assign(running, &babies, factor, keys, scratch)?;
     Ok(())
 }
 
@@ -275,7 +302,7 @@ where
     BE: Backend,
     P: DiagonalProd<BE> + LtDiagonalScale,
     Module<BE>: LinearTransformationOps<BE> + CnvPVecAlloc<BE>,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
@@ -295,7 +322,7 @@ where
     BE: Backend,
     P: DiagonalProd<BE> + LtDiagonalScale,
     Module<BE>: LinearTransformationOps<BE> + CnvPVecAlloc<BE>,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
@@ -333,7 +360,7 @@ where
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSImagOps<BE>,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
@@ -371,7 +398,7 @@ where
     BE: Backend,
     P: DiagonalProd<BE> + LtDiagonalScale,
     Module<BE>: LinearTransformationOps<BE> + CnvPVecAlloc<BE> + CKKSAddOps<BE> + CKKSImagOps<BE>,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
@@ -411,7 +438,7 @@ where
         + CKKSSubOps<BE>
         + CKKSImagOps<BE>
         + CKKSRotateOps<BE>,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
@@ -459,7 +486,7 @@ where
     BE: Backend,
     P: DiagonalProd<BE> + LtDiagonalScale,
     Module<BE>: LinearTransformationOps<BE> + CnvPVecAlloc<BE> + CKKSCopyOps<BE>,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,

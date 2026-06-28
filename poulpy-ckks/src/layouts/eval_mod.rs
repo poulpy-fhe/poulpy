@@ -41,13 +41,13 @@
 //! trait (see [`crate::default::eval_mod`] for the evaluation itself).
 
 use anyhow::{Result, anyhow, ensure};
-use poulpy_core::layouts::Base2K;
+use poulpy_core::layouts::{Base2K, LWEInfos, bsgs_consumed_bits, bsgs_eval_depth};
 use poulpy_hal::layouts::{HostBytesBackend, Module};
 
 use rand_distr::num_traits::{Float, FloatConst};
 
 use crate::{
-    CKKSMeta,
+    CKKSInfos, CKKSLayout, SetCKKSInfos,
     api::{Basis, Parity},
     cosine,
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
@@ -95,9 +95,9 @@ pub enum EvalModType {
     /// Can be paired with `f_mod_log_interval_reduction`.
     CosHK,
     /// Continuous Chebyshev approximation of `1/(2π)·sin(2π·x)` over `[−K, K]`.
-    /// `sin` is odd, so it is *already* anti-symmetric around the message and
-    /// needs no phase offset; Typically combined with an arcsine post-composition
-    /// to linearize the output.
+    /// Implemented as the equivalent shifted cosine
+    /// `cos(2π·(x − 1/4))`, which keeps the same target while using the full
+    /// Chebyshev path.
     /// Cannot be paired with `f_mod_log_interval_reduction` (must be set to 0).
     SinCheby,
     /// Direct Chebyshev approximation of `1/(2π)·cos(2π·x)` over the reduced range
@@ -137,11 +137,11 @@ pub struct EvalModPlan {
     pub eval_mod_type: EvalModType,
     /// `log2` of the *message ratio* `q/Δ`: the cleartext is `I(X)·q + Δ·m` with
     /// `m ∈ [-1, 1]`. In CKKS-meta terms the encoding scale is `Δ = 2^log_delta` and
-    /// the integer part wraps at the plaintext modulus `q = 2^effective_k =
+    /// the integer part wraps at the plaintext modulus `q = 2^k =
     /// 2^(log_delta + log_budget)`, so the ratio is `q/Δ = 2^log_budget` — i.e.
     /// `log_message_ratio` is the `log_budget` of the value being reduced, the bit
     /// gap between the payload and the integer part.
-    pub log_message_ratio: usize,
+    pub log_msg_ratio: usize,
     /// Degree of the base polynomial approximation.
     pub f_mod_degree: usize,
     /// `K`, the number of message intervals the reduction spans: the approximation
@@ -162,6 +162,74 @@ pub struct EvalModPlan {
     /// Baby-step/giant-step split strategy used to encode the polynomials (depth
     /// vs. number-of-rotations trade-off).
     pub split_strategy: SplitStrategy,
+    /// CKKS metadata of the coefficients
+    pub coeffs_meta: CKKSLayout,
+    /// Logscale used during EvalMod
+    pub f_mod_log_delta: usize,
+}
+
+impl EvalModPlan {
+    /// Multiplicative levels the eval_mod pipeline consumes: BSGS depth of the
+    /// base `f` polynomial + `f_mod_log_interval_reduction` range-extension steps
+    /// + BSGS depth of the optional inverse `f⁻¹` post-composition.
+    ///
+    /// Computed analytically from the plan via
+    /// [`bsgs_eval_depth`](poulpy_core::layouts::bsgs_eval_depth) (which accounts
+    /// for the [`SplitStrategy`], so this is exact for `MinMult` as well as
+    /// `MinDepth`); it matches the depth of the compiled [`EvalMod::eval_depth`].
+    pub fn eval_depth(&self) -> usize {
+        let base = bsgs_eval_depth(self.base_degree(), self.split_strategy);
+        let inv = self.f_mod_inv_degree.map_or(0, |d| bsgs_eval_depth(d, self.split_strategy));
+        base + self.f_mod_log_interval_reduction + inv
+    }
+
+    /// `log_budget` bits the eval_mod pipeline consumes on an input ciphertext of
+    /// scale `input_log_delta`: the base polynomial evaluation
+    /// ([`bsgs_consumed_bits`](poulpy_core::layouts::bsgs_consumed_bits) with the
+    /// coefficient scale [`Self::meta`]`.log_delta`), plus
+    /// `f_mod_log_interval_reduction` range-extension squarings (each a `ct×ct`
+    /// consuming `input_log_delta`), plus the optional arcsine inverse. Computed
+    /// analytically; matches the compiled [`EvalMod::consumed_bits`].
+    pub fn consumed_bits(&self) -> usize {
+        let coeff = self.coeffs_meta.meta.log_delta;
+        let input_log_delta = self.f_mod_log_delta;
+        let base = bsgs_consumed_bits(
+            self.base_degree(),
+            self.split_strategy,
+            self.base_parity(),
+            Basis::Chebyshev,
+            input_log_delta,
+            coeff,
+        );
+        let range_ext = self.f_mod_log_interval_reduction * input_log_delta;
+        let inv = self.f_mod_inv_degree.map_or(0, |d| {
+            bsgs_consumed_bits(d, self.split_strategy, Parity::Odd, Basis::Monomial, input_log_delta, coeff)
+        });
+        base + range_ext + inv
+    }
+
+    /// Degree of the base `f` polynomial actually encoded, so its BSGS depth can
+    /// be derived without building it. For `CosHK` this is the minimax degree
+    /// chosen by [`cosine::approximate_cos`]; otherwise the interpolation degree
+    /// `f_mod_degree`.
+    fn base_degree(&self) -> usize {
+        match self.eval_mod_type {
+            EvalModType::CosHK => {
+                cosine::approximate_cos_len(self.f_mod_interval, self.f_mod_degree, (1u64 << self.log_msg_ratio) as f64)
+                    .saturating_sub(1)
+            }
+            _ => self.f_mod_degree,
+        }
+    }
+
+    /// Parity of the base `f` polynomial (matches `from_literal`): `sin` is odd,
+    /// the cosine/exp families keep all coefficients.
+    fn base_parity(&self) -> Parity {
+        match self.eval_mod_type {
+            EvalModType::SinCheby => Parity::Full,
+            _ => Parity::Full,
+        }
+    }
 }
 
 /// BSGS-encoded base polynomial driving the homomorphic evaluation. Its
@@ -246,15 +314,11 @@ where
     /// interval, `SinCheby` with `f_mod_log_interval_reduction ≠ 0`, `CosHK` with
     /// `f_mod_degree < 2·(K − 1)`, an even `f_mod_inv_degree`,
     /// `f_mod_log_interval_reduction ≥ 31` — or if a coefficient is not representable in `F`.
-    pub fn from_literal(
-        coeff_meta: CKKSMeta,
-        base2k: Base2K,
-        lit: EvalModPlan,
-        module: &Module<HostBytesBackend>,
-    ) -> Result<Self> {
+    pub fn from_literal(base2k: Base2K, lit: EvalModPlan, module: &Module<HostBytesBackend>) -> Result<Self> {
         if lit.eval_mod_type == EvalModType::ExpCmplx {
-            return Self::from_literal_exp(coeff_meta, base2k, lit, module);
+            return Self::from_literal_exp(base2k, lit, module);
         }
+        let coeff_meta = lit.coeffs_meta;
 
         ensure!(lit.f_mod_degree > 0, "f_mod_degree must be > 0");
         ensure!(lit.f_mod_interval > 0, "f_mod_interval must be > 0");
@@ -305,7 +369,13 @@ where
         };
 
         let mut f_mod_poly: Polynomial<F> = match lit.eval_mod_type {
-            EvalModType::SinCheby => Polynomial::chebyshev_interpolate(lit.f_mod_degree, -k_eff, k_eff, |x| (two_pi * x).sin())?,
+            EvalModType::SinCheby => {
+                // Use the equivalent shifted cosine rather than an odd-only sine
+                // polynomial: it evaluates the same periodic target and exercises
+                // the full Chebyshev BSGS path used by the other real variants.
+                let off = scalar_from_f64::<F>("-0.25", -0.25)?;
+                Polynomial::chebyshev_interpolate(lit.f_mod_degree, -k_eff, k_eff, |x| (two_pi * (x + off)).cos())?
+            }
             EvalModType::CosCheby => {
                 // Bake the −1/4-period phase shift into the interpolated function so
                 // no separate offset is added at evaluation time. The polynomial is
@@ -321,7 +391,7 @@ where
                 let coeffs = cosine::approximate_cos::<F>(
                     lit.f_mod_interval,
                     lit.f_mod_degree,
-                    (1u64 << lit.log_message_ratio) as f64,
+                    (1u64 << lit.log_msg_ratio) as f64,
                     f_mod_log_interval_reduction,
                 );
                 // cos(2π·(x-1/4)/2^r) is not even in x; Parity::Full preserves
@@ -331,7 +401,7 @@ where
             EvalModType::ExpCmplx => unreachable!(),
         };
         match lit.eval_mod_type {
-            EvalModType::SinCheby => f_mod_poly.parity = Parity::Odd,
+            EvalModType::SinCheby => f_mod_poly.parity = Parity::Full,
             // The phase-shifted cosine is not even, so keep all coefficients.
             EvalModType::CosCheby => f_mod_poly.parity = Parity::Full,
             EvalModType::CosHK => {}
@@ -353,7 +423,8 @@ where
         // coefficient `i` at step `i`.
         let range_extension_consts = if f_mod_log_interval_reduction > 0 {
             let vals: Vec<F> = (0..f_mod_log_interval_reduction).map(|i| s.powi(1i32 << (i + 1))).collect();
-            let mut pt = module.ckks_pt_coeffs_alloc(f_mod_log_interval_reduction, base2k, coeff_meta);
+            let mut pt = module.ckks_pt_coeffs_alloc(f_mod_log_interval_reduction, base2k, coeff_meta.k());
+            pt.set_meta(coeff_meta.meta());
             pt.encode_host_floats(&vals)
                 .map_err(|e| anyhow!("range_extension_consts: {e}"))?;
             Some(pt)
@@ -376,12 +447,8 @@ where
     /// single [`ComplexPolynomial`] and BSGS-encodes it. The `r` range-extension
     /// steps are plain complex squarings (`exp 2θ = (exp θ)²`), so no offset or
     /// per-step constant is needed.
-    fn from_literal_exp(
-        coeff_meta: CKKSMeta,
-        base2k: Base2K,
-        lit: EvalModPlan,
-        module: &Module<HostBytesBackend>,
-    ) -> Result<Self> {
+    fn from_literal_exp(base2k: Base2K, lit: EvalModPlan, module: &Module<HostBytesBackend>) -> Result<Self> {
+        let coeff_meta = lit.coeffs_meta;
         ensure!(lit.f_mod_degree > 0, "f_mod_degree must be > 0");
         ensure!(lit.f_mod_interval > 0, "f_mod_interval must be > 0");
         ensure!(
@@ -430,6 +497,23 @@ impl<F, P> EvalMod<F, P> {
         };
         let inv = self.f_mod_inv_bsgs.as_ref().map_or(0, |p| p.eval_depth());
         base + self.plan.f_mod_log_interval_reduction + inv
+    }
+
+    /// `log_budget` bits consumed evaluating the pipeline on an input ciphertext
+    /// of scale `input_log_delta`: base polynomial (heaviest BSGS chain) + the
+    /// `f_mod_log_interval_reduction` range-extension squarings (`ct×ct`,
+    /// `input_log_delta` each) + the optional arcsine inverse. Matches the actual
+    /// runtime consumption and [`EvalModPlan::consumed_bits`].
+    pub fn consumed_bits(&self) -> usize {
+        let coeff = self.plan.coeffs_meta.meta.log_delta;
+        let log_delta = self.plan.f_mod_log_delta;
+        let base = match &self.f_mod_bsgs {
+            EvalModBsgs::Real(p) => p.consumed_bits(log_delta, coeff),
+            EvalModBsgs::Complex(p) => p.re.consumed_bits(log_delta, coeff),
+        };
+        let range_ext = self.plan.f_mod_log_interval_reduction * log_delta;
+        let inv = self.f_mod_inv_bsgs.as_ref().map_or(0, |p| p.consumed_bits(log_delta, coeff));
+        base + range_ext + inv
     }
 
     /// Per-step range-extension scaling `s`: the base polynomial bakes `s` into its
