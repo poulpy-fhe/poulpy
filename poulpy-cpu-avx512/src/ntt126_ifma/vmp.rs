@@ -17,10 +17,11 @@ use std::mem::size_of;
 
 use crate::ntt126_ifma::{
     bbc_meta::Bbc126IfmaMeta,
+    kernels::ntt_avx512,
     module::handle,
     primes::{PrimeSetNtt126Ifma, Primes42},
     tables::{harvey_modmul, harvey_quotient},
-    traits::{Ntt126IfmaAddAssign, Ntt126IfmaCFromB, Ntt126IfmaDFTExecute, Ntt126IfmaFromZnx64},
+    traits::{Ntt126IfmaAddAssign, Ntt126IfmaCFromB, Ntt126IfmaFromZnx64},
     types::Q_SHIFTED_NTT126IFMA,
 };
 use poulpy_hal::layouts::{
@@ -244,7 +245,8 @@ pub(crate) fn vmp_prepare_ifma(
         for col_i in 0..ncols {
             let pos = n * (row_i * ncols + col_i);
             crate::NTT126Ifma::ntt126_ifma_from_znx64(tmp_b, &mat_i64[pos..pos + n]);
-            crate::NTT126Ifma::ntt126_ifma_dft_execute(&handle(module).table_ntt, tmp_b);
+            // Lazy [0, 4q): consumed only by c_from_b (re-reduces).
+            unsafe { ntt_avx512::<Primes42>(&handle(module).table_ntt, tmp_b, true) };
             let tmp_c: &mut [u32] = cast_slice_mut(tmp_c_u64);
             crate::NTT126Ifma::ntt126_ifma_c_from_b(n, tmp_c, tmp_b);
 

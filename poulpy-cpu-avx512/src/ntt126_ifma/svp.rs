@@ -12,10 +12,11 @@ use poulpy_hal::{
 
 use crate::NTT126Ifma;
 use crate::ntt126_ifma::{
+    kernels::ntt_avx512,
     module::handle,
     primes::{PrimeSetNtt126Ifma, Primes42},
     tables::{harvey_modmul, harvey_quotient},
-    traits::{Ntt126IfmaCFromB, Ntt126IfmaDFTExecute, Ntt126IfmaFromZnx64, Ntt126IfmaZero},
+    traits::{Ntt126IfmaCFromB, Ntt126IfmaFromZnx64, Ntt126IfmaZero},
 };
 
 #[inline(always)]
@@ -37,7 +38,8 @@ pub(crate) fn svp_prepare(
 
     let mut tmp = vec![0u64; 3 * n];
     NTT126Ifma::ntt126_ifma_from_znx64(&mut tmp, a.at(a_col, 0));
-    NTT126Ifma::ntt126_ifma_dft_execute(&handle(module).table_ntt, &mut tmp);
+    // Lazy [0, 4q): consumed only by c_from_b (re-reduces).
+    unsafe { ntt_avx512::<Primes42>(&handle(module).table_ntt, &mut tmp, true) };
 
     let res_u32: &mut [u32] = cast_slice_mut(res.at_mut(res_col, 0));
     NTT126Ifma::ntt126_ifma_c_from_b(n, res_u32, &tmp);

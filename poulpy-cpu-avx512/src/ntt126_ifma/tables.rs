@@ -1,14 +1,5 @@
 //! Precomputed twiddle tables and Harvey arithmetic helpers for the 3-prime IFMA NTT.
 //!
-//! # IFMA-native arithmetic model
-//!
-//! Lazy Harvey reduction: butterfly values are kept in `[0, 4q)` internally,
-//! and normalised to `[0, 2q)` at NTT boundaries.  On the difference path of
-//! each butterfly the Harvey multiplier absorbs the wider range directly —
-//! inputs up to `2^52` yield outputs in `[0, 2q)` because `q < 2^42` — so a
-//! pre-reduction `cond_sub` before the multiply is unnecessary.  Only the sum
-//! path keeps one `cond_sub` (of `4q`) per butterfly pair.
-//!
 //! # Twiddle factor layout
 //!
 //! Twiddle factors use a **split (SoA) layout** within each NTT level segment.
@@ -41,19 +32,27 @@ use super::primes::{PrimeSetNtt126Ifma, modq_pow64};
 pub struct Ntt126IfmaTable<P: PrimeSetNtt126Ifma> {
     /// NTT size (power of two, ≤ 2^16).
     pub n: usize,
-    /// `2q[k]` for each prime (lane 3 = 0).  Used for the final `[0, 4q)` → `[0, 2q)`
-    /// normalisation pass and by external consumers that expect `[0, 2q)` input.
+    /// `2q[k]` for each prime (lane 3 = 0); used for the final `[0, 4q)` → `[0, 2q)` pass.
     pub q2: [u64; 4],
-    /// `4q[k]` for each prime (lane 3 = 0).  Used inside butterflies under the
-    /// lazy `[0, 4q)` invariant: sum path subtracts `4q`, diff path adds `4q`
-    /// before subtracting `b`.
+    /// `4q[k]` for each prime (lane 3 = 0); used inside butterflies under the lazy `[0, 4q)` invariant.
     pub q4: [u64; 4],
     /// Packed twiddle factors: each entry is 8 u64.
     /// Layout: level-0 (n entries), then butterfly levels (halfnn-1 entries each).
     pub powomega: Vec<u64>,
-    /// Plane-contiguous twiddle factors for planar kernels.
-    /// Each segment is `[p0 omega][p1 omega][p2 omega][p0 quotient][p1 quotient][p2 quotient]`.
-    pub powomega_plane: Vec<u64>,
+    /// Scrambled forward roots, prime-major.
+    /// Entry for prime `k`, scrambled index `j` is at `[k*n + j]`.
+    /// `root[bitrev(i)] = w^i`, where `w` is the primitive `2n`-th root.
+    pub root: Vec<u64>,
+    /// Harvey/Shoup preconditioned quotients for `root`, same layout.
+    /// `root_quot[k*n + j] = harvey_quotient(root[k*n + j], Q[k])`.
+    pub root_quot: Vec<u64>,
+    /// Vectorized tail roots for the `t = 4, 2, 1` stages, prime-major, stride
+    /// `3n/2`. Per prime, three blocks of length `n/2` with each root duplicated
+    /// to match the stage operand width: 4× (distance 4), 2× (distance 2), 1×
+    /// (distance 1). Empty when `n < 16` (tail vectorization requires `n >= 16`).
+    pub tail_root: Vec<u64>,
+    /// Harvey/Shoup preconditioned quotients for `tail_root`, same layout.
+    pub tail_quot: Vec<u64>,
     _phantom: PhantomData<P>,
 }
 
@@ -65,9 +64,11 @@ pub struct Ntt126IfmaTableInv<P: PrimeSetNtt126Ifma> {
     /// Packed twiddle factors: butterfly levels (halfnn-1 entries each),
     /// then last-pass (n entries with ω^{-i}/n baked in).
     pub powomega: Vec<u64>,
-    /// Plane-contiguous twiddle factors for planar kernels.
-    /// Each segment is `[p0 omega][p1 omega][p2 omega][p0 quotient][p1 quotient][p2 quotient]`.
-    pub powomega_plane: Vec<u64>,
+    /// Reordered inverse roots, prime-major (stride `n`).
+    /// Entry for prime `k`, reordered index `j` is at `[k*n + j]`.
+    pub inv_root: Vec<u64>,
+    /// Harvey/Shoup preconditioned quotients for `inv_root`, same layout.
+    pub inv_quot: Vec<u64>,
     _phantom: PhantomData<P>,
 }
 
@@ -85,6 +86,159 @@ fn fill_omegas_ntt126_ifma<P: PrimeSetNtt126Ifma>(n: usize) -> [u64; 3] {
 #[inline(always)]
 pub fn harvey_quotient(omega: u64, q: u64) -> u64 {
     ((omega as u128 * (1u128 << 52)) / q as u128) as u64
+}
+
+/// Reverse the low `bits` bits of `x`.
+fn reverse_bits(x: usize, bits: u32) -> usize {
+    let mut r = 0usize;
+    for i in 0..bits {
+        r |= ((x >> i) & 1) << (bits - 1 - i);
+    }
+    r
+}
+
+/// Build the scrambled forward root tables (prime-major).
+///
+/// For each prime `k`: `w = OMEGA[k] ^ (2^16 / n)` (primitive `2n`-th root),
+/// then `root[bitrev(i)] = w^i` for `i in 0..n` (`root[0] = 1`).
+/// Returns `(root, root_quot)`, each of length `3*n`, with entry for
+/// prime `k`, scrambled index `j` at `[k*n + j]`.
+fn build_root_table<P: PrimeSetNtt126Ifma>(n: usize) -> (Vec<u64>, Vec<u64>) {
+    let mut root_tbl = vec![0u64; 3 * n];
+    let mut quot_tbl = vec![0u64; 3 * n];
+    if n == 0 {
+        return (root_tbl, quot_tbl);
+    }
+    let log_n = n.trailing_zeros();
+    for k in 0..3 {
+        let q = P::Q[k];
+        let w = modq_pow64(P::OMEGA[k], (1i64 << 16) / n as i64, q);
+        // root[bitrev(i)] = w^i, built incrementally from the previous scrambled index.
+        let mut root = vec![0u64; n];
+        root[0] = 1;
+        let mut prev_idx = 0usize;
+        for i in 1..n {
+            let idx = reverse_bits(i, log_n);
+            root[idx] = ((root[prev_idx] as u128 * w as u128) % q as u128) as u64;
+            prev_idx = idx;
+        }
+        for j in 0..n {
+            root_tbl[k * n + j] = root[j];
+            quot_tbl[k * n + j] = harvey_quotient(root[j], q);
+        }
+    }
+    (root_tbl, quot_tbl)
+}
+
+/// Modular inverse via Fermat: `x^{q-2} mod q` (`q` prime).
+fn modinv(x: u64, q: u64) -> u64 {
+    modq_pow64(x, q as i64 - 2, q)
+}
+
+/// Build the reordered inverse root tables (prime-major, stride `n`).
+///
+/// For each prime `k`: build the scrambled forward roots `fwd[bitrev(i)] = w^i`
+/// (`w` the primitive `2n`-th root), take `inv_nat[j] = modinv(fwd[j])`, then
+/// reorder level-major: `temp[0] = inv_nat[0]`, then for `m in [n/2, n/4, …, 1]`
+/// append `inv_nat[m+i]` for `i in 0..m`.
+/// Returns `(inv_root, inv_quot)`, each of length `3*n`.
+fn build_inv_root_table<P: PrimeSetNtt126Ifma>(n: usize) -> (Vec<u64>, Vec<u64>) {
+    let mut inv_root = vec![0u64; 3 * n];
+    let mut inv_precon = vec![0u64; 3 * n];
+    if n == 0 {
+        return (inv_root, inv_precon);
+    }
+    let log_n = n.trailing_zeros();
+    for k in 0..3 {
+        let q = P::Q[k];
+        let w = modq_pow64(P::OMEGA[k], (1i64 << 16) / n as i64, q);
+        // Scrambled forward roots: root[bitrev(i)] = w^i.
+        let mut fwd = vec![0u64; n];
+        fwd[0] = 1;
+        let mut prev_idx = 0usize;
+        for i in 1..n {
+            let idx = reverse_bits(i, log_n);
+            fwd[idx] = ((fwd[prev_idx] as u128 * w as u128) % q as u128) as u64;
+            prev_idx = idx;
+        }
+        // inv_nat[j] = modinv(fwd[j]).
+        let inv_nat: Vec<u64> = fwd.iter().map(|&r| modinv(r, q)).collect();
+        // Reorder level-major.
+        let mut temp = vec![0u64; n];
+        temp[0] = inv_nat[0];
+        let mut idx = 1usize;
+        let mut m = n >> 1;
+        while m > 0 {
+            for i in 0..m {
+                temp[idx] = inv_nat[m + i];
+                idx += 1;
+            }
+            m >>= 1;
+        }
+        for j in 0..n {
+            inv_root[k * n + j] = temp[j];
+            inv_precon[k * n + j] = harvey_quotient(temp[j], q);
+        }
+    }
+    (inv_root, inv_precon)
+}
+
+/// Build the vectorized tail root tables for the `t = 4, 2, 1` stages
+/// (prime-major, stride `3n/2`).
+///
+/// Derived from each prime's non-duplicated scrambled `root[]`, each root is
+/// duplicated to the stage operand width:
+/// - distance-4 block (offset 0, len `n/2`): `root[i]` 4× for `i in n/8..n/4`.
+/// - distance-2 block (offset `n/2`, len `n/2`): `root[i]` 2× for `i in n/4..n/2`.
+/// - distance-1 block (offset `n`, len `n/2`): `root[i]` 1× for `i in n/2..n`.
+///
+/// Only built for `n >= 16`; returns empty vectors otherwise.
+fn build_tail_root_table<P: PrimeSetNtt126Ifma>(n: usize) -> (Vec<u64>, Vec<u64>) {
+    if n < 16 {
+        return (Vec::new(), Vec::new());
+    }
+    let stride = 3 * n / 2;
+    let mut tail_root = vec![0u64; 3 * stride];
+    let mut tail_quot = vec![0u64; 3 * stride];
+    let log_n = n.trailing_zeros();
+    for k in 0..3 {
+        let q = P::Q[k];
+        let w = modq_pow64(P::OMEGA[k], (1i64 << 16) / n as i64, q);
+        // root[bitrev(i)] = w^i, built incrementally (same as build_root_table).
+        let mut root = vec![0u64; n];
+        root[0] = 1;
+        let mut prev_idx = 0usize;
+        for i in 1..n {
+            let idx = reverse_bits(i, log_n);
+            root[idx] = ((root[prev_idx] as u128 * w as u128) % q as u128) as u64;
+            prev_idx = idx;
+        }
+        let base = k * stride;
+        let mut p = base;
+        let mut push = |val: u64, p: &mut usize| {
+            tail_root[*p] = val;
+            tail_quot[*p] = harvey_quotient(val, q);
+            *p += 1;
+        };
+        // distance-4 block: each root 4×.
+        for &r in &root[(n / 8)..(n / 4)] {
+            for _ in 0..4 {
+                push(r, &mut p);
+            }
+        }
+        // distance-2 block: each root 2×.
+        for &r in &root[(n / 4)..(n / 2)] {
+            for _ in 0..2 {
+                push(r, &mut p);
+            }
+        }
+        // distance-1 block: each root 1×.
+        for &r in &root[(n / 2)..n] {
+            push(r, &mut p);
+        }
+        debug_assert_eq!(p - base, stride);
+    }
+    (tail_root, tail_quot)
 }
 
 /// Harvey modular multiply (scalar): `a * omega mod q`.
@@ -132,20 +286,6 @@ fn store_twiddle_split<P: PrimeSetNtt126Ifma>(
     powomega[q + 3] = 0;
 }
 
-fn store_twiddle_plane<P: PrimeSetNtt126Ifma>(
-    powomega: &mut [u64],
-    omega_base: usize,
-    quot_base: usize,
-    count: usize,
-    idx: usize,
-    omega_vals: &[u64; 3],
-) {
-    for k in 0..3 {
-        powomega[omega_base + k * count + idx] = omega_vals[k];
-        powomega[quot_base + k * count + idx] = harvey_quotient(omega_vals[k], P::Q[k]);
-    }
-}
-
 // ──────────────────────────────────────────────────────────────────────────────
 // Forward NTT table construction
 // ──────────────────────────────────────────────────────────────────────────────
@@ -159,6 +299,9 @@ impl<P: PrimeSetNtt126Ifma> Ntt126IfmaTable<P> {
 
         let q2: [u64; 4] = [2 * P::Q[0], 2 * P::Q[1], 2 * P::Q[2], 0];
         let q4: [u64; 4] = [4 * P::Q[0], 4 * P::Q[1], 4 * P::Q[2], 0];
+
+        let (root, root_quot) = build_root_table::<P>(n);
+        let (tail_root, tail_quot) = build_tail_root_table::<P>(n);
 
         let omega_vec = fill_omegas_ntt126_ifma::<P>(n);
 
@@ -179,10 +322,7 @@ impl<P: PrimeSetNtt126Ifma> Ntt126IfmaTable<P> {
         // Total u64 count is same: 8 * total_entries
         let mut powomega: Vec<u64> = alloc_aligned::<u64>(8 * total_entries);
         powomega.resize(8 * total_entries, 0);
-        let mut powomega_plane: Vec<u64> = alloc_aligned::<u64>(6 * total_entries);
-        powomega_plane.resize(6 * total_entries, 0);
         let mut seg_base = 0usize; // base offset (in u64) for current segment
-        let mut plane_seg_base = 0usize;
 
         if n <= 1 {
             return Self {
@@ -190,7 +330,10 @@ impl<P: PrimeSetNtt126Ifma> Ntt126IfmaTable<P> {
                 q2,
                 q4,
                 powomega,
-                powomega_plane,
+                root,
+                root_quot,
+                tail_root,
+                tail_quot,
                 _phantom: PhantomData,
             };
         }
@@ -199,18 +342,14 @@ impl<P: PrimeSetNtt126Ifma> Ntt126IfmaTable<P> {
         {
             let omega_base = seg_base;
             let quot_base = seg_base + 4 * n;
-            let plane_omega_base = plane_seg_base;
-            let plane_quot_base = plane_seg_base + 3 * n;
             let mut pow_om: [u64; 3] = [1; 3]; // ω^0 = 1
             for i in 0..n {
                 store_twiddle_split::<P>(&mut powomega, omega_base, quot_base, i, &pow_om);
-                store_twiddle_plane::<P>(&mut powomega_plane, plane_omega_base, plane_quot_base, n, i, &pow_om);
                 for k in 0..3 {
                     pow_om[k] = ((pow_om[k] as u128 * omega_vec[k] as u128) % P::Q[k] as u128) as u64;
                 }
             }
             seg_base += 8 * n;
-            plane_seg_base += 6 * n;
         }
 
         // ── Butterfly levels: nn = n, n/2, …, 2 ─────────────────────────
@@ -221,20 +360,16 @@ impl<P: PrimeSetNtt126Ifma> Ntt126IfmaTable<P> {
                 let count = halfnn - 1;
                 let omega_base = seg_base;
                 let quot_base = seg_base + 4 * count;
-                let plane_omega_base = plane_seg_base;
-                let plane_quot_base = plane_seg_base + 3 * count;
                 let m = n / halfnn;
                 let omega_m: [u64; 3] = std::array::from_fn(|k| modq_pow64(omega_vec[k], m as i64, P::Q[k]));
                 let mut pow_om = omega_m;
                 for i in 0..count {
                     store_twiddle_split::<P>(&mut powomega, omega_base, quot_base, i, &pow_om);
-                    store_twiddle_plane::<P>(&mut powomega_plane, plane_omega_base, plane_quot_base, count, i, &pow_om);
                     for k in 0..3 {
                         pow_om[k] = ((pow_om[k] as u128 * omega_m[k] as u128) % P::Q[k] as u128) as u64;
                     }
                 }
                 seg_base += 8 * count;
-                plane_seg_base += 6 * count;
             }
             nn /= 2;
         }
@@ -244,7 +379,10 @@ impl<P: PrimeSetNtt126Ifma> Ntt126IfmaTable<P> {
             q2,
             q4,
             powomega,
-            powomega_plane,
+            root,
+            root_quot,
+            tail_root,
+            tail_quot,
             _phantom: PhantomData,
         }
     }
@@ -265,6 +403,8 @@ impl<P: PrimeSetNtt126Ifma> Ntt126IfmaTableInv<P> {
         let q4: [u64; 4] = [4 * P::Q[0], 4 * P::Q[1], 4 * P::Q[2], 0];
         let omega_vec = fill_omegas_ntt126_ifma::<P>(n);
 
+        let (inv_root, inv_quot) = build_inv_root_table::<P>(n);
+
         // butterfly levels + last pass (n entries)
         let total_entries = n
             + (0..)
@@ -280,10 +420,7 @@ impl<P: PrimeSetNtt126Ifma> Ntt126IfmaTableInv<P> {
 
         let mut powomega: Vec<u64> = alloc_aligned::<u64>(8 * total_entries);
         powomega.resize(8 * total_entries, 0);
-        let mut powomega_plane: Vec<u64> = alloc_aligned::<u64>(6 * total_entries);
-        powomega_plane.resize(6 * total_entries, 0);
         let mut seg_base = 0usize;
-        let mut plane_seg_base = 0usize;
 
         if n <= 1 {
             return Self {
@@ -291,7 +428,8 @@ impl<P: PrimeSetNtt126Ifma> Ntt126IfmaTableInv<P> {
                 q2,
                 q4,
                 powomega,
-                powomega_plane,
+                inv_root,
+                inv_quot,
                 _phantom: PhantomData,
             };
         }
@@ -304,20 +442,16 @@ impl<P: PrimeSetNtt126Ifma> Ntt126IfmaTableInv<P> {
                 let count = halfnn - 1;
                 let omega_base = seg_base;
                 let quot_base = seg_base + 4 * count;
-                let plane_omega_base = plane_seg_base;
-                let plane_quot_base = plane_seg_base + 3 * count;
                 let m = n / halfnn;
                 let omega_neg_m: [u64; 3] = std::array::from_fn(|k| modq_pow64(omega_vec[k], -(m as i64), P::Q[k]));
                 let mut pow_om = omega_neg_m;
                 for i in 0..count {
                     store_twiddle_split::<P>(&mut powomega, omega_base, quot_base, i, &pow_om);
-                    store_twiddle_plane::<P>(&mut powomega_plane, plane_omega_base, plane_quot_base, count, i, &pow_om);
                     for k in 0..3 {
                         pow_om[k] = ((pow_om[k] as u128 * omega_neg_m[k] as u128) % P::Q[k] as u128) as u64;
                     }
                 }
                 seg_base += 8 * count;
-                plane_seg_base += 6 * count;
             }
             nn *= 2;
         }
@@ -326,14 +460,11 @@ impl<P: PrimeSetNtt126Ifma> Ntt126IfmaTableInv<P> {
         {
             let omega_base = seg_base;
             let quot_base = seg_base + 4 * n;
-            let plane_omega_base = plane_seg_base;
-            let plane_quot_base = plane_seg_base + 3 * n;
             let omega_inv: [u64; 3] = std::array::from_fn(|k| modq_pow64(omega_vec[k], -1, P::Q[k]));
             let n_inv: [u64; 3] = std::array::from_fn(|k| modq_pow64(n as u64, -1, P::Q[k]));
             let mut pow_om = n_inv; // i=0: just n^{-1}
             for i in 0..n {
                 store_twiddle_split::<P>(&mut powomega, omega_base, quot_base, i, &pow_om);
-                store_twiddle_plane::<P>(&mut powomega_plane, plane_omega_base, plane_quot_base, n, i, &pow_om);
                 for k in 0..3 {
                     pow_om[k] = ((pow_om[k] as u128 * omega_inv[k] as u128) % P::Q[k] as u128) as u64;
                 }
@@ -345,7 +476,8 @@ impl<P: PrimeSetNtt126Ifma> Ntt126IfmaTableInv<P> {
             q2,
             q4,
             powomega,
-            powomega_plane,
+            inv_root,
+            inv_quot,
             _phantom: PhantomData,
         }
     }
