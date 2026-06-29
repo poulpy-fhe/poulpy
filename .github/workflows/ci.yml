@@ -224,15 +224,15 @@ jobs:
         run: cargo clippy --workspace --all-targets --features "$AVX512_FEATURES" -- -D warnings
 
   neon:
-    name: NEON backend (aarch64 via qemu)
-    runs-on: ubuntu-latest
+    name: NEON backend (aarch64 native)
+    runs-on: ubuntu-24.04-arm
 
     env:
-      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER: qemu-aarch64-static
-      # Let qemu-user find the aarch64 glibc loader/libs from the cross sysroot
-      # installed by gcc-aarch64-linux-gnu.
-      QEMU_LD_PREFIX: /usr/aarch64-linux-gnu
+      # .cargo/config.toml wires this target's runner to qemu-aarch64-static for
+      # the x86 cross-compile dev workflow. This lane runs on native arm64, so we
+      # bypass qemu and execute test binaries directly. "env" is a transparent
+      # passthrough wrapper (cargo rejects an empty runner string).
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER: env
 
     steps:
       - name: Checkout
@@ -245,12 +245,6 @@ jobs:
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           components: clippy, rustfmt
-          targets: aarch64-unknown-linux-gnu
-
-      - name: Install qemu-user-static and aarch64 cross toolchain
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y qemu-user-static gcc-aarch64-linux-gnu
 
       - name: Cache cargo deps
         uses: actions/cache@v4
@@ -259,19 +253,18 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-neon-${{ hashFiles('**/Cargo.lock') }}
+          key: arm64-cargo-neon-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-neon-
-            ${{ runner.os }}-cargo-
+            arm64-cargo-neon-
 
       - name: Check NEON backend (workspace libs)
-        run: cargo check --workspace --target aarch64-unknown-linux-gnu --features "$NEON_FEATURES"
+        run: cargo check --workspace --features "$NEON_FEATURES"
 
       - name: Clippy NEON backend (workspace libs)
-        run: cargo clippy --workspace --target aarch64-unknown-linux-gnu --features "$NEON_FEATURES" -- -D warnings
+        run: cargo clippy --workspace --features "$NEON_FEATURES" -- -D warnings
 
-      - name: Test NEON backend under qemu
-        run: cargo test -p poulpy-cpu-arm --target aarch64-unknown-linux-gnu --features "enable-neon,enable-ckks"
+      - name: Test NEON backend
+        run: cargo test -p poulpy-cpu-arm --features "enable-neon,enable-ckks"
 
   build-and-test:
     name: build-and-test
