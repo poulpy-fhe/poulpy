@@ -33,10 +33,10 @@
 
 use core::arch::x86_64::{
     __m256i, _mm_add_epi64, _mm_cvtsi64_si128, _mm_cvtsi128_si64, _mm_unpackhi_epi64, _mm256_add_epi32, _mm256_add_epi64,
-    _mm256_and_si256, _mm256_andnot_si256, _mm256_castsi256_si128, _mm256_cmpgt_epi64, _mm256_extracti128_si256,
-    _mm256_loadu_si256, _mm256_mul_epu32, _mm256_or_si256, _mm256_permute2x128_si256, _mm256_set1_epi64x, _mm256_setzero_si256,
-    _mm256_slli_epi64, _mm256_srl_epi64, _mm256_srli_epi64, _mm256_storeu_si256, _mm256_sub_epi64, _mm256_unpackhi_epi64,
-    _mm256_unpacklo_epi64,
+    _mm256_and_si256, _mm256_andnot_si256, _mm256_blendv_epi8, _mm256_castsi256_si128, _mm256_cmpeq_epi64, _mm256_cmpgt_epi64,
+    _mm256_extracti128_si256, _mm256_loadu_si256, _mm256_mul_epu32, _mm256_or_si256, _mm256_permute2x128_si256,
+    _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_slli_epi64, _mm256_srl_epi64, _mm256_srli_epi64, _mm256_storeu_si256,
+    _mm256_sub_epi64, _mm256_unpackhi_epi64, _mm256_unpacklo_epi64, _mm256_xor_si256,
 };
 
 use poulpy_cpu_ref::reference::ntt120::{
@@ -744,6 +744,54 @@ fn crt_finalize(mut v: u128, half_q: u128) -> i128 {
     if v >= half_q { v as i128 - TOTAL_Q as i128 } else { v as i128 }
 }
 
+// Planar (4-wide) CRT-fold helpers: each u128 lane is a (lo, hi) `__m256i` pair.
+// AVX2 has no mask registers, so masks are per-lane all-ones `__m256i` and the
+// masked 128-bit add/sub select with `blendv`; unsigned compares use a sign flip.
+
+/// Unsigned 64-bit `a > b` across 4 lanes (sign-flip + signed compare).
+#[inline(always)]
+unsafe fn cmpgt_u64_avx2(a: __m256i, b: __m256i) -> __m256i {
+    unsafe {
+        let msb = _mm256_set1_epi64x(i64::MIN);
+        _mm256_cmpgt_epi64(_mm256_xor_si256(a, msb), _mm256_xor_si256(b, msb))
+    }
+}
+
+/// Unsigned 128-bit `(hi,lo) >= (chi,clo)` across 4 lanes (non-strict).
+#[inline(always)]
+unsafe fn cmp_ge_u128_avx2(hi: __m256i, lo: __m256i, chi: __m256i, clo: __m256i) -> __m256i {
+    unsafe {
+        let hi_gt = cmpgt_u64_avx2(hi, chi);
+        let hi_eq = _mm256_cmpeq_epi64(hi, chi);
+        let lo_ge = _mm256_or_si256(cmpgt_u64_avx2(lo, clo), _mm256_cmpeq_epi64(lo, clo));
+        _mm256_or_si256(hi_gt, _mm256_and_si256(hi_eq, lo_ge))
+    }
+}
+
+/// Masked 128-bit add across 4 lanes: where `m` is set, `(lo,hi) += (alo,ahi)`.
+#[inline(always)]
+unsafe fn add128_masked_avx2(lo: __m256i, hi: __m256i, alo: __m256i, ahi: __m256i, m: __m256i) -> (__m256i, __m256i) {
+    unsafe {
+        let one = _mm256_set1_epi64x(1);
+        let flo = _mm256_add_epi64(lo, alo);
+        let carry = cmpgt_u64_avx2(lo, flo); // flo wrapped below lo
+        let fhi = _mm256_add_epi64(_mm256_add_epi64(hi, ahi), _mm256_and_si256(carry, one));
+        (_mm256_blendv_epi8(lo, flo, m), _mm256_blendv_epi8(hi, fhi, m))
+    }
+}
+
+/// Masked 128-bit subtract across 4 lanes: where `m` is set, `(lo,hi) -= (slo,shi)`.
+#[inline(always)]
+unsafe fn sub128_masked_avx2(lo: __m256i, hi: __m256i, slo: __m256i, shi: __m256i, m: __m256i) -> (__m256i, __m256i) {
+    unsafe {
+        let one = _mm256_set1_epi64x(1);
+        let borrow = cmpgt_u64_avx2(slo, lo); // lo < slo
+        let flo = _mm256_sub_epi64(lo, slo);
+        let fhi = _mm256_sub_epi64(_mm256_sub_epi64(hi, shi), _mm256_and_si256(borrow, one));
+        (_mm256_blendv_epi8(lo, flo, m), _mm256_blendv_epi8(hi, fhi, m))
+    }
+}
+
 /// Hybrid AVX2 / scalar CRT reconstruction: q120b → i128 coefficients.
 ///
 /// For each of `nn` ring elements:
@@ -839,16 +887,47 @@ pub(crate) unsafe fn b_to_znx128_avx2(nn: usize, res: &mut [i128], a: &[u64]) {
                 _mm256_add_epi64(_mm256_mul_epu32(u2, qm_hi_b[2]), _mm256_mul_epu32(u3, qm_hi_b[3])),
             );
 
-            let mut slo = [0u64; 4];
-            let mut smid = [0u64; 4];
-            let mut shi = [0u64; 4];
-            _mm256_storeu_si256(slo.as_mut_ptr() as *mut __m256i, acc_lo);
-            _mm256_storeu_si256(smid.as_mut_ptr() as *mut __m256i, acc_mid);
-            _mm256_storeu_si256(shi.as_mut_ptr() as *mut __m256i, acc_hi);
+            // Carry-propagate (acc_lo,acc_mid,acc_hi) -> 128-bit (v_lo,v_hi), Barrett
+            // table-fold mod TOTAL_Q and one cond-sub — the 4-wide analog of the
+            // AVX-512 planar fold. Only the symmetric sign lift stays scalar.
+            let mask32 = _mm256_set1_epi64x(u32::MAX as i64);
+            let one = _mm256_set1_epi64x(1);
+            let two = _mm256_set1_epi64x(2);
+            let zero = _mm256_setzero_si256();
+            let tq_lo = _mm256_set1_epi64x(TOTAL_Q as u64 as i64);
+            let tq_hi = _mm256_set1_epi64x((TOTAL_Q >> 64) as u64 as i64);
+            let tq2 = TOTAL_Q << 1;
+            let tq2_lo = _mm256_set1_epi64x(tq2 as u64 as i64);
+            let tq2_hi = _mm256_set1_epi64x((tq2 >> 64) as u64 as i64);
 
+            let smid_lo = _mm256_and_si256(acc_mid, mask32);
+            let smid_hi = _mm256_srli_epi64::<32>(acc_mid);
+            let v_lo = _mm256_add_epi64(acc_lo, _mm256_slli_epi64::<32>(smid_lo));
+            let carry0 = cmpgt_u64_avx2(acc_lo, v_lo); // v_lo wrapped below acc_lo
+            let v_hi = _mm256_add_epi64(_mm256_add_epi64(acc_hi, smid_hi), _mm256_and_si256(carry0, one));
+
+            let qapx = _mm256_srli_epi64::<56>(v_hi); // v >> 120, in {0,1,2,3}
+            let mb0 = _mm256_cmpeq_epi64(_mm256_and_si256(qapx, one), one);
+            let mb1 = _mm256_cmpeq_epi64(_mm256_and_si256(qapx, two), two);
+            let (sub_lo, sub_hi) = add128_masked_avx2(zero, zero, tq_lo, tq_hi, mb0);
+            let (sub_lo, sub_hi) = add128_masked_avx2(sub_lo, sub_hi, tq2_lo, tq2_hi, mb1);
+            let borrow = cmpgt_u64_avx2(sub_lo, v_lo); // v_lo < sub_lo
+            let v_lo = _mm256_sub_epi64(v_lo, sub_lo);
+            let v_hi = _mm256_sub_epi64(_mm256_sub_epi64(v_hi, sub_hi), _mm256_and_si256(borrow, one));
+            let ge = cmp_ge_u128_avx2(v_hi, v_lo, tq_hi, tq_lo);
+            let (v_lo, v_hi) = sub128_masked_avx2(v_lo, v_hi, tq_lo, tq_hi, ge);
+
+            let mut lo_l = [0u64; 4];
+            let mut hi_l = [0u64; 4];
+            _mm256_storeu_si256(lo_l.as_mut_ptr() as *mut __m256i, v_lo);
+            _mm256_storeu_si256(hi_l.as_mut_ptr() as *mut __m256i, v_hi);
             for i in 0..4 {
-                let v = ((shi[i] as u128) << 64) + ((smid[i] as u128) << 32) + (slo[i] as u128);
-                res[c + i] = crt_finalize(v, half_q);
+                let vv = (lo_l[i] as u128) | ((hi_l[i] as u128) << 64);
+                res[c + i] = if vv >= half_q {
+                    vv as i128 - TOTAL_Q as i128
+                } else {
+                    vv as i128
+                };
             }
             c += 4;
         }

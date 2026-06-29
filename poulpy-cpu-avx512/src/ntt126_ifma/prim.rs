@@ -243,21 +243,27 @@ unsafe fn simd_b_from_znx64_impl(n: usize, res: &mut [u64], a: &[i64], mask: i64
     }
 }
 
-/// Reduce planar b-format values in [0, 2q) to planar c-format values in [0, q).
+/// Reduce planar b-format values in [0, 4q) to planar c-format values in [0, q).
 #[target_feature(enable = "avx512f")]
 unsafe fn simd_c_from_b(n: usize, res: &mut [u64], a: &[u64]) {
     unsafe {
         for p in 0..3 {
             let q = _mm512_set1_epi64(Primes42::Q[p] as i64);
+            let q2 = _mm512_set1_epi64((2 * Primes42::Q[p]) as i64);
             let base = p * n;
             let mut i = 0usize;
             while i + 8 <= n {
+                // [0, 4q) -> [0, q): subtract 2q then q.
                 let av = _mm512_loadu_si512(a.as_ptr().add(base + i) as *const __m512i);
-                _mm512_storeu_si512(res.as_mut_ptr().add(base + i) as *mut __m512i, cond_sub_2q_si512(av, q));
+                let r = cond_sub_2q_si512(cond_sub_2q_si512(av, q2), q);
+                _mm512_storeu_si512(res.as_mut_ptr().add(base + i) as *mut __m512i, r);
                 i += 8;
             }
             while i < n {
-                let x = a[base + i];
+                let mut x = a[base + i];
+                if x >= 2 * Primes42::Q[p] {
+                    x -= 2 * Primes42::Q[p];
+                }
                 res[base + i] = if x >= Primes42::Q[p] { x - Primes42::Q[p] } else { x };
                 i += 1;
             }
@@ -272,7 +278,8 @@ unsafe fn simd_c_from_b(n: usize, res: &mut [u64], a: &[u64]) {
 impl Ntt126IfmaDFTExecute<Ntt126IfmaTable<Primes42>> for NTT126Ifma {
     #[inline(always)]
     fn ntt126_ifma_dft_execute(table: &Ntt126IfmaTable<Primes42>, data: &mut [u64]) {
-        unsafe { ntt_avx512::<Primes42>(table, data) }
+        // Non-lazy: fully reduce for the public DFT contract.
+        unsafe { ntt_avx512::<Primes42>(table, data, false) }
     }
 }
 

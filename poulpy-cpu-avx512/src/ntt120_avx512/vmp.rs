@@ -8,12 +8,13 @@ use std::mem::size_of;
 
 use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::{
-    __m256i, __m512i, _mm_sfence, _mm256_loadu_si256, _mm256_storeu_si256, _mm256_stream_si256, _mm512_castsi512_si256,
-    _mm512_loadu_si512, _mm512_permutex2var_epi64, _mm512_set_epi64,
+    __m256i, __m512i, _mm_sfence, _mm256_loadu_si256, _mm256_storeu_si256, _mm256_stream_si256, _mm512_add_epi64,
+    _mm512_castsi512_si256, _mm512_loadu_si512, _mm512_permutex2var_epi64, _mm512_set_epi64, _mm512_set1_epi64,
+    _mm512_storeu_si512,
 };
 
 use poulpy_cpu_ref::reference::ntt120::{
-    NttCFromB, NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, types::Q_SHIFTED, vec_znx_dft::NttModuleHandle,
+    NttCFromB, NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle,
 };
 use poulpy_hal::layouts::{
     DataViewMut, MatZnxBackendRef, Module, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut, VmpPMatBackendRef,
@@ -21,6 +22,7 @@ use poulpy_hal::layouts::{
 };
 
 use super::mat_vec_avx512::vec_mat1col_product_blkpair_bbc_pm_avx512;
+use super::prim::{lazy_reduce_512, q_shifted_512};
 use crate::NTT120Avx512;
 
 /// Scratch space (in bytes) required by the AVX VMP prepare kernel.
@@ -175,13 +177,25 @@ unsafe fn save_blk_overwrite_nt(_n: usize, blk: usize, dst: &mut [u64], src: &[u
     }
 }
 
-#[inline(always)]
-fn save_blk_add(n: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
+/// Lazy accumulate of one x2-block (8 u64) into a q120b vector.
+///
+/// Both `dst[8*blk..]` and `src` hold q120b residues in `[0, 2·Q_SHIFTED[k])`
+/// (the `accum_to_q120b` invariant). For such inputs `x % Q_SHIFTED[k]` equals a
+/// single conditional subtract, so `lazy_reduce_512` (one SIMD compare + masked
+/// subtract) reproduces the scalar `%` byte-for-byte. The summed result stays in
+/// `[0, 2·Q_SHIFTED[k])`, matching the downstream iNTT/normalize invariant.
+#[target_feature(enable = "avx512f")]
+unsafe fn save_blk_add(n: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
     debug_assert!(src.len() >= 8);
     debug_assert!(dst.len() >= 4 * n);
-    for i in 0..8 {
-        let k = i % 4;
-        dst[8 * blk + i] = dst[8 * blk + i] % Q_SHIFTED[k] + src[i] % Q_SHIFTED[k];
+    unsafe {
+        let q_s_512 = q_shifted_512();
+        let msb_512 = _mm512_set1_epi64(i64::MIN);
+        let dst_ptr = dst.as_mut_ptr().add(8 * blk) as *mut __m512i;
+        let src_ptr = src.as_ptr() as *const __m512i;
+        let dv = lazy_reduce_512(_mm512_loadu_si512(dst_ptr), q_s_512, msb_512);
+        let sv = lazy_reduce_512(_mm512_loadu_si512(src_ptr), q_s_512, msb_512);
+        _mm512_storeu_si512(dst_ptr, _mm512_add_epi64(dv, sv));
     }
 }
 
@@ -240,8 +254,8 @@ unsafe fn vmp_apply_core_avx_pm<const OVERWRITE: bool>(
                 unsafe { save_blk_overwrite_nt(n, blk0, &mut res_u64[base..], &blkpair_output[0..8]) };
                 unsafe { save_blk_overwrite_nt(n, blk1, &mut res_u64[base..], &blkpair_output[8..16]) };
             } else {
-                save_blk_add(n, blk0, &mut res_u64[base..], &blkpair_output[0..8]);
-                save_blk_add(n, blk1, &mut res_u64[base..], &blkpair_output[8..16]);
+                unsafe { save_blk_add(n, blk0, &mut res_u64[base..], &blkpair_output[0..8]) };
+                unsafe { save_blk_add(n, blk1, &mut res_u64[base..], &blkpair_output[8..16]) };
             }
         }
     }

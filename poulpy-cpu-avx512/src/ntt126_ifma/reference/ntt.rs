@@ -2,7 +2,7 @@
 //!
 //! Pure-Rust mirror of the AVX-512-IFMA forward and inverse NTT kernels in
 //! [`super::super::kernels`].  Used by the AVX-512 unit tests as the
-//! correctness oracle for `ntt_avx512` / `intt_avx512`.
+//! correctness oracle for the `ntt_avx512` / `intt_avx512` kernels.
 //!
 //! See [`super::super::tables`] for the table layout this implementation
 //! consumes — the IFMA-native lazy `[0, 4q)` arithmetic, the SoA twiddle

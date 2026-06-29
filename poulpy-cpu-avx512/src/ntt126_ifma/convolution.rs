@@ -13,12 +13,11 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use std::mem::size_of;
 
 use crate::ntt126_ifma::{
-    kernels::cond_sub_2q_si512,
+    kernels::{cond_sub_2q_si512, ntt_avx512},
     module::handle,
     primes::{PrimeSetNtt126Ifma, Primes42},
-    tables::Ntt126IfmaTable,
     tables::{harvey_modmul, harvey_quotient},
-    traits::{Ntt126IfmaAddAssign, Ntt126IfmaCFromB, Ntt126IfmaDFTExecute, Ntt126IfmaFromZnx64},
+    traits::{Ntt126IfmaAddAssign, Ntt126IfmaCFromB, Ntt126IfmaFromZnx64},
     types::Q126Scalar,
 };
 use poulpy_hal::layouts::{
@@ -705,7 +704,8 @@ pub(crate) fn cnv_prepare_left(
             } else {
                 NTT126Ifma::ntt126_ifma_from_znx64(limb, a.at(col, j));
             }
-            <NTT126Ifma as Ntt126IfmaDFTExecute<Ntt126IfmaTable<Primes42>>>::ntt126_ifma_dft_execute(table, limb);
+            // Lazy [0, 4q): the left operand feeds only the BBC product (bound 2^44 > 4q).
+            unsafe { ntt_avx512::<Primes42>(table, limb, true) };
             unsafe { scatter_limb_planar(dst, limb, n, res_size, j) };
         }
         for j in min_size..res_size {
@@ -743,7 +743,8 @@ pub(crate) fn cnv_prepare_right(
             } else {
                 NTT126Ifma::ntt126_ifma_from_znx64(limb_b, a.at(col, j));
             }
-            <NTT126Ifma as Ntt126IfmaDFTExecute<Ntt126IfmaTable<Primes42>>>::ntt126_ifma_dft_execute(table, limb_b);
+            // Lazy [0, 4q): c_from_b re-reduces from [0, 4q).
+            unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
             NTT126Ifma::ntt126_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
             unsafe { scatter_limb_planar(dst, limb_c, n, res_size, res_size - 1 - j) };
         }
@@ -788,7 +789,8 @@ pub(crate) fn cnv_prepare_self(
             } else {
                 NTT126Ifma::ntt126_ifma_from_znx64(limb_b, a.at(col, j));
             }
-            <NTT126Ifma as Ntt126IfmaDFTExecute<Ntt126IfmaTable<Primes42>>>::ntt126_ifma_dft_execute(table, limb_b);
+            // Lazy [0, 4q): left operand → BBC (bound 2^44 > 4q); limb_b → c_from_b (re-reduces).
+            unsafe { ntt_avx512::<Primes42>(table, limb_b, true) };
             unsafe { scatter_limb_planar(dst_l, limb_b, n, res_size, j) };
             NTT126Ifma::ntt126_ifma_c_from_b(n, cast_slice_mut(limb_c), limb_b);
             unsafe { scatter_limb_planar(dst_r, limb_c, n, res_size, res_size - 1 - j) };
