@@ -55,20 +55,6 @@ To include CKKS backend wiring in the NEON test build:
 cargo test -p poulpy-cpu-arm --features enable-neon,enable-ckks
 ```
 
-### Cross-compiling from x86 with qemu
-
-The workspace `.cargo/config.toml` wires `aarch64-unknown-linux-{gnu,musl}` to `qemu-aarch64-static`:
-
-```bash
-rustup target add aarch64-unknown-linux-musl
-sudo pacman -S qemu-user-static   # or: sudo apt install -y qemu-user-static
-
-cargo test -p poulpy-cpu-arm --features enable-neon,enable-ckks \
-    --target aarch64-unknown-linux-musl
-```
-
-qemu distorts SIMD-vs-scalar ratios. Use it as a correctness gate only, never for performance decisions.
-
 ## Basic Usage
 
 This crate exposes two NEON-accelerated backends:

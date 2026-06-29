@@ -227,13 +227,6 @@ jobs:
     name: NEON backend (aarch64 native)
     runs-on: ubuntu-24.04-arm
 
-    env:
-      # .cargo/config.toml wires this target's runner to qemu-aarch64-static for
-      # the x86 cross-compile dev workflow. This lane runs on native arm64, so we
-      # bypass qemu and execute test binaries directly. "env" is a transparent
-      # passthrough wrapper (cargo rejects an empty runner string).
-      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER: env
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4

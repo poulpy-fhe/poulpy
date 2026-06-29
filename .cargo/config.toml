@@ -1,21 +1,7 @@
 [env]
 CFLAGS = "-std=gnu17"
 
-# AArch64 cross-targets for running NEON tests under qemu-user.
-#
-# Requires:
-#   sudo pacman -S qemu-user-static aarch64-linux-gnu-gcc
-#
-# Then either target works:
-#   cargo test -p poulpy-cpu-arm --features enable-neon \
-#       --target aarch64-unknown-linux-gnu
-#   cargo test -p poulpy-cpu-arm --features enable-neon \
-#       --target aarch64-unknown-linux-musl
-
-[target.aarch64-unknown-linux-gnu]
-linker = "aarch64-linux-gnu-gcc"
-runner = "qemu-aarch64-static"
-
-[target.aarch64-unknown-linux-musl]
-linker = "rust-lld"
-runner = "qemu-aarch64-static"
+# No per-target overrides for the aarch64 triples: NEON/ASIMD is baseline on
+# AArch64, so the accelerated cpu-arm backend builds and runs natively on arm64
+# hosts with just `--features enable-neon` — opt-in, exactly like the avx backends
+# on x86, with cpu-ref remaining the default reference backend.

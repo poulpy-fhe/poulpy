@@ -127,7 +127,7 @@
 //! # Platform support
 //!
 //! - **Required**: AArch64 (Apple Silicon, ARMv8-A and later).
-//! - **Tested under**: native AArch64 hosts and `qemu-aarch64-static` for correctness gates.
+//! - **Tested under**: native AArch64 hosts.
 //! - **Not supported**: 32-bit ARM, x86, RISC-V, or any other architecture.
 //!
 //! # Threat model
