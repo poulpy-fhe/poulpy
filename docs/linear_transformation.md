@@ -95,13 +95,13 @@ The baby-step cache is prepared once either way.
 
 ## Split strategies
 
-The decomposition is controlled by the choice of `n1`.
+The decomposition is controlled by the choice of `n1`, expressed through the `LinearTransformationStrategy` enum, which has two variants.
 
 - `Direct` uses one giant step per diagonal and no baby rotations. It is best for a handful of diagonals.
 
 - `Bsgs { giant_step }` uses a caller-fixed `n1`. This is the knob to align `n1` with the diagonal structure of `M`, for example the stride of an FFT matrix.
 
-- `Auto` falls back to `Direct` for two diagonals or fewer, and otherwise picks `n1` automatically. It only considers giant steps that are multiples of the smallest gap between consecutive diagonals, which is cheap for stride structured matrices, and selects the one that balances the baby and giant counts near the square root of the number of diagonals.
+For the cost-optimal width, call the `optimal_bsgs_giant_step` helper and feed its result into `Bsgs { giant_step }`. It returns `1`, which degenerates to the `Direct` schedule, for a single diagonal or fewer. Otherwise it only considers giant steps that are multiples of the smallest gap between consecutive diagonals, which is cheap for stride structured matrices, and selects the one that balances the baby and giant counts near the square root of the number of diagonals.
 
 The result is invariant to `n1`; only the cost changes, and it bottoms out near the square root of the number of diagonals.
 

@@ -73,11 +73,11 @@ The crate also ships a generic conformance suite under `test_suite/` that any ba
 ### poulpy-ckks
 
 The leveled CKKS evaluator built on core.
-It uses the same bivariate base-`2^K` representation rather than an RNS one, and exposes precision through `CKKSMeta`, which tracks `log_delta`, the base-2 log of the encoding scale, and `log_budget`, the remaining homomorphic headroom in bits.
+It uses the same bivariate base-`2^K` representation rather than an RNS one, and exposes precision through `CKKSMeta`, which tracks `log_delta`, the base-2 log of the encoding scale, and `log_sparsity`, the sparse-packing factor. The remaining homomorphic headroom, `log_budget`, is not stored in `CKKSMeta`; it is derived from the ciphertext's torus width `k` as `k - log_delta`.
 The `encoding/` folder maps complex slots to and from a plaintext polynomial through a negacyclic FFT packing of real and imaginary parts.
 The `leveled/` arithmetic tracks the `CKKSMeta` precision metadata for you: addition and subtraction align operands by budget and do not consume capacity, while multiplication does in rescaling, which is a bit shift rather than a division by a prime.
-The public operations include add, subtract, negate, multiply, fused multiply-add and multiply-subtract, affine maps, slot rotation, conjugation, and multiplication or division by `i` or by powers of two, plus maintenance helpers that compact or resize a ciphertext's limb storage.
-Higher-level evaluators build on these: polynomial evaluation, linear transformations (matrix-vector products over the slots), and the homomorphic DFT (`CoeffsToSlots` / `SlotsToCoeffs`) built as a chain of those linear transformations.
+The public operations include add, subtract, negate, multiply, fused multiply-add and multiply-subtract, affine maps, slot rotation, conjugation, and multiplication or division by `i` or by powers of two.
+Higher-level evaluators build on these: polynomial evaluation, linear transformations (matrix-vector products over the slots), the homomorphic DFT (`CoeffsToSlots` / `SlotsToCoeffs`) built as a chain of those linear transformations, homomorphic modular reduction (`EvalMod`), and a bootstrapping pipeline that composes mod-raise, the homomorphic DFT, and `EvalMod` to refresh a ciphertext's budget.
 
 ### poulpy-bin-fhe
 

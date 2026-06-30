@@ -83,7 +83,8 @@ RNS CKKS libraries.
 Each ciphertext carries CKKS metadata:
 
 - `log_delta`: base-2 logarithm of the plaintext precision
-- `log_budget`: remaining homomorphic capacity (includes message integer part)
+- `log_sparsity`: sparse-packing factor (`log2` of the slot replication; `0` is dense)
+- `log_budget`: remaining homomorphic capacity (includes message integer part), derived from the wrapped GLWE's torus width `k` as `k - log_delta` rather than stored
 
 That metadata is part of the evaluator state. User code should treat it as
 scheme-managed information: encryption, rescale, multiplication, addition, and
@@ -147,9 +148,12 @@ The main CKKS-facing types are:
 ```rust
 pub struct CKKSMeta {
     pub log_delta: usize,
-    pub log_budget: usize,
+    pub log_sparsity: usize,
 }
 ```
+
+`log_budget`, the remaining homomorphic capacity, is not stored here; it is
+derived from the wrapped GLWE's torus width `k` as `log_budget = k - log_delta`.
 
 ## Encoding
 
@@ -180,61 +184,43 @@ encoder.decode_reim(&pt, &mut re_out, &mut im_out)?;
 If you already have a concrete FFT table instance (e.g. one shared across
 encoders), use `Encoder::from_table(table, m)` instead of `new`.
 
-## End-to-End Example: Evaluate `(a + b*x) + (c + d*x) * x^2`
+## End-to-End Example: Chebyshev sine approximation
 
 The crate includes a runnable example at
-[`poulpy-cpu-ref/examples/ckks_poly2.rs`](../poulpy-cpu-ref/examples/ckks_poly2.rs) that:
+[`poulpy-cpu-ref/examples/ckks_poly2.rs`](../poulpy-cpu-ref/examples/ckks_poly2.rs)
+that approximates `sin(x)` on `[-1, 1]` with a degree-31 Chebyshev interpolation,
+`sin(x) ≈ Σ cᵢ·Tᵢ(x)`, and evaluates it homomorphically through the Baby-Step
+Giant-Step polynomial evaluator. It follows the standard six-phase CKKS workflow:
 
-1. encodes complex slots into a CKKS plaintext
-2. encrypts `x`
-3. evaluates `(a + b*x) + (c + d*x) * x^2`
-4. decrypts and decodes the result
+1. **setup** — build the module, secret key, and relinearization (tensor) key
+2. **encoding** — Chebyshev-interpolate `sin`, decompose it into BSGS form, and encode the input slots
+3. **encryption** — encrypt the slot vector `x`
+4. **evaluation** — populate the Chebyshev power basis and run the BSGS evaluation
+5. **decryption** — decrypt and decode the result
+6. **verification** — compare against the reference `f64::sin`
 
-Polynomial coefficients `a`, `b`, `c`, `d` are packed as consecutive scalar
-entries inside a single `CKKSPlaintext`. Complex linear forms (e.g. `a + b*x`
-for complex `a`, `b`) are built by computing two real affine evaluations and
-combining them via `ckks_mul_i_assign`:
+The polynomial is interpolated and decomposed on the host, then evaluated on a
+power basis built from the encrypted input:
 
 ```rust,ignore
 use poulpy_ckks::{
-    CKKSInfos,
-    api::{CKKSAddOps, CKKSAffineOps, CKKSImagOps, CKKSMulOps},
-    layouts::{CKKSCiphertext, CKKSMaintainOps, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
+    api::PolynomialEvaluation,
+    polynomial::{Basis, EncodeBSGS, Polynomial},
+    power_basis::{PowerBasis, PowerBasisGen},
 };
 
-// squaring: consumes one log_delta chunk of homomorphic capacity
-let mut ct_x2 = module.ckks_ciphertext_alloc(BASE2K.into(), ct_x.log_budget().into());
-module.ckks_square(&mut ct_x2, &ct_x, &tsk_prepared, scratch.borrow())?;
-module.ckks_compact_limbs(&mut ct_x2)?;
+// host side: degree-31 Chebyshev interpolation of sin on [-1, 1], in BSGS form
+let poly = Polynomial::chebyshev_interpolate(DEGREE, -1.0, 1.0, f64::sin)?;
+let bsgs = poly.encode_bsgs(&host_module, BASE2K.into(), COEFF_META)?;
 
-// build left branch a + b*x and right branch c + d*x
-// using packed_coeffs: a at index 0, b at 2, c at 4, d at 6 (real parts)
-//                      and at indices 1, 3, 5, 7 (imaginary parts)
-let linear_k = ct_x.k() - PREC_PT.log_delta;
-let left_linear  = build_complex_affine(&module, &ct_x, &packed_coeffs,
-                                        COEFF_A, COEFF_B, linear_k)?;
-let right_linear = build_complex_affine(&module, &ct_x, &packed_coeffs,
-                                        COEFF_C, COEFF_D, linear_k)?;
+// encrypted side: populate the Chebyshev power basis, then evaluate
+let mut pb = PowerBasis::new(Basis::Chebyshev, ct_x);
+pb.populate(DEGREE, bsgs.log_split(), bsgs.parity(), &module, &tsk_prepared, &mut scratch)?;
 
-// multiply right branch by x^2 and add the two branches
-let right_branch_k = ct_x2.k() - ct_x2.log_delta();
-let mut right_branch = module.ckks_ciphertext_alloc(BASE2K.into(), right_branch_k.into());
-module.ckks_mul(&mut right_branch, &right_linear, &ct_x2, &tsk_prepared, scratch.borrow())?;
-module.ckks_compact_limbs(&mut right_branch)?;
-
-let mut poly = module.ckks_ciphertext_alloc(BASE2K.into(), right_branch.k());
-module.ckks_add_into(&mut poly, &right_branch, &left_linear, scratch.borrow())?;
-```
-
-Where `build_complex_affine` combines two real affine forms:
-
-```rust,ignore
-// real part: dst = x * scale_re + offset_re
-module.ckks_affine_pt_const_into(&mut part0, x, packed_coeffs, offset.re, scale.re, scratch)?;
-// imaginary part: part1 = x * scale_im + offset_im, then rotate by i
-module.ckks_affine_pt_const_into(&mut part1, x, packed_coeffs, offset.im, scale.im, scratch)?;
-module.ckks_mul_i_assign(&mut part1, scratch)?;
-module.ckks_add_assign(&mut part0, &part1, scratch)?;
+let mut ct_sin = module.ckks_ciphertext_alloc(BASE2K.into(), CT_K.into());
+module.ckks_eval_poly_real_const_coeffs_from_power_basis(
+    &mut ct_sin, &bsgs, &pb, &tsk_prepared, &mut scratch,
+)?;
 ```
 
 That example is meant to showcase the intended user workflow end to end:
@@ -249,25 +235,26 @@ The historical `crate::leveled::api` path remains available as a backwards-compa
 | Trait | Operations |
 |-------|-----------|
 | `CKKSEncrypt` / `CKKSDecrypt` | encryption and decryption |
-| `CKKSAddOps` | normalized ciphertext and plaintext addition |
-| `CKKSAddOpsUnnormalized` | unnormalized add (result is `UnnormalizedCKKSCiphertext`) |
-| `CKKSSubOps` | normalized subtraction |
-| `CKKSSubOpsUnnormalized` | unnormalized subtraction |
+| `CKKSAddOps` | normalized and unnormalized ciphertext and plaintext addition |
+| `CKKSSubOps` | normalized and unnormalized subtraction |
 | `CKKSNegOps` | negation |
 | `CKKSMulOps` | ciphertext–ciphertext and ciphertext–plaintext multiplication |
 | `CKKSMulAddOps` | fused `dst += a * b` variants |
 | `CKKSMulSubOps` | fused `dst -= a * b` variants |
 | `CKKSAffineOps` | fused affine: `dst = a * scale_coeff + offset_coeff` |
-| `CKKSAddManyOps` / `CKKSMulManyOps` | tree-reduction add/multiply over slices |
+| `CKKSAddManyOps` | tree-reduction add over slices |
 | `CKKSDotProductOps` | inner product of ciphertext or plaintext slices |
 | `CKKSImagOps` | multiplication and division by `i` (imaginary unit rotation) |
 | `CKKSCopyOps` | level-aware ciphertext copy |
 | `CKKSRotateOps` | homomorphic slot rotation |
 | `CKKSConjugateOps` | homomorphic conjugation |
 | `CKKSPow2Ops` | multiplication and division by powers of two |
-| `CKKSRescaleOps` | rescaling and level alignment |
 | `CKKSPlaintextVecOps` | plaintext ZNX operations |
-| `CKKSMaintainOps` | limb reallocation and compaction |
+| `PolynomialEvaluation` | Baby-Step Giant-Step polynomial evaluation (monomial and Chebyshev bases) |
+| `LinearTransformationOps` | homomorphic matrix-vector product over the slots (BSGS diagonal method) |
+| `DFTOps` | homomorphic DFT (`CoeffsToSlots` / `SlotsToCoeffs`) |
+| `CKKSEvalModOps` | homomorphic modular reduction (`EvalMod`) |
+| `CKKSBootstrappingOps` | bootstrapping pipeline (mod-raise, homomorphic DFT, `EvalMod`) |
 | `CKKSAllOpsTmpBytes` | scratch size queries for all operations |
 
 For example, ciphertext addition uses `CKKSAddOps<BE>` and is called through
@@ -285,7 +272,8 @@ module.ckks_add_assign(&mut lhs, &rhs, scratch)?;
 
 ### Unnormalized Operations
 
-`CKKSAddOpsUnnormalized` and `CKKSSubOpsUnnormalized` write into an
+The `*_unnormalized` methods on `CKKSAddOps` and `CKKSSubOps` (e.g.
+`ckks_add_into_unnormalized`, `ckks_sub_assign_unnormalized`) write into an
 `UnnormalizedCKKSCiphertext`. This type does not implement
 `GLWEToBackendRef`/`GLWEToBackendMut`, so it cannot be accidentally passed to
 any DFT-domain primitive (keyswitching, convolution, automorphisms). Call
@@ -315,16 +303,17 @@ the `encoding::Encoder<T>` requires a concrete FFT table type (e.g.
 
 ## Roadmap
 
-Planned work for `poulpy-ckks` includes both lower-level evaluator building
-blocks and higher-level CKKS-based functionality.
+The core leveled evaluator building blocks are now implemented:
 
-Near- and mid-term evaluator work:
+- polynomial evaluation (Baby-Step Giant-Step / Paterson-Stockmeyer)
+- linear transformations (matrix-vector products over the slots)
+- homomorphic DFT (`CoeffsToSlots` / `SlotsToCoeffs`)
+- homomorphic modular reduction (`EvalMod`)
+- bootstrapping (mod-raise, homomorphic DFT, and `EvalMod`)
 
-- linear transformations
-- polynomial evaluation
-- homomorphic DFT
-- state-of-the-art bootstrapping
-- conjugate invariant
+Planned evaluator work:
+
+- conjugate invariant ring
 
 Higher-level functionality on top of that foundation:
 
