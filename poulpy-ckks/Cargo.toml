@@ -13,6 +13,8 @@ documentation = "https://docs.rs/poulpy-ckks"
 enable-ckks = []
 enable-avx = []
 enable-neon = []
+# Back `Quad` with libquadmath (`f128::f128`); x86_64 only, else a no-op.
+libquadmath = ["dep:f128"]
 
 [dependencies]
 poulpy-hal = {workspace = true}
@@ -23,7 +25,10 @@ anyhow = {workspace = true}
 bytemuck = {workspace = true}
 dashu-float = {workspace = true}
 
-# libquadmath reference for the `Quad` bit-parity test. x86_64-only (libquadmath
-# does not exist on aarch64); `Quad` itself uses the portable `f128` primitive.
+# libquadmath backing for `Quad` (x86_64 only).
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+f128 = { version = "0.2", optional = true }
+
+# Reference for the portable-`Quad` bit-parity test.
 [target.'cfg(target_arch = "x86_64")'.dev-dependencies]
 f128 = "0.2"
