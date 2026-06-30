@@ -11,21 +11,31 @@
 //! | `CKKSPlaintext<D>` | Quantized CKKS plaintext in the torus / ZNX domain |
 
 mod alloc;
+pub mod bootstrapping;
+pub mod bootstrapping_keys;
 pub mod ciphertext;
 pub mod complex_diagonals;
 pub mod dft;
+pub mod eval_mod;
+pub mod mul;
 pub mod plaintext;
 
 pub use alloc::CKKSModuleAlloc;
+pub use bootstrapping::{BootstrappingContext, BootstrappingPlan};
+pub use bootstrapping_keys::{
+    BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, EncapsulationKeysLayout,
+};
 pub use ciphertext::{
-    CKKSCiphertext, CKKSCiphertextViewMut, CKKSMaintainOps, CKKSNormalizationState, Normalized, ScratchArenaTakeCKKS,
-    Unnormalized, UnnormalizedCKKSCiphertext,
+    CKKSCiphertext, CKKSCiphertextViewMut, CKKSNormalizationState, Normalized, ScratchArenaTakeCKKS, Unnormalized,
+    UnnormalizedCKKSCiphertext,
 };
 pub use complex_diagonals::ComplexDiagonals;
 pub use dft::{
     DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTOutputFormat, DFTPlan, DFTType, Decode, DftDirection, DftFormat, Encode,
     Repack, Split, Standard,
 };
+pub use eval_mod::{EvalMod, EvalModBsgs, EvalModPlan, EvalModPoly, EvalModType};
+pub use mul::CKKSPreparedRight;
 pub use plaintext::CKKSPlaintext;
 
 use std::fmt::Debug;

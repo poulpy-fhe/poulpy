@@ -19,7 +19,7 @@ use poulpy_hal::{
     layouts::{HostBytesBackend, Module},
 };
 
-use crate::{layouts::plaintext::CKKSPlaintext, leveled::api::CKKSDotProductOps};
+use crate::{CKKSInfos, layouts::plaintext::CKKSPlaintext, leveled::api::CKKSDotProductOps};
 
 use super::helpers::{
     PT_PREC, TestContextBackend, TestContextModule, TestScalar, TestVector, alloc_ct, alloc_scratch, assert_decrypt_precision,
@@ -66,6 +66,8 @@ fn cmul_scalar_acc<F: TestScalar>(acc_re: &mut [F], acc_im: &mut [F], a_re: &[F]
 pub fn test_dot_product_ct_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -152,6 +154,8 @@ pub fn test_dot_product_ct_unaligned<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -231,6 +235,8 @@ pub fn test_dot_product_ct_unaligned_b<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -310,6 +316,8 @@ pub fn test_dot_product_ct_delta_log_delta<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -321,10 +329,10 @@ pub fn test_dot_product_ct_delta_log_delta<BE, F, E>(
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
 
     let half = F::from_f64(0.5).unwrap();
-    let low_log_delta = params.prec.log_delta - DELTA_LOG_DELTA;
+    let low_log_delta = params.prec().log_delta() - DELTA_LOG_DELTA;
     let low_prec = precision_at(&params, low_log_delta);
-    let (a_hi_re, a_hi_im) = quantized_vector(host_module, &encoder, &params, TestVector::First, params.prec.log_delta);
-    let (b_hi_re, b_hi_im) = quantized_vector(host_module, &encoder, &params, TestVector::Second, params.prec.log_delta);
+    let (a_hi_re, a_hi_im) = quantized_vector(host_module, &encoder, &params, TestVector::First, params.prec().log_delta());
+    let (b_hi_re, b_hi_im) = quantized_vector(host_module, &encoder, &params, TestVector::Second, params.prec().log_delta());
     let (b_lo_re, b_lo_im) = quantized_vector(host_module, &encoder, &params, TestVector::Second, low_log_delta);
     let a_vecs = [
         (scaled(&a_hi_re, half), scaled(&a_hi_im, half)),
@@ -419,6 +427,8 @@ pub fn test_dot_product_ct_smaller_output<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -505,6 +515,8 @@ pub fn test_dot_product_pt_vec_aligned<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -520,7 +532,12 @@ pub fn test_dot_product_pt_vec_aligned<BE, F, E>(
     let b_vecs = three_vectors(&re1, &im1, &re2, &im2);
     let b_pt_vecs: Vec<_> = b_vecs
         .iter()
-        .map(|(re, im)| (quantize(re, params.prec.log_delta), quantize(im, params.prec.log_delta)))
+        .map(|(re, im)| {
+            (
+                quantize(re, params.prec().log_delta()),
+                quantize(im, params.prec().log_delta()),
+            )
+        })
         .collect();
 
     let mut want_re = vec![F::zero(); m];
@@ -554,7 +571,7 @@ pub fn test_dot_product_pt_vec_aligned<BE, F, E>(
         .collect();
     let pts: Vec<_> = b_vecs
         .iter()
-        .map(|(re, im)| encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), params.prec, re, im))
+        .map(|(re, im)| encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), params.prec(), re, im))
         .collect();
     let a_refs: Vec<&_> = a_cts.iter().collect();
     let pt_refs: Vec<&_> = pts.iter().collect();
@@ -582,6 +599,8 @@ pub fn test_dot_product_const_aligned<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -597,7 +616,7 @@ pub fn test_dot_product_const_aligned<BE, F, E>(
     let const_coeffs: [f64; 3] = [0.25, 0.125, -0.3125];
     let quantized: Vec<F> = const_coeffs
         .iter()
-        .map(|r| quantized_const::<F>(*r, 0.0, PT_PREC.log_delta).0)
+        .map(|r| quantized_const::<F>(*r, 0.0, PT_PREC.log_delta()).0)
         .collect();
 
     let mut want_re = vec![F::zero(); m];

@@ -53,6 +53,8 @@ fn build_terms<F: TestScalar>(re1: &[F], im1: &[F], re2: &[F], im2: &[F], n: usi
 pub fn test_add_many_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -106,6 +108,8 @@ pub fn test_add_many_single_smaller_output<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -149,6 +153,8 @@ pub fn test_add_many_unaligned_log_budget<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -192,6 +198,8 @@ pub fn test_add_many_delta_log_delta<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -201,9 +209,9 @@ pub fn test_add_many_delta_log_delta<BE, F, E>(
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
 
-    let low_log_delta = params.prec.log_delta - DELTA_LOG_DELTA;
+    let low_log_delta = params.prec().log_delta() - DELTA_LOG_DELTA;
     let low_prec = precision_at(&params, low_log_delta);
-    let (hi_re, hi_im) = quantized_vector(host_module, &encoder, &params, TestVector::First, params.prec.log_delta);
+    let (hi_re, hi_im) = quantized_vector(host_module, &encoder, &params, TestVector::First, params.prec().log_delta());
     let (lo_re, lo_im) = quantized_vector(host_module, &encoder, &params, TestVector::Second, low_log_delta);
 
     let scale = F::from_f64(1.0 / (2.0 * N as f64)).unwrap();
@@ -275,6 +283,8 @@ pub fn test_add_many_delta_log_delta<BE, F, E>(
 pub fn test_add_many_smaller_output<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,

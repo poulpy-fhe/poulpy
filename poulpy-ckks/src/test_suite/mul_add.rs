@@ -16,12 +16,13 @@ use poulpy_hal::{
     layouts::{HostBytesBackend, Module},
 };
 
-use crate::{CKKSInfos, CKKSMeta, leveled::api::CKKSMulAddOps};
+use crate::{CKKSInfos, leveled::api::CKKSMulAddOps};
 
 use super::helpers::{
     MUL_CONST, PT_PREC, TestContextBackend, TestContextModule, TestScalar, alloc_scratch, assert_ct_meta,
-    assert_decrypt_precision, assert_decrypt_precision_at_log_delta, ckks_encrypt, ckks_pt_cst_full, encode_and_upload_pt,
-    gen_sk, gen_sk_with_raw, gen_tsk, quantize, quantized_const, quantized_slots, test_vector_1, test_vector_2,
+    assert_decrypt_precision, assert_decrypt_precision_at_log_delta, ckks_encrypt, ckks_pt_cst_full, ckks_snapshot, ckks_spec,
+    encode_and_upload_pt, gen_sk, gen_sk_with_raw, gen_tsk, quantize, quantized_const, quantized_slots, test_vector_1,
+    test_vector_2,
 };
 
 use crate::{encoding::reim::Encoder, test_suite::CKKSTestParams};
@@ -55,6 +56,8 @@ fn cmul_scalar<F: TestScalar>(a_re: &[F], a_im: &[F], c_re: F, c_im: F) -> (Vec<
 pub fn test_mul_add_ct_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -134,6 +137,8 @@ pub fn test_mul_add_ct_unaligned_dst<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -214,6 +219,8 @@ pub fn test_mul_add_pt_vec_into_aligned<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -233,8 +240,8 @@ pub fn test_mul_add_pt_vec_into_aligned<BE, F, E>(
     let b_re_raw = scaled(&re1, half);
     let b_im_raw = scaled(&im2, half);
     let (b_re, b_im) = (
-        quantize(&b_re_raw, params.prec.log_delta),
-        quantize(&b_im_raw, params.prec.log_delta),
+        quantize(&b_re_raw, params.prec().log_delta()),
+        quantize(&b_im_raw, params.prec().log_delta()),
     );
 
     let (prod_re, prod_im) = cmul(&a_re, &a_im, &b_re, &b_im);
@@ -268,7 +275,7 @@ pub fn test_mul_add_pt_vec_into_aligned<BE, F, E>(
         module,
         &encoder,
         params.base2k.into(),
-        params.prec,
+        params.prec(),
         &b_re_raw,
         &b_im_raw,
     );
@@ -294,6 +301,8 @@ pub fn test_mul_add_pt_vec_into_delta_log_delta<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -361,7 +370,7 @@ pub fn test_mul_add_pt_vec_into_delta_log_delta<BE, F, E>(
         &sk,
         &want_re,
         &want_im,
-        PT_PREC.log_delta,
+        PT_PREC.log_delta(),
         &mut scratch.borrow(),
     );
 }
@@ -372,6 +381,8 @@ pub fn test_mul_add_const_into_aligned<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -390,7 +401,7 @@ pub fn test_mul_add_const_into_aligned<BE, F, E>(
     let a_im = scaled(&im2, half);
 
     let c_re_f64 = MUL_CONST.0;
-    let (c_re, c_im) = quantized_const::<F>(c_re_f64, 0.0, PT_PREC.log_delta);
+    let (c_re, c_im) = quantized_const::<F>(c_re_f64, 0.0, PT_PREC.log_delta());
     let (prod_re, prod_im) = cmul_scalar(&a_re, &a_im, c_re, c_im);
     let want_re: Vec<F> = (0..dst_re.len()).map(|i| dst_re[i] + prod_re[i]).collect();
     let want_im: Vec<F> = (0..dst_im.len()).map(|i| dst_im[i] + prod_im[i]).collect();
@@ -440,6 +451,8 @@ pub fn test_mul_add_const_zero_preserves_dst_meta<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -479,18 +492,14 @@ pub fn test_mul_add_const_zero_preserves_dst_meta<BE, F, E>(
         &a_im,
         &mut scratch.borrow(),
     );
-    let dst_meta = dst.meta();
-    let zero_prec = CKKSMeta {
-        log_sparsity: 0,
-        log_delta: 0,
-        log_budget: PT_PREC.log_budget,
-    };
+    let dst_meta = ckks_snapshot(&dst);
+    let zero_prec = ckks_spec(params.n, params.base2k, 0, PT_PREC.log_budget());
     let cst = ckks_pt_cst_full::<BE, F>(host_module, module, params.base2k.into(), zero_prec, m, None, None);
     module
         .ckks_mul_add_pt_const_into(&mut dst, &a, &cst, 0, &mut scratch.borrow())
         .unwrap();
 
-    assert_ct_meta("mul_add_const_zero", &dst, dst_meta.log_delta, dst_meta.log_budget);
+    assert_ct_meta("mul_add_const_zero", &dst, dst_meta.log_delta(), dst_meta.log_budget());
     assert_decrypt_precision(
         "mul_add_const_zero",
         &params,

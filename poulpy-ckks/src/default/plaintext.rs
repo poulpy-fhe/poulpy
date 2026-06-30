@@ -42,7 +42,7 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
         const OP: &str = "ckks_add_pt_vec";
         ensure_base2k_match(OP, ct.base2k().as_usize(), pt.base2k().as_usize())?;
         ensure_plaintext_degree_match(OP, ct.n().as_usize(), pt.n().as_usize())?;
-        ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.effective_k())?;
+        ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.log_delta() + pt.log_budget())?;
         let shift = plaintext_shift(ct.log_budget(), pt);
         let base2k = ct.base2k().as_usize();
         let mut ct_ref = GLWEToBackendMut::to_backend_mut(ct);
@@ -75,7 +75,7 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
         ensure_base2k_match(OP, ct.base2k().as_usize(), pt.base2k().as_usize())?;
         ensure_plaintext_coeff_in_range(OP, "ciphertext", coeff_ct, ct.n().as_usize())?;
         ensure_plaintext_coeff_in_range(OP, "plaintext", coeff_pt, pt.n().as_usize())?;
-        ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.effective_k())?;
+        ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.log_delta() + pt.log_budget())?;
         let shift = plaintext_shift(ct.log_budget(), pt);
         let base2k = ct.base2k().as_usize();
         let mut ct_ref = GLWEToBackendMut::to_backend_mut(ct);
@@ -125,7 +125,7 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
         ensure_base2k_match(OP, ct.base2k().as_usize(), pt.base2k().as_usize())?;
         ensure_plaintext_coeff_in_range(OP, "ciphertext", coeff_ct, ct.n().as_usize())?;
         ensure_plaintext_coeff_in_range(OP, "plaintext", coeff_pt, pt.n().as_usize())?;
-        ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.effective_k())?;
+        ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.log_delta() + pt.log_budget())?;
         let shift = plaintext_shift(ct.log_budget(), pt);
         let base2k = ct.base2k().as_usize();
         let mut ct_ref = GLWEToBackendMut::to_backend_mut(ct);
@@ -167,7 +167,7 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
         const OP: &str = "ckks_sub_pt_vec";
         ensure_base2k_match(OP, ct.base2k().as_usize(), pt.base2k().as_usize())?;
         ensure_plaintext_degree_match(OP, ct.n().as_usize(), pt.n().as_usize())?;
-        ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.effective_k())?;
+        ensure_plaintext_alignment(OP, ct.log_budget(), pt.log_delta(), pt.log_delta() + pt.log_budget())?;
         let shift = plaintext_shift(ct.log_budget(), pt);
         let base2k = ct.base2k().as_usize();
         let mut ct_ref = GLWEToBackendMut::to_backend_mut(ct);
@@ -208,13 +208,19 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
         Self: VecZnxLshBackend<BE> + VecZnxRshBackend<BE>,
     {
         ensure_base2k_match("ckks_extract_pt", src.base2k().as_usize(), dst.base2k().as_usize())?;
-        let available = src_meta.log_budget() + dst.log_delta();
-        if available < dst.effective_k() {
+        // The source budget is derived from the decrypted plaintext's torus width
+        // `k` (which spans the source ciphertext) and the source scale `log_delta`.
+        let src_log_budget = src.k().as_usize().saturating_sub(src_meta.log_delta);
+        let available = src_log_budget + dst.log_delta();
+        // Validity is checked against the meaningful (effective) precision; the
+        // physical `max_k` integer-poly width is truncated by the shift below.
+        let dst_effective_k = dst.log_delta() + dst.log_budget();
+        if available < dst_effective_k {
             return Err(crate::CKKSCompositionError::PlaintextAlignmentImpossible {
                 op: "ckks_extract_pt",
-                ct_log_budget: src_meta.log_budget(),
+                ct_log_budget: src_log_budget,
                 pt_log_delta: dst.log_delta(),
-                pt_k: dst.effective_k(),
+                pt_k: dst_effective_k,
             }
             .into());
         }

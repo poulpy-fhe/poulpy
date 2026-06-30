@@ -118,8 +118,12 @@ impl<D: Data, BRT: BlindRotationAlgo, B: Backend> LWEInfos for BlindRotationKeyP
         self.data[0].n()
     }
 
-    fn size(&self) -> usize {
-        self.data[0].size()
+    fn max_size(&self) -> usize {
+        self.data[0].max_size()
+    }
+
+    fn k(&self) -> poulpy_core::layouts::TorusPrecision {
+        self.data[0].k()
     }
 }
 

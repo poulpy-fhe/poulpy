@@ -2,7 +2,7 @@ use anyhow::Result;
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use poulpy_core::layouts::{
-    BSGSMeta, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta,
+    BSGSMeta, Compact, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta,
     prepared::{GLWETensorKeyPrepared, GLWETensorKeyPreparedToBackendRef},
 };
 
@@ -20,7 +20,7 @@ pub trait PolynomialEvaluation<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
         A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
@@ -39,7 +39,7 @@ pub trait PolynomialEvaluation<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
         C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
         G: PowerBasisHelper<BE, A>,
@@ -47,7 +47,7 @@ pub trait PolynomialEvaluation<BE: Backend> {
 
     /// Builds the power basis internally then evaluates a real-coefficient
     /// polynomial.
-    fn ckks_eval_poly_real_const_coeffs<R, S, C, B>(
+    fn ckks_eval_poly_real_const_coeffs<R, S, B>(
         &self,
         dst: &mut R,
         src: &S,
@@ -56,9 +56,8 @@ pub trait PolynomialEvaluation<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
         S: GLWEToBackendRef<BE> + CKKSCtBounds,
-        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
@@ -75,7 +74,7 @@ pub trait PolynomialEvaluation<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
         S: GLWEToBackendRef<BE> + CKKSCtBounds,
         C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,

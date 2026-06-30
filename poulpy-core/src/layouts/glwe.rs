@@ -7,7 +7,7 @@ use poulpy_hal::{
 };
 
 use crate::api::ModuleTransfer;
-use crate::layouts::{Base2K, Degree, LWEInfos, Rank, SetLWEInfos, TorusPrecision};
+use crate::layouts::{Base2K, Compact, Degree, LWEInfos, Rank, SetBase2k, SetK, SetSize, TorusPrecision};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::fmt;
 
@@ -27,9 +27,21 @@ where
         GLWELayout {
             n: self.n(),
             base2k: self.base2k(),
-            k: self.max_k(),
+            k: self.k(),
             rank: self.rank(),
         }
+    }
+}
+
+impl<T: GLWEInfos + ?Sized> GLWEInfos for &T {
+    fn rank(&self) -> Rank {
+        (**self).rank()
+    }
+}
+
+impl<T: GLWEInfos + ?Sized> GLWEInfos for &mut T {
+    fn rank(&self) -> Rank {
+        (**self).rank()
     }
 }
 
@@ -55,8 +67,12 @@ impl LWEInfos for GLWELayout {
         self.base2k
     }
 
-    fn size(&self) -> usize {
-        self.k.as_usize().div_ceil(self.base2k.as_usize())
+    fn max_size(&self) -> usize {
+        self.k.div_ceil(self.base2k) as usize
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 
@@ -75,23 +91,44 @@ impl GLWEInfos for GLWELayout {
 #[derive(PartialEq, Eq, Clone)]
 pub struct GLWE<D: Data> {
     pub(crate) data: VecZnx<D>,
+    pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
 }
 
 pub type GLWEBackendRef<'a, BE> = GLWE<<BE as Backend>::BufRef<'a>>;
 pub type GLWEBackendMut<'a, BE> = GLWE<<BE as Backend>::BufMut<'a>>;
 
-impl<D: Data> SetLWEInfos for GLWE<D> {
+impl<D: Data> SetBase2k for GLWE<D> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k
     }
 }
 
-impl<D: Data> SetLWEInfos for &mut GLWE<D> {
+impl<D: Data> SetBase2k for &mut GLWE<D> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k
     }
 }
+
+impl<D: Data> SetK for GLWE<D> {
+    fn set_k(&mut self, k: TorusPrecision) {
+        self.k = k
+    }
+}
+
+impl<D: Data> SetK for &mut GLWE<D> {
+    fn set_k(&mut self, k: TorusPrecision) {
+        self.k = k
+    }
+}
+
+impl<D: Data> SetSize for GLWE<D> {
+    fn set_size(&mut self, size: usize) {
+        self.data.set_size(size);
+    }
+}
+
+impl<D: Data> Compact for GLWE<D> {}
 
 impl<D: Data> GLWE<D> {
     /// Returns a shared reference to the underlying [`VecZnx`].
@@ -122,52 +159,16 @@ impl<D: Data> LWEInfos for GLWE<D> {
         Degree(self.data.n() as u32)
     }
 
-    fn size(&self) -> usize {
+    fn max_size(&self) -> usize {
         self.data.size()
     }
-}
 
-impl<D: Data> LWEInfos for &GLWE<D> {
-    fn base2k(&self) -> Base2K {
-        self.base2k
-    }
-
-    fn n(&self) -> Degree {
-        Degree(self.data.n() as u32)
-    }
-
-    fn size(&self) -> usize {
-        self.data.size()
-    }
-}
-
-impl<D: Data> LWEInfos for &mut GLWE<D> {
-    fn base2k(&self) -> Base2K {
-        self.base2k
-    }
-
-    fn n(&self) -> Degree {
-        Degree(self.data.n() as u32)
-    }
-
-    fn size(&self) -> usize {
-        self.data.size()
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 
 impl<D: Data> GLWEInfos for GLWE<D> {
-    fn rank(&self) -> Rank {
-        Rank(self.data.cols() as u32 - 1)
-    }
-}
-
-impl<D: Data> GLWEInfos for &GLWE<D> {
-    fn rank(&self) -> Rank {
-        Rank(self.data.cols() as u32 - 1)
-    }
-}
-
-impl<D: Data> GLWEInfos for &mut GLWE<D> {
     fn rank(&self) -> Rank {
         Rank(self.data.cols() as u32 - 1)
     }
@@ -179,6 +180,7 @@ impl<D: HostDataRef> ToOwnedDeep for GLWE<D> {
         GLWE {
             data: self.data.to_owned_deep(),
             base2k: self.base2k,
+            k: self.k,
         }
     }
 }
@@ -207,6 +209,7 @@ impl<D: Data> GLWE<D> {
         GLWE {
             data: self.data.to_host_owned::<BE>(),
             base2k: self.base2k,
+            k: self.k,
         }
     }
 
@@ -228,8 +231,9 @@ impl<D: Data> GLWE<D> {
         let shape = self.data.shape();
         let data = self.data.data;
         GLWE {
-            data: VecZnx::from_data_with_max_size(data, shape.n(), shape.cols(), shape.size(), shape.max_size()),
+            data: VecZnx::from_data_with_max_size(data, shape.n(), shape.cols(), shape.size(), shape.size()),
             base2k: self.base2k,
+            k: self.k,
         }
     }
 }
@@ -242,7 +246,7 @@ impl<D: HostDataRef> fmt::Debug for GLWE<D> {
 
 impl<D: HostDataRef> fmt::Display for GLWE<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "GLWE: base2k={} k={}: {}", self.base2k().0, self.max_k().0, self.data)
+        write!(f, "GLWE: base2k={} k={}: {}", self.base2k().0, self.k().0, self.data)
     }
 }
 
@@ -258,7 +262,7 @@ impl GLWE<Vec<u8>> {
     where
         A: GLWEInfos,
     {
-        Self::alloc(infos.n(), infos.base2k(), infos.max_k(), infos.rank())
+        Self::alloc(infos.n(), infos.base2k(), infos.k(), infos.rank())
     }
 
     /// Allocates a new [`GLWE`] with the given parameters.
@@ -281,6 +285,7 @@ impl GLWE<Vec<u8>> {
                 size,
             ),
             base2k,
+            k,
         }
     }
 
@@ -289,7 +294,7 @@ impl GLWE<Vec<u8>> {
     where
         A: GLWEInfos,
     {
-        Self::bytes_of(infos.n(), infos.base2k(), infos.max_k(), infos.rank())
+        Self::bytes_of(infos.n(), infos.base2k(), infos.k(), infos.rank())
     }
 
     /// Returns the byte count required for a [`GLWE`] with the given parameters.
@@ -300,11 +305,6 @@ impl GLWE<Vec<u8>> {
     /// * `rank` -- number of mask polynomials.
     pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank) -> usize {
         VecZnx::bytes_of(n.into(), (rank + 1).into(), k.0.div_ceil(base2k.0) as usize)
-    }
-
-    /// Reallocates the backing buffer so capacity matches `size` limb count.
-    pub fn reallocate_limbs(&mut self, size: usize) {
-        self.data.reallocate_limbs(size);
     }
 }
 
@@ -336,6 +336,7 @@ where
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         GLWE {
             base2k: self.base2k,
+            k: self.k,
             data: self.data.to_backend_ref(),
         }
     }
@@ -344,6 +345,7 @@ where
 pub fn glwe_backend_ref_from_ref<'a, 'b, BE: Backend>(glwe: &'a GLWE<BE::BufRef<'b>>) -> GLWEBackendRef<'a, BE> {
     GLWE {
         base2k: glwe.base2k,
+        k: glwe.k,
         data: poulpy_hal::layouts::vec_znx_backend_ref_from_ref::<BE>(&glwe.data),
     }
 }
@@ -357,6 +359,7 @@ impl<'b, BE: Backend + 'b> GLWEToBackendRef<BE> for &GLWE<BE::BufRef<'b>> {
 pub fn glwe_backend_ref_from_mut<'a, 'b, BE: Backend>(glwe: &'a GLWE<BE::BufMut<'b>>) -> GLWEBackendRef<'a, BE> {
     GLWE {
         base2k: glwe.base2k,
+        k: glwe.k,
         data: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE>(&glwe.data),
     }
 }
@@ -372,6 +375,7 @@ where
     fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
         GLWE {
             base2k: self.base2k,
+            k: self.k,
             data: self.data.to_backend_mut(),
         }
     }
@@ -392,6 +396,7 @@ impl<'b, BE: Backend + 'b> GLWEToBackendMut<BE> for &mut GLWE<BE::BufMut<'b>> {
 pub fn glwe_backend_mut_from_mut<'a, 'b, BE: Backend>(glwe: &'a mut GLWE<BE::BufMut<'b>>) -> GLWEBackendMut<'a, BE> {
     GLWE {
         base2k: glwe.base2k,
+        k: glwe.k,
         data: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut glwe.data),
     }
 }

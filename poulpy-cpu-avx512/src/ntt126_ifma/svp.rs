@@ -2,7 +2,6 @@
 
 use bytemuck::{cast_slice, cast_slice_mut};
 
-use poulpy_cpu_ref::reference::ntt120::types::Q120bScalar;
 use poulpy_hal::{
     api::{VecZnxDftAlloc, VecZnxDftApply},
     layouts::{
@@ -13,9 +12,19 @@ use poulpy_hal::{
 
 use crate::NTT126Ifma;
 use crate::ntt126_ifma::{
+    kernels::ntt_avx512,
     module::handle,
-    traits::{Ntt126IfmaCFromB, Ntt126IfmaDFTExecute, Ntt126IfmaFromZnx64, Ntt126IfmaMulBbc, Ntt126IfmaZero},
+    primes::{PrimeSetNtt126Ifma, Primes42},
+    tables::{harvey_modmul, harvey_quotient},
+    traits::{Ntt126IfmaCFromB, Ntt126IfmaFromZnx64, Ntt126IfmaZero},
 };
+
+#[inline(always)]
+fn mul_mod_lazy(a: u64, b: u64, prime: usize) -> u64 {
+    let q = Primes42::Q[prime];
+    let b = if b >= q { b - q } else { b };
+    harvey_modmul(a, b, harvey_quotient(b, q), q)
+}
 
 /// Encode a scalar polynomial into IFMA prepared format.
 pub(crate) fn svp_prepare(
@@ -27,9 +36,10 @@ pub(crate) fn svp_prepare(
 ) {
     let n = res.n();
 
-    let mut tmp = vec![0u64; 4 * n];
+    let mut tmp = vec![0u64; 3 * n];
     NTT126Ifma::ntt126_ifma_from_znx64(&mut tmp, a.at(a_col, 0));
-    NTT126Ifma::ntt126_ifma_dft_execute(&handle(module).table_ntt, &mut tmp);
+    // Lazy [0, 4q): consumed only by c_from_b (re-reduces).
+    unsafe { ntt_avx512::<Primes42>(&handle(module).table_ntt, &mut tmp, true) };
 
     let res_u32: &mut [u32] = cast_slice_mut(res.at_mut(res_col, 0));
     NTT126Ifma::ntt126_ifma_c_from_b(n, res_u32, &tmp);
@@ -56,7 +66,7 @@ pub(crate) fn svp_apply_dft(
 
 /// Pointwise DFT-domain multiply: `res = a ⊙ b`.
 pub(crate) fn svp_apply_dft_to_dft(
-    module: &Module<NTT126Ifma>,
+    _module: &Module<NTT126Ifma>,
     res: &mut VecZnxDftBackendMut<'_, NTT126Ifma>,
     res_col: usize,
     a: &SvpPPolBackendRef<'_, NTT126Ifma>,
@@ -64,25 +74,21 @@ pub(crate) fn svp_apply_dft_to_dft(
     b: &VecZnxDftBackendRef<'_, NTT126Ifma>,
     b_col: usize,
 ) {
-    let meta = &handle(module).meta_bbc;
     let n = res.n();
     let res_size = res.size();
     let b_size = b.size();
     let min_size = res_size.min(b_size);
 
-    let a_u32: &[u32] = cast_slice(a.at(a_col, 0));
+    let a_u64: &[u64] = cast_slice(a.at(a_col, 0));
 
     for j in 0..min_size {
         let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(res_col, j));
-        let b_u32: &[u32] = cast_slice(b.at(b_col, j));
-        for n_i in 0..n {
-            NTT126Ifma::ntt126_ifma_mul_bbc(
-                meta,
-                1,
-                &mut res_u64[4 * n_i..4 * n_i + 4],
-                &b_u32[8 * n_i..8 * n_i + 8],
-                &a_u32[8 * n_i..8 * n_i + 8],
-            );
+        let b_u64: &[u64] = cast_slice(b.at(b_col, j));
+        for prime in 0..3 {
+            let base = prime * n;
+            for i in 0..n {
+                res_u64[base + i] = mul_mod_lazy(b_u64[base + i], a_u64[base + i], prime);
+            }
         }
     }
 
@@ -93,26 +99,24 @@ pub(crate) fn svp_apply_dft_to_dft(
 
 /// Pointwise DFT-domain multiply in place: `res = a ⊙ res`.
 pub(crate) fn svp_apply_dft_to_dft_assign(
-    module: &Module<NTT126Ifma>,
+    _module: &Module<NTT126Ifma>,
     res: &mut VecZnxDftBackendMut<'_, NTT126Ifma>,
     res_col: usize,
     a: &SvpPPolBackendRef<'_, NTT126Ifma>,
     a_col: usize,
 ) {
-    let meta = &handle(module).meta_bbc;
     let n = res.n();
     let res_size = res.size();
 
-    let a_u32: &[u32] = cast_slice(a.at(a_col, 0));
+    let a_u64: &[u64] = cast_slice(a.at(a_col, 0));
 
     for j in 0..res_size {
-        let res_slice: &mut [Q120bScalar] = res.at_mut(res_col, j);
-        let mut product = [0u64; 4];
-        for n_i in 0..n {
-            let x_elem: Q120bScalar = res_slice[n_i];
-            let x_u32: &[u32] = cast_slice(std::slice::from_ref(&x_elem));
-            NTT126Ifma::ntt126_ifma_mul_bbc(meta, 1, &mut product, x_u32, &a_u32[8 * n_i..8 * n_i + 8]);
-            res_slice[n_i] = Q120bScalar(product);
+        let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(res_col, j));
+        for prime in 0..3 {
+            let base = prime * n;
+            for i in 0..n {
+                res_u64[base + i] = mul_mod_lazy(res_u64[base + i], a_u64[base + i], prime);
+            }
         }
     }
 }

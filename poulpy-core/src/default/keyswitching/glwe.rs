@@ -1,7 +1,7 @@
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero,
-        VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
+        VmpApplyDftToDft, VmpApplyDftToDftAccumulate, VmpApplyDftToDftTmpBytes,
     },
     layouts::{Backend, Module, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendRef},
 };
@@ -67,6 +67,7 @@ impl<BE: Backend> GGLWEProductDefault<BE> for Module<BE> where
         + VecZnxDftBytesOf
         + VmpApplyDftToDftTmpBytes
         + VmpApplyDftToDft<BE>
+        + VmpApplyDftToDftAccumulate<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftZero<BE>
         + VecZnxDftCopy<BE>
@@ -80,6 +81,7 @@ where
         + VecZnxDftBytesOf
         + VmpApplyDftToDftTmpBytes
         + VmpApplyDftToDft<BE>
+        + VmpApplyDftToDftAccumulate<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftZero<BE>
         + VecZnxDftCopy<BE>,
@@ -140,7 +142,6 @@ where
         } else {
             let dsize: usize = key.dsize().into();
             let dnum: usize = key.dnum().into();
-            let cols_out: usize = res.cols();
 
             for di in 0..dsize {
                 let (mut ai_dft, mut scratch_1) =
@@ -157,17 +158,9 @@ where
                 if di == 0 {
                     self.vmp_apply_dft_to_dft(res, &ai_dft.to_backend_ref(), &key.data, 0, &mut scratch_1.borrow());
                 } else {
-                    let (mut res_dft_tmp, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(self, cols_out, res.size());
-                    self.vmp_apply_dft_to_dft(
-                        &mut res_dft_tmp,
-                        &ai_dft.to_backend_ref(),
-                        &key.data,
-                        di,
-                        &mut scratch_2.borrow(),
-                    );
-                    for col in 0..cols_out {
-                        self.vec_znx_dft_add_assign(res, col, &res_dft_tmp.to_backend_ref(), col);
-                    }
+                    // Accumulate directly into res, folding the per-column DFT add into the
+                    // VMP save (drops the res_dft_tmp buffer + the separate add pass).
+                    self.vmp_apply_dft_to_dft_accumulate(res, &ai_dft.to_backend_ref(), &key.data, di, &mut scratch_1.borrow());
                 }
             }
 
@@ -256,7 +249,7 @@ where
         let a_conv_infos: GLWELayout = GLWELayout {
             n: a_infos.n(),
             base2k: key_infos.base2k(),
-            k: a_infos.max_k(),
+            k: a_infos.k(),
             rank: a_infos.rank(),
         };
         let lvl_2_0: usize = GLWE::<Vec<u8>>::bytes_of_from_infos(&a_conv_infos);
@@ -347,7 +340,7 @@ pub fn glwe_keyswitch_default<BE, M, R, A, K>(
             let (mut a_conv, mut scratch_2) = scratch_phase.take_glwe_scratch(&GLWELayout {
                 n: a.n(),
                 base2k: key.base2k(),
-                k: a.max_k(),
+                k: a.k(),
                 rank: a.rank(),
             });
             module.glwe_normalize_default(&mut a_conv, a, &mut scratch_2.borrow());
@@ -459,7 +452,7 @@ pub fn glwe_keyswitch_assign_default<BE, M, R, K>(
         let (mut res_conv, mut scratch_3) = scratch.take_glwe_scratch(&GLWELayout {
             n: res.n(),
             base2k: key.base2k(),
-            k: res.max_k(),
+            k: res.k(),
             rank: res.rank(),
         });
         module.glwe_normalize_default(&mut res_conv, res, &mut scratch_3.borrow());

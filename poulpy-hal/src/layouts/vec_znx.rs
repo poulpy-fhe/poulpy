@@ -230,18 +230,6 @@ impl VecZnx<Vec<u8>> {
     pub fn rsh_tmp_bytes(n: usize) -> usize {
         n * size_of::<i64>()
     }
-
-    /// Reallocates the backing buffer so capacity matches the `new_size` limb count.
-    pub fn reallocate_limbs(&mut self, new_size: usize) {
-        if self.size() == new_size {
-            return;
-        }
-
-        let mut compact: Self = Self::alloc(self.n(), self.cols(), new_size);
-        let copy_len = compact.raw().len().min(self.raw().len());
-        compact.raw_mut()[..copy_len].copy_from_slice(&self.raw()[..copy_len]);
-        *self = compact;
-    }
 }
 
 impl<D: HostDataMut> ZnxZero for VecZnx<D> {

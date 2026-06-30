@@ -49,9 +49,6 @@ pub(crate) mod default {
     pub(crate) mod plaintext {
         pub(crate) use crate::default::plaintext::*;
     }
-    pub(crate) mod rescale {
-        pub(crate) use crate::default::rescale::*;
-    }
     pub(crate) mod rotate {
         pub(crate) use crate::default::rotate::*;
     }

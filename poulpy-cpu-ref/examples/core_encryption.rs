@@ -52,7 +52,7 @@ fn main() {
 
     module.vec_znx_fill_uniform_source_backend(
         base2k.into(),
-        &mut <poulpy_hal::layouts::VecZnx<Vec<u8>> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(&mut pt_want.data),
+        &mut <poulpy_hal::layouts::VecZnx<Vec<u8>> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(pt_want.data_mut()),
         0,
         &mut source_xa,
     );
@@ -71,7 +71,7 @@ fn main() {
 
     module.glwe_sub_assign(&mut pt_want, &pt_have);
 
-    let noise_have: f64 = pt_want.data.stats(base2k.into(), 0).std() * (k_xe.as_u32() as f64).exp2();
+    let noise_have: f64 = pt_want.data().stats(base2k.into(), 0).std() * (k_xe.as_u32() as f64).exp2();
     let noise_want: f64 = DEFAULT_SIGMA_XE;
 
     assert!(noise_have <= noise_want + 0.2);

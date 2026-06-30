@@ -3,7 +3,7 @@ use std::hint::black_box;
 use criterion::Criterion;
 use poulpy_core::{
     GLWETensoring,
-    layouts::{GLWEInfos, LWEInfos, ModuleCoreAlloc},
+    layouts::{GLWEInfos, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc},
 };
 use poulpy_hal::{
     api::{
@@ -41,6 +41,39 @@ fn normalize_input_limb_bound_with_offset(
     full_size.min((res_size * res_base2k + offset_bits as usize).div_ceil(in_base2k))
 }
 
+/// Relinearization (the keyswitch phase of `ckks_mul`). The tensor key is left
+/// zeroed: the op is data-independent, so this times the real kernel path.
+pub fn bench_glwe_tensor_relinearize<BE: Backend<OwnedBuf = Vec<u8>>>(
+    glwe_infos: &impl GLWEInfos,
+    tsk_infos: &GLWETensorKeyLayout,
+    dsize: usize,
+    c: &mut Criterion,
+    label: &str,
+) where
+    Module<BE>: ModuleNew<BE> + GLWETensoring<BE> + GLWETensorKeyPreparedFactory<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    for<'x> BE::BufMut<'x>: HostDataMut + AsRef<[u8]> + AsMut<[u8]> + Sync,
+{
+    let n: usize = glwe_infos.n().into();
+    let module = Module::<BE>::new(n as u64);
+
+    let mut res = module.glwe_alloc_from_infos(glwe_infos);
+    let tensor = module.glwe_tensor_alloc_from_infos(glwe_infos);
+    let tsk = module.alloc_tensor_key_prepared_from_infos(tsk_infos);
+    let tsk_size = tensor.max_size() + dsize;
+    let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_tensor_relinearize_tmp_bytes(&res, &tensor, &tsk));
+
+    let group_name = format!("glwe_tensor_relinearize::{label}");
+    let mut group = c.benchmark_group(group_name);
+    group.bench_function(format!("n={n}"), |bench| {
+        bench.iter(|| {
+            module.glwe_tensor_relinearize(&mut res, &tensor, &tsk, tsk_size, &mut scratch.borrow());
+            black_box(());
+        })
+    });
+    group.finish();
+}
+
 pub fn bench_glwe_tensor_apply<BE: Backend<OwnedBuf = Vec<u8>>>(glwe_infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
 where
     Module<BE>: ModuleNew<BE> + GLWETensoring<BE>,
@@ -59,15 +92,7 @@ where
     let mut group = c.benchmark_group(group_name);
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
-            module.glwe_tensor_apply(
-                0,
-                &mut tensor,
-                &a,
-                a.max_k().as_usize(),
-                &b,
-                b.max_k().as_usize(),
-                &mut scratch.borrow(),
-            );
+            module.glwe_tensor_apply(0, &mut tensor, &a, &b, &mut scratch.borrow());
             black_box(());
         })
     });
@@ -89,8 +114,8 @@ pub fn bench_glwe_tensor_prepare_left<BE: Backend<OwnedBuf = Vec<u8>>>(
 
     let a = module.glwe_alloc_from_infos(glwe_infos);
     let a_mask = msb_mask_bottom_limb(glwe_infos.base2k().as_usize(), a.max_k().as_usize());
-    let mut a_prep = module.cnv_pvec_left_alloc(cols, a.size());
-    let mut scratch = ScratchOwned::<BE>::alloc(module.cnv_prepare_left_tmp_bytes(a.size(), a.size()));
+    let mut a_prep = module.cnv_pvec_left_alloc(cols, a.max_size());
+    let mut scratch = ScratchOwned::<BE>::alloc(module.cnv_prepare_left_tmp_bytes(a.max_size(), a.max_size()));
 
     let group_name = format!("glwe_tensor_prepare_left::{label}");
     let mut group = c.benchmark_group(group_name);
@@ -124,8 +149,8 @@ pub fn bench_glwe_tensor_prepare_right<BE: Backend<OwnedBuf = Vec<u8>>>(
 
     let b = module.glwe_alloc_from_infos(glwe_infos);
     let b_mask = msb_mask_bottom_limb(glwe_infos.base2k().as_usize(), b.max_k().as_usize());
-    let mut b_prep = module.cnv_pvec_right_alloc(cols, b.size());
-    let mut scratch = ScratchOwned::<BE>::alloc(module.cnv_prepare_right_tmp_bytes(b.size(), b.size()));
+    let mut b_prep = module.cnv_pvec_right_alloc(cols, b.max_size());
+    let mut scratch = ScratchOwned::<BE>::alloc(module.cnv_prepare_right_tmp_bytes(b.max_size(), b.max_size()));
 
     let group_name = format!("glwe_tensor_prepare_right::{label}");
     let mut group = c.benchmark_group(group_name);
@@ -162,8 +187,8 @@ where
     let base2k = glwe_infos.base2k().as_usize();
     let (cnv_offset_hi, cnv_offset_lo) = (0, -(base2k as i64));
     let diag_dft_size = normalize_input_limb_bound_with_offset(
-        a.size() + b.size() - cnv_offset_hi,
-        tensor.size(),
+        a.max_size() + b.max_size() - cnv_offset_hi,
+        tensor.max_size(),
         base2k,
         base2k,
         cnv_offset_lo,
@@ -171,12 +196,12 @@ where
 
     let a_mask = msb_mask_bottom_limb(base2k, a.max_k().as_usize());
     let b_mask = msb_mask_bottom_limb(base2k, b.max_k().as_usize());
-    let mut a_prep = module.cnv_pvec_left_alloc(cols, a.size());
-    let mut b_prep = module.cnv_pvec_right_alloc(cols, b.size());
+    let mut a_prep = module.cnv_pvec_left_alloc(cols, a.max_size());
+    let mut b_prep = module.cnv_pvec_right_alloc(cols, b.max_size());
     let mut prep_scratch = ScratchOwned::<BE>::alloc(
         module
-            .cnv_prepare_left_tmp_bytes(a.size(), a.size())
-            .max(module.cnv_prepare_right_tmp_bytes(b.size(), b.size())),
+            .cnv_prepare_left_tmp_bytes(a.max_size(), a.max_size())
+            .max(module.cnv_prepare_right_tmp_bytes(b.max_size(), b.max_size())),
     );
     {
         let mut a_prep_backend = a_prep.to_backend_mut();
@@ -225,7 +250,7 @@ where
                 >>::reborrow_backend_mut(&mut res_dft);
                 module.vec_znx_idft_apply_tmpa(&mut res_big_backend, 0, &mut res_dft_backend, 0);
             }
-            let (mut tmp, mut scratch) = scratch.take_vec_znx_scratch(n, 1, tensor.size());
+            let (mut tmp, mut scratch) = scratch.take_vec_znx_scratch(n, 1, tensor.max_size());
             module.vec_znx_big_normalize(
                 &mut tmp,
                 base2k,
@@ -272,8 +297,8 @@ pub fn bench_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>>(
     let base2k = glwe_infos.base2k().as_usize();
     let (cnv_offset_hi, cnv_offset_lo) = (0, -(base2k as i64));
     let pairwise_dft_size = normalize_input_limb_bound_with_offset(
-        a.size() + b.size() - cnv_offset_hi,
-        tensor.size(),
+        a.max_size() + b.max_size() - cnv_offset_hi,
+        tensor.max_size(),
         base2k,
         base2k,
         cnv_offset_lo,
@@ -281,12 +306,12 @@ pub fn bench_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>>(
 
     let a_mask = msb_mask_bottom_limb(base2k, a.max_k().as_usize());
     let b_mask = msb_mask_bottom_limb(base2k, b.max_k().as_usize());
-    let mut a_prep = module.cnv_pvec_left_alloc(cols, a.size());
-    let mut b_prep = module.cnv_pvec_right_alloc(cols, b.size());
+    let mut a_prep = module.cnv_pvec_left_alloc(cols, a.max_size());
+    let mut b_prep = module.cnv_pvec_right_alloc(cols, b.max_size());
     let mut prep_scratch = ScratchOwned::<BE>::alloc(
         module
-            .cnv_prepare_left_tmp_bytes(a.size(), a.size())
-            .max(module.cnv_prepare_right_tmp_bytes(b.size(), b.size())),
+            .cnv_prepare_left_tmp_bytes(a.max_size(), a.max_size())
+            .max(module.cnv_prepare_right_tmp_bytes(b.max_size(), b.max_size())),
     );
     {
         let mut a_prep_backend = a_prep.to_backend_mut();
@@ -307,7 +332,7 @@ pub fn bench_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>>(
         );
     }
 
-    let mut diag_terms = module.vec_znx_alloc(cols, tensor.size());
+    let mut diag_terms = module.vec_znx_alloc(cols, tensor.max_size());
     let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_tensor_apply_tmp_bytes(&tensor, &a, &b));
 
     {
@@ -334,7 +359,7 @@ pub fn bench_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>>(
                 >>::reborrow_backend_mut(&mut res_dft);
                 module.vec_znx_idft_apply_tmpa(&mut res_big_backend, 0, &mut res_dft_backend, 0);
             }
-            let (mut tmp, mut scratch) = scratch.take_vec_znx_scratch(n, 1, tensor.size());
+            let (mut tmp, mut scratch) = scratch.take_vec_znx_scratch(n, 1, tensor.max_size());
             module.vec_znx_big_normalize(
                 &mut tmp,
                 base2k,
@@ -380,7 +405,7 @@ pub fn bench_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>>(
                 >>::reborrow_backend_mut(&mut res_dft);
                 module.vec_znx_idft_apply_tmpa(&mut res_big_backend, 0, &mut res_dft_backend, 0);
             }
-            let (mut tmp, mut scratch) = scratch.take_vec_znx_scratch(n, 1, tensor.size());
+            let (mut tmp, mut scratch) = scratch.take_vec_znx_scratch(n, 1, tensor.max_size());
             module.vec_znx_big_normalize(
                 &mut tmp,
                 base2k,
@@ -422,7 +447,7 @@ pub fn bench_glwe_tensor_square_apply<BE: Backend<OwnedBuf = Vec<u8>>>(
     let mut group = c.benchmark_group(group_name);
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
-            module.glwe_tensor_square_apply(0, &mut tensor, &a, a.max_k().as_usize(), &mut scratch.borrow());
+            module.glwe_tensor_square_apply(0, &mut tensor, &a, &mut scratch.borrow());
             black_box(());
         })
     });

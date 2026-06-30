@@ -7,7 +7,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSMeta,
+    CKKSInfos, CKKSMeta, SetCKKSInfos,
     encoding::reim::Encoder,
     layouts::CKKSModuleAlloc,
     test_suite::{
@@ -25,24 +25,26 @@ pub fn test_encode_decode_reim_roundtrip<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     Module<HostBytesBackend>: TestContextHostModule,
 {
     let m = params.n / 2;
-    let log_delta = params.prec.log_delta;
+    let log_delta = params.prec().log_delta();
     let encoder = Encoder::<E>::new::<F>(m).unwrap();
 
     let (re_in, im_in) = test_vector_1::<F>(m);
 
     let mut pt = host_module.ckks_pt_vec_alloc(
         Base2K(params.base2k as u32),
-        CKKSMeta {
-            log_sparsity: 0,
-            log_delta,
-            log_budget: 10,
-        },
+        poulpy_core::layouts::TorusPrecision((log_delta + 10) as u32),
     );
+    pt.set_meta(CKKSMeta {
+        log_sparsity: 0,
+        log_delta,
+    });
     encoder.encode_reim(&mut pt, &re_in, &im_in).unwrap();
 
     let mut re_out = vec![F::from_f64(0.0).unwrap(); m];

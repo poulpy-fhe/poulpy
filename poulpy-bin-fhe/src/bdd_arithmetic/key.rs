@@ -358,7 +358,7 @@ impl<D: Data, BRA: BlindRotationAlgo, BE: Backend> BDDKeyInfos for BDDKeyPrepare
         self.ks_glwe.as_ref().map(|ks_glwe| GLWESwitchingKeyLayout {
             n: ks_glwe.n(),
             base2k: ks_glwe.base2k(),
-            k: ks_glwe.max_k(),
+            k: ks_glwe.k(),
             rank_in: ks_glwe.rank_in(),
             rank_out: ks_glwe.rank_out(),
             dnum: ks_glwe.dnum(),
@@ -369,7 +369,7 @@ impl<D: Data, BRA: BlindRotationAlgo, BE: Backend> BDDKeyInfos for BDDKeyPrepare
         GLWEToLWEKeyLayout {
             n: self.ks_lwe.n(),
             base2k: self.ks_lwe.base2k(),
-            k: self.ks_lwe.max_k(),
+            k: self.ks_lwe.k(),
             rank_in: self.ks_lwe.rank_in(),
             dnum: self.ks_lwe.dnum(),
         }

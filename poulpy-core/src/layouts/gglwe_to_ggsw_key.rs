@@ -3,12 +3,9 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::{
-    DeclaredK,
-    layouts::{
-        Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEBackendMut, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos,
-        LWEInfos, Rank, TorusPrecision,
-    },
+use crate::layouts::{
+    Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEBackendMut, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos, LWEInfos,
+    Rank, TorusPrecision,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
@@ -25,12 +22,6 @@ pub struct GGLWEToGGSWKeyLayout {
     pub rank: Rank,
     pub dnum: Dnum,
     pub dsize: Dsize,
-}
-
-impl DeclaredK for GGLWEToGGSWKeyLayout {
-    fn k(&self) -> TorusPrecision {
-        self.k
-    }
 }
 
 #[derive(PartialEq, Eq, Clone)]
@@ -56,6 +47,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyBackendRef<'a, BE> {
         let key_i = &self.inner.keys[i];
         crate::layouts::GGLWEBackendRef::from_inner(GGLWE {
             base2k: key_i.base2k,
+            k: key_i.k,
             dsize: key_i.dsize,
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_ref::<BE>(&key_i.data),
         })
@@ -88,6 +80,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyBackendMut<'a, BE> {
         let key_i = &self.inner.keys[i];
         crate::layouts::GGLWEBackendRef::from_inner(GGLWE {
             base2k: key_i.base2k,
+            k: key_i.k,
             dsize: key_i.dsize,
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_mut::<BE>(&key_i.data),
         })
@@ -98,6 +91,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyBackendMut<'a, BE> {
         let key_i = &mut self.inner.keys[i];
         GGLWEBackendMut::from_inner(GGLWE {
             base2k: key_i.base2k,
+            k: key_i.k,
             dsize: key_i.dsize,
             data: poulpy_hal::layouts::mat_znx_backend_mut_from_mut::<BE>(&mut key_i.data),
         })
@@ -130,8 +124,12 @@ impl<D: Data> LWEInfos for GGLWEToGGSWKey<D> {
         self.keys[0].base2k()
     }
 
-    fn size(&self) -> usize {
-        self.keys[0].size()
+    fn max_size(&self) -> usize {
+        self.keys[0].max_size()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.keys[0].k()
     }
 }
 
@@ -168,8 +166,12 @@ impl LWEInfos for GGLWEToGGSWKeyLayout {
         self.base2k
     }
 
-    fn size(&self) -> usize {
-        self.k.as_usize().div_ceil(self.base2k.as_usize())
+    fn max_size(&self) -> usize {
+        self.k.div_ceil(self.base2k) as usize
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 
@@ -238,7 +240,7 @@ impl GGLWEToGGSWKey<Vec<u8>> {
         Self::alloc(
             infos.n(),
             infos.base2k(),
-            infos.max_k(),
+            infos.k(),
             infos.rank(),
             infos.dnum(),
             infos.dsize(),
@@ -265,7 +267,7 @@ impl GGLWEToGGSWKey<Vec<u8>> {
         Self::bytes_of(
             infos.n(),
             infos.base2k(),
-            infos.max_k(),
+            infos.k(),
             infos.rank(),
             infos.dnum(),
             infos.dsize(),

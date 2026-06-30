@@ -28,19 +28,19 @@ where
 {
     assert_eq!(module.n() as u32, key_infos.n());
 
-    let max_k: TorusPrecision = a_infos.max_k().max(res_infos.max_k());
+    let k: TorusPrecision = a_infos.k().max(res_infos.k());
 
     let glwe_a_infos: GLWELayout = GLWELayout {
         n: module.n().into(),
         base2k: a_infos.base2k(),
-        k: max_k,
+        k,
         rank: Rank(1),
     };
 
     let glwe_res_infos: GLWELayout = GLWELayout {
         n: module.n().into(),
         base2k: res_infos.base2k(),
-        k: max_k,
+        k,
         rank: Rank(1),
     };
 
@@ -80,7 +80,7 @@ pub fn lwe_keyswitch_default<BE, M, R, A, K>(
     let (mut glwe_in, scratch_1) = scratch.take_glwe_scratch(&GLWELayout {
         n: ksk.n(),
         base2k: a.base2k(),
-        k: a.max_k(),
+        k: a.k(),
         rank: Rank(1),
     });
     module.vec_znx_zero_backend(&mut glwe_in.data, 0);
@@ -96,7 +96,7 @@ pub fn lwe_keyswitch_default<BE, M, R, A, K>(
     let (mut glwe_out, mut scratch_2) = scratch_1.take_glwe_scratch(&GLWELayout {
         n: ksk.n(),
         base2k: res.base2k(),
-        k: res.max_k(),
+        k: res.k(),
         rank: Rank(1),
     });
 

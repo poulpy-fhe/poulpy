@@ -11,7 +11,7 @@ use std::fmt::Debug;
 
 use poulpy_core::{
     ModuleTransfer,
-    layouts::{Base2K, DiagonalArithmetic, LinearTransformationStrategy},
+    layouts::{Base2K, DiagonalArithmetic, LWEInfos, LinearTransformationStrategy},
 };
 use poulpy_hal::{
     api::{ModuleNew, NegacyclicFFT},
@@ -20,7 +20,7 @@ use poulpy_hal::{
 use rand_distr::num_traits::{Float, FloatConst, NumCast};
 
 use crate::{
-    CKKSInfos, CKKSMeta,
+    CKKSInfos, CKKSLayout, SetCKKSInfos,
     api::LinearTransformation,
     encoding::reim::Encoder,
     layouts::{CKKSModuleAlloc, CKKSPlaintextVecHostCodec, CKKSScalar, ComplexDiagonals, plaintext::CKKSPlaintext},
@@ -49,7 +49,7 @@ pub fn ckks_encode_linear_transformation_from_diagonals<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     encoder: &Encoder<E>,
     base2k: Base2K,
-    meta: CKKSMeta,
+    meta: CKKSLayout,
     diagonals: &ComplexDiagonals<F>,
     strategy: LinearTransformationStrategy,
     transpose: bool,
@@ -72,7 +72,8 @@ where
         diagonals
     };
     cd.build_transform(strategy, |pre_re, pre_im| {
-        let mut host_pt = host_module.ckks_pt_vec_alloc(base2k, meta);
+        let mut host_pt = host_module.ckks_pt_vec_alloc(base2k, meta.k());
+        host_pt.set_meta(meta.meta());
         // `sparse`: the diagonal slot vectors live in the `encoder.m()`-slot sub-ring
         // and are gap-mapped (`R[Y]→Z[X]`) into the degree-`N` plaintext; otherwise the
         // dense full-`N/2`-slot encoding is used.

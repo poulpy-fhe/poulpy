@@ -5,13 +5,14 @@ use poulpy_hal::{
 
 use crate::layouts::{
     Base2K, Degree, GLWE, GLWEBackendMut, GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
-    SetLWEInfos, TorusPrecision,
+    SetBase2k, TorusPrecision,
 };
 use std::fmt;
 
 #[derive(PartialEq, Eq, Clone)]
 pub struct GLWETensor<D: Data> {
     pub(crate) data: VecZnx<D>,
+    pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) rank: Rank,
 }
@@ -19,7 +20,7 @@ pub struct GLWETensor<D: Data> {
 pub type GLWETensorBackendRef<'a, BE> = GLWETensor<<BE as Backend>::BufRef<'a>>;
 pub type GLWETensorBackendMut<'a, BE> = GLWETensor<<BE as Backend>::BufMut<'a>>;
 
-impl<D: HostDataMut> SetLWEInfos for GLWETensor<D> {
+impl<D: HostDataMut> SetBase2k for GLWETensor<D> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k
     }
@@ -46,33 +47,17 @@ impl<D: Data> LWEInfos for GLWETensor<D> {
         Degree(self.data.n() as u32)
     }
 
-    fn size(&self) -> usize {
-        self.data.size()
-    }
-}
-
-impl<D: Data> LWEInfos for &mut GLWETensor<D> {
-    fn base2k(&self) -> Base2K {
-        self.base2k
+    fn max_size(&self) -> usize {
+        self.data.max_size()
     }
 
-    fn n(&self) -> Degree {
-        Degree(self.data.n() as u32)
-    }
-
-    fn size(&self) -> usize {
-        self.data.size()
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 
 impl<D: Data> GLWEInfos for GLWETensor<D> {
     ///NOTE: self.rank() != self.to_ref().rank() if self is of type [GLWETensor]
-    fn rank(&self) -> Rank {
-        self.rank
-    }
-}
-
-impl<D: Data> GLWEInfos for &mut GLWETensor<D> {
     fn rank(&self) -> Rank {
         self.rank
     }
@@ -86,13 +71,7 @@ impl<D: HostDataRef> fmt::Debug for GLWETensor<D> {
 
 impl<D: HostDataRef> fmt::Display for GLWETensor<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "GLWETensor: base2k={} k={}: {}",
-            self.base2k().0,
-            self.max_k().0,
-            self.data
-        )
+        write!(f, "GLWETensor: base2k={} k={}: {}", self.base2k().0, self.k().0, self.data)
     }
 }
 
@@ -111,7 +90,7 @@ impl GLWETensor<Vec<u8>> {
     where
         A: GLWEInfos,
     {
-        Self::alloc(infos.n(), infos.base2k(), infos.max_k(), infos.rank())
+        Self::alloc(infos.n(), infos.base2k(), infos.k(), infos.rank())
     }
 
     pub(crate) fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank) -> Self {
@@ -127,6 +106,7 @@ impl GLWETensor<Vec<u8>> {
             ),
             base2k,
             rank,
+            k,
         }
     }
 
@@ -134,7 +114,7 @@ impl GLWETensor<Vec<u8>> {
     where
         A: GLWEInfos,
     {
-        Self::bytes_of(infos.n(), infos.base2k(), infos.max_k(), infos.rank())
+        Self::bytes_of(infos.n(), infos.base2k(), infos.k(), infos.rank())
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank) -> usize {
@@ -151,6 +131,7 @@ where
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         GLWE {
             base2k: self.base2k,
+            k: self.k,
             data: self.data.to_backend_ref(),
         }
     }
@@ -163,6 +144,7 @@ where
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         GLWE {
             base2k: self.base2k,
+            k: self.k,
             data: self.data.to_backend_ref(),
         }
     }
@@ -175,6 +157,7 @@ where
     fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
         GLWE {
             base2k: self.base2k,
+            k: self.k,
             data: self.data.to_backend_mut(),
         }
     }
@@ -184,6 +167,7 @@ impl<'b, BE: Backend + 'b> GLWEToBackendRef<BE> for &mut GLWETensor<BE::BufMut<'
     fn to_backend_ref(&self) -> GLWEBackendRef<'_, BE> {
         GLWE {
             base2k: self.base2k,
+            k: self.k,
             data: poulpy_hal::layouts::vec_znx_backend_ref_from_mut::<BE>(&self.data),
         }
     }
@@ -193,6 +177,7 @@ impl<'b, BE: Backend + 'b> GLWEToBackendMut<BE> for &mut GLWETensor<BE::BufMut<'
     fn to_backend_mut(&mut self) -> GLWEBackendMut<'_, BE> {
         GLWE {
             base2k: self.base2k,
+            k: self.k,
             data: poulpy_hal::layouts::vec_znx_backend_mut_from_mut::<BE>(&mut self.data),
         }
     }

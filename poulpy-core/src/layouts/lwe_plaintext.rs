@@ -5,7 +5,7 @@ use poulpy_hal::layouts::{
 };
 
 use crate::api::ModuleTransfer;
-use crate::layouts::{Base2K, Degree, LWEInfos, SetLWEInfos, TorusPrecision};
+use crate::layouts::{Base2K, Degree, LWEInfos, SetBase2k, TorusPrecision};
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub struct LWEPlaintextLayout {
@@ -22,20 +22,25 @@ impl LWEInfos for LWEPlaintextLayout {
         Degree(0)
     }
 
-    fn size(&self) -> usize {
-        self.k.0.div_ceil(self.base2k.0) as usize
+    fn max_size(&self) -> usize {
+        self.k.div_ceil(self.base2k) as usize
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 
 pub struct LWEPlaintext<D: Data> {
     pub(crate) data: VecZnx<D>,
+    pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
 }
 
 pub type LWEPlaintextBackendRef<'a, BE> = LWEPlaintext<<BE as Backend>::BufRef<'a>>;
 pub type LWEPlaintextBackendMut<'a, BE> = LWEPlaintext<<BE as Backend>::BufMut<'a>>;
 
-impl<D: HostDataMut> SetLWEInfos for LWEPlaintext<D> {
+impl<D: HostDataMut> SetBase2k for LWEPlaintext<D> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k
     }
@@ -50,8 +55,12 @@ impl<D: Data> LWEInfos for LWEPlaintext<D> {
         Degree(self.data.n() as u32 - 1)
     }
 
-    fn size(&self) -> usize {
+    fn max_size(&self) -> usize {
         self.data.size()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.k
     }
 }
 
@@ -77,8 +86,9 @@ impl<D: Data> LWEPlaintext<D> {
         let shape = self.data.shape();
         let data = self.data.data;
         LWEPlaintext {
-            data: VecZnx::from_data_with_max_size(data, shape.n(), shape.cols(), shape.size(), shape.max_size()),
+            data: VecZnx::from_data_with_max_size(data, shape.n(), shape.cols(), shape.size(), shape.size()),
             base2k: self.base2k,
+            k: self.k,
         }
     }
 }
@@ -92,7 +102,7 @@ impl LWEPlaintext<Vec<u8>> {
     where
         A: LWEInfos,
     {
-        Self::alloc(infos.base2k(), infos.max_k())
+        Self::alloc(infos.base2k(), infos.k())
     }
 
     pub(crate) fn alloc(base2k: Base2K, k: TorusPrecision) -> Self {
@@ -105,6 +115,7 @@ impl LWEPlaintext<Vec<u8>> {
                 size,
             ),
             base2k,
+            k,
         }
     }
 
@@ -122,13 +133,7 @@ impl LWEPlaintext<Vec<u8>> {
 
 impl<D: HostDataRef> fmt::Display for LWEPlaintext<D> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "LWEPlaintext: base2k={} k={}: {}",
-            self.base2k().0,
-            self.max_k().0,
-            self.data
-        )
+        write!(f, "LWEPlaintext: base2k={} k={}: {}", self.base2k().0, self.k().0, self.data)
     }
 }
 
@@ -141,6 +146,7 @@ impl<BE: Backend> LWEPlaintextToBackendRef<BE> for LWEPlaintext<BE::OwnedBuf> {
         LWEPlaintext {
             data: <VecZnx<BE::OwnedBuf> as VecZnxToBackendRef<BE>>::to_backend_ref(&self.data),
             base2k: self.base2k,
+            k: self.k,
         }
     }
 }
@@ -153,9 +159,10 @@ impl<'b, BE: Backend + 'b> LWEPlaintextToBackendRef<BE> for &LWEPlaintext<BE::Bu
                 self.data.n(),
                 self.data.cols(),
                 self.data.size(),
-                self.data.max_size(),
+                self.data.size(),
             ),
             base2k: self.base2k,
+            k: self.k,
         }
     }
 }
@@ -168,9 +175,10 @@ impl<'b, BE: Backend + 'b> LWEPlaintextToBackendRef<BE> for &mut LWEPlaintext<BE
                 self.data.n(),
                 self.data.cols(),
                 self.data.size(),
-                self.data.max_size(),
+                self.data.size(),
             ),
             base2k: self.base2k,
+            k: self.k,
         }
     }
 }
@@ -184,6 +192,7 @@ impl<BE: Backend> LWEPlaintextToBackendMut<BE> for LWEPlaintext<BE::OwnedBuf> {
         LWEPlaintext {
             data: <VecZnx<BE::OwnedBuf> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut self.data),
             base2k: self.base2k,
+            k: self.k,
         }
     }
 }
@@ -197,9 +206,10 @@ impl<'b, BE: Backend + 'b> LWEPlaintextToBackendMut<BE> for &mut LWEPlaintext<BE
                 shape.n(),
                 shape.cols(),
                 shape.size(),
-                shape.max_size(),
+                shape.size(),
             ),
             base2k: self.base2k,
+            k: self.k,
         }
     }
 }

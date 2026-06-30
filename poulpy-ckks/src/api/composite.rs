@@ -1,6 +1,6 @@
 use anyhow::Result;
 use poulpy_core::layouts::{
-    GGLWEInfos, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+    Compact, GGLWEInfos, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
     prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::layouts::{Backend, Data, ScratchArena};
@@ -30,7 +30,7 @@ pub trait CKKSAddManyOps<BE: Backend> {
     /// final write applies:
     ///
     /// ```text
-    /// offset         = max(0, result_effective_k − dst.max_k())
+    /// offset         = max(0, result_k − dst.max_k())
     /// log_budget_out = (min log_budget) − offset
     /// ```
     ///
@@ -61,13 +61,13 @@ pub trait CKKSMulAddOps<BE: Backend> {
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos;
+        P: CKKSInfos + LWEInfos;
 
     fn ckks_mul_add_pt_const_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos;
+        P: CKKSInfos + LWEInfos;
 
     /// Computes `dst += a * b` using tensor-product keyswitching via `tsk`.
     ///
@@ -85,7 +85,7 @@ pub trait CKKSMulAddOps<BE: Backend> {
     /// // addition with dst:
     /// log_delta_out  = min(dst.log_delta, prod_delta)
     /// log_budget_out = min(dst.log_budget, prod_budget)
-    ///                  − max(0, min(dst.effective_k(), prod_effective_k) − dst.max_k())
+    ///                  − max(0, min(dst.k(), prod_k) − dst.max_k())
     /// ```
     fn ckks_mul_add_ct_into<Dst, A, B, T>(
         &self,
@@ -113,7 +113,7 @@ pub trait CKKSMulAddOps<BE: Backend> {
     /// // addition with dst:
     /// log_delta_out  = min(dst.log_delta, prod_delta)
     /// log_budget_out = min(dst.log_budget, prod_budget)
-    ///                  − max(0, min(dst.effective_k(), prod_effective_k) − dst.max_k())
+    ///                  − max(0, min(dst.k(), prod_k) − dst.max_k())
     /// ```
     fn ckks_mul_add_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
@@ -183,7 +183,7 @@ pub trait CKKSAffineOps<BE: Backend> {
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos;
+        P: CKKSInfos + LWEInfos;
 
     /// Computes `dst = a * affine_const[scale_coeff] + affine_const[offset_coeff]`.
     ///
@@ -200,7 +200,7 @@ pub trait CKKSAffineOps<BE: Backend> {
     /// capacity, so the net cost is from the `mul` step only:
     ///
     /// ```text
-    /// natural_eff_k  = a.effective_k() − affine_const.log_delta
+    /// natural_eff_k  = a.k() − affine_const.log_delta
     /// offset         = max(0, natural_eff_k − dst.max_k())
     ///
     /// log_delta_out  = a.log_delta
@@ -218,7 +218,7 @@ pub trait CKKSAffineOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + crate::SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
@@ -240,14 +240,14 @@ pub trait CKKSAffineOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + crate::SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
     fn ckks_affine_pt_vec_tmp_bytes<R, A, S>(&self, res: &R, a: &A, scale: &S) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        S: CKKSInfos;
+        S: CKKSInfos + LWEInfos;
 
     /// Computes `dst = a * scale + offset` where `scale` and `offset` are full
     /// plaintext polynomials in the ZNX domain.
@@ -258,7 +258,7 @@ pub trait CKKSAffineOps<BE: Backend> {
     /// `mul scale` step:
     ///
     /// ```text
-    /// natural_eff_k  = a.effective_k() − scale.log_delta
+    /// natural_eff_k  = a.k() − scale.log_delta
     /// offset_bits    = max(0, natural_eff_k − dst.max_k())
     ///
     /// log_delta_out  = a.log_delta
@@ -267,7 +267,7 @@ pub trait CKKSAffineOps<BE: Backend> {
     ///
     /// **Net capacity consumed**: `scale.log_delta + offset_bits` bits.
     ///
-    /// **Precondition**: `(a.log_budget − scale.log_delta) + offset.log_delta >= offset.effective_k()`
+    /// **Precondition**: `(a.log_budget − scale.log_delta) + offset.log_delta >= offset.k()`
     /// (the offset plaintext must fit in the ciphertext headroom after the multiply).
     fn ckks_affine_pt_vec_into<Dst, A, S, P>(
         &self,
@@ -278,7 +278,7 @@ pub trait CKKSAffineOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + crate::SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         S: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
@@ -299,7 +299,7 @@ pub trait CKKSAffineOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + crate::SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         S: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 }
@@ -315,13 +315,13 @@ pub trait CKKSMulSubOps<BE: Backend> {
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos;
+        P: CKKSInfos + LWEInfos;
 
     fn ckks_mul_sub_pt_const_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos;
+        P: CKKSInfos + LWEInfos;
 
     /// Computes `dst -= a * b` using tensor-product keyswitching via `tsk`.
     ///
@@ -388,13 +388,13 @@ pub trait CKKSDotProductOps<BE: Backend> {
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos;
+        P: CKKSInfos + LWEInfos;
 
     fn ckks_dot_product_pt_const_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos;
+        P: CKKSInfos + LWEInfos;
 
     /// Computes `dst = Σ a[i] * b[i]` over ciphertext–ciphertext pairs.
     ///
@@ -404,7 +404,7 @@ pub trait CKKSDotProductOps<BE: Backend> {
     /// uniform-precision inputs:
     ///
     /// ```text
-    /// natural_eff_k  = a[i].log_budget   (= a[i].effective_k() − a[i].log_delta)
+    /// natural_eff_k  = a[i].log_budget   (= a[i].k() − a[i].log_delta)
     /// offset         = max(0, natural_eff_k − dst.max_k())
     ///
     /// log_delta_out  = a[i].log_delta
@@ -429,7 +429,7 @@ pub trait CKKSDotProductOps<BE: Backend> {
     /// # Metadata
     ///
     /// ```text
-    /// natural_eff_k  = a[i].effective_k() − b[i].log_delta
+    /// natural_eff_k  = a[i].k() − b[i].log_delta
     /// offset         = max(0, natural_eff_k − dst.max_k())
     ///
     /// log_delta_out  = a[i].log_delta

@@ -2,11 +2,13 @@
 //!
 //! Pure-Rust mirror of the AVX-512-IFMA forward and inverse NTT kernels in
 //! [`super::super::kernels`].  Used by the AVX-512 unit tests as the
-//! correctness oracle for `ntt_avx512` / `intt_avx512`.
+//! correctness oracle for the `ntt_avx512` / `intt_avx512` kernels.
 //!
 //! See [`super::super::tables`] for the table layout this implementation
 //! consumes — the IFMA-native lazy `[0, 4q)` arithmetic, the SoA twiddle
 //! layout, and the `cond_sub_2q` / `harvey_modmul` helpers all live there.
+
+#![allow(clippy::needless_range_loop)]
 
 use super::super::primes::PrimeSetNtt126Ifma;
 use super::super::tables::{Ntt126IfmaTable, Ntt126IfmaTableInv, cond_sub_2q, harvey_modmul};
@@ -22,6 +24,7 @@ pub fn ntt126_ifma_ref<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTable<P>, data: 
     if n <= 1 {
         return;
     }
+    debug_assert!(data.len() >= 3 * n);
 
     let q2 = &table.q2;
     let q4 = &table.q4;
@@ -33,10 +36,10 @@ pub fn ntt126_ifma_ref<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTable<P>, data: 
         let quot_base = seg_base + 4 * n;
         for i in 0..n {
             for k in 0..3 {
-                let a = data[4 * i + k];
+                let a = data[k * n + i];
                 let omega = table.powomega[omega_base + 4 * i + k];
                 let omega_quot = table.powomega[quot_base + 4 * i + k];
-                data[4 * i + k] = harvey_modmul(a, omega, omega_quot, P::Q[k]);
+                data[k * n + i] = harvey_modmul(a, omega, omega_quot, P::Q[k]);
             }
         }
         seg_base += 8 * n;
@@ -56,32 +59,32 @@ pub fn ntt126_ifma_ref<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTable<P>, data: 
             while block_start < n {
                 // i = 0: no twiddle multiply (both sides need cond_sub_4q)
                 {
-                    let p1 = 4 * block_start;
-                    let p2 = 4 * (block_start + halfnn);
                     for k in 0..3 {
-                        let a = data[p1 + k];
-                        let b = data[p2 + k];
+                        let p1 = k * n + block_start;
+                        let p2 = k * n + block_start + halfnn;
+                        let a = data[p1];
+                        let b = data[p2];
                         let sum = a + b;
                         let diff = a + q4[k] - b;
-                        data[p1 + k] = cond_sub_2q(sum, q4[k]);
-                        data[p2 + k] = cond_sub_2q(diff, q4[k]);
+                        data[p1] = cond_sub_2q(sum, q4[k]);
+                        data[p2] = cond_sub_2q(diff, q4[k]);
                     }
                 }
 
                 // i = 1..halfnn-1: Harvey multiply absorbs the diff-path reduction
                 for i in 1..halfnn {
-                    let p1 = 4 * (block_start + i);
-                    let p2 = 4 * (block_start + halfnn + i);
                     let tw_idx = i - 1;
                     for k in 0..3 {
-                        let a = data[p1 + k];
-                        let b = data[p2 + k];
+                        let p1 = k * n + block_start + i;
+                        let p2 = k * n + block_start + halfnn + i;
+                        let a = data[p1];
+                        let b = data[p2];
                         let sum = a + b;
                         let diff = a + q4[k] - b;
-                        data[p1 + k] = cond_sub_2q(sum, q4[k]);
+                        data[p1] = cond_sub_2q(sum, q4[k]);
                         let omega = table.powomega[omega_base + 4 * tw_idx + k];
                         let omega_quot = table.powomega[quot_base + 4 * tw_idx + k];
-                        data[p2 + k] = harvey_modmul(diff, omega, omega_quot, P::Q[k]);
+                        data[p2] = harvey_modmul(diff, omega, omega_quot, P::Q[k]);
                     }
                 }
 
@@ -93,13 +96,13 @@ pub fn ntt126_ifma_ref<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTable<P>, data: 
             // nn == 2: add/sub only, no twiddle
             let mut block_start = 0usize;
             while block_start < n {
-                let p1 = 4 * block_start;
-                let p2 = 4 * (block_start + 1);
                 for k in 0..3 {
-                    let a = data[p1 + k];
-                    let b = data[p2 + k];
-                    data[p1 + k] = cond_sub_2q(a + b, q4[k]);
-                    data[p2 + k] = cond_sub_2q(a + q4[k] - b, q4[k]);
+                    let p1 = k * n + block_start;
+                    let p2 = k * n + block_start + 1;
+                    let a = data[p1];
+                    let b = data[p2];
+                    data[p1] = cond_sub_2q(a + b, q4[k]);
+                    data[p2] = cond_sub_2q(a + q4[k] - b, q4[k]);
                 }
                 block_start += 2;
             }
@@ -111,7 +114,8 @@ pub fn ntt126_ifma_ref<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTable<P>, data: 
     // ── Final normalisation: [0, 4q) → [0, 2q) ──────────────────────
     for i in 0..n {
         for k in 0..3 {
-            data[4 * i + k] = cond_sub_2q(data[4 * i + k], q2[k]);
+            let idx = k * n + i;
+            data[idx] = cond_sub_2q(data[idx], q2[k]);
         }
     }
 }
@@ -126,6 +130,7 @@ pub fn intt126_ifma_ref<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTableInv<P>, da
     if n <= 1 {
         return;
     }
+    debug_assert!(data.len() >= 3 * n);
 
     let q4 = &table.q4;
     let mut seg_base = 0usize;
@@ -144,34 +149,34 @@ pub fn intt126_ifma_ref<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTableInv<P>, da
             while block_start < n {
                 // i = 0: no twiddle
                 {
-                    let p1 = 4 * block_start;
-                    let p2 = 4 * (block_start + halfnn);
                     for k in 0..3 {
-                        let a = data[p1 + k];
-                        let b = data[p2 + k];
+                        let p1 = k * n + block_start;
+                        let p2 = k * n + block_start + halfnn;
+                        let a = data[p1];
+                        let b = data[p2];
                         let sum = a + b;
                         let diff = a + q4[k] - b;
-                        data[p1 + k] = cond_sub_2q(sum, q4[k]);
-                        data[p2 + k] = cond_sub_2q(diff, q4[k]);
+                        data[p1] = cond_sub_2q(sum, q4[k]);
+                        data[p2] = cond_sub_2q(diff, q4[k]);
                     }
                 }
 
                 // i = 1..halfnn-1: twiddle on b BEFORE butterfly (b_raw ∈ [0, 4q)
                 // fed directly into Harvey → bo ∈ [0, 2q); sum/diff use cond_sub_4q).
                 for i in 1..halfnn {
-                    let p1 = 4 * (block_start + i);
-                    let p2 = 4 * (block_start + halfnn + i);
                     let tw_idx = i - 1;
                     for k in 0..3 {
-                        let a = data[p1 + k];
-                        let b_raw = data[p2 + k];
+                        let p1 = k * n + block_start + i;
+                        let p2 = k * n + block_start + halfnn + i;
+                        let a = data[p1];
+                        let b_raw = data[p2];
                         let omega = table.powomega[omega_base + 4 * tw_idx + k];
                         let omega_quot = table.powomega[quot_base + 4 * tw_idx + k];
                         let bo = harvey_modmul(b_raw, omega, omega_quot, P::Q[k]);
                         let sum = a + bo;
                         let diff = a + q4[k] - bo;
-                        data[p1 + k] = cond_sub_2q(sum, q4[k]);
-                        data[p2 + k] = cond_sub_2q(diff, q4[k]);
+                        data[p1] = cond_sub_2q(sum, q4[k]);
+                        data[p2] = cond_sub_2q(diff, q4[k]);
                     }
                 }
 
@@ -183,13 +188,13 @@ pub fn intt126_ifma_ref<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTableInv<P>, da
             // nn == 2: add/sub only
             let mut block_start = 0usize;
             while block_start < n {
-                let p1 = 4 * block_start;
-                let p2 = 4 * (block_start + 1);
                 for k in 0..3 {
-                    let a = data[p1 + k];
-                    let b = data[p2 + k];
-                    data[p1 + k] = cond_sub_2q(a + b, q4[k]);
-                    data[p2 + k] = cond_sub_2q(a + q4[k] - b, q4[k]);
+                    let p1 = k * n + block_start;
+                    let p2 = k * n + block_start + 1;
+                    let a = data[p1];
+                    let b = data[p2];
+                    data[p1] = cond_sub_2q(a + b, q4[k]);
+                    data[p2] = cond_sub_2q(a + q4[k] - b, q4[k]);
                 }
                 block_start += 2;
             }
@@ -204,10 +209,10 @@ pub fn intt126_ifma_ref<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTableInv<P>, da
         let quot_base = seg_base + 4 * n;
         for i in 0..n {
             for k in 0..3 {
-                let a = data[4 * i + k];
+                let a = data[k * n + i];
                 let omega = table.powomega[omega_base + 4 * i + k];
                 let omega_quot = table.powomega[quot_base + 4 * i + k];
-                data[4 * i + k] = harvey_modmul(a, omega, omega_quot, P::Q[k]);
+                data[k * n + i] = harvey_modmul(a, omega, omega_quot, P::Q[k]);
             }
         }
     }
@@ -228,7 +233,7 @@ mod tests {
 
             let coeffs: Vec<i64> = (0..n as i64).map(|i| (i * 7 + 3) % 201 - 100).collect();
 
-            let mut data = vec![0u64; 4 * n];
+            let mut data = vec![0u64; 3 * n];
             b_ntt126_ifma_from_znx64_ref(n, &mut data, &coeffs);
             let data_orig = data.clone();
 
@@ -237,8 +242,8 @@ mod tests {
 
             for i in 0..n {
                 for k in 0..3 {
-                    let orig = data_orig[4 * i + k] % Primes42::Q[k];
-                    let got = data[4 * i + k] % Primes42::Q[k];
+                    let orig = data_orig[k * n + i] % Primes42::Q[k];
+                    let got = data[k * n + i] % Primes42::Q[k];
                     assert_eq!(orig, got, "n={n} i={i} k={k}: mismatch after NTT+iNTT round-trip");
                 }
             }
@@ -254,8 +259,8 @@ mod tests {
         let a: Vec<i64> = vec![1, 2, 0, 0, 0, 0, 0, 0];
         let b: Vec<i64> = vec![3, 4, 0, 0, 0, 0, 0, 0];
 
-        let mut da = vec![0u64; 4 * n];
-        let mut db = vec![0u64; 4 * n];
+        let mut da = vec![0u64; 3 * n];
+        let mut db = vec![0u64; 3 * n];
         b_ntt126_ifma_from_znx64_ref(n, &mut da, &a);
         b_ntt126_ifma_from_znx64_ref(n, &mut db, &b);
 
@@ -263,11 +268,11 @@ mod tests {
         ntt126_ifma_ref::<Primes42>(&fwd, &mut db);
 
         // Pointwise multiply (mod each Q[k])
-        let mut dc = vec![0u64; 4 * n];
+        let mut dc = vec![0u64; 3 * n];
         for i in 0..n {
             for k in 0..3 {
                 let q = Primes42::Q[k];
-                dc[4 * i + k] = ((da[4 * i + k] % q) as u128 * (db[4 * i + k] % q) as u128 % q as u128) as u64;
+                dc[k * n + i] = ((da[k * n + i] % q) as u128 * (db[k * n + i] % q) as u128 % q as u128) as u64;
             }
         }
 

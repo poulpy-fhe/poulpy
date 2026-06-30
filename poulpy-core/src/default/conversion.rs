@@ -232,7 +232,7 @@ where
     let lvl_0: usize = GLWE::<Vec<u8>>::bytes_of(
         module.n().into(),
         key_infos.base2k(),
-        lwe_infos.max_k().max(glwe_infos.max_k()),
+        lwe_infos.k().max(glwe_infos.k()),
         1u32.into(),
     );
 
@@ -271,7 +271,7 @@ pub fn glwe_from_lwe_default<BE, M, R, A, K>(
     let res_infos = GLWELayout {
         n: res.n(),
         base2k: res.base2k(),
-        k: res.max_k(),
+        k: res.k(),
         rank: res.rank(),
     };
     let lwe = lwe.to_backend_ref();
@@ -291,7 +291,7 @@ pub fn glwe_from_lwe_default<BE, M, R, A, K>(
     let (mut glwe, scratch_1) = scratch.take_glwe_scratch(&GLWELayout {
         n: ksk.n(),
         base2k: ksk.base2k(),
-        k: lwe.max_k(),
+        k: lwe.k(),
         rank: 1u32.into(),
     });
     module.vec_znx_zero_backend(&mut glwe.data, 0);
@@ -363,11 +363,11 @@ where
     let res_infos: GLWELayout = GLWELayout {
         n: module.n().into(),
         base2k: lwe_infos.base2k(),
-        k: lwe_infos.max_k(),
+        k: lwe_infos.k(),
         rank: Rank(1),
     };
 
-    let lvl_0: usize = GLWE::<Vec<u8>>::bytes_of(module.n().into(), lwe_infos.base2k(), lwe_infos.max_k(), 1u32.into());
+    let lvl_0: usize = GLWE::<Vec<u8>>::bytes_of(module.n().into(), lwe_infos.base2k(), lwe_infos.k(), 1u32.into());
     let lvl_1: usize = module.glwe_keyswitch_tmp_bytes_default(&res_infos, glwe_infos, key_infos);
     let lvl_2: usize = GLWE::<Vec<u8>>::bytes_of_from_infos(glwe_infos);
 
@@ -409,7 +409,7 @@ pub fn lwe_from_glwe_default<BE, M, R, A, K>(
     let glwe_layout: GLWELayout = GLWELayout {
         n: module.n().into(),
         base2k: res.base2k(),
-        k: res.max_k(),
+        k: res.k(),
         rank: Rank(1),
     };
 
@@ -505,13 +505,13 @@ where
     let rank: usize = res_infos.rank().into();
     let cols: usize = rank + 1;
 
-    let res_size: usize = res_infos.size();
-    let a_size: usize = res_infos.max_k().as_usize().div_ceil(tsk_base2k);
+    let a_size: usize = res_infos.k().as_usize().div_ceil(tsk_base2k);
+    let tsk_size: usize = tsk_infos.size();
 
     let lvl_0: usize = module.bytes_of_vec_znx_dft(cols - 1, a_size) + VecZnx::bytes_of(module.n(), 1, a_size);
-    let lvl_1_res_dft: usize = module.bytes_of_vec_znx_dft(cols, a_size);
-    let lvl_1_gglwe_prod: usize = module.gglwe_product_dft_tmp_bytes_default(res_size, a_size, tsk_infos);
-    let lvl_1_big: usize = module.bytes_of_vec_znx_big(cols, res_size)
+    let lvl_1_res_dft: usize = module.bytes_of_vec_znx_dft(cols, tsk_size);
+    let lvl_1_gglwe_prod: usize = module.gglwe_product_dft_tmp_bytes_default(tsk_size, a_size, tsk_infos);
+    let lvl_1_big: usize = module.bytes_of_vec_znx_big(cols, tsk_size)
         + module
             .vec_znx_idft_apply_tmp_bytes()
             .max(module.vec_znx_big_normalize_tmp_bytes());
@@ -552,7 +552,7 @@ where
     let rank: usize = res_backend.rank().into();
     let cols: usize = rank + 1;
 
-    let res_conv_size: usize = res_backend.max_k().as_usize().div_ceil(tsk_base2k);
+    let res_conv_size: usize = res_backend.k().as_usize().div_ceil(tsk_base2k);
     {
         let (mut a_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols - 1, res_conv_size);
         let (mut a_0, mut scratch_2) = scratch_1.take_vec_znx_scratch(module.n(), 1, res_conv_size);

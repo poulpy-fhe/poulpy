@@ -1,26 +1,38 @@
-//! Raw AVX512-IFMA forward and inverse NTT kernels.
+//! Raw AVX512-IFMA forward and inverse NTT kernels, 8 u64 lanes per `__m512i`.
 //!
-//! These kernels are the core arithmetic engine of the IFMA backend.
-//!
-//! - Butterfly values live in `[0, 4q)`; a single final pass renormalises to `[0, 2q)`.
-//! - Diff path feeds directly into Harvey without a pre-reduction (IFMA's 52-bit
-//!   product absorbs inputs up to `2^52`).
-//! - Harvey multiplication replaces the AVX2 split-precomputed multiply path.
-//! - Two coefficients are processed at a time through 512-bit loads where profitable.
+//! Forward: Cooley-Tukey, natural-order input -> bit-reversed output. Inverse:
+//! Gentleman-Sande, bit-reversed -> natural, with the `1/n` scale folded in.
+//! Butterfly values are kept under a lazy reduction (`[0, 4q)` forward,
+//! `[0, 2q)` inverse); the forward kernel ends with a single pass renormalising
+//! to `[0, q)`.
+
+// ----------------------------------------------------------------------
+// DISCLAIMER
+//
+// This module contains code that has been adapted from the Intel HEXL
+// library (https://github.com/intel/hexl), which is licensed under the
+// Apache License, Version 2.0.
+//
+// Unlike the spqlios-arithmetic ports, this is not a 1-to-1 port: the
+// kernels were reworked for Poulpy's three-prime CRT layout.
+//
+// Both Poulpy and HEXL are distributed under the terms of the Apache
+// License, Version 2.0. See the LICENSE file for details.
+//
+// ----------------------------------------------------------------------
 
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::{
-    __m256i, __m512i, _mm256_add_epi64, _mm256_and_si256, _mm256_loadu_si256, _mm256_madd52hi_epu64, _mm256_madd52lo_epu64,
-    _mm256_min_epu64, _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_storeu_si256, _mm256_sub_epi64, _mm512_add_epi64,
-    _mm512_and_si512, _mm512_castsi256_si512, _mm512_inserti64x4, _mm512_loadu_si512, _mm512_madd52hi_epu64,
-    _mm512_madd52lo_epu64, _mm512_min_epu64, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_storeu_si512, _mm512_sub_epi64,
+    __m128i, __m256i, __m512i, _mm_loadu_si128, _mm256_and_si256, _mm256_loadu_si256, _mm256_madd52hi_epu64,
+    _mm256_madd52lo_epu64, _mm256_min_epu64, _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_storeu_si256, _mm256_sub_epi64,
+    _mm512_add_epi64, _mm512_and_si512, _mm512_broadcast_i64x2, _mm512_broadcast_i64x4, _mm512_extracti64x4_epi64,
+    _mm512_loadu_si512, _mm512_madd52hi_epu64, _mm512_madd52lo_epu64, _mm512_mask_blend_epi64, _mm512_min_epu64,
+    _mm512_permutexvar_epi64, _mm512_set_epi64, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_storeu_si512, _mm512_sub_epi64,
 };
 
-use std::mem::size_of;
-
 use crate::ntt126_ifma::{
-    primes::PrimeSetNtt126Ifma,
-    tables::{Ntt126IfmaTable, Ntt126IfmaTableInv},
+    primes::{PrimeSetNtt126Ifma, modq_pow64},
+    tables::{Ntt126IfmaTable, Ntt126IfmaTableInv, cond_sub_2q, harvey_modmul, harvey_quotient},
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -29,10 +41,7 @@ use crate::ntt126_ifma::{
 
 /// Conditional subtract of `q2`: if x >= q2 (unsigned), return x - q2, else x.
 ///
-/// Uses the `min_epu64` identity: `min(x, x − q2 mod 2^64) == x − q2` when
-/// `x ≥ q2` (no underflow so the wrapped difference is smaller than x) and
-/// `== x` when `x < q2` (the wrapped difference is huge and `x` wins).
-/// This is 2 µops vs 4 for the MSB-flip / cmpgt idiom.
+/// Uses `min(x, x − q2 mod 2^64) == x − q2` when `x ≥ q2`, `== x` otherwise.
 #[inline]
 #[target_feature(enable = "avx512vl")]
 pub(crate) unsafe fn cond_sub_2q_si256(x: __m256i, q2: __m256i) -> __m256i {
@@ -42,14 +51,9 @@ pub(crate) unsafe fn cond_sub_2q_si256(x: __m256i, q2: __m256i) -> __m256i {
 
 /// Harvey modular multiply — 4 lanes.
 ///
-/// Input: `a ∈ [0, 2^52)` (in practice up to `8q` under lazy reduction),
-/// `omega ∈ [0, q)`.  Output: `r ∈ [0, 2q)` with `r ≡ a*omega (mod q)`.
-///
-/// Since `r = a·ω − qhat·q ∈ [0, 2q) ⊂ [0, 2^52)`, we only need the low-52
-/// bits of `a·ω` and `qhat·q`. Reconstructing full 64-bit products (mask +
-/// shift + add) is wasted work; `madd52lo` alone suffices, and a final mask
-/// to 52 bits handles the borrow case (when `lo52(a·ω) < lo52(qhat·q)` even
-/// though the mathematical difference is non-negative).
+/// Input: `a` up to `8q` (under lazy reduction), `omega ∈ [0, q)`. Output:
+/// `r ∈ [0, 2q)` with `r ≡ a*omega (mod q)`. Only the low 52 bits of `a·ω` and
+/// `qhat·q` are needed; the final mask to 52 bits handles the borrow.
 #[inline]
 #[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn harvey_modmul_si256(a: __m256i, omega: __m256i, omega_quot: __m256i, q: __m256i) -> __m256i {
@@ -90,935 +94,799 @@ pub(crate) unsafe fn harvey_modmul_si512(a: __m512i, omega: __m512i, omega_quot:
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// NTT butterfly kernels
+// Forward NTT (Cooley-Tukey, natural -> bit-reversed)
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Pack two consecutive `__m256i` values into one `__m512i`.
-#[inline(always)]
-unsafe fn pack_512(lo: __m256i, hi: __m256i) -> __m512i {
-    unsafe { _mm512_inserti64x4::<1>(_mm512_castsi256_si512(lo), hi) }
-}
-
-/// Fused level-0 twist and first butterfly level: for each pair
-/// `(i, i + n/2)`, twist both elements by their level-0 omegas, then apply
-/// the level-1 butterfly, saving one full store/reload pass over the data.
-/// Operations per element match the unfused sequence exactly.
-#[target_feature(enable = "avx512ifma")]
-#[allow(clippy::too_many_arguments)]
-unsafe fn ntt_iter_first_fused_ifma(
-    begin: *mut __m256i,
-    halfn: usize,
-    po0_omega: *const __m256i,
-    po0_quot: *const __m256i,
-    po1_omega: *const __m256i,
-    po1_quot: *const __m256i,
-    q: __m256i,
-    q4: __m256i,
-) {
-    unsafe {
-        let mut ptr1 = begin;
-        let mut ptr2 = begin.add(halfn);
-
-        // i = 0: twist both halves, butterfly without a level-1 twiddle.
-        {
-            let a = harvey_modmul_si256(
-                _mm256_loadu_si256(ptr1),
-                _mm256_loadu_si256(po0_omega),
-                _mm256_loadu_si256(po0_quot),
-                q,
-            );
-            let b = harvey_modmul_si256(
-                _mm256_loadu_si256(ptr2),
-                _mm256_loadu_si256(po0_omega.add(halfn)),
-                _mm256_loadu_si256(po0_quot.add(halfn)),
-                q,
-            );
-            let sum = cond_sub_2q_si256(_mm256_add_epi64(a, b), q4);
-            let diff = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(a, q4), b), q4);
-            _mm256_storeu_si256(ptr1, sum);
-            _mm256_storeu_si256(ptr2, diff);
-            ptr1 = ptr1.add(1);
-            ptr2 = ptr2.add(1);
-        }
-
-        // i = 1: peel so the 512-bit loop starts on even indices.
-        {
-            let a = harvey_modmul_si256(
-                _mm256_loadu_si256(ptr1),
-                _mm256_loadu_si256(po0_omega.add(1)),
-                _mm256_loadu_si256(po0_quot.add(1)),
-                q,
-            );
-            let b = harvey_modmul_si256(
-                _mm256_loadu_si256(ptr2),
-                _mm256_loadu_si256(po0_omega.add(halfn + 1)),
-                _mm256_loadu_si256(po0_quot.add(halfn + 1)),
-                q,
-            );
-            let sum = cond_sub_2q_si256(_mm256_add_epi64(a, b), q4);
-            let diff = _mm256_sub_epi64(_mm256_add_epi64(a, q4), b);
-            _mm256_storeu_si256(ptr1, sum);
-            _mm256_storeu_si256(
-                ptr2,
-                harvey_modmul_si256(diff, _mm256_loadu_si256(po1_omega), _mm256_loadu_si256(po1_quot), q),
-            );
-            ptr1 = ptr1.add(1);
-            ptr2 = ptr2.add(1);
-        }
-
-        // i = 2..halfn: 512-bit pairs.
-        let q_512 = pack_512(q, q);
-        let q4_512 = pack_512(q4, q4);
-        let pairs = (halfn - 2) / 2;
-        let tw0a_512 = po0_omega.add(2) as *const __m512i;
-        let tw0aq_512 = po0_quot.add(2) as *const __m512i;
-        let tw0b_512 = po0_omega.add(halfn + 2) as *const __m512i;
-        let tw0bq_512 = po0_quot.add(halfn + 2) as *const __m512i;
-        let tw1_512 = po1_omega.add(1) as *const __m512i;
-        let tw1q_512 = po1_quot.add(1) as *const __m512i;
-        for p in 0..pairs {
-            let a = harvey_modmul_si512(
-                _mm512_loadu_si512(ptr1 as *const __m512i),
-                _mm512_loadu_si512(tw0a_512.add(p)),
-                _mm512_loadu_si512(tw0aq_512.add(p)),
-                q_512,
-            );
-            let b = harvey_modmul_si512(
-                _mm512_loadu_si512(ptr2 as *const __m512i),
-                _mm512_loadu_si512(tw0b_512.add(p)),
-                _mm512_loadu_si512(tw0bq_512.add(p)),
-                q_512,
-            );
-            let sum = cond_sub_2q_si512(_mm512_add_epi64(a, b), q4_512);
-            let diff = _mm512_sub_epi64(_mm512_add_epi64(a, q4_512), b);
-            _mm512_storeu_si512(ptr1 as *mut __m512i, sum);
-            _mm512_storeu_si512(
-                ptr2 as *mut __m512i,
-                harvey_modmul_si512(
-                    diff,
-                    _mm512_loadu_si512(tw1_512.add(p)),
-                    _mm512_loadu_si512(tw1q_512.add(p)),
-                    q_512,
-                ),
-            );
-            ptr1 = ptr1.add(2);
-            ptr2 = ptr2.add(2);
-        }
-
-        // 256-bit tail.
-        for i in (2 + 2 * pairs)..halfn {
-            let a = harvey_modmul_si256(
-                _mm256_loadu_si256(ptr1),
-                _mm256_loadu_si256(po0_omega.add(i)),
-                _mm256_loadu_si256(po0_quot.add(i)),
-                q,
-            );
-            let b = harvey_modmul_si256(
-                _mm256_loadu_si256(ptr2),
-                _mm256_loadu_si256(po0_omega.add(halfn + i)),
-                _mm256_loadu_si256(po0_quot.add(halfn + i)),
-                q,
-            );
-            let sum = cond_sub_2q_si256(_mm256_add_epi64(a, b), q4);
-            let diff = _mm256_sub_epi64(_mm256_add_epi64(a, q4), b);
-            _mm256_storeu_si256(ptr1, sum);
-            _mm256_storeu_si256(
-                ptr2,
-                harvey_modmul_si256(
-                    diff,
-                    _mm256_loadu_si256(po1_omega.add(i - 1)),
-                    _mm256_loadu_si256(po1_quot.add(i - 1)),
-                    q,
-                ),
-            );
-            ptr1 = ptr1.add(1);
-            ptr2 = ptr2.add(1);
-        }
-    }
-}
-
-/// Level-0: `a[i] *= ω^i` using Harvey multiply.
-/// Uses 512-bit main loop with split twiddle layout.
-///
-/// `po_omega`: pointer to contiguous ω values for this segment.
-/// `po_quot`: pointer to contiguous ωq values for this segment.
-#[target_feature(enable = "avx512ifma")]
-unsafe fn ntt_iter_first_ifma(
-    begin: *mut __m256i,
-    end: *const __m256i,
-    po_omega: *const __m256i,
-    po_quot: *const __m256i,
-    q: __m256i,
-) {
-    unsafe {
-        let q_512 = pack_512(q, q);
-        let n_coeffs = (end as usize - begin as usize) / size_of::<__m256i>();
-
-        // 512-bit main loop: 2 coefficients at a time — single 512-bit load per twiddle
-        let pairs = n_coeffs / 2;
-        let data_512 = begin as *mut __m512i;
-        let omega_512 = po_omega as *const __m512i;
-        let quot_512 = po_quot as *const __m512i;
-        let unrolled_pairs = pairs / 2;
-        for i in 0..unrolled_pairs {
-            let base = i * 2;
-            let x0 = _mm512_loadu_si512(data_512.add(base));
-            let omega0 = _mm512_loadu_si512(omega_512.add(base));
-            let omega_quot0 = _mm512_loadu_si512(quot_512.add(base));
-            let x1 = _mm512_loadu_si512(data_512.add(base + 1));
-            let omega1 = _mm512_loadu_si512(omega_512.add(base + 1));
-            let omega_quot1 = _mm512_loadu_si512(quot_512.add(base + 1));
-            _mm512_storeu_si512(data_512.add(base), harvey_modmul_si512(x0, omega0, omega_quot0, q_512));
-            _mm512_storeu_si512(data_512.add(base + 1), harvey_modmul_si512(x1, omega1, omega_quot1, q_512));
-        }
-
-        if !pairs.is_multiple_of(2) {
-            let i = pairs - 1;
-            let x = _mm512_loadu_si512(data_512.add(i));
-            let omega = _mm512_loadu_si512(omega_512.add(i));
-            let omega_quot = _mm512_loadu_si512(quot_512.add(i));
-            _mm512_storeu_si512(data_512.add(i), harvey_modmul_si512(x, omega, omega_quot, q_512));
-        }
-
-        // 256-bit tail
-        if !n_coeffs.is_multiple_of(2) {
-            let idx = n_coeffs - 1;
-            let x = _mm256_loadu_si256(begin.add(idx));
-            let omega = _mm256_loadu_si256(po_omega.add(idx));
-            let omega_quot = _mm256_loadu_si256(po_quot.add(idx));
-            _mm256_storeu_si256(begin.add(idx), harvey_modmul_si256(x, omega, omega_quot, q));
-        }
-    }
-}
-
-/// Forward Cooley-Tukey butterfly with IFMA-native lazy arithmetic.
-/// Uses 512-bit inner loop with split twiddle layout.
-///
-/// All inputs and outputs in `[0, 4q)`.  Sum path subtracts `4q`; diff path
-/// is fed directly into the Harvey multiply (which absorbs the reduction).
-#[target_feature(enable = "avx512ifma")]
+/// Forward (decimation-in-time) radix-2 butterfly, lazy `[0, 4q)`: given `x`,
+/// `y` in `[0, 4q)`, twiddle `w` (`w_precon` its Harvey/Shoup quotient) and
+/// `q2 = 2q`, returns `(x', y')` in `[0, 4q)` with `x' = X + WY`,
+/// `y' = X - WY (mod q)`.
 #[inline]
-unsafe fn ntt_iter_ifma(
-    nn: usize,
-    begin: *mut __m256i,
-    end: *const __m256i,
-    q: __m256i,
-    q4: __m256i,
-    po_omega: *const __m256i,
-    po_quot: *const __m256i,
-) {
+#[target_feature(enable = "avx512ifma,avx512f")]
+unsafe fn fwd_butterfly_si512(
+    x: __m512i,
+    y: __m512i,
+    w: __m512i,
+    w_precon: __m512i,
+    q: __m512i,
+    q2: __m512i,
+) -> (__m512i, __m512i) {
     unsafe {
-        let halfnn = nn / 2;
-        let q_512 = pack_512(q, q);
-        let q4_512 = pack_512(q4, q4);
-        let mut data = begin;
-        while (data as usize) < (end as usize) {
-            let mut ptr1 = data;
-            let mut ptr2 = data.add(halfnn);
-
-            // i = 0: no twiddle (both sides use cond_sub_4q)
-            {
-                let a = _mm256_loadu_si256(ptr1);
-                let b = _mm256_loadu_si256(ptr2);
-                let sum = cond_sub_2q_si256(_mm256_add_epi64(a, b), q4);
-                let diff = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(a, q4), b), q4);
-                _mm256_storeu_si256(ptr1, sum);
-                _mm256_storeu_si256(ptr2, diff);
-                ptr1 = ptr1.add(1);
-                ptr2 = ptr2.add(1);
-            }
-
-            // i = 1..halfnn-1: diff fed directly into Harvey (split layout).
-            // Peel i=1 so the wide data loop starts on a 64-byte boundary.
-            let remaining = halfnn - 1;
-            let twiddle_shift = if remaining > 0 {
-                let a = _mm256_loadu_si256(ptr1);
-                let b = _mm256_loadu_si256(ptr2);
-                let sum = cond_sub_2q_si256(_mm256_add_epi64(a, b), q4);
-                let diff = _mm256_sub_epi64(_mm256_add_epi64(a, q4), b);
-                let omega = _mm256_loadu_si256(po_omega);
-                let omega_quot = _mm256_loadu_si256(po_quot);
-                _mm256_storeu_si256(ptr1, sum);
-                _mm256_storeu_si256(ptr2, harvey_modmul_si256(diff, omega, omega_quot, q));
-                ptr1 = ptr1.add(1);
-                ptr2 = ptr2.add(1);
-                1
-            } else {
-                0
-            };
-            let remaining = remaining - twiddle_shift;
-
-            // 512-bit pairs, unrolled to expose independent Harvey chains.
-            let pairs = remaining / 2;
-            let omega_512 = po_omega.add(twiddle_shift) as *const __m512i;
-            let quot_512 = po_quot.add(twiddle_shift) as *const __m512i;
-            let quads = pairs / 4;
-            for p in 0..quads {
-                let base = p * 4;
-
-                let av0 = _mm512_loadu_si512(ptr1 as *const __m512i);
-                let bv0 = _mm512_loadu_si512(ptr2 as *const __m512i);
-                let av1 = _mm512_loadu_si512(ptr1.add(2) as *const __m512i);
-                let bv1 = _mm512_loadu_si512(ptr2.add(2) as *const __m512i);
-                let av2 = _mm512_loadu_si512(ptr1.add(4) as *const __m512i);
-                let bv2 = _mm512_loadu_si512(ptr2.add(4) as *const __m512i);
-                let av3 = _mm512_loadu_si512(ptr1.add(6) as *const __m512i);
-                let bv3 = _mm512_loadu_si512(ptr2.add(6) as *const __m512i);
-
-                let omega0 = _mm512_loadu_si512(omega_512.add(base));
-                let omega1 = _mm512_loadu_si512(omega_512.add(base + 1));
-                let omega2 = _mm512_loadu_si512(omega_512.add(base + 2));
-                let omega3 = _mm512_loadu_si512(omega_512.add(base + 3));
-                let omega_quot0 = _mm512_loadu_si512(quot_512.add(base));
-                let omega_quot1 = _mm512_loadu_si512(quot_512.add(base + 1));
-                let omega_quot2 = _mm512_loadu_si512(quot_512.add(base + 2));
-                let omega_quot3 = _mm512_loadu_si512(quot_512.add(base + 3));
-
-                let sum0 = cond_sub_2q_si512(_mm512_add_epi64(av0, bv0), q4_512);
-                let sum1 = cond_sub_2q_si512(_mm512_add_epi64(av1, bv1), q4_512);
-                let sum2 = cond_sub_2q_si512(_mm512_add_epi64(av2, bv2), q4_512);
-                let sum3 = cond_sub_2q_si512(_mm512_add_epi64(av3, bv3), q4_512);
-
-                let diff0 = _mm512_sub_epi64(_mm512_add_epi64(av0, q4_512), bv0);
-                let diff1 = _mm512_sub_epi64(_mm512_add_epi64(av1, q4_512), bv1);
-                let diff2 = _mm512_sub_epi64(_mm512_add_epi64(av2, q4_512), bv2);
-                let diff3 = _mm512_sub_epi64(_mm512_add_epi64(av3, q4_512), bv3);
-
-                let out0 = harvey_modmul_si512(diff0, omega0, omega_quot0, q_512);
-                let out1 = harvey_modmul_si512(diff1, omega1, omega_quot1, q_512);
-                let out2 = harvey_modmul_si512(diff2, omega2, omega_quot2, q_512);
-                let out3 = harvey_modmul_si512(diff3, omega3, omega_quot3, q_512);
-
-                _mm512_storeu_si512(ptr1 as *mut __m512i, sum0);
-                _mm512_storeu_si512(ptr1.add(2) as *mut __m512i, sum1);
-                _mm512_storeu_si512(ptr1.add(4) as *mut __m512i, sum2);
-                _mm512_storeu_si512(ptr1.add(6) as *mut __m512i, sum3);
-                _mm512_storeu_si512(ptr2 as *mut __m512i, out0);
-                _mm512_storeu_si512(ptr2.add(2) as *mut __m512i, out1);
-                _mm512_storeu_si512(ptr2.add(4) as *mut __m512i, out2);
-                _mm512_storeu_si512(ptr2.add(6) as *mut __m512i, out3);
-
-                ptr1 = ptr1.add(8);
-                ptr2 = ptr2.add(8);
-            }
-
-            // Pair-at-a-time tail (0..3 remaining pairs).
-            let mut p_idx = quads * 4;
-            while p_idx < pairs {
-                let av = _mm512_loadu_si512(ptr1 as *const __m512i);
-                let bv = _mm512_loadu_si512(ptr2 as *const __m512i);
-                let sum = cond_sub_2q_si512(_mm512_add_epi64(av, bv), q4_512);
-                let diff = _mm512_sub_epi64(_mm512_add_epi64(av, q4_512), bv);
-                let omega = _mm512_loadu_si512(omega_512.add(p_idx));
-                let omega_quot = _mm512_loadu_si512(quot_512.add(p_idx));
-                _mm512_storeu_si512(ptr1 as *mut __m512i, sum);
-                _mm512_storeu_si512(ptr2 as *mut __m512i, harvey_modmul_si512(diff, omega, omega_quot, q_512));
-                ptr1 = ptr1.add(2);
-                ptr2 = ptr2.add(2);
-                p_idx += 1;
-            }
-
-            // 256-bit tail
-            if !remaining.is_multiple_of(2) {
-                let tail_idx = twiddle_shift + pairs * 2;
-                let a = _mm256_loadu_si256(ptr1);
-                let b = _mm256_loadu_si256(ptr2);
-                let sum = cond_sub_2q_si256(_mm256_add_epi64(a, b), q4);
-                let diff = _mm256_sub_epi64(_mm256_add_epi64(a, q4), b);
-                let omega = _mm256_loadu_si256(po_omega.add(tail_idx));
-                let omega_quot = _mm256_loadu_si256(po_quot.add(tail_idx));
-                _mm256_storeu_si256(ptr1, sum);
-                _mm256_storeu_si256(ptr2, harvey_modmul_si256(diff, omega, omega_quot, q));
-            }
-            data = data.add(nn);
-        }
+        let x_red = cond_sub_2q_si512(x, q2);
+        let t = harvey_modmul_si512(y, w, w_precon, q);
+        let x_out = _mm512_add_epi64(x_red, t);
+        let y_out = _mm512_add_epi64(x_red, _mm512_sub_epi64(q2, t)); // both [0, 4q)
+        (x_out, y_out)
     }
 }
 
-/// Inverse Gentleman-Sande butterfly with IFMA-native lazy arithmetic.
-/// Uses 512-bit inner loop with split twiddle layout.
-///
-/// All inputs and outputs in `[0, 4q)`.  `b_raw ∈ [0, 4q)` is fed directly into
-/// Harvey (output `∈ [0, 2q)`); sum/diff use `cond_sub_4q`.
-#[target_feature(enable = "avx512ifma")]
+/// Forward distance-1 interleaved load: gathers the even/odd lanes of two
+/// consecutive registers into the `(x, y)` operand pair for a `t = 1` stage.
 #[inline]
-unsafe fn intt_iter_ifma(
-    nn: usize,
-    begin: *mut __m256i,
-    end: *const __m256i,
-    q: __m256i,
-    q4: __m256i,
-    po_omega: *const __m256i,
-    po_quot: *const __m256i,
-) {
+#[target_feature(enable = "avx512f")]
+unsafe fn load_fwd_interleaved_t1(arg: *const u64) -> (__m512i, __m512i) {
     unsafe {
-        let halfnn = nn / 2;
-        let q_512 = pack_512(q, q);
-        let q4_512 = pack_512(q4, q4);
-        let mut data = begin;
-        while (data as usize) < (end as usize) {
-            let mut ptr1 = data;
-            let mut ptr2 = data.add(halfnn);
-
-            // i = 0: no twiddle
-            {
-                let a = _mm256_loadu_si256(ptr1);
-                let b = _mm256_loadu_si256(ptr2);
-                let sum = cond_sub_2q_si256(_mm256_add_epi64(a, b), q4);
-                let diff = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(a, q4), b), q4);
-                _mm256_storeu_si256(ptr1, sum);
-                _mm256_storeu_si256(ptr2, diff);
-                ptr1 = ptr1.add(1);
-                ptr2 = ptr2.add(1);
-            }
-
-            // Peel i=1 so the wide data loop starts on a 64-byte boundary.
-            let remaining = halfnn - 1;
-            let twiddle_shift = if remaining > 0 {
-                let a = _mm256_loadu_si256(ptr1);
-                let b = _mm256_loadu_si256(ptr2);
-                let omega = _mm256_loadu_si256(po_omega);
-                let omega_quot = _mm256_loadu_si256(po_quot);
-                let bo = harvey_modmul_si256(b, omega, omega_quot, q);
-                let sum = cond_sub_2q_si256(_mm256_add_epi64(a, bo), q4);
-                let diff = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(a, q4), bo), q4);
-                _mm256_storeu_si256(ptr1, sum);
-                _mm256_storeu_si256(ptr2, diff);
-                ptr1 = ptr1.add(1);
-                ptr2 = ptr2.add(1);
-                1
-            } else {
-                0
-            };
-            let remaining = remaining - twiddle_shift;
-
-            // 512-bit pairs, unrolled to expose independent Harvey chains.
-            let pairs = remaining / 2;
-            let omega_512 = po_omega.add(twiddle_shift) as *const __m512i;
-            let quot_512 = po_quot.add(twiddle_shift) as *const __m512i;
-            let quads = pairs / 4;
-            for p in 0..quads {
-                let base = p * 4;
-
-                let bv0 = _mm512_loadu_si512(ptr2 as *const __m512i);
-                let bv1 = _mm512_loadu_si512(ptr2.add(2) as *const __m512i);
-                let bv2 = _mm512_loadu_si512(ptr2.add(4) as *const __m512i);
-                let bv3 = _mm512_loadu_si512(ptr2.add(6) as *const __m512i);
-
-                let omega0 = _mm512_loadu_si512(omega_512.add(base));
-                let omega1 = _mm512_loadu_si512(omega_512.add(base + 1));
-                let omega2 = _mm512_loadu_si512(omega_512.add(base + 2));
-                let omega3 = _mm512_loadu_si512(omega_512.add(base + 3));
-                let omega_quot0 = _mm512_loadu_si512(quot_512.add(base));
-                let omega_quot1 = _mm512_loadu_si512(quot_512.add(base + 1));
-                let omega_quot2 = _mm512_loadu_si512(quot_512.add(base + 2));
-                let omega_quot3 = _mm512_loadu_si512(quot_512.add(base + 3));
-
-                let bo0 = harvey_modmul_si512(bv0, omega0, omega_quot0, q_512);
-                let bo1 = harvey_modmul_si512(bv1, omega1, omega_quot1, q_512);
-                let bo2 = harvey_modmul_si512(bv2, omega2, omega_quot2, q_512);
-                let bo3 = harvey_modmul_si512(bv3, omega3, omega_quot3, q_512);
-
-                let av0 = _mm512_loadu_si512(ptr1 as *const __m512i);
-                let av1 = _mm512_loadu_si512(ptr1.add(2) as *const __m512i);
-                let av2 = _mm512_loadu_si512(ptr1.add(4) as *const __m512i);
-                let av3 = _mm512_loadu_si512(ptr1.add(6) as *const __m512i);
-
-                let sum0 = cond_sub_2q_si512(_mm512_add_epi64(av0, bo0), q4_512);
-                let sum1 = cond_sub_2q_si512(_mm512_add_epi64(av1, bo1), q4_512);
-                let sum2 = cond_sub_2q_si512(_mm512_add_epi64(av2, bo2), q4_512);
-                let sum3 = cond_sub_2q_si512(_mm512_add_epi64(av3, bo3), q4_512);
-
-                let diff0 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(av0, q4_512), bo0), q4_512);
-                let diff1 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(av1, q4_512), bo1), q4_512);
-                let diff2 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(av2, q4_512), bo2), q4_512);
-                let diff3 = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(av3, q4_512), bo3), q4_512);
-
-                _mm512_storeu_si512(ptr1 as *mut __m512i, sum0);
-                _mm512_storeu_si512(ptr1.add(2) as *mut __m512i, sum1);
-                _mm512_storeu_si512(ptr1.add(4) as *mut __m512i, sum2);
-                _mm512_storeu_si512(ptr1.add(6) as *mut __m512i, sum3);
-                _mm512_storeu_si512(ptr2 as *mut __m512i, diff0);
-                _mm512_storeu_si512(ptr2.add(2) as *mut __m512i, diff1);
-                _mm512_storeu_si512(ptr2.add(4) as *mut __m512i, diff2);
-                _mm512_storeu_si512(ptr2.add(6) as *mut __m512i, diff3);
-
-                ptr1 = ptr1.add(8);
-                ptr2 = ptr2.add(8);
-            }
-
-            // Pair-at-a-time tail (0..3 remaining pairs).
-            let mut p_idx = quads * 4;
-            while p_idx < pairs {
-                let av = _mm512_loadu_si512(ptr1 as *const __m512i);
-                let bv = _mm512_loadu_si512(ptr2 as *const __m512i);
-                let omega = _mm512_loadu_si512(omega_512.add(p_idx));
-                let omega_quot = _mm512_loadu_si512(quot_512.add(p_idx));
-                let bo = harvey_modmul_si512(bv, omega, omega_quot, q_512);
-                let sum = cond_sub_2q_si512(_mm512_add_epi64(av, bo), q4_512);
-                let diff = cond_sub_2q_si512(_mm512_sub_epi64(_mm512_add_epi64(av, q4_512), bo), q4_512);
-                _mm512_storeu_si512(ptr1 as *mut __m512i, sum);
-                _mm512_storeu_si512(ptr2 as *mut __m512i, diff);
-                ptr1 = ptr1.add(2);
-                ptr2 = ptr2.add(2);
-                p_idx += 1;
-            }
-
-            // 256-bit tail
-            if !remaining.is_multiple_of(2) {
-                let tail_idx = twiddle_shift + pairs * 2;
-                let a = _mm256_loadu_si256(ptr1);
-                let b = _mm256_loadu_si256(ptr2);
-                let omega = _mm256_loadu_si256(po_omega.add(tail_idx));
-                let omega_quot = _mm256_loadu_si256(po_quot.add(tail_idx));
-                let bo = harvey_modmul_si256(b, omega, omega_quot, q);
-                let sum = cond_sub_2q_si256(_mm256_add_epi64(a, bo), q4);
-                let diff = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(a, q4), bo), q4);
-                _mm256_storeu_si256(ptr1, sum);
-                _mm256_storeu_si256(ptr2, diff);
-            }
-            data = data.add(nn);
-        }
+        let v1 = _mm512_loadu_si512(arg as *const __m512i);
+        let v2 = _mm512_loadu_si512(arg.add(8) as *const __m512i);
+        let perm = _mm512_set_epi64(6, 7, 4, 5, 2, 3, 0, 1);
+        let v1p = _mm512_permutexvar_epi64(perm, v1);
+        let v2p = _mm512_permutexvar_epi64(perm, v2);
+        let out1 = _mm512_mask_blend_epi64(0xaa, v1, v2p);
+        let out2 = _mm512_mask_blend_epi64(0xaa, v1p, v2);
+        (out1, out2)
     }
 }
 
-/// Forward mirror of [`intt_radix8_first3_ifma`]: fuses the last three
-/// butterfly levels (`nn = 8, 4, 2`) of each block in one register pass.
-/// Twiddles are block-independent; operations per element match the unfused
-/// per-level sequence exactly.
-#[target_feature(enable = "avx512ifma")]
+/// Forward distance-2 interleaved load: gathers 2-lane groups of two
+/// consecutive registers into the `(x, y)` operand pair for a `t = 2` stage.
+#[inline]
+#[target_feature(enable = "avx512f")]
+unsafe fn load_fwd_interleaved_t2(arg: *const u64) -> (__m512i, __m512i) {
+    unsafe {
+        let v1 = _mm512_loadu_si512(arg as *const __m512i);
+        let v2 = _mm512_loadu_si512(arg.add(8) as *const __m512i);
+        let perm = _mm512_set_epi64(5, 4, 7, 6, 1, 0, 3, 2);
+        let v1p = _mm512_permutexvar_epi64(perm, v1);
+        let v2p = _mm512_permutexvar_epi64(perm, v2);
+        let out1 = _mm512_mask_blend_epi64(0xcc, v1, v2p);
+        let out2 = _mm512_mask_blend_epi64(0xcc, v1p, v2);
+        (out1, out2)
+    }
+}
+
+/// Forward distance-4 interleaved load: gathers 4-lane halves of two
+/// consecutive registers into the `(x, y)` operand pair for a `t = 4` stage.
+#[inline]
+#[target_feature(enable = "avx512f")]
+unsafe fn load_fwd_interleaved_t4(arg: *const u64) -> (__m512i, __m512i) {
+    unsafe {
+        let vperm2 = _mm512_set_epi64(3, 2, 1, 0, 7, 6, 5, 4);
+        let v_7to0 = _mm512_loadu_si512(arg as *const __m512i);
+        let v_15to8 = _mm512_loadu_si512(arg.add(8) as *const __m512i);
+        let perm_hi = _mm512_permutexvar_epi64(vperm2, v_15to8);
+        let out1 = _mm512_mask_blend_epi64(0x0f, perm_hi, v_7to0);
+        let out2 = _mm512_mask_blend_epi64(0xf0, perm_hi, v_7to0);
+        let out2 = _mm512_permutexvar_epi64(vperm2, out2);
+        (out1, out2)
+    }
+}
+
+/// Inverse permutation of [`load_fwd_interleaved_t1`]: scatters the butterfly
+/// outputs of a `t = 1` stage back to their natural in-plane positions.
+#[inline]
+#[target_feature(enable = "avx512f")]
+unsafe fn write_fwd_interleaved_t1(arg1: __m512i, arg2: __m512i, out: *mut u64) {
+    unsafe {
+        let vperm2 = _mm512_set_epi64(3, 2, 1, 0, 7, 6, 5, 4);
+        let v_x_out = _mm512_set_epi64(7, 3, 6, 2, 5, 1, 4, 0);
+        let v_y_out = _mm512_set_epi64(3, 7, 2, 6, 1, 5, 0, 4);
+        let arg2 = _mm512_permutexvar_epi64(vperm2, arg2);
+        let perm_lo = _mm512_mask_blend_epi64(0x0f, arg1, arg2);
+        let perm_hi = _mm512_mask_blend_epi64(0xf0, arg1, arg2);
+        let a1 = _mm512_permutexvar_epi64(v_x_out, perm_hi);
+        let a2 = _mm512_permutexvar_epi64(v_y_out, perm_lo);
+        _mm512_storeu_si512(out as *mut __m512i, a1);
+        _mm512_storeu_si512(out.add(8) as *mut __m512i, a2);
+    }
+}
+
+/// Largest sub-transform handled directly by the breadth-first base case.
+/// Sub-transforms larger than this split depth-first for cache locality.
+const BASE_NTT_SIZE: usize = 1024;
+
+/// Breadth-first forward transform of one sub-plane of length `n_sub`.
+///
+/// `(depth, half)` locate the sub-plane within the depth-first recursion so the
+/// shared full-`n` root tables can be indexed: broadcast stages
+/// (`t = n_sub/2, …, 8`) start at `W_idx = (m << depth) + half * m` and double
+/// `W_idx` per stage; `tail_offset` then maps `W_idx` into the duplicated `tail`
+/// block layout (using `N = n_sub << depth`).
+#[inline]
+#[target_feature(enable = "avx512ifma,avx512vl")]
 #[allow(clippy::too_many_arguments)]
-unsafe fn ntt_radix8_last3_ifma(
-    begin: *mut __m256i,
-    end: *const __m256i,
-    q: __m256i,
-    q4: __m256i,
-    w8: *const __m256i,
-    w8q: *const __m256i,
-    w4: *const __m256i,
-    w4q: *const __m256i,
+unsafe fn fwd_plane_base(
+    ptr: *mut u64,
+    n_sub: usize,
+    depth: u32,
+    half: usize,
+    root: &[u64],
+    precon: &[u64],
+    tail: &[u64],
+    tail_p: &[u64],
+    q: u64,
+    q2: u64,
+    q_v: __m512i,
+    q2_v: __m512i,
 ) {
     unsafe {
-        let w8_1 = _mm256_loadu_si256(w8);
-        let w8_2 = _mm256_loadu_si256(w8.add(1));
-        let w8_3 = _mm256_loadu_si256(w8.add(2));
-        let w8_1q = _mm256_loadu_si256(w8q);
-        let w8_2q = _mm256_loadu_si256(w8q.add(1));
-        let w8_3q = _mm256_loadu_si256(w8q.add(2));
-        let w4_1 = _mm256_loadu_si256(w4);
-        let w4_1q = _mm256_loadu_si256(w4q);
+        // Broadcast-twiddle stages: t = n_sub/2, n_sub/4, …, 8.
+        let mut t = n_sub / 2;
+        let mut m = 1usize;
+        let mut w_idx = (m << depth) + half * m;
+        while t >= 8 {
+            let mut j1 = 0usize;
+            for i in 0..m {
+                let w = root[w_idx + i];
+                let w_precon = precon[w_idx + i];
+                let w_v = _mm512_set1_epi64(w as i64);
+                let w_precon_v = _mm512_set1_epi64(w_precon as i64);
 
-        let mut ptr = begin;
-        while (ptr as usize) < (end as usize) {
-            let a0 = _mm256_loadu_si256(ptr);
-            let a1 = _mm256_loadu_si256(ptr.add(1));
-            let a2 = _mm256_loadu_si256(ptr.add(2));
-            let a3 = _mm256_loadu_si256(ptr.add(3));
-            let a4 = _mm256_loadu_si256(ptr.add(4));
-            let a5 = _mm256_loadu_si256(ptr.add(5));
-            let a6 = _mm256_loadu_si256(ptr.add(6));
-            let a7 = _mm256_loadu_si256(ptr.add(7));
-
-            // nn=8: identity at i=0, twiddles w8_{1,2,3} at i=1..3.
-            let u0 = cond_sub_2q_si256(_mm256_add_epi64(a0, a4), q4);
-            let u4 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(a0, q4), a4), q4);
-            let u1 = cond_sub_2q_si256(_mm256_add_epi64(a1, a5), q4);
-            let u5 = harvey_modmul_si256(_mm256_sub_epi64(_mm256_add_epi64(a1, q4), a5), w8_1, w8_1q, q);
-            let u2 = cond_sub_2q_si256(_mm256_add_epi64(a2, a6), q4);
-            let u6 = harvey_modmul_si256(_mm256_sub_epi64(_mm256_add_epi64(a2, q4), a6), w8_2, w8_2q, q);
-            let u3 = cond_sub_2q_si256(_mm256_add_epi64(a3, a7), q4);
-            let u7 = harvey_modmul_si256(_mm256_sub_epi64(_mm256_add_epi64(a3, q4), a7), w8_3, w8_3q, q);
-
-            // nn=4: identity at i=0, twiddle w4 at i=1, per half-block.
-            let v0 = cond_sub_2q_si256(_mm256_add_epi64(u0, u2), q4);
-            let v2 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(u0, q4), u2), q4);
-            let v1 = cond_sub_2q_si256(_mm256_add_epi64(u1, u3), q4);
-            let v3 = harvey_modmul_si256(_mm256_sub_epi64(_mm256_add_epi64(u1, q4), u3), w4_1, w4_1q, q);
-            let v4 = cond_sub_2q_si256(_mm256_add_epi64(u4, u6), q4);
-            let v6 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(u4, q4), u6), q4);
-            let v5 = cond_sub_2q_si256(_mm256_add_epi64(u5, u7), q4);
-            let v7 = harvey_modmul_si256(_mm256_sub_epi64(_mm256_add_epi64(u5, q4), u7), w4_1, w4_1q, q);
-
-            // nn=2: 4 identity butterflies.
-            let o0 = cond_sub_2q_si256(_mm256_add_epi64(v0, v1), q4);
-            let o1 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(v0, q4), v1), q4);
-            let o2 = cond_sub_2q_si256(_mm256_add_epi64(v2, v3), q4);
-            let o3 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(v2, q4), v3), q4);
-            let o4 = cond_sub_2q_si256(_mm256_add_epi64(v4, v5), q4);
-            let o5 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(v4, q4), v5), q4);
-            let o6 = cond_sub_2q_si256(_mm256_add_epi64(v6, v7), q4);
-            let o7 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(v6, q4), v7), q4);
-
-            _mm256_storeu_si256(ptr, o0);
-            _mm256_storeu_si256(ptr.add(1), o1);
-            _mm256_storeu_si256(ptr.add(2), o2);
-            _mm256_storeu_si256(ptr.add(3), o3);
-            _mm256_storeu_si256(ptr.add(4), o4);
-            _mm256_storeu_si256(ptr.add(5), o5);
-            _mm256_storeu_si256(ptr.add(6), o6);
-            _mm256_storeu_si256(ptr.add(7), o7);
-
-            ptr = ptr.add(8);
-        }
-    }
-}
-
-/// Fused iNTT pass covering `nn = 2, 4, 8` in registers.
-///
-/// Twiddle layout in `po_base` (level-2 has no twiddles):
-///   [0]=ω₄ [1]=ω₄ quot | [2..5)=ω₈^{1,2,3} [5..8)=ω₈ quots.
-#[target_feature(enable = "avx512ifma,avx512vl")]
-unsafe fn intt_radix8_first3_ifma(begin: *mut __m256i, end: *const __m256i, q: __m256i, q4: __m256i, po_base: *const __m256i) {
-    unsafe {
-        let w4 = _mm256_loadu_si256(po_base);
-        let w4q = _mm256_loadu_si256(po_base.add(1));
-        let w8_1 = _mm256_loadu_si256(po_base.add(2));
-        let w8_2 = _mm256_loadu_si256(po_base.add(3));
-        let w8_3 = _mm256_loadu_si256(po_base.add(4));
-        let w8_1q = _mm256_loadu_si256(po_base.add(5));
-        let w8_2q = _mm256_loadu_si256(po_base.add(6));
-        let w8_3q = _mm256_loadu_si256(po_base.add(7));
-
-        let mut ptr = begin;
-        while (ptr as usize) < (end as usize) {
-            let a0 = _mm256_loadu_si256(ptr);
-            let a1 = _mm256_loadu_si256(ptr.add(1));
-            let a2 = _mm256_loadu_si256(ptr.add(2));
-            let a3 = _mm256_loadu_si256(ptr.add(3));
-            let a4 = _mm256_loadu_si256(ptr.add(4));
-            let a5 = _mm256_loadu_si256(ptr.add(5));
-            let a6 = _mm256_loadu_si256(ptr.add(6));
-            let a7 = _mm256_loadu_si256(ptr.add(7));
-
-            // nn=2: 4 identity butterflies.
-            let t0 = cond_sub_2q_si256(_mm256_add_epi64(a0, a1), q4);
-            let t1 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(a0, q4), a1), q4);
-            let t2 = cond_sub_2q_si256(_mm256_add_epi64(a2, a3), q4);
-            let t3 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(a2, q4), a3), q4);
-            let t4 = cond_sub_2q_si256(_mm256_add_epi64(a4, a5), q4);
-            let t5 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(a4, q4), a5), q4);
-            let t6 = cond_sub_2q_si256(_mm256_add_epi64(a6, a7), q4);
-            let t7 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(a6, q4), a7), q4);
-
-            // nn=4: identity at i=0, twiddle w4 at i=1, for each half-block.
-            let u0 = cond_sub_2q_si256(_mm256_add_epi64(t0, t2), q4);
-            let u2 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(t0, q4), t2), q4);
-            let bo13 = harvey_modmul_si256(t3, w4, w4q, q);
-            let u1 = cond_sub_2q_si256(_mm256_add_epi64(t1, bo13), q4);
-            let u3 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(t1, q4), bo13), q4);
-
-            let u4 = cond_sub_2q_si256(_mm256_add_epi64(t4, t6), q4);
-            let u6 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(t4, q4), t6), q4);
-            let bo57 = harvey_modmul_si256(t7, w4, w4q, q);
-            let u5 = cond_sub_2q_si256(_mm256_add_epi64(t5, bo57), q4);
-            let u7 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(t5, q4), bo57), q4);
-
-            // nn=8: identity at i=0, twiddles w8_{1,2,3} at i=1..3.
-            let v0 = cond_sub_2q_si256(_mm256_add_epi64(u0, u4), q4);
-            let v4 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(u0, q4), u4), q4);
-            let bo15 = harvey_modmul_si256(u5, w8_1, w8_1q, q);
-            let v1 = cond_sub_2q_si256(_mm256_add_epi64(u1, bo15), q4);
-            let v5 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(u1, q4), bo15), q4);
-            let bo26 = harvey_modmul_si256(u6, w8_2, w8_2q, q);
-            let v2 = cond_sub_2q_si256(_mm256_add_epi64(u2, bo26), q4);
-            let v6 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(u2, q4), bo26), q4);
-            let bo37 = harvey_modmul_si256(u7, w8_3, w8_3q, q);
-            let v3 = cond_sub_2q_si256(_mm256_add_epi64(u3, bo37), q4);
-            let v7 = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(u3, q4), bo37), q4);
-
-            _mm256_storeu_si256(ptr, v0);
-            _mm256_storeu_si256(ptr.add(1), v1);
-            _mm256_storeu_si256(ptr.add(2), v2);
-            _mm256_storeu_si256(ptr.add(3), v3);
-            _mm256_storeu_si256(ptr.add(4), v4);
-            _mm256_storeu_si256(ptr.add(5), v5);
-            _mm256_storeu_si256(ptr.add(6), v6);
-            _mm256_storeu_si256(ptr.add(7), v7);
-
-            ptr = ptr.add(8);
-        }
-    }
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Public: forward NTT
-// ──────────────────────────────────────────────────────────────────────────────
-
-/// Algorithmic block size for the blocked NTT. Once butterfly size drops to
-/// this many coefficients, we stop sweeping all data per level and instead
-/// run the remaining levels fully inside each block before moving on.
-///
-/// Each block holds `NTT_BLOCK * 32` bytes of data (3-prime CRT, 4 x u64 per
-/// coefficient). At `256`, the block is 8 KiB, leaving room in L1d for twiddle
-/// streams and other live data without assuming a specific higher-level
-/// parameter set.
-const NTT_BLOCK: usize = 256;
-
-/// Forward NTT — AVX512-IFMA accelerated, split twiddle layout.
-///
-/// Butterfly values live in `[0, 4q)`; a final pass renormalises to `[0, 2q)`.
-/// Butterfly levels larger than `NTT_BLOCK` run breadth-first; inner levels
-/// (≤ `NTT_BLOCK`) are performed block-by-block, keeping the working set in
-/// cache across all remaining levels.
-#[target_feature(enable = "avx512ifma,avx512vl")]
-pub(crate) unsafe fn ntt_avx512<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTable<P>, data: &mut [u64]) {
-    unsafe {
-        ntt_avx512_no_final::<P>(table, data);
-
-        let n = table.n;
-        if n == 1 {
-            return;
-        }
-        let q2 = _mm256_loadu_si256(table.q2.as_ptr() as *const __m256i);
-        let q2_512 = pack_512(q2, q2);
-        let ptr_512 = data.as_mut_ptr() as *mut __m512i;
-        let chunks = n / 2;
-        for i in 0..chunks {
-            let x = _mm512_loadu_si512(ptr_512.add(i));
-            _mm512_storeu_si512(ptr_512.add(i), cond_sub_2q_si512(x, q2_512));
-        }
-    }
-}
-
-/// Forward NTT without the final `[0, 4q) -> [0, 2q)` normalisation pass.
-#[target_feature(enable = "avx512ifma,avx512vl")]
-unsafe fn ntt_avx512_no_final<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTable<P>, data: &mut [u64]) {
-    let n = table.n;
-    if n == 1 {
-        return;
-    }
-
-    unsafe {
-        let begin = data.as_mut_ptr() as *mut __m256i;
-        let end = begin.add(n) as *const __m256i;
-        let po_base = table.powomega.as_ptr() as *const __m256i;
-
-        let q = {
-            let a = P::Q[0];
-            let b = P::Q[1];
-            let c = P::Q[2];
-            use core::arch::x86_64::_mm256_set_epi64x;
-            _mm256_set_epi64x(0, c as i64, b as i64, a as i64)
-        };
-        let q4 = _mm256_loadu_si256(table.q4.as_ptr() as *const __m256i);
-
-        let mut seg_avx = 0usize;
-        let block = NTT_BLOCK.min(n);
-        let mut nn = n;
-
-        if n > block {
-            // Level 0 (a[i] *= ω^i) fused with the first butterfly level.
-            let halfn = n / 2;
-            let count = halfn - 1;
-            ntt_iter_first_fused_ifma(
-                begin,
-                halfn,
-                po_base,
-                po_base.add(n),
-                po_base.add(2 * n),
-                po_base.add(2 * n + count),
-                q,
-                q4,
-            );
-            seg_avx = 2 * n + 2 * count;
-            nn = halfn;
-        } else {
-            // Level 0: a[i] *= ω^i.
-            ntt_iter_first_ifma(begin, end, po_base.add(seg_avx), po_base.add(seg_avx + n), q);
-            seg_avx += 2 * n;
-        }
-
-        // Upper butterfly levels (breadth-first) while nn > NTT_BLOCK.
-        while nn > block {
-            let halfnn = nn / 2;
-            let count = halfnn - 1;
-            ntt_iter_ifma(nn, begin, end, q, q4, po_base.add(seg_avx), po_base.add(seg_avx + count));
-            seg_avx += 2 * count;
-            nn /= 2;
-        }
-
-        // Precompute segment offsets for each remaining level (nn, nn/2, …, 2).
-        let mut inner_segs = [0usize; 17];
-        let mut inner_nn = [0usize; 17];
-        let mut num_inner = 0usize;
-        {
-            let mut m = nn;
-            let mut s = seg_avx;
-            while m >= 2 {
-                inner_nn[num_inner] = m;
-                inner_segs[num_inner] = s;
-                let halfm = m / 2;
-                if halfm > 1 {
-                    s += 2 * (halfm - 1);
+                // t/8 independent vector butterflies over (j, j+t).
+                let mut j = j1;
+                while j < j1 + t {
+                    let xp = ptr.add(j) as *mut __m512i;
+                    let yp = ptr.add(j + t) as *mut __m512i;
+                    let x_in = _mm512_loadu_si512(xp as *const __m512i);
+                    let y_in = _mm512_loadu_si512(yp as *const __m512i);
+                    let x_red = cond_sub_2q_si512(x_in, q2_v);
+                    let tt = harvey_modmul_si512(y_in, w_v, w_precon_v, q_v);
+                    let x_out = _mm512_add_epi64(x_red, tt);
+                    let y_out = _mm512_sub_epi64(_mm512_add_epi64(x_red, q2_v), tt);
+                    _mm512_storeu_si512(xp, x_out);
+                    _mm512_storeu_si512(yp, y_out);
+                    j += 8;
                 }
-                m /= 2;
-                num_inner += 1;
+                j1 += 2 * t;
             }
+            t >>= 1;
+            m <<= 1;
+            w_idx <<= 1;
         }
 
-        // Inner levels (depth-first by block): run the whole remaining level
-        // sequence inside each block before moving to the next.  Each block
-        // is `nn = NTT_BLOCK` coefficients; subsequent levels subdivide it.
-        let mut blk_start = 0usize;
-        while blk_start < n {
-            let blk_begin = begin.add(blk_start);
-            let blk_end = begin.add(blk_start + nn) as *const __m256i;
-            for i in 0..num_inner {
-                let m = inner_nn[i];
-                let seg = inner_segs[i];
-                if m == 8 {
-                    // Levels nn = 8, 4, 2 fused in one register pass.
-                    let seg4 = inner_segs[i + 1];
-                    ntt_radix8_last3_ifma(
-                        blk_begin,
-                        blk_end,
-                        q,
-                        q4,
-                        po_base.add(seg),
-                        po_base.add(seg + 3),
-                        po_base.add(seg4),
-                        po_base.add(seg4 + 1),
-                    );
+        // Map a broadcast `W_idx` into the duplicated `tail` block layout.
+        // `N` is the full transform size; the three tail blocks (t = 4, 2, 1)
+        // sit at local offsets 0, N/2, N, all reachable as `new_idx - N/8`.
+        let big_n = n_sub << depth;
+        let tail_offset = |idx: usize| -> usize {
+            let new_idx = if idx <= big_n / 8 {
+                idx
+            } else if idx <= big_n / 4 {
+                (idx - big_n / 8) * 4 + big_n / 8
+            } else if idx <= big_n / 2 {
+                (idx - big_n / 4) * 2 + 5 * big_n / 8
+            } else {
+                idx + 5 * big_n / 8
+            };
+            new_idx - big_n / 8
+        };
+
+        // Tail stages: t = 4, 2, 1.
+        if n_sub >= 16 {
+            // t = 4 stage, m = n_sub/8. Distance-4 root block.
+            {
+                let off = tail_offset(w_idx);
+                let mut w_ptr = tail.as_ptr().add(off);
+                let mut wp_ptr = tail_p.as_ptr().add(off);
+                let mut j1 = 0usize;
+                while j1 < n_sub {
+                    let (vx, vy) = load_fwd_interleaved_t4(ptr.add(j1));
+                    let w_v = _mm512_loadu_si512(w_ptr as *const __m512i);
+                    let wp_v = _mm512_loadu_si512(wp_ptr as *const __m512i);
+                    let (vx, vy) = fwd_butterfly_si512(vx, vy, w_v, wp_v, q_v, q2_v);
+                    _mm512_storeu_si512(ptr.add(j1) as *mut __m512i, vx);
+                    _mm512_storeu_si512(ptr.add(j1 + 8) as *mut __m512i, vy);
+                    w_ptr = w_ptr.add(8);
+                    wp_ptr = wp_ptr.add(8);
+                    j1 += 16;
+                }
+            }
+
+            // t = 2 stage, m = n_sub/4. Distance-2 root block.
+            {
+                let off = tail_offset(w_idx << 1);
+                let mut w_ptr = tail.as_ptr().add(off);
+                let mut wp_ptr = tail_p.as_ptr().add(off);
+                let mut j1 = 0usize;
+                while j1 < n_sub {
+                    let (vx, vy) = load_fwd_interleaved_t2(ptr.add(j1));
+                    let w_v = _mm512_loadu_si512(w_ptr as *const __m512i);
+                    let wp_v = _mm512_loadu_si512(wp_ptr as *const __m512i);
+                    let (vx, vy) = fwd_butterfly_si512(vx, vy, w_v, wp_v, q_v, q2_v);
+                    _mm512_storeu_si512(ptr.add(j1) as *mut __m512i, vx);
+                    _mm512_storeu_si512(ptr.add(j1 + 8) as *mut __m512i, vy);
+                    w_ptr = w_ptr.add(8);
+                    wp_ptr = wp_ptr.add(8);
+                    j1 += 16;
+                }
+            }
+
+            // t = 1 stage, m = n_sub/2. Distance-1 root block.
+            {
+                let off = tail_offset(w_idx << 2);
+                let mut w_ptr = tail.as_ptr().add(off);
+                let mut wp_ptr = tail_p.as_ptr().add(off);
+                let mut j1 = 0usize;
+                while j1 < n_sub {
+                    let (vx, vy) = load_fwd_interleaved_t1(ptr.add(j1));
+                    let w_v = _mm512_loadu_si512(w_ptr as *const __m512i);
+                    let wp_v = _mm512_loadu_si512(wp_ptr as *const __m512i);
+                    let (vx, vy) = fwd_butterfly_si512(vx, vy, w_v, wp_v, q_v, q2_v);
+                    write_fwd_interleaved_t1(vx, vy, ptr.add(j1));
+                    w_ptr = w_ptr.add(8);
+                    wp_ptr = wp_ptr.add(8);
+                    j1 += 16;
+                }
+            }
+        } else {
+            // Scalar tail (n_sub < 16): t = 4, 2, 1. Only reached at depth 0,
+            // where W_idx == m, matching the non-duplicated `root` layout.
+            while t >= 1 {
+                let mut j1 = 0usize;
+                for i in 0..m {
+                    let w = root[m + i];
+                    let w_precon = precon[m + i];
+                    for j in j1..j1 + t {
+                        let x_in = *ptr.add(j);
+                        let y_in = *ptr.add(j + t);
+                        let x_red = cond_sub_2q(x_in, q2);
+                        let tt = harvey_modmul(y_in, w, w_precon, q);
+                        *ptr.add(j) = x_red + tt;
+                        *ptr.add(j + t) = x_red + q2 - tt;
+                    }
+                    j1 += 2 * t;
+                }
+                if t == 1 {
                     break;
                 }
-                let count = m / 2 - 1;
-                ntt_iter_ifma(m, blk_begin, blk_end, q, q4, po_base.add(seg), po_base.add(seg + count));
+                t >>= 1;
+                m <<= 1;
             }
-            blk_start += nn;
         }
     }
 }
 
-/// [`ntt_avx512`] variant that writes the final normalised x2-blocks to
-/// strided rows: block `i` lands at `dst[i * row_stride + row_off]` (u64
-/// units). Used by the convolution prepare to skip a separate scatter pass.
+/// Depth-first forward transform of one sub-plane of length `n_sub`.
+///
+/// For `n_sub > BASE_NTT_SIZE`, runs the single top broadcast stage (distance
+/// `n_sub/2`, one twiddle group) then recurses into the two halves. For
+/// `n_sub <= BASE_NTT_SIZE`, falls through to the breadth-first base case.
+///
+/// `ILM` (depth-0 only): top-stage input is canonical, so its precondition is skipped.
+#[inline]
 #[target_feature(enable = "avx512ifma,avx512vl")]
-pub(crate) unsafe fn ntt_avx512_to_rows<P: PrimeSetNtt126Ifma>(
-    table: &Ntt126IfmaTable<P>,
-    data: &mut [u64],
-    dst: &mut [u64],
-    row_stride: usize,
-    row_off: usize,
+#[allow(clippy::too_many_arguments)]
+unsafe fn fwd_plane<const ILM: bool>(
+    ptr: *mut u64,
+    n_sub: usize,
+    depth: u32,
+    half: usize,
+    root: &[u64],
+    precon: &[u64],
+    tail: &[u64],
+    tail_p: &[u64],
+    q: u64,
+    q2: u64,
+    q_v: __m512i,
+    q2_v: __m512i,
 ) {
     unsafe {
-        ntt_avx512_no_final::<P>(table, data);
-
-        let n = table.n;
-        let q2 = _mm256_loadu_si256(table.q2.as_ptr() as *const __m256i);
-        let q2_512 = pack_512(q2, q2);
-        let src_512 = data.as_ptr() as *const __m512i;
-        let chunks = n / 2;
-        for i in 0..chunks {
-            let x = _mm512_loadu_si512(src_512.add(i));
-            let out = dst.as_mut_ptr().add(i * row_stride + row_off) as *mut __m512i;
-            _mm512_storeu_si512(out, cond_sub_2q_si512(x, q2_512));
+        if n_sub <= BASE_NTT_SIZE {
+            // Base case keeps the precondition (small-n top stage isn't worth a split).
+            fwd_plane_base(ptr, n_sub, depth, half, root, precon, tail, tail_p, q, q2, q_v, q2_v);
+            return;
         }
+
+        // Top broadcast stage: distance t = n_sub/2, single twiddle group.
+        let t = n_sub / 2;
+        let w_idx = (1usize << depth) + half;
+        let w = root[w_idx];
+        let w_precon = precon[w_idx];
+        let w_v = _mm512_set1_epi64(w as i64);
+        let w_precon_v = _mm512_set1_epi64(w_precon as i64);
+        let mut j = 0usize;
+        while j < t {
+            let xp = ptr.add(j) as *mut __m512i;
+            let yp = ptr.add(j + t) as *mut __m512i;
+            let x_in = _mm512_loadu_si512(xp as *const __m512i);
+            let y_in = _mm512_loadu_si512(yp as *const __m512i);
+            let x_red = if ILM { x_in } else { cond_sub_2q_si512(x_in, q2_v) };
+            let tt = harvey_modmul_si512(y_in, w_v, w_precon_v, q_v);
+            let x_out = _mm512_add_epi64(x_red, tt);
+            let y_out = _mm512_sub_epi64(_mm512_add_epi64(x_red, q2_v), tt);
+            _mm512_storeu_si512(xp, x_out);
+            _mm512_storeu_si512(yp, y_out);
+            j += 8;
+        }
+
+        // Recurse into the two halves (inputs now [0, 4q): no ILM).
+        let half_n = n_sub / 2;
+        fwd_plane::<false>(ptr, half_n, depth + 1, half * 2, root, precon, tail, tail_p, q, q2, q_v, q2_v);
+        fwd_plane::<false>(
+            ptr.add(half_n),
+            half_n,
+            depth + 1,
+            half * 2 + 1,
+            root,
+            precon,
+            tail,
+            tail_p,
+            q,
+            q2,
+            q_v,
+            q2_v,
+        );
     }
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Public: inverse NTT
-// ──────────────────────────────────────────────────────────────────────────────
-
-/// Inverse NTT — AVX512-IFMA accelerated, split twiddle layout.
+/// Forward NTT (Cooley-Tukey, natural-order input -> bit-reversed output,
+/// negacyclic).
 ///
-/// Butterfly values live in `[0, 4q)`.  The final pointwise Harvey pass reduces
-/// to `[0, 2q)` automatically.  Inner levels (≤ `NTT_BLOCK`) are performed
-/// block-by-block to keep the working set in cache across all levels.
+/// `data` holds 3 contiguous planes of length `n` (`data[k*n .. (k+1)*n]`); each
+/// plane is transformed in place with prime `Q[k]` and its scrambled roots.
+/// Input is assumed canonical (`[0, q)`). `lazy_output` leaves the result in
+/// `[0, 4q)` instead of `[0, q)`, skipping the final reduction; use it for
+/// consumers that re-reduce (`c_from_b`, the BBC product, whose bound is `2^44 > 4q`).
 #[target_feature(enable = "avx512ifma,avx512vl")]
-#[inline]
-pub(crate) unsafe fn intt_avx512<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTableInv<P>, data: &mut [u64]) {
+pub(crate) unsafe fn ntt_avx512<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTable<P>, data: &mut [u64], lazy_output: bool) {
     let n = table.n;
-    if n == 1 {
+    debug_assert_eq!(data.len(), 3 * n, "data must hold 3 planes of length n");
+    if n < 2 {
         return;
     }
 
     unsafe {
-        let begin = data.as_mut_ptr() as *mut __m256i;
-        let end = begin.add(n) as *const __m256i;
-        let po_base = table.powomega.as_ptr() as *const __m256i;
+        for k in 0..3 {
+            let q = P::Q[k];
+            let q2 = 2 * q;
+            let plane = &mut data[k * n..(k + 1) * n];
+            let root = &table.root[k * n..(k + 1) * n];
+            let precon = &table.root_quot[k * n..(k + 1) * n];
 
-        let q = {
-            let a = P::Q[0];
-            let b = P::Q[1];
-            let c = P::Q[2];
-            use core::arch::x86_64::_mm256_set_epi64x;
-            _mm256_set_epi64x(0, c as i64, b as i64, a as i64)
-        };
-        let q4 = _mm256_loadu_si256(table.q4.as_ptr() as *const __m256i);
+            let q_v = _mm512_set1_epi64(q as i64);
+            let q2_v = _mm512_set1_epi64(q2 as i64);
 
-        let block = NTT_BLOCK.min(n);
+            let ptr = plane.as_mut_ptr();
 
-        // Precompute segment offsets for inner (block-local) levels: nn = 2, 4, …, block.
-        let mut inner_segs = [0usize; 17];
-        let mut inner_nn = [0usize; 17];
-        let mut num_inner = 0usize;
-        let mut seg_avx = 0usize;
+            // Duplicated tail roots for the t = 4, 2, 1 stages (empty for n < 16).
+            let (tail, tail_p): (&[u64], &[u64]) = if n >= 16 {
+                let stride = 3 * n / 2;
+                (
+                    &table.tail_root[k * stride..(k + 1) * stride],
+                    &table.tail_quot[k * stride..(k + 1) * stride],
+                )
+            } else {
+                (&[], &[])
+            };
+
+            // Depth-first transform; the depth-0 top stage skips its precondition.
+            fwd_plane::<true>(ptr, n, 0, 0, root, precon, tail, tail_p, q, q2, q_v, q2_v);
+
+            // Final reduction [0, 4q) -> [0, q), skipped on lazy output.
+            if !lazy_output {
+                let mut off = 0usize;
+                while off < n {
+                    let xp = ptr.add(off) as *mut __m512i;
+                    let x = cond_sub_2q_si512(_mm512_loadu_si512(xp as *const __m512i), q2_v);
+                    let x = cond_sub_2q_si512(x, q_v);
+                    _mm512_storeu_si512(xp, x);
+                    off += 8;
+                }
+            }
+        }
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Inverse NTT (Gentleman-Sande, bit-reversed -> natural)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/// Inverse Gentleman-Sande radix-2 butterfly, lazy `[0, 2q)`: given `x`, `y`
+/// in `[0, 2q)`, twiddle `w` (`w_precon` its Harvey/Shoup quotient) and
+/// `q2 = 2q`, returns `(x', y')` in `[0, 2q)` with `x' = X + Y`,
+/// `y' = (X - Y) W (mod q)`.
+#[inline]
+#[target_feature(enable = "avx512ifma,avx512f")]
+unsafe fn inv_butterfly_si512(
+    x: __m512i,
+    y: __m512i,
+    w: __m512i,
+    w_precon: __m512i,
+    q: __m512i,
+    q2: __m512i,
+) -> (__m512i, __m512i) {
+    unsafe {
+        let x_out = cond_sub_2q_si512(_mm512_add_epi64(x, y), q2);
+        let t = _mm512_sub_epi64(_mm512_add_epi64(x, q2), y); // X+2q-Y in (0,4q)
+        let y_out = harvey_modmul_si512(t, w, w_precon, q); // both [0,2q)
+        (x_out, y_out)
+    }
+}
+
+/// Inverse distance-1 interleaved load: gathers the even/odd lanes of two
+/// consecutive registers into the `(x, y)` operand pair for a `t = 1` stage.
+#[inline]
+#[target_feature(enable = "avx512f")]
+unsafe fn load_inv_interleaved_t1(arg: *const u64) -> (__m512i, __m512i) {
+    unsafe {
+        let vhi = _mm512_set_epi64(6, 4, 2, 0, 7, 5, 3, 1);
+        let vlo = _mm512_set_epi64(7, 5, 3, 1, 6, 4, 2, 0);
+        let vp2 = _mm512_set_epi64(3, 2, 1, 0, 7, 6, 5, 4);
+        let a = _mm512_loadu_si512(arg as *const __m512i);
+        let b = _mm512_loadu_si512(arg.add(8) as *const __m512i);
+        let plo = _mm512_permutexvar_epi64(vlo, a);
+        let phi = _mm512_permutexvar_epi64(vhi, b);
+        let o1 = _mm512_mask_blend_epi64(0x0f, phi, plo);
+        let o2 = _mm512_mask_blend_epi64(0xf0, phi, plo);
+        let o2 = _mm512_permutexvar_epi64(vp2, o2);
+        (o1, o2)
+    }
+}
+
+/// Inverse distance-2 interleaved load: gathers 2-lane groups of two
+/// consecutive registers into the `(x, y)` operand pair for a `t = 2` stage.
+#[inline]
+#[target_feature(enable = "avx512f")]
+unsafe fn load_inv_interleaved_t2(arg: *const u64) -> (__m512i, __m512i) {
+    unsafe {
+        let perm = _mm512_set_epi64(6, 7, 4, 5, 2, 3, 0, 1);
+        let a = _mm512_loadu_si512(arg as *const __m512i);
+        let b = _mm512_loadu_si512(arg.add(8) as *const __m512i);
+        let ap = _mm512_permutexvar_epi64(perm, a);
+        let bp = _mm512_permutexvar_epi64(perm, b);
+        let o1 = _mm512_mask_blend_epi64(0xaa, a, bp);
+        let o2 = _mm512_mask_blend_epi64(0xaa, ap, b);
+        (o1, o2)
+    }
+}
+
+/// Inverse distance-4 interleaved load: gathers 4-lane halves of two
+/// consecutive registers into the `(x, y)` operand pair for a `t = 4` stage.
+#[inline]
+#[target_feature(enable = "avx512f")]
+unsafe fn load_inv_interleaved_t4(arg: *const u64) -> (__m512i, __m512i) {
+    unsafe {
+        let perm = _mm512_set_epi64(5, 4, 7, 6, 1, 0, 3, 2);
+        let a = _mm512_loadu_si512(arg as *const __m512i);
+        let b = _mm512_loadu_si512(arg.add(8) as *const __m512i);
+        let ap = _mm512_permutexvar_epi64(perm, a);
+        let bp = _mm512_permutexvar_epi64(perm, b);
+        let o1 = _mm512_mask_blend_epi64(0xcc, a, bp);
+        let o2 = _mm512_mask_blend_epi64(0xcc, ap, b);
+        (o1, o2)
+    }
+}
+
+/// Inverse permutation of [`load_inv_interleaved_t4`]: scatters the butterfly
+/// outputs of a `t = 4` stage back to their natural positions as 4 × `__m256i`.
+#[inline]
+#[target_feature(enable = "avx512f")]
+unsafe fn write_inv_interleaved_t4(x: __m512i, y: __m512i, out: *mut u64) {
+    unsafe {
+        let x0 = _mm512_extracti64x4_epi64::<0>(x);
+        let x1 = _mm512_extracti64x4_epi64::<1>(x);
+        let y0 = _mm512_extracti64x4_epi64::<0>(y);
+        let y1 = _mm512_extracti64x4_epi64::<1>(y);
+        _mm256_storeu_si256(out as *mut __m256i, x0);
+        _mm256_storeu_si256(out.add(4) as *mut __m256i, y0);
+        _mm256_storeu_si256(out.add(8) as *mut __m256i, x1);
+        _mm256_storeu_si256(out.add(12) as *mut __m256i, y1);
+    }
+}
+
+/// Distance-2 twiddle load: read 4 consecutive u64 roots, broadcast each into
+/// 2 lanes to match the operand layout of a `t = 2` stage.
+#[inline]
+#[target_feature(enable = "avx512f")]
+unsafe fn load_w_op_t2(arg: *const u64) -> __m512i {
+    unsafe {
+        let vp = _mm512_set_epi64(3, 3, 2, 2, 1, 1, 0, 0);
+        let w = _mm512_broadcast_i64x4(_mm256_loadu_si256(arg as *const __m256i));
+        _mm512_permutexvar_epi64(vp, w)
+    }
+}
+
+/// Distance-4 twiddle load: read 2 consecutive u64 roots, broadcast each into
+/// 4 lanes to match the operand layout of a `t = 4` stage.
+#[inline]
+#[target_feature(enable = "avx512f")]
+unsafe fn load_w_op_t4(arg: *const u64) -> __m512i {
+    unsafe {
+        let vp = _mm512_set_epi64(1, 1, 1, 1, 0, 0, 0, 0);
+        let w = _mm512_broadcast_i64x2(_mm_loadu_si128(arg as *const __m128i));
+        _mm512_permutexvar_epi64(vp, w)
+    }
+}
+
+/// Broadcast-twiddle inverse stage: distance `t`, `m` twiddle groups, reading
+/// roots from `inv[wi..]`. Each group does `t/8` independent vector butterflies.
+#[inline]
+#[target_feature(enable = "avx512ifma,avx512vl")]
+#[allow(clippy::too_many_arguments)]
+unsafe fn inv_broadcast_stage(
+    ptr: *mut u64,
+    t: usize,
+    m: usize,
+    inv: &[u64],
+    ip: &[u64],
+    wi: usize,
+    q_v: __m512i,
+    q2_v: __m512i,
+) {
+    unsafe {
+        for i in 0..m {
+            let w_v = _mm512_set1_epi64(inv[wi + i] as i64);
+            let wp_v = _mm512_set1_epi64(ip[wi + i] as i64);
+            let j1 = i * (2 * t);
+            let mut j = 0usize;
+            while j < t {
+                let xp = ptr.add(j1 + j) as *mut __m512i;
+                let yp = ptr.add(j1 + j + t) as *mut __m512i;
+                let x = _mm512_loadu_si512(xp as *const __m512i);
+                let y = _mm512_loadu_si512(yp as *const __m512i);
+                let (x, y) = inv_butterfly_si512(x, y, w_v, wp_v, q_v, q2_v);
+                _mm512_storeu_si512(xp, x);
+                _mm512_storeu_si512(yp, y);
+                j += 8;
+            }
+        }
+    }
+}
+
+/// Breadth-first inverse transform of one sub-plane of length `n_sub`.
+///
+/// Runs all stages except the single `m = 1` (distance `n_sub/2`) stage, which
+/// the caller performs (a parent recursion level, or the `1/n`-folding final
+/// pass at depth 0). `(depth, half)` thread the running root index `wi` into the
+/// shared full-`n` `inv`/`ip` tables; returns `wi` for the deferred stage.
+#[inline]
+#[target_feature(enable = "avx512ifma,avx512vl")]
+#[allow(clippy::too_many_arguments)]
+unsafe fn inv_plane_base(
+    ptr: *mut u64,
+    n_sub: usize,
+    depth: u32,
+    half: usize,
+    inv: &[u64],
+    ip: &[u64],
+    q_v: __m512i,
+    q2_v: __m512i,
+) -> usize {
+    unsafe {
+        let mut m = n_sub / 2;
+        let mut wi = 1 + m * half;
+        // Root-index increment between stages, halved as m halves.
+        let mut wi_delta = (m / 2) * ((1usize << (depth + 1)) - half);
+
+        // t = 1 stage, m = n_sub/2. One vectorized root per butterfly.
         {
-            let mut m = 2usize;
-            while m <= block {
-                inner_nn[num_inner] = m;
-                inner_segs[num_inner] = seg_avx;
-                let halfm = m / 2;
-                if halfm > 1 {
-                    seg_avx += 2 * (halfm - 1);
-                }
-                m *= 2;
-                num_inner += 1;
+            let mut j1 = 0usize;
+            let mut iter = 0usize;
+            while iter < m / 8 {
+                let (vx, vy) = load_inv_interleaved_t1(ptr.add(j1));
+                let vw = _mm512_loadu_si512(inv.as_ptr().add(wi + 8 * iter) as *const __m512i);
+                let vwp = _mm512_loadu_si512(ip.as_ptr().add(wi + 8 * iter) as *const __m512i);
+                let (vx, vy) = inv_butterfly_si512(vx, vy, vw, vwp, q_v, q2_v);
+                _mm512_storeu_si512(ptr.add(j1) as *mut __m512i, vx);
+                _mm512_storeu_si512(ptr.add(j1 + 8) as *mut __m512i, vy);
+                j1 += 16;
+                iter += 1;
             }
+            m >>= 1;
+            wi += wi_delta;
+            wi_delta >>= 1;
         }
 
-        // Fuse nn=2,4,8 into a single radix-8 pass when available.
-        let radix8_start = num_inner >= 3;
-        let inner_start = if radix8_start { 3 } else { 0 };
-
-        let mut blk_start = 0usize;
-        while blk_start < n {
-            let blk_begin = begin.add(blk_start);
-            let blk_end = begin.add(blk_start + block) as *const __m256i;
-
-            if radix8_start {
-                intt_radix8_first3_ifma(blk_begin, blk_end, q, q4, po_base);
+        // t = 2 stage, m = n_sub/4. Each root duplicated into 2 lanes.
+        {
+            let mut j1 = 0usize;
+            let mut iter = 0usize;
+            while iter < m / 4 {
+                let (vx, vy) = load_inv_interleaved_t2(ptr.add(j1));
+                let vw = load_w_op_t2(inv.as_ptr().add(wi + 4 * iter));
+                let vwp = load_w_op_t2(ip.as_ptr().add(wi + 4 * iter));
+                let (vx, vy) = inv_butterfly_si512(vx, vy, vw, vwp, q_v, q2_v);
+                _mm512_storeu_si512(ptr.add(j1) as *mut __m512i, vx);
+                _mm512_storeu_si512(ptr.add(j1 + 8) as *mut __m512i, vy);
+                j1 += 16;
+                iter += 1;
             }
+            m >>= 1;
+            wi += wi_delta;
+            wi_delta >>= 1;
+        }
 
-            for i in inner_start..num_inner {
-                let m = inner_nn[i];
-                let halfm = m / 2;
-                let seg = inner_segs[i];
-                if halfm > 1 {
-                    let count = halfm - 1;
-                    intt_iter_ifma(m, blk_begin, blk_end, q, q4, po_base.add(seg), po_base.add(seg + count));
-                } else {
-                    // m == 2: add/sub only.
-                    let mut p1 = blk_begin;
-                    let mut p2 = blk_begin.add(1);
-                    while (p1 as usize) < (blk_end as usize) {
-                        let a = _mm256_loadu_si256(p1);
-                        let b = _mm256_loadu_si256(p2);
-                        let sum = cond_sub_2q_si256(_mm256_add_epi64(a, b), q4);
-                        let diff = cond_sub_2q_si256(_mm256_sub_epi64(_mm256_add_epi64(a, q4), b), q4);
-                        _mm256_storeu_si256(p1, sum);
-                        _mm256_storeu_si256(p2, diff);
-                        p1 = p1.add(2);
-                        p2 = p2.add(2);
+        // t = 4 stage, m = n_sub/8. Each root duplicated into 4 lanes.
+        {
+            let mut j1 = 0usize;
+            let mut iter = 0usize;
+            while iter < m / 2 {
+                let (vx, vy) = load_inv_interleaved_t4(ptr.add(j1));
+                let vw = load_w_op_t4(inv.as_ptr().add(wi + 2 * iter));
+                let vwp = load_w_op_t4(ip.as_ptr().add(wi + 2 * iter));
+                let (vx, vy) = inv_butterfly_si512(vx, vy, vw, vwp, q_v, q2_v);
+                write_inv_interleaved_t4(vx, vy, ptr.add(j1));
+                j1 += 16;
+                iter += 1;
+            }
+            m >>= 1;
+            wi += wi_delta;
+            wi_delta >>= 1;
+        }
+
+        // Broadcast-twiddle stages: t = 8, 16, …, n_sub/4 (m = n_sub/16 down to 2).
+        let mut t = 8usize;
+        while m > 1 {
+            inv_broadcast_stage(ptr, t, m, inv, ip, wi, q_v, q2_v);
+            m >>= 1;
+            wi += wi_delta;
+            wi_delta >>= 1;
+            t *= 2;
+        }
+
+        // Deferred m = 1 (distance n_sub/2) stage's root index.
+        wi
+    }
+}
+
+/// Depth-first inverse transform of one sub-plane of length `n_sub`.
+///
+/// For `n_sub > BASE_NTT_SIZE`, recurses into the two halves first, then runs
+/// the merge stage (`m = 2`, distance `n_sub/4`); otherwise runs the base case.
+/// Either way the single `m = 1` (distance `n_sub/2`) stage is deferred to the
+/// caller; its root index is returned.
+#[inline]
+#[target_feature(enable = "avx512ifma,avx512vl")]
+#[allow(clippy::too_many_arguments)]
+unsafe fn inv_plane(
+    ptr: *mut u64,
+    n_sub: usize,
+    depth: u32,
+    half: usize,
+    inv: &[u64],
+    ip: &[u64],
+    q_v: __m512i,
+    q2_v: __m512i,
+) -> usize {
+    unsafe {
+        if n_sub <= BASE_NTT_SIZE {
+            return inv_plane_base(ptr, n_sub, depth, half, inv, ip, q_v, q2_v);
+        }
+
+        let half_n = n_sub / 2;
+        inv_plane(ptr, half_n, depth + 1, half * 2, inv, ip, q_v, q2_v);
+        inv_plane(ptr.add(half_n), half_n, depth + 1, half * 2 + 1, inv, ip, q_v, q2_v);
+
+        // Advance the root index past the stages the halves already ran, then
+        // run the single merge stage (m = 2, distance n_sub/4) that finishes
+        // both halves' deferred top butterflies.
+        let mut m = n_sub / 2;
+        let mut wi = 1 + m * half;
+        let mut wi_delta = (m / 2) * ((1usize << (depth + 1)) - half);
+        let mut t = 1usize;
+        while m > 2 {
+            t <<= 1;
+            wi += wi_delta;
+            wi_delta >>= 1;
+            m >>= 1;
+        }
+        // m == 2: merge stage at distance t = n_sub/4.
+        inv_broadcast_stage(ptr, t, 2, inv, ip, wi, q_v, q2_v);
+        wi += wi_delta;
+
+        // Deferred m = 1 (distance n_sub/2) stage's root index.
+        wi
+    }
+}
+
+/// Inverse NTT (Gentleman-Sande, bit-reversed input -> natural-order output,
+/// negacyclic), with the `1/n` scale folded into the final stage.
+///
+/// `data` holds 3 contiguous planes of length `n` (`data[k*n .. (k+1)*n]`); each
+/// plane is transformed in place with prime `Q[k]` and that plane's reordered
+/// inverse roots from `table.inv_root` / `table.inv_quot`. Input must be in
+/// `[0, q)`; output is left in `[0, 2q)` (congruent mod q to the natural result).
+///
+/// Each plane runs [`inv_plane`] (depth-first split above `BASE_NTT_SIZE`) down
+/// to the single `m = 1` (distance `n/2`) stage, which folds the `1/n` scale:
+/// the diff lane uses `W' = (W·n_inv) mod q`, the sum lane is scaled by `n_inv`,
+/// avoiding a separate plane sweep.
+#[target_feature(enable = "avx512ifma,avx512vl")]
+pub(crate) unsafe fn intt_avx512<P: PrimeSetNtt126Ifma>(table: &Ntt126IfmaTableInv<P>, data: &mut [u64]) {
+    let n = table.n;
+    debug_assert_eq!(data.len(), 3 * n, "data must hold 3 planes of length n");
+    if n < 2 {
+        return;
+    }
+
+    unsafe {
+        for k in 0..3 {
+            let q = P::Q[k];
+            let q2 = 2 * q;
+            let inv = &table.inv_root[k * n..(k + 1) * n];
+            let ip = &table.inv_quot[k * n..(k + 1) * n];
+
+            let q_v = _mm512_set1_epi64(q as i64);
+            let q2_v = _mm512_set1_epi64(q2 as i64);
+
+            let plane = &mut data[k * n..(k + 1) * n];
+            let ptr = plane.as_mut_ptr();
+
+            if n < 16 {
+                // Scalar fallback for small planes.
+                let mut t = 1usize;
+                let mut m = n;
+                let mut wi = 1usize;
+                while m > 1 {
+                    let h = m / 2;
+                    let mut j1 = 0usize;
+                    for _i in 0..h {
+                        let w = inv[wi];
+                        let w_precon = ip[wi];
+                        wi += 1;
+                        for j in j1..j1 + t {
+                            let x = plane[j];
+                            let y = plane[j + t];
+                            plane[j] = cond_sub_2q(x + y, q2);
+                            plane[j + t] = harvey_modmul(x + q2 - y, w, w_precon, q);
+                        }
+                        j1 += 2 * t;
                     }
+                    t *= 2;
+                    m /= 2;
+                }
+            } else {
+                // 1/n scale, folded into the final m == 1 stage below.
+                let n_inv = modq_pow64(n as u64, -1, q);
+                let n_inv_quot = harvey_quotient(n_inv, q);
+                let n_inv_v = _mm512_set1_epi64(n_inv as i64);
+                let n_inv_quot_v = _mm512_set1_epi64(n_inv_quot as i64);
+
+                // Depth-first transform of the full plane, down to (but not
+                // including) the single m == 1 stage. Returns that stage's root
+                // index.
+                let wi = inv_plane(ptr, n, 0, 0, inv, ip, q_v, q2_v);
+
+                // Final stage (m == 1, t = n/2): fold the 1/n scale.
+                let t = n / 2;
+                let w = inv[wi];
+                let w_scaled = ((w as u128 * n_inv as u128) % q as u128) as u64; // W' = W·n_inv
+                let w_scaled_v = _mm512_set1_epi64(w_scaled as i64);
+                let wp_scaled_v = _mm512_set1_epi64(harvey_quotient(w_scaled, q) as i64);
+                let mut j = 0usize;
+                while j < t {
+                    let xp = ptr.add(j) as *mut __m512i;
+                    let yp = ptr.add(j + t) as *mut __m512i;
+                    let x = _mm512_loadu_si512(xp as *const __m512i);
+                    let y = _mm512_loadu_si512(yp as *const __m512i);
+                    // sum lane: (X+Y)·n_inv; diff lane: (X-Y)·W' — folds 1/n.
+                    let x_out = harvey_modmul_si512(_mm512_add_epi64(x, y), n_inv_v, n_inv_quot_v, q_v);
+                    let t_in = _mm512_sub_epi64(_mm512_add_epi64(x, q2_v), y);
+                    let y_out = harvey_modmul_si512(t_in, w_scaled_v, wp_scaled_v, q_v);
+                    _mm512_storeu_si512(xp, x_out);
+                    _mm512_storeu_si512(yp, y_out);
+                    j += 8;
                 }
             }
-            blk_start += block;
-        }
 
-        // Outer butterfly levels (breadth-first) for nn > block.
-        let mut nn = block * 2;
-        while nn <= n {
-            let halfnn = nn / 2;
-            let count = halfnn - 1;
-            intt_iter_ifma(nn, begin, end, q, q4, po_base.add(seg_avx), po_base.add(seg_avx + count));
-            seg_avx += 2 * count;
-            nn *= 2;
+            if n < 16 {
+                // Scalar fallback: separate 1/n scaling pass over the plane.
+                let n_inv = modq_pow64(n as u64, -1, q);
+                let n_inv_quot = harvey_quotient(n_inv, q);
+                for c in plane.iter_mut() {
+                    *c = harvey_modmul(*c, n_inv, n_inv_quot, q);
+                }
+            }
         }
-
-        // Last pass: a[i] *= ω^{-i} / n — Harvey absorbs [0, 4q) → [0, 2q).
-        ntt_iter_first_ifma(begin, end, po_base.add(seg_avx), po_base.add(seg_avx + n), q);
     }
 }
 
@@ -1081,28 +949,160 @@ mod tests {
 
     #[test]
     fn ntt_avx512_vs_ref() {
-        for log_n in 1..=10usize {
+        // NTT126Ifma operates on n >= 8 (enforced by Module::new); the kernel is
+        // validated against the scalar reference over that supported range.
+        for log_n in 3..=10usize {
             let n = 1 << log_n;
             let fwd = Ntt126IfmaTable::<Primes42>::new(n);
 
             let coeffs: Vec<i64> = (0..n as i64).map(|i| (i * 7 + 3) % 201 - 100).collect();
 
-            let mut data_avx = vec![0u64; 4 * n];
-            let mut data_ref = vec![0u64; 4 * n];
+            let mut data_avx = vec![0u64; 3 * n];
+            let mut data_ref = vec![0u64; 3 * n];
             b_ntt126_ifma_from_znx64_ref(n, &mut data_avx, &coeffs);
             b_ntt126_ifma_from_znx64_ref(n, &mut data_ref, &coeffs);
 
-            unsafe { ntt_avx512::<Primes42>(&fwd, &mut data_avx) };
+            unsafe { ntt_avx512::<Primes42>(&fwd, &mut data_avx, false) };
             ntt126_ifma_ref::<Primes42>(&fwd, &mut data_ref);
 
-            for i in 0..4 * n {
+            // The AVX512 forward reduces fully to [0, q); the reference leaves
+            // lazy [0, 2q). Compare residues mod q (per plane).
+            for i in 0..3 * n {
+                let q = Primes42::Q[i / n];
                 assert_eq!(
-                    data_avx[i], data_ref[i],
+                    data_avx[i] % q,
+                    data_ref[i] % q,
                     "n={n} idx={i}: NTT AVX512 vs ref (avx={}, ref={})",
-                    data_avx[i], data_ref[i]
+                    data_avx[i],
+                    data_ref[i]
                 );
             }
         }
+    }
+
+    /// Lazy forward output reduced mod q must equal the fully-reduced forward,
+    /// and stay within `[0, 4q)`.
+    #[test]
+    fn ntt_avx512_lazy_output_matches_full() {
+        for log_n in [4usize, 8, 11, 13] {
+            let n = 1 << log_n;
+            let fwd = Ntt126IfmaTable::<Primes42>::new(n);
+            let coeffs = pseudorandom_coeffs(n);
+
+            let mut full = vec![0u64; 3 * n];
+            let mut lazy = vec![0u64; 3 * n];
+            b_ntt126_ifma_from_znx64_ref(n, &mut full, &coeffs);
+            b_ntt126_ifma_from_znx64_ref(n, &mut lazy, &coeffs);
+
+            unsafe {
+                ntt_avx512::<Primes42>(&fwd, &mut full, false);
+                ntt_avx512::<Primes42>(&fwd, &mut lazy, true);
+            }
+
+            for i in 0..3 * n {
+                let q = Primes42::Q[i / n];
+                assert!(lazy[i] < 4 * q, "n={n} idx={i}: lazy {} not in [0,4q)", lazy[i]);
+                assert_eq!(full[i], lazy[i] % q, "n={n} idx={i}: lazy%q != full");
+            }
+        }
+    }
+
+    /// Pseudorandom coefficients in [-10000, 10000) seeded by an LCG.
+    fn pseudorandom_coeffs(n: usize) -> Vec<i64> {
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+        (0..n)
+            .map(|_| {
+                state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                ((state >> 11) as i64 % 20001) - 10000
+            })
+            .collect()
+    }
+
+    /// Forward kernel vs scalar reference (mod q) on pseudorandom input.
+    /// Sizes > 1024 exercise the depth-first recursion.
+    fn ntt_avx512_vs_ref_pseudorandom(n: usize) {
+        let fwd = Ntt126IfmaTable::<Primes42>::new(n);
+        let coeffs = pseudorandom_coeffs(n);
+
+        let mut data_avx = vec![0u64; 3 * n];
+        let mut data_ref = vec![0u64; 3 * n];
+        b_ntt126_ifma_from_znx64_ref(n, &mut data_avx, &coeffs);
+        b_ntt126_ifma_from_znx64_ref(n, &mut data_ref, &coeffs);
+
+        unsafe { ntt_avx512::<Primes42>(&fwd, &mut data_avx, false) };
+        ntt126_ifma_ref::<Primes42>(&fwd, &mut data_ref);
+
+        // The AVX512 forward reduces fully to [0, q); the reference leaves
+        // lazy [0, 2q). Compare residues mod q (per plane).
+        for i in 0..3 * n {
+            let q = Primes42::Q[i / n];
+            assert_eq!(
+                data_avx[i] % q,
+                data_ref[i] % q,
+                "n={n} idx={i}: NTT AVX512 vs ref (avx={}, ref={})",
+                data_avx[i],
+                data_ref[i]
+            );
+        }
+    }
+
+    /// Inverse kernel vs scalar reference (mod q) on a forward-transformed
+    /// pseudorandom input. Sizes > 1024 exercise the depth-first recursion.
+    fn intt_avx512_vs_ref_pseudorandom(n: usize) {
+        let fwd = Ntt126IfmaTable::<Primes42>::new(n);
+        let inv = Ntt126IfmaTableInv::<Primes42>::new(n);
+        let coeffs = pseudorandom_coeffs(n);
+
+        let mut data = vec![0u64; 3 * n];
+        b_ntt126_ifma_from_znx64_ref(n, &mut data, &coeffs);
+        ntt126_ifma_ref::<Primes42>(&fwd, &mut data);
+
+        let mut data_avx = data.clone();
+        let mut data_ref = data.clone();
+
+        unsafe { intt_avx512::<Primes42>(&inv, &mut data_avx) };
+        intt126_ifma_ref::<Primes42>(&inv, &mut data_ref);
+
+        for i in 0..3 * n {
+            let q = Primes42::Q[i / n];
+            assert_eq!(
+                data_avx[i] % q,
+                data_ref[i] % q,
+                "n={n} idx={i}: iNTT AVX512 vs ref (avx={}, ref={})",
+                data_avx[i],
+                data_ref[i]
+            );
+        }
+    }
+
+    #[test]
+    fn ntt_avx512_vs_ref_n4096_pseudorandom() {
+        ntt_avx512_vs_ref_pseudorandom(4096);
+    }
+
+    #[test]
+    fn ntt_avx512_vs_ref_n8192_pseudorandom() {
+        ntt_avx512_vs_ref_pseudorandom(8192);
+    }
+
+    #[test]
+    fn ntt_avx512_vs_ref_n16384_pseudorandom() {
+        ntt_avx512_vs_ref_pseudorandom(16384);
+    }
+
+    #[test]
+    fn intt_avx512_vs_ref_n4096_pseudorandom() {
+        intt_avx512_vs_ref_pseudorandom(4096);
+    }
+
+    #[test]
+    fn intt_avx512_vs_ref_n8192_pseudorandom() {
+        intt_avx512_vs_ref_pseudorandom(8192);
+    }
+
+    #[test]
+    fn intt_avx512_vs_ref_n16384_pseudorandom() {
+        intt_avx512_vs_ref_pseudorandom(16384);
     }
 
     #[test]
@@ -1113,7 +1113,7 @@ mod tests {
             let inv = Ntt126IfmaTableInv::<Primes42>::new(n);
 
             let coeffs: Vec<i64> = (0..n as i64).map(|i| (i * 7 + 3) % 201 - 100).collect();
-            let mut data = vec![0u64; 4 * n];
+            let mut data = vec![0u64; 3 * n];
             b_ntt126_ifma_from_znx64_ref(n, &mut data, &coeffs);
             ntt126_ifma_ref::<Primes42>(&fwd, &mut data);
 
@@ -1123,11 +1123,15 @@ mod tests {
             unsafe { intt_avx512::<Primes42>(&inv, &mut data_avx) };
             intt126_ifma_ref::<Primes42>(&inv, &mut data_ref);
 
-            for i in 0..4 * n {
+            // Both kernels leave lazy [0, 2q) output; compare residues mod q.
+            for i in 0..3 * n {
+                let q = Primes42::Q[i / n];
                 assert_eq!(
-                    data_avx[i], data_ref[i],
+                    data_avx[i] % q,
+                    data_ref[i] % q,
                     "n={n} idx={i}: iNTT AVX512 vs ref (avx={}, ref={})",
-                    data_avx[i], data_ref[i]
+                    data_avx[i],
+                    data_ref[i]
                 );
             }
         }
@@ -1135,25 +1139,27 @@ mod tests {
 
     #[test]
     fn ntt_intt_avx512_roundtrip() {
-        for log_n in 1..=10usize {
+        // NTT126Ifma operates on n >= 8 (enforced by Module::new); forward then
+        // inverse recovers the input (mod q) over that supported range.
+        for log_n in 3..=10usize {
             let n = 1 << log_n;
             let fwd = Ntt126IfmaTable::<Primes42>::new(n);
             let inv = Ntt126IfmaTableInv::<Primes42>::new(n);
 
             let coeffs: Vec<i64> = (0..n as i64).map(|i| (i * 7 + 3) % 201 - 100).collect();
-            let mut data = vec![0u64; 4 * n];
+            let mut data = vec![0u64; 3 * n];
             b_ntt126_ifma_from_znx64_ref(n, &mut data, &coeffs);
             let orig = data.clone();
 
             unsafe {
-                ntt_avx512::<Primes42>(&fwd, &mut data);
+                ntt_avx512::<Primes42>(&fwd, &mut data, false);
                 intt_avx512::<Primes42>(&inv, &mut data);
             }
 
             for i in 0..n {
                 for k in 0..3 {
-                    let o = orig[4 * i + k] % Primes42::Q[k];
-                    let g = data[4 * i + k] % Primes42::Q[k];
+                    let o = orig[k * n + i] % Primes42::Q[k];
+                    let g = data[k * n + i] % Primes42::Q[k];
                     assert_eq!(o, g, "n={n} i={i} k={k}: roundtrip mismatch");
                 }
             }

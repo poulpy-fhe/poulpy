@@ -1090,6 +1090,60 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
+    // Lazy convolution used by glwe_mul_plain; defaults delegate to the eager path.
+    fn cnv_prepare_left_lazy_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize {
+        Self::cnv_prepare_left_tmp_bytes(module, res_size, a_size)
+    }
+
+    fn cnv_prepare_left_lazy(
+        module: &Module<BE>,
+        res: &mut crate::layouts::CnvPVecLBackendMut<'_, BE>,
+        a: &crate::layouts::VecZnxBackendRef<'_, BE>,
+        mask: i64,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) {
+        Self::cnv_prepare_left(module, res, a, mask, scratch);
+    }
+
+    fn cnv_prepare_right_lazy_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize {
+        Self::cnv_prepare_right_tmp_bytes(module, res_size, a_size)
+    }
+
+    fn cnv_prepare_right_lazy(
+        module: &Module<BE>,
+        res: &mut crate::layouts::CnvPVecRBackendMut<'_, BE>,
+        a: &crate::layouts::VecZnxBackendRef<'_, BE>,
+        mask: i64,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) {
+        Self::cnv_prepare_right(module, res, a, mask, scratch);
+    }
+
+    fn cnv_apply_dft_lazy_tmp_bytes(
+        module: &Module<BE>,
+        cnv_offset: usize,
+        res_size: usize,
+        a_size: usize,
+        b_size: usize,
+    ) -> usize {
+        Self::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn cnv_apply_dft_lazy(
+        module: &Module<BE>,
+        cnv_offset: usize,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        res_col: usize,
+        a: &crate::layouts::CnvPVecLBackendRef<'_, BE>,
+        a_col: usize,
+        b: &crate::layouts::CnvPVecRBackendRef<'_, BE>,
+        b_col: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) {
+        Self::cnv_apply_dft(module, cnv_offset, res, res_col, a, a_col, b, b_col, scratch);
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn cnv_apply_dft_accumulate(
         module: &Module<BE>,

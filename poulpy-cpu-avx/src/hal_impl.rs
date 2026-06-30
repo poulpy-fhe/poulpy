@@ -306,6 +306,9 @@ unsafe impl HalConvolutionImpl<NTT120Avx> for NTT120Avx {
         );
     }
 
+    // glwe_mul_plain keeps the eager block-major path on AVX2 (faster than the
+    // fused apply here), so the lazy methods inherit the eager default.
+
     #[allow(clippy::too_many_arguments)]
     fn cnv_apply_dft_accumulate(
         module: &Module<Self>,

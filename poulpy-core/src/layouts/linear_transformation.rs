@@ -60,7 +60,7 @@ impl<P> LinearTransformation<P> {
 
     /// The first encoded diagonal across all giant steps, or `None` if the
     /// transform is empty. The diagonals share a uniform plaintext shape, so this
-    /// is the canonical place callers read `base2k` / `max_k` / `log_delta` from.
+    /// is the canonical place callers read `base2k` / `k` / `log_delta` from.
     pub fn first_diagonal_plaintext(&self) -> Option<&P> {
         self.giant_steps
             .iter()

@@ -148,12 +148,16 @@ impl<D: HostDataRef, BRA: BlindRotationAlgo> LWEInfos for BlindRotationKeyCompre
         self.keys[0].n()
     }
 
-    fn size(&self) -> usize {
-        self.keys[0].size()
+    fn max_size(&self) -> usize {
+        self.keys[0].max_size()
     }
 
     fn base2k(&self) -> Base2K {
         self.keys[0].base2k()
+    }
+
+    fn k(&self) -> poulpy_core::layouts::TorusPrecision {
+        self.keys[0].k()
     }
 }
 

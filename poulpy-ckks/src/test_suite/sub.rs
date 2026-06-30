@@ -1,13 +1,13 @@
 //! Subtraction tests: ct-ct, ct-pt, ct-const (out-of-place and in-place).
 
-use crate::{CKKSInfos, CKKSMeta, leveled::api::CKKSSubOps};
+use crate::{CKKSInfos, leveled::api::CKKSSubOps};
 use poulpy_core::layouts::LWEInfos;
 
 use super::helpers::{
     ADD_SUB_CONST, PT_PREC, TestContextBackend, TestContextModule, TestScalar, TestVector, add_sub_const_pt, alloc_ct,
     alloc_scratch, assert_binary_output_meta, assert_ct_meta, assert_decrypt_precision, assert_decrypt_precision_at_log_delta,
-    assert_unary_output_meta, ckks_encrypt, ckks_encrypt_with_prec, ckks_pt_cst, encode_and_upload_pt, gen_sk, precision_at,
-    quantize, quantized_const, quantized_vector, test_vector_1, test_vector_2, want_sub,
+    assert_unary_output_meta, ckks_encrypt, ckks_encrypt_with_prec, ckks_pt_cst, ckks_spec, encode_and_upload_pt, gen_sk,
+    precision_at, quantize, quantized_const, quantized_vector, test_vector_1, test_vector_2, want_sub,
 };
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
@@ -21,6 +21,8 @@ const DELTA_LOG_DELTA: usize = 12;
 pub fn test_sub_ct_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -74,6 +76,8 @@ where
 pub fn test_sub_ct_delta_a_lt_b<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -127,6 +131,8 @@ where
 pub fn test_sub_ct_delta_a_gt_b<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -180,6 +186,8 @@ where
 pub fn test_sub_ct_delta_log_delta<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -189,9 +197,9 @@ where
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
 
-    let low_log_delta = params.prec.log_delta - DELTA_LOG_DELTA;
+    let low_log_delta = params.prec().log_delta() - DELTA_LOG_DELTA;
     let low_prec = precision_at(&params, low_log_delta);
-    let (a_re, a_im) = quantized_vector(host_module, &encoder, &params, TestVector::First, params.prec.log_delta);
+    let (a_re, a_im) = quantized_vector(host_module, &encoder, &params, TestVector::First, params.prec().log_delta());
     let (b_re, b_im) = quantized_vector(host_module, &encoder, &params, TestVector::Second, low_log_delta);
     let ct1 = ckks_encrypt(
         &params,
@@ -237,6 +245,8 @@ where
 pub fn test_sub_ct_smaller_output<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -290,6 +300,8 @@ where
 pub fn test_sub_ct_assign_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -344,6 +356,8 @@ where
 pub fn test_sub_ct_assign_self_lt<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -400,6 +414,8 @@ where
 pub fn test_sub_ct_assign_self_gt<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -456,6 +472,8 @@ where
 pub fn test_sub_pt_vec_assign<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -478,12 +496,12 @@ where
         &im1,
         &mut scratch.borrow(),
     );
-    let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), params.prec, &re2, &im2);
+    let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), params.prec(), &re2, &im2);
     let (want_re, want_im) = want_sub(
         &re1,
         &im1,
-        &quantize(&re2, params.prec.log_delta),
-        &quantize(&im2, params.prec.log_delta),
+        &quantize(&re2, params.prec().log_delta()),
+        &quantize(&im2, params.prec().log_delta()),
     );
     let expected_log_delta = ct.log_delta();
     let expected_log_budget = ct.log_budget();
@@ -505,6 +523,8 @@ where
 pub fn test_sub_pt_vec<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -527,12 +547,12 @@ where
         &im1,
         &mut scratch.borrow(),
     );
-    let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), params.prec, &re2, &im2);
+    let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), params.prec(), &re2, &im2);
     let (want_re, want_im) = want_sub(
         &re1,
         &im1,
-        &quantize(&re2, params.prec.log_delta),
-        &quantize(&im2, params.prec.log_delta),
+        &quantize(&re2, params.prec().log_delta()),
+        &quantize(&im2, params.prec().log_delta()),
     );
     let mut ct_res = alloc_ct(&params, module, params.k);
     module
@@ -558,6 +578,8 @@ pub fn test_sub_pt_vec_into_delta_log_delta<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -568,7 +590,7 @@ pub fn test_sub_pt_vec_into_delta_log_delta<BE, F, E>(
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
 
-    let (a_re, a_im) = quantized_vector(host_module, &encoder, &params, TestVector::First, params.prec.log_delta);
+    let (a_re, a_im) = quantized_vector(host_module, &encoder, &params, TestVector::First, params.prec().log_delta());
     let ct1 = ckks_encrypt(
         &params,
         module,
@@ -584,8 +606,8 @@ pub fn test_sub_pt_vec_into_delta_log_delta<BE, F, E>(
     let (want_re, want_im) = want_sub(
         &a_re,
         &a_im,
-        &quantize(&re2, PT_PREC.log_delta),
-        &quantize(&im2, PT_PREC.log_delta),
+        &quantize(&re2, PT_PREC.log_delta()),
+        &quantize(&im2, PT_PREC.log_delta()),
     );
     let mut ct_res = alloc_ct(&params, module, params.k);
     module
@@ -601,7 +623,7 @@ pub fn test_sub_pt_vec_into_delta_log_delta<BE, F, E>(
         &sk,
         &want_re,
         &want_im,
-        PT_PREC.log_delta,
+        PT_PREC.log_delta(),
         &mut scratch.borrow(),
     );
 }
@@ -612,6 +634,8 @@ pub fn test_sub_pt_vec_into_smaller_output<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -634,12 +658,12 @@ pub fn test_sub_pt_vec_into_smaller_output<BE, F, E>(
         &im1,
         &mut scratch.borrow(),
     );
-    let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), params.prec, &re2, &im2);
+    let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), params.prec(), &re2, &im2);
     let (want_re, want_im) = want_sub(
         &re1,
         &im1,
-        &quantize(&re2, params.prec.log_delta),
-        &quantize(&im2, params.prec.log_delta),
+        &quantize(&re2, params.prec().log_delta()),
+        &quantize(&im2, params.prec().log_delta()),
     );
     let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
     module
@@ -665,6 +689,8 @@ pub fn test_sub_pt_const_into_aligned<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -686,7 +712,7 @@ pub fn test_sub_pt_const_into_aligned<BE, F, E>(
         &im1,
         &mut scratch.borrow(),
     );
-    let (const_re, const_im) = quantized_const::<F>(ADD_SUB_CONST.0, ADD_SUB_CONST.1, PT_PREC.log_delta);
+    let (const_re, const_im) = quantized_const::<F>(ADD_SUB_CONST.0, ADD_SUB_CONST.1, PT_PREC.log_delta());
     let want_re: Vec<F> = re1.iter().map(|x| *x - const_re).collect();
     let want_im: Vec<F> = im1.iter().map(|x| *x - const_im).collect();
     let mut ct_res = alloc_ct(&params, module, params.k);
@@ -718,6 +744,8 @@ pub fn test_sub_const_into_lsh_alignment<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -739,17 +767,13 @@ pub fn test_sub_const_into_lsh_alignment<BE, F, E>(
         &im1,
         &mut scratch.borrow(),
     );
-    let (const_re, const_im) = quantized_const::<F>(ADD_SUB_CONST.0, ADD_SUB_CONST.1, PT_PREC.log_delta);
+    let (const_re, const_im) = quantized_const::<F>(ADD_SUB_CONST.0, ADD_SUB_CONST.1, PT_PREC.log_delta());
     let want_re: Vec<F> = re1.iter().map(|x| *x - const_re).collect();
     let want_im: Vec<F> = im1.iter().map(|x| *x - const_im).collect();
     let mut ct_res = alloc_ct(&params, module, params.k);
     // Padding the constant with the full ciphertext budget makes its allocated
     // max_k round up past the available precision, forcing PlaintextShift::Lsh.
-    let cst_prec = CKKSMeta {
-        log_delta: PT_PREC.log_delta,
-        log_budget: ct.log_budget(),
-        ..Default::default()
-    };
+    let cst_prec = ckks_spec(params.n, params.base2k, PT_PREC.log_delta(), ct.log_budget());
     let cst = ckks_pt_cst::<BE, F>(
         host_module,
         module,
@@ -787,6 +811,8 @@ pub fn test_sub_const_into_lsh_alignment<BE, F, E>(
 pub fn test_sub_one_assign<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,

@@ -52,7 +52,7 @@ impl<D: Data, T: UnsignedInteger> FheUint<D, T> {
             assert_eq!(module.n(), infos.n().as_usize());
         }
 
-        Self::alloc(module, infos.base2k(), infos.max_k(), infos.rank())
+        Self::alloc(module, infos.base2k(), infos.k(), infos.rank())
     }
 
     pub fn alloc<M>(module: &M, base2k: Base2K, k: TorusPrecision, rank: Rank) -> Self
@@ -95,12 +95,16 @@ impl<D: HostDataRef, T: UnsignedInteger> LWEInfos for FheUint<D, T> {
         self.bits.base2k()
     }
 
-    fn size(&self) -> usize {
-        self.bits.size()
+    fn max_size(&self) -> usize {
+        self.bits.max_size()
     }
 
     fn n(&self) -> poulpy_core::layouts::Degree {
         self.bits.n()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.bits.k()
     }
 }
 
@@ -460,7 +464,7 @@ impl<D: HostDataRef, T: UnsignedInteger> FheUint<D, T> {
         if let Some(ks_glwe) = ks_glwe {
             // TODO(device): this extraction path still stages the rank-1 GLWE
             // in host-owned memory for compatibility with the current core API.
-            let mut res_tmp: GLWE<BE::OwnedBuf> = module.glwe_alloc(ks_glwe.base2k(), ks_glwe.max_k(), ks_glwe.rank_out());
+            let mut res_tmp: GLWE<BE::OwnedBuf> = module.glwe_alloc(ks_glwe.base2k(), ks_glwe.k(), ks_glwe.rank_out());
             let mut scratch_1 = scratch.borrow();
             {
                 let mut scratch_op = scratch_1.borrow();

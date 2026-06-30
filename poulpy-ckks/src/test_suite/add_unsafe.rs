@@ -18,6 +18,8 @@ use crate::{encoding::reim::Encoder, test_suite::CKKSTestParams};
 pub fn test_add_ct_aligned_unsafe<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -77,6 +79,8 @@ pub fn test_add_ct_assign_aligned_unsafe<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -138,6 +142,8 @@ pub fn test_add_pt_vec_into_aligned_unsafe<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -160,12 +166,12 @@ pub fn test_add_pt_vec_into_aligned_unsafe<BE, F, E>(
         &im1,
         &mut scratch.borrow(),
     );
-    let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), params.prec, &re2, &im2);
+    let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), params.prec(), &re2, &im2);
     let (want_re, want_im) = want_add(
         &re1,
         &im1,
-        &quantize(&re2, params.prec.log_delta),
-        &quantize(&im2, params.prec.log_delta),
+        &quantize(&re2, params.prec().log_delta()),
+        &quantize(&im2, params.prec().log_delta()),
     );
 
     let mut ct_res = UnnormalizedCKKSCiphertext::new(alloc_ct(&params, module, params.k));
@@ -193,6 +199,8 @@ pub fn test_add_const_into_aligned_unsafe<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -214,7 +222,7 @@ pub fn test_add_const_into_aligned_unsafe<BE, F, E>(
         &im1,
         &mut scratch.borrow(),
     );
-    let (const_re, const_im) = quantized_const::<F>(ADD_SUB_CONST.0, ADD_SUB_CONST.1, PT_PREC.log_delta);
+    let (const_re, const_im) = quantized_const::<F>(ADD_SUB_CONST.0, ADD_SUB_CONST.1, PT_PREC.log_delta());
     let (want_re, want_im) = want_add_const(&re1, &im1, const_re, const_im);
     let mut ct_res = UnnormalizedCKKSCiphertext::new(alloc_ct(&params, module, params.k));
     let cst = add_sub_const_pt::<BE, F>(host_module, module, params.base2k.into());

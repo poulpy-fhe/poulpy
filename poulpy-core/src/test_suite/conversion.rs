@@ -275,7 +275,7 @@ where
     let mut glwe_pt: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
     module.glwe_decrypt(&glwe_ct, &mut glwe_pt, &sk_glwe_prepared, &mut scratch.borrow());
 
-    let mut lwe_pt_conv = module.lwe_plaintext_alloc(glwe_pt.base2k(), lwe_pt.max_k());
+    let mut lwe_pt_conv = module.lwe_plaintext_alloc(glwe_pt.base2k(), lwe_pt.k());
 
     module.vec_znx_normalize(
         &mut vec_znx_backend_mut::<BE>(&mut lwe_pt_conv.data),
@@ -407,7 +407,7 @@ where
     let mut lwe_pt: LWEPlaintext<Vec<u8>> = module.lwe_plaintext_alloc_from_infos(&lwe_infos);
     module.lwe_decrypt(&lwe_ct, &mut lwe_pt, &sk_lwe, &mut scratch.borrow());
 
-    let mut glwe_pt_conv = GLWEPlaintext::<Vec<u8>>::alloc(glwe_ct.n(), lwe_pt.base2k(), lwe_pt.max_k());
+    let mut glwe_pt_conv = GLWEPlaintext::<Vec<u8>>::alloc(glwe_ct.n(), lwe_pt.base2k(), lwe_pt.k());
 
     module.vec_znx_normalize(
         &mut vec_znx_backend_mut::<BE>(&mut glwe_pt_conv.data),
@@ -498,7 +498,7 @@ where
         let mut lwe_pt: LWEPlaintext<Vec<u8>> = module.lwe_plaintext_alloc_from_infos(&lwe_infos);
         module.lwe_decrypt(&lwe_cts[a_idx], &mut lwe_pt, &sk_lwe, &mut scratch.borrow());
 
-        let mut glwe_pt_conv = GLWEPlaintext::<Vec<u8>>::alloc(glwe_ct.n(), lwe_pt.base2k(), lwe_pt.max_k());
+        let mut glwe_pt_conv = GLWEPlaintext::<Vec<u8>>::alloc(glwe_ct.n(), lwe_pt.base2k(), lwe_pt.k());
         module.vec_znx_normalize(
             &mut vec_znx_backend_mut::<BE>(&mut glwe_pt_conv.data),
             lwe_pt.base2k().as_usize(),
@@ -597,7 +597,7 @@ where
             rows: n,
             n: Degree(n as u32 * rank.0),
             base2k: glwe_infos.base2k(),
-            k: glwe_infos.max_k(),
+            k: glwe_infos.k(),
         };
 
         let mut source_xs: Source = Source::new([0u8; 32]);

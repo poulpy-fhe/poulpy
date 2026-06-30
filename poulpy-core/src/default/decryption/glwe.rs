@@ -8,7 +8,7 @@ use poulpy_hal::{
 
 pub use crate::api::GLWEDecrypt;
 use crate::layouts::{
-    GLWEBackendMut, GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetLWEInfos,
+    GLWEBackendMut, GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBase2k,
     prepared::{GLWESecretPreparedBackendRef, GLWESecretPreparedToBackendRef},
 };
 
@@ -40,7 +40,7 @@ where
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
     R: GLWEToBackendRef<BE> + GLWEInfos,
-    P: GLWEToBackendMut<BE> + GLWEInfos + SetLWEInfos,
+    P: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
     S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
 {
     let res_backend = res.to_backend_ref();

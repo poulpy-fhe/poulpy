@@ -75,7 +75,7 @@ where
         host_module,
         encoder,
         params.base2k.into(),
-        params.prec,
+        params.prec(),
         b,
         LinearTransformationStrategy::Bsgs { giant_step: n1 },
         transpose,
@@ -93,6 +93,8 @@ fn prepare_lt<BE>(
 ) -> LinearTransformationPrepared<BE>
 where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + LinearTransformationOps<BE> + CnvPVecAlloc<BE>,
 {
     let first = lt.first_diagonal_plaintext().expect("linear transformation has no diagonals");
@@ -105,6 +107,8 @@ where
 pub fn test_linear_transformation<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
     BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + LinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,

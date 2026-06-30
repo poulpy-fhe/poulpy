@@ -8,7 +8,7 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use poulpy_ckks::{
-    CKKSInfos, CKKSMeta,
+    CKKSInfos, CKKSLayout, CKKSMeta,
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
     leveled::api::{CKKSAllOpsTmpBytes, CKKSCopyOps, PolynomialEvaluation},
     polynomial::{Basis, ComplexPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
@@ -30,10 +30,17 @@ const DSIZE: usize = 1;
 const DEGREES: &[usize] = &[7, 15, 31, 63, 127];
 const STRATEGIES: &[(SplitStrategy, &str)] = &[(SplitStrategy::MinDepth, "min-depth"), (SplitStrategy::MinMult, "min-mult")];
 
-const COEFF_META: CKKSMeta = CKKSMeta {
-    log_sparsity: 0,
-    log_delta: LOG_DELTA,
-    log_budget: 1,
+const COEFF_META: CKKSLayout = CKKSLayout {
+    glwe_layout: GLWELayout {
+        n: Degree(N as u32),
+        base2k: Base2K(BASE2K as u32),
+        k: TorusPrecision((LOG_DELTA + 1) as u32),
+        rank: Rank(1),
+    },
+    meta: CKKSMeta {
+        log_sparsity: 0,
+        log_delta: LOG_DELTA,
+    },
 };
 
 fn glwe_layout() -> GLWELayout {
@@ -66,10 +73,11 @@ fn random_coeffs(degree: usize) -> Vec<f64> {
     (0..=degree).map(|_| next()).collect()
 }
 
-fn bench_ntt120_ref(c: &mut Criterion) {
-    type BE = poulpy_cpu_ref::NTT120Ref;
-    let label = "ntt120-ref";
-
+macro_rules! poly_eval_bench {
+    ($fn:ident, $be:ty, $label:expr) => {
+fn $fn(c: &mut Criterion) {
+    type BE = $be;
+    let label = $label;
     let module = Module::<BE>::new(N as u64);
     let host_module = Module::<HostBytesBackend>::new(N as u64);
     let glwe_layout = glwe_layout();
@@ -77,7 +85,6 @@ fn bench_ntt120_ref(c: &mut Criterion) {
     let input_meta = CKKSMeta {
         log_sparsity: 0,
         log_delta: LOG_DELTA,
-        log_budget: CT_K - LOG_DELTA,
     };
 
     let ct_template = module.ckks_ciphertext_alloc_from_infos(&glwe_layout);
@@ -246,9 +253,21 @@ fn bench_ntt120_ref(c: &mut Criterion) {
     }
     group.finish();
 }
+    };
+}
+
+poly_eval_bench!(bench_ntt120_ref, poulpy_cpu_ref::NTT120Ref, "ntt120-ref");
+#[cfg(feature = "enable-avx")]
+poly_eval_bench!(bench_ntt120_avx, poulpy_cpu_avx::NTT120Avx, "ntt120-avx");
+#[cfg(feature = "enable-ifma")]
+poly_eval_bench!(bench_ntt_ifma, poulpy_cpu_avx512::NTT126Ifma, "ntt-ifma");
 
 fn bench_ckks_poly_eval(c: &mut Criterion) {
     bench_ntt120_ref(c);
+    #[cfg(feature = "enable-avx")]
+    bench_ntt120_avx(c);
+    #[cfg(feature = "enable-ifma")]
+    bench_ntt_ifma(c);
 }
 
 criterion_group! {

@@ -43,7 +43,7 @@ use poulpy_cpu_ref::reference::ntt120::{
 };
 
 use super::arithmetic_avx512::{
-    b_from_znx64_avx512, b_from_znx64_masked_avx512, b_to_znx128_avx512, c_from_b_avx512, pack_left_1blk_x2_avx512,
+    b_from_znx64_avx512, b_from_znx64_masked_avx512, b_to_znx128_avx512_planar, c_from_b_avx512, pack_left_1blk_x2_avx512,
     pack_right_1blk_x2_avx512, pairwise_pack_left_1blk_x2_avx512, pairwise_pack_right_1blk_x2_avx512,
     vec_mat1col_product_bbb_avx512,
 };
@@ -84,7 +84,7 @@ unsafe fn lazy_reduce(x: __m256i, q_s: __m256i, msb: __m256i) -> __m256i {
 /// when `q_s_i > x_i (signed)`. We subtract `q_s` only where the mask bit is **clear**
 /// (i.e., `x ≥ q_s` after the sign-flip), via `_mm512_mask_sub_epi64` with the inverted mask.
 #[inline(always)]
-unsafe fn lazy_reduce_512(x: __m512i, q_s: __m512i, msb: __m512i) -> __m512i {
+pub(crate) unsafe fn lazy_reduce_512(x: __m512i, q_s: __m512i, msb: __m512i) -> __m512i {
     unsafe {
         let x_xor = _mm512_xor_si512(x, msb);
         let q_xor = _mm512_xor_si512(q_s, msb);
@@ -104,7 +104,7 @@ unsafe fn lazy_reduce_512(x: __m512i, q_s: __m512i, msb: __m512i) -> __m512i {
 
 /// Broadcast the 4 × u64 `Q_SHIFTED` constant into both halves of an `__m512i`.
 #[inline(always)]
-unsafe fn q_shifted_512() -> __m512i {
+pub(crate) unsafe fn q_shifted_512() -> __m512i {
     unsafe { _mm512_broadcast_i64x4(_mm256_loadu_si256(Q_SHIFTED.as_ptr() as *const __m256i)) }
 }
 
@@ -336,7 +336,7 @@ impl NttToZnx128 for NTT120Avx512 {
     #[inline(always)]
     fn ntt_to_znx128(res: &mut [i128], divisor_is_n: usize, a: &[u64]) {
         // SAFETY: NTT120Avx512::new() verifies AVX-512F availability at construction time.
-        unsafe { b_to_znx128_avx512(divisor_is_n, res, a) }
+        unsafe { b_to_znx128_avx512_planar(divisor_is_n, res, a) }
     }
 }
 
