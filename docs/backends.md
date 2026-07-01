@@ -52,7 +52,7 @@ The `*Avx512` and `NTT126Ifma` types live in `poulpy-cpu-avx512`.
 | `NTT120Ref` | `poulpy-cpu-ref` | none | none |
 | `NTT120Avx` | `poulpy-cpu-avx` | `enable-avx` | `+avx2,+fma` |
 | `NTT120Avx512` | `poulpy-cpu-avx512` | `enable-avx512f` | `+avx512f` |
-| `NTT126Ifma` | `poulpy-cpu-avx512` | `enable-ifma` | `+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx` |
+| `NTT126Ifma` | `poulpy-cpu-avx512` | `enable-ifma` | `+avx512f,+avx512ifma,+avx512vl` |
 
 Accelerated backends check the required CPU features at runtime in `Module::new` and panic if they are missing.
 They also require the matching `target-feature` flags at compile time.

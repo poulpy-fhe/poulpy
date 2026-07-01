@@ -37,7 +37,7 @@
 //! backend also uses AVX2 and FMA kernels and checks those features at module
 //! construction.
 //!
-//! `NTT126Ifma` additionally requires AVX-512-IFMA, AVX-512VL, BMI2, and ADX.
+//! `NTT126Ifma` additionally requires AVX-512-IFMA and AVX-512VL.
 //! Runtime CPU feature detection is performed in
 //! [`Module::new()`](poulpy_hal::api::ModuleNew::new); missing runtime features
 //! cause a descriptive panic.
@@ -50,7 +50,7 @@
 //! RUSTFLAGS="-C target-feature=+avx512f" \
 //!     cargo build --release --features enable-avx512f
 //!
-//! RUSTFLAGS="-C target-feature=+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx" \
+//! RUSTFLAGS="-C target-feature=+avx512f,+avx512ifma,+avx512vl" \
 //!     cargo build --release --features enable-ifma
 //! ```
 //!
@@ -97,7 +97,7 @@
 //! - Required: x86-64.
 //! - `FFT64Avx512`: AVX-512F + AVX2 + FMA.
 //! - `NTT120Avx512`: AVX-512F.
-//! - `NTT126Ifma`: AVX-512F + AVX-512-IFMA + AVX-512VL + BMI2 + ADX.
+//! - `NTT126Ifma`: AVX-512F + AVX-512-IFMA + AVX-512VL.
 //! - Non-x86 targets and x86-64 CPUs without the selected feature set are not supported.
 //!
 //! # Usage
@@ -130,7 +130,7 @@ compile_error!("feature `enable-avx512f` requires AVX512F. Build with RUSTFLAGS=
     not(target_feature = "avx512ifma")
 ))]
 compile_error!(
-    "feature `enable-ifma` requires AVX512-IFMA. Build with RUSTFLAGS=\"-C target-feature=+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx\"."
+    "feature `enable-ifma` requires AVX512-IFMA. Build with RUSTFLAGS=\"-C target-feature=+avx512f,+avx512ifma,+avx512vl\"."
 );
 
 #[cfg(all(
@@ -140,17 +140,7 @@ compile_error!(
     not(target_feature = "avx512vl")
 ))]
 compile_error!(
-    "feature `enable-ifma` requires AVX512VL. Build with RUSTFLAGS=\"-C target-feature=+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx\"."
-);
-
-#[cfg(all(feature = "enable-ifma", not(docsrs), target_arch = "x86_64", not(target_feature = "bmi2")))]
-compile_error!(
-    "feature `enable-ifma` requires BMI2. Build with RUSTFLAGS=\"-C target-feature=+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx\"."
-);
-
-#[cfg(all(feature = "enable-ifma", not(docsrs), target_arch = "x86_64", not(target_feature = "adx")))]
-compile_error!(
-    "feature `enable-ifma` requires ADX. Build with RUSTFLAGS=\"-C target-feature=+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx\"."
+    "feature `enable-ifma` requires AVX512VL. Build with RUSTFLAGS=\"-C target-feature=+avx512f,+avx512ifma,+avx512vl\"."
 );
 
 #[cfg(feature = "enable-avx512f")]

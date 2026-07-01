@@ -163,16 +163,10 @@ fn assert_runtime_support() {
         if !std::arch::is_x86_feature_detected!("avx512vl") {
             panic!("NTT126Ifma requires x86_64 with AVX512-VL support");
         }
-        if !std::arch::is_x86_feature_detected!("bmi2") {
-            panic!("NTT126Ifma requires x86_64 with BMI2 support");
-        }
-        if !std::arch::is_x86_feature_detected!("adx") {
-            panic!("NTT126Ifma requires x86_64 with ADX support");
-        }
     }
 
     #[cfg(not(target_arch = "x86_64"))]
-    panic!("NTT126Ifma requires x86_64 with AVX512-F + AVX512-IFMA + AVX512-VL + BMI2 + ADX support");
+    panic!("NTT126Ifma requires x86_64 with AVX512-F + AVX512-IFMA + AVX512-VL support");
 }
 
 /// Allocate a fully-initialised `Module<NTT126Ifma>` of ring dimension `n`.

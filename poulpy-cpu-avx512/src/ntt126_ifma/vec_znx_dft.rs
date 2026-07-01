@@ -102,8 +102,8 @@ fn garner_from_residues(r0: u64, r1: u64, r2: u64) -> i128 {
 ///
 /// - `a` must contain at least `3 * nn` u64 values.
 /// - `res` must have room for at least `nn` i128 values.
-/// - Caller must ensure AVX512-IFMA, AVX512-VL, BMI2, and ADX support.
-#[target_feature(enable = "avx512ifma,avx512vl,bmi2,adx")]
+/// - Caller must ensure AVX512-IFMA and AVX512-VL support.
+#[target_feature(enable = "avx512ifma,avx512vl")]
 pub(crate) unsafe fn simd_b_ntt126_ifma_to_znx128(nn: usize, res: &mut [i128], a: &[u64]) {
     debug_assert!(res.len() >= nn);
     debug_assert!(a.len() >= 3 * nn);
@@ -186,8 +186,8 @@ pub(crate) unsafe fn simd_b_ntt126_ifma_to_znx128(nn: usize, res: &mut [i128], a
 /// # Safety
 /// - `src_ptr` covers `3 * n * n_blocks` u64; `dst_ptr` covers `n * n_blocks` i128.
 /// - If aliased, the dst window must lie in the first half of the src window.
-/// - AVX-512-IFMA, AVX-512-VL, BMI2 and ADX required at runtime.
-#[target_feature(enable = "avx512ifma,avx512vl,bmi2,adx")]
+/// - AVX-512-IFMA and AVX-512-VL required at runtime.
+#[target_feature(enable = "avx512ifma,avx512vl")]
 unsafe fn intt_then_compact_ifma(
     n: usize,
     n_blocks: usize,
