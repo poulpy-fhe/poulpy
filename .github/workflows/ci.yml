@@ -59,6 +59,22 @@ env:
     poulpy-bench/ckks-bench
     poulpy-bench/enable-avx
     poulpy-bench/enable-ifma
+  NEON_FEATURES: >-
+    poulpy-core/enable-core
+    poulpy-core/enable-neon
+    poulpy-ckks/enable-ckks
+    poulpy-ckks/enable-neon
+    poulpy-cpu-ref/enable-core
+    poulpy-cpu-ref/enable-ckks
+    poulpy-cpu-arm/enable-ckks
+    poulpy-cpu-arm/enable-neon
+    poulpy-bin-fhe/enable-bin-fhe
+    poulpy-bin-fhe/enable-neon
+    poulpy-bench/hal-bench
+    poulpy-bench/core-bench
+    poulpy-bench/bin-fhe-bench
+    poulpy-bench/ckks-bench
+    poulpy-bench/enable-neon
 
 jobs:
   portable:
@@ -207,6 +223,42 @@ jobs:
       - name: Clippy AVX-512 backend
         run: cargo clippy --workspace --all-targets --features "$AVX512_FEATURES" -- -D warnings
 
+  neon:
+    name: NEON backend (aarch64 native)
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: clippy, rustfmt
+
+      - name: Cache cargo deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: arm64-cargo-neon-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            arm64-cargo-neon-
+
+      - name: Check NEON backend (workspace libs)
+        run: cargo check --workspace --features "$NEON_FEATURES"
+
+      - name: Clippy NEON backend (workspace libs)
+        run: cargo clippy --workspace --features "$NEON_FEATURES" -- -D warnings
+
+      - name: Test NEON backend
+        run: cargo test -p poulpy-cpu-arm --features "enable-neon,enable-ckks"
+
   build-and-test:
     name: build-and-test
     runs-on: ubuntu-latest
@@ -214,6 +266,7 @@ jobs:
       - portable
       - avx
       - avx512
+      - neon
     if: always()
 
     steps:
@@ -234,4 +287,9 @@ jobs:
             exit 1
           fi
 
-          echo "Portable, AVX, and AVX-512 CI jobs passed."
+          if [ "${{ needs.neon.result }}" != "success" ]; then
+            echo "NEON backend job finished with: ${{ needs.neon.result }}"
+            exit 1
+          fi
+
+          echo "Portable, AVX, AVX-512 and NEON CI jobs passed."
