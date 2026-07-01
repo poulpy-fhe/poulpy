@@ -5,7 +5,8 @@
 //! CKKS linear transformation, then prepare its right operand), and evaluates the
 //! transform by chaining one prepared linear transformation per factor.
 //!
-//! Scale accounting (see `docs/ckks_dft.md` §6). poulpy's torus plaintext-multiply
+//! Scale accounting (see the homomorphic-DFT scale accounting in
+//! [`docs/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/bootstrapping.md)). poulpy's torus plaintext-multiply
 //! already realigns the result to the **input** `log_delta` via its `cnv_offset` —
 //! i.e. the rescale is implicit in the linear-transform eval. So the homomorphic
 //! (I)DFT is simply *one prepared linear transformation per factor, chained*, with

@@ -45,7 +45,7 @@ It provides `FFT64Ref` and `NTT120Ref`.
 `poulpy-cpu-avx` and `poulpy-cpu-avx512` do not reimplement the whole HAL.
 They hand-vectorize only the hot paths, the transform butterflies and the matrix-vector products, and delegate every other operation to the reference implementation through shared macros.
 `poulpy-cpu-avx` adds AVX2 and FMA kernels and provides `FFT64Avx` and `NTT120Avx`.
-`poulpy-cpu-avx512` adds AVX-512 and IFMA kernels and provides `FFT64Avx512`, `NTT120Avx512`, and `NTT126Ifma`, the last of which uses a hand-written assembly kernel fusing IFMA reduction with a BMI2 and ADX carry chain for its CRT reconstruction.
+`poulpy-cpu-avx512` adds AVX-512 and IFMA kernels and provides `FFT64Avx512`, `NTT120Avx512`, and `NTT126Ifma`, the last of which reconstructs its CRT output with an AVX-512 IFMA kernel.
 
 Results are deterministic and bit-identical across backends, since the NTT families are exact and the FFT family is held within correct rounding.
 This means you can develop and test against `FFT64Ref` and switch to an accelerated backend with no change in output.
