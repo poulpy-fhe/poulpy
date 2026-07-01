@@ -124,12 +124,8 @@ poulpy-cpu-ref = "0.6"
 
 ## Documentation
 
-* [Getting Started](./docs/getting-started.md) is a map of the codebase: what each crate contains, how the layers fit together, how to build and test, and how the code's parameters relate to the usual FHE notation.
-* [Backends](./docs/backends.md) explains the three arithmetic families (`FFT64`, `NTT4x30`, `NTT3x42`) and how to pick one.
-* [Polynomial Evaluation](./docs/polynomial_evaluation.md) covers homomorphic polynomial evaluation on encrypted slots via the Baby-Step Giant-Step method, the split strategies, and the modulus consumed per degree.
-* [Linear Transformations](./docs/linear_transformation.md) covers the homomorphic matrix-vector product over the slots (`CoeffsToSlots` / `SlotsToCoeffs`) via the Baby-Step Giant-Step diagonal method.
+* The [`docs/`](./docs) folder holds the full documentation — a codebase map, the backend guide, design notes, and architecture diagrams. Start with its [index](./docs/README.md).
 * Crate package pages and generated Rust documentation are linked from the crates.io entries above.
-* Architecture diagrams and design notes live in the [`/docs`](./docs) folder.
 * Crate-specific READMEs provide more focused usage notes, especially [`poulpy-ckks`](./poulpy-ckks/README.md) and [`poulpy-bench`](./poulpy-bench/README.md).
 
 ## Testing Backend-Gated Integrations
