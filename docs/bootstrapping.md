@@ -24,10 +24,8 @@ The end-to-end test is exactly such a hand-composed reference.
 ## The integer wrap-around
 
 A CKKS ciphertext at modulus `q` encrypts a message `m` at scale `Δ = 2^log_delta`, so its plaintext polynomial is `Δ·m(X)`.
-Decryption recovers that value only modulo `q`: the inner product of the ciphertext with the secret key is `Δ·m(X) + q·I(X)`, where `I(X)` is an unknown integer polynomial that the reduction modulo `q` normally erases.
+Decryption recovers that value only modulo `q`: the inner product of the ciphertext with the secret key is `Δ·m(X) + q·I(X)`, where `I(X)` is an unknown integer polynomial, that needs to be removed to preserve the plaintext.
 
-Raising the modulus from `q` to a larger `Q` does not re-run that reduction, so the `q·I(X)` term becomes visible in the wider ciphertext.
-To recover `Δ·m` we must strip it back out, which is a modular reduction by `q`.
 Normalizing by `q` turns `q·I + Δ·m` into `I + Δ·m/q`, and `mod 1` removes the integer `I`, leaving `Δ·m/q`; scaling back by `q` returns `Δ·m` at the wide modulus.
 That homomorphic `x mod 1` is what EvalMod approximates.
 
@@ -39,7 +37,7 @@ The homomorphic DFT bridges the two: CoeffsToSlots moves the coefficients into t
 ModUp raises the ciphertext modulus from `q = 2^k_small` to the wider bootstrap modulus `2^k_large`.
 In the base-`2^K` representation this is a digit shift with no arithmetic: it MSB-aligns the source into the wide ciphertext (`glwe_copy`, leaving the new low-order limbs zero), then shifts the digits down to their natural integer magnitude (`glwe_rsh` by `k_large − k_small`).
 The raised-from modulus `q` becomes an explicit, un-reduced multiple `I(X)·q` in the `[0, 2^k_large)` window, which EvalMod later removes.
-The encoding scale `log_delta` is unchanged; the headroom now spans the full raised modulus, so `log_budget = k_large − log_delta`.
+The encoding scale `log_delta` is unchanged: the headroom now spans the full raised modulus, so `log_budget = k_large − log_delta`.
 
 Right after ModUp the ciphertext is relabeled at the input-modulus scale, a free division by the message ratio: setting `log_delta := log_modulus_in` reinterprets `q·I + Δ·m` as `I + m·Δ/q`, separating the integer part `I` from the residue.
 The message ratio is `q/Δ = 2^log_msg_ratio`, the bit gap between the payload and the integer part.
