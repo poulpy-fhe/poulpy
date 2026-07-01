@@ -5,7 +5,7 @@
 //!
 //! Usage (native x86_64 with AVX-512F):
 //!
-//!   RUSTFLAGS="-C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl,+bmi2,+adx" \
+//!   RUSTFLAGS="-C target-feature=+avx2,+fma,+avx512f,+avx512ifma,+avx512vl" \
 //!     cargo run --release --example bench_avx512_vs_ref \
 //!     -p poulpy-cpu-avx512 --features enable-avx512f
 //!

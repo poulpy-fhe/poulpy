@@ -34,28 +34,32 @@ It exists only as an IFMA-accelerated backend, because it relies on IFMA multipl
 
 ## Available backend types
 
-| Family | Reference | AVX2 / FMA | AVX-512 |
-|--------|-----------|------------|---------|
-| FFT64  | `FFT64Ref` | `FFT64Avx` | `FFT64Avx512` |
-| NTT120 | `NTT120Ref` | `NTT120Avx` | `NTT120Avx512` |
-| NTT126 | none | none | `NTT126Ifma` |
+| Family | Reference | AVX2 / FMA | AVX-512 | NEON |
+|--------|-----------|------------|---------|------|
+| FFT64  | `FFT64Ref` | `FFT64Avx` | `FFT64Avx512` | `FFT64Neon` |
+| NTT120 | `NTT120Ref` | `NTT120Avx` | `NTT120Avx512` | `NTT120Neon` |
+| NTT126 | none | none | `NTT126Ifma` | none |
 
 The `*Ref` types live in `poulpy-cpu-ref` and are portable across every CPU.
 The `*Avx` types live in `poulpy-cpu-avx`.
 The `*Avx512` and `NTT126Ifma` types live in `poulpy-cpu-avx512`.
+The `*Neon` types live in `poulpy-cpu-arm` and target AArch64 (Apple Silicon, Neoverse).
 
 | Backend | Crate | Feature | Required target features |
 |---------|-------|---------|--------------------------|
 | `FFT64Ref` | `poulpy-cpu-ref` | none | none |
 | `FFT64Avx` | `poulpy-cpu-avx` | `enable-avx` | `+avx2,+fma` |
 | `FFT64Avx512` | `poulpy-cpu-avx512` | `enable-avx512f` | `+avx512f` |
+| `FFT64Neon` | `poulpy-cpu-arm` | `enable-neon` | none |
 | `NTT120Ref` | `poulpy-cpu-ref` | none | none |
 | `NTT120Avx` | `poulpy-cpu-avx` | `enable-avx` | `+avx2,+fma` |
 | `NTT120Avx512` | `poulpy-cpu-avx512` | `enable-avx512f` | `+avx512f` |
+| `NTT120Neon` | `poulpy-cpu-arm` | `enable-neon` | none |
 | `NTT126Ifma` | `poulpy-cpu-avx512` | `enable-ifma` | `+avx512f,+avx512ifma,+avx512vl` |
 
-Accelerated backends check the required CPU features at runtime in `Module::new` and panic if they are missing.
+The AVX and AVX-512 backends check the required CPU features at runtime in `Module::new` and panic if they are missing.
 They also require the matching `target-feature` flags at compile time.
+The `*Neon` backends need no `target-feature` flags and build only on `aarch64`.
 
 ## How to use a backend
 
