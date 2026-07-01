@@ -23,7 +23,7 @@ use crate::reference::znx::{
     ZnxNormalizeMiddleStepAssign, ZnxNormalizeMiddleStepCarryOnly, ZnxNormalizeMiddleStepSub, ZnxRotate, ZnxSub, ZnxSubAssign,
     ZnxSubNegateAssign, ZnxSwitchRing, ZnxZero,
 };
-use crate::reference::{fft64::convolution::I64Ops, ntt120::I128BigOps};
+use crate::reference::{fft64::convolution::I64Ops, ntt4x30::I128BigOps};
 use poulpy_hal::{
     api::HostBufMut,
     layouts::{
@@ -64,7 +64,7 @@ impl ScalarBigHadamardProduct for crate::FFT64Ref {
     }
 }
 
-impl ScalarBigHadamardProduct for crate::NTT120Ref {
+impl ScalarBigHadamardProduct for crate::NTT4x30Ref {
     #[inline(always)]
     fn scalar_big_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
         Self::i128_hadamard_product_i64(res, a, b)

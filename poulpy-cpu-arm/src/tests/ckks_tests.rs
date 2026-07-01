@@ -12,20 +12,20 @@ ckks_backend_test_suite!(
 );
 
 ckks_backend_test_suite!(
-    mod ntt120_f64,
-    backend = crate::NTT120Neon,
+    mod ntt4x30_f64,
+    backend = crate::NTT4x30Neon,
     scalar = f64,
     encoder = crate::FFT64NeonReimTable,
-    params = poulpy_ckks::test_suite::NTT120_PARAMS_F64,
+    params = poulpy_ckks::test_suite::NTT4X30_PARAMS_F64,
     rotations = super::ATK_ROTATIONS,
 );
 
 // binary128 path on aarch64: `Quad` scalar with the reference encoder.
 ckks_backend_test_suite!(
-    mod ntt120_f128,
-    backend = crate::NTT120Neon,
+    mod ntt4x30_f128,
+    backend = crate::NTT4x30Neon,
     scalar = poulpy_ckks::Quad,
     encoder = poulpy_cpu_ref::FFT64ReimTable<poulpy_ckks::Quad>,
-    params = poulpy_ckks::test_suite::NTT120_PARAMS_F128,
+    params = poulpy_ckks::test_suite::NTT4X30_PARAMS_F128,
     rotations = super::ATK_ROTATIONS,
 );

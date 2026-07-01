@@ -149,9 +149,9 @@ fn tsk_layout() -> GLWETensorKeyLayout {
     }
 }
 
-fn bench_ntt120_ref(c: &mut Criterion) {
-    type BE = poulpy_cpu_ref::NTT120Ref;
-    let label = "ntt120-ref";
+fn bench_ntt4x30_ref(c: &mut Criterion) {
+    type BE = poulpy_cpu_ref::NTT4x30Ref;
+    let label = "ntt4x30-ref";
 
     let module = Module::<BE>::new(N as u64);
     let host_module = Module::<HostBytesBackend>::new(N as u64);
@@ -233,7 +233,7 @@ fn bench_ntt120_ref(c: &mut Criterion) {
 }
 
 fn bench_ckks_eval_mod(c: &mut Criterion) {
-    bench_ntt120_ref(c);
+    bench_ntt4x30_ref(c);
 }
 
 criterion_group! {

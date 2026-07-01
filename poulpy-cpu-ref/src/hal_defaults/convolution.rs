@@ -14,14 +14,14 @@ use crate::reference::{
         reim::{ReimArith, ReimFFTExecute, ReimFFTTable},
         reim4::{Reim4BlkMatVec, Reim4Convolution},
     },
-    ntt120::{
+    ntt4x30::{
         NttAddAssign, NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc1ColX2, NttPackLeft1BlkX2,
         convolution::{
-            ntt120_cnv_accumulate_dft, ntt120_cnv_accumulate_dft_tmp_bytes, ntt120_cnv_apply_dft,
-            ntt120_cnv_apply_dft_accumulate, ntt120_cnv_apply_dft_tmp_bytes, ntt120_cnv_by_const_apply,
-            ntt120_cnv_by_const_apply_tmp_bytes, ntt120_cnv_pairwise_apply_dft, ntt120_cnv_pairwise_apply_dft_tmp_bytes,
-            ntt120_cnv_prepare_left, ntt120_cnv_prepare_left_tmp_bytes, ntt120_cnv_prepare_right,
-            ntt120_cnv_prepare_right_tmp_bytes, ntt120_cnv_prepare_self, ntt120_cnv_prepare_self_tmp_bytes,
+            ntt4x30_cnv_accumulate_dft, ntt4x30_cnv_accumulate_dft_tmp_bytes, ntt4x30_cnv_apply_dft,
+            ntt4x30_cnv_apply_dft_accumulate, ntt4x30_cnv_apply_dft_tmp_bytes, ntt4x30_cnv_by_const_apply,
+            ntt4x30_cnv_by_const_apply_tmp_bytes, ntt4x30_cnv_pairwise_apply_dft, ntt4x30_cnv_pairwise_apply_dft_tmp_bytes,
+            ntt4x30_cnv_prepare_left, ntt4x30_cnv_prepare_left_tmp_bytes, ntt4x30_cnv_prepare_right,
+            ntt4x30_cnv_prepare_right_tmp_bytes, ntt4x30_cnv_prepare_self, ntt4x30_cnv_prepare_self_tmp_bytes,
         },
         ntt::NttTable,
         primes::Primes30,
@@ -280,7 +280,7 @@ where
 impl<BE: Backend> FFT64ConvolutionDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
 
 #[doc(hidden)]
-pub trait NTT120ConvolutionDefault<BE: Backend>: Backend
+pub trait NTT4x30ConvolutionDefault<BE: Backend>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
@@ -288,7 +288,7 @@ where
     where
         BE: Backend<ScalarPrep = Q120bScalar>,
     {
-        ntt120_cnv_prepare_left_tmp_bytes(module.n())
+        ntt4x30_cnv_prepare_left_tmp_bytes(module.n())
     }
 
     fn cnv_prepare_left_default(
@@ -303,16 +303,16 @@ where
         for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
     {
-        let bytes = ntt120_cnv_prepare_left_tmp_bytes(module.n());
+        let bytes = ntt4x30_cnv_prepare_left_tmp_bytes(module.n());
         let (tmp, _) = take_host_typed::<BE, u8>(scratch.borrow(), bytes);
-        ntt120_cnv_prepare_left::<BE>(module, res, a, mask, tmp);
+        ntt4x30_cnv_prepare_left::<BE>(module, res, a, mask, tmp);
     }
 
     fn cnv_prepare_right_tmp_bytes_default(module: &Module<BE>, _res_size: usize, _a_size: usize) -> usize
     where
         BE: Backend<ScalarPrep = Q120bScalar>,
     {
-        ntt120_cnv_prepare_right_tmp_bytes(module.n())
+        ntt4x30_cnv_prepare_right_tmp_bytes(module.n())
     }
 
     fn cnv_prepare_right_default(
@@ -327,9 +327,9 @@ where
         for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
     {
-        let bytes = ntt120_cnv_prepare_right_tmp_bytes(module.n());
+        let bytes = ntt4x30_cnv_prepare_right_tmp_bytes(module.n());
         let (tmp, _) = take_host_typed::<BE, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        ntt120_cnv_prepare_right::<BE>(module, res, a, mask, tmp);
+        ntt4x30_cnv_prepare_right::<BE>(module, res, a, mask, tmp);
     }
 
     fn cnv_apply_dft_tmp_bytes_default(
@@ -342,7 +342,7 @@ where
     where
         BE: Backend<ScalarPrep = Q120bScalar>,
     {
-        ntt120_cnv_apply_dft_tmp_bytes(res_size, a_size, b_size)
+        ntt4x30_cnv_apply_dft_tmp_bytes(res_size, a_size, b_size)
     }
 
     fn cnv_by_const_apply_tmp_bytes_default(
@@ -355,7 +355,7 @@ where
     where
         BE: Backend<ScalarBig = i128, ScalarPrep = Q120bScalar>,
     {
-        ntt120_cnv_by_const_apply_tmp_bytes(res_size, a_size, b_size)
+        ntt4x30_cnv_by_const_apply_tmp_bytes(res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -378,9 +378,9 @@ where
         R: VecZnxBigToBackendMut<BE>,
     {
         let mut res_ref = res.to_backend_mut();
-        let bytes = ntt120_cnv_by_const_apply_tmp_bytes(0, 0, 0);
+        let bytes = ntt4x30_cnv_by_const_apply_tmp_bytes(0, 0, 0);
         let (tmp, _) = take_host_typed::<BE, u8>(scratch.borrow(), bytes);
-        ntt120_cnv_by_const_apply::<BE>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_coeff, tmp);
+        ntt4x30_cnv_by_const_apply::<BE>(cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, b_coeff, tmp);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -403,9 +403,9 @@ where
         R: VecZnxDftToBackendMut<BE>,
     {
         let mut res_ref = res.to_backend_mut();
-        let bytes = ntt120_cnv_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let bytes = ntt4x30_cnv_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
         let (tmp, _) = take_host_typed::<BE, u8>(scratch.borrow(), bytes);
-        ntt120_cnv_apply_dft::<BE>(module, cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
+        ntt4x30_cnv_apply_dft::<BE>(module, cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -428,9 +428,9 @@ where
         R: VecZnxDftToBackendMut<BE>,
     {
         let mut res_ref = res.to_backend_mut();
-        let bytes = ntt120_cnv_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let bytes = ntt4x30_cnv_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
         let (tmp, _) = take_host_typed::<BE, u8>(scratch.borrow(), bytes);
-        ntt120_cnv_apply_dft_accumulate::<BE>(module, cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
+        ntt4x30_cnv_apply_dft_accumulate::<BE>(module, cnv_offset, &mut res_ref, res_col, a, a_col, b, b_col, tmp);
     }
 
     fn cnv_accumulate_dft_tmp_bytes_default(
@@ -443,7 +443,7 @@ where
     where
         BE: Backend<ScalarPrep = Q120bScalar>,
     {
-        ntt120_cnv_accumulate_dft_tmp_bytes(res_size, a_size, b_size)
+        ntt4x30_cnv_accumulate_dft_tmp_bytes(res_size, a_size, b_size)
     }
 
     fn cnv_accumulate_dft_default<'a, R>(
@@ -462,9 +462,9 @@ where
         R: VecZnxDftToBackendMut<BE>,
     {
         let mut res_ref = res.to_backend_mut();
-        let bytes = ntt120_cnv_accumulate_dft_tmp_bytes(res_ref.size(), 0, 0);
+        let bytes = ntt4x30_cnv_accumulate_dft_tmp_bytes(res_ref.size(), 0, 0);
         let (tmp, _) = take_host_typed::<BE, u8>(scratch.borrow(), bytes);
-        ntt120_cnv_accumulate_dft::<BE>(module, cnv_offset, &mut res_ref, res_col, terms, tmp);
+        ntt4x30_cnv_accumulate_dft::<BE>(module, cnv_offset, &mut res_ref, res_col, terms, tmp);
     }
 
     fn cnv_pairwise_apply_dft_tmp_bytes_default(
@@ -477,7 +477,7 @@ where
     where
         BE: Backend<ScalarPrep = Q120bScalar>,
     {
-        ntt120_cnv_pairwise_apply_dft_tmp_bytes(res_size, a_size, b_size)
+        ntt4x30_cnv_pairwise_apply_dft_tmp_bytes(res_size, a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -500,16 +500,16 @@ where
         R: VecZnxDftToBackendMut<BE>,
     {
         let mut res_ref = res.to_backend_mut();
-        let bytes = ntt120_cnv_pairwise_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
+        let bytes = ntt4x30_cnv_pairwise_apply_dft_tmp_bytes(res_ref.size(), a.size(), b.size());
         let (tmp, _) = take_host_typed::<BE, u8>(scratch.borrow(), bytes);
-        ntt120_cnv_pairwise_apply_dft::<BE>(module, cnv_offset, &mut res_ref, res_col, a, b, i, j, tmp);
+        ntt4x30_cnv_pairwise_apply_dft::<BE>(module, cnv_offset, &mut res_ref, res_col, a, b, i, j, tmp);
     }
 
     fn cnv_prepare_self_tmp_bytes_default(module: &Module<BE>, _res_size: usize, _a_size: usize) -> usize
     where
         BE: Backend<ScalarPrep = Q120bScalar>,
     {
-        ntt120_cnv_prepare_self_tmp_bytes(module.n())
+        ntt4x30_cnv_prepare_self_tmp_bytes(module.n())
     }
 
     fn cnv_prepare_self_default(
@@ -530,10 +530,10 @@ where
         for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
     {
-        let bytes = ntt120_cnv_prepare_self_tmp_bytes(module.n());
+        let bytes = ntt4x30_cnv_prepare_self_tmp_bytes(module.n());
         let (tmp, _) = take_host_typed::<BE, u8>(scratch.borrow(), bytes);
-        ntt120_cnv_prepare_self::<BE>(module, left, right, a, mask, tmp);
+        ntt4x30_cnv_prepare_self::<BE>(module, left, right, a, mask, tmp);
     }
 }
 
-impl<BE: Backend> NTT120ConvolutionDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
+impl<BE: Backend> NTT4x30ConvolutionDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}

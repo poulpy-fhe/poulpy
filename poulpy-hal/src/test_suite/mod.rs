@@ -26,7 +26,7 @@ pub mod vmp;
 ///
 /// Centralising these values at the macro call-site makes it possible to
 /// instantiate the same test suite with backend-appropriate parameters
-/// (e.g. different `base2k` for FFT64 vs NTT120).
+/// (e.g. different `base2k` for FFT64 vs NTT4x30).
 #[derive(Clone, Copy, Debug)]
 pub struct TestParams {
     /// Ring degree N (polynomial degree).

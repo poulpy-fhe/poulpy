@@ -12,11 +12,11 @@ use crate::reference::{
             svp_apply_dft_to_dft_assign as fft64_svp_apply_dft_to_dft_assign, svp_prepare as fft64_svp_prepare,
         },
     },
-    ntt120::{
+    ntt4x30::{
         NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc, NttZero,
         ntt::NttTable,
         primes::Primes30,
-        svp::{ntt120_svp_apply_dft_to_dft_assign, ntt120_svp_prepare},
+        svp::{ntt4x30_svp_apply_dft_to_dft_assign, ntt4x30_svp_prepare},
         types::Q120bScalar,
         vec_znx_dft::NttModuleHandle,
     },
@@ -117,7 +117,7 @@ where
 impl<BE: Backend> FFT64SvpDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
 
 #[doc(hidden)]
-pub trait NTT120SvpDefault<BE: Backend>: Backend
+pub trait NTT4x30SvpDefault<BE: Backend>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
@@ -130,7 +130,7 @@ where
         R: SvpPPolToBackendMut<BE>,
     {
         let mut res_ref = res.to_backend_mut();
-        ntt120_svp_prepare::<BE>(module, &mut res_ref, res_col, a, a_col);
+        ntt4x30_svp_prepare::<BE>(module, &mut res_ref, res_col, a, a_col);
     }
 
     fn svp_ppol_copy_backend_default(
@@ -246,8 +246,8 @@ where
         A: SvpPPolToBackendRef<BE>,
     {
         let a_ref = a.to_backend_ref();
-        ntt120_svp_apply_dft_to_dft_assign::<BE>(module, res, res_col, &a_ref, a_col);
+        ntt4x30_svp_apply_dft_to_dft_assign::<BE>(module, res, res_col, &a_ref, a_col);
     }
 }
 
-impl<BE: Backend> NTT120SvpDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
+impl<BE: Backend> NTT4x30SvpDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}

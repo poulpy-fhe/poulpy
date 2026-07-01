@@ -21,8 +21,8 @@
 - **`poulpy-bin-fhe`**: the binary/gate-level FHE crate built on **`poulpy-core`** and **`poulpy-hal`**. It replaces the former `poulpy-schemes` crate; its public APIs have moved to the backend-owned HAL/core surface, while a few host/reference-backend dependencies remain for this release.
 - **`poulpy-cpu-ref`**: the reference CPU implementation of **`poulpy-hal`**.
 - **`poulpy-cpu-avx`**: an AVX2/FMA accelerated CPU implementation of **`poulpy-hal`**. Enable it with the `enable-avx` feature on crates that expose that feature.
-- **`poulpy-cpu-avx512`**: an AVX-512 accelerated CPU implementation of **`poulpy-hal`**, exposing three backends: `FFT64Avx512` and `NTT120Avx512` (AVX-512F, via `enable-avx512f`) and `NTT126Ifma` (AVX-512F + IFMA + VL + BMI2 + ADX, via `enable-ifma`).
-- **`poulpy-cpu-arm`**: a NEON/ASIMD accelerated CPU implementation of **`poulpy-hal`** for AArch64, exposing two backends: `FFT64Neon` and `NTT120Neon`. Enable it with the `enable-neon` feature on crates that expose that feature.
+- **`poulpy-cpu-avx512`**: an AVX-512 accelerated CPU implementation of **`poulpy-hal`**, exposing three backends: `FFT64Avx512` and `NTT4x30Avx512` (AVX-512F, via `enable-avx512f`) and `NTT3x42Ifma` (AVX-512F + IFMA + VL + BMI2 + ADX, via `enable-ifma`).
+- **`poulpy-cpu-arm`**: a NEON/ASIMD accelerated CPU implementation of **`poulpy-hal`** for AArch64, exposing two backends: `FFT64Neon` and `NTT4x30Neon`. Enable it with the `enable-neon` feature on crates that expose that feature.
 - **`poulpy-bench`**: the consolidated Criterion benchmark suite for the workspace. It is an internal workspace crate and is not published to crates.io.
 
 ## Architecture
@@ -125,7 +125,7 @@ poulpy-cpu-ref = "0.6"
 ## Documentation
 
 * [Getting Started](./docs/getting-started.md) is a map of the codebase: what each crate contains, how the layers fit together, how to build and test, and how the code's parameters relate to the usual FHE notation.
-* [Backends](./docs/backends.md) explains the three arithmetic families (`FFT64`, `NTT120`, `NTT126`) and how to pick one.
+* [Backends](./docs/backends.md) explains the three arithmetic families (`FFT64`, `NTT4x30`, `NTT3x42`) and how to pick one.
 * [Polynomial Evaluation](./docs/polynomial_evaluation.md) covers homomorphic polynomial evaluation on encrypted slots via the Baby-Step Giant-Step method, the split strategies, and the modulus consumed per degree.
 * [Linear Transformations](./docs/linear_transformation.md) covers the homomorphic matrix-vector product over the slots (`CoeffsToSlots` / `SlotsToCoeffs`) via the Baby-Step Giant-Step diagonal method.
 * Crate package pages and generated Rust documentation are linked from the crates.io entries above.

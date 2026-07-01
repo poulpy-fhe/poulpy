@@ -3,8 +3,8 @@
 //! This crate provides three backend implementations for [`poulpy_hal`]:
 //!
 //! - `FFT64Avx512`: f64 FFT backend, gated on `enable-avx512f`.
-//! - `NTT120Avx512`: Q120 NTT backend over four ~30-bit CRT primes, gated on `enable-avx512f`.
-//! - `NTT126Ifma`: Q126 NTT backend over three ~42-bit CRT primes, gated on `enable-ifma`.
+//! - `NTT4x30Avx512`: Q120 NTT backend over four ~30-bit CRT primes, gated on `enable-avx512f`.
+//! - `NTT3x42Ifma`: Q126 NTT backend over three ~42-bit CRT primes, gated on `enable-ifma`.
 //!
 //! # Architecture
 //!
@@ -20,24 +20,24 @@
 //! |--------------------|------------------------------------------------------------|
 //! | `fft64`            | `FFT64Avx512` backend and REIM FFT table wrappers          |
 //! | `znx_avx512`       | AVX-512F single ring element arithmetic                    |
-//! | `ntt120_avx512`    | `NTT120Avx512` NTT, VMP, convolution, and DFT kernels      |
-//! | `ntt126_ifma`      | `NTT126Ifma` IFMA NTT, VMP, SVP, convolution, and DFT code |
+//! | `ntt4x30_avx512`    | `NTT4x30Avx512` NTT, VMP, convolution, and DFT kernels      |
+//! | `ntt3x42_ifma`      | `NTT3x42Ifma` IFMA NTT, VMP, SVP, convolution, and DFT code |
 //! | `hal_impl`         | HAL OEP implementations and default wiring                 |
 //! | `vec_znx_big_avx512` | AVX-512F i128 accumulator helpers                        |
 //!
 //! # Scalar types
 //!
 //! - `FFT64Avx512`: `ScalarPrep = f64`, `ScalarBig = i64`.
-//! - `NTT120Avx512`: `ScalarPrep = Q120bScalar`, `ScalarBig = i128`.
-//! - `NTT126Ifma`: `ScalarPrep = Q126Scalar`, `ScalarBig = i128`.
+//! - `NTT4x30Avx512`: `ScalarPrep = Q120bScalar`, `ScalarBig = i128`.
+//! - `NTT3x42Ifma`: `ScalarPrep = Q126Scalar`, `ScalarBig = i128`.
 //!
 //! # CPU requirements
 //!
-//! `FFT64Avx512` and `NTT120Avx512` require x86-64 with AVX-512F. The FFT64
+//! `FFT64Avx512` and `NTT4x30Avx512` require x86-64 with AVX-512F. The FFT64
 //! backend also uses AVX2 and FMA kernels and checks those features at module
 //! construction.
 //!
-//! `NTT126Ifma` additionally requires AVX-512-IFMA and AVX-512VL.
+//! `NTT3x42Ifma` additionally requires AVX-512-IFMA and AVX-512VL.
 //! Runtime CPU feature detection is performed in
 //! [`Module::new()`](poulpy_hal::api::ModuleNew::new); missing runtime features
 //! cause a descriptive panic.
@@ -88,16 +88,16 @@
 //!
 //! # Feature flags
 //!
-//! - `enable-avx512f`: exports `FFT64Avx512` and `NTT120Avx512`.
-//! - `enable-ifma`: implies `enable-avx512f` and also exports `NTT126Ifma`.
+//! - `enable-avx512f`: exports `FFT64Avx512` and `NTT4x30Avx512`.
+//! - `enable-ifma`: implies `enable-avx512f` and also exports `NTT3x42Ifma`.
 //! - `enable-ckks`: wires these backends into `poulpy-ckks` defaults.
 //!
 //! # Platform support
 //!
 //! - Required: x86-64.
 //! - `FFT64Avx512`: AVX-512F + AVX2 + FMA.
-//! - `NTT120Avx512`: AVX-512F.
-//! - `NTT126Ifma`: AVX-512F + AVX-512-IFMA + AVX-512VL.
+//! - `NTT4x30Avx512`: AVX-512F.
+//! - `NTT3x42Ifma`: AVX-512F + AVX-512-IFMA + AVX-512VL.
 //! - Non-x86 targets and x86-64 CPUs without the selected feature set are not supported.
 //!
 //! # Usage
@@ -109,7 +109,7 @@
 //! # Versioning and stability
 //!
 //! The public API consists of the backend marker types, FFT table wrappers, and
-//! the `ntt126_ifma_api` support exports used by benchmarks. Other items are
+//! the `ntt3x42_ifma_api` support exports used by benchmarks. Other items are
 //! implementation details.
 
 #[cfg(all(feature = "enable-avx512f", not(docsrs), not(target_arch = "x86_64")))]
@@ -149,7 +149,7 @@ mod fft64;
 #[cfg(feature = "enable-avx512f")]
 mod hal_impl;
 #[cfg(feature = "enable-avx512f")]
-mod ntt120_avx512;
+mod ntt4x30_avx512;
 #[cfg(feature = "enable-avx512f")]
 mod znx_avx512;
 
@@ -157,27 +157,27 @@ mod znx_avx512;
 mod vec_znx_big_avx512;
 
 #[cfg(feature = "enable-ifma")]
-mod ntt126_ifma;
+mod ntt3x42_ifma;
 
 #[cfg(feature = "enable-avx512f")]
 pub use fft64::{FFT64Avx512, FFT64Avx512ReimTable, ReimFFTAvx512, ReimIFFTAvx512};
-#[cfg(feature = "enable-avx512f")]
-pub use ntt120_avx512::NTT120Avx512;
 #[cfg(feature = "enable-ifma")]
-pub use ntt126_ifma::NTT126Ifma;
+pub use ntt3x42_ifma::NTT3x42Ifma;
+#[cfg(feature = "enable-avx512f")]
+pub use ntt4x30_avx512::NTT4x30Avx512;
 
-/// Public surface for tools that drive [`NTT126Ifma`] kernels directly (e.g. the
+/// Public surface for tools that drive [`NTT3x42Ifma`] kernels directly (e.g. the
 /// benches): the precomputed twiddle tables, the prime set, and the
-/// [`Ntt126IfmaDFTExecute`](ntt126_ifma_api::Ntt126IfmaDFTExecute) trait used to
+/// [`Ntt3x42IfmaDFTExecute`](ntt3x42_ifma_api::Ntt3x42IfmaDFTExecute) trait used to
 /// dispatch a forward / inverse NTT.
 ///
 /// The scalar test oracles for the IFMA SIMD kernels live under
-/// `crate::ntt126_ifma::reference` and are not re-exported.
+/// `crate::ntt3x42_ifma::reference` and are not re-exported.
 #[cfg(feature = "enable-ifma")]
-pub mod ntt126_ifma_api {
-    pub use crate::ntt126_ifma::primes::{PrimeSetNtt126Ifma, Primes42};
-    pub use crate::ntt126_ifma::tables::{Ntt126IfmaTable, Ntt126IfmaTableInv};
-    pub use crate::ntt126_ifma::traits::Ntt126IfmaDFTExecute;
+pub mod ntt3x42_ifma_api {
+    pub use crate::ntt3x42_ifma::primes::{PrimeSetNtt3x42Ifma, Primes42};
+    pub use crate::ntt3x42_ifma::tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv};
+    pub use crate::ntt3x42_ifma::traits::Ntt3x42IfmaDFTExecute;
 }
 
 #[cfg(all(feature = "enable-ckks", not(any(feature = "enable-avx512f", feature = "enable-ifma"))))]
@@ -196,12 +196,12 @@ mod tests;
 // --- TransferFrom impls ---
 #[cfg(feature = "enable-avx512f")]
 mod transfer_impls {
-    use poulpy_cpu_ref::{FFT64Ref, NTT120Ref};
+    use poulpy_cpu_ref::{FFT64Ref, NTT4x30Ref};
     use poulpy_hal::layouts::{Backend, TransferFrom};
 
     #[cfg(feature = "enable-ifma")]
-    use crate::NTT126Ifma;
-    use crate::{FFT64Avx512, NTT120Avx512};
+    use crate::NTT3x42Ifma;
+    use crate::{FFT64Avx512, NTT4x30Avx512};
 
     impl TransferFrom<FFT64Avx512> for FFT64Avx512 {
         fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
@@ -214,81 +214,81 @@ mod transfer_impls {
         }
     }
 
-    impl TransferFrom<NTT120Avx512> for NTT120Avx512 {
+    impl TransferFrom<NTT4x30Avx512> for NTT4x30Avx512 {
         fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            NTT120Avx512::from_host_bytes(&NTT120Avx512::to_host_bytes(src))
+            NTT4x30Avx512::from_host_bytes(&NTT4x30Avx512::to_host_bytes(src))
         }
     }
-    impl TransferFrom<NTT120Ref> for NTT120Avx512 {
+    impl TransferFrom<NTT4x30Ref> for NTT4x30Avx512 {
         fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            NTT120Avx512::from_host_bytes(&NTT120Ref::to_host_bytes(src))
+            NTT4x30Avx512::from_host_bytes(&NTT4x30Ref::to_host_bytes(src))
         }
     }
 
     // Cross-family: coefficient-domain buffers are compatible.
     // Prepared layouts must not be transferred directly; transfer the
     // non-prepared form and re-prepare on the destination backend.
-    impl TransferFrom<NTT120Ref> for FFT64Avx512 {
+    impl TransferFrom<NTT4x30Ref> for FFT64Avx512 {
         fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            FFT64Avx512::from_host_bytes(&NTT120Ref::to_host_bytes(src))
+            FFT64Avx512::from_host_bytes(&NTT4x30Ref::to_host_bytes(src))
         }
     }
-    impl TransferFrom<NTT120Avx512> for FFT64Avx512 {
+    impl TransferFrom<NTT4x30Avx512> for FFT64Avx512 {
         fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            FFT64Avx512::from_host_bytes(&NTT120Avx512::to_host_bytes(src))
+            FFT64Avx512::from_host_bytes(&NTT4x30Avx512::to_host_bytes(src))
         }
     }
-    impl TransferFrom<FFT64Ref> for NTT120Avx512 {
+    impl TransferFrom<FFT64Ref> for NTT4x30Avx512 {
         fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            NTT120Avx512::from_host_bytes(&FFT64Ref::to_host_bytes(src))
+            NTT4x30Avx512::from_host_bytes(&FFT64Ref::to_host_bytes(src))
         }
     }
-    impl TransferFrom<FFT64Avx512> for NTT120Avx512 {
+    impl TransferFrom<FFT64Avx512> for NTT4x30Avx512 {
         fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            NTT120Avx512::from_host_bytes(&FFT64Avx512::to_host_bytes(src))
+            NTT4x30Avx512::from_host_bytes(&FFT64Avx512::to_host_bytes(src))
         }
     }
 
     #[cfg(feature = "enable-ifma")]
-    impl TransferFrom<NTT126Ifma> for NTT126Ifma {
+    impl TransferFrom<NTT3x42Ifma> for NTT3x42Ifma {
         fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            NTT126Ifma::from_host_bytes(&NTT126Ifma::to_host_bytes(src))
+            NTT3x42Ifma::from_host_bytes(&NTT3x42Ifma::to_host_bytes(src))
         }
     }
     #[cfg(feature = "enable-ifma")]
-    impl TransferFrom<NTT120Ref> for NTT126Ifma {
+    impl TransferFrom<NTT4x30Ref> for NTT3x42Ifma {
         fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            NTT126Ifma::from_host_bytes(&NTT120Ref::to_host_bytes(src))
+            NTT3x42Ifma::from_host_bytes(&NTT4x30Ref::to_host_bytes(src))
         }
     }
     #[cfg(feature = "enable-ifma")]
-    impl TransferFrom<FFT64Ref> for NTT126Ifma {
+    impl TransferFrom<FFT64Ref> for NTT3x42Ifma {
         fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            NTT126Ifma::from_host_bytes(&FFT64Ref::to_host_bytes(src))
+            NTT3x42Ifma::from_host_bytes(&FFT64Ref::to_host_bytes(src))
         }
     }
     #[cfg(feature = "enable-ifma")]
-    impl TransferFrom<NTT120Avx512> for NTT126Ifma {
+    impl TransferFrom<NTT4x30Avx512> for NTT3x42Ifma {
         fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            NTT126Ifma::from_host_bytes(&NTT120Avx512::to_host_bytes(src))
+            NTT3x42Ifma::from_host_bytes(&NTT4x30Avx512::to_host_bytes(src))
         }
     }
     #[cfg(feature = "enable-ifma")]
-    impl TransferFrom<FFT64Avx512> for NTT126Ifma {
+    impl TransferFrom<FFT64Avx512> for NTT3x42Ifma {
         fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            NTT126Ifma::from_host_bytes(&FFT64Avx512::to_host_bytes(src))
+            NTT3x42Ifma::from_host_bytes(&FFT64Avx512::to_host_bytes(src))
         }
     }
     #[cfg(feature = "enable-ifma")]
-    impl TransferFrom<NTT126Ifma> for FFT64Avx512 {
+    impl TransferFrom<NTT3x42Ifma> for FFT64Avx512 {
         fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            FFT64Avx512::from_host_bytes(&NTT126Ifma::to_host_bytes(src))
+            FFT64Avx512::from_host_bytes(&NTT3x42Ifma::to_host_bytes(src))
         }
     }
     #[cfg(feature = "enable-ifma")]
-    impl TransferFrom<NTT126Ifma> for NTT120Avx512 {
+    impl TransferFrom<NTT3x42Ifma> for NTT4x30Avx512 {
         fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            NTT120Avx512::from_host_bytes(&NTT126Ifma::to_host_bytes(src))
+            NTT4x30Avx512::from_host_bytes(&NTT3x42Ifma::to_host_bytes(src))
         }
     }
 }

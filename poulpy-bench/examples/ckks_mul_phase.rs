@@ -13,7 +13,7 @@ use poulpy_core::{
         Rank, TorusPrecision,
     },
 };
-use poulpy_cpu_avx512::NTT126Ifma;
+use poulpy_cpu_avx512::NTT3x42Ifma;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Module, ScratchOwned},
@@ -28,7 +28,7 @@ fn main() {
     let iters: u64 = args.get(3).and_then(|s| s.parse().ok()).unwrap_or(200);
     let (n, base2k, k, dsize, rank) = (1u32 << log_n, 52u32, 728u32, 1u32, 1u32);
 
-    let module = Module::<NTT126Ifma>::new(n as u64);
+    let module = Module::<NTT3x42Ifma>::new(n as u64);
     let glwe = GLWELayout {
         n: Degree(n),
         base2k: Base2K(base2k),
@@ -52,13 +52,13 @@ fn main() {
         let tsk = module.alloc_tensor_key_prepared_from_infos(&tsk_layout);
         let mut res = module.glwe_alloc_from_infos(&glwe);
         let tsk_size = tensor.max_size() + dsize as usize;
-        let mut scratch = ScratchOwned::<NTT126Ifma>::alloc(module.glwe_tensor_relinearize_tmp_bytes(&res, &tensor, &tsk));
+        let mut scratch = ScratchOwned::<NTT3x42Ifma>::alloc(module.glwe_tensor_relinearize_tmp_bytes(&res, &tensor, &tsk));
         for _ in 0..iters {
             module.glwe_tensor_relinearize(&mut res, &tensor, &tsk, tsk_size, &mut scratch.borrow());
             black_box(&res);
         }
     } else {
-        let mut scratch = ScratchOwned::<NTT126Ifma>::alloc(module.glwe_tensor_apply_tmp_bytes(&tensor, &a, &b));
+        let mut scratch = ScratchOwned::<NTT3x42Ifma>::alloc(module.glwe_tensor_apply_tmp_bytes(&tensor, &a, &b));
         for _ in 0..iters {
             module.glwe_tensor_apply(0, &mut tensor, &a, &b, &mut scratch.borrow());
             black_box(&tensor);

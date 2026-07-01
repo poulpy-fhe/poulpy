@@ -198,5 +198,5 @@ A small self-contained parameter set (ring degree `n = 2048`, `K = 16`, message 
 - `poulpy-cpu-ref/examples/bootstrap_trace.rs` runs the standard pipeline for profiling.
 
 ```sh
-cargo test -p poulpy-cpu-ref --features enable-ckks --release ntt120_f64::bootstrapping_e2e -- --nocapture
+cargo test -p poulpy-cpu-ref --features enable-ckks --release ntt4x30_f64::bootstrapping_e2e -- --nocapture
 ```

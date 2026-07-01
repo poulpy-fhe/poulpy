@@ -283,7 +283,7 @@ Further (out of scope here, noted for later):
 **Headroom caveat.** Savings 4–6 are bounded by the width of the `BIG` scalar: the
 accumulator absorbs the `n1`-term convolution sum *and* the `n2`-term giant sum without
 normalizing. For large `n1·n2` and small base-`2^K`, verify the accumulation fits the
-backend's `ScalarBig` (e.g. `i128` for NTT120); if not, insert an intermediate
+backend's `ScalarBig` (e.g. `i128` for NTT4x30); if not, insert an intermediate
 `vec_znx_big_normalize` of the body. This is the one place laziness has a hard limit.
 
 ---

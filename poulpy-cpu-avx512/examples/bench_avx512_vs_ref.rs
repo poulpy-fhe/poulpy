@@ -40,12 +40,12 @@ mod avx512 {
     use rand::{RngExt, SeedableRng};
     use rand_chacha::ChaCha8Rng;
 
-    use poulpy_cpu_avx512::{FFT64Avx512, NTT120Avx512};
+    use poulpy_cpu_avx512::{FFT64Avx512, NTT4x30Avx512};
     use poulpy_cpu_ref::{
-        FFT64Ref, NTT120Ref,
+        FFT64Ref, NTT4x30Ref,
         reference::{
             fft64::reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable},
-            ntt120::{
+            ntt4x30::{
                 I128BigOps, I128NormalizeOps, NttDFTExecute, NttFromZnx64,
                 ntt::{NttTable, NttTableInv},
                 primes::{PrimeSet, Primes30},
@@ -364,25 +364,25 @@ mod avx512 {
         row(rep, "ifft", n, ref_ns, avx512_ns, sp);
     }
 
-    // ─── NTT120 ────────────────────────────────────────────────────────────
+    // ─── NTT4x30 ────────────────────────────────────────────────────────────
 
     fn bench_ntt_from_znx64(rep: &mut Reporter, n: usize, sp: &mut Vec<f64>) {
         let a = rand_i64s(n);
 
         let mut avx = vec![0u64; 4 * n];
         let mut refr = vec![0u64; 4 * n];
-        <NTT120Avx512 as NttFromZnx64>::ntt_from_znx64(&mut avx, &a);
-        <NTT120Ref as NttFromZnx64>::ntt_from_znx64(&mut refr, &a);
+        <NTT4x30Avx512 as NttFromZnx64>::ntt_from_znx64(&mut avx, &a);
+        <NTT4x30Ref as NttFromZnx64>::ntt_from_znx64(&mut refr, &a);
         assert_eq!(avx, refr, "ntt_from_znx64 (n={n})");
 
         let iters = iters_for(n);
         let mut r = vec![0u64; 4 * n];
         let ref_ns = time(iters, || {
-            <NTT120Ref as NttFromZnx64>::ntt_from_znx64(&mut r, &a);
+            <NTT4x30Ref as NttFromZnx64>::ntt_from_znx64(&mut r, &a);
             black_box(&r);
         });
         let avx512_ns = time(iters, || {
-            <NTT120Avx512 as NttFromZnx64>::ntt_from_znx64(&mut r, &a);
+            <NTT4x30Avx512 as NttFromZnx64>::ntt_from_znx64(&mut r, &a);
             black_box(&r);
         });
         row(rep, "ntt_from_znx64", n, ref_ns, avx512_ns, sp);
@@ -394,20 +394,20 @@ mod avx512 {
 
         let mut avx = data0.clone();
         let mut refr = data0.clone();
-        <NTT120Avx512 as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut avx);
-        <NTT120Ref as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut refr);
+        <NTT4x30Avx512 as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut avx);
+        <NTT4x30Ref as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut refr);
         assert_eq!(avx, refr, "ntt (n={n})");
 
         let iters = iters_for(n);
         let mut d = data0.clone();
         let ref_ns = time(iters, || {
             d.copy_from_slice(&data0);
-            <NTT120Ref as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut d);
+            <NTT4x30Ref as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut d);
             black_box(&d);
         });
         let avx512_ns = time(iters, || {
             d.copy_from_slice(&data0);
-            <NTT120Avx512 as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut d);
+            <NTT4x30Avx512 as NttDFTExecute<NttTable<Primes30>>>::ntt_dft_execute(&table, &mut d);
             black_box(&d);
         });
         row(rep, "ntt", n, ref_ns, avx512_ns, sp);
@@ -419,20 +419,20 @@ mod avx512 {
 
         let mut avx = data0.clone();
         let mut refr = data0.clone();
-        <NTT120Avx512 as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut avx);
-        <NTT120Ref as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut refr);
+        <NTT4x30Avx512 as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut avx);
+        <NTT4x30Ref as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut refr);
         assert_eq!(avx, refr, "intt (n={n})");
 
         let iters = iters_for(n);
         let mut d = data0.clone();
         let ref_ns = time(iters, || {
             d.copy_from_slice(&data0);
-            <NTT120Ref as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut d);
+            <NTT4x30Ref as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut d);
             black_box(&d);
         });
         let avx512_ns = time(iters, || {
             d.copy_from_slice(&data0);
-            <NTT120Avx512 as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut d);
+            <NTT4x30Avx512 as NttDFTExecute<NttTableInv<Primes30>>>::ntt_dft_execute(&table, &mut d);
             black_box(&d);
         });
         row(rep, "intt", n, ref_ns, avx512_ns, sp);
@@ -446,18 +446,18 @@ mod avx512 {
 
         let mut avx = vec![0i128; n];
         let mut refr = vec![0i128; n];
-        <NTT120Avx512 as I128BigOps>::i128_add(&mut avx, &a, &b);
-        <NTT120Ref as I128BigOps>::i128_add(&mut refr, &a, &b);
+        <NTT4x30Avx512 as I128BigOps>::i128_add(&mut avx, &a, &b);
+        <NTT4x30Ref as I128BigOps>::i128_add(&mut refr, &a, &b);
         assert_eq!(avx, refr, "i128_add (n={n})");
 
         let iters = iters_for(n);
         let mut r = vec![0i128; n];
         let ref_ns = time(iters, || {
-            <NTT120Ref as I128BigOps>::i128_add(&mut r, &a, &b);
+            <NTT4x30Ref as I128BigOps>::i128_add(&mut r, &a, &b);
             black_box(&r);
         });
         let avx512_ns = time(iters, || {
-            <NTT120Avx512 as I128BigOps>::i128_add(&mut r, &a, &b);
+            <NTT4x30Avx512 as I128BigOps>::i128_add(&mut r, &a, &b);
             black_box(&r);
         });
         row(rep, "i128_add", n, ref_ns, avx512_ns, sp);
@@ -472,8 +472,8 @@ mod avx512 {
         let mut c_avx = c_init.clone();
         let mut r_ref = vec![0i64; n];
         let mut c_ref = c_init.clone();
-        <NTT120Avx512 as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r_avx, &a, &mut c_avx);
-        <NTT120Ref as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r_ref, &a, &mut c_ref);
+        <NTT4x30Avx512 as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r_avx, &a, &mut c_avx);
+        <NTT4x30Ref as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r_ref, &a, &mut c_ref);
         assert_eq!(r_avx, r_ref, "nfc_middle_step r (n={n})");
         assert_eq!(c_avx, c_ref, "nfc_middle_step c (n={n})");
 
@@ -482,12 +482,12 @@ mod avx512 {
         let mut c = c_init.clone();
         let ref_ns = time(iters, || {
             c.copy_from_slice(&c_init);
-            <NTT120Ref as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r, &a, &mut c);
+            <NTT4x30Ref as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r, &a, &mut c);
             black_box((&r, &c));
         });
         let avx512_ns = time(iters, || {
             c.copy_from_slice(&c_init);
-            <NTT120Avx512 as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r, &a, &mut c);
+            <NTT4x30Avx512 as I128NormalizeOps>::nfc_middle_step(base2k, 0, &mut r, &a, &mut c);
             black_box((&r, &c));
         });
         row(rep, "nfc_middle_step (i128)", n, ref_ns, avx512_ns, sp);
@@ -559,7 +559,7 @@ mod avx512 {
             bench_ifft(&mut rep, n, &mut sp);
         }
 
-        section(&mut rep, "NTT120 (q120b)");
+        section(&mut rep, "NTT4x30 (q120b)");
         for &n in SIZES {
             bench_ntt_from_znx64(&mut rep, n, &mut sp);
             bench_ntt(&mut rep, n, &mut sp);

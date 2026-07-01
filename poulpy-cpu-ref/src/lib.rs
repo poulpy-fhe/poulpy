@@ -5,7 +5,7 @@
 //! This crate provides two reference implementations for [`poulpy_hal`]:
 //!
 //! - [`FFT64Ref`]: scalar `f64` FFT arithmetic — see the [`fft64`] module.
-//! - [`NTT120Ref`]: scalar Q120 NTT arithmetic (CRT over four ~30-bit primes) — see the [`ntt120`] module.
+//! - [`NTT4x30Ref`]: scalar Q120 NTT arithmetic (CRT over four ~30-bit primes) — see the [`ntt4x30`] module.
 //!
 //! Both are canonical reference implementations: portable across all CPU architectures,
 //! prioritising correctness and debuggability over throughput.
@@ -23,7 +23,7 @@ pub mod core_impl;
 pub mod fft64;
 pub mod hal_defaults;
 mod hal_impl;
-pub mod ntt120;
+pub mod ntt4x30;
 pub mod reference;
 
 #[cfg(test)]
@@ -44,13 +44,13 @@ pub mod source {
 }
 
 pub use fft64::{FFT64Ref, FFT64ReimTable};
-pub use ntt120::{NTT120Ref, NTT120RefHandle};
+pub use ntt4x30::{NTT4x30Ref, NTT4x30RefHandle};
 
 // --- TransferFrom impls ---
 mod transfer_impls {
     use poulpy_hal::layouts::{Backend, TransferFrom};
 
-    use crate::{FFT64Ref, NTT120Ref};
+    use crate::{FFT64Ref, NTT4x30Ref};
 
     impl TransferFrom<FFT64Ref> for FFT64Ref {
         fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
@@ -58,23 +58,23 @@ mod transfer_impls {
         }
     }
 
-    impl TransferFrom<NTT120Ref> for NTT120Ref {
+    impl TransferFrom<NTT4x30Ref> for NTT4x30Ref {
         fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            NTT120Ref::from_host_bytes(&NTT120Ref::to_host_bytes(src))
+            NTT4x30Ref::from_host_bytes(&NTT4x30Ref::to_host_bytes(src))
         }
     }
 
     // Cross-family: coefficient-domain buffers are compatible (plain i64 data).
     // Prepared layouts are backend-specific and must not be transferred directly;
     // transfer the non-prepared form and re-prepare on the destination backend.
-    impl TransferFrom<NTT120Ref> for FFT64Ref {
+    impl TransferFrom<NTT4x30Ref> for FFT64Ref {
         fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            FFT64Ref::from_host_bytes(&NTT120Ref::to_host_bytes(src))
+            FFT64Ref::from_host_bytes(&NTT4x30Ref::to_host_bytes(src))
         }
     }
-    impl TransferFrom<FFT64Ref> for NTT120Ref {
+    impl TransferFrom<FFT64Ref> for NTT4x30Ref {
         fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            NTT120Ref::from_host_bytes(&FFT64Ref::to_host_bytes(src))
+            NTT4x30Ref::from_host_bytes(&FFT64Ref::to_host_bytes(src))
         }
     }
 }

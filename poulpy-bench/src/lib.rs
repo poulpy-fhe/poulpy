@@ -297,37 +297,37 @@ macro_rules! for_each_fft_backend_family {
 }
 
 /// Private: expands to every NTT-family backend in tier order
-/// (ntt120-ref → ntt120-avx → ntt120-avx512 → ntt-ifma → ntt120-neon → gpu).
+/// (ntt4x30-ref → ntt4x30-avx → ntt4x30-avx512 → ntt-ifma → ntt4x30-neon → gpu).
 #[doc(hidden)]
 #[macro_export]
 macro_rules! for_each_ntt_backend_family {
     ($fn:path $(, $arg:expr)* ; $c:expr) => {{
         {
             use $fn as __f;
-            __f::<poulpy_cpu_ref::NTT120Ref>($($arg,)* $c, "ntt120-ref");
+            __f::<poulpy_cpu_ref::NTT4x30Ref>($($arg,)* $c, "ntt4x30-ref");
         }
         #[cfg(all(feature = "enable-avx", target_arch = "x86_64"))]
         {
             use $fn as __f;
-            __f::<poulpy_cpu_avx::NTT120Avx>($($arg,)* $c, "ntt120-avx");
+            __f::<poulpy_cpu_avx::NTT4x30Avx>($($arg,)* $c, "ntt4x30-avx");
         }
         #[cfg(all(feature = "enable-avx512f", target_arch = "x86_64"))]
         {
             use $fn as __f;
-            __f::<poulpy_cpu_avx512::NTT120Avx512>($($arg,)* $c, "ntt120-avx512");
+            __f::<poulpy_cpu_avx512::NTT4x30Avx512>($($arg,)* $c, "ntt4x30-avx512");
         }
         #[cfg(all(feature = "enable-ifma", target_arch = "x86_64"))]
         {
             use $fn as __f;
-            __f::<poulpy_cpu_avx512::NTT126Ifma>($($arg,)* $c, "ntt-ifma");
+            __f::<poulpy_cpu_avx512::NTT3x42Ifma>($($arg,)* $c, "ntt-ifma");
         }
         #[cfg(all(feature = "enable-neon", target_arch = "aarch64"))]
         {
             use $fn as __f;
-            __f::<poulpy_cpu_arm::NTT120Neon>($($arg,)* $c, "ntt120-neon");
+            __f::<poulpy_cpu_arm::NTT4x30Neon>($($arg,)* $c, "ntt4x30-neon");
         }
         // #[cfg(feature = "enable-gpu")]
-        // { use $fn as __f; __f::<poulpy_gpu::NTT120GPU>($($arg,)* $c, "ntt120-gpu"); }
+        // { use $fn as __f; __f::<poulpy_gpu::NTT4x30GPU>($($arg,)* $c, "ntt4x30-gpu"); }
     }};
 }
 
@@ -342,9 +342,9 @@ macro_rules! for_each_fft_backend {
     }};
 }
 
-/// Run a bench function against every NTT120 backend.
+/// Run a bench function against every NTT4x30 backend.
 ///
-/// Use for operations that are specific to the NTT120 transform domain.
+/// Use for operations that are specific to the NTT4x30 transform domain.
 #[macro_export]
 macro_rules! for_each_ntt_backend {
     ($fn:path $(, $arg:expr)* ; $c:expr) => {{

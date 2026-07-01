@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Renamed
+- Rename the multi-prime NTT backend families to a `<primes>x<bits>` scheme, leaving room for future variants such as `NTT2x60`: `NTT120` → `NTT4x30` (CRT over four ~30-bit primes) and `NTT126` → `NTT3x42` (three ~42-bit primes). This updates the public backend marker types (`NTT4x30Ref` / `NTT4x30Avx` / `NTT4x30Avx512` / `NTT4x30Neon`, and `NTT3x42Ifma`), their modules and test/bench references, the CKKS test parameters (`NTT4X30_PARAMS_F64` / `NTT4X30_PARAMS_F128`), and the documentation. The `Q120` / `Q126` moduli and `Primes30` / `Primes42` prime sets keep their names.
+
 ### `poulpy-hal`
 - Add HAL APIs for scalar automorphisms and packed matrix helpers: `ScalarZnxAutomorphismBackend`, `ScalarZnxAutomorphismAssignBackend`, `VecZnxTransposeBackend`, and `VecZnxBigColWeightedSum`.
 - Add reusable DFT-domain automorphism planning and application via `VecZnxDftAutomorphismPlan` and `VecZnxDftAutomorphism`, with backend-specific plan types wired through `HalVecZnxDftImpl`.

@@ -19,7 +19,7 @@ This backend integrates transparently with:
 
 ## When is this backend used?
 
-The FFT64 and NTT120 reference HAL backends are always available and require
+The FFT64 and NTT4x30 reference HAL backends are always available and require
 **no compilation flags and no CPU features**.
 
 It is automatically selected when:
@@ -42,10 +42,10 @@ Useful test commands:
 # HAL/reference backend tests
 cargo test -p poulpy-cpu-ref
 
-# Core conformance tests on FFT64Ref and NTT120Ref
+# Core conformance tests on FFT64Ref and NTT4x30Ref
 cargo test -p poulpy-cpu-ref --features enable-core
 
-# CKKS conformance tests on FFT64Ref and NTT120Ref
+# CKKS conformance tests on FFT64Ref and NTT4x30Ref
 cargo test -p poulpy-cpu-ref --features enable-ckks
 ```
 
@@ -56,7 +56,7 @@ cargo test -p poulpy-cpu-ref --features enable-ckks
 This crate exposes two backends:
 
 ```rust
-use poulpy_cpu_ref::{FFT64Ref, NTT120Ref};
+use poulpy_cpu_ref::{FFT64Ref, NTT4x30Ref};
 use poulpy_hal::{api::ModuleNew, layouts::Module};
 
 let log_n: usize = 10;
@@ -65,7 +65,7 @@ let log_n: usize = 10;
 let module: Module<FFT64Ref> = Module::<FFT64Ref>::new(1 << log_n);
 
 // Q120 NTT backend (CRT over four ~30-bit primes)
-let module: Module<NTT120Ref> = Module::<NTT120Ref>::new(1 << log_n);
+let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(1 << log_n);
 ```
 
 Both work on **all supported platforms and architectures**.
@@ -102,7 +102,7 @@ use poulpy_cpu_avx::FFT64Avx as BackendImpl;
 use poulpy_cpu_ref::FFT64Ref as BackendImpl;
 ```
 
-The same pattern applies to NTT120 backends (`NTT120Ref` / `NTT120Avx`).
+The same pattern applies to NTT4x30 backends (`NTT4x30Ref` / `NTT4x30Avx`).
 
 ---
 

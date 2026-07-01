@@ -4,7 +4,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 
 #[cfg(feature = "enable-avx")]
 fn bench_ckks_linear_transformation(c: &mut Criterion) {
-    poulpy_bench::bench_suite::ckks::bench_ckks_linear_transformation::<poulpy_cpu_avx::NTT120Avx>(c, "ntt120-avx");
+    poulpy_bench::bench_suite::ckks::bench_ckks_linear_transformation::<poulpy_cpu_avx::NTT4x30Avx>(c, "ntt4x30-avx");
 }
 
 #[cfg(not(feature = "enable-avx"))]

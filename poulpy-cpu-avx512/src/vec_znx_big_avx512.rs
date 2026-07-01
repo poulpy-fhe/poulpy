@@ -1,4 +1,4 @@
-//! Raw AVX-512 kernels for `i128` arithmetic, shared by the NTT120 AVX-512 backends.
+//! Raw AVX-512 kernels for `i128` arithmetic, shared by the NTT4x30 AVX-512 backends.
 //!
 //! This module contains the low-level SIMD kernels behind the `I128BigOps` and
 //! `I128NormalizeOps` traits. The higher-level loop structure lives in the shared
@@ -18,8 +18,8 @@
 //! `lsh != 0` have dedicated kernels; scalar fallback only when `base2k > 64`
 //! or `n < 8`.
 //!
-//! [`I128NormalizeOps`]: poulpy_cpu_ref::reference::ntt120::I128NormalizeOps
-//! [`I128BigOps`]: poulpy_cpu_ref::reference::ntt120::I128BigOps
+//! [`I128NormalizeOps`]: poulpy_cpu_ref::reference::ntt4x30::I128NormalizeOps
+//! [`I128BigOps`]: poulpy_cpu_ref::reference::ntt4x30::I128BigOps
 
 use std::arch::x86_64::*;
 

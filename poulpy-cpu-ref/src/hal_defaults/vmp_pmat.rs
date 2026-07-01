@@ -14,15 +14,15 @@ use crate::reference::{
             vmp_prepare_tmp_bytes as fft64_vmp_prepare_tmp_bytes, vmp_zero as fft64_vmp_zero,
         },
     },
-    ntt120::{
+    ntt4x30::{
         NttCFromB, NttDFTExecute, NttExtract1BlkContiguous, NttFromZnx64, NttMulBbc1ColX2, NttMulBbc2ColsX2,
         ntt::NttTable,
         primes::Primes30,
         types::Q120bScalar,
         vec_znx_dft::NttModuleHandle,
         vmp::{
-            ntt120_vmp_apply_dft_to_dft, ntt120_vmp_apply_dft_to_dft_tmp_bytes, ntt120_vmp_prepare, ntt120_vmp_prepare_tmp_bytes,
-            ntt120_vmp_zero,
+            ntt4x30_vmp_apply_dft_to_dft, ntt4x30_vmp_apply_dft_to_dft_tmp_bytes, ntt4x30_vmp_prepare,
+            ntt4x30_vmp_prepare_tmp_bytes, ntt4x30_vmp_zero,
         },
     },
 };
@@ -180,7 +180,7 @@ where
 }
 
 #[doc(hidden)]
-pub trait NTT120VmpDefault<BE: Backend>: Backend
+pub trait NTT4x30VmpDefault<BE: Backend>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'x> BE::BufMut<'x>: HostDataMut,
@@ -190,7 +190,7 @@ where
     where
         BE: Backend<ScalarPrep = Q120bScalar>,
     {
-        ntt120_vmp_prepare_tmp_bytes(module.n())
+        ntt4x30_vmp_prepare_tmp_bytes(module.n())
     }
 
     fn vmp_prepare_default(
@@ -205,9 +205,9 @@ where
         for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
     {
-        let bytes = ntt120_vmp_prepare_tmp_bytes(module.n());
+        let bytes = ntt4x30_vmp_prepare_tmp_bytes(module.n());
         let (tmp, _) = take_host_typed::<BE, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        ntt120_vmp_prepare::<BE>(module, res, a, tmp);
+        ntt4x30_vmp_prepare::<BE>(module, res, a, tmp);
     }
 
     fn vmp_apply_dft_to_dft_tmp_bytes_default(
@@ -222,7 +222,7 @@ where
     where
         BE: Backend<ScalarPrep = Q120bScalar>,
     {
-        ntt120_vmp_apply_dft_to_dft_tmp_bytes(a_size, b_rows, b_cols_in)
+        ntt4x30_vmp_apply_dft_to_dft_tmp_bytes(a_size, b_rows, b_cols_in)
     }
 
     fn vmp_apply_dft_to_dft_default(
@@ -239,9 +239,9 @@ where
         for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
     {
-        let bytes = ntt120_vmp_apply_dft_to_dft_tmp_bytes(a.size(), b.rows(), b.cols_in());
+        let bytes = ntt4x30_vmp_apply_dft_to_dft_tmp_bytes(a.size(), b.rows(), b.cols_in());
         let (tmp, _) = take_host_typed::<BE, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        ntt120_vmp_apply_dft_to_dft::<BE>(module, res, a, b, limb_offset, tmp);
+        ntt4x30_vmp_apply_dft_to_dft::<BE>(module, res, a, b, limb_offset, tmp);
     }
 
     fn vmp_apply_dft_to_dft_accumulate_tmp_bytes_default(
@@ -258,7 +258,7 @@ where
         Module<BE>: VecZnxDftBytesOf,
     {
         module.bytes_of_vec_znx_dft(b_cols_out, res_size.min(b_size))
-            + ntt120_vmp_apply_dft_to_dft_tmp_bytes(a_size, b_rows, b_cols_in)
+            + ntt4x30_vmp_apply_dft_to_dft_tmp_bytes(a_size, b_rows, b_cols_in)
     }
 
     fn vmp_apply_dft_to_dft_accumulate_default(
@@ -281,9 +281,9 @@ where
         for col in 0..cols_out {
             module.vec_znx_dft_zero(&mut tmp, col);
         }
-        let bytes = ntt120_vmp_apply_dft_to_dft_tmp_bytes(a.size(), b.rows(), b.cols_in());
+        let bytes = ntt4x30_vmp_apply_dft_to_dft_tmp_bytes(a.size(), b.rows(), b.cols_in());
         let (kernel_tmp, _) = take_host_typed::<BE, u64>(scratch_1, bytes / size_of::<u64>());
-        ntt120_vmp_apply_dft_to_dft::<BE>(module, &mut tmp, a, b, limb_offset, kernel_tmp);
+        ntt4x30_vmp_apply_dft_to_dft::<BE>(module, &mut tmp, a, b, limb_offset, kernel_tmp);
         let tmp_ref = tmp.to_backend_ref();
         for col in 0..cols_out {
             module.vec_znx_dft_add_assign(res, col, &tmp_ref, col);
@@ -294,11 +294,11 @@ where
     where
         for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     {
-        ntt120_vmp_zero(res);
+        ntt4x30_vmp_zero(res);
     }
 }
 
-impl<BE: Backend> NTT120VmpDefault<BE> for BE
+impl<BE: Backend> NTT4x30VmpDefault<BE> for BE
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'x> BE::BufMut<'x>: HostDataMut,

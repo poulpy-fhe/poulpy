@@ -26,8 +26,8 @@
 //! recovered precision from ~9 bits to ~14 (a `+20`-bit scale-up); the assertion
 //! is a conservative smoke-test floor.
 //!
-//! RUSTFLAGS="-C target-feature=+avx2,+fma" cargo test -p poulpy-cpu-avx --release --features enable-avx,enable-ckks ntt120_f64::bootstrapping -- --nocapture
-//! cargo test -p poulpy-cpu-ref --features enable-ckks --release ntt120_f64::bootstrapping_e2e -- --nocapture
+//! RUSTFLAGS="-C target-feature=+avx2,+fma" cargo test -p poulpy-cpu-avx --release --features enable-avx,enable-ckks ntt4x30_f64::bootstrapping -- --nocapture
+//! cargo test -p poulpy-cpu-ref --features enable-ckks --release ntt4x30_f64::bootstrapping_e2e -- --nocapture
 
 use std::time::Instant;
 

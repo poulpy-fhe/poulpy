@@ -256,16 +256,16 @@ fn $fn(c: &mut Criterion) {
     };
 }
 
-poly_eval_bench!(bench_ntt120_ref, poulpy_cpu_ref::NTT120Ref, "ntt120-ref");
+poly_eval_bench!(bench_ntt4x30_ref, poulpy_cpu_ref::NTT4x30Ref, "ntt4x30-ref");
 #[cfg(feature = "enable-avx")]
-poly_eval_bench!(bench_ntt120_avx, poulpy_cpu_avx::NTT120Avx, "ntt120-avx");
+poly_eval_bench!(bench_ntt4x30_avx, poulpy_cpu_avx::NTT4x30Avx, "ntt4x30-avx");
 #[cfg(feature = "enable-ifma")]
-poly_eval_bench!(bench_ntt_ifma, poulpy_cpu_avx512::NTT126Ifma, "ntt-ifma");
+poly_eval_bench!(bench_ntt_ifma, poulpy_cpu_avx512::NTT3x42Ifma, "ntt-ifma");
 
 fn bench_ckks_poly_eval(c: &mut Criterion) {
-    bench_ntt120_ref(c);
+    bench_ntt4x30_ref(c);
     #[cfg(feature = "enable-avx")]
-    bench_ntt120_avx(c);
+    bench_ntt4x30_avx(c);
     #[cfg(feature = "enable-ifma")]
     bench_ntt_ifma(c);
 }
