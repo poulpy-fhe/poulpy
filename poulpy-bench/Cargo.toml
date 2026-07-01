@@ -18,6 +18,10 @@ enable-avx = [
     "poulpy-cpu-avx/enable-avx",
     "poulpy-cpu-avx/enable-ckks",
 ]
+enable-neon = [
+    "dep:poulpy-cpu-arm",
+    "poulpy-cpu-arm/enable-neon",
+]
 enable-avx512f = [
     "dep:poulpy-cpu-avx512",
     "poulpy-cpu-avx512/enable-avx512f",
@@ -32,6 +36,7 @@ ckks-bench = [
     "poulpy-cpu-ref/enable-ckks",
     "poulpy-cpu-avx?/enable-ckks",
     "poulpy-cpu-avx512?/enable-ckks",
+    "poulpy-cpu-arm?/enable-ckks",
 ]
 # enable-gpu = ["dep:poulpy-gpu", "poulpy-gpu/enable-gpu"]
 
@@ -46,6 +51,7 @@ poulpy-bin-fhe = {workspace = true}
 poulpy-ckks = {workspace = true, optional = true}
 poulpy-cpu-ref = {workspace = true}
 poulpy-cpu-avx = {workspace = true, optional = true}
+poulpy-cpu-arm = {workspace = true, optional = true}
 poulpy-cpu-avx512 = {workspace = true, optional = true}
 # poulpy-gpu = {workspace = true, optional = true}
 

@@ -1,6 +1,6 @@
 [workspace]
-members = ["poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-cpu-avx512", "poulpy-bin-fhe", "poulpy-cpu-ref", "poulpy-bench", "poulpy-ckks"]
-default-members = ["poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-bin-fhe", "poulpy-cpu-ref", "poulpy-bench", "poulpy-ckks"]
+members = ["poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-cpu-avx512", "poulpy-cpu-arm", "poulpy-bin-fhe", "poulpy-cpu-ref", "poulpy-bench", "poulpy-ckks"]
+default-members = ["poulpy-hal", "poulpy-core", "poulpy-cpu-avx", "poulpy-cpu-arm", "poulpy-bin-fhe", "poulpy-cpu-ref", "poulpy-bench", "poulpy-ckks"]
 resolver = "3"
 
 # Optimized build that keeps debug symbols, for sampling profilers (samply, perf,
@@ -14,6 +14,7 @@ strip = false
 poulpy-hal = {path = "poulpy-hal"}
 poulpy-core = {path = "poulpy-core"}
 poulpy-cpu-avx = {path = "poulpy-cpu-avx"}
+poulpy-cpu-arm = {path = "poulpy-cpu-arm"}
 poulpy-cpu-ref = {path = "poulpy-cpu-ref"}
 poulpy-cpu-avx512 = {path = "poulpy-cpu-avx512"}
 poulpy-bin-fhe = {path = "poulpy-bin-fhe"}

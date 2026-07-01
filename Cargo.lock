@@ -543,6 +543,7 @@ dependencies = [
  "poulpy-bin-fhe",
  "poulpy-ckks",
  "poulpy-core",
+ "poulpy-cpu-arm",
  "poulpy-cpu-avx",
  "poulpy-cpu-avx512",
  "poulpy-cpu-ref",
@@ -561,6 +562,7 @@ dependencies = [
  "itertools 0.14.0",
  "paste",
  "poulpy-core",
+ "poulpy-cpu-arm",
  "poulpy-cpu-avx",
  "poulpy-cpu-avx512",
  "poulpy-cpu-ref",
@@ -600,6 +602,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "poulpy-cpu-arm"
+version = "0.6.0"
+dependencies = [
+ "anyhow",
+ "bytemuck",
+ "byteorder",
+ "itertools 0.14.0",
+ "once_cell",
+ "paste",
+ "poulpy-ckks",
+ "poulpy-core",
+ "poulpy-cpu-ref",
+ "poulpy-hal",
+ "rand",
+ "rand_chacha",
+ "rand_core",
+ "rand_distr",
+]
+
+[[package]]
 name = "poulpy-cpu-avx"
 version = "0.6.0"
 dependencies = [
@@ -626,7 +648,6 @@ dependencies = [
  "anyhow",
  "bytemuck",
  "byteorder",
- "f128",
  "itertools 0.14.0",
  "once_cell",
  "paste",
@@ -648,7 +669,6 @@ dependencies = [
  "bytemuck",
  "byteorder",
  "dashu-float",
- "f128",
  "itertools 0.14.0",
  "once_cell",
  "poulpy-ckks",

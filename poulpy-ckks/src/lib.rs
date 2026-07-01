@@ -1,3 +1,4 @@
+#![cfg_attr(not(all(feature = "libquadmath", target_arch = "x86_64")), feature(f128))]
 //! # poulpy-ckks
 //!
 //! Backend-agnostic implementation of the CKKS (Cheon-Kim-Kim-Song)
@@ -65,12 +66,23 @@ pub mod leveled;
 pub mod oep;
 pub mod polynomial;
 pub mod power_basis;
+#[cfg(not(all(feature = "libquadmath", target_arch = "x86_64")))]
+pub mod scalar;
 pub mod test_suite;
 pub use error::CKKSCompositionError;
 pub(crate) use error::{
     checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget, ensure_base2k_match,
     ensure_plaintext_alignment, ensure_plaintext_coeff_in_range, ensure_plaintext_degree_match,
 };
+#[cfg(all(feature = "libquadmath", target_arch = "x86_64"))]
+pub use f128::f128 as Quad;
+/// Quad-precision (IEEE 754 binary128) CKKS scalar.
+///
+/// The portable [`scalar::Quad`] newtype over the primitive `f128` by default;
+/// the libquadmath-backed `f128::f128` under the `libquadmath` feature on
+/// x86_64 (faster transcendentals for on-the-fly FFT-table builds).
+#[cfg(not(all(feature = "libquadmath", target_arch = "x86_64")))]
+pub use scalar::Quad;
 
 pub type CKKSCiphertextRef<'a, BE> = layouts::CKKSCiphertext<<BE as Backend>::BufRef<'a>>;
 pub type CKKSCiphertextMut<'a, BE> = layouts::CKKSCiphertext<<BE as Backend>::BufMut<'a>>;

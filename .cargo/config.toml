@@ -1,2 +1,7 @@
 [env]
 CFLAGS = "-std=gnu17"
+
+# No per-target overrides for the aarch64 triples: NEON/ASIMD is baseline on
+# AArch64, so the accelerated cpu-arm backend builds and runs natively on arm64
+# hosts with just `--features enable-neon` — opt-in, exactly like the avx backends
+# on x86, with cpu-ref remaining the default reference backend.
