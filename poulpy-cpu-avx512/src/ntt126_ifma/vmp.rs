@@ -9,9 +9,9 @@
 
 use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::{
-    __m512i, _mm_sfence, _mm512_add_epi64, _mm512_loadu_si512, _mm512_madd52hi_epu64, _mm512_madd52lo_epu64,
-    _mm512_maskz_permutex2var_epi64, _mm512_permutex2var_epi64, _mm512_set_epi64, _mm512_setzero_si512, _mm512_storeu_si512,
-    _mm512_stream_si512,
+    __m512i, _mm_sfence, _mm512_add_epi64, _mm512_and_si512, _mm512_loadu_si512, _mm512_madd52hi_epu64, _mm512_madd52lo_epu64,
+    _mm512_maskz_permutex2var_epi64, _mm512_or_si512, _mm512_permutex2var_epi64, _mm512_set_epi64, _mm512_set1_epi64,
+    _mm512_setzero_si512, _mm512_slli_epi64, _mm512_srli_epi64, _mm512_storeu_si512, _mm512_stream_si512,
 };
 use std::mem::size_of;
 
@@ -214,13 +214,17 @@ pub(crate) fn vmp_apply_tmp_bytes_ifma(a_size: usize, b_rows: usize, b_cols_in: 
     (32 + 3 * 8 * row_max) * size_of::<u64>()
 }
 
-/// Row-prime-local VMP prepare.
+/// Packed 42-bit masks: `w0 = p0 | p1_lo22 << 42`, `w1 = p1_hi20 | p2 << 20`.
+const MASK22: u64 = (1 << 22) - 1;
+
+/// Row-prime-local VMP prepare, packed.
 ///
-/// Layout: `n_blk_quads × ncols × nrows × 3` groups of 8 u64. Each group
-/// contains one prime's 4 x2-blocks × 2 coefficients for the selected row.
+/// Layout: `n_blk_quads × ncols × nrows × 2` groups of 8 u64. Each group pair
+/// packs the three 42-bit CRT residues of the row's 8 coefficients into
+/// 2 words per coefficient (`w0`, `w1` planes of 8 words each).
 ///
-/// Element `(blk_quad, col, row, prime)` offset in u64:
-///   `((blk_quad * ncols + col) * nrows + row) * 24 + prime * 8`.
+/// Element `(blk_quad, col, row)` offset in u64:
+///   `((blk_quad * ncols + col) * nrows + row) * 16`.
 pub(crate) fn vmp_prepare_ifma(
     module: &Module<crate::NTT126Ifma>,
     res: &mut VmpPMatBackendMut<'_, crate::NTT126Ifma>,
@@ -237,9 +241,9 @@ pub(crate) fn vmp_prepare_ifma(
     let mat_i64: &[i64] = a.raw();
     let pmat_u64: &mut [u64] = cast_slice_mut(res.data_mut());
 
-    let bq_stride = ncols * nrows * 24;
-    let col_stride = nrows * 24;
-    let row_stride = 24;
+    let bq_stride = ncols * nrows * 16;
+    let col_stride = nrows * 16;
+    let row_stride = 16;
 
     for row_i in 0..nrows {
         for col_i in 0..ncols {
@@ -253,9 +257,12 @@ pub(crate) fn vmp_prepare_ifma(
             for bq in 0..n_blk_quads {
                 let coeff_base = 8 * bq;
                 let dst_base = bq * bq_stride + col_i * col_stride + row_i * row_stride;
-                for p in 0..3 {
-                    pmat_u64[dst_base + 8 * p..dst_base + 8 * (p + 1)]
-                        .copy_from_slice(&tmp_c_u64[p * n + coeff_base..p * n + coeff_base + 8]);
+                for i in 0..8 {
+                    let p0 = tmp_c_u64[coeff_base + i];
+                    let p1 = tmp_c_u64[n + coeff_base + i];
+                    let p2 = tmp_c_u64[2 * n + coeff_base + i];
+                    pmat_u64[dst_base + i] = p0 | (p1 & MASK22) << 42;
+                    pmat_u64[dst_base + 8 + i] = (p1 >> 22) | (p2 << 20);
                 }
             }
         }
@@ -328,6 +335,20 @@ const IDX_PM_P0: [i64; 8] = [0, 4, 8, 12, 0, 0, 0, 0];
 const IDX_PM_P1: [i64; 8] = [1, 5, 9, 13, 0, 0, 0, 0];
 const IDX_PM_P2: [i64; 8] = [2, 6, 10, 14, 0, 0, 0, 0];
 
+/// Unpack one packed pmat group (`w0`, `w1`) into the three 42-bit residues.
+#[target_feature(enable = "avx512f")]
+#[inline]
+unsafe fn unpack_y(w0: __m512i, w1: __m512i, m42: __m512i, m20: __m512i) -> [__m512i; 3] {
+    [
+        _mm512_and_si512(w0, m42),
+        _mm512_or_si512(
+            _mm512_srli_epi64::<42>(w0),
+            _mm512_slli_epi64::<22>(_mm512_and_si512(w1, m20)),
+        ),
+        _mm512_srli_epi64::<20>(w1),
+    ]
+}
+
 /// Extract a block-quad from planar prep scalars into 3 prime-major planes.
 #[target_feature(enable = "avx512f")]
 #[inline]
@@ -394,13 +415,15 @@ unsafe fn vmp_apply_core_pm_small_rows<const ROWS: usize, const OVERWRITE: bool>
 ) {
     unsafe {
         let n_blk_quads = n / 8;
-        let bq_stride = ncols * nrows * 24;
-        let col_stride_y = nrows * 24;
-        let row_stride_y = 24;
+        let bq_stride = ncols * nrows * 16;
+        let col_stride_y = nrows * 16;
+        let row_stride_y = 16;
         let active_cols = col_max.saturating_sub(limb_offset);
         let idx_p0 = _mm512_loadu_si512(IDX_PM_P0.as_ptr() as *const __m512i);
         let idx_p1 = _mm512_loadu_si512(IDX_PM_P1.as_ptr() as *const __m512i);
         let idx_p2 = _mm512_loadu_si512(IDX_PM_P2.as_ptr() as *const __m512i);
+        let m42 = _mm512_set1_epi64(((1u64 << 42) - 1) as i64);
+        let m20 = _mm512_set1_epi64(((1u64 << 20) - 1) as i64);
 
         for bq in 0..n_blk_quads {
             let mut x_rows = [[_mm512_setzero_si512(); 3]; ROWS];
@@ -421,9 +444,9 @@ unsafe fn vmp_apply_core_pm_small_rows<const ROWS: usize, const OVERWRITE: bool>
 
                 for (r, x_row) in x_rows.iter().enumerate() {
                     let y_row = y_base.add(r * row_stride_y);
-                    let y0 = _mm512_loadu_si512(y_row as *const __m512i);
-                    let y1 = _mm512_loadu_si512(y_row.add(8) as *const __m512i);
-                    let y2 = _mm512_loadu_si512(y_row.add(16) as *const __m512i);
+                    let w0 = _mm512_loadu_si512(y_row as *const __m512i);
+                    let w1 = _mm512_loadu_si512(y_row.add(8) as *const __m512i);
+                    let [y0, y1, y2] = unpack_y(w0, w1, m42, m20);
 
                     acc_lo0 = _mm512_madd52lo_epu64(acc_lo0, x_row[0], y0);
                     acc_hi0 = _mm512_madd52hi_epu64(acc_hi0, x_row[0], y0);
@@ -514,9 +537,9 @@ unsafe fn vmp_apply_core_pm<const OVERWRITE: bool>(
     };
 
     // Matrix layout constants
-    let bq_stride = ncols * nrows * 24; // u64 per block-quad
-    let col_stride_y = nrows * 24; // u64 per column within a block-quad
-    let row_stride_y = 24; // u64 per row: 3 prime vectors
+    let bq_stride = ncols * nrows * 16; // u64 per block-quad
+    let col_stride_y = nrows * 16; // u64 per column within a block-quad
+    let row_stride_y = 16; // u64 per row: 2 packed vectors
 
     let active_cols = col_max.saturating_sub(limb_offset);
 
@@ -612,14 +635,16 @@ unsafe fn vmp_apply_core_pm<const OVERWRITE: bool>(
             unsafe {
                 let mut red = [_mm512_setzero_si512(); 3];
 
-                // Interleave all 3 primes so Zen 5's two FMA ports always
-                // have 6 independent MADD52 chains in flight (2 per prime
-                // across acc_lo/acc_hi). This hides the 5-cycle VPMADD52
-                // latency without blowing up register pressure.
+                // Interleave all 3 primes to keep 6 independent MADD52
+                // chains in flight (2 per prime across acc_lo/acc_hi),
+                // hiding the multiply latency without excess register
+                // pressure.
                 let x_base0 = x_pm.as_ptr() as *const __m512i;
                 let x_base1 = x_pm.as_ptr().add(x_plane_sz) as *const __m512i;
                 let x_base2 = x_pm.as_ptr().add(2 * x_plane_sz) as *const __m512i;
                 let y_base = pmat_u64.as_ptr().add(y_off);
+                let m42 = _mm512_set1_epi64(((1u64 << 42) - 1) as i64);
+                let m20 = _mm512_set1_epi64(((1u64 << 20) - 1) as i64);
 
                 let mut acc_lo0 = _mm512_setzero_si512();
                 let mut acc_hi0 = _mm512_setzero_si512();
@@ -631,11 +656,11 @@ unsafe fn vmp_apply_core_pm<const OVERWRITE: bool>(
                 for r in 0..row_max {
                     let x0 = _mm512_loadu_si512(x_base0.add(r));
                     let y_row = y_base.add(r * row_stride_y);
-                    let y0 = _mm512_loadu_si512(y_row as *const __m512i);
+                    let w0 = _mm512_loadu_si512(y_row as *const __m512i);
                     let x1 = _mm512_loadu_si512(x_base1.add(r));
-                    let y1 = _mm512_loadu_si512(y_row.add(8) as *const __m512i);
+                    let w1 = _mm512_loadu_si512(y_row.add(8) as *const __m512i);
                     let x2 = _mm512_loadu_si512(x_base2.add(r));
-                    let y2 = _mm512_loadu_si512(y_row.add(16) as *const __m512i);
+                    let [y0, y1, y2] = unpack_y(w0, w1, m42, m20);
                     acc_lo0 = _mm512_madd52lo_epu64(acc_lo0, x0, y0);
                     acc_hi0 = _mm512_madd52hi_epu64(acc_hi0, x0, y0);
                     acc_lo1 = _mm512_madd52lo_epu64(acc_lo1, x1, y1);
