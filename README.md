@@ -10,7 +10,7 @@
 **Poulpy** is a **fast and modular** FHE library that implements Ring-Learning-With-Errors based homomorphic encryption over the Torus. It adopts the bivariate polynomial representation proposed in [Revisiting Key Decomposition Techniques for FHE: Simpler, Faster and More Generic](https://eprint.iacr.org/2023/771) to represent Torus polynomials. Compared with the residue number system (RNS), this representation provides simpler and more reusable arithmetic, a **common plaintext space** for all schemes, and native bridges between schemes. Poulpy also decouples scheme implementations from the polynomial arithmetic backend by being built from the ground up around a **hardware abstraction layer** that closely matches the API of [spqlios-arithmetic](https://github.com/tfhe/spqlios-arithmetic). Leveraging the HAL, users can develop applications generic over the backend and choose a backend at runtime.
 
 <p align="center">
-<img src="docs/lib_diagram.png" />
+<img src="docs/img/lib_diagram.png" />
 </p>
 
 ## Library Crates
@@ -21,8 +21,8 @@
 - **`poulpy-bin-fhe`**: the binary/gate-level FHE crate built on **`poulpy-core`** and **`poulpy-hal`**. It replaces the former `poulpy-schemes` crate; its public APIs have moved to the backend-owned HAL/core surface, while a few host/reference-backend dependencies remain for this release.
 - **`poulpy-cpu-ref`**: the reference CPU implementation of **`poulpy-hal`**.
 - **`poulpy-cpu-avx`**: an AVX2/FMA accelerated CPU implementation of **`poulpy-hal`**. Enable it with the `enable-avx` feature on crates that expose that feature.
-- **`poulpy-cpu-avx512`**: an AVX-512 accelerated CPU implementation of **`poulpy-hal`**, exposing three backends: `FFT64Avx512` and `NTT120Avx512` (AVX-512F, via `enable-avx512f`) and `NTT126Ifma` (AVX-512F + IFMA + VL + BMI2 + ADX, via `enable-ifma`).
-- **`poulpy-cpu-arm`**: a NEON/ASIMD accelerated CPU implementation of **`poulpy-hal`** for AArch64, exposing two backends: `FFT64Neon` and `NTT120Neon`. Enable it with the `enable-neon` feature on crates that expose that feature.
+- **`poulpy-cpu-avx512`**: an AVX-512 accelerated CPU implementation of **`poulpy-hal`**, exposing three backends: `FFT64Avx512` and `NTT4x30Avx512` (AVX-512F, via `enable-avx512f`) and `NTT3x42Ifma` (AVX-512F + IFMA + VL + BMI2 + ADX, via `enable-ifma`).
+- **`poulpy-cpu-arm`**: a NEON/ASIMD accelerated CPU implementation of **`poulpy-hal`** for AArch64, exposing two backends: `FFT64Neon` and `NTT4x30Neon`. Enable it with the `enable-neon` feature on crates that expose that feature.
 - **`poulpy-bench`**: the consolidated Criterion benchmark suite for the workspace. It is an internal workspace crate and is not published to crates.io.
 
 ## Architecture
@@ -93,6 +93,8 @@ This provides the following benefits:
 
 - **Deterministic computation:** Although it is defined on the Torus, bivariate arithmetic remains integer polynomial arithmetic, ensuring all computations are deterministic. Outputs are reproducible and identical regardless of the backend or hardware.
 
+The bivariate representation recovers bit-granular scale and capacity management that RNS-CKKS lacks. A recent RNS-based technique, [Grafting](https://eprint.iacr.org/2024/1014) by Cheon et al., targets the same goal from inside the RNS world by decoupling scale factors from the modulus. For a detailed comparison of the two approaches, see [docs/grafting-vs-bivariate.md](docs/grafting-vs-bivariate.md).
+
 ## Installation
 
 - **`poulpy-hal`**: https://crates.io/crates/poulpy-hal
@@ -122,8 +124,8 @@ poulpy-cpu-ref = "0.6"
 
 ## Documentation
 
+* The [`docs/`](./docs) folder holds the full documentation — a codebase map, the backend guide, design notes, and architecture diagrams. Start with its [index](./docs/README.md).
 * Crate package pages and generated Rust documentation are linked from the crates.io entries above.
-* Architecture diagrams and design notes live in the [`/docs`](./docs) folder.
 * Crate-specific READMEs provide more focused usage notes, especially [`poulpy-ckks`](./poulpy-ckks/README.md) and [`poulpy-bench`](./poulpy-bench/README.md).
 
 ## Testing Backend-Gated Integrations

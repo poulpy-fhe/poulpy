@@ -2,8 +2,8 @@ use criterion::{Criterion, criterion_group, criterion_main};
 
 pub fn bench_ntt_ref(c: &mut Criterion) {
     use criterion::BenchmarkId;
-    use poulpy_cpu_ref::NTT120Ref;
-    use poulpy_cpu_ref::reference::ntt120::{NttDFTExecute, NttTable, Primes30};
+    use poulpy_cpu_ref::NTT4x30Ref;
+    use poulpy_cpu_ref::reference::ntt4x30::{NttDFTExecute, NttTable, Primes30};
     use std::hint::black_box;
 
     let group_name: String = "ntt_ref".to_string();
@@ -15,7 +15,7 @@ pub fn bench_ntt_ref(c: &mut Criterion) {
         values.iter_mut().enumerate().for_each(|(i, x)| *x = (i + 1) as u64);
         let table: NttTable<Primes30> = NttTable::<Primes30>::new(n);
         move || {
-            NTT120Ref::ntt_dft_execute(&table, &mut values);
+            NTT4x30Ref::ntt_dft_execute(&table, &mut values);
             black_box(());
         }
     }
@@ -31,8 +31,8 @@ pub fn bench_ntt_ref(c: &mut Criterion) {
 
 pub fn bench_intt_ref(c: &mut Criterion) {
     use criterion::BenchmarkId;
-    use poulpy_cpu_ref::NTT120Ref;
-    use poulpy_cpu_ref::reference::ntt120::{NttDFTExecute, NttTableInv, Primes30};
+    use poulpy_cpu_ref::NTT4x30Ref;
+    use poulpy_cpu_ref::reference::ntt4x30::{NttDFTExecute, NttTableInv, Primes30};
     use std::hint::black_box;
 
     let group_name: String = "intt_ref".to_string();
@@ -44,7 +44,7 @@ pub fn bench_intt_ref(c: &mut Criterion) {
         values.iter_mut().enumerate().for_each(|(i, x)| *x = (i + 1) as u64);
         let table: NttTableInv<Primes30> = NttTableInv::<Primes30>::new(n);
         move || {
-            NTT120Ref::ntt_dft_execute(&table, &mut values);
+            NTT4x30Ref::ntt_dft_execute(&table, &mut values);
             black_box(());
         }
     }
@@ -76,8 +76,8 @@ fn bench_ntt_avx(_c: &mut Criterion) {
 ))]
 pub fn bench_ntt_avx(c: &mut Criterion) {
     use criterion::BenchmarkId;
-    use poulpy_cpu_avx::NTT120Avx;
-    use poulpy_cpu_ref::reference::ntt120::{NttDFTExecute, NttTable, Primes30};
+    use poulpy_cpu_avx::NTT4x30Avx;
+    use poulpy_cpu_ref::reference::ntt4x30::{NttDFTExecute, NttTable, Primes30};
     use std::hint::black_box;
 
     let group_name: String = "ntt_avx2_fma".to_string();
@@ -89,7 +89,7 @@ pub fn bench_ntt_avx(c: &mut Criterion) {
         values.iter_mut().enumerate().for_each(|(i, x)| *x = (i + 1) as u64);
         let table: NttTable<Primes30> = NttTable::<Primes30>::new(n);
         move || {
-            NTT120Avx::ntt_dft_execute(&table, &mut values);
+            NTT4x30Avx::ntt_dft_execute(&table, &mut values);
             black_box(());
         }
     }
@@ -123,8 +123,8 @@ fn bench_ntt_ifma(_c: &mut Criterion) {
 ))]
 pub fn bench_ntt_ifma(c: &mut Criterion) {
     use criterion::BenchmarkId;
-    use poulpy_cpu_avx512::NTT126Ifma;
-    use poulpy_cpu_avx512::ntt126_ifma_api::{Ntt126IfmaDFTExecute, Ntt126IfmaTable, Primes42};
+    use poulpy_cpu_avx512::NTT3x42Ifma;
+    use poulpy_cpu_avx512::ntt3x42_ifma_api::{Ntt3x42IfmaDFTExecute, Ntt3x42IfmaTable, Primes42};
     use std::hint::black_box;
 
     let group_name: String = "ntt_ifma_avx512".to_string();
@@ -134,9 +134,9 @@ pub fn bench_ntt_ifma(c: &mut Criterion) {
     fn runner(n: usize) -> impl FnMut() {
         let mut values: Vec<u64> = vec![0u64; 3 * n];
         values.iter_mut().enumerate().for_each(|(i, x)| *x = (i + 1) as u64);
-        let table: Ntt126IfmaTable<Primes42> = Ntt126IfmaTable::<Primes42>::new(n);
+        let table: Ntt3x42IfmaTable<Primes42> = Ntt3x42IfmaTable::<Primes42>::new(n);
         move || {
-            NTT126Ifma::ntt126_ifma_dft_execute(&table, &mut values);
+            NTT3x42Ifma::ntt3x42_ifma_dft_execute(&table, &mut values);
             black_box(());
         }
     }
@@ -170,8 +170,8 @@ fn bench_intt_ifma(_c: &mut Criterion) {
 ))]
 pub fn bench_intt_ifma(c: &mut Criterion) {
     use criterion::BenchmarkId;
-    use poulpy_cpu_avx512::NTT126Ifma;
-    use poulpy_cpu_avx512::ntt126_ifma_api::{Ntt126IfmaDFTExecute, Ntt126IfmaTableInv, Primes42};
+    use poulpy_cpu_avx512::NTT3x42Ifma;
+    use poulpy_cpu_avx512::ntt3x42_ifma_api::{Ntt3x42IfmaDFTExecute, Ntt3x42IfmaTableInv, Primes42};
     use std::hint::black_box;
 
     let group_name: String = "intt_ifma_avx512".to_string();
@@ -181,9 +181,9 @@ pub fn bench_intt_ifma(c: &mut Criterion) {
     fn runner(n: usize) -> impl FnMut() {
         let mut values: Vec<u64> = vec![0u64; 3 * n];
         values.iter_mut().enumerate().for_each(|(i, x)| *x = (i + 1) as u64);
-        let table: Ntt126IfmaTableInv<Primes42> = Ntt126IfmaTableInv::<Primes42>::new(n);
+        let table: Ntt3x42IfmaTableInv<Primes42> = Ntt3x42IfmaTableInv::<Primes42>::new(n);
         move || {
-            NTT126Ifma::ntt126_ifma_dft_execute(&table, &mut values);
+            NTT3x42Ifma::ntt3x42_ifma_dft_execute(&table, &mut values);
             black_box(());
         }
     }
@@ -215,8 +215,8 @@ fn bench_intt_avx(_c: &mut Criterion) {
 ))]
 pub fn bench_intt_avx(c: &mut Criterion) {
     use criterion::BenchmarkId;
-    use poulpy_cpu_avx::NTT120Avx;
-    use poulpy_cpu_ref::reference::ntt120::{NttDFTExecute, NttTableInv, Primes30};
+    use poulpy_cpu_avx::NTT4x30Avx;
+    use poulpy_cpu_ref::reference::ntt4x30::{NttDFTExecute, NttTableInv, Primes30};
     use std::hint::black_box;
 
     let group_name: String = "intt_avx2_fma".to_string();
@@ -228,7 +228,7 @@ pub fn bench_intt_avx(c: &mut Criterion) {
         values.iter_mut().enumerate().for_each(|(i, x)| *x = (i + 1) as u64);
         let table: NttTableInv<Primes30> = NttTableInv::<Primes30>::new(n);
         move || {
-            NTT120Avx::ntt_dft_execute(&table, &mut values);
+            NTT4x30Avx::ntt_dft_execute(&table, &mut values);
             black_box(());
         }
     }
@@ -250,8 +250,8 @@ fn bench_ntt_avx512(_c: &mut Criterion) {
 #[cfg(all(feature = "enable-avx512f", target_arch = "x86_64", target_feature = "avx512f"))]
 pub fn bench_ntt_avx512(c: &mut Criterion) {
     use criterion::BenchmarkId;
-    use poulpy_cpu_avx512::NTT120Avx512;
-    use poulpy_cpu_ref::reference::ntt120::{NttDFTExecute, NttTable, Primes30};
+    use poulpy_cpu_avx512::NTT4x30Avx512;
+    use poulpy_cpu_ref::reference::ntt4x30::{NttDFTExecute, NttTable, Primes30};
     use std::hint::black_box;
 
     let group_name: String = "ntt_avx512f".to_string();
@@ -263,7 +263,7 @@ pub fn bench_ntt_avx512(c: &mut Criterion) {
         values.iter_mut().enumerate().for_each(|(i, x)| *x = (i + 1) as u64);
         let table: NttTable<Primes30> = NttTable::<Primes30>::new(n);
         move || {
-            NTT120Avx512::ntt_dft_execute(&table, &mut values);
+            NTT4x30Avx512::ntt_dft_execute(&table, &mut values);
             black_box(());
         }
     }
@@ -285,8 +285,8 @@ fn bench_intt_avx512(_c: &mut Criterion) {
 #[cfg(all(feature = "enable-avx512f", target_arch = "x86_64", target_feature = "avx512f"))]
 pub fn bench_intt_avx512(c: &mut Criterion) {
     use criterion::BenchmarkId;
-    use poulpy_cpu_avx512::NTT120Avx512;
-    use poulpy_cpu_ref::reference::ntt120::{NttDFTExecute, NttTableInv, Primes30};
+    use poulpy_cpu_avx512::NTT4x30Avx512;
+    use poulpy_cpu_ref::reference::ntt4x30::{NttDFTExecute, NttTableInv, Primes30};
     use std::hint::black_box;
 
     let group_name: String = "intt_avx512f".to_string();
@@ -298,7 +298,7 @@ pub fn bench_intt_avx512(c: &mut Criterion) {
         values.iter_mut().enumerate().for_each(|(i, x)| *x = (i + 1) as u64);
         let table: NttTableInv<Primes30> = NttTableInv::<Primes30>::new(n);
         move || {
-            NTT120Avx512::ntt_dft_execute(&table, &mut values);
+            NTT4x30Avx512::ntt_dft_execute(&table, &mut values);
             black_box(());
         }
     }

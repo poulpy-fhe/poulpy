@@ -2,7 +2,8 @@
 //!
 //! A thin trait on [`Module`] over the free functions in
 //! [`crate::default::dft`], so callers write `module.ckks_coeffs_to_slots(...)`.
-//! See [`docs/ckks_dft.md`](https://github.com/poulpy-fhe/poulpy) for the design.
+//! The homomorphic DFT is documented as a stage of the bootstrapping pipeline in
+//! [`docs/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/bootstrapping.md).
 
 use anyhow::Result;
 use poulpy_core::{

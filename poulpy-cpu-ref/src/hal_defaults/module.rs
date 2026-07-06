@@ -2,7 +2,7 @@
 
 use std::ptr::NonNull;
 
-use crate::reference::{fft64::module::FFT64HandleFactory, ntt120::vec_znx_dft::NttHandleFactory};
+use crate::reference::{fft64::module::FFT64HandleFactory, ntt4x30::vec_znx_dft::NttHandleFactory};
 use poulpy_hal::layouts::{Backend, Module};
 
 #[doc(hidden)]
@@ -24,7 +24,7 @@ where
 impl<BE: Backend> FFT64ModuleDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
 
 #[doc(hidden)]
-pub trait NTT120ModuleDefault<BE: Backend>: Backend
+pub trait NTT4x30ModuleDefault<BE: Backend>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
@@ -39,4 +39,4 @@ where
     }
 }
 
-impl<BE: Backend> NTT120ModuleDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
+impl<BE: Backend> NTT4x30ModuleDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}

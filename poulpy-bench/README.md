@@ -9,9 +9,9 @@ Each benchmark binary covers one subsystem. Binaries that operate on generic pol
 | Backend | Type | Feature flag | Label in output |
 |---|---|---|---|
 | `FFT64Ref` | FFT64, portable | *(always enabled)* | `fft64-ref` |
-| `NTT120Ref` | NTT120, portable | *(always enabled)* | `ntt120-ref` |
+| `NTT4x30Ref` | NTT4x30, portable | *(always enabled)* | `ntt4x30-ref` |
 | `FFT64Avx` | FFT64, AVX2/FMA | `enable-avx` | `fft64-avx` |
-| `NTT120Avx` | NTT120, AVX2/FMA | `enable-avx` | `ntt120-avx` |
+| `NTT4x30Avx` | NTT4x30, AVX2/FMA | `enable-avx` | `ntt4x30-avx` |
 
 The `enable-avx` flag enables the `poulpy-cpu-avx` backend and requires `target_arch = "x86_64"`.
 
@@ -116,7 +116,7 @@ Field reference:
 
 | Section | Field | Applies to | Description |
 |---|---|---|---|
-| `backends` | `["label", ...]` | shell script | Backends to run: `fft64-ref`, `ntt120-ref`, `fft64-avx`, `ntt120-avx`. AVX feature is auto-enabled when an AVX backend is listed. Omit to run all compiled-in backends. |
+| `backends` | `["label", ...]` | shell script | Backends to run: `fft64-ref`, `ntt4x30-ref`, `fft64-avx`, `ntt4x30-avx`. AVX feature is auto-enabled when an AVX backend is listed. Omit to run all compiled-in backends. |
 | `run` | `["name", ...]` | shell script | What to run. Binary names (e.g. `"vec_znx_big"`) run the whole binary; function names (e.g. `"vec_znx_big_add_into"`) are used as a Criterion filter across the default binary set. Mix freely. Omit or leave empty to run the default set in full. |
 | `hal.sweeps` | `[[log_n, cols, size], ...]` | `vec_znx_big`, `vec_znx_dft`, `svp` | Sweep points for generic HAL ops |
 | `cnv.sweeps` | `[[log_n, size], ...]` | `convolution` | Sweep points for convolution |
@@ -207,14 +207,14 @@ The benchmark ID format is `<group_name>/<parameter>` where the group name
 encodes the operation and backend label.
 
 ```sh
-# all vec_znx benchmarks on the ntt120-ref backend
-cargo bench -p poulpy-bench --bench vec_znx --features hal-bench -- ntt120-ref
+# all vec_znx benchmarks on the ntt4x30-ref backend
+cargo bench -p poulpy-bench --bench vec_znx --features hal-bench -- ntt4x30-ref
 
 # only the add benchmark, all backends
 cargo bench -p poulpy-bench --bench vec_znx --features hal-bench -- vec_znx_add_into
 
 # CKKS linear transformation, reference NTT backend
-cargo bench -p poulpy-bench --bench ckks_linear_transformation --features ckks-bench -- ntt120-ref
+cargo bench -p poulpy-bench --bench ckks_linear_transformation --features ckks-bench -- ntt4x30-ref
 
 # one specific backend × operation
 cargo bench -p poulpy-bench --bench vec_znx --features hal-bench -- "vec_znx_add_into::fft64-ref"
@@ -241,8 +241,8 @@ The timing rows are still Criterion benchmark IDs. The manifest is there to make
 runtime comparisons easier to read alongside schedule shape and scratch pressure.
 
 Precision behavior is validated by the CKKS linear-transformation tests on
-`FFT64/f64`, `NTT120/f64`, and `NTT120/f128`. The benchmark binary itself runs on
-the NTT family, including `ntt120-avx` when `enable-avx` and AVX2/FMA
+`FFT64/f64`, `NTT4x30/f64`, and `NTT4x30/f128`. The benchmark binary itself runs on
+the NTT family, including `ntt4x30-avx` when `enable-avx` and AVX2/FMA
 `RUSTFLAGS` are used.
 
 For production use, the prepared CKKS linear-transformation API is the promoted
@@ -288,5 +288,5 @@ Criterion HTML reports are written to `target/criterion/`.
 1. Add the backend crate to `[dependencies]` in `Cargo.toml` (behind an optional feature if needed).
 2. Add one entry to the appropriate private family macro in [`src/lib.rs`](src/lib.rs):
    - `for_each_fft_backend_family!` for an FFT64 backend
-   - `for_each_ntt_backend_family!` for an NTT120 backend
+   - `for_each_ntt_backend_family!` for an NTT4x30 backend
 3. No bench files need to change.

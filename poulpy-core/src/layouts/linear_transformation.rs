@@ -4,7 +4,7 @@
 //! bucketed by giant step) and the integer-level BSGS schedule types
 //! (`LinearTransformationLayout`, `LinearTransformationPlan`,
 //! `LinearTransformationStrategy`) plus their derivation, which is pure integer
-//! math (cf. docs/lt_bsgs.md §3).
+//! math (cf. docs/linear_transformation.md).
 //!
 //! The *prepared* (convolution-domain) caches live in
 //! [`crate::layouts::prepared`]; the HAL-dependent allocators and the

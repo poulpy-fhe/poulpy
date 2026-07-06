@@ -25,7 +25,7 @@
 #
 # Backend selection is done via the JSON "backends" field:
 #   "backends": ["fft64-ref"]               # ref only
-#   "backends": ["fft64-avx", "ntt120-avx"] # AVX only (auto-enables the feature)
+#   "backends": ["fft64-avx", "ntt4x30-avx"] # AVX only (auto-enables the feature)
 #   "backends": ["fft64-avx512"]            # AVX-512F only (auto-enables the feature)
 #   "backends": ["ntt-ifma"]                # IFMA only (auto-enables the feature)
 #   (omit)                                  # all compiled-in backends

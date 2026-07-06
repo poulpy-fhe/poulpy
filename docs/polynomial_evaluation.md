@@ -28,7 +28,7 @@ Inside the giant-step recombination the shared giant-step power is prepared once
 
 ## Decomposition example
 
-The decomposition splits the polynomial recursively at the largest giant power below the midpoint, until each remaining chunk has degree below the baby-step base.
+The decomposition splits the polynomial recursively at the smallest giant power above the midpoint of the remaining degree, until each remaining chunk has degree below the baby-step base.
 The chunks that remain are the baby polynomials, and the giant powers are the splitting points.
 The example below shows a degree fifteen polynomial with a baby-step base of four.
 

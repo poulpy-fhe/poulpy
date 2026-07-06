@@ -36,14 +36,14 @@ use poulpy_core::{
         prepared::{GLWESecretPrepared, GLWESecretPreparedFactory, GLWETensorKeyPrepared},
     },
 };
-use poulpy_cpu_ref::{FFT64ReimTable, NTT120Ref};
+use poulpy_cpu_ref::{FFT64ReimTable, NTT4x30Ref};
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, HostBytesBackend, Module, ScratchOwned},
     source::Source,
 };
 
-type BackendImpl = NTT120Ref;
+type BackendImpl = NTT4x30Ref;
 type SecretKeyPrepared = GLWESecretPrepared<<BackendImpl as Backend>::OwnedBuf, BackendImpl>;
 type TensorKeyPrepared = GLWETensorKeyPrepared<<BackendImpl as Backend>::OwnedBuf, BackendImpl>;
 

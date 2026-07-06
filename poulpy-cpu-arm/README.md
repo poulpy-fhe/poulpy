@@ -60,7 +60,7 @@ cargo test -p poulpy-cpu-arm --features enable-neon,enable-ckks
 This crate exposes two NEON-accelerated backends:
 
 ```rust
-use poulpy_cpu_arm::{FFT64Neon, NTT120Neon};
+use poulpy_cpu_arm::{FFT64Neon, NTT4x30Neon};
 use poulpy_hal::{api::ModuleNew, layouts::Module};
 
 let log_n: usize = 10;
@@ -69,7 +69,7 @@ let log_n: usize = 10;
 let module: Module<FFT64Neon> = Module::<FFT64Neon>::new(1 << log_n);
 
 // Q120 NTT backend (NEON, CRT over four ~30-bit primes)
-let module: Module<NTT120Neon> = Module::<NTT120Neon>::new(1 << log_n);
+let module: Module<NTT4x30Neon> = Module::<NTT4x30Neon>::new(1 << log_n);
 ```
 
 Once compiled with `enable-neon`, both backends are usable anywhere Poulpy expects a backend type in the HAL/core/CKKS layers. `poulpy-bin-fhe` has a separate `enable-neon` feature for its current crate-local integration.

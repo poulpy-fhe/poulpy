@@ -16,26 +16,27 @@ use crate::reference::{
             vec_znx_idft_apply as fft64_vec_znx_idft_apply, vec_znx_idft_apply_tmpa as fft64_vec_znx_idft_apply_tmpa,
         },
     },
-    ntt120::{
+    ntt4x30::{
         NttAdd, NttAddAssign, NttCopy, NttDFTExecute, NttFromZnx64, NttNegate, NttNegateAssign, NttSub, NttSubAssign,
         NttSubNegateAssign, NttToZnx128, NttZero,
         ntt::{NttTable, NttTableInv},
         primes::Primes30,
         types::Q120bScalar,
         vec_znx_dft::{
-            NttAutomorphismPlan, NttModuleHandle, build_ntt120_automorphism_plan,
-            ntt120_vec_znx_dft_add_assign as ntt120_default_vec_znx_dft_add_assign,
-            ntt120_vec_znx_dft_add_into as ntt120_default_vec_znx_dft_add_into,
-            ntt120_vec_znx_dft_add_scaled_assign as ntt120_default_vec_znx_dft_add_scaled_assign,
-            ntt120_vec_znx_dft_apply as ntt120_default_vec_znx_dft_apply,
-            ntt120_vec_znx_dft_automorphism as ntt120_default_vec_znx_dft_automorphism,
-            ntt120_vec_znx_dft_copy as ntt120_default_vec_znx_dft_copy, ntt120_vec_znx_dft_sub as ntt120_default_vec_znx_dft_sub,
-            ntt120_vec_znx_dft_sub_assign as ntt120_default_vec_znx_dft_sub_assign,
-            ntt120_vec_znx_dft_sub_negate_assign as ntt120_default_vec_znx_dft_sub_negate_assign,
-            ntt120_vec_znx_dft_zero as ntt120_default_vec_znx_dft_zero,
-            ntt120_vec_znx_idft_apply as ntt120_default_vec_znx_idft_apply,
-            ntt120_vec_znx_idft_apply_tmp_bytes as ntt120_default_vec_znx_idft_apply_tmp_bytes,
-            ntt120_vec_znx_idft_apply_tmpa as ntt120_default_vec_znx_idft_apply_tmpa,
+            NttAutomorphismPlan, NttModuleHandle, build_ntt4x30_automorphism_plan,
+            ntt4x30_vec_znx_dft_add_assign as ntt4x30_default_vec_znx_dft_add_assign,
+            ntt4x30_vec_znx_dft_add_into as ntt4x30_default_vec_znx_dft_add_into,
+            ntt4x30_vec_znx_dft_add_scaled_assign as ntt4x30_default_vec_znx_dft_add_scaled_assign,
+            ntt4x30_vec_znx_dft_apply as ntt4x30_default_vec_znx_dft_apply,
+            ntt4x30_vec_znx_dft_automorphism as ntt4x30_default_vec_znx_dft_automorphism,
+            ntt4x30_vec_znx_dft_copy as ntt4x30_default_vec_znx_dft_copy,
+            ntt4x30_vec_znx_dft_sub as ntt4x30_default_vec_znx_dft_sub,
+            ntt4x30_vec_znx_dft_sub_assign as ntt4x30_default_vec_znx_dft_sub_assign,
+            ntt4x30_vec_znx_dft_sub_negate_assign as ntt4x30_default_vec_znx_dft_sub_negate_assign,
+            ntt4x30_vec_znx_dft_zero as ntt4x30_default_vec_znx_dft_zero,
+            ntt4x30_vec_znx_idft_apply as ntt4x30_default_vec_znx_idft_apply,
+            ntt4x30_vec_znx_idft_apply_tmp_bytes as ntt4x30_default_vec_znx_idft_apply_tmp_bytes,
+            ntt4x30_vec_znx_idft_apply_tmpa as ntt4x30_default_vec_znx_idft_apply_tmpa,
         },
     },
     znx::ZnxZero,
@@ -272,11 +273,11 @@ where
 }
 
 #[doc(hidden)]
-pub trait NTT120VecZnxDftDefault<BE: Backend>: Backend
+pub trait NTT4x30VecZnxDftDefault<BE: Backend>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
-    /// NTT120 automorphism plan type. Implementation lands as a follow-up
+    /// NTT4x30 automorphism plan type. Implementation lands as a follow-up
     /// step; the placeholder unit type keeps the OEP wiring consistent
     /// across backends.
     type AutomorphismPlanDefault: Send + Sync;
@@ -294,14 +295,14 @@ where
         BE: Backend<ScalarPrep = Q120bScalar> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttZero + 'static,
         for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
     {
-        ntt120_default_vec_znx_dft_apply::<BE>(module, step, offset, res, res_col, a, a_col);
+        ntt4x30_default_vec_znx_dft_apply::<BE>(module, step, offset, res, res_col, a, a_col);
     }
 
     fn vec_znx_idft_apply_tmp_bytes_default(module: &Module<BE>) -> usize
     where
         BE: Backend<ScalarPrep = Q120bScalar>,
     {
-        ntt120_default_vec_znx_idft_apply_tmp_bytes(module.n())
+        ntt4x30_default_vec_znx_idft_apply_tmp_bytes(module.n())
     }
 
     fn vec_znx_idft_apply_default(
@@ -320,9 +321,9 @@ where
     {
         let (tmp, _) = take_host_typed::<BE, u64>(
             scratch.borrow(),
-            ntt120_default_vec_znx_idft_apply_tmp_bytes(module.n()) / size_of::<u64>(),
+            ntt4x30_default_vec_znx_idft_apply_tmp_bytes(module.n()) / size_of::<u64>(),
         );
-        ntt120_default_vec_znx_idft_apply(module, res, res_col, a, a_col, tmp);
+        ntt4x30_default_vec_znx_idft_apply(module, res, res_col, a, a_col, tmp);
     }
 
     fn vec_znx_idft_apply_tmpa_default(
@@ -336,7 +337,7 @@ where
         BE: Backend<ScalarPrep = Q120bScalar, ScalarBig = i128> + NttDFTExecute<NttTableInv<Primes30>> + NttToZnx128,
         for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     {
-        ntt120_default_vec_znx_idft_apply_tmpa(module, res, res_col, a, a_col);
+        ntt4x30_default_vec_znx_idft_apply_tmpa(module, res, res_col, a, a_col);
     }
 
     fn vec_znx_dft_add_into_default(
@@ -352,7 +353,7 @@ where
         for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
-        ntt120_default_vec_znx_dft_add_into(res, res_col, a, a_col, b, b_col);
+        ntt4x30_default_vec_znx_dft_add_into(res, res_col, a, a_col, b, b_col);
     }
 
     fn vec_znx_dft_add_scaled_assign_default(
@@ -367,7 +368,7 @@ where
         for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
-        ntt120_default_vec_znx_dft_add_scaled_assign(res, res_col, a, a_col, a_scale);
+        ntt4x30_default_vec_znx_dft_add_scaled_assign(res, res_col, a, a_col, a_scale);
     }
 
     fn vec_znx_dft_add_assign_default(
@@ -381,7 +382,7 @@ where
         for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
-        ntt120_default_vec_znx_dft_add_assign(res, res_col, a, a_col);
+        ntt4x30_default_vec_znx_dft_add_assign(res, res_col, a, a_col);
     }
 
     fn vec_znx_dft_sub_default(
@@ -397,7 +398,7 @@ where
         for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
-        ntt120_default_vec_znx_dft_sub(res, res_col, a, a_col, b, b_col);
+        ntt4x30_default_vec_znx_dft_sub(res, res_col, a, a_col, b, b_col);
     }
 
     fn vec_znx_dft_sub_assign_default(
@@ -411,7 +412,7 @@ where
         for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
-        ntt120_default_vec_znx_dft_sub_assign(res, res_col, a, a_col);
+        ntt4x30_default_vec_znx_dft_sub_assign(res, res_col, a, a_col);
     }
 
     fn vec_znx_dft_sub_negate_assign_default(
@@ -425,7 +426,7 @@ where
         for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
-        ntt120_default_vec_znx_dft_sub_negate_assign(res, res_col, a, a_col);
+        ntt4x30_default_vec_znx_dft_sub_negate_assign(res, res_col, a, a_col);
     }
 
     fn vec_znx_dft_copy_default(
@@ -441,7 +442,7 @@ where
         for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
-        ntt120_default_vec_znx_dft_copy(step, offset, res, res_col, a, a_col);
+        ntt4x30_default_vec_znx_dft_copy(step, offset, res, res_col, a, a_col);
     }
 
     fn vec_znx_dft_zero_default(_module: &Module<BE>, res: &mut VecZnxDftBackendMut<'_, BE>, res_col: usize)
@@ -449,14 +450,14 @@ where
         BE: Backend<ScalarPrep = Q120bScalar> + NttZero,
         for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     {
-        ntt120_default_vec_znx_dft_zero(res, res_col);
+        ntt4x30_default_vec_znx_dft_zero(res, res_col);
     }
 
     fn vec_znx_dft_automorphism_plan_default(module: &Module<BE>, p: i64) -> NttAutomorphismPlan
     where
         BE: Backend<ScalarPrep = Q120bScalar>,
     {
-        build_ntt120_automorphism_plan(module.n(), p)
+        build_ntt4x30_automorphism_plan(module.n(), p)
     }
 
     fn vec_znx_dft_automorphism_with_plan_default(
@@ -471,11 +472,11 @@ where
         for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
         for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     {
-        ntt120_default_vec_znx_dft_automorphism(plan, res, res_col, a, a_col);
+        ntt4x30_default_vec_znx_dft_automorphism(plan, res, res_col, a, a_col);
     }
 }
 
-impl<BE: Backend> NTT120VecZnxDftDefault<BE> for BE
+impl<BE: Backend> NTT4x30VecZnxDftDefault<BE> for BE
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {

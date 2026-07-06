@@ -190,7 +190,7 @@ mod fft64;
 mod hal_impl;
 #[cfg(feature = "enable-avx")]
 #[cfg(feature = "enable-avx")]
-mod ntt120;
+mod ntt4x30;
 #[cfg(feature = "enable-avx")]
 #[cfg(all(test, feature = "enable-avx", feature = "enable-ckks"))]
 mod tests;
@@ -199,16 +199,16 @@ mod znx_avx;
 #[cfg(feature = "enable-avx")]
 pub use fft64::{FFT64Avx, FFT64AvxReimTable, ReimFFTAvx, ReimIFFTAvx};
 #[cfg(feature = "enable-avx")]
-pub use ntt120::NTT120Avx;
+pub use ntt4x30::NTT4x30Avx;
 
 // --- TransferFrom impls ---
 #[cfg(feature = "enable-avx")]
 mod transfer_impls {
     #[cfg(feature = "enable-avx")]
-    use poulpy_cpu_ref::{FFT64Ref, NTT120Ref};
+    use poulpy_cpu_ref::{FFT64Ref, NTT4x30Ref};
     use poulpy_hal::layouts::{Backend, TransferFrom};
 
-    use crate::{FFT64Avx, NTT120Avx};
+    use crate::{FFT64Avx, NTT4x30Avx};
 
     impl TransferFrom<FFT64Avx> for FFT64Avx {
         fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
@@ -221,38 +221,38 @@ mod transfer_impls {
         }
     }
 
-    impl TransferFrom<NTT120Avx> for NTT120Avx {
+    impl TransferFrom<NTT4x30Avx> for NTT4x30Avx {
         fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            NTT120Avx::from_host_bytes(&NTT120Avx::to_host_bytes(src))
+            NTT4x30Avx::from_host_bytes(&NTT4x30Avx::to_host_bytes(src))
         }
     }
-    impl TransferFrom<NTT120Ref> for NTT120Avx {
+    impl TransferFrom<NTT4x30Ref> for NTT4x30Avx {
         fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            NTT120Avx::from_host_bytes(&NTT120Ref::to_host_bytes(src))
+            NTT4x30Avx::from_host_bytes(&NTT4x30Ref::to_host_bytes(src))
         }
     }
 
     // Cross-family: coefficient-domain buffers are compatible.
     // Prepared layouts must not be transferred directly; transfer the
     // non-prepared form and re-prepare on the destination backend.
-    impl TransferFrom<NTT120Ref> for FFT64Avx {
+    impl TransferFrom<NTT4x30Ref> for FFT64Avx {
         fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            FFT64Avx::from_host_bytes(&NTT120Ref::to_host_bytes(src))
+            FFT64Avx::from_host_bytes(&NTT4x30Ref::to_host_bytes(src))
         }
     }
-    impl TransferFrom<NTT120Avx> for FFT64Avx {
+    impl TransferFrom<NTT4x30Avx> for FFT64Avx {
         fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            FFT64Avx::from_host_bytes(&NTT120Avx::to_host_bytes(src))
+            FFT64Avx::from_host_bytes(&NTT4x30Avx::to_host_bytes(src))
         }
     }
-    impl TransferFrom<FFT64Ref> for NTT120Avx {
+    impl TransferFrom<FFT64Ref> for NTT4x30Avx {
         fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            NTT120Avx::from_host_bytes(&FFT64Ref::to_host_bytes(src))
+            NTT4x30Avx::from_host_bytes(&FFT64Ref::to_host_bytes(src))
         }
     }
-    impl TransferFrom<FFT64Avx> for NTT120Avx {
+    impl TransferFrom<FFT64Avx> for NTT4x30Avx {
         fn transfer_buf(src: &Vec<u8>) -> Vec<u8> {
-            NTT120Avx::from_host_bytes(&FFT64Avx::to_host_bytes(src))
+            NTT4x30Avx::from_host_bytes(&FFT64Avx::to_host_bytes(src))
         }
     }
 }

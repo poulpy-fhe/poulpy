@@ -1,9 +1,9 @@
 use crate::{
-    FFT64Ref, NTT120Ref,
+    FFT64Ref, NTT4x30Ref,
     hal_defaults::{
         FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault, FFT64VecZnxDftDefault,
-        FFT64VmpDefault, HalVecZnxDefault, NTT120ConvolutionDefault, NTT120ModuleDefault, NTT120SvpDefault,
-        NTT120VecZnxBigDefault, NTT120VecZnxDftDefault, NTT120VmpDefault,
+        FFT64VmpDefault, HalVecZnxDefault, NTT4x30ConvolutionDefault, NTT4x30ModuleDefault, NTT4x30SvpDefault,
+        NTT4x30VecZnxBigDefault, NTT4x30VecZnxDftDefault, NTT4x30VmpDefault,
     },
 };
 use poulpy_hal::{
@@ -64,7 +64,7 @@ unsafe impl HalVecZnxDftImpl<FFT64Ref> for FFT64Ref {
     hal_impl_vec_znx_dft!(FFT64VecZnxDftDefault);
 }
 
-unsafe impl HalVecZnxImpl<NTT120Ref> for NTT120Ref {
+unsafe impl HalVecZnxImpl<NTT4x30Ref> for NTT4x30Ref {
     hal_impl_vec_znx!();
 
     fn vec_znx_transpose_backend(module: &Module<Self>, res: &mut VecZnxBackendMut<'_, Self>, a: &VecZnxBackendRef<'_, Self>) {
@@ -72,16 +72,16 @@ unsafe impl HalVecZnxImpl<NTT120Ref> for NTT120Ref {
     }
 }
 
-unsafe impl HalModuleImpl<NTT120Ref> for NTT120Ref {
-    hal_impl_module!(NTT120ModuleDefault);
+unsafe impl HalModuleImpl<NTT4x30Ref> for NTT4x30Ref {
+    hal_impl_module!(NTT4x30ModuleDefault);
 }
 
-unsafe impl HalVmpImpl<NTT120Ref> for NTT120Ref {
-    hal_impl_vmp!(NTT120VmpDefault);
+unsafe impl HalVmpImpl<NTT4x30Ref> for NTT4x30Ref {
+    hal_impl_vmp!(NTT4x30VmpDefault);
 }
 
-unsafe impl HalConvolutionImpl<NTT120Ref> for NTT120Ref {
-    hal_impl_convolution!(NTT120ConvolutionDefault);
+unsafe impl HalConvolutionImpl<NTT4x30Ref> for NTT4x30Ref {
+    hal_impl_convolution!(NTT4x30ConvolutionDefault);
 
     fn cnv_accumulate_dft_tmp_bytes(
         module: &Module<Self>,
@@ -90,7 +90,7 @@ unsafe impl HalConvolutionImpl<NTT120Ref> for NTT120Ref {
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        <Self as NTT120ConvolutionDefault<Self>>::cnv_accumulate_dft_tmp_bytes_default(
+        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_accumulate_dft_tmp_bytes_default(
             module, cnv_offset, res_size, a_size, b_size,
         )
     }
@@ -106,7 +106,7 @@ unsafe impl HalConvolutionImpl<NTT120Ref> for NTT120Ref {
         Self: HalVecZnxDftImpl<Self> + 'a,
     {
         let mut scratch = scratch.borrow();
-        <Self as NTT120ConvolutionDefault<Self>>::cnv_accumulate_dft_default(
+        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_accumulate_dft_default(
             module,
             cnv_offset,
             &mut res,
@@ -117,14 +117,14 @@ unsafe impl HalConvolutionImpl<NTT120Ref> for NTT120Ref {
     }
 }
 
-unsafe impl HalVecZnxBigImpl<NTT120Ref> for NTT120Ref {
-    hal_impl_vec_znx_big!(NTT120VecZnxBigDefault);
+unsafe impl HalVecZnxBigImpl<NTT4x30Ref> for NTT4x30Ref {
+    hal_impl_vec_znx_big!(NTT4x30VecZnxBigDefault);
 }
 
-unsafe impl HalSvpImpl<NTT120Ref> for NTT120Ref {
-    hal_impl_svp!(NTT120SvpDefault);
+unsafe impl HalSvpImpl<NTT4x30Ref> for NTT4x30Ref {
+    hal_impl_svp!(NTT4x30SvpDefault);
 }
 
-unsafe impl HalVecZnxDftImpl<NTT120Ref> for NTT120Ref {
-    hal_impl_vec_znx_dft!(NTT120VecZnxDftDefault);
+unsafe impl HalVecZnxDftImpl<NTT4x30Ref> for NTT4x30Ref {
+    hal_impl_vec_znx_dft!(NTT4x30VecZnxDftDefault);
 }

@@ -1,7 +1,7 @@
 //! Standalone CKKS bootstrapping run, for profiling.
 //!
-//! Compiles the end-to-end bootstrapping pipeline (the `ntt120_f64` reference
-//! backend — same composition as `tests::ckks_tests::ntt120_f64::bootstrapping_e2e`)
+//! Compiles the end-to-end bootstrapping pipeline (the `ntt4x30_f64` reference
+//! backend — same composition as `tests::ckks_tests::ntt4x30_f64::bootstrapping_e2e`)
 //! into a single binary so it can be run under a sampling profiler and explored
 //! in the browser: every function, its call count and timings, flame graph and
 //! timeline.
@@ -25,19 +25,19 @@
 //! - `cargo flamegraph -p poulpy-cpu-ref --example bootstrap_trace --features enable-ckks`
 //!   (SVG, open in any browser).
 
-use poulpy_ckks::test_suite::{NTT120_PARAMS_F64, bootstrapping::test_bootstrapping_standard_e2e};
+use poulpy_ckks::test_suite::{NTT4X30_PARAMS_F64, bootstrapping::test_bootstrapping_standard_e2e};
 use poulpy_cpu_ref::{
-    FFT64ReimTable, NTT120Ref,
+    FFT64ReimTable, NTT4x30Ref,
     layouts::{HostBytesBackend, Module},
 };
 
 fn main() {
-    let params = NTT120_PARAMS_F64;
+    let params = NTT4X30_PARAMS_F64;
 
     // `test_bootstrapping_e2e` builds its own modules internally; these only
     // satisfy the signature (they are ignored by the test body).
-    let module = Module::<NTT120Ref>::new(params.n as u64);
+    let module = Module::<NTT4x30Ref>::new(params.n as u64);
     let host_module = Module::<HostBytesBackend>::new(params.n as u64);
 
-    test_bootstrapping_standard_e2e::<NTT120Ref, f64, FFT64ReimTable<f64>>(params, &module, &host_module);
+    test_bootstrapping_standard_e2e::<NTT4x30Ref, f64, FFT64ReimTable<f64>>(params, &module, &host_module);
 }

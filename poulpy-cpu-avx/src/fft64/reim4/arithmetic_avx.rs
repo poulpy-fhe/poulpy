@@ -652,8 +652,11 @@ pub unsafe fn reim4_convolution_by_real_const_2coeffs_avx(k: usize, dst: &mut [f
     }
 }
 
-/// Full-row convolution, tiling outputs by 3. Per-output accumulation order
-/// matches `reim4_convolution_2coeffs_avx`.
+/// Full-row convolution, tiling outputs by 3: the widest tile whose working
+/// set (two accumulators and one window row pair per output, plus the shared
+/// b row, `4T + 2 = 14` registers) fits AVX2's 16 ymm registers without
+/// spilling. Per-output accumulation order matches
+/// `reim4_convolution_2coeffs_avx`.
 ///
 /// # Safety
 /// Caller must ensure the CPU supports AVX2 and FMA (e.g. `is_x86_feature_detected!("avx2")`).

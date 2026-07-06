@@ -1,6 +1,6 @@
 //! Lazy DFT-domain giant rotations and final normalization.
 //!
-//! Implements the ROT and Finalize pieces of docs/lt_bsgs.md §6.3-§6.4. The PROD
+//! Implements the ROT and Finalize pieces of docs/linear_transformation.md. The PROD
 //! result rides through giant rotations in `VecZnxDft`: mask columns are still
 //! normalized through scratch BIG/SMALL before key-switching because gadget
 //! decomposition requires limb-aligned input, but the body add, automorphism,
@@ -195,7 +195,7 @@ pub(super) fn glwe_idft_dft_into_big<BE, M>(
 }
 
 /// Final BIG → SMALL normalize with sub-limb offset; this is the single
-/// rounding allowed by docs/lt_bsgs.md §6.4 / saving #4. `cnv_offset_lo` is the
+/// rounding allowed by docs/linear_transformation.md. `cnv_offset_lo` is the
 /// fractional limb shift PROD never applied, so it lands here at the end.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn glwe_normalize_big_into<BE, M, R>(

@@ -287,7 +287,7 @@ pub type OwnedBuf<BE> = <BE as Backend>::OwnedBuf;
 /// - any host `Vec<u8>` backend → `HostBytesBackend`
 /// - `HostBytesBackend` → any host `Vec<u8>` backend
 ///
-/// All other backend-to-backend transfers (e.g. `FFT64Ref` ↔ `NTT120Ref`,
+/// All other backend-to-backend transfers (e.g. `FFT64Ref` ↔ `NTT4x30Ref`,
 /// `FFT64Ref` → `FFT64Avx`) must be implemented explicitly in the respective
 /// backend crates.
 pub trait TransferFrom<From: Backend>: Backend {

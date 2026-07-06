@@ -7,13 +7,13 @@
 //! re-exports the data type under CKKS names and adds the scale-aware entry point.
 //! All `log_delta` / `log_budget` accounting lives here — the core engine only
 //! receives base2k-level alignment integers. See
-//! [`docs/lt_bsgs.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/lt_bsgs.md).
+//! [`docs/linear_transformation.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/linear_transformation.md).
 //!
 //! # Prepared vs streamed — one evaluator
 //!
 //! Evaluation is generic over the diagonal representation `P`: a prepared
 //! [`PreparedDiagonal`] (resident, fastest for repeated use) or a plaintext
-//! [`CKKSPlaintext`] diagonal (streamed, lower peak memory). Both go through the
+//! [`CKKSPlaintext`](crate::layouts::CKKSPlaintext) diagonal (streamed, lower peak memory). Both go through the
 //! same [`Self::ckks_eval_linear_transformation_into`] — the `P = PreparedDiagonal`
 //! case is the resident path and a plaintext `P` is the streamed path. There is no
 //! separate "prepared" vs "unprepared" method; you pick the path by which `P` you
@@ -61,7 +61,7 @@ pub use poulpy_core::{
 /// (stashed via [`PreparedDiagonal::set_log_scale`] during preparation) and
 /// carries no scale concept of its own.
 ///
-/// Implemented for the two diagonal representations: [`CKKSPlaintext`] (streamed)
+/// Implemented for the two diagonal representations: [`CKKSPlaintext`](crate::layouts::CKKSPlaintext) (streamed)
 /// via its `log_delta`, and the core [`PreparedDiagonal`] (resident) via that
 /// stashed scale.
 pub trait LtDiagonalScale {

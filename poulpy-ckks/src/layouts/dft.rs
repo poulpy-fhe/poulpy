@@ -4,8 +4,8 @@
 //! matrices themselves are generated from this literal by the `default::dft`
 //! module; this file holds the (backend-free) parameter struct, its enums, and
 //! the prepared [`DFTMatrix`] that carries the encoded/prepared factor operands.
-//! See [`docs/ckks_dft.md`](https://github.com/poulpy-fhe/poulpy) for the full
-//! design.
+//! The homomorphic DFT is documented as a stage of the bootstrapping pipeline in
+//! [`docs/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/bootstrapping.md).
 
 use core::marker::PhantomData;
 use std::collections::BTreeSet;
@@ -53,7 +53,8 @@ pub enum DFTOutputFormat {
 /// factor matrices is its **length**. The schedule is free: pick the granularity
 /// you want (`vec![1; log_slots]` = one layer per matrix, no merging;
 /// `vec![log_slots]` = a single fully-merged matrix; anything in between). A
-/// single uniform per-factor scale is used (see `docs/ckks_dft.md` §6).
+/// single uniform per-factor scale is used (see the homomorphic-DFT scale
+/// accounting in [`docs/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/bootstrapping.md)).
 ///
 /// **Convention: the schedule is in evaluation order** — the factor matrices are
 /// applied to the ciphertext left-to-right, so `factorization_depth[0]` is the

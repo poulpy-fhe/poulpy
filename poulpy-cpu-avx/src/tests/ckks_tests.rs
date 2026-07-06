@@ -12,10 +12,10 @@ ckks_backend_test_suite!(
 );
 
 ckks_backend_test_suite!(
-    mod ntt120_f64,
-    backend = crate::NTT120Avx,
+    mod ntt4x30_f64,
+    backend = crate::NTT4x30Avx,
     scalar = f64,
     encoder = crate::FFT64AvxReimTable,
-    params = poulpy_ckks::test_suite::NTT120_PARAMS_F64,
+    params = poulpy_ckks::test_suite::NTT4X30_PARAMS_F64,
     rotations = super::ATK_ROTATIONS,
 );

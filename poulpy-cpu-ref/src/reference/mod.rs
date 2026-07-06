@@ -6,6 +6,6 @@
 //! [`poulpy_hal::test_suite`] module.
 
 pub mod fft64;
-pub mod ntt120;
+pub mod ntt4x30;
 pub mod vec_znx;
 pub mod znx;

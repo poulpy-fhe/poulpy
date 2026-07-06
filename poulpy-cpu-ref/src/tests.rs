@@ -6,7 +6,7 @@ use poulpy_hal::{
     },
 };
 
-use crate::{FFT64Ref, NTT120Ref};
+use crate::{FFT64Ref, NTT4x30Ref};
 
 #[cfg(feature = "enable-ckks")]
 mod ckks_tests;
@@ -44,32 +44,32 @@ fn test_convolution_accumulate_fused_fft64_ref() {
 }
 
 #[test]
-fn test_convolution_by_const_ntt120_ref() {
-    let module: Module<NTT120Ref> = Module::<NTT120Ref>::new(8);
+fn test_convolution_by_const_ntt4x30_ref() {
+    let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(8);
     test_convolution_by_const(&module, 50);
 }
 
 #[test]
-fn test_convolution_ntt120_ref() {
-    let module: Module<NTT120Ref> = Module::<NTT120Ref>::new(8);
+fn test_convolution_ntt4x30_ref() {
+    let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(8);
     test_convolution(&module, 50);
 }
 
 #[test]
-fn test_convolution_pairwise_ntt120_ref() {
-    let module: Module<NTT120Ref> = Module::<NTT120Ref>::new(8);
+fn test_convolution_pairwise_ntt4x30_ref() {
+    let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(8);
     test_convolution_pairwise(&module, 50);
 }
 
 #[test]
-fn test_convolution_accumulate_ntt120_ref() {
-    let module: Module<NTT120Ref> = Module::<NTT120Ref>::new(8);
+fn test_convolution_accumulate_ntt4x30_ref() {
+    let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(8);
     test_convolution_accumulate(&module, 50);
 }
 
 #[test]
-fn test_convolution_accumulate_fused_ntt120_ref() {
-    let module: Module<NTT120Ref> = Module::<NTT120Ref>::new(8);
+fn test_convolution_accumulate_fused_ntt4x30_ref() {
+    let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(8);
     test_convolution_accumulate_fused(&module, 50);
 }
 
@@ -78,7 +78,7 @@ use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
 cross_backend_test_suite! {
     mod vec_znx,
     backend_ref =  crate::FFT64Ref,
-    backend_test = crate::NTT120Ref,
+    backend_test = crate::NTT4x30Ref,
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
         test_vec_znx_zero_backend_matches_wrapper => poulpy_hal::test_suite::vec_znx::test_vec_znx_zero_backend_matches_wrapper,
@@ -133,7 +133,7 @@ cross_backend_test_suite! {
 cross_backend_test_suite! {
     mod svp,
     backend_ref =  crate::FFT64Ref,
-    backend_test = crate::NTT120Ref,
+    backend_test = crate::NTT4x30Ref,
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
         test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
@@ -143,7 +143,7 @@ cross_backend_test_suite! {
 cross_backend_test_suite! {
     mod vec_znx_big,
     backend_ref =  crate::FFT64Ref,
-    backend_test = crate::NTT120Ref,
+    backend_test = crate::NTT4x30Ref,
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
         test_vec_znx_big_add_into => poulpy_hal::test_suite::vec_znx_big::test_vec_znx_big_add_into,
@@ -168,7 +168,7 @@ cross_backend_test_suite! {
 cross_backend_test_suite! {
     mod vec_znx_dft,
     backend_ref =  crate::FFT64Ref,
-    backend_test = crate::NTT120Ref,
+    backend_test = crate::NTT4x30Ref,
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
         test_vec_znx_dft_add_into => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_add_into,
@@ -184,7 +184,7 @@ cross_backend_test_suite! {
 cross_backend_test_suite! {
     mod vec_znx_dft_automorphism,
     backend_ref =  crate::FFT64Ref,
-    backend_test = crate::NTT120Ref,
+    backend_test = crate::NTT4x30Ref,
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
         test_vec_znx_dft_automorphism => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_dft_automorphism,
@@ -193,7 +193,7 @@ cross_backend_test_suite! {
 cross_backend_test_suite! {
     mod vmp,
     backend_ref =  crate::FFT64Ref,
-    backend_test = crate::NTT120Ref,
+    backend_test = crate::NTT4x30Ref,
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
         test_vmp_apply_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft,
@@ -203,7 +203,7 @@ cross_backend_test_suite! {
 
 backend_test_suite! {
     mod sampling,
-    backend = crate::NTT120Ref,
+    backend = crate::NTT4x30Ref,
     params = TestParams { size: 1<<12, base2k: 12 },
     tests = {
         test_vec_znx_fill_uniform => poulpy_hal::test_suite::vec_znx::test_vec_znx_fill_uniform,
@@ -223,8 +223,8 @@ poulpy_core::core_backend_test_suite!(
 
 #[cfg(feature = "enable-core")]
 poulpy_core::core_backend_test_suite!(
-    mod ntt120,
-    backend = crate::NTT120Ref,
+    mod ntt4x30,
+    backend = crate::NTT4x30Ref,
     params = TestParams { size: 1<<8, base2k: 52 },
 );
 
@@ -236,9 +236,9 @@ fn test_vec_znx_rsh_assign_multi_limb_matches_rsh() {
     use poulpy_hal::test_suite::{download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
 
     let n = 8usize;
-    let module: Module<NTT120Ref> = Module::<NTT120Ref>::new(n as u64);
+    let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(n as u64);
     let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(n as u64);
-    let mut scratch: ScratchOwned<NTT120Ref> = ScratchOwned::alloc(module.vec_znx_rsh_tmp_bytes());
+    let mut scratch: ScratchOwned<NTT4x30Ref> = ScratchOwned::alloc(module.vec_znx_rsh_tmp_bytes());
     let base2k = 52usize;
     let mut source = Source::new([3u8; 32]);
 
@@ -250,28 +250,28 @@ fn test_vec_znx_rsh_assign_multi_limb_matches_rsh() {
             }
             let mut a: VecZnx<Vec<u8>> = module_host.vec_znx_alloc(1, size);
             a.fill_uniform(base2k, &mut source);
-            let a_be = upload_vec_znx::<NTT120Ref>(&a);
-            let mut want_be = upload_vec_znx::<NTT120Ref>(&module_host.vec_znx_alloc(1, size));
+            let a_be = upload_vec_znx::<NTT4x30Ref>(&a);
+            let mut want_be = upload_vec_znx::<NTT4x30Ref>(&module_host.vec_znx_alloc(1, size));
             module.vec_znx_rsh_backend(
                 base2k,
                 k,
-                &mut vec_znx_backend_mut::<NTT120Ref>(&mut want_be),
+                &mut vec_znx_backend_mut::<NTT4x30Ref>(&mut want_be),
                 0,
-                &vec_znx_backend_ref::<NTT120Ref>(&a_be),
+                &vec_znx_backend_ref::<NTT4x30Ref>(&a_be),
                 0,
                 &mut scratch.borrow(),
             );
-            let mut got_be = upload_vec_znx::<NTT120Ref>(&a);
+            let mut got_be = upload_vec_znx::<NTT4x30Ref>(&a);
             module.vec_znx_rsh_assign_backend(
                 base2k,
                 k,
-                &mut vec_znx_backend_mut::<NTT120Ref>(&mut got_be),
+                &mut vec_znx_backend_mut::<NTT4x30Ref>(&mut got_be),
                 0,
                 &mut scratch.borrow(),
             );
             assert_eq!(
-                download_vec_znx::<NTT120Ref>(&got_be),
-                download_vec_znx::<NTT120Ref>(&want_be),
+                download_vec_znx::<NTT4x30Ref>(&got_be),
+                download_vec_znx::<NTT4x30Ref>(&want_be),
                 "vec_znx_rsh_assign mismatch for size={size} k={k}"
             );
         }
@@ -279,7 +279,7 @@ fn test_vec_znx_rsh_assign_multi_limb_matches_rsh() {
 }
 
 #[test]
-fn test_ntt120_vmp_apply_truncated_res_matches_full_prefix() {
+fn test_ntt4x30_vmp_apply_truncated_res_matches_full_prefix() {
     use poulpy_hal::api::{
         ScratchOwnedAlloc, VecZnxDftAlloc, VecZnxDftApply, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare,
         VmpPrepareTmpBytes,
@@ -295,11 +295,11 @@ fn test_ntt120_vmp_apply_truncated_res_matches_full_prefix() {
     let base2k = 52usize;
     let (rows, cols_in, cols_out, mat_size) = (2usize, 1usize, 1usize, 4usize);
 
-    let module: Module<NTT120Ref> = Module::<NTT120Ref>::new(n as u64);
+    let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(n as u64);
     let module_host: Module<HostBytesBackend> = Module::<HostBytesBackend>::new(n as u64);
     let mut source = Source::new([7u8; 32]);
 
-    let mut scratch: ScratchOwned<NTT120Ref> = ScratchOwned::alloc(
+    let mut scratch: ScratchOwned<NTT4x30Ref> = ScratchOwned::alloc(
         module
             .vmp_apply_dft_to_dft_tmp_bytes(mat_size, rows, rows, cols_in, cols_out, mat_size)
             .max(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, mat_size)),
@@ -307,28 +307,28 @@ fn test_ntt120_vmp_apply_truncated_res_matches_full_prefix() {
 
     let mut a: VecZnx<Vec<u8>> = module_host.vec_znx_alloc(cols_in, rows);
     a.fill_uniform(base2k, &mut source);
-    let a_be = upload_vec_znx::<NTT120Ref>(&a);
-    let mut a_dft: VecZnxDft<Vec<u8>, NTT120Ref> = module.vec_znx_dft_alloc(cols_in, rows);
+    let a_be = upload_vec_znx::<NTT4x30Ref>(&a);
+    let mut a_dft: VecZnxDft<Vec<u8>, NTT4x30Ref> = module.vec_znx_dft_alloc(cols_in, rows);
     module.vec_znx_dft_apply(
         1,
         0,
         &mut a_dft.to_backend_mut(),
         0,
-        &vec_znx_backend_ref::<NTT120Ref>(&a_be),
+        &vec_znx_backend_ref::<NTT4x30Ref>(&a_be),
         0,
     );
 
     let mut mat: MatZnx<Vec<u8>> = module_host.mat_znx_alloc(rows, cols_in, cols_out, mat_size);
     mat.fill_uniform(base2k, &mut source);
-    let mat_be = upload_mat_znx::<NTT120Ref>(&mat);
-    let mut pmat: VmpPMat<Vec<u8>, NTT120Ref> = module.vmp_pmat_alloc(rows, cols_in, cols_out, mat_size);
+    let mat_be = upload_mat_znx::<NTT4x30Ref>(&mat);
+    let mut pmat: VmpPMat<Vec<u8>, NTT4x30Ref> = module.vmp_pmat_alloc(rows, cols_in, cols_out, mat_size);
     module.vmp_prepare(
         &mut pmat.to_backend_mut(),
-        &<MatZnx<<NTT120Ref as Backend>::OwnedBuf> as MatZnxToBackendRef<NTT120Ref>>::to_backend_ref(&mat_be),
+        &<MatZnx<<NTT4x30Ref as Backend>::OwnedBuf> as MatZnxToBackendRef<NTT4x30Ref>>::to_backend_ref(&mat_be),
         &mut scratch.arena(),
     );
 
-    let mut res_full: VecZnxDft<Vec<u8>, NTT120Ref> = module.vec_znx_dft_alloc(cols_out, mat_size);
+    let mut res_full: VecZnxDft<Vec<u8>, NTT4x30Ref> = module.vec_znx_dft_alloc(cols_out, mat_size);
     module.vmp_apply_dft_to_dft(
         &mut res_full.to_backend_mut(),
         &a_dft.to_backend_ref(),
@@ -340,7 +340,7 @@ fn test_ntt120_vmp_apply_truncated_res_matches_full_prefix() {
 
     // odd truncated sizes hit the trailing-column path on a paired pmat column
     for res_size in [1usize, 3] {
-        let mut res_trunc: VecZnxDft<Vec<u8>, NTT120Ref> = module.vec_znx_dft_alloc(cols_out, res_size);
+        let mut res_trunc: VecZnxDft<Vec<u8>, NTT4x30Ref> = module.vec_znx_dft_alloc(cols_out, res_size);
         module.vmp_apply_dft_to_dft(
             &mut res_trunc.to_backend_mut(),
             &a_dft.to_backend_ref(),

@@ -103,8 +103,8 @@ impl CKKSTestParams {
     }
 }
 
-/// NTT120 parameter set.
-pub const NTT120_PARAMS_F64: CKKSTestParams = CKKSTestParams {
+/// NTT4x30 parameter set.
+pub const NTT4X30_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     n: 256,
     base2k: 52,
     k: 8 * 40,
@@ -131,8 +131,8 @@ pub const FFT64_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     dsize: 1,
 };
 
-/// NTT120 parameter set.
-pub const NTT120_PARAMS_F128: CKKSTestParams = CKKSTestParams {
+/// NTT4x30 parameter set.
+pub const NTT4X30_PARAMS_F128: CKKSTestParams = CKKSTestParams {
     n: 256,
     base2k: 52,
     k: 8 * 80,
