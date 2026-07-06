@@ -121,9 +121,10 @@ impl Backend for NTT3x42Ifma {
     }
 
     fn bytes_of_vmp_pmat(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
-        // Prime-major layout: 3 planes (one per CRT prime), no padding lane.
-        // Per coefficient: 3 × u64 instead of the default 4 × u64.
-        n * rows * cols_in * cols_out * size * 3 * size_of::<u64>()
+        // Packed prime-major layout: the three 42-bit CRT residues per
+        // coefficient are packed into 2 × u64 (126 of 128 bits), unpacked
+        // in registers by the apply kernel.
+        n * rows * cols_in * cols_out * size * 2 * size_of::<u64>()
     }
 
     unsafe fn destroy(handle: NonNull<Self::Handle>) {
