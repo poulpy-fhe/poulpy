@@ -22,11 +22,10 @@ poulpy-cpu-avx512          AVX-512 / IFMA backend
 
 The hardware abstraction layer.
 It defines the data layouts and the operation traits, but no arithmetic of its own beyond the layouts.
-Its design deliberately mirrors the C library [spqlios-arithmetic](https://github.com/tfhe/spqlios-arithmetic), and the reference transform kernels in the backends are direct Rust ports of it, so the layouts and the operation API match spqlios closely.
 
 The layouts split into three domains.
 In the coefficient domain, `VecZnx` is the central type, a base-`2^K` vector of polynomials in `Z[X]/(X^N + 1)` stored as `size` limbs of `N` coefficients, and `ScalarZnx` is its single-limb specialization used for plaintexts and secret keys.
-`MatZnx` is the matrix form behind GGSW.
+`MatZnx` is the matrix form behind GGLWE and GGSW.
 In the transform domain, `VecZnxDft` holds polynomials after the backend's DFT or NTT, where multiplication becomes pointwise, and the prepared operands `SvpPPol` (a scalar polynomial) and `VmpPMat` (a polynomial matrix) live here too.
 The large-coefficient `VecZnxBig` is the wide accumulator that holds products before they are normalized back into base-`2^K` limbs.
 
@@ -47,9 +46,9 @@ They hand-vectorize only the hot paths, the transform butterflies and the matrix
 `poulpy-cpu-avx` adds AVX2 and FMA kernels and provides `FFT64Avx` and `NTT4x30Avx`.
 `poulpy-cpu-avx512` adds AVX-512 and IFMA kernels and provides `FFT64Avx512`, `NTT4x30Avx512`, and `NTT3x42Ifma`, the last of which reconstructs its CRT output with an AVX-512 IFMA kernel.
 
-Results are deterministic and bit-identical across backends, since the NTT families are exact and the FFT family is held within correct rounding.
+Results are deterministic and bit-identical across backends, since the NTT backends are exact and the FFT backends are held within correct rounding.
 This means you can develop and test against `FFT64Ref` and switch to an accelerated backend with no change in output.
-See [backends.md](backends.md) for the three arithmetic families and how to pick one.
+See [backends.md](backends.md) for the arithmetic families, their subfamilies, and how to pick one.
 
 ### poulpy-core
 

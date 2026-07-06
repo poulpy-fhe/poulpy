@@ -5,18 +5,20 @@ A *backend* performs the low-level primitives behind that layer, such as the Fou
 Every backend is a small marker type that you pass as the generic parameter of `Module<B>`.
 User code stays generic over `B` and the backend is chosen at compile time.
 
-There are three arithmetic families: `FFT64`, `NTT4x30`, and `NTT3x42`.
-They differ in the transform each uses to make polynomial multiplication in `Z[X]/(X^N + 1)` efficient.
-They are interchangeable behind the HAL, so the same scheme code runs on any of them.
+There are two main arithmetic families: `FFT` and `NTT` backends, each with their subfamilies.
+They differ in the format of the DFT used to make polynomial multiplication in `Z[X]/(X^N + 1)` efficient: `FFT` backends use a complex floating-point DFT, while `NTT` backends use a number-theoretic transform over integers.
+All backends are interchangeable behind the HAL, so the same scheme code runs on any of them.
 
-## The three families
+## Currently available subfamilies
+
+Poulpy currently ships one FFT subfamily, `FFT64`, and two NTT subfamilies, `NTT4x30` and `NTT3x42`.
 
 ### FFT64
 
 `FFT64` uses a 64-bit floating-point FFT for polynomial multiplication.
 Coefficients live in the DFT domain as `f64` and in the large-integer domain as `i64`.
 The transform is approximate because it relies on IEEE 754 rounding.
-It is the preferred choice at small ring dimensions, and the family the examples and the gate-level FHE crate use by default.
+It is the preferred choice at small ring dimensions, and the subfamily the examples and the gate-level FHE crate use by default.
 
 ### NTT4x30
 
@@ -34,8 +36,8 @@ It exists only as an IFMA-accelerated backend, because it relies on IFMA multipl
 
 ## Available backend types
 
-| Family | Reference | AVX2 / FMA | AVX-512 | NEON |
-|--------|-----------|------------|---------|------|
+| Subfamily | Reference | AVX2 / FMA | AVX-512 | NEON |
+|-----------|-----------|------------|---------|------|
 | FFT64  | `FFT64Ref` | `FFT64Avx` | `FFT64Avx512` | `FFT64Neon` |
 | NTT4x30 | `NTT4x30Ref` | `NTT4x30Avx` | `NTT4x30Avx512` | `NTT4x30Neon` |
 | NTT3x42 | none | none | `NTT3x42Ifma` | none |
@@ -72,7 +74,7 @@ use poulpy_cpu_ref::FFT64Ref;
 let module: Module<FFT64Ref> = Module::new(1 << 10);
 ```
 
-Switching family or acceleration is a one-line change.
+Switching subfamily or acceleration is a one-line change.
 
 ```rust
 use poulpy_cpu_ref::NTT4x30Ref;
@@ -91,7 +93,7 @@ use poulpy_cpu_ref::FFT64Ref as BackendImpl;
 let module = Module::<BackendImpl>::new(n as u64);
 ```
 
-## Choosing a family
+## Choosing a subfamily
 
 The backend fixes the maximum limb size `base2k` you can use.
 `FFT64` allows up to 19 bits per limb, while `NTT4x30` allows up to 52.
@@ -99,4 +101,4 @@ A larger `base2k` represents the same precision in fewer limbs, at the cost of m
 This tradeoff usually pays off for leveled schemes such as BFV, BGV, and CKKS, but not for TFHE.
 So use `FFT64` for gate-level and TFHE-style work, especially at small ring dimensions.
 Use `NTT4x30` or `NTT3x42` for the leveled schemes, where the larger limbs cut the limb count.
-Within a chosen family, prefer the most accelerated backend your CPU and build flags allow.
+Within a chosen subfamily, prefer the most accelerated backend your CPU and build flags allow.

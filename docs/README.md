@@ -2,7 +2,7 @@
 
 - [Getting Started](getting-started.md) — a map of the codebase: what each crate contains and where to look, how the layers are organized, how to build, test, and benchmark, and how the parameters in the code relate to the usual FHE
   notation.
-- [Backends](backends.md) — the three arithmetic families (`FFT64`, `NTT4x30`, `NTT3x42`), the available backend types, and how to choose one.
+- [Backends](backends.md) — the FFT and NTT arithmetic families, the currently available subfamilies (`FFT64`, `NTT4x30`, `NTT3x42`), the available backend types, and how to choose one.
 - [Grafting vs. the Bivariate Representation](grafting-vs-bivariate.md) — how Poulpy's bivariate base-`2^K` representation compares to RNS Grafting for bit-granular scale and modulus management.
 
 ## CKKS

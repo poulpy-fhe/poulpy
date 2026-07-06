@@ -19,6 +19,7 @@ This has several consequences.
 - The machine word of 64 bits is under-utilized, since primes are smaller than a word.
 - Parameter sets become **circuit-specific**, because the prime chain encodes a level schedule, and key-switching keys are tied to that schedule.
 - Suitable small NTT primes are scarce for ring dimensions $2^{14}$ to $2^{17}$, which constrains parameter design.
+- Plaintexts must themselves be carried in RNS across the entire moduli chain, so a ciphertext over 30 primes implies at least a 30x expansion of every plaintext.
 
 Both Grafting and the bivariate representation set out to recover bit-granular scale and precision management.
 They differ fundamentally in *how*.
@@ -41,6 +42,7 @@ Instead of representing a large coefficient in RNS, each coefficient is decompos
 This is the bivariate ring $\mathbb{Z}[X, Y]$ with $Y = 2^{K}$, in which cyclotomic arithmetic in the $X$ dimension is decoupled from large-integer arithmetic in the $Y$ or limb dimension.
 There is no scale-to-prime link to break in the first place.
 Rescaling and scale management are bit shifts, the digit decomposition needed for key-switching is implicit in the representation, and there are no NTT primes to pick at all.
+Plaintexts stay native integer polynomials of a single limb, with no RNS expansion.
 
 ## Side-by-side
 
@@ -52,6 +54,7 @@ Rescaling and scale management are bit shifts, the digit decomposition needed fo
 | Key-switching DFTs | Grows with RNS factor count | Linear in limbs, decomposition implicit |
 | NTT primes | Word-size primes still needed | None required |
 | Machine-word use | Word-size primes, awkward sprouts | Sub-word limbs, flat vectorizable layout |
+| Plaintext layouts | Full moduli chain | One limb |
 | Parameterization | Universal via added sprout | Circuit-independent, native |
 | Scheme unification | None, RNS-specific | Common plaintext space for all FHE schemes |
 | Implementation | Closed-source | Open-source |
@@ -60,9 +63,9 @@ Rescaling and scale management are bit shifts, the digit decomposition needed fo
 
 Grafting and the bivariate representation converge on the same goal, bit-granular CKKS in which the scale is decoupled from the modulus and parameter sets are circuit-independent.
 They reach it from opposite directions.
-Grafting is an evolutionary fix.
+Grafting is an evolutionary additive fix.
 It preserves the RNS and NTT ecosystem and its word-size-prime throughput, and it recovers bit granularity by adding rational rescale and universal sprouts.
-The bivariate representation is a structural choice.
+The bivariate representation is a by design structural choice.
 By decomposing coefficients in base $2^K$ it never incurs the scale and modulus coupling, it gets bit-granular rescaling and implicit digit decomposition for free, and it avoids NTT primes entirely.
 The cost is leaving the RNS ecosystem and adopting a new arithmetic stack.
 

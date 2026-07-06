@@ -113,7 +113,7 @@ consumed_bits = coeffs_to_slots.consumed_bits()
 and the bootstrap modulus is sized from that, leaving head-room for the refreshed output:
 
 ```text
-k_boot = (log_modulus_in + consumed_bits + 2·log_delta).next_multiple_of(base2k)
+k_boot = log_modulus_in + consumed_bits + levels_after_boot·log_delta
 ```
 
 EvalMod is charged at the scale it runs (`f_mod_log_delta`), not the message scale; the surrounding set-scale round-trip is budget-neutral and does not enter the total.
