@@ -46,7 +46,10 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos,
-    api::{CKKSAddOps, CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDecrypt, CKKSEvalModOps, CKKSPow2Ops, CKKSSubOps, DFTOps},
+    api::{
+        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSConjugateOps, CKKSDecrypt, CKKSEvalModOps, CKKSImagOps,
+        CKKSPow2Ops, CKKSSubOps, DFTOps,
+    },
     encoding::reim::Encoder,
     layouts::{
         BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan,
@@ -762,6 +765,292 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
             s.worst_want,
         );
     }
+}
+
+/// SlotsToCoeffs-first bootstrapping:
+///
+/// ```text
+/// SlotsToCoeffs(split) ─► ModRaise ─► CoeffsToSlots(split) ─► EvalMod(×2) ─► relabel /2^R
+/// ```
+pub fn test_bootstrapping_s2c_first_e2e<BE, F, E>(
+    params: CKKSTestParams,
+    _module: &Module<BE>,
+    _host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend + Backend<OwnedBuf = Vec<u8>>,
+    Module<BE>: TestContextModule<BE> + CKKSBootstrappingOps<BE> + CKKSConjugateOps<BE> + CKKSImagOps<BE>,
+    Module<HostBytesBackend>: TestContextHostModule,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<f64> + CKKSPlaintextVecHostCodec<F>,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    let (re, im) = run_s2c_first_case::<BE, F, E>(params.base2k, 40, 16, FMOD_INTERVAL);
+    for (avg, tag) in [(re, "re"), (im, "im")] {
+        println!("[s2c_first] BOOTSTRAP-PREC ({tag}) avg={avg:.2} bits");
+        assert!(avg >= 24.0, "bootstrapping_s2c_first_e2e ({tag}): {avg:.1} bits < 24.0");
+    }
+}
+
+fn run_s2c_first_case<BE, F, E>(base2k: usize, log_delta: usize, log_msg_ratio: usize, fmod_interval: usize) -> (f64, f64)
+where
+    BE: TestContextBackend + Backend<OwnedBuf = Vec<u8>>,
+    Module<BE>: TestContextModule<BE> + CKKSBootstrappingOps<BE> + CKKSConjugateOps<BE> + CKKSImagOps<BE>,
+    Module<HostBytesBackend>: TestContextHostModule,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+    for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
+    for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<f64> + CKKSPlaintextVecHostCodec<F>,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    let plan = BootstrappingPlan {
+        pipeline: BootstrappingPipeline::S2CFirst,
+        techniques: BootstrappingTechniques {
+            sparse_secret_encapsulation: Some(SparseSecretEncapsulation { hamming_weight: 32 }),
+            eval_round_plus: None,
+        },
+        coeffs_to_slots: DFTPlan {
+            kind: DFTType::Encode,
+            factorization_depth: vec![2, 2, 3, 3],
+            giant_steps: vec![4, 4, 4, 4],
+            format: DFTOutputFormat::SplitRealAndImag,
+            scaling: Some(1. / fmod_interval as f64),
+            bit_reversed: false,
+            meta: meta(58, 2),
+        },
+        eval_mod: EvalModPlan {
+            eval_mod_type: EvalModType::CosHK,
+            log_msg_ratio,
+            f_mod_degree: 30,
+            f_mod_interval: fmod_interval,
+            f_mod_log_interval_reduction: 3,
+            f_mod_inv_degree: None,
+            scaling: None,
+            split_strategy: SplitStrategy::MinDepth,
+            coeffs_meta: meta(48, 4),
+            f_mod_log_delta: 60,
+        },
+        slots_to_coeffs: DFTPlan {
+            kind: DFTType::Decode,
+            factorization_depth: vec![3, 3, 2, 2],
+            giant_steps: vec![4, 4, 4, 4],
+            format: DFTOutputFormat::SplitRealAndImag,
+            scaling: Some(0.5),
+            bit_reversed: false,
+            meta: meta(45, 2),
+        },
+    };
+
+    let n = 1 << (LOG_SLOTS + 1);
+    let m = n / 2;
+    let log_modulus_in = log_delta + plan.eval_mod.log_msg_ratio;
+    let k_in = log_modulus_in + plan.slots_to_coeffs.consumed_bits();
+    let k_boot = (log_modulus_in + plan.coeffs_to_slots.consumed_bits() + plan.eval_mod.consumed_bits() + 2 * log_delta)
+        .next_multiple_of(base2k);
+
+    let module = Module::<BE>::new(n as u64);
+    let host_module = Module::<HostBytesBackend>::new(n as u64);
+    let encoder = Encoder::<E>::new::<F>(m).unwrap();
+
+    let tp = CKKSTestParams {
+        n,
+        base2k,
+        k: k_boot,
+        prec_meta: CKKSMeta {
+            log_sparsity: 0,
+            log_delta,
+        },
+        prec_log_budget: 8,
+        hw: 192,
+        dsize: 7,
+    };
+
+    println!("[s2c_first] n={n} base2k={base2k} log_delta={log_delta} k_in={k_in} k_boot={k_boot}");
+    println!(
+        "[s2c_first] S2C={} C2S={} EvalMod={}",
+        plan.slots_to_coeffs.consumed_bits(),
+        plan.coeffs_to_slots.consumed_bits(),
+        plan.eval_mod.consumed_bits()
+    );
+
+    let scratch_size;
+    let mut scratch = {
+        let mut c = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+        c.set_meta(tp.prec().meta);
+        scratch_size = module.ckks_all_ops_with_atk_tmp_bytes(&c, &tp.tsk_layout(), &tp.atk_layout(), &plan.eval_mod.coeffs_meta);
+        ScratchOwned::<BE>::alloc(scratch_size)
+    };
+
+    let ctx =
+        BootstrappingContext::<BE, F>::compile(&module, &host_module, &encoder, base2k.into(), &plan, &mut scratch.borrow())
+            .unwrap();
+    {
+        let mut eval_ct = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+        eval_ct.set_meta(meta(log_delta, k_boot - log_delta).meta);
+        let eval_tmp = module.ckks_eval_mod_tmp_bytes(&eval_ct, &eval_ct, &ctx.eval_mod, &tp.tsk_layout());
+        if eval_tmp > scratch_size {
+            scratch = ScratchOwned::<BE>::alloc(eval_tmp);
+        }
+    }
+
+    let (sk_raw, sk) = gen_sk_with_raw(&tp, &module, &host_module, [0u8; 32]);
+
+    let keys_layout = BootstrappingKeysLayout {
+        automorphism_key: tp.atk_layout().layout,
+        tensor_key: tp.tsk_layout().layout,
+        encapsulation: plan
+            .sparse_secret_hamming_weight()
+            .map(|hamming_weight| EncapsulationKeysLayout {
+                ephemeral_secret_weight: hamming_weight,
+                dense_to_sparse: tp.ksk_layout(log_modulus_in).layout,
+                sparse_to_dense: tp.ksk_layout(k_boot).layout,
+            }),
+    };
+    let (mut src_xs, mut src_xa, mut src_xe) = (Source::new([7u8; 32]), Source::new([1u8; 32]), Source::new([2u8; 32]));
+    let bsk = ctx
+        .generate_keys(
+            &module,
+            &host_module,
+            &sk_raw,
+            &keys_layout,
+            &mut src_xs,
+            &mut src_xa,
+            &mut src_xe,
+            &mut scratch.borrow(),
+        )
+        .unwrap()
+        .prepare(&module, &mut scratch.borrow());
+
+    let (re, im) = test_vector_1::<F>(m);
+    let ct0 = ckks_encrypt_with_prec(
+        &tp,
+        &module,
+        &host_module,
+        &encoder,
+        &sk,
+        k_in,
+        &re,
+        &im,
+        meta(log_delta, k_in - log_delta),
+        &mut scratch.borrow(),
+    );
+
+    let alloc = |k: usize| module.ckks_ciphertext_alloc(base2k.into(), k.into());
+
+    let (bs_re, bs_im) = {
+        let mut ct_bs = alloc(k_boot);
+        module
+            .ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, &mut scratch.borrow())
+            .unwrap();
+        decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow())
+    };
+
+    let mut conj_ct = alloc(k_in);
+    module
+        .ckks_conjugate_into(&mut conj_ct, &ct0, bsk.conjugation_key(), &mut scratch.borrow())
+        .unwrap();
+    let mut re_half = alloc(k_in);
+    let mut im_half = alloc(k_in);
+    module
+        .ckks_add_into(&mut re_half, &ct0, &conj_ct, &mut scratch.borrow())
+        .unwrap();
+    module
+        .ckks_sub_into(&mut im_half, &ct0, &conj_ct, &mut scratch.borrow())
+        .unwrap();
+    module.ckks_div_i_assign(&mut im_half, &mut scratch.borrow()).unwrap();
+
+    let mut ct_coeffs = alloc(k_in);
+    module
+        .ckks_slots_to_coeffs_split(
+            &mut ct_coeffs,
+            &re_half,
+            &im_half,
+            &ctx.slots_to_coeffs,
+            bsk.rotation_keys(),
+            &mut scratch.borrow(),
+        )
+        .unwrap();
+
+    let mut ct_raised = alloc(k_boot);
+    match bsk.encapsulation_keys() {
+        Some((dense_to_sparse, sparse_to_dense)) => {
+            module.glwe_keyswitch_assign(
+                &mut ct_coeffs,
+                dense_to_sparse,
+                dense_to_sparse.max_size(),
+                &mut scratch.borrow(),
+            );
+            module
+                .ckks_mod_up_into(&mut ct_raised, &ct_coeffs, &mut scratch.borrow())
+                .unwrap();
+            module.glwe_keyswitch_assign(
+                &mut ct_raised,
+                sparse_to_dense,
+                sparse_to_dense.max_size(),
+                &mut scratch.borrow(),
+            );
+        }
+        None => {
+            module
+                .ckks_mod_up_into(&mut ct_raised, &ct_coeffs, &mut scratch.borrow())
+                .unwrap();
+        }
+    }
+    ct_raised.set_meta(CKKSMeta {
+        log_sparsity: 0,
+        log_delta: log_modulus_in,
+    });
+
+    let (mut r0, mut i0) = (alloc(k_boot), alloc(k_boot));
+    module
+        .ckks_coeffs_to_slots_split(
+            &mut r0,
+            &mut i0,
+            &ct_raised,
+            &ctx.coeffs_to_slots,
+            bsk.rotation_keys(),
+            bsk.conjugation_key(),
+            &mut scratch.borrow(),
+        )
+        .unwrap();
+
+    let (mut res, mut res_im) = (alloc(k_boot), alloc(k_boot));
+    module
+        .ckks_eval_mod(&mut res, &r0, &ctx.eval_mod, bsk.tensor_key(), &mut scratch.borrow())
+        .unwrap();
+    module
+        .ckks_eval_mod(&mut res_im, &i0, &ctx.eval_mod, bsk.tensor_key(), &mut scratch.borrow())
+        .unwrap();
+    module.ckks_mul_i_assign(&mut res_im, &mut scratch.borrow()).unwrap();
+    module.ckks_add_assign(&mut res, &res_im, &mut scratch.borrow()).unwrap();
+    res.set_meta(CKKSMeta {
+        log_sparsity: 0,
+        log_delta,
+    });
+
+    let (re_out, im_out) = decrypt(&module, &encoder, &res, &sk, &mut scratch.borrow());
+
+    for (a, b, tag) in [(&bs_re, &re_out, "re"), (&bs_im, &im_out, "im")] {
+        let agree = precision_stats(a, b, log_delta);
+        assert!(
+            agree.avg_log2_prec >= log_delta as f64 - 1.0,
+            "ckks_bootstrap(S2CFirst) disagrees with manual ({tag}): {:.1} bits",
+            agree.avg_log2_prec
+        );
+    }
+
+    let s_re = precision_stats(&bs_re, &re, log_delta);
+    let s_im = precision_stats(&bs_im, &im, log_delta);
+    (s_re.avg_log2_prec, s_im.avg_log2_prec)
 }
 
 fn decrypt<BE: Backend, C, F, E, S>(

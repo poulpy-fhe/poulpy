@@ -12,7 +12,7 @@ use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena, Trans
 
 use crate::{
     CKKSCtBounds, CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos,
-    api::{CKKSAddOps, CKKSCopyOps, CKKSEvalModOps, CKKSPow2Ops, CKKSSubOps, DFTOps},
+    api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSEvalModOps, CKKSImagOps, CKKSPow2Ops, CKKSSubOps, DFTOps},
     layouts::{BootstrappingContext, BootstrappingKeys, CKKSCiphertext, CKKSModuleAlloc},
 };
 
@@ -65,6 +65,8 @@ where
         + CKKSPow2Ops<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSImagOps<BE>
         + DFTOps<BE>
         + CKKSEvalModOps<BE>,
     CKKSCiphertext<BE::OwnedBuf>:

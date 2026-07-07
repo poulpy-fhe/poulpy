@@ -91,10 +91,9 @@ pub struct BootstrappingPlan {
 
 impl BootstrappingPlan {
     pub fn validate(&self) -> Result<()> {
-        // TODO(HalfBTS): remove this guard when S2C-first is wired.
         anyhow::ensure!(
-            self.pipeline == BootstrappingPipeline::C2SFirst,
-            "S2C-first bootstrapping is not implemented on this branch"
+            self.pipeline != BootstrappingPipeline::S2CFirst || self.techniques.eval_round_plus.is_none(),
+            "EvalRound+ is not supported with S2C-first bootstrapping"
         );
         if let Some(sse) = self.techniques.sparse_secret_encapsulation {
             anyhow::ensure!(sse.hamming_weight > 0, "SSE hamming_weight must be nonzero");
