@@ -50,8 +50,8 @@ use crate::{
     encoding::reim::Encoder,
     layouts::{
         BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan,
-        CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, DFTOutputFormat, DFTPlan, DFTType,
-        EncapsulationKeysLayout,
+        BootstrappingTechniques, CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, DFTOutputFormat,
+        DFTPlan, DFTType, EncapsulationKeysLayout, EvalRoundPlus, SparseSecretEncapsulation,
         eval_mod::{EvalModPlan, EvalModType},
     },
     polynomial::SplitStrategy,
@@ -96,7 +96,10 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
 {
     let plan = BootstrappingPlan {
         pipeline: BootstrappingPipeline::C2SFirst,
-        ephemeral_secret_weight: 32,
+        techniques: BootstrappingTechniques {
+            sparse_secret_encapsulation: Some(SparseSecretEncapsulation { hamming_weight: 32 }),
+            eval_round_plus: None,
+        },
         coeffs_to_slots: DFTPlan {
             kind: DFTType::Encode,
             factorization_depth: vec![2, 2, 3, 3],
@@ -106,7 +109,6 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
             bit_reversed: false,
             meta: meta(58, 2),
         },
-        coeffs_to_slots_bypass: None,
         eval_mod: EvalModPlan {
             eval_mod_type: EvalModType::CosHK,
             log_msg_ratio: LOG_MSG_RATIO,
@@ -201,11 +203,13 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     let keys_layout = BootstrappingKeysLayout {
         automorphism_key: tp.atk_layout().layout,
         tensor_key: tp.tsk_layout().layout,
-        encapsulation: (plan.ephemeral_secret_weight > 0).then(|| EncapsulationKeysLayout {
-            ephemeral_secret_weight: plan.ephemeral_secret_weight,
-            dense_to_sparse: tp.ksk_layout(log_modulus_in).layout,
-            sparse_to_dense: tp.ksk_layout(k_boot).layout,
-        }),
+        encapsulation: plan
+            .sparse_secret_hamming_weight()
+            .map(|hamming_weight| EncapsulationKeysLayout {
+                ephemeral_secret_weight: hamming_weight,
+                dense_to_sparse: tp.ksk_layout(log_modulus_in).layout,
+                sparse_to_dense: tp.ksk_layout(k_boot).layout,
+            }),
     };
     let (mut src_xs, mut src_xa, mut src_xe) = (Source::new([7u8; 32]), Source::new([1u8; 32]), Source::new([2u8; 32]));
     // `generate_keys` returns the keys *unprepared* (the serializable / GPU-resident
@@ -489,7 +493,20 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
     // bits. The HP CoeffsToSlots is compiled separately below.
     let plan = BootstrappingPlan {
         pipeline: BootstrappingPipeline::C2SFirst,
-        ephemeral_secret_weight: 32,
+        techniques: BootstrappingTechniques {
+            sparse_secret_encapsulation: Some(SparseSecretEncapsulation { hamming_weight: 32 }),
+            eval_round_plus: Some(EvalRoundPlus {
+                coeffs_to_slots_bypass: DFTPlan {
+                    kind: DFTType::Encode,
+                    factorization_depth: vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                    giant_steps: vec![1; 10],
+                    format: DFTOutputFormat::SplitRealAndImag,
+                    scaling: Some(1.0),
+                    bit_reversed: false,
+                    meta: meta(58, 2),
+                },
+            }),
+        },
         coeffs_to_slots: DFTPlan {
             kind: DFTType::Encode,
             factorization_depth: vec![2, 2, 3, 3],
@@ -499,15 +516,6 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
             bit_reversed: false,
             meta: meta(29, 2),
         },
-        coeffs_to_slots_bypass: Some(DFTPlan {
-            kind: DFTType::Encode,
-            factorization_depth: vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-            giant_steps: vec![1; 10],
-            format: DFTOutputFormat::SplitRealAndImag,
-            scaling: Some(1.0),
-            bit_reversed: false,
-            meta: meta(58, 2),
-        }),
         eval_mod: EvalModPlan {
             eval_mod_type: EvalModType::CosHK,
             log_msg_ratio: LOG_MSG_RATIO,
@@ -590,11 +598,13 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
     let keys_layout = BootstrappingKeysLayout {
         automorphism_key: tp.atk_layout().layout,
         tensor_key: tp.tsk_layout().layout,
-        encapsulation: (plan.ephemeral_secret_weight > 0).then(|| EncapsulationKeysLayout {
-            ephemeral_secret_weight: plan.ephemeral_secret_weight,
-            dense_to_sparse: tp.ksk_layout(log_modulus_in).layout,
-            sparse_to_dense: tp.ksk_layout(k_boot).layout,
-        }),
+        encapsulation: plan
+            .sparse_secret_hamming_weight()
+            .map(|hamming_weight| EncapsulationKeysLayout {
+                ephemeral_secret_weight: hamming_weight,
+                dense_to_sparse: tp.ksk_layout(log_modulus_in).layout,
+                sparse_to_dense: tp.ksk_layout(k_boot).layout,
+            }),
     };
     let (mut src_xs, mut src_xa, mut src_xe) = (Source::new([7u8; 32]), Source::new([1u8; 32]), Source::new([2u8; 32]));
     // Generated unprepared (serializable / GPU-resident), then prepared up front.

@@ -49,6 +49,24 @@ pub enum BootstrappingPipeline {
     S2CFirst,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SparseSecretEncapsulation {
+    /// Sparse-secret ModRaise encapsulation (<https://eprint.iacr.org/2022/024>);
+    /// `0` disables it, otherwise this is the ephemeral ternary secret weight.
+    pub hamming_weight: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct EvalRoundPlus {
+    pub coeffs_to_slots_bypass: DFTPlan,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct BootstrappingTechniques {
+    pub sparse_secret_encapsulation: Option<SparseSecretEncapsulation>,
+    pub eval_round_plus: Option<EvalRoundPlus>,
+}
+
 /// End-to-end parameterization of CKKS bootstrapping.
 ///
 /// See the [module docs](self) for the overall role.
@@ -56,25 +74,10 @@ pub enum BootstrappingPipeline {
 pub struct BootstrappingPlan {
     pub pipeline: BootstrappingPipeline,
 
-    /// Hamming weight of the ephemeral **sparse** secret used to encapsulate the
-    /// ModUp (sparse-secret encapsulation, <https://eprint.iacr.org/2022/024>).
-    ///
-    /// `0` disables the trick. Otherwise the pipeline key-switches the ciphertext
-    /// from the dense secret to a sparse secret of this weight *before* ModUp and
-    /// back to the dense secret *after* — `denseToSparse → ModUp → sparseToDense`.
-    /// Under a sparse key the integer wrap-around `I·q` exposed by ModUp is bounded
-    /// by this weight instead of the dense weight, so EvalMod can use a much
-    /// smaller interval `K` (`f_mod_interval`) with negligible failure probability.
-    /// The two key-switching keys are generated from the dense secret (see the
-    /// reference composition); they are not part of the secret-independent
-    /// [`BootstrappingContext`].
-    pub ephemeral_secret_weight: usize,
+    pub techniques: BootstrappingTechniques,
 
     /// CoeffsToSlots: homomorphic encoding ([`DFTType::Encode`](crate::layouts::DFTType)).
     pub coeffs_to_slots: DFTPlan,
-
-    /// CoeffsToSlots high precision for bypass.
-    pub coeffs_to_slots_bypass: Option<DFTPlan>,
 
     /// EvalMod: approximate `x mod 1`. EvalMod runs at its own
     /// ([`EvalModPlan::f_mod_log_delta`]) scale — `ckks_eval_mod` sets the
@@ -93,7 +96,21 @@ impl BootstrappingPlan {
             self.pipeline == BootstrappingPipeline::C2SFirst,
             "S2C-first bootstrapping is not implemented on this branch"
         );
+        if let Some(sse) = self.techniques.sparse_secret_encapsulation {
+            anyhow::ensure!(sse.hamming_weight > 0, "SSE hamming_weight must be nonzero");
+        }
         Ok(())
+    }
+
+    pub fn sparse_secret_hamming_weight(&self) -> Option<usize> {
+        self.techniques.sparse_secret_encapsulation.map(|sse| sse.hamming_weight)
+    }
+
+    pub fn coeffs_to_slots_bypass(&self) -> Option<&DFTPlan> {
+        self.techniques
+            .eval_round_plus
+            .as_ref()
+            .map(|eval_round| &eval_round.coeffs_to_slots_bypass)
     }
 
     /// Total `log_budget` bits the pipeline consumes: the two DFT stages plus
@@ -111,6 +128,9 @@ impl BootstrappingPlan {
     pub fn galois_elements(&self, log_n: usize, cyclotomic_order: i64) -> Vec<i64> {
         let mut set: std::collections::BTreeSet<i64> = std::collections::BTreeSet::new();
         set.extend(self.coeffs_to_slots.galois_elements(log_n, cyclotomic_order));
+        if let Some(bypass) = self.coeffs_to_slots_bypass() {
+            set.extend(bypass.galois_elements(log_n, cyclotomic_order));
+        }
         set.extend(self.slots_to_coeffs.galois_elements(log_n, cyclotomic_order));
         set.into_iter().collect()
     }
@@ -177,7 +197,7 @@ where
         let eval_mod =
             host_eval_mod.map_plaintexts(|pt| CKKSPlaintext::from_inner(module.upload_glwe_plaintext(&pt.inner), pt.meta()));
 
-        let coeffs_to_slots_bypass = if let Some(bypass) = &plan.coeffs_to_slots_bypass {
+        let coeffs_to_slots_bypass = if let Some(bypass) = plan.coeffs_to_slots_bypass() {
             let c2s_lt: DFTMatrix<BE, Encode, Split> =
                 module.ckks_new_dft_matrix(host_module, encoder, base2k, bypass, scratch)?;
 
