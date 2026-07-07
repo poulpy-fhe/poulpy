@@ -64,6 +64,7 @@ pub mod __macro_reexports {
 }
 pub mod encoding;
 mod error;
+pub mod eval_lut;
 pub mod layouts;
 /// One-stop imports for the common CKKS path.
 ///

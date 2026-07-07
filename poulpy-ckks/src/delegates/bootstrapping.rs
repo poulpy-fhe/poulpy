@@ -8,8 +8,9 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSBootstrappingOps, CKKSDFTOps, CKKSEvalModOps},
-    layouts::{BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertext},
+    layouts::{BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertext, CKKSPlaintext, EncodedLut},
     oep::CKKSBootstrappingImpl,
+    polynomial::ComplexBSGSPolynomial,
 };
 
 impl<BE: Backend + CKKSBootstrappingImpl<BE>> CKKSBootstrappingOps<BE> for Module<BE>
@@ -54,5 +55,35 @@ where
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
     {
         BE::ckks_bootstrap_impl::<F, K>(self, ct_out, ct_in, ctx, keys, scratch)
+    }
+
+    fn ckks_functional_bootstrap<F, K>(
+        &self,
+        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
+        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ctx: &BootstrappingContext<BE, F>,
+        lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
+    {
+        BE::ckks_functional_bootstrap::<F, K>(self, ct_out, ct_in, ctx, lut, keys, scratch)
+    }
+
+    fn ckks_functional_bootstrap_multi<F, K>(
+        &self,
+        ct_outs: &mut [CKKSCiphertext<BE::OwnedBuf>],
+        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ctx: &BootstrappingContext<BE, F>,
+        luts: &[ComplexBSGSPolynomial<CKKSPlaintext<BE::OwnedBuf>>],
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
+    {
+        BE::ckks_functional_bootstrap_multi::<F, K>(self, ct_outs, ct_in, ctx, luts, keys, scratch)
     }
 }

@@ -10,10 +10,11 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use crate::{
     CKKSCtBounds, CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos,
     api::{
-        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSDFTOps, CKKSEvalModOps, CKKSImagOps, CKKSPow2Ops,
-        CKKSSubOps,
+        CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSDFTOps, CKKSEvalModOps, CKKSImagOps,
+        CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
     },
-    layouts::{BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertext},
+    layouts::{BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertext, CKKSPlaintext, EncodedLut},
+    polynomial::ComplexBSGSPolynomial,
 };
 
 /// Backend override hook for [`CKKSBootstrappingOps`](crate::api::CKKSBootstrappingOps).
@@ -63,6 +64,32 @@ pub unsafe trait CKKSBootstrappingImpl<BE: Backend>: Backend {
     ) -> Result<()>
     where
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
+
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_functional_bootstrap<F, K>(
+        module: &Module<BE>,
+        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
+        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ctx: &BootstrappingContext<BE, F>,
+        lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
+
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_functional_bootstrap_multi<F, K>(
+        module: &Module<BE>,
+        ct_outs: &mut [CKKSCiphertext<BE::OwnedBuf>],
+        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ctx: &BootstrappingContext<BE, F>,
+        luts: &[ComplexBSGSPolynomial<CKKSPlaintext<BE::OwnedBuf>>],
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
 }
 
 unsafe impl<BE: Backend> CKKSBootstrappingImpl<BE> for BE
@@ -79,7 +106,10 @@ where
         + CKKSImagOps<BE>
         + CKKSDFTOps<BE>
         + CKKSEvalModOps<BE>
-        + CKKSAllOpsTmpBytes<BE>,
+        + CKKSAllOpsTmpBytes<BE>
+        + CKKSMulOps<BE>
+        + CKKSAffineOps<BE>
+        + CKKSPolynomialEvaluationOps<BE>,
     CKKSCiphertext<BE::OwnedBuf>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -127,6 +157,36 @@ where
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
     {
         module.ckks_bootstrap_default(ct_out, ct_in, ctx, keys, scratch)
+    }
+
+    fn ckks_functional_bootstrap<F, K>(
+        module: &Module<BE>,
+        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
+        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ctx: &BootstrappingContext<BE, F>,
+        lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
+    {
+        crate::default::bootstrapping::ckks_functional_bootstrap_default(module, ct_out, ct_in, ctx, lut, keys, scratch)
+    }
+
+    fn ckks_functional_bootstrap_multi<F, K>(
+        module: &Module<BE>,
+        ct_outs: &mut [CKKSCiphertext<BE::OwnedBuf>],
+        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ctx: &BootstrappingContext<BE, F>,
+        luts: &[ComplexBSGSPolynomial<CKKSPlaintext<BE::OwnedBuf>>],
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
+    {
+        crate::default::bootstrapping::ckks_functional_bootstrap_multi_default(module, ct_outs, ct_in, ctx, luts, keys, scratch)
     }
 }
 

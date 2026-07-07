@@ -123,6 +123,7 @@ pub mod complex_diagonals;
 pub mod dft;
 mod encoding_buffer;
 pub mod eval_mod;
+pub mod functional_bootstrapping;
 pub mod mul;
 pub mod paco;
 pub mod plaintext;
@@ -155,6 +156,7 @@ pub(crate) use encoding_buffer::{
     copy_reim_host_into_encoding_buffer,
 };
 pub use eval_mod::{EvalMod, EvalModBsgs, EvalModPlan, EvalModPoly, EvalModType, compile_eval_mod};
+pub use functional_bootstrapping::EncodedLut;
 pub use mul::CKKSPreparedRight;
 pub use paco::{
     PaCoContext, PaCoDFTPlan, PaCoKeyParameters, PaCoKeySet, PaCoKeySetParts, PaCoKeys, PaCoKeysPrepared, PaCoKeysPreparedParts,
