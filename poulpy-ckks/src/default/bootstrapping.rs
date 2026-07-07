@@ -11,7 +11,7 @@ use poulpy_hal::layouts::{Backend, HostBytesBackend, ScratchArena, TransferFrom}
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
     api::{CKKSAddOps, CKKSCopyOps, CKKSEvalModOps, CKKSPow2Ops, CKKSSubOps, DFTOps},
-    layouts::{BootstrappingContext, BootstrappingKeys, CKKSCiphertext, CKKSModuleAlloc},
+    layouts::{BootstrappingContext, BootstrappingKeys, BootstrappingPipeline, CKKSCiphertext, CKKSModuleAlloc},
 };
 
 /// Default (backend-generic) implementation of the CKKS bootstrapping
@@ -103,6 +103,12 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact + SetBSGSMeta + BSGSMeta,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
+        // TODO(HalfBTS): remove this guard when S2C-first is wired.
+        ensure!(
+            ctx.pipeline == BootstrappingPipeline::C2SFirst,
+            "S2C-first bootstrapping is not implemented on this branch"
+        );
+
         let base2k = ct_in.base2k();
         let k_boot = ct_out.k();
         let log_modulus_in = ct_in.k();

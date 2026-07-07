@@ -14,10 +14,8 @@
 //! semantics (a digit shift in the base-`2^base2k` torus model, not an RNS
 //! prime-basis extension).
 //!
-//! This crate provides no orchestrator: the plan is a parameter bundle the
-//! caller reads while composing `ModUp → CoeffsToSlots → EvalMod →
-//! SlotsToCoeffs` from the respective op traits, passing the relinearization and
-//! rotation keys to the stages that need them.
+//! The plan can drive the one-shot orchestrator or be read by expert callers
+//! composing the same stages manually.
 //!
 //! [`BootstrappingContext`] is the *compiled* form of a [`BootstrappingPlan`]:
 //! the prepared, backend-resident homomorphic DFT matrices and the encoded,
@@ -45,11 +43,19 @@ use crate::{
     },
 };
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BootstrappingPipeline {
+    C2SFirst,
+    S2CFirst,
+}
+
 /// End-to-end parameterization of CKKS bootstrapping.
 ///
 /// See the [module docs](self) for the overall role.
 #[derive(Clone, Debug)]
 pub struct BootstrappingPlan {
+    pub pipeline: BootstrappingPipeline,
+
     /// Hamming weight of the ephemeral **sparse** secret used to encapsulate the
     /// ModUp (sparse-secret encapsulation, <https://eprint.iacr.org/2022/024>).
     ///
@@ -81,6 +87,15 @@ pub struct BootstrappingPlan {
 }
 
 impl BootstrappingPlan {
+    pub fn validate(&self) -> Result<()> {
+        // TODO(HalfBTS): remove this guard when S2C-first is wired.
+        anyhow::ensure!(
+            self.pipeline == BootstrappingPipeline::C2SFirst,
+            "S2C-first bootstrapping is not implemented on this branch"
+        );
+        Ok(())
+    }
+
     /// Total `log_budget` bits the pipeline consumes: the two DFT stages plus
     /// EvalMod (charged at its own `f_mod_log_delta` scale; the surrounding
     /// set-scale round-trip is budget-neutral).
@@ -119,6 +134,8 @@ pub struct BootstrappingContext<BE: Backend, F> {
 
     /// Encoded, backend-resident EvalMod (`x mod 1`).
     pub eval_mod: EvalMod<F, CKKSPlaintext<BE::OwnedBuf>>,
+
+    pub pipeline: BootstrappingPipeline,
 }
 
 impl<BE: Backend, F> BootstrappingContext<BE, F>
@@ -146,6 +163,8 @@ where
         CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>,
         CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
     {
+        plan.validate()?;
+
         let c2s_lt: DFTMatrix<BE, Encode, Split> =
             module.ckks_new_dft_matrix(host_module, encoder, base2k, &plan.coeffs_to_slots, scratch)?;
         let coeffs_to_slots = module.ckks_prepare_dft_matrix(&c2s_lt, scratch);
@@ -172,6 +191,7 @@ where
             coeffs_to_slots_bypass,
             slots_to_coeffs,
             eval_mod,
+            pipeline: plan.pipeline,
         })
     }
 }

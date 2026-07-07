@@ -49,8 +49,9 @@ use crate::{
     api::{CKKSAddOps, CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDecrypt, CKKSEvalModOps, CKKSPow2Ops, CKKSSubOps, DFTOps},
     encoding::reim::Encoder,
     layouts::{
-        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPlan, CKKSCiphertext, CKKSModuleAlloc,
-        CKKSPlaintext, CKKSPlaintextVecHostCodec, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout,
+        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan,
+        CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, DFTOutputFormat, DFTPlan, DFTType,
+        EncapsulationKeysLayout,
         eval_mod::{EvalModPlan, EvalModType},
     },
     polynomial::SplitStrategy,
@@ -94,6 +95,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let plan = BootstrappingPlan {
+        pipeline: BootstrappingPipeline::C2SFirst,
         ephemeral_secret_weight: 32,
         coeffs_to_slots: DFTPlan {
             kind: DFTType::Encode,
@@ -486,6 +488,7 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
     // the message and the bootstrap modulus shrinks by `num_factors × (58 − 29)`
     // bits. The HP CoeffsToSlots is compiled separately below.
     let plan = BootstrappingPlan {
+        pipeline: BootstrappingPipeline::C2SFirst,
         ephemeral_secret_weight: 32,
         coeffs_to_slots: DFTPlan {
             kind: DFTType::Encode,

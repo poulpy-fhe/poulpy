@@ -21,7 +21,7 @@ pub mod mul;
 pub mod plaintext;
 
 pub use alloc::CKKSModuleAlloc;
-pub use bootstrapping::{BootstrappingContext, BootstrappingPlan};
+pub use bootstrapping::{BootstrappingContext, BootstrappingPipeline, BootstrappingPlan};
 pub use bootstrapping_keys::{
     BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, EncapsulationKeysLayout,
 };
