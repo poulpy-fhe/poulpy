@@ -5,7 +5,7 @@ pub trait ModuleNew<B: Backend> {
     fn new(n: u64) -> Self;
 }
 
-/// Query the ring degree `N` of a [`Module`](crate::layouts::Module).
+/// Query the maximum ring degree `N` of a [`Module`](crate::layouts::Module).
 pub trait ModuleN {
     fn n(&self) -> usize;
 }

@@ -1,19 +1,18 @@
+use crate::CKKSResult as Result;
 use crate::default::bootstrapping::CKKSBootstrappingOpsDefault;
 
-use anyhow::Result;
 use poulpy_core::{
     GLWECopy, GLWEKeyswitch, GLWEShift,
     layouts::{
-        BSGSMeta, Compact, GGLWEInfos, GLWEInfos, GLWETensorKeyPrepared, LWEInfos, SetBSGSMeta,
-        prepared::GLWETensorKeyPreparedToBackendRef,
+        BSGSMeta, Compact, GGLWEInfos, GLWEInfos, GLWETensorKeyPrepared, SetBSGSMeta, prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
-use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena, TransferFrom};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos,
-    api::{CKKSAddOps, CKKSCopyOps, CKKSEvalModOps, CKKSPow2Ops, CKKSSubOps, DFTOps},
-    layouts::{BootstrappingContext, BootstrappingKeys, CKKSCiphertext, CKKSModuleAlloc},
+    api::{CKKSAddOps, CKKSAllOpsTmpBytes, CKKSCopyOps, CKKSDFTOps, CKKSEvalModOps, CKKSPow2Ops, CKKSSubOps},
+    layouts::{BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertext, CKKSModuleAlloc},
 };
 
 /// Backend override hook for [`CKKSBootstrappingOps`](crate::api::CKKSBootstrappingOps).
@@ -28,20 +27,32 @@ use crate::{
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
 pub unsafe trait CKKSBootstrappingImpl<BE: Backend>: Backend {
-    fn ckks_mod_up_tmp_bytes(module: &Module<BE>) -> usize;
+    fn ckks_mod_up_tmp_bytes_impl(module: &Module<BE>) -> usize;
 
-    fn ckks_mod_up_into<Dst, Src>(
+    /// See [`CKKSBootstrappingOps::ckks_bootstrap_tmp_bytes`](crate::api::CKKSBootstrappingOps::ckks_bootstrap_tmp_bytes).
+    fn ckks_bootstrap_tmp_bytes_impl<C1, C2, F>(
+        module: &Module<BE>,
+        ct_out: &C1,
+        ct_in: &C2,
+        ctx: &BootstrappingContext<BE, F>,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds;
+
+    fn ckks_mod_up_into_impl<Dst, Src>(
         module: &Module<BE>,
         dst: &mut Dst,
         src: &Src,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos;
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos;
 
     /// See [`CKKSBootstrappingOps::ckks_bootstrap`](crate::api::CKKSBootstrappingOps::ckks_bootstrap).
-    fn ckks_bootstrap<F, K>(
+    fn ckks_bootstrap_impl<F, K>(
         module: &Module<BE>,
         ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
         ct_in: &CKKSCiphertext<BE::OwnedBuf>,
@@ -50,7 +61,6 @@ pub unsafe trait CKKSBootstrappingImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: TransferFrom<HostBytesBackend>,
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
 }
 
@@ -65,25 +75,45 @@ where
         + CKKSPow2Ops<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
-        + DFTOps<BE>
-        + CKKSEvalModOps<BE>,
+        + CKKSDFTOps<BE>
+        + CKKSEvalModOps<BE>
+        + CKKSAllOpsTmpBytes<BE>,
     CKKSCiphertext<BE::OwnedBuf>:
         GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact + SetBSGSMeta + BSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    fn ckks_mod_up_tmp_bytes(module: &Module<BE>) -> usize {
+    fn ckks_mod_up_tmp_bytes_impl(module: &Module<BE>) -> usize {
         module.ckks_mod_up_tmp_bytes_default()
     }
 
-    fn ckks_mod_up_into<Dst, Src>(module: &Module<BE>, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_bootstrap_tmp_bytes_impl<C1, C2, F>(
+        module: &Module<BE>,
+        ct_out: &C1,
+        ct_in: &C2,
+        ctx: &BootstrappingContext<BE, F>,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
     where
-        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos,
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds,
+    {
+        module.ckks_bootstrap_tmp_bytes_default(ct_out, ct_in, ctx, keys_layout)
+    }
+
+    fn ckks_mod_up_into_impl<Dst, Src>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        src: &Src,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
         module.ckks_mod_up_into_default(dst, src, scratch)
     }
 
-    fn ckks_bootstrap<F, K>(
+    fn ckks_bootstrap_impl<F, K>(
         module: &Module<BE>,
         ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
         ct_in: &CKKSCiphertext<BE::OwnedBuf>,
@@ -92,7 +122,6 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: TransferFrom<HostBytesBackend>,
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
     {
         module.ckks_bootstrap_default(ct_out, ct_in, ctx, keys, scratch)

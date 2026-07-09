@@ -4,14 +4,14 @@ use criterion::{BenchmarkId, Criterion};
 use poulpy_ckks::{
     CKKSMeta, SetCKKSInfos,
     api::{
-        Diagonal, GiantStep, LinearTransformation, LinearTransformationBabySteps, LinearTransformationOps,
-        LinearTransformationPrepared, LinearTransformationStrategy,
-    },
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
-    leveled::api::{
         CKKSAddManyOps, CKKSAddOps, CKKSConjugateOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps,
         CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
     },
+    api::{
+        CKKSLinearTransformationOps, Diagonal, GiantStep, LinearTransformation, LinearTransformationBabySteps,
+        LinearTransformationPrepared, LinearTransformationStrategy,
+    },
+    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
     oep::CKKSImpl,
 };
 use poulpy_core::{
@@ -141,7 +141,7 @@ where
         + CKKSMulAddOps<Self>
         + CKKSMulSubOps<Self>
         + CKKSDotProductOps<Self>
-        + LinearTransformationOps<Self>
+        + CKKSLinearTransformationOps<Self>
         + CnvPVecAlloc<Self>,
     ScratchOwned<Self>: ScratchOwnedAlloc<Self> + ScratchOwnedBorrow<Self>,
 {
@@ -198,7 +198,7 @@ where
         + CKKSMulAddOps<BE>
         + CKKSMulSubOps<BE>
         + CKKSDotProductOps<BE>
-        + LinearTransformationOps<BE>
+        + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -434,9 +434,9 @@ where
     let atk_layout = atk_layout();
     let meta = ckks_ct_meta();
 
-    let mut ct_a = module.ckks_ciphertext_alloc_from_infos(&ct_layout);
-    let mut ct_b = module.ckks_ciphertext_alloc_from_infos(&ct_layout);
-    let mut ct_dst = module.ckks_ciphertext_alloc_from_infos(&ct_layout);
+    let mut ct_a = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
+    let mut ct_b = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
+    let mut ct_dst = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
     ct_a.set_meta_checked(meta).unwrap();
     ct_b.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
@@ -467,20 +467,20 @@ where
         .max(module.ckks_sub_pt_vec_tmp_bytes())
         .max(module.ckks_add_pt_const_tmp_bytes())
         .max(module.ckks_sub_pt_const_tmp_bytes())
-        .max(module.ckks_mul_tmp_bytes(&ct_a, &tsk))
-        .max(module.ckks_square_tmp_bytes(&ct_a, &tsk))
+        .max(module.ckks_mul_tmp_bytes(&ct_a, &ct_a, &ct_a, &tsk))
+        .max(module.ckks_square_tmp_bytes(&ct_a, &ct_a, &tsk))
         .max(module.ckks_mul_pt_vec_tmp_bytes(&ct_dst, &ct_a, &pt))
         .max(module.ckks_mul_pt_const_tmp_bytes(&ct_dst, &ct_a, &const_full))
         .max(module.ckks_rotate_tmp_bytes(&ct_a, atks.get(&ROTATION).unwrap()))
         .max(module.ckks_conjugate_tmp_bytes(&ct_a, atks.get(&-1).unwrap()))
         .max(module.ckks_add_many_tmp_bytes())
-        .max(module.ckks_mul_add_ct_tmp_bytes(&ct_dst, &tsk))
-        .max(module.ckks_mul_sub_ct_tmp_bytes(&ct_dst, &tsk))
+        .max(module.ckks_mul_add_ct_tmp_bytes(&ct_dst, &ct_dst, &ct_dst, &tsk))
+        .max(module.ckks_mul_sub_ct_tmp_bytes(&ct_dst, &ct_dst, &ct_dst, &tsk))
         .max(module.ckks_mul_add_pt_vec_tmp_bytes(&ct_dst, &ct_a, &pt))
         .max(module.ckks_mul_sub_pt_vec_tmp_bytes(&ct_dst, &ct_a, &pt))
         .max(module.ckks_mul_add_pt_const_tmp_bytes(&ct_dst, &ct_a, &const_full))
         .max(module.ckks_mul_sub_pt_const_tmp_bytes(&ct_dst, &ct_a, &const_full))
-        .max(module.ckks_dot_product_ct_tmp_bytes(MANY_TERMS, &ct_dst, &tsk))
+        .max(module.ckks_dot_product_ct_tmp_bytes(MANY_TERMS, &ct_dst, &ct_dst, &ct_dst, &tsk))
         .max(module.ckks_dot_product_pt_vec_tmp_bytes(&ct_dst, &ct_a, &pt))
         .max(module.ckks_dot_product_pt_const_tmp_bytes(&ct_dst, &ct_a, &const_full));
 
@@ -556,7 +556,7 @@ fn bench_lt_case<BE>(
         format_bytes(scratch_bytes),
     );
 
-    let mut ct_dst = module.ckks_ciphertext_alloc_from_infos(&ckks_layout());
+    let mut ct_dst = module.ckks_ciphertext_alloc_from_glwe_infos(&ckks_layout());
     ct_dst.set_meta_checked(meta_ct).unwrap();
 
     group.bench_function(label, |b| {
@@ -769,9 +769,9 @@ where
     let tsk_layout = mul_tsk_layout(p);
     let meta = mul_ckks_ct_meta(p);
 
-    let mut ct_a = module.ckks_ciphertext_alloc_from_infos(&ct_layout);
-    let mut ct_b = module.ckks_ciphertext_alloc_from_infos(&ct_layout);
-    let mut ct_dst = module.ckks_ciphertext_alloc_from_infos(&ct_layout);
+    let mut ct_a = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
+    let mut ct_b = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
+    let mut ct_dst = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
     ct_a.set_meta_checked(meta).unwrap();
     ct_b.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
@@ -786,8 +786,8 @@ where
     let tsk = module.alloc_tensor_key_prepared_from_infos(&tsk_layout);
 
     let scratch_bytes = module
-        .ckks_mul_tmp_bytes(&ct_a, &tsk)
-        .max(module.ckks_square_tmp_bytes(&ct_a, &tsk))
+        .ckks_mul_tmp_bytes(&ct_a, &ct_a, &ct_a, &tsk)
+        .max(module.ckks_square_tmp_bytes(&ct_a, &ct_a, &tsk))
         .max(module.ckks_mul_pt_vec_tmp_bytes(&ct_dst, &ct_a, &pt))
         .max(module.ckks_mul_pt_const_tmp_bytes(&ct_dst, &ct_a, &const_full));
 
@@ -1065,7 +1065,7 @@ where
     BE: CkksBenchBackend,
 {
     let module = Module::<BE>::new(N as u64);
-    let mut ct_src = module.ckks_ciphertext_alloc_from_infos(&ckks_layout());
+    let mut ct_src = module.ckks_ciphertext_alloc_from_glwe_infos(&ckks_layout());
     ct_src.set_meta_checked(ckks_ct_meta()).unwrap();
     let mut group = c.benchmark_group(format!("ckks_linear_transformation::{label}"));
 

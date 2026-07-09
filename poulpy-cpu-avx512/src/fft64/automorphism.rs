@@ -2,14 +2,14 @@
 //!
 //! Each iteration of the hot loop gathers 8 complex slots: an 8-wide u32
 //! index load, widen to 8 × i64 lanes, two `_mm512_i64gather_pd` (real
-//! and imaginary halves), an optional `_mm512_xor_pd` for the global
+//! and imaginary halves), an optional integer sign-bit xor for the global
 //! conjugate flag, then two `_mm512_storeu_pd`. Tail slots fall through
 //! to AVX2 4-wide (≥4) or scalar (<4).
 
 use core::arch::x86_64::{
     __m128i, __m256d, __m256i, __m512d, __m512i, _mm_loadu_si128, _mm256_cvtepu32_epi64, _mm256_i64gather_pd, _mm256_loadu_si256,
-    _mm256_set1_pd, _mm256_storeu_pd, _mm256_xor_pd, _mm512_cvtepu32_epi64, _mm512_i64gather_pd, _mm512_set1_pd,
-    _mm512_storeu_pd, _mm512_xor_pd,
+    _mm256_set1_pd, _mm256_storeu_pd, _mm256_xor_pd, _mm512_castpd_si512, _mm512_castsi512_pd, _mm512_cvtepu32_epi64,
+    _mm512_i64gather_pd, _mm512_set1_epi64, _mm512_storeu_pd, _mm512_xor_si512,
 };
 
 use poulpy_cpu_ref::reference::fft64::vec_znx_dft::{Fft64AutomorphismPlan, vec_znx_dft_automorphism as fft64_automorphism_ref};
@@ -121,7 +121,10 @@ unsafe fn automorphism_no_conj_inner(m: usize, perm: &[u32], a_re: &[f64], a_im:
 #[target_feature(enable = "avx512f", enable = "avx2", enable = "fma")]
 unsafe fn automorphism_conj_inner(m: usize, perm: &[u32], a_re: &[f64], a_im: &[f64], res_re: &mut [f64], res_im: &mut [f64]) {
     unsafe {
-        let sign_bit_512: __m512d = _mm512_set1_pd(-0.0);
+        // Sign-bit flip on the 512-bit path goes through integer xor: the f64
+        // variant `_mm512_xor_pd` is an AVX-512DQ intrinsic, outside this
+        // crate's compile-time baseline, and would block inlining.
+        let sign_bit_512: __m512i = _mm512_set1_epi64(i64::MIN);
         let sign_bit_256: __m256d = _mm256_set1_pd(-0.0);
         let main = m & !7;
         let mut i: usize = 0;
@@ -131,7 +134,7 @@ unsafe fn automorphism_conj_inner(m: usize, perm: &[u32], a_re: &[f64], a_im: &[
 
             let re_v: __m512d = _mm512_i64gather_pd::<8>(idx64, a_re.as_ptr());
             let im_v: __m512d = _mm512_i64gather_pd::<8>(idx64, a_im.as_ptr());
-            let im_neg: __m512d = _mm512_xor_pd(im_v, sign_bit_512);
+            let im_neg: __m512d = _mm512_castsi512_pd(_mm512_xor_si512(_mm512_castpd_si512(im_v), sign_bit_512));
 
             _mm512_storeu_pd(res_re.as_mut_ptr().add(i), re_v);
             _mm512_storeu_pd(res_im.as_mut_ptr().add(i), im_neg);

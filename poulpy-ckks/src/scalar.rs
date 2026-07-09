@@ -3,9 +3,14 @@
 //! [`Quad`] is a `#[repr(transparent)]` newtype over the nightly primitive
 //! `f128`, implementing the `num_traits` surface (`Float`, `FloatConst`,
 //! `From`/`ToPrimitive`) that `num_traits` does not provide for `f128` itself.
-//! It replaces the `f128` crate (libquadmath, x86_64-only) so the binary128
-//! path works on both x86_64 and aarch64-linux-gnu. The `f128` math symbols are
-//! only guaranteed on targets with "reliable" f128 math (those two).
+//! It replaces the `f128` crate (libquadmath, x86_64-only) as the *type* so the
+//! binary128 path works on both x86_64 and aarch64-linux-gnu. The `f128` math
+//! symbols are only guaranteed on targets with "reliable" f128 math (those two).
+//!
+//! Under the `libquadmath` feature on x86_64, only the transcendental methods
+//! are routed through libquadmath (via the `f128` crate) — the type, its
+//! storage, and all exact operations are unchanged, so `Quad` remains the same
+//! `Pod` newtype in every configuration.
 
 use core::cmp::Ordering;
 use core::fmt;
@@ -13,13 +18,18 @@ use core::iter::{Product, Sum};
 use core::num::FpCategory;
 use core::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Rem, RemAssign, Sub, SubAssign};
 
-use rand_distr::num_traits::{Float, FloatConst, FromPrimitive, Num, NumCast, One, ToPrimitive, Zero};
+use num_traits::{Float, FloatConst, FromPrimitive, Num, NumCast, One, ToPrimitive, Zero};
 
 /// IEEE 754 binary128 (quadruple precision) float, portable across the
 /// `poulpy` CPU backends (x86_64 and aarch64).
 #[derive(Clone, Copy, PartialEq, PartialOrd)]
 #[repr(transparent)]
 pub struct Quad(pub f128);
+
+// `Quad` is transparent over IEEE-754 binary128. Every bit pattern is a valid
+// floating-point value, so it is safe to store and transfer as plain bytes.
+unsafe impl bytemuck::Zeroable for Quad {}
+unsafe impl bytemuck::Pod for Quad {}
 
 impl Quad {
     /// Wraps a primitive `f128`.
@@ -274,6 +284,69 @@ macro_rules! fwd_unary {
     };
 }
 
+/// libquadmath backing for the transcendental methods (x86_64 +
+/// `libquadmath` only): primitive `f128` values are bit-cast to the `f128`
+/// crate's binary128 type (both are IEEE-754 binary128, identical bit layout),
+/// evaluated by libquadmath, and bit-cast back. Storage and exact arithmetic
+/// never leave the primitive type.
+#[cfg(all(feature = "libquadmath", target_arch = "x86_64"))]
+mod quadmath {
+    pub(super) type Lq = ::f128::f128;
+
+    #[inline(always)]
+    pub(super) fn to_lq(x: f128) -> Lq {
+        // `Lq` is a transparent 16-byte binary128; every bit pattern is valid.
+        unsafe { core::mem::transmute::<u128, Lq>(x.to_bits()) }
+    }
+
+    #[inline(always)]
+    pub(super) fn from_lq(x: Lq) -> f128 {
+        f128::from_bits(unsafe { core::mem::transmute::<Lq, u128>(x) })
+    }
+}
+
+/// Unary transcendentals: primitive `f128` math by default, libquadmath under
+/// the `libquadmath` feature on x86_64.
+macro_rules! transc_unary {
+    ($($method:ident),+ $(,)?) => {
+        $(
+            #[inline]
+            fn $method(self) -> Quad {
+                #[cfg(all(feature = "libquadmath", target_arch = "x86_64"))]
+                {
+                    Quad(quadmath::from_lq(num_traits::Float::$method(quadmath::to_lq(self.0))))
+                }
+                #[cfg(not(all(feature = "libquadmath", target_arch = "x86_64")))]
+                {
+                    Quad(self.0.$method())
+                }
+            }
+        )+
+    };
+}
+
+/// Binary transcendentals, same routing as [`transc_unary`].
+macro_rules! transc_binary {
+    ($($method:ident),+ $(,)?) => {
+        $(
+            #[inline]
+            fn $method(self, other: Quad) -> Quad {
+                #[cfg(all(feature = "libquadmath", target_arch = "x86_64"))]
+                {
+                    Quad(quadmath::from_lq(num_traits::Float::$method(
+                        quadmath::to_lq(self.0),
+                        quadmath::to_lq(other.0),
+                    )))
+                }
+                #[cfg(not(all(feature = "libquadmath", target_arch = "x86_64")))]
+                {
+                    Quad(self.0.$method(other.0))
+                }
+            }
+        )+
+    };
+}
+
 macro_rules! fwd_predicate {
     ($($method:ident),+ $(,)?) => {
         $(
@@ -310,9 +383,12 @@ impl Float for Quad {
 
     fwd_predicate!(is_nan, is_infinite, is_finite, is_normal, is_sign_positive, is_sign_negative);
 
-    fwd_unary!(
-        floor, ceil, round, trunc, fract, abs, signum, recip, sqrt, exp, exp2, ln, log2, log10, cbrt, sin, cos, tan, asin, acos,
-        atan, exp_m1, ln_1p, sinh, cosh, tanh, asinh, acosh, atanh,
+    // Exact / correctly-rounded operations: always the primitive.
+    fwd_unary!(floor, ceil, round, trunc, fract, abs, signum, recip, sqrt);
+
+    // Transcendentals: libquadmath-backed under the `libquadmath` feature.
+    transc_unary!(
+        exp, exp2, ln, log2, log10, cbrt, sin, cos, tan, asin, acos, atan, exp_m1, ln_1p, sinh, cosh, tanh, asinh, acosh, atanh,
     );
 
     #[inline]
@@ -330,15 +406,7 @@ impl Float for Quad {
         Quad(self.0.powi(n))
     }
 
-    #[inline]
-    fn powf(self, n: Quad) -> Quad {
-        Quad(self.0.powf(n.0))
-    }
-
-    #[inline]
-    fn log(self, base: Quad) -> Quad {
-        Quad(self.0.log(base.0))
-    }
+    transc_binary!(powf, log);
 
     #[inline]
     fn max(self, other: Quad) -> Quad {
@@ -356,20 +424,20 @@ impl Float for Quad {
         if self.0 > other.0 { Quad(self.0 - other.0) } else { Quad(0.0) }
     }
 
-    #[inline]
-    fn hypot(self, other: Quad) -> Quad {
-        Quad(self.0.hypot(other.0))
-    }
-
-    #[inline]
-    fn atan2(self, other: Quad) -> Quad {
-        Quad(self.0.atan2(other.0))
-    }
+    transc_binary!(hypot, atan2);
 
     #[inline]
     fn sin_cos(self) -> (Quad, Quad) {
-        let (s, c) = self.0.sin_cos();
-        (Quad(s), Quad(c))
+        #[cfg(all(feature = "libquadmath", target_arch = "x86_64"))]
+        {
+            let (s, c) = num_traits::Float::sin_cos(quadmath::to_lq(self.0));
+            (Quad(quadmath::from_lq(s)), Quad(quadmath::from_lq(c)))
+        }
+        #[cfg(not(all(feature = "libquadmath", target_arch = "x86_64")))]
+        {
+            let (s, c) = self.0.sin_cos();
+            (Quad(s), Quad(c))
+        }
     }
 
     #[inline]
@@ -422,7 +490,7 @@ impl Quad {
 #[cfg(test)]
 mod tests {
     use super::Quad;
-    use rand_distr::num_traits::{Float, FloatConst, FromPrimitive, ToPrimitive};
+    use num_traits::{Float, FloatConst, FromPrimitive, ToPrimitive};
 
     #[test]
     fn conversions_roundtrip() {
@@ -453,7 +521,7 @@ mod tests {
     #[test]
     fn matches_libquadmath_precision() {
         use f128::f128 as Lq;
-        use rand_distr::num_traits::Float as LqFloat;
+        use num_traits::Float as LqFloat;
 
         fn lq_bits(x: Lq) -> u128 {
             unsafe { core::mem::transmute::<Lq, u128>(x) }
@@ -498,49 +566,49 @@ mod tests {
         let mut transc = 0usize;
         let mut worst_ulp = 0u128;
 
+        // correctly-rounded => identical bits
+        macro_rules! check_exact {
+            ($name:literal, $qm:ident, $q:expr, $r:expr, $xf:expr) => {{
+                assert_eq!(
+                    Quad::$qm($q).to_bits(),
+                    lq_bits(LqFloat::$qm($r)),
+                    "{} not bit-identical for input {}",
+                    $name,
+                    $xf
+                );
+                exact += 1;
+            }};
+        }
+        // transcendental => within MAX_ULP
+        macro_rules! check_ulp {
+            ($name:literal, $qm:ident, $q:expr, $r:expr, $xf:expr) => {{
+                let d = ulp_diff(Quad::$qm($q).to_bits(), lq_bits(LqFloat::$qm($r)));
+                worst_ulp = worst_ulp.max(d);
+                assert!(
+                    d <= MAX_ULP,
+                    "{} off by {} ULP for input {} (> {})",
+                    $name,
+                    d,
+                    $xf,
+                    MAX_ULP
+                );
+                transc += 1;
+            }};
+        }
+
         for &xf in inputs {
             let q = Quad::from_f64(xf).unwrap();
             let r = lq(xf);
 
-            // correctly-rounded => identical bits
-            macro_rules! check_exact {
-                ($name:literal, $qm:ident) => {{
-                    assert_eq!(
-                        Quad::$qm(q).to_bits(),
-                        lq_bits(LqFloat::$qm(r)),
-                        "{} not bit-identical for input {}",
-                        $name,
-                        xf
-                    );
-                    exact += 1;
-                }};
-            }
-            // transcendental => within MAX_ULP
-            macro_rules! check_ulp {
-                ($name:literal, $qm:ident) => {{
-                    let d = ulp_diff(Quad::$qm(q).to_bits(), lq_bits(LqFloat::$qm(r)));
-                    worst_ulp = worst_ulp.max(d);
-                    assert!(
-                        d <= MAX_ULP,
-                        "{} off by {} ULP for input {} (> {})",
-                        $name,
-                        d,
-                        xf,
-                        MAX_ULP
-                    );
-                    transc += 1;
-                }};
-            }
+            check_exact!("floor", floor, q, r, xf);
+            check_exact!("ceil", ceil, q, r, xf);
+            check_exact!("round", round, q, r, xf);
+            check_exact!("trunc", trunc, q, r, xf);
+            check_exact!("abs", abs, q, r, xf);
 
-            check_exact!("floor", floor);
-            check_exact!("ceil", ceil);
-            check_exact!("round", round);
-            check_exact!("trunc", trunc);
-            check_exact!("abs", abs);
-
-            check_ulp!("sin", sin);
-            check_ulp!("cos", cos);
-            check_ulp!("exp2", exp2);
+            check_ulp!("sin", sin, q, r, xf);
+            check_ulp!("cos", cos, q, r, xf);
+            check_ulp!("exp2", exp2, q, r, xf);
 
             // binary arithmetic is correctly rounded => identical bits
             let half = Quad::from_f64(0.5).unwrap();
@@ -572,10 +640,112 @@ mod tests {
 
             // sqrt (correctly rounded) and ln, only where defined
             if xf > 0.0 {
-                check_exact!("sqrt", sqrt);
-                check_ulp!("ln", ln);
+                check_exact!("sqrt", sqrt, q, r, xf);
+                check_ulp!("ln", ln, q, r, xf);
             }
         }
+
+        // ---- full-mantissa operands ----
+        //
+        // Every input above is f64-representable, so its low 60 significand
+        // bits are zero — an implementation that silently rounded through f64
+        // would pass all of it. Compose operands as `hi + lo` with `lo` far
+        // below f64's reach of `hi` (populating the deep mantissa) on both
+        // sides identically, and re-run the exact/transcendental checks.
+        let composed: &[(f64, f64)] = &[
+            (1.0, 1.0e-25),
+            (core::f64::consts::PI, -3.7e-24),
+            (0.5, 1.0e-30),
+            (-2.0, 5.0e-26),
+            (1234.5, -1.0e-20),
+            (1e-12, 1e-40),
+        ];
+        for &(hi, lo) in composed {
+            let xf = hi;
+            let q = Quad::from_f64(hi).unwrap() + Quad::from_f64(lo).unwrap();
+            let r = lq(hi) + lq(lo);
+            assert_eq!(q.to_bits(), lq_bits(r), "composition differs for ({hi}, {lo})");
+            // The composition genuinely populated sub-f64 mantissa.
+            assert!(
+                (q - Quad::from_f64(q.to_f64().unwrap()).unwrap()).abs() > Quad::from_f64(0.0).unwrap(),
+                "operand ({hi}, {lo}) carries no sub-f64 mantissa"
+            );
+
+            check_exact!("floor", floor, q, r, xf);
+            check_exact!("abs", abs, q, r, xf);
+            let half = Quad::from_f64(0.5).unwrap();
+            let half_r = lq(0.5);
+            assert_eq!(
+                (q * half).to_bits(),
+                lq_bits(r * half_r),
+                "mul not bit-identical for composed ({hi}, {lo})"
+            );
+            assert_eq!(
+                (q + half).to_bits(),
+                lq_bits(r + half_r),
+                "add not bit-identical for composed ({hi}, {lo})"
+            );
+            assert_eq!(
+                (q / half).to_bits(),
+                lq_bits(r / half_r),
+                "div not bit-identical for composed ({hi}, {lo})"
+            );
+            exact += 5;
+
+            check_ulp!("sin", sin, q, r, xf);
+            check_ulp!("cos", cos, q, r, xf);
+            check_ulp!("exp2", exp2, q, r, xf);
+            if hi > 0.0 {
+                check_exact!("sqrt", sqrt, q, r, xf);
+                check_ulp!("ln", ln, q, r, xf);
+            }
+        }
+
+        // ---- subnormals ----
+        //
+        // f64 subnormals are normal in binary128; reach true binary128
+        // subnormals by scaling min-positive down, identically on both sides.
+        fn lq_from_bits(bits: u128) -> Lq {
+            unsafe { core::mem::transmute::<u128, Lq>(bits) }
+        }
+        let tiny = Quad::min_positive_value();
+        // The f128 crate's `min_positive_value` is not binary128's MIN_POSITIVE;
+        // build the reference from the same bit pattern.
+        let tiny_r = lq_from_bits(tiny.to_bits());
+        let half = Quad::from_f64(0.5).unwrap();
+        let half_r = lq(0.5);
+        let sub = tiny * half;
+        let sub_r = tiny_r * half_r;
+        assert_eq!(sub.to_bits(), lq_bits(sub_r), "subnormal halving differs");
+        assert!(sub.to_bits() != 0, "subnormal collapsed to zero");
+        assert_eq!(sub.classify(), core::num::FpCategory::Subnormal);
+        assert_eq!((sub + sub).to_bits(), lq_bits(sub_r + sub_r), "subnormal add differs");
+        assert_eq!(
+            (sub * Quad::from_f64(4.0).unwrap()).to_bits(),
+            lq_bits(sub_r * lq(4.0)),
+            "subnormal renormalizing mul differs"
+        );
+        exact += 3;
+
+        // ---- specials ----
+        let inf = Quad::infinity();
+        let inf_r = <Lq as LqFloat>::infinity();
+        assert_eq!((inf + inf).to_bits(), lq_bits(inf_r + inf_r));
+        assert!((inf - inf).is_nan() && (inf_r - inf_r).is_nan(), "inf − inf must be NaN");
+        assert!(
+            (Quad::from_f64(0.0).unwrap() / Quad::from_f64(0.0).unwrap()).is_nan(),
+            "0/0 must be NaN"
+        );
+        let neg_zero = Quad::neg_zero();
+        assert!(neg_zero.is_sign_negative() && neg_zero == Quad::from_f64(0.0).unwrap());
+        assert_eq!(
+            Quad::from_f64(3.0).unwrap().copysign(neg_zero).to_f64().unwrap(),
+            -3.0,
+            "copysign must honor -0.0"
+        );
+        // NaN propagates through exact ops and transcendentals alike.
+        assert!((Quad::nan() * Quad::from_f64(2.0).unwrap()).is_nan());
+        assert!(Quad::nan().sin().is_nan());
 
         // Constants agree to ≤ MAX_ULP (libquadmath's may be ~1 ULP off).
         macro_rules! check_const_ulp {
@@ -591,9 +761,68 @@ mod tests {
         check_const_ulp!("LN_2", LN_2);
 
         assert!(
-            exact > 80 && transc > 40,
+            exact > 100 && transc > 55,
             "expected many comparisons (exact={exact}, transc={transc})"
         );
         eprintln!("Quad vs libquadmath: {exact} ops bit-identical, {transc} transcendentals within {worst_ulp} ULP");
+    }
+
+    /// Arch-independent full-mantissa invariants: `Quad` arithmetic must be
+    /// exact well past the 53-bit boundary an `f64`-roundtripping bug would
+    /// impose. All identities below are exactly representable in binary128, so
+    /// every assertion is bit-exact.
+    #[test]
+    fn full_mantissa_arithmetic_is_exact() {
+        let one = Quad::from_f64(1.0).unwrap();
+        let eps56 = Quad::from_f64(2f64.powi(-56)).unwrap();
+
+        // (1 + 2^-56)·(1 + 2^-56) = 1 + 2^-55 + 2^-112: all three terms fit the
+        // 113-bit significand, so the product is exact — and 2^-112 is far
+        // below anything an f64 path could carry.
+        let a = one + eps56;
+        let product = a * a;
+        let expected = one + Quad::from_f64(2f64.powi(-55)).unwrap() + Quad::from_f64(2f64.powi(-112)).unwrap();
+        assert_eq!(product.to_bits(), expected.to_bits(), "113-bit product not exact");
+
+        // Double-double recomposition round-trips: (hi + lo) − hi == lo when
+        // the combined significand span fits 113 bits (`lo` is a power of two —
+        // one significand bit — at relative 2^-61, far below f64's reach).
+        let hi = Quad::from_f64(core::f64::consts::PI).unwrap();
+        let lo = Quad::from_f64(2f64.powi(-60)).unwrap();
+        assert_eq!(
+            ((hi + lo) - hi).to_bits(),
+            lo.to_bits(),
+            "double-double recomposition lost bits"
+        );
+
+        // Sterbenz: subtraction of close values is exact.
+        let b = one + eps56 + eps56;
+        assert_eq!((b - a).to_bits(), eps56.to_bits(), "Sterbenz subtraction not exact");
+
+        // Powers of two divide exactly all the way into the subnormal range,
+        // and climb back losslessly.
+        let mut x = Quad::min_positive_value();
+        let half = Quad::from_f64(0.5).unwrap();
+        let two = Quad::from_f64(2.0).unwrap();
+        for _ in 0..10 {
+            x *= half;
+        }
+        assert_eq!(x.classify(), core::num::FpCategory::Subnormal);
+        for _ in 0..10 {
+            x *= two;
+        }
+        assert_eq!(
+            x.to_bits(),
+            Quad::min_positive_value().to_bits(),
+            "subnormal round-trip lost bits"
+        );
+
+        // integer_decode keeps the top 64 significand bits; a residue at
+        // relative 2^-60 — below f64's 53-bit reach but inside the top 64 —
+        // must show up in the decoded mantissa.
+        let lo60 = Quad::from_f64(1.9e-18).unwrap();
+        let (mantissa_composed, _, _) = Float::integer_decode(hi + lo60);
+        let (mantissa_pi, _, _) = Float::integer_decode(hi);
+        assert_ne!(mantissa_composed, mantissa_pi, "integer_decode blind to sub-f64 mantissa");
     }
 }

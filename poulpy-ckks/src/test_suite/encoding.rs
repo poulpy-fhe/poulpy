@@ -8,15 +8,15 @@ use poulpy_hal::{
 
 use crate::{
     CKKSInfos, CKKSMeta, SetCKKSInfos,
-    encoding::reim::Encoder,
     layouts::CKKSModuleAlloc,
+    test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
         helpers::{TestContextBackend, TestContextHostModule, TestScalar, assert_precision_for_log_delta, test_vector_1},
     },
 };
 
-/// The reim [`Encoder`] is its own inverse: `decode_reim(encode_reim(re, im))`
+/// The reim [`ReferenceEncoder`] is its own inverse: `decode_reim(encode_reim(re, im))`
 /// recovers `(re, im)` up to the encoding (`log_delta`) quantization, with no
 /// encryption involved. Backend-generic over the scalar `F` and FFT engine `E`.
 pub fn test_encode_decode_reim_roundtrip<BE, F, E>(
@@ -33,7 +33,7 @@ pub fn test_encode_decode_reim_roundtrip<BE, F, E>(
 {
     let m = params.n / 2;
     let log_delta = params.prec().log_delta();
-    let encoder = Encoder::<E>::new::<F>(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new::<F>(m).unwrap();
 
     let (re_in, im_in) = test_vector_1::<F>(m);
 

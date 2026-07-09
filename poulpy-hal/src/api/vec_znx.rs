@@ -293,7 +293,15 @@ pub trait VecZnxLshCoeffBackend<B: Backend> {
 }
 
 pub trait VecZnxLshAddIntoBackend<B: Backend> {
-    /// Left shift by k bits all columns of `a`.
+    /// Adds `a` left-shifted by `k` bits into `res`: `res += a << k`, column-wise.
+    ///
+    /// Normalization contract: the shifted operand `a` is normalized on the fly
+    /// (its own inter-limb carries are propagated), so the addend is in the
+    /// canonical `base2k` digit range. The addition into `res` is **not**
+    /// re-normalized: adding a normalized digit onto an already-normalized `res`
+    /// limb can leave that limb one bit beyond the `base2k` range. Callers that
+    /// require a normalized `res` afterwards must normalize it themselves; this
+    /// op alone does not restore the digit contract on `res`.
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_lsh_add_into_backend(
         &self,
@@ -390,7 +398,15 @@ pub trait VecZnxRshCoeffBackend<B: Backend> {
 }
 
 pub trait VecZnxRshAddIntoBackend<B: Backend> {
-    /// Right shift by k bits all columns of `a`.
+    /// Adds `a` right-shifted by `k` bits into `res`: `res += a >> k`, column-wise.
+    ///
+    /// Normalization contract: the shifted operand `a` is normalized on the fly
+    /// (its own inter-limb carries are propagated), so the addend is in the
+    /// canonical `base2k` digit range. The addition into `res` is **not**
+    /// re-normalized: adding a normalized digit onto an already-normalized `res`
+    /// limb can leave that limb one bit beyond the `base2k` range. Callers that
+    /// require a normalized `res` afterwards must normalize it themselves; this
+    /// op alone does not restore the digit contract on `res`.
     #[allow(clippy::too_many_arguments)]
     fn vec_znx_rsh_add_into_backend(
         &self,

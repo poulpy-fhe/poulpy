@@ -1,6 +1,7 @@
-use anyhow::Result;
-use poulpy_core::layouts::{GGLWEInfos, prepared::GLWEAutomorphismKeyPreparedToBackendRef};
-use poulpy_core::layouts::{GGLWEPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement};
+use crate::CKKSAtkBounds;
+use crate::CKKSResult as Result;
+use poulpy_core::layouts::GGLWEInfos;
+use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
@@ -44,11 +45,11 @@ pub trait CKKSConjugateOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos;
+        K: CKKSAtkBounds<BE>;
 
     /// Computes `dst = conj(dst)` in-place.  Metadata is unchanged.
     fn ckks_conjugate_assign<Dst, K>(&self, dst: &mut Dst, key: &K, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos;
+        K: CKKSAtkBounds<BE>;
 }

@@ -1,70 +1,60 @@
-use poulpy_core::layouts::{
-    Base2K, Degree, GLWEInfos, GLWEPlaintextLayout, GetDegree, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
-};
+use poulpy_core::layouts::{Base2K, Degree, GLWEInfos, GLWEPlaintextLayout, GetDegree, ModuleCoreAlloc, Rank, TorusPrecision};
 use poulpy_hal::layouts::{Backend, Module};
 
 use crate::{CKKSInfos, CKKSMeta, SetCKKSInfos};
 
 use super::{CKKSCiphertext, CKKSPlaintext};
 
+/// CKKS container allocation on a backend module.
+///
+/// Every method is default-bodied over the [`ModuleCoreAlloc`] supertrait, so
+/// the blanket impl for `Module<BE>` is empty: the whole constructor matrix is
+/// two primitive shapes (ciphertext with explicit rank, plaintext with explicit
+/// degree) plus thin conveniences over them.
 pub trait CKKSModuleAlloc<BE: Backend>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf> {
+    /// Allocates a ciphertext with `infos`' layout **and** its CKKS metadata
+    /// (`log_delta`, `log_sparsity`), mirroring
+    /// [`Self::ckks_plaintext_alloc_from_infos`]. Use
+    /// [`Self::ckks_ciphertext_alloc_from_glwe_infos`] when only a GLWE layout
+    /// is available (fresh default metadata).
     fn ckks_ciphertext_alloc_from_infos<A>(&self, infos: &A) -> CKKSCiphertext<BE::OwnedBuf>
     where
-        A: GLWEInfos;
-
-    fn ckks_ciphertext_alloc(&self, base2k: Base2K, k: TorusPrecision) -> CKKSCiphertext<BE::OwnedBuf>;
-
-    fn ckks_pt_vec_alloc_from_infos<A>(&self, infos: &A) -> CKKSPlaintext<BE::OwnedBuf>
-    where
-        A: GLWEInfos + CKKSInfos;
-
-    fn ckks_plaintext_alloc_from_infos<A>(&self, infos: &A) -> CKKSPlaintext<BE::OwnedBuf>
-    where
-        A: LWEInfos + CKKSInfos;
-
-    /// Allocates a default-meta plaintext sized to `k` over `base2k`. The semantic
-    /// [`CKKSMeta`] is not needed to size the buffer — set it afterwards with
-    /// [`SetCKKSInfos::set_meta`] (the `_from_infos` variants do this for you).
-    fn ckks_plaintext_alloc(&self, n: Degree, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintext<BE::OwnedBuf>;
-
-    fn ckks_pt_coeffs_alloc(&self, coeff_count: usize, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintext<BE::OwnedBuf> {
-        self.ckks_plaintext_alloc(coeff_count.into(), base2k, k)
+        A: GLWEInfos + CKKSInfos,
+    {
+        CKKSCiphertext::from_inner(self.glwe_alloc_from_infos(infos), infos.meta())
     }
 
-    fn ckks_pt_vec_alloc(&self, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintext<BE::OwnedBuf>;
-}
-
-impl<BE: Backend> CKKSModuleAlloc<BE> for Module<BE>
-where
-    Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>,
-{
-    fn ckks_ciphertext_alloc_from_infos<A>(&self, infos: &A) -> CKKSCiphertext<BE::OwnedBuf>
+    /// Allocates a default-meta ciphertext from a bare GLWE layout; the name
+    /// makes the metadata drop explicit.
+    fn ckks_ciphertext_alloc_from_glwe_infos<A>(&self, infos: &A) -> CKKSCiphertext<BE::OwnedBuf>
     where
         A: GLWEInfos,
     {
         CKKSCiphertext::from_inner(self.glwe_alloc_from_infos(infos), CKKSMeta::default())
     }
 
-    fn ckks_ciphertext_alloc(&self, base2k: Base2K, k: TorusPrecision) -> CKKSCiphertext<BE::OwnedBuf> {
-        CKKSCiphertext::from_inner(self.glwe_alloc(base2k, k, Rank(1)), CKKSMeta::default())
+    /// Allocates a default-meta ciphertext of the given `rank`.
+    fn ckks_ciphertext_alloc_with_rank(&self, base2k: Base2K, k: TorusPrecision, rank: Rank) -> CKKSCiphertext<BE::OwnedBuf> {
+        CKKSCiphertext::from_inner(self.glwe_alloc(base2k, k, rank), CKKSMeta::default())
     }
 
-    fn ckks_pt_vec_alloc_from_infos<A>(&self, infos: &A) -> CKKSPlaintext<BE::OwnedBuf>
-    where
-        A: GLWEInfos + CKKSInfos,
-    {
-        self.ckks_plaintext_alloc_from_infos(infos)
+    /// Rank-1 convenience over [`Self::ckks_ciphertext_alloc_with_rank`].
+    fn ckks_ciphertext_alloc(&self, base2k: Base2K, k: TorusPrecision) -> CKKSCiphertext<BE::OwnedBuf> {
+        self.ckks_ciphertext_alloc_with_rank(base2k, k, Rank(1))
     }
 
     fn ckks_plaintext_alloc_from_infos<A>(&self, infos: &A) -> CKKSPlaintext<BE::OwnedBuf>
     where
-        A: LWEInfos + CKKSInfos,
+        A: CKKSInfos,
     {
         let mut pt = self.ckks_plaintext_alloc(infos.n(), infos.base2k(), infos.k());
         pt.set_meta(infos.meta());
         pt
     }
 
+    /// Allocates a default-meta plaintext sized to `k` over `base2k`. The semantic
+    /// [`CKKSMeta`] is not needed to size the buffer — set it afterwards with
+    /// [`SetCKKSInfos::set_meta`] (the `_from_infos` variants do this for you).
     fn ckks_plaintext_alloc(&self, n: Degree, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintext<BE::OwnedBuf> {
         // `k` is the effective torus width (`log_delta + log_budget`); the buffer
         // auto-sizes to `ceil(k / base2k)` limbs, so the integer-poly storage spans
@@ -76,7 +66,18 @@ where
         )
     }
 
-    fn ckks_pt_vec_alloc(&self, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintext<BE::OwnedBuf> {
+    /// Coefficient-count convenience over [`Self::ckks_plaintext_alloc`].
+    fn ckks_pt_coeffs_alloc(&self, coeff_count: usize, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintext<BE::OwnedBuf> {
+        self.ckks_plaintext_alloc(coeff_count.into(), base2k, k)
+    }
+
+    /// Full-ring-degree convenience over [`Self::ckks_plaintext_alloc`].
+    fn ckks_pt_vec_alloc(&self, base2k: Base2K, k: TorusPrecision) -> CKKSPlaintext<BE::OwnedBuf>
+    where
+        Self: GetDegree,
+    {
         self.ckks_plaintext_alloc(self.ring_degree(), base2k, k)
     }
 }
+
+impl<BE: Backend> CKKSModuleAlloc<BE> for Module<BE> where Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf> {}

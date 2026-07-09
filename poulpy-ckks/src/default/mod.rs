@@ -1,5 +1,6 @@
 pub mod add;
 pub mod bootstrapping;
+pub(crate) mod carry_verb;
 pub mod conjugate;
 pub mod copy;
 pub mod dft;
@@ -10,6 +11,7 @@ pub mod linear_transformation;
 pub mod linear_transformation_diagonals;
 pub mod mul;
 pub mod neg;
+pub mod paco;
 pub mod plaintext;
 pub mod polynomial_evaluation;
 pub mod pow2;

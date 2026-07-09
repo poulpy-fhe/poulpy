@@ -12,11 +12,12 @@
 //!   after the transform, hold the matching coefficient layout.
 //!
 //! Each test is self-contained and drives the transform through the public
-//! [`DFTOps`] method surface. The parameters come from one of two centralized
+//! [`CKKSDFTOps`] method surface. The parameters come from one of two centralized
 //! builders, each shared by the CoeffsToSlots and SlotsToCoeffs directions:
-//! [`dense_params`] (full slot count, `Standard` / `Split` formats) and
-//! [`sparse_params`] (sub-maximal slots, the `RepackImagAsReal` path).
+//! `dense_params` (full slot count, `Standard` / `Split` formats) and
+//! `sparse_params` (sub-maximal slots, the `RepackImagAsReal` path).
 
+use crate::api::CKKSEncodingOps;
 use std::collections::HashMap;
 
 use poulpy_core::layouts::Base2K;
@@ -28,18 +29,18 @@ use poulpy_hal::{
 use poulpy_core::{GLWENoise, layouts::LWEInfos};
 
 use crate::{
-    CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos,
-    api::DFTOps,
-    encoding::reim::Encoder,
+    CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos,
+    api::{CKKSDFTMatrixOps, CKKSDFTOps},
     layouts::{
         CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, DFTMatrix, DFTOutputFormat, DFTPlan, DFTType,
         Decode, Encode, Repack, Split, Standard,
     },
+    test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
         helpers::{
             TestContextBackend, TestContextHostModule, TestContextModule, TestScalar, alloc_ct, alloc_scratch, ckks_encrypt,
-            ckks_encrypt_coeffs, ckks_encrypt_pt, ckks_spec, gen_atk, gen_sk_with_raw, test_vector_1,
+            ckks_encrypt_coeffs, ckks_encrypt_pt, gen_atk, gen_sk_with_raw, test_vector_1,
         },
     },
 };
@@ -73,6 +74,7 @@ fn dense_params(params: &CKKSTestParams) -> CKKSTestParams {
         prec_log_budget: 10,
         hw: params.hw.min(1 << DENSE_LOG_SLOTS),
         dsize: params.dsize,
+        rank: 1,
     }
 }
 
@@ -94,27 +96,19 @@ fn sparse_params(params: &CKKSTestParams) -> CKKSTestParams {
         prec_log_budget: 10,
         hw: params.hw.min(32),
         dsize: params.dsize,
+        rank: 1,
     }
 }
 
-/// `CKKSMeta` for the factor matrices: the per-factor scale, minimal budget.
-fn factor_meta(log_delta: usize) -> CKKSLayout {
-    // n/base2k are placeholders; the encode passes an explicit base2k and only k()/meta() are read.
-    ckks_spec(0, 0, log_delta, 10)
+/// Coefficient meta for the factor matrices: the per-factor scale, minimal budget.
+fn factor_meta(log_delta: usize) -> CoeffsMeta {
+    CoeffsMeta::from_delta_budget(log_delta, 10)
 }
 
 /// A factorized (I)DFT plan over `log_slots` factors: one FFT layer per factor
 /// (no merging), BSGS width 2.
 fn plan(log_slots: usize, kind: DFTType, format: DFTOutputFormat, log_delta: usize) -> DFTPlan {
-    DFTPlan {
-        kind,
-        factorization_depth: vec![1usize; log_slots],
-        giant_steps: vec![2usize; log_slots],
-        format,
-        scaling: None,
-        bit_reversed: false,
-        meta: factor_meta(log_delta),
-    }
+    DFTPlan::new(kind, vec![(1usize, 2usize); log_slots], format, factor_meta(log_delta)).unwrap()
 }
 
 /// Bit-reversal permutation over `DENSE_LOG_SLOTS` bits (poulpy's slot map order).
@@ -172,7 +166,7 @@ pub fn test_dft_coeffs_to_slots_standard<BE, F, E>(
     _host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE> + DFTOps<BE> + GLWENoise<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + GLWENoise<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -187,15 +181,13 @@ pub fn test_dft_coeffs_to_slots_standard<BE, F, E>(
 
     let module = Module::<BE>::new(params.n as u64);
     let host_module = Module::<HostBytesBackend>::new(params.n as u64);
-    let encoder = Encoder::<E>::new::<F>(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new::<F>(m).unwrap();
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, &module, &host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, &module);
 
     let enc_lt: DFTMatrix<BE, Encode, Standard> = module
-        .ckks_new_dft_matrix(
-            &host_module,
-            &encoder,
+        .ckks_new_dft_matrix::<Encode, Standard>(
             Base2K(base2k as u32),
             &plan(DENSE_LOG_SLOTS, DFTType::Encode, DFTOutputFormat::Standard, log_delta),
             &mut scratch.borrow(),
@@ -251,7 +243,7 @@ pub fn test_dft_slots_to_coeffs_standard<BE, F, E>(
     _host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE> + DFTOps<BE> + GLWENoise<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + GLWENoise<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -266,15 +258,13 @@ pub fn test_dft_slots_to_coeffs_standard<BE, F, E>(
 
     let module = Module::<BE>::new(params.n as u64);
     let host_module = Module::<HostBytesBackend>::new(params.n as u64);
-    let encoder = Encoder::<E>::new::<F>(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new::<F>(m).unwrap();
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, &module, &host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, &module);
 
     let dec_lt = module
-        .ckks_new_dft_matrix(
-            &host_module,
-            &encoder,
+        .ckks_new_dft_matrix::<Decode, Standard>(
             Base2K(base2k as u32),
             &plan(DENSE_LOG_SLOTS, DFTType::Decode, DFTOutputFormat::Standard, log_delta),
             &mut scratch.borrow(),
@@ -330,7 +320,7 @@ pub fn test_dft_coeffs_to_slots_split<BE, F, E>(
     _host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE> + DFTOps<BE> + GLWENoise<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + GLWENoise<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -345,15 +335,13 @@ pub fn test_dft_coeffs_to_slots_split<BE, F, E>(
 
     let module = Module::<BE>::new(params.n as u64);
     let host_module = Module::<HostBytesBackend>::new(params.n as u64);
-    let encoder = Encoder::<E>::new::<F>(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new::<F>(m).unwrap();
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, &module, &host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, &module);
 
     let enc_lt = module
-        .ckks_new_dft_matrix(
-            &host_module,
-            &encoder,
+        .ckks_new_dft_matrix::<Encode, Split>(
             Base2K(base2k as u32),
             &plan(DENSE_LOG_SLOTS, DFTType::Encode, DFTOutputFormat::SplitRealAndImag, log_delta),
             &mut scratch.borrow(),
@@ -424,7 +412,7 @@ pub fn test_dft_coeffs_to_slots_repack_sparse<BE, F, E>(
     _host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE> + DFTOps<BE> + GLWENoise<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + GLWENoise<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -440,15 +428,12 @@ pub fn test_dft_coeffs_to_slots_repack_sparse<BE, F, E>(
 
     let module = Module::<BE>::new(params.n as u64);
     let host_module = Module::<HostBytesBackend>::new(params.n as u64);
-    let encoder = Encoder::<E>::new::<F>(params.n / 2).unwrap();
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, &module, &host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, &module);
 
     let enc_lt = module
-        .ckks_new_dft_matrix(
-            &host_module,
-            &encoder,
+        .ckks_new_dft_matrix::<Encode, Repack>(
             Base2K(base2k as u32),
             &plan(log_slots, DFTType::Encode, DFTOutputFormat::RepackImagAsReal, log_delta),
             &mut scratch.borrow(),
@@ -494,13 +479,13 @@ pub fn test_dft_coeffs_to_slots_repack_sparse<BE, F, E>(
 
     // Reference at 2·slots resolution: real part = [re | im], imag part = 0.
     // Sparse-encode that expected vector and measure the error via GLWE noise.
-    let small = Encoder::<E>::new::<F>(2 * slots).unwrap();
+    let small = ReferenceEncoder::<E>::new::<F>(2 * slots).unwrap();
     let mut want_re = vec![F::from_f64(0.0).unwrap(); 2 * slots];
     want_re[..slots].copy_from_slice(re);
     want_re[slots..].copy_from_slice(im);
     let want_im = vec![F::from_f64(0.0).unwrap(); 2 * slots];
     let mut pt_want = want_plaintext(&module, &ct_out);
-    small.encode_reim_sparse(&mut pt_want, &want_re, &want_im).unwrap();
+    small.encode_reim(&mut pt_want, &want_re, &want_im).unwrap();
     let noise = module.glwe_noise(&ct_out, &pt_want, &sk, &mut scratch.borrow()).std().log2();
     let bound = noise_bound(log_delta);
     assert!(
@@ -520,7 +505,7 @@ pub fn test_dft_slots_to_coeffs_split<BE, F, E>(
     _host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE> + DFTOps<BE> + GLWENoise<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + GLWENoise<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -535,15 +520,13 @@ pub fn test_dft_slots_to_coeffs_split<BE, F, E>(
 
     let module = Module::<BE>::new(params.n as u64);
     let host_module = Module::<HostBytesBackend>::new(params.n as u64);
-    let encoder = Encoder::<E>::new::<F>(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new::<F>(m).unwrap();
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, &module, &host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, &module);
 
     let dec_lt = module
-        .ckks_new_dft_matrix(
-            &host_module,
-            &encoder,
+        .ckks_new_dft_matrix::<Decode, Split>(
             Base2K(base2k as u32),
             &plan(DENSE_LOG_SLOTS, DFTType::Decode, DFTOutputFormat::SplitRealAndImag, log_delta),
             &mut scratch.borrow(),
@@ -612,7 +595,7 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
     _host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE> + DFTOps<BE> + GLWENoise<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + GLWENoise<BE>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -628,15 +611,12 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
 
     let module = Module::<BE>::new(params.n as u64);
     let host_module = Module::<HostBytesBackend>::new(params.n as u64);
-    let encoder = Encoder::<E>::new::<F>(params.n / 2).unwrap();
 
     let (sk_raw, sk) = gen_sk_with_raw(&params, &module, &host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, &module);
 
     let dec_lt = module
-        .ckks_new_dft_matrix(
-            &host_module,
-            &encoder,
+        .ckks_new_dft_matrix::<Decode, Repack>(
             Base2K(base2k as u32),
             &plan(log_slots, DFTType::Decode, DFTOutputFormat::RepackImagAsReal, log_delta),
             &mut scratch.borrow(),
@@ -656,7 +636,7 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
     // resolution (imag 0), the repacked-slots form (log_sparsity = 2).
     let (re_full, im_full) = test_vector_1::<F>(params.n / 2);
     let (re, im) = (&re_full[..slots], &im_full[..slots]);
-    let small = Encoder::<E>::new::<F>(2 * slots).unwrap();
+    let small = ReferenceEncoder::<E>::new::<F>(2 * slots).unwrap();
     let mut want_re = vec![F::from_f64(0.0).unwrap(); 2 * slots];
     want_re[..slots].copy_from_slice(re);
     want_re[slots..].copy_from_slice(im);
@@ -666,7 +646,7 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
         log_sparsity: 2,
         log_delta,
     });
-    small.encode_reim_sparse(&mut host_pt, &want_re, &want_im).unwrap();
+    small.encode_reim(&mut host_pt, &want_re, &want_im).unwrap();
     let mut ct_in = ckks_encrypt_pt(&params, &module, &sk, params.k, &host_pt, &mut scratch.borrow());
     ct_in.set_log_sparsity(2);
 
@@ -707,7 +687,7 @@ pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
     _host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend,
-    Module<BE>: TestContextModule<BE> + DFTOps<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -719,8 +699,6 @@ pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
     {
         let p = dense_params(&params);
         let module = Module::<BE>::new(p.n as u64);
-        let host_module = Module::<HostBytesBackend>::new(p.n as u64);
-        let encoder = Encoder::<E>::new::<F>(p.n / 2).unwrap();
         let mut scratch = alloc_scratch(&p, &module);
         let log_n = p.n.ilog2() as usize;
         let order = module.cyclotomic_order();
@@ -729,7 +707,7 @@ pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
 
         let pe = plan(DENSE_LOG_SLOTS, DFTType::Encode, DFTOutputFormat::SplitRealAndImag, ld);
         let me: DFTMatrix<BE, Encode, Split> = module
-            .ckks_new_dft_matrix(&host_module, &encoder, base2k, &pe, &mut scratch.borrow())
+            .ckks_new_dft_matrix::<Encode, Split>(base2k, &pe, &mut scratch.borrow())
             .unwrap();
         assert_eq!(
             pe.galois_elements(log_n, order),
@@ -741,7 +719,7 @@ pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
 
         let pd = plan(DENSE_LOG_SLOTS, DFTType::Decode, DFTOutputFormat::SplitRealAndImag, ld);
         let md: DFTMatrix<BE, Decode, Split> = module
-            .ckks_new_dft_matrix(&host_module, &encoder, base2k, &pd, &mut scratch.borrow())
+            .ckks_new_dft_matrix::<Decode, Split>(base2k, &pd, &mut scratch.borrow())
             .unwrap();
         assert_eq!(
             pd.galois_elements(log_n, order),
@@ -754,8 +732,6 @@ pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
     {
         let p = sparse_params(&params);
         let module = Module::<BE>::new(p.n as u64);
-        let host_module = Module::<HostBytesBackend>::new(p.n as u64);
-        let encoder = Encoder::<E>::new::<F>(1 << SPARSE_LOG_SLOTS).unwrap();
         let mut scratch = alloc_scratch(&p, &module);
         let log_n = p.n.ilog2() as usize;
         let order = module.cyclotomic_order();
@@ -765,7 +741,7 @@ pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
         let pe = plan(SPARSE_LOG_SLOTS, DFTType::Encode, DFTOutputFormat::RepackImagAsReal, ld);
         assert!(pe.is_sparse_repack(log_n), "expected the sparse repack path");
         let me: DFTMatrix<BE, Encode, Repack> = module
-            .ckks_new_dft_matrix(&host_module, &encoder, base2k, &pe, &mut scratch.borrow())
+            .ckks_new_dft_matrix::<Encode, Repack>(base2k, &pe, &mut scratch.borrow())
             .unwrap();
         assert_eq!(
             pe.galois_elements(log_n, order),
@@ -775,7 +751,7 @@ pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
 
         let pd = plan(SPARSE_LOG_SLOTS, DFTType::Decode, DFTOutputFormat::RepackImagAsReal, ld);
         let md: DFTMatrix<BE, Decode, Repack> = module
-            .ckks_new_dft_matrix(&host_module, &encoder, base2k, &pd, &mut scratch.borrow())
+            .ckks_new_dft_matrix::<Decode, Repack>(base2k, &pd, &mut scratch.borrow())
             .unwrap();
         assert_eq!(
             pd.galois_elements(log_n, order),

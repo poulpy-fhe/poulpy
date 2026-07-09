@@ -1,9 +1,8 @@
-use anyhow::Result;
+use crate::CKKSResult as Result;
 use poulpy_core::{
     GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWETensoring,
     layouts::{
-        Compact, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
-        prepared::GLWETensorKeyPreparedToBackendRef,
+        Compact, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, ModuleCoreAlloc, prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
 use poulpy_hal::{
@@ -27,38 +26,41 @@ where
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
         + VecZnxCopyBackend<BE>,
 {
-    fn ckks_mul_tmp_bytes<R, T>(&self, res: &R, tsk: &T) -> usize
+    fn ckks_mul_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        B: CKKSCtBounds,
         T: GGLWEInfos,
     {
-        BE::ckks_mul_tmp_bytes(self, res, tsk)
+        BE::ckks_mul_tmp_bytes_impl(self, res, a, b, tsk)
     }
 
-    fn ckks_square_tmp_bytes<R, T>(&self, res: &R, tsk: &T) -> usize
+    fn ckks_square_tmp_bytes<R, A, T>(&self, res: &R, a: &A, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
+        A: CKKSCtBounds,
         T: GGLWEInfos,
     {
-        BE::ckks_square_tmp_bytes(self, res, tsk)
+        BE::ckks_square_tmp_bytes_impl(self, res, a, tsk)
     }
 
     fn ckks_mul_pt_vec_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos + LWEInfos,
+        P: CKKSInfos,
     {
-        BE::ckks_mul_pt_vec_tmp_bytes(self, res, a, b.k())
+        BE::ckks_mul_pt_vec_tmp_bytes_impl(self, res, a, b.k())
     }
 
     fn ckks_mul_pt_const_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos + LWEInfos,
+        P: CKKSInfos,
     {
-        BE::ckks_mul_pt_const_tmp_bytes(self, res, a, b.k())
+        BE::ckks_mul_pt_const_tmp_bytes_impl(self, res, a, b.k())
     }
 
     fn ckks_mul_into<Dst, A, B, T>(&self, dst: &mut Dst, a: &A, b: &B, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -68,7 +70,7 @@ where
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     {
-        BE::ckks_mul_into(self, dst, a, b, tsk, scratch)
+        BE::ckks_mul_into_impl(self, dst, a, b, tsk, scratch)
     }
 
     fn ckks_mul_assign<Dst, A, T>(&self, dst: &mut Dst, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -77,14 +79,14 @@ where
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     {
-        BE::ckks_mul_assign(self, dst, a, tsk, scratch)
+        BE::ckks_mul_assign_impl(self, dst, a, tsk, scratch)
     }
 
     fn ckks_prepare_right<A>(&self, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
     where
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_prepare_right(self, a, scratch)
+        BE::ckks_prepare_right_impl(self, a, scratch)
     }
 
     fn ckks_mul_prepared_assign<Dst, T>(
@@ -98,7 +100,7 @@ where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     {
-        BE::ckks_mul_prepared_assign(self, dst, prepared, tsk, scratch)
+        BE::ckks_mul_prepared_assign_impl(self, dst, prepared, tsk, scratch)
     }
 
     fn ckks_square_into<Dst, A, T>(&self, dst: &mut Dst, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -107,7 +109,7 @@ where
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     {
-        BE::ckks_square_into(self, dst, a, tsk, scratch)
+        BE::ckks_square_into_impl(self, dst, a, tsk, scratch)
     }
 
     fn ckks_square_assign<Dst, T>(&self, dst: &mut Dst, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -115,7 +117,7 @@ where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     {
-        BE::ckks_square_assign(self, dst, tsk, scratch)
+        BE::ckks_square_assign_impl(self, dst, tsk, scratch)
     }
 
     fn ckks_mul_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -124,7 +126,7 @@ where
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_mul_pt_vec_into(self, dst, a, pt, scratch)
+        BE::ckks_mul_pt_vec_into_impl(self, dst, a, pt, scratch)
     }
 
     fn ckks_mul_pt_vec_assign<Dst, P>(&self, dst: &mut Dst, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -132,7 +134,7 @@ where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_mul_pt_vec_assign(self, dst, pt, scratch)
+        BE::ckks_mul_pt_vec_assign_impl(self, dst, pt, scratch)
     }
 
     fn ckks_mul_pt_const_into<Dst, A, P>(
@@ -148,7 +150,7 @@ where
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_mul_pt_const_into(self, dst, a, pt, pt_coeff, scratch)
+        BE::ckks_mul_pt_const_into_impl(self, dst, a, pt, pt_coeff, scratch)
     }
 
     fn ckks_mul_pt_const_assign<Dst, P>(
@@ -162,6 +164,6 @@ where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         P: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_mul_pt_const_assign(self, dst, pt, pt_coeff, scratch)
+        BE::ckks_mul_pt_const_assign_impl(self, dst, pt, pt_coeff, scratch)
     }
 }

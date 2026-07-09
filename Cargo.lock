@@ -578,10 +578,10 @@ dependencies = [
  "bytemuck",
  "dashu-float",
  "f128",
+ "num-traits",
+ "paste",
  "poulpy-core",
  "poulpy-hal",
- "rand",
- "rand_distr",
 ]
 
 [[package]]

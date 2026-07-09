@@ -20,7 +20,7 @@ Poulpy uses the Baby-Step Giant-Step decomposition to reduce that to the square 
 
 The evaluation engine lives in `poulpy-core` and is scheme agnostic.
 It operates on GLWE ciphertexts, GGLWE automorphism keys, and prepared plaintext diagonals through the `GLWELinearTransformations` trait.
-The CKKS layer in `poulpy-ckks` is a thin wrapper, `LinearTransformationOps`, that owns the scale and budget accounting, encodes the diagonals, and supplies the galois-element to key map.
+The CKKS layer in `poulpy-ckks` is a thin wrapper, `CKKSLinearTransformationOps`, that owns the scale and budget accounting, encodes the diagonals, and supplies the galois-element to key map.
 No homomorphic arithmetic lives in the CKKS layer.
 
 ## Baby-Step Giant-Step factorization

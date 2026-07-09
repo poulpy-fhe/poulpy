@@ -1,5 +1,5 @@
-use anyhow::Result;
-use poulpy_hal::layouts::{Backend, HostBytesBackend, ScratchArena, TransferFrom};
+use crate::CKKSResult as Result;
+use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use poulpy_core::layouts::{
     BSGSMeta, Compact, GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta,
@@ -41,7 +41,6 @@ pub trait CKKSEvalModOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: TransferFrom<HostBytesBackend>,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta;

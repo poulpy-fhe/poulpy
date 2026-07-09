@@ -8,21 +8,21 @@
 //! the [`EvalMod`] structure. The public entry point is
 //! [`CKKSEvalModOps`](crate::api::CKKSEvalModOps).
 
-use anyhow::{Result, ensure};
+use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::{
     GLWECopy,
     layouts::{
-        BSGSMeta, Compact, GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta,
+        BSGSMeta, Compact, GGLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, Rank, SetBSGSMeta,
         prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    CKKSCtBounds, SetCKKSInfos,
-    api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSPow2Ops, CKKSSubOps, PolynomialEvaluation},
+    CKKSCtBounds, CKKSMeta, SetCKKSInfos,
+    api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps},
     layouts::{
-        CKKSCiphertext, CKKSModuleAlloc,
+        CKKSCiphertext, CKKSModuleAlloc, ScratchArenaTakeCKKS,
         eval_mod::{EvalMod, EvalModBsgs},
     },
 };
@@ -49,7 +49,7 @@ pub trait CKKSEvalModOpsDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: PolynomialEvaluation<BE>
+        Self: CKKSPolynomialEvaluationOps<BE>
             + CKKSAddOps<BE>
             + CKKSSubOps<BE>
             + CKKSMulOps<BE>
@@ -66,7 +66,7 @@ pub trait CKKSEvalModOpsDefault<BE: Backend> {
 
 impl<BE: Backend> CKKSEvalModOpsDefault<BE> for Module<BE>
 where
-    Module<BE>: PolynomialEvaluation<BE>
+    Module<BE>: CKKSPolynomialEvaluationOps<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSMulOps<BE>
@@ -119,7 +119,7 @@ fn eval_mod<R, C, P, F, BE>(
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: PolynomialEvaluation<BE>
+    Module<BE>: CKKSPolynomialEvaluationOps<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSMulOps<BE>
@@ -138,47 +138,71 @@ where
     // scale. `consumed_bits()` accounts for the arithmetic at the plan scale;
     // if the plan scale is higher than the input scale, returning to the input
     // scale also drops that extra precision from the externally visible budget.
+    // Intermediates are allocated rank-1 (`ckks_ciphertext_alloc`); reject
+    // higher-rank inputs instead of silently mis-shaping them.
+    ckks_ensure!(
+        ct.rank().as_usize() == 1,
+        "ckks_eval_mod supports rank-1 ciphertexts only, got rank {}",
+        ct.rank().as_usize()
+    );
     let s_in = ct.log_delta();
     let s_eval = params.plan.f_mod_log_delta;
     let s_budget = ct.log_budget();
 
     let required = params.consumed_bits();
-    ensure!(
+    ckks_ensure!(
         ct.log_budget() >= required,
         "ckks_eval_mod: input log_budget {got} < {required} bits required (consumed at scale {s_eval})",
         got = ct.log_budget(),
     );
 
-    let mut t1 = module.ckks_ciphertext_alloc(ct.base2k(), (s_budget + s_eval).into());
-    module.glwe_copy(&mut t1, ct);
-    t1.set_log_budget(s_budget);
-    t1.set_log_delta(s_eval);
+    // The working copy at the plan scale is carved from scratch (accounted for
+    // by `ckks_eval_mod_tmp_bytes`), not heap-allocated: it lives for the whole
+    // evaluation (the inverse stage reuses it), so its bytes are charged on top
+    // of every nested stage. `glwe_copy` zero-fills the destination limbs
+    // beyond the source, so the dirty scratch region is fully defined.
+    scratch.scope(|scratch_local| {
+        let (mut t1, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(
+            &GLWELayout {
+                n: ct.n(),
+                base2k: ct.base2k(),
+                k: (s_budget + s_eval).into(),
+                rank: Rank(1),
+            },
+            CKKSMeta {
+                log_delta: s_eval,
+                log_sparsity: ct.log_sparsity(),
+            },
+        );
+        module.glwe_copy(&mut t1, ct);
 
-    match &params.f_mod_bsgs {
-        EvalModBsgs::Real(bsgs) => {
-            module.ckks_eval_poly_real_const_coeffs(res, &t1, bsgs, tsk, scratch)?;
+        match &params.f_mod_bsgs {
+            EvalModBsgs::Real(bsgs) => {
+                module.ckks_eval_poly_real_const_coeffs(res, &t1, bsgs, tsk, &mut scratch_local)?;
 
-            if let Some(consts) = params.range_extension_consts.as_ref() {
-                for i in 0..params.plan.f_mod_log_interval_reduction {
-                    module.ckks_square_assign(res, tsk, scratch)?;
-                    module.ckks_mul_pow2_assign(res, 1, scratch)?;
-                    module.ckks_sub_pt_const_assign(res, 0, consts, i, scratch)?;
+                if let Some(consts) = params.range_extension_consts.as_ref() {
+                    for i in 0..params.plan.f_mod_log_interval_reduction {
+                        module.ckks_square_assign(res, tsk, &mut scratch_local)?;
+                        module.ckks_mul_pow2_assign(res, 1, &mut scratch_local)?;
+                        module.ckks_sub_pt_const_assign(res, 0, consts, i, &mut scratch_local)?;
+                    }
+                }
+
+                if let Some(inv) = params.f_mod_inv_bsgs.as_ref() {
+                    module.ckks_copy(&mut t1, &*res, &mut scratch_local)?;
+                    Compact::compact(&mut t1);
+                    module.ckks_eval_poly_real_const_coeffs(res, &t1, inv, tsk, &mut scratch_local)?;
                 }
             }
-
-            if let Some(inv) = params.f_mod_inv_bsgs.as_ref() {
-                module.ckks_copy(&mut t1, &*res, scratch)?;
-                Compact::compact(&mut t1);
-                module.ckks_eval_poly_real_const_coeffs(res, &t1, inv, tsk, scratch)?;
+            EvalModBsgs::Complex(bsgs) => {
+                module.ckks_eval_poly_complex_const_coeffs(res, &t1, bsgs, tsk, &mut scratch_local)?;
+                for _ in 0..params.plan.f_mod_log_interval_reduction {
+                    module.ckks_square_assign(res, tsk, &mut scratch_local)?;
+                }
             }
         }
-        EvalModBsgs::Complex(bsgs) => {
-            module.ckks_eval_poly_complex_const_coeffs(res, &t1, bsgs, tsk, scratch)?;
-            for _ in 0..params.plan.f_mod_log_interval_reduction {
-                module.ckks_square_assign(res, tsk, scratch)?;
-            }
-        }
-    }
+        Result::Ok(())
+    })?;
 
     // Restore the input scale on the result. This is a pure metadata relabel
     // (`set_log_delta`), not a rescale: entry raised the scale `s_in -> s_eval`

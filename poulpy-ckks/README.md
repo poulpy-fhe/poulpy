@@ -17,6 +17,12 @@ The crate exposes:
 - secret-key encryption and decryption
 - leveled arithmetic implemented through traits on `Module<BE>`
 
+## Toolchain
+
+`poulpy-ckks` requires **nightly Rust** by default: the portable quad-precision scalar [`Quad`] is a newtype over the unstable primitive `f128` (`#![feature(f128)]`). The workspace pins a known-good nightly in `rust-toolchain.toml`.
+
+On x86_64, the optional `libquadmath` feature routes `Quad`'s transcendental math through libquadmath (via the `f128` crate) for faster on-the-fly FFT-table builds; the `Quad` type, its storage, and exact arithmetic are identical in every configuration. On other architectures the feature is a no-op.
+
 ## Tests And Backend Integration
 
 `poulpy-ckks` exposes its public API as soon as the crate is imported. Backend

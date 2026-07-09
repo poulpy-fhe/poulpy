@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::CKKSResult as Result;
 use poulpy_core::{
     GLWECopy, GLWENegate, GLWERotate, GLWEShift,
     layouts::{GLWEToBackendMut, GLWEToBackendRef},
@@ -15,7 +15,7 @@ where
     Module<BE>: GLWECopy<BE> + GLWENegate<BE> + GLWERotate<BE> + GLWEShift<BE> + ModuleN,
 {
     fn ckks_mul_i_tmp_bytes(&self) -> usize {
-        BE::ckks_mul_i_tmp_bytes(self)
+        BE::ckks_mul_i_tmp_bytes_impl(self)
     }
 
     fn ckks_mul_i_into<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -23,18 +23,18 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_mul_i_into(self, dst, src, scratch)
+        BE::ckks_mul_i_into_impl(self, dst, src, scratch)
     }
 
     fn ckks_mul_i_assign<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        BE::ckks_mul_i_assign(self, dst, scratch)
+        BE::ckks_mul_i_assign_impl(self, dst, scratch)
     }
 
     fn ckks_div_i_tmp_bytes(&self) -> usize {
-        BE::ckks_div_i_tmp_bytes(self)
+        BE::ckks_div_i_tmp_bytes_impl(self)
     }
 
     fn ckks_div_i_into<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
@@ -42,13 +42,13 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_div_i_into(self, dst, src, scratch)
+        BE::ckks_div_i_into_impl(self, dst, src, scratch)
     }
 
     fn ckks_div_i_assign<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        BE::ckks_div_i_assign(self, dst, scratch)
+        BE::ckks_div_i_assign_impl(self, dst, scratch)
     }
 }

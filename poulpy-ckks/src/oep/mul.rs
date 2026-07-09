@@ -1,6 +1,6 @@
+use crate::CKKSResult as Result;
 use crate::default::mul::CKKSMulDefault;
 
-use anyhow::Result;
 use poulpy_core::{
     GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWETensoring, GiantStepTensorBounds,
     layouts::{
@@ -12,7 +12,7 @@ use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena},
 };
 
-use crate::{CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos, layouts::CKKSPreparedRight};
+use crate::{CKKSCtBounds, CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos, layouts::CKKSPreparedRight};
 
 /// # Safety
 ///
@@ -20,12 +20,32 @@ use crate::{CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos, layouts
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
 pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
-    fn ckks_mul_tmp_bytes<R: GLWEInfos, T: GGLWEInfos>(module: &Module<BE>, res: &R, tsk: &T) -> usize;
-    fn ckks_square_tmp_bytes<R: GLWEInfos, T: GGLWEInfos>(module: &Module<BE>, res: &R, tsk: &T) -> usize;
-    fn ckks_mul_pt_vec_tmp_bytes<R: GLWEInfos, A: GLWEInfos>(module: &Module<BE>, res: &R, a: &A, b_k: TorusPrecision) -> usize;
-    fn ckks_mul_pt_const_tmp_bytes<R: GLWEInfos, A: GLWEInfos>(module: &Module<BE>, res: &R, a: &A, b_k: TorusPrecision)
-    -> usize;
-    fn ckks_mul_into<Dst, A, B, T>(
+    fn ckks_mul_tmp_bytes_impl<R: GLWEInfos, A: GLWEInfos, B: GLWEInfos, T: GGLWEInfos>(
+        module: &Module<BE>,
+        res: &R,
+        a: &A,
+        b: &B,
+        tsk: &T,
+    ) -> usize;
+    fn ckks_square_tmp_bytes_impl<R: GLWEInfos, A: GLWEInfos, T: GGLWEInfos>(
+        module: &Module<BE>,
+        res: &R,
+        a: &A,
+        tsk: &T,
+    ) -> usize;
+    fn ckks_mul_pt_vec_tmp_bytes_impl<R: GLWEInfos, A: GLWEInfos>(
+        module: &Module<BE>,
+        res: &R,
+        a: &A,
+        b_k: TorusPrecision,
+    ) -> usize;
+    fn ckks_mul_pt_const_tmp_bytes_impl<R: GLWEInfos, A: GLWEInfos>(
+        module: &Module<BE>,
+        res: &R,
+        a: &A,
+        b_k: TorusPrecision,
+    ) -> usize;
+    fn ckks_mul_into_impl<Dst, A, B, T>(
         module: &Module<BE>,
         dst: &mut Dst,
         a: &A,
@@ -38,7 +58,7 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         B: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
-    fn ckks_mul_assign<Dst, A, T>(
+    fn ckks_mul_assign_impl<Dst, A, T>(
         module: &Module<BE>,
         dst: &mut Dst,
         a: &A,
@@ -49,10 +69,14 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
-    fn ckks_prepare_right<A>(module: &Module<BE>, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
+    fn ckks_prepare_right_impl<A>(
+        module: &Module<BE>,
+        a: &A,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<CKKSPreparedRight<BE>>
     where
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos;
-    fn ckks_mul_prepared_assign<Dst, T>(
+    fn ckks_mul_prepared_assign_impl<Dst, T>(
         module: &Module<BE>,
         dst: &mut Dst,
         prepared: &CKKSPreparedRight<BE>,
@@ -62,7 +86,7 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
-    fn ckks_square_into<Dst, A, T>(
+    fn ckks_square_into_impl<Dst, A, T>(
         module: &Module<BE>,
         dst: &mut Dst,
         a: &A,
@@ -73,11 +97,16 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
-    fn ckks_square_assign<Dst, T>(module: &Module<BE>, dst: &mut Dst, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_square_assign_impl<Dst, T>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
-    fn ckks_mul_pt_vec_into<Dst, A, P>(
+    fn ckks_mul_pt_vec_into_impl<Dst, A, P>(
         module: &Module<BE>,
         dst: &mut Dst,
         a: &A,
@@ -87,8 +116,8 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
     where
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        P: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos + CKKSInfos;
-    fn ckks_mul_pt_vec_assign<Dst, P>(
+        P: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds;
+    fn ckks_mul_pt_vec_assign_impl<Dst, P>(
         module: &Module<BE>,
         dst: &mut Dst,
         pt: &P,
@@ -96,8 +125,8 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
-        P: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos + CKKSInfos;
-    fn ckks_mul_pt_const_into<Dst, A, P>(
+        P: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds;
+    fn ckks_mul_pt_const_into_impl<Dst, A, P>(
         module: &Module<BE>,
         dst: &mut Dst,
         a: &A,
@@ -108,8 +137,8 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
     where
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        P: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos + CKKSInfos;
-    fn ckks_mul_pt_const_assign<Dst, P>(
+        P: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds;
+    fn ckks_mul_pt_const_assign_impl<Dst, P>(
         module: &Module<BE>,
         dst: &mut Dst,
         pt: &P,
@@ -118,7 +147,7 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
-        P: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos + CKKSInfos;
+        P: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds;
 }
 
 unsafe impl<BE: Backend> CKKSMulImpl<BE> for BE
@@ -136,19 +165,35 @@ where
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
         + VecZnxCopyBackend<BE>,
 {
-    fn ckks_mul_tmp_bytes<R: GLWEInfos, T: GGLWEInfos>(module: &Module<BE>, res: &R, tsk: &T) -> usize {
-        module.ckks_mul_tmp_bytes_default(res, tsk)
+    fn ckks_mul_tmp_bytes_impl<R: GLWEInfos, A: GLWEInfos, B: GLWEInfos, T: GGLWEInfos>(
+        module: &Module<BE>,
+        res: &R,
+        a: &A,
+        b: &B,
+        tsk: &T,
+    ) -> usize {
+        module.ckks_mul_tmp_bytes_default(res, a, b, tsk)
     }
 
-    fn ckks_square_tmp_bytes<R: GLWEInfos, T: GGLWEInfos>(module: &Module<BE>, res: &R, tsk: &T) -> usize {
-        module.ckks_square_tmp_bytes_default(res, tsk)
+    fn ckks_square_tmp_bytes_impl<R: GLWEInfos, A: GLWEInfos, T: GGLWEInfos>(
+        module: &Module<BE>,
+        res: &R,
+        a: &A,
+        tsk: &T,
+    ) -> usize {
+        module.ckks_square_tmp_bytes_default(res, a, tsk)
     }
 
-    fn ckks_mul_pt_vec_tmp_bytes<R: GLWEInfos, A: GLWEInfos>(module: &Module<BE>, res: &R, a: &A, b_k: TorusPrecision) -> usize {
+    fn ckks_mul_pt_vec_tmp_bytes_impl<R: GLWEInfos, A: GLWEInfos>(
+        module: &Module<BE>,
+        res: &R,
+        a: &A,
+        b_k: TorusPrecision,
+    ) -> usize {
         module.ckks_mul_pt_vec_tmp_bytes_default(res, a, b_k)
     }
 
-    fn ckks_mul_pt_const_tmp_bytes<R: GLWEInfos, A: GLWEInfos>(
+    fn ckks_mul_pt_const_tmp_bytes_impl<R: GLWEInfos, A: GLWEInfos>(
         module: &Module<BE>,
         res: &R,
         a: &A,
@@ -157,7 +202,7 @@ where
         module.ckks_mul_pt_const_tmp_bytes_default(res, a, b_k)
     }
 
-    fn ckks_mul_into<Dst, A, B, T>(
+    fn ckks_mul_into_impl<Dst, A, B, T>(
         module: &Module<BE>,
         dst: &mut Dst,
         a: &A,
@@ -174,7 +219,7 @@ where
         module.ckks_mul_into_default(dst, a, b, tsk, scratch)
     }
 
-    fn ckks_mul_assign<Dst, A, T>(
+    fn ckks_mul_assign_impl<Dst, A, T>(
         module: &Module<BE>,
         dst: &mut Dst,
         a: &A,
@@ -189,14 +234,14 @@ where
         module.ckks_mul_assign_default(dst, a, tsk, scratch)
     }
 
-    fn ckks_prepare_right<A>(module: &Module<BE>, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
+    fn ckks_prepare_right_impl<A>(module: &Module<BE>, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
     where
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     {
         module.ckks_prepare_right_default(a, scratch)
     }
 
-    fn ckks_mul_prepared_assign<Dst, T>(
+    fn ckks_mul_prepared_assign_impl<Dst, T>(
         module: &Module<BE>,
         dst: &mut Dst,
         prepared: &CKKSPreparedRight<BE>,
@@ -210,7 +255,7 @@ where
         module.ckks_mul_prepared_assign_default(dst, prepared, tsk, scratch)
     }
 
-    fn ckks_square_into<Dst, A, T>(
+    fn ckks_square_into_impl<Dst, A, T>(
         module: &Module<BE>,
         dst: &mut Dst,
         a: &A,
@@ -225,7 +270,12 @@ where
         module.ckks_square_into_default(dst, a, tsk, scratch)
     }
 
-    fn ckks_square_assign<Dst, T>(module: &Module<BE>, dst: &mut Dst, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_square_assign_impl<Dst, T>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        tsk: &T,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -233,7 +283,7 @@ where
         module.ckks_square_assign_default(dst, tsk, scratch)
     }
 
-    fn ckks_mul_pt_vec_into<Dst, A, P>(
+    fn ckks_mul_pt_vec_into_impl<Dst, A, P>(
         module: &Module<BE>,
         dst: &mut Dst,
         a: &A,
@@ -243,12 +293,12 @@ where
     where
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        P: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos + CKKSInfos,
+        P: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds,
     {
         module.ckks_mul_pt_vec_into_default(dst, a, pt, scratch)
     }
 
-    fn ckks_mul_pt_vec_assign<Dst, P>(
+    fn ckks_mul_pt_vec_assign_impl<Dst, P>(
         module: &Module<BE>,
         dst: &mut Dst,
         pt: &P,
@@ -256,12 +306,12 @@ where
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
-        P: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos + CKKSInfos,
+        P: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds,
     {
         module.ckks_mul_pt_vec_assign_default(dst, pt, scratch)
     }
 
-    fn ckks_mul_pt_const_into<Dst, A, P>(
+    fn ckks_mul_pt_const_into_impl<Dst, A, P>(
         module: &Module<BE>,
         dst: &mut Dst,
         a: &A,
@@ -272,12 +322,12 @@ where
     where
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        P: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos + CKKSInfos,
+        P: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds,
     {
         module.ckks_mul_pt_const_into_default(dst, a, pt, pt_coeff, scratch)
     }
 
-    fn ckks_mul_pt_const_assign<Dst, P>(
+    fn ckks_mul_pt_const_assign_impl<Dst, P>(
         module: &Module<BE>,
         dst: &mut Dst,
         pt: &P,
@@ -286,7 +336,7 @@ where
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
-        P: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos + CKKSInfos,
+        P: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds,
     {
         module.ckks_mul_pt_const_assign_default(dst, pt, pt_coeff, scratch)
     }

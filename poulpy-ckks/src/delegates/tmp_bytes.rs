@@ -1,14 +1,14 @@
 use crate::{
     CKKSCtBounds, CKKSInfos,
-    leveled::api::{
-        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSDecrypt, CKKSEncrypt, CKKSImagOps, CKKSMulAddOps, CKKSMulOps,
+    api::{
+        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSDecryptOps, CKKSEncryptOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps,
         CKKSMulSubOps, CKKSNegOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
     },
 };
 use poulpy_core::{
     GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWELinearTransformations, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWEShift,
     GLWETensorKeyEncryptSk, GLWETensoring,
-    layouts::{GGLWEInfos, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory, LWEInfos},
+    layouts::{GGLWEInfos, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory},
 };
 use poulpy_hal::{
     api::{
@@ -20,8 +20,8 @@ use poulpy_hal::{
 
 impl<BE: Backend> CKKSAllOpsTmpBytes<BE> for Module<BE>
 where
-    Self: CKKSEncrypt<BE>
-        + CKKSDecrypt<BE>
+    Self: CKKSEncryptOps<BE>
+        + CKKSDecryptOps<BE>
         + CKKSAddOps<BE>
         + CKKSConjugateOps<BE>
         + CKKSSubOps<BE>
@@ -56,12 +56,14 @@ where
     where
         C: CKKSCtBounds,
         T: GGLWEInfos,
-        P: CKKSInfos + LWEInfos,
+        P: CKKSInfos,
     {
         // The giant step hoists the prepared `X^{gsp}` right operand into a
         // backend-resident (heap) buffer, so it no longer draws on scratch; the
         // per-pair `ct×ct` multiply and `ct+ct` add bound the scratch.
-        let polynomial_giant_steps_tmp_bytes = self.ckks_mul_tmp_bytes(ct_infos, tsk_infos).max(self.ckks_add_tmp_bytes());
+        let polynomial_giant_steps_tmp_bytes = self
+            .ckks_mul_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos)
+            .max(self.ckks_add_tmp_bytes());
 
         self.ckks_encrypt_sk_tmp_bytes(ct_infos)
             .max(self.ckks_decrypt_tmp_bytes(ct_infos))
@@ -76,10 +78,10 @@ where
             .max(self.ckks_div_pow2_tmp_bytes())
             .max(self.ckks_mul_i_tmp_bytes())
             .max(self.ckks_div_i_tmp_bytes())
-            .max(self.ckks_mul_tmp_bytes(ct_infos, tsk_infos))
-            .max(self.ckks_mul_add_ct_tmp_bytes(ct_infos, tsk_infos))
-            .max(self.ckks_mul_sub_ct_tmp_bytes(ct_infos, tsk_infos))
-            .max(self.ckks_square_tmp_bytes(ct_infos, tsk_infos))
+            .max(self.ckks_mul_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos))
+            .max(self.ckks_mul_add_ct_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos))
+            .max(self.ckks_mul_sub_ct_tmp_bytes(ct_infos, ct_infos, ct_infos, tsk_infos))
+            .max(self.ckks_square_tmp_bytes(ct_infos, ct_infos, tsk_infos))
             .max(polynomial_giant_steps_tmp_bytes)
             .max(self.ckks_mul_pt_vec_tmp_bytes(ct_infos, ct_infos, pt_prec))
             .max(self.ckks_mul_pt_const_tmp_bytes(ct_infos, ct_infos, pt_prec))
@@ -92,7 +94,7 @@ where
         C: CKKSCtBounds,
         T: GGLWEInfos,
         A: GGLWEInfos,
-        P: CKKSInfos + LWEInfos,
+        P: CKKSInfos,
     {
         self.ckks_all_ops_tmp_bytes(ct_infos, tsk_infos, pt_prec)
             .max(self.ckks_rotate_tmp_bytes(ct_infos, atk_infos))

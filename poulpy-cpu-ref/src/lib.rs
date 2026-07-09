@@ -16,7 +16,11 @@
 //! No platform-specific intrinsics or assembly are used.
 
 #[cfg(feature = "enable-ckks")]
+pub mod ckks_encoding;
+#[cfg(feature = "enable-ckks")]
 mod ckks_impl;
+#[cfg(feature = "enable-ckks")]
+pub mod ckks_paco;
 #[cfg(feature = "enable-core")]
 #[doc(hidden)]
 pub mod core_impl;
@@ -25,6 +29,7 @@ pub mod hal_defaults;
 mod hal_impl;
 pub mod ntt4x30;
 pub mod reference;
+pub mod table_cache;
 
 #[cfg(test)]
 mod tests;
