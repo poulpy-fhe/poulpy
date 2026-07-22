@@ -130,7 +130,7 @@ fn tsk_layout() -> EncryptionLayout<GLWETensorKeyLayout> {
     EncryptionLayout::new_from_default_sigma(GLWETensorKeyLayout {
         n: N.into(),
         base2k: BASE2K.into(),
-        k: k.into(),
+        k_aux: (k - dnum * DSIZE * BASE2K).into(),
         rank: Rank(1),
         dsize: DSIZE.into(),
         dnum: dnum.into(),

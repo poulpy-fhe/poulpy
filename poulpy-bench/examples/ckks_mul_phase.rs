@@ -9,8 +9,8 @@
 use poulpy_core::{
     GLWETensoring,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
-        Rank, TorusPrecision,
+        Base2K, Degree, Dnum, Dsize, GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, ModuleCoreAlloc, Rank,
+        TorusPrecision,
     },
 };
 use poulpy_cpu_avx512::NTT3x42Ifma;
@@ -41,20 +41,20 @@ fn main() {
 
     let t0 = Instant::now();
     if op == "relin" {
+        let (dnum, k_aux) = poulpy_bench::params::key_dnum_k_aux(k + dsize * base2k, base2k, dsize);
         let tsk_layout = GLWETensorKeyLayout {
             n: Degree(n),
             base2k: Base2K(base2k),
-            k: TorusPrecision(k + dsize * base2k),
+            k_aux: TorusPrecision(k_aux),
             rank: Rank(rank),
             dsize: Dsize(dsize),
-            dnum: Dnum(k.div_ceil(dsize * base2k)),
+            dnum: Dnum(dnum),
         };
         let tsk = module.alloc_tensor_key_prepared_from_infos(&tsk_layout);
         let mut res = module.glwe_alloc_from_infos(&glwe);
-        let tsk_size = tensor.max_size() + dsize as usize;
         let mut scratch = ScratchOwned::<NTT3x42Ifma>::alloc(module.glwe_tensor_relinearize_tmp_bytes(&res, &tensor, &tsk));
         for _ in 0..iters {
-            module.glwe_tensor_relinearize(&mut res, &tensor, &tsk, tsk_size, &mut scratch.borrow());
+            module.glwe_tensor_relinearize(&mut res, &tensor, &tsk, &mut scratch.borrow());
             black_box(&res);
         }
     } else {

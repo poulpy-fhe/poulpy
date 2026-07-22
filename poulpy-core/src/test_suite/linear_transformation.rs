@@ -57,7 +57,6 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     let k_in = 2 * in_base2k + 1;
     let dsize = 2;
     let dnum = k_in.div_ceil(key_base2k * dsize);
-    let k_ksk = k_in + key_base2k * dsize;
 
     let ct_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
         n: n.into(),
@@ -69,9 +68,9 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     let atk_infos = EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
         n: n.into(),
         base2k: key_base2k.into(),
-        k: k_ksk.into(),
-        rank: rank.into(),
         dnum: dnum.into(),
+        k_aux: (dsize * key_base2k + module.log_n()).into(),
+        rank: rank.into(),
         dsize: dsize.into(),
     })
     .unwrap();
@@ -130,13 +129,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     }
 
     let mut prepared_babies = LinearTransformationBabySteps::alloc(module, &baby_steps, &ct);
-    module.glwe_prepare_linear_transformation_baby_steps(
-        &mut prepared_babies,
-        &ct,
-        &atks,
-        atk_infos.size(),
-        &mut scratch.borrow(),
-    );
+    module.glwe_prepare_linear_transformation_baby_steps(&mut prepared_babies, &ct, &atks, &mut scratch.borrow());
     assert_eq!(prepared_babies.baby_steps().collect::<Vec<_>>(), baby_steps);
 
     let mut right_prepared = module.cnv_pvec_right_alloc(1, pt.size());
@@ -155,7 +148,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
             module.glwe_copy(&mut expected, &ct);
         } else {
             let key = atks.get(&module.galois_element(rot)).unwrap();
-            module.glwe_automorphism(&mut expected, &ct, key, atk_infos.size(), &mut scratch.borrow());
+            module.glwe_automorphism(&mut expected, &ct, key, &mut scratch.borrow());
         }
 
         let mut expected_prepared = module.cnv_pvec_left_alloc(rank + 1, expected.size());

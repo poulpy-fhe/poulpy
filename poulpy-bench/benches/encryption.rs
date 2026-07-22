@@ -23,15 +23,14 @@ fn bench_ggsw_encrypt_sk(c: &mut Criterion) {
     let p = &poulpy_bench::params::BenchParams::get().core;
     let n = p.n;
     let base2k = p.base2k;
-    let k = p.k;
+    let (dnum, k_aux) = poulpy_bench::params::key_dnum_k_aux(p.k, base2k, p.dsize);
     let dsize = Dsize(p.dsize);
-    let dnum = Dnum(p.dnum());
     let infos = GGSWLayout {
         n: n.into(),
         base2k: base2k.into(),
-        k: k.into(),
+        k_aux: k_aux.into(),
         rank: p.rank.into(),
-        dnum,
+        dnum: Dnum(dnum),
         dsize,
     };
     poulpy_bench::for_each_backend!(
@@ -45,16 +44,15 @@ fn bench_glwe_automorphism_key_encrypt_sk(c: &mut Criterion) {
     let p = &poulpy_bench::params::BenchParams::get().core;
     let n = p.n;
     let base2k = p.base2k;
-    let k_atk = p.k;
+    let (dnum, k_aux) = poulpy_bench::params::key_dnum_k_aux(p.k, base2k, p.dsize);
     let dsize = Dsize(p.dsize);
-    let dnum = Dnum(p.dnum());
 
     let atk_infos = GLWEAutomorphismKeyLayout {
         n: n.into(),
         base2k: base2k.into(),
-        k: k_atk.into(),
+        k_aux: k_aux.into(),
         rank: p.rank.into(),
-        dnum,
+        dnum: Dnum(dnum),
         dsize,
     };
 

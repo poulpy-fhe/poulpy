@@ -259,7 +259,7 @@ where
     let switching_key = validate_encapsulation_key(input, context, keys)?;
 
     let mut structured = module.ckks_ciphertext_alloc(context.base2k(), input.k());
-    module.glwe_keyswitch(&mut structured, input, switching_key, switching_key.max_size(), scratch);
+    module.glwe_keyswitch(&mut structured, input, switching_key, scratch);
     structured.set_meta_checked(input.meta())?;
     Ok(structured)
 }

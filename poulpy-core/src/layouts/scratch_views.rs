@@ -71,6 +71,10 @@ macro_rules! view_wrapper {
                 $crate::layouts::LWEInfos::max_size(&self.inner)
             }
 
+            fn size(&self) -> usize {
+                $crate::layouts::LWEInfos::size(&self.inner)
+            }
+
             fn k(&self) -> $crate::layouts::TorusPrecision {
                 $crate::layouts::LWEInfos::k(&self.inner)
             }
@@ -187,6 +191,10 @@ impl<'a, BE: Backend + 'a> GetDistribution for GLWESecretViewMut<'a, BE> {
 }
 
 impl<'a, BE: Backend + 'a> GGLWEInfos for GGLWEViewMut<'a, BE> {
+    fn k_aux(&self) -> crate::layouts::TorusPrecision {
+        self.inner.k_aux()
+    }
+
     fn dnum(&self) -> crate::layouts::Dnum {
         self.inner.dnum()
     }
@@ -205,6 +213,10 @@ impl<'a, BE: Backend + 'a> GGLWEInfos for GGLWEViewMut<'a, BE> {
 }
 
 impl<'a, BE: Backend + 'a> GGLWEInfos for GGLWEPreparedViewMut<'a, BE> {
+    fn k_aux(&self) -> crate::layouts::TorusPrecision {
+        self.inner.k_aux()
+    }
+
     fn dnum(&self) -> crate::layouts::Dnum {
         self.inner.dnum()
     }
@@ -229,6 +241,10 @@ impl<'a, BE: Backend + 'a> SetGGLWEInfos for GGLWEViewMut<'a, BE> {
 }
 
 impl<'a, BE: Backend + 'a> GGSWInfos for GGSWViewMut<'a, BE> {
+    fn k_aux(&self) -> crate::layouts::TorusPrecision {
+        self.inner.k_aux()
+    }
+
     fn dnum(&self) -> crate::layouts::Dnum {
         self.inner.dnum()
     }
@@ -239,6 +255,10 @@ impl<'a, BE: Backend + 'a> GGSWInfos for GGSWViewMut<'a, BE> {
 }
 
 impl<'a, BE: Backend + 'a> GGSWInfos for GGSWPreparedViewMut<'a, BE> {
+    fn k_aux(&self) -> crate::layouts::TorusPrecision {
+        self.inner.k_aux()
+    }
+
     fn dnum(&self) -> crate::layouts::Dnum {
         self.inner.dnum()
     }
@@ -397,7 +417,7 @@ impl<'a, BE: Backend + 'a> GGLWEToBackendRef<BE> for GGLWEViewMut<'a, BE> {
     fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE> {
         GGLWEBackendRef::from_inner(GGLWE {
             base2k: self.inner.base2k,
-            k: self.inner.k,
+            k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
             data: mat_znx_backend_ref_from_mut::<BE>(&self.inner.data),
         })
@@ -408,7 +428,7 @@ impl<'a, BE: Backend + 'a> GGLWEToBackendMut<BE> for GGLWEViewMut<'a, BE> {
     fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE> {
         GGLWEBackendMut::from_inner(GGLWE {
             base2k: self.inner.base2k,
-            k: self.inner.k,
+            k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
             data: mat_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
         })
@@ -419,7 +439,7 @@ impl<'a, BE: Backend + 'a> GGLWEPreparedToBackendRef<BE> for GGLWEPreparedViewMu
     fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, BE> {
         GGLWEPrepared {
             base2k: self.inner.base2k,
-            k: self.inner.k,
+            k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
             data: self.inner.data.reborrow_backend_ref(),
         }
@@ -430,7 +450,7 @@ impl<'a, BE: Backend + 'a> GGLWEPreparedToBackendMut<BE> for GGLWEPreparedViewMu
     fn to_backend_mut(&mut self) -> GGLWEPreparedBackendMut<'_, BE> {
         GGLWEPrepared {
             base2k: self.inner.base2k,
-            k: self.inner.k,
+            k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
             data: self.inner.data.reborrow_backend_mut(),
         }
@@ -441,7 +461,7 @@ impl<'a, BE: Backend + 'a> GGSWToBackendRef<BE> for GGSWViewMut<'a, BE> {
     fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE> {
         GGSWBackendRef::from_inner(GGSW {
             base2k: self.inner.base2k,
-            k: self.inner.k,
+            k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
             data: mat_znx_backend_ref_from_mut::<BE>(&self.inner.data),
         })
@@ -452,7 +472,7 @@ impl<'a, BE: Backend + 'a> GGSWToBackendMut<BE> for GGSWViewMut<'a, BE> {
     fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE> {
         GGSWBackendMut::from_inner(GGSW {
             base2k: self.inner.base2k,
-            k: self.inner.k,
+            k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
             data: mat_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
         })
@@ -463,7 +483,7 @@ impl<'a, BE: Backend + 'a> GGSWPreparedToBackendRef<BE> for GGSWPreparedViewMut<
     fn to_backend_ref(&self) -> GGSWPreparedBackendRef<'_, BE> {
         GGSWPrepared {
             base2k: self.inner.base2k,
-            k: self.inner.k,
+            k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
             data: self.inner.data.reborrow_backend_ref(),
         }
@@ -474,7 +494,7 @@ impl<'a, BE: Backend + 'a> GGSWPreparedToBackendMut<BE> for GGSWPreparedViewMut<
     fn to_backend_mut(&mut self) -> GGSWPreparedBackendMut<'_, BE> {
         GGSWPrepared {
             base2k: self.inner.base2k,
-            k: self.inner.k,
+            k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
             data: self.inner.data.reborrow_backend_mut(),
         }

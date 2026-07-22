@@ -9,7 +9,7 @@ use crate::{
     DEFAULT_SIGMA_XE, EncryptionLayout, GGLWENoise, GLWEAutomorphismKeyAutomorphism, GLWEAutomorphismKeyEncryptSk,
     layouts::{
         GGLWEInfos, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWESecret,
-        GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc,
+        GLWESecretPreparedFactory, ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
     var_noise_gglwe_product_v2,
@@ -44,7 +44,6 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::TestBacke
     for rank in 1_usize..3 {
         for dsize in 1..max_dsize + 1 {
             let k_ksk: usize = k_in + key_base2k * dsize;
-            let k_out: usize = k_ksk; // Better capture noise.
 
             let n: usize = module.n();
             let dsize_in: usize = 1;
@@ -55,8 +54,8 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::TestBacke
             let auto_key_in_infos = EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
                 n: n.into(),
                 base2k: in_base2k.into(),
-                k: k_in.into(),
                 dnum: dnum_in.into(),
+                k_aux: (dsize_in * in_base2k + module.log_n()).into(),
                 dsize: dsize_in.into(),
                 rank: rank.into(),
             })
@@ -65,8 +64,8 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::TestBacke
             let auto_key_out_infos = EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
                 n: n.into(),
                 base2k: out_base2k.into(),
-                k: k_out.into(),
                 dnum: dnum_in.into(),
+                k_aux: (dsize_in * out_base2k + module.log_n()).into(),
                 dsize: dsize_in.into(),
                 rank: rank.into(),
             })
@@ -75,8 +74,8 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::TestBacke
             let auto_key_apply_infos = EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
-                k: k_ksk.into(),
                 dnum: dnum_ksk.into(),
+                k_aux: (dsize * key_base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank: rank.into(),
             })
@@ -138,7 +137,6 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::TestBacke
                 &mut auto_key_out,
                 &auto_key_in,
                 &auto_key_apply_prepared,
-                auto_key_apply_prepared.size(),
                 &mut scratch.borrow(),
             );
 
@@ -238,8 +236,8 @@ pub fn test_gglwe_automorphism_key_automorphism_assign<BE: crate::test_suite::Te
             let auto_key_layout = EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
                 n: n.into(),
                 base2k: out_base2k.into(),
-                k: k_out.into(),
                 dnum: dnum_in.into(),
+                k_aux: (dsize_in * out_base2k + module.log_n()).into(),
                 dsize: dsize_in.into(),
                 rank: rank.into(),
             })
@@ -248,8 +246,8 @@ pub fn test_gglwe_automorphism_key_automorphism_assign<BE: crate::test_suite::Te
             let auto_key_apply_layout = EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
-                k: k_ksk.into(),
                 dnum: dnum_ksk.into(),
+                k_aux: (dsize * key_base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank: rank.into(),
             })
@@ -300,12 +298,7 @@ pub fn test_gglwe_automorphism_key_automorphism_assign<BE: crate::test_suite::Te
             module.glwe_automorphism_key_prepare(&mut auto_key_apply_prepared, &auto_key_apply, &mut scratch.borrow());
 
             // gglwe_{s1}(s0) (x) gglwe_{s2}(s1) = gglwe_{s2}(s0)
-            module.glwe_automorphism_key_automorphism_assign(
-                &mut auto_key,
-                &auto_key_apply_prepared,
-                auto_key_apply_prepared.size(),
-                &mut scratch.borrow(),
-            );
+            module.glwe_automorphism_key_automorphism_assign(&mut auto_key, &auto_key_apply_prepared, &mut scratch.borrow());
 
             let mut sk_auto: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(&auto_key);
             sk_auto.fill_zero(); // Necessary to avoid panic of unfilled sk

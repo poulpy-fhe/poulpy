@@ -45,8 +45,8 @@ where
                 let gglwe_infos = EncryptionLayout::new_from_default_sigma(GGLWELayout {
                     n: n.into(),
                     base2k: base2k.into(),
-                    k: k_ksk.into(),
                     dnum: dnum.into(),
+                    k_aux: (di * base2k + module.log_n()).into(),
                     dsize: di.into(),
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
@@ -117,8 +117,8 @@ where
         let gglwe_infos = EncryptionLayout::new_from_default_sigma(GGLWELayout {
             n: n.into(),
             base2k: base2k.into(),
-            k: k_ksk.into(),
             dnum: dnum.into(),
+            k_aux: (base2k + module.log_n()).into(),
             dsize: 1_u32.into(),
             rank_in: 1_u32.into(),
             rank_out: 1_u32.into(),
@@ -180,8 +180,8 @@ pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::Tes
                 let gglwe_infos = EncryptionLayout::new_from_default_sigma(GGLWELayout {
                     n: n.into(),
                     base2k: base2k.into(),
-                    k: k_ksk.into(),
                     dnum: dnum.into(),
+                    k_aux: (dsize * base2k + module.log_n()).into(),
                     dsize: dsize.into(),
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
@@ -257,8 +257,8 @@ pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::Tes
         let gglwe_infos = EncryptionLayout::new_from_default_sigma(GGLWELayout {
             n: n.into(),
             base2k: base2k.into(),
-            k: k_ksk.into(),
             dnum: dnum.into(),
+            k_aux: (base2k + module.log_n()).into(),
             dsize: 1_u32.into(),
             rank_in: 1_u32.into(),
             rank_out: 1_u32.into(),
@@ -320,8 +320,8 @@ where
                 let gglwe_infos = EncryptionLayout::new_from_default_sigma(GGLWELayout {
                     n: n.into(),
                     base2k: base2k.into(),
-                    k: k_ksk.into(),
                     dnum: dnum.into(),
+                    k_aux: (dsize * base2k + module.log_n()).into(),
                     dsize: dsize.into(),
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),

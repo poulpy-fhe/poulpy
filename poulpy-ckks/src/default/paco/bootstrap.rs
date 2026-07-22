@@ -138,10 +138,6 @@ where
     );
 
     validate_backend_storage_capacity::<BE, _>("PaCo output", output)?;
-    let output_capacity = output
-        .max_size()
-        .checked_mul(output.base2k().as_usize())
-        .context("PaCo output storage capacity overflows usize")?;
     let bsk = keys.bootstrapping_keys();
     let canonical = &bsk[0];
     ckks_ensure!(
@@ -150,11 +146,15 @@ where
         canonical.k(),
         plan.max_plaintext_width(),
     );
+    // The circuit runs entirely in-place on `output` at the bootstrapping-key
+    // width, so its allocated limb capacity must equal that width exactly: a
+    // narrower buffer cannot hold the result, and a wider one would drive the
+    // in-place keyswitches past what the gadget keys can process.
     ckks_ensure!(
-        output_capacity >= canonical.k().as_usize(),
-        "PaCo output capacity {} bits is smaller than bootstrapping-key width {}",
-        output_capacity,
-        canonical.k(),
+        output.max_size() == canonical.max_size(),
+        "PaCo output must be allocated to exactly the bootstrapping-key width of {} limbs, got {} limbs",
+        canonical.max_size(),
+        output.max_size(),
     );
     for (index, key) in bsk.iter().enumerate() {
         ckks_ensure!(
@@ -200,11 +200,10 @@ where
         );
     }
 
-    // Automorphism and multiplication keyswitches size their working result
-    // from the destination's allocated limb capacity, not only its current
-    // semantic width. A caller may supply a deliberately overallocated output,
-    // so validate the keys against the widest buffer the branch can expose.
-    let working_size = output.max_size().max(canonical.max_size());
+    // Automorphism and multiplication keyswitches size their working result from
+    // the destination's allocated limb capacity, which the check above pins to the
+    // bootstrapping-key width.
+    let working_size = canonical.max_size();
 
     let tensor_view = GLWETensorKeyPreparedToBackendRef::to_backend_ref(keys.tensor_key());
     validate_gadget_backend_view(

@@ -148,10 +148,8 @@ where
         K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
-        let mut has_nonzero = false;
         let cyclotomic_order = self.cyclotomic_order();
         for rotation in babies.baby_steps().filter(|&rotation| rotation != 0) {
-            has_nonzero = true;
             if keys
                 .get_automorphism_key(galois_element(rotation, cyclotomic_order))
                 .is_none()
@@ -163,17 +161,7 @@ where
                 .into());
             }
         }
-        // Canonical keyswitch output size: the operand plus `key.dsize()` guard
-        // limbs (the keyswitch adds ~`dsize·base2k` bits of noise; see
-        // `ckks_rotate_into_default`). Only read `dsize` when a baby rotation
-        // actually needs a key — `automorphism_key_infos()` panics on an empty key
-        // map, and with no rotation the value is unused anyway.
-        let key_size = if has_nonzero {
-            src.max_size() + keys.automorphism_key_infos().dsize().as_usize()
-        } else {
-            src.max_size()
-        };
-        self.glwe_prepare_linear_transformation_baby_steps(babies, src, keys, key_size, scratch);
+        self.glwe_prepare_linear_transformation_baby_steps(babies, src, keys, scratch);
         Ok(())
     }
 
@@ -218,8 +206,7 @@ where
             0,
             pt_max_k,
         )?;
-        let key_size = lt_key_size(lt, dst, keys);
-        self.glwe_eval_linear_transformation_into(cnv_offset, dst, babies, lt, keys, key_size, scratch);
+        self.glwe_eval_linear_transformation_into(cnv_offset, dst, babies, lt, keys, scratch);
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
         dst.compact();
@@ -363,28 +350,4 @@ where
         }
     }
     Ok(())
-}
-
-/// Resolves the `key_size` (giant-rotation keyswitch output size) for the core
-/// eval entry point.
-///
-/// Canonical sizing, consistent with the rest of the crate
-/// (`ckks_rotate_into_default` etc.): the result operand plus `key.dsize()` guard
-/// limbs, since a keyswitch adds ~`dsize·base2k` bits of noise. The core eval caps
-/// this at the key's own size, so over-asking is safe. Falls back to `dst.size()`
-/// when no giant rotation is needed (the eval skips ROT for `rot == 0`, so
-/// `key_size` is unused — and `automorphism_key_infos()` would panic on the
-/// possibly-empty key map of such an identity-only transform).
-fn lt_key_size<BE: Backend, P, Dst, H, K>(lt: &LinearTransformation<P>, dst: &Dst, keys: &H) -> usize
-where
-    Dst: LWEInfos,
-    K: CKKSAtkBounds<BE>,
-    H: GLWEAutomorphismKeyHelper<K, BE>,
-{
-    let has_nonzero_giant_rotation = lt.giant_steps.iter().any(|gs| gs.rot != 0 && !gs.diagonals.is_empty());
-    if has_nonzero_giant_rotation {
-        dst.max_size() + keys.automorphism_key_infos().dsize().as_usize()
-    } else {
-        dst.max_size()
-    }
 }

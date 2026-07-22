@@ -12,7 +12,7 @@ use crate::{
     EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWENoise, GLWEPacking, GLWERotate, GLWESub,
     layouts::{
         GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWEPlaintext,
-        GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc,
+        GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
 };
@@ -45,7 +45,6 @@ where
     let pt_k: usize = 2 * base2k + 1;
     let rank: usize = 3;
     let dsize: usize = 1;
-    let k_ksk: usize = k_ct + key_base2k * dsize;
 
     let dnum: usize = k_ct.div_ceil(key_base2k * dsize);
 
@@ -60,10 +59,10 @@ where
     let key_infos = EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
         n: n.into(),
         base2k: key_base2k.into(),
-        k: k_ksk.into(),
+        dnum: dnum.into(),
+        k_aux: (dsize * key_base2k + module.log_n()).into(),
         rank: rank.into(),
         dsize: dsize.into(),
-        dnum: dnum.into(),
     })
     .unwrap();
 
@@ -134,7 +133,7 @@ where
 
     let mut res: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_out_infos);
 
-    module.glwe_pack(&mut res, cts_map, 0, &auto_keys, key_infos.size(), &mut scratch.borrow());
+    module.glwe_pack(&mut res, cts_map, 0, &auto_keys, &mut scratch.borrow());
 
     let mut pt_want: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
     let mut data: Vec<i64> = vec![0i64; n];

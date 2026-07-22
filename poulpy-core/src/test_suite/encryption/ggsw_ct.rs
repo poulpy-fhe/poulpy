@@ -33,8 +33,8 @@ where
             let ggsw_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
                 n: n.into(),
                 base2k: base2k.into(),
-                k: k.into(),
                 dnum: dnum.into(),
+                k_aux: (di * base2k + module.log_n()).into(),
                 dsize: di.into(),
                 rank: rank.into(),
             })
@@ -120,8 +120,8 @@ where
             let ggsw_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
                 n: n.into(),
                 base2k: base2k.into(),
-                k: k.into(),
                 dnum: dnum.into(),
+                k_aux: (di * base2k + module.log_n()).into(),
                 dsize: di.into(),
                 rank: rank.into(),
             })

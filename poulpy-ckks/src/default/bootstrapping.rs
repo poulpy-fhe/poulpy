@@ -224,10 +224,10 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
                             ct_in.meta(),
                         );
                         self.ckks_copy(&mut ct0, ct_in, &mut scratch_inner)?;
-                        self.glwe_keyswitch_assign(&mut ct0, dense_to_sparse, dense_to_sparse.max_size(), &mut scratch_inner);
+                        self.glwe_keyswitch_assign(&mut ct0, dense_to_sparse, &mut scratch_inner);
                         self.ckks_mod_up_into_default(&mut ct, &ct0, &mut scratch_inner)
                     })?;
-                    self.glwe_keyswitch_assign(&mut ct, sparse_to_dense, sparse_to_dense.max_size(), &mut scratch_local);
+                    self.glwe_keyswitch_assign(&mut ct, sparse_to_dense, &mut scratch_local);
                 }
                 None => {
                     self.ckks_mod_up_into_default(&mut ct, ct_in, &mut scratch_local)?;

@@ -479,14 +479,8 @@ pub trait GLWETensoringDefault<BE: Backend> {
         A: GLWEInfos,
         B: GGLWEInfos;
 
-    fn glwe_tensor_relinearize_default<R, A, B>(
-        &self,
-        res: &mut R,
-        a: &A,
-        tsk: &B,
-        tsk_size: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_tensor_relinearize_default<R, A, B>(&self, res: &mut R, a: &A, tsk: &B, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
@@ -651,14 +645,8 @@ where
         lvl_0 + lvl_1
     }
 
-    fn glwe_tensor_relinearize_default<R, A, B>(
-        &self,
-        res: &mut R,
-        a: &A,
-        tsk: &B,
-        tsk_size: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_tensor_relinearize_default<R, A, B>(&self, res: &mut R, a: &A, tsk: &B, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
@@ -671,7 +659,7 @@ where
             self.glwe_tensor_relinearize_tmp_bytes_default(res, a, tsk)
         );
 
-        let tsk_size = tsk.size().min(tsk_size);
+        let tsk_size = tsk.work_size(a.k());
 
         let a_base2k: usize = a.base2k().into();
         let key_base2k: usize = tsk.base2k().into();

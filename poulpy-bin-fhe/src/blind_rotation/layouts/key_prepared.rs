@@ -133,6 +133,10 @@ impl<D: Data, BRT: BlindRotationAlgo, B: Backend> GLWEInfos for BlindRotationKey
     }
 }
 impl<D: Data, BRT: BlindRotationAlgo, B: Backend> GGSWInfos for BlindRotationKeyPrepared<D, BRT, B> {
+    fn k_aux(&self) -> poulpy_core::layouts::TorusPrecision {
+        self.data[0].k_aux()
+    }
+
     fn dsize(&self) -> poulpy_core::layouts::Dsize {
         Dsize(1)
     }

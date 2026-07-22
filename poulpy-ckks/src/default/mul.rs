@@ -459,7 +459,7 @@ where
     let scratch_local = scratch.borrow();
     let (mut tmp, mut scratch_local) = scratch_local.take_glwe_tensor_scratch(&tensor_layout);
     apply(&mut tmp, &*dst, &mut scratch_local);
-    module.glwe_tensor_relinearize(dst, &tmp, tsk, tmp.max_size() + tsk.dsize().as_usize(), &mut scratch_local);
+    module.glwe_tensor_relinearize(dst, &tmp, tsk, &mut scratch_local);
 
     if matches!(order, StampOrder::AfterApply) {
         do_stamp(dst);

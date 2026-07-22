@@ -42,16 +42,23 @@ impl<D: Data, T: UnsignedInteger> FheUintPreparedDebug<D, T> {
         M: ModuleN + ModuleCoreAlloc<OwnedBuf = D>,
         A: GGSWInfos,
     {
-        Self::alloc(module, infos.base2k(), infos.k(), infos.dnum(), infos.dsize(), infos.rank())
+        Self::alloc(
+            module,
+            infos.base2k(),
+            infos.dnum(),
+            infos.dsize(),
+            infos.k_aux(),
+            infos.rank(),
+        )
     }
 
-    pub fn alloc<M>(module: &M, base2k: Base2K, k: TorusPrecision, dnum: Dnum, dsize: Dsize, rank: Rank) -> Self
+    pub fn alloc<M>(module: &M, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> Self
     where
         M: ModuleN + ModuleCoreAlloc<OwnedBuf = D>,
     {
         Self {
             bits: (0..T::BITS)
-                .map(|_| module.ggsw_alloc(base2k, k, rank, dnum, dsize))
+                .map(|_| module.ggsw_alloc(base2k, dnum, dsize, k_aux, rank))
                 .collect(),
             _phantom: PhantomData,
         }
@@ -83,6 +90,10 @@ impl<D: HostDataRef, T: UnsignedInteger> GLWEInfos for FheUintPreparedDebug<D, T
 }
 
 impl<D: HostDataRef, T: UnsignedInteger> GGSWInfos for FheUintPreparedDebug<D, T> {
+    fn k_aux(&self) -> TorusPrecision {
+        self.bits[0].k_aux()
+    }
+
     fn dsize(&self) -> poulpy_core::layouts::Dsize {
         self.bits[0].dsize()
     }

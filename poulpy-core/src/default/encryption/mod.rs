@@ -88,6 +88,9 @@ impl<L: LWEInfos> EncryptionLayout<L> {
     }
 
     pub fn new_from_default_sigma(layout: L) -> Result<Self> {
+        // Place the error at the object's full precision `k` (the physical
+        // bottom limb). For key layouts `k()` already returns the total
+        // `dnum*dsize*base2k + k_aux`, so the guard region is properly encrypted.
         let noise = NoiseInfos::new(layout.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE)?;
         Self::new(layout, noise)
     }
@@ -118,6 +121,10 @@ impl<L: LWEInfos> LWEInfos for EncryptionLayout<L> {
         self.layout.max_size()
     }
 
+    fn size(&self) -> usize {
+        self.layout.size()
+    }
+
     fn k(&self) -> TorusPrecision {
         self.layout.k()
     }
@@ -130,6 +137,10 @@ impl<L: GLWEInfos> GLWEInfos for EncryptionLayout<L> {
 }
 
 impl<L: GGLWEInfos> GGLWEInfos for EncryptionLayout<L> {
+    fn k_aux(&self) -> crate::layouts::TorusPrecision {
+        self.layout.k_aux()
+    }
+
     fn dnum(&self) -> crate::layouts::Dnum {
         self.layout.dnum()
     }
@@ -148,6 +159,10 @@ impl<L: GGLWEInfos> GGLWEInfos for EncryptionLayout<L> {
 }
 
 impl<L: GGSWInfos> GGSWInfos for EncryptionLayout<L> {
+    fn k_aux(&self) -> crate::layouts::TorusPrecision {
+        self.layout.k_aux()
+    }
+
     fn dnum(&self) -> crate::layouts::Dnum {
         self.layout.dnum()
     }

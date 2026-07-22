@@ -76,7 +76,6 @@ pub trait GLWELinearTransformations<BE: Backend> {
         cache: &mut LinearTransformationBabySteps<BE>,
         a: &A,
         keys: &H,
-        key_size: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         A: GLWEToBackendRef<BE> + GLWEInfos,
@@ -104,7 +103,6 @@ pub trait GLWELinearTransformations<BE: Backend> {
         lhs: &LinearTransformationBabySteps<BE>,
         rhs: &LinearTransformation<P>,
         keys: &H,
-        key_size: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,

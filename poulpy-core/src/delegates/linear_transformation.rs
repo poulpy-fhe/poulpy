@@ -67,14 +67,13 @@ where
         cache: &mut LinearTransformationBabySteps<BE>,
         a: &A,
         keys: &H,
-        key_size: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
-        BE::glwe_prepare_linear_transformation_baby_steps(self, cache, a, keys, key_size, scratch)
+        BE::glwe_prepare_linear_transformation_baby_steps(self, cache, a, keys, scratch)
     }
 
     fn glwe_eval_linear_transformation_into<R, P, H, K>(
@@ -84,7 +83,6 @@ where
         lhs: &LinearTransformationBabySteps<BE>,
         rhs: &LinearTransformation<P>,
         keys: &H,
-        key_size: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -92,6 +90,6 @@ where
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
-        BE::glwe_eval_linear_transformation_into(self, cnv_offset, res, lhs, rhs, keys, key_size, scratch)
+        BE::glwe_eval_linear_transformation_into(self, cnv_offset, res, lhs, rhs, keys, scratch)
     }
 }

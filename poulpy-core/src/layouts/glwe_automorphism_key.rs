@@ -30,9 +30,9 @@ pub trait GLWEAutomorphismKeyHelper<K, BE: Backend> {
 pub struct GLWEAutomorphismKeyLayout {
     pub n: Degree,
     pub base2k: Base2K,
-    pub k: TorusPrecision,
-    pub rank: Rank,
     pub dnum: Dnum,
+    pub k_aux: TorusPrecision,
+    pub rank: Rank,
     pub dsize: Dsize,
 }
 /// GLWE automorphism (Galois) key.
@@ -104,6 +104,10 @@ impl<D: Data> GLWEInfos for GLWEAutomorphismKey<D> {
 }
 
 impl<D: Data> GGLWEInfos for GLWEAutomorphismKey<D> {
+    fn k_aux(&self) -> TorusPrecision {
+        self.key.k_aux()
+    }
+
     fn rank_in(&self) -> Rank {
         self.key.rank_in()
     }
@@ -131,11 +135,11 @@ impl LWEInfos for GLWEAutomorphismKeyLayout {
     }
 
     fn max_size(&self) -> usize {
-        self.k.div_ceil(self.base2k) as usize
+        crate::layouts::key_size(self.base2k, self.dnum, self.dsize, self.k_aux)
     }
 
     fn k(&self) -> TorusPrecision {
-        self.k
+        crate::layouts::key_k(self.base2k, self.dnum, self.dsize, self.k_aux)
     }
 }
 
@@ -146,6 +150,14 @@ impl GLWEInfos for GLWEAutomorphismKeyLayout {
 }
 
 impl GGLWEInfos for GLWEAutomorphismKeyLayout {
+    fn k_aux(&self) -> TorusPrecision {
+        self.k_aux
+    }
+
+    fn dnum(&self) -> Dnum {
+        self.dnum
+    }
+
     fn rank_in(&self) -> Rank {
         self.rank
     }
@@ -156,10 +168,6 @@ impl GGLWEInfos for GLWEAutomorphismKeyLayout {
 
     fn rank_out(&self) -> Rank {
         self.rank
-    }
-
-    fn dnum(&self) -> Dnum {
-        self.dnum
     }
 }
 
@@ -194,17 +202,17 @@ impl GLWEAutomorphismKey<Vec<u8>> {
         Self::alloc(
             infos.n(),
             infos.base2k(),
-            infos.k(),
-            infos.rank(),
             infos.dnum(),
             infos.dsize(),
+            infos.k_aux(),
+            infos.rank(),
         )
     }
 
     /// Allocates a new [`GLWEAutomorphismKey`] with the given parameters.
-    pub(crate) fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank, dnum: Dnum, dsize: Dsize) -> Self {
+    pub(crate) fn alloc(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> Self {
         GLWEAutomorphismKey {
-            key: GGLWE::alloc(n, base2k, k, rank, rank, dnum, dsize),
+            key: GGLWE::alloc(n, base2k, dnum, dsize, k_aux, rank, rank),
             p: 0,
         }
     }
@@ -222,16 +230,16 @@ impl GLWEAutomorphismKey<Vec<u8>> {
         Self::bytes_of(
             infos.n(),
             infos.base2k(),
-            infos.k(),
-            infos.rank(),
             infos.dnum(),
             infos.dsize(),
+            infos.k_aux(),
+            infos.rank(),
         )
     }
 
     /// Returns the byte count required for a [`GLWEAutomorphismKey`] with the given parameters.
-    pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank, dnum: Dnum, dsize: Dsize) -> usize {
-        GGLWE::bytes_of(n, base2k, k, rank, rank, dnum, dsize)
+    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
+        GGLWE::bytes_of(n, base2k, dnum, dsize, k_aux, rank, rank)
     }
 }
 

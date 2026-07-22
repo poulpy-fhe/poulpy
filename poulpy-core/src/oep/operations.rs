@@ -128,14 +128,8 @@ pub unsafe trait GLWETensoringImpl<BE: Backend>: Backend {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos;
 
-    fn glwe_tensor_relinearize<R, A, T>(
-        module: &Module<BE>,
-        res: &mut R,
-        a: &A,
-        tsk: &T,
-        tsk_size: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_tensor_relinearize<R, A, T>(module: &Module<BE>, res: &mut R, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
@@ -339,28 +333,15 @@ pub unsafe trait GLWETraceImpl<BE: Backend>: Backend {
         A: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_trace<R, A, K, H>(
-        module: &Module<BE>,
-        res: &mut R,
-        skip: usize,
-        a: &A,
-        keys: &H,
-        key_size: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_trace<R, A, K, H>(module: &Module<BE>, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
-    fn glwe_trace_assign<R, K, H>(
-        module: &Module<BE>,
-        res: &mut R,
-        skip: usize,
-        keys: &H,
-        key_size: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_trace_assign<R, K, H>(module: &Module<BE>, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
@@ -385,7 +366,6 @@ pub unsafe trait GLWEPackImpl<BE: Backend>: Backend {
         a: HashMap<usize, &mut A>,
         log_gap_out: usize,
         keys: &H,
-        key_size: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -527,19 +507,13 @@ where
         module.glwe_tensor_square_apply_default(cnv_offset, res, a, scratch)
     }
 
-    fn glwe_tensor_relinearize<R, A, T>(
-        module: &Module<BE>,
-        res: &mut R,
-        a: &A,
-        tsk: &T,
-        tsk_size: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_tensor_relinearize<R, A, T>(module: &Module<BE>, res: &mut R, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
     {
-        module.glwe_tensor_relinearize_default(res, a, tsk, tsk_size, scratch)
+        module.glwe_tensor_relinearize_default(res, a, tsk, scratch)
     }
 
     fn glwe_tensor_relinearize_tmp_bytes<R, A, B>(module: &Module<BE>, res: &R, a: &A, tsk: &B) -> usize
@@ -817,38 +791,25 @@ where
         module.glwe_trace_tmp_bytes_default(res_infos, a_infos, key_infos)
     }
 
-    fn glwe_trace<R, A, K, H>(
-        module: &Module<BE>,
-        res: &mut R,
-        skip: usize,
-        a: &A,
-        keys: &H,
-        key_size: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_trace<R, A, K, H>(module: &Module<BE>, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
         let mut scratch_local = scratch.borrow();
-        module.glwe_trace_default(res, skip, a, keys, key_size, &mut scratch_local)
+        module.glwe_trace_default(res, skip, a, keys, &mut scratch_local)
     }
 
-    fn glwe_trace_assign<R, K, H>(
-        module: &Module<BE>,
-        res: &mut R,
-        skip: usize,
-        keys: &H,
-        key_size: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_trace_assign<R, K, H>(module: &Module<BE>, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
         let mut scratch_local = scratch.borrow();
-        module.glwe_trace_assign_default(res, skip, keys, key_size, &mut scratch_local)
+        module.glwe_trace_assign_default(res, skip, keys, &mut scratch_local)
     }
 }
 
@@ -876,7 +837,6 @@ where
         a: HashMap<usize, &mut A>,
         log_gap_out: usize,
         keys: &H,
-        key_size: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -885,7 +845,7 @@ where
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
         let mut scratch_local = scratch.borrow();
-        module.glwe_pack_default(res, a, log_gap_out, keys, key_size, &mut scratch_local)
+        module.glwe_pack_default(res, a, log_gap_out, keys, &mut scratch_local)
     }
 }
 
@@ -1033,7 +993,6 @@ macro_rules! impl_glwe_trace_defaults_full {
                 skip: usize,
                 a: &A,
                 keys: &H,
-                key_size: usize,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
@@ -1044,7 +1003,7 @@ macro_rules! impl_glwe_trace_defaults_full {
                 H: $crate::layouts::GLWEAutomorphismKeyHelper<K, $be>,
             {
                 $crate::default::glwe_trace::glwe_trace_defaults_impl::glwe_trace_default::<$be, _, _, _, _, _>(
-                    self, res, skip, a, keys, key_size, scratch,
+                    self, res, skip, a, keys, scratch,
                 )
             }
 
@@ -1053,7 +1012,6 @@ macro_rules! impl_glwe_trace_defaults_full {
                 res: &mut R,
                 skip: usize,
                 keys: &H,
-                key_size: usize,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
@@ -1063,7 +1021,7 @@ macro_rules! impl_glwe_trace_defaults_full {
                 H: $crate::layouts::GLWEAutomorphismKeyHelper<K, $be>,
             {
                 $crate::default::glwe_trace::glwe_trace_defaults_impl::glwe_trace_assign_default::<$be, _, _, _, _>(
-                    self, res, skip, keys, key_size, scratch,
+                    self, res, skip, keys, scratch,
                 )
             }
         }
@@ -1096,7 +1054,6 @@ macro_rules! impl_glwe_packing_defaults_full {
                 a: ::std::collections::HashMap<usize, &mut A>,
                 log_gap_out: usize,
                 keys: &H,
-                key_size: usize,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
@@ -1112,7 +1069,6 @@ macro_rules! impl_glwe_packing_defaults_full {
                     a,
                     log_gap_out,
                     keys,
-                    key_size,
                     scratch,
                 )
             }

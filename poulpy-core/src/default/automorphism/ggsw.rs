@@ -40,9 +40,7 @@ pub fn ggsw_automorphism_default<BE, M, R, A, K, T>(
     res: &mut R,
     a: &A,
     key: &K,
-    key_size: usize,
     tsk: &T,
-    tsk_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
@@ -59,19 +57,17 @@ pub fn ggsw_automorphism_default<BE, M, R, A, K, T>(
         for row in 0..rows {
             let mut res_at = res_backend.at_view_mut(row, 0);
             let a_at = a_backend.at_view(row, 0);
-            module.glwe_automorphism_default(&mut res_at, &a_at, key, key_size, scratch);
+            module.glwe_automorphism_default(&mut res_at, &a_at, key, scratch);
         }
     }
-    module.ggsw_expand_row_default(&mut res.to_backend_mut(), tsk, tsk_size, scratch);
+    module.ggsw_expand_row_default(&mut res.to_backend_mut(), tsk, scratch);
 }
 
 pub fn ggsw_automorphism_assign_default<BE, M, R, K, T>(
     module: &M,
     res: &mut R,
     key: &K,
-    key_size: usize,
     tsk: &T,
-    tsk_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
@@ -85,8 +81,8 @@ pub fn ggsw_automorphism_assign_default<BE, M, R, K, T>(
         let mut res_backend = res.to_backend_mut();
         for row in 0..rows {
             let mut res_at = res_backend.at_view_mut(row, 0);
-            module.glwe_automorphism_assign_default(&mut res_at, key, key_size, &mut scratch.borrow());
+            module.glwe_automorphism_assign_default(&mut res_at, key, &mut scratch.borrow());
         }
     }
-    module.ggsw_expand_row_default(&mut res.to_backend_mut(), tsk, tsk_size, scratch);
+    module.ggsw_expand_row_default(&mut res.to_backend_mut(), tsk, scratch);
 }

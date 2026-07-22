@@ -66,8 +66,8 @@ where
                 let ksk_infos = EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
                     n: n.into(),
                     base2k: key_base2k.into(),
-                    k: k_ksk.into(),
                     dnum: dnum.into(),
+                    k_aux: (dsize * key_base2k + module.log_n()).into(),
                     dsize: dsize.into(),
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
@@ -134,13 +134,7 @@ where
                     module.glwe_switching_key_prepared_alloc_from_infos(&ksk);
                 module.glwe_switching_key_prepare(&mut ksk_prepared, &ksk, &mut scratch.borrow());
 
-                module.glwe_keyswitch(
-                    &mut glwe_out,
-                    &glwe_in,
-                    &ksk_prepared,
-                    ksk_prepared.size(),
-                    &mut scratch.borrow(),
-                );
+                module.glwe_keyswitch(&mut glwe_out, &glwe_in, &ksk_prepared, &mut scratch.borrow());
 
                 let noise_max: f64 = var_noise_gglwe_product_v2(
                     module.n() as f64,
@@ -209,8 +203,8 @@ where
             let ksk_infos = EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
-                k: k_ksk.into(),
                 dnum: dnum.into(),
+                k_aux: (dsize * key_base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank_in: rank.into(),
                 rank_out: rank.into(),
@@ -274,7 +268,7 @@ where
                 module.glwe_switching_key_prepared_alloc_from_infos(&ksk);
             module.glwe_switching_key_prepare(&mut ksk_prepared, &ksk, &mut scratch.borrow());
 
-            module.glwe_keyswitch_assign(&mut glwe_out, &ksk_prepared, ksk_prepared.size(), &mut scratch.borrow());
+            module.glwe_keyswitch_assign(&mut glwe_out, &ksk_prepared, &mut scratch.borrow());
 
             let noise_max: f64 = var_noise_gglwe_product_v2(
                 module.n() as f64,

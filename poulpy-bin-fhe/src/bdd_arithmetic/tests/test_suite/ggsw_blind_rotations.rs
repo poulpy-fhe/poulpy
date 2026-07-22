@@ -52,7 +52,7 @@ where
     let ggsw_res_infos: GGSWLayout = GGSWLayout {
         n: module.n().into(),
         base2k,
-        k: k_ggsw_res,
+        k_aux: TorusPrecision(k_ggsw_res.0 - 2 * base2k.0),
         rank,
         dnum: Dnum(2),
         dsize: Dsize(1),
@@ -61,7 +61,7 @@ where
     let ggsw_k_infos: GGSWLayout = GGSWLayout {
         n: module.n().into(),
         base2k,
-        k: k_ggsw_apply,
+        k_aux: TorusPrecision(k_ggsw_apply.0 - 3 * base2k.0),
         rank,
         dnum: Dnum(3),
         dsize: Dsize(1),
@@ -101,7 +101,10 @@ where
     let mut bit_start: usize = 0;
 
     let max_noise = |col_i: usize| {
-        let mut noise: f64 = -(ggsw_res_infos.size() as f64 * base2k.as_usize() as f64) + DEFAULT_SIGMA_XE.log2() + 3.0;
+        // Noise floor sits at the semantic precision `k()` (gadget + guard), not at the
+        // physical limb capacity `size * base2k` — the two only coincide when `k()`
+        // happens to be limb-aligned.
+        let mut noise: f64 = -(ggsw_res_infos.k().as_usize() as f64) + DEFAULT_SIGMA_XE.log2() + 3.0;
         noise += 0.5 * ggsw_res_infos.log_n() as f64;
         if col_i != 0 {
             noise += 0.5 * ggsw_res_infos.log_n() as f64

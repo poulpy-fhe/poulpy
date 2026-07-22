@@ -139,9 +139,9 @@ fn scratch_arena_take_core_returns_disjoint_backend_regions() {
     let ggsw_infos = GGSWLayout {
         n: Degree(64),
         base2k: Base2K(8),
-        k: TorusPrecision(24),
-        rank: Rank(1),
         dnum: Dnum(2),
+        k_aux: TorusPrecision(24 - 2 * 8),
+        rank: Rank(1),
         dsize: Dsize(1),
     };
 

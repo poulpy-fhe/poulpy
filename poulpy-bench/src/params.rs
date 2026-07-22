@@ -121,10 +121,14 @@ impl Default for CoreParams {
     }
 }
 
-impl CoreParams {
-    pub fn dnum(&self) -> u32 {
-        self.k.div_ceil(self.dsize * self.base2k)
-    }
+pub fn key_dnum_k_aux(k: u32, base2k: u32, dsize: u32) -> (u32, u32) {
+    let digit: u32 = dsize * base2k;
+    assert!(
+        k >= 2 * digit,
+        "k ({k}) must hold at least one gadget digit plus one digit of guard ({digit} bits each)"
+    );
+    let dnum: u32 = k / digit - 1;
+    (dnum, k - dnum * digit)
 }
 
 /// Top-level container for all configurable benchmark parameters.

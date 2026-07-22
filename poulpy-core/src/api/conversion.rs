@@ -20,7 +20,7 @@ pub trait GLWEFromLWE<BE: Backend> {
         A: LWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_from_lwe<R, A, K>(&self, res: &mut R, lwe: &A, ksk: &K, key_size: usize, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_from_lwe<R, A, K>(&self, res: &mut R, lwe: &A, ksk: &K, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: LWEToBackendRef<BE> + LWEInfos,
@@ -34,15 +34,8 @@ pub trait LWEFromGLWE<BE: Backend> {
         A: GLWEInfos,
         K: GGLWEInfos;
 
-    fn lwe_from_glwe<R, A, K>(
-        &self,
-        res: &mut R,
-        a: &A,
-        a_idx: usize,
-        key: &K,
-        key_size: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn lwe_from_glwe<R, A, K>(&self, res: &mut R, a: &A, a_idx: usize, key: &K, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: LWEToBackendMut<BE> + LWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
@@ -54,7 +47,7 @@ pub trait GGSWFromGGLWE<BE: Backend> {
         R: GGSWInfos,
         A: GGLWEInfos;
 
-    fn ggsw_from_gglwe<R, A, T>(&self, res: &mut R, a: &A, tsk: &T, tsk_size: usize, scratch: &mut ScratchArena<'_, BE>)
+    fn ggsw_from_gglwe<R, A, T>(&self, res: &mut R, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GGSWToBackendMut<BE> + GGSWInfos,
         A: GGLWEToBackendRef<BE> + GGLWEInfos,
@@ -91,7 +84,7 @@ pub trait GGSWExpandRows<BE: Backend> {
         R: GGSWInfos,
         A: GGLWEInfos;
 
-    fn ggsw_expand_row<R, T>(&self, res: &mut R, tsk: &T, tsk_size: usize, scratch: &mut ScratchArena<'_, BE>)
+    fn ggsw_expand_row<R, T>(&self, res: &mut R, tsk: &T, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GGSWToBackendMut<BE> + GGSWInfos,
         T: GGLWEToGGSWKeyPreparedToBackendRef<BE> + GGLWEInfos;

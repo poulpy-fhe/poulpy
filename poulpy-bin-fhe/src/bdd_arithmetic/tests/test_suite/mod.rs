@@ -146,6 +146,9 @@ pub(crate) const TEST_TSK_BASE2K: u32 = 10;
 pub(crate) const TEST_LWE_BASE2K: u32 = 4;
 pub(crate) const TEST_K_GLWE: u32 = 26;
 pub(crate) const TEST_K_GGSW: u32 = 39;
+pub(crate) const TEST_K_CBT: u32 = 52;
+pub(crate) const TEST_K_KS_GLWE: u32 = 20;
+pub(crate) const TEST_K_KS_LWE: u32 = 16;
 pub(crate) const TEST_BLOCK_SIZE: u32 = 7;
 pub(crate) const TEST_RANK: u32 = 2;
 
@@ -159,7 +162,7 @@ pub(crate) static TEST_GLWE_INFOS: GLWELayout = GLWELayout {
 pub(crate) static TEST_GGSW_INFOS: GGSWLayout = GGSWLayout {
     n: Degree(TEST_N_GLWE),
     base2k: Base2K(TEST_FHEUINT_BASE2K),
-    k: TorusPrecision(TEST_K_GGSW),
+    k_aux: TorusPrecision(TEST_K_GGSW - 2 * TEST_FHEUINT_BASE2K),
     rank: Rank(TEST_RANK),
     dnum: Dnum(2),
     dsize: Dsize(1),
@@ -171,41 +174,41 @@ pub(crate) static TEST_BDD_KEY_LAYOUT: BDDKeyLayout = BDDKeyLayout {
             n_glwe: Degree(TEST_N_GLWE),
             n_lwe: Degree(TEST_N_LWE),
             base2k: Base2K(TEST_BRK_BASE2K),
-            k: TorusPrecision(52),
-            dnum: Dnum(4),
+            dnum: Dnum(3),
+            k_aux: TorusPrecision(TEST_K_CBT - 3 * TEST_BRK_BASE2K),
             rank: Rank(TEST_RANK),
         },
         atk_layout: GLWEAutomorphismKeyLayout {
             n: Degree(TEST_N_GLWE),
             base2k: Base2K(TEST_ATK_BASE2K),
-            k: TorusPrecision(52),
             rank: Rank(TEST_RANK),
-            dnum: Dnum(4),
+            dnum: Dnum(3),
+            k_aux: TorusPrecision(TEST_K_CBT - 3 * TEST_ATK_BASE2K),
             dsize: Dsize(1),
         },
         tsk_layout: GGLWEToGGSWKeyLayout {
             n: Degree(TEST_N_GLWE),
             base2k: Base2K(TEST_TSK_BASE2K),
-            k: TorusPrecision(52),
             rank: Rank(TEST_RANK),
             dnum: Dnum(4),
+            k_aux: TorusPrecision(TEST_K_CBT - 4 * TEST_TSK_BASE2K),
             dsize: Dsize(1),
         },
     },
     ks_glwe_layout: Some(GLWESwitchingKeyLayout {
         n: Degree(TEST_N_GLWE),
         base2k: Base2K(TEST_LWE_BASE2K),
-        k: TorusPrecision(20),
         rank_in: Rank(TEST_RANK),
         rank_out: Rank(1),
         dnum: Dnum(3),
+        k_aux: TorusPrecision(TEST_K_KS_GLWE - 3 * TEST_LWE_BASE2K),
         dsize: Dsize(1),
     }),
     ks_lwe_layout: GLWEToLWEKeyLayout {
         n: Degree(TEST_N_GLWE),
         base2k: Base2K(TEST_LWE_BASE2K),
-        k: TorusPrecision(16),
         rank_in: Rank(1),
         dnum: Dnum(3),
+        k_aux: TorusPrecision(TEST_K_KS_LWE - 3 * TEST_LWE_BASE2K),
     },
 };

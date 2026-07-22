@@ -137,14 +137,14 @@ where
     fn alloc_fhe_uint_prepared(
         &self,
         base2k: Base2K,
-        k: TorusPrecision,
         dnum: Dnum,
         dsize: Dsize,
+        k_aux: TorusPrecision,
         rank: Rank,
     ) -> FheUintPrepared<BE::OwnedBuf, T, BE> {
         FheUintPrepared {
             bits: (0..T::BITS)
-                .map(|_| self.ggsw_prepared_alloc(base2k, k, dnum, dsize, rank))
+                .map(|_| self.ggsw_prepared_alloc(base2k, dnum, dsize, k_aux, rank))
                 .collect(),
             _phantom: PhantomData,
         }
@@ -154,7 +154,7 @@ where
     where
         A: GGSWInfos,
     {
-        self.alloc_fhe_uint_prepared(infos.base2k(), infos.k(), infos.dnum(), infos.dsize(), infos.rank())
+        self.alloc_fhe_uint_prepared(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux(), infos.rank())
     }
 }
 
@@ -167,11 +167,11 @@ impl<T: UnsignedInteger, BE: Backend> FheUintPrepared<BE::OwnedBuf, T, BE> {
         module.alloc_fhe_uint_prepared_from_infos(infos)
     }
 
-    pub fn alloc<M>(module: &M, base2k: Base2K, k: TorusPrecision, dnum: Dnum, dsize: Dsize, rank: Rank) -> Self
+    pub fn alloc<M>(module: &M, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> Self
     where
         M: FheUintPreparedFactory<T, BE>,
     {
-        module.alloc_fhe_uint_prepared(base2k, k, dnum, dsize, rank)
+        module.alloc_fhe_uint_prepared(base2k, dnum, dsize, k_aux, rank)
     }
 }
 
@@ -305,6 +305,10 @@ impl<D: HostDataRef, T: UnsignedInteger, B: Backend> GLWEInfos for FheUintPrepar
 }
 
 impl<D: HostDataRef, T: UnsignedInteger, B: Backend> GGSWInfos for FheUintPrepared<D, T, B> {
+    fn k_aux(&self) -> TorusPrecision {
+        self.bits[0].k_aux()
+    }
+
     fn dsize(&self) -> poulpy_core::layouts::Dsize {
         self.bits[0].dsize()
     }

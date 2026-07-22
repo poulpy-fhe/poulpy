@@ -51,14 +51,8 @@ where
     lvl_0 + lvl_1 + lvl_2
 }
 
-pub fn lwe_keyswitch_default<BE, M, R, A, K>(
-    module: &M,
-    res: &mut R,
-    a: &A,
-    ksk: &K,
-    key_size: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
+pub fn lwe_keyswitch_default<BE, M, R, A, K>(module: &M, res: &mut R, a: &A, ksk: &K, scratch: &mut ScratchArena<'_, BE>)
+where
     BE: Backend,
     M: LWEKeyswitchDefault<BE> + ModuleN + GLWEKeyswitchDefault<BE> + VecZnxCopyRangeBackend<BE> + VecZnxZeroBackend<BE>,
     R: LWEToBackendMut<BE> + LWEInfos,
@@ -102,7 +96,7 @@ pub fn lwe_keyswitch_default<BE, M, R, A, K>(
 
     let glwe_in_ref = glwe_backend_ref_from_mut::<BE>(&glwe_in);
     let glwe_in_view = &glwe_in_ref;
-    module.glwe_keyswitch_default(&mut glwe_out, &glwe_in_view, ksk, key_size, &mut scratch_2);
+    module.glwe_keyswitch_default(&mut glwe_out, &glwe_in_view, ksk, &mut scratch_2);
 
     let mut res_backend = res.to_backend_mut();
     let glwe_out_ref = glwe_backend_ref_from_mut::<BE>(&glwe_out);

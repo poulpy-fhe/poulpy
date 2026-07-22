@@ -6,9 +6,8 @@ fn bench_glwe_automorphism(c: &mut Criterion) {
     let n = p.n;
     let base2k = p.base2k;
     let k_ct = p.k;
-    let k_atk = p.k;
+    let (dnum, k_aux) = poulpy_bench::params::key_dnum_k_aux(p.k, base2k, p.dsize);
     let dsize = Dsize(p.dsize);
-    let dnum = Dnum(p.dnum());
 
     let glwe_infos = GLWELayout {
         n: n.into(),
@@ -19,9 +18,9 @@ fn bench_glwe_automorphism(c: &mut Criterion) {
     let atk_infos = GLWEAutomorphismKeyLayout {
         n: n.into(),
         base2k: base2k.into(),
-        k: k_atk.into(),
+        k_aux: k_aux.into(),
         rank: p.rank.into(),
-        dnum,
+        dnum: Dnum(dnum),
         dsize,
     };
 

@@ -305,14 +305,21 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     assert!(error.to_string().contains("output base2k"), "unexpected error: {error:#}");
     assert_ciphertext_unchanged::<BE>(&before, &bad_output);
 
-    let oversized_k = keys.bootstrapping_keys()[0].k().as_usize() + params.base2k;
-    let mut oversized_output = module.ckks_ciphertext_alloc(params.base2k.into(), oversized_k.into());
-    let before = oversized_output.to_host_owned::<BE>();
+    // The output must be allocated to exactly the bootstrapping-key width; a buffer
+    // one limb wider is rejected up front (a wider working slot would drive the
+    // in-place keyswitches past the gadget keys' capacity).
+    let canonical_limbs = keys.bootstrapping_keys()[0].max_size();
+    let wrong_size_k = (canonical_limbs + 1) * params.base2k;
+    let mut wrong_size_output = module.ckks_ciphertext_alloc(params.base2k.into(), wrong_size_k.into());
+    let before = wrong_size_output.to_host_owned::<BE>();
     let error = module
-        .ckks_paco_bootstrap_direct_into::<_, _>(&mut oversized_output, &ct_in, &ctx, &keys, KAPPA, &mut scratch.borrow())
-        .expect_err("an output wider than the prepared gadget keys must be rejected");
-    assert!(error.to_string().contains("require at least"), "unexpected error: {error:#}");
-    assert_ciphertext_unchanged::<BE>(&before, &oversized_output);
+        .ckks_paco_bootstrap_direct_into::<_, _>(&mut wrong_size_output, &ct_in, &ctx, &keys, KAPPA, &mut scratch.borrow())
+        .expect_err("an output not exactly the bootstrapping-key width must be rejected");
+    assert!(
+        error.to_string().contains("exactly the bootstrapping-key width"),
+        "unexpected error: {error:#}"
+    );
+    assert_ciphertext_unchanged::<BE>(&before, &wrong_size_output);
 
     // Worker modules and scratch are preflighted before any branch starts.
     let mut worker_rejected = module.ckks_ciphertext_alloc_from_infos(&keys.bootstrapping_keys()[0]);

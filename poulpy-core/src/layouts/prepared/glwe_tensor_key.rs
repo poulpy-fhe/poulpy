@@ -25,6 +25,7 @@ impl<D: Data, B: Backend> LWEInfos for GLWETensorKeyPrepared<D, B> {
     fn max_size(&self) -> usize {
         self.0.max_size()
     }
+
     fn k(&self) -> TorusPrecision {
         self.0.k()
     }
@@ -37,6 +38,10 @@ impl<D: Data, B: Backend> GLWEInfos for GLWETensorKeyPrepared<D, B> {
 }
 
 impl<D: Data, B: Backend> GGLWEInfos for GLWETensorKeyPrepared<D, B> {
+    fn k_aux(&self) -> TorusPrecision {
+        self.0.k_aux()
+    }
+
     fn rank_in(&self) -> Rank {
         self.0.rank_in()
     }
@@ -61,32 +66,32 @@ where
     fn alloc_tensor_key_prepared(
         &self,
         base2k: Base2K,
-        k: TorusPrecision,
         dnum: Dnum,
         dsize: Dsize,
+        k_aux: TorusPrecision,
         rank: Rank,
     ) -> GLWETensorKeyPrepared<B::OwnedBuf, B> {
         let pairs: u32 = (((rank.as_u32() + 1) * rank.as_u32()) >> 1).max(1);
-        GLWETensorKeyPrepared(self.gglwe_prepared_alloc(base2k, k, Rank(pairs), rank, dnum, dsize))
+        GLWETensorKeyPrepared(self.gglwe_prepared_alloc(base2k, dnum, dsize, k_aux, Rank(pairs), rank))
     }
 
     fn alloc_tensor_key_prepared_from_infos<A>(&self, infos: &A) -> GLWETensorKeyPrepared<B::OwnedBuf, B>
     where
         A: GGLWEInfos,
     {
-        self.alloc_tensor_key_prepared(infos.base2k(), infos.k(), infos.dnum(), infos.dsize(), infos.rank_out())
+        self.alloc_tensor_key_prepared(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux(), infos.rank_out())
     }
 
-    fn bytes_of_tensor_key_prepared(&self, base2k: Base2K, k: TorusPrecision, rank: Rank, dnum: Dnum, dsize: Dsize) -> usize {
+    fn bytes_of_tensor_key_prepared(&self, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
         let pairs: u32 = (((rank.as_u32() + 1) * rank.as_u32()) >> 1).max(1);
-        self.gglwe_prepared_bytes_of(base2k, k, Rank(pairs), rank, dnum, dsize)
+        self.gglwe_prepared_bytes_of(base2k, dnum, dsize, k_aux, Rank(pairs), rank)
     }
 
     fn bytes_of_tensor_key_prepared_from_infos<A>(&self, infos: &A) -> usize
     where
         A: GGLWEInfos,
     {
-        self.bytes_of_tensor_key_prepared(infos.base2k(), infos.k(), infos.rank(), infos.dnum(), infos.dsize())
+        self.bytes_of_tensor_key_prepared(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux(), infos.rank())
     }
 
     fn prepare_tensor_key_tmp_bytes<A>(&self, infos: &A) -> usize

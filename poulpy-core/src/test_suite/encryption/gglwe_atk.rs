@@ -47,8 +47,8 @@ pub fn test_gglwe_automorphism_key_encrypt_sk<BE: crate::test_suite::TestBackend
             let atk_infos = EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
                 n: n.into(),
                 base2k: base2k.into(),
-                k: k_ksk.into(),
                 dnum: dnum.into(),
+                k_aux: (di * base2k + module.log_n()).into(),
                 dsize: di.into(),
                 rank: rank.into(),
             })
@@ -154,8 +154,8 @@ pub fn test_gglwe_automorphism_key_compressed_encrypt_sk<BE: crate::test_suite::
             let atk_infos = EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
                 n: n.into(),
                 base2k: base2k.into(),
-                k: k_ksk.into(),
                 dnum: dnum.into(),
+                k_aux: (dsize * base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank: rank.into(),
             })
