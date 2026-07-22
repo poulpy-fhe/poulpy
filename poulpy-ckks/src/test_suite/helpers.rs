@@ -17,16 +17,14 @@ use crate::{
     CKKSCompositionError, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos,
     api::{
         CKKSAddManyOps, CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSDotProductOps,
-        CKKSEvalModOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps, CKKSPlaintextVecOps, CKKSPow2Ops,
-        CKKSRotateOps, CKKSSubOps,
+        CKKSEncodingScalar, CKKSEvalModOps, CKKSImagOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps,
+        CKKSPlaintextVecOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
     },
-    encoding::reim::Encoder,
-    layouts::{
-        CKKSCiphertext, CKKSModuleAlloc, CKKSNormalizationState, CKKSPlaintextVecHostCodec, ciphertext::CKKSOffset,
-        plaintext::CKKSPlaintext,
-    },
-    leveled::api::{CKKSDecrypt, CKKSEncrypt},
+    api::{CKKSDecryptOps, CKKSEncryptOps},
+    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSNormalizationState, CKKSPlaintextVecHostCodec, plaintext::CKKSPlaintext},
+    test_suite::reference_encoder::ReferenceEncoder,
 };
+use num_traits::{Float, FromPrimitive, ToPrimitive};
 use poulpy_core::{
     EncryptionLayout, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEKeyswitch, GLWENormalize, GLWESub,
     GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ModuleTransfer, ScratchArenaTakeCore,
@@ -36,7 +34,6 @@ use poulpy_core::{
         GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision, prepared::GLWESecretPrepared,
     },
 };
-use rand_distr::num_traits::{Float, FloatConst, FromPrimitive, ToPrimitive};
 
 use poulpy_hal::{
     api::{ModuleNew, NegacyclicFFT, ScratchOwnedAlloc},
@@ -48,6 +45,36 @@ use poulpy_hal::{
 };
 
 use super::CKKSTestParams;
+
+// ─── deterministic per-call RNG seeds ────────────────────────────────────────
+
+thread_local! {
+    static SEED_COUNTER: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Returns a fresh, deterministic 32-byte RNG seed for test-suite randomness.
+///
+/// Every call yields a distinct seed (`tag` domain-separates streams, a
+/// per-thread counter separates calls). Reusing one fixed seed across all
+/// encryptions in a test made every ciphertext share its GLWE mask `a` and
+/// error `e` — so `sub` tests were noiseless trivial encryptions (mask and
+/// error cancel exactly) and `mul` tests tensored degenerate `a ⊗ a` inputs,
+/// passing the noise assertions vacuously.
+///
+/// Determinism: libtest runs each test on its own thread, so each test sees the
+/// counter start at 0 and the sequence of seeds depends only on the test's own
+/// call order.
+pub fn next_test_seed(tag: u8) -> [u8; 32] {
+    let n = SEED_COUNTER.with(|c| {
+        let v = c.get();
+        c.set(v.wrapping_add(1));
+        v
+    });
+    let mut seed = [0u8; 32];
+    seed[0] = tag;
+    seed[1..9].copy_from_slice(&n.to_le_bytes());
+    seed
+}
 
 // ─── constants ───────────────────────────────────────────────────────────────
 
@@ -76,7 +103,7 @@ pub fn ckks_spec(n: usize, base2k: usize, log_delta: usize, log_budget: usize) -
 /// Snapshots a value's current precision as a `CKKSLayout` spec (so it can be
 /// passed to the `assert_mul_*_output_meta` helpers after the source is mutated
 /// in place). Captures `log_delta`/`log_budget`/`log_sparsity` and the width `k`.
-pub fn ckks_snapshot<A: CKKSInfos + LWEInfos>(a: &A) -> CKKSLayout {
+pub fn ckks_snapshot<A: CKKSInfos>(a: &A) -> CKKSLayout {
     ckks_spec_sparse(
         a.n().as_usize(),
         a.base2k().as_usize(),
@@ -130,8 +157,8 @@ pub trait TestContextModule<BE: Backend>:
     + CKKSModuleAlloc<BE>
     + CKKSAllOpsTmpBytes<BE>
     + CKKSEvalModOps<BE>
-    + CKKSEncrypt<BE>
-    + CKKSDecrypt<BE>
+    + CKKSEncryptOps<BE>
+    + CKKSDecryptOps<BE>
     + CKKSAddOps<BE>
     + CKKSSubOps<BE>
     + CKKSMulOps<BE>
@@ -169,8 +196,8 @@ impl<BE: Backend, M> TestContextModule<BE> for M where
         + CKKSModuleAlloc<BE>
         + CKKSAllOpsTmpBytes<BE>
         + CKKSEvalModOps<BE>
-        + CKKSEncrypt<BE>
-        + CKKSDecrypt<BE>
+        + CKKSEncryptOps<BE>
+        + CKKSDecryptOps<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSMulOps<BE>
@@ -210,10 +237,9 @@ impl<M: ModuleNew<HostBytesBackend> + CKKSModuleAlloc<HostBytesBackend>> TestCon
 
 // ─── scalar + test-vector marker ─────────────────────────────────────────────
 
-pub trait TestScalar: Copy + Float + FloatConst + FromPrimitive + ToPrimitive + std::fmt::Debug + Send + Sync + 'static {}
+pub trait TestScalar: Copy + CKKSEncodingScalar + FromPrimitive + ToPrimitive {}
 
-impl<T> TestScalar for T where T: Copy + Float + FloatConst + FromPrimitive + ToPrimitive + std::fmt::Debug + Send + Sync + 'static
-{}
+impl<T> TestScalar for T where T: Copy + CKKSEncodingScalar + FromPrimitive + ToPrimitive {}
 
 #[derive(Clone, Copy)]
 pub enum TestVector {
@@ -387,7 +413,7 @@ pub fn quantized_const<F: TestScalar>(re: f64, im: f64, log_delta: usize) -> (F,
 /// Encodes then immediately decodes `(re, im)` to obtain quantized slots.
 pub fn quantized_slots<F: TestScalar, E: NegacyclicFFT<F>>(
     host_module: &Module<HostBytesBackend>,
-    encoder: &Encoder<E>,
+    encoder: &ReferenceEncoder<E>,
     base2k: Base2K,
     prec: CKKSLayout,
     re: &[F],
@@ -409,7 +435,7 @@ where
 /// Returns the quantized slots of a test vector scaled to `log_delta`.
 pub fn quantized_vector<F: TestScalar, E: NegacyclicFFT<F>>(
     host_module: &Module<HostBytesBackend>,
-    encoder: &Encoder<E>,
+    encoder: &ReferenceEncoder<E>,
     params: &CKKSTestParams,
     which: TestVector,
     log_delta: usize,
@@ -469,7 +495,7 @@ where
     Module<BE>: TestContextModule<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
-    let mut ct = module.ckks_ciphertext_alloc_from_infos(&params.glwe_layout());
+    let mut ct = module.ckks_ciphertext_alloc_from_glwe_infos(&params.glwe_layout());
     ct.set_meta(params.prec().meta);
     let tsk_infos = params.tsk_layout();
     let atk_infos = params.atk_layout();
@@ -486,7 +512,7 @@ where
 {
     let mut layout = params.glwe_layout();
     layout.layout.k = k.into();
-    module.ckks_ciphertext_alloc_from_infos(&layout)
+    module.ckks_ciphertext_alloc_from_glwe_infos(&layout)
 }
 
 // ─── plaintext upload / download ─────────────────────────────────────────────
@@ -510,7 +536,7 @@ pub fn download_pt<BE: Backend>(pt: &CKKSPlaintext<BE::OwnedBuf>) -> CKKSPlainte
 pub fn encode_and_upload_pt<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     module: &Module<BE>,
-    encoder: &Encoder<E>,
+    encoder: &ReferenceEncoder<E>,
     base2k: Base2K,
     prec: CKKSLayout,
     re: &[F],
@@ -675,8 +701,8 @@ where
     Module<BE>: TestContextModule<BE>,
 {
     let tsk_infos = params.tsk_layout();
-    let mut xa = Source::new([1u8; 32]);
-    let mut xe = Source::new([2u8; 32]);
+    let mut xa = Source::new(next_test_seed(1));
+    let mut xe = Source::new(next_test_seed(2));
     let mut tsk = module.glwe_tensor_key_alloc_from_infos(&tsk_infos);
     module.glwe_tensor_key_encrypt_sk(&mut tsk, sk_raw, &tsk_infos, &mut xe, &mut xa, scratch);
     let mut tsk_prepared = module.alloc_tensor_key_prepared_from_infos(&tsk_infos);
@@ -698,8 +724,8 @@ where
     Module<BE>: TestContextModule<BE>,
 {
     let atk_infos = params.atk_layout();
-    let mut xa = Source::new([1u8; 32]);
-    let mut xe = Source::new([2u8; 32]);
+    let mut xa = Source::new(next_test_seed(1));
+    let mut xe = Source::new(next_test_seed(2));
     let mut atk = module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
     module.glwe_automorphism_key_encrypt_sk(&mut atk, galois_element, sk_raw, &atk_infos, &mut xe, &mut xa, scratch);
     let mut atk_prepared = module.glwe_automorphism_key_prepared_alloc_from_infos(&atk_infos);
@@ -722,8 +748,8 @@ where
     Module<BE>: TestContextModule<BE>,
 {
     let infos = params.ksk_layout(k_in);
-    let mut xa = Source::new([1u8; 32]);
-    let mut xe = Source::new([2u8; 32]);
+    let mut xa = Source::new(next_test_seed(1));
+    let mut xe = Source::new(next_test_seed(2));
     let mut ksk = module.glwe_switching_key_alloc_from_infos(&infos);
     module.glwe_switching_key_encrypt_sk(&mut ksk, sk_in, sk_out, &infos, &mut xe, &mut xa, scratch);
     let mut ksk_prepared = module.glwe_switching_key_prepared_alloc_from_infos(&ksk);
@@ -756,7 +782,7 @@ where
     Module<HostBytesBackend>: TestContextHostModule,
 {
     // Sparse ephemeral secret skSparse (fixed Hamming weight).
-    let mut source = Source::new([7u8; 32]);
+    let mut source = Source::new(next_test_seed(7));
     let mut sk_sparse_host = host_module.glwe_secret_alloc_from_infos(&params.glwe_layout());
     sk_sparse_host.fill_ternary_hw(ephemeral_secret_weight, &mut source);
     let sk_sparse_raw = module.upload_glwe_secret(&sk_sparse_host);
@@ -775,7 +801,7 @@ pub fn ckks_encrypt<BE, F, E>(
     params: &CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
-    encoder: &Encoder<E>,
+    encoder: &ReferenceEncoder<E>,
     sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     k: usize,
     re: &[F],
@@ -825,10 +851,10 @@ where
     let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
 
     let mut ct = alloc_ct(params, module, k);
-    let mut xa = Source::new([5u8; 32]);
-    let mut xe = Source::new([6u8; 32]);
+    let mut xa = Source::new(next_test_seed(5));
+    let mut xe = Source::new(next_test_seed(6));
     module
-        .ckks_encrypt_sk(&mut ct, &pt, sk, &enc_infos, &mut xa, &mut xe, scratch)
+        .ckks_encrypt_sk(&mut ct, &pt, sk, &enc_infos, &mut xe, &mut xa, scratch)
         .unwrap();
     ct
 }
@@ -839,7 +865,7 @@ pub fn ckks_encrypt_with_prec<BE, F, E>(
     params: &CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
-    encoder: &Encoder<E>,
+    encoder: &ReferenceEncoder<E>,
     sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     k: usize,
     re: &[F],
@@ -864,17 +890,17 @@ where
     let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
 
     let mut ct = alloc_ct(params, module, k);
-    let mut xa = Source::new([3u8; 32]);
-    let mut xe = Source::new([4u8; 32]);
+    let mut xa = Source::new(next_test_seed(3));
+    let mut xe = Source::new(next_test_seed(4));
     module
-        .ckks_encrypt_sk(&mut ct, &pt, sk, &enc_infos, &mut xa, &mut xe, scratch)
+        .ckks_encrypt_sk(&mut ct, &pt, sk, &enc_infos, &mut xe, &mut xa, scratch)
         .unwrap();
     ct
 }
 
 /// Encrypts an already-encoded host plaintext at the given `k`. Use this when the
 /// slot encoding is not a plain dense `(re, im)` or coefficient vector — e.g. a
-/// sparse / repacked layout the caller built with [`Encoder::encode_reim_sparse`].
+/// sparse / repacked layout the caller built with [`ReferenceEncoder::encode_reim`].
 pub fn ckks_encrypt_pt<BE>(
     params: &CKKSTestParams,
     module: &Module<BE>,
@@ -894,10 +920,10 @@ where
     let enc_infos = EncryptionLayout::new_from_default_sigma(layout).unwrap();
 
     let mut ct = alloc_ct(params, module, k);
-    let mut xa = Source::new([3u8; 32]);
-    let mut xe = Source::new([4u8; 32]);
+    let mut xa = Source::new(next_test_seed(3));
+    let mut xe = Source::new(next_test_seed(4));
     module
-        .ckks_encrypt_sk(&mut ct, &pt, sk, &enc_infos, &mut xa, &mut xe, scratch)
+        .ckks_encrypt_sk(&mut ct, &pt, sk, &enc_infos, &mut xe, &mut xa, scratch)
         .unwrap();
     ct
 }
@@ -924,7 +950,7 @@ where
 pub fn ckks_decrypt_decode<BE, F, E>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    encoder: &Encoder<E>,
+    encoder: &ReferenceEncoder<E>,
     ct: &CKKSCiphertext<BE::OwnedBuf>,
     sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     scratch: &mut ScratchArena<'_, BE>,
@@ -963,7 +989,7 @@ where
 }
 
 /// Decodes a host-side plaintext to slot vectors.
-pub fn ckks_decode_pt<F, E>(encoder: &Encoder<E>, m: usize, pt: &CKKSPlaintext<Vec<u8>>) -> (Vec<F>, Vec<F>)
+pub fn ckks_decode_pt<F, E>(encoder: &ReferenceEncoder<E>, m: usize, pt: &CKKSPlaintext<Vec<u8>>) -> (Vec<F>, Vec<F>)
 where
     F: TestScalar,
     E: NegacyclicFFT<F>,
@@ -1091,7 +1117,7 @@ pub fn assert_decrypt_precision<BE, F, E>(
     label: &str,
     params: &CKKSTestParams,
     module: &Module<BE>,
-    encoder: &Encoder<E>,
+    encoder: &ReferenceEncoder<E>,
     ct: &CKKSCiphertext<BE::OwnedBuf>,
     sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     want_re: &[F],
@@ -1141,7 +1167,7 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
     label: &str,
     params: &CKKSTestParams,
     module: &Module<BE>,
-    encoder: &Encoder<E>,
+    encoder: &ReferenceEncoder<E>,
     ct: &CKKSCiphertext<BE::OwnedBuf>,
     sk: &GLWESecretPrepared<BE::OwnedBuf, BE>,
     want_re: &[F],
@@ -1231,9 +1257,10 @@ pub fn assert_ct_meta<D: Data, S: CKKSNormalizationState>(
     assert_eq!(ct.log_budget(), log_budget, "{label}: unexpected log_budget");
 }
 
-pub fn assert_ckks_error(label: &str, err: &anyhow::Error, want: CKKSCompositionError) {
-    let got = err.downcast_ref::<CKKSCompositionError>();
-    assert_eq!(got, Some(&want), "{label}: unexpected error: {err}");
+pub fn assert_ckks_error(label: &str, err: &crate::CKKSError, want: CKKSCompositionError) {
+    // No downcast needed: typed operations surface semantic failures as
+    // `CKKSError::Composition` directly.
+    assert_eq!(err.composition(), Some(&want), "{label}: unexpected error: {err}");
 }
 
 pub fn assert_unary_output_meta<D: Data, S: CKKSNormalizationState>(
@@ -1241,7 +1268,12 @@ pub fn assert_unary_output_meta<D: Data, S: CKKSNormalizationState>(
     ct: &CKKSCiphertext<D, S>,
     input: &CKKSCiphertext<impl Data>,
 ) {
-    assert_ct_meta(label, ct, input.log_delta(), input.log_budget() - ct.offset_unary(input));
+    assert_ct_meta(
+        label,
+        ct,
+        input.log_delta(),
+        input.log_budget() - crate::ckks_offset_unary(ct, input),
+    );
 }
 
 pub fn assert_binary_output_meta<D: Data, S: CKKSNormalizationState>(
@@ -1254,7 +1286,7 @@ pub fn assert_binary_output_meta<D: Data, S: CKKSNormalizationState>(
         label,
         ct,
         a.log_delta().min(b.log_delta()),
-        a.log_budget().min(b.log_budget()) - ct.offset_binary(a, b),
+        a.log_budget().min(b.log_budget()) - crate::ckks_offset_binary(ct, a, b),
     );
 }
 

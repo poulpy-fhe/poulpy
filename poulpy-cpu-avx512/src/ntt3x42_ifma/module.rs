@@ -33,6 +33,7 @@ pub struct NTT3x42IfmaHandle {
     pub(crate) table_ntt: Ntt3x42IfmaTable<Primes42>,
     pub(crate) table_intt: Ntt3x42IfmaTableInv<Primes42>,
     pub(crate) meta_bbc: Bbc126IfmaMeta<Primes42>,
+    table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
 }
 
 impl Backend for NTT3x42Ifma {
@@ -67,6 +68,14 @@ impl Backend for NTT3x42Ifma {
         let src_len = src.len();
         buf[..src_len].copy_from_slice(src);
         buf[src_len..].fill(0);
+    }
+    fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
+        assert_eq!(buf.len(), dst.len());
+        dst.copy_from_slice(buf);
+    }
+    fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
+        assert_eq!(buf.len(), src.len());
+        buf.copy_from_slice(src);
     }
     fn len_bytes(buf: &Self::OwnedBuf) -> usize {
         buf.len()
@@ -179,10 +188,17 @@ pub(crate) fn module_new(n: u64) -> Module<NTT3x42Ifma> {
     assert_runtime_support();
     assert!(n >= 8, "NTT3x42Ifma requires n >= 8, got {n}");
     let handle = NTT3x42IfmaHandle {
+        table_cache: Default::default(),
         table_ntt: Ntt3x42IfmaTable::new(n as usize),
         table_intt: Ntt3x42IfmaTableInv::new(n as usize),
         meta_bbc: Bbc126IfmaMeta::new(),
     };
     let ptr: NonNull<NTT3x42IfmaHandle> = NonNull::from(Box::leak(Box::new(handle)));
     unsafe { Module::from_nonnull(ptr, n) }
+}
+
+unsafe impl ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for NTT3x42IfmaHandle {
+    fn module_plan_cache(&self) -> &::poulpy_cpu_ref::table_cache::ModuleTableCache {
+        &self.table_cache
+    }
 }

@@ -2,7 +2,7 @@ use poulpy_hal::{
     api::{ScalarZnxAutomorphismBackend, VecZnxCopyRangeBackend},
     layouts::{
         Backend, Data, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendMut, ScalarZnxToBackendRef, TransferFrom,
-        ZnxZero, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_mut,
+        ZnxViewMut, ZnxZero, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_mut,
     },
     oep::HalVecZnxImpl,
     source::Source,
@@ -187,6 +187,21 @@ impl<D: HostDataMut> GLWESecret<D> {
             self.data.fill_binary_hw(i, hw, source);
         });
         self.dist = Distribution::BinaryFixed(hw);
+    }
+
+    /// Sets column `col` to the caller-provided binary `{0, 1}` coefficient
+    /// vector and tags the distribution as [`Distribution::BinaryFixed`] with
+    /// the vector's Hamming weight. For structured binary secrets whose
+    /// positions are chosen by the caller (e.g. the PaCo bootstrapping key).
+    ///
+    /// The distribution tag is shared by all columns; when filling several
+    /// columns the last written weight wins.
+    pub fn fill_binary_coeffs(&mut self, col: usize, coeffs: &[i64]) {
+        assert!(coeffs.iter().all(|&x| x == 0 || x == 1), "coefficients must be binary");
+        let dst = self.data.at_mut(col, 0);
+        assert_eq!(dst.len(), coeffs.len(), "coefficient length must equal the ring degree");
+        dst.copy_from_slice(coeffs);
+        self.dist = Distribution::BinaryFixed(coeffs.iter().filter(|&&x| x != 0).count());
     }
 
     pub fn fill_binary_block(&mut self, block_size: usize, source: &mut Source) {

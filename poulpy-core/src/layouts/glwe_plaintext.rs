@@ -254,8 +254,13 @@ where
     }
 }
 
-impl<'b, BE: Backend + 'b> GLWEToBackendRef<BE> for &mut GLWEPlaintext<BE::BufMut<'b>> {
-    fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>> {
+/// Reborrows a mutable-view-backed plaintext as a shared backend view.
+pub trait GLWEPlaintextReborrowBackendRef<BE: Backend> {
+    fn reborrow_backend_ref(&self) -> GLWE<BE::BufRef<'_>>;
+}
+
+impl<'b, BE: Backend + 'b> GLWEPlaintextReborrowBackendRef<BE> for GLWEPlaintext<BE::BufMut<'b>> {
+    fn reborrow_backend_ref(&self) -> GLWE<BE::BufRef<'_>> {
         GLWE {
             base2k: self.base2k,
             k: self.k,
@@ -264,13 +269,30 @@ impl<'b, BE: Backend + 'b> GLWEToBackendRef<BE> for &mut GLWEPlaintext<BE::BufMu
     }
 }
 
-impl<'b, BE: Backend + 'b> GLWEToBackendMut<BE> for &mut GLWEPlaintext<BE::BufMut<'b>> {
-    fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>> {
+/// Reborrows a mutable-view-backed plaintext as a mutable backend view.
+pub trait GLWEPlaintextReborrowBackendMut<BE: Backend>: GLWEPlaintextReborrowBackendRef<BE> {
+    fn reborrow_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>>;
+}
+
+impl<'b, BE: Backend + 'b> GLWEPlaintextReborrowBackendMut<BE> for GLWEPlaintext<BE::BufMut<'b>> {
+    fn reborrow_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>> {
         GLWE {
             base2k: self.base2k,
             k: self.k,
             data: <VecZnx<BE::BufMut<'b>> as VecZnxReborrowBackendMut<BE>>::reborrow_backend_mut(&mut self.data),
         }
+    }
+}
+
+impl<'b, BE: Backend + 'b> GLWEToBackendRef<BE> for &mut GLWEPlaintext<BE::BufMut<'b>> {
+    fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>> {
+        <GLWEPlaintext<BE::BufMut<'b>> as GLWEPlaintextReborrowBackendRef<BE>>::reborrow_backend_ref(*self)
+    }
+}
+
+impl<'b, BE: Backend + 'b> GLWEToBackendMut<BE> for &mut GLWEPlaintext<BE::BufMut<'b>> {
+    fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>> {
+        <GLWEPlaintext<BE::BufMut<'b>> as GLWEPlaintextReborrowBackendMut<BE>>::reborrow_backend_mut(*self)
     }
 }
 

@@ -1,11 +1,11 @@
 #![allow(clippy::too_many_arguments)]
 
+use crate::CKKSResult as Result;
 use crate::default::encryption::CKKSEncryptionDefault;
 
-use anyhow::Result;
 use poulpy_core::{
     EncryptionInfos,
-    layouts::{GLWEInfos, GLWESecretPreparedToBackendRef, LWEInfos},
+    layouts::{GLWEInfos, GLWESecretPreparedToBackendRef},
     oep::{DecryptionDefault, EncryptionDefault},
 };
 use poulpy_hal::{
@@ -18,7 +18,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-use crate::{CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos, default::plaintext::CKKSPlaintextDefault};
+use crate::{CKKSCtBounds, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos, default::plaintext::CKKSPlaintextDefault};
 
 /// # Safety
 ///
@@ -26,31 +26,31 @@ use crate::{CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos, default
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
 pub unsafe trait CKKSEncryptionImpl<BE: Backend>: Backend {
-    fn ckks_encrypt_sk_tmp_bytes<A>(module: &Module<BE>, ct_infos: &A) -> usize
+    fn ckks_encrypt_sk_tmp_bytes_impl<A>(module: &Module<BE>, ct_infos: &A) -> usize
     where
-        A: GLWEInfos + CKKSInfos;
+        A: CKKSCtBounds;
 
-    fn ckks_encrypt_sk<Dct, S, E, Pt>(
+    fn ckks_encrypt_sk_impl<Dct, S, E, Pt>(
         module: &Module<BE>,
         ct: &mut Dct,
         pt: &Pt,
         sk: &S,
         enc_infos: &E,
-        source_xa: &mut Source,
         source_xe: &mut Source,
+        source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         E: EncryptionInfos,
-        Pt: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
-        Dct: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
+        Pt: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dct: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
 
-    fn ckks_decrypt_tmp_bytes<A>(module: &Module<BE>, ct_infos: &A) -> usize
+    fn ckks_decrypt_tmp_bytes_impl<A>(module: &Module<BE>, ct_infos: &A) -> usize
     where
-        A: GLWEInfos + CKKSInfos;
+        A: CKKSCtBounds;
 
-    fn ckks_decrypt<S, Dct, Pt>(
+    fn ckks_decrypt_impl<S, Dct, Pt>(
         module: &Module<BE>,
         pt: &mut Pt,
         ct: &Dct,
@@ -58,11 +58,15 @@ pub unsafe trait CKKSEncryptionImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Pt: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
-        Dct: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos,
+        Pt: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dct: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
 }
 
+/// Default encryption/decryption, deliberately restricted to host backends
+/// (`HostBackend` + host-visible buffer views): the [`CKKSEncryptionImpl`]
+/// trait itself carries no host bounds, and a device backend implements it
+/// natively instead of relying on this blanket impl.
 unsafe impl<BE: Backend> CKKSEncryptionImpl<BE> for BE
 where
     BE: HalVecZnxImpl<BE> + HalVecZnxBigImpl<BE> + HalVecZnxDftImpl<BE> + HalSvpImpl<BE> + HostBackend,
@@ -70,6 +74,7 @@ where
         + CKKSPlaintextDefault<BE>
         + EncryptionDefault<BE>
         + DecryptionDefault<BE>
+        + poulpy_core::GLWENormalize<BE>
         + VecZnxLshAddIntoBackend<BE>
         + VecZnxRshAddIntoBackend<BE>
         + VecZnxRshTmpBytes
@@ -79,40 +84,40 @@ where
     for<'a> BE::BufMut<'a>: HostDataMut,
     for<'a> BE::BufRef<'a>: HostDataRef,
 {
-    fn ckks_encrypt_sk_tmp_bytes<A>(module: &Module<BE>, ct_infos: &A) -> usize
+    fn ckks_encrypt_sk_tmp_bytes_impl<A>(module: &Module<BE>, ct_infos: &A) -> usize
     where
-        A: GLWEInfos + CKKSInfos,
+        A: CKKSCtBounds,
     {
         module.ckks_encrypt_sk_tmp_bytes_default(ct_infos)
     }
 
-    fn ckks_encrypt_sk<Dct, S, E, Pt>(
+    fn ckks_encrypt_sk_impl<Dct, S, E, Pt>(
         module: &Module<BE>,
         ct: &mut Dct,
         pt: &Pt,
         sk: &S,
         enc_infos: &E,
-        source_xa: &mut Source,
         source_xe: &mut Source,
+        source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         E: EncryptionInfos,
-        Pt: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
-        Dct: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
+        Pt: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dct: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
-        module.ckks_encrypt_sk_default(ct, pt, sk, enc_infos, source_xa, source_xe, scratch)
+        module.ckks_encrypt_sk_default(ct, pt, sk, enc_infos, source_xe, source_xa, scratch)
     }
 
-    fn ckks_decrypt_tmp_bytes<A>(module: &Module<BE>, ct_infos: &A) -> usize
+    fn ckks_decrypt_tmp_bytes_impl<A>(module: &Module<BE>, ct_infos: &A) -> usize
     where
-        A: GLWEInfos + CKKSInfos,
+        A: CKKSCtBounds,
     {
         module.ckks_decrypt_tmp_bytes_default(ct_infos)
     }
 
-    fn ckks_decrypt<S, Dct, Pt>(
+    fn ckks_decrypt_impl<S, Dct, Pt>(
         module: &Module<BE>,
         pt: &mut Pt,
         ct: &Dct,
@@ -120,8 +125,8 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Pt: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
-        Dct: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos,
+        Pt: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dct: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     {
         module.ckks_decrypt_default(pt, ct, sk, scratch)

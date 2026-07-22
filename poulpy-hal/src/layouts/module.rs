@@ -82,6 +82,18 @@ pub trait Backend: Sized + Sync + Send {
     ///
     /// `src.len()` must equal the byte length of `buf`.
     fn copy_from_host(buf: &mut Self::OwnedBuf, src: &[u8]);
+    /// Copies a backend-native borrowed view into a host byte slice.
+    ///
+    /// Unlike [`Self::copy_to_host`], this accepts a view carved from an
+    /// arena. Device backends should implement it with a device-to-host copy
+    /// from the view's native address.
+    fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]);
+    /// Copies a host byte slice into a backend-native mutable borrowed view.
+    ///
+    /// Unlike [`Self::copy_from_host`], this accepts a view carved from an
+    /// arena. Device backends should implement it with a host-to-device copy
+    /// to the view's native address.
+    fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]);
     /// Returns the number of bytes stored in a backend-owned buffer.
     fn len_bytes(buf: &Self::OwnedBuf) -> usize;
     /// Borrows a shared backend-native view over an owned buffer.
@@ -169,9 +181,11 @@ pub trait Backend: Sized + Sync + Send {
 
 /// Primary entry point for all polynomial operations over `Z[X]/(X^N + 1)`.
 ///
-/// A `Module` pairs a ring degree `N` (always a power of two) with a
+/// A `Module` pairs a maximum ring degree `N` (always a power of two) with a
 /// backend-specific handle that holds any required precomputed state. All
 /// [`api`](crate::api) trait methods are dispatched through this type.
+/// Existing fixed-ring operations use the maximum degree; dimension-aware
+/// operations may select any supported power-of-two degree from the handle.
 ///
 /// The module **owns** its handle; dropping the `Module` calls
 /// [`Backend::destroy`].
@@ -232,10 +246,17 @@ impl<B: Backend> Module<B> {
         self.ptr.as_ptr()
     }
 
-    /// Returns the ring degree `N`.
+    /// Returns the maximum supported ring degree `N`.
     #[inline]
     pub fn n(&self) -> usize {
         self.n as usize
+    }
+
+    /// Explicit alias for [`Self::n`] when treating the module as a
+    /// multi-ring execution context.
+    #[inline]
+    pub fn max_n(&self) -> usize {
+        self.n()
     }
 
     /// Allocates a zero-initialized backend-owned [`ScalarZnx`].

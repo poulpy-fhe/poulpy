@@ -15,7 +15,7 @@ doctest = false
 [features]
 enable-avx512f = []
 enable-ifma = ["enable-avx512f"]
-enable-ckks = ["dep:poulpy-ckks"]
+enable-ckks = ["dep:poulpy-ckks", "poulpy-cpu-ref/enable-ckks"]
 
 [dependencies]
 bytemuck = {workspace = true}
@@ -33,6 +33,7 @@ rand_chacha = {workspace = true}
 paste = {workspace = true}
 
 [dev-dependencies]
+poulpy-ckks = {workspace = true, features = ["test-utils"]}
 anyhow = {workspace = true}
 
 [package.metadata.docs.rs]

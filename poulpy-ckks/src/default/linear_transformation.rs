@@ -3,18 +3,18 @@
 //! Computes the scale-derived convolution parameters (`a_k`,
 //! `cnv_offset`) and the result `log_delta` / `log_budget`, delegates the actual
 //! evaluation to the scheme-agnostic core engine
-//! [`GLWELinearTransformations`](poulpy_core::GLWELinearTransformations), and stamps the
+//! [`GLWELinearTransformations`](trait@poulpy_core::GLWELinearTransformations), and stamps the
 //! CKKS metadata onto the result. See `docs/linear_transformation.md`.
 
-use anyhow::Result;
+use crate::CKKSAtkBounds;
+use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::{
     GLWECopy, GLWELinearTransformations, LinearTransformationBabySteps, LinearTransformationGiantStep,
     LinearTransformationPrepared,
     default::linear_transformation::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft},
     layouts::{
-        Compact, GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef,
-        GetGaloisElement, LWEInfos,
-        prepared::{GLWEAutomorphismKeyPreparedToBackendRef, PreparedDiagonal},
+        Compact, GGLWEInfos, GLWE, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        prepared::PreparedDiagonal,
     },
 };
 use poulpy_hal::{
@@ -24,9 +24,9 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, SetCKKSInfos,
-    api::{CKKSCopyOps, LinearTransformation, LinearTransformationOps, LtDiagonalScale},
+    api::{CKKSCopyOps, CKKSLinearTransformationOps, LinearTransformation, LtDiagonalScale},
     default::mul::mul_pt_params_raw,
-    layouts::{CKKSModuleAlloc, CKKSPlaintext},
+    layouts::{CKKSModuleAlloc, CKKSPlaintext, ScratchArenaTakeCKKS},
 };
 
 /// Per-giant streamed PROD for CKKS plaintext diagonals.
@@ -70,7 +70,7 @@ impl<D: Data, BE: Backend> LtDiagonalScale for PreparedDiagonal<D, BE> {
     }
 }
 
-impl<BE: Backend> LinearTransformationOps<BE> for Module<BE>
+impl<BE: Backend> CKKSLinearTransformationOps<BE> for Module<BE>
 where
     Module<BE>: GLWELinearTransformations<BE> + GLWECopy<BE> + CKKSCopyOps<BE> + CKKSModuleAlloc<BE> + CyclotomicOrder,
 {
@@ -97,8 +97,10 @@ where
         K: GGLWEInfos,
     {
         // `ct` doubles as the plaintext-operand proxy: it bounds the convolution
-        // sizes from above, so the result is a safe upper bound.
-        self.glwe_eval_linear_transformation_tmp_bytes(ct, ct, ct, key)
+        // sizes from above, so the result is a safe upper bound. The extra
+        // ct-sized buffer is the dst-shaped working copy the `_assign` wrappers
+        // carve from scratch (an upper bound for the `_into` paths, which skip it).
+        self.glwe_eval_linear_transformation_tmp_bytes(ct, ct, ct, key) + GLWE::<Vec<u8>>::bytes_of_from_infos(ct)
     }
 
     fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
@@ -106,8 +108,10 @@ where
         C: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        // `ct` doubles as the plaintext-operand proxy (upper bound on diagonal shape).
-        self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, ct, key)
+        // `ct` doubles as the plaintext-operand proxy (upper bound on diagonal
+        // shape). The extra ct-sized buffer covers the `_assign` wrappers'
+        // scratch-carved working copy, as above.
+        self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, ct, key) + GLWE::<Vec<u8>>::bytes_of_from_infos(ct)
     }
 
     // ---------- populate ----------
@@ -121,7 +125,11 @@ where
         P: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
     {
         // Stash the plaintext scale exponent while filling the diagonals so eval
-        // no longer needs `lt` for `cnv_offset` math.
+        // no longer needs `lt` for `cnv_offset` math. Contract: the diagonals
+        // must share one scale/width (the crate's compilers always produce
+        // uniform diagonals; the unprepared eval path rejects heterogeneous
+        // hand-built inputs via `ensure_uniform_diagonal_scale` — this
+        // infallible prepare stashes the first diagonal's scale for all).
         if let Some(first_pt) = lt.first_diagonal_plaintext() {
             prepared.set_log_scale(first_pt.log_delta());
         }
@@ -137,7 +145,7 @@ where
     ) -> Result<()>
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
         let mut has_nonzero = false;
@@ -184,7 +192,7 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalScale,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
         check_required_keys(lt, babies, keys, self.cyclotomic_order())?;
@@ -197,6 +205,7 @@ where
         // the diagonal data was masked/positioned at in `cnv_prepare_right` (its
         // effective `k`), which can be below the rounded physical `max_k`.
         let (pt_log_scale, pt_max_k) = (first.lt_log_scale(), first.max_k().as_usize());
+        ensure_uniform_diagonal_scale(lt, pt_log_scale, pt_max_k)?;
         // ct × (plaintext diagonal): the ct × pt convolution rule, with the diagonal
         // described by just its scale (`pt_log_scale` → rhs `log_delta`) and storage
         // width (`pt_max_k` → rhs `max_k`). Its `log_budget` is dead in this math
@@ -228,16 +237,18 @@ where
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: DiagonalProd<BE> + LtDiagonalScale,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
-        let mut tmp = self.ckks_ciphertext_alloc_from_infos(dst);
-        tmp.set_meta(dst.meta());
-        self.ckks_eval_linear_transformation_into(&mut tmp, dst, babies, lt, keys, scratch)?;
-        // `ckks_copy` moves both the limbs and the CKKS metadata the eval consumed
-        // into `dst` (a plain `glwe_copy` would leave the budget/scale stale).
-        self.ckks_copy(dst, &tmp, scratch)?;
-        Ok(())
+        // The dst-shaped working copy is carved from scratch (accounted for by
+        // `ckks_eval_linear_transformation_tmp_bytes`), not heap-allocated.
+        scratch.scope(|scratch_local| {
+            let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
+            self.ckks_eval_linear_transformation_into(&mut tmp, dst, babies, lt, keys, &mut scratch_local)?;
+            // `ckks_copy` moves both the limbs and the CKKS metadata the eval consumed
+            // into `dst` (a plain `glwe_copy` would leave the budget/scale stale).
+            self.ckks_copy(dst, &tmp, &mut scratch_local)
+        })
     }
 
     // ---------- eval (self-allocated baby cache) ----------
@@ -254,7 +265,7 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: DiagonalProd<BE> + LtDiagonalScale,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
         // Only the (small) input baby cache is materialized here; with a plaintext
@@ -274,16 +285,18 @@ where
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         P: DiagonalProd<BE> + LtDiagonalScale,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
-        let mut tmp = self.ckks_ciphertext_alloc_from_infos(dst);
-        tmp.set_meta(dst.meta());
-        self.ckks_eval_linear_transformation_self_into(&mut tmp, dst, lt, keys, scratch)?;
-        // `ckks_copy` moves both the limbs and the CKKS metadata the eval consumed
-        // into `dst` (a plain `glwe_copy` would leave the budget/scale stale).
-        self.ckks_copy(dst, &tmp, scratch)?;
-        Ok(())
+        // The dst-shaped working copy is carved from scratch (accounted for by
+        // `ckks_eval_linear_transformation_tmp_bytes`), not heap-allocated.
+        scratch.scope(|scratch_local| {
+            let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
+            self.ckks_eval_linear_transformation_self_into(&mut tmp, dst, lt, keys, &mut scratch_local)?;
+            // `ckks_copy` moves both the limbs and the CKKS metadata the eval consumed
+            // into `dst` (a plain `glwe_copy` would leave the budget/scale stale).
+            self.ckks_copy(dst, &tmp, &mut scratch_local)
+        })
     }
 }
 
@@ -296,11 +309,11 @@ fn check_required_keys<BE: Backend, P, H, K>(
     cyclotomic_order: i64,
 ) -> Result<()>
 where
-    K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+    K: CKKSAtkBounds<BE>,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
     for rotation in lt.baby_steps().iter().copied() {
-        anyhow::ensure!(
+        ckks_ensure!(
             babies.contains_baby_step(rotation),
             "missing prepared baby-step rotation {rotation}"
         );
@@ -324,6 +337,34 @@ where
     Ok(())
 }
 
+/// Verifies every diagonal shares the first diagonal's scale and storage width.
+///
+/// The evaluation derives one `cnv_offset` (and the result metadata) from the
+/// first diagonal alone; a hand-built transform with heterogeneous diagonal
+/// scales would silently mis-scale every other diagonal's contribution. The
+/// crate's own compilers (`ckks_encode_linear_transformation_from_diagonals`,
+/// the DFT/PaCo factor encoders) always produce uniform diagonals, so this
+/// only rejects malformed hand-assembled inputs.
+fn ensure_uniform_diagonal_scale<P>(lt: &LinearTransformation<P>, log_scale: usize, max_k: usize) -> Result<()>
+where
+    P: LtDiagonalScale + LWEInfos,
+{
+    for gs in &lt.giant_steps {
+        for diag in &gs.diagonals {
+            let pt = &diag.plaintext;
+            ckks_ensure!(
+                pt.lt_log_scale() == log_scale && pt.max_k().as_usize() == max_k,
+                "linear transformation diagonals are not scale-uniform: diagonal (giant rot {}, baby {}) has (log_scale {}, max_k {}) but the first diagonal — which cnv_offset and the result metadata are derived from — has ({log_scale}, {max_k})",
+                gs.rot,
+                diag.baby,
+                pt.lt_log_scale(),
+                pt.max_k().as_usize(),
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Resolves the `key_size` (giant-rotation keyswitch output size) for the core
 /// eval entry point.
 ///
@@ -337,7 +378,7 @@ where
 fn lt_key_size<BE: Backend, P, Dst, H, K>(lt: &LinearTransformation<P>, dst: &Dst, keys: &H) -> usize
 where
     Dst: LWEInfos,
-    K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+    K: CKKSAtkBounds<BE>,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
     let has_nonzero_giant_rotation = lt.giant_steps.iter().any(|gs| gs.rot != 0 && !gs.diagonals.is_empty());

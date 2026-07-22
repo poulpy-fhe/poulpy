@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::CKKSResult as Result;
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use poulpy_core::layouts::{
@@ -10,7 +10,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos, layouts::CKKSCiphertext, polynomial::Com
 
 pub use poulpy_core::layouts::{BSGSPolynomialInfos, BabyStep, Basis, Parity, PowerBasisHelper};
 
-pub trait PolynomialEvaluation<BE: Backend> {
+pub trait CKKSPolynomialEvaluationOps<BE: Backend> {
     fn ckks_eval_poly_real_const_coeffs_from_power_basis<R, B, A, G, T>(
         &self,
         res: &mut R,

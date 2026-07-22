@@ -43,6 +43,61 @@ use crate::{
 // NttModuleHandle trait + NttHandleProvider blanket impl
 // ──────────────────────────────────────────────────────────────────────────────
 
+/// Forward and inverse NTT tables for one ring degree.
+pub struct NttPlan<P: PrimeSet> {
+    ntt: NttTable<P>,
+    intt: NttTableInv<P>,
+}
+
+impl<P: PrimeSet> NttPlan<P> {
+    pub fn new(n: usize) -> Self {
+        Self {
+            ntt: NttTable::new(n),
+            intt: NttTableInv::new(n),
+        }
+    }
+
+    pub fn ntt(&self) -> &NttTable<P> {
+        &self.ntt
+    }
+
+    pub fn intt(&self) -> &NttTableInv<P> {
+        &self.intt
+    }
+}
+
+/// Complete geometric family of NTT plans up to a maximum ring degree.
+pub struct NttPlanSet<P: PrimeSet> {
+    plans: Vec<NttPlan<P>>,
+    max_n: usize,
+}
+
+impl<P: PrimeSet> NttPlanSet<P> {
+    pub fn new(max_n: usize) -> Self {
+        assert!(
+            max_n.is_power_of_two(),
+            "maximum ring degree must be a power of two, got {max_n}"
+        );
+        let plans = (0..=max_n.ilog2() as usize)
+            .map(|log_n| NttPlan::new(1usize << log_n))
+            .collect();
+        Self { plans, max_n }
+    }
+
+    pub fn max_n(&self) -> usize {
+        self.max_n
+    }
+
+    pub fn for_ring(&self, n: usize) -> &NttPlan<P> {
+        assert!(
+            n.is_power_of_two() && n <= self.max_n,
+            "unsupported ring degree {n}; maximum is {}",
+            self.max_n
+        );
+        &self.plans[n.ilog2() as usize]
+    }
+}
+
 // TODO(ntt4x30): Associate PrimeSet with NttModuleHandle (add associated type)
 //               to enable Primes29/Primes31 dispatch through the public API.
 
@@ -57,11 +112,23 @@ use crate::{
 /// <!-- DOCUMENTED EXCEPTION: Primes30 hardcoded for spqlios compatibility.
 ///   Generalisation path: add `type PrimeSet: PrimeSet` as an associated type here,
 ///   then parameterise NttTable/NttTableInv/BbcMeta accordingly. -->
-pub trait NttModuleHandle {
+pub trait NttModuleHandle: poulpy_hal::api::ModuleN {
+    /// Combined NTT plan for an explicit ring degree.
+    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30>;
     /// Precomputed forward NTT twiddle table (Primes30, size `n`).
-    fn get_ntt_table(&self) -> &NttTable<Primes30>;
+    fn get_ntt_table_for(&self, n: usize) -> &NttTable<Primes30> {
+        self.get_ntt_plan(n).ntt()
+    }
     /// Precomputed inverse NTT twiddle table (Primes30, size `n`).
-    fn get_intt_table(&self) -> &NttTableInv<Primes30>;
+    fn get_intt_table_for(&self, n: usize) -> &NttTableInv<Primes30> {
+        self.get_ntt_plan(n).intt()
+    }
+    fn get_ntt_table(&self) -> &NttTable<Primes30> {
+        self.get_ntt_table_for(self.n())
+    }
+    fn get_intt_table(&self) -> &NttTableInv<Primes30> {
+        self.get_intt_table_for(self.n())
+    }
     /// Precomputed metadata for `q120b × q120c` lazy multiply–accumulate.
     fn get_bbc_meta(&self) -> &BbcMeta<Primes30>;
     /// Precomputed metadata for `q120b × q120b` lazy multiply–accumulate.
@@ -85,10 +152,8 @@ pub trait NttModuleHandle {
 /// established by the module defaults (or a backend override).  There is no
 /// runtime check in release builds.
 pub unsafe trait NttHandleProvider {
-    /// Returns a reference to the forward NTT twiddle table.
-    fn get_ntt_table(&self) -> &NttTable<Primes30>;
-    /// Returns a reference to the inverse NTT twiddle table.
-    fn get_intt_table(&self) -> &NttTableInv<Primes30>;
+    /// Returns the combined NTT plan for `n`.
+    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30>;
     /// Returns a reference to the `q120b × q120c` lazy multiply–accumulate metadata.
     fn get_bbc_meta(&self) -> &BbcMeta<Primes30>;
     /// Returns a reference to the `q120b × q120b` lazy multiply–accumulate metadata.
@@ -117,15 +182,11 @@ where
     B: Backend,
     B::Handle: NttHandleProvider,
 {
-    fn get_ntt_table(&self) -> &NttTable<Primes30> {
+    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30> {
         // SAFETY: `ptr()` returns a valid, non-null pointer to `B::Handle`
         // that was initialised by the module defaults and is kept alive by
         // the `Module`.
-        unsafe { (&*self.ptr()).get_ntt_table() }
-    }
-
-    fn get_intt_table(&self) -> &NttTableInv<Primes30> {
-        unsafe { (&*self.ptr()).get_intt_table() }
+        unsafe { (&*self.ptr()).get_ntt_plan(n) }
     }
 
     fn get_bbc_meta(&self) -> &BbcMeta<Primes30> {

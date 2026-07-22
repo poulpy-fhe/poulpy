@@ -28,6 +28,7 @@
 //! (lazy / streaming / on-the-fly-prepared) can implement [`BootstrappingKeys`]
 //! directly instead of materializing the whole bundle.
 
+use crate::CKKSAtkBounds;
 use std::collections::{BTreeSet, HashMap};
 
 use anyhow::Result;
@@ -122,8 +123,7 @@ pub struct BootstrappingKeysPrepared<D: Data, BE: Backend> {
 
 impl<D: Data, BE: Backend> BootstrappingKeys<BE> for BootstrappingKeysPrepared<D, BE>
 where
-    GLWEAutomorphismKeyPrepared<D, BE>:
-        GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+    GLWEAutomorphismKeyPrepared<D, BE>: CKKSAtkBounds<BE>,
     GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     GLWESwitchingKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
 {
@@ -225,6 +225,17 @@ pub struct BootstrappingKeysLayout {
 
 /// Layout of the sparse-secret encapsulation key-switching keys
 /// (<https://eprint.iacr.org/2022/024>).
+///
+/// This is the **single source of truth** for the encapsulation trick: setting
+/// [`BootstrappingKeysLayout::encapsulation`] generates the two key-switching
+/// keys, and the pipeline enables the trick exactly when those keys are
+/// present in the key set (`denseToSparse → ModUp → sparseToDense`). Under a
+/// sparse key the integer wrap-around `I·q` exposed by ModUp is bounded by
+/// `ephemeral_secret_weight` instead of the dense weight, so EvalMod can use a
+/// much smaller interval `K` (`f_mod_interval`) with negligible failure
+/// probability — choose the plan's `f_mod_interval` accordingly. The keys are
+/// derived from the dense secret at keygen; nothing about the trick is stored
+/// in the secret-independent `BootstrappingPlan`/`BootstrappingContext`.
 #[derive(Clone, Copy, Debug)]
 pub struct EncapsulationKeysLayout {
     /// Hamming weight of the ephemeral sparse secret.
@@ -251,6 +262,11 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
     /// [`EncapsulationKeysLayout::ephemeral_secret_weight`]) and the two
     /// encapsulation key-switching keys are derived from `sk_dense`.
     ///
+    /// Key generation is deliberately host-side: the ephemeral secret is sampled
+    /// on `host_module` and uploaded, hence the `TransferFrom<HostBytesBackend>`
+    /// bound. Keygen runs once per keyset, so no backend-resident sampling path
+    /// is provided.
+    ///
     /// `scratch` must be large enough for the key encrypt operations.
     #[allow(clippy::too_many_arguments)]
     pub fn generate_keys(
@@ -260,8 +276,8 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
         sk_dense: &BackendGLWESecret<BE>,
         layout: &BootstrappingKeysLayout,
         source_xs: &mut Source,
-        source_xa: &mut Source,
         source_xe: &mut Source,
+        source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<BootstrappingKeySet<BE::OwnedBuf>>
     where

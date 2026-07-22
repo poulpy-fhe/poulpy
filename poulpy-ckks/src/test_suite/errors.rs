@@ -1,7 +1,7 @@
 use crate::{
     CKKSCompositionError, CKKSInfos, SetCKKSInfos,
+    api::{CKKSAddOps, CKKSDotProductOps},
     layouts::CKKSModuleAlloc,
-    leveled::api::{CKKSAddOps, CKKSDotProductOps},
 };
 use poulpy_core::layouts::{Base2K, LWEInfos, TorusPrecision};
 use poulpy_hal::{
@@ -14,7 +14,7 @@ use super::helpers::{
     gen_tsk, test_vector_1,
 };
 
-use crate::{encoding::reim::Encoder, test_suite::CKKSTestParams};
+use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
 pub fn test_add_pt_vec_alignment_error<BE, F, E>(
     params: CKKSTestParams,
@@ -29,7 +29,7 @@ pub fn test_add_pt_vec_alignment_error<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);

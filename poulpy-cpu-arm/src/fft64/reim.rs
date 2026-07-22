@@ -16,7 +16,7 @@ use super::FFT64Neon;
 /// reference kernels otherwise.
 /// Wraps [`ReimFFTTable`] and [`ReimIFFTTable`] into a single object that
 /// implements [`NegacyclicFFT`], suitable for use as the transform provider
-/// in a CKKS [`poulpy_ckks::encoding::Encoder`].
+/// in the CPU CKKS encoding implementation.
 pub struct FFT64NeonReimTable {
     fft: ReimFFTTable<f64>,
     ifft: ReimIFFTTable<f64>,

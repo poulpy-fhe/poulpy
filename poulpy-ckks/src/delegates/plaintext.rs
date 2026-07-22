@@ -1,5 +1,5 @@
-use anyhow::Result;
-use poulpy_core::layouts::{GLWEInfos, GLWEToBackendRef, LWEInfos};
+use crate::CKKSResult as Result;
+use poulpy_core::layouts::{GLWEInfos, GLWEToBackendRef};
 use poulpy_hal::{
     api::{VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshBackend, VecZnxRshTmpBytes},
     layouts::{Backend, Module, ScratchArena},
@@ -17,14 +17,14 @@ where
     Module<BE>: VecZnxLshBackend<BE> + VecZnxLshTmpBytes + VecZnxRshBackend<BE> + VecZnxRshTmpBytes,
 {
     fn ckks_extract_pt_tmp_bytes(&self) -> usize {
-        BE::ckks_extract_pt_tmp_bytes(self)
+        BE::ckks_extract_pt_tmp_bytes_impl(self)
     }
 
     fn ckks_extract_pt<D, S>(&self, dst: &mut D, src: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        D: GLWEToBackendMut<BE> + GLWEInfos + CKKSInfos + SetCKKSInfos + LWEInfos,
-        S: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos,
+        D: GLWEToBackendMut<BE> + GLWEInfos + CKKSInfos + SetCKKSInfos,
+        S: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
-        BE::ckks_extract_pt(self, dst, src, scratch)
+        BE::ckks_extract_pt_impl(self, dst, src, scratch)
     }
 }

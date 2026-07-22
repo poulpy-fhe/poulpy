@@ -16,7 +16,7 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, galois_element};
 
-use crate::{CKKSLayout, CKKSMeta, layouts::CKKSPlaintext};
+use crate::{CKKSMeta, CoeffsMeta, layouts::CKKSPlaintext};
 
 /// Distinguishes the two homomorphic transforms.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -47,108 +47,314 @@ pub enum DFTOutputFormat {
 
 /// Parameters describing a factorized homomorphic (I)DFT.
 ///
-/// `factorization_depth` is the factorization schedule: one entry per factor
-/// matrix, giving how many radix-2 FFT layers that matrix merges. The total
-/// number of layers — and hence `log_slots` — is its **sum**, and the number of
-/// factor matrices is its **length**. The schedule is free: pick the granularity
-/// you want (`vec![1; log_slots]` = one layer per matrix, no merging;
-/// `vec![log_slots]` = a single fully-merged matrix; anything in between). A
-/// single uniform per-factor scale is used (see the homomorphic-DFT scale
-/// accounting in [`docs/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/bootstrapping.md)).
+/// Built with [`Self::new`], which validates the shape invariants once — a
+/// `DFTPlan` that exists is always shape-valid, so the derived-index APIs
+/// ([`Self::diagonal_indexes`], [`Self::galois_elements`]) are infallible.
+///
+/// The [`FactorSchedule`] gives one [`FactorStep`] per factor matrix: how many
+/// radix-2 FFT layers that matrix merges (`depth`) and its BSGS giant-step
+/// width. The total number of layers — and hence `log_slots` — is the **sum of
+/// depths**, and the number of factor matrices is the schedule **length**. The
+/// schedule is free: pick the granularity you want (`vec![(1, g); log_slots]` =
+/// one layer per matrix, no merging; `vec![(log_slots, g)]` = a single
+/// fully-merged matrix; anything in between). A single uniform per-factor scale
+/// is used (see the homomorphic-DFT scale accounting in
+/// [`docs/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/bootstrapping.md)).
 ///
 /// **Convention: the schedule is in evaluation order** — the factor matrices are
-/// applied to the ciphertext left-to-right, so `factorization_depth[0]` is the
-/// first matrix evaluated and `factorization_depth[len-1]` the last. This holds
+/// applied to the ciphertext left-to-right, so the first step is the
+/// first matrix evaluated and the last step the last. This holds
 /// for both `Encode` and `Decode`; the generator does **no** implicit reordering
 /// by `kind`. Because `Decode` is the inverse of `Encode`, a `Decode` plan that
 /// undoes an `Encode` plan with schedule `s` uses the **reversed** schedule
 /// (`s` read right-to-left) — that reversal is the caller's, not the library's.
-/// (Symmetric schedules such as `vec![1; log_slots]` are their own reverse, so
-/// the same schedule round-trips.)
+/// (Symmetric schedules such as `vec![(1, g); log_slots]` are their own reverse,
+/// so the same schedule round-trips.)
 #[derive(Clone, Debug)]
 pub struct DFTPlan {
     /// Encode (IDFT) or Decode (DFT).
-    pub kind: DFTType,
-    /// Factorization schedule in **evaluation order**: `factorization_depth[i]`
-    /// is the number of FFT layers merged into the `i`-th matrix applied to the
-    /// ciphertext. `log_slots` is the sum (see [`Self::log_slots`]); the factor
-    /// count is the length. Every entry must be `>= 1`. See the struct docs for
-    /// the Encode/Decode reverse relationship.
-    pub factorization_depth: Vec<usize>,
-    /// BSGS giant-step width for each factor matrix, parallel to
-    /// `factorization_depth` (same length). `factor_giant_steps[i]` is the width
-    /// the `i`-th factor's diagonals are decomposed with; `1` means the direct
-    /// schedule (one giant rotation per diagonal, no baby sharing).
-    ///
-    /// The schedule choice is the caller's: the library applies no implicit
-    /// optimum, since the cost-optimal width depends on the backend. To compute a
-    /// heuristic width, generate the factor's diagonal indexes and pass them to
-    /// [`optimal_bsgs_giant_step`](poulpy_core::layouts::optimal_bsgs_giant_step).
-    /// Each width is interpreted modulo that factor's own slot count (which is
-    /// `2·slots` for the sparse-repack factors).
-    pub giant_steps: Vec<usize>,
-    /// Post-processing format. Default [`DFTOutputFormat::Standard`].
+    pub(crate) kind: DFTType,
+    /// Factorization schedule in **evaluation order** (see the struct docs).
+    pub(crate) schedule: FactorSchedule,
+    /// Post-processing format.
     ///
     /// On a *resolved* plan (one stored inside a [`DFTMatrix`]) this is
     /// canonical: a dense (non-sparse) `RepackImagAsReal` request is normalized
-    /// to [`DFTOutputFormat::SplitRealAndImag`] by the constructor, so
-    /// `RepackImagAsReal` here always means the sparse repack (see
-    /// [`DFTMatrix::is_sparse`]).
-    pub format: DFTOutputFormat,
-    /// Constant the matrix is multiplied by. Default `1.0`.
-    pub scaling: Option<f64>,
+    /// to [`DFTOutputFormat::SplitRealAndImag`], so `RepackImagAsReal` there
+    /// always means the sparse repack (see [`DFTMatrix::is_sparse`]).
+    pub(crate) format: DFTOutputFormat,
+    /// Constant the matrix is multiplied by; `None` = `1.0`. Set via
+    /// [`Self::with_scaling`], which validates it.
+    pub(crate) scaling: Option<f64>,
     /// If true, applies the transform bit-reversed (and expects bit-reversed
-    /// inputs). Default false.
-    pub bit_reversed: bool,
-    /// `log_budget` bits each factor consumes (the per-factor plaintext
-    /// `log_delta`). Meaningless on an input literal; the constructor fills it
-    /// from `factor_meta` on the resolved plan stored in a [`DFTMatrix`].
-    pub meta: CKKSLayout,
+    /// inputs).
+    pub(crate) bit_reversed: bool,
+    /// Per-factor coefficient metadata: the torus width the factor plaintexts
+    /// are allocated with, and the scale (`log_delta` — the `log_budget` bits
+    /// each factor consumes) they are encoded at.
+    pub(crate) coeffs_meta: CoeffsMeta,
 }
 
-impl DFTPlan {
-    /// `log2` of the number of complex slots the transform acts on: the sum of
-    /// the factorization schedule (total FFT layers).
-    pub fn log_slots(&self) -> usize {
-        self.factorization_depth.iter().sum()
+/// Single source of truth for the radix-2 merge geometry, shared by the factor
+/// generator (`crate::default::dft::matrices::merge_next_layer`) and the
+/// value-free index replay ([`DFTPlan::diagonal_indexes`]): the rotation a
+/// merged FFT layer applies. `level` counts down from `log_slots` (the layer
+/// being merged into the factor); `mask` is the factor's slot-count mask
+/// (`2·slots − 1` on the sparse-repack first `Decode` factor, else `slots − 1`).
+///
+/// Keeping this in one place is what guarantees key provisioning
+/// ([`DFTPlan::galois_elements`]) covers exactly the diagonals the generator
+/// produces — a drift between the two would silently under-provision keys.
+pub(crate) fn dft_layer_rotation(kind: DFTType, bit_reversed: bool, level: usize, log_slots: usize, mask: i64) -> i64 {
+    // Encode-forward and Decode-bit-reversed share the absolute-level branch.
+    let uses_level = (kind == DFTType::Encode && !bit_reversed) || (kind == DFTType::Decode && bit_reversed);
+    if uses_level {
+        (1i64 << (level - 1)) & mask
+    } else {
+        (1i64 << (log_slots - level)) & mask
+    }
+}
+
+/// The `{d, d+rot, d−rot}` (mod `mask + 1`) diagonal spread of one merged
+/// butterfly layer — the index arithmetic paired with [`dft_layer_rotation`].
+pub(crate) fn dft_layer_spread(d: i64, rot: i64, mask: i64) -> [i64; 3] {
+    [d, (d + rot) & mask, (d - rot) & mask]
+}
+
+/// One factor of a factorization schedule: how many radix-2 layers the
+/// factor matrix merges, and the BSGS giant-step width it is evaluated with.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FactorStep {
+    /// Radix-2 layers merged into this factor; must be ≥ 1.
+    pub depth: usize,
+    /// BSGS giant-step width; `1` is the direct schedule. Must be ≥ 1.
+    pub giant_step: usize,
+}
+
+/// The factorization schedule shared by every factorized homomorphic
+/// transform plan ([`DFTPlan`] and the PaCo factor chains): one
+/// [`FactorStep`] per factor matrix, in evaluation order.
+///
+/// Storing per-factor pairs (rather than two parallel vectors) makes the
+/// "same length" invariant unrepresentable; the remaining shape invariants
+/// are owned by [`Self::check`], through which both plan hierarchies
+/// validate, so the clauses cannot drift the way two hand-copied validators
+/// can.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FactorSchedule {
+    /// The per-factor steps, in evaluation order. Must be non-empty
+    /// (checked).
+    pub steps: Vec<FactorStep>,
+}
+
+impl FactorSchedule {
+    /// Builds a schedule from parallel depth/giant-step lists, erroring (as
+    /// `plan`) if their lengths differ. Shape invariants beyond the pairing
+    /// are still checked separately via [`Self::check`].
+    pub fn from_parts(factorization_depth: &[usize], giant_steps: &[usize], plan: &'static str) -> anyhow::Result<Self> {
+        if giant_steps.len() != factorization_depth.len() {
+            return Err(crate::CKKSCompositionError::InvalidPlan {
+                plan,
+                reason: format!(
+                    "giant_steps (len {}) must match factorization_depth (len {})",
+                    giant_steps.len(),
+                    factorization_depth.len()
+                ),
+            }
+            .into());
+        }
+        Ok(Self {
+            steps: factorization_depth
+                .iter()
+                .zip(giant_steps)
+                .map(|(&depth, &giant_step)| FactorStep { depth, giant_step })
+                .collect(),
+        })
     }
 
     /// Number of factor matrices (the schedule length).
     pub fn num_factors(&self) -> usize {
-        self.factorization_depth.len()
+        self.steps.len()
     }
 
-    /// Validates the basic shape invariant shared by generation and evaluation:
-    /// at least one factor, every factor merges at least one FFT layer, and the
-    /// per-factor BSGS widths line up with the factorization schedule.
-    pub fn check(&self) -> Result<(), String> {
-        if self.factorization_depth.is_empty() {
-            return Err("invalid DFTPlan: empty factorization_depth (no factor matrices)".to_string());
+    /// Total merged layers: `log_slots` for a full DFT, the chain's unit
+    /// count for the PaCo chains. Unchecked sum; use [`Self::check`] first
+    /// when the schedule is caller-supplied.
+    pub fn log_slots(&self) -> usize {
+        self.steps.iter().map(|s| s.depth).sum()
+    }
+
+    /// The per-factor merged-layer counts, in evaluation order (collected;
+    /// schedules are consulted on setup paths only).
+    pub fn depths(&self) -> Vec<usize> {
+        self.steps.iter().map(|s| s.depth).collect()
+    }
+
+    /// The per-factor BSGS giant-step widths, in evaluation order (collected;
+    /// schedules are consulted on setup paths only).
+    pub fn giant_steps(&self) -> Vec<usize> {
+        self.steps.iter().map(|s| s.giant_step).collect()
+    }
+
+    /// Validates the shape invariants and returns the checked layer sum:
+    /// at least one factor, no zero-layer factor, no zero giant step, and a
+    /// non-overflowing sum.
+    pub fn check(&self, plan: &'static str) -> anyhow::Result<usize> {
+        let invalid = |reason: String| -> anyhow::Error { crate::CKKSCompositionError::InvalidPlan { plan, reason }.into() };
+        if self.steps.is_empty() {
+            return Err(invalid("empty factorization schedule (no factor matrices)".to_string()));
         }
-        if self.factorization_depth.contains(&0) {
-            return Err(format!(
-                "invalid DFTPlan: factorization_depth has a zero-layer factor: {:?}",
-                self.factorization_depth
-            ));
+        if self.steps.iter().any(|s| s.depth == 0) {
+            return Err(invalid(format!(
+                "factorization schedule has a zero-layer factor: {:?}",
+                self.depths()
+            )));
         }
-        if self.giant_steps.len() != self.factorization_depth.len() {
-            return Err(format!(
-                "invalid DFTPlan: factor_giant_steps (len {}) must match factorization_depth (len {})",
-                self.giant_steps.len(),
-                self.factorization_depth.len()
-            ));
+        if self.steps.iter().any(|s| s.giant_step == 0) {
+            return Err(invalid(format!(
+                "schedule has a zero-width giant step (use 1 for the direct schedule): {:?}",
+                self.giant_steps()
+            )));
         }
-        if self.giant_steps.contains(&0) {
-            return Err(format!(
-                "invalid DFTPlan: factor_giant_steps has a zero-width factor (use 1 for the direct schedule): {:?}",
-                self.giant_steps
-            ));
+        self.steps
+            .iter()
+            .try_fold(0usize, |sum, s| sum.checked_add(s.depth))
+            .ok_or_else(|| invalid(format!("factorization schedule sum overflows usize: {:?}", self.depths())))
+    }
+}
+
+/// `(depth, giant_step)` pairs, in evaluation order — the ergonomic literal
+/// form: `vec![(2, 4), (2, 4), (3, 4)].into()`.
+impl From<Vec<(usize, usize)>> for FactorSchedule {
+    fn from(pairs: Vec<(usize, usize)>) -> Self {
+        Self {
+            steps: pairs
+                .into_iter()
+                .map(|(depth, giant_step)| FactorStep { depth, giant_step })
+                .collect(),
         }
-        Ok(())
+    }
+}
+
+impl From<Vec<FactorStep>> for FactorSchedule {
+    fn from(steps: Vec<FactorStep>) -> Self {
+        Self { steps }
+    }
+}
+
+impl DFTPlan {
+    /// Validated constructor: the only way to obtain a `DFTPlan` outside the
+    /// crate, so every plan in circulation is shape-valid (the derived-index
+    /// APIs are therefore infallible).
+    ///
+    /// `schedule` accepts a [`FactorSchedule`] or `(depth, giant_step)` pairs in
+    /// evaluation order (`vec![(2, 4), (3, 4)].into()` — see the struct docs for
+    /// the ordering convention). `coeffs_meta` carries the per-factor
+    /// coefficient metadata (its `log_delta` is the per-factor scale). `scaling`
+    /// defaults to `1.0` and `bit_reversed` to `false`; adjust with
+    /// [`Self::with_scaling`] / [`Self::with_bit_reversed`].
+    ///
+    /// Errors ([`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan)) if the
+    /// schedule fails [`FactorSchedule::check`] or the consumed-bit count
+    /// overflows.
+    pub fn new(
+        kind: DFTType,
+        schedule: impl Into<FactorSchedule>,
+        format: DFTOutputFormat,
+        coeffs_meta: CoeffsMeta,
+    ) -> anyhow::Result<Self> {
+        let plan = Self {
+            kind,
+            schedule: schedule.into(),
+            format,
+            scaling: None,
+            bit_reversed: false,
+            coeffs_meta,
+        };
+        plan.schedule.check("DFTPlan")?;
+        if plan.num_factors().checked_mul(plan.coeffs_meta.log_delta()).is_none() {
+            return Err(crate::CKKSCompositionError::InvalidPlan {
+                plan: "DFTPlan",
+                reason: format!(
+                    "{} factors at log_delta {} overflow the consumed-bit count",
+                    plan.num_factors(),
+                    plan.coeffs_meta.log_delta(),
+                ),
+            }
+            .into());
+        }
+        Ok(plan)
+    }
+
+    /// Sets the constant the matrix is multiplied by (default `1.0`).
+    ///
+    /// Errors if `scaling` is non-finite or `<= 0` — such a value would
+    /// silently NaN-poison every generated diagonal via the per-factor
+    /// `scaling^(1/depth)` spread.
+    pub fn with_scaling(mut self, scaling: f64) -> anyhow::Result<Self> {
+        if !scaling.is_finite() || scaling <= 0.0 {
+            return Err(crate::CKKSCompositionError::InvalidPlan {
+                plan: "DFTPlan",
+                reason: format!("scaling must be finite and > 0, got {scaling}"),
+            }
+            .into());
+        }
+        self.scaling = Some(scaling);
+        Ok(self)
+    }
+
+    /// Applies the transform bit-reversed (and expects bit-reversed inputs).
+    /// Default `false`.
+    pub fn with_bit_reversed(mut self, bit_reversed: bool) -> Self {
+        self.bit_reversed = bit_reversed;
+        self
+    }
+
+    /// Encode (IDFT) or Decode (DFT).
+    pub fn kind(&self) -> DFTType {
+        self.kind
+    }
+
+    /// The factorization schedule, in evaluation order.
+    pub fn schedule(&self) -> &FactorSchedule {
+        &self.schedule
+    }
+
+    /// Post-processing format (canonical on a resolved plan — see the field
+    /// docs on the struct).
+    pub fn format(&self) -> DFTOutputFormat {
+        self.format
+    }
+
+    /// Constant the matrix is multiplied by; `None` = `1.0`.
+    pub fn scaling(&self) -> Option<f64> {
+        self.scaling
+    }
+
+    /// Whether the transform is applied bit-reversed.
+    pub fn bit_reversed(&self) -> bool {
+        self.bit_reversed
+    }
+
+    /// Per-factor coefficient metadata (its `log_delta` is the per-factor
+    /// scale).
+    pub fn coeffs_meta(&self) -> CoeffsMeta {
+        self.coeffs_meta
+    }
+
+    /// `log2` of the number of complex slots the transform acts on: the sum of
+    /// the factorization schedule (total FFT layers).
+    pub fn log_slots(&self) -> usize {
+        self.schedule.log_slots()
+    }
+
+    /// Number of factor matrices (the schedule length).
+    pub fn num_factors(&self) -> usize {
+        self.schedule.num_factors()
     }
 
     pub fn consumed_bits(&self) -> usize {
-        self.num_factors() * self.meta.meta.log_delta
+        self.num_factors() * self.coeffs_meta.log_delta()
     }
 
     /// Whether this plan resolves to the sparse `RepackImagAsReal` path on a ring
@@ -171,20 +377,17 @@ impl DFTPlan {
     /// produces. `log_n` (ring degree exponent) is needed only to decide the
     /// sparse-repack path (which prepends the `{0, slots}` repack diagonals and
     /// widens the first `Decode` factor to `2·slots`).
+    ///
+    /// Infallible: every `DFTPlan` is shape-valid by construction
+    /// ([`Self::new`]).
     pub fn diagonal_indexes(&self, log_n: usize) -> Vec<Vec<i64>> {
-        self.check().expect("invalid DFTPlan");
-
         let log_slots = self.log_slots();
         let slots = 1i64 << log_slots;
         let sparse = self.is_sparse_repack(log_n);
-        // `rot` uses the absolute level for Encode-forward / Decode-bit-reversed,
-        // and `log_slots − level` otherwise (cf. `default::dft::rot_uses_level`).
-        let uses_level =
-            (self.kind == DFTType::Encode && !self.bit_reversed) || (self.kind == DFTType::Decode && self.bit_reversed);
 
         let mut out = Vec::with_capacity(self.num_factors());
-        let mut fft_level = log_slots as i64;
-        for (i, &m) in self.factorization_depth.iter().enumerate() {
+        let mut fft_level = log_slots;
+        for (i, m) in self.schedule.steps.iter().map(|s| s.depth).enumerate() {
             // Only the sparse-repack first Decode factor starts from the repack
             // matrix ({0, slots}) and wraps its rotations modulo 2·slots.
             let repack_first = sparse && self.kind == DFTType::Decode && i == 0;
@@ -198,22 +401,16 @@ impl DFTPlan {
             };
             let mut level = fft_level;
             for _ in 0..m {
-                let rot = if uses_level {
-                    (1i64 << (level - 1)) & mask
-                } else {
-                    (1i64 << (log_slots as i64 - level)) & mask
-                };
+                let rot = dft_layer_rotation(self.kind, self.bit_reversed, level, log_slots, mask);
                 let mut next: BTreeSet<i64> = BTreeSet::new();
                 for &d in &set {
-                    next.insert(d);
-                    next.insert((d + rot) & mask);
-                    next.insert((d - rot) & mask);
+                    next.extend(dft_layer_spread(d, rot, mask));
                 }
                 set = next;
                 level -= 1;
             }
             out.push(set.into_iter().collect());
-            fft_level -= m as i64;
+            fft_level -= m;
         }
         out
     }
@@ -232,6 +429,9 @@ impl DFTPlan {
     /// sparse path), without generating any diagonal. Equals
     /// [`DFTMatrix::galois_elements`] on the compiled matrix. The conjugation key
     /// used by the split forward transform is separate and not included here.
+    ///
+    /// Infallible: every `DFTPlan` is shape-valid by construction
+    /// ([`Self::new`]).
     pub fn galois_elements(&self, log_n: usize, cyclotomic_order: i64) -> Vec<i64> {
         let sparse = self.is_sparse_repack(log_n);
         let slots = 1i64 << self.log_slots();
@@ -240,11 +440,13 @@ impl DFTPlan {
         let slot_count = if sparse { (slots << 1) as usize } else { slots as usize };
 
         let mut set: BTreeSet<i64> = BTreeSet::new();
-        for (indexes, &giant_step) in self.diagonal_indexes(log_n).into_iter().zip(&self.giant_steps) {
+        for (indexes, step) in self.diagonal_indexes(log_n).into_iter().zip(&self.schedule.steps) {
             let layout = LinearTransformationLayout {
                 indexes,
                 slots: slot_count,
-                strategy: LinearTransformationStrategy::Bsgs { giant_step },
+                strategy: LinearTransformationStrategy::Bsgs {
+                    giant_step: step.giant_step,
+                },
             };
             set.extend(layout.galois_elements(cyclotomic_order));
         }
@@ -406,7 +608,7 @@ impl<BE: Backend, Dir, Fmt, R> DFTMatrix<BE, Dir, Fmt, R> {
 
     /// `log_budget` bits consumed per factor (the per-factor plaintext `log_delta`).
     pub fn meta(&self) -> CKKSMeta {
-        self.inner.plan.meta.meta
+        self.inner.plan.coeffs_meta.meta
     }
 
     /// Total `log_budget` bits the whole transform consumes: `num_factors ×

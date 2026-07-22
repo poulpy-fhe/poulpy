@@ -14,6 +14,7 @@ mod convolution;
 mod encoding;
 mod mat_znx;
 mod module;
+mod plan_cache;
 mod scalar_znx;
 mod scratch;
 mod scratch_views;
@@ -29,6 +30,7 @@ mod znx_base;
 pub use convolution::*;
 pub use mat_znx::*;
 pub use module::*;
+pub use plan_cache::*;
 pub use scalar_znx::*;
 pub use scratch::*;
 pub use scratch_views::*;
@@ -174,6 +176,16 @@ impl Backend for HostBytesBackend {
         let src_len = src.len();
         buf[..src_len].copy_from_slice(src);
         buf[src_len..].fill(0);
+    }
+
+    fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
+        assert_eq!(buf.len(), dst.len());
+        dst.copy_from_slice(buf);
+    }
+
+    fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
+        assert_eq!(buf.len(), src.len());
+        buf.copy_from_slice(src);
     }
 
     fn len_bytes(buf: &Self::OwnedBuf) -> usize {
@@ -345,6 +357,14 @@ macro_rules! impl_backend_from {
 
             fn copy_from_host(buf: &mut Self::OwnedBuf, src: &[u8]) {
                 <$from as poulpy_hal::layouts::Backend>::copy_from_host(buf, src)
+            }
+
+            fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
+                <$from as poulpy_hal::layouts::Backend>::copy_view_to_host(buf, dst)
+            }
+
+            fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
+                <$from as poulpy_hal::layouts::Backend>::copy_host_to_view(buf, src)
             }
 
             fn len_bytes(buf: &Self::OwnedBuf) -> usize {

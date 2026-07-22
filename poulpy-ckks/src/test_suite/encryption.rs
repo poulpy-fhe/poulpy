@@ -5,16 +5,14 @@ use super::helpers::{
     assert_precision_for_log_delta, ckks_decrypt_decode, ckks_decrypt_with_prec, ckks_encrypt, ckks_encrypt_with_prec, ckks_spec,
     gen_sk, quantized_slots, test_vector_1,
 };
-use crate::{
-    CKKSCompositionError, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos, layouts::CKKSModuleAlloc, leveled::api::CKKSDecrypt,
-};
+use crate::{CKKSCompositionError, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos, api::CKKSDecryptOps, layouts::CKKSModuleAlloc};
 use poulpy_core::layouts::LWEInfos;
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
     layouts::{HostBytesBackend, Module},
 };
 
-use crate::{encoding::reim::Encoder, test_suite::CKKSTestParams};
+use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
 fn extract_src_prec(params: &CKKSTestParams) -> CKKSLayout {
     if params.base2k == 19 {
@@ -29,7 +27,7 @@ fn assert_decrypt_extract_success<BE, F, E>(
     params: &CKKSTestParams,
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
-    encoder: &Encoder<E>,
+    encoder: &ReferenceEncoder<E>,
     dst_prec: CKKSLayout,
 ) where
     BE: TestContextBackend,
@@ -38,7 +36,7 @@ fn assert_decrypt_extract_success<BE, F, E>(
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
-    Module<BE>: CKKSDecrypt<BE>,
+    Module<BE>: CKKSDecryptOps<BE>,
 {
     let src_prec = extract_src_prec(params);
     let sk = gen_sk(params, module, host_module, [0u8; 32]);
@@ -88,7 +86,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -126,10 +124,10 @@ pub fn test_decrypt_extract_same_meta<BE, F, E>(
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
-    Module<BE>: CKKSDecrypt<BE>,
+    Module<BE>: CKKSDecryptOps<BE>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     assert_decrypt_extract_success(
         "decrypt_extract_same_meta",
         &params,
@@ -151,10 +149,10 @@ pub fn test_decrypt_extract_truncates_log_budget<BE, F, E>(
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
-    Module<BE>: CKKSDecrypt<BE>,
+    Module<BE>: CKKSDecryptOps<BE>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let src_prec = extract_src_prec(&params);
     assert_decrypt_extract_success(
         "decrypt_extract_truncates_log_budget",
@@ -177,10 +175,10 @@ pub fn test_decrypt_extract_rsh_for_smaller_log_delta<BE, F, E>(
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
-    Module<BE>: CKKSDecrypt<BE>,
+    Module<BE>: CKKSDecryptOps<BE>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let src_prec = extract_src_prec(&params);
     assert_decrypt_extract_success(
         "decrypt_extract_rsh",
@@ -203,10 +201,10 @@ pub fn test_decrypt_extract_lsh_for_larger_log_delta<BE, F, E>(
     Module<BE>: TestContextModule<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
-    Module<BE>: CKKSDecrypt<BE>,
+    Module<BE>: CKKSDecryptOps<BE>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let src_prec = extract_src_prec(&params);
     assert_decrypt_extract_success(
         "decrypt_extract_lsh",
@@ -231,7 +229,7 @@ pub fn test_decrypt_extract_output_hom_rem_too_large<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let src_prec = extract_src_prec(&params);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -285,7 +283,7 @@ pub fn test_decrypt_extract_base2k_mismatch_error<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let src_prec = extract_src_prec(&params);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);

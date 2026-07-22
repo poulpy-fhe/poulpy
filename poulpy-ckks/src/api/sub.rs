@@ -1,6 +1,6 @@
-use anyhow::Result;
-use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, Data, HostBytesBackend, ScratchArena, TransferFrom};
+use crate::CKKSResult as Result;
+use poulpy_core::layouts::{GLWE, GLWEToBackendMut, GLWEToBackendRef};
+use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
 use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::UnnormalizedCKKSCiphertext};
 
@@ -62,7 +62,6 @@ pub trait CKKSSubOps<BE: Backend> {
     /// Metadata is preserved.
     fn ckks_sub_one_assign<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        BE: TransferFrom<HostBytesBackend>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 
     /// Computes `dst = a - pt` where `pt` is a full plaintext polynomial.
@@ -134,7 +133,7 @@ pub trait CKKSSubOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: Data,
-        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        GLWE<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: GLWEToBackendRef<BE> + CKKSCtBounds;
 
@@ -147,7 +146,7 @@ pub trait CKKSSubOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: Data,
-        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        GLWE<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSInfos;
 
     /// Computes `dst = a - pt` without normalizing `dst`.
@@ -160,7 +159,7 @@ pub trait CKKSSubOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: Data,
-        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        GLWE<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
@@ -173,7 +172,7 @@ pub trait CKKSSubOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: Data,
-        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        GLWE<Dst>: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
     /// Computes `dst = a - pt[pt_coeff]` without normalizing `dst`.
@@ -188,7 +187,7 @@ pub trait CKKSSubOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: Data,
-        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        GLWE<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
@@ -203,6 +202,6 @@ pub trait CKKSSubOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: Data,
-        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        GLWE<Dst>: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 }

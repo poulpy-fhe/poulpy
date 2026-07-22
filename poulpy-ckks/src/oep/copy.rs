@@ -1,10 +1,10 @@
+use crate::CKKSResult as Result;
 use crate::default::copy::CKKSCopyDefault;
 
-use anyhow::Result;
-use poulpy_core::{GLWECopy, GLWEShift, layouts::LWEInfos};
+use poulpy_core::{GLWECopy, GLWEShift};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use crate::{CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
+use crate::{CKKSCtBounds, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
 
 /// # Safety
 ///
@@ -12,12 +12,12 @@ use crate::{CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
 pub unsafe trait CKKSCopyImpl<BE: Backend>: Backend {
-    fn ckks_copy_tmp_bytes(module: &Module<BE>) -> usize;
+    fn ckks_copy_tmp_bytes_impl(module: &Module<BE>) -> usize;
 
-    fn ckks_copy<Dst, Src>(module: &Module<BE>, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_copy_impl<Dst, Src>(module: &Module<BE>, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos;
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds;
 }
 
 unsafe impl<BE: Backend> CKKSCopyImpl<BE> for BE
@@ -25,14 +25,14 @@ where
     BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
     Module<BE>: crate::default::copy::CKKSCopyDefault<BE> + GLWECopy<BE> + GLWEShift<BE>,
 {
-    fn ckks_copy_tmp_bytes(module: &Module<BE>) -> usize {
+    fn ckks_copy_tmp_bytes_impl(module: &Module<BE>) -> usize {
         module.ckks_copy_tmp_bytes_default()
     }
 
-    fn ckks_copy<Dst, Src>(module: &Module<BE>, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_copy_impl<Dst, Src>(module: &Module<BE>, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         module.ckks_copy_default(dst, src, scratch)
     }

@@ -10,6 +10,7 @@
 //! | [`test_mul_ct_delta_a_lt_b`] | `a.log_budget() < b.log_budget()` |
 //! | [`test_mul_ct_delta_a_gt_b`] | `a.log_budget() > b.log_budget()` |
 //! | [`test_mul_ct_smaller_output`] | output has smaller `max_k()` than inputs |
+//! | [`test_mul_ct_smaller_output_exact_scratch`] | same, on a scratch arena of exactly `ckks_mul_tmp_bytes` |
 //!
 //! ## ct x ct inplace ct-ct (`GLWE<_, CKKS>::mul_assign`)
 //!
@@ -45,11 +46,11 @@
 //! | Function | Path exercised |
 //! |----------|----------------|
 //! | [`test_mul_pt_vec_assign`] | - |
-use crate::{CKKSCompositionError, CKKSInfos, leveled::api::CKKSMulOps};
+use crate::{CKKSCompositionError, CKKSInfos, api::CKKSMulOps, layouts::CKKSModuleAlloc};
 
 use poulpy_hal::{
-    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module},
+    api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    layouts::{HostBytesBackend, Module, ScratchOwned},
 };
 
 use super::helpers::{
@@ -59,7 +60,7 @@ use super::helpers::{
     gen_sk_with_raw, gen_tsk, precision_at, quantize, quantized_const, quantized_vector, want_mul, want_square,
 };
 
-use crate::{SetCKKSInfos, encoding::reim::Encoder, test_suite::CKKSTestParams};
+use crate::{SetCKKSInfos, test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
 const DELTA_LOG_DELTA: usize = 8;
 
@@ -75,7 +76,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = super::helpers::test_vector_1::<F>(m);
     let (re2, im2) = super::helpers::test_vector_2::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
@@ -133,7 +134,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = super::helpers::test_vector_1::<F>(m);
     let (re2, im2) = super::helpers::test_vector_2::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
@@ -191,7 +192,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = super::helpers::test_vector_1::<F>(m);
     let (re2, im2) = super::helpers::test_vector_2::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
@@ -249,7 +250,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
@@ -311,7 +312,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = super::helpers::test_vector_1::<F>(m);
     let (re2, im2) = super::helpers::test_vector_2::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
@@ -359,6 +360,76 @@ where
     );
 }
 
+/// Wide operands into a narrower destination, on a scratch arena of exactly
+/// `ckks_mul_tmp_bytes(res, a, b, tsk)`.
+///
+/// Regression test: the sizing must account for the operands' widths — the op
+/// carves its tensor intermediate at `max(a.max_k, b.max_k)`, which exceeds
+/// the destination's width here. Sizing from `res` alone under-allocated and
+/// blew the scratch-arena assert on this documented-legal call.
+pub fn test_mul_ct_smaller_output_exact_scratch<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let (re1, im1) = super::helpers::test_vector_1::<F>(m);
+    let (re2, im2) = super::helpers::test_vector_2::<F>(m);
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+
+    let ct1 = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re1,
+        &im1,
+        &mut scratch.borrow(),
+    );
+    let ct2 = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re2,
+        &im2,
+        &mut scratch.borrow(),
+    );
+    let (want_re, want_im) = want_mul(&re1, &im1, &re2, &im2);
+    let mut ct_res = alloc_ct(&params, module, params.k - params.base2k - 1);
+    let exact_bytes = module.ckks_mul_tmp_bytes(&ct_res, &ct1, &ct2, &tsk);
+    let mut mul_scratch = ScratchOwned::<BE>::alloc(exact_bytes);
+    module
+        .ckks_mul_into(&mut ct_res, &ct1, &ct2, &tsk, &mut mul_scratch.borrow())
+        .unwrap();
+    assert_mul_ct_output_meta("mul_ct smaller_output_exact_scratch", &ct_res, &ct1, &ct2);
+    assert_decrypt_precision(
+        "mul_ct smaller_output_exact_scratch",
+        &params,
+        module,
+        &encoder,
+        &ct_res,
+        &sk,
+        &want_re,
+        &want_im,
+        &mut scratch.borrow(),
+    );
+}
+
 // ─── ct × ct in-place ───────────────────────────────────────────────────────
 
 pub fn test_mul_ct_assign_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
@@ -371,7 +442,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = super::helpers::test_vector_1::<F>(m);
     let (re2, im2) = super::helpers::test_vector_2::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
@@ -429,7 +500,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = super::helpers::test_vector_1::<F>(m);
     let (re2, im2) = super::helpers::test_vector_2::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
@@ -487,7 +558,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = super::helpers::test_vector_1::<F>(m);
     let (re2, im2) = super::helpers::test_vector_2::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
@@ -547,7 +618,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = super::helpers::test_vector_1::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -593,7 +664,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = super::helpers::test_vector_1::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -639,7 +710,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = super::helpers::test_vector_1::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -687,7 +758,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = super::helpers::test_vector_1::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -733,7 +804,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = super::helpers::test_vector_1::<F>(m);
     let (re2, im2) = super::helpers::test_vector_2::<F>(m);
     let sk = super::helpers::gen_sk(&params, module, host_module, [0u8; 32]);
@@ -788,7 +859,7 @@ pub fn test_mul_pt_vec_into_delta_log_delta<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re2, im2) = super::helpers::test_vector_2::<F>(m);
     let sk = super::helpers::gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -844,7 +915,7 @@ pub fn test_mul_pt_vec_into_smaller_output<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = super::helpers::test_vector_1::<F>(m);
     let (re2, im2) = super::helpers::test_vector_2::<F>(m);
     let sk = super::helpers::gen_sk(&params, module, host_module, [0u8; 32]);
@@ -898,7 +969,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = super::helpers::test_vector_1::<F>(m);
     let (re2, im2) = super::helpers::test_vector_2::<F>(m);
     let sk = super::helpers::gen_sk(&params, module, host_module, [0u8; 32]);
@@ -953,7 +1024,7 @@ pub fn test_mul_pt_const_into_aligned<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = super::helpers::test_vector_1::<F>(m);
     let sk = super::helpers::gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -1009,7 +1080,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = super::helpers::test_vector_1::<F>(m);
     let sk = super::helpers::gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -1068,7 +1139,7 @@ pub fn test_mul_pt_const_into_delta_log_delta<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let sk = super::helpers::gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
 
@@ -1117,6 +1188,62 @@ pub fn test_mul_pt_const_into_delta_log_delta<BE, F, E>(
 
 // ─── error test ──────────────────────────────────────────────────────────────
 
+/// `ckks_mul_prepared_assign` must reject a prepared operand built under a
+/// different layout (here: a different `base2k`) with a typed error, before
+/// touching the destination.
+pub fn test_mul_prepared_layout_mismatch_error<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let (re1, im1) = super::helpers::test_vector_1::<F>(m);
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+
+    let mut dst = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re1,
+        &im1,
+        &mut scratch.borrow(),
+    );
+    // Prepared from an operand with a different limb radix.
+    let mismatched_base2k = params.base2k / 2;
+    let mut other = module.ckks_ciphertext_alloc(mismatched_base2k.into(), params.k.into());
+    other.set_meta(params.prec().meta);
+    let prepared = module.ckks_prepare_right(&other, &mut scratch.borrow()).unwrap();
+    let err = module
+        .ckks_mul_prepared_assign(&mut dst, &prepared, &tsk, &mut scratch.borrow())
+        .unwrap_err();
+    assert_ckks_error(
+        "mul_prepared_layout_mismatch",
+        &err,
+        CKKSCompositionError::PreparedOperandLayoutMismatch {
+            op: "mul_prepared",
+            dst_n: params.n,
+            dst_base2k: params.base2k,
+            dst_rank: 1,
+            prep_n: params.n,
+            prep_base2k: mismatched_base2k,
+            prep_rank: 1,
+        },
+    );
+}
+
 pub fn test_mul_ct_explicit_metadata_error<BE, F, E>(
     params: CKKSTestParams,
     module: &Module<BE>,
@@ -1130,7 +1257,7 @@ pub fn test_mul_ct_explicit_metadata_error<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = super::helpers::test_vector_1::<F>(m);
     let (re2, im2) = super::helpers::test_vector_2::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);

@@ -14,4 +14,4 @@ pub use eval::{
     ckks_new_dft_matrix, ckks_prepare_dft_matrix, ckks_slots_to_coeffs_assign, ckks_slots_to_coeffs_repack,
     ckks_slots_to_coeffs_split,
 };
-pub use matrices::gen_dft_matrices;
+pub use matrices::{DftScalar, gen_dft_matrices, gen_dft_matrices_blockwise};

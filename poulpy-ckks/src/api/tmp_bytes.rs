@@ -1,5 +1,5 @@
 use crate::{CKKSCtBounds, CKKSInfos};
-use poulpy_core::layouts::{GGLWEInfos, LWEInfos};
+use poulpy_core::layouts::GGLWEInfos;
 use poulpy_hal::layouts::Backend;
 
 /// Helpers that return the maximum scratch size needed across broad CKKS
@@ -12,7 +12,7 @@ pub trait CKKSAllOpsTmpBytes<BE: Backend> {
     where
         C: CKKSCtBounds,
         T: GGLWEInfos,
-        P: CKKSInfos + LWEInfos;
+        P: CKKSInfos;
 
     /// Returns a scratch size large enough for [`Self::ckks_all_ops_tmp_bytes`]
     /// plus automorphism-key setup, rotation, and conjugation.
@@ -21,5 +21,5 @@ pub trait CKKSAllOpsTmpBytes<BE: Backend> {
         C: CKKSCtBounds,
         T: GGLWEInfos,
         A: GGLWEInfos,
-        P: CKKSInfos + LWEInfos;
+        P: CKKSInfos;
 }

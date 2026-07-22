@@ -9,14 +9,14 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
-    encoding::reim::Encoder,
+    api::{CKKSMulOps, CKKSPolynomialEvaluationOps},
     layouts::{CKKSCiphertext, CKKSPlaintext, CKKSPlaintextVecHostCodec},
-    leveled::api::{CKKSMulOps, PolynomialEvaluation},
     polynomial::{
         BSGSPolynomial, Basis, ComplexBSGSPolynomial, ComplexPolynomial, EncodeBSGS, Parity, Polynomial, SplitStrategy,
     },
     power_basis::{PowerBasis, PowerBasisGen, PowerBasisInsert},
     test_suite::CKKSTestParams,
+    test_suite::reference_encoder::ReferenceEncoder,
 };
 
 use super::helpers::{
@@ -189,7 +189,7 @@ pub fn test_power_basis_populate_degree7<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (x_re_raw, _x_im_raw) = test_vector_1::<F>(m);
     let x_im_raw = vec![F::zero(); x_re_raw.len()];
     let (x_re, _) = quantized_slots(
@@ -256,7 +256,7 @@ pub fn test_power_basis_populate_chebyshev_degree7<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (x_re_raw, _x_im_raw) = test_vector_1::<F>(m);
     let x_im_raw = vec![F::zero(); x_re_raw.len()];
     let (x_re, _) = quantized_slots(
@@ -354,7 +354,7 @@ pub fn test_encode_bsgs_preserves_chebyshev_eval<BE, F, E>(
 {
     let poly = Polynomial::chebyshev_interpolate(31, -F::one(), F::one(), |x: F| x.sin())
         .expect("degree-31 Chebyshev interpolation of sin(x) should succeed");
-    let coeff_meta = ckks_spec(params.n, params.base2k, 40, 8);
+    let coeff_meta = crate::CoeffsMeta::from_delta_budget(40, 8);
     let bsgs = poly
         .encode_bsgs(host_module, params.base2k.into(), coeff_meta)
         .expect("encode_bsgs should succeed for degree-31 Chebyshev polynomial");
@@ -385,7 +385,7 @@ pub fn test_eval_poly_const_coeffs_cubic<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + PolynomialEvaluation<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -393,7 +393,7 @@ pub fn test_eval_poly_const_coeffs_cubic<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
 
     let quarter = F::from_f64(0.25).unwrap();
     let (re1, _im1) = test_vector_1::<F>(m);
@@ -416,7 +416,7 @@ pub fn test_eval_poly_const_coeffs_cubic<BE, F, E>(
 
     let poly_ref = Polynomial::new(Basis::Monomial, raw_coeffs.to_vec());
     let bsgs_host = poly_ref
-        .encode_bsgs(host_module, params.base2k.into(), PT_PREC)
+        .encode_bsgs(host_module, params.base2k.into(), PT_PREC.into())
         .expect("encode_bsgs should succeed for cubic monomial polynomial");
     let poly = upload_bsgs(module, &bsgs_host);
 
@@ -484,7 +484,7 @@ pub fn test_eval_poly_rejects_power_basis_mismatch<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + PolynomialEvaluation<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -492,13 +492,13 @@ pub fn test_eval_poly_rejects_power_basis_mismatch<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (x_re_raw, _x_im_raw) = test_vector_1::<F>(m);
     let x_im_raw = vec![F::zero(); x_re_raw.len()];
 
     let poly_ref = Polynomial::new(Basis::Monomial, vec![0.125f64, -0.25, 0.0625]);
     let bsgs_host = poly_ref
-        .encode_bsgs(host_module, params.base2k.into(), PT_PREC)
+        .encode_bsgs(host_module, params.base2k.into(), PT_PREC.into())
         .expect("encode_bsgs should succeed for monomial polynomial");
     let bsgs = upload_bsgs(module, &bsgs_host);
 
@@ -544,7 +544,7 @@ pub fn test_eval_poly_const_coeffs_exp7<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + PolynomialEvaluation<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -563,7 +563,7 @@ pub fn test_eval_poly_const_coeffs_exp7<BE, F, E>(
     ];
 
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (x_re_raw, _x_im_raw) = test_vector_1::<F>(m);
     let x_im_raw = vec![F::zero(); x_re_raw.len()];
 
@@ -579,7 +579,7 @@ pub fn test_eval_poly_const_coeffs_exp7<BE, F, E>(
 
     let poly_ref = Polynomial::new(Basis::Monomial, raw_coeffs.to_vec());
     let bsgs_host = poly_ref
-        .encode_bsgs(host_module, params.base2k.into(), PT_PREC)
+        .encode_bsgs(host_module, params.base2k.into(), PT_PREC.into())
         .expect("encode_bsgs should succeed for degree-7 monomial polynomial");
     let bsgs = upload_bsgs(module, &bsgs_host);
 
@@ -637,7 +637,7 @@ pub fn test_eval_poly_const_coeffs_even_monomial<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + PolynomialEvaluation<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -648,7 +648,7 @@ pub fn test_eval_poly_const_coeffs_even_monomial<BE, F, E>(
     let raw_coeffs = [0.5f64, 0.0, 0.25, 0.0, 0.125];
 
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let quarter = F::from_f64(0.25).unwrap();
     let (re1, _) = test_vector_1::<F>(m);
     let x_re_raw: Vec<F> = re1.iter().map(|&x| x * quarter).collect();
@@ -667,7 +667,7 @@ pub fn test_eval_poly_const_coeffs_even_monomial<BE, F, E>(
     let poly_ref = Polynomial::new(Basis::Monomial, raw_coeffs.to_vec());
     assert_eq!(poly_ref.parity, Parity::Even, "polynomial should be detected as even");
     let bsgs_host = poly_ref
-        .encode_bsgs(host_module, params.base2k.into(), PT_PREC)
+        .encode_bsgs(host_module, params.base2k.into(), PT_PREC.into())
         .expect("encode_bsgs should succeed");
     assert_eq!(bsgs_host.parity(), Parity::Even, "BSGSPolynomial should carry Even parity");
     let bsgs = upload_bsgs(module, &bsgs_host);
@@ -733,7 +733,7 @@ pub fn test_eval_poly_const_coeffs_odd_monomial<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + PolynomialEvaluation<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -744,7 +744,7 @@ pub fn test_eval_poly_const_coeffs_odd_monomial<BE, F, E>(
     let raw_coeffs = [0.0f64, 0.25, 0.0, 0.125, 0.0, 0.0625];
 
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let quarter = F::from_f64(0.25).unwrap();
     let (re1, _) = test_vector_1::<F>(m);
     let x_re_raw: Vec<F> = re1.iter().map(|&x| x * quarter).collect();
@@ -763,7 +763,7 @@ pub fn test_eval_poly_const_coeffs_odd_monomial<BE, F, E>(
     let poly_ref = Polynomial::new(Basis::Monomial, raw_coeffs.to_vec());
     assert_eq!(poly_ref.parity, Parity::Odd, "polynomial should be detected as odd");
     let bsgs_host = poly_ref
-        .encode_bsgs(host_module, params.base2k.into(), PT_PREC)
+        .encode_bsgs(host_module, params.base2k.into(), PT_PREC.into())
         .expect("encode_bsgs should succeed");
     assert_eq!(bsgs_host.parity(), Parity::Odd, "BSGSPolynomial should carry Odd parity");
     let bsgs = upload_bsgs(module, &bsgs_host);
@@ -829,7 +829,7 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + PolynomialEvaluation<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -837,7 +837,7 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (x_re_raw, _x_im_raw) = test_vector_1::<F>(m);
     let x_im_raw = vec![F::zero(); x_re_raw.len()];
     let input_meta = precision_at(&params, params.prec().log_delta().min(20));
@@ -846,7 +846,7 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31<BE, F, E>(
     let poly = Polynomial::chebyshev_interpolate(31, -F::one(), F::one(), |x: F| x.sin())
         .expect("degree-31 Chebyshev interpolation of sin(x) should succeed");
     let bsgs_host = poly
-        .encode_bsgs(host_module, params.base2k.into(), PT_PREC)
+        .encode_bsgs(host_module, params.base2k.into(), PT_PREC.into())
         .expect("encode_bsgs should succeed for degree-31 Chebyshev polynomial");
     let want_re: Vec<F> = x_re.iter().map(|&x| eval_encoded_bsgs_chebyshev(&bsgs_host, x)).collect();
     let want_im = vec![F::zero(); x_re.len()];
@@ -914,7 +914,7 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31_min_mult<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + PolynomialEvaluation<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -922,7 +922,7 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31_min_mult<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (x_re_raw, _x_im_raw) = test_vector_1::<F>(m);
     let x_im_raw = vec![F::zero(); x_re_raw.len()];
     let input_meta = precision_at(&params, params.prec().log_delta().min(20));
@@ -931,7 +931,7 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31_min_mult<BE, F, E>(
     let poly = Polynomial::chebyshev_interpolate(31, -F::one(), F::one(), |x: F| x.sin())
         .expect("degree-31 Chebyshev interpolation of sin(x) should succeed");
     let bsgs_host = poly
-        .encode_bsgs_with(host_module, params.base2k.into(), PT_PREC, SplitStrategy::MinMult)
+        .encode_bsgs_with(host_module, params.base2k.into(), PT_PREC.into(), SplitStrategy::MinMult)
         .expect("encode_bsgs_with MinMult should succeed for degree-31 Chebyshev polynomial");
     let want_re: Vec<F> = x_re.iter().map(|&x| eval_encoded_bsgs_chebyshev(&bsgs_host, x)).collect();
     let want_im = vec![F::zero(); x_re.len()];
@@ -999,7 +999,7 @@ pub fn test_eval_poly_const_coeffs_complex_cubic<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + PolynomialEvaluation<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -1008,7 +1008,7 @@ pub fn test_eval_poly_const_coeffs_complex_cubic<BE, F, E>(
 {
     // p(z) = Σ_k (a_k + i·b_k)·z^k, evaluated on complex slot values z.
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
 
     let quarter = F::from_f64(0.25).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
@@ -1036,7 +1036,7 @@ pub fn test_eval_poly_const_coeffs_complex_cubic<BE, F, E>(
 
     let poly_ref = ComplexPolynomial::new(Basis::Monomial, re_coeffs.to_vec(), im_coeffs.to_vec());
     let bsgs_host = poly_ref
-        .encode_bsgs(host_module, params.base2k.into(), PT_PREC)
+        .encode_bsgs(host_module, params.base2k.into(), PT_PREC.into())
         .expect("encode_bsgs should succeed for complex cubic monomial polynomial");
     let poly = upload_complex_bsgs(module, &bsgs_host);
 
@@ -1113,7 +1113,7 @@ pub fn test_eval_poly_const_coeffs_complex_chebyshev<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + PolynomialEvaluation<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -1122,7 +1122,7 @@ pub fn test_eval_poly_const_coeffs_complex_chebyshev<BE, F, E>(
 {
     // p(z) = Σ_k (a_k + i·b_k)·T_k(z), Chebyshev basis, on complex slot values z.
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
 
     let quarter = F::from_f64(0.25).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
@@ -1150,7 +1150,7 @@ pub fn test_eval_poly_const_coeffs_complex_chebyshev<BE, F, E>(
 
     let poly_ref = ComplexPolynomial::new(Basis::Chebyshev, re_coeffs.to_vec(), im_coeffs.to_vec());
     let bsgs_host = poly_ref
-        .encode_bsgs(host_module, params.base2k.into(), PT_PREC)
+        .encode_bsgs(host_module, params.base2k.into(), PT_PREC.into())
         .expect("encode_bsgs should succeed for complex degree-7 Chebyshev polynomial");
     let poly = upload_complex_bsgs(module, &bsgs_host);
 
@@ -1257,7 +1257,7 @@ pub fn test_eval_poly_const_coeffs_complex_even<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + PolynomialEvaluation<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -1266,7 +1266,7 @@ pub fn test_eval_poly_const_coeffs_complex_even<BE, F, E>(
 {
     // Even-parity complex monomial: only even-degree complex coeffs nonzero.
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
 
     let quarter = F::from_f64(0.25).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
@@ -1294,7 +1294,7 @@ pub fn test_eval_poly_const_coeffs_complex_even<BE, F, E>(
 
     let poly_ref = ComplexPolynomial::new(Basis::Monomial, re_coeffs.to_vec(), im_coeffs.to_vec());
     let bsgs_host = poly_ref
-        .encode_bsgs(host_module, params.base2k.into(), PT_PREC)
+        .encode_bsgs(host_module, params.base2k.into(), PT_PREC.into())
         .expect("encode_bsgs should succeed for even complex monomial polynomial");
     assert_eq!(bsgs_host.re.parity(), Parity::Even, "BSGS real part should carry Even parity");
     assert_eq!(bsgs_host.im.parity(), Parity::Even, "BSGS imag part should carry Even parity");
@@ -1369,7 +1369,7 @@ pub fn test_eval_poly_const_coeffs_complex_odd<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + PolynomialEvaluation<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -1378,7 +1378,7 @@ pub fn test_eval_poly_const_coeffs_complex_odd<BE, F, E>(
 {
     // Odd-parity complex monomial: only odd-degree complex coeffs nonzero.
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
 
     let quarter = F::from_f64(0.25).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
@@ -1406,7 +1406,7 @@ pub fn test_eval_poly_const_coeffs_complex_odd<BE, F, E>(
 
     let poly_ref = ComplexPolynomial::new(Basis::Monomial, re_coeffs.to_vec(), im_coeffs.to_vec());
     let bsgs_host = poly_ref
-        .encode_bsgs(host_module, params.base2k.into(), PT_PREC)
+        .encode_bsgs(host_module, params.base2k.into(), PT_PREC.into())
         .expect("encode_bsgs should succeed for odd complex monomial polynomial");
     assert_eq!(bsgs_host.re.parity(), Parity::Odd, "BSGS real part should carry Odd parity");
     assert_eq!(bsgs_host.im.parity(), Parity::Odd, "BSGS imag part should carry Odd parity");
@@ -1481,7 +1481,7 @@ pub fn test_eval_poly_const_coeffs_complex_fold<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + PolynomialEvaluation<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -1492,7 +1492,7 @@ pub fn test_eval_poly_const_coeffs_complex_fold<BE, F, E>(
     // trailing constant and `populate` generates X^8, so the complex fold path
     // is exercised. Uses the one-shot convenience entry point.
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
 
     let quarter = F::from_f64(0.25).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
@@ -1522,7 +1522,7 @@ pub fn test_eval_poly_const_coeffs_complex_fold<BE, F, E>(
 
     let poly_ref = ComplexPolynomial::new(Basis::Monomial, re_coeffs.to_vec(), im_coeffs.to_vec());
     let bsgs_host = poly_ref
-        .encode_bsgs(host_module, params.base2k.into(), PT_PREC)
+        .encode_bsgs(host_module, params.base2k.into(), PT_PREC.into())
         .expect("encode_bsgs should succeed for degree-8 complex monomial polynomial");
     assert_eq!(bsgs_host.re.degree(), 8, "fold test requires degree 8");
     let n_baby = bsgs_host.re.baby_steps().len();
@@ -1595,7 +1595,7 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + PolynomialEvaluation<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
     CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>,
@@ -1610,7 +1610,7 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
 
     let module = Module::<BE>::new(n as u64);
     let host_module = Module::<HostBytesBackend>::new(n as u64);
-    let encoder = Encoder::<E>::new::<F>(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new::<F>(m).unwrap();
 
     // Budget comfortably above the worst-case consumption (degree 511, MinMult).
     let k = (input_log_delta + 12 * input_log_delta + 16).next_multiple_of(base2k);
@@ -1625,6 +1625,7 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
         prec_log_budget: k - input_log_delta,
         hw: m,
         dsize: 1,
+        rank: 1,
     };
     let coeff_meta = ckks_spec(n, base2k, coeff_log_delta, 10);
 
@@ -1653,7 +1654,7 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
                 .map(|i| F::from_f64(((i % 7) + 1) as f64 / 16.0).unwrap())
                 .collect();
             let bsgs_host = Polynomial::new(Basis::Monomial, coeffs)
-                .encode_bsgs_with(&host_module, base2k.into(), coeff_meta, strategy)
+                .encode_bsgs_with(&host_module, base2k.into(), coeff_meta.into(), strategy)
                 .expect("encode_bsgs_with");
             let bsgs = upload_bsgs(&module, &bsgs_host);
 

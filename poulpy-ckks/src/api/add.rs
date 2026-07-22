@@ -1,12 +1,13 @@
-use anyhow::Result;
-use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, Data, HostBytesBackend, ScratchArena, TransferFrom};
+use crate::CKKSResult as Result;
+use poulpy_core::layouts::{GLWE, GLWEToBackendMut, GLWEToBackendRef};
+use poulpy_hal::layouts::{Backend, Data, ScratchArena};
 
 use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::UnnormalizedCKKSCiphertext};
 
 /// Normalized ciphertext and plaintext addition.
 ///
-/// All operations in this trait produce a fully normalized [`CKKSCiphertext`]
+/// All operations in this trait produce a fully normalized
+/// [`CKKSCiphertext`](crate::layouts::CKKSCiphertext)
 /// whose limb digits fit within `base2k` bits, safe for any subsequent
 /// DFT-domain operation (keyswitching, convolution, automorphisms).
 ///
@@ -83,7 +84,6 @@ pub trait CKKSAddOps<BE: Backend> {
     /// Metadata is preserved.
     fn ckks_add_one_assign<Dst>(&self, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        BE: TransferFrom<HostBytesBackend>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 
     fn ckks_add_pt_vec_tmp_bytes(&self) -> usize;
@@ -161,7 +161,7 @@ pub trait CKKSAddOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: Data,
-        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        GLWE<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: GLWEToBackendRef<BE> + CKKSCtBounds;
 
@@ -174,7 +174,7 @@ pub trait CKKSAddOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: Data,
-        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        GLWE<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSInfos;
 
     /// Computes `dst = a + pt` without normalizing `dst`.
@@ -187,7 +187,7 @@ pub trait CKKSAddOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: Data,
-        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        GLWE<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
@@ -200,7 +200,7 @@ pub trait CKKSAddOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: Data,
-        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        GLWE<Dst>: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
     /// Computes `dst = a + pt[pt_coeff]` without normalizing `dst`.
@@ -215,7 +215,7 @@ pub trait CKKSAddOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: Data,
-        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        GLWE<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
@@ -230,6 +230,6 @@ pub trait CKKSAddOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: Data,
-        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        GLWE<Dst>: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 }

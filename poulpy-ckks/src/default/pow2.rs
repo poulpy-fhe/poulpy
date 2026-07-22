@@ -1,14 +1,11 @@
-use anyhow::Result;
+use crate::CKKSResult as Result;
 use poulpy_core::layouts::GLWEToBackendMut;
-use poulpy_core::{
-    GLWECopy, GLWEShift,
-    layouts::{GLWEInfos, LWEInfos},
-};
+use poulpy_core::{GLWECopy, GLWEShift, layouts::GLWEInfos};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::GLWEToBackendRef;
 
-use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub, ckks_offset_unary};
+use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub};
 
 pub trait CKKSPow2Default<BE: Backend> {
     fn ckks_mul_pow2_tmp_bytes_default(&self) -> usize
@@ -34,20 +31,17 @@ pub trait CKKSPow2Default<BE: Backend> {
     ) -> Result<()>
     where
         Self: GLWEShift<BE>,
-        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
-        let offset = ckks_offset_unary(dst, src);
-        self.glwe_lsh(dst, src, bits + offset, scratch);
-        dst.set_meta(src.meta());
-        dst.set_log_budget(checked_log_budget_sub("mul_pow2", src.log_budget(), offset)?);
+        crate::ckks_shift_stamp_unary(self, "mul_pow2", dst, src, bits, 0, scratch)?;
         Ok(())
     }
 
     fn ckks_mul_pow2_assign_default<Dst>(&self, dst: &mut Dst, bits: usize, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: GLWEShift<BE>,
-        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
     {
         self.glwe_lsh_assign(dst, bits, scratch);
         Ok(())
@@ -62,22 +56,23 @@ pub trait CKKSPow2Default<BE: Backend> {
     ) -> Result<()>
     where
         Self: GLWEShift<BE> + GLWECopy<BE>,
-        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
-        let offset = ckks_offset_unary(dst, src);
-        self.glwe_lsh(dst, src, offset, scratch);
-        dst.set_meta(src.meta());
-        dst.set_log_budget(checked_log_budget_sub("div_pow2", src.log_budget(), bits + offset)?);
+        crate::ckks_shift_stamp_unary(self, "div_pow2", dst, src, 0, bits, scratch)?;
         dst.set_log_delta(dst.log_delta() + bits);
         Ok(())
     }
 
     fn ckks_div_pow2_assign_default<Dst>(&self, dst: &mut Dst, bits: usize) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
     {
+        // Lossless relabel, mirroring `_into` with `offset = 0`: the `bits`
+        // charged to the budget move under `log_delta`, leaving `k` unchanged
+        // (`set_log_delta` preserves the budget by shifting `k` back up).
         dst.set_log_budget(checked_log_budget_sub("div_pow2_assign", dst.log_budget(), bits)?);
+        dst.set_log_delta(dst.log_delta() + bits);
         Ok(())
     }
 }
