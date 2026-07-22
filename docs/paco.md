@@ -7,9 +7,13 @@ structured, low-weight secret to express decryption as four encrypted packing
 vectors, then evaluates modular addition through multiplication on the unit
 circle.
 
-The implementation uses Poulpy's generator-5 DFT embedding and natural slot
-order. The exact convention and its relationship to the paper's reference code
-are recorded in [the PaCo DFT specification](spec/paco_dft_convention.md).
+The implementation uses Poulpy's generator-5 DFT embedding. The mid-pipeline
+slot convention is selected by `PaCoSlotOrder` on the plan (`Natural` is the
+default; `PaCoPlan::with_slot_order` selects `BitRevLow`); the choice changes
+the BSGS diagonal offsets and hence the Galois key set, so it must be kept
+stable per persisted key bundle. The exact convention and its relationship to
+the paper's reference code are recorded in
+[the PaCo DFT specification](spec/paco_dft_convention.md).
 
 ## Public API
 
@@ -46,14 +50,19 @@ recombined in increasing order.
 
 The only PaCo-specific backend hook is coefficient encoding, the
 input-dependent conversion of public ciphertext residues into the four beta
-plaintexts. A backend that invokes `impl_ckks_paco_default!` opts into a
-blanket `CKKSPaCoImpl` that downloads the exhausted ciphertext, uses the
-standard host codec and CKKS encoder, and uploads the result. A backend with a
-native encoder instead implements `CKKSPaCoDefault` manually, overrides
-`ckks_paco_coeff_encodings_default`, and does not invoke the macro. The blanket
-`CKKSPaCoImpl` remains the dispatch layer in both cases. The rest of PaCo
-composes existing CKKS multiplication, automorphism, trace/fold,
-linear-transformation, allocation, transfer, and metadata APIs.
+plaintexts. A backend opts in by implementing
+`poulpy_ckks::oep::CKKSPaCoCoeffEncodingImpl`, which supplies the scratch
+bound and the encoding itself; the `CKKSPaCoOps` methods
+`ckks_paco_coeff_encodings` and `ckks_paco_coeff_encodings_tmp_bytes`
+dispatch to it. The trait imposes no FFT engine, encoder, or host codec: a
+backend with a native encoder may implement the whole step as one fused
+kernel from the ciphertext residues. The complete scheme definition of the
+step is exported as `poulpy_ckks::encoding::paco_coeff_encodings_host`, and a
+CPU backend with host-accessible buffers adopts it wholesale with
+`poulpy-cpu-ref`'s `impl_ckks_paco_coeff_encoding!` macro, which routes the
+staged host routine through the backend's own CKKS encoding implementation.
+The rest of PaCo composes existing CKKS multiplication, automorphism,
+trace/fold, linear-transformation, allocation, transfer, and metadata APIs.
 
 ## Construction outline
 
@@ -65,14 +74,14 @@ use poulpy_ckks::{
 use poulpy_core::layouts::Base2K;
 
 let coeffs_to_slots = PaCoDFTPlan::new(c2s_depths, c2s_giant_steps,
-                                       c2s_scale, plaintext_budget, c2s_scaling)?;
+                                       c2s_log_delta, log_budget, c2s_scaling)?;
 let slots_to_coeffs = PaCoDFTPlan::new(stc_depths, stc_giant_steps,
-                                       stc_scale, plaintext_budget, stc_scaling)?;
+                                       stc_log_delta, log_budget, stc_scaling)?;
 let plan = PaCoPlan::new(log_n, h, c, log_q)?
-    .with_evaluation(bootstrap_scale, beta_budget, coeffs_to_slots, slots_to_coeffs)?;
+    .with_evaluation(log_delta_bsk, log_beta_budget, coeffs_to_slots, slots_to_coeffs)?;
 
-let context = PaCoContext::<MyBackend, f64, MyFft>::compile(
-    &module, &host_module, Base2K(base2k), plan.clone(),
+let context = PaCoContext::<MyBackend, f64>::compile(
+    &module, Base2K(base2k), plan.clone(), &mut scratch,
 )?;
 
 // Obtain a validated PaCoKeys implementation from the application's key
@@ -80,7 +89,7 @@ let context = PaCoContext::<MyBackend, f64, MyFft>::compile(
 // required secret-key relationships are stated below.
 
 let mut output = module.ckks_ciphertext_alloc(Base2K(base2k), k_boot.into());
-module.ckks_paco_bootstrap_into::<f64, MyFft, _>(
+module.ckks_paco_bootstrap_into(
     &mut output, &exhausted_input, &context, &keys, kappa, &mut scratch,
 )?;
 ```

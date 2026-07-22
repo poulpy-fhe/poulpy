@@ -126,15 +126,14 @@ need explicit overrides; everything else is inherited for free.
 
 | Module | Visibility | Role |
 |--------|-----------|------|
-| `api` | public | Typed, ergonomic evaluator traits (`CKKSAddOps`, `CKKSMulOps`, `CKKSAffineOps`, …) that `Module<BE>` implements. These are what user code calls. Re-exported under `leveled::api` for backwards compatibility. |
+| `api` | public | Typed, ergonomic evaluator traits (`CKKSAddOps`, `CKKSMulOps`, `CKKSAffineOps`, …) that `Module<BE>` implements. These are what user code calls. |
 | `delegates` | crate-private | Implements each `api` trait on `Module<BE>` by delegating to `oep`. Also owns composite operations (affine, mul-add, dot-product, etc.) that are built from two or more primitives and therefore live above the OEP layer. |
 | `oep` | public | Operation Exposition Pattern. Each `CKKS*Impl<BE>` unsafe trait defines the raw dispatch surface: static methods taking `&Module<BE>` directly. A blanket `impl` wires every backend that satisfies the HAL bounds to the corresponding `default` method. Macros (`impl_ckks_*_defaults!`) are the only thing a backend crate needs to call to opt in. `CKKSImpl<BE>` is the aggregate supertrait required by composite ops. |
 | `default` | public | One trait per operation family (e.g. `CKKSAddDefault<BE>`) holding the portable algorithm implementations as regular methods on `Module<BE>`. Backends that need to override an operation implement the corresponding `oep` trait directly instead of relying on this layer. |
 | `layouts` | public | CKKS-level data wrappers: `CKKSCiphertext<D>`, `CKKSPlaintext<D>`, `UnnormalizedCKKSCiphertext<D>`, allocation helpers (`CKKSModuleAlloc`), and the `CKKSPlaintextVecHostCodec<F>` encoding trait. |
-| `encoding` | public | Slot encoder/decoder. `Encoder<T>` packs complex slot values into a `CKKSPlaintext` via a negacyclic FFT table `T` supplied by the backend crate. |
-| `leveled` | public | Compatibility shim: re-exports `api::*` under `leveled::api::*` so existing code continues to compile. |
-| `test_suite` | public | Backend-agnostic test suite. Invoke `ckks_backend_test_suite!` in a backend crate's test module to run the full suite against that backend without duplicating test logic. |
-| `error` | private | `CKKSCompositionError` and checked arithmetic helpers used by the default implementations. |
+| `encoding` | public | Scheme-level encoding definitions shared by backends (e.g. the PaCo host reference `paco_coeff_encodings_host`). Slot/coefficient encoding itself is a backend-resident operation exposed by `api::CKKSEncodingOps` and dispatched through `oep::CKKSEncodingImpl`. |
+| `test_suite` | public (feature `test-utils`) | Backend-agnostic test suite. Enable the `test-utils` feature (backend crates do so in dev-dependencies) and invoke `ckks_backend_test_suite!` in a backend crate's test module to run the full suite against that backend without duplicating test logic. |
+| `error` | private | `CKKSError`, `CKKSResult`, and `CKKSCompositionError`, re-exported at the crate root, plus checked arithmetic helpers used by the default implementations. |
 
 ## Public Types
 
@@ -163,32 +162,35 @@ derived from the wrapped GLWE's torus width `k` as `log_budget = k - log_delta`.
 
 ## Encoding
 
-The `encoding::Encoder<T>` helper packs user-provided real and imaginary slot
-vectors into a `CKKSPlaintext`. `T` is the negacyclic FFT table implementation
-provided by the backend crate (e.g. `FFT64ReimTable<f64>` from
-`poulpy-cpu-ref`).
+Slot and coefficient encoding are backend-resident operations on `Module<BE>`,
+exposed by `api::CKKSEncodingOps<BE, F>`:
+`ckks_encode_slots_assign_into` / `ckks_decode_slots_into` operate on a
+backend-resident `CKKSEncodingBuffer`, `ckks_encode_coeffs_into` /
+`ckks_decode_coeffs_into` on raw coefficients, and
+`ckks_slots_to_coeffs_assign` / `ckks_coeffs_to_slots_assign` convert a buffer
+in place. `api::CKKSEncodingHostOps` layers host-slice convenience adapters on
+top:
 
 ```rust,ignore
-use poulpy_ckks::encoding::Encoder;
-use poulpy_cpu_ref::FFT64ReimTable;
+use poulpy_ckks::api::CKKSEncodingHostOps;
 
 let m = 8;  // number of complex slots
 let re = vec![0.0f64; m];
 let im = vec![1.0f64; m];
 
-let encoder = Encoder::<FFT64ReimTable<f64>>::new::<f64>(m)?;
-
 // allocate a plaintext via the module, then encode
 let mut pt = module.ckks_pt_vec_alloc(base2k.into(), prec);
-encoder.encode_reim(&mut pt, &re, &im)?;
+module.ckks_encode_reim_into(&mut pt, &re, &im, &mut scratch)?;
 
 let mut re_out = vec![0.0f64; m];
 let mut im_out = vec![0.0f64; m];
-encoder.decode_reim(&pt, &mut re_out, &mut im_out)?;
+module.ckks_decode_reim_into(&pt, &mut re_out, &mut im_out, &mut scratch)?;
 ```
 
-If you already have a concrete FFT table instance (e.g. one shared across
-encoders), use `Encoder::from_table(table, m)` instead of `new`.
+The scalar `F` (e.g. `f64`) is fixed by the backend's
+`oep::CKKSEncodingImpl<BE, F>` implementation, and FFT plans are owned and
+cached by the module itself, so user code never constructs an encoder object
+or an FFT table.
 
 ## End-to-End Example: Chebyshev sine approximation
 
@@ -210,7 +212,7 @@ power basis built from the encrypted input:
 
 ```rust,ignore
 use poulpy_ckks::{
-    api::PolynomialEvaluation,
+    api::CKKSPolynomialEvaluationOps,
     polynomial::{Basis, EncodeBSGS, Polynomial},
     power_basis::{PowerBasis, PowerBasisGen},
 };
@@ -236,11 +238,11 @@ encoding, encryption, evaluation, decryption, and decoding.
 
 Leveled operations are invoked through traits implemented on
 `poulpy_hal::layouts::Module<BE>`. All traits are defined in `crate::api`.
-The historical `crate::leveled::api` path remains available as a backwards-compat alias.
 
 | Trait | Operations |
 |-------|-----------|
-| `CKKSEncrypt` / `CKKSDecrypt` | encryption and decryption |
+| `CKKSEncryptOps` / `CKKSDecryptOps` | encryption and decryption |
+| `CKKSEncodingOps` / `CKKSEncodingHostOps` | backend-resident slot/coefficient encoding and decoding, plus host-slice adapters |
 | `CKKSAddOps` | normalized and unnormalized ciphertext and plaintext addition |
 | `CKKSSubOps` | normalized and unnormalized subtraction |
 | `CKKSNegOps` | negation |
@@ -256,11 +258,12 @@ The historical `crate::leveled::api` path remains available as a backwards-compa
 | `CKKSConjugateOps` | homomorphic conjugation |
 | `CKKSPow2Ops` | multiplication and division by powers of two |
 | `CKKSPlaintextVecOps` | plaintext ZNX operations |
-| `PolynomialEvaluation` | Baby-Step Giant-Step polynomial evaluation (monomial and Chebyshev bases) |
-| `LinearTransformationOps` | homomorphic matrix-vector product over the slots (BSGS diagonal method) |
-| `DFTOps` | homomorphic DFT (`CoeffsToSlots` / `SlotsToCoeffs`) |
+| `CKKSPolynomialEvaluationOps` | Baby-Step Giant-Step polynomial evaluation (monomial and Chebyshev bases) |
+| `CKKSLinearTransformationOps` | homomorphic matrix-vector product over the slots (BSGS diagonal method) |
+| `CKKSDFTOps` / `CKKSDFTMatrixOps` | homomorphic DFT (`CoeffsToSlots` / `SlotsToCoeffs`) and its compiled plaintext matrices |
 | `CKKSEvalModOps` | homomorphic modular reduction (`EvalMod`) |
 | `CKKSBootstrappingOps` | bootstrapping pipeline (mod-raise, homomorphic DFT, `EvalMod`) |
+| `CKKSPaCoOps` | PaCo bootstrapping (see [`docs/paco.md`](../docs/paco.md)) |
 | `CKKSAllOpsTmpBytes` | scratch size queries for all operations |
 
 For example, ciphertext addition uses `CKKSAddOps<BE>` and is called through
@@ -303,9 +306,10 @@ users will choose one of:
 - `poulpy-cpu-avx512` for AVX-512F and AVX-512-IFMA execution when those
   target features are available
 
-Backend selection happens through the `BE` parameter of `Module<BE>`. Note that
-the `encoding::Encoder<T>` requires a concrete FFT table type (e.g.
-`FFT64ReimTable<f64>`) which comes from the chosen backend crate.
+Backend selection happens through the `BE` parameter of `Module<BE>`. Encoding
+dispatches through the backend like every other operation
+(`oep::CKKSEncodingImpl<BE, F>`); backend crates opt in with the
+`impl_ckks_*` macros, so no backend-specific type appears in user code.
 
 ## Roadmap
 
@@ -316,6 +320,7 @@ The core leveled evaluator building blocks are now implemented:
 - homomorphic DFT (`CoeffsToSlots` / `SlotsToCoeffs`)
 - homomorphic modular reduction (`EvalMod`)
 - bootstrapping (mod-raise, homomorphic DFT, and `EvalMod`)
+- PaCo bootstrapping (partial CoeffsToSlots, without ModUp or `EvalMod`; see [`docs/paco.md`](../docs/paco.md))
 
 Planned evaluator work:
 
@@ -334,7 +339,7 @@ these higher-level features without changing the backend-agnostic programming mo
 
 ## Where to Look Next
 
-- `src/encoding/reim.rs` for slot packing
+- `src/api/encoding.rs` for the slot/coefficient encoding API (the reference packing lives in `poulpy-cpu-ref/src/ckks_encoding.rs`)
 - `src/layouts/` for CKKS data structures
 - `src/api/` for evaluator trait definitions
 - `src/test_suite/` for end-to-end usage patterns

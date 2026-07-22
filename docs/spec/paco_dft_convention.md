@@ -15,7 +15,7 @@ PaCo packs data so that one slot-wise ciphertext multiplication performs `h·k` 
 | Block ring | `ℂ[Z]/(Z^{2C} − α_v)`, `α_v` **varies** per block (twiddles `2^l·5^{bitrev(i)} mod 4n`) | `ℂ[Z]/(Z^{2C} − i)`, **uniform** for every block and chunk |
 | Slot order | extended-bit-reversed by `C/2` (`Π^{(C/2)}` applied after packing) | natural coefficient order (bit-reversed *point* order, invisible to the pipeline) |
 | Factor generator | dedicated `D`/`E` matrices (`E = Π·D·Π` to stay tridiagonal in the permuted layout) | `gen_dft_matrices_blockwise` (same butterflies as `gen_dft_matrices`, diagonals canonicalized modulo the `n`-tile) |
-| Packing (cleartext) | `D`-chain layers + extended bit-reversal | the encoder's own FFT per `2C` block (`Encoder::unpack_reim_coeffs`) + bit-reversal gather (`P_br·U_enc`) |
+| Packing (cleartext) | `D`-chain layers + extended bit-reversal | the encoder's own FFT per `2C` block (the test suite's `ReferenceEncoder::unpack_reim_coeffs`) + bit-reversal gather (`P_br·U_enc`) |
 | Partial CoeffToSlot | inverse `E^{(C/2)}` chain | blockwise `2C`-point Encode chain (`bit_reversed = true`) |
 | PartialC2s output | coefficient `b'_{ext_bit_rev(i, C/2)}` at slot `i` | coefficient `b'_i` at slot `i` (**natural**) |
 | PackedPairs layout | `m̃_{br(j)} + i·m̃_{br(j)+C/2}` | `m̃_j + i·m̃_{j+C/2}` (**natural**) |
