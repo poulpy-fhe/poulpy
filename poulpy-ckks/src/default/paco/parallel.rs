@@ -18,7 +18,7 @@ use std::{sync::mpsc::sync_channel, thread};
 use anyhow::Context;
 use poulpy_core::{
     GLWEAutomorphism, GLWEKeyswitch, GLWELinearTransformations, GLWERotate,
-    layouts::{Compact, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
+    layouts::{Compact, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision},
 };
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
@@ -221,7 +221,7 @@ where
         // A branch compacts its logical width. Reusing that backing buffer
         // without clearing now-inactive high limbs would let later
         // automorphisms observe stale data, so keep branch temporaries fresh.
-        let mut branch_output = module.ckks_ciphertext_alloc(context.base2k(), keys.bootstrapping_keys()[0].k());
+        let mut branch_output = module.ckks_ciphertext_alloc(context.base2k(), output.k());
         run_branch_into::<BE, F, K, _>(
             module,
             &mut branch_output,
@@ -413,8 +413,8 @@ where
                 .spawn_scoped(scope, move || {
                     for branch in ((worker + 1)..schedule.kappa).step_by(background_workers) {
                         let result = (|| -> Result<(usize, CKKSCiphertext<BE::OwnedBuf>)> {
-                            let mut branch_output =
-                                worker_module.ckks_ciphertext_alloc(context.base2k(), keys.bootstrapping_keys()[0].k());
+                            let mut branch_output = worker_module
+                                .ckks_ciphertext_alloc(context.base2k(), TorusPrecision(schedule.output_meta.1 as u32));
                             run_branch_into::<BE, F, K, _>(
                                 worker_module,
                                 &mut branch_output,

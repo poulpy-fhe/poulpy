@@ -86,14 +86,17 @@ where
 {
     let plan = context.plan();
     let canonical = &keys.bootstrapping_keys()[0];
+    // The branch evaluates at working level `output.k() + circuit_depth` (see
+    // `branch_working_k`), so size the op scratch from that, not the seed width.
+    let working_k = super::bootstrap::branch_working_k(plan, output.k().as_usize())?;
     let branch_layout = BranchScratchLayout {
         glwe_layout: GLWELayout {
             n: canonical.n(),
             base2k: canonical.base2k(),
-            k: canonical.k(),
+            k: TorusPrecision(working_k as u32),
             rank: canonical.rank(),
         },
-        max_size: output.max_size(),
+        max_size: working_k.div_ceil(canonical.base2k().as_usize()),
         meta: canonical.meta(),
     };
     let beta_k = plan

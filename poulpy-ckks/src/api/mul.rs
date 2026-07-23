@@ -21,7 +21,7 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight};
 /// natural_budget = min(a.log_budget, b.log_budget) − max(a.log_delta, b.log_delta)
 /// log_delta_out  = min(a.log_delta, b.log_delta)
 /// natural_eff_k  = natural_budget + log_delta_out
-/// offset         = max(0, natural_eff_k − dst.max_k())
+/// offset         = max(0, natural_eff_k − dst.k())
 ///
 /// log_budget_out = natural_budget − offset
 /// ```
@@ -29,12 +29,16 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight};
 /// **Capacity consumed by the multiplication itself**: `max(a.log_delta, b.log_delta)` bits.
 /// **Additional reduction from small `dst`**: `offset` bits.
 ///
+/// The result is produced at the destination's **requested `dst.k()`** (value-preserving
+/// rounding when narrower than the natural width), not the buffer's `dst.max_k()` — the
+/// same contract as the `pt_vec` variant below.
+///
 /// For the common case of equal-precision operands (`a.log_delta == b.log_delta == Δ`):
 ///
 /// ```text
 /// natural_eff_k  = a.log_budget   (= b.log_budget when budgets are also equal)
 /// log_delta_out  = Δ
-/// offset         = max(0, a.log_budget − dst.max_k())
+/// offset         = max(0, a.log_budget − dst.k())
 /// log_budget_out = a.log_budget − Δ − offset
 /// ```
 ///
@@ -48,13 +52,19 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight};
 /// log_delta_out  = a.log_delta
 /// natural_eff_k  = natural_budget + a.log_delta
 ///                = a.k() − pt.log_delta
-/// offset         = max(0, natural_eff_k − dst.max_k())
+/// offset         = max(0, natural_eff_k − dst.k())
 ///
 /// log_budget_out = natural_budget − offset
 /// ```
 ///
 /// **Capacity consumed**: `pt.log_delta` bits (precision of the plaintext
 /// multiplier), plus `offset`.
+///
+/// The result is produced at the destination's **requested `dst.k()`** (with
+/// value-preserving rounding of the low bits when it is narrower than the natural
+/// width), not at the buffer's limb-aligned `dst.max_k()`. Allocate `dst` at the
+/// exact `k` you want the product at — this is how a leveled consumer (e.g. the PaCo
+/// blind rotation) evaluates the whole downstream circuit at a lower, cheaper width.
 ///
 /// **Plaintext operand**: `pt` is multiplied in as a full-width **integer
 /// polynomial** (bottom-up encoding) — every stored limb participates

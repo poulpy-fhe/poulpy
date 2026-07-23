@@ -1298,7 +1298,9 @@ pub fn assert_mul_ct_output_meta<D: Data, S: CKKSNormalizationState>(
 ) {
     let log_budget = a.log_budget().min(b.log_budget()) - a.log_delta().max(b.log_delta());
     let log_delta = a.log_delta().min(b.log_delta());
-    let offset = (log_budget + log_delta).saturating_sub(ct.max_k().as_usize());
+    // ct×ct (like ct×pt) targets the destination's requested `k()` with value-preserving
+    // rounding, not its buffer capacity, so the result width is bounded by `k`, not `max_k`.
+    let offset = (log_budget + log_delta).saturating_sub(ct.k().as_usize());
     assert_ct_meta(label, ct, log_delta, log_budget - offset);
 }
 
@@ -1310,6 +1312,8 @@ pub fn assert_mul_pt_output_meta<D: Data, S: CKKSNormalizationState>(
 ) {
     let log_budget = a.log_budget() - a.log_delta().min(b.log_delta());
     let log_delta = a.log_delta().max(b.log_delta());
-    let offset = (log_budget + log_delta).saturating_sub(ct.max_k().as_usize());
+    // ct×pt targets the destination's requested `k()` (with value-preserving rounding),
+    // not its buffer capacity, so the result width is bounded by `k`, not `max_k`.
+    let offset = (log_budget + log_delta).saturating_sub(ct.k().as_usize());
     assert_ct_meta(label, ct, log_delta, log_budget - offset);
 }

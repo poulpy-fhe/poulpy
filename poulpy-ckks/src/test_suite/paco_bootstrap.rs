@@ -218,6 +218,9 @@ fn seq_bootstrap_case<BE, F, E>(
         .unwrap_or_else(|_| unreachable!("exactly four PaCo bootstrapping keys"));
     let keys = PaCoKeysPrepared::new(&plan, bsk, atks, tsk, None).unwrap();
     let ctx = PaCoContext::<BE, F>::compile(&module, params.base2k.into(), plan.clone(), &mut scratch.borrow()).unwrap();
+    // The bootstrap output is allocated at its maximum final level `k_out`
+    // (`k_boot` is the wider seed/working width, not a valid output level).
+    let k_out = ctx.max_output_k(&keys).unwrap();
 
     // Real exhausted input at k_in; message coefficients |m| < 2^log_msg.
     let coeffs: Vec<F> = (0..params.n)
@@ -250,7 +253,7 @@ fn seq_bootstrap_case<BE, F, E>(
     // Run through the caller-allocated public direct API (`kappa = 1`) and
     // compare only the final ciphertext with the independent cleartext model.
     let bsk_budget = k_boot - log_delta;
-    let mut out = module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into());
+    let mut out = module.ckks_ciphertext_alloc(params.base2k.into(), k_out);
     module
         .ckks_paco_bootstrap_direct_into::<_, _>(&mut out, &ct_in, &ctx, &keys, 1, &mut scratch.borrow())
         .unwrap();
@@ -265,6 +268,33 @@ fn seq_bootstrap_case<BE, F, E>(
         final_bound,
         &mut scratch.borrow(),
     );
+
+    // Leveled output: request an output below `k_out`, deliberately NOT a multiple of
+    // `base2k`. The blind rotation produces the phase directly at the lower working
+    // width, so the whole circuit runs narrower and must still recover the message.
+    if k_out.as_usize() > 2 * params.base2k {
+        let k_low = k_out.as_usize() - 5;
+        let mut out_low = module.ckks_ciphertext_alloc(params.base2k.into(), k_low.into());
+        module
+            .ckks_paco_bootstrap_direct_into::<_, _>(&mut out_low, &ct_in, &ctx, &keys, 1, &mut scratch.borrow())
+            .unwrap();
+        assert_eq!(
+            poulpy_core::layouts::LWEInfos::k(&out_low).as_usize(),
+            k_low,
+            "reduced-level bootstrap must produce exactly the requested output level"
+        );
+        assert_slots::<BE, F, E>(
+            &format!("paco_seq_bootstrap[reduced-level]({paco_h},{paco_c},{slot_order:?})"),
+            &module,
+            &host_module,
+            &encoder_full,
+            &out_low,
+            &sk,
+            &oracle.final_slots,
+            final_bound + 7.0,
+            &mut scratch.borrow(),
+        );
+    }
 
     // The final relabel compensates both eta's q/4 factor and the configured
     // dyadic chain scaling. This re-anchors the *decoded value* onto the
@@ -314,7 +344,7 @@ fn seq_bootstrap_case<BE, F, E>(
     let view_scratch = view_arena.borrow();
     let (mut ct_view, _rest) = view_scratch.take_ckks_ciphertext_like_scratch(&ct_in);
     module.glwe_copy(&mut ct_view, &ct_in);
-    let mut out_view = module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into());
+    let mut out_view = module.ckks_ciphertext_alloc(params.base2k.into(), k_out);
     module
         .ckks_paco_bootstrap_direct_into::<_, _>(&mut out_view, &ct_view, &ctx, &keys, 1, &mut scratch.borrow())
         .unwrap();

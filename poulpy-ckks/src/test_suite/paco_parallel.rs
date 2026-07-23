@@ -199,6 +199,10 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     let keys = PaCoKeysPrepared::new(&plan, bsk, atks, tsk, None).unwrap();
     let ctx = PaCoContext::<BE, F>::compile(&module, params.base2k.into(), plan, &mut scratch.borrow()).unwrap();
 
+    // Maximum final output level; the bootstrap output is allocated here (a lower
+    // level would run the circuit cheaper and is exercised separately below).
+    let k_out = ctx.max_output_k(&keys).unwrap();
+
     // Exhausted input.
     let coeffs: Vec<F> = (0..params.n)
         .map(|i| F::from_f64(0.4 * (((i.wrapping_mul(2654435761) % 1024) as f64) / 512.0 - 1.0)).unwrap())
@@ -216,7 +220,7 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
 
     // Public-entry validation must reject malformed schedules and layouts
     // before touching the caller's output.
-    let mut rejected = module.ckks_ciphertext_alloc_from_infos(&keys.bootstrapping_keys()[0]);
+    let mut rejected = module.ckks_ciphertext_alloc(ctx.base2k(), k_out);
     for (bad_kappa, reason) in [
         (0, "non-zero power of two"),
         (3, "non-zero power of two"),
@@ -254,7 +258,7 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     assert!(error.to_string().contains("active limbs"), "unexpected error: {error:#}");
     assert_ciphertext_unchanged::<BE>(&before, &rejected);
 
-    let mut truncated_output = module.ckks_ciphertext_alloc_from_infos(&keys.bootstrapping_keys()[0]);
+    let mut truncated_output = module.ckks_ciphertext_alloc(ctx.base2k(), k_out);
     truncated_output.set_size(0);
     let before = truncated_output.to_host_owned::<BE>();
     let error = module
@@ -305,24 +309,27 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     assert!(error.to_string().contains("output base2k"), "unexpected error: {error:#}");
     assert_ciphertext_unchanged::<BE>(&before, &bad_output);
 
-    // The output must be allocated to exactly the bootstrapping-key width; a buffer
-    // one limb wider is rejected up front (a wider working slot would drive the
-    // in-place keyswitches past the gadget keys' capacity).
-    let canonical_limbs = keys.bootstrapping_keys()[0].max_size();
-    let wrong_size_k = (canonical_limbs + 1) * params.base2k;
-    let mut wrong_size_output = module.ckks_ciphertext_alloc(params.base2k.into(), wrong_size_k.into());
-    let before = wrong_size_output.to_host_owned::<BE>();
-    let error = module
-        .ckks_paco_bootstrap_direct_into::<_, _>(&mut wrong_size_output, &ct_in, &ctx, &keys, KAPPA, &mut scratch.borrow())
-        .expect_err("an output not exactly the bootstrapping-key width must be rejected");
+    // An output level above `k_out` cannot be produced by the circuit. The full
+    // bootstrapping-key width (`k_out + consumed_bits`) is such a level, so it is
+    // rejected up front.
+    let too_high_k = keys.bootstrapping_keys()[0].k();
     assert!(
-        error.to_string().contains("exactly the bootstrapping-key width"),
+        too_high_k.as_usize() > k_out.as_usize(),
+        "test precondition: bsk width exceeds k_out"
+    );
+    let mut too_high_output = module.ckks_ciphertext_alloc(ctx.base2k(), too_high_k);
+    let before = too_high_output.to_host_owned::<BE>();
+    let error = module
+        .ckks_paco_bootstrap_direct_into::<_, _>(&mut too_high_output, &ct_in, &ctx, &keys, KAPPA, &mut scratch.borrow())
+        .expect_err("an output level above k_out must be rejected");
+    assert!(
+        error.to_string().contains("exceeds the maximum bootstrap output level"),
         "unexpected error: {error:#}"
     );
-    assert_ciphertext_unchanged::<BE>(&before, &wrong_size_output);
+    assert_ciphertext_unchanged::<BE>(&before, &too_high_output);
 
     // Worker modules and scratch are preflighted before any branch starts.
-    let mut worker_rejected = module.ckks_ciphertext_alloc_from_infos(&keys.bootstrapping_keys()[0]);
+    let mut worker_rejected = module.ckks_ciphertext_alloc(ctx.base2k(), k_out);
     let before = worker_rejected.to_host_owned::<BE>();
     let mut rejected_caller_scratch = alloc_scratch(&params, &module);
     let mut undersized_workers = vec![PaCoWorker::new(
@@ -363,7 +370,7 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     assert_ciphertext_unchanged::<BE>(&before, &worker_rejected);
 
     // ── Sequential driver: all D coefficient classes recovered ────────────
-    let mut seq = module.ckks_ciphertext_alloc_from_infos(&keys.bootstrapping_keys()[0]);
+    let mut seq = module.ckks_ciphertext_alloc(ctx.base2k(), k_out);
     let mut exact_scratch = ScratchOwned::<BE>::alloc(required);
     module
         .ckks_paco_bootstrap_direct_into::<_, _>(&mut seq, &ct_in, &ctx, &keys, KAPPA, &mut exact_scratch.borrow())
@@ -398,7 +405,7 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     }
 
     // ── Parallel driver: bit-identical to the sequential loop ──────────────
-    let mut par = module.ckks_ciphertext_alloc_from_infos(&keys.bootstrapping_keys()[0]);
+    let mut par = module.ckks_ciphertext_alloc(ctx.base2k(), k_out);
     // Two background workers may complete branches out of order while the
     // caller recombines them in canonical sequential order.
     let mut workers = (0..2)
@@ -427,7 +434,7 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     );
 
     // Worker modules and arenas remain reusable across calls.
-    let mut par_reused = module.ckks_ciphertext_alloc_from_infos(&keys.bootstrapping_keys()[0]);
+    let mut par_reused = module.ckks_ciphertext_alloc(ctx.base2k(), k_out);
     module
         .ckks_paco_bootstrap_parallel_direct_into::<_, _>(
             &mut par_reused,
@@ -577,6 +584,7 @@ pub fn test_paco_encapsulated_bootstrap<BE, F, E>(
     let keyset = PaCoKeySet::new(&plan, bsk, rotation_keys, tensor_key, Some(dense_to_paco)).unwrap();
     let prepared = keyset.into_prepare(&plan, &module, &mut scratch.borrow()).unwrap();
     let ctx = PaCoContext::<BE, F>::compile(&module, params.base2k.into(), plan, &mut scratch.borrow()).unwrap();
+    let k_out = ctx.max_output_k(&prepared).unwrap();
 
     // Exhausted input under the DENSE application key.
     let coeffs: Vec<F> = (0..params.n)
@@ -593,7 +601,7 @@ pub fn test_paco_encapsulated_bootstrap<BE, F, E>(
         &mut scratch.borrow(),
     );
 
-    let mut out = module.ckks_ciphertext_alloc_from_infos(&prepared.bootstrapping_keys()[0]);
+    let mut out = module.ckks_ciphertext_alloc(ctx.base2k(), k_out);
     module
         .ckks_paco_bootstrap_into::<_, _>(&mut out, &ct_in, &ctx, &prepared, kappa, &mut scratch.borrow())
         .unwrap();
@@ -602,7 +610,7 @@ pub fn test_paco_encapsulated_bootstrap<BE, F, E>(
 
     // The default parallel driver must be bit-identical to the default
     // sequential driver (same encapsulation, same per-branch limbs).
-    let mut par = module.ckks_ciphertext_alloc_from_infos(&prepared.bootstrapping_keys()[0]);
+    let mut par = module.ckks_ciphertext_alloc(ctx.base2k(), k_out);
     let mut workers = vec![PaCoWorker::new(
         Module::<BE>::new(params.n as u64),
         alloc_scratch(&params, &module),

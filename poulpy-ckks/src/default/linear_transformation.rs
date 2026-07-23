@@ -199,7 +199,7 @@ where
         // width (`pt_max_k` → rhs `max_k`). Its `log_budget` is dead in this math
         // (`checked_mul_pt_log_budget` reads the rhs budget only for diagnostics), so 0.
         let (res_log_budget, res_log_delta, cnv_offset) = mul_pt_params_raw(
-            dst.max_k().as_usize(),
+            dst.k().as_usize(),
             src.log_delta(),
             src.log_budget(),
             pt_log_scale,

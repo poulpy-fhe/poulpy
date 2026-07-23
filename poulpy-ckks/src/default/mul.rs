@@ -161,7 +161,7 @@ pub trait CKKSMulDefault<BE: Backend> {
             .into());
         }
         let (res_log_budget, res_log_delta, cnv_offset) = mul_ct_params_raw(
-            dst.max_k().as_usize(),
+            dst.k().as_usize(),
             dst.log_delta(),
             dst.k().into(),
             prepared.log_delta,
@@ -474,13 +474,7 @@ where
     A: CKKSInfos,
     B: CKKSInfos,
 {
-    mul_ct_params_raw(
-        res.max_k().as_usize(),
-        a.log_delta(),
-        a.k().into(),
-        b.log_delta(),
-        b.k().into(),
-    )
+    mul_ct_params_raw(res.k().as_usize(), a.log_delta(), a.k().into(), b.log_delta(), b.k().into())
 }
 
 /// Shared `(log_budget, log_delta, cnv_offset)` rule for ct × ct multiplication,
@@ -523,7 +517,7 @@ where
     B: CKKSInfos,
 {
     mul_pt_params_raw(
-        res.max_k().as_usize(),
+        res.k().as_usize(),
         a.log_delta(),
         a.log_budget(),
         b.log_delta(),
