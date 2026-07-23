@@ -1,7 +1,7 @@
 use crate::{
     api::{
         VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAccumulate, VmpApplyDftToDftAccumulateTmpBytes,
-        VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes, VmpZero,
+        VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPMatBytesOf, VmpPMatFoldOutputLimbs, VmpPrepare, VmpPrepareTmpBytes, VmpZero,
     },
     layouts::{
         Backend, MatZnxBackendRef, Module, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
@@ -44,6 +44,13 @@ impl_vmp_delegate!(
     VmpPrepare<B>,
     fn vmp_prepare(&self, res: &mut VmpPMatBackendMut<'_, B>, a: &MatZnxBackendRef<'_, B>, scratch: &mut ScratchArena<'_, B>) {
         B::vmp_prepare(self, res, a, scratch);
+    }
+);
+
+impl_vmp_delegate!(
+    VmpPMatFoldOutputLimbs<B>,
+    fn vmp_pmat_fold_output_limbs(&self, res: &mut VmpPMatBackendMut<'_, B>, src: &VmpPMatBackendRef<'_, B>, base2k: usize) {
+        B::vmp_pmat_fold_output_limbs(self, res, src, base2k);
     }
 );
 

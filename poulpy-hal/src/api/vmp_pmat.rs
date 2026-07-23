@@ -24,6 +24,17 @@ pub trait VmpPrepare<B: Backend> {
     fn vmp_prepare(&self, pmat: &mut VmpPMatBackendMut<'_, B>, mat: &MatZnxBackendRef<'_, B>, scratch: &mut ScratchArena<'_, B>);
 }
 
+/// Reduces the output-limb dimension of a prepared one-output-column VMP
+/// matrix while preserving the represented fixed-point value.
+///
+/// The leading `res.size()` limbs are copied. Every discarded source limb is
+/// folded into the last retained limb with one factor of `2^-base2k` per limb
+/// distance. This operation is currently supported by the FFT64 backends,
+/// whose prepared scalars are `f64`; other transform families reject it.
+pub trait VmpPMatFoldOutputLimbs<B: Backend> {
+    fn vmp_pmat_fold_output_limbs(&self, res: &mut VmpPMatBackendMut<'_, B>, src: &VmpPMatBackendRef<'_, B>, base2k: usize);
+}
+
 #[allow(clippy::too_many_arguments)]
 /// Returns scratch bytes required for [`VmpApplyDft`].
 pub trait VmpApplyDftTmpBytes {

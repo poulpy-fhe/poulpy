@@ -10,7 +10,8 @@ use crate::reference::{
         reim4::Reim4BlkMatVec,
         vmp::{
             vmp_apply_dft_to_dft as fft64_vmp_apply_dft_to_dft,
-            vmp_apply_dft_to_dft_tmp_bytes as fft64_vmp_apply_dft_to_dft_tmp_bytes, vmp_prepare as fft64_vmp_prepare,
+            vmp_apply_dft_to_dft_tmp_bytes as fft64_vmp_apply_dft_to_dft_tmp_bytes,
+            vmp_pmat_fold_output_limbs as fft64_vmp_pmat_fold_output_limbs, vmp_prepare as fft64_vmp_prepare,
             vmp_prepare_tmp_bytes as fft64_vmp_prepare_tmp_bytes, vmp_zero as fft64_vmp_zero,
         },
     },
@@ -82,6 +83,19 @@ where
         let bytes = fft64_vmp_prepare_tmp_bytes(module.n());
         let (tmp, _) = take_host_typed::<BE, f64>(scratch.borrow(), bytes / size_of::<f64>());
         fft64_vmp_prepare(module.get_fft_table(), res, a, tmp);
+    }
+
+    fn vmp_pmat_fold_output_limbs_default(
+        _module: &Module<BE>,
+        res: &mut VmpPMatBackendMut<'_, BE>,
+        src: &VmpPMatBackendRef<'_, BE>,
+        base2k: usize,
+    ) where
+        BE: Backend<ScalarPrep = f64>,
+        for<'x> BE::BufMut<'x>: HostDataMut,
+        for<'x> BE::BufRef<'x>: HostDataRef,
+    {
+        fft64_vmp_pmat_fold_output_limbs(res, src, base2k);
     }
 
     fn vmp_apply_dft_to_dft_tmp_bytes_default(
@@ -186,6 +200,15 @@ where
     for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
 {
+    fn vmp_pmat_fold_output_limbs_default(
+        _module: &Module<BE>,
+        _res: &mut VmpPMatBackendMut<'_, BE>,
+        _src: &VmpPMatBackendRef<'_, BE>,
+        _base2k: usize,
+    ) {
+        panic!("prepared output-limb folding is not supported by NTT120 backends")
+    }
+
     fn vmp_prepare_tmp_bytes_default(module: &Module<BE>, _rows: usize, _cols_in: usize, _cols_out: usize, _size: usize) -> usize
     where
         BE: Backend<ScalarPrep = Q120bScalar>,

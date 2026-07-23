@@ -106,6 +106,76 @@ pub(crate) fn vmp_prepare_core<REIM>(
     }
 }
 
+/// Folds discarded fixed-point output limbs of a prepared one-column FFT64 VMP
+/// matrix into its last retained limb.
+///
+/// Keeping this operation beside `vmp_prepare_core` makes the prepared layout
+/// an FFT64 backend concern. Scheme crates can request the arithmetic operation
+/// through the HAL without depending on paired-column/block offsets.
+pub fn vmp_pmat_fold_output_limbs<BE>(res: &mut VmpPMatBackendMut<'_, BE>, src: &VmpPMatBackendRef<'_, BE>, base2k: usize)
+where
+    BE: Backend<ScalarPrep = f64>,
+    for<'x> BE::BufMut<'x>: HostDataMut,
+    for<'x> BE::BufRef<'x>: HostDataRef,
+{
+    assert_eq!(res.n(), src.n(), "folded VMP degree mismatch");
+    assert_eq!(res.rows(), src.rows(), "folded VMP row mismatch");
+    assert_eq!(res.cols_in(), src.cols_in(), "folded VMP input-column mismatch");
+    assert_eq!(res.cols_out(), 1, "folding currently requires one output column");
+    assert_eq!(src.cols_out(), 1, "folding currently requires one output column");
+    assert!(base2k >= 1, "folding base2k must be positive");
+
+    let src_size = src.size();
+    let out_size = res.size();
+    assert!(out_size >= 1, "folded VMP must retain at least one limb");
+    assert!(out_size <= src_size, "folded VMP cannot grow the limb count");
+
+    let n = src.n();
+    assert!(
+        n >= 8 && n.is_multiple_of(8),
+        "FFT64 prepared folding requires n divisible by 8"
+    );
+    let nrows = src.rows() * src.cols_in();
+    let blocks = n / 8;
+    let src_blk_stride = 8 * nrows * src_size;
+    let dst_blk_stride = 8 * nrows * out_size;
+
+    let src_raw = src.raw();
+    let dst_raw = res.raw_mut();
+    assert_eq!(src_raw.len(), blocks * src_blk_stride);
+    assert_eq!(dst_raw.len(), blocks * dst_blk_stride);
+
+    // Within-block offset of (limb, row) in the paired-column FFT64 pmat.
+    let limb_offset = |limb: usize, row: usize, size: usize| -> usize {
+        if limb == size - 1 && !size.is_multiple_of(2) {
+            limb * nrows * 8 + row * 8
+        } else {
+            (limb / 2) * (nrows * 16) + row * 16 + (limb % 2) * 8
+        }
+    };
+
+    for block in 0..blocks {
+        let src_block = block * src_blk_stride;
+        let dst_block = block * dst_blk_stride;
+        for row in 0..nrows {
+            for limb in 0..out_size {
+                let src_at = src_block + limb_offset(limb, row, src_size);
+                let dst_at = dst_block + limb_offset(limb, row, out_size);
+                dst_raw[dst_at..dst_at + 8].copy_from_slice(&src_raw[src_at..src_at + 8]);
+            }
+            for limb in out_size..src_size {
+                let distance = limb - (out_size - 1);
+                let scale = (-((distance * base2k) as f64)).exp2();
+                let src_at = src_block + limb_offset(limb, row, src_size);
+                let dst_at = dst_block + limb_offset(out_size - 1, row, out_size);
+                for lane in 0..8 {
+                    dst_raw[dst_at + lane] += scale * src_raw[src_at + lane];
+                }
+            }
+        }
+    }
+}
+
 pub fn vmp_apply_dft_tmp_bytes(n: usize, a_size: usize, prows: usize, pcols_in: usize) -> usize {
     let row_max: usize = (a_size).min(prows);
     (16 + (n + 8) * row_max * pcols_in) * size_of::<f64>()

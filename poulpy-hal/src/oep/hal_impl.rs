@@ -964,6 +964,15 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
+    fn vmp_pmat_fold_output_limbs(
+        _module: &Module<BE>,
+        _res: &mut crate::layouts::VmpPMatBackendMut<'_, BE>,
+        _src: &crate::layouts::VmpPMatBackendRef<'_, BE>,
+        _base2k: usize,
+    ) {
+        panic!("prepared output-limb folding is not supported by this backend")
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn vmp_apply_dft_tmp_bytes(
         module: &Module<BE>,

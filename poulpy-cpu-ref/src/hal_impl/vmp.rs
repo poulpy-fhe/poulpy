@@ -64,6 +64,15 @@ macro_rules! hal_impl_vmp {
             <Self as $defaults<Self>>::vmp_prepare_default(module, res, a, &mut scratch);
         }
 
+        fn vmp_pmat_fold_output_limbs(
+            module: &Module<Self>,
+            res: &mut poulpy_hal::layouts::VmpPMatBackendMut<'_, Self>,
+            src: &poulpy_hal::layouts::VmpPMatBackendRef<'_, Self>,
+            base2k: usize,
+        ) {
+            <Self as $defaults<Self>>::vmp_pmat_fold_output_limbs_default(module, res, src, base2k);
+        }
+
         fn vmp_apply_dft_to_dft_tmp_bytes(
             module: &Module<Self>,
             res_size: usize,
