@@ -41,7 +41,6 @@ where
             for rank_out_s1s2 in 1_usize..3 {
                 for dsize in 1_usize..max_dsize + 1 {
                     let k_ksk: usize = k_in + key_base2k * dsize;
-                    let k_out: usize = k_ksk; // Better capture noise.
 
                     let n: usize = module.n();
                     let dsize_in: usize = 1;
@@ -51,8 +50,8 @@ where
                     let gglwe_s0s1_infos = EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
                         n: n.into(),
                         base2k: in_base2k.into(),
-                        k: k_in.into(),
                         dnum: dnum_in.into(),
+                        k_aux: (dsize_in * in_base2k + module.log_n()).into(),
                         dsize: dsize_in.into(),
                         rank_in: rank_in_s0s1.into(),
                         rank_out: rank_out_s0s1.into(),
@@ -62,8 +61,8 @@ where
                     let gglwe_s1s2_infos = EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
                         n: n.into(),
                         base2k: key_base2k.into(),
-                        k: k_ksk.into(),
                         dnum: dnum_ksk.into(),
+                        k_aux: (dsize * key_base2k + module.log_n()).into(),
                         dsize: dsize.into(),
                         rank_in: rank_out_s0s1.into(),
                         rank_out: rank_out_s1s2.into(),
@@ -73,8 +72,8 @@ where
                     let gglwe_s0s2_infos: GLWESwitchingKeyLayout = GLWESwitchingKeyLayout {
                         n: n.into(),
                         base2k: out_base2k.into(),
-                        k: k_out.into(),
                         dnum: dnum_in.into(),
+                        k_aux: (dsize_in * out_base2k + module.log_n()).into(),
                         dsize: dsize_in.into(),
                         rank_in: rank_in_s0s1.into(),
                         rank_out: rank_out_s1s2.into(),
@@ -142,7 +141,6 @@ where
                         &mut gglwe_s0s2,
                         &gglwe_s0s1,
                         &gglwe_s1s2_prepared,
-                        gglwe_s1s2_prepared.size(),
                         &mut scratch_apply.borrow(),
                     );
 
@@ -219,8 +217,8 @@ where
                 let gglwe_s0s1_infos = EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
                     n: n.into(),
                     base2k: out_base2k.into(),
-                    k: k_out.into(),
                     dnum: dnum_in.into(),
+                    k_aux: (dsize_in * out_base2k + module.log_n()).into(),
                     dsize: dsize_in.into(),
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
@@ -230,8 +228,8 @@ where
                 let gglwe_s1s2_infos = EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
                     n: n.into(),
                     base2k: key_base2k.into(),
-                    k: k_ksk.into(),
                     dnum: dnum_ksk.into(),
+                    k_aux: (dsize * key_base2k + module.log_n()).into(),
                     dsize: dsize.into(),
                     rank_in: rank_out.into(),
                     rank_out: rank_out.into(),
@@ -321,12 +319,7 @@ where
                     gglwe_s1s2_prepared.k(),
                     gglwe_s1s2_prepared.size()
                 );
-                module.gglwe_keyswitch_assign(
-                    &mut gglwe_s0s1,
-                    &gglwe_s1s2_prepared,
-                    gglwe_s1s2_prepared.size(),
-                    &mut scratch_apply.borrow(),
-                );
+                module.gglwe_keyswitch_assign(&mut gglwe_s0s1, &gglwe_s1s2_prepared, &mut scratch_apply.borrow());
 
                 let gglwe_s0s2: GLWESwitchingKey<Vec<u8>> = gglwe_s0s1;
 

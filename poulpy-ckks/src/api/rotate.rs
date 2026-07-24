@@ -1,8 +1,6 @@
-use anyhow::Result;
-use poulpy_core::layouts::{
-    GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
-    prepared::GLWEAutomorphismKeyPreparedToBackendRef,
-};
+use crate::CKKSAtkBounds;
+use crate::CKKSResult as Result;
+use poulpy_core::layouts::{GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{CKKSCtBounds, SetCKKSInfos};
@@ -50,7 +48,7 @@ pub trait CKKSRotateOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds;
@@ -58,7 +56,7 @@ pub trait CKKSRotateOps<BE: Backend> {
     /// Computes `dst = rotate(dst, k)` in-place.  Metadata is unchanged.
     fn ckks_rotate_assign<Dst, H, K>(&self, dst: &mut Dst, k: i64, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 }

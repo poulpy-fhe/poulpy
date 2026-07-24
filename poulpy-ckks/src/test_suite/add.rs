@@ -9,7 +9,7 @@
 //! | [`test_add_ct_aligned`] | `a.log_budget() == b.log_budget()`, `offset == 0` → `glwe_add` fast path |
 //! | [`test_add_ct_delta_a_lt_b`] | `a.log_budget() < b.log_budget()` → b shifted to align with a |
 //! | [`test_add_ct_delta_a_gt_b`] | `a.log_budget() > b.log_budget()` → a shifted to align with b |
-//! | [`test_add_ct_smaller_output`] | `offset > 0` (output one limb narrower than inputs) |
+//! | [`test_add_ct_aligned_smaller_output`] | `offset > 0` (output one limb narrower than inputs) |
 //!
 //! ## Operations-layer ct+ct (`GLWE<_, CKKS>::add_assign`)
 //!
@@ -39,7 +39,7 @@
 //! | [`test_add_const_into_smaller_output`] | out-of-place, smaller output with packed-cst precision |
 //! | [`test_add_const_into_real_only`] | out-of-place, real coefficient only |
 //! | [`test_add_const_into_lsh_alignment`] | out-of-place, constant `max_k` above budget → left-shift alignment |
-use crate::{CKKSCompositionError, CKKSInfos, SetCKKSInfos, layouts::CKKSModuleAlloc, leveled::api::CKKSAddOps};
+use crate::{CKKSCompositionError, CKKSInfos, SetCKKSInfos, api::CKKSAddOps, layouts::CKKSModuleAlloc};
 
 use super::helpers::{
     ADD_SUB_CONST, PT_PREC, TestContextBackend, TestContextModule, TestScalar, TestVector, add_sub_const_pt, alloc_ct,
@@ -55,7 +55,7 @@ use poulpy_hal::{
     layouts::{HostBytesBackend, Module},
 };
 
-use crate::{encoding::reim::Encoder, test_suite::CKKSTestParams};
+use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
 const DELTA_LOG_DELTA: usize = 12;
 
@@ -72,7 +72,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (re2, im2) = test_vector_2::<F>(m);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
@@ -128,7 +128,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (re2, im2) = test_vector_2::<F>(m);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
@@ -184,7 +184,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (re2, im2) = test_vector_2::<F>(m);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
@@ -240,7 +240,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
 
@@ -303,7 +303,7 @@ pub fn test_add_ct_aligned_smaller_output<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (re2, im2) = test_vector_2::<F>(m);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
@@ -361,7 +361,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (re2, im2) = test_vector_2::<F>(m);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
@@ -418,7 +418,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (re2, im2) = test_vector_2::<F>(m);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
@@ -477,7 +477,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (re2, im2) = test_vector_2::<F>(m);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
@@ -538,7 +538,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (re2, im2) = test_vector_2::<F>(m);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
@@ -590,7 +590,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (re2, im2) = test_vector_2::<F>(m);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
@@ -646,7 +646,7 @@ pub fn test_add_pt_vec_into_delta_log_delta<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re2, im2) = test_vector_2::<F>(m);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -703,7 +703,7 @@ pub fn test_add_pt_vec_into_lsh_alignment<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re2, im2) = test_vector_2::<F>(m);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -766,7 +766,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -820,7 +820,7 @@ pub fn test_add_const_into_lsh_alignment<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -887,7 +887,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -939,7 +939,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -988,7 +988,7 @@ pub fn test_add_const_into_delta_log_delta<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
 
@@ -1043,7 +1043,7 @@ pub fn test_add_const_into_smaller_output<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -1097,7 +1097,7 @@ pub fn test_add_const_into_real_only<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -1149,7 +1149,7 @@ pub fn test_add_pt_vec_into_smaller_output<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (re2, im2) = test_vector_2::<F>(m);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
@@ -1205,7 +1205,7 @@ pub fn test_add_pt_vec_base2k_mismatch_error<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);

@@ -12,9 +12,9 @@ use crate::{
     EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEMulConst, GLWEMulPlain, GLWESub, GLWETensorDecrypt, GLWETensorKeyEncryptSk,
     GLWETensoring,
     layouts::{
-        Dsize, GGLWEInfos, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESecretTensor,
-        GLWESecretTensorFactory, GLWESecretTensorPrepared, GLWESecretTensorPreparedFactory, GLWETensor, GLWETensorKey,
-        GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, TorusPrecision,
+        Dsize, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWESecretTensor, GLWESecretTensorFactory,
+        GLWESecretTensorPrepared, GLWESecretTensorPreparedFactory, GLWETensor, GLWETensorKey, GLWETensorKeyLayout,
+        GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, LWEInfos, ModuleCoreAlloc, TorusPrecision,
         prepared::GLWESecretPrepared,
     },
 };
@@ -42,7 +42,6 @@ where
     let out_base2k: usize = base2k - 2;
     let tsk_base2k: usize = base2k;
     let k: usize = 8 * base2k + 1;
-    let k_tsk = k + tsk_base2k;
 
     for rank in 1_usize..=3 {
         let n: usize = module.n();
@@ -65,9 +64,9 @@ where
         let tsk_infos = EncryptionLayout::new_from_default_sigma(GLWETensorKeyLayout {
             n: n.into(),
             base2k: tsk_base2k.into(),
-            k: k_tsk.into(),
-            rank: rank.into(),
             dnum: k.div_ceil(tsk_base2k).into(),
+            k_aux: (tsk_base2k + module.log_n()).into(),
+            rank: rank.into(),
             dsize: Dsize(1),
         })
         .unwrap();
@@ -194,13 +193,7 @@ where
 
             assert!(noise_have - noise_want <= 0.5, "{} > {}", noise_have, noise_want);
 
-            module.glwe_tensor_relinearize(
-                &mut res_relin,
-                &res_tensor,
-                &tsk_prep,
-                (res_tensor.size() + tsk_prep.dsize().as_usize()).min(tsk_prep.size()),
-                &mut scratch.borrow(),
-            );
+            module.glwe_tensor_relinearize(&mut res_relin, &res_tensor, &tsk_prep, &mut scratch.borrow());
             module.glwe_decrypt(&res_relin, &mut pt_have, &sk_dft, &mut scratch.borrow());
 
             module.glwe_sub(&mut pt_tmp, &pt_have, &pt_want);
@@ -262,9 +255,9 @@ where
         let tsk_infos: GLWETensorKeyLayout = GLWETensorKeyLayout {
             n: n.into(),
             base2k: tsk_base2k.into(),
-            k: (k + tsk_base2k).into(),
-            rank: rank.into(),
             dnum: k.div_ceil(tsk_base2k).into(),
+            k_aux: (tsk_base2k + module.log_n()).into(),
+            rank: rank.into(),
             dsize: Dsize(1),
         };
 
@@ -337,20 +330,8 @@ where
 
             assert_eq!(res_square.data().raw(), res_tensor.data().raw());
 
-            module.glwe_tensor_relinearize(
-                &mut res_relin_square,
-                &res_square,
-                &tsk_prep,
-                (res_square.size() + tsk_prep.dsize().as_usize()).min(tsk_prep.size()),
-                &mut scratch.borrow(),
-            );
-            module.glwe_tensor_relinearize(
-                &mut res_relin_tensor,
-                &res_tensor,
-                &tsk_prep,
-                (res_tensor.size() + tsk_prep.dsize().as_usize()).min(tsk_prep.size()),
-                &mut scratch.borrow(),
-            );
+            module.glwe_tensor_relinearize(&mut res_relin_square, &res_square, &tsk_prep, &mut scratch.borrow());
+            module.glwe_tensor_relinearize(&mut res_relin_tensor, &res_tensor, &tsk_prep, &mut scratch.borrow());
             assert_eq!(res_relin_square.data().raw(), res_relin_tensor.data().raw());
 
             // Decrypt one side to ensure the square path remains functionally valid.

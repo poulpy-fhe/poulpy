@@ -1,6 +1,6 @@
-use anyhow::Result;
-use poulpy_core::layouts::{GLWEInfos, GLWEPlaintext, GLWESecretPreparedToBackendRef, GLWEToBackendMut, LWEInfos};
-use poulpy_core::{EncryptionInfos, GLWEDecrypt, GLWEEncryptSk, ScratchArenaTakeCore};
+use crate::CKKSResult as Result;
+use poulpy_core::layouts::{GLWEInfos, GLWEPlaintext, GLWESecretPreparedToBackendRef, GLWEToBackendMut};
+use poulpy_core::{EncryptionInfos, GLWEDecrypt, GLWEEncryptSk, GLWENormalize, ScratchArenaTakeCore};
 use poulpy_hal::{
     api::{
         VecZnxLshAddIntoBackend, VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshAddIntoBackend, VecZnxRshBackend,
@@ -19,11 +19,12 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
     fn ckks_encrypt_sk_tmp_bytes_default<A>(&self, ct_infos: &A) -> usize
     where
         A: GLWEInfos + CKKSInfos,
-        Self: GLWEEncryptSk<BE> + VecZnxLshTmpBytes + VecZnxRshAddIntoBackend<BE> + VecZnxRshTmpBytes,
+        Self: GLWEEncryptSk<BE> + GLWENormalize<BE> + VecZnxLshTmpBytes + VecZnxRshAddIntoBackend<BE> + VecZnxRshTmpBytes,
     {
         self.glwe_encrypt_sk_tmp_bytes(ct_infos)
             .max(self.vec_znx_lsh_tmp_bytes())
             .max(self.vec_znx_rsh_tmp_bytes())
+            .max(self.glwe_normalize_tmp_bytes())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -33,16 +34,20 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
         pt: &Dpt,
         sk: &S,
         enc_infos: &E,
-        source_xa: &mut Source,
         source_xe: &mut Source,
+        source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        Dct: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
-        Dpt: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
-        Self: GLWEEncryptSk<BE> + VecZnxLshAddIntoBackend<BE> + VecZnxRshAddIntoBackend<BE> + CKKSPlaintextDefault<BE>,
+        Dct: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+        Dpt: GLWEToBackendRef<BE> + CKKSInfos,
+        Self: GLWEEncryptSk<BE>
+            + GLWENormalize<BE>
+            + VecZnxLshAddIntoBackend<BE>
+            + VecZnxRshAddIntoBackend<BE>
+            + CKKSPlaintextDefault<BE>,
     {
         self.glwe_encrypt_zero_sk(ct, sk, enc_infos, source_xe, source_xa, scratch);
         ct.set_log_budget(checked_log_budget_sub(
@@ -51,7 +56,13 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
             pt.log_delta(),
         )?);
         ct.set_log_delta(pt.log_delta());
-        self.ckks_add_pt_vec_into_default(ct, pt, scratch)
+        self.ckks_add_pt_vec_into_default(ct, pt, scratch)?;
+        // The raw limb-add above can leave digits one bit beyond the `base2k`
+        // normalized range; a fresh encryption is typed `Normalized`, so
+        // propagate the carries before returning (the crate's digit contract
+        // for every DFT-domain op).
+        self.glwe_normalize_assign(ct, scratch);
+        Ok(())
     }
 
     fn ckks_decrypt_tmp_bytes_default<A>(&self, ct_infos: &A) -> usize
@@ -73,8 +84,8 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
     fn ckks_decrypt_default<Dpt, Dct, S>(&self, pt: &mut Dpt, ct: &Dct, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        Dpt: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
-        Dct: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos,
+        Dpt: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+        Dct: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
         Self: GLWEDecrypt<BE> + CKKSPlaintextDefault<BE> + VecZnxLshBackend<BE> + VecZnxRshBackend<BE>,
     {
         let (mut full_pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(ct);

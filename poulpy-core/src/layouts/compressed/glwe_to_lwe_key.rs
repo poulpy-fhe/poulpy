@@ -44,6 +44,10 @@ impl<D: Data> GLWEInfos for GLWEToLWESwitchingKeyCompressed<D> {
 }
 
 impl<D: Data> GGLWEInfos for GLWEToLWESwitchingKeyCompressed<D> {
+    fn k_aux(&self) -> TorusPrecision {
+        self.0.k_aux()
+    }
+
     fn rank_in(&self) -> Rank {
         self.0.rank_in()
     }
@@ -106,18 +110,18 @@ impl GLWEToLWESwitchingKeyCompressed<Vec<u8>> {
             1,
             "dsize > 1 is unsupported for GLWEToLWESwitchingKeyCompressed"
         );
-        Self::alloc(infos.n(), infos.base2k(), infos.k(), infos.rank_in(), infos.dnum())
+        Self::alloc(infos.n(), infos.base2k(), infos.dnum(), infos.k_aux(), infos.rank_in())
     }
 
-    pub(crate) fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision, rank_in: Rank, dnum: Dnum) -> Self {
+    pub(crate) fn alloc(n: Degree, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision, rank_in: Rank) -> Self {
         GLWEToLWESwitchingKeyCompressed(GLWESwitchingKeyCompressed::alloc(
             n,
             base2k,
-            k,
-            rank_in,
-            Rank(1),
             dnum,
             Dsize(1),
+            k_aux,
+            rank_in,
+            Rank(1),
         ))
     }
 
@@ -138,8 +142,8 @@ impl GLWEToLWESwitchingKeyCompressed<Vec<u8>> {
         GLWESwitchingKeyCompressed::bytes_of_from_infos(infos)
     }
 
-    pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision, dnum: Dnum, rank_in: Rank) -> usize {
-        GLWESwitchingKeyCompressed::bytes_of(n, base2k, k, rank_in, dnum, Dsize(1))
+    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision, rank_in: Rank) -> usize {
+        GLWESwitchingKeyCompressed::bytes_of(n, base2k, dnum, Dsize(1), k_aux, rank_in)
     }
 }
 

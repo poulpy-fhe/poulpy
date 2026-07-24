@@ -27,6 +27,8 @@ pub struct CKKSTestParams {
     pub prec_log_budget: usize,
     pub hw: usize,
     pub dsize: usize,
+    /// GLWE rank of ciphertexts and keys (`1` for all standard parameter sets).
+    pub rank: usize,
 }
 
 impl CKKSTestParams {
@@ -40,10 +42,15 @@ impl CKKSTestParams {
                 n: Degree(self.n as u32),
                 base2k: Base2K(self.base2k as u32),
                 k: TorusPrecision((self.prec_meta.log_delta + self.prec_log_budget) as u32),
-                rank: Rank(1),
+                rank: Rank(self.rank as u32),
             },
             meta: self.prec_meta,
         }
+    }
+
+    /// `log2(n)` — the ring dimension in bits.
+    pub fn log_n(&self) -> usize {
+        self.n.ilog2() as usize
     }
 
     pub fn glwe_layout(&self) -> EncryptionLayout<GLWELayout> {
@@ -51,35 +58,37 @@ impl CKKSTestParams {
             n: self.n.into(),
             base2k: self.base2k.into(),
             k: self.k.into(),
-            rank: Rank(1),
+            rank: Rank(self.rank as u32),
         })
         .unwrap()
     }
 
     pub fn tsk_layout(&self) -> EncryptionLayout<GLWETensorKeyLayout> {
-        let k = self.k + self.dsize * self.base2k;
-        let dnum = k / (self.dsize * self.base2k);
+        let total = self.k + self.dsize * self.base2k;
+        let dnum = total / (self.dsize * self.base2k);
+        let k_aux = self.dsize * self.base2k + self.log_n();
         EncryptionLayout::new_from_default_sigma(GLWETensorKeyLayout {
             n: self.n.into(),
             base2k: self.base2k.into(),
-            k: k.into(),
-            rank: Rank(1),
-            dsize: self.dsize.into(),
             dnum: dnum.into(),
+            k_aux: k_aux.into(),
+            rank: Rank(self.rank as u32),
+            dsize: self.dsize.into(),
         })
         .unwrap()
     }
 
     pub fn atk_layout(&self) -> EncryptionLayout<GLWEAutomorphismKeyLayout> {
-        let k = self.k + self.dsize * self.base2k;
-        let dnum = k / (self.dsize * self.base2k);
+        let total = self.k + self.dsize * self.base2k;
+        let dnum = total / (self.dsize * self.base2k);
+        let k_aux = self.dsize * self.base2k + self.log_n();
         EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
             n: self.n.into(),
             base2k: self.base2k.into(),
-            k: k.into(),
-            rank: Rank(1),
-            dsize: self.dsize.into(),
             dnum: dnum.into(),
+            k_aux: k_aux.into(),
+            rank: Rank(self.rank as u32),
+            dsize: self.dsize.into(),
         })
         .unwrap()
     }
@@ -88,16 +97,17 @@ impl CKKSTestParams {
     /// modulus `k_in` bits (e.g. the encapsulation `denseToSparse` /
     /// `sparseToDense` keys, sized at the input level and at `k_boot`).
     pub fn ksk_layout(&self, k_in: usize) -> EncryptionLayout<GLWESwitchingKeyLayout> {
-        let k = k_in + self.dsize * self.base2k;
-        let dnum = k / (self.dsize * self.base2k);
+        let total = k_in + self.dsize * self.base2k;
+        let dnum = total / (self.dsize * self.base2k);
+        let k_aux = self.dsize * self.base2k + self.log_n();
         EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
             n: self.n.into(),
             base2k: self.base2k.into(),
-            k: k.into(),
-            rank_in: Rank(1),
-            rank_out: Rank(1),
-            dsize: self.dsize.into(),
             dnum: dnum.into(),
+            k_aux: k_aux.into(),
+            rank_in: Rank(self.rank as u32),
+            rank_out: Rank(self.rank as u32),
+            dsize: self.dsize.into(),
         })
         .unwrap()
     }
@@ -115,6 +125,7 @@ pub const NTT4X30_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     prec_log_budget: 30,
     hw: 192,
     dsize: 1,
+    rank: 1,
 };
 
 /// FFT64 parameter set.
@@ -129,6 +140,7 @@ pub const FFT64_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     prec_log_budget: 10,
     hw: 192,
     dsize: 1,
+    rank: 1,
 };
 
 /// NTT4x30 parameter set.
@@ -143,7 +155,125 @@ pub const NTT4X30_PARAMS_F128: CKKSTestParams = CKKSTestParams {
     prec_log_budget: 30,
     hw: 192,
     dsize: 1,
+    rank: 1,
 };
+
+/// Registers the **rank-generic arithmetic subset** of the CKKS suite for a
+/// parameter set with `rank > 1`: encrypt/decrypt, add/sub (ct and pt), mul
+/// (ct, square, prepared, pt), neg, copy, pow2, rotate, and conjugate.
+///
+/// The full [`ckks_backend_test_suite!`](crate::ckks_backend_test_suite) hardwires rank-1-only pipelines
+/// (bootstrapping, EvalMod, DFT, PaCo — which reject `rank != 1` by
+/// construction), so higher-rank coverage uses this subset instead.
+/// [`NTT4X30_PARAMS_F64`] at GLWE rank 2, for the rank-generic arithmetic
+/// subset ([`ckks_backend_rank2_test_suite!`](crate::ckks_backend_rank2_test_suite)).
+pub const NTT4X30_PARAMS_F64_RANK2: CKKSTestParams = CKKSTestParams {
+    rank: 2,
+    ..NTT4X30_PARAMS_F64
+};
+
+#[macro_export]
+macro_rules! ckks_backend_rank2_test_suite {
+    (
+        mod $modname:ident,
+        backend = $backend:ty,
+        scalar = $scalar:ty,
+        encoder = $encoder_ty:ty,
+        params = $params:expr,
+        rotations = $rotations:expr $(,)?
+    ) => {
+        mod $modname {
+            use std::sync::LazyLock;
+
+            use anyhow::Result;
+
+            use poulpy_hal::layouts::{HostBytesBackend, Module};
+
+            static MODULE: LazyLock<Module<$backend>> = LazyLock::new(|| Module::<$backend>::new($params.n as u64));
+            static HOST_MODULE: LazyLock<Module<HostBytesBackend>> =
+                LazyLock::new(|| Module::<HostBytesBackend>::new($params.n as u64));
+
+            macro_rules! run_test {
+                ($name:ident, $path:path) => {
+                    #[test]
+                    fn $name() {
+                        #[allow(clippy::unsafe_removed_from_name)]
+                        use $path as __test_fn;
+                        __test_fn::<$backend, $scalar, $encoder_ty>($params, &*MODULE, &*HOST_MODULE);
+                    }
+                };
+            }
+
+            macro_rules! run_test_with_arg {
+                ($name:ident, $path:path, $arg:expr) => {
+                    #[test]
+                    fn $name() {
+                        #[allow(clippy::unsafe_removed_from_name)]
+                        use $path as __test_fn;
+                        __test_fn::<$backend, $scalar, $encoder_ty>($params, &*MODULE, &*HOST_MODULE, $arg);
+                    }
+                };
+            }
+
+            macro_rules! run_test_result {
+                ($name:ident, $path:path) => {
+                    #[test]
+                    fn $name() -> Result<()> {
+                        #[allow(clippy::unsafe_removed_from_name)]
+                        use $path as __test_fn;
+                        __test_fn::<$backend, $scalar, $encoder_ty>($params, &*MODULE, &*HOST_MODULE)
+                    }
+                };
+            }
+
+            run_test!(encrypt_decrypt, $crate::test_suite::encryption::test_encrypt_decrypt);
+            run_test!(add_ct_aligned, $crate::test_suite::add::test_add_ct_aligned);
+            run_test!(add_ct_delta_a_lt_b, $crate::test_suite::add::test_add_ct_delta_a_lt_b);
+            run_test!(add_ct_delta_a_gt_b, $crate::test_suite::add::test_add_ct_delta_a_gt_b);
+            run_test!(add_pt_vec_assign, $crate::test_suite::add::test_add_pt_vec_assign);
+            run_test!(add_const_assign, $crate::test_suite::add::test_add_const_assign);
+            run_test!(add_one_assign, $crate::test_suite::add::test_add_one_assign);
+            run_test!(sub_ct_aligned, $crate::test_suite::sub::test_sub_ct_aligned);
+            run_test!(sub_ct_delta_a_lt_b, $crate::test_suite::sub::test_sub_ct_delta_a_lt_b);
+            run_test!(sub_ct_delta_a_gt_b, $crate::test_suite::sub::test_sub_ct_delta_a_gt_b);
+            run_test!(sub_pt_vec_assign, $crate::test_suite::sub::test_sub_pt_vec_assign);
+            run_test!(sub_one_assign, $crate::test_suite::sub::test_sub_one_assign);
+            run_test_result!(copy_aligned, $crate::test_suite::copy::test_copy_aligned);
+            run_test_result!(neg, $crate::test_suite::neg::test_neg_aligned);
+            run_test_result!(neg_wider_output, $crate::test_suite::neg::test_neg_wider_output);
+            run_test_result!(neg_assign, $crate::test_suite::neg::test_neg_assign);
+            run_test!(mul_ct_aligned, $crate::test_suite::mul::test_mul_ct_aligned);
+            run_test!(
+                mul_ct_assign_aligned,
+                $crate::test_suite::mul::test_mul_ct_assign_aligned
+            );
+            run_test!(
+                mul_ct_smaller_output,
+                $crate::test_suite::mul::test_mul_ct_smaller_output
+            );
+            run_test!(
+                mul_ct_smaller_output_exact_scratch,
+                $crate::test_suite::mul::test_mul_ct_smaller_output_exact_scratch
+            );
+            run_test!(square_aligned, $crate::test_suite::mul::test_square_aligned);
+            run_test!(
+                mul_pt_vec_into_aligned,
+                $crate::test_suite::mul::test_mul_pt_vec_into_aligned
+            );
+            run_test!(mul_pt_vec_assign, $crate::test_suite::mul::test_mul_pt_vec_assign);
+            run_test!(mul_pow2_aligned, $crate::test_suite::mul_pow2::test_mul_pow2_aligned);
+            run_test!(div_pow2_aligned, $crate::test_suite::mul_pow2::test_div_pow2_aligned);
+            run_test!(div_pow2_assign, $crate::test_suite::mul_pow2::test_div_pow2_assign);
+            run_test_with_arg!(
+                rotate_aligned,
+                $crate::test_suite::rotate::test_rotate_aligned,
+                $rotations
+            );
+            run_test!(conjugate_aligned, $crate::test_suite::conjugate::test_conjugate_aligned);
+            run_test!(conjugate_assign, $crate::test_suite::conjugate::test_conjugate_assign);
+        }
+    };
+}
 
 #[macro_export]
 macro_rules! ckks_backend_test_suite {
@@ -184,6 +314,18 @@ macro_rules! ckks_backend_test_suite {
                         #[allow(clippy::unsafe_removed_from_name)]
                         use $path as __test_fn;
                         __test_fn::<$backend, $scalar, $encoder_ty>($params, &*MODULE, &*HOST_MODULE, $arg);
+                    }
+                };
+            }
+
+            macro_rules! run_test_ignored {
+                ($name:ident, $path:path) => {
+                    #[test]
+                    #[ignore = "large parameters; run explicitly with --ignored --release"]
+                    fn $name() {
+                        #[allow(clippy::unsafe_removed_from_name)]
+                        use $path as __test_fn;
+                        __test_fn::<$backend, $scalar, $encoder_ty>($params, &*MODULE, &*HOST_MODULE);
                     }
                 };
             }
@@ -380,6 +522,7 @@ macro_rules! ckks_backend_test_suite {
             run_test_result!(copy_smaller_output, $crate::test_suite::copy::test_copy_smaller_output);
             run_test_result!(neg, $crate::test_suite::neg::test_neg_aligned);
             run_test_result!(neg_smaller_output, $crate::test_suite::neg::test_neg_smaller_output);
+            run_test_result!(neg_wider_output, $crate::test_suite::neg::test_neg_wider_output);
             run_test_result!(neg_assign, $crate::test_suite::neg::test_neg_assign);
             run_test!(conjugate_aligned, $crate::test_suite::conjugate::test_conjugate_aligned);
             run_test!(
@@ -409,6 +552,36 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 linear_transformation,
                 $crate::test_suite::linear_transformation::test_linear_transformation
+            );
+            run_test!(paco_partial_c2s, $crate::test_suite::paco_lt::test_paco_partial_c2s);
+            run_test!(paco_packing, $crate::test_suite::paco_lt::test_paco_packing);
+            run_test!(
+                paco_cleartext_reference,
+                $crate::test_suite::paco_reference::test_paco_cleartext_reference
+            );
+            run_test!(paco_stc, $crate::test_suite::paco_lt::test_paco_stc);
+            run_test!(paco_slot_trace, $crate::test_suite::paco_ops::test_paco_slot_trace);
+            run_test!(paco_slot_product, $crate::test_suite::paco_ops::test_paco_slot_product);
+            run_test!(paco_conj_rotate, $crate::test_suite::paco_ops::test_paco_conj_rotate);
+            run_test!(
+                paco_partial_pipeline,
+                $crate::test_suite::paco_keys::test_paco_partial_pipeline
+            );
+            run_test!(
+                paco_seq_bootstrap,
+                $crate::test_suite::paco_bootstrap::test_paco_seq_bootstrap
+            );
+            run_test!(
+                paco_parallel_bootstrap,
+                $crate::test_suite::paco_parallel::test_paco_parallel_bootstrap
+            );
+            run_test!(
+                paco_encapsulated_bootstrap,
+                $crate::test_suite::paco_parallel::test_paco_encapsulated_bootstrap
+            );
+            run_test_ignored!(
+                paco_paper_scale,
+                $crate::test_suite::paco_bootstrap::test_paco_paper_scale
             );
             run_test!(
                 dft_coeffs_to_slots_standard,
@@ -448,6 +621,10 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 mul_ct_smaller_output,
                 $crate::test_suite::mul::test_mul_ct_smaller_output
+            );
+            run_test!(
+                mul_ct_smaller_output_exact_scratch,
+                $crate::test_suite::mul::test_mul_ct_smaller_output_exact_scratch
             );
             run_test!(
                 mul_ct_assign_aligned,
@@ -492,6 +669,10 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 mul_const_into_delta_log_delta,
                 $crate::test_suite::mul::test_mul_pt_const_into_delta_log_delta
+            );
+            run_test!(
+                mul_prepared_layout_mismatch_error,
+                $crate::test_suite::mul::test_mul_prepared_layout_mismatch_error
             );
             run_test!(
                 mul_ct_explicit_metadata_error,
@@ -764,7 +945,16 @@ pub mod mul_add;
 pub mod mul_pow2;
 pub mod mul_sub;
 pub mod neg;
+pub mod paco_bootstrap;
+pub mod paco_keys;
+pub mod paco_lt;
+pub mod paco_ops;
+pub mod paco_parallel;
+pub mod paco_reference;
+pub(crate) mod paco_reference_model;
 pub mod polynomial_evaluation;
+#[doc(hidden)]
+pub mod reference_encoder;
 pub mod rotate;
 pub mod sub;
 pub mod sub_unsafe;

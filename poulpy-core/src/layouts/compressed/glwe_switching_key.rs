@@ -73,6 +73,10 @@ impl<D: Data> GLWEInfos for GLWESwitchingKeyCompressed<D> {
 }
 
 impl<D: Data> GGLWEInfos for GLWESwitchingKeyCompressed<D> {
+    fn k_aux(&self) -> TorusPrecision {
+        self.key.k_aux()
+    }
+
     fn rank_in(&self) -> Rank {
         self.key.rank_in()
     }
@@ -121,11 +125,11 @@ impl GLWESwitchingKeyCompressed<Vec<u8>> {
         Self::alloc(
             infos.n(),
             infos.base2k(),
-            infos.k(),
-            infos.rank_in(),
-            infos.rank_out(),
             infos.dnum(),
             infos.dsize(),
+            infos.k_aux(),
+            infos.rank_in(),
+            infos.rank_out(),
         )
     }
 
@@ -133,14 +137,14 @@ impl GLWESwitchingKeyCompressed<Vec<u8>> {
     pub(crate) fn alloc(
         n: Degree,
         base2k: Base2K,
-        k: TorusPrecision,
-        rank_in: Rank,
-        rank_out: Rank,
         dnum: Dnum,
         dsize: Dsize,
+        k_aux: TorusPrecision,
+        rank_in: Rank,
+        rank_out: Rank,
     ) -> Self {
         GLWESwitchingKeyCompressed {
-            key: GGLWECompressed::alloc(n, base2k, k, rank_in, rank_out, dnum, dsize),
+            key: GGLWECompressed::alloc(n, base2k, dnum, dsize, k_aux, rank_in, rank_out),
             input_degree: Degree(0),
             output_degree: Degree(0),
         }
@@ -155,9 +159,8 @@ impl GLWESwitchingKeyCompressed<Vec<u8>> {
     }
 
     /// Returns the serialized byte size for a compressed GLWE switching key with the given parameters.
-    pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision, rank_in: Rank, dnum: Dnum, dsize: Dsize) -> usize
-where {
-        GGLWECompressed::bytes_of(n, base2k, k, rank_in, dnum, dsize)
+    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank_in: Rank) -> usize {
+        GGLWECompressed::bytes_of(n, base2k, dnum, dsize, k_aux, rank_in)
     }
 }
 

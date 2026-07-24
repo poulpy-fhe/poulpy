@@ -1,14 +1,16 @@
 //! Han–Ki Chebyshev approximation of `cos(2π·(x - 1/4)/2^scnum)` on `[-K, K]`,
 //! adapted from `lattigo/he/hefloat/cosine/cosine_approx.go`. The solve runs
 //! in 256-bit `FBig` since the linear system is poorly conditioned at the
-//! supported parameter ranges, and narrows to `f64` only at the return
-//! boundary. `cos` and π are implemented locally because `dashu-float` does
-//! not provide them.
+//! supported parameter ranges, and narrows to the target scalar `F` only at
+//! the return boundary — mantissa-exactly, via a three-way `f64` decomposition
+//! (see [`fbig_to_scalar`]), so `F = Quad` receives full binary128 precision.
+//! `cos` and π are implemented locally because `dashu-float` does not provide
+//! them.
 
 #![allow(clippy::needless_range_loop)]
 
 use dashu_float::{Context, DBig, FBig, round::mode::HalfEven};
-use rand_distr::num_traits::FromPrimitive;
+use num_traits::{Float, FromPrimitive};
 
 pub const ENCODING_PRECISION: usize = 256;
 
@@ -405,10 +407,22 @@ fn solve(
     c
 }
 
-/// Returns Chebyshev coefficients approximating `cos(2π·(x - 1/4)/2^scnum)` on
-/// `[-k, k]` in the standard basis (variable `u = x/k`). The solve runs in
-/// 256-bit `FBig`; each coefficient is narrowed via `f64` to the target `F`,
-/// so `F` with mantissa wider than 53 bits inherits f64 precision.
+/// Narrows a 256-bit `FBig` to the target scalar `F` **mantissa-exactly** (up
+/// to `F`'s own precision): the value is decomposed into three `f64`
+/// components (`hi + mid + lo`, each the correctly-rounded remainder of the
+/// previous ones — a triple-double covering ~159 significand bits) and
+/// recomposed in `F` in descending magnitude, so `F = Quad` (113-bit
+/// significand) receives its full precision while `F = f64` collapses to the
+/// plain rounding.
+fn fbig_to_scalar<F: Float + FromPrimitive>(c: &FBig<HalfEven>) -> F {
+    let hi = c.to_f64().value();
+    let rem = c - from_f64(hi);
+    let mid = rem.to_f64().value();
+    let lo = (rem - from_f64(mid)).to_f64().value();
+    let f = |x: f64| F::from_f64(x).expect("finite scalar");
+    f(hi) + f(mid) + f(lo)
+}
+
 /// Number of coefficients [`approximate_cos`] produces for `(k, degree, dev)`
 /// (its polynomial has degree `len − 1`). Lets callers size the BSGS depth of the
 /// CosHK base polynomial without solving for the coefficients.
@@ -416,16 +430,17 @@ pub fn approximate_cos_len(k: usize, degree: usize, dev: f64) -> usize {
     gen_degrees(degree, k, dev).1
 }
 
-pub fn approximate_cos<F: FromPrimitive>(k: usize, degree: usize, dev: f64, scnum: usize) -> Vec<F> {
+/// Returns Chebyshev coefficients approximating `cos(2π·(x - 1/4)/2^scnum)` on
+/// `[-k, k]` in the standard basis (variable `u = x/k`). The solve runs in
+/// 256-bit `FBig`; each coefficient is narrowed mantissa-exactly to the target
+/// `F` (see [`fbig_to_scalar`]), so wide scalars such as `Quad` keep their full
+/// precision.
+pub fn approximate_cos<F: Float + FromPrimitive>(k: usize, degree: usize, dev: f64, scnum: usize) -> Vec<F> {
     let (deg, totdeg) = gen_degrees(degree, k, dev);
     let (nodes, y) = gen_nodes(&deg, dev, totdeg, k, scnum);
     let coeffs = solve(totdeg, k, scnum, nodes, y);
     // solve returns totdeg+1 coefficients; the trailing one is outside the target polynomial degree.
-    coeffs
-        .into_iter()
-        .take(totdeg)
-        .map(|c| F::from_f64(c.to_f64().value()).expect("finite scalar"))
-        .collect()
+    coeffs.iter().take(totdeg).map(|c| fbig_to_scalar(c)).collect()
 }
 
 #[cfg(test)]
@@ -459,6 +474,45 @@ mod tests {
         for c in &coeffs {
             assert!(c.is_finite(), "non-finite coefficient: {c}");
         }
+    }
+
+    /// CosHK coefficients must reach the target scalar mantissa-exactly: the
+    /// `Quad` coefficients agree with the `f64` ones when rounded to `f64`
+    /// (same solve, same rounding boundary), and carry a genuine sub-`f64`
+    /// mantissa (a nonzero low-order residue on most coefficients) — the old
+    /// `FBig → f64 → F` narrowing zeroed every bit below 53.
+    #[test]
+    fn approximate_cos_quad_carries_full_mantissa() {
+        use crate::Quad;
+        use num_traits::ToPrimitive;
+
+        let (k, degree, dev, scnum) = (12usize, 30usize, 256.0, 3usize);
+        let c64: Vec<f64> = approximate_cos(k, degree, dev, scnum);
+        let cq: Vec<Quad> = approximate_cos(k, degree, dev, scnum);
+        assert_eq!(c64.len(), cq.len());
+
+        let mut with_residue = 0usize;
+        for (a, b) in c64.iter().zip(&cq) {
+            let b64 = b.to_f64().unwrap();
+            // Rounding the Quad coefficient to f64 reproduces the f64 path
+            // within one ulp (the triple-double recomposition and the direct
+            // f64 narrowing may round the tie differently).
+            assert!(
+                (b64 - a).abs() <= a.abs().max(f64::MIN_POSITIVE) * f64::EPSILON,
+                "Quad coefficient diverges from f64 path: {a} vs {b64}"
+            );
+            let residue = (*b - Quad::from_f64(b64).unwrap()).abs().to_f64().unwrap();
+            if residue > 0.0 {
+                with_residue += 1;
+            }
+        }
+        // The solve's 256-bit values are irrational-ish; essentially all
+        // coefficients must carry bits below the f64 boundary.
+        assert!(
+            with_residue * 2 > cq.len(),
+            "only {with_residue}/{} Quad coefficients carry sub-f64 mantissa",
+            cq.len()
+        );
     }
 
     fn clenshaw(coeffs: &[f64], u: f64) -> f64 {

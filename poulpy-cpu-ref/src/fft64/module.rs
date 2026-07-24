@@ -19,10 +19,7 @@ use poulpy_hal::{
     layouts::{Backend, Host},
 };
 
-use crate::reference::fft64::{
-    module::{FFT64HandleFactory, FFTHandleProvider},
-    reim::{ReimFFTTable, ReimIFFTTable},
-};
+use crate::reference::fft64::module::{FFT64HandleFactory, FFT64Plan, FFT64PlanSet, FFTHandleProvider};
 
 use super::FFT64Ref;
 
@@ -36,8 +33,8 @@ use super::FFT64Ref;
 /// `Module<FFT64Ref>` is dropped (via [`Backend::destroy`]).
 #[repr(C)]
 pub struct FFT64RefHandle {
-    table_fft: ReimFFTTable<f64>,
-    table_ifft: ReimIFFTTable<f64>,
+    ring_plans: FFT64PlanSet<f64>,
+    table_cache: crate::table_cache::ModuleTableCache,
 }
 
 impl Backend for FFT64Ref {
@@ -75,6 +72,14 @@ impl Backend for FFT64Ref {
         let src_len = src.len();
         buf[..src_len].copy_from_slice(src);
         buf[src_len..].fill(0);
+    }
+    fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
+        assert_eq!(buf.len(), dst.len());
+        dst.copy_from_slice(buf);
+    }
+    fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
+        assert_eq!(buf.len(), src.len());
+        buf.copy_from_slice(src);
     }
     fn len_bytes(buf: &Self::OwnedBuf) -> usize {
         buf.len()
@@ -140,18 +145,20 @@ impl Backend for FFT64Ref {
 unsafe impl FFT64HandleFactory for FFT64RefHandle {
     fn create_fft64_handle(n: usize) -> Self {
         FFT64RefHandle {
-            table_fft: ReimFFTTable::new(n >> 1),
-            table_ifft: ReimIFFTTable::new(n >> 1),
+            table_cache: Default::default(),
+            ring_plans: FFT64PlanSet::new(n),
         }
     }
 }
 
 unsafe impl FFTHandleProvider<f64> for FFT64RefHandle {
-    fn get_fft_table(&self) -> &ReimFFTTable<f64> {
-        &self.table_fft
+    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64> {
+        self.ring_plans.for_ring(n)
     }
+}
 
-    fn get_ifft_table(&self) -> &ReimIFFTTable<f64> {
-        &self.table_ifft
+unsafe impl crate::table_cache::ModuleTableCacheProvider for FFT64RefHandle {
+    fn module_plan_cache(&self) -> &crate::table_cache::ModuleTableCache {
+        &self.table_cache
     }
 }

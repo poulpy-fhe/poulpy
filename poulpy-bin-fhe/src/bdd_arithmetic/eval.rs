@@ -464,7 +464,7 @@ where
                 self.glwe_sub(&mut tmp_c, res_b, res_a);
                 let (tmp_res_big, mut scratch_6) = scratch_5.take_vec_znx_big_scratch(self, cols, s.size());
                 let mut tmp_res_big = tmp_res_big;
-                self.glwe_external_product_dft(&mut res_dft, &tmp_c, s, s.size(), &mut scratch_6.borrow());
+                self.glwe_external_product_dft(&mut res_dft, &tmp_c, s, &mut scratch_6.borrow());
                 let res_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&res_dft);
                 for col in 0..cols {
                     self.vec_znx_idft_apply(&mut tmp_res_big, col, &res_dft_ref, col, &mut scratch_6.borrow());
@@ -552,7 +552,7 @@ where
                 self.glwe_sub(&mut tmp_c, &tmp_b, &tmp_a);
                 let (tmp_res_big, mut scratch_6) = scratch_5.take_vec_znx_big_scratch(self, cols, s.size());
                 let mut tmp_res_big = tmp_res_big;
-                self.glwe_external_product_dft(&mut res_dft, &tmp_c, s, s.size(), &mut scratch_6.borrow());
+                self.glwe_external_product_dft(&mut res_dft, &tmp_c, s, &mut scratch_6.borrow());
                 let res_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&res_dft);
                 for col in 0..cols {
                     self.vec_znx_idft_apply(&mut tmp_res_big, col, &res_dft_ref, col, &mut scratch_6.borrow());
@@ -681,7 +681,7 @@ where
         {
             let (tmp_res_big, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(self, cols, s.size());
             let mut tmp_res_big = tmp_res_big;
-            self.glwe_external_product_dft(&mut res_dft, &tmp_in, s, s.size(), &mut scratch_4.borrow());
+            self.glwe_external_product_dft(&mut res_dft, &tmp_in, s, &mut scratch_4.borrow());
             let res_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&res_dft);
             for col in 0..cols {
                 self.vec_znx_idft_apply(&mut tmp_res_big, col, &res_dft_ref, col, &mut scratch_4.borrow());
@@ -738,7 +738,7 @@ where
         {
             let (tmp_res_big, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(self, cols, s.size());
             let mut tmp_res_big = tmp_res_big;
-            self.glwe_external_product_dft(&mut res_dft, &tmp, s, s.size(), &mut scratch_4.borrow());
+            self.glwe_external_product_dft(&mut res_dft, &tmp, s, &mut scratch_4.borrow());
             let res_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&res_dft);
             for col in 0..cols {
                 self.vec_znx_idft_apply(&mut tmp_res_big, col, &res_dft_ref, col, &mut scratch_4.borrow());
@@ -788,7 +788,7 @@ where
         {
             let (tmp_res_big, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(self, cols, s.size());
             let mut tmp_res_big = tmp_res_big;
-            self.glwe_external_product_dft(&mut res_dft, &tmp, s, s.size(), &mut scratch_4.borrow());
+            self.glwe_external_product_dft(&mut res_dft, &tmp, s, &mut scratch_4.borrow());
             let res_dft_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&res_dft);
             for col in 0..cols {
                 self.vec_znx_idft_apply(&mut tmp_res_big, col, &res_dft_ref, col, &mut scratch_4.borrow());

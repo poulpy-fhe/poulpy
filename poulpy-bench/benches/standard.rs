@@ -78,12 +78,13 @@ fn std_glwe_encrypt_sk(c: &mut Criterion) {
 
 fn std_ggsw_encrypt_sk(c: &mut Criterion) {
     let cp = &p().core;
+    let (dnum, k_aux) = poulpy_bench::params::key_dnum_k_aux(cp.k, cp.base2k, cp.dsize);
     let infos = GGSWLayout {
         n: Degree(cp.n),
         base2k: Base2K(cp.base2k),
-        k: TorusPrecision(cp.k),
+        k_aux: TorusPrecision(k_aux),
         rank: Rank(cp.rank),
-        dnum: Dnum(cp.dnum()),
+        dnum: Dnum(dnum),
         dsize: Dsize(cp.dsize),
     };
     poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::core::encryption::bench_ggsw_encrypt_sk, &infos; c);
@@ -93,12 +94,13 @@ fn std_ggsw_encrypt_sk(c: &mut Criterion) {
 
 fn std_glwe_external_product(c: &mut Criterion) {
     let cp = &p().core;
+    let (dnum, k_aux) = poulpy_bench::params::key_dnum_k_aux(cp.k, cp.base2k, cp.dsize);
     let infos = GGSWLayout {
         n: Degree(cp.n),
         base2k: Base2K(cp.base2k),
-        k: TorusPrecision(cp.k),
+        k_aux: TorusPrecision(k_aux),
         rank: Rank(cp.rank),
-        dnum: Dnum(cp.dnum()),
+        dnum: Dnum(dnum),
         dsize: Dsize(cp.dsize),
     };
     poulpy_bench::for_each_backend!(
@@ -110,6 +112,7 @@ fn std_glwe_external_product(c: &mut Criterion) {
 
 fn std_glwe_automorphism(c: &mut Criterion) {
     let cp = &p().core;
+    let (dnum, k_aux) = poulpy_bench::params::key_dnum_k_aux(cp.k, cp.base2k, cp.dsize);
     let glwe_infos = GLWELayout {
         n: Degree(cp.n),
         base2k: Base2K(cp.base2k),
@@ -119,9 +122,9 @@ fn std_glwe_automorphism(c: &mut Criterion) {
     let atk_infos = GLWEAutomorphismKeyLayout {
         n: Degree(cp.n),
         base2k: Base2K(cp.base2k),
-        k: TorusPrecision(cp.k),
+        k_aux: TorusPrecision(k_aux),
         rank: Rank(cp.rank),
-        dnum: Dnum(cp.dnum()),
+        dnum: Dnum(dnum),
         dsize: Dsize(cp.dsize),
     };
     poulpy_bench::for_each_backend!(
@@ -133,6 +136,7 @@ fn std_glwe_automorphism(c: &mut Criterion) {
 
 fn std_glwe_keyswitch(c: &mut Criterion) {
     let cp = &p().core;
+    let (dnum, k_aux) = poulpy_bench::params::key_dnum_k_aux(cp.k + cp.dsize * cp.base2k, cp.base2k, cp.dsize);
     let glwe = GLWELayout {
         n: Degree(cp.n),
         base2k: Base2K(cp.base2k),
@@ -142,10 +146,10 @@ fn std_glwe_keyswitch(c: &mut Criterion) {
     let ksk_infos = GLWESwitchingKeyLayout {
         n: Degree(cp.n),
         base2k: Base2K(cp.base2k),
-        k: TorusPrecision(cp.k + cp.base2k * cp.dsize),
+        k_aux: TorusPrecision(k_aux),
         rank_in: Rank(cp.rank),
         rank_out: Rank(cp.rank),
-        dnum: Dnum(cp.dnum()),
+        dnum: Dnum(dnum),
         dsize: Dsize(cp.dsize),
     };
     poulpy_bench::for_each_backend!(

@@ -1,6 +1,6 @@
-use anyhow::Result;
+use crate::CKKSResult as Result;
 use poulpy_core::layouts::{
-    Compact, GGLWEInfos, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+    Compact, GGLWEInfos, GLWE, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
     prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::layouts::{Backend, Data, ScratchArena};
@@ -35,15 +35,10 @@ pub trait CKKSAddManyOps<BE: Backend> {
     /// ```
     ///
     /// Errors if `inputs` is empty.
-    fn ckks_add_many<Dst: Data, Src: Data>(
-        &self,
-        dst: &mut CKKSCiphertext<Dst>,
-        inputs: &[&CKKSCiphertext<Src>],
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    fn ckks_add_many<Dst, Src>(&self, dst: &mut Dst, inputs: &[&Src], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<Src>: GLWEToBackendRef<BE>;
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds;
 }
 
 /// Fused multiply-accumulate: `dst += a * b`.
@@ -52,22 +47,27 @@ pub trait CKKSAddManyOps<BE: Backend> {
 /// scratch for the intermediate product instead of requiring a caller-visible
 /// ciphertext allocation.
 pub trait CKKSMulAddOps<BE: Backend> {
-    fn ckks_mul_add_ct_tmp_bytes<R, T>(&self, res: &R, tsk: &T) -> usize
+    /// Scratch bytes for [`Self::ckks_mul_add_ct_into`] with result `res` and
+    /// multiplication operands `a`, `b` (the internal product is carved at the
+    /// widest of the three).
+    fn ckks_mul_add_ct_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        B: CKKSCtBounds,
         T: GGLWEInfos;
 
     fn ckks_mul_add_pt_vec_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos + LWEInfos;
+        P: CKKSInfos;
 
     fn ckks_mul_add_pt_const_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos + LWEInfos;
+        P: CKKSInfos;
 
     /// Computes `dst += a * b` using tensor-product keyswitching via `tsk`.
     ///
@@ -152,7 +152,7 @@ pub trait CKKSMulAddOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        GLWE<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
@@ -168,7 +168,7 @@ pub trait CKKSMulAddOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        GLWE<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 }
@@ -183,7 +183,7 @@ pub trait CKKSAffineOps<BE: Backend> {
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos + LWEInfos;
+        P: CKKSInfos;
 
     /// Computes `dst = a * affine_const[scale_coeff] + affine_const[offset_coeff]`.
     ///
@@ -247,7 +247,7 @@ pub trait CKKSAffineOps<BE: Backend> {
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        S: CKKSInfos + LWEInfos;
+        S: CKKSInfos;
 
     /// Computes `dst = a * scale + offset` where `scale` and `offset` are full
     /// plaintext polynomials in the ZNX domain.
@@ -306,72 +306,71 @@ pub trait CKKSAffineOps<BE: Backend> {
 
 /// Fused multiply-subtract: `dst -= a * b`.
 pub trait CKKSMulSubOps<BE: Backend> {
-    fn ckks_mul_sub_ct_tmp_bytes<R, T>(&self, res: &R, tsk: &T) -> usize
+    /// Scratch bytes for [`Self::ckks_mul_sub_ct_into`] with result `res` and
+    /// multiplication operands `a`, `b` (the internal product is carved at the
+    /// widest of the three).
+    fn ckks_mul_sub_ct_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        B: CKKSCtBounds,
         T: GGLWEInfos;
 
     fn ckks_mul_sub_pt_vec_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos + LWEInfos;
+        P: CKKSInfos;
 
     fn ckks_mul_sub_pt_const_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos + LWEInfos;
+        P: CKKSInfos;
 
     /// Computes `dst -= a * b` using tensor-product keyswitching via `tsk`.
     ///
     /// Metadata follows the same rule as
     /// [`CKKSMulAddOps::ckks_mul_add_ct_into`] with `+=` replaced by `-=`.
-    fn ckks_mul_sub_ct_into<Dst: Data, A: Data, B: Data, T: Data>(
+    fn ckks_mul_sub_ct_into<Dst, A, B, T>(
         &self,
-        dst: &mut CKKSCiphertext<Dst>,
-        a: &CKKSCiphertext<A>,
-        b: &CKKSCiphertext<B>,
-        tsk: &GLWETensorKeyPrepared<T, BE>,
+        dst: &mut Dst,
+        a: &A,
+        b: &B,
+        tsk: &T,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<A>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
-        CKKSCiphertext<B>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
-        GLWETensorKeyPrepared<T, BE>: GLWETensorKeyPreparedToBackendRef<BE>;
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE> + CKKSCtBounds,
+        T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
 
     /// Computes `dst -= a * pt` where `pt` is a full plaintext polynomial.
     ///
     /// Metadata follows the same rule as
     /// [`CKKSMulAddOps::ckks_mul_add_pt_vec_into`].
-    fn ckks_mul_sub_pt_vec_into<Dst: Data, A: Data, P>(
-        &self,
-        dst: &mut CKKSCiphertext<Dst>,
-        a: &CKKSCiphertext<A>,
-        pt: &P,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    fn ckks_mul_sub_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<A>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 
     /// Computes `dst -= a * pt[pt_coeff]`.
     ///
     /// Metadata follows the same rule as
     /// [`CKKSMulAddOps::ckks_mul_add_pt_const_into`].
-    fn ckks_mul_sub_pt_const_into<Dst: Data, A: Data, P>(
+    fn ckks_mul_sub_pt_const_into<Dst, A, P>(
         &self,
-        dst: &mut CKKSCiphertext<Dst>,
-        a: &CKKSCiphertext<A>,
+        dst: &mut Dst,
+        a: &A,
         pt: &P,
         pt_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<A>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds;
 }
 
@@ -379,22 +378,27 @@ pub trait CKKSMulSubOps<BE: Backend> {
 ///
 /// Computes the weighted sum `dst = Σ a[i] * b[i]` over all pairs.
 pub trait CKKSDotProductOps<BE: Backend> {
-    fn ckks_dot_product_ct_tmp_bytes<R, T>(&self, n: usize, res: &R, tsk: &T) -> usize
+    /// Scratch bytes for [`Self::ckks_dot_product_ct`] over `n` input pairs;
+    /// `a`/`b` describe the widest input pair (the internal products are carved
+    /// at the widest of `res`/`a`/`b`).
+    fn ckks_dot_product_ct_tmp_bytes<R, A, B, T>(&self, n: usize, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        B: CKKSCtBounds,
         T: GGLWEInfos;
 
     fn ckks_dot_product_pt_vec_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos + LWEInfos;
+        P: CKKSInfos;
 
     fn ckks_dot_product_pt_const_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos + LWEInfos;
+        P: CKKSInfos;
 
     /// Computes `dst = Σ a[i] * b[i]` over ciphertext–ciphertext pairs.
     ///

@@ -9,8 +9,7 @@ use crate::{
     EncryptionLayout, GGSWEncryptSk, GGSWExternalProduct, GGSWNoise,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGSW, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, LWEInfos,
-        ModuleCoreAlloc,
+        GGSW, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
         prepared::{GGSWPrepared, GLWESecretPrepared},
     },
     noise::noise_ggsw_product,
@@ -41,8 +40,6 @@ where
         for dsize in 1..max_dsize + 1 {
             let k_apply: usize = k_in + key_base2k * dsize;
 
-            let k_out: usize = k_in; // Better capture noise.
-
             let n: usize = module.n();
             let dnum: usize = k_in.div_ceil(key_base2k * dsize);
             let dnum_in: usize = k_in / in_base2k;
@@ -51,8 +48,8 @@ where
             let ggsw_in_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
                 n: n.into(),
                 base2k: in_base2k.into(),
-                k: k_in.into(),
                 dnum: dnum_in.into(),
+                k_aux: (dsize_in * in_base2k + module.log_n()).into(),
                 dsize: dsize_in.into(),
                 rank: rank.into(),
             })
@@ -61,8 +58,8 @@ where
             let ggsw_out_infos: GGSWLayout = GGSWLayout {
                 n: n.into(),
                 base2k: out_base2k.into(),
-                k: k_out.into(),
                 dnum: dnum_in.into(),
+                k_aux: (dsize_in * out_base2k + module.log_n()).into(),
                 dsize: dsize_in.into(),
                 rank: rank.into(),
             };
@@ -70,8 +67,8 @@ where
             let ggsw_apply_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
-                k: k_apply.into(),
                 dnum: dnum.into(),
+                k_aux: (dsize * key_base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank: rank.into(),
             })
@@ -128,13 +125,7 @@ where
             let mut ct_rhs_prepared: GGSWPrepared<BE::OwnedBuf, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw_apply);
             module.ggsw_prepare(&mut ct_rhs_prepared, &ggsw_apply, &mut scratch.borrow());
 
-            module.ggsw_external_product(
-                &mut ggsw_out,
-                &ggsw_in,
-                &ct_rhs_prepared,
-                ct_rhs_prepared.size(),
-                &mut scratch.borrow(),
-            );
+            module.ggsw_external_product(&mut ggsw_out, &ggsw_in, &ct_rhs_prepared, &mut scratch.borrow());
 
             {
                 let mut pt_in_as_vec = crate::test_suite::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut pt_in);
@@ -219,8 +210,8 @@ where
             let ggsw_out_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
                 n: n.into(),
                 base2k: out_base2k.into(),
-                k: k_out.into(),
                 dnum: dnum_in.into(),
+                k_aux: (dsize_in * out_base2k + module.log_n()).into(),
                 dsize: dsize_in.into(),
                 rank: rank.into(),
             })
@@ -229,8 +220,8 @@ where
             let ggsw_apply_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
-                k: k_apply.into(),
                 dnum: dnum.into(),
+                k_aux: (dsize * key_base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank: rank.into(),
             })
@@ -287,7 +278,7 @@ where
             let mut ct_rhs_prepared: GGSWPrepared<BE::OwnedBuf, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw_apply);
             module.ggsw_prepare(&mut ct_rhs_prepared, &ggsw_apply, &mut scratch.borrow());
 
-            module.ggsw_external_product_assign(&mut ggsw_out, &ct_rhs_prepared, ct_rhs_prepared.size(), &mut scratch.borrow());
+            module.ggsw_external_product_assign(&mut ggsw_out, &ct_rhs_prepared, &mut scratch.borrow());
 
             {
                 let mut pt_in_as_vec = crate::test_suite::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut pt_in);

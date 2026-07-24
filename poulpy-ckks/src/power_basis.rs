@@ -1,15 +1,16 @@
 use anyhow::{Result, ensure};
 use poulpy_core::layouts::{
-    Base2K, GGLWEInfos, GLWEInfos, GLWEPlaintext, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-    TorusPrecision, prepared::GLWETensorKeyPreparedToBackendRef, split_degree,
+    GGLWEInfos, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+    prepared::GLWETensorKeyPreparedToBackendRef, split_degree,
 };
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
+    CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::{CKKSMulOps, CKKSPow2Ops, CKKSSubOps},
     checked_mul_ct_log_budget,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
+    default::carry_verb::ckks_one_pt,
+    layouts::{CKKSCiphertext, CKKSModuleAlloc},
 };
 
 pub use crate::api::{Basis, Parity};
@@ -257,28 +258,6 @@ impl<BE: Backend> PowerBasisGen<BE> for PowerBasis<CKKSCiphertext<BE::OwnedBuf>>
 
         Ok(())
     }
-}
-
-fn ckks_one_pt<BE>(module: &Module<BE>, base2k: Base2K) -> Result<CKKSPlaintext<BE::OwnedBuf>>
-where
-    BE: Backend,
-    Module<BE>: CKKSModuleAlloc<BE>,
-{
-    let meta = CKKSMeta {
-        log_sparsity: 0,
-        log_delta: 1,
-    };
-
-    // Monomial plaintext: effective torus width is `log_delta` (budget 0).
-    let k_total: TorusPrecision = meta.log_delta.into();
-
-    let mut host_pt = CKKSPlaintext::from_inner(GLWEPlaintext::alloc_with_meta(1usize.into(), base2k, k_total), meta);
-    host_pt.encode_host_floats(&[1.0f64])?;
-
-    let mut pt = module.ckks_pt_coeffs_alloc(1, base2k, k_total);
-    pt.set_meta(meta);
-    pt.copy_from_host_bytes::<BE>(host_pt.data().data.as_slice());
-    Ok(pt)
 }
 
 fn mul_ct_k<A, B>(a: &A, b: &B) -> Result<usize>

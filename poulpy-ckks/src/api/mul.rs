@@ -1,5 +1,5 @@
-use anyhow::Result;
-use poulpy_core::layouts::{Compact, GLWEToBackendMut, LWEInfos};
+use crate::CKKSResult as Result;
+use poulpy_core::layouts::{Compact, GLWEToBackendMut};
 use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendRef, prepared::GLWETensorKeyPreparedToBackendRef};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
@@ -21,7 +21,7 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight};
 /// natural_budget = min(a.log_budget, b.log_budget) − max(a.log_delta, b.log_delta)
 /// log_delta_out  = min(a.log_delta, b.log_delta)
 /// natural_eff_k  = natural_budget + log_delta_out
-/// offset         = max(0, natural_eff_k − dst.max_k())
+/// offset         = max(0, natural_eff_k − dst.k())
 ///
 /// log_budget_out = natural_budget − offset
 /// ```
@@ -29,12 +29,16 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight};
 /// **Capacity consumed by the multiplication itself**: `max(a.log_delta, b.log_delta)` bits.
 /// **Additional reduction from small `dst`**: `offset` bits.
 ///
+/// The result is produced at the destination's **requested `dst.k()`** (value-preserving
+/// rounding when narrower than the natural width), not the buffer's `dst.max_k()` — the
+/// same contract as the `pt_vec` variant below.
+///
 /// For the common case of equal-precision operands (`a.log_delta == b.log_delta == Δ`):
 ///
 /// ```text
 /// natural_eff_k  = a.log_budget   (= b.log_budget when budgets are also equal)
 /// log_delta_out  = Δ
-/// offset         = max(0, a.log_budget − dst.max_k())
+/// offset         = max(0, a.log_budget − dst.k())
 /// log_budget_out = a.log_budget − Δ − offset
 /// ```
 ///
@@ -48,13 +52,19 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight};
 /// log_delta_out  = a.log_delta
 /// natural_eff_k  = natural_budget + a.log_delta
 ///                = a.k() − pt.log_delta
-/// offset         = max(0, natural_eff_k − dst.max_k())
+/// offset         = max(0, natural_eff_k − dst.k())
 ///
 /// log_budget_out = natural_budget − offset
 /// ```
 ///
 /// **Capacity consumed**: `pt.log_delta` bits (precision of the plaintext
 /// multiplier), plus `offset`.
+///
+/// The result is produced at the destination's **requested `dst.k()`** (with
+/// value-preserving rounding of the low bits when it is narrower than the natural
+/// width), not at the buffer's limb-aligned `dst.max_k()`. Allocate `dst` at the
+/// exact `k` you want the product at — this is how a leveled consumer (e.g. the PaCo
+/// blind rotation) evaluates the whole downstream circuit at a lower, cheaper width.
 ///
 /// **Plaintext operand**: `pt` is multiplied in as a full-width **integer
 /// polynomial** (bottom-up encoding) — every stored limb participates
@@ -70,31 +80,47 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight};
 /// # Rescaling after multiplication
 ///
 /// After a ciphertext–ciphertext multiplication the result has a lower
-/// `log_budget` but the same `log_delta`.  To release the physical limbs
-/// no longer needed, call
-/// [`CKKSMaintainOps::ckks_compact_limbs`](crate::layouts::CKKSMaintainOps::ckks_compact_limbs).
+/// `log_budget` but the same `log_delta`. The mul ops already release the
+/// physical limbs no longer covered by the shrunken width (they call
+/// `Compact::compact` on the destination before returning). To trade further
+/// budget for precision under `log_delta` — the closest analogue of an RNS
+/// "rescale" — use
+/// [`CKKSPow2Ops::ckks_div_pow2_assign`](crate::api::CKKSPow2Ops::ckks_div_pow2_assign).
 pub trait CKKSMulOps<BE: Backend> {
-    fn ckks_mul_tmp_bytes<R, T>(&self, res: &R, tsk: &T) -> usize
+    /// Scratch bytes for [`Self::ckks_mul_into`] / [`Self::ckks_mul_assign`] /
+    /// [`Self::ckks_mul_prepared_assign`] with result `res` and operands `a`, `b`.
+    ///
+    /// The operands must be passed: the internal tensor intermediate is carved at
+    /// the widest of `res`/`a`/`b`, so a destination narrower than its operands
+    /// (a supported call) needs more scratch than `res` alone describes. For
+    /// `_assign` pass `dst` as both `res` and `a`; for `_prepared_assign` pass
+    /// the operand the [`CKKSPreparedRight`] was prepared from.
+    fn ckks_mul_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        B: CKKSCtBounds,
         T: GGLWEInfos;
 
-    fn ckks_square_tmp_bytes<R, T>(&self, res: &R, tsk: &T) -> usize
+    /// Scratch bytes for [`Self::ckks_square_into`] / [`Self::ckks_square_assign`]
+    /// with result `res` and operand `a` (pass `dst` twice for `_assign`).
+    fn ckks_square_tmp_bytes<R, A, T>(&self, res: &R, a: &A, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
+        A: CKKSCtBounds,
         T: GGLWEInfos;
 
     fn ckks_mul_pt_vec_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos + LWEInfos;
+        P: CKKSInfos;
 
     fn ckks_mul_pt_const_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos + LWEInfos;
+        P: CKKSInfos;
 
     /// Computes `dst = a * b` using tensor-product keyswitching via `tsk`.
     ///

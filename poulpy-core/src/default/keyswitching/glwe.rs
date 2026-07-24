@@ -271,14 +271,8 @@ where
 }
 
 #[allow(private_bounds)]
-pub fn glwe_keyswitch_default<BE, M, R, A, K>(
-    module: &M,
-    res: &mut R,
-    a: &A,
-    key: &K,
-    key_size: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
+pub fn glwe_keyswitch_default<BE, M, R, A, K>(module: &M, res: &mut R, a: &A, key: &K, scratch: &mut ScratchArena<'_, BE>)
+where
     BE: Backend,
     M: GLWEKeyswitchDefault<BE>
         + ModuleN
@@ -321,7 +315,7 @@ pub fn glwe_keyswitch_default<BE, M, R, A, K>(
         module.glwe_keyswitch_tmp_bytes_default(res, a, key)
     );
 
-    let key_size = key.size().min(key_size);
+    let key_size = key.work_size(a.k());
 
     let a_base2k: usize = a.base2k().into();
     let key_base2k: usize = key.base2k().into();
@@ -389,13 +383,8 @@ pub fn glwe_keyswitch_default<BE, M, R, A, K>(
 }
 
 #[allow(private_bounds)]
-pub fn glwe_keyswitch_assign_default<BE, M, R, K>(
-    module: &M,
-    res: &mut R,
-    key: &K,
-    key_size: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
+pub fn glwe_keyswitch_assign_default<BE, M, R, K>(module: &M, res: &mut R, key: &K, scratch: &mut ScratchArena<'_, BE>)
+where
     BE: Backend,
     M: GLWEKeyswitchDefault<BE>
         + ModuleN
@@ -437,7 +426,7 @@ pub fn glwe_keyswitch_assign_default<BE, M, R, K>(
         module.glwe_keyswitch_tmp_bytes_default(res, res, key)
     );
 
-    let key_size = key.size().min(key_size);
+    let key_size = key.work_size(res.k());
 
     let res_base2k: usize = res.base2k().as_usize();
     let key_base2k: usize = key.base2k().as_usize();

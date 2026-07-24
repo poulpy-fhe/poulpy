@@ -1,10 +1,8 @@
-use anyhow::Result;
+use crate::CKKSAtkBounds;
+use crate::CKKSResult as Result;
 use poulpy_core::{
     GLWEAutomorphism, GLWEShift,
-    layouts::{
-        GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
-        prepared::GLWEAutomorphismKeyPreparedToBackendRef,
-    },
+    layouts::{GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef},
 };
 use poulpy_hal::layouts::{Backend, GaloisElement, Module, ScratchArena};
 
@@ -21,7 +19,7 @@ where
         C: CKKSCtBounds,
         K: GGLWEInfos,
     {
-        BE::ckks_rotate_tmp_bytes(self, ct_infos, key_infos)
+        BE::ckks_rotate_tmp_bytes_impl(self, ct_infos, key_infos)
     }
 
     fn ckks_rotate_into<Dst, Src, H, K>(
@@ -33,7 +31,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
@@ -44,12 +42,12 @@ where
                 op: "rotate",
                 rotation: k,
             })?;
-        BE::ckks_rotate_into(self, dst, src, key, scratch)
+        BE::ckks_rotate_into_impl(self, dst, src, key, scratch)
     }
 
     fn ckks_rotate_assign<Dst, H, K>(&self, dst: &mut Dst, k: i64, keys: &H, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>,
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
@@ -59,6 +57,6 @@ where
                 op: "rotate_assign",
                 rotation: k,
             })?;
-        BE::ckks_rotate_assign(self, dst, key, scratch)
+        BE::ckks_rotate_assign_impl(self, dst, key, scratch)
     }
 }

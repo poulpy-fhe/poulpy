@@ -41,7 +41,6 @@ pub fn test_blind_rotation<BRA: BlindRotationAlgo, M, BE: Backend<OwnedBuf = Vec
     let n_glwe: usize = module.n();
     let base2k: usize = 19;
     let k_lwe: usize = 24;
-    let k_brk: usize = 3 * base2k;
     let rows_brk: usize = 2; // Ensures first limb is noise-free.
     let k_lut: usize = base2k;
     let k_res: usize = 2 * base2k;
@@ -59,8 +58,8 @@ pub fn test_blind_rotation<BRA: BlindRotationAlgo, M, BE: Backend<OwnedBuf = Vec
         n_glwe: n_glwe.into(),
         n_lwe: n_lwe.into(),
         base2k: base2k.into(),
-        k: k_brk.into(),
         dnum: rows_brk.into(),
+        k_aux: (base2k + n_glwe.ilog2() as usize).into(),
         rank: rank.into(),
     })
     .unwrap();

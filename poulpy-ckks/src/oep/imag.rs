@@ -1,16 +1,16 @@
+use crate::CKKSResult as Result;
 use crate::default::imag::CKKSImagDefault;
 
-use anyhow::Result;
 use poulpy_core::{
     GLWECopy, GLWENegate, GLWERotate, GLWEShift,
-    layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
+    layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef},
 };
 use poulpy_hal::{
     api::ModuleN,
     layouts::{Backend, Module, ScratchArena},
 };
 
-use crate::{CKKSInfos, SetCKKSInfos};
+use crate::{CKKSCtBounds, SetCKKSInfos};
 
 /// # Safety
 ///
@@ -18,27 +18,37 @@ use crate::{CKKSInfos, SetCKKSInfos};
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
 pub unsafe trait CKKSImagImpl<BE: Backend>: Backend {
-    fn ckks_mul_i_tmp_bytes(module: &Module<BE>) -> usize;
+    fn ckks_mul_i_tmp_bytes_impl(module: &Module<BE>) -> usize;
 
-    fn ckks_mul_i_into<Dst, Src>(module: &Module<BE>, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_mul_i_into_impl<Dst, Src>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        src: &Src,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos;
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds;
 
-    fn ckks_mul_i_assign<Dst>(module: &Module<BE>, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_mul_i_assign_impl<Dst>(module: &Module<BE>, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos;
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 
-    fn ckks_div_i_tmp_bytes(module: &Module<BE>) -> usize;
+    fn ckks_div_i_tmp_bytes_impl(module: &Module<BE>) -> usize;
 
-    fn ckks_div_i_into<Dst, Src>(module: &Module<BE>, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_div_i_into_impl<Dst, Src>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        src: &Src,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos;
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds;
 
-    fn ckks_div_i_assign<Dst>(module: &Module<BE>, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_div_i_assign_impl<Dst>(module: &Module<BE>, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos;
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 }
 
 unsafe impl<BE: Backend> CKKSImagImpl<BE> for BE
@@ -47,40 +57,50 @@ where
     Module<BE>:
         crate::default::imag::CKKSImagDefault<BE> + GLWECopy<BE> + GLWENegate<BE> + GLWERotate<BE> + GLWEShift<BE> + ModuleN,
 {
-    fn ckks_mul_i_tmp_bytes(module: &Module<BE>) -> usize {
+    fn ckks_mul_i_tmp_bytes_impl(module: &Module<BE>) -> usize {
         module.ckks_mul_i_tmp_bytes_default()
     }
 
-    fn ckks_mul_i_into<Dst, Src>(module: &Module<BE>, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_mul_i_into_impl<Dst, Src>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        src: &Src,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds,
     {
         module.ckks_mul_i_into_default(dst, src, scratch)
     }
 
-    fn ckks_mul_i_assign<Dst>(module: &Module<BE>, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_mul_i_assign_impl<Dst>(module: &Module<BE>, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
         module.ckks_mul_i_assign_default(dst, scratch)
     }
 
-    fn ckks_div_i_tmp_bytes(module: &Module<BE>) -> usize {
+    fn ckks_div_i_tmp_bytes_impl(module: &Module<BE>) -> usize {
         module.ckks_div_i_tmp_bytes_default()
     }
 
-    fn ckks_div_i_into<Dst, Src>(module: &Module<BE>, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_div_i_into_impl<Dst, Src>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        src: &Src,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds,
     {
         module.ckks_div_i_into_default(dst, src, scratch)
     }
 
-    fn ckks_div_i_assign<Dst>(module: &Module<BE>, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_div_i_assign_impl<Dst>(module: &Module<BE>, dst: &mut Dst, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
         module.ckks_div_i_assign_default(dst, scratch)
     }

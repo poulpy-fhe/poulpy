@@ -183,7 +183,22 @@ impl GLWEPlaintext<Vec<u8>> {
     where
         A: GLWEInfos,
     {
-        Self::alloc(infos.n(), infos.base2k(), infos.k())
+        // Size to `infos.size()` (not `ceil(k/base2k)`) so that a plaintext
+        // allocated from a *key* info (whose `size()` includes the auxiliary
+        // limbs above the gadget precision `k`) matches the width reserved by
+        // `take_glwe_plaintext_scratch`. For non-key infos the two coincide.
+        let n: Degree = infos.n();
+        let size: usize = infos.size();
+        GLWEPlaintext {
+            data: VecZnx::from_data(
+                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<Vec<u8>>::bytes_of(n.into(), 1, size)),
+                n.into(),
+                1,
+                size,
+            ),
+            base2k: infos.base2k(),
+            k: infos.k(),
+        }
     }
 
     pub(crate) fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision) -> Self {
@@ -220,7 +235,10 @@ impl GLWEPlaintext<Vec<u8>> {
     where
         A: GLWEInfos,
     {
-        Self::bytes_of(infos.n(), infos.base2k(), infos.k())
+        // Mirror `alloc_from_infos` / `take_glwe_plaintext_scratch`: size to
+        // `infos.size()` so key infos (with auxiliary limbs) reserve the full
+        // width. For non-key infos `size() == ceil(k/base2k)`.
+        VecZnx::bytes_of(infos.n().into(), 1, infos.size())
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision) -> usize {
@@ -254,8 +272,13 @@ where
     }
 }
 
-impl<'b, BE: Backend + 'b> GLWEToBackendRef<BE> for &mut GLWEPlaintext<BE::BufMut<'b>> {
-    fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>> {
+/// Reborrows a mutable-view-backed plaintext as a shared backend view.
+pub trait GLWEPlaintextReborrowBackendRef<BE: Backend> {
+    fn reborrow_backend_ref(&self) -> GLWE<BE::BufRef<'_>>;
+}
+
+impl<'b, BE: Backend + 'b> GLWEPlaintextReborrowBackendRef<BE> for GLWEPlaintext<BE::BufMut<'b>> {
+    fn reborrow_backend_ref(&self) -> GLWE<BE::BufRef<'_>> {
         GLWE {
             base2k: self.base2k,
             k: self.k,
@@ -264,13 +287,30 @@ impl<'b, BE: Backend + 'b> GLWEToBackendRef<BE> for &mut GLWEPlaintext<BE::BufMu
     }
 }
 
-impl<'b, BE: Backend + 'b> GLWEToBackendMut<BE> for &mut GLWEPlaintext<BE::BufMut<'b>> {
-    fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>> {
+/// Reborrows a mutable-view-backed plaintext as a mutable backend view.
+pub trait GLWEPlaintextReborrowBackendMut<BE: Backend>: GLWEPlaintextReborrowBackendRef<BE> {
+    fn reborrow_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>>;
+}
+
+impl<'b, BE: Backend + 'b> GLWEPlaintextReborrowBackendMut<BE> for GLWEPlaintext<BE::BufMut<'b>> {
+    fn reborrow_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>> {
         GLWE {
             base2k: self.base2k,
             k: self.k,
             data: <VecZnx<BE::BufMut<'b>> as VecZnxReborrowBackendMut<BE>>::reborrow_backend_mut(&mut self.data),
         }
+    }
+}
+
+impl<'b, BE: Backend + 'b> GLWEToBackendRef<BE> for &mut GLWEPlaintext<BE::BufMut<'b>> {
+    fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>> {
+        <GLWEPlaintext<BE::BufMut<'b>> as GLWEPlaintextReborrowBackendRef<BE>>::reborrow_backend_ref(*self)
+    }
+}
+
+impl<'b, BE: Backend + 'b> GLWEToBackendMut<BE> for &mut GLWEPlaintext<BE::BufMut<'b>> {
+    fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>> {
+        <GLWEPlaintext<BE::BufMut<'b>> as GLWEPlaintextReborrowBackendMut<BE>>::reborrow_backend_mut(*self)
     }
 }
 

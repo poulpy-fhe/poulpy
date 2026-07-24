@@ -52,6 +52,12 @@ impl Backend for SrcBackend {
     fn copy_from_host(buf: &mut Self::OwnedBuf, src: &[u8]) {
         buf.copy_from_slice(src);
     }
+    fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
+        dst.copy_from_slice(buf);
+    }
+    fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
+        buf.copy_from_slice(src);
+    }
     fn len_bytes(buf: &Self::OwnedBuf) -> usize {
         buf.len()
     }
@@ -154,6 +160,12 @@ impl Backend for DstBackend {
     }
 
     fn copy_from_host(buf: &mut Self::OwnedBuf, src: &[u8]) {
+        buf.copy_from_slice(src);
+    }
+    fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
+        dst.copy_from_slice(buf);
+    }
+    fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
         buf.copy_from_slice(src);
     }
     fn len_bytes(buf: &Self::OwnedBuf) -> usize {
@@ -274,7 +286,7 @@ fn module_transfer_glwe_roundtrip() {
 fn module_transfer_gglwe_roundtrip() {
     let src_module: Module<SrcBackend> = Module::new(64);
     let dst_module: Module<DstBackend> = Module::new(64);
-    let mut src: GGLWE<Vec<u8>> = src_module.gglwe_alloc(Base2K(12), TorusPrecision(33), Rank(1), Rank(2), Dnum(3), Dsize(1));
+    let mut src: GGLWE<Vec<u8>> = src_module.gglwe_alloc(Base2K(12), Dnum(3), Dsize(1), TorusPrecision(12 + 6), Rank(1), Rank(2));
     fill_bytes(src.data.data_mut());
 
     let uploaded = dst_module.upload_gglwe::<SrcBackend>(&src);

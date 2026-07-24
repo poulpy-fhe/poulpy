@@ -1,5 +1,4 @@
-//! CKKS encoding helpers.
+//! Backend-independent CKKS encoding algorithms.
 
-pub mod reim;
-
-pub use reim::Encoder;
+pub(crate) mod paco;
+pub use paco::coeff_enc::paco_coeff_encodings_host;

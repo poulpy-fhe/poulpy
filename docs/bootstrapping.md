@@ -14,7 +14,7 @@ ModUp ─► CoeffsToSlots ─► EvalMod ─► SlotsToCoeffs
 ```
 
 ModUp is the modulus raise, provided by the bootstrapping trait (`CKKSBootstrappingOps`).
-CoeffsToSlots and SlotsToCoeffs are the homomorphic DFT (`DFTOps`), a chain of linear transformations over the slots (see [linear_transformation.md](linear_transformation.md)); EvalMod is homomorphic `x mod 1`, a polynomial evaluation (`CKKSEvalModOps`, see [polynomial_evaluation.md](polynomial_evaluation.md)).
+CoeffsToSlots and SlotsToCoeffs are the homomorphic DFT (`CKKSDFTOps`), a chain of linear transformations over the slots (see [linear_transformation.md](linear_transformation.md)); EvalMod is homomorphic `x mod 1`, a polynomial evaluation (`CKKSEvalModOps`, see [polynomial_evaluation.md](polynomial_evaluation.md)).
 
 The engine follows the usual `api` / `oep` / `default` / `delegates` split.
 A ready-made orchestrator, `ckks_bootstrap`, runs the whole refresh from a compiled `BootstrappingContext` and a prepared `BootstrappingKeys`.
@@ -52,8 +52,9 @@ denseToSparse ─► ModUp ─► sparseToDense
 ```
 
 so `I·q` stays small and EvalMod can use a much smaller interval `K` with negligible failure probability ([eprint 2022/024](https://eprint.iacr.org/2022/024)).
-It is enabled when `ephemeral_secret_weight > 0`.
-Its two key-switching keys are derived from the dense secret and so are part of the keys, not of the secret-independent `BootstrappingContext`.
+It is selected by the bootstrapping recipe through `BootstrappingTechniques::sparse_secret_encapsulation`, whose Hamming weight must be chosen together with EvalMod's interval.
+`BootstrappingKeysLayout::encapsulation` contains only the two physical key-switch layouts; key generation rejects its presence or absence when it disagrees with the compiled recipe, and execution likewise rejects a mismatched key set.
+The generated keys remain part of the key bundle, while the public Hamming-weight parameter is retained by the otherwise secret-independent `BootstrappingPlan`/`BootstrappingContext`.
 
 ## The homomorphic DFT (CoeffsToSlots / SlotsToCoeffs)
 
@@ -137,22 +138,39 @@ This pipeline is used when the context carries a bypass transform.
 
 ## Parameters and keys
 
-A `BootstrappingPlan` is the parameter bundle: the ephemeral secret weight, the two homomorphic DFT plans (and an optional bypass), and the EvalMod plan.
+A `BootstrappingPlan` is the complete ModUp/EvalMod recipe: its C2S-first or S2C-first pipeline, optional techniques (sparse-secret encapsulation and EvalRound+), the two homomorphic DFT plans, and the EvalMod plan.
+The constructors validate once — `DFTPlan::new` checks the factorization schedule (`(depth, giant_step)` pairs in evaluation order), while `BootstrappingPlan::new` checks the selected pipeline, stage directions, sparse weight, and EvalRound+ constraints — so a plan that exists is always shape-valid and the derived-key APIs (`galois_elements`) are infallible.
 
 ```rust
-let plan = BootstrappingPlan {
-    ephemeral_secret_weight: 32,
-    coeffs_to_slots: DFTPlan {
-        kind: DFTType::Encode,
-        factorization_depth: vec![2, 2, 3, 3],
-        giant_steps: vec![4, 4, 4, 4],
-        format: DFTOutputFormat::SplitRealAndImag,
-        scaling: Some(1.0 / 16.0),          // 1 / K
-        bit_reversed: false,
-        meta: meta(58, 2),
+// Coefficient meta: CoeffsMeta::from_delta_budget(log_delta, log_budget).
+let meta = CoeffsMeta::from_delta_budget;
+
+let coeffs_to_slots = DFTPlan::new(
+    DFTType::Encode,
+    vec![(2, 4), (2, 4), (3, 4), (3, 4)],   // (depth, giant_step) per factor
+    DFTOutputFormat::SplitRealAndImag,
+    meta(58, 2),
+)?
+.with_scaling(1.0 / 16.0)?;                 // 1 / K
+
+let slots_to_coeffs = DFTPlan::new(
+    DFTType::Decode,
+    vec![(3, 4), (3, 4), (2, 4), (2, 4)],
+    DFTOutputFormat::SplitRealAndImag,
+    meta(39, 2),
+)?
+.with_scaling((11_f64).exp2())?;            // 2^log_msg_ratio
+
+let plan = BootstrappingPlan::new(
+    BootstrappingPipeline::C2SFirst,
+    BootstrappingTechniques {
+        sparse_secret_encapsulation: Some(SparseSecretEncapsulation {
+            hamming_weight: 32,
+        }),
+        eval_round_plus: None,               // Some(EvalRoundPlus { ... }) selects EvalRound+
     },
-    coeffs_to_slots_bypass: None,           // Some(..) selects EvalRound+
-    eval_mod: EvalModPlan {
+    coeffs_to_slots,
+    EvalModPlan {
         eval_mod_type: EvalModType::CosHK,
         log_msg_ratio: 11,
         f_mod_degree: 30,
@@ -164,16 +182,8 @@ let plan = BootstrappingPlan {
         coeffs_meta: meta(48, 4),
         f_mod_log_delta: 60,
     },
-    slots_to_coeffs: DFTPlan {
-        kind: DFTType::Decode,
-        factorization_depth: vec![3, 3, 2, 2],
-        giant_steps: vec![4, 4, 4, 4],
-        format: DFTOutputFormat::SplitRealAndImag,
-        scaling: Some((11_f64).exp2()),     // 2^log_msg_ratio
-        bit_reversed: false,
-        meta: meta(39, 2),
-    },
-};
+    slots_to_coeffs,
+)?;
 ```
 
 `BootstrappingContext::compile` turns the plan into the resident, secret-independent form: the prepared backend-resident DFT matrices (with the `1/K` and message-ratio scalings baked in) and the encoded, uploaded EvalMod.
@@ -198,5 +208,5 @@ A small self-contained parameter set (ring degree `n = 2048`, `K = 16`, message 
 - `poulpy-cpu-ref/examples/bootstrap_trace.rs` runs the standard pipeline for profiling.
 
 ```sh
-cargo test -p poulpy-cpu-ref --features enable-ckks --release ntt4x30_f64::bootstrapping_e2e -- --nocapture
+cargo test -p poulpy-cpu-ref --features enable-ckks --release ntt4x30_f64::bootstrapping -- --nocapture
 ```

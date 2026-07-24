@@ -11,7 +11,7 @@ use crate::{
     layouts::{
         GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPrepared, GGLWEToGGSWKeyPreparedFactory, GGSW, GGSWInfos, GGSWLayout,
         GLWEInfos, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey, GLWESwitchingKeyLayout,
-        GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
+        GLWESwitchingKeyPreparedFactory, ModuleCoreAlloc,
         prepared::{GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
     noise::noise_ggsw_keyswitch,
@@ -44,7 +44,6 @@ where
         for dsize in 1..max_dsize + 1 {
             let k_ksk: usize = k_in + key_base2k * dsize;
             let k_tsk: usize = k_ksk;
-            let k_out: usize = k_ksk; // Better capture noise.
 
             let n: usize = module.n();
             let dnum_in: usize = k_in / in_base2k;
@@ -55,8 +54,8 @@ where
             let ggsw_in_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
                 n: n.into(),
                 base2k: in_base2k.into(),
-                k: k_in.into(),
                 dnum: dnum_in.into(),
+                k_aux: (dsize_in * in_base2k + module.log_n()).into(),
                 dsize: dsize_in.into(),
                 rank: rank.into(),
             })
@@ -65,8 +64,8 @@ where
             let ggsw_out_infos: GGSWLayout = GGSWLayout {
                 n: n.into(),
                 base2k: out_base2k.into(),
-                k: k_out.into(),
                 dnum: dnum_in.into(),
+                k_aux: (dsize_in * out_base2k + module.log_n()).into(),
                 dsize: dsize_in.into(),
                 rank: rank.into(),
             };
@@ -74,8 +73,8 @@ where
             let tsk_infos = EncryptionLayout::new_from_default_sigma(GGLWEToGGSWKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
-                k: k_tsk.into(),
                 dnum: dnum_ksk.into(),
+                k_aux: (dsize * key_base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank: rank.into(),
             })
@@ -84,8 +83,8 @@ where
             let ksk_apply_infos = EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
-                k: k_ksk.into(),
                 dnum: dnum_ksk.into(),
+                k_aux: (dsize * key_base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank_in: rank.into(),
                 rank_out: rank.into(),
@@ -161,15 +160,7 @@ where
                 module.gglwe_to_ggsw_key_prepared_alloc_from_infos(&tsk);
             module.gglwe_to_ggsw_key_prepare(&mut tsk_prepared, &tsk, &mut scratch.borrow());
 
-            module.ggsw_keyswitch(
-                &mut ggsw_out,
-                &ggsw_in,
-                &ksk_prepared,
-                ksk_prepared.size(),
-                &tsk_prepared,
-                tsk_prepared.size(),
-                &mut scratch.borrow(),
-            );
+            module.ggsw_keyswitch(&mut ggsw_out, &ggsw_in, &ksk_prepared, &tsk_prepared, &mut scratch.borrow());
 
             let max_noise = |col_j: usize| -> f64 {
                 noise_ggsw_keyswitch(
@@ -245,8 +236,8 @@ where
             let ggsw_out_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
                 n: n.into(),
                 base2k: out_base2k.into(),
-                k: k_out.into(),
                 dnum: dnum_in.into(),
+                k_aux: (dsize_in * out_base2k + module.log_n()).into(),
                 dsize: dsize_in.into(),
                 rank: rank.into(),
             })
@@ -255,8 +246,8 @@ where
             let tsk_infos = EncryptionLayout::new_from_default_sigma(GGLWEToGGSWKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
-                k: k_tsk.into(),
                 dnum: dnum_ksk.into(),
+                k_aux: (dsize * key_base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank: rank.into(),
             })
@@ -265,8 +256,8 @@ where
             let ksk_apply_infos = EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
-                k: k_ksk.into(),
                 dnum: dnum_ksk.into(),
+                k_aux: (dsize * key_base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank_in: rank.into(),
                 rank_out: rank.into(),
@@ -341,14 +332,7 @@ where
                 module.gglwe_to_ggsw_key_prepared_alloc_from_infos(&tsk);
             module.gglwe_to_ggsw_key_prepare(&mut tsk_prepared, &tsk, &mut scratch.borrow());
 
-            module.ggsw_keyswitch_assign(
-                &mut ggsw_out,
-                &ksk_prepared,
-                ksk_prepared.size(),
-                &tsk_prepared,
-                tsk_prepared.size(),
-                &mut scratch.borrow(),
-            );
+            module.ggsw_keyswitch_assign(&mut ggsw_out, &ksk_prepared, &tsk_prepared, &mut scratch.borrow());
 
             let max_noise = |col_j: usize| -> f64 {
                 noise_ggsw_keyswitch(

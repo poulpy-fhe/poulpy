@@ -10,6 +10,7 @@
 - [Polynomial Evaluation](polynomial_evaluation.md) — evaluating a polynomial on encrypted slots with the Baby-Step Giant-Step method, the two split strategies, the supported polynomial flavors, and the modulus consumed per degree.
 - [Linear Transformations](linear_transformation.md) — the homomorphic matrix-vector product over the slots (`CoeffsToSlots` / `SlotsToCoeffs`) via the Baby-Step Giant-Step diagonal method, with hoisting, lazy normalization, and the cost in key-switches.
 - [Bootstrapping](bootstrapping.md) — refreshing a ciphertext's homomorphic budget through the `ModUp` → `CoeffsToSlots` → `EvalMod` → `SlotsToCoeffs` pipeline, the scale and budget accounting through each stage, and the standard and EvalRound+ variants.
+- [PaCo Bootstrapping](paco.md) — refreshing selected coefficient classes with PaCo, including validated plans/keys, direct and encapsulated modes, bounded parallel evaluation, and metadata accounting.
 
 ## Specifications
 
@@ -17,3 +18,4 @@ The [`spec/`](spec) folder holds lower-level implementation specifications and c
 
 - [BSGS Linear Transformation — Specification](spec/lt_bsgs.md) — the implementation specification of the homomorphic slot-domain linear transformation (`CoeffsToSlots` / `SlotsToCoeffs`) via the baby-step / giant-step decomposition, with hoisting and lazy normalization.
 - [BSGS Linear Transformation — Implementation Walkthrough](spec/lt_bsgs_impl.md) — a file-by-file guided tour of the reference implementation that realizes the specification.
+- [PaCo DFT Convention](spec/paco_dft_convention.md) — the generator-5 packing convention used by the PaCo implementation and its relationship to the paper's reference convention.

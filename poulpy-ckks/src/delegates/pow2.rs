@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::CKKSResult as Result;
 use poulpy_core::{
     GLWECopy, GLWEShift,
     layouts::{GLWEToBackendMut, GLWEToBackendRef},
@@ -14,7 +14,7 @@ where
     Module<BE>: GLWECopy<BE> + GLWEShift<BE>,
 {
     fn ckks_mul_pow2_tmp_bytes(&self) -> usize {
-        BE::ckks_mul_pow2_tmp_bytes(self)
+        BE::ckks_mul_pow2_tmp_bytes_impl(self)
     }
 
     fn ckks_mul_pow2_into<Dst, Src>(
@@ -28,18 +28,18 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_mul_pow2_into(self, dst, src, bits, scratch)
+        BE::ckks_mul_pow2_into_impl(self, dst, src, bits, scratch)
     }
 
     fn ckks_mul_pow2_assign<Dst>(&self, dst: &mut Dst, bits: usize, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        BE::ckks_mul_pow2_assign(self, dst, bits, scratch)
+        BE::ckks_mul_pow2_assign_impl(self, dst, bits, scratch)
     }
 
     fn ckks_div_pow2_tmp_bytes(&self) -> usize {
-        BE::ckks_div_pow2_tmp_bytes(self)
+        BE::ckks_div_pow2_tmp_bytes_impl(self)
     }
 
     fn ckks_div_pow2_into<Dst, Src>(
@@ -53,13 +53,13 @@ where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        BE::ckks_div_pow2_into(self, dst, src, bits, scratch)
+        BE::ckks_div_pow2_into_impl(self, dst, src, bits, scratch)
     }
 
     fn ckks_div_pow2_assign<Dst>(&self, dst: &mut Dst, bits: usize) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
-        BE::ckks_div_pow2_assign(self, dst, bits)
+        BE::ckks_div_pow2_assign_impl(self, dst, bits)
     }
 }

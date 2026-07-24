@@ -1,6 +1,6 @@
 [package]
 name = "poulpy-ckks"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2024"
 license = "Apache-2.0"
 readme = "README.md"
@@ -10,19 +10,21 @@ homepage = "https://github.com/poulpy-fhe/poulpy"
 documentation = "https://docs.rs/poulpy-ckks"
 
 [features]
-enable-ckks = []
-enable-avx = []
-enable-neon = []
-# Back `Quad` with libquadmath (`f128::f128`); x86_64 only, else a no-op.
+# Compile the exported backend-conformance test suite (`poulpy_ckks::test_suite`).
+# Backend crates enable this from their dev-dependencies; production builds of
+# dependents skip the ~17k lines of test code entirely.
+test-utils = []
+# Route `Quad`'s transcendental math through libquadmath (`f128` crate);
+# x86_64 only, else a no-op. The `Quad` type itself is unchanged.
 libquadmath = ["dep:f128"]
 
 [dependencies]
 poulpy-hal = {workspace = true}
 poulpy-core = {workspace = true}
-rand = {workspace = true}
-rand_distr = {workspace = true}
+num-traits = {workspace = true}
 anyhow = {workspace = true}
 bytemuck = {workspace = true}
+paste = {workspace = true}
 dashu-float = {workspace = true}
 
 # libquadmath backing for `Quad` (x86_64 only).

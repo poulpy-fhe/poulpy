@@ -73,8 +73,7 @@ get a key.
 
 - `Direct` — one giant step per diagonal, no baby rotations (best for ≤ 2 diagonals).
 - `Bsgs { giant_step }` — caller-fixed `n1`. This is the "expose it so callers can align
-  it with the diagonal structure" knob.
-- `Auto` — `≤ 2` diagonals ⇒ `Direct`, else
+  it with the diagonal structure" knob; a spec-§10-style default comes from
   [`optimal_bsgs_giant_step`](../../poulpy-core/src/layouts/linear_transformation.rs#L256).
 
 > **Beyond the spec.** The spec §10 defaults to `n1 = round(√|I|)`; §8 lists *structure-aware*

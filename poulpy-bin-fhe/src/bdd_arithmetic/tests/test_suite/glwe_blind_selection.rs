@@ -45,7 +45,7 @@ where
     let rank: Rank = TEST_RANK.into();
     let k_glwe: TorusPrecision = TorusPrecision(26);
     let k_ggsw: TorusPrecision = TorusPrecision(39);
-    let dnum: Dnum = Dnum(3);
+    let dnum: Dnum = Dnum(2);
 
     let glwe_infos: GLWELayout = GLWELayout {
         n: module.n().into(),
@@ -56,7 +56,7 @@ where
     let ggsw_infos: GGSWLayout = GGSWLayout {
         n: module.n().into(),
         base2k,
-        k: k_ggsw,
+        k_aux: TorusPrecision(k_ggsw.0 - 2 * base2k.0),
         rank,
         dnum,
         dsize: Dsize(1),

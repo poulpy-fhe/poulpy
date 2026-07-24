@@ -19,7 +19,7 @@ use poulpy_hal::{
     layouts::{HostBytesBackend, Module},
 };
 
-use crate::{CKKSInfos, layouts::plaintext::CKKSPlaintext, leveled::api::CKKSDotProductOps};
+use crate::{CKKSInfos, api::CKKSDotProductOps, layouts::plaintext::CKKSPlaintext};
 
 use super::helpers::{
     PT_PREC, TestContextBackend, TestContextModule, TestScalar, TestVector, alloc_ct, alloc_scratch, assert_decrypt_precision,
@@ -27,7 +27,7 @@ use super::helpers::{
     gen_sk_with_raw, gen_tsk, precision_at, quantize, quantized_const, quantized_vector, test_vector_1, test_vector_2,
 };
 
-use crate::{encoding::reim::Encoder, test_suite::CKKSTestParams};
+use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
 const N: usize = 3;
 const DELTA_LOG_DELTA: usize = 8;
@@ -73,7 +73,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (re2, im2) = test_vector_2::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
@@ -161,7 +161,7 @@ pub fn test_dot_product_ct_unaligned<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (re2, im2) = test_vector_2::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
@@ -242,7 +242,7 @@ pub fn test_dot_product_ct_unaligned_b<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (re2, im2) = test_vector_2::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
@@ -323,7 +323,7 @@ pub fn test_dot_product_ct_delta_log_delta<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
     let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
@@ -434,7 +434,7 @@ pub fn test_dot_product_ct_smaller_output<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (re2, im2) = test_vector_2::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
@@ -522,7 +522,7 @@ pub fn test_dot_product_pt_vec_aligned<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (re2, im2) = test_vector_2::<F>(m);
     let sk = super::helpers::gen_sk(&params, module, host_module, [0u8; 32]);
@@ -606,7 +606,7 @@ pub fn test_dot_product_const_aligned<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (re2, im2) = test_vector_2::<F>(m);
     let sk = super::helpers::gen_sk(&params, module, host_module, [0u8; 32]);

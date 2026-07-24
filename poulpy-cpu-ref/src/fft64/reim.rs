@@ -25,12 +25,13 @@ use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
 use rand_distr::num_traits::{Float, FloatConst};
 
 use super::FFT64Ref;
+use crate::reference::fft64::module::FFT64Plan;
 
 /// Precomputed twiddle-factor tables for the negacyclic reim FFT and IFFT.
 ///
 /// Wraps [`ReimFFTTable`] and [`ReimIFFTTable`] into a single object that
 /// implements [`NegacyclicFFT`], suitable for use as the transform provider
-/// in a CKKS [`poulpy_ckks::encoding::Encoder`].
+/// in the CPU CKKS encoding implementation.
 pub struct FFT64ReimTable<F: Float + FloatConst + Debug> {
     fft: ReimFFTTable<F>,
     ifft: ReimIFFTTable<F>,
@@ -56,6 +57,20 @@ impl<F: Float + FloatConst + Debug> NegacyclicFFTNew<F> for FFT64ReimTable<F> {
             fft: ReimFFTTable::new(m),
             ifft: ReimIFFTTable::new(m),
         }
+    }
+}
+
+impl<F: Float + FloatConst + Debug> NegacyclicFFT<F> for FFT64Plan<F> {
+    fn m(&self) -> usize {
+        self.fft().m()
+    }
+
+    fn fft(&self, data: &mut [F]) {
+        self.fft().execute(data);
+    }
+
+    fn ifft(&self, data: &mut [F]) {
+        self.ifft().execute(data);
     }
 }
 

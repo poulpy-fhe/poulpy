@@ -14,7 +14,7 @@
 //! |----------|----------------|
 //! | [`test_rotate_assign`] | in-place rotation for each requested shift |
 
-use crate::{CKKSCompositionError, CKKSInfos, leveled::api::CKKSRotateOps};
+use crate::{CKKSCompositionError, CKKSInfos, api::CKKSRotateOps};
 use std::collections::HashMap;
 
 use super::helpers::{
@@ -28,7 +28,7 @@ use poulpy_hal::{
     layouts::{GaloisElement, HostBytesBackend, Module, ScratchArena},
 };
 
-use crate::{encoding::reim::Encoder, test_suite::CKKSTestParams};
+use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
 pub fn test_rotate_aligned<BE, F, E>(
     params: CKKSTestParams,
@@ -45,7 +45,7 @@ pub fn test_rotate_aligned<BE, F, E>(
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -104,7 +104,7 @@ pub fn test_rotate_smaller_output<BE, F, E>(
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -163,7 +163,7 @@ pub fn test_rotate_assign<BE, F, E>(
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -220,7 +220,7 @@ pub fn test_rotate_assign_missing_key_error<BE, F, E>(
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let sk = super::helpers::gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);

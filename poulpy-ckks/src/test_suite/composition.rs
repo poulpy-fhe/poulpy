@@ -7,8 +7,8 @@ use super::helpers::{
 };
 use crate::{
     CKKSCompositionError, CKKSInfos,
+    api::{CKKSAddOps, CKKSMulOps},
     layouts::CKKSPlaintext,
-    leveled::api::{CKKSAddOps, CKKSMulOps},
 };
 use poulpy_core::layouts::LWEInfos;
 use poulpy_hal::{
@@ -16,12 +16,12 @@ use poulpy_hal::{
     layouts::{HostBytesBackend, Module},
 };
 
-use crate::{encoding::reim::Encoder, test_suite::CKKSTestParams};
+use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
 fn constant<BE, F, E>(
     host_module: &Module<HostBytesBackend>,
     module: &Module<BE>,
-    encoder: &Encoder<E>,
+    encoder: &ReferenceEncoder<E>,
     params: &CKKSTestParams,
     c: (f64, f64),
     m: usize,
@@ -101,7 +101,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -165,7 +165,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -233,7 +233,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -302,7 +302,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (re2, im2) = test_vector_2::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
@@ -391,7 +391,7 @@ pub fn test_repeated_square_exhausts_capacity<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);

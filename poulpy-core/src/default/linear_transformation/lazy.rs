@@ -24,12 +24,7 @@ use crate::{
     layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GetGaloisElement, prepared::GGLWEPreparedToBackendRef},
 };
 
-pub(super) fn glwe_lazy_giant_automorphism_tmp_bytes<BE, M, R, K>(
-    module: &M,
-    a_infos: &R,
-    key_infos: &K,
-    key_size: usize,
-) -> usize
+pub(super) fn glwe_lazy_giant_automorphism_tmp_bytes<BE, M, R, K>(module: &M, a_infos: &R, key_infos: &K) -> usize
 where
     BE: Backend,
     M: ModuleN + GLWEKeyswitchInternal<BE> + VecZnxBigAutomorphismAssignTmpBytes + VecZnxDftBytesOf + VecZnxIdftApplyTmpBytes,
@@ -37,7 +32,7 @@ where
     K: GGLWEInfos,
 {
     let cols = a_infos.rank().as_usize() + 1;
-    let key_size = key_size.min(key_infos.size());
+    let key_size = key_infos.size();
     let lvl_0 = module.bytes_of_vec_znx_dft(cols, key_size);
     let lvl_1 = module
         .glwe_keyswitch_internal_tmp_bytes(key_infos, a_infos, key_infos)
@@ -53,7 +48,6 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft_tmp_bytes<BE, M, K>(
     rank: usize,
     prod_size: usize,
     key_infos: &K,
-    key_size: usize,
 ) -> usize
 where
     BE: Backend,
@@ -61,7 +55,7 @@ where
     K: GGLWEInfos,
 {
     let cols = rank + 1;
-    let key_size = key_size.min(key_infos.size());
+    let key_size = key_infos.size();
     let mask_small_size = prod_size.min(key_size);
     let mask_big = module.bytes_of_vec_znx_big(1, prod_size);
     let mask_dft = module.bytes_of_vec_znx_dft(rank, mask_small_size);

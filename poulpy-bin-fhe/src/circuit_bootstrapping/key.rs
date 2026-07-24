@@ -43,9 +43,9 @@ impl CircuitBootstrappingEncryptionInfos {
     /// Constructs encryption infos using the default Gaussian sigma for all sub-keys.
     pub fn from_default_sigma(layout: &CircuitBootstrappingKeyLayout) -> Result<Self> {
         Ok(Self {
-            brk: NoiseInfos::new(layout.brk_layout.k.as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE)?,
-            atk: NoiseInfos::new(layout.atk_layout.k.as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE)?,
-            tsk: NoiseInfos::new(layout.tsk_layout.k.as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE)?,
+            brk: NoiseInfos::new(layout.brk_layout.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE)?,
+            atk: NoiseInfos::new(layout.atk_layout.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE)?,
+            tsk: NoiseInfos::new(layout.tsk_layout.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE)?,
         })
     }
 }
@@ -313,8 +313,8 @@ impl<D: HostDataRef, BRA: BlindRotationAlgo> CircuitBootstrappingKeyInfos for Ci
         GLWEAutomorphismKeyLayout {
             n: atk.n(),
             base2k: atk.base2k(),
-            k: atk.k(),
             dnum: atk.dnum(),
+            k_aux: atk.k_aux(),
             dsize: atk.dsize(),
             rank: atk.rank(),
         }
@@ -325,8 +325,8 @@ impl<D: HostDataRef, BRA: BlindRotationAlgo> CircuitBootstrappingKeyInfos for Ci
             n_glwe: self.brk.n_glwe(),
             n_lwe: self.brk.n_lwe(),
             base2k: self.brk.base2k(),
-            k: self.brk.k(),
             dnum: self.brk.dnum(),
+            k_aux: self.brk.k_aux(),
             rank: self.brk.rank(),
         }
     }
@@ -335,8 +335,8 @@ impl<D: HostDataRef, BRA: BlindRotationAlgo> CircuitBootstrappingKeyInfos for Ci
         GGLWEToGGSWKeyLayout {
             n: self.tsk.n(),
             base2k: self.tsk.base2k(),
-            k: self.tsk.k(),
             dnum: self.tsk.dnum(),
+            k_aux: self.tsk.k_aux(),
             dsize: self.tsk.dsize(),
             rank: self.tsk.rank(),
         }

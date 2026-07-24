@@ -68,10 +68,12 @@ pub unsafe fn znx_automorphism_avx512(p: i64, res: &mut [i64], a: &[i64]) {
             let idx_vec = _mm512_and_si512(t_vec, mask_1n_vec);
 
             let sign_k: __mmask8 = _mm512_cmpgt_epi64_mask(t_vec, n_minus1_vec);
-            let sign_mask: __m512i = _mm512_movm_epi64(sign_k);
 
             let vals = _mm512_i64gather_epi64(idx_vec, aa, 8);
-            let out = _mm512_sub_epi64(_mm512_xor_si512(vals, sign_mask), sign_mask);
+            // Conditional negate under `sign_k` (0 - vals in flagged lanes). Stays
+            // within AVX-512F: `_mm512_movm_epi64` + xor/sub would pull in AVX-512DQ,
+            // which is outside this crate's compile-time baseline and blocks inlining.
+            let out = _mm512_mask_sub_epi64(vals, sign_k, _mm512_setzero_si512(), vals);
 
             _mm512_storeu_si512(rr, out);
             rr = rr.add(1);

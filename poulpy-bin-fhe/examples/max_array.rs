@@ -58,6 +58,7 @@ where
     const BINARY_BLOCK_SIZE: u32 = 7;
     const BASE2K: u32 = 17;
     const RANK: u32 = 1;
+    const K_AUX: u32 = BASE2K;
 
     // GLWE layout, used to generate GLWE Ciphertexts, keys, switching keys, etc
     let glwe_layout = GLWELayout {
@@ -71,9 +72,9 @@ where
     let ggsw_layout = GGSWLayout {
         n: Degree(N_GLWE),
         base2k: Base2K(BASE2K),
-        k: TorusPrecision(3 * BASE2K),
+        k_aux: TorusPrecision(K_AUX),
         rank: Rank(RANK),
-        dnum: Dnum(3),
+        dnum: Dnum(2),
         dsize: Dsize(1),
     };
 
@@ -84,23 +85,23 @@ where
                 n_glwe: Degree(N_GLWE),
                 n_lwe: Degree(N_LWE),
                 base2k: Base2K(BASE2K),
-                k: TorusPrecision(4 * BASE2K),
-                dnum: Dnum(4),
+                dnum: Dnum(3),
+                k_aux: TorusPrecision(K_AUX),
                 rank: Rank(RANK),
             },
             atk_layout: GLWEAutomorphismKeyLayout {
                 n: Degree(N_GLWE),
                 base2k: Base2K(BASE2K),
-                k: TorusPrecision(4 * BASE2K),
-                dnum: Dnum(4),
+                dnum: Dnum(3),
+                k_aux: TorusPrecision(K_AUX),
                 dsize: Dsize(1),
                 rank: Rank(RANK),
             },
             tsk_layout: GGLWEToGGSWKeyLayout {
                 n: Degree(N_GLWE),
                 base2k: Base2K(BASE2K),
-                k: TorusPrecision(4 * BASE2K),
-                dnum: Dnum(4),
+                dnum: Dnum(3),
+                k_aux: TorusPrecision(K_AUX),
                 dsize: Dsize(1),
                 rank: Rank(RANK),
             },
@@ -108,8 +109,8 @@ where
         ks_glwe_layout: Some(GLWESwitchingKeyLayout {
             n: Degree(N_GLWE),
             base2k: Base2K(BASE2K),
-            k: TorusPrecision(4 * BASE2K),
-            dnum: Dnum(4),
+            dnum: Dnum(3),
+            k_aux: TorusPrecision(K_AUX),
             dsize: Dsize(1),
             rank_in: Rank(RANK),
             rank_out: Rank(1),
@@ -117,9 +118,9 @@ where
         ks_lwe_layout: GLWEToLWEKeyLayout {
             n: Degree(N_GLWE),
             base2k: Base2K(BASE2K),
-            k: TorusPrecision(4 * BASE2K),
             rank_in: Rank(RANK),
-            dnum: Dnum(4),
+            dnum: Dnum(3),
+            k_aux: TorusPrecision(K_AUX),
         },
     };
 

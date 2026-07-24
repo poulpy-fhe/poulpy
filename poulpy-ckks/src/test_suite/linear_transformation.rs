@@ -7,18 +7,19 @@
 //! scheme-agnostic plaintext evaluator [`ComplexDiagonals`] / [`Evaluate`],
 //! which the homomorphic engine must match up to CKKS precision.
 
+use crate::api::CKKSEncodingOps;
 use std::collections::HashMap;
 
 use poulpy_core::layouts::{Diagonals, Evaluate, LinearTransformationStrategy};
 use poulpy_hal::{
     api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchAvailable, ScratchOwnedBorrow},
-    layouts::{CyclotomicOrder, HostBytesBackend, Module, ScratchArena, TransferFrom},
+    layouts::{CyclotomicOrder, HostBytesBackend, Module, ScratchArena},
 };
 
 use crate::{
-    api::{LinearTransformation, LinearTransformationOps, LinearTransformationPrepared},
-    encoding::reim::Encoder,
+    api::{CKKSLinearTransformationOps, LinearTransformation, LinearTransformationPrepared},
     layouts::{CKKSPlaintext, ComplexDiagonals},
+    test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
         helpers::{
@@ -55,32 +56,29 @@ fn complex_diagonals<F: TestScalar>(diag_indices: &[usize], m: usize) -> Complex
 /// Encodes the diagonal map `b` into a `LinearTransformation<CKKSPlaintext>`
 /// under the BSGS schedule for `n1`, via the production helper. `transpose`
 /// picks the matrix-vector orientation: `false` → `B·a`, `true` → `a·B`.
-fn encode_lt<BE, F, E>(
+fn encode_lt<BE, F>(
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
-    encoder: &Encoder<E>,
     params: &CKKSTestParams,
     b: &ComplexDiagonals<F>,
     n1: usize,
     transpose: bool,
+    scratch: &mut ScratchArena<'_, BE>,
 ) -> LinearTransformation<CKKSPlaintext<BE::OwnedBuf>>
 where
-    BE: TestContextBackend + TransferFrom<HostBytesBackend>,
-    Module<HostBytesBackend>: crate::test_suite::helpers::TestContextHostModule,
+    BE: TestContextBackend,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
     F: TestScalar,
-    E: NegacyclicFFT<F>,
 {
     crate::default::ckks_encode_linear_transformation_from_diagonals(
         module,
-        host_module,
-        encoder,
         params.base2k.into(),
-        params.prec(),
+        params.prec().into(),
         b,
         LinearTransformationStrategy::Bsgs { giant_step: n1 },
         transpose,
-        false,
+        scratch,
     )
+    .unwrap()
 }
 
 /// Materializes the prepared (resident-RHS) form of a plaintext linear
@@ -95,7 +93,7 @@ where
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + LinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
 {
     let first = lt.first_diagonal_plaintext().expect("linear transformation has no diagonals");
     let mut prepared = LinearTransformationPrepared::<BE>::alloc_prepared_from_index(module, &lt.index(), first);
@@ -109,13 +107,13 @@ where
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: TestContextModule<BE> + LinearTransformationOps<BE> + CnvPVecAlloc<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (a_re, a_im) = test_vector_1::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -125,8 +123,8 @@ where
     let n1 = 2;
     let strategy = LinearTransformationStrategy::Bsgs { giant_step: n1 };
     let b = complex_diagonals::<F>(&[0, 1, 2, 3], m);
-    let lt_left = encode_lt(module, host_module, &encoder, &params, &b, n1, false);
-    let lt_right = encode_lt(module, host_module, &encoder, &params, &b, n1, true);
+    let lt_left = encode_lt(module, &params, &b, n1, false, &mut scratch.borrow());
+    let lt_right = encode_lt(module, &params, &b, n1, true, &mut scratch.borrow());
 
     // Automorphism keys are indexed by Galois element throughout the engine.
     let order = module.cyclotomic_order();
