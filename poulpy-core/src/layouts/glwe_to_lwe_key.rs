@@ -15,9 +15,9 @@ use std::fmt;
 pub struct GLWEToLWEKeyLayout {
     pub n: Degree,
     pub base2k: Base2K,
-    pub k: TorusPrecision,
-    pub rank_in: Rank,
     pub dnum: Dnum,
+    pub k_aux: TorusPrecision,
+    pub rank_in: Rank,
 }
 impl LWEInfos for GLWEToLWEKeyLayout {
     fn n(&self) -> Degree {
@@ -29,11 +29,11 @@ impl LWEInfos for GLWEToLWEKeyLayout {
     }
 
     fn max_size(&self) -> usize {
-        self.k.div_ceil(self.base2k) as usize
+        crate::layouts::key_size(self.base2k, self.dnum, Dsize(1), self.k_aux)
     }
 
     fn k(&self) -> TorusPrecision {
-        self.k
+        crate::layouts::key_k(self.base2k, self.dnum, Dsize(1), self.k_aux)
     }
 }
 
@@ -44,6 +44,14 @@ impl GLWEInfos for GLWEToLWEKeyLayout {
 }
 
 impl GGLWEInfos for GLWEToLWEKeyLayout {
+    fn k_aux(&self) -> TorusPrecision {
+        self.k_aux
+    }
+
+    fn dnum(&self) -> Dnum {
+        self.dnum
+    }
+
     fn rank_in(&self) -> Rank {
         self.rank_in
     }
@@ -54,10 +62,6 @@ impl GGLWEInfos for GLWEToLWEKeyLayout {
 
     fn rank_out(&self) -> Rank {
         Rank(1)
-    }
-
-    fn dnum(&self) -> Dnum {
-        self.dnum
     }
 }
 
@@ -89,6 +93,10 @@ impl<D: Data> GLWEInfos for GLWEToLWEKey<D> {
     }
 }
 impl<D: Data> GGLWEInfos for GLWEToLWEKey<D> {
+    fn k_aux(&self) -> TorusPrecision {
+        self.0.k_aux()
+    }
+
     fn rank_in(&self) -> Rank {
         self.0.rank_in()
     }
@@ -147,11 +155,11 @@ impl GLWEToLWEKey<Vec<u8>> {
     {
         assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for GLWEToLWEKey");
         assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for GLWEToLWEKey");
-        Self::alloc(infos.n(), infos.base2k(), infos.k(), infos.rank_in(), infos.dnum())
+        Self::alloc(infos.n(), infos.base2k(), infos.dnum(), infos.k_aux(), infos.rank_in())
     }
 
-    pub(crate) fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision, rank_in: Rank, dnum: Dnum) -> Self {
-        GLWEToLWEKey(GLWESwitchingKey::alloc(n, base2k, k, rank_in, Rank(1), dnum, Dsize(1)))
+    pub(crate) fn alloc(n: Degree, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision, rank_in: Rank) -> Self {
+        GLWEToLWEKey(GLWESwitchingKey::alloc(n, base2k, dnum, Dsize(1), k_aux, rank_in, Rank(1)))
     }
 
     pub fn bytes_of_from_infos<A>(infos: &A) -> usize
@@ -160,11 +168,11 @@ impl GLWEToLWEKey<Vec<u8>> {
     {
         assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for GLWEToLWEKey");
         assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for GLWEToLWEKey");
-        Self::bytes_of(infos.n(), infos.base2k(), infos.k(), infos.rank_in(), infos.dnum())
+        Self::bytes_of(infos.n(), infos.base2k(), infos.dnum(), infos.k_aux(), infos.rank_in())
     }
 
-    pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision, rank_in: Rank, dnum: Dnum) -> usize {
-        GLWESwitchingKey::bytes_of(n, base2k, k, rank_in, Rank(1), dnum, Dsize(1))
+    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision, rank_in: Rank) -> usize {
+        GLWESwitchingKey::bytes_of(n, base2k, dnum, Dsize(1), k_aux, rank_in, Rank(1))
     }
 }
 

@@ -186,7 +186,7 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
         );
         (
             GGLWEViewMut::from_inner(GGLWE {
-                k: infos.k(),
+                k_aux: infos.k_aux(),
                 base2k: infos.base2k(),
                 dsize: infos.dsize(),
                 data: data.into_inner(),
@@ -212,7 +212,7 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
         );
         (
             GGLWEPreparedViewMut::from_inner(GGLWEPrepared {
-                k: infos.k(),
+                k_aux: infos.k_aux(),
                 base2k: infos.base2k(),
                 dsize: infos.dsize(),
                 data: data.into_inner(),
@@ -236,7 +236,7 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
         );
         (
             GGSWViewMut::from_inner(GGSW {
-                k: infos.k(),
+                k_aux: infos.k_aux(),
                 base2k: infos.base2k(),
                 dsize: infos.dsize(),
                 data: data.into_inner(),
@@ -262,7 +262,7 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
         );
         (
             GGSWPreparedViewMut::from_inner(GGSWPrepared {
-                k: infos.k(),
+                k_aux: infos.k_aux(),
                 base2k: infos.base2k(),
                 dsize: infos.dsize(),
                 data: data.into_inner(),

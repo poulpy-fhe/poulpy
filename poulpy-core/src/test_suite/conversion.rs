@@ -13,10 +13,10 @@ use crate::{
     GLWENormalize, GLWEToLWESwitchingKeyEncryptSk, LWEDecrypt, LWEEncryptSk, LWEFromGLWE, LWEMatrixDecrypt,
     LWEToGLWESwitchingKeyEncryptSk,
     layouts::{
-        Base2K, Degree, Dnum, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWEToLWEKey,
-        GLWEToLWEKeyLayout, GLWEToLWEKeyPrepared, GLWEToLWEKeyPreparedFactory, LWE, LWEInfos, LWELayout, LWEMatrixLayout,
-        LWEPlaintext, LWESecret, LWEToGLWEKey, LWEToGLWEKeyLayout, LWEToGLWEKeyPrepared, LWEToGLWEKeyPreparedFactory,
-        ModuleCoreAlloc, Rank, SecretConversion, TorusPrecision, prepared::GLWESecretPrepared,
+        Base2K, Degree, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, GLWEToLWEKey, GLWEToLWEKeyLayout,
+        GLWEToLWEKeyPrepared, GLWEToLWEKeyPreparedFactory, LWE, LWEInfos, LWELayout, LWEMatrixLayout, LWEPlaintext, LWESecret,
+        LWEToGLWEKey, LWEToGLWEKeyLayout, LWEToGLWEKeyPrepared, LWEToGLWEKeyPreparedFactory, ModuleCoreAlloc, Rank,
+        SecretConversion, TorusPrecision, prepared::GLWESecretPrepared,
     },
 };
 
@@ -185,7 +185,6 @@ where
 
     let rank: Rank = Rank(2);
     let k_lwe_pt: TorusPrecision = TorusPrecision(8);
-    let k_ksk = 5 * base2k + 1;
     let k_glwe = 4 * base2k + 1;
     let k_lwe = 4 * base2k + 1;
 
@@ -196,8 +195,8 @@ where
     let lwe_to_glwe_infos = EncryptionLayout::new_from_default_sigma(LWEToGLWEKeyLayout {
         n: n_glwe,
         base2k: Base2K(base2k as u32),
-        k: TorusPrecision(k_ksk as u32),
-        dnum: Dnum(2),
+        dnum: 2_usize.into(),
+        k_aux: (base2k + module.log_n()).into(),
         rank_out: rank,
     })
     .unwrap();
@@ -264,13 +263,7 @@ where
     let mut ksk_prepared: LWEToGLWEKeyPrepared<BE::OwnedBuf, BE> = module.lwe_to_glwe_key_prepared_alloc_from_infos(&ksk);
     module.lwe_to_glwe_key_prepare(&mut ksk_prepared, &ksk, &mut scratch.borrow());
 
-    module.glwe_from_lwe(
-        &mut glwe_ct,
-        &lwe_ct,
-        &ksk_prepared,
-        ksk_prepared.size(),
-        &mut scratch.borrow(),
-    );
+    module.glwe_from_lwe(&mut glwe_ct, &lwe_ct, &ksk_prepared, &mut scratch.borrow());
 
     let mut glwe_pt: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
     module.glwe_decrypt(&glwe_ct, &mut glwe_pt, &sk_glwe_prepared, &mut scratch.borrow());
@@ -311,7 +304,6 @@ where
     let n_glwe: Degree = Degree(module.n() as u32);
     let n_lwe: Degree = Degree(22);
     let base2k: usize = params.base2k;
-    let k_ksk = 5 * base2k + 1;
     let k_glwe = 4 * base2k + 1;
     let k_lwe = 4 * base2k + 1;
 
@@ -321,8 +313,8 @@ where
     let glwe_to_lwe_infos = EncryptionLayout::new_from_default_sigma(GLWEToLWEKeyLayout {
         n: n_glwe,
         base2k: Base2K(base2k as u32),
-        k: TorusPrecision(k_ksk as u32),
-        dnum: Dnum(2),
+        dnum: 2_usize.into(),
+        k_aux: (base2k + module.log_n()).into(),
         rank_in: rank,
     })
     .unwrap();
@@ -395,14 +387,7 @@ where
     let mut ksk_prepared: GLWEToLWEKeyPrepared<BE::OwnedBuf, BE> = module.glwe_to_lwe_key_prepared_alloc_from_infos(&ksk);
     module.glwe_to_lwe_key_prepare(&mut ksk_prepared, &ksk, &mut scratch.borrow());
 
-    module.lwe_from_glwe(
-        &mut lwe_ct,
-        &glwe_ct,
-        a_idx,
-        &ksk_prepared,
-        ksk_prepared.size(),
-        &mut scratch.borrow(),
-    );
+    module.lwe_from_glwe(&mut lwe_ct, &glwe_ct, a_idx, &ksk_prepared, &mut scratch.borrow());
 
     let mut lwe_pt: LWEPlaintext<Vec<u8>> = module.lwe_plaintext_alloc_from_infos(&lwe_infos);
     module.lwe_decrypt(&lwe_ct, &mut lwe_pt, &sk_lwe, &mut scratch.borrow());

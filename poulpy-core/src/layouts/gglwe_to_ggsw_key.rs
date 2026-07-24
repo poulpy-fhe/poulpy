@@ -18,9 +18,9 @@ use std::{
 pub struct GGLWEToGGSWKeyLayout {
     pub n: Degree,
     pub base2k: Base2K,
-    pub k: TorusPrecision,
-    pub rank: Rank,
     pub dnum: Dnum,
+    pub k_aux: TorusPrecision,
+    pub rank: Rank,
     pub dsize: Dsize,
 }
 
@@ -47,7 +47,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyBackendRef<'a, BE> {
         let key_i = &self.inner.keys[i];
         crate::layouts::GGLWEBackendRef::from_inner(GGLWE {
             base2k: key_i.base2k,
-            k: key_i.k,
+            k_aux: key_i.k_aux,
             dsize: key_i.dsize,
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_ref::<BE>(&key_i.data),
         })
@@ -80,7 +80,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyBackendMut<'a, BE> {
         let key_i = &self.inner.keys[i];
         crate::layouts::GGLWEBackendRef::from_inner(GGLWE {
             base2k: key_i.base2k,
-            k: key_i.k,
+            k_aux: key_i.k_aux,
             dsize: key_i.dsize,
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_mut::<BE>(&key_i.data),
         })
@@ -91,7 +91,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyBackendMut<'a, BE> {
         let key_i = &mut self.inner.keys[i];
         GGLWEBackendMut::from_inner(GGLWE {
             base2k: key_i.base2k,
-            k: key_i.k,
+            k_aux: key_i.k_aux,
             dsize: key_i.dsize,
             data: poulpy_hal::layouts::mat_znx_backend_mut_from_mut::<BE>(&mut key_i.data),
         })
@@ -140,6 +140,10 @@ impl<D: Data> GLWEInfos for GGLWEToGGSWKey<D> {
 }
 
 impl<D: Data> GGLWEInfos for GGLWEToGGSWKey<D> {
+    fn k_aux(&self) -> TorusPrecision {
+        self.keys[0].k_aux()
+    }
+
     fn rank_in(&self) -> Rank {
         self.rank_out()
     }
@@ -167,11 +171,11 @@ impl LWEInfos for GGLWEToGGSWKeyLayout {
     }
 
     fn max_size(&self) -> usize {
-        self.k.div_ceil(self.base2k) as usize
+        crate::layouts::key_size(self.base2k, self.dnum, self.dsize, self.k_aux)
     }
 
     fn k(&self) -> TorusPrecision {
-        self.k
+        crate::layouts::key_k(self.base2k, self.dnum, self.dsize, self.k_aux)
     }
 }
 
@@ -182,6 +186,14 @@ impl GLWEInfos for GGLWEToGGSWKeyLayout {
 }
 
 impl GGLWEInfos for GGLWEToGGSWKeyLayout {
+    fn k_aux(&self) -> TorusPrecision {
+        self.k_aux
+    }
+
+    fn dnum(&self) -> Dnum {
+        self.dnum
+    }
+
     fn rank_in(&self) -> Rank {
         self.rank
     }
@@ -192,10 +204,6 @@ impl GGLWEInfos for GGLWEToGGSWKeyLayout {
 
     fn rank_out(&self) -> Rank {
         self.rank
-    }
-
-    fn dnum(&self) -> Dnum {
-        self.dnum
     }
 }
 
@@ -240,17 +248,17 @@ impl GGLWEToGGSWKey<Vec<u8>> {
         Self::alloc(
             infos.n(),
             infos.base2k(),
-            infos.k(),
-            infos.rank(),
             infos.dnum(),
             infos.dsize(),
+            infos.k_aux(),
+            infos.rank(),
         )
     }
 
-    pub(crate) fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank, dnum: Dnum, dsize: Dsize) -> Self {
+    pub(crate) fn alloc(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> Self {
         GGLWEToGGSWKey {
             keys: (0..rank.as_usize())
-                .map(|_| GGLWE::alloc(n, base2k, k, rank, rank, dnum, dsize))
+                .map(|_| GGLWE::alloc(n, base2k, dnum, dsize, k_aux, rank, rank))
                 .collect(),
         }
     }
@@ -267,15 +275,15 @@ impl GGLWEToGGSWKey<Vec<u8>> {
         Self::bytes_of(
             infos.n(),
             infos.base2k(),
-            infos.k(),
-            infos.rank(),
             infos.dnum(),
             infos.dsize(),
+            infos.k_aux(),
+            infos.rank(),
         )
     }
 
-    pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank, dnum: Dnum, dsize: Dsize) -> usize {
-        rank.as_usize() * GGLWE::bytes_of(n, base2k, k, rank, rank, dnum, dsize)
+    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
+        rank.as_usize() * GGLWE::bytes_of(n, base2k, dnum, dsize, k_aux, rank, rank)
     }
 }
 

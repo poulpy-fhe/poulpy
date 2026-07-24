@@ -10,7 +10,7 @@ use crate::{
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GGLWEToGGSWKey, GGLWEToGGSWKeyLayout, GGLWEToGGSWKeyPreparedFactory, GGSW, GGSWInfos, GGSWLayout, GLWEAutomorphismKey,
-        GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc,
+        GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
         prepared::{GGLWEToGGSWKeyPrepared, GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
     noise::noise_ggsw_keyswitch,
@@ -48,7 +48,6 @@ where
         for dsize in 1..max_dsize + 1 {
             let k_ksk: usize = k_in + key_base2k * dsize;
             let k_tsk: usize = k_ksk;
-            let k_out: usize = k_ksk; // Better capture noise.
 
             let n: usize = module.n();
             let dnum_in: usize = k_in / in_base2k;
@@ -59,8 +58,8 @@ where
             let ggsw_in_layout = EncryptionLayout::new_from_default_sigma(GGSWLayout {
                 n: n.into(),
                 base2k: in_base2k.into(),
-                k: k_in.into(),
                 dnum: dnum_in.into(),
+                k_aux: (dsize_in * in_base2k + module.log_n()).into(),
                 dsize: dsize_in.into(),
                 rank: rank.into(),
             })
@@ -69,8 +68,8 @@ where
             let ggsw_out_layout = EncryptionLayout::new_from_default_sigma(GGSWLayout {
                 n: n.into(),
                 base2k: out_base2k.into(),
-                k: k_out.into(),
                 dnum: dnum_in.into(),
+                k_aux: (dsize_in * out_base2k + module.log_n()).into(),
                 dsize: dsize_in.into(),
                 rank: rank.into(),
             })
@@ -79,8 +78,8 @@ where
             let tsk_layout = EncryptionLayout::new_from_default_sigma(GGLWEToGGSWKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
-                k: k_tsk.into(),
                 dnum: dnum_ksk.into(),
+                k_aux: (dsize * key_base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank: rank.into(),
             })
@@ -89,8 +88,8 @@ where
             let auto_key_layout = EncryptionLayout::new_from_default_sigma(GGLWEToGGSWKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
-                k: k_ksk.into(),
                 dnum: dnum_ksk.into(),
+                k_aux: (dsize * key_base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank: rank.into(),
             })
@@ -166,15 +165,7 @@ where
             module.gglwe_to_ggsw_key_prepare(&mut tsk_prepared, &tsk, &mut scratch.borrow());
 
             let mut ct_out = upload_ggsw(module, &ct_out_template);
-            module.ggsw_automorphism(
-                &mut ct_out,
-                &ct_in,
-                &auto_key_prepared,
-                auto_key_prepared.size(),
-                &tsk_prepared,
-                tsk_prepared.size(),
-                &mut scratch.borrow(),
-            );
+            module.ggsw_automorphism(&mut ct_out, &ct_in, &auto_key_prepared, &tsk_prepared, &mut scratch.borrow());
 
             {
                 let mut pt_scalar_backend_as_vec =
@@ -257,8 +248,8 @@ where
             let ggsw_out_layout = EncryptionLayout::new_from_default_sigma(GGSWLayout {
                 n: n.into(),
                 base2k: out_base2k.into(),
-                k: k_out.into(),
                 dnum: dnum_in.into(),
+                k_aux: (dsize_in * out_base2k + module.log_n()).into(),
                 dsize: dsize_in.into(),
                 rank: rank.into(),
             })
@@ -267,8 +258,8 @@ where
             let tsk_layout = EncryptionLayout::new_from_default_sigma(GGLWEToGGSWKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
-                k: k_tsk.into(),
                 dnum: dnum_ksk.into(),
+                k_aux: (dsize * key_base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank: rank.into(),
             })
@@ -277,8 +268,8 @@ where
             let auto_key_layout = EncryptionLayout::new_from_default_sigma(GGLWEToGGSWKeyLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
-                k: k_ksk.into(),
                 dnum: dnum_ksk.into(),
+                k_aux: (dsize * key_base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank: rank.into(),
             })
@@ -352,14 +343,7 @@ where
                 module.gglwe_to_ggsw_key_prepared_alloc_from_infos(&tsk);
             module.gglwe_to_ggsw_key_prepare(&mut tsk_prepared, &tsk, &mut scratch.borrow());
 
-            module.ggsw_automorphism_assign(
-                &mut ct,
-                &auto_key_prepared,
-                auto_key_prepared.size(),
-                &tsk_prepared,
-                tsk_prepared.size(),
-                &mut scratch.borrow(),
-            );
+            module.ggsw_automorphism_assign(&mut ct, &auto_key_prepared, &tsk_prepared, &mut scratch.borrow());
 
             {
                 let mut pt_scalar_backend_as_vec =

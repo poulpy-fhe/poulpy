@@ -48,6 +48,11 @@ impl CKKSTestParams {
         }
     }
 
+    /// `log2(n)` — the ring dimension in bits.
+    pub fn log_n(&self) -> usize {
+        self.n.ilog2() as usize
+    }
+
     pub fn glwe_layout(&self) -> EncryptionLayout<GLWELayout> {
         EncryptionLayout::new_from_default_sigma(GLWELayout {
             n: self.n.into(),
@@ -59,29 +64,31 @@ impl CKKSTestParams {
     }
 
     pub fn tsk_layout(&self) -> EncryptionLayout<GLWETensorKeyLayout> {
-        let k = self.k + self.dsize * self.base2k;
-        let dnum = k / (self.dsize * self.base2k);
+        let total = self.k + self.dsize * self.base2k;
+        let dnum = total / (self.dsize * self.base2k);
+        let k_aux = self.dsize * self.base2k + self.log_n();
         EncryptionLayout::new_from_default_sigma(GLWETensorKeyLayout {
             n: self.n.into(),
             base2k: self.base2k.into(),
-            k: k.into(),
+            dnum: dnum.into(),
+            k_aux: k_aux.into(),
             rank: Rank(self.rank as u32),
             dsize: self.dsize.into(),
-            dnum: dnum.into(),
         })
         .unwrap()
     }
 
     pub fn atk_layout(&self) -> EncryptionLayout<GLWEAutomorphismKeyLayout> {
-        let k = self.k + self.dsize * self.base2k;
-        let dnum = k / (self.dsize * self.base2k);
+        let total = self.k + self.dsize * self.base2k;
+        let dnum = total / (self.dsize * self.base2k);
+        let k_aux = self.dsize * self.base2k + self.log_n();
         EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
             n: self.n.into(),
             base2k: self.base2k.into(),
-            k: k.into(),
+            dnum: dnum.into(),
+            k_aux: k_aux.into(),
             rank: Rank(self.rank as u32),
             dsize: self.dsize.into(),
-            dnum: dnum.into(),
         })
         .unwrap()
     }
@@ -90,16 +97,17 @@ impl CKKSTestParams {
     /// modulus `k_in` bits (e.g. the encapsulation `denseToSparse` /
     /// `sparseToDense` keys, sized at the input level and at `k_boot`).
     pub fn ksk_layout(&self, k_in: usize) -> EncryptionLayout<GLWESwitchingKeyLayout> {
-        let k = k_in + self.dsize * self.base2k;
-        let dnum = k / (self.dsize * self.base2k);
+        let total = k_in + self.dsize * self.base2k;
+        let dnum = total / (self.dsize * self.base2k);
+        let k_aux = self.dsize * self.base2k + self.log_n();
         EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
             n: self.n.into(),
             base2k: self.base2k.into(),
-            k: k.into(),
+            dnum: dnum.into(),
+            k_aux: k_aux.into(),
             rank_in: Rank(self.rank as u32),
             rank_out: Rank(self.rank as u32),
             dsize: self.dsize.into(),
-            dnum: dnum.into(),
         })
         .unwrap()
     }

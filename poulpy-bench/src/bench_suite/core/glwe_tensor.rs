@@ -46,7 +46,6 @@ fn normalize_input_limb_bound_with_offset(
 pub fn bench_glwe_tensor_relinearize<BE: Backend<OwnedBuf = Vec<u8>>>(
     glwe_infos: &impl GLWEInfos,
     tsk_infos: &GLWETensorKeyLayout,
-    dsize: usize,
     c: &mut Criterion,
     label: &str,
 ) where
@@ -60,14 +59,13 @@ pub fn bench_glwe_tensor_relinearize<BE: Backend<OwnedBuf = Vec<u8>>>(
     let mut res = module.glwe_alloc_from_infos(glwe_infos);
     let tensor = module.glwe_tensor_alloc_from_infos(glwe_infos);
     let tsk = module.alloc_tensor_key_prepared_from_infos(tsk_infos);
-    let tsk_size = tensor.max_size() + dsize;
     let mut scratch = ScratchOwned::<BE>::alloc(module.glwe_tensor_relinearize_tmp_bytes(&res, &tensor, &tsk));
 
     let group_name = format!("glwe_tensor_relinearize::{label}");
     let mut group = c.benchmark_group(group_name);
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
-            module.glwe_tensor_relinearize(&mut res, &tensor, &tsk, tsk_size, &mut scratch.borrow());
+            module.glwe_tensor_relinearize(&mut res, &tensor, &tsk, &mut scratch.borrow());
             black_box(());
         })
     });

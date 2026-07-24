@@ -244,25 +244,27 @@ fn ckks_pt_meta() -> CKKSMeta {
 }
 
 fn tsk_layout() -> GLWETensorKeyLayout {
+    let (dnum, k_aux) = crate::params::key_dnum_k_aux((K + DSIZE * BASE2K) as u32, BASE2K as u32, DSIZE as u32);
     GLWETensorKeyLayout {
         n: Degree(N as u32),
         base2k: Base2K(BASE2K as u32),
-        k: TorusPrecision((K + DSIZE * BASE2K) as u32),
+        k_aux: TorusPrecision(k_aux),
         rank: Rank(1),
         dsize: Dsize(DSIZE as u32),
-        dnum: Dnum(K.div_ceil(DSIZE * BASE2K) as u32),
+        dnum: Dnum(dnum),
     }
 }
 
 fn atk_layout() -> EncryptionLayout<GLWEAutomorphismKeyLayout> {
-    let k = K + DSIZE * BASE2K;
+    let (dnum, k_aux) = crate::params::key_dnum_k_aux((K + DSIZE * BASE2K) as u32, BASE2K as u32, DSIZE as u32);
+    debug_assert_eq!(dnum, DNUM as u32);
     EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
         n: Degree(N as u32),
         base2k: Base2K(BASE2K as u32),
-        k: TorusPrecision(k as u32),
+        k_aux: TorusPrecision(k_aux),
         rank: Rank(1),
         dsize: Dsize(DSIZE as u32),
-        dnum: Dnum(DNUM as u32),
+        dnum: Dnum(dnum),
     })
     .unwrap()
 }
@@ -742,13 +744,14 @@ fn mul_ckks_ct_meta(p: &CkksMulParams) -> CKKSMeta {
 }
 
 fn mul_tsk_layout(p: &CkksMulParams) -> GLWETensorKeyLayout {
+    let (dnum, k_aux) = crate::params::key_dnum_k_aux((p.k + p.dsize * p.base2k) as u32, p.base2k as u32, p.dsize as u32);
     GLWETensorKeyLayout {
         n: Degree(p.n as u32),
         base2k: Base2K(p.base2k as u32),
-        k: TorusPrecision((p.k + p.dsize * p.base2k) as u32),
+        k_aux: TorusPrecision(k_aux),
         rank: Rank(1),
         dsize: Dsize(p.dsize as u32),
-        dnum: Dnum(p.k.div_ceil(p.dsize * p.base2k) as u32),
+        dnum: Dnum(dnum),
     }
 }
 

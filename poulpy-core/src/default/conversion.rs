@@ -248,14 +248,8 @@ where
     lvl_0 + lvl_1
 }
 
-pub fn glwe_from_lwe_default<BE, M, R, A, K>(
-    module: &M,
-    res: &mut R,
-    lwe: &A,
-    ksk: &K,
-    key_size: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
+pub fn glwe_from_lwe_default<BE, M, R, A, K>(module: &M, res: &mut R, lwe: &A, ksk: &K, scratch: &mut ScratchArena<'_, BE>)
+where
     BE: Backend,
     M: ConversionDefault<BE>
         + ModuleN
@@ -346,7 +340,7 @@ pub fn glwe_from_lwe_default<BE, M, R, A, K>(
     let glwe_ref = glwe_backend_ref_from_mut::<BE>(&glwe);
     let glwe_view = &glwe_ref;
     let mut res_view = &mut res_backend;
-    module.glwe_keyswitch_default(&mut res_view, &glwe_view, ksk, key_size, &mut scratch_1)
+    module.glwe_keyswitch_default(&mut res_view, &glwe_view, ksk, &mut scratch_1)
 }
 
 pub fn lwe_from_glwe_tmp_bytes_default<BE, M, R, A, K>(module: &M, lwe_infos: &R, glwe_infos: &A, key_infos: &K) -> usize
@@ -380,7 +374,6 @@ pub fn lwe_from_glwe_default<BE, M, R, A, K>(
     a: &A,
     a_idx: usize,
     key: &K,
-    key_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
@@ -417,7 +410,7 @@ pub fn lwe_from_glwe_default<BE, M, R, A, K>(
     let (mut tmp_glwe_rank_1, mut scratch_1) = scratch.take_glwe_scratch(&glwe_layout);
 
     let a_backend_view = &a_backend;
-    module.glwe_keyswitch_default(&mut tmp_glwe_rank_1, &a_backend_view, key, key_size, &mut scratch_1);
+    module.glwe_keyswitch_default(&mut tmp_glwe_rank_1, &a_backend_view, key, &mut scratch_1);
     if a_idx != 0 {
         module.glwe_rotate_assign(-(a_idx as i64), &mut tmp_glwe_rank_1, &mut scratch_1);
     }
@@ -445,14 +438,8 @@ where
     module.ggsw_expand_rows_tmp_bytes_default(res_infos, tsk_infos)
 }
 
-pub fn ggsw_from_gglwe_default<BE, M, R, A, T>(
-    module: &M,
-    res: &mut R,
-    a: &A,
-    tsk: &T,
-    tsk_size: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
+pub fn ggsw_from_gglwe_default<BE, M, R, A, T>(module: &M, res: &mut R, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>)
+where
     BE: Backend,
     M: ConversionDefault<BE> + ModuleN + GLWECopyDefault<BE>,
     R: GGSWToBackendMut<BE> + GGSWInfos,
@@ -481,7 +468,7 @@ pub fn ggsw_from_gglwe_default<BE, M, R, A, T>(
         module.glwe_copy_default(&mut res_at, &a_at);
     }
 
-    module.ggsw_expand_row_default(&mut res_backend, tsk, tsk_size, scratch)
+    module.ggsw_expand_row_default(&mut res_backend, tsk, scratch)
 }
 
 pub fn ggsw_expand_rows_tmp_bytes_default<BE, M, R, A>(module: &M, res_infos: &R, tsk_infos: &A) -> usize
@@ -521,7 +508,7 @@ where
     lvl_0 + lvl_1.max(lvl_2)
 }
 
-pub fn ggsw_expand_row_default<BE, M, R, T>(module: &M, res: &mut R, tsk: &T, tsk_size: usize, scratch: &mut ScratchArena<'_, BE>)
+pub fn ggsw_expand_row_default<BE, M, R, T>(module: &M, res: &mut R, tsk: &T, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
     M: ConversionDefault<BE>
@@ -539,6 +526,7 @@ where
 {
     let mut res_backend = res.to_backend_mut();
 
+    let tsk_size: usize = tsk.work_size(res_backend.k());
     let res_base2k: usize = res_backend.base2k().into();
     let tsk_base2k: usize = tsk.base2k().into();
 

@@ -29,16 +29,18 @@ use crate::blind_rotation::BlindRotationAlgo;
 /// - `n_lwe`: Number of LWE ciphertext dimensions; equals the number of GGSW
 ///   ciphertexts stored in the key.
 /// - `base2k`: Decomposition base (bits per limb).
-/// - `k`: Total torus precision (message bits).
-/// - `dnum`: Number of decomposition digits per GGSW row.
+/// - `dnum`: Number of gadget decomposition digits (`dsize` fixed to 1); the
+///   gadget precision is `dnum * dsize * base2k` and the full precision is
+///   `key_k(base2k, dnum, Dsize(1), k_aux)`.
+/// - `k_aux`: Auxiliary guard precision (torus bits) below the gadget region.
 /// - `rank`: GLWE rank (0 for plain LWE, ≥ 1 for GLWE / Module-LWE).
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub struct BlindRotationKeyLayout {
     pub n_glwe: Degree,
     pub n_lwe: Degree,
     pub base2k: Base2K,
-    pub k: TorusPrecision,
     pub dnum: Dnum,
+    pub k_aux: TorusPrecision,
     pub rank: Rank,
 }
 
@@ -63,6 +65,10 @@ impl BlindRotationKeyInfos for EncryptionLayout<BlindRotationKeyLayout> {
 }
 
 impl GGSWInfos for BlindRotationKeyLayout {
+    fn k_aux(&self) -> TorusPrecision {
+        self.k_aux
+    }
+
     fn dsize(&self) -> Dsize {
         Dsize(1)
     }
@@ -88,11 +94,11 @@ impl LWEInfos for BlindRotationKeyLayout {
     }
 
     fn max_size(&self) -> usize {
-        self.k.div_ceil(self.base2k) as usize
+        poulpy_core::layouts::key_size(self.base2k, self.dnum, Dsize(1), self.k_aux)
     }
 
     fn k(&self) -> TorusPrecision {
-        self.k
+        poulpy_core::layouts::key_k(self.base2k, self.dnum, Dsize(1), self.k_aux)
     }
 }
 
@@ -273,6 +279,10 @@ impl<D: HostDataRef, BRT: BlindRotationAlgo> GLWEInfos for BlindRotationKey<D, B
     }
 }
 impl<D: HostDataRef, BRT: BlindRotationAlgo> GGSWInfos for BlindRotationKey<D, BRT> {
+    fn k_aux(&self) -> TorusPrecision {
+        self.keys[0].k_aux()
+    }
+
     fn dsize(&self) -> poulpy_core::layouts::Dsize {
         Dsize(1)
     }

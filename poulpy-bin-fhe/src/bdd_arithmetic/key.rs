@@ -49,10 +49,10 @@ impl BDDEncryptionInfos {
         Ok(Self {
             cbt: CircuitBootstrappingEncryptionInfos::from_default_sigma(&layout.cbt_layout)?,
             ks_glwe: match layout.ks_glwe_layout {
-                Some(ref l) => Some(NoiseInfos::new(l.k.as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE)?),
+                Some(ref l) => Some(NoiseInfos::new(l.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE)?),
                 None => None,
             },
-            ks_lwe: NoiseInfos::new(layout.ks_lwe_layout.k.as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE)?,
+            ks_lwe: NoiseInfos::new(layout.ks_lwe_layout.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE)?,
         })
     }
 }
@@ -358,10 +358,10 @@ impl<D: Data, BRA: BlindRotationAlgo, BE: Backend> BDDKeyInfos for BDDKeyPrepare
         self.ks_glwe.as_ref().map(|ks_glwe| GLWESwitchingKeyLayout {
             n: ks_glwe.n(),
             base2k: ks_glwe.base2k(),
-            k: ks_glwe.k(),
+            dnum: ks_glwe.dnum(),
             rank_in: ks_glwe.rank_in(),
             rank_out: ks_glwe.rank_out(),
-            dnum: ks_glwe.dnum(),
+            k_aux: ks_glwe.k_aux(),
             dsize: ks_glwe.dsize(),
         })
     }
@@ -369,9 +369,9 @@ impl<D: Data, BRA: BlindRotationAlgo, BE: Backend> BDDKeyInfos for BDDKeyPrepare
         GLWEToLWEKeyLayout {
             n: self.ks_lwe.n(),
             base2k: self.ks_lwe.base2k(),
-            k: self.ks_lwe.k(),
-            rank_in: self.ks_lwe.rank_in(),
             dnum: self.ks_lwe.dnum(),
+            rank_in: self.ks_lwe.rank_in(),
+            k_aux: self.ks_lwe.k_aux(),
         }
     }
 }

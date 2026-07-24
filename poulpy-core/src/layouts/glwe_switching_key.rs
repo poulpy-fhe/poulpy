@@ -20,10 +20,10 @@ use std::fmt;
 pub struct GLWESwitchingKeyLayout {
     pub n: Degree,
     pub base2k: Base2K,
-    pub k: TorusPrecision,
+    pub dnum: Dnum,
+    pub k_aux: TorusPrecision,
     pub rank_in: Rank,
     pub rank_out: Rank,
-    pub dnum: Dnum,
     pub dsize: Dsize,
 }
 
@@ -37,11 +37,11 @@ impl LWEInfos for GLWESwitchingKeyLayout {
     }
 
     fn max_size(&self) -> usize {
-        self.k.div_ceil(self.base2k) as usize
+        crate::layouts::key_size(self.base2k, self.dnum, self.dsize, self.k_aux)
     }
 
     fn k(&self) -> TorusPrecision {
-        self.k
+        crate::layouts::key_k(self.base2k, self.dnum, self.dsize, self.k_aux)
     }
 }
 
@@ -52,6 +52,14 @@ impl GLWEInfos for GLWESwitchingKeyLayout {
 }
 
 impl GGLWEInfos for GLWESwitchingKeyLayout {
+    fn k_aux(&self) -> TorusPrecision {
+        self.k_aux
+    }
+
+    fn dnum(&self) -> Dnum {
+        self.dnum
+    }
+
     fn rank_in(&self) -> Rank {
         self.rank_in
     }
@@ -62,10 +70,6 @@ impl GGLWEInfos for GLWESwitchingKeyLayout {
 
     fn dsize(&self) -> Dsize {
         self.dsize
-    }
-
-    fn dnum(&self) -> Dnum {
-        self.dnum
     }
 }
 
@@ -146,6 +150,10 @@ impl<D: Data> GLWEInfos for GLWESwitchingKey<D> {
 }
 
 impl<D: Data> GGLWEInfos for GLWESwitchingKey<D> {
+    fn k_aux(&self) -> TorusPrecision {
+        self.key.k_aux()
+    }
+
     fn rank_in(&self) -> Rank {
         self.key.rank_in()
     }
@@ -200,11 +208,11 @@ impl GLWESwitchingKey<Vec<u8>> {
         Self::alloc(
             infos.n(),
             infos.base2k(),
-            infos.k(),
-            infos.rank_in(),
-            infos.rank_out(),
             infos.dnum(),
             infos.dsize(),
+            infos.k_aux(),
+            infos.rank_in(),
+            infos.rank_out(),
         )
     }
 
@@ -212,14 +220,14 @@ impl GLWESwitchingKey<Vec<u8>> {
     pub(crate) fn alloc(
         n: Degree,
         base2k: Base2K,
-        k: TorusPrecision,
-        rank_in: Rank,
-        rank_out: Rank,
         dnum: Dnum,
         dsize: Dsize,
+        k_aux: TorusPrecision,
+        rank_in: Rank,
+        rank_out: Rank,
     ) -> Self {
         GLWESwitchingKey {
-            key: GGLWE::alloc(n, base2k, k, rank_in, rank_out, dnum, dsize),
+            key: GGLWE::alloc(n, base2k, dnum, dsize, k_aux, rank_in, rank_out),
             input_degree: Degree(0),
             output_degree: Degree(0),
         }
@@ -233,11 +241,11 @@ impl GLWESwitchingKey<Vec<u8>> {
         Self::bytes_of(
             infos.n(),
             infos.base2k(),
-            infos.k(),
-            infos.rank_in(),
-            infos.rank_out(),
             infos.dnum(),
             infos.dsize(),
+            infos.k_aux(),
+            infos.rank_in(),
+            infos.rank_out(),
         )
     }
 
@@ -245,13 +253,13 @@ impl GLWESwitchingKey<Vec<u8>> {
     pub fn bytes_of(
         n: Degree,
         base2k: Base2K,
-        k: TorusPrecision,
-        rank_in: Rank,
-        rank_out: Rank,
         dnum: Dnum,
         dsize: Dsize,
+        k_aux: TorusPrecision,
+        rank_in: Rank,
+        rank_out: Rank,
     ) -> usize {
-        GGLWE::bytes_of(n, base2k, k, rank_in, rank_out, dnum, dsize)
+        GGLWE::bytes_of(n, base2k, dnum, dsize, k_aux, rank_in, rank_out)
     }
 }
 

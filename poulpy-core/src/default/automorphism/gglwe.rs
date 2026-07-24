@@ -50,7 +50,6 @@ pub fn glwe_automorphism_key_automorphism_default<BE, M, R, A, K>(
     res: &mut R,
     a: &A,
     key: &K,
-    key_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
@@ -102,7 +101,7 @@ pub fn glwe_automorphism_key_automorphism_default<BE, M, R, A, K>(
                     }
 
                     let mut scratch_iter = scratch.borrow();
-                    module.glwe_keyswitch_assign_default(&mut res_tmp, key, key_size, &mut scratch_iter);
+                    module.glwe_keyswitch_assign_default(&mut res_tmp, key, &mut scratch_iter);
 
                     for i in 0..cols_out {
                         module.vec_znx_automorphism_assign_backend(p_inv, &mut res_tmp.data, i, &mut scratch_iter);
@@ -116,7 +115,7 @@ pub fn glwe_automorphism_key_automorphism_default<BE, M, R, A, K>(
 
                     let tmp_glwe_ref = glwe_backend_ref_from_mut::<BE>(&tmp_glwe);
                     let tmp_glwe_view = &tmp_glwe_ref;
-                    module.glwe_keyswitch_default(&mut res_tmp, &tmp_glwe_view, key, key_size, &mut scratch_iter);
+                    module.glwe_keyswitch_default(&mut res_tmp, &tmp_glwe_view, key, &mut scratch_iter);
 
                     for i in 0..cols_out {
                         module.vec_znx_automorphism_assign_backend(p_inv, &mut res_tmp.data, i, &mut scratch_iter);
@@ -133,7 +132,6 @@ pub fn glwe_automorphism_key_automorphism_assign_default<BE, M, R, K>(
     module: &M,
     res: &mut R,
     key: &K,
-    key_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
@@ -159,7 +157,7 @@ pub fn glwe_automorphism_key_automorphism_assign_default<BE, M, R, K>(
                     module.vec_znx_automorphism_assign_backend(p, &mut res_tmp.data, i, &mut scratch_iter);
                 }
 
-                module.glwe_keyswitch_assign_default(&mut res_tmp, key, key_size, &mut scratch_iter);
+                module.glwe_keyswitch_assign_default(&mut res_tmp, key, &mut scratch_iter);
 
                 for i in 0..cols_out {
                     module.vec_znx_automorphism_assign_backend(p_inv, &mut res_tmp.data, i, &mut scratch_iter);

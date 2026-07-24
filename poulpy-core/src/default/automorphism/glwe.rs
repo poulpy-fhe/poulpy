@@ -55,14 +55,8 @@ where
     lvl_auto.max(lvl_conv + lvl_ks)
 }
 
-pub fn glwe_automorphism_default<BE, M, R, A, K>(
-    module: &M,
-    res: &mut R,
-    a: &A,
-    key: &K,
-    key_size: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
+pub fn glwe_automorphism_default<BE, M, R, A, K>(module: &M, res: &mut R, a: &A, key: &K, scratch: &mut ScratchArena<'_, BE>)
+where
     BE: Backend,
     M: GLWEAutomorphismDefault<BE> + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssignBackend<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -76,7 +70,7 @@ pub fn glwe_automorphism_default<BE, M, R, A, K>(
         module.glwe_automorphism_tmp_bytes_default(res, a, key)
     );
 
-    module.glwe_keyswitch_default(res, a, key, key_size, scratch);
+    module.glwe_keyswitch_default(res, a, key, scratch);
     let cols = res.rank().as_usize() + 1;
     let mut res_ref = res.to_backend_mut();
     for i in 0..cols {
@@ -84,13 +78,8 @@ pub fn glwe_automorphism_default<BE, M, R, A, K>(
     }
 }
 
-pub fn glwe_automorphism_assign_default<BE, M, R, K>(
-    module: &M,
-    res: &mut R,
-    key: &K,
-    key_size: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
+pub fn glwe_automorphism_assign_default<BE, M, R, K>(module: &M, res: &mut R, key: &K, scratch: &mut ScratchArena<'_, BE>)
+where
     BE: Backend,
     M: GLWEAutomorphismDefault<BE> + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssignBackend<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -103,7 +92,7 @@ pub fn glwe_automorphism_assign_default<BE, M, R, K>(
         module.glwe_automorphism_tmp_bytes_default(res, res, key)
     );
 
-    module.glwe_keyswitch_assign_default(res, key, key_size, scratch);
+    module.glwe_keyswitch_assign_default(res, key, scratch);
 
     let cols = res.rank().as_usize() + 1;
     let mut res_ref = res.to_backend_mut();
@@ -112,14 +101,8 @@ pub fn glwe_automorphism_assign_default<BE, M, R, K>(
     }
 }
 
-pub fn glwe_automorphism_add_default<BE, M, R, A, K>(
-    module: &M,
-    res: &mut R,
-    a: &A,
-    key: &K,
-    key_size: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
+pub fn glwe_automorphism_add_default<BE, M, R, A, K>(module: &M, res: &mut R, a: &A, key: &K, scratch: &mut ScratchArena<'_, BE>)
+where
     BE: Backend,
     M: GLWEAutomorphismDefault<BE>
         + GLWEKeyswitchDefault<BE>
@@ -144,6 +127,7 @@ pub fn glwe_automorphism_add_default<BE, M, R, A, K>(
 
     let key_base2k: usize = key.base2k().into();
     let res_base2k: usize = res.base2k().into();
+    let key_size = key.work_size(a.k());
     let cols: usize = (res.rank() + 1).into();
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, key_size);
     let mut a_layout = a.glwe_layout();
@@ -184,13 +168,8 @@ pub fn glwe_automorphism_add_default<BE, M, R, A, K>(
     }
 }
 
-pub fn glwe_automorphism_add_assign_default<BE, M, R, K>(
-    module: &M,
-    res: &mut R,
-    key: &K,
-    key_size: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
+pub fn glwe_automorphism_add_assign_default<BE, M, R, K>(module: &M, res: &mut R, key: &K, scratch: &mut ScratchArena<'_, BE>)
+where
     BE: Backend,
     M: GLWEAutomorphismDefault<BE>
         + GLWEKeyswitchDefault<BE>
@@ -212,7 +191,7 @@ pub fn glwe_automorphism_add_assign_default<BE, M, R, K>(
         module.glwe_automorphism_tmp_bytes_default(res, res, key)
     );
 
-    let key_size = key.size().min(key_size);
+    let key_size = key.work_size(res.k());
 
     let key_base2k: usize = key.base2k().into();
     let res_base2k: usize = res.base2k().into();
@@ -255,14 +234,8 @@ pub fn glwe_automorphism_add_assign_default<BE, M, R, K>(
     }
 }
 
-pub fn glwe_automorphism_sub_default<BE, M, R, A, K>(
-    module: &M,
-    res: &mut R,
-    a: &A,
-    key: &K,
-    key_size: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
+pub fn glwe_automorphism_sub_default<BE, M, R, A, K>(module: &M, res: &mut R, a: &A, key: &K, scratch: &mut ScratchArena<'_, BE>)
+where
     BE: Backend,
     M: GLWEAutomorphismDefault<BE>
         + GLWEKeyswitchDefault<BE>
@@ -287,6 +260,7 @@ pub fn glwe_automorphism_sub_default<BE, M, R, A, K>(
 
     let key_base2k: usize = key.base2k().into();
     let res_base2k: usize = res.base2k().into();
+    let key_size = key.work_size(a.k());
     let cols: usize = (res.rank() + 1).into();
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, key_size);
     let mut a_layout = a.glwe_layout();
@@ -331,7 +305,6 @@ pub fn glwe_automorphism_sub_negate_default<BE, M, R, A, K>(
     res: &mut R,
     a: &A,
     key: &K,
-    key_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
@@ -358,6 +331,7 @@ pub fn glwe_automorphism_sub_negate_default<BE, M, R, A, K>(
 
     let key_base2k: usize = key.base2k().into();
     let res_base2k: usize = res.base2k().into();
+    let key_size = key.work_size(a.k());
     let cols: usize = (res.rank() + 1).into();
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, key_size);
     let mut a_layout = a.glwe_layout();
@@ -397,13 +371,8 @@ pub fn glwe_automorphism_sub_negate_default<BE, M, R, A, K>(
     }
 }
 
-pub fn glwe_automorphism_sub_assign_default<BE, M, R, K>(
-    module: &M,
-    res: &mut R,
-    key: &K,
-    key_size: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
+pub fn glwe_automorphism_sub_assign_default<BE, M, R, K>(module: &M, res: &mut R, key: &K, scratch: &mut ScratchArena<'_, BE>)
+where
     BE: Backend,
     M: GLWEAutomorphismDefault<BE>
         + GLWEKeyswitchDefault<BE>
@@ -425,6 +394,7 @@ pub fn glwe_automorphism_sub_assign_default<BE, M, R, K>(
         module.glwe_automorphism_tmp_bytes_default(res, res, key)
     );
 
+    let key_size = key.work_size(res.k());
     let key_base2k: usize = key.base2k().into();
     let res_base2k: usize = res.base2k().into();
     let cols: usize = (res.rank() + 1).into();
@@ -469,7 +439,6 @@ pub fn glwe_automorphism_sub_negate_assign_default<BE, M, R, K>(
     module: &M,
     res: &mut R,
     key: &K,
-    key_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
@@ -493,6 +462,7 @@ pub fn glwe_automorphism_sub_negate_assign_default<BE, M, R, K>(
         module.glwe_automorphism_tmp_bytes_default(res, res, key)
     );
 
+    let key_size = key.work_size(res.k());
     let key_base2k: usize = key.base2k().into();
     let res_base2k: usize = res.base2k().into();
     let cols: usize = (res.rank() + 1).into();

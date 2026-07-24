@@ -10,7 +10,7 @@ use crate::{
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GGLWEInfos, GGSW, GGSWLayout, GGSWPreparedFactory, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKey,
-        GLWESwitchingKeyLayout, LWEInfos, ModuleCoreAlloc,
+        GLWESwitchingKeyLayout, ModuleCoreAlloc,
         prepared::{GGSWPrepared, GLWESecretPrepared},
     },
     noise::noise_ggsw_product,
@@ -42,7 +42,6 @@ where
         for rank_out in 1_usize..3 {
             for dsize in 1_usize..max_dsize + 1 {
                 let k_ggsw: usize = k_in + key_base2k * dsize;
-                let k_out: usize = k_in; // Better capture noise.
 
                 let n: usize = module.n();
                 let dnum_in: usize = k_in / in_base2k;
@@ -52,8 +51,8 @@ where
                 let gglwe_in_infos = EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
                     n: n.into(),
                     base2k: in_base2k.into(),
-                    k: k_in.into(),
                     dnum: dnum_in.into(),
+                    k_aux: (dsize_in * in_base2k + module.log_n()).into(),
                     dsize: dsize_in.into(),
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
@@ -63,8 +62,8 @@ where
                 let gglwe_out_infos: GLWESwitchingKeyLayout = GLWESwitchingKeyLayout {
                     n: n.into(),
                     base2k: out_base2k.into(),
-                    k: k_out.into(),
                     dnum: dnum_in.into(),
+                    k_aux: (dsize_in * out_base2k + module.log_n()).into(),
                     dsize: dsize_in.into(),
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
@@ -73,8 +72,8 @@ where
                 let ggsw_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
                     n: n.into(),
                     base2k: key_base2k.into(),
-                    k: k_ggsw.into(),
                     dnum: dnum.into(),
+                    k_aux: (dsize * key_base2k + module.log_n()).into(),
                     dsize: dsize.into(),
                     rank: rank_out.into(),
                 })
@@ -137,13 +136,7 @@ where
                 module.ggsw_prepare(&mut ct_rgsw_prepared, &ct_rgsw, &mut scratch.borrow());
 
                 // gglwe_(m) (x) RGSW_(X^k) = gglwe_(m * X^k)
-                module.gglwe_external_product(
-                    &mut ct_gglwe_out,
-                    &ct_gglwe_in,
-                    &ct_rgsw_prepared,
-                    ct_rgsw_prepared.size(),
-                    &mut scratch.borrow(),
-                );
+                module.gglwe_external_product(&mut ct_gglwe_out, &ct_gglwe_in, &ct_rgsw_prepared, &mut scratch.borrow());
 
                 {
                     let mut sk_in_as_vec = crate::test_suite::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut sk_in.data);
@@ -232,8 +225,8 @@ pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::T
                 let gglwe_out_infos = EncryptionLayout::new_from_default_sigma(GLWESwitchingKeyLayout {
                     n: n.into(),
                     base2k: out_base2k.into(),
-                    k: k_out.into(),
                     dnum: dnum_in.into(),
+                    k_aux: (dsize_in * out_base2k + module.log_n()).into(),
                     dsize: dsize_in.into(),
                     rank_in: rank_in.into(),
                     rank_out: rank_out.into(),
@@ -243,8 +236,8 @@ pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::T
                 let ggsw_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
                     n: n.into(),
                     base2k: key_base2k.into(),
-                    k: k_ggsw.into(),
                     dnum: dnum.into(),
+                    k_aux: (dsize * key_base2k + module.log_n()).into(),
                     dsize: dsize.into(),
                     rank: rank_out.into(),
                 })
@@ -306,12 +299,7 @@ pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::T
                 module.ggsw_prepare(&mut ct_rgsw_prepared, &ct_rgsw, &mut scratch.borrow());
 
                 // gglwe_(m) (x) RGSW_(X^k) = gglwe_(m * X^k)
-                module.gglwe_external_product_assign(
-                    &mut ct_gglwe,
-                    &ct_rgsw_prepared,
-                    ct_rgsw_prepared.size(),
-                    &mut scratch.borrow(),
-                );
+                module.gglwe_external_product_assign(&mut ct_gglwe, &ct_rgsw_prepared, &mut scratch.borrow());
 
                 {
                     let mut sk_in_as_vec = crate::test_suite::scalar_znx_as_vec_znx_backend_mut::<BE>(&mut sk_in.data);

@@ -215,7 +215,7 @@ pub fn download_ggsw<BE: HostBackend<OwnedBuf = Vec<u8>>>(_module: &Module<BE>, 
             src.data.cols_out(),
             src.data.size(),
         ),
-        k: src.k,
+        k_aux: src.k_aux,
         base2k: src.base2k,
         dsize: src.dsize,
     }

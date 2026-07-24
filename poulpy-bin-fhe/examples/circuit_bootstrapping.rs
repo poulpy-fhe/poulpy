@@ -77,42 +77,39 @@ fn main() {
     let rows_brk: usize = rows_ggsw_res + 1;
 
     // Blind rotation key GGSW modulus
-    let k_brk: usize = (rows_brk + 1) * base2k;
 
     // GGLWE automorphism keys number of dnum
     let rows_trace: usize = rows_ggsw_res + 1;
 
     // GGLWE automorphism keys modulus
-    let k_trace: usize = (rows_trace + 1) * base2k;
 
     // GGLWE tensor key number of dnum
     let rows_tsk: usize = rows_ggsw_res + 1;
 
     // GGLWE tensor key modulus
-    let k_tsk: usize = (rows_tsk + 1) * base2k;
 
     let cbt_layout: CircuitBootstrappingKeyLayout = CircuitBootstrappingKeyLayout {
         brk_layout: BlindRotationKeyLayout {
             n_glwe: n_glwe.into(),
             n_lwe: n_lwe.into(),
             base2k: base2k.into(),
-            k: k_brk.into(),
             dnum: rows_brk.into(),
+            k_aux: (base2k + n_glwe.ilog2() as usize).into(),
             rank: rank.into(),
         },
         atk_layout: GLWEAutomorphismKeyLayout {
             n: n_glwe.into(),
             base2k: base2k.into(),
-            k: k_trace.into(),
             dnum: rows_trace.into(),
+            k_aux: (base2k + n_glwe.ilog2() as usize).into(),
             dsize: 1_u32.into(),
             rank: rank.into(),
         },
         tsk_layout: GGLWEToGGSWKeyLayout {
             n: n_glwe.into(),
             base2k: base2k.into(),
-            k: k_tsk.into(),
             dnum: rows_tsk.into(),
+            k_aux: (base2k + n_glwe.ilog2() as usize).into(),
             dsize: 1_u32.into(),
             rank: rank.into(),
         },
@@ -121,7 +118,7 @@ fn main() {
     let ggsw_infos: GGSWLayout = GGSWLayout {
         n: n_glwe.into(),
         base2k: base2k.into(),
-        k: k_ggsw_res.into(),
+        k_aux: (base2k + n_glwe.ilog2() as usize).into(),
         dnum: rows_ggsw_res.into(),
         dsize: 1_u32.into(),
         rank: rank.into(),
@@ -292,8 +289,7 @@ fn main() {
 
     // Apply GLWE x GGSW
     {
-        let size = ct_glwe.size() + res_prepared.dsize().as_usize();
-        module.glwe_external_product_assign(&mut ct_glwe, &res_prepared, size, &mut scratch.borrow());
+        module.glwe_external_product_assign(&mut ct_glwe, &res_prepared, &mut scratch.borrow());
     }
 
     // Decrypt

@@ -10,14 +10,14 @@ use crate::{CKKSResult as Result, ckks_ensure};
 use anyhow::Context;
 use poulpy_core::layouts::{
     Compact, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyPreparedToBackendRef, GLWEInfos, GLWETensorKeyPreparedToBackendRef,
-    GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
+    GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos, TorusPrecision,
 };
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
 
 use super::ops::PaCoSlotOps;
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSMeta,
-    api::{CKKSAddOps, CKKSConjugateOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSSubOps, PaCoScalar},
+    api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSSubOps, PaCoScalar},
     layouts::{
         CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext,
         paco::{
@@ -32,7 +32,12 @@ use crate::{
 /// Metadata predicted for a direct PaCo branch after the final, budget-neutral
 /// scale relabel. Computing it before evaluation prevents an expensive circuit
 /// from ending in scale or budget underflow.
-fn checked_output_meta<B: CKKSCtBounds>(plan: &PaCoPlan, input: &impl CKKSCtBounds, bsk: &B) -> Result<(usize, usize)> {
+fn checked_output_meta<B: CKKSCtBounds>(
+    plan: &PaCoPlan,
+    input: &impl CKKSCtBounds,
+    output_k: usize,
+    bsk: &B,
+) -> Result<(usize, usize)> {
     let input_scale = i128::try_from(input.log_delta()).context("PaCo input scale does not fit signed arithmetic")?;
     let bootstrap_scale = i128::try_from(bsk.log_delta()).context("PaCo bootstrap scale does not fit signed arithmetic")?;
     let shift = i128::from(plan.log_q())
@@ -46,16 +51,45 @@ fn checked_output_meta<B: CKKSCtBounds>(plan: &PaCoPlan, input: &impl CKKSCtBoun
     ckks_ensure!(output_scale >= 0, "PaCo output scale would be negative ({output_scale})");
     let output_scale = usize::try_from(output_scale).context("PaCo output scale does not fit usize")?;
 
-    let final_k = bsk
+    // `k_out` is the maximum final output level: the bootstrapping-key (seed) width
+    // minus the budget the circuit consumes. The caller may request any output level
+    // up to `k_out`; the branch then evaluates at working level `output_k + circuit_depth`
+    // (< the seed width when `output_k < k_out`), so a lower level runs the whole circuit
+    // narrower — genuinely cheaper.
+    let k_out = bsk
         .k()
         .as_usize()
         .checked_sub(plan.consumed_bits())
         .context("PaCo key width is smaller than the plan's budget consumption")?;
     ckks_ensure!(
-        output_scale <= final_k,
-        "PaCo output scale {output_scale} exceeds the post-bootstrap torus width {final_k}",
+        output_k <= k_out,
+        "PaCo output level {output_k} exceeds the maximum bootstrap output level {k_out}",
     );
-    Ok((output_scale, final_k))
+    ckks_ensure!(
+        output_scale <= output_k,
+        "PaCo output scale {output_scale} exceeds the requested output width {output_k}",
+    );
+    Ok((output_scale, output_k))
+}
+
+/// Working torus width the branch evaluates at for a requested `output_k`.
+///
+/// The blind-rotation output `bsk·β` naturally lands at `bsk.k() - log_delta_bsk`, and
+/// the DFT/product stages consume `consumed_bits - log_delta_bsk` more (`circuit_depth`).
+/// Allocating the working accumulator at `output_k + circuit_depth` makes the first
+/// multiply produce the phase directly at that width (a value-preserving rounding of the
+/// low bits, since ct×pt targets `dst.k()`), so the fixed-depth circuit lands exactly on
+/// `output_k`. At `output_k == k_out` this equals the phase's natural width (no rounding);
+/// below it the whole circuit runs narrower — genuinely cheaper.
+pub(crate) fn branch_working_k(plan: &PaCoPlan, output_k: usize) -> Result<usize> {
+    let circuit_depth = plan
+        .consumed_bits()
+        .checked_sub(plan.log_delta_bsk())
+        .context("PaCo consumed budget is smaller than the seed rescale")?;
+    output_k
+        .checked_add(circuit_depth)
+        .context("PaCo working torus width overflows usize")
+        .map_err(Into::into)
 }
 
 /// Validates the runtime ciphertexts and every key reachable through a custom
@@ -138,10 +172,6 @@ where
     );
 
     validate_backend_storage_capacity::<BE, _>("PaCo output", output)?;
-    let output_capacity = output
-        .max_size()
-        .checked_mul(output.base2k().as_usize())
-        .context("PaCo output storage capacity overflows usize")?;
     let bsk = keys.bootstrapping_keys();
     let canonical = &bsk[0];
     ckks_ensure!(
@@ -150,12 +180,11 @@ where
         canonical.k(),
         plan.max_plaintext_width(),
     );
-    ckks_ensure!(
-        output_capacity >= canonical.k().as_usize(),
-        "PaCo output capacity {} bits is smaller than bootstrapping-key width {}",
-        output_capacity,
-        canonical.k(),
-    );
+    // The caller allocates `output` at the final level it wants, up to `k_out`; the
+    // circuit runs at working level `output.k() + consumed_bits` in scratch (see the
+    // branch executor). This both validates `output.k() <= k_out` and yields the
+    // output metadata reused below.
+    let output_meta = checked_output_meta(plan, input, output.k().as_usize(), canonical)?;
     for (index, key) in bsk.iter().enumerate() {
         ckks_ensure!(
             key.n().as_usize() == plan.n(),
@@ -200,11 +229,11 @@ where
         );
     }
 
-    // Automorphism and multiplication keyswitches size their working result
-    // from the destination's allocated limb capacity, not only its current
-    // semantic width. A caller may supply a deliberately overallocated output,
-    // so validate the keys against the widest buffer the branch can expose.
-    let working_size = output.max_size().max(canonical.max_size());
+    // Automorphism and multiplication keyswitches size their working result from the
+    // working accumulator's limb capacity (`branch_working_k`). `output.k() <= k_out`
+    // keeps this within the gadget keys' capacity, but re-validate defensively (custom
+    // key managers may under-size).
+    let working_size = branch_working_k(plan, output_meta.1)?.div_ceil(context.base2k().as_usize());
 
     let tensor_view = GLWETensorKeyPreparedToBackendRef::to_backend_ref(keys.tensor_key());
     validate_gadget_backend_view(
@@ -245,7 +274,7 @@ where
         )?;
     }
 
-    checked_output_meta(plan, input, canonical)
+    Ok(output_meta)
 }
 
 /// Evaluates one direct PaCo branch into caller-provided `output`.
@@ -270,6 +299,7 @@ where
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
         + PaCoSlotOps<BE>
         + CKKSLinearTransformationOps<BE>
         + CKKSModuleAlloc<BE>
@@ -282,6 +312,17 @@ where
     let (output_scale, expected_final_k) = output_meta;
     let plan = context.plan();
     let bsk = keys.bootstrapping_keys();
+
+    // The circuit runs in a dedicated accumulator sized to `output_k + circuit_depth`
+    // (see `branch_working_k`), NOT in the caller's `output`. This truncates the seed
+    // to the width whose post-stage result is exactly `expected_final_k`, so a lower
+    // requested output level runs the entire circuit narrower — genuinely cheaper. The
+    // result is copied into `output` at the end. `output` is shadowed below so the
+    // circuit body operates on the working accumulator unchanged.
+    let working_k = branch_working_k(plan, expected_final_k)?;
+    let mut work = module.ckks_ciphertext_alloc(context.base2k(), TorusPrecision(working_k as u32));
+    let destination = output;
+    let output = &mut work;
 
     // Step 1 — Coefficient encoding. Turn the input ciphertext's public
     // coefficients into the four input-dependent β plaintexts the blind
@@ -297,12 +338,14 @@ where
     // product `Σ_t Enc(σ_t)·β_t` over the four structured-secret ciphertexts:
     // `bsk[0]·β[0]` seeds `output`, and each remaining `bsk[t]·β[t]`
     // accumulates through `temporary`.
-    let mut temporary = module.ckks_ciphertext_alloc(context.base2k(), bsk[0].k());
+    let mut temporary = module.ckks_ciphertext_alloc(context.base2k(), TorusPrecision(working_k as u32));
     module.ckks_mul_pt_vec_into(output, &bsk[0], &beta[0], scratch)?;
     for index in 1..4 {
         module.ckks_mul_pt_vec_into(&mut temporary, &bsk[index], &beta[index], scratch)?;
         module.ckks_add_assign(output, &temporary, scratch)?;
     }
+    // The blind-rotation multiplies target `output.k()` (= working_k), so the phase is
+    // produced directly at the working width with proper rounding — no relabel needed.
 
     // Step 3 — Homomorphic trace `Tr_{N/2 → slots}`. Collapse the redundant
     // coefficient-class copies of the phase into the working slot layout. One
@@ -402,5 +445,9 @@ where
         log_delta: output_scale,
         log_sparsity: gap.trailing_zeros() as usize,
     })?;
+
+    // Write the result into the caller's destination. The accumulator already carries
+    // exactly `expected_final_k` (= the requested output level), so the copy is lossless.
+    module.ckks_copy(destination, &*output, scratch)?;
     Ok(())
 }

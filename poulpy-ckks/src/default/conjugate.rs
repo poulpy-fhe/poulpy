@@ -1,7 +1,7 @@
 use crate::CKKSResult as Result;
 use poulpy_core::{
     GLWEAutomorphism, GLWEShift,
-    layouts::{GGLWEInfos, GGLWEPreparedToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos},
+    layouts::{GGLWEInfos, GGLWEPreparedToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement},
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
@@ -35,9 +35,9 @@ pub trait CKKSConjugateDefault<BE: Backend> {
         let log_budget = checked_log_budget_sub("conjugate", src.log_budget(), offset)?;
         if offset != 0 {
             self.glwe_lsh(dst, src, offset, scratch);
-            self.glwe_automorphism_assign(dst, key, dst.max_size() + key.dsize().as_usize(), scratch);
+            self.glwe_automorphism_assign(dst, key, scratch);
         } else {
-            self.glwe_automorphism(dst, src, key, src.max_size() + key.dsize().as_usize(), scratch);
+            self.glwe_automorphism(dst, src, key, scratch);
         }
 
         dst.set_meta(src.meta());
@@ -51,7 +51,7 @@ pub trait CKKSConjugateDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + GLWEInfos,
         K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
-        self.glwe_automorphism_assign(dst, key, dst.max_size() + key.dsize().as_usize(), scratch);
+        self.glwe_automorphism_assign(dst, key, scratch);
         Ok(())
     }
 }

@@ -33,7 +33,6 @@
 
 use crate::CKKSAtkBounds;
 use crate::{CKKSResult as Result, ckks_ensure};
-use anyhow::Context;
 use poulpy_core::{
     GLWEAutomorphism,
     layouts::{
@@ -150,13 +149,7 @@ where
                         op: "paco_slot_trace",
                         rotation: rot,
                     })?;
-            // Canonical keyswitch output size (cf. `ckks_rotate_into_default`):
-            // the operand plus `dsize` guard limbs of keyswitch noise.
-            let key_size = ct
-                .max_size()
-                .checked_add(key.dsize().as_usize())
-                .context("PaCo trace keyswitch width overflows usize")?;
-            self.glwe_automorphism_add_assign(ct, key, key_size, scratch);
+            self.glwe_automorphism_add_assign(ct, key, scratch);
         }
         Ok(())
     }

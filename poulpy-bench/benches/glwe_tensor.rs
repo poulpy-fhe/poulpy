@@ -13,21 +13,21 @@ fn glwe_infos() -> GLWELayout {
 
 fn tsk_infos() -> GLWETensorKeyLayout {
     let p = &poulpy_bench::params::BenchParams::get().core;
+    let (dnum, k_aux) = poulpy_bench::params::key_dnum_k_aux(p.k + p.dsize * p.base2k, p.base2k, p.dsize);
     GLWETensorKeyLayout {
         n: Degree(p.n),
         base2k: Base2K(p.base2k),
-        k: TorusPrecision(p.k + p.dsize * p.base2k),
+        k_aux: TorusPrecision(k_aux),
         rank: Rank(p.rank),
         dsize: Dsize(p.dsize),
-        dnum: Dnum(p.k.div_ceil(p.dsize * p.base2k)),
+        dnum: Dnum(dnum),
     }
 }
 
 fn bench_glwe_tensor_relinearize(c: &mut Criterion) {
-    let p = &poulpy_bench::params::BenchParams::get().core;
     poulpy_bench::for_each_backend!(
         poulpy_bench::bench_suite::core::glwe_tensor::bench_glwe_tensor_relinearize,
-        &glwe_infos(), &tsk_infos(), p.dsize as usize;
+        &glwe_infos(), &tsk_infos();
         c
     );
 }

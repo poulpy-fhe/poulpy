@@ -53,6 +53,10 @@ impl<D: Data> GLWEInfos for GLWEAutomorphismKeyCompressed<D> {
 }
 
 impl<D: Data> GGLWEInfos for GLWEAutomorphismKeyCompressed<D> {
+    fn k_aux(&self) -> TorusPrecision {
+        self.key.k_aux()
+    }
+
     fn rank_in(&self) -> Rank {
         self.key.rank_in()
     }
@@ -96,16 +100,16 @@ impl GLWEAutomorphismKeyCompressed<Vec<u8>> {
         Self::alloc(
             infos.n(),
             infos.base2k(),
-            infos.k(),
-            infos.rank(),
             infos.dnum(),
             infos.dsize(),
+            infos.k_aux(),
+            infos.rank(),
         )
     }
 
-    pub(crate) fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank, dnum: Dnum, dsize: Dsize) -> Self {
+    pub(crate) fn alloc(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> Self {
         GLWEAutomorphismKeyCompressed {
-            key: GGLWECompressed::alloc(n, base2k, k, rank, rank, dnum, dsize),
+            key: GGLWECompressed::alloc(n, base2k, dnum, dsize, k_aux, rank, rank),
             p: 0,
         }
     }
@@ -117,15 +121,15 @@ impl GLWEAutomorphismKeyCompressed<Vec<u8>> {
         Self::bytes_of(
             infos.n(),
             infos.base2k(),
-            infos.k(),
-            infos.rank(),
             infos.dnum(),
             infos.dsize(),
+            infos.k_aux(),
+            infos.rank(),
         )
     }
 
-    pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank, dnum: Dnum, dsize: Dsize) -> usize {
-        GGLWECompressed::bytes_of(n, base2k, k, rank, dnum, dsize)
+    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
+        GGLWECompressed::bytes_of(n, base2k, dnum, dsize, k_aux, rank)
     }
 }
 

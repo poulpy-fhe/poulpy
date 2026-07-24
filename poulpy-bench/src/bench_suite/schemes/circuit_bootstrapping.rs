@@ -50,14 +50,14 @@ pub fn bench_circuit_bootstrapping<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend
             n_glwe: 1024_u32.into(),
             n_lwe: 574_u32.into(),
             base2k: 13_u32.into(),
-            k: 52_u32.into(),
+            k_aux: 13_u32.into(),
             dnum: 3_u32.into(),
             rank: 2_u32.into(),
         },
         atk_layout: GLWEAutomorphismKeyLayout {
             n: 1024_u32.into(),
             base2k: 13_u32.into(),
-            k: 52_u32.into(),
+            k_aux: 13_u32.into(),
             dnum: 3_u32.into(),
             dsize: Dsize(1),
             rank: 2_u32.into(),
@@ -65,7 +65,7 @@ pub fn bench_circuit_bootstrapping<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend
         tsk_layout: GGLWEToGGSWKeyLayout {
             n: 1024_u32.into(),
             base2k: 13_u32.into(),
-            k: 52_u32.into(),
+            k_aux: 13_u32.into(),
             dnum: 3_u32.into(),
             dsize: Dsize(1),
             rank: 2_u32.into(),
@@ -74,8 +74,8 @@ pub fn bench_circuit_bootstrapping<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend
     let ggsw_infos: GGSWLayout = GGSWLayout {
         n: 1024_u32.into(),
         base2k: 13_u32.into(),
-        k: 26_u32.into(),
-        dnum: 2_u32.into(),
+        k_aux: 13_u32.into(),
+        dnum: 1_u32.into(),
         dsize: 1_u32.into(),
         rank: 2_u32.into(),
     };

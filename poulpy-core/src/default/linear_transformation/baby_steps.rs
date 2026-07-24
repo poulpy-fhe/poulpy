@@ -199,7 +199,6 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
     cache: &mut LinearTransformationBabySteps<BE>,
     a: &A,
     keys: &H,
-    key_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
@@ -227,9 +226,9 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
     let has_nonzero_rotation = cache.values.keys().any(|&rot| rot != 0);
     let (use_hoisted, key_size) = if has_nonzero_rotation {
         let key_infos = keys.automorphism_key_infos();
-        (a.base2k() == key_infos.base2k(), key_size.min(key_infos.size()))
+        (a.base2k() == key_infos.base2k(), key_infos.work_size(a.k()))
     } else {
-        (false, key_size)
+        (false, a.size())
     };
 
     if use_hoisted {
@@ -282,7 +281,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
                     .get_automorphism_key(module.galois_element(rot))
                     .unwrap_or_else(|| panic!("missing automorphism key for baby-step rotation {rot}"));
                 let (mut baby, mut baby_scratch) = scratch.borrow().take_glwe_scratch(a);
-                module.glwe_automorphism(&mut baby, a, key, key_size, &mut baby_scratch.borrow());
+                module.glwe_automorphism(&mut baby, a, key, &mut baby_scratch.borrow());
                 let baby_ref = baby.to_backend_ref();
                 module.cnv_prepare_left(
                     &mut prepared.to_backend_mut(),

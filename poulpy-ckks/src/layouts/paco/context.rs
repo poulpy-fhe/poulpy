@@ -22,7 +22,7 @@
 use std::marker::PhantomData;
 
 use anyhow::{Context, Result, ensure};
-use poulpy_core::layouts::{Base2K, DiagonalArithmetic};
+use poulpy_core::layouts::{Base2K, DiagonalArithmetic, LWEInfos, TorusPrecision};
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
 
 use super::plan::{PaCoDFTPlan, PaCoPlan};
@@ -342,6 +342,24 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
     /// The validated plan used to compile this context.
     pub fn plan(&self) -> &PaCoPlan {
         &self.plan
+    }
+
+    /// Maximum final output level `k` a bootstrap can produce with `keys`: the
+    /// bootstrapping-key (seed) width minus the budget the circuit consumes.
+    ///
+    /// Allocate the bootstrap output ciphertext at any `k` up to this value (e.g.
+    /// `module.ckks_ciphertext_alloc(ctx.base2k(), ctx.max_output_k(&keys)?)`); a
+    /// lower level runs the whole circuit at a narrower — and cheaper — working level.
+    /// Errors if the plan consumes more budget than the key width provides.
+    pub fn max_output_k<K>(&self, keys: &K) -> Result<TorusPrecision>
+    where
+        K: super::keyset::PaCoKeys<BE>,
+    {
+        let seed_k = keys.bootstrapping_keys()[0].k().as_usize();
+        let k_out = seed_k
+            .checked_sub(self.plan.consumed_bits())
+            .context("PaCo bootstrapping-key width is smaller than the plan's budget consumption")?;
+        Ok(TorusPrecision(k_out as u32))
     }
 
     /// Limb radix expected by ciphertexts, plaintexts, and evaluation keys.

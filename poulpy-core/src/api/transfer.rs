@@ -176,7 +176,7 @@ impl<To: Backend> ModuleTransfer<To> for Module<To> {
         let _ = self;
         GGLWE {
             data: transfer_mat_znx::<From, To>(&src.data),
-            k: src.k,
+            k_aux: src.k_aux,
             base2k: src.base2k,
             dsize: src.dsize,
         }
@@ -198,7 +198,7 @@ impl<To: Backend> ModuleTransfer<To> for Module<To> {
         let _ = self;
         GGSW {
             data: transfer_mat_znx::<From, To>(&src.data),
-            k: src.k,
+            k_aux: src.k_aux,
             base2k: src.base2k,
             dsize: src.dsize,
         }

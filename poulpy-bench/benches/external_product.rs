@@ -5,8 +5,8 @@ fn bench_glwe_external_product(c: &mut Criterion) {
     let p = &poulpy_bench::params::BenchParams::get().core;
     let n = p.n;
     let base2k = p.base2k;
+    let (dnum, k_aux) = poulpy_bench::params::key_dnum_k_aux(p.k, base2k, p.dsize);
     let dsize = Dsize(p.dsize);
-    let dnum = Dnum(p.dnum());
 
     let glwe_infos = GLWELayout {
         n: n.into(),
@@ -17,9 +17,9 @@ fn bench_glwe_external_product(c: &mut Criterion) {
     let ggsw_infos = GGSWLayout {
         n: n.into(),
         base2k: base2k.into(),
-        k: p.k.into(),
+        k_aux: k_aux.into(),
         rank: p.rank.into(),
-        dnum,
+        dnum: Dnum(dnum),
         dsize,
     };
     poulpy_bench::for_each_backend!(
@@ -33,16 +33,15 @@ fn bench_glwe_external_product_assign(c: &mut Criterion) {
     let p = &poulpy_bench::params::BenchParams::get().core;
     let n = p.n;
     let base2k = p.base2k;
-    let k = p.k;
+    let (dnum, k_aux) = poulpy_bench::params::key_dnum_k_aux(p.k, base2k, p.dsize);
     let dsize = Dsize(p.dsize);
-    let dnum = Dnum(p.dnum());
 
     let infos = GGSWLayout {
         n: n.into(),
         base2k: base2k.into(),
-        k: k.into(),
+        k_aux: k_aux.into(),
         rank: p.rank.into(),
-        dnum,
+        dnum: Dnum(dnum),
         dsize,
     };
     poulpy_bench::for_each_backend!(

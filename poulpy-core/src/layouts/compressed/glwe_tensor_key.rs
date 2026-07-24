@@ -48,6 +48,10 @@ impl<D: Data> GLWEInfos for GLWETensorKeyCompressed<D> {
 }
 
 impl<D: Data> GGLWEInfos for GLWETensorKeyCompressed<D> {
+    fn k_aux(&self) -> TorusPrecision {
+        self.0.k_aux()
+    }
+
     fn rank_in(&self) -> Rank {
         self.rank_out()
     }
@@ -93,16 +97,16 @@ impl GLWETensorKeyCompressed<Vec<u8>> {
         Self::alloc(
             infos.n(),
             infos.base2k(),
-            infos.k(),
-            infos.rank(),
             infos.dnum(),
             infos.dsize(),
+            infos.k_aux(),
+            infos.rank(),
         )
     }
 
-    pub(crate) fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank, dnum: Dnum, dsize: Dsize) -> Self {
+    pub(crate) fn alloc(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> Self {
         let pairs: u32 = (((rank.as_u32() + 1) * rank.as_u32()) >> 1).max(1);
-        GLWETensorKeyCompressed(GGLWECompressed::alloc(n, base2k, k, Rank(pairs), rank, dnum, dsize))
+        GLWETensorKeyCompressed(GGLWECompressed::alloc(n, base2k, dnum, dsize, k_aux, Rank(pairs), rank))
     }
 
     pub fn bytes_of_from_infos<A>(infos: &A) -> usize
@@ -112,16 +116,16 @@ impl GLWETensorKeyCompressed<Vec<u8>> {
         Self::bytes_of(
             infos.n(),
             infos.base2k(),
-            infos.k(),
-            infos.rank(),
             infos.dnum(),
             infos.dsize(),
+            infos.k_aux(),
+            infos.rank(),
         )
     }
 
-    pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank, dnum: Dnum, dsize: Dsize) -> usize {
+    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
         let pairs: u32 = (((rank.as_u32() + 1) * rank.as_u32()) >> 1).max(1);
-        GGLWECompressed::bytes_of(n, base2k, k, Rank(pairs), dnum, dsize)
+        GGLWECompressed::bytes_of(n, base2k, dnum, dsize, k_aux, Rank(pairs))
     }
 }
 

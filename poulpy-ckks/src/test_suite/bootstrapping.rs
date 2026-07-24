@@ -320,7 +320,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     //    /message-ratio): `I(X)·q` becomes the integer part, the message the
     //    residue `Δ·c/q`.
     if let Some((dense_to_sparse, _)) = bsk.encapsulation_keys() {
-        module.glwe_keyswitch_assign(&mut ct0, dense_to_sparse, dense_to_sparse.max_size(), &mut scratch.borrow());
+        module.glwe_keyswitch_assign(&mut ct0, dense_to_sparse, &mut scratch.borrow());
     }
     println!("denseToSparse: {:?}", now.elapsed());
 
@@ -328,7 +328,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     let mut ct = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     module.ckks_mod_up_into(&mut ct, &ct0, &mut scratch.borrow()).unwrap();
     if let Some((_, sparse_to_dense)) = bsk.encapsulation_keys() {
-        module.glwe_keyswitch_assign(&mut ct, sparse_to_dense, sparse_to_dense.max_size(), &mut scratch.borrow());
+        module.glwe_keyswitch_assign(&mut ct, sparse_to_dense, &mut scratch.borrow());
     }
     ct.set_meta(meta(log_modulus_in, k_boot - log_modulus_in).meta);
     println!("ckks_mod_up_into: {:?}", now.elapsed());
@@ -698,12 +698,12 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
 
     // 1) (encapsulate) denseToSparse, ModUp, sparseToDense.
     if let Some((dense_to_sparse, _)) = bsk.encapsulation_keys() {
-        module.glwe_keyswitch_assign(&mut ct0, dense_to_sparse, dense_to_sparse.max_size(), &mut scratch.borrow());
+        module.glwe_keyswitch_assign(&mut ct0, dense_to_sparse, &mut scratch.borrow());
     }
     let mut ct = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     module.ckks_mod_up_into(&mut ct, &ct0, &mut scratch.borrow()).unwrap();
     if let Some((_, sparse_to_dense)) = bsk.encapsulation_keys() {
-        module.glwe_keyswitch_assign(&mut ct, sparse_to_dense, sparse_to_dense.max_size(), &mut scratch.borrow());
+        module.glwe_keyswitch_assign(&mut ct, sparse_to_dense, &mut scratch.borrow());
     }
     ct.set_meta(meta(log_modulus_in, k_boot - log_modulus_in).meta);
 
