@@ -135,12 +135,12 @@ impl BootstrappingPlan {
         if pipeline != BootstrappingPipeline::C2SFirst {
             return Err(invalid("S2C-first bootstrapping is not implemented".to_string()));
         }
-        if let Some(sse) = techniques.sparse_secret_encapsulation {
-            if sse.hamming_weight == 0 {
-                return Err(invalid(
-                    "sparse-secret encapsulation hamming_weight must be nonzero".to_string(),
-                ));
-            }
+        if let Some(sse) = techniques.sparse_secret_encapsulation
+            && sse.hamming_weight == 0
+        {
+            return Err(invalid(
+                "sparse-secret encapsulation hamming_weight must be nonzero".to_string(),
+            ));
         }
         if let Some(eval_round) = &techniques.eval_round_plus {
             if eval_round.coeffs_to_slots_bypass.kind() != DFTType::Encode {

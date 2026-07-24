@@ -125,12 +125,13 @@ fn glwe_layout() -> EncryptionLayout<GLWELayout> {
 }
 
 fn tsk_layout() -> EncryptionLayout<GLWETensorKeyLayout> {
-    let k = CT_K + DSIZE * BASE2K;
-    let dnum = CT_K.div_ceil(DSIZE * BASE2K);
+    let digit_bits = DSIZE * BASE2K;
+    let dnum = CT_K.div_ceil(digit_bits);
+    let k_aux = digit_bits + N.ilog2() as usize;
     EncryptionLayout::new_from_default_sigma(GLWETensorKeyLayout {
         n: N.into(),
         base2k: BASE2K.into(),
-        k_aux: (k - dnum * DSIZE * BASE2K).into(),
+        k_aux: k_aux.into(),
         rank: Rank(1),
         dsize: DSIZE.into(),
         dnum: dnum.into(),
