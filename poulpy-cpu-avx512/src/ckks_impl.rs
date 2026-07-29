@@ -70,11 +70,16 @@ select_avx512_encoding_transform!(NTT3x42Ifma);
 
 ::poulpy_cpu_ref::impl_ckks_encoding!(FFT64Avx512);
 ::poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(FFT64Avx512);
+::poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(FFT64Avx512);
 ::poulpy_cpu_ref::impl_ckks_encoding!(NTT4x30Avx512);
 ::poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(NTT4x30Avx512);
+::poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
 ::poulpy_cpu_ref::impl_ckks_encoding!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
 ::poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+::poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(NTT3x42Ifma);
 
 impl_ckks_add_defaults!(FFT64Avx512);
 impl_ckks_add_defaults!(NTT4x30Avx512);

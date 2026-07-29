@@ -30,6 +30,7 @@ mod plaintext;
 mod polynomial_evaluation;
 mod pow2;
 mod rotate;
+mod ship;
 mod sub;
 
 pub use add::CKKSAddImpl;
@@ -60,5 +61,6 @@ pub use pow2::CKKSPow2Impl;
 pub use pow2::impl_ckks_pow2_defaults;
 pub use rotate::CKKSRotateImpl;
 pub use rotate::impl_ckks_rotate_defaults;
+pub use ship::CKKSShipCoeffEncodingImpl;
 pub use sub::CKKSSubImpl;
 pub use sub::impl_ckks_sub_defaults;

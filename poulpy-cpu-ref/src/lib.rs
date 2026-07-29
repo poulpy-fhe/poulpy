@@ -21,6 +21,8 @@ pub mod ckks_encoding;
 mod ckks_impl;
 #[cfg(feature = "enable-ckks")]
 pub mod ckks_paco;
+#[cfg(feature = "enable-ckks")]
+pub mod ckks_ship;
 #[cfg(feature = "enable-core")]
 #[doc(hidden)]
 pub mod core_impl;
