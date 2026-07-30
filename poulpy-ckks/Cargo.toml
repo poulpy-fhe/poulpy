@@ -31,6 +31,7 @@ dashu-float = {workspace = true}
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 f128 = { version = "0.2", optional = true }
 
-# Reference for the portable-`Quad` bit-parity test.
-[target.'cfg(target_arch = "x86_64")'.dev-dependencies]
+# Reference for the portable-`Quad` bit-parity test. Excludes Apple: the crate
+# links libquadmath, which Apple's toolchain does not ship.
+[target.'cfg(all(target_arch = "x86_64", not(target_vendor = "apple")))'.dev-dependencies]
 f128 = "0.2"

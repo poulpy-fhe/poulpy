@@ -33,7 +33,48 @@ use rand_distr::num_traits::{Float, FloatConst};
 
 use crate::fft64::reim::{fft_avx2_fma::fft_avx2_fma, ifft_avx2_fma::ifft_avx2_fma};
 
-global_asm!(include_str!("fft16_avx2_fma.s"), include_str!("ifft16_avx2_fma.s"));
+// Mach-O: symbols carry a leading underscore, and `.hidden`/`.type`/`.size`/
+// `.note.GNU-stack` are ELF-only directives the Mach-O assembler rejects.
+#[cfg(target_vendor = "apple")]
+global_asm!(
+    ".text",
+    ".globl  _fft16_avx2_fma_asm",
+    ".private_extern _fft16_avx2_fma_asm",
+    ".p2align 4, 0x90",
+    "_fft16_avx2_fma_asm:",
+    ".att_syntax prefix",
+    include_str!("fft16_avx2_fma.s"),
+    ".text",
+    ".globl  _ifft16_avx2_fma_asm",
+    ".private_extern _ifft16_avx2_fma_asm",
+    ".p2align 4, 0x90",
+    "_ifft16_avx2_fma_asm:",
+    ".att_syntax prefix",
+    include_str!("ifft16_avx2_fma.s"),
+);
+
+#[cfg(not(target_vendor = "apple"))]
+global_asm!(
+    ".text",
+    ".globl  fft16_avx2_fma_asm",
+    ".hidden fft16_avx2_fma_asm",
+    ".p2align 4, 0x90",
+    ".type   fft16_avx2_fma_asm,@function",
+    "fft16_avx2_fma_asm:",
+    ".att_syntax prefix",
+    include_str!("fft16_avx2_fma.s"),
+    ".size   fft16_avx2_fma_asm, .-fft16_avx2_fma_asm",
+    ".text",
+    ".globl  ifft16_avx2_fma_asm",
+    ".hidden ifft16_avx2_fma_asm",
+    ".p2align 4, 0x90",
+    ".type   ifft16_avx2_fma_asm,@function",
+    "ifft16_avx2_fma_asm:",
+    ".att_syntax prefix",
+    include_str!("ifft16_avx2_fma.s"),
+    ".size   ifft16_avx2_fma_asm, .-ifft16_avx2_fma_asm",
+    ".section .note.GNU-stack,\"\",@progbits",
+);
 
 #[inline(always)]
 pub(crate) fn as_arr<const SIZE: usize, R: Float + FloatConst>(x: &[R]) -> &[R; SIZE] {

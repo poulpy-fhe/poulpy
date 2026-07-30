@@ -516,8 +516,8 @@ mod tests {
     /// bit-for-bit, transcendentals to ≤ 2 ULP (glibc and libquadmath are
     /// independent libms; an `f64`-then-widened bug would be off by ~2^60 ULP).
     ///
-    /// Only runs on x86_64, where the `f128` crate (libquadmath) is available.
-    #[cfg(target_arch = "x86_64")]
+    /// Only runs on non-Apple x86_64, where the `f128` crate (libquadmath) is available.
+    #[cfg(all(target_arch = "x86_64", not(target_vendor = "apple")))]
     #[test]
     fn matches_libquadmath_precision() {
         use f128::f128 as Lq;
