@@ -289,7 +289,7 @@ macro_rules! fwd_unary {
 /// crate's binary128 type (both are IEEE-754 binary128, identical bit layout),
 /// evaluated by libquadmath, and bit-cast back. Storage and exact arithmetic
 /// never leave the primitive type.
-#[cfg(all(feature = "libquadmath", target_arch = "x86_64"))]
+#[cfg(all(feature = "libquadmath", target_arch = "x86_64", not(target_vendor = "apple")))]
 mod quadmath {
     pub(super) type Lq = ::f128::f128;
 
@@ -312,11 +312,11 @@ macro_rules! transc_unary {
         $(
             #[inline]
             fn $method(self) -> Quad {
-                #[cfg(all(feature = "libquadmath", target_arch = "x86_64"))]
+                #[cfg(all(feature = "libquadmath", target_arch = "x86_64", not(target_vendor = "apple")))]
                 {
                     Quad(quadmath::from_lq(num_traits::Float::$method(quadmath::to_lq(self.0))))
                 }
-                #[cfg(not(all(feature = "libquadmath", target_arch = "x86_64")))]
+                #[cfg(not(all(feature = "libquadmath", target_arch = "x86_64", not(target_vendor = "apple"))))]
                 {
                     Quad(self.0.$method())
                 }
@@ -331,14 +331,14 @@ macro_rules! transc_binary {
         $(
             #[inline]
             fn $method(self, other: Quad) -> Quad {
-                #[cfg(all(feature = "libquadmath", target_arch = "x86_64"))]
+                #[cfg(all(feature = "libquadmath", target_arch = "x86_64", not(target_vendor = "apple")))]
                 {
                     Quad(quadmath::from_lq(num_traits::Float::$method(
                         quadmath::to_lq(self.0),
                         quadmath::to_lq(other.0),
                     )))
                 }
-                #[cfg(not(all(feature = "libquadmath", target_arch = "x86_64")))]
+                #[cfg(not(all(feature = "libquadmath", target_arch = "x86_64", not(target_vendor = "apple"))))]
                 {
                     Quad(self.0.$method(other.0))
                 }
@@ -428,12 +428,12 @@ impl Float for Quad {
 
     #[inline]
     fn sin_cos(self) -> (Quad, Quad) {
-        #[cfg(all(feature = "libquadmath", target_arch = "x86_64"))]
+        #[cfg(all(feature = "libquadmath", target_arch = "x86_64", not(target_vendor = "apple")))]
         {
             let (s, c) = num_traits::Float::sin_cos(quadmath::to_lq(self.0));
             (Quad(quadmath::from_lq(s)), Quad(quadmath::from_lq(c)))
         }
-        #[cfg(not(all(feature = "libquadmath", target_arch = "x86_64")))]
+        #[cfg(not(all(feature = "libquadmath", target_arch = "x86_64", not(target_vendor = "apple"))))]
         {
             let (s, c) = self.0.sin_cos();
             (Quad(s), Quad(c))

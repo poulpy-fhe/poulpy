@@ -21,7 +21,7 @@ The crate exposes:
 
 `poulpy-ckks` requires **nightly Rust** by default: the portable quad-precision scalar [`Quad`] is a newtype over the unstable primitive `f128` (`#![feature(f128)]`). The workspace pins a known-good nightly in `rust-toolchain.toml`.
 
-On x86_64, the optional `libquadmath` feature routes `Quad`'s transcendental math through libquadmath (via the `f128` crate) for faster on-the-fly FFT-table builds; the `Quad` type, its storage, and exact arithmetic are identical in every configuration. On other architectures the feature is a no-op.
+On non-Apple x86_64, the optional `libquadmath` feature routes `Quad`'s transcendental math through libquadmath (via the `f128` crate) for faster on-the-fly FFT-table builds; the `Quad` type, its storage, and exact arithmetic are identical in every configuration. Elsewhere — other architectures, and macOS, whose toolchain does not ship libquadmath — the feature is a no-op.
 
 ## Tests And Backend Integration
 
