@@ -4,13 +4,19 @@
 //! `f128`, implementing the `num_traits` surface (`Float`, `FloatConst`,
 //! `From`/`ToPrimitive`) that `num_traits` does not provide for `f128` itself.
 //! It replaces the `f128` crate (libquadmath, x86_64-only) as the *type* so the
-//! binary128 path works on both x86_64 and aarch64-linux-gnu. The `f128` math
-//! symbols are only guaranteed on targets with "reliable" f128 math (those two).
+//! binary128 path works on both x86_64 and aarch64-linux-gnu.
 //!
-//! Under the `libquadmath` feature on x86_64, only the transcendental methods
-//! are routed through libquadmath (via the `f128` crate) — the type, its
-//! storage, and all exact operations are unchanged, so `Quad` remains the same
-//! `Pod` newtype in every configuration.
+//! `+ - * /`, comparisons and conversions are compiler_builtins soft-float and
+//! correct everywhere. Everything else — `%`, the transcendentals, `sqrt`, and
+//! the rounding family — lowers to a libm call, which is only binary128 where
+//! `long double` is: `*f128` symbols on x86_64-linux, `*l` on aarch64-linux.
+//! Apple lowers to the same `*l` names over a 64-bit (arm64) or 80-bit x87
+//! (x86_64) `long double`, so those results are wrong there. `backing` is the
+//! single seam where that routing is decided.
+//!
+//! Under the `libquadmath` feature on non-Apple x86_64 the same set is routed
+//! through libquadmath instead — the type and its storage are unchanged, so
+//! `Quad` remains the same `Pod` newtype in every configuration.
 
 use core::cmp::Ordering;
 use core::fmt;
@@ -92,7 +98,16 @@ bin_op!(Add, add, +);
 bin_op!(Sub, sub, -);
 bin_op!(Mul, mul, *);
 bin_op!(Div, div, /);
-bin_op!(Rem, rem, %);
+
+// `%` is the one operator that lowers to a libm call (`fmodf128` / `fmodl`)
+// rather than a soft-float builtin, so it goes through `backing` too.
+impl Rem for Quad {
+    type Output = Quad;
+    #[inline]
+    fn rem(self, rhs: Quad) -> Quad {
+        Quad(backing::rem(self.0, rhs.0))
+    }
+}
 
 impl Neg for Quad {
     type Output = Quad;
@@ -116,7 +131,13 @@ assign_op!(AddAssign, add_assign, +=);
 assign_op!(SubAssign, sub_assign, -=);
 assign_op!(MulAssign, mul_assign, *=);
 assign_op!(DivAssign, div_assign, /=);
-assign_op!(RemAssign, rem_assign, %=);
+
+impl RemAssign for Quad {
+    #[inline]
+    fn rem_assign(&mut self, rhs: Quad) {
+        self.0 = backing::rem(self.0, rhs.0);
+    }
+}
 
 impl Sum for Quad {
     #[inline]
@@ -284,64 +305,149 @@ macro_rules! fwd_unary {
     };
 }
 
-/// libquadmath backing for the transcendental methods (x86_64 +
-/// `libquadmath` only): primitive `f128` values are bit-cast to the `f128`
-/// crate's binary128 type (both are IEEE-754 binary128, identical bit layout),
-/// evaluated by libquadmath, and bit-cast back. Storage and exact arithmetic
-/// never leave the primitive type.
-#[cfg(all(feature = "libquadmath", target_arch = "x86_64", not(target_vendor = "apple")))]
-mod quadmath {
-    pub(super) type Lq = ::f128::f128;
+/// Single routing seam for every `Quad` method that lowers to a libm call.
+///
+/// The target predicate is written here and nowhere else. Callers go through
+/// [`routed_unary`] / [`routed_binary`], so adding a third backing is local to
+/// this module.
+mod backing {
+    #[cfg(all(feature = "libquadmath", target_arch = "x86_64", not(target_vendor = "apple")))]
+    pub(super) use quadmath::*;
 
-    #[inline(always)]
-    pub(super) fn to_lq(x: f128) -> Lq {
-        // `Lq` is a transparent 16-byte binary128; every bit pattern is valid.
-        unsafe { core::mem::transmute::<u128, Lq>(x.to_bits()) }
+    #[cfg(not(all(feature = "libquadmath", target_arch = "x86_64", not(target_vendor = "apple"))))]
+    pub(super) use primitive::*;
+
+    /// Nightly primitive `f128`. Correct wherever `long double` is binary128.
+    #[cfg(not(all(feature = "libquadmath", target_arch = "x86_64", not(target_vendor = "apple"))))]
+    mod primitive {
+        macro_rules! unary {
+            ($($f:ident),+ $(,)?) => {
+                $(
+                    #[inline(always)]
+                    pub fn $f(x: f128) -> f128 {
+                        x.$f()
+                    }
+                )+
+            };
+        }
+
+        macro_rules! binary {
+            ($($f:ident),+ $(,)?) => {
+                $(
+                    #[inline(always)]
+                    pub fn $f(x: f128, y: f128) -> f128 {
+                        x.$f(y)
+                    }
+                )+
+            };
+        }
+
+        unary!(
+            floor, ceil, round, trunc, fract, sqrt, cbrt, exp, exp2, ln, log2, log10, sin, cos, tan, asin, acos, atan, exp_m1,
+            ln_1p, sinh, cosh, tanh, asinh, acosh, atanh,
+        );
+        binary!(powf, log, hypot, atan2);
+
+        #[inline(always)]
+        pub fn rem(x: f128, y: f128) -> f128 {
+            x % y
+        }
+
+        #[inline(always)]
+        pub fn mul_add(x: f128, a: f128, b: f128) -> f128 {
+            x.mul_add(a, b)
+        }
+
+        #[inline(always)]
+        pub fn sin_cos(x: f128) -> (f128, f128) {
+            x.sin_cos()
+        }
     }
 
-    #[inline(always)]
-    pub(super) fn from_lq(x: Lq) -> f128 {
-        f128::from_bits(unsafe { core::mem::transmute::<Lq, u128>(x) })
+    /// libquadmath, reached by bit-casting to the `f128` crate's binary128 type
+    /// (identical layout) and back. Storage never leaves the primitive.
+    #[cfg(all(feature = "libquadmath", target_arch = "x86_64", not(target_vendor = "apple")))]
+    mod quadmath {
+        use num_traits::Float;
+
+        type Lq = ::f128::f128;
+
+        #[inline(always)]
+        fn to_lq(x: f128) -> Lq {
+            // `Lq` is a transparent 16-byte binary128; every bit pattern is valid.
+            unsafe { core::mem::transmute::<u128, Lq>(x.to_bits()) }
+        }
+
+        #[inline(always)]
+        fn from_lq(x: Lq) -> f128 {
+            f128::from_bits(unsafe { core::mem::transmute::<Lq, u128>(x) })
+        }
+
+        macro_rules! unary {
+            ($($f:ident),+ $(,)?) => {
+                $(
+                    #[inline(always)]
+                    pub fn $f(x: f128) -> f128 {
+                        from_lq(Float::$f(to_lq(x)))
+                    }
+                )+
+            };
+        }
+
+        macro_rules! binary {
+            ($($f:ident),+ $(,)?) => {
+                $(
+                    #[inline(always)]
+                    pub fn $f(x: f128, y: f128) -> f128 {
+                        from_lq(Float::$f(to_lq(x), to_lq(y)))
+                    }
+                )+
+            };
+        }
+
+        unary!(
+            floor, ceil, round, trunc, fract, sqrt, cbrt, exp, exp2, ln, log2, log10, sin, cos, tan, asin, acos, atan, exp_m1,
+            ln_1p, sinh, cosh, tanh, asinh, acosh, atanh,
+        );
+        binary!(powf, log, hypot, atan2);
+
+        #[inline(always)]
+        pub fn rem(x: f128, y: f128) -> f128 {
+            from_lq(to_lq(x) % to_lq(y))
+        }
+
+        #[inline(always)]
+        pub fn mul_add(x: f128, a: f128, b: f128) -> f128 {
+            from_lq(Float::mul_add(to_lq(x), to_lq(a), to_lq(b)))
+        }
+
+        #[inline(always)]
+        pub fn sin_cos(x: f128) -> (f128, f128) {
+            let (s, c) = Float::sin_cos(to_lq(x));
+            (from_lq(s), from_lq(c))
+        }
     }
 }
 
-/// Unary transcendentals: primitive `f128` math by default, libquadmath under
-/// the `libquadmath` feature on x86_64.
-macro_rules! transc_unary {
+/// Unary methods that lower to a libm call, routed through [`backing`].
+macro_rules! routed_unary {
     ($($method:ident),+ $(,)?) => {
         $(
             #[inline]
             fn $method(self) -> Quad {
-                #[cfg(all(feature = "libquadmath", target_arch = "x86_64", not(target_vendor = "apple")))]
-                {
-                    Quad(quadmath::from_lq(num_traits::Float::$method(quadmath::to_lq(self.0))))
-                }
-                #[cfg(not(all(feature = "libquadmath", target_arch = "x86_64", not(target_vendor = "apple"))))]
-                {
-                    Quad(self.0.$method())
-                }
+                Quad(backing::$method(self.0))
             }
         )+
     };
 }
 
-/// Binary transcendentals, same routing as [`transc_unary`].
-macro_rules! transc_binary {
+/// Binary methods that lower to a libm call, routed through [`backing`].
+macro_rules! routed_binary {
     ($($method:ident),+ $(,)?) => {
         $(
             #[inline]
             fn $method(self, other: Quad) -> Quad {
-                #[cfg(all(feature = "libquadmath", target_arch = "x86_64", not(target_vendor = "apple")))]
-                {
-                    Quad(quadmath::from_lq(num_traits::Float::$method(
-                        quadmath::to_lq(self.0),
-                        quadmath::to_lq(other.0),
-                    )))
-                }
-                #[cfg(not(all(feature = "libquadmath", target_arch = "x86_64", not(target_vendor = "apple"))))]
-                {
-                    Quad(self.0.$method(other.0))
-                }
+                Quad(backing::$method(self.0, other.0))
             }
         )+
     };
@@ -383,12 +489,13 @@ impl Float for Quad {
 
     fwd_predicate!(is_nan, is_infinite, is_finite, is_normal, is_sign_positive, is_sign_negative);
 
-    // Exact / correctly-rounded operations: always the primitive.
-    fwd_unary!(floor, ceil, round, trunc, fract, abs, signum, recip, sqrt);
+    // Pure bit manipulation: no libm call, always the primitive.
+    fwd_unary!(abs, signum, recip);
 
-    // Transcendentals: libquadmath-backed under the `libquadmath` feature.
-    transc_unary!(
-        exp, exp2, ln, log2, log10, cbrt, sin, cos, tan, asin, acos, atan, exp_m1, ln_1p, sinh, cosh, tanh, asinh, acosh, atanh,
+    // Everything that lowers to a libm call, including the rounding family.
+    routed_unary!(
+        floor, ceil, round, trunc, fract, sqrt, cbrt, exp, exp2, ln, log2, log10, sin, cos, tan, asin, acos, atan, exp_m1, ln_1p,
+        sinh, cosh, tanh, asinh, acosh, atanh,
     );
 
     #[inline]
@@ -398,15 +505,16 @@ impl Float for Quad {
 
     #[inline]
     fn mul_add(self, a: Quad, b: Quad) -> Quad {
-        Quad(self.0.mul_add(a.0, b.0))
+        Quad(backing::mul_add(self.0, a.0, b.0))
     }
 
+    // `__powitf2`, a compiler_builtins soft-float routine: correct everywhere.
     #[inline]
     fn powi(self, n: i32) -> Quad {
         Quad(self.0.powi(n))
     }
 
-    transc_binary!(powf, log);
+    routed_binary!(powf, log);
 
     #[inline]
     fn max(self, other: Quad) -> Quad {
@@ -424,20 +532,12 @@ impl Float for Quad {
         if self.0 > other.0 { Quad(self.0 - other.0) } else { Quad(0.0) }
     }
 
-    transc_binary!(hypot, atan2);
+    routed_binary!(hypot, atan2);
 
     #[inline]
     fn sin_cos(self) -> (Quad, Quad) {
-        #[cfg(all(feature = "libquadmath", target_arch = "x86_64", not(target_vendor = "apple")))]
-        {
-            let (s, c) = num_traits::Float::sin_cos(quadmath::to_lq(self.0));
-            (Quad(quadmath::from_lq(s)), Quad(quadmath::from_lq(c)))
-        }
-        #[cfg(not(all(feature = "libquadmath", target_arch = "x86_64", not(target_vendor = "apple"))))]
-        {
-            let (s, c) = self.0.sin_cos();
-            (Quad(s), Quad(c))
-        }
+        let (s, c) = backing::sin_cos(self.0);
+        (Quad(s), Quad(c))
     }
 
     #[inline]
@@ -628,7 +728,13 @@ mod tests {
                 lq_bits(r - half_r),
                 "sub not bit-identical for input {xf}"
             );
-            exact += 3;
+            // `%` is `fmod`, exact and correctly rounded in both libms.
+            assert_eq!(
+                (q % half).to_bits(),
+                lq_bits(r % half_r),
+                "rem not bit-identical for input {xf}"
+            );
+            exact += 4;
 
             // powf transcendental
             worst_ulp = worst_ulp.max(ulp_diff(q.powf(half).to_bits(), lq_bits(LqFloat::powf(r, half_r))));

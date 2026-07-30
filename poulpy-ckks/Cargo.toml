@@ -14,7 +14,7 @@ documentation = "https://docs.rs/poulpy-ckks"
 # Backend crates enable this from their dev-dependencies; production builds of
 # dependents skip the ~17k lines of test code entirely.
 test-utils = []
-# Route `Quad`'s transcendental math through libquadmath (`f128` crate);
+# Route `Quad`'s libm-backed math through libquadmath (`f128` crate);
 # non-Apple x86_64 only, else a no-op. The `Quad` type itself is unchanged.
 libquadmath = ["dep:f128"]
 
