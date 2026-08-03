@@ -12,7 +12,8 @@ use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos,
     api::{CKKSAddOps, CKKSAllOpsTmpBytes, CKKSCopyOps, CKKSDFTOps, CKKSEvalModOps, CKKSPow2Ops, CKKSSubOps},
     layouts::{
-        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertext, CKKSModuleAlloc, ScratchArenaTakeCKKS,
+        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, CKKSCiphertext, CKKSModuleAlloc,
+        ScratchArenaTakeCKKS,
     },
 };
 
@@ -185,6 +186,12 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact + SetBSGSMeta + BSGSMeta,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
+        // TODO(HalfBTS): remove this guard when S2C-first is wired.
+        ckks_ensure!(
+            ctx.pipeline == BootstrappingPipeline::C2SFirst,
+            "S2C-first bootstrapping is not implemented"
+        );
+
         // All pipeline intermediates are rank-1 working ciphertexts carved from
         // scratch (accounted for by `ckks_bootstrap_tmp_bytes`); reject
         // higher-rank inputs up front.
@@ -194,6 +201,15 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
             ct_in.rank().as_usize(),
             ct_out.rank().as_usize()
         );
+
+        let encapsulation_keys = keys.encapsulation_keys();
+        ckks_ensure!(
+            encapsulation_keys.is_some() == ctx.sparse_secret_hamming_weight().is_some(),
+            "bootstrapping key encapsulation does not match the compiled recipe (expected {}, got {})",
+            ctx.sparse_secret_hamming_weight().is_some(),
+            encapsulation_keys.is_some()
+        );
+
         let base2k = ct_in.base2k();
         let k_boot = ct_out.k();
         let log_modulus_in = ct_in.k();
@@ -209,7 +225,7 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
             // integer wrap-around `I·q` exposed by ModUp is bounded by the *sparse* secret's
             // Hamming weight (https://eprint.iacr.org/2022/024).
             let (mut ct, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta());
-            match keys.encapsulation_keys() {
+            match encapsulation_keys {
                 Some((dense_to_sparse, sparse_to_dense)) => {
                     // The input-width copy is scoped so its scratch is released
                     // right after ModUp widens it into `ct`.
