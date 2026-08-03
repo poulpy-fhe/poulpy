@@ -168,6 +168,43 @@ jobs:
         if: steps.avx.outputs.supported != 'true'
         run: echo "Runner CPU does not expose AVX2 and FMA; AVX backend checks skipped."
 
+  intel_macos_avx:
+    name: Intel macOS AVX smoke
+    runs-on: macos-15-intel
+    timeout-minutes: 10
+
+    env:
+      RUSTFLAGS: -C target-feature=+avx2,+fma
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Cache cargo deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: macos-15-intel-cargo-avx-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            macos-15-intel-cargo-avx-
+
+      - name: Test Darwin AVX FFT assembly
+        run: >-
+          cargo test -p poulpy-cpu-avx --lib
+          --features "enable-avx,poulpy-ckks/libquadmath"
+          fft64::reim::fft_avx2_fma::tests::fft_ifft_roundtrip_avx2
+          -- --exact
+
   # AVX-512 typecheck/clippy lane. GitHub-hosted runners do not expose AVX-512,
   # so this lane builds and lints the AVX-512F + IFMA configuration on every
   # push to keep the poulpy-cpu-avx512 crate buildable. Tests are NOT run here
@@ -259,6 +296,7 @@ jobs:
     needs:
       - portable
       - avx
+      - intel_macos_avx
       - avx512
       - neon
     if: always()
@@ -276,6 +314,11 @@ jobs:
             exit 1
           fi
 
+          if [ "${{ needs.intel_macos_avx.result }}" != "success" ]; then
+            echo "Intel macOS AVX job finished with: ${{ needs.intel_macos_avx.result }}"
+            exit 1
+          fi
+
           if [ "${{ needs.avx512.result }}" != "success" ]; then
             echo "AVX-512 backend job finished with: ${{ needs.avx512.result }}"
             exit 1
@@ -286,4 +329,4 @@ jobs:
             exit 1
           fi
 
-          echo "Portable, AVX, AVX-512 and NEON CI jobs passed."
+          echo "Portable, AVX, Intel macOS AVX, AVX-512 and NEON CI jobs passed."
