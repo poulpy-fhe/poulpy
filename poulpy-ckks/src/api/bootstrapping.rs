@@ -29,8 +29,9 @@ use crate::{
 /// [`BootstrappingKeys`], and selects the pipeline from the context — the classic
 /// refresh when [`coeffs_to_slots_bypass`](BootstrappingContext::coeffs_to_slots_bypass)
 /// is absent, the EvalRound+ variant (<https://eprint.iacr.org/2024/1379>) when it
-/// is present. Sparse-secret encapsulation of ModUp is applied automatically when
-/// the keys carry [encapsulation keys](BootstrappingKeys::encapsulation_keys).
+/// is present. Sparse-secret encapsulation of ModUp is selected by the compiled
+/// recipe; the supplied keys must carry the matching
+/// [encapsulation keys](BootstrappingKeys::encapsulation_keys).
 pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE> {
     /// Returns scratch bytes required by [`Self::ckks_mod_up_into`].
     fn ckks_mod_up_tmp_bytes(&self) -> usize;
@@ -65,9 +66,10 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     /// One-shot CKKS bootstrap, driven by the compiled context.
     ///
     /// `ct_in` is at the input ("level 0") modulus; `ct_out` must be allocated at
-    /// the bootstrap modulus (its `k()` sets the working width). When `keys` carries
-    /// [encapsulation keys](BootstrappingKeys::encapsulation_keys), the sparse-secret
-    /// trick wraps ModUp (`denseToSparse → ModUp → sparseToDense`). The `1/K`
+    /// the bootstrap modulus (its `k()` sets the working width). When the compiled
+    /// recipe enables sparse-secret encapsulation, `keys` must carry the matching
+    /// [encapsulation keys](BootstrappingKeys::encapsulation_keys), which wrap ModUp
+    /// (`denseToSparse → ModUp → sparseToDense`). The `1/K`
     /// amplitude bridge must be folded into the CoeffsToSlots plan's `scaling` by
     /// the caller **before** compiling the context (see
     /// [`BootstrappingContext::coeffs_to_slots`]); EvalMod applies its own scale

@@ -52,8 +52,9 @@ denseToSparse ─► ModUp ─► sparseToDense
 ```
 
 so `I·q` stays small and EvalMod can use a much smaller interval `K` with negligible failure probability ([eprint 2022/024](https://eprint.iacr.org/2022/024)).
-It is configured entirely on the key side: set `BootstrappingKeysLayout::encapsulation` (an `EncapsulationKeysLayout` carrying the ephemeral secret weight) to generate the two key-switching keys, and the pipeline enables the trick exactly when those keys are present in the key set.
-The keys are derived from the dense secret and so are part of the keys, not of the secret-independent `BootstrappingPlan`/`BootstrappingContext`.
+It is selected by the bootstrapping recipe through `BootstrappingTechniques::sparse_secret_encapsulation`, whose Hamming weight must be chosen together with EvalMod's interval.
+`BootstrappingKeysLayout::encapsulation` contains only the two physical key-switch layouts; key generation rejects its presence or absence when it disagrees with the compiled recipe, and execution likewise rejects a mismatched key set.
+The generated keys remain part of the key bundle, while the public Hamming-weight parameter is retained by the otherwise secret-independent `BootstrappingPlan`/`BootstrappingContext`.
 
 ## The homomorphic DFT (CoeffsToSlots / SlotsToCoeffs)
 
@@ -137,8 +138,8 @@ This pipeline is used when the context carries a bypass transform.
 
 ## Parameters and keys
 
-A `BootstrappingPlan` is the parameter bundle: the two homomorphic DFT plans (and an optional bypass) and the EvalMod plan. (Sparse-secret encapsulation is key-material configuration — see `EncapsulationKeysLayout` above — not part of the plan.)
-The constructors validate once — `DFTPlan::new` checks the factorization schedule (`(depth, giant_step)` pairs in evaluation order), `BootstrappingPlan::new` checks the stage directions — so a plan that exists is always shape-valid and the derived-key APIs (`galois_elements`) are infallible.
+A `BootstrappingPlan` is the complete ModUp/EvalMod recipe: its C2S-first or S2C-first pipeline, optional techniques (sparse-secret encapsulation and EvalRound+), the two homomorphic DFT plans, and the EvalMod plan.
+The constructors validate once — `DFTPlan::new` checks the factorization schedule (`(depth, giant_step)` pairs in evaluation order), while `BootstrappingPlan::new` checks the selected pipeline, stage directions, sparse weight, and EvalRound+ constraints — so a plan that exists is always shape-valid and the derived-key APIs (`galois_elements`) are infallible.
 
 ```rust
 // Coefficient meta: CoeffsMeta::from_delta_budget(log_delta, log_budget).
@@ -161,6 +162,13 @@ let slots_to_coeffs = DFTPlan::new(
 .with_scaling((11_f64).exp2())?;            // 2^log_msg_ratio
 
 let plan = BootstrappingPlan::new(
+    BootstrappingPipeline::C2SFirst,
+    BootstrappingTechniques {
+        sparse_secret_encapsulation: Some(SparseSecretEncapsulation {
+            hamming_weight: 32,
+        }),
+        eval_round_plus: None,               // Some(EvalRoundPlus { ... }) selects EvalRound+
+    },
     coeffs_to_slots,
     EvalModPlan {
         eval_mod_type: EvalModType::CosHK,
@@ -175,7 +183,7 @@ let plan = BootstrappingPlan::new(
         f_mod_log_delta: 60,
     },
     slots_to_coeffs,
-)?;                                         // .with_coeffs_to_slots_bypass(..)? selects EvalRound+
+)?;
 ```
 
 `BootstrappingContext::compile` turns the plan into the resident, secret-independent form: the prepared backend-resident DFT matrices (with the `1/K` and message-ratio scalings baked in) and the encoded, uploaded EvalMod.

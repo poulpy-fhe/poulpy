@@ -52,8 +52,9 @@ use crate::{
         CKKSPow2Ops, CKKSSubOps,
     },
     layouts::{
-        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPlan, CKKSCiphertext, CKKSModuleAlloc,
-        CKKSPlaintext, CKKSPlaintextVecHostCodec, DFTOutputFormat, DFTPlan, DFTType, EncapsulationKeysLayout,
+        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan,
+        BootstrappingTechniques, CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, DFTOutputFormat,
+        DFTPlan, DFTType, EncapsulationKeysLayout, EvalRoundPlus, SparseSecretEncapsulation,
         eval_mod::{EvalModPlan, EvalModType},
     },
     polynomial::SplitStrategy,
@@ -72,8 +73,8 @@ use crate::{
 const LOG_SLOTS: usize = 10;
 const FMOD_INTERVAL: usize = 16;
 const LOG_MSG_RATIO: usize = 11;
-/// Hamming weight of the ephemeral sparse-encapsulation secret; a key-material
-/// parameter (see `EncapsulationKeysLayout`), not part of the plan.
+/// Hamming weight of the ephemeral sparse-encapsulation secret selected by the
+/// bootstrapping recipe.
 const EPHEMERAL_SECRET_WEIGHT: usize = 32;
 /// Regression floor for the recovered average precision, in bits.
 ///
@@ -126,6 +127,13 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     .with_scaling((LOG_MSG_RATIO as f64).exp2())
     .unwrap();
     let plan = BootstrappingPlan::new(
+        BootstrappingPipeline::C2SFirst,
+        BootstrappingTechniques {
+            sparse_secret_encapsulation: Some(SparseSecretEncapsulation {
+                hamming_weight: EPHEMERAL_SECRET_WEIGHT,
+            }),
+            eval_round_plus: None,
+        },
         coeffs_to_slots,
         EvalModPlan {
             eval_mod_type: EvalModType::CosHK,
@@ -215,8 +223,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     let keys_layout = BootstrappingKeysLayout {
         automorphism_key: tp.atk_layout().layout,
         tensor_key: tp.tsk_layout().layout,
-        encapsulation: Some(EncapsulationKeysLayout {
-            ephemeral_secret_weight: EPHEMERAL_SECRET_WEIGHT,
+        encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
             dense_to_sparse: tp.ksk_layout(log_modulus_in).layout,
             sparse_to_dense: tp.ksk_layout(k_boot).layout,
         }),
@@ -545,6 +552,15 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
     .with_scaling((LOG_MSG_RATIO as f64).exp2())
     .unwrap();
     let plan = BootstrappingPlan::new(
+        BootstrappingPipeline::C2SFirst,
+        BootstrappingTechniques {
+            sparse_secret_encapsulation: Some(SparseSecretEncapsulation {
+                hamming_weight: EPHEMERAL_SECRET_WEIGHT,
+            }),
+            eval_round_plus: Some(EvalRoundPlus {
+                coeffs_to_slots_bypass: bypass,
+            }),
+        },
         coeffs_to_slots,
         EvalModPlan {
             eval_mod_type: EvalModType::CosHK,
@@ -560,8 +576,6 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
         },
         slots_to_coeffs,
     )
-    .unwrap()
-    .with_coeffs_to_slots_bypass(bypass)
     .unwrap();
 
     let n = 1 << (LOG_SLOTS + 1);
@@ -622,8 +636,7 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
     let keys_layout = BootstrappingKeysLayout {
         automorphism_key: tp.atk_layout().layout,
         tensor_key: tp.tsk_layout().layout,
-        encapsulation: Some(EncapsulationKeysLayout {
-            ephemeral_secret_weight: EPHEMERAL_SECRET_WEIGHT,
+        encapsulation: plan.sparse_secret_hamming_weight().map(|_| EncapsulationKeysLayout {
             dense_to_sparse: tp.ksk_layout(log_modulus_in).layout,
             sparse_to_dense: tp.ksk_layout(k_boot).layout,
         }),
