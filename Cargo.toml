@@ -20,6 +20,11 @@ poulpy-cpu-avx512 = {path = "poulpy-cpu-avx512"}
 poulpy-bin-fhe = {path = "poulpy-bin-fhe"}
 poulpy-ckks = {path = "poulpy-ckks"}
 dashu-float = "0.4.5"
+astro-float-num = { version = "0.3.6", default-features = false, features = ["std"] }
+# `poulpy-ckks` enables `unstable-float` only for its portable target graph.
+# Cargo then unifies that feature onto transitive users of this same libm; the
+# workspace's pinned nightly is therefore part of the fallback's contract.
+libm = "0.2.16"
 rand = "0.10.2"
 rand_chacha = "0.10.0"
 rand_core = "0.10.1"
