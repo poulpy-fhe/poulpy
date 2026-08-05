@@ -52,8 +52,9 @@ pub trait DataViewMut: DataView {
 /// For a container with `cols` columns and `size` limbs, limb `j` of
 /// column `i` starts at scalar offset `n * (j * cols + i)`.
 ///
-/// The associated `Scalar` type is `i64` for coefficient-domain types
-/// and a backend-specific type for DFT/big representations.
+/// The associated `Scalar` type is the container's word type `W`
+/// (`i64` by default for coefficient-domain types, the backend-declared
+/// `DftWord`/`BigWord` for DFT/big representations).
 pub trait ZnxView: ZnxInfos + DataView<D: HostDataRef> {
     type Scalar: Copy + Zero + Display + Debug + Pod;
 

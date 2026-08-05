@@ -47,7 +47,16 @@ impl LaneElem for u64 {
 }
 
 /// Fixed-size lane container (`[T; LANES]`) abstracted so that a
-/// [`PrimeSet`] can pick its exact lane count (3, 4, 6, ...).
+/// [`PrimeSet`] can pick its exact lane count.
+///
+/// Enabled lane counts: 1-8, 12, 16 (see `impl_lane_array!` below). A new
+/// [`PrimeSet`] with a different `LANES` needs its count added to that
+/// invocation — bytemuck has no blanket `Pod for [T; N]`, so each size is a
+/// separate impl.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` is not an enabled `LaneArray` size",
+    note = "lane counts are enabled per size; add the new count to the `impl_lane_array!` invocation in poulpy-cpu-ref/src/reference/ntt4x30/primes.rs"
+)]
 pub trait LaneArray<T: LaneElem>: Copy + Debug + PartialEq + Eq + Send + Sync + Pod + 'static {
     const LEN: usize;
     fn as_slice(&self) -> &[T];
@@ -78,7 +87,7 @@ macro_rules! impl_lane_array {
     )*};
 }
 
-impl_lane_array!(2, 3, 4, 6, 8);
+impl_lane_array!(1, 2, 3, 4, 5, 6, 7, 8, 12, 16);
 
 /// Selects a set of NTT-friendly primes and their associated constants
 /// for a CRT (residue number system) representation.
@@ -106,6 +115,9 @@ pub trait PrimeSet: Sized + Sync + Send + 'static {
     const LANES: usize;
 
     /// Lane container shape: `[T; LANES]`.
+    ///
+    /// The count must be one enabled by `impl_lane_array!` (1-8, 12, 16);
+    /// see [`LaneArray`] for extending the list.
     type Lanes<T: LaneElem>: LaneArray<T>;
 
     /// The NTT-friendly primes `[Q0, ..., Q_{LANES-1}]`.

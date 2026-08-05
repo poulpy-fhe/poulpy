@@ -22,11 +22,11 @@
 //! decomposition and normalization.
 //!
 //! **Layout types** ([`layouts`]):
-//! - [`layouts::ScalarZnx`] -- single polynomial with `i64` coefficients.
+//! - [`layouts::ScalarZnx`] -- single polynomial of integer coefficients (word type `W`, default `i64`).
 //! - [`layouts::VecZnx`] -- vector of `cols` polynomials, each with `size` limbs.
 //! - [`layouts::MatZnx`] -- matrix of polynomials (`rows x cols_in`, each entry a [`layouts::VecZnx`] of `cols_out` polynomials).
-//! - [`layouts::VecZnxBig`] -- vector of polynomials with backend-specific large-coefficient scalars (result accumulator).
-//! - [`layouts::VecZnxDft`] -- vector of polynomials in DFT/NTT domain (backend-specific prepared scalars).
+//! - [`layouts::VecZnxBig`] -- vector of polynomials with large-coefficient accumulator words (keyed by the backend's declared [`layouts::BigWord`]).
+//! - [`layouts::VecZnxDft`] -- vector of polynomials in DFT/NTT domain (keyed by the backend's declared [`layouts::DftWord`]).
 //! - [`layouts::SvpPPol`] -- prepared scalar polynomial for scalar-vector products.
 //! - [`layouts::VmpPMat`] -- prepared matrix for vector-matrix products.
 //! - [`layouts::CnvPVecL`], [`layouts::CnvPVecR`] -- prepared left/right operands for bivariate convolution.
@@ -34,7 +34,9 @@
 //!
 //! All layout types are generic over a data container `D` (owned `Vec<u8>`, borrowed
 //! `&[u8]` / `&mut [u8]`), enabling zero-copy views and arena-style allocation via
-//! [`layouts::ScratchArena`].
+//! [`layouts::ScratchArena`], and over a word type `W` naming the byte-layout
+//! convention of their coefficient domain (see [`layouts::ZnxWord`],
+//! [`layouts::BigWord`], [`layouts::DftWord`]).
 //!
 //! ## Architecture
 //!

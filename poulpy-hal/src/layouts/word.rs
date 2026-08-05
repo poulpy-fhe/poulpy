@@ -13,6 +13,14 @@
 //! and friends remain authoritative for total buffer sizes and may be
 //! overridden by backends whose packed representation diverges from
 //! `n * cols * size * size_of::<Word>()`.
+//!
+//! **Alignment:** a buffer backing a word-keyed container must be aligned to
+//! `align_of::<W>()`. Every allocation path in this crate goes through
+//! [`alloc_aligned`](crate::alloc_aligned) (aligned to
+//! [`DEFAULTALIGN`](crate::DEFAULTALIGN), which exceeds the alignment of all
+//! word types); the requirement exists for external `Data` providers and is
+//! checked by a `debug_assert` in
+//! [`ZnxView::as_ptr`](crate::layouts::ZnxView::as_ptr).
 
 use std::fmt::{Debug, Display};
 

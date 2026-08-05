@@ -1,6 +1,6 @@
 //! Word-compatibility tests: execute the word contract of
-//! [`crate::layouts::word`] — type equality of word-keyed containers means
-//! buffer interchangeability across backends.
+//! [`DftWord`](crate::layouts::DftWord) — type equality of word-keyed
+//! containers means buffer interchangeability across backends.
 //!
 //! Instantiate via [`cross_backend_test_suite!`](crate::cross_backend_test_suite)
 //! with a pair of backends declaring the same `DftWord` (enforced at
