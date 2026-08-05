@@ -27,7 +27,7 @@ use crate::{
 
 fn glwe_external_product_dft_fill<BE, M>(
     module: &M,
-    res_dft: &mut VecZnxDft<BE::BufMut<'_>, BE::DftWord>,
+    res_dft: &mut VecZnxDft<BE::BufMut<'_>, BE::DftWord, BE>,
     a: GLWEBackendRef<'_, BE>,
     ggsw: &GGSWPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
@@ -130,7 +130,7 @@ where
 
     fn glwe_external_product_dft<'r, A, G>(
         &self,
-        res_dft: &mut VecZnxDft<BE::BufMut<'r>, BE::DftWord>,
+        res_dft: &mut VecZnxDft<BE::BufMut<'r>, BE::DftWord, BE>,
         a: &A,
         ggsw: &G,
         scratch: &mut ScratchArena<'_, BE>,

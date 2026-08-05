@@ -135,7 +135,7 @@ where
 
     let (data, tmp_bytes) = tmp_bytes.split_at_mut(BE::bytes_of_vec_znx_dft(n, cols, size));
 
-    let mut a_dft: VecZnxDft<&mut [u8], BE::DftWord> = VecZnxDft::from_data(cast_mut(data), n, cols, size);
+    let mut a_dft: VecZnxDft<&mut [u8], BE::DftWord, BE> = VecZnxDft::from_data(cast_mut(data), n, cols, size);
 
     let offset: usize = cols - a.cols();
     for j in 0..cols {

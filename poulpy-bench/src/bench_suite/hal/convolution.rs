@@ -30,7 +30,7 @@ where
 
         let module: Module<BE> = Module::<BE>::new(n as u64);
 
-        let mut a_prep: CnvPVecL<BE::OwnedBuf, BE::DftWord> = module.cnv_pvec_left_alloc(1, size);
+        let mut a_prep: CnvPVecL<BE::OwnedBuf, BE::DftWord, BE> = module.cnv_pvec_left_alloc(1, size);
 
         let a = crate::random_host_vec_znx(module.n(), 1, size, &mut source);
         let a = crate::upload_host_vec_znx::<BE>(&a);
@@ -78,7 +78,7 @@ where
 
         let module: Module<BE> = Module::<BE>::new(n as u64);
 
-        let mut a_prep: CnvPVecR<BE::OwnedBuf, BE::DftWord> = module.cnv_pvec_right_alloc(1, size);
+        let mut a_prep: CnvPVecR<BE::OwnedBuf, BE::DftWord, BE> = module.cnv_pvec_right_alloc(1, size);
 
         let a = crate::random_host_vec_znx(module.n(), 1, size, &mut source);
         let a = crate::upload_host_vec_znx::<BE>(&a);
@@ -126,9 +126,9 @@ where
 
         let module: Module<BE> = Module::<BE>::new(n as u64);
 
-        let a_prep: CnvPVecL<BE::OwnedBuf, BE::DftWord> =
+        let a_prep: CnvPVecL<BE::OwnedBuf, BE::DftWord, BE> =
             crate::random_backend_cnv_pvec_left::<BE>(module.n(), 1, size, &mut source);
-        let b_prep: CnvPVecR<BE::OwnedBuf, BE::DftWord> =
+        let b_prep: CnvPVecR<BE::OwnedBuf, BE::DftWord, BE> =
             crate::random_backend_cnv_pvec_right::<BE>(module.n(), 1, size, &mut source);
         let mut c_dft = module.vec_znx_dft_alloc(1, c_size);
 
@@ -187,9 +187,9 @@ where
 
         let module: Module<BE> = Module::<BE>::new(n as u64);
 
-        let a_prep: CnvPVecL<BE::OwnedBuf, BE::DftWord> =
+        let a_prep: CnvPVecL<BE::OwnedBuf, BE::DftWord, BE> =
             crate::random_backend_cnv_pvec_left::<BE>(module.n(), 1, size, &mut source);
-        let b_prep: CnvPVecR<BE::OwnedBuf, BE::DftWord> =
+        let b_prep: CnvPVecR<BE::OwnedBuf, BE::DftWord, BE> =
             crate::random_backend_cnv_pvec_right::<BE>(module.n(), 1, size, &mut source);
         let mut c_dft = module.vec_znx_dft_alloc(1, c_size);
 
@@ -262,9 +262,9 @@ where
         let cols = 2;
         let c_size: usize = size + size - 1;
 
-        let a_prep: CnvPVecL<BE::OwnedBuf, BE::DftWord> =
+        let a_prep: CnvPVecL<BE::OwnedBuf, BE::DftWord, BE> =
             crate::random_backend_cnv_pvec_left::<BE>(module.n(), cols, size, &mut source);
-        let b_prep: CnvPVecR<BE::OwnedBuf, BE::DftWord> =
+        let b_prep: CnvPVecR<BE::OwnedBuf, BE::DftWord, BE> =
             crate::random_backend_cnv_pvec_right::<BE>(module.n(), cols, size, &mut source);
         let mut c_dft = module.vec_znx_dft_alloc(1, c_size);
 
@@ -326,7 +326,7 @@ where
 
         let a = crate::random_host_vec_znx(module.n(), cols, size, &mut source);
         let a = crate::upload_host_vec_znx::<BE>(&a);
-        let mut c_big: VecZnxBig<BE::OwnedBuf, BE::BigWord> = module.vec_znx_big_alloc(1, c_size);
+        let mut c_big: VecZnxBig<BE::OwnedBuf, BE::BigWord, BE> = module.vec_znx_big_alloc(1, c_size);
 
         let b = crate::random_host_vec_znx(module.n(), 1, size, &mut source);
         let b = crate::upload_host_vec_znx::<BE>(&b);

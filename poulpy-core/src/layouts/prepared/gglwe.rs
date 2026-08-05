@@ -17,7 +17,7 @@ use crate::layouts::{
 /// Tied to a specific backend via `B: Backend`.
 #[derive(PartialEq)]
 pub struct GGLWEPrepared<D: Data, B: Backend> {
-    pub(crate) data: VmpPMat<D, B::DftWord>,
+    pub(crate) data: VmpPMat<D, B::DftWord, B>,
     pub(crate) k_aux: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) dsize: Dsize,

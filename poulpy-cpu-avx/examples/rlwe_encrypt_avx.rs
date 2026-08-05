@@ -22,7 +22,7 @@ use poulpy_hal::{
         VecZnxDftAlloc, VecZnxDftApply, VecZnxFillUniformSourceBackend, VecZnxIdftApplyTmpA, VecZnxNormalizeAssignBackend,
     },
     layouts::{
-        Backend, Module, NoiseInfos, ScalarZnx, ScalarZnxToBackendRef, ScratchOwned, VecZnx, VecZnxBig, VecZnxBigToBackendRef,
+        Module, NoiseInfos, ScalarZnx, ScalarZnxToBackendRef, ScratchOwned, VecZnx, VecZnxBigOwned,
         VecZnxDftOwned, VecZnxToBackendMut, VecZnxToBackendRef,
     },
     source::Source,
@@ -87,8 +87,7 @@ fn main() {
     // Alias scratch space (VecZnxDft<B> is always at least as big as VecZnxBig<B>)
 
     // BIG(ct[1] * s) <- IDFT(DFT(ct[1] * s)) (not normalized)
-    let mut buf_big: VecZnxBig<<BackendImpl as Backend>::OwnedBuf, <BackendImpl as Backend>::BigWord> =
-        module.vec_znx_big_alloc(1, ct_size);
+    let mut buf_big: VecZnxBigOwned<BackendImpl> = module.vec_znx_big_alloc(1, ct_size);
     module.vec_znx_idft_apply_tmpa(
         &mut buf_big.to_backend_mut::<BackendImpl>(),
         0,
@@ -126,9 +125,7 @@ fn main() {
         base2k,
         0,
         0, // Selects the first column of ct (ct[0])
-        &<VecZnxBig<<BackendImpl as Backend>::OwnedBuf, <BackendImpl as Backend>::BigWord> as VecZnxBigToBackendRef<
-            BackendImpl,
-        >>::to_backend_ref(&buf_big),
+        &buf_big.to_backend_ref::<BackendImpl>(),
         base2k,
         0, // Selects the first column of buf_big
         &mut scratch.borrow(),
@@ -181,9 +178,7 @@ fn main() {
         base2k,
         0,
         0,
-        &<VecZnxBig<<BackendImpl as Backend>::OwnedBuf, <BackendImpl as Backend>::BigWord> as VecZnxBigToBackendRef<
-            BackendImpl,
-        >>::to_backend_ref(&buf_big),
+        &buf_big.to_backend_ref::<BackendImpl>(),
         base2k,
         0,
         &mut scratch.borrow(),

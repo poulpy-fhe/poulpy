@@ -20,13 +20,13 @@ use crate::layouts::{Backend, Data, DataView, DataViewMut, DftWord, DigestU64, H
 /// coefficient count that matches vector lane widths relative to buffer alignment.
 #[repr(C)]
 #[derive(PartialEq, Eq, Hash)]
-pub struct SvpPPol<D: Data, W: DftWord> {
+pub struct SvpPPol<D: Data, W: DftWord, B: Backend<DftWord = W>> {
     pub data: D,
     shape: ScalarZnxShape,
-    pub _phantom: PhantomData<W>,
+    pub _phantom: PhantomData<(W, B)>,
 }
 
-impl<D: HostDataRef, W: DftWord> DigestU64 for SvpPPol<D, W> {
+impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> DigestU64 for SvpPPol<D, W, B> {
     fn digest_u64(&self) -> u64 {
         let mut h: DefaultHasher = DefaultHasher::new();
         h.write(self.data.as_ref());
@@ -36,11 +36,11 @@ impl<D: HostDataRef, W: DftWord> DigestU64 for SvpPPol<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: DftWord> ZnxView for SvpPPol<D, W> {
+impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> ZnxView for SvpPPol<D, W, B> {
     type Scalar = W;
 }
 
-impl<D: Data, W: DftWord> ZnxInfos for SvpPPol<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for SvpPPol<D, W, B> {
     fn cols(&self) -> usize {
         self.shape.cols()
     }
@@ -58,7 +58,7 @@ impl<D: Data, W: DftWord> ZnxInfos for SvpPPol<D, W> {
     }
 }
 
-impl<D: Data, W: DftWord> SvpPPol<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> SvpPPol<D, W, B> {
     pub fn n(&self) -> usize {
         self.shape.n()
     }
@@ -72,24 +72,24 @@ impl<D: Data, W: DftWord> SvpPPol<D, W> {
     }
 }
 
-impl<D: Data, W: DftWord> DataView for SvpPPol<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> DataView for SvpPPol<D, W, B> {
     type D = D;
     fn data(&self) -> &Self::D {
         &self.data
     }
 }
 
-impl<D: Data, W: DftWord> DataViewMut for SvpPPol<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> DataViewMut for SvpPPol<D, W, B> {
     fn data_mut(&mut self) -> &mut Self::D {
         &mut self.data
     }
 }
 
-impl<D: Data, W: DftWord> SvpPPol<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> SvpPPol<D, W, B> {
     /// Allocates a zero-initialized backend-owned `SvpPPol`.
-    pub fn alloc<B>(n: usize, cols: usize) -> SvpPPolOwned<B>
+    pub fn alloc(n: usize, cols: usize) -> SvpPPolOwned<B>
     where
-        B: Backend<DftWord = W, OwnedBuf = D>,
+        B: Backend<OwnedBuf = D>,
     {
         let data: <B as Backend>::OwnedBuf = B::alloc_zeroed_bytes(B::bytes_of_svp_ppol(n, cols));
         SvpPPol {
@@ -100,37 +100,39 @@ impl<D: Data, W: DftWord> SvpPPol<D, W> {
     }
 }
 
-impl<D: Data, W: DftWord> SvpPPol<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> SvpPPol<D, W, B> {
     /// Borrows this backend-owned `SvpPPol` using the backend's native view type.
     ///
     /// Ergonomic inherent form of [`SvpPPolToBackendRef`]: the backend is
     /// supplied explicitly (`x.to_backend_ref::<B>()`) since it is not
     /// recoverable from the word-keyed type alone.
-    pub fn to_backend_ref<B>(&self) -> SvpPPolBackendRef<'_, B>
+    pub fn to_backend_ref<B2>(&self) -> SvpPPolBackendRef<'_, B2>
     where
-        B: Backend<OwnedBuf = D, DftWord = W>,
+        B2: Backend,
+        Self: SvpPPolToBackendRef<B2>,
     {
-        SvpPPolToBackendRef::<B>::to_backend_ref(self)
+        SvpPPolToBackendRef::<B2>::to_backend_ref(self)
     }
 
     /// Mutably borrows this backend-owned `SvpPPol` using the backend's native view type.
     ///
     /// Ergonomic inherent form of [`SvpPPolToBackendMut`]; see
     /// [`Self::to_backend_ref`].
-    pub fn to_backend_mut<B>(&mut self) -> SvpPPolBackendMut<'_, B>
+    pub fn to_backend_mut<B2>(&mut self) -> SvpPPolBackendMut<'_, B2>
     where
-        B: Backend<OwnedBuf = D, DftWord = W>,
+        B2: Backend,
+        Self: SvpPPolToBackendMut<B2>,
     {
-        SvpPPolToBackendMut::<B>::to_backend_mut(self)
+        SvpPPolToBackendMut::<B2>::to_backend_mut(self)
     }
 }
 
 /// Owned `SvpPPol` backed by a backend-owned buffer.
-pub type SvpPPolOwned<B> = SvpPPol<<B as Backend>::OwnedBuf, <B as Backend>::DftWord>;
+pub type SvpPPolOwned<B> = SvpPPol<<B as Backend>::OwnedBuf, <B as Backend>::DftWord, B>;
 /// Shared backend-native borrow of an `SvpPPol`.
-pub type SvpPPolBackendRef<'a, B> = SvpPPol<<B as Backend>::BufRef<'a>, <B as Backend>::DftWord>;
+pub type SvpPPolBackendRef<'a, B> = SvpPPol<<B as Backend>::BufRef<'a>, <B as Backend>::DftWord, B>;
 /// Mutable backend-native borrow of an `SvpPPol`.
-pub type SvpPPolBackendMut<'a, B> = SvpPPol<<B as Backend>::BufMut<'a>, <B as Backend>::DftWord>;
+pub type SvpPPolBackendMut<'a, B> = SvpPPol<<B as Backend>::BufMut<'a>, <B as Backend>::DftWord, B>;
 
 /// Reborrow a mutable backend-native `SvpPPol` view as a shared backend-native view.
 pub fn svp_ppol_backend_ref_from_mut<'a, 'b, B: Backend>(ppol: &'a SvpPPolBackendMut<'b, B>) -> SvpPPolBackendRef<'a, B> {
@@ -146,7 +148,7 @@ pub trait SvpPPolToBackendRef<B: Backend> {
     fn to_backend_ref(&self) -> SvpPPolBackendRef<'_, B>;
 }
 
-impl<B: Backend> SvpPPolToBackendRef<B> for SvpPPol<B::OwnedBuf, B::DftWord> {
+impl<B: Backend> SvpPPolToBackendRef<B> for SvpPPol<B::OwnedBuf, B::DftWord, B> {
     fn to_backend_ref(&self) -> SvpPPolBackendRef<'_, B> {
         SvpPPol {
             data: B::view(&self.data),
@@ -156,7 +158,7 @@ impl<B: Backend> SvpPPolToBackendRef<B> for SvpPPol<B::OwnedBuf, B::DftWord> {
     }
 }
 
-impl<'b, B: Backend + 'b> SvpPPolToBackendRef<B> for &SvpPPol<B::BufRef<'b>, B::DftWord> {
+impl<'b, B: Backend + 'b> SvpPPolToBackendRef<B> for &SvpPPol<B::BufRef<'b>, B::DftWord, B> {
     fn to_backend_ref(&self) -> SvpPPolBackendRef<'_, B> {
         SvpPPol {
             data: B::view_ref(&self.data),
@@ -171,7 +173,7 @@ pub trait SvpPPolReborrowBackendRef<B: Backend> {
     fn reborrow_backend_ref(&self) -> SvpPPolBackendRef<'_, B>;
 }
 
-impl<'b, B: Backend + 'b> SvpPPolReborrowBackendRef<B> for SvpPPol<B::BufMut<'b>, B::DftWord> {
+impl<'b, B: Backend + 'b> SvpPPolReborrowBackendRef<B> for SvpPPol<B::BufMut<'b>, B::DftWord, B> {
     fn reborrow_backend_ref(&self) -> SvpPPolBackendRef<'_, B> {
         svp_ppol_backend_ref_from_mut::<B>(self)
     }
@@ -182,7 +184,7 @@ pub trait SvpPPolToBackendMut<B: Backend> {
     fn to_backend_mut(&mut self) -> SvpPPolBackendMut<'_, B>;
 }
 
-impl<B: Backend> SvpPPolToBackendMut<B> for SvpPPol<B::OwnedBuf, B::DftWord> {
+impl<B: Backend> SvpPPolToBackendMut<B> for SvpPPol<B::OwnedBuf, B::DftWord, B> {
     fn to_backend_mut(&mut self) -> SvpPPolBackendMut<'_, B> {
         SvpPPol {
             data: B::view_mut(&mut self.data),
@@ -192,7 +194,7 @@ impl<B: Backend> SvpPPolToBackendMut<B> for SvpPPol<B::OwnedBuf, B::DftWord> {
     }
 }
 
-impl<'b, B: Backend + 'b> SvpPPolToBackendMut<B> for &mut SvpPPol<B::BufMut<'b>, B::DftWord> {
+impl<'b, B: Backend + 'b> SvpPPolToBackendMut<B> for &mut SvpPPol<B::BufMut<'b>, B::DftWord, B> {
     fn to_backend_mut(&mut self) -> SvpPPolBackendMut<'_, B> {
         SvpPPol {
             data: B::view_mut_ref(&mut self.data),
@@ -207,7 +209,7 @@ pub trait SvpPPolReborrowBackendMut<B: Backend> {
     fn reborrow_backend_mut(&mut self) -> SvpPPolBackendMut<'_, B>;
 }
 
-impl<'b, B: Backend + 'b> SvpPPolReborrowBackendMut<B> for SvpPPol<B::BufMut<'b>, B::DftWord> {
+impl<'b, B: Backend + 'b> SvpPPolReborrowBackendMut<B> for SvpPPol<B::BufMut<'b>, B::DftWord, B> {
     fn reborrow_backend_mut(&mut self) -> SvpPPolBackendMut<'_, B> {
         SvpPPol {
             data: B::view_mut_ref(&mut self.data),
@@ -217,7 +219,7 @@ impl<'b, B: Backend + 'b> SvpPPolReborrowBackendMut<B> for SvpPPol<B::BufMut<'b>
     }
 }
 
-impl<D: Data, W: DftWord> SvpPPol<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> SvpPPol<D, W, B> {
     pub fn from_data(data: D, n: usize, cols: usize) -> Self {
         Self {
             data,
@@ -227,7 +229,7 @@ impl<D: Data, W: DftWord> SvpPPol<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: DftWord> fmt::Display for SvpPPol<D, W> {
+impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> fmt::Display for SvpPPol<D, W, B> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "SvpPPol(n={}, cols={})", self.n(), self.cols())?;
 

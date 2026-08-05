@@ -7,16 +7,12 @@ use crate::{
         VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply,
         VecZnxIdftApplyTmpA, VecZnxNormalizeAssignBackend,
     },
-    layouts::{
-        Backend, CnvPVecL, CnvPVecR, DataView, FillUniform, ScratchArena, ScratchOwned, VecZnx, ZnxView, ZnxViewMut, ZnxZero,
-    },
+    layouts::{DataView, FillUniform, ScratchArena, ScratchOwned, VecZnx, ZnxView, ZnxViewMut, ZnxZero},
     source::Source,
 };
 
-use crate::layouts::VecZnxBigOwned;
 use crate::layouts::VecZnxDftOwned;
-type CnvPVecLOwned<BE> = CnvPVecL<<BE as Backend>::OwnedBuf, <BE as Backend>::DftWord>;
-type CnvPVecROwned<BE> = CnvPVecR<<BE as Backend>::OwnedBuf, <BE as Backend>::DftWord>;
+use crate::layouts::{CnvPVecLOwned, CnvPVecROwned, VecZnxBigOwned};
 
 pub fn test_convolution_by_const<M, BE: crate::test_suite::TestBackend<OwnedBuf = Vec<u8>>>(module: &M, base2k: usize)
 where

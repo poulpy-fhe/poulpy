@@ -17,7 +17,7 @@ use crate::{
 /// Stores the GLWE secret tensor with polynomials in the frequency domain
 /// for fast tensor operations. Tied to a specific backend via `B: Backend`.
 pub struct GLWESecretTensorPrepared<D: Data, B: Backend> {
-    pub(crate) data: SvpPPol<D, B::DftWord>,
+    pub(crate) data: SvpPPol<D, B::DftWord, B>,
     pub(crate) rank: Rank,
     pub(crate) dist: Distribution,
 }

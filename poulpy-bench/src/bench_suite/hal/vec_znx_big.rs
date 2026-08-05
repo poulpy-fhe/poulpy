@@ -37,9 +37,9 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
-        let mut b: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
-        let mut c: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
+        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
+        let mut b: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
+        let mut c: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
 
         // Fill a with random bytes
         source.fill_bytes(a.data_mut().as_mut());
@@ -88,8 +88,8 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
-        let mut c: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
+        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
+        let mut c: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
 
         // Fill a with random i64
         source.fill_bytes(a.data_mut().as_mut());
@@ -136,9 +136,9 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
+        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
         let mut b = module.vec_znx_alloc(cols, size);
-        let mut c: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
+        let mut c: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
 
         // Fill a with random i64
         source.fill_bytes(a.data_mut().as_mut());
@@ -188,7 +188,7 @@ where
         let mut source: Source = Source::new([0u8; 32]);
 
         let mut a = module.vec_znx_alloc(cols, size);
-        let mut c: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
+        let mut c: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
 
         // Fill a with random i64
         source.fill_bytes(a.data_mut().as_mut());
@@ -235,8 +235,8 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
-        let mut res: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
+        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
+        let mut res: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
 
         // Fill a with random i64
         source.fill_bytes(a.data_mut().as_mut());
@@ -285,7 +285,7 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut res: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
+        let mut res: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
 
         let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.vec_znx_big_automorphism_assign_tmp_bytes());
 
@@ -331,8 +331,8 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
-        let mut b: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
+        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
+        let mut b: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
 
         // Fill a with random i64
         source.fill_bytes(a.data_mut().as_mut());
@@ -378,7 +378,7 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
+        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
 
         // Fill a with random i64
         source.fill_bytes(a.data_mut().as_mut());
@@ -427,7 +427,7 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
+        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
         let mut res = module.vec_znx_alloc(cols, size);
 
         // Fill a with random i64
@@ -488,7 +488,7 @@ where
         let base2k: usize = 50;
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
+        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
         let mut res = module.vec_znx_alloc(cols, size);
         let mut tmp = module.vec_znx_alloc(1, size);
 
@@ -556,7 +556,7 @@ where
         let base2k: usize = 50;
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
+        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
         let mut res = module.vec_znx_alloc(cols, size);
         let mut tmp = module.vec_znx_alloc(1, size);
 
@@ -616,7 +616,7 @@ pub fn bench_vec_znx_normalize_add_assign_compare<B: Backend>(
         let base2k: usize = 50;
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
+        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
         let mut res_fused = module.vec_znx_alloc(cols, size);
         let mut res_fallback = module.vec_znx_alloc(cols, size);
         let mut tmp_fused = module.vec_znx_alloc(1, size);
@@ -696,7 +696,7 @@ pub fn bench_vec_znx_normalize_sub_assign_compare<B: Backend>(
         let base2k: usize = 50;
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
+        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
         let mut res_fused = module.vec_znx_alloc(cols, size);
         let mut res_fallback = module.vec_znx_alloc(cols, size);
         let mut tmp_fused = module.vec_znx_alloc(1, size);
@@ -772,9 +772,9 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
-        let mut b: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
-        let mut c: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
+        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
+        let mut b: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
+        let mut c: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
 
         // Fill a with random bytes
         source.fill_bytes(a.data_mut().as_mut());
@@ -822,8 +822,8 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
-        let mut c: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
+        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
+        let mut c: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
 
         // Fill a with random bytes
         source.fill_bytes(a.data_mut().as_mut());
@@ -869,8 +869,8 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
-        let mut c: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
+        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
+        let mut c: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
 
         // Fill a with random bytes
         source.fill_bytes(a.data_mut().as_mut());
@@ -917,8 +917,8 @@ where
         let mut source: Source = Source::new([0u8; 32]);
 
         let mut a = module.vec_znx_alloc(cols, size);
-        let mut b: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
-        let mut c: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
+        let mut b: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
+        let mut c: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
 
         // Fill a with random bytes
         source.fill_bytes(a.data_mut().as_mut());
@@ -966,9 +966,9 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
+        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
         let mut b = module.vec_znx_alloc(cols, size);
-        let mut c: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
+        let mut c: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
 
         // Fill a with random bytes
         source.fill_bytes(a.data_mut().as_mut());

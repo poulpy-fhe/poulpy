@@ -44,10 +44,11 @@ use poulpy_core::{
     layouts::{GGSW, GLWE, GLWEPlaintext, LWE, LWESecret},
 };
 use poulpy_hal::layouts::{
-    Backend, CnvPVecL, CnvPVecR, DataView, MatZnx, MatZnxBackendRef, MatZnxToBackendRef, ScalarZnx, ScalarZnxBackendRef,
-    ScalarZnxToBackendRef, SvpPPol, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut,
-    VecZnxBigBackendRef, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDft, VecZnxDftBackendMut, VecZnxDftBackendRef,
-    VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, VmpPMat,
+    Backend, CnvPVecL, CnvPVecLOwned, CnvPVecR, CnvPVecROwned, DataView, MatZnx, MatZnxBackendRef, MatZnxToBackendRef, ScalarZnx,
+    ScalarZnxBackendRef, ScalarZnxToBackendRef, SvpPPol, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig,
+    VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDft,
+    VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftOwned, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut,
+    VecZnxToBackendRef, VmpPMat,
 };
 #[cfg(any(feature = "core-bench", feature = "bin-fhe-bench", feature = "ckks-bench"))]
 use poulpy_hal::layouts::{Module, TransferFrom};
@@ -132,10 +133,10 @@ pub fn random_backend_vec_znx_dft<BE: Backend>(
     cols: usize,
     size: usize,
     source: &mut Source,
-) -> VecZnxDft<BE::OwnedBuf, BE::DftWord> {
+) -> VecZnxDft<BE::OwnedBuf, BE::DftWord, BE> {
     let mut bytes = vec![0u8; BE::bytes_of_vec_znx_dft(n, cols, size)];
     source.fill_bytes(&mut bytes);
-    VecZnxDft::from_bytes::<BE>(n, cols, size, bytes)
+    VecZnxDftOwned::<BE>::from_bytes(n, cols, size, bytes)
 }
 
 pub fn random_backend_vec_znx_big<BE: Backend>(
@@ -143,13 +144,17 @@ pub fn random_backend_vec_znx_big<BE: Backend>(
     cols: usize,
     size: usize,
     source: &mut Source,
-) -> VecZnxBig<BE::OwnedBuf, BE::BigWord> {
+) -> VecZnxBig<BE::OwnedBuf, BE::BigWord, BE> {
     let mut bytes = vec![0u8; BE::bytes_of_vec_znx_big(n, cols, size)];
     source.fill_bytes(&mut bytes);
-    VecZnxBig::from_bytes::<BE>(n, cols, size, bytes)
+    VecZnxBigOwned::<BE>::from_bytes(n, cols, size, bytes)
 }
 
-pub fn random_backend_svp_ppol<BE: Backend>(n: usize, cols: usize, source: &mut Source) -> SvpPPol<BE::OwnedBuf, BE::DftWord> {
+pub fn random_backend_svp_ppol<BE: Backend>(
+    n: usize,
+    cols: usize,
+    source: &mut Source,
+) -> SvpPPol<BE::OwnedBuf, BE::DftWord, BE> {
     let mut bytes = vec![0u8; BE::bytes_of_svp_ppol(n, cols)];
     source.fill_bytes(&mut bytes);
     SvpPPol::from_data(BE::from_host_bytes(&bytes), n, cols)
@@ -162,7 +167,7 @@ pub fn random_backend_vmp_pmat<BE: Backend>(
     cols_out: usize,
     size: usize,
     source: &mut Source,
-) -> VmpPMat<BE::OwnedBuf, BE::DftWord> {
+) -> VmpPMat<BE::OwnedBuf, BE::DftWord, BE> {
     let mut bytes = vec![0u8; BE::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size)];
     source.fill_bytes(&mut bytes);
     VmpPMat::from_data(BE::from_host_bytes(&bytes), n, rows, cols_in, cols_out, size)
@@ -173,10 +178,10 @@ pub fn random_backend_cnv_pvec_left<BE: Backend>(
     cols: usize,
     size: usize,
     source: &mut Source,
-) -> CnvPVecL<BE::OwnedBuf, BE::DftWord> {
+) -> CnvPVecL<BE::OwnedBuf, BE::DftWord, BE> {
     let mut bytes = vec![0u8; BE::bytes_of_cnv_pvec_left(n, cols, size)];
     source.fill_bytes(&mut bytes);
-    CnvPVecL::from_bytes::<BE>(n, cols, size, bytes)
+    CnvPVecLOwned::<BE>::from_bytes(n, cols, size, bytes)
 }
 
 pub fn random_backend_cnv_pvec_right<BE: Backend>(
@@ -184,10 +189,10 @@ pub fn random_backend_cnv_pvec_right<BE: Backend>(
     cols: usize,
     size: usize,
     source: &mut Source,
-) -> CnvPVecR<BE::OwnedBuf, BE::DftWord> {
+) -> CnvPVecR<BE::OwnedBuf, BE::DftWord, BE> {
     let mut bytes = vec![0u8; BE::bytes_of_cnv_pvec_right(n, cols, size)];
     source.fill_bytes(&mut bytes);
-    CnvPVecR::from_bytes::<BE>(n, cols, size, bytes)
+    CnvPVecROwned::<BE>::from_bytes(n, cols, size, bytes)
 }
 
 pub fn scalar_znx_backend_ref<'a, BE: Backend>(src: &'a ScalarZnx<BE::OwnedBuf>) -> ScalarZnxBackendRef<'a, BE> {
@@ -206,24 +211,28 @@ pub fn mat_znx_backend_ref<'a, BE: Backend>(src: &'a MatZnx<BE::OwnedBuf>) -> Ma
     <MatZnx<BE::OwnedBuf> as MatZnxToBackendRef<BE>>::to_backend_ref(src)
 }
 
-pub fn vec_znx_dft_backend_ref<'a, BE: Backend>(src: &'a VecZnxDft<BE::OwnedBuf, BE::DftWord>) -> VecZnxDftBackendRef<'a, BE> {
-    <VecZnxDft<BE::OwnedBuf, BE::DftWord> as VecZnxDftToBackendRef<BE>>::to_backend_ref(src)
+pub fn vec_znx_dft_backend_ref<'a, BE: Backend>(
+    src: &'a VecZnxDft<BE::OwnedBuf, BE::DftWord, BE>,
+) -> VecZnxDftBackendRef<'a, BE> {
+    <VecZnxDft<BE::OwnedBuf, BE::DftWord, BE> as VecZnxDftToBackendRef<BE>>::to_backend_ref(src)
 }
 
 pub fn vec_znx_dft_backend_mut<'a, BE: Backend>(
-    src: &'a mut VecZnxDft<BE::OwnedBuf, BE::DftWord>,
+    src: &'a mut VecZnxDft<BE::OwnedBuf, BE::DftWord, BE>,
 ) -> VecZnxDftBackendMut<'a, BE> {
-    <VecZnxDft<BE::OwnedBuf, BE::DftWord> as VecZnxDftToBackendMut<BE>>::to_backend_mut(src)
+    <VecZnxDft<BE::OwnedBuf, BE::DftWord, BE> as VecZnxDftToBackendMut<BE>>::to_backend_mut(src)
 }
 
-pub fn vec_znx_big_backend_ref<'a, BE: Backend>(src: &'a VecZnxBig<BE::OwnedBuf, BE::BigWord>) -> VecZnxBigBackendRef<'a, BE> {
-    <VecZnxBig<BE::OwnedBuf, BE::BigWord> as VecZnxBigToBackendRef<BE>>::to_backend_ref(src)
+pub fn vec_znx_big_backend_ref<'a, BE: Backend>(
+    src: &'a VecZnxBig<BE::OwnedBuf, BE::BigWord, BE>,
+) -> VecZnxBigBackendRef<'a, BE> {
+    <VecZnxBig<BE::OwnedBuf, BE::BigWord, BE> as VecZnxBigToBackendRef<BE>>::to_backend_ref(src)
 }
 
 pub fn vec_znx_big_backend_mut<'a, BE: Backend>(
-    src: &'a mut VecZnxBig<BE::OwnedBuf, BE::BigWord>,
+    src: &'a mut VecZnxBig<BE::OwnedBuf, BE::BigWord, BE>,
 ) -> VecZnxBigBackendMut<'a, BE> {
-    <VecZnxBig<BE::OwnedBuf, BE::BigWord> as VecZnxBigToBackendMut<BE>>::to_backend_mut(src)
+    <VecZnxBig<BE::OwnedBuf, BE::BigWord, BE> as VecZnxBigToBackendMut<BE>>::to_backend_mut(src)
 }
 
 #[cfg(any(feature = "core-bench", feature = "bin-fhe-bench", feature = "ckks-bench"))]

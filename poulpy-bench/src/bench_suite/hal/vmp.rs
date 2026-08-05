@@ -40,7 +40,7 @@ where
 
         let mat = crate::random_host_mat_znx(module.n(), rows, cols_in, cols_out, size, &mut source);
         let mat = crate::upload_host_mat_znx::<B>(&mat);
-        let mut pmat: VmpPMat<B::OwnedBuf, B::DftWord> = module.vmp_pmat_alloc(rows, cols_in, cols_out, size);
+        let mut pmat: VmpPMat<B::OwnedBuf, B::DftWord, B> = module.vmp_pmat_alloc(rows, cols_in, cols_out, size);
 
         move || {
             let mut pmat_backend = pmat.to_backend_mut::<B>();
@@ -92,10 +92,10 @@ where
         let mut scratch: ScratchOwned<B> =
             ScratchOwned::alloc(module.vmp_apply_dft_tmp_bytes(size, size, rows, cols_in, cols_out, size));
 
-        let mut res: VecZnxDft<B::OwnedBuf, B::DftWord> = module.vec_znx_dft_alloc(cols_out, size);
+        let mut res: VecZnxDft<B::OwnedBuf, B::DftWord, B> = module.vec_znx_dft_alloc(cols_out, size);
         let a = crate::random_host_vec_znx(module.n(), cols_in, size, &mut source);
         let a = crate::upload_host_vec_znx::<B>(&a);
-        let pmat: VmpPMat<B::OwnedBuf, B::DftWord> =
+        let pmat: VmpPMat<B::OwnedBuf, B::DftWord, B> =
             crate::random_backend_vmp_pmat::<B>(module.n(), rows, cols_in, cols_out, size, &mut source);
 
         move || {
@@ -148,10 +148,10 @@ where
         let mut scratch: ScratchOwned<B> =
             ScratchOwned::alloc(module.vmp_apply_dft_to_dft_tmp_bytes(size, size, rows, cols_in, cols_out, size));
 
-        let mut res: VecZnxDft<B::OwnedBuf, B::DftWord> = module.vec_znx_dft_alloc(cols_out, size);
-        let a: VecZnxDft<B::OwnedBuf, B::DftWord> =
+        let mut res: VecZnxDft<B::OwnedBuf, B::DftWord, B> = module.vec_znx_dft_alloc(cols_out, size);
+        let a: VecZnxDft<B::OwnedBuf, B::DftWord, B> =
             crate::random_backend_vec_znx_dft::<B>(module.n(), cols_in, size, &mut source);
-        let pmat: VmpPMat<B::OwnedBuf, B::DftWord> =
+        let pmat: VmpPMat<B::OwnedBuf, B::DftWord, B> =
             crate::random_backend_vmp_pmat::<B>(module.n(), rows, cols_in, cols_out, size, &mut source);
 
         move || {

@@ -294,7 +294,7 @@ where
         }
     }
 
-    res.into_big::<BE>()
+    res.into_big()
 }
 
 pub fn vec_znx_dft_sub<BE>(

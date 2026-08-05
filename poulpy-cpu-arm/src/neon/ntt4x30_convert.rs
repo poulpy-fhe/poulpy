@@ -539,10 +539,10 @@ unsafe fn compact_all_blocks_neon(n: usize, n_blocks: usize, u64_ptr: *mut u64, 
 #[allow(dead_code)]
 pub(crate) fn vec_znx_idft_apply_consume<D: Data>(
     module: &Module<NTT4x30Neon>,
-    mut a: VecZnxDft<D, <NTT4x30Neon as poulpy_hal::layouts::Backend>::DftWord>,
-) -> VecZnxBig<D, <NTT4x30Neon as poulpy_hal::layouts::Backend>::BigWord>
+    mut a: VecZnxDft<D, <NTT4x30Neon as poulpy_hal::layouts::Backend>::DftWord, NTT4x30Neon>,
+) -> VecZnxBig<D, <NTT4x30Neon as poulpy_hal::layouts::Backend>::BigWord, NTT4x30Neon>
 where
-    VecZnxDft<D, <NTT4x30Neon as poulpy_hal::layouts::Backend>::DftWord>: VecZnxDftToBackendMut<NTT4x30Neon>,
+    VecZnxDft<D, <NTT4x30Neon as poulpy_hal::layouts::Backend>::DftWord, NTT4x30Neon>: VecZnxDftToBackendMut<NTT4x30Neon>,
 {
     let table = module.get_intt_table();
     let (n, n_blocks, u64_ptr) = {

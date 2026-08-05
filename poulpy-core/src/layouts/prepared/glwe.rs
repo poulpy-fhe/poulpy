@@ -12,7 +12,7 @@ use crate::layouts::{Base2K, Degree, GLWEInfos, GLWEToBackendRef, GetDegree, LWE
 /// Tied to a specific backend via `B: Backend`.
 #[derive(PartialEq)]
 pub struct GLWEPrepared<D: Data, B: Backend> {
-    pub(crate) data: VecZnxDft<D, B::DftWord>,
+    pub(crate) data: VecZnxDft<D, B::DftWord, B>,
     pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
 }

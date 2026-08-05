@@ -67,13 +67,13 @@ impl VmpPMatShape {
 /// coefficient count matches vector lane widths relative to buffer alignment.
 #[repr(C)]
 #[derive(PartialEq, Eq, Hash)]
-pub struct VmpPMat<D: Data, W: DftWord> {
+pub struct VmpPMat<D: Data, W: DftWord, B: Backend<DftWord = W>> {
     data: D,
     shape: VmpPMatShape,
-    _phantom: PhantomData<W>,
+    _phantom: PhantomData<(W, B)>,
 }
 
-impl<D: HostDataRef, W: DftWord> DigestU64 for VmpPMat<D, W> {
+impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> DigestU64 for VmpPMat<D, W, B> {
     fn digest_u64(&self) -> u64 {
         let mut h: DefaultHasher = DefaultHasher::new();
         h.write(self.data.as_ref());
@@ -86,11 +86,11 @@ impl<D: HostDataRef, W: DftWord> DigestU64 for VmpPMat<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: DftWord> ZnxView for VmpPMat<D, W> {
+impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> ZnxView for VmpPMat<D, W, B> {
     type Scalar = W;
 }
 
-impl<D: Data, W: DftWord> ZnxInfos for VmpPMat<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for VmpPMat<D, W, B> {
     fn cols(&self) -> usize {
         self.shape.cols_in()
     }
@@ -112,20 +112,20 @@ impl<D: Data, W: DftWord> ZnxInfos for VmpPMat<D, W> {
     }
 }
 
-impl<D: Data, W: DftWord> DataView for VmpPMat<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> DataView for VmpPMat<D, W, B> {
     type D = D;
     fn data(&self) -> &Self::D {
         &self.data
     }
 }
 
-impl<D: Data, W: DftWord> DataViewMut for VmpPMat<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> DataViewMut for VmpPMat<D, W, B> {
     fn data_mut(&mut self) -> &mut Self::D {
         &mut self.data
     }
 }
 
-impl<D: Data, W: DftWord> VmpPMat<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
     pub fn shape(&self) -> VmpPMatShape {
         self.shape
     }
@@ -153,11 +153,11 @@ impl<D: Data, W: DftWord> VmpPMat<D, W> {
     }
 }
 
-impl<D: Data, W: DftWord> VmpPMat<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
     /// Allocates a zero-initialized backend-owned `VmpPMat`.
-    pub fn alloc<B>(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> VmpPMatOwned<B>
+    pub fn alloc(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> VmpPMatOwned<B>
     where
-        B: Backend<DftWord = W, OwnedBuf = D>,
+        B: Backend<OwnedBuf = D>,
     {
         let data: <B as Backend>::OwnedBuf = B::alloc_zeroed_bytes(B::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size));
         VmpPMat {
@@ -168,43 +168,45 @@ impl<D: Data, W: DftWord> VmpPMat<D, W> {
     }
 }
 
-impl<D: Data, W: DftWord> VmpPMat<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
     /// Borrows this backend-owned `VmpPMat` using the backend's native view type.
     ///
     /// Ergonomic inherent form of [`VmpPMatToBackendRef`]: the backend is
     /// supplied explicitly (`x.to_backend_ref::<B>()`) since it is not
     /// recoverable from the word-keyed type alone.
-    pub fn to_backend_ref<B>(&self) -> VmpPMatBackendRef<'_, B>
+    pub fn to_backend_ref<B2>(&self) -> VmpPMatBackendRef<'_, B2>
     where
-        B: Backend<OwnedBuf = D, DftWord = W>,
+        B2: Backend,
+        Self: VmpPMatToBackendRef<B2>,
     {
-        VmpPMatToBackendRef::<B>::to_backend_ref(self)
+        VmpPMatToBackendRef::<B2>::to_backend_ref(self)
     }
 
     /// Mutably borrows this backend-owned `VmpPMat` using the backend's native view type.
     ///
     /// Ergonomic inherent form of [`VmpPMatToBackendMut`]; see
     /// [`Self::to_backend_ref`].
-    pub fn to_backend_mut<B>(&mut self) -> VmpPMatBackendMut<'_, B>
+    pub fn to_backend_mut<B2>(&mut self) -> VmpPMatBackendMut<'_, B2>
     where
-        B: Backend<OwnedBuf = D, DftWord = W>,
+        B2: Backend,
+        Self: VmpPMatToBackendMut<B2>,
     {
-        VmpPMatToBackendMut::<B>::to_backend_mut(self)
+        VmpPMatToBackendMut::<B2>::to_backend_mut(self)
     }
 }
 
 /// Owned `VmpPMat` backed by a backend-owned buffer.
-pub type VmpPMatOwned<B> = VmpPMat<<B as Backend>::OwnedBuf, <B as Backend>::DftWord>;
+pub type VmpPMatOwned<B> = VmpPMat<<B as Backend>::OwnedBuf, <B as Backend>::DftWord, B>;
 /// Immutably borrowed `VmpPMat`.
-pub type VmpPMatRef<'a, B> = VmpPMat<&'a [u8], <B as Backend>::DftWord>;
+pub type VmpPMatRef<'a, B> = VmpPMat<&'a [u8], <B as Backend>::DftWord, B>;
 /// Shared backend-native borrow of a `VmpPMat`.
-pub type VmpPMatBackendRef<'a, B> = VmpPMat<<B as Backend>::BufRef<'a>, <B as Backend>::DftWord>;
+pub type VmpPMatBackendRef<'a, B> = VmpPMat<<B as Backend>::BufRef<'a>, <B as Backend>::DftWord, B>;
 /// Mutable backend-native borrow of a `VmpPMat`.
-pub type VmpPMatBackendMut<'a, B> = VmpPMat<<B as Backend>::BufMut<'a>, <B as Backend>::DftWord>;
+pub type VmpPMatBackendMut<'a, B> = VmpPMat<<B as Backend>::BufMut<'a>, <B as Backend>::DftWord, B>;
 
 /// Reborrow an immutable backend-native `VmpPMat` view as a shared backend-native view.
 pub fn vmp_pmat_backend_ref_from_ref<'a, 'b, B: Backend + 'b>(
-    pmat: &'a VmpPMat<B::BufRef<'b>, B::DftWord>,
+    pmat: &'a VmpPMat<B::BufRef<'b>, B::DftWord, B>,
 ) -> VmpPMatBackendRef<'a, B> {
     VmpPMat {
         data: B::view_ref(&pmat.data),
@@ -237,7 +239,7 @@ pub trait VmpPMatToBackendRef<B: Backend> {
     fn to_backend_ref(&self) -> VmpPMatBackendRef<'_, B>;
 }
 
-impl<B: Backend> VmpPMatToBackendRef<B> for VmpPMat<B::OwnedBuf, B::DftWord> {
+impl<B: Backend> VmpPMatToBackendRef<B> for VmpPMat<B::OwnedBuf, B::DftWord, B> {
     fn to_backend_ref(&self) -> VmpPMatBackendRef<'_, B> {
         VmpPMat {
             data: B::view(&self.data),
@@ -247,7 +249,7 @@ impl<B: Backend> VmpPMatToBackendRef<B> for VmpPMat<B::OwnedBuf, B::DftWord> {
     }
 }
 
-impl<'b, B: Backend + 'b> VmpPMatToBackendRef<B> for &VmpPMat<B::BufRef<'b>, B::DftWord> {
+impl<'b, B: Backend + 'b> VmpPMatToBackendRef<B> for &VmpPMat<B::BufRef<'b>, B::DftWord, B> {
     fn to_backend_ref(&self) -> VmpPMatBackendRef<'_, B> {
         VmpPMat {
             data: B::view_ref(&self.data),
@@ -262,7 +264,7 @@ pub trait VmpPMatReborrowBackendRef<B: Backend> {
     fn reborrow_backend_ref(&self) -> VmpPMatBackendRef<'_, B>;
 }
 
-impl<'b, B: Backend + 'b> VmpPMatReborrowBackendRef<B> for VmpPMat<B::BufMut<'b>, B::DftWord> {
+impl<'b, B: Backend + 'b> VmpPMatReborrowBackendRef<B> for VmpPMat<B::BufMut<'b>, B::DftWord, B> {
     fn reborrow_backend_ref(&self) -> VmpPMatBackendRef<'_, B> {
         VmpPMat {
             data: B::view_ref_mut(&self.data),
@@ -277,7 +279,7 @@ pub trait VmpPMatToBackendMut<B: Backend> {
     fn to_backend_mut(&mut self) -> VmpPMatBackendMut<'_, B>;
 }
 
-impl<B: Backend> VmpPMatToBackendMut<B> for VmpPMat<B::OwnedBuf, B::DftWord> {
+impl<B: Backend> VmpPMatToBackendMut<B> for VmpPMat<B::OwnedBuf, B::DftWord, B> {
     fn to_backend_mut(&mut self) -> VmpPMatBackendMut<'_, B> {
         VmpPMat {
             data: B::view_mut(&mut self.data),
@@ -287,7 +289,7 @@ impl<B: Backend> VmpPMatToBackendMut<B> for VmpPMat<B::OwnedBuf, B::DftWord> {
     }
 }
 
-impl<'b, B: Backend + 'b> VmpPMatToBackendMut<B> for &mut VmpPMat<B::BufMut<'b>, B::DftWord> {
+impl<'b, B: Backend + 'b> VmpPMatToBackendMut<B> for &mut VmpPMat<B::BufMut<'b>, B::DftWord, B> {
     fn to_backend_mut(&mut self) -> VmpPMatBackendMut<'_, B> {
         vmp_pmat_backend_mut_from_mut::<B>(self)
     }
@@ -298,13 +300,13 @@ pub trait VmpPMatReborrowBackendMut<B: Backend> {
     fn reborrow_backend_mut(&mut self) -> VmpPMatBackendMut<'_, B>;
 }
 
-impl<'b, B: Backend + 'b> VmpPMatReborrowBackendMut<B> for VmpPMat<B::BufMut<'b>, B::DftWord> {
+impl<'b, B: Backend + 'b> VmpPMatReborrowBackendMut<B> for VmpPMat<B::BufMut<'b>, B::DftWord, B> {
     fn reborrow_backend_mut(&mut self) -> VmpPMatBackendMut<'_, B> {
         vmp_pmat_backend_mut_from_mut::<B>(self)
     }
 }
 
-impl<D: Data, W: DftWord> VmpPMat<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
     pub fn from_data(data: D, n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> Self {
         Self {
             data,

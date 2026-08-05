@@ -34,13 +34,13 @@ impl CnvPVecShape {
 /// [`DftWord`] type `W`, ready to be used as the right operand of
 /// [`Convolution::cnv_apply_dft`](crate::api::Convolution::cnv_apply_dft).
 /// Created via [`Convolution::cnv_prepare_right`](crate::api::Convolution::cnv_prepare_right).
-pub struct CnvPVecR<D: Data, W: DftWord> {
+pub struct CnvPVecR<D: Data, W: DftWord, B: Backend<DftWord = W>> {
     data: D,
     shape: CnvPVecShape,
-    _phantom: PhantomData<W>,
+    _phantom: PhantomData<(W, B)>,
 }
 
-impl<D: Data, W: DftWord> ZnxInfos for CnvPVecR<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for CnvPVecR<D, W, B> {
     fn cols(&self) -> usize {
         self.shape.cols()
     }
@@ -58,24 +58,24 @@ impl<D: Data, W: DftWord> ZnxInfos for CnvPVecR<D, W> {
     }
 }
 
-impl<D: Data, W: DftWord> DataView for CnvPVecR<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> DataView for CnvPVecR<D, W, B> {
     type D = D;
     fn data(&self) -> &Self::D {
         &self.data
     }
 }
 
-impl<D: Data, W: DftWord> DataViewMut for CnvPVecR<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> DataViewMut for CnvPVecR<D, W, B> {
     fn data_mut(&mut self) -> &mut Self::D {
         &mut self.data
     }
 }
 
-impl<D: HostDataRef, W: DftWord> ZnxView for CnvPVecR<D, W> {
+impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> ZnxView for CnvPVecR<D, W, B> {
     type Scalar = W;
 }
 
-impl<D: Data, W: DftWord> CnvPVecR<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
     pub fn shape(&self) -> CnvPVecShape {
         self.shape
     }
@@ -93,11 +93,11 @@ impl<D: Data, W: DftWord> CnvPVecR<D, W> {
     }
 }
 
-impl<D: Data, W: DftWord> CnvPVecR<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
     /// Allocates a zero-initialized backend-owned `CnvPVecR`.
-    pub fn alloc<B>(n: usize, cols: usize, size: usize) -> CnvPVecR<B::OwnedBuf, W>
+    pub fn alloc(n: usize, cols: usize, size: usize) -> CnvPVecR<B::OwnedBuf, W, B>
     where
-        B: Backend<DftWord = W, OwnedBuf = D>,
+        B: Backend<OwnedBuf = D>,
     {
         let data: B::OwnedBuf = B::alloc_zeroed_bytes(B::bytes_of_cnv_pvec_right(n, cols, size));
         CnvPVecR {
@@ -112,9 +112,9 @@ impl<D: Data, W: DftWord> CnvPVecR<D, W> {
     /// # Panics
     ///
     /// Panics if the buffer length does not equal `B::bytes_of_cnv_pvec_right(n, cols, size)`.
-    pub fn from_bytes<B>(n: usize, cols: usize, size: usize, bytes: impl Into<Vec<u8>>) -> CnvPVecR<B::OwnedBuf, W>
+    pub fn from_bytes(n: usize, cols: usize, size: usize, bytes: impl Into<Vec<u8>>) -> CnvPVecR<B::OwnedBuf, W, B>
     where
-        B: Backend<DftWord = W, OwnedBuf = D>,
+        B: Backend<OwnedBuf = D>,
     {
         let data: Vec<u8> = bytes.into();
         assert!(data.len() == B::bytes_of_cnv_pvec_right(n, cols, size));
@@ -127,7 +127,7 @@ impl<D: Data, W: DftWord> CnvPVecR<D, W> {
     }
 }
 
-impl<D: Data, W: DftWord> CnvPVecR<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
     pub fn from_data(data: D, n: usize, cols: usize, size: usize) -> Self {
         Self {
             data,
@@ -143,13 +143,13 @@ impl<D: Data, W: DftWord> CnvPVecR<D, W> {
 /// [`DftWord`] type `W`, ready to be used as the left operand of
 /// [`Convolution::cnv_apply_dft`](crate::api::Convolution::cnv_apply_dft).
 /// Created via [`Convolution::cnv_prepare_left`](crate::api::Convolution::cnv_prepare_left).
-pub struct CnvPVecL<D: Data, W: DftWord> {
+pub struct CnvPVecL<D: Data, W: DftWord, B: Backend<DftWord = W>> {
     data: D,
     shape: CnvPVecShape,
-    _phantom: PhantomData<W>,
+    _phantom: PhantomData<(W, B)>,
 }
 
-impl<D: Data, W: DftWord> ZnxInfos for CnvPVecL<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for CnvPVecL<D, W, B> {
     fn cols(&self) -> usize {
         self.shape.cols()
     }
@@ -167,24 +167,24 @@ impl<D: Data, W: DftWord> ZnxInfos for CnvPVecL<D, W> {
     }
 }
 
-impl<D: Data, W: DftWord> DataView for CnvPVecL<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> DataView for CnvPVecL<D, W, B> {
     type D = D;
     fn data(&self) -> &Self::D {
         &self.data
     }
 }
 
-impl<D: Data, W: DftWord> DataViewMut for CnvPVecL<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> DataViewMut for CnvPVecL<D, W, B> {
     fn data_mut(&mut self) -> &mut Self::D {
         &mut self.data
     }
 }
 
-impl<D: HostDataRef, W: DftWord> ZnxView for CnvPVecL<D, W> {
+impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> ZnxView for CnvPVecL<D, W, B> {
     type Scalar = W;
 }
 
-impl<D: Data, W: DftWord> CnvPVecL<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
     pub fn shape(&self) -> CnvPVecShape {
         self.shape
     }
@@ -202,11 +202,11 @@ impl<D: Data, W: DftWord> CnvPVecL<D, W> {
     }
 }
 
-impl<D: Data, W: DftWord> CnvPVecL<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
     /// Allocates a zero-initialized backend-owned `CnvPVecL`.
-    pub fn alloc<B>(n: usize, cols: usize, size: usize) -> CnvPVecL<B::OwnedBuf, W>
+    pub fn alloc(n: usize, cols: usize, size: usize) -> CnvPVecL<B::OwnedBuf, W, B>
     where
-        B: Backend<DftWord = W, OwnedBuf = D>,
+        B: Backend<OwnedBuf = D>,
     {
         let data: B::OwnedBuf = B::alloc_zeroed_bytes(B::bytes_of_cnv_pvec_left(n, cols, size));
         CnvPVecL {
@@ -221,9 +221,9 @@ impl<D: Data, W: DftWord> CnvPVecL<D, W> {
     /// # Panics
     ///
     /// Panics if the buffer length does not equal `B::bytes_of_cnv_pvec_left(n, cols, size)`.
-    pub fn from_bytes<B>(n: usize, cols: usize, size: usize, bytes: impl Into<Vec<u8>>) -> CnvPVecL<B::OwnedBuf, W>
+    pub fn from_bytes(n: usize, cols: usize, size: usize, bytes: impl Into<Vec<u8>>) -> CnvPVecL<B::OwnedBuf, W, B>
     where
-        B: Backend<DftWord = W, OwnedBuf = D>,
+        B: Backend<OwnedBuf = D>,
     {
         let data: Vec<u8> = bytes.into();
         assert!(data.len() == B::bytes_of_cnv_pvec_left(n, cols, size));
@@ -236,7 +236,7 @@ impl<D: Data, W: DftWord> CnvPVecL<D, W> {
     }
 }
 
-impl<D: Data, W: DftWord> CnvPVecL<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
     pub fn from_data(data: D, n: usize, cols: usize, size: usize) -> Self {
         Self {
             data,
@@ -263,58 +263,66 @@ pub struct CnvDftAccTerm<'a, BE: Backend + 'a> {
 }
 
 /// Borrow a `CnvPVecR` as a shared reference view.
-pub type CnvPVecRBackendRef<'a, B> = CnvPVecR<<B as Backend>::BufRef<'a>, <B as Backend>::DftWord>;
-pub type CnvPVecRBackendMut<'a, B> = CnvPVecR<<B as Backend>::BufMut<'a>, <B as Backend>::DftWord>;
-pub type CnvPVecLBackendRef<'a, B> = CnvPVecL<<B as Backend>::BufRef<'a>, <B as Backend>::DftWord>;
-pub type CnvPVecLBackendMut<'a, B> = CnvPVecL<<B as Backend>::BufMut<'a>, <B as Backend>::DftWord>;
+/// Owned `CnvPVecR` backed by a backend-owned buffer.
+pub type CnvPVecROwned<B> = CnvPVecR<<B as Backend>::OwnedBuf, <B as Backend>::DftWord, B>;
+/// Owned `CnvPVecL` backed by a backend-owned buffer.
+pub type CnvPVecLOwned<B> = CnvPVecL<<B as Backend>::OwnedBuf, <B as Backend>::DftWord, B>;
+pub type CnvPVecRBackendRef<'a, B> = CnvPVecR<<B as Backend>::BufRef<'a>, <B as Backend>::DftWord, B>;
+pub type CnvPVecRBackendMut<'a, B> = CnvPVecR<<B as Backend>::BufMut<'a>, <B as Backend>::DftWord, B>;
+pub type CnvPVecLBackendRef<'a, B> = CnvPVecL<<B as Backend>::BufRef<'a>, <B as Backend>::DftWord, B>;
+pub type CnvPVecLBackendMut<'a, B> = CnvPVecL<<B as Backend>::BufMut<'a>, <B as Backend>::DftWord, B>;
 
-impl<D: Data, W: DftWord> CnvPVecR<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
     /// Borrows this backend-owned `CnvPVecR` using the backend's native view type.
     ///
     /// Ergonomic inherent form of [`CnvPVecRToBackendRef`]: the backend is
     /// supplied explicitly (`x.to_backend_ref::<B>()`) since it is not
     /// recoverable from the word-keyed type alone.
-    pub fn to_backend_ref<B>(&self) -> CnvPVecRBackendRef<'_, B>
+    pub fn to_backend_ref<B2>(&self) -> CnvPVecRBackendRef<'_, B2>
     where
-        B: Backend<OwnedBuf = D, DftWord = W>,
+        B2: Backend,
+        Self: CnvPVecRToBackendRef<B2>,
     {
-        CnvPVecRToBackendRef::<B>::to_backend_ref(self)
+        CnvPVecRToBackendRef::<B2>::to_backend_ref(self)
     }
 
     /// Mutably borrows this backend-owned `CnvPVecR` using the backend's native view type.
     ///
     /// Ergonomic inherent form of [`CnvPVecRToBackendMut`]; see
     /// [`Self::to_backend_ref`].
-    pub fn to_backend_mut<B>(&mut self) -> CnvPVecRBackendMut<'_, B>
+    pub fn to_backend_mut<B2>(&mut self) -> CnvPVecRBackendMut<'_, B2>
     where
-        B: Backend<OwnedBuf = D, DftWord = W>,
+        B2: Backend,
+        Self: CnvPVecRToBackendMut<B2>,
     {
-        CnvPVecRToBackendMut::<B>::to_backend_mut(self)
+        CnvPVecRToBackendMut::<B2>::to_backend_mut(self)
     }
 }
 
-impl<D: Data, W: DftWord> CnvPVecL<D, W> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
     /// Borrows this backend-owned `CnvPVecL` using the backend's native view type.
     ///
     /// Ergonomic inherent form of [`CnvPVecLToBackendRef`]: the backend is
     /// supplied explicitly (`x.to_backend_ref::<B>()`) since it is not
     /// recoverable from the word-keyed type alone.
-    pub fn to_backend_ref<B>(&self) -> CnvPVecLBackendRef<'_, B>
+    pub fn to_backend_ref<B2>(&self) -> CnvPVecLBackendRef<'_, B2>
     where
-        B: Backend<OwnedBuf = D, DftWord = W>,
+        B2: Backend,
+        Self: CnvPVecLToBackendRef<B2>,
     {
-        CnvPVecLToBackendRef::<B>::to_backend_ref(self)
+        CnvPVecLToBackendRef::<B2>::to_backend_ref(self)
     }
 
     /// Mutably borrows this backend-owned `CnvPVecL` using the backend's native view type.
     ///
     /// Ergonomic inherent form of [`CnvPVecLToBackendMut`]; see
     /// [`Self::to_backend_ref`].
-    pub fn to_backend_mut<B>(&mut self) -> CnvPVecLBackendMut<'_, B>
+    pub fn to_backend_mut<B2>(&mut self) -> CnvPVecLBackendMut<'_, B2>
     where
-        B: Backend<OwnedBuf = D, DftWord = W>,
+        B2: Backend,
+        Self: CnvPVecLToBackendMut<B2>,
     {
-        CnvPVecLToBackendMut::<B>::to_backend_mut(self)
+        CnvPVecLToBackendMut::<B2>::to_backend_mut(self)
     }
 }
 
@@ -323,7 +331,7 @@ pub trait CnvPVecRToBackendRef<BE: Backend> {
     fn to_backend_ref(&self) -> CnvPVecRBackendRef<'_, BE>;
 }
 
-impl<BE: Backend> CnvPVecRToBackendRef<BE> for CnvPVecR<BE::OwnedBuf, BE::DftWord> {
+impl<BE: Backend> CnvPVecRToBackendRef<BE> for CnvPVecR<BE::OwnedBuf, BE::DftWord, BE> {
     fn to_backend_ref(&self) -> CnvPVecRBackendRef<'_, BE> {
         CnvPVecR {
             data: BE::view(&self.data),
@@ -338,7 +346,7 @@ pub trait CnvPVecRReborrowBackendRef<BE: Backend> {
     fn reborrow_backend_ref(&self) -> CnvPVecRBackendRef<'_, BE>;
 }
 
-impl<'b, BE: Backend + 'b> CnvPVecRReborrowBackendRef<BE> for CnvPVecR<BE::BufMut<'b>, BE::DftWord> {
+impl<'b, BE: Backend + 'b> CnvPVecRReborrowBackendRef<BE> for CnvPVecR<BE::BufMut<'b>, BE::DftWord, BE> {
     fn reborrow_backend_ref(&self) -> CnvPVecRBackendRef<'_, BE> {
         CnvPVecR {
             data: BE::view_ref_mut(&self.data),
@@ -353,7 +361,7 @@ pub trait CnvPVecRToBackendMut<BE: Backend> {
     fn to_backend_mut(&mut self) -> CnvPVecRBackendMut<'_, BE>;
 }
 
-impl<BE: Backend> CnvPVecRToBackendMut<BE> for CnvPVecR<BE::OwnedBuf, BE::DftWord> {
+impl<BE: Backend> CnvPVecRToBackendMut<BE> for CnvPVecR<BE::OwnedBuf, BE::DftWord, BE> {
     fn to_backend_mut(&mut self) -> CnvPVecRBackendMut<'_, BE> {
         CnvPVecR {
             data: BE::view_mut(&mut self.data),
@@ -368,7 +376,7 @@ pub trait CnvPVecRReborrowBackendMut<BE: Backend> {
     fn reborrow_backend_mut(&mut self) -> CnvPVecRBackendMut<'_, BE>;
 }
 
-impl<'b, BE: Backend + 'b> CnvPVecRReborrowBackendMut<BE> for CnvPVecR<BE::BufMut<'b>, BE::DftWord> {
+impl<'b, BE: Backend + 'b> CnvPVecRReborrowBackendMut<BE> for CnvPVecR<BE::BufMut<'b>, BE::DftWord, BE> {
     fn reborrow_backend_mut(&mut self) -> CnvPVecRBackendMut<'_, BE> {
         CnvPVecR {
             data: BE::view_mut_ref(&mut self.data),
@@ -383,7 +391,7 @@ pub trait CnvPVecLToBackendRef<BE: Backend> {
     fn to_backend_ref(&self) -> CnvPVecLBackendRef<'_, BE>;
 }
 
-impl<BE: Backend> CnvPVecLToBackendRef<BE> for CnvPVecL<BE::OwnedBuf, BE::DftWord> {
+impl<BE: Backend> CnvPVecLToBackendRef<BE> for CnvPVecL<BE::OwnedBuf, BE::DftWord, BE> {
     fn to_backend_ref(&self) -> CnvPVecLBackendRef<'_, BE> {
         CnvPVecL {
             data: BE::view(&self.data),
@@ -398,7 +406,7 @@ pub trait CnvPVecLReborrowBackendRef<BE: Backend> {
     fn reborrow_backend_ref(&self) -> CnvPVecLBackendRef<'_, BE>;
 }
 
-impl<'b, BE: Backend + 'b> CnvPVecLReborrowBackendRef<BE> for CnvPVecL<BE::BufMut<'b>, BE::DftWord> {
+impl<'b, BE: Backend + 'b> CnvPVecLReborrowBackendRef<BE> for CnvPVecL<BE::BufMut<'b>, BE::DftWord, BE> {
     fn reborrow_backend_ref(&self) -> CnvPVecLBackendRef<'_, BE> {
         CnvPVecL {
             data: BE::view_ref_mut(&self.data),
@@ -413,7 +421,7 @@ pub trait CnvPVecLToBackendMut<BE: Backend> {
     fn to_backend_mut(&mut self) -> CnvPVecLBackendMut<'_, BE>;
 }
 
-impl<BE: Backend> CnvPVecLToBackendMut<BE> for CnvPVecL<BE::OwnedBuf, BE::DftWord> {
+impl<BE: Backend> CnvPVecLToBackendMut<BE> for CnvPVecL<BE::OwnedBuf, BE::DftWord, BE> {
     fn to_backend_mut(&mut self) -> CnvPVecLBackendMut<'_, BE> {
         CnvPVecL {
             data: BE::view_mut(&mut self.data),
@@ -428,7 +436,7 @@ pub trait CnvPVecLReborrowBackendMut<BE: Backend> {
     fn reborrow_backend_mut(&mut self) -> CnvPVecLBackendMut<'_, BE>;
 }
 
-impl<'b, BE: Backend + 'b> CnvPVecLReborrowBackendMut<BE> for CnvPVecL<BE::BufMut<'b>, BE::DftWord> {
+impl<'b, BE: Backend + 'b> CnvPVecLReborrowBackendMut<BE> for CnvPVecL<BE::BufMut<'b>, BE::DftWord, BE> {
     fn reborrow_backend_mut(&mut self) -> CnvPVecLBackendMut<'_, BE> {
         CnvPVecL {
             data: BE::view_mut_ref(&mut self.data),

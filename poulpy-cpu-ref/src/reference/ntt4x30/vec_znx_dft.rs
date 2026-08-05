@@ -208,7 +208,7 @@ where
 /// `&[u64]` of length `4*n`.
 #[inline(always)]
 fn limb_u64<D: crate::layouts::HostDataRef, BE: Backend<DftWord = Q120bScalar>>(
-    v: &VecZnxDft<D, BE::DftWord>,
+    v: &VecZnxDft<D, BE::DftWord, BE>,
     col: usize,
     limb: usize,
 ) -> &[u64] {
@@ -217,7 +217,7 @@ fn limb_u64<D: crate::layouts::HostDataRef, BE: Backend<DftWord = Q120bScalar>>(
 
 #[inline(always)]
 fn limb_u64_mut<D: crate::layouts::HostDataMut, BE: Backend<DftWord = Q120bScalar>>(
-    v: &mut VecZnxDft<D, BE::DftWord>,
+    v: &mut VecZnxDft<D, BE::DftWord, BE>,
     col: usize,
     limb: usize,
 ) -> &mut [u64] {
@@ -379,7 +379,7 @@ where
 
     unsafe { compact_all_blocks_scalar(n, n_blocks, u64_ptr, table) };
 
-    a.into_big::<BE>()
+    a.into_big()
 }
 
 #[allow(dead_code)]

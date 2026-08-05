@@ -256,7 +256,7 @@ pub(crate) fn vec_znx_idft_apply_tmpa_ifma(
 
 #[inline(always)]
 fn limb_u64<D: Data + HostDataRef>(
-    v: &VecZnxDft<D, <NTT3x42Ifma as poulpy_hal::layouts::Backend>::DftWord>,
+    v: &VecZnxDft<D, <NTT3x42Ifma as poulpy_hal::layouts::Backend>::DftWord, NTT3x42Ifma>,
     col: usize,
     limb: usize,
 ) -> &[u64] {
@@ -265,7 +265,7 @@ fn limb_u64<D: Data + HostDataRef>(
 
 #[inline(always)]
 fn limb_u64_mut<D: Data + HostDataMut>(
-    v: &mut VecZnxDft<D, <NTT3x42Ifma as poulpy_hal::layouts::Backend>::DftWord>,
+    v: &mut VecZnxDft<D, <NTT3x42Ifma as poulpy_hal::layouts::Backend>::DftWord, NTT3x42Ifma>,
     col: usize,
     limb: usize,
 ) -> &mut [u64] {

@@ -28,8 +28,8 @@ use crate::{
         VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApply, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
-        Backend, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, Module, ScalarZnx, ScratchOwned, SvpPPolOwned,
-        VecZnx, VmpPMatOwned,
+        Backend, DataView, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, Module, ScalarZnx, ScratchOwned,
+        SvpPPolOwned, VecZnx, VecZnxDft, VecZnxDftOwned, VmpPMatOwned,
     },
     source::Source,
 };
@@ -58,7 +58,7 @@ pub fn test_word_compat_dft_bytes<BA, BB>(
         let dft_a = dft_of_uploaded_vec_znx(module_a, &a, 1, 0);
         let dft_b = dft_of_uploaded_vec_znx(module_b, &a, 1, 0);
         assert!(
-            dft_a == dft_b,
+            BA::to_host_bytes(&dft_a.data) == BB::to_host_bytes(&dft_b.data),
             "shared DftWord but different DFT buffer bytes (size={size}): one backend violates the word contract"
         );
     }
@@ -104,7 +104,7 @@ pub fn test_word_compat_svp_prepare_bytes<BA, BB>(
         );
     }
     assert!(
-        svp_a == svp_b,
+        BA::to_host_bytes(&svp_a.data) == BB::to_host_bytes(&svp_b.data),
         "shared DftWord but different SvpPPol buffer bytes: one backend violates the word contract"
     );
 }
@@ -160,7 +160,7 @@ pub fn test_word_compat_vmp_prepare_bytes<BA, BB>(
         &mut scratch_b.arena(),
     );
     assert!(
-        pmat_a == pmat_b,
+        BA::to_host_bytes(pmat_a.data()) == BB::to_host_bytes(pmat_b.data()),
         "shared DftWord but different VmpPMat buffer bytes: one backend violates the word contract"
     );
 }
@@ -205,13 +205,19 @@ pub fn test_word_compat_dft_cross_idft<BA, BB>(
 
         let dft_a = dft_of_uploaded_vec_znx(module_a, &a, 1, 0);
         let dft_b = dft_of_uploaded_vec_znx(module_b, &a, 1, 0);
+        let (n, dft_cols, dft_size) = (dft_a.n(), dft_a.cols(), dft_a.size());
 
-        // Native consumption on each backend, then each backend consuming the
-        // other's buffer: all four must agree in the coefficient domain.
+        // Native consumption on each backend first (the re-tag consumes the
+        // buffer), then each backend consuming the other's buffer: all four
+        // must agree in the coefficient domain.
+        // TODO(stage 5): replace the manual `from_data` re-tag with the
+        // marker-guarded `into_backend`.
         let res_aa = idft_apply_to_host(module_a, base2k, &dft_a, size, &mut scratch_a);
-        let res_ab = idft_apply_to_host(module_b, base2k, &dft_a, size, &mut scratch_b);
         let res_bb = idft_apply_to_host(module_b, base2k, &dft_b, size, &mut scratch_b);
-        let res_ba = idft_apply_to_host(module_a, base2k, &dft_b, size, &mut scratch_a);
+        let dft_ab: VecZnxDftOwned<BB> = VecZnxDft::from_data(dft_a.data, n, dft_cols, dft_size);
+        let dft_ba: VecZnxDftOwned<BA> = VecZnxDft::from_data(dft_b.data, n, dft_cols, dft_size);
+        let res_ab = idft_apply_to_host(module_b, base2k, &dft_ab, size, &mut scratch_b);
+        let res_ba = idft_apply_to_host(module_a, base2k, &dft_ba, size, &mut scratch_a);
 
         assert_eq!(res_aa, res_ab, "consuming A's DFT buffer on B diverges (size={size})");
         assert_eq!(res_bb, res_ba, "consuming B's DFT buffer on A diverges (size={size})");

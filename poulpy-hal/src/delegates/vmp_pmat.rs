@@ -1,4 +1,3 @@
-use crate::layouts::VmpPMat;
 use crate::{
     api::{
         VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAccumulate, VmpApplyDftToDftAccumulateTmpBytes,
@@ -24,7 +23,7 @@ macro_rules! impl_vmp_delegate {
 
 impl<B: Backend> VmpPMatAlloc<B> for Module<B> {
     fn vmp_pmat_alloc(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> VmpPMatOwned<B> {
-        VmpPMat::alloc::<B>(self.n(), rows, cols_in, cols_out, size)
+        VmpPMatOwned::<B>::alloc(self.n(), rows, cols_in, cols_out, size)
     }
 }
 

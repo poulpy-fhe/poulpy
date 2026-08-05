@@ -162,7 +162,7 @@ where
     {
         let a_ref = a.to_backend_ref();
         let b_size = b.size();
-        let mut b_dft = poulpy_hal::layouts::VecZnxDft::alloc::<BE>(module.n(), 1, b_size);
+        let mut b_dft = poulpy_hal::layouts::VecZnxDftOwned::<BE>::alloc(module.n(), 1, b_size);
         let mut b_dft_ref = b_dft.to_backend_mut::<BE>();
 
         module.vec_znx_dft_apply(1, 0, &mut b_dft_ref, 0, b, b_col);

@@ -75,15 +75,15 @@ unsafe fn compact_all_blocks_avx2(n: usize, n_blocks: usize, u64_ptr: *mut u64, 
 #[allow(dead_code)]
 pub(crate) fn vec_znx_idft_apply_consume<D: Data>(
     module: &Module<NTT4x30Avx>,
-    mut a: VecZnxDft<D, <NTT4x30Avx as poulpy_hal::layouts::Backend>::DftWord>,
-) -> VecZnxBig<D, <NTT4x30Avx as poulpy_hal::layouts::Backend>::BigWord>
+    mut a: VecZnxDft<D, <NTT4x30Avx as poulpy_hal::layouts::Backend>::DftWord, NTT4x30Avx>,
+) -> VecZnxBig<D, <NTT4x30Avx as poulpy_hal::layouts::Backend>::BigWord, NTT4x30Avx>
 where
-    VecZnxDft<D, <NTT4x30Avx as poulpy_hal::layouts::Backend>::DftWord>: VecZnxDftToBackendMut<NTT4x30Avx>,
+    VecZnxDft<D, <NTT4x30Avx as poulpy_hal::layouts::Backend>::DftWord, NTT4x30Avx>: VecZnxDftToBackendMut<NTT4x30Avx>,
 {
     let table = module.get_intt_table();
 
     let (n, n_blocks, u64_ptr) = {
-        let mut a_mut: VecZnxDft<&mut [u8], <NTT4x30Avx as poulpy_hal::layouts::Backend>::DftWord> =
+        let mut a_mut: VecZnxDft<&mut [u8], <NTT4x30Avx as poulpy_hal::layouts::Backend>::DftWord, NTT4x30Avx> =
             VecZnxDftToBackendMut::<NTT4x30Avx>::to_backend_mut(&mut a);
         let n = a_mut.n();
         let n_blocks = a_mut.cols() * a_mut.size();
@@ -95,5 +95,5 @@ where
     };
 
     unsafe { compact_all_blocks_avx2(n, n_blocks, u64_ptr, table) };
-    a.into_big::<NTT4x30Avx>()
+    a.into_big()
 }

@@ -15,7 +15,7 @@ use crate::{
 /// for fast multiplication during encryption and decryption. Tied to a
 /// specific backend via `B: Backend`.
 pub struct GLWESecretPrepared<D: Data, B: Backend> {
-    pub(crate) data: SvpPPol<D, B::DftWord>,
+    pub(crate) data: SvpPPol<D, B::DftWord, B>,
     pub(crate) dist: Distribution,
 }
 
