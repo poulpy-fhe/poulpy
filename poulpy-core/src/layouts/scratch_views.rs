@@ -399,7 +399,7 @@ impl<'a, BE: Backend + 'a> GLWESecretPreparedToBackendRef<BE> for GLWESecretPrep
     fn to_backend_ref(&self) -> GLWESecretPreparedBackendRef<'_, BE> {
         GLWESecretPrepared {
             dist: self.inner.dist,
-            data: self.inner.data.reborrow_backend_ref(),
+            data: SvpPPolReborrowBackendRef::<BE>::reborrow_backend_ref(&self.inner.data),
         }
     }
 }
@@ -408,7 +408,7 @@ impl<'a, BE: Backend + 'a> GLWESecretPreparedToBackendMut<BE> for GLWESecretPrep
     fn to_backend_mut(&mut self) -> GLWESecretPreparedBackendMut<'_, BE> {
         GLWESecretPrepared {
             dist: self.inner.dist,
-            data: self.inner.data.reborrow_backend_mut(),
+            data: SvpPPolReborrowBackendMut::<BE>::reborrow_backend_mut(&mut self.inner.data),
         }
     }
 }
@@ -441,7 +441,7 @@ impl<'a, BE: Backend + 'a> GGLWEPreparedToBackendRef<BE> for GGLWEPreparedViewMu
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
-            data: self.inner.data.reborrow_backend_ref(),
+            data: VmpPMatReborrowBackendRef::<BE>::reborrow_backend_ref(&self.inner.data),
         }
     }
 }
@@ -452,7 +452,7 @@ impl<'a, BE: Backend + 'a> GGLWEPreparedToBackendMut<BE> for GGLWEPreparedViewMu
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
-            data: self.inner.data.reborrow_backend_mut(),
+            data: VmpPMatReborrowBackendMut::<BE>::reborrow_backend_mut(&mut self.inner.data),
         }
     }
 }
@@ -485,7 +485,7 @@ impl<'a, BE: Backend + 'a> GGSWPreparedToBackendRef<BE> for GGSWPreparedViewMut<
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
-            data: self.inner.data.reborrow_backend_ref(),
+            data: VmpPMatReborrowBackendRef::<BE>::reborrow_backend_ref(&self.inner.data),
         }
     }
 }
@@ -496,7 +496,7 @@ impl<'a, BE: Backend + 'a> GGSWPreparedToBackendMut<BE> for GGSWPreparedViewMut<
             base2k: self.inner.base2k,
             k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
-            data: self.inner.data.reborrow_backend_mut(),
+            data: VmpPMatReborrowBackendMut::<BE>::reborrow_backend_mut(&mut self.inner.data),
         }
     }
 }

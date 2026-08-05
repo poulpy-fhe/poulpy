@@ -5,8 +5,8 @@ use crate::layouts::{
 
 /// Allocates prepared convolution operands ([`CnvPVecL`], [`CnvPVecR`]).
 pub trait CnvPVecAlloc<BE: Backend> {
-    fn cnv_pvec_left_alloc(&self, cols: usize, size: usize) -> CnvPVecL<BE::OwnedBuf, BE>;
-    fn cnv_pvec_right_alloc(&self, cols: usize, size: usize) -> CnvPVecR<BE::OwnedBuf, BE>;
+    fn cnv_pvec_left_alloc(&self, cols: usize, size: usize) -> CnvPVecL<BE::OwnedBuf, BE::DftWord>;
+    fn cnv_pvec_right_alloc(&self, cols: usize, size: usize) -> CnvPVecR<BE::OwnedBuf, BE::DftWord>;
 }
 
 /// Returns the byte sizes for prepared convolution operands.

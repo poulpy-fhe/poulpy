@@ -41,7 +41,7 @@ pub type LinearTransformationPrepared<BE> = LinearTransformation<PreparedDiagona
 /// (resident cache), but it may also be scratch-borrowed.
 pub struct PreparedDiagonal<D: Data, BE: Backend> {
     /// Prepared convolution-domain diagonal (the BSGS right operand).
-    pub(crate) cnv: CnvPVecR<D, BE>,
+    pub(crate) cnv: CnvPVecR<D, BE::DftWord>,
     /// Limb base of the diagonal it was encoded from.
     pub(crate) base2k: Base2K,
     /// Storage precision of the diagonal it was encoded from.
@@ -55,12 +55,12 @@ pub struct PreparedDiagonal<D: Data, BE: Backend> {
 
 impl<D: Data, BE: Backend> PreparedDiagonal<D, BE> {
     /// The prepared convolution-domain operand.
-    pub fn cnv(&self) -> &CnvPVecR<D, BE> {
+    pub fn cnv(&self) -> &CnvPVecR<D, BE::DftWord> {
         &self.cnv
     }
 
     /// Mutable access to the prepared convolution-domain operand (populate step).
-    pub fn cnv_mut(&mut self) -> &mut CnvPVecR<D, BE> {
+    pub fn cnv_mut(&mut self) -> &mut CnvPVecR<D, BE::DftWord> {
         &mut self.cnv
     }
 
@@ -105,7 +105,7 @@ impl<D: Data, BE: Backend> GLWEInfos for PreparedDiagonal<D, BE> {
 /// The values are populated by `glwe_prepare_linear_transformation_baby_steps`; the
 /// cache is sized via [`LinearTransformationBabySteps::alloc`].
 pub struct LinearTransformationBabySteps<BE: Backend> {
-    pub(crate) values: BTreeMap<i64, CnvPVecL<BE::OwnedBuf, BE>>,
+    pub(crate) values: BTreeMap<i64, CnvPVecL<BE::OwnedBuf, BE::DftWord>>,
 }
 
 impl<BE: Backend> LinearTransformationBabySteps<BE> {
@@ -140,7 +140,7 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
     }
 
     /// Returns the prepared left operand `rot(v, k)` for the baby rotation `k`.
-    pub fn baby_step(&self, rot: i64) -> &CnvPVecL<BE::OwnedBuf, BE> {
+    pub fn baby_step(&self, rot: i64) -> &CnvPVecL<BE::OwnedBuf, BE::DftWord> {
         self.values
             .get(&rot)
             .unwrap_or_else(|| panic!("missing prepared baby-step rotation {rot}"))

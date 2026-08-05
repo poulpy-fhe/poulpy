@@ -28,8 +28,8 @@
 //!
 //! For the `NTT4x30Ref` backend:
 //!
-//! - `ScalarPrep = Q120bScalar`: coefficients in the NTT / frequency domain (32 bytes = 4 × u64).
-//! - `ScalarBig  = i128`: coefficients in the large-integer (CRT-reconstructed) domain.
+//! - `DftWord = Q120bScalar`: coefficients in the NTT / frequency domain (32 bytes = 4 × u64).
+//! - `BigWord  = i128`: coefficients in the large-integer (CRT-reconstructed) domain.
 //!
 //! # Usage
 //!
@@ -59,8 +59,8 @@ pub use module::NTT4x30RefHandle;
 ///
 /// # Backend characteristics
 ///
-/// - **ScalarPrep**: `Q120bScalar` — NTT-domain coefficients stored as 4 × u64 CRT residues.
-/// - **ScalarBig**: `i128` — large-coefficient ring elements use 128-bit signed integers.
+/// - **DftWord**: `Q120bScalar` — NTT-domain coefficients stored as 4 × u64 CRT residues.
+/// - **BigWord**: `i128` — large-coefficient ring elements use 128-bit signed integers.
 /// - **Prime set**: `Primes30` (four ~30-bit primes, Q ≈ 2^120).
 /// - **NTT tables**: precomputed twiddle factors stored in the module handle
 ///   (`NTT4x30RefHandle`), shared across all operations on the same module.

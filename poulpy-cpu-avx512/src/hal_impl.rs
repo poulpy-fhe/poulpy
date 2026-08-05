@@ -69,7 +69,7 @@ unsafe impl HalVecZnxDftImpl<FFT64Avx512> for FFT64Avx512 {
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        crate::fft64::fft64_vec_znx_dft_automorphism_avx512(plan, res, res_col, a, a_col);
+        crate::fft64::fft64_vec_znx_dft_automorphism_avx512::<Self>(plan, res, res_col, a, a_col);
     }
 }
 
@@ -299,7 +299,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         let bytes =
             poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_apply_dft_tmp_bytes(res.size(), a.size(), b.size());
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_apply_dft(
+        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_apply_dft::<Self>(
             module, cnv_offset, res, res_col, a, a_col, b, b_col, tmp,
         );
     }
@@ -317,7 +317,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     ) {
         let bytes = poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_prepare_left_lazy_tmp_bytes(module.n());
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_prepare_left_lazy(module, res, a, mask, tmp);
+        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_prepare_left_lazy::<Self>(module, res, a, mask, tmp);
     }
 
     fn cnv_prepare_right_lazy_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
@@ -334,7 +334,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         let n_u64 = poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_prepare_right_lazy_tmp_bytes(module.n())
             / size_of::<u64>();
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), n_u64);
-        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_prepare_right_lazy(module, res, a, mask, tmp);
+        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_prepare_right_lazy::<Self>(module, res, a, mask, tmp);
     }
 
     fn cnv_apply_dft_lazy_tmp_bytes(
@@ -420,7 +420,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
             b.size(),
         );
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_pairwise_apply_dft(
+        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_pairwise_apply_dft::<Self>(
             module, cnv_offset, res, res_col, a, b, i, j, tmp,
         );
     }

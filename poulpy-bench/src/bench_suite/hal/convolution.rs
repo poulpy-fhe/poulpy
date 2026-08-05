@@ -4,10 +4,7 @@ use criterion::{BenchmarkId, Criterion};
 
 use poulpy_hal::{
     api::{CnvPVecAlloc, Convolution, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxBigAlloc, VecZnxDftAlloc},
-    layouts::{
-        Backend, CnvPVecL, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecR, CnvPVecRToBackendMut, CnvPVecRToBackendRef,
-        Module, ScratchOwned, VecZnxBig, VecZnxBigToBackendMut, VecZnxDftToBackendMut,
-    },
+    layouts::{Backend, CnvPVecL, CnvPVecR, Module, ScratchOwned, VecZnxBig},
     source::Source,
 };
 
@@ -33,7 +30,7 @@ where
 
         let module: Module<BE> = Module::<BE>::new(n as u64);
 
-        let mut a_prep: CnvPVecL<BE::OwnedBuf, BE> = module.cnv_pvec_left_alloc(1, size);
+        let mut a_prep: CnvPVecL<BE::OwnedBuf, BE::DftWord> = module.cnv_pvec_left_alloc(1, size);
 
         let a = crate::random_host_vec_znx(module.n(), 1, size, &mut source);
         let a = crate::upload_host_vec_znx::<BE>(&a);
@@ -41,7 +38,7 @@ where
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.cnv_prepare_left_tmp_bytes(c_size, size));
 
         move || {
-            let mut a_prep_backend = a_prep.to_backend_mut();
+            let mut a_prep_backend = a_prep.to_backend_mut::<BE>();
             let a_backend = crate::vec_znx_backend_ref::<BE>(&a);
             module.cnv_prepare_left(&mut a_prep_backend, &a_backend, !0i64, &mut scratch.borrow());
             black_box(());
@@ -81,7 +78,7 @@ where
 
         let module: Module<BE> = Module::<BE>::new(n as u64);
 
-        let mut a_prep: CnvPVecR<BE::OwnedBuf, BE> = module.cnv_pvec_right_alloc(1, size);
+        let mut a_prep: CnvPVecR<BE::OwnedBuf, BE::DftWord> = module.cnv_pvec_right_alloc(1, size);
 
         let a = crate::random_host_vec_znx(module.n(), 1, size, &mut source);
         let a = crate::upload_host_vec_znx::<BE>(&a);
@@ -89,7 +86,7 @@ where
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.cnv_prepare_right_tmp_bytes(c_size, size));
 
         move || {
-            let mut a_prep_backend = a_prep.to_backend_mut();
+            let mut a_prep_backend = a_prep.to_backend_mut::<BE>();
             let a_backend = crate::vec_znx_backend_ref::<BE>(&a);
             module.cnv_prepare_right(&mut a_prep_backend, &a_backend, !0i64, &mut scratch.borrow());
             black_box(());
@@ -129,8 +126,10 @@ where
 
         let module: Module<BE> = Module::<BE>::new(n as u64);
 
-        let a_prep: CnvPVecL<BE::OwnedBuf, BE> = crate::random_backend_cnv_pvec_left::<BE>(module.n(), 1, size, &mut source);
-        let b_prep: CnvPVecR<BE::OwnedBuf, BE> = crate::random_backend_cnv_pvec_right::<BE>(module.n(), 1, size, &mut source);
+        let a_prep: CnvPVecL<BE::OwnedBuf, BE::DftWord> =
+            crate::random_backend_cnv_pvec_left::<BE>(module.n(), 1, size, &mut source);
+        let b_prep: CnvPVecR<BE::OwnedBuf, BE::DftWord> =
+            crate::random_backend_cnv_pvec_right::<BE>(module.n(), 1, size, &mut source);
         let mut c_dft = module.vec_znx_dft_alloc(1, c_size);
 
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
@@ -140,14 +139,14 @@ where
                 .max(module.cnv_prepare_right_tmp_bytes(c_size, size)),
         );
         move || {
-            let mut c_dft_backend = c_dft.to_backend_mut();
+            let mut c_dft_backend = c_dft.to_backend_mut::<BE>();
             module.cnv_apply_dft(
                 0,
                 &mut c_dft_backend,
                 0,
-                &a_prep.to_backend_ref(),
+                &a_prep.to_backend_ref::<BE>(),
                 0,
-                &b_prep.to_backend_ref(),
+                &b_prep.to_backend_ref::<BE>(),
                 0,
                 &mut scratch.borrow(),
             );
@@ -188,8 +187,10 @@ where
 
         let module: Module<BE> = Module::<BE>::new(n as u64);
 
-        let a_prep: CnvPVecL<BE::OwnedBuf, BE> = crate::random_backend_cnv_pvec_left::<BE>(module.n(), 1, size, &mut source);
-        let b_prep: CnvPVecR<BE::OwnedBuf, BE> = crate::random_backend_cnv_pvec_right::<BE>(module.n(), 1, size, &mut source);
+        let a_prep: CnvPVecL<BE::OwnedBuf, BE::DftWord> =
+            crate::random_backend_cnv_pvec_left::<BE>(module.n(), 1, size, &mut source);
+        let b_prep: CnvPVecR<BE::OwnedBuf, BE::DftWord> =
+            crate::random_backend_cnv_pvec_right::<BE>(module.n(), 1, size, &mut source);
         let mut c_dft = module.vec_znx_dft_alloc(1, c_size);
 
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
@@ -199,27 +200,27 @@ where
                 .max(module.cnv_prepare_right_tmp_bytes(c_size, size)),
         );
         {
-            let mut c_dft_backend = c_dft.to_backend_mut();
+            let mut c_dft_backend = c_dft.to_backend_mut::<BE>();
             module.cnv_apply_dft(
                 0,
                 &mut c_dft_backend,
                 0,
-                &a_prep.to_backend_ref(),
+                &a_prep.to_backend_ref::<BE>(),
                 0,
-                &b_prep.to_backend_ref(),
+                &b_prep.to_backend_ref::<BE>(),
                 0,
                 &mut scratch.borrow(),
             );
         }
         move || {
-            let mut c_dft_backend = c_dft.to_backend_mut();
+            let mut c_dft_backend = c_dft.to_backend_mut::<BE>();
             module.cnv_apply_dft_accumulate(
                 0,
                 &mut c_dft_backend,
                 0,
-                &a_prep.to_backend_ref(),
+                &a_prep.to_backend_ref::<BE>(),
                 0,
-                &b_prep.to_backend_ref(),
+                &b_prep.to_backend_ref::<BE>(),
                 0,
                 &mut scratch.borrow(),
             );
@@ -261,8 +262,10 @@ where
         let cols = 2;
         let c_size: usize = size + size - 1;
 
-        let a_prep: CnvPVecL<BE::OwnedBuf, BE> = crate::random_backend_cnv_pvec_left::<BE>(module.n(), cols, size, &mut source);
-        let b_prep: CnvPVecR<BE::OwnedBuf, BE> = crate::random_backend_cnv_pvec_right::<BE>(module.n(), cols, size, &mut source);
+        let a_prep: CnvPVecL<BE::OwnedBuf, BE::DftWord> =
+            crate::random_backend_cnv_pvec_left::<BE>(module.n(), cols, size, &mut source);
+        let b_prep: CnvPVecR<BE::OwnedBuf, BE::DftWord> =
+            crate::random_backend_cnv_pvec_right::<BE>(module.n(), cols, size, &mut source);
         let mut c_dft = module.vec_znx_dft_alloc(1, c_size);
 
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
@@ -272,13 +275,13 @@ where
                 .max(module.cnv_prepare_right_tmp_bytes(c_size, size)),
         );
         move || {
-            let mut c_dft_backend = c_dft.to_backend_mut();
+            let mut c_dft_backend = c_dft.to_backend_mut::<BE>();
             module.cnv_pairwise_apply_dft(
                 0,
                 &mut c_dft_backend,
                 0,
-                &a_prep.to_backend_ref(),
-                &b_prep.to_backend_ref(),
+                &a_prep.to_backend_ref::<BE>(),
+                &b_prep.to_backend_ref::<BE>(),
                 0,
                 1,
                 &mut scratch.borrow(),
@@ -323,14 +326,14 @@ where
 
         let a = crate::random_host_vec_znx(module.n(), cols, size, &mut source);
         let a = crate::upload_host_vec_znx::<BE>(&a);
-        let mut c_big: VecZnxBig<BE::OwnedBuf, BE> = module.vec_znx_big_alloc(1, c_size);
+        let mut c_big: VecZnxBig<BE::OwnedBuf, BE::BigWord> = module.vec_znx_big_alloc(1, c_size);
 
         let b = crate::random_host_vec_znx(module.n(), 1, size, &mut source);
         let b = crate::upload_host_vec_znx::<BE>(&b);
 
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.cnv_by_const_apply_tmp_bytes(0, c_size, size, size));
         move || {
-            let mut c_big_backend = c_big.to_backend_mut();
+            let mut c_big_backend = c_big.to_backend_mut::<BE>();
             let a_backend = crate::vec_znx_backend_ref::<BE>(&a);
             let b_backend = crate::vec_znx_backend_ref::<BE>(&b);
             module.cnv_by_const_apply(

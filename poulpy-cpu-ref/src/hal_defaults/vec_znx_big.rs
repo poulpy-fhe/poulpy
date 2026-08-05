@@ -84,8 +84,8 @@ where
 fn vec_znx_big_inner_sum_default_impl<R, A, BE>(res: &mut R, res_col: usize, res_coeff: usize, a: &A, a_col: usize)
 where
     BE: Backend,
-    BE::ScalarBig: Copy + From<i64>,
-    Wrapping<BE::ScalarBig>: Add<Output = Wrapping<BE::ScalarBig>>,
+    BE::BigWord: Copy + From<i64>,
+    Wrapping<BE::BigWord>: Add<Output = Wrapping<BE::BigWord>>,
     for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
     R: VecZnxBigToBackendMut<BE>,
@@ -100,7 +100,7 @@ where
         let sum = a
             .at(a_col, limb)
             .iter()
-            .fold(Wrapping(BE::ScalarBig::from(0)), |acc, &x| acc + Wrapping(x));
+            .fold(Wrapping(BE::BigWord::from(0)), |acc, &x| acc + Wrapping(x));
 
         res.at_mut(res_col, limb)[res_coeff] = sum.0;
     }
@@ -115,8 +115,8 @@ fn vec_znx_scalar_product_default_impl<R, BE>(
     b_col: usize,
 ) where
     BE: Backend,
-    BE::ScalarBig: Copy + From<i64>,
-    Wrapping<BE::ScalarBig>: Mul<Output = Wrapping<BE::ScalarBig>>,
+    BE::BigWord: Copy + From<i64>,
+    Wrapping<BE::BigWord>: Mul<Output = Wrapping<BE::BigWord>>,
     for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
     R: VecZnxBigToBackendMut<BE>,
@@ -133,7 +133,7 @@ fn vec_znx_scalar_product_default_impl<R, BE>(
         let a_slice = a.at(a_col, limb);
         let res_slice = res.at_mut(res_col, limb);
         for k in 0..n {
-            res_slice[k] = (Wrapping(BE::ScalarBig::from(a_slice[k])) * Wrapping(BE::ScalarBig::from(b_slice[k]))).0;
+            res_slice[k] = (Wrapping(BE::BigWord::from(a_slice[k])) * Wrapping(BE::BigWord::from(b_slice[k]))).0;
         }
     }
 }
@@ -148,8 +148,8 @@ fn vec_znx_big_col_weighted_sum_default_impl<R, BE>(
     coeffs: usize,
 ) where
     BE: Backend,
-    BE::ScalarBig: Copy + From<i64>,
-    Wrapping<BE::ScalarBig>: Add<Output = Wrapping<BE::ScalarBig>> + Mul<Output = Wrapping<BE::ScalarBig>>,
+    BE::BigWord: Copy + From<i64>,
+    Wrapping<BE::BigWord>: Add<Output = Wrapping<BE::BigWord>> + Mul<Output = Wrapping<BE::BigWord>>,
     for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
     R: VecZnxBigToBackendMut<BE>,
@@ -164,17 +164,17 @@ fn vec_znx_big_col_weighted_sum_default_impl<R, BE>(
     assert!(res.size() <= a.size());
 
     let weights_slice = weights.at(weights_col, 0);
-    let zero = BE::ScalarBig::from(0);
+    let zero = BE::BigWord::from(0);
 
     for limb in 0..res.size() {
         let res_slice = res.at_mut(res_col, limb);
         res_slice.fill(zero);
 
         for (col, slice) in weights_slice.iter().enumerate().take(cols) {
-            let weight = BE::ScalarBig::from(*slice);
+            let weight = BE::BigWord::from(*slice);
             let a_slice = a.at(col, limb);
             for k in 0..coeffs {
-                res_slice[k] = (Wrapping(res_slice[k]) + Wrapping(BE::ScalarBig::from(a_slice[k])) * Wrapping(weight)).0;
+                res_slice[k] = (Wrapping(res_slice[k]) + Wrapping(BE::BigWord::from(a_slice[k])) * Wrapping(weight)).0;
             }
         }
     }
@@ -189,7 +189,7 @@ where
 {
     fn vec_znx_big_from_small_default<R>(res: &mut R, res_col: usize, a: &VecZnxBackendRef<'_, BE>, a_col: usize)
     where
-        BE: Backend<ScalarBig = i64>,
+        BE: Backend<BigWord = i64>,
         for<'x> BE::BufMut<'x>: HostDataMut,
         for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
@@ -218,10 +218,10 @@ where
         noise_infos: NoiseInfos,
         source: &mut Source,
     ) where
-        BE: Backend<ScalarBig = i64>,
+        BE: Backend<BigWord = i64>,
         R: VecZnxBigToBackendMut<BE>,
     {
-        fft64_vec_znx_big_add_normal_ref(res_base2k, res, res_col, noise_infos, source);
+        fft64_vec_znx_big_add_normal_ref::<_, BE>(res_base2k, res, res_col, noise_infos, source);
     }
 
     fn vec_znx_big_add_normal_seed_default<R>(
@@ -232,7 +232,7 @@ where
         noise_infos: NoiseInfos,
         seed: [u8; 32],
     ) where
-        BE: Backend<ScalarBig = i64>,
+        BE: Backend<BigWord = i64>,
         R: VecZnxBigToBackendMut<BE>,
     {
         let mut source = Source::new(seed);
@@ -248,22 +248,22 @@ where
         b: &C,
         b_col: usize,
     ) where
-        BE: Backend<ScalarBig = i64> + ZnxAdd + ZnxCopy + ZnxZero,
+        BE: Backend<BigWord = i64> + ZnxAdd + ZnxCopy + ZnxZero,
         for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
         C: VecZnxBigToBackendRef<BE>,
     {
-        fft64_vec_znx_big_add_into(res, res_col, a, a_col, b, b_col);
+        fft64_vec_znx_big_add_into::<_, _, _, BE>(res, res_col, a, a_col, b, b_col);
     }
 
     fn vec_znx_big_add_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
-        BE: Backend<ScalarBig = i64> + ZnxAddAssign,
+        BE: Backend<BigWord = i64> + ZnxAddAssign,
         R: VecZnxBigToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
     {
-        fft64_vec_znx_big_add_assign(res, res_col, a, a_col);
+        fft64_vec_znx_big_add_assign::<_, _, BE>(res, res_col, a, a_col);
     }
 
     fn vec_znx_big_add_small_into_default<R, A>(
@@ -275,12 +275,12 @@ where
         b: &VecZnxBackendRef<'_, BE>,
         b_col: usize,
     ) where
-        BE: Backend<ScalarBig = i64> + ZnxAdd + ZnxCopy + ZnxZero,
+        BE: Backend<BigWord = i64> + ZnxAdd + ZnxCopy + ZnxZero,
         for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
     {
-        fft64_vec_znx_big_add_small_into(res, res_col, a, a_col, &b, b_col);
+        fft64_vec_znx_big_add_small_into::<_, _, _, BE>(res, res_col, a, a_col, &b, b_col);
     }
 
     fn vec_znx_big_add_small_assign_default<R>(
@@ -290,11 +290,11 @@ where
         a: &VecZnxBackendRef<'_, BE>,
         a_col: usize,
     ) where
-        BE: Backend<ScalarBig = i64> + ZnxAddAssign,
+        BE: Backend<BigWord = i64> + ZnxAddAssign,
         for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
     {
-        fft64_vec_znx_big_add_small_assign(res, res_col, &a, a_col);
+        fft64_vec_znx_big_add_small_assign::<_, _, BE>(res, res_col, &a, a_col);
     }
 
     fn vec_znx_big_sub_default<R, A, C>(
@@ -306,30 +306,30 @@ where
         b: &C,
         b_col: usize,
     ) where
-        BE: Backend<ScalarBig = i64> + ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
+        BE: Backend<BigWord = i64> + ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
         R: VecZnxBigToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
         C: VecZnxBigToBackendRef<BE>,
     {
-        fft64_vec_znx_big_sub(res, res_col, a, a_col, b, b_col);
+        fft64_vec_znx_big_sub::<_, _, _, BE>(res, res_col, a, a_col, b, b_col);
     }
 
     fn vec_znx_big_sub_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
-        BE: Backend<ScalarBig = i64> + ZnxSubAssign,
+        BE: Backend<BigWord = i64> + ZnxSubAssign,
         R: VecZnxBigToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
     {
-        fft64_vec_znx_big_sub_assign(res, res_col, a, a_col);
+        fft64_vec_znx_big_sub_assign::<_, _, BE>(res, res_col, a, a_col);
     }
 
     fn vec_znx_big_sub_negate_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
-        BE: Backend<ScalarBig = i64> + ZnxSubNegateAssign + ZnxNegateAssign,
+        BE: Backend<BigWord = i64> + ZnxSubNegateAssign + ZnxNegateAssign,
         R: VecZnxBigToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
     {
-        fft64_vec_znx_big_sub_negate_assign(res, res_col, a, a_col);
+        fft64_vec_znx_big_sub_negate_assign::<_, _, BE>(res, res_col, a, a_col);
     }
 
     fn vec_znx_big_sub_small_a_default<R, C>(
@@ -341,12 +341,12 @@ where
         b: &C,
         b_col: usize,
     ) where
-        BE: Backend<ScalarBig = i64> + ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
+        BE: Backend<BigWord = i64> + ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
         for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
         C: VecZnxBigToBackendRef<BE>,
     {
-        fft64_vec_znx_big_sub_small_a(res, res_col, &a, a_col, b, b_col);
+        fft64_vec_znx_big_sub_small_a::<_, _, _, BE>(res, res_col, &a, a_col, b, b_col);
     }
 
     fn vec_znx_big_sub_small_assign_default<R>(
@@ -356,11 +356,11 @@ where
         a: &VecZnxBackendRef<'_, BE>,
         a_col: usize,
     ) where
-        BE: Backend<ScalarBig = i64> + ZnxSubAssign,
+        BE: Backend<BigWord = i64> + ZnxSubAssign,
         for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
     {
-        fft64_vec_znx_big_sub_small_a_assign(res, res_col, &a, a_col);
+        fft64_vec_znx_big_sub_small_a_assign::<_, _, BE>(res, res_col, &a, a_col);
     }
 
     fn vec_znx_big_sub_small_b_default<R, A>(
@@ -372,12 +372,12 @@ where
         b: &VecZnxBackendRef<'_, BE>,
         b_col: usize,
     ) where
-        BE: Backend<ScalarBig = i64> + ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
+        BE: Backend<BigWord = i64> + ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
         for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
     {
-        fft64_vec_znx_big_sub_small_b(res, res_col, a, a_col, &b, b_col);
+        fft64_vec_znx_big_sub_small_b::<_, _, _, BE>(res, res_col, a, a_col, &b, b_col);
     }
 
     fn vec_znx_big_sub_small_negate_assign_default<R>(
@@ -387,11 +387,11 @@ where
         a: &VecZnxBackendRef<'_, BE>,
         a_col: usize,
     ) where
-        BE: Backend<ScalarBig = i64> + ZnxSubNegateAssign + ZnxNegateAssign,
+        BE: Backend<BigWord = i64> + ZnxSubNegateAssign + ZnxNegateAssign,
         for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
     {
-        fft64_vec_znx_big_sub_small_b_assign(res, res_col, &a, a_col);
+        fft64_vec_znx_big_sub_small_b_assign::<_, _, BE>(res, res_col, &a, a_col);
     }
 
     fn vec_znx_big_inner_sum_default<R, A>(
@@ -402,7 +402,7 @@ where
         a: &A,
         a_col: usize,
     ) where
-        BE: Backend<ScalarBig = i64>,
+        BE: Backend<BigWord = i64>,
         for<'x> BE::BufMut<'x>: HostDataMut,
         for<'x> BE::BufRef<'x>: HostDataRef,
         R: VecZnxBigToBackendMut<BE>,
@@ -420,7 +420,7 @@ where
         b: &ScalarZnxBackendRef<'_, BE>,
         b_col: usize,
     ) where
-        BE: Backend<ScalarBig = i64>,
+        BE: Backend<BigWord = i64>,
         for<'x> BE::BufMut<'x>: HostDataMut,
         for<'x> BE::BufRef<'x>: HostDataRef,
         R: VecZnxBigToBackendMut<BE>,
@@ -438,7 +438,7 @@ where
         cols: usize,
         coeffs: usize,
     ) where
-        BE: Backend<ScalarBig = i64>,
+        BE: Backend<BigWord = i64>,
         for<'x> BE::BufMut<'x>: HostDataMut,
         for<'x> BE::BufRef<'x>: HostDataRef,
         R: VecZnxBigToBackendMut<BE>,
@@ -448,24 +448,24 @@ where
 
     fn vec_znx_big_negate_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
-        BE: Backend<ScalarBig = i64> + ZnxNegate + ZnxZero,
+        BE: Backend<BigWord = i64> + ZnxNegate + ZnxZero,
         R: VecZnxBigToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
     {
-        fft64_vec_znx_big_negate(res, res_col, a, a_col);
+        fft64_vec_znx_big_negate::<_, _, BE>(res, res_col, a, a_col);
     }
 
     fn vec_znx_big_negate_assign_default<R>(_module: &Module<BE>, res: &mut R, res_col: usize)
     where
-        BE: Backend<ScalarBig = i64> + ZnxNegateAssign,
+        BE: Backend<BigWord = i64> + ZnxNegateAssign,
         R: VecZnxBigToBackendMut<BE>,
     {
-        fft64_vec_znx_big_negate_assign(res, res_col);
+        fft64_vec_znx_big_negate_assign::<_, BE>(res, res_col);
     }
 
     fn vec_znx_big_normalize_tmp_bytes_default(module: &Module<BE>) -> usize
     where
-        BE: Backend<ScalarBig = i64>,
+        BE: Backend<BigWord = i64>,
     {
         fft64_vec_znx_big_normalize_tmp_bytes(module.n())
     }
@@ -481,7 +481,7 @@ where
         a_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        BE: Backend<ScalarBig = i64>
+        BE: Backend<BigWord = i64>
             + ZnxZero
             + ZnxCopy
             + ZnxAddAssign
@@ -503,21 +503,21 @@ where
             scratch.borrow(),
             fft64_vec_znx_big_normalize_tmp_bytes(module.n()) / size_of::<i64>(),
         );
-        fft64_vec_znx_big_normalize(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
+        fft64_vec_znx_big_normalize::<_, _, BE>(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
     }
 
     fn vec_znx_big_automorphism_default<R, A>(_module: &Module<BE>, k: i64, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
-        BE: Backend<ScalarBig = i64> + ZnxAutomorphism + ZnxZero,
+        BE: Backend<BigWord = i64> + ZnxAutomorphism + ZnxZero,
         R: VecZnxBigToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
     {
-        fft64_vec_znx_big_automorphism(k, res, res_col, a, a_col);
+        fft64_vec_znx_big_automorphism::<_, _, BE>(k, res, res_col, a, a_col);
     }
 
     fn vec_znx_big_automorphism_assign_tmp_bytes_default(module: &Module<BE>) -> usize
     where
-        BE: Backend<ScalarBig = i64>,
+        BE: Backend<BigWord = i64>,
     {
         fft64_vec_znx_big_automorphism_assign_tmp_bytes(module.n())
     }
@@ -529,7 +529,7 @@ where
         res_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        BE: Backend<ScalarBig = i64> + ZnxAutomorphism + ZnxCopy,
+        BE: Backend<BigWord = i64> + ZnxAutomorphism + ZnxCopy,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
         R: VecZnxBigToBackendMut<BE>,
     {
@@ -537,7 +537,7 @@ where
             scratch.borrow(),
             fft64_vec_znx_big_automorphism_assign_tmp_bytes(module.n()) / size_of::<i64>(),
         );
-        fft64_vec_znx_big_automorphism_assign(k, res, res_col, tmp);
+        fft64_vec_znx_big_automorphism_assign::<_, BE>(k, res, res_col, tmp);
     }
 }
 
@@ -558,12 +558,12 @@ where
 {
     fn vec_znx_big_from_small_default<R>(res: &mut R, res_col: usize, a: &VecZnxBackendRef<'_, BE>, a_col: usize)
     where
-        BE: Backend<ScalarBig = i128> + I128BigOps,
+        BE: Backend<BigWord = i128> + I128BigOps,
         for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
     {
         let a = vec_znx_backend_ref_as_host_ref::<BE>(a);
-        ntt4x30_vec_znx_big_from_small(res, res_col, &a, a_col);
+        ntt4x30_vec_znx_big_from_small::<_, _, BE>(res, res_col, &a, a_col);
     }
 
     fn vec_znx_big_add_normal_default<R>(
@@ -574,10 +574,10 @@ where
         noise_infos: NoiseInfos,
         source: &mut Source,
     ) where
-        BE: Backend<ScalarBig = i128>,
+        BE: Backend<BigWord = i128>,
         R: VecZnxBigToBackendMut<BE>,
     {
-        ntt4x30_vec_znx_big_add_normal_ref(res_base2k, res, res_col, noise_infos, source);
+        ntt4x30_vec_znx_big_add_normal_ref::<_, BE>(res_base2k, res, res_col, noise_infos, source);
     }
 
     fn vec_znx_big_add_normal_seed_default<R>(
@@ -588,7 +588,7 @@ where
         noise_infos: NoiseInfos,
         seed: [u8; 32],
     ) where
-        BE: Backend<ScalarBig = i128>,
+        BE: Backend<BigWord = i128>,
         R: VecZnxBigToBackendMut<BE>,
     {
         let mut source = Source::new(seed);
@@ -604,22 +604,22 @@ where
         b: &C,
         b_col: usize,
     ) where
-        BE: Backend<ScalarBig = i128> + I128BigOps,
+        BE: Backend<BigWord = i128> + I128BigOps,
         for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
         C: VecZnxBigToBackendRef<BE>,
     {
-        ntt4x30_vec_znx_big_add_into(res, res_col, a, a_col, b, b_col);
+        ntt4x30_vec_znx_big_add_into::<_, _, _, BE>(res, res_col, a, a_col, b, b_col);
     }
 
     fn vec_znx_big_add_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
-        BE: Backend<ScalarBig = i128> + I128BigOps,
+        BE: Backend<BigWord = i128> + I128BigOps,
         R: VecZnxBigToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
     {
-        ntt4x30_vec_znx_big_add_assign(res, res_col, a, a_col);
+        ntt4x30_vec_znx_big_add_assign::<_, _, BE>(res, res_col, a, a_col);
     }
 
     fn vec_znx_big_add_small_into_default<R, A>(
@@ -631,13 +631,13 @@ where
         b: &VecZnxBackendRef<'_, BE>,
         b_col: usize,
     ) where
-        BE: Backend<ScalarBig = i128> + I128BigOps,
+        BE: Backend<BigWord = i128> + I128BigOps,
         for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
     {
         let b = vec_znx_backend_ref_as_host_ref::<BE>(b);
-        ntt4x30_vec_znx_big_add_small_into(res, res_col, a, a_col, &b, b_col);
+        ntt4x30_vec_znx_big_add_small_into::<_, _, _, BE>(res, res_col, a, a_col, &b, b_col);
     }
 
     fn vec_znx_big_add_small_assign_default<R>(
@@ -647,12 +647,12 @@ where
         a: &VecZnxBackendRef<'_, BE>,
         a_col: usize,
     ) where
-        BE: Backend<ScalarBig = i128> + I128BigOps,
+        BE: Backend<BigWord = i128> + I128BigOps,
         for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
     {
         let a = vec_znx_backend_ref_as_host_ref::<BE>(a);
-        ntt4x30_vec_znx_big_add_small_assign(res, res_col, &a, a_col);
+        ntt4x30_vec_znx_big_add_small_assign::<_, _, BE>(res, res_col, &a, a_col);
     }
 
     fn vec_znx_big_sub_default<R, A, C>(
@@ -664,30 +664,30 @@ where
         b: &C,
         b_col: usize,
     ) where
-        BE: Backend<ScalarBig = i128> + I128BigOps,
+        BE: Backend<BigWord = i128> + I128BigOps,
         R: VecZnxBigToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
         C: VecZnxBigToBackendRef<BE>,
     {
-        ntt4x30_vec_znx_big_sub(res, res_col, a, a_col, b, b_col);
+        ntt4x30_vec_znx_big_sub::<_, _, _, BE>(res, res_col, a, a_col, b, b_col);
     }
 
     fn vec_znx_big_sub_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
-        BE: Backend<ScalarBig = i128> + I128BigOps,
+        BE: Backend<BigWord = i128> + I128BigOps,
         R: VecZnxBigToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
     {
-        ntt4x30_vec_znx_big_sub_assign(res, res_col, a, a_col);
+        ntt4x30_vec_znx_big_sub_assign::<_, _, BE>(res, res_col, a, a_col);
     }
 
     fn vec_znx_big_sub_negate_assign_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
-        BE: Backend<ScalarBig = i128> + I128BigOps,
+        BE: Backend<BigWord = i128> + I128BigOps,
         R: VecZnxBigToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
     {
-        ntt4x30_vec_znx_big_sub_negate_assign(res, res_col, a, a_col);
+        ntt4x30_vec_znx_big_sub_negate_assign::<_, _, BE>(res, res_col, a, a_col);
     }
 
     fn vec_znx_big_sub_small_a_default<R, C>(
@@ -699,13 +699,13 @@ where
         b: &C,
         b_col: usize,
     ) where
-        BE: Backend<ScalarBig = i128> + I128BigOps,
+        BE: Backend<BigWord = i128> + I128BigOps,
         for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
         C: VecZnxBigToBackendRef<BE>,
     {
         let a = vec_znx_backend_ref_as_host_ref::<BE>(a);
-        ntt4x30_vec_znx_big_sub_small_a(res, res_col, &a, a_col, b, b_col);
+        ntt4x30_vec_znx_big_sub_small_a::<_, _, _, BE>(res, res_col, &a, a_col, b, b_col);
     }
 
     fn vec_znx_big_sub_small_assign_default<R>(
@@ -715,12 +715,12 @@ where
         a: &VecZnxBackendRef<'_, BE>,
         a_col: usize,
     ) where
-        BE: Backend<ScalarBig = i128> + I128BigOps,
+        BE: Backend<BigWord = i128> + I128BigOps,
         for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
     {
         let a = vec_znx_backend_ref_as_host_ref::<BE>(a);
-        ntt4x30_vec_znx_big_sub_small_assign(res, res_col, &a, a_col);
+        ntt4x30_vec_znx_big_sub_small_assign::<_, _, BE>(res, res_col, &a, a_col);
     }
 
     fn vec_znx_big_sub_small_b_default<R, A>(
@@ -732,13 +732,13 @@ where
         b: &VecZnxBackendRef<'_, BE>,
         b_col: usize,
     ) where
-        BE: Backend<ScalarBig = i128> + I128BigOps,
+        BE: Backend<BigWord = i128> + I128BigOps,
         for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
     {
         let b = vec_znx_backend_ref_as_host_ref::<BE>(b);
-        ntt4x30_vec_znx_big_sub_small_b(res, res_col, a, a_col, &b, b_col);
+        ntt4x30_vec_znx_big_sub_small_b::<_, _, _, BE>(res, res_col, a, a_col, &b, b_col);
     }
 
     fn vec_znx_big_sub_small_negate_assign_default<R>(
@@ -748,12 +748,12 @@ where
         a: &VecZnxBackendRef<'_, BE>,
         a_col: usize,
     ) where
-        BE: Backend<ScalarBig = i128> + I128BigOps,
+        BE: Backend<BigWord = i128> + I128BigOps,
         for<'x> BE::BufRef<'x>: AsRef<[u8]>,
         R: VecZnxBigToBackendMut<BE>,
     {
         let a = vec_znx_backend_ref_as_host_ref::<BE>(a);
-        ntt4x30_vec_znx_big_sub_small_negate_assign(res, res_col, &a, a_col);
+        ntt4x30_vec_znx_big_sub_small_negate_assign::<_, _, BE>(res, res_col, &a, a_col);
     }
 
     fn vec_znx_big_inner_sum_default<R, A>(
@@ -764,7 +764,7 @@ where
         a: &A,
         a_col: usize,
     ) where
-        BE: Backend<ScalarBig = i128>,
+        BE: Backend<BigWord = i128>,
         for<'x> BE::BufMut<'x>: HostDataMut,
         for<'x> BE::BufRef<'x>: HostDataRef,
         R: VecZnxBigToBackendMut<BE>,
@@ -782,7 +782,7 @@ where
         b: &ScalarZnxBackendRef<'_, BE>,
         b_col: usize,
     ) where
-        BE: Backend<ScalarBig = i128>,
+        BE: Backend<BigWord = i128>,
         for<'x> BE::BufMut<'x>: HostDataMut,
         for<'x> BE::BufRef<'x>: HostDataRef,
         R: VecZnxBigToBackendMut<BE>,
@@ -800,7 +800,7 @@ where
         cols: usize,
         coeffs: usize,
     ) where
-        BE: Backend<ScalarBig = i128>,
+        BE: Backend<BigWord = i128>,
         for<'x> BE::BufMut<'x>: HostDataMut,
         for<'x> BE::BufRef<'x>: HostDataRef,
         R: VecZnxBigToBackendMut<BE>,
@@ -810,24 +810,24 @@ where
 
     fn vec_znx_big_negate_default<R, A>(_module: &Module<BE>, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
-        BE: Backend<ScalarBig = i128> + I128BigOps,
+        BE: Backend<BigWord = i128> + I128BigOps,
         R: VecZnxBigToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
     {
-        ntt4x30_vec_znx_big_negate(res, res_col, a, a_col);
+        ntt4x30_vec_znx_big_negate::<_, _, BE>(res, res_col, a, a_col);
     }
 
     fn vec_znx_big_negate_assign_default<R>(_module: &Module<BE>, res: &mut R, res_col: usize)
     where
-        BE: Backend<ScalarBig = i128> + I128BigOps,
+        BE: Backend<BigWord = i128> + I128BigOps,
         R: VecZnxBigToBackendMut<BE>,
     {
-        ntt4x30_vec_znx_big_negate_assign(res, res_col);
+        ntt4x30_vec_znx_big_negate_assign::<_, BE>(res, res_col);
     }
 
     fn vec_znx_big_normalize_tmp_bytes_default(module: &Module<BE>) -> usize
     where
-        BE: Backend<ScalarBig = i128> + I128NormalizeOps,
+        BE: Backend<BigWord = i128> + I128NormalizeOps,
     {
         ntt4x30_vec_znx_big_normalize_tmp_bytes(module.n())
     }
@@ -843,7 +843,7 @@ where
         a_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        BE: Backend<ScalarBig = i128> + I128NormalizeOps,
+        BE: Backend<BigWord = i128> + I128NormalizeOps,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
         R: VecZnxToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
@@ -852,7 +852,7 @@ where
             scratch.borrow(),
             ntt4x30_vec_znx_big_normalize_tmp_bytes(module.n()) / size_of::<i128>(),
         );
-        ntt4x30_vec_znx_big_normalize(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
+        ntt4x30_vec_znx_big_normalize::<_, _, BE>(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
     }
 
     fn vec_znx_big_normalize_add_assign_default<R, A>(
@@ -866,7 +866,7 @@ where
         a_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        BE: Backend<ScalarBig = i128> + I128NormalizeOps,
+        BE: Backend<BigWord = i128> + I128NormalizeOps,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
         R: VecZnxToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
@@ -875,7 +875,7 @@ where
             scratch.borrow(),
             ntt4x30_vec_znx_big_normalize_tmp_bytes(module.n()) / size_of::<i128>(),
         );
-        ntt4x30_vec_znx_big_normalize_add_assign(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
+        ntt4x30_vec_znx_big_normalize_add_assign::<_, _, BE>(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
     }
 
     fn vec_znx_big_normalize_sub_assign_default<R, A>(
@@ -889,7 +889,7 @@ where
         a_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        BE: Backend<ScalarBig = i128> + I128NormalizeOps,
+        BE: Backend<BigWord = i128> + I128NormalizeOps,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
         R: VecZnxToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
@@ -898,21 +898,21 @@ where
             scratch.borrow(),
             ntt4x30_vec_znx_big_normalize_tmp_bytes(module.n()) / size_of::<i128>(),
         );
-        ntt4x30_vec_znx_big_normalize_sub_assign(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
+        ntt4x30_vec_znx_big_normalize_sub_assign::<_, _, BE>(res, res_base2k, res_offset, res_col, a, a_base2k, a_col, carry);
     }
 
     fn vec_znx_big_automorphism_default<R, A>(_module: &Module<BE>, k: i64, res: &mut R, res_col: usize, a: &A, a_col: usize)
     where
-        BE: Backend<ScalarBig = i128> + I128BigOps,
+        BE: Backend<BigWord = i128> + I128BigOps,
         R: VecZnxBigToBackendMut<BE>,
         A: VecZnxBigToBackendRef<BE>,
     {
-        ntt4x30_vec_znx_big_automorphism(k, res, res_col, a, a_col);
+        ntt4x30_vec_znx_big_automorphism::<_, _, BE>(k, res, res_col, a, a_col);
     }
 
     fn vec_znx_big_automorphism_assign_tmp_bytes_default(module: &Module<BE>) -> usize
     where
-        BE: Backend<ScalarBig = i128> + I128BigOps,
+        BE: Backend<BigWord = i128> + I128BigOps,
     {
         ntt4x30_vec_znx_big_automorphism_assign_tmp_bytes(module.n())
     }
@@ -924,7 +924,7 @@ where
         res_col: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        BE: Backend<ScalarBig = i128> + I128BigOps,
+        BE: Backend<BigWord = i128> + I128BigOps,
         for<'x> BE::BufMut<'x>: HostBufMut<'x>,
         R: VecZnxBigToBackendMut<BE>,
     {
@@ -932,7 +932,7 @@ where
             scratch.borrow(),
             ntt4x30_vec_znx_big_automorphism_assign_tmp_bytes(module.n()) / size_of::<i128>(),
         );
-        ntt4x30_vec_znx_big_automorphism_assign(k, res, res_col, tmp);
+        ntt4x30_vec_znx_big_automorphism_assign::<_, BE>(k, res, res_col, tmp);
     }
 }
 

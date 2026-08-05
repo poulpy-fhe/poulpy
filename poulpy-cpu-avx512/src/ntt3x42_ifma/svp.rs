@@ -1,12 +1,13 @@
 //! Scalar-vector product (SVP) operations for [`NTT3x42Ifma`].
 
 use bytemuck::{cast_slice, cast_slice_mut};
+use poulpy_cpu_ref::reference::ntt4x30::primes::PrimeSet;
 
 use poulpy_hal::{
     api::{VecZnxDftAlloc, VecZnxDftApply},
     layouts::{
         Module, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, VecZnxBackendRef, VecZnxDftBackendMut,
-        VecZnxDftBackendRef, VecZnxDftReborrowBackendRef, VecZnxDftToBackendMut, ZnxView, ZnxViewMut,
+        VecZnxDftBackendRef, ZnxView, ZnxViewMut,
     },
 };
 
@@ -14,7 +15,7 @@ use crate::NTT3x42Ifma;
 use crate::ntt3x42_ifma::{
     kernels::ntt_avx512,
     module::handle,
-    primes::{PrimeSetNtt3x42Ifma, Primes42},
+    primes::Primes42,
     tables::{harvey_modmul, harvey_quotient},
     traits::{Ntt3x42IfmaCFromB, Ntt3x42IfmaFromZnx64, Ntt3x42IfmaZero},
 };
@@ -58,9 +59,9 @@ pub(crate) fn svp_apply_dft(
 ) {
     let b_size = b.size();
     let mut b_dft_owned = module.vec_znx_dft_alloc(1, b_size);
-    let mut b_dft = b_dft_owned.to_backend_mut();
+    let mut b_dft = b_dft_owned.to_backend_mut::<NTT3x42Ifma>();
     <Module<NTT3x42Ifma> as VecZnxDftApply<NTT3x42Ifma>>::vec_znx_dft_apply(module, 1, 0, &mut b_dft, 0, b, b_col);
-    let b_dft_ref = b_dft.reborrow_backend_ref();
+    let b_dft_ref = poulpy_hal::layouts::VecZnxDftReborrowBackendRef::<NTT3x42Ifma>::reborrow_backend_ref(&b_dft);
     svp_apply_dft_to_dft(module, res, res_col, a, a_col, &b_dft_ref, 0);
 }
 

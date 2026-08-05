@@ -9,8 +9,8 @@ use poulpy_hal::{
 use crate::{
     FFT64Ref,
     hal_defaults::{
-        FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault, FFT64VecZnxDftDefault,
-        FFT64VmpDefault, HalVecZnxDefault, ScalarBigHadamardProduct,
+        BigWordHadamardProduct, FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault,
+        FFT64VecZnxDftDefault, FFT64VmpDefault, HalVecZnxDefault,
     },
     reference::{
         fft64::{
@@ -136,9 +136,9 @@ impl ReimArith for DelegatingFFT64Ref {}
 impl Reim4BlkMatVec for DelegatingFFT64Ref {}
 impl Reim4Convolution for DelegatingFFT64Ref {}
 impl I64Ops for DelegatingFFT64Ref {}
-impl ScalarBigHadamardProduct for DelegatingFFT64Ref {
+impl BigWordHadamardProduct for DelegatingFFT64Ref {
     #[inline(always)]
-    fn scalar_big_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
+    fn big_word_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
         Self::i64_hadamard_product(res, a, b)
     }
 }

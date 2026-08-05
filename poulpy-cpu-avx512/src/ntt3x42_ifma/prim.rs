@@ -6,7 +6,7 @@
 
 use crate::ntt3x42_ifma::{
     bbc_meta::Bbc126IfmaMeta,
-    primes::{PrimeSetNtt3x42Ifma, Primes42},
+    primes::Primes42,
     tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv},
     traits::{
         Ntt3x42IfmaAdd, Ntt3x42IfmaAddAssign, Ntt3x42IfmaCFromB, Ntt3x42IfmaCopy, Ntt3x42IfmaDFTExecute, Ntt3x42IfmaFromZnx64,
@@ -14,6 +14,7 @@ use crate::ntt3x42_ifma::{
         Ntt3x42IfmaSubNegateAssign, Ntt3x42IfmaToZnx128, Ntt3x42IfmaZero,
     },
 };
+use poulpy_cpu_ref::reference::ntt4x30::primes::PrimeSet;
 
 use core::arch::x86_64::{
     __m256i, __m512i, _mm256_add_epi64, _mm256_and_si256, _mm256_cmpgt_epi64, _mm256_loadu_si256, _mm256_mul_epu32,
@@ -124,7 +125,7 @@ unsafe fn simd_negate_assign(res: &mut [u64]) {
 
 /// `oq[k] = Q[k] - (2^63 mod Q[k])` for negative i64 handling.
 const OQ_IFMA: [u64; 4] = {
-    let q = <Primes42 as crate::ntt3x42_ifma::primes::PrimeSetNtt3x42Ifma>::Q;
+    let q = <Primes42 as poulpy_cpu_ref::reference::ntt4x30::primes::PrimeSet>::Q;
     let mut oq = [0u64; 4];
     let mut k = 0;
     while k < 3 {
@@ -136,7 +137,7 @@ const OQ_IFMA: [u64; 4] = {
 
 /// `2^42 mod Q[k]` for two-pass reduction of signed 64-bit inputs.
 const POW42_MOD_Q_IFMA: [u64; 4] = {
-    let q = <Primes42 as crate::ntt3x42_ifma::primes::PrimeSetNtt3x42Ifma>::Q;
+    let q = <Primes42 as poulpy_cpu_ref::reference::ntt4x30::primes::PrimeSet>::Q;
     let pow42 = 1u64 << 42;
     [pow42 - q[0], pow42 - q[1], pow42 - q[2], 0]
 };

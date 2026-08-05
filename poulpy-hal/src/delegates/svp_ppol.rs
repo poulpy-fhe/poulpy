@@ -1,3 +1,4 @@
+use crate::layouts::SvpPPol;
 use crate::{
     api::{SvpApplyDft, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPPolBytesOf, SvpPPolCopyBackend, SvpPrepare},
     layouts::{
@@ -20,7 +21,7 @@ macro_rules! impl_svp_delegate {
 
 impl<B: Backend> SvpPPolAlloc<B> for Module<B> {
     fn svp_ppol_alloc(&self, cols: usize) -> SvpPPolOwned<B> {
-        SvpPPolOwned::alloc(self.n(), cols)
+        SvpPPol::alloc::<B>(self.n(), cols)
     }
 }
 

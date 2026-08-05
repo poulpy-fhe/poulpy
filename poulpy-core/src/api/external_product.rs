@@ -33,7 +33,7 @@ pub trait GLWEExternalProductInternal<BE: Backend> {
 
     fn glwe_external_product_dft<'r, A, G>(
         &self,
-        res_dft: &mut VecZnxDft<<BE as Backend>::BufMut<'r>, BE>,
+        res_dft: &mut VecZnxDft<<BE as Backend>::BufMut<'r>, BE::DftWord>,
         a: &A,
         ggsw: &G,
         scratch: &mut ScratchArena<'_, BE>,

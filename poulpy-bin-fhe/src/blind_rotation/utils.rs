@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::SvpPrepare,
-    layouts::{Backend, HostDataMut, Module, ScalarZnx, ScalarZnxToBackendRef, SvpPPolOwned, SvpPPolToBackendMut, ZnxViewMut},
+    layouts::{Backend, HostDataMut, Module, ScalarZnx, ScalarZnxToBackendRef, SvpPPolOwned, ZnxViewMut},
 };
 
 pub(crate) fn set_xai_plus_y<C, B: Backend>(
@@ -25,7 +25,7 @@ pub(crate) fn set_xai_plus_y<C, B: Backend>(
         raw[0] += y;
     }
 
-    let mut res_backend = res.to_backend_mut();
+    let mut res_backend = res.to_backend_mut::<B>();
     let buf_ref = buf.to_ref();
     let buf_backend = ScalarZnx::from_data(B::from_host_bytes(buf_ref.data), buf_ref.n(), buf_ref.cols());
     module.svp_prepare(

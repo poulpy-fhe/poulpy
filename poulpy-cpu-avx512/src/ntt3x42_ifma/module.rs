@@ -37,8 +37,9 @@ pub struct NTT3x42IfmaHandle {
 }
 
 impl Backend for NTT3x42Ifma {
-    type ScalarPrep = Q126Scalar;
-    type ScalarBig = i128;
+    type DftWord = Q126Scalar;
+    type ZnxWord = i64;
+    type BigWord = i128;
     type OwnedBuf = Vec<u8>;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];

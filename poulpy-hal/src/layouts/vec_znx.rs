@@ -1,13 +1,14 @@
 use std::{
     fmt,
     hash::{DefaultHasher, Hasher},
+    marker::PhantomData,
 };
 
 use crate::{
     alloc_aligned,
     layouts::{
         Backend, Data, DataView, DataViewMut, DigestU64, FillUniform, HostDataMut, HostDataRef, ReaderFrom, ScalarZnx,
-        ToOwnedDeep, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxZero,
+        ToOwnedDeep, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
     },
     source::Source,
 };
@@ -20,13 +21,16 @@ use rand::Rng;
 ///
 /// This is the central data type of the crate. Each `VecZnx` contains
 /// `cols` independent polynomial columns, each decomposed into `size`
-/// limbs of `N` coefficients. Coefficients are `i64` values.
+/// limbs of `N` coefficients. Coefficients are [`ZnxWord`] values
+/// (`i64` by default).
 ///
 /// **Memory layout:** limb-major, column-minor. Limb `j` of column `i`
 /// starts at scalar offset `N * (j * cols + i)`.
 ///
 /// The type parameter `D` controls ownership: `Vec<u8>` for owned,
 /// `&[u8]` for shared borrows, `&mut [u8]` for mutable borrows.
+/// The type parameter `W` names the coefficient word (byte-layout
+/// contract) of the buffer.
 ///
 /// **Invariant:** `size <= max_size`. The `max_size` field records the
 /// allocated capacity; `size` can be reduced without reallocation.
@@ -68,36 +72,38 @@ impl VecZnxShape {
 
 #[repr(C)]
 #[derive(PartialEq, Eq, Clone, Copy, Hash)]
-pub struct VecZnx<D: Data> {
+pub struct VecZnx<D: Data, W: ZnxWord = i64> {
     pub data: D,
     shape: VecZnxShape,
+    pub _phantom: PhantomData<W>,
 }
 
-impl<D: HostDataRef> VecZnx<D> {
+impl<D: HostDataRef, W: ZnxWord> VecZnx<D, W> {
     /// Returns a read-only [`ScalarZnx`] view of a single limb of a single column.
-    pub fn as_scalar_znx_ref(&self, col: usize, limb: usize) -> ScalarZnx<&[u8]> {
+    pub fn as_scalar_znx_ref(&self, col: usize, limb: usize) -> ScalarZnx<&[u8], W> {
         ScalarZnx::from_data(bytemuck::cast_slice(self.at(col, limb)), self.n(), 1)
     }
 }
 
-impl<D: HostDataMut> VecZnx<D> {
+impl<D: HostDataMut, W: ZnxWord> VecZnx<D, W> {
     /// Returns a mutable [`ScalarZnx`] view of a single limb of a single column.
-    pub fn as_scalar_znx_mut(&mut self, col: usize, limb: usize) -> ScalarZnx<&mut [u8]> {
+    pub fn as_scalar_znx_mut(&mut self, col: usize, limb: usize) -> ScalarZnx<&mut [u8], W> {
         let n = self.n();
         ScalarZnx::from_data(bytemuck::cast_slice_mut(self.at_mut(col, limb)), n, 1)
     }
 }
 
-impl<D: Data + Default> Default for VecZnx<D> {
+impl<D: Data + Default, W: ZnxWord> Default for VecZnx<D, W> {
     fn default() -> Self {
         Self {
             data: D::default(),
             shape: VecZnxShape::default(),
+            _phantom: PhantomData,
         }
     }
 }
 
-impl<D: HostDataRef> DigestU64 for VecZnx<D> {
+impl<D: HostDataRef, W: ZnxWord> DigestU64 for VecZnx<D, W> {
     fn digest_u64(&self) -> u64 {
         let mut h: DefaultHasher = DefaultHasher::new();
         h.write(self.data.as_ref());
@@ -109,19 +115,20 @@ impl<D: HostDataRef> DigestU64 for VecZnx<D> {
     }
 }
 
-impl<D: HostDataRef> ToOwnedDeep for VecZnx<D> {
-    type Owned = VecZnx<Vec<u8>>;
+impl<D: HostDataRef, W: ZnxWord> ToOwnedDeep for VecZnx<D, W> {
+    type Owned = VecZnx<Vec<u8>, W>;
     fn to_owned_deep(&self) -> Self::Owned {
         VecZnx {
             data: self.data.as_ref().to_vec(),
             shape: self.shape,
+            _phantom: PhantomData,
         }
     }
 }
 
-impl<D: Data> VecZnx<D> {
+impl<D: Data, W: ZnxWord> VecZnx<D, W> {
     /// Rebuilds this backend-owned vector as a host-owned [`VecZnx<Vec<u8>>`].
-    pub fn to_host_owned<BE>(&self) -> VecZnx<Vec<u8>>
+    pub fn to_host_owned<BE>(&self) -> VecZnx<Vec<u8>, W>
     where
         BE: Backend<OwnedBuf = D>,
     {
@@ -144,13 +151,13 @@ impl<D: Data> VecZnx<D> {
     }
 }
 
-impl<D: HostDataRef> fmt::Debug for VecZnx<D> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Debug for VecZnx<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: Data> ZnxInfos for VecZnx<D> {
+impl<D: Data, W: ZnxWord> ZnxInfos for VecZnx<D, W> {
     fn cols(&self) -> usize {
         self.shape.cols()
     }
@@ -168,24 +175,24 @@ impl<D: Data> ZnxInfos for VecZnx<D> {
     }
 }
 
-impl<D: Data> DataView for VecZnx<D> {
+impl<D: Data, W: ZnxWord> DataView for VecZnx<D, W> {
     type D = D;
     fn data(&self) -> &Self::D {
         &self.data
     }
 }
 
-impl<D: Data> DataViewMut for VecZnx<D> {
+impl<D: Data, W: ZnxWord> DataViewMut for VecZnx<D, W> {
     fn data_mut(&mut self) -> &mut Self::D {
         &mut self.data
     }
 }
 
-impl<D: HostDataRef> ZnxView for VecZnx<D> {
-    type Scalar = i64;
+impl<D: HostDataRef, W: ZnxWord> ZnxView for VecZnx<D, W> {
+    type Scalar = W;
 }
 
-impl<D: Data> VecZnx<D> {
+impl<D: Data, W: ZnxWord> VecZnx<D, W> {
     pub fn n(&self) -> usize {
         self.shape.n()
     }
@@ -214,7 +221,7 @@ impl<D: Data> VecZnx<D> {
     }
 }
 
-impl<D: Data> VecZnx<D> {
+impl<D: Data, W: ZnxWord> VecZnx<D, W> {
     /// Sets the active limb count.
     ///
     /// # Panics
@@ -232,12 +239,12 @@ impl VecZnx<Vec<u8>> {
     }
 }
 
-impl<D: HostDataMut> ZnxZero for VecZnx<D> {
+impl<D: HostDataMut, W: ZnxWord> ZnxZero for VecZnx<D, W> {
     fn zero(&mut self) {
-        self.raw_mut().fill(0)
+        self.raw_mut().fill(W::zero())
     }
     fn zero_at(&mut self, i: usize, j: usize) {
-        self.at_mut(i, j).fill(0);
+        self.at_mut(i, j).fill(W::zero());
     }
 }
 
@@ -254,6 +261,7 @@ impl VecZnx<Vec<u8>> {
         Self {
             data,
             shape: VecZnxShape::new(n, cols, size, size),
+            _phantom: PhantomData,
         }
     }
 
@@ -278,17 +286,19 @@ impl VecZnx<Vec<u8>> {
         Self {
             data,
             shape: VecZnxShape::new(n, cols, size, size),
+            _phantom: PhantomData,
         }
     }
 }
 
-impl<D: Data> VecZnx<D> {
+impl<D: Data, W: ZnxWord> VecZnx<D, W> {
     /// Constructs a `VecZnx` from raw parts without validation.
     /// Sets `max_size = size`.
     pub fn from_data(data: D, n: usize, cols: usize, size: usize) -> Self {
         Self {
             data,
             shape: VecZnxShape::new(n, cols, size, size),
+            _phantom: PhantomData,
         }
     }
 
@@ -300,11 +310,12 @@ impl<D: Data> VecZnx<D> {
         Self {
             data,
             shape: VecZnxShape::new(n, cols, size, max_size),
+            _phantom: PhantomData,
         }
     }
 }
 
-impl<D: HostDataRef> fmt::Display for VecZnx<D> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Display for VecZnx<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "VecZnx(n={}, cols={}, size={})", self.n(), self.cols(), self.size())?;
 
@@ -409,6 +420,7 @@ impl<B: Backend> VecZnxToBackendRef<B> for VecZnx<B::OwnedBuf> {
         VecZnx {
             data: B::view(&self.data),
             shape: self.shape,
+            _phantom: PhantomData,
         }
     }
 }
@@ -424,6 +436,7 @@ impl VecZnxToBackendRef<crate::layouts::HostBytesBackend> for VecZnx<&mut [u8]> 
         VecZnx {
             data: self.data,
             shape: self.shape,
+            _phantom: PhantomData,
         }
     }
 }
@@ -433,6 +446,7 @@ impl VecZnxToBackendRef<crate::layouts::HostBytesBackend> for VecZnx<&[u8]> {
         VecZnx {
             data: self.data,
             shape: self.shape,
+            _phantom: PhantomData,
         }
     }
 }
@@ -446,6 +460,7 @@ pub fn vec_znx_backend_ref_from_ref<'a, 'b, B: Backend + 'b>(vec: &'a VecZnx<B::
     VecZnx {
         data: B::view_ref(&vec.data),
         shape: vec.shape,
+        _phantom: PhantomData,
     }
 }
 
@@ -453,6 +468,7 @@ pub fn vec_znx_backend_ref_from_mut<'a, 'b, B: Backend + 'b>(vec: &'a VecZnx<B::
     VecZnx {
         data: B::view_ref_mut(&vec.data),
         shape: vec.shape,
+        _phantom: PhantomData,
     }
 }
 
@@ -472,6 +488,7 @@ impl<B: Backend> VecZnxToBackendMut<B> for VecZnx<B::OwnedBuf> {
         VecZnx {
             data: B::view_mut(&mut self.data),
             shape: self.shape,
+            _phantom: PhantomData,
         }
     }
 }
@@ -487,6 +504,7 @@ impl VecZnxToBackendMut<crate::layouts::HostBytesBackend> for VecZnx<&mut [u8]> 
         VecZnx {
             data: self.data,
             shape: self.shape,
+            _phantom: PhantomData,
         }
     }
 }
@@ -500,6 +518,7 @@ pub fn vec_znx_host_backend_ref<D: HostDataRef>(vec: &VecZnx<D>) -> VecZnxBacken
     VecZnx {
         data: vec.data.as_ref(),
         shape: vec.shape,
+        _phantom: PhantomData,
     }
 }
 
@@ -507,6 +526,7 @@ pub fn vec_znx_host_backend_mut<D: HostDataMut>(vec: &mut VecZnx<D>) -> VecZnxBa
     VecZnx {
         data: vec.data.as_mut(),
         shape: vec.shape,
+        _phantom: PhantomData,
     }
 }
 
@@ -514,6 +534,7 @@ pub fn vec_znx_backend_mut_from_mut<'a, 'b, B: Backend + 'b>(vec: &'a mut VecZnx
     VecZnx {
         data: B::view_mut_ref(&mut vec.data),
         shape: vec.shape,
+        _phantom: PhantomData,
     }
 }
 
@@ -523,7 +544,7 @@ impl<'b, B: Backend + 'b> VecZnxReborrowBackendMut<B> for VecZnx<B::BufMut<'b>> 
     }
 }
 
-impl<D: HostDataMut> ReaderFrom for VecZnx<D> {
+impl<D: HostDataMut, W: ZnxWord> ReaderFrom for VecZnx<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         // Read into temporaries first to avoid leaving self in an inconsistent state on error.
         let new_n: usize = reader.read_u64::<LittleEndian>()? as usize;
@@ -532,13 +553,14 @@ impl<D: HostDataMut> ReaderFrom for VecZnx<D> {
         let new_max_size: usize = reader.read_u64::<LittleEndian>()? as usize;
         let len: usize = reader.read_u64::<LittleEndian>()? as usize;
 
-        // Validate metadata consistency: n * cols * size * sizeof(i64) must match data length.
-        let expected_len: usize = new_n * new_cols * new_size * size_of::<i64>();
+        // Validate metadata consistency: n * cols * size * sizeof(W) must match data length.
+        let expected_len: usize = new_n * new_cols * new_size * size_of::<W>();
         if expected_len != len {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!(
-                    "VecZnx metadata inconsistent: n={new_n} * cols={new_cols} * size={new_size} * 8 = {expected_len} != data len={len}"
+                    "VecZnx metadata inconsistent: n={new_n} * cols={new_cols} * size={new_size} * {} = {expected_len} != data len={len}",
+                    size_of::<W>()
                 ),
             ));
         }
@@ -558,13 +580,13 @@ impl<D: HostDataMut> ReaderFrom for VecZnx<D> {
     }
 }
 
-impl<D: HostDataRef> WriterTo for VecZnx<D> {
-    fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+impl<D: HostDataRef, W: ZnxWord> WriterTo for VecZnx<D, W> {
+    fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         writer.write_u64::<LittleEndian>(self.n() as u64)?;
         writer.write_u64::<LittleEndian>(self.cols() as u64)?;
         writer.write_u64::<LittleEndian>(self.size() as u64)?;
         writer.write_u64::<LittleEndian>(self.max_size() as u64)?;
-        let coeff_bytes: usize = self.n() * self.cols() * self.size() * size_of::<i64>();
+        let coeff_bytes: usize = self.n() * self.cols() * self.size() * size_of::<W>();
         let buf: &[u8] = self.data.as_ref();
         if buf.len() < coeff_bytes {
             return Err(std::io::Error::new(

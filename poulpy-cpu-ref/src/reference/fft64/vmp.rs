@@ -21,7 +21,7 @@ pub fn vmp_prepare<BE>(
     mat: &MatZnxBackendRef<'_, BE>,
     tmp: &mut [f64],
 ) where
-    BE: Backend<ScalarPrep = f64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
+    BE: Backend<DftWord = f64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -113,7 +113,7 @@ pub fn vmp_apply_dft_tmp_bytes(n: usize, a_size: usize, prows: usize, pcols_in: 
 
 pub fn vmp_apply_dft<R, A, M, BE>(table: &ReimFFTTable<f64>, res: &mut R, a: &A, pmat: &M, tmp_bytes: &mut [f64])
 where
-    BE: Backend<ScalarPrep = f64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
+    BE: Backend<DftWord = f64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
     for<'x> BE::BufMut<'x>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
     R: VecZnxDftToBackendMut<BE>,
@@ -135,7 +135,7 @@ where
 
     let (data, tmp_bytes) = tmp_bytes.split_at_mut(BE::bytes_of_vec_znx_dft(n, cols, size));
 
-    let mut a_dft: VecZnxDft<&mut [u8], BE> = VecZnxDft::from_data(cast_mut(data), n, cols, size);
+    let mut a_dft: VecZnxDft<&mut [u8], BE::DftWord> = VecZnxDft::from_data(cast_mut(data), n, cols, size);
 
     let offset: usize = cols - a.cols();
     for j in 0..cols {
@@ -160,7 +160,7 @@ pub fn vmp_apply_dft_to_dft_tmp_bytes(a_size: usize, prows: usize, pcols_in: usi
 
 pub fn vmp_zero<BE>(res: &mut VmpPMatBackendMut<'_, BE>)
 where
-    BE: Backend<ScalarPrep = f64>,
+    BE: Backend<DftWord = f64>,
     for<'x> BE::BufMut<'x>: HostDataMut,
 {
     res.raw_mut().fill(0.0);
@@ -173,7 +173,7 @@ pub fn vmp_apply_dft_to_dft<BE>(
     limb_offset: usize,
     tmp_bytes: &mut [f64],
 ) where
-    BE: Backend<ScalarPrep = f64> + ReimArith + Reim4BlkMatVec,
+    BE: Backend<DftWord = f64> + ReimArith + Reim4BlkMatVec,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {

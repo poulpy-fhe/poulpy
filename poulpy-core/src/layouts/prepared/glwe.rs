@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf},
-    layouts::{Backend, Data, Module, VecZnxDft, VecZnxDftToBackendMut, VecZnxDftToBackendRef},
+    layouts::{Backend, Data, Module, VecZnxDft},
 };
 
 use crate::layouts::{Base2K, Degree, GLWEInfos, GLWEToBackendRef, GetDegree, LWEInfos, Rank, TorusPrecision};
@@ -10,9 +10,9 @@ use crate::layouts::{Base2K, Degree, GLWEInfos, GLWEToBackendRef, GetDegree, LWE
 /// Stores polynomials in the frequency domain of the backend's DFT/NTT
 /// transform, enabling O(N log N) polynomial multiplication.
 /// Tied to a specific backend via `B: Backend`.
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq)]
 pub struct GLWEPrepared<D: Data, B: Backend> {
-    pub(crate) data: VecZnxDft<D, B>,
+    pub(crate) data: VecZnxDft<D, B::DftWord>,
     pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
 }
@@ -109,7 +109,7 @@ pub trait GLWEPreparedToBackendRef<B: Backend> {
 impl<B: Backend> GLWEPreparedToBackendRef<B> for GLWEPrepared<B::OwnedBuf, B> {
     fn to_backend_ref(&self) -> GLWEPreparedBackendRef<'_, B> {
         GLWEPrepared {
-            data: self.data.to_backend_ref(),
+            data: self.data.to_backend_ref::<B>(),
             base2k: self.base2k,
             k: self.k,
         }
@@ -123,7 +123,7 @@ pub trait GLWEPreparedToBackendMut<B: Backend> {
 impl<B: Backend> GLWEPreparedToBackendMut<B> for GLWEPrepared<B::OwnedBuf, B> {
     fn to_backend_mut(&mut self) -> GLWEPreparedBackendMut<'_, B> {
         GLWEPrepared {
-            data: self.data.to_backend_mut(),
+            data: self.data.to_backend_mut::<B>(),
             base2k: self.base2k,
             k: self.k,
         }

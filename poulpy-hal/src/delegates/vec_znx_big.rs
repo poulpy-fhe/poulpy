@@ -45,7 +45,7 @@ impl<B: Backend> VecZnxBigAlloc<B> for Module<B> {
     }
 
     fn vec_znx_big_alloc_n(&self, n: usize, cols: usize, size: usize) -> VecZnxBigOwned<B> {
-        VecZnxBigOwned::alloc(n, cols, size)
+        VecZnxBig::alloc::<B>(n, cols, size)
     }
 }
 
@@ -55,7 +55,7 @@ impl<B: Backend> VecZnxBigFromBytes<B> for Module<B> {
     }
 
     fn vec_znx_big_from_bytes_n(&self, n: usize, cols: usize, size: usize, bytes: Vec<u8>) -> VecZnxBigOwned<B> {
-        VecZnxBig::<B::OwnedBuf, B>::from_bytes(n, cols, size, bytes)
+        VecZnxBig::from_bytes::<B>(n, cols, size, bytes)
     }
 }
 

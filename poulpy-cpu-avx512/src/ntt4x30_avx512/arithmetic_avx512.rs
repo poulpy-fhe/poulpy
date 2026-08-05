@@ -45,6 +45,7 @@ use core::arch::x86_64::{
     _mm512_mul_epu32, _mm512_or_si512, _mm512_permutex2var_epi64, _mm512_set_epi64, _mm512_set1_epi64, _mm512_setzero_si512,
     _mm512_slli_epi64, _mm512_srli_epi64, _mm512_storeu_si512, _mm512_sub_epi64, _mm512_test_epi64_mask,
 };
+use poulpy_cpu_ref::reference::ntt4x30::primes::PrimeSetCrt4;
 
 use poulpy_cpu_ref::reference::ntt4x30::{
     mat_vec::BbbMeta,

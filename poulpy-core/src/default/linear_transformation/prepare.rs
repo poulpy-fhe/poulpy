@@ -12,7 +12,7 @@
 
 use poulpy_hal::{
     api::{CnvPVecAlloc, Convolution},
-    layouts::{Backend, CnvPVecRToBackendMut, ScratchArena},
+    layouts::{Backend, ScratchArena},
 };
 
 use crate::{
@@ -177,7 +177,7 @@ pub fn glwe_prepare_linear_transformation_rhs_default<BE, M, P>(
                 .unwrap_or_else(|| panic!("prepared cache has no diagonal slot for baby {} at giant {}", d.baby, gs.rot));
             let plaintext_backend = plaintext.to_backend_ref();
             module.cnv_prepare_right(
-                &mut prepared_slot.plaintext.cnv_mut().to_backend_mut(),
+                &mut prepared_slot.plaintext.cnv_mut().to_backend_mut::<BE>(),
                 &plaintext_backend.data,
                 mask,
                 scratch,

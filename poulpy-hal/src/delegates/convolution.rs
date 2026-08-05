@@ -19,12 +19,12 @@ macro_rules! impl_convolution_delegate {
 }
 
 impl<BE: Backend> CnvPVecAlloc<BE> for Module<BE> {
-    fn cnv_pvec_left_alloc(&self, cols: usize, size: usize) -> CnvPVecL<BE::OwnedBuf, BE> {
-        CnvPVecL::alloc(self.n(), cols, size)
+    fn cnv_pvec_left_alloc(&self, cols: usize, size: usize) -> CnvPVecL<BE::OwnedBuf, BE::DftWord> {
+        CnvPVecL::alloc::<BE>(self.n(), cols, size)
     }
 
-    fn cnv_pvec_right_alloc(&self, cols: usize, size: usize) -> CnvPVecR<BE::OwnedBuf, BE> {
-        CnvPVecR::alloc(self.n(), cols, size)
+    fn cnv_pvec_right_alloc(&self, cols: usize, size: usize) -> CnvPVecR<BE::OwnedBuf, BE::DftWord> {
+        CnvPVecR::alloc::<BE>(self.n(), cols, size)
     }
 }
 

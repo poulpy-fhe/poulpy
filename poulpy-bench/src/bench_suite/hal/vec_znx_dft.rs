@@ -32,9 +32,9 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let a: VecZnxDft<B::OwnedBuf, B> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
-        let b: VecZnxDft<B::OwnedBuf, B> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
-        let mut c: VecZnxDft<B::OwnedBuf, B> = module.vec_znx_dft_alloc(cols, size);
+        let a: VecZnxDft<B::OwnedBuf, B::DftWord> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
+        let b: VecZnxDft<B::OwnedBuf, B::DftWord> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
+        let mut c: VecZnxDft<B::OwnedBuf, B::DftWord> = module.vec_znx_dft_alloc(cols, size);
 
         move || {
             let a = crate::vec_znx_dft_backend_ref::<B>(&a);
@@ -76,8 +76,8 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let a: VecZnxDft<B::OwnedBuf, B> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
-        let mut c: VecZnxDft<B::OwnedBuf, B> = module.vec_znx_dft_alloc(cols, size);
+        let a: VecZnxDft<B::OwnedBuf, B::DftWord> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
+        let mut c: VecZnxDft<B::OwnedBuf, B::DftWord> = module.vec_znx_dft_alloc(cols, size);
 
         move || {
             let a = crate::vec_znx_dft_backend_ref::<B>(&a);
@@ -118,13 +118,13 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut res: VecZnxDft<B::OwnedBuf, B> = module.vec_znx_dft_alloc(cols, size);
+        let mut res: VecZnxDft<B::OwnedBuf, B::DftWord> = module.vec_znx_dft_alloc(cols, size);
         let a = crate::random_host_vec_znx(module.n(), cols, size, &mut source);
         let a = crate::upload_host_vec_znx::<B>(&a);
 
         move || {
             let a = crate::vec_znx_backend_ref::<B>(&a);
-            let mut res = crate::vec_znx_dft_backend_mut(&mut res);
+            let mut res = crate::vec_znx_dft_backend_mut::<B>(&mut res);
             for i in 0..cols {
                 module.vec_znx_dft_apply(1, 0, &mut res, i, &a, i);
             }
@@ -163,14 +163,14 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut res: VecZnxBig<B::OwnedBuf, B> = module.vec_znx_big_alloc(cols, size);
-        let a: VecZnxDft<B::OwnedBuf, B> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
+        let mut res: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
+        let a: VecZnxDft<B::OwnedBuf, B::DftWord> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
 
         let mut scratch = ScratchOwned::alloc(module.vec_znx_idft_apply_tmp_bytes());
 
         move || {
             let a = crate::vec_znx_dft_backend_ref::<B>(&a);
-            let mut res = crate::vec_znx_big_backend_mut(&mut res);
+            let mut res = crate::vec_znx_big_backend_mut::<B>(&mut res);
             for i in 0..cols {
                 module.vec_znx_idft_apply(&mut res, i, &a, i, &mut scratch.borrow());
             }
@@ -206,12 +206,13 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut res: VecZnxBig<B::OwnedBuf, B> = module.vec_znx_big_alloc(cols, size);
-        let mut a: VecZnxDft<B::OwnedBuf, B> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
+        let mut res: VecZnxBig<B::OwnedBuf, B::BigWord> = module.vec_znx_big_alloc(cols, size);
+        let mut a: VecZnxDft<B::OwnedBuf, B::DftWord> =
+            crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
 
         move || {
-            let mut res = crate::vec_znx_big_backend_mut(&mut res);
-            let mut a = crate::vec_znx_dft_backend_mut(&mut a);
+            let mut res = crate::vec_znx_big_backend_mut::<B>(&mut res);
+            let mut a = crate::vec_znx_dft_backend_mut::<B>(&mut a);
             for i in 0..cols {
                 module.vec_znx_idft_apply_tmpa(&mut res, i, &mut a, i);
             }
@@ -248,9 +249,9 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let a: VecZnxDft<B::OwnedBuf, B> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
-        let b: VecZnxDft<B::OwnedBuf, B> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
-        let mut c: VecZnxDft<B::OwnedBuf, B> = module.vec_znx_dft_alloc(cols, size);
+        let a: VecZnxDft<B::OwnedBuf, B::DftWord> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
+        let b: VecZnxDft<B::OwnedBuf, B::DftWord> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
+        let mut c: VecZnxDft<B::OwnedBuf, B::DftWord> = module.vec_znx_dft_alloc(cols, size);
 
         move || {
             let a = crate::vec_znx_dft_backend_ref::<B>(&a);
@@ -292,8 +293,8 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let a: VecZnxDft<B::OwnedBuf, B> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
-        let mut c: VecZnxDft<B::OwnedBuf, B> = module.vec_znx_dft_alloc(cols, size);
+        let a: VecZnxDft<B::OwnedBuf, B::DftWord> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
+        let mut c: VecZnxDft<B::OwnedBuf, B::DftWord> = module.vec_znx_dft_alloc(cols, size);
 
         move || {
             let a = crate::vec_znx_dft_backend_ref::<B>(&a);
@@ -334,8 +335,8 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let a: VecZnxDft<B::OwnedBuf, B> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
-        let mut c: VecZnxDft<B::OwnedBuf, B> = module.vec_znx_dft_alloc(cols, size);
+        let a: VecZnxDft<B::OwnedBuf, B::DftWord> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
+        let mut c: VecZnxDft<B::OwnedBuf, B::DftWord> = module.vec_znx_dft_alloc(cols, size);
 
         move || {
             let a = crate::vec_znx_dft_backend_ref::<B>(&a);

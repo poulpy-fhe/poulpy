@@ -3,7 +3,7 @@
 use core::arch::aarch64::{int64x2_t, vdupq_n_s64, vmlal_u32, vmovn_u64, vmull_u32, vshlq_u64, vshrn_n_u64};
 use poulpy_cpu_ref::reference::ntt4x30::{
     ntt::{NttReducMeta, NttStepMeta, NttTable, NttTableInv},
-    primes::PrimeSet,
+    primes::PrimeSetCrt4,
 };
 
 use super::q120::{Q120, add_q120, and_q120, load_const, load_q120, mla_epu32_q120, store_q120, sub_q120};
@@ -347,7 +347,7 @@ unsafe fn intt_iter_red(
 }
 
 /// Forward Q120 NTT — NEON.
-pub(crate) fn ntt_neon<P: PrimeSet>(table: &NttTable<P>, data: &mut [u64]) {
+pub(crate) fn ntt_neon<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
     let n = table.n;
     if n == 1 {
         return;
@@ -414,7 +414,7 @@ pub(crate) fn ntt_neon<P: PrimeSet>(table: &NttTable<P>, data: &mut [u64]) {
 }
 
 /// Inverse Q120 NTT — NEON.
-pub(crate) fn intt_neon<P: PrimeSet>(table: &NttTableInv<P>, data: &mut [u64]) {
+pub(crate) fn intt_neon<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &mut [u64]) {
     let n = table.n;
     if n == 1 {
         return;

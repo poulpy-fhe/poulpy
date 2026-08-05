@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes},
-    layouts::{Backend, Data, Module, ScratchArena, VmpPMat, VmpPMatBackendRef, VmpPMatToBackendMut, VmpPMatToBackendRef},
+    layouts::{Backend, Data, Module, ScratchArena, VmpPMat, VmpPMatBackendRef},
 };
 
 use crate::layouts::{
@@ -15,9 +15,9 @@ use crate::layouts::{
 /// represents a prepared matrix suitable for vector-matrix products.
 ///
 /// Tied to a specific backend via `B: Backend`.
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq)]
 pub struct GGLWEPrepared<D: Data, B: Backend> {
-    pub(crate) data: VmpPMat<D, B>,
+    pub(crate) data: VmpPMat<D, B::DftWord>,
     pub(crate) k_aux: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) dsize: Dsize,
@@ -225,14 +225,14 @@ impl<B: Backend> GGLWEPreparedToBackendRef<B> for GGLWEPrepared<B::OwnedBuf, B> 
             base2k: self.base2k,
             k_aux: self.k_aux,
             dsize: self.dsize,
-            data: self.data.to_backend_ref(),
+            data: self.data.to_backend_ref::<B>(),
         }
     }
 }
 
 impl<B: Backend> GGLWEPreparedVmpPMatRef<B> for GGLWEPrepared<B::OwnedBuf, B> {
     fn vmp_pmat_backend_ref(&self) -> VmpPMatBackendRef<'_, B> {
-        self.data.to_backend_ref()
+        self.data.to_backend_ref::<B>()
     }
 }
 
@@ -246,7 +246,7 @@ impl<B: Backend> GGLWEPreparedToBackendMut<B> for GGLWEPrepared<B::OwnedBuf, B> 
             base2k: self.base2k,
             k_aux: self.k_aux,
             dsize: self.dsize,
-            data: self.data.to_backend_mut(),
+            data: self.data.to_backend_mut::<B>(),
         }
     }
 }

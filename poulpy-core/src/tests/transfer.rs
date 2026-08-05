@@ -21,8 +21,9 @@ fn host_alloc(len: usize) -> Vec<u8> {
 }
 
 impl Backend for SrcBackend {
-    type ScalarBig = i64;
-    type ScalarPrep = f64;
+    type ZnxWord = i64;
+    type BigWord = i64;
+    type DftWord = f64;
     type OwnedBuf = Vec<u8>;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
@@ -131,8 +132,9 @@ unsafe impl HalModuleImpl<SrcBackend> for SrcBackend {
 }
 
 impl Backend for DstBackend {
-    type ScalarBig = i64;
-    type ScalarPrep = f64;
+    type ZnxWord = i64;
+    type BigWord = i64;
+    type DftWord = f64;
     type OwnedBuf = Vec<u8>;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];

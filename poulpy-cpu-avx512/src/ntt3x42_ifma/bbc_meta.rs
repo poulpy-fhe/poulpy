@@ -1,5 +1,6 @@
 //! Lazy-accumulation BBC (b × c → b) multiply metadata for the 3-prime IFMA backend.
 
+use poulpy_cpu_ref::reference::ntt4x30::primes::PrimeSet;
 use std::marker::PhantomData;
 
 use super::primes::{PrimeSetNtt3x42Ifma, Primes42};

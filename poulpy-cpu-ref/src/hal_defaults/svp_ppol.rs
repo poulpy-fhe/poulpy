@@ -25,8 +25,7 @@ use poulpy_hal::{
     api::VecZnxDftApply,
     layouts::{
         Backend, HostDataRef, Module, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, SvpPPolToBackendMut,
-        SvpPPolToBackendRef, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut, ZnxView,
-        ZnxViewMut,
+        SvpPPolToBackendRef, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, ZnxView, ZnxViewMut,
     },
 };
 
@@ -38,7 +37,7 @@ where
     fn svp_prepare_default<R>(module: &Module<BE>, res: &mut R, res_col: usize, a: &ScalarZnxBackendRef<'_, BE>, a_col: usize)
     where
         Module<BE>: FFTModuleHandle<f64>,
-        BE: Backend<ScalarPrep = f64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64>,
+        BE: Backend<DftWord = f64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64>,
         for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> BE::BufRef<'x>: HostDataRef,
         R: SvpPPolToBackendMut<BE>,
@@ -70,13 +69,13 @@ where
         b_col: usize,
     ) where
         Module<BE>: FFTModuleHandle<f64>,
-        BE: Backend<ScalarPrep = f64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64>,
+        BE: Backend<DftWord = f64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64>,
         for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> BE::BufRef<'x>: HostDataRef,
         A: SvpPPolToBackendRef<BE>,
     {
         let a_ref = a.to_backend_ref();
-        fft64_svp_apply_dft(module.get_fft_table(), res, res_col, &a_ref, a_col, b, b_col);
+        fft64_svp_apply_dft::<BE>(module.get_fft_table(), res, res_col, &a_ref, a_col, b, b_col);
     }
 
     fn svp_apply_dft_to_dft_default<'b, A>(
@@ -88,7 +87,7 @@ where
         b: &VecZnxDftBackendRef<'b, BE>,
         b_col: usize,
     ) where
-        BE: Backend<ScalarPrep = f64> + ReimArith,
+        BE: Backend<DftWord = f64> + ReimArith,
         for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> BE::BufRef<'x>: HostDataRef,
         A: SvpPPolToBackendRef<BE>,
@@ -104,7 +103,7 @@ where
         a: &A,
         a_col: usize,
     ) where
-        BE: Backend<ScalarPrep = f64> + ReimArith,
+        BE: Backend<DftWord = f64> + ReimArith,
         for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> BE::BufRef<'x>: HostDataRef,
         A: SvpPPolToBackendRef<BE>,
@@ -124,7 +123,7 @@ where
     fn svp_prepare_default<R>(module: &Module<BE>, res: &mut R, res_col: usize, a: &ScalarZnxBackendRef<'_, BE>, a_col: usize)
     where
         Module<BE>: NttModuleHandle,
-        BE: Backend<ScalarPrep = Q120bScalar> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttCFromB,
+        BE: Backend<DftWord = Q120bScalar> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttCFromB,
         for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> BE::BufRef<'x>: HostDataRef,
         R: SvpPPolToBackendMut<BE>,
@@ -156,15 +155,15 @@ where
         b_col: usize,
     ) where
         Module<BE>: NttModuleHandle + VecZnxDftApply<BE>,
-        BE: Backend<ScalarPrep = Q120bScalar> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttMulBbc + NttZero,
+        BE: Backend<DftWord = Q120bScalar> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttMulBbc + NttZero,
         for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> BE::BufRef<'x>: HostDataRef,
         A: SvpPPolToBackendRef<BE>,
     {
         let a_ref = a.to_backend_ref();
         let b_size = b.size();
-        let mut b_dft = poulpy_hal::layouts::VecZnxDftOwned::<BE>::alloc(module.n(), 1, b_size);
-        let mut b_dft_ref = b_dft.to_backend_mut();
+        let mut b_dft = poulpy_hal::layouts::VecZnxDft::alloc::<BE>(module.n(), 1, b_size);
+        let mut b_dft_ref = b_dft.to_backend_mut::<BE>();
 
         module.vec_znx_dft_apply(1, 0, &mut b_dft_ref, 0, b, b_col);
 
@@ -202,7 +201,7 @@ where
         b_col: usize,
     ) where
         Module<BE>: NttModuleHandle,
-        BE: Backend<ScalarPrep = Q120bScalar> + NttMulBbc + NttZero,
+        BE: Backend<DftWord = Q120bScalar> + NttMulBbc + NttZero,
         for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> BE::BufRef<'x>: HostDataRef,
         A: SvpPPolToBackendRef<BE>,
@@ -240,7 +239,7 @@ where
         a_col: usize,
     ) where
         Module<BE>: NttModuleHandle,
-        BE: Backend<ScalarPrep = Q120bScalar> + NttMulBbc,
+        BE: Backend<DftWord = Q120bScalar> + NttMulBbc,
         for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> BE::BufRef<'x>: HostDataRef,
         A: SvpPPolToBackendRef<BE>,

@@ -53,20 +53,20 @@ where
 }
 
 #[doc(hidden)]
-pub trait ScalarBigHadamardProduct: Backend {
-    fn scalar_big_hadamard_product(res: &mut [Self::ScalarBig], a: &[i64], b: &[i64]);
+pub trait BigWordHadamardProduct: Backend {
+    fn big_word_hadamard_product(res: &mut [Self::BigWord], a: &[i64], b: &[i64]);
 }
 
-impl ScalarBigHadamardProduct for crate::FFT64Ref {
+impl BigWordHadamardProduct for crate::FFT64Ref {
     #[inline(always)]
-    fn scalar_big_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
+    fn big_word_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
         Self::i64_hadamard_product(res, a, b)
     }
 }
 
-impl ScalarBigHadamardProduct for crate::NTT4x30Ref {
+impl BigWordHadamardProduct for crate::NTT4x30Ref {
     #[inline(always)]
-    fn scalar_big_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
+    fn big_word_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
         Self::i128_hadamard_product_i64(res, a, b)
     }
 }
@@ -158,7 +158,7 @@ where
         b: &ScalarZnxBackendRef<'_, BE>,
         b_col: usize,
     ) where
-        BE: ScalarBigHadamardProduct,
+        BE: BigWordHadamardProduct,
         for<'x> BE::BufMut<'x>: HostDataMut,
         for<'x> BE::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
     {
@@ -171,7 +171,7 @@ where
             let a_slice = a.at(a_col, limb);
             let b_slice = b.at(b_col, 0);
 
-            BE::scalar_big_hadamard_product(res_slice, a_slice, b_slice);
+            BE::big_word_hadamard_product(res_slice, a_slice, b_slice);
         }
     }
 

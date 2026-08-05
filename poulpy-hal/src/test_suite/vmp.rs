@@ -6,17 +6,13 @@ use crate::{
         VmpApplyDftToDftAccumulate, VmpApplyDftToDftAccumulateTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare,
         VmpPrepareTmpBytes,
     },
-    layouts::{
-        Backend, DigestU64, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, Module, ScratchOwned, VecZnx, VecZnxBig,
-        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDft, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMat,
-        VmpPMatToBackendMut, VmpPMatToBackendRef,
-    },
+    layouts::{Backend, DigestU64, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, Module, ScratchOwned, VecZnx},
     source::Source,
 };
 
-type VecZnxDftOwned<BE> = VecZnxDft<<BE as Backend>::OwnedBuf, BE>;
-type VmpPMatOwned<BE> = VmpPMat<<BE as Backend>::OwnedBuf, BE>;
-type VecZnxBigOwned<BE> = VecZnxBig<<BE as Backend>::OwnedBuf, BE>;
+use crate::layouts::VecZnxBigOwned;
+use crate::layouts::VecZnxDftOwned;
+use crate::layouts::VmpPMatOwned;
 
 fn idft_into_alloc<BE>(module: &Module<BE>, a: &mut VecZnxDftOwned<BE>) -> VecZnxBigOwned<BE>
 where
@@ -27,8 +23,8 @@ where
     let size = a.size();
     let mut res = module.vec_znx_big_alloc(cols, size);
     for j in 0..cols {
-        let mut res_backend = res.to_backend_mut();
-        let mut a_backend = a.to_backend_mut();
+        let mut res_backend = res.to_backend_mut::<BE>();
+        let mut a_backend = a.to_backend_mut::<BE>();
         module.vec_znx_idft_apply_tmpa(&mut res_backend, j, &mut a_backend, j);
     }
     res
@@ -95,12 +91,12 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                     let mut pmat_test: VmpPMatOwned<BT> = module_test.vmp_pmat_alloc(rows, cols_in, cols_out, size_out);
 
                     module_ref.vmp_prepare(
-                        &mut pmat_ref.to_backend_mut(),
+                        &mut pmat_ref.to_backend_mut::<BR>(),
                         &<MatZnx<BR::OwnedBuf> as MatZnxToBackendRef<BR>>::to_backend_ref(&mat_ref_backend),
                         &mut scratch_ref.arena(),
                     );
                     module_test.vmp_prepare(
-                        &mut pmat_test.to_backend_mut(),
+                        &mut pmat_test.to_backend_mut::<BT>(),
                         &<MatZnx<BT::OwnedBuf> as MatZnxToBackendRef<BT>>::to_backend_ref(&mat_test_backend),
                         &mut scratch_test.arena(),
                     );
@@ -113,13 +109,13 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                     module_ref.vmp_apply_dft(
                         &mut res_dft_ref,
                         &vec_znx_backend_ref::<BR>(&a_ref_backend),
-                        &pmat_ref.to_backend_ref(),
+                        &pmat_ref.to_backend_ref::<BR>(),
                         &mut scratch_ref.arena(),
                     );
                     module_test.vmp_apply_dft(
                         &mut res_dft_test,
                         &vec_znx_backend_ref::<BT>(&a_test_backend),
-                        &pmat_test.to_backend_ref(),
+                        &pmat_test.to_backend_ref::<BT>(),
                         &mut scratch_test.arena(),
                     );
 
@@ -138,7 +134,7 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                             base2k,
                             0,
                             j,
-                            &res_big_ref.to_backend_ref(),
+                            &res_big_ref.to_backend_ref::<BR>(),
                             base2k,
                             j,
                             &mut scratch_ref.arena(),
@@ -148,7 +144,7 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                             base2k,
                             0,
                             j,
-                            &res_big_test.to_backend_ref(),
+                            &res_big_test.to_backend_ref::<BT>(),
                             base2k,
                             j,
                             &mut scratch_test.arena(),
@@ -237,7 +233,7 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                         module_ref.vec_znx_dft_apply(
                             1,
                             0,
-                            &mut a_dft_ref.to_backend_mut(),
+                            &mut a_dft_ref.to_backend_mut::<BR>(),
                             j,
                             &vec_znx_backend_ref::<BR>(&a_ref_backend),
                             j,
@@ -245,7 +241,7 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                         module_test.vec_znx_dft_apply(
                             1,
                             0,
-                            &mut a_dft_test.to_backend_mut(),
+                            &mut a_dft_test.to_backend_mut::<BT>(),
                             j,
                             &vec_znx_backend_ref::<BT>(&a_test_backend),
                             j,
@@ -264,12 +260,12 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                     let mut pmat_test: VmpPMatOwned<BT> = module_test.vmp_pmat_alloc(rows, cols_in, cols_out, size_out);
 
                     module_ref.vmp_prepare(
-                        &mut pmat_ref.to_backend_mut(),
+                        &mut pmat_ref.to_backend_mut::<BR>(),
                         &<MatZnx<BR::OwnedBuf> as MatZnxToBackendRef<BR>>::to_backend_ref(&mat_ref_backend),
                         &mut scratch_ref.arena(),
                     );
                     module_test.vmp_prepare(
-                        &mut pmat_test.to_backend_mut(),
+                        &mut pmat_test.to_backend_mut::<BT>(),
                         &<MatZnx<BT::OwnedBuf> as MatZnxToBackendRef<BT>>::to_backend_ref(&mat_test_backend),
                         &mut scratch_test.arena(),
                     );
@@ -280,16 +276,16 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                     let mut res_dft_test: VecZnxDftOwned<BT> = module_test.vec_znx_dft_alloc(cols_out, size_out);
 
                     module_ref.vmp_apply_dft_to_dft(
-                        &mut res_dft_ref.to_backend_mut(),
-                        &a_dft_ref.to_backend_ref(),
-                        &pmat_ref.to_backend_ref(),
+                        &mut res_dft_ref.to_backend_mut::<BR>(),
+                        &a_dft_ref.to_backend_ref::<BR>(),
+                        &pmat_ref.to_backend_ref::<BR>(),
                         0,
                         &mut scratch_ref.arena(),
                     );
                     module_test.vmp_apply_dft_to_dft(
-                        &mut res_dft_test.to_backend_mut(),
-                        &a_dft_test.to_backend_ref(),
-                        &pmat_test.to_backend_ref(),
+                        &mut res_dft_test.to_backend_mut::<BT>(),
+                        &a_dft_test.to_backend_ref::<BT>(),
+                        &pmat_test.to_backend_ref::<BT>(),
                         0,
                         &mut scratch_test.arena(),
                     );
@@ -307,7 +303,7 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                             base2k,
                             0,
                             j,
-                            &res_big_ref.to_backend_ref(),
+                            &res_big_ref.to_backend_ref::<BR>(),
                             base2k,
                             j,
                             &mut scratch_ref.arena(),
@@ -317,7 +313,7 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                             base2k,
                             0,
                             j,
-                            &res_big_test.to_backend_ref(),
+                            &res_big_test.to_backend_ref::<BT>(),
                             base2k,
                             j,
                             &mut scratch_test.arena(),
@@ -425,7 +421,7 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                         module_ref.vec_znx_dft_apply(
                             1,
                             0,
-                            &mut a_dft_ref.to_backend_mut(),
+                            &mut a_dft_ref.to_backend_mut::<BR>(),
                             j,
                             &vec_znx_backend_ref::<BR>(&a_ref_backend),
                             j,
@@ -433,7 +429,7 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                         module_test.vec_znx_dft_apply(
                             1,
                             0,
-                            &mut a_dft_test.to_backend_mut(),
+                            &mut a_dft_test.to_backend_mut::<BT>(),
                             j,
                             &vec_znx_backend_ref::<BT>(&a_test_backend),
                             j,
@@ -446,7 +442,7 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                         module_ref.vec_znx_dft_apply(
                             1,
                             0,
-                            &mut res_init_dft_ref.to_backend_mut(),
+                            &mut res_init_dft_ref.to_backend_mut::<BR>(),
                             j,
                             &vec_znx_backend_ref::<BR>(&res_init_ref_backend),
                             j,
@@ -454,7 +450,7 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                         module_test.vec_znx_dft_apply(
                             1,
                             0,
-                            &mut res_init_dft_test.to_backend_mut(),
+                            &mut res_init_dft_test.to_backend_mut::<BT>(),
                             j,
                             &vec_znx_backend_ref::<BT>(&res_init_test_backend),
                             j,
@@ -464,12 +460,12 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                     let mut pmat_ref: VmpPMatOwned<BR> = module_ref.vmp_pmat_alloc(rows, cols_in, cols_out, size_out);
                     let mut pmat_test: VmpPMatOwned<BT> = module_test.vmp_pmat_alloc(rows, cols_in, cols_out, size_out);
                     module_ref.vmp_prepare(
-                        &mut pmat_ref.to_backend_mut(),
+                        &mut pmat_ref.to_backend_mut::<BR>(),
                         &<MatZnx<BR::OwnedBuf> as MatZnxToBackendRef<BR>>::to_backend_ref(&mat_ref_backend),
                         &mut scratch_ref.arena(),
                     );
                     module_test.vmp_prepare(
-                        &mut pmat_test.to_backend_mut(),
+                        &mut pmat_test.to_backend_mut::<BT>(),
                         &<MatZnx<BT::OwnedBuf> as MatZnxToBackendRef<BT>>::to_backend_ref(&mat_test_backend),
                         &mut scratch_test.arena(),
                     );
@@ -477,30 +473,30 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                     let mut res_apply_ref: VecZnxDftOwned<BR> = module_ref.vec_znx_dft_alloc(cols_out, size_out);
                     let mut res_apply_test: VecZnxDftOwned<BT> = module_test.vec_znx_dft_alloc(cols_out, size_out);
                     module_ref.vmp_apply_dft_to_dft(
-                        &mut res_apply_ref.to_backend_mut(),
-                        &a_dft_ref.to_backend_ref(),
-                        &pmat_ref.to_backend_ref(),
+                        &mut res_apply_ref.to_backend_mut::<BR>(),
+                        &a_dft_ref.to_backend_ref::<BR>(),
+                        &pmat_ref.to_backend_ref::<BR>(),
                         0,
                         &mut scratch_ref.arena(),
                     );
                     module_test.vmp_apply_dft_to_dft(
-                        &mut res_apply_test.to_backend_mut(),
-                        &a_dft_test.to_backend_ref(),
-                        &pmat_test.to_backend_ref(),
+                        &mut res_apply_test.to_backend_mut::<BT>(),
+                        &a_dft_test.to_backend_ref::<BT>(),
+                        &pmat_test.to_backend_ref::<BT>(),
                         0,
                         &mut scratch_test.arena(),
                     );
                     for j in 0..cols_out {
                         module_ref.vec_znx_dft_add_assign(
-                            &mut res_apply_ref.to_backend_mut(),
+                            &mut res_apply_ref.to_backend_mut::<BR>(),
                             j,
-                            &res_init_dft_ref.to_backend_ref(),
+                            &res_init_dft_ref.to_backend_ref::<BR>(),
                             j,
                         );
                         module_test.vec_znx_dft_add_assign(
-                            &mut res_apply_test.to_backend_mut(),
+                            &mut res_apply_test.to_backend_mut::<BT>(),
                             j,
-                            &res_init_dft_test.to_backend_ref(),
+                            &res_init_dft_test.to_backend_ref::<BT>(),
                             j,
                         );
                     }
@@ -508,16 +504,16 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                     let mut res_acc_ref = res_init_dft_ref;
                     let mut res_acc_test = res_init_dft_test;
                     module_ref.vmp_apply_dft_to_dft_accumulate(
-                        &mut res_acc_ref.to_backend_mut(),
-                        &a_dft_ref.to_backend_ref(),
-                        &pmat_ref.to_backend_ref(),
+                        &mut res_acc_ref.to_backend_mut::<BR>(),
+                        &a_dft_ref.to_backend_ref::<BR>(),
+                        &pmat_ref.to_backend_ref::<BR>(),
                         0,
                         &mut scratch_ref.arena(),
                     );
                     module_test.vmp_apply_dft_to_dft_accumulate(
-                        &mut res_acc_test.to_backend_mut(),
-                        &a_dft_test.to_backend_ref(),
-                        &pmat_test.to_backend_ref(),
+                        &mut res_acc_test.to_backend_mut::<BT>(),
+                        &a_dft_test.to_backend_ref::<BT>(),
+                        &pmat_test.to_backend_ref::<BT>(),
                         0,
                         &mut scratch_test.arena(),
                     );
@@ -539,7 +535,7 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                             base2k,
                             0,
                             j,
-                            &res_apply_big_ref.to_backend_ref(),
+                            &res_apply_big_ref.to_backend_ref::<BR>(),
                             base2k,
                             j,
                             &mut scratch_ref.arena(),
@@ -549,7 +545,7 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                             base2k,
                             0,
                             j,
-                            &res_apply_big_test.to_backend_ref(),
+                            &res_apply_big_test.to_backend_ref::<BT>(),
                             base2k,
                             j,
                             &mut scratch_test.arena(),
@@ -559,7 +555,7 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                             base2k,
                             0,
                             j,
-                            &res_acc_big_ref.to_backend_ref(),
+                            &res_acc_big_ref.to_backend_ref::<BR>(),
                             base2k,
                             j,
                             &mut scratch_ref.arena(),
@@ -569,7 +565,7 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                             base2k,
                             0,
                             j,
-                            &res_acc_big_test.to_backend_ref(),
+                            &res_acc_big_test.to_backend_ref::<BT>(),
                             base2k,
                             j,
                             &mut scratch_test.arena(),

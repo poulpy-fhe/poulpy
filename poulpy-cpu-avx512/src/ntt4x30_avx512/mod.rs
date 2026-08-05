@@ -39,8 +39,8 @@
 //!
 //! # Scalar types
 //!
-//! - `ScalarPrep = Q120bScalar` — NTT-domain coefficients (4 × u64, 32 bytes/coeff).
-//! - `ScalarBig  = i128` — CRT-reconstructed large coefficients.
+//! - `DftWord = Q120bScalar` — NTT-domain coefficients (4 × u64, 32 bytes/coeff).
+//! - `BigWord  = i128` — CRT-reconstructed large coefficients.
 
 pub(crate) mod arithmetic_avx512;
 pub(crate) mod convolution;
@@ -62,8 +62,8 @@ mod znx;
 ///
 /// # Backend characteristics
 ///
-/// - **ScalarPrep**: `Q120bScalar` — NTT-domain coefficients stored as 4 × u64 CRT residues.
-/// - **ScalarBig**: `i128` — large-coefficient ring elements use 128-bit signed integers.
+/// - **DftWord**: `Q120bScalar` — NTT-domain coefficients stored as 4 × u64 CRT residues.
+/// - **BigWord**: `i128` — large-coefficient ring elements use 128-bit signed integers.
 /// - **Prime set**: `Primes30` (four ~30-bit primes, Q ≈ 2^120).
 ///
 /// # CPU feature requirements

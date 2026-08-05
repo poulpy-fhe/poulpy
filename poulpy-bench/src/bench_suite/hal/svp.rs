@@ -4,10 +4,7 @@ use criterion::{BenchmarkId, Criterion};
 
 use poulpy_hal::{
     api::{ModuleNew, SvpApplyDft, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxDftAlloc},
-    layouts::{
-        Backend, Module, SvpPPol, SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnxDft, VecZnxDftToBackendMut,
-        VecZnxDftToBackendRef,
-    },
+    layouts::{Backend, Module, SvpPPol, VecZnxDft},
     source::Source,
 };
 
@@ -30,13 +27,13 @@ where
         let cols: usize = 2;
         let mut source = Source::new([0u8; 32]);
 
-        let mut svp: SvpPPol<B::OwnedBuf, B> = module.svp_ppol_alloc(cols);
+        let mut svp: SvpPPol<B::OwnedBuf, B::DftWord> = module.svp_ppol_alloc(cols);
         let a = crate::random_host_scalar_znx(module.n(), cols, &mut source);
         let a = crate::upload_host_scalar_znx::<B>(&a);
 
         move || {
             let a_backend = crate::scalar_znx_backend_ref::<B>(&a);
-            module.svp_prepare(&mut svp.to_backend_mut(), 0, &a_backend, 0);
+            module.svp_prepare(&mut svp.to_backend_mut::<B>(), 0, &a_backend, 0);
             black_box(());
         }
     }
@@ -71,15 +68,15 @@ where
         let module: Module<B> = Module::<B>::new(n as u64);
         let mut source = Source::new([0u8; 32]);
 
-        let svp: SvpPPol<B::OwnedBuf, B> = crate::random_backend_svp_ppol::<B>(module.n(), cols, &mut source);
-        let mut res: VecZnxDft<B::OwnedBuf, B> = module.vec_znx_dft_alloc(cols, size);
+        let svp: SvpPPol<B::OwnedBuf, B::DftWord> = crate::random_backend_svp_ppol::<B>(module.n(), cols, &mut source);
+        let mut res: VecZnxDft<B::OwnedBuf, B::DftWord> = module.vec_znx_dft_alloc(cols, size);
         let a = crate::random_host_vec_znx(module.n(), cols, size, &mut source);
         let a = crate::upload_host_vec_znx::<B>(&a);
 
         move || {
-            let svp = svp.to_backend_ref();
+            let svp = svp.to_backend_ref::<B>();
             let a = crate::vec_znx_backend_ref::<B>(&a);
-            let mut res = res.to_backend_mut();
+            let mut res = res.to_backend_mut::<B>();
             for j in 0..cols {
                 module.svp_apply_dft(&mut res, j, &svp, j, &a, j);
             }
@@ -117,14 +114,14 @@ where
         let module: Module<B> = Module::<B>::new(n as u64);
         let mut source = Source::new([0u8; 32]);
 
-        let svp: SvpPPol<B::OwnedBuf, B> = crate::random_backend_svp_ppol::<B>(module.n(), cols, &mut source);
-        let mut res: VecZnxDft<B::OwnedBuf, B> = module.vec_znx_dft_alloc(cols, size);
-        let a: VecZnxDft<B::OwnedBuf, B> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
+        let svp: SvpPPol<B::OwnedBuf, B::DftWord> = crate::random_backend_svp_ppol::<B>(module.n(), cols, &mut source);
+        let mut res: VecZnxDft<B::OwnedBuf, B::DftWord> = module.vec_znx_dft_alloc(cols, size);
+        let a: VecZnxDft<B::OwnedBuf, B::DftWord> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
 
         move || {
-            let svp = svp.to_backend_ref();
+            let svp = svp.to_backend_ref::<B>();
             for j in 0..cols {
-                module.svp_apply_dft_to_dft(&mut res.to_backend_mut(), j, &svp, j, &a.to_backend_ref(), j);
+                module.svp_apply_dft_to_dft(&mut res.to_backend_mut::<B>(), j, &svp, j, &a.to_backend_ref::<B>(), j);
             }
             black_box(());
         }
@@ -160,13 +157,13 @@ where
         let module: Module<B> = Module::<B>::new(n as u64);
         let mut source = Source::new([0u8; 32]);
 
-        let svp: SvpPPol<B::OwnedBuf, B> = crate::random_backend_svp_ppol::<B>(module.n(), cols, &mut source);
-        let mut res: VecZnxDft<B::OwnedBuf, B> = module.vec_znx_dft_alloc(cols, size);
+        let svp: SvpPPol<B::OwnedBuf, B::DftWord> = crate::random_backend_svp_ppol::<B>(module.n(), cols, &mut source);
+        let mut res: VecZnxDft<B::OwnedBuf, B::DftWord> = module.vec_znx_dft_alloc(cols, size);
 
         move || {
-            let svp = svp.to_backend_ref();
+            let svp = svp.to_backend_ref::<B>();
             for j in 0..cols {
-                module.svp_apply_dft_to_dft_assign(&mut res.to_backend_mut(), j, &svp, j);
+                module.svp_apply_dft_to_dft_assign(&mut res.to_backend_mut::<B>(), j, &svp, j);
             }
             black_box(());
         }

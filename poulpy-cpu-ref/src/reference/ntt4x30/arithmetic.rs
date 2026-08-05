@@ -22,7 +22,7 @@
 //! in the q120b / q120c layout (4 or 8 scalars per ring element, one
 //! per prime).
 
-use crate::reference::ntt4x30::primes::PrimeSet;
+use crate::reference::ntt4x30::primes::PrimeSetCrt4;
 
 /// Converts a vector of `i64` ring-element coefficients into q120b format.
 ///
@@ -36,7 +36,7 @@ use crate::reference::ntt4x30::primes::PrimeSet;
 ///
 /// # Panics
 /// Panics in debug mode if `res.len() < 4 * nn` or `x.len() < nn`.
-pub fn b_from_znx64_ref<P: PrimeSet>(nn: usize, res: &mut [u64], x: &[i64]) {
+pub fn b_from_znx64_ref<P: PrimeSetCrt4>(nn: usize, res: &mut [u64], x: &[i64]) {
     debug_assert!(res.len() >= 4 * nn);
     debug_assert!(x.len() >= nn);
 
@@ -61,7 +61,7 @@ pub fn b_from_znx64_ref<P: PrimeSet>(nn: usize, res: &mut [u64], x: &[i64]) {
 
 /// Converts a vector of `i64` coefficients into q120b format, applying `mask` to each
 /// coefficient before conversion. Equivalent to `b_from_znx64_ref` on `x[j] & mask`.
-pub fn b_from_znx64_masked_ref<P: PrimeSet>(nn: usize, res: &mut [u64], x: &[i64], mask: i64) {
+pub fn b_from_znx64_masked_ref<P: PrimeSetCrt4>(nn: usize, res: &mut [u64], x: &[i64], mask: i64) {
     debug_assert!(res.len() >= 4 * nn);
     debug_assert!(x.len() >= nn);
 
@@ -93,7 +93,7 @@ pub fn b_from_znx64_masked_ref<P: PrimeSet>(nn: usize, res: &mut [u64], x: &[i64
 ///
 /// # Panics
 /// Panics in debug mode if `res.len() < 8 * nn` or `x.len() < nn`.
-pub fn c_from_znx64_ref<P: PrimeSet>(nn: usize, res: &mut [u32], x: &[i64]) {
+pub fn c_from_znx64_ref<P: PrimeSetCrt4>(nn: usize, res: &mut [u32], x: &[i64]) {
     debug_assert!(res.len() >= 8 * nn);
     debug_assert!(x.len() >= nn);
 
@@ -116,7 +116,7 @@ pub fn c_from_znx64_ref<P: PrimeSet>(nn: usize, res: &mut [u32], x: &[i64]) {
 ///
 /// # Panics
 /// Panics in debug mode if `res.len() < nn` or `x.len() < 4 * nn`.
-pub fn b_to_znx128_ref<P: PrimeSet>(nn: usize, res: &mut [i128], x: &[u64]) {
+pub fn b_to_znx128_ref<P: PrimeSetCrt4>(nn: usize, res: &mut [i128], x: &[u64]) {
     debug_assert!(res.len() >= nn);
     debug_assert!(x.len() >= 4 * nn);
 
@@ -150,7 +150,7 @@ pub fn b_to_znx128_ref<P: PrimeSet>(nn: usize, res: &mut [i128], x: &[u64]) {
 ///
 /// # Panics
 /// Panics in debug mode if slices are shorter than `4 * nn`.
-pub fn add_bbb_ref<P: PrimeSet>(nn: usize, res: &mut [u64], x: &[u64], y: &[u64]) {
+pub fn add_bbb_ref<P: PrimeSetCrt4>(nn: usize, res: &mut [u64], x: &[u64], y: &[u64]) {
     debug_assert!(res.len() >= 4 * nn);
     debug_assert!(x.len() >= 4 * nn);
     debug_assert!(y.len() >= 4 * nn);
@@ -174,7 +174,7 @@ pub fn add_bbb_ref<P: PrimeSet>(nn: usize, res: &mut [u64], x: &[u64], y: &[u64]
 ///
 /// # Panics
 /// Panics in debug mode if slices are shorter than `8 * nn`.
-pub fn add_ccc_ref<P: PrimeSet>(nn: usize, res: &mut [u32], x: &[u32], y: &[u32]) {
+pub fn add_ccc_ref<P: PrimeSetCrt4>(nn: usize, res: &mut [u32], x: &[u32], y: &[u32]) {
     debug_assert!(res.len() >= 8 * nn);
     debug_assert!(x.len() >= 8 * nn);
     debug_assert!(y.len() >= 8 * nn);
@@ -199,7 +199,7 @@ pub fn add_ccc_ref<P: PrimeSet>(nn: usize, res: &mut [u32], x: &[u32], y: &[u32]
 ///
 /// # Panics
 /// Panics in debug mode if slices are shorter than `4 * nn` / `8 * nn`.
-pub fn c_from_b_ref<P: PrimeSet>(nn: usize, res: &mut [u32], x: &[u64]) {
+pub fn c_from_b_ref<P: PrimeSetCrt4>(nn: usize, res: &mut [u32], x: &[u64]) {
     debug_assert!(res.len() >= 8 * nn);
     debug_assert!(x.len() >= 4 * nn);
 

@@ -10,9 +10,7 @@ use crate::NTT3x42Ifma;
 #[cfg(test)]
 mod ntt3x42_ifma_tests {
     use crate::ntt3x42_ifma::{
-        primes::{PrimeSetNtt3x42Ifma, Primes42},
-        reference::arithmetic::b_ntt3x42_ifma_to_znx128_ref,
-        vec_znx_dft::simd_b_ntt3x42_ifma_to_znx128,
+        primes::Primes42, reference::arithmetic::b_ntt3x42_ifma_to_znx128_ref, vec_znx_dft::simd_b_ntt3x42_ifma_to_znx128,
     };
     use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
 
@@ -212,7 +210,7 @@ mod ntt3x42_ifma_tests {
 
     #[test]
     fn test_b_to_znx128_ifma_asm_edges_vs_ref() {
-        const Q: [u64; 3] = <Primes42 as PrimeSetNtt3x42Ifma>::Q;
+        const Q: [u64; 3] = <Primes42 as poulpy_cpu_ref::reference::ntt4x30::primes::PrimeSet>::Q;
         let big_q = Q[0] as u128 * Q[1] as u128 * Q[2] as u128;
         let values = [
             0u128,

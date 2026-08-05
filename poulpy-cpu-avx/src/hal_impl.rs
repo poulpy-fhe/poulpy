@@ -71,7 +71,7 @@ unsafe impl HalVecZnxDftImpl<FFT64Avx> for FFT64Avx {
         a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        crate::fft64::fft64_vec_znx_dft_automorphism_avx(plan, res, res_col, a, a_col);
+        crate::fft64::fft64_vec_znx_dft_automorphism_avx::<Self>(plan, res, res_col, a, a_col);
     }
 }
 
@@ -301,7 +301,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx> for NTT4x30Avx {
         let bytes =
             poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_apply_dft_tmp_bytes(res.size(), a.size(), b.size());
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_apply_dft(
+        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_apply_dft::<Self>(
             module, cnv_offset, res, res_col, a, a_col, b, b_col, tmp,
         );
     }
@@ -388,7 +388,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx> for NTT4x30Avx {
             b.size(),
         );
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_pairwise_apply_dft(
+        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_pairwise_apply_dft::<Self>(
             module, cnv_offset, res, res_col, a, b, i, j, tmp,
         );
     }
@@ -429,6 +429,6 @@ unsafe impl HalVecZnxDftImpl<NTT4x30Avx> for NTT4x30Avx {
         a: &poulpy_hal::layouts::VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        crate::ntt4x30::automorphism::ntt4x30_vec_znx_dft_automorphism_avx(plan, res, res_col, a, a_col);
+        crate::ntt4x30::automorphism::ntt4x30_vec_znx_dft_automorphism_avx::<Self>(plan, res, res_col, a, a_col);
     }
 }

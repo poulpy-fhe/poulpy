@@ -9,14 +9,11 @@ use crate::{
         VecZnxBigSubNegateAssign, VecZnxBigSubSmallABackend, VecZnxBigSubSmallAssign, VecZnxBigSubSmallBBackend,
         VecZnxBigSubSmallNegateAssign,
     },
-    layouts::{
-        Backend, DigestU64, FillUniform, HostBytesBackend, Module, NoiseInfos, ScratchOwned, VecZnx, VecZnxBig,
-        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut,
-    },
+    layouts::{Backend, DigestU64, FillUniform, HostBytesBackend, Module, NoiseInfos, ScratchOwned, VecZnx, VecZnxToBackendMut},
     source::Source,
 };
 
-type VecZnxBigOwned<BE> = VecZnxBig<<BE as Backend>::OwnedBuf, BE>;
+use crate::layouts::VecZnxBigOwned;
 
 fn big_from_small_host<BE>(module: &Module<BE>, host: &VecZnx<impl crate::layouts::HostDataRef>) -> VecZnxBigOwned<BE>
 where
@@ -28,7 +25,7 @@ where
     let uploaded = upload_vec_znx::<BE>(host);
     let mut res = module.vec_znx_big_alloc(cols, size);
     for j in 0..cols {
-        module.vec_znx_big_from_small_backend(&mut res.to_backend_mut(), j, &vec_znx_backend_ref::<BE>(&uploaded), j);
+        module.vec_znx_big_from_small_backend(&mut res.to_backend_mut::<BE>(), j, &vec_znx_backend_ref::<BE>(&uploaded), j);
     }
     res
 }
@@ -66,7 +63,7 @@ where
             base2k,
             res_offset,
             j,
-            &backend.to_backend_ref(),
+            &backend.to_backend_ref::<BE>(),
             base2k,
             j,
             &mut scratch.arena(),
@@ -104,8 +101,14 @@ pub fn test_vec_znx_big_seed_add_normal_matches_source_wrapper<
 
     let mut wrapper: VecZnxBigOwned<BT> = module_test.vec_znx_big_alloc(cols, size);
     let mut backend: VecZnxBigOwned<BT> = module_test.vec_znx_big_alloc(cols, size);
-    module_test.vec_znx_big_add_normal(base2k, &mut wrapper.to_backend_mut(), col_i, noise_infos, &mut wrapper_source);
-    module_test.vec_znx_big_add_normal_backend(base2k, &mut backend.to_backend_mut(), col_i, noise_infos, seed);
+    module_test.vec_znx_big_add_normal(
+        base2k,
+        &mut wrapper.to_backend_mut::<BT>(),
+        col_i,
+        noise_infos,
+        &mut wrapper_source,
+    );
+    module_test.vec_znx_big_add_normal_backend(base2k, &mut backend.to_backend_mut::<BT>(), col_i, noise_infos, seed);
     assert_eq!(
         normalize_big_to_host(module_test, base2k, &wrapper, &mut scratch),
         normalize_big_to_host(module_test, base2k, &backend, &mut scratch)
@@ -167,19 +170,19 @@ pub fn test_vec_znx_big_add_into<BR: crate::test_suite::TestBackend, BT: crate::
                 // Reference
                 for i in 0..cols {
                     module_ref.vec_znx_big_add_into(
-                        &mut res_big_ref.to_backend_mut(),
+                        &mut res_big_ref.to_backend_mut::<BR>(),
                         i,
-                        &a_ref.to_backend_ref(),
+                        &a_ref.to_backend_ref::<BR>(),
                         i,
-                        &b_ref.to_backend_ref(),
+                        &b_ref.to_backend_ref::<BR>(),
                         i,
                     );
                     module_test.vec_znx_big_add_into(
-                        &mut res_big_test.to_backend_mut(),
+                        &mut res_big_test.to_backend_mut::<BT>(),
                         i,
-                        &a_test.to_backend_ref(),
+                        &a_test.to_backend_ref::<BT>(),
                         i,
-                        &b_test.to_backend_ref(),
+                        &b_test.to_backend_ref::<BT>(),
                         i,
                     );
                 }
@@ -236,8 +239,13 @@ pub fn test_vec_znx_big_add_assign<BR: crate::test_suite::TestBackend, BT: crate
             let mut res_big_test = big_from_small_host(module_test, &res);
 
             for i in 0..cols {
-                module_ref.vec_znx_big_add_assign(&mut res_big_ref.to_backend_mut(), i, &a_ref.to_backend_ref(), i);
-                module_test.vec_znx_big_add_assign(&mut res_big_test.to_backend_mut(), i, &a_test.to_backend_ref(), i);
+                module_ref.vec_znx_big_add_assign(&mut res_big_ref.to_backend_mut::<BR>(), i, &a_ref.to_backend_ref::<BR>(), i);
+                module_test.vec_znx_big_add_assign(
+                    &mut res_big_test.to_backend_mut::<BT>(),
+                    i,
+                    &a_test.to_backend_ref::<BT>(),
+                    i,
+                );
             }
 
             let res_small_ref = normalize_big_to_host(module_ref, base2k, &res_big_ref, &mut scratch_ref);
@@ -297,17 +305,17 @@ pub fn test_vec_znx_big_add_small_into<BR: crate::test_suite::TestBackend, BT: c
                 // Reference
                 for i in 0..cols {
                     module_ref.vec_znx_big_add_small_into_backend(
-                        &mut res_big_ref.to_backend_mut(),
+                        &mut res_big_ref.to_backend_mut::<BR>(),
                         i,
-                        &a_ref.to_backend_ref(),
+                        &a_ref.to_backend_ref::<BR>(),
                         i,
                         &vec_znx_backend_ref::<BR>(&b_ref),
                         i,
                     );
                     module_test.vec_znx_big_add_small_into_backend(
-                        &mut res_big_test.to_backend_mut(),
+                        &mut res_big_test.to_backend_mut::<BT>(),
                         i,
-                        &a_test.to_backend_ref(),
+                        &a_test.to_backend_ref::<BT>(),
                         i,
                         &vec_znx_backend_ref::<BT>(&b_test),
                         i,
@@ -369,13 +377,13 @@ pub fn test_vec_znx_big_add_small_assign<BR: crate::test_suite::TestBackend, BT:
 
             for i in 0..cols {
                 module_ref.vec_znx_big_add_small_assign(
-                    &mut res_big_ref.to_backend_mut(),
+                    &mut res_big_ref.to_backend_mut::<BR>(),
                     i,
                     &vec_znx_backend_ref::<BR>(&a_ref),
                     i,
                 );
                 module_test.vec_znx_big_add_small_assign(
-                    &mut res_big_test.to_backend_mut(),
+                    &mut res_big_test.to_backend_mut::<BT>(),
                     i,
                     &vec_znx_backend_ref::<BT>(&a_test),
                     i,
@@ -434,8 +442,20 @@ pub fn test_vec_znx_big_automorphism<BR: crate::test_suite::TestBackend, BT: cra
 
                 // Reference
                 for i in 0..cols {
-                    module_ref.vec_znx_big_automorphism(p, &mut res_big_ref.to_backend_mut(), i, &a_ref.to_backend_ref(), i);
-                    module_test.vec_znx_big_automorphism(p, &mut res_big_test.to_backend_mut(), i, &a_test.to_backend_ref(), i);
+                    module_ref.vec_znx_big_automorphism(
+                        p,
+                        &mut res_big_ref.to_backend_mut::<BR>(),
+                        i,
+                        &a_ref.to_backend_ref::<BR>(),
+                        i,
+                    );
+                    module_test.vec_znx_big_automorphism(
+                        p,
+                        &mut res_big_test.to_backend_mut::<BT>(),
+                        i,
+                        &a_test.to_backend_ref::<BT>(),
+                        i,
+                    );
                 }
 
                 let res_small_ref = normalize_big_to_host(module_ref, base2k, &res_big_ref, &mut scratch_ref);
@@ -490,8 +510,18 @@ pub fn test_vec_znx_big_automorphism_assign<BR: crate::test_suite::TestBackend, 
             let mut res_big_test = big_from_small_host(module_test, &res);
 
             for i in 0..cols {
-                module_ref.vec_znx_big_automorphism_assign(p, &mut res_big_ref.to_backend_mut(), i, &mut scratch_ref.arena());
-                module_test.vec_znx_big_automorphism_assign(p, &mut res_big_test.to_backend_mut(), i, &mut scratch_test.arena());
+                module_ref.vec_znx_big_automorphism_assign(
+                    p,
+                    &mut res_big_ref.to_backend_mut::<BR>(),
+                    i,
+                    &mut scratch_ref.arena(),
+                );
+                module_test.vec_znx_big_automorphism_assign(
+                    p,
+                    &mut res_big_test.to_backend_mut::<BT>(),
+                    i,
+                    &mut scratch_test.arena(),
+                );
             }
 
             let res_small_ref = normalize_big_to_host(module_ref, base2k, &res_big_ref, &mut scratch_ref);
@@ -543,8 +573,8 @@ pub fn test_vec_znx_big_negate<BR: crate::test_suite::TestBackend, BT: crate::te
 
             // Reference
             for i in 0..cols {
-                module_ref.vec_znx_big_negate(&mut res_big_ref.to_backend_mut(), i, &a_ref.to_backend_ref(), i);
-                module_test.vec_znx_big_negate(&mut res_big_test.to_backend_mut(), i, &a_test.to_backend_ref(), i);
+                module_ref.vec_znx_big_negate(&mut res_big_ref.to_backend_mut::<BR>(), i, &a_ref.to_backend_ref::<BR>(), i);
+                module_test.vec_znx_big_negate(&mut res_big_test.to_backend_mut::<BT>(), i, &a_test.to_backend_ref::<BT>(), i);
             }
 
             let res_small_ref = normalize_big_to_host(module_ref, base2k, &res_big_ref, &mut scratch_ref);
@@ -593,8 +623,8 @@ pub fn test_vec_znx_big_negate_assign<BR: crate::test_suite::TestBackend, BT: cr
         let mut res_big_test = big_from_small_host(module_test, &res);
 
         for i in 0..cols {
-            module_ref.vec_znx_big_negate_assign(&mut res_big_ref.to_backend_mut(), i);
-            module_test.vec_znx_big_negate_assign(&mut res_big_test.to_backend_mut(), i);
+            module_ref.vec_znx_big_negate_assign(&mut res_big_ref.to_backend_mut::<BR>(), i);
+            module_test.vec_znx_big_negate_assign(&mut res_big_test.to_backend_mut::<BT>(), i);
         }
 
         let res_small_ref = normalize_big_to_host(module_ref, base2k, &res_big_ref, &mut scratch_ref);
@@ -705,19 +735,19 @@ pub fn test_vec_znx_big_sub<BR: crate::test_suite::TestBackend, BT: crate::test_
                 // Reference
                 for i in 0..cols {
                     module_ref.vec_znx_big_sub(
-                        &mut res_big_ref.to_backend_mut(),
+                        &mut res_big_ref.to_backend_mut::<BR>(),
                         i,
-                        &a_ref.to_backend_ref(),
+                        &a_ref.to_backend_ref::<BR>(),
                         i,
-                        &b_ref.to_backend_ref(),
+                        &b_ref.to_backend_ref::<BR>(),
                         i,
                     );
                     module_test.vec_znx_big_sub(
-                        &mut res_big_test.to_backend_mut(),
+                        &mut res_big_test.to_backend_mut::<BT>(),
                         i,
-                        &a_test.to_backend_ref(),
+                        &a_test.to_backend_ref::<BT>(),
                         i,
-                        &b_test.to_backend_ref(),
+                        &b_test.to_backend_ref::<BT>(),
                         i,
                     );
                 }
@@ -774,8 +804,13 @@ pub fn test_vec_znx_big_sub_assign<BR: crate::test_suite::TestBackend, BT: crate
             let mut res_big_test = big_from_small_host(module_test, &res);
 
             for i in 0..cols {
-                module_ref.vec_znx_big_sub_assign(&mut res_big_ref.to_backend_mut(), i, &a_ref.to_backend_ref(), i);
-                module_test.vec_znx_big_sub_assign(&mut res_big_test.to_backend_mut(), i, &a_test.to_backend_ref(), i);
+                module_ref.vec_znx_big_sub_assign(&mut res_big_ref.to_backend_mut::<BR>(), i, &a_ref.to_backend_ref::<BR>(), i);
+                module_test.vec_znx_big_sub_assign(
+                    &mut res_big_test.to_backend_mut::<BT>(),
+                    i,
+                    &a_test.to_backend_ref::<BT>(),
+                    i,
+                );
             }
 
             let res_small_ref = normalize_big_to_host(module_ref, base2k, &res_big_ref, &mut scratch_ref);
@@ -829,8 +864,18 @@ pub fn test_vec_znx_big_sub_negate_assign<BR: crate::test_suite::TestBackend, BT
             let mut res_big_test = big_from_small_host(module_test, &res);
 
             for i in 0..cols {
-                module_ref.vec_znx_big_sub_negate_assign(&mut res_big_ref.to_backend_mut(), i, &a_ref.to_backend_ref(), i);
-                module_test.vec_znx_big_sub_negate_assign(&mut res_big_test.to_backend_mut(), i, &a_test.to_backend_ref(), i);
+                module_ref.vec_znx_big_sub_negate_assign(
+                    &mut res_big_ref.to_backend_mut::<BR>(),
+                    i,
+                    &a_ref.to_backend_ref::<BR>(),
+                    i,
+                );
+                module_test.vec_znx_big_sub_negate_assign(
+                    &mut res_big_test.to_backend_mut::<BT>(),
+                    i,
+                    &a_test.to_backend_ref::<BT>(),
+                    i,
+                );
             }
 
             let res_small_ref = normalize_big_to_host(module_ref, base2k, &res_big_ref, &mut scratch_ref);
@@ -889,19 +934,19 @@ pub fn test_vec_znx_big_sub_small_a<BR: crate::test_suite::TestBackend, BT: crat
                 // Reference
                 for i in 0..cols {
                     module_ref.vec_znx_big_sub_small_a_backend(
-                        &mut res_big_ref.to_backend_mut(),
+                        &mut res_big_ref.to_backend_mut::<BR>(),
                         i,
                         &vec_znx_backend_ref::<BR>(&b_ref),
                         i,
-                        &a_ref.to_backend_ref(),
+                        &a_ref.to_backend_ref::<BR>(),
                         i,
                     );
                     module_test.vec_znx_big_sub_small_a_backend(
-                        &mut res_big_test.to_backend_mut(),
+                        &mut res_big_test.to_backend_mut::<BT>(),
                         i,
                         &vec_znx_backend_ref::<BT>(&b_test),
                         i,
-                        &a_test.to_backend_ref(),
+                        &a_test.to_backend_ref::<BT>(),
                         i,
                     );
                 }
@@ -963,17 +1008,17 @@ pub fn test_vec_znx_big_sub_small_b<BR: crate::test_suite::TestBackend, BT: crat
                 // Reference
                 for i in 0..cols {
                     module_ref.vec_znx_big_sub_small_b_backend(
-                        &mut res_big_ref.to_backend_mut(),
+                        &mut res_big_ref.to_backend_mut::<BR>(),
                         i,
-                        &a_ref.to_backend_ref(),
+                        &a_ref.to_backend_ref::<BR>(),
                         i,
                         &vec_znx_backend_ref::<BR>(&b_ref),
                         i,
                     );
                     module_test.vec_znx_big_sub_small_b_backend(
-                        &mut res_big_test.to_backend_mut(),
+                        &mut res_big_test.to_backend_mut::<BT>(),
                         i,
-                        &a_test.to_backend_ref(),
+                        &a_test.to_backend_ref::<BT>(),
                         i,
                         &vec_znx_backend_ref::<BT>(&b_test),
                         i,
@@ -1034,13 +1079,13 @@ pub fn test_vec_znx_big_sub_small_a_assign<BR: crate::test_suite::TestBackend, B
 
             for i in 0..cols {
                 module_ref.vec_znx_big_sub_small_assign(
-                    &mut res_big_ref.to_backend_mut(),
+                    &mut res_big_ref.to_backend_mut::<BR>(),
                     i,
                     &vec_znx_backend_ref::<BR>(&a_ref),
                     i,
                 );
                 module_test.vec_znx_big_sub_small_assign(
-                    &mut res_big_test.to_backend_mut(),
+                    &mut res_big_test.to_backend_mut::<BT>(),
                     i,
                     &vec_znx_backend_ref::<BT>(&a_test),
                     i,
@@ -1103,13 +1148,13 @@ pub fn test_vec_znx_big_sub_small_b_assign<BR: crate::test_suite::TestBackend, B
 
                 for i in 0..cols {
                     module_ref.vec_znx_big_sub_small_negate_assign(
-                        &mut res_big_ref.to_backend_mut(),
+                        &mut res_big_ref.to_backend_mut::<BR>(),
                         i,
                         &vec_znx_backend_ref::<BR>(&a_ref),
                         i,
                     );
                     module_test.vec_znx_big_sub_small_negate_assign(
-                        &mut res_big_test.to_backend_mut(),
+                        &mut res_big_test.to_backend_mut::<BT>(),
                         i,
                         &vec_znx_backend_ref::<BT>(&a_test),
                         i,

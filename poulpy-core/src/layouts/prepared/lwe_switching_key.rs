@@ -14,7 +14,7 @@ use crate::layouts::{
 ///
 /// A newtype wrapper around [`GLWESwitchingKeyPrepared`] for LWE key-switching.
 /// Tied to a specific backend via `B: Backend`.
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq)]
 pub struct LWESwitchingKeyPrepared<D: Data, B: Backend>(pub(crate) GLWESwitchingKeyPrepared<D, B>);
 
 impl<D: Data, B: Backend> LWEInfos for LWESwitchingKeyPrepared<D, B> {

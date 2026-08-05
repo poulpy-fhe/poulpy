@@ -8,17 +8,15 @@ use crate::{
         VecZnxIdftApplyTmpA, VecZnxNormalizeAssignBackend,
     },
     layouts::{
-        Backend, CnvPVecL, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecR, CnvPVecRToBackendMut, CnvPVecRToBackendRef,
-        DataView, FillUniform, ScratchArena, ScratchOwned, VecZnx, VecZnxBig, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
-        VecZnxDft, VecZnxDftToBackendMut, VecZnxDftToBackendRef, ZnxView, ZnxViewMut, ZnxZero,
+        Backend, CnvPVecL, CnvPVecR, DataView, FillUniform, ScratchArena, ScratchOwned, VecZnx, ZnxView, ZnxViewMut, ZnxZero,
     },
     source::Source,
 };
 
-type VecZnxBigOwned<BE> = VecZnxBig<<BE as Backend>::OwnedBuf, BE>;
-type VecZnxDftOwned<BE> = VecZnxDft<<BE as Backend>::OwnedBuf, BE>;
-type CnvPVecLOwned<BE> = CnvPVecL<<BE as Backend>::OwnedBuf, BE>;
-type CnvPVecROwned<BE> = CnvPVecR<<BE as Backend>::OwnedBuf, BE>;
+use crate::layouts::VecZnxBigOwned;
+use crate::layouts::VecZnxDftOwned;
+type CnvPVecLOwned<BE> = CnvPVecL<<BE as Backend>::OwnedBuf, <BE as Backend>::DftWord>;
+type CnvPVecROwned<BE> = CnvPVecR<<BE as Backend>::OwnedBuf, <BE as Backend>::DftWord>;
 
 pub fn test_convolution_by_const<M, BE: crate::test_suite::TestBackend<OwnedBuf = Vec<u8>>>(module: &M, base2k: usize)
 where
@@ -64,7 +62,7 @@ where
         for cnv_offset in 0..res_size {
             module.cnv_by_const_apply(
                 cnv_offset,
-                &mut res_big.to_backend_mut(),
+                &mut res_big.to_backend_mut::<BE>(),
                 0,
                 &vec_znx_backend_ref::<BE>(&a_backend),
                 a_col,
@@ -81,7 +79,7 @@ where
                 base2k,
                 0,
                 0,
-                &res_big.to_backend_ref(),
+                &res_big.to_backend_ref::<BE>(),
                 base2k,
                 0,
                 &mut scratch.arena(),
@@ -157,7 +155,7 @@ where
     );
 
     {
-        let mut a_prep_backend = a_prep.to_backend_mut();
+        let mut a_prep_backend = a_prep.to_backend_mut::<BE>();
         module.cnv_prepare_left(
             &mut a_prep_backend,
             &vec_znx_backend_ref::<BE>(&a_backend),
@@ -166,7 +164,7 @@ where
         );
     }
     {
-        let mut b_prep_backend = b_prep.to_backend_mut();
+        let mut b_prep_backend = b_prep.to_backend_mut::<BE>();
         module.cnv_prepare_right(
             &mut b_prep_backend,
             &vec_znx_backend_ref::<BE>(&b_backend),
@@ -180,16 +178,21 @@ where
             for cnv_offset in 0..res_size {
                 module.cnv_apply_dft(
                     cnv_offset,
-                    &mut res_dft.to_backend_mut(),
+                    &mut res_dft.to_backend_mut::<BE>(),
                     res_dft_col,
-                    &a_prep.to_backend_ref(),
+                    &a_prep.to_backend_ref::<BE>(),
                     a_col,
-                    &b_prep.to_backend_ref(),
+                    &b_prep.to_backend_ref::<BE>(),
                     b_col,
                     &mut scratch.arena(),
                 );
 
-                module.vec_znx_idft_apply_tmpa(&mut res_big.to_backend_mut(), 0, &mut res_dft.to_backend_mut(), res_dft_col);
+                module.vec_znx_idft_apply_tmpa(
+                    &mut res_big.to_backend_mut::<BE>(),
+                    0,
+                    &mut res_dft.to_backend_mut::<BE>(),
+                    res_dft_col,
+                );
 
                 let res_host_template: VecZnx<Vec<u8>> = module.vec_znx_alloc(1, res_size);
                 let mut res_have_backend = upload_vec_znx::<BE>(&res_host_template);
@@ -198,7 +201,7 @@ where
                     base2k,
                     0,
                     0,
-                    &res_big.to_backend_ref(),
+                    &res_big.to_backend_ref::<BE>(),
                     base2k,
                     0,
                     &mut scratch.arena(),
@@ -264,7 +267,7 @@ where
     );
 
     {
-        let mut a_prep_backend = a_prep.to_backend_mut();
+        let mut a_prep_backend = a_prep.to_backend_mut::<BE>();
         module.cnv_prepare_left(
             &mut a_prep_backend,
             &vec_znx_backend_ref::<BE>(&a_backend),
@@ -273,7 +276,7 @@ where
         );
     }
     {
-        let mut b_prep_backend = b_prep.to_backend_mut();
+        let mut b_prep_backend = b_prep.to_backend_mut::<BE>();
         module.cnv_prepare_right(
             &mut b_prep_backend,
             &vec_znx_backend_ref::<BE>(&b_backend),
@@ -286,21 +289,21 @@ where
         // Identical deterministic initial accumulator content for both paths.
         module.cnv_apply_dft(
             0,
-            &mut res_acc.to_backend_mut(),
+            &mut res_acc.to_backend_mut::<BE>(),
             res_col,
-            &a_prep.to_backend_ref(),
+            &a_prep.to_backend_ref::<BE>(),
             0,
-            &b_prep.to_backend_ref(),
+            &b_prep.to_backend_ref::<BE>(),
             0,
             &mut scratch.arena(),
         );
         module.cnv_apply_dft(
             0,
-            &mut res_ref.to_backend_mut(),
+            &mut res_ref.to_backend_mut::<BE>(),
             res_col,
-            &a_prep.to_backend_ref(),
+            &a_prep.to_backend_ref::<BE>(),
             0,
-            &b_prep.to_backend_ref(),
+            &b_prep.to_backend_ref::<BE>(),
             0,
             &mut scratch.arena(),
         );
@@ -310,26 +313,31 @@ where
                 for cnv_offset in (0..res_size).step_by(3) {
                     module.cnv_apply_dft_accumulate(
                         cnv_offset,
-                        &mut res_acc.to_backend_mut(),
+                        &mut res_acc.to_backend_mut::<BE>(),
                         res_col,
-                        &a_prep.to_backend_ref(),
+                        &a_prep.to_backend_ref::<BE>(),
                         a_col,
-                        &b_prep.to_backend_ref(),
+                        &b_prep.to_backend_ref::<BE>(),
                         b_col,
                         &mut scratch.arena(),
                     );
 
                     module.cnv_apply_dft(
                         cnv_offset,
-                        &mut tmp_dft.to_backend_mut(),
+                        &mut tmp_dft.to_backend_mut::<BE>(),
                         0,
-                        &a_prep.to_backend_ref(),
+                        &a_prep.to_backend_ref::<BE>(),
                         a_col,
-                        &b_prep.to_backend_ref(),
+                        &b_prep.to_backend_ref::<BE>(),
                         b_col,
                         &mut scratch.arena(),
                     );
-                    module.vec_znx_dft_add_assign(&mut res_ref.to_backend_mut(), res_col, &tmp_dft.to_backend_ref(), 0);
+                    module.vec_znx_dft_add_assign(
+                        &mut res_ref.to_backend_mut::<BE>(),
+                        res_col,
+                        &tmp_dft.to_backend_ref::<BE>(),
+                        0,
+                    );
 
                     assert_eq!(
                         res_acc.data(),
@@ -397,7 +405,7 @@ where
     );
 
     {
-        let mut a_prep_backend = a_prep.to_backend_mut();
+        let mut a_prep_backend = a_prep.to_backend_mut::<BE>();
         module.cnv_prepare_left(
             &mut a_prep_backend,
             &vec_znx_backend_ref::<BE>(&a_backend),
@@ -406,7 +414,7 @@ where
         );
     }
     {
-        let mut b_prep_backend = b_prep.to_backend_mut();
+        let mut b_prep_backend = b_prep.to_backend_mut::<BE>();
         module.cnv_prepare_right(
             &mut b_prep_backend,
             &vec_znx_backend_ref::<BE>(&b_backend),
@@ -423,15 +431,15 @@ where
             let terms: Vec<CnvDftAccTerm<'_, BE>> = term_cols
                 .iter()
                 .map(|&(a_col, b_col)| CnvDftAccTerm {
-                    a: a_prep.to_backend_ref(),
+                    a: a_prep.to_backend_ref::<BE>(),
                     a_col,
-                    b: b_prep.to_backend_ref(),
+                    b: b_prep.to_backend_ref::<BE>(),
                     b_col,
                 })
                 .collect();
             module.cnv_accumulate_dft(
                 cnv_offset,
-                &mut res_fused.to_backend_mut(),
+                &mut res_fused.to_backend_mut::<BE>(),
                 res_col,
                 &terms,
                 &mut scratch.arena(),
@@ -442,22 +450,22 @@ where
             if idx == 0 {
                 module.cnv_apply_dft(
                     cnv_offset,
-                    &mut res_ref.to_backend_mut(),
+                    &mut res_ref.to_backend_mut::<BE>(),
                     res_col,
-                    &a_prep.to_backend_ref(),
+                    &a_prep.to_backend_ref::<BE>(),
                     a_col,
-                    &b_prep.to_backend_ref(),
+                    &b_prep.to_backend_ref::<BE>(),
                     b_col,
                     &mut scratch.arena(),
                 );
             } else {
                 module.cnv_apply_dft_accumulate(
                     cnv_offset,
-                    &mut res_ref.to_backend_mut(),
+                    &mut res_ref.to_backend_mut::<BE>(),
                     res_col,
-                    &a_prep.to_backend_ref(),
+                    &a_prep.to_backend_ref::<BE>(),
                     a_col,
-                    &b_prep.to_backend_ref(),
+                    &b_prep.to_backend_ref::<BE>(),
                     b_col,
                     &mut scratch.arena(),
                 );
@@ -465,8 +473,18 @@ where
         }
 
         // Compare in the normalized coefficient domain.
-        module.vec_znx_idft_apply_tmpa(&mut big_fused.to_backend_mut(), 0, &mut res_fused.to_backend_mut(), res_col);
-        module.vec_znx_idft_apply_tmpa(&mut big_ref.to_backend_mut(), 0, &mut res_ref.to_backend_mut(), res_col);
+        module.vec_znx_idft_apply_tmpa(
+            &mut big_fused.to_backend_mut::<BE>(),
+            0,
+            &mut res_fused.to_backend_mut::<BE>(),
+            res_col,
+        );
+        module.vec_znx_idft_apply_tmpa(
+            &mut big_ref.to_backend_mut::<BE>(),
+            0,
+            &mut res_ref.to_backend_mut::<BE>(),
+            res_col,
+        );
 
         let host_template: VecZnx<Vec<u8>> = module.vec_znx_alloc(1, res_size);
         let mut have_backend = upload_vec_znx::<BE>(&host_template);
@@ -476,7 +494,7 @@ where
             base2k,
             0,
             0,
-            &big_fused.to_backend_ref(),
+            &big_fused.to_backend_ref::<BE>(),
             base2k,
             0,
             &mut scratch.arena(),
@@ -486,7 +504,7 @@ where
             base2k,
             0,
             0,
-            &big_ref.to_backend_ref(),
+            &big_ref.to_backend_ref::<BE>(),
             base2k,
             0,
             &mut scratch.arena(),
@@ -551,7 +569,7 @@ where
     );
 
     {
-        let mut a_prep_backend = a_prep.to_backend_mut();
+        let mut a_prep_backend = a_prep.to_backend_mut::<BE>();
         module.cnv_prepare_left(
             &mut a_prep_backend,
             &vec_znx_backend_ref::<BE>(&a_backend),
@@ -560,7 +578,7 @@ where
         );
     }
     {
-        let mut b_prep_backend = b_prep.to_backend_mut();
+        let mut b_prep_backend = b_prep.to_backend_mut::<BE>();
         module.cnv_prepare_right(
             &mut b_prep_backend,
             &vec_znx_backend_ref::<BE>(&b_backend),
@@ -574,16 +592,21 @@ where
             for cnv_offset in 0..res_size {
                 module.cnv_pairwise_apply_dft(
                     cnv_offset,
-                    &mut res_dft.to_backend_mut(),
+                    &mut res_dft.to_backend_mut::<BE>(),
                     res_dft_col,
-                    &a_prep.to_backend_ref(),
-                    &b_prep.to_backend_ref(),
+                    &a_prep.to_backend_ref::<BE>(),
+                    &b_prep.to_backend_ref::<BE>(),
                     col_i,
                     col_j,
                     &mut scratch.arena(),
                 );
 
-                module.vec_znx_idft_apply_tmpa(&mut res_big.to_backend_mut(), 0, &mut res_dft.to_backend_mut(), res_dft_col);
+                module.vec_znx_idft_apply_tmpa(
+                    &mut res_big.to_backend_mut::<BE>(),
+                    0,
+                    &mut res_dft.to_backend_mut::<BE>(),
+                    res_dft_col,
+                );
 
                 let res_host_template: VecZnx<Vec<u8>> = module.vec_znx_alloc(1, res_size);
                 let mut res_have_backend = upload_vec_znx::<BE>(&res_host_template);
@@ -592,7 +615,7 @@ where
                     base2k,
                     0,
                     0,
-                    &res_big.to_backend_ref(),
+                    &res_big.to_backend_ref::<BE>(),
                     base2k,
                     0,
                     &mut scratch.arena(),

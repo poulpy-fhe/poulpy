@@ -25,6 +25,7 @@ mod vec_znx;
 mod vec_znx_big;
 mod vec_znx_dft;
 mod vmp_pmat;
+mod word;
 mod znx_base;
 
 pub use convolution::*;
@@ -41,6 +42,7 @@ pub use vec_znx::*;
 pub use vec_znx_big::*;
 pub use vec_znx_dft::*;
 pub use vmp_pmat::*;
+pub use word::*;
 pub use znx_base::*;
 
 use anyhow::Result;
@@ -120,8 +122,9 @@ where
 pub struct HostBytesBackend;
 
 impl Backend for HostBytesBackend {
-    type ScalarBig = i128;
-    type ScalarPrep = i64;
+    type ZnxWord = i64;
+    type BigWord = i128;
+    type DftWord = i64;
     type OwnedBuf = Vec<u8>;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
@@ -323,8 +326,9 @@ impl<T: Backend<Location = Host, OwnedBuf = Vec<u8>>> TransferFrom<HostBytesBack
 macro_rules! impl_backend_from {
     ($be:ty, $from:ty) => {
         impl poulpy_hal::layouts::Backend for $be {
-            type ScalarBig = <$from as poulpy_hal::layouts::Backend>::ScalarBig;
-            type ScalarPrep = <$from as poulpy_hal::layouts::Backend>::ScalarPrep;
+            type ZnxWord = <$from as poulpy_hal::layouts::Backend>::ZnxWord;
+            type BigWord = <$from as poulpy_hal::layouts::Backend>::BigWord;
+            type DftWord = <$from as poulpy_hal::layouts::Backend>::DftWord;
             type OwnedBuf = <$from as poulpy_hal::layouts::Backend>::OwnedBuf;
             type BufRef<'a> = <$from as poulpy_hal::layouts::Backend>::BufRef<'a>;
             type BufMut<'a> = <$from as poulpy_hal::layouts::Backend>::BufMut<'a>;

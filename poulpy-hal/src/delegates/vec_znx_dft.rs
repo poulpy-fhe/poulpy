@@ -24,7 +24,7 @@ macro_rules! impl_vec_znx_dft_delegate {
 
 impl<B: Backend> VecZnxDftFromBytes<B> for Module<B> {
     fn vec_znx_dft_from_bytes(&self, cols: usize, size: usize, bytes: Vec<u8>) -> VecZnxDftOwned<B> {
-        VecZnxDft::<B::OwnedBuf, B>::from_bytes(self.n(), cols, size, bytes)
+        VecZnxDft::from_bytes::<B>(self.n(), cols, size, bytes)
     }
 }
 
@@ -36,7 +36,7 @@ impl<B: Backend> VecZnxDftBytesOf for Module<B> {
 
 impl<B: Backend> VecZnxDftAlloc<B> for Module<B> {
     fn vec_znx_dft_alloc(&self, cols: usize, size: usize) -> VecZnxDftOwned<B> {
-        VecZnxDftOwned::alloc(self.n(), cols, size)
+        VecZnxDft::alloc::<B>(self.n(), cols, size)
     }
 }
 

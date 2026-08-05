@@ -19,11 +19,100 @@ use bytemuck::{Pod, Zeroable};
 use rand_distr::num_traits::Zero;
 use std::{fmt, ops::Add};
 
-use super::primes::{PrimeSet, Primes30};
+use super::primes::{LaneArray, LaneElem, PrimeSet, Primes30};
+
+/// One NTT-domain coefficient of a CRT (residue number system) backend:
+/// `P::LANES` packed lanes of `T`, one residue per prime of `P`.
+///
+/// Byte-layout contract (see [`poulpy_hal::layouts::DftWord`]): a
+/// `VecZnxDft` limb stores `n` consecutive `CrtWord<P, T>` blocks in the
+/// spqlios NTT ordering for the prime set `P`. Two buffers are
+/// interchangeable iff their word types are equal — the prime set, lane
+/// element and lane count are all part of the type, so distinct
+/// conventions cannot be mixed accidentally.
+///
+/// The lane count is exact (3, 4, 6, ... — whatever `P` declares), and the
+/// lane element is explicit: `CrtWord<Primes30, u64>` is a 32-byte 4-lane
+/// block of `u64` residues, `CrtWord<Primes30, u32>` would be its 16-byte
+/// compact sibling.
+#[repr(transparent)]
+pub struct CrtWord<P: PrimeSet, T: LaneElem>(pub P::Lanes<T>);
+
+impl<P: PrimeSet, T: LaneElem> Clone for CrtWord<P, T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<P: PrimeSet, T: LaneElem> Copy for CrtWord<P, T> {}
+
+impl<P: PrimeSet, T: LaneElem> Default for CrtWord<P, T> {
+    fn default() -> Self {
+        Self(P::Lanes::<T>::lanes_zeroed())
+    }
+}
+
+impl<P: PrimeSet, T: LaneElem> PartialEq for CrtWord<P, T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<P: PrimeSet, T: LaneElem> Eq for CrtWord<P, T> {}
+
+impl<P: PrimeSet, T: LaneElem> fmt::Debug for CrtWord<P, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("CrtWord").field(&self.0.as_slice()).finish()
+    }
+}
+
+impl<P: PrimeSet, T: LaneElem> fmt::Display for CrtWord<P, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "[")?;
+        for (i, lane) in self.0.as_slice().iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{lane:#x}")?;
+        }
+        write!(f, "]")
+    }
+}
+
+// SAFETY: CrtWord is #[repr(transparent)] over `P::Lanes<T>`, which is
+// `[T; LANES]` with `T: Pod` (LaneArray requires Pod). All bit patterns
+// are valid; no padding bytes, no uninit.
+unsafe impl<P: PrimeSet, T: LaneElem> Zeroable for CrtWord<P, T> {}
+unsafe impl<P: PrimeSet, T: LaneElem> Pod for CrtWord<P, T> {}
+
+/// Byte-layout contract: `n` consecutive `P::LANES`-lane CRT blocks per
+/// limb, in the spqlios NTT ordering of `P`. Two buffers are
+/// interchangeable iff their word types are equal.
+impl<P: PrimeSet, T: LaneElem> poulpy_hal::layouts::DftWord for CrtWord<P, T> {}
+
+impl<P: PrimeSet, T: LaneElem> Add for CrtWord<P, T> {
+    type Output = Self;
+    /// Element-wise wrapping addition of the CRT residues.
+    fn add(self, rhs: Self) -> Self {
+        Self(P::Lanes::<T>::lanes_from_fn(|k| {
+            self.0.as_slice()[k].wrapping_add(rhs.0.as_slice()[k])
+        }))
+    }
+}
+
+impl<P: PrimeSet, T: LaneElem> Zero for CrtWord<P, T> {
+    fn zero() -> Self {
+        Self(P::Lanes::<T>::lanes_zeroed())
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.as_slice().iter().all(|x| *x == T::ZERO)
+    }
+}
 
 /// Shared 32-byte NTT prep scalar for 4-lane CRT backends.
 ///
-/// Stores four `u64` lanes in a packed `#[repr(C)]` struct so that:
+/// Stores four `u64` lanes in a packed block so that:
 ///
 /// - A `VecZnxDft` limb stores `n` consecutive `Q120bScalar` values.
 /// - The scalar bytes can be reinterpreted as `[u64; 4]` via
@@ -32,46 +121,8 @@ use super::primes::{PrimeSet, Primes30};
 ///   prepared-constant SVP/VMP multiply–accumulate operations.
 ///
 /// The historical `Q120bScalar` name comes from the original 4-prime NTT4x30
-/// backend. The layout itself is shared by every backend that uses a
-/// 4-lane `ScalarPrep`, including 3-prime backends that leave lane 3 as
-/// padding.
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub struct Q120bScalar(pub [u64; 4]);
-
-// SAFETY: Q120bScalar is #[repr(C)] with a single [u64; 4] field.
-// All bit patterns are valid; no padding bytes, no uninit.
-unsafe impl Zeroable for Q120bScalar {}
-unsafe impl Pod for Q120bScalar {}
-
-impl fmt::Display for Q120bScalar {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{:#x}, {:#x}, {:#x}, {:#x}]", self.0[0], self.0[1], self.0[2], self.0[3])
-    }
-}
-
-impl Add for Q120bScalar {
-    type Output = Self;
-    /// Element-wise wrapping addition of the four CRT residues.
-    fn add(self, rhs: Self) -> Self {
-        Self([
-            self.0[0].wrapping_add(rhs.0[0]),
-            self.0[1].wrapping_add(rhs.0[1]),
-            self.0[2].wrapping_add(rhs.0[2]),
-            self.0[3].wrapping_add(rhs.0[3]),
-        ])
-    }
-}
-
-impl Zero for Q120bScalar {
-    fn zero() -> Self {
-        Self([0u64; 4])
-    }
-
-    fn is_zero(&self) -> bool {
-        self.0 == [0u64; 4]
-    }
-}
+/// backend; it is now an alias of the prime-set-parameterized [`CrtWord`].
+pub type Q120bScalar = CrtWord<Primes30, u64>;
 
 /// CRT representation of an integer modulo Q120.
 ///

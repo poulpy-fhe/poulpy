@@ -1,11 +1,4 @@
-use std::{
-    fmt::{Debug, Display},
-    marker::PhantomData,
-    ptr::NonNull,
-};
-
-use bytemuck::Pod;
-use rand_distr::num_traits::Zero;
+use std::{marker::PhantomData, ptr::NonNull};
 
 use crate::layouts::{Data, Location, MatZnx, ScalarZnx, VecZnx};
 use crate::{
@@ -15,10 +8,10 @@ use crate::{
 
 /// Core trait that every backend (CPU, GPU, FPGA, ...) must implement.
 ///
-/// Defines the scalar types used for DFT-domain (`ScalarPrep`) and
-/// extended-precision (`ScalarBig`) representations, as well as the
-/// opaque `Handle` type that holds backend-specific precomputed state
-/// (e.g. FFT twiddle factors).
+/// Defines the word types used for the coefficient domain (`ZnxWord`),
+/// DFT-domain (`DftWord`) and extended-precision (`BigWord`)
+/// representations, as well as the opaque `Handle` type that holds
+/// backend-specific precomputed state (e.g. FFT twiddle factors).
 ///
 /// # Safety
 ///
@@ -26,10 +19,12 @@ use crate::{
 /// correctly deallocate the handle without double-free.
 #[allow(clippy::missing_safety_doc)]
 pub trait Backend: Sized + Sync + Send {
-    /// Scalar type for extended-precision (big) polynomial representations.
-    type ScalarBig: Copy + Zero + Display + Debug + Pod;
-    /// Scalar type for DFT-domain (prepared) polynomial representations.
-    type ScalarPrep: Copy + Zero + Display + Debug + Pod;
+    /// Word type for coefficient-domain (small) polynomial representations.
+    type ZnxWord: crate::layouts::ZnxWord;
+    /// Word type for extended-precision (big) polynomial representations.
+    type BigWord: crate::layouts::BigWord;
+    /// Word type for DFT-domain (prepared) polynomial representations.
+    type DftWord: crate::layouts::DftWord;
     /// Owned backend storage for layouts and scratch.
     ///
     /// This buffer may be host-resident or device-resident. It is intentionally
@@ -128,13 +123,13 @@ pub trait Backend: Sized + Sync + Send {
     fn region_mut_ref<'a, 'b>(buf: &'a mut Self::BufMut<'b>, offset: usize, len: usize) -> Self::BufMut<'a>
     where
         Self: 'b;
-    /// Bytes size of `ScalarBig`.
-    fn size_of_scalar_big() -> usize {
-        size_of::<Self::ScalarBig>()
+    /// Bytes size of `BigWord`.
+    fn size_of_big_word() -> usize {
+        size_of::<Self::BigWord>()
     }
-    /// Bytes size of `ScalarPrep`.
-    fn size_of_scalar_prep() -> usize {
-        size_of::<Self::ScalarPrep>()
+    /// Bytes size of `DftWord`.
+    fn size_of_dft_word() -> usize {
+        size_of::<Self::DftWord>()
     }
 
     /// Required alignment (in bytes) for scratch-arena carved regions.
@@ -147,27 +142,27 @@ pub trait Backend: Sized + Sync + Send {
 
     /// Byte size of a [`crate::layouts::VecZnxDft`] buffer.
     fn bytes_of_vec_znx_dft(n: usize, cols: usize, size: usize) -> usize {
-        n * cols * size * Self::size_of_scalar_prep()
+        n * cols * size * Self::size_of_dft_word()
     }
     /// Byte size of a [`crate::layouts::VecZnxBig`] buffer.
     fn bytes_of_vec_znx_big(n: usize, cols: usize, size: usize) -> usize {
-        n * cols * size * Self::size_of_scalar_big()
+        n * cols * size * Self::size_of_big_word()
     }
     /// Byte size of a [`crate::layouts::SvpPPol`] buffer.
     fn bytes_of_svp_ppol(n: usize, cols: usize) -> usize {
-        n * cols * Self::size_of_scalar_prep()
+        n * cols * Self::size_of_dft_word()
     }
     /// Byte size of a [`crate::layouts::VmpPMat`] buffer.
     fn bytes_of_vmp_pmat(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
-        n * rows * cols_in * cols_out * size * Self::size_of_scalar_prep()
+        n * rows * cols_in * cols_out * size * Self::size_of_dft_word()
     }
     /// Byte size of a [`crate::layouts::CnvPVecL`] buffer.
     fn bytes_of_cnv_pvec_left(n: usize, cols: usize, size: usize) -> usize {
-        n * cols * size * Self::size_of_scalar_prep()
+        n * cols * size * Self::size_of_dft_word()
     }
     /// Byte size of a [`crate::layouts::CnvPVecR`] buffer.
     fn bytes_of_cnv_pvec_right(n: usize, cols: usize, size: usize) -> usize {
-        n * cols * size * Self::size_of_scalar_prep()
+        n * cols * size * Self::size_of_dft_word()
     }
     /// Deallocates a backend handle.
     ///

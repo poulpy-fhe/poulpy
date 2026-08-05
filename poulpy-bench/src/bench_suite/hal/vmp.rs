@@ -7,9 +7,7 @@ use poulpy_hal::{
         ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxDftAlloc, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft,
         VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
-    layouts::{
-        Backend, Module, ScratchOwned, VecZnxDft, VecZnxDftToBackendMut, VmpPMat, VmpPMatToBackendMut, VmpPMatToBackendRef,
-    },
+    layouts::{Backend, Module, ScratchOwned, VecZnxDft, VmpPMat},
     source::Source,
 };
 
@@ -42,10 +40,10 @@ where
 
         let mat = crate::random_host_mat_znx(module.n(), rows, cols_in, cols_out, size, &mut source);
         let mat = crate::upload_host_mat_znx::<B>(&mat);
-        let mut pmat: VmpPMat<B::OwnedBuf, B> = module.vmp_pmat_alloc(rows, cols_in, cols_out, size);
+        let mut pmat: VmpPMat<B::OwnedBuf, B::DftWord> = module.vmp_pmat_alloc(rows, cols_in, cols_out, size);
 
         move || {
-            let mut pmat_backend = pmat.to_backend_mut();
+            let mut pmat_backend = pmat.to_backend_mut::<B>();
             let mat_backend = crate::mat_znx_backend_ref::<B>(&mat);
             module.vmp_prepare(&mut pmat_backend, &mat_backend, &mut scratch.borrow());
             black_box(());
@@ -94,14 +92,14 @@ where
         let mut scratch: ScratchOwned<B> =
             ScratchOwned::alloc(module.vmp_apply_dft_tmp_bytes(size, size, rows, cols_in, cols_out, size));
 
-        let mut res: VecZnxDft<B::OwnedBuf, B> = module.vec_znx_dft_alloc(cols_out, size);
+        let mut res: VecZnxDft<B::OwnedBuf, B::DftWord> = module.vec_znx_dft_alloc(cols_out, size);
         let a = crate::random_host_vec_znx(module.n(), cols_in, size, &mut source);
         let a = crate::upload_host_vec_znx::<B>(&a);
-        let pmat: VmpPMat<B::OwnedBuf, B> =
+        let pmat: VmpPMat<B::OwnedBuf, B::DftWord> =
             crate::random_backend_vmp_pmat::<B>(module.n(), rows, cols_in, cols_out, size, &mut source);
 
         move || {
-            let pmat = pmat.to_backend_ref();
+            let pmat = pmat.to_backend_ref::<B>();
             let a = crate::vec_znx_backend_ref::<B>(&a);
             module.vmp_apply_dft(&mut res, &a, &pmat, &mut scratch.borrow());
             black_box(());
@@ -150,15 +148,16 @@ where
         let mut scratch: ScratchOwned<B> =
             ScratchOwned::alloc(module.vmp_apply_dft_to_dft_tmp_bytes(size, size, rows, cols_in, cols_out, size));
 
-        let mut res: VecZnxDft<B::OwnedBuf, B> = module.vec_znx_dft_alloc(cols_out, size);
-        let a: VecZnxDft<B::OwnedBuf, B> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols_in, size, &mut source);
-        let pmat: VmpPMat<B::OwnedBuf, B> =
+        let mut res: VecZnxDft<B::OwnedBuf, B::DftWord> = module.vec_znx_dft_alloc(cols_out, size);
+        let a: VecZnxDft<B::OwnedBuf, B::DftWord> =
+            crate::random_backend_vec_znx_dft::<B>(module.n(), cols_in, size, &mut source);
+        let pmat: VmpPMat<B::OwnedBuf, B::DftWord> =
             crate::random_backend_vmp_pmat::<B>(module.n(), rows, cols_in, cols_out, size, &mut source);
 
         move || {
-            let pmat = pmat.to_backend_ref();
+            let pmat = pmat.to_backend_ref::<B>();
             let a = crate::vec_znx_dft_backend_ref::<B>(&a);
-            module.vmp_apply_dft_to_dft(&mut res.to_backend_mut(), &a, &pmat, 0, &mut scratch.borrow());
+            module.vmp_apply_dft_to_dft(&mut res.to_backend_mut::<B>(), &a, &pmat, 0, &mut scratch.borrow());
             black_box(());
         }
     }

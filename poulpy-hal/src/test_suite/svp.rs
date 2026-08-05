@@ -8,16 +8,12 @@ use crate::{
         ScratchOwnedAlloc, SvpApplyDft, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxBigAlloc,
         VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApplyTmpA,
     },
-    layouts::{
-        Backend, FillUniform, HostBytesBackend, Module, ScalarZnx, ScratchOwned, SvpPPolOwned, SvpPPolToBackendMut,
-        SvpPPolToBackendRef, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDft, VecZnxDftToBackendMut,
-        VecZnxDftToBackendRef,
-    },
+    layouts::{Backend, FillUniform, HostBytesBackend, Module, ScalarZnx, ScratchOwned, SvpPPolOwned, VecZnx},
     source::Source,
 };
 
-type VecZnxDftOwned<BE> = VecZnxDft<<BE as Backend>::OwnedBuf, BE>;
-type VecZnxBigOwned<BE> = crate::layouts::VecZnxBig<<BE as Backend>::OwnedBuf, BE>;
+use crate::layouts::VecZnxBigOwned;
+use crate::layouts::VecZnxDftOwned;
 
 fn idft_into_alloc<BE>(module: &Module<BE>, a: &mut VecZnxDftOwned<BE>) -> VecZnxBigOwned<BE>
 where
@@ -28,8 +24,8 @@ where
     let size = a.size();
     let mut res = module.vec_znx_big_alloc(cols, size);
     for j in 0..cols {
-        let mut res_backend = res.to_backend_mut();
-        let mut a_backend = a.to_backend_mut();
+        let mut res_backend = res.to_backend_mut::<BE>();
+        let mut a_backend = a.to_backend_mut::<BE>();
         module.vec_znx_idft_apply_tmpa(&mut res_backend, j, &mut a_backend, j);
     }
     res
@@ -80,13 +76,13 @@ pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
 
     for j in 0..cols {
         module_ref.svp_prepare(
-            &mut svp_ref.to_backend_mut(),
+            &mut svp_ref.to_backend_mut::<BR>(),
             j,
             &scalar_znx_backend_ref::<BR>(&scalar_ref_backend),
             j,
         );
         module_test.svp_prepare(
-            &mut svp_test.to_backend_mut(),
+            &mut svp_test.to_backend_mut::<BT>(),
             j,
             &scalar_znx_backend_ref::<BT>(&scalar_test_backend),
             j,
@@ -105,17 +101,17 @@ pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
 
             for j in 0..cols {
                 module_ref.svp_apply_dft(
-                    &mut res_dft_ref.to_backend_mut(),
+                    &mut res_dft_ref.to_backend_mut::<BR>(),
                     j,
-                    &svp_ref.to_backend_ref(),
+                    &svp_ref.to_backend_ref::<BR>(),
                     j,
                     &vec_znx_backend_ref::<BR>(&a_ref_backend),
                     j,
                 );
                 module_test.svp_apply_dft(
-                    &mut res_dft_test.to_backend_mut(),
+                    &mut res_dft_test.to_backend_mut::<BT>(),
                     j,
-                    &svp_test.to_backend_ref(),
+                    &svp_test.to_backend_ref::<BT>(),
                     j,
                     &vec_znx_backend_ref::<BT>(&a_test_backend),
                     j,
@@ -135,7 +131,7 @@ pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                     base2k,
                     0,
                     j,
-                    &res_big_ref.to_backend_ref(),
+                    &res_big_ref.to_backend_ref::<BR>(),
                     base2k,
                     j,
                     &mut scratch_ref.arena(),
@@ -145,7 +141,7 @@ pub fn test_svp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                     base2k,
                     0,
                     j,
-                    &res_big_test.to_backend_ref(),
+                    &res_big_test.to_backend_ref::<BT>(),
                     base2k,
                     j,
                     &mut scratch_test.arena(),
@@ -206,13 +202,13 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
 
     for j in 0..cols {
         module_ref.svp_prepare(
-            &mut svp_ref.to_backend_mut(),
+            &mut svp_ref.to_backend_mut::<BR>(),
             j,
             &scalar_znx_backend_ref::<BR>(&scalar_ref_backend),
             j,
         );
         module_test.svp_prepare(
-            &mut svp_test.to_backend_mut(),
+            &mut svp_test.to_backend_mut::<BT>(),
             j,
             &scalar_znx_backend_ref::<BT>(&scalar_test_backend),
             j,
@@ -232,7 +228,7 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
             module_ref.vec_znx_dft_apply(
                 1,
                 0,
-                &mut a_dft_ref.to_backend_mut(),
+                &mut a_dft_ref.to_backend_mut::<BR>(),
                 j,
                 &vec_znx_backend_ref::<BR>(&a_ref_backend),
                 j,
@@ -240,7 +236,7 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
             module_test.vec_znx_dft_apply(
                 1,
                 0,
-                &mut a_dft_test.to_backend_mut(),
+                &mut a_dft_test.to_backend_mut::<BT>(),
                 j,
                 &vec_znx_backend_ref::<BT>(&a_test_backend),
                 j,
@@ -253,19 +249,19 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
 
             for j in 0..cols {
                 module_ref.svp_apply_dft_to_dft(
-                    &mut res_dft_ref.to_backend_mut(),
+                    &mut res_dft_ref.to_backend_mut::<BR>(),
                     j,
-                    &svp_ref.to_backend_ref(),
+                    &svp_ref.to_backend_ref::<BR>(),
                     j,
-                    &a_dft_ref.to_backend_ref(),
+                    &a_dft_ref.to_backend_ref::<BR>(),
                     j,
                 );
                 module_test.svp_apply_dft_to_dft(
-                    &mut res_dft_test.to_backend_mut(),
+                    &mut res_dft_test.to_backend_mut::<BT>(),
                     j,
-                    &svp_test.to_backend_ref(),
+                    &svp_test.to_backend_ref::<BT>(),
                     j,
-                    &a_dft_test.to_backend_ref(),
+                    &a_dft_test.to_backend_ref::<BT>(),
                     j,
                 );
             }
@@ -283,7 +279,7 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                     base2k,
                     0,
                     j,
-                    &res_big_ref.to_backend_ref(),
+                    &res_big_ref.to_backend_ref::<BR>(),
                     base2k,
                     j,
                     &mut scratch_ref.arena(),
@@ -293,7 +289,7 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                     base2k,
                     0,
                     j,
-                    &res_big_test.to_backend_ref(),
+                    &res_big_test.to_backend_ref::<BT>(),
                     base2k,
                     j,
                     &mut scratch_test.arena(),
@@ -354,13 +350,13 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
 
     for j in 0..cols {
         module_ref.svp_prepare(
-            &mut svp_ref.to_backend_mut(),
+            &mut svp_ref.to_backend_mut::<BR>(),
             j,
             &scalar_znx_backend_ref::<BR>(&scalar_ref_backend),
             j,
         );
         module_test.svp_prepare(
-            &mut svp_test.to_backend_mut(),
+            &mut svp_test.to_backend_mut::<BT>(),
             j,
             &scalar_znx_backend_ref::<BT>(&scalar_test_backend),
             j,
@@ -380,7 +376,7 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
             module_ref.vec_znx_dft_apply(
                 1,
                 0,
-                &mut res_dft_ref.to_backend_mut(),
+                &mut res_dft_ref.to_backend_mut::<BR>(),
                 j,
                 &vec_znx_backend_ref::<BR>(&res_ref_backend_input),
                 j,
@@ -388,7 +384,7 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
             module_test.vec_znx_dft_apply(
                 1,
                 0,
-                &mut res_dft_test.to_backend_mut(),
+                &mut res_dft_test.to_backend_mut::<BT>(),
                 j,
                 &vec_znx_backend_ref::<BT>(&res_test_backend_input),
                 j,
@@ -396,8 +392,18 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
         }
 
         for j in 0..cols {
-            module_ref.svp_apply_dft_to_dft_assign(&mut res_dft_ref.to_backend_mut(), j, &svp_ref.to_backend_ref(), j);
-            module_test.svp_apply_dft_to_dft_assign(&mut res_dft_test.to_backend_mut(), j, &svp_test.to_backend_ref(), j);
+            module_ref.svp_apply_dft_to_dft_assign(
+                &mut res_dft_ref.to_backend_mut::<BR>(),
+                j,
+                &svp_ref.to_backend_ref::<BR>(),
+                j,
+            );
+            module_test.svp_apply_dft_to_dft_assign(
+                &mut res_dft_test.to_backend_mut::<BT>(),
+                j,
+                &svp_test.to_backend_ref::<BT>(),
+                j,
+            );
         }
 
         let res_big_ref = idft_into_alloc(module_ref, &mut res_dft_ref);
@@ -413,7 +419,7 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
                 base2k,
                 0,
                 j,
-                &res_big_ref.to_backend_ref(),
+                &res_big_ref.to_backend_ref::<BR>(),
                 base2k,
                 j,
                 &mut scratch_ref.arena(),
@@ -423,7 +429,7 @@ pub fn test_svp_apply_dft_to_dft_assign<BR: crate::test_suite::TestBackend, BT: 
                 base2k,
                 0,
                 j,
-                &res_big_test.to_backend_ref(),
+                &res_big_test.to_backend_ref::<BT>(),
                 base2k,
                 j,
                 &mut scratch_test.arena(),

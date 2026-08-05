@@ -9,7 +9,7 @@
 
 use poulpy_hal::{
     api::{CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic},
-    layouts::{Backend, CnvDftAccTerm, CnvPVecLToBackendRef, CnvPVecRToBackendRef, ScratchArena, VecZnxDftBackendMut},
+    layouts::{Backend, CnvDftAccTerm, CnvPVecRToBackendRef, ScratchArena, VecZnxDftBackendMut},
 };
 
 use crate::{
@@ -60,9 +60,9 @@ pub(super) fn glwe_accumulate_prepared_baby_steps_dft<BE, M>(
                 assert_eq!(baby.cols(), cols);
                 assert_eq!(baby.size() + diagonal.size() - cnv_offset_hi, res_dft_size);
                 CnvDftAccTerm {
-                    a: baby.to_backend_ref(),
+                    a: baby.to_backend_ref::<BE>(),
                     a_col: col,
-                    b: diagonal.to_backend_ref(),
+                    b: diagonal.to_backend_ref::<BE>(),
                     b_col: 0,
                 }
             })
@@ -142,7 +142,7 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
                     cnv_offset_hi,
                     prod_dft,
                     col,
-                    &baby.to_backend_ref(),
+                    &baby.to_backend_ref::<BE>(),
                     col,
                     &diagonal.to_backend_ref(),
                     0,
@@ -153,7 +153,7 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
                     cnv_offset_hi,
                     prod_dft,
                     col,
-                    &baby.to_backend_ref(),
+                    &baby.to_backend_ref::<BE>(),
                     col,
                     &diagonal.to_backend_ref(),
                     0,

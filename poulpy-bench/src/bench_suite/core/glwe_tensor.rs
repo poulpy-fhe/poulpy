@@ -11,9 +11,8 @@ use poulpy_hal::{
         VecZnxIdftApplyTmpA, VecZnxSubAssignBackend,
     },
     layouts::{
-        Backend, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, HostDataMut, Module,
-        ScratchOwned, VecZnx, VecZnxBigReborrowBackendMut, VecZnxDftReborrowBackendMut, VecZnxReborrowBackendMut,
-        VecZnxToBackendRef, ZnxView, ZnxViewMut, vec_znx_big_backend_ref_from_mut,
+        Backend, HostDataMut, Module, ScratchOwned, VecZnx, VecZnxBigToBackendMut, VecZnxDftToBackendMut,
+        VecZnxReborrowBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut, vec_znx_big_backend_ref_from_mut,
     },
 };
 
@@ -119,7 +118,7 @@ pub fn bench_glwe_tensor_prepare_left<BE: Backend<OwnedBuf = Vec<u8>>>(
     let mut group = c.benchmark_group(group_name);
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
-            let mut a_prep_backend = a_prep.to_backend_mut();
+            let mut a_prep_backend = a_prep.to_backend_mut::<BE>();
             module.cnv_prepare_left(
                 &mut a_prep_backend,
                 &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(a.data()),
@@ -154,7 +153,7 @@ pub fn bench_glwe_tensor_prepare_right<BE: Backend<OwnedBuf = Vec<u8>>>(
     let mut group = c.benchmark_group(group_name);
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
-            let mut b_prep_backend = b_prep.to_backend_mut();
+            let mut b_prep_backend = b_prep.to_backend_mut::<BE>();
             module.cnv_prepare_right(
                 &mut b_prep_backend,
                 &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(b.data()),
@@ -202,7 +201,7 @@ where
             .max(module.cnv_prepare_right_tmp_bytes(b.max_size(), b.max_size())),
     );
     {
-        let mut a_prep_backend = a_prep.to_backend_mut();
+        let mut a_prep_backend = a_prep.to_backend_mut::<BE>();
         module.cnv_prepare_left(
             &mut a_prep_backend,
             &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(a.data()),
@@ -211,7 +210,7 @@ where
         );
     }
     {
-        let mut b_prep_backend = b_prep.to_backend_mut();
+        let mut b_prep_backend = b_prep.to_backend_mut::<BE>();
         module.cnv_prepare_right(
             &mut b_prep_backend,
             &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(b.data()),
@@ -232,20 +231,16 @@ where
                 cnv_offset_hi,
                 &mut res_dft,
                 0,
-                &a_prep.to_backend_ref(),
+                &a_prep.to_backend_ref::<BE>(),
                 0,
-                &b_prep.to_backend_ref(),
+                &b_prep.to_backend_ref::<BE>(),
                 0,
                 &mut scratch,
             );
             let (mut res_big, scratch) = scratch.take_vec_znx_big_scratch(&module, 1, diag_dft_size);
             {
-                let mut res_big_backend = <poulpy_hal::layouts::VecZnxBig<BE::BufMut<'_>, BE> as VecZnxBigReborrowBackendMut<
-                    BE,
-                >>::reborrow_backend_mut(&mut res_big);
-                let mut res_dft_backend = <poulpy_hal::layouts::VecZnxDft<BE::BufMut<'_>, BE> as VecZnxDftReborrowBackendMut<
-                    BE,
-                >>::reborrow_backend_mut(&mut res_dft);
+                let mut res_big_backend = res_big.to_backend_mut();
+                let mut res_dft_backend = res_dft.to_backend_mut();
                 module.vec_znx_idft_apply_tmpa(&mut res_big_backend, 0, &mut res_dft_backend, 0);
             }
             let (mut tmp, mut scratch) = scratch.take_vec_znx_scratch(n, 1, tensor.max_size());
@@ -254,7 +249,7 @@ where
                 base2k,
                 cnv_offset_lo,
                 0,
-                &vec_znx_big_backend_ref_from_mut(&res_big),
+                &vec_znx_big_backend_ref_from_mut::<BE>(&res_big),
                 base2k,
                 0,
                 &mut scratch,
@@ -312,7 +307,7 @@ pub fn bench_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>>(
             .max(module.cnv_prepare_right_tmp_bytes(b.max_size(), b.max_size())),
     );
     {
-        let mut a_prep_backend = a_prep.to_backend_mut();
+        let mut a_prep_backend = a_prep.to_backend_mut::<BE>();
         module.cnv_prepare_left(
             &mut a_prep_backend,
             &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(a.data()),
@@ -321,7 +316,7 @@ pub fn bench_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>>(
         );
     }
     {
-        let mut b_prep_backend = b_prep.to_backend_mut();
+        let mut b_prep_backend = b_prep.to_backend_mut::<BE>();
         module.cnv_prepare_right(
             &mut b_prep_backend,
             &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(b.data()),
@@ -341,20 +336,16 @@ pub fn bench_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>>(
                 cnv_offset_hi,
                 &mut res_dft,
                 0,
-                &a_prep.to_backend_ref(),
+                &a_prep.to_backend_ref::<BE>(),
                 i,
-                &b_prep.to_backend_ref(),
+                &b_prep.to_backend_ref::<BE>(),
                 i,
                 &mut scratch,
             );
             let (mut res_big, scratch) = scratch.take_vec_znx_big_scratch(&module, 1, pairwise_dft_size);
             {
-                let mut res_big_backend = <poulpy_hal::layouts::VecZnxBig<BE::BufMut<'_>, BE> as VecZnxBigReborrowBackendMut<
-                    BE,
-                >>::reborrow_backend_mut(&mut res_big);
-                let mut res_dft_backend = <poulpy_hal::layouts::VecZnxDft<BE::BufMut<'_>, BE> as VecZnxDftReborrowBackendMut<
-                    BE,
-                >>::reborrow_backend_mut(&mut res_dft);
+                let mut res_big_backend = res_big.to_backend_mut();
+                let mut res_dft_backend = res_dft.to_backend_mut();
                 module.vec_znx_idft_apply_tmpa(&mut res_big_backend, 0, &mut res_dft_backend, 0);
             }
             let (mut tmp, mut scratch) = scratch.take_vec_znx_scratch(n, 1, tensor.max_size());
@@ -363,7 +354,7 @@ pub fn bench_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>>(
                 base2k,
                 cnv_offset_lo,
                 0,
-                &vec_znx_big_backend_ref_from_mut(&res_big),
+                &vec_znx_big_backend_ref_from_mut::<BE>(&res_big),
                 base2k,
                 0,
                 &mut scratch,
@@ -387,20 +378,16 @@ pub fn bench_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>>(
                 cnv_offset_hi,
                 &mut res_dft,
                 0,
-                &a_prep.to_backend_ref(),
-                &b_prep.to_backend_ref(),
+                &a_prep.to_backend_ref::<BE>(),
+                &b_prep.to_backend_ref::<BE>(),
                 0,
                 1,
                 &mut scratch,
             );
             let (mut res_big, scratch) = scratch.take_vec_znx_big_scratch(&module, 1, pairwise_dft_size);
             {
-                let mut res_big_backend = <poulpy_hal::layouts::VecZnxBig<BE::BufMut<'_>, BE> as VecZnxBigReborrowBackendMut<
-                    BE,
-                >>::reborrow_backend_mut(&mut res_big);
-                let mut res_dft_backend = <poulpy_hal::layouts::VecZnxDft<BE::BufMut<'_>, BE> as VecZnxDftReborrowBackendMut<
-                    BE,
-                >>::reborrow_backend_mut(&mut res_dft);
+                let mut res_big_backend = res_big.to_backend_mut();
+                let mut res_dft_backend = res_dft.to_backend_mut();
                 module.vec_znx_idft_apply_tmpa(&mut res_big_backend, 0, &mut res_dft_backend, 0);
             }
             let (mut tmp, mut scratch) = scratch.take_vec_znx_scratch(n, 1, tensor.max_size());
@@ -409,7 +396,7 @@ pub fn bench_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>>(
                 base2k,
                 cnv_offset_lo,
                 0,
-                &vec_znx_big_backend_ref_from_mut(&res_big),
+                &vec_znx_big_backend_ref_from_mut::<BE>(&res_big),
                 base2k,
                 0,
                 &mut scratch,
