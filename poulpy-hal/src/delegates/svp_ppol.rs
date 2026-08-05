@@ -12,7 +12,7 @@ macro_rules! impl_svp_delegate {
     ($trait:ty, $($body:item)+) => {
         impl<B> $trait for Module<B>
         where
-            B: Backend + HalSvpImpl<B>,
+            B: Backend<ZnxWord = i64> + HalSvpImpl<B>,
         {
             $($body)+
         }

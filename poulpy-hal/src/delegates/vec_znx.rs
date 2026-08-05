@@ -33,7 +33,11 @@ macro_rules! impl_vec_znx_delegate {
     ($trait:ty, $($body:item)+) => {
         impl<B> $trait for Module<B>
         where
-            B: Backend + HalVecZnxImpl<B>,
+            // `ZnxWord = i64` makes `Backend::ZnxWord` load-bearing: the coefficient-domain ops
+            // delegated here are i64-only, so a backend declaring any other word must not receive
+            // them. Interim fence until the coefficient aliases flip to `B::ZnxWord` (i32 plumbing),
+            // which replaces these bounds. Same bound on all six delegate family macros.
+            B: Backend<ZnxWord = i64> + HalVecZnxImpl<B>,
         {
             $($body)+
         }

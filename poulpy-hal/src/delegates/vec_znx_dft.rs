@@ -15,7 +15,7 @@ macro_rules! impl_vec_znx_dft_delegate {
     ($trait:ty, $($body:item)+) => {
         impl<B> $trait for Module<B>
         where
-            B: Backend + HalVecZnxDftImpl<B>,
+            B: Backend<ZnxWord = i64> + HalVecZnxDftImpl<B>,
         {
             $($body)+
         }

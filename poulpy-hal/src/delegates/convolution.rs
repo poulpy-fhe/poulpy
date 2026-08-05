@@ -9,7 +9,7 @@ use crate::{
 
 macro_rules! impl_convolution_delegate {
     ($trait:ty, $($body:item),+ $(,)?) => {
-        impl<BE: Backend> $trait for Module<BE>
+        impl<BE: Backend<ZnxWord = i64>> $trait for Module<BE>
         where
             BE: HalConvolutionImpl<BE> + HalVecZnxDftImpl<BE>,
         {
