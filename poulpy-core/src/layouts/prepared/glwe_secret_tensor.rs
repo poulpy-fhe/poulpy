@@ -1,3 +1,5 @@
+use poulpy_hal::layouts::SvpPPolToBackendMut;
+use poulpy_hal::layouts::SvpPPolToBackendRef;
 use poulpy_hal::{
     api::{SvpPPolAlloc, SvpPPolBytesOf},
     layouts::{Backend, Data, HostDataMut, HostDataRef, Module, SvpPPol, ZnxInfos},
@@ -137,7 +139,7 @@ pub trait GLWESecretTensorPreparedToBackendRef<B: Backend> {
 impl<B: Backend> GLWESecretTensorPreparedToBackendRef<B> for GLWESecretTensorPrepared<B::OwnedBuf, B> {
     fn to_backend_ref(&self) -> GLWESecretTensorPreparedBackendRef<'_, B> {
         GLWESecretTensorPrepared {
-            data: self.data.to_backend_ref::<B>(),
+            data: self.data.to_backend_ref(),
             rank: self.rank,
             dist: self.dist,
         }
@@ -151,7 +153,7 @@ pub trait GLWESecretTensorPreparedToBackendMut<B: Backend> {
 impl<B: Backend> GLWESecretTensorPreparedToBackendMut<B> for GLWESecretTensorPrepared<B::OwnedBuf, B> {
     fn to_backend_mut(&mut self) -> GLWESecretTensorPreparedBackendMut<'_, B> {
         GLWESecretTensorPrepared {
-            data: self.data.to_backend_mut::<B>(),
+            data: self.data.to_backend_mut(),
             rank: self.rank,
             dist: self.dist,
         }
@@ -161,7 +163,7 @@ impl<B: Backend> GLWESecretTensorPreparedToBackendMut<B> for GLWESecretTensorPre
 impl<B: Backend> GLWESecretPreparedToBackendRef<B> for GLWESecretTensorPrepared<B::OwnedBuf, B> {
     fn to_backend_ref(&self) -> crate::layouts::GLWESecretPreparedBackendRef<'_, B> {
         GLWESecretPrepared {
-            data: self.data.to_backend_ref::<B>(),
+            data: self.data.to_backend_ref(),
             dist: self.dist,
         }
     }
@@ -170,7 +172,7 @@ impl<B: Backend> GLWESecretPreparedToBackendRef<B> for GLWESecretTensorPrepared<
 impl<B: Backend> GLWESecretPreparedToBackendMut<B> for GLWESecretTensorPrepared<B::OwnedBuf, B> {
     fn to_backend_mut(&mut self) -> crate::layouts::GLWESecretPreparedBackendMut<'_, B> {
         GLWESecretPrepared {
-            data: self.data.to_backend_mut::<B>(),
+            data: self.data.to_backend_mut(),
             dist: self.dist,
         }
     }

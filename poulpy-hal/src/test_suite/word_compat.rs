@@ -21,6 +21,8 @@ use super::{
     TestParams, scalar_znx_backend_ref, upload_mat_znx, upload_scalar_znx,
     vec_znx_dft::{dft_of_uploaded_vec_znx, idft_apply_to_host},
 };
+use crate::layouts::SvpPPolToBackendMut;
+use crate::layouts::VmpPMatToBackendMut;
 
 use crate::{
     api::{
@@ -90,18 +92,8 @@ pub fn test_word_compat_svp_prepare_bytes<BA, BB>(
     let mut svp_a: SvpPPolOwned<BA> = module_a.svp_ppol_alloc(cols);
     let mut svp_b: SvpPPolOwned<BB> = module_b.svp_ppol_alloc(cols);
     for j in 0..cols {
-        module_a.svp_prepare(
-            &mut svp_a.to_backend_mut::<BA>(),
-            j,
-            &scalar_znx_backend_ref::<BA>(&scalar_a),
-            j,
-        );
-        module_b.svp_prepare(
-            &mut svp_b.to_backend_mut::<BB>(),
-            j,
-            &scalar_znx_backend_ref::<BB>(&scalar_b),
-            j,
-        );
+        module_a.svp_prepare(&mut svp_a.to_backend_mut(), j, &scalar_znx_backend_ref::<BA>(&scalar_a), j);
+        module_b.svp_prepare(&mut svp_b.to_backend_mut(), j, &scalar_znx_backend_ref::<BB>(&scalar_b), j);
     }
     assert!(
         BA::to_host_bytes(&svp_a.data) == BB::to_host_bytes(&svp_b.data),
@@ -150,12 +142,12 @@ pub fn test_word_compat_vmp_prepare_bytes<BA, BB>(
     let mut pmat_a: VmpPMatOwned<BA> = module_a.vmp_pmat_alloc(rows, cols_in, cols_out, size);
     let mut pmat_b: VmpPMatOwned<BB> = module_b.vmp_pmat_alloc(rows, cols_in, cols_out, size);
     module_a.vmp_prepare(
-        &mut pmat_a.to_backend_mut::<BA>(),
+        &mut pmat_a.to_backend_mut(),
         &<MatZnx<BA::OwnedBuf> as MatZnxToBackendRef<BA>>::to_backend_ref(&mat_a),
         &mut scratch_a.arena(),
     );
     module_b.vmp_prepare(
-        &mut pmat_b.to_backend_mut::<BB>(),
+        &mut pmat_b.to_backend_mut(),
         &<MatZnx<BB::OwnedBuf> as MatZnxToBackendRef<BB>>::to_backend_ref(&mat_b),
         &mut scratch_b.arena(),
     );

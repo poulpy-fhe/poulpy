@@ -176,33 +176,6 @@ impl<B: Backend> VecZnxDft<B::OwnedBuf, B::DftWord, B> {
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
-    /// Borrows this backend-owned `VecZnxDft` using the backend's native view type.
-    ///
-    /// Transitional inherent form of [`VecZnxDftToBackendRef`]; scheduled for
-    /// removal once call sites drop the explicit backend turbofish (the
-    /// backend is now recoverable from the type).
-    pub fn to_backend_ref<B2>(&self) -> VecZnxDftBackendRef<'_, B2>
-    where
-        B2: Backend,
-        Self: VecZnxDftToBackendRef<B2>,
-    {
-        VecZnxDftToBackendRef::<B2>::to_backend_ref(self)
-    }
-
-    /// Mutably borrows this backend-owned `VecZnxDft` using the backend's native view type.
-    ///
-    /// Transitional inherent form of [`VecZnxDftToBackendMut`]; see
-    /// [`Self::to_backend_ref`].
-    pub fn to_backend_mut<B2>(&mut self) -> VecZnxDftBackendMut<'_, B2>
-    where
-        B2: Backend,
-        Self: VecZnxDftToBackendMut<B2>,
-    {
-        VecZnxDftToBackendMut::<B2>::to_backend_mut(self)
-    }
-}
-
 /// Owned `VecZnxDft` backed by a backend-owned buffer.
 pub type VecZnxDftOwned<B> = VecZnxDft<<B as Backend>::OwnedBuf, <B as Backend>::DftWord, B>;
 /// Shared backend-native borrow of a `VecZnxDft`.

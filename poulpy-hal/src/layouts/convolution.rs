@@ -272,60 +272,6 @@ pub type CnvPVecRBackendMut<'a, B> = CnvPVecR<<B as Backend>::BufMut<'a>, <B as 
 pub type CnvPVecLBackendRef<'a, B> = CnvPVecL<<B as Backend>::BufRef<'a>, <B as Backend>::DftWord, B>;
 pub type CnvPVecLBackendMut<'a, B> = CnvPVecL<<B as Backend>::BufMut<'a>, <B as Backend>::DftWord, B>;
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
-    /// Borrows this backend-owned `CnvPVecR` using the backend's native view type.
-    ///
-    /// Ergonomic inherent form of [`CnvPVecRToBackendRef`]: the backend is
-    /// supplied explicitly (`x.to_backend_ref::<B>()`) since it is not
-    /// recoverable from the word-keyed type alone.
-    pub fn to_backend_ref<B2>(&self) -> CnvPVecRBackendRef<'_, B2>
-    where
-        B2: Backend,
-        Self: CnvPVecRToBackendRef<B2>,
-    {
-        CnvPVecRToBackendRef::<B2>::to_backend_ref(self)
-    }
-
-    /// Mutably borrows this backend-owned `CnvPVecR` using the backend's native view type.
-    ///
-    /// Ergonomic inherent form of [`CnvPVecRToBackendMut`]; see
-    /// [`Self::to_backend_ref`].
-    pub fn to_backend_mut<B2>(&mut self) -> CnvPVecRBackendMut<'_, B2>
-    where
-        B2: Backend,
-        Self: CnvPVecRToBackendMut<B2>,
-    {
-        CnvPVecRToBackendMut::<B2>::to_backend_mut(self)
-    }
-}
-
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
-    /// Borrows this backend-owned `CnvPVecL` using the backend's native view type.
-    ///
-    /// Ergonomic inherent form of [`CnvPVecLToBackendRef`]: the backend is
-    /// supplied explicitly (`x.to_backend_ref::<B>()`) since it is not
-    /// recoverable from the word-keyed type alone.
-    pub fn to_backend_ref<B2>(&self) -> CnvPVecLBackendRef<'_, B2>
-    where
-        B2: Backend,
-        Self: CnvPVecLToBackendRef<B2>,
-    {
-        CnvPVecLToBackendRef::<B2>::to_backend_ref(self)
-    }
-
-    /// Mutably borrows this backend-owned `CnvPVecL` using the backend's native view type.
-    ///
-    /// Ergonomic inherent form of [`CnvPVecLToBackendMut`]; see
-    /// [`Self::to_backend_ref`].
-    pub fn to_backend_mut<B2>(&mut self) -> CnvPVecLBackendMut<'_, B2>
-    where
-        B2: Backend,
-        Self: CnvPVecLToBackendMut<B2>,
-    {
-        CnvPVecLToBackendMut::<B2>::to_backend_mut(self)
-    }
-}
-
 /// Borrow a backend-owned `CnvPVecR` using the backend's native view type.
 pub trait CnvPVecRToBackendRef<BE: Backend> {
     fn to_backend_ref(&self) -> CnvPVecRBackendRef<'_, BE>;

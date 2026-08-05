@@ -1,3 +1,7 @@
+use poulpy_hal::layouts::SvpPPolToBackendMut;
+use poulpy_hal::layouts::SvpPPolToBackendRef;
+use poulpy_hal::layouts::VecZnxDftToBackendMut;
+use poulpy_hal::layouts::VecZnxDftToBackendRef;
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion};
@@ -33,7 +37,7 @@ where
 
         move || {
             let a_backend = crate::scalar_znx_backend_ref::<B>(&a);
-            module.svp_prepare(&mut svp.to_backend_mut::<B>(), 0, &a_backend, 0);
+            module.svp_prepare(&mut svp.to_backend_mut(), 0, &a_backend, 0);
             black_box(());
         }
     }
@@ -74,9 +78,9 @@ where
         let a = crate::upload_host_vec_znx::<B>(&a);
 
         move || {
-            let svp = svp.to_backend_ref::<B>();
+            let svp = svp.to_backend_ref();
             let a = crate::vec_znx_backend_ref::<B>(&a);
-            let mut res = res.to_backend_mut::<B>();
+            let mut res = res.to_backend_mut();
             for j in 0..cols {
                 module.svp_apply_dft(&mut res, j, &svp, j, &a, j);
             }
@@ -120,9 +124,9 @@ where
             crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
 
         move || {
-            let svp = svp.to_backend_ref::<B>();
+            let svp = svp.to_backend_ref();
             for j in 0..cols {
-                module.svp_apply_dft_to_dft(&mut res.to_backend_mut::<B>(), j, &svp, j, &a.to_backend_ref::<B>(), j);
+                module.svp_apply_dft_to_dft(&mut res.to_backend_mut(), j, &svp, j, &a.to_backend_ref(), j);
             }
             black_box(());
         }
@@ -162,9 +166,9 @@ where
         let mut res: VecZnxDft<B::OwnedBuf, B::DftWord, B> = module.vec_znx_dft_alloc(cols, size);
 
         move || {
-            let svp = svp.to_backend_ref::<B>();
+            let svp = svp.to_backend_ref();
             for j in 0..cols {
-                module.svp_apply_dft_to_dft_assign(&mut res.to_backend_mut::<B>(), j, &svp, j);
+                module.svp_apply_dft_to_dft_assign(&mut res.to_backend_mut(), j, &svp, j);
             }
             black_box(());
         }

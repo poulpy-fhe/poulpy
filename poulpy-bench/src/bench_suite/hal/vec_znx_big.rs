@@ -1,3 +1,5 @@
+use poulpy_hal::layouts::VecZnxBigToBackendMut;
+use poulpy_hal::layouts::VecZnxBigToBackendRef;
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion};
@@ -47,9 +49,9 @@ where
         source.fill_bytes(c.data_mut().as_mut());
 
         move || {
-            let a = a.to_backend_ref::<B>();
-            let b = b.to_backend_ref::<B>();
-            let mut c = c.to_backend_mut::<B>();
+            let a = a.to_backend_ref();
+            let b = b.to_backend_ref();
+            let mut c = c.to_backend_mut();
             for i in 0..cols {
                 module.vec_znx_big_add_into(&mut c, i, &a, i, &b, i);
             }
@@ -96,8 +98,8 @@ where
         source.fill_bytes(c.data_mut().as_mut());
 
         move || {
-            let a = a.to_backend_ref::<B>();
-            let mut c = c.to_backend_mut::<B>();
+            let a = a.to_backend_ref();
+            let mut c = c.to_backend_mut();
             for i in 0..cols {
                 module.vec_znx_big_add_assign(&mut c, i, &a, i);
             }
@@ -146,9 +148,9 @@ where
         source.fill_bytes(c.data_mut().as_mut());
 
         move || {
-            let a = a.to_backend_ref::<B>();
+            let a = a.to_backend_ref();
             let b = crate::vec_znx_backend_ref::<B>(&b);
-            let mut c = c.to_backend_mut::<B>();
+            let mut c = c.to_backend_mut();
             for i in 0..cols {
                 module.vec_znx_big_add_small_into_backend(&mut c, i, &a, i, &b, i);
             }
@@ -196,7 +198,7 @@ where
 
         move || {
             let a = crate::vec_znx_backend_ref::<B>(&a);
-            let mut c = c.to_backend_mut::<B>();
+            let mut c = c.to_backend_mut();
             for i in 0..cols {
                 module.vec_znx_big_add_small_assign(&mut c, i, &a, i);
             }
@@ -243,8 +245,8 @@ where
         source.fill_bytes(res.data_mut().as_mut());
 
         move || {
-            let a = a.to_backend_ref::<B>();
-            let mut res = res.to_backend_mut::<B>();
+            let a = a.to_backend_ref();
+            let mut res = res.to_backend_mut();
             for i in 0..cols {
                 module.vec_znx_big_automorphism(-7, &mut res, i, &a, i);
             }
@@ -293,7 +295,7 @@ where
         source.fill_bytes(res.data_mut().as_mut());
 
         move || {
-            let mut res = res.to_backend_mut::<B>();
+            let mut res = res.to_backend_mut();
             for i in 0..cols {
                 module.vec_znx_big_automorphism_assign(-7, &mut res, i, &mut scratch.borrow());
             }
@@ -339,8 +341,8 @@ where
         source.fill_bytes(b.data_mut().as_mut());
 
         move || {
-            let a = a.to_backend_ref::<B>();
-            let mut b = b.to_backend_mut::<B>();
+            let a = a.to_backend_ref();
+            let mut b = b.to_backend_mut();
             for i in 0..cols {
                 module.vec_znx_big_negate(&mut b, i, &a, i);
             }
@@ -384,7 +386,7 @@ where
         source.fill_bytes(a.data_mut().as_mut());
 
         move || {
-            let mut a = a.to_backend_mut::<B>();
+            let mut a = a.to_backend_mut();
             for i in 0..cols {
                 module.vec_znx_big_negate_assign(&mut a, i);
             }
@@ -437,7 +439,7 @@ where
         let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.vec_znx_big_normalize_tmp_bytes());
 
         move || {
-            let a = a.to_backend_ref::<B>();
+            let a = a.to_backend_ref();
             let mut res = crate::vec_znx_backend_mut::<B>(&mut res);
             for i in 0..cols {
                 module.vec_znx_big_normalize(&mut res, base2k, 0, i, &a, base2k, i, &mut scratch.borrow());
@@ -500,7 +502,7 @@ where
 
         move || {
             for i in 0..cols {
-                let a = a.to_backend_ref::<B>();
+                let a = a.to_backend_ref();
                 {
                     let mut tmp_ref = crate::vec_znx_backend_mut::<B>(&mut tmp);
                     module.vec_znx_big_normalize(&mut tmp_ref, base2k, 0, 0, &a, base2k, i, &mut scratch.borrow());
@@ -568,7 +570,7 @@ where
 
         move || {
             for i in 0..cols {
-                let a = a.to_backend_ref::<B>();
+                let a = a.to_backend_ref();
                 {
                     let mut tmp_ref = crate::vec_znx_backend_mut::<B>(&mut tmp);
                     module.vec_znx_big_normalize(&mut tmp_ref, base2k, 0, 0, &a, base2k, i, &mut scratch.borrow());
@@ -636,7 +638,7 @@ pub fn bench_vec_znx_normalize_add_assign_compare<B: Backend>(
         group.bench_with_input(BenchmarkId::new("fused", &id), &(), |b, _| {
             b.iter(|| {
                 for i in 0..cols {
-                    let a = a.to_backend_ref::<B>();
+                    let a = a.to_backend_ref();
                     {
                         let mut tmp_ref = crate::vec_znx_backend_mut::<B>(&mut tmp_fused);
                         module.vec_znx_big_normalize(&mut tmp_ref, base2k, 0, 0, &a, base2k, i, &mut scratch_fused.borrow());
@@ -653,7 +655,7 @@ pub fn bench_vec_znx_normalize_add_assign_compare<B: Backend>(
         group.bench_with_input(BenchmarkId::new("fallback", &id), &(), |b, _| {
             b.iter(|| {
                 for i in 0..cols {
-                    let a = a.to_backend_ref::<B>();
+                    let a = a.to_backend_ref();
                     {
                         let mut tmp_ref = crate::vec_znx_backend_mut::<B>(&mut tmp_fallback);
                         module.vec_znx_big_normalize(&mut tmp_ref, base2k, 0, 0, &a, base2k, i, &mut scratch_fallback.borrow());
@@ -716,7 +718,7 @@ pub fn bench_vec_znx_normalize_sub_assign_compare<B: Backend>(
         group.bench_with_input(BenchmarkId::new("fused", &id), &(), |b, _| {
             b.iter(|| {
                 for i in 0..cols {
-                    let a = a.to_backend_ref::<B>();
+                    let a = a.to_backend_ref();
                     {
                         let mut tmp_ref = crate::vec_znx_backend_mut::<B>(&mut tmp_fused);
                         module.vec_znx_big_normalize(&mut tmp_ref, base2k, 0, 0, &a, base2k, i, &mut scratch_fused.borrow());
@@ -733,7 +735,7 @@ pub fn bench_vec_znx_normalize_sub_assign_compare<B: Backend>(
         group.bench_with_input(BenchmarkId::new("fallback", &id), &(), |b, _| {
             b.iter(|| {
                 for i in 0..cols {
-                    let a = a.to_backend_ref::<B>();
+                    let a = a.to_backend_ref();
                     {
                         let mut tmp_ref = crate::vec_znx_backend_mut::<B>(&mut tmp_fallback);
                         module.vec_znx_big_normalize(&mut tmp_ref, base2k, 0, 0, &a, base2k, i, &mut scratch_fallback.borrow());
@@ -782,9 +784,9 @@ where
         source.fill_bytes(c.data_mut().as_mut());
 
         move || {
-            let a = a.to_backend_ref::<B>();
-            let b = b.to_backend_ref::<B>();
-            let mut c = c.to_backend_mut::<B>();
+            let a = a.to_backend_ref();
+            let b = b.to_backend_ref();
+            let mut c = c.to_backend_mut();
             for i in 0..cols {
                 module.vec_znx_big_sub(&mut c, i, &a, i, &b, i);
             }
@@ -830,8 +832,8 @@ where
         source.fill_bytes(c.data_mut().as_mut());
 
         move || {
-            let a = a.to_backend_ref::<B>();
-            let mut c = c.to_backend_mut::<B>();
+            let a = a.to_backend_ref();
+            let mut c = c.to_backend_mut();
             for i in 0..cols {
                 module.vec_znx_big_sub_assign(&mut c, i, &a, i);
             }
@@ -877,8 +879,8 @@ where
         source.fill_bytes(c.data_mut().as_mut());
 
         move || {
-            let a = a.to_backend_ref::<B>();
-            let mut c = c.to_backend_mut::<B>();
+            let a = a.to_backend_ref();
+            let mut c = c.to_backend_mut();
             for i in 0..cols {
                 module.vec_znx_big_sub_negate_assign(&mut c, i, &a, i);
             }
@@ -927,8 +929,8 @@ where
 
         move || {
             let a = crate::vec_znx_backend_ref::<B>(&a);
-            let b = b.to_backend_ref::<B>();
-            let mut c = c.to_backend_mut::<B>();
+            let b = b.to_backend_ref();
+            let mut c = c.to_backend_mut();
             for i in 0..cols {
                 module.vec_znx_big_sub_small_a_backend(&mut c, i, &a, i, &b, i);
             }
@@ -976,9 +978,9 @@ where
         source.fill_bytes(c.data_mut().as_mut());
 
         move || {
-            let a = a.to_backend_ref::<B>();
+            let a = a.to_backend_ref();
             let b = crate::vec_znx_backend_ref::<B>(&b);
-            let mut c = c.to_backend_mut::<B>();
+            let mut c = c.to_backend_mut();
             for i in 0..cols {
                 module.vec_znx_big_sub_small_b_backend(&mut c, i, &a, i, &b, i);
             }

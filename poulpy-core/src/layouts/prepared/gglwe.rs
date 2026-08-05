@@ -1,3 +1,5 @@
+use poulpy_hal::layouts::VmpPMatToBackendMut;
+use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
     api::{VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes},
     layouts::{Backend, Data, Module, ScratchArena, VmpPMat, VmpPMatBackendRef},
@@ -225,14 +227,14 @@ impl<B: Backend> GGLWEPreparedToBackendRef<B> for GGLWEPrepared<B::OwnedBuf, B> 
             base2k: self.base2k,
             k_aux: self.k_aux,
             dsize: self.dsize,
-            data: self.data.to_backend_ref::<B>(),
+            data: self.data.to_backend_ref(),
         }
     }
 }
 
 impl<B: Backend> GGLWEPreparedVmpPMatRef<B> for GGLWEPrepared<B::OwnedBuf, B> {
     fn vmp_pmat_backend_ref(&self) -> VmpPMatBackendRef<'_, B> {
-        self.data.to_backend_ref::<B>()
+        self.data.to_backend_ref()
     }
 }
 
@@ -246,7 +248,7 @@ impl<B: Backend> GGLWEPreparedToBackendMut<B> for GGLWEPrepared<B::OwnedBuf, B> 
             base2k: self.base2k,
             k_aux: self.k_aux,
             dsize: self.dsize,
-            data: self.data.to_backend_mut::<B>(),
+            data: self.data.to_backend_mut(),
         }
     }
 }

@@ -1,3 +1,10 @@
+use poulpy_hal::layouts::CnvPVecLToBackendMut;
+use poulpy_hal::layouts::CnvPVecLToBackendRef;
+use poulpy_hal::layouts::CnvPVecRToBackendMut;
+use poulpy_hal::layouts::CnvPVecRToBackendRef;
+use poulpy_hal::layouts::VecZnxBigToBackendMut;
+use poulpy_hal::layouts::VecZnxBigToBackendRef;
+use poulpy_hal::layouts::VecZnxDftToBackendMut;
 use std::collections::HashMap;
 
 use poulpy_hal::{
@@ -132,7 +139,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     let mut right_prepared = module.cnv_pvec_right_alloc(1, pt.size());
     let pt_ref = <GLWEPlaintext<Vec<u8>> as GLWEToBackendRef<BE>>::to_backend_ref(&pt);
     module.cnv_prepare_right(
-        &mut right_prepared.to_backend_mut::<BE>(),
+        &mut right_prepared.to_backend_mut(),
         &pt_ref.data,
         !0i64,
         &mut scratch.borrow(),
@@ -151,7 +158,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         let mut expected_prepared = module.cnv_pvec_left_alloc(rank + 1, expected.size());
         let expected_ref = <GLWE<BE::OwnedBuf> as GLWEToBackendRef<BE>>::to_backend_ref(&expected);
         module.cnv_prepare_left(
-            &mut expected_prepared.to_backend_mut::<BE>(),
+            &mut expected_prepared.to_backend_mut(),
             &expected_ref.data,
             mask,
             &mut scratch.borrow(),
@@ -171,30 +178,25 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
             let mut want_dft = module.vec_znx_dft_alloc(1, product_size);
             let mut have_big = module.vec_znx_big_alloc(1, product_size);
             let mut want_big = module.vec_znx_big_alloc(1, product_size);
-            let right_ref = right_prepared.to_backend_ref::<BE>();
+            let right_ref = right_prepared.to_backend_ref();
 
             module.cnv_apply_dft(
                 0,
-                &mut have_dft.to_backend_mut::<BE>(),
+                &mut have_dft.to_backend_mut(),
                 0,
-                &baby.to_backend_ref::<BE>(),
+                &baby.to_backend_ref(),
                 col,
                 &right_ref,
                 0,
                 &mut scratch.borrow(),
             );
-            module.vec_znx_idft_apply_tmpa(
-                &mut have_big.to_backend_mut::<BE>(),
-                0,
-                &mut have_dft.to_backend_mut::<BE>(),
-                0,
-            );
+            module.vec_znx_idft_apply_tmpa(&mut have_big.to_backend_mut(), 0, &mut have_dft.to_backend_mut(), 0);
             module.vec_znx_big_normalize(
                 &mut vec_znx_backend_mut::<BE>(&mut have),
                 ct.base2k().as_usize(),
                 0,
                 0,
-                &have_big.to_backend_ref::<BE>(),
+                &have_big.to_backend_ref(),
                 ct.base2k().as_usize(),
                 0,
                 &mut scratch.borrow(),
@@ -202,26 +204,21 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
 
             module.cnv_apply_dft(
                 0,
-                &mut want_dft.to_backend_mut::<BE>(),
+                &mut want_dft.to_backend_mut(),
                 0,
-                &expected_prepared.to_backend_ref::<BE>(),
+                &expected_prepared.to_backend_ref(),
                 col,
                 &right_ref,
                 0,
                 &mut scratch.borrow(),
             );
-            module.vec_znx_idft_apply_tmpa(
-                &mut want_big.to_backend_mut::<BE>(),
-                0,
-                &mut want_dft.to_backend_mut::<BE>(),
-                0,
-            );
+            module.vec_znx_idft_apply_tmpa(&mut want_big.to_backend_mut(), 0, &mut want_dft.to_backend_mut(), 0);
             module.vec_znx_big_normalize(
                 &mut vec_znx_backend_mut::<BE>(&mut want),
                 ct.base2k().as_usize(),
                 0,
                 0,
-                &want_big.to_backend_ref::<BE>(),
+                &want_big.to_backend_ref(),
                 ct.base2k().as_usize(),
                 0,
                 &mut scratch.borrow(),

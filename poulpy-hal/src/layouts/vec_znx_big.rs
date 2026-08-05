@@ -169,33 +169,6 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
     }
 }
 
-impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
-    /// Borrows this backend-owned `VecZnxBig` using the backend's native view type.
-    ///
-    /// Ergonomic inherent form of [`VecZnxBigToBackendRef`]: the backend is
-    /// supplied explicitly (`x.to_backend_ref::<B>()`) since it is not
-    /// recoverable from the word-keyed type alone.
-    pub fn to_backend_ref<B2>(&self) -> VecZnxBigBackendRef<'_, B2>
-    where
-        B2: Backend,
-        Self: VecZnxBigToBackendRef<B2>,
-    {
-        VecZnxBigToBackendRef::<B2>::to_backend_ref(self)
-    }
-
-    /// Mutably borrows this backend-owned `VecZnxBig` using the backend's native view type.
-    ///
-    /// Ergonomic inherent form of [`VecZnxBigToBackendMut`]; see
-    /// [`Self::to_backend_ref`].
-    pub fn to_backend_mut<B2>(&mut self) -> VecZnxBigBackendMut<'_, B2>
-    where
-        B2: Backend,
-        Self: VecZnxBigToBackendMut<B2>,
-    {
-        VecZnxBigToBackendMut::<B2>::to_backend_mut(self)
-    }
-}
-
 /// Owned `VecZnxBig` backed by a backend-owned buffer.
 pub type VecZnxBigOwned<B> = VecZnxBig<<B as Backend>::OwnedBuf, <B as Backend>::BigWord, B>;
 /// Shared backend-native borrow of a `VecZnxBig`.

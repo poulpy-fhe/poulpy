@@ -1,3 +1,5 @@
+use poulpy_hal::layouts::SvpPPolToBackendMut;
+use poulpy_hal::layouts::SvpPPolToBackendRef;
 use poulpy_hal::{
     api::{SvpPPolAlloc, SvpPPolBytesOf, SvpPrepare},
     layouts::{Backend, Data, Module, SvpPPol, ZnxInfos},
@@ -130,7 +132,7 @@ impl<B: Backend> GLWESecretPreparedToBackendRef<B> for GLWESecretPrepared<B::Own
     fn to_backend_ref(&self) -> GLWESecretPreparedBackendRef<'_, B> {
         GLWESecretPrepared {
             dist: self.dist,
-            data: self.data.to_backend_ref::<B>(),
+            data: self.data.to_backend_ref(),
         }
     }
 }
@@ -143,7 +145,7 @@ impl<B: Backend> GLWESecretPreparedToBackendMut<B> for GLWESecretPrepared<B::Own
     fn to_backend_mut(&mut self) -> GLWESecretPreparedBackendMut<'_, B> {
         GLWESecretPrepared {
             dist: self.dist,
-            data: self.data.to_backend_mut::<B>(),
+            data: self.data.to_backend_mut(),
         }
     }
 }

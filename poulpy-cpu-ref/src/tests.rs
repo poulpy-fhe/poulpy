@@ -1,3 +1,7 @@
+use poulpy_hal::layouts::VecZnxDftToBackendMut;
+use poulpy_hal::layouts::VecZnxDftToBackendRef;
+use poulpy_hal::layouts::VmpPMatToBackendMut;
+use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
     layouts::Module,
     test_suite::convolution::{
@@ -312,7 +316,7 @@ fn test_ntt4x30_vmp_apply_truncated_res_matches_full_prefix() {
     module.vec_znx_dft_apply(
         1,
         0,
-        &mut a_dft.to_backend_mut::<NTT4x30Ref>(),
+        &mut a_dft.to_backend_mut(),
         0,
         &vec_znx_backend_ref::<NTT4x30Ref>(&a_be),
         0,
@@ -323,16 +327,16 @@ fn test_ntt4x30_vmp_apply_truncated_res_matches_full_prefix() {
     let mat_be = upload_mat_znx::<NTT4x30Ref>(&mat);
     let mut pmat: VmpPMatOwned<NTT4x30Ref> = module.vmp_pmat_alloc(rows, cols_in, cols_out, mat_size);
     module.vmp_prepare(
-        &mut pmat.to_backend_mut::<NTT4x30Ref>(),
+        &mut pmat.to_backend_mut(),
         &<MatZnx<<NTT4x30Ref as Backend>::OwnedBuf> as MatZnxToBackendRef<NTT4x30Ref>>::to_backend_ref(&mat_be),
         &mut scratch.arena(),
     );
 
     let mut res_full: VecZnxDftOwned<NTT4x30Ref> = module.vec_znx_dft_alloc(cols_out, mat_size);
     module.vmp_apply_dft_to_dft(
-        &mut res_full.to_backend_mut::<NTT4x30Ref>(),
-        &a_dft.to_backend_ref::<NTT4x30Ref>(),
-        &pmat.to_backend_ref::<NTT4x30Ref>(),
+        &mut res_full.to_backend_mut(),
+        &a_dft.to_backend_ref(),
+        &pmat.to_backend_ref(),
         0,
         &mut scratch.arena(),
     );
@@ -342,9 +346,9 @@ fn test_ntt4x30_vmp_apply_truncated_res_matches_full_prefix() {
     for res_size in [1usize, 3] {
         let mut res_trunc: VecZnxDftOwned<NTT4x30Ref> = module.vec_znx_dft_alloc(cols_out, res_size);
         module.vmp_apply_dft_to_dft(
-            &mut res_trunc.to_backend_mut::<NTT4x30Ref>(),
-            &a_dft.to_backend_ref::<NTT4x30Ref>(),
-            &pmat.to_backend_ref::<NTT4x30Ref>(),
+            &mut res_trunc.to_backend_mut(),
+            &a_dft.to_backend_ref(),
+            &pmat.to_backend_ref(),
             0,
             &mut scratch.arena(),
         );

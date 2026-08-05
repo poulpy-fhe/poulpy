@@ -7,6 +7,7 @@
 //! in place with `cnv_apply_dft_accumulate`, so no per-term result is ever
 //! materialized.
 
+use poulpy_hal::layouts::CnvPVecLToBackendRef;
 use poulpy_hal::{
     api::{CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic},
     layouts::{Backend, CnvDftAccTerm, CnvPVecRToBackendRef, ScratchArena, VecZnxDftBackendMut},
@@ -60,9 +61,9 @@ pub(super) fn glwe_accumulate_prepared_baby_steps_dft<BE, M>(
                 assert_eq!(baby.cols(), cols);
                 assert_eq!(baby.size() + diagonal.size() - cnv_offset_hi, res_dft_size);
                 CnvDftAccTerm {
-                    a: baby.to_backend_ref::<BE>(),
+                    a: baby.to_backend_ref(),
                     a_col: col,
-                    b: diagonal.to_backend_ref::<BE>(),
+                    b: diagonal.to_backend_ref(),
                     b_col: 0,
                 }
             })
@@ -142,7 +143,7 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
                     cnv_offset_hi,
                     prod_dft,
                     col,
-                    &baby.to_backend_ref::<BE>(),
+                    &baby.to_backend_ref(),
                     col,
                     &diagonal.to_backend_ref(),
                     0,
@@ -153,7 +154,7 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
                     cnv_offset_hi,
                     prod_dft,
                     col,
-                    &baby.to_backend_ref::<BE>(),
+                    &baby.to_backend_ref(),
                     col,
                     &diagonal.to_backend_ref(),
                     0,

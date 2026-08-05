@@ -1,3 +1,5 @@
+use poulpy_hal::layouts::VecZnxDftToBackendMut;
+use poulpy_hal::layouts::VecZnxDftToBackendRef;
 use poulpy_hal::{
     api::{VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf},
     layouts::{Backend, Data, Module, VecZnxDft},
@@ -109,7 +111,7 @@ pub trait GLWEPreparedToBackendRef<B: Backend> {
 impl<B: Backend> GLWEPreparedToBackendRef<B> for GLWEPrepared<B::OwnedBuf, B> {
     fn to_backend_ref(&self) -> GLWEPreparedBackendRef<'_, B> {
         GLWEPrepared {
-            data: self.data.to_backend_ref::<B>(),
+            data: self.data.to_backend_ref(),
             base2k: self.base2k,
             k: self.k,
         }
@@ -123,7 +125,7 @@ pub trait GLWEPreparedToBackendMut<B: Backend> {
 impl<B: Backend> GLWEPreparedToBackendMut<B> for GLWEPrepared<B::OwnedBuf, B> {
     fn to_backend_mut(&mut self) -> GLWEPreparedBackendMut<'_, B> {
         GLWEPrepared {
-            data: self.data.to_backend_mut::<B>(),
+            data: self.data.to_backend_mut(),
             base2k: self.base2k,
             k: self.k,
         }

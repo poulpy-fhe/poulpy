@@ -227,7 +227,7 @@ where
     (0..cols).for_each(|col_i| {
         let mut a: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
         {
-            let mut a_ref = a.to_backend_mut::<B>();
+            let mut a_ref = a.to_backend_mut();
             module.vec_znx_big_add_normal(base2k, &mut a_ref, col_i, noise_infos, &mut source);
             module.vec_znx_big_add_normal(base2k, &mut a_ref, col_i, noise_infos, &mut source);
         }

@@ -7,7 +7,7 @@ use poulpy_hal::{
     api::{VecZnxDftAlloc, VecZnxDftApply},
     layouts::{
         Module, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, VecZnxBackendRef, VecZnxDftBackendMut,
-        VecZnxDftBackendRef, ZnxView, ZnxViewMut,
+        VecZnxDftBackendRef, VecZnxDftToBackendMut, ZnxView, ZnxViewMut,
     },
 };
 
@@ -59,7 +59,7 @@ pub(crate) fn svp_apply_dft(
 ) {
     let b_size = b.size();
     let mut b_dft_owned = module.vec_znx_dft_alloc(1, b_size);
-    let mut b_dft = b_dft_owned.to_backend_mut::<NTT3x42Ifma>();
+    let mut b_dft = b_dft_owned.to_backend_mut();
     <Module<NTT3x42Ifma> as VecZnxDftApply<NTT3x42Ifma>>::vec_znx_dft_apply(module, 1, 0, &mut b_dft, 0, b, b_col);
     let b_dft_ref = poulpy_hal::layouts::VecZnxDftReborrowBackendRef::<NTT3x42Ifma>::reborrow_backend_ref(&b_dft);
     svp_apply_dft_to_dft(module, res, res_col, a, a_col, &b_dft_ref, 0);

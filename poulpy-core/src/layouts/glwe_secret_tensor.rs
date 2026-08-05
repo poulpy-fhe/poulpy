@@ -1,3 +1,7 @@
+use poulpy_hal::layouts::VecZnxBigToBackendMut;
+use poulpy_hal::layouts::VecZnxBigToBackendRef;
+use poulpy_hal::layouts::VecZnxDftToBackendMut;
+use poulpy_hal::layouts::VecZnxDftToBackendRef;
 use poulpy_hal::{
     api::{
         ModuleN, SvpApplyDftToDft, SvpPrepare, VecZnxBigAlloc, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
@@ -226,7 +230,7 @@ where
         let mut a_dft = VecZnxDftOwned::<BE>::alloc(self.n(), rank, 1);
         let a_backend_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(a.data());
         for i in 0..rank {
-            let mut a_dft_backend = a_dft.to_backend_mut::<BE>();
+            let mut a_dft_backend = a_dft.to_backend_mut();
             self.vec_znx_dft_apply(1, 0, &mut a_dft_backend, i, &a_backend_vec, i);
         }
 
@@ -245,18 +249,18 @@ where
         for i in 0..rank {
             for j in i..rank {
                 let idx: usize = i * rank + j - (i * (i + 1) / 2);
-                let a_dft_ref = a_dft.to_backend_ref::<BE>();
+                let a_dft_ref = a_dft.to_backend_ref();
                 {
-                    let mut a_ij_dft_backend = a_ij_dft.to_backend_mut::<BE>();
+                    let mut a_ij_dft_backend = a_ij_dft.to_backend_mut();
                     self.svp_apply_dft_to_dft(&mut a_ij_dft_backend, 0, &a_prepared_backend_ref, j, &a_dft_ref, i);
                 }
                 {
-                    let mut a_ij_big = a_ij_big_backend.to_backend_mut::<BE>();
-                    let mut a_ij_dft = a_ij_dft.to_backend_mut::<BE>();
+                    let mut a_ij_big = a_ij_big_backend.to_backend_mut();
+                    let mut a_ij_dft = a_ij_dft.to_backend_mut();
                     self.vec_znx_idft_apply_tmpa(&mut a_ij_big, 0, &mut a_ij_dft, 0);
                 }
                 {
-                    let a_ij_big = a_ij_big_backend.to_backend_ref::<BE>();
+                    let a_ij_big = a_ij_big_backend.to_backend_ref();
                     self.vec_znx_big_normalize(
                         &mut res_backend,
                         base2k,

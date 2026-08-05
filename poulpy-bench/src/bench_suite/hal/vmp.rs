@@ -1,3 +1,6 @@
+use poulpy_hal::layouts::VecZnxDftToBackendMut;
+use poulpy_hal::layouts::VmpPMatToBackendMut;
+use poulpy_hal::layouts::VmpPMatToBackendRef;
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion};
@@ -43,7 +46,7 @@ where
         let mut pmat: VmpPMat<B::OwnedBuf, B::DftWord, B> = module.vmp_pmat_alloc(rows, cols_in, cols_out, size);
 
         move || {
-            let mut pmat_backend = pmat.to_backend_mut::<B>();
+            let mut pmat_backend = pmat.to_backend_mut();
             let mat_backend = crate::mat_znx_backend_ref::<B>(&mat);
             module.vmp_prepare(&mut pmat_backend, &mat_backend, &mut scratch.borrow());
             black_box(());
@@ -99,7 +102,7 @@ where
             crate::random_backend_vmp_pmat::<B>(module.n(), rows, cols_in, cols_out, size, &mut source);
 
         move || {
-            let pmat = pmat.to_backend_ref::<B>();
+            let pmat = pmat.to_backend_ref();
             let a = crate::vec_znx_backend_ref::<B>(&a);
             module.vmp_apply_dft(&mut res, &a, &pmat, &mut scratch.borrow());
             black_box(());
@@ -155,9 +158,9 @@ where
             crate::random_backend_vmp_pmat::<B>(module.n(), rows, cols_in, cols_out, size, &mut source);
 
         move || {
-            let pmat = pmat.to_backend_ref::<B>();
+            let pmat = pmat.to_backend_ref();
             let a = crate::vec_znx_dft_backend_ref::<B>(&a);
-            module.vmp_apply_dft_to_dft(&mut res.to_backend_mut::<B>(), &a, &pmat, 0, &mut scratch.borrow());
+            module.vmp_apply_dft_to_dft(&mut res.to_backend_mut(), &a, &pmat, 0, &mut scratch.borrow());
             black_box(());
         }
     }

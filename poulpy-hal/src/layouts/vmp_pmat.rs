@@ -168,33 +168,6 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
-    /// Borrows this backend-owned `VmpPMat` using the backend's native view type.
-    ///
-    /// Ergonomic inherent form of [`VmpPMatToBackendRef`]: the backend is
-    /// supplied explicitly (`x.to_backend_ref::<B>()`) since it is not
-    /// recoverable from the word-keyed type alone.
-    pub fn to_backend_ref<B2>(&self) -> VmpPMatBackendRef<'_, B2>
-    where
-        B2: Backend,
-        Self: VmpPMatToBackendRef<B2>,
-    {
-        VmpPMatToBackendRef::<B2>::to_backend_ref(self)
-    }
-
-    /// Mutably borrows this backend-owned `VmpPMat` using the backend's native view type.
-    ///
-    /// Ergonomic inherent form of [`VmpPMatToBackendMut`]; see
-    /// [`Self::to_backend_ref`].
-    pub fn to_backend_mut<B2>(&mut self) -> VmpPMatBackendMut<'_, B2>
-    where
-        B2: Backend,
-        Self: VmpPMatToBackendMut<B2>,
-    {
-        VmpPMatToBackendMut::<B2>::to_backend_mut(self)
-    }
-}
-
 /// Owned `VmpPMat` backed by a backend-owned buffer.
 pub type VmpPMatOwned<B> = VmpPMat<<B as Backend>::OwnedBuf, <B as Backend>::DftWord, B>;
 /// Immutably borrowed `VmpPMat`.

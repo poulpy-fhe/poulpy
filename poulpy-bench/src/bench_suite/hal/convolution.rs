@@ -1,3 +1,9 @@
+use poulpy_hal::layouts::CnvPVecLToBackendMut;
+use poulpy_hal::layouts::CnvPVecLToBackendRef;
+use poulpy_hal::layouts::CnvPVecRToBackendMut;
+use poulpy_hal::layouts::CnvPVecRToBackendRef;
+use poulpy_hal::layouts::VecZnxBigToBackendMut;
+use poulpy_hal::layouts::VecZnxDftToBackendMut;
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion};
@@ -38,7 +44,7 @@ where
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.cnv_prepare_left_tmp_bytes(c_size, size));
 
         move || {
-            let mut a_prep_backend = a_prep.to_backend_mut::<BE>();
+            let mut a_prep_backend = a_prep.to_backend_mut();
             let a_backend = crate::vec_znx_backend_ref::<BE>(&a);
             module.cnv_prepare_left(&mut a_prep_backend, &a_backend, !0i64, &mut scratch.borrow());
             black_box(());
@@ -86,7 +92,7 @@ where
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.cnv_prepare_right_tmp_bytes(c_size, size));
 
         move || {
-            let mut a_prep_backend = a_prep.to_backend_mut::<BE>();
+            let mut a_prep_backend = a_prep.to_backend_mut();
             let a_backend = crate::vec_znx_backend_ref::<BE>(&a);
             module.cnv_prepare_right(&mut a_prep_backend, &a_backend, !0i64, &mut scratch.borrow());
             black_box(());
@@ -139,14 +145,14 @@ where
                 .max(module.cnv_prepare_right_tmp_bytes(c_size, size)),
         );
         move || {
-            let mut c_dft_backend = c_dft.to_backend_mut::<BE>();
+            let mut c_dft_backend = c_dft.to_backend_mut();
             module.cnv_apply_dft(
                 0,
                 &mut c_dft_backend,
                 0,
-                &a_prep.to_backend_ref::<BE>(),
+                &a_prep.to_backend_ref(),
                 0,
-                &b_prep.to_backend_ref::<BE>(),
+                &b_prep.to_backend_ref(),
                 0,
                 &mut scratch.borrow(),
             );
@@ -200,27 +206,27 @@ where
                 .max(module.cnv_prepare_right_tmp_bytes(c_size, size)),
         );
         {
-            let mut c_dft_backend = c_dft.to_backend_mut::<BE>();
+            let mut c_dft_backend = c_dft.to_backend_mut();
             module.cnv_apply_dft(
                 0,
                 &mut c_dft_backend,
                 0,
-                &a_prep.to_backend_ref::<BE>(),
+                &a_prep.to_backend_ref(),
                 0,
-                &b_prep.to_backend_ref::<BE>(),
+                &b_prep.to_backend_ref(),
                 0,
                 &mut scratch.borrow(),
             );
         }
         move || {
-            let mut c_dft_backend = c_dft.to_backend_mut::<BE>();
+            let mut c_dft_backend = c_dft.to_backend_mut();
             module.cnv_apply_dft_accumulate(
                 0,
                 &mut c_dft_backend,
                 0,
-                &a_prep.to_backend_ref::<BE>(),
+                &a_prep.to_backend_ref(),
                 0,
-                &b_prep.to_backend_ref::<BE>(),
+                &b_prep.to_backend_ref(),
                 0,
                 &mut scratch.borrow(),
             );
@@ -275,13 +281,13 @@ where
                 .max(module.cnv_prepare_right_tmp_bytes(c_size, size)),
         );
         move || {
-            let mut c_dft_backend = c_dft.to_backend_mut::<BE>();
+            let mut c_dft_backend = c_dft.to_backend_mut();
             module.cnv_pairwise_apply_dft(
                 0,
                 &mut c_dft_backend,
                 0,
-                &a_prep.to_backend_ref::<BE>(),
-                &b_prep.to_backend_ref::<BE>(),
+                &a_prep.to_backend_ref(),
+                &b_prep.to_backend_ref(),
                 0,
                 1,
                 &mut scratch.borrow(),
@@ -333,7 +339,7 @@ where
 
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.cnv_by_const_apply_tmp_bytes(0, c_size, size, size));
         move || {
-            let mut c_big_backend = c_big.to_backend_mut::<BE>();
+            let mut c_big_backend = c_big.to_backend_mut();
             let a_backend = crate::vec_znx_backend_ref::<BE>(&a);
             let b_backend = crate::vec_znx_backend_ref::<BE>(&b);
             module.cnv_by_const_apply(

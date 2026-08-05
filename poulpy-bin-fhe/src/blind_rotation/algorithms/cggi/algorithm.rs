@@ -1,4 +1,6 @@
 use itertools::izip;
+use poulpy_hal::layouts::SvpPPolToBackendRef;
+use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDft, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
@@ -235,7 +237,7 @@ fn execute_block_binary_extended<R, DataIn, M, BE: Backend<OwnedBuf = Vec<u8>> +
 
             // vmp_res = DFT(acc) * BRK[i]
             for i in 0..extension_factor {
-                let skii_ref = skii.data().to_backend_ref::<BE>();
+                let skii_ref = skii.data().to_backend_ref();
                 scratch_5.scope(|mut scratch_local| {
                     module.vmp_apply_dft_to_dft(
                         &mut vmp_res[i],
@@ -254,7 +256,7 @@ fn execute_block_binary_extended<R, DataIn, M, BE: Backend<OwnedBuf = Vec<u8>> +
                     // DFT X^{-ai}
                     for j in 0..extension_factor {
                         for i in 0..cols {
-                            let x_pow_a_ref = x_pow_a[ai_hi].to_backend_ref::<BE>();
+                            let x_pow_a_ref = x_pow_a[ai_hi].to_backend_ref();
                             let vmp_res_j_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&vmp_res[j]);
                             {
                                 let mut vmp_xai_backend = vmp_xai.to_backend_mut();
@@ -277,7 +279,7 @@ fn execute_block_binary_extended<R, DataIn, M, BE: Backend<OwnedBuf = Vec<u8>> +
                 if (ai_hi + 1) & (two_n - 1) != 0 {
                     for (i, j) in (0..ai_lo).zip(extension_factor - ai_lo..extension_factor) {
                         for k in 0..cols {
-                            let x_pow_a_ref = x_pow_a[ai_hi + 1].to_backend_ref::<BE>();
+                            let x_pow_a_ref = x_pow_a[ai_hi + 1].to_backend_ref();
                             let vmp_res_j_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&vmp_res[j]);
                             {
                                 let mut vmp_xai_backend = vmp_xai.to_backend_mut();
@@ -296,7 +298,7 @@ fn execute_block_binary_extended<R, DataIn, M, BE: Backend<OwnedBuf = Vec<u8>> +
                     // Sets acc_add_dft[ai_lo..extension_factor] += (acc[0..extension_factor - ai_lo] * sk) * X^{-ai}
                     for (i, j) in (ai_lo..extension_factor).zip(0..extension_factor - ai_lo) {
                         for k in 0..cols {
-                            let x_pow_a_ref = x_pow_a[ai_hi].to_backend_ref::<BE>();
+                            let x_pow_a_ref = x_pow_a[ai_hi].to_backend_ref();
                             let vmp_res_j_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&vmp_res[j]);
                             {
                                 let mut vmp_xai_backend = vmp_xai.to_backend_mut();
@@ -427,12 +429,12 @@ fn execute_block_binary<R, DataIn, M, BE: Backend<OwnedBuf = Vec<u8>> + 'static>
             let ai_pos: usize = ((aii + two_n as i64) & (two_n - 1) as i64) as usize;
 
             // vmp_res = DFT(acc) * BRK[i]
-            let skii_ref = skii.data().to_backend_ref::<BE>();
+            let skii_ref = skii.data().to_backend_ref();
             module.vmp_apply_dft_to_dft(&mut vmp_res, &acc_dft.to_backend_ref(), &skii_ref, 0, &mut scratch_4.borrow());
 
             // DFT(X^ai -1) * (DFT(acc) * BRK[i])
             for i in 0..cols {
-                let x_pow_a_ref = x_pow_a[ai_pos].to_backend_ref::<BE>();
+                let x_pow_a_ref = x_pow_a[ai_pos].to_backend_ref();
                 let vmp_res_ref = vec_znx_dft_backend_ref_from_mut::<BE>(&vmp_res);
                 {
                     let mut vmp_xai_backend = vmp_xai.to_backend_mut();

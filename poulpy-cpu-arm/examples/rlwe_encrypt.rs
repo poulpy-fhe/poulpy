@@ -1,4 +1,9 @@
 use itertools::izip;
+use poulpy_cpu_ref::layouts::SvpPPolToBackendMut;
+use poulpy_cpu_ref::layouts::SvpPPolToBackendRef;
+use poulpy_cpu_ref::layouts::VecZnxBigToBackendMut;
+use poulpy_cpu_ref::layouts::VecZnxBigToBackendRef;
+use poulpy_cpu_ref::layouts::VecZnxDftToBackendMut;
 
 #[cfg(all(feature = "enable-neon", target_arch = "aarch64"))]
 use poulpy_cpu_arm::FFT64Neon as BackendImpl;
@@ -12,8 +17,8 @@ use poulpy_hal::{
         VecZnxDftAlloc, VecZnxDftApply, VecZnxFillUniformSourceBackend, VecZnxIdftApplyTmpA, VecZnxNormalizeAssignBackend,
     },
     layouts::{
-        Module, NoiseInfos, ScalarZnx, ScalarZnxToBackendRef, ScratchOwned, VecZnx, VecZnxBigOwned,
-        VecZnxDftOwned, VecZnxToBackendMut, VecZnxToBackendRef,
+        Module, NoiseInfos, ScalarZnx, ScalarZnxToBackendRef, ScratchOwned, VecZnx, VecZnxBigOwned, VecZnxDftOwned,
+        VecZnxToBackendMut, VecZnxToBackendRef,
     },
     source::Source,
 };
@@ -41,7 +46,7 @@ fn main() {
 
     // s_dft <- DFT(s)
     module.svp_prepare(
-        &mut s_dft.to_backend_mut::<BackendImpl>(),
+        &mut s_dft.to_backend_mut(),
         0,
         &<ScalarZnx<Vec<u8>> as ScalarZnxToBackendRef<BackendImpl>>::to_backend_ref(&s),
         0,
@@ -64,26 +69,21 @@ fn main() {
     let mut buf_dft: VecZnxDftOwned<BackendImpl> = module.vec_znx_dft_alloc(1, ct_size);
 
     let ct_backend = <VecZnx<Vec<u8>> as VecZnxToBackendRef<BackendImpl>>::to_backend_ref(&ct);
-    module.vec_znx_dft_apply(1, 0, &mut buf_dft.to_backend_mut::<BackendImpl>(), 0, &ct_backend, 1);
+    module.vec_znx_dft_apply(1, 0, &mut buf_dft.to_backend_mut(), 0, &ct_backend, 1);
 
     // Applies DFT(ct[1]) * DFT(s)
     module.svp_apply_dft_to_dft_assign(
-        &mut buf_dft.to_backend_mut::<BackendImpl>(), // DFT(ct[1] * s)
-        0,                                            // Selects the first column of res
-        &s_dft.to_backend_ref::<BackendImpl>(),       // DFT(s)
-        0,                                            // Selects the first column of s_dft
+        &mut buf_dft.to_backend_mut(), // DFT(ct[1] * s)
+        0,                             // Selects the first column of res
+        &s_dft.to_backend_ref(),       // DFT(s)
+        0,                             // Selects the first column of s_dft
     );
 
     // Alias scratch space (VecZnxDft<B> is always at least as big as VecZnxBig<B>)
 
     // BIG(ct[1] * s) <- IDFT(DFT(ct[1] * s)) (not normalized)
     let mut buf_big: VecZnxBigOwned<BackendImpl> = module.vec_znx_big_alloc(1, ct_size);
-    module.vec_znx_idft_apply_tmpa(
-        &mut buf_big.to_backend_mut::<BackendImpl>(),
-        0,
-        &mut buf_dft.to_backend_mut::<BackendImpl>(),
-        0,
-    );
+    module.vec_znx_idft_apply_tmpa(&mut buf_big.to_backend_mut(), 0, &mut buf_dft.to_backend_mut(), 0);
 
     // Creates a plaintext: VecZnx with 1 column
     let mut m = module.vec_znx_alloc(
@@ -102,7 +102,7 @@ fn main() {
 
     // m - BIG(ct[1] * s)
     module.vec_znx_big_sub_small_negate_assign(
-        &mut buf_big.to_backend_mut::<BackendImpl>(),
+        &mut buf_big.to_backend_mut(),
         0, // Selects the first column of the receiver
         &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BackendImpl>>::to_backend_ref(&m),
         0, // Selects the first column of the message
@@ -115,7 +115,7 @@ fn main() {
         base2k,
         0,
         0, // Selects the first column of ct (ct[0])
-        &buf_big.to_backend_ref::<BackendImpl>(),
+        &buf_big.to_backend_ref(),
         base2k,
         0, // Selects the first column of buf_big
         &mut scratch.borrow(),
@@ -137,25 +137,20 @@ fn main() {
 
     // DFT(ct[1] * s)
     let ct_backend = <VecZnx<Vec<u8>> as VecZnxToBackendRef<BackendImpl>>::to_backend_ref(&ct);
-    module.vec_znx_dft_apply(1, 0, &mut buf_dft.to_backend_mut::<BackendImpl>(), 0, &ct_backend, 1);
+    module.vec_znx_dft_apply(1, 0, &mut buf_dft.to_backend_mut(), 0, &ct_backend, 1);
     module.svp_apply_dft_to_dft_assign(
-        &mut buf_dft.to_backend_mut::<BackendImpl>(),
+        &mut buf_dft.to_backend_mut(),
         0, // Selects the first column of res.
-        &s_dft.to_backend_ref::<BackendImpl>(),
+        &s_dft.to_backend_ref(),
         0,
     );
 
     // BIG(c1 * s) = IDFT(DFT(c1 * s))
-    module.vec_znx_idft_apply_tmpa(
-        &mut buf_big.to_backend_mut::<BackendImpl>(),
-        0,
-        &mut buf_dft.to_backend_mut::<BackendImpl>(),
-        0,
-    );
+    module.vec_znx_idft_apply_tmpa(&mut buf_big.to_backend_mut(), 0, &mut buf_dft.to_backend_mut(), 0);
 
     // BIG(c1 * s) + ct[0]
     module.vec_znx_big_add_small_assign(
-        &mut buf_big.to_backend_mut::<BackendImpl>(),
+        &mut buf_big.to_backend_mut(),
         0,
         &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BackendImpl>>::to_backend_ref(&ct),
         0,
@@ -168,7 +163,7 @@ fn main() {
         base2k,
         0,
         0,
-        &buf_big.to_backend_ref::<BackendImpl>(),
+        &buf_big.to_backend_ref(),
         base2k,
         0,
         &mut scratch.borrow(),

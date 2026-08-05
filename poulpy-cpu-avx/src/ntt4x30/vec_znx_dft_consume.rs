@@ -84,7 +84,7 @@ where
 
     let (n, n_blocks, u64_ptr) = {
         let mut a_mut: VecZnxDft<&mut [u8], <NTT4x30Avx as poulpy_hal::layouts::Backend>::DftWord, NTT4x30Avx> =
-            VecZnxDftToBackendMut::<NTT4x30Avx>::to_backend_mut(&mut a);
+            a.to_backend_mut();
         let n = a_mut.n();
         let n_blocks = a_mut.cols() * a_mut.size();
         let ptr: *mut u64 = {

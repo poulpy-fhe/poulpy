@@ -100,33 +100,6 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> SvpPPol<D, W, B> {
     }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> SvpPPol<D, W, B> {
-    /// Borrows this backend-owned `SvpPPol` using the backend's native view type.
-    ///
-    /// Ergonomic inherent form of [`SvpPPolToBackendRef`]: the backend is
-    /// supplied explicitly (`x.to_backend_ref::<B>()`) since it is not
-    /// recoverable from the word-keyed type alone.
-    pub fn to_backend_ref<B2>(&self) -> SvpPPolBackendRef<'_, B2>
-    where
-        B2: Backend,
-        Self: SvpPPolToBackendRef<B2>,
-    {
-        SvpPPolToBackendRef::<B2>::to_backend_ref(self)
-    }
-
-    /// Mutably borrows this backend-owned `SvpPPol` using the backend's native view type.
-    ///
-    /// Ergonomic inherent form of [`SvpPPolToBackendMut`]; see
-    /// [`Self::to_backend_ref`].
-    pub fn to_backend_mut<B2>(&mut self) -> SvpPPolBackendMut<'_, B2>
-    where
-        B2: Backend,
-        Self: SvpPPolToBackendMut<B2>,
-    {
-        SvpPPolToBackendMut::<B2>::to_backend_mut(self)
-    }
-}
-
 /// Owned `SvpPPol` backed by a backend-owned buffer.
 pub type SvpPPolOwned<B> = SvpPPol<<B as Backend>::OwnedBuf, <B as Backend>::DftWord, B>;
 /// Shared backend-native borrow of an `SvpPPol`.

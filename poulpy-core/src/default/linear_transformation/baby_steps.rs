@@ -14,6 +14,7 @@
 //! definition lives in [`crate::layouts`]); this module owns the HAL-dependent
 //! allocator and population routines.
 
+use poulpy_hal::layouts::CnvPVecLToBackendMut;
 use std::collections::BTreeMap;
 
 use poulpy_hal::{
@@ -246,12 +247,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
             assert_eq!(prepared.size(), a_size, "prepared baby cache has wrong size");
             if rot == 0 {
                 let a_ref = a.to_backend_ref();
-                module.cnv_prepare_left(
-                    &mut prepared.to_backend_mut::<BE>(),
-                    &a_ref.data,
-                    mask,
-                    &mut loop_scratch.borrow(),
-                );
+                module.cnv_prepare_left(&mut prepared.to_backend_mut(), &a_ref.data, mask, &mut loop_scratch.borrow());
             } else {
                 let (mut baby, mut baby_scratch) = loop_scratch.borrow().take_glwe_scratch(a);
                 glwe_hoisted_baby_rotation(
@@ -266,7 +262,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
                 );
                 let baby_ref = baby.to_backend_ref();
                 module.cnv_prepare_left(
-                    &mut prepared.to_backend_mut::<BE>(),
+                    &mut prepared.to_backend_mut(),
                     &baby_ref.data,
                     mask,
                     &mut baby_scratch.borrow(),
@@ -279,7 +275,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
             assert_eq!(prepared.size(), a_size, "prepared baby cache has wrong size");
             if rot == 0 {
                 let a_ref = a.to_backend_ref();
-                module.cnv_prepare_left(&mut prepared.to_backend_mut::<BE>(), &a_ref.data, mask, scratch);
+                module.cnv_prepare_left(&mut prepared.to_backend_mut(), &a_ref.data, mask, scratch);
             } else {
                 let key: &K = keys
                     .get_automorphism_key(module.galois_element(rot))
@@ -288,7 +284,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
                 module.glwe_automorphism(&mut baby, a, key, &mut baby_scratch.borrow());
                 let baby_ref = baby.to_backend_ref();
                 module.cnv_prepare_left(
-                    &mut prepared.to_backend_mut::<BE>(),
+                    &mut prepared.to_backend_mut(),
                     &baby_ref.data,
                     mask,
                     &mut baby_scratch.borrow(),

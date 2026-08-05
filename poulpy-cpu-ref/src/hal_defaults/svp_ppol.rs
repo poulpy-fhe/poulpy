@@ -2,6 +2,7 @@
 //! on [`SvpPPol`](poulpy_hal::layouts::SvpPPol).
 
 use bytemuck::{cast_slice, cast_slice_mut};
+use poulpy_hal::layouts::VecZnxDftToBackendMut;
 
 use crate::reference::{
     fft64::{
@@ -163,7 +164,7 @@ where
         let a_ref = a.to_backend_ref();
         let b_size = b.size();
         let mut b_dft = poulpy_hal::layouts::VecZnxDftOwned::<BE>::alloc(module.n(), 1, b_size);
-        let mut b_dft_ref = b_dft.to_backend_mut::<BE>();
+        let mut b_dft_ref = b_dft.to_backend_mut();
 
         module.vec_znx_dft_apply(1, 0, &mut b_dft_ref, 0, b, b_col);
 

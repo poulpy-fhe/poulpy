@@ -1,3 +1,7 @@
+use poulpy_hal::layouts::CnvPVecLToBackendMut;
+use poulpy_hal::layouts::CnvPVecLToBackendRef;
+use poulpy_hal::layouts::CnvPVecRToBackendMut;
+use poulpy_hal::layouts::CnvPVecRToBackendRef;
 use std::hint::black_box;
 
 use criterion::Criterion;
@@ -118,7 +122,7 @@ pub fn bench_glwe_tensor_prepare_left<BE: Backend<OwnedBuf = Vec<u8>>>(
     let mut group = c.benchmark_group(group_name);
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
-            let mut a_prep_backend = a_prep.to_backend_mut::<BE>();
+            let mut a_prep_backend = a_prep.to_backend_mut();
             module.cnv_prepare_left(
                 &mut a_prep_backend,
                 &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(a.data()),
@@ -153,7 +157,7 @@ pub fn bench_glwe_tensor_prepare_right<BE: Backend<OwnedBuf = Vec<u8>>>(
     let mut group = c.benchmark_group(group_name);
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
-            let mut b_prep_backend = b_prep.to_backend_mut::<BE>();
+            let mut b_prep_backend = b_prep.to_backend_mut();
             module.cnv_prepare_right(
                 &mut b_prep_backend,
                 &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(b.data()),
@@ -201,7 +205,7 @@ where
             .max(module.cnv_prepare_right_tmp_bytes(b.max_size(), b.max_size())),
     );
     {
-        let mut a_prep_backend = a_prep.to_backend_mut::<BE>();
+        let mut a_prep_backend = a_prep.to_backend_mut();
         module.cnv_prepare_left(
             &mut a_prep_backend,
             &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(a.data()),
@@ -210,7 +214,7 @@ where
         );
     }
     {
-        let mut b_prep_backend = b_prep.to_backend_mut::<BE>();
+        let mut b_prep_backend = b_prep.to_backend_mut();
         module.cnv_prepare_right(
             &mut b_prep_backend,
             &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(b.data()),
@@ -231,9 +235,9 @@ where
                 cnv_offset_hi,
                 &mut res_dft,
                 0,
-                &a_prep.to_backend_ref::<BE>(),
+                &a_prep.to_backend_ref(),
                 0,
-                &b_prep.to_backend_ref::<BE>(),
+                &b_prep.to_backend_ref(),
                 0,
                 &mut scratch,
             );
@@ -307,7 +311,7 @@ pub fn bench_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>>(
             .max(module.cnv_prepare_right_tmp_bytes(b.max_size(), b.max_size())),
     );
     {
-        let mut a_prep_backend = a_prep.to_backend_mut::<BE>();
+        let mut a_prep_backend = a_prep.to_backend_mut();
         module.cnv_prepare_left(
             &mut a_prep_backend,
             &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(a.data()),
@@ -316,7 +320,7 @@ pub fn bench_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>>(
         );
     }
     {
-        let mut b_prep_backend = b_prep.to_backend_mut::<BE>();
+        let mut b_prep_backend = b_prep.to_backend_mut();
         module.cnv_prepare_right(
             &mut b_prep_backend,
             &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(b.data()),
@@ -336,9 +340,9 @@ pub fn bench_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>>(
                 cnv_offset_hi,
                 &mut res_dft,
                 0,
-                &a_prep.to_backend_ref::<BE>(),
+                &a_prep.to_backend_ref(),
                 i,
-                &b_prep.to_backend_ref::<BE>(),
+                &b_prep.to_backend_ref(),
                 i,
                 &mut scratch,
             );
@@ -378,8 +382,8 @@ pub fn bench_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>>(
                 cnv_offset_hi,
                 &mut res_dft,
                 0,
-                &a_prep.to_backend_ref::<BE>(),
-                &b_prep.to_backend_ref::<BE>(),
+                &a_prep.to_backend_ref(),
+                &b_prep.to_backend_ref(),
                 0,
                 1,
                 &mut scratch,
