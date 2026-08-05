@@ -31,7 +31,8 @@ use crate::{
     },
     layouts::{
         Backend, DataView, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, Module, ScalarZnx, ScratchOwned,
-        SvpPPolOwned, VecZnx, VecZnxDft, VecZnxDftOwned, VmpPMatOwned,
+        SvpPPolLayoutCompatible, SvpPPolOwned, VecZnx, VecZnxDftLayoutCompatible, VecZnxDftOwned, VmpPMatLayoutCompatible,
+        VmpPMatOwned,
     },
     source::Source,
 };
@@ -44,8 +45,8 @@ pub fn test_word_compat_dft_bytes<BA, BB>(
     module_a: &Module<BA>,
     module_b: &Module<BB>,
 ) where
-    BA: Backend,
-    BB: Backend<OwnedBuf = BA::OwnedBuf, DftWord = BA::DftWord>,
+    BA: Backend + VecZnxDftLayoutCompatible<BB>,
+    BB: Backend,
     Module<BA>: VecZnxDftAlloc<BA> + VecZnxDftApply<BA>,
     Module<BB>: VecZnxDftAlloc<BB> + VecZnxDftApply<BB>,
 {
@@ -74,8 +75,8 @@ pub fn test_word_compat_svp_prepare_bytes<BA, BB>(
     module_a: &Module<BA>,
     module_b: &Module<BB>,
 ) where
-    BA: Backend,
-    BB: Backend<OwnedBuf = BA::OwnedBuf, DftWord = BA::DftWord>,
+    BA: Backend + SvpPPolLayoutCompatible<BB>,
+    BB: Backend,
     Module<BA>: SvpPPolAlloc<BA> + SvpPrepare<BA>,
     Module<BB>: SvpPPolAlloc<BB> + SvpPrepare<BB>,
 {
@@ -104,23 +105,20 @@ pub fn test_word_compat_svp_prepare_bytes<BA, BB>(
 /// Same input, `vmp_prepare` on each backend: the resulting `VmpPMat` buffers
 /// must be byte-identical. Exact-arithmetic (NTT/CRT) words only.
 ///
-/// A backend that packs its `VmpPMat` differently (e.g. via a
-/// `bytes_of_vmp_pmat` override) must declare its own word type and therefore
-/// cannot be paired here — that is the contract, not a limitation.
-///
-/// KNOWN VIOLATION: the accelerated NTT4x30 backends (AVX/AVX-512/NEON)
-/// prepare `VmpPMat` in a prime-major planar layout while the reference
-/// backend uses block-interleaved q120c, all under the shared `Q120bScalar`
-/// word. Their instantiations of this test are `#[ignore]`d until `VmpPMat`
-/// gets its own per-backend prepared-word declaration.
+/// A backend pair that packs `VmpPMat` differently must not declare
+/// [`VmpPMatLayoutCompatible`] and therefore cannot instantiate this test —
+/// notably the accelerated NTT4x30 backends (prime-major planar layout)
+/// against the reference backend (block-interleaved q120c): their divergence
+/// under the shared `Q120bScalar` word is now prevented by construction, the
+/// backends being distinct container types with no `VmpPMat` marker.
 pub fn test_word_compat_vmp_prepare_bytes<BA, BB>(
     params: &TestParams,
     module_host: &Module<HostBytesBackend>,
     module_a: &Module<BA>,
     module_b: &Module<BB>,
 ) where
-    BA: Backend,
-    BB: Backend<OwnedBuf = BA::OwnedBuf, DftWord = BA::DftWord>,
+    BA: Backend + VmpPMatLayoutCompatible<BB>,
+    BB: Backend,
     Module<BA>: VmpPMatAlloc<BA> + VmpPrepare<BA> + VmpPrepareTmpBytes,
     Module<BB>: VmpPMatAlloc<BB> + VmpPrepare<BB> + VmpPrepareTmpBytes,
     ScratchOwned<BA>: ScratchOwnedAlloc<BA>,
@@ -167,8 +165,8 @@ pub fn test_word_compat_dft_cross_idft<BA, BB>(
     module_a: &Module<BA>,
     module_b: &Module<BB>,
 ) where
-    BA: Backend,
-    BB: Backend<OwnedBuf = BA::OwnedBuf, DftWord = BA::DftWord>,
+    BA: Backend + VecZnxDftLayoutCompatible<BB>,
+    BB: Backend<OwnedBuf = BA::OwnedBuf, DftWord = BA::DftWord> + VecZnxDftLayoutCompatible<BA>,
     Module<BA>: VecZnxDftAlloc<BA>
         + VecZnxDftApply<BA>
         + VecZnxBigAlloc<BA>
@@ -197,17 +195,15 @@ pub fn test_word_compat_dft_cross_idft<BA, BB>(
 
         let dft_a = dft_of_uploaded_vec_znx(module_a, &a, 1, 0);
         let dft_b = dft_of_uploaded_vec_znx(module_b, &a, 1, 0);
-        let (n, dft_cols, dft_size) = (dft_a.n(), dft_a.cols(), dft_a.size());
 
         // Native consumption on each backend first (the re-tag consumes the
-        // buffer), then each backend consuming the other's buffer: all four
-        // must agree in the coefficient domain.
-        // TODO(stage 5): replace the manual `from_data` re-tag with the
-        // marker-guarded `into_backend`.
+        // buffer), then each backend consuming the other's buffer via the
+        // marker-guarded zero-copy re-tag: all four must agree in the
+        // coefficient domain.
         let res_aa = idft_apply_to_host(module_a, base2k, &dft_a, size, &mut scratch_a);
         let res_bb = idft_apply_to_host(module_b, base2k, &dft_b, size, &mut scratch_b);
-        let dft_ab: VecZnxDftOwned<BB> = VecZnxDft::from_data(dft_a.data, n, dft_cols, dft_size);
-        let dft_ba: VecZnxDftOwned<BA> = VecZnxDft::from_data(dft_b.data, n, dft_cols, dft_size);
+        let dft_ab: VecZnxDftOwned<BB> = dft_a.into_backend::<BB>();
+        let dft_ba: VecZnxDftOwned<BA> = dft_b.into_backend::<BA>();
         let res_ab = idft_apply_to_host(module_b, base2k, &dft_ab, size, &mut scratch_b);
         let res_ba = idft_apply_to_host(module_a, base2k, &dft_ba, size, &mut scratch_a);
 

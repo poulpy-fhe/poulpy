@@ -197,9 +197,6 @@ cross_backend_test_suite! {
     tests = {
         test_word_compat_dft_bytes => poulpy_hal::test_suite::word_compat::test_word_compat_dft_bytes,
         test_word_compat_svp_prepare_bytes => poulpy_hal::test_suite::word_compat::test_word_compat_svp_prepare_bytes,
-        #[ignore = "KNOWN VIOLATION: accelerated NTT4x30 backends prepare VmpPMat in a prime-major planar layout, \
-        Ref in block-interleaved q120c, under the same Q120bScalar word; pending per-container prepared-word fix"]
-        test_word_compat_vmp_prepare_bytes => poulpy_hal::test_suite::word_compat::test_word_compat_vmp_prepare_bytes,
         test_word_compat_dft_cross_idft => poulpy_hal::test_suite::word_compat::test_word_compat_dft_cross_idft,
     }
 }

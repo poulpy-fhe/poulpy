@@ -17,6 +17,11 @@
 //! ([`test_suite::word_compat`](crate::test_suite::word_compat)); declare the
 //! marker and instantiate the corresponding tests together.
 //!
+//! Compatibility implies identical word types; this is enforced where it
+//! matters — the `into_backend` re-tag bounds the destination backend's
+//! word — rather than as a supertrait (mutual marker bounds would
+//! otherwise cycle the trait solver).
+//!
 //! Every backend is compatible with itself (reflexive blanket impls).
 
 use crate::layouts::Backend;
@@ -29,7 +34,7 @@ use crate::layouts::Backend;
 /// Implementors assert byte-identical buffer layouts between `Self` and `B2`
 /// for this container family, for every shape — same convention, not merely
 /// the same size. Validate with the word-compat test suite.
-pub unsafe trait VecZnxDftLayoutCompatible<B2: Backend>: Backend<DftWord = <B2 as Backend>::DftWord> {}
+pub unsafe trait VecZnxDftLayoutCompatible<B2: Backend>: Backend {}
 unsafe impl<B: Backend> VecZnxDftLayoutCompatible<B> for B {}
 
 /// `B: SvpPPolLayoutCompatible<B2>` asserts `SvpPPol` buffers of `B` are
@@ -40,7 +45,7 @@ unsafe impl<B: Backend> VecZnxDftLayoutCompatible<B> for B {}
 /// Implementors assert byte-identical buffer layouts between `Self` and `B2`
 /// for this container family, for every shape — same convention, not merely
 /// the same size. Validate with the word-compat test suite.
-pub unsafe trait SvpPPolLayoutCompatible<B2: Backend>: Backend<DftWord = <B2 as Backend>::DftWord> {}
+pub unsafe trait SvpPPolLayoutCompatible<B2: Backend>: Backend {}
 unsafe impl<B: Backend> SvpPPolLayoutCompatible<B> for B {}
 
 /// `B: VmpPMatLayoutCompatible<B2>` asserts `VmpPMat` buffers of `B` are
@@ -54,7 +59,7 @@ unsafe impl<B: Backend> SvpPPolLayoutCompatible<B> for B {}
 /// Implementors assert byte-identical buffer layouts between `Self` and `B2`
 /// for this container family, for every shape — same convention, not merely
 /// the same size. Validate with the word-compat test suite.
-pub unsafe trait VmpPMatLayoutCompatible<B2: Backend>: Backend<DftWord = <B2 as Backend>::DftWord> {}
+pub unsafe trait VmpPMatLayoutCompatible<B2: Backend>: Backend {}
 unsafe impl<B: Backend> VmpPMatLayoutCompatible<B> for B {}
 
 /// `B: VecZnxBigLayoutCompatible<B2>` asserts `VecZnxBig` buffers of `B` are
@@ -65,7 +70,7 @@ unsafe impl<B: Backend> VmpPMatLayoutCompatible<B> for B {}
 /// Implementors assert byte-identical buffer layouts between `Self` and `B2`
 /// for this container family, for every shape — same convention, not merely
 /// the same size. Validate with the word-compat test suite.
-pub unsafe trait VecZnxBigLayoutCompatible<B2: Backend>: Backend<BigWord = <B2 as Backend>::BigWord> {}
+pub unsafe trait VecZnxBigLayoutCompatible<B2: Backend>: Backend {}
 unsafe impl<B: Backend> VecZnxBigLayoutCompatible<B> for B {}
 
 /// `B: CnvPVecLayoutCompatible<B2>` asserts `CnvPVecL` **and** `CnvPVecR`
@@ -76,5 +81,5 @@ unsafe impl<B: Backend> VecZnxBigLayoutCompatible<B> for B {}
 /// Implementors assert byte-identical buffer layouts between `Self` and `B2`
 /// for this container family, for every shape — same convention, not merely
 /// the same size. Validate with the word-compat test suite.
-pub unsafe trait CnvPVecLayoutCompatible<B2: Backend>: Backend<DftWord = <B2 as Backend>::DftWord> {}
+pub unsafe trait CnvPVecLayoutCompatible<B2: Backend>: Backend {}
 unsafe impl<B: Backend> CnvPVecLayoutCompatible<B> for B {}
