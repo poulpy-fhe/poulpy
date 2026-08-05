@@ -73,7 +73,7 @@ impl<D: Data, W: DftWord> VecZnxDft<D, W> {
         B: Backend<DftWord = W>,
     {
         let shape = self.shape;
-        debug_assert!(
+        assert!(
             B::bytes_of_vec_znx_big(shape.n(), shape.cols(), shape.size())
                 <= B::bytes_of_vec_znx_dft(shape.n(), shape.cols(), shape.size()),
             "into_big: big-domain buffer would exceed the DFT-domain allocation"

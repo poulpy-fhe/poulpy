@@ -59,12 +59,32 @@ pub trait ZnxView: ZnxInfos + DataView<D: HostDataRef> {
 
     /// Returns a non-mutable pointer to the underlying coefficients array.
     fn as_ptr(&self) -> *const Self::Scalar {
-        self.data().as_ref().as_ptr() as *const Self::Scalar
+        let ptr: *const u8 = self.data().as_ref().as_ptr();
+        debug_assert!(
+            (ptr as usize).is_multiple_of(align_of::<Self::Scalar>()),
+            "buffer not aligned to align_of::<Scalar>() = {}",
+            align_of::<Self::Scalar>()
+        );
+        ptr as *const Self::Scalar
     }
 
     /// Returns a non-mutable reference to the entire underlying coefficient array.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the buffer is smaller than the element view (`n * poly_count`
+    /// scalars), which happens when the backend sizes this container below its
+    /// word type's element view (the word is then a sizing/identity token only).
     fn raw(&self) -> &[Self::Scalar] {
-        unsafe { std::slice::from_raw_parts(self.as_ptr(), self.n() * self.poly_count()) }
+        let span: usize = self.n() * self.poly_count();
+        assert!(
+            span * size_of::<Self::Scalar>() <= self.data().as_ref().len(),
+            "element view ({} scalars of {} bytes) exceeds the {}-byte buffer: this container has no element view for its word type",
+            span,
+            size_of::<Self::Scalar>(),
+            self.data().as_ref().len()
+        );
+        unsafe { std::slice::from_raw_parts(self.as_ptr(), span) }
     }
 
     /// Returns a non-mutable pointer starting at the j-th small polynomial of the i-th column.
@@ -72,6 +92,13 @@ pub trait ZnxView: ZnxInfos + DataView<D: HostDataRef> {
         assert!(i < self.cols(), "cols: {} >= self.cols(): {}", i, self.cols());
         assert!(j < self.size(), "size: {} >= self.size(): {}", j, self.size());
         let offset: usize = self.n() * (j * self.cols() + i);
+        assert!(
+            (offset + self.n()) * size_of::<Self::Scalar>() <= self.data().as_ref().len(),
+            "element view of block ({}, {}) exceeds the {}-byte buffer: this container has no element view for its word type",
+            i,
+            j,
+            self.data().as_ref().len()
+        );
         unsafe { self.as_ptr().add(offset) }
     }
 
@@ -87,12 +114,30 @@ pub trait ZnxView: ZnxInfos + DataView<D: HostDataRef> {
 pub trait ZnxViewMut: ZnxView + DataViewMut<D: HostDataMut> {
     /// Returns a mutable pointer to the underlying coefficients array.
     fn as_mut_ptr(&mut self) -> *mut Self::Scalar {
-        self.data_mut().as_mut().as_mut_ptr() as *mut Self::Scalar
+        let ptr: *mut u8 = self.data_mut().as_mut().as_mut_ptr();
+        debug_assert!(
+            (ptr as usize).is_multiple_of(align_of::<Self::Scalar>()),
+            "buffer not aligned to align_of::<Scalar>() = {}",
+            align_of::<Self::Scalar>()
+        );
+        ptr as *mut Self::Scalar
     }
 
     /// Returns a mutable reference to the entire underlying coefficient array.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the buffer is smaller than the element view (see [`ZnxView::raw`]).
     fn raw_mut(&mut self) -> &mut [Self::Scalar] {
-        unsafe { std::slice::from_raw_parts_mut(self.as_mut_ptr(), self.n() * self.poly_count()) }
+        let span: usize = self.n() * self.poly_count();
+        assert!(
+            span * size_of::<Self::Scalar>() <= self.data().as_ref().len(),
+            "element view ({} scalars of {} bytes) exceeds the {}-byte buffer: this container has no element view for its word type",
+            span,
+            size_of::<Self::Scalar>(),
+            self.data().as_ref().len()
+        );
+        unsafe { std::slice::from_raw_parts_mut(self.as_mut_ptr(), span) }
     }
 
     /// Returns a mutable pointer starting at the j-th small polynomial of the i-th column.
@@ -100,6 +145,13 @@ pub trait ZnxViewMut: ZnxView + DataViewMut<D: HostDataMut> {
         assert!(i < self.cols(), "cols: {} >= self.cols(): {}", i, self.cols());
         assert!(j < self.size(), "size: {} >= self.size(): {}", j, self.size());
         let offset: usize = self.n() * (j * self.cols() + i);
+        assert!(
+            (offset + self.n()) * size_of::<Self::Scalar>() <= self.data().as_ref().len(),
+            "element view of block ({}, {}) exceeds the {}-byte buffer: this container has no element view for its word type",
+            i,
+            j,
+            self.data().as_ref().len()
+        );
         unsafe { self.as_mut_ptr().add(offset) }
     }
 
