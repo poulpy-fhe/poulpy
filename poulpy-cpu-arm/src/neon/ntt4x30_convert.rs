@@ -4,7 +4,7 @@ use core::arch::aarch64::{
     uint32x4_t, vaddq_u32, vaddvq_u64, vcgtq_s64, vdupq_n_s64, vdupq_n_u64, vld1q_u32, vorrq_u64, vreinterpretq_u64_s64,
     vshlq_n_u64, vshrq_n_u64, vst1q_u32, vst1q_u64,
 };
-use poulpy_cpu_ref::reference::ntt4x30::primes::{PrimeSet, Primes30};
+use poulpy_cpu_ref::reference::ntt4x30::primes::{PrimeSet, PrimeSetCrt4, Primes30};
 
 #[allow(unused_imports)]
 use super::q120::{
@@ -477,7 +477,7 @@ pub(crate) fn pairwise_pack_right_1blk_x2_neon(
 
 use bytemuck::cast_slice_mut;
 use poulpy_cpu_ref::reference::ntt4x30::{ntt::NttTableInv, vec_znx_dft::NttModuleHandle};
-use poulpy_hal::layouts::{Data, Module, VecZnxBig, VecZnxDft, VecZnxDftToBackendMut, ZnxViewMut};
+use poulpy_hal::layouts::{Data, Module, VecZnxBig, VecZnxDft, VecZnxDftBackendMut, VecZnxDftToBackendMut, ZnxViewMut};
 
 use super::ntt4x30_ntt::intt_neon;
 use crate::NTT4x30Neon;
@@ -546,7 +546,7 @@ where
 {
     let table = module.get_intt_table();
     let (n, n_blocks, u64_ptr) = {
-        let mut a_mut: VecZnxDft<&mut [u8], NTT4x30Neon> = a.to_backend_mut();
+        let mut a_mut: VecZnxDftBackendMut<'_, NTT4x30Neon> = a.to_backend_mut();
         let n = a_mut.n();
         let n_blocks = a_mut.cols() * a_mut.size();
         let ptr: *mut u64 = {
