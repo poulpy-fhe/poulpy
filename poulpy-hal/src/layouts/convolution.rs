@@ -391,3 +391,55 @@ impl<'b, BE: Backend + 'b> CnvPVecLReborrowBackendMut<BE> for CnvPVecL<BE::BufMu
         }
     }
 }
+
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecL<D, W, B> {
+    /// Zero-copy re-tag of this container to a layout-compatible backend `B2`.
+    ///
+    /// The buffer moves as-is; only the type tag changes. Requires the
+    /// [`CnvPVecLayoutCompatible`](crate::layouts::CnvPVecLayoutCompatible) marker declared by the backend
+    /// pair. `D` is kept, so for further backend-native use `B2`'s buffer
+    /// types must match `D` (true for all current CPU backends).
+    pub fn into_backend<B2>(self) -> CnvPVecL<D, W, B2>
+    where
+        B2: Backend<DftWord = W>,
+        B: crate::layouts::CnvPVecLayoutCompatible<B2>,
+    {
+        let shape = self.shape;
+        assert_eq!(
+            B::bytes_of_cnv_pvec_left(shape.n(), shape.cols(), shape.size()),
+            B2::bytes_of_cnv_pvec_left(shape.n(), shape.cols(), shape.size()),
+            "into_backend: byte sizes diverge despite declared layout compatibility"
+        );
+        CnvPVecL {
+            data: self.data,
+            shape,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> CnvPVecR<D, W, B> {
+    /// Zero-copy re-tag of this container to a layout-compatible backend `B2`.
+    ///
+    /// The buffer moves as-is; only the type tag changes. Requires the
+    /// [`CnvPVecLayoutCompatible`](crate::layouts::CnvPVecLayoutCompatible) marker declared by the backend
+    /// pair. `D` is kept, so for further backend-native use `B2`'s buffer
+    /// types must match `D` (true for all current CPU backends).
+    pub fn into_backend<B2>(self) -> CnvPVecR<D, W, B2>
+    where
+        B2: Backend<DftWord = W>,
+        B: crate::layouts::CnvPVecLayoutCompatible<B2>,
+    {
+        let shape = self.shape;
+        assert_eq!(
+            B::bytes_of_cnv_pvec_right(shape.n(), shape.cols(), shape.size()),
+            B2::bytes_of_cnv_pvec_right(shape.n(), shape.cols(), shape.size()),
+            "into_backend: byte sizes diverge despite declared layout compatibility"
+        );
+        CnvPVecR {
+            data: self.data,
+            shape,
+            _phantom: PhantomData,
+        }
+    }
+}

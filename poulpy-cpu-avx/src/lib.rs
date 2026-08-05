@@ -256,3 +256,6 @@ mod transfer_impls {
         }
     }
 }
+
+#[cfg(feature = "enable-avx")]
+mod layout_compat;

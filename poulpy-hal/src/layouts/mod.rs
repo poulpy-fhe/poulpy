@@ -12,6 +12,7 @@
 
 mod convolution;
 mod encoding;
+mod layout_compat;
 mod mat_znx;
 mod module;
 mod plan_cache;
@@ -29,6 +30,7 @@ mod word;
 mod znx_base;
 
 pub use convolution::*;
+pub use layout_compat::*;
 pub use mat_znx::*;
 pub use module::*;
 pub use plan_cache::*;
@@ -437,6 +439,19 @@ macro_rules! impl_backend_from {
                 <$from as poulpy_hal::layouts::Backend>::destroy(handle)
             }
         }
+
+        // A delegating backend forwards all storage behavior verbatim, so every
+        // container layout is shared with the source backend by construction.
+        unsafe impl poulpy_hal::layouts::VecZnxDftLayoutCompatible<$from> for $be {}
+        unsafe impl poulpy_hal::layouts::VecZnxDftLayoutCompatible<$be> for $from {}
+        unsafe impl poulpy_hal::layouts::VecZnxBigLayoutCompatible<$from> for $be {}
+        unsafe impl poulpy_hal::layouts::VecZnxBigLayoutCompatible<$be> for $from {}
+        unsafe impl poulpy_hal::layouts::SvpPPolLayoutCompatible<$from> for $be {}
+        unsafe impl poulpy_hal::layouts::SvpPPolLayoutCompatible<$be> for $from {}
+        unsafe impl poulpy_hal::layouts::VmpPMatLayoutCompatible<$from> for $be {}
+        unsafe impl poulpy_hal::layouts::VmpPMatLayoutCompatible<$be> for $from {}
+        unsafe impl poulpy_hal::layouts::CnvPVecLayoutCompatible<$from> for $be {}
+        unsafe impl poulpy_hal::layouts::CnvPVecLayoutCompatible<$be> for $from {}
     };
 }
 

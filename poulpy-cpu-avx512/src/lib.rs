@@ -292,3 +292,6 @@ mod transfer_impls {
         }
     }
 }
+
+#[cfg(feature = "enable-avx512f")]
+mod layout_compat;

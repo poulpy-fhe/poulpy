@@ -288,3 +288,29 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
         }
     }
 }
+
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
+    /// Zero-copy re-tag of this container to a layout-compatible backend `B2`.
+    ///
+    /// The buffer moves as-is; only the type tag changes. Requires the
+    /// [`VmpPMatLayoutCompatible`](crate::layouts::VmpPMatLayoutCompatible) marker declared by the backend
+    /// pair. `D` is kept, so for further backend-native use `B2`'s buffer
+    /// types must match `D` (true for all current CPU backends).
+    pub fn into_backend<B2>(self) -> VmpPMat<D, W, B2>
+    where
+        B2: Backend<DftWord = W>,
+        B: crate::layouts::VmpPMatLayoutCompatible<B2>,
+    {
+        let shape = self.shape;
+        assert_eq!(
+            B::bytes_of_vmp_pmat(shape.n(), shape.rows(), shape.cols_in(), shape.cols_out(), shape.size()),
+            B2::bytes_of_vmp_pmat(shape.n(), shape.rows(), shape.cols_in(), shape.cols_out(), shape.size()),
+            "into_backend: byte sizes diverge despite declared layout compatibility"
+        );
+        VmpPMat {
+            data: self.data,
+            shape,
+            _phantom: PhantomData,
+        }
+    }
+}

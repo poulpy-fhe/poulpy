@@ -228,3 +228,6 @@ mod transfer_impls {
         }
     }
 }
+
+#[cfg(feature = "enable-neon")]
+mod layout_compat;

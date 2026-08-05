@@ -293,3 +293,29 @@ impl<D: HostDataRef, W: BigWord, B: Backend<BigWord = W>> fmt::Display for VecZn
         Ok(())
     }
 }
+
+impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
+    /// Zero-copy re-tag of this container to a layout-compatible backend `B2`.
+    ///
+    /// The buffer moves as-is; only the type tag changes. Requires the
+    /// [`VecZnxBigLayoutCompatible`](crate::layouts::VecZnxBigLayoutCompatible) marker declared by the backend
+    /// pair. `D` is kept, so for further backend-native use `B2`'s buffer
+    /// types must match `D` (true for all current CPU backends).
+    pub fn into_backend<B2>(self) -> VecZnxBig<D, W, B2>
+    where
+        B2: Backend<BigWord = W>,
+        B: crate::layouts::VecZnxBigLayoutCompatible<B2>,
+    {
+        let shape = self.shape;
+        assert_eq!(
+            B::bytes_of_vec_znx_big(shape.n(), shape.cols(), shape.max_size()),
+            B2::bytes_of_vec_znx_big(shape.n(), shape.cols(), shape.max_size()),
+            "into_backend: byte sizes diverge despite declared layout compatibility"
+        );
+        VecZnxBig {
+            data: self.data,
+            shape,
+            _phantom: PhantomData,
+        }
+    }
+}
