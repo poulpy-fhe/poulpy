@@ -30,7 +30,7 @@ where
     res
 }
 
-fn dft_of_uploaded_vec_znx<BE>(
+pub(crate) fn dft_of_uploaded_vec_znx<BE>(
     module: &Module<BE>,
     host: &VecZnx<impl crate::layouts::HostDataRef>,
     steps: usize,
@@ -99,7 +99,7 @@ where
     normalize_big_to_host(module, base2k, &big, scratch)
 }
 
-fn idft_apply_to_host<BE>(
+pub(crate) fn idft_apply_to_host<BE>(
     module: &Module<BE>,
     base2k: usize,
     dft: &VecZnxDftOwned<BE>,
