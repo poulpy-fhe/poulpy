@@ -52,6 +52,7 @@ mod reim4;
 /// let module: Module<FFT64Avx> = Module::new(1024);
 /// // Use module for FHE operations...
 /// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FFT64Avx {}
 
 #[cfg(test)]

@@ -29,7 +29,7 @@ use crate::{
     },
 };
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub(crate) struct DelegatingFFT64Ref;
 
 poulpy_hal::impl_backend_from!(DelegatingFFT64Ref, FFT64Ref);

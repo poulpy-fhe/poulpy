@@ -61,5 +61,5 @@ mod tests;
 /// # Thread safety
 ///
 /// `NTT3x42Ifma` is `Send + Sync` (derived from being a zero-sized, field-less struct).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NTT3x42Ifma;

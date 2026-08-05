@@ -70,5 +70,5 @@ pub use module::NTT4x30RefHandle;
 /// `NTT4x30Ref` is `Send + Sync` (derived from being a zero-sized, field-less struct).
 /// The `Module<NTT4x30Ref>` that holds the NTT tables is also `Send + Sync`, so modules can
 /// be shared across threads.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NTT4x30Ref;

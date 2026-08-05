@@ -58,5 +58,5 @@ pub use reim::FFT64ReimTable;
 /// The `Module<FFT64Ref>` that holds the FFT tables is also `Send + Sync`, so modules can
 /// be shared across threads. Individual operations require exclusive (`&mut`) access to their
 /// output buffers and scratch space, preventing data races at the API level.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FFT64Ref;

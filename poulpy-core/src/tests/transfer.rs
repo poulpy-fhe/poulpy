@@ -10,10 +10,10 @@ use crate::{
     layouts::{Base2K, Dnum, Dsize, GGLWE, GLWE, ModuleCoreAlloc, Rank, TorusPrecision},
 };
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 struct SrcBackend;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 struct DstBackend;
 
 fn host_alloc(len: usize) -> Vec<u8> {

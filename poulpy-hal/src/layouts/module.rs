@@ -18,7 +18,7 @@ use crate::{
 /// [`destroy`](Backend::destroy) is called during [`Module`] drop and must
 /// correctly deallocate the handle without double-free.
 #[allow(clippy::missing_safety_doc)]
-pub trait Backend: Sized + Sync + Send {
+pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     /// Word type for coefficient-domain (small) polynomial representations.
     type ZnxWord: crate::layouts::ZnxWord;
     /// Word type for extended-precision (big) polynomial representations.

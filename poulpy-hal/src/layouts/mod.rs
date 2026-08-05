@@ -118,7 +118,7 @@ where
 
 /// Minimal host-resident backend used as the default backend adapter for
 /// host-visible byte-slice views in generic helper code.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct HostBytesBackend;
 
 impl Backend for HostBytesBackend {

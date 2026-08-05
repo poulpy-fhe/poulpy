@@ -13,5 +13,5 @@ pub use reim::{FFT64NeonReimTable, ReimFFTNeon, ReimIFFTNeon};
 
 /// NEON-accelerated CPU backend for Poulpy HAL.
 /// `DftWord = f64`, `BigWord = i64`.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FFT64Neon;

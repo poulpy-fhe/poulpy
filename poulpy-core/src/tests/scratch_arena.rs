@@ -11,7 +11,7 @@ use crate::{
     scratch::ScratchArenaTakeCore,
 };
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 struct TestBackend;
 
 impl Backend for TestBackend {

@@ -12,5 +12,5 @@ mod tests;
 
 /// NEON-accelerated NTT4x30 CPU backend for Poulpy HAL.
 /// `DftWord = Q120bScalar` (4 × u64 CRT residues), `BigWord = i128`, prime set `Primes30`.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NTT4x30Neon;
