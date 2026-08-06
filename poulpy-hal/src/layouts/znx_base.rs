@@ -61,7 +61,7 @@ pub trait ZnxView: ZnxInfos + DataView<D: HostDataRef> {
     /// Returns a non-mutable pointer to the underlying coefficients array.
     fn as_ptr(&self) -> *const Self::Scalar {
         let ptr: *const u8 = self.data().as_ref().as_ptr();
-        debug_assert!(
+        assert!(
             (ptr as usize).is_multiple_of(align_of::<Self::Scalar>()),
             "buffer not aligned to align_of::<Scalar>() = {}",
             align_of::<Self::Scalar>()
@@ -77,9 +77,14 @@ pub trait ZnxView: ZnxInfos + DataView<D: HostDataRef> {
     /// scalars), which happens when the backend sizes this container below its
     /// word type's element view (the word is then a sizing/identity token only).
     fn raw(&self) -> &[Self::Scalar] {
-        let span: usize = self.n() * self.poly_count();
+        let span: usize = self
+            .n()
+            .checked_mul(self.poly_count())
+            .expect("element view scalar count overflows usize");
         assert!(
-            span * size_of::<Self::Scalar>() <= self.data().as_ref().len(),
+            span.checked_mul(size_of::<Self::Scalar>())
+                .expect("element view byte size overflows usize")
+                <= self.data().as_ref().len(),
             "element view ({} scalars of {} bytes) exceeds the {}-byte buffer: this container has no element view for its word type",
             span,
             size_of::<Self::Scalar>(),
@@ -92,9 +97,17 @@ pub trait ZnxView: ZnxInfos + DataView<D: HostDataRef> {
     fn at_ptr(&self, i: usize, j: usize) -> *const Self::Scalar {
         assert!(i < self.cols(), "cols: {} >= self.cols(): {}", i, self.cols());
         assert!(j < self.size(), "size: {} >= self.size(): {}", j, self.size());
-        let offset: usize = self.n() * (j * self.cols() + i);
+        let offset: usize = j
+            .checked_mul(self.cols())
+            .and_then(|x| x.checked_add(i))
+            .and_then(|x| x.checked_mul(self.n()))
+            .expect("element view offset overflows usize");
         assert!(
-            (offset + self.n()) * size_of::<Self::Scalar>() <= self.data().as_ref().len(),
+            offset
+                .checked_add(self.n())
+                .and_then(|x| x.checked_mul(size_of::<Self::Scalar>()))
+                .expect("element view byte size overflows usize")
+                <= self.data().as_ref().len(),
             "element view of block ({}, {}) exceeds the {}-byte buffer: this container has no element view for its word type",
             i,
             j,
@@ -116,7 +129,7 @@ pub trait ZnxViewMut: ZnxView + DataViewMut<D: HostDataMut> {
     /// Returns a mutable pointer to the underlying coefficients array.
     fn as_mut_ptr(&mut self) -> *mut Self::Scalar {
         let ptr: *mut u8 = self.data_mut().as_mut().as_mut_ptr();
-        debug_assert!(
+        assert!(
             (ptr as usize).is_multiple_of(align_of::<Self::Scalar>()),
             "buffer not aligned to align_of::<Scalar>() = {}",
             align_of::<Self::Scalar>()
@@ -130,9 +143,14 @@ pub trait ZnxViewMut: ZnxView + DataViewMut<D: HostDataMut> {
     ///
     /// Panics if the buffer is smaller than the element view (see [`ZnxView::raw`]).
     fn raw_mut(&mut self) -> &mut [Self::Scalar] {
-        let span: usize = self.n() * self.poly_count();
+        let span: usize = self
+            .n()
+            .checked_mul(self.poly_count())
+            .expect("element view scalar count overflows usize");
         assert!(
-            span * size_of::<Self::Scalar>() <= self.data().as_ref().len(),
+            span.checked_mul(size_of::<Self::Scalar>())
+                .expect("element view byte size overflows usize")
+                <= self.data().as_ref().len(),
             "element view ({} scalars of {} bytes) exceeds the {}-byte buffer: this container has no element view for its word type",
             span,
             size_of::<Self::Scalar>(),
@@ -145,9 +163,17 @@ pub trait ZnxViewMut: ZnxView + DataViewMut<D: HostDataMut> {
     fn at_mut_ptr(&mut self, i: usize, j: usize) -> *mut Self::Scalar {
         assert!(i < self.cols(), "cols: {} >= self.cols(): {}", i, self.cols());
         assert!(j < self.size(), "size: {} >= self.size(): {}", j, self.size());
-        let offset: usize = self.n() * (j * self.cols() + i);
+        let offset: usize = j
+            .checked_mul(self.cols())
+            .and_then(|x| x.checked_add(i))
+            .and_then(|x| x.checked_mul(self.n()))
+            .expect("element view offset overflows usize");
         assert!(
-            (offset + self.n()) * size_of::<Self::Scalar>() <= self.data().as_ref().len(),
+            offset
+                .checked_add(self.n())
+                .and_then(|x| x.checked_mul(size_of::<Self::Scalar>()))
+                .expect("element view byte size overflows usize")
+                <= self.data().as_ref().len(),
             "element view of block ({}, {}) exceeds the {}-byte buffer: this container has no element view for its word type",
             i,
             j,
