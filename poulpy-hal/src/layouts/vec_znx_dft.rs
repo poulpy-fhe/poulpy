@@ -28,16 +28,22 @@ use crate::layouts::{
 /// [`VecZnxIdftApply`](crate::api::VecZnxIdftApply) to convert
 /// between coefficient and DFT domains.
 #[repr(C)]
-#[derive(PartialEq)]
 pub struct VecZnxDft<D: Data, W: DftWord, B: Backend<DftWord = W>> {
     pub data: D,
     shape: VecZnxShape,
     pub _phantom: PhantomData<(W, B)>,
 }
 
-// Equality is byte equality on `data` (plus the shape); it never compares a
-// `W` value, so it is an equivalence relation even for non-`Eq` words like
-// `f64`. A derived `Eq` would spuriously demand `W: Eq`.
+// Equality (and hashing, where provided) is defined directly on the
+// representation: same shape, same buffer bytes. No `W`/`B` value is ever
+// compared, so no bound on them is needed — in particular `Eq` holds even
+// for non-`Eq` words like `f64` (byte equality is a total equivalence).
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> PartialEq for VecZnxDft<D, W, B> {
+    fn eq(&self, other: &Self) -> bool {
+        self.shape == other.shape && self.data == other.data
+    }
+}
+
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> Eq for VecZnxDft<D, W, B> {}
 
 impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> DigestU64 for VecZnxDft<D, W, B> {

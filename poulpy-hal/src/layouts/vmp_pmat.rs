@@ -66,17 +66,30 @@ impl VmpPMatShape {
 /// Ring degree `n` is always a power of two, so each prepared polynomial's DFT
 /// coefficient count matches vector lane widths relative to buffer alignment.
 #[repr(C)]
-#[derive(PartialEq, Hash)]
 pub struct VmpPMat<D: Data, W: DftWord, B: Backend<DftWord = W>> {
     data: D,
     shape: VmpPMatShape,
     _phantom: PhantomData<(W, B)>,
 }
 
-// Equality is byte equality on `data` (plus the shape); it never compares a
-// `W` value, so it is an equivalence relation even for non-`Eq` words like
-// `f64`. A derived `Eq` would spuriously demand `W: Eq`.
+// Equality (and hashing, where provided) is defined directly on the
+// representation: same shape, same buffer bytes. No `W`/`B` value is ever
+// compared, so no bound on them is needed — in particular `Eq` holds even
+// for non-`Eq` words like `f64` (byte equality is a total equivalence).
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> PartialEq for VmpPMat<D, W, B> {
+    fn eq(&self, other: &Self) -> bool {
+        self.shape == other.shape && self.data == other.data
+    }
+}
+
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> Eq for VmpPMat<D, W, B> {}
+
+impl<D: Data + std::hash::Hash, W: DftWord, B: Backend<DftWord = W>> std::hash::Hash for VmpPMat<D, W, B> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.shape.hash(state);
+        self.data.hash(state);
+    }
+}
 
 impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> DigestU64 for VmpPMat<D, W, B> {
     fn digest_u64(&self) -> u64 {
