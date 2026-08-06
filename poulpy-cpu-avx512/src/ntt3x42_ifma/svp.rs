@@ -1,7 +1,7 @@
 //! Scalar-vector product (SVP) operations for [`NTT3x42Ifma`].
 
 use bytemuck::{cast_slice, cast_slice_mut};
-use poulpy_cpu_ref::reference::ntt4x30::primes::PrimeSet;
+use poulpy_hal::layouts::PrimeSet;
 
 use poulpy_hal::{
     api::{VecZnxDftAlloc, VecZnxDftApply},

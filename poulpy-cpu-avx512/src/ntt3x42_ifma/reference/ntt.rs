@@ -223,7 +223,7 @@ mod tests {
     use super::super::super::primes::Primes42;
     use super::super::arithmetic::{b_ntt3x42_ifma_from_znx64_ref, b_ntt3x42_ifma_to_znx128_ref};
     use super::*;
-    use poulpy_cpu_ref::reference::ntt4x30::primes::PrimeSet;
+    use poulpy_hal::layouts::PrimeSet;
 
     #[test]
     fn ntt_intt_identity() {

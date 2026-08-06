@@ -19,7 +19,7 @@ use core::arch::x86_64::{
     __m512i, _mm512_add_epi64, _mm512_and_si512, _mm512_loadu_si512, _mm512_madd52hi_epu64, _mm512_madd52lo_epu64,
     _mm512_set1_epi64, _mm512_setzero_si512, _mm512_slli_epi64, _mm512_srli_epi64, _mm512_storeu_si512, _mm512_sub_epi64,
 };
-use poulpy_cpu_ref::reference::ntt4x30::primes::PrimeSet;
+use poulpy_hal::layouts::PrimeSet;
 use poulpy_hal::layouts::{
     Data, HostDataMut, HostDataRef, Module, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDft, VecZnxDftBackendMut,
     VecZnxDftBackendRef, ZnxView, ZnxViewMut,

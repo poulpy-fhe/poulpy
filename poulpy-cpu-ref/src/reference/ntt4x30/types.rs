@@ -15,100 +15,10 @@
 //
 // ----------------------------------------------------------------------
 
-use bytemuck::{Pod, Zeroable};
-use rand_distr::num_traits::Zero;
-use std::{fmt, ops::Add};
+use super::primes::{PrimeSet, Primes30};
 
-use super::primes::{LaneArray, LaneElem, PrimeSet, Primes30};
-
-/// One NTT-domain coefficient of a CRT (residue number system) backend:
-/// `P::LANES` packed lanes of `T`, one residue per prime of `P`.
-///
-/// Byte-layout contract (see [`poulpy_hal::layouts::DftWord`]): a
-/// `VecZnxDft` limb stores `n` consecutive `CrtWord<P, T>` blocks in the
-/// spqlios NTT ordering for the prime set `P`. The prime set, lane element,
-/// and lane count are all part of the type, so distinct CRT conventions cannot
-/// unify accidentally. Cross-backend interchange still requires the relevant
-/// layout-compatibility marker for the container family.
-///
-/// The lane count is exact (3, 4, 6, ... — whatever `P` declares), and the
-/// lane element is explicit: `CrtWord<Primes30, u64>` is a 32-byte 4-lane
-/// block of `u64` residues, `CrtWord<Primes30, u32>` would be its 16-byte
-/// compact sibling.
-#[repr(transparent)]
-pub struct CrtWord<P: PrimeSet, T: LaneElem>(pub P::Lanes<T>);
-
-impl<P: PrimeSet, T: LaneElem> Clone for CrtWord<P, T> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<P: PrimeSet, T: LaneElem> Copy for CrtWord<P, T> {}
-
-impl<P: PrimeSet, T: LaneElem> Default for CrtWord<P, T> {
-    fn default() -> Self {
-        Self(P::Lanes::<T>::lanes_zeroed())
-    }
-}
-
-impl<P: PrimeSet, T: LaneElem> PartialEq for CrtWord<P, T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
-impl<P: PrimeSet, T: LaneElem> Eq for CrtWord<P, T> {}
-
-impl<P: PrimeSet, T: LaneElem> fmt::Debug for CrtWord<P, T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("CrtWord").field(&self.0.as_slice()).finish()
-    }
-}
-
-impl<P: PrimeSet, T: LaneElem> fmt::Display for CrtWord<P, T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[")?;
-        for (i, lane) in self.0.as_slice().iter().enumerate() {
-            if i > 0 {
-                write!(f, ", ")?;
-            }
-            write!(f, "{lane:#x}")?;
-        }
-        write!(f, "]")
-    }
-}
-
-// SAFETY: CrtWord is #[repr(transparent)] over `P::Lanes<T>`, which is
-// `[T; LANES]` with `T: Pod` (LaneArray requires Pod). All bit patterns
-// are valid; no padding bytes, no uninit.
-unsafe impl<P: PrimeSet, T: LaneElem> Zeroable for CrtWord<P, T> {}
-unsafe impl<P: PrimeSet, T: LaneElem> Pod for CrtWord<P, T> {}
-
-/// Byte-layout contract: `n` consecutive `P::LANES`-lane CRT blocks per
-/// limb, in the spqlios NTT ordering of `P`. Cross-backend interchange also
-/// requires the relevant layout-compatibility marker.
-impl<P: PrimeSet, T: LaneElem> poulpy_hal::layouts::DftWord for CrtWord<P, T> {}
-
-impl<P: PrimeSet, T: LaneElem> Add for CrtWord<P, T> {
-    type Output = Self;
-    /// Element-wise wrapping addition of the CRT residues.
-    fn add(self, rhs: Self) -> Self {
-        Self(P::Lanes::<T>::lanes_from_fn(|k| {
-            self.0.as_slice()[k].wrapping_add(rhs.0.as_slice()[k])
-        }))
-    }
-}
-
-impl<P: PrimeSet, T: LaneElem> Zero for CrtWord<P, T> {
-    fn zero() -> Self {
-        Self(P::Lanes::<T>::lanes_zeroed())
-    }
-
-    fn is_zero(&self) -> bool {
-        self.0.as_slice().iter().all(|x| *x == T::ZERO)
-    }
-}
+/// Re-export of the family-neutral CRT word (moved to `poulpy_hal::layouts`).
+pub use poulpy_hal::layouts::CrtWord;
 
 /// Shared 32-byte NTT prep scalar for 4-lane CRT backends.
 ///

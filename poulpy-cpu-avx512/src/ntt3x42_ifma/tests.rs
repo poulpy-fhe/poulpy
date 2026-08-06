@@ -210,7 +210,7 @@ mod ntt3x42_ifma_tests {
 
     #[test]
     fn test_b_to_znx128_ifma_asm_edges_vs_ref() {
-        const Q: [u64; 3] = <Primes42 as poulpy_cpu_ref::reference::ntt4x30::primes::PrimeSet>::Q;
+        const Q: [u64; 3] = <Primes42 as poulpy_hal::layouts::PrimeSet>::Q;
         let big_q = Q[0] as u128 * Q[1] as u128 * Q[2] as u128;
         let values = [
             0u128,

@@ -13,7 +13,7 @@ use core::arch::x86_64::{
     _mm512_maskz_permutex2var_epi64, _mm512_or_si512, _mm512_permutex2var_epi64, _mm512_set_epi64, _mm512_set1_epi64,
     _mm512_setzero_si512, _mm512_slli_epi64, _mm512_srli_epi64, _mm512_storeu_si512, _mm512_stream_si512,
 };
-use poulpy_cpu_ref::reference::ntt4x30::primes::PrimeSet;
+use poulpy_hal::layouts::PrimeSet;
 use std::mem::size_of;
 
 use crate::ntt3x42_ifma::{

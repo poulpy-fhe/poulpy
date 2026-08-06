@@ -11,6 +11,7 @@
 //! portions of the API that still require direct byte access.
 
 mod convolution;
+mod crt;
 mod encoding;
 mod layout_compat;
 mod mat_znx;
@@ -30,6 +31,7 @@ mod word;
 mod znx_base;
 
 pub use convolution::*;
+pub use crt::*;
 pub use layout_compat::*;
 pub use mat_znx::*;
 pub use module::*;

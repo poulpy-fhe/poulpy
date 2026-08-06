@@ -10,7 +10,7 @@
 #![allow(dead_code)]
 
 use bytemuck::{cast_slice, cast_slice_mut};
-use poulpy_cpu_ref::reference::ntt4x30::primes::PrimeSet;
+use poulpy_hal::layouts::PrimeSet;
 use std::mem::size_of;
 
 use crate::ntt3x42_ifma::{

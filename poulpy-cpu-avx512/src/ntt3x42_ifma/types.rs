@@ -60,6 +60,6 @@ impl Zero for Q126Scalar {
 /// after add/sub operations to keep values in range.
 #[allow(dead_code)]
 pub const Q_SHIFTED_NTT3X42IFMA: [u64; 4] = {
-    let q = <Primes42 as poulpy_cpu_ref::reference::ntt4x30::primes::PrimeSet>::Q;
+    let q = <Primes42 as poulpy_hal::layouts::PrimeSet>::Q;
     [2 * q[0], 2 * q[1], 2 * q[2], 0]
 };

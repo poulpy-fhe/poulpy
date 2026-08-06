@@ -45,7 +45,7 @@ use crate::ntt3x42_ifma::{bbc_meta::Bbc126IfmaMeta, primes::Primes42};
 // Constants for SIMD reduction
 // ─────────────────────────────────────────────────────────────────────────────
 
-const Q_IFMA: [u64; 3] = <Primes42 as poulpy_cpu_ref::reference::ntt4x30::primes::PrimeSet>::Q;
+const Q_IFMA: [u64; 3] = <Primes42 as poulpy_hal::layouts::PrimeSet>::Q;
 
 /// Q vector: `[Q[0], Q[1], Q[2], 0]`.
 const Q_VEC: [u64; 4] = [Q_IFMA[0], Q_IFMA[1], Q_IFMA[2], 0];

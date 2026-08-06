@@ -20,7 +20,7 @@ pub fn vec_mat1col_product_bbc_ntt3x42_ifma_ref(
     x: &[u32],
     y: &[u32],
 ) {
-    let q = <Primes42 as poulpy_cpu_ref::reference::ntt4x30::primes::PrimeSet>::Q;
+    let q = <Primes42 as poulpy_hal::layouts::PrimeSet>::Q;
     // Reinterpret u32 slices as u64
     let x_u64: &[u64] = unsafe { std::slice::from_raw_parts(x.as_ptr() as *const u64, x.len() / 2) };
     let y_u64: &[u64] = unsafe { std::slice::from_raw_parts(y.as_ptr() as *const u64, y.len() / 2) };
@@ -47,7 +47,7 @@ pub fn vec_mat1col_product_x2_bbc_ntt3x42_ifma_ref(
     x: &[u32],
     y: &[u32],
 ) {
-    let q = <Primes42 as poulpy_cpu_ref::reference::ntt4x30::primes::PrimeSet>::Q;
+    let q = <Primes42 as poulpy_hal::layouts::PrimeSet>::Q;
     let x_u64: &[u64] = unsafe { std::slice::from_raw_parts(x.as_ptr() as *const u64, x.len() / 2) };
     let y_u64: &[u64] = unsafe { std::slice::from_raw_parts(y.as_ptr() as *const u64, y.len() / 2) };
 
@@ -84,7 +84,7 @@ pub fn vec_mat2cols_product_x2_bbc_ntt3x42_ifma_ref(
     x: &[u32],
     y: &[u32],
 ) {
-    let q = <Primes42 as poulpy_cpu_ref::reference::ntt4x30::primes::PrimeSet>::Q;
+    let q = <Primes42 as poulpy_hal::layouts::PrimeSet>::Q;
     let x_u64: &[u64] = unsafe { std::slice::from_raw_parts(x.as_ptr() as *const u64, x.len() / 2) };
     let y_u64: &[u64] = unsafe { std::slice::from_raw_parts(y.as_ptr() as *const u64, y.len() / 2) };
 

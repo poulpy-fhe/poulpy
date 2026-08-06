@@ -1,6 +1,6 @@
 //! Prime sets and modular helpers for the 3-prime IFMA representation.
 
-use poulpy_cpu_ref::reference::ntt4x30::primes::{LaneElem, PrimeSet};
+use poulpy_hal::layouts::{LaneElem, PrimeSet};
 
 /// Extension of the unified [`PrimeSet`] for the 3-prime IFMA family,
 /// carrying its **Garner** CRT reconstruction constants.
