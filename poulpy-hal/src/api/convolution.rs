@@ -3,7 +3,7 @@ use crate::layouts::{
     CnvPVecROwned, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
 };
 
-/// Allocates prepared convolution operands ([`CnvPVecL`], [`CnvPVecR`]).
+/// Allocates prepared convolution operands ([`CnvPVecL`](crate::layouts::CnvPVecL), [`CnvPVecR`](crate::layouts::CnvPVecR)).
 pub trait CnvPVecAlloc<BE: Backend> {
     fn cnv_pvec_left_alloc(&self, cols: usize, size: usize) -> CnvPVecLOwned<BE>;
     fn cnv_pvec_right_alloc(&self, cols: usize, size: usize) -> CnvPVecROwned<BE>;
