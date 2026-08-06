@@ -1,12 +1,16 @@
 //! Word types: the byte-layout contracts of polynomial coefficient domains.
 //!
-//! A word type names a **complete byte-layout convention**: element packing,
-//! lane count, prime set, ordering, and reduction form. **Type equality means
-//! buffer interchangeability** — two backends whose layouts project the same
-//! word type promise byte-identical buffer conventions and may exchange
-//! buffers of that domain without conversion. A backend deviating in *any*
-//! aspect of the convention must mint a new word type, even if the byte size
-//! matches.
+//! A word type names a **byte-layout convention**: element packing, lane
+//! count, prime set, ordering, and reduction form. The word alone does NOT
+//! grant cross-backend interchangeability — DFT/big-domain containers are
+//! additionally keyed by the producing backend, and buffers move between
+//! backends only through the explicit `into_backend` re-tag, guarded by the
+//! per-container `*LayoutCompatible` markers (see
+//! [`VecZnxDftLayoutCompatible`](crate::layouts::VecZnxDftLayoutCompatible)
+//! and siblings). Sharing a word is necessary but not sufficient for such a
+//! marker: the NTT4x30 backends share `Q120bScalar` yet pack `VmpPMat`
+//! differently, which is precisely why interchangeability is opt-in per
+//! container family.
 //!
 //! Word types are a sizing + identity contract, not necessarily an element
 //! view: [`Backend::bytes_of_vmp_pmat`](crate::layouts::Backend::bytes_of_vmp_pmat)
