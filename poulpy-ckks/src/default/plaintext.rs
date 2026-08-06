@@ -1,3 +1,4 @@
+use poulpy_core::layouts::IntPolyInfos;
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, LWEInfos};
 use poulpy_hal::{
@@ -22,9 +23,9 @@ enum PlaintextShift {
     Lsh(usize),
 }
 
-fn plaintext_shift<P: CKKSInfos>(ct_log_budget: usize, pt: &P) -> PlaintextShift {
+fn plaintext_shift<P: CKKSInfos + IntPolyInfos>(ct_log_budget: usize, pt: &P) -> PlaintextShift {
     let available = ct_log_budget + pt.log_delta();
-    let encoded_k = pt.max_k().as_usize();
+    let encoded_k = pt.encoded_k().as_usize();
     if available >= encoded_k {
         PlaintextShift::Rsh(available - encoded_k)
     } else {
@@ -37,7 +38,7 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
     where
         Self: VecZnxRshAddIntoBackend<BE> + VecZnxLshAddIntoBackend<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSInfos,
+        A: GLWEToBackendRef<BE> + IntPolyInfos + CKKSInfos,
     {
         const OP: &str = "ckks_add_pt_vec";
         ensure_base2k_match(OP, ct.base2k().as_usize(), pt.base2k().as_usize())?;
@@ -69,7 +70,7 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
     where
         Self: VecZnxRshAddCoeffIntoBackend<BE> + VecZnxLshAddCoeffToCoeffBackend<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSInfos,
+        A: GLWEToBackendRef<BE> + IntPolyInfos + CKKSInfos,
     {
         const OP: &str = "ckks_add_pt_const";
         ensure_base2k_match(OP, ct.base2k().as_usize(), pt.base2k().as_usize())?;
@@ -119,7 +120,7 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
     where
         Self: VecZnxRshSubCoeffIntoBackend<BE> + VecZnxLshSubCoeffToCoeffBackend<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSInfos,
+        A: GLWEToBackendRef<BE> + IntPolyInfos + CKKSInfos,
     {
         const OP: &str = "ckks_sub_pt_const";
         ensure_base2k_match(OP, ct.base2k().as_usize(), pt.base2k().as_usize())?;
@@ -162,7 +163,7 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
     where
         Self: VecZnxRshSubBackend<BE> + VecZnxLshSubBackend<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos,
-        A: GLWEToBackendRef<BE> + CKKSInfos,
+        A: GLWEToBackendRef<BE> + IntPolyInfos + CKKSInfos,
     {
         const OP: &str = "ckks_sub_pt_vec";
         ensure_base2k_match(OP, ct.base2k().as_usize(), pt.base2k().as_usize())?;
@@ -188,7 +189,7 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
 
     fn ckks_extract_pt_default<D, S>(&self, dst: &mut D, src: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        D: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+        D: GLWEToBackendMut<BE> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
         S: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
         Self: VecZnxLshBackend<BE> + VecZnxRshBackend<BE>,
     {
@@ -203,7 +204,7 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        D: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+        D: GLWEToBackendMut<BE> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
         S: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos,
         Self: VecZnxLshBackend<BE> + VecZnxRshBackend<BE>,
     {
@@ -224,7 +225,7 @@ pub trait CKKSPlaintextDefault<BE: Backend> {
             }
             .into());
         }
-        let dst_k = dst.max_k().as_usize();
+        let dst_k = dst.encoded_k().as_usize();
         let dst_base2k: usize = dst.base2k().into();
         let mut dst_ref = GLWEToBackendMut::to_backend_mut(dst);
         let src_ref = GLWEToBackendRef::to_backend_ref(src);

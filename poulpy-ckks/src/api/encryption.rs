@@ -1,3 +1,4 @@
+use poulpy_core::layouts::IntPolyInfos;
 use crate::CKKSResult as Result;
 use poulpy_core::{
     EncryptionInfos,
@@ -50,7 +51,7 @@ pub trait CKKSEncryptOps<BE: Backend> {
     where
         S: GLWESecretPreparedToBackendRef<BE>,
         Dct: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Dpt: GLWEToBackendRef<BE> + CKKSCtBounds;
+        Dpt: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
 }
 
 /// Secret-key decryption of a CKKS ciphertext.
@@ -91,6 +92,6 @@ pub trait CKKSDecryptOps<BE: Backend> {
     fn ckks_decrypt<Dpt, Dct, S>(&self, pt: &mut Dpt, ct: &Dct, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        Dpt: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dpt: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + IntPolyInfos,
         Dct: GLWEToBackendRef<BE> + CKKSCtBounds;
 }

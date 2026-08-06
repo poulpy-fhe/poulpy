@@ -35,7 +35,7 @@ where
     let mut ct: poulpy_core::layouts::GLWE<Vec<u8>> = module.glwe_alloc_from_infos(infos);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_encrypt_sk_tmp_bytes(infos));
 
-    let enc_infos = NoiseInfos::new(infos.max_k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
+    let enc_infos = NoiseInfos::new(infos.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
 
     let group_name = format!("glwe_encrypt_sk::{label}");
     let mut group = c.benchmark_group(group_name);
@@ -79,7 +79,7 @@ where
     let mut ct = module.ggsw_alloc_from_infos(infos);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ggsw_encrypt_sk_tmp_bytes(infos));
 
-    let enc_infos = NoiseInfos::new(infos.max_k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
+    let enc_infos = NoiseInfos::new(infos.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
 
     let group_name = format!("ggsw_encrypt_sk::{label}");
     let mut group = c.benchmark_group(group_name);
@@ -122,7 +122,7 @@ pub fn bench_glwe_automorphism_key_encrypt_sk<BE: Backend<OwnedBuf = Vec<u8>>>(
     let mut atk: GLWEAutomorphismKey<Vec<u8>> = module.glwe_automorphism_key_alloc_from_infos(atk_infos);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_automorphism_key_encrypt_sk_tmp_bytes(atk_infos));
 
-    let enc_infos = NoiseInfos::new(atk_infos.max_k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
+    let enc_infos = NoiseInfos::new(atk_infos.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
 
     let group_name = format!("glwe_automorphism_key_encrypt_sk::{label}");
     let mut group = c.benchmark_group(group_name);

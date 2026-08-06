@@ -77,6 +77,14 @@ impl<D: Data, BE: Backend> PreparedDiagonal<D, BE> {
     }
 }
 
+impl<D: Data, BE: Backend> crate::layouts::IntPolyInfos for PreparedDiagonal<D, BE> {
+    /// Prepared diagonals are integer polynomials prepared across their whole
+    /// stored width.
+    fn encoded_k(&self) -> crate::layouts::TorusPrecision {
+        self.max_k()
+    }
+}
+
 impl<D: Data, BE: Backend> LWEInfos for PreparedDiagonal<D, BE> {
     fn n(&self) -> Degree {
         Degree(self.cnv.n() as u32)

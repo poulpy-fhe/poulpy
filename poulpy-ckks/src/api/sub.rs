@@ -14,7 +14,7 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::UnnormalizedCKKSCiph
 /// ## Ciphertext–ciphertext subtraction (`ckks_sub_into` / `ckks_sub_assign`)
 ///
 /// ```text
-/// offset         = max(0, min(a.k(), b.k()) − dst.max_k())
+/// offset         = max(0, min(a.k(), b.k()) − dst.k())
 ///
 /// log_delta_out  = min(a.log_delta,  b.log_delta)
 /// log_budget_out = min(a.log_budget, b.log_budget) − offset
@@ -25,7 +25,7 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::UnnormalizedCKKSCiph
 /// ## Ciphertext–plaintext-vector subtraction (`ckks_sub_pt_vec_*`)
 ///
 /// ```text
-/// offset         = max(0, a.k() − dst.max_k())
+/// offset         = max(0, a.k() − dst.k())
 ///
 /// log_delta_out  = a.log_delta
 /// log_budget_out = a.log_budget − offset
@@ -69,13 +69,13 @@ pub trait CKKSSubOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds;
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
 
     /// Computes `dst -= pt` in-place.
     fn ckks_sub_pt_vec_assign<Dst, P>(&self, dst: &mut Dst, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds;
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
 
     fn ckks_sub_pt_const_tmp_bytes(&self) -> usize;
 
@@ -100,7 +100,7 @@ pub trait CKKSSubOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds;
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
 
     /// Computes `dst -= pt[pt_coeff]` in-place.
     ///
@@ -116,7 +116,7 @@ pub trait CKKSSubOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds;
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
 
     /// Computes `dst = a - b` without normalizing `dst`.
     ///
@@ -161,7 +161,7 @@ pub trait CKKSSubOps<BE: Backend> {
         Dst: Data,
         GLWE<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds;
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
 
     /// Computes `dst -= pt` without normalizing `dst`.
     fn ckks_sub_pt_vec_assign_unnormalized<Dst, P>(
@@ -173,7 +173,7 @@ pub trait CKKSSubOps<BE: Backend> {
     where
         Dst: Data,
         GLWE<Dst>: GLWEToBackendMut<BE>,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds;
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
 
     /// Computes `dst = a - pt[pt_coeff]` without normalizing `dst`.
     fn ckks_sub_pt_const_into_unnormalized<Dst, A, P>(
@@ -189,7 +189,7 @@ pub trait CKKSSubOps<BE: Backend> {
         Dst: Data,
         GLWE<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds;
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
 
     /// Computes `dst -= pt[pt_coeff]` without normalizing `dst`.
     fn ckks_sub_pt_const_assign_unnormalized<Dst, P>(
@@ -203,5 +203,5 @@ pub trait CKKSSubOps<BE: Backend> {
     where
         Dst: Data,
         GLWE<Dst>: GLWEToBackendMut<BE>,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds;
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
 }

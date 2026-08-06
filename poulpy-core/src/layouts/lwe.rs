@@ -23,7 +23,8 @@ pub trait LWEInfos {
     fn log_n(&self) -> usize {
         self.n().log2()
     }
-    /// Returns the maximum Torus precision representable by the object.
+    /// Returns the Torus precision the **allocation** can hold
+    /// ([`Self::max_size`] `* base2k`).
     fn max_k(&self) -> TorusPrecision {
         TorusPrecision(self.max_size() as u32 * self.base2k().as_u32())
     }
@@ -39,7 +40,11 @@ pub trait LWEInfos {
     /// Returns the base-2-log of the limb width used for the RNS/CRT representation.
     fn base2k(&self) -> Base2K;
 
-    /// Returns the maximum limb width this object can expose through [`Self::size`].
+    /// Returns the allocated limb **capacity** of the backing container: the
+    /// physical width operations may compute at (`size() <= max_size()`).
+    /// Together with `k()` this fully describes an object: `k` is the claimed
+    /// precision and `max_size` the allocation. Layout/spec types without a
+    /// buffer report their metadata-derived width.
     fn max_size(&self) -> usize;
 
     /// Returns a plain-data [`LWELayout`] snapshot of the current parameters.
@@ -96,28 +101,11 @@ pub trait SetBase2k {
 
 /// Trait for mutating the Torus precision `k` in place.
 ///
-/// `k` is a metadata label (the effective torus width); it is independent of the
-/// underlying buffer's active size, which `compact()`/`set_size` manage on use.
+/// `k` is a metadata label (the effective torus width); it is independent of
+/// the underlying buffer's allocation width `max_size`.
 pub trait SetK {
     /// Sets the Torus precision `k`.
     fn set_k(&mut self, k: TorusPrecision);
-}
-
-pub trait SetSize {
-    fn set_size(&mut self, size: usize);
-}
-
-pub trait Compact
-where
-    Self: LWEInfos + SetK + SetSize,
-{
-    fn compact(&mut self) {
-        let limbs = (self.k().as_usize() + self.log_n())
-            .div_ceil(self.base2k().as_usize())
-            .max(1)
-            .min(self.max_size());
-        self.set_size(limbs);
-    }
 }
 
 /// Plain-data snapshot of the parameters that describe an [`LWE`] ciphertext.
@@ -177,7 +165,7 @@ impl<D: Data> LWEInfos for LWE<D> {
     }
 
     fn max_size(&self) -> usize {
-        self.mask.size()
+        self.mask.max_size().min(self.body.max_size())
     }
 
     fn k(&self) -> TorusPrecision {

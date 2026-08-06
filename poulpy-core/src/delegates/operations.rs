@@ -1,3 +1,4 @@
+use crate::layouts::IntPolyInfos;
 use std::collections::HashMap;
 
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -188,14 +189,14 @@ impl_operations_delegate!(
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos,
+        B: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
     {
         BE::glwe_mul_plain(self, cnv_offset, res, a, b, scratch)
     },
     fn glwe_mul_plain_assign<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
     {
         BE::glwe_mul_plain_assign(self, cnv_offset, res, a, scratch)
     }

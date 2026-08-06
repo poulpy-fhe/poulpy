@@ -7,7 +7,7 @@ use poulpy_hal::{
 };
 
 use crate::api::ModuleTransfer;
-use crate::layouts::{Base2K, Compact, Degree, LWEInfos, Rank, SetBase2k, SetK, SetSize, TorusPrecision};
+use crate::layouts::{Base2K, Degree, LWEInfos, Rank, SetBase2k, SetK, TorusPrecision};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::fmt;
 
@@ -122,24 +122,10 @@ impl<D: Data> SetK for &mut GLWE<D> {
     }
 }
 
-impl<D: Data> SetSize for GLWE<D> {
-    fn set_size(&mut self, size: usize) {
-        self.data.set_size(size);
-    }
-}
-
-impl<D: Data> Compact for GLWE<D> {}
-
 impl<D: Data> GLWE<D> {
     /// Returns a shared reference to the underlying [`VecZnx`].
     pub fn data(&self) -> &VecZnx<D> {
         &self.data
-    }
-
-    /// Returns the allocated limb capacity, which can exceed the active `size()`
-    /// after a precision-consuming rescale.
-    pub fn max_size(&self) -> usize {
-        self.data.max_size()
     }
 }
 
@@ -160,7 +146,7 @@ impl<D: Data> LWEInfos for GLWE<D> {
     }
 
     fn max_size(&self) -> usize {
-        self.data.size()
+        self.data.max_size()
     }
 
     fn k(&self) -> TorusPrecision {

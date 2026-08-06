@@ -1,7 +1,7 @@
 //! Subtraction tests: ct-ct, ct-pt, ct-const (out-of-place and in-place).
 
+use poulpy_core::layouts::IntPolyInfos;
 use crate::{CKKSInfos, api::CKKSSubOps};
-use poulpy_core::layouts::LWEInfos;
 
 use super::helpers::{
     ADD_SUB_CONST, PT_PREC, TestContextBackend, TestContextModule, TestScalar, TestVector, add_sub_const_pt, alloc_ct,
@@ -783,9 +783,9 @@ pub fn test_sub_const_into_lsh_alignment<BE, F, E>(
         Some(ADD_SUB_CONST.1),
     );
     assert!(
-        cst.max_k().as_usize() > ct.log_budget() + cst.log_delta(),
+        cst.encoded_k().as_usize() > ct.log_budget() + cst.log_delta(),
         "test setup no longer triggers the Lsh alignment path (max_k={} <= available={})",
-        cst.max_k().as_usize(),
+        cst.encoded_k().as_usize(),
         ct.log_budget() + cst.log_delta()
     );
     module

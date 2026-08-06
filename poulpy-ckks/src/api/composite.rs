@@ -1,6 +1,7 @@
+use poulpy_core::layouts::IntPolyInfos;
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{
-    Compact, GGLWEInfos, GLWE, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+    GGLWEInfos, GLWE, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
     prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::layouts::{Backend, Data, ScratchArena};
@@ -30,7 +31,7 @@ pub trait CKKSAddManyOps<BE: Backend> {
     /// final write applies:
     ///
     /// ```text
-    /// offset         = max(0, result_k − dst.max_k())
+    /// offset         = max(0, result_k − dst.k())
     /// log_budget_out = (min log_budget) − offset
     /// ```
     ///
@@ -85,7 +86,7 @@ pub trait CKKSMulAddOps<BE: Backend> {
     /// // addition with dst:
     /// log_delta_out  = min(dst.log_delta, prod_delta)
     /// log_budget_out = min(dst.log_budget, prod_budget)
-    ///                  − max(0, min(dst.k(), prod_k) − dst.max_k())
+    ///                  − max(0, min(dst.k(), prod_k) − dst.k())
     /// ```
     fn ckks_mul_add_ct_into<Dst, A, B, T>(
         &self,
@@ -113,13 +114,13 @@ pub trait CKKSMulAddOps<BE: Backend> {
     /// // addition with dst:
     /// log_delta_out  = min(dst.log_delta, prod_delta)
     /// log_budget_out = min(dst.log_budget, prod_budget)
-    ///                  − max(0, min(dst.k(), prod_k) − dst.max_k())
+    ///                  − max(0, min(dst.k(), prod_k) − dst.k())
     /// ```
     fn ckks_mul_add_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds;
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
 
     /// Computes `dst += a * pt[pt_coeff]`.
     ///
@@ -135,7 +136,7 @@ pub trait CKKSMulAddOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds;
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
 
     /// Computes `dst += a * pt[pt_coeff]` without normalizing `dst`.
     ///
@@ -154,7 +155,7 @@ pub trait CKKSMulAddOps<BE: Backend> {
     where
         GLWE<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds;
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
 
     /// Computes `dst += a * pt` without normalizing `dst`.
     ///
@@ -170,7 +171,7 @@ pub trait CKKSMulAddOps<BE: Backend> {
     where
         GLWE<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds;
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
 }
 
 /// Fused affine evaluation: `dst = a * scale + offset`.
@@ -201,7 +202,7 @@ pub trait CKKSAffineOps<BE: Backend> {
     ///
     /// ```text
     /// natural_eff_k  = a.k() − affine_const.log_delta
-    /// offset         = max(0, natural_eff_k − dst.max_k())
+    /// offset         = max(0, natural_eff_k − dst.k())
     ///
     /// log_delta_out  = a.log_delta
     /// log_budget_out = a.log_budget − affine_const.log_delta − offset
@@ -218,9 +219,9 @@ pub trait CKKSAffineOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds;
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
 
     /// Computes `dst = dst * affine_const[scale_coeff] + affine_const[offset_coeff]` in-place.
     ///
@@ -240,8 +241,8 @@ pub trait CKKSAffineOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
 
     fn ckks_affine_pt_vec_tmp_bytes<R, A, S>(&self, res: &R, a: &A, scale: &S) -> usize
     where
@@ -259,7 +260,7 @@ pub trait CKKSAffineOps<BE: Backend> {
     ///
     /// ```text
     /// natural_eff_k  = a.k() − scale.log_delta
-    /// offset_bits    = max(0, natural_eff_k − dst.max_k())
+    /// offset_bits    = max(0, natural_eff_k − dst.k())
     ///
     /// log_delta_out  = a.log_delta
     /// log_budget_out = a.log_budget − scale.log_delta − offset_bits
@@ -278,10 +279,10 @@ pub trait CKKSAffineOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        S: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds;
+        S: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
 
     /// Computes `dst = dst * scale + offset` in-place.
     ///
@@ -299,9 +300,9 @@ pub trait CKKSAffineOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
-        S: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        S: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
 }
 
 /// Fused multiply-subtract: `dst -= a * b`.
@@ -354,7 +355,7 @@ pub trait CKKSMulSubOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds;
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
 
     /// Computes `dst -= a * pt[pt_coeff]`.
     ///
@@ -371,7 +372,7 @@ pub trait CKKSMulSubOps<BE: Backend> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds;
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
 }
 
 /// Inner product (dot product) of ciphertext and plaintext slices.
@@ -409,7 +410,7 @@ pub trait CKKSDotProductOps<BE: Backend> {
     ///
     /// ```text
     /// natural_eff_k  = a[i].log_budget   (= a[i].k() − a[i].log_delta)
-    /// offset         = max(0, natural_eff_k − dst.max_k())
+    /// offset         = max(0, natural_eff_k − dst.k())
     ///
     /// log_delta_out  = a[i].log_delta
     /// log_budget_out = a[i].log_budget − a[i].log_delta − offset
@@ -434,7 +435,7 @@ pub trait CKKSDotProductOps<BE: Backend> {
     ///
     /// ```text
     /// natural_eff_k  = a[i].k() − b[i].log_delta
-    /// offset         = max(0, natural_eff_k − dst.max_k())
+    /// offset         = max(0, natural_eff_k − dst.k())
     ///
     /// log_delta_out  = a[i].log_delta
     /// log_budget_out = a[i].log_budget − b[i].log_delta − offset
@@ -449,7 +450,7 @@ pub trait CKKSDotProductOps<BE: Backend> {
     where
         CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         CKKSCiphertext<D>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
-        E: GLWEToBackendRef<BE> + CKKSCtBounds;
+        E: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos;
 
     /// Computes `dst = Σ a[i] * b[i][pt_coeffs[i]]` over ciphertext–scalar-constant pairs.
     ///
@@ -466,5 +467,5 @@ pub trait CKKSDotProductOps<BE: Backend> {
     where
         CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         CKKSCiphertext<D>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
-        E: GLWEToBackendRef<BE> + CKKSCtBounds;
+        E: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos;
 }

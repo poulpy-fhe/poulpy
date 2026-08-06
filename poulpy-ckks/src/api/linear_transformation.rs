@@ -32,11 +32,12 @@
 //! module.ckks_eval_linear_transformation_into(&mut dst, &ct, &babies, &prepared, &atks, &mut scratch)?;
 //! ```
 
+use poulpy_core::layouts::IntPolyInfos;
 use crate::CKKSAtkBounds;
 use crate::CKKSResult as Result;
 use poulpy_core::{
     default::linear_transformation::DiagonalProd,
-    layouts::{Compact, GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
+    layouts::{GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
@@ -124,7 +125,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>;
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>;
 
     /// Fills `babies` with the prepared baby-step rotations of `src`.
     ///
@@ -166,9 +167,9 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: DiagonalProd<BE> + LtDiagonalScale,
+        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
@@ -183,8 +184,8 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
-        P: DiagonalProd<BE> + LtDiagonalScale,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
@@ -206,9 +207,9 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: DiagonalProd<BE> + LtDiagonalScale,
+        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
@@ -223,7 +224,7 @@ pub trait CKKSLinearTransformationOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: DiagonalProd<BE> + LtDiagonalScale,
+        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 }

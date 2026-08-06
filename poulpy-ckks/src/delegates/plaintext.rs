@@ -1,3 +1,4 @@
+use poulpy_core::layouts::IntPolyInfos;
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendRef};
 use poulpy_hal::{
@@ -22,7 +23,7 @@ where
 
     fn ckks_extract_pt<D, S>(&self, dst: &mut D, src: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        D: GLWEToBackendMut<BE> + GLWEInfos + CKKSInfos + SetCKKSInfos,
+        D: GLWEToBackendMut<BE> + GLWEInfos + CKKSInfos + SetCKKSInfos + IntPolyInfos,
         S: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
         BE::ckks_extract_pt_impl(self, dst, src, scratch)

@@ -1,3 +1,4 @@
+use poulpy_core::layouts::IntPolyInfos;
 use std::{
     fmt::{self},
     ops::{Deref, DerefMut},
@@ -5,9 +6,8 @@ use std::{
 
 use anyhow::{Context, Result};
 use poulpy_core::layouts::{
-    BSGSMeta, Base2K, Compact, Degree, GLWE, GLWEInfos, GLWEPlaintext, GLWEPlaintextReborrowBackendMut,
-    GLWEPlaintextReborrowBackendRef, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBSGSMeta, SetBase2k, SetK, SetSize,
-    TorusPrecision,
+    BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEPlaintext, GLWEPlaintextReborrowBackendMut, GLWEPlaintextReborrowBackendRef,
+    GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBSGSMeta, SetBase2k, SetK, TorusPrecision,
 };
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef};
 
@@ -95,6 +95,12 @@ poulpy_core::view_wrapper!(
 poulpy_core::impl_glwe_infos!(CKKSPlaintextViewMut);
 crate::impl_ckks_infos!(inner_meta CKKSPlaintextViewMut);
 
+impl<'a, BE: poulpy_hal::layouts::Backend + 'a> poulpy_core::layouts::IntPolyInfos for CKKSPlaintextViewMut<'a, BE> {
+    fn encoded_k(&self) -> TorusPrecision {
+        self.inner.encoded_k()
+    }
+}
+
 impl<'a, BE: Backend + 'a> SetBase2k for CKKSPlaintextViewMut<'a, BE> {
     fn set_base2k(&mut self, base2k: Base2K) {
         SetBase2k::set_base2k(&mut self.inner, base2k);
@@ -145,6 +151,12 @@ impl<D: Data> LWEInfos for CKKSPlaintext<D> {
     }
 }
 
+impl<D: Data> poulpy_core::layouts::IntPolyInfos for CKKSPlaintext<D> {
+    fn encoded_k(&self) -> TorusPrecision {
+        self.inner.encoded_k()
+    }
+}
+
 impl<D: Data> GLWEInfos for CKKSPlaintext<D> {
     fn rank(&self) -> Rank {
         self.inner.rank()
@@ -165,18 +177,6 @@ impl<D: Data> SetK for CKKSPlaintext<D> {
     fn set_k(&mut self, k: TorusPrecision) {
         SetK::set_k(&mut self.inner, k);
     }
-}
-
-impl<D: Data> SetSize for CKKSPlaintext<D> {
-    fn set_size(&mut self, size: usize) {
-        SetSize::set_size(&mut self.inner, size);
-    }
-}
-
-impl<D: Data> Compact for CKKSPlaintext<D> {
-    // Plaintexts hold full-width integer polynomials; compaction would shed
-    // limbs that carry meaningful precision, so it is intentionally a no-op.
-    fn compact(&mut self) {}
 }
 
 impl<D: Data> SetBSGSMeta for CKKSPlaintext<D> {
@@ -254,7 +254,7 @@ where
     let scale = F::from_usize(log_delta)
         .context("CKKS plaintext scale exponent is not representable by the codec scalar")?
         .exp2();
-    let k = pt.max_k();
+    let k = pt.encoded_k();
     if log_delta + log_budget <= 63 {
         let data: Vec<i64> = coeffs
             .iter()
@@ -300,7 +300,7 @@ where
     );
     let scale =
         (-F::from_usize(log_delta).context("CKKS plaintext scale exponent is not representable by the codec scalar")?).exp2();
-    let k = pt.max_k();
+    let k = pt.encoded_k();
     if log_delta + log_budget <= 63 {
         let mut data = vec![0i64; coeffs.len()];
         pt.decode_vec_i64_strided(gap, &mut data, k);

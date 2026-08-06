@@ -1,5 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
+use poulpy_core::layouts::IntPolyInfos;
 use crate::CKKSResult as Result;
 use crate::default::encryption::CKKSEncryptionDefault;
 
@@ -42,7 +43,7 @@ pub unsafe trait CKKSEncryptionImpl<BE: Backend>: Backend {
     ) -> Result<()>
     where
         E: EncryptionInfos,
-        Pt: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Pt: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds,
         Dct: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         S: GLWESecretPreparedToBackendRef<BE>;
 
@@ -58,7 +59,7 @@ pub unsafe trait CKKSEncryptionImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Pt: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Pt: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + IntPolyInfos,
         Dct: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos;
 }
@@ -103,7 +104,7 @@ where
     ) -> Result<()>
     where
         E: EncryptionInfos,
-        Pt: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Pt: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
         Dct: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
     {
@@ -125,7 +126,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Pt: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Pt: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + IntPolyInfos,
         Dct: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
     {
