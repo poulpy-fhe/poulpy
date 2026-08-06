@@ -1,6 +1,7 @@
+use poulpy_hal::layouts::SvpPPolToBackendMut;
 use poulpy_hal::{
     api::SvpPrepare,
-    layouts::{Backend, HostDataMut, Module, ScalarZnx, ScalarZnxToBackendRef, SvpPPolOwned, SvpPPolToBackendMut, ZnxViewMut},
+    layouts::{Backend, HostDataMut, Module, ScalarZnx, ScalarZnxToBackendRef, SvpPPolOwned, ZnxViewMut},
 };
 
 pub(crate) fn set_xai_plus_y<C, B: Backend>(

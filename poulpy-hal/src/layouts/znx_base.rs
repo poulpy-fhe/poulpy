@@ -31,7 +31,7 @@ pub trait ZnxInfos {
 
     /// Returns the total number of small polynomials.
     fn poly_count(&self) -> usize {
-        self.rows() * self.cols() * self.size()
+        crate::layouts::checked_product(&[self.rows(), self.cols(), self.size()], "polynomial count")
     }
 }
 
@@ -52,26 +52,67 @@ pub trait DataViewMut: DataView {
 /// For a container with `cols` columns and `size` limbs, limb `j` of
 /// column `i` starts at scalar offset `n * (j * cols + i)`.
 ///
-/// The associated `Scalar` type is `i64` for coefficient-domain types
-/// and a backend-specific type for DFT/big representations.
+/// The associated `Scalar` type is the container's word type `W`
+/// (`i64` by default for coefficient-domain types, the backend-declared
+/// `DftWord`/`BigWord` for DFT/big representations).
 pub trait ZnxView: ZnxInfos + DataView<D: HostDataRef> {
     type Scalar: Copy + Zero + Display + Debug + Pod;
 
     /// Returns a non-mutable pointer to the underlying coefficients array.
     fn as_ptr(&self) -> *const Self::Scalar {
-        self.data().as_ref().as_ptr() as *const Self::Scalar
+        let ptr: *const u8 = self.data().as_ref().as_ptr();
+        assert!(
+            (ptr as usize).is_multiple_of(align_of::<Self::Scalar>()),
+            "buffer not aligned to align_of::<Scalar>() = {}",
+            align_of::<Self::Scalar>()
+        );
+        ptr as *const Self::Scalar
     }
 
     /// Returns a non-mutable reference to the entire underlying coefficient array.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the buffer is smaller than the element view (`n * poly_count`
+    /// scalars), which happens when the backend sizes this container below its
+    /// word type's element view (the word is then a sizing/identity token only).
     fn raw(&self) -> &[Self::Scalar] {
-        unsafe { std::slice::from_raw_parts(self.as_ptr(), self.n() * self.poly_count()) }
+        let span: usize = self
+            .n()
+            .checked_mul(self.poly_count())
+            .expect("element view scalar count overflows usize");
+        assert!(
+            span.checked_mul(size_of::<Self::Scalar>())
+                .expect("element view byte size overflows usize")
+                <= self.data().as_ref().len(),
+            "element view ({} scalars of {} bytes) exceeds the {}-byte buffer: this container has no element view for its word type",
+            span,
+            size_of::<Self::Scalar>(),
+            self.data().as_ref().len()
+        );
+        unsafe { std::slice::from_raw_parts(self.as_ptr(), span) }
     }
 
     /// Returns a non-mutable pointer starting at the j-th small polynomial of the i-th column.
     fn at_ptr(&self, i: usize, j: usize) -> *const Self::Scalar {
         assert!(i < self.cols(), "cols: {} >= self.cols(): {}", i, self.cols());
         assert!(j < self.size(), "size: {} >= self.size(): {}", j, self.size());
-        let offset: usize = self.n() * (j * self.cols() + i);
+        let offset: usize = j
+            .checked_mul(self.cols())
+            .and_then(|x| x.checked_add(i))
+            .and_then(|x| x.checked_mul(self.n()))
+            .expect("element view offset overflows usize");
+        assert!(
+            offset
+                .checked_add(self.n())
+                .and_then(|x| x.checked_mul(size_of::<Self::Scalar>()))
+                .expect("element view byte size overflows usize")
+                <= self.data().as_ref().len(),
+            "element view of block ({}, {}) exceeds the {}-byte buffer: this container has no element view for its word type",
+            i,
+            j,
+            self.data().as_ref().len()
+        );
         unsafe { self.as_ptr().add(offset) }
     }
 
@@ -87,19 +128,57 @@ pub trait ZnxView: ZnxInfos + DataView<D: HostDataRef> {
 pub trait ZnxViewMut: ZnxView + DataViewMut<D: HostDataMut> {
     /// Returns a mutable pointer to the underlying coefficients array.
     fn as_mut_ptr(&mut self) -> *mut Self::Scalar {
-        self.data_mut().as_mut().as_mut_ptr() as *mut Self::Scalar
+        let ptr: *mut u8 = self.data_mut().as_mut().as_mut_ptr();
+        assert!(
+            (ptr as usize).is_multiple_of(align_of::<Self::Scalar>()),
+            "buffer not aligned to align_of::<Scalar>() = {}",
+            align_of::<Self::Scalar>()
+        );
+        ptr as *mut Self::Scalar
     }
 
     /// Returns a mutable reference to the entire underlying coefficient array.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the buffer is smaller than the element view (see [`ZnxView::raw`]).
     fn raw_mut(&mut self) -> &mut [Self::Scalar] {
-        unsafe { std::slice::from_raw_parts_mut(self.as_mut_ptr(), self.n() * self.poly_count()) }
+        let span: usize = self
+            .n()
+            .checked_mul(self.poly_count())
+            .expect("element view scalar count overflows usize");
+        assert!(
+            span.checked_mul(size_of::<Self::Scalar>())
+                .expect("element view byte size overflows usize")
+                <= self.data().as_ref().len(),
+            "element view ({} scalars of {} bytes) exceeds the {}-byte buffer: this container has no element view for its word type",
+            span,
+            size_of::<Self::Scalar>(),
+            self.data().as_ref().len()
+        );
+        unsafe { std::slice::from_raw_parts_mut(self.as_mut_ptr(), span) }
     }
 
     /// Returns a mutable pointer starting at the j-th small polynomial of the i-th column.
     fn at_mut_ptr(&mut self, i: usize, j: usize) -> *mut Self::Scalar {
         assert!(i < self.cols(), "cols: {} >= self.cols(): {}", i, self.cols());
         assert!(j < self.size(), "size: {} >= self.size(): {}", j, self.size());
-        let offset: usize = self.n() * (j * self.cols() + i);
+        let offset: usize = j
+            .checked_mul(self.cols())
+            .and_then(|x| x.checked_add(i))
+            .and_then(|x| x.checked_mul(self.n()))
+            .expect("element view offset overflows usize");
+        assert!(
+            offset
+                .checked_add(self.n())
+                .and_then(|x| x.checked_mul(size_of::<Self::Scalar>()))
+                .expect("element view byte size overflows usize")
+                <= self.data().as_ref().len(),
+            "element view of block ({}, {}) exceeds the {}-byte buffer: this container has no element view for its word type",
+            i,
+            j,
+            self.data().as_ref().len()
+        );
         unsafe { self.as_mut_ptr().add(offset) }
     }
 

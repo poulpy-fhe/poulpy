@@ -236,7 +236,7 @@ pub trait VecZnxBigColWeightedSum<B: Backend> {
 }
 
 /// Computes the element-wise (Hadamard) product `res[k] = a[k] * b[k]` for all `k`
-/// and stores each product as a [`ScalarBig`](Backend::ScalarBig) value in `res`.
+/// and stores each product as a [`BigWord`](Backend::BigWord) value in `res`.
 /// Use [`VecZnxBigInnerSumBackend`] afterwards to reduce to a single scalar.
 pub trait VecZnxScalarProduct<B: Backend> {
     fn vec_znx_scalar_product(

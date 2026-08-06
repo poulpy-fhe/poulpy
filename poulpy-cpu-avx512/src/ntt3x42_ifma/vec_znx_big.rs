@@ -3,7 +3,7 @@
 //! The shared `poulpy-hal` NTT4x30 defaults rely on backend-provided `I128BigOps`
 //! and `I128NormalizeOps` hooks for vectorized i128 operations. The kernels themselves
 //! live in [`crate::vec_znx_big_avx512`] and are shared with [`NTT4x30Avx512`](crate::NTT4x30Avx512):
-//! both backends use an i128 `ScalarBig`, so the AVX-512F mask-form borrow propagation
+//! both backends use an i128 `BigWord`, so the AVX-512F mask-form borrow propagation
 //! and the fused `±= normalize(a)` middle/final steps apply unchanged.
 
 use super::NTT3x42Ifma;
@@ -17,7 +17,7 @@ use crate::vec_znx_big_avx512::{
     vi128_negate_assign_avx512, vi128_negate_avx512, vi128_sub_assign_avx512, vi128_sub_avx512, vi128_sub_negate_assign_avx512,
     vi128_sub_small_a_avx512, vi128_sub_small_assign_avx512, vi128_sub_small_b_avx512, vi128_sub_small_negate_assign_avx512,
 };
-use poulpy_cpu_ref::hal_defaults::ScalarBigHadamardProduct;
+use poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct;
 use poulpy_cpu_ref::reference::ntt4x30::{I128BigOps, I128NormalizeOps, vec_znx_big::AssignOp};
 
 impl I128BigOps for NTT3x42Ifma {
@@ -89,9 +89,9 @@ impl I128BigOps for NTT3x42Ifma {
     }
 }
 
-impl ScalarBigHadamardProduct for NTT3x42Ifma {
+impl BigWordHadamardProduct for NTT3x42Ifma {
     #[inline(always)]
-    fn scalar_big_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
+    fn big_word_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
         Self::i128_hadamard_product_i64(res, a, b)
     }
 }

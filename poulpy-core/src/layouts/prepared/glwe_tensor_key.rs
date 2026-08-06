@@ -10,7 +10,7 @@ use crate::layouts::{
 ///
 /// A newtype wrapper around [`GGLWEPrepared`] for tensor operations.
 /// Tied to a specific backend via `B: Backend`.
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq)]
 pub struct GLWETensorKeyPrepared<D: Data, B: Backend>(pub(crate) GGLWEPrepared<D, B>);
 
 impl<D: Data, B: Backend> LWEInfos for GLWETensorKeyPrepared<D, B> {

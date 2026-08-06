@@ -37,8 +37,9 @@ pub struct NTT3x42IfmaHandle {
 }
 
 impl Backend for NTT3x42Ifma {
-    type ScalarPrep = Q126Scalar;
-    type ScalarBig = i128;
+    type DftWord = Q126Scalar;
+    type ZnxWord = i64;
+    type BigWord = i128;
     type OwnedBuf = Vec<u8>;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
@@ -133,7 +134,10 @@ impl Backend for NTT3x42Ifma {
         // Packed prime-major layout: the three 42-bit CRT residues per
         // coefficient are packed into 2 × u64 (126 of 128 bits), unpacked
         // in registers by the apply kernel.
-        n * rows * cols_in * cols_out * size * 2 * size_of::<u64>()
+        [n, rows, cols_in, cols_out, size, 2, size_of::<u64>()]
+            .into_iter()
+            .try_fold(1usize, usize::checked_mul)
+            .expect("IFMA VmpPMat byte size overflows usize")
     }
 
     unsafe fn destroy(handle: NonNull<Self::Handle>) {

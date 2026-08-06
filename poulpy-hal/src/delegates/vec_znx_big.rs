@@ -8,8 +8,8 @@ use crate::{
         VecZnxBigSubSmallAssign, VecZnxBigSubSmallBBackend, VecZnxBigSubSmallNegateAssign, VecZnxScalarProduct,
     },
     layouts::{
-        Backend, Module, NoiseInfos, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig,
-        VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigOwned,
+        Backend, Module, NoiseInfos, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
+        VecZnxBigBackendRef, VecZnxBigOwned,
     },
     oep::HalVecZnxBigImpl,
     source::Source,
@@ -19,7 +19,7 @@ macro_rules! impl_vec_znx_big_delegate {
     ($trait:ty, $($body:item)+) => {
         impl<B> $trait for Module<B>
         where
-            B: Backend + HalVecZnxBigImpl<B>,
+            B: Backend<ZnxWord = i64> + HalVecZnxBigImpl<B>,
         {
             $($body)+
         }
@@ -45,7 +45,7 @@ impl<B: Backend> VecZnxBigAlloc<B> for Module<B> {
     }
 
     fn vec_znx_big_alloc_n(&self, n: usize, cols: usize, size: usize) -> VecZnxBigOwned<B> {
-        VecZnxBigOwned::alloc(n, cols, size)
+        VecZnxBigOwned::<B>::alloc(n, cols, size)
     }
 }
 
@@ -55,7 +55,7 @@ impl<B: Backend> VecZnxBigFromBytes<B> for Module<B> {
     }
 
     fn vec_znx_big_from_bytes_n(&self, n: usize, cols: usize, size: usize, bytes: Vec<u8>) -> VecZnxBigOwned<B> {
-        VecZnxBig::<B::OwnedBuf, B>::from_bytes(n, cols, size, bytes)
+        VecZnxBigOwned::<B>::from_bytes(n, cols, size, bytes)
     }
 }
 

@@ -91,7 +91,7 @@ impl<BRA: BlindRotationAlgo, BE: Backend> BlindRotationKeyPrepared<BE::OwnedBuf,
 /// `BlindRotationKeyPrepared<&[u8], BRA, BE>` is `Sync` (shared references
 /// can be passed to multiple threads simultaneously) because all fields are
 /// immutable on the shared path.
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq)]
 pub struct BlindRotationKeyPrepared<D: Data, BRT: BlindRotationAlgo, B: Backend> {
     pub(crate) data: Vec<GGSWPrepared<D, B>>,
     pub(crate) dist: Distribution,

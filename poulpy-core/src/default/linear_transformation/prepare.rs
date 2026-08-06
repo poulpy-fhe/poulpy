@@ -10,9 +10,10 @@
 //! Backends forward to them from their [`crate::oep::LinearTransformationDefault`]
 //! impl.
 
+use poulpy_hal::layouts::CnvPVecRToBackendMut;
 use poulpy_hal::{
     api::{CnvPVecAlloc, Convolution},
-    layouts::{Backend, CnvPVecRToBackendMut, ScratchArena},
+    layouts::{Backend, ScratchArena},
 };
 
 use crate::{

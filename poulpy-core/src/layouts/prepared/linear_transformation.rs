@@ -8,9 +8,10 @@
 //! the unprepared transform and BSGS schedule types live in
 //! [`crate::layouts::linear_transformation`](crate::layouts).
 
+use poulpy_hal::layouts::CnvPVecLOwned;
 use std::collections::BTreeMap;
 
-use poulpy_hal::layouts::{Backend, CnvPVecL, CnvPVecR, Data};
+use poulpy_hal::layouts::{Backend, CnvPVecR, Data};
 
 use crate::layouts::{Base2K, Degree, GLWEInfos, LWEInfos, LinearTransformation, Rank, TorusPrecision};
 
@@ -41,7 +42,7 @@ pub type LinearTransformationPrepared<BE> = LinearTransformation<PreparedDiagona
 /// (resident cache), but it may also be scratch-borrowed.
 pub struct PreparedDiagonal<D: Data, BE: Backend> {
     /// Prepared convolution-domain diagonal (the BSGS right operand).
-    pub(crate) cnv: CnvPVecR<D, BE>,
+    pub(crate) cnv: CnvPVecR<D, BE::DftWord, BE>,
     /// Limb base of the diagonal it was encoded from.
     pub(crate) base2k: Base2K,
     /// Storage precision of the diagonal it was encoded from.
@@ -55,12 +56,12 @@ pub struct PreparedDiagonal<D: Data, BE: Backend> {
 
 impl<D: Data, BE: Backend> PreparedDiagonal<D, BE> {
     /// The prepared convolution-domain operand.
-    pub fn cnv(&self) -> &CnvPVecR<D, BE> {
+    pub fn cnv(&self) -> &CnvPVecR<D, BE::DftWord, BE> {
         &self.cnv
     }
 
     /// Mutable access to the prepared convolution-domain operand (populate step).
-    pub fn cnv_mut(&mut self) -> &mut CnvPVecR<D, BE> {
+    pub fn cnv_mut(&mut self) -> &mut CnvPVecR<D, BE::DftWord, BE> {
         &mut self.cnv
     }
 
@@ -105,7 +106,7 @@ impl<D: Data, BE: Backend> GLWEInfos for PreparedDiagonal<D, BE> {
 /// The values are populated by `glwe_prepare_linear_transformation_baby_steps`; the
 /// cache is sized via [`LinearTransformationBabySteps::alloc`].
 pub struct LinearTransformationBabySteps<BE: Backend> {
-    pub(crate) values: BTreeMap<i64, CnvPVecL<BE::OwnedBuf, BE>>,
+    pub(crate) values: BTreeMap<i64, CnvPVecLOwned<BE>>,
 }
 
 impl<BE: Backend> LinearTransformationBabySteps<BE> {
@@ -140,7 +141,7 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
     }
 
     /// Returns the prepared left operand `rot(v, k)` for the baby rotation `k`.
-    pub fn baby_step(&self, rot: i64) -> &CnvPVecL<BE::OwnedBuf, BE> {
+    pub fn baby_step(&self, rot: i64) -> &CnvPVecLOwned<BE> {
         self.values
             .get(&rot)
             .unwrap_or_else(|| panic!("missing prepared baby-step rotation {rot}"))

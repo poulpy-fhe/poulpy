@@ -39,16 +39,13 @@ use core::arch::x86_64::{
 
 use super::kernels::{cond_sub_2q_si256, cond_sub_2q_si512, harvey_modmul_si256, harvey_modmul_si512};
 
-use crate::ntt3x42_ifma::{
-    bbc_meta::Bbc126IfmaMeta,
-    primes::{PrimeSetNtt3x42Ifma, Primes42},
-};
+use crate::ntt3x42_ifma::{bbc_meta::Bbc126IfmaMeta, primes::Primes42};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants for SIMD reduction
 // ─────────────────────────────────────────────────────────────────────────────
 
-const Q_IFMA: [u64; 3] = <Primes42 as PrimeSetNtt3x42Ifma>::Q;
+const Q_IFMA: [u64; 3] = <Primes42 as poulpy_hal::layouts::PrimeSet>::Q;
 
 /// Q vector: `[Q[0], Q[1], Q[2], 0]`.
 const Q_VEC: [u64; 4] = [Q_IFMA[0], Q_IFMA[1], Q_IFMA[2], 0];
