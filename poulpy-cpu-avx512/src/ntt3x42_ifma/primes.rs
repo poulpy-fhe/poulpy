@@ -32,7 +32,6 @@ pub struct Primes42;
 
 impl PrimeSet for Primes42 {
     type PrimeElem = u64;
-    const LANES: usize = 3;
     type Lanes<T: LaneElem> = [T; 3];
     const Q: [u64; 3] = [
         4_398_044_938_241, // 33554420 * 2^17 + 1

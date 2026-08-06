@@ -1,6 +1,6 @@
 use std::{marker::PhantomData, ptr::NonNull};
 
-use crate::layouts::{Data, Location, MatZnx, ScalarZnx, VecZnx};
+use crate::layouts::{Data, Location, MatZnx, ScalarZnx, VecZnx, checked_product};
 use crate::{
     GALOISGENERATOR,
     api::{ModuleLogN, ModuleN},
@@ -142,27 +142,30 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
 
     /// Byte size of a [`crate::layouts::VecZnxDft`] buffer.
     fn bytes_of_vec_znx_dft(n: usize, cols: usize, size: usize) -> usize {
-        n * cols * size * Self::size_of_dft_word()
+        checked_product(&[n, cols, size, Self::size_of_dft_word()], "VecZnxDft byte size")
     }
     /// Byte size of a [`crate::layouts::VecZnxBig`] buffer.
     fn bytes_of_vec_znx_big(n: usize, cols: usize, size: usize) -> usize {
-        n * cols * size * Self::size_of_big_word()
+        checked_product(&[n, cols, size, Self::size_of_big_word()], "VecZnxBig byte size")
     }
     /// Byte size of a [`crate::layouts::SvpPPol`] buffer.
     fn bytes_of_svp_ppol(n: usize, cols: usize) -> usize {
-        n * cols * Self::size_of_dft_word()
+        checked_product(&[n, cols, Self::size_of_dft_word()], "SvpPPol byte size")
     }
     /// Byte size of a [`crate::layouts::VmpPMat`] buffer.
     fn bytes_of_vmp_pmat(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
-        n * rows * cols_in * cols_out * size * Self::size_of_dft_word()
+        checked_product(
+            &[n, rows, cols_in, cols_out, size, Self::size_of_dft_word()],
+            "VmpPMat byte size",
+        )
     }
     /// Byte size of a [`crate::layouts::CnvPVecL`] buffer.
     fn bytes_of_cnv_pvec_left(n: usize, cols: usize, size: usize) -> usize {
-        n * cols * size * Self::size_of_dft_word()
+        checked_product(&[n, cols, size, Self::size_of_dft_word()], "CnvPVecL byte size")
     }
     /// Byte size of a [`crate::layouts::CnvPVecR`] buffer.
     fn bytes_of_cnv_pvec_right(n: usize, cols: usize, size: usize) -> usize {
-        n * cols * size * Self::size_of_dft_word()
+        checked_product(&[n, cols, size, Self::size_of_dft_word()], "CnvPVecR byte size")
     }
     /// Deallocates a backend handle.
     ///

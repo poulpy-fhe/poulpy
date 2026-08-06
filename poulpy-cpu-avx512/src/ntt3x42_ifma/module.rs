@@ -134,7 +134,10 @@ impl Backend for NTT3x42Ifma {
         // Packed prime-major layout: the three 42-bit CRT residues per
         // coefficient are packed into 2 × u64 (126 of 128 bits), unpacked
         // in registers by the apply kernel.
-        n * rows * cols_in * cols_out * size * 2 * size_of::<u64>()
+        [n, rows, cols_in, cols_out, size, 2, size_of::<u64>()]
+            .into_iter()
+            .try_fold(1usize, usize::checked_mul)
+            .expect("IFMA VmpPMat byte size overflows usize")
     }
 
     unsafe fn destroy(handle: NonNull<Self::Handle>) {

@@ -31,7 +31,7 @@ pub trait ZnxInfos {
 
     /// Returns the total number of small polynomials.
     fn poly_count(&self) -> usize {
-        self.rows() * self.cols() * self.size()
+        crate::layouts::checked_product(&[self.rows(), self.cols(), self.size()], "polynomial count")
     }
 }
 

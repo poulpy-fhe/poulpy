@@ -42,7 +42,6 @@ pub struct Primes29;
 
 impl PrimeSet for Primes29 {
     type PrimeElem = u32;
-    const LANES: usize = 4;
     type Lanes<T: LaneElem> = [T; 4];
     const Q: [u32; 4] = [
         (1u32 << 29) - 2 * (1u32 << 17) + 1,  // 536_608_769
@@ -69,7 +68,6 @@ pub struct Primes30;
 
 impl PrimeSet for Primes30 {
     type PrimeElem = u32;
-    const LANES: usize = 4;
     type Lanes<T: LaneElem> = [T; 4];
     const Q: [u32; 4] = [
         (1u32 << 30) - 2 * (1u32 << 17) + 1,  // 1_073_479_681
@@ -93,7 +91,6 @@ pub struct Primes31;
 
 impl PrimeSet for Primes31 {
     type PrimeElem = u32;
-    const LANES: usize = 4;
     type Lanes<T: LaneElem> = [T; 4];
     const Q: [u32; 4] = [
         (1u32 << 31) - (1u32 << 17) + 1,      // 2_147_352_577

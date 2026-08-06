@@ -45,14 +45,22 @@ where
     BE::BufMut<'a>: HostBufMut<'a>,
     T: Copy,
 {
-    debug_assert!(
+    assert!(
         BE::SCRATCH_ALIGN.is_multiple_of(std::mem::align_of::<T>()),
         "B::SCRATCH_ALIGN ({}) must be a multiple of align_of::<T>() ({})",
         BE::SCRATCH_ALIGN,
         std::mem::align_of::<T>()
     );
-    let (buf, arena) = arena.take_region(len * std::mem::size_of::<T>());
+    let byte_len = len
+        .checked_mul(std::mem::size_of::<T>())
+        .expect("typed scratch byte size overflows usize");
+    let (buf, arena) = arena.take_region(byte_len);
     let bytes: &'a mut [u8] = buf.into_bytes();
+    assert!(
+        (bytes.as_mut_ptr() as usize).is_multiple_of(std::mem::align_of::<T>()),
+        "scratch region is not aligned to align_of::<T>() = {}",
+        std::mem::align_of::<T>()
+    );
     let slice = unsafe { std::slice::from_raw_parts_mut(bytes.as_mut_ptr() as *mut T, len) };
     (slice, arena)
 }

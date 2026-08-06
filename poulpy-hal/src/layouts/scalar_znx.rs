@@ -210,7 +210,7 @@ impl ScalarZnx<Vec<u8>> {
     /// Returns the number of bytes required to store a `ScalarZnx` with
     /// ring degree `n` and `cols` columns: `n * cols * 8`.
     pub fn bytes_of(n: usize, cols: usize) -> usize {
-        n * cols * size_of::<i64>()
+        crate::layouts::checked_product(&[n, cols, size_of::<i64>()], "ScalarZnx byte size")
     }
 
     /// Allocates a zero-initialized `ScalarZnx` aligned to [`DEFAULTALIGN`](crate::DEFAULTALIGN).
@@ -430,7 +430,8 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for ScalarZnx<D, W> {
         let new_cols: usize = reader.read_u64::<LittleEndian>()? as usize;
         let len: usize = reader.read_u64::<LittleEndian>()? as usize;
 
-        let expected_len: usize = new_n * new_cols * size_of::<W>();
+        let expected_len: usize =
+            crate::layouts::checked_product(&[new_n, new_cols, size_of::<W>()], "ScalarZnx serialized byte size");
         if expected_len != len {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -459,7 +460,8 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for ScalarZnx<D, W> {
     fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         writer.write_u64::<LittleEndian>(self.n() as u64)?;
         writer.write_u64::<LittleEndian>(self.cols() as u64)?;
-        let coeff_bytes = self.n() * self.cols() * size_of::<W>();
+        let coeff_bytes =
+            crate::layouts::checked_product(&[self.n(), self.cols(), size_of::<W>()], "ScalarZnx logical byte size");
         let buf: &[u8] = self.data.as_ref();
         if buf.len() < coeff_bytes {
             return Err(std::io::Error::new(

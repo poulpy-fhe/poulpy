@@ -48,11 +48,11 @@ impl LaneElem for u64 {
     }
 }
 
-/// Fixed-size lane container (`[T; LANES]`) abstracted so that a
+/// Fixed-size lane container (`[T; N]`) abstracted so that a
 /// [`PrimeSet`] can pick its exact lane count.
 ///
 /// Enabled lane counts: 1-8, 12, 16 (see `impl_lane_array!` below). A new
-/// [`PrimeSet`] with a different `LANES` needs its count added to that
+/// [`PrimeSet`] with a different lane count needs its count added to that
 /// invocation — bytemuck has no blanket `Pod for [T; N]`, so each size is a
 /// separate impl.
 #[diagnostic::on_unimplemented(
@@ -94,13 +94,13 @@ impl_lane_array!(1, 2, 3, 4, 5, 6, 7, 8, 12, 16);
 /// Selects a set of NTT-friendly primes and their associated constants
 /// for a CRT (residue number system) representation.
 ///
-/// A prime set represents integers modulo `Q = Q[0]·...·Q[LANES-1]`, a
-/// product of `LANES` primes each of approximately the same bit-size.
+/// A prime set represents integers modulo `Q = Q[0]·...·Q[N-1]`, a
+/// product of `N` primes each of approximately the same bit-size.
 /// All primes support a primitive `2^17`-th root of unity, so NTT sizes
 /// up to `2^16` are supported.
 ///
 /// The lane count and the storage element of the prime constants are part
-/// of the prime set (`Lanes<T> = [T; LANES]`, `PrimeElem` = `u32` for the
+/// of the prime set (`Lanes<T> = [T; N]`, `PrimeElem` = `u32` for the
 /// ~30-bit family, `u64` for the ~42-bit family). CRT *reconstruction*
 /// constants are intentionally not part of this trait — their semantics
 /// differ per family (full-CRT vs Garner) and live on extension traits in
@@ -111,16 +111,13 @@ pub trait PrimeSet: Sized + Sync + Send + 'static {
     /// Storage element of the prime constants.
     type PrimeElem: LaneElem;
 
-    /// Number of CRT lanes (primes).
-    const LANES: usize;
-
-    /// Lane container shape: `[T; LANES]`.
+    /// Lane container shape: `[T; N]`.
     ///
     /// The count must be one enabled by `impl_lane_array!` (1-8, 12, 16);
     /// see [`LaneArray`] for extending the list.
     type Lanes<T: LaneElem>: LaneArray<T>;
 
-    /// The NTT-friendly primes `[Q0, ..., Q_{LANES-1}]`.
+    /// The NTT-friendly primes `[Q0, ..., Q_{N-1}]`.
     const Q: Self::Lanes<Self::PrimeElem>;
 
     /// `OMEGA[k]` is a primitive `2^17`-th root of unity modulo `Q[k]`.
@@ -138,7 +135,7 @@ pub trait PrimeSet: Sized + Sync + Send + 'static {
 }
 
 /// One NTT-domain coefficient of a CRT (residue number system) backend:
-/// `P::LANES` packed lanes of `T`, one residue per prime of `P`.
+/// `P::Lanes<T>::LEN` packed lanes of `T`, one residue per prime of `P`.
 ///
 /// Byte-layout contract (see [`DftWord`]): a `VecZnxDft` limb stores `n`
 /// consecutive `CrtWord<P, T>` blocks in the NTT ordering for the prime set
@@ -196,12 +193,12 @@ impl<P: PrimeSet, T: LaneElem> fmt::Display for CrtWord<P, T> {
 }
 
 // SAFETY: CrtWord is #[repr(transparent)] over `P::Lanes<T>`, which is
-// `[T; LANES]` with `T: Pod` (LaneArray requires Pod). All bit patterns
+// `[T; N]` with `T: Pod` (LaneArray requires Pod). All bit patterns
 // are valid; no padding bytes, no uninit.
 unsafe impl<P: PrimeSet, T: LaneElem> Zeroable for CrtWord<P, T> {}
 unsafe impl<P: PrimeSet, T: LaneElem> Pod for CrtWord<P, T> {}
 
-/// Byte-layout contract: `n` consecutive `P::LANES`-lane CRT blocks per
+/// Byte-layout contract: `n` consecutive `P::Lanes<T>::LEN`-lane CRT blocks per
 /// limb, in the NTT ordering of `P`. Cross-backend interchange also
 /// requires the relevant layout-compatibility marker.
 impl<P: PrimeSet, T: LaneElem> DftWord for CrtWord<P, T> {}

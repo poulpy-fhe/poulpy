@@ -45,6 +45,7 @@ pub struct VecZnxShape {
 
 impl VecZnxShape {
     pub const fn new(n: usize, cols: usize, size: usize, max_size: usize) -> Self {
+        assert!(size <= max_size);
         Self { n, cols, size, max_size }
     }
 
@@ -251,7 +252,7 @@ impl<D: HostDataMut, W: ZnxWord> ZnxZero for VecZnx<D, W> {
 impl VecZnx<Vec<u8>> {
     /// Returns the number of bytes required: `n * cols * size * 8`.
     pub fn bytes_of(n: usize, cols: usize, size: usize) -> usize {
-        n * cols * size * size_of::<i64>()
+        crate::layouts::checked_product(&[n, cols, size, size_of::<i64>()], "VecZnx byte size")
     }
 
     /// Allocates a zero-initialized `VecZnx` aligned to [`DEFAULTALIGN`](crate::DEFAULTALIGN).
@@ -380,13 +381,18 @@ pub trait VecZnxAsScalarBackendRef<B: Backend> {
 
 impl<B: Backend> VecZnxAsScalarBackendRef<B> for VecZnx<B::OwnedBuf> {
     fn as_scalar_znx_backend_ref(&self, col: usize, limb: usize) -> ScalarZnx<B::BufRef<'_>> {
-        #[cfg(debug_assertions)]
-        {
-            assert!(limb < self.size(), "size: {limb} >= {}", self.size());
-            assert!(col < self.cols(), "cols: {col} >= {}", self.cols());
-        }
-        let start: usize = (limb * self.cols() + col) * self.n() * size_of::<i64>();
-        let len: usize = self.n() * size_of::<i64>();
+        assert!(limb < self.size(), "size: {limb} >= {}", self.size());
+        assert!(col < self.cols(), "cols: {col} >= {}", self.cols());
+        let start: usize = limb
+            .checked_mul(self.cols())
+            .and_then(|x| x.checked_add(col))
+            .and_then(|x| x.checked_mul(self.n()))
+            .and_then(|x| x.checked_mul(size_of::<i64>()))
+            .expect("VecZnx scalar backend view offset overflows usize");
+        let len: usize = self
+            .n()
+            .checked_mul(size_of::<i64>())
+            .expect("VecZnx scalar backend view length overflows usize");
         ScalarZnx::from_data(B::region(&self.data, start, len), self.n(), 1)
     }
 }
@@ -398,14 +404,18 @@ pub trait VecZnxAsScalarBackendMut<B: Backend> {
 
 impl<B: Backend> VecZnxAsScalarBackendMut<B> for VecZnx<B::OwnedBuf> {
     fn as_scalar_znx_backend_mut(&mut self, col: usize, limb: usize) -> ScalarZnx<B::BufMut<'_>> {
-        #[cfg(debug_assertions)]
-        {
-            assert!(limb < self.size(), "size: {limb} >= {}", self.size());
-            assert!(col < self.cols(), "cols: {col} >= {}", self.cols());
-        }
         let n = self.n();
-        let start: usize = (limb * self.cols() + col) * n * size_of::<i64>();
-        let len: usize = n * size_of::<i64>();
+        assert!(limb < self.size(), "size: {limb} >= {}", self.size());
+        assert!(col < self.cols(), "cols: {col} >= {}", self.cols());
+        let start: usize = limb
+            .checked_mul(self.cols())
+            .and_then(|x| x.checked_add(col))
+            .and_then(|x| x.checked_mul(n))
+            .and_then(|x| x.checked_mul(size_of::<i64>()))
+            .expect("VecZnx scalar backend view offset overflows usize");
+        let len: usize = n
+            .checked_mul(size_of::<i64>())
+            .expect("VecZnx scalar backend view length overflows usize");
         ScalarZnx::from_data(B::region_mut(&mut self.data, start, len), n, 1)
     }
 }
@@ -554,7 +564,8 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for VecZnx<D, W> {
         let len: usize = reader.read_u64::<LittleEndian>()? as usize;
 
         // Validate metadata consistency: n * cols * size * sizeof(W) must match data length.
-        let expected_len: usize = new_n * new_cols * new_size * size_of::<W>();
+        let expected_len: usize =
+            crate::layouts::checked_product(&[new_n, new_cols, new_size, size_of::<W>()], "VecZnx serialized byte size");
         if expected_len != len {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -586,7 +597,10 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for VecZnx<D, W> {
         writer.write_u64::<LittleEndian>(self.cols() as u64)?;
         writer.write_u64::<LittleEndian>(self.size() as u64)?;
         writer.write_u64::<LittleEndian>(self.max_size() as u64)?;
-        let coeff_bytes: usize = self.n() * self.cols() * self.size() * size_of::<W>();
+        let coeff_bytes: usize = crate::layouts::checked_product(
+            &[self.n(), self.cols(), self.size(), size_of::<W>()],
+            "VecZnx logical byte size",
+        );
         let buf: &[u8] = self.data.as_ref();
         if buf.len() < coeff_bytes {
             return Err(std::io::Error::new(

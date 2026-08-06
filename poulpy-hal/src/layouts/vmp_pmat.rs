@@ -126,7 +126,10 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for VmpPMat<D, W, B>
     }
 
     fn poly_count(&self) -> usize {
-        self.rows() * self.cols_in() * self.size() * self.cols_out()
+        crate::layouts::checked_product(
+            &[self.rows(), self.cols_in(), self.size(), self.cols_out()],
+            "VmpPMat polynomial count",
+        )
     }
 }
 

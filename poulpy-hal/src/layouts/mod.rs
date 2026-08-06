@@ -75,6 +75,17 @@ pub trait HostDataRef = Data + AsRef<[u8]> + Sync;
 /// support in-place modification and can be moved between threads.
 pub trait HostDataMut = HostDataRef + AsMut<[u8]> + Send;
 
+#[inline]
+pub(crate) fn checked_product(factors: &[usize], context: &str) -> usize {
+    factors
+        .iter()
+        .copied()
+        .try_fold(1usize, usize::checked_mul)
+        .unwrap_or_else(|| {
+            panic!("{context} overflows usize");
+        })
+}
+
 mod private {
     pub trait Sealed {}
 }
