@@ -440,6 +440,37 @@ macro_rules! impl_backend_from {
             unsafe fn destroy(handle: std::ptr::NonNull<Self::Handle>) {
                 <$from as poulpy_hal::layouts::Backend>::destroy(handle)
             }
+
+            // Sizing must be forwarded explicitly: these are defaulted trait
+            // methods, so without forwarding the delegate would silently get
+            // the word-derived defaults instead of the source backend's
+            // overrides (e.g. the packed IFMA `bytes_of_vmp_pmat`), breaking
+            // the layout compatibility asserted by the markers below.
+            const SCRATCH_ALIGN: usize = <$from as poulpy_hal::layouts::Backend>::SCRATCH_ALIGN;
+
+            fn bytes_of_vec_znx_dft(n: usize, cols: usize, size: usize) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::bytes_of_vec_znx_dft(n, cols, size)
+            }
+
+            fn bytes_of_vec_znx_big(n: usize, cols: usize, size: usize) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::bytes_of_vec_znx_big(n, cols, size)
+            }
+
+            fn bytes_of_svp_ppol(n: usize, cols: usize) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::bytes_of_svp_ppol(n, cols)
+            }
+
+            fn bytes_of_vmp_pmat(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size)
+            }
+
+            fn bytes_of_cnv_pvec_left(n: usize, cols: usize, size: usize) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::bytes_of_cnv_pvec_left(n, cols, size)
+            }
+
+            fn bytes_of_cnv_pvec_right(n: usize, cols: usize, size: usize) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::bytes_of_cnv_pvec_right(n, cols, size)
+            }
         }
 
         // A delegating backend forwards all storage behavior verbatim, so every
