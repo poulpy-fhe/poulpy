@@ -1,4 +1,5 @@
 pub(crate) mod add;
+pub(crate) mod approximation;
 pub(crate) mod bootstrapping;
 pub(crate) mod composite;
 pub(crate) mod conjugate;

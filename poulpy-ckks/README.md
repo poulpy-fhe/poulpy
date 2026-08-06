@@ -16,6 +16,8 @@ The crate exposes:
 - slot encoding/decoding helpers
 - secret-key encryption and decryption
 - leveled arithmetic implemented through traits on `Module<BE>`
+- reusable minimax fitting, degree selection, composite sign generation, and
+  interval-mapped BSGS approximation plans
 
 ## Toolchain
 
@@ -238,6 +240,13 @@ or an FFT table.
 
 ## End-to-End Example: Chebyshev sine approximation
 
+For applications that choose a polynomial from an accuracy target instead of
+fixing its degree, `poulpy_ckks::approximation` provides Remez minimax fitting,
+precision/depth-based degree selection, composite sign coefficients, and
+`PolynomialApproximation`. The latter owns both the prepared BSGS polynomial
+and its interval map; `CKKSApproximationOps::ckks_eval_approximation` applies
+that map and evaluates the polynomial in one reusable operation.
+
 The crate includes a runnable example at
 [`poulpy-cpu-ref/examples/ckks_poly2.rs`](../poulpy-cpu-ref/examples/ckks_poly2.rs)
 that approximates `sin(x)` on `[-1, 1]` with a degree-31 Chebyshev interpolation,
@@ -302,6 +311,7 @@ Leveled operations are invoked through traits implemented on
 | `CKKSConjugateOps` | homomorphic conjugation |
 | `CKKSPow2Ops` | multiplication and division by powers of two |
 | `CKKSPlaintextVecOps` | plaintext ZNX operations |
+| `CKKSApproximationOps` | interval mapping and evaluation of a prepared `PolynomialApproximation` |
 | `CKKSPolynomialEvaluationOps` | Baby-Step Giant-Step polynomial evaluation (monomial and Chebyshev bases) |
 | `CKKSLinearTransformationOps` | homomorphic matrix-vector product over the slots (BSGS diagonal method) |
 | `CKKSDFTOps` / `CKKSDFTMatrixOps` | homomorphic DFT (`CoeffsToSlots` / `SlotsToCoeffs`) and its compiled plaintext matrices |

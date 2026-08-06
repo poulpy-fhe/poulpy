@@ -1,4 +1,5 @@
 mod add;
+mod approximation;
 mod bootstrapping;
 mod composite;
 mod conjugate;
@@ -20,6 +21,7 @@ mod sub;
 mod tmp_bytes;
 
 pub use add::CKKSAddOps;
+pub use approximation::CKKSApproximationOps;
 pub use bootstrapping::CKKSBootstrappingOps;
 pub use composite::{CKKSAddManyOps, CKKSAffineOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulSubOps};
 pub use conjugate::CKKSConjugateOps;

@@ -128,6 +128,7 @@ macro_rules! impl_ckks_infos {
 }
 
 mod alloc;
+mod approximation;
 pub mod bootstrapping;
 pub mod bootstrapping_keys;
 pub mod ciphertext;
@@ -141,6 +142,7 @@ pub mod plaintext;
 pub(crate) mod validation;
 
 pub use alloc::CKKSModuleAlloc;
+pub use approximation::PolynomialApproximation;
 pub use bootstrapping::{
     BootstrappingContext, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, EvalRoundPlus,
     SparseSecretEncapsulation,
