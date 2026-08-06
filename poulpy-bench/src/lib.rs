@@ -214,25 +214,25 @@ pub fn mat_znx_backend_ref<'a, BE: Backend>(src: &'a MatZnx<BE::OwnedBuf>) -> Ma
 pub fn vec_znx_dft_backend_ref<'a, BE: Backend>(
     src: &'a VecZnxDft<BE::OwnedBuf, BE::DftWord, BE>,
 ) -> VecZnxDftBackendRef<'a, BE> {
-    <VecZnxDft<BE::OwnedBuf, BE::DftWord, BE> as VecZnxDftToBackendRef<BE>>::to_backend_ref(src)
+    src.to_backend_ref()
 }
 
 pub fn vec_znx_dft_backend_mut<'a, BE: Backend>(
     src: &'a mut VecZnxDft<BE::OwnedBuf, BE::DftWord, BE>,
 ) -> VecZnxDftBackendMut<'a, BE> {
-    <VecZnxDft<BE::OwnedBuf, BE::DftWord, BE> as VecZnxDftToBackendMut<BE>>::to_backend_mut(src)
+    src.to_backend_mut()
 }
 
 pub fn vec_znx_big_backend_ref<'a, BE: Backend>(
     src: &'a VecZnxBig<BE::OwnedBuf, BE::BigWord, BE>,
 ) -> VecZnxBigBackendRef<'a, BE> {
-    <VecZnxBig<BE::OwnedBuf, BE::BigWord, BE> as VecZnxBigToBackendRef<BE>>::to_backend_ref(src)
+    src.to_backend_ref()
 }
 
 pub fn vec_znx_big_backend_mut<'a, BE: Backend>(
     src: &'a mut VecZnxBig<BE::OwnedBuf, BE::BigWord, BE>,
 ) -> VecZnxBigBackendMut<'a, BE> {
-    <VecZnxBig<BE::OwnedBuf, BE::BigWord, BE> as VecZnxBigToBackendMut<BE>>::to_backend_mut(src)
+    src.to_backend_mut()
 }
 
 #[cfg(any(feature = "core-bench", feature = "bin-fhe-bench", feature = "ckks-bench"))]

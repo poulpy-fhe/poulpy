@@ -218,7 +218,7 @@ where
         let scratch = scratch.borrow();
         let (mut a_prepared, _scratch_1) = scratch.take_glwe_secret_prepared_scratch(self, rank.into());
         {
-            let mut a_prepared_data = SvpPPolReborrowBackendMut::<BE>::reborrow_backend_mut(&mut a_prepared.data);
+            let mut a_prepared_data = a_prepared.data.reborrow_backend_mut();
             for i in 0..rank {
                 self.svp_prepare(&mut a_prepared_data, i, a.data(), i);
             }
@@ -235,7 +235,7 @@ where
         }
 
         let mut a_ij_dft = VecZnxDftOwned::<BE>::alloc(self.n(), 1, 1);
-        let a_prepared_backend_ref = SvpPPolReborrowBackendRef::<BE>::reborrow_backend_ref(&a_prepared.data);
+        let a_prepared_backend_ref = a_prepared.data.reborrow_backend_ref();
         let mut a_ij_big_backend = self.vec_znx_big_alloc(1, 1);
         let mut norm_scratch = ScratchOwned {
             data: BE::alloc_bytes(self.vec_znx_big_normalize_tmp_bytes()),
