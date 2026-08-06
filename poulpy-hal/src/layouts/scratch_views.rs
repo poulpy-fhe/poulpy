@@ -80,25 +80,25 @@ view_wrapper!(VmpPMatViewMut, VmpPMatBackendMut<'a, B>);
 
 impl<'a, B: Backend + 'a> CnvPVecLToBackendRef<B> for CnvPVecLViewMut<'a, B> {
     fn to_backend_ref(&self) -> CnvPVecLBackendRef<'_, B> {
-        CnvPVecLReborrowBackendRef::<B>::reborrow_backend_ref(&self.inner)
+        self.inner.reborrow_backend_ref()
     }
 }
 
 impl<'a, B: Backend + 'a> CnvPVecLToBackendMut<B> for CnvPVecLViewMut<'a, B> {
     fn to_backend_mut(&mut self) -> CnvPVecLBackendMut<'_, B> {
-        CnvPVecLReborrowBackendMut::<B>::reborrow_backend_mut(&mut self.inner)
+        self.inner.reborrow_backend_mut()
     }
 }
 
 impl<'a, B: Backend + 'a> CnvPVecRToBackendRef<B> for CnvPVecRViewMut<'a, B> {
     fn to_backend_ref(&self) -> CnvPVecRBackendRef<'_, B> {
-        CnvPVecRReborrowBackendRef::<B>::reborrow_backend_ref(&self.inner)
+        self.inner.reborrow_backend_ref()
     }
 }
 
 impl<'a, B: Backend + 'a> CnvPVecRToBackendMut<B> for CnvPVecRViewMut<'a, B> {
     fn to_backend_mut(&mut self) -> CnvPVecRBackendMut<'_, B> {
-        CnvPVecRReborrowBackendMut::<B>::reborrow_backend_mut(&mut self.inner)
+        self.inner.reborrow_backend_mut()
     }
 }
 
@@ -130,13 +130,13 @@ impl<'a, B: Backend + 'a> ScalarZnxToBackendMut<B> for ScalarZnxViewMut<'a, B> {
 
 impl<'a, B: Backend + 'a> SvpPPolToBackendRef<B> for SvpPPolViewMut<'a, B> {
     fn to_backend_ref(&self) -> SvpPPolBackendRef<'_, B> {
-        SvpPPolReborrowBackendRef::<B>::reborrow_backend_ref(&self.inner)
+        self.inner.reborrow_backend_ref()
     }
 }
 
 impl<'a, B: Backend + 'a> SvpPPolToBackendMut<B> for SvpPPolViewMut<'a, B> {
     fn to_backend_mut(&mut self) -> SvpPPolBackendMut<'_, B> {
-        SvpPPolReborrowBackendMut::<B>::reborrow_backend_mut(&mut self.inner)
+        self.inner.reborrow_backend_mut()
     }
 }
 
@@ -154,36 +154,36 @@ impl<'a, B: Backend + 'a> VecZnxToBackendMut<B> for VecZnxViewMut<'a, B> {
 
 impl<'a, B: Backend + 'a> VecZnxBigToBackendRef<B> for VecZnxBigViewMut<'a, B> {
     fn to_backend_ref(&self) -> VecZnxBigBackendRef<'_, B> {
-        VecZnxBigReborrowBackendRef::<B>::reborrow_backend_ref(&self.inner)
+        self.inner.reborrow_backend_ref()
     }
 }
 
 impl<'a, B: Backend + 'a> VecZnxBigToBackendMut<B> for VecZnxBigViewMut<'a, B> {
     fn to_backend_mut(&mut self) -> VecZnxBigBackendMut<'_, B> {
-        VecZnxBigReborrowBackendMut::<B>::reborrow_backend_mut(&mut self.inner)
+        self.inner.reborrow_backend_mut()
     }
 }
 
 impl<'a, B: Backend + 'a> VecZnxDftToBackendRef<B> for VecZnxDftViewMut<'a, B> {
     fn to_backend_ref(&self) -> VecZnxDftBackendRef<'_, B> {
-        VecZnxDftReborrowBackendRef::<B>::reborrow_backend_ref(&self.inner)
+        self.inner.reborrow_backend_ref()
     }
 }
 
 impl<'a, B: Backend + 'a> VecZnxDftToBackendMut<B> for VecZnxDftViewMut<'a, B> {
     fn to_backend_mut(&mut self) -> VecZnxDftBackendMut<'_, B> {
-        VecZnxDftReborrowBackendMut::<B>::reborrow_backend_mut(&mut self.inner)
+        self.inner.reborrow_backend_mut()
     }
 }
 
 impl<'a, B: Backend + 'a> VmpPMatToBackendRef<B> for VmpPMatViewMut<'a, B> {
     fn to_backend_ref(&self) -> VmpPMatBackendRef<'_, B> {
-        VmpPMatReborrowBackendRef::<B>::reborrow_backend_ref(&self.inner)
+        self.inner.reborrow_backend_ref()
     }
 }
 
 impl<'a, B: Backend + 'a> VmpPMatToBackendMut<B> for VmpPMatViewMut<'a, B> {
     fn to_backend_mut(&mut self) -> VmpPMatBackendMut<'_, B> {
-        VmpPMatReborrowBackendMut::<B>::reborrow_backend_mut(&mut self.inner)
+        self.inner.reborrow_backend_mut()
     }
 }

@@ -8,9 +8,10 @@
 //! the unprepared transform and BSGS schedule types live in
 //! [`crate::layouts::linear_transformation`](crate::layouts).
 
+use poulpy_hal::layouts::CnvPVecLOwned;
 use std::collections::BTreeMap;
 
-use poulpy_hal::layouts::{Backend, CnvPVecL, CnvPVecR, Data};
+use poulpy_hal::layouts::{Backend, CnvPVecR, Data};
 
 use crate::layouts::{Base2K, Degree, GLWEInfos, LWEInfos, LinearTransformation, Rank, TorusPrecision};
 
@@ -105,7 +106,7 @@ impl<D: Data, BE: Backend> GLWEInfos for PreparedDiagonal<D, BE> {
 /// The values are populated by `glwe_prepare_linear_transformation_baby_steps`; the
 /// cache is sized via [`LinearTransformationBabySteps::alloc`].
 pub struct LinearTransformationBabySteps<BE: Backend> {
-    pub(crate) values: BTreeMap<i64, CnvPVecL<BE::OwnedBuf, BE::DftWord, BE>>,
+    pub(crate) values: BTreeMap<i64, CnvPVecLOwned<BE>>,
 }
 
 impl<BE: Backend> LinearTransformationBabySteps<BE> {
@@ -140,7 +141,7 @@ impl<BE: Backend> LinearTransformationBabySteps<BE> {
     }
 
     /// Returns the prepared left operand `rot(v, k)` for the baby rotation `k`.
-    pub fn baby_step(&self, rot: i64) -> &CnvPVecL<BE::OwnedBuf, BE::DftWord, BE> {
+    pub fn baby_step(&self, rot: i64) -> &CnvPVecLOwned<BE> {
         self.values
             .get(&rot)
             .unwrap_or_else(|| panic!("missing prepared baby-step rotation {rot}"))

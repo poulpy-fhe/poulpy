@@ -1,3 +1,6 @@
+use crate::layouts::VecZnxBigBackendMut;
+use crate::layouts::VecZnxBigBackendRef;
+use crate::layouts::VecZnxBigOwned;
 use std::f64::consts::SQRT_2;
 
 use poulpy_hal::api::VecZnxBigAlloc;
@@ -5,7 +8,7 @@ use poulpy_hal::api::VecZnxBigAlloc;
 use crate::{
     api::VecZnxBigAddNormal,
     layouts::{
-        Backend, HostDataMut, HostDataRef, Module, NoiseInfos, VecZnx, VecZnxBig, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
+        Backend, HostDataMut, HostDataRef, Module, NoiseInfos, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
         VecZnxToBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut,
     },
     reference::{
@@ -24,7 +27,7 @@ use crate::{
     source::Source,
 };
 
-fn big_as_vec_znx_mut<'a, BE>(v: VecZnxBig<BE::BufMut<'a>, BE::BigWord, BE>) -> VecZnx<BE::BufMut<'a>>
+fn big_as_vec_znx_mut<'a, BE>(v: VecZnxBigBackendMut<'a, BE>) -> VecZnx<BE::BufMut<'a>>
 where
     BE: Backend,
 {
@@ -32,7 +35,7 @@ where
     VecZnx::from_data_with_max_size(v.data, shape.n(), shape.cols(), shape.size(), shape.max_size())
 }
 
-fn big_as_vec_znx_ref<'a, BE>(v: VecZnxBig<BE::BufRef<'a>, BE::BigWord, BE>) -> VecZnx<BE::BufRef<'a>>
+fn big_as_vec_znx_ref<'a, BE>(v: VecZnxBigBackendRef<'a, BE>) -> VecZnx<BE::BufRef<'a>>
 where
     BE: Backend,
 {
@@ -225,7 +228,7 @@ where
     let k_f64: f64 = (1u64 << noise_infos.k as u64) as f64;
     let sqrt2: f64 = SQRT_2;
     (0..cols).for_each(|col_i| {
-        let mut a: VecZnxBig<B::OwnedBuf, B::BigWord, B> = module.vec_znx_big_alloc(cols, size);
+        let mut a: VecZnxBigOwned<B> = module.vec_znx_big_alloc(cols, size);
         {
             let mut a_ref = a.to_backend_mut();
             module.vec_znx_big_add_normal(base2k, &mut a_ref, col_i, noise_infos, &mut source);

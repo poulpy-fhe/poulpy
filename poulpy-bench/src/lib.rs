@@ -44,11 +44,11 @@ use poulpy_core::{
     layouts::{GGSW, GLWE, GLWEPlaintext, LWE, LWESecret},
 };
 use poulpy_hal::layouts::{
-    Backend, CnvPVecL, CnvPVecLOwned, CnvPVecR, CnvPVecROwned, DataView, MatZnx, MatZnxBackendRef, MatZnxToBackendRef, ScalarZnx,
-    ScalarZnxBackendRef, ScalarZnxToBackendRef, SvpPPol, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig,
-    VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDft,
-    VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftOwned, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut,
-    VecZnxToBackendRef, VmpPMat,
+    Backend, CnvPVecLOwned, CnvPVecROwned, DataView, MatZnx, MatZnxBackendRef, MatZnxToBackendRef, ScalarZnx,
+    ScalarZnxBackendRef, ScalarZnxToBackendRef, SvpPPol, SvpPPolOwned, VecZnx, VecZnxBackendMut, VecZnxBackendRef,
+    VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut,
+    VecZnxDftBackendRef, VecZnxDftOwned, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef,
+    VmpPMat, VmpPMatOwned,
 };
 #[cfg(any(feature = "core-bench", feature = "bin-fhe-bench", feature = "ckks-bench"))]
 use poulpy_hal::layouts::{Module, TransferFrom};
@@ -128,33 +128,19 @@ pub fn random_host_mat_znx(
     MatZnx::from_bytes(n, rows, cols_in, cols_out, size, bytes)
 }
 
-pub fn random_backend_vec_znx_dft<BE: Backend>(
-    n: usize,
-    cols: usize,
-    size: usize,
-    source: &mut Source,
-) -> VecZnxDft<BE::OwnedBuf, BE::DftWord, BE> {
+pub fn random_backend_vec_znx_dft<BE: Backend>(n: usize, cols: usize, size: usize, source: &mut Source) -> VecZnxDftOwned<BE> {
     let mut bytes = vec![0u8; BE::bytes_of_vec_znx_dft(n, cols, size)];
     source.fill_bytes(&mut bytes);
     VecZnxDftOwned::<BE>::from_bytes(n, cols, size, bytes)
 }
 
-pub fn random_backend_vec_znx_big<BE: Backend>(
-    n: usize,
-    cols: usize,
-    size: usize,
-    source: &mut Source,
-) -> VecZnxBig<BE::OwnedBuf, BE::BigWord, BE> {
+pub fn random_backend_vec_znx_big<BE: Backend>(n: usize, cols: usize, size: usize, source: &mut Source) -> VecZnxBigOwned<BE> {
     let mut bytes = vec![0u8; BE::bytes_of_vec_znx_big(n, cols, size)];
     source.fill_bytes(&mut bytes);
     VecZnxBigOwned::<BE>::from_bytes(n, cols, size, bytes)
 }
 
-pub fn random_backend_svp_ppol<BE: Backend>(
-    n: usize,
-    cols: usize,
-    source: &mut Source,
-) -> SvpPPol<BE::OwnedBuf, BE::DftWord, BE> {
+pub fn random_backend_svp_ppol<BE: Backend>(n: usize, cols: usize, source: &mut Source) -> SvpPPolOwned<BE> {
     let mut bytes = vec![0u8; BE::bytes_of_svp_ppol(n, cols)];
     source.fill_bytes(&mut bytes);
     SvpPPol::from_data(BE::from_host_bytes(&bytes), n, cols)
@@ -167,29 +153,19 @@ pub fn random_backend_vmp_pmat<BE: Backend>(
     cols_out: usize,
     size: usize,
     source: &mut Source,
-) -> VmpPMat<BE::OwnedBuf, BE::DftWord, BE> {
+) -> VmpPMatOwned<BE> {
     let mut bytes = vec![0u8; BE::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size)];
     source.fill_bytes(&mut bytes);
     VmpPMat::from_data(BE::from_host_bytes(&bytes), n, rows, cols_in, cols_out, size)
 }
 
-pub fn random_backend_cnv_pvec_left<BE: Backend>(
-    n: usize,
-    cols: usize,
-    size: usize,
-    source: &mut Source,
-) -> CnvPVecL<BE::OwnedBuf, BE::DftWord, BE> {
+pub fn random_backend_cnv_pvec_left<BE: Backend>(n: usize, cols: usize, size: usize, source: &mut Source) -> CnvPVecLOwned<BE> {
     let mut bytes = vec![0u8; BE::bytes_of_cnv_pvec_left(n, cols, size)];
     source.fill_bytes(&mut bytes);
     CnvPVecLOwned::<BE>::from_bytes(n, cols, size, bytes)
 }
 
-pub fn random_backend_cnv_pvec_right<BE: Backend>(
-    n: usize,
-    cols: usize,
-    size: usize,
-    source: &mut Source,
-) -> CnvPVecR<BE::OwnedBuf, BE::DftWord, BE> {
+pub fn random_backend_cnv_pvec_right<BE: Backend>(n: usize, cols: usize, size: usize, source: &mut Source) -> CnvPVecROwned<BE> {
     let mut bytes = vec![0u8; BE::bytes_of_cnv_pvec_right(n, cols, size)];
     source.fill_bytes(&mut bytes);
     CnvPVecROwned::<BE>::from_bytes(n, cols, size, bytes)
@@ -211,27 +187,19 @@ pub fn mat_znx_backend_ref<'a, BE: Backend>(src: &'a MatZnx<BE::OwnedBuf>) -> Ma
     <MatZnx<BE::OwnedBuf> as MatZnxToBackendRef<BE>>::to_backend_ref(src)
 }
 
-pub fn vec_znx_dft_backend_ref<'a, BE: Backend>(
-    src: &'a VecZnxDft<BE::OwnedBuf, BE::DftWord, BE>,
-) -> VecZnxDftBackendRef<'a, BE> {
+pub fn vec_znx_dft_backend_ref<'a, BE: Backend>(src: &'a VecZnxDftOwned<BE>) -> VecZnxDftBackendRef<'a, BE> {
     src.to_backend_ref()
 }
 
-pub fn vec_znx_dft_backend_mut<'a, BE: Backend>(
-    src: &'a mut VecZnxDft<BE::OwnedBuf, BE::DftWord, BE>,
-) -> VecZnxDftBackendMut<'a, BE> {
+pub fn vec_znx_dft_backend_mut<'a, BE: Backend>(src: &'a mut VecZnxDftOwned<BE>) -> VecZnxDftBackendMut<'a, BE> {
     src.to_backend_mut()
 }
 
-pub fn vec_znx_big_backend_ref<'a, BE: Backend>(
-    src: &'a VecZnxBig<BE::OwnedBuf, BE::BigWord, BE>,
-) -> VecZnxBigBackendRef<'a, BE> {
+pub fn vec_znx_big_backend_ref<'a, BE: Backend>(src: &'a VecZnxBigOwned<BE>) -> VecZnxBigBackendRef<'a, BE> {
     src.to_backend_ref()
 }
 
-pub fn vec_znx_big_backend_mut<'a, BE: Backend>(
-    src: &'a mut VecZnxBig<BE::OwnedBuf, BE::BigWord, BE>,
-) -> VecZnxBigBackendMut<'a, BE> {
+pub fn vec_znx_big_backend_mut<'a, BE: Backend>(src: &'a mut VecZnxBigOwned<BE>) -> VecZnxBigBackendMut<'a, BE> {
     src.to_backend_mut()
 }
 
