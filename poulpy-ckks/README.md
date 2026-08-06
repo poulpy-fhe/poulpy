@@ -160,6 +160,50 @@ pub struct CKKSMeta {
 `log_budget`, the remaining homomorphic capacity, is not stored here; it is
 derived from the wrapped GLWE's torus width `k` as `log_budget = k - log_delta`.
 
+## Evaluation Keys and `k_aux`
+
+CKKS tensor (relinearization), automorphism, and switching keys use the core
+GGLWE gadget layout. These key layouts no longer take a total `k` field.
+Instead, they expose `dnum`, `dsize`, and the auxiliary guard `k_aux`; their
+total torus precision is derived as
+
+```text
+key.k() = dnum * dsize * base2k + k_aux
+```
+
+The first term is the gadget-decomposition region. `k_aux` is the region below
+the gadget digits that absorbs noise and prevents operations from truncating in
+the middle of a digit. It must cover at least one complete digit:
+
+```text
+k_aux >= dsize * base2k
+```
+
+For example, a conservative tensor-key layout can cover the ciphertext width
+with gadget digits and reserve one digit plus the ring-growth allowance as the
+auxiliary guard:
+
+```rust,ignore
+let digit_bits = DSIZE * BASE2K;
+let dnum = CT_K.div_ceil(digit_bits);
+let k_aux = digit_bits + N.ilog2() as usize;
+
+let tsk_layout = GLWETensorKeyLayout {
+    n: N.into(),
+    base2k: BASE2K.into(),
+    dnum: dnum.into(),
+    dsize: DSIZE.into(),
+    k_aux: k_aux.into(),
+    rank: Rank(1),
+};
+```
+
+When migrating an old limb-aligned key with `Dnum(d)` and no auxiliary guard,
+use `Dnum(d - 1)` with `k_aux = dsize * base2k`: this preserves the total key
+width while making the formerly implicit final digit an explicit guard. Gadget
+operations now derive their working width from the input ciphertext and the
+key's `(dsize, k_aux)`; they no longer take a caller-supplied output size.
+
 ## Encoding
 
 Slot and coefficient encoding are backend-resident operations on `Module<BE>`,

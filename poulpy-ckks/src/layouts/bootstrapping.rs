@@ -5,11 +5,11 @@
 //! [`DFTPlan`]), EvalMod (an [`EvalModPlan`]) and SlotsToCoeffs (a `Decode`
 //! [`DFTPlan`]).
 //!
-//! Only the per-stage circuit descriptions live here. The torus widths
-//! (`base2k`, the encoding scale `log_delta`, and the input/raised moduli) are
-//! per-ciphertext metadata supplied at call time — ModUp reads them from its
-//! source and destination ciphertexts — and the message ratio is already part of
-//! the [`EvalModPlan`]. See
+//! The plan also selects the ModUp/EvalMod pipeline and its optional techniques.
+//! Torus widths (`base2k`, the encoding scale `log_delta`, and the input/raised
+//! moduli) remain per-ciphertext metadata supplied at call time — ModUp reads
+//! them from its source and destination ciphertexts — and the message ratio is
+//! already part of the [`EvalModPlan`]. See
 //! [`CKKSBootstrappingOps`](crate::api::CKKSBootstrappingOps) for the ModUp
 //! semantics (a digit shift in the base-`2^base2k` torus model, not an RNS
 //! prime-basis extension).
@@ -41,6 +41,40 @@ use crate::{
     },
 };
 
+/// Stage ordering for the ModUp/EvalMod bootstrapping family.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BootstrappingPipeline {
+    /// CoeffsToSlots before EvalMod and SlotsToCoeffs.
+    C2SFirst,
+    /// SlotsToCoeffs-first recipe (reserved; not yet implemented).
+    S2CFirst,
+}
+
+/// Sparse-secret encapsulation parameters for ModUp.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SparseSecretEncapsulation {
+    /// Sparse-secret ModRaise encapsulation (<https://eprint.iacr.org/2022/024>);
+    /// this is the ephemeral ternary secret weight. Use `None` in
+    /// [`BootstrappingTechniques`] to disable the technique.
+    pub hamming_weight: usize,
+}
+
+/// EvalRound+ parameters (<https://eprint.iacr.org/2024/1379>).
+#[derive(Clone, Debug)]
+pub struct EvalRoundPlus {
+    /// High-precision CoeffsToSlots transform bypassing EvalMod.
+    pub coeffs_to_slots_bypass: DFTPlan,
+}
+
+/// Optional techniques composed into a ModUp/EvalMod recipe.
+#[derive(Clone, Debug, Default)]
+pub struct BootstrappingTechniques {
+    /// Sparse-secret key switches around ModUp.
+    pub sparse_secret_encapsulation: Option<SparseSecretEncapsulation>,
+    /// EvalRound+ high-precision bypass.
+    pub eval_round_plus: Option<EvalRoundPlus>,
+}
+
 /// End-to-end parameterization of CKKS bootstrapping.
 ///
 /// Built with [`Self::new`], which validates the stage roles once — a
@@ -51,12 +85,12 @@ use crate::{
 /// See the [module docs](self) for the overall role.
 #[derive(Clone, Debug)]
 pub struct BootstrappingPlan {
+    pipeline: BootstrappingPipeline,
+
+    techniques: BootstrappingTechniques,
+
     /// CoeffsToSlots: homomorphic encoding ([`DFTType::Encode`]).
     pub(crate) coeffs_to_slots: DFTPlan,
-
-    /// CoeffsToSlots high precision for bypass.
-    pub(crate) coeffs_to_slots_bypass: Option<DFTPlan>,
-
     /// EvalMod: approximate `x mod 1`. EvalMod runs at its own
     /// ([`EvalModPlan::f_mod_log_delta`]) scale — `ckks_eval_mod` sets the
     /// ciphertext to it on entry and restores the input scale on exit (a pure,
@@ -68,15 +102,22 @@ pub struct BootstrappingPlan {
 }
 
 impl BootstrappingPlan {
-    /// Validated constructor: `coeffs_to_slots` must be a
+    /// Validated constructor for a complete bootstrapping recipe.
+    ///
+    /// `coeffs_to_slots` must be a
     /// [`DFTType::Encode`] plan and `slots_to_coeffs` a [`DFTType::Decode`]
     /// plan (errors [`InvalidPlan`](crate::CKKSCompositionError::InvalidPlan)
     /// otherwise) — a swapped direction would make [`Self::galois_elements`]
     /// derive rotation keys for a transform that
-    /// [`BootstrappingContext::compile`] (whose `Dir` markers are authoritative)
-    /// never builds. Add the optional high-precision CoeffsToSlots with
-    /// [`Self::with_coeffs_to_slots_bypass`].
-    pub fn new(coeffs_to_slots: DFTPlan, eval_mod: EvalModPlan, slots_to_coeffs: DFTPlan) -> Result<Self> {
+    /// [`BootstrappingContext::compile`] never builds. The constructor also
+    /// rejects recipe techniques that the selected pipeline cannot evaluate.
+    pub fn new(
+        pipeline: BootstrappingPipeline,
+        techniques: BootstrappingTechniques,
+        coeffs_to_slots: DFTPlan,
+        eval_mod: EvalModPlan,
+        slots_to_coeffs: DFTPlan,
+    ) -> Result<Self> {
         let invalid = |reason: String| -> anyhow::Error {
             crate::CKKSCompositionError::InvalidPlan {
                 plan: "BootstrappingPlan",
@@ -90,40 +131,47 @@ impl BootstrappingPlan {
         if slots_to_coeffs.kind() != DFTType::Decode {
             return Err(invalid("slots_to_coeffs must be a DFTType::Decode plan".to_string()));
         }
+        // TODO(HalfBTS): remove this guard when S2C-first is wired.
+        if pipeline != BootstrappingPipeline::C2SFirst {
+            return Err(invalid("S2C-first bootstrapping is not implemented".to_string()));
+        }
+        if let Some(sse) = techniques.sparse_secret_encapsulation
+            && sse.hamming_weight == 0
+        {
+            return Err(invalid(
+                "sparse-secret encapsulation hamming_weight must be nonzero".to_string(),
+            ));
+        }
+        if let Some(eval_round) = &techniques.eval_round_plus {
+            if eval_round.coeffs_to_slots_bypass.kind() != DFTType::Encode {
+                return Err(invalid(
+                    "EvalRound+ coeffs_to_slots_bypass must be a DFTType::Encode plan".to_string(),
+                ));
+            }
+            if !eval_mod.f_mod_interval.is_power_of_two() {
+                return Err(invalid(format!(
+                    "EvalRound+ requires a power-of-two f_mod_interval, got {}",
+                    eval_mod.f_mod_interval
+                )));
+            }
+        }
         Ok(Self {
+            pipeline,
+            techniques,
             coeffs_to_slots,
-            coeffs_to_slots_bypass: None,
             eval_mod,
             slots_to_coeffs,
         })
     }
 
-    /// Sets the high-precision CoeffsToSlots bypass (the EvalRound+ pipeline).
-    ///
-    /// Errors if `bypass` is not a [`DFTType::Encode`] plan, or if the plan's
-    /// `f_mod_interval` is not a power of two: the EvalRound+ pipeline computes
-    /// `K·r0` as a power-of-two shift (`f_mod_interval.trailing_zeros()`),
-    /// which is silently wrong for any other `K` — rejected here, at plan
-    /// construction, rather than per bootstrap.
-    pub fn with_coeffs_to_slots_bypass(mut self, bypass: DFTPlan) -> Result<Self> {
-        let invalid = |reason: String| -> anyhow::Error {
-            crate::CKKSCompositionError::InvalidPlan {
-                plan: "BootstrappingPlan",
-                reason,
-            }
-            .into()
-        };
-        if bypass.kind() != DFTType::Encode {
-            return Err(invalid("coeffs_to_slots_bypass must be a DFTType::Encode plan".to_string()));
-        }
-        if !self.eval_mod.f_mod_interval.is_power_of_two() {
-            return Err(invalid(format!(
-                "coeffs_to_slots_bypass (EvalRound+) requires a power-of-two f_mod_interval, got {}",
-                self.eval_mod.f_mod_interval
-            )));
-        }
-        self.coeffs_to_slots_bypass = Some(bypass);
-        Ok(self)
+    /// The selected ModUp/EvalMod bootstrapping pipeline.
+    pub fn pipeline(&self) -> BootstrappingPipeline {
+        self.pipeline
+    }
+
+    /// Optional techniques applied by the recipe.
+    pub fn techniques(&self) -> &BootstrappingTechniques {
+        &self.techniques
     }
 
     /// CoeffsToSlots: homomorphic encoding ([`DFTType::Encode`]).
@@ -133,7 +181,15 @@ impl BootstrappingPlan {
 
     /// The optional high-precision CoeffsToSlots bypass (EvalRound+).
     pub fn coeffs_to_slots_bypass(&self) -> Option<&DFTPlan> {
-        self.coeffs_to_slots_bypass.as_ref()
+        self.techniques
+            .eval_round_plus
+            .as_ref()
+            .map(|eval_round| &eval_round.coeffs_to_slots_bypass)
+    }
+
+    /// Ephemeral sparse-secret weight required by the recipe, if enabled.
+    pub fn sparse_secret_hamming_weight(&self) -> Option<usize> {
+        self.techniques.sparse_secret_encapsulation.map(|sse| sse.hamming_weight)
     }
 
     /// EvalMod: approximate `x mod 1`.
@@ -161,6 +217,9 @@ impl BootstrappingPlan {
     pub fn galois_elements(&self, log_n: usize, cyclotomic_order: i64) -> Vec<i64> {
         let mut set: std::collections::BTreeSet<i64> = std::collections::BTreeSet::new();
         set.extend(self.coeffs_to_slots.galois_elements(log_n, cyclotomic_order));
+        if let Some(bypass) = self.coeffs_to_slots_bypass() {
+            set.extend(bypass.galois_elements(log_n, cyclotomic_order));
+        }
         set.extend(self.slots_to_coeffs.galois_elements(log_n, cyclotomic_order));
         set.into_iter().collect()
     }
@@ -190,6 +249,19 @@ pub struct BootstrappingContext<BE: Backend, F> {
 
     /// Encoded, backend-resident EvalMod (`x mod 1`).
     pub eval_mod: EvalMod<F, CKKSPlaintext<BE::OwnedBuf>>,
+
+    /// Selected ModUp/EvalMod pipeline.
+    pub pipeline: BootstrappingPipeline,
+
+    /// Ephemeral sparse-secret weight required by the recipe, if enabled.
+    sparse_secret_hamming_weight: Option<usize>,
+}
+
+impl<BE: Backend, F> BootstrappingContext<BE, F> {
+    /// Ephemeral sparse-secret weight required by the compiled recipe.
+    pub fn sparse_secret_hamming_weight(&self) -> Option<usize> {
+        self.sparse_secret_hamming_weight
+    }
 }
 
 impl<BE: Backend, F> BootstrappingContext<BE, F>
@@ -222,9 +294,7 @@ where
 
         let eval_mod = compile_eval_mod::<BE, F>(base2k, plan.eval_mod, module, scratch)?;
 
-        let coeffs_to_slots_bypass = if let Some(bypass) = &plan.coeffs_to_slots_bypass {
-            // A bypass plan implies a power-of-two `f_mod_interval`; enforced by
-            // `BootstrappingPlan::with_coeffs_to_slots_bypass` at construction.
+        let coeffs_to_slots_bypass = if let Some(bypass) = plan.coeffs_to_slots_bypass() {
             let c2s_lt: DFTMatrix<BE, Encode, Split> = module.ckks_new_dft_matrix::<Encode, Split>(base2k, bypass, scratch)?;
 
             Some(module.ckks_prepare_dft_matrix(&c2s_lt, scratch))
@@ -237,6 +307,108 @@ where
             coeffs_to_slots_bypass,
             slots_to_coeffs,
             eval_mod,
+            pipeline: plan.pipeline,
+            sparse_secret_hamming_weight: plan.sparse_secret_hamming_weight(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        CoeffsMeta,
+        layouts::{DFTOutputFormat, eval_mod::EvalModType},
+        polynomial::SplitStrategy,
+    };
+
+    fn dft(kind: DFTType) -> DFTPlan {
+        DFTPlan::new(
+            kind,
+            vec![(1, 1)],
+            DFTOutputFormat::SplitRealAndImag,
+            CoeffsMeta::from_delta_budget(8, 2),
+        )
+        .unwrap()
+    }
+
+    fn eval_mod(f_mod_interval: usize) -> EvalModPlan {
+        EvalModPlan {
+            eval_mod_type: EvalModType::CosHK,
+            log_msg_ratio: 2,
+            f_mod_degree: 3,
+            f_mod_interval,
+            f_mod_log_interval_reduction: 1,
+            f_mod_inv_degree: None,
+            scaling: None,
+            split_strategy: SplitStrategy::MinDepth,
+            coeffs_meta: CoeffsMeta::from_delta_budget(8, 2),
+            f_mod_log_delta: 10,
+        }
+    }
+
+    fn plan(
+        pipeline: BootstrappingPipeline,
+        techniques: BootstrappingTechniques,
+        f_mod_interval: usize,
+    ) -> Result<BootstrappingPlan> {
+        BootstrappingPlan::new(
+            pipeline,
+            techniques,
+            dft(DFTType::Encode),
+            eval_mod(f_mod_interval),
+            dft(DFTType::Decode),
+        )
+    }
+
+    #[test]
+    fn recipe_records_sparse_secret_weight() {
+        let plan = plan(
+            BootstrappingPipeline::C2SFirst,
+            BootstrappingTechniques {
+                sparse_secret_encapsulation: Some(SparseSecretEncapsulation { hamming_weight: 32 }),
+                eval_round_plus: None,
+            },
+            16,
+        )
+        .unwrap();
+
+        assert_eq!(plan.sparse_secret_hamming_weight(), Some(32));
+    }
+
+    #[test]
+    fn recipe_rejects_unimplemented_pipeline() {
+        let err = plan(BootstrappingPipeline::S2CFirst, BootstrappingTechniques::default(), 16).unwrap_err();
+        assert!(err.to_string().contains("S2C-first"));
+    }
+
+    #[test]
+    fn recipe_rejects_zero_sparse_secret_weight() {
+        let err = plan(
+            BootstrappingPipeline::C2SFirst,
+            BootstrappingTechniques {
+                sparse_secret_encapsulation: Some(SparseSecretEncapsulation { hamming_weight: 0 }),
+                eval_round_plus: None,
+            },
+            16,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("hamming_weight"));
+    }
+
+    #[test]
+    fn eval_round_plus_requires_power_of_two_interval() {
+        let err = plan(
+            BootstrappingPipeline::C2SFirst,
+            BootstrappingTechniques {
+                sparse_secret_encapsulation: None,
+                eval_round_plus: Some(EvalRoundPlus {
+                    coeffs_to_slots_bypass: dft(DFTType::Encode),
+                }),
+            },
+            3,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("power-of-two"));
     }
 }
