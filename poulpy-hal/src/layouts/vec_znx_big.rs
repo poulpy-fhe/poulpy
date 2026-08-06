@@ -22,12 +22,17 @@ use crate::layouts::{
 /// backend `B` pins producer provenance, and cross-backend zero-copy movement
 /// additionally requires the relevant layout-compatibility marker.
 #[repr(C)]
-#[derive(PartialEq, Eq, Hash)]
+#[derive(PartialEq, Hash)]
 pub struct VecZnxBig<D: Data, W: BigWord, B: Backend<BigWord = W>> {
     pub data: D,
     shape: VecZnxShape,
     pub _phantom: PhantomData<(W, B)>,
 }
+
+// Equality is byte equality on `data` (plus the shape); it never compares a
+// `W` value, so it is an equivalence relation even for non-`Eq` words like
+// `f64`. A derived `Eq` would spuriously demand `W: Eq`.
+impl<D: Data, W: BigWord, B: Backend<BigWord = W>> Eq for VecZnxBig<D, W, B> {}
 
 impl<D: HostDataRef, W: BigWord, B: Backend<BigWord = W>> DigestU64 for VecZnxBig<D, W, B> {
     fn digest_u64(&self) -> u64 {

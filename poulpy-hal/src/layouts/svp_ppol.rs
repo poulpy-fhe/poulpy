@@ -19,12 +19,17 @@ use crate::layouts::{Backend, Data, DataView, DataViewMut, DftWord, DigestU64, H
 /// Ring degree `n` is always a power of two, so the DFT-domain layout has a
 /// coefficient count that matches vector lane widths relative to buffer alignment.
 #[repr(C)]
-#[derive(PartialEq, Eq, Hash)]
+#[derive(PartialEq, Hash)]
 pub struct SvpPPol<D: Data, W: DftWord, B: Backend<DftWord = W>> {
     pub data: D,
     shape: ScalarZnxShape,
     pub _phantom: PhantomData<(W, B)>,
 }
+
+// Equality is byte equality on `data` (plus the shape); it never compares a
+// `W` value, so it is an equivalence relation even for non-`Eq` words like
+// `f64`. A derived `Eq` would spuriously demand `W: Eq`.
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> Eq for SvpPPol<D, W, B> {}
 
 impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> DigestU64 for SvpPPol<D, W, B> {
     fn digest_u64(&self) -> u64 {

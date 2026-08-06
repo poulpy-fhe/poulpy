@@ -360,3 +360,15 @@ fn test_ntt4x30_vmp_apply_truncated_res_matches_full_prefix() {
         );
     }
 }
+
+/// Compile-time regression check: container equality is byte equality, so the
+/// DFT/big-family containers implement `Eq` even when the logical word is
+/// `f64` (a derived `Eq` used to demand `W: Eq` and silently vanish here).
+#[allow(dead_code)]
+fn assert_f64_word_containers_are_eq() {
+    fn requires_eq<T: Eq>() {}
+    requires_eq::<poulpy_hal::layouts::VecZnxDftOwned<crate::FFT64Ref>>();
+    requires_eq::<poulpy_hal::layouts::VecZnxBigOwned<crate::FFT64Ref>>();
+    requires_eq::<poulpy_hal::layouts::SvpPPolOwned<crate::FFT64Ref>>();
+    requires_eq::<poulpy_hal::layouts::VmpPMatOwned<crate::FFT64Ref>>();
+}
