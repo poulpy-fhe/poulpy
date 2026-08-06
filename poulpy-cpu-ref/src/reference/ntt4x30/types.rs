@@ -26,10 +26,10 @@ use super::primes::{LaneArray, LaneElem, PrimeSet, Primes30};
 ///
 /// Byte-layout contract (see [`poulpy_hal::layouts::DftWord`]): a
 /// `VecZnxDft` limb stores `n` consecutive `CrtWord<P, T>` blocks in the
-/// spqlios NTT ordering for the prime set `P`. Two buffers are
-/// interchangeable iff their word types are equal — the prime set, lane
-/// element and lane count are all part of the type, so distinct
-/// conventions cannot be mixed accidentally.
+/// spqlios NTT ordering for the prime set `P`. The prime set, lane element,
+/// and lane count are all part of the type, so distinct CRT conventions cannot
+/// unify accidentally. Cross-backend interchange still requires the relevant
+/// layout-compatibility marker for the container family.
 ///
 /// The lane count is exact (3, 4, 6, ... — whatever `P` declares), and the
 /// lane element is explicit: `CrtWord<Primes30, u64>` is a 32-byte 4-lane
@@ -86,8 +86,8 @@ unsafe impl<P: PrimeSet, T: LaneElem> Zeroable for CrtWord<P, T> {}
 unsafe impl<P: PrimeSet, T: LaneElem> Pod for CrtWord<P, T> {}
 
 /// Byte-layout contract: `n` consecutive `P::LANES`-lane CRT blocks per
-/// limb, in the spqlios NTT ordering of `P`. Two buffers are
-/// interchangeable iff their word types are equal.
+/// limb, in the spqlios NTT ordering of `P`. Cross-backend interchange also
+/// requires the relevant layout-compatibility marker.
 impl<P: PrimeSet, T: LaneElem> poulpy_hal::layouts::DftWord for CrtWord<P, T> {}
 
 impl<P: PrimeSet, T: LaneElem> Add for CrtWord<P, T> {

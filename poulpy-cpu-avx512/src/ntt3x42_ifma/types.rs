@@ -21,8 +21,8 @@ unsafe impl Pod for Q126Scalar {}
 
 /// `Q126Scalar` is an identity + sizing contract over planar storage, not an
 /// element view: buffers tagged with it store three prime planes of `n`
-/// consecutive `u64` values per limb. Two buffers are interchangeable iff
-/// their word types are equal.
+/// consecutive `u64` values per limb. Cross-backend interchange requires both
+/// matching word types and the relevant layout-compatibility marker.
 impl poulpy_hal::layouts::DftWord for Q126Scalar {}
 
 impl fmt::Display for Q126Scalar {

@@ -1,6 +1,5 @@
-//! Word-compatibility tests: execute the word contract of
-//! [`DftWord`](crate::layouts::DftWord) — type equality of word-keyed
-//! containers means buffer interchangeability across backends.
+//! Word-compatibility tests: execute declared cross-backend layout
+//! compatibility for word-keyed prepared containers.
 //!
 //! Instantiate via [`cross_backend_test_suite!`](crate::cross_backend_test_suite)
 //! with a pair of backends declaring the same `DftWord` (enforced at
@@ -11,11 +10,12 @@
 //!   backends must produce the same bytes for the same input.
 //! - [`test_word_compat_dft_cross_idft`] asserts **cross-consumption**: a DFT
 //!   buffer produced by one backend is consumed by the other. This holds for
-//!   every shared-word pair, including `f64` FFT backends whose DFT-domain
-//!   values may differ in final ulps.
+//!   every pair that declares [`VecZnxDftLayoutCompatible`](crate::layouts::VecZnxDftLayoutCompatible),
+//!   including `f64` FFT backends whose DFT-domain values may differ in final ulps.
 //!
-//! A backend whose byte layout deviates in any aspect must mint a new word
-//! type; these tests are what makes that rule executable.
+//! A backend whose byte layout deviates in any aspect must either mint a new
+//! word type or omit the corresponding layout-compatibility marker; these tests
+//! make declared compatibility executable.
 
 use super::{
     TestParams, scalar_znx_backend_ref, upload_mat_znx, upload_scalar_znx,

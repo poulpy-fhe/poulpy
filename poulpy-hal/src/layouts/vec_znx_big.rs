@@ -18,9 +18,9 @@ use crate::layouts::{
 /// The wider scalar type allows lossless accumulation of intermediate
 /// products before normalization back to coefficient-domain limbs.
 ///
-/// The word type `W` names the byte-layout convention of the buffer; two
-/// buffers with the same `W` are interchangeable regardless of which backend
-/// produced them (see [`BigWord`]).
+/// The word type `W` names the byte-layout convention of the buffer. The
+/// backend `B` pins producer provenance, and cross-backend zero-copy movement
+/// additionally requires the relevant layout-compatibility marker.
 #[repr(C)]
 #[derive(PartialEq, Eq, Hash)]
 pub struct VecZnxBig<D: Data, W: BigWord, B: Backend<BigWord = W>> {
