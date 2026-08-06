@@ -1,8 +1,8 @@
 #![allow(clippy::too_many_arguments)]
 
-use poulpy_core::layouts::IntPolyInfos;
 use crate::CKKSResult as Result;
 use crate::default::encryption::CKKSEncryptionDefault;
+use poulpy_core::layouts::IntPolyInfos;
 
 use poulpy_core::{
     EncryptionInfos,

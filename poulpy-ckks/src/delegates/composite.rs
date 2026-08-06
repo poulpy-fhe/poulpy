@@ -1,5 +1,5 @@
-use poulpy_core::layouts::IntPolyInfos;
 use crate::{CKKSResult as Result, ckks_bail, ckks_ensure};
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     GLWENormalize, GLWETensoring,
     layouts::{

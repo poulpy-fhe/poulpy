@@ -1,7 +1,7 @@
 //! Subtraction tests: ct-ct, ct-pt, ct-const (out-of-place and in-place).
 
-use poulpy_core::layouts::IntPolyInfos;
 use crate::{CKKSInfos, api::CKKSSubOps};
+use poulpy_core::layouts::IntPolyInfos;
 
 use super::helpers::{
     ADD_SUB_CONST, PT_PREC, TestContextBackend, TestContextModule, TestScalar, TestVector, add_sub_const_pt, alloc_ct,

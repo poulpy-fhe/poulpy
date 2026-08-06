@@ -1,5 +1,5 @@
-use poulpy_core::layouts::IntPolyInfos;
 use crate::CKKSResult as Result;
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWE, GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 

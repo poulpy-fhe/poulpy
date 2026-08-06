@@ -20,9 +20,9 @@
 //! packing (imag packed into the right half) through `coeffs_to_slots_repack` /
 //! `slots_to_coeffs_repack`.
 
-use poulpy_core::layouts::IntPolyInfos;
 use crate::CKKSAtkBounds;
 use crate::{CKKSResult as Result, ckks_ensure};
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     default::linear_transformation::DiagonalProd,
     layouts::{

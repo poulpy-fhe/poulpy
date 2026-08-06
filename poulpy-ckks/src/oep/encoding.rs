@@ -1,5 +1,5 @@
-use poulpy_core::layouts::IntPolyInfos;
 use crate::CKKSResult as Result;
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_hal::layouts::{Backend, Module, ModulePlanCache};
 
 use crate::{

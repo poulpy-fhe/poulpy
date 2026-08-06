@@ -1,5 +1,5 @@
-use poulpy_core::layouts::IntPolyInfos;
 use crate::CKKSResult as Result;
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     GLWECopy, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWETensoring, GiantStepTensorBounds, ScratchArenaTakeCore,
     glwe_prepare_right, glwe_tensor_apply_prepared_right,

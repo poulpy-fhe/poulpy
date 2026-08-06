@@ -39,8 +39,8 @@
 //! | [`test_add_const_into_smaller_output`] | out-of-place, smaller output with packed-cst precision |
 //! | [`test_add_const_into_real_only`] | out-of-place, real coefficient only |
 //! | [`test_add_const_into_lsh_alignment`] | out-of-place, constant `max_k` above budget → left-shift alignment |
-use poulpy_core::layouts::IntPolyInfos;
 use crate::{CKKSCompositionError, CKKSInfos, SetCKKSInfos, api::CKKSAddOps, layouts::CKKSModuleAlloc};
+use poulpy_core::layouts::IntPolyInfos;
 
 use super::helpers::{
     ADD_SUB_CONST, PT_PREC, TestContextBackend, TestContextModule, TestScalar, TestVector, add_sub_const_pt, alloc_ct,

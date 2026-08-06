@@ -1,5 +1,5 @@
-use poulpy_core::layouts::IntPolyInfos;
 use crate::CKKSResult as Result;
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, LWEInfos};
 use poulpy_hal::{
     api::{

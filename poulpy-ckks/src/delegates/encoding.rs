@@ -1,6 +1,6 @@
-use poulpy_core::layouts::IntPolyInfos;
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::GLWEInfos;
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_hal::layouts::{Backend, Module};
 
 use crate::{

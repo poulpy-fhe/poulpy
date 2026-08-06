@@ -5,10 +5,10 @@
 //! caller's standard backend arena. This lets a device backend compose its
 //! native FFT and plaintext codec without a device-to-host round-trip.
 
-use poulpy_core::layouts::IntPolyInfos;
 use crate::{CKKSResult as Result, ckks_ensure};
 use bytemuck::Pod;
 use num_traits::FloatConst;
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{

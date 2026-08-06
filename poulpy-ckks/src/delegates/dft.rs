@@ -4,9 +4,9 @@
 
 #![allow(clippy::too_many_arguments)]
 
-use poulpy_core::layouts::IntPolyInfos;
 use crate::CKKSAtkBounds;
 use crate::CKKSResult as Result;
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     default::linear_transformation::DiagonalProd,
     layouts::{Base2K, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, LinearTransformation},

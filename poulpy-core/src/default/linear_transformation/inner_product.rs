@@ -14,9 +14,9 @@ use poulpy_hal::{
 };
 
 use crate::{
-    layouts::IntPolyInfos,
     LinearTransformationGiantStep,
     default::operations::msb_mask_bottom_limb,
+    layouts::IntPolyInfos,
     layouts::{GLWEInfos, GLWEToBackendRef, prepared::PreparedDiagonal},
 };
 

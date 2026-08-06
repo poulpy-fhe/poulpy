@@ -132,7 +132,6 @@ impl<'a, BE: Backend + 'a> crate::layouts::IntPolyInfos for LWEPlaintextViewMut<
     }
 }
 
-
 impl<'a, BE: Backend + 'a> SetK for GLWEViewMut<'a, BE> {
     fn set_k(&mut self, k: TorusPrecision) {
         self.inner.set_k(k);

@@ -6,9 +6,9 @@
 //! [`GLWELinearTransformations`](trait@poulpy_core::GLWELinearTransformations), and stamps the
 //! CKKS metadata onto the result. See `docs/linear_transformation.md`.
 
-use poulpy_core::layouts::IntPolyInfos;
 use crate::CKKSAtkBounds;
 use crate::{CKKSResult as Result, ckks_ensure};
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     GLWECopy, GLWELinearTransformations, LinearTransformationBabySteps, LinearTransformationGiantStep,
     LinearTransformationPrepared,

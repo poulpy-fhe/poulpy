@@ -1,6 +1,6 @@
-use poulpy_core::layouts::IntPolyInfos;
 use crate::CKKSResult as Result;
 use crate::default::plaintext::CKKSPlaintextDefault;
+use poulpy_core::layouts::IntPolyInfos;
 
 use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::{

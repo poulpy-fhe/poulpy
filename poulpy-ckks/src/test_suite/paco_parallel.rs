@@ -9,8 +9,8 @@
 //!   **bit-identical** ciphertext (same limbs, same metadata) — parallelism
 //!   is pure orchestration.
 
-use poulpy_core::layouts::IntPolyInfos;
 use crate::api::CKKSEncodingOps;
+use poulpy_core::layouts::IntPolyInfos;
 use std::collections::HashMap;
 
 use poulpy_core::{
