@@ -51,14 +51,9 @@ impl LaneElem for u64 {
 /// Fixed-size lane container (`[T; N]`) abstracted so that a
 /// [`PrimeSet`] can pick its exact lane count.
 ///
-/// Enabled lane counts: 1-8, 12, 16 (see `impl_lane_array!` below). A new
-/// [`PrimeSet`] with a different lane count needs its count added to that
-/// invocation — bytemuck has no blanket `Pod for [T; N]`, so each size is a
-/// separate impl.
-#[diagnostic::on_unimplemented(
-    message = "`{Self}` is not an enabled `LaneArray` size",
-    note = "lane counts are enabled per size; add the new count to the `impl_lane_array!` invocation in poulpy-hal/src/layouts/crt.rs"
-)]
+/// Blanket-implemented for `[T; N]` for every `N` (bytemuck's
+/// `min_const_generics` feature provides `Pod for [T; N]`), so any lane
+/// count works without further registration.
 pub trait LaneArray<T: LaneElem>: Copy + Debug + PartialEq + Eq + Send + Sync + Pod + 'static {
     const LEN: usize;
     fn as_slice(&self) -> &[T];
@@ -67,29 +62,21 @@ pub trait LaneArray<T: LaneElem>: Copy + Debug + PartialEq + Eq + Send + Sync + 
     fn lanes_from_fn(f: impl FnMut(usize) -> T) -> Self;
 }
 
-// bytemuck has no blanket `Pod for [T; N]` over all `N`, so lane counts are
-// enabled per size; extend the list when a new lane count appears.
-macro_rules! impl_lane_array {
-    ($($n:literal),* $(,)?) => {$(
-        impl<T: LaneElem> LaneArray<T> for [T; $n] {
-            const LEN: usize = $n;
-            fn as_slice(&self) -> &[T] {
-                self
-            }
-            fn as_mut_slice(&mut self) -> &mut [T] {
-                self
-            }
-            fn lanes_zeroed() -> Self {
-                [T::ZERO; $n]
-            }
-            fn lanes_from_fn(f: impl FnMut(usize) -> T) -> Self {
-                std::array::from_fn(f)
-            }
-        }
-    )*};
+impl<T: LaneElem, const N: usize> LaneArray<T> for [T; N] {
+    const LEN: usize = N;
+    fn as_slice(&self) -> &[T] {
+        self
+    }
+    fn as_mut_slice(&mut self) -> &mut [T] {
+        self
+    }
+    fn lanes_zeroed() -> Self {
+        [T::ZERO; N]
+    }
+    fn lanes_from_fn(f: impl FnMut(usize) -> T) -> Self {
+        std::array::from_fn(f)
+    }
 }
-
-impl_lane_array!(1, 2, 3, 4, 5, 6, 7, 8, 12, 16);
 
 /// Selects a set of NTT-friendly primes and their associated constants
 /// for a CRT (residue number system) representation.
@@ -113,8 +100,8 @@ pub trait PrimeSet: Sized + Sync + Send + 'static {
 
     /// Lane container shape: `[T; N]`.
     ///
-    /// The count must be one enabled by `impl_lane_array!` (1-8, 12, 16);
-    /// see [`LaneArray`] for extending the list.
+    /// Any lane count works ([`LaneArray`] is blanket-implemented for
+    /// `[T; N]`).
     type Lanes<T: LaneElem>: LaneArray<T>;
 
     /// The NTT-friendly primes `[Q0, ..., Q_{N-1}]`.
