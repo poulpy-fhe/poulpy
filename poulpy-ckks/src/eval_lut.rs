@@ -7,13 +7,14 @@
 use anyhow::{Result, ensure};
 use num_traits::{Float, FloatConst};
 use poulpy_core::layouts::{
-    GGLWEInfos, GGLWEPreparedToBackendRef, GLWETensorKeyPrepared, GLWEToBackendRef, GetGaloisElement, LWEInfos,
+    GGLWEInfos, GGLWEPreparedToBackendRef, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
+    SetBSGSMeta,
     prepared::{GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    CKKSCtBounds,
+    CKKSCtBounds, SetCKKSInfos,
     api::{
         Basis, CKKSAddOps, CKKSAffineOps, CKKSConjugateOps, CKKSCopyOps, CKKSEvalModOps, CKKSMulOps, CKKSPolynomialEvaluationOps,
         CKKSPow2Ops, CKKSSubOps,
@@ -58,9 +59,9 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ckks_eval_lut<BE, F, K, C>(
+pub fn ckks_eval_lut<BE, F, K, C, R>(
     module: &Module<BE>,
-    res: &mut CKKSCiphertext<BE::OwnedBuf>,
+    res: &mut R,
     ct: &C,
     eval_exp: &EvalMod<F, CKKSPlaintext<BE::OwnedBuf>>,
     lut: &ComplexBSGSPolynomial<CKKSPlaintext<BE::OwnedBuf>>,
@@ -74,6 +75,7 @@ where
         CKKSEvalModOps<BE> + CKKSPolynomialEvaluationOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE> + CKKSModuleAlloc<BE>,
     K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
+    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let (base2k, k) = (res.base2k(), res.max_k());
@@ -170,9 +172,9 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ckks_eval_lut_binary<BE, C>(
+pub fn ckks_eval_lut_binary<BE, C, R>(
     module: &Module<BE>,
-    res: &mut CKKSCiphertext<BE::OwnedBuf>,
+    res: &mut R,
     ct: &C,
     cos_bsgs: &BSGSPolynomial<CKKSPlaintext<BE::OwnedBuf>>,
     log_interval_reduction: usize,
@@ -184,6 +186,7 @@ where
     BE: Backend,
     Module<BE>: CKKSPolynomialEvaluationOps<BE> + CKKSMulOps<BE> + CKKSPow2Ops<BE> + CKKSSubOps<BE> + CKKSAffineOps<BE>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
+    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     module.ckks_eval_poly_real_const_coeffs(res, ct, cos_bsgs, tsk, scratch)?;

@@ -1010,6 +1010,31 @@ where
         decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow())
     };
 
+    let im_zero = vec![F::zero(); m];
+    let ct_real = ckks_encrypt_with_prec(
+        &tp,
+        &module,
+        &host_module,
+        &encoder,
+        &sk,
+        k_in,
+        &re,
+        &im_zero,
+        ckks_spec(n, base2k, log_delta, k_in - log_delta),
+        &mut scratch.borrow(),
+    );
+    let (real_bs_re, real_bs_im) = {
+        let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+        module
+            .ckks_bootstrap_real(&mut ct_bs, &ct_real, &ctx, &bsk, &mut scratch.borrow())
+            .unwrap();
+        assert_eq!(ct_bs.k().as_usize(), k_boot - plan.post_mod_up_consumed_bits());
+        assert_eq!(ct_bs.log_delta(), log_delta);
+        decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow())
+    };
+    assert!(precision_stats(&real_bs_re, &re, log_delta).avg_log2_prec >= 5.0);
+    assert!(precision_stats(&real_bs_im, &im_zero, log_delta).avg_log2_prec >= 5.0);
+
     let insufficient_k = log_delta + plan.pre_mod_up_consumed_bits() - 1;
     let ct_insufficient = ckks_encrypt_with_prec(
         &tp,

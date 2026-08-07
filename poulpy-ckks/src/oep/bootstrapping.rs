@@ -42,6 +42,18 @@ pub unsafe trait CKKSBootstrappingImpl<BE: Backend>: Backend {
         C1: CKKSCtBounds,
         C2: CKKSCtBounds;
 
+    fn ckks_functional_bootstrap_tmp_bytes_impl<C1, C2, F>(
+        module: &Module<BE>,
+        ct_out: &C1,
+        ct_in: &C2,
+        ctx: &BootstrappingContext<BE, F>,
+        lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds;
+
     fn ckks_mod_up_into_impl<Dst, Src>(
         module: &Module<BE>,
         dst: &mut Dst,
@@ -64,8 +76,32 @@ pub unsafe trait CKKSBootstrappingImpl<BE: Backend>: Backend {
     where
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
 
+    fn ckks_bootstrap_real<F, K>(
+        module: &Module<BE>,
+        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
+        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ctx: &BootstrappingContext<BE, F>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
+
     #[allow(clippy::too_many_arguments)]
     fn ckks_functional_bootstrap<F, K>(
+        module: &Module<BE>,
+        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
+        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ctx: &BootstrappingContext<BE, F>,
+        lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
+
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_functional_bootstrap_real<F, K>(
         module: &Module<BE>,
         ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
         ct_in: &CKKSCiphertext<BE::OwnedBuf>,
@@ -131,6 +167,21 @@ where
         module.ckks_bootstrap_tmp_bytes_default(ct_out, ct_in, ctx, keys_layout)
     }
 
+    fn ckks_functional_bootstrap_tmp_bytes_impl<C1, C2, F>(
+        module: &Module<BE>,
+        ct_out: &C1,
+        ct_in: &C2,
+        ctx: &BootstrappingContext<BE, F>,
+        lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds,
+    {
+        module.ckks_functional_bootstrap_tmp_bytes_default(ct_out, ct_in, ctx, lut, keys_layout)
+    }
+
     fn ckks_mod_up_into_impl<Dst, Src>(
         module: &Module<BE>,
         dst: &mut Dst,
@@ -158,6 +209,20 @@ where
         module.ckks_bootstrap_default(ct_out, ct_in, ctx, keys, scratch)
     }
 
+    fn ckks_bootstrap_real<F, K>(
+        module: &Module<BE>,
+        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
+        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ctx: &BootstrappingContext<BE, F>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
+    {
+        module.ckks_bootstrap_real_default(ct_out, ct_in, ctx, keys, scratch)
+    }
+
     fn ckks_functional_bootstrap<F, K>(
         module: &Module<BE>,
         ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
@@ -171,6 +236,21 @@ where
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
     {
         crate::default::bootstrapping::ckks_functional_bootstrap_default(module, ct_out, ct_in, ctx, lut, keys, scratch)
+    }
+
+    fn ckks_functional_bootstrap_real<F, K>(
+        module: &Module<BE>,
+        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
+        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ctx: &BootstrappingContext<BE, F>,
+        lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
+    {
+        crate::default::bootstrapping::ckks_functional_bootstrap_real_default(module, ct_out, ct_in, ctx, lut, keys, scratch)
     }
 
     fn ckks_functional_bootstrap_multi<F, K>(

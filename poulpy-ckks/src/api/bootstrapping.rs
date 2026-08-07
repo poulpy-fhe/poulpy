@@ -50,6 +50,19 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
         C1: CKKSCtBounds,
         C2: CKKSCtBounds;
 
+    /// Scratch upper bound for functional bootstrap with `lut`.
+    fn ckks_functional_bootstrap_tmp_bytes<C1, C2, F>(
+        &self,
+        ct_out: &C1,
+        ct_in: &C2,
+        ctx: &BootstrappingContext<BE, F>,
+        lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds;
+
     /// Raises the modulus of `src` into the wider `dst`.
     ///
     /// `dst` must carry the target (raised) modulus: `dst.k() ≥
@@ -95,11 +108,38 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     where
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
 
+    /// S2C-first bootstrap for ciphertexts known to contain real slots only.
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_bootstrap_real<F, K>(
+        &self,
+        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
+        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ctx: &BootstrappingContext<BE, F>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
+
     /// Refreshes `ct_in` through an S2C-first context and applies `lut` to each
     /// real and imaginary slot half before recombining them in `ct_out`. The LUT
     /// derives the required message ratio from its table length.
     #[allow(clippy::too_many_arguments)]
     fn ckks_functional_bootstrap<F, K>(
+        &self,
+        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
+        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ctx: &BootstrappingContext<BE, F>,
+        lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
+
+    /// Functional bootstrap for ciphertexts known to contain real slots only.
+    #[allow(clippy::too_many_arguments)]
+    fn ckks_functional_bootstrap_real<F, K>(
         &self,
         ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
         ct_in: &CKKSCiphertext<BE::OwnedBuf>,

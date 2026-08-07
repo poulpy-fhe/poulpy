@@ -17,7 +17,7 @@ use crate::{
     eval_lut::{ckks_eval_lut, ckks_eval_lut_binary, ckks_eval_lut_multi},
     layouts::{
         BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, CKKSCiphertext, CKKSModuleAlloc,
-        CKKSPlaintext, EncodedLut, EncodedLutKind, ScratchArenaTakeCKKS,
+        CKKSPlaintext, EncodedLut, EncodedLutKind, EvalModType, ScratchArenaTakeCKKS,
     },
 };
 
@@ -132,6 +132,58 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
         carved + nested
     }
 
+    fn ckks_functional_bootstrap_tmp_bytes_default<C1, C2, F>(
+        &self,
+        ct_out: &C1,
+        ct_in: &C2,
+        ctx: &BootstrappingContext<BE, F>,
+        lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        Self: CKKSAllOpsTmpBytes<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds,
+        CKKSCiphertext<BE::OwnedBuf>: CKKSCtBounds,
+    {
+        let base = self.ckks_bootstrap_tmp_bytes_default(ct_out, ct_in, ctx, keys_layout);
+        let boot_layout = CKKSLayout {
+            glwe_layout: GLWELayout {
+                n: ct_out.n(),
+                base2k: ct_in.base2k(),
+                k: ct_out.k(),
+                rank: Rank(1),
+            },
+            meta: CKKSMeta::default(),
+        };
+        let in_layout = CKKSLayout {
+            glwe_layout: GLWELayout {
+                n: ct_in.n(),
+                base2k: ct_in.base2k(),
+                k: ct_in.k(),
+                rank: Rank(1),
+            },
+            meta: CKKSMeta::default(),
+        };
+        let boot_bytes = GLWE::<Vec<u8>>::bytes_of_from_infos(&boot_layout);
+        let in_bytes = GLWE::<Vec<u8>>::bytes_of_from_infos(&in_layout);
+        let carved = (3 * boot_bytes).max(boot_bytes + 4 * in_bytes);
+        let nested = self
+            .ckks_all_ops_with_atk_tmp_bytes(
+                &boot_layout,
+                &keys_layout.tensor_key,
+                &keys_layout.automorphism_key,
+                lut.coeffs(),
+            )
+            .max(self.ckks_all_ops_with_atk_tmp_bytes(
+                &in_layout,
+                &keys_layout.tensor_key,
+                &keys_layout.automorphism_key,
+                lut.coeffs(),
+            ));
+        base.max(carved + nested)
+    }
+
     fn ckks_mod_up_into_default<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: GLWECopy<BE> + GLWEShift<BE>,
@@ -232,6 +284,25 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
             keys.conjugation_key(),
             scratch,
         )
+    }
+
+    fn ckks_bootstrap_coeffs_to_slots_real<F, K, R1, R2>(
+        &self,
+        ct: &mut R1,
+        conjugate: &mut R2,
+        ctx: &BootstrappingContext<BE, F>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Self: CKKSDFTOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
+        K: BootstrappingKeys<BE>,
+        R1: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        R2: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    {
+        self.ckks_dft_evaluate_assign(ct, &ctx.coeffs_to_slots, keys.rotation_keys(), scratch)?;
+        self.ckks_conjugate_into(conjugate, &*ct, keys.conjugation_key(), scratch)?;
+        self.ckks_add_assign(ct, &*conjugate, scratch)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -351,6 +422,44 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
                 keys.rotation_keys(),
                 &mut scratch_inner,
             )?;
+
+            let log_modulus_in = ct_coeffs.k().as_usize();
+            self.ckks_bootstrap_mod_up_from_mut(ct_raised, &mut ct_coeffs, keys, &mut scratch_inner)?;
+            ct_raised.set_meta(CKKSMeta {
+                log_sparsity: ct_in.log_sparsity(),
+                log_delta: log_modulus_in,
+            });
+            Result::Ok(())
+        })
+    }
+
+    fn ckks_bootstrap_s2c_mod_up_real<F, K, R>(
+        &self,
+        ct_raised: &mut R,
+        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ctx: &BootstrappingContext<BE, F>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Self: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSCopyOps<BE> + CKKSPow2Ops<BE> + CKKSDFTOps<BE>,
+        K: BootstrappingKeys<BE>,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        CKKSCiphertext<BE::OwnedBuf>:
+            GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
+    {
+        let input_layout = GLWELayout {
+            n: ct_in.n(),
+            base2k: ct_in.base2k(),
+            k: ct_in.k(),
+            rank: Rank(1),
+        };
+
+        scratch.scope(|scratch_inner| {
+            let (mut ct_coeffs, mut scratch_inner) = scratch_inner.take_ckks_ciphertext_scratch(&input_layout, ct_in.meta());
+            self.ckks_copy(&mut ct_coeffs, ct_in, &mut scratch_inner)?;
+            self.ckks_mul_pow2_assign(&mut ct_coeffs, 1, &mut scratch_inner)?;
+            self.ckks_dft_evaluate_assign(&mut ct_coeffs, &ctx.slots_to_coeffs, keys.rotation_keys(), &mut scratch_inner)?;
 
             let log_modulus_in = ct_coeffs.k().as_usize();
             self.ckks_bootstrap_mod_up_from_mut(ct_raised, &mut ct_coeffs, keys, &mut scratch_inner)?;
@@ -527,6 +636,125 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
             Result::Ok(())
         })
     }
+
+    fn ckks_bootstrap_real_default<F, K>(
+        &self,
+        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
+        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ctx: &BootstrappingContext<BE, F>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        Self: GLWECopy<BE>
+            + GLWEShift<BE>
+            + GLWEKeyswitch<BE>
+            + CKKSCopyOps<BE>
+            + CKKSPow2Ops<BE>
+            + CKKSAddOps<BE>
+            + CKKSConjugateOps<BE>
+            + CKKSDFTOps<BE>
+            + CKKSEvalModOps<BE>,
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
+        CKKSCiphertext<BE::OwnedBuf>:
+            GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
+        GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        ckks_ensure!(
+            ctx.pipeline == BootstrappingPipeline::S2CFirst,
+            "real-slot bootstrapping requires an S2C-first context"
+        );
+        ckks_ensure!(
+            ct_in.rank().as_usize() == 1 && ct_out.rank().as_usize() == 1,
+            "ckks_bootstrap_real supports rank-1 ciphertexts only"
+        );
+        ckks_ensure!(
+            keys.encapsulation_keys().is_some() == ctx.sparse_secret_hamming_weight().is_some(),
+            "bootstrapping key encapsulation does not match the compiled recipe"
+        );
+
+        let boot_layout = GLWELayout {
+            n: ct_out.n(),
+            base2k: ct_in.base2k(),
+            k: ct_out.k(),
+            rank: Rank(1),
+        };
+        scratch.scope(|scratch_local| {
+            let (mut ct_raised, scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta());
+            let (mut r0, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta());
+            self.ckks_bootstrap_s2c_mod_up_real(&mut ct_raised, ct_in, ctx, keys, &mut scratch_local)?;
+            self.ckks_bootstrap_coeffs_to_slots_real(&mut ct_raised, &mut r0, ctx, keys, &mut scratch_local)?;
+            self.ckks_eval_mod(ct_out, &ct_raised, &ctx.eval_mod, keys.tensor_key(), &mut scratch_local)?;
+            ct_out.set_meta(CKKSMeta {
+                log_sparsity: ct_in.log_sparsity(),
+                log_delta: ct_in.log_delta(),
+            });
+            Result::Ok(())
+        })
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SlotsKind {
+    Complex,
+    Real,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn ckks_eval_encoded_lut<BE, F, K, C, R>(
+    module: &Module<BE>,
+    ct_out: &mut R,
+    ct_in: &C,
+    ctx: &BootstrappingContext<BE, F>,
+    lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+    keys: &K,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: CKKSModuleAlloc<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSEvalModOps<BE>
+        + CKKSPolynomialEvaluationOps<BE>
+        + CKKSMulOps<BE>
+        + CKKSPow2Ops<BE>
+        + CKKSAffineOps<BE>,
+    K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
+    C: GLWEToBackendRef<BE> + CKKSCtBounds,
+    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+    CKKSCiphertext<BE::OwnedBuf>:
+        GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    match lut.kind() {
+        EncodedLutKind::General(series) => ckks_eval_lut(
+            module,
+            ct_out,
+            ct_in,
+            &ctx.eval_mod,
+            series,
+            keys.conjugation_key(),
+            keys.tensor_key(),
+            scratch,
+        )?,
+        EncodedLutKind::Binary {
+            cos,
+            affine,
+            log_interval_reduction,
+        } => ckks_eval_lut_binary(
+            module,
+            ct_out,
+            ct_in,
+            cos,
+            *log_interval_reduction,
+            affine,
+            keys.tensor_key(),
+            scratch,
+        )?,
+    }
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -553,6 +781,80 @@ where
         + CKKSImagOps<BE>
         + CKKSEvalModOps<BE>
         + CKKSPolynomialEvaluationOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSMulOps<BE>
+        + CKKSPow2Ops<BE>
+        + CKKSAffineOps<BE>,
+    K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
+    CKKSCiphertext<BE::OwnedBuf>:
+        GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    ckks_functional_bootstrap_with_slots(module, ct_out, ct_in, ctx, lut, keys, SlotsKind::Complex, scratch)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn ckks_functional_bootstrap_real_default<BE, F, K>(
+    module: &Module<BE>,
+    ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
+    ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+    ctx: &BootstrappingContext<BE, F>,
+    lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+    keys: &K,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: CKKSBootstrappingOpsDefault<BE>
+        + GLWECopy<BE>
+        + GLWEShift<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWEKeyswitch<BE>
+        + CKKSDFTOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSImagOps<BE>
+        + CKKSEvalModOps<BE>
+        + CKKSPolynomialEvaluationOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSMulOps<BE>
+        + CKKSPow2Ops<BE>
+        + CKKSAffineOps<BE>,
+    K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
+    CKKSCiphertext<BE::OwnedBuf>:
+        GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    ckks_functional_bootstrap_with_slots(module, ct_out, ct_in, ctx, lut, keys, SlotsKind::Real, scratch)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn ckks_functional_bootstrap_with_slots<BE, F, K>(
+    module: &Module<BE>,
+    ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
+    ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+    ctx: &BootstrappingContext<BE, F>,
+    lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+    keys: &K,
+    slots_kind: SlotsKind,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: CKKSBootstrappingOpsDefault<BE>
+        + GLWECopy<BE>
+        + GLWEShift<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWEKeyswitch<BE>
+        + CKKSDFTOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSImagOps<BE>
+        + CKKSEvalModOps<BE>
+        + CKKSPolynomialEvaluationOps<BE>
+        + CKKSCopyOps<BE>
         + CKKSMulOps<BE>
         + CKKSPow2Ops<BE>
         + CKKSAffineOps<BE>,
@@ -573,6 +875,12 @@ where
         keys.encapsulation_keys().is_some() == ctx.sparse_secret_hamming_weight().is_some(),
         "bootstrapping key encapsulation does not match the compiled recipe"
     );
+    if lut.requires_eval_mod() {
+        ckks_ensure!(
+            ctx.eval_mod.plan.eval_mod_type == EvalModType::ExpCmplx,
+            "general functional bootstrapping requires an ExpCmplx EvalMod context"
+        );
+    }
     ensure_functional_message_ratio(ct_in, ctx.slots_to_coeffs.consumed_bits(), lut.log_msg_ratio())?;
 
     let boot_layout = GLWELayout {
@@ -583,63 +891,20 @@ where
     };
     scratch.scope(|scratch_local| {
         let (mut ct_raised, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta());
+        if slots_kind == SlotsKind::Real {
+            module.ckks_bootstrap_s2c_mod_up_real(&mut ct_raised, ct_in, ctx, keys, &mut scratch_local)?;
+            let (mut r0, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
+            module.ckks_bootstrap_coeffs_to_slots_real(&mut ct_raised, &mut r0, ctx, keys, &mut scratch_local)?;
+            return ckks_eval_encoded_lut(module, ct_out, &ct_raised, ctx, lut, keys, &mut scratch_local);
+        }
+
         module.ckks_bootstrap_s2c_mod_up(&mut ct_raised, ct_in, ctx, keys, &mut scratch_local)?;
         let (mut r0, scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
         let (mut i0, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
         module.ckks_bootstrap_coeffs_to_slots(&ct_raised, &mut r0, &mut i0, ctx, keys, &mut scratch_local)?;
-
-        let mut res_im = module.ckks_ciphertext_alloc(ct_out.base2k(), ct_out.max_k());
-        match lut.kind() {
-            EncodedLutKind::General(series) => {
-                ckks_eval_lut(
-                    module,
-                    ct_out,
-                    &r0,
-                    &ctx.eval_mod,
-                    series,
-                    keys.conjugation_key(),
-                    keys.tensor_key(),
-                    &mut scratch_local,
-                )?;
-                ckks_eval_lut(
-                    module,
-                    &mut res_im,
-                    &i0,
-                    &ctx.eval_mod,
-                    series,
-                    keys.conjugation_key(),
-                    keys.tensor_key(),
-                    &mut scratch_local,
-                )?;
-            }
-            EncodedLutKind::Binary {
-                cos,
-                affine,
-                log_interval_reduction,
-            } => {
-                ckks_eval_lut_binary(
-                    module,
-                    ct_out,
-                    &r0,
-                    cos,
-                    *log_interval_reduction,
-                    affine,
-                    keys.tensor_key(),
-                    &mut scratch_local,
-                )?;
-                ckks_eval_lut_binary(
-                    module,
-                    &mut res_im,
-                    &i0,
-                    cos,
-                    *log_interval_reduction,
-                    affine,
-                    keys.tensor_key(),
-                    &mut scratch_local,
-                )?;
-            }
-        }
-        module.recombine_halves(ct_out, &mut res_im, &mut scratch_local)
+        ckks_eval_encoded_lut(module, ct_out, &r0, ctx, lut, keys, &mut scratch_local)?;
+        ckks_eval_encoded_lut(module, &mut ct_raised, &i0, ctx, lut, keys, &mut scratch_local)?;
+        module.recombine_halves(ct_out, &mut ct_raised, &mut scratch_local)
     })
 }
 
@@ -690,25 +955,30 @@ where
         luts.iter().all(|lut| lut.log_msg_ratio() == log_msg_ratio),
         "functional bootstrap LUTs must have the same message ratio"
     );
-    let mut series = Vec::with_capacity(luts.len());
-    for lut in luts {
-        if let Some(series_i) = lut.general_series() {
-            series.push(series_i);
-        } else {
-            ckks_ensure!(false, "ckks_functional_bootstrap_multi supports general LUTs only");
-        }
-    }
+    ckks_ensure!(
+        luts.iter().all(|lut| lut.general_series().is_some()),
+        "ckks_functional_bootstrap_multi supports general LUTs only"
+    );
+    let series: Vec<_> = luts.iter().filter_map(EncodedLut::general_series).collect();
 
     ckks_ensure!(
         ctx.pipeline == BootstrappingPipeline::S2CFirst,
         "functional bootstrapping requires an S2C-first context"
     );
+    ckks_ensure!(
+        ctx.eval_mod.plan.eval_mod_type == EvalModType::ExpCmplx,
+        "general functional bootstrapping requires an ExpCmplx EvalMod context"
+    );
     let head = &ct_outs[0];
-    let (out_n, out_base2k, out_k, out_max_k) = (head.n(), head.base2k(), head.k(), head.max_k());
+    let (out_n, out_base2k, out_k) = (head.n(), head.base2k(), head.k());
     ckks_ensure!(
         ct_in.rank().as_usize() == 1
             && ct_outs.iter().all(|ct| {
-                ct.rank().as_usize() == 1 && ct.n() == head.n() && ct.base2k() == head.base2k() && ct.max_k() == head.max_k()
+                ct.rank().as_usize() == 1
+                    && ct.n() == head.n()
+                    && ct.base2k() == head.base2k()
+                    && ct.k() == head.k()
+                    && ct.max_k() == head.max_k()
             }),
         "functional bootstrapping outputs must share one rank-1 layout"
     );
@@ -732,7 +1002,7 @@ where
         module.ckks_bootstrap_coeffs_to_slots(&ct_raised, &mut r0, &mut i0, ctx, keys, &mut scratch_local)?;
 
         let mut im_outs: Vec<_> = (0..luts.len())
-            .map(|_| module.ckks_ciphertext_alloc(out_base2k, out_max_k))
+            .map(|_| module.ckks_ciphertext_alloc(out_base2k, out_k))
             .collect();
         ckks_eval_lut_multi(
             module,

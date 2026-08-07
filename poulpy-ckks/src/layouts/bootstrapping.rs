@@ -31,11 +31,11 @@ use poulpy_core::{
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    CKKSCtBounds,
+    CKKSCtBounds, CKKSInfos,
     api::{CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingOps, CKKSEncodingScalar},
     layouts::{
-        CKKSModuleAlloc, CKKSPlaintext, DFTMatrix, DFTMatrixPrepared, DFTPlan, DFTType, Decode, Encode, EvalMod, EvalModPlan,
-        Split, eval_mod::compile_eval_mod,
+        CKKSModuleAlloc, CKKSPlaintext, DFTMatrix, DFTMatrixPrepared, DFTPlan, DFTType, Decode, Encode, EncodedLut, EvalMod,
+        EvalModPlan, Split, eval_mod::compile_eval_mod,
     },
 };
 
@@ -226,6 +226,16 @@ impl BootstrappingPlan {
     /// Bootstrap width for a desired output width.
     pub fn bootstrap_k(&self, output_k: usize) -> usize {
         output_k + self.post_mod_up_consumed_bits()
+    }
+
+    /// Raised width required by an S2C-first functional bootstrap.
+    pub fn functional_bootstrap_k<P>(&self, output_k: usize, log_delta: usize, lut: &EncodedLut<P>) -> usize
+    where
+        P: CKKSInfos,
+    {
+        assert!(self.pipeline == BootstrappingPipeline::S2CFirst);
+        let eval_mod = lut.requires_eval_mod() as usize * self.eval_mod.consumed_bits();
+        output_k + self.coeffs_to_slots.consumed_bits() + eval_mod + lut.consumed_bits(log_delta)
     }
 
     /// Total `log_budget` bits the pipeline consumes: the two DFT stages plus

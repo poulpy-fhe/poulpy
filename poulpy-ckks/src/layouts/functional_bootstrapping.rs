@@ -4,7 +4,7 @@ use poulpy_core::layouts::Base2K;
 use poulpy_hal::layouts::{HostBytesBackend, Module};
 
 use crate::{
-    CoeffsMeta, SetCKKSInfos,
+    CKKSInfos, CoeffsMeta, SetCKKSInfos,
     eval_lut::{cos_hermite_binary, trig_hermite_lut},
     layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar},
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
@@ -107,14 +107,30 @@ impl<P> EncodedLut<P> {
         self.log_msg_ratio
     }
 
-    pub fn consumed_bits(&self, log_delta: usize, coeff_log_delta: usize) -> usize {
+    /// Multiplicative budget consumed at the given ciphertext scale.
+    pub fn consumed_bits(&self, log_delta: usize) -> usize
+    where
+        P: CKKSInfos,
+    {
+        let coeff_log_delta = self.coeffs().log_delta();
         match &self.kind {
             EncodedLutKind::General(series) => series.re.consumed_bits(log_delta, coeff_log_delta),
             EncodedLutKind::Binary {
                 cos,
                 log_interval_reduction,
                 ..
-            } => cos.consumed_bits(log_delta, coeff_log_delta) + log_interval_reduction * log_delta + log_delta,
+            } => cos.consumed_bits(log_delta, coeff_log_delta) + log_interval_reduction * log_delta + coeff_log_delta,
+        }
+    }
+
+    pub(crate) fn requires_eval_mod(&self) -> bool {
+        matches!(&self.kind, EncodedLutKind::General(_))
+    }
+
+    pub(crate) fn coeffs(&self) -> &P {
+        match &self.kind {
+            EncodedLutKind::General(series) => &series.re.baby_steps()[0],
+            EncodedLutKind::Binary { cos, .. } => &cos.baby_steps()[0],
         }
     }
 

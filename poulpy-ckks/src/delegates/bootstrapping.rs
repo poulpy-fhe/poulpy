@@ -34,6 +34,21 @@ where
         BE::ckks_bootstrap_tmp_bytes_impl(self, ct_out, ct_in, ctx, keys_layout)
     }
 
+    fn ckks_functional_bootstrap_tmp_bytes<C1, C2, F>(
+        &self,
+        ct_out: &C1,
+        ct_in: &C2,
+        ctx: &BootstrappingContext<BE, F>,
+        lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds,
+    {
+        BE::ckks_functional_bootstrap_tmp_bytes_impl(self, ct_out, ct_in, ctx, lut, keys_layout)
+    }
+
     fn ckks_mod_up_into<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -56,6 +71,20 @@ where
         BE::ckks_bootstrap_impl::<F, K>(self, ct_out, ct_in, ctx, keys, scratch)
     }
 
+    fn ckks_bootstrap_real<F, K>(
+        &self,
+        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
+        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ctx: &BootstrappingContext<BE, F>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
+    {
+        BE::ckks_bootstrap_real::<F, K>(self, ct_out, ct_in, ctx, keys, scratch)
+    }
+
     fn ckks_functional_bootstrap<F, K>(
         &self,
         ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
@@ -69,6 +98,21 @@ where
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
     {
         BE::ckks_functional_bootstrap::<F, K>(self, ct_out, ct_in, ctx, lut, keys, scratch)
+    }
+
+    fn ckks_functional_bootstrap_real<F, K>(
+        &self,
+        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
+        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ctx: &BootstrappingContext<BE, F>,
+        lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
+    {
+        BE::ckks_functional_bootstrap_real::<F, K>(self, ct_out, ct_in, ctx, lut, keys, scratch)
     }
 
     fn ckks_functional_bootstrap_multi<F, K>(
