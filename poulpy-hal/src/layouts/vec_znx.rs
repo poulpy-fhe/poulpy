@@ -65,7 +65,7 @@ impl VecZnxShape {
         self.max_size
     }
 
-    pub const fn with_size(self, size: usize) -> Self {
+    pub(crate) const fn with_size(self, size: usize) -> Self {
         assert!(size <= self.max_size);
         Self { size, ..self }
     }
@@ -210,26 +210,9 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W> {
         self.shape
     }
 
-    pub fn with_size(mut self, size: usize) -> Self {
-        assert!(size <= self.max_size());
-        self.shape = self.shape.with_size(size);
-        self
-    }
-
     /// Returns the allocated limb capacity.
     pub fn max_size(&self) -> usize {
         self.shape.max_size()
-    }
-}
-
-impl<D: Data, W: ZnxWord> VecZnx<D, W> {
-    /// Sets the active limb count.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `size > max_size`.
-    pub fn set_size(&mut self, size: usize) {
-        self.shape = self.shape.with_size(size);
     }
 }
 

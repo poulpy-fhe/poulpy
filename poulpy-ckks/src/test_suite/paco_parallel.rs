@@ -250,24 +250,6 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     assert!(error.to_string().contains("scratch bytes"), "unexpected error: {error:#}");
     assert_ciphertext_unchanged::<BE>(&before, &rejected);
 
-    let mut truncated_input = ct_in.clone();
-    truncated_input.data_mut().set_size(0);
-    let before = rejected.to_host_owned::<BE>();
-    let error = module
-        .ckks_paco_bootstrap_direct_into::<_, _>(&mut rejected, &truncated_input, &ctx, &keys, KAPPA, &mut scratch.borrow())
-        .expect_err("an input with truncated active storage must be rejected");
-    assert!(error.to_string().contains("active limbs"), "unexpected error: {error:#}");
-    assert_ciphertext_unchanged::<BE>(&before, &rejected);
-
-    let mut truncated_output = module.ckks_ciphertext_alloc(ctx.base2k(), k_out);
-    truncated_output.data_mut().set_size(0);
-    let before = truncated_output.to_host_owned::<BE>();
-    let error = module
-        .ckks_paco_bootstrap_direct_into::<_, _>(&mut truncated_output, &ct_in, &ctx, &keys, KAPPA, &mut scratch.borrow())
-        .expect_err("an output with truncated active storage must be rejected");
-    assert!(error.to_string().contains("active limbs"), "unexpected error: {error:#}");
-    assert_ciphertext_unchanged::<BE>(&before, &truncated_output);
-
     let before = rejected.to_host_owned::<BE>();
     let error = module
         .ckks_paco_bootstrap_into::<_, _>(&mut rejected, &ct_in, &ctx, &keys, KAPPA, &mut scratch.borrow())
