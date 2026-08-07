@@ -1,12 +1,13 @@
+use poulpy_core::layouts::IntPolyInfos;
 use std::{
     fmt::{self},
     ops::{Deref, DerefMut},
 };
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use poulpy_core::layouts::{
-    BSGSMeta, Base2K, Compact, Degree, GLWE, GLWEInfos, GLWEPlaintext, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
-    SetBSGSMeta, SetBase2k, SetK, SetSize, TorusPrecision,
+    BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEPlaintext, GLWEPlaintextReborrowBackendMut, GLWEPlaintextReborrowBackendRef,
+    GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBSGSMeta, SetBase2k, SetK, TorusPrecision,
 };
 use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef};
 
@@ -81,6 +82,43 @@ where
     }
 }
 
+poulpy_core::view_wrapper!(
+    /// Scratch-backed mutable CKKS plaintext view.
+    ///
+    /// This nominal wrapper contains an ordinary
+    /// `CKKSPlaintext<BE::BufMut<'a>>`; both its polynomial storage and CKKS
+    /// metadata therefore have exactly the same representation as other CKKS
+    /// plaintexts.
+    CKKSPlaintextViewMut,
+    CKKSPlaintext<BE::BufMut<'a>>
+);
+poulpy_core::impl_glwe_infos!(CKKSPlaintextViewMut);
+crate::impl_ckks_infos!(inner_meta CKKSPlaintextViewMut);
+
+impl<'a, BE: poulpy_hal::layouts::Backend + 'a> poulpy_core::layouts::IntPolyInfos for CKKSPlaintextViewMut<'a, BE> {
+    fn encoded_k(&self) -> TorusPrecision {
+        self.inner.encoded_k()
+    }
+}
+
+impl<'a, BE: Backend + 'a> SetBase2k for CKKSPlaintextViewMut<'a, BE> {
+    fn set_base2k(&mut self, base2k: Base2K) {
+        SetBase2k::set_base2k(&mut self.inner, base2k);
+    }
+}
+
+impl<'a, BE: Backend + 'a> GLWEToBackendRef<BE> for CKKSPlaintextViewMut<'a, BE> {
+    fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>> {
+        <GLWEPlaintext<BE::BufMut<'a>> as GLWEPlaintextReborrowBackendRef<BE>>::reborrow_backend_ref(&self.inner.inner)
+    }
+}
+
+impl<'a, BE: Backend + 'a> GLWEToBackendMut<BE> for CKKSPlaintextViewMut<'a, BE> {
+    fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>> {
+        <GLWEPlaintext<BE::BufMut<'a>> as GLWEPlaintextReborrowBackendMut<BE>>::reborrow_backend_mut(&mut self.inner.inner)
+    }
+}
+
 impl<D: Data> Deref for CKKSPlaintext<D> {
     type Target = GLWEPlaintext<D>;
 
@@ -113,6 +151,12 @@ impl<D: Data> LWEInfos for CKKSPlaintext<D> {
     }
 }
 
+impl<D: Data> poulpy_core::layouts::IntPolyInfos for CKKSPlaintext<D> {
+    fn encoded_k(&self) -> TorusPrecision {
+        self.inner.encoded_k()
+    }
+}
+
 impl<D: Data> GLWEInfos for CKKSPlaintext<D> {
     fn rank(&self) -> Rank {
         self.inner.rank()
@@ -135,18 +179,6 @@ impl<D: Data> SetK for CKKSPlaintext<D> {
     }
 }
 
-impl<D: Data> SetSize for CKKSPlaintext<D> {
-    fn set_size(&mut self, size: usize) {
-        SetSize::set_size(&mut self.inner, size);
-    }
-}
-
-impl<D: Data> Compact for CKKSPlaintext<D> {
-    // Plaintexts hold full-width integer polynomials; compaction would shed
-    // limbs that carry meaningful precision, so it is intentionally a no-op.
-    fn compact(&mut self) {}
-}
-
 impl<D: Data> SetBSGSMeta for CKKSPlaintext<D> {
     fn set_bsgs_log_budget(&mut self, log_budget: usize) {
         SetCKKSInfos::set_log_budget(self, log_budget);
@@ -156,7 +188,7 @@ impl<D: Data> SetBSGSMeta for CKKSPlaintext<D> {
     }
 }
 
-impl<D: HostDataMut> SetBase2k for CKKSPlaintext<D> {
+impl<D: Data> SetBase2k for CKKSPlaintext<D> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.inner.set_base2k(base2k);
     }
@@ -172,15 +204,6 @@ impl<D: Data> CKKSInfos for CKKSPlaintext<D> {
     fn meta(&self) -> CKKSMeta {
         self.meta
     }
-
-    fn log_delta(&self) -> usize {
-        self.meta.log_delta
-    }
-
-    fn log_budget(&self) -> usize {
-        // Derived from the wrapped GLWE plaintext's torus width: `k - log_delta`.
-        self.inner.k().as_usize().saturating_sub(self.meta.log_delta)
-    }
 }
 
 impl<D: Data> BSGSMeta for CKKSPlaintext<D> {
@@ -192,37 +215,24 @@ impl<D: Data> BSGSMeta for CKKSPlaintext<D> {
     }
 }
 
-pub trait CKKSPlaintextVecHostCodec<F: CKKSScalar>: CKKSInfos + LWEInfos {
+pub trait CKKSPlaintextVecHostCodec<F: CKKSScalar>: CKKSInfos {
+    /// Quantizes a coefficient vector whose length divides the plaintext
+    /// degree. A full-length vector is dense; a shorter vector is placed with
+    /// the implied coefficient gap.
     fn encode_host_floats(&mut self, coeffs: &[F]) -> Result<()>;
+
+    /// Inverse of [`Self::encode_host_floats`]. The output length selects the
+    /// dense or gap-strided coefficient representation.
     fn decode_host_floats(&self, coeffs: &mut [F]) -> Result<()>;
-
-    /// Sparse (gap-interleaved) coefficient encoding.
-    ///
-    /// `coeffs` has length `L = 2·slots` — a power of two that divides `n` — laid
-    /// out as `re(slots) || im(slots)`. It is spread into the `n` polynomial
-    /// coefficients with gap `g = n / L`: `re[i]` lands at coefficient `i·g` and
-    /// `im[i]` at `n/2 + i·g`; all other coefficients are zero. This is how a
-    /// sparsely-packed (`logSlots < logMaxSlots`) vector is encoded coefficient-wise
-    /// for the homomorphic DFT. For full packing (`L == n`, `g == 1`) it reduces
-    /// to the dense placement `re || im`.
-    fn encode_host_floats_sparse(&mut self, coeffs: &[F]) -> Result<()>;
-
-    /// Inverse of [`Self::encode_host_floats_sparse`]: reads the gap-interleaved
-    /// coefficients of `self` back into `coeffs` (length `L = 2·slots`).
-    fn decode_host_floats_sparse(&self, coeffs: &mut [F]) -> Result<()>;
 }
 
-/// Validates a sparse `coeffs` length (`L = 2·slots`, a power of two dividing `n`,
-/// laid out `re(slots) || im(slots)`) and returns the coefficient gap `g = n / L`.
-/// With this gap, `coeffs[j]` lands at coefficient `j·g`, so the real parts fall in
-/// `[0, n/2)` and the imaginary parts in `[n/2, n)` (since `slots·g = n/2`).
-fn sparse_gap<F>(coeffs: &[F], n: usize) -> Result<usize> {
+/// Validates a non-empty coefficient vector of length `L` dividing `n` and
+/// returns the coefficient gap `g = n / L`. With this gap, `coeffs[j]` lands
+/// at polynomial coefficient `j·g`.
+fn coefficient_gap<F>(coeffs: &[F], n: usize) -> Result<usize> {
     let l = coeffs.len();
-    anyhow::ensure!(
-        l >= 2 && l.is_power_of_two(),
-        "sparse coeffs length must be a power of two ≥ 2, got {l}"
-    );
-    anyhow::ensure!(l <= n && n.is_multiple_of(l), "sparse coeffs length {l} must divide n {n}");
+    anyhow::ensure!(l > 0, "coefficient count must be non-zero");
+    anyhow::ensure!(l <= n && n.is_multiple_of(l), "coefficient count {l} must divide n {n}");
     Ok(n / l)
 }
 
@@ -241,13 +251,33 @@ where
     // scale wider than the float's precision is allowed, it simply yields values
     // accurate only to `F`'s mantissa. The integer-width checks below are the real
     // correctness guards (the quantized value must fit i64/i128).
-    let scale = F::from_usize(log_delta).unwrap().exp2();
-    let k = pt.max_k();
+    let scale = F::from_usize(log_delta)
+        .context("CKKS plaintext scale exponent is not representable by the codec scalar")?
+        .exp2();
+    let k = pt.encoded_k();
     if log_delta + log_budget <= 63 {
-        let data: Vec<i64> = coeffs.iter().map(|&x| (x * scale).round().to_i64().unwrap()).collect();
+        let data: Vec<i64> = coeffs
+            .iter()
+            .enumerate()
+            .map(|(index, &x)| {
+                (x * scale)
+                    .round()
+                    .to_i64()
+                    .with_context(|| format!("CKKS coefficient {index} is not representable as an i64 at scale 2^{log_delta}"))
+            })
+            .collect::<Result<_>>()?;
         pt.encode_vec_i64_strided(gap, &data, k);
     } else {
-        let data: Vec<i128> = coeffs.iter().map(|&x| (x * scale).round().to_i128().unwrap()).collect();
+        let data: Vec<i128> = coeffs
+            .iter()
+            .enumerate()
+            .map(|(index, &x)| {
+                (x * scale)
+                    .round()
+                    .to_i128()
+                    .with_context(|| format!("CKKS coefficient {index} is not representable as an i128 at scale 2^{log_delta}"))
+            })
+            .collect::<Result<_>>()?;
         pt.encode_vec_i128_strided(gap, &data, k);
     }
     Ok(())
@@ -263,20 +293,25 @@ where
 {
     let log_delta = pt.log_delta();
     let log_budget = pt.log_budget();
-    anyhow::ensure!(log_delta + log_budget <= 127);
-    let scale = (-F::from_usize(log_delta).unwrap()).exp2();
-    let k = pt.max_k();
+    anyhow::ensure!(
+        log_delta + log_budget <= 127,
+        "CKKS host decoding supports at most 127 torus bits, got {}",
+        log_delta + log_budget,
+    );
+    let scale =
+        (-F::from_usize(log_delta).context("CKKS plaintext scale exponent is not representable by the codec scalar")?).exp2();
+    let k = pt.encoded_k();
     if log_delta + log_budget <= 63 {
         let mut data = vec![0i64; coeffs.len()];
         pt.decode_vec_i64_strided(gap, &mut data, k);
         for (c, &i) in coeffs.iter_mut().zip(data.iter()) {
-            *c = F::from_i64(i).unwrap() * scale;
+            *c = F::from_i64(i).context("decoded i64 coefficient is not representable by the codec scalar")? * scale;
         }
     } else {
         let mut data = vec![0i128; coeffs.len()];
         pt.decode_vec_i128_strided(gap, &mut data, k);
         for (c, &i) in coeffs.iter_mut().zip(data.iter()) {
-            *c = F::from_i128(i).unwrap() * scale;
+            *c = F::from_i128(i).context("decoded i128 coefficient is not representable by the codec scalar")? * scale;
         }
     }
     Ok(())
@@ -284,22 +319,12 @@ where
 
 impl<F: CKKSScalar, D: HostDataMut + HostDataRef> CKKSPlaintextVecHostCodec<F> for CKKSPlaintext<D> {
     fn encode_host_floats(&mut self, coeffs: &[F]) -> Result<()> {
-        anyhow::ensure!(coeffs.len() == self.n().as_usize());
-        encode_host_floats_strided(self, coeffs, 1)
-    }
-
-    fn decode_host_floats(&self, coeffs: &mut [F]) -> Result<()> {
-        anyhow::ensure!(coeffs.len() == self.n().as_usize());
-        decode_host_floats_strided(self, coeffs, 1)
-    }
-
-    fn encode_host_floats_sparse(&mut self, coeffs: &[F]) -> Result<()> {
-        let gap = sparse_gap(coeffs, self.n().as_usize())?;
+        let gap = coefficient_gap(coeffs, self.n().as_usize())?;
         encode_host_floats_strided(self, coeffs, gap)
     }
 
-    fn decode_host_floats_sparse(&self, coeffs: &mut [F]) -> Result<()> {
-        let gap = sparse_gap(coeffs, self.n().as_usize())?;
+    fn decode_host_floats(&self, coeffs: &mut [F]) -> Result<()> {
+        let gap = coefficient_gap(coeffs, self.n().as_usize())?;
         decode_host_floats_strided(self, coeffs, gap)
     }
 }
@@ -344,7 +369,7 @@ mod tests {
         let small = vec![1.0_f64, 2.0, 3.0, 4.0]; // re=[1,2], im=[3,4]
         let mut pt = module.ckks_pt_vec_alloc(base2k, (10usize + 40).into());
         pt.set_meta(prec);
-        pt.encode_host_floats_sparse(&small).unwrap();
+        pt.encode_host_floats(&small).unwrap();
 
         // Full coefficients: re at 0,4; im at n/2=8, 12; rest zero.
         let mut full = vec![0.0_f64; n];
@@ -360,7 +385,7 @@ mod tests {
 
         // Round-trip back to the small vector.
         let mut got = vec![0.0_f64; 4];
-        pt.decode_host_floats_sparse(&mut got).unwrap();
+        pt.decode_host_floats(&mut got).unwrap();
         for (a, b) in small.iter().zip(&got) {
             assert!(approx(*a, *b), "sparse round-trip: {small:?} vs {got:?}");
         }

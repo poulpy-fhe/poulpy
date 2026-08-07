@@ -8,16 +8,16 @@ and lazy normalization.
 The engine is **GLWE-level and scheme-agnostic** — it operates on GLWE ciphertexts,
 GGLWE automorphism keys, and prepared plaintext diagonals — so it lives in
 **poulpy-core**, beside `keyswitching` and `automorphism`. CKKS only contributes the
-diagonal *encoding* and the galois-element map; the `LinearTransformation` /
-`LinearTransformationOps` traits in
+diagonal *encoding* and the galois-element map; the `CKKSLinearTransformationOps`
+trait in
 [`poulpy-ckks/src/api/linear_transformation.rs`](../../poulpy-ckks/src/api/linear_transformation.rs)
-become a thin wrapper that drives the core engine (§11).
+becomes a thin wrapper that drives the core engine (§11).
 The diagram [`linear_transformation.png`](../img/linear_transformation.png) is the visual companion to this text, and
 [`lt_bsgs_impl.md`](lt_bsgs_impl.md) is a file-by-file walkthrough of the default
 implementation that realizes this specification.
 
 > **Implementation status.** The engine lives in **poulpy-core** as the scheme-agnostic
-> `GLWELinearTransformOps` module tree
+> `GLWELinearTransformations` module tree
 > ([`poulpy-core/src/default/linear_transformation.rs`](../../poulpy-core/src/default/linear_transformation.rs)):
 > the module root re-exports focused files for indexing (§3), preparation (§5), hoisted
 > baby rotations (§6.2), prepared inner products (§6.3), lazy giant rotations (§6.3), and
@@ -338,7 +338,7 @@ from poulpy-ckks they are not.
   Prepared baby rotations are addressed by the real baby-step rotation `k`, matching
   the BSGS index, not by a dense local list position. The prepared
   `LinearTransformation<BE>` data type also lives core-side.
-- **CKKS wrapper.** `LinearTransformationOps::ckks_eval_linear_transformation_into` /
+- **CKKS wrapper.** `CKKSLinearTransformationOps::ckks_eval_linear_transformation_into` /
   `_assign` in
   [`poulpy-ckks/src/api/linear_transformation.rs`](../../poulpy-ckks/src/api/linear_transformation.rs)
   becomes thin: encode the diagonals (CKKS scale/`Δ_pt`), build the galois-element map,

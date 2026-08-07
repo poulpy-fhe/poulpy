@@ -14,7 +14,7 @@ use poulpy_hal::layouts::VmpPMatBackendRef;
 /// Wraps a [`GGLWEPrepared`] with input/output degree metadata for
 /// key-switching between GLWE ciphertexts. Tied to a specific backend
 /// via `B: Backend`.
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq)]
 pub struct GLWESwitchingKeyPrepared<D: Data, B: Backend> {
     pub(crate) key: GGLWEPrepared<D, B>,
     pub(crate) input_degree: Degree,  // Degree of sk_in
@@ -66,6 +66,10 @@ impl<D: Data, B: Backend> GLWEInfos for GLWESwitchingKeyPrepared<D, B> {
 }
 
 impl<D: Data, B: Backend> GGLWEInfos for GLWESwitchingKeyPrepared<D, B> {
+    fn k_aux(&self) -> TorusPrecision {
+        self.key.k_aux()
+    }
+
     fn rank_in(&self) -> Rank {
         self.key.rank_in()
     }
@@ -90,14 +94,14 @@ where
     fn glwe_switching_key_prepared_alloc(
         &self,
         base2k: Base2K,
-        k: TorusPrecision,
-        rank_in: Rank,
-        rank_out: Rank,
         dnum: Dnum,
         dsize: Dsize,
+        k_aux: TorusPrecision,
+        rank_in: Rank,
+        rank_out: Rank,
     ) -> GLWESwitchingKeyPrepared<B::OwnedBuf, B> {
         GLWESwitchingKeyPrepared::<B::OwnedBuf, B> {
-            key: self.gglwe_prepared_alloc(base2k, k, rank_in, rank_out, dnum, dsize),
+            key: self.gglwe_prepared_alloc(base2k, dnum, dsize, k_aux, rank_in, rank_out),
             input_degree: Degree(0),
             output_degree: Degree(0),
         }
@@ -109,24 +113,24 @@ where
     {
         self.glwe_switching_key_prepared_alloc(
             infos.base2k(),
-            infos.k(),
-            infos.rank_in(),
-            infos.rank_out(),
             infos.dnum(),
             infos.dsize(),
+            infos.k_aux(),
+            infos.rank_in(),
+            infos.rank_out(),
         )
     }
 
     fn bytes_of_glwe_key_prepared(
         &self,
         base2k: Base2K,
-        k: TorusPrecision,
-        rank_in: Rank,
-        rank_out: Rank,
         dnum: Dnum,
         dsize: Dsize,
+        k_aux: TorusPrecision,
+        rank_in: Rank,
+        rank_out: Rank,
     ) -> usize {
-        self.gglwe_prepared_bytes_of(base2k, k, rank_in, rank_out, dnum, dsize)
+        self.gglwe_prepared_bytes_of(base2k, dnum, dsize, k_aux, rank_in, rank_out)
     }
 
     fn glwe_switching_key_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
@@ -135,11 +139,11 @@ where
     {
         self.bytes_of_glwe_key_prepared(
             infos.base2k(),
-            infos.k(),
-            infos.rank_in(),
-            infos.rank_out(),
             infos.dnum(),
             infos.dsize(),
+            infos.k_aux(),
+            infos.rank_in(),
+            infos.rank_out(),
         )
     }
 

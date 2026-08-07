@@ -9,7 +9,7 @@ use crate::{
     EncryptionLayout, GGSWEncryptSk, GLWEEncryptSk, GLWEExternalProduct, GLWENoise, GLWENormalize,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory, LWEInfos,
+        GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory,
         ModuleCoreAlloc,
         prepared::{GGSWPrepared, GLWESecretPrepared},
     },
@@ -65,8 +65,8 @@ where
             let ggsw_apply_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
-                k: k_ggsw.into(),
                 dnum: dnum.into(),
+                k_aux: (dsize * key_base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank: rank.into(),
             })
@@ -100,6 +100,7 @@ where
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
                 (module).ggsw_encrypt_sk_tmp_bytes(&ggsw_apply_infos)
                     | (module).glwe_encrypt_sk_tmp_bytes(&glwe_in_infos)
+                    | (module).glwe_noise_tmp_bytes(&glwe_out_infos)
                     | module.glwe_external_product_tmp_bytes(&glwe_out_infos, &glwe_in_infos, &ggsw_apply_infos),
             );
 
@@ -132,13 +133,7 @@ where
             let mut ct_ggsw_prepared: GGSWPrepared<BE::OwnedBuf, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw_apply);
             module.ggsw_prepare(&mut ct_ggsw_prepared, &ggsw_apply, &mut scratch.borrow());
 
-            module.glwe_external_product(
-                &mut glwe_out,
-                &glwe_in,
-                &ct_ggsw_prepared,
-                ct_ggsw_prepared.size(),
-                &mut scratch.borrow(),
-            );
+            module.glwe_external_product(&mut glwe_out, &glwe_in, &ct_ggsw_prepared, &mut scratch.borrow());
 
             module.vec_znx_rotate_assign_backend(
                 k as i64,
@@ -219,8 +214,8 @@ where
             let ggsw_apply_infos = EncryptionLayout::new_from_default_sigma(GGSWLayout {
                 n: n.into(),
                 base2k: key_base2k.into(),
-                k: k_ggsw.into(),
                 dnum: dnum.into(),
+                k_aux: (dsize * key_base2k + module.log_n()).into(),
                 dsize: dsize.into(),
                 rank: rank.into(),
             })
@@ -252,6 +247,7 @@ where
             let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
                 (module).ggsw_encrypt_sk_tmp_bytes(&ggsw_apply_infos)
                     | (module).glwe_encrypt_sk_tmp_bytes(&glwe_out_infos)
+                    | (module).glwe_noise_tmp_bytes(&glwe_out_infos)
                     | module.glwe_external_product_tmp_bytes(&glwe_out_infos, &glwe_out_infos, &ggsw_apply_infos),
             );
 
@@ -284,12 +280,7 @@ where
             let mut ct_ggsw_prepared: GGSWPrepared<BE::OwnedBuf, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw_apply);
             module.ggsw_prepare(&mut ct_ggsw_prepared, &ggsw_apply, &mut scratch.borrow());
 
-            module.glwe_external_product_assign(
-                &mut glwe_out,
-                &ct_ggsw_prepared,
-                ct_ggsw_prepared.size(),
-                &mut scratch.borrow(),
-            );
+            module.glwe_external_product_assign(&mut glwe_out, &ct_ggsw_prepared, &mut scratch.borrow());
 
             module.vec_znx_rotate_assign_backend(
                 k as i64,

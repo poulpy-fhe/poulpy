@@ -25,7 +25,7 @@
 use core::arch::x86_64::{
     __m128i, __m256i, __m512i, _mm_loadu_si128, _mm256_and_si256, _mm256_loadu_si256, _mm256_madd52hi_epu64,
     _mm256_madd52lo_epu64, _mm256_min_epu64, _mm256_set1_epi64x, _mm256_setzero_si256, _mm256_storeu_si256, _mm256_sub_epi64,
-    _mm512_add_epi64, _mm512_and_si512, _mm512_broadcast_i64x2, _mm512_broadcast_i64x4, _mm512_extracti64x4_epi64,
+    _mm512_add_epi64, _mm512_and_si512, _mm512_castsi128_si512, _mm512_castsi256_si512, _mm512_extracti64x4_epi64,
     _mm512_loadu_si512, _mm512_madd52hi_epu64, _mm512_madd52lo_epu64, _mm512_mask_blend_epi64, _mm512_min_epu64,
     _mm512_permutexvar_epi64, _mm512_set_epi64, _mm512_set1_epi64, _mm512_setzero_si512, _mm512_storeu_si512, _mm512_sub_epi64,
 };
@@ -590,7 +590,9 @@ unsafe fn write_inv_interleaved_t4(x: __m512i, y: __m512i, out: *mut u64) {
 unsafe fn load_w_op_t2(arg: *const u64) -> __m512i {
     unsafe {
         let vp = _mm512_set_epi64(3, 3, 2, 2, 1, 1, 0, 0);
-        let w = _mm512_broadcast_i64x4(_mm256_loadu_si256(arg as *const __m256i));
+        // `vp` only references lanes 0..4, so the upper (undefined) lanes of the
+        // cast never leak into the result; no broadcast needed before the permute.
+        let w = _mm512_castsi256_si512(_mm256_loadu_si256(arg as *const __m256i));
         _mm512_permutexvar_epi64(vp, w)
     }
 }
@@ -602,7 +604,11 @@ unsafe fn load_w_op_t2(arg: *const u64) -> __m512i {
 unsafe fn load_w_op_t4(arg: *const u64) -> __m512i {
     unsafe {
         let vp = _mm512_set_epi64(1, 1, 1, 1, 0, 0, 0, 0);
-        let w = _mm512_broadcast_i64x2(_mm_loadu_si128(arg as *const __m128i));
+        // `vp` only references lanes 0..2, so the upper (undefined) lanes of the
+        // cast never leak into the result. This also avoids `_mm512_broadcast_i64x2`,
+        // an AVX-512DQ intrinsic outside this crate's compile-time baseline that
+        // would block inlining.
+        let w = _mm512_castsi128_si512(_mm_loadu_si128(arg as *const __m128i));
         _mm512_permutexvar_epi64(vp, w)
     }
 }
@@ -905,6 +911,7 @@ mod tests {
         },
         tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv},
     };
+    use poulpy_hal::layouts::PrimeSet;
 
     #[test]
     fn harvey_modmul_simd_vs_scalar() {

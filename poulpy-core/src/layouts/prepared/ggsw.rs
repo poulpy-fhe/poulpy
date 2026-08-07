@@ -1,6 +1,8 @@
+use poulpy_hal::layouts::VmpPMatToBackendMut;
+use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
     api::{VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes, VmpZero},
-    layouts::{Backend, Data, HostDataRef, Module, ScratchArena, VmpPMat, VmpPMatToBackendMut, VmpPMatToBackendRef},
+    layouts::{Backend, Data, HostDataRef, Module, ScratchArena, VmpPMat},
 };
 
 use crate::layouts::{
@@ -12,10 +14,10 @@ use crate::layouts::{
 /// Stores the GGSW gadget matrix with polynomials in the frequency domain
 /// of the backend's DFT/NTT transform, enabling O(N log N) polynomial
 /// operations. Tied to a specific backend via `B: Backend`.
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq)]
 pub struct GGSWPrepared<D: Data, B: Backend> {
-    pub(crate) data: VmpPMat<D, B>,
-    pub(crate) k: TorusPrecision,
+    pub(crate) data: VmpPMat<D, B::DftWord, B>,
+    pub(crate) k_aux: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) dsize: Dsize,
 }
@@ -33,11 +35,11 @@ impl<D: Data, B: Backend> LWEInfos for GGSWPrepared<D, B> {
     }
 
     fn max_size(&self) -> usize {
-        self.data.size()
+        crate::layouts::key_size(self.base2k, self.dnum(), self.dsize, self.k_aux)
     }
 
     fn k(&self) -> TorusPrecision {
-        self.k
+        crate::layouts::key_k(self.base2k, self.dnum(), self.dsize, self.k_aux)
     }
 }
 
@@ -48,6 +50,10 @@ impl<D: Data, B: Backend> GLWEInfos for GGSWPrepared<D, B> {
 }
 
 impl<D: Data, B: Backend> GGSWInfos for GGSWPrepared<D, B> {
+    fn k_aux(&self) -> TorusPrecision {
+        self.k_aux
+    }
+
     fn dsize(&self) -> Dsize {
         self.dsize
     }
@@ -66,35 +72,18 @@ where
     fn ggsw_prepared_alloc(
         &self,
         base2k: Base2K,
-        k: TorusPrecision,
         dnum: Dnum,
         dsize: Dsize,
+        k_aux: TorusPrecision,
         rank: Rank,
     ) -> GGSWPrepared<B::OwnedBuf, B> {
-        let size: usize = k.0.div_ceil(base2k.0) as usize;
-        debug_assert!(
-            size as u32 > dsize.0,
-            "invalid ggsw: ceil(k/base2k): {size} <= dsize: {}",
-            dsize.0
-        );
-
-        assert!(
-            dnum.0 * dsize.0 <= size as u32,
-            "invalid ggsw: dnum: {} * dsize:{} > ceil(k/base2k): {size}",
-            dnum.0,
-            dsize.0,
-        );
+        let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
 
         GGSWPrepared {
-            data: self.vmp_pmat_alloc(
-                dnum.into(),
-                (rank + 1).into(),
-                (rank + 1).into(),
-                k.0.div_ceil(base2k.0) as usize,
-            ),
+            data: self.vmp_pmat_alloc(dnum.into(), (rank + 1).into(), (rank + 1).into(), size),
             base2k,
             dsize,
-            k,
+            k_aux,
         }
     }
 
@@ -103,23 +92,11 @@ where
         A: GGSWInfos,
     {
         assert_eq!(self.ring_degree(), infos.n());
-        self.ggsw_prepared_alloc(infos.base2k(), infos.k(), infos.dnum(), infos.dsize(), infos.rank())
+        self.ggsw_prepared_alloc(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux(), infos.rank())
     }
 
-    fn ggsw_prepared_bytes_of(&self, base2k: Base2K, k: TorusPrecision, dnum: Dnum, dsize: Dsize, rank: Rank) -> usize {
-        let size: usize = k.0.div_ceil(base2k.0) as usize;
-        debug_assert!(
-            size as u32 > dsize.0,
-            "invalid ggsw: ceil(k/base2k): {size} <= dsize: {}",
-            dsize.0
-        );
-
-        assert!(
-            dnum.0 * dsize.0 <= size as u32,
-            "invalid ggsw: dnum: {} * dsize:{} > ceil(k/base2k): {size}",
-            dnum.0,
-            dsize.0,
-        );
+    fn ggsw_prepared_bytes_of(&self, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
+        let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
 
         self.bytes_of_vmp_pmat(dnum.into(), (rank + 1).into(), (rank + 1).into(), size)
     }
@@ -129,7 +106,7 @@ where
         A: GGSWInfos,
     {
         assert_eq!(self.ring_degree(), infos.n());
-        self.ggsw_prepared_bytes_of(infos.base2k(), infos.k(), infos.dnum(), infos.dsize(), infos.rank())
+        self.ggsw_prepared_bytes_of(infos.base2k(), infos.dnum(), infos.dsize(), infos.k_aux(), infos.rank())
     }
 
     fn ggsw_prepare_tmp_bytes<A>(&self, infos: &A) -> usize
@@ -182,7 +159,7 @@ impl<B: Backend> GGSWPreparedFactory<B> for Module<B> where
 // module-only API: allocation/size helpers are provided by `GGSWPreparedFactory` on `Module`.
 
 impl<D: HostDataRef, B: Backend> GGSWPrepared<D, B> {
-    pub fn data(&self) -> &VmpPMat<D, B> {
+    pub fn data(&self) -> &VmpPMat<D, B::DftWord, B> {
         &self.data
     }
 }
@@ -199,7 +176,7 @@ impl<B: Backend> GGSWPreparedToBackendRef<B> for GGSWPrepared<B::OwnedBuf, B> {
     fn to_backend_ref(&self) -> GGSWPreparedBackendRef<'_, B> {
         GGSWPrepared {
             base2k: self.base2k,
-            k: self.k,
+            k_aux: self.k_aux,
             dsize: self.dsize,
             data: self.data.to_backend_ref(),
         }
@@ -214,7 +191,7 @@ impl<B: Backend> GGSWPreparedToBackendMut<B> for GGSWPrepared<B::OwnedBuf, B> {
     fn to_backend_mut(&mut self) -> GGSWPreparedBackendMut<'_, B> {
         GGSWPrepared {
             base2k: self.base2k,
-            k: self.k,
+            k_aux: self.k_aux,
             dsize: self.dsize,
             data: self.data.to_backend_mut(),
         }

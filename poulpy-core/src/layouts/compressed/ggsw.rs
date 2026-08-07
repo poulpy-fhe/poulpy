@@ -28,7 +28,7 @@ use std::{
 #[derive(PartialEq, Eq, Clone)]
 pub struct GGSWCompressed<D: Data> {
     pub(crate) data: MatZnx<D>,
-    pub(crate) k: TorusPrecision,
+    pub(crate) k_aux: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) dsize: Dsize,
     pub(crate) rank: Rank,
@@ -118,6 +118,10 @@ impl<'a, BE: Backend + 'a> GLWEInfos for GGSWCompressedBackendRef<'a, BE> {
 }
 
 impl<'a, BE: Backend + 'a> GGSWInfos for GGSWCompressedBackendRef<'a, BE> {
+    fn k_aux(&self) -> TorusPrecision {
+        self.inner.k_aux()
+    }
+
     fn dnum(&self) -> Dnum {
         self.inner.dnum()
     }
@@ -152,6 +156,10 @@ impl<'a, BE: Backend + 'a> GLWEInfos for GGSWCompressedBackendMut<'a, BE> {
 }
 
 impl<'a, BE: Backend + 'a> GGSWInfos for GGSWCompressedBackendMut<'a, BE> {
+    fn k_aux(&self) -> TorusPrecision {
+        self.inner.k_aux()
+    }
+
     fn dnum(&self) -> Dnum {
         self.inner.dnum()
     }
@@ -201,11 +209,11 @@ impl<D: Data> LWEInfos for GGSWCompressed<D> {
     }
 
     fn max_size(&self) -> usize {
-        self.data.size()
+        crate::layouts::key_size(self.base2k, self.dnum(), self.dsize, self.k_aux)
     }
 
     fn k(&self) -> TorusPrecision {
-        self.k
+        crate::layouts::key_k(self.base2k, self.dnum(), self.dsize, self.k_aux)
     }
 }
 impl<D: Data> GLWEInfos for GGSWCompressed<D> {
@@ -215,6 +223,10 @@ impl<D: Data> GLWEInfos for GGSWCompressed<D> {
 }
 
 impl<D: Data> GGSWInfos for GGSWCompressed<D> {
+    fn k_aux(&self) -> TorusPrecision {
+        self.k_aux
+    }
+
     fn dsize(&self) -> Dsize {
         self.dsize
     }
@@ -235,7 +247,10 @@ impl<D: HostDataRef> fmt::Display for GGSWCompressed<D> {
         write!(
             f,
             "(GGSWCompressed: base2k={} k={} dsize={}) {}",
-            self.base2k, self.k, self.dsize, self.data
+            self.base2k,
+            self.k(),
+            self.dsize,
+            self.data
         )
     }
 }
@@ -255,28 +270,16 @@ impl GGSWCompressed<Vec<u8>> {
         Self::alloc(
             infos.n(),
             infos.base2k(),
-            infos.k(),
-            infos.rank(),
             infos.dnum(),
             infos.dsize(),
+            infos.k_aux(),
+            infos.rank(),
         )
     }
 
     /// Allocates a new compressed GGSW with the given parameters.
-    pub(crate) fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank, dnum: Dnum, dsize: Dsize) -> Self {
-        let size: usize = k.0.div_ceil(base2k.0) as usize;
-        assert!(
-            size as u32 > dsize.0,
-            "invalid ggsw: ceil(k/base2k): {size} <= dsize: {}",
-            dsize.0
-        );
-
-        assert!(
-            dnum.0 * dsize.0 <= size as u32,
-            "invalid ggsw: dnum: {} * dsize:{} > ceil(k/base2k): {size}",
-            dnum.0,
-            dsize.0,
-        );
+    pub(crate) fn alloc(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> Self {
+        let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
 
         GGSWCompressed {
             data: MatZnx::from_data(
@@ -293,7 +296,7 @@ impl GGSWCompressed<Vec<u8>> {
                 1,
                 size,
             ),
-            k,
+            k_aux,
             base2k,
             dsize,
             rank,
@@ -309,30 +312,18 @@ impl GGSWCompressed<Vec<u8>> {
         Self::bytes_of(
             infos.n(),
             infos.base2k(),
-            infos.k(),
-            infos.rank(),
             infos.dnum(),
             infos.dsize(),
+            infos.k_aux(),
+            infos.rank(),
         )
     }
 
     /// Returns the serialized byte size for a compressed GGSW with the given parameters.
-    pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank, dnum: Dnum, dsize: Dsize) -> usize {
-        let size: usize = k.0.div_ceil(base2k.0) as usize;
-        assert!(
-            size as u32 > dsize.0,
-            "invalid ggsw: ceil(k/base2k): {size} <= dsize: {}",
-            dsize.0
-        );
+    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
+        let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
 
-        assert!(
-            dnum.0 * dsize.0 <= size as u32,
-            "invalid ggsw: dnum: {} * dsize:{} > ceil(k/base2k): {size}",
-            dnum.0,
-            dsize.0,
-        );
-
-        MatZnx::bytes_of(n.into(), dnum.into(), (rank + 1).into(), 1, k.0.div_ceil(base2k.0) as usize)
+        MatZnx::bytes_of(n.into(), dnum.into(), (rank + 1).into(), 1, size)
     }
 }
 
@@ -342,7 +333,7 @@ impl<D: HostDataRef> GGSWCompressed<D> {
         let rank: usize = self.rank().into();
         GLWECompressed {
             data: self.data.at(row, col),
-            k: self.k,
+            k: self.k(),
             base2k: self.base2k,
             rank: self.rank,
             seed: self.seed[row * (rank + 1) + col],
@@ -354,19 +345,21 @@ impl<D: HostDataMut> GGSWCompressed<D> {
     /// Returns a mutably-borrowed compressed GLWE at the given row and column.
     pub fn at_mut(&mut self, row: usize, col: usize) -> GLWECompressed<&mut [u8]> {
         let rank: usize = self.rank().into();
+        let k = self.k();
+        let seed = self.seed[row * (rank + 1) + col];
         GLWECompressed {
             data: self.data.at_mut(row, col),
-            k: self.k,
+            k,
             base2k: self.base2k,
             rank: self.rank,
-            seed: self.seed[row * (rank + 1) + col],
+            seed,
         }
     }
 }
 
 impl<D: HostDataMut> ReaderFrom for GGSWCompressed<D> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
-        self.k = TorusPrecision(reader.read_u32::<LittleEndian>()?);
+        self.k_aux = TorusPrecision(reader.read_u32::<LittleEndian>()?);
         self.base2k = Base2K(reader.read_u32::<LittleEndian>()?);
         self.dsize = Dsize(reader.read_u32::<LittleEndian>()?);
         self.rank = Rank(reader.read_u32::<LittleEndian>()?);
@@ -381,7 +374,7 @@ impl<D: HostDataMut> ReaderFrom for GGSWCompressed<D> {
 
 impl<D: HostDataRef> WriterTo for GGSWCompressed<D> {
     fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        writer.write_u32::<LittleEndian>(self.k.into())?;
+        writer.write_u32::<LittleEndian>(self.k_aux.into())?;
         writer.write_u32::<LittleEndian>(self.base2k.into())?;
         writer.write_u32::<LittleEndian>(self.dsize.into())?;
         writer.write_u32::<LittleEndian>(self.rank.into())?;
@@ -435,7 +428,7 @@ pub trait GGSWCompressedToBackendRef<BE: Backend> {
 impl<BE: Backend> GGSWCompressedToBackendRef<BE> for GGSWCompressed<BE::OwnedBuf> {
     fn to_backend_ref(&self) -> GGSWCompressedBackendRef<'_, BE> {
         GGSWCompressedBackendRef::from_inner(GGSWCompressed {
-            k: self.k(),
+            k_aux: self.k_aux(),
             base2k: self.base2k(),
             dsize: self.dsize(),
             rank: self.rank(),
@@ -448,7 +441,7 @@ impl<BE: Backend> GGSWCompressedToBackendRef<BE> for GGSWCompressed<BE::OwnedBuf
 impl<'b, BE: Backend + 'b> GGSWCompressedToBackendRef<BE> for &GGSWCompressed<BE::BufRef<'b>> {
     fn to_backend_ref(&self) -> GGSWCompressedBackendRef<'_, BE> {
         GGSWCompressedBackendRef::from_inner(GGSWCompressed {
-            k: self.k(),
+            k_aux: self.k_aux(),
             base2k: self.base2k(),
             dsize: self.dsize(),
             rank: self.rank(),
@@ -461,7 +454,7 @@ impl<'b, BE: Backend + 'b> GGSWCompressedToBackendRef<BE> for &GGSWCompressed<BE
 impl<'b, BE: Backend + 'b> GGSWCompressedToBackendRef<BE> for &mut GGSWCompressed<BE::BufMut<'b>> {
     fn to_backend_ref(&self) -> GGSWCompressedBackendRef<'_, BE> {
         GGSWCompressedBackendRef::from_inner(GGSWCompressed {
-            k: self.k(),
+            k_aux: self.k_aux(),
             base2k: self.base2k(),
             dsize: self.dsize(),
             rank: self.rank(),
@@ -478,7 +471,7 @@ pub trait GGSWCompressedToBackendMut<BE: Backend>: GGSWCompressedToBackendRef<BE
 impl<BE: Backend> GGSWCompressedToBackendMut<BE> for GGSWCompressed<BE::OwnedBuf> {
     fn to_backend_mut(&mut self) -> GGSWCompressedBackendMut<'_, BE> {
         GGSWCompressedBackendMut::from_inner(GGSWCompressed {
-            k: self.k(),
+            k_aux: self.k_aux(),
             base2k: self.base2k(),
             dsize: self.dsize(),
             rank: self.rank(),
@@ -491,7 +484,7 @@ impl<BE: Backend> GGSWCompressedToBackendMut<BE> for GGSWCompressed<BE::OwnedBuf
 impl<'b, BE: Backend + 'b> GGSWCompressedToBackendMut<BE> for &mut GGSWCompressed<BE::BufMut<'b>> {
     fn to_backend_mut(&mut self) -> GGSWCompressedBackendMut<'_, BE> {
         GGSWCompressedBackendMut::from_inner(GGSWCompressed {
-            k: self.k(),
+            k_aux: self.k_aux(),
             base2k: self.base2k(),
             dsize: self.dsize(),
             rank: self.rank(),
@@ -507,12 +500,16 @@ fn ggsw_compressed_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
     col: usize,
 ) -> GLWECompressedBackendMut<'a, BE> {
     let rank: usize = ggsw.rank().into();
+    let k = ggsw.k();
+    let seed = ggsw.seed[row * (rank + 1) + col];
+    let base2k = ggsw.base2k;
+    let rank_field = ggsw.rank;
     GLWECompressed {
         data: mat_znx_at_backend_mut_from_mut::<BE>(&mut ggsw.data, row, col),
-        k: ggsw.k,
-        base2k: ggsw.base2k,
-        rank: ggsw.rank,
-        seed: ggsw.seed[row * (rank + 1) + col],
+        k,
+        base2k,
+        rank: rank_field,
+        seed,
     }
 }
 
@@ -524,7 +521,7 @@ fn ggsw_compressed_at_backend_ref_from_ref<'a, 'b, BE: Backend>(
     let rank: usize = ggsw.rank().into();
     GLWECompressed {
         data: mat_znx_at_backend_ref_from_ref::<BE>(&ggsw.data, row, col),
-        k: ggsw.k,
+        k: ggsw.k(),
         base2k: ggsw.base2k,
         rank: ggsw.rank,
         seed: ggsw.seed[row * (rank + 1) + col],

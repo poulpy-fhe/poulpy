@@ -1,9 +1,10 @@
-use anyhow::{Result, bail, ensure};
+use crate::{CKKSResult as Result, ckks_bail, ckks_ensure};
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     GLWENormalize, GLWETensoring,
     layouts::{
-        Compact, GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWETensor, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
-        LWEInfos, TorusPrecision,
+        GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWETensor, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        TorusPrecision,
     },
 };
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
@@ -11,12 +12,10 @@ use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 use crate::{
     CKKSCtBounds, CKKSInfos, SetCKKSInfos,
     api::CKKSCopyOps,
+    api::{CKKSAddManyOps, CKKSAddOps, CKKSAffineOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSSubOps},
     layouts::{
         CKKSCiphertext, CKKSCiphertextViewMut, ScratchArenaTakeCKKS, UnnormalizedCKKSCiphertext,
         ciphertext::UnnormalizedCKKSCiphertextRefMut,
-    },
-    leveled::api::{
-        CKKSAddManyOps, CKKSAddOps, CKKSAffineOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSSubOps,
     },
     oep::CKKSAddImpl,
 };
@@ -32,14 +31,37 @@ use crate::{
 /// In the typical case (sign-balanced CKKS inputs) digit growth follows an
 /// Irwin–Hall distribution with std dev `O(sqrt(n) · 2^(base2k−1) / sqrt(3))`,
 /// so the practical limit is much higher than this conservative bound.
-fn ensure_accumulation_fits<D: Data>(op: &'static str, dst: &CKKSCiphertext<D>, n: usize) -> Result<()> {
+fn ensure_accumulation_fits<C: LWEInfos + ?Sized>(op: &'static str, dst: &C, n: usize) -> Result<()> {
     let base2k: usize = dst.base2k().as_usize();
-    ensure!(base2k < 64, "{op}: unsupported base2k={base2k}");
-    ensure!(
+    ckks_ensure!(base2k < 64, "{op}: unsupported base2k={base2k}");
+    ckks_ensure!(
         n <= (1usize << (63 - base2k)),
         "{op}: {n} terms risks i64 overflow at base2k={base2k}",
     );
     Ok(())
+}
+
+/// Shared body of the fused multiply-then-accumulate composites
+/// (`ckks_mul_{add,sub}_*_into[_unnormalized]`): carve a `dst`-shaped temporary
+/// inside a scratch scope, run the variant's multiply into it, then fold it
+/// into `dst` with the variant's carry verb.
+fn mul_then_combine<BE, Dst, MulF, CombineF>(
+    dst: &mut Dst,
+    scratch: &mut ScratchArena<'_, BE>,
+    mul: MulF,
+    combine: CombineF,
+) -> Result<()>
+where
+    BE: Backend,
+    Dst: GLWEInfos + CKKSInfos,
+    MulF: for<'t> FnOnce(&mut CKKSCiphertextViewMut<'t, BE>, &mut ScratchArena<'t, BE>) -> Result<()>,
+    CombineF: for<'t> FnOnce(&mut Dst, &CKKSCiphertextViewMut<'t, BE>, &mut ScratchArena<'t, BE>) -> Result<()>,
+{
+    scratch.scope(|scratch_local| {
+        let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
+        mul(&mut tmp, &mut scratch_local)?;
+        combine(dst, &tmp, &mut scratch_local)
+    })
 }
 
 // --- CKKSAddManyOps ---
@@ -52,18 +74,13 @@ where
         self.ckks_add_tmp_bytes()
     }
 
-    fn ckks_add_many<Dst: Data, Src: Data>(
-        &self,
-        dst: &mut CKKSCiphertext<Dst>,
-        inputs: &[&CKKSCiphertext<Src>],
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    fn ckks_add_many<Dst, Src>(&self, dst: &mut Dst, inputs: &[&Src], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<Src>: GLWEToBackendRef<BE>,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         match inputs.len() {
-            0 => bail!("ckks_add_many: inputs must contain at least one ciphertext"),
+            0 => ckks_bail!("ckks_add_many: inputs must contain at least one ciphertext"),
             1 => {
                 self.ckks_copy(dst, inputs[0], scratch)?;
             }
@@ -85,19 +102,21 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSMulAddOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE>,
 {
-    fn ckks_mul_add_ct_tmp_bytes<R, T>(&self, res: &R, tsk: &T) -> usize
+    fn ckks_mul_add_ct_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        B: CKKSCtBounds,
         T: GGLWEInfos,
     {
-        GLWE::<Vec<u8>>::bytes_of_from_infos(res) + self.ckks_mul_tmp_bytes(res, tsk).max(self.ckks_add_tmp_bytes())
+        GLWE::<Vec<u8>>::bytes_of_from_infos(res) + self.ckks_mul_tmp_bytes(res, a, b, tsk).max(self.ckks_add_tmp_bytes())
     }
 
     fn ckks_mul_add_pt_vec_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos + LWEInfos,
+        P: CKKSInfos,
     {
         GLWE::<Vec<u8>>::bytes_of_from_infos(res) + self.ckks_mul_pt_vec_tmp_bytes(res, a, b).max(self.ckks_add_tmp_bytes())
     }
@@ -106,7 +125,7 @@ where
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos + LWEInfos,
+        P: CKKSInfos,
     {
         GLWE::<Vec<u8>>::bytes_of_from_infos(res) + self.ckks_mul_pt_const_tmp_bytes(res, a, b).max(self.ckks_add_tmp_bytes())
     }
@@ -125,24 +144,26 @@ where
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
         T: GGLWEInfos + poulpy_core::layouts::prepared::GLWETensorKeyPreparedToBackendRef<BE>,
     {
-        scratch.scope(|scratch_local| {
-            let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
-            self.ckks_mul_into(&mut tmp, a, b, tsk, &mut scratch_local)?;
-            self.ckks_add_assign(dst, &tmp, &mut scratch_local)
-        })
+        mul_then_combine(
+            dst,
+            scratch,
+            |tmp, s| self.ckks_mul_into(tmp, a, b, tsk, s),
+            |dst, tmp, s| self.ckks_add_assign(dst, tmp, s),
+        )
     }
 
     fn ckks_mul_add_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        scratch.scope(|scratch_local| {
-            let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
-            self.ckks_mul_pt_vec_into(&mut tmp, a, pt, &mut scratch_local)?;
-            self.ckks_add_assign(dst, &tmp, &mut scratch_local)
-        })
+        mul_then_combine(
+            dst,
+            scratch,
+            |tmp, s| self.ckks_mul_pt_vec_into(tmp, a, pt, s),
+            |dst, tmp, s| self.ckks_add_assign(dst, tmp, s),
+        )
     }
 
     fn ckks_mul_add_pt_const_into<Dst, A, P>(
@@ -156,13 +177,14 @@ where
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        scratch.scope(|scratch_local| {
-            let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
-            self.ckks_mul_pt_const_into(&mut tmp, a, pt, pt_coeff, &mut scratch_local)?;
-            self.ckks_add_assign(dst, &tmp, &mut scratch_local)
-        })
+        mul_then_combine(
+            dst,
+            scratch,
+            |tmp, s| self.ckks_mul_pt_const_into(tmp, a, pt, pt_coeff, s),
+            |dst, tmp, s| self.ckks_add_assign(dst, tmp, s),
+        )
     }
 
     fn ckks_mul_add_pt_const_into_unnormalized<Dst: Data, A, P>(
@@ -174,15 +196,16 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        GLWE<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        scratch.scope(|scratch_local| {
-            let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
-            self.ckks_mul_pt_const_into(&mut tmp, a, pt, pt_coeff, &mut scratch_local)?;
-            self.ckks_add_assign_unnormalized(dst, &tmp, &mut scratch_local)
-        })
+        mul_then_combine(
+            dst,
+            scratch,
+            |tmp, s| self.ckks_mul_pt_const_into(tmp, a, pt, pt_coeff, s),
+            |dst, tmp, s| self.ckks_add_assign_unnormalized(dst, tmp, s),
+        )
     }
 
     fn ckks_mul_add_pt_vec_into_unnormalized<Dst: Data, A, P>(
@@ -193,15 +216,16 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        UnnormalizedCKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
+        GLWE<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        scratch.scope(|scratch_local| {
-            let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
-            self.ckks_mul_pt_vec_into(&mut tmp, a, pt, &mut scratch_local)?;
-            self.ckks_add_assign_unnormalized(dst, &tmp, &mut scratch_local)
-        })
+        mul_then_combine(
+            dst,
+            scratch,
+            |tmp, s| self.ckks_mul_pt_vec_into(tmp, a, pt, s),
+            |dst, tmp, s| self.ckks_add_assign_unnormalized(dst, tmp, s),
+        )
     }
 }
 
@@ -215,7 +239,7 @@ where
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos + LWEInfos,
+        P: CKKSInfos,
     {
         self.ckks_mul_pt_const_tmp_bytes(res, a, affine_const)
             .max(self.ckks_add_pt_const_tmp_bytes())
@@ -231,9 +255,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
         self.ckks_mul_pt_const_into(dst, a, affine_const, scale_coeff, scratch)?;
         self.ckks_add_pt_const_assign(dst, 0, affine_const, offset_coeff, scratch)
@@ -248,8 +272,8 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
         self.ckks_mul_pt_const_assign(dst, affine_const, scale_coeff, scratch)?;
         self.ckks_add_pt_const_assign(dst, 0, affine_const, offset_coeff, scratch)
@@ -259,7 +283,7 @@ where
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        S: CKKSInfos + LWEInfos,
+        S: CKKSInfos,
     {
         self.ckks_mul_pt_vec_tmp_bytes(res, a, scale)
             .max(self.ckks_add_pt_vec_tmp_bytes())
@@ -274,10 +298,10 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        S: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        S: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
         self.ckks_mul_pt_vec_into(dst, a, scale, scratch)?;
         self.ckks_add_pt_vec_assign(dst, offset, scratch)
@@ -291,9 +315,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
-        S: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        S: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
         self.ckks_mul_pt_vec_assign(dst, scale, scratch)?;
         self.ckks_add_pt_vec_assign(dst, offset, scratch)
@@ -306,19 +330,21 @@ impl<BE: Backend> CKKSMulSubOps<BE> for Module<BE>
 where
     Module<BE>: CKKSMulOps<BE> + CKKSSubOps<BE>,
 {
-    fn ckks_mul_sub_ct_tmp_bytes<R, T>(&self, res: &R, tsk: &T) -> usize
+    fn ckks_mul_sub_ct_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        B: CKKSCtBounds,
         T: GGLWEInfos,
     {
-        GLWE::<Vec<u8>>::bytes_of_from_infos(res) + self.ckks_mul_tmp_bytes(res, tsk).max(self.ckks_sub_tmp_bytes())
+        GLWE::<Vec<u8>>::bytes_of_from_infos(res) + self.ckks_mul_tmp_bytes(res, a, b, tsk).max(self.ckks_sub_tmp_bytes())
     }
 
     fn ckks_mul_sub_pt_vec_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos + LWEInfos,
+        P: CKKSInfos,
     {
         GLWE::<Vec<u8>>::bytes_of_from_infos(res) + self.ckks_mul_pt_vec_tmp_bytes(res, a, b).max(self.ckks_sub_tmp_bytes())
     }
@@ -327,69 +353,66 @@ where
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos + LWEInfos,
+        P: CKKSInfos,
     {
         GLWE::<Vec<u8>>::bytes_of_from_infos(res) + self.ckks_mul_pt_const_tmp_bytes(res, a, b).max(self.ckks_sub_tmp_bytes())
     }
 
-    fn ckks_mul_sub_ct_into<Dst: Data, A: Data, B: Data, T: Data>(
+    fn ckks_mul_sub_ct_into<Dst, A, B, T>(
         &self,
-        dst: &mut CKKSCiphertext<Dst>,
-        a: &CKKSCiphertext<A>,
-        b: &CKKSCiphertext<B>,
-        tsk: &GLWETensorKeyPrepared<T, BE>,
+        dst: &mut Dst,
+        a: &A,
+        b: &B,
+        tsk: &T,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<A>: GLWEToBackendRef<BE> + GLWEInfos,
-        CKKSCiphertext<B>: GLWEToBackendRef<BE> + GLWEInfos,
-        GLWETensorKeyPrepared<T, BE>: poulpy_core::layouts::prepared::GLWETensorKeyPreparedToBackendRef<BE>,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        B: GLWEToBackendRef<BE> + CKKSCtBounds,
+        T: GGLWEInfos + poulpy_core::layouts::prepared::GLWETensorKeyPreparedToBackendRef<BE>,
     {
-        scratch.scope(|scratch_local| {
-            let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
-            self.ckks_mul_into(&mut tmp, a, b, tsk, &mut scratch_local)?;
-            self.ckks_sub_assign(dst, &tmp, &mut scratch_local)
-        })
+        mul_then_combine(
+            dst,
+            scratch,
+            |tmp, s| self.ckks_mul_into(tmp, a, b, tsk, s),
+            |dst, tmp, s| self.ckks_sub_assign(dst, tmp, s),
+        )
     }
 
-    fn ckks_mul_sub_pt_vec_into<Dst: Data, A: Data, P>(
-        &self,
-        dst: &mut CKKSCiphertext<Dst>,
-        a: &CKKSCiphertext<A>,
-        pt: &P,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
+    fn ckks_mul_sub_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<A>: GLWEToBackendRef<BE> + GLWEInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        scratch.scope(|scratch_local| {
-            let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
-            self.ckks_mul_pt_vec_into(&mut tmp, a, pt, &mut scratch_local)?;
-            self.ckks_sub_assign(dst, &tmp, &mut scratch_local)
-        })
+        mul_then_combine(
+            dst,
+            scratch,
+            |tmp, s| self.ckks_mul_pt_vec_into(tmp, a, pt, s),
+            |dst, tmp, s| self.ckks_sub_assign(dst, tmp, s),
+        )
     }
 
-    fn ckks_mul_sub_pt_const_into<Dst: Data, A: Data, P>(
+    fn ckks_mul_sub_pt_const_into<Dst, A, P>(
         &self,
-        dst: &mut CKKSCiphertext<Dst>,
-        a: &CKKSCiphertext<A>,
+        dst: &mut Dst,
+        a: &A,
         pt: &P,
         pt_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<A>: GLWEToBackendRef<BE> + GLWEInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        A: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
-        scratch.scope(|scratch_local| {
-            let (mut tmp, mut scratch_local) = scratch_local.take_ckks_ciphertext_like_scratch(dst);
-            self.ckks_mul_pt_const_into(&mut tmp, a, pt, pt_coeff, &mut scratch_local)?;
-            self.ckks_sub_assign(dst, &tmp, &mut scratch_local)
-        })
+        mul_then_combine(
+            dst,
+            scratch,
+            |tmp, s| self.ckks_mul_pt_const_into(tmp, a, pt, pt_coeff, s),
+            |dst, tmp, s| self.ckks_sub_assign(dst, tmp, s),
+        )
     }
 }
 
@@ -397,10 +420,10 @@ where
 
 fn check_lengths(op: &'static str, a_len: usize, b_len: usize) -> Result<()> {
     if a_len == 0 {
-        bail!("{op}: inputs must contain at least one pair");
+        ckks_bail!("{op}: inputs must contain at least one pair");
     }
     if a_len != b_len {
-        bail!("{op}: length mismatch between ct vector ({a_len}) and weight vector ({b_len})");
+        ckks_bail!("{op}: length mismatch between ct vector ({a_len}) and weight vector ({b_len})");
     }
     Ok(())
 }
@@ -429,7 +452,7 @@ where
         let mut acc = UnnormalizedCKKSCiphertextRefMut::new(dst);
         for i in 1..n {
             mul_term_into_tmp(&mut tmp, i, &mut scratch_local)?;
-            BE::ckks_add_assign_unnormalized_ref(module, &mut acc, &tmp, &mut scratch_local)?;
+            BE::ckks_add_assign_unnormalized_ref_impl(module, &mut acc, &tmp, &mut scratch_local)?;
         }
         acc.normalize(module, &mut scratch_local);
         Ok(())
@@ -440,12 +463,17 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSDotProductOps<BE> for Module<BE>
 where
     Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + GLWENormalize<BE> + GLWETensoring<BE>,
 {
-    fn ckks_dot_product_ct_tmp_bytes<R, T>(&self, n: usize, res: &R, tsk: &T) -> usize
+    fn ckks_dot_product_ct_tmp_bytes<R, A, B, T>(&self, n: usize, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        B: CKKSCtBounds,
         T: GGLWEInfos,
     {
-        let mul_scratch: usize = self.ckks_mul_tmp_bytes(res, tsk);
+        // `a`/`b` describe the widest input pair; the internal tensor
+        // intermediate and the apply scratch scale with the operand widths, not
+        // only with `res` (which may legitimately be narrower).
+        let mul_scratch: usize = self.ckks_mul_tmp_bytes(res, a, b, tsk);
         if n <= 1 {
             return mul_scratch.max(self.glwe_normalize_tmp_bytes());
         }
@@ -454,12 +482,12 @@ where
         let tensor_layout = GLWELayout {
             n: res.n(),
             base2k: res.base2k(),
-            k: TorusPrecision(res.max_k().as_u32()),
+            k: TorusPrecision(res.k().max(a.k()).max(b.k()).as_u32()),
             rank: res.rank(),
         };
         let tensor_bytes: usize = GLWETensor::bytes_of_from_infos(&tensor_layout);
         let inner: usize = self
-            .glwe_tensor_apply_tmp_bytes(&tensor_layout, res, res)
+            .glwe_tensor_apply_tmp_bytes(&tensor_layout, a, b)
             .max(self.glwe_tensor_relinearize_tmp_bytes(res, &tensor_layout, tsk));
         let fast: usize = 2 * n * ct_bytes + tensor_bytes + inner;
         fallback.max(fast)
@@ -469,7 +497,7 @@ where
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos + LWEInfos,
+        P: CKKSInfos,
     {
         GLWE::<Vec<u8>>::bytes_of_from_infos(res) + self.ckks_mul_pt_vec_tmp_bytes(res, a, b).max(self.ckks_add_tmp_bytes())
     }
@@ -478,7 +506,7 @@ where
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos + LWEInfos,
+        P: CKKSInfos,
     {
         GLWE::<Vec<u8>>::bytes_of_from_infos(res) + self.ckks_mul_pt_const_tmp_bytes(res, a, b).max(self.ckks_add_tmp_bytes())
     }
@@ -514,7 +542,7 @@ where
     where
         CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         CKKSCiphertext<D>: GLWEToBackendRef<BE> + GLWEInfos,
-        E: GLWEToBackendRef<BE> + CKKSCtBounds,
+        E: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
         check_lengths("ckks_dot_product_pt_vec", a.len(), b.len())?;
         let n: usize = a.len();
@@ -536,7 +564,7 @@ where
     where
         CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
         CKKSCiphertext<D>: GLWEToBackendRef<BE> + GLWEInfos,
-        E: GLWEToBackendRef<BE> + CKKSCtBounds,
+        E: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
         check_lengths("ckks_dot_product_pt_const", a.len(), b.len())?;
         check_lengths("ckks_dot_product_pt_const coeffs", a.len(), pt_coeffs.len())?;

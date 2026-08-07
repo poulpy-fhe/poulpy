@@ -1,15 +1,14 @@
 use std::fmt::Debug;
 
 use anyhow::{Result, anyhow};
+use num_traits::{Float, FloatConst, FromPrimitive};
 use poulpy_core::layouts::Base2K;
 use poulpy_hal::layouts::{HostBytesBackend, Module};
-use rand_distr::num_traits::{Float, FloatConst, FromPrimitive};
 
 use crate::{
-    CKKSInfos, CKKSLayout, SetCKKSInfos,
+    CoeffsMeta, SetCKKSInfos,
     layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar},
 };
-use poulpy_core::layouts::LWEInfos;
 
 pub use poulpy_core::layouts::{
     BSGSPolynomial, Basis, DEFAULT_SPLIT_STRATEGY, Parity, Polynomial, SplitStrategy, change_of_basis, evaluate_coeffs,
@@ -23,7 +22,7 @@ pub trait EncodeBSGS {
         &self,
         module: &Module<HostBytesBackend>,
         base2k: Base2K,
-        coeff_meta: CKKSLayout,
+        coeff_meta: CoeffsMeta,
     ) -> Result<BSGSPolynomial<CKKSPlaintext<Vec<u8>>>>;
 
     /// Decomposes and encodes using an explicit [`SplitStrategy`].
@@ -31,7 +30,7 @@ pub trait EncodeBSGS {
         &self,
         module: &Module<HostBytesBackend>,
         base2k: Base2K,
-        coeff_meta: CKKSLayout,
+        coeff_meta: CoeffsMeta,
         strategy: SplitStrategy,
     ) -> Result<BSGSPolynomial<CKKSPlaintext<Vec<u8>>>>;
 }
@@ -45,7 +44,7 @@ where
         &self,
         module: &Module<HostBytesBackend>,
         base2k: Base2K,
-        coeff_meta: CKKSLayout,
+        coeff_meta: CoeffsMeta,
     ) -> Result<BSGSPolynomial<CKKSPlaintext<Vec<u8>>>> {
         self.encode_bsgs_with(module, base2k, coeff_meta, DEFAULT_SPLIT_STRATEGY)
     }
@@ -54,13 +53,13 @@ where
         &self,
         module: &Module<HostBytesBackend>,
         base2k: Base2K,
-        coeff_meta: CKKSLayout,
+        coeff_meta: CoeffsMeta,
         strategy: SplitStrategy,
     ) -> Result<BSGSPolynomial<CKKSPlaintext<Vec<u8>>>> {
         let mut step_idx = 0usize;
         self.decompose_bsgs_with(strategy, |baby_coeffs| {
-            let mut pt = module.ckks_pt_coeffs_alloc(baby_coeffs.len(), base2k, coeff_meta.k());
-            pt.set_meta(coeff_meta.meta());
+            let mut pt = module.ckks_pt_coeffs_alloc(baby_coeffs.len(), base2k, coeff_meta.k);
+            pt.set_meta(coeff_meta.meta);
             pt.encode_host_floats(baby_coeffs)
                 .map_err(|e| anyhow!("encode_bsgs: step {step_idx}: {e}"))?;
             step_idx += 1;
@@ -133,6 +132,37 @@ where
         change_of_basis(self.basis, self.a, self.b)
     }
 
+    /// Encodes both parts into a [`ComplexBSGSPolynomial`] using
+    /// [`DEFAULT_SPLIT_STRATEGY`].
+    pub fn encode_bsgs(
+        &self,
+        module: &Module<HostBytesBackend>,
+        base2k: Base2K,
+        coeff_meta: CoeffsMeta,
+    ) -> Result<ComplexBSGSPolynomial<CKKSPlaintext<Vec<u8>>>> {
+        self.encode_bsgs_with(module, base2k, coeff_meta, DEFAULT_SPLIT_STRATEGY)
+    }
+
+    /// Encodes both parts with a shared parity and `strategy`, yielding two
+    /// `BSGSPolynomial`s with identical baby-step structure.
+    pub fn encode_bsgs_with(
+        &self,
+        module: &Module<HostBytesBackend>,
+        base2k: Base2K,
+        coeff_meta: CoeffsMeta,
+        strategy: SplitStrategy,
+    ) -> Result<ComplexBSGSPolynomial<CKKSPlaintext<Vec<u8>>>> {
+        let (re_poly, im_poly) = self.split_with_shared_parity();
+        let re = re_poly.encode_bsgs_with(module, base2k, coeff_meta, strategy)?;
+        let im = im_poly.encode_bsgs_with(module, base2k, coeff_meta, strategy)?;
+        Ok(ComplexBSGSPolynomial { re, im })
+    }
+}
+
+impl<F> ComplexPolynomial<F>
+where
+    F: Float + FloatConst + FromPrimitive + Debug,
+{
     /// Combined parity: index `k` is present if `re[k] != 0 || im[k] != 0`.
     fn combined_parity(&self) -> Parity {
         let present = |k: usize| self.re[k] != F::zero() || self.im[k] != F::zero();
@@ -145,32 +175,15 @@ where
         }
     }
 
-    /// Encodes both parts into a [`ComplexBSGSPolynomial`] using
-    /// [`DEFAULT_SPLIT_STRATEGY`].
-    pub fn encode_bsgs(
-        &self,
-        module: &Module<HostBytesBackend>,
-        base2k: Base2K,
-        coeff_meta: CKKSLayout,
-    ) -> Result<ComplexBSGSPolynomial<CKKSPlaintext<Vec<u8>>>> {
-        self.encode_bsgs_with(module, base2k, coeff_meta, DEFAULT_SPLIT_STRATEGY)
-    }
-
-    /// Encodes both parts with a shared parity and `strategy`, yielding two
-    /// `BSGSPolynomial`s with identical baby-step structure.
-    pub fn encode_bsgs_with(
-        &self,
-        module: &Module<HostBytesBackend>,
-        base2k: Base2K,
-        coeff_meta: CKKSLayout,
-        strategy: SplitStrategy,
-    ) -> Result<ComplexBSGSPolynomial<CKKSPlaintext<Vec<u8>>>> {
+    /// Splits into `(re, im)` [`Polynomial`]s stamped with the shared
+    /// [combined parity](Self::combined_parity) and this polynomial's interval,
+    /// so the two halves keep an identical baby-step schedule.
+    pub(crate) fn split_with_shared_parity(&self) -> (Polynomial<F>, Polynomial<F>) {
         let parity = self.combined_parity();
-        let re_poly = Polynomial::new_with_parity(self.basis, self.re.clone(), parity).with_interval(self.a, self.b);
-        let im_poly = Polynomial::new_with_parity(self.basis, self.im.clone(), parity).with_interval(self.a, self.b);
-        let re = re_poly.encode_bsgs_with(module, base2k, coeff_meta, strategy)?;
-        let im = im_poly.encode_bsgs_with(module, base2k, coeff_meta, strategy)?;
-        Ok(ComplexBSGSPolynomial { re, im })
+        (
+            Polynomial::new_with_parity(self.basis, self.re.clone(), parity).with_interval(self.a, self.b),
+            Polynomial::new_with_parity(self.basis, self.im.clone(), parity).with_interval(self.a, self.b),
+        )
     }
 }
 

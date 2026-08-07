@@ -69,12 +69,9 @@ where
     // one-column BIG scratch before regular GLWE automorphism. Size both routes
     // and take the larger budget.
     let cols = a.rank().as_usize() + 1;
-    // Scratch is allocated up-front and must cover the physical working set, so
-    // the budget is sized off the operands' allocated capacity (`max_size()`)
-    // rather than their current meta-derived `size()`. After the LWEInfos
-    // refactor a ciphertext's `size()` reflects only its active limbs, which can
-    // be far smaller than the limbs the runtime baby-step/PROD path actually
-    // uses (mirrors how `ckks_mul_tmp_bytes` budgets off `max_k()`).
+    // Scratch is allocated up-front and must cover the physical working set,
+    // so the budget is sized off the operands' allocated width (`max_size()`)
+    // rather than their meta-derived `size()`.
     let a_size = a.max_size();
     let pt_size = pt.max_size();
     let cnv_offset_hi = pt_size.saturating_sub(1);
@@ -87,8 +84,7 @@ where
     let lazy_acc_big = module.bytes_of_vec_znx_big(cols, lazy_size);
     let rot_dft = module.bytes_of_vec_znx_dft(cols, key.size());
     let prepare_right = module.cnv_prepare_right_tmp_bytes(pt_size, pt_size);
-    let lazy_dft =
-        glwe_lazy_giant_automorphism_from_dft_tmp_bytes::<BE, _, _>(module, a.rank().as_usize(), prod_size, key, key.size());
+    let lazy_dft = glwe_lazy_giant_automorphism_from_dft_tmp_bytes::<BE, _, _>(module, a.rank().as_usize(), prod_size, key);
     let fallback_path = prod_dft + prod_col_big + inner_dft;
     let lazy_dft_rot = rot_dft + lazy_dft;
     let lazy_dft_path = prod_dft + lazy_acc_dft + inner_dft + lazy_dft_rot + lazy_acc_big;
@@ -100,12 +96,7 @@ where
         .max(glwe_prepare_linear_transformation_baby_steps_tmp_bytes::<BE, _, _, _>(
             module, a, key,
         ))
-        .max(glwe_lazy_giant_automorphism_tmp_bytes::<BE, _, _, _>(
-            module,
-            res,
-            key,
-            key.size(),
-        ))
+        .max(glwe_lazy_giant_automorphism_tmp_bytes::<BE, _, _, _>(module, res, key))
         .max(fallback_path)
         .max(lazy_dft_path)
 }
@@ -146,7 +137,6 @@ pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H, K>(
     cache: &mut LinearTransformationBabySteps<BE>,
     a: &A,
     keys: &H,
-    key_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
@@ -168,7 +158,7 @@ pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H, K>(
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
-    glwe_prepare_linear_transformation_baby_steps(module, cache, a, keys, key_size, scratch);
+    glwe_prepare_linear_transformation_baby_steps(module, cache, a, keys, scratch);
 }
 
 /// Reference impl: BSGS evaluation of a linear transformation, generic over the
@@ -191,7 +181,6 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H, K>(
     lhs: &LinearTransformationBabySteps<BE>,
     rhs: &LinearTransformation<P>,
     keys: &H,
-    key_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
@@ -234,7 +223,7 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H, K>(
         "linear transformation has no non-empty giant steps"
     );
 
-    glwe_eval_giant_steps(module, cnv_offset, res, lhs, rhs, keys, key_size, scratch);
+    glwe_eval_giant_steps(module, cnv_offset, res, lhs, rhs, keys, scratch);
 }
 
 /// Reference impl: scratch bytes for the streamed (unprepared-RHS) evaluation.

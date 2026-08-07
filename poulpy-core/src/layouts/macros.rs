@@ -67,6 +67,10 @@ macro_rules! impl_gglwe_infos_for_inner {
                 self.$($field)+.max_size()
             }
 
+            fn size(&self) -> usize {
+                self.$($field)+.size()
+            }
+
             fn k(&self) -> TorusPrecision{
                 self.$($field)+.k()
             }
@@ -79,6 +83,10 @@ macro_rules! impl_gglwe_infos_for_inner {
         }
 
         impl<$($gen)*> GGLWEInfos for $ty {
+            fn k_aux(&self) -> TorusPrecision {
+                self.$($field)+.k_aux()
+            }
+
             fn rank_in(&self) -> Rank {
                 self.$($field)+.rank_in()
             }

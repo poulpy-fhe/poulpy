@@ -1,10 +1,11 @@
-use anyhow::Result;
+use crate::CKKSResult as Result;
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{
-    BSGSMeta, Base2K, Compact, Degree, GGLWEInfos, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
-    LWEInfos, Rank, SetBSGSMeta, TorusPrecision,
+    BSGSMeta, Base2K, Degree, GGLWEInfos, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
+    SetBSGSMeta, TorusPrecision,
 };
 use poulpy_hal::api::CnvPVecBytesOf;
-use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena, TransferFrom, VecZnx};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena, VecZnx};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
@@ -51,14 +52,6 @@ impl CKKSInfos for EvalModWorkCtInfos {
     fn meta(&self) -> CKKSMeta {
         self.meta
     }
-
-    fn log_delta(&self) -> usize {
-        self.meta.log_delta
-    }
-
-    fn log_budget(&self) -> usize {
-        self.k.as_usize().saturating_sub(self.meta.log_delta)
-    }
 }
 
 impl<BE: Backend + CKKSEvalModImpl<BE>> CKKSEvalModOps<BE> for Module<BE>
@@ -91,15 +84,27 @@ where
         // The giant step hoists the prepared `X^{gsp}` right operand, kept alive
         // across the baby-step pairs that share it.
         let hoisted_right = self.bytes_of_cnv_pvec_right(cols, work.max_size());
-        let bsgs_giant = self.ckks_mul_tmp_bytes(&work, tsk).max(self.ckks_add_tmp_bytes()) + 3 * compact_work + hoisted_right;
-        let square_scope = (self.ckks_square_tmp_bytes(&work, tsk) + compact_work).max(
-            self.ckks_square_tmp_bytes(res, tsk) + VecZnx::bytes_of(res.n().into(), (res.rank() + 1).into(), res.max_size()),
+        let bsgs_giant = self
+            .ckks_mul_tmp_bytes(&work, &work, &work, tsk)
+            .max(self.ckks_add_tmp_bytes())
+            + 3 * compact_work
+            + hoisted_right;
+        let square_scope = (self.ckks_square_tmp_bytes(&work, &work, tsk) + compact_work).max(
+            // Scratch is a physical working-set budget: size the square-scope
+            // copy off `res`'s allocated capacity, the upper bound on the limbs
+            // any runtime re-expansion can expose.
+            self.ckks_square_tmp_bytes(res, res, tsk) + VecZnx::bytes_of(res.n().into(), (res.rank() + 1).into(), res.max_size()),
         );
-        self.ckks_copy_tmp_bytes()
-            .max(self.ckks_add_pt_const_tmp_bytes())
-            .max(self.ckks_sub_pt_const_tmp_bytes())
-            .max(bsgs_giant)
-            .max(square_scope)
+        // The working copy `t1` (the input re-labelled at the plan scale — the
+        // `work` shape) is carved from this scratch and lives for the whole
+        // evaluation, so its bytes are charged on top of every nested stage.
+        compact_work
+            + self
+                .ckks_copy_tmp_bytes()
+                .max(self.ckks_add_pt_const_tmp_bytes())
+                .max(self.ckks_sub_pt_const_tmp_bytes())
+                .max(bsgs_giant)
+                .max(square_scope)
     }
 
     fn ckks_eval_mod<R, C, P, F>(
@@ -111,11 +116,10 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: TransferFrom<HostBytesBackend>,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
     {
-        BE::ckks_eval_mod::<R, C, P, F>(self, res, ct, params, tsk, scratch)
+        BE::ckks_eval_mod_impl::<R, C, P, F>(self, res, ct, params, tsk, scratch)
     }
 }

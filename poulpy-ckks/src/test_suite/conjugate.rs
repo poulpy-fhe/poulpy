@@ -15,7 +15,7 @@
 //! |----------|----------------|
 //! | [`test_conjugate_assign`] | in-place conjugation |
 
-use crate::{CKKSInfos, leveled::api::CKKSConjugateOps};
+use crate::{CKKSInfos, api::CKKSConjugateOps};
 
 use super::helpers::{
     TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ct_meta, assert_decrypt_precision,
@@ -25,7 +25,7 @@ use poulpy_core::{GLWEAutomorphism, GLWEShift};
 use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew, ScratchAvailable, ScratchOwnedBorrow};
 use poulpy_hal::layouts::{HostBytesBackend, Module, ScratchArena};
 
-use crate::{encoding::reim::Encoder, test_suite::CKKSTestParams};
+use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
 pub fn test_conjugate_aligned<BE, F, E>(params: CKKSTestParams, module: &Module<BE>, host_module: &Module<HostBytesBackend>)
 where
@@ -38,7 +38,7 @@ where
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -88,7 +88,7 @@ pub fn test_conjugate_smaller_output<BE, F, E>(
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -135,7 +135,7 @@ where
     for<'a> ScratchArena<'a, BE>: ScratchAvailable,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);

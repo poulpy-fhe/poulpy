@@ -32,13 +32,12 @@
 //! module.ckks_eval_linear_transformation_into(&mut dst, &ct, &babies, &prepared, &atks, &mut scratch)?;
 //! ```
 
-use anyhow::Result;
+use crate::CKKSAtkBounds;
+use crate::CKKSResult as Result;
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     default::linear_transformation::DiagonalProd,
-    layouts::{
-        Compact, GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef,
-        GetGaloisElement, LWEInfos, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
-    },
+    layouts::{GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
@@ -83,7 +82,7 @@ pub trait LtDiagonalScale {
 ///
 /// The `_self_` variants allocate and prepare the baby cache internally for code
 /// paths that evaluate a transform once.
-pub trait LinearTransformationOps<BE: Backend> {
+pub trait CKKSLinearTransformationOps<BE: Backend> {
     // ----- tmp_bytes -----
 
     /// Scratch bytes required by [`Self::ckks_prepare_linear_transformation_rhs`].
@@ -126,7 +125,7 @@ pub trait LinearTransformationOps<BE: Backend> {
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>;
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>;
 
     /// Fills `babies` with the prepared baby-step rotations of `src`.
     ///
@@ -142,7 +141,7 @@ pub trait LinearTransformationOps<BE: Backend> {
     ) -> Result<()>
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
     // ----- eval (caller-supplied baby cache) -----
@@ -168,10 +167,10 @@ pub trait LinearTransformationOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: DiagonalProd<BE> + LtDiagonalScale,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+        K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
     /// In-place `dst = M · dst` with a caller-supplied baby cache (see
@@ -185,9 +184,9 @@ pub trait LinearTransformationOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
-        P: DiagonalProd<BE> + LtDiagonalScale,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+        K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
     // ----- eval (self-allocated baby cache) -----
@@ -208,10 +207,10 @@ pub trait LinearTransformationOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: DiagonalProd<BE> + LtDiagonalScale,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+        K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
     /// In-place `dst = M · dst`, self-allocating the baby cache (see
@@ -225,7 +224,7 @@ pub trait LinearTransformationOps<BE: Backend> {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: DiagonalProd<BE> + LtDiagonalScale,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+        K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 }

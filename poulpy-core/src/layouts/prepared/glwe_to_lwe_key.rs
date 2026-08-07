@@ -14,7 +14,7 @@ use crate::layouts::{
 ///
 /// A newtype wrapper around [`GLWESwitchingKeyPrepared`] for converting
 /// GLWE to LWE. Tied to a specific backend via `B: Backend`.
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq)]
 pub struct GLWEToLWEKeyPrepared<D: Data, B: Backend>(pub(crate) GLWESwitchingKeyPrepared<D, B>);
 
 impl<D: Data, B: Backend> LWEInfos for GLWEToLWEKeyPrepared<D, B> {
@@ -42,6 +42,10 @@ impl<D: Data, B: Backend> GLWEInfos for GLWEToLWEKeyPrepared<D, B> {
 }
 
 impl<D: Data, B: Backend> GGLWEInfos for GLWEToLWEKeyPrepared<D, B> {
+    fn k_aux(&self) -> TorusPrecision {
+        self.0.k_aux()
+    }
+
     fn rank_in(&self) -> Rank {
         self.0.rank_in()
     }
@@ -66,11 +70,11 @@ where
     fn glwe_to_lwe_key_prepared_alloc(
         &self,
         base2k: Base2K,
-        k: TorusPrecision,
-        rank_in: Rank,
         dnum: Dnum,
+        k_aux: TorusPrecision,
+        rank_in: Rank,
     ) -> GLWEToLWEKeyPrepared<B::OwnedBuf, B> {
-        GLWEToLWEKeyPrepared(self.glwe_switching_key_prepared_alloc(base2k, k, rank_in, Rank(1), dnum, Dsize(1)))
+        GLWEToLWEKeyPrepared(self.glwe_switching_key_prepared_alloc(base2k, dnum, Dsize(1), k_aux, rank_in, Rank(1)))
     }
     fn glwe_to_lwe_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> GLWEToLWEKeyPrepared<B::OwnedBuf, B>
     where
@@ -82,11 +86,11 @@ where
             "rank_out > 1 is not supported for GLWEToLWEKeyPrepared"
         );
         debug_assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for GLWEToLWEKeyPrepared");
-        self.glwe_to_lwe_key_prepared_alloc(infos.base2k(), infos.k(), infos.rank_in(), infos.dnum())
+        self.glwe_to_lwe_key_prepared_alloc(infos.base2k(), infos.dnum(), infos.k_aux(), infos.rank_in())
     }
 
-    fn glwe_to_lwe_key_prepared_bytes_of(&self, base2k: Base2K, k: TorusPrecision, rank_in: Rank, dnum: Dnum) -> usize {
-        self.bytes_of_glwe_key_prepared(base2k, k, rank_in, Rank(1), dnum, Dsize(1))
+    fn glwe_to_lwe_key_prepared_bytes_of(&self, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision, rank_in: Rank) -> usize {
+        self.bytes_of_glwe_key_prepared(base2k, dnum, Dsize(1), k_aux, rank_in, Rank(1))
     }
 
     fn glwe_to_lwe_key_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
@@ -99,7 +103,7 @@ where
             "rank_out > 1 is not supported for GLWEToLWEKeyPrepared"
         );
         debug_assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for GLWEToLWEKeyPrepared");
-        self.glwe_to_lwe_key_prepared_bytes_of(infos.base2k(), infos.k(), infos.rank_in(), infos.dnum())
+        self.glwe_to_lwe_key_prepared_bytes_of(infos.base2k(), infos.dnum(), infos.k_aux(), infos.rank_in())
     }
 
     fn glwe_to_lwe_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize

@@ -1,4 +1,5 @@
-use anyhow::Result;
+use crate::CKKSResult as Result;
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     EncryptionInfos,
     layouts::{GLWEInfos, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef},
@@ -31,7 +32,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// Errors with `InsufficientHomomorphicCapacity` if `k < pt.log_delta`
 /// (i.e., the encryption key does not provide enough headroom for the
 /// requested plaintext precision).
-pub trait CKKSEncrypt<BE: Backend> {
+pub trait CKKSEncryptOps<BE: Backend> {
     fn ckks_encrypt_sk_tmp_bytes<A>(&self, ct_infos: &A) -> usize
     where
         A: CKKSCtBounds;
@@ -43,14 +44,14 @@ pub trait CKKSEncrypt<BE: Backend> {
         pt: &Dpt,
         sk: &S,
         enc_infos: &E,
-        source_xa: &mut Source,
         source_xe: &mut Source,
+        source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         S: GLWESecretPreparedToBackendRef<BE>,
         Dct: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Dpt: GLWEToBackendRef<BE> + CKKSCtBounds;
+        Dpt: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
 }
 
 /// Secret-key decryption of a CKKS ciphertext.
@@ -61,13 +62,29 @@ pub trait CKKSEncrypt<BE: Backend> {
 ///
 /// # Metadata
 ///
-/// The output plaintext inherits the ciphertext's metadata unchanged:
+/// The output frame is the **destination's preset** `(log_delta, log_budget)`:
+/// the decrypted polynomial is shifted into `pt`'s frame, which lets a caller
+/// extract at a precision different from the ciphertext's (see
+/// `ckks_extract_pt_with_meta`). `pt`'s metadata is **not** modified by this
+/// call — in particular it is *not* stamped from the ciphertext.
+///
+/// To decrypt "at the ciphertext's frame" (the common case), preset the
+/// destination before calling:
 ///
 /// ```text
-/// log_delta_out  = ct.log_delta
-/// log_budget_out = ct.log_budget
+/// pt.set_meta(ct.meta());        // log_delta_out  = ct.log_delta
+///                                // log_budget_out = pt.max_k − ct.log_delta
 /// ```
-pub trait CKKSDecrypt<BE: Backend> {
+///
+/// A freshly allocated plaintext has `log_delta = 0`, which decodes the raw
+/// torus value as an integer frame — almost never what you want after CKKS
+/// arithmetic; always preset the frame.
+///
+/// Errors with `PlaintextAlignmentImpossible` if the requested effective
+/// precision `pt.log_delta + pt.log_budget` exceeds what the ciphertext can
+/// supply (`ct.log_budget + pt.log_delta`), and with
+/// `PlaintextBase2KMismatch` on differing `base2k`.
+pub trait CKKSDecryptOps<BE: Backend> {
     fn ckks_decrypt_tmp_bytes<A>(&self, ct_infos: &A) -> usize
     where
         A: CKKSCtBounds;
@@ -75,6 +92,6 @@ pub trait CKKSDecrypt<BE: Backend> {
     fn ckks_decrypt<Dpt, Dct, S>(&self, pt: &mut Dpt, ct: &Dct, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        Dpt: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dpt: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + IntPolyInfos,
         Dct: GLWEToBackendRef<BE> + CKKSCtBounds;
 }

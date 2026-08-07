@@ -11,12 +11,13 @@ use crate::{
     scratch::ScratchArenaTakeCore,
 };
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 struct TestBackend;
 
 impl Backend for TestBackend {
-    type ScalarBig = i64;
-    type ScalarPrep = f64;
+    type ZnxWord = i64;
+    type BigWord = i64;
+    type DftWord = f64;
     type OwnedBuf = Vec<u8>;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
@@ -44,6 +45,14 @@ impl Backend for TestBackend {
     }
 
     fn copy_from_host(buf: &mut Self::OwnedBuf, src: &[u8]) {
+        buf.copy_from_slice(src);
+    }
+
+    fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
+        dst.copy_from_slice(buf);
+    }
+
+    fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
         buf.copy_from_slice(src);
     }
 
@@ -131,9 +140,9 @@ fn scratch_arena_take_core_returns_disjoint_backend_regions() {
     let ggsw_infos = GGSWLayout {
         n: Degree(64),
         base2k: Base2K(8),
-        k: TorusPrecision(24),
-        rank: Rank(1),
         dnum: Dnum(2),
+        k_aux: TorusPrecision(24 - 2 * 8),
+        rank: Rank(1),
         dsize: Dsize(1),
     };
 

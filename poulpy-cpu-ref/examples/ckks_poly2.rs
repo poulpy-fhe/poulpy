@@ -21,10 +21,10 @@
 
 use anyhow::Result;
 use poulpy_ckks::{
-    CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos,
-    encoding::Encoder,
+    CKKSInfos, CKKSLayout, CKKSMeta, CoeffsMeta, SetCKKSInfos,
+    api::CKKSEncodingHostOps,
+    api::{CKKSAllOpsTmpBytes, CKKSDecryptOps, CKKSEncryptOps, CKKSPolynomialEvaluationOps},
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
-    leveled::api::{CKKSAllOpsTmpBytes, CKKSDecrypt, CKKSEncrypt, PolynomialEvaluation},
     polynomial::{BSGSPolynomial, Basis, EncodeBSGS, Polynomial},
     power_basis::{PowerBasis, PowerBasisGen},
 };
@@ -36,7 +36,7 @@ use poulpy_core::{
         prepared::{GLWESecretPrepared, GLWESecretPreparedFactory, GLWETensorKeyPrepared},
     },
 };
-use poulpy_cpu_ref::{FFT64ReimTable, NTT4x30Ref};
+use poulpy_cpu_ref::NTT4x30Ref;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, HostBytesBackend, Module, ScratchOwned},
@@ -71,14 +71,11 @@ const PREC_CT: CKKSLayout = CKKSLayout {
     },
 };
 
-/// Encoding precision for the BSGS polynomial coefficients.
-const COEFF_META: CKKSLayout = CKKSLayout {
-    glwe_layout: GLWELayout {
-        n: Degree(N as u32),
-        base2k: Base2K(BASE2K as u32),
-        k: TorusPrecision(45 + 1),
-        rank: Rank(1),
-    },
+/// Encoding precision for the BSGS polynomial coefficients: the reduced
+/// [`CoeffsMeta`] — coefficient plaintexts carry no ring/radix fields (`n`
+/// follows the module, `base2k` is passed at encode time).
+const COEFF_META: CoeffsMeta = CoeffsMeta {
+    k: TorusPrecision(45 + 1),
     meta: CKKSMeta {
         log_sparsity: 0,
         log_delta: 45,
@@ -89,7 +86,6 @@ const ABS_ERROR_TOLERANCE: f64 = 5e-5;
 /// Long-lived objects prepared during setup.
 struct SetupArtifacts {
     module: Module<BackendImpl>,
-    encoder: Encoder<FFT64ReimTable<f64>>,
     sk: SecretKeyPrepared,
     tsk_prepared: TensorKeyPrepared,
     scratch: ScratchOwned<BackendImpl>,
@@ -129,12 +125,13 @@ fn glwe_layout() -> EncryptionLayout<GLWELayout> {
 }
 
 fn tsk_layout() -> EncryptionLayout<GLWETensorKeyLayout> {
-    let k = CT_K + DSIZE * BASE2K;
-    let dnum = CT_K.div_ceil(DSIZE * BASE2K);
+    let digit_bits = DSIZE * BASE2K;
+    let dnum = CT_K.div_ceil(digit_bits);
+    let k_aux = digit_bits + N.ilog2() as usize;
     EncryptionLayout::new_from_default_sigma(GLWETensorKeyLayout {
         n: N.into(),
         base2k: BASE2K.into(),
-        k: k.into(),
+        k_aux: k_aux.into(),
         rank: Rank(1),
         dsize: DSIZE.into(),
         dnum: dnum.into(),
@@ -195,8 +192,6 @@ fn setup() -> Result<SetupArtifacts> {
     );
 
     let module = Module::<BackendImpl>::new(N as u64);
-    let encoder = Encoder::<FFT64ReimTable<f64>>::new::<f64>(M)?;
-
     let mut source_xs = Source::new([0u8; 32]);
     let mut source_xa = Source::new([1u8; 32]);
     let mut source_xe = Source::new([2u8; 32]);
@@ -208,8 +203,19 @@ fn setup() -> Result<SetupArtifacts> {
     module.glwe_secret_prepare(&mut sk, &sk_raw);
     println!("  prepared secret key");
 
-    let ct_infos = module.ckks_ciphertext_alloc_from_infos(&glwe_layout());
-    let scratch_bytes = module.ckks_all_ops_tmp_bytes(&ct_infos, &tsk_layout(), &COEFF_META);
+    let ct_infos = module.ckks_ciphertext_alloc_from_glwe_infos(&glwe_layout());
+    // Scratch sizing wants the full plaintext layout: the ring/radix the
+    // coefficient plaintexts will actually live in, plus the coefficient meta.
+    let coeff_prec = CKKSLayout {
+        glwe_layout: GLWELayout {
+            n: N.into(),
+            base2k: BASE2K.into(),
+            k: COEFF_META.k,
+            rank: Rank(1),
+        },
+        meta: COEFF_META.meta,
+    };
+    let scratch_bytes = module.ckks_all_ops_tmp_bytes(&ct_infos, &tsk_layout(), &coeff_prec);
     let mut scratch = ScratchOwned::<BackendImpl>::alloc(scratch_bytes);
     println!("  scratch bytes: {scratch_bytes}");
 
@@ -220,8 +226,8 @@ fn setup() -> Result<SetupArtifacts> {
             &mut tsk,
             &sk_raw,
             &tsk_layout(),
-            &mut source_xa,
             &mut source_xe,
+            &mut source_xa,
             &mut scratch_local,
         );
     }
@@ -235,7 +241,6 @@ fn setup() -> Result<SetupArtifacts> {
 
     Ok(SetupArtifacts {
         module,
-        encoder,
         sk,
         tsk_prepared,
         scratch,
@@ -246,7 +251,7 @@ fn setup() -> Result<SetupArtifacts> {
 ///
 /// Computes the degree-DEGREE Chebyshev interpolation of sin, decomposes it in
 /// BSGS form, and encodes the input slot vector.
-fn encoding(setup: &SetupArtifacts) -> Result<EncodingArtifacts> {
+fn encoding(setup: &mut SetupArtifacts) -> Result<EncodingArtifacts> {
     print_phase("encoding");
 
     let x_re: Vec<f64> = (0..M).map(|i| 2.0 * i as f64 / (M as f64 - 1.0) - 1.0).collect();
@@ -261,7 +266,9 @@ fn encoding(setup: &SetupArtifacts) -> Result<EncodingArtifacts> {
 
     let mut pt_znx = setup.module.ckks_pt_vec_alloc(BASE2K.into(), PREC_CT.k());
     pt_znx.set_meta(PREC_CT.meta());
-    setup.encoder.encode_reim(&mut pt_znx, &x_re, &x_im)?;
+    setup
+        .module
+        .ckks_encode_reim_into(&mut pt_znx, &x_re, &x_im, &mut setup.scratch.borrow())?;
     print_pt_meta("encoded plaintext x", &pt_znx);
     println!("  x[0] = {:.6}", x_re[0]);
 
@@ -287,8 +294,8 @@ fn encryption(setup: &mut SetupArtifacts, encoding: &EncodingArtifacts) -> Resul
             &encoding.pt_znx,
             &setup.sk,
             &glwe_layout(),
-            &mut source_xa,
             &mut source_xe,
+            &mut source_xa,
             &mut scratch,
         )?;
     }
@@ -350,7 +357,7 @@ fn evaluation(
 fn decryption(setup: &mut SetupArtifacts, evaluation: &EvaluationArtifacts) -> Result<DecryptionArtifacts> {
     print_phase("decryption");
 
-    let mut pt_znx = setup.module.ckks_pt_vec_alloc_from_infos(&evaluation.ct_sin);
+    let mut pt_znx = setup.module.ckks_plaintext_alloc_from_infos(&evaluation.ct_sin);
     {
         let mut scratch = setup.scratch.borrow();
         setup
@@ -361,7 +368,9 @@ fn decryption(setup: &mut SetupArtifacts, evaluation: &EvaluationArtifacts) -> R
 
     let mut have_re = vec![0.0; M];
     let mut have_im = vec![0.0; M];
-    setup.encoder.decode_reim(&pt_znx, &mut have_re, &mut have_im)?;
+    setup
+        .module
+        .ckks_decode_reim_into(&pt_znx, &mut have_re, &mut have_im, &mut setup.scratch.borrow())?;
     println!("  sin(x[0]) decrypted = {:.15}", have_re[0]);
 
     Ok(DecryptionArtifacts { have_re })
@@ -395,7 +404,7 @@ fn verification(encoding: &EncodingArtifacts, evaluation: &EvaluationArtifacts, 
 
 fn main() -> Result<()> {
     let mut setup_artifacts = setup()?;
-    let encoding_artifacts = encoding(&setup_artifacts)?;
+    let encoding_artifacts = encoding(&mut setup_artifacts)?;
     let encryption_artifacts = encryption(&mut setup_artifacts, &encoding_artifacts)?;
     let evaluation_artifacts = evaluation(&mut setup_artifacts, &encoding_artifacts, encryption_artifacts)?;
     let decryption_artifacts = decryption(&mut setup_artifacts, &evaluation_artifacts)?;

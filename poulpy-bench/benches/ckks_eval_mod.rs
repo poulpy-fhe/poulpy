@@ -8,13 +8,13 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use poulpy_ckks::{
-    CKKSInfos, CKKSLayout, CKKSMeta,
+    CKKSInfos, CKKSLayout, CKKSMeta, CoeffsMeta,
     api::CKKSEvalModOps,
+    api::{CKKSAddOps, CKKSCopyOps, CKKSEncodingHostOps, CKKSMulOps},
     layouts::{
         CKKSModuleAlloc,
-        eval_mod::{EvalMod, EvalModPlan, EvalModType},
+        eval_mod::{EvalModPlan, EvalModType, compile_eval_mod},
     },
-    leveled::api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps},
     polynomial::SplitStrategy,
 };
 use poulpy_core::layouts::{
@@ -22,7 +22,7 @@ use poulpy_core::layouts::{
 };
 use poulpy_hal::{
     api::{CnvPVecBytesOf, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{HostBytesBackend, Module, ScratchOwned},
+    layouts::{Module, ScratchOwned},
 };
 
 const N: usize = 4096;
@@ -32,13 +32,24 @@ const LOG_DELTA: usize = 30;
 const EVAL_MOD_LOG_DELTA: usize = 60;
 const DSIZE: usize = 1;
 
-const COEFF_META: CKKSLayout = CKKSLayout {
+// Plaintext-operand layout used only to size the const-multiply scratch.
+const PT_LAYOUT: CKKSLayout = CKKSLayout {
     glwe_layout: GLWELayout {
         n: Degree(N as u32),
         base2k: Base2K(BASE2K as u32),
         k: TorusPrecision((EVAL_MOD_LOG_DELTA + BASE2K) as u32),
         rank: Rank(1),
     },
+    meta: CKKSMeta {
+        log_delta: EVAL_MOD_LOG_DELTA,
+        log_sparsity: 0,
+    },
+};
+
+// Coefficient meta the EvalMod operands are encoded with; equals
+// `CoeffsMeta::from_delta_budget(EVAL_MOD_LOG_DELTA, BASE2K)`.
+const COEFF_META: CoeffsMeta = CoeffsMeta {
+    k: TorusPrecision((EVAL_MOD_LOG_DELTA + BASE2K) as u32),
     meta: CKKSMeta {
         log_delta: EVAL_MOD_LOG_DELTA,
         log_sparsity: 0,
@@ -138,14 +149,14 @@ fn glwe_layout() -> GLWELayout {
 }
 
 fn tsk_layout() -> GLWETensorKeyLayout {
-    let k = CT_K + DSIZE * BASE2K;
+    let (dnum, k_aux) = poulpy_bench::params::key_dnum_k_aux((CT_K + DSIZE * BASE2K) as u32, BASE2K as u32, DSIZE as u32);
     GLWETensorKeyLayout {
         n: Degree(N as u32),
         base2k: Base2K(BASE2K as u32),
-        k: TorusPrecision(k as u32),
+        k_aux: TorusPrecision(k_aux),
         rank: Rank(1),
         dsize: Dsize(DSIZE as u32),
-        dnum: Dnum(k.div_ceil(DSIZE * BASE2K) as u32),
+        dnum: Dnum(dnum),
     }
 }
 
@@ -154,7 +165,6 @@ fn bench_ntt4x30_ref(c: &mut Criterion) {
     let label = "ntt4x30-ref";
 
     let module = Module::<BE>::new(N as u64);
-    let host_module = Module::<HostBytesBackend>::new(N as u64);
     let glwe_layout = glwe_layout();
     let tsk_layout = tsk_layout();
     let input_meta = CKKSMeta {
@@ -162,9 +172,9 @@ fn bench_ntt4x30_ref(c: &mut Criterion) {
         log_sparsity: 0,
     };
 
-    let ct_template = module.ckks_ciphertext_alloc_from_infos(&glwe_layout);
-    let mul_bytes = module.ckks_mul_tmp_bytes(&ct_template, &tsk_layout);
-    let mul_pt_bytes = module.ckks_mul_pt_const_tmp_bytes(&ct_template, &ct_template, &COEFF_META);
+    let ct_template = module.ckks_ciphertext_alloc_from_glwe_infos(&glwe_layout);
+    let mul_bytes = module.ckks_mul_tmp_bytes(&ct_template, &ct_template, &ct_template, &tsk_layout);
+    let mul_pt_bytes = module.ckks_mul_pt_const_tmp_bytes(&ct_template, &ct_template, &PT_LAYOUT);
     let add_bytes = module.ckks_add_tmp_bytes();
     let copy_bytes = module.ckks_copy_tmp_bytes();
     let ct_block = poulpy_core::layouts::GLWE::<Vec<u8>>::bytes_of_from_infos(&ct_template);
@@ -182,10 +192,12 @@ fn bench_ntt4x30_ref(c: &mut Criterion) {
     let mut ct_x = module.ckks_ciphertext_alloc(Base2K(BASE2K as u32), TorusPrecision(CT_K as u32));
     ct_x.set_meta_checked(input_meta).unwrap();
 
+    let mut compile_scratch = ScratchOwned::<BE>::alloc(CKKSEncodingHostOps::<BE, f64>::ckks_reim_tmp_bytes(&module, N / 2));
+
     let mut group = c.benchmark_group(format!("ckks_eval_mod::{label}"));
     for case in CASES {
-        let params =
-            EvalMod::<f64, _>::from_literal(Base2K(BASE2K as u32), case.lit, &host_module).expect("EvalMod::from_literal");
+        let params = compile_eval_mod::<BE, f64>(Base2K(BASE2K as u32), case.lit, &module, &mut compile_scratch.borrow())
+            .expect("compile_eval_mod");
 
         let (levels, log_budget_in, log_budget_out) = {
             let mut ct_run = module.ckks_ciphertext_alloc(Base2K(BASE2K as u32), TorusPrecision(CT_K as u32));

@@ -1,6 +1,6 @@
 //! DFT-domain scalar constants and type markers for the 3-prime IFMA representation.
 
-use super::primes::{PrimeSetNtt3x42Ifma, Primes42};
+use super::primes::Primes42;
 use bytemuck::{Pod, Zeroable};
 use rand_distr::num_traits::Zero;
 use std::{fmt, ops::Add};
@@ -18,6 +18,12 @@ pub struct Q126Scalar(pub [u64; 3]);
 // are valid and there is no padding.
 unsafe impl Zeroable for Q126Scalar {}
 unsafe impl Pod for Q126Scalar {}
+
+/// `Q126Scalar` is an identity + sizing contract over planar storage, not an
+/// element view: buffers tagged with it store three prime planes of `n`
+/// consecutive `u64` values per limb. Cross-backend interchange requires both
+/// matching word types and the relevant layout-compatibility marker.
+impl poulpy_hal::layouts::DftWord for Q126Scalar {}
 
 impl fmt::Display for Q126Scalar {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -54,6 +60,6 @@ impl Zero for Q126Scalar {
 /// after add/sub operations to keep values in range.
 #[allow(dead_code)]
 pub const Q_SHIFTED_NTT3X42IFMA: [u64; 4] = {
-    let q = <Primes42 as PrimeSetNtt3x42Ifma>::Q;
+    let q = <Primes42 as poulpy_hal::layouts::PrimeSet>::Q;
     [2 * q[0], 2 * q[1], 2 * q[2], 0]
 };

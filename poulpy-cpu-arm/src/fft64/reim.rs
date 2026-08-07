@@ -16,7 +16,7 @@ use super::FFT64Neon;
 /// reference kernels otherwise.
 /// Wraps [`ReimFFTTable`] and [`ReimIFFTTable`] into a single object that
 /// implements [`NegacyclicFFT`], suitable for use as the transform provider
-/// in a CKKS [`poulpy_ckks::encoding::Encoder`].
+/// in the CPU CKKS encoding implementation.
 pub struct FFT64NeonReimTable {
     fft: ReimFFTTable<f64>,
     ifft: ReimIFFTTable<f64>,
@@ -252,9 +252,9 @@ impl I64Ops for FFT64Neon {
 #[cfg(not(target_arch = "aarch64"))]
 impl I64Ops for FFT64Neon {}
 
-impl poulpy_cpu_ref::hal_defaults::ScalarBigHadamardProduct for FFT64Neon {
+impl poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct for FFT64Neon {
     #[inline(always)]
-    fn scalar_big_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
+    fn big_word_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
         <Self as I64Ops>::i64_hadamard_product(res, a, b)
     }
 }

@@ -1,7 +1,8 @@
+use crate::CKKSResult as Result;
 use crate::default::plaintext::CKKSPlaintextDefault;
+use poulpy_core::layouts::IntPolyInfos;
 
-use anyhow::Result;
-use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos};
+use poulpy_core::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::{
     api::{VecZnxLshBackend, VecZnxLshTmpBytes, VecZnxRshBackend, VecZnxRshTmpBytes},
     layouts::{Backend, Module, ScratchArena},
@@ -15,12 +16,17 @@ use crate::{CKKSInfos, SetCKKSInfos};
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
 pub unsafe trait CKKSPlaintextZnxImpl<BE: Backend>: Backend {
-    fn ckks_extract_pt_tmp_bytes(module: &Module<BE>) -> usize;
+    fn ckks_extract_pt_tmp_bytes_impl(module: &Module<BE>) -> usize;
 
-    fn ckks_extract_pt<Dst, Src>(module: &Module<BE>, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_extract_pt_impl<Dst, Src>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        src: &Src,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos;
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos;
 }
 
 unsafe impl<BE: Backend> CKKSPlaintextZnxImpl<BE> for BE
@@ -28,14 +34,19 @@ where
     BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
     Module<BE>: CKKSPlaintextDefault<BE> + VecZnxLshTmpBytes + VecZnxRshTmpBytes + VecZnxLshBackend<BE> + VecZnxRshBackend<BE>,
 {
-    fn ckks_extract_pt_tmp_bytes(module: &Module<BE>) -> usize {
+    fn ckks_extract_pt_tmp_bytes_impl(module: &Module<BE>) -> usize {
         module.ckks_extract_pt_tmp_bytes_default()
     }
 
-    fn ckks_extract_pt<Dst, Src>(module: &Module<BE>, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_extract_pt_impl<Dst, Src>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        src: &Src,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
     {
         module.ckks_extract_pt_default(dst, src, scratch)
     }

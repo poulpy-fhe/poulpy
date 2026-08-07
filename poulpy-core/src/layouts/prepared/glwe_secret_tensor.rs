@@ -1,6 +1,8 @@
+use poulpy_hal::layouts::SvpPPolToBackendMut;
+use poulpy_hal::layouts::SvpPPolToBackendRef;
 use poulpy_hal::{
     api::{SvpPPolAlloc, SvpPPolBytesOf},
-    layouts::{Backend, Data, HostDataMut, HostDataRef, Module, SvpPPol, SvpPPolToBackendMut, SvpPPolToBackendRef, ZnxInfos},
+    layouts::{Backend, Data, HostDataMut, HostDataRef, Module, SvpPPol, ZnxInfos},
 };
 
 use crate::{
@@ -17,7 +19,7 @@ use crate::{
 /// Stores the GLWE secret tensor with polynomials in the frequency domain
 /// for fast tensor operations. Tied to a specific backend via `B: Backend`.
 pub struct GLWESecretTensorPrepared<D: Data, B: Backend> {
-    pub(crate) data: SvpPPol<D, B>,
+    pub(crate) data: SvpPPol<D, B::DftWord, B>,
     pub(crate) rank: Rank,
     pub(crate) dist: Distribution,
 }

@@ -19,7 +19,7 @@ use poulpy_core::{
     EncryptionLayout, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
     layouts::{
         Dsize, GGLWEToGGSWKeyLayout, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GLWEAutomorphismKeyLayout, GLWEInfos,
-        GLWESecretPreparedFactory, LWEInfos, LWELayout, ModuleCoreAlloc,
+        GLWESecretPreparedFactory, LWELayout, ModuleCoreAlloc,
     },
 };
 
@@ -64,16 +64,12 @@ pub fn test_circuit_bootstrapping_to_exponent<BE: Backend<OwnedBuf = Vec<u8>> + 
     let k_lwe_ct: usize = 22;
     let block_size: usize = 7;
 
-    let k_ggsw_res: usize = 4 * res_base2k;
     let rows_ggsw_res: usize = 3;
 
-    let k_brk: usize = k_ggsw_res + base2k_brk;
     let rows_brk: usize = 4;
 
-    let k_atk: usize = k_ggsw_res + tsk_base2k;
     let rows_atk: usize = 4;
 
-    let k_tsk: usize = k_ggsw_res + a_base2ktk;
     let rows_tsk: usize = 4;
 
     let lwe_infos: LWELayout = LWELayout {
@@ -87,23 +83,23 @@ pub fn test_circuit_bootstrapping_to_exponent<BE: Backend<OwnedBuf = Vec<u8>> + 
             n_glwe: n_glwe.into(),
             n_lwe: n_lwe.into(),
             base2k: base2k_brk.into(),
-            k: k_brk.into(),
             dnum: rows_brk.into(),
+            k_aux: (base2k_brk + n_glwe.ilog2() as usize).into(),
             rank: rank.into(),
         },
         atk_layout: GLWEAutomorphismKeyLayout {
             n: n_glwe.into(),
             base2k: a_base2ktk.into(),
-            k: k_atk.into(),
             dnum: rows_atk.into(),
+            k_aux: (a_base2ktk + n_glwe.ilog2() as usize).into(),
             rank: rank.into(),
             dsize: Dsize(1),
         },
         tsk_layout: GGLWEToGGSWKeyLayout {
             n: n_glwe.into(),
             base2k: tsk_base2k.into(),
-            k: k_tsk.into(),
             dnum: rows_tsk.into(),
+            k_aux: (tsk_base2k + n_glwe.ilog2() as usize).into(),
             dsize: Dsize(1),
             rank: rank.into(),
         },
@@ -112,7 +108,7 @@ pub fn test_circuit_bootstrapping_to_exponent<BE: Backend<OwnedBuf = Vec<u8>> + 
     let ggsw_infos: GGSWLayout = GGSWLayout {
         n: n_glwe.into(),
         base2k: res_base2k.into(),
-        k: k_ggsw_res.into(),
+        k_aux: (res_base2k + n_glwe.ilog2() as usize).into(),
         dnum: rows_ggsw_res.into(),
         dsize: Dsize(1),
         rank: rank.into(),
@@ -223,7 +219,7 @@ pub fn test_circuit_bootstrapping_to_exponent<BE: Backend<OwnedBuf = Vec<u8>> + 
     module.ggsw_prepare(&mut res_prepared, &res, &mut scratch.borrow());
 
     {
-        module.glwe_external_product_assign(&mut ct_glwe, &res_prepared, res_prepared.size(), &mut scratch.borrow());
+        module.glwe_external_product_assign(&mut ct_glwe, &res_prepared, &mut scratch.borrow());
     }
 
     let mut pt_res: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&ggsw_infos);
@@ -270,16 +266,12 @@ pub fn test_circuit_bootstrapping_to_constant<BE: Backend<OwnedBuf = Vec<u8>> + 
     let k_lwe_ct: usize = 13;
     let block_size: usize = 7;
 
-    let k_ggsw_res: usize = 4 * res_base2k;
     let rows_ggsw_res: usize = 3;
 
-    let k_brk: usize = k_ggsw_res + base2k_brk;
     let rows_brk: usize = 4;
 
-    let k_atk: usize = k_ggsw_res + tsk_base2k;
     let rows_atk: usize = 4;
 
-    let k_tsk: usize = k_ggsw_res + a_base2ktk;
     let rows_tsk: usize = 4;
 
     let lwe_infos: LWELayout = LWELayout {
@@ -293,23 +285,23 @@ pub fn test_circuit_bootstrapping_to_constant<BE: Backend<OwnedBuf = Vec<u8>> + 
             n_glwe: n_glwe.into(),
             n_lwe: n_lwe.into(),
             base2k: base2k_brk.into(),
-            k: k_brk.into(),
             dnum: rows_brk.into(),
+            k_aux: (base2k_brk + n_glwe.ilog2() as usize).into(),
             rank: rank.into(),
         },
         atk_layout: GLWEAutomorphismKeyLayout {
             n: n_glwe.into(),
             base2k: a_base2ktk.into(),
-            k: k_atk.into(),
             dnum: rows_atk.into(),
+            k_aux: (a_base2ktk + n_glwe.ilog2() as usize).into(),
             rank: rank.into(),
             dsize: Dsize(1),
         },
         tsk_layout: GGLWEToGGSWKeyLayout {
             n: n_glwe.into(),
             base2k: tsk_base2k.into(),
-            k: k_tsk.into(),
             dnum: rows_tsk.into(),
+            k_aux: (tsk_base2k + n_glwe.ilog2() as usize).into(),
             dsize: Dsize(1),
             rank: rank.into(),
         },
@@ -318,7 +310,7 @@ pub fn test_circuit_bootstrapping_to_constant<BE: Backend<OwnedBuf = Vec<u8>> + 
     let ggsw_infos: GGSWLayout = GGSWLayout {
         n: n_glwe.into(),
         base2k: res_base2k.into(),
-        k: k_ggsw_res.into(),
+        k_aux: (res_base2k + n_glwe.ilog2() as usize).into(),
         dnum: rows_ggsw_res.into(),
         dsize: Dsize(1),
         rank: rank.into(),
@@ -420,7 +412,7 @@ pub fn test_circuit_bootstrapping_to_constant<BE: Backend<OwnedBuf = Vec<u8>> + 
     module.ggsw_prepare(&mut res_prepared, &res, &mut scratch.borrow());
 
     {
-        module.glwe_external_product_assign(&mut ct_glwe, &res_prepared, res_prepared.size(), &mut scratch.borrow());
+        module.glwe_external_product_assign(&mut ct_glwe, &res_prepared, &mut scratch.borrow());
     }
 
     let mut pt_res: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&ggsw_infos);

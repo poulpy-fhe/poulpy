@@ -8,6 +8,7 @@
 //! |----------|----------------|
 //! | [`test_neg_aligned`] | out-of-place negation |
 //! | [`test_neg_smaller_output`] | out-of-place negation into a smaller output buffer |
+//! | [`test_neg_wider_output`] | out-of-place negation into a wider output buffer (`k` propagation on the `offset == 0` fast path) |
 //!
 //! ## Operations-layer negation (`GLWE<_, CKKS>::neg_assign`)
 //!
@@ -15,7 +16,7 @@
 //! |----------|----------------|
 //! | [`test_neg_assign`] | in-place negation |
 
-use crate::{CKKSInfos, leveled::api::CKKSNegOps};
+use crate::{CKKSInfos, api::CKKSNegOps};
 
 use super::helpers::{
     TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, assert_ct_meta, assert_decrypt_precision,
@@ -27,7 +28,7 @@ use poulpy_hal::{
     layouts::{HostBytesBackend, Module},
 };
 
-use crate::{encoding::reim::Encoder, test_suite::CKKSTestParams};
+use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
 // ─── negation out-of-place (GLWE<_, CKKS>::neg) ────────────────────────────
 
@@ -46,7 +47,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -95,7 +96,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);
@@ -129,6 +130,59 @@ where
     Ok(())
 }
 
+/// Negation out-of-place into a wider output buffer.
+///
+/// Regression test: the `offset == 0` fast path must still propagate the
+/// source torus width `k`, otherwise a `dst` allocated wider than `src.k()`
+/// keeps its stale (larger) `k` and reports a phantom `log_budget` surplus.
+pub fn test_neg_wider_output<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) -> Result<()>
+where
+    BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE>,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let (re1, im1) = test_vector_1::<F>(m);
+    let sk = gen_sk(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+
+    let ct1 = ckks_encrypt(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &re1,
+        &im1,
+        &mut scratch.borrow(),
+    );
+    let (want_re, want_im) = want_neg(&re1, &im1);
+    let mut ct_res = alloc_ct(&params, module, params.k + params.base2k);
+    module.ckks_neg_into(&mut ct_res, &ct1, &mut scratch.borrow())?;
+    assert_unary_output_meta("neg wider_output", &ct_res, &ct1);
+    assert_decrypt_precision(
+        "neg",
+        &params,
+        module,
+        &encoder,
+        &ct_res,
+        &sk,
+        &want_re,
+        &want_im,
+        &mut scratch.borrow(),
+    );
+    Ok(())
+}
+
 // ─── negation in-place (GLWE<_, CKKS>::neg_assign) ────────────────────────
 
 /// Negation in-place.
@@ -146,7 +200,7 @@ where
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
     let m = params.n / 2;
-    let encoder = Encoder::<E>::new(m).unwrap();
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (re1, im1) = test_vector_1::<F>(m);
     let sk = gen_sk(&params, module, host_module, [0u8; 32]);
     let mut scratch = alloc_scratch(&params, module);

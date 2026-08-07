@@ -7,9 +7,39 @@ use poulpy_hal::layouts::{
 
 use crate::api::ModuleTransfer;
 use crate::layouts::{
-    Base2K, Compact, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBase2k, SetK, SetSize,
-    TorusPrecision,
+    Base2K, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, SetBase2k, SetK, TorusPrecision,
 };
+
+/// Width vocabulary for **integer-polynomial** (non-Torus) operands.
+///
+/// A ciphertext is a Torus element: MSB-anchored, `k()` measures precision
+/// from the top, and limbs below it are droppable noise. A plaintext operand
+/// fed to a convolution (`GLWEMulPlain`, linear-transformation diagonals,
+/// codec buffers) is **not** a Torus polynomial — it is an LSB-anchored
+/// integer polynomial in which every encoded limb carries data. Its consuming
+/// width is therefore neither `k()` (claimed precision, a label for budget
+/// arithmetic) nor `max_size()`/`max_k()` (the allocation, never consumed by
+/// compute), but the **encoded width** declared here.
+///
+/// Ops that consume a plaintext operand bound on this trait, so a type that
+/// cannot state its encoded width cannot reach the convolution.
+pub trait IntPolyInfos: LWEInfos {
+    /// Bit-width of the encoded integer polynomial: every limb up to this
+    /// width carries data and is consumed by the convolution.
+    fn encoded_k(&self) -> TorusPrecision;
+}
+
+impl<T: IntPolyInfos + ?Sized> IntPolyInfos for &T {
+    fn encoded_k(&self) -> TorusPrecision {
+        (**self).encoded_k()
+    }
+}
+
+impl<T: IntPolyInfos + ?Sized> IntPolyInfos for &mut T {
+    fn encoded_k(&self) -> TorusPrecision {
+        (**self).encoded_k()
+    }
+}
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
 pub struct GLWEPlaintextLayout {
@@ -75,21 +105,13 @@ impl<D: Data> SetK for &mut GLWEPlaintext<D> {
     }
 }
 
-impl<D: Data> SetSize for GLWEPlaintext<D> {
-    fn set_size(&mut self, size: usize) {
-        self.data.set_size(size);
-    }
-}
-
-impl<D: Data> Compact for GLWEPlaintext<D> {}
-
 impl<D: Data> LWEInfos for GLWEPlaintext<D> {
     fn base2k(&self) -> Base2K {
         self.base2k
     }
 
     fn max_size(&self) -> usize {
-        self.data.size()
+        self.data.max_size()
     }
 
     fn n(&self) -> Degree {
@@ -104,6 +126,22 @@ impl<D: Data> LWEInfos for GLWEPlaintext<D> {
 impl<D: Data> GLWEInfos for GLWEPlaintext<D> {
     fn rank(&self) -> Rank {
         Rank(self.data.cols() as u32 - 1)
+    }
+}
+
+impl<D: Data> IntPolyInfos for GLWEPlaintext<D> {
+    /// Plaintexts are encoded across their whole allocation today, so the
+    /// encoded width equals the allocated width. This equality is a property
+    /// of the encoders, not of the vocabulary: an encoder writing narrower
+    /// than the allocation would report the narrower width here.
+    fn encoded_k(&self) -> TorusPrecision {
+        self.max_k()
+    }
+}
+
+impl IntPolyInfos for GLWEPlaintextLayout {
+    fn encoded_k(&self) -> TorusPrecision {
+        self.max_k()
     }
 }
 
@@ -183,7 +221,22 @@ impl GLWEPlaintext<Vec<u8>> {
     where
         A: GLWEInfos,
     {
-        Self::alloc(infos.n(), infos.base2k(), infos.k())
+        // Size to `infos.size()` (not `ceil(k/base2k)`) so that a plaintext
+        // allocated from a *key* info (whose `size()` includes the auxiliary
+        // limbs above the gadget precision `k`) matches the width reserved by
+        // `take_glwe_plaintext_scratch`. For non-key infos the two coincide.
+        let n: Degree = infos.n();
+        let size: usize = infos.size();
+        GLWEPlaintext {
+            data: VecZnx::from_data(
+                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<Vec<u8>>::bytes_of(n.into(), 1, size)),
+                n.into(),
+                1,
+                size,
+            ),
+            base2k: infos.base2k(),
+            k: infos.k(),
+        }
     }
 
     pub(crate) fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision) -> Self {
@@ -220,7 +273,10 @@ impl GLWEPlaintext<Vec<u8>> {
     where
         A: GLWEInfos,
     {
-        Self::bytes_of(infos.n(), infos.base2k(), infos.k())
+        // Mirror `alloc_from_infos` / `take_glwe_plaintext_scratch`: size to
+        // `infos.size()` so key infos (with auxiliary limbs) reserve the full
+        // width. For non-key infos `size() == ceil(k/base2k)`.
+        VecZnx::bytes_of(infos.n().into(), 1, infos.size())
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision) -> usize {
@@ -254,8 +310,13 @@ where
     }
 }
 
-impl<'b, BE: Backend + 'b> GLWEToBackendRef<BE> for &mut GLWEPlaintext<BE::BufMut<'b>> {
-    fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>> {
+/// Reborrows a mutable-view-backed plaintext as a shared backend view.
+pub trait GLWEPlaintextReborrowBackendRef<BE: Backend> {
+    fn reborrow_backend_ref(&self) -> GLWE<BE::BufRef<'_>>;
+}
+
+impl<'b, BE: Backend + 'b> GLWEPlaintextReborrowBackendRef<BE> for GLWEPlaintext<BE::BufMut<'b>> {
+    fn reborrow_backend_ref(&self) -> GLWE<BE::BufRef<'_>> {
         GLWE {
             base2k: self.base2k,
             k: self.k,
@@ -264,13 +325,30 @@ impl<'b, BE: Backend + 'b> GLWEToBackendRef<BE> for &mut GLWEPlaintext<BE::BufMu
     }
 }
 
-impl<'b, BE: Backend + 'b> GLWEToBackendMut<BE> for &mut GLWEPlaintext<BE::BufMut<'b>> {
-    fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>> {
+/// Reborrows a mutable-view-backed plaintext as a mutable backend view.
+pub trait GLWEPlaintextReborrowBackendMut<BE: Backend>: GLWEPlaintextReborrowBackendRef<BE> {
+    fn reborrow_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>>;
+}
+
+impl<'b, BE: Backend + 'b> GLWEPlaintextReborrowBackendMut<BE> for GLWEPlaintext<BE::BufMut<'b>> {
+    fn reborrow_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>> {
         GLWE {
             base2k: self.base2k,
             k: self.k,
             data: <VecZnx<BE::BufMut<'b>> as VecZnxReborrowBackendMut<BE>>::reborrow_backend_mut(&mut self.data),
         }
+    }
+}
+
+impl<'b, BE: Backend + 'b> GLWEToBackendRef<BE> for &mut GLWEPlaintext<BE::BufMut<'b>> {
+    fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>> {
+        <GLWEPlaintext<BE::BufMut<'b>> as GLWEPlaintextReborrowBackendRef<BE>>::reborrow_backend_ref(*self)
+    }
+}
+
+impl<'b, BE: Backend + 'b> GLWEToBackendMut<BE> for &mut GLWEPlaintext<BE::BufMut<'b>> {
+    fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>> {
+        <GLWEPlaintext<BE::BufMut<'b>> as GLWEPlaintextReborrowBackendMut<BE>>::reborrow_backend_mut(*self)
     }
 }
 

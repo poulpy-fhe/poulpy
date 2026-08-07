@@ -88,13 +88,7 @@ pub fn bench_glwe_automorphism<BE: Backend<OwnedBuf = Vec<u8>>>(
     let mut group = c.benchmark_group(group_name);
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
-            module.glwe_automorphism(
-                &mut ct_out,
-                &ct_in,
-                &atk_prepared,
-                ct_in.max_size() + atk_prepared.dsize().as_usize(),
-                &mut scratch.borrow(),
-            );
+            module.glwe_automorphism(&mut ct_out, &ct_in, &atk_prepared, &mut scratch.borrow());
             black_box(());
         })
     });

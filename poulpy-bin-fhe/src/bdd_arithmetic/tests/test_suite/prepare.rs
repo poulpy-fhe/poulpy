@@ -77,7 +77,9 @@ pub fn test_bdd_prepare<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>> 
     c_enc_prep_debug.prepare(module, &c_enc, bdd_key_prepared, &mut scratch_2.borrow());
 
     let max_noise = |col_i: usize| {
-        let mut noise: f64 = -(ggsw_infos.size() as f64 * ggsw_infos.base2k().as_usize() as f64) + DEFAULT_SIGMA_XE.log2() + 2.0;
+        // Noise floor sits at the semantic precision `k()` (gadget + guard), not at the
+        // physical limb capacity `size * base2k`.
+        let mut noise: f64 = -(ggsw_infos.k().as_usize() as f64) + DEFAULT_SIGMA_XE.log2() + 4.0;
         noise += 0.5 * ggsw_infos.log_n() as f64;
         if col_i != 0 {
             noise += 0.5 * ggsw_infos.log_n() as f64

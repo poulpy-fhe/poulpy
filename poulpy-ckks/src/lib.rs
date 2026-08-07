@@ -1,4 +1,5 @@
-#![cfg_attr(not(all(feature = "libquadmath", target_arch = "x86_64")), feature(f128))]
+#![feature(f128)]
+#![deny(rustdoc::broken_intra_doc_links)]
 //! # poulpy-ckks
 //!
 //! Backend-agnostic implementation of the CKKS (Cheon-Kim-Kim-Song)
@@ -17,9 +18,10 @@
 //! Together they define the semantic torus width of a value:
 //! `k() = log_delta + log_budget`.
 //! Storage is rounded up to the next multiple of `base2k`, so the allocated
-//! width `k()` may exceed `k()`. Arithmetic APIs update this
-//! metadata for you, while maintenance helpers let you compact or resize owned
-//! buffers without violating those invariants.
+//! capacity `max_k()` may exceed the effective width `k()`. Arithmetic APIs
+//! update this metadata for you; buffers always stay at their allocated
+//! width, and allocating a destination at exactly the `k` you want is how
+//! results are narrowed.
 //!
 //! Safe add/sub operations return K-normalized ciphertexts. Their
 //! unnormalized variants live on [`api::CKKSAddOps`] and [`api::CKKSSubOps`]
@@ -39,8 +41,9 @@
 //! |--------|------|
 //! | [`encoding`] | CKKS encoders/decoders, including slot-wise real/imaginary packing |
 //! | [`layouts`] | CKKS ciphertext/plaintext wrappers and metadata-aware allocation helpers |
-//! | [`leveled`] | Leveled arithmetic (add, sub, mul, neg, rotate, conjugate), encryption, decryption, and rescale |
-//! | [`api::CKKSBootstrappingOps`] | The CKKS bootstrapping pipeline: its one native primitive ModUp (modulus raise), plus CoeffsToSlots / SlotsToCoeffs and EvalMod re-exported as supertraits ([`api::DFTOps`] / [`api::CKKSEvalModOps`]); parameterized by [`layouts::BootstrappingPlan`] |
+//! | [`api`] | The public op traits: leveled arithmetic (add, sub, mul, neg, rotate, conjugate), encryption, decryption, rescale, and scratch sizing |
+//! | [`api::CKKSBootstrappingOps`] | The CKKS bootstrapping pipeline: its one native primitive ModUp (modulus raise), plus CoeffsToSlots / SlotsToCoeffs and EvalMod re-exported as supertraits ([`api::CKKSDFTOps`] / [`api::CKKSEvalModOps`]); parameterized by [`layouts::BootstrappingPlan`] |
+//! | [`api::CKKSPaCoOps`] | PaCo bootstrapping without ModUp or EvalMod; parameterized by [`layouts::PaCoPlan`] and a compiled [`layouts::PaCoContext`] |
 
 use poulpy_core::layouts::{
     Base2K, Degree, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, TorusPrecision,
@@ -62,34 +65,55 @@ pub mod __macro_reexports {
 pub mod encoding;
 mod error;
 pub mod layouts;
-pub mod leveled;
+/// One-stop imports for the common CKKS path.
+///
+/// `use poulpy_ckks::prelude::*;` brings in the op traits (add/sub/mul/…,
+/// encrypt/decrypt, scratch sizing), the ciphertext/plaintext containers with
+/// their allocation helpers, and the metadata types — everything the
+/// encode → encrypt → evaluate → decrypt → decode loop needs from this crate.
+/// Key material and the `Module`/scratch machinery come from `poulpy-core` and
+/// `poulpy-hal`.
+pub mod prelude {
+    pub use crate::api::{
+        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps,
+        CKKSEncryptOps, CKKSImagOps, CKKSMulOps, CKKSNegOps, CKKSPlaintextVecOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
+    };
+    pub use crate::layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, UnnormalizedCKKSCiphertext};
+    pub use crate::{
+        CKKSCompositionError, CKKSError, CKKSInfos, CKKSLayout, CKKSMeta, CKKSResult, CoeffsMeta, Quad, SetCKKSInfos,
+    };
+}
 pub mod oep;
 pub mod polynomial;
 pub mod power_basis;
-#[cfg(not(all(feature = "libquadmath", target_arch = "x86_64")))]
 pub mod scalar;
+#[cfg(feature = "test-utils")]
 pub mod test_suite;
-pub use error::CKKSCompositionError;
+pub use error::{CKKSCompositionError, CKKSError, CKKSResult};
 pub(crate) use error::{
-    checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget, ensure_base2k_match,
+    checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget, ckks_bail, ckks_ensure, ensure_base2k_match,
     ensure_plaintext_alignment, ensure_plaintext_coeff_in_range, ensure_plaintext_degree_match,
 };
-#[cfg(all(feature = "libquadmath", target_arch = "x86_64"))]
-pub use f128::f128 as Quad;
 /// Quad-precision (IEEE 754 binary128) CKKS scalar.
 ///
-/// The portable [`scalar::Quad`] newtype over the primitive `f128` by default;
-/// the libquadmath-backed `f128::f128` under the `libquadmath` feature on
-/// x86_64 (faster transcendentals for on-the-fly FFT-table builds).
-#[cfg(not(all(feature = "libquadmath", target_arch = "x86_64")))]
+/// Always the portable [`scalar::Quad`] newtype over the primitive `f128`, in
+/// every configuration. Under the `libquadmath` feature on x86_64 only its
+/// *transcendental* math is routed through libquadmath (faster for on-the-fly
+/// FFT-table builds); storage, codecs, and exact arithmetic are unchanged, so
+/// the type — and its `bytemuck::Pod` encoding — is identical across features.
 pub use scalar::Quad;
 
-pub type CKKSCiphertextRef<'a, BE> = layouts::CKKSCiphertext<<BE as Backend>::BufRef<'a>>;
-pub type CKKSCiphertextMut<'a, BE> = layouts::CKKSCiphertext<<BE as Backend>::BufMut<'a>>;
+/// Backend-compatible shared CKKS plaintext storage.
+pub trait CKKSPlaintextToBackendRef<BE: Backend>: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos {}
 
-pub trait CKKSPlaintextToBackendRef<BE: Backend>: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos {}
+impl<BE: Backend, T> CKKSPlaintextToBackendRef<BE> for T where T: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos {}
 
-impl<BE: Backend, T> CKKSPlaintextToBackendRef<BE> for T where T: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos {}
+/// Backend-compatible mutable CKKS plaintext storage.
+///
+/// Implemented by owned plaintexts and scratch-backed plaintext views alike.
+pub trait CKKSPlaintextToBackendMut<BE: Backend>: CKKSPlaintextToBackendRef<BE> + GLWEToBackendMut<BE> {}
+
+impl<BE: Backend, T> CKKSPlaintextToBackendMut<BE> for T where T: CKKSPlaintextToBackendRef<BE> + GLWEToBackendMut<BE> {}
 
 /// Marker bound for CKKS ciphertext type parameters.
 ///
@@ -99,6 +123,25 @@ impl<BE: Backend, T> CKKSPlaintextToBackendRef<BE> for T where T: GLWEToBackendR
 pub trait CKKSCtBounds: GLWEInfos + CKKSInfos {}
 
 impl<T: GLWEInfos + CKKSInfos> CKKSCtBounds for T {}
+
+/// Marker bound for prepared Galois/automorphism-key type parameters.
+///
+/// Names the four-trait cluster every automorphism-consuming op requires of its key type (backend-resident automorphism key, GGLWE view, Galois element, and GGLWE layout info), collapsing the repeated spelled-out bound found throughout the DFT, linear-transformation, and PaCo APIs into a single constraint.
+pub trait CKKSAtkBounds<BE: Backend>:
+    poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef<BE>
+    + poulpy_core::layouts::GGLWEPreparedToBackendRef<BE>
+    + poulpy_core::layouts::GetGaloisElement
+    + poulpy_core::layouts::GGLWEInfos
+{
+}
+
+impl<BE: Backend, T> CKKSAtkBounds<BE> for T where
+    T: poulpy_core::layouts::prepared::GLWEAutomorphismKeyPreparedToBackendRef<BE>
+        + poulpy_core::layouts::GGLWEPreparedToBackendRef<BE>
+        + poulpy_core::layouts::GetGaloisElement
+        + poulpy_core::layouts::GGLWEInfos
+{
+}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 /// CKKS semantic precision metadata carried by ciphertexts and plaintexts.
@@ -123,15 +166,20 @@ pub struct CKKSMeta {
 /// raw limb storage used by the underlying torus representation. `log_budget` is
 /// derived from the container's torus width `k` (from the wrapped GLWE) and
 /// `log_delta`, so it is only available on containers, not on a bare [`CKKSMeta`].
-pub trait CKKSInfos {
+pub trait CKKSInfos: LWEInfos {
     /// Returns the complete metadata pair.
     fn meta(&self) -> CKKSMeta;
 
     /// Returns the base-2 logarithm of the encoded decimal scaling factor.
-    fn log_delta(&self) -> usize;
+    fn log_delta(&self) -> usize {
+        self.meta().log_delta
+    }
 
-    /// Returns the base-2 logarithm of the remaining homomorphic capacity.
-    fn log_budget(&self) -> usize;
+    /// Returns the base-2 logarithm of the remaining homomorphic capacity,
+    /// derived from the container's torus width: `k − log_delta`.
+    fn log_budget(&self) -> usize {
+        self.k().as_usize().saturating_sub(self.log_delta())
+    }
 
     /// Returns the sparse-packing factor (`log2` of the coefficient gap / slot
     /// replication); `0` is dense. See [`CKKSMeta::log_sparsity`].
@@ -187,16 +235,55 @@ pub struct CKKSLayout {
     pub meta: CKKSMeta,
 }
 
-impl Default for CKKSLayout {
-    fn default() -> Self {
+/// Coefficient metadata for plan-compiled operands: the DFT factor diagonals
+/// ([`layouts::DFTPlan`]), the EvalMod polynomial coefficients
+/// ([`layouts::EvalModPlan`]), and the BSGS polynomial encoders
+/// ([`polynomial::EncodeBSGS`]).
+///
+/// The reduced form of a [`CKKSLayout`]: only the torus width `k` the operand
+/// plaintexts are allocated with and the [`CKKSMeta`] they are stamped with.
+/// Plans carry no ring or radix information — `n` follows the module and
+/// `base2k` is passed explicitly at compile time — so there is nothing to fill
+/// with placeholders.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CoeffsMeta {
+    /// Torus width the operand plaintexts are allocated with.
+    pub k: TorusPrecision,
+    /// CKKS metadata (`log_delta`, `log_sparsity`) the operands are stamped with.
+    pub meta: CKKSMeta,
+}
+
+impl CoeffsMeta {
+    /// Dense (`log_sparsity = 0`) coefficient meta with
+    /// `k = log_delta + log_budget`.
+    pub fn from_delta_budget(log_delta: usize, log_budget: usize) -> Self {
         Self {
-            glwe_layout: GLWELayout {
-                n: Degree(0),
-                base2k: Base2K(0),
-                k: TorusPrecision(0),
-                rank: Rank(1),
+            k: (log_delta + log_budget).into(),
+            meta: CKKSMeta {
+                log_delta,
+                log_sparsity: 0,
             },
-            meta: CKKSMeta::default(),
+        }
+    }
+
+    /// The operand encoding scale.
+    pub fn log_delta(&self) -> usize {
+        self.meta.log_delta
+    }
+
+    /// The operand headroom: `k − log_delta` (saturating).
+    pub fn log_budget(&self) -> usize {
+        usize::from(self.k).saturating_sub(self.meta.log_delta)
+    }
+}
+
+/// Narrowing conversion: keeps `k` and the [`CKKSMeta`], drops the ring/radix
+/// fields plans never consume.
+impl From<CKKSLayout> for CoeffsMeta {
+    fn from(layout: CKKSLayout) -> Self {
+        Self {
+            k: layout.glwe_layout.k,
+            meta: layout.meta,
         }
     }
 }
@@ -229,29 +316,106 @@ impl CKKSInfos for CKKSLayout {
     fn meta(&self) -> CKKSMeta {
         self.meta
     }
-
-    fn log_delta(&self) -> usize {
-        self.meta.log_delta
-    }
-
-    fn log_budget(&self) -> usize {
-        self.glwe_layout.k().as_usize().saturating_sub(self.meta.log_delta)
-    }
 }
 
+/// Bits a binary add/sub must shift its result down to fit `res`: the excess of
+/// the **natural result width** — `min(log_delta) + min(log_budget)`, the meta
+/// the operation stamps — over the destination's requested `res.k()`. Using the natural width (rather
+/// than `min(a.k, b.k)`, which is `≥` it whenever deltas *and* budgets both
+/// differ) charges exactly the budget the narrower destination forces and no
+/// more; the larger-delta operand's truncated tail lies below the claimed
+/// `min(log_delta)` precision. This mirrors the mul family's
+/// `(res_log_budget + res_log_delta).saturating_sub(res_max_k)`.
 pub(crate) fn ckks_offset_binary<R, A, B>(res: &R, a: &A, b: &B) -> usize
 where
-    R: LWEInfos + CKKSInfos + ?Sized,
-    A: LWEInfos + CKKSInfos + ?Sized,
-    B: LWEInfos + CKKSInfos + ?Sized,
+    R: CKKSInfos + ?Sized,
+    A: CKKSInfos + ?Sized,
+    B: CKKSInfos + ?Sized,
 {
-    a.k().min(b.k()).as_usize().saturating_sub(res.max_k().as_usize())
+    let natural_k = a.log_delta().min(b.log_delta()) + a.log_budget().min(b.log_budget());
+    natural_k.saturating_sub(res.k().as_usize())
 }
 
 pub(crate) fn ckks_offset_unary<R, A>(res: &R, a: &A) -> usize
 where
-    R: LWEInfos + CKKSInfos + ?Sized,
-    A: LWEInfos + CKKSInfos + ?Sized,
+    R: CKKSInfos + ?Sized,
+    A: CKKSInfos + ?Sized,
 {
-    a.k().as_usize().saturating_sub(res.max_k().as_usize())
+    a.k().as_usize().saturating_sub(res.k().as_usize())
+}
+
+/// Shared unary-op preamble: aligns `src` into `dst` (left shift by
+/// `offset + extra_shift`) and stamps `src`'s metadata with the budget charged
+/// by `offset + extra_charge`. Validates **before** mutating, so on `Err`
+/// (insufficient budget) `dst` is untouched. Returns the computed offset.
+///
+/// This is the single implementation of the "shift + stamp" sequence the
+/// copy/pow2/add-pt/sub-pt into-ops previously hand-rolled (H1 in the 2026-07
+/// review was a drift bug in exactly this preamble).
+pub(crate) fn ckks_shift_stamp_unary<BE, M, Dst, Src>(
+    module: &M,
+    op: &'static str,
+    dst: &mut Dst,
+    src: &Src,
+    extra_shift: usize,
+    extra_charge: usize,
+    scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,
+) -> CKKSResult<()>
+where
+    BE: Backend,
+    M: poulpy_core::GLWEShift<BE> + ?Sized,
+    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+    Src: GLWEToBackendRef<BE> + CKKSInfos,
+{
+    let offset = ckks_offset_unary(dst, src);
+    let log_budget = checked_log_budget_sub(op, src.log_budget(), offset + extra_charge)?;
+    module.glwe_lsh(dst, src, offset + extra_shift, scratch);
+    dst.set_meta(src.meta());
+    dst.set_log_budget(log_budget);
+    Ok(())
+}
+
+#[cfg(test)]
+mod offset_tests {
+    use super::*;
+
+    fn layout(log_delta: usize, log_budget: usize) -> CKKSLayout {
+        CKKSLayout {
+            glwe_layout: poulpy_core::layouts::GLWELayout {
+                n: Degree(0),
+                base2k: Base2K(1),
+                k: (log_delta + log_budget).into(),
+                rank: Rank(1),
+            },
+            meta: CKKSMeta {
+                log_delta,
+                log_sparsity: 0,
+            },
+        }
+    }
+
+    /// The binary offset charges exactly the natural result width's excess over
+    /// the destination — not `min(a.k, b.k)`, which over-charges when deltas
+    /// and budgets both differ.
+    #[test]
+    fn offset_binary_charges_natural_result_width() {
+        // Deltas AND budgets differ: natural width = 30 + 20 = 50, while
+        // min(a.k, b.k) = 55 — the old formula charged 5 spurious bits.
+        let a = layout(40, 20); // k = 60
+        let b = layout(30, 25); // k = 55
+        let res = layout(30, 20); // max_k = 50
+        assert_eq!(ckks_offset_binary(&res, &a, &b), 0);
+
+        // A genuinely narrower destination still charges the difference.
+        let narrow = layout(30, 12); // max_k = 42
+        assert_eq!(ckks_offset_binary(&narrow, &a, &b), 8);
+
+        // Degenerate cases match the old formula: equal budgets…
+        let c = layout(40, 25); // k = 65
+        let d = layout(30, 25); // k = 55
+        assert_eq!(ckks_offset_binary(&narrow, &c, &d), (30 + 25) - 42);
+        // …and equal deltas.
+        let e = layout(30, 30); // k = 60
+        assert_eq!(ckks_offset_binary(&narrow, &d, &e), (30 + 25) - 42);
+    }
 }

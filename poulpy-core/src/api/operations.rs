@@ -1,3 +1,4 @@
+use crate::layouts::IntPolyInfos;
 use std::collections::HashMap;
 
 use poulpy_hal::layouts::{Backend, ScratchArena};
@@ -17,21 +18,14 @@ pub trait GLWETrace<BE: Backend> {
         A: GLWEInfos,
         K: GGLWEInfos;
 
-    fn glwe_trace<R, A, K, H>(
-        &self,
-        res: &mut R,
-        skip: usize,
-        a: &A,
-        keys: &H,
-        key_size: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_trace<R, A, K, H>(&self, res: &mut R, skip: usize, a: &A, keys: &H, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
-    fn glwe_trace_assign<R, K, H>(&self, res: &mut R, skip: usize, keys: &H, key_size: usize, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_trace_assign<R, K, H>(&self, res: &mut R, skip: usize, keys: &H, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
@@ -52,7 +46,6 @@ pub trait GLWEPacking<BE: Backend> {
         a: HashMap<usize, &mut A>,
         log_gap_out: usize,
         keys: &H,
-        key_size: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -96,14 +89,15 @@ pub trait GLWEMulConst<BE: Backend> {
 /// Multiplication of a GLWE ciphertext by a **plaintext** operand.
 ///
 /// The plain operand — `b` in [`Self::glwe_mul_plain`], `a` in
-/// [`Self::glwe_mul_plain_assign`] — is treated as a full-width **integer
-/// polynomial** (bottom-up encoding): the convolution masks it at its full
-/// `max_k()` (every stored limb), , *not* at its effective `k()`.
-/// Consequently a plaintext's reported `k` / `log_budget` does **not** narrow
-/// the operand — callers must allocate it at exactly the limb width they want
-/// folded into the product (masking at the effective `k` would zero the low
-/// bits of the last limb and silently lose precision). The ciphertext operand,
-/// by contrast, is processed at its effective `k`.
+/// [`Self::glwe_mul_plain_assign`] — is an **integer polynomial**, not a Torus
+/// element: LSB-anchored, every encoded limb carries data. The convolution
+/// therefore consumes it at its declared
+/// [`encoded_k()`](crate::layouts::IntPolyInfos::encoded_k) — the operand is
+/// bounded by [`crate::layouts::IntPolyInfos`], so a type that cannot state
+/// its encoded width cannot be passed here. Its `k` labels claimed precision
+/// for budget arithmetic only, and `max_k()` is the allocation, never consumed
+/// by compute. The ciphertext operand, a Torus element, is processed at its
+/// effective `k`.
 pub trait GLWEMulPlain<BE: Backend> {
     fn glwe_mul_plain_tmp_bytes<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
@@ -116,13 +110,13 @@ pub trait GLWEMulPlain<BE: Backend> {
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos;
+        B: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
 
     #[allow(clippy::too_many_arguments)]
     fn glwe_mul_plain_assign<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
 }
 
 pub trait GLWETensoring<BE: Backend> {
@@ -148,7 +142,7 @@ pub trait GLWETensoring<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos;
 
-    fn glwe_tensor_relinearize<R, A, T>(&self, res: &mut R, a: &A, tsk: &T, tsk_size: usize, scratch: &mut ScratchArena<'_, BE>)
+    fn glwe_tensor_relinearize<R, A, T>(&self, res: &mut R, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,

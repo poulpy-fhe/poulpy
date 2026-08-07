@@ -58,8 +58,8 @@ pub fn bench_glwe_keyswitch<BE: Backend<OwnedBuf = Vec<u8>>>(
     let mut sk_out: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(glwe_out);
     sk_out.fill_ternary_prob(0.5, &mut source_xs);
 
-    let ksk_enc_infos = NoiseInfos::new(gglwe.max_k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
-    let glwe_enc_infos = NoiseInfos::new(glwe_in.max_k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
+    let ksk_enc_infos = NoiseInfos::new(gglwe.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
+    let glwe_enc_infos = NoiseInfos::new(glwe_in.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
 
     module.glwe_switching_key_encrypt_sk(
         &mut ksk,
@@ -85,10 +85,9 @@ pub fn bench_glwe_keyswitch<BE: Backend<OwnedBuf = Vec<u8>>>(
 
     let group_name = format!("glwe_keyswitch::{label}");
     let mut group = c.benchmark_group(group_name);
-    let size = ct_in.max_size() + ksk_prepared.dsize().as_usize();
     group.bench_function(format!("n={n}"), |bench| {
         bench.iter(|| {
-            module.glwe_keyswitch(&mut ct_out, &ct_in, &ksk_prepared, size, &mut scratch.borrow());
+            module.glwe_keyswitch(&mut ct_out, &ct_in, &ksk_prepared, &mut scratch.borrow());
             black_box(());
         })
     });

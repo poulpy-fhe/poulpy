@@ -168,6 +168,10 @@ impl<D: HostDataRef, BRA: BlindRotationAlgo> GLWEInfos for BlindRotationKeyCompr
 }
 
 impl<D: HostDataRef, BRA: BlindRotationAlgo> GGSWInfos for BlindRotationKeyCompressed<D, BRA> {
+    fn k_aux(&self) -> poulpy_core::layouts::TorusPrecision {
+        self.keys[0].k_aux()
+    }
+
     fn dnum(&self) -> poulpy_core::layouts::Dnum {
         self.keys[0].dnum()
     }

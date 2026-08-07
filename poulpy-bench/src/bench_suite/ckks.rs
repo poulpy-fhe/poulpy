@@ -4,14 +4,14 @@ use criterion::{BenchmarkId, Criterion};
 use poulpy_ckks::{
     CKKSMeta, SetCKKSInfos,
     api::{
-        Diagonal, GiantStep, LinearTransformation, LinearTransformationBabySteps, LinearTransformationOps,
-        LinearTransformationPrepared, LinearTransformationStrategy,
-    },
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
-    leveled::api::{
         CKKSAddManyOps, CKKSAddOps, CKKSConjugateOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps,
         CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
     },
+    api::{
+        CKKSLinearTransformationOps, Diagonal, GiantStep, LinearTransformation, LinearTransformationBabySteps,
+        LinearTransformationPrepared, LinearTransformationStrategy,
+    },
+    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
     oep::CKKSImpl,
 };
 use poulpy_core::{
@@ -90,7 +90,7 @@ const CKKS_MUL_SWEEP: &[CkksMulParams] = &[
 ];
 
 pub trait CkksBenchBackend:
-    Backend<OwnedBuf = Vec<u8>>
+    Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>
     + CKKSImpl<Self>
     + GLWEKeyswitchImpl<Self>
     + GLWEAddImpl<Self>
@@ -141,7 +141,7 @@ where
         + CKKSMulAddOps<Self>
         + CKKSMulSubOps<Self>
         + CKKSDotProductOps<Self>
-        + LinearTransformationOps<Self>
+        + CKKSLinearTransformationOps<Self>
         + CnvPVecAlloc<Self>,
     ScratchOwned<Self>: ScratchOwnedAlloc<Self> + ScratchOwnedBorrow<Self>,
 {
@@ -149,7 +149,7 @@ where
 
 impl<BE> CkksBenchBackend for BE
 where
-    BE: Backend<OwnedBuf = Vec<u8>>
+    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>
         + CKKSImpl<BE>
         + GLWEKeyswitchImpl<BE>
         + GLWEAddImpl<BE>
@@ -198,7 +198,7 @@ where
         + CKKSMulAddOps<BE>
         + CKKSMulSubOps<BE>
         + CKKSDotProductOps<BE>
-        + LinearTransformationOps<BE>
+        + CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -244,25 +244,27 @@ fn ckks_pt_meta() -> CKKSMeta {
 }
 
 fn tsk_layout() -> GLWETensorKeyLayout {
+    let (dnum, k_aux) = crate::params::key_dnum_k_aux((K + DSIZE * BASE2K) as u32, BASE2K as u32, DSIZE as u32);
     GLWETensorKeyLayout {
         n: Degree(N as u32),
         base2k: Base2K(BASE2K as u32),
-        k: TorusPrecision((K + DSIZE * BASE2K) as u32),
+        k_aux: TorusPrecision(k_aux),
         rank: Rank(1),
         dsize: Dsize(DSIZE as u32),
-        dnum: Dnum(K.div_ceil(DSIZE * BASE2K) as u32),
+        dnum: Dnum(dnum),
     }
 }
 
 fn atk_layout() -> EncryptionLayout<GLWEAutomorphismKeyLayout> {
-    let k = K + DSIZE * BASE2K;
+    let (dnum, k_aux) = crate::params::key_dnum_k_aux((K + DSIZE * BASE2K) as u32, BASE2K as u32, DSIZE as u32);
+    debug_assert_eq!(dnum, DNUM as u32);
     EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
         n: Degree(N as u32),
         base2k: Base2K(BASE2K as u32),
-        k: TorusPrecision(k as u32),
+        k_aux: TorusPrecision(k_aux),
         rank: Rank(1),
         dsize: Dsize(DSIZE as u32),
-        dnum: Dnum(DNUM as u32),
+        dnum: Dnum(dnum),
     })
     .unwrap()
 }
@@ -434,9 +436,9 @@ where
     let atk_layout = atk_layout();
     let meta = ckks_ct_meta();
 
-    let mut ct_a = module.ckks_ciphertext_alloc_from_infos(&ct_layout);
-    let mut ct_b = module.ckks_ciphertext_alloc_from_infos(&ct_layout);
-    let mut ct_dst = module.ckks_ciphertext_alloc_from_infos(&ct_layout);
+    let mut ct_a = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
+    let mut ct_b = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
+    let mut ct_dst = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
     ct_a.set_meta_checked(meta).unwrap();
     ct_b.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
@@ -467,20 +469,20 @@ where
         .max(module.ckks_sub_pt_vec_tmp_bytes())
         .max(module.ckks_add_pt_const_tmp_bytes())
         .max(module.ckks_sub_pt_const_tmp_bytes())
-        .max(module.ckks_mul_tmp_bytes(&ct_a, &tsk))
-        .max(module.ckks_square_tmp_bytes(&ct_a, &tsk))
+        .max(module.ckks_mul_tmp_bytes(&ct_a, &ct_a, &ct_a, &tsk))
+        .max(module.ckks_square_tmp_bytes(&ct_a, &ct_a, &tsk))
         .max(module.ckks_mul_pt_vec_tmp_bytes(&ct_dst, &ct_a, &pt))
         .max(module.ckks_mul_pt_const_tmp_bytes(&ct_dst, &ct_a, &const_full))
         .max(module.ckks_rotate_tmp_bytes(&ct_a, atks.get(&ROTATION).unwrap()))
         .max(module.ckks_conjugate_tmp_bytes(&ct_a, atks.get(&-1).unwrap()))
         .max(module.ckks_add_many_tmp_bytes())
-        .max(module.ckks_mul_add_ct_tmp_bytes(&ct_dst, &tsk))
-        .max(module.ckks_mul_sub_ct_tmp_bytes(&ct_dst, &tsk))
+        .max(module.ckks_mul_add_ct_tmp_bytes(&ct_dst, &ct_dst, &ct_dst, &tsk))
+        .max(module.ckks_mul_sub_ct_tmp_bytes(&ct_dst, &ct_dst, &ct_dst, &tsk))
         .max(module.ckks_mul_add_pt_vec_tmp_bytes(&ct_dst, &ct_a, &pt))
         .max(module.ckks_mul_sub_pt_vec_tmp_bytes(&ct_dst, &ct_a, &pt))
         .max(module.ckks_mul_add_pt_const_tmp_bytes(&ct_dst, &ct_a, &const_full))
         .max(module.ckks_mul_sub_pt_const_tmp_bytes(&ct_dst, &ct_a, &const_full))
-        .max(module.ckks_dot_product_ct_tmp_bytes(MANY_TERMS, &ct_dst, &tsk))
+        .max(module.ckks_dot_product_ct_tmp_bytes(MANY_TERMS, &ct_dst, &ct_dst, &ct_dst, &tsk))
         .max(module.ckks_dot_product_pt_vec_tmp_bytes(&ct_dst, &ct_a, &pt))
         .max(module.ckks_dot_product_pt_const_tmp_bytes(&ct_dst, &ct_a, &const_full));
 
@@ -556,7 +558,7 @@ fn bench_lt_case<BE>(
         format_bytes(scratch_bytes),
     );
 
-    let mut ct_dst = module.ckks_ciphertext_alloc_from_infos(&ckks_layout());
+    let mut ct_dst = module.ckks_ciphertext_alloc_from_glwe_infos(&ckks_layout());
     ct_dst.set_meta_checked(meta_ct).unwrap();
 
     group.bench_function(label, |b| {
@@ -742,13 +744,14 @@ fn mul_ckks_ct_meta(p: &CkksMulParams) -> CKKSMeta {
 }
 
 fn mul_tsk_layout(p: &CkksMulParams) -> GLWETensorKeyLayout {
+    let (dnum, k_aux) = crate::params::key_dnum_k_aux((p.k + p.dsize * p.base2k) as u32, p.base2k as u32, p.dsize as u32);
     GLWETensorKeyLayout {
         n: Degree(p.n as u32),
         base2k: Base2K(p.base2k as u32),
-        k: TorusPrecision((p.k + p.dsize * p.base2k) as u32),
+        k_aux: TorusPrecision(k_aux),
         rank: Rank(1),
         dsize: Dsize(p.dsize as u32),
-        dnum: Dnum(p.k.div_ceil(p.dsize * p.base2k) as u32),
+        dnum: Dnum(dnum),
     }
 }
 
@@ -769,9 +772,9 @@ where
     let tsk_layout = mul_tsk_layout(p);
     let meta = mul_ckks_ct_meta(p);
 
-    let mut ct_a = module.ckks_ciphertext_alloc_from_infos(&ct_layout);
-    let mut ct_b = module.ckks_ciphertext_alloc_from_infos(&ct_layout);
-    let mut ct_dst = module.ckks_ciphertext_alloc_from_infos(&ct_layout);
+    let mut ct_a = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
+    let mut ct_b = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
+    let mut ct_dst = module.ckks_ciphertext_alloc_from_glwe_infos(&ct_layout);
     ct_a.set_meta_checked(meta).unwrap();
     ct_b.set_meta_checked(meta).unwrap();
     ct_dst.set_meta_checked(meta).unwrap();
@@ -786,8 +789,8 @@ where
     let tsk = module.alloc_tensor_key_prepared_from_infos(&tsk_layout);
 
     let scratch_bytes = module
-        .ckks_mul_tmp_bytes(&ct_a, &tsk)
-        .max(module.ckks_square_tmp_bytes(&ct_a, &tsk))
+        .ckks_mul_tmp_bytes(&ct_a, &ct_a, &ct_a, &tsk)
+        .max(module.ckks_square_tmp_bytes(&ct_a, &ct_a, &tsk))
         .max(module.ckks_mul_pt_vec_tmp_bytes(&ct_dst, &ct_a, &pt))
         .max(module.ckks_mul_pt_const_tmp_bytes(&ct_dst, &ct_a, &const_full));
 
@@ -1065,7 +1068,7 @@ where
     BE: CkksBenchBackend,
 {
     let module = Module::<BE>::new(N as u64);
-    let mut ct_src = module.ckks_ciphertext_alloc_from_infos(&ckks_layout());
+    let mut ct_src = module.ckks_ciphertext_alloc_from_glwe_infos(&ckks_layout());
     ct_src.set_meta_checked(ckks_ct_meta()).unwrap();
     let mut group = c.benchmark_group(format!("ckks_linear_transformation::{label}"));
 

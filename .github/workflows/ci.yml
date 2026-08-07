@@ -15,7 +15,6 @@ env:
   RUST_TOOLCHAIN: nightly-2026-05-14
   PORTABLE_FEATURES: >-
     poulpy-core/enable-core
-    poulpy-ckks/enable-ckks
     poulpy-cpu-ref/enable-core
     poulpy-cpu-ref/enable-ckks
     poulpy-bin-fhe/enable-bin-fhe
@@ -26,12 +25,10 @@ env:
   AVX_FEATURES: >-
     poulpy-core/enable-core
     poulpy-core/enable-avx
-    poulpy-ckks/enable-ckks
-    poulpy-ckks/enable-avx
     poulpy-cpu-ref/enable-core
     poulpy-cpu-ref/enable-ckks
-    poulpy-cpu-avx/enable-ckks
     poulpy-cpu-avx/enable-avx
+    poulpy-cpu-avx/enable-ckks
     poulpy-bin-fhe/enable-bin-fhe
     poulpy-bin-fhe/enable-avx
     poulpy-bench/hal-bench
@@ -42,12 +39,11 @@ env:
   AVX512_FEATURES: >-
     poulpy-core/enable-core
     poulpy-core/enable-avx
-    poulpy-ckks/enable-ckks
-    poulpy-ckks/enable-avx
+    poulpy-core/enable-ifma
     poulpy-cpu-ref/enable-core
     poulpy-cpu-ref/enable-ckks
-    poulpy-cpu-avx/enable-ckks
     poulpy-cpu-avx/enable-avx
+    poulpy-cpu-avx/enable-ckks
     poulpy-cpu-avx512/enable-ckks
     poulpy-cpu-avx512/enable-ifma
     poulpy-bin-fhe/enable-bin-fhe
@@ -62,8 +58,6 @@ env:
   NEON_FEATURES: >-
     poulpy-core/enable-core
     poulpy-core/enable-neon
-    poulpy-ckks/enable-ckks
-    poulpy-ckks/enable-neon
     poulpy-cpu-ref/enable-core
     poulpy-cpu-ref/enable-ckks
     poulpy-cpu-arm/enable-ckks

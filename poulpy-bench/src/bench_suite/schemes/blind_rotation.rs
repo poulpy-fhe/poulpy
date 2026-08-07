@@ -54,7 +54,7 @@ where
         n_glwe: n_glwe.into(),
         n_lwe: n_lwe.into(),
         base2k: Base2K(18),
-        k: TorusPrecision(36),
+        k_aux: TorusPrecision(18),
         dnum: Dnum(1),
         rank: rank.into(),
     };

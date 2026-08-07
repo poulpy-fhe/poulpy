@@ -1,8 +1,9 @@
 use poulpy_hal::layouts::Backend;
 
 use super::{
-    CKKSAddImpl, CKKSConjugateImpl, CKKSCopyImpl, CKKSEncryptionImpl, CKKSImagImpl, CKKSMulImpl, CKKSNegImpl,
-    CKKSPlaintextZnxImpl, CKKSPolynomialEvaluationImpl, CKKSPow2Impl, CKKSRotateImpl, CKKSSubImpl,
+    CKKSAddImpl, CKKSBootstrappingImpl, CKKSConjugateImpl, CKKSCopyImpl, CKKSEncryptionImpl, CKKSEvalModImpl, CKKSImagImpl,
+    CKKSMulImpl, CKKSNegImpl, CKKSPlaintextZnxImpl, CKKSPolynomialEvaluationImpl, CKKSPow2Impl, CKKSRotateImpl, CKKSSubImpl,
+    DFTImpl,
 };
 
 /// Aggregate CKKS dispatch surface.
@@ -10,6 +11,13 @@ use super::{
 /// Concrete APIs can depend on narrower `CKKS*Impl` family traits. This
 /// aggregate trait remains useful for composite operations that span multiple
 /// CKKS families and for broad test/backend capability bundles.
+///
+/// Bundles every scalar-independent family. The scalar-generic seams —
+/// [`CKKSEncodingImpl<BE, F>`](super::CKKSEncodingImpl),
+/// [`DFTMatrixImpl<BE, F>`](super::DFTMatrixImpl), and
+/// [`CKKSPaCoCoeffEncodingImpl<BE>`](super::CKKSPaCoCoeffEncodingImpl) — carry
+/// an encoding-scalar type parameter and therefore cannot be part of a
+/// non-generic bundle; bound them separately where needed.
 ///
 /// # Safety
 ///
@@ -30,6 +38,9 @@ pub unsafe trait CKKSImpl<BE: Backend>:
     + CKKSConjugateImpl<BE>
     + CKKSMulImpl<BE>
     + CKKSPolynomialEvaluationImpl<BE>
+    + DFTImpl<BE>
+    + CKKSEvalModImpl<BE>
+    + CKKSBootstrappingImpl<BE>
 {
 }
 
@@ -46,5 +57,8 @@ unsafe impl<BE: Backend> CKKSImpl<BE> for BE where
         + CKKSConjugateImpl<BE>
         + CKKSMulImpl<BE>
         + CKKSPolynomialEvaluationImpl<BE>
+        + DFTImpl<BE>
+        + CKKSEvalModImpl<BE>
+        + CKKSBootstrappingImpl<BE>
 {
 }

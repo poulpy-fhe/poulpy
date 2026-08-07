@@ -11,8 +11,8 @@ fn test_cggi_blind_rotation_key_serialization() {
         n_glwe: 256_u32.into(),
         n_lwe: 64_usize.into(),
         base2k: 12_usize.into(),
-        k: 54_usize.into(),
         dnum: 2_usize.into(),
+        k_aux: 30_usize.into(),
         rank: 2_usize.into(),
     };
     let module = HostModule::new(layout.n_glwe.as_u32() as u64);
@@ -26,8 +26,8 @@ fn test_cggi_blind_rotation_key_compressed_serialization() {
         n_glwe: 256_u32.into(),
         n_lwe: 64_usize.into(),
         base2k: 12_usize.into(),
-        k: 54_usize.into(),
         dnum: 2_usize.into(),
+        k_aux: 30_usize.into(),
         rank: 2_usize.into(),
     };
     let module = HostModule::new(layout.n_glwe.as_u32() as u64);

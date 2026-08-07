@@ -14,7 +14,7 @@ macro_rules! impl_vmp_delegate {
     ($trait:ty, $($body:item)+) => {
         impl<B> $trait for Module<B>
         where
-            B: Backend + HalVmpImpl<B>,
+            B: Backend<ZnxWord = i64> + HalVmpImpl<B>,
         {
             $($body)+
         }
@@ -23,7 +23,7 @@ macro_rules! impl_vmp_delegate {
 
 impl<B: Backend> VmpPMatAlloc<B> for Module<B> {
     fn vmp_pmat_alloc(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> VmpPMatOwned<B> {
-        VmpPMatOwned::alloc(self.n(), rows, cols_in, cols_out, size)
+        VmpPMatOwned::<B>::alloc(self.n(), rows, cols_in, cols_out, size)
     }
 }
 

@@ -1,4 +1,6 @@
 use itertools::izip;
+use poulpy_hal::layouts::SvpPPolToBackendRef;
+use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDft, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
@@ -7,9 +9,9 @@ use poulpy_hal::{
         VmpApplyDftToDftTmpBytes,
     },
     layouts::{
-        Backend, Data, HostDataMut, HostDataRef, Module, ScratchArena, SvpPPolOwned, SvpPPolToBackendRef, VecZnx,
-        VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendRef, VmpPMatToBackendRef, ZnxView, ZnxViewMut, ZnxZero,
-        vec_znx_backend_ref_from_mut, vec_znx_big_backend_ref_from_mut, vec_znx_dft_backend_ref_from_mut,
+        Backend, Data, HostDataMut, HostDataRef, Module, ScratchArena, SvpPPolOwned, VecZnx, VecZnxDftToBackendMut,
+        VecZnxDftToBackendRef, VecZnxToBackendRef, ZnxView, ZnxViewMut, ZnxZero, vec_znx_backend_ref_from_mut,
+        vec_znx_big_backend_ref_from_mut, vec_znx_dft_backend_ref_from_mut,
     },
     oep::HalVecZnxImpl,
 };
@@ -554,7 +556,7 @@ fn execute_standard<R, DataIn, M, BE: Backend<OwnedBuf = Vec<u8>>>(
     for (ai, ski) in izip!(a.iter(), brk.data.iter()) {
         // acc_tmp = sk[i] * acc
         {
-            module.glwe_external_product(&mut acc_tmp, &out_tmp, ski, ski.size(), &mut scratch_1.borrow());
+            module.glwe_external_product(&mut acc_tmp, &out_tmp, ski, &mut scratch_1.borrow());
         }
 
         // acc_tmp = (sk[i] * acc) * (X^{ai} - 1)

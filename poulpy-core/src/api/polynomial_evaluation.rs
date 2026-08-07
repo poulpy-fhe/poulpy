@@ -4,7 +4,7 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 use crate::{
     BSGSOps,
     layouts::{
-        BabyStep, Compact, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper,
+        BabyStep, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper,
         prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
@@ -27,7 +27,7 @@ pub trait GLWEPolynomialEvaluation<BE: Backend> {
     ) -> Result<()>
     where
         Ops: BSGSOps<BE, V, P, A, V>,
-        V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact,
+        V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
         P: GLWEToBackendRef<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>;

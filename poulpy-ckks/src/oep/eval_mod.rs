@@ -1,13 +1,14 @@
-use anyhow::Result;
+use crate::CKKSResult as Result;
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{
-    BSGSMeta, Compact, GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta,
+    BSGSMeta, GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta,
     prepared::GLWETensorKeyPreparedToBackendRef,
 };
-use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena, TransferFrom};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
-    api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSSubOps, PolynomialEvaluation},
+    api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSSubOps},
     default::eval_mod::CKKSEvalModOpsDefault,
     layouts::{CKKSCiphertext, CKKSModuleAlloc, eval_mod::EvalMod},
 };
@@ -27,7 +28,7 @@ use crate::{
 /// associated method signatures.
 pub unsafe trait CKKSEvalModImpl<BE: Backend>: Backend {
     /// See [`CKKSEvalModOps::ckks_eval_mod`](crate::api::CKKSEvalModOps::ckks_eval_mod).
-    fn ckks_eval_mod<R, C, P, F>(
+    fn ckks_eval_mod_impl<R, C, P, F>(
         module: &Module<BE>,
         res: &mut R,
         ct: &C,
@@ -36,15 +37,14 @@ pub unsafe trait CKKSEvalModImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: TransferFrom<HostBytesBackend>,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta;
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta;
 }
 
 unsafe impl<BE: Backend> CKKSEvalModImpl<BE> for BE
 where
-    Module<BE>: PolynomialEvaluation<BE>
+    Module<BE>: CKKSPolynomialEvaluationOps<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSMulOps<BE>
@@ -54,7 +54,7 @@ where
     CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
 {
-    fn ckks_eval_mod<R, C, P, F>(
+    fn ckks_eval_mod_impl<R, C, P, F>(
         module: &Module<BE>,
         res: &mut R,
         ct: &C,
@@ -63,10 +63,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        BE: TransferFrom<HostBytesBackend>,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
     {
         module.ckks_eval_mod_default(res, ct, params, tsk, scratch)
     }

@@ -1,5 +1,6 @@
-use anyhow::Result;
-use poulpy_core::layouts::{Compact, GLWEToBackendMut, LWEInfos};
+use crate::CKKSResult as Result;
+use poulpy_core::layouts::GLWEToBackendMut;
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GGLWEInfos, GLWEToBackendRef, prepared::GLWETensorKeyPreparedToBackendRef};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
@@ -21,7 +22,7 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight};
 /// natural_budget = min(a.log_budget, b.log_budget) − max(a.log_delta, b.log_delta)
 /// log_delta_out  = min(a.log_delta, b.log_delta)
 /// natural_eff_k  = natural_budget + log_delta_out
-/// offset         = max(0, natural_eff_k − dst.max_k())
+/// offset         = max(0, natural_eff_k − dst.k())
 ///
 /// log_budget_out = natural_budget − offset
 /// ```
@@ -29,12 +30,16 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight};
 /// **Capacity consumed by the multiplication itself**: `max(a.log_delta, b.log_delta)` bits.
 /// **Additional reduction from small `dst`**: `offset` bits.
 ///
+/// The result is produced at the destination's **requested `dst.k()`** (value-preserving
+/// rounding when narrower than the natural width), not the buffer's allocation — the
+/// same contract as the `pt_vec` variant below.
+///
 /// For the common case of equal-precision operands (`a.log_delta == b.log_delta == Δ`):
 ///
 /// ```text
 /// natural_eff_k  = a.log_budget   (= b.log_budget when budgets are also equal)
 /// log_delta_out  = Δ
-/// offset         = max(0, a.log_budget − dst.max_k())
+/// offset         = max(0, a.log_budget − dst.k())
 /// log_budget_out = a.log_budget − Δ − offset
 /// ```
 ///
@@ -48,7 +53,7 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight};
 /// log_delta_out  = a.log_delta
 /// natural_eff_k  = natural_budget + a.log_delta
 ///                = a.k() − pt.log_delta
-/// offset         = max(0, natural_eff_k − dst.max_k())
+/// offset         = max(0, natural_eff_k − dst.k())
 ///
 /// log_budget_out = natural_budget − offset
 /// ```
@@ -56,9 +61,17 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight};
 /// **Capacity consumed**: `pt.log_delta` bits (precision of the plaintext
 /// multiplier), plus `offset`.
 ///
+/// The result is produced at the destination's **requested `dst.k()`** (with
+/// value-preserving rounding of the low bits when it is narrower than the natural
+/// width), not at the buffer's limb-aligned allocation. Allocate `dst` at the
+/// exact `k` you want the product at — this is how a leveled consumer (e.g. the PaCo
+/// blind rotation) evaluates the whole downstream circuit at a lower, cheaper width.
+///
 /// **Plaintext operand**: `pt` is multiplied in as a full-width **integer
 /// polynomial** (bottom-up encoding) — every stored limb participates
-/// (the convolution masks it at `pt.max_k()`, not its effective `k`).
+/// (the convolution masks it at its declared `pt.encoded_k()` — plaintext
+/// operands are integer polynomials, not Torus elements, and are bounded by
+/// `IntPolyInfos` to state that width).
 /// Allocate `pt` at exactly the precision you want folded in;
 /// a reduced `pt.k()` / `log_budget` does not narrow it.
 ///
@@ -70,31 +83,46 @@ use crate::{CKKSCtBounds, CKKSInfos, SetCKKSInfos, layouts::CKKSPreparedRight};
 /// # Rescaling after multiplication
 ///
 /// After a ciphertext–ciphertext multiplication the result has a lower
-/// `log_budget` but the same `log_delta`.  To release the physical limbs
-/// no longer needed, call
-/// [`CKKSMaintainOps::ckks_compact_limbs`](crate::layouts::CKKSMaintainOps::ckks_compact_limbs).
+/// `log_budget` but the same `log_delta`; the destination buffer keeps its
+/// allocated width (allocate the destination at exactly the `k` you want the
+/// product at). To trade further budget for precision under `log_delta` — the
+/// closest analogue of an RNS "rescale" — use
+/// [`CKKSPow2Ops::ckks_div_pow2_assign`](crate::api::CKKSPow2Ops::ckks_div_pow2_assign).
 pub trait CKKSMulOps<BE: Backend> {
-    fn ckks_mul_tmp_bytes<R, T>(&self, res: &R, tsk: &T) -> usize
+    /// Scratch bytes for [`Self::ckks_mul_into`] / [`Self::ckks_mul_assign`] /
+    /// [`Self::ckks_mul_prepared_assign`] with result `res` and operands `a`, `b`.
+    ///
+    /// The operands must be passed: the internal tensor intermediate is carved at
+    /// the widest of `res`/`a`/`b`, so a destination narrower than its operands
+    /// (a supported call) needs more scratch than `res` alone describes. For
+    /// `_assign` pass `dst` as both `res` and `a`; for `_prepared_assign` pass
+    /// the operand the [`CKKSPreparedRight`] was prepared from.
+    fn ckks_mul_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
+        A: CKKSCtBounds,
+        B: CKKSCtBounds,
         T: GGLWEInfos;
 
-    fn ckks_square_tmp_bytes<R, T>(&self, res: &R, tsk: &T) -> usize
+    /// Scratch bytes for [`Self::ckks_square_into`] / [`Self::ckks_square_assign`]
+    /// with result `res` and operand `a` (pass `dst` twice for `_assign`).
+    fn ckks_square_tmp_bytes<R, A, T>(&self, res: &R, a: &A, tsk: &T) -> usize
     where
         R: CKKSCtBounds,
+        A: CKKSCtBounds,
         T: GGLWEInfos;
 
     fn ckks_mul_pt_vec_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos + LWEInfos;
+        P: CKKSInfos;
 
     fn ckks_mul_pt_const_tmp_bytes<R, A, P>(&self, res: &R, a: &A, b: &P) -> usize
     where
         R: CKKSCtBounds,
         A: CKKSCtBounds,
-        P: CKKSInfos + LWEInfos;
+        P: CKKSInfos;
 
     /// Computes `dst = a * b` using tensor-product keyswitching via `tsk`.
     ///
@@ -102,7 +130,7 @@ pub trait CKKSMulOps<BE: Backend> {
     /// the capacity offset.
     fn ckks_mul_into<Dst, A, B, T>(&self, dst: &mut Dst, a: &A, b: &B, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
@@ -110,7 +138,7 @@ pub trait CKKSMulOps<BE: Backend> {
     /// Computes `dst *= a` in-place using tensor-product keyswitching via `tsk`.
     fn ckks_mul_assign<Dst, A, T>(&self, dst: &mut Dst, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
 
@@ -139,7 +167,7 @@ pub trait CKKSMulOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
 
     /// Computes `dst = a * a` (squaring) using tensor-product keyswitching.
@@ -147,14 +175,14 @@ pub trait CKKSMulOps<BE: Backend> {
     /// Equivalent to `ckks_mul_into(dst, a, a, tsk)` with the same metadata rule.
     fn ckks_square_into<Dst, A, T>(&self, dst: &mut Dst, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
 
     /// Computes `dst = dst * dst` (squaring in-place) using tensor-product keyswitching.
     fn ckks_square_assign<Dst, T>(&self, dst: &mut Dst, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
 
     /// Computes `dst = a * pt` where `pt` is a full plaintext polynomial.
@@ -163,15 +191,15 @@ pub trait CKKSMulOps<BE: Backend> {
     /// the capacity offset.
     fn ckks_mul_pt_vec_into<Dst, A, P>(&self, dst: &mut Dst, a: &A, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds;
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
 
     /// Computes `dst *= pt` in-place.
     fn ckks_mul_pt_vec_assign<Dst, P>(&self, dst: &mut Dst, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
 
     /// Computes `dst = a * pt[pt_coeff]`, multiplying by a single
     /// quantized constant from coefficient `pt_coeff` of `pt`.
@@ -187,9 +215,9 @@ pub trait CKKSMulOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds;
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
 
     /// Computes `dst *= pt[pt_coeff]` in-place.
     fn ckks_mul_pt_const_assign<Dst, P>(
@@ -200,6 +228,6 @@ pub trait CKKSMulOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
 }

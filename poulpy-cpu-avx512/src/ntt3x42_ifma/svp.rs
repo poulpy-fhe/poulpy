@@ -1,6 +1,7 @@
 //! Scalar-vector product (SVP) operations for [`NTT3x42Ifma`].
 
 use bytemuck::{cast_slice, cast_slice_mut};
+use poulpy_hal::layouts::PrimeSet;
 
 use poulpy_hal::{
     api::{VecZnxDftAlloc, VecZnxDftApply},
@@ -14,7 +15,7 @@ use crate::NTT3x42Ifma;
 use crate::ntt3x42_ifma::{
     kernels::ntt_avx512,
     module::handle,
-    primes::{PrimeSetNtt3x42Ifma, Primes42},
+    primes::Primes42,
     tables::{harvey_modmul, harvey_quotient},
     traits::{Ntt3x42IfmaCFromB, Ntt3x42IfmaFromZnx64, Ntt3x42IfmaZero},
 };

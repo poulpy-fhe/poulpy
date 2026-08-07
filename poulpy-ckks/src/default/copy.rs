@@ -1,11 +1,11 @@
-use anyhow::Result;
+use crate::CKKSResult as Result;
 use poulpy_core::{
     GLWECopy, GLWEShift,
-    layouts::{GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
+    layouts::{GLWEToBackendMut, GLWEToBackendRef},
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
-use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub, ckks_offset_unary};
+use crate::{CKKSInfos, SetCKKSInfos, ckks_offset_unary};
 
 pub trait CKKSCopyDefault<BE: Backend> {
     fn ckks_copy_tmp_bytes_default(&self) -> usize
@@ -18,8 +18,8 @@ pub trait CKKSCopyDefault<BE: Backend> {
     fn ckks_copy_default<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: GLWECopy<BE> + GLWEShift<BE>,
-        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + LWEInfos + CKKSInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + CKKSInfos,
     {
         let offset = ckks_offset_unary(dst, src);
         if offset == 0 {
@@ -29,9 +29,7 @@ pub trait CKKSCopyDefault<BE: Backend> {
             // so propagate `src`'s width explicitly.
             dst.set_log_budget(src.log_budget());
         } else {
-            self.glwe_lsh(dst, src, offset, scratch);
-            dst.set_meta(src.meta());
-            dst.set_log_budget(checked_log_budget_sub("copy", src.log_budget(), offset)?);
+            crate::ckks_shift_stamp_unary(self, "copy", dst, src, 0, 0, scratch)?;
         }
         Ok(())
     }

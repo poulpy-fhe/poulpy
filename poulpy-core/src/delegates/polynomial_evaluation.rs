@@ -4,7 +4,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use crate::{
     BSGSOps, GLWEPolynomialEvaluation,
     layouts::{
-        BabyStep, Compact, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper,
+        BabyStep, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper,
         prepared::GLWETensorKeyPreparedToBackendRef,
     },
     oep::PolynomialEvaluationImpl,
@@ -22,7 +22,7 @@ impl<BE: Backend + PolynomialEvaluationImpl<BE>> GLWEPolynomialEvaluation<BE> fo
     ) -> Result<()>
     where
         Ops: BSGSOps<BE, V, P, A, V>,
-        V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact,
+        V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
         P: GLWEToBackendRef<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,

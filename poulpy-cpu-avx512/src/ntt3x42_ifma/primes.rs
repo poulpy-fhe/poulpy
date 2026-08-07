@@ -1,39 +1,26 @@
 //! Prime sets and modular helpers for the 3-prime IFMA representation.
 
-/// Selects a set of three NTT-friendly primes and their associated
-/// constants for the IFMA CRT representation.
+use poulpy_hal::layouts::{LaneElem, PrimeSet};
+
+/// Extension of the unified [`PrimeSet`] for the 3-prime IFMA family,
+/// carrying its **Garner** CRT reconstruction constants.
 ///
 /// The product `Q = Q[0]·Q[1]·Q[2]` is approximately 2^126 (fits in `i128`
 /// with two bits of margin).
 /// All three primes support a primitive `2^17`-th root of unity, so
 /// NTT sizes up to `2^16` are supported.
 ///
-/// Unlike [`poulpy_cpu_ref::reference::ntt4x30::primes::PrimeSet`] which uses `[u32; 4]`
-/// for ~30-bit primes, this trait uses `[u64; 3]` for ~42-bit primes
-/// that fit within IFMA52's 52-bit input window.
-pub trait PrimeSetNtt3x42Ifma: Sized + Sync + Send + 'static {
-    /// The three NTT-friendly primes `[Q0, Q1, Q2]`.
-    const Q: [u64; 3];
-
-    /// `OMEGA[k]` is a primitive `2^17`-th root of unity modulo `Q[k]`.
-    ///
-    /// For an NTT of size `n ≤ 2^16`, the actual primitive `2n`-th root
-    /// used is `modq_pow64(OMEGA[k], 2^16 / n, Q[k])`.
-    const OMEGA: [u64; 3];
-
+/// Unlike the full-CRT constants of
+/// [`PrimeSetCrt4`](poulpy_cpu_ref::reference::ntt4x30::primes::PrimeSetCrt4),
+/// the constants here follow Garner's algorithm and are semantically
+/// specific to this family.
+pub trait PrimeSetNtt3x42Ifma: PrimeSet<PrimeElem = u64, Lanes<u64> = [u64; 3]> {
     /// CRT reconstruction constants (Garner's algorithm).
     ///
     /// - `CRT_CST\[0\]` = `inv(Q\[0\], Q\[1\])` — inverse of `Q\[0\]` modulo `Q\[1\]`
     /// - `CRT_CST\[1\]` = `inv(Q\[0\]*Q\[1\], Q\[2\])` — inverse of `Q\[0\]*Q\[1\]` modulo `Q\[2\]`
     /// - `CRT_CST\[2\]` is unused (reserved / zero)
     const CRT_CST: [u64; 3];
-
-    /// `ceil(log2(Q[0]))`.
-    ///
-    /// All three primes have the same bit-size, so this constant applies
-    /// to all of them.  Used during NTT precomputation to track the
-    /// growth of intermediate bit-widths through the butterfly levels.
-    const LOG_Q: u64;
 }
 
 /// 42-bit NTT-friendly primes with `2·2^16`-th roots of unity.
@@ -43,19 +30,24 @@ pub trait PrimeSetNtt3x42Ifma: Sized + Sync + Send + 'static {
 /// - Designed for use with AVX512-IFMA52 instructions (primes < 2^49).
 pub struct Primes42;
 
-impl PrimeSetNtt3x42Ifma for Primes42 {
+impl PrimeSet for Primes42 {
+    type PrimeElem = u64;
+    type Lanes<T: LaneElem> = [T; 3];
     const Q: [u64; 3] = [
         4_398_044_938_241, // 33554420 * 2^17 + 1
         4_398_043_496_449, // 33554409 * 2^17 + 1
         4_398_042_972_161, // 33554405 * 2^17 + 1
     ];
     const OMEGA: [u64; 3] = [178_422_821_038, 2_962_575_618_789, 4_244_078_245_315];
+    const LOG_Q: u64 = 42;
+}
+
+impl PrimeSetNtt3x42Ifma for Primes42 {
     // Garner CRT constants:
     // CRT_CST[0] = inv(Q[0], Q[1])
     // CRT_CST[1] = inv(Q[0]*Q[1], Q[2])
     // CRT_CST[2] = unused
     const CRT_CST: [u64; 3] = [399_819_085_640, 806_292_778_743, 0];
-    const LOG_Q: u64 = 42;
 }
 
 /// Computes `x^n mod q` using square-and-multiply with 128-bit intermediates.

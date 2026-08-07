@@ -1,13 +1,10 @@
+use crate::CKKSResult as Result;
 use crate::default::neg::CKKSNegDefault;
 
-use anyhow::Result;
-use poulpy_core::{
-    GLWENegate, GLWEShift,
-    layouts::{GLWEInfos, LWEInfos},
-};
+use poulpy_core::{GLWENegate, GLWEShift, layouts::GLWEInfos};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use crate::{CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
+use crate::{CKKSCtBounds, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
 
 /// # Safety
 ///
@@ -15,16 +12,21 @@ use crate::{CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos};
 /// any HAL-level invariants (alignment, layout, scratch sizing) implied by the
 /// associated method signatures.
 pub unsafe trait CKKSNegImpl<BE: Backend>: Backend {
-    fn ckks_neg_tmp_bytes(module: &Module<BE>) -> usize;
+    fn ckks_neg_tmp_bytes_impl(module: &Module<BE>) -> usize;
 
-    fn ckks_neg_into<Dst, Src>(module: &Module<BE>, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_neg_into_impl<Dst, Src>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        src: &Src,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos;
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds;
 
-    fn ckks_neg_assign<Dst>(module: &Module<BE>, dst: &mut Dst) -> Result<()>
+    fn ckks_neg_assign_impl<Dst>(module: &Module<BE>, dst: &mut Dst) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos;
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
 }
 
 unsafe impl<BE: Backend> CKKSNegImpl<BE> for BE
@@ -32,21 +34,26 @@ where
     BE: poulpy_hal::oep::HalVecZnxImpl<BE>,
     Module<BE>: crate::default::neg::CKKSNegDefault<BE> + GLWENegate<BE> + GLWEShift<BE>,
 {
-    fn ckks_neg_tmp_bytes(module: &Module<BE>) -> usize {
+    fn ckks_neg_tmp_bytes_impl(module: &Module<BE>) -> usize {
         module.ckks_neg_tmp_bytes_default()
     }
 
-    fn ckks_neg_into<Dst, Src>(module: &Module<BE>, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    fn ckks_neg_into_impl<Dst, Src>(
+        module: &Module<BE>,
+        dst: &mut Dst,
+        src: &Src,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
-        Src: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Src: GLWEToBackendRef<BE> + GLWEInfos + CKKSCtBounds,
     {
         module.ckks_neg_into_default(dst, src, scratch)
     }
 
-    fn ckks_neg_assign<Dst>(module: &Module<BE>, dst: &mut Dst) -> Result<()>
+    fn ckks_neg_assign_impl<Dst>(module: &Module<BE>, dst: &mut Dst) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + LWEInfos + CKKSInfos + SetCKKSInfos,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
     {
         module.ckks_neg_assign_default(dst)
     }

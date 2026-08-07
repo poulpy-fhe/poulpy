@@ -1,6 +1,8 @@
+use poulpy_hal::layouts::SvpPPolToBackendMut;
+use poulpy_hal::layouts::SvpPPolToBackendRef;
 use poulpy_hal::{
     api::{SvpPPolAlloc, SvpPPolBytesOf, SvpPrepare},
-    layouts::{Backend, Data, Module, SvpPPol, SvpPPolToBackendMut, SvpPPolToBackendRef, ZnxInfos},
+    layouts::{Backend, Data, Module, SvpPPol, ZnxInfos},
 };
 
 use crate::{
@@ -15,7 +17,7 @@ use crate::{
 /// for fast multiplication during encryption and decryption. Tied to a
 /// specific backend via `B: Backend`.
 pub struct GLWESecretPrepared<D: Data, B: Backend> {
-    pub(crate) data: SvpPPol<D, B>,
+    pub(crate) data: SvpPPol<D, B::DftWord, B>,
     pub(crate) dist: Distribution,
 }
 

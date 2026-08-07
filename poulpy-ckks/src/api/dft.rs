@@ -5,41 +5,32 @@
 //! The homomorphic DFT is documented as a stage of the bootstrapping pipeline in
 //! [`docs/bootstrapping.md`](https://github.com/poulpy-fhe/poulpy/blob/main/docs/bootstrapping.md).
 
-use anyhow::Result;
+use crate::CKKSAtkBounds;
+use crate::CKKSResult as Result;
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     default::linear_transformation::DiagonalProd,
-    layouts::{
-        Base2K, Compact, GGLWEInfos, GGLWEPreparedToBackendRef, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef,
-        GetGaloisElement, LinearTransformation, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
-    },
+    layouts::{Base2K, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, LinearTransformation},
 };
-use poulpy_hal::{
-    api::{ModuleNew, NegacyclicFFT, NegacyclicFFTNew},
-    layouts::{Backend, HostBytesBackend, Module, ScratchArena, TransferFrom},
-};
+use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
-    api::LtDiagonalScale,
-    default::dft::matrices::DftScalar,
-    encoding::reim::Encoder,
-    layouts::{
-        CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, DFTMatrix, DFTMatrixPrepared, DFTPlan, Decode,
-        DftDirection, DftFormat, Encode, Repack, Split, Standard,
-    },
+    api::{CKKSEncodingScalar, LtDiagonalScale},
+    layouts::{DFTMatrix, DFTMatrixPrepared, DFTPlan, Decode, DftDirection, DftFormat, Encode, Repack, Split, Standard},
 };
 
-/// Homomorphic DFT operations on a CKKS [`Module`].
+/// Homomorphic DFT operations on a CKKS [`poulpy_hal::layouts::Module`].
 ///
-/// Setup ([`Self::ckks_new_dft_matrix`]) builds the factor operands once (as a
-/// host, unprepared [`DFTMatrix`]); [`Self::ckks_prepare_dft_matrix`] optionally
+/// Setup ([`CKKSDFTMatrixOps::ckks_new_dft_matrix`]) builds the factor operands
+/// once (as an unprepared [`DFTMatrix`]); [`Self::ckks_prepare_dft_matrix`] optionally
 /// promotes that to the resident [`DFTMatrixPrepared`] for faster repeated
 /// evaluation. The evaluation methods apply either form. The `*_assign` methods
 /// are the `Standard` format; `*_split` returns the real/imaginary parts in two
 /// ciphertexts (`SplitRealAndImag`); `*_repack` is the sparse `RepackImagAsReal`
 /// path that packs the imaginary part into the right half of a single ciphertext.
-pub trait DFTOps<BE: Backend> {
-    /// Prepares a host, unprepared [`DFTMatrix`] into its resident
+pub trait CKKSDFTOps<BE: Backend> {
+    /// Prepares an unprepared [`DFTMatrix`] into its resident
     /// convolution-domain form [`DFTMatrixPrepared`] (see
     /// [`crate::default::dft::ckks_prepare_dft_matrix`]): each factor's plaintext
     /// diagonals are prepared into a `CnvPVec` right operand, trading resident
@@ -51,32 +42,7 @@ pub trait DFTOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> DFTMatrixPrepared<BE, Dir, Fmt>
     where
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>;
-
-    /// Builds the (host, unprepared) homomorphic (I)DFT described by `literal`
-    /// (see [`crate::default::dft::ckks_new_dft_matrix`]): each factor matrix is
-    /// encoded into a CKKS linear transformation with plaintext diagonals,
-    /// materialized per factor at eval time. Promote it to the resident form with
-    /// [`Self::ckks_prepare_dft_matrix`]. The BSGS schedule is chosen
-    /// cost-optimally per factor matrix. The host-backed reference build does not
-    /// touch `scratch`, but the parameter is kept for backends whose encode/upload
-    /// path needs device scratch.
-    fn ckks_new_dft_matrix<Dir, Fmt, E, F>(
-        &self,
-        host_module: &Module<HostBytesBackend>,
-        encoder: &Encoder<E>,
-        base2k: Base2K,
-        literal: &DFTPlan,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<DFTMatrix<BE, Dir, Fmt>>
-    where
-        Dir: DftDirection,
-        Fmt: DftFormat,
-        F: CKKSScalar + DftScalar,
-        BE: TransferFrom<HostBytesBackend>,
-        Module<HostBytesBackend>: ModuleNew<HostBytesBackend> + CKKSModuleAlloc<HostBytesBackend>,
-        E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
-        CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>;
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>;
 
     /// Evaluates the homomorphic (I)DFT in place (raw chain, no format wrapper).
     fn ckks_dft_evaluate_assign<Dir, Fmt, P, Dst, H, K>(
@@ -87,9 +53,9 @@ pub trait DFTOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
     /// `CoeffsToSlots`, `Standard` format (in place).
@@ -101,9 +67,9 @@ pub trait DFTOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
     /// `SlotsToCoeffs`, `Standard` format (in place).
@@ -115,9 +81,9 @@ pub trait DFTOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
     /// `CoeffsToSlots`, `SplitRealAndImag` — real/imag in two ciphertexts.
@@ -133,10 +99,10 @@ pub trait DFTOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
     /// `SlotsToCoeffs`, `SplitRealAndImag` — combine two ciphertexts then Decode.
@@ -150,10 +116,10 @@ pub trait DFTOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
     /// `CoeffsToSlots`, sparse `RepackImagAsReal` — imag packed into the right half.
@@ -168,10 +134,10 @@ pub trait DFTOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>;
 
     /// `SlotsToCoeffs`, sparse `RepackImagAsReal` — inverse of [`Self::ckks_coeffs_to_slots_repack`].
@@ -184,9 +150,36 @@ pub trait DFTOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: DiagonalProd<BE> + LtDiagonalScale,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>;
+}
+
+/// Homomorphic DFT matrix generation at scalar precision `F`.
+///
+/// Split from [`CKKSDFTOps`] so the scalar is a trait parameter and the method
+/// stays free of backend bounds: the delegating impl on `Module<BE>` requires
+/// the [`DFTMatrixImpl<BE, F>`](crate::oep::DFTMatrixImpl) seam at the impl
+/// level, and a backend overrides that seam independently of any bounds the
+/// reference implementation carries.
+pub trait CKKSDFTMatrixOps<BE: Backend, F: CKKSEncodingScalar> {
+    /// Builds the unprepared homomorphic (I)DFT described by `literal` at
+    /// scalar precision `F` (the reference chain is
+    /// [`crate::default::dft::ckks_new_dft_matrix`]): each factor matrix is
+    /// encoded into a CKKS linear transformation with plaintext diagonals,
+    /// materialized per factor at eval time. Promote it to the resident form
+    /// with [`CKKSDFTOps::ckks_prepare_dft_matrix`]. Each factor's BSGS
+    /// giant-step width is taken verbatim from the plan's schedule (`1` is the
+    /// direct schedule); no implicit optimum is applied.
+    fn ckks_new_dft_matrix<Dir, Fmt>(
+        &self,
+        base2k: Base2K,
+        literal: &DFTPlan,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<DFTMatrix<BE, Dir, Fmt>>
+    where
+        Dir: DftDirection,
+        Fmt: DftFormat;
 }

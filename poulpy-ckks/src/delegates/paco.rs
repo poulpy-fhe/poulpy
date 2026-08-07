@@ -1,0 +1,151 @@
+use crate::{CKKSResult as Result, ckks_ensure};
+use poulpy_core::{
+    GLWEKeyswitch,
+    layouts::{GLWEToBackendMut, GLWEToBackendRef},
+};
+use poulpy_hal::{
+    api::ScratchOwnedBorrow,
+    layouts::{Backend, Module, ScratchArena, ScratchOwned},
+};
+
+use crate::{
+    CKKSCtBounds,
+    api::{CKKSPaCoOps, PaCoScalar},
+    default::paco::{
+        parallel::{
+            PaCoBootstrapModule, paco_bootstrap_direct_into, paco_bootstrap_into, paco_bootstrap_parallel_direct_into,
+            paco_bootstrap_parallel_into,
+        },
+        preflight::paco_bootstrap_tmp_bytes,
+    },
+    layouts::{CKKSCiphertext, CKKSPlaintext, PaCoContext, PaCoKeys, PaCoWorker},
+    oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl},
+};
+
+impl<BE, F> CKKSPaCoOps<BE, F> for Module<BE>
+where
+    BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
+    F: PaCoScalar,
+    Module<BE>: PaCoBootstrapModule<BE> + GLWEKeyswitch<BE>,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Send + Sync,
+    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
+    BE::OwnedBuf: Sync,
+{
+    fn ckks_paco_bootstrap_direct_tmp_bytes<K, Src>(
+        &self,
+        output: &CKKSCiphertext<BE::OwnedBuf>,
+        input: &Src,
+        context: &PaCoContext<BE, F>,
+        keys: &K,
+    ) -> Result<usize>
+    where
+        K: PaCoKeys<BE>,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+    {
+        paco_bootstrap_tmp_bytes(self, output, input, context, keys, false)
+    }
+
+    fn ckks_paco_bootstrap_tmp_bytes<K, Src>(
+        &self,
+        output: &CKKSCiphertext<BE::OwnedBuf>,
+        input: &Src,
+        context: &PaCoContext<BE, F>,
+        keys: &K,
+    ) -> Result<usize>
+    where
+        K: PaCoKeys<BE>,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+    {
+        paco_bootstrap_tmp_bytes(self, output, input, context, keys, true)
+    }
+
+    fn ckks_paco_coeff_encodings<Src>(
+        &self,
+        ciphertext: &Src,
+        context: &PaCoContext<BE, F>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<[CKKSPlaintext<BE::OwnedBuf>; 4]>
+    where
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+    {
+        let required = BE::ckks_paco_coeff_encodings_tmp_bytes_impl::<F>(self, context.plan())?;
+        ckks_ensure!(
+            scratch.available() >= required,
+            "PaCo coefficient encoding needs {required} scratch bytes, but only {} are available",
+            scratch.available()
+        );
+        BE::ckks_paco_coeff_encodings_impl::<F, Src>(self, ciphertext, context.plan(), context.base2k(), scratch)
+    }
+
+    fn ckks_paco_coeff_encodings_tmp_bytes(&self, context: &PaCoContext<BE, F>) -> Result<usize> {
+        BE::ckks_paco_coeff_encodings_tmp_bytes_impl::<F>(self, context.plan())
+    }
+
+    fn ckks_paco_bootstrap_direct_into<K, Src>(
+        &self,
+        output: &mut CKKSCiphertext<BE::OwnedBuf>,
+        input: &Src,
+        context: &PaCoContext<BE, F>,
+        keys: &K,
+        kappa: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        K: PaCoKeys<BE>,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+    {
+        paco_bootstrap_direct_into::<BE, F, K, Src>(self, output, input, context, keys, kappa, scratch)
+    }
+
+    fn ckks_paco_bootstrap_into<K, Src>(
+        &self,
+        output: &mut CKKSCiphertext<BE::OwnedBuf>,
+        input: &Src,
+        context: &PaCoContext<BE, F>,
+        keys: &K,
+        kappa: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        K: PaCoKeys<BE>,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds,
+    {
+        paco_bootstrap_into::<BE, F, K, Src>(self, output, input, context, keys, kappa, scratch)
+    }
+
+    fn ckks_paco_bootstrap_parallel_direct_into<K, Src>(
+        &self,
+        output: &mut CKKSCiphertext<BE::OwnedBuf>,
+        input: &Src,
+        context: &PaCoContext<BE, F>,
+        keys: &K,
+        kappa: usize,
+        workers: &mut [PaCoWorker<BE>],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        K: PaCoKeys<BE> + Sync,
+        ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
+    {
+        paco_bootstrap_parallel_direct_into::<BE, F, K, Src>(self, output, input, context, keys, kappa, workers, scratch)
+    }
+
+    fn ckks_paco_bootstrap_parallel_into<K, Src>(
+        &self,
+        output: &mut CKKSCiphertext<BE::OwnedBuf>,
+        input: &Src,
+        context: &PaCoContext<BE, F>,
+        keys: &K,
+        kappa: usize,
+        workers: &mut [PaCoWorker<BE>],
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        K: PaCoKeys<BE> + Sync,
+        ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
+        Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
+    {
+        paco_bootstrap_parallel_into::<BE, F, K, Src>(self, output, input, context, keys, kappa, workers, scratch)
+    }
+}

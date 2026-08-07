@@ -15,10 +15,9 @@ use std::ptr::NonNull;
 
 use poulpy_cpu_ref::reference::ntt4x30::{
     mat_vec::{BbbMeta, BbcMeta},
-    ntt::{NttTable, NttTableInv},
     primes::Primes30,
     types::Q120bScalar,
-    vec_znx_dft::{NttHandleFactory, NttHandleProvider},
+    vec_znx_dft::{NttHandleFactory, NttHandleProvider, NttPlan, NttPlanSet},
 };
 use poulpy_hal::{alloc_aligned, assert_alignment, layouts::Backend};
 
@@ -34,15 +33,16 @@ use super::NTT4x30Avx512;
 /// `Module<NTT4x30Avx512>` is dropped (via [`Backend::destroy`]).
 #[repr(C)]
 pub struct NTT4x30Avx512Handle {
-    table_ntt: NttTable<Primes30>,
-    table_intt: NttTableInv<Primes30>,
+    ring_plans: NttPlanSet<Primes30>,
     meta_bbc: BbcMeta<Primes30>,
     meta_bbb: BbbMeta<Primes30>,
+    table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
 }
 
 impl Backend for NTT4x30Avx512 {
-    type ScalarPrep = Q120bScalar;
-    type ScalarBig = i128;
+    type DftWord = Q120bScalar;
+    type ZnxWord = i64;
+    type BigWord = i128;
     type OwnedBuf = Vec<u8>;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
@@ -72,6 +72,14 @@ impl Backend for NTT4x30Avx512 {
         let src_len = src.len();
         buf[..src_len].copy_from_slice(src);
         buf[src_len..].fill(0);
+    }
+    fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
+        assert_eq!(buf.len(), dst.len());
+        dst.copy_from_slice(buf);
+    }
+    fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
+        assert_eq!(buf.len(), src.len());
+        buf.copy_from_slice(src);
     }
     fn len_bytes(buf: &Self::OwnedBuf) -> usize {
         buf.len()
@@ -141,8 +149,8 @@ impl Backend for NTT4x30Avx512 {
 unsafe impl NttHandleFactory for NTT4x30Avx512Handle {
     fn create_ntt_handle(n: usize) -> Self {
         NTT4x30Avx512Handle {
-            table_ntt: NttTable::new(n),
-            table_intt: NttTableInv::new(n),
+            table_cache: Default::default(),
+            ring_plans: NttPlanSet::new(n),
             meta_bbc: BbcMeta::new(),
             meta_bbb: BbbMeta::new(),
         }
@@ -160,12 +168,8 @@ unsafe impl NttHandleFactory for NTT4x30Avx512Handle {
 /// The returned references are valid for the lifetime of `&self`.
 /// All fields are fully initialised in [`NTT4x30Avx512::new_impl`].
 unsafe impl NttHandleProvider for NTT4x30Avx512Handle {
-    fn get_ntt_table(&self) -> &NttTable<Primes30> {
-        &self.table_ntt
-    }
-
-    fn get_intt_table(&self) -> &NttTableInv<Primes30> {
-        &self.table_intt
+    fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30> {
+        self.ring_plans.for_ring(n)
     }
 
     fn get_bbc_meta(&self) -> &BbcMeta<Primes30> {
@@ -174,5 +178,11 @@ unsafe impl NttHandleProvider for NTT4x30Avx512Handle {
 
     fn get_bbb_meta(&self) -> &BbbMeta<Primes30> {
         &self.meta_bbb
+    }
+}
+
+unsafe impl ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for NTT4x30Avx512Handle {
+    fn module_plan_cache(&self) -> &::poulpy_cpu_ref::table_cache::ModuleTableCache {
+        &self.table_cache
     }
 }

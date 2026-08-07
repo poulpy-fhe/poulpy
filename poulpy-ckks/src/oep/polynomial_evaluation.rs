@@ -1,6 +1,7 @@
-use anyhow::Result;
+use crate::CKKSResult as Result;
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{
-    Compact, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta,
+    GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta,
     prepared::{GLWETensorKeyPrepared, GLWETensorKeyPreparedToBackendRef},
 };
 use poulpy_core::{
@@ -27,7 +28,7 @@ use crate::{
 /// Implementations must satisfy the contracts of the polynomial-evaluation
 /// API, including the invariants of the underlying add/mul/copy kernels.
 pub unsafe trait CKKSPolynomialEvaluationImpl<BE: Backend>: Backend {
-    fn ckks_eval_poly_real_const_coeffs_from_power_basis<R, B, A, G, T>(
+    fn ckks_eval_poly_real_const_coeffs_from_power_basis_impl<R, B, A, G, T>(
         module: &Module<BE>,
         res: &mut R,
         poly: &B,
@@ -36,14 +37,14 @@ pub unsafe trait CKKSPolynomialEvaluationImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
         A: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::BSGSMeta,
         G: PowerBasisHelper<BE, A>,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
 
-    fn ckks_eval_poly_complex_const_coeffs_from_power_basis<R, C, A, G, T>(
+    fn ckks_eval_poly_complex_const_coeffs_from_power_basis_impl<R, C, A, G, T>(
         module: &Module<BE>,
         res: &mut R,
         poly: &ComplexBSGSPolynomial<C>,
@@ -52,13 +53,13 @@ pub unsafe trait CKKSPolynomialEvaluationImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
-        C: GLWEToBackendRef<BE> + GLWEInfos + poulpy_core::layouts::BSGSMeta + CKKSCtBounds,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        C: GLWEToBackendRef<BE> + GLWEInfos + poulpy_core::layouts::BSGSMeta + CKKSCtBounds + IntPolyInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::BSGSMeta,
         G: PowerBasisHelper<BE, A>,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
 
-    fn ckks_eval_poly_real_const_coeffs<R, S, B>(
+    fn ckks_eval_poly_real_const_coeffs_impl<R, S, B>(
         module: &Module<BE>,
         dst: &mut R,
         src: &S,
@@ -67,14 +68,14 @@ pub unsafe trait CKKSPolynomialEvaluationImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         S: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
         CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
 
-    fn ckks_eval_poly_complex_const_coeffs<R, S, C>(
+    fn ckks_eval_poly_complex_const_coeffs_impl<R, S, C>(
         module: &Module<BE>,
         dst: &mut R,
         src: &S,
@@ -83,9 +84,9 @@ pub unsafe trait CKKSPolynomialEvaluationImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         S: GLWEToBackendRef<BE> + CKKSCtBounds,
-        C: GLWEToBackendRef<BE> + GLWEInfos + poulpy_core::layouts::BSGSMeta + CKKSCtBounds,
+        C: GLWEToBackendRef<BE> + GLWEInfos + poulpy_core::layouts::BSGSMeta + CKKSCtBounds + IntPolyInfos,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
         CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
 }
@@ -111,7 +112,7 @@ where
         + CKKSModuleAlloc<BE>
         + PolynomialEvaluationDefault<BE>,
 {
-    fn ckks_eval_poly_real_const_coeffs_from_power_basis<R, B, A, G, T>(
+    fn ckks_eval_poly_real_const_coeffs_from_power_basis_impl<R, B, A, G, T>(
         module: &Module<BE>,
         res: &mut R,
         poly: &B,
@@ -120,7 +121,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
         A: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::BSGSMeta,
@@ -130,7 +131,7 @@ where
         module.ckks_eval_poly_real_const_coeffs_from_power_basis_default::<R, B, A, G, T>(res, poly, power_basis, tsk, scratch)
     }
 
-    fn ckks_eval_poly_complex_const_coeffs_from_power_basis<R, C, A, G, T>(
+    fn ckks_eval_poly_complex_const_coeffs_from_power_basis_impl<R, C, A, G, T>(
         module: &Module<BE>,
         res: &mut R,
         poly: &ComplexBSGSPolynomial<C>,
@@ -139,8 +140,8 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
-        C: GLWEToBackendRef<BE> + GLWEInfos + poulpy_core::layouts::BSGSMeta + CKKSCtBounds,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        C: GLWEToBackendRef<BE> + GLWEInfos + poulpy_core::layouts::BSGSMeta + CKKSCtBounds + IntPolyInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds + poulpy_core::layouts::BSGSMeta,
         G: PowerBasisHelper<BE, A>,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -148,7 +149,7 @@ where
         module.ckks_eval_poly_complex_const_coeffs_from_power_basis_default::<R, C, A, G, T>(res, poly, power_basis, tsk, scratch)
     }
 
-    fn ckks_eval_poly_real_const_coeffs<R, S, B>(
+    fn ckks_eval_poly_real_const_coeffs_impl<R, S, B>(
         module: &Module<BE>,
         dst: &mut R,
         src: &S,
@@ -157,7 +158,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         S: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
@@ -171,7 +172,7 @@ where
         module.ckks_eval_poly_real_const_coeffs_from_power_basis_default(dst, bsgs, &power_basis, tsk, scratch)
     }
 
-    fn ckks_eval_poly_complex_const_coeffs<R, S, C>(
+    fn ckks_eval_poly_complex_const_coeffs_impl<R, S, C>(
         module: &Module<BE>,
         dst: &mut R,
         src: &S,
@@ -180,9 +181,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         S: GLWEToBackendRef<BE> + CKKSCtBounds,
-        C: GLWEToBackendRef<BE> + GLWEInfos + poulpy_core::layouts::BSGSMeta + CKKSCtBounds,
+        C: GLWEToBackendRef<BE> + GLWEInfos + poulpy_core::layouts::BSGSMeta + CKKSCtBounds + IntPolyInfos,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
         CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {

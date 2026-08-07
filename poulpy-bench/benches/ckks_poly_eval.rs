@@ -9,8 +9,8 @@ use std::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
 use poulpy_ckks::{
     CKKSInfos, CKKSLayout, CKKSMeta,
+    api::{CKKSAllOpsTmpBytes, CKKSCopyOps, CKKSPolynomialEvaluationOps},
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
-    leveled::api::{CKKSAllOpsTmpBytes, CKKSCopyOps, PolynomialEvaluation},
     polynomial::{Basis, ComplexPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
     power_basis::{PowerBasis, PowerBasisGen},
 };
@@ -53,14 +53,14 @@ fn glwe_layout() -> GLWELayout {
 }
 
 fn tsk_layout() -> GLWETensorKeyLayout {
-    let k = CT_K + DSIZE * BASE2K;
+    let (dnum, k_aux) = poulpy_bench::params::key_dnum_k_aux((CT_K + DSIZE * BASE2K) as u32, BASE2K as u32, DSIZE as u32);
     GLWETensorKeyLayout {
         n: Degree(N as u32),
         base2k: Base2K(BASE2K as u32),
-        k: TorusPrecision(k as u32),
+        k_aux: TorusPrecision(k_aux),
         rank: Rank(1),
         dsize: Dsize(DSIZE as u32),
-        dnum: Dnum(k.div_ceil(DSIZE * BASE2K) as u32),
+        dnum: Dnum(dnum),
     }
 }
 
@@ -87,7 +87,7 @@ fn $fn(c: &mut Criterion) {
         log_delta: LOG_DELTA,
     };
 
-    let ct_template = module.ckks_ciphertext_alloc_from_infos(&glwe_layout);
+    let ct_template = module.ckks_ciphertext_alloc_from_glwe_infos(&glwe_layout);
     // The all-ops aggregate already includes the giant-step engine's scratch.
     let scratch_bytes = module
         .ckks_all_ops_tmp_bytes(&ct_template, &tsk_layout, &COEFF_META)
@@ -107,7 +107,7 @@ fn $fn(c: &mut Criterion) {
 
         for &(strategy, strategy_label) in STRATEGIES {
             let bsgs = poly
-                .encode_bsgs_with(&host_module, Base2K(BASE2K as u32), COEFF_META, strategy)
+                .encode_bsgs_with(&host_module, Base2K(BASE2K as u32), COEFF_META.into(), strategy)
                 .expect("encode_bsgs_with");
             let log_split = bsgs.base().trailing_zeros() as usize;
 
@@ -183,7 +183,7 @@ fn $fn(c: &mut Criterion) {
         let im_coeffs: Vec<f64> = random_coeffs(degree).iter().rev().map(|c| c * 0.5 - 0.05).collect();
         let complex_poly = ComplexPolynomial::new(Basis::Monomial, random_coeffs(degree), im_coeffs);
         let complex_bsgs = complex_poly
-            .encode_bsgs_with(&host_module, Base2K(BASE2K as u32), COEFF_META, SplitStrategy::MinDepth)
+            .encode_bsgs_with(&host_module, Base2K(BASE2K as u32), COEFF_META.into(), SplitStrategy::MinDepth)
             .expect("complex encode_bsgs_with");
         let complex_log_split = complex_bsgs.re.base().trailing_zeros() as usize;
 

@@ -26,14 +26,8 @@ where
     module.glwe_external_product_tmp_bytes_default(res_infos, a_infos, b_infos)
 }
 
-pub fn ggsw_external_product_default<BE, M, R, A, B>(
-    module: &M,
-    res: &mut R,
-    a: &A,
-    b: &B,
-    key_size: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
+pub fn ggsw_external_product_default<BE, M, R, A, B>(module: &M, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>)
+where
     BE: Backend,
     M: GGSWExternalProductDefault<BE> + GLWEExternalProductDefault<BE> + GLWEZeroDefault<BE>,
     R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
@@ -57,7 +51,7 @@ pub fn ggsw_external_product_default<BE, M, R, A, B>(
         for col in 0..res_rank {
             let mut res_at = res.at_view_mut(row, col);
             let a_at = a.at_view(row, col);
-            module.glwe_external_product_default(&mut res_at, &a_at, b, key_size, &mut scratch.borrow());
+            module.glwe_external_product_default(&mut res_at, &a_at, b, &mut scratch.borrow());
         }
     }
 
@@ -70,13 +64,8 @@ pub fn ggsw_external_product_default<BE, M, R, A, B>(
     }
 }
 
-pub fn ggsw_external_product_assign_default<BE, M, R, A>(
-    module: &M,
-    res: &mut R,
-    a: &A,
-    key_size: usize,
-    scratch: &mut ScratchArena<'_, BE>,
-) where
+pub fn ggsw_external_product_assign_default<BE, M, R, A>(module: &M, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
+where
     BE: Backend,
     M: GGSWExternalProductDefault<BE> + GLWEExternalProductDefault<BE> + ModuleN,
     R: GGSWToBackendMut<BE> + GGSWAtViewMut<BE> + GGSWInfos,
@@ -96,7 +85,7 @@ pub fn ggsw_external_product_assign_default<BE, M, R, A>(
     let res_rank: usize = (res.rank() + 1).into();
     for row in 0..res_dnum {
         for col in 0..res_rank {
-            module.glwe_external_product_assign_default(&mut res.at_view_mut(row, col), a, key_size, &mut scratch.borrow());
+            module.glwe_external_product_assign_default(&mut res.at_view_mut(row, col), a, &mut scratch.borrow());
         }
     }
 }

@@ -1,6 +1,8 @@
+use poulpy_hal::layouts::VmpPMatToBackendMut;
+use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
     api::{VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes},
-    layouts::{Backend, Data, Module, ScratchArena, VmpPMat, VmpPMatBackendRef, VmpPMatToBackendMut, VmpPMatToBackendRef},
+    layouts::{Backend, Data, Module, ScratchArena, VmpPMat, VmpPMatBackendRef},
 };
 
 use crate::layouts::{
@@ -15,10 +17,10 @@ use crate::layouts::{
 /// represents a prepared matrix suitable for vector-matrix products.
 ///
 /// Tied to a specific backend via `B: Backend`.
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq)]
 pub struct GGLWEPrepared<D: Data, B: Backend> {
-    pub(crate) data: VmpPMat<D, B>,
-    pub(crate) k: TorusPrecision,
+    pub(crate) data: VmpPMat<D, B::DftWord, B>,
+    pub(crate) k_aux: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) dsize: Dsize,
 }
@@ -37,10 +39,11 @@ impl<D: Data, B: Backend> LWEInfos for GGLWEPrepared<D, B> {
     }
 
     fn max_size(&self) -> usize {
-        self.data.size()
+        crate::layouts::key_size(self.base2k, self.dnum(), self.dsize, self.k_aux)
     }
+
     fn k(&self) -> TorusPrecision {
-        self.k
+        crate::layouts::key_k(self.base2k, self.dnum(), self.dsize, self.k_aux)
     }
 }
 
@@ -53,6 +56,10 @@ impl<D: Data, B: Backend> GLWEInfos for GGLWEPrepared<D, B> {
 
 /// Provides GGLWE-specific parameter accessors (input/output rank, dsize, dnum).
 impl<D: Data, B: Backend> GGLWEInfos for GGLWEPrepared<D, B> {
+    fn k_aux(&self) -> TorusPrecision {
+        self.k_aux
+    }
+
     fn rank_in(&self) -> Rank {
         Rank(self.data.cols_in() as u32)
     }
@@ -79,36 +86,22 @@ where
     Self: GetDegree + VmpPMatAlloc<BE> + VmpPMatBytesOf + VmpPrepare<BE> + VmpPrepareTmpBytes,
 {
     /// Allocates a new [`GGLWEPrepared`] with the given parameters.
-    ///
-    /// Panics if `dnum * dsize > ceil(k / base2k)`.
     fn gglwe_prepared_alloc(
         &self,
         base2k: Base2K,
-        k: TorusPrecision,
-        rank_in: Rank,
-        rank_out: Rank,
         dnum: Dnum,
         dsize: Dsize,
+        k_aux: TorusPrecision,
+        rank_in: Rank,
+        rank_out: Rank,
     ) -> GGLWEPrepared<BE::OwnedBuf, BE> {
-        let size: usize = k.0.div_ceil(base2k.0) as usize;
-        debug_assert!(
-            size as u32 > dsize.0,
-            "invalid gglwe: ceil(k/base2k): {size} <= dsize: {}",
-            dsize.0
-        );
-
-        assert!(
-            dnum.0 * dsize.0 <= size as u32,
-            "invalid gglwe: dnum: {} * dsize:{} > ceil(k/base2k): {size}",
-            dnum.0,
-            dsize.0,
-        );
+        let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
 
         GGLWEPrepared {
             data: self.vmp_pmat_alloc(dnum.into(), rank_in.into(), (rank_out + 1).into(), size),
             base2k,
             dsize,
-            k,
+            k_aux,
         }
     }
 
@@ -120,11 +113,11 @@ where
         assert_eq!(self.ring_degree(), infos.n());
         self.gglwe_prepared_alloc(
             infos.base2k(),
-            infos.k(),
-            infos.rank_in(),
-            infos.rank_out(),
             infos.dnum(),
             infos.dsize(),
+            infos.k_aux(),
+            infos.rank_in(),
+            infos.rank_out(),
         )
     }
 
@@ -132,25 +125,13 @@ where
     fn gglwe_prepared_bytes_of(
         &self,
         base2k: Base2K,
-        k: TorusPrecision,
-        rank_in: Rank,
-        rank_out: Rank,
         dnum: Dnum,
         dsize: Dsize,
+        k_aux: TorusPrecision,
+        rank_in: Rank,
+        rank_out: Rank,
     ) -> usize {
-        let size: usize = k.0.div_ceil(base2k.0) as usize;
-        debug_assert!(
-            size as u32 > dsize.0,
-            "invalid gglwe: ceil(k/base2k): {size} <= dsize: {}",
-            dsize.0
-        );
-
-        assert!(
-            dnum.0 * dsize.0 <= size as u32,
-            "invalid gglwe: dnum: {} * dsize:{} > ceil(k/base2k): {size}",
-            dnum.0,
-            dsize.0,
-        );
+        let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
 
         self.bytes_of_vmp_pmat(dnum.into(), rank_in.into(), (rank_out + 1).into(), size)
     }
@@ -163,11 +144,11 @@ where
         assert_eq!(self.ring_degree(), infos.n());
         self.gglwe_prepared_bytes_of(
             infos.base2k(),
-            infos.k(),
-            infos.rank_in(),
-            infos.rank_out(),
             infos.dnum(),
             infos.dsize(),
+            infos.k_aux(),
+            infos.rank_in(),
+            infos.rank_out(),
         )
     }
 
@@ -244,7 +225,7 @@ impl<B: Backend> GGLWEPreparedToBackendRef<B> for GGLWEPrepared<B::OwnedBuf, B> 
     fn to_backend_ref(&self) -> GGLWEPreparedBackendRef<'_, B> {
         GGLWEPrepared {
             base2k: self.base2k,
-            k: self.k,
+            k_aux: self.k_aux,
             dsize: self.dsize,
             data: self.data.to_backend_ref(),
         }
@@ -265,7 +246,7 @@ impl<B: Backend> GGLWEPreparedToBackendMut<B> for GGLWEPrepared<B::OwnedBuf, B> 
     fn to_backend_mut(&mut self) -> GGLWEPreparedBackendMut<'_, B> {
         GGLWEPrepared {
             base2k: self.base2k,
-            k: self.k,
+            k_aux: self.k_aux,
             dsize: self.dsize,
             data: self.data.to_backend_mut(),
         }

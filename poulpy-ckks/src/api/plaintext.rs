@@ -1,5 +1,6 @@
-use anyhow::Result;
-use poulpy_core::layouts::{GLWEInfos, GLWEToBackendRef, LWEInfos};
+use crate::CKKSResult as Result;
+use poulpy_core::layouts::IntPolyInfos;
+use poulpy_core::layouts::{GLWEInfos, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::GLWEToBackendMut;
@@ -23,6 +24,6 @@ pub trait CKKSPlaintextVecOps<BE: Backend> {
     /// Extracts the ZNX plaintext polynomial from `src` into `dst`.
     fn ckks_extract_pt<D, S>(&self, dst: &mut D, src: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        D: GLWEToBackendMut<BE> + GLWEInfos + CKKSInfos + SetCKKSInfos + LWEInfos,
-        S: GLWEToBackendRef<BE> + GLWEInfos + LWEInfos + CKKSInfos;
+        D: GLWEToBackendMut<BE> + GLWEInfos + CKKSInfos + SetCKKSInfos + IntPolyInfos,
+        S: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos;
 }

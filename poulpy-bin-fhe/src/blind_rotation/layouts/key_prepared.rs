@@ -91,7 +91,7 @@ impl<BRA: BlindRotationAlgo, BE: Backend> BlindRotationKeyPrepared<BE::OwnedBuf,
 /// `BlindRotationKeyPrepared<&[u8], BRA, BE>` is `Sync` (shared references
 /// can be passed to multiple threads simultaneously) because all fields are
 /// immutable on the shared path.
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq)]
 pub struct BlindRotationKeyPrepared<D: Data, BRT: BlindRotationAlgo, B: Backend> {
     pub(crate) data: Vec<GGSWPrepared<D, B>>,
     pub(crate) dist: Distribution,
@@ -133,6 +133,10 @@ impl<D: Data, BRT: BlindRotationAlgo, B: Backend> GLWEInfos for BlindRotationKey
     }
 }
 impl<D: Data, BRT: BlindRotationAlgo, B: Backend> GGSWInfos for BlindRotationKeyPrepared<D, BRT, B> {
+    fn k_aux(&self) -> poulpy_core::layouts::TorusPrecision {
+        self.data[0].k_aux()
+    }
+
     fn dsize(&self) -> poulpy_core::layouts::Dsize {
         Dsize(1)
     }

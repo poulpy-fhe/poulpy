@@ -7,8 +7,7 @@ fn bench_glwe_keyswitch(c: &mut Criterion) {
     let base2k = p.base2k;
     let k = p.k;
     let dsize = p.dsize;
-    let dnum = p.dnum();
-    let k_ksk = k + dsize * base2k;
+    let (dnum, k_aux) = poulpy_bench::params::key_dnum_k_aux(k + dsize * base2k, base2k, dsize);
 
     let glwe_in = GLWELayout {
         n: Degree(n),
@@ -25,7 +24,7 @@ fn bench_glwe_keyswitch(c: &mut Criterion) {
     let gglwe = GLWESwitchingKeyLayout {
         n: Degree(n),
         base2k: Base2K(base2k),
-        k: TorusPrecision(k_ksk),
+        k_aux: TorusPrecision(k_aux),
         rank_in: Rank(p.rank),
         rank_out: Rank(p.rank),
         dnum: Dnum(dnum),

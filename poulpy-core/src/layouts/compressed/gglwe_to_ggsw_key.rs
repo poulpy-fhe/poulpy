@@ -44,7 +44,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyCompressedBackendRef<'a, BE> {
         assert!((i as u32) < self.rank());
         let key_i = &self.inner.keys[i];
         GGLWECompressedBackendRef::from_inner(GGLWECompressed {
-            k: key_i.k,
+            k_aux: key_i.k_aux,
             base2k: key_i.base2k,
             dsize: key_i.dsize,
             seed: key_i.seed.clone(),
@@ -79,7 +79,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyCompressedBackendMut<'a, BE> {
         assert!((i as u32) < self.rank());
         let key_i = &self.inner.keys[i];
         GGLWECompressedBackendRef::from_inner(GGLWECompressed {
-            k: key_i.k,
+            k_aux: key_i.k_aux,
             base2k: key_i.base2k,
             dsize: key_i.dsize,
             seed: key_i.seed.clone(),
@@ -92,7 +92,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyCompressedBackendMut<'a, BE> {
         assert!((i as u32) < self.rank());
         let key_i = &mut self.inner.keys[i];
         GGLWECompressedBackendMut::from_inner(GGLWECompressed {
-            k: key_i.k,
+            k_aux: key_i.k_aux,
             base2k: key_i.base2k,
             dsize: key_i.dsize,
             seed: key_i.seed.clone(),
@@ -144,6 +144,10 @@ impl<D: Data> GLWEInfos for GGLWEToGGSWKeyCompressed<D> {
 }
 
 impl<D: Data> GGLWEInfos for GGLWEToGGSWKeyCompressed<D> {
+    fn k_aux(&self) -> TorusPrecision {
+        self.keys[0].k_aux()
+    }
+
     fn rank_in(&self) -> Rank {
         self.rank_out()
     }
@@ -199,18 +203,18 @@ impl GGLWEToGGSWKeyCompressed<Vec<u8>> {
         Self::alloc(
             infos.n(),
             infos.base2k(),
-            infos.k(),
-            infos.rank(),
             infos.dnum(),
             infos.dsize(),
+            infos.k_aux(),
+            infos.rank(),
         )
     }
 
     /// Allocates a new compressed GGLWE-to-GGSW key with the given parameters.
-    pub(crate) fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank, dnum: Dnum, dsize: Dsize) -> Self {
+    pub(crate) fn alloc(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> Self {
         GGLWEToGGSWKeyCompressed {
             keys: (0..rank.as_usize())
-                .map(|_| GGLWECompressed::alloc(n, base2k, k, rank, rank, dnum, dsize))
+                .map(|_| GGLWECompressed::alloc(n, base2k, dnum, dsize, k_aux, rank, rank))
                 .collect(),
         }
     }
@@ -228,16 +232,16 @@ impl GGLWEToGGSWKeyCompressed<Vec<u8>> {
         Self::bytes_of(
             infos.n(),
             infos.base2k(),
-            infos.k(),
-            infos.rank(),
             infos.dnum(),
             infos.dsize(),
+            infos.k_aux(),
+            infos.rank(),
         )
     }
 
     /// Returns the serialized byte size for a compressed GGLWE-to-GGSW key with the given parameters.
-    pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank, dnum: Dnum, dsize: Dsize) -> usize {
-        rank.as_usize() * GGLWECompressed::bytes_of(n, base2k, k, rank, dnum, dsize)
+    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
+        rank.as_usize() * GGLWECompressed::bytes_of(n, base2k, dnum, dsize, k_aux, rank)
     }
 }
 

@@ -102,7 +102,7 @@ pub fn glwe_accumulate_streamed_baby_steps_dft<BE, M, P>(
 ) where
     BE: Backend,
     M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
-    P: GLWEToBackendRef<BE> + GLWEInfos,
+    P: GLWEToBackendRef<BE> + crate::layouts::IntPolyInfos + GLWEInfos,
 {
     glwe_accumulate_unprepared_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, gs, scratch);
 }
@@ -137,7 +137,6 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
     lhs: &LinearTransformationBabySteps<BE>,
     rhs: &LinearTransformation<P>,
     keys: &H,
-    key_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
@@ -196,11 +195,11 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
     let (use_lazy_giant_rotation, key_size_effective) = if has_nonzero_giant_rotation {
         let key_infos = keys.automorphism_key_infos();
         let key_base2k = key_infos.base2k();
-        let key_size_effective = key_size.min(key_infos.size());
+        let key_size_effective = key_infos.work_size(res.k());
         (res_base2k == key_base2k && prod_base2k == key_base2k, key_size_effective)
     } else {
         // No giant rotation: BIG-flow accumulator is always valid (no key required).
-        (true, key_size)
+        (true, res.size())
     };
     let use_final_lazy_accumulator = !has_nonzero_giant_rotation || use_lazy_giant_rotation;
     let lazy_size = if use_lazy_giant_rotation {
@@ -262,7 +261,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
                             &prod_dft_ref,
                             prod_base2k.as_usize(),
                             key,
-                            key_size,
+                            key_size_effective,
                             &mut scratch_rot,
                         );
                     }
@@ -340,7 +339,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
             let key: &K = keys
                 .get_automorphism_key(module.galois_element(rot))
                 .unwrap_or_else(|| panic!("missing automorphism key for giant-step rotation {rot}"));
-            module.glwe_automorphism_assign(&mut fallback_acc, key, key_size, &mut scratch_phase);
+            module.glwe_automorphism_assign(&mut fallback_acc, key, &mut scratch_phase);
         }
 
         if res_initialized {

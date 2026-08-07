@@ -1,15 +1,15 @@
 use crate::{
     api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution},
     layouts::{
-        Backend, CnvDftAccTerm, CnvPVecL, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecR, CnvPVecRBackendMut,
-        CnvPVecRBackendRef, Module, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
+        Backend, CnvDftAccTerm, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecLOwned, CnvPVecRBackendMut, CnvPVecRBackendRef,
+        CnvPVecROwned, Module, ScratchArena, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
     },
     oep::{HalConvolutionImpl, HalVecZnxDftImpl},
 };
 
 macro_rules! impl_convolution_delegate {
     ($trait:ty, $($body:item),+ $(,)?) => {
-        impl<BE: Backend> $trait for Module<BE>
+        impl<BE: Backend<ZnxWord = i64>> $trait for Module<BE>
         where
             BE: HalConvolutionImpl<BE> + HalVecZnxDftImpl<BE>,
         {
@@ -19,12 +19,12 @@ macro_rules! impl_convolution_delegate {
 }
 
 impl<BE: Backend> CnvPVecAlloc<BE> for Module<BE> {
-    fn cnv_pvec_left_alloc(&self, cols: usize, size: usize) -> CnvPVecL<BE::OwnedBuf, BE> {
-        CnvPVecL::alloc(self.n(), cols, size)
+    fn cnv_pvec_left_alloc(&self, cols: usize, size: usize) -> CnvPVecLOwned<BE> {
+        CnvPVecLOwned::<BE>::alloc(self.n(), cols, size)
     }
 
-    fn cnv_pvec_right_alloc(&self, cols: usize, size: usize) -> CnvPVecR<BE::OwnedBuf, BE> {
-        CnvPVecR::alloc(self.n(), cols, size)
+    fn cnv_pvec_right_alloc(&self, cols: usize, size: usize) -> CnvPVecROwned<BE> {
+        CnvPVecROwned::<BE>::alloc(self.n(), cols, size)
     }
 }
 

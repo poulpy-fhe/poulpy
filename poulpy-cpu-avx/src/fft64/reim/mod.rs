@@ -52,7 +52,7 @@ pub(crate) fn as_arr_mut<const SIZE: usize, R: Float + FloatConst>(x: &mut [R]) 
 ///
 /// Wraps [`ReimFFTTable`] and [`ReimIFFTTable`] into a single object that
 /// implements [`NegacyclicFFT`], suitable for use as the transform provider
-/// in a CKKS [`poulpy_ckks::encoding::Encoder`].
+/// in the CPU CKKS encoding implementation.
 pub struct FFT64AvxReimTable {
     fft: ReimFFTTable<f64>,
     ifft: ReimIFFTTable<f64>,

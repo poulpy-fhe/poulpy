@@ -14,7 +14,7 @@ use crate::layouts::{
 ///
 /// A newtype wrapper around [`GLWESwitchingKeyPrepared`] for LWE key-switching.
 /// Tied to a specific backend via `B: Backend`.
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq)]
 pub struct LWESwitchingKeyPrepared<D: Data, B: Backend>(pub(crate) GLWESwitchingKeyPrepared<D, B>);
 
 impl<D: Data, B: Backend> LWEInfos for LWESwitchingKeyPrepared<D, B> {
@@ -41,6 +41,10 @@ impl<D: Data, B: Backend> GLWEInfos for LWESwitchingKeyPrepared<D, B> {
 }
 
 impl<D: Data, B: Backend> GGLWEInfos for LWESwitchingKeyPrepared<D, B> {
+    fn k_aux(&self) -> TorusPrecision {
+        self.0.k_aux()
+    }
+
     fn dsize(&self) -> Dsize {
         self.0.dsize()
     }
@@ -65,10 +69,10 @@ where
     fn lwe_switching_key_prepared_alloc(
         &self,
         base2k: Base2K,
-        k: TorusPrecision,
         dnum: Dnum,
+        k_aux: TorusPrecision,
     ) -> LWESwitchingKeyPrepared<B::OwnedBuf, B> {
-        LWESwitchingKeyPrepared(self.glwe_switching_key_prepared_alloc(base2k, k, Rank(1), Rank(1), dnum, Dsize(1)))
+        LWESwitchingKeyPrepared(self.glwe_switching_key_prepared_alloc(base2k, dnum, Dsize(1), k_aux, Rank(1), Rank(1)))
     }
 
     fn lwe_switching_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> LWESwitchingKeyPrepared<B::OwnedBuf, B>
@@ -78,11 +82,11 @@ where
         debug_assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for LWESwitchingKey");
         debug_assert_eq!(infos.rank_in().0, 1, "rank_in > 1 is not supported for LWESwitchingKey");
         debug_assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for LWESwitchingKey");
-        self.lwe_switching_key_prepared_alloc(infos.base2k(), infos.k(), infos.dnum())
+        self.lwe_switching_key_prepared_alloc(infos.base2k(), infos.dnum(), infos.k_aux())
     }
 
-    fn lwe_switching_key_prepared_bytes_of(&self, base2k: Base2K, k: TorusPrecision, dnum: Dnum) -> usize {
-        self.bytes_of_glwe_key_prepared(base2k, k, Rank(1), Rank(1), dnum, Dsize(1))
+    fn lwe_switching_key_prepared_bytes_of(&self, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision) -> usize {
+        self.bytes_of_glwe_key_prepared(base2k, dnum, Dsize(1), k_aux, Rank(1), Rank(1))
     }
 
     fn lwe_switching_key_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
@@ -92,7 +96,7 @@ where
         debug_assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for LWESwitchingKey");
         debug_assert_eq!(infos.rank_in().0, 1, "rank_in > 1 is not supported for LWESwitchingKey");
         debug_assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for LWESwitchingKey");
-        self.lwe_switching_key_prepared_bytes_of(infos.base2k(), infos.k(), infos.dnum())
+        self.lwe_switching_key_prepared_bytes_of(infos.base2k(), infos.dnum(), infos.k_aux())
     }
 
     fn lwe_switching_key_prepare_tmp_bytes<A>(&self, infos: &A) -> usize

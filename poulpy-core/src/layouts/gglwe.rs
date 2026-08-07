@@ -21,7 +21,24 @@ pub trait GGLWEInfos
 where
     Self: GLWEInfos,
 {
+    /// Auxiliary guard precision (in bits) stored below the gadget region and
+    /// used for noise management during key operations. Free value, need not be
+    /// a multiple of `base2k`. In practice `dsize*base2k + logN`.
+    fn k_aux(&self) -> TorusPrecision;
+    /// Number of gadget-decomposition rows.
     fn dnum(&self) -> Dnum;
+    /// Number of key limbs an operation should process when applied to an input
+    /// ciphertext of precision `input_k`: `ceil((input_k + k_aux) / base2k)`,
+    /// clamped to the key's own allocated width. This replaces the old explicit
+    /// `key_size` operation argument.
+    fn work_size(&self, input_k: TorusPrecision) -> usize {
+        self.size().min(crate::layouts::key_work_size(
+            self.base2k(),
+            input_k,
+            self.dsize(),
+            self.k_aux(),
+        ))
+    }
     fn dsize(&self) -> Dsize;
     fn rank_in(&self) -> Rank;
     fn rank_out(&self) -> Rank;
@@ -29,11 +46,11 @@ where
         GGLWELayout {
             n: self.n(),
             base2k: self.base2k(),
-            k: self.k(),
+            dnum: self.dnum(),
+            k_aux: self.k_aux(),
             rank_in: self.rank_in(),
             rank_out: self.rank_out(),
             dsize: self.dsize(),
-            dnum: self.dnum(),
         }
     }
 }
@@ -46,10 +63,10 @@ pub trait SetGGLWEInfos {
 pub struct GGLWELayout {
     pub n: Degree,
     pub base2k: Base2K,
-    pub k: TorusPrecision,
+    pub dnum: Dnum,
+    pub k_aux: TorusPrecision,
     pub rank_in: Rank,
     pub rank_out: Rank,
-    pub dnum: Dnum,
     pub dsize: Dsize,
 }
 
@@ -63,11 +80,11 @@ impl LWEInfos for GGLWELayout {
     }
 
     fn max_size(&self) -> usize {
-        self.k.div_ceil(self.base2k) as usize
+        crate::layouts::key_size(self.base2k, self.dnum, self.dsize, self.k_aux)
     }
 
     fn k(&self) -> TorusPrecision {
-        self.k
+        crate::layouts::key_k(self.base2k, self.dnum, self.dsize, self.k_aux)
     }
 }
 
@@ -78,6 +95,14 @@ impl GLWEInfos for GGLWELayout {
 }
 
 impl GGLWEInfos for GGLWELayout {
+    fn k_aux(&self) -> TorusPrecision {
+        self.k_aux
+    }
+
+    fn dnum(&self) -> Dnum {
+        self.dnum
+    }
+
     fn rank_in(&self) -> Rank {
         self.rank_in
     }
@@ -89,16 +114,12 @@ impl GGLWEInfos for GGLWELayout {
     fn rank_out(&self) -> Rank {
         self.rank_out
     }
-
-    fn dnum(&self) -> Dnum {
-        self.dnum
-    }
 }
 
 #[derive(PartialEq, Eq, Clone)]
 pub struct GGLWE<D: Data> {
     pub(crate) data: MatZnx<D>,
-    pub(crate) k: TorusPrecision,
+    pub(crate) k_aux: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) dsize: Dsize,
 }
@@ -172,7 +193,7 @@ impl<'a, BE: Backend + 'a> GGLWEToBackendRef<BE> for GGLWEBackendRef<'a, BE> {
     fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE> {
         GGLWEBackendRef::from_inner(GGLWE {
             base2k: self.inner.base2k,
-            k: self.inner.k,
+            k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_ref::<BE>(&self.inner.data),
         })
@@ -189,7 +210,7 @@ impl<'a, BE: Backend + 'a> GGLWEToBackendRef<BE> for GGLWEBackendMut<'a, BE> {
     fn to_backend_ref(&self) -> GGLWEBackendRef<'_, BE> {
         GGLWEBackendRef::from_inner(GGLWE {
             base2k: self.inner.base2k,
-            k: self.inner.k,
+            k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_mut::<BE>(&self.inner.data),
         })
@@ -200,7 +221,7 @@ impl<'a, BE: Backend + 'a> GGLWEToBackendMut<BE> for GGLWEBackendMut<'a, BE> {
     fn to_backend_mut(&mut self) -> GGLWEBackendMut<'_, BE> {
         GGLWEBackendMut::from_inner(GGLWE {
             base2k: self.inner.base2k,
-            k: self.inner.k,
+            k_aux: self.inner.k_aux,
             dsize: self.inner.dsize,
             data: poulpy_hal::layouts::mat_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
         })
@@ -221,7 +242,7 @@ impl<D: Data> LWEInfos for GGLWE<D> {
     }
 
     fn k(&self) -> TorusPrecision {
-        self.k
+        crate::layouts::key_k(self.base2k, self.dnum(), self.dsize, self.k_aux)
     }
 }
 
@@ -232,6 +253,10 @@ impl<D: Data> GLWEInfos for GGLWE<D> {
 }
 
 impl<D: Data> GGLWEInfos for GGLWE<D> {
+    fn k_aux(&self) -> TorusPrecision {
+        self.k_aux
+    }
+
     fn rank_in(&self) -> Rank {
         Rank(self.data.cols_in() as u32)
     }
@@ -264,7 +289,7 @@ impl<BE: Backend> GGLWEAtBackendRef<BE> for GGLWE<BE::OwnedBuf> {
         let data = <MatZnx<BE::OwnedBuf> as MatZnxAtBackendRef<BE>>::at_backend(&self.data, row, col);
         GLWE {
             base2k: self.base2k,
-            k: self.k,
+            k: self.k(),
             data,
         }
     }
@@ -278,7 +303,7 @@ pub(crate) fn gglwe_at_backend_ref_from_ref<'a, 'b, BE: Backend>(
     let data = poulpy_hal::layouts::mat_znx_at_backend_ref_from_ref::<BE>(&gglwe.data, row, col);
     GLWE {
         base2k: gglwe.base2k,
-        k: gglwe.k,
+        k: gglwe.k(),
         data,
     }
 }
@@ -301,7 +326,7 @@ pub(crate) fn gglwe_at_backend_ref_from_mut<'a, 'b, BE: Backend>(
     let data = poulpy_hal::layouts::mat_znx_at_backend_ref_from_mut::<BE>(&gglwe.data, row, col);
     GLWE {
         base2k: gglwe.base2k,
-        k: gglwe.k,
+        k: gglwe.k(),
         data,
     }
 }
@@ -319,7 +344,7 @@ pub(crate) trait GGLWEAtBackendMut<BE: Backend> {
 impl<BE: Backend> GGLWEAtBackendMut<BE> for GGLWE<BE::OwnedBuf> {
     fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>> {
         let base2k = self.base2k;
-        let k = self.k;
+        let k = self.k();
         let data = <MatZnx<BE::OwnedBuf> as MatZnxAtBackendMut<BE>>::at_backend_mut(&mut self.data, row, col);
         GLWE { base2k, k, data }
     }
@@ -331,7 +356,7 @@ pub(crate) fn gglwe_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
     col: usize,
 ) -> GLWE<BE::BufMut<'a>> {
     let base2k = gglwe.base2k;
-    let k = gglwe.k;
+    let k = gglwe.k();
     let data = poulpy_hal::layouts::mat_znx_at_backend_mut_from_mut::<BE>(&mut gglwe.data, row, col);
     GLWE { base2k, k, data }
 }
@@ -382,7 +407,7 @@ impl<D: HostDataRef> GGLWE<D> {
         let data = self.data.at(row, col);
         GLWE {
             base2k: self.base2k,
-            k: self.k,
+            k: self.k(),
             data,
         }
     }
@@ -391,7 +416,7 @@ impl<D: HostDataRef> GGLWE<D> {
 impl<D: HostDataMut> GGLWE<D> {
     pub fn at_mut(&mut self, row: usize, col: usize) -> GLWE<&mut [u8]> {
         let base2k = self.base2k;
-        let k = self.k;
+        let k = self.k();
         let data = self.data.at_mut(row, col);
         GLWE { base2k, k, data }
     }
@@ -427,7 +452,7 @@ impl<D: Data> GGLWE<D> {
             data: MatZnx::from_data(self.data.into_data(), n, rows, cols_in, cols_out, size),
             base2k: self.base2k,
             dsize: self.dsize,
-            k: self.k,
+            k_aux: self.k_aux,
         }
     }
 }
@@ -444,36 +469,24 @@ impl GGLWE<Vec<u8>> {
         Self::alloc(
             infos.n(),
             infos.base2k(),
-            infos.k(),
-            infos.rank_in(),
-            infos.rank_out(),
             infos.dnum(),
             infos.dsize(),
+            infos.k_aux(),
+            infos.rank_in(),
+            infos.rank_out(),
         )
     }
 
     pub(crate) fn alloc(
         n: Degree,
         base2k: Base2K,
-        k: TorusPrecision,
-        rank_in: Rank,
-        rank_out: Rank,
         dnum: Dnum,
         dsize: Dsize,
+        k_aux: TorusPrecision,
+        rank_in: Rank,
+        rank_out: Rank,
     ) -> Self {
-        let size: usize = k.0.div_ceil(base2k.0) as usize;
-        assert!(
-            size as u32 > dsize.0,
-            "invalid gglwe: ceil(k/base2k): {size} <= dsize: {}",
-            dsize.0
-        );
-
-        assert!(
-            dnum.0 * dsize.0 <= size as u32,
-            "invalid gglwe: dnum: {} * dsize:{} > ceil(k/base2k): {size}",
-            dnum.0,
-            dsize.0,
-        );
+        let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
 
         GGLWE {
             data: MatZnx::from_data(
@@ -492,7 +505,7 @@ impl GGLWE<Vec<u8>> {
             ),
             base2k,
             dsize,
-            k,
+            k_aux,
         }
     }
 
@@ -503,44 +516,26 @@ impl GGLWE<Vec<u8>> {
         Self::bytes_of(
             infos.n(),
             infos.base2k(),
-            infos.k(),
-            infos.rank_in(),
-            infos.rank_out(),
             infos.dnum(),
             infos.dsize(),
+            infos.k_aux(),
+            infos.rank_in(),
+            infos.rank_out(),
         )
     }
 
     pub fn bytes_of(
         n: Degree,
         base2k: Base2K,
-        k: TorusPrecision,
-        rank_in: Rank,
-        rank_out: Rank,
         dnum: Dnum,
         dsize: Dsize,
+        k_aux: TorusPrecision,
+        rank_in: Rank,
+        rank_out: Rank,
     ) -> usize {
-        let size: usize = k.0.div_ceil(base2k.0) as usize;
-        assert!(
-            size as u32 > dsize.0,
-            "invalid gglwe: ceil(k/base2k): {size} <= dsize: {}",
-            dsize.0
-        );
+        let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
 
-        assert!(
-            dnum.0 * dsize.0 <= size as u32,
-            "invalid gglwe: dnum: {} * dsize:{} > ceil(k/base2k): {size}",
-            dnum.0,
-            dsize.0,
-        );
-
-        MatZnx::bytes_of(
-            n.into(),
-            dnum.into(),
-            rank_in.into(),
-            (rank_out + 1).into(),
-            k.0.div_ceil(base2k.0) as usize,
-        )
+        MatZnx::bytes_of(n.into(), dnum.into(), rank_in.into(), (rank_out + 1).into(), size)
     }
 }
 
@@ -556,7 +551,7 @@ where
         GGLWEBackendMut::from_inner(GGLWE {
             base2k: self.base2k(),
             dsize: self.dsize(),
-            k: self.k(),
+            k_aux: self.k_aux(),
             data: self.data.to_backend_mut(),
         })
     }
@@ -567,7 +562,7 @@ impl<'b, BE: Backend + 'b> GGLWEToBackendRef<BE> for &mut GGLWE<BE::BufMut<'b>> 
         GGLWEBackendRef::from_inner(GGLWE {
             base2k: self.base2k(),
             dsize: self.dsize(),
-            k: self.k(),
+            k_aux: self.k_aux(),
             data: poulpy_hal::layouts::mat_znx_backend_ref_from_mut::<BE>(&self.data),
         })
     }
@@ -578,7 +573,7 @@ impl<'b, BE: Backend + 'b> GGLWEToBackendMut<BE> for &mut GGLWE<BE::BufMut<'b>> 
         GGLWEBackendMut::from_inner(GGLWE {
             base2k: self.base2k(),
             dsize: self.dsize(),
-            k: self.k(),
+            k_aux: self.k_aux(),
             data: poulpy_hal::layouts::mat_znx_backend_mut_from_mut::<BE>(&mut self.data),
         })
     }
@@ -596,7 +591,7 @@ where
         GGLWEBackendRef::from_inner(GGLWE {
             base2k: self.base2k(),
             dsize: self.dsize(),
-            k: self.k(),
+            k_aux: self.k_aux(),
             data: self.data.to_backend_ref(),
         })
     }
@@ -606,6 +601,7 @@ impl<D: HostDataMut> ReaderFrom for GGLWE<D> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.base2k = Base2K(reader.read_u32::<LittleEndian>()?);
         self.dsize = Dsize(reader.read_u32::<LittleEndian>()?);
+        self.k_aux = TorusPrecision(reader.read_u32::<LittleEndian>()?);
         self.data.read_from(reader)
     }
 }
@@ -614,6 +610,7 @@ impl<D: HostDataRef> WriterTo for GGLWE<D> {
     fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         writer.write_u32::<LittleEndian>(self.base2k.0)?;
         writer.write_u32::<LittleEndian>(self.dsize.0)?;
+        writer.write_u32::<LittleEndian>(self.k_aux.0)?;
         self.data.write_to(writer)
     }
 }

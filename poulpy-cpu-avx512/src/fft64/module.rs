@@ -1,10 +1,10 @@
 use std::ptr::NonNull;
 
-use poulpy_cpu_ref::hal_defaults::ScalarBigHadamardProduct;
+use poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct;
 use poulpy_cpu_ref::reference::{
     fft64::{
         convolution::I64Ops,
-        module::{FFT64HandleFactory, FFTHandleProvider},
+        module::{FFT64HandleFactory, FFT64Plan, FFT64PlanSet, FFTHandleProvider},
         reim::{ReimArith, ReimFFTExecute, ReimFFTTable, ReimIFFTTable, reim_copy_ref, reim_zero_ref},
         reim4::{Reim4BlkMatVec, Reim4Convolution},
     },
@@ -77,13 +77,14 @@ use crate::{
 /// when the module is dropped, which reconstructs the `Box` from the raw pointer and drops it.
 #[repr(C)]
 pub struct FFT64Avx512Handle {
-    table_fft: ReimFFTTable<f64>,
-    table_ifft: ReimIFFTTable<f64>,
+    ring_plans: FFT64PlanSet<f64>,
+    table_cache: ::poulpy_cpu_ref::table_cache::ModuleTableCache,
 }
 
 impl Backend for FFT64Avx512 {
-    type ScalarPrep = f64;
-    type ScalarBig = i64;
+    type DftWord = f64;
+    type ZnxWord = i64;
+    type BigWord = i64;
     type OwnedBuf = Vec<u8>;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
@@ -113,6 +114,14 @@ impl Backend for FFT64Avx512 {
         let src_len = src.len();
         buf[..src_len].copy_from_slice(src);
         buf[src_len..].fill(0);
+    }
+    fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
+        assert_eq!(buf.len(), dst.len());
+        dst.copy_from_slice(buf);
+    }
+    fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
+        assert_eq!(buf.len(), src.len());
+        buf.copy_from_slice(src);
     }
     fn len_bytes(buf: &Self::OwnedBuf) -> usize {
         buf.len()
@@ -178,8 +187,8 @@ impl Backend for FFT64Avx512 {
 unsafe impl FFT64HandleFactory for FFT64Avx512Handle {
     fn create_fft64_handle(n: usize) -> Self {
         FFT64Avx512Handle {
-            table_fft: ReimFFTTable::new(n >> 1),
-            table_ifft: ReimIFFTTable::new(n >> 1),
+            table_cache: Default::default(),
+            ring_plans: FFT64PlanSet::new(n),
         }
     }
 
@@ -194,12 +203,8 @@ unsafe impl FFT64HandleFactory for FFT64Avx512Handle {
 }
 
 unsafe impl FFTHandleProvider<f64> for FFT64Avx512Handle {
-    fn get_fft_table(&self) -> &ReimFFTTable<f64> {
-        &self.table_fft
-    }
-
-    fn get_ifft_table(&self) -> &ReimIFFTTable<f64> {
-        &self.table_ifft
+    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<f64> {
+        self.ring_plans.for_ring(n)
     }
 }
 
@@ -694,9 +699,15 @@ impl I64Ops for FFT64Avx512 {
     }
 }
 
-impl ScalarBigHadamardProduct for FFT64Avx512 {
+impl BigWordHadamardProduct for FFT64Avx512 {
     #[inline(always)]
-    fn scalar_big_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
+    fn big_word_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
         Self::i64_hadamard_product(res, a, b)
+    }
+}
+
+unsafe impl ::poulpy_cpu_ref::table_cache::ModuleTableCacheProvider for FFT64Avx512Handle {
+    fn module_plan_cache(&self) -> &::poulpy_cpu_ref::table_cache::ModuleTableCache {
+        &self.table_cache
     }
 }

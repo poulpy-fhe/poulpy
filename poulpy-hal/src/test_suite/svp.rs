@@ -2,22 +2,24 @@ use super::{
     TestParams, download_vec_znx, scalar_znx_backend_ref, upload_scalar_znx, upload_vec_znx, vec_znx_backend_mut,
     vec_znx_backend_ref,
 };
+use crate::layouts::SvpPPolToBackendMut;
+use crate::layouts::SvpPPolToBackendRef;
+use crate::layouts::VecZnxBigToBackendMut;
+use crate::layouts::VecZnxBigToBackendRef;
+use crate::layouts::VecZnxDftToBackendMut;
+use crate::layouts::VecZnxDftToBackendRef;
 
 use crate::{
     api::{
         ScratchOwnedAlloc, SvpApplyDft, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxBigAlloc,
         VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApplyTmpA,
     },
-    layouts::{
-        Backend, FillUniform, HostBytesBackend, Module, ScalarZnx, ScratchOwned, SvpPPolOwned, SvpPPolToBackendMut,
-        SvpPPolToBackendRef, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDft, VecZnxDftToBackendMut,
-        VecZnxDftToBackendRef,
-    },
+    layouts::{Backend, FillUniform, HostBytesBackend, Module, ScalarZnx, ScratchOwned, SvpPPolOwned, VecZnx},
     source::Source,
 };
 
-type VecZnxDftOwned<BE> = VecZnxDft<<BE as Backend>::OwnedBuf, BE>;
-type VecZnxBigOwned<BE> = crate::layouts::VecZnxBig<<BE as Backend>::OwnedBuf, BE>;
+use crate::layouts::VecZnxBigOwned;
+use crate::layouts::VecZnxDftOwned;
 
 fn idft_into_alloc<BE>(module: &Module<BE>, a: &mut VecZnxDftOwned<BE>) -> VecZnxBigOwned<BE>
 where

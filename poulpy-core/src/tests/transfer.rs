@@ -10,10 +10,10 @@ use crate::{
     layouts::{Base2K, Dnum, Dsize, GGLWE, GLWE, ModuleCoreAlloc, Rank, TorusPrecision},
 };
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 struct SrcBackend;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 struct DstBackend;
 
 fn host_alloc(len: usize) -> Vec<u8> {
@@ -21,8 +21,9 @@ fn host_alloc(len: usize) -> Vec<u8> {
 }
 
 impl Backend for SrcBackend {
-    type ScalarBig = i64;
-    type ScalarPrep = f64;
+    type ZnxWord = i64;
+    type BigWord = i64;
+    type DftWord = f64;
     type OwnedBuf = Vec<u8>;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
@@ -50,6 +51,12 @@ impl Backend for SrcBackend {
     }
 
     fn copy_from_host(buf: &mut Self::OwnedBuf, src: &[u8]) {
+        buf.copy_from_slice(src);
+    }
+    fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
+        dst.copy_from_slice(buf);
+    }
+    fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
         buf.copy_from_slice(src);
     }
     fn len_bytes(buf: &Self::OwnedBuf) -> usize {
@@ -125,8 +132,9 @@ unsafe impl HalModuleImpl<SrcBackend> for SrcBackend {
 }
 
 impl Backend for DstBackend {
-    type ScalarBig = i64;
-    type ScalarPrep = f64;
+    type ZnxWord = i64;
+    type BigWord = i64;
+    type DftWord = f64;
     type OwnedBuf = Vec<u8>;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
@@ -154,6 +162,12 @@ impl Backend for DstBackend {
     }
 
     fn copy_from_host(buf: &mut Self::OwnedBuf, src: &[u8]) {
+        buf.copy_from_slice(src);
+    }
+    fn copy_view_to_host(buf: &Self::BufRef<'_>, dst: &mut [u8]) {
+        dst.copy_from_slice(buf);
+    }
+    fn copy_host_to_view(buf: &mut Self::BufMut<'_>, src: &[u8]) {
         buf.copy_from_slice(src);
     }
     fn len_bytes(buf: &Self::OwnedBuf) -> usize {
@@ -274,7 +288,7 @@ fn module_transfer_glwe_roundtrip() {
 fn module_transfer_gglwe_roundtrip() {
     let src_module: Module<SrcBackend> = Module::new(64);
     let dst_module: Module<DstBackend> = Module::new(64);
-    let mut src: GGLWE<Vec<u8>> = src_module.gglwe_alloc(Base2K(12), TorusPrecision(33), Rank(1), Rank(2), Dnum(3), Dsize(1));
+    let mut src: GGLWE<Vec<u8>> = src_module.gglwe_alloc(Base2K(12), Dnum(3), Dsize(1), TorusPrecision(12 + 6), Rank(1), Rank(2));
     fill_bytes(src.data.data_mut());
 
     let uploaded = dst_module.upload_gglwe::<SrcBackend>(&src);

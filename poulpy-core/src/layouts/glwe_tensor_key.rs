@@ -20,9 +20,9 @@ use std::fmt;
 pub struct GLWETensorKeyLayout {
     pub n: Degree,
     pub base2k: Base2K,
-    pub k: TorusPrecision,
-    pub rank: Rank,
     pub dnum: Dnum,
+    pub k_aux: TorusPrecision,
+    pub rank: Rank,
     pub dsize: Dsize,
 }
 
@@ -61,6 +61,10 @@ impl<D: Data> GLWEInfos for GLWETensorKey<D> {
 }
 
 impl<D: Data> GGLWEInfos for GLWETensorKey<D> {
+    fn k_aux(&self) -> TorusPrecision {
+        self.0.k_aux()
+    }
+
     fn rank_in(&self) -> Rank {
         let rank_out: usize = self.rank_out().as_usize();
         let pairs: usize = (((rank_out + 1) * rank_out) >> 1).max(1);
@@ -90,11 +94,11 @@ impl LWEInfos for GLWETensorKeyLayout {
     }
 
     fn max_size(&self) -> usize {
-        self.k.div_ceil(self.base2k) as usize
+        crate::layouts::key_size(self.base2k, self.dnum, self.dsize, self.k_aux)
     }
 
     fn k(&self) -> TorusPrecision {
-        self.k
+        crate::layouts::key_k(self.base2k, self.dnum, self.dsize, self.k_aux)
     }
 }
 
@@ -105,6 +109,14 @@ impl GLWEInfos for GLWETensorKeyLayout {
 }
 
 impl GGLWEInfos for GLWETensorKeyLayout {
+    fn k_aux(&self) -> TorusPrecision {
+        self.k_aux
+    }
+
+    fn dnum(&self) -> Dnum {
+        self.dnum
+    }
+
     fn rank_in(&self) -> Rank {
         let rank_out: usize = self.rank_out().as_usize();
         let pairs: usize = (((rank_out + 1) * rank_out) >> 1).max(1);
@@ -117,10 +129,6 @@ impl GGLWEInfos for GLWETensorKeyLayout {
 
     fn rank_out(&self) -> Rank {
         self.rank
-    }
-
-    fn dnum(&self) -> Dnum {
-        self.dnum
     }
 }
 
@@ -157,17 +165,17 @@ impl GLWETensorKey<Vec<u8>> {
         Self::alloc(
             infos.n(),
             infos.base2k(),
-            infos.k(),
-            infos.rank(),
             infos.dnum(),
             infos.dsize(),
+            infos.k_aux(),
+            infos.rank(),
         )
     }
 
     /// Allocates a new [`GLWETensorKey`] with the given parameters.
-    pub(crate) fn alloc(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank, dnum: Dnum, dsize: Dsize) -> Self {
+    pub(crate) fn alloc(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> Self {
         let pairs: u32 = (((rank.0 + 1) * rank.0) >> 1).max(1);
-        GLWETensorKey(GGLWE::alloc(n, base2k, k, Rank(pairs), rank, dnum, dsize))
+        GLWETensorKey(GGLWE::alloc(n, base2k, dnum, dsize, k_aux, Rank(pairs), rank))
     }
 
     /// Returns the byte count required for a [`GLWETensorKey`] with the given parameters.
@@ -178,17 +186,17 @@ impl GLWETensorKey<Vec<u8>> {
         Self::bytes_of(
             infos.n(),
             infos.base2k(),
-            infos.k(),
-            infos.rank(),
             infos.dnum(),
             infos.dsize(),
+            infos.k_aux(),
+            infos.rank(),
         )
     }
 
     /// Returns the byte count required for a [`GLWETensorKey`] with the given parameters.
-    pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank, dnum: Dnum, dsize: Dsize) -> usize {
+    pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
         let pairs: u32 = (((rank.0 + 1) * rank.0) >> 1).max(1);
-        GGLWE::bytes_of(n, base2k, k, Rank(pairs), rank, dnum, dsize)
+        GGLWE::bytes_of(n, base2k, dnum, dsize, k_aux, Rank(pairs), rank)
     }
 }
 

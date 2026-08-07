@@ -1,4 +1,4 @@
-use anyhow::Result;
+use crate::CKKSResult as Result;
 use poulpy_core::layouts::{GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
@@ -22,7 +22,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// For `_into` variants:
 ///
 /// ```text
-/// offset         = max(0, src.k() − dst.max_k())
+/// offset         = max(0, src.k() − dst.k())
 ///
 /// log_delta_out  = src.log_delta
 /// log_budget_out = src.log_budget − offset
@@ -42,7 +42,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// For `_into` variants:
 ///
 /// ```text
-/// offset         = max(0, src.k() − dst.max_k())
+/// offset         = max(0, src.k() − dst.k())
 ///
 /// log_delta_out  = src.log_delta + bits
 /// log_budget_out = src.log_budget − bits − offset

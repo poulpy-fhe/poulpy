@@ -18,7 +18,8 @@ use poulpy_hal::{
 use crate::{
     default::keyswitching::GGLWEProductDefault,
     layouts::{
-        Base2K, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
+        Base2K, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos,
+        prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
 
@@ -272,7 +273,7 @@ where
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos,
+        B: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
     {
         let scratch = scratch.borrow();
         assert_eq!(res.rank(), a.rank());
@@ -284,11 +285,11 @@ where
         );
 
         let a_k = a.k().as_usize();
-        // `b` is the plaintext (a full-width integer polynomial), so its bottom-limb
-        // mask must span its full `max_k`, not the effective `k` — masking at `k`
-        // would zero the low bits of the last limb and lose precision in the
-        // convolution (see the effective-k vs max-k invariant).
-        let b_k = b.max_k().as_usize();
+        // `b` is the plaintext: an integer polynomial consumed at its declared
+        // `encoded_k()` — every encoded limb carries data, so masking at the
+        // effective `k` would zero the last limb's low bits and lose precision
+        // in the convolution.
+        let b_k = b.encoded_k().as_usize();
         let ab_base2k: usize = a.base2k().as_usize();
         assert_eq!(b.base2k().as_usize(), ab_base2k);
         assert_eq!(a_k.div_ceil(ab_base2k), a.size());
@@ -357,7 +358,7 @@ where
     fn glwe_mul_plain_assign_default<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
     {
         let scratch = scratch.borrow();
         assert!(
@@ -368,10 +369,9 @@ where
         );
 
         let res_k = res.k().as_usize();
-        // `a` is the plaintext (a full-width integer polynomial): mask its bottom
-        // limb at `max_k`, not the effective `k`, to avoid zeroing the last limb's
-        // low bits and losing convolution precision (effective-k vs max-k invariant).
-        let a_k = a.max_k().as_usize();
+        // `a` is the plaintext: an integer polynomial consumed at its declared
+        // `encoded_k()` (see `glwe_mul_plain`).
+        let a_k = a.encoded_k().as_usize();
         let ab_base2k: usize = a.base2k().as_usize();
         assert_eq!(res.base2k().as_usize(), ab_base2k);
         assert_eq!(res_k.div_ceil(ab_base2k), res.size());
@@ -452,12 +452,12 @@ pub trait GLWEMulPlainDefault<BE: Backend> {
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos;
+        B: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
 
     fn glwe_mul_plain_assign_default<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
 }
 
 #[doc(hidden)]
@@ -479,14 +479,8 @@ pub trait GLWETensoringDefault<BE: Backend> {
         A: GLWEInfos,
         B: GGLWEInfos;
 
-    fn glwe_tensor_relinearize_default<R, A, B>(
-        &self,
-        res: &mut R,
-        a: &A,
-        tsk: &B,
-        tsk_size: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_tensor_relinearize_default<R, A, B>(&self, res: &mut R, a: &A, tsk: &B, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
@@ -651,14 +645,8 @@ where
         lvl_0 + lvl_1
     }
 
-    fn glwe_tensor_relinearize_default<R, A, B>(
-        &self,
-        res: &mut R,
-        a: &A,
-        tsk: &B,
-        tsk_size: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
+    fn glwe_tensor_relinearize_default<R, A, B>(&self, res: &mut R, a: &A, tsk: &B, scratch: &mut ScratchArena<'_, BE>)
+    where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
         B: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
@@ -671,7 +659,7 @@ where
             self.glwe_tensor_relinearize_tmp_bytes_default(res, a, tsk)
         );
 
-        let tsk_size = tsk.size().min(tsk_size);
+        let tsk_size = tsk.work_size(a.k());
 
         let a_base2k: usize = a.base2k().into();
         let key_base2k: usize = tsk.base2k().into();

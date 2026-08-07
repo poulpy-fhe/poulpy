@@ -39,8 +39,8 @@ where
         let key_infos = EncryptionLayout::new_from_default_sigma(GGLWEToGGSWKeyLayout {
             n: n.into(),
             base2k: base2k.into(),
-            k: k.into(),
             dnum: dnum.into(),
+            k_aux: (base2k + module.log_n()).into(),
             dsize: Dsize(1),
             rank: rank.into(),
         })
@@ -140,8 +140,8 @@ where
         let key_infos = EncryptionLayout::new_from_default_sigma(GGLWEToGGSWKeyLayout {
             n: n.into(),
             base2k: base2k.into(),
-            k: k.into(),
             dnum: dnum.into(),
+            k_aux: (base2k + module.log_n()).into(),
             dsize: Dsize(1),
             rank: rank.into(),
         })

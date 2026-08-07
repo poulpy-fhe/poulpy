@@ -1,4 +1,7 @@
-use std::hash::{DefaultHasher, Hasher};
+use std::{
+    hash::{DefaultHasher, Hasher},
+    marker::PhantomData,
+};
 
 use rand::seq::SliceRandom;
 use rand_core::Rng;
@@ -8,7 +11,7 @@ use crate::{
     alloc_aligned,
     layouts::{
         Backend, Data, DataView, DataViewMut, DigestU64, FillUniform, HostDataMut, HostDataRef, ReaderFrom, ToOwnedDeep, VecZnx,
-        VecZnxBackendMut, VecZnxBackendRef, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxZero,
+        VecZnxBackendMut, VecZnxBackendRef, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
     },
     source::Source,
 };
@@ -21,6 +24,8 @@ use crate::{
 ///
 /// The type parameter `D` controls ownership: `Vec<u8>` for owned,
 /// `&[u8]` for shared borrows, `&mut [u8]` for mutable borrows.
+/// The type parameter `W` names the coefficient word (byte-layout
+/// contract) of the buffer.
 #[repr(C)]
 #[derive(PartialEq, Eq, Debug, Clone, Copy, Hash, Default)]
 pub struct ScalarZnxShape {
@@ -42,7 +47,7 @@ impl ScalarZnxShape {
     }
 }
 
-impl<D: Data> ScalarZnx<D> {
+impl<D: Data, W: ZnxWord> ScalarZnx<D, W> {
     pub fn n(&self) -> usize {
         self.shape.n()
     }
@@ -58,12 +63,13 @@ impl<D: Data> ScalarZnx<D> {
 
 #[repr(C)]
 #[derive(PartialEq, Eq, Debug, Clone, Hash)]
-pub struct ScalarZnx<D: Data> {
+pub struct ScalarZnx<D: Data, W: ZnxWord = i64> {
     pub data: D,
     shape: ScalarZnxShape,
+    pub _phantom: PhantomData<W>,
 }
 
-impl<D: HostDataRef> DigestU64 for ScalarZnx<D> {
+impl<D: HostDataRef, W: ZnxWord> DigestU64 for ScalarZnx<D, W> {
     fn digest_u64(&self) -> u64 {
         let mut h: DefaultHasher = DefaultHasher::new();
         h.write(self.data.as_ref());
@@ -73,17 +79,18 @@ impl<D: HostDataRef> DigestU64 for ScalarZnx<D> {
     }
 }
 
-impl<D: HostDataRef> ToOwnedDeep for ScalarZnx<D> {
-    type Owned = ScalarZnx<Vec<u8>>;
+impl<D: HostDataRef, W: ZnxWord> ToOwnedDeep for ScalarZnx<D, W> {
+    type Owned = ScalarZnx<Vec<u8>, W>;
     fn to_owned_deep(&self) -> Self::Owned {
         ScalarZnx {
             data: self.data.as_ref().to_vec(),
             shape: self.shape,
+            _phantom: PhantomData,
         }
     }
 }
 
-impl<D: Data> ZnxInfos for ScalarZnx<D> {
+impl<D: Data, W: ZnxWord> ZnxInfos for ScalarZnx<D, W> {
     fn cols(&self) -> usize {
         self.shape.cols()
     }
@@ -101,21 +108,21 @@ impl<D: Data> ZnxInfos for ScalarZnx<D> {
     }
 }
 
-impl<D: Data> DataView for ScalarZnx<D> {
+impl<D: Data, W: ZnxWord> DataView for ScalarZnx<D, W> {
     type D = D;
     fn data(&self) -> &Self::D {
         &self.data
     }
 }
 
-impl<D: Data> DataViewMut for ScalarZnx<D> {
+impl<D: Data, W: ZnxWord> DataViewMut for ScalarZnx<D, W> {
     fn data_mut(&mut self) -> &mut Self::D {
         &mut self.data
     }
 }
 
-impl<D: HostDataRef> ZnxView for ScalarZnx<D> {
-    type Scalar = i64;
+impl<D: HostDataRef, W: ZnxWord> ZnxView for ScalarZnx<D, W> {
+    type Scalar = W;
 }
 
 impl<D: HostDataMut> ScalarZnx<D> {
@@ -203,7 +210,7 @@ impl ScalarZnx<Vec<u8>> {
     /// Returns the number of bytes required to store a `ScalarZnx` with
     /// ring degree `n` and `cols` columns: `n * cols * 8`.
     pub fn bytes_of(n: usize, cols: usize) -> usize {
-        n * cols * size_of::<i64>()
+        crate::layouts::checked_product(&[n, cols, size_of::<i64>()], "ScalarZnx byte size")
     }
 
     /// Allocates a zero-initialized `ScalarZnx` aligned to [`DEFAULTALIGN`](crate::DEFAULTALIGN).
@@ -212,6 +219,7 @@ impl ScalarZnx<Vec<u8>> {
         Self {
             data,
             shape: ScalarZnxShape::new(n, cols),
+            _phantom: PhantomData,
         }
     }
 
@@ -228,16 +236,17 @@ impl ScalarZnx<Vec<u8>> {
         Self {
             data,
             shape: ScalarZnxShape::new(n, cols),
+            _phantom: PhantomData,
         }
     }
 }
 
-impl<D: HostDataMut> ZnxZero for ScalarZnx<D> {
+impl<D: HostDataMut, W: ZnxWord> ZnxZero for ScalarZnx<D, W> {
     fn zero(&mut self) {
-        self.raw_mut().fill(0)
+        self.raw_mut().fill(W::zero())
     }
     fn zero_at(&mut self, i: usize, j: usize) {
-        self.at_mut(i, j).fill(0);
+        self.at_mut(i, j).fill(W::zero());
     }
 }
 
@@ -264,12 +273,13 @@ pub type ScalarZnxBackendRef<'a, B> = ScalarZnx<<B as Backend>::BufRef<'a>>;
 /// Mutable backend-native borrow of a `ScalarZnx`.
 pub type ScalarZnxBackendMut<'a, B> = ScalarZnx<<B as Backend>::BufMut<'a>>;
 
-impl<D: Data> ScalarZnx<D> {
+impl<D: Data, W: ZnxWord> ScalarZnx<D, W> {
     /// Constructs a `ScalarZnx` from raw parts without validation.
     pub fn from_data(data: D, n: usize, cols: usize) -> Self {
         Self {
             data,
             shape: ScalarZnxShape::new(n, cols),
+            _phantom: PhantomData,
         }
     }
 }
@@ -284,6 +294,7 @@ impl<B: Backend> ScalarZnxToBackendRef<B> for ScalarZnx<B::OwnedBuf> {
         ScalarZnx {
             data: B::view(&self.data),
             shape: self.shape,
+            _phantom: PhantomData,
         }
     }
 }
@@ -293,6 +304,7 @@ impl<'b, B: Backend + 'b> ScalarZnxToBackendRef<B> for &ScalarZnx<B::BufRef<'b>>
         ScalarZnx {
             data: B::view_ref(&self.data),
             shape: self.shape,
+            _phantom: PhantomData,
         }
     }
 }
@@ -313,6 +325,7 @@ impl<B: Backend> ScalarZnxToBackendMut<B> for ScalarZnx<B::OwnedBuf> {
         ScalarZnx {
             data: B::view_mut(&mut self.data),
             shape: self.shape,
+            _phantom: PhantomData,
         }
     }
 }
@@ -327,6 +340,7 @@ fn scalar_znx_backend_ref_from_mut<'a, 'b, B: Backend + 'b>(scalar: &'a ScalarZn
     ScalarZnx {
         data: B::view_ref_mut(&scalar.data),
         shape: scalar.shape,
+        _phantom: PhantomData,
     }
 }
 
@@ -336,22 +350,24 @@ fn scalar_znx_backend_mut_from_mut<'a, 'b, B: Backend + 'b>(
     ScalarZnx {
         data: B::view_mut_ref(&mut scalar.data),
         shape: scalar.shape,
+        _phantom: PhantomData,
     }
 }
 
-impl<D: HostDataRef> ScalarZnx<D> {
+impl<D: HostDataRef, W: ZnxWord> ScalarZnx<D, W> {
     /// Borrow a host-visible `ScalarZnx` as a shared byte-slice view.
-    pub fn to_ref(&self) -> ScalarZnx<&[u8]> {
+    pub fn to_ref(&self) -> ScalarZnx<&[u8], W> {
         ScalarZnx {
             data: self.data.as_ref(),
             shape: self.shape,
+            _phantom: PhantomData,
         }
     }
 }
 
-impl<D: HostDataRef> ScalarZnx<D> {
+impl<D: HostDataRef, W: ZnxWord> ScalarZnx<D, W> {
     /// Views this `ScalarZnx` as a [`VecZnx`] with `size == 1`.
-    pub fn as_vec_znx(&self) -> VecZnx<&[u8]> {
+    pub fn as_vec_znx(&self) -> VecZnx<&[u8], W> {
         VecZnx::from_data(self.data.as_ref(), self.n(), self.cols(), 1)
     }
 }
@@ -379,9 +395,9 @@ pub fn scalar_znx_as_vec_znx_backend_ref_from_mut<'a, 'b, B: Backend + 'b>(
     VecZnx::from_data(B::view_ref_mut(&scalar.data), scalar.n(), scalar.cols(), 1)
 }
 
-impl<D: HostDataMut> ScalarZnx<D> {
+impl<D: HostDataMut, W: ZnxWord> ScalarZnx<D, W> {
     /// Mutably views this `ScalarZnx` as a [`VecZnx`] with `size == 1`.
-    pub fn as_vec_znx_mut(&mut self) -> VecZnx<&mut [u8]> {
+    pub fn as_vec_znx_mut(&mut self) -> VecZnx<&mut [u8], W> {
         let shape = self.shape();
         VecZnx::from_data(self.data.as_mut(), shape.n(), shape.cols(), 1)
     }
@@ -408,17 +424,21 @@ pub fn scalar_znx_as_vec_znx_backend_mut_from_mut<'a, 'b, B: Backend + 'b>(
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
-impl<D: HostDataMut> ReaderFrom for ScalarZnx<D> {
+impl<D: HostDataMut, W: ZnxWord> ReaderFrom for ScalarZnx<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         let new_n: usize = reader.read_u64::<LittleEndian>()? as usize;
         let new_cols: usize = reader.read_u64::<LittleEndian>()? as usize;
         let len: usize = reader.read_u64::<LittleEndian>()? as usize;
 
-        let expected_len: usize = new_n * new_cols * size_of::<i64>();
+        let expected_len: usize =
+            crate::layouts::checked_product(&[new_n, new_cols, size_of::<W>()], "ScalarZnx serialized byte size");
         if expected_len != len {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                format!("ScalarZnx metadata inconsistent: n={new_n} * cols={new_cols} * 8 = {expected_len} != data len={len}"),
+                format!(
+                    "ScalarZnx metadata inconsistent: n={new_n} * cols={new_cols} * {} = {expected_len} != data len={len}",
+                    size_of::<W>()
+                ),
             ));
         }
 
@@ -436,11 +456,12 @@ impl<D: HostDataMut> ReaderFrom for ScalarZnx<D> {
     }
 }
 
-impl<D: HostDataRef> WriterTo for ScalarZnx<D> {
-    fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+impl<D: HostDataRef, W: ZnxWord> WriterTo for ScalarZnx<D, W> {
+    fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         writer.write_u64::<LittleEndian>(self.n() as u64)?;
         writer.write_u64::<LittleEndian>(self.cols() as u64)?;
-        let coeff_bytes = self.n() * self.cols() * size_of::<i64>();
+        let coeff_bytes =
+            crate::layouts::checked_product(&[self.n(), self.cols(), size_of::<W>()], "ScalarZnx logical byte size");
         let buf: &[u8] = self.data.as_ref();
         if buf.len() < coeff_bytes {
             return Err(std::io::Error::new(
