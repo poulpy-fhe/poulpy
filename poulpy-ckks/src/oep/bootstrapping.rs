@@ -9,8 +9,11 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, GLWEToBackendMut, GLWEToBackendRef, SetCKKSInfos,
-    api::{CKKSAddOps, CKKSAllOpsTmpBytes, CKKSCopyOps, CKKSDFTOps, CKKSEvalModOps, CKKSPow2Ops, CKKSSubOps},
-    layouts::{BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertext, CKKSModuleAlloc},
+    api::{
+        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSDFTOps, CKKSEvalModOps, CKKSImagOps, CKKSPow2Ops,
+        CKKSSubOps,
+    },
+    layouts::{BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertext},
 };
 
 /// Backend override hook for [`CKKSBootstrappingOps`](crate::api::CKKSBootstrappingOps).
@@ -67,12 +70,13 @@ where
     Module<BE>: CKKSBootstrappingOpsDefault<BE>
         + GLWECopy<BE>
         + GLWEShift<BE>
-        + CKKSModuleAlloc<BE>
         + GLWEKeyswitch<BE>
         + CKKSCopyOps<BE>
         + CKKSPow2Ops<BE>
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSImagOps<BE>
         + CKKSDFTOps<BE>
         + CKKSEvalModOps<BE>
         + CKKSAllOpsTmpBytes<BE>,
