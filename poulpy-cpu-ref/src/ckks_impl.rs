@@ -40,8 +40,10 @@ where
 
 crate::impl_ckks_encoding!(FFT64Ref);
 crate::impl_ckks_paco_coeff_encoding!(FFT64Ref);
+crate::impl_ckks_ship_coeff_encoding!(FFT64Ref);
 crate::impl_ckks_encoding!(NTT4x30Ref);
 crate::impl_ckks_paco_coeff_encoding!(NTT4x30Ref);
+crate::impl_ckks_ship_coeff_encoding!(NTT4x30Ref);
 impl_ckks_add_defaults!(FFT64Ref);
 impl_ckks_add_defaults!(NTT4x30Ref);
 impl_ckks_sub_defaults!(FFT64Ref);

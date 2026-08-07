@@ -42,8 +42,10 @@ select_avx_encoding_transform!(NTT4x30Avx);
 
 ::poulpy_cpu_ref::impl_ckks_encoding!(FFT64Avx);
 ::poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(FFT64Avx);
+::poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(FFT64Avx);
 ::poulpy_cpu_ref::impl_ckks_encoding!(NTT4x30Avx);
 ::poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(NTT4x30Avx);
+::poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(NTT4x30Avx);
 impl_ckks_add_defaults!(FFT64Avx);
 impl_ckks_add_defaults!(NTT4x30Avx);
 impl_ckks_sub_defaults!(FFT64Avx);
