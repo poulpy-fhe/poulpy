@@ -1,7 +1,7 @@
 //! Composite evaluation of prepared polynomial approximations.
 
 use poulpy_core::layouts::{
-    BSGSMeta, Compact, GGLWEInfos, GLWE, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta,
+    BSGSMeta, GGLWEInfos, GLWE, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, SetBSGSMeta,
     prepared::{GLWETensorKeyPrepared, GLWETensorKeyPreparedToBackendRef},
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -25,8 +25,7 @@ where
         + CKKSModuleAlloc<BE>
         + CKKSPolynomialEvaluationOps<BE>
         + CKKSPow2Ops<BE>,
-    CKKSCiphertext<BE::OwnedBuf>:
-        GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
 {
     fn ckks_approximation_tmp_bytes<R, T, P>(&self, res: &R, tsk: &T, approximation: &PolynomialApproximation<P>) -> usize
@@ -60,9 +59,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
     {
         let required = approximation.consumed_bits(input.log_delta());
         ckks_ensure!(

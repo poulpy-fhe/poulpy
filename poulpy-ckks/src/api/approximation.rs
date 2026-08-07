@@ -1,7 +1,8 @@
 //! Evaluation of prepared polynomial approximations.
 
 use poulpy_core::layouts::{
-    BSGSMeta, Compact, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta, prepared::GLWETensorKeyPrepared,
+    BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, SetBSGSMeta,
+    prepared::GLWETensorKeyPrepared,
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
@@ -27,7 +28,7 @@ pub trait CKKSApproximationOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
+        R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         I: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta;
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos;
 }
