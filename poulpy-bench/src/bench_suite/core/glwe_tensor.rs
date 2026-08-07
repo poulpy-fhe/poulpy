@@ -114,7 +114,7 @@ pub fn bench_glwe_tensor_prepare_left<BE: Backend<OwnedBuf = Vec<u8>>>(
     let module = Module::<BE>::new(n as u64);
 
     let a = module.glwe_alloc_from_infos(glwe_infos);
-    let a_mask = msb_mask_bottom_limb(glwe_infos.base2k().as_usize(), a.max_k().as_usize());
+    let a_mask = msb_mask_bottom_limb(glwe_infos.base2k().as_usize(), a.k().as_usize());
     let mut a_prep = module.cnv_pvec_left_alloc(cols, a.max_size());
     let mut scratch = ScratchOwned::<BE>::alloc(module.cnv_prepare_left_tmp_bytes(a.max_size(), a.max_size()));
 
@@ -149,7 +149,7 @@ pub fn bench_glwe_tensor_prepare_right<BE: Backend<OwnedBuf = Vec<u8>>>(
     let module = Module::<BE>::new(n as u64);
 
     let b = module.glwe_alloc_from_infos(glwe_infos);
-    let b_mask = msb_mask_bottom_limb(glwe_infos.base2k().as_usize(), b.max_k().as_usize());
+    let b_mask = msb_mask_bottom_limb(glwe_infos.base2k().as_usize(), b.k().as_usize());
     let mut b_prep = module.cnv_pvec_right_alloc(cols, b.max_size());
     let mut scratch = ScratchOwned::<BE>::alloc(module.cnv_prepare_right_tmp_bytes(b.max_size(), b.max_size()));
 
@@ -195,8 +195,8 @@ where
         cnv_offset_lo,
     );
 
-    let a_mask = msb_mask_bottom_limb(base2k, a.max_k().as_usize());
-    let b_mask = msb_mask_bottom_limb(base2k, b.max_k().as_usize());
+    let a_mask = msb_mask_bottom_limb(base2k, a.k().as_usize());
+    let b_mask = msb_mask_bottom_limb(base2k, b.k().as_usize());
     let mut a_prep = module.cnv_pvec_left_alloc(cols, a.max_size());
     let mut b_prep = module.cnv_pvec_right_alloc(cols, b.max_size());
     let mut prep_scratch = ScratchOwned::<BE>::alloc(
@@ -301,8 +301,8 @@ pub fn bench_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>>(
         cnv_offset_lo,
     );
 
-    let a_mask = msb_mask_bottom_limb(base2k, a.max_k().as_usize());
-    let b_mask = msb_mask_bottom_limb(base2k, b.max_k().as_usize());
+    let a_mask = msb_mask_bottom_limb(base2k, a.k().as_usize());
+    let b_mask = msb_mask_bottom_limb(base2k, b.k().as_usize());
     let mut a_prep = module.cnv_pvec_left_alloc(cols, a.max_size());
     let mut b_prep = module.cnv_pvec_right_alloc(cols, b.max_size());
     let mut prep_scratch = ScratchOwned::<BE>::alloc(

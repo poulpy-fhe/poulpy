@@ -64,6 +64,18 @@ impl<D: Data> LWEInfos for LWEPlaintext<D> {
     }
 }
 
+impl<D: Data> crate::layouts::IntPolyInfos for LWEPlaintext<D> {
+    fn encoded_k(&self) -> crate::layouts::TorusPrecision {
+        self.max_k()
+    }
+}
+
+impl crate::layouts::IntPolyInfos for LWEPlaintextLayout {
+    fn encoded_k(&self) -> crate::layouts::TorusPrecision {
+        self.max_k()
+    }
+}
+
 impl<D: HostDataRef> LWEPlaintext<D> {
     /// Copies this plaintext's backing bytes into an owned buffer of
     /// backend `To`, routing via host bytes.

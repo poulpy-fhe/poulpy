@@ -69,12 +69,9 @@ where
     // one-column BIG scratch before regular GLWE automorphism. Size both routes
     // and take the larger budget.
     let cols = a.rank().as_usize() + 1;
-    // Scratch is allocated up-front and must cover the physical working set, so
-    // the budget is sized off the operands' allocated capacity (`max_size()`)
-    // rather than their current meta-derived `size()`. After the LWEInfos
-    // refactor a ciphertext's `size()` reflects only its active limbs, which can
-    // be far smaller than the limbs the runtime baby-step/PROD path actually
-    // uses (mirrors how `ckks_mul_tmp_bytes` budgets off `max_k()`).
+    // Scratch is allocated up-front and must cover the physical working set,
+    // so the budget is sized off the operands' allocated width (`max_size()`)
+    // rather than their meta-derived `size()`.
     let a_size = a.max_size();
     let pt_size = pt.max_size();
     let cnv_offset_hi = pt_size.saturating_sub(1);

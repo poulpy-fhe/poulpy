@@ -18,7 +18,7 @@ use std::{sync::mpsc::sync_channel, thread};
 use anyhow::Context;
 use poulpy_core::{
     GLWEAutomorphism, GLWEKeyswitch, GLWELinearTransformations, GLWERotate,
-    layouts::{Compact, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision},
+    layouts::{GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision},
 };
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
@@ -104,7 +104,7 @@ where
     Module<BE>: PaCoBootstrapModule<BE>,
     K: PaCoKeys<BE>,
     F: PaCoScalar,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
@@ -161,7 +161,7 @@ where
     Module<BE>: PaCoBootstrapModule<BE> + GLWEKeyswitch<BE>,
     K: PaCoKeys<BE>,
     F: PaCoScalar,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
@@ -192,7 +192,7 @@ where
     Module<BE>: PaCoBootstrapModule<BE>,
     K: PaCoKeys<BE>,
     F: PaCoScalar,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
@@ -218,9 +218,9 @@ where
         return set_recombined_sparsity(output, context, schedule.kappa);
     }
     for branch in 1..schedule.kappa {
-        // A branch compacts its logical width. Reusing that backing buffer
-        // without clearing now-inactive high limbs would let later
-        // automorphisms observe stale data, so keep branch temporaries fresh.
+        // Keep branch temporaries fresh: reusing a backing buffer across
+        // branches would let later automorphisms observe stale limbs from a
+        // previous branch.
         let mut branch_output = module.ckks_ciphertext_alloc(context.base2k(), output.k());
         run_branch_into::<BE, F, K, _>(
             module,
@@ -279,7 +279,7 @@ where
     Module<BE>: PaCoBootstrapModule<BE> + GLWEKeyswitch<BE>,
     K: PaCoKeys<BE>,
     F: PaCoScalar,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
@@ -318,7 +318,7 @@ where
     F: PaCoScalar,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
     PaCoContext<BE, F>: Sync,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact + Send + Sync,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Send + Sync,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
 {
@@ -355,7 +355,7 @@ where
     F: PaCoScalar,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
     PaCoContext<BE, F>: Sync,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact + Send + Sync,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Send + Sync,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
 {
@@ -545,7 +545,7 @@ where
     F: PaCoScalar,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
     PaCoContext<BE, F>: Sync,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact + Send + Sync,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Send + Sync,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {

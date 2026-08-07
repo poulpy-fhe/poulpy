@@ -11,7 +11,7 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// # Metadata
 ///
 /// ```text
-/// offset         = max(0, src.k() − dst.max_k())
+/// offset         = max(0, src.k() − dst.k())
 ///
 /// log_delta_out  = src.log_delta
 /// log_budget_out = src.log_budget − offset

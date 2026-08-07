@@ -7,7 +7,8 @@
 //! The macro is `pub(crate)`: it is an implementation detail of the two verb modules, not a backend-facing extension point.
 
 use crate::CKKSResult as Result;
-use poulpy_core::layouts::{Base2K, GLWEPlaintext, LWEInfos};
+use poulpy_core::layouts::IntPolyInfos;
+use poulpy_core::layouts::{Base2K, GLWEPlaintext};
 use poulpy_hal::layouts::Backend;
 
 use crate::{
@@ -41,7 +42,7 @@ where
     // coefficient `1 << log_delta`, so the limb bytes are built with the integer
     // codec and uploaded as raw bytes — no float codec or backend transfer op.
     let mut host_pt = CKKSPlaintext::from_inner(GLWEPlaintext::alloc_with_meta(1usize.into(), base2k, k_total.into()), meta);
-    let max_k = host_pt.max_k();
+    let max_k = host_pt.encoded_k();
     host_pt.encode_vec_i64(&[1i64 << meta.log_delta], max_k);
 
     let mut pt = module.ckks_pt_coeffs_alloc(1, base2k, k_total.into());
@@ -245,7 +246,7 @@ macro_rules! ckks_carry_verb_default {
                     Self: GLWEShift<BE> + GLWENormalize<BE> $(+ $PtVecBound<BE>)+ + CKKSPlaintextDefault<BE>,
                     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     A: GLWEToBackendRef<BE> + CKKSInfos,
-                    P: GLWEToBackendRef<BE> + CKKSInfos,
+                    P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
                     self.[<ckks_ $verb _pt_vec_into_unnormalized_default>](dst, a, pt, scratch)?;
                     self.glwe_normalize_assign(dst, scratch);
@@ -263,7 +264,7 @@ macro_rules! ckks_carry_verb_default {
                     Self: GLWEShift<BE> $(+ $PtVecBound<BE>)+ + CKKSPlaintextDefault<BE>,
                     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     A: GLWEToBackendRef<BE> + CKKSInfos,
-                    P: GLWEToBackendRef<BE> + CKKSInfos,
+                    P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
                     $crate::ckks_shift_stamp_unary(self, concat!(stringify!($verb), "_pt_vec"), dst, a, 0, 0, scratch)?;
                     self.[<ckks_ $verb _pt_vec_assign_unnormalized_default>](dst, pt, scratch)?;
@@ -279,7 +280,7 @@ macro_rules! ckks_carry_verb_default {
                 where
                     Self: GLWENormalize<BE> $(+ $PtVecBound<BE>)+ + CKKSPlaintextDefault<BE>,
                     Dst: GLWEToBackendMut<BE> + CKKSInfos,
-                    P: GLWEToBackendRef<BE> + CKKSInfos,
+                    P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
                     self.[<ckks_ $verb _pt_vec_assign_unnormalized_default>](dst, pt, scratch)?;
                     self.glwe_normalize_assign(dst, scratch);
@@ -295,7 +296,7 @@ macro_rules! ckks_carry_verb_default {
                 where
                     Self: CKKSPlaintextDefault<BE> $(+ $PtVecBound<BE>)+,
                     Dst: GLWEToBackendMut<BE> + CKKSInfos,
-                    P: GLWEToBackendRef<BE> + CKKSInfos,
+                    P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
                     CKKSPlaintextDefault::[<ckks_ $verb _pt_vec_into_default>](self, dst, pt, scratch)?;
                     Ok(())
@@ -314,7 +315,7 @@ macro_rules! ckks_carry_verb_default {
                     Self: GLWEShift<BE> + GLWENormalize<BE> $(+ $PtConstBound<BE>)+ + CKKSPlaintextDefault<BE>,
                     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     A: GLWEToBackendRef<BE> + CKKSInfos,
-                    P: GLWEToBackendRef<BE> + CKKSInfos,
+                    P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
                     self.[<ckks_ $verb _pt_const_into_unnormalized_default>](dst, a, dst_coeff, cst, const_coeff, scratch)?;
                     self.glwe_normalize_assign(dst, scratch);
@@ -334,7 +335,7 @@ macro_rules! ckks_carry_verb_default {
                     Self: GLWEShift<BE> $(+ $PtConstBound<BE>)+ + CKKSPlaintextDefault<BE>,
                     Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     A: GLWEToBackendRef<BE> + CKKSInfos,
-                    P: GLWEToBackendRef<BE> + CKKSInfos,
+                    P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
                     $crate::ckks_shift_stamp_unary(self, concat!(stringify!($verb), "_pt_const"), dst, a, 0, 0, scratch)?;
                     self.[<ckks_ $verb _pt_const_assign_unnormalized_default>](dst, dst_coeff, cst, const_coeff, scratch)
@@ -351,7 +352,7 @@ macro_rules! ckks_carry_verb_default {
                 where
                     Self: GLWENormalize<BE> $(+ $PtConstBound<BE>)+ + CKKSPlaintextDefault<BE>,
                     Dst: GLWEToBackendMut<BE> + CKKSInfos,
-                    P: GLWEToBackendRef<BE> + CKKSInfos,
+                    P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
                     self.[<ckks_ $verb _pt_const_assign_unnormalized_default>](dst, dst_coeff, cst, const_coeff, scratch)?;
                     self.glwe_normalize_assign(dst, scratch);
@@ -369,7 +370,7 @@ macro_rules! ckks_carry_verb_default {
                 where
                     Self: CKKSPlaintextDefault<BE> $(+ $PtConstBound<BE>)+,
                     Dst: GLWEToBackendMut<BE> + CKKSInfos,
-                    P: GLWEToBackendRef<BE> + CKKSInfos,
+                    P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
                     CKKSPlaintextDefault::[<ckks_ $verb _pt_const_into_default>](self, dst, dst_coeff, cst, const_coeff, scratch)?;
                     Ok(())

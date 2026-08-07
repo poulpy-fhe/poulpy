@@ -12,6 +12,7 @@
 //!   signed Galois element `−5^k` applied through the
 //!   plain conjugation op must equal `conj(rotate(·, k))`, in one keyswitch.
 
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWELayout, LWEInfos, Rank};
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
@@ -128,7 +129,7 @@ pub(crate) fn assert_slots<BE, F, E>(
     let n = ct.n().as_usize();
     let size = a.size().min(b.size());
     // Digits align to the plaintexts' STORAGE width (max_k), not effective k.
-    let (max_k, b2k) = (got_pt.max_k().as_usize() as i32, base2k.as_usize() as i32);
+    let (max_k, b2k) = (got_pt.encoded_k().as_usize() as i32, base2k.as_usize() as i32);
     let mut max_err = 0.0f64;
     for i in 0..n {
         let mut e = 0.0f64;

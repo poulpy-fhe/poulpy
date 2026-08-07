@@ -12,6 +12,8 @@ use std::fmt::Debug;
 
 use anyhow::{Result, anyhow, ensure};
 use poulpy_hal::layouts::Backend;
+
+use crate::layouts::IntPolyInfos;
 use rand_distr::num_traits::{Float, FloatConst, FromPrimitive};
 
 use crate::layouts::{GLWEInfos, GLWEToBackendMut, GLWEToBackendRef};
@@ -758,7 +760,7 @@ pub struct BSGSPolynomial<C> {
 
 impl<BE: Backend, C> BSGSPolynomialInfos<BE> for BSGSPolynomial<C>
 where
-    C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta,
+    C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + IntPolyInfos,
 {
     type Coeffs = C;
 
@@ -910,7 +912,7 @@ pub trait SetBSGSMeta: BSGSMeta {
 
 /// Read access to a decomposed BSGS polynomial during evaluation.
 pub trait BSGSPolynomialInfos<BE: Backend> {
-    type Coeffs: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta;
+    type Coeffs: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos + BSGSMeta;
     fn degree(&self) -> usize;
     fn baby_steps(&self) -> usize;
     fn baby_step(&self, i: usize) -> &Self::Coeffs;

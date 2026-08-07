@@ -16,6 +16,7 @@ use poulpy_hal::{
 use crate::{
     LinearTransformationGiantStep,
     default::operations::msb_mask_bottom_limb,
+    layouts::IntPolyInfos,
     layouts::{GLWEInfos, GLWEToBackendRef, prepared::PreparedDiagonal},
 };
 
@@ -103,7 +104,7 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
 ) where
     BE: Backend,
     M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
-    P: GLWEToBackendRef<BE> + GLWEInfos,
+    P: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
 {
     let cols = lhs.cols();
     let first = gs
@@ -114,7 +115,7 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
     // The streamed diagonal is an integer poly encoded across its full physical
     // width, so mask/size use `max_k`/`max_size`, not the (possibly smaller)
     // effective `k`/`size`.
-    let pt_k = first.plaintext.max_k().as_usize();
+    let pt_k = first.plaintext.encoded_k().as_usize();
     let diagonal_size = first.plaintext.max_size();
     let mask = msb_mask_bottom_limb(pt_base2k, pt_k);
     let res_dft_size = lhs.size() + diagonal_size - cnv_offset_hi;

@@ -28,7 +28,7 @@ impl<D: Data, B: Backend> LWEInfos for GLWEPrepared<D, B> {
     }
 
     fn max_size(&self) -> usize {
-        self.data.size()
+        self.data.max_size()
     }
 
     fn n(&self) -> Degree {
