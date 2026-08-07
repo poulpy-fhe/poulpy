@@ -49,7 +49,7 @@
 
 use std::marker::PhantomData;
 
-use crate::reference::ntt4x30::primes::PrimeSet;
+use crate::reference::ntt4x30::primes::PrimeSetCrt4;
 use poulpy_hal::alloc_aligned;
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -96,7 +96,7 @@ pub struct NttReducMeta {
 /// Precomputed twiddle-factor table for the forward Q120 NTT.
 ///
 /// Construct with [`NttTable::new`].
-pub struct NttTable<P: PrimeSet> {
+pub struct NttTable<P: PrimeSetCrt4> {
     /// NTT size (power of two, ≤ 2^16).
     pub n: usize,
     /// Per-level metadata (length = log2(n) + 1).
@@ -119,7 +119,7 @@ pub struct NttTable<P: PrimeSet> {
 /// Precomputed twiddle-factor table for the inverse Q120 NTT.
 ///
 /// Construct with [`NttTableInv::new`].
-pub struct NttTableInv<P: PrimeSet> {
+pub struct NttTableInv<P: PrimeSetCrt4> {
     /// NTT size (power of two, ≤ 2^16).
     pub n: usize,
     /// Per-level metadata (length = log2(n) + 1).
@@ -161,7 +161,7 @@ pub fn modq_pow(x: u32, n: i64, q: u32) -> u32 {
 }
 
 /// Returns the primitive `2n`-th roots of unity for each prime.
-fn fill_omegas<P: PrimeSet>(n: usize) -> [u32; 4] {
+fn fill_omegas<P: PrimeSetCrt4>(n: usize) -> [u32; 4] {
     debug_assert!((1..=(1 << 16)).contains(&n), "n must be a power of two in [1, 2^16], got {n}");
     std::array::from_fn(|k| modq_pow(P::OMEGA[k], (1i64 << 16) / n as i64, P::Q[k]))
 }
@@ -172,7 +172,7 @@ fn fill_omegas<P: PrimeSet>(n: usize) -> [u32; 4] {
 /// that minimises the output bit-size after reduction.
 ///
 /// Returns `(NttReducMeta, bs_after_reduc)`.
-fn fill_reduction_meta<P: PrimeSet>(bs_start: u64) -> (NttReducMeta, u64) {
+fn fill_reduction_meta<P: PrimeSetCrt4>(bs_start: u64) -> (NttReducMeta, u64) {
     let mut bs_after_reduc = u64::MAX;
     let mut min_h = bs_start / 2;
 
@@ -215,7 +215,7 @@ fn pack_omega(t: u64, half_bs: u64, q: u64) -> u64 {
     (t1 << 32) | t
 }
 
-impl<P: PrimeSet> NttTable<P> {
+impl<P: PrimeSetCrt4> NttTable<P> {
     /// Builds the forward NTT precomputation table for size `n`.
     ///
     /// `n` must be a power of two with `1 ≤ n ≤ 2^16`.
@@ -358,7 +358,7 @@ impl<P: PrimeSet> NttTable<P> {
     }
 }
 
-impl<P: PrimeSet> NttTableInv<P> {
+impl<P: PrimeSetCrt4> NttTableInv<P> {
     /// Builds the inverse NTT precomputation table for size `n`.
     ///
     /// `n` must be a power of two with `1 ≤ n ≤ 2^16`.
@@ -555,7 +555,7 @@ pub fn modq_red(x: u64, h: u64, mask: u64, cst: u64) -> u64 {
 ///
 /// # Panics
 /// Panics in debug mode if `data.len() < 4 * table.n`.
-pub fn ntt_ref<P: PrimeSet>(table: &NttTable<P>, data: &mut [u64]) {
+pub fn ntt_ref<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
     let n = table.n;
     if n == 1 {
         return;
@@ -614,7 +614,7 @@ pub fn ntt_ref<P: PrimeSet>(table: &NttTable<P>, data: &mut [u64]) {
 ///
 /// # Panics
 /// Panics in debug mode if `data.len() < 4 * table.n`.
-pub fn intt_ref<P: PrimeSet>(table: &NttTableInv<P>, data: &mut [u64]) {
+pub fn intt_ref<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &mut [u64]) {
     let n = table.n;
     if n == 1 {
         return;
@@ -834,7 +834,7 @@ mod tests {
     use super::*;
     use crate::reference::ntt4x30::{
         arithmetic::{b_from_znx64_ref, b_to_znx128_ref},
-        primes::Primes30,
+        primes::{PrimeSet, Primes30},
     };
 
     /// Verify that NTT followed by iNTT is the identity on a polynomial

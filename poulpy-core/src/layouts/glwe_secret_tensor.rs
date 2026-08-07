@@ -1,3 +1,7 @@
+use poulpy_hal::layouts::VecZnxBigToBackendMut;
+use poulpy_hal::layouts::VecZnxBigToBackendRef;
+use poulpy_hal::layouts::VecZnxDftToBackendMut;
+use poulpy_hal::layouts::VecZnxDftToBackendRef;
 use poulpy_hal::{
     api::{
         ModuleN, SvpApplyDftToDft, SvpPrepare, VecZnxBigAlloc, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
@@ -5,9 +9,8 @@ use poulpy_hal::{
     },
     layouts::{
         Backend, Data, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendRef, ScratchArena, ScratchOwned,
-        SvpPPolReborrowBackendMut, SvpPPolReborrowBackendRef, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDft,
-        VecZnxDftToBackendMut, VecZnxDftToBackendRef, ZnxView, ZnxViewMut, scalar_znx_as_vec_znx_backend_mut_from_mut,
-        scalar_znx_as_vec_znx_backend_ref_from_ref,
+        SvpPPolReborrowBackendMut, SvpPPolReborrowBackendRef, VecZnxDftOwned, ZnxView, ZnxViewMut,
+        scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_ref,
     },
 };
 
@@ -224,14 +227,14 @@ where
 
         let base2k: usize = 17;
 
-        let mut a_dft = VecZnxDft::<BE::OwnedBuf, BE>::alloc(self.n(), rank, 1);
+        let mut a_dft = VecZnxDftOwned::<BE>::alloc(self.n(), rank, 1);
         let a_backend_vec = scalar_znx_as_vec_znx_backend_ref_from_ref::<BE>(a.data());
         for i in 0..rank {
             let mut a_dft_backend = a_dft.to_backend_mut();
             self.vec_znx_dft_apply(1, 0, &mut a_dft_backend, i, &a_backend_vec, i);
         }
 
-        let mut a_ij_dft = VecZnxDft::<BE::OwnedBuf, BE>::alloc(self.n(), 1, 1);
+        let mut a_ij_dft = VecZnxDftOwned::<BE>::alloc(self.n(), 1, 1);
         let a_prepared_backend_ref = a_prepared.data.reborrow_backend_ref();
         let mut a_ij_big_backend = self.vec_znx_big_alloc(1, 1);
         let mut norm_scratch = ScratchOwned {

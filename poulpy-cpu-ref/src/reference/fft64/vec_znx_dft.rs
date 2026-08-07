@@ -19,7 +19,7 @@ pub fn vec_znx_dft_add_into<BE>(
     b: &VecZnxDftBackendRef<'_, BE>,
     b_col: usize,
 ) where
-    BE: Backend<ScalarPrep = f64> + ReimArith,
+    BE: Backend<DftWord = f64> + ReimArith,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -72,7 +72,7 @@ pub fn vec_znx_dft_add_assign<BE>(
     a: &VecZnxDftBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<ScalarPrep = f64> + ReimArith,
+    BE: Backend<DftWord = f64> + ReimArith,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -99,7 +99,7 @@ pub fn vec_znx_dft_add_scaled_assign<BE>(
     a_col: usize,
     a_scale: i64,
 ) where
-    BE: Backend<ScalarPrep = f64> + ReimArith,
+    BE: Backend<DftWord = f64> + ReimArith,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -139,7 +139,7 @@ pub fn vec_znx_dft_copy<BE>(
     a: &VecZnxDftBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<ScalarPrep = f64> + ReimArith,
+    BE: Backend<DftWord = f64> + ReimArith,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -173,7 +173,7 @@ pub fn vec_znx_dft_apply<BE>(
     a: &VecZnxBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<ScalarPrep = f64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
+    BE: Backend<DftWord = f64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
 {
     #[cfg(debug_assertions)]
@@ -209,7 +209,7 @@ pub fn vec_znx_idft_apply<BE>(
     a: &VecZnxDftBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<ScalarPrep = f64, ScalarBig = i64> + ReimArith + ReimFFTExecute<ReimIFFTTable<f64>, f64> + ZnxZero,
+    BE: Backend<DftWord = f64, BigWord = i64> + ReimArith + ReimFFTExecute<ReimIFFTTable<f64>, f64> + ZnxZero,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -243,7 +243,7 @@ pub fn vec_znx_idft_apply_tmpa<BE>(
     a: &mut VecZnxDftBackendMut<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<ScalarPrep = f64, ScalarBig = i64> + ReimArith + ReimFFTExecute<ReimIFFTTable<f64>, f64> + ZnxZero,
+    BE: Backend<DftWord = f64, BigWord = i64> + ReimArith + ReimFFTExecute<ReimIFFTTable<f64>, f64> + ZnxZero,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {
     #[cfg(debug_assertions)]
@@ -277,7 +277,7 @@ pub fn vec_znx_idft_apply_consume<'a, BE>(
     mut res: VecZnxDftBackendMut<'a, BE>,
 ) -> VecZnxBigBackendMut<'a, BE>
 where
-    BE: Backend<ScalarPrep = f64, ScalarBig = i64> + ReimArith + ReimFFTExecute<ReimIFFTTable<f64>, f64>,
+    BE: Backend<DftWord = f64, BigWord = i64> + ReimArith + ReimFFTExecute<ReimIFFTTable<f64>, f64>,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {
     #[cfg(debug_assertions)]
@@ -305,7 +305,7 @@ pub fn vec_znx_dft_sub<BE>(
     b: &VecZnxDftBackendRef<'_, BE>,
     b_col: usize,
 ) where
-    BE: Backend<ScalarPrep = f64> + ReimArith,
+    BE: Backend<DftWord = f64> + ReimArith,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -358,7 +358,7 @@ pub fn vec_znx_dft_sub_assign<BE>(
     a: &VecZnxDftBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<ScalarPrep = f64> + ReimArith,
+    BE: Backend<DftWord = f64> + ReimArith,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -383,7 +383,7 @@ pub fn vec_znx_dft_sub_negate_assign<BE>(
     a: &VecZnxDftBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<ScalarPrep = f64> + ReimArith,
+    BE: Backend<DftWord = f64> + ReimArith,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -408,7 +408,7 @@ pub fn vec_znx_dft_sub_negate_assign<BE>(
 
 pub fn vec_znx_dft_zero<BE>(res: &mut VecZnxDftBackendMut<'_, BE>, res_col: usize)
 where
-    BE: Backend<ScalarPrep = f64> + ReimArith,
+    BE: Backend<DftWord = f64> + ReimArith,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {
     for j in 0..res.size() {
@@ -479,7 +479,7 @@ pub fn vec_znx_dft_automorphism<BE>(
     a: &VecZnxDftBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<ScalarPrep = f64> + ReimArith,
+    BE: Backend<DftWord = f64> + ReimArith,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {

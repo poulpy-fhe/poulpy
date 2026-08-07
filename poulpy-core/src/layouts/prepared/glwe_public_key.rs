@@ -16,7 +16,7 @@ use crate::{
 ///
 /// Wraps a [`GLWEPrepared`] with distribution metadata for public-key
 /// encryption. Tied to a specific backend via `B: Backend`.
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq)]
 pub struct GLWEPublicKeyPrepared<D: Data, B: Backend> {
     pub(crate) key: GLWEPrepared<D, B>,
     pub(crate) dist: Distribution,

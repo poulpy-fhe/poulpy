@@ -1,6 +1,8 @@
+use poulpy_hal::layouts::VecZnxDftToBackendMut;
+use poulpy_hal::layouts::VecZnxDftToBackendRef;
 use poulpy_hal::{
     api::{VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf},
-    layouts::{Backend, Data, Module, VecZnxDft, VecZnxDftToBackendMut, VecZnxDftToBackendRef},
+    layouts::{Backend, Data, Module, VecZnxDft},
 };
 
 use crate::layouts::{Base2K, Degree, GLWEInfos, GLWEToBackendRef, GetDegree, LWEInfos, Rank, TorusPrecision};
@@ -10,9 +12,9 @@ use crate::layouts::{Base2K, Degree, GLWEInfos, GLWEToBackendRef, GetDegree, LWE
 /// Stores polynomials in the frequency domain of the backend's DFT/NTT
 /// transform, enabling O(N log N) polynomial multiplication.
 /// Tied to a specific backend via `B: Backend`.
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq)]
 pub struct GLWEPrepared<D: Data, B: Backend> {
-    pub(crate) data: VecZnxDft<D, B>,
+    pub(crate) data: VecZnxDft<D, B::DftWord, B>,
     pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
 }

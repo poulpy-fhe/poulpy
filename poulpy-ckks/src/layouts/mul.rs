@@ -1,7 +1,8 @@
 //! Prepared right operand for hoisted CKKS `ct×ct` multiplication.
 
 use poulpy_core::layouts::GLWELayout;
-use poulpy_hal::layouts::{Backend, CnvPVecR};
+use poulpy_hal::layouts::Backend;
+use poulpy_hal::layouts::CnvPVecROwned;
 
 /// A CKKS ciphertext prepared as the right operand of a `ct×ct` multiply.
 ///
@@ -16,7 +17,7 @@ use poulpy_hal::layouts::{Backend, CnvPVecR};
 /// forward transform out of the per-multiply path.
 pub struct CKKSPreparedRight<BE: Backend> {
     /// Backend-resident prepared convolution operand.
-    pub(crate) prep: CnvPVecR<BE::OwnedBuf, BE>,
+    pub(crate) prep: CnvPVecROwned<BE>,
     /// Limb count consumed at prepare time: `ceil(k / base2k)`.
     pub(crate) size: usize,
     /// `log_delta` of the source ciphertext.

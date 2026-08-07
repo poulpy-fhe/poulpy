@@ -1,4 +1,6 @@
 use super::{TestParams, download_vec_znx, upload_vec_znx, vec_znx_backend_ref};
+use crate::layouts::VecZnxBigToBackendMut;
+use crate::layouts::VecZnxBigToBackendRef;
 
 use crate::{
     api::{
@@ -9,14 +11,11 @@ use crate::{
         VecZnxBigSubNegateAssign, VecZnxBigSubSmallABackend, VecZnxBigSubSmallAssign, VecZnxBigSubSmallBBackend,
         VecZnxBigSubSmallNegateAssign,
     },
-    layouts::{
-        Backend, DigestU64, FillUniform, HostBytesBackend, Module, NoiseInfos, ScratchOwned, VecZnx, VecZnxBig,
-        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxToBackendMut,
-    },
+    layouts::{Backend, DigestU64, FillUniform, HostBytesBackend, Module, NoiseInfos, ScratchOwned, VecZnx, VecZnxToBackendMut},
     source::Source,
 };
 
-type VecZnxBigOwned<BE> = VecZnxBig<<BE as Backend>::OwnedBuf, BE>;
+use crate::layouts::VecZnxBigOwned;
 
 fn big_from_small_host<BE>(module: &Module<BE>, host: &VecZnx<impl crate::layouts::HostDataRef>) -> VecZnxBigOwned<BE>
 where

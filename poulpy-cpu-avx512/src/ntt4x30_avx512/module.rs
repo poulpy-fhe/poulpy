@@ -40,8 +40,9 @@ pub struct NTT4x30Avx512Handle {
 }
 
 impl Backend for NTT4x30Avx512 {
-    type ScalarPrep = Q120bScalar;
-    type ScalarBig = i128;
+    type DftWord = Q120bScalar;
+    type ZnxWord = i64;
+    type BigWord = i128;
     type OwnedBuf = Vec<u8>;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];

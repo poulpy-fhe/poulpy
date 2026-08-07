@@ -1,17 +1,17 @@
 use std::ops::{Deref, DerefMut};
 
 use crate::layouts::{
-    Backend, CnvPVecL, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecLReborrowBackendMut, CnvPVecLReborrowBackendRef,
-    CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecR, CnvPVecRBackendMut, CnvPVecRBackendRef, CnvPVecRReborrowBackendMut,
+    Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecLReborrowBackendMut, CnvPVecLReborrowBackendRef,
+    CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, CnvPVecRReborrowBackendMut,
     CnvPVecRReborrowBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, MatZnx, MatZnxBackendMut, MatZnxBackendRef,
     MatZnxToBackendMut, MatZnxToBackendRef, ScalarZnx, ScalarZnxBackendMut, ScalarZnxBackendRef, ScalarZnxToBackendMut,
-    ScalarZnxToBackendRef, SvpPPol, SvpPPolBackendMut, SvpPPolBackendRef, SvpPPolReborrowBackendMut, SvpPPolReborrowBackendRef,
-    SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut,
+    ScalarZnxToBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, SvpPPolReborrowBackendMut, SvpPPolReborrowBackendRef,
+    SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
     VecZnxBigBackendRef, VecZnxBigReborrowBackendMut, VecZnxBigReborrowBackendRef, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
-    VecZnxDft, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftReborrowBackendMut, VecZnxDftReborrowBackendRef,
-    VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxReborrowBackendMut, VecZnxReborrowBackendRef, VecZnxToBackendMut,
-    VecZnxToBackendRef, VmpPMat, VmpPMatBackendMut, VmpPMatBackendRef, VmpPMatReborrowBackendMut, VmpPMatReborrowBackendRef,
-    VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxInfos, mat_znx_backend_mut_from_mut, mat_znx_backend_ref_from_mut,
+    VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftReborrowBackendMut, VecZnxDftReborrowBackendRef, VecZnxDftToBackendMut,
+    VecZnxDftToBackendRef, VecZnxReborrowBackendMut, VecZnxReborrowBackendRef, VecZnxToBackendMut, VecZnxToBackendRef,
+    VmpPMatBackendMut, VmpPMatBackendRef, VmpPMatReborrowBackendMut, VmpPMatReborrowBackendRef, VmpPMatToBackendMut,
+    VmpPMatToBackendRef, ZnxInfos, mat_znx_backend_mut_from_mut, mat_znx_backend_ref_from_mut,
 };
 
 macro_rules! view_wrapper {
@@ -68,15 +68,15 @@ macro_rules! view_wrapper {
     };
 }
 
-view_wrapper!(CnvPVecLViewMut, CnvPVecL<B::BufMut<'a>, B>);
-view_wrapper!(CnvPVecRViewMut, CnvPVecR<B::BufMut<'a>, B>);
+view_wrapper!(CnvPVecLViewMut, CnvPVecLBackendMut<'a, B>);
+view_wrapper!(CnvPVecRViewMut, CnvPVecRBackendMut<'a, B>);
 view_wrapper!(MatZnxViewMut, MatZnx<B::BufMut<'a>>);
 view_wrapper!(ScalarZnxViewMut, ScalarZnx<B::BufMut<'a>>);
-view_wrapper!(SvpPPolViewMut, SvpPPol<B::BufMut<'a>, B>);
+view_wrapper!(SvpPPolViewMut, SvpPPolBackendMut<'a, B>);
 view_wrapper!(VecZnxViewMut, VecZnx<B::BufMut<'a>>);
-view_wrapper!(VecZnxBigViewMut, VecZnxBig<B::BufMut<'a>, B>);
-view_wrapper!(VecZnxDftViewMut, VecZnxDft<B::BufMut<'a>, B>);
-view_wrapper!(VmpPMatViewMut, VmpPMat<B::BufMut<'a>, B>);
+view_wrapper!(VecZnxBigViewMut, VecZnxBigBackendMut<'a, B>);
+view_wrapper!(VecZnxDftViewMut, VecZnxDftBackendMut<'a, B>);
+view_wrapper!(VmpPMatViewMut, VmpPMatBackendMut<'a, B>);
 
 impl<'a, B: Backend + 'a> CnvPVecLToBackendRef<B> for CnvPVecLViewMut<'a, B> {
     fn to_backend_ref(&self) -> CnvPVecLBackendRef<'_, B> {

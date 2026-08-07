@@ -11,12 +11,13 @@ use crate::{
     scratch::ScratchArenaTakeCore,
 };
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 struct TestBackend;
 
 impl Backend for TestBackend {
-    type ScalarBig = i64;
-    type ScalarPrep = f64;
+    type ZnxWord = i64;
+    type BigWord = i64;
+    type DftWord = f64;
     type OwnedBuf = Vec<u8>;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];

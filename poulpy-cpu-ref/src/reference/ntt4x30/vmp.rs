@@ -67,7 +67,7 @@ pub fn ntt4x30_vmp_prepare<BE>(
     a: &MatZnxBackendRef<'_, BE>,
     tmp: &mut [u64],
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttCFromB,
+    BE: Backend<DftWord = Q120bScalar> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttCFromB,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -312,7 +312,7 @@ pub fn ntt4x30_vmp_apply_dft_to_dft<BE>(
     limb_offset: usize,
     tmp: &mut [u64],
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttExtract1BlkContiguous + NttMulBbc1ColX2 + NttMulBbc2ColsX2,
+    BE: Backend<DftWord = Q120bScalar> + NttExtract1BlkContiguous + NttMulBbc1ColX2 + NttMulBbc2ColsX2,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {

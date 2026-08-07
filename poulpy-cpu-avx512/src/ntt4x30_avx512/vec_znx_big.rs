@@ -18,7 +18,7 @@ use crate::vec_znx_big_avx512::{
     vi128_negate_assign_avx512, vi128_negate_avx512, vi128_sub_assign_avx512, vi128_sub_avx512, vi128_sub_negate_assign_avx512,
     vi128_sub_small_a_avx512, vi128_sub_small_assign_avx512, vi128_sub_small_b_avx512, vi128_sub_small_negate_assign_avx512,
 };
-use poulpy_cpu_ref::hal_defaults::ScalarBigHadamardProduct;
+use poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct;
 use poulpy_cpu_ref::reference::ntt4x30::{I128BigOps, I128NormalizeOps, vec_znx_big::AssignOp};
 
 impl I128BigOps for NTT4x30Avx512 {
@@ -90,9 +90,9 @@ impl I128BigOps for NTT4x30Avx512 {
     }
 }
 
-impl ScalarBigHadamardProduct for NTT4x30Avx512 {
+impl BigWordHadamardProduct for NTT4x30Avx512 {
     #[inline(always)]
-    fn scalar_big_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
+    fn big_word_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
         Self::i128_hadamard_product_i64(res, a, b)
     }
 }

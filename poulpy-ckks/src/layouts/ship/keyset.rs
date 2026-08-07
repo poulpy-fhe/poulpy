@@ -115,8 +115,8 @@ pub struct ShipIndexKeys<D: Data> {
 /// operands.
 pub struct ShipIndexKeysPrepared<D: Data, BE: Backend> {
     pub(crate) mux_keys: Vec<Vec<HMuxRotKeyPrepared<D, BE>>>,
-    pub(crate) masks: Vec<CnvPVecL<D, BE>>,
-    pub(crate) masks2: Vec<CnvPVecL<D, BE>>,
+    pub(crate) masks: Vec<CnvPVecL<D, BE::DftWord, BE>>,
+    pub(crate) masks2: Vec<CnvPVecL<D, BE::DftWord, BE>>,
 }
 
 impl<D: Data, BE: Backend> ShipIndexKeysPrepared<D, BE> {
@@ -126,13 +126,13 @@ impl<D: Data, BE: Backend> ShipIndexKeysPrepared<D, BE> {
     }
 
     /// The `4*theta` prepared selector masks (first coefficient half).
-    pub fn masks(&self) -> &[CnvPVecL<D, BE>] {
+    pub fn masks(&self) -> &[CnvPVecL<D, BE::DftWord, BE>] {
         &self.masks
     }
 
     /// The `omega_2` mask set (second coefficient half), empty unless the
     /// keys were generated with `complex`.
-    pub fn masks2(&self) -> &[CnvPVecL<D, BE>] {
+    pub fn masks2(&self) -> &[CnvPVecL<D, BE::DftWord, BE>] {
         &self.masks2
     }
 }
@@ -263,21 +263,22 @@ impl<D: Data> ShipKeySet<D> {
             scratch.available()
         );
 
-        let prepare_masks = |masks: &[CKKSCiphertext<D>], scratch: &mut ScratchArena<'_, BE>| -> Vec<CnvPVecL<D, BE>> {
-            masks
-                .iter()
-                .map(|ct| {
-                    let mut prep = module.cnv_pvec_left_alloc(2, mask_size);
-                    module.cnv_prepare_left(
-                        &mut prep.to_backend_mut(),
-                        GLWEToBackendRef::<BE>::to_backend_ref(ct).data(),
-                        mask_msb,
-                        scratch,
-                    );
-                    prep
-                })
-                .collect()
-        };
+        let prepare_masks =
+            |masks: &[CKKSCiphertext<D>], scratch: &mut ScratchArena<'_, BE>| -> Vec<CnvPVecL<D, BE::DftWord, BE>> {
+                masks
+                    .iter()
+                    .map(|ct| {
+                        let mut prep = module.cnv_pvec_left_alloc(2, mask_size);
+                        module.cnv_prepare_left(
+                            &mut prep.to_backend_mut(),
+                            GLWEToBackendRef::<BE>::to_backend_ref(ct).data(),
+                            mask_msb,
+                            scratch,
+                        );
+                        prep
+                    })
+                    .collect()
+            };
 
         let mut index_keys = Vec::with_capacity(self.index_keys.len());
         for ik in &self.index_keys {

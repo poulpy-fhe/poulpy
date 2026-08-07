@@ -23,7 +23,7 @@ where
     }
 }
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq)]
 pub struct GLWEAutomorphismKeyPrepared<D: Data, B: Backend> {
     pub(crate) key: GGLWEPrepared<D, B>,
     pub(crate) p: i64,

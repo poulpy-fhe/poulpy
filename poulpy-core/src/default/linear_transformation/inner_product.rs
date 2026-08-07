@@ -7,9 +7,10 @@
 //! in place with `cnv_apply_dft_accumulate`, so no per-term result is ever
 //! materialized.
 
+use poulpy_hal::layouts::CnvPVecLToBackendRef;
 use poulpy_hal::{
     api::{CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic},
-    layouts::{Backend, CnvDftAccTerm, CnvPVecLToBackendRef, CnvPVecRToBackendRef, ScratchArena, VecZnxDftBackendMut},
+    layouts::{Backend, CnvDftAccTerm, CnvPVecRToBackendRef, ScratchArena, VecZnxDftBackendMut},
 };
 
 use crate::{

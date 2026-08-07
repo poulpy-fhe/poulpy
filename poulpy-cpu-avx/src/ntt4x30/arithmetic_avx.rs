@@ -41,7 +41,7 @@ use core::arch::x86_64::{
 
 use poulpy_cpu_ref::reference::ntt4x30::{
     mat_vec::BbbMeta,
-    primes::{PrimeSet, Primes30},
+    primes::{PrimeSet, PrimeSetCrt4, Primes30},
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

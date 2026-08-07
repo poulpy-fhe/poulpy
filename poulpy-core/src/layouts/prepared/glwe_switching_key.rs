@@ -14,7 +14,7 @@ use poulpy_hal::layouts::VmpPMatBackendRef;
 /// Wraps a [`GGLWEPrepared`] with input/output degree metadata for
 /// key-switching between GLWE ciphertexts. Tied to a specific backend
 /// via `B: Backend`.
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq)]
 pub struct GLWESwitchingKeyPrepared<D: Data, B: Backend> {
     pub(crate) key: GGLWEPrepared<D, B>,
     pub(crate) input_degree: Degree,  // Degree of sk_in

@@ -1,4 +1,9 @@
 use itertools::izip;
+use poulpy_cpu_ref::layouts::SvpPPolToBackendMut;
+use poulpy_cpu_ref::layouts::SvpPPolToBackendRef;
+use poulpy_cpu_ref::layouts::VecZnxBigToBackendMut;
+use poulpy_cpu_ref::layouts::VecZnxBigToBackendRef;
+use poulpy_cpu_ref::layouts::VecZnxDftToBackendMut;
 
 #[cfg(all(feature = "enable-neon", target_arch = "aarch64"))]
 use poulpy_cpu_arm::FFT64Neon as BackendImpl;
@@ -12,9 +17,8 @@ use poulpy_hal::{
         VecZnxDftAlloc, VecZnxDftApply, VecZnxFillUniformSourceBackend, VecZnxIdftApplyTmpA, VecZnxNormalizeAssignBackend,
     },
     layouts::{
-        Backend, Module, NoiseInfos, ScalarZnx, ScalarZnxToBackendRef, ScratchOwned, SvpPPolToBackendMut, SvpPPolToBackendRef,
-        VecZnx, VecZnxBig, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDft, VecZnxDftToBackendMut, VecZnxToBackendMut,
-        VecZnxToBackendRef,
+        Module, NoiseInfos, ScalarZnx, ScalarZnxToBackendRef, ScratchOwned, VecZnx, VecZnxBigOwned, VecZnxDftOwned,
+        VecZnxToBackendMut, VecZnxToBackendRef,
     },
     source::Source,
 };
@@ -62,7 +66,7 @@ fn main() {
         &mut source,
     );
 
-    let mut buf_dft: VecZnxDft<<BackendImpl as Backend>::OwnedBuf, BackendImpl> = module.vec_znx_dft_alloc(1, ct_size);
+    let mut buf_dft: VecZnxDftOwned<BackendImpl> = module.vec_znx_dft_alloc(1, ct_size);
 
     let ct_backend = <VecZnx<Vec<u8>> as VecZnxToBackendRef<BackendImpl>>::to_backend_ref(&ct);
     module.vec_znx_dft_apply(1, 0, &mut buf_dft.to_backend_mut(), 0, &ct_backend, 1);
@@ -78,7 +82,7 @@ fn main() {
     // Alias scratch space (VecZnxDft<B> is always at least as big as VecZnxBig<B>)
 
     // BIG(ct[1] * s) <- IDFT(DFT(ct[1] * s)) (not normalized)
-    let mut buf_big: VecZnxBig<<BackendImpl as Backend>::OwnedBuf, BackendImpl> = module.vec_znx_big_alloc(1, ct_size);
+    let mut buf_big: VecZnxBigOwned<BackendImpl> = module.vec_znx_big_alloc(1, ct_size);
     module.vec_znx_idft_apply_tmpa(&mut buf_big.to_backend_mut(), 0, &mut buf_dft.to_backend_mut(), 0);
 
     // Creates a plaintext: VecZnx with 1 column
@@ -111,9 +115,7 @@ fn main() {
         base2k,
         0,
         0, // Selects the first column of ct (ct[0])
-        &<VecZnxBig<<BackendImpl as Backend>::OwnedBuf, BackendImpl> as VecZnxBigToBackendRef<BackendImpl>>::to_backend_ref(
-            &buf_big,
-        ),
+        &buf_big.to_backend_ref(),
         base2k,
         0, // Selects the first column of buf_big
         &mut scratch.borrow(),
@@ -161,9 +163,7 @@ fn main() {
         base2k,
         0,
         0,
-        &<VecZnxBig<<BackendImpl as Backend>::OwnedBuf, BackendImpl> as VecZnxBigToBackendRef<BackendImpl>>::to_backend_ref(
-            &buf_big,
-        ),
+        &buf_big.to_backend_ref(),
         base2k,
         0,
         &mut scratch.borrow(),

@@ -47,7 +47,7 @@ pub(crate) fn ship_masking_accumulate<BE>(
     module: &Module<BE>,
     acc: &mut CKKSCiphertext<BE::OwnedBuf>,
     plan: &ShipPlan,
-    masks: &[CnvPVecL<BE::OwnedBuf, BE>],
+    masks: &[CnvPVecL<BE::OwnedBuf, BE::DftWord, BE>],
     pis: &[CKKSPlaintext<BE::OwnedBuf>],
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>

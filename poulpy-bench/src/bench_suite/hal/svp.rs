@@ -1,13 +1,16 @@
+use poulpy_hal::layouts::SvpPPolOwned;
+use poulpy_hal::layouts::SvpPPolToBackendMut;
+use poulpy_hal::layouts::SvpPPolToBackendRef;
+use poulpy_hal::layouts::VecZnxDftOwned;
+use poulpy_hal::layouts::VecZnxDftToBackendMut;
+use poulpy_hal::layouts::VecZnxDftToBackendRef;
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion};
 
 use poulpy_hal::{
     api::{ModuleNew, SvpApplyDft, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxDftAlloc},
-    layouts::{
-        Backend, Module, SvpPPol, SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnxDft, VecZnxDftToBackendMut,
-        VecZnxDftToBackendRef,
-    },
+    layouts::{Backend, Module},
     source::Source,
 };
 
@@ -30,7 +33,7 @@ where
         let cols: usize = 2;
         let mut source = Source::new([0u8; 32]);
 
-        let mut svp: SvpPPol<B::OwnedBuf, B> = module.svp_ppol_alloc(cols);
+        let mut svp: SvpPPolOwned<B> = module.svp_ppol_alloc(cols);
         let a = crate::random_host_scalar_znx(module.n(), cols, &mut source);
         let a = crate::upload_host_scalar_znx::<B>(&a);
 
@@ -71,8 +74,8 @@ where
         let module: Module<B> = Module::<B>::new(n as u64);
         let mut source = Source::new([0u8; 32]);
 
-        let svp: SvpPPol<B::OwnedBuf, B> = crate::random_backend_svp_ppol::<B>(module.n(), cols, &mut source);
-        let mut res: VecZnxDft<B::OwnedBuf, B> = module.vec_znx_dft_alloc(cols, size);
+        let svp: SvpPPolOwned<B> = crate::random_backend_svp_ppol::<B>(module.n(), cols, &mut source);
+        let mut res: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(cols, size);
         let a = crate::random_host_vec_znx(module.n(), cols, size, &mut source);
         let a = crate::upload_host_vec_znx::<B>(&a);
 
@@ -117,9 +120,9 @@ where
         let module: Module<B> = Module::<B>::new(n as u64);
         let mut source = Source::new([0u8; 32]);
 
-        let svp: SvpPPol<B::OwnedBuf, B> = crate::random_backend_svp_ppol::<B>(module.n(), cols, &mut source);
-        let mut res: VecZnxDft<B::OwnedBuf, B> = module.vec_znx_dft_alloc(cols, size);
-        let a: VecZnxDft<B::OwnedBuf, B> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
+        let svp: SvpPPolOwned<B> = crate::random_backend_svp_ppol::<B>(module.n(), cols, &mut source);
+        let mut res: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(cols, size);
+        let a: VecZnxDftOwned<B> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols, size, &mut source);
 
         move || {
             let svp = svp.to_backend_ref();
@@ -160,8 +163,8 @@ where
         let module: Module<B> = Module::<B>::new(n as u64);
         let mut source = Source::new([0u8; 32]);
 
-        let svp: SvpPPol<B::OwnedBuf, B> = crate::random_backend_svp_ppol::<B>(module.n(), cols, &mut source);
-        let mut res: VecZnxDft<B::OwnedBuf, B> = module.vec_znx_dft_alloc(cols, size);
+        let svp: SvpPPolOwned<B> = crate::random_backend_svp_ppol::<B>(module.n(), cols, &mut source);
+        let mut res: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(cols, size);
 
         move || {
             let svp = svp.to_backend_ref();

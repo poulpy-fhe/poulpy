@@ -29,7 +29,7 @@
 //! The accumulation is designed so that `ell < 10 000` inner products
 //! fit without overflow (all intermediate sums stay below 64 bits).
 
-use crate::reference::ntt4x30::primes::PrimeSet;
+use crate::reference::ntt4x30::primes::PrimeSetCrt4;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Precomputed metadata
@@ -38,13 +38,13 @@ use crate::reference::ntt4x30::primes::PrimeSet;
 /// Precomputed metadata for the q120a × q120a → q120b dot product.
 ///
 /// Constructed once (per prime set) and reused for any `ell < 10 000`.
-pub struct BaaMeta<P: PrimeSet> {
+pub struct BaaMeta<P: PrimeSetCrt4> {
     pub h: u64,
     pub h_pow_red: [u64; 4], // (2^h) % Q[k]
     _phantom: std::marker::PhantomData<P>,
 }
 
-impl<P: PrimeSet> BaaMeta<P> {
+impl<P: PrimeSetCrt4> BaaMeta<P> {
     /// Computes the optimal split point `h` that minimises the output
     /// bit-width for an accumulation of up to `MAX_ELL = 10 000` terms.
     pub fn new() -> Self {
@@ -77,14 +77,14 @@ impl<P: PrimeSet> BaaMeta<P> {
     }
 }
 
-impl<P: PrimeSet> Default for BaaMeta<P> {
+impl<P: PrimeSetCrt4> Default for BaaMeta<P> {
     fn default() -> Self {
         Self::new()
     }
 }
 
 /// Precomputed metadata for the q120b × q120b → q120b dot product.
-pub struct BbbMeta<P: PrimeSet> {
+pub struct BbbMeta<P: PrimeSetCrt4> {
     pub h: u64,
     pub s1h_pow_red: u64,      // 2^h (prime-independent)
     pub s2l_pow_red: [u64; 4], // 2^32 mod Q[k]
@@ -96,7 +96,7 @@ pub struct BbbMeta<P: PrimeSet> {
     _phantom: std::marker::PhantomData<P>,
 }
 
-impl<P: PrimeSet> BbbMeta<P> {
+impl<P: PrimeSetCrt4> BbbMeta<P> {
     /// Computes the optimal `h` for the four-term accumulation scheme.
     pub fn new() -> Self {
         const MAX_ELL: f64 = 10_000.0;
@@ -165,21 +165,21 @@ impl<P: PrimeSet> BbbMeta<P> {
     }
 }
 
-impl<P: PrimeSet> Default for BbbMeta<P> {
+impl<P: PrimeSetCrt4> Default for BbbMeta<P> {
     fn default() -> Self {
         Self::new()
     }
 }
 
 /// Precomputed metadata for the q120b × q120c → q120b dot product.
-pub struct BbcMeta<P: PrimeSet> {
+pub struct BbcMeta<P: PrimeSetCrt4> {
     pub h: u64,
     pub s2l_pow_red: [u64; 4], // 2^32 mod Q[k]
     pub s2h_pow_red: [u64; 4], // 2^(32+h) mod Q[k]
     _phantom: std::marker::PhantomData<P>,
 }
 
-impl<P: PrimeSet> BbcMeta<P> {
+impl<P: PrimeSetCrt4> BbcMeta<P> {
     /// Computes the optimal `h` for the two-term accumulation scheme.
     pub fn new() -> Self {
         const MAX_ELL: f64 = 10_000.0;
@@ -212,7 +212,7 @@ impl<P: PrimeSet> BbcMeta<P> {
     }
 }
 
-impl<P: PrimeSet> Default for BbcMeta<P> {
+impl<P: PrimeSetCrt4> Default for BbcMeta<P> {
     fn default() -> Self {
         Self::new()
     }
@@ -235,7 +235,7 @@ impl<P: PrimeSet> Default for BbcMeta<P> {
 ///
 /// Inputs: `x` and `y` as flat `u32` slices with stride 4 (one group
 /// of 4 per ring element), `res` as a `u64` slice of length 4.
-pub fn vec_mat1col_product_baa_ref<P: PrimeSet>(meta: &BaaMeta<P>, ell: usize, res: &mut [u64], x: &[u32], y: &[u32]) {
+pub fn vec_mat1col_product_baa_ref<P: PrimeSetCrt4>(meta: &BaaMeta<P>, ell: usize, res: &mut [u64], x: &[u32], y: &[u32]) {
     assert!(res.len() >= 4);
     assert!(x.len() >= 4 * ell);
     assert!(y.len() >= 4 * ell);
@@ -265,7 +265,7 @@ pub fn vec_mat1col_product_baa_ref<P: PrimeSet>(meta: &BaaMeta<P>, ell: usize, r
 /// `ell` must be < 10 000.
 ///
 /// Both inputs and output are flat `u64` slices with stride 4.
-pub fn vec_mat1col_product_bbb_ref<P: PrimeSet>(meta: &BbbMeta<P>, ell: usize, res: &mut [u64], x: &[u64], y: &[u64]) {
+pub fn vec_mat1col_product_bbb_ref<P: PrimeSetCrt4>(meta: &BbbMeta<P>, ell: usize, res: &mut [u64], x: &[u64], y: &[u64]) {
     assert!(res.len() >= 4);
     assert!(x.len() >= 4 * ell);
     assert!(y.len() >= 4 * ell);
@@ -356,7 +356,7 @@ pub(crate) fn accum_mul_q120_bc(s: &mut [u64; 8], x: &[u32; 8], y: &[u32; 8]) {
 
 /// Collapses the 8-wide accumulator `s` into a 4-wide q120b result.
 #[inline(always)]
-pub(crate) fn accum_to_q120b<P: PrimeSet>(res: &mut [u64; 4], s: &[u64; 8], meta: &BbcMeta<P>) {
+pub(crate) fn accum_to_q120b<P: PrimeSetCrt4>(res: &mut [u64; 4], s: &[u64; 8], meta: &BbcMeta<P>) {
     let h2 = meta.h;
     let mask2 = (1u64 << h2) - 1;
     for k in 0..4 {
@@ -371,7 +371,7 @@ pub(crate) fn accum_to_q120b<P: PrimeSet>(res: &mut [u64; 4], s: &[u64; 8], meta
 /// where `x` is in q120b and `y` is in q120c.
 ///
 /// `ell` must be < 10 000.
-pub fn vec_mat1col_product_bbc_ref<P: PrimeSet>(meta: &BbcMeta<P>, ell: usize, res: &mut [u64], x: &[u32], y: &[u32]) {
+pub fn vec_mat1col_product_bbc_ref<P: PrimeSetCrt4>(meta: &BbcMeta<P>, ell: usize, res: &mut [u64], x: &[u32], y: &[u32]) {
     assert!(res.len() >= 4);
     assert!(x.len() >= 8 * ell);
     assert!(y.len() >= 8 * ell);
@@ -391,7 +391,7 @@ pub fn vec_mat1col_product_bbc_ref<P: PrimeSet>(meta: &BbcMeta<P>, ell: usize, r
 /// `x` contains two interleaved q120b vectors (each of length `ell`),
 /// and `y` contains two interleaved q120c vectors.
 /// Both output q120b values are written into `res` (8 contiguous u64s).
-pub fn vec_mat1col_product_x2_bbc_ref<P: PrimeSet>(meta: &BbcMeta<P>, ell: usize, res: &mut [u64], x: &[u32], y: &[u32]) {
+pub fn vec_mat1col_product_x2_bbc_ref<P: PrimeSetCrt4>(meta: &BbcMeta<P>, ell: usize, res: &mut [u64], x: &[u32], y: &[u32]) {
     assert!(res.len() >= 8);
     assert!(x.len() >= 16 * ell);
     assert!(y.len() >= 16 * ell);
@@ -420,7 +420,7 @@ pub fn vec_mat1col_product_x2_bbc_ref<P: PrimeSet>(meta: &BbcMeta<P>, ell: usize
 /// Equivalent to calling `vec_mat1col_product_x2_bbc_ref` twice with
 /// two different column slices of `y`, accumulating into `res[0..8]`
 /// and `res[8..16]` respectively.
-pub fn vec_mat2cols_product_x2_bbc_ref<P: PrimeSet>(meta: &BbcMeta<P>, ell: usize, res: &mut [u64], x: &[u32], y: &[u32]) {
+pub fn vec_mat2cols_product_x2_bbc_ref<P: PrimeSetCrt4>(meta: &BbcMeta<P>, ell: usize, res: &mut [u64], x: &[u32], y: &[u32]) {
     assert!(res.len() >= 16);
     assert!(x.len() >= 16 * ell);
     assert!(y.len() >= 32 * ell);

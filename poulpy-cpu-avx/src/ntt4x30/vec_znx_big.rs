@@ -13,7 +13,7 @@ use super::{
         vi128_sub_small_a_avx2, vi128_sub_small_assign_avx2, vi128_sub_small_b_avx2, vi128_sub_small_negate_assign_avx2,
     },
 };
-use poulpy_cpu_ref::hal_defaults::ScalarBigHadamardProduct;
+use poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct;
 use poulpy_cpu_ref::reference::ntt4x30::{I128BigOps, I128NormalizeOps};
 
 impl I128BigOps for NTT4x30Avx {
@@ -85,9 +85,9 @@ impl I128BigOps for NTT4x30Avx {
     }
 }
 
-impl ScalarBigHadamardProduct for NTT4x30Avx {
+impl BigWordHadamardProduct for NTT4x30Avx {
     #[inline(always)]
-    fn scalar_big_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
+    fn big_word_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
         Self::i128_hadamard_product_i64(res, a, b)
     }
 }

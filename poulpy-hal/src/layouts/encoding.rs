@@ -35,7 +35,13 @@ impl<D: HostDataMut> VecZnx<D> {
         #[cfg(debug_assertions)]
         {
             let shape = self.shape();
-            let a = VecZnx::from_data_with_max_size(self.data.as_mut(), shape.n(), shape.cols(), shape.size(), shape.max_size());
+            let a = VecZnx::<_, i64>::from_data_with_max_size(
+                self.data.as_mut(),
+                shape.n(),
+                shape.cols(),
+                shape.size(),
+                shape.max_size(),
+            );
             assert!(
                 size <= a.size(),
                 "invalid argument k.div_ceil(base2k)={} > a.size()={}",
@@ -102,7 +108,13 @@ impl<D: HostDataMut> VecZnx<D> {
         #[cfg(debug_assertions)]
         {
             let shape = self.shape();
-            let a = VecZnx::from_data_with_max_size(self.data.as_mut(), shape.n(), shape.cols(), shape.size(), shape.max_size());
+            let a = VecZnx::<_, i64>::from_data_with_max_size(
+                self.data.as_mut(),
+                shape.n(),
+                shape.cols(),
+                shape.size(),
+                shape.max_size(),
+            );
             assert!(
                 size <= a.size(),
                 "invalid argument k.div_ceil(base2k)={} > a.size()={}",
@@ -169,7 +181,13 @@ impl<D: HostDataMut> VecZnx<D> {
         #[cfg(debug_assertions)]
         {
             let shape = self.shape();
-            let a = VecZnx::from_data_with_max_size(self.data.as_mut(), shape.n(), shape.cols(), shape.size(), shape.max_size());
+            let a = VecZnx::<_, i64>::from_data_with_max_size(
+                self.data.as_mut(),
+                shape.n(),
+                shape.cols(),
+                shape.size(),
+                shape.max_size(),
+            );
             assert!(idx < a.n());
             assert!(
                 size <= a.size(),
@@ -223,7 +241,13 @@ impl<D: HostDataRef> VecZnx<D> {
         #[cfg(debug_assertions)]
         {
             let shape = self.shape();
-            let a = VecZnx::from_data_with_max_size(self.data.as_ref(), shape.n(), shape.cols(), shape.size(), shape.max_size());
+            let a = VecZnx::<_, i64>::from_data_with_max_size(
+                self.data.as_ref(),
+                shape.n(),
+                shape.cols(),
+                shape.size(),
+                shape.max_size(),
+            );
             assert!(gap >= 1, "gap must be >= 1");
             assert!(
                 data.len() * gap == a.n(),
@@ -235,7 +259,13 @@ impl<D: HostDataRef> VecZnx<D> {
         }
 
         let shape = self.shape();
-        let a = VecZnx::from_data_with_max_size(self.data.as_ref(), shape.n(), shape.cols(), shape.size(), shape.max_size());
+        let a = VecZnx::<_, i64>::from_data_with_max_size(
+            self.data.as_ref(),
+            shape.n(),
+            shape.cols(),
+            shape.size(),
+            shape.max_size(),
+        );
         let limb0 = a.at(col, 0);
         for (j, d) in data.iter_mut().enumerate() {
             *d = limb0[j * gap];
@@ -273,7 +303,13 @@ impl<D: HostDataRef> VecZnx<D> {
         #[cfg(debug_assertions)]
         {
             let shape = self.shape();
-            let a = VecZnx::from_data_with_max_size(self.data.as_ref(), shape.n(), shape.cols(), shape.size(), shape.max_size());
+            let a = VecZnx::<_, i64>::from_data_with_max_size(
+                self.data.as_ref(),
+                shape.n(),
+                shape.cols(),
+                shape.size(),
+                shape.max_size(),
+            );
             assert!(gap >= 1, "gap must be >= 1");
             assert!(
                 data.len() * gap == a.n(),
@@ -285,7 +321,13 @@ impl<D: HostDataRef> VecZnx<D> {
         }
 
         let shape = self.shape();
-        let a = VecZnx::from_data_with_max_size(self.data.as_ref(), shape.n(), shape.cols(), shape.size(), shape.max_size());
+        let a = VecZnx::<_, i64>::from_data_with_max_size(
+            self.data.as_ref(),
+            shape.n(),
+            shape.cols(),
+            shape.size(),
+            shape.max_size(),
+        );
         let limb0 = a.at(col, 0);
         for (j, d) in data.iter_mut().enumerate() {
             *d = limb0[j * gap] as i128;
@@ -319,13 +361,25 @@ impl<D: HostDataRef> VecZnx<D> {
         #[cfg(debug_assertions)]
         {
             let shape = self.shape();
-            let a = VecZnx::from_data_with_max_size(self.data.as_ref(), shape.n(), shape.cols(), shape.size(), shape.max_size());
+            let a = VecZnx::<_, i64>::from_data_with_max_size(
+                self.data.as_ref(),
+                shape.n(),
+                shape.cols(),
+                shape.size(),
+                shape.max_size(),
+            );
             assert!(idx < a.n());
             assert!(col < a.cols())
         }
 
         let shape = self.shape();
-        let a = VecZnx::from_data_with_max_size(self.data.as_ref(), shape.n(), shape.cols(), shape.size(), shape.max_size());
+        let a = VecZnx::<_, i64>::from_data_with_max_size(
+            self.data.as_ref(),
+            shape.n(),
+            shape.cols(),
+            shape.size(),
+            shape.max_size(),
+        );
         let size: usize = k.div_ceil(base2k);
         let mut res: i64 = 0;
         let rem: usize = base2k - (k % base2k);
@@ -348,7 +402,13 @@ impl<D: HostDataRef> VecZnx<D> {
         #[cfg(debug_assertions)]
         {
             let shape = self.shape();
-            let a = VecZnx::from_data_with_max_size(self.data.as_ref(), shape.n(), shape.cols(), shape.size(), shape.max_size());
+            let a = VecZnx::<_, i64>::from_data_with_max_size(
+                self.data.as_ref(),
+                shape.n(),
+                shape.cols(),
+                shape.size(),
+                shape.max_size(),
+            );
             assert!(
                 data.len() >= a.n(),
                 "invalid data: data.len()={} < a.n()={}",
@@ -359,7 +419,13 @@ impl<D: HostDataRef> VecZnx<D> {
         }
 
         let shape = self.shape();
-        let a = VecZnx::from_data_with_max_size(self.data.as_ref(), shape.n(), shape.cols(), shape.size(), shape.max_size());
+        let a = VecZnx::<_, i64>::from_data_with_max_size(
+            self.data.as_ref(),
+            shape.n(),
+            shape.cols(),
+            shape.size(),
+            shape.max_size(),
+        );
         let size: usize = a.size();
         // Extra 256 guard bits absorb cancellation in downstream reduce(x * 2^offset)
         // operations (offset up to 128 bits) without affecting the public f64 API.
