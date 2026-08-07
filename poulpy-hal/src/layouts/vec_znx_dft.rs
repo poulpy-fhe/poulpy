@@ -131,22 +131,24 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
     pub fn max_size(&self) -> usize {
         self.shape.max_size()
     }
-
-    pub fn with_size(mut self, size: usize) -> Self {
-        assert!(size <= self.max_size());
-        self.shape = self.shape.with_size(size);
-        self
-    }
 }
 
-impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
-    /// Sets the active limb count.
+impl<'b, B: Backend + 'b> VecZnxDftBackendMut<'b, B> {
+    /// Reborrows this buffer as a mutable view with a temporary compute size.
+    ///
+    /// The returned view has the same allocation capacity as `self`, but HAL
+    /// kernels see `size` as the active limb count. Dropping the view leaves
+    /// `self`'s metadata unchanged.
     ///
     /// # Panics
     ///
     /// Panics if `size > max_size`.
-    pub fn set_size(&mut self, size: usize) {
-        self.shape = self.shape.with_size(size)
+    pub fn with_size_mut(&mut self, size: usize) -> VecZnxDftBackendMut<'_, B> {
+        VecZnxDft {
+            data: B::view_mut_ref(&mut self.data),
+            shape: self.shape.with_size(size),
+            _phantom: PhantomData,
+        }
     }
 }
 

@@ -31,6 +31,7 @@ This release adds **PaCo** (Coron & Seuré, [ePrint 2025/886](https://eprint.iac
 ### `poulpy-hal`
 - Add `ModulePlanCache` — a per-`Module`, heterogeneous, typed cache of immutable plan families (keyed by a logical ZST type via `TypeId`) with a closure-based `with_or_create` accessor that initializes each entry exactly once under concurrency — plus the `unsafe trait ModulePlanCacheProvider` implemented by backend handles that own the cache, keeping plan location and destruction order a backend concern (important for device-resource plans). This generalizes the FFT-table cache previously private to `poulpy-cpu-ref` into a neutral HAL ownership contract.
 - **Breaking:** `Backend` gains two required methods, `copy_view_to_host` and `copy_host_to_view`, for byte transfers between arena views (not owned buffers) and host slices; device backends implement them as device↔host copies. External `Backend` implementations must add both.
+- **Breaking:** remove the public `set_size` / layout-level `with_size` resizing API from `VecZnx`, `VecZnxDft`, and `VecZnxBig`. Temporary DFT compute widths now use scoped HAL `VecZnxDftBackendMut::with_size_mut` views, so owned object metadata is not mutated and restored around kernels.
 - Re-document `Module` as a multi-ring execution context: `n()` is now specified as the **maximum** ring degree and the new alias `max_n()` makes dimension-aware call sites explicit, so one module can serve every power-of-two sub-dimension (used by the new encoding plan sets).
 
 ### `poulpy-core`

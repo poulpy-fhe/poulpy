@@ -78,14 +78,15 @@ fn ship_switching_key_product<BE>(
             scratch
                 .borrow()
                 .take_vec_znx_dft_scratch(module, cols, ((a_size + di) / dsize).min(dnum));
-        res.set_size(res.max_size() - ((dsize - di) as isize - 2).max(0) as usize);
+        let res_compute_size = res.max_size() - ((dsize - di) as isize - 2).max(0) as usize;
+        let mut res_view = res.with_size_mut(res_compute_size);
         for j in 0..cols {
             module.vec_znx_dft_copy(dsize, dsize - di - 1, &mut ai_dft.to_backend_mut(), j, a, j);
         }
         if di == 0 {
-            module.vmp_apply_dft_to_dft(res, &ai_dft.to_backend_ref(), &pmat, 0, &mut scratch_1.borrow());
+            module.vmp_apply_dft_to_dft(&mut res_view, &ai_dft.to_backend_ref(), &pmat, 0, &mut scratch_1.borrow());
         } else {
-            let (mut res_tmp, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(module, cols_out, res.size());
+            let (mut res_tmp, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(module, cols_out, res_view.size());
             module.vmp_apply_dft_to_dft(
                 &mut res_tmp.to_backend_mut(),
                 &ai_dft.to_backend_ref(),
@@ -94,11 +95,10 @@ fn ship_switching_key_product<BE>(
                 &mut scratch_2.borrow(),
             );
             for col in 0..cols_out {
-                module.vec_znx_dft_add_assign(res, col, &res_tmp.to_backend_ref(), col);
+                module.vec_znx_dft_add_assign(&mut res_view, col, &res_tmp.to_backend_ref(), col);
             }
         }
     }
-    res.set_size(res.max_size());
 }
 
 /// Scratch bytes for [`ship_mux_rotate`].

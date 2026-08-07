@@ -149,22 +149,27 @@ where
                         .borrow()
                         .take_vec_znx_dft_scratch(self, cols, ((a_size + di) / dsize).min(dnum));
 
-                res.set_size(res.max_size() - ((dsize - di) as isize - 2).max(0) as usize);
+                let res_compute_size = res.max_size() - ((dsize - di) as isize - 2).max(0) as usize;
+                let mut res_view = res.with_size_mut(res_compute_size);
 
                 for j in 0..cols {
                     self.vec_znx_dft_copy(dsize, dsize - di - 1, &mut ai_dft, j, a, j);
                 }
 
                 if di == 0 {
-                    self.vmp_apply_dft_to_dft(res, &ai_dft.to_backend_ref(), &key.data, 0, &mut scratch_1.borrow());
+                    self.vmp_apply_dft_to_dft(&mut res_view, &ai_dft.to_backend_ref(), &key.data, 0, &mut scratch_1.borrow());
                 } else {
                     // Accumulate directly into res, folding the per-column DFT add into the
                     // VMP save (drops the res_dft_tmp buffer + the separate add pass).
-                    self.vmp_apply_dft_to_dft_accumulate(res, &ai_dft.to_backend_ref(), &key.data, di, &mut scratch_1.borrow());
+                    self.vmp_apply_dft_to_dft_accumulate(
+                        &mut res_view,
+                        &ai_dft.to_backend_ref(),
+                        &key.data,
+                        di,
+                        &mut scratch_1.borrow(),
+                    );
                 }
             }
-
-            res.set_size(res.max_size());
         }
     }
 }
