@@ -72,14 +72,57 @@ impl<F: Float> Cpx<F> {
 
 /// `roots[k] = exp(2πi·k / n)` for `k in 0..n`. `n = 4·slots`.
 fn roots_of_unity<F: DftScalar>(n: usize) -> Vec<Cpx<F>> {
+    debug_assert!(n >= 4 && n.is_power_of_two());
     let two = F::from(2.0).unwrap();
     let nf = F::from(n).unwrap();
-    (0..n)
+    let step = two * F::PI() / nf;
+
+    // `n == 4` has no complete octant; all of its roots are cardinal points.
+    if n == 4 {
+        return vec![
+            Cpx::new(F::one(), F::zero()),
+            Cpx::new(F::zero(), F::one()),
+            Cpx::new(-F::one(), F::zero()),
+            Cpx::new(F::zero(), -F::one()),
+        ];
+    }
+
+    // Evaluate only [0, π/4], then derive the other seven octants with
+    // exact sign changes and coordinate swaps. Unlike a recurrence, this adds
+    // no rounding drift and preserves unit modulus to the sin_cos accuracy.
+    let width = n >> 3;
+    let octant: Vec<Cpx<F>> = (0..=width)
         .map(|k| {
-            let theta = two * F::PI() * F::from(k).unwrap() / nf;
-            Cpx::new(theta.cos(), theta.sin())
+            let angle = step * F::from(k).unwrap();
+            let (sin, cos) = angle.sin_cos();
+            Cpx::new(cos, sin)
         })
-        .collect()
+        .collect();
+    let mut roots = Vec::with_capacity(n);
+    for k in 0..n {
+        let sector = k / width;
+        let offset = k % width;
+        let direct = octant[offset];
+        let reflected = octant[width - offset];
+        roots.push(match sector {
+            0 => direct,
+            1 => Cpx::new(reflected.im, reflected.re),
+            2 => Cpx::new(-direct.im, direct.re),
+            3 => Cpx::new(-reflected.re, reflected.im),
+            4 => Cpx::new(-direct.re, -direct.im),
+            5 => Cpx::new(-reflected.im, -reflected.re),
+            6 => Cpx::new(direct.im, -direct.re),
+            7 => Cpx::new(reflected.re, -reflected.im),
+            _ => unreachable!(),
+        });
+    }
+
+    // Pin the axes to their exact representations, including positive zero.
+    roots[0] = Cpx::new(F::one(), F::zero());
+    roots[n >> 2] = Cpx::new(F::zero(), F::one());
+    roots[n >> 1] = Cpx::new(-F::one(), F::zero());
+    roots[3 * (n >> 2)] = Cpx::new(F::zero(), -F::one());
+    roots
 }
 
 /// `pow5[i] = 5^i mod 4·slots`, for `i in 0..=2·slots`.
@@ -620,6 +663,61 @@ mod tests {
                 let residue = (rq - Quad::from_f64(rq_f64).unwrap()).abs().to_f64().unwrap();
                 assert!(residue > 0.0, "Quad root carries no sub-f64 mantissa: s={s} depth={depth}");
             }
+        }
+    }
+
+    #[test]
+    fn symmetric_roots_add_no_recurrence_drift() {
+        use crate::Quad;
+        use num_traits::{Float, FromPrimitive, ToPrimitive};
+
+        let n = 131072usize;
+        let roots = roots_of_unity::<f64>(n);
+        assert_eq!(roots[0], Cpx::new(1.0, 0.0));
+        assert_eq!(roots[n / 4], Cpx::new(0.0, 1.0));
+        assert_eq!(roots[n / 2], Cpx::new(-1.0, 0.0));
+        assert_eq!(roots[3 * n / 4], Cpx::new(0.0, -1.0));
+
+        let mut max_modulus_error = 0.0f64;
+        for root in &roots {
+            max_modulus_error = max_modulus_error.max((root.re.hypot(root.im) - 1.0).abs());
+        }
+        assert!(max_modulus_error <= f64::EPSILON, "modulus error: {max_modulus_error:e}");
+
+        // Every derived octant is a bit-exact sign change / coordinate swap of
+        // the first. This is platform independent and admits no drift budget.
+        let width = n / 8;
+        let assert_f64_bits = |got: Cpx<f64>, expected: Cpx<f64>| {
+            assert_eq!(got.re.to_bits(), expected.re.to_bits());
+            assert_eq!(got.im.to_bits(), expected.im.to_bits());
+        };
+        for offset in 1..width {
+            let base = roots[offset];
+            assert_f64_bits(roots[2 * width - offset], Cpx::new(base.im, base.re));
+            assert_f64_bits(roots[2 * width + offset], Cpx::new(-base.im, base.re));
+            assert_f64_bits(roots[4 * width - offset], Cpx::new(-base.re, base.im));
+            assert_f64_bits(roots[4 * width + offset], Cpx::new(-base.re, -base.im));
+            assert_f64_bits(roots[6 * width - offset], Cpx::new(-base.im, -base.re));
+            assert_f64_bits(roots[6 * width + offset], Cpx::new(base.im, -base.re));
+            assert_f64_bits(roots[8 * width - offset], Cpx::new(base.re, -base.im));
+        }
+
+        // Quad has the same exact symmetry and retains binary128 unit modulus.
+        let roots = roots_of_unity::<Quad>(n);
+        assert_eq!(roots[0].re.to_bits(), Quad::from_f64(1.0).unwrap().to_bits());
+        assert_eq!(roots[0].im.to_bits(), Quad::from_f64(0.0).unwrap().to_bits());
+        assert_eq!(roots[n / 4].re.to_bits(), Quad::from_f64(0.0).unwrap().to_bits());
+        assert_eq!(roots[n / 4].im.to_bits(), Quad::from_f64(1.0).unwrap().to_bits());
+        for offset in (1..width).step_by(257) {
+            let base = roots[offset];
+            assert_eq!(roots[2 * width - offset].re.to_bits(), base.im.to_bits());
+            assert_eq!(roots[2 * width - offset].im.to_bits(), base.re.to_bits());
+            assert_eq!(roots[6 * width + offset].re.to_bits(), base.im.to_bits());
+            assert_eq!(roots[6 * width + offset].im.to_bits(), (-base.re).to_bits());
+        }
+        for root in roots.iter().step_by(2039) {
+            let modulus_error = (root.re * root.re + root.im * root.im - Quad::from_f64(1.0).unwrap()).abs();
+            assert!(modulus_error.to_f64().unwrap() <= 5e-34);
         }
     }
 

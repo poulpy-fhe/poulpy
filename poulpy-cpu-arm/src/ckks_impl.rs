@@ -42,8 +42,10 @@ select_neon_encoding_transform!(NTT4x30Neon);
 
 ::poulpy_cpu_ref::impl_ckks_encoding!(FFT64Neon);
 ::poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(FFT64Neon);
+::poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(FFT64Neon);
 ::poulpy_cpu_ref::impl_ckks_encoding!(NTT4x30Neon);
 ::poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(NTT4x30Neon);
+::poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(NTT4x30Neon);
 impl_ckks_add_defaults!(FFT64Neon);
 impl_ckks_add_defaults!(NTT4x30Neon);
 impl_ckks_sub_defaults!(FFT64Neon);

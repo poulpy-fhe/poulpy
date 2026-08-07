@@ -90,7 +90,7 @@ const CKKS_MUL_SWEEP: &[CkksMulParams] = &[
 ];
 
 pub trait CkksBenchBackend:
-    Backend<OwnedBuf = Vec<u8>>
+    Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>
     + CKKSImpl<Self>
     + GLWEKeyswitchImpl<Self>
     + GLWEAddImpl<Self>
@@ -149,7 +149,7 @@ where
 
 impl<BE> CkksBenchBackend for BE
 where
-    BE: Backend<OwnedBuf = Vec<u8>>
+    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>
         + CKKSImpl<BE>
         + GLWEKeyswitchImpl<BE>
         + GLWEAddImpl<BE>

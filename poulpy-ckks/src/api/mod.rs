@@ -17,6 +17,7 @@ mod plaintext;
 mod polynomial_evaluation;
 mod pow2;
 mod rotate;
+mod ship;
 mod sub;
 mod tmp_bytes;
 
@@ -39,5 +40,6 @@ pub use plaintext::CKKSPlaintextVecOps;
 pub use polynomial_evaluation::*;
 pub use pow2::CKKSPow2Ops;
 pub use rotate::CKKSRotateOps;
+pub use ship::{CKKSShipOps, ShipScalar};
 pub use sub::CKKSSubOps;
 pub use tmp_bytes::CKKSAllOpsTmpBytes;

@@ -10,11 +10,13 @@
 //! Backends forward to them from their [`crate::oep::LinearTransformationDefault`]
 //! impl.
 
+use poulpy_hal::layouts::CnvPVecRToBackendMut;
 use poulpy_hal::{
     api::{CnvPVecAlloc, Convolution},
-    layouts::{Backend, CnvPVecRToBackendMut, ScratchArena},
+    layouts::{Backend, ScratchArena},
 };
 
+use crate::layouts::IntPolyInfos;
 use crate::{
     default::operations::msb_mask_bottom_limb,
     layouts::{
@@ -140,7 +142,7 @@ pub fn glwe_prepare_linear_transformation_rhs_default<BE, M, P>(
     // The diagonal is an integer poly encoded across its full physical width
     // (`max_k`), so the bottom-limb mask must span `max_k`, not the (possibly
     // smaller) effective `k`, otherwise the low limb's data is truncated.
-    let mask = msb_mask_bottom_limb(pt_base2k_usize, first.max_k().as_usize());
+    let mask = msb_mask_bottom_limb(pt_base2k_usize, first.encoded_k().as_usize());
 
     for gs in &lt.giant_steps {
         if gs.diagonals.is_empty() {

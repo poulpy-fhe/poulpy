@@ -55,7 +55,7 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
 
     /// Raises the modulus of `src` into the wider `dst`.
     ///
-    /// `dst` must be allocated at the target (raised) modulus: `dst.max_k() ≥
+    /// `dst` must carry the target (raised) modulus: `dst.k() ≥
     /// src.k()`. See the trait docs for the exact semantics and
     /// metadata effect.
     fn ckks_mod_up_into<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>

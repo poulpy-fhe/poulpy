@@ -6,7 +6,7 @@ use std::mem::size_of;
 use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::_mm_sfence;
 
-use poulpy_cpu_ref::reference::ntt4x30::{mat_vec::BbcMeta, primes::Primes30, types::Q120bScalar, vec_znx_dft::NttModuleHandle};
+use poulpy_cpu_ref::reference::ntt4x30::{mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle};
 use poulpy_hal::layouts::{CnvPVecLBackendRef, CnvPVecRBackendRef, Module, VecZnxDftBackendMut, ZnxView, ZnxViewMut};
 
 use super::{
@@ -92,7 +92,8 @@ pub(crate) unsafe fn cnv_apply_dft_lazy_avx(
     }
 
     for j in min_size..res_size {
-        res.at_mut(res_col, j).fill(Q120bScalar([0; 4]));
+        res.at_mut(res_col, j)
+            .fill(poulpy_cpu_ref::reference::ntt4x30::types::CrtWord([0; 4]));
     }
     _mm_sfence();
 }

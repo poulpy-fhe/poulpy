@@ -1,4 +1,5 @@
 use crate::CKKSResult as Result;
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_hal::layouts::{Backend, Module, ModulePlanCache};
 
 use crate::{
@@ -33,7 +34,7 @@ pub unsafe trait CKKSEncodingImpl<BE: Backend, F: CKKSEncodingScalar>: Backend {
         coeffs: &CKKSEncodingBufferBackendRef<'_, BE, F>,
     ) -> Result<()>
     where
-        P: CKKSPlaintextToBackendMut<BE>;
+        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos;
 
     /// Backend-native plaintext → coefficient mapping, without an FFT.
     fn ckks_decode_coeffs_into_impl<P>(
@@ -42,7 +43,7 @@ pub unsafe trait CKKSEncodingImpl<BE: Backend, F: CKKSEncodingScalar>: Backend {
         coeffs: &mut CKKSEncodingBufferBackendMut<'_, BE, F>,
     ) -> Result<()>
     where
-        P: CKKSPlaintextToBackendRef<BE>;
+        P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos;
 
     /// In-place planar slots → polynomial coefficients (permutation + IFFT).
     fn ckks_slots_to_coeffs_assign_impl(

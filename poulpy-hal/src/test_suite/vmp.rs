@@ -1,4 +1,10 @@
 use super::{TestParams, download_vec_znx, upload_mat_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
+use crate::layouts::VecZnxBigToBackendMut;
+use crate::layouts::VecZnxBigToBackendRef;
+use crate::layouts::VecZnxDftToBackendMut;
+use crate::layouts::VecZnxDftToBackendRef;
+use crate::layouts::VmpPMatToBackendMut;
+use crate::layouts::VmpPMatToBackendRef;
 use crate::{
     api::{
         ModuleNew, ScratchOwnedAlloc, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
@@ -6,17 +12,13 @@ use crate::{
         VmpApplyDftToDftAccumulate, VmpApplyDftToDftAccumulateTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare,
         VmpPrepareTmpBytes,
     },
-    layouts::{
-        Backend, DigestU64, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, Module, ScratchOwned, VecZnx, VecZnxBig,
-        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDft, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMat,
-        VmpPMatToBackendMut, VmpPMatToBackendRef,
-    },
+    layouts::{Backend, DigestU64, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, Module, ScratchOwned, VecZnx},
     source::Source,
 };
 
-type VecZnxDftOwned<BE> = VecZnxDft<<BE as Backend>::OwnedBuf, BE>;
-type VmpPMatOwned<BE> = VmpPMat<<BE as Backend>::OwnedBuf, BE>;
-type VecZnxBigOwned<BE> = VecZnxBig<<BE as Backend>::OwnedBuf, BE>;
+use crate::layouts::VecZnxBigOwned;
+use crate::layouts::VecZnxDftOwned;
+use crate::layouts::VmpPMatOwned;
 
 fn idft_into_alloc<BE>(module: &Module<BE>, a: &mut VecZnxDftOwned<BE>) -> VecZnxBigOwned<BE>
 where

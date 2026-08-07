@@ -61,7 +61,7 @@ use core::arch::x86_64::{
 
 use poulpy_cpu_ref::reference::ntt4x30::{
     ntt::{NttReducMeta, NttStepMeta, NttTable, NttTableInv},
-    primes::PrimeSet,
+    primes::PrimeSetCrt4,
 };
 
 /// Switch from level-order to block-order processing at this block size.
@@ -958,7 +958,7 @@ unsafe fn intt_iter_red(
 /// Caller must ensure AVX-512F is available (guaranteed by `NTT4x30Avx512` construction).
 /// `data.len()` must be `>= 4 * table.n`.
 #[target_feature(enable = "avx512f")]
-pub(crate) unsafe fn ntt_avx512<P: PrimeSet>(table: &NttTable<P>, data: &mut [u64]) {
+pub(crate) unsafe fn ntt_avx512<P: PrimeSetCrt4>(table: &NttTable<P>, data: &mut [u64]) {
     let n = table.n;
     if n == 1 {
         return;
@@ -1048,7 +1048,7 @@ pub(crate) unsafe fn ntt_avx512<P: PrimeSet>(table: &NttTable<P>, data: &mut [u6
 /// Caller must ensure AVX-512F is available (guaranteed by `NTT4x30Avx512` construction).
 /// `data.len()` must be `>= 4 * table.n`.
 #[target_feature(enable = "avx512f")]
-pub(crate) unsafe fn intt_avx512<P: PrimeSet>(table: &NttTableInv<P>, data: &mut [u64]) {
+pub(crate) unsafe fn intt_avx512<P: PrimeSetCrt4>(table: &NttTableInv<P>, data: &mut [u64]) {
     let n = table.n;
     if n == 1 {
         return;
@@ -1126,7 +1126,7 @@ mod tests {
     use poulpy_cpu_ref::reference::ntt4x30::{
         arithmetic::{b_from_znx64_ref, b_to_znx128_ref},
         ntt::{NttTable, NttTableInv, ntt_ref},
-        primes::Primes30,
+        primes::{PrimeSet, Primes30},
     };
 
     /// AVX-512F NTT followed by AVX-512F iNTT is the identity — mirrors the ref test.

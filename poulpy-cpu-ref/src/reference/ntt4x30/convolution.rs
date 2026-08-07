@@ -92,7 +92,7 @@ fn ntt4x30_conv_columns<BE, const ACC: bool, const PAIRWISE: bool>(
     b_size: usize,
     tmp: &mut [u8],
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttAddAssign + NttMulBbc1ColX2,
+    BE: Backend<DftWord = Q120bScalar> + NttAddAssign + NttMulBbc1ColX2,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
@@ -223,7 +223,7 @@ pub fn ntt4x30_cnv_apply_dft<BE>(
     b_col: usize,
     tmp: &mut [u8],
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttAddAssign + NttMulBbc1ColX2,
+    BE: Backend<DftWord = Q120bScalar> + NttAddAssign + NttMulBbc1ColX2,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
@@ -260,7 +260,7 @@ pub fn ntt4x30_cnv_apply_dft_accumulate<BE>(
     b_col: usize,
     tmp: &mut [u8],
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttAddAssign + NttMulBbc1ColX2,
+    BE: Backend<DftWord = Q120bScalar> + NttAddAssign + NttMulBbc1ColX2,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
@@ -342,7 +342,7 @@ pub fn ntt4x30_cnv_accumulate_dft<BE>(
     terms: &[crate::layouts::CnvDftAccTerm<'_, BE>],
     tmp: &mut [u8],
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar>,
+    BE: Backend<DftWord = Q120bScalar>,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
@@ -437,12 +437,12 @@ pub fn ntt4x30_cnv_pairwise_apply_dft<BE>(
     col_j: usize,
     tmp: &mut [u8],
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttAddAssign + NttMulBbc1ColX2,
+    BE: Backend<DftWord = Q120bScalar> + NttAddAssign + NttMulBbc1ColX2,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
     if col_i == col_j {
-        ntt4x30_cnv_apply_dft(module, cnv_offset, res, res_col, a, col_i, b, col_j, tmp);
+        ntt4x30_cnv_apply_dft::<BE>(module, cnv_offset, res, res_col, a, col_i, b, col_j, tmp);
         return;
     }
 
@@ -490,7 +490,7 @@ pub fn ntt4x30_cnv_prepare_left<BE>(
     mask: i64,
     tmp: &mut [u8],
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + NttPackLeft1BlkX2 + 'static,
+    BE: Backend<DftWord = Q120bScalar> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + NttPackLeft1BlkX2 + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
 {
     let n = res.n();
@@ -548,7 +548,7 @@ pub fn ntt4x30_cnv_prepare_right<BE>(
     mask: i64,
     tmp: &mut [u64],
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + NttCFromB + 'static,
+    BE: Backend<DftWord = Q120bScalar> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + NttCFromB + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
 {
     let n = res.n();
@@ -601,7 +601,7 @@ pub fn ntt4x30_cnv_prepare_self<BE>(
     mask: i64,
     tmp: &mut [u8],
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar>
+    BE: Backend<DftWord = Q120bScalar>
         + NttFromZnx64
         + NttDFTExecute<NttTable<Primes30>>
         + NttCFromB
@@ -684,7 +684,7 @@ pub fn ntt4x30_cnv_by_const_apply<BE>(
     b_coeff: usize,
     _tmp: &mut [u8],
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar, ScalarBig = i128> + 'static,
+    BE: Backend<DftWord = Q120bScalar, BigWord = i128> + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8]>,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
@@ -737,7 +737,7 @@ pub fn ntt4x30_cnv_prepare_left_lazy<BE>(
     mask: i64,
     _tmp: &mut [u8],
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + 'static,
+    BE: Backend<DftWord = Q120bScalar> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
 {
     let table = module.get_ntt_table();
@@ -774,7 +774,7 @@ pub fn ntt4x30_cnv_prepare_right_lazy<BE>(
     mask: i64,
     tmp: &mut [u64],
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + NttCFromB + 'static,
+    BE: Backend<DftWord = Q120bScalar> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + NttCFromB + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
 {
     let n = res.n();
@@ -819,7 +819,7 @@ pub fn ntt4x30_cnv_apply_dft_lazy<BE>(
     b_col: usize,
     tmp: &mut [u8],
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttMulBbc1ColX2 + NttPackLeft1BlkX2 + NttPackRight1BlkX2,
+    BE: Backend<DftWord = Q120bScalar> + NttMulBbc1ColX2 + NttPackLeft1BlkX2 + NttPackRight1BlkX2,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {

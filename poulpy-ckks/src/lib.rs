@@ -19,8 +19,9 @@
 //! `k() = log_delta + log_budget`.
 //! Storage is rounded up to the next multiple of `base2k`, so the allocated
 //! capacity `max_k()` may exceed the effective width `k()`. Arithmetic APIs
-//! update this metadata for you, while maintenance helpers let you compact or
-//! resize owned buffers without violating those invariants.
+//! update this metadata for you; buffers always stay at their allocated
+//! width, and allocating a destination at exactly the `k` you want is how
+//! results are narrowed.
 //!
 //! Safe add/sub operations return K-normalized ciphertexts. Their
 //! unnormalized variants live on [`api::CKKSAddOps`] and [`api::CKKSSubOps`]
@@ -101,10 +102,11 @@ pub(crate) use error::{
 /// Quad-precision (IEEE 754 binary128) CKKS scalar.
 ///
 /// Always the portable [`scalar::Quad`] newtype over the primitive `f128`, in
-/// every configuration. Under the `libquadmath` feature on x86_64 only its
-/// *transcendental* math is routed through libquadmath (faster for on-the-fly
-/// FFT-table builds); storage, codecs, and exact arithmetic are unchanged, so
-/// the type — and its `bytemuck::Pod` encoding — is identical across features.
+/// every configuration. Under the `libquadmath` feature on non-Apple x86_64
+/// only its libm-backed math is routed through libquadmath (faster for
+/// on-the-fly FFT-table builds); storage, codecs, and exact arithmetic are
+/// unchanged, so the type — and its `bytemuck::Pod` encoding — is identical
+/// across features.
 pub use scalar::Quad;
 
 /// Backend-compatible shared CKKS plaintext storage.
@@ -324,7 +326,7 @@ impl CKKSInfos for CKKSLayout {
 
 /// Bits a binary add/sub must shift its result down to fit `res`: the excess of
 /// the **natural result width** — `min(log_delta) + min(log_budget)`, the meta
-/// the operation stamps — over `res.max_k()`. Using the natural width (rather
+/// the operation stamps — over the destination's requested `res.k()`. Using the natural width (rather
 /// than `min(a.k, b.k)`, which is `≥` it whenever deltas *and* budgets both
 /// differ) charges exactly the budget the narrower destination forces and no
 /// more; the larger-delta operand's truncated tail lies below the claimed
@@ -337,7 +339,7 @@ where
     B: CKKSInfos + ?Sized,
 {
     let natural_k = a.log_delta().min(b.log_delta()) + a.log_budget().min(b.log_budget());
-    natural_k.saturating_sub(res.max_k().as_usize())
+    natural_k.saturating_sub(res.k().as_usize())
 }
 
 pub(crate) fn ckks_offset_unary<R, A>(res: &R, a: &A) -> usize
@@ -345,7 +347,7 @@ where
     R: CKKSInfos + ?Sized,
     A: CKKSInfos + ?Sized,
 {
-    a.k().as_usize().saturating_sub(res.max_k().as_usize())
+    a.k().as_usize().saturating_sub(res.k().as_usize())
 }
 
 /// Shared unary-op preamble: aligns `src` into `dst` (left shift by

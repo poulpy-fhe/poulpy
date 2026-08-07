@@ -1,9 +1,10 @@
 use crate::CKKSResult as Result;
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     GLWECopy, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWETensoring, GiantStepTensorBounds, ScratchArenaTakeCore,
     glwe_prepare_right, glwe_tensor_apply_prepared_right,
     layouts::{
-        Compact, GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEPlaintextLayout, GLWETensor, GLWETensorViewMut, GLWEToBackendMut,
+        GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWEPlaintextLayout, GLWETensor, GLWETensorViewMut, GLWEToBackendMut,
         GLWEToBackendRef, LWEInfos, ModuleCoreAlloc, TorusPrecision, prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
@@ -26,15 +27,16 @@ pub trait CKKSMulDefault<BE: Backend> {
         T: GGLWEInfos,
         Self: GLWETensoring<BE>,
     {
-        // The op carves its tensor intermediate at `max(a.max_k, b.max_k)`
-        // (`ckks_mul_into`) or `max(dst.max_k, a.max_k)` (`ckks_mul_assign`), so
-        // sizing must cover the widest of the three — a destination narrower than
-        // its operands is a supported call, and the tensor-apply scratch also
-        // scales with the real operand limb counts.
+        // The op carves its tensor intermediate at the operands' effective
+        // width `max(a.k, b.k)` (`ckks_mul_into`) or `max(dst.k, a.k)`
+        // (`ckks_mul_assign`), matching the `cnv_offset` rule in
+        // `mul_ct_params_raw` (which is already expressed on effective `k`).
+        // Sizing must cover the widest of the three — a destination narrower
+        // than its operands is a supported call.
         let tensor_layout = GLWELayout {
             n: res.n(),
             base2k: res.base2k(),
-            k: TorusPrecision(res.max_k().max(a.max_k()).max(b.max_k()).as_u32()),
+            k: TorusPrecision(res.k().max(a.k()).max(b.k()).as_u32()),
             rank: res.rank(),
         };
 
@@ -56,7 +58,7 @@ pub trait CKKSMulDefault<BE: Backend> {
     ) -> Result<()>
     where
         Self: GLWETensoring<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         B: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -67,7 +69,7 @@ pub trait CKKSMulDefault<BE: Backend> {
             self,
             dst,
             tsk,
-            a.max_k().max(b.max_k()),
+            a.k().max(b.k()),
             MulStamp {
                 log_budget: res_log_budget,
                 log_delta: res_log_delta,
@@ -83,7 +85,7 @@ pub trait CKKSMulDefault<BE: Backend> {
     fn ckks_mul_assign_default<Dst, A, T>(&self, dst: &mut Dst, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: GLWETensoring<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
@@ -93,7 +95,7 @@ pub trait CKKSMulDefault<BE: Backend> {
             self,
             dst,
             tsk,
-            dst.max_k().max(a.max_k()),
+            dst.k().max(a.k()),
             MulStamp {
                 log_budget: res_log_budget,
                 log_delta: res_log_delta,
@@ -143,7 +145,7 @@ pub trait CKKSMulDefault<BE: Backend> {
     ) -> Result<()>
     where
         Self: GLWETensoring<BE> + GiantStepTensorBounds<BE>,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
         // Prepared operands are long-lived cached objects: reject one built
@@ -175,7 +177,7 @@ pub trait CKKSMulDefault<BE: Backend> {
             self,
             dst,
             tsk,
-            dst.max_k().max(TorusPrecision(prepared.k as u32)),
+            dst.k().max(TorusPrecision(prepared.k as u32)),
             MulStamp {
                 log_budget: res_log_budget,
                 log_delta: res_log_delta,
@@ -196,11 +198,12 @@ pub trait CKKSMulDefault<BE: Backend> {
         Self: GLWETensoring<BE>,
     {
         // Mirror of `ckks_mul_tmp_bytes_default`: the op's tensor intermediate is
-        // carved at the operand's width, which may exceed the destination's.
+        // carved at the operand's effective width, which may exceed the
+        // destination's.
         let tensor_layout = GLWELayout {
             n: res.n(),
             base2k: res.base2k(),
-            k: TorusPrecision(res.max_k().max(a.max_k()).as_u32()),
+            k: TorusPrecision(res.k().max(a.k()).as_u32()),
             rank: res.rank(),
         };
 
@@ -215,7 +218,7 @@ pub trait CKKSMulDefault<BE: Backend> {
     fn ckks_square_into_default<Dst, A, T>(&self, dst: &mut Dst, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: GLWETensoring<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
@@ -225,7 +228,7 @@ pub trait CKKSMulDefault<BE: Backend> {
             self,
             dst,
             tsk,
-            a.max_k(),
+            a.k(),
             MulStamp {
                 log_budget: res_log_budget,
                 log_delta: res_log_delta,
@@ -240,7 +243,7 @@ pub trait CKKSMulDefault<BE: Backend> {
     fn ckks_square_assign_default<Dst, T>(&self, dst: &mut Dst, tsk: &T, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Self: GLWETensoring<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_ct_params(dst, dst, dst)?;
@@ -249,7 +252,7 @@ pub trait CKKSMulDefault<BE: Backend> {
             self,
             dst,
             tsk,
-            dst.max_k(),
+            dst.k(),
             MulStamp {
                 log_budget: res_log_budget,
                 log_delta: res_log_delta,
@@ -301,9 +304,9 @@ pub trait CKKSMulDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos + CKKSInfos,
+        P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
         Self: GLWECopy<BE> + GLWEMulPlain<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf> + VecZnxCopyBackend<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, a, pt)?;
@@ -314,23 +317,15 @@ pub trait CKKSMulDefault<BE: Backend> {
         dst.set_log_delta(res_log_delta);
         // The product of values sparse at `s` and `t` is sparse at `min(s, t)`.
         dst.set_log_sparsity(a.log_sparsity().min(pt.log_sparsity()));
-        // `set_log_*` updates the effective torus width but deliberately does
-        // not grow a buffer compacted by an earlier operation. Re-expand the
-        // complete active backend view before writing: the core copy then
-        // zeroes every limb above the natural result, including carry-guard
-        // limbs that `compact()` may retain. This makes caller-owned
-        // destinations safely reusable across different result widths.
-        dst.set_size(dst.max_size());
         self.glwe_mul_plain(cnv_offset, dst, a, pt, scratch);
-        dst.compact();
         Ok(())
     }
 
     fn ckks_mul_pt_vec_assign_default<Dst, P>(&self, dst: &mut Dst, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        P: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos + CKKSInfos,
+        P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
         Self: GLWECopy<BE> + GLWEMulPlain<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf> + VecZnxCopyBackend<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, dst, pt)?;
         self.glwe_mul_plain_assign(cnv_offset, dst, pt, scratch);
@@ -338,7 +333,6 @@ pub trait CKKSMulDefault<BE: Backend> {
         dst.set_log_delta(res_log_delta);
         // The product of values sparse at `s` and `t` is sparse at `min(s, t)`.
         dst.set_log_sparsity(dst.log_sparsity().min(pt.log_sparsity()));
-        dst.compact();
         Ok(())
     }
 
@@ -351,9 +345,9 @@ pub trait CKKSMulDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos + CKKSInfos,
+        P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
         Self: GLWEMulConst<BE>,
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, a, pt)?;
@@ -366,7 +360,6 @@ pub trait CKKSMulDefault<BE: Backend> {
         dst.set_log_sparsity(a.log_sparsity());
         self.glwe_mul_const(cnv_offset, dst, a, pt, pt_coeff, scratch);
 
-        dst.compact();
         Ok(())
     }
 
@@ -378,9 +371,9 @@ pub trait CKKSMulDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        P: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos + CKKSInfos,
+        P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + GLWEInfos + CKKSInfos,
         Self: GLWEMulConst<BE>,
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     {
         let (res_log_budget, res_log_delta, cnv_offset) = get_mul_pt_params(dst, dst, cnst)?;
 
@@ -388,7 +381,6 @@ pub trait CKKSMulDefault<BE: Backend> {
 
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
-        dst.compact();
         Ok(())
     }
 }
@@ -418,7 +410,7 @@ enum StampOrder {
 /// Shared body of the five tensor-multiplication variants (`mul_into`,
 /// `mul_assign`, `mul_prepared_assign`, `square_into`, `square_assign`):
 /// stamp (per `order`), carve the tensor intermediate at `tensor_k`, run the
-/// variant's `apply` into it, relinearize into `dst`, stamp, compact.
+/// variant's `apply` into it, relinearize into `dst`, stamp the metadata.
 ///
 /// `apply` receives the carved tensor, a shared reborrow of `dst` (used by the
 /// `_assign` variants, ignored by `_into`), and the nested scratch arena.
@@ -436,7 +428,7 @@ fn tensor_mul_core<BE, M, Dst, T>(
 where
     BE: Backend,
     M: GLWETensoring<BE> + ?Sized,
-    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
+    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
     T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let do_stamp = |dst: &mut Dst| {
@@ -464,7 +456,6 @@ where
     if matches!(order, StampOrder::AfterApply) {
         do_stamp(dst);
     }
-    dst.compact();
     Ok(())
 }
 
@@ -514,7 +505,7 @@ pub(crate) fn get_mul_pt_params<R, A, B>(res: &R, a: &A, b: &B) -> Result<(usize
 where
     R: CKKSInfos,
     A: CKKSInfos,
-    B: CKKSInfos,
+    B: CKKSInfos + IntPolyInfos,
 {
     mul_pt_params_raw(
         res.k().as_usize(),
@@ -522,7 +513,7 @@ where
         a.log_budget(),
         b.log_delta(),
         b.log_budget(),
-        b.max_k().as_usize(),
+        b.encoded_k().as_usize(),
     )
 }
 

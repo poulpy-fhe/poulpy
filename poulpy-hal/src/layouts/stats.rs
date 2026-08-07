@@ -58,7 +58,7 @@ impl<D: HostDataRef> VecZnx<D> {
     }
 }
 
-impl<D: HostDataRef, B: Backend + Backend<ScalarBig = i64>> VecZnxBig<D, B> {
+impl<D: HostDataRef, B: Backend<BigWord = i64>> VecZnxBig<D, i64, B> {
     pub fn stats(&self, base2k: usize, col: usize) -> Stats {
         let shape = self.shape();
         let znx: VecZnx<&[u8]> =

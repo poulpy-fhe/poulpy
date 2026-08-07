@@ -54,8 +54,8 @@ pub fn bench_glwe_external_product<BE: Backend<OwnedBuf = Vec<u8>>>(
             | module.glwe_external_product_tmp_bytes(glwe_infos, glwe_infos, ggsw_infos),
     );
 
-    let ggsw_enc_infos = NoiseInfos::new(ggsw_infos.max_k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
-    let glwe_enc_infos = NoiseInfos::new(glwe_infos.max_k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
+    let ggsw_enc_infos = NoiseInfos::new(ggsw_infos.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
+    let glwe_enc_infos = NoiseInfos::new(glwe_infos.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
 
     module.ggsw_encrypt_sk(
         &mut ct_ggsw,
@@ -123,7 +123,7 @@ where
             | module.glwe_external_product_tmp_bytes(infos, infos, infos),
     );
 
-    let enc_infos = NoiseInfos::new(infos.max_k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
+    let enc_infos = NoiseInfos::new(infos.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
 
     module.ggsw_encrypt_sk(
         &mut ct_ggsw,

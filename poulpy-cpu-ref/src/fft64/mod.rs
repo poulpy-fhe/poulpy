@@ -26,8 +26,8 @@
 //!
 //! # Scalar types
 //!
-//! - `ScalarPrep = f64`: coefficients in the DFT / frequency domain.
-//! - `ScalarBig  = i64`: coefficients in the large-integer (multi-word) domain.
+//! - `DftWord = f64`: coefficients in the DFT / frequency domain.
+//! - `BigWord  = i64`: coefficients in the large-integer (multi-word) domain.
 //!   meaning each coefficient occupies exactly one scalar word.
 
 mod module;
@@ -47,8 +47,8 @@ pub use reim::FFT64ReimTable;
 ///
 /// # Backend characteristics
 ///
-/// - **ScalarPrep**: `f64` — DFT-domain coefficients are 64-bit IEEE 754 floats.
-/// - **ScalarBig**: `i64` — large-coefficient ring elements use 64-bit signed integers.
+/// - **DftWord**: `f64` — DFT-domain coefficients are 64-bit IEEE 754 floats.
+/// - **BigWord**: `i64` — large-coefficient ring elements use 64-bit signed integers.
 /// - **FFT tables**: precomputed twiddle factors stored in the module handle
 ///   (`FFT64RefHandle`), shared across all operations on the same module.
 ///
@@ -58,5 +58,5 @@ pub use reim::FFT64ReimTable;
 /// The `Module<FFT64Ref>` that holds the FFT tables is also `Send + Sync`, so modules can
 /// be shared across threads. Individual operations require exclusive (`&mut`) access to their
 /// output buffers and scratch space, preventing data races at the API level.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FFT64Ref;

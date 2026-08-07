@@ -17,8 +17,8 @@
 //!
 //! # Scalar types
 //!
-//! - `ScalarPrep = Q120bScalar` — NTT-domain coefficients (4 × u64, 32 bytes/coeff).
-//! - `ScalarBig  = i128` — CRT-reconstructed large coefficients.
+//! - `DftWord = Q120bScalar` — NTT-domain coefficients (4 × u64, 32 bytes/coeff).
+//! - `BigWord  = i128` — CRT-reconstructed large coefficients.
 
 pub(crate) mod arithmetic_avx;
 pub(crate) mod automorphism;
@@ -42,8 +42,8 @@ mod znx;
 ///
 /// # Backend characteristics
 ///
-/// - **ScalarPrep**: `Q120bScalar` — NTT-domain coefficients stored as 4 × u64 CRT residues.
-/// - **ScalarBig**: `i128` — large-coefficient ring elements use 128-bit signed integers.
+/// - **DftWord**: `Q120bScalar` — NTT-domain coefficients stored as 4 × u64 CRT residues.
+/// - **BigWord**: `i128` — large-coefficient ring elements use 128-bit signed integers.
 /// - **Prime set**: `Primes30` (four ~30-bit primes, Q ≈ 2^120).
 ///
 /// # CPU feature requirements
@@ -54,7 +54,7 @@ mod znx;
 /// # Thread safety
 ///
 /// `NTT4x30Avx` is `Send + Sync` (derived from being a zero-sized, field-less struct).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NTT4x30Avx;
 
 #[cfg(test)]

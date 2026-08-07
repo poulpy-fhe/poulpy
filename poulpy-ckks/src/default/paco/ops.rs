@@ -36,8 +36,7 @@ use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::{
     GLWEAutomorphism,
     layouts::{
-        Compact, GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef,
-        prepared::GLWETensorKeyPreparedToBackendRef,
+        GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
 use poulpy_hal::{
@@ -117,7 +116,7 @@ pub trait PaCoSlotOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
@@ -164,7 +163,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,

@@ -8,6 +8,7 @@
 use crate::{CKKSResult as Result, ckks_ensure};
 use bytemuck::Pod;
 use num_traits::FloatConst;
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_hal::layouts::{Backend, ScratchArena};
 
 use crate::{
@@ -45,7 +46,7 @@ pub trait CKKSEncodingOps<BE: Backend, F: CKKSEncodingScalar> {
     /// mapping.
     fn ckks_encode_slots_assign_into<P, C>(&self, pt: &mut P, slots: &mut C) -> Result<()>
     where
-        P: CKKSPlaintextToBackendMut<BE>,
+        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos,
         C: CKKSEncodingBufferToBackendMut<BE, F>,
     {
         self.ckks_slots_to_coeffs_assign(slots)?;
@@ -56,7 +57,7 @@ pub trait CKKSEncodingOps<BE: Backend, F: CKKSEncodingScalar> {
     /// composing coefficient mapping and the coefficient→slot transform.
     fn ckks_decode_slots_into<P, C>(&self, pt: &P, slots: &mut C) -> Result<()>
     where
-        P: CKKSPlaintextToBackendRef<BE>,
+        P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
         C: CKKSEncodingBufferToBackendMut<BE, F>,
     {
         self.ckks_decode_coeffs_into(pt, slots)?;
@@ -66,13 +67,13 @@ pub trait CKKSEncodingOps<BE: Backend, F: CKKSEncodingScalar> {
     /// Quantizes backend-resident polynomial coefficients without an IFFT.
     fn ckks_encode_coeffs_into<P, C>(&self, pt: &mut P, coeffs: &C) -> Result<()>
     where
-        P: CKKSPlaintextToBackendMut<BE>,
+        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos,
         C: CKKSEncodingBufferToBackendRef<BE, F>;
 
     /// Dequantizes a plaintext into backend-resident polynomial coefficients.
     fn ckks_decode_coeffs_into<P, C>(&self, pt: &P, coeffs: &mut C) -> Result<()>
     where
-        P: CKKSPlaintextToBackendRef<BE>,
+        P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
         C: CKKSEncodingBufferToBackendMut<BE, F>;
 
     /// In-place planar complex slots → polynomial coefficients.
@@ -101,7 +102,7 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
     /// Encodes host complex slots through one backend-native arena buffer.
     fn ckks_encode_reim_into<P>(&self, pt: &mut P, re: &[F], im: &[F], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        P: CKKSPlaintextToBackendMut<BE>,
+        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos,
     {
         ckks_ensure!(re.len() == im.len(), "real and imaginary slot counts differ");
         ckks_ensure!(
@@ -130,7 +131,7 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
     /// arena buffer.
     fn ckks_decode_reim_into<P>(&self, pt: &P, re: &mut [F], im: &mut [F], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        P: CKKSPlaintextToBackendRef<BE>,
+        P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
     {
         ckks_ensure!(re.len() == im.len(), "real and imaginary slot counts differ");
         ckks_ensure!(
@@ -160,7 +161,7 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
     /// Quantizes host polynomial coefficients without applying an IFFT.
     fn ckks_encode_coeffs_host_into<P>(&self, pt: &mut P, coeffs: &[F], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        P: CKKSPlaintextToBackendMut<BE>,
+        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos,
     {
         let required = CKKSEncodingBuffer::<BE::OwnedBuf, F>::bytes_of(coeffs.len());
         ckks_ensure!(
@@ -178,7 +179,7 @@ pub trait CKKSEncodingHostOps<BE: Backend, F: CKKSEncodingScalar>: CKKSEncodingO
     /// Dequantizes polynomial coefficients to a host slice without an FFT.
     fn ckks_decode_coeffs_host_into<P>(&self, pt: &P, coeffs: &mut [F], scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        P: CKKSPlaintextToBackendRef<BE>,
+        P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
     {
         let required = CKKSEncodingBuffer::<BE::OwnedBuf, F>::bytes_of(coeffs.len());
         ckks_ensure!(

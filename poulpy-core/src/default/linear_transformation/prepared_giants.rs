@@ -102,7 +102,7 @@ pub fn glwe_accumulate_streamed_baby_steps_dft<BE, M, P>(
 ) where
     BE: Backend,
     M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
-    P: GLWEToBackendRef<BE> + GLWEInfos,
+    P: GLWEToBackendRef<BE> + crate::layouts::IntPolyInfos + GLWEInfos,
 {
     glwe_accumulate_unprepared_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, gs, scratch);
 }

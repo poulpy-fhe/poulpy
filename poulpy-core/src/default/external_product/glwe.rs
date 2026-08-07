@@ -5,13 +5,14 @@
 
 #![allow(private_bounds)]
 
+use poulpy_hal::layouts::VecZnxDftBackendMut;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
         VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize,
         VecZnxNormalizeTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
     },
-    layouts::{Backend, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxDft, VecZnxDftToBackendRef},
+    layouts::{Backend, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
 };
 
 use crate::{
@@ -27,7 +28,7 @@ use crate::{
 
 fn glwe_external_product_dft_fill<BE, M>(
     module: &M,
-    res_dft: &mut VecZnxDft<BE::BufMut<'_>, BE>,
+    res_dft: &mut VecZnxDftBackendMut<'_, BE>,
     a: GLWEBackendRef<'_, BE>,
     ggsw: &GGSWPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
@@ -60,19 +61,20 @@ fn glwe_external_product_dft_fill<BE, M>(
                 let (mut a_dft, mut scratch_1) = scratch
                     .borrow()
                     .take_vec_znx_dft_scratch(module, cols, (a.size() + di) / dsize);
-                res_dft.set_size(res_dft.max_size() - ((dsize - di) as isize - 2).max(0) as usize);
+                let res_compute_size = res_dft.max_size() - ((dsize - di) as isize - 2).max(0) as usize;
+                let mut res_view = res_dft.with_size_mut(res_compute_size);
 
                 for j in 0..cols {
                     module.vec_znx_dft_apply(dsize, dsize - 1 - di, &mut a_dft, j, &a.data, j);
                 }
 
                 if di == 0 {
-                    module.vmp_apply_dft_to_dft(res_dft, &a_dft.to_backend_ref(), &ggsw.data, 0, &mut scratch_1.borrow());
+                    module.vmp_apply_dft_to_dft(&mut res_view, &a_dft.to_backend_ref(), &ggsw.data, 0, &mut scratch_1.borrow());
                 } else {
                     let (mut res_dft_tmp, mut scratch_2) =
                         scratch_1
                             .borrow()
-                            .take_vec_znx_dft_scratch(module, res_dft.cols(), res_dft.size());
+                            .take_vec_znx_dft_scratch(module, res_view.cols(), res_view.size());
                     module.vmp_apply_dft_to_dft(
                         &mut res_dft_tmp,
                         &a_dft.to_backend_ref(),
@@ -81,13 +83,12 @@ fn glwe_external_product_dft_fill<BE, M>(
                         &mut scratch_2.borrow(),
                     );
                     for col in 0..cols {
-                        module.vec_znx_dft_add_assign(res_dft, col, &res_dft_tmp.to_backend_ref(), col);
+                        module.vec_znx_dft_add_assign(&mut res_view, col, &res_dft_tmp.to_backend_ref(), col);
                     }
                 }
             }
         }
     }
-    res_dft.set_size(res_dft.max_size());
 }
 
 impl<BE: Backend> GLWEExternalProductInternal<BE> for Module<BE>
@@ -130,7 +131,7 @@ where
 
     fn glwe_external_product_dft<'r, A, G>(
         &self,
-        res_dft: &mut VecZnxDft<BE::BufMut<'r>, BE>,
+        res_dft: &mut VecZnxDftBackendMut<'r, BE>,
         a: &A,
         ggsw: &G,
         scratch: &mut ScratchArena<'_, BE>,

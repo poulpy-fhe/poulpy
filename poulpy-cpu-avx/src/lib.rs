@@ -29,8 +29,8 @@
 //!
 //! For the `FFT64Avx` backend:
 //!
-//! - `ScalarPrep = f64`: coefficients in the DFT / frequency domain.
-//! - `ScalarBig  = i64`: coefficients in the large-integer (multi-word) domain.
+//! - `DftWord = f64`: coefficients in the DFT / frequency domain.
+//! - `BigWord  = i64`: coefficients in the large-integer (multi-word) domain.
 //!   meaning each coefficient occupies exactly one scalar word.
 //!
 //! # CPU requirements
@@ -256,3 +256,6 @@ mod transfer_impls {
         }
     }
 }
+
+#[cfg(feature = "enable-avx")]
+mod layout_compat;

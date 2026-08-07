@@ -1,3 +1,7 @@
+use poulpy_hal::layouts::VecZnxDftToBackendMut;
+use poulpy_hal::layouts::VecZnxDftToBackendRef;
+use poulpy_hal::layouts::VmpPMatToBackendMut;
+use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
     layouts::Module,
     test_suite::convolution::{
@@ -285,8 +289,8 @@ fn test_ntt4x30_vmp_apply_truncated_res_matches_full_prefix() {
         VmpPrepareTmpBytes,
     };
     use poulpy_hal::layouts::{
-        Backend, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, ScratchOwned, VecZnx, VecZnxDft,
-        VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMat, VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxView,
+        Backend, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, ScratchOwned, VecZnx, VecZnxDftOwned, VmpPMatOwned,
+        ZnxView,
     };
     use poulpy_hal::source::Source;
     use poulpy_hal::test_suite::{upload_mat_znx, upload_vec_znx, vec_znx_backend_ref};
@@ -308,7 +312,7 @@ fn test_ntt4x30_vmp_apply_truncated_res_matches_full_prefix() {
     let mut a: VecZnx<Vec<u8>> = module_host.vec_znx_alloc(cols_in, rows);
     a.fill_uniform(base2k, &mut source);
     let a_be = upload_vec_znx::<NTT4x30Ref>(&a);
-    let mut a_dft: VecZnxDft<Vec<u8>, NTT4x30Ref> = module.vec_znx_dft_alloc(cols_in, rows);
+    let mut a_dft: VecZnxDftOwned<NTT4x30Ref> = module.vec_znx_dft_alloc(cols_in, rows);
     module.vec_znx_dft_apply(
         1,
         0,
@@ -321,14 +325,14 @@ fn test_ntt4x30_vmp_apply_truncated_res_matches_full_prefix() {
     let mut mat: MatZnx<Vec<u8>> = module_host.mat_znx_alloc(rows, cols_in, cols_out, mat_size);
     mat.fill_uniform(base2k, &mut source);
     let mat_be = upload_mat_znx::<NTT4x30Ref>(&mat);
-    let mut pmat: VmpPMat<Vec<u8>, NTT4x30Ref> = module.vmp_pmat_alloc(rows, cols_in, cols_out, mat_size);
+    let mut pmat: VmpPMatOwned<NTT4x30Ref> = module.vmp_pmat_alloc(rows, cols_in, cols_out, mat_size);
     module.vmp_prepare(
         &mut pmat.to_backend_mut(),
         &<MatZnx<<NTT4x30Ref as Backend>::OwnedBuf> as MatZnxToBackendRef<NTT4x30Ref>>::to_backend_ref(&mat_be),
         &mut scratch.arena(),
     );
 
-    let mut res_full: VecZnxDft<Vec<u8>, NTT4x30Ref> = module.vec_znx_dft_alloc(cols_out, mat_size);
+    let mut res_full: VecZnxDftOwned<NTT4x30Ref> = module.vec_znx_dft_alloc(cols_out, mat_size);
     module.vmp_apply_dft_to_dft(
         &mut res_full.to_backend_mut(),
         &a_dft.to_backend_ref(),
@@ -340,7 +344,7 @@ fn test_ntt4x30_vmp_apply_truncated_res_matches_full_prefix() {
 
     // odd truncated sizes hit the trailing-column path on a paired pmat column
     for res_size in [1usize, 3] {
-        let mut res_trunc: VecZnxDft<Vec<u8>, NTT4x30Ref> = module.vec_znx_dft_alloc(cols_out, res_size);
+        let mut res_trunc: VecZnxDftOwned<NTT4x30Ref> = module.vec_znx_dft_alloc(cols_out, res_size);
         module.vmp_apply_dft_to_dft(
             &mut res_trunc.to_backend_mut(),
             &a_dft.to_backend_ref(),
@@ -355,4 +359,16 @@ fn test_ntt4x30_vmp_apply_truncated_res_matches_full_prefix() {
             "truncated vmp output mismatch for res_size={res_size}"
         );
     }
+}
+
+/// Compile-time regression check: container equality is byte equality, so the
+/// DFT/big-family containers implement `Eq` even when the logical word is
+/// `f64` (a derived `Eq` used to demand `W: Eq` and silently vanish here).
+#[allow(dead_code)]
+fn assert_f64_word_containers_are_eq() {
+    fn requires_eq<T: Eq>() {}
+    requires_eq::<poulpy_hal::layouts::VecZnxDftOwned<crate::FFT64Ref>>();
+    requires_eq::<poulpy_hal::layouts::VecZnxBigOwned<crate::FFT64Ref>>();
+    requires_eq::<poulpy_hal::layouts::SvpPPolOwned<crate::FFT64Ref>>();
+    requires_eq::<poulpy_hal::layouts::VmpPMatOwned<crate::FFT64Ref>>();
 }

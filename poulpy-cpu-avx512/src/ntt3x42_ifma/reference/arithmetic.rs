@@ -11,7 +11,7 @@ use super::super::primes::{PrimeSetNtt3x42Ifma, Primes42};
 // Compile-time constants for Primes42
 // ─────────────────────────────────────────────────────────────────────────────
 
-const Q: [u64; 3] = <Primes42 as PrimeSetNtt3x42Ifma>::Q;
+const Q: [u64; 3] = <Primes42 as poulpy_hal::layouts::PrimeSet>::Q;
 
 /// `oq[k] = Q[k] - (2^63 mod Q[k])`.
 ///
