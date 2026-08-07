@@ -126,6 +126,7 @@ pub mod eval_mod;
 pub mod mul;
 pub mod paco;
 pub mod plaintext;
+pub mod ship;
 pub(crate) mod validation;
 
 pub use alloc::CKKSModuleAlloc;
@@ -160,6 +161,10 @@ pub use paco::{
     PaCoPlan, PaCoSecretSpec, PaCoSlotOrder, PaCoWorker,
 };
 pub use plaintext::{CKKSPlaintext, CKKSPlaintextViewMut};
+pub use ship::{
+    HMuxRotKey, HMuxRotKeyPrepared, ShipCoeffEncodings, ShipIndexKeys, ShipIndexKeysPrepared, ShipKeyParameters, ShipKeySet,
+    ShipKeysLayout, ShipKeysPrepared, ShipPlan, ShipSecretSpec,
+};
 
 use std::fmt::Debug;
 
