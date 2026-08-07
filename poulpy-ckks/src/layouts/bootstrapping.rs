@@ -15,11 +15,9 @@
 //! prime-basis extension).
 //!
 //! [`CKKSBootstrappingOps::ckks_bootstrap`](crate::api::CKKSBootstrappingOps)
-//! is the orchestrator consuming these types: it composes `ModUp →
-//! CoeffsToSlots → EvalMod → SlotsToCoeffs` from a compiled
-//! [`BootstrappingContext`] and a prepared key set. The plan remains a plain
-//! parameter bundle, so callers can also compose the stages manually from the
-//! respective op traits.
+//! composes the selected pipeline from a compiled [`BootstrappingContext`] and
+//! a prepared key set. The plan remains a plain parameter bundle, so callers
+//! can also compose the stages manually from the respective op traits.
 //!
 //! [`BootstrappingContext`] is the *compiled* form of a [`BootstrappingPlan`]:
 //! the prepared, backend-resident homomorphic DFT matrices and the encoded,
@@ -46,7 +44,7 @@ use crate::{
 pub enum BootstrappingPipeline {
     /// CoeffsToSlots before EvalMod and SlotsToCoeffs.
     C2SFirst,
-    /// SlotsToCoeffs before ModUp, CoeffsToSlots, and EvalMod.
+    /// SlotsToCoeffs below ModUp, then CoeffsToSlots and EvalMod above it.
     S2CFirst,
 }
 
@@ -202,11 +200,39 @@ impl BootstrappingPlan {
     pub fn slots_to_coeffs(&self) -> &DFTPlan {
         &self.slots_to_coeffs
     }
+
+    /// Budget consumed before ModUp.
+    pub fn pre_mod_up_consumed_bits(&self) -> usize {
+        match self.pipeline {
+            BootstrappingPipeline::C2SFirst => 0,
+            BootstrappingPipeline::S2CFirst => self.slots_to_coeffs.consumed_bits(),
+        }
+    }
+
+    /// Budget consumed after ModUp.
+    pub fn post_mod_up_consumed_bits(&self) -> usize {
+        let c2s_eval_mod = self.coeffs_to_slots.consumed_bits() + self.eval_mod.consumed_bits();
+        match self.pipeline {
+            BootstrappingPipeline::C2SFirst => c2s_eval_mod + self.slots_to_coeffs.consumed_bits(),
+            BootstrappingPipeline::S2CFirst => c2s_eval_mod,
+        }
+    }
+
+    /// Input width for a given modulus at ModUp.
+    pub fn input_k(&self, log_modulus: usize) -> usize {
+        log_modulus + self.pre_mod_up_consumed_bits()
+    }
+
+    /// Bootstrap width for a desired output width.
+    pub fn bootstrap_k(&self, output_k: usize) -> usize {
+        output_k + self.post_mod_up_consumed_bits()
+    }
+
     /// Total `log_budget` bits the pipeline consumes: the two DFT stages plus
     /// EvalMod (charged at its own `f_mod_log_delta` scale; the surrounding
     /// set-scale round-trip is budget-neutral).
     pub fn consumed_bits(&self) -> usize {
-        self.coeffs_to_slots.consumed_bits() + self.eval_mod.consumed_bits() + self.slots_to_coeffs.consumed_bits()
+        self.pre_mod_up_consumed_bits() + self.post_mod_up_consumed_bits()
     }
 
     /// Distinct Galois elements the pipeline's rotation keys must cover: the union
@@ -244,7 +270,8 @@ pub struct BootstrappingContext<BE: Backend, F> {
     /// Prepared bypass CoeffsToSlots matrix
     pub coeffs_to_slots_bypass: Option<DFTMatrixPrepared<BE, Encode, Split>>,
 
-    /// Prepared SlotsToCoeffs matrix (homomorphic decoding).
+    /// Prepared SlotsToCoeffs matrix (homomorphic decoding). S2C-first plans
+    /// use scaling `1/2` to cancel the initial real/imaginary split.
     pub slots_to_coeffs: DFTMatrixPrepared<BE, Decode, Split>,
 
     /// Encoded, backend-resident EvalMod (`x mod 1`).
@@ -380,6 +407,24 @@ mod tests {
     fn recipe_accepts_s2c_first_pipeline() {
         let plan = plan(BootstrappingPipeline::S2CFirst, BootstrappingTechniques::default(), 16).unwrap();
         assert_eq!(plan.pipeline(), BootstrappingPipeline::S2CFirst);
+    }
+
+    #[test]
+    fn recipe_accounts_for_pipeline_order() {
+        let c2s = plan(BootstrappingPipeline::C2SFirst, BootstrappingTechniques::default(), 16).unwrap();
+        assert_eq!(c2s.pre_mod_up_consumed_bits(), 0);
+        assert_eq!(c2s.post_mod_up_consumed_bits(), c2s.consumed_bits());
+        assert_eq!(c2s.input_k(20), 20);
+        assert_eq!(c2s.bootstrap_k(30), 30 + c2s.consumed_bits());
+
+        let s2c = plan(BootstrappingPipeline::S2CFirst, BootstrappingTechniques::default(), 16).unwrap();
+        assert_eq!(s2c.pre_mod_up_consumed_bits(), s2c.slots_to_coeffs().consumed_bits());
+        assert_eq!(
+            s2c.post_mod_up_consumed_bits(),
+            s2c.coeffs_to_slots().consumed_bits() + s2c.eval_mod().consumed_bits()
+        );
+        assert_eq!(s2c.input_k(20), 20 + s2c.slots_to_coeffs().consumed_bits());
+        assert_eq!(s2c.bootstrap_k(30), 30 + s2c.post_mod_up_consumed_bits());
     }
 
     #[test]

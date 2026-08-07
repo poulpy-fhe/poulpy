@@ -10,11 +10,9 @@ use crate::{
 
 /// CKKS bootstrapping.
 ///
-/// Bootstrapping is the pipeline `ModUp → CoeffsToSlots → EvalMod →
-/// SlotsToCoeffs`. Of those, only **ModUp** (the modulus raise) is a new
-/// primitive, defined directly on this trait. The other three stages are reused
-/// verbatim from their own op traits, which this trait **re-exports as
-/// supertraits**:
+/// Only **ModUp** is a bootstrapping-specific primitive. CoeffsToSlots,
+/// EvalMod, and SlotsToCoeffs are reused from their own op traits, which this
+/// trait re-exports as supertraits:
 ///
 /// - CoeffsToSlots / SlotsToCoeffs via [`CKKSDFTOps`](crate::api::CKKSDFTOps)
 ///   ([`ckks_coeffs_to_slots`](CKKSDFTOps::ckks_coeffs_to_slots),
@@ -26,11 +24,10 @@ use crate::{
 /// The composable stages stay public so callers can assemble custom pipelines,
 /// but a ready-made orchestrator is provided: [`ckks_bootstrap`](Self::ckks_bootstrap).
 /// It consumes a compiled [`BootstrappingContext`] and a prepared
-/// [`BootstrappingKeys`], and selects the pipeline from the context — the classic
-/// refresh when [`coeffs_to_slots_bypass`](BootstrappingContext::coeffs_to_slots_bypass)
-/// is absent, the EvalRound+ variant (<https://eprint.iacr.org/2024/1379>) when it
-/// is present. Sparse-secret encapsulation of ModUp is selected by the compiled
-/// recipe; the supplied keys must carry the matching
+/// [`BootstrappingKeys`], and selects C2S-first or S2C-first from the context.
+/// EvalRound+ is selected separately by the C2S-first recipe's optional bypass.
+/// Sparse-secret encapsulation is also selected by the compiled recipe; the
+/// supplied keys must carry the matching
 /// [encapsulation keys](BootstrappingKeys::encapsulation_keys).
 pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE> {
     /// Returns scratch bytes required by [`Self::ckks_mod_up_into`].
@@ -39,8 +36,8 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     /// Scratch upper bound for a full [`Self::ckks_bootstrap`] call: the
     /// pipeline working ciphertexts it carves from scratch plus the largest
     /// nested stage. `ct_out`/`ct_in` provide the bootstrap and input widths,
-    /// `ctx` selects the pipeline variant (standard vs EvalRound+) and the
-    /// EvalMod parameters, and `keys_layout` sizes the key-dependent stages
+    /// `ctx` selects the pipeline, optional EvalRound+ variant, and EvalMod
+    /// parameters; `keys_layout` sizes the key-dependent stages
     /// (rotations, tensor key, optional encapsulation switches).
     fn ckks_bootstrap_tmp_bytes<C1, C2, F>(
         &self,
@@ -75,16 +72,17 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     /// [`BootstrappingContext::coeffs_to_slots`]); EvalMod applies its own scale
     /// round-trip, so no further scaling is needed at call time.
     ///
-    /// The pipeline is selected from the context:
+    /// The pipeline is selected from [`BootstrappingContext::pipeline`]:
     ///
-    /// - **standard** (`ModUp → CoeffsToSlots → EvalMod → SlotsToCoeffs`) when
-    ///   [`coeffs_to_slots_bypass`](BootstrappingContext::coeffs_to_slots_bypass) is
-    ///   `None`;
-    /// - **EvalRound+** (<https://eprint.iacr.org/2024/1379>) when it is `Some`: EvalMod
-    ///   runs on the low-precision CoeffsToSlots whose DFT error `e` cancels in the
-    ///   round `r0_hp − K·r0_lp + EvalMod(r0_lp)`, recovering the message at the
-    ///   high-precision bypass transform's precision (`K = f_mod_interval`, read from
-    ///   the compiled EvalMod, must be a power of two).
+    /// - [`C2SFirst`](crate::layouts::BootstrappingPipeline::C2SFirst): `ModUp → CoeffsToSlots →
+    ///   EvalMod → SlotsToCoeffs`. The final transform restores the message ratio.
+    /// - [`S2CFirst`](crate::layouts::BootstrappingPipeline::S2CFirst): `SlotsToCoeffs → ModUp →
+    ///   CoeffsToSlots → EvalMod`. The first transform uses scaling `1/2`; the
+    ///   output is relabeled at `ct_in.log_delta`.
+    ///
+    /// Use [`BootstrappingPlan::input_k`](crate::layouts::BootstrappingPlan::input_k)
+    /// and [`BootstrappingPlan::bootstrap_k`](crate::layouts::BootstrappingPlan::bootstrap_k)
+    /// to place the pre- and post-ModUp costs correctly.
     #[allow(clippy::too_many_arguments)]
     fn ckks_bootstrap<F, K>(
         &self,

@@ -13,7 +13,7 @@ use crate::{
         CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSDFTOps, CKKSEvalModOps, CKKSImagOps, CKKSPow2Ops,
         CKKSSubOps,
     },
-    layouts::{BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertext, CKKSModuleAlloc},
+    layouts::{BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertext},
 };
 
 /// Backend override hook for [`CKKSBootstrappingOps`](crate::api::CKKSBootstrappingOps).
@@ -70,7 +70,6 @@ where
     Module<BE>: CKKSBootstrappingOpsDefault<BE>
         + GLWECopy<BE>
         + GLWEShift<BE>
-        + CKKSModuleAlloc<BE>
         + GLWEKeyswitch<BE>
         + CKKSCopyOps<BE>
         + CKKSPow2Ops<BE>

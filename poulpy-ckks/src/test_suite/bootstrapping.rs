@@ -158,11 +158,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     // Scale of the ciphertext entering the pipeline.
     let log_modulus_in = log_delta + plan.eval_mod().log_msg_ratio;
 
-    // Size the bootstrap modulus from the plan: the ciphertext enters at
-    // `log_modulus_in`, the pipeline consumes `consumed_bits` of budget (EvalMod
-    // charged at the scale it runs — `f_mod_log_delta`, not the message scale, the
-    // set-scale round-trip being budget-neutral), plus output head-room.
-    let k_boot = (log_modulus_in + plan.consumed_bits() + 2 * log_delta).next_multiple_of(base2k);
+    let k_boot = plan.bootstrap_k(log_modulus_in + 2 * log_delta).next_multiple_of(base2k);
 
     let module = Module::<BE>::new(n as u64);
     let host_module = Module::<HostBytesBackend>::new(n as u64);
@@ -585,7 +581,7 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
     let log_delta = 45;
     let log_modulus_in = log_delta + plan.eval_mod().log_msg_ratio;
 
-    let k_boot = (log_modulus_in + plan.consumed_bits() + 2 * log_delta).next_multiple_of(base2k);
+    let k_boot = plan.bootstrap_k(log_modulus_in + 2 * log_delta).next_multiple_of(base2k);
 
     let module = Module::<BE>::new(n as u64);
     let host_module = Module::<HostBytesBackend>::new(n as u64);
@@ -915,9 +911,8 @@ where
     let n = 1 << (LOG_SLOTS + 1);
     let m = n / 2;
     let log_modulus_in = log_delta + plan.eval_mod().log_msg_ratio;
-    let k_in = log_modulus_in + plan.slots_to_coeffs().consumed_bits();
-    let k_boot = (log_modulus_in + plan.coeffs_to_slots().consumed_bits() + plan.eval_mod().consumed_bits() + 2 * log_delta)
-        .next_multiple_of(base2k);
+    let k_in = plan.input_k(log_modulus_in);
+    let k_boot = plan.bootstrap_k(3 * log_delta).next_multiple_of(base2k);
 
     let module = Module::<BE>::new(n as u64);
     let host_module = Module::<HostBytesBackend>::new(n as u64);
@@ -1022,6 +1017,8 @@ where
         module
             .ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, &mut scratch.borrow())
             .unwrap();
+        assert_eq!(ct_bs.k().as_usize(), k_boot - plan.post_mod_up_consumed_bits());
+        assert_eq!(ct_bs.log_delta(), log_delta);
         decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow())
     };
 

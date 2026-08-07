@@ -1,7 +1,6 @@
 //! Evaluation keys for CKKS bootstrapping.
 //!
-//! The refresh pipeline (`ModUp → CoeffsToSlots → EvalMod → SlotsToCoeffs`)
-//! consumes four kinds of key material:
+//! The bootstrapping pipelines consume four kinds of key material:
 //!
 //! - **rotation (automorphism) keys** for the two homomorphic DFTs — the union
 //!   of the Galois elements of `CoeffsToSlots` (incl. the optional high-precision
