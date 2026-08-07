@@ -13,10 +13,9 @@ use crate::{
     layouts::{
         BootstrappingContext, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
         CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, DFTOutputFormat, DFTPlan, DFTType,
-        EncapsulationKeysLayout, EncodedLut, SparseSecretEncapsulation,
-        eval_mod::{EvalModPlan, EvalModType},
+        EncapsulationKeysLayout, EncodedLut, SparseSecretEncapsulation, eval_mod::EvalModPlan,
     },
-    polynomial::{ComplexBSGSPolynomial, SplitStrategy},
+    polynomial::SplitStrategy,
     test_suite::{
         CKKSTestParams,
         helpers::{
@@ -42,7 +41,7 @@ enum Case {
 
 enum HostLuts {
     Encoded(EncodedLut<CKKSPlaintext<Vec<u8>>>),
-    Multi(Vec<ComplexBSGSPolynomial<CKKSPlaintext<Vec<u8>>>>),
+    Multi(Vec<EncodedLut<CKKSPlaintext<Vec<u8>>>>),
 }
 
 pub fn test_functional_bootstrapping_e2e<BE, F, E>(
@@ -140,7 +139,7 @@ where
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let table_values: &[&[usize]] = match case {
-        Case::General => &[&[5, 2, 7, 0, 3, 6, 1, 4]],
+        Case::General => &[&[0, 1, 0, 0]],
         Case::Multi => &[
             &[5, 2, 7, 0, 3, 6, 1, 4],
             &[0, 1, 2, 3, 4, 5, 6, 7],
@@ -153,10 +152,8 @@ where
         .map(|table| table.iter().map(|&value| F::from_usize(value).unwrap()).collect())
         .collect();
     let p = tables[0].len();
-    let log_p = p.ilog2() as usize;
-    let log_modulus_in = INPUT_LOG_DELTA + log_p;
-    let plan = fbt_plan(params.base2k, log_p);
-    let coeffs_meta = CoeffsMeta::from_delta_budget(log_modulus_in, params.base2k);
+    let plan = fbt_plan(params.base2k);
+    let coeffs_meta = CoeffsMeta::from_delta_budget(INPUT_LOG_DELTA, params.base2k);
 
     let host_luts = match case {
         Case::General => HostLuts::Encoded(
@@ -173,9 +170,7 @@ where
             tables
                 .iter()
                 .map(|table| {
-                    crate::eval_lut::trig_hermite_lut(table)
-                        .encode_bsgs_with(host_module, params.base2k.into(), coeffs_meta, SplitStrategy::MinDepth)
-                        .unwrap()
+                    EncodedLut::general(host_module, table, params.base2k.into(), coeffs_meta, SplitStrategy::MinDepth).unwrap()
                 })
                 .collect(),
         ),
@@ -194,9 +189,14 @@ where
             .unwrap(),
         ),
     };
+    let log_msg_ratio = match &host_luts {
+        HostLuts::Encoded(lut) => lut.log_msg_ratio(),
+        HostLuts::Multi(luts) => luts[0].log_msg_ratio(),
+    };
+    let log_modulus_in = INPUT_LOG_DELTA + log_msg_ratio;
     let lut_consumed = match &host_luts {
         HostLuts::Encoded(lut) => lut.consumed_bits(log_modulus_in, log_modulus_in),
-        HostLuts::Multi(luts) => luts[0].re.consumed_bits(log_modulus_in, log_modulus_in),
+        HostLuts::Multi(luts) => luts[0].consumed_bits(log_modulus_in, log_modulus_in),
     };
     let k_in = plan.input_k(log_modulus_in);
     let k_boot = plan
@@ -292,10 +292,7 @@ where
             vec![output]
         }
         HostLuts::Multi(luts) => {
-            let luts: Vec<_> = luts
-                .iter()
-                .map(|lut| lut.map_baby_steps_ref(|pt| upload_pt(module, pt)))
-                .collect();
+            let luts: Vec<_> = luts.iter().map(|lut| lut.map(|pt| upload_pt(module, pt))).collect();
             let mut outputs: Vec<_> = luts
                 .iter()
                 .map(|_| module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into()))
@@ -306,6 +303,27 @@ where
             outputs
         }
     };
+
+    if matches!(case, Case::General) {
+        let wrong_ratio_lut = EncodedLut::binary(
+            host_module,
+            F::from_usize(0).unwrap(),
+            F::from_usize(1).unwrap(),
+            EXP_DEGREE,
+            K_INTERVAL,
+            LOG_INTERVAL_REDUCTION,
+            params.base2k.into(),
+            coeffs_meta,
+            SplitStrategy::MinDepth,
+        )
+        .unwrap()
+        .map(|pt| upload_pt(module, pt));
+        let mut output = module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into());
+        let error = module
+            .ckks_functional_bootstrap(&mut output, &ct, &ctx, &wrong_ratio_lut, &keys, &mut scratch.borrow())
+            .unwrap_err();
+        assert!(error.to_string().contains("log_msg_ratio"));
+    }
 
     for (index, (output, table)) in outputs.iter().zip(&tables).enumerate() {
         let (got_re, got_im) = ckks_decrypt_decode::<BE, F, E>(&tp, module, &encoder, output, &sk, &mut scratch.borrow());
@@ -321,7 +339,7 @@ where
     }
 }
 
-fn fbt_plan(base2k: usize, log_p: usize) -> BootstrappingPlan {
+fn fbt_plan(base2k: usize) -> BootstrappingPlan {
     let slots_to_coeffs = DFTPlan::new(
         DFTType::Decode,
         vec![(2, 4), (3, 4), (2, 4)],
@@ -347,18 +365,14 @@ fn fbt_plan(base2k: usize, log_p: usize) -> BootstrappingPlan {
             eval_round_plus: None,
         },
         coeffs_to_slots,
-        EvalModPlan {
-            eval_mod_type: EvalModType::ExpCmplx,
-            log_msg_ratio: log_p,
-            f_mod_degree: EXP_DEGREE,
-            f_mod_interval: K_INTERVAL,
-            f_mod_log_interval_reduction: LOG_INTERVAL_REDUCTION,
-            f_mod_inv_degree: None,
-            scaling: Some(std::f64::consts::TAU),
-            split_strategy: SplitStrategy::MinDepth,
-            coeffs_meta: CoeffsMeta::from_delta_budget(EVAL_LOG_DELTA, base2k),
-            f_mod_log_delta: EVAL_LOG_DELTA,
-        },
+        EvalModPlan::complex_exponential(
+            EXP_DEGREE,
+            K_INTERVAL,
+            LOG_INTERVAL_REDUCTION,
+            SplitStrategy::MinDepth,
+            CoeffsMeta::from_delta_budget(EVAL_LOG_DELTA, base2k),
+            EVAL_LOG_DELTA,
+        ),
         slots_to_coeffs,
     )
     .unwrap()

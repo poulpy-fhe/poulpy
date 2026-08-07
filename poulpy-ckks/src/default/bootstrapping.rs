@@ -17,9 +17,8 @@ use crate::{
     eval_lut::{ckks_eval_lut, ckks_eval_lut_binary, ckks_eval_lut_multi},
     layouts::{
         BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, CKKSCiphertext, CKKSModuleAlloc,
-        CKKSPlaintext, EncodedLut, ScratchArenaTakeCKKS,
+        CKKSPlaintext, EncodedLut, EncodedLutKind, ScratchArenaTakeCKKS,
     },
-    polynomial::ComplexBSGSPolynomial,
 };
 
 /// Default (backend-generic) implementation of the CKKS bootstrapping
@@ -574,6 +573,7 @@ where
         keys.encapsulation_keys().is_some() == ctx.sparse_secret_hamming_weight().is_some(),
         "bootstrapping key encapsulation does not match the compiled recipe"
     );
+    ensure_functional_message_ratio(ct_in, ctx.slots_to_coeffs.consumed_bits(), lut.log_msg_ratio())?;
 
     let boot_layout = GLWELayout {
         n: ct_out.n(),
@@ -589,8 +589,8 @@ where
         module.ckks_bootstrap_coeffs_to_slots(&ct_raised, &mut r0, &mut i0, ctx, keys, &mut scratch_local)?;
 
         let mut res_im = module.ckks_ciphertext_alloc(ct_out.base2k(), ct_out.max_k());
-        match lut {
-            EncodedLut::General(series) => {
+        match lut.kind() {
+            EncodedLutKind::General(series) => {
                 ckks_eval_lut(
                     module,
                     ct_out,
@@ -612,7 +612,7 @@ where
                     &mut scratch_local,
                 )?;
             }
-            EncodedLut::Binary {
+            EncodedLutKind::Binary {
                 cos,
                 affine,
                 log_interval_reduction,
@@ -649,7 +649,7 @@ pub fn ckks_functional_bootstrap_multi_default<BE, F, K>(
     ct_outs: &mut [CKKSCiphertext<BE::OwnedBuf>],
     ct_in: &CKKSCiphertext<BE::OwnedBuf>,
     ctx: &BootstrappingContext<BE, F>,
-    luts: &[ComplexBSGSPolynomial<CKKSPlaintext<BE::OwnedBuf>>],
+    luts: &[EncodedLut<CKKSPlaintext<BE::OwnedBuf>>],
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -685,6 +685,19 @@ where
         ct_outs.len(),
         luts.len()
     );
+    let log_msg_ratio = luts[0].log_msg_ratio();
+    ckks_ensure!(
+        luts.iter().all(|lut| lut.log_msg_ratio() == log_msg_ratio),
+        "functional bootstrap LUTs must have the same message ratio"
+    );
+    let mut series = Vec::with_capacity(luts.len());
+    for lut in luts {
+        if let Some(series_i) = lut.general_series() {
+            series.push(series_i);
+        } else {
+            ckks_ensure!(false, "ckks_functional_bootstrap_multi supports general LUTs only");
+        }
+    }
 
     ckks_ensure!(
         ctx.pipeline == BootstrappingPipeline::S2CFirst,
@@ -703,6 +716,7 @@ where
         keys.encapsulation_keys().is_some() == ctx.sparse_secret_hamming_weight().is_some(),
         "bootstrapping key encapsulation does not match the compiled recipe"
     );
+    ensure_functional_message_ratio(ct_in, ctx.slots_to_coeffs.consumed_bits(), log_msg_ratio)?;
 
     let boot_layout = GLWELayout {
         n: out_n,
@@ -725,7 +739,7 @@ where
             ct_outs,
             &r0,
             &ctx.eval_mod,
-            luts,
+            &series,
             keys.conjugation_key(),
             keys.tensor_key(),
             &mut scratch_local,
@@ -735,7 +749,7 @@ where
             &mut im_outs,
             &i0,
             &ctx.eval_mod,
-            luts,
+            &series,
             keys.conjugation_key(),
             keys.tensor_key(),
             &mut scratch_local,
@@ -746,4 +760,17 @@ where
         }
         Result::Ok(())
     })
+}
+
+fn ensure_functional_message_ratio<C>(ct_in: &C, s2c_consumed_bits: usize, expected: usize) -> Result<()>
+where
+    C: CKKSInfos,
+{
+    if let Some(actual) = ct_in.log_budget().checked_sub(s2c_consumed_bits) {
+        ckks_ensure!(
+            actual == expected,
+            "functional bootstrap LUT requires log_msg_ratio {expected}, got {actual}"
+        );
+    }
+    Ok(())
 }

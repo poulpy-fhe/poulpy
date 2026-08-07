@@ -14,7 +14,6 @@ use crate::{
         CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
     },
     layouts::{BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertext, CKKSPlaintext, EncodedLut},
-    polynomial::ComplexBSGSPolynomial,
 };
 
 /// Backend override hook for [`CKKSBootstrappingOps`](crate::api::CKKSBootstrappingOps).
@@ -84,7 +83,7 @@ pub unsafe trait CKKSBootstrappingImpl<BE: Backend>: Backend {
         ct_outs: &mut [CKKSCiphertext<BE::OwnedBuf>],
         ct_in: &CKKSCiphertext<BE::OwnedBuf>,
         ctx: &BootstrappingContext<BE, F>,
-        luts: &[ComplexBSGSPolynomial<CKKSPlaintext<BE::OwnedBuf>>],
+        luts: &[EncodedLut<CKKSPlaintext<BE::OwnedBuf>>],
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -179,7 +178,7 @@ where
         ct_outs: &mut [CKKSCiphertext<BE::OwnedBuf>],
         ct_in: &CKKSCiphertext<BE::OwnedBuf>,
         ctx: &BootstrappingContext<BE, F>,
-        luts: &[ComplexBSGSPolynomial<CKKSPlaintext<BE::OwnedBuf>>],
+        luts: &[EncodedLut<CKKSPlaintext<BE::OwnedBuf>>],
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>

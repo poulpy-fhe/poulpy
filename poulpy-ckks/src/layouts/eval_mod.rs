@@ -139,7 +139,8 @@ pub struct EvalModPlan {
     /// the integer part wraps at the plaintext modulus `q = 2^k =
     /// 2^(log_delta + log_budget)`, so the ratio is `q/Δ = 2^log_budget` — i.e.
     /// `log_message_ratio` is the `log_budget` of the value being reduced, the bit
-    /// gap between the payload and the integer part.
+    /// gap between the payload and the integer part. Ignored by
+    /// [`EvalModType::ExpCmplx`].
     pub log_msg_ratio: usize,
     /// Degree of the base polynomial approximation.
     pub f_mod_degree: usize,
@@ -168,6 +169,29 @@ pub struct EvalModPlan {
 }
 
 impl EvalModPlan {
+    /// Builds the unit-circle exponential used by functional bootstrapping.
+    pub fn complex_exponential(
+        f_mod_degree: usize,
+        f_mod_interval: usize,
+        f_mod_log_interval_reduction: usize,
+        split_strategy: SplitStrategy,
+        coeffs_meta: CoeffsMeta,
+        f_mod_log_delta: usize,
+    ) -> Self {
+        Self {
+            eval_mod_type: EvalModType::ExpCmplx,
+            log_msg_ratio: 0,
+            f_mod_degree,
+            f_mod_interval,
+            f_mod_log_interval_reduction,
+            f_mod_inv_degree: None,
+            scaling: Some(std::f64::consts::TAU),
+            split_strategy,
+            coeffs_meta,
+            f_mod_log_delta,
+        }
+    }
+
     /// Multiplicative levels the eval_mod pipeline consumes: BSGS depth of the
     /// base `f` polynomial + `f_mod_log_interval_reduction` range-extension steps
     /// + BSGS depth of the optional inverse `f⁻¹` post-composition.

@@ -10,7 +10,6 @@ use crate::{
     api::{CKKSBootstrappingOps, CKKSDFTOps, CKKSEvalModOps},
     layouts::{BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertext, CKKSPlaintext, EncodedLut},
     oep::CKKSBootstrappingImpl,
-    polynomial::ComplexBSGSPolynomial,
 };
 
 impl<BE: Backend + CKKSBootstrappingImpl<BE>> CKKSBootstrappingOps<BE> for Module<BE>
@@ -77,7 +76,7 @@ where
         ct_outs: &mut [CKKSCiphertext<BE::OwnedBuf>],
         ct_in: &CKKSCiphertext<BE::OwnedBuf>,
         ctx: &BootstrappingContext<BE, F>,
-        luts: &[ComplexBSGSPolynomial<CKKSPlaintext<BE::OwnedBuf>>],
+        luts: &[EncodedLut<CKKSPlaintext<BE::OwnedBuf>>],
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>

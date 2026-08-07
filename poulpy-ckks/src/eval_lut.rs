@@ -96,7 +96,7 @@ pub fn ckks_eval_lut_multi<BE, F, K, C>(
     res: &mut [CKKSCiphertext<BE::OwnedBuf>],
     ct: &C,
     eval_exp: &EvalMod<F, CKKSPlaintext<BE::OwnedBuf>>,
-    luts: &[ComplexBSGSPolynomial<CKKSPlaintext<BE::OwnedBuf>>],
+    luts: &[&ComplexBSGSPolynomial<CKKSPlaintext<BE::OwnedBuf>>],
     conj_key: &K,
     tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
     scratch: &mut ScratchArena<'_, BE>,
