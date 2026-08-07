@@ -583,6 +583,13 @@ macro_rules! ckks_backend_test_suite {
                 paco_paper_scale,
                 $crate::test_suite::paco_bootstrap::test_paco_paper_scale
             );
+            run_test!(ship_host_replica, $crate::test_suite::ship::test_ship_host_replica);
+            run_test!(ship_mux_rotate, $crate::test_suite::ship::test_ship_mux_rotate);
+            run_test!(ship_bootstrap, $crate::test_suite::ship::test_ship_bootstrap);
+            run_test!(
+                ship_bootstrap_complex,
+                $crate::test_suite::ship::test_ship_bootstrap_complex
+            );
             run_test!(
                 dft_coeffs_to_slots_standard,
                 $crate::test_suite::dft::test_dft_coeffs_to_slots_standard
@@ -956,5 +963,6 @@ pub mod polynomial_evaluation;
 #[doc(hidden)]
 pub mod reference_encoder;
 pub mod rotate;
+pub mod ship;
 pub mod sub;
 pub mod sub_unsafe;

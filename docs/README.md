@@ -11,6 +11,7 @@
 - [Linear Transformations](linear_transformation.md) — the homomorphic matrix-vector product over the slots (`CoeffsToSlots` / `SlotsToCoeffs`) via the Baby-Step Giant-Step diagonal method, with hoisting, lazy normalization, and the cost in key-switches.
 - [Bootstrapping](bootstrapping.md) — refreshing a ciphertext's homomorphic budget through the `ModUp` → `CoeffsToSlots` → `EvalMod` → `SlotsToCoeffs` pipeline, the scale and budget accounting through each stage, and the standard and EvalRound+ variants.
 - [PaCo Bootstrapping](paco.md) — refreshing selected coefficient classes with PaCo, including validated plans/keys, direct and encapsulated modes, bounded parallel evaluation, and metadata accounting.
+- [SHIP Bootstrapping](ship.md) — the shallow SHIP half bootstrap: sparse-secret encapsulation, hoisted mux blind rotations, and the product tree, with validated plans, integrated key generation, and real/complex entry points.
 
 ## Specifications
 

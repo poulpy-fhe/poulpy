@@ -630,12 +630,22 @@ mod tests {
             );
             exact += 3;
 
-            // powf transcendental
-            worst_ulp = worst_ulp.max(ulp_diff(q.powf(half).to_bits(), lq_bits(LqFloat::powf(r, half_r))));
-            assert!(
-                ulp_diff(q.powf(half).to_bits(), lq_bits(LqFloat::powf(r, half_r))) <= MAX_ULP,
-                "powf off by too many ULP for input {xf}"
-            );
+            // powf transcendental. A negative base with non-integer exponent
+            // is a domain error: both sides must return NaN, whose sign and
+            // payload are unspecified (libquadmath yields -NaN, primitive
+            // f128 +NaN), so the ULP metric only applies to the valid domain.
+            let pow_ours = q.powf(half);
+            let pow_theirs = LqFloat::powf(r, half_r);
+            if xf < 0.0 {
+                assert!(
+                    pow_ours.is_nan() && LqFloat::is_nan(pow_theirs),
+                    "powf must be NaN for negative base {xf}"
+                );
+            } else {
+                let d = ulp_diff(pow_ours.to_bits(), lq_bits(pow_theirs));
+                worst_ulp = worst_ulp.max(d);
+                assert!(d <= MAX_ULP, "powf off by {d} ULP for input {xf} (> {MAX_ULP})");
+            }
             transc += 1;
 
             // sqrt (correctly rounded) and ln, only where defined

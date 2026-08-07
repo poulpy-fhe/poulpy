@@ -16,6 +16,7 @@ pub mod plaintext;
 pub mod polynomial_evaluation;
 pub mod pow2;
 pub mod rotate;
+pub mod ship;
 pub mod sub;
 
 pub use add::CKKSAddDefault;
