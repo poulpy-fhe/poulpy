@@ -1,6 +1,6 @@
 use std::ptr::NonNull;
 
-use poulpy_cpu_ref::hal_defaults::ScalarBigHadamardProduct;
+use poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct;
 use poulpy_cpu_ref::reference::{
     fft64::{
         convolution::I64Ops,
@@ -82,8 +82,9 @@ pub struct FFT64Avx512Handle {
 }
 
 impl Backend for FFT64Avx512 {
-    type ScalarPrep = f64;
-    type ScalarBig = i64;
+    type DftWord = f64;
+    type ZnxWord = i64;
+    type BigWord = i64;
     type OwnedBuf = Vec<u8>;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
@@ -698,9 +699,9 @@ impl I64Ops for FFT64Avx512 {
     }
 }
 
-impl ScalarBigHadamardProduct for FFT64Avx512 {
+impl BigWordHadamardProduct for FFT64Avx512 {
     #[inline(always)]
-    fn scalar_big_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
+    fn big_word_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
         Self::i64_hadamard_product(res, a, b)
     }
 }

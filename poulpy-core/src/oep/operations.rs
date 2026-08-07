@@ -1,3 +1,4 @@
+use crate::layouts::IntPolyInfos;
 use std::collections::HashMap;
 
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -76,7 +77,7 @@ pub unsafe trait GLWEMulPlainImpl<BE: Backend>: Backend {
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos;
+        B: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
 
     fn glwe_mul_plain_assign<R, A>(
         module: &Module<BE>,
@@ -86,7 +87,7 @@ pub unsafe trait GLWEMulPlainImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
 }
 
 /// Backend-provided GLWE tensoring and relinearization operations.
@@ -443,7 +444,7 @@ where
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos,
+        B: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
     {
         module.glwe_mul_plain_default(cnv_offset, res, a, b, scratch)
     }
@@ -451,7 +452,7 @@ where
     fn glwe_mul_plain_assign<R, A>(module: &Module<BE>, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
     {
         module.glwe_mul_plain_assign_default(cnv_offset, res, a, scratch)
     }

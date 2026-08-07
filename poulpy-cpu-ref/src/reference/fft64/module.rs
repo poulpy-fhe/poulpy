@@ -139,12 +139,12 @@ pub unsafe trait FFT64HandleFactory: Sized {
     fn assert_fft64_runtime_support() {}
 }
 
-impl<BE: Backend> FFTModuleHandle<BE::ScalarPrep> for Module<BE>
+impl<BE: Backend> FFTModuleHandle<BE::DftWord> for Module<BE>
 where
-    BE::ScalarPrep: Float + FloatConst + Debug,
-    BE::Handle: FFTHandleProvider<BE::ScalarPrep>,
+    BE::DftWord: Float + FloatConst + Debug,
+    BE::Handle: FFTHandleProvider<BE::DftWord>,
 {
-    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<BE::ScalarPrep> {
+    fn get_fft_plan(&self, n: usize) -> &FFT64Plan<BE::DftWord> {
         unsafe { (&*self.ptr()).get_fft_plan(n) }
     }
 }

@@ -3,9 +3,7 @@ use crate::default::bootstrapping::CKKSBootstrappingOpsDefault;
 
 use poulpy_core::{
     GLWECopy, GLWEKeyswitch, GLWEShift,
-    layouts::{
-        BSGSMeta, Compact, GGLWEInfos, GLWEInfos, GLWETensorKeyPrepared, SetBSGSMeta, prepared::GLWETensorKeyPreparedToBackendRef,
-    },
+    layouts::{BSGSMeta, GGLWEInfos, GLWEInfos, GLWETensorKeyPrepared, SetBSGSMeta, prepared::GLWETensorKeyPreparedToBackendRef},
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
@@ -79,7 +77,7 @@ where
         + CKKSEvalModOps<BE>
         + CKKSAllOpsTmpBytes<BE>,
     CKKSCiphertext<BE::OwnedBuf>:
-        GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact + SetBSGSMeta + BSGSMeta,
+        GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     fn ckks_mod_up_tmp_bytes_impl(module: &Module<BE>) -> usize {

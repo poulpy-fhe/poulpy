@@ -25,8 +25,8 @@
 //!
 //! # Scalar types
 //!
-//! - `FFT64Neon`: `ScalarPrep = f64`, `ScalarBig = i64`.
-//! - `NTT4x30Neon`: `ScalarPrep = Q120bScalar` (4 × u64 CRT residues over `Primes30`), `ScalarBig = i128`.
+//! - `FFT64Neon`: `DftWord = f64`, `BigWord = i64`.
+//! - `NTT4x30Neon`: `DftWord = Q120bScalar` (4 × u64 CRT residues over `Primes30`), `BigWord = i128`.
 //!
 //! # CPU requirements
 //!
@@ -228,3 +228,6 @@ mod transfer_impls {
         }
     }
 }
+
+#[cfg(feature = "enable-neon")]
+mod layout_compat;

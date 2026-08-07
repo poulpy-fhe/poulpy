@@ -487,6 +487,7 @@ impl<P: PrimeSetNtt3x42Ifma> Ntt3x42IfmaTableInv<P> {
 mod tests {
     use super::super::primes::Primes42;
     use super::*;
+    use poulpy_hal::layouts::PrimeSet;
 
     #[test]
     fn harvey_modmul_correctness() {

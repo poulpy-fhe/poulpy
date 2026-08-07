@@ -5,13 +5,14 @@
 
 #![allow(private_bounds)]
 
+use poulpy_hal::layouts::VecZnxDftBackendMut;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
         VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize,
         VecZnxNormalizeTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
     },
-    layouts::{Backend, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxDft, VecZnxDftToBackendRef},
+    layouts::{Backend, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
 };
 
 use crate::{
@@ -27,7 +28,7 @@ use crate::{
 
 fn glwe_external_product_dft_fill<BE, M>(
     module: &M,
-    res_dft: &mut VecZnxDft<BE::BufMut<'_>, BE>,
+    res_dft: &mut VecZnxDftBackendMut<'_, BE>,
     a: GLWEBackendRef<'_, BE>,
     ggsw: &GGSWPreparedBackendRef<'_, BE>,
     scratch: &mut ScratchArena<'_, BE>,
@@ -130,7 +131,7 @@ where
 
     fn glwe_external_product_dft<'r, A, G>(
         &self,
-        res_dft: &mut VecZnxDft<BE::BufMut<'r>, BE>,
+        res_dft: &mut VecZnxDftBackendMut<'r, BE>,
         a: &A,
         ggsw: &G,
         scratch: &mut ScratchArena<'_, BE>,

@@ -1,5 +1,5 @@
 use crate::{CKKSResult as Result, ckks_ensure};
-use poulpy_core::layouts::Compact;
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{
     BSGSMeta, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, SetBSGSMeta,
     prepared::GLWETensorKeyPreparedToBackendRef,
@@ -47,17 +47,17 @@ where
 /// CKKS scale-aware operations for the scale-agnostic core BSGS engine.
 ///
 /// Every method is a thin dispatch to the CKKS API ([`CKKSMulOps`], [`CKKSAddOps`],
-/// [`CKKSCopyOps`]); the only non-dispatch bits are the accumulator seed and
-/// compaction, which have no single existing API equivalent.
+/// [`CKKSCopyOps`]); the only non-dispatch bit is the accumulator seed, which
+/// has no single existing API equivalent.
 struct CKKSBSGSOps;
 
 impl<BE: Backend, V, P, A, R> BSGSOps<BE, V, P, A, R> for CKKSBSGSOps
 where
     Module<BE>: CKKSAddOps<BE> + CKKSMulOps<BE> + CKKSMulAddOps<BE> + CKKSCopyOps<BE> + GLWEZero<BE>,
-    V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
-    P: GLWEToBackendRef<BE> + CKKSCtBounds,
+    V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+    P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     A: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
-    R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
+    R: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
 {
     type Prepared = CKKSPreparedRight<BE>;
 
@@ -70,7 +70,6 @@ where
     ) -> anyhow::Result<()> {
         res.set_log_delta(seed.log_delta());
         res.set_log_budget(seed.log_budget());
-        res.compact();
         module.glwe_zero(res);
         Ok(())
     }
@@ -143,7 +142,6 @@ where
 
     fn copy(&self, module: &Module<BE>, res: &mut R, src: &V, scratch: &mut ScratchArena<'_, BE>) -> anyhow::Result<()> {
         module.ckks_copy(res, src, scratch)?;
-        res.compact();
         Ok(())
     }
 }
@@ -159,7 +157,7 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
     ) -> Result<()>
     where
         Self: GLWEZero<BE> + CKKSAddOps<BE> + CKKSMulOps<BE> + CKKSMulAddOps<BE> + CKKSModuleAlloc<BE> + CKKSCopyOps<BE> + Sized,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds + Compact,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds,
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
@@ -183,8 +181,8 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
             + CKKSModuleAlloc<BE>
             + CKKSCopyOps<BE>
             + Sized,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds + Compact,
-        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds,
+        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         G: PowerBasisHelper<BE, A>,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
@@ -208,7 +206,7 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
             + CKKSModuleAlloc<BE>
             + CKKSCopyOps<BE>
             + Sized,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds + Compact,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds,
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
@@ -258,7 +256,7 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
             power_basis,
             tsk,
             &mut scratch.borrow(),
-        )?; //TODO: ensure each giant-step intermediate state is compacted
+        )?;
 
         if can_fold {
             let xpow = power_basis.get(fold_power)?;
@@ -286,8 +284,8 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
             + CKKSModuleAlloc<BE>
             + CKKSCopyOps<BE>
             + Sized,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds + Compact,
-        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos + SetBSGSMeta + SetCKKSInfos + CKKSCtBounds,
+        C: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds + IntPolyInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos + BSGSMeta + CKKSCtBounds,
         G: PowerBasisHelper<BE, A>,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,

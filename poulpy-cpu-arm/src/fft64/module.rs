@@ -21,8 +21,9 @@ pub struct FFT64NeonHandle {
 }
 
 impl Backend for FFT64Neon {
-    type ScalarPrep = f64;
-    type ScalarBig = i64;
+    type DftWord = f64;
+    type ZnxWord = i64;
+    type BigWord = i64;
     type OwnedBuf = Vec<u8>;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];

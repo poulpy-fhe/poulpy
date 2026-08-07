@@ -1,7 +1,7 @@
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::{
     GLWEKeyswitch,
-    layouts::{Compact, GLWEToBackendMut, GLWEToBackendRef},
+    layouts::{GLWEToBackendMut, GLWEToBackendRef},
 };
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
@@ -27,7 +27,7 @@ where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
     F: PaCoScalar,
     Module<BE>: PaCoBootstrapModule<BE> + GLWEKeyswitch<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact + Send + Sync,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Send + Sync,
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
     BE::OwnedBuf: Sync,
 {

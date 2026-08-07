@@ -5,7 +5,7 @@
 //! arithmetic operation (the `ct×pt` baby-step terms, the hoisted `ct×ct`
 //! giant-step multiply, the `ct+ct` add, the accumulator seed and the final
 //! copy) is supplied by the scheme through [`BSGSOps`], which owns all precision
-//! bookkeeping, normalization and compaction.
+//! bookkeeping and normalization.
 
 use anyhow::{Result, ensure};
 use poulpy_hal::{
@@ -19,7 +19,7 @@ use poulpy_hal::{
 
 use crate::{
     layouts::{
-        BabyStep, Compact, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper,
+        BabyStep, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper,
         prepared::GLWETensorKeyPreparedToBackendRef,
     },
     oep::PolynomialEvaluationDefault,
@@ -77,7 +77,7 @@ where
     type Prepared;
 
     /// Initializes the accumulator `res` from `seed`'s precision: sets `res`'s
-    /// metadata to that of `seed`, compacts it, and zeroes its data.
+    /// metadata to that of `seed` and zeroes its data.
     fn init_accumulator(&self, module: &Module<BE>, res: &mut V, seed: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<()>;
 
     /// Computes `res[res_coeff] += coeffs[idx]`, normalizing `res`.
@@ -117,7 +117,7 @@ where
     fn prepare_right(&self, module: &Module<BE>, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<Self::Prepared>;
 
     /// Computes `dst *= prepared` (ct × ct), relinearizing with `tsk` and
-    /// compacting the result to the consumed budget.
+    /// stamping the consumed budget on the result.
     fn mul_prepared_assign<T>(
         &self,
         module: &Module<BE>,
@@ -132,7 +132,7 @@ where
     /// Computes `dst += a` with budget alignment, normalizing `dst`.
     fn add_assign(&self, module: &Module<BE>, dst: &mut V, a: &V, scratch: &mut ScratchArena<'_, BE>) -> Result<()>;
 
-    /// Computes `res = src`, returning `res` compacted to its effective precision.
+    /// Computes `res = src`, stamping `res` with `src`'s effective precision.
     fn copy(&self, module: &Module<BE>, res: &mut R, src: &V, scratch: &mut ScratchArena<'_, BE>) -> Result<()>;
 }
 
@@ -140,8 +140,8 @@ where
 ///
 /// All arithmetic is delegated to the scheme via [`BSGSOps`]; the engine only
 /// computes the parity schedule, seeds the accumulator from the *highest* power
-/// (the lowest-budget operand, so every term writes at the final compact width),
-/// sequences the terms and compacts at the end.
+/// (the lowest-budget operand, so every term writes at the final result width)
+/// and sequences the terms.
 pub(crate) fn eval_baby_step<BE: Backend, Ops, V, P, G, A>(
     module: &Module<BE>,
     ops: &Ops,
@@ -153,7 +153,7 @@ pub(crate) fn eval_baby_step<BE: Backend, Ops, V, P, G, A>(
 ) -> Result<()>
 where
     Ops: BSGSOps<BE, V, P, A, V>,
-    V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact,
+    V: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
     P: GLWEToBackendRef<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE>,
     G: PowerBasisHelper<BE, A>,
@@ -177,8 +177,6 @@ where
         let xpow = power_basis.get(i)?;
         ops.mul_add_pt_const(module, res, xpow, coeffs, i, scratch)?;
     }
-
-    res.compact();
 
     Ok(())
 }
@@ -262,9 +260,8 @@ where
                     (low_steps[0].get(), high_steps[high_idx].get_mut())
                 };
 
-                // `b·Xᵍˢᵖ` (ct×ct, the scheme compacts `b` to the consumed budget);
-                // then `b += a`. The incoming `b` is already compact — a baby step
-                // (compacted by `eval_baby_step`) or a prior round's compacted result.
+                // `b·Xᵍˢᵖ` (ct×ct, the scheme stamps `b` with the consumed
+                // budget); then `b += a`.
                 ops.mul_prepared_assign(module, b, &prepared, tsk, scratch)?;
                 ops.add_assign(module, b, a, scratch)?;
             }
@@ -296,7 +293,7 @@ impl<BE: Backend> PolynomialEvaluationDefault<BE> for Module<BE> {
     ) -> Result<()>
     where
         Ops: BSGSOps<BE, R, P, A, R>,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
         P: GLWEToBackendRef<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,

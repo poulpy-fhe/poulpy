@@ -8,13 +8,13 @@
 
 use crate::CKKSAtkBounds;
 use crate::{CKKSResult as Result, ckks_ensure};
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     GLWECopy, GLWELinearTransformations, LinearTransformationBabySteps, LinearTransformationGiantStep,
     LinearTransformationPrepared,
     default::linear_transformation::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft},
     layouts::{
-        Compact, GGLWEInfos, GLWE, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-        prepared::PreparedDiagonal,
+        GGLWEInfos, GLWE, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::PreparedDiagonal,
     },
 };
 use poulpy_hal::{
@@ -122,7 +122,7 @@ where
         lt: &LinearTransformation<P>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
     {
         // Stash the plaintext scale exponent while filling the diagonals so eval
         // no longer needs `lt` for `cnv_offset` math. Contract: the diagonals
@@ -177,9 +177,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: DiagonalProd<BE> + LtDiagonalScale,
+        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
@@ -192,7 +192,7 @@ where
         // read off the first diagonal. The convolution offset must match the width
         // the diagonal data was masked/positioned at in `cnv_prepare_right` (its
         // effective `k`), which can be below the rounded physical `max_k`.
-        let (pt_log_scale, pt_max_k) = (first.lt_log_scale(), first.max_k().as_usize());
+        let (pt_log_scale, pt_max_k) = (first.lt_log_scale(), first.encoded_k().as_usize());
         ensure_uniform_diagonal_scale(lt, pt_log_scale, pt_max_k)?;
         // ct × (plaintext diagonal): the ct × pt convolution rule, with the diagonal
         // described by just its scale (`pt_log_scale` → rhs `log_delta`) and storage
@@ -209,7 +209,6 @@ where
         self.glwe_eval_linear_transformation_into(cnv_offset, dst, babies, lt, keys, scratch);
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
-        dst.compact();
         Ok(())
     }
 
@@ -223,7 +222,7 @@ where
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: DiagonalProd<BE> + LtDiagonalScale,
+        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
@@ -249,9 +248,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: DiagonalProd<BE> + LtDiagonalScale,
+        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
@@ -271,7 +270,7 @@ where
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: DiagonalProd<BE> + LtDiagonalScale,
+        P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
         K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>,
     {
@@ -334,18 +333,18 @@ where
 /// only rejects malformed hand-assembled inputs.
 fn ensure_uniform_diagonal_scale<P>(lt: &LinearTransformation<P>, log_scale: usize, max_k: usize) -> Result<()>
 where
-    P: LtDiagonalScale + LWEInfos,
+    P: LtDiagonalScale + IntPolyInfos + LWEInfos,
 {
     for gs in &lt.giant_steps {
         for diag in &gs.diagonals {
             let pt = &diag.plaintext;
             ckks_ensure!(
-                pt.lt_log_scale() == log_scale && pt.max_k().as_usize() == max_k,
+                pt.lt_log_scale() == log_scale && pt.encoded_k().as_usize() == max_k,
                 "linear transformation diagonals are not scale-uniform: diagonal (giant rot {}, baby {}) has (log_scale {}, max_k {}) but the first diagonal — which cnv_offset and the result metadata are derived from — has ({log_scale}, {max_k})",
                 gs.rot,
                 diag.baby,
                 pt.lt_log_scale(),
-                pt.max_k().as_usize(),
+                pt.encoded_k().as_usize(),
             );
         }
     }

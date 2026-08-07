@@ -8,7 +8,7 @@ use crate::{
     GetDistribution, GetDistributionMut,
     dist::Distribution,
     layouts::{
-        Base2K, Compact, GGLWE, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut,
+        Base2K, GGLWE, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut,
         GGLWEPreparedBackendRef, GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef, GGLWEToBackendMut, GGLWEToBackendRef,
         GGSW, GGSWBackendMut, GGSWBackendRef, GGSWInfos, GGSWPrepared, GGSWPreparedBackendMut, GGSWPreparedBackendRef,
         GGSWPreparedToBackendMut, GGSWPreparedToBackendRef, GGSWToBackendMut, GGSWToBackendRef, GLWE, GLWEBackendMut,
@@ -17,7 +17,7 @@ use crate::{
         GLWESecretPreparedToBackendRef, GLWESecretTensor, GLWESecretToBackendMut, GLWESecretToBackendRef, GLWETensor,
         GLWEToBackendMut, GLWEToBackendRef, LWE, LWEBackendMut, LWEBackendRef, LWEPlaintext, LWEPlaintextBackendMut,
         LWEPlaintextBackendRef, LWEPlaintextToBackendMut, LWEPlaintextToBackendRef, LWEToBackendMut, LWEToBackendRef, Rank,
-        SetBase2k, SetGGLWEInfos, SetK, SetSize, TorusPrecision,
+        SetBase2k, SetGGLWEInfos, SetK, TorusPrecision,
     },
 };
 
@@ -120,19 +120,23 @@ impl_set_lwe_infos!(LWEViewMut);
 impl_set_lwe_infos!(GLWEViewMut);
 impl_set_lwe_infos!(GLWEPlaintextViewMut);
 
+impl<'a, BE: Backend + 'a> crate::layouts::IntPolyInfos for GLWEPlaintextViewMut<'a, BE> {
+    fn encoded_k(&self) -> crate::layouts::TorusPrecision {
+        self.inner.encoded_k()
+    }
+}
+
+impl<'a, BE: Backend + 'a> crate::layouts::IntPolyInfos for LWEPlaintextViewMut<'a, BE> {
+    fn encoded_k(&self) -> crate::layouts::TorusPrecision {
+        self.inner.encoded_k()
+    }
+}
+
 impl<'a, BE: Backend + 'a> SetK for GLWEViewMut<'a, BE> {
     fn set_k(&mut self, k: TorusPrecision) {
         self.inner.set_k(k);
     }
 }
-
-impl<'a, BE: Backend + 'a> SetSize for GLWEViewMut<'a, BE> {
-    fn set_size(&mut self, size: usize) {
-        self.inner.set_size(size);
-    }
-}
-
-impl<'a, BE: Backend + 'a> Compact for GLWEViewMut<'a, BE> {}
 
 impl<'a, BE: Backend + 'a> SetBase2k for LWEPlaintextViewMut<'a, BE> {
     fn set_base2k(&mut self, base2k: Base2K) {

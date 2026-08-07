@@ -273,7 +273,7 @@ pub trait SecretConversion<B: Backend> {
         S: GLWESecretToBackendRef<B>;
 }
 
-impl<B: Backend + HalVecZnxImpl<B>> SecretConversion<B> for Module<B> {
+impl<B: Backend<ZnxWord = i64> + HalVecZnxImpl<B>> SecretConversion<B> for Module<B> {
     fn glwe_secret_from_lwe_secret<S>(&self, src: &S) -> GLWESecret<B::OwnedBuf>
     where
         S: LWESecretToBackendRef<B>,

@@ -10,12 +10,13 @@
 #![allow(dead_code)]
 
 use bytemuck::{cast_slice, cast_slice_mut};
+use poulpy_hal::layouts::PrimeSet;
 use std::mem::size_of;
 
 use crate::ntt3x42_ifma::{
     kernels::{cond_sub_2q_si512, ntt_avx512},
     module::handle,
-    primes::{PrimeSetNtt3x42Ifma, Primes42},
+    primes::Primes42,
     tables::{harvey_modmul, harvey_quotient},
     traits::{Ntt3x42IfmaAddAssign, Ntt3x42IfmaCFromB, Ntt3x42IfmaFromZnx64},
     types::Q126Scalar,

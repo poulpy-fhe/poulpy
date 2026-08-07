@@ -1,4 +1,5 @@
 use crate::CKKSResult as Result;
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWESecretPreparedToBackendRef, GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_core::{EncryptionInfos, GLWEDecrypt, GLWEEncryptSk};
 use poulpy_hal::{
@@ -39,7 +40,7 @@ where
     where
         S: GLWESecretPreparedToBackendRef<BE>,
         Dct: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        Dpt: GLWEToBackendRef<BE> + CKKSCtBounds,
+        Dpt: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_encrypt_sk_impl(self, ct, pt, sk, enc_infos, source_xe, source_xa, scratch)
     }
@@ -69,7 +70,7 @@ where
     fn ckks_decrypt<Dpt, Dct, S>(&self, pt: &mut Dpt, ct: &Dct, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        Dpt: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
+        Dpt: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos + IntPolyInfos,
         Dct: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
         BE::ckks_decrypt_impl(self, pt, ct, sk, scratch)

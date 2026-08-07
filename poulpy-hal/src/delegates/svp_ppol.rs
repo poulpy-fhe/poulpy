@@ -11,7 +11,7 @@ macro_rules! impl_svp_delegate {
     ($trait:ty, $($body:item)+) => {
         impl<B> $trait for Module<B>
         where
-            B: Backend + HalSvpImpl<B>,
+            B: Backend<ZnxWord = i64> + HalSvpImpl<B>,
         {
             $($body)+
         }
@@ -20,7 +20,7 @@ macro_rules! impl_svp_delegate {
 
 impl<B: Backend> SvpPPolAlloc<B> for Module<B> {
     fn svp_ppol_alloc(&self, cols: usize) -> SvpPPolOwned<B> {
-        SvpPPolOwned::alloc(self.n(), cols)
+        SvpPPolOwned::<B>::alloc(self.n(), cols)
     }
 }
 

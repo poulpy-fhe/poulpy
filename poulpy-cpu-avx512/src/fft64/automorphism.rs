@@ -31,7 +31,7 @@ pub fn fft64_vec_znx_dft_automorphism_avx512<BE>(
     a: &VecZnxDftBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<ScalarPrep = f64> + poulpy_cpu_ref::reference::fft64::reim::ReimArith,
+    BE: Backend<DftWord = f64> + poulpy_cpu_ref::reference::fft64::reim::ReimArith,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -44,7 +44,7 @@ pub fn fft64_vec_znx_dft_automorphism_avx512<BE>(
     let m: usize = res.n() >> 1;
     if m < 8 {
         // 8-wide gather has no slots to fill; defer to the scalar path.
-        fft64_automorphism_ref(plan, res, res_col, a, a_col);
+        fft64_automorphism_ref::<BE>(plan, res, res_col, a, a_col);
         return;
     }
 

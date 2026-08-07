@@ -1,4 +1,8 @@
 use super::{TestParams, download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
+use crate::layouts::VecZnxBigToBackendMut;
+use crate::layouts::VecZnxBigToBackendRef;
+use crate::layouts::VecZnxDftToBackendMut;
+use crate::layouts::VecZnxDftToBackendRef;
 
 use crate::{
     api::{
@@ -7,15 +11,12 @@ use crate::{
         VecZnxDftCopy, VecZnxDftSub, VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxIdftApply, VecZnxIdftApplyTmpA,
         VecZnxIdftApplyTmpBytes,
     },
-    layouts::{
-        Backend, FillUniform, HostBytesBackend, Module, ScratchOwned, VecZnx, VecZnxBig, VecZnxBigToBackendMut,
-        VecZnxBigToBackendRef, VecZnxDft, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef,
-    },
+    layouts::{Backend, FillUniform, HostBytesBackend, Module, ScratchOwned, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef},
     source::Source,
 };
 
-type VecZnxDftOwned<BE> = VecZnxDft<<BE as Backend>::OwnedBuf, BE>;
-type VecZnxBigOwned<BE> = VecZnxBig<<BE as Backend>::OwnedBuf, BE>;
+use crate::layouts::VecZnxBigOwned;
+use crate::layouts::VecZnxDftOwned;
 
 fn idft_into_alloc<BE>(module: &Module<BE>, a: &mut VecZnxDftOwned<BE>) -> VecZnxBigOwned<BE>
 where
@@ -33,7 +34,7 @@ where
     res
 }
 
-fn dft_of_uploaded_vec_znx<BE>(
+pub(crate) fn dft_of_uploaded_vec_znx<BE>(
     module: &Module<BE>,
     host: &VecZnx<impl crate::layouts::HostDataRef>,
     steps: usize,
@@ -102,7 +103,7 @@ where
     normalize_big_to_host(module, base2k, &big, scratch)
 }
 
-fn idft_apply_to_host<BE>(
+pub(crate) fn idft_apply_to_host<BE>(
     module: &Module<BE>,
     base2k: usize,
     dft: &VecZnxDftOwned<BE>,

@@ -15,15 +15,14 @@
 //
 // ----------------------------------------------------------------------
 
-use bytemuck::{Pod, Zeroable};
-use rand_distr::num_traits::Zero;
-use std::{fmt, ops::Add};
-
 use super::primes::{PrimeSet, Primes30};
+
+/// Re-export of the family-neutral CRT word (moved to `poulpy_hal::layouts`).
+pub use poulpy_hal::layouts::CrtWord;
 
 /// Shared 32-byte NTT prep scalar for 4-lane CRT backends.
 ///
-/// Stores four `u64` lanes in a packed `#[repr(C)]` struct so that:
+/// Stores four `u64` lanes in a packed block so that:
 ///
 /// - A `VecZnxDft` limb stores `n` consecutive `Q120bScalar` values.
 /// - The scalar bytes can be reinterpreted as `[u64; 4]` via
@@ -32,46 +31,8 @@ use super::primes::{PrimeSet, Primes30};
 ///   prepared-constant SVP/VMP multiply–accumulate operations.
 ///
 /// The historical `Q120bScalar` name comes from the original 4-prime NTT4x30
-/// backend. The layout itself is shared by every backend that uses a
-/// 4-lane `ScalarPrep`, including 3-prime backends that leave lane 3 as
-/// padding.
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
-pub struct Q120bScalar(pub [u64; 4]);
-
-// SAFETY: Q120bScalar is #[repr(C)] with a single [u64; 4] field.
-// All bit patterns are valid; no padding bytes, no uninit.
-unsafe impl Zeroable for Q120bScalar {}
-unsafe impl Pod for Q120bScalar {}
-
-impl fmt::Display for Q120bScalar {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{:#x}, {:#x}, {:#x}, {:#x}]", self.0[0], self.0[1], self.0[2], self.0[3])
-    }
-}
-
-impl Add for Q120bScalar {
-    type Output = Self;
-    /// Element-wise wrapping addition of the four CRT residues.
-    fn add(self, rhs: Self) -> Self {
-        Self([
-            self.0[0].wrapping_add(rhs.0[0]),
-            self.0[1].wrapping_add(rhs.0[1]),
-            self.0[2].wrapping_add(rhs.0[2]),
-            self.0[3].wrapping_add(rhs.0[3]),
-        ])
-    }
-}
-
-impl Zero for Q120bScalar {
-    fn zero() -> Self {
-        Self([0u64; 4])
-    }
-
-    fn is_zero(&self) -> bool {
-        self.0 == [0u64; 4]
-    }
-}
+/// backend; it is now an alias of the prime-set-parameterized [`CrtWord`].
+pub type Q120bScalar = CrtWord<Primes30, u64>;
 
 /// CRT representation of an integer modulo Q120.
 ///

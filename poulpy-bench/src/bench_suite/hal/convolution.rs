@@ -1,13 +1,19 @@
+use poulpy_hal::layouts::CnvPVecLOwned;
+use poulpy_hal::layouts::CnvPVecLToBackendMut;
+use poulpy_hal::layouts::CnvPVecLToBackendRef;
+use poulpy_hal::layouts::CnvPVecROwned;
+use poulpy_hal::layouts::CnvPVecRToBackendMut;
+use poulpy_hal::layouts::CnvPVecRToBackendRef;
+use poulpy_hal::layouts::VecZnxBigOwned;
+use poulpy_hal::layouts::VecZnxBigToBackendMut;
+use poulpy_hal::layouts::VecZnxDftToBackendMut;
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion};
 
 use poulpy_hal::{
     api::{CnvPVecAlloc, Convolution, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxBigAlloc, VecZnxDftAlloc},
-    layouts::{
-        Backend, CnvPVecL, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecR, CnvPVecRToBackendMut, CnvPVecRToBackendRef,
-        Module, ScratchOwned, VecZnxBig, VecZnxBigToBackendMut, VecZnxDftToBackendMut,
-    },
+    layouts::{Backend, Module, ScratchOwned},
     source::Source,
 };
 
@@ -33,7 +39,7 @@ where
 
         let module: Module<BE> = Module::<BE>::new(n as u64);
 
-        let mut a_prep: CnvPVecL<BE::OwnedBuf, BE> = module.cnv_pvec_left_alloc(1, size);
+        let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(1, size);
 
         let a = crate::random_host_vec_znx(module.n(), 1, size, &mut source);
         let a = crate::upload_host_vec_znx::<BE>(&a);
@@ -81,7 +87,7 @@ where
 
         let module: Module<BE> = Module::<BE>::new(n as u64);
 
-        let mut a_prep: CnvPVecR<BE::OwnedBuf, BE> = module.cnv_pvec_right_alloc(1, size);
+        let mut a_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(1, size);
 
         let a = crate::random_host_vec_znx(module.n(), 1, size, &mut source);
         let a = crate::upload_host_vec_znx::<BE>(&a);
@@ -129,8 +135,8 @@ where
 
         let module: Module<BE> = Module::<BE>::new(n as u64);
 
-        let a_prep: CnvPVecL<BE::OwnedBuf, BE> = crate::random_backend_cnv_pvec_left::<BE>(module.n(), 1, size, &mut source);
-        let b_prep: CnvPVecR<BE::OwnedBuf, BE> = crate::random_backend_cnv_pvec_right::<BE>(module.n(), 1, size, &mut source);
+        let a_prep: CnvPVecLOwned<BE> = crate::random_backend_cnv_pvec_left::<BE>(module.n(), 1, size, &mut source);
+        let b_prep: CnvPVecROwned<BE> = crate::random_backend_cnv_pvec_right::<BE>(module.n(), 1, size, &mut source);
         let mut c_dft = module.vec_znx_dft_alloc(1, c_size);
 
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
@@ -188,8 +194,8 @@ where
 
         let module: Module<BE> = Module::<BE>::new(n as u64);
 
-        let a_prep: CnvPVecL<BE::OwnedBuf, BE> = crate::random_backend_cnv_pvec_left::<BE>(module.n(), 1, size, &mut source);
-        let b_prep: CnvPVecR<BE::OwnedBuf, BE> = crate::random_backend_cnv_pvec_right::<BE>(module.n(), 1, size, &mut source);
+        let a_prep: CnvPVecLOwned<BE> = crate::random_backend_cnv_pvec_left::<BE>(module.n(), 1, size, &mut source);
+        let b_prep: CnvPVecROwned<BE> = crate::random_backend_cnv_pvec_right::<BE>(module.n(), 1, size, &mut source);
         let mut c_dft = module.vec_znx_dft_alloc(1, c_size);
 
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
@@ -261,8 +267,8 @@ where
         let cols = 2;
         let c_size: usize = size + size - 1;
 
-        let a_prep: CnvPVecL<BE::OwnedBuf, BE> = crate::random_backend_cnv_pvec_left::<BE>(module.n(), cols, size, &mut source);
-        let b_prep: CnvPVecR<BE::OwnedBuf, BE> = crate::random_backend_cnv_pvec_right::<BE>(module.n(), cols, size, &mut source);
+        let a_prep: CnvPVecLOwned<BE> = crate::random_backend_cnv_pvec_left::<BE>(module.n(), cols, size, &mut source);
+        let b_prep: CnvPVecROwned<BE> = crate::random_backend_cnv_pvec_right::<BE>(module.n(), cols, size, &mut source);
         let mut c_dft = module.vec_znx_dft_alloc(1, c_size);
 
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
@@ -323,7 +329,7 @@ where
 
         let a = crate::random_host_vec_znx(module.n(), cols, size, &mut source);
         let a = crate::upload_host_vec_znx::<BE>(&a);
-        let mut c_big: VecZnxBig<BE::OwnedBuf, BE> = module.vec_znx_big_alloc(1, c_size);
+        let mut c_big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, c_size);
 
         let b = crate::random_host_vec_znx(module.n(), 1, size, &mut source);
         let b = crate::upload_host_vec_znx::<BE>(&b);

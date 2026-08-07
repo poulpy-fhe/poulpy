@@ -1,4 +1,12 @@
 use super::{download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
+use crate::layouts::CnvPVecLToBackendMut;
+use crate::layouts::CnvPVecLToBackendRef;
+use crate::layouts::CnvPVecRToBackendMut;
+use crate::layouts::CnvPVecRToBackendRef;
+use crate::layouts::VecZnxBigToBackendMut;
+use crate::layouts::VecZnxBigToBackendRef;
+use crate::layouts::VecZnxDftToBackendMut;
+use crate::layouts::VecZnxDftToBackendRef;
 use rand::Rng;
 
 use crate::{
@@ -7,18 +15,12 @@ use crate::{
         VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply,
         VecZnxIdftApplyTmpA, VecZnxNormalizeAssignBackend,
     },
-    layouts::{
-        Backend, CnvPVecL, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecR, CnvPVecRToBackendMut, CnvPVecRToBackendRef,
-        DataView, FillUniform, ScratchArena, ScratchOwned, VecZnx, VecZnxBig, VecZnxBigToBackendMut, VecZnxBigToBackendRef,
-        VecZnxDft, VecZnxDftToBackendMut, VecZnxDftToBackendRef, ZnxView, ZnxViewMut, ZnxZero,
-    },
+    layouts::{DataView, FillUniform, ScratchArena, ScratchOwned, VecZnx, ZnxView, ZnxViewMut, ZnxZero},
     source::Source,
 };
 
-type VecZnxBigOwned<BE> = VecZnxBig<<BE as Backend>::OwnedBuf, BE>;
-type VecZnxDftOwned<BE> = VecZnxDft<<BE as Backend>::OwnedBuf, BE>;
-type CnvPVecLOwned<BE> = CnvPVecL<<BE as Backend>::OwnedBuf, BE>;
-type CnvPVecROwned<BE> = CnvPVecR<<BE as Backend>::OwnedBuf, BE>;
+use crate::layouts::VecZnxDftOwned;
+use crate::layouts::{CnvPVecLOwned, CnvPVecROwned, VecZnxBigOwned};
 
 pub fn test_convolution_by_const<M, BE: crate::test_suite::TestBackend<OwnedBuf = Vec<u8>>>(module: &M, base2k: usize)
 where

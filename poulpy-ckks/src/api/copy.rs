@@ -13,14 +13,14 @@ use crate::{CKKSCtBounds, SetCKKSInfos};
 /// # Metadata
 ///
 /// ```text
-/// offset         = max(0, src.k() − dst.max_k())
+/// offset         = max(0, src.k() − dst.k())
 ///
 /// log_delta_out  = src.log_delta
 /// log_budget_out = src.log_budget − offset
 /// ```
 ///
-/// When `dst.max_k() >= src.k()` the copy is lossless and
-/// `offset = 0`.  When `dst.max_k() < src.k()`, the
+/// When `dst.k() >= src.k()` the copy is lossless and
+/// `offset = 0`.  When `dst.k() < src.k()`, the
 /// most-significant bits that do not fit are silently dropped and
 /// `log_budget` is reduced by the deficit.
 pub trait CKKSCopyOps<BE: Backend> {

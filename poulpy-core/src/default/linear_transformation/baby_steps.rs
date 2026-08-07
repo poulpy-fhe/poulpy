@@ -14,6 +14,7 @@
 //! definition lives in [`crate::layouts`]); this module owns the HAL-dependent
 //! allocator and population routines.
 
+use poulpy_hal::layouts::CnvPVecLToBackendMut;
 use std::collections::BTreeMap;
 
 use poulpy_hal::{
@@ -23,8 +24,7 @@ use poulpy_hal::{
         VecZnxIdftApplyTmpBytes,
     },
     layouts::{
-        Backend, CnvPVecLToBackendMut, GaloisElement, ScratchArena, VecZnxBigToBackendRef, VecZnxDftBackendRef,
-        VecZnxDftToBackendRef, ZnxInfos,
+        Backend, GaloisElement, ScratchArena, VecZnxBigToBackendRef, VecZnxDftBackendRef, VecZnxDftToBackendRef, ZnxInfos,
     },
 };
 

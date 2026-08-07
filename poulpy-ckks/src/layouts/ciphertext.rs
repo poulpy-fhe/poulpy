@@ -12,8 +12,8 @@ use std::{
 
 use anyhow::Result;
 use poulpy_core::layouts::{
-    BSGSMeta, Base2K, Compact, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, LWEInfos, Rank,
-    SetBSGSMeta, SetK, SetSize, TorusPrecision,
+    BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, LWEInfos, Rank, SetBSGSMeta,
+    SetK, TorusPrecision,
 };
 use poulpy_core::{GLWENormalize, ScratchArenaTakeCore};
 use poulpy_hal::layouts::{Backend, Data, HostDataRef, ScratchArena};
@@ -99,7 +99,7 @@ impl<D: Data, S: CKKSNormalizationState> CKKSCiphertext<D, S> {
     /// Normal CKKS operations update metadata themselves.
     pub fn set_meta_checked(&mut self, meta: CKKSMeta) -> Result<()> {
         // The budget now lives in the wrapped GLWE's torus width `k`; this only
-        // validates that the stored width fits the allocated storage and that the
+        // validates that the claimed width fits the allocated storage and that the
         // requested scale fits within it.
         anyhow::ensure!(
             self.k().as_usize() <= self.max_k().as_usize() && meta.log_delta <= self.k().as_usize(),
@@ -189,14 +189,6 @@ impl<D: Data, S: CKKSNormalizationState> SetK for CKKSCiphertext<D, S> {
         SetK::set_k(&mut self.inner, k);
     }
 }
-
-impl<D: Data, S: CKKSNormalizationState> SetSize for CKKSCiphertext<D, S> {
-    fn set_size(&mut self, size: usize) {
-        self.inner.data_mut().set_size(size);
-    }
-}
-
-impl<D: Data, S: CKKSNormalizationState> Compact for CKKSCiphertext<D, S> {}
 
 impl<D: Data, S: CKKSNormalizationState> BSGSMeta for CKKSCiphertext<D, S> {
     fn bsgs_log_budget(&self) -> usize {

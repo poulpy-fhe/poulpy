@@ -10,11 +10,12 @@
 //!   is pure orchestration.
 
 use crate::api::CKKSEncodingOps;
+use poulpy_core::layouts::IntPolyInfos;
 use std::collections::HashMap;
 
 use poulpy_core::{
     GLWERotate, ModuleTransfer,
-    layouts::{GLWEInfos, GLWELayout, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, Rank, SetSize},
+    layouts::{GLWEInfos, GLWELayout, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, Rank},
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -58,7 +59,7 @@ fn assert_ciphertext_unchanged<BE>(
     assert_eq!(
         before.max_size(),
         after.max_size(),
-        "a rejected call changed the output capacity"
+        "a rejected call changed the output stored limb width"
     );
     assert_eq!(before.data().raw(), after.data().raw(), "a rejected call changed output data");
 }
@@ -95,7 +96,7 @@ where
     let pt = ckks_decrypt_with_prec(module, ct, sk, prec, scratch).unwrap();
     // Digits are aligned to the plaintext's STORAGE width (max_k, a whole
     // number of limbs), not its effective k — mirror the codec convention.
-    let max_k = pt.max_k().as_usize() as i32;
+    let max_k = pt.encoded_k().as_usize() as i32;
     let data = pt.data();
     let b2k = base2k.as_usize() as i32;
     (0..n)
@@ -250,7 +251,7 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     assert_ciphertext_unchanged::<BE>(&before, &rejected);
 
     let mut truncated_input = ct_in.clone();
-    truncated_input.set_size(0);
+    truncated_input.data_mut().set_size(0);
     let before = rejected.to_host_owned::<BE>();
     let error = module
         .ckks_paco_bootstrap_direct_into::<_, _>(&mut rejected, &truncated_input, &ctx, &keys, KAPPA, &mut scratch.borrow())
@@ -259,7 +260,7 @@ pub fn test_paco_parallel_bootstrap<BE, F, E>(
     assert_ciphertext_unchanged::<BE>(&before, &rejected);
 
     let mut truncated_output = module.ckks_ciphertext_alloc(ctx.base2k(), k_out);
-    truncated_output.set_size(0);
+    truncated_output.data_mut().set_size(0);
     let before = truncated_output.to_host_owned::<BE>();
     let error = module
         .ckks_paco_bootstrap_direct_into::<_, _>(&mut truncated_output, &ct_in, &ctx, &keys, KAPPA, &mut scratch.borrow())

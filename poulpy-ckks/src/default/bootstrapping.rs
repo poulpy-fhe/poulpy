@@ -2,8 +2,8 @@ use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::{
     GLWECopy, GLWEKeyswitch, GLWEShift,
     layouts::{
-        BSGSMeta, Compact, GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
-        LWEInfos, Rank, SetBSGSMeta, prepared::GLWETensorKeyPreparedToBackendRef,
+        BSGSMeta, GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        Rank, SetBSGSMeta, prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
 use poulpy_hal::layouts::{Backend, ScratchArena};
@@ -123,10 +123,10 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
         Src: GLWEToBackendRef<BE> + CKKSInfos,
     {
         // `dst` is the (freshly-allocated) widened target: ModUp raises the modulus
-        // into its full allocated capacity, so the widening width is `dst.max_k()`.
+        // to the destination's requested modulus, so the widening width is `dst.k()`.
         // `dst.k()` is meta-derived and is `0` on a fresh ciphertext, which would
         // spuriously fail the "must widen" check below.
-        let k_large: usize = dst.max_k().as_usize();
+        let k_large: usize = dst.k().as_usize();
         let k_small: usize = src.k().as_usize();
 
         ckks_ensure!(
@@ -183,7 +183,7 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
             + CKKSEvalModOps<BE>,
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
         CKKSCiphertext<BE::OwnedBuf>:
-            GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact + SetBSGSMeta + BSGSMeta,
+            GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
         // TODO(HalfBTS): remove this guard when S2C-first is wired.
