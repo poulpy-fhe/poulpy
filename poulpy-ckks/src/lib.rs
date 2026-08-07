@@ -97,10 +97,11 @@ pub(crate) use error::{
 /// Quad-precision (IEEE 754 binary128) CKKS scalar.
 ///
 /// Always the portable [`scalar::Quad`] newtype over the primitive `f128`, in
-/// every configuration. Under the `libquadmath` feature on x86_64 only its
-/// *transcendental* math is routed through libquadmath (faster for on-the-fly
-/// FFT-table builds); storage, codecs, and exact arithmetic are unchanged, so
-/// the type — and its `bytemuck::Pod` encoding — is identical across features.
+/// every configuration. Under the `libquadmath` feature on non-Apple x86_64
+/// only its libm-backed math is routed through libquadmath (faster for
+/// on-the-fly FFT-table builds); storage, codecs, and exact arithmetic are
+/// unchanged, so the type — and its `bytemuck::Pod` encoding — is identical
+/// across features.
 pub use scalar::Quad;
 
 /// Backend-compatible shared CKKS plaintext storage.

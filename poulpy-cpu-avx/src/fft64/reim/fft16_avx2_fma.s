@@ -4,13 +4,8 @@
 # ----------------------------------------------------------------------
 #
 
-.text
-.globl  fft16_avx2_fma_asm
-.hidden fft16_avx2_fma_asm
-.p2align 4, 0x90
-.type   fft16_avx2_fma_asm,@function
-fft16_avx2_fma_asm:
-.att_syntax prefix
+# Body only: the object-format-specific symbol decoration (.globl, visibility,
+# alignment, label, .size) is emitted by the `global_asm!` block in `mod.rs`.
 
 # SysV args: %rdi = re*, %rsi = im*, %rdx = omg*
 # stage 0: load inputs
@@ -157,6 +152,3 @@ vmovupd     %ymm6,0x40(%rsi)   # ia8
 vmovupd     %ymm7,0x60(%rsi)   # ia12
 vzeroupper
 ret
-
-.size   fft16_avx2_fma_asm, .-fft16_avx2_fma_asm
-.section .note.GNU-stack,"",@progbits
