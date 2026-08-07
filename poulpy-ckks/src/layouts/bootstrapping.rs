@@ -129,11 +129,6 @@ impl BootstrappingPlan {
         if slots_to_coeffs.kind() != DFTType::Decode {
             return Err(invalid("slots_to_coeffs must be a DFTType::Decode plan".to_string()));
         }
-        if pipeline == BootstrappingPipeline::S2CFirst && techniques.eval_round_plus.is_some() {
-            return Err(invalid(
-                "EvalRound+ is not supported with S2C-first bootstrapping".to_string(),
-            ));
-        }
         if let Some(sse) = techniques.sparse_secret_encapsulation
             && sse.hamming_weight == 0
         {
@@ -428,8 +423,8 @@ mod tests {
     }
 
     #[test]
-    fn recipe_rejects_eval_round_plus_with_s2c_first() {
-        let err = plan(
+    fn recipe_accepts_eval_round_plus_with_s2c_first() {
+        let plan = plan(
             BootstrappingPipeline::S2CFirst,
             BootstrappingTechniques {
                 sparse_secret_encapsulation: None,
@@ -439,8 +434,8 @@ mod tests {
             },
             16,
         )
-        .unwrap_err();
-        assert!(err.to_string().contains("EvalRound+"));
+        .unwrap();
+        assert!(plan.coeffs_to_slots_bypass().is_some());
     }
 
     #[test]

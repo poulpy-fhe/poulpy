@@ -833,14 +833,25 @@ pub fn test_bootstrapping_s2c_first_e2e<BE, F, E>(
     CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    let (re, im) = run_s2c_first_case::<BE, F, E>(params.base2k, 40, 16, FMOD_INTERVAL);
-    for (avg, tag) in [(re, "re"), (im, "im")] {
-        println!("[s2c_first] BOOTSTRAP-PREC ({tag}) avg={avg:.2} bits");
-        assert!(avg >= 24.0, "bootstrapping_s2c_first_e2e ({tag}): {avg:.1} bits < 24.0");
+    for (eval_round_plus, case) in [(false, "standard"), (true, "evalround+")] {
+        let (re, im) = run_s2c_first_case::<BE, F, E>(params.base2k, 40, 16, FMOD_INTERVAL, eval_round_plus);
+        for (avg, tag) in [(re, "re"), (im, "im")] {
+            println!("[s2c_first/{case}] BOOTSTRAP-PREC ({tag}) avg={avg:.2} bits");
+            assert!(
+                avg >= 24.0,
+                "bootstrapping_s2c_first_e2e ({case}/{tag}): {avg:.1} bits < 24.0"
+            );
+        }
     }
 }
 
-fn run_s2c_first_case<BE, F, E>(base2k: usize, log_delta: usize, log_msg_ratio: usize, fmod_interval: usize) -> (f64, f64)
+fn run_s2c_first_case<BE, F, E>(
+    base2k: usize,
+    log_delta: usize,
+    log_msg_ratio: usize,
+    fmod_interval: usize,
+    eval_round_plus: bool,
+) -> (f64, f64)
 where
     BE: TestContextBackend + Backend<OwnedBuf = Vec<u8>>,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
@@ -859,11 +870,24 @@ where
         DFTType::Encode,
         vec![(2, 4), (2, 4), (3, 4), (3, 4)],
         DFTOutputFormat::SplitRealAndImag,
-        meta(58, 2),
+        meta(if eval_round_plus { 29 } else { 58 }, 2),
     )
     .unwrap()
     .with_scaling(1. / fmod_interval as f64)
     .unwrap();
+    let coeffs_to_slots_bypass = eval_round_plus
+        .then(|| {
+            DFTPlan::new(
+                DFTType::Encode,
+                vec![(1, 1); 10],
+                DFTOutputFormat::SplitRealAndImag,
+                meta(58, 2),
+            )
+            .unwrap()
+            .with_scaling(1.0)
+            .unwrap()
+        })
+        .map(|coeffs_to_slots_bypass| EvalRoundPlus { coeffs_to_slots_bypass });
     let slots_to_coeffs = DFTPlan::new(
         DFTType::Decode,
         vec![(3, 4), (3, 4), (2, 4), (2, 4)],
@@ -879,7 +903,7 @@ where
             sparse_secret_encapsulation: Some(SparseSecretEncapsulation {
                 hamming_weight: EPHEMERAL_SECRET_WEIGHT,
             }),
-            eval_round_plus: None,
+            eval_round_plus: coeffs_to_slots_bypass,
         },
         coeffs_to_slots,
         EvalModPlan {
@@ -922,7 +946,9 @@ where
         rank: 1,
     };
 
-    println!("[s2c_first] n={n} base2k={base2k} log_delta={log_delta} k_in={k_in} k_boot={k_boot}");
+    println!(
+        "[s2c_first] n={n} base2k={base2k} log_delta={log_delta} k_in={k_in} k_boot={k_boot} eval_round_plus={eval_round_plus}"
+    );
     println!(
         "[s2c_first] S2C={} C2S={} EvalMod={}",
         plan.slots_to_coeffs().consumed_bits(),

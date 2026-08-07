@@ -98,7 +98,14 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
 
         let mut carved = match ctx.pipeline {
             BootstrappingPipeline::C2SFirst => 5 * boot_ct_bytes,
-            BootstrappingPipeline::S2CFirst => (3 * boot_ct_bytes).max(boot_ct_bytes + 4 * in_ct_bytes),
+            BootstrappingPipeline::S2CFirst => {
+                let post_mod_up = if ctx.coeffs_to_slots_bypass.is_some() {
+                    5 * boot_ct_bytes
+                } else {
+                    3 * boot_ct_bytes
+                };
+                post_mod_up.max(boot_ct_bytes + 4 * in_ct_bytes)
+            }
         };
         if ctx.pipeline == BootstrappingPipeline::C2SFirst && ctx.coeffs_to_slots_bypass.is_some() {
             carved += 2 * boot_ct_bytes;
@@ -273,7 +280,9 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
             + CKKSConjugateOps<BE>
             + CKKSImagOps<BE>
             + CKKSDFTOps<BE>
-            + CKKSEvalModOps<BE>,
+            + CKKSEvalModOps<BE>
+            + CKKSCopyOps<BE>
+            + CKKSPow2Ops<BE>,
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
         CKKSCiphertext<BE::OwnedBuf>:
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
@@ -326,8 +335,44 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
             let (mut r0, scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
             let (mut i0, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
             self.ckks_bootstrap_coeffs_to_slots(&ct_raised, &mut r0, &mut i0, ctx, keys, &mut scratch_local)?;
-            self.ckks_bootstrap_eval_mod_halves(&r0, &i0, ct_out, &mut ct_raised, ctx, keys, &mut scratch_local)?;
-            self.recombine_halves(ct_out, &mut ct_raised, &mut scratch_local)?;
+
+            match &ctx.coeffs_to_slots_bypass {
+                None => {
+                    self.ckks_bootstrap_eval_mod_halves(&r0, &i0, ct_out, &mut ct_raised, ctx, keys, &mut scratch_local)?;
+                    self.recombine_halves(ct_out, &mut ct_raised, &mut scratch_local)?;
+                }
+                Some(bypass) => {
+                    let (mut r0_hp, scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
+                    let (mut i0_hp, mut scratch_local) =
+                        scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
+                    self.ckks_coeffs_to_slots_split(
+                        &mut r0_hp,
+                        &mut i0_hp,
+                        &ct_raised,
+                        bypass,
+                        keys.rotation_keys(),
+                        keys.conjugation_key(),
+                        &mut scratch_local,
+                    )?;
+
+                    self.ckks_bootstrap_eval_mod_halves(&r0, &i0, ct_out, &mut ct_raised, ctx, keys, &mut scratch_local)?;
+
+                    ckks_ensure!(
+                        ctx.eval_mod.plan.f_mod_interval.is_power_of_two(),
+                        "EvalRound+ requires a power-of-two f_mod_interval, got {}",
+                        ctx.eval_mod.plan.f_mod_interval
+                    );
+                    let log2_k = ctx.eval_mod.plan.f_mod_interval.trailing_zeros() as usize;
+                    self.ckks_mul_pow2_assign(&mut r0, log2_k, &mut scratch_local)?;
+                    self.ckks_mul_pow2_assign(&mut i0, log2_k, &mut scratch_local)?;
+                    self.ckks_sub_assign(&mut r0_hp, &r0, &mut scratch_local)?;
+                    self.ckks_sub_assign(&mut i0_hp, &i0, &mut scratch_local)?;
+                    self.ckks_add_assign(&mut r0_hp, ct_out, &mut scratch_local)?;
+                    self.ckks_add_assign(&mut i0_hp, &ct_raised, &mut scratch_local)?;
+                    self.recombine_halves(&mut r0_hp, &mut i0_hp, &mut scratch_local)?;
+                    self.ckks_copy(ct_out, &r0_hp, &mut scratch_local)?;
+                }
+            }
             ct_out.set_meta(CKKSMeta {
                 log_sparsity: ct_in.log_sparsity(),
                 log_delta: ct_in.log_delta(),
