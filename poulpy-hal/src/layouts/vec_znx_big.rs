@@ -114,16 +114,6 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
     pub fn max_size(&self) -> usize {
         self.shape.max_size()
     }
-
-    pub fn with_size(mut self, size: usize) -> Self {
-        assert!(size <= self.max_size());
-        self.shape = self.shape.with_size(size);
-        self
-    }
-
-    pub fn set_size(&mut self, size: usize) {
-        self.shape = self.shape.with_size(size);
-    }
 }
 
 impl<D: HostDataMut, W: BigWord, B: Backend<BigWord = W>> ZnxZero for VecZnxBig<D, W, B> {
