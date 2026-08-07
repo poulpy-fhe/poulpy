@@ -700,6 +700,18 @@ enum SlotsKind {
     Real,
 }
 
+fn ensure_unit_circle_exp_context<BE: Backend, F>(ctx: &BootstrappingContext<BE, F>) -> Result<()> {
+    ckks_ensure!(
+        ctx.eval_mod.plan.eval_mod_type == EvalModType::ExpCmplx,
+        "general functional bootstrapping requires an ExpCmplx EvalMod context"
+    );
+    ckks_ensure!(
+        ctx.eval_mod.plan.scaling == Some(std::f64::consts::TAU),
+        "general functional bootstrapping requires a unit-circle ExpCmplx context (scaling = 2π)"
+    );
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn ckks_eval_encoded_lut<BE, F, K, C, R>(
     module: &Module<BE>,
@@ -876,10 +888,7 @@ where
         "bootstrapping key encapsulation does not match the compiled recipe"
     );
     if lut.requires_eval_mod() {
-        ckks_ensure!(
-            ctx.eval_mod.plan.eval_mod_type == EvalModType::ExpCmplx,
-            "general functional bootstrapping requires an ExpCmplx EvalMod context"
-        );
+        ensure_unit_circle_exp_context(ctx)?;
     }
     ensure_functional_message_ratio(ct_in, ctx.slots_to_coeffs.consumed_bits(), lut.log_msg_ratio())?;
 
@@ -965,20 +974,13 @@ where
         ctx.pipeline == BootstrappingPipeline::S2CFirst,
         "functional bootstrapping requires an S2C-first context"
     );
-    ckks_ensure!(
-        ctx.eval_mod.plan.eval_mod_type == EvalModType::ExpCmplx,
-        "general functional bootstrapping requires an ExpCmplx EvalMod context"
-    );
+    ensure_unit_circle_exp_context(ctx)?;
     let head = &ct_outs[0];
     let (out_n, out_base2k, out_k) = (head.n(), head.base2k(), head.k());
     ckks_ensure!(
         ct_in.rank().as_usize() == 1
             && ct_outs.iter().all(|ct| {
-                ct.rank().as_usize() == 1
-                    && ct.n() == head.n()
-                    && ct.base2k() == head.base2k()
-                    && ct.k() == head.k()
-                    && ct.max_k() == head.max_k()
+                ct.rank().as_usize() == 1 && ct.n() == head.n() && ct.base2k() == head.base2k() && ct.k() == head.k()
             }),
         "functional bootstrapping outputs must share one rank-1 layout"
     );

@@ -148,9 +148,9 @@ where
     let table_values: &[&[usize]] = match case {
         Case::General => &[&[0, 1, 0, 0]],
         Case::Multi => &[
+            &[0, 0, 0, 0, 0, 0, 0, 0],
             &[5, 2, 7, 0, 3, 6, 1, 4],
             &[0, 1, 2, 3, 4, 5, 6, 7],
-            &[7, 6, 5, 4, 3, 2, 1, 0],
         ],
         Case::Binary => &[&[3, 1]],
     };
@@ -390,6 +390,21 @@ where
                 .unwrap_err();
             assert!(error.to_string().contains("ExpCmplx"));
             ctx.eval_mod.plan.eval_mod_type = EvalModType::ExpCmplx;
+
+            ctx.eval_mod.plan.scaling = None;
+            let error = module
+                .ckks_functional_bootstrap(&mut output, &ct, &ctx, lut, &keys, &mut op_scratch.borrow())
+                .unwrap_err();
+            assert!(error.to_string().contains("unit-circle"));
+            ctx.eval_mod.plan.scaling = Some(std::f64::consts::TAU);
+
+            // Reusing a wider allocation at a narrower effective width must
+            // remain within the scratch size queried for that effective width.
+            let mut wide_output = module.ckks_ciphertext_alloc(params.base2k.into(), (k_boot + 4 * params.base2k).into());
+            wide_output.set_k(k_boot.into());
+            module
+                .ckks_functional_bootstrap(&mut wide_output, &ct, &ctx, lut, &keys, &mut op_scratch.borrow())
+                .unwrap();
         }
 
         if slots_kind == SlotsKind::Complex && matches!(case, Case::Multi) {

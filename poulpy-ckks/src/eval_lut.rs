@@ -78,7 +78,12 @@ where
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    let (base2k, k) = (res.base2k(), res.max_k());
+    // Work at the destination's effective width. `res` may reuse a wider
+    // allocation after being relabelled with a smaller `k`; using `max_k()`
+    // here would make the runtime scratch requirement exceed the public
+    // functional-bootstrap scratch query, which is intentionally based on
+    // the effective width.
+    let (base2k, k) = (res.base2k(), res.k());
 
     let mut e_x = module.ckks_ciphertext_alloc(base2k, k);
     module.ckks_eval_mod(&mut e_x, ct, eval_exp, tsk, scratch)?;
@@ -125,7 +130,7 @@ where
         res.len(),
         luts.len()
     );
-    let (base2k, k) = (res[0].base2k(), res[0].max_k());
+    let (base2k, k) = (res[0].base2k(), res[0].k());
 
     let mut e_x = module.ckks_ciphertext_alloc(base2k, k);
     module.ckks_eval_mod(&mut e_x, ct, eval_exp, tsk, scratch)?;
@@ -134,7 +139,17 @@ where
     module.ckks_copy(&mut x1, &e_x, scratch)?;
     let head = &luts[0].re;
     let mut power_basis = PowerBasis::new(head.basis(), x1);
-    power_basis.populate(head.degree(), head.log_split(), head.parity(), module, tsk, scratch)?;
+    // Equal-arity LUTs have the same message ratio, but their coefficient
+    // parity (and, for some split strategies, their BSGS split) can still
+    // differ. Populate the union of every schedule so the result does not
+    // depend on which LUT happens to be first.
+    for lut in luts {
+        ensure!(
+            lut.re.basis() == head.basis(),
+            "ckks_eval_lut_multi: all LUTs must use the same polynomial basis"
+        );
+        power_basis.populate(lut.re.degree(), lut.re.log_split(), lut.re.parity(), module, tsk, scratch)?;
+    }
 
     let mut conj = module.ckks_ciphertext_alloc(base2k, k);
     for (res_i, lut) in res.iter_mut().zip(luts) {
@@ -165,6 +180,11 @@ where
 {
     let two = F::one() + F::one();
     let two_pi = two * F::PI();
+    ensure!(
+        log_interval_reduction < usize::BITS as usize,
+        "log_interval_reduction must be < {}",
+        usize::BITS
+    );
     let k_eff = F::from_usize(k_interval).expect("K representable")
         / F::from_usize(1usize << log_interval_reduction).expect("2^r representable");
     let cos = Polynomial::chebyshev_interpolate(degree, -k_eff, k_eff, |x| (two_pi * x).cos())?;
@@ -200,4 +220,17 @@ where
     module.ckks_affine_pt_const_assign(res, affine, 0, 1, scratch)?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cos_hermite_binary;
+
+    #[test]
+    fn binary_lut_rejects_oversized_interval_reduction() {
+        let error = cos_hermite_binary::<f64>(0.0, 1.0, 3, 1, usize::BITS as usize)
+            .err()
+            .expect("oversized reduction must fail");
+        assert!(error.to_string().contains("log_interval_reduction"));
+    }
 }
