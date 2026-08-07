@@ -1,7 +1,8 @@
 use crate::CKKSResult as Result;
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{
-    BSGSMeta, Base2K, Compact, Degree, GGLWEInfos, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
-    LWEInfos, Rank, SetBSGSMeta, TorusPrecision,
+    BSGSMeta, Base2K, Degree, GGLWEInfos, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
+    SetBSGSMeta, TorusPrecision,
 };
 use poulpy_hal::api::CnvPVecBytesOf;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena, VecZnx};
@@ -89,6 +90,9 @@ where
             + 3 * compact_work
             + hoisted_right;
         let square_scope = (self.ckks_square_tmp_bytes(&work, &work, tsk) + compact_work).max(
+            // Scratch is a physical working-set budget: size the square-scope
+            // copy off `res`'s allocated capacity, the upper bound on the limbs
+            // any runtime re-expansion can expose.
             self.ckks_square_tmp_bytes(res, res, tsk) + VecZnx::bytes_of(res.n().into(), (res.rank() + 1).into(), res.max_size()),
         );
         // The working copy `t1` (the input re-labelled at the plan scale — the
@@ -112,9 +116,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
     {
         BE::ckks_eval_mod_impl::<R, C, P, F>(self, res, ct, params, tsk, scratch)
     }

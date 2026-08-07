@@ -11,7 +11,7 @@
 //! | `CKKSPlaintext<D>` | Quantized CKKS plaintext in the torus / ZNX domain |
 
 /// Implements the full CKKS scratch-view trait bundle for a nominal backend
-/// view wrapper: [`CKKSInfos`](crate::CKKSInfos), [`SetCKKSInfos`](crate::SetCKKSInfos), `SetK`, `SetSize`, `Compact` (deliberate no-op — a scratch view's borrowed limb count is fixed for the lifetime of the arena allocation), `BSGSMeta`, and `SetBSGSMeta`.
+/// view wrapper: [`CKKSInfos`](crate::CKKSInfos), [`SetCKKSInfos`](crate::SetCKKSInfos), `SetK`, `BSGSMeta`, and `SetBSGSMeta`.
 ///
 /// Two arms, selected by where the CKKS metadata lives:
 ///
@@ -29,18 +29,6 @@ macro_rules! impl_ckks_infos {
             fn set_k(&mut self, k: ::poulpy_core::layouts::TorusPrecision) {
                 ::poulpy_core::layouts::SetK::set_k(&mut self.inner, k);
             }
-        }
-
-        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::SetSize for $name<'a, BE> {
-            fn set_size(&mut self, size: usize) {
-                ::poulpy_core::layouts::SetSize::set_size(&mut self.inner, size);
-            }
-        }
-
-        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::Compact for $name<'a, BE> {
-            // Scratch-backed views intentionally skip compaction; the borrowed
-            // limb count is fixed for the lifetime of the arena allocation.
-            fn compact(&mut self) {}
         }
 
         impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::BSGSMeta for $name<'a, BE> {

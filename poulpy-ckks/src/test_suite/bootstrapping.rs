@@ -394,8 +394,9 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     let now = Instant::now();
     // 3) EvalMod each half. EvalMod raises the ciphertext to its own plan scale
     //    (`f_mod_log_delta`) internally and restores the input scale on the result,
-    //    so no manual set_scale is needed here. Compact first: the ct×ct squaring
-    //    needs compact operands (storage == k).
+    //    so no manual set_scale is needed here. The results are allocated at
+    //    exactly `k_boot`: an allocation's width is the width ct×ct squaring
+    //    computes at.
     let mut res_real = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let mut res_imag = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     module

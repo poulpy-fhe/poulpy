@@ -4,7 +4,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use crate::{
     default::polynomial_evaluation::BSGSOps,
     layouts::{
-        BabyStep, Compact, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper,
+        BabyStep, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, Parity, PowerBasisHelper,
         prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
@@ -27,7 +27,7 @@ pub unsafe trait PolynomialEvaluationImpl<BE: Backend>: Backend {
     ) -> Result<()>
     where
         Ops: BSGSOps<BE, R, P, A, R>,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
         P: GLWEToBackendRef<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>;
@@ -67,7 +67,7 @@ pub trait PolynomialEvaluationDefault<BE: Backend> {
     ) -> Result<()>
     where
         Ops: BSGSOps<BE, R, P, A, R>,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
         P: GLWEToBackendRef<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>;
@@ -107,7 +107,7 @@ where
     ) -> Result<()>
     where
         Ops: BSGSOps<BE, R, P, A, R>,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
         P: GLWEToBackendRef<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE>,
         G: PowerBasisHelper<BE, A>,

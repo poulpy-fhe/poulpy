@@ -13,6 +13,7 @@
 //! `2·max_n` scalars (~100 KiB of `f64` at `n = 65536`), and in exchange every
 //! backend follows one code path and can use its own accelerated kernels.
 
+use poulpy_core::layouts::IntPolyInfos;
 use std::marker::PhantomData;
 
 use anyhow::{Context, Result, ensure};
@@ -261,7 +262,7 @@ pub fn encode_coeffs_into<BE, F, P>(pt: &mut P, coeffs: &CKKSEncodingBufferBacke
 where
     BE: Backend,
     F: CKKSEncodingScalar + NumCast,
-    P: CKKSPlaintextToBackendMut<BE>,
+    P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -273,7 +274,7 @@ where
         .context("CKKS plaintext scale exponent is not representable by the codec scalar")?
         .exp2();
     let base2k = pt.base2k().as_usize();
-    let k = pt.max_k().as_usize();
+    let k = pt.encoded_k().as_usize();
     let mut backend = pt.to_backend_mut();
 
     if log_delta + log_budget <= 63 {
@@ -309,7 +310,7 @@ pub fn decode_coeffs_into<BE, F, P>(pt: &P, coeffs: &mut CKKSEncodingBufferBacke
 where
     BE: Backend,
     F: CKKSEncodingScalar,
-    P: CKKSPlaintextToBackendRef<BE>,
+    P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -325,7 +326,7 @@ where
     let scale =
         (-F::from_usize(log_delta).context("CKKS plaintext scale exponent is not representable by the codec scalar")?).exp2();
     let base2k = pt.base2k().as_usize();
-    let k = pt.max_k().as_usize();
+    let k = pt.encoded_k().as_usize();
     let backend = pt.to_backend_ref();
 
     if log_delta + log_budget <= 63 {
@@ -401,7 +402,7 @@ macro_rules! impl_ckks_encoding {
                 coeffs: &::poulpy_ckks::layouts::CKKSEncodingBufferBackendRef<'_, $be, F>,
             ) -> ::poulpy_ckks::CKKSResult<()>
             where
-                P: ::poulpy_ckks::CKKSPlaintextToBackendMut<$be>,
+                P: ::poulpy_ckks::CKKSPlaintextToBackendMut<$be> + ::poulpy_core::layouts::IntPolyInfos,
             {
                 $crate::ckks_encoding::encode_coeffs_into::<$be, F, P>(pt, coeffs).map_err(::poulpy_ckks::CKKSError::from)
             }
@@ -412,7 +413,7 @@ macro_rules! impl_ckks_encoding {
                 coeffs: &mut ::poulpy_ckks::layouts::CKKSEncodingBufferBackendMut<'_, $be, F>,
             ) -> ::poulpy_ckks::CKKSResult<()>
             where
-                P: ::poulpy_ckks::CKKSPlaintextToBackendRef<$be>,
+                P: ::poulpy_ckks::CKKSPlaintextToBackendRef<$be> + ::poulpy_core::layouts::IntPolyInfos,
             {
                 $crate::ckks_encoding::decode_coeffs_into::<$be, F, P>(pt, coeffs).map_err(::poulpy_ckks::CKKSError::from)
             }

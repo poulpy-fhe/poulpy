@@ -1,4 +1,5 @@
 use crate::CKKSResult as Result;
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWE, GLWEToBackendMut, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
@@ -44,7 +45,7 @@ impl<BE: Backend + CKKSSubImpl<BE>> CKKSSubOps<BE> for Module<BE> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_sub_pt_vec_into_impl(self, dst, a, pt, scratch)
     }
@@ -52,7 +53,7 @@ impl<BE: Backend + CKKSSubImpl<BE>> CKKSSubOps<BE> for Module<BE> {
     fn ckks_sub_pt_vec_assign<Dst, P>(&self, dst: &mut Dst, pt: &P, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_sub_pt_vec_assign_impl(self, dst, pt, scratch)
     }
@@ -73,7 +74,7 @@ impl<BE: Backend + CKKSSubImpl<BE>> CKKSSubOps<BE> for Module<BE> {
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_sub_pt_const_into_impl(self, dst, a, dst_coeff, pt, pt_coeff, scratch)
     }
@@ -88,7 +89,7 @@ impl<BE: Backend + CKKSSubImpl<BE>> CKKSSubOps<BE> for Module<BE> {
     ) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_sub_pt_const_assign_impl(self, dst, dst_coeff, pt, pt_coeff, scratch)
     }
@@ -133,7 +134,7 @@ impl<BE: Backend + CKKSSubImpl<BE>> CKKSSubOps<BE> for Module<BE> {
         Dst: Data,
         GLWE<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_sub_pt_vec_into_unnormalized_impl(self, dst, a, pt, scratch)
     }
@@ -147,7 +148,7 @@ impl<BE: Backend + CKKSSubImpl<BE>> CKKSSubOps<BE> for Module<BE> {
     where
         Dst: Data,
         GLWE<Dst>: GLWEToBackendMut<BE>,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_sub_pt_vec_assign_unnormalized_impl(self, dst, pt, scratch)
     }
@@ -165,7 +166,7 @@ impl<BE: Backend + CKKSSubImpl<BE>> CKKSSubOps<BE> for Module<BE> {
         Dst: Data,
         GLWE<Dst>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_sub_pt_const_into_unnormalized_impl(self, dst, a, dst_coeff, pt, pt_coeff, scratch)
     }
@@ -181,7 +182,7 @@ impl<BE: Backend + CKKSSubImpl<BE>> CKKSSubOps<BE> for Module<BE> {
     where
         Dst: Data,
         GLWE<Dst>: GLWEToBackendMut<BE>,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_sub_pt_const_assign_unnormalized_impl(self, dst, dst_coeff, pt, pt_coeff, scratch)
     }

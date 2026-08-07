@@ -1,4 +1,5 @@
 use crate::CKKSResult as Result;
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWEInfos, GLWEPlaintext, GLWESecretPreparedToBackendRef, GLWEToBackendMut};
 use poulpy_core::{EncryptionInfos, GLWEDecrypt, GLWEEncryptSk, GLWENormalize, ScratchArenaTakeCore};
 use poulpy_hal::{
@@ -42,7 +43,7 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
         E: EncryptionInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
         Dct: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
-        Dpt: GLWEToBackendRef<BE> + CKKSInfos,
+        Dpt: GLWEToBackendRef<BE> + CKKSInfos + IntPolyInfos,
         Self: GLWEEncryptSk<BE>
             + GLWENormalize<BE>
             + VecZnxLshAddIntoBackend<BE>
@@ -84,7 +85,7 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
     fn ckks_decrypt_default<Dpt, Dct, S>(&self, pt: &mut Dpt, ct: &Dct, sk: &S, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        Dpt: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
+        Dpt: GLWEToBackendMut<BE> + CKKSInfos + IntPolyInfos + SetCKKSInfos,
         Dct: GLWEToBackendRef<BE> + GLWEInfos + CKKSInfos,
         Self: GLWEDecrypt<BE> + CKKSPlaintextDefault<BE> + VecZnxLshBackend<BE> + VecZnxRshBackend<BE>,
     {
