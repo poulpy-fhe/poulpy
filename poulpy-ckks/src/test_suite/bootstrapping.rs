@@ -46,10 +46,10 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos,
+    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos,
     api::{
-        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSConjugateOps, CKKSDFTMatrixOps, CKKSDFTOps, CKKSDecryptOps,
-        CKKSEvalModOps, CKKSImagOps, CKKSPow2Ops, CKKSSubOps,
+        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSDFTOps, CKKSDecryptOps, CKKSEvalModOps,
+        CKKSPow2Ops, CKKSSubOps,
     },
     layouts::{
         BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan,
@@ -821,12 +821,7 @@ pub fn test_bootstrapping_s2c_first_e2e<BE, F, E>(
     _host_module: &Module<HostBytesBackend>,
 ) where
     BE: TestContextBackend + Backend<OwnedBuf = Vec<u8>>,
-    Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, F>
-        + CKKSBootstrappingOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSDFTMatrixOps<BE, F>
-        + CKKSImagOps<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -848,12 +843,7 @@ pub fn test_bootstrapping_s2c_first_e2e<BE, F, E>(
 fn run_s2c_first_case<BE, F, E>(base2k: usize, log_delta: usize, log_msg_ratio: usize, fmod_interval: usize) -> (f64, f64)
 where
     BE: TestContextBackend + Backend<OwnedBuf = Vec<u8>>,
-    Module<BE>: TestContextModule<BE>
-        + CKKSEncodingOps<BE, F>
-        + CKKSBootstrappingOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSDFTMatrixOps<BE, F>
-        + CKKSImagOps<BE>,
+    Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F> + CKKSBootstrappingOps<BE> + CKKSDFTMatrixOps<BE, F>,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -1010,10 +1000,8 @@ where
         &mut scratch.borrow(),
     );
 
-    let alloc = |k: usize| module.ckks_ciphertext_alloc(base2k.into(), k.into());
-
     let (bs_re, bs_im) = {
-        let mut ct_bs = alloc(k_boot);
+        let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
         module
             .ckks_bootstrap(&mut ct_bs, &ct0, &ctx, &bsk, &mut scratch.borrow())
             .unwrap();
@@ -1022,89 +1010,27 @@ where
         decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow())
     };
 
-    let mut conj_ct = alloc(k_in);
-    module
-        .ckks_conjugate_into(&mut conj_ct, &ct0, bsk.conjugation_key(), &mut scratch.borrow())
-        .unwrap();
-    let mut re_half = alloc(k_in);
-    let mut im_half = alloc(k_in);
-    module
-        .ckks_add_into(&mut re_half, &ct0, &conj_ct, &mut scratch.borrow())
-        .unwrap();
-    module
-        .ckks_sub_into(&mut im_half, &ct0, &conj_ct, &mut scratch.borrow())
-        .unwrap();
-    module.ckks_div_i_assign(&mut im_half, &mut scratch.borrow()).unwrap();
-
-    let mut ct_coeffs = alloc(k_in);
-    module
-        .ckks_slots_to_coeffs_split(
-            &mut ct_coeffs,
-            &re_half,
-            &im_half,
-            &ctx.slots_to_coeffs,
-            bsk.rotation_keys(),
-            &mut scratch.borrow(),
-        )
-        .unwrap();
-
-    let mut ct_raised = alloc(k_boot);
-    match bsk.encapsulation_keys() {
-        Some((dense_to_sparse, sparse_to_dense)) => {
-            module.glwe_keyswitch_assign(&mut ct_coeffs, dense_to_sparse, &mut scratch.borrow());
-            module
-                .ckks_mod_up_into(&mut ct_raised, &ct_coeffs, &mut scratch.borrow())
-                .unwrap();
-            module.glwe_keyswitch_assign(&mut ct_raised, sparse_to_dense, &mut scratch.borrow());
-        }
-        None => {
-            module
-                .ckks_mod_up_into(&mut ct_raised, &ct_coeffs, &mut scratch.borrow())
-                .unwrap();
-        }
-    }
-    ct_raised.set_meta(CKKSMeta {
-        log_sparsity: 0,
-        log_delta: log_modulus_in,
-    });
-
-    let (mut r0, mut i0) = (alloc(k_boot), alloc(k_boot));
-    module
-        .ckks_coeffs_to_slots_split(
-            &mut r0,
-            &mut i0,
-            &ct_raised,
-            &ctx.coeffs_to_slots,
-            bsk.rotation_keys(),
-            bsk.conjugation_key(),
-            &mut scratch.borrow(),
-        )
-        .unwrap();
-
-    let (mut res, mut res_im) = (alloc(k_boot), alloc(k_boot));
-    module
-        .ckks_eval_mod(&mut res, &r0, &ctx.eval_mod, bsk.tensor_key(), &mut scratch.borrow())
-        .unwrap();
-    module
-        .ckks_eval_mod(&mut res_im, &i0, &ctx.eval_mod, bsk.tensor_key(), &mut scratch.borrow())
-        .unwrap();
-    module.ckks_mul_i_assign(&mut res_im, &mut scratch.borrow()).unwrap();
-    module.ckks_add_assign(&mut res, &res_im, &mut scratch.borrow()).unwrap();
-    res.set_meta(CKKSMeta {
-        log_sparsity: 0,
-        log_delta,
-    });
-
-    let (re_out, im_out) = decrypt(&module, &encoder, &res, &sk, &mut scratch.borrow());
-
-    for (a, b, tag) in [(&bs_re, &re_out, "re"), (&bs_im, &im_out, "im")] {
-        let agree = precision_stats(a, b, log_delta);
-        assert!(
-            agree.avg_log2_prec >= log_delta as f64 - 1.0,
-            "ckks_bootstrap(S2CFirst) disagrees with manual ({tag}): {:.1} bits",
-            agree.avg_log2_prec
-        );
-    }
+    let insufficient_k = log_delta + plan.pre_mod_up_consumed_bits() - 1;
+    let ct_insufficient = ckks_encrypt_with_prec(
+        &tp,
+        &module,
+        &host_module,
+        &encoder,
+        &sk,
+        insufficient_k,
+        &re,
+        &im,
+        ckks_spec(n, base2k, log_delta, insufficient_k - log_delta),
+        &mut scratch.borrow(),
+    );
+    let mut ct_out = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+    let err = module
+        .ckks_bootstrap(&mut ct_out, &ct_insufficient, &ctx, &bsk, &mut scratch.borrow())
+        .unwrap_err();
+    assert!(matches!(
+        err.composition(),
+        Some(CKKSCompositionError::MultiplicationPrecisionUnderflow { .. })
+    ));
 
     let s_re = precision_stats(&bs_re, &re, log_delta);
     let s_im = precision_stats(&bs_im, &im, log_delta);
