@@ -47,7 +47,7 @@ use poulpy_hal::{
 use crate::{
     CKKSCompositionError, CKKSCtBounds, SetCKKSInfos,
     api::{CKKSMulOps, CKKSRotateOps},
-    layouts::{CKKSCiphertext, CKKSModuleAlloc},
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
 };
 
 /// The rotation amounts of a `Tr_{a→b}` / `Pr_{a→b}` fold, in application
@@ -125,7 +125,7 @@ pub trait PaCoSlotOps<BE: Backend> {
 impl<BE: Backend> PaCoSlotOps<BE> for Module<BE>
 where
     Module<BE>: CKKSRotateOps<BE> + CKKSMulOps<BE> + CKKSModuleAlloc<BE> + GLWEAutomorphism<BE> + CyclotomicOrder + ModuleN,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
 {
     fn ckks_slot_trace_assign<Dst, H, K>(
         &self,

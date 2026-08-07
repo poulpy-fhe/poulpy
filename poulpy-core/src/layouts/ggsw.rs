@@ -12,6 +12,7 @@ use std::{
 
 use crate::api::ModuleTransfer;
 use crate::layouts::{Base2K, Degree, Dnum, Dsize, GLWE, GLWEInfos, GLWEViewMut, GLWEViewRef, LWEInfos, Rank, TorusPrecision};
+use poulpy_hal::layouts::ZnxWord;
 
 /// Trait providing the parameter accessors for a GGSW (Gadget GSW) ciphertext.
 ///
@@ -118,23 +119,23 @@ impl GGSWInfos for GGSWLayout {
 ///
 /// `D: Data` is the storage backend (e.g. `Vec<u8>`, `&[u8]`, `&mut [u8]`).
 #[derive(PartialEq, Eq, Clone)]
-pub struct GGSW<D: Data> {
-    pub(crate) data: MatZnx<D>,
+pub struct GGSW<D: Data, W: ZnxWord> {
+    pub(crate) data: MatZnx<D, W>,
     pub(crate) k_aux: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) dsize: Dsize,
 }
 
 pub struct GGSWBackendRef<'a, BE: Backend + 'a> {
-    inner: GGSW<BE::BufRef<'a>>,
+    inner: GGSW<BE::BufRef<'a>, BE::ZnxWord>,
 }
 
 impl<'a, BE: Backend + 'a> GGSWBackendRef<'a, BE> {
-    pub fn from_inner(inner: GGSW<BE::BufRef<'a>>) -> Self {
+    pub fn from_inner(inner: GGSW<BE::BufRef<'a>, BE::ZnxWord>) -> Self {
         Self { inner }
     }
 
-    pub fn into_inner(self) -> GGSW<BE::BufRef<'a>> {
+    pub fn into_inner(self) -> GGSW<BE::BufRef<'a>, BE::ZnxWord> {
         self.inner
     }
 
@@ -144,7 +145,7 @@ impl<'a, BE: Backend + 'a> GGSWBackendRef<'a, BE> {
 }
 
 impl<'a, BE: Backend + 'a> Deref for GGSWBackendRef<'a, BE> {
-    type Target = GGSW<BE::BufRef<'a>>;
+    type Target = GGSW<BE::BufRef<'a>, BE::ZnxWord>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
@@ -152,15 +153,15 @@ impl<'a, BE: Backend + 'a> Deref for GGSWBackendRef<'a, BE> {
 }
 
 pub struct GGSWBackendMut<'a, BE: Backend + 'a> {
-    inner: GGSW<BE::BufMut<'a>>,
+    inner: GGSW<BE::BufMut<'a>, BE::ZnxWord>,
 }
 
 impl<'a, BE: Backend + 'a> GGSWBackendMut<'a, BE> {
-    pub fn from_inner(inner: GGSW<BE::BufMut<'a>>) -> Self {
+    pub fn from_inner(inner: GGSW<BE::BufMut<'a>, BE::ZnxWord>) -> Self {
         Self { inner }
     }
 
-    pub fn into_inner(self) -> GGSW<BE::BufMut<'a>> {
+    pub fn into_inner(self) -> GGSW<BE::BufMut<'a>, BE::ZnxWord> {
         self.inner
     }
 
@@ -174,7 +175,7 @@ impl<'a, BE: Backend + 'a> GGSWBackendMut<'a, BE> {
 }
 
 impl<'a, BE: Backend + 'a> Deref for GGSWBackendMut<'a, BE> {
-    type Target = GGSW<BE::BufMut<'a>>;
+    type Target = GGSW<BE::BufMut<'a>, BE::ZnxWord>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
@@ -314,7 +315,7 @@ impl<'a, BE: Backend + 'a> GGSWAtViewRef<BE> for &GGSWBackendRef<'a, BE> {
     }
 }
 
-impl<D: Data> LWEInfos for GGSW<D> {
+impl<D: Data, W: ZnxWord> LWEInfos for GGSW<D, W> {
     fn n(&self) -> Degree {
         Degree(self.data.n() as u32)
     }
@@ -332,13 +333,13 @@ impl<D: Data> LWEInfos for GGSW<D> {
     }
 }
 
-impl<D: Data> GLWEInfos for GGSW<D> {
+impl<D: Data, W: ZnxWord> GLWEInfos for GGSW<D, W> {
     fn rank(&self) -> Rank {
         Rank(self.data.cols_out() as u32 - 1)
     }
 }
 
-impl<D: Data> GGSWInfos for GGSW<D> {
+impl<D: Data, W: ZnxWord> GGSWInfos for GGSW<D, W> {
     fn k_aux(&self) -> TorusPrecision {
         self.k_aux
     }
@@ -352,13 +353,13 @@ impl<D: Data> GGSWInfos for GGSW<D> {
     }
 }
 
-impl<D: HostDataRef> fmt::Debug for GGSW<D> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GGSW<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.data)
     }
 }
 
-impl<D: HostDataRef> fmt::Display for GGSW<D> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Display for GGSW<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -371,14 +372,14 @@ impl<D: HostDataRef> fmt::Display for GGSW<D> {
     }
 }
 
-impl<D: HostDataMut> FillUniform for GGSW<D> {
+impl<D: HostDataMut, W: ZnxWord> FillUniform for GGSW<D, W> {
     fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
         self.data.fill_uniform(log_bound, source);
     }
 }
 
-impl<D: HostDataRef> GGSW<D> {
-    pub fn at(&self, row: usize, col: usize) -> GLWE<&[u8]> {
+impl<D: HostDataRef, W: ZnxWord> GGSW<D, W> {
+    pub fn at(&self, row: usize, col: usize) -> GLWE<&[u8], W> {
         let data = self.data.at(row, col);
         GLWE {
             base2k: self.base2k,
@@ -389,12 +390,12 @@ impl<D: HostDataRef> GGSW<D> {
 }
 
 pub(crate) trait GGSWAtBackendRef<BE: Backend> {
-    fn at_backend(&self, row: usize, col: usize) -> GLWE<BE::BufRef<'_>>;
+    fn at_backend(&self, row: usize, col: usize) -> GLWE<BE::BufRef<'_>, BE::ZnxWord>;
 }
 
-impl<BE: Backend> GGSWAtBackendRef<BE> for GGSW<BE::OwnedBuf> {
-    fn at_backend(&self, row: usize, col: usize) -> GLWE<BE::BufRef<'_>> {
-        let data = <MatZnx<BE::OwnedBuf> as MatZnxAtBackendRef<BE>>::at_backend(&self.data, row, col);
+impl<BE: Backend> GGSWAtBackendRef<BE> for GGSW<BE::OwnedBuf, BE::ZnxWord> {
+    fn at_backend(&self, row: usize, col: usize) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
+        let data = <MatZnx<BE::OwnedBuf, BE::ZnxWord> as MatZnxAtBackendRef<BE>>::at_backend(&self.data, row, col);
         GLWE {
             base2k: self.base2k,
             k: self.k(),
@@ -404,10 +405,10 @@ impl<BE: Backend> GGSWAtBackendRef<BE> for GGSW<BE::OwnedBuf> {
 }
 
 pub(crate) fn ggsw_at_backend_ref_from_ref<'a, 'b, BE: Backend>(
-    ggsw: &'a GGSW<BE::BufRef<'b>>,
+    ggsw: &'a GGSW<BE::BufRef<'b>, BE::ZnxWord>,
     row: usize,
     col: usize,
-) -> GLWE<BE::BufRef<'a>> {
+) -> GLWE<BE::BufRef<'a>, BE::ZnxWord> {
     let data = poulpy_hal::layouts::mat_znx_at_backend_ref_from_ref::<BE>(&ggsw.data, row, col);
     GLWE {
         base2k: ggsw.base2k,
@@ -420,17 +421,19 @@ pub trait GGSWAtViewRef<BE: Backend> {
     fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE>;
 }
 
-impl<BE: Backend> GGSWAtViewRef<BE> for GGSW<BE::OwnedBuf> {
+impl<BE: Backend> GGSWAtViewRef<BE> for GGSW<BE::OwnedBuf, BE::ZnxWord> {
     fn at_view(&self, row: usize, col: usize) -> GLWEViewRef<'_, BE> {
-        GLWEViewRef::from_inner(<GGSW<BE::OwnedBuf> as GGSWAtBackendRef<BE>>::at_backend(self, row, col))
+        GLWEViewRef::from_inner(<GGSW<BE::OwnedBuf, BE::ZnxWord> as GGSWAtBackendRef<BE>>::at_backend(
+            self, row, col,
+        ))
     }
 }
 
 pub(crate) fn ggsw_at_backend_ref_from_mut<'a, 'b, BE: Backend>(
-    ggsw: &'a GGSW<BE::BufMut<'b>>,
+    ggsw: &'a GGSW<BE::BufMut<'b>, BE::ZnxWord>,
     row: usize,
     col: usize,
-) -> GLWE<BE::BufRef<'a>> {
+) -> GLWE<BE::BufRef<'a>, BE::ZnxWord> {
     let data = poulpy_hal::layouts::mat_znx_at_backend_ref_from_mut::<BE>(&ggsw.data, row, col);
     GLWE {
         base2k: ggsw.base2k,
@@ -439,8 +442,8 @@ pub(crate) fn ggsw_at_backend_ref_from_mut<'a, 'b, BE: Backend>(
     }
 }
 
-impl<D: HostDataMut> GGSW<D> {
-    pub fn at_mut(&mut self, row: usize, col: usize) -> GLWE<&mut [u8]> {
+impl<D: HostDataMut, W: ZnxWord> GGSW<D, W> {
+    pub fn at_mut(&mut self, row: usize, col: usize) -> GLWE<&mut [u8], W> {
         let base2k = self.base2k;
         let k = self.k();
         let data = self.data.at_mut(row, col);
@@ -449,23 +452,23 @@ impl<D: HostDataMut> GGSW<D> {
 }
 
 pub(crate) trait GGSWAtBackendMut<BE: Backend> {
-    fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>>;
+    fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord>;
 }
 
-impl<BE: Backend> GGSWAtBackendMut<BE> for GGSW<BE::OwnedBuf> {
-    fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>> {
+impl<BE: Backend> GGSWAtBackendMut<BE> for GGSW<BE::OwnedBuf, BE::ZnxWord> {
+    fn at_backend_mut(&mut self, row: usize, col: usize) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
         let base2k = self.base2k;
         let k = self.k();
-        let data = <MatZnx<BE::OwnedBuf> as MatZnxAtBackendMut<BE>>::at_backend_mut(&mut self.data, row, col);
+        let data = <MatZnx<BE::OwnedBuf, BE::ZnxWord> as MatZnxAtBackendMut<BE>>::at_backend_mut(&mut self.data, row, col);
         GLWE { base2k, k, data }
     }
 }
 
 pub(crate) fn ggsw_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
-    ggsw: &'a mut GGSW<BE::BufMut<'b>>,
+    ggsw: &'a mut GGSW<BE::BufMut<'b>, BE::ZnxWord>,
     row: usize,
     col: usize,
-) -> GLWE<BE::BufMut<'a>> {
+) -> GLWE<BE::BufMut<'a>, BE::ZnxWord> {
     let base2k = ggsw.base2k;
     let k = ggsw.k();
     let data = poulpy_hal::layouts::mat_znx_at_backend_mut_from_mut::<BE>(&mut ggsw.data, row, col);
@@ -476,9 +479,11 @@ pub trait GGSWAtViewMut<BE: Backend> {
     fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE>;
 }
 
-impl<BE: Backend> GGSWAtViewMut<BE> for GGSW<BE::OwnedBuf> {
+impl<BE: Backend> GGSWAtViewMut<BE> for GGSW<BE::OwnedBuf, BE::ZnxWord> {
     fn at_view_mut(&mut self, row: usize, col: usize) -> GLWEViewMut<'_, BE> {
-        GLWEViewMut::from_inner(<GGSW<BE::OwnedBuf> as GGSWAtBackendMut<BE>>::at_backend_mut(self, row, col))
+        GLWEViewMut::from_inner(<GGSW<BE::OwnedBuf, BE::ZnxWord> as GGSWAtBackendMut<BE>>::at_backend_mut(
+            self, row, col,
+        ))
     }
 }
 
@@ -488,12 +493,12 @@ impl<'a, BE: Backend + 'a> GGSWAtViewMut<BE> for GGSWBackendMut<'a, BE> {
     }
 }
 
-impl<D: HostDataRef> GGSW<D> {
+impl<D: HostDataRef, W: ZnxWord> GGSW<D, W> {
     /// Copies this ciphertext's backing bytes into an owned buffer of
     /// backend `To`, routing via host bytes.
-    pub fn to_backend<BE, To>(&self, dst: &Module<To>) -> GGSW<To::OwnedBuf>
+    pub fn to_backend<BE, To>(&self, dst: &Module<To>) -> GGSW<To::OwnedBuf, To::ZnxWord>
     where
-        BE: Backend<OwnedBuf = D>,
+        BE: Backend<OwnedBuf = D, ZnxWord = W>,
         To: Backend,
         To: TransferFrom<BE>,
     {
@@ -501,11 +506,11 @@ impl<D: HostDataRef> GGSW<D> {
     }
 }
 
-impl<D: Data> GGSW<D> {
+impl<D: Data, W: ZnxWord> GGSW<D, W> {
     /// Zero-cost rename when both backends share the same `OwnedBuf`.
-    pub fn reinterpret<To>(self) -> GGSW<To::OwnedBuf>
+    pub fn reinterpret<To>(self) -> GGSW<To::OwnedBuf, To::ZnxWord>
     where
-        To: Backend<OwnedBuf = D>,
+        To: Backend<OwnedBuf = D, ZnxWord = W>,
     {
         let (n, rows, cols_in, cols_out, size) = (
             self.data.n(),
@@ -527,7 +532,7 @@ impl<D: Data> GGSW<D> {
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl GGSW<Vec<u8>> {
+impl<W: ZnxWord> GGSW<Vec<u8>, W> {
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
         A: GGSWInfos,
@@ -547,7 +552,7 @@ impl GGSW<Vec<u8>> {
 
         GGSW {
             data: MatZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(MatZnx::<Vec<u8>>::bytes_of(
+                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(MatZnx::<Vec<u8>, W>::bytes_of(
                     n.into(),
                     dnum.into(),
                     (rank + 1).into(),
@@ -583,13 +588,13 @@ impl GGSW<Vec<u8>> {
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
         let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
 
-        MatZnx::bytes_of(n.into(), dnum.into(), (rank + 1).into(), (rank + 1).into(), size)
+        MatZnx::<Vec<u8>, W>::bytes_of(n.into(), dnum.into(), (rank + 1).into(), (rank + 1).into(), size)
     }
 }
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 
-impl<D: HostDataMut> ReaderFrom for GGSW<D> {
+impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGSW<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.base2k = Base2K(reader.read_u32::<LittleEndian>()?);
         self.dsize = Dsize(reader.read_u32::<LittleEndian>()?);
@@ -598,8 +603,8 @@ impl<D: HostDataMut> ReaderFrom for GGSW<D> {
     }
 }
 
-impl<D: HostDataRef> WriterTo for GGSW<D> {
-    fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+impl<D: HostDataRef, W: ZnxWord> WriterTo for GGSW<D, W> {
+    fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         writer.write_u32::<LittleEndian>(self.base2k.into())?;
         writer.write_u32::<LittleEndian>(self.dsize.into())?;
         writer.write_u32::<LittleEndian>(self.k_aux.into())?;
@@ -611,9 +616,9 @@ pub trait GGSWToBackendMut<BE: Backend>: GGSWToBackendRef<BE> {
     fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE>;
 }
 
-impl<BE: Backend, D: Data> GGSWToBackendMut<BE> for GGSW<D>
+impl<BE: Backend, D: Data> GGSWToBackendMut<BE> for GGSW<D, BE::ZnxWord>
 where
-    MatZnx<D>: MatZnxToBackendRef<BE> + MatZnxToBackendMut<BE>,
+    MatZnx<D, BE::ZnxWord>: MatZnxToBackendRef<BE> + MatZnxToBackendMut<BE>,
 {
     fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE> {
         GGSWBackendMut::from_inner(GGSW {
@@ -625,7 +630,7 @@ where
     }
 }
 
-impl<'b, BE: Backend + 'b> GGSWToBackendRef<BE> for &mut GGSW<BE::BufMut<'b>> {
+impl<'b, BE: Backend + 'b> GGSWToBackendRef<BE> for &mut GGSW<BE::BufMut<'b>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE> {
         GGSWBackendRef::from_inner(GGSW {
             dsize: self.dsize,
@@ -636,13 +641,13 @@ impl<'b, BE: Backend + 'b> GGSWToBackendRef<BE> for &mut GGSW<BE::BufMut<'b>> {
     }
 }
 
-impl<'b, BE: Backend + 'b> GGSWToBackendMut<BE> for &mut GGSW<BE::BufMut<'b>> {
+impl<'b, BE: Backend + 'b> GGSWToBackendMut<BE> for &mut GGSW<BE::BufMut<'b>, BE::ZnxWord> {
     fn to_backend_mut(&mut self) -> GGSWBackendMut<'_, BE> {
         ggsw_backend_mut_from_mut::<BE>(self)
     }
 }
 
-pub fn ggsw_backend_mut_from_mut<'a, 'b, BE: Backend>(ggsw: &'a mut GGSW<BE::BufMut<'b>>) -> GGSWBackendMut<'a, BE> {
+pub fn ggsw_backend_mut_from_mut<'a, 'b, BE: Backend>(ggsw: &'a mut GGSW<BE::BufMut<'b>, BE::ZnxWord>) -> GGSWBackendMut<'a, BE> {
     GGSWBackendMut::from_inner(GGSW {
         dsize: ggsw.dsize,
         base2k: ggsw.base2k,
@@ -730,9 +735,9 @@ pub trait GGSWToBackendRef<BE: Backend> {
     fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE>;
 }
 
-impl<BE: Backend, D: Data> GGSWToBackendRef<BE> for GGSW<D>
+impl<BE: Backend, D: Data> GGSWToBackendRef<BE> for GGSW<D, BE::ZnxWord>
 where
-    MatZnx<D>: MatZnxToBackendRef<BE>,
+    MatZnx<D, BE::ZnxWord>: MatZnxToBackendRef<BE>,
 {
     fn to_backend_ref(&self) -> GGSWBackendRef<'_, BE> {
         GGSWBackendRef::from_inner(GGSW {

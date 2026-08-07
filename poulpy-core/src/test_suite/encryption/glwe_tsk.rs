@@ -45,7 +45,7 @@ where
         })
         .unwrap();
 
-        let mut tensor_key: GLWETensorKey<Vec<u8>> = module.glwe_tensor_key_alloc_from_infos(&tensor_key_infos);
+        let mut tensor_key: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&tensor_key_infos);
 
         let mut source_xs: Source = Source::new([0u8; 32]);
         let mut source_xe: Source = Source::new([0u8; 32]);
@@ -58,7 +58,7 @@ where
                 .max(module.gglwe_noise_tmp_bytes(&tensor_key_infos)),
         );
 
-        let mut sk: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(&tensor_key_infos);
+        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&tensor_key_infos);
         sk.fill_ternary_prob(0.5, &mut source_xs);
         let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
         module.glwe_secret_prepare(&mut sk_prepared, &sk);
@@ -72,7 +72,7 @@ where
             &mut crate::test_suite::scratch_host_arena(&mut scratch),
         );
 
-        let mut sk_tensor: GLWESecretTensor<Vec<u8>> = module.glwe_secret_tensor_alloc_from_infos(&sk);
+        let mut sk_tensor: GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_tensor_alloc_from_infos(&sk);
         module.glwe_secret_tensor_prepare(&mut sk_tensor, &sk, &mut crate::test_suite::scratch_host_arena(&mut scratch));
 
         let max_noise: f64 = DEFAULT_SIGMA_XE.log2() - (k as f64) + 0.5;
@@ -129,7 +129,7 @@ where
         })
         .unwrap();
 
-        let mut tensor_key_compressed: GLWETensorKeyCompressed<Vec<u8>> =
+        let mut tensor_key_compressed: GLWETensorKeyCompressed<BE::OwnedBuf, BE::ZnxWord> =
             module.glwe_tensor_key_compressed_alloc_from_infos(&tensor_key_infos);
 
         let mut source_xs: Source = Source::new([0u8; 32]);
@@ -142,7 +142,7 @@ where
                 .max(module.gglwe_noise_tmp_bytes(&tensor_key_infos)),
         );
 
-        let mut sk: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(&tensor_key_infos);
+        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&tensor_key_infos);
         sk.fill_ternary_prob(0.5, &mut source_xs);
         let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
         module.glwe_secret_prepare(&mut sk_prepared, &sk);
@@ -158,10 +158,10 @@ where
             &mut crate::test_suite::scratch_host_arena(&mut scratch),
         );
 
-        let mut tensor_key: GLWETensorKey<Vec<u8>> = module.glwe_tensor_key_alloc_from_infos(&tensor_key_infos);
+        let mut tensor_key: GLWETensorKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_tensor_key_alloc_from_infos(&tensor_key_infos);
         module.decompress_tensor_key(&mut tensor_key, &tensor_key_compressed);
 
-        let mut sk_tensor: GLWESecretTensor<Vec<u8>> = module.glwe_secret_tensor_alloc_from_infos(&sk);
+        let mut sk_tensor: GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_tensor_alloc_from_infos(&sk);
         module.glwe_secret_tensor_prepare(&mut sk_tensor, &sk, &mut crate::test_suite::scratch_host_arena(&mut scratch));
 
         let max_noise: f64 = DEFAULT_SIGMA_XE.log2() - (k as f64) + 0.5;

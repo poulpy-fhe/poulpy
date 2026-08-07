@@ -10,6 +10,7 @@
 
 #![allow(private_bounds)]
 
+use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssignBackend, VecZnxAutomorphismAssignTmpBytes,
@@ -22,16 +23,14 @@ use poulpy_hal::{
 use crate::{
     ScratchArenaTakeCore,
     default::{keyswitching::GLWEKeyswitchInternal, operations::GLWENormalizeDefault},
-    layouts::{
-        GGLWEInfos, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, prepared::GGLWEPreparedToBackendRef,
-    },
+    layouts::{GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, prepared::GGLWEPreparedToBackendRef},
     oep::{GLWEAutomorphismDefault, GLWEKeyswitchDefault},
 };
 
 pub fn glwe_automorphism_tmp_bytes_default<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
-    M: ModuleN + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssignTmpBytes,
+    M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssignTmpBytes,
     R: GLWEInfos,
     A: GLWEInfos,
     K: GGLWEInfos,
@@ -45,9 +44,9 @@ where
     // Since glwe_keyswitch_tmp_bytes = dft + max(ks_internal, big + compute), the total is
     // lvl_conv + glwe_keyswitch_tmp_bytes, which also dominates the plain default/assign variants.
     let lvl_conv: usize = if res_infos.k() > a_infos.k() {
-        GLWE::<Vec<u8>>::bytes_of_from_infos(res_infos)
+        module.glwe_bytes_of_from_infos(res_infos)
     } else {
-        GLWE::<Vec<u8>>::bytes_of_from_infos(a_infos)
+        module.glwe_bytes_of_from_infos(a_infos)
     };
     let lvl_ks: usize = module.glwe_keyswitch_tmp_bytes_default(res_infos, a_infos, key_infos);
     let lvl_auto: usize = module.vec_znx_automorphism_assign_tmp_bytes();
@@ -104,7 +103,8 @@ where
 pub fn glwe_automorphism_add_default<BE, M, R, A, K>(module: &M, res: &mut R, a: &A, key: &K, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
-    M: GLWEAutomorphismDefault<BE>
+    M: GLWEBytesOf<BE>
+        + GLWEAutomorphismDefault<BE>
         + GLWEKeyswitchDefault<BE>
         + GLWEKeyswitchInternal<BE>
         + GLWENormalizeDefault<BE>
@@ -171,7 +171,8 @@ where
 pub fn glwe_automorphism_add_assign_default<BE, M, R, K>(module: &M, res: &mut R, key: &K, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
-    M: GLWEAutomorphismDefault<BE>
+    M: GLWEBytesOf<BE>
+        + GLWEAutomorphismDefault<BE>
         + GLWEKeyswitchDefault<BE>
         + GLWEKeyswitchInternal<BE>
         + GLWENormalizeDefault<BE>
@@ -237,7 +238,8 @@ where
 pub fn glwe_automorphism_sub_default<BE, M, R, A, K>(module: &M, res: &mut R, a: &A, key: &K, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
-    M: GLWEAutomorphismDefault<BE>
+    M: GLWEBytesOf<BE>
+        + GLWEAutomorphismDefault<BE>
         + GLWEKeyswitchDefault<BE>
         + GLWEKeyswitchInternal<BE>
         + GLWENormalizeDefault<BE>
@@ -308,7 +310,8 @@ pub fn glwe_automorphism_sub_negate_default<BE, M, R, A, K>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GLWEAutomorphismDefault<BE>
+    M: GLWEBytesOf<BE>
+        + GLWEAutomorphismDefault<BE>
         + GLWEKeyswitchDefault<BE>
         + GLWEKeyswitchInternal<BE>
         + GLWENormalizeDefault<BE>
@@ -374,7 +377,8 @@ pub fn glwe_automorphism_sub_negate_default<BE, M, R, A, K>(
 pub fn glwe_automorphism_sub_assign_default<BE, M, R, K>(module: &M, res: &mut R, key: &K, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
-    M: GLWEAutomorphismDefault<BE>
+    M: GLWEBytesOf<BE>
+        + GLWEAutomorphismDefault<BE>
         + GLWEKeyswitchDefault<BE>
         + GLWEKeyswitchInternal<BE>
         + GLWENormalizeDefault<BE>
@@ -442,7 +446,8 @@ pub fn glwe_automorphism_sub_negate_assign_default<BE, M, R, K>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GLWEAutomorphismDefault<BE>
+    M: GLWEBytesOf<BE>
+        + GLWEAutomorphismDefault<BE>
         + GLWEKeyswitchDefault<BE>
         + GLWEKeyswitchInternal<BE>
         + GLWENormalizeDefault<BE>

@@ -95,14 +95,14 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOps<BE> for Module<BE> {
     }
     fn ckks_add_into_unnormalized<Dst, A, B>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst>,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
         a: &A,
         b: &B,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: Data,
-        GLWE<Dst>: GLWEToBackendMut<BE>,
+        GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         B: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
@@ -111,13 +111,13 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOps<BE> for Module<BE> {
 
     fn ckks_add_assign_unnormalized<Dst, A>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst>,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
         a: &A,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: Data,
-        GLWE<Dst>: GLWEToBackendMut<BE>,
+        GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSInfos,
     {
         BE::ckks_add_assign_unnormalized_impl(self, dst, a, scratch)
@@ -125,14 +125,14 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOps<BE> for Module<BE> {
 
     fn ckks_add_pt_vec_into_unnormalized<Dst, A, P>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst>,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
         a: &A,
         pt: &P,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: Data,
-        GLWE<Dst>: GLWEToBackendMut<BE>,
+        GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
@@ -141,13 +141,13 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOps<BE> for Module<BE> {
 
     fn ckks_add_pt_vec_assign_unnormalized<Dst, P>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst>,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
         pt: &P,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         Dst: Data,
-        GLWE<Dst>: GLWEToBackendMut<BE>,
+        GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_add_pt_vec_assign_unnormalized_impl(self, dst, pt, scratch)
@@ -155,7 +155,7 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOps<BE> for Module<BE> {
 
     fn ckks_add_pt_const_into_unnormalized<Dst, A, P>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst>,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
         a: &A,
         dst_coeff: usize,
         pt: &P,
@@ -164,7 +164,7 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOps<BE> for Module<BE> {
     ) -> Result<()>
     where
         Dst: Data,
-        GLWE<Dst>: GLWEToBackendMut<BE>,
+        GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
@@ -173,7 +173,7 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOps<BE> for Module<BE> {
 
     fn ckks_add_pt_const_assign_unnormalized<Dst, P>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst>,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
         dst_coeff: usize,
         pt: &P,
         pt_coeff: usize,
@@ -181,7 +181,7 @@ impl<BE: Backend + CKKSAddImpl<BE>> CKKSAddOps<BE> for Module<BE> {
     ) -> Result<()>
     where
         Dst: Data,
-        GLWE<Dst>: GLWEToBackendMut<BE>,
+        GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
         P: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos,
     {
         BE::ckks_add_pt_const_assign_unnormalized_impl(self, dst, dst_coeff, pt, pt_coeff, scratch)

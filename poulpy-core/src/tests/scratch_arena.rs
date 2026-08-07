@@ -2,7 +2,7 @@ use std::{marker::PhantomData, ptr::NonNull};
 
 use poulpy_hal::{
     api::ScratchArenaTakeBasic,
-    layouts::{Backend, DataViewMut, Host, Module, ScratchOwned, VecZnx},
+    layouts::{Backend, DataViewMut, Host, Module, ScratchOwned},
     oep::HalModuleImpl,
 };
 
@@ -176,7 +176,10 @@ fn scratch_arena_split_yields_independent_chunks() {
         _phantom: PhantomData,
     };
     let arena = scratch.arena();
-    let chunk_len = VecZnx::bytes_of(64, 2, 2);
+    // Must come from the same source as `take_vec_znx_scratch`, which carves
+    // with `B::bytes_of_vec_znx`; sizing via the host layout instead would
+    // desynchronise the moment a backend overrides its sizing.
+    let chunk_len = TestBackend::bytes_of_vec_znx(64, 2, 2);
     let (chunks, rem) = arena.split(2, chunk_len);
 
     assert!(rem.available() < (1 << 12));

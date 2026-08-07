@@ -11,7 +11,7 @@ use poulpy_hal::{
     layouts::{Backend, Module, ScratchOwned},
 };
 
-pub fn bench_vec_znx_lsh_assign<B: Backend>(c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_lsh_assign<B: Backend<ZnxWord = i64>>(c: &mut Criterion, label: &str)
 where
     Module<B>: ModuleNew<B> + VecZnxLshAssignBackend<B> + VecZnxAlloc<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -20,7 +20,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(params: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(params: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxLshAssignBackend<B> + ModuleNew<B> + VecZnxAlloc<B>,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -58,7 +58,7 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_lsh<B: Backend>(c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_lsh<B: Backend<ZnxWord = i64>>(c: &mut Criterion, label: &str)
 where
     Module<B>: VecZnxLshBackend<B> + ModuleNew<B> + VecZnxAlloc<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -67,7 +67,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(params: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(params: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxLshBackend<B> + ModuleNew<B> + VecZnxAlloc<B>,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -107,7 +107,7 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_rsh_assign<B: Backend>(c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_rsh_assign<B: Backend<ZnxWord = i64>>(c: &mut Criterion, label: &str)
 where
     Module<B>: VecZnxRshAssignBackend<B> + ModuleNew<B> + VecZnxAlloc<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -116,7 +116,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(params: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(params: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxRshAssignBackend<B> + ModuleNew<B> + VecZnxAlloc<B>,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -154,7 +154,7 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_rsh<B: Backend>(c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_rsh<B: Backend<ZnxWord = i64>>(c: &mut Criterion, label: &str)
 where
     Module<B>: VecZnxRshBackend<B> + ModuleNew<B> + VecZnxAlloc<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -163,7 +163,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(params: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(params: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxRshBackend<B> + ModuleNew<B> + VecZnxAlloc<B>,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,

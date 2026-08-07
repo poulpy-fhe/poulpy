@@ -56,7 +56,7 @@ pub fn ntt4x30_svp_prepare<'r, 'a, BE>(
     a: &ScalarZnxBackendRef<'a, BE>,
     a_col: usize,
 ) where
-    BE: Backend<DftWord = Q120bScalar> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttCFromB,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttCFromB,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
@@ -96,7 +96,7 @@ pub fn ntt4x30_svp_apply_dft_to_dft<'r, 'a, 'b, BE>(
     b: &VecZnxDftBackendRef<'b, BE>,
     b_col: usize,
 ) where
-    BE: Backend<DftWord = Q120bScalar> + NttMulBbc + NttZero,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttMulBbc + NttZero,
     BE::BufMut<'r>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
 {
@@ -150,7 +150,7 @@ pub fn ntt4x30_svp_apply_dft_to_dft_assign<'r, 'a, BE>(
     a: &SvpPPolBackendRef<'a, BE>,
     a_col: usize,
 ) where
-    BE: Backend<DftWord = Q120bScalar> + NttMulBbc,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttMulBbc,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {

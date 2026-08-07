@@ -9,7 +9,7 @@ use crate::{
         bootstrap::{ShipBootstrapModule, ship_bootstrap_complex_into, ship_bootstrap_into},
         preflight::ship_bootstrap_tmp_bytes,
     },
-    layouts::{CKKSCiphertext, CKKSPlaintext, ShipCoeffEncodings, ShipKeysPrepared, ShipPlan},
+    layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, ShipCoeffEncodings, ShipKeysPrepared, ShipPlan},
     oep::{CKKSEncodingImpl, CKKSShipCoeffEncodingImpl},
 };
 
@@ -18,12 +18,12 @@ where
     BE: Backend + CKKSShipCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
     F: ShipScalar,
     Module<BE>: ShipBootstrapModule<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
 {
     fn ckks_ship_bootstrap_tmp_bytes<Src>(
         &self,
-        output: &CKKSCiphertext<BE::OwnedBuf>,
+        output: &CKKSCiphertextOwned<BE>,
         input: &Src,
         keys: &ShipKeysPrepared<BE::OwnedBuf, BE>,
     ) -> Result<usize>
@@ -44,7 +44,7 @@ where
         base2k: Base2K,
         complex: bool,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<ShipCoeffEncodings<BE::OwnedBuf>>
+    ) -> Result<ShipCoeffEncodings<BE::OwnedBuf, BE::ZnxWord>>
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
@@ -59,7 +59,7 @@ where
 
     fn ckks_ship_bootstrap_into<Src>(
         &self,
-        output: &mut CKKSCiphertext<BE::OwnedBuf>,
+        output: &mut CKKSCiphertextOwned<BE>,
         input: &Src,
         keys: &ShipKeysPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
@@ -72,7 +72,7 @@ where
 
     fn ckks_ship_bootstrap_complex_into<Src>(
         &self,
-        output: &mut CKKSCiphertext<BE::OwnedBuf>,
+        output: &mut CKKSCiphertextOwned<BE>,
         input: &Src,
         keys: &ShipKeysPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,

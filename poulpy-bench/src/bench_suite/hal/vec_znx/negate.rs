@@ -7,7 +7,7 @@ use poulpy_hal::{
     layouts::{Backend, Module},
 };
 
-pub fn bench_vec_znx_negate<B: Backend>(c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_negate<B: Backend<ZnxWord = i64>>(c: &mut Criterion, label: &str)
 where
     Module<B>: VecZnxNegateBackend<B> + ModuleNew<B> + VecZnxAlloc<B>,
 {
@@ -15,7 +15,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(params: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(params: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxNegateBackend<B> + ModuleNew<B> + VecZnxAlloc<B>,
     {
@@ -50,7 +50,7 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_negate_assign<B: Backend>(c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_negate_assign<B: Backend<ZnxWord = i64>>(c: &mut Criterion, label: &str)
 where
     Module<B>: VecZnxNegateAssignBackend<B> + ModuleNew<B> + VecZnxAlloc<B>,
 {
@@ -58,7 +58,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(params: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(params: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxNegateAssignBackend<B> + ModuleNew<B> + VecZnxAlloc<B>,
     {

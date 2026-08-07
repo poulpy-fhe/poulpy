@@ -1,7 +1,7 @@
-use poulpy_hal::layouts::VecZnxBigToBackendMut;
 use poulpy_hal::layouts::VecZnxBigToBackendRef;
 use poulpy_hal::layouts::VecZnxDftToBackendMut;
 use poulpy_hal::layouts::VecZnxDftToBackendRef;
+use poulpy_hal::layouts::{VecZnxBigToBackendMut, ZnxWord};
 use poulpy_hal::{
     api::{
         ModuleN, SvpApplyDftToDft, SvpPrepare, VecZnxBigAlloc, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
@@ -23,41 +23,43 @@ use crate::{
     },
 };
 
-pub struct GLWESecretTensor<D: Data> {
-    pub(crate) data: ScalarZnx<D>,
+/// Number of distinct unordered secret-key products for a rank-`r` tensor key.
+/// Depends only on the rank: neither the storage nor the coefficient word.
+pub(crate) fn pairs(rank: usize) -> usize {
+    (((rank + 1) * rank) >> 1).max(1)
+}
+
+pub struct GLWESecretTensor<D: Data, W: ZnxWord> {
+    pub(crate) data: ScalarZnx<D, W>,
     pub(crate) rank: Rank,
     pub(crate) dist: Distribution,
 }
 
-impl GLWESecretTensor<Vec<u8>> {
-    pub(crate) fn pairs(rank: usize) -> usize {
-        (((rank + 1) * rank) >> 1).max(1)
-    }
-}
+impl<W: ZnxWord> GLWESecretTensor<Vec<u8>, W> {}
 
-impl<D: Data> GetDistribution for GLWESecretTensor<D> {
+impl<D: Data, W: ZnxWord> GetDistribution for GLWESecretTensor<D, W> {
     fn dist(&self) -> &Distribution {
         &self.dist
     }
 }
 
-impl<D: Data> GetDistributionMut for GLWESecretTensor<D> {
+impl<D: Data, W: ZnxWord> GetDistributionMut for GLWESecretTensor<D, W> {
     fn dist_mut(&mut self) -> &mut Distribution {
         &mut self.dist
     }
 }
 
-impl<D: Data> GLWESecretTensor<D> {
-    pub fn data(&self) -> &ScalarZnx<D> {
+impl<D: Data, W: ZnxWord> GLWESecretTensor<D, W> {
+    pub fn data(&self) -> &ScalarZnx<D, W> {
         &self.data
     }
 
-    pub fn data_mut(&mut self) -> &mut ScalarZnx<D> {
+    pub fn data_mut(&mut self) -> &mut ScalarZnx<D, W> {
         &mut self.data
     }
 }
 
-impl<D: Data> LWEInfos for GLWESecretTensor<D> {
+impl<D: Data, W: ZnxWord> LWEInfos for GLWESecretTensor<D, W> {
     fn base2k(&self) -> Base2K {
         Base2K(0)
     }
@@ -75,8 +77,8 @@ impl<D: Data> LWEInfos for GLWESecretTensor<D> {
     }
 }
 
-impl<D: HostDataRef> GLWESecretTensor<D> {
-    pub fn at(&self, mut i: usize, mut j: usize) -> ScalarZnx<&[u8]> {
+impl<D: HostDataRef, W: ZnxWord> GLWESecretTensor<D, W> {
+    pub fn at(&self, mut i: usize, mut j: usize) -> ScalarZnx<&[u8], W> {
         if i > j {
             std::mem::swap(&mut i, &mut j);
         };
@@ -89,8 +91,8 @@ impl<D: HostDataRef> GLWESecretTensor<D> {
     }
 }
 
-impl<D: HostDataMut> GLWESecretTensor<D> {
-    pub fn at_mut(&mut self, mut i: usize, mut j: usize) -> ScalarZnx<&mut [u8]> {
+impl<D: HostDataMut, W: ZnxWord> GLWESecretTensor<D, W> {
+    pub fn at_mut(&mut self, mut i: usize, mut j: usize) -> ScalarZnx<&mut [u8], W> {
         if i > j {
             std::mem::swap(&mut i, &mut j);
         };
@@ -104,25 +106,27 @@ impl<D: HostDataMut> GLWESecretTensor<D> {
     }
 }
 
-impl<D: Data> GLWEInfos for GLWESecretTensor<D> {
+impl<D: Data, W: ZnxWord> GLWEInfos for GLWESecretTensor<D, W> {
     fn rank(&self) -> Rank {
         self.rank
     }
 }
 
-impl<BE: Backend> GLWESecretToBackendRef<BE> for GLWESecretTensor<BE::OwnedBuf> {
+impl<BE: Backend> GLWESecretToBackendRef<BE> for GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GLWESecretBackendRef<'_, BE> {
         GLWESecret {
-            data: <ScalarZnx<BE::OwnedBuf> as ScalarZnxToBackendRef<BE>>::to_backend_ref(&self.data),
+            data: <ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxToBackendRef<BE>>::to_backend_ref(&self.data),
             dist: self.dist,
         }
     }
 }
 
-impl<BE: Backend> GLWESecretToBackendMut<BE> for GLWESecretTensor<BE::OwnedBuf> {
+impl<BE: Backend> GLWESecretToBackendMut<BE> for GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord> {
     fn to_backend_mut(&mut self) -> GLWESecretBackendMut<'_, BE> {
         GLWESecret {
-            data: <ScalarZnx<BE::OwnedBuf> as poulpy_hal::layouts::ScalarZnxToBackendMut<BE>>::to_backend_mut(&mut self.data),
+            data: <ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as poulpy_hal::layouts::ScalarZnxToBackendMut<BE>>::to_backend_mut(
+                &mut self.data,
+            ),
             dist: self.dist,
         }
     }
@@ -132,7 +136,7 @@ impl<BE: Backend> GLWESecretToBackendMut<BE> for GLWESecretTensor<BE::OwnedBuf> 
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl GLWESecretTensor<Vec<u8>> {
+impl<W: ZnxWord> GLWESecretTensor<Vec<u8>, W> {
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
         A: GLWEInfos,
@@ -143,12 +147,12 @@ impl GLWESecretTensor<Vec<u8>> {
     pub(crate) fn alloc(n: Degree, rank: Rank) -> Self {
         GLWESecretTensor {
             data: ScalarZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(ScalarZnx::<Vec<u8>>::bytes_of(
+                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(ScalarZnx::<Vec<u8>, W>::bytes_of(
                     n.into(),
-                    Self::pairs(rank.into()),
+                    pairs(rank.into()),
                 )),
                 n.into(),
-                Self::pairs(rank.into()),
+                pairs(rank.into()),
             ),
             rank,
             dist: Distribution::NONE,
@@ -159,11 +163,11 @@ impl GLWESecretTensor<Vec<u8>> {
     where
         A: GLWEInfos,
     {
-        Self::bytes_of(infos.n(), Self::pairs(infos.rank().into()).into())
+        Self::bytes_of(infos.n(), pairs(infos.rank().into()).into())
     }
 
     pub fn bytes_of(n: Degree, rank: Rank) -> usize {
-        ScalarZnx::bytes_of(n.into(), Self::pairs(rank.into()))
+        ScalarZnx::<Vec<u8>, W>::bytes_of(n.into(), pairs(rank.into()))
     }
 }
 
@@ -203,7 +207,7 @@ where
         let res = &mut res.to_backend_mut();
         let a = a.to_backend_ref();
 
-        assert_eq!(res.rank(), GLWESecretTensor::pairs(a.rank().into()) as u32);
+        assert_eq!(res.rank(), pairs(a.rank().into()) as u32);
         assert_eq!(res.n(), self.n() as u32);
         assert_eq!(a.n(), self.n() as u32);
         assert!(

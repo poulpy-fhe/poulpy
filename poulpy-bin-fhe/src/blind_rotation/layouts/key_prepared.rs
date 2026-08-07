@@ -35,7 +35,7 @@ pub trait BlindRotationKeyPreparedFactory<BRA: BlindRotationAlgo, BE: Backend> {
     fn prepare_blind_rotation_key(
         &self,
         res: &mut BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE>,
-        other: &BlindRotationKey<BE::OwnedBuf, BRA>,
+        other: &BlindRotationKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
         scratch: &mut ScratchArena<'_, BE>,
     );
 }
@@ -63,8 +63,12 @@ impl<BRA: BlindRotationAlgo, BE: Backend> BlindRotationKeyPrepared<BE::OwnedBuf,
     ///
     /// Convenience wrapper around
     /// [`BlindRotationKeyPreparedFactory::prepare_blind_rotation_key`].
-    pub fn prepare<M>(&mut self, module: &M, other: &BlindRotationKey<BE::OwnedBuf, BRA>, scratch: &mut ScratchArena<'_, BE>)
-    where
+    pub fn prepare<M>(
+        &mut self,
+        module: &M,
+        other: &BlindRotationKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
         M: BlindRotationKeyPreparedFactory<BRA, BE>,
     {
         module.prepare_blind_rotation_key(self, other, scratch);

@@ -9,7 +9,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::ModuleN,
-    layouts::{Backend, HostDataMut, HostDataRef, Module, ScalarZnx, ScratchArena, ZnxView, ZnxViewMut},
+    layouts::{Backend, HostDataMut, HostDataRef, Module, ScalarZnx, ScratchArena, ZnxView, ZnxViewMut, ZnxWord},
     source::Source,
 };
 
@@ -18,8 +18,11 @@ use crate::blind_rotation::{
     CGGI,
 };
 
-impl<D: HostDataRef> BlindRotationKeyCompressedFactory<CGGI> for BlindRotationKeyCompressed<D, CGGI> {
-    fn blind_rotation_key_compressed_alloc<M, A>(module: &M, infos: &A) -> BlindRotationKeyCompressed<Vec<u8>, CGGI>
+impl<D: HostDataRef, W: ZnxWord> BlindRotationKeyCompressedFactory<CGGI> for BlindRotationKeyCompressed<D, CGGI, W> {
+    fn blind_rotation_key_compressed_alloc<M, A>(
+        module: &M,
+        infos: &A,
+    ) -> BlindRotationKeyCompressed<M::OwnedBuf, CGGI, M::ZnxWord>
     where
         M: ModuleCoreCompressedAlloc + ModuleN,
         A: BlindRotationKeyInfos,
@@ -28,7 +31,7 @@ impl<D: HostDataRef> BlindRotationKeyCompressedFactory<CGGI> for BlindRotationKe
         {
             assert_eq!(module.n(), infos.n_glwe().as_usize());
         }
-        let mut data: Vec<GGSWCompressed<Vec<u8>>> = Vec::with_capacity(infos.n_lwe().into());
+        let mut data: Vec<GGSWCompressed<M::OwnedBuf, M::ZnxWord>> = Vec::with_capacity(infos.n_lwe().into());
         (0..infos.n_lwe().as_usize()).for_each(|_| data.push(module.ggsw_compressed_alloc_from_infos(infos)));
         BlindRotationKeyCompressed {
             keys: data,
@@ -56,7 +59,7 @@ where
 
     fn blind_rotation_key_compressed_encrypt_sk<S0, S1, E>(
         &self,
-        res: &mut BlindRotationKeyCompressed<BE::OwnedBuf, CGGI>,
+        res: &mut BlindRotationKeyCompressed<BE::OwnedBuf, CGGI, BE::ZnxWord>,
         sk_glwe: &S0,
         sk_lwe: &S1,
         seed_xa: [u8; 32],
@@ -86,7 +89,7 @@ where
 
             res.dist = sk_lwe.dist();
 
-            let mut pt: ScalarZnx<BE::OwnedBuf> = self.scalar_znx_alloc(1);
+            let mut pt: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = self.scalar_znx_alloc(1);
             let sk_ref = sk_lwe.data();
 
             for (i, ggsw) in res.keys.iter_mut().enumerate() {

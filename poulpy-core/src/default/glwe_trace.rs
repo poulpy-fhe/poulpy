@@ -16,6 +16,7 @@
 //! Requires automorphism keys indexed by the Galois elements returned
 //! from [`GLWETrace::glwe_trace_galois_elements`].
 
+use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::ModuleLogN,
     layouts::{Backend, CyclotomicOrder, GaloisElement, ScratchArena, galois_element},
@@ -24,7 +25,7 @@ use poulpy_hal::{
 use crate::{
     GLWEAutomorphism, GLWECopy, GLWENormalize, GLWEShift, ScratchArenaTakeCore,
     layouts::{
-        GGLWEInfos, GGLWELayout, GLWE, GLWEAutomorphismKeyHelper, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef,
+        GGLWEInfos, GGLWELayout, GLWEAutomorphismKeyHelper, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef,
         GetGaloisElement, LWEInfos, prepared::GGLWEPreparedToBackendRef,
     },
 };
@@ -49,7 +50,8 @@ fn trace_assign_internal<M, K, H, R, BE: Backend>(
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    M: ModuleLogN
+    M: GLWEBytesOf<BE>
+        + ModuleLogN
         + GaloisElement
         + GLWEAutomorphism<BE>
         + GLWEShift<BE>
@@ -149,7 +151,8 @@ pub mod glwe_trace_defaults_impl {
     pub fn glwe_trace_assign_tmp_bytes_default<BE, M, A, K>(module: &M, a_infos: &A, key_infos: &K) -> usize
     where
         BE: Backend,
-        M: GLWETraceDefault<BE>
+        M: GLWEBytesOf<BE>
+            + GLWETraceDefault<BE>
             + ModuleLogN
             + GaloisElement
             + GLWEAutomorphism<BE>
@@ -170,7 +173,7 @@ pub mod glwe_trace_defaults_impl {
                 k: a_infos.k(),
                 rank: a_infos.rank(),
             };
-            let lvl_0: usize = GLWE::<Vec<u8>>::bytes_of_from_infos(&a_conv_infos);
+            let lvl_0: usize = module.glwe_bytes_of_from_infos(&a_conv_infos);
             let lvl_1: usize = module
                 .glwe_normalize_tmp_bytes()
                 .max(module.glwe_trace_assign_tmp_bytes_default(&a_conv_infos, key_infos));
@@ -193,7 +196,8 @@ pub mod glwe_trace_defaults_impl {
     pub fn glwe_trace_tmp_bytes_default<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         BE: Backend,
-        M: GLWETraceDefault<BE>
+        M: GLWEBytesOf<BE>
+            + GLWETraceDefault<BE>
             + ModuleLogN
             + GaloisElement
             + GLWEAutomorphism<BE>
@@ -215,7 +219,7 @@ pub mod glwe_trace_defaults_impl {
             k: a_infos.k().max(res_infos.k()),
             rank: res_infos.rank(),
         };
-        let lvl_0: usize = GLWE::<Vec<u8>>::bytes_of_from_infos(&tmp_infos);
+        let lvl_0: usize = module.glwe_bytes_of_from_infos(&tmp_infos);
         let lvl_1: usize = if a_infos.base2k() == key_infos.base2k() {
             0
         } else {
@@ -225,7 +229,7 @@ pub mod glwe_trace_defaults_impl {
         let lvl_3: usize = if res_infos.base2k() == key_infos.base2k() {
             0
         } else {
-            GLWE::<Vec<u8>>::bytes_of_from_infos(res_infos) + module.glwe_normalize_tmp_bytes()
+            module.glwe_bytes_of_from_infos(res_infos) + module.glwe_normalize_tmp_bytes()
         };
 
         lvl_0 + lvl_1.max(lvl_2).max(lvl_3)
@@ -240,7 +244,8 @@ pub mod glwe_trace_defaults_impl {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: Backend,
-        M: GLWETraceDefault<BE>
+        M: GLWEBytesOf<BE>
+            + GLWETraceDefault<BE>
             + ModuleLogN
             + GaloisElement
             + GLWEAutomorphism<BE>
@@ -305,7 +310,8 @@ pub mod glwe_trace_defaults_impl {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: Backend,
-        M: GLWETraceDefault<BE>
+        M: GLWEBytesOf<BE>
+            + GLWETraceDefault<BE>
             + ModuleLogN
             + GaloisElement
             + GLWEAutomorphism<BE>

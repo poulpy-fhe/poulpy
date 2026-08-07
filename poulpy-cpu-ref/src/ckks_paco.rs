@@ -17,7 +17,7 @@ use poulpy_ckks::{
     CKKSCtBounds,
     api::{CKKSEncodingOps, PaCoScalar},
     encoding::paco_coeff_encodings_host,
-    layouts::{CKKSModuleAlloc, CKKSPlaintext, PaCoPlan},
+    layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, PaCoPlan},
     oep::CKKSEncodingImpl,
 };
 use poulpy_core::{
@@ -40,9 +40,9 @@ pub fn paco_coeff_encodings_staged<BE, F, Src>(
     ct: &Src,
     plan: &PaCoPlan,
     base2k: Base2K,
-) -> Result<[CKKSPlaintext<BE::OwnedBuf>; 4]>
+) -> Result<[CKKSPlaintextOwned<BE>; 4]>
 where
-    BE: Backend + CKKSEncodingImpl<BE, F>,
+    BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<BE, F>,
     BE::OwnedBuf: HostDataRef,
     Module<BE>: ModuleN + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + GLWECopy<BE>,
     F: PaCoScalar,
@@ -88,7 +88,10 @@ macro_rules! impl_ckks_paco_coeff_encoding {
                 base2k: ::poulpy_core::layouts::Base2K,
                 _scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) -> ::poulpy_ckks::CKKSResult<
-                [::poulpy_ckks::layouts::CKKSPlaintext<<$be as ::poulpy_hal::layouts::Backend>::OwnedBuf>; 4],
+                [::poulpy_ckks::layouts::CKKSPlaintext<
+                    <$be as ::poulpy_hal::layouts::Backend>::OwnedBuf,
+                    <$be as ::poulpy_hal::layouts::Backend>::ZnxWord,
+                >; 4],
             >
             where
                 F: ::poulpy_ckks::api::PaCoScalar,

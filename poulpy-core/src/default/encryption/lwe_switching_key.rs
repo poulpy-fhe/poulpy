@@ -7,10 +7,11 @@ use poulpy_hal::{
     source::Source,
 };
 
+use crate::api::GLWEBytesOf;
 use crate::{
     EncryptionInfos, ScratchArenaTakeCore,
     encryption::glwe_switching_key::GLWESwitchingKeyEncryptSk,
-    layouts::{GGLWEInfos, GGLWEToBackendMut, GLWESecret, GLWESwitchingKeyDegreesMut, LWEInfos, LWESecretToBackendRef, Rank},
+    layouts::{GGLWEInfos, GGLWEToBackendMut, GLWESwitchingKeyDegreesMut, LWEInfos, LWESecretToBackendRef, Rank},
 };
 
 #[doc(hidden)]
@@ -52,9 +53,9 @@ where
         assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for LWESwitchingKey");
         assert_eq!(self.n() as u32, infos.n());
 
-        let lvl_0: usize = GLWESecret::bytes_of(self.n().into(), Rank(1));
-        let lvl_1: usize = GLWESecret::bytes_of(self.n().into(), Rank(1));
-        let lvl_2: usize = GLWESecret::bytes_of(self.n().into(), Rank(1));
+        let lvl_0: usize = self.glwe_secret_bytes_of(self.n().into(), Rank(1));
+        let lvl_1: usize = self.glwe_secret_bytes_of(self.n().into(), Rank(1));
+        let lvl_2: usize = self.glwe_secret_bytes_of(self.n().into(), Rank(1));
         let lvl_3: usize = self.glwe_switching_key_encrypt_sk_tmp_bytes(infos);
 
         lvl_0 + lvl_1 + lvl_2 + lvl_3

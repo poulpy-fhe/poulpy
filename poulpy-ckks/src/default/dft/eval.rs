@@ -42,7 +42,7 @@ use crate::{
     },
     default::dft::matrices::{DftScalar, gen_dft_matrices},
     layouts::{
-        CKKSModuleAlloc, CKKSPlaintext, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTOutputFormat, DFTPlan, Decode,
+        CKKSModuleAlloc, CKKSPlaintextOwned, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTOutputFormat, DFTPlan, Decode,
         DftDirection, DftFormat, Encode, Repack, Split, Standard,
     },
     oep::CKKSEncodingImpl,
@@ -50,7 +50,7 @@ use crate::{
 
 /// One unprepared factor: the diagonals of a single DFT factor matrix encoded
 /// as a CKKS linear transformation (plaintext diagonals).
-type DftFactorLt<BE> = LinearTransformation<CKKSPlaintext<<BE as Backend>::OwnedBuf>>;
+type DftFactorLt<BE> = LinearTransformation<CKKSPlaintextOwned<BE>>;
 
 fn checked_dft_log_slots(literal: &DFTPlan, log_n: usize) -> Result<usize> {
     // Shape validity (including a non-overflowing layer sum) is guaranteed by

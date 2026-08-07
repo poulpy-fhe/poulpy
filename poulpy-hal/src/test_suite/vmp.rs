@@ -12,7 +12,7 @@ use crate::{
         VmpApplyDftToDftAccumulate, VmpApplyDftToDftAccumulateTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare,
         VmpPrepareTmpBytes,
     },
-    layouts::{Backend, DigestU64, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, Module, ScratchOwned, VecZnx},
+    layouts::{Backend, DigestU64, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, Module, ScratchOwned},
     source::Source,
 };
 
@@ -81,13 +81,13 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                 for size_out in 1..max_size + 1 {
                     let rows: usize = cols_in;
 
-                    let mut a: VecZnx<Vec<u8>> = module_host.vec_znx_alloc(cols_in, size_in);
+                    let mut a = module_host.vec_znx_alloc(cols_in, size_in);
                     a.fill_uniform(base2k, &mut source);
                     let a_digest: u64 = a.digest_u64();
                     let a_ref_backend = upload_vec_znx::<BR>(&a);
                     let a_test_backend = upload_vec_znx::<BT>(&a);
 
-                    let mut mat: MatZnx<Vec<u8>> = module_host.mat_znx_alloc(rows, cols_in, cols_out, size_out);
+                    let mut mat = module_host.mat_znx_alloc(rows, cols_in, cols_out, size_out);
                     mat.fill_uniform(base2k, &mut source);
                     let mat_digest: u64 = mat.digest_u64();
                     let mat_ref_backend = upload_mat_znx::<BR>(&mat);
@@ -98,12 +98,12 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
 
                     module_ref.vmp_prepare(
                         &mut pmat_ref.to_backend_mut(),
-                        &<MatZnx<BR::OwnedBuf> as MatZnxToBackendRef<BR>>::to_backend_ref(&mat_ref_backend),
+                        &<MatZnx<BR::OwnedBuf, i64> as MatZnxToBackendRef<BR>>::to_backend_ref(&mat_ref_backend),
                         &mut scratch_ref.arena(),
                     );
                     module_test.vmp_prepare(
                         &mut pmat_test.to_backend_mut(),
-                        &<MatZnx<BT::OwnedBuf> as MatZnxToBackendRef<BT>>::to_backend_ref(&mat_test_backend),
+                        &<MatZnx<BT::OwnedBuf, i64> as MatZnxToBackendRef<BT>>::to_backend_ref(&mat_test_backend),
                         &mut scratch_test.arena(),
                     );
 
@@ -130,7 +130,7 @@ pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_su
                     let res_big_ref = idft_into_alloc(module_ref, &mut res_dft_ref);
                     let res_big_test = idft_into_alloc(module_test, &mut res_dft_test);
 
-                    let res_host_template: VecZnx<Vec<u8>> = module_host.vec_znx_alloc(cols_out, size_out);
+                    let res_host_template = module_host.vec_znx_alloc(cols_out, size_out);
                     let mut res_small_ref_backend = upload_vec_znx::<BR>(&res_host_template);
                     let mut res_small_test_backend = upload_vec_znx::<BT>(&res_host_template);
 
@@ -226,7 +226,7 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                 for size_out in 1..max_size + 1 {
                     let rows: usize = size_in;
 
-                    let mut a: VecZnx<Vec<u8>> = module_host.vec_znx_alloc(cols_in, size_in);
+                    let mut a = module_host.vec_znx_alloc(cols_in, size_in);
                     a.fill_uniform(base2k, &mut source);
                     let a_digest: u64 = a.digest_u64();
                     let a_ref_backend = upload_vec_znx::<BR>(&a);
@@ -256,7 +256,7 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
 
                     assert_eq!(a.digest_u64(), a_digest);
 
-                    let mut mat: MatZnx<Vec<u8>> = module_host.mat_znx_alloc(rows, cols_in, cols_out, size_out);
+                    let mut mat = module_host.mat_znx_alloc(rows, cols_in, cols_out, size_out);
                     mat.fill_uniform(base2k, &mut source);
                     let mat_digest: u64 = mat.digest_u64();
                     let mat_ref_backend = upload_mat_znx::<BR>(&mat);
@@ -267,12 +267,12 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
 
                     module_ref.vmp_prepare(
                         &mut pmat_ref.to_backend_mut(),
-                        &<MatZnx<BR::OwnedBuf> as MatZnxToBackendRef<BR>>::to_backend_ref(&mat_ref_backend),
+                        &<MatZnx<BR::OwnedBuf, i64> as MatZnxToBackendRef<BR>>::to_backend_ref(&mat_ref_backend),
                         &mut scratch_ref.arena(),
                     );
                     module_test.vmp_prepare(
                         &mut pmat_test.to_backend_mut(),
-                        &<MatZnx<BT::OwnedBuf> as MatZnxToBackendRef<BT>>::to_backend_ref(&mat_test_backend),
+                        &<MatZnx<BT::OwnedBuf, i64> as MatZnxToBackendRef<BT>>::to_backend_ref(&mat_test_backend),
                         &mut scratch_test.arena(),
                     );
 
@@ -299,7 +299,7 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                     let res_big_ref = idft_into_alloc(module_ref, &mut res_dft_ref);
                     let res_big_test = idft_into_alloc(module_test, &mut res_dft_test);
 
-                    let res_host_template: VecZnx<Vec<u8>> = module_host.vec_znx_alloc(cols_out, size_out);
+                    let res_host_template = module_host.vec_znx_alloc(cols_out, size_out);
                     let mut res_small_ref_backend = upload_vec_znx::<BR>(&res_host_template);
                     let mut res_small_test_backend = upload_vec_znx::<BT>(&res_host_template);
 
@@ -406,17 +406,17 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                 for size_out in 1..max_size + 1 {
                     let rows: usize = size_in;
 
-                    let mut a: VecZnx<Vec<u8>> = module_host.vec_znx_alloc(cols_in, size_in);
+                    let mut a = module_host.vec_znx_alloc(cols_in, size_in);
                     a.fill_uniform(base2k, &mut source);
                     let a_ref_backend = upload_vec_znx::<BR>(&a);
                     let a_test_backend = upload_vec_znx::<BT>(&a);
 
-                    let mut res_init: VecZnx<Vec<u8>> = module_host.vec_znx_alloc(cols_out, size_out);
+                    let mut res_init = module_host.vec_znx_alloc(cols_out, size_out);
                     res_init.fill_uniform(base2k, &mut source);
                     let res_init_ref_backend = upload_vec_znx::<BR>(&res_init);
                     let res_init_test_backend = upload_vec_znx::<BT>(&res_init);
 
-                    let mut mat: MatZnx<Vec<u8>> = module_host.mat_znx_alloc(rows, cols_in, cols_out, size_out);
+                    let mut mat = module_host.mat_znx_alloc(rows, cols_in, cols_out, size_out);
                     mat.fill_uniform(base2k, &mut source);
                     let mat_ref_backend = upload_mat_znx::<BR>(&mat);
                     let mat_test_backend = upload_mat_znx::<BT>(&mat);
@@ -467,12 +467,12 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                     let mut pmat_test: VmpPMatOwned<BT> = module_test.vmp_pmat_alloc(rows, cols_in, cols_out, size_out);
                     module_ref.vmp_prepare(
                         &mut pmat_ref.to_backend_mut(),
-                        &<MatZnx<BR::OwnedBuf> as MatZnxToBackendRef<BR>>::to_backend_ref(&mat_ref_backend),
+                        &<MatZnx<BR::OwnedBuf, i64> as MatZnxToBackendRef<BR>>::to_backend_ref(&mat_ref_backend),
                         &mut scratch_ref.arena(),
                     );
                     module_test.vmp_prepare(
                         &mut pmat_test.to_backend_mut(),
-                        &<MatZnx<BT::OwnedBuf> as MatZnxToBackendRef<BT>>::to_backend_ref(&mat_test_backend),
+                        &<MatZnx<BT::OwnedBuf, i64> as MatZnxToBackendRef<BT>>::to_backend_ref(&mat_test_backend),
                         &mut scratch_test.arena(),
                     );
 
@@ -529,7 +529,7 @@ pub fn test_vmp_apply_dft_to_dft_accumulate<BR: crate::test_suite::TestBackend, 
                     let res_acc_big_ref = idft_into_alloc(module_ref, &mut res_acc_ref);
                     let res_acc_big_test = idft_into_alloc(module_test, &mut res_acc_test);
 
-                    let res_host_template: VecZnx<Vec<u8>> = module_host.vec_znx_alloc(cols_out, size_out);
+                    let res_host_template = module_host.vec_znx_alloc(cols_out, size_out);
                     let mut res_apply_small_ref = upload_vec_znx::<BR>(&res_host_template);
                     let mut res_apply_small_test = upload_vec_znx::<BT>(&res_host_template);
                     let mut res_acc_small_ref = upload_vec_znx::<BR>(&res_host_template);

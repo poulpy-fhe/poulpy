@@ -30,9 +30,8 @@ use crate::{
         VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApply, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
-        Backend, DataView, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, Module, ScalarZnx, ScratchOwned,
-        SvpPPolLayoutCompatible, SvpPPolOwned, VecZnx, VecZnxDftLayoutCompatible, VecZnxDftOwned, VmpPMatLayoutCompatible,
-        VmpPMatOwned,
+        DataView, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, Module, ScratchOwned, SvpPPolLayoutCompatible,
+        SvpPPolOwned, VecZnxDftLayoutCompatible, VecZnxDftOwned, VmpPMatLayoutCompatible, VmpPMatOwned,
     },
     source::Source,
 };
@@ -45,8 +44,8 @@ pub fn test_word_compat_dft_bytes<BA, BB>(
     module_a: &Module<BA>,
     module_b: &Module<BB>,
 ) where
-    BA: Backend + VecZnxDftLayoutCompatible<BB>,
-    BB: Backend,
+    BA: crate::test_suite::TestBackend + VecZnxDftLayoutCompatible<BB>,
+    BB: crate::test_suite::TestBackend,
     Module<BA>: VecZnxDftAlloc<BA> + VecZnxDftApply<BA>,
     Module<BB>: VecZnxDftAlloc<BB> + VecZnxDftApply<BB>,
 {
@@ -56,7 +55,7 @@ pub fn test_word_compat_dft_bytes<BA, BB>(
     let mut source = Source::new([0u8; 32]);
 
     for size in [1, 2, 3, 4] {
-        let mut a: VecZnx<Vec<u8>> = module_host.vec_znx_alloc(cols, size);
+        let mut a = module_host.vec_znx_alloc(cols, size);
         a.fill_uniform(base2k, &mut source);
         let dft_a = dft_of_uploaded_vec_znx(module_a, &a, 1, 0);
         let dft_b = dft_of_uploaded_vec_znx(module_b, &a, 1, 0);
@@ -75,8 +74,8 @@ pub fn test_word_compat_svp_prepare_bytes<BA, BB>(
     module_a: &Module<BA>,
     module_b: &Module<BB>,
 ) where
-    BA: Backend + SvpPPolLayoutCompatible<BB>,
-    BB: Backend,
+    BA: crate::test_suite::TestBackend + SvpPPolLayoutCompatible<BB>,
+    BB: crate::test_suite::TestBackend,
     Module<BA>: SvpPPolAlloc<BA> + SvpPrepare<BA>,
     Module<BB>: SvpPPolAlloc<BB> + SvpPrepare<BB>,
 {
@@ -85,7 +84,7 @@ pub fn test_word_compat_svp_prepare_bytes<BA, BB>(
     let cols = 2;
     let mut source = Source::new([0u8; 32]);
 
-    let mut scalar: ScalarZnx<Vec<u8>> = module_host.scalar_znx_alloc(cols);
+    let mut scalar = module_host.scalar_znx_alloc(cols);
     scalar.fill_uniform(base2k, &mut source);
     let scalar_a = upload_scalar_znx::<BA>(&scalar);
     let scalar_b = upload_scalar_znx::<BB>(&scalar);
@@ -117,8 +116,8 @@ pub fn test_word_compat_vmp_prepare_bytes<BA, BB>(
     module_a: &Module<BA>,
     module_b: &Module<BB>,
 ) where
-    BA: Backend + VmpPMatLayoutCompatible<BB>,
-    BB: Backend,
+    BA: crate::test_suite::TestBackend + VmpPMatLayoutCompatible<BB>,
+    BB: crate::test_suite::TestBackend,
     Module<BA>: VmpPMatAlloc<BA> + VmpPrepare<BA> + VmpPrepareTmpBytes,
     Module<BB>: VmpPMatAlloc<BB> + VmpPrepare<BB> + VmpPrepareTmpBytes,
     ScratchOwned<BA>: ScratchOwnedAlloc<BA>,
@@ -132,7 +131,7 @@ pub fn test_word_compat_vmp_prepare_bytes<BA, BB>(
     let mut scratch_a: ScratchOwned<BA> = ScratchOwned::alloc(module_a.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size));
     let mut scratch_b: ScratchOwned<BB> = ScratchOwned::alloc(module_b.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size));
 
-    let mut mat: MatZnx<Vec<u8>> = module_host.mat_znx_alloc(rows, cols_in, cols_out, size);
+    let mut mat = module_host.mat_znx_alloc(rows, cols_in, cols_out, size);
     mat.fill_uniform(base2k, &mut source);
     let mat_a = upload_mat_znx::<BA>(&mat);
     let mat_b = upload_mat_znx::<BB>(&mat);
@@ -141,12 +140,12 @@ pub fn test_word_compat_vmp_prepare_bytes<BA, BB>(
     let mut pmat_b: VmpPMatOwned<BB> = module_b.vmp_pmat_alloc(rows, cols_in, cols_out, size);
     module_a.vmp_prepare(
         &mut pmat_a.to_backend_mut(),
-        &<MatZnx<BA::OwnedBuf> as MatZnxToBackendRef<BA>>::to_backend_ref(&mat_a),
+        &<MatZnx<BA::OwnedBuf, BA::ZnxWord> as MatZnxToBackendRef<BA>>::to_backend_ref(&mat_a),
         &mut scratch_a.arena(),
     );
     module_b.vmp_prepare(
         &mut pmat_b.to_backend_mut(),
-        &<MatZnx<BB::OwnedBuf> as MatZnxToBackendRef<BB>>::to_backend_ref(&mat_b),
+        &<MatZnx<BB::OwnedBuf, BB::ZnxWord> as MatZnxToBackendRef<BB>>::to_backend_ref(&mat_b),
         &mut scratch_b.arena(),
     );
     assert!(
@@ -165,8 +164,9 @@ pub fn test_word_compat_dft_cross_idft<BA, BB>(
     module_a: &Module<BA>,
     module_b: &Module<BB>,
 ) where
-    BA: Backend + VecZnxDftLayoutCompatible<BB>,
-    BB: Backend<OwnedBuf = BA::OwnedBuf, DftWord = BA::DftWord> + VecZnxDftLayoutCompatible<BA>,
+    BA: crate::test_suite::TestBackend + VecZnxDftLayoutCompatible<BB>,
+    BB: crate::test_suite::TestBackend<OwnedBuf = BA::OwnedBuf, DftWord = BA::DftWord, ZnxWord = BA::ZnxWord>
+        + VecZnxDftLayoutCompatible<BA>,
     Module<BA>: VecZnxDftAlloc<BA>
         + VecZnxDftApply<BA>
         + VecZnxBigAlloc<BA>
@@ -190,7 +190,7 @@ pub fn test_word_compat_dft_cross_idft<BA, BB>(
     let mut scratch_b: ScratchOwned<BB> = ScratchOwned::alloc(module_b.vec_znx_big_normalize_tmp_bytes());
 
     for size in [1, 2, 3, 4] {
-        let mut a: VecZnx<Vec<u8>> = module_host.vec_znx_alloc(cols, size);
+        let mut a = module_host.vec_znx_alloc(cols, size);
         a.fill_uniform(base2k, &mut source);
 
         let dft_a = dft_of_uploaded_vec_znx(module_a, &a, 1, 0);

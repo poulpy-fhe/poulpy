@@ -46,7 +46,7 @@ fn normalize_input_limb_bound_with_offset(
 
 /// Relinearization (the keyswitch phase of `ckks_mul`). The tensor key is left
 /// zeroed: the op is data-independent, so this times the real kernel path.
-pub fn bench_glwe_tensor_relinearize<BE: Backend<OwnedBuf = Vec<u8>>>(
+pub fn bench_glwe_tensor_relinearize<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
     glwe_infos: &impl GLWEInfos,
     tsk_infos: &GLWETensorKeyLayout,
     c: &mut Criterion,
@@ -75,8 +75,11 @@ pub fn bench_glwe_tensor_relinearize<BE: Backend<OwnedBuf = Vec<u8>>>(
     group.finish();
 }
 
-pub fn bench_glwe_tensor_apply<BE: Backend<OwnedBuf = Vec<u8>>>(glwe_infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
-where
+pub fn bench_glwe_tensor_apply<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
+    glwe_infos: &impl GLWEInfos,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<BE>: ModuleNew<BE> + GLWETensoring<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'x> BE::BufMut<'x>: HostDataMut + AsRef<[u8]> + AsMut<[u8]> + Sync,
@@ -100,7 +103,7 @@ where
     group.finish();
 }
 
-pub fn bench_glwe_tensor_prepare_left<BE: Backend<OwnedBuf = Vec<u8>>>(
+pub fn bench_glwe_tensor_prepare_left<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
     glwe_infos: &impl GLWEInfos,
     c: &mut Criterion,
     label: &str,
@@ -125,7 +128,7 @@ pub fn bench_glwe_tensor_prepare_left<BE: Backend<OwnedBuf = Vec<u8>>>(
             let mut a_prep_backend = a_prep.to_backend_mut();
             module.cnv_prepare_left(
                 &mut a_prep_backend,
-                &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(a.data()),
+                &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<BE>>::to_backend_ref(a.data()),
                 a_mask,
                 &mut scratch.borrow(),
             );
@@ -135,7 +138,7 @@ pub fn bench_glwe_tensor_prepare_left<BE: Backend<OwnedBuf = Vec<u8>>>(
     group.finish();
 }
 
-pub fn bench_glwe_tensor_prepare_right<BE: Backend<OwnedBuf = Vec<u8>>>(
+pub fn bench_glwe_tensor_prepare_right<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
     glwe_infos: &impl GLWEInfos,
     c: &mut Criterion,
     label: &str,
@@ -160,7 +163,7 @@ pub fn bench_glwe_tensor_prepare_right<BE: Backend<OwnedBuf = Vec<u8>>>(
             let mut b_prep_backend = b_prep.to_backend_mut();
             module.cnv_prepare_right(
                 &mut b_prep_backend,
-                &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(b.data()),
+                &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<BE>>::to_backend_ref(b.data()),
                 b_mask,
                 &mut scratch.borrow(),
             );
@@ -170,8 +173,11 @@ pub fn bench_glwe_tensor_prepare_right<BE: Backend<OwnedBuf = Vec<u8>>>(
     group.finish();
 }
 
-pub fn bench_glwe_tensor_diag_lane<BE: Backend<OwnedBuf = Vec<u8>>>(glwe_infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
-where
+pub fn bench_glwe_tensor_diag_lane<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
+    glwe_infos: &impl GLWEInfos,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<BE>:
         ModuleNew<BE> + GLWETensoring<BE> + Convolution<BE> + CnvPVecAlloc<BE> + VecZnxIdftApplyTmpA<BE> + VecZnxBigNormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -208,7 +214,7 @@ where
         let mut a_prep_backend = a_prep.to_backend_mut();
         module.cnv_prepare_left(
             &mut a_prep_backend,
-            &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(a.data()),
+            &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<BE>>::to_backend_ref(a.data()),
             a_mask,
             &mut prep_scratch.borrow(),
         );
@@ -217,7 +223,7 @@ where
         let mut b_prep_backend = b_prep.to_backend_mut();
         module.cnv_prepare_right(
             &mut b_prep_backend,
-            &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(b.data()),
+            &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<BE>>::to_backend_ref(b.data()),
             b_mask,
             &mut prep_scratch.borrow(),
         );
@@ -264,7 +270,7 @@ where
     group.finish();
 }
 
-pub fn bench_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>>(
+pub fn bench_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
     glwe_infos: &impl GLWEInfos,
     c: &mut Criterion,
     label: &str,
@@ -314,7 +320,7 @@ pub fn bench_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>>(
         let mut a_prep_backend = a_prep.to_backend_mut();
         module.cnv_prepare_left(
             &mut a_prep_backend,
-            &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(a.data()),
+            &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<BE>>::to_backend_ref(a.data()),
             a_mask,
             &mut prep_scratch.borrow(),
         );
@@ -323,7 +329,7 @@ pub fn bench_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>>(
         let mut b_prep_backend = b_prep.to_backend_mut();
         module.cnv_prepare_right(
             &mut b_prep_backend,
-            &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(b.data()),
+            &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<BE>>::to_backend_ref(b.data()),
             b_mask,
             &mut prep_scratch.borrow(),
         );
@@ -405,9 +411,10 @@ pub fn bench_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>>(
                 0,
                 &mut scratch,
             );
-            let mut tmp_mut = <VecZnx<BE::BufMut<'_>> as VecZnxReborrowBackendMut<BE>>::reborrow_backend_mut(&mut tmp);
+            let mut tmp_mut =
+                <VecZnx<BE::BufMut<'_>, BE::ZnxWord> as VecZnxReborrowBackendMut<BE>>::reborrow_backend_mut(&mut tmp);
             let diag_terms_ref =
-                <VecZnx<BE::OwnedBuf> as poulpy_hal::layouts::VecZnxToBackendRef<BE>>::to_backend_ref(&diag_terms);
+                <VecZnx<BE::OwnedBuf, BE::ZnxWord> as poulpy_hal::layouts::VecZnxToBackendRef<BE>>::to_backend_ref(&diag_terms);
             module.vec_znx_sub_assign_backend(&mut tmp_mut, 0, &diag_terms_ref, 0);
             module.vec_znx_sub_assign_backend(&mut tmp_mut, 0, &diag_terms_ref, 1);
             black_box(());
@@ -416,7 +423,7 @@ pub fn bench_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>>(
     group.finish();
 }
 
-pub fn bench_glwe_tensor_square_apply<BE: Backend<OwnedBuf = Vec<u8>>>(
+pub fn bench_glwe_tensor_square_apply<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
     glwe_infos: &impl GLWEInfos,
     c: &mut Criterion,
     label: &str,

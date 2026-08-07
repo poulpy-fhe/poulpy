@@ -129,7 +129,7 @@ fn $fn(c: &mut Criterion) {
                 {
                     let mut sc = scratch.borrow();
                     module
-                        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<Vec<u8>>, _, _>(
+                        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<Vec<u8>, i64>, _, _>(
                             &mut ct_res,
                             &bsgs,
                             &pb,
@@ -166,7 +166,7 @@ fn $fn(c: &mut Criterion) {
                     {
                         let mut sc = scratch.borrow();
                         module
-                            .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<Vec<u8>>, _, _>(
+                            .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<Vec<u8>, i64>, _, _>(
                                 black_box(&mut ct_res),
                                 black_box(&bsgs),
                                 black_box(&pb),
@@ -204,7 +204,7 @@ fn $fn(c: &mut Criterion) {
             {
                 let mut sc = scratch.borrow();
                 module
-                    .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<Vec<u8>>, _, _>(
+                    .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<Vec<u8>, i64>, _, _>(
                         &mut ct_res,
                         &complex_bsgs,
                         &pb,
@@ -239,7 +239,7 @@ fn $fn(c: &mut Criterion) {
                 {
                     let mut sc = scratch.borrow();
                     module
-                        .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<Vec<u8>>, _, _>(
+                        .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<Vec<u8>, i64>, _, _>(
                             black_box(&mut ct_res),
                             black_box(&complex_bsgs),
                             &pb,

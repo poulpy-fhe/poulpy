@@ -2,9 +2,10 @@ use poulpy_core::{
     EncryptionLayout, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWENoise,
     layouts::{GGSWLayout, GLWELayout, GLWESecretPreparedFactory, prepared::GLWESecretPrepared},
 };
+use poulpy_hal::layouts::{HostDataMut, HostDataRef};
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBackend, HostDataMut, Module, ScratchOwned},
+    layouts::{Backend, HostBackend, Module, ScratchOwned},
     source::Source,
 };
 use rand::Rng;
@@ -18,8 +19,9 @@ use crate::{
     blind_rotation::BlindRotationAlgo,
 };
 
-pub fn test_bdd_sll<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>> + HostBackend>(test_context: &TestContext<BRA, BE>)
-where
+pub fn test_bdd_sll<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend>(
+    test_context: &TestContext<BRA, BE>,
+) where
     Module<BE>: ModuleNew<BE>
         + GLWESecretPreparedFactory<BE>
         + GLWEDecrypt<BE>
@@ -49,7 +51,8 @@ where
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
 
-    let mut res: FheUint<Vec<u8>, u32> = FheUint::<Vec<u8>, u32>::alloc_from_infos(module, &glwe_infos);
+    let mut res: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
+        FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
     let mut a_enc_prep: FheUintPrepared<BE::OwnedBuf, u32, BE> =
         FheUintPrepared::<BE::OwnedBuf, u32, BE>::alloc_from_infos(module, &ggsw_infos);
     let mut b_enc_prep: FheUintPrepared<BE::OwnedBuf, u32, BE> =

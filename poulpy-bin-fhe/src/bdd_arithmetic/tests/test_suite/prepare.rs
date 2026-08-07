@@ -18,7 +18,7 @@ use crate::{
     blind_rotation::BlindRotationAlgo,
 };
 
-pub fn test_bdd_prepare<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>> + HostBackend>(
+pub fn test_bdd_prepare<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend>(
     test_context: &TestContext<BRA, BE>,
 ) where
     Module<BE>: ModuleNew<BE>
@@ -55,7 +55,7 @@ pub fn test_bdd_prepare<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>> 
     let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(glwe_infos).unwrap();
 
     // GLWE(value)
-    let mut c_enc: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(module, &glwe_infos);
+    let mut c_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> = FheUint::alloc_from_infos(module, &glwe_infos);
     let value: u32 = source.next_u32();
     c_enc.encrypt_sk(
         module,
@@ -68,8 +68,8 @@ pub fn test_bdd_prepare<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>> 
     );
 
     // GGSW(0)
-    let mut c_enc_prep_debug: FheUintPreparedDebug<Vec<u8>, u32> =
-        FheUintPreparedDebug::<Vec<u8>, u32>::alloc_from_infos(module, &ggsw_infos);
+    let mut c_enc_prep_debug: FheUintPreparedDebug<BE::OwnedBuf, u32, BE::ZnxWord> =
+        FheUintPreparedDebug::<Vec<u8>, u32, i64>::alloc_from_infos(module, &ggsw_infos);
 
     let mut scratch_2 = ScratchOwned::alloc(module.fhe_uint_prepare_tmp_bytes(7, 1, &c_enc_prep_debug, &c_enc, bdd_key_prepared));
 

@@ -6,7 +6,7 @@ use poulpy_hal::{
 
 use crate::{
     GLWERotate,
-    layouts::{GLWE, GLWEInfos, GLWELayout},
+    layouts::{GLWE, GLWEInfos, GLWELayout, ModuleCoreAlloc},
 };
 
 fn negacyclic_rotate(src: &[i64], k: i64) -> Vec<i64> {
@@ -47,9 +47,9 @@ where
     let shifts = [-((n as i64) + 3), -5, -1, 0, 1, 7, n as i64 - 1, n as i64 + 2];
 
     for &shift in &shifts {
-        let mut src = GLWE::<Vec<u8>>::alloc_from_infos(&layout);
-        let mut out = GLWE::<Vec<u8>>::alloc_from_infos(&layout);
-        let mut inplace = GLWE::<Vec<u8>>::alloc_from_infos(&layout);
+        let mut src: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
+        let mut out: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
+        let mut inplace: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&layout);
 
         for col in 0..cols {
             let poly = src.data.at_mut(col, 0);

@@ -5,7 +5,7 @@ use poulpy_core::layouts::{
     prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_core::{BSGSOps, GLWEPolynomialEvaluation, GLWEZero};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena, ZnxWord};
 
 use crate::CKKSCtBounds;
 use crate::{
@@ -18,18 +18,18 @@ use crate::{
     polynomial::ComplexBSGSPolynomial,
 };
 
-struct EvaluatedBabyStep<D: poulpy_hal::layouts::Data> {
+struct EvaluatedBabyStep<D: poulpy_hal::layouts::Data, W: ZnxWord> {
     degree: usize,
-    value: CKKSCiphertext<D>,
+    value: CKKSCiphertext<D, W>,
 }
 
-impl<BE, D> BabyStepInfos<BE> for EvaluatedBabyStep<D>
+impl<BE, D> BabyStepInfos<BE> for EvaluatedBabyStep<D, BE::ZnxWord>
 where
     BE: Backend,
     D: poulpy_hal::layouts::Data,
-    CKKSCiphertext<D>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
+    CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
 {
-    type Value = CKKSCiphertext<D>;
+    type Value = CKKSCiphertext<D, BE::ZnxWord>;
 
     fn degree(&self) -> usize {
         self.degree

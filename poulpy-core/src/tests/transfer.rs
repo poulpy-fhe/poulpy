@@ -273,7 +273,8 @@ fn fill_bytes(buf: &mut [u8]) {
 fn module_transfer_glwe_roundtrip() {
     let src_module: Module<SrcBackend> = Module::new(64);
     let dst_module: Module<DstBackend> = Module::new(64);
-    let mut src: GLWE<Vec<u8>> = src_module.glwe_alloc(Base2K(12), TorusPrecision(33), Rank(2));
+    let mut src: GLWE<<SrcBackend as Backend>::OwnedBuf, <SrcBackend as Backend>::ZnxWord> =
+        src_module.glwe_alloc(Base2K(12), TorusPrecision(33), Rank(2));
     fill_bytes(&mut src.data.data);
 
     let uploaded = dst_module.upload_glwe::<SrcBackend>(&src);
@@ -288,7 +289,8 @@ fn module_transfer_glwe_roundtrip() {
 fn module_transfer_gglwe_roundtrip() {
     let src_module: Module<SrcBackend> = Module::new(64);
     let dst_module: Module<DstBackend> = Module::new(64);
-    let mut src: GGLWE<Vec<u8>> = src_module.gglwe_alloc(Base2K(12), Dnum(3), Dsize(1), TorusPrecision(12 + 6), Rank(1), Rank(2));
+    let mut src: GGLWE<<SrcBackend as Backend>::OwnedBuf, <SrcBackend as Backend>::ZnxWord> =
+        src_module.gglwe_alloc(Base2K(12), Dnum(3), Dsize(1), TorusPrecision(12 + 6), Rank(1), Rank(2));
     fill_bytes(src.data.data_mut());
 
     let uploaded = dst_module.upload_gglwe::<SrcBackend>(&src);

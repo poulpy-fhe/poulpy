@@ -252,7 +252,7 @@ fn test_vec_znx_rsh_assign_multi_limb_matches_rsh() {
             if k / base2k + 1 > size {
                 continue;
             }
-            let mut a: VecZnx<Vec<u8>> = module_host.vec_znx_alloc(1, size);
+            let mut a: VecZnx<Vec<u8>, i64> = module_host.vec_znx_alloc(1, size);
             a.fill_uniform(base2k, &mut source);
             let a_be = upload_vec_znx::<NTT4x30Ref>(&a);
             let mut want_be = upload_vec_znx::<NTT4x30Ref>(&module_host.vec_znx_alloc(1, size));
@@ -309,7 +309,7 @@ fn test_ntt4x30_vmp_apply_truncated_res_matches_full_prefix() {
             .max(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, mat_size)),
     );
 
-    let mut a: VecZnx<Vec<u8>> = module_host.vec_znx_alloc(cols_in, rows);
+    let mut a: VecZnx<Vec<u8>, i64> = module_host.vec_znx_alloc(cols_in, rows);
     a.fill_uniform(base2k, &mut source);
     let a_be = upload_vec_znx::<NTT4x30Ref>(&a);
     let mut a_dft: VecZnxDftOwned<NTT4x30Ref> = module.vec_znx_dft_alloc(cols_in, rows);
@@ -322,13 +322,13 @@ fn test_ntt4x30_vmp_apply_truncated_res_matches_full_prefix() {
         0,
     );
 
-    let mut mat: MatZnx<Vec<u8>> = module_host.mat_znx_alloc(rows, cols_in, cols_out, mat_size);
+    let mut mat: MatZnx<Vec<u8>, i64> = module_host.mat_znx_alloc(rows, cols_in, cols_out, mat_size);
     mat.fill_uniform(base2k, &mut source);
     let mat_be = upload_mat_znx::<NTT4x30Ref>(&mat);
     let mut pmat: VmpPMatOwned<NTT4x30Ref> = module.vmp_pmat_alloc(rows, cols_in, cols_out, mat_size);
     module.vmp_prepare(
         &mut pmat.to_backend_mut(),
-        &<MatZnx<<NTT4x30Ref as Backend>::OwnedBuf> as MatZnxToBackendRef<NTT4x30Ref>>::to_backend_ref(&mat_be),
+        &<MatZnx<<NTT4x30Ref as Backend>::OwnedBuf, i64> as MatZnxToBackendRef<NTT4x30Ref>>::to_backend_ref(&mat_be),
         &mut scratch.arena(),
     );
 

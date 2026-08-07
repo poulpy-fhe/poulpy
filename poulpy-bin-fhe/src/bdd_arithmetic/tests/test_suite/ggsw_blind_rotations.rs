@@ -5,6 +5,7 @@ use poulpy_core::{
         GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
     },
 };
+use poulpy_hal::layouts::HostDataRef;
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssignBackend},
     layouts::{
@@ -35,7 +36,7 @@ where
         + GLWEDecrypt<BE>
         + GLWEEncryptSk<BE>
         + VecZnxRotateAssignBackend<BE>,
-    BE: Backend<OwnedBuf = Vec<u8>> + HostBackend,
+    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
     BE: 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -72,9 +73,9 @@ where
     let mut source_xe: Source = Source::new([3u8; 32]);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
-    let mut res: GGSW<Vec<u8>> = module.ggsw_alloc_from_infos(&ggsw_res_infos);
+    let mut res: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_res_infos);
 
-    let mut scalar: ScalarZnx<Vec<u8>> = module.scalar_znx_alloc(1);
+    let mut scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
     scalar.raw_mut().iter_mut().enumerate().for_each(|(i, x)| *x = i as i64);
 
     let k: u32 = source.next_u32();
@@ -124,7 +125,7 @@ where
 
             module.scalar_to_ggsw_blind_rotation(
                 &mut res,
-                &<ScalarZnx<Vec<u8>> as ScalarZnxToBackendRef<BE>>::to_backend_ref(&scalar),
+                &<ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxToBackendRef<BE>>::to_backend_ref(&scalar),
                 &k_enc_prep,
                 false,
                 bit_start,
@@ -135,13 +136,14 @@ where
 
             let rot: i64 = (((k >> bit_start) & mask) << bit_step) as i64;
 
-            let mut scalar_want: ScalarZnx<Vec<u8>> = module.scalar_znx_alloc(1);
+            let mut scalar_want: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
             scalar_want.raw_mut().copy_from_slice(scalar.raw());
 
-            let mut scalar_want_vec: VecZnx<Vec<u8>> = module.vec_znx_alloc(1, 1);
+            let mut scalar_want_vec: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(1, 1);
             scalar_want_vec.raw_mut().copy_from_slice(scalar_want.raw());
             {
-                let mut scalar_want_backend = <VecZnx<Vec<u8>> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut scalar_want_vec);
+                let mut scalar_want_backend =
+                    <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut scalar_want_vec);
                 module.vec_znx_rotate_assign_backend(-rot, &mut scalar_want_backend, 0, &mut scratch.borrow());
             }
             scalar_want.raw_mut().copy_from_slice(scalar_want_vec.raw());
@@ -153,7 +155,7 @@ where
                             module,
                             row,
                             col,
-                            &<ScalarZnx<Vec<u8>> as ScalarZnxToBackendRef<BE>>::to_backend_ref(&scalar_want),
+                            &<ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxToBackendRef<BE>>::to_backend_ref(&scalar_want),
                             sk_glwe_prep,
                             &mut scratch.borrow(),
                         )

@@ -8,7 +8,7 @@ use super::helpers::{
 use crate::{
     CKKSCompositionError, CKKSInfos,
     api::{CKKSAddOps, CKKSMulOps},
-    layouts::CKKSPlaintext,
+    layouts::CKKSPlaintextOwned,
 };
 use poulpy_core::layouts::LWEInfos;
 use poulpy_hal::{
@@ -25,7 +25,7 @@ fn constant<BE, F, E>(
     params: &CKKSTestParams,
     c: (f64, f64),
     m: usize,
-) -> CKKSPlaintext<BE::OwnedBuf>
+) -> CKKSPlaintextOwned<BE>
 where
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,

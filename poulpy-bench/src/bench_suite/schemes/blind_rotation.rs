@@ -19,7 +19,7 @@ use poulpy_bin_fhe::blind_rotation::{
     BlindRotationKeyPrepared, BlindRotationKeyPreparedFactory, LookUpTableLayout, LookupTable, LookupTableFactory,
 };
 
-pub fn bench_blind_rotate<BE: Backend<OwnedBuf = Vec<u8>>, BRA: BlindRotationAlgo>(c: &mut Criterion, label: &str)
+pub fn bench_blind_rotate<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, BRA: BlindRotationAlgo>(c: &mut Criterion, label: &str)
 where
     Module<BE>: ModuleN
         + ModuleNew<BE>
@@ -70,12 +70,12 @@ where
         base2k: Base2K(18),
     };
 
-    let mut sk_glwe: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(&glwe_infos);
+    let mut sk_glwe: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc_from_infos(&glwe_infos);
     sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
     let mut sk_glwe_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&glwe_infos);
     module.glwe_secret_prepare(&mut sk_glwe_dft, &sk_glwe);
 
-    let mut sk_lwe: LWESecret<Vec<u8>> = module.lwe_secret_alloc(n_lwe.into());
+    let mut sk_lwe: LWESecret<Vec<u8>, i64> = module.lwe_secret_alloc(n_lwe.into());
     sk_lwe.fill_binary_block(block_size, &mut source_xs);
 
     let brk_enc_infos = EncryptionLayout::new_from_default_sigma(brk_infos).unwrap();
@@ -94,9 +94,9 @@ where
     let mut brk_prepared: BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE> = BlindRotationKeyPrepared::alloc(&module, &brk);
     brk_prepared.prepare(&module, &brk, &mut scratch.borrow());
 
-    let mut res: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_infos);
+    let mut res: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&glwe_infos);
     res.data_mut().fill_uniform(glwe_infos.base2k().as_usize(), &mut source_xa);
-    let mut lwe: LWE<Vec<u8>> = module.lwe_alloc_from_infos(&lwe_infos);
+    let mut lwe: LWE<Vec<u8>, i64> = module.lwe_alloc_from_infos(&lwe_infos);
     lwe.fill_uniform(lwe_infos.base2k().as_usize(), &mut source_xa);
 
     let mut f_vec: Vec<i64> = vec![0i64; message_modulus];

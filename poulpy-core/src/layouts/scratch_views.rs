@@ -82,18 +82,18 @@ macro_rules! view_wrapper {
     };
 }
 
-view_wrapper!(LWEViewMut, LWE<BE::BufMut<'a>>);
-view_wrapper!(LWEPlaintextViewMut, LWEPlaintext<BE::BufMut<'a>>);
-view_wrapper!(GLWEViewRef, GLWE<BE::BufRef<'a>>);
-view_wrapper!(GLWEViewMut, GLWE<BE::BufMut<'a>>);
-view_wrapper!(GLWEPlaintextViewMut, GLWEPlaintext<BE::BufMut<'a>>);
-view_wrapper!(GLWETensorViewMut, GLWETensor<BE::BufMut<'a>>);
-view_wrapper!(GLWESecretViewMut, GLWESecret<BE::BufMut<'a>>);
-view_wrapper!(GLWESecretTensorViewMut, GLWESecretTensor<BE::BufMut<'a>>);
+view_wrapper!(LWEViewMut, LWE<BE::BufMut<'a>, BE::ZnxWord>);
+view_wrapper!(LWEPlaintextViewMut, LWEPlaintext<BE::BufMut<'a>, BE::ZnxWord>);
+view_wrapper!(GLWEViewRef, GLWE<BE::BufRef<'a>, BE::ZnxWord>);
+view_wrapper!(GLWEViewMut, GLWE<BE::BufMut<'a>, BE::ZnxWord>);
+view_wrapper!(GLWEPlaintextViewMut, GLWEPlaintext<BE::BufMut<'a>, BE::ZnxWord>);
+view_wrapper!(GLWETensorViewMut, GLWETensor<BE::BufMut<'a>, BE::ZnxWord>);
+view_wrapper!(GLWESecretViewMut, GLWESecret<BE::BufMut<'a>, BE::ZnxWord>);
+view_wrapper!(GLWESecretTensorViewMut, GLWESecretTensor<BE::BufMut<'a>, BE::ZnxWord>);
 view_wrapper!(GLWESecretPreparedViewMut, GLWESecretPrepared<BE::BufMut<'a>, BE>);
-view_wrapper!(GGLWEViewMut, GGLWE<BE::BufMut<'a>>);
+view_wrapper!(GGLWEViewMut, GGLWE<BE::BufMut<'a>, BE::ZnxWord>);
 view_wrapper!(GGLWEPreparedViewMut, GGLWEPrepared<BE::BufMut<'a>, BE>);
-view_wrapper!(GGSWViewMut, GGSW<BE::BufMut<'a>>);
+view_wrapper!(GGSWViewMut, GGSW<BE::BufMut<'a>, BE::ZnxWord>);
 view_wrapper!(GGSWPreparedViewMut, GGSWPrepared<BE::BufMut<'a>, BE>);
 
 impl<'a, BE: Backend + 'a> GGLWEViewMut<'a, BE> {

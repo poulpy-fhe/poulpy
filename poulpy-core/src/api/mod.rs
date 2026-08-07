@@ -2,6 +2,7 @@
 //!
 //! Traits are organized by operation family:
 //! - `automorphism` -- Galois automorphisms on ciphertexts and automorphism keys.
+//! - `bytes_of` -- backend-routed byte sizes for core layouts.
 //! - `conversion` -- conversions between ciphertext representations.
 //! - `decryption` -- secret-key decryption operations.
 //! - `encryption` -- secret/public-key encryption and evaluation-key generation.
@@ -15,6 +16,7 @@
 //! implementations in the (private) `delegates` module.
 
 mod automorphism;
+mod bytes_of;
 mod conversion;
 mod decryption;
 mod encryption;
@@ -27,6 +29,7 @@ mod polynomial_evaluation;
 mod transfer;
 
 pub use automorphism::*;
+pub use bytes_of::*;
 pub use conversion::*;
 pub use decryption::*;
 pub use encryption::*;

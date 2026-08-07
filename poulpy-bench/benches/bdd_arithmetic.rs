@@ -28,7 +28,7 @@ use poulpy_hal::{
 };
 
 // Common setup data structure
-struct BenchmarkSetup<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend, BRA: BlindRotationAlgo> {
+struct BenchmarkSetup<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend, BRA: BlindRotationAlgo> {
     module: Module<BE>,
     scratch: ScratchOwned<BE>,
     a_enc_prepared: FheUintPrepared<BE::OwnedBuf, u32, BE>,
@@ -45,7 +45,7 @@ struct Params {
     bdd_layout: BDDKeyLayout,
 }
 
-fn setup_benchmark<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend, BRA: BlindRotationAlgo>(
+fn setup_benchmark<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend, BRA: BlindRotationAlgo>(
     params: &Params,
 ) -> BenchmarkSetup<BE, BRA>
 where
@@ -78,10 +78,10 @@ where
     let mut source_xa: Source = Source::new([1u8; 32]);
     let mut source_xe: Source = Source::new([1u8; 32]);
 
-    let mut sk_lwe: LWESecret<Vec<u8>> = module.lwe_secret_alloc(n_lwe);
+    let mut sk_lwe: LWESecret<Vec<u8>, i64> = module.lwe_secret_alloc(n_lwe);
     sk_lwe.fill_binary_block(params.block_size, &mut source_xs);
 
-    let mut sk_glwe: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank);
+    let mut sk_glwe: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc(rank);
     sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
 
     // Circuit bootstrapping evaluation key
@@ -172,7 +172,7 @@ where
     }
 }
 
-fn create_runner<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend, BRA: BlindRotationAlgo, F>(
+fn create_runner<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend, BRA: BlindRotationAlgo, F>(
     setup: BenchmarkSetup<BE, BRA>,
     operation: F,
 ) -> impl FnMut()
@@ -212,7 +212,7 @@ where
     }
 }
 
-fn bench_operation<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend, BRA: BlindRotationAlgo, F>(
+fn bench_operation<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend, BRA: BlindRotationAlgo, F>(
     group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
     params: &Params,
     operation_name: &str,
@@ -249,8 +249,10 @@ fn bench_operation<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend, BRA: BlindRota
     group.bench_with_input(id, &(), |b, _| b.iter(&mut runner));
 }
 
-pub fn benc_bdd_arithmetic<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend, BRA: BlindRotationAlgo>(c: &mut Criterion, label: &str)
-where
+pub fn benc_bdd_arithmetic<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend, BRA: BlindRotationAlgo>(
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<BE>: ModuleNew<BE>
         + ModuleN
         + GLWESecretPreparedFactory<BE>

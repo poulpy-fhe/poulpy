@@ -19,7 +19,7 @@ use poulpy_hal::{
 
 use std::collections::HashMap;
 
-use crate::layouts::{CKKSCiphertext, ship::keyset::HMuxRotKeyPrepared};
+use crate::layouts::{CKKSCiphertextOwned, ship::keyset::HMuxRotKeyPrepared};
 
 /// Automorphism plans of the mux output twists, keyed by Galois element.
 pub(crate) type ShipMuxPlans<BE> = HashMap<i64, <Module<BE> as VecZnxDftAutomorphismPlan<BE>>::Plan>;
@@ -131,7 +131,7 @@ where
 /// closes the position.
 pub(crate) fn ship_mux_rotate<BE>(
     module: &Module<BE>,
-    ct: &mut CKKSCiphertext<BE::OwnedBuf>,
+    ct: &mut CKKSCiphertextOwned<BE>,
     keys: &[HMuxRotKeyPrepared<BE::OwnedBuf, BE>],
     plans: &ShipMuxPlans<BE>,
     scratch: &mut ScratchArena<'_, BE>,
@@ -147,7 +147,7 @@ where
         + VecZnxBigNormalize<BE>
         + VmpApplyDftToDft<BE>
         + VecZnxDftBytesOf,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
 {
     const OP: &str = "ship_mux_rotate";
     ckks_ensure!(!keys.is_empty(), "{OP}: empty key group");

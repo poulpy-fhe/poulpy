@@ -86,14 +86,14 @@ impl_decryption_delegate!(
     },
     fn glwe_tensor_decrypt<R: Data, P: Data, S0: Data, S1: Data>(
         &self,
-        res: &GLWETensor<R>,
-        pt: &mut GLWEPlaintext<P>,
+        res: &GLWETensor<R, BE::ZnxWord>,
+        pt: &mut GLWEPlaintext<P, BE::ZnxWord>,
         sk: &GLWESecretPrepared<S0, BE>,
         sk_tensor: &GLWESecretTensorPrepared<S1, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        GLWETensor<R>: GLWEToBackendRef<BE> + GLWEInfos,
-        GLWEPlaintext<P>: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
+        GLWETensor<R, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
+        GLWEPlaintext<P, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
         GLWESecretPrepared<S0, BE>: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         GLWESecretTensorPrepared<S1, BE>: GLWESecretTensorPreparedToBackendRef<BE> + GLWEInfos,
     {

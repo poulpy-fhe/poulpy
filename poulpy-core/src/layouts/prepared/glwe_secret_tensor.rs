@@ -10,7 +10,7 @@ use crate::{
     dist::Distribution,
     layouts::{
         Base2K, Degree, GLWEInfos, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretPreparedToBackendMut,
-        GLWESecretPreparedToBackendRef, GLWESecretTensor, GLWESecretToBackendRef, GetDegree, LWEInfos, Rank,
+        GLWESecretPreparedToBackendRef, GLWESecretToBackendRef, GetDegree, LWEInfos, Rank,
     },
 };
 
@@ -82,7 +82,7 @@ where
 {
     fn glwe_secret_tensor_prepared_alloc(&self, rank: Rank) -> GLWESecretTensorPrepared<B::OwnedBuf, B> {
         GLWESecretTensorPrepared {
-            data: self.svp_ppol_alloc(GLWESecretTensor::pairs(rank.into())),
+            data: self.svp_ppol_alloc(crate::layouts::pairs(rank.into())),
             rank,
             dist: Distribution::NONE,
         }
@@ -96,7 +96,7 @@ where
     }
 
     fn glwe_secret_tensor_prepared_bytes_of(&self, rank: Rank) -> usize {
-        self.bytes_of_svp_ppol(GLWESecretTensor::pairs(rank.into()))
+        self.bytes_of_svp_ppol(crate::layouts::pairs(rank.into()))
     }
     fn glwe_secret_tensor_prepared_bytes_of_from_infos<A>(&self, infos: &A) -> usize
     where

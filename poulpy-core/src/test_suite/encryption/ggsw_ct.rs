@@ -40,9 +40,9 @@ where
             })
             .unwrap();
 
-            let mut ct: GGSW<Vec<u8>> = module.ggsw_alloc_from_infos(&ggsw_infos);
+            let mut ct: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_infos);
 
-            let mut pt_scalar: ScalarZnx<Vec<u8>> = module.scalar_znx_alloc(1);
+            let mut pt_scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
             let mut source_xe: Source = Source::new([0u8; 32]);
@@ -56,7 +56,7 @@ where
                     .max(module.ggsw_noise_tmp_bytes(&ggsw_infos)),
             );
 
-            let mut sk: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(&ggsw_infos);
+            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&ggsw_infos);
             sk.fill_ternary_prob(0.5, &mut source_xs);
 
             let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
@@ -81,7 +81,7 @@ where
                             module,
                             row,
                             col,
-                            &<ScalarZnx<Vec<u8>> as ScalarZnxToBackendRef<poulpy_hal::layouts::HostBytesBackend>>::to_backend_ref(
+                            &<ScalarZnx<Vec<u8>, i64> as ScalarZnxToBackendRef<poulpy_hal::layouts::HostBytesBackend>>::to_backend_ref(
                                 &pt_scalar,
                             ),
                             &sk_prepared,
@@ -127,9 +127,10 @@ where
             })
             .unwrap();
 
-            let mut ct_compressed: GGSWCompressed<Vec<u8>> = module.ggsw_compressed_alloc_from_infos(&ggsw_infos);
+            let mut ct_compressed: GGSWCompressed<BE::OwnedBuf, BE::ZnxWord> =
+                module.ggsw_compressed_alloc_from_infos(&ggsw_infos);
 
-            let mut pt_scalar: ScalarZnx<Vec<u8>> = module.scalar_znx_alloc(1);
+            let mut pt_scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
             let mut source_xe: Source = Source::new([0u8; 32]);
@@ -142,7 +143,7 @@ where
                     .max(module.ggsw_noise_tmp_bytes(&ggsw_infos)),
             );
 
-            let mut sk: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(&ggsw_infos);
+            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&ggsw_infos);
             sk.fill_ternary_prob(0.5, &mut source_xs);
 
             let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
@@ -162,7 +163,7 @@ where
 
             let noise_f = |_col_i: usize| -(k as f64) + DEFAULT_SIGMA_XE.log2() + 0.5;
 
-            let mut ct: GGSW<Vec<u8>> = module.ggsw_alloc_from_infos(&ggsw_infos);
+            let mut ct: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_infos);
             module.decompress_ggsw(&mut ct, &ct_compressed);
 
             for row in 0..ct.dnum().as_usize() {
@@ -172,7 +173,7 @@ where
                             module,
                             row,
                             col,
-                            &<ScalarZnx<Vec<u8>> as ScalarZnxToBackendRef<poulpy_hal::layouts::HostBytesBackend>>::to_backend_ref(
+                            &<ScalarZnx<Vec<u8>, i64> as ScalarZnxToBackendRef<poulpy_hal::layouts::HostBytesBackend>>::to_backend_ref(
                                 &pt_scalar,
                             ),
                             &sk_prepared,

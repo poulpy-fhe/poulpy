@@ -11,22 +11,21 @@ use rand::Rng;
 
 use crate::{
     api::{
-        CnvPVecAlloc, Convolution, ModuleN, ScratchOwnedAlloc, VecZnxAddIntoBackend, VecZnxAlloc, VecZnxBigAlloc,
-        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply,
-        VecZnxIdftApplyTmpA, VecZnxNormalizeAssignBackend,
+        CnvPVecAlloc, Convolution, ModuleN, ScratchOwnedAlloc, VecZnxAddIntoBackend, VecZnxBigAlloc, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApplyTmpA,
+        VecZnxNormalizeAssignBackend,
     },
-    layouts::{DataView, FillUniform, ScratchArena, ScratchOwned, VecZnx, ZnxView, ZnxViewMut, ZnxZero},
+    layouts::{DataView, FillUniform, ScratchArena, ScratchOwned, VecZnx, VecZnxOwned, ZnxView, ZnxViewMut, ZnxZero},
     source::Source,
 };
 
 use crate::layouts::VecZnxDftOwned;
 use crate::layouts::{CnvPVecLOwned, CnvPVecROwned, VecZnxBigOwned};
 
-pub fn test_convolution_by_const<M, BE: crate::test_suite::TestBackend<OwnedBuf = Vec<u8>>>(module: &M, base2k: usize)
+pub fn test_convolution_by_const<M, BE: crate::test_suite::TestBackend>(module: &M, base2k: usize)
 where
     M: ModuleN
         + Convolution<BE>
-        + VecZnxAlloc<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
         + VecZnxNormalizeAssignBackend<BE>
@@ -40,10 +39,10 @@ where
     let b_size: usize = 15;
     let res_size: usize = a_size + b_size;
 
-    let mut a: VecZnx<Vec<u8>> = module.vec_znx_alloc(a_cols, a_size);
-    let mut b: VecZnx<Vec<u8>> = module.vec_znx_alloc(1, b_size);
+    let mut a = VecZnx::alloc(module.n(), a_cols, a_size);
+    let mut b = VecZnx::alloc(module.n(), 1, b_size);
 
-    let mut res_want: VecZnx<Vec<u8>> = module.vec_znx_alloc(1, res_size);
+    let mut res_want = VecZnx::alloc(module.n(), 1, res_size);
     let mut res_big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, res_size);
 
     a.fill_uniform(17, &mut source);
@@ -76,7 +75,7 @@ where
                 &mut scratch.arena(),
             );
 
-            let res_host_template: VecZnx<Vec<u8>> = module.vec_znx_alloc(1, res_size);
+            let res_host_template = VecZnx::alloc(module.n(), 1, res_size);
             let mut res_have_backend = upload_vec_znx::<BE>(&res_host_template);
             module.vec_znx_big_normalize(
                 &mut vec_znx_backend_mut::<BE>(&mut res_have_backend),
@@ -108,12 +107,11 @@ where
     }
 }
 
-pub fn test_convolution<M, BE: crate::test_suite::TestBackend<OwnedBuf = Vec<u8>>>(module: &M, base2k: usize)
+pub fn test_convolution<M, BE: crate::test_suite::TestBackend>(module: &M, base2k: usize)
 where
     M: ModuleN
         + Convolution<BE>
         + CnvPVecAlloc<BE>
-        + VecZnxAlloc<BE>
         + VecZnxDftAlloc<BE>
         + VecZnxDftApply<BE>
         + VecZnxIdftApplyTmpA<BE>
@@ -131,10 +129,10 @@ where
     let b_size: usize = 15;
     let res_size: usize = a_size + b_size;
 
-    let mut a: VecZnx<Vec<u8>> = module.vec_znx_alloc(a_cols, a_size);
-    let mut b: VecZnx<Vec<u8>> = module.vec_znx_alloc(b_cols, b_size);
+    let mut a = VecZnx::alloc(module.n(), a_cols, a_size);
+    let mut b = VecZnx::alloc(module.n(), b_cols, b_size);
 
-    let mut res_want: VecZnx<Vec<u8>> = module.vec_znx_alloc(1, res_size);
+    let mut res_want = VecZnx::alloc(module.n(), 1, res_size);
     // Two-column DFT destination written at column 1: covers the
     // column-interleaved `VecZnxDft` indexing of the backend kernels.
     let res_dft_col: usize = 1;
@@ -193,7 +191,7 @@ where
 
                 module.vec_znx_idft_apply_tmpa(&mut res_big.to_backend_mut(), 0, &mut res_dft.to_backend_mut(), res_dft_col);
 
-                let res_host_template: VecZnx<Vec<u8>> = module.vec_znx_alloc(1, res_size);
+                let res_host_template = VecZnx::alloc(module.n(), 1, res_size);
                 let mut res_have_backend = upload_vec_znx::<BE>(&res_host_template);
                 module.vec_znx_big_normalize(
                     &mut vec_znx_backend_mut::<BE>(&mut res_have_backend),
@@ -228,9 +226,9 @@ where
 
 /// `cnv_apply_dft_accumulate` matches `cnv_apply_dft` followed by a DFT add,
 /// bit-for-bit on the raw prepared data.
-pub fn test_convolution_accumulate<M, BE: crate::test_suite::TestBackend<OwnedBuf = Vec<u8>>>(module: &M, _base2k: usize)
+pub fn test_convolution_accumulate<M, BE: crate::test_suite::TestBackend>(module: &M, _base2k: usize)
 where
-    M: ModuleN + Convolution<BE> + CnvPVecAlloc<BE> + VecZnxAlloc<BE> + VecZnxDftAlloc<BE> + VecZnxDftAddAssign<BE>,
+    M: ModuleN + Convolution<BE> + CnvPVecAlloc<BE> + VecZnxDftAlloc<BE> + VecZnxDftAddAssign<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let mut source: Source = Source::new([0u8; 32]);
@@ -240,8 +238,8 @@ where
     let b_size: usize = 15;
     let res_size: usize = a_size + b_size;
 
-    let mut a: VecZnx<Vec<u8>> = module.vec_znx_alloc(cols, a_size);
-    let mut b: VecZnx<Vec<u8>> = module.vec_znx_alloc(cols, b_size);
+    let mut a = VecZnx::alloc(module.n(), cols, a_size);
+    let mut b = VecZnx::alloc(module.n(), cols, b_size);
     a.fill_uniform(17, &mut source);
     b.fill_uniform(17, &mut source);
 
@@ -333,9 +331,8 @@ where
                     );
                     module.vec_znx_dft_add_assign(&mut res_ref.to_backend_mut(), res_col, &tmp_dft.to_backend_ref(), 0);
 
-                    assert_eq!(
-                        res_acc.data(),
-                        res_ref.data(),
+                    assert!(
+                        BE::to_host_bytes(res_acc.data()) == BE::to_host_bytes(res_ref.data()),
                         "accumulate != apply + add (res_col={res_col} a_col={a_col} b_col={b_col} cnv_offset={cnv_offset})"
                     );
                 }
@@ -348,12 +345,11 @@ where
 /// `cnv_apply_dft_accumulate` sequence after normalization to the coefficient
 /// domain (the fused path reduces once per output, so the raw q120 lazy
 /// representatives may differ).
-pub fn test_convolution_accumulate_fused<M, BE: crate::test_suite::TestBackend<OwnedBuf = Vec<u8>>>(module: &M, base2k: usize)
+pub fn test_convolution_accumulate_fused<M, BE: crate::test_suite::TestBackend>(module: &M, base2k: usize)
 where
     M: ModuleN
         + Convolution<BE>
         + CnvPVecAlloc<BE>
-        + VecZnxAlloc<BE>
         + VecZnxDftAlloc<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
@@ -373,8 +369,8 @@ where
     // `VecZnxDft` indexing of the backend kernels.
     let res_col: usize = 1;
 
-    let mut a: VecZnx<Vec<u8>> = module.vec_znx_alloc(cols, a_size);
-    let mut b: VecZnx<Vec<u8>> = module.vec_znx_alloc(cols, b_size);
+    let mut a = VecZnx::alloc(module.n(), cols, a_size);
+    let mut b = VecZnx::alloc(module.n(), cols, b_size);
     a.fill_uniform(17, &mut source);
     b.fill_uniform(17, &mut source);
 
@@ -470,7 +466,7 @@ where
         module.vec_znx_idft_apply_tmpa(&mut big_fused.to_backend_mut(), 0, &mut res_fused.to_backend_mut(), res_col);
         module.vec_znx_idft_apply_tmpa(&mut big_ref.to_backend_mut(), 0, &mut res_ref.to_backend_mut(), res_col);
 
-        let host_template: VecZnx<Vec<u8>> = module.vec_znx_alloc(1, res_size);
+        let host_template = VecZnx::alloc(module.n(), 1, res_size);
         let mut have_backend = upload_vec_znx::<BE>(&host_template);
         let mut want_backend = upload_vec_znx::<BE>(&host_template);
         module.vec_znx_big_normalize(
@@ -499,12 +495,11 @@ where
     }
 }
 
-pub fn test_convolution_pairwise<M, BE: crate::test_suite::TestBackend<OwnedBuf = Vec<u8>>>(module: &M, base2k: usize)
+pub fn test_convolution_pairwise<M, BE: crate::test_suite::TestBackend>(module: &M, base2k: usize)
 where
     M: ModuleN
         + Convolution<BE>
         + CnvPVecAlloc<BE>
-        + VecZnxAlloc<BE>
         + VecZnxDftAlloc<BE>
         + VecZnxDftApply<BE>
         + VecZnxIdftApplyTmpA<BE>
@@ -523,12 +518,12 @@ where
     let b_size: usize = 15;
     let res_size: usize = a_size + b_size;
 
-    let mut a: VecZnx<Vec<u8>> = module.vec_znx_alloc(cols, a_size);
-    let mut b: VecZnx<Vec<u8>> = module.vec_znx_alloc(cols, b_size);
-    let mut tmp_a: VecZnx<Vec<u8>> = module.vec_znx_alloc(1, a_size);
-    let mut tmp_b: VecZnx<Vec<u8>> = module.vec_znx_alloc(1, b_size);
+    let mut a = VecZnx::alloc(module.n(), cols, a_size);
+    let mut b = VecZnx::alloc(module.n(), cols, b_size);
+    let mut tmp_a = VecZnx::alloc(module.n(), 1, a_size);
+    let mut tmp_b = VecZnx::alloc(module.n(), 1, b_size);
 
-    let mut res_want: VecZnx<Vec<u8>> = module.vec_znx_alloc(1, res_size);
+    let mut res_want = VecZnx::alloc(module.n(), 1, res_size);
     // Two-column DFT destination written at column 1: covers the
     // column-interleaved `VecZnxDft` indexing of the backend kernels.
     let res_dft_col: usize = 1;
@@ -587,7 +582,7 @@ where
 
                 module.vec_znx_idft_apply_tmpa(&mut res_big.to_backend_mut(), 0, &mut res_dft.to_backend_mut(), res_dft_col);
 
-                let res_host_template: VecZnx<Vec<u8>> = module.vec_znx_alloc(1, res_size);
+                let res_host_template = VecZnx::alloc(module.n(), 1, res_size);
                 let mut res_have_backend = upload_vec_znx::<BE>(&res_host_template);
                 module.vec_znx_big_normalize(
                     &mut vec_znx_backend_mut::<BE>(&mut res_have_backend),
@@ -662,11 +657,11 @@ pub fn bivariate_convolution_naive<M, BE: crate::test_suite::TestBackend>(
     module: &M,
     base2k: usize,
     k: i64,
-    res: &mut VecZnx<Vec<u8>>,
+    res: &mut VecZnxOwned<BE::ZnxWord>,
     res_col: usize,
-    a: &VecZnx<Vec<u8>>,
+    a: &VecZnxOwned<BE::ZnxWord>,
     a_col: usize,
-    b: &VecZnx<Vec<u8>>,
+    b: &VecZnxOwned<BE::ZnxWord>,
     b_col: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
@@ -708,9 +703,9 @@ fn bivariate_tensoring_naive<M, BE: crate::test_suite::TestBackend>(
     module: &M,
     base2k: usize,
     k: i64,
-    res: &mut VecZnx<Vec<u8>>,
-    a: &VecZnx<Vec<u8>>,
-    b: &VecZnx<Vec<u8>>,
+    res: &mut VecZnxOwned<BE::ZnxWord>,
+    a: &VecZnxOwned<BE::ZnxWord>,
+    b: &VecZnxOwned<BE::ZnxWord>,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     M: VecZnxNormalizeAssignBackend<BE>,

@@ -5,7 +5,7 @@ use crate::layouts::{
     BackendLWESecret, GGLWE, GGSW, GLWE, GLWEPlaintext, GLWESecret, LWE, LWEPlaintext, LWESecret,
 };
 
-fn transfer_vec_znx<From, To>(src: &VecZnx<From::OwnedBuf>) -> VecZnx<To::OwnedBuf>
+fn transfer_vec_znx<From, To>(src: &VecZnx<From::OwnedBuf, From::ZnxWord>) -> VecZnx<To::OwnedBuf, To::ZnxWord>
 where
     From: Backend,
     To: Backend + TransferFrom<From>,
@@ -19,7 +19,7 @@ where
     )
 }
 
-fn transfer_mat_znx<From, To>(src: &MatZnx<From::OwnedBuf>) -> MatZnx<To::OwnedBuf>
+fn transfer_mat_znx<From, To>(src: &MatZnx<From::OwnedBuf, From::ZnxWord>) -> MatZnx<To::OwnedBuf, To::ZnxWord>
 where
     From: Backend,
     To: Backend + TransferFrom<From>,
@@ -34,7 +34,7 @@ where
     )
 }
 
-fn transfer_scalar_znx<From, To>(src: &ScalarZnx<From::OwnedBuf>) -> ScalarZnx<To::OwnedBuf>
+fn transfer_scalar_znx<From, To>(src: &ScalarZnx<From::OwnedBuf, From::ZnxWord>) -> ScalarZnx<To::OwnedBuf, To::ZnxWord>
 where
     From: Backend,
     To: Backend + TransferFrom<From>,

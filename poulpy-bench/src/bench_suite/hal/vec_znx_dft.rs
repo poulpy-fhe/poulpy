@@ -14,15 +14,18 @@ use poulpy_hal::{
     source::Source,
 };
 
-pub fn bench_vec_znx_dft_add_into<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
-where
+pub fn bench_vec_znx_dft_add_into<B: Backend<ZnxWord = i64>>(
+    params: &crate::params::HalSweepParams,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<B>: VecZnxDftAddInto<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
 {
     let group_name: String = format!("vec_znx_dft_add_into::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxDftAddInto<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
     {
@@ -58,15 +61,18 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_dft_add_assign<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
-where
+pub fn bench_vec_znx_dft_add_assign<B: Backend<ZnxWord = i64>>(
+    params: &crate::params::HalSweepParams,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<B>: VecZnxDftAddAssign<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
 {
     let group_name: String = format!("vec_znx_dft_add_assign::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxDftAddAssign<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
     {
@@ -100,7 +106,7 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_dft_apply<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_dft_apply<B: Backend<ZnxWord = i64>>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
 where
     Module<B>: VecZnxDftApply<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
 {
@@ -108,7 +114,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxDftApply<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
     {
@@ -143,7 +149,7 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_idft_apply<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_idft_apply<B: Backend<ZnxWord = i64>>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
 where
     Module<B>: VecZnxIdftApply<B> + ModuleNew<B> + VecZnxIdftApplyTmpBytes + VecZnxDftAlloc<B> + VecZnxBigAlloc<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -152,7 +158,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxIdftApply<B> + ModuleNew<B> + VecZnxIdftApplyTmpBytes + VecZnxDftAlloc<B> + VecZnxBigAlloc<B>,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -189,15 +195,18 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_idft_apply_tmpa<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
-where
+pub fn bench_vec_znx_idft_apply_tmpa<B: Backend<ZnxWord = i64>>(
+    params: &crate::params::HalSweepParams,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<B>: VecZnxIdftApplyTmpA<B> + ModuleNew<B> + VecZnxDftAlloc<B> + VecZnxBigAlloc<B>,
 {
     let group_name: String = format!("vec_znx_idft_apply_tmpa::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxIdftApplyTmpA<B> + ModuleNew<B> + VecZnxDftAlloc<B> + VecZnxBigAlloc<B>,
     {
@@ -230,7 +239,7 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_dft_sub<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_dft_sub<B: Backend<ZnxWord = i64>>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
 where
     Module<B>: VecZnxDftSub<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
 {
@@ -238,7 +247,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxDftSub<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
     {
@@ -274,15 +283,18 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_dft_sub_assign<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
-where
+pub fn bench_vec_znx_dft_sub_assign<B: Backend<ZnxWord = i64>>(
+    params: &crate::params::HalSweepParams,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<B>: VecZnxDftSubAssign<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
 {
     let group_name: String = format!("vec_znx_dft_sub_assign::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxDftSubAssign<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
     {
@@ -316,15 +328,18 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_dft_sub_negate_assign<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
-where
+pub fn bench_vec_znx_dft_sub_negate_assign<B: Backend<ZnxWord = i64>>(
+    params: &crate::params::HalSweepParams,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<B>: VecZnxDftSubNegateAssign<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
 {
     let group_name: String = format!("vec_znx_dft_sub_negate_assign::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxDftSubNegateAssign<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
     {
