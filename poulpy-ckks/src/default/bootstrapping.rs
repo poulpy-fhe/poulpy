@@ -96,20 +96,15 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
         };
         let in_ct_bytes = GLWE::<Vec<u8>>::bytes_of_from_infos(&in_layout);
 
-        let mut carved = match ctx.pipeline {
-            BootstrappingPipeline::C2SFirst => 5 * boot_ct_bytes,
-            BootstrappingPipeline::S2CFirst => {
-                let post_mod_up = if ctx.coeffs_to_slots_bypass.is_some() {
-                    5 * boot_ct_bytes
-                } else {
-                    3 * boot_ct_bytes
-                };
-                post_mod_up.max(boot_ct_bytes + 4 * in_ct_bytes)
-            }
+        let post_mod_up = if ctx.coeffs_to_slots_bypass.is_some() {
+            5 * boot_ct_bytes
+        } else {
+            3 * boot_ct_bytes
         };
-        if ctx.pipeline == BootstrappingPipeline::C2SFirst && ctx.coeffs_to_slots_bypass.is_some() {
-            carved += 2 * boot_ct_bytes;
-        }
+        let mut carved = match ctx.pipeline {
+            BootstrappingPipeline::C2SFirst => post_mod_up,
+            BootstrappingPipeline::S2CFirst => post_mod_up.max(boot_ct_bytes + 4 * in_ct_bytes),
+        };
 
         let mut nested = self
             .ckks_all_ops_with_atk_tmp_bytes(
@@ -484,18 +479,16 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
             let (mut i0, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct.meta());
             self.ckks_bootstrap_coeffs_to_slots(&ct, &mut r0, &mut i0, ctx, keys, &mut scratch_local)?;
 
-            // EvalMod each half (scale-preserving; removes the integer part / leaves `Δm + e`).
-            let (mut res_real, scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct.meta());
-            let (mut res_imag, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct.meta());
-            self.ckks_bootstrap_eval_mod_halves(&r0, &i0, &mut res_real, &mut res_imag, ctx, keys, &mut scratch_local)?;
-
             match &ctx.coeffs_to_slots_bypass {
                 // Standard: EvalMod's clean residue goes straight to SlotsToCoeffs.
                 None => {
+                    self.ckks_eval_mod(&mut ct, &r0, &ctx.eval_mod, keys.tensor_key(), &mut scratch_local)?;
+                    r0.set_k(k_boot);
+                    self.ckks_eval_mod(&mut r0, &i0, &ctx.eval_mod, keys.tensor_key(), &mut scratch_local)?;
                     self.ckks_slots_to_coeffs_split(
                         ct_out,
-                        &res_real,
-                        &res_imag,
+                        &ct,
+                        &r0,
                         &ctx.slots_to_coeffs,
                         keys.rotation_keys(),
                         &mut scratch_local,
@@ -525,12 +518,17 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
                         ctx.eval_mod.plan.f_mod_interval
                     );
                     let log2_k = ctx.eval_mod.plan.f_mod_interval.trailing_zeros() as usize;
+
+                    self.ckks_eval_mod(&mut ct, &r0, &ctx.eval_mod, keys.tensor_key(), &mut scratch_local)?;
                     self.ckks_mul_pow2_assign(&mut r0, log2_k, &mut scratch_local)?;
-                    self.ckks_mul_pow2_assign(&mut i0, log2_k, &mut scratch_local)?;
                     self.ckks_sub_assign(&mut r0_hp, &r0, &mut scratch_local)?;
+                    self.ckks_add_assign(&mut r0_hp, &ct, &mut scratch_local)?;
+
+                    r0.set_k(k_boot);
+                    self.ckks_eval_mod(&mut r0, &i0, &ctx.eval_mod, keys.tensor_key(), &mut scratch_local)?;
+                    self.ckks_mul_pow2_assign(&mut i0, log2_k, &mut scratch_local)?;
                     self.ckks_sub_assign(&mut i0_hp, &i0, &mut scratch_local)?;
-                    self.ckks_add_assign(&mut r0_hp, &res_real, &mut scratch_local)?;
-                    self.ckks_add_assign(&mut i0_hp, &res_imag, &mut scratch_local)?;
+                    self.ckks_add_assign(&mut i0_hp, &r0, &mut scratch_local)?;
 
                     self.ckks_slots_to_coeffs_split(
                         ct_out,
