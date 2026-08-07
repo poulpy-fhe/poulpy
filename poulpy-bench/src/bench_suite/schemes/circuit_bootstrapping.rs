@@ -106,7 +106,8 @@ pub fn bench_circuit_bootstrapping<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64
 
     let cbt_enc_infos = CircuitBootstrappingEncryptionInfos::from_default_sigma(&cbt_infos).unwrap();
 
-    let mut cbt_key: CircuitBootstrappingKey<Vec<u8>, BRA> = CircuitBootstrappingKey::alloc_from_infos(&module, &cbt_infos);
+    let mut cbt_key: CircuitBootstrappingKey<BE::OwnedBuf, BRA, BE::ZnxWord> =
+        CircuitBootstrappingKey::alloc_from_infos(&module, &cbt_infos);
     module.circuit_bootstrapping_key_encrypt_sk(
         &mut cbt_key,
         &sk_lwe,

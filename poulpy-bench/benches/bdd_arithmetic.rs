@@ -86,7 +86,7 @@ where
 
     // Circuit bootstrapping evaluation key
     let cbt_enc_infos = CircuitBootstrappingEncryptionInfos::from_default_sigma(&params.bdd_layout.cbt_layout).unwrap();
-    let mut cbt_key: CircuitBootstrappingKey<Vec<u8>, BRA> =
+    let mut cbt_key: CircuitBootstrappingKey<BE::OwnedBuf, BRA, BE::ZnxWord> =
         CircuitBootstrappingKey::alloc_from_infos(&module, &params.bdd_layout.cbt_layout);
     cbt_key.encrypt_sk(
         &module,
@@ -107,7 +107,7 @@ where
 
     let bdd_enc_infos = BDDEncryptionInfos::from_default_sigma(&params.bdd_layout).unwrap();
     let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(params.glwe_layout).unwrap();
-    let mut bdd_key: BDDKey<Vec<u8>, BRA> = BDDKey::alloc_from_infos(&module, &params.bdd_layout);
+    let mut bdd_key: BDDKey<BE::OwnedBuf, BRA, BE::ZnxWord> = BDDKey::alloc_from_infos(&module, &params.bdd_layout);
     bdd_key.encrypt_sk(
         &module,
         &sk_lwe,
@@ -121,7 +121,7 @@ where
     let input_a = 255_u32;
     let input_b = 30_u32;
 
-    let mut a_enc: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&module, &params.glwe_layout);
+    let mut a_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> = FheUint::alloc_from_infos(&module, &params.glwe_layout);
     a_enc.encrypt_sk(
         &module,
         input_a,
@@ -132,7 +132,7 @@ where
         &mut scratch.borrow(),
     );
 
-    let mut b_enc: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&module, &params.glwe_layout);
+    let mut b_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> = FheUint::alloc_from_infos(&module, &params.glwe_layout);
     b_enc.encrypt_sk(
         &module,
         input_b,
@@ -180,7 +180,7 @@ where
     Module<BE>: ExecuteBDDCircuit2WTo1W<BE>,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
     F: Fn(
-        &mut FheUint<Vec<u8>, u32>,
+        &mut FheUint<BE::OwnedBuf, u32, BE::ZnxWord>,
         &Module<BE>,
         &FheUintPrepared<BE::OwnedBuf, u32, BE>,
         &FheUintPrepared<BE::OwnedBuf, u32, BE>,
@@ -197,7 +197,7 @@ where
         glwe_layout,
     } = setup;
 
-    let mut c_enc: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&module, &glwe_layout);
+    let mut c_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> = FheUint::alloc_from_infos(&module, &glwe_layout);
 
     move || {
         operation(
@@ -235,7 +235,7 @@ fn bench_operation<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend,
     for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
     for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
     F: Fn(
-            &mut FheUint<Vec<u8>, u32>,
+            &mut FheUint<BE::OwnedBuf, u32, BE::ZnxWord>,
             &Module<BE>,
             &FheUintPrepared<BE::OwnedBuf, u32, BE>,
             &FheUintPrepared<BE::OwnedBuf, u32, BE>,

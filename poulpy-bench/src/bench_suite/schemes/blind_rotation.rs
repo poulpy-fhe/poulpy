@@ -26,7 +26,7 @@ where
         + BlindRotationKeyEncryptSk<BRA, BE>
         + BlindRotationKeyPreparedFactory<BRA, BE>
         + BlindRotationExecute<BRA, BE>
-        + LookupTableFactory
+        + LookupTableFactory<BE::OwnedBuf, BE::ZnxWord>
         + GLWESecretPreparedFactory<BE>
         + GLWEDecrypt<BE>
         + LWEEncryptSk<BE>,
@@ -80,7 +80,8 @@ where
 
     let brk_enc_infos = EncryptionLayout::new_from_default_sigma(brk_infos).unwrap();
 
-    let mut brk: BlindRotationKey<Vec<u8>, BRA> = BlindRotationKey::<Vec<u8>, BRA>::alloc(&module, &brk_infos);
+    let mut brk: BlindRotationKey<BE::OwnedBuf, BRA, BE::ZnxWord> =
+        BlindRotationKey::<BE::OwnedBuf, BRA, BE::ZnxWord>::alloc(&module, &brk_infos);
     module.blind_rotation_key_encrypt_sk(
         &mut brk,
         &sk_glwe_dft,
@@ -108,7 +109,7 @@ where
         k: TorusPrecision(2),
         base2k: Base2K(17),
     };
-    let mut lut: LookupTable = LookupTable::alloc(&module, &lut_infos);
+    let mut lut: LookupTable<BE::OwnedBuf, BE::ZnxWord> = LookupTable::alloc(&module, &lut_infos);
     lut.set(&module, &f_vec, log_message_modulus + 1);
 
     let id: BenchmarkId = BenchmarkId::from_parameter(format!("{n_glwe} / {n_lwe}"));

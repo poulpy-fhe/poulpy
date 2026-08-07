@@ -98,7 +98,7 @@ pub fn benc_bdd_prepare<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBac
 
         let bdd_enc_infos = BDDEncryptionInfos::from_default_sigma(&params.bdd_layout).unwrap();
         let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(params.glwe_layout).unwrap();
-        let mut bdd_key: BDDKey<Vec<u8>, BRA> = BDDKey::alloc_from_infos(&module, &params.bdd_layout);
+        let mut bdd_key: BDDKey<BE::OwnedBuf, BRA, BE::ZnxWord> = BDDKey::alloc_from_infos(&module, &params.bdd_layout);
         bdd_key.encrypt_sk(
             &module,
             &sk_lwe,
@@ -111,7 +111,7 @@ pub fn benc_bdd_prepare<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBac
 
         let input_a = 255_u32;
 
-        let mut a_enc: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&module, &params.glwe_layout);
+        let mut a_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> = FheUint::alloc_from_infos(&module, &params.glwe_layout);
         a_enc.encrypt_sk(
             &module,
             input_a,
