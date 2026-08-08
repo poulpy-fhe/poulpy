@@ -37,7 +37,7 @@ impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
         CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
     {
         let log_msg_ratio = table_log_msg_ratio(table.len())?;
-        let bsgs = trig_hermite_lut(table).encode_bsgs_with(host_module, base2k, coeffs_meta, strategy)?;
+        let bsgs = trig_hermite_lut(table)?.encode_bsgs_with(host_module, base2k, coeffs_meta, strategy)?;
         Ok(Self {
             kind: EncodedLutKind::General(bsgs),
             log_msg_ratio,

@@ -56,6 +56,18 @@ pub unsafe trait CKKSBootstrappingImpl<BE: Backend>: Backend {
         C1: CKKSCtBounds,
         C2: CKKSCtBounds;
 
+    fn ckks_functional_bootstrap_multi_tmp_bytes_impl<C1, C2, F>(
+        module: &Module<BE>,
+        ct_out: &C1,
+        ct_in: &C2,
+        ctx: &BootstrappingContext<BE, F>,
+        luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds;
+
     fn ckks_mod_up_into_impl<Dst, Src>(
         module: &Module<BE>,
         dst: &mut Dst,
@@ -181,6 +193,21 @@ where
         C2: CKKSCtBounds,
     {
         module.ckks_functional_bootstrap_tmp_bytes_default(ct_out, ct_in, ctx, lut, keys_layout)
+    }
+
+    fn ckks_functional_bootstrap_multi_tmp_bytes_impl<C1, C2, F>(
+        module: &Module<BE>,
+        ct_out: &C1,
+        ct_in: &C2,
+        ctx: &BootstrappingContext<BE, F>,
+        luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds,
+    {
+        module.ckks_functional_bootstrap_multi_tmp_bytes_default(ct_out, ct_in, ctx, luts, keys_layout)
     }
 
     fn ckks_mod_up_into_impl<Dst, Src>(

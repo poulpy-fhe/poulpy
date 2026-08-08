@@ -51,6 +51,21 @@ where
         BE::ckks_functional_bootstrap_tmp_bytes_impl(self, ct_out, ct_in, ctx, lut, keys_layout)
     }
 
+    fn ckks_functional_bootstrap_multi_tmp_bytes<C1, C2, F>(
+        &self,
+        ct_out: &C1,
+        ct_in: &C2,
+        ctx: &BootstrappingContext<BE, F>,
+        luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds,
+    {
+        BE::ckks_functional_bootstrap_multi_tmp_bytes_impl(self, ct_out, ct_in, ctx, luts, keys_layout)
+    }
+
     fn ckks_mod_up_into<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
         Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,

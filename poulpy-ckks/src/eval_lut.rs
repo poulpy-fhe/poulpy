@@ -28,11 +28,12 @@ use crate::{
 
 /// Builds the LUT power series `Σ (α_k/2)·E^k`; `T + conj(T)` recovers the
 /// interpolation of `f`.
-pub fn trig_hermite_lut<F>(f: &[F]) -> ComplexPolynomial<F>
+pub fn trig_hermite_lut<F>(f: &[F]) -> Result<ComplexPolynomial<F>>
 where
     F: CKKSScalar + Float + FloatConst,
     CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
 {
+    ensure!(!f.is_empty(), "trig_hermite_lut: table must not be empty");
     let p = f.len();
     let two = F::one() + F::one();
     let half = F::one() / two;
@@ -57,7 +58,7 @@ where
         im[k] = half * scale * si;
     }
 
-    ComplexPolynomial::new(Basis::Monomial, re, im)
+    Ok(ComplexPolynomial::new(Basis::Monomial, re, im))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -226,7 +227,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::cos_hermite_binary;
+    use super::{cos_hermite_binary, trig_hermite_lut};
+
+    #[test]
+    fn trig_lut_rejects_empty_table() {
+        assert!(trig_hermite_lut::<f64>(&[]).is_err());
+    }
 
     #[test]
     fn binary_lut_rejects_oversized_interval_reduction() {

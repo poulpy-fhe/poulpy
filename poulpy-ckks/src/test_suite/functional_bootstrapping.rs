@@ -207,7 +207,7 @@ where
         HostLuts::Encoded(lut) => lut,
         HostLuts::Multi(luts) => &luts[0],
     };
-    let functional_k = plan.functional_bootstrap_k(output_k, log_modulus_in, budget_lut);
+    let functional_k = plan.functional_bootstrap_k(output_k, INPUT_LOG_DELTA, budget_lut);
     let eval_mod_cost = if matches!(case, Case::Binary) {
         0
     } else {
@@ -257,11 +257,9 @@ where
     let input_spec = ckks_spec(params.n, params.base2k, INPUT_LOG_DELTA, k_in - INPUT_LOG_DELTA);
     let boot_tmp = match &host_luts {
         HostLuts::Encoded(lut) => module.ckks_functional_bootstrap_tmp_bytes(&output_spec, &input_spec, &ctx, lut, &keys_layout),
-        HostLuts::Multi(luts) => luts
-            .iter()
-            .map(|lut| module.ckks_functional_bootstrap_tmp_bytes(&output_spec, &input_spec, &ctx, lut, &keys_layout))
-            .max()
-            .unwrap(),
+        HostLuts::Multi(luts) => {
+            module.ckks_functional_bootstrap_multi_tmp_bytes(&output_spec, &input_spec, &ctx, luts, &keys_layout)
+        }
     };
     if boot_tmp > initial_tmp {
         scratch = ScratchOwned::<BE>::alloc(boot_tmp);

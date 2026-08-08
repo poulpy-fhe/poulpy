@@ -65,6 +65,21 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
         C1: CKKSCtBounds,
         C2: CKKSCtBounds;
 
+    /// Scratch upper bound for a multi-LUT functional bootstrap. `ct_out`
+    /// provides the shared output layout required by
+    /// [`Self::ckks_functional_bootstrap_multi`].
+    fn ckks_functional_bootstrap_multi_tmp_bytes<C1, C2, F>(
+        &self,
+        ct_out: &C1,
+        ct_in: &C2,
+        ctx: &BootstrappingContext<BE, F>,
+        luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds;
+
     /// Raises the modulus of `src` into the wider `dst`.
     ///
     /// `dst` must carry the target (raised) modulus: `dst.k() ≥

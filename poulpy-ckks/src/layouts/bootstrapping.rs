@@ -232,13 +232,17 @@ impl BootstrappingPlan {
     }
 
     /// Raised width required by an S2C-first functional bootstrap.
+    ///
+    /// `log_delta` is the input ciphertext scale; the LUT message ratio is
+    /// folded in to obtain the post-S2C scale used by the LUT evaluation.
     pub fn functional_bootstrap_k<P>(&self, output_k: usize, log_delta: usize, lut: &EncodedLut<P>) -> usize
     where
         P: CKKSInfos,
     {
         assert!(self.pipeline == BootstrappingPipeline::S2CFirst);
         let eval_mod = lut.requires_eval_mod() as usize * self.eval_mod.consumed_bits();
-        output_k + self.coeffs_to_slots.consumed_bits() + eval_mod + lut.consumed_bits(log_delta)
+        let lut_log_delta = log_delta + lut.log_msg_ratio();
+        output_k + self.coeffs_to_slots.consumed_bits() + eval_mod + lut.consumed_bits(lut_log_delta)
     }
 
     /// Total `log_budget` bits the pipeline consumes: the two DFT stages plus
