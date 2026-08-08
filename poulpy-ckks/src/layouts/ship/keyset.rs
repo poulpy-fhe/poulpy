@@ -20,11 +20,12 @@ use poulpy_core::{
     },
     msb_mask_bottom_limb,
 };
+use poulpy_hal::layouts::HostStaged;
 use poulpy_hal::{
     api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution},
     layouts::{
         Backend, CnvPVecL, CnvPVecLToBackendMut, Data, GaloisElement, HostBytesBackend, HostDataMut, HostDataRef, Module,
-        ScratchArena, TransferFrom, ZnxView, ZnxViewMut, ZnxWord,
+        ScratchArena, ZnxView, ZnxViewMut, ZnxWord,
     },
     source::Source,
 };
@@ -362,7 +363,7 @@ pub(crate) fn hmux_rot_key_encrypt_sk<BE>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<HMuxRotKey<BE::OwnedBuf, BE::ZnxWord>>
 where
-    BE: Backend + TransferFrom<HostBytesBackend>,
+    BE: HostStaged,
     BE::OwnedBuf: HostDataRef + HostDataMut,
     Module<BE>: GLWESwitchingKeyEncryptSk<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
@@ -408,7 +409,11 @@ where
     Ok(HMuxRotKey { key, gal_el })
 }
 
-impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
+// Generation is word-pinned, not by choice: `generate` stages its key material
+// through `Module<HostBytesBackend>` (and already took a host `GLWESecret<Vec<u8>,
+// i64>`), so the material it uploads carries that backend's word. Because it
+// returns `Self`, the word cannot be constrained per-method and lands here.
+impl<D: Data> ShipKeySet<D, i64> {
     /// Generates the full SHIP key set for `sk_dense_host` and the sparse
     /// support of `spec`.
     ///
@@ -431,7 +436,7 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<Self>
     where
-        BE: Backend<OwnedBuf = D, ZnxWord = W> + TransferFrom<HostBytesBackend>,
+        BE: HostStaged + Backend<OwnedBuf = D>,
         D: HostDataRef + HostDataMut,
         F: ShipScalar,
         Module<BE>: GLWESwitchingKeyEncryptSk<BE>

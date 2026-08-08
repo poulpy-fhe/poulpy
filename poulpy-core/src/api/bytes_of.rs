@@ -91,7 +91,11 @@ impl<B: Backend> GLWEBytesOf<B> for Module<B> {
 
     fn lwe_bytes_of_from_infos<A: LWEInfos>(&self, infos: &A) -> usize {
         let size: usize = infos.k().0.div_ceil(infos.base2k().0) as usize;
-        B::bytes_of_vec_znx(1, 1, size) + B::bytes_of_vec_znx(infos.n().as_usize(), 1, size)
+        // An LWE is two separate buffers (body then mask). `ScratchArena::take_region`
+        // aligns every carve to `SCRATCH_ALIGN`, so the body's contribution has to be
+        // rounded up or the reservation under-counts the gap before the mask.
+        let body: usize = B::bytes_of_vec_znx(1, 1, size).next_multiple_of(B::SCRATCH_ALIGN);
+        body + B::bytes_of_vec_znx(infos.n().as_usize(), 1, size)
     }
 
     fn gglwe_bytes_of_from_infos<A: GGLWEInfos>(&self, infos: &A) -> usize {

@@ -82,7 +82,7 @@ impl<D: HostDataRef, W: ZnxWord> LWEPlaintext<D, W> {
     pub fn to_backend<BE, To>(&self, dst: &Module<To>) -> LWEPlaintext<To::OwnedBuf, To::ZnxWord>
     where
         BE: Backend<OwnedBuf = D, ZnxWord = W>,
-        To: Backend,
+        To: Backend<ZnxWord = W>,
         To: TransferFrom<BE>,
     {
         dst.upload_lwe_plaintext(self)

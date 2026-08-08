@@ -64,7 +64,7 @@ pub trait TestBackend:
     + ConversionImpl<Self>
     + AutomorphismImpl<Self>
 where
-    Self: HostBackend<OwnedBuf = Vec<u8>>,
+    Self: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64>,
     for<'a> Self::BufRef<'a>: HostDataRef,
     for<'a> Self::BufMut<'a>: HostDataMut,
 {
@@ -98,7 +98,7 @@ where
         + DecryptionImpl<BE>
         + ConversionImpl<BE>
         + AutomorphismImpl<BE>,
-    BE: HostBackend<OwnedBuf = Vec<u8>>,
+    BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -133,7 +133,7 @@ pub fn scalar_znx_as_vec_znx_backend_mut<BE: Backend>(
     <ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxAsVecZnxBackendMut<BE>>::as_vec_znx_backend_mut(src)
 }
 
-pub fn upload_glwe<BE: HostBackend<OwnedBuf = Vec<u8>>>(
+pub fn upload_glwe<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
     module: &Module<BE>,
     src: &GLWE<Vec<u8>, i64>,
 ) -> GLWE<BE::OwnedBuf, BE::ZnxWord>
@@ -143,7 +143,7 @@ where
     module.upload_glwe::<HB>(src)
 }
 
-pub fn download_glwe<BE: HostBackend<OwnedBuf = Vec<u8>>>(
+pub fn download_glwe<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
     _module: &Module<BE>,
     src: &GLWE<BE::OwnedBuf, BE::ZnxWord>,
 ) -> GLWE<Vec<u8>, BE::ZnxWord> {
@@ -161,7 +161,7 @@ pub fn download_glwe<BE: HostBackend<OwnedBuf = Vec<u8>>>(
     }
 }
 
-pub fn upload_glwe_plaintext<BE: HostBackend<OwnedBuf = Vec<u8>>>(
+pub fn upload_glwe_plaintext<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
     module: &Module<BE>,
     src: &GLWEPlaintext<Vec<u8>, i64>,
 ) -> GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord>
@@ -171,7 +171,7 @@ where
     module.upload_glwe_plaintext::<HB>(src)
 }
 
-pub fn download_glwe_plaintext<BE: HostBackend<OwnedBuf = Vec<u8>>>(
+pub fn download_glwe_plaintext<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
     _module: &Module<BE>,
     src: &GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord>,
 ) -> GLWEPlaintext<Vec<u8>, BE::ZnxWord> {
@@ -189,7 +189,7 @@ pub fn download_glwe_plaintext<BE: HostBackend<OwnedBuf = Vec<u8>>>(
     }
 }
 
-pub fn upload_glwe_secret<BE: HostBackend<OwnedBuf = Vec<u8>>>(
+pub fn upload_glwe_secret<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
     module: &Module<BE>,
     src: &GLWESecret<Vec<u8>, i64>,
 ) -> GLWESecret<BE::OwnedBuf, BE::ZnxWord>
@@ -199,7 +199,7 @@ where
     module.upload_glwe_secret::<HB>(src)
 }
 
-pub fn upload_gglwe<BE: HostBackend<OwnedBuf = Vec<u8>>>(
+pub fn upload_gglwe<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
     module: &Module<BE>,
     src: &GGLWE<Vec<u8>, i64>,
 ) -> GGLWE<BE::OwnedBuf, BE::ZnxWord>
@@ -209,7 +209,7 @@ where
     module.upload_gglwe::<HB>(src)
 }
 
-pub fn upload_ggsw<BE: HostBackend<OwnedBuf = Vec<u8>>>(
+pub fn upload_ggsw<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
     module: &Module<BE>,
     src: &GGSW<Vec<u8>, i64>,
 ) -> GGSW<BE::OwnedBuf, BE::ZnxWord>
@@ -219,7 +219,7 @@ where
     module.upload_ggsw::<HB>(src)
 }
 
-pub fn download_ggsw<BE: HostBackend<OwnedBuf = Vec<u8>>>(
+pub fn download_ggsw<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
     _module: &Module<BE>,
     src: &GGSW<BE::OwnedBuf, BE::ZnxWord>,
 ) -> GGSW<Vec<u8>, BE::ZnxWord> {
@@ -238,7 +238,7 @@ pub fn download_ggsw<BE: HostBackend<OwnedBuf = Vec<u8>>>(
     }
 }
 
-pub fn upload_glwe_automorphism_key<BE: HostBackend<OwnedBuf = Vec<u8>>>(
+pub fn upload_glwe_automorphism_key<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
     module: &Module<BE>,
     src: &GLWEAutomorphismKey<Vec<u8>, i64>,
 ) -> GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord>
@@ -251,7 +251,7 @@ where
     }
 }
 
-pub fn upload_gglwe_to_ggsw_key<BE: HostBackend<OwnedBuf = Vec<u8>>>(
+pub fn upload_gglwe_to_ggsw_key<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
     module: &Module<BE>,
     src: &GGLWEToGGSWKey<Vec<u8>, i64>,
 ) -> GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord>

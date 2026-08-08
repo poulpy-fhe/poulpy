@@ -11,6 +11,7 @@
 //! them to the backend, performs the operation, downloads, and asserts
 //! correctness.
 
+use poulpy_hal::layouts::HostStaged;
 use std::{f64::consts::TAU, fmt::Debug};
 
 use crate::{
@@ -526,7 +527,7 @@ where
 /// Uploads a host-side plaintext to the backend.
 pub fn upload_pt<BE>(module: &Module<BE>, pt: &CKKSPlaintextOwned<HostBytesBackend>) -> CKKSPlaintextOwned<BE>
 where
-    BE: Backend + TransferFrom<HostBytesBackend>,
+    BE: HostStaged,
 {
     CKKSPlaintext::from_inner(module.upload_glwe_plaintext(&pt.inner), pt.meta())
 }
@@ -549,7 +550,7 @@ pub fn encode_and_upload_pt<BE, F, E>(
     im: &[F],
 ) -> CKKSPlaintextOwned<BE>
 where
-    BE: Backend + TransferFrom<HostBytesBackend>,
+    BE: HostStaged,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F>,
@@ -570,7 +571,7 @@ pub fn ckks_pt_cst<BE, F>(
     im: Option<f64>,
 ) -> CKKSPlaintextOwned<BE>
 where
-    BE: Backend + TransferFrom<HostBytesBackend>,
+    BE: HostStaged,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
 {
@@ -599,7 +600,7 @@ pub fn ckks_pt_cst_full<BE, F>(
     im: Option<f64>,
 ) -> CKKSPlaintextOwned<BE>
 where
-    BE: Backend + TransferFrom<HostBytesBackend>,
+    BE: HostStaged,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
 {
@@ -624,7 +625,7 @@ pub fn add_sub_const_pt<BE, F>(
     base2k: Base2K,
 ) -> CKKSPlaintextOwned<BE>
 where
-    BE: Backend + TransferFrom<HostBytesBackend>,
+    BE: HostStaged,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
 {
@@ -646,7 +647,7 @@ pub fn mul_const_full_pt<BE, F>(
     m: usize,
 ) -> CKKSPlaintextOwned<BE>
 where
-    BE: Backend + TransferFrom<HostBytesBackend>,
+    BE: HostStaged,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
 {

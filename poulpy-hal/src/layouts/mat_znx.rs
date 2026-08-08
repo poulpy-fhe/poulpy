@@ -283,7 +283,7 @@ impl<B: Backend> MatZnxAtBackendRef<B> for MatZnx<B::OwnedBuf, B::ZnxWord> {
         assert!(row < self.rows(), "rows: {} >= {}", row, self.rows());
         assert!(col < self.cols_in(), "cols: {} >= {}", col, self.cols_in());
 
-        let nb_bytes: usize = VecZnx::<Vec<u8>, B::ZnxWord>::bytes_of(self.n(), self.cols_out(), self.size());
+        let nb_bytes: usize = B::bytes_of_vec_znx(self.n(), self.cols_out(), self.size());
         let start: usize = nb_bytes
             .checked_mul(self.cols_in())
             .and_then(|x| x.checked_mul(row))
@@ -308,7 +308,7 @@ pub fn mat_znx_at_backend_ref_from_ref<'a, 'b, B: Backend + 'b>(
     assert!(row < mat.rows(), "rows: {} >= {}", row, mat.rows());
     assert!(col < mat.cols_in(), "cols: {} >= {}", col, mat.cols_in());
 
-    let nb_bytes: usize = VecZnx::<Vec<u8>, B::ZnxWord>::bytes_of(mat.n(), mat.cols_out(), mat.size());
+    let nb_bytes: usize = B::bytes_of_vec_znx(mat.n(), mat.cols_out(), mat.size());
     let start: usize = nb_bytes
         .checked_mul(mat.cols_in())
         .and_then(|x| x.checked_mul(row))
@@ -332,7 +332,7 @@ pub fn mat_znx_at_backend_ref_from_mut<'a, 'b, B: Backend + 'b>(
     assert!(row < mat.rows(), "rows: {} >= {}", row, mat.rows());
     assert!(col < mat.cols_in(), "cols: {} >= {}", col, mat.cols_in());
 
-    let nb_bytes: usize = VecZnx::<Vec<u8>, B::ZnxWord>::bytes_of(mat.n(), mat.cols_out(), mat.size());
+    let nb_bytes: usize = B::bytes_of_vec_znx(mat.n(), mat.cols_out(), mat.size());
     let start: usize = nb_bytes
         .checked_mul(mat.cols_in())
         .and_then(|x| x.checked_mul(row))
@@ -362,7 +362,7 @@ impl<B: Backend> MatZnxAtBackendMut<B> for MatZnx<B::OwnedBuf, B::ZnxWord> {
         let cols_out: usize = self.cols_out();
         let cols_in: usize = self.cols_in();
         let size: usize = self.size();
-        let nb_bytes: usize = VecZnx::<Vec<u8>, B::ZnxWord>::bytes_of(n, cols_out, size);
+        let nb_bytes: usize = B::bytes_of_vec_znx(n, cols_out, size);
         let start: usize = nb_bytes
             .checked_mul(cols_in)
             .and_then(|x| x.checked_mul(row))
@@ -386,7 +386,7 @@ pub fn mat_znx_at_backend_mut_from_mut<'a, 'b, B: Backend + 'b>(
     let cols_out: usize = mat.cols_out();
     let cols_in: usize = mat.cols_in();
     let size: usize = mat.size();
-    let nb_bytes: usize = VecZnx::<Vec<u8>, B::ZnxWord>::bytes_of(n, cols_out, size);
+    let nb_bytes: usize = B::bytes_of_vec_znx(n, cols_out, size);
     let start: usize = nb_bytes
         .checked_mul(cols_in)
         .and_then(|x| x.checked_mul(row))

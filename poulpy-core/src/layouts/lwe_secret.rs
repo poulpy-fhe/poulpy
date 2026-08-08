@@ -45,7 +45,7 @@ impl<D: HostDataRef, W: ZnxWord> LWESecret<D, W> {
     pub fn to_backend<BE, To>(&self, dst: &Module<To>) -> LWESecret<To::OwnedBuf, To::ZnxWord>
     where
         BE: Backend<OwnedBuf = D, ZnxWord = W>,
-        To: Backend,
+        To: Backend<ZnxWord = W>,
         To: TransferFrom<BE>,
     {
         dst.upload_lwe_secret(self)

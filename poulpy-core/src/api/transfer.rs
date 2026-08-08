@@ -7,7 +7,7 @@ use crate::layouts::{
 
 fn transfer_vec_znx<From, To>(src: &VecZnx<From::OwnedBuf, From::ZnxWord>) -> VecZnx<To::OwnedBuf, To::ZnxWord>
 where
-    From: Backend,
+    From: Backend<ZnxWord = To::ZnxWord>,
     To: Backend + TransferFrom<From>,
 {
     VecZnx::from_data_with_max_size(
@@ -21,7 +21,7 @@ where
 
 fn transfer_mat_znx<From, To>(src: &MatZnx<From::OwnedBuf, From::ZnxWord>) -> MatZnx<To::OwnedBuf, To::ZnxWord>
 where
-    From: Backend,
+    From: Backend<ZnxWord = To::ZnxWord>,
     To: Backend + TransferFrom<From>,
 {
     MatZnx::from_data(
@@ -36,7 +36,7 @@ where
 
 fn transfer_scalar_znx<From, To>(src: &ScalarZnx<From::OwnedBuf, From::ZnxWord>) -> ScalarZnx<To::OwnedBuf, To::ZnxWord>
 where
-    From: Backend,
+    From: Backend<ZnxWord = To::ZnxWord>,
     To: Backend + TransferFrom<From>,
 {
     ScalarZnx::from_data(<To as TransferFrom<From>>::transfer_buf(src.data()), src.n(), src.cols())
@@ -45,89 +45,89 @@ where
 pub trait ModuleTransfer<To: Backend> {
     fn upload_glwe<From>(&self, src: &BackendGLWE<From>) -> BackendGLWE<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>;
 
     fn download_glwe<From>(&self, src: &BackendGLWE<From>) -> BackendGLWE<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>;
 
     fn upload_lwe<From>(&self, src: &BackendLWE<From>) -> BackendLWE<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>;
 
     fn download_lwe<From>(&self, src: &BackendLWE<From>) -> BackendLWE<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>;
 
     fn upload_gglwe<From>(&self, src: &BackendGGLWE<From>) -> BackendGGLWE<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>;
 
     fn download_gglwe<From>(&self, src: &BackendGGLWE<From>) -> BackendGGLWE<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>;
 
     fn upload_ggsw<From>(&self, src: &BackendGGSW<From>) -> BackendGGSW<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>;
 
     fn download_ggsw<From>(&self, src: &BackendGGSW<From>) -> BackendGGSW<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>;
 
     fn upload_glwe_secret<From>(&self, src: &BackendGLWESecret<From>) -> BackendGLWESecret<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>;
 
     fn download_glwe_secret<From>(&self, src: &BackendGLWESecret<From>) -> BackendGLWESecret<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>;
 
     fn upload_lwe_secret<From>(&self, src: &BackendLWESecret<From>) -> BackendLWESecret<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>;
 
     fn download_lwe_secret<From>(&self, src: &BackendLWESecret<From>) -> BackendLWESecret<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>;
 
     fn upload_glwe_plaintext<From>(&self, src: &BackendGLWEPlaintext<From>) -> BackendGLWEPlaintext<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>;
 
     fn download_glwe_plaintext<From>(&self, src: &BackendGLWEPlaintext<From>) -> BackendGLWEPlaintext<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>;
 
     fn upload_lwe_plaintext<From>(&self, src: &BackendLWEPlaintext<From>) -> BackendLWEPlaintext<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>;
 
     fn download_lwe_plaintext<From>(&self, src: &BackendLWEPlaintext<From>) -> BackendLWEPlaintext<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>;
 }
 
 impl<To: Backend> ModuleTransfer<To> for Module<To> {
     fn upload_glwe<From>(&self, src: &BackendGLWE<From>) -> BackendGLWE<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>,
     {
         let _ = self;
@@ -140,7 +140,7 @@ impl<To: Backend> ModuleTransfer<To> for Module<To> {
 
     fn download_glwe<From>(&self, src: &BackendGLWE<From>) -> BackendGLWE<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>,
     {
         self.upload_glwe(src)
@@ -148,7 +148,7 @@ impl<To: Backend> ModuleTransfer<To> for Module<To> {
 
     fn upload_lwe<From>(&self, src: &BackendLWE<From>) -> BackendLWE<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>,
     {
         let _ = self;
@@ -162,7 +162,7 @@ impl<To: Backend> ModuleTransfer<To> for Module<To> {
 
     fn download_lwe<From>(&self, src: &BackendLWE<From>) -> BackendLWE<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>,
     {
         self.upload_lwe(src)
@@ -170,7 +170,7 @@ impl<To: Backend> ModuleTransfer<To> for Module<To> {
 
     fn upload_gglwe<From>(&self, src: &BackendGGLWE<From>) -> BackendGGLWE<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>,
     {
         let _ = self;
@@ -184,7 +184,7 @@ impl<To: Backend> ModuleTransfer<To> for Module<To> {
 
     fn download_gglwe<From>(&self, src: &BackendGGLWE<From>) -> BackendGGLWE<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>,
     {
         self.upload_gglwe(src)
@@ -192,7 +192,7 @@ impl<To: Backend> ModuleTransfer<To> for Module<To> {
 
     fn upload_ggsw<From>(&self, src: &BackendGGSW<From>) -> BackendGGSW<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>,
     {
         let _ = self;
@@ -206,7 +206,7 @@ impl<To: Backend> ModuleTransfer<To> for Module<To> {
 
     fn download_ggsw<From>(&self, src: &BackendGGSW<From>) -> BackendGGSW<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>,
     {
         self.upload_ggsw(src)
@@ -214,7 +214,7 @@ impl<To: Backend> ModuleTransfer<To> for Module<To> {
 
     fn upload_glwe_secret<From>(&self, src: &BackendGLWESecret<From>) -> BackendGLWESecret<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>,
     {
         let _ = self;
@@ -226,7 +226,7 @@ impl<To: Backend> ModuleTransfer<To> for Module<To> {
 
     fn download_glwe_secret<From>(&self, src: &BackendGLWESecret<From>) -> BackendGLWESecret<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>,
     {
         self.upload_glwe_secret(src)
@@ -234,7 +234,7 @@ impl<To: Backend> ModuleTransfer<To> for Module<To> {
 
     fn upload_lwe_secret<From>(&self, src: &BackendLWESecret<From>) -> BackendLWESecret<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>,
     {
         let _ = self;
@@ -246,7 +246,7 @@ impl<To: Backend> ModuleTransfer<To> for Module<To> {
 
     fn download_lwe_secret<From>(&self, src: &BackendLWESecret<From>) -> BackendLWESecret<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>,
     {
         self.upload_lwe_secret(src)
@@ -254,7 +254,7 @@ impl<To: Backend> ModuleTransfer<To> for Module<To> {
 
     fn upload_glwe_plaintext<From>(&self, src: &BackendGLWEPlaintext<From>) -> BackendGLWEPlaintext<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>,
     {
         let _ = self;
@@ -267,7 +267,7 @@ impl<To: Backend> ModuleTransfer<To> for Module<To> {
 
     fn download_glwe_plaintext<From>(&self, src: &BackendGLWEPlaintext<From>) -> BackendGLWEPlaintext<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>,
     {
         self.upload_glwe_plaintext(src)
@@ -275,7 +275,7 @@ impl<To: Backend> ModuleTransfer<To> for Module<To> {
 
     fn upload_lwe_plaintext<From>(&self, src: &BackendLWEPlaintext<From>) -> BackendLWEPlaintext<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>,
     {
         let _ = self;
@@ -288,7 +288,7 @@ impl<To: Backend> ModuleTransfer<To> for Module<To> {
 
     fn download_lwe_plaintext<From>(&self, src: &BackendLWEPlaintext<From>) -> BackendLWEPlaintext<To>
     where
-        From: Backend,
+        From: Backend<ZnxWord = To::ZnxWord>,
         To: TransferFrom<From>,
     {
         self.upload_lwe_plaintext(src)

@@ -44,7 +44,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     layouts::{
-        Backend, CyclotomicOrder, Data, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchArena, TransferFrom, ZnxWord,
+        Backend, CyclotomicOrder, Data, HostBytesBackend, HostDataMut, HostDataRef, HostStaged, Module, ScratchArena, ZnxWord,
     },
     source::Source,
 };
@@ -274,7 +274,7 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<BootstrappingKeySet<BE::OwnedBuf, BE::ZnxWord>>
     where
-        BE: TransferFrom<HostBytesBackend>,
+        BE: HostStaged,
         BE::OwnedBuf: HostDataMut,
         Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + ModuleTransfer<BE>

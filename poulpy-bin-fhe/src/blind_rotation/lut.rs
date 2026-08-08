@@ -246,7 +246,7 @@ impl<D: HostDataRef, W: ZnxWord> LookupTable<D, W> {
     pub fn to_backend<From, To>(&self, dst: &Module<To>) -> LookupTable<To::OwnedBuf, To::ZnxWord>
     where
         From: Backend<OwnedBuf = D, ZnxWord = W>,
-        To: Backend + TransferFrom<From>,
+        To: Backend<ZnxWord = W> + TransferFrom<From>,
     {
         LookupTable {
             data: self.data.iter().map(|glwe| glwe.to_backend::<From, To>(dst)).collect(),
