@@ -12,7 +12,7 @@ use std::collections::BTreeSet;
 
 use poulpy_core::{
     LinearTransformationPrepared,
-    layouts::{LinearTransformation, LinearTransformationLayout, LinearTransformationStrategy},
+    layouts::{LinearTransformation, LinearTransformationLayout, LinearTransformationStrategy, optimal_bsgs_giant_step},
 };
 use poulpy_hal::layouts::{Backend, galois_element};
 
@@ -307,6 +307,29 @@ impl DFTPlan {
     /// Default `false`.
     pub fn with_bit_reversed(mut self, bit_reversed: bool) -> Self {
         self.bit_reversed = bit_reversed;
+        self
+    }
+
+    /// Replaces each factor's BSGS width with the structure-aware optimum for
+    /// its non-zero diagonals on a degree-`2^log_n` ring.
+    ///
+    /// This minimizes and balances the backend-independent baby/giant rotation
+    /// counts. A backend-specific optimum may differ, so the tuning is explicit
+    /// rather than part of [`Self::new`]. Call this after
+    /// [`Self::with_bit_reversed`], since bit reversal changes the diagonal
+    /// geometry. Factor depths, scale, and budget consumption are unchanged.
+    pub fn with_optimal_bsgs(mut self, log_n: usize) -> Self {
+        let sparse = self.is_sparse_repack(log_n);
+        let slots = 1usize << self.log_slots();
+        let factor_slots = if sparse { slots << 1 } else { slots };
+        let giant_steps: Vec<_> = self
+            .diagonal_indexes(log_n)
+            .into_iter()
+            .map(|indexes| optimal_bsgs_giant_step(indexes, factor_slots))
+            .collect();
+        for (step, giant_step) in self.schedule.steps.iter_mut().zip(giant_steps) {
+            step.giant_step = giant_step;
+        }
         self
     }
 
@@ -624,5 +647,46 @@ impl<BE: Backend, Dir, Fmt: DftFormat, R> DFTMatrix<BE, Dir, Fmt, R> {
     /// `Fmt` type-state.
     pub fn is_sparse(&self) -> bool {
         Fmt::FORMAT == DFTOutputFormat::RepackImagAsReal
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn plan(kind: DFTType, depths: &[usize], format: DFTOutputFormat) -> DFTPlan {
+        DFTPlan::new(
+            kind,
+            depths.iter().map(|&depth| (depth, 1)).collect::<Vec<_>>(),
+            format,
+            CoeffsMeta::from_delta_budget(30, 2),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn optimal_bsgs_matches_dense_dft_geometry() {
+        let encode = plan(DFTType::Encode, &[2, 3, 3, 3], DFTOutputFormat::SplitRealAndImag);
+        let encode_indexes = encode.diagonal_indexes(12);
+        let encode = encode.with_optimal_bsgs(12);
+        assert_eq!(encode.schedule().giant_steps(), vec![1024, 256, 32, 4]);
+        assert_eq!(encode.diagonal_indexes(12), encode_indexes);
+
+        let decode = plan(DFTType::Decode, &[3, 3, 3, 2], DFTOutputFormat::SplitRealAndImag).with_optimal_bsgs(12);
+        assert_eq!(decode.schedule().giant_steps(), vec![4, 32, 256, 1024]);
+    }
+
+    #[test]
+    fn optimal_bsgs_uses_sparse_working_slot_count() {
+        let plan = plan(DFTType::Decode, &[2, 2], DFTOutputFormat::RepackImagAsReal);
+        let indexes = plan.diagonal_indexes(7);
+        let expected: Vec<_> = indexes
+            .iter()
+            .map(|factor| optimal_bsgs_giant_step(factor.iter().copied(), 1 << (plan.log_slots() + 1)))
+            .collect();
+        let consumed_bits = plan.consumed_bits();
+        let plan = plan.with_optimal_bsgs(7);
+        assert_eq!(plan.schedule().giant_steps(), expected);
+        assert_eq!(plan.consumed_bits(), consumed_bits);
     }
 }
