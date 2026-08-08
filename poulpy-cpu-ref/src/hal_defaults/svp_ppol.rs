@@ -31,14 +31,14 @@ use poulpy_hal::{
 };
 
 #[doc(hidden)]
-pub trait FFT64SvpDefault<BE: Backend>: Backend
+pub trait FFT64SvpDefault<BE: Backend<ZnxWord = i64>>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
     fn svp_prepare_default<R>(module: &Module<BE>, res: &mut R, res_col: usize, a: &ScalarZnxBackendRef<'_, BE>, a_col: usize)
     where
         Module<BE>: FFTModuleHandle<f64>,
-        BE: Backend<DftWord = f64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64>,
+        BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64>,
         for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> BE::BufRef<'x>: HostDataRef,
         R: SvpPPolToBackendMut<BE>,
@@ -70,7 +70,7 @@ where
         b_col: usize,
     ) where
         Module<BE>: FFTModuleHandle<f64>,
-        BE: Backend<DftWord = f64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64>,
+        BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64>,
         for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> BE::BufRef<'x>: HostDataRef,
         A: SvpPPolToBackendRef<BE>,
@@ -88,7 +88,7 @@ where
         b: &VecZnxDftBackendRef<'b, BE>,
         b_col: usize,
     ) where
-        BE: Backend<DftWord = f64> + ReimArith,
+        BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith,
         for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> BE::BufRef<'x>: HostDataRef,
         A: SvpPPolToBackendRef<BE>,
@@ -104,7 +104,7 @@ where
         a: &A,
         a_col: usize,
     ) where
-        BE: Backend<DftWord = f64> + ReimArith,
+        BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith,
         for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> BE::BufRef<'x>: HostDataRef,
         A: SvpPPolToBackendRef<BE>,
@@ -114,17 +114,17 @@ where
     }
 }
 
-impl<BE: Backend> FFT64SvpDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
+impl<BE: Backend<ZnxWord = i64>> FFT64SvpDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
 
 #[doc(hidden)]
-pub trait NTT4x30SvpDefault<BE: Backend>: Backend
+pub trait NTT4x30SvpDefault<BE: Backend<ZnxWord = i64>>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
     fn svp_prepare_default<R>(module: &Module<BE>, res: &mut R, res_col: usize, a: &ScalarZnxBackendRef<'_, BE>, a_col: usize)
     where
         Module<BE>: NttModuleHandle,
-        BE: Backend<DftWord = Q120bScalar> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttCFromB,
+        BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttCFromB,
         for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> BE::BufRef<'x>: HostDataRef,
         R: SvpPPolToBackendMut<BE>,
@@ -156,7 +156,11 @@ where
         b_col: usize,
     ) where
         Module<BE>: NttModuleHandle + VecZnxDftApply<BE>,
-        BE: Backend<DftWord = Q120bScalar> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttMulBbc + NttZero,
+        BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>
+            + NttDFTExecute<NttTable<Primes30>>
+            + NttFromZnx64
+            + NttMulBbc
+            + NttZero,
         for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> BE::BufRef<'x>: HostDataRef,
         A: SvpPPolToBackendRef<BE>,
@@ -202,7 +206,7 @@ where
         b_col: usize,
     ) where
         Module<BE>: NttModuleHandle,
-        BE: Backend<DftWord = Q120bScalar> + NttMulBbc + NttZero,
+        BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttMulBbc + NttZero,
         for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> BE::BufRef<'x>: HostDataRef,
         A: SvpPPolToBackendRef<BE>,
@@ -240,7 +244,7 @@ where
         a_col: usize,
     ) where
         Module<BE>: NttModuleHandle,
-        BE: Backend<DftWord = Q120bScalar> + NttMulBbc,
+        BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttMulBbc,
         for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut,
         for<'x> BE::BufRef<'x>: HostDataRef,
         A: SvpPPolToBackendRef<BE>,
@@ -250,4 +254,4 @@ where
     }
 }
 
-impl<BE: Backend> NTT4x30SvpDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
+impl<BE: Backend<ZnxWord = i64>> NTT4x30SvpDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}

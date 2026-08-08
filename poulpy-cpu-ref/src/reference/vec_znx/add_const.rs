@@ -12,7 +12,7 @@ pub fn vec_znx_add_const_into<'r, 'a, BE>(
     res_limb: usize,
     res_coeff: usize,
 ) where
-    BE: Backend + ZnxCopy + ZnxZero,
+    BE: Backend<ZnxWord = i64> + ZnxCopy + ZnxZero,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
@@ -41,7 +41,7 @@ pub fn vec_znx_add_const_assign<'r, 'a, BE>(
     res_limb: usize,
     res_coeff: usize,
 ) where
-    BE: Backend,
+    BE: Backend<ZnxWord = i64>,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {

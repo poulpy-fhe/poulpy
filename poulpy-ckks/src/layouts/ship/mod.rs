@@ -15,18 +15,18 @@ pub use keyset::{
 pub use plan::ShipPlan;
 pub use secret::ShipSecretSpec;
 
-use poulpy_hal::layouts::Data;
+use poulpy_hal::layouts::{Data, ZnxWord};
 
 use crate::layouts::CKKSPlaintext;
 
 /// Input-dependent SHIP plaintext material: `pt0` (and `pt0_2` for the
 /// complex bootstrap) at the raised width, plus per support slot the
 /// `4*theta` rotated `pi` vectors, candidate-major, at the working width.
-pub struct ShipCoeffEncodings<D: Data> {
+pub struct ShipCoeffEncodings<D: Data, W: ZnxWord> {
     /// `Ecd((gamma/(4*i*pi)) * w^{b_i})` over the first coefficient half.
-    pub pt0: CKKSPlaintext<D>,
+    pub pt0: CKKSPlaintext<D, W>,
     /// Second-half `pt0`, present when built for the complex bootstrap.
-    pub pt0_2: Option<CKKSPlaintext<D>>,
+    pub pt0_2: Option<CKKSPlaintext<D, W>>,
     /// Per support slot, the `4*theta` `Rot_{p+c}(Ecd(pi_k(a)))` plaintexts.
-    pub pi: Vec<Vec<CKKSPlaintext<D>>>,
+    pub pi: Vec<Vec<CKKSPlaintext<D, W>>>,
 }

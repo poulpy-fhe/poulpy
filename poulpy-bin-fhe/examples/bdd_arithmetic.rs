@@ -45,7 +45,7 @@ use poulpy_cpu_ref::FFT64Ref;
 
 fn example_bdd_arithmetic<BE, BRA: BlindRotationAlgo>()
 where
-    BE: Backend<OwnedBuf = Vec<u8>> + HostBackend + 'static,
+    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend + 'static,
     Module<BE>: ModuleNew<BE>
         + ModuleN
         + GLWESecretPreparedFactory<BE>
@@ -59,7 +59,7 @@ where
         + GLWEBlindSelection<u32, BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     BE::OwnedBuf: HostDataRef + HostDataMut,
-    for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]> + 'static,
+    for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8], ZnxWord = i64> + 'static,
     for<'a> BE::BufMut<'a>: AsMut<[u8]> + AsRef<[u8]> + Sync,
 {
     ////////// Parameter Selection
@@ -165,7 +165,7 @@ where
     // and for performing the operations themselves
     let bdd_enc_infos = BDDEncryptionInfos::from_default_sigma(&bdd_layout).unwrap();
 
-    let mut bdd_key: BDDKey<Vec<u8>, BRA> = BDDKey::alloc_from_infos(&module, &bdd_layout);
+    let mut bdd_key: BDDKey<Vec<u8>, BRA, i64> = BDDKey::alloc_from_infos(&module, &bdd_layout);
     bdd_key.encrypt_sk(
         &module,
         &sk_lwe,
@@ -183,7 +183,7 @@ where
 
     let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(glwe_layout).unwrap();
 
-    let mut a_enc: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&module, &glwe_layout);
+    let mut a_enc: FheUint<Vec<u8>, u32, i64> = FheUint::alloc_from_infos(&module, &glwe_layout);
     a_enc.encrypt_sk(
         &module,
         input_a,
@@ -194,7 +194,7 @@ where
         &mut scratch.borrow(),
     );
 
-    let mut b_enc: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&module, &glwe_layout);
+    let mut b_enc: FheUint<Vec<u8>, u32, i64> = FheUint::alloc_from_infos(&module, &glwe_layout);
     b_enc.encrypt_sk(
         &module,
         input_b,
@@ -222,7 +222,7 @@ where
     b_enc_prepared.prepare(&module, &b_enc, &bdd_key_prepared, &mut scratch.borrow());
 
     // Allocating the intermediate ciphertext c_enc
-    let mut c_enc: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&module, &glwe_layout);
+    let mut c_enc: FheUint<Vec<u8>, u32, i64> = FheUint::alloc_from_infos(&module, &glwe_layout);
 
     // Performing the operation
     c_enc.add(
@@ -238,7 +238,7 @@ where
     c_enc_prepared.prepare(&module, &c_enc, &bdd_key_prepared, &mut scratch.borrow());
 
     // Creating the output ciphertext d_enc
-    let mut selected_enc: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&module, &glwe_layout);
+    let mut selected_enc: FheUint<Vec<u8>, u32, i64> = FheUint::alloc_from_infos(&module, &glwe_layout);
     selected_enc.xor(
         &module,
         &c_enc_prepared,
@@ -280,9 +280,9 @@ where
         .collect();
     let input_selector: u32 = rand::rng().random_range(0..number_of_inputs as u32);
 
-    let mut inputs_a_enc_vec: Vec<FheUint<Vec<u8>, u32>> = Vec::new();
+    let mut inputs_a_enc_vec: Vec<FheUint<Vec<u8>, u32, i64>> = Vec::new();
     for input in &inputs_a_vec {
-        let mut next_input: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&module, &glwe_layout);
+        let mut next_input: FheUint<Vec<u8>, u32, i64> = FheUint::alloc_from_infos(&module, &glwe_layout);
         next_input.encrypt_sk(
             &module,
             *input,
@@ -295,12 +295,12 @@ where
         inputs_a_enc_vec.push(next_input);
     }
 
-    let mut inputs_a_enc_vec_map: HashMap<usize, &mut FheUint<Vec<u8>, u32>> = HashMap::new();
+    let mut inputs_a_enc_vec_map: HashMap<usize, &mut FheUint<Vec<u8>, u32, i64>> = HashMap::new();
     for (i, input) in inputs_a_enc_vec.iter_mut().enumerate() {
         inputs_a_enc_vec_map.insert(i, input);
     }
 
-    let mut input_selector_enc: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&module, &glwe_layout);
+    let mut input_selector_enc: FheUint<Vec<u8>, u32, i64> = FheUint::alloc_from_infos(&module, &glwe_layout);
     input_selector_enc.encrypt_sk(
         &module,
         input_selector,

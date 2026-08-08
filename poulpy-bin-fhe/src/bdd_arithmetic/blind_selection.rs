@@ -4,12 +4,15 @@ use poulpy_core::{
     GLWECopy, GLWEDecrypt,
     layouts::{GGSWInfos, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, ModuleCoreAlloc},
 };
-use poulpy_hal::layouts::{Backend, HostDataMut, Module, ScratchArena, ZnxZero};
+use poulpy_hal::layouts::{Backend, HostDataMut, HostDataRef, Module, ScratchArena, ZnxZero};
 
 use crate::bdd_arithmetic::{Cmux, GetGGSWBit, UnsignedInteger};
+use poulpy_core::GLWEBytesOf;
 
-impl<T: UnsignedInteger, BE: Backend<OwnedBuf = Vec<u8>> + 'static> GLWEBlindSelection<T, BE> for Module<BE> where
-    Self: GLWECopy<BE> + Cmux<BE> + GLWEDecrypt<BE>
+impl<T: UnsignedInteger, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + 'static> GLWEBlindSelection<T, BE>
+    for Module<BE>
+where
+    Self: GLWECopy<BE> + Cmux<BE> + GLWEDecrypt<BE>,
 {
 }
 
@@ -26,18 +29,19 @@ impl<T: UnsignedInteger, BE: Backend<OwnedBuf = Vec<u8>> + 'static> GLWEBlindSel
 /// `bit_mask` most-significant bits of the selected index sub-field, traversing
 /// from MSB to LSB.  Indices absent from the map are treated as encryptions of
 /// zero.
-pub trait GLWEBlindSelection<T: UnsignedInteger, BE: Backend<OwnedBuf = Vec<u8>> + 'static>
+pub trait GLWEBlindSelection<T: UnsignedInteger, BE: Backend<OwnedBuf: HostDataMut + HostDataRef> + 'static>
 where
-    Self: GLWECopy<BE> + Cmux<BE> + GLWEDecrypt<BE> + ModuleCoreAlloc<OwnedBuf = Vec<u8>>,
+    Self: GLWECopy<BE> + Cmux<BE> + GLWEDecrypt<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
 {
     /// Returns the minimum scratch-space size in bytes required by
     /// [`glwe_blind_selection`][Self::glwe_blind_selection].
     fn glwe_blind_selection_tmp_bytes<R, K>(&self, res_infos: &R, k_infos: &K) -> usize
     where
+        Self: GLWEBytesOf<BE>,
         R: GLWEInfos,
         K: GGSWInfos,
     {
-        self.cmux_tmp_bytes(res_infos, res_infos, k_infos) + GLWE::<Vec<u8>>::bytes_of_from_infos(res_infos)
+        self.cmux_tmp_bytes(res_infos, res_infos, k_infos) + self.glwe_bytes_of_from_infos(res_infos)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -74,14 +78,14 @@ where
                     }
 
                     (Some(lo), None) => {
-                        let mut zero: GLWE<BE::OwnedBuf> = self.glwe_alloc_from_infos(res);
+                        let mut zero: GLWE<BE::OwnedBuf, BE::ZnxWord> = self.glwe_alloc_from_infos(res);
                         zero.data_mut().zero();
                         self.cmux_assign(lo, &zero, bit, scratch);
                         a.insert(j, lo);
                     }
 
                     (None, Some(hi)) => {
-                        let mut zero: GLWE<BE::OwnedBuf> = self.glwe_alloc_from_infos(res);
+                        let mut zero: GLWE<BE::OwnedBuf, BE::ZnxWord> = self.glwe_alloc_from_infos(res);
                         zero.data_mut().zero();
                         self.cmux_assign(&mut zero, hi, bit, scratch);
                         self.glwe_copy(hi, &zero);

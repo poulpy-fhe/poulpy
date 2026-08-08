@@ -74,11 +74,12 @@ where
             })
             .unwrap();
 
-            let mut autokey: GLWEAutomorphismKey<Vec<u8>> = module.glwe_automorphism_key_alloc_from_infos(&autokey_infos);
-            let mut ct_in: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&ct_in_infos);
-            let mut ct_out: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&ct_out_infos);
-            let mut pt_in: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&ct_in_infos);
-            let mut pt_out: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&ct_out_infos);
+            let mut autokey: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
+                module.glwe_automorphism_key_alloc_from_infos(&autokey_infos);
+            let mut ct_in: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_in_infos);
+            let mut ct_out: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_out_infos);
+            let mut pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&ct_in_infos);
+            let mut pt_out: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&ct_out_infos);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
             let mut source_xe: Source = Source::new([0u8; 32]);
@@ -98,7 +99,7 @@ where
                     | module.glwe_automorphism_tmp_bytes(&ct_out, &ct_in, &autokey),
             );
 
-            let mut sk: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(&ct_out);
+            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&ct_out);
             sk.fill_ternary_prob(0.5, &mut source_xs);
 
             let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
@@ -214,9 +215,10 @@ where
             })
             .unwrap();
 
-            let mut autokey: GLWEAutomorphismKey<Vec<u8>> = module.glwe_automorphism_key_alloc_from_infos(&autokey_infos);
-            let mut ct: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&ct_out_infos);
-            let mut pt_want: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&ct_out_infos);
+            let mut autokey: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
+                module.glwe_automorphism_key_alloc_from_infos(&autokey_infos);
+            let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_out_infos);
+            let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&ct_out_infos);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
             let mut source_xe: Source = Source::new([0u8; 32]);
@@ -236,7 +238,7 @@ where
                     | module.glwe_automorphism_tmp_bytes(&ct, &ct, &autokey),
             );
 
-            let mut sk: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(&ct);
+            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&ct);
             sk.fill_ternary_prob(0.5, &mut source_xs);
 
             let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);

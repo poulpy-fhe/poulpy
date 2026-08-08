@@ -17,30 +17,32 @@ use crate::{
     circuit_bootstrapping::{CircuitBootstrappingKey, CircuitBootstrappingKeyInfos},
 };
 
-impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>>> CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE> {
+impl<BRA: BlindRotationAlgo, BE: Backend> CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE> {
     pub fn alloc_from_infos<A, M>(module: &M, infos: &A) -> CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>
     where
         A: CircuitBootstrappingKeyInfos,
         M: CircuitBootstrappingKeyPreparedFactory<BRA, BE>,
+        BE::OwnedBuf: AsMut<[u8]> + AsRef<[u8]>,
     {
         module.circuit_bootstrapping_key_prepared_alloc_from_infos(infos)
     }
 }
 
-impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>>> CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE> {
+impl<BRA: BlindRotationAlgo, BE: Backend> CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE> {
     pub fn prepare<M>(
         &mut self,
         module: &M,
-        other: &CircuitBootstrappingKey<BE::OwnedBuf, BRA>,
+        other: &CircuitBootstrappingKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         M: CircuitBootstrappingKeyPreparedFactory<BRA, BE>,
+        BE::OwnedBuf: AsMut<[u8]> + AsRef<[u8]>,
     {
         module.circuit_bootstrapping_key_prepare(self, other, scratch);
     }
 }
 
-impl<BE: Backend<OwnedBuf = Vec<u8>>, BRA: BlindRotationAlgo> CircuitBootstrappingKeyPreparedFactory<BRA, BE> for Module<BE>
+impl<BE: Backend, BRA: BlindRotationAlgo> CircuitBootstrappingKeyPreparedFactory<BRA, BE> for Module<BE>
 where
     Self: Sized
         + BlindRotationKeyPreparedFactory<BRA, BE>
@@ -56,7 +58,7 @@ where
 /// Implemented for `Module<BE>` when the backend supports preparation of all
 /// three sub-key types.  Default method implementations delegate to the
 /// corresponding sub-key factories.
-pub trait CircuitBootstrappingKeyPreparedFactory<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>>>
+pub trait CircuitBootstrappingKeyPreparedFactory<BRA: BlindRotationAlgo, BE: Backend>
 where
     Self: Sized
         + BlindRotationKeyPreparedFactory<BRA, BE>
@@ -100,7 +102,7 @@ where
     fn circuit_bootstrapping_key_prepare(
         &self,
         res: &mut CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>,
-        other: &CircuitBootstrappingKey<BE::OwnedBuf, BRA>,
+        other: &CircuitBootstrappingKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
         // TODO(device): the prepared CBT bundle is still assembled from the

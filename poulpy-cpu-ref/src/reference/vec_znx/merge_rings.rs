@@ -19,7 +19,7 @@ pub fn vec_znx_merge_rings<'r, 'a, BE>(
     a_col: usize,
     tmp: &mut [i64],
 ) where
-    BE: Backend + ZnxCopy + ZnxSwitchRing + ZnxRotate + ZnxZero,
+    BE: Backend<ZnxWord = i64> + ZnxCopy + ZnxSwitchRing + ZnxRotate + ZnxZero,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {

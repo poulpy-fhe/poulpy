@@ -14,7 +14,7 @@ use crate::{
     CKKSMeta,
     api::{CKKSEncodingOps, ShipScalar},
     encoding::paco::coeff_enc::glwe_column_residues,
-    layouts::{CKKSCiphertext, CKKSEncodingBuffer, CKKSModuleAlloc, CKKSPlaintext, ShipCoeffEncodings, ShipPlan},
+    layouts::{CKKSCiphertext, CKKSEncodingBuffer, CKKSModuleAlloc, CKKSPlaintextOwned, ShipCoeffEncodings, ShipPlan},
 };
 
 /// Phases `(cos, sin)(2*pi*x/q0)` of a residue vector.
@@ -38,7 +38,7 @@ fn encode_reim_pt<BE, F>(
     log_delta: usize,
     re: &[F],
     im: &[F],
-) -> Result<CKKSPlaintext<BE::OwnedBuf>>
+) -> Result<CKKSPlaintextOwned<BE>>
 where
     BE: Backend,
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
@@ -66,13 +66,16 @@ where
 /// [`CKKSShipCoeffEncodingImpl`](crate::oep::CKKSShipCoeffEncodingImpl).
 pub fn ship_coeff_encodings_host<BE, D, F>(
     module: &Module<BE>,
-    ct: &CKKSCiphertext<D>,
+    ct: &CKKSCiphertext<D, BE::ZnxWord>,
     plan: &ShipPlan,
     base2k: Base2K,
     complex: bool,
-) -> Result<ShipCoeffEncodings<BE::OwnedBuf>>
+) -> Result<ShipCoeffEncodings<BE::OwnedBuf, BE::ZnxWord>>
 where
-    BE: Backend,
+    // Host reference encoder: recomposes the ciphertext limbs through the i64
+    // `decode_vec_i64` path, so it applies only to an i64-word backend. Device
+    // backends bypass it via the OEP impl.
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     D: HostDataRef,
     F: ShipScalar,
@@ -112,7 +115,7 @@ where
 
     // pt0 carries gamma/(4*i*pi): (gamma/4pi) * (sin(phi_b), -cos(phi_b)).
     let (body_cos, body_sin) = phases::<F>(&body, b2k)?;
-    let encode_pt0 = |off: usize| -> Result<CKKSPlaintext<BE::OwnedBuf>> {
+    let encode_pt0 = |off: usize| -> Result<CKKSPlaintextOwned<BE>> {
         let re: Vec<F> = (0..m).map(|i| gamma_4pi * body_sin[i + off]).collect();
         let im: Vec<F> = (0..m).map(|i| -gamma_4pi * body_cos[i + off]).collect();
         encode_reim_pt(module, base2k, kk, ld, &re, &im)

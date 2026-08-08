@@ -13,7 +13,9 @@ use crate::{
         CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSDFTOps, CKKSEvalModOps, CKKSImagOps,
         CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
     },
-    layouts::{BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertext, CKKSPlaintext, EncodedLut},
+    layouts::{
+        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned, CKKSPlaintextOwned, EncodedLut,
+    },
 };
 
 /// Backend override hook for [`CKKSBootstrappingOps`](crate::api::CKKSBootstrappingOps).
@@ -47,7 +49,7 @@ pub unsafe trait CKKSBootstrappingImpl<BE: Backend>: Backend {
         ct_out: &C1,
         ct_in: &C2,
         ctx: &BootstrappingContext<BE, F>,
-        lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+        lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
@@ -67,8 +69,8 @@ pub unsafe trait CKKSBootstrappingImpl<BE: Backend>: Backend {
     /// See [`CKKSBootstrappingOps::ckks_bootstrap`](crate::api::CKKSBootstrappingOps::ckks_bootstrap).
     fn ckks_bootstrap_impl<F, K>(
         module: &Module<BE>,
-        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -78,8 +80,8 @@ pub unsafe trait CKKSBootstrappingImpl<BE: Backend>: Backend {
 
     fn ckks_bootstrap_real<F, K>(
         module: &Module<BE>,
-        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -90,10 +92,10 @@ pub unsafe trait CKKSBootstrappingImpl<BE: Backend>: Backend {
     #[allow(clippy::too_many_arguments)]
     fn ckks_functional_bootstrap<F, K>(
         module: &Module<BE>,
-        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
-        lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+        lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -103,10 +105,10 @@ pub unsafe trait CKKSBootstrappingImpl<BE: Backend>: Backend {
     #[allow(clippy::too_many_arguments)]
     fn ckks_functional_bootstrap_real<F, K>(
         module: &Module<BE>,
-        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
-        lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+        lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -116,10 +118,10 @@ pub unsafe trait CKKSBootstrappingImpl<BE: Backend>: Backend {
     #[allow(clippy::too_many_arguments)]
     fn ckks_functional_bootstrap_multi<F, K>(
         module: &Module<BE>,
-        ct_outs: &mut [CKKSCiphertext<BE::OwnedBuf>],
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_outs: &mut [CKKSCiphertextOwned<BE>],
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
-        luts: &[EncodedLut<CKKSPlaintext<BE::OwnedBuf>>],
+        luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -145,8 +147,7 @@ where
         + CKKSMulOps<BE>
         + CKKSAffineOps<BE>
         + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf>:
-        GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     fn ckks_mod_up_tmp_bytes_impl(module: &Module<BE>) -> usize {
@@ -172,7 +173,7 @@ where
         ct_out: &C1,
         ct_in: &C2,
         ctx: &BootstrappingContext<BE, F>,
-        lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+        lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
@@ -197,8 +198,8 @@ where
 
     fn ckks_bootstrap_impl<F, K>(
         module: &Module<BE>,
-        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -211,8 +212,8 @@ where
 
     fn ckks_bootstrap_real<F, K>(
         module: &Module<BE>,
-        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -225,10 +226,10 @@ where
 
     fn ckks_functional_bootstrap<F, K>(
         module: &Module<BE>,
-        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
-        lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+        lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -240,10 +241,10 @@ where
 
     fn ckks_functional_bootstrap_real<F, K>(
         module: &Module<BE>,
-        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
-        lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+        lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -255,10 +256,10 @@ where
 
     fn ckks_functional_bootstrap_multi<F, K>(
         module: &Module<BE>,
-        ct_outs: &mut [CKKSCiphertext<BE::OwnedBuf>],
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_outs: &mut [CKKSCiphertextOwned<BE>],
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
-        luts: &[EncodedLut<CKKSPlaintext<BE::OwnedBuf>>],
+        luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>

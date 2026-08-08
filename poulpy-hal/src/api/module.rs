@@ -22,16 +22,16 @@ where
 
 /// Allocates backend-owned [`ScalarZnx`](crate::layouts::ScalarZnx) layouts.
 pub trait ScalarZnxAlloc<B: Backend>: ModuleN {
-    fn scalar_znx_alloc(&self, cols: usize) -> ScalarZnx<B::OwnedBuf>;
+    fn scalar_znx_alloc(&self, cols: usize) -> ScalarZnx<B::OwnedBuf, B::ZnxWord>;
 }
 
 /// Allocates backend-owned [`VecZnx`](crate::layouts::VecZnx) layouts.
 pub trait VecZnxAlloc<B: Backend>: ModuleN {
-    fn vec_znx_alloc(&self, cols: usize, size: usize) -> VecZnx<B::OwnedBuf>;
-    fn vec_znx_alloc_with_max_size(&self, cols: usize, size: usize, max_size: usize) -> VecZnx<B::OwnedBuf>;
+    fn vec_znx_alloc(&self, cols: usize, size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord>;
+    fn vec_znx_alloc_with_max_size(&self, cols: usize, size: usize, max_size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord>;
 }
 
 /// Allocates backend-owned [`MatZnx`](crate::layouts::MatZnx) layouts.
 pub trait MatZnxAlloc<B: Backend>: ModuleN {
-    fn mat_znx_alloc(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> MatZnx<B::OwnedBuf>;
+    fn mat_znx_alloc(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> MatZnx<B::OwnedBuf, B::ZnxWord>;
 }

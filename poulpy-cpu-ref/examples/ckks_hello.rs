@@ -103,7 +103,7 @@ fn main() -> Result<()> {
     let b_re: Vec<f64> = (0..M).map(|i| 0.25 + 0.5 * (i as f64 / M as f64)).collect();
     let zeros = vec![0.0f64; M];
 
-    let mut encrypt = |re: &[f64]| -> Result<CKKSCiphertext<Vec<u8>>> {
+    let mut encrypt = |re: &[f64]| -> Result<CKKSCiphertext<Vec<u8>, i64>> {
         let mut pt = module.ckks_pt_vec_alloc(BASE2K.into(), CT_K.into());
         pt.set_meta(meta);
         module.ckks_encode_reim_into(&mut pt, re, &zeros, &mut scratch.borrow())?;

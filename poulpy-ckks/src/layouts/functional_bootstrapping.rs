@@ -6,7 +6,7 @@ use poulpy_hal::layouts::{HostBytesBackend, Module};
 use crate::{
     CKKSInfos, CoeffsMeta, SetCKKSInfos,
     eval_lut::{cos_hermite_binary, trig_hermite_lut},
-    layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar},
+    layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, CKKSScalar},
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
 };
 
@@ -24,7 +24,7 @@ pub(crate) enum EncodedLutKind<P> {
     },
 }
 
-impl EncodedLut<CKKSPlaintext<Vec<u8>>> {
+impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
     pub fn general<F>(
         host_module: &Module<HostBytesBackend>,
         table: &[F],
@@ -34,7 +34,7 @@ impl EncodedLut<CKKSPlaintext<Vec<u8>>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst,
-        CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
     {
         let log_msg_ratio = table_log_msg_ratio(table.len())?;
         let bsgs = trig_hermite_lut(table).encode_bsgs_with(host_module, base2k, coeffs_meta, strategy)?;
@@ -58,7 +58,7 @@ impl EncodedLut<CKKSPlaintext<Vec<u8>>> {
     ) -> Result<Self>
     where
         F: CKKSScalar + Float + FloatConst,
-        CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
     {
         let (cos_poly, affine) = cos_hermite_binary(f0, f1, degree, k_interval, log_interval_reduction)?;
         let cos = <Polynomial<F> as EncodeBSGS>::encode_bsgs_with(&cos_poly, host_module, base2k, coeffs_meta, strategy)?;

@@ -146,14 +146,14 @@ pub trait CKKSMulAddOps<BE: Backend> {
     /// the digit-growth analysis and safety bound.
     fn ckks_mul_add_pt_const_into_unnormalized<Dst: Data, A, P>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst>,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
         a: &A,
         pt: &P,
         pt_coeff: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        GLWE<Dst>: GLWEToBackendMut<BE>,
+        GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
 
@@ -163,13 +163,13 @@ pub trait CKKSMulAddOps<BE: Backend> {
     /// [`Self::ckks_mul_add_pt_const_into_unnormalized`].
     fn ckks_mul_add_pt_vec_into_unnormalized<Dst: Data, A, P>(
         &self,
-        dst: &mut UnnormalizedCKKSCiphertext<Dst>,
+        dst: &mut UnnormalizedCKKSCiphertext<Dst, BE::ZnxWord>,
         a: &A,
         pt: &P,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        GLWE<Dst>: GLWEToBackendMut<BE>,
+        GLWE<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds;
 }
@@ -417,16 +417,16 @@ pub trait CKKSDotProductOps<BE: Backend> {
     /// ```
     fn ckks_dot_product_ct<Dst: Data, D: Data, E: Data, T: Data>(
         &self,
-        dst: &mut CKKSCiphertext<Dst>,
-        a: &[&CKKSCiphertext<D>],
-        b: &[&CKKSCiphertext<E>],
+        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord>,
+        a: &[&CKKSCiphertext<D, BE::ZnxWord>],
+        b: &[&CKKSCiphertext<E, BE::ZnxWord>],
         tsk: &GLWETensorKeyPrepared<T, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<D>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
-        CKKSCiphertext<E>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
+        CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
+        CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
+        CKKSCiphertext<E, BE::ZnxWord>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
         GLWETensorKeyPrepared<T, BE>: GLWETensorKeyPreparedToBackendRef<BE>;
 
     /// Computes `dst = Σ a[i] * b[i]` over ciphertext–plaintext-polynomial pairs.
@@ -442,14 +442,14 @@ pub trait CKKSDotProductOps<BE: Backend> {
     /// ```
     fn ckks_dot_product_pt_vec<Dst: Data, D: Data, E>(
         &self,
-        dst: &mut CKKSCiphertext<Dst>,
-        a: &[&CKKSCiphertext<D>],
+        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord>,
+        a: &[&CKKSCiphertext<D, BE::ZnxWord>],
         b: &[&E],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<D>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
+        CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
+        CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
         E: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos;
 
     /// Computes `dst = Σ a[i] * b[i][pt_coeffs[i]]` over ciphertext–scalar-constant pairs.
@@ -458,14 +458,14 @@ pub trait CKKSDotProductOps<BE: Backend> {
     /// Metadata follows the same rule as [`Self::ckks_dot_product_pt_vec`].
     fn ckks_dot_product_pt_const<Dst: Data, D: Data, E>(
         &self,
-        dst: &mut CKKSCiphertext<Dst>,
-        a: &[&CKKSCiphertext<D>],
+        dst: &mut CKKSCiphertext<Dst, BE::ZnxWord>,
+        a: &[&CKKSCiphertext<D, BE::ZnxWord>],
         b: &[&E],
         pt_coeffs: &[usize],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        CKKSCiphertext<Dst>: GLWEToBackendMut<BE>,
-        CKKSCiphertext<D>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
+        CKKSCiphertext<Dst, BE::ZnxWord>: GLWEToBackendMut<BE>,
+        CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE> + LWEInfos + GLWEInfos,
         E: GLWEToBackendRef<BE> + CKKSCtBounds + IntPolyInfos;
 }

@@ -3,7 +3,7 @@ use std::ops::{Deref, DerefMut};
 use crate::layouts::{
     Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecLReborrowBackendMut, CnvPVecLReborrowBackendRef,
     CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, CnvPVecRReborrowBackendMut,
-    CnvPVecRReborrowBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, MatZnx, MatZnxBackendMut, MatZnxBackendRef,
+    CnvPVecRReborrowBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, MatZnxBackendMut, MatZnxBackendRef,
     MatZnxToBackendMut, MatZnxToBackendRef, ScalarZnx, ScalarZnxBackendMut, ScalarZnxBackendRef, ScalarZnxToBackendMut,
     ScalarZnxToBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, SvpPPolReborrowBackendMut, SvpPPolReborrowBackendRef,
     SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
@@ -70,10 +70,10 @@ macro_rules! view_wrapper {
 
 view_wrapper!(CnvPVecLViewMut, CnvPVecLBackendMut<'a, B>);
 view_wrapper!(CnvPVecRViewMut, CnvPVecRBackendMut<'a, B>);
-view_wrapper!(MatZnxViewMut, MatZnx<B::BufMut<'a>>);
-view_wrapper!(ScalarZnxViewMut, ScalarZnx<B::BufMut<'a>>);
+view_wrapper!(MatZnxViewMut, MatZnxBackendMut<'a, B>);
+view_wrapper!(ScalarZnxViewMut, ScalarZnxBackendMut<'a, B>);
 view_wrapper!(SvpPPolViewMut, SvpPPolBackendMut<'a, B>);
-view_wrapper!(VecZnxViewMut, VecZnx<B::BufMut<'a>>);
+view_wrapper!(VecZnxViewMut, VecZnxBackendMut<'a, B>);
 view_wrapper!(VecZnxBigViewMut, VecZnxBigBackendMut<'a, B>);
 view_wrapper!(VecZnxDftViewMut, VecZnxDftBackendMut<'a, B>);
 view_wrapper!(VmpPMatViewMut, VmpPMatBackendMut<'a, B>);
@@ -142,13 +142,13 @@ impl<'a, B: Backend + 'a> SvpPPolToBackendMut<B> for SvpPPolViewMut<'a, B> {
 
 impl<'a, B: Backend + 'a> VecZnxToBackendRef<B> for VecZnxViewMut<'a, B> {
     fn to_backend_ref(&self) -> VecZnxBackendRef<'_, B> {
-        <VecZnx<B::BufMut<'a>> as VecZnxReborrowBackendRef<B>>::reborrow_backend_ref(&self.inner)
+        <VecZnx<B::BufMut<'a>, B::ZnxWord> as VecZnxReborrowBackendRef<B>>::reborrow_backend_ref(&self.inner)
     }
 }
 
 impl<'a, B: Backend + 'a> VecZnxToBackendMut<B> for VecZnxViewMut<'a, B> {
     fn to_backend_mut(&mut self) -> VecZnxBackendMut<'_, B> {
-        <VecZnx<B::BufMut<'a>> as VecZnxReborrowBackendMut<B>>::reborrow_backend_mut(&mut self.inner)
+        <VecZnx<B::BufMut<'a>, B::ZnxWord> as VecZnxReborrowBackendMut<B>>::reborrow_backend_mut(&mut self.inner)
     }
 }
 

@@ -11,7 +11,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-pub fn bench_vec_znx_normalize<B: Backend>(c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_normalize<B: Backend<ZnxWord = i64>>(c: &mut Criterion, label: &str)
 where
     Module<B>: VecZnxNormalize<B> + ModuleNew<B> + VecZnxNormalizeTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -21,7 +21,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(params: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(params: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxNormalize<B> + ModuleNew<B> + VecZnxNormalizeTmpBytes,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -45,8 +45,8 @@ where
         let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.vec_znx_normalize_tmp_bytes());
         let res_offset: i64 = 0;
         move || {
-            let a = <VecZnx<B::OwnedBuf> as VecZnxToBackendRef<B>>::to_backend_ref(&a);
-            let mut res = <VecZnx<B::OwnedBuf> as VecZnxToBackendMut<B>>::to_backend_mut(&mut res);
+            let a = <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendRef<B>>::to_backend_ref(&a);
+            let mut res = <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendMut<B>>::to_backend_mut(&mut res);
             for i in 0..cols {
                 module.vec_znx_normalize(&mut res, base2k, res_offset, i, &a, base2k, i, &mut scratch.borrow());
             }
@@ -63,7 +63,7 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_normalize_assign<B: Backend>(c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_normalize_assign<B: Backend<ZnxWord = i64>>(c: &mut Criterion, label: &str)
 where
     Module<B>: VecZnxNormalizeAssignBackend<B> + ModuleNew<B> + VecZnxNormalizeTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -73,7 +73,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(params: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(params: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxNormalizeAssignBackend<B> + ModuleNew<B> + VecZnxNormalizeTmpBytes,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -95,7 +95,7 @@ where
         let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.vec_znx_normalize_tmp_bytes());
 
         move || {
-            let mut a = <VecZnx<B::OwnedBuf> as VecZnxToBackendMut<B>>::to_backend_mut(&mut a);
+            let mut a = <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendMut<B>>::to_backend_mut(&mut a);
             for i in 0..cols {
                 module.vec_znx_normalize_assign_backend(base2k, &mut a, i, &mut scratch.borrow());
             }

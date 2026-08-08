@@ -38,10 +38,23 @@ use rand_distr::num_traits::Zero;
 pub trait ZnxWord: Pod + Copy + Zero + Display + Debug + Send + Sync + PartialEq + 'static {
     /// Bit width of the word (64 for `i64`).
     const BITS: usize;
+
+    /// Builds a word from a signed integer, truncating to [`Self::BITS`].
+    ///
+    /// This is what lets coefficient sampling (`FillUniform`, the ternary and
+    /// binary secret fills) be written once against any word instead of being
+    /// pinned to `i64`. Callers are responsible for supplying a value that
+    /// already fits the word; truncation is defined but not meaningful.
+    fn from_i64(value: i64) -> Self;
 }
 
 impl ZnxWord for i64 {
     const BITS: usize = 64;
+
+    #[inline(always)]
+    fn from_i64(value: i64) -> Self {
+        value
+    }
 }
 
 /// Extended-precision (big) word of [`VecZnxBig`](crate::layouts::VecZnxBig):

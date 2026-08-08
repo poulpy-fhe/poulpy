@@ -9,10 +9,11 @@
 //! [`PaCoKeys`](crate::layouts::PaCoKeys).
 
 use crate::CKKSResult as Result;
+use crate::layouts::CKKSPlaintextOwned;
 use crate::{
     CKKSCtBounds,
     api::CKKSEncodingScalar,
-    layouts::{CKKSCiphertext, CKKSPlaintext, PaCoContext, PaCoKeys, PaCoWorker},
+    layouts::{CKKSCiphertextOwned, PaCoContext, PaCoKeys, PaCoWorker},
 };
 
 use poulpy_core::layouts::GLWEToBackendRef;
@@ -81,7 +82,7 @@ pub trait CKKSPaCoOps<BE: Backend, F: PaCoScalar> {
     /// context, and key layouts are validated while computing the bound.
     fn ckks_paco_bootstrap_direct_tmp_bytes<K, Src>(
         &self,
-        output: &CKKSCiphertext<BE::OwnedBuf>,
+        output: &CKKSCiphertextOwned<BE>,
         input: &Src,
         context: &PaCoContext<BE, F>,
         keys: &K,
@@ -98,7 +99,7 @@ pub trait CKKSPaCoOps<BE: Backend, F: PaCoScalar> {
     /// returned by [`Self::ckks_paco_bootstrap_direct_tmp_bytes`].
     fn ckks_paco_bootstrap_tmp_bytes<K, Src>(
         &self,
-        output: &CKKSCiphertext<BE::OwnedBuf>,
+        output: &CKKSCiphertextOwned<BE>,
         input: &Src,
         context: &PaCoContext<BE, F>,
         keys: &K,
@@ -123,7 +124,7 @@ pub trait CKKSPaCoOps<BE: Backend, F: PaCoScalar> {
         ciphertext: &Src,
         context: &PaCoContext<BE, F>,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<[CKKSPlaintext<BE::OwnedBuf>; 4]>
+    ) -> Result<[CKKSPlaintextOwned<BE>; 4]>
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds;
 
@@ -134,7 +135,7 @@ pub trait CKKSPaCoOps<BE: Backend, F: PaCoScalar> {
     /// recombined in increasing branch order, making the result deterministic.
     fn ckks_paco_bootstrap_direct_into<K, Src>(
         &self,
-        output: &mut CKKSCiphertext<BE::OwnedBuf>,
+        output: &mut CKKSCiphertextOwned<BE>,
         input: &Src,
         context: &PaCoContext<BE, F>,
         keys: &K,
@@ -153,7 +154,7 @@ pub trait CKKSPaCoOps<BE: Backend, F: PaCoScalar> {
     /// their application key.
     fn ckks_paco_bootstrap_into<K, Src>(
         &self,
-        output: &mut CKKSCiphertext<BE::OwnedBuf>,
+        output: &mut CKKSCiphertextOwned<BE>,
         input: &Src,
         context: &PaCoContext<BE, F>,
         keys: &K,
@@ -177,7 +178,7 @@ pub trait CKKSPaCoOps<BE: Backend, F: PaCoScalar> {
     )]
     fn ckks_paco_bootstrap_parallel_direct_into<K, Src>(
         &self,
-        output: &mut CKKSCiphertext<BE::OwnedBuf>,
+        output: &mut CKKSCiphertextOwned<BE>,
         input: &Src,
         context: &PaCoContext<BE, F>,
         keys: &K,
@@ -198,7 +199,7 @@ pub trait CKKSPaCoOps<BE: Backend, F: PaCoScalar> {
     )]
     fn ckks_paco_bootstrap_parallel_into<K, Src>(
         &self,
-        output: &mut CKKSCiphertext<BE::OwnedBuf>,
+        output: &mut CKKSCiphertextOwned<BE>,
         input: &Src,
         context: &PaCoContext<BE, F>,
         keys: &K,

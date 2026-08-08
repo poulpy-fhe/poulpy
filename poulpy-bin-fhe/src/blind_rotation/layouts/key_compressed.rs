@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::ModuleN,
-    layouts::{Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, WriterTo},
+    layouts::{Data, FillUniform, HostDataMut, HostDataRef, ReaderFrom, WriterTo, ZnxWord},
     source::Source,
 };
 
@@ -38,25 +38,28 @@ use crate::blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos};
 /// Implements [`ReaderFrom`] and [`WriterTo`].  The binary format is identical
 /// in structure to `BlindRotationKey` but each element is `GGSWCompressed`.
 #[derive(Clone)]
-pub struct BlindRotationKeyCompressed<D: Data, BRT: BlindRotationAlgo> {
-    pub(crate) keys: Vec<GGSWCompressed<D>>,
+pub struct BlindRotationKeyCompressed<D: Data, BRT: BlindRotationAlgo, W: ZnxWord> {
+    pub(crate) keys: Vec<GGSWCompressed<D, W>>,
     pub(crate) dist: Distribution,
     pub(crate) _phantom: PhantomData<BRT>,
 }
 
 /// Algorithm-specific factory for allocating a [`BlindRotationKeyCompressed`].
 pub trait BlindRotationKeyCompressedFactory<BRA: BlindRotationAlgo> {
-    fn blind_rotation_key_compressed_alloc<M, A>(module: &M, infos: &A) -> BlindRotationKeyCompressed<Vec<u8>, BRA>
+    fn blind_rotation_key_compressed_alloc<M, A>(
+        module: &M,
+        infos: &A,
+    ) -> BlindRotationKeyCompressed<M::OwnedBuf, BRA, M::ZnxWord>
     where
         M: ModuleCoreCompressedAlloc + ModuleN,
         A: BlindRotationKeyInfos;
 }
 
-impl<BRA: BlindRotationAlgo> BlindRotationKeyCompressed<Vec<u8>, BRA>
+impl<BRA: BlindRotationAlgo> BlindRotationKeyCompressed<Vec<u8>, BRA, i64>
 where
     Self: BlindRotationKeyCompressedFactory<BRA>,
 {
-    pub fn alloc<M, A>(module: &M, infos: &A) -> BlindRotationKeyCompressed<Vec<u8>, BRA>
+    pub fn alloc<M, A>(module: &M, infos: &A) -> BlindRotationKeyCompressed<M::OwnedBuf, BRA, M::ZnxWord>
     where
         M: ModuleCoreCompressedAlloc + ModuleN,
         A: BlindRotationKeyInfos,
@@ -65,13 +68,13 @@ where
     }
 }
 
-impl<D: HostDataRef, BRT: BlindRotationAlgo> fmt::Debug for BlindRotationKeyCompressed<D, BRT> {
+impl<D: HostDataRef, BRT: BlindRotationAlgo, W: ZnxWord> fmt::Debug for BlindRotationKeyCompressed<D, BRT, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: Data, BRT: BlindRotationAlgo> PartialEq for BlindRotationKeyCompressed<D, BRT> {
+impl<D: Data, BRT: BlindRotationAlgo, W: ZnxWord> PartialEq for BlindRotationKeyCompressed<D, BRT, W> {
     fn eq(&self, other: &Self) -> bool {
         if self.keys.len() != other.keys.len() {
             return false;
@@ -85,9 +88,9 @@ impl<D: Data, BRT: BlindRotationAlgo> PartialEq for BlindRotationKeyCompressed<D
     }
 }
 
-impl<D: Data, BRT: BlindRotationAlgo> Eq for BlindRotationKeyCompressed<D, BRT> {}
+impl<D: Data, BRT: BlindRotationAlgo, W: ZnxWord> Eq for BlindRotationKeyCompressed<D, BRT, W> {}
 
-impl<D: HostDataRef, BRT: BlindRotationAlgo> fmt::Display for BlindRotationKeyCompressed<D, BRT> {
+impl<D: HostDataRef, BRT: BlindRotationAlgo, W: ZnxWord> fmt::Display for BlindRotationKeyCompressed<D, BRT, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for (i, key) in self.keys.iter().enumerate() {
             write!(f, "key[{i}]: {key}")?;
@@ -96,13 +99,13 @@ impl<D: HostDataRef, BRT: BlindRotationAlgo> fmt::Display for BlindRotationKeyCo
     }
 }
 
-impl<D: HostDataMut, BRT: BlindRotationAlgo> FillUniform for BlindRotationKeyCompressed<D, BRT> {
+impl<D: HostDataMut, BRT: BlindRotationAlgo, W: ZnxWord> FillUniform for BlindRotationKeyCompressed<D, BRT, W> {
     fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
         self.keys.iter_mut().for_each(|key| key.fill_uniform(log_bound, source));
     }
 }
 
-impl<D: HostDataMut, BRT: BlindRotationAlgo> ReaderFrom for BlindRotationKeyCompressed<D, BRT> {
+impl<D: HostDataMut, BRT: BlindRotationAlgo, W: ZnxWord> ReaderFrom for BlindRotationKeyCompressed<D, BRT, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.dist = Distribution::read_from(reader)?;
         let len: usize = reader.read_u64::<LittleEndian>()? as usize;
@@ -119,8 +122,8 @@ impl<D: HostDataMut, BRT: BlindRotationAlgo> ReaderFrom for BlindRotationKeyComp
     }
 }
 
-impl<D: HostDataRef, BRT: BlindRotationAlgo> WriterTo for BlindRotationKeyCompressed<D, BRT> {
-    fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+impl<D: HostDataRef, BRT: BlindRotationAlgo, W: ZnxWord> WriterTo for BlindRotationKeyCompressed<D, BRT, W> {
+    fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         match self.dist.write_to(writer) {
             Ok(()) => {}
             Err(e) => return Err(e),
@@ -133,7 +136,7 @@ impl<D: HostDataRef, BRT: BlindRotationAlgo> WriterTo for BlindRotationKeyCompre
     }
 }
 
-impl<D: HostDataRef, BRA: BlindRotationAlgo> BlindRotationKeyInfos for BlindRotationKeyCompressed<D, BRA> {
+impl<D: HostDataRef, BRA: BlindRotationAlgo, W: ZnxWord> BlindRotationKeyInfos for BlindRotationKeyCompressed<D, BRA, W> {
     fn n_glwe(&self) -> Degree {
         self.n()
     }
@@ -143,7 +146,7 @@ impl<D: HostDataRef, BRA: BlindRotationAlgo> BlindRotationKeyInfos for BlindRota
     }
 }
 
-impl<D: HostDataRef, BRA: BlindRotationAlgo> LWEInfos for BlindRotationKeyCompressed<D, BRA> {
+impl<D: HostDataRef, BRA: BlindRotationAlgo, W: ZnxWord> LWEInfos for BlindRotationKeyCompressed<D, BRA, W> {
     fn n(&self) -> Degree {
         self.keys[0].n()
     }
@@ -161,13 +164,13 @@ impl<D: HostDataRef, BRA: BlindRotationAlgo> LWEInfos for BlindRotationKeyCompre
     }
 }
 
-impl<D: HostDataRef, BRA: BlindRotationAlgo> GLWEInfos for BlindRotationKeyCompressed<D, BRA> {
+impl<D: HostDataRef, BRA: BlindRotationAlgo, W: ZnxWord> GLWEInfos for BlindRotationKeyCompressed<D, BRA, W> {
     fn rank(&self) -> poulpy_core::layouts::Rank {
         self.keys[0].rank()
     }
 }
 
-impl<D: HostDataRef, BRA: BlindRotationAlgo> GGSWInfos for BlindRotationKeyCompressed<D, BRA> {
+impl<D: HostDataRef, BRA: BlindRotationAlgo, W: ZnxWord> GGSWInfos for BlindRotationKeyCompressed<D, BRA, W> {
     fn k_aux(&self) -> poulpy_core::layouts::TorusPrecision {
         self.keys[0].k_aux()
     }
@@ -181,7 +184,7 @@ impl<D: HostDataRef, BRA: BlindRotationAlgo> GGSWInfos for BlindRotationKeyCompr
     }
 }
 
-impl<D: HostDataRef, BRA: BlindRotationAlgo> BlindRotationKeyCompressed<D, BRA> {
+impl<D: HostDataRef, BRA: BlindRotationAlgo, W: ZnxWord> BlindRotationKeyCompressed<D, BRA, W> {
     #[allow(dead_code)]
     pub(crate) fn block_size(&self) -> usize {
         match self.dist {

@@ -11,7 +11,7 @@ use poulpy_core::layouts::{
     SetBSGSMeta,
     prepared::{GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, HostBytesBackend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
@@ -19,7 +19,9 @@ use crate::{
         Basis, CKKSAddOps, CKKSAffineOps, CKKSConjugateOps, CKKSCopyOps, CKKSEvalModOps, CKKSMulOps, CKKSPolynomialEvaluationOps,
         CKKSPow2Ops, CKKSSubOps,
     },
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar, eval_mod::EvalMod},
+    layouts::{
+        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, CKKSScalar, eval_mod::EvalMod,
+    },
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial},
     power_basis::{PowerBasis, PowerBasisGen},
 };
@@ -29,7 +31,7 @@ use crate::{
 pub fn trig_hermite_lut<F>(f: &[F]) -> ComplexPolynomial<F>
 where
     F: CKKSScalar + Float + FloatConst,
-    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>,
+    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
 {
     let p = f.len();
     let two = F::one() + F::one();
@@ -63,8 +65,8 @@ pub fn ckks_eval_lut<BE, F, K, C, R>(
     module: &Module<BE>,
     res: &mut R,
     ct: &C,
-    eval_exp: &EvalMod<F, CKKSPlaintext<BE::OwnedBuf>>,
-    lut: &ComplexBSGSPolynomial<CKKSPlaintext<BE::OwnedBuf>>,
+    eval_exp: &EvalMod<F, CKKSPlaintextOwned<BE>>,
+    lut: &ComplexBSGSPolynomial<CKKSPlaintextOwned<BE>>,
     conj_key: &K,
     tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
     scratch: &mut ScratchArena<'_, BE>,
@@ -100,10 +102,10 @@ where
 #[allow(clippy::too_many_arguments)]
 pub fn ckks_eval_lut_multi<BE, F, K, C>(
     module: &Module<BE>,
-    res: &mut [CKKSCiphertext<BE::OwnedBuf>],
+    res: &mut [CKKSCiphertextOwned<BE>],
     ct: &C,
-    eval_exp: &EvalMod<F, CKKSPlaintext<BE::OwnedBuf>>,
-    luts: &[&ComplexBSGSPolynomial<CKKSPlaintext<BE::OwnedBuf>>],
+    eval_exp: &EvalMod<F, CKKSPlaintextOwned<BE>>,
+    luts: &[&ComplexBSGSPolynomial<CKKSPlaintextOwned<BE>>],
     conj_key: &K,
     tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
     scratch: &mut ScratchArena<'_, BE>,
@@ -153,7 +155,7 @@ where
 
     let mut conj = module.ckks_ciphertext_alloc(base2k, k);
     for (res_i, lut) in res.iter_mut().zip(luts) {
-        module.ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<BE::OwnedBuf>, _, _>(
+        module.ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             res_i,
             lut,
             &power_basis,
@@ -176,7 +178,7 @@ pub fn cos_hermite_binary<F>(
 ) -> Result<(Polynomial<F>, [F; 2])>
 where
     F: CKKSScalar + Float + FloatConst,
-    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>,
+    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
 {
     let two = F::one() + F::one();
     let two_pi = two * F::PI();
@@ -196,9 +198,9 @@ pub fn ckks_eval_lut_binary<BE, C, R>(
     module: &Module<BE>,
     res: &mut R,
     ct: &C,
-    cos_bsgs: &BSGSPolynomial<CKKSPlaintext<BE::OwnedBuf>>,
+    cos_bsgs: &BSGSPolynomial<CKKSPlaintextOwned<BE>>,
     log_interval_reduction: usize,
-    affine: &CKKSPlaintext<BE::OwnedBuf>,
+    affine: &CKKSPlaintextOwned<BE>,
     tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>

@@ -139,8 +139,8 @@ pub use bootstrapping_keys::{
     BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, EncapsulationKeysLayout,
 };
 pub use ciphertext::{
-    CKKSCiphertext, CKKSCiphertextViewMut, CKKSNormalizationState, Normalized, ScratchArenaTakeCKKS, Unnormalized,
-    UnnormalizedCKKSCiphertext,
+    CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSNormalizationState, Normalized, ScratchArenaTakeCKKS,
+    Unnormalized, UnnormalizedCKKSCiphertext,
 };
 pub use complex_diagonals::ComplexDiagonals;
 pub use dft::{
@@ -163,7 +163,7 @@ pub use paco::{
     PaCoContext, PaCoDFTPlan, PaCoKeyParameters, PaCoKeySet, PaCoKeySetParts, PaCoKeys, PaCoKeysPrepared, PaCoKeysPreparedParts,
     PaCoPlan, PaCoSecretSpec, PaCoSlotOrder, PaCoWorker,
 };
-pub use plaintext::{CKKSPlaintext, CKKSPlaintextViewMut};
+pub use plaintext::{CKKSPlaintext, CKKSPlaintextOwned, CKKSPlaintextViewMut};
 pub use ship::{
     HMuxRotKey, HMuxRotKeyPrepared, ShipCoeffEncodings, ShipIndexKeys, ShipIndexKeysPrepared, ShipKeyParameters, ShipKeySet,
     ShipKeysLayout, ShipKeysPrepared, ShipPlan, ShipSecretSpec,

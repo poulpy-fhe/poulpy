@@ -23,23 +23,23 @@ where
 }
 
 impl<B: Backend> ScalarZnxAlloc<B> for Module<B> {
-    fn scalar_znx_alloc(&self, cols: usize) -> ScalarZnx<B::OwnedBuf> {
+    fn scalar_znx_alloc(&self, cols: usize) -> ScalarZnx<B::OwnedBuf, B::ZnxWord> {
         Module::<B>::scalar_znx_alloc(self, cols)
     }
 }
 
 impl<B: Backend> VecZnxAlloc<B> for Module<B> {
-    fn vec_znx_alloc(&self, cols: usize, size: usize) -> VecZnx<B::OwnedBuf> {
+    fn vec_znx_alloc(&self, cols: usize, size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord> {
         Module::<B>::vec_znx_alloc(self, cols, size)
     }
 
-    fn vec_znx_alloc_with_max_size(&self, cols: usize, size: usize, max_size: usize) -> VecZnx<B::OwnedBuf> {
+    fn vec_znx_alloc_with_max_size(&self, cols: usize, size: usize, max_size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord> {
         Module::<B>::vec_znx_alloc_with_max_size(self, cols, size, max_size)
     }
 }
 
 impl<B: Backend> MatZnxAlloc<B> for Module<B> {
-    fn mat_znx_alloc(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> MatZnx<B::OwnedBuf> {
+    fn mat_znx_alloc(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> MatZnx<B::OwnedBuf, B::ZnxWord> {
         Module::<B>::mat_znx_alloc(self, rows, cols_in, cols_out, size)
     }
 }

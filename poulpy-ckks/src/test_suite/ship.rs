@@ -5,7 +5,7 @@ use std::f64::consts::TAU;
 use poulpy_core::{
     GLWEZero, ModuleTransfer,
     layouts::{
-        BackendGLWESecret, GLWESecret, GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
+        BackendGLWESecret, GLWESecretPreparedFactory, GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
         prepared::GLWESecretPrepared,
     },
 };
@@ -66,7 +66,7 @@ fn gen_sk_with_host<BE>(
     host_module: &Module<HostBytesBackend>,
     seed: [u8; 32],
 ) -> (
-    GLWESecret<Vec<u8>>,
+    BackendGLWESecret<HostBytesBackend>,
     BackendGLWESecret<BE>,
     GLWESecretPrepared<BE::OwnedBuf, BE>,
 )

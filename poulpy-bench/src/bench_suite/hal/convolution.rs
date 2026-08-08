@@ -19,7 +19,7 @@ use poulpy_hal::{
 
 pub fn bench_cnv_prepare_left<BE>(params: &crate::params::CnvSweepParams, c: &mut Criterion, label: &str)
 where
-    BE: Backend + 'static,
+    BE: Backend<ZnxWord = i64> + 'static,
     Module<BE>: ModuleNew<BE> + Convolution<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -29,7 +29,7 @@ where
 
     fn runner<BE>(n: usize, size: usize) -> impl FnMut()
     where
-        BE: Backend + 'static,
+        BE: Backend<ZnxWord = i64> + 'static,
         Module<BE>: ModuleNew<BE> + Convolution<BE> + CnvPVecAlloc<BE>,
         ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     {
@@ -67,7 +67,7 @@ where
 
 pub fn bench_cnv_prepare_right<BE>(params: &crate::params::CnvSweepParams, c: &mut Criterion, label: &str)
 where
-    BE: Backend + 'static,
+    BE: Backend<ZnxWord = i64> + 'static,
     Module<BE>: ModuleNew<BE> + Convolution<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -77,7 +77,7 @@ where
 
     fn runner<BE>(n: usize, size: usize) -> impl FnMut()
     where
-        BE: Backend + 'static,
+        BE: Backend<ZnxWord = i64> + 'static,
         Module<BE>: ModuleNew<BE> + Convolution<BE> + CnvPVecAlloc<BE>,
         ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     {
@@ -115,7 +115,7 @@ where
 
 pub fn bench_cnv_apply_dft<BE>(params: &crate::params::CnvSweepParams, c: &mut Criterion, label: &str)
 where
-    BE: Backend + 'static,
+    BE: Backend<ZnxWord = i64> + 'static,
     Module<BE>: ModuleNew<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -125,7 +125,7 @@ where
 
     fn runner<BE>(n: usize, size: usize) -> impl FnMut()
     where
-        BE: Backend + 'static,
+        BE: Backend<ZnxWord = i64> + 'static,
         Module<BE>: ModuleNew<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
         ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     {
@@ -174,7 +174,7 @@ where
 
 pub fn bench_cnv_apply_dft_accumulate<BE>(params: &crate::params::CnvSweepParams, c: &mut Criterion, label: &str)
 where
-    BE: Backend + 'static,
+    BE: Backend<ZnxWord = i64> + 'static,
     Module<BE>: ModuleNew<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -184,7 +184,7 @@ where
 
     fn runner<BE>(n: usize, size: usize) -> impl FnMut()
     where
-        BE: Backend + 'static,
+        BE: Backend<ZnxWord = i64> + 'static,
         Module<BE>: ModuleNew<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
         ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     {
@@ -246,7 +246,7 @@ where
 
 pub fn bench_cnv_pairwise_apply_dft<BE>(params: &crate::params::CnvSweepParams, c: &mut Criterion, label: &str)
 where
-    BE: Backend + 'static,
+    BE: Backend<ZnxWord = i64> + 'static,
     Module<BE>: ModuleNew<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -256,7 +256,7 @@ where
 
     fn runner<BE>(n: usize, size: usize) -> impl FnMut()
     where
-        BE: Backend + 'static,
+        BE: Backend<ZnxWord = i64> + 'static,
         Module<BE>: ModuleNew<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
         ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     {
@@ -306,7 +306,7 @@ where
 
 pub fn bench_cnv_by_const_apply<BE>(params: &crate::params::CnvSweepParams, c: &mut Criterion, label: &str)
 where
-    BE: Backend + 'static,
+    BE: Backend<ZnxWord = i64> + 'static,
     Module<BE>: ModuleNew<BE> + Convolution<BE> + VecZnxBigAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -316,7 +316,7 @@ where
 
     fn runner<BE>(n: usize, size: usize) -> impl FnMut()
     where
-        BE: Backend + 'static,
+        BE: Backend<ZnxWord = i64> + 'static,
         Module<BE>: ModuleNew<BE> + Convolution<BE> + VecZnxBigAlloc<BE> + CnvPVecAlloc<BE>,
         ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     {

@@ -25,7 +25,7 @@ where
 
     fn blind_rotation_key_encrypt_sk<S0, S1, E>(
         &self,
-        res: &mut BlindRotationKey<BE::OwnedBuf, CGGI>,
+        res: &mut BlindRotationKey<BE::OwnedBuf, CGGI, BE::ZnxWord>,
         sk_glwe: &S0,
         sk_lwe: &S1,
         enc_infos: &E,
@@ -53,7 +53,7 @@ where
 
             res.dist = sk_lwe.dist();
 
-            let mut pt: ScalarZnx<BE::OwnedBuf> = self.scalar_znx_alloc(1);
+            let mut pt: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = self.scalar_znx_alloc(1);
             let sk_ref = sk_lwe.data();
 
             for (i, ggsw) in res.keys.iter_mut().enumerate() {

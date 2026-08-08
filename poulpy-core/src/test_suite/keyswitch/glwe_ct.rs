@@ -74,11 +74,12 @@ where
                 })
                 .unwrap();
 
-                let mut ksk: GLWESwitchingKey<Vec<u8>> = module.glwe_switching_key_alloc_from_infos(&ksk_infos);
-                let mut glwe_in: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_in_infos);
-                let mut glwe_out: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_out_infos);
-                let mut pt_in: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_in_infos);
-                let mut pt_out: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
+                let mut ksk: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&ksk_infos);
+                let mut glwe_in: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_in_infos);
+                let mut glwe_out: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_out_infos);
+                let mut pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_in_infos);
+                let mut pt_out: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> =
+                    module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
 
                 let mut source_xs: Source = Source::new([0u8; 32]);
                 let mut source_xe: Source = Source::new([0u8; 32]);
@@ -97,13 +98,13 @@ where
                         | module.glwe_keyswitch_tmp_bytes(&glwe_out_infos, &glwe_in_infos, &ksk_infos),
                 );
 
-                let mut sk_in: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank_in.into());
+                let mut sk_in: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank_in.into());
                 sk_in.fill_ternary_prob(0.5, &mut source_xs);
 
                 let mut sk_in_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank_in.into());
                 module.glwe_secret_prepare(&mut sk_in_prepared, &sk_in);
 
-                let mut sk_out: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank_out.into());
+                let mut sk_out: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank_out.into());
                 sk_out.fill_ternary_prob(0.5, &mut source_xs);
 
                 let mut sk_out_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> =
@@ -211,9 +212,9 @@ where
             })
             .unwrap();
 
-            let mut ksk: GLWESwitchingKey<Vec<u8>> = module.glwe_switching_key_alloc_from_infos(&ksk_infos);
-            let mut glwe_out: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_out_infos);
-            let mut pt_want: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
+            let mut ksk: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_switching_key_alloc_from_infos(&ksk_infos);
+            let mut glwe_out: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_out_infos);
+            let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
             let mut source_xe: Source = Source::new([0u8; 32]);
@@ -232,13 +233,13 @@ where
                     | module.glwe_keyswitch_tmp_bytes(&glwe_out_infos, &glwe_out_infos, &ksk_infos),
             );
 
-            let mut sk_in: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank.into());
+            let mut sk_in: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
             sk_in.fill_ternary_prob(0.5, &mut source_xs);
 
             let mut sk_in_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
             module.glwe_secret_prepare(&mut sk_in_prepared, &sk_in);
 
-            let mut sk_out: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank.into());
+            let mut sk_out: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
             sk_out.fill_ternary_prob(0.5, &mut source_xs);
 
             let mut sk_out_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());

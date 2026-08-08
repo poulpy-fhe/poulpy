@@ -5,7 +5,7 @@ use crate::{
 
 pub fn vec_znx_copy<'r, 'a, BE>(res: &mut VecZnxBackendMut<'r, BE>, res_col: usize, a: &VecZnxBackendRef<'a, BE>, a_col: usize)
 where
-    BE: Backend + ZnxCopy + ZnxZero,
+    BE: Backend<ZnxWord = i64> + ZnxCopy + ZnxZero,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
@@ -35,7 +35,7 @@ pub fn vec_znx_extract_coeff<'r, 'a, BE>(
     a_col: usize,
     a_coeff: usize,
 ) where
-    BE: Backend,
+    BE: Backend<ZnxWord = i64>,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
@@ -69,7 +69,7 @@ pub fn vec_znx_extract_coeff<'r, 'a, BE>(
 /// `min(res.size(), a.size())` are zero-filled on `res`.
 pub fn vec_znx_transpose<'r, 'a, BE>(res: &mut VecZnxBackendMut<'r, BE>, a: &VecZnxBackendRef<'a, BE>)
 where
-    BE: Backend,
+    BE: Backend<ZnxWord = i64>,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
@@ -131,7 +131,7 @@ pub fn vec_znx_copy_range<'r, 'a, BE>(
     a_offset: usize,
     len: usize,
 ) where
-    BE: Backend + ZnxCopy,
+    BE: Backend<ZnxWord = i64> + ZnxCopy,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {

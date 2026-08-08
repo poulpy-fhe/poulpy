@@ -17,7 +17,7 @@ pub fn vec_znx_automorphism_rotate<'r, 'a, BE>(
     a: &VecZnxBackendRef<'a, BE>,
     a_col: usize,
 ) where
-    BE: Backend + ZnxAutomorphismRotate + ZnxZero,
+    BE: Backend<ZnxWord = i64> + ZnxAutomorphismRotate + ZnxZero,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {

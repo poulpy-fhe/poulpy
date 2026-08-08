@@ -16,7 +16,7 @@ pub fn vec_znx_automorphism<'r, 'a, BE>(
     a: &VecZnxBackendRef<'a, BE>,
     a_col: usize,
 ) where
-    BE: Backend + ZnxAutomorphism + ZnxZero,
+    BE: Backend<ZnxWord = i64> + ZnxAutomorphism + ZnxZero,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
@@ -38,7 +38,7 @@ pub fn vec_znx_automorphism<'r, 'a, BE>(
 
 pub fn vec_znx_automorphism_assign<'r, BE>(p: i64, res: &mut VecZnxBackendMut<'r, BE>, res_col: usize, tmp: &mut [i64])
 where
-    BE: Backend + ZnxAutomorphism + ZnxCopy,
+    BE: Backend<ZnxWord = i64> + ZnxAutomorphism + ZnxCopy,
     BE::BufMut<'r>: HostDataMut,
 {
     #[cfg(debug_assertions)]

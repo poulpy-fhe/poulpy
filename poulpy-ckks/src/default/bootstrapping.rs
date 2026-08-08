@@ -2,8 +2,8 @@ use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::{
     GLWECopy, GLWEKeyswitch, GLWEShift,
     layouts::{
-        BSGSMeta, GGLWEInfos, GLWE, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-        Rank, SetBSGSMeta, prepared::GLWETensorKeyPreparedToBackendRef,
+        BSGSMeta, GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
+        SetBSGSMeta, prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -16,10 +16,11 @@ use crate::{
     },
     eval_lut::{ckks_eval_lut, ckks_eval_lut_binary, ckks_eval_lut_multi},
     layouts::{
-        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, CKKSCiphertext, CKKSModuleAlloc,
-        CKKSPlaintext, EncodedLut, EncodedLutKind, EvalModType, ScratchArenaTakeCKKS,
+        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, CKKSCiphertextOwned,
+        CKKSModuleAlloc, CKKSPlaintextOwned, EncodedLut, EncodedLutKind, EvalModType, ScratchArenaTakeCKKS,
     },
 };
+use poulpy_core::GLWEBytesOf;
 
 /// Default (backend-generic) implementation of the CKKS bootstrapping
 /// primitives.
@@ -48,10 +49,11 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
+        Self: GLWEBytesOf<BE>,
         Self: CKKSAllOpsTmpBytes<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
-        CKKSCiphertext<BE::OwnedBuf>: CKKSCtBounds,
+        CKKSCiphertextOwned<BE>: CKKSCtBounds,
     {
         let base2k = ct_in.base2k();
         // `log_delta = 0` maximizes `log_budget`, which upper-bounds the EvalMod
@@ -68,7 +70,7 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
                 log_sparsity: 0,
             },
         };
-        let boot_ct_bytes = GLWE::<Vec<u8>>::bytes_of_from_infos(&boot_layout);
+        let boot_ct_bytes = self.glwe_bytes_of_from_infos(&boot_layout);
         // The coefficient-plaintext proxy for the plaintext ops: EvalMod's
         // encoded polynomial coefficients, the widest plaintext the pipeline
         // multiplies by.
@@ -95,7 +97,7 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
                 log_sparsity: 0,
             },
         };
-        let in_ct_bytes = GLWE::<Vec<u8>>::bytes_of_from_infos(&in_layout);
+        let in_ct_bytes = self.glwe_bytes_of_from_infos(&in_layout);
 
         let post_mod_up = if ctx.coeffs_to_slots_bypass.is_some() {
             5 * boot_ct_bytes
@@ -139,14 +141,15 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
         ct_out: &C1,
         ct_in: &C2,
         ctx: &BootstrappingContext<BE, F>,
-        lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+        lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
+        Self: GLWEBytesOf<BE>,
         Self: CKKSAllOpsTmpBytes<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
-        CKKSCiphertext<BE::OwnedBuf>: CKKSCtBounds,
+        CKKSCiphertextOwned<BE>: CKKSCtBounds,
     {
         let base = self.ckks_bootstrap_tmp_bytes_default(ct_out, ct_in, ctx, keys_layout);
         let boot_layout = CKKSLayout {
@@ -167,8 +170,8 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
             },
             meta: CKKSMeta::default(),
         };
-        let boot_bytes = GLWE::<Vec<u8>>::bytes_of_from_infos(&boot_layout);
-        let in_bytes = GLWE::<Vec<u8>>::bytes_of_from_infos(&in_layout);
+        let boot_bytes = self.glwe_bytes_of_from_infos(&boot_layout);
+        let in_bytes = self.glwe_bytes_of_from_infos(&in_layout);
         let carved = (3 * boot_bytes).max(boot_bytes + 4 * in_bytes);
         let nested = self
             .ckks_all_ops_with_atk_tmp_bytes(
@@ -332,8 +335,8 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
 
     fn ckks_bootstrap_s2c_first<F, K>(
         &self,
-        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -351,7 +354,7 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
             + CKKSCopyOps<BE>
             + CKKSPow2Ops<BE>,
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
-        CKKSCiphertext<BE::OwnedBuf>:
+        CKKSCiphertextOwned<BE>:
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
@@ -417,7 +420,7 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
     fn ckks_bootstrap_s2c_mod_up<F, K, R>(
         &self,
         ct_raised: &mut R,
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -433,7 +436,7 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
             + CKKSDFTOps<BE>,
         K: BootstrappingKeys<BE>,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        CKKSCiphertext<BE::OwnedBuf>:
+        CKKSCiphertextOwned<BE>:
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
     {
         let input_layout = GLWELayout {
@@ -475,7 +478,7 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
     fn ckks_bootstrap_s2c_mod_up_real<F, K, R>(
         &self,
         ct_raised: &mut R,
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -484,7 +487,7 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
         Self: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSCopyOps<BE> + CKKSPow2Ops<BE> + CKKSDFTOps<BE>,
         K: BootstrappingKeys<BE>,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-        CKKSCiphertext<BE::OwnedBuf>:
+        CKKSCiphertextOwned<BE>:
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
     {
         let input_layout = GLWELayout {
@@ -516,8 +519,8 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn ckks_bootstrap_default<F, K>(
         &self,
-        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -535,7 +538,7 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
             + CKKSDFTOps<BE>
             + CKKSEvalModOps<BE>,
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
-        CKKSCiphertext<BE::OwnedBuf>:
+        CKKSCiphertextOwned<BE>:
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
@@ -680,8 +683,8 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
 
     fn ckks_bootstrap_real_default<F, K>(
         &self,
-        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -697,7 +700,7 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
             + CKKSDFTOps<BE>
             + CKKSEvalModOps<BE>,
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
-        CKKSCiphertext<BE::OwnedBuf>:
+        CKKSCiphertextOwned<BE>:
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
@@ -763,7 +766,7 @@ fn ckks_eval_encoded_lut<BE, F, K, C, R>(
     ct_out: &mut R,
     ct_in: &C,
     ctx: &BootstrappingContext<BE, F>,
-    lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+    lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -781,8 +784,7 @@ where
     K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-    CKKSCiphertext<BE::OwnedBuf>:
-        GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     match lut.kind() {
@@ -817,10 +819,10 @@ where
 #[allow(clippy::too_many_arguments)]
 pub fn ckks_functional_bootstrap_default<BE, F, K>(
     module: &Module<BE>,
-    ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
-    ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+    ct_out: &mut CKKSCiphertextOwned<BE>,
+    ct_in: &CKKSCiphertextOwned<BE>,
     ctx: &BootstrappingContext<BE, F>,
-    lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+    lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -843,8 +845,7 @@ where
         + CKKSPow2Ops<BE>
         + CKKSAffineOps<BE>,
     K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
-    CKKSCiphertext<BE::OwnedBuf>:
-        GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     ckks_functional_bootstrap_with_slots(module, ct_out, ct_in, ctx, lut, keys, SlotsKind::Complex, scratch)
@@ -853,10 +854,10 @@ where
 #[allow(clippy::too_many_arguments)]
 pub fn ckks_functional_bootstrap_real_default<BE, F, K>(
     module: &Module<BE>,
-    ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
-    ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+    ct_out: &mut CKKSCiphertextOwned<BE>,
+    ct_in: &CKKSCiphertextOwned<BE>,
     ctx: &BootstrappingContext<BE, F>,
-    lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+    lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -879,8 +880,7 @@ where
         + CKKSPow2Ops<BE>
         + CKKSAffineOps<BE>,
     K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
-    CKKSCiphertext<BE::OwnedBuf>:
-        GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     ckks_functional_bootstrap_with_slots(module, ct_out, ct_in, ctx, lut, keys, SlotsKind::Real, scratch)
@@ -889,10 +889,10 @@ where
 #[allow(clippy::too_many_arguments)]
 fn ckks_functional_bootstrap_with_slots<BE, F, K>(
     module: &Module<BE>,
-    ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
-    ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+    ct_out: &mut CKKSCiphertextOwned<BE>,
+    ct_in: &CKKSCiphertextOwned<BE>,
     ctx: &BootstrappingContext<BE, F>,
-    lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+    lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
     keys: &K,
     slots_kind: SlotsKind,
     scratch: &mut ScratchArena<'_, BE>,
@@ -916,8 +916,7 @@ where
         + CKKSPow2Ops<BE>
         + CKKSAffineOps<BE>,
     K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
-    CKKSCiphertext<BE::OwnedBuf>:
-        GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     ckks_ensure!(
@@ -965,10 +964,10 @@ where
 #[allow(clippy::too_many_arguments)]
 pub fn ckks_functional_bootstrap_multi_default<BE, F, K>(
     module: &Module<BE>,
-    ct_outs: &mut [CKKSCiphertext<BE::OwnedBuf>],
-    ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+    ct_outs: &mut [CKKSCiphertextOwned<BE>],
+    ct_in: &CKKSCiphertextOwned<BE>,
     ctx: &BootstrappingContext<BE, F>,
-    luts: &[EncodedLut<CKKSPlaintext<BE::OwnedBuf>>],
+    luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -990,8 +989,7 @@ where
         + CKKSMulOps<BE>
         + CKKSPow2Ops<BE>,
     K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
-    CKKSCiphertext<BE::OwnedBuf>:
-        GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     ckks_ensure!(

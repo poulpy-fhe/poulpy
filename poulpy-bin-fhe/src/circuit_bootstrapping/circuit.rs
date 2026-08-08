@@ -8,9 +8,9 @@ use poulpy_hal::{
 use poulpy_core::{
     GGSWExpandRows, GGSWFromGGLWE, GLWECopy, GLWEDecrypt, GLWENormalize, GLWEPacking, GLWERotate, GLWETrace,
     layouts::{
-        Dsize, GGLWE, GGLWEInfos, GGLWELayout, GGLWEPreparedToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos,
-        GGSWToBackendMut, GLWEAutomorphismKeyHelper, GLWEInfos, GLWELayout, GLWESecretPreparedFactory, GLWEToBackendMut,
-        GLWEToBackendRef, GetGaloisElement, LWEInfos, LWEToBackendRef, ModuleCoreAlloc, Rank,
+        Dsize, GGLWEInfos, GGLWELayout, GGLWEPreparedToBackendRef, GGSWAtViewMut, GGSWAtViewRef, GGSWInfos, GGSWToBackendMut,
+        GLWEAutomorphismKeyHelper, GLWEInfos, GLWELayout, GLWESecretPreparedFactory, GLWEToBackendMut, GLWEToBackendRef,
+        GetGaloisElement, LWEInfos, LWEToBackendRef, ModuleCoreAlloc, Rank,
     },
 };
 
@@ -22,6 +22,7 @@ use crate::{
     },
     circuit_bootstrapping::{CircuitBootstrappingKeyInfos, CircuitBootstrappingKeyPrepared},
 };
+use poulpy_core::GLWEBytesOf;
 
 /// Trait for evaluating a complete circuit bootstrapping.
 ///
@@ -32,8 +33,8 @@ use crate::{
 pub trait CircuitBootstrappingExecute<BRA, BE>
 where
     BRA: BlindRotationAlgo,
-    BE: Backend<OwnedBuf = Vec<u8>>,
-    Self: ModuleCoreAlloc<OwnedBuf = Vec<u8>>,
+    BE: Backend,
+    Self: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
 {
     /// Returns the minimum scratch-space size (bytes) required by the circuit
     /// bootstrapping evaluation methods.
@@ -92,7 +93,7 @@ where
 impl<BRA, BE> CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE>
 where
     BRA: BlindRotationAlgo,
-    BE: Backend<OwnedBuf = Vec<u8>>,
+    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
 {
     /// Convenience method: bootstraps `lwe` into the GGSW ciphertext `res`
     /// using the constant-term encoding.
@@ -140,10 +141,10 @@ where
 impl<BRA, BE> CircuitBootstrappingExecute<BRA, BE> for Module<BE>
 where
     BRA: BlindRotationAlgo,
-    BE: Backend<OwnedBuf = Vec<u8>> + 'static,
+    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + 'static,
     Self: ModuleN
-        + ModuleCoreAlloc<OwnedBuf = Vec<u8>>
-        + LookupTableFactory
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + LookupTableFactory<BE::OwnedBuf, BE::ZnxWord>
         + BlindRotationExecute<BRA, BE>
         + GLWETrace<BE>
         + GLWEPacking<BE>
@@ -183,8 +184,8 @@ where
         self.blind_rotation_execute_tmp_bytes(block_size, extension_factor, res_infos, &cbt_infos.brk_infos())
             .max(self.glwe_trace_tmp_bytes(res_infos, res_infos, &cbt_infos.atk_infos()))
             .max(self.ggsw_from_gglwe_tmp_bytes(res_infos, &cbt_infos.tsk_infos()))
-            + GLWE::<Vec<u8>>::bytes_of_from_infos(res_infos)
-            + GGLWE::bytes_of_from_infos(&gglwe_infos)
+            + self.glwe_bytes_of_from_infos(res_infos)
+            + self.gglwe_bytes_of_from_infos(&gglwe_infos)
     }
 
     fn circuit_bootstrapping_execute_to_constant<R, L>(
@@ -246,12 +247,12 @@ pub fn circuit_bootstrap_core<R, L, M, BRA, BE>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BRA: BlindRotationAlgo,
-    BE: Backend<OwnedBuf = Vec<u8>> + 'static,
+    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + 'static,
     R: GGSWToBackendMut<BE> + GGSWAtViewRef<BE> + GGSWAtViewMut<BE> + GGSWInfos,
     L: LWEToBackendRef<BE>,
     M: ModuleN
-        + ModuleCoreAlloc<OwnedBuf = Vec<u8>>
-        + LookupTableFactory
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + LookupTableFactory<BE::OwnedBuf, BE::ZnxWord>
         + BlindRotationExecute<BRA, BE>
         + GLWETrace<BE>
         + GLWEPacking<BE>
@@ -316,7 +317,7 @@ pub fn circuit_bootstrap_core<R, L, M, BRA, BE>(
     };
 
     // Lut precision, basically must be able to hold the decomposition power basis of the GGSW
-    let mut lut: LookupTable = LookupTable::alloc(module, &lut_infos);
+    let mut lut: LookupTable<BE::OwnedBuf, BE::ZnxWord> = LookupTable::alloc(module, &lut_infos);
     lut.set(module, &f, res_base2k * dnum_res);
 
     if to_exponent {
@@ -340,12 +341,12 @@ pub fn circuit_bootstrap_core<R, L, M, BRA, BE>(
     };
 
     let mut scratch_1 = scratch.borrow();
-    let mut res_glwe_atk_layout: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(glwe_atk_layout);
+    let mut res_glwe_atk_layout: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(glwe_atk_layout);
 
     // Execute blind rotation over BRK layout and returns result over ATK layout
     {
-        let mut res_glwe_brk_layout: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(glwe_brk_layout);
-        let mut lwe_owned: LWE<Vec<u8>> = module.lwe_alloc_from_infos(&lwe_backend);
+        let mut res_glwe_brk_layout: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(glwe_brk_layout);
+        let mut lwe_owned: LWE<BE::OwnedBuf, BE::ZnxWord> = module.lwe_alloc_from_infos(&lwe_backend);
         lwe_owned.body_mut().raw_mut().copy_from_slice(lwe_backend.body().raw());
         lwe_owned.mask_mut().raw_mut().copy_from_slice(lwe_backend.mask().raw());
         key.brk
@@ -386,7 +387,7 @@ pub fn circuit_bootstrap_core<R, L, M, BRA, BE>(
                     &mut scratch_1,
                 );
             } else {
-                let mut tmp_row: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&res_row);
+                let mut tmp_row: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&res_row);
                 module.glwe_trace(&mut tmp_row, 0, &res_glwe_atk_layout, &key.atk, &mut scratch_1.borrow());
                 module.glwe_copy(&mut res_row, &tmp_row);
             }
@@ -412,12 +413,17 @@ fn post_process<R, A, M, H, K, BE>(
     auto_keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend<OwnedBuf = Vec<u8>> + 'static,
+    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + 'static,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
     K: GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-    M: ModuleLogN + GLWETrace<BE> + GLWEPacking<BE> + GLWERotate<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = Vec<u8>>,
+    M: ModuleLogN
+        + GLWETrace<BE>
+        + GLWEPacking<BE>
+        + GLWERotate<BE>
+        + GLWECopy<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
     for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
     for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
 {
@@ -427,8 +433,8 @@ fn post_process<R, A, M, H, K, BE>(
     // TODO: optimize with packing and final partial trace
     // If gap_out < gap_in, then we need to repack, i.e. reduce the cap between coefficients.
     if log_gap_in != log_gap_out {
-        let mut a_trace: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(a);
-        let mut packed: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(res);
+        let mut a_trace: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(a);
+        let mut packed: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(res);
 
         // First partial trace, vanishes all coefficients which are not multiples of gap_in
         // [1, 1, 1, 1, 0, 0, 0, ..., 0, 0, -1, -1, -1, -1] -> [1, 0, 0, 0, 0, 0, 0, ..., 0, 0, 0, 0, 0, 0]
@@ -442,7 +448,7 @@ fn post_process<R, A, M, H, K, BE>(
 
         let steps: usize = 1 << log_domain;
 
-        let mut cts_vec: Vec<GLWE<Vec<u8>>> = (0..steps).map(|_| module.glwe_alloc_from_infos(a)).collect();
+        let mut cts_vec: Vec<GLWE<BE::OwnedBuf, BE::ZnxWord>> = (0..steps).map(|_| module.glwe_alloc_from_infos(a)).collect();
 
         for (i, ct) in cts_vec.iter_mut().enumerate().take(steps) {
             if i != 0 {
@@ -460,7 +466,7 @@ fn post_process<R, A, M, H, K, BE>(
         module.glwe_pack(&mut packed, cts, log_gap_out, auto_keys, &mut scratch.borrow());
         module.glwe_copy(res, &packed);
     } else {
-        let mut traced: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(res);
+        let mut traced: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(res);
         module.glwe_trace(&mut traced, module.log_n() - log_gap_in + 1, a, auto_keys, scratch);
         module.glwe_copy(res, &traced);
     }

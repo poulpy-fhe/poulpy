@@ -409,7 +409,7 @@ impl PaCoSecretSpec {
     /// `BinaryFixed(h)` — which is literally true: the key is binary of Hamming
     /// weight `h`). The secret can then be uploaded/prepared like any other
     /// GLWE secret.
-    pub fn fill_glwe_secret<D: HostDataMut>(&self, p: &PaCoPlan, sk: &mut GLWESecret<D>) -> Result<()> {
+    pub fn fill_glwe_secret<D: HostDataMut>(&self, p: &PaCoPlan, sk: &mut GLWESecret<D, i64>) -> Result<()> {
         self.check(p)?;
         ensure!(
             sk.n().as_usize() == p.n(),

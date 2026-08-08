@@ -72,12 +72,12 @@ where
             })
             .unwrap();
 
-            let mut ggsw_apply: GGSW<Vec<u8>> = module.ggsw_alloc_from_infos(&ggsw_apply_infos);
-            let mut glwe_in: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_in_infos);
-            let mut glwe_out: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_out_infos);
-            let mut pt_ggsw: ScalarZnx<Vec<u8>> = module.scalar_znx_alloc(1);
-            let mut pt_in: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_in_infos);
-            let mut pt_out: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
+            let mut ggsw_apply: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_apply_infos);
+            let mut glwe_in: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_in_infos);
+            let mut glwe_out: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_out_infos);
+            let mut pt_ggsw: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
+            let mut pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_in_infos);
+            let mut pt_out: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
             let mut source_xe: Source = Source::new([0u8; 32]);
@@ -104,7 +104,7 @@ where
                     | module.glwe_external_product_tmp_bytes(&glwe_out_infos, &glwe_in_infos, &ggsw_apply_infos),
             );
 
-            let mut sk: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank.into());
+            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
             sk.fill_ternary_prob(0.5, &mut source_xs);
 
             let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
@@ -221,10 +221,10 @@ where
             })
             .unwrap();
 
-            let mut ggsw_apply: GGSW<Vec<u8>> = module.ggsw_alloc_from_infos(&ggsw_apply_infos);
-            let mut glwe_out: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_out_infos);
-            let mut pt_ggsw: ScalarZnx<Vec<u8>> = module.scalar_znx_alloc(1);
-            let mut pt_want: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
+            let mut ggsw_apply: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_apply_infos);
+            let mut glwe_out: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_out_infos);
+            let mut pt_ggsw: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
+            let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
             let mut source_xe: Source = Source::new([0u8; 32]);
@@ -251,7 +251,7 @@ where
                     | module.glwe_external_product_tmp_bytes(&glwe_out_infos, &glwe_out_infos, &ggsw_apply_infos),
             );
 
-            let mut sk: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank.into());
+            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
             sk.fill_ternary_prob(0.5, &mut source_xs);
 
             let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());

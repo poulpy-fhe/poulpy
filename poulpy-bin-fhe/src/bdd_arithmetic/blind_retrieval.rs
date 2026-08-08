@@ -3,9 +3,10 @@ use poulpy_core::{
     GLWECopy,
     layouts::{GGSWInfos, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, ModuleCoreAlloc},
 };
-use poulpy_hal::layouts::{Backend, HostDataMut, Module, ScratchArena, ZnxZero};
+use poulpy_hal::layouts::{Backend, HostDataMut, HostDataRef, Module, ScratchArena, ZnxZero};
 
 use crate::bdd_arithmetic::{Cmux, Cswap, GetGGSWBit};
+use poulpy_core::GLWEBytesOf;
 
 /// Stateful accumulator for oblivious retrieval of one GLWE ciphertext from a
 /// stream of inputs using an encrypted binary index.
@@ -28,15 +29,15 @@ use crate::bdd_arithmetic::{Cmux, Cswap, GetGGSWBit};
 /// All methods that require scratch space accept a mutable `ScratchArena<BE>` arena.
 /// The required size is returned by
 /// [`retrieve_tmp_bytes`][GLWEBlindRetriever::retrieve_tmp_bytes].
-pub struct GLWEBlindRetriever<D: poulpy_hal::layouts::Data = Vec<u8>> {
-    accumulators: Vec<Accumulator<D>>,
+pub struct GLWEBlindRetriever<D: poulpy_hal::layouts::Data, W: poulpy_hal::layouts::ZnxWord> {
+    accumulators: Vec<Accumulator<D, W>>,
     counter: usize,
 }
 
-impl GLWEBlindRetriever<Vec<u8>> {
+impl GLWEBlindRetriever<Vec<u8>, i64> {
     pub fn alloc<A, M>(module: &M, infos: &A, size: usize) -> Self
     where
-        M: ModuleCoreAlloc<OwnedBuf = Vec<u8>>,
+        M: ModuleCoreAlloc<OwnedBuf = Vec<u8>, ZnxWord = i64>,
         A: GLWEInfos,
     {
         let bit_size: usize = (u32::BITS - (size as u32 - 1).leading_zeros()) as usize;
@@ -48,8 +49,8 @@ impl GLWEBlindRetriever<Vec<u8>> {
 
     pub fn retrieve_tmp_bytes<M, R, S, BE>(module: &M, res: &R, selector: &S) -> usize
     where
-        BE: Backend<OwnedBuf = Vec<u8>>,
-        M: Cmux<BE>,
+        BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>,
+        M: GLWEBytesOf<BE> + Cmux<BE>,
         R: GLWEInfos,
         S: GGSWInfos,
     {
@@ -65,8 +66,8 @@ impl GLWEBlindRetriever<Vec<u8>> {
         offset: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        M: GLWECopy<BE> + Cmux<BE>,
-        BE: Backend<OwnedBuf = Vec<u8>> + 'static,
+        M: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE>,
+        BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + 'static,
         R: GLWEToBackendMut<BE>,
         A: GLWEToBackendRef<BE>,
         S: GetGGSWBit<BE>,
@@ -84,8 +85,8 @@ impl GLWEBlindRetriever<Vec<u8>> {
     where
         A: GLWEToBackendRef<BE>,
         S: GetGGSWBit<BE>,
-        M: GLWECopy<BE> + Cmux<BE>,
-        BE: Backend<OwnedBuf = Vec<u8>> + 'static,
+        M: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE>,
+        BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + 'static,
         for<'a> BE::BufMut<'a>: HostDataMut,
         for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {
@@ -103,8 +104,8 @@ impl GLWEBlindRetriever<Vec<u8>> {
     where
         R: GLWEToBackendMut<BE>,
         S: GetGGSWBit<BE>,
-        M: GLWECopy<BE> + Cmux<BE>,
-        BE: Backend<OwnedBuf = Vec<u8>> + 'static,
+        M: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE>,
+        BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + 'static,
         for<'a> BE::BufMut<'a>: HostDataMut,
         for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
     {
@@ -132,15 +133,15 @@ impl GLWEBlindRetriever<Vec<u8>> {
     }
 }
 
-struct Accumulator<D: poulpy_hal::layouts::Data> {
-    data: GLWE<D>,
+struct Accumulator<D: poulpy_hal::layouts::Data, W: poulpy_hal::layouts::ZnxWord> {
+    data: GLWE<D, W>,
     num: usize, // Number of accumulated values
 }
 
-impl Accumulator<Vec<u8>> {
+impl<D: poulpy_hal::layouts::Data, W: poulpy_hal::layouts::ZnxWord> Accumulator<D, W> {
     pub fn alloc<A, M>(module: &M, infos: &A) -> Self
     where
-        M: ModuleCoreAlloc<OwnedBuf = Vec<u8>>,
+        M: ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W>,
         A: GLWEInfos,
     {
         Self {
@@ -153,7 +154,7 @@ impl Accumulator<Vec<u8>> {
 fn add_core<A, S, M, BE>(
     module: &M,
     a: &A,
-    accumulators: &mut [Accumulator<Vec<u8>>],
+    accumulators: &mut [Accumulator<BE::OwnedBuf, BE::ZnxWord>],
     i: usize,
     selector: &S,
     offset: usize,
@@ -161,8 +162,8 @@ fn add_core<A, S, M, BE>(
 ) where
     A: GLWEToBackendRef<BE>,
     S: GetGGSWBit<BE>,
-    M: GLWECopy<BE> + Cmux<BE>,
-    BE: Backend<OwnedBuf = Vec<u8>> + 'static,
+    M: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE>,
+    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + 'static,
     for<'a> BE::BufMut<'a>: HostDataMut,
     for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
 {
@@ -190,8 +191,8 @@ fn add_core<A, S, M, BE>(
     }
 }
 
-impl<BE: Backend<OwnedBuf = Vec<u8>> + 'static> GLWEBlindRetrieval<BE> for Module<BE> where
-    Self: GLWECopy<BE> + Cmux<BE> + Cswap<BE>
+impl<BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + 'static> GLWEBlindRetrieval<BE> for Module<BE> where
+    Self: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE> + Cswap<BE>
 {
 }
 
@@ -207,9 +208,9 @@ impl<BE: Backend<OwnedBuf = Vec<u8>> + 'static> GLWEBlindRetrieval<BE> for Modul
 /// The rearrangement uses conditional-swap ([`Cswap`]) operations, one per bit
 /// of the selector sub-field.  The `_rev` variant applies the operations in
 /// reverse, useful for undoing the permutation.
-pub trait GLWEBlindRetrieval<BE: Backend<OwnedBuf = Vec<u8>> + 'static>
+pub trait GLWEBlindRetrieval<BE: Backend<OwnedBuf: HostDataMut + HostDataRef> + 'static>
 where
-    Self: GLWECopy<BE> + Cmux<BE> + Cswap<BE>,
+    Self: GLWEBytesOf<BE> + GLWECopy<BE> + Cmux<BE> + Cswap<BE>,
 {
     /// Returns the minimum scratch-space size in bytes required by
     /// [`glwe_blind_retrieval_statefull`][Self::glwe_blind_retrieval_statefull].

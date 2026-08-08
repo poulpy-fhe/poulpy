@@ -32,7 +32,7 @@ use poulpy_cpu_ref::FFT64Ref;
 
 fn example_max_array<BE, BRA: BlindRotationAlgo>()
 where
-    BE: Backend<OwnedBuf = Vec<u8>> + HostBackend + 'static,
+    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend + 'static,
     Module<BE>: ModuleNew<BE>
         + ModuleN
         + GLWESecretPreparedFactory<BE>
@@ -49,7 +49,7 @@ where
         + GLWEBlindSelection<u32, BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     BE::OwnedBuf: HostDataRef + HostDataMut,
-    for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]> + 'static,
+    for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8], ZnxWord = i64> + 'static,
     for<'a> BE::BufMut<'a>: AsMut<[u8]> + AsRef<[u8]> + Sync,
 {
     ////////// Parameter Selection
@@ -156,7 +156,7 @@ where
     let bdd_enc_infos = BDDEncryptionInfos::from_default_sigma(&bdd_layout).unwrap();
     let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(glwe_layout).unwrap();
 
-    let mut bdd_key: BDDKey<Vec<u8>, BRA> = BDDKey::alloc_from_infos(&module, &bdd_layout);
+    let mut bdd_key: BDDKey<Vec<u8>, BRA, i64> = BDDKey::alloc_from_infos(&module, &bdd_layout);
     bdd_key.encrypt_sk(
         &module,
         &sk_lwe,
@@ -172,7 +172,7 @@ where
     let mut rng = rand::rng();
     let inputs: Vec<u32> = (0..3).map(|_| rng.random_range(0..u32::MAX - 1)).collect();
 
-    let mut inputs_enc: Vec<FheUint<Vec<u8>, u32>> = Vec::new();
+    let mut inputs_enc: Vec<FheUint<Vec<u8>, u32, i64>> = Vec::new();
     for input in &inputs {
         let mut next_input = FheUint::alloc_from_infos(&module, &glwe_layout);
         next_input.encrypt_sk(
@@ -194,7 +194,7 @@ where
     let mut bdd_key_prepared: BDDKeyPrepared<BE::OwnedBuf, BRA, BE> = BDDKeyPrepared::alloc_from_infos(&module, &bdd_layout);
     bdd_key_prepared.prepare(&module, &bdd_key, &mut scratch.borrow());
 
-    let mut max_enc: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&module, &glwe_layout);
+    let mut max_enc: FheUint<Vec<u8>, u32, i64> = FheUint::alloc_from_infos(&module, &glwe_layout);
     max_enc.encrypt_sk(
         &module,
         0,
@@ -205,10 +205,10 @@ where
         &mut scratch.borrow(),
     );
     // Copy of max_enc for the HashMap
-    let mut max_enc_copy: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&module, &glwe_layout);
+    let mut max_enc_copy: FheUint<Vec<u8>, u32, i64> = FheUint::alloc_from_infos(&module, &glwe_layout);
 
     // Allocating the intermediate ciphertext c_enc
-    let mut compare_enc: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&module, &glwe_layout);
+    let mut compare_enc: FheUint<Vec<u8>, u32, i64> = FheUint::alloc_from_infos(&module, &glwe_layout);
     let mut compare_enc_prepared: FheUintPrepared<BE::OwnedBuf, u32, BE> =
         FheUintPrepared::alloc_from_infos(&module, &ggsw_layout);
 

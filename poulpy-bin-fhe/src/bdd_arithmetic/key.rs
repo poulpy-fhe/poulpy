@@ -26,7 +26,7 @@ use poulpy_core::{
 
 use poulpy_hal::layouts::NoiseInfos;
 use poulpy_hal::{
-    layouts::{Backend, Data, HostBackend, Module, ReaderFrom, ScratchArena, WriterTo},
+    layouts::{Backend, Data, HostBackend, HostDataMut, HostDataRef, Module, ReaderFrom, ScratchArena, WriterTo, ZnxWord},
     source::Source,
 };
 
@@ -125,20 +125,21 @@ impl BDDKeyInfos for BDDKeyLayout {
 /// ## Thread Safety
 ///
 /// `BDDKey` is `Sync`; multiple evaluation threads may hold shared references.
-pub struct BDDKey<D, BRA>
+pub struct BDDKey<D, BRA, W = i64>
 where
     D: Data,
     BRA: BlindRotationAlgo,
+    W: ZnxWord,
 {
-    pub(crate) cbt: CircuitBootstrappingKey<D, BRA>,
-    pub(crate) ks_glwe: Option<GLWESwitchingKey<D>>,
-    pub(crate) ks_lwe: GLWEToLWEKey<D>,
+    pub(crate) cbt: CircuitBootstrappingKey<D, BRA, W>,
+    pub(crate) ks_glwe: Option<GLWESwitchingKey<D, W>>,
+    pub(crate) ks_lwe: GLWEToLWEKey<D, W>,
 }
 
-impl<BRA: BlindRotationAlgo> BDDKey<Vec<u8>, BRA> {
+impl<BRA: BlindRotationAlgo> BDDKey<Vec<u8>, BRA, i64> {
     pub fn alloc_from_infos<M, A: BDDKeyInfos>(module: &M, infos: &A) -> Self
     where
-        M: ModuleCoreAlloc<OwnedBuf = Vec<u8>> + poulpy_hal::api::ModuleN,
+        M: ModuleCoreAlloc<OwnedBuf = Vec<u8>, ZnxWord = i64> + poulpy_hal::api::ModuleN,
     {
         Self {
             cbt: CircuitBootstrappingKey::alloc_from_infos(module, &infos.cbt_infos()),
@@ -156,7 +157,7 @@ impl<BRA: BlindRotationAlgo> BDDKey<Vec<u8>, BRA> {
 /// Implemented for `Module<BE>` when the backend supports circuit-bootstrapping
 /// and switching-key encryption.  Callers should prefer the convenience method
 /// [`BDDKey::encrypt_sk`].
-pub trait BDDKeyEncryptSk<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>>> {
+pub trait BDDKeyEncryptSk<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + HostDataRef>> {
     /// Returns the minimum scratch-space size in bytes required by
     /// [`bdd_key_encrypt_sk`][Self::bdd_key_encrypt_sk].
     fn bdd_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
@@ -176,7 +177,7 @@ pub trait BDDKeyEncryptSk<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>
     /// encrypted under that intermediate key rather than `sk_glwe` directly.
     fn bdd_key_encrypt_sk<S0, S1>(
         &self,
-        res: &mut BDDKey<BE::OwnedBuf, BRA>,
+        res: &mut BDDKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
         sk_lwe: &S0,
         sk_glwe: &S1,
         enc_infos: &BDDEncryptionInfos,
@@ -188,7 +189,8 @@ pub trait BDDKeyEncryptSk<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>
         S1: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
-impl<BE: Backend<OwnedBuf = Vec<u8>>, BRA: BlindRotationAlgo> BDDKeyEncryptSk<BRA, BE> for Module<BE>
+impl<BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>, BRA: BlindRotationAlgo> BDDKeyEncryptSk<BRA, BE>
+    for Module<BE>
 where
     Self: CircuitBootstrappingKeyEncryptSk<BRA, BE> + GLWEToLWESwitchingKeyEncryptSk<BE> + GLWESwitchingKeyEncryptSk<BE>,
 {
@@ -203,7 +205,7 @@ where
     #[allow(clippy::too_many_arguments)]
     fn bdd_key_encrypt_sk<S0, S1>(
         &self,
-        res: &mut BDDKey<BE::OwnedBuf, BRA>,
+        res: &mut BDDKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
         sk_lwe: &S0,
         sk_glwe: &S1,
         enc_infos: &BDDEncryptionInfos,
@@ -219,7 +221,7 @@ where
                 .ks_glwe
                 .as_ref()
                 .expect("ks_glwe enc_infos missing when ks_glwe key exists");
-            let mut sk_out: GLWESecret<Vec<u8>> = self.glwe_secret_alloc(key.rank_out());
+            let mut sk_out: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = self.glwe_secret_alloc(key.rank_out());
             sk_out.fill_ternary_prob(0.5, source_xe);
             self.glwe_switching_key_encrypt_sk(key, sk_glwe, &sk_out, ks_glwe_infos, source_xe, source_xa, scratch);
             self.glwe_to_lwe_key_encrypt_sk(
@@ -247,9 +249,9 @@ where
     }
 }
 
-impl<BRA: BlindRotationAlgo> BDDKey<Vec<u8>, BRA> {
+impl<BRA: BlindRotationAlgo> BDDKey<Vec<u8>, BRA, i64> {
     #[allow(clippy::too_many_arguments)]
-    pub fn encrypt_sk<S0, S1, M, BE: Backend<OwnedBuf = Vec<u8>> + HostBackend>(
+    pub fn encrypt_sk<S0, S1, M, BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend>(
         &mut self,
         module: &M,
         sk_lwe: &S0,
@@ -267,7 +269,7 @@ impl<BRA: BlindRotationAlgo> BDDKey<Vec<u8>, BRA> {
     }
 }
 
-impl<BRA: BlindRotationAlgo> ReaderFrom for BDDKey<Vec<u8>, BRA> {
+impl<BRA: BlindRotationAlgo> ReaderFrom for BDDKey<Vec<u8>, BRA, i64> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.cbt.read_from(reader)?;
         match reader.read_u8()? {
@@ -306,8 +308,8 @@ impl<BRA: BlindRotationAlgo> ReaderFrom for BDDKey<Vec<u8>, BRA> {
     }
 }
 
-impl<BRA: BlindRotationAlgo> WriterTo for BDDKey<Vec<u8>, BRA> {
-    fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+impl<BRA: BlindRotationAlgo> WriterTo for BDDKey<Vec<u8>, BRA, i64> {
+    fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         self.cbt.write_to(writer)?;
         match &self.ks_glwe {
             None => writer.write_u8(0)?,
@@ -393,7 +395,7 @@ impl<BRA: BlindRotationAlgo, BE: Backend> GLWEAutomorphismKeyHelper<GLWEAutomorp
 /// Implemented for `Module<BE>` when the backend supports preparation of all
 /// three constituent sub-keys.  Default method implementations delegate to
 /// the corresponding sub-key factories.
-pub trait BDDKeyPreparedFactory<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>>>
+pub trait BDDKeyPreparedFactory<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + HostDataRef>>
 where
     Self: Sized + CircuitBootstrappingKeyPreparedFactory<BRA, BE> + GLWEToLWEKeyPreparedFactory<BE>,
 {
@@ -425,7 +427,7 @@ where
     fn prepare_bdd_key(
         &self,
         res: &mut BDDKeyPrepared<BE::OwnedBuf, BRA, BE>,
-        other: &BDDKey<BE::OwnedBuf, BRA>,
+        other: &BDDKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
         res.cbt.prepare(self, &other.cbt, scratch);
@@ -441,12 +443,16 @@ where
         self.glwe_to_lwe_key_prepare(&mut res.ks_lwe, &other.ks_lwe, scratch);
     }
 }
-impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>>> BDDKeyPreparedFactory<BRA, BE> for Module<BE> where
-    Self: Sized + CircuitBootstrappingKeyPreparedFactory<BRA, BE> + GLWEToLWEKeyPreparedFactory<BE>
+impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>> BDDKeyPreparedFactory<BRA, BE>
+    for Module<BE>
+where
+    Self: Sized + CircuitBootstrappingKeyPreparedFactory<BRA, BE> + GLWEToLWEKeyPreparedFactory<BE>,
 {
 }
 
-impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>>> BDDKeyPrepared<BE::OwnedBuf, BRA, BE> {
+impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>>
+    BDDKeyPrepared<BE::OwnedBuf, BRA, BE>
+{
     pub fn alloc_from_infos<M, A>(module: &M, infos: &A) -> Self
     where
         M: BDDKeyPreparedFactory<BRA, BE>,
@@ -492,13 +498,18 @@ pub trait BDDKeyHelper<D: Data, BRA: BlindRotationAlgo, BE: Backend> {
 /// Unlike `FheUintPrepare`, this variant stores the per-bit GGSW ciphertexts
 /// in standard (non-DFT) form, enabling noise inspection via
 /// [`FheUintPreparedDebug::noise`] without a forward DFT transform.
-pub trait FheUintPrepareDebug<BRA: BlindRotationAlgo, T: UnsignedInteger, BE: Backend<OwnedBuf = Vec<u8>> + HostBackend> {
+pub trait FheUintPrepareDebug<
+    BRA: BlindRotationAlgo,
+    T: UnsignedInteger,
+    BE: Backend<OwnedBuf: HostDataMut + HostDataRef> + HostBackend,
+>
+{
     /// Populates `res` by bootstrapping each bit of `bits` through `key`'s
     /// circuit-bootstrapping pipeline, storing the output GGSW in standard form.
     fn fhe_uint_debug_prepare(
         &self,
-        res: &mut FheUintPreparedDebug<BE::OwnedBuf, T>,
-        bits: &FheUint<BE::OwnedBuf, T>,
+        res: &mut FheUintPreparedDebug<BE::OwnedBuf, T, BE::ZnxWord>,
+        bits: &FheUint<BE::OwnedBuf, T, BE::ZnxWord>,
         key: &BDDKeyPrepared<BE::OwnedBuf, BRA, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     );

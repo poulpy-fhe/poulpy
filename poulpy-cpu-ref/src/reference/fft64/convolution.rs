@@ -17,8 +17,8 @@ pub fn convolution_prepare_left<BE>(
     mask: i64,
     tmp: &mut VecZnxDftBackendMut<'_, BE>,
 ) where
-    BE: Backend<DftWord = f64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
-    for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
+    for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
     convolution_prepare::<_, BE>(table, res, a, mask, tmp)
 }
@@ -30,8 +30,8 @@ pub fn convolution_prepare_right<BE>(
     mask: i64,
     tmp: &mut VecZnxDftBackendMut<'_, BE>,
 ) where
-    BE: Backend<DftWord = f64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
-    for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
+    for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
     convolution_prepare::<_, BE>(table, res, a, mask, tmp)
 }
@@ -43,8 +43,8 @@ fn convolution_prepare<R, BE>(
     mask: i64,
     tmp: &mut VecZnxDftBackendMut<'_, BE>,
 ) where
-    BE: Backend<DftWord = f64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
-    for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
+    for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
     R: ZnxInfos + ZnxViewMut<Scalar = BE::DftWord>,
 {
     let cols: usize = res.cols();
@@ -88,8 +88,8 @@ pub fn convolution_prepare_self<BE>(
     mask: i64,
     tmp: &mut VecZnxDftBackendMut<'_, BE>,
 ) where
-    BE: Backend<DftWord = f64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
-    for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
+    for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
     let cols: usize = left.cols();
     assert_eq!(a.cols(), cols, "a.cols():{} != left.cols():{cols}", a.cols());
@@ -153,8 +153,8 @@ pub fn convolution_by_const_apply<BE>(
     b_coeff: usize,
     tmp: &mut [i64],
 ) where
-    BE: Backend<BigWord = i64> + I64Ops + 'static,
-    for<'x> BE: Backend<BufRef<'x> = &'x [u8]>,
+    BE: Backend<BigWord = i64, ZnxWord = i64> + I64Ops + 'static,
+    for<'x> BE: Backend<BufRef<'x> = &'x [u8], ZnxWord = i64>,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
     let n: usize = res.n();
@@ -211,7 +211,7 @@ pub fn convolution_apply_dft<BE>(
     b_col: usize,
     tmp: &mut [f64],
 ) where
-    BE: Backend<DftWord = f64> + Reim4BlkMatVec + Reim4Convolution,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + Reim4BlkMatVec + Reim4Convolution,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
@@ -266,7 +266,7 @@ pub fn convolution_apply_dft_accumulate<BE>(
     b_col: usize,
     tmp: &mut [f64],
 ) where
-    BE: Backend<DftWord = f64> + Reim4BlkMatVec + Reim4Convolution,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + Reim4BlkMatVec + Reim4Convolution,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
@@ -319,7 +319,7 @@ pub fn convolution_pairwise_apply_dft<BE>(
     col_j: usize,
     tmp: &mut [f64],
 ) where
-    BE: Backend<DftWord = f64> + ReimArith + Reim4BlkMatVec + Reim4Convolution,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Reim4Convolution,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {

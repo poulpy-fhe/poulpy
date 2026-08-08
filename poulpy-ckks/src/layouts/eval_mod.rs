@@ -52,7 +52,7 @@ use crate::{
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial, SplitStrategy},
 };
 
-use super::{CKKSModuleAlloc, CKKSPlaintext, CKKSScalar};
+use super::{CKKSModuleAlloc, CKKSPlaintextOwned, CKKSScalar};
 
 // Fallible scalar conversions: building the host-side polynomials goes through
 // the generic float `F`, and a conversion that is not exactly representable in
@@ -313,7 +313,7 @@ fn encode_bsgs_backend<BE, F>(
     coeff_meta: CoeffsMeta,
     strategy: SplitStrategy,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<BSGSPolynomial<CKKSPlaintext<BE::OwnedBuf>>>
+) -> Result<BSGSPolynomial<CKKSPlaintextOwned<BE>>>
 where
     BE: Backend,
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
@@ -338,7 +338,7 @@ fn encode_complex_bsgs_backend<BE, F>(
     coeff_meta: CoeffsMeta,
     strategy: SplitStrategy,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<ComplexBSGSPolynomial<CKKSPlaintext<BE::OwnedBuf>>>
+) -> Result<ComplexBSGSPolynomial<CKKSPlaintextOwned<BE>>>
 where
     BE: Backend,
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
@@ -367,7 +367,7 @@ pub fn compile_eval_mod<BE, F>(
     lit: EvalModPlan,
     module: &Module<BE>,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<EvalMod<F, CKKSPlaintext<BE::OwnedBuf>>>
+) -> Result<EvalMod<F, CKKSPlaintextOwned<BE>>>
 where
     BE: Backend,
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
@@ -511,7 +511,7 @@ fn compile_eval_mod_exp<BE, F>(
     lit: EvalModPlan,
     module: &Module<BE>,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<EvalMod<F, CKKSPlaintext<BE::OwnedBuf>>>
+) -> Result<EvalMod<F, CKKSPlaintextOwned<BE>>>
 where
     BE: Backend,
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,

@@ -8,12 +8,12 @@ use poulpy_hal::{
 };
 
 pub use crate::api::GGLWEEncryptSk;
+use crate::api::GLWEBytesOf;
 use crate::{
     EncryptionInfos, GLWEEncryptSk, GLWEEncryptSkInternal, ScratchArenaTakeCore,
     encryption::glwe::GLWEMaskFillDefault,
     layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GLWEPlaintext, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-        prepared::GLWESecretPreparedToBackendRef,
+        GGLWEInfos, GGLWEToBackendMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWESecretPreparedToBackendRef,
     },
 };
 
@@ -57,7 +57,7 @@ where
     {
         assert_eq!(self.n() as u32, infos.n());
 
-        let lvl_0: usize = GLWEPlaintext::<Vec<u8>>::bytes_of_from_infos(infos);
+        let lvl_0: usize = self.glwe_plaintext_bytes_of_from_infos(infos);
         let lvl_1: usize = self.glwe_encrypt_sk_tmp_bytes(infos).max(self.vec_znx_normalize_tmp_bytes());
 
         lvl_0 + lvl_1

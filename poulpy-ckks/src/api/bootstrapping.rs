@@ -5,7 +5,9 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSDFTOps, CKKSEvalModOps},
-    layouts::{BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertext, CKKSPlaintext, EncodedLut},
+    layouts::{
+        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned, CKKSPlaintextOwned, EncodedLut,
+    },
 };
 
 /// CKKS bootstrapping.
@@ -56,7 +58,7 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
         ct_out: &C1,
         ct_in: &C2,
         ctx: &BootstrappingContext<BE, F>,
-        lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+        lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
@@ -99,8 +101,8 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     #[allow(clippy::too_many_arguments)]
     fn ckks_bootstrap<F, K>(
         &self,
-        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -113,8 +115,8 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     #[allow(clippy::too_many_arguments)]
     fn ckks_bootstrap_real<F, K>(
         &self,
-        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -128,10 +130,10 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     #[allow(clippy::too_many_arguments)]
     fn ckks_functional_bootstrap<F, K>(
         &self,
-        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
-        lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+        lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -142,10 +144,10 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     #[allow(clippy::too_many_arguments)]
     fn ckks_functional_bootstrap_real<F, K>(
         &self,
-        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
-        lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+        lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -156,10 +158,10 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     #[allow(clippy::too_many_arguments)]
     fn ckks_functional_bootstrap_multi<F, K>(
         &self,
-        ct_outs: &mut [CKKSCiphertext<BE::OwnedBuf>],
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_outs: &mut [CKKSCiphertextOwned<BE>],
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
-        luts: &[EncodedLut<CKKSPlaintext<BE::OwnedBuf>>],
+        luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>

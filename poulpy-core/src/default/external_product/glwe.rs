@@ -5,6 +5,7 @@
 
 #![allow(private_bounds)]
 
+use crate::api::GLWEBytesOf;
 use poulpy_hal::layouts::VecZnxDftBackendMut;
 use poulpy_hal::{
     api::{
@@ -20,8 +21,8 @@ use crate::{
     api::GLWEExternalProductInternal,
     default::operations::GLWENormalizeDefault,
     layouts::{
-        GGSWInfos, GGSWPreparedBackendRef, GLWE, GLWEBackendRef, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef,
-        LWEInfos, prepared::GGSWPreparedToBackendRef,
+        GGSWInfos, GGSWPreparedBackendRef, GLWEBackendRef, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        prepared::GGSWPreparedToBackendRef,
     },
     oep::GLWEExternalProductDefault,
 };
@@ -34,7 +35,8 @@ fn glwe_external_product_dft_fill<BE, M>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: ModuleN
+    M: GLWEBytesOf<BE>
+        + ModuleN
         + VecZnxDftBytesOf
         + VmpApplyDftToDftTmpBytes
         + VecZnxNormalizeTmpBytes
@@ -171,7 +173,8 @@ where
 pub fn glwe_external_product_tmp_bytes_default<BE, M, R, A, G>(module: &M, res_infos: &R, a_infos: &A, ggsw_infos: &G) -> usize
 where
     BE: Backend,
-    M: GLWEExternalProductDefault<BE>
+    M: GLWEBytesOf<BE>
+        + GLWEExternalProductDefault<BE>
         + GLWEExternalProductInternal<BE>
         + GLWENormalizeDefault<BE>
         + ModuleN
@@ -198,7 +201,7 @@ where
             k: a_infos.k(),
             rank: a_infos.rank(),
         };
-        let lvl_2_0: usize = GLWE::<Vec<u8>>::bytes_of_from_infos(&a_conv_infos);
+        let lvl_2_0: usize = module.glwe_bytes_of_from_infos(&a_conv_infos);
         let lvl_2_1: usize = module
             .glwe_normalize_tmp_bytes_default()
             .max(module.glwe_external_product_dft_fill_tmp_bytes_default(&a_conv_infos, ggsw_infos));
@@ -212,7 +215,8 @@ where
 pub fn glwe_external_product_default<BE, M, R, A, G>(module: &M, res: &mut R, a: &A, ggsw: &G, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
-    M: GLWEExternalProductDefault<BE>
+    M: GLWEBytesOf<BE>
+        + GLWEExternalProductDefault<BE>
         + GLWEExternalProductInternal<BE>
         + GLWENormalizeDefault<BE>
         + ModuleN
@@ -289,7 +293,8 @@ where
 pub fn glwe_external_product_assign_default<BE, M, R, G>(module: &M, res: &mut R, ggsw: &G, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
-    M: GLWEExternalProductDefault<BE>
+    M: GLWEBytesOf<BE>
+        + GLWEExternalProductDefault<BE>
         + GLWEExternalProductInternal<BE>
         + GLWENormalizeDefault<BE>
         + ModuleN

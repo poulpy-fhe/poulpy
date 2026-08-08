@@ -16,7 +16,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use crate::{
     CoeffsMeta,
     api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar, LinearTransformation},
-    layouts::{CKKSModuleAlloc, ComplexDiagonals, plaintext::CKKSPlaintext},
+    layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, ComplexDiagonals},
 };
 
 fn validate_compile_inputs<F>(
@@ -93,7 +93,7 @@ pub fn ckks_encode_linear_transformation_from_diagonals<BE, F>(
     strategy: LinearTransformationStrategy,
     transpose: bool,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<LinearTransformation<CKKSPlaintext<BE::OwnedBuf>>>
+) -> Result<LinearTransformation<CKKSPlaintextOwned<BE>>>
 where
     BE: Backend,
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
@@ -117,7 +117,7 @@ fn encode_linear_transformation_from_diagonals<BE, F>(
     strategy: LinearTransformationStrategy,
     transpose: bool,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<LinearTransformation<CKKSPlaintext<BE::OwnedBuf>>>
+) -> Result<LinearTransformation<CKKSPlaintextOwned<BE>>>
 where
     BE: Backend,
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,

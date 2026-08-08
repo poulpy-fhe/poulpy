@@ -818,7 +818,7 @@ where
 unsafe impl<BE: Backend> GLWEPackImpl<BE> for BE
 where
     Module<BE>: crate::default::glwe_packing::GLWEPackingDefault<BE>,
-    GLWE<Vec<u8>>: GLWEToBackendMut<BE>,
+    GLWE<BE::OwnedBuf, BE::ZnxWord>: GLWEToBackendMut<BE>,
 {
     fn glwe_pack_galois_elements(module: &Module<BE>) -> Vec<i64> {
         module.glwe_pack_galois_elements_default()
@@ -874,14 +874,22 @@ macro_rules! impl_glwe_rotate_impl_from {
                 let delegate: poulpy_hal::layouts::Module<$from> =
                     <poulpy_hal::layouts::Module<$from> as poulpy_hal::api::ModuleNew<$from>>::new(module.n() as u64);
 
-                let a_host: $crate::layouts::GLWE<Vec<u8>> =
+                let a_host: $crate::layouts::GLWE<Vec<u8>, <$be as poulpy_hal::layouts::Backend>::ZnxWord> =
                     poulpy_hal::layouts::ToOwnedDeep::to_owned_deep(&$crate::layouts::GLWEToBackendRef::to_backend_ref(a));
-                let a_src: $crate::layouts::GLWE<<$be as poulpy_hal::layouts::Backend>::OwnedBuf> = a_host.reinterpret::<$be>();
+                let a_src: $crate::layouts::GLWE<
+                    <$be as poulpy_hal::layouts::Backend>::OwnedBuf,
+                    <$be as poulpy_hal::layouts::Backend>::ZnxWord,
+                > = a_host.reinterpret::<$be>();
 
                 let res_infos = $crate::layouts::GLWEToBackendMut::to_backend_mut(res);
-                let res_host: $crate::layouts::GLWE<Vec<u8>> = delegate.glwe_alloc_from_infos(&res_infos);
-                let res_src: $crate::layouts::GLWE<<$be as poulpy_hal::layouts::Backend>::OwnedBuf> =
-                    res_host.reinterpret::<$be>();
+                let res_host: $crate::layouts::GLWE<
+                    <$from as poulpy_hal::layouts::Backend>::OwnedBuf,
+                    <$from as poulpy_hal::layouts::Backend>::ZnxWord,
+                > = delegate.glwe_alloc_from_infos(&res_infos);
+                let res_src: $crate::layouts::GLWE<
+                    <$be as poulpy_hal::layouts::Backend>::OwnedBuf,
+                    <$be as poulpy_hal::layouts::Backend>::ZnxWord,
+                > = res_host.reinterpret::<$be>();
 
                 let a_delegate = $crate::api::ModuleTransfer::upload_glwe::<$be>(&delegate, &a_src);
                 let mut res_delegate = $crate::api::ModuleTransfer::upload_glwe::<$be>(&delegate, &res_src);
@@ -893,8 +901,10 @@ macro_rules! impl_glwe_rotate_impl_from {
                     &a_delegate,
                 );
 
-                let res_back: $crate::layouts::GLWE<<$be as poulpy_hal::layouts::Backend>::OwnedBuf> =
-                    $crate::api::ModuleTransfer::download_glwe::<$from>(&delegate, &res_delegate);
+                let res_back: $crate::layouts::GLWE<
+                    <$be as poulpy_hal::layouts::Backend>::OwnedBuf,
+                    <$be as poulpy_hal::layouts::Backend>::ZnxWord,
+                > = $crate::api::ModuleTransfer::download_glwe::<$from>(&delegate, &res_delegate);
                 let res_back_ref = $crate::layouts::GLWEToBackendRef::to_backend_ref(&res_back);
 
                 let mut bytes = Vec::new();
@@ -918,10 +928,12 @@ macro_rules! impl_glwe_rotate_impl_from {
                 let delegate: poulpy_hal::layouts::Module<$from> =
                     <poulpy_hal::layouts::Module<$from> as poulpy_hal::api::ModuleNew<$from>>::new(module.n() as u64);
 
-                let res_host: $crate::layouts::GLWE<Vec<u8>> =
+                let res_host: $crate::layouts::GLWE<Vec<u8>, <$be as poulpy_hal::layouts::Backend>::ZnxWord> =
                     poulpy_hal::layouts::ToOwnedDeep::to_owned_deep(&$crate::layouts::GLWEToBackendMut::to_backend_mut(res));
-                let res_src: $crate::layouts::GLWE<<$be as poulpy_hal::layouts::Backend>::OwnedBuf> =
-                    res_host.reinterpret::<$be>();
+                let res_src: $crate::layouts::GLWE<
+                    <$be as poulpy_hal::layouts::Backend>::OwnedBuf,
+                    <$be as poulpy_hal::layouts::Backend>::ZnxWord,
+                > = res_host.reinterpret::<$be>();
                 let mut res_delegate = $crate::api::ModuleTransfer::upload_glwe::<$be>(&delegate, &res_src);
 
                 let mut scratch_owned: poulpy_hal::layouts::ScratchOwned<$from> =
@@ -940,8 +952,10 @@ macro_rules! impl_glwe_rotate_impl_from {
                     scratch_delegate,
                 );
 
-                let res_back: $crate::layouts::GLWE<<$be as poulpy_hal::layouts::Backend>::OwnedBuf> =
-                    $crate::api::ModuleTransfer::download_glwe::<$from>(&delegate, &res_delegate);
+                let res_back: $crate::layouts::GLWE<
+                    <$be as poulpy_hal::layouts::Backend>::OwnedBuf,
+                    <$be as poulpy_hal::layouts::Backend>::ZnxWord,
+                > = $crate::api::ModuleTransfer::download_glwe::<$from>(&delegate, &res_delegate);
                 let res_back_ref = $crate::layouts::GLWEToBackendRef::to_backend_ref(&res_back);
 
                 let mut bytes = Vec::new();

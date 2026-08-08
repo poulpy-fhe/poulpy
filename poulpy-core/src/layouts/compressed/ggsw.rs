@@ -15,6 +15,7 @@ use crate::layouts::{
     },
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use poulpy_hal::layouts::ZnxWord;
 use std::{
     fmt,
     ops::{Deref, DerefMut},
@@ -26,8 +27,8 @@ use std::{
 /// polynomials are regenerated deterministically from 32-byte PRNG
 /// seeds during decompression.
 #[derive(PartialEq, Eq, Clone)]
-pub struct GGSWCompressed<D: Data> {
-    pub(crate) data: MatZnx<D>,
+pub struct GGSWCompressed<D: Data, W: ZnxWord> {
+    pub(crate) data: MatZnx<D, W>,
     pub(crate) k_aux: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) dsize: Dsize,
@@ -36,15 +37,15 @@ pub struct GGSWCompressed<D: Data> {
 }
 
 pub struct GGSWCompressedBackendRef<'a, BE: Backend + 'a> {
-    inner: GGSWCompressed<BE::BufRef<'a>>,
+    inner: GGSWCompressed<BE::BufRef<'a>, BE::ZnxWord>,
 }
 
 impl<'a, BE: Backend + 'a> GGSWCompressedBackendRef<'a, BE> {
-    pub fn from_inner(inner: GGSWCompressed<BE::BufRef<'a>>) -> Self {
+    pub fn from_inner(inner: GGSWCompressed<BE::BufRef<'a>, BE::ZnxWord>) -> Self {
         Self { inner }
     }
 
-    pub fn into_inner(self) -> GGSWCompressed<BE::BufRef<'a>> {
+    pub fn into_inner(self) -> GGSWCompressed<BE::BufRef<'a>, BE::ZnxWord> {
         self.inner
     }
 
@@ -54,7 +55,7 @@ impl<'a, BE: Backend + 'a> GGSWCompressedBackendRef<'a, BE> {
 }
 
 impl<'a, BE: Backend + 'a> Deref for GGSWCompressedBackendRef<'a, BE> {
-    type Target = GGSWCompressed<BE::BufRef<'a>>;
+    type Target = GGSWCompressed<BE::BufRef<'a>, BE::ZnxWord>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
@@ -62,15 +63,15 @@ impl<'a, BE: Backend + 'a> Deref for GGSWCompressedBackendRef<'a, BE> {
 }
 
 pub struct GGSWCompressedBackendMut<'a, BE: Backend + 'a> {
-    inner: GGSWCompressed<BE::BufMut<'a>>,
+    inner: GGSWCompressed<BE::BufMut<'a>, BE::ZnxWord>,
 }
 
 impl<'a, BE: Backend + 'a> GGSWCompressedBackendMut<'a, BE> {
-    pub fn from_inner(inner: GGSWCompressed<BE::BufMut<'a>>) -> Self {
+    pub fn from_inner(inner: GGSWCompressed<BE::BufMut<'a>, BE::ZnxWord>) -> Self {
         Self { inner }
     }
 
-    pub fn into_inner(self) -> GGSWCompressed<BE::BufMut<'a>> {
+    pub fn into_inner(self) -> GGSWCompressed<BE::BufMut<'a>, BE::ZnxWord> {
         self.inner
     }
 
@@ -80,7 +81,7 @@ impl<'a, BE: Backend + 'a> GGSWCompressedBackendMut<'a, BE> {
 }
 
 impl<'a, BE: Backend + 'a> Deref for GGSWCompressedBackendMut<'a, BE> {
-    type Target = GGSWCompressed<BE::BufMut<'a>>;
+    type Target = GGSWCompressed<BE::BufMut<'a>, BE::ZnxWord>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
@@ -181,7 +182,7 @@ pub trait GGSWCompressedSeedMut {
     fn seed_mut(&mut self) -> &mut Vec<[u8; 32]>;
 }
 
-impl<D: Data> GGSWCompressedSeedMut for GGSWCompressed<D> {
+impl<D: Data, W: ZnxWord> GGSWCompressedSeedMut for GGSWCompressed<D, W> {
     fn seed_mut(&mut self) -> &mut Vec<[u8; 32]> {
         &mut self.seed
     }
@@ -193,13 +194,13 @@ pub trait GGSWCompressedSeed {
     fn seed(&self) -> &Vec<[u8; 32]>;
 }
 
-impl<D: HostDataRef> GGSWCompressedSeed for GGSWCompressed<D> {
+impl<D: HostDataRef, W: ZnxWord> GGSWCompressedSeed for GGSWCompressed<D, W> {
     fn seed(&self) -> &Vec<[u8; 32]> {
         &self.seed
     }
 }
 
-impl<D: Data> LWEInfos for GGSWCompressed<D> {
+impl<D: Data, W: ZnxWord> LWEInfos for GGSWCompressed<D, W> {
     fn n(&self) -> Degree {
         Degree(self.data.n() as u32)
     }
@@ -216,13 +217,13 @@ impl<D: Data> LWEInfos for GGSWCompressed<D> {
         crate::layouts::key_k(self.base2k, self.dnum(), self.dsize, self.k_aux)
     }
 }
-impl<D: Data> GLWEInfos for GGSWCompressed<D> {
+impl<D: Data, W: ZnxWord> GLWEInfos for GGSWCompressed<D, W> {
     fn rank(&self) -> Rank {
         self.rank
     }
 }
 
-impl<D: Data> GGSWInfos for GGSWCompressed<D> {
+impl<D: Data, W: ZnxWord> GGSWInfos for GGSWCompressed<D, W> {
     fn k_aux(&self) -> TorusPrecision {
         self.k_aux
     }
@@ -236,13 +237,13 @@ impl<D: Data> GGSWInfos for GGSWCompressed<D> {
     }
 }
 
-impl<D: HostDataRef> fmt::Debug for GGSWCompressed<D> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GGSWCompressed<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.data)
     }
 }
 
-impl<D: HostDataRef> fmt::Display for GGSWCompressed<D> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Display for GGSWCompressed<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -255,19 +256,19 @@ impl<D: HostDataRef> fmt::Display for GGSWCompressed<D> {
     }
 }
 
-impl<D: HostDataMut> FillUniform for GGSWCompressed<D> {
+impl<D: HostDataMut, W: ZnxWord> FillUniform for GGSWCompressed<D, W> {
     fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
         self.data.fill_uniform(log_bound, source);
     }
 }
 
-impl GGSWCompressed<Vec<u8>> {
+impl<D: Data, W: ZnxWord> GGSWCompressed<D, W> {
     /// Allocates a new compressed GGSW by copying parameters from an existing info provider.
-    pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
+    pub(crate) fn alloc_from_infos<B: Backend<OwnedBuf = D, ZnxWord = W>, A>(infos: &A) -> Self
     where
         A: GGSWInfos,
     {
-        Self::alloc(
+        Self::alloc::<B>(
             infos.n(),
             infos.base2k(),
             infos.dnum(),
@@ -278,18 +279,19 @@ impl GGSWCompressed<Vec<u8>> {
     }
 
     /// Allocates a new compressed GGSW with the given parameters.
-    pub(crate) fn alloc(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> Self {
+    pub(crate) fn alloc<B: Backend<OwnedBuf = D, ZnxWord = W>>(
+        n: Degree,
+        base2k: Base2K,
+        dnum: Dnum,
+        dsize: Dsize,
+        k_aux: TorusPrecision,
+        rank: Rank,
+    ) -> Self {
         let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
 
         GGSWCompressed {
             data: MatZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(MatZnx::<Vec<u8>>::bytes_of(
-                    n.into(),
-                    dnum.into(),
-                    (rank + 1).into(),
-                    1,
-                    size,
-                )),
+                B::alloc_zeroed_bytes(B::bytes_of_mat_znx(n.into(), dnum.into(), (rank + 1).into(), 1, size)),
                 n.into(),
                 dnum.into(),
                 (rank + 1).into(),
@@ -323,13 +325,13 @@ impl GGSWCompressed<Vec<u8>> {
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
         let size: usize = crate::layouts::key_size(base2k, dnum, dsize, k_aux);
 
-        MatZnx::bytes_of(n.into(), dnum.into(), (rank + 1).into(), 1, size)
+        MatZnx::<Vec<u8>, W>::bytes_of(n.into(), dnum.into(), (rank + 1).into(), 1, size)
     }
 }
 
-impl<D: HostDataRef> GGSWCompressed<D> {
+impl<D: HostDataRef, W: ZnxWord> GGSWCompressed<D, W> {
     /// Returns an immutably-borrowed compressed GLWE at the given row and column.
-    pub fn at(&self, row: usize, col: usize) -> GLWECompressed<&[u8]> {
+    pub fn at(&self, row: usize, col: usize) -> GLWECompressed<&[u8], W> {
         let rank: usize = self.rank().into();
         GLWECompressed {
             data: self.data.at(row, col),
@@ -341,9 +343,9 @@ impl<D: HostDataRef> GGSWCompressed<D> {
     }
 }
 
-impl<D: HostDataMut> GGSWCompressed<D> {
+impl<D: HostDataMut, W: ZnxWord> GGSWCompressed<D, W> {
     /// Returns a mutably-borrowed compressed GLWE at the given row and column.
-    pub fn at_mut(&mut self, row: usize, col: usize) -> GLWECompressed<&mut [u8]> {
+    pub fn at_mut(&mut self, row: usize, col: usize) -> GLWECompressed<&mut [u8], W> {
         let rank: usize = self.rank().into();
         let k = self.k();
         let seed = self.seed[row * (rank + 1) + col];
@@ -357,7 +359,7 @@ impl<D: HostDataMut> GGSWCompressed<D> {
     }
 }
 
-impl<D: HostDataMut> ReaderFrom for GGSWCompressed<D> {
+impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGSWCompressed<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.k_aux = TorusPrecision(reader.read_u32::<LittleEndian>()?);
         self.base2k = Base2K(reader.read_u32::<LittleEndian>()?);
@@ -372,8 +374,8 @@ impl<D: HostDataMut> ReaderFrom for GGSWCompressed<D> {
     }
 }
 
-impl<D: HostDataRef> WriterTo for GGSWCompressed<D> {
-    fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+impl<D: HostDataRef, W: ZnxWord> WriterTo for GGSWCompressed<D, W> {
+    fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         writer.write_u32::<LittleEndian>(self.k_aux.into())?;
         writer.write_u32::<LittleEndian>(self.base2k.into())?;
         writer.write_u32::<LittleEndian>(self.dsize.into())?;
@@ -425,7 +427,7 @@ pub trait GGSWCompressedToBackendRef<BE: Backend> {
     fn to_backend_ref(&self) -> GGSWCompressedBackendRef<'_, BE>;
 }
 
-impl<BE: Backend> GGSWCompressedToBackendRef<BE> for GGSWCompressed<BE::OwnedBuf> {
+impl<BE: Backend> GGSWCompressedToBackendRef<BE> for GGSWCompressed<BE::OwnedBuf, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GGSWCompressedBackendRef<'_, BE> {
         GGSWCompressedBackendRef::from_inner(GGSWCompressed {
             k_aux: self.k_aux(),
@@ -433,12 +435,12 @@ impl<BE: Backend> GGSWCompressedToBackendRef<BE> for GGSWCompressed<BE::OwnedBuf
             dsize: self.dsize(),
             rank: self.rank(),
             seed: self.seed.clone(),
-            data: <MatZnx<BE::OwnedBuf> as MatZnxToBackendRef<BE>>::to_backend_ref(&self.data),
+            data: <MatZnx<BE::OwnedBuf, BE::ZnxWord> as MatZnxToBackendRef<BE>>::to_backend_ref(&self.data),
         })
     }
 }
 
-impl<'b, BE: Backend + 'b> GGSWCompressedToBackendRef<BE> for &GGSWCompressed<BE::BufRef<'b>> {
+impl<'b, BE: Backend + 'b> GGSWCompressedToBackendRef<BE> for &GGSWCompressed<BE::BufRef<'b>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GGSWCompressedBackendRef<'_, BE> {
         GGSWCompressedBackendRef::from_inner(GGSWCompressed {
             k_aux: self.k_aux(),
@@ -451,7 +453,7 @@ impl<'b, BE: Backend + 'b> GGSWCompressedToBackendRef<BE> for &GGSWCompressed<BE
     }
 }
 
-impl<'b, BE: Backend + 'b> GGSWCompressedToBackendRef<BE> for &mut GGSWCompressed<BE::BufMut<'b>> {
+impl<'b, BE: Backend + 'b> GGSWCompressedToBackendRef<BE> for &mut GGSWCompressed<BE::BufMut<'b>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GGSWCompressedBackendRef<'_, BE> {
         GGSWCompressedBackendRef::from_inner(GGSWCompressed {
             k_aux: self.k_aux(),
@@ -468,7 +470,7 @@ pub trait GGSWCompressedToBackendMut<BE: Backend>: GGSWCompressedToBackendRef<BE
     fn to_backend_mut(&mut self) -> GGSWCompressedBackendMut<'_, BE>;
 }
 
-impl<BE: Backend> GGSWCompressedToBackendMut<BE> for GGSWCompressed<BE::OwnedBuf> {
+impl<BE: Backend> GGSWCompressedToBackendMut<BE> for GGSWCompressed<BE::OwnedBuf, BE::ZnxWord> {
     fn to_backend_mut(&mut self) -> GGSWCompressedBackendMut<'_, BE> {
         GGSWCompressedBackendMut::from_inner(GGSWCompressed {
             k_aux: self.k_aux(),
@@ -476,12 +478,12 @@ impl<BE: Backend> GGSWCompressedToBackendMut<BE> for GGSWCompressed<BE::OwnedBuf
             dsize: self.dsize(),
             rank: self.rank(),
             seed: self.seed.clone(),
-            data: <MatZnx<BE::OwnedBuf> as MatZnxToBackendMut<BE>>::to_backend_mut(&mut self.data),
+            data: <MatZnx<BE::OwnedBuf, BE::ZnxWord> as MatZnxToBackendMut<BE>>::to_backend_mut(&mut self.data),
         })
     }
 }
 
-impl<'b, BE: Backend + 'b> GGSWCompressedToBackendMut<BE> for &mut GGSWCompressed<BE::BufMut<'b>> {
+impl<'b, BE: Backend + 'b> GGSWCompressedToBackendMut<BE> for &mut GGSWCompressed<BE::BufMut<'b>, BE::ZnxWord> {
     fn to_backend_mut(&mut self) -> GGSWCompressedBackendMut<'_, BE> {
         GGSWCompressedBackendMut::from_inner(GGSWCompressed {
             k_aux: self.k_aux(),
@@ -495,7 +497,7 @@ impl<'b, BE: Backend + 'b> GGSWCompressedToBackendMut<BE> for &mut GGSWCompresse
 }
 
 fn ggsw_compressed_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
-    ggsw: &'a mut GGSWCompressed<BE::BufMut<'b>>,
+    ggsw: &'a mut GGSWCompressed<BE::BufMut<'b>, BE::ZnxWord>,
     row: usize,
     col: usize,
 ) -> GLWECompressedBackendMut<'a, BE> {
@@ -514,7 +516,7 @@ fn ggsw_compressed_at_backend_mut_from_mut<'a, 'b, BE: Backend>(
 }
 
 fn ggsw_compressed_at_backend_ref_from_ref<'a, 'b, BE: Backend>(
-    ggsw: &'a GGSWCompressed<BE::BufRef<'b>>,
+    ggsw: &'a GGSWCompressed<BE::BufRef<'b>, BE::ZnxWord>,
     row: usize,
     col: usize,
 ) -> GLWECompressedBackendRef<'a, BE> {

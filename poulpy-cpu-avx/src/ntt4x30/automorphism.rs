@@ -32,7 +32,7 @@ pub fn ntt4x30_vec_znx_dft_automorphism_avx<BE>(
     a: &VecZnxDftBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<DftWord = Q120bScalar> + NttZero,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttZero,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {

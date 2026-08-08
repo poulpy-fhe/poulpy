@@ -17,7 +17,7 @@ use super::{
 use crate::{
     CKKSCtBounds,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSMulOps, CKKSSubOps, ShipScalar},
-    layouts::{CKKSCiphertext, ShipKeysPrepared},
+    layouts::{CKKSCiphertextOwned, ShipKeysPrepared},
     oep::{CKKSEncodingImpl, CKKSShipCoeffEncodingImpl},
 };
 
@@ -26,7 +26,7 @@ use crate::{
 /// variant whenever the key bundle carries its masks.
 pub(crate) fn ship_bootstrap_tmp_bytes<BE, F, Src>(
     module: &Module<BE>,
-    output: &CKKSCiphertext<BE::OwnedBuf>,
+    output: &CKKSCiphertextOwned<BE>,
     input: &Src,
     keys: &ShipKeysPrepared<BE::OwnedBuf, BE>,
 ) -> Result<usize>

@@ -1,3 +1,4 @@
+use crate::layouts::CKKSPlaintextOwned;
 use std::fmt::Debug;
 
 use anyhow::{Result, anyhow};
@@ -7,7 +8,7 @@ use poulpy_hal::layouts::{HostBytesBackend, Module};
 
 use crate::{
     CoeffsMeta, SetCKKSInfos,
-    layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar},
+    layouts::{CKKSModuleAlloc, CKKSPlaintextVecHostCodec, CKKSScalar},
 };
 
 pub use poulpy_core::layouts::{
@@ -23,7 +24,7 @@ pub trait EncodeBSGS {
         module: &Module<HostBytesBackend>,
         base2k: Base2K,
         coeff_meta: CoeffsMeta,
-    ) -> Result<BSGSPolynomial<CKKSPlaintext<Vec<u8>>>>;
+    ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend>>>;
 
     /// Decomposes and encodes using an explicit [`SplitStrategy`].
     fn encode_bsgs_with(
@@ -32,20 +33,20 @@ pub trait EncodeBSGS {
         base2k: Base2K,
         coeff_meta: CoeffsMeta,
         strategy: SplitStrategy,
-    ) -> Result<BSGSPolynomial<CKKSPlaintext<Vec<u8>>>>;
+    ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend>>>;
 }
 
 impl<F> EncodeBSGS for Polynomial<F>
 where
     F: Float + FloatConst + FromPrimitive + Debug + CKKSScalar,
-    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>,
+    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
 {
     fn encode_bsgs(
         &self,
         module: &Module<HostBytesBackend>,
         base2k: Base2K,
         coeff_meta: CoeffsMeta,
-    ) -> Result<BSGSPolynomial<CKKSPlaintext<Vec<u8>>>> {
+    ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend>>> {
         self.encode_bsgs_with(module, base2k, coeff_meta, DEFAULT_SPLIT_STRATEGY)
     }
 
@@ -55,7 +56,7 @@ where
         base2k: Base2K,
         coeff_meta: CoeffsMeta,
         strategy: SplitStrategy,
-    ) -> Result<BSGSPolynomial<CKKSPlaintext<Vec<u8>>>> {
+    ) -> Result<BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend>>> {
         let mut step_idx = 0usize;
         self.decompose_bsgs_with(strategy, |baby_coeffs| {
             let mut pt = module.ckks_pt_coeffs_alloc(baby_coeffs.len(), base2k, coeff_meta.k);
@@ -95,7 +96,7 @@ pub struct ComplexBSGSPolynomial<C> {
 impl<F> ComplexPolynomial<F>
 where
     F: Float + FloatConst + FromPrimitive + Debug + CKKSScalar,
-    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>,
+    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
 {
     /// Constructs a complex polynomial, padding `re`/`im` to equal length. The
     /// interval defaults to `[-1, 1]`; set it with [`Self::with_interval`].
@@ -139,7 +140,7 @@ where
         module: &Module<HostBytesBackend>,
         base2k: Base2K,
         coeff_meta: CoeffsMeta,
-    ) -> Result<ComplexBSGSPolynomial<CKKSPlaintext<Vec<u8>>>> {
+    ) -> Result<ComplexBSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend>>> {
         self.encode_bsgs_with(module, base2k, coeff_meta, DEFAULT_SPLIT_STRATEGY)
     }
 
@@ -151,7 +152,7 @@ where
         base2k: Base2K,
         coeff_meta: CoeffsMeta,
         strategy: SplitStrategy,
-    ) -> Result<ComplexBSGSPolynomial<CKKSPlaintext<Vec<u8>>>> {
+    ) -> Result<ComplexBSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend>>> {
         let (re_poly, im_poly) = self.split_with_shared_parity();
         let re = re_poly.encode_bsgs_with(module, base2k, coeff_meta, strategy)?;
         let im = im_poly.encode_bsgs_with(module, base2k, coeff_meta, strategy)?;

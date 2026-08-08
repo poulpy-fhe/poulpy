@@ -23,6 +23,7 @@
 //! the prepared, backend-resident homomorphic DFT matrices and the encoded,
 //! uploaded EvalMod, built once and reused across bootstraps.
 
+use crate::layouts::CKKSPlaintextOwned;
 use anyhow::Result;
 use poulpy_core::{
     default::linear_transformation::DiagonalProd,
@@ -34,8 +35,8 @@ use crate::{
     CKKSCtBounds, CKKSInfos,
     api::{CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingOps, CKKSEncodingScalar},
     layouts::{
-        CKKSModuleAlloc, CKKSPlaintext, DFTMatrix, DFTMatrixPrepared, DFTPlan, DFTType, Decode, Encode, EncodedLut, EvalMod,
-        EvalModPlan, Split, eval_mod::compile_eval_mod,
+        CKKSModuleAlloc, DFTMatrix, DFTMatrixPrepared, DFTPlan, DFTType, Decode, Encode, EncodedLut, EvalMod, EvalModPlan, Split,
+        eval_mod::compile_eval_mod,
     },
 };
 
@@ -287,7 +288,7 @@ pub struct BootstrappingContext<BE: Backend, F> {
     pub slots_to_coeffs: DFTMatrixPrepared<BE, Decode, Split>,
 
     /// Encoded, backend-resident EvalMod (`x mod 1`).
-    pub eval_mod: EvalMod<F, CKKSPlaintext<BE::OwnedBuf>>,
+    pub eval_mod: EvalMod<F, CKKSPlaintextOwned<BE>>,
 
     /// Selected ModUp/EvalMod pipeline.
     pub pipeline: BootstrappingPipeline,
@@ -321,7 +322,7 @@ where
     ) -> Result<Self>
     where
         Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
-        CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
+        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
     {
         let c2s_lt: DFTMatrix<BE, Encode, Split> =
             module.ckks_new_dft_matrix::<Encode, Split>(base2k, &plan.coeffs_to_slots, scratch)?;

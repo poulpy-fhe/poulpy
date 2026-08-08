@@ -177,7 +177,7 @@ fn bench_ntt4x30_ref(c: &mut Criterion) {
     let mul_pt_bytes = module.ckks_mul_pt_const_tmp_bytes(&ct_template, &ct_template, &PT_LAYOUT);
     let add_bytes = module.ckks_add_tmp_bytes();
     let copy_bytes = module.ckks_copy_tmp_bytes();
-    let ct_block = poulpy_core::layouts::GLWE::<Vec<u8>>::bytes_of_from_infos(&ct_template);
+    let ct_block = poulpy_core::layouts::GLWE::<Vec<u8>, i64>::bytes_of_from_infos(&ct_template);
     // The giant step keeps the prepared `X^{gsp}` right operand alive across relinearization.
     let hoisted_right = module.bytes_of_cnv_pvec_right(2, CT_K.div_ceil(BASE2K));
     let scratch_bytes = mul_bytes

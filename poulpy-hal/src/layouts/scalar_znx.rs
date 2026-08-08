@@ -63,7 +63,7 @@ impl<D: Data, W: ZnxWord> ScalarZnx<D, W> {
 
 #[repr(C)]
 #[derive(PartialEq, Eq, Debug, Clone, Hash)]
-pub struct ScalarZnx<D: Data, W: ZnxWord = i64> {
+pub struct ScalarZnx<D: Data, W: ZnxWord> {
     pub data: D,
     shape: ScalarZnxShape,
     pub _phantom: PhantomData<W>,
@@ -125,17 +125,17 @@ impl<D: HostDataRef, W: ZnxWord> ZnxView for ScalarZnx<D, W> {
     type Scalar = W;
 }
 
-impl<D: HostDataMut> ScalarZnx<D> {
+impl<D: HostDataMut, W: ZnxWord> ScalarZnx<D, W> {
     /// Fills column `col` with ternary values `{-1, 0, 1}` where each
     /// non-zero entry appears with total probability `prob` (split equally
     /// between `-1` and `+1`).
     pub fn fill_ternary_prob(&mut self, col: usize, prob: f64, source: &mut Source) {
-        let choices: [i64; 3] = [-1, 0, 1];
+        let choices: [W; 3] = [W::from_i64(-1), W::zero(), W::from_i64(1)];
         let weights: [f64; 3] = [prob / 2.0, 1.0 - prob, prob / 2.0];
         let dist: WeightedIndex<f64> = WeightedIndex::new(weights).unwrap();
         self.at_mut(col, 0)
             .iter_mut()
-            .for_each(|x: &mut i64| *x = choices[dist.sample(source)]);
+            .for_each(|x: &mut W| *x = choices[dist.sample(source)]);
     }
 
     /// Fills column `col` with exactly `hw` non-zero ternary values `{-1, +1}`
@@ -148,22 +148,22 @@ impl<D: HostDataMut> ScalarZnx<D> {
         assert!(hw <= self.n());
         // Zero-initialize before setting non-zero entries, since shuffle will
         // mix positions and we need indices hw..n to be zero.
-        self.at_mut(col, 0).fill(0);
+        self.at_mut(col, 0).fill(W::zero());
         self.at_mut(col, 0)[..hw]
             .iter_mut()
-            .for_each(|x: &mut i64| *x = (((source.next_u32() & 1) as i64) << 1) - 1);
+            .for_each(|x: &mut W| *x = W::from_i64((((source.next_u32() & 1) as i64) << 1) - 1));
         self.at_mut(col, 0).shuffle(source);
     }
 
     /// Fills column `col` with binary values `{0, 1}` where each entry is `1`
     /// with probability `prob`.
     pub fn fill_binary_prob(&mut self, col: usize, prob: f64, source: &mut Source) {
-        let choices: [i64; 2] = [0, 1];
+        let choices: [W; 2] = [W::zero(), W::from_i64(1)];
         let weights: [f64; 2] = [1.0 - prob, prob];
         let dist: WeightedIndex<f64> = WeightedIndex::new(weights).unwrap();
         self.at_mut(col, 0)
             .iter_mut()
-            .for_each(|x: &mut i64| *x = choices[dist.sample(source)]);
+            .for_each(|x: &mut W| *x = choices[dist.sample(source)]);
     }
 
     /// Fills column `col` with exactly `hw` ones at uniformly random positions;
@@ -176,10 +176,10 @@ impl<D: HostDataMut> ScalarZnx<D> {
         assert!(hw <= self.n());
         // Zero-initialize before setting non-zero entries, since shuffle will
         // mix positions and we need indices hw..n to be zero.
-        self.at_mut(col, 0).fill(0);
+        self.at_mut(col, 0).fill(W::zero());
         self.at_mut(col, 0)[..hw]
             .iter_mut()
-            .for_each(|x: &mut i64| *x = (source.next_u32() & 1) as i64);
+            .for_each(|x: &mut W| *x = W::from_i64((source.next_u32() & 1) as i64));
         self.at_mut(col, 0).shuffle(source);
     }
 
@@ -194,25 +194,27 @@ impl<D: HostDataMut> ScalarZnx<D> {
     pub fn fill_binary_block(&mut self, col: usize, block_size: usize, source: &mut Source) {
         assert!(self.n().is_multiple_of(block_size));
         // Zero-initialize: each block gets at most one non-zero entry.
-        self.at_mut(col, 0).fill(0);
+        self.at_mut(col, 0).fill(W::zero());
         let max_idx: u64 = (block_size + 1) as u64;
         let mask_idx: u64 = (1 << ((u64::BITS - max_idx.leading_zeros()) as u64)) - 1;
         for block in self.at_mut(col, 0).chunks_mut(block_size) {
             let idx: usize = source.next_u64n(max_idx, mask_idx) as usize;
             if idx != block_size {
-                block[idx] = 1;
+                block[idx] = W::from_i64(1);
             }
         }
     }
 }
 
-impl ScalarZnx<Vec<u8>> {
+impl<D: Data, W: ZnxWord> ScalarZnx<D, W> {
     /// Returns the number of bytes required to store a `ScalarZnx` with
-    /// ring degree `n` and `cols` columns: `n * cols * 8`.
+    /// ring degree `n` and `cols` columns: `n * cols * size_of::<W>()`.
     pub fn bytes_of(n: usize, cols: usize) -> usize {
-        crate::layouts::checked_product(&[n, cols, size_of::<i64>()], "ScalarZnx byte size")
+        crate::layouts::checked_product(&[n, cols, size_of::<W>()], "ScalarZnx byte size")
     }
+}
 
+impl<W: ZnxWord> ScalarZnx<Vec<u8>, W> {
     /// Allocates a zero-initialized `ScalarZnx` aligned to [`DEFAULTALIGN`](crate::DEFAULTALIGN).
     pub(crate) fn alloc(n: usize, cols: usize) -> Self {
         let data: Vec<u8> = alloc_aligned::<u8>(Self::bytes_of(n, cols));
@@ -250,28 +252,33 @@ impl<D: HostDataMut, W: ZnxWord> ZnxZero for ScalarZnx<D, W> {
     }
 }
 
-impl<D: HostDataMut> FillUniform for ScalarZnx<D> {
+impl<D: HostDataMut, W: ZnxWord> FillUniform for ScalarZnx<D, W> {
     fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
-        match log_bound {
-            64 => source.fill_bytes(self.data.as_mut()),
-            0 => panic!("invalid log_bound, cannot be zero"),
-            _ => {
-                let mask: u64 = (1u64 << log_bound) - 1;
-                for x in self.raw_mut().iter_mut() {
-                    let r = source.next_u64() & mask;
-                    *x = ((r << (64 - log_bound)) as i64) >> (64 - log_bound);
-                }
-            }
+        assert!(log_bound != 0, "invalid log_bound, cannot be zero");
+        assert!(
+            log_bound <= W::BITS,
+            "log_bound {log_bound} exceeds the {}-bit coefficient word",
+            W::BITS
+        );
+        if log_bound == W::BITS {
+            source.fill_bytes(self.data.as_mut());
+            return;
+        }
+        let mask: u64 = (1u64 << log_bound) - 1;
+        let shift: usize = 64 - log_bound;
+        for x in self.raw_mut().iter_mut() {
+            let r = source.next_u64() & mask;
+            *x = W::from_i64(((r << shift) as i64) >> shift);
         }
     }
 }
 
 /// Owned `ScalarZnx` backed by a `Vec<u8>`.
-pub type ScalarZnxOwned = ScalarZnx<Vec<u8>>;
+pub type ScalarZnxOwned<W> = ScalarZnx<Vec<u8>, W>;
 /// Shared backend-native borrow of a `ScalarZnx`.
-pub type ScalarZnxBackendRef<'a, B> = ScalarZnx<<B as Backend>::BufRef<'a>>;
+pub type ScalarZnxBackendRef<'a, B> = ScalarZnx<<B as Backend>::BufRef<'a>, <B as Backend>::ZnxWord>;
 /// Mutable backend-native borrow of a `ScalarZnx`.
-pub type ScalarZnxBackendMut<'a, B> = ScalarZnx<<B as Backend>::BufMut<'a>>;
+pub type ScalarZnxBackendMut<'a, B> = ScalarZnx<<B as Backend>::BufMut<'a>, <B as Backend>::ZnxWord>;
 
 impl<D: Data, W: ZnxWord> ScalarZnx<D, W> {
     /// Constructs a `ScalarZnx` from raw parts without validation.
@@ -289,7 +296,7 @@ pub trait ScalarZnxToBackendRef<B: Backend> {
     fn to_backend_ref(&self) -> ScalarZnxBackendRef<'_, B>;
 }
 
-impl<B: Backend> ScalarZnxToBackendRef<B> for ScalarZnx<B::OwnedBuf> {
+impl<B: Backend> ScalarZnxToBackendRef<B> for ScalarZnx<B::OwnedBuf, B::ZnxWord> {
     fn to_backend_ref(&self) -> ScalarZnxBackendRef<'_, B> {
         ScalarZnx {
             data: B::view(&self.data),
@@ -299,7 +306,7 @@ impl<B: Backend> ScalarZnxToBackendRef<B> for ScalarZnx<B::OwnedBuf> {
     }
 }
 
-impl<'b, B: Backend + 'b> ScalarZnxToBackendRef<B> for &ScalarZnx<B::BufRef<'b>> {
+impl<'b, B: Backend + 'b> ScalarZnxToBackendRef<B> for &ScalarZnx<B::BufRef<'b>, B::ZnxWord> {
     fn to_backend_ref(&self) -> ScalarZnxBackendRef<'_, B> {
         ScalarZnx {
             data: B::view_ref(&self.data),
@@ -309,7 +316,7 @@ impl<'b, B: Backend + 'b> ScalarZnxToBackendRef<B> for &ScalarZnx<B::BufRef<'b>>
     }
 }
 
-impl<'b, B: Backend + 'b> ScalarZnxToBackendRef<B> for &mut ScalarZnx<B::BufMut<'b>> {
+impl<'b, B: Backend + 'b> ScalarZnxToBackendRef<B> for &mut ScalarZnx<B::BufMut<'b>, B::ZnxWord> {
     fn to_backend_ref(&self) -> ScalarZnxBackendRef<'_, B> {
         scalar_znx_backend_ref_from_mut::<B>(self)
     }
@@ -320,7 +327,7 @@ pub trait ScalarZnxToBackendMut<B: Backend> {
     fn to_backend_mut(&mut self) -> ScalarZnxBackendMut<'_, B>;
 }
 
-impl<B: Backend> ScalarZnxToBackendMut<B> for ScalarZnx<B::OwnedBuf> {
+impl<B: Backend> ScalarZnxToBackendMut<B> for ScalarZnx<B::OwnedBuf, B::ZnxWord> {
     fn to_backend_mut(&mut self) -> ScalarZnxBackendMut<'_, B> {
         ScalarZnx {
             data: B::view_mut(&mut self.data),
@@ -330,13 +337,15 @@ impl<B: Backend> ScalarZnxToBackendMut<B> for ScalarZnx<B::OwnedBuf> {
     }
 }
 
-impl<'b, B: Backend + 'b> ScalarZnxToBackendMut<B> for &mut ScalarZnx<B::BufMut<'b>> {
+impl<'b, B: Backend + 'b> ScalarZnxToBackendMut<B> for &mut ScalarZnx<B::BufMut<'b>, B::ZnxWord> {
     fn to_backend_mut(&mut self) -> ScalarZnxBackendMut<'_, B> {
         scalar_znx_backend_mut_from_mut::<B>(self)
     }
 }
 
-fn scalar_znx_backend_ref_from_mut<'a, 'b, B: Backend + 'b>(scalar: &'a ScalarZnx<B::BufMut<'b>>) -> ScalarZnxBackendRef<'a, B> {
+fn scalar_znx_backend_ref_from_mut<'a, 'b, B: Backend + 'b>(
+    scalar: &'a ScalarZnx<B::BufMut<'b>, B::ZnxWord>,
+) -> ScalarZnxBackendRef<'a, B> {
     ScalarZnx {
         data: B::view_ref_mut(&scalar.data),
         shape: scalar.shape,
@@ -345,7 +354,7 @@ fn scalar_znx_backend_ref_from_mut<'a, 'b, B: Backend + 'b>(scalar: &'a ScalarZn
 }
 
 fn scalar_znx_backend_mut_from_mut<'a, 'b, B: Backend + 'b>(
-    scalar: &'a mut ScalarZnx<B::BufMut<'b>>,
+    scalar: &'a mut ScalarZnx<B::BufMut<'b>, B::ZnxWord>,
 ) -> ScalarZnxBackendMut<'a, B> {
     ScalarZnx {
         data: B::view_mut_ref(&mut scalar.data),
@@ -374,23 +383,23 @@ impl<D: HostDataRef, W: ZnxWord> ScalarZnx<D, W> {
 
 /// Views a backend-owned `ScalarZnx` as a backend-native [`VecZnx`] with `size == 1`.
 pub trait ScalarZnxAsVecZnxBackendRef<B: Backend> {
-    fn as_vec_znx_backend(&self) -> VecZnx<B::BufRef<'_>>;
+    fn as_vec_znx_backend(&self) -> VecZnx<B::BufRef<'_>, B::ZnxWord>;
 }
 
-impl<B: Backend> ScalarZnxAsVecZnxBackendRef<B> for ScalarZnx<B::OwnedBuf> {
-    fn as_vec_znx_backend(&self) -> VecZnx<B::BufRef<'_>> {
+impl<B: Backend> ScalarZnxAsVecZnxBackendRef<B> for ScalarZnx<B::OwnedBuf, B::ZnxWord> {
+    fn as_vec_znx_backend(&self) -> VecZnx<B::BufRef<'_>, B::ZnxWord> {
         VecZnx::from_data(B::view(&self.data), self.n(), self.cols(), 1)
     }
 }
 
 pub fn scalar_znx_as_vec_znx_backend_ref_from_ref<'a, 'b, B: Backend + 'b>(
-    scalar: &'a ScalarZnx<B::BufRef<'b>>,
+    scalar: &'a ScalarZnx<B::BufRef<'b>, B::ZnxWord>,
 ) -> VecZnxBackendRef<'a, B> {
     VecZnx::from_data(B::view_ref(&scalar.data), scalar.n(), scalar.cols(), 1)
 }
 
 pub fn scalar_znx_as_vec_znx_backend_ref_from_mut<'a, 'b, B: Backend + 'b>(
-    scalar: &'a ScalarZnx<B::BufMut<'b>>,
+    scalar: &'a ScalarZnx<B::BufMut<'b>, B::ZnxWord>,
 ) -> VecZnxBackendRef<'a, B> {
     VecZnx::from_data(B::view_ref_mut(&scalar.data), scalar.n(), scalar.cols(), 1)
 }
@@ -405,18 +414,18 @@ impl<D: HostDataMut, W: ZnxWord> ScalarZnx<D, W> {
 
 /// Mutably views a backend-owned `ScalarZnx` as a backend-native [`VecZnx`] with `size == 1`.
 pub trait ScalarZnxAsVecZnxBackendMut<B: Backend> {
-    fn as_vec_znx_backend_mut(&mut self) -> VecZnx<B::BufMut<'_>>;
+    fn as_vec_znx_backend_mut(&mut self) -> VecZnx<B::BufMut<'_>, B::ZnxWord>;
 }
 
-impl<B: Backend> ScalarZnxAsVecZnxBackendMut<B> for ScalarZnx<B::OwnedBuf> {
-    fn as_vec_znx_backend_mut(&mut self) -> VecZnx<B::BufMut<'_>> {
+impl<B: Backend> ScalarZnxAsVecZnxBackendMut<B> for ScalarZnx<B::OwnedBuf, B::ZnxWord> {
+    fn as_vec_znx_backend_mut(&mut self) -> VecZnx<B::BufMut<'_>, B::ZnxWord> {
         let shape = self.shape();
         VecZnx::from_data(B::view_mut(&mut self.data), shape.n(), shape.cols(), 1)
     }
 }
 
 pub fn scalar_znx_as_vec_znx_backend_mut_from_mut<'a, 'b, B: Backend + 'b>(
-    scalar: &'a mut ScalarZnx<B::BufMut<'b>>,
+    scalar: &'a mut ScalarZnx<B::BufMut<'b>, B::ZnxWord>,
 ) -> VecZnxBackendMut<'a, B> {
     let shape = scalar.shape();
     VecZnx::from_data(B::view_mut_ref(&mut scalar.data), shape.n(), shape.cols(), 1)

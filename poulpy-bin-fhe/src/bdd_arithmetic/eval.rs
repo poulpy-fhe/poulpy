@@ -1,4 +1,5 @@
 use core::panic;
+use poulpy_hal::layouts::HostDataRef;
 
 use itertools::Itertools;
 use poulpy_core::{
@@ -22,6 +23,7 @@ use poulpy_hal::{
 };
 
 use crate::bdd_arithmetic::GetGGSWBit;
+use poulpy_core::GLWEBytesOf;
 
 /// A single bit-output circuit stored as a flat node array.
 ///
@@ -105,7 +107,7 @@ where
 /// producing one GLWE ciphertext per output bit.  The circuit is represented as
 /// a sequence of [`Node`] entries arranged in BDD levels; each level is evaluated
 /// using [`Cmux`] gates.
-pub trait ExecuteBDDCircuit<BE: Backend<OwnedBuf = Vec<u8>>> {
+pub trait ExecuteBDDCircuit<BE: Backend<OwnedBuf: HostDataMut + HostDataRef>> {
     /// Returns the minimum scratch-space size in bytes required by a single
     /// thread of BDD circuit evaluation.
     ///
@@ -124,12 +126,17 @@ pub trait ExecuteBDDCircuit<BE: Backend<OwnedBuf = Vec<u8>>> {
     ///
     /// Delegates to [`execute_bdd_circuit_multi_thread`][Self::execute_bdd_circuit_multi_thread]
     /// with `threads = 1`.
-    fn execute_bdd_circuit<C, G, O>(&self, out: &mut [GLWE<O>], inputs: &G, circuit: &C, scratch: &mut ScratchArena<'_, BE>)
-    where
+    fn execute_bdd_circuit<C, G, O>(
+        &self,
+        out: &mut [GLWE<O, BE::ZnxWord>],
+        inputs: &G,
+        circuit: &C,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
         G: GetGGSWBit<BE> + BitSize,
         C: GetBitCircuitInfo,
         O: HostDataMut,
-        GLWE<O>: GLWEToBackendMut<BE>,
+        GLWE<O, BE::ZnxWord>: GLWEToBackendMut<BE>,
     {
         self.execute_bdd_circuit_multi_thread(1, out, inputs, circuit, scratch);
     }
@@ -147,7 +154,7 @@ pub trait ExecuteBDDCircuit<BE: Backend<OwnedBuf = Vec<u8>>> {
     fn execute_bdd_circuit_multi_thread<C, G, O>(
         &self,
         threads: usize,
-        out: &mut [GLWE<O>],
+        out: &mut [GLWE<O, BE::ZnxWord>],
         inputs: &G,
         circuit: &C,
         scratch: &mut ScratchArena<'_, BE>,
@@ -155,16 +162,16 @@ pub trait ExecuteBDDCircuit<BE: Backend<OwnedBuf = Vec<u8>>> {
         G: GetGGSWBit<BE> + BitSize,
         C: GetBitCircuitInfo,
         O: HostDataMut,
-        GLWE<O>: GLWEToBackendMut<BE>;
+        GLWE<O, BE::ZnxWord>: GLWEToBackendMut<BE>;
 }
 
 pub trait BitSize {
     fn bit_size(&self) -> usize;
 }
 
-impl<BE: Backend<OwnedBuf = Vec<u8>>> ExecuteBDDCircuit<BE> for Module<BE>
+impl<BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>> ExecuteBDDCircuit<BE> for Module<BE>
 where
-    Self: Cmux<BE> + GLWECopy<BE>,
+    Self: GLWEBytesOf<BE> + Cmux<BE> + GLWECopy<BE>,
     BE: 'static,
     for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
     for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]>,
@@ -174,13 +181,13 @@ where
         R: GLWEInfos,
         G: GGSWInfos,
     {
-        2 * state_size * GLWE::<Vec<u8>>::bytes_of_from_infos(res_infos) + self.cmux_tmp_bytes(res_infos, res_infos, ggsw_infos)
+        2 * state_size * self.glwe_bytes_of_from_infos(res_infos) + self.cmux_tmp_bytes(res_infos, res_infos, ggsw_infos)
     }
 
     fn execute_bdd_circuit_multi_thread<C, G, O>(
         &self,
         threads: usize,
-        out: &mut [GLWE<O>],
+        out: &mut [GLWE<O, BE::ZnxWord>],
         inputs: &G,
         circuit: &C,
         scratch: &mut ScratchArena<'_, BE>,
@@ -188,7 +195,7 @@ where
         G: GetGGSWBit<BE> + BitSize,
         C: GetBitCircuitInfo,
         O: HostDataMut,
-        GLWE<O>: GLWEToBackendMut<BE>,
+        GLWE<O, BE::ZnxWord>: GLWEToBackendMut<BE>,
     {
         #[cfg(debug_assertions)]
         {
@@ -232,8 +239,8 @@ fn eval_level<M, G, R, BE>(
     state_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    M: Cmux<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = Vec<u8>>,
-    BE: Backend<OwnedBuf = Vec<u8>> + 'static,
+    M: Cmux<BE> + GLWECopy<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
+    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + 'static,
     G: GetGGSWBit<BE> + BitSize,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,
@@ -244,7 +251,8 @@ fn eval_level<M, G, R, BE>(
     // TODO(device): the current BDD evaluator still uses host-owned temporary
     // levels because the node execution logic performs host-visible zero/one
     // initialization over the intermediate GLWEs.
-    let mut level: Vec<GLWE<Vec<u8>>> = (0..state_size * 2).map(|_| module.glwe_alloc_from_infos(res)).collect();
+    let mut level: Vec<GLWE<BE::OwnedBuf, BE::ZnxWord>> =
+        (0..state_size * 2).map(|_| module.glwe_alloc_from_infos(res)).collect();
     let mut scratch_1 = scratch.borrow();
 
     level.iter_mut().for_each(|ct| ct.data_mut().zero());
@@ -252,7 +260,7 @@ fn eval_level<M, G, R, BE>(
     // TODO: implement API on GLWE
     level[1].data_mut().encode_coeff_i64(res.base2k().into(), 0, 2, 0, 1);
 
-    let mut level_ref: Vec<&mut GLWE<Vec<u8>>> = level.iter_mut().collect_vec();
+    let mut level_ref: Vec<&mut GLWE<BE::OwnedBuf, BE::ZnxWord>> = level.iter_mut().collect_vec();
     let (mut prev_level, mut next_level) = level_ref.split_at_mut(state_size);
 
     let (all_but_last, last) = nodes.split_at(nodes.len() - state_size);
@@ -322,8 +330,9 @@ pub enum Node {
     None,
 }
 
-impl<BE: Backend<OwnedBuf = Vec<u8>>> Cswap<BE> for Module<BE> where
-    Self: Sized
+impl<BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>> Cswap<BE> for Module<BE> where
+    Self: GLWEBytesOf<BE>
+        + Sized
         + ModuleN
         + GLWEExternalProductInternal<BE>
         + GLWESub<BE>
@@ -357,9 +366,10 @@ impl<BE: Backend<OwnedBuf = Vec<u8>>> Cswap<BE> for Module<BE> where
 ///
 /// but is performed entirely in the ciphertext domain.  Used by
 /// `GLWEBlindRetrieval` to implement oblivious array access.
-pub trait Cswap<BE: Backend<OwnedBuf = Vec<u8>>>
+pub trait Cswap<BE: Backend<OwnedBuf: HostDataMut + HostDataRef>>
 where
-    Self: Sized
+    Self: GLWEBytesOf<BE>
+        + Sized
         + ModuleN
         + GLWEExternalProductInternal<BE>
         + GLWESub<BE>
@@ -382,6 +392,7 @@ where
     /// Returns the minimum scratch-space size in bytes required by [`cswap`][Self::cswap].
     fn cswap_tmp_bytes<R, A, S>(&self, res_a_infos: &R, res_b_infos: &A, s_infos: &S) -> usize
     where
+        Self: GLWEBytesOf<BE>,
         R: GLWEInfos,
         A: GLWEInfos,
         S: GGSWInfos,
@@ -395,25 +406,25 @@ where
         };
         let mut tot = res_dft
             + (self.glwe_external_product_internal_tmp_bytes(&tmp_c_infos, &tmp_c_infos, s_infos)
-                + GLWE::<Vec<u8>>::bytes_of_from_infos(&tmp_c_infos))
+                + self.glwe_bytes_of_from_infos(&tmp_c_infos))
             .max(self.vec_znx_big_normalize_tmp_bytes());
 
         if res_a_infos.base2k() != s_infos.base2k() {
-            tot += GLWE::<Vec<u8>>::bytes_of_from_infos(&GLWELayout {
+            tot += self.glwe_bytes_of_from_infos(&GLWELayout {
                 n: res_a_infos.n(),
                 base2k: s_infos.base2k(),
                 k: res_a_infos.k(),
                 rank: res_a_infos.rank(),
             });
-            tot += GLWE::<Vec<u8>>::bytes_of_from_infos(&GLWELayout {
+            tot += self.glwe_bytes_of_from_infos(&GLWELayout {
                 n: res_b_infos.n(),
                 base2k: s_infos.base2k(),
                 k: res_b_infos.k(),
                 rank: res_b_infos.rank(),
             });
         } else {
-            tot += GLWE::<Vec<u8>>::bytes_of_from_infos(res_a_infos);
-            tot += GLWE::<Vec<u8>>::bytes_of_from_infos(res_b_infos);
+            tot += self.glwe_bytes_of_from_infos(res_a_infos);
+            tot += self.glwe_bytes_of_from_infos(res_b_infos);
         }
 
         tot + self.bytes_of_vec_znx_big(1, s_infos.size())
@@ -623,9 +634,10 @@ where
 ///
 /// so that `res` encrypts `t` when `b = 1` and `f` when `b = 0`.  This is the
 /// fundamental gate used throughout BDD circuit evaluation.
-pub trait Cmux<BE: Backend<OwnedBuf = Vec<u8>>>
+pub trait Cmux<BE: Backend<OwnedBuf: HostDataMut + HostDataRef>>
 where
-    Self: Sized
+    Self: GLWEBytesOf<BE>
+        + Sized
         + GLWEExternalProductInternal<BE>
         + GLWECopy<BE>
         + GLWESub<BE>
@@ -641,13 +653,14 @@ where
     /// Returns the minimum scratch-space size in bytes required by [`cmux`][Self::cmux].
     fn cmux_tmp_bytes<R, A, B>(&self, res_infos: &R, a_infos: &A, selector_infos: &B) -> usize
     where
+        Self: GLWEBytesOf<BE>,
         R: GLWEInfos,
         A: GLWEInfos,
         B: GGSWInfos,
     {
         let res_dft: usize = self.bytes_of_vec_znx_dft((selector_infos.rank() + 1).into(), selector_infos.size());
-        GLWE::<Vec<u8>>::bytes_of_from_infos(res_infos)
-            + GLWE::<Vec<u8>>::bytes_of_from_infos(a_infos)
+        self.glwe_bytes_of_from_infos(res_infos)
+            + self.glwe_bytes_of_from_infos(a_infos)
             + res_dft
             + self
                 .glwe_external_product_internal_tmp_bytes(res_infos, a_infos, selector_infos)
@@ -815,9 +828,10 @@ where
     }
 }
 
-impl<BE: Backend<OwnedBuf = Vec<u8>>> Cmux<BE> for Module<BE>
+impl<BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>> Cmux<BE> for Module<BE>
 where
-    Self: Sized
+    Self: GLWEBytesOf<BE>
+        + Sized
         + GLWEExternalProductInternal<BE>
         + GLWECopy<BE>
         + GLWESub<BE>
