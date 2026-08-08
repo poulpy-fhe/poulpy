@@ -77,6 +77,15 @@ Real coefficient polynomials in the monomial basis, where the coefficients are r
 
 Real coefficient polynomials in the Chebyshev basis, where the result is `Sum_k c_k T_k(x)` and the power basis holds the Chebyshev powers `T_k(x)`.
 
+Even and odd polynomials can optionally be folded before BSGS decomposition with `encode_bsgs_folded_with`.
+In the monomial basis this evaluates the lower degree `Q(x squared)` or `x times Q(x squared)`; in the Chebyshev basis it evaluates `Q(T2(x))` or `x times Q(T2(x))`, where `T2(x) = 2 x squared - 1`.
+The ordinary encoder already uses parity to skip zero coefficients and unnecessary baby powers, but it does not factor the polynomial or halve its encoded degree.
+
+For a source degree `d`, let `m = floor(d / 2)` and let `D(n)` be the depth reported in the table below for degree `n` under the selected split strategy.
+The folded depth is `D(m) + 1` for an even polynomial and `D(m) + 2` for an odd polynomial.
+Consequently `MinDepth` folding is depth neutral for every even degree and adds one level for every odd degree; with `MinMult`, the table determines the degree bands where folding adds zero, one, or two levels.
+Folding is therefore explicit rather than automatic.
+
 Complex coefficient polynomials in both the monomial and Chebyshev bases, where each coefficient is `a_k + i b_k`.
 The complex case reuses the real engine by evaluating the real part chunks and the imaginary part chunks, then combining them as `real_part + i times imaginary_part`.
 The multiplication by the imaginary unit is the capacity free monomial map provided by the scheme, so the complex evaluation consumes the same modulus as the real one and runs only slightly slower.

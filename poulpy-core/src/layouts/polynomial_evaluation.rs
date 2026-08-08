@@ -42,14 +42,18 @@ pub enum Parity {
 
 /// Input rewrite attached to a decomposed polynomial.
 ///
-/// Chebyshev polynomials with a known parity can be folded through
-/// `T₂(x) = 2x² - 1`, halving the encoded degree. Odd polynomials additionally
-/// factor out one copy of the original input.
+/// Polynomials with a known parity can be folded through `x²` (monomial basis)
+/// or `T₂(x) = 2x² - 1` (Chebyshev basis), halving the encoded degree. Odd
+/// polynomials additionally factor out one copy of the original input.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum PolynomialInputTransform {
     /// Evaluate the encoded polynomial directly on the input.
     #[default]
     Identity,
+    /// Evaluate the encoded polynomial on `x²`.
+    Square,
+    /// Evaluate the encoded polynomial on `x²`, then multiply by `x`.
+    SquareTimesInput,
     /// Evaluate the encoded polynomial on `T₂(x)`.
     ChebyshevT2,
     /// Evaluate the encoded polynomial on `T₂(x)`, then multiply by `x`.
@@ -60,8 +64,8 @@ impl PolynomialInputTransform {
     fn extra_depth(self) -> usize {
         match self {
             Self::Identity => 0,
-            Self::ChebyshevT2 => 1,
-            Self::ChebyshevT2TimesInput => 2,
+            Self::Square | Self::ChebyshevT2 => 1,
+            Self::SquareTimesInput | Self::ChebyshevT2TimesInput => 2,
         }
     }
 }
@@ -636,41 +640,42 @@ where
         self.evaluate(u * x + w)
     }
 
-    /// Folds an even or odd Chebyshev polynomial through `u = T₂(x)`.
+    /// Folds an even or odd polynomial through a quadratic input transform.
     ///
-    /// For even `P`, returns `Q` such that `P(x) = Q(T₂(x))`. For odd `P`,
-    /// returns `Q` such that `P(x) = x·Q(T₂(x))`. The returned polynomial is
-    /// expressed on the canonical `u ∈ [-1, 1]` interval; the accompanying
-    /// transform records how to recover the source polynomial.
-    pub fn fold_chebyshev_t2(&self) -> Result<(Self, PolynomialInputTransform)> {
-        ensure!(self.basis == Basis::Chebyshev, "T₂ folding requires a Chebyshev polynomial");
+    /// Monomial polynomials use `u = x²`; Chebyshev polynomials use
+    /// `u = T₂(x)`. For even `P`, the result satisfies `P(x) = Q(u)`. For odd
+    /// `P`, it satisfies `P(x) = x·Q(u)`. The accompanying transform records how
+    /// to recover the source polynomial.
+    pub fn fold_parity(&self) -> Result<(Self, PolynomialInputTransform)> {
+        let (start, transform) = match (self.basis, self.parity) {
+            (Basis::Monomial, Parity::Even) => (0, PolynomialInputTransform::Square),
+            (Basis::Monomial, Parity::Odd) => (1, PolynomialInputTransform::SquareTimesInput),
+            (Basis::Chebyshev, Parity::Even) => (0, PolynomialInputTransform::ChebyshevT2),
+            (Basis::Chebyshev, Parity::Odd) => (1, PolynomialInputTransform::ChebyshevT2TimesInput),
+            (_, Parity::Full) => return Err(anyhow!("parity folding requires even or odd parity")),
+        };
+        let minimum_degree = if self.parity == Parity::Even { 2 } else { 3 };
+        ensure!(
+            self.degree() >= minimum_degree,
+            "parity folding a {:?} polynomial requires degree ≥ {minimum_degree}",
+            self.parity
+        );
+        ensure!(
+            self.coeffs
+                .iter()
+                .enumerate()
+                .all(|(i, &coefficient)| { i.is_multiple_of(2) == (self.parity == Parity::Even) || coefficient == F::zero() }),
+            "parity folding requires coefficients consistent with {:?} parity",
+            self.parity
+        );
+
+        if self.basis == Basis::Monomial || self.parity == Parity::Even {
+            let coeffs = self.coeffs.iter().skip(start).step_by(2).copied().collect();
+            return Ok((Self::new_with_parity(self.basis, coeffs, Parity::Full), transform));
+        }
 
         match self.parity {
-            Parity::Even => {
-                ensure!(self.degree() >= 2, "T₂ folding an even polynomial requires degree ≥ 2");
-                ensure!(
-                    self.coeffs
-                        .iter()
-                        .enumerate()
-                        .all(|(i, &c)| i.is_multiple_of(2) || c == F::zero()),
-                    "even T₂ folding requires zero odd coefficients"
-                );
-                let coeffs = self.coeffs.iter().step_by(2).copied().collect();
-                Ok((
-                    Self::new_with_parity(Basis::Chebyshev, coeffs, Parity::Full),
-                    PolynomialInputTransform::ChebyshevT2,
-                ))
-            }
             Parity::Odd => {
-                ensure!(self.degree() >= 3, "T₂ folding an odd polynomial requires degree ≥ 3");
-                ensure!(
-                    self.coeffs
-                        .iter()
-                        .enumerate()
-                        .all(|(i, &c)| !i.is_multiple_of(2) || c == F::zero()),
-                    "odd T₂ folding requires zero even coefficients"
-                );
-
                 // Rₖ(u) = T₂ₖ₊₁(x) / x in the Chebyshev basis of
                 // u = T₂(x). Build Rₖ with the recurrence
                 // R₀ = 1, R₁ = 2T₁ - T₀,
@@ -710,12 +715,9 @@ where
                     std::mem::swap(&mut r, &mut next);
                 }
 
-                Ok((
-                    Self::new_with_parity(Basis::Chebyshev, q, Parity::Full),
-                    PolynomialInputTransform::ChebyshevT2TimesInput,
-                ))
+                Ok((Self::new_with_parity(Basis::Chebyshev, q, Parity::Full), transform))
             }
-            Parity::Full => Err(anyhow!("T₂ folding requires even or odd parity")),
+            _ => unreachable!("monomial and even folds return above"),
         }
     }
 
@@ -760,23 +762,23 @@ where
         })
     }
 
-    /// Folds this even/odd Chebyshev polynomial through `T₂`, then decomposes
-    /// and encodes the lower-degree polynomial for BSGS evaluation.
+    /// Folds this even/odd polynomial through `x²` (monomial) or `T₂`
+    /// (Chebyshev), then decomposes and encodes the lower-degree polynomial.
     ///
     /// This is explicit because the odd transform costs a final ciphertext
     /// multiplication and can increase depth for some degrees. The returned
     /// decomposition carries the transform and includes its cost in
     /// [`BSGSPolynomial::eval_depth`] and [`BSGSPolynomial::consumed_bits`].
-    pub fn decompose_bsgs_t2_with<C>(
+    pub fn decompose_bsgs_folded_with<C>(
         &self,
         split_strategy: SplitStrategy,
         encode: impl FnMut(&[F]) -> Result<C>,
     ) -> Result<BSGSPolynomial<C>> {
-        let (folded, input_transform) = self.fold_chebyshev_t2()?;
+        let (folded, input_transform) = self.fold_parity()?;
         let mut bsgs = folded.decompose_bsgs_with(split_strategy, encode)?;
         bsgs.input_transform = input_transform;
         // The public interval still describes the source input. Evaluation first
-        // maps that interval to [-1, 1], then applies the attached T₂ transform.
+        // applies its change of basis, then the attached quadratic transform.
         bsgs.a = self.a.to_f64().expect("interval lower bound must convert to f64");
         bsgs.b = self.b.to_f64().expect("interval upper bound must convert to f64");
         Ok(bsgs)
@@ -938,8 +940,8 @@ impl<C> BSGSPolynomial<C> {
 
     /// Returns the degree encoded by this BSGS decomposition.
     ///
-    /// This is half the source degree when [`Self::input_transform`] is a T₂
-    /// fold.
+    /// This is half the source degree when [`Self::input_transform`] is a
+    /// quadratic parity fold.
     pub fn degree(&self) -> usize {
         self.degree
     }
@@ -1238,7 +1240,7 @@ mod tests {
             vec![1.0_f64, 0.0, -0.5, 0.0, 0.25, 0.0, 0.125],
             Parity::Even,
         );
-        let (folded, transform) = poly.fold_chebyshev_t2().unwrap();
+        let (folded, transform) = poly.fold_parity().unwrap();
 
         assert_eq!(transform, PolynomialInputTransform::ChebyshevT2);
         assert_eq!(folded.coeffs, vec![1.0, -0.5, 0.25, 0.125]);
@@ -1255,7 +1257,7 @@ mod tests {
             vec![0.0_f64, 1.0, 0.0, -0.5, 0.0, 0.25, 0.0, -0.125],
             Parity::Odd,
         );
-        let (folded, transform) = poly.fold_chebyshev_t2().unwrap();
+        let (folded, transform) = poly.fold_parity().unwrap();
 
         assert_eq!(transform, PolynomialInputTransform::ChebyshevT2TimesInput);
         for i in 0..=64 {
@@ -1265,11 +1267,11 @@ mod tests {
     }
 
     #[test]
-    fn t2_bsgs_preserves_source_interval_and_accounts_for_transform() {
+    fn parity_fold_bsgs_preserves_source_interval_and_accounts_for_transform() {
         let even = Polynomial::new_with_parity(Basis::Chebyshev, vec![1.0_f64, 0.0, 2.0, 0.0, 3.0, 0.0, 4.0], Parity::Even)
             .with_interval(-3.0, 5.0);
         let even_bsgs = even
-            .decompose_bsgs_t2_with(SplitStrategy::MinDepth, |c| Ok::<_, anyhow::Error>(c.to_vec()))
+            .decompose_bsgs_folded_with(SplitStrategy::MinDepth, |c| Ok::<_, anyhow::Error>(c.to_vec()))
             .unwrap();
         assert_eq!(even_bsgs.input_transform(), PolynomialInputTransform::ChebyshevT2);
         assert_eq!(even_bsgs.degree(), 3);
@@ -1283,7 +1285,7 @@ mod tests {
             Parity::Odd,
         );
         let odd_bsgs = odd
-            .decompose_bsgs_t2_with(SplitStrategy::MinDepth, |c| Ok::<_, anyhow::Error>(c.to_vec()))
+            .decompose_bsgs_folded_with(SplitStrategy::MinDepth, |c| Ok::<_, anyhow::Error>(c.to_vec()))
             .unwrap();
         assert_eq!(odd_bsgs.input_transform(), PolynomialInputTransform::ChebyshevT2TimesInput);
         assert_eq!(odd_bsgs.degree(), 3);
@@ -1292,6 +1294,26 @@ mod tests {
             odd_bsgs.consumed_bits(5, 3),
             bsgs_consumed_bits(3, SplitStrategy::MinDepth, Parity::Full, Basis::Chebyshev, 5, 3) + 10
         );
+    }
+
+    #[test]
+    fn monomial_parity_folds_match_source() {
+        let even = Polynomial::new_with_parity(Basis::Monomial, vec![1.0_f64, 0.0, -0.5, 0.0, 0.25, 0.0, 0.125], Parity::Even);
+        let odd = Polynomial::new_with_parity(
+            Basis::Monomial,
+            vec![0.0_f64, 1.0, 0.0, -0.5, 0.0, 0.25, 0.0, -0.125],
+            Parity::Odd,
+        );
+        let (even_folded, even_transform) = even.fold_parity().unwrap();
+        let (odd_folded, odd_transform) = odd.fold_parity().unwrap();
+
+        assert_eq!(even_transform, PolynomialInputTransform::Square);
+        assert_eq!(odd_transform, PolynomialInputTransform::SquareTimesInput);
+        for i in 0..=64 {
+            let x = -1.0 + 2.0 * i as f64 / 64.0;
+            assert!((even.evaluate(x) - even_folded.evaluate(x * x)).abs() < 1e-12);
+            assert!((odd.evaluate(x) - x * odd_folded.evaluate(x * x)).abs() < 1e-12);
+        }
     }
 
     #[test]

@@ -803,8 +803,8 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_chebyshev_degree31_min_mult
             );
             run_test!(
-                eval_poly_const_coeffs_chebyshev_t2,
-                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_chebyshev_t2
+                eval_poly_const_coeffs_parity_folds,
+                $crate::test_suite::polynomial_evaluation::test_eval_poly_const_coeffs_parity_folds
             );
             run_test!(
                 eval_poly_consumed_bits_sweep,

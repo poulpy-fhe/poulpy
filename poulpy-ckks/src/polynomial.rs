@@ -34,9 +34,9 @@ pub trait EncodeBSGS {
         strategy: SplitStrategy,
     ) -> Result<BSGSPolynomial<CKKSPlaintext<Vec<u8>>>>;
 
-    /// Folds an even/odd Chebyshev polynomial through `T₂`, then decomposes
-    /// and encodes the lower-degree polynomial with an explicit split strategy.
-    fn encode_bsgs_t2_with(
+    /// Folds an even/odd polynomial through `x²` (monomial) or `T₂`
+    /// (Chebyshev), then encodes the lower-degree polynomial.
+    fn encode_bsgs_folded_with(
         &self,
         module: &Module<HostBytesBackend>,
         base2k: Base2K,
@@ -77,7 +77,7 @@ where
         })
     }
 
-    fn encode_bsgs_t2_with(
+    fn encode_bsgs_folded_with(
         &self,
         module: &Module<HostBytesBackend>,
         base2k: Base2K,
@@ -85,11 +85,11 @@ where
         strategy: SplitStrategy,
     ) -> Result<BSGSPolynomial<CKKSPlaintext<Vec<u8>>>> {
         let mut step_idx = 0usize;
-        self.decompose_bsgs_t2_with(strategy, |baby_coeffs| {
+        self.decompose_bsgs_folded_with(strategy, |baby_coeffs| {
             let mut pt = module.ckks_pt_coeffs_alloc(baby_coeffs.len(), base2k, coeff_meta.k);
             pt.set_meta(coeff_meta.meta);
             pt.encode_host_floats(baby_coeffs)
-                .map_err(|e| anyhow!("encode_bsgs_t2: step {step_idx}: {e}"))?;
+                .map_err(|e| anyhow!("encode_bsgs_folded: step {step_idx}: {e}"))?;
             step_idx += 1;
             Ok(pt)
         })
@@ -186,8 +186,8 @@ where
         Ok(ComplexBSGSPolynomial { re, im })
     }
 
-    /// Encodes both components through the same even/odd Chebyshev T₂ fold.
-    pub fn encode_bsgs_t2_with(
+    /// Encodes both components through the same even/odd quadratic fold.
+    pub fn encode_bsgs_folded_with(
         &self,
         module: &Module<HostBytesBackend>,
         base2k: Base2K,
@@ -195,8 +195,8 @@ where
         strategy: SplitStrategy,
     ) -> Result<ComplexBSGSPolynomial<CKKSPlaintext<Vec<u8>>>> {
         let (re_poly, im_poly) = self.split_with_shared_parity();
-        let re = re_poly.encode_bsgs_t2_with(module, base2k, coeff_meta, strategy)?;
-        let im = im_poly.encode_bsgs_t2_with(module, base2k, coeff_meta, strategy)?;
+        let re = re_poly.encode_bsgs_folded_with(module, base2k, coeff_meta, strategy)?;
+        let im = im_poly.encode_bsgs_folded_with(module, base2k, coeff_meta, strategy)?;
         Ok(ComplexBSGSPolynomial { re, im })
     }
 }

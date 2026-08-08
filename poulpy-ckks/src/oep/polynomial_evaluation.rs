@@ -42,6 +42,13 @@ where
 
     match transform {
         PolynomialInputTransform::Identity => Ok(input),
+        PolynomialInputTransform::Square | PolynomialInputTransform::SquareTimesInput => {
+            let mut input_basis = PowerBasis::new(crate::api::Basis::Monomial, input);
+            input_basis.gen_power(2, module, tsk, scratch)?;
+            Ok(input_basis
+                .take_power(2)
+                .expect("generating x² must store the degree-two power"))
+        }
         PolynomialInputTransform::ChebyshevT2 | PolynomialInputTransform::ChebyshevT2TimesInput => {
             let mut input_basis = PowerBasis::new(crate::api::Basis::Chebyshev, input);
             input_basis.gen_power_chebyshev(2, module, tsk, scratch)?;
@@ -199,7 +206,10 @@ where
         let mut power_basis = PowerBasis::new(bsgs.basis(), x1);
         power_basis.populate(bsgs.degree(), bsgs.log_split(), bsgs.parity(), module, tsk, scratch)?;
         module.ckks_eval_poly_real_const_coeffs_from_power_basis_default(dst, bsgs, &power_basis, tsk, scratch)?;
-        if transform == PolynomialInputTransform::ChebyshevT2TimesInput {
+        if matches!(
+            transform,
+            PolynomialInputTransform::SquareTimesInput | PolynomialInputTransform::ChebyshevT2TimesInput
+        ) {
             module.ckks_mul_assign(dst, src, tsk, scratch)?;
         }
         Ok(())
@@ -229,7 +239,10 @@ where
         let mut power_basis = PowerBasis::new(poly.re.basis(), x1);
         power_basis.populate(poly.re.degree(), poly.re.log_split(), poly.re.parity(), module, tsk, scratch)?;
         module.ckks_eval_poly_complex_const_coeffs_from_power_basis_default(dst, poly, &power_basis, tsk, scratch)?;
-        if transform == PolynomialInputTransform::ChebyshevT2TimesInput {
+        if matches!(
+            transform,
+            PolynomialInputTransform::SquareTimesInput | PolynomialInputTransform::ChebyshevT2TimesInput
+        ) {
             module.ckks_mul_assign(dst, src, tsk, scratch)?;
         }
         Ok(())
