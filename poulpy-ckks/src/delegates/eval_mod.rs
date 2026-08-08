@@ -9,8 +9,8 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena, VecZnx};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
-    api::{CKKSAddOps, CKKSCopyOps, CKKSEvalModOps, CKKSMulOps, CKKSSubOps},
-    layouts::eval_mod::EvalMod,
+    api::{CKKSAddOps, CKKSCopyOps, CKKSEvalModOps, CKKSMulOps, CKKSSubOps, PolynomialInputTransform},
+    layouts::eval_mod::{EvalMod, EvalModBsgs},
     oep::CKKSEvalModImpl,
 };
 
@@ -95,10 +95,18 @@ where
             // any runtime re-expansion can expose.
             self.ckks_square_tmp_bytes(res, res, tsk) + VecZnx::bytes_of(res.n().into(), (res.rank() + 1).into(), res.max_size()),
         );
-        // The working copy `t1` (the input re-labelled at the plan scale — the
-        // `work` shape) is carved from this scratch and lives for the whole
-        // evaluation, so its bytes are charged on top of every nested stage.
-        compact_work
+        // Identity base polynomials transfer an owned, relabelled input directly
+        // into the power basis. Scratch only needs a full working ciphertext for
+        // a transformed base or for the optional inverse composition.
+        let needs_work_copy = params.f_mod_inv_bsgs.is_some()
+            || match &params.f_mod_bsgs {
+                EvalModBsgs::Real(poly) => poly.input_transform() != PolynomialInputTransform::Identity,
+                EvalModBsgs::Complex(poly) => {
+                    poly.re.input_transform() != PolynomialInputTransform::Identity
+                        || poly.im.input_transform() != PolynomialInputTransform::Identity
+                }
+            };
+        usize::from(needs_work_copy) * compact_work
             + self
                 .ckks_copy_tmp_bytes()
                 .max(self.ckks_add_pt_const_tmp_bytes())
