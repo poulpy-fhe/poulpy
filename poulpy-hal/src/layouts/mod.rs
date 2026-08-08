@@ -320,8 +320,26 @@ pub type OwnedBuf<BE> = <BE as Backend>::OwnedBuf;
 /// All other backend-to-backend transfers (e.g. `FFT64Ref` ↔ `NTT4x30Ref`,
 /// `FFT64Ref` → `FFT64Avx`) must be implemented explicitly in the respective
 /// backend crates.
+///
+/// # Scope: this is a byte move, not a conversion
+///
+/// [`Self::transfer_buf`] receives an opaque buffer with no shape (`n`, `cols`,
+/// `size`) and no `base2k`, so it cannot re-decompose limbs. The layout-level
+/// helpers built on it (`ModuleTransfer::upload_*` / `download_*`) therefore
+/// re-attach the source's shape to the destination, and they require both
+/// backends to agree on the coefficient word (`To: Backend<ZnxWord =
+/// From::ZnxWord>`). Only the buffer type may differ, which is what makes
+/// host → device staging work.
+///
+/// Moving a value between backends whose limb axis differs (a different word,
+/// a different `base2k`, hence a different limb count for the same torus
+/// precision) is a re-encoding rather than a copy: it needs both `base2k`
+/// values and a caller-allocated destination at its own layout. That is a
+/// separate operation and is deliberately not expressible here.
 pub trait TransferFrom<From: Backend>: Backend {
     /// Transfers a buffer owned by `From` into `Self`.
+    ///
+    /// Byte-for-byte; the caller guarantees both sides share a layout.
     fn transfer_buf(src: &From::OwnedBuf) -> Self::OwnedBuf;
 }
 
@@ -330,6 +348,15 @@ impl<T: Backend<Location = Host, OwnedBuf = Vec<u8>>> TransferFrom<HostBytesBack
         T::from_host_bytes(src)
     }
 }
+
+/// A backend that can exchange coefficient data with [`HostBytesBackend`].
+///
+/// Bundles the two requirements of a host-staged transfer: the byte move itself
+/// ([`TransferFrom`]) and agreement on the coefficient word, since
+/// [`TransferFrom::transfer_buf`] is a copy and cannot re-decompose limbs.
+pub trait HostStaged: Backend<ZnxWord = <HostBytesBackend as Backend>::ZnxWord> + TransferFrom<HostBytesBackend> {}
+
+impl<BE> HostStaged for BE where BE: Backend<ZnxWord = <HostBytesBackend as Backend>::ZnxWord> + TransferFrom<HostBytesBackend> {}
 
 /// Implement a backend marker by forwarding all storage- and handle-level
 /// behavior to an existing backend.

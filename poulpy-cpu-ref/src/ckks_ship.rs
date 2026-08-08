@@ -34,9 +34,9 @@ pub fn ship_coeff_encodings_staged<BE, F, Src>(
     plan: &ShipPlan,
     base2k: Base2K,
     complex: bool,
-) -> Result<ShipCoeffEncodings<BE::OwnedBuf>>
+) -> Result<ShipCoeffEncodings<BE::OwnedBuf, BE::ZnxWord>>
 where
-    BE: Backend + CKKSEncodingImpl<BE, F>,
+    BE: Backend<ZnxWord = i64> + CKKSEncodingImpl<BE, F>,
     BE::OwnedBuf: HostDataRef,
     Module<BE>: ModuleN + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F> + GLWECopy<BE>,
     F: ShipScalar,
@@ -83,7 +83,10 @@ macro_rules! impl_ckks_ship_coeff_encoding {
                 complex: bool,
                 _scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) -> ::poulpy_ckks::CKKSResult<
-                ::poulpy_ckks::layouts::ShipCoeffEncodings<<$be as ::poulpy_hal::layouts::Backend>::OwnedBuf>,
+                ::poulpy_ckks::layouts::ShipCoeffEncodings<
+                    <$be as ::poulpy_hal::layouts::Backend>::OwnedBuf,
+                    <$be as ::poulpy_hal::layouts::Backend>::ZnxWord,
+                >,
             >
             where
                 F: ::poulpy_ckks::api::ShipScalar,

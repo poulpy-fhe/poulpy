@@ -1,3 +1,4 @@
+use poulpy_hal::layouts::ZnxWord;
 use std::fmt;
 
 use poulpy_hal::{
@@ -66,9 +67,9 @@ impl GGLWEInfos for LWESwitchingKeyLayout {
 }
 
 #[derive(PartialEq, Eq, Clone)]
-pub struct LWESwitchingKey<D: Data>(pub(crate) GLWESwitchingKey<D>);
+pub struct LWESwitchingKey<D: Data, W: ZnxWord>(pub(crate) GLWESwitchingKey<D, W>);
 
-impl<D: Data> LWEInfos for LWESwitchingKey<D> {
+impl<D: Data, W: ZnxWord> LWEInfos for LWESwitchingKey<D, W> {
     fn base2k(&self) -> Base2K {
         self.0.base2k()
     }
@@ -86,13 +87,13 @@ impl<D: Data> LWEInfos for LWESwitchingKey<D> {
     }
 }
 
-impl<D: Data> GLWEInfos for LWESwitchingKey<D> {
+impl<D: Data, W: ZnxWord> GLWEInfos for LWESwitchingKey<D, W> {
     fn rank(&self) -> Rank {
         self.rank_out()
     }
 }
 
-impl<D: Data> GGLWEInfos for LWESwitchingKey<D> {
+impl<D: Data, W: ZnxWord> GGLWEInfos for LWESwitchingKey<D, W> {
     fn k_aux(&self) -> TorusPrecision {
         self.0.k_aux()
     }
@@ -118,7 +119,7 @@ impl<D: Data> GGLWEInfos for LWESwitchingKey<D> {
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl LWESwitchingKey<Vec<u8>> {
+impl<W: ZnxWord> LWESwitchingKey<Vec<u8>, W> {
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
         A: GGLWEInfos,
@@ -144,45 +145,45 @@ impl LWESwitchingKey<Vec<u8>> {
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision) -> usize {
-        GLWESwitchingKey::bytes_of(n, base2k, dnum, Dsize(1), k_aux, Rank(1), Rank(1))
+        GLWESwitchingKey::<Vec<u8>, W>::bytes_of(n, base2k, dnum, Dsize(1), k_aux, Rank(1), Rank(1))
     }
 }
 
-impl<D: HostDataRef> fmt::Debug for LWESwitchingKey<D> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Debug for LWESwitchingKey<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: HostDataMut> FillUniform for LWESwitchingKey<D> {
+impl<D: HostDataMut, W: ZnxWord> FillUniform for LWESwitchingKey<D, W> {
     fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
         self.0.fill_uniform(log_bound, source);
     }
 }
 
-impl<D: HostDataRef> fmt::Display for LWESwitchingKey<D> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Display for LWESwitchingKey<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "(LWESwitchingKey) {}", self.0)
     }
 }
 
-impl<D: HostDataMut> ReaderFrom for LWESwitchingKey<D> {
+impl<D: HostDataMut, W: ZnxWord> ReaderFrom for LWESwitchingKey<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.0.read_from(reader)
     }
 }
 
-impl<D: HostDataRef> WriterTo for LWESwitchingKey<D> {
-    fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+impl<D: HostDataRef, W: ZnxWord> WriterTo for LWESwitchingKey<D, W> {
+    fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         self.0.write_to(writer)
     }
 }
 
-impl_gglwe_to_backend_for_field!(LWESwitchingKey<D>, 0, GLWESwitchingKey<D>);
+impl_gglwe_to_backend_for_field!(LWESwitchingKey<D, BE::ZnxWord>, 0, GLWESwitchingKey<D, BE::ZnxWord>);
 
-impl_gglwe_at_view_for_field!(LWESwitchingKey<BE::OwnedBuf>; 0.key);
+impl_gglwe_at_view_for_field!(LWESwitchingKey<BE::OwnedBuf, BE::ZnxWord>; 0.key);
 
-impl<D: HostDataMut> GLWESwitchingKeyDegreesMut for LWESwitchingKey<D> {
+impl<D: HostDataMut, W: ZnxWord> GLWESwitchingKeyDegreesMut for LWESwitchingKey<D, W> {
     fn input_degree(&mut self) -> &mut Degree {
         &mut self.0.input_degree
     }
@@ -192,7 +193,7 @@ impl<D: HostDataMut> GLWESwitchingKeyDegreesMut for LWESwitchingKey<D> {
     }
 }
 
-impl<D: HostDataRef> GLWESwitchingKeyDegrees for LWESwitchingKey<D> {
+impl<D: HostDataRef, W: ZnxWord> GLWESwitchingKeyDegrees for LWESwitchingKey<D, W> {
     fn input_degree(&self) -> &Degree {
         &self.0.input_degree
     }

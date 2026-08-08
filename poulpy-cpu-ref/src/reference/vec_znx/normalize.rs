@@ -10,11 +10,11 @@ use crate::{
 };
 
 #[cfg(test)]
-fn alloc_host_vec_znx(n: usize, cols: usize, size: usize) -> crate::layouts::VecZnx<Vec<u8>> {
+fn alloc_host_vec_znx(n: usize, cols: usize, size: usize) -> crate::layouts::VecZnx<Vec<u8>, i64> {
     use crate::layouts::VecZnx;
 
     crate::layouts::VecZnx::from_data(
-        crate::layouts::HostBytesBackend::alloc_bytes(VecZnx::<Vec<u8>>::bytes_of(n, cols, size)),
+        crate::layouts::HostBytesBackend::alloc_bytes(VecZnx::<Vec<u8>, i64>::bytes_of(n, cols, size)),
         n,
         cols,
         size,
@@ -37,7 +37,7 @@ pub fn vec_znx_normalize_coeff<'r, 'a, BE>(
     a_coeff: usize,
     carry: &mut [i64],
 ) where
-    BE: Backend
+    BE: Backend<ZnxWord = i64>
         + ZnxZero
         + ZnxCopy
         + ZnxAddAssign
@@ -69,7 +69,7 @@ pub fn vec_znx_normalize_coeff_assign<'r, BE>(
     res_coeff: usize,
     carry: &mut [i64],
 ) where
-    BE: Backend + ZnxNormalizeFirstStepAssign + ZnxNormalizeMiddleStepAssign + ZnxNormalizeFinalStepAssign,
+    BE: Backend<ZnxWord = i64> + ZnxNormalizeFirstStepAssign + ZnxNormalizeMiddleStepAssign + ZnxNormalizeFinalStepAssign,
     BE::BufMut<'r>: HostDataMut,
 {
     #[cfg(debug_assertions)]
@@ -103,7 +103,7 @@ fn vec_znx_normalize_coeff_inter_base2k<'r, 'a, BE>(
     a_coeff: usize,
     carry: &mut [i64],
 ) where
-    BE: Backend
+    BE: Backend<ZnxWord = i64>
         + ZnxZero
         + ZnxNormalizeFirstStepCarryOnly
         + ZnxNormalizeMiddleStepCarryOnly
@@ -188,7 +188,7 @@ fn vec_znx_normalize_coeff_cross_base2k<'r, 'a, BE>(
     a_coeff: usize,
     carry: &mut [i64],
 ) where
-    BE: Backend
+    BE: Backend<ZnxWord = i64>
         + ZnxZero
         + ZnxCopy
         + ZnxAddAssign
@@ -349,7 +349,7 @@ pub fn vec_znx_normalize<'r, 'a, BE>(
     a_col: usize,
     carry: &mut [i64],
 ) where
-    BE: Backend
+    BE: Backend<ZnxWord = i64>
         + ZnxZero
         + ZnxCopy
         + ZnxAddAssign
@@ -381,7 +381,7 @@ fn vec_znx_normalize_inter_base2k<'r, 'a, BE>(
     a_col: usize,
     carry: &mut [i64],
 ) where
-    BE: Backend
+    BE: Backend<ZnxWord = i64>
         + ZnxZero
         + ZnxNormalizeFirstStepCarryOnly
         + ZnxNormalizeMiddleStepCarryOnly
@@ -477,7 +477,7 @@ fn vec_znx_normalize_cross_base2k<'r, 'a, BE>(
     a_col: usize,
     carry: &mut [i64],
 ) where
-    BE: Backend
+    BE: Backend<ZnxWord = i64>
         + ZnxZero
         + ZnxCopy
         + ZnxAddAssign
@@ -723,7 +723,7 @@ fn vec_znx_normalize_cross_base2k<'r, 'a, BE>(
 
 pub fn vec_znx_normalize_assign<'r, BE>(base2k: usize, res: &mut VecZnxBackendMut<'r, BE>, res_col: usize, carry: &mut [i64])
 where
-    BE: Backend + ZnxNormalizeFirstStepAssign + ZnxNormalizeMiddleStepAssign + ZnxNormalizeFinalStepAssign,
+    BE: Backend<ZnxWord = i64> + ZnxNormalizeFirstStepAssign + ZnxNormalizeMiddleStepAssign + ZnxNormalizeFinalStepAssign,
     BE::BufMut<'r>: HostDataMut,
 {
     #[cfg(debug_assertions)]
@@ -808,17 +808,17 @@ fn test_vec_znx_normalize_cross_base2k() {
                 let out_size: usize = (in_prec as usize).div_ceil(out_base2k);
 
                 let min_prec: u32 = (in_size * in_base2k).min(out_size * out_base2k) as u32;
-                let mut want: VecZnx<Vec<u8>> = alloc_host_vec_znx(n, 1, in_size);
+                let mut want: VecZnx<Vec<u8>, i64> = alloc_host_vec_znx(n, 1, in_size);
                 want.fill_uniform(60, &mut source);
 
-                let mut have: VecZnx<Vec<u8>> = alloc_host_vec_znx(n, 1, out_size);
+                let mut have: VecZnx<Vec<u8>, i64> = alloc_host_vec_znx(n, 1, out_size);
                 have.fill_uniform(60, &mut source);
                 vec_znx_normalize_cross_base2k::<FFT64Ref>(
-                    &mut <VecZnx<Vec<u8>> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut have),
+                    &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut have),
                     out_base2k,
                     offset,
                     0,
-                    &<VecZnx<Vec<u8>> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&want),
+                    &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&want),
                     in_base2k,
                     0,
                     &mut carry,
@@ -916,18 +916,18 @@ fn test_vec_znx_normalize_inter_base2k() {
             let out_prec: u32 = (size * base2k) as u32;
 
             // Fills "want" with uniform values
-            let mut want: VecZnx<Vec<u8>> = alloc_host_vec_znx(n, 1, size);
+            let mut want: VecZnx<Vec<u8>, i64> = alloc_host_vec_znx(n, 1, size);
             want.fill_uniform(60, &mut source);
 
             // Fills "have" with the shifted normalization of "want"
-            let mut have: VecZnx<Vec<u8>> = alloc_host_vec_znx(n, 1, size);
+            let mut have: VecZnx<Vec<u8>, i64> = alloc_host_vec_znx(n, 1, size);
             have.fill_uniform(60, &mut source);
             vec_znx_normalize_inter_base2k::<FFT64Ref>(
                 base2k,
-                &mut <VecZnx<Vec<u8>> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut have),
+                &mut <VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<FFT64Ref>>::to_backend_mut(&mut have),
                 offset,
                 0,
-                &<VecZnx<Vec<u8>> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&want),
+                &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<FFT64Ref>>::to_backend_ref(&want),
                 0,
                 &mut carry,
             );

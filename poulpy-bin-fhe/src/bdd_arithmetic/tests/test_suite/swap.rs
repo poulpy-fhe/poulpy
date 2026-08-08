@@ -3,9 +3,10 @@ use poulpy_core::{
     EncryptionLayout, GGSWEncryptSk, GLWEDecrypt, GLWEEncryptSk,
     layouts::{GGSW, GGSWPrepared, GGSWPreparedFactory, GLWELayout, GLWEPlaintext, GLWESecretPrepared, ModuleCoreAlloc},
 };
+use poulpy_hal::layouts::{HostDataMut, HostDataRef};
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBackend, HostDataMut, Module, ScalarZnx, ScratchOwned, ZnxViewMut},
+    layouts::{Backend, HostBackend, Module, ScalarZnx, ScratchOwned, ZnxViewMut},
     source::Source,
 };
 use rand::Rng;
@@ -22,7 +23,7 @@ pub fn test_cmux_direct<BRA, BE>(test_context: &TestContext<BRA, BE>)
 where
     BRA: BlindRotationAlgo,
     Module<BE>: GLWEEncryptSk<BE> + GLWEDecrypt<BE> + Cmux<BE> + GGSWEncryptSk<BE> + GGSWPreparedFactory<BE>,
-    BE: Backend<OwnedBuf = Vec<u8>> + HostBackend,
+    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
     BE: 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -47,8 +48,8 @@ where
     let k_pt: usize = 8;
 
     for bit in [0_i64, 1_i64] {
-        let mut pt_t: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
-        let mut pt_f: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+        let mut pt_t: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+        let mut pt_f: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
         pt_t.encode_coeff_i64(t, k_pt.into(), 0);
         pt_f.encode_coeff_i64(f, k_pt.into(), 0);
 
@@ -73,9 +74,9 @@ where
             &mut scratch.borrow(),
         );
 
-        let mut s: GGSW<Vec<u8>> = module.ggsw_alloc_from_infos(&ggsw_infos);
+        let mut s: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_infos);
         let mut s_prepared: GGSWPrepared<BE::OwnedBuf, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw_infos);
-        let mut pt_sel: ScalarZnx<Vec<u8>> = module.scalar_znx_alloc(1);
+        let mut pt_sel: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
         pt_sel.raw_mut()[0] = bit;
         module.ggsw_encrypt_sk(
             &mut s,
@@ -91,7 +92,7 @@ where
         let mut ct_res = module.glwe_alloc_from_infos(&glwe_infos);
         module.cmux(&mut ct_res, &ct_t, &ct_f, &s_prepared, &mut scratch.borrow());
 
-        let mut pt_have: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+        let mut pt_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
         module.glwe_decrypt(&ct_res, &mut pt_have, sk, &mut scratch.borrow());
 
         let want = if bit == 0 { f } else { t };
@@ -103,7 +104,7 @@ pub fn test_cswap_direct<BRA, BE>(test_context: &TestContext<BRA, BE>)
 where
     BRA: BlindRotationAlgo,
     Module<BE>: GLWEEncryptSk<BE> + GLWEDecrypt<BE> + Cswap<BE> + GGSWEncryptSk<BE> + GGSWPreparedFactory<BE>,
-    BE: Backend<OwnedBuf = Vec<u8>> + HostBackend,
+    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
     BE: 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -128,8 +129,8 @@ where
     let k_pt: usize = 8;
 
     for bit in [0_i64, 1_i64] {
-        let mut pt_a: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
-        let mut pt_b: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+        let mut pt_a: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+        let mut pt_b: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
         pt_a.encode_coeff_i64(a, k_pt.into(), 0);
         pt_b.encode_coeff_i64(b, k_pt.into(), 0);
 
@@ -154,9 +155,9 @@ where
             &mut scratch.borrow(),
         );
 
-        let mut s: GGSW<Vec<u8>> = module.ggsw_alloc_from_infos(&ggsw_infos);
+        let mut s: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_infos);
         let mut s_prepared: GGSWPrepared<BE::OwnedBuf, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw_infos);
-        let mut pt_sel: ScalarZnx<Vec<u8>> = module.scalar_znx_alloc(1);
+        let mut pt_sel: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
         pt_sel.raw_mut()[0] = bit;
         module.ggsw_encrypt_sk(
             &mut s,
@@ -171,8 +172,8 @@ where
 
         module.cswap(&mut ct_a, &mut ct_b, &s_prepared, &mut scratch.borrow());
 
-        let mut pt_a_have: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
-        let mut pt_b_have: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+        let mut pt_a_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+        let mut pt_b_have: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
         module.glwe_decrypt(&ct_a, &mut pt_a_have, sk, &mut scratch.borrow());
         module.glwe_decrypt(&ct_b, &mut pt_b_have, sk, &mut scratch.borrow());
 
@@ -186,7 +187,7 @@ pub fn test_fhe_uint_swap<BRA, BE>(test_context: &TestContext<BRA, BE>)
 where
     BRA: BlindRotationAlgo,
     Module<BE>: GLWEEncryptSk<BE> + GLWEDecrypt<BE> + Cswap<BE> + GGSWEncryptSk<BE> + GGSWPreparedFactory<BE>,
-    BE: Backend<OwnedBuf = Vec<u8>> + HostBackend,
+    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
     BE: 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -206,15 +207,17 @@ where
     let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(glwe_infos).unwrap();
     let ggsw_enc_infos = EncryptionLayout::new_from_default_sigma(ggsw_infos).unwrap();
 
-    let mut s: GGSW<Vec<u8>> = module.ggsw_alloc_from_infos(&ggsw_infos);
+    let mut s: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_infos);
     let mut s_prepared: GGSWPrepared<BE::OwnedBuf, BE> = module.ggsw_prepared_alloc_from_infos(&ggsw_infos);
 
     let a: u32 = source_xa.next_u32();
     let b: u32 = source_xa.next_u32();
 
     for bit in [0, 1] {
-        let mut a_enc: FheUint<Vec<u8>, u32> = FheUint::<Vec<u8>, u32>::alloc_from_infos(module, &glwe_infos);
-        let mut b_enc: FheUint<Vec<u8>, u32> = FheUint::<Vec<u8>, u32>::alloc_from_infos(module, &glwe_infos);
+        let mut a_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
+            FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
+        let mut b_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
+            FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
 
         a_enc.encrypt_sk(
             module,
@@ -236,7 +239,7 @@ where
             &mut scratch.borrow(),
         );
 
-        let mut pt: ScalarZnx<Vec<u8>> = module.scalar_znx_alloc(1);
+        let mut pt: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
         pt.raw_mut()[0] = bit;
         module.ggsw_encrypt_sk(
             &mut s,
@@ -262,7 +265,7 @@ pub fn test_glwe_blind_retrieval_statefull<BRA, BE>(test_context: &TestContext<B
 where
     BRA: BlindRotationAlgo,
     Module<BE>: GLWEEncryptSk<BE> + GLWEDecrypt<BE> + GLWEBlindRetrieval<BE> + GGSWEncryptSk<BE> + GGSWPreparedFactory<BE>,
-    BE: Backend<OwnedBuf = Vec<u8>> + HostBackend,
+    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
     BE: 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -284,9 +287,10 @@ where
 
     let data: Vec<u32> = (0..32).map(|i| i as u32).collect_vec();
 
-    let mut data_enc: Vec<FheUint<Vec<u8>, u32>> = (0..data.len())
+    let mut data_enc: Vec<FheUint<BE::OwnedBuf, u32, BE::ZnxWord>> = (0..data.len())
         .map(|i| {
-            let mut ct: FheUint<Vec<u8>, u32> = FheUint::<Vec<u8>, u32>::alloc_from_infos(module, &glwe_infos);
+            let mut ct: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
+                FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
             ct.encrypt_sk(
                 module,
                 data[i],
@@ -328,7 +332,7 @@ pub fn test_glwe_blind_retriever<BRA, BE>(test_context: &TestContext<BRA, BE>)
 where
     BRA: BlindRotationAlgo,
     Module<BE>: GLWEEncryptSk<BE> + GLWEDecrypt<BE> + GLWEBlindRetrieval<BE> + GGSWEncryptSk<BE> + GGSWPreparedFactory<BE>,
-    BE: Backend<OwnedBuf = Vec<u8>> + HostBackend,
+    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend,
     BE: 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -350,9 +354,10 @@ where
 
     let data: Vec<u32> = (0..25).map(|i| i as u32).collect_vec();
 
-    let data_enc: Vec<FheUint<Vec<u8>, u32>> = (0..data.len())
+    let data_enc: Vec<FheUint<BE::OwnedBuf, u32, BE::ZnxWord>> = (0..data.len())
         .map(|i| {
-            let mut ct: FheUint<Vec<u8>, u32> = FheUint::<Vec<u8>, u32>::alloc_from_infos(module, &glwe_infos);
+            let mut ct: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
+                FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
             ct.encrypt_sk(
                 module,
                 data[i],
@@ -366,7 +371,7 @@ where
         })
         .collect_vec();
 
-    let mut retriever: GLWEBlindRetriever = GLWEBlindRetriever::alloc(module, &glwe_infos, data.len());
+    let mut retriever: GLWEBlindRetriever<BE::OwnedBuf, BE::ZnxWord> = GLWEBlindRetriever::alloc(module, &glwe_infos, data.len());
     for idx in 0..data.len() as u32 {
         let offset = 2;
         let mut idx_enc: FheUintPrepared<BE::OwnedBuf, u32, BE> = FheUintPrepared::alloc_from_infos(module, &ggsw_infos);
@@ -380,7 +385,7 @@ where
             &mut scratch.borrow(),
         );
 
-        let mut res: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(module, &glwe_infos);
+        let mut res: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> = FheUint::alloc_from_infos(module, &glwe_infos);
         retriever.retrieve(module, &mut res, &data_enc, &idx_enc, offset, &mut scratch.borrow());
 
         assert_eq!(data[idx as usize], res.decrypt(module, sk, &mut scratch.borrow()));

@@ -12,7 +12,7 @@ use poulpy_hal::{
     source::Source,
 };
 
-pub fn bench_vec_znx_automorphism<B: Backend>(c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_automorphism<B: Backend<ZnxWord = i64>>(c: &mut Criterion, label: &str)
 where
     Module<B>: VecZnxAutomorphismBackend<B> + ModuleNew<B>,
     B::OwnedBuf: AsMut<[u8]>,
@@ -21,7 +21,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(params: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(params: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxAutomorphismBackend<B> + ModuleNew<B>,
         B::OwnedBuf: AsMut<[u8]>,
@@ -40,8 +40,8 @@ where
         source.fill_bytes(res.data_mut().as_mut());
 
         move || {
-            let a = <VecZnx<B::OwnedBuf> as VecZnxToBackendRef<B>>::to_backend_ref(&a);
-            let mut res = <VecZnx<B::OwnedBuf> as VecZnxToBackendMut<B>>::to_backend_mut(&mut res);
+            let a = <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendRef<B>>::to_backend_ref(&a);
+            let mut res = <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendMut<B>>::to_backend_mut(&mut res);
             for i in 0..cols {
                 module.vec_znx_automorphism_backend(-7, &mut res, i, &a, i);
             }
@@ -58,7 +58,7 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_automorphism_assign<B: Backend>(c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_automorphism_assign<B: Backend<ZnxWord = i64>>(c: &mut Criterion, label: &str)
 where
     Module<B>: VecZnxAutomorphismAssignBackend<B> + VecZnxAutomorphismAssignTmpBytes + ModuleNew<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -68,7 +68,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(params: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(params: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxAutomorphismAssignBackend<B> + ModuleNew<B> + VecZnxAutomorphismAssignTmpBytes,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -88,7 +88,7 @@ where
         source.fill_bytes(res.data_mut().as_mut());
 
         move || {
-            let mut res = <VecZnx<B::OwnedBuf> as VecZnxToBackendMut<B>>::to_backend_mut(&mut res);
+            let mut res = <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendMut<B>>::to_backend_mut(&mut res);
             for i in 0..cols {
                 module.vec_znx_automorphism_assign_backend(-7, &mut res, i, &mut scratch.borrow());
             }

@@ -33,7 +33,7 @@ use crate::blind_rotation::{BlindRotationAlgo, BlindRotationKey, BlindRotationKe
 pub struct CGGI {}
 
 impl BlindRotationAlgo for CGGI {
-    fn alloc_key<M, A>(module: &M, infos: &A) -> BlindRotationKey<M::OwnedBuf, Self>
+    fn alloc_key<M, A>(module: &M, infos: &A) -> BlindRotationKey<M::OwnedBuf, Self, M::ZnxWord>
     where
         M: ModuleCoreAlloc + ModuleN,
         A: BlindRotationKeyInfos,

@@ -18,7 +18,7 @@ use crate::{
         },
         preflight::paco_bootstrap_tmp_bytes,
     },
-    layouts::{CKKSCiphertext, CKKSPlaintext, PaCoContext, PaCoKeys, PaCoWorker},
+    layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, PaCoContext, PaCoKeys, PaCoWorker},
     oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl},
 };
 
@@ -27,13 +27,13 @@ where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
     F: PaCoScalar,
     Module<BE>: PaCoBootstrapModule<BE> + GLWEKeyswitch<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Send + Sync,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Send + Sync,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     BE::OwnedBuf: Sync,
 {
     fn ckks_paco_bootstrap_direct_tmp_bytes<K, Src>(
         &self,
-        output: &CKKSCiphertext<BE::OwnedBuf>,
+        output: &CKKSCiphertextOwned<BE>,
         input: &Src,
         context: &PaCoContext<BE, F>,
         keys: &K,
@@ -47,7 +47,7 @@ where
 
     fn ckks_paco_bootstrap_tmp_bytes<K, Src>(
         &self,
-        output: &CKKSCiphertext<BE::OwnedBuf>,
+        output: &CKKSCiphertextOwned<BE>,
         input: &Src,
         context: &PaCoContext<BE, F>,
         keys: &K,
@@ -64,7 +64,7 @@ where
         ciphertext: &Src,
         context: &PaCoContext<BE, F>,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<[CKKSPlaintext<BE::OwnedBuf>; 4]>
+    ) -> Result<[CKKSPlaintextOwned<BE>; 4]>
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
@@ -83,7 +83,7 @@ where
 
     fn ckks_paco_bootstrap_direct_into<K, Src>(
         &self,
-        output: &mut CKKSCiphertext<BE::OwnedBuf>,
+        output: &mut CKKSCiphertextOwned<BE>,
         input: &Src,
         context: &PaCoContext<BE, F>,
         keys: &K,
@@ -99,7 +99,7 @@ where
 
     fn ckks_paco_bootstrap_into<K, Src>(
         &self,
-        output: &mut CKKSCiphertext<BE::OwnedBuf>,
+        output: &mut CKKSCiphertextOwned<BE>,
         input: &Src,
         context: &PaCoContext<BE, F>,
         keys: &K,
@@ -115,7 +115,7 @@ where
 
     fn ckks_paco_bootstrap_parallel_direct_into<K, Src>(
         &self,
-        output: &mut CKKSCiphertext<BE::OwnedBuf>,
+        output: &mut CKKSCiphertextOwned<BE>,
         input: &Src,
         context: &PaCoContext<BE, F>,
         keys: &K,
@@ -133,7 +133,7 @@ where
 
     fn ckks_paco_bootstrap_parallel_into<K, Src>(
         &self,
-        output: &mut CKKSCiphertext<BE::OwnedBuf>,
+        output: &mut CKKSCiphertextOwned<BE>,
         input: &Src,
         context: &PaCoContext<BE, F>,
         keys: &K,

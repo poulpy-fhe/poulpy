@@ -9,10 +9,11 @@ use poulpy_hal::{
     source::Source,
 };
 
+use crate::api::GLWEBytesOf;
 use crate::{
     EncryptionInfos, GGLWECompressedEncryptSk, ScratchArenaTakeCore,
     layouts::{
-        GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GLWEInfos, GLWESecret, GLWESecretPreparedFactory,
+        GGLWECompressedSeedMut, GGLWECompressedToBackendMut, GGLWEInfos, GLWEInfos, GLWESecretPreparedFactory,
         GLWESecretToBackendRef, LWEInfos, SetGaloisElement,
     },
 };
@@ -48,7 +49,7 @@ where
     {
         assert_eq!(self.n() as u32, infos.n());
         let lvl_0: usize = self.glwe_secret_prepared_bytes_of_from_infos(infos);
-        let lvl_1: usize = GLWESecret::bytes_of_from_infos(infos);
+        let lvl_1: usize = self.glwe_secret_bytes_of_from_infos(infos);
         let lvl_2_encrypt: usize = self.gglwe_compressed_encrypt_sk_tmp_bytes(infos);
 
         lvl_0 + lvl_1 + lvl_2_encrypt

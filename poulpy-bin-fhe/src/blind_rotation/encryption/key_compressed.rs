@@ -34,7 +34,7 @@ pub trait BlindRotationKeyCompressedEncryptSk<B: Backend, BRA: BlindRotationAlgo
     #[allow(clippy::too_many_arguments)]
     fn blind_rotation_key_compressed_encrypt_sk<S0, S1, E>(
         &self,
-        res: &mut BlindRotationKeyCompressed<B::OwnedBuf, BRA>,
+        res: &mut BlindRotationKeyCompressed<B::OwnedBuf, BRA, B::ZnxWord>,
         sk_glwe: &S0,
         sk_lwe: &S1,
         seed_xa: [u8; 32],

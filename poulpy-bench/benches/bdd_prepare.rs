@@ -24,8 +24,10 @@ use poulpy_hal::{
     source::Source,
 };
 
-pub fn benc_bdd_prepare<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend, BRA: BlindRotationAlgo>(c: &mut Criterion, label: &str)
-where
+pub fn benc_bdd_prepare<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend, BRA: BlindRotationAlgo>(
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<BE>: ModuleNew<BE>
         + ModuleN
         + GLWESecretPreparedFactory<BE>
@@ -53,7 +55,9 @@ where
         bdd_layout: BDDKeyLayout,
     }
 
-    fn runner<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend, BRA: BlindRotationAlgo>(params: &Params) -> impl FnMut()
+    fn runner<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend, BRA: BlindRotationAlgo>(
+        params: &Params,
+    ) -> impl FnMut()
     where
         Module<BE>: ModuleNew<BE>
             + ModuleN
@@ -83,10 +87,10 @@ where
         let mut source_xa: Source = Source::new([1u8; 32]);
         let mut source_xe: Source = Source::new([1u8; 32]);
 
-        let mut sk_lwe: LWESecret<Vec<u8>> = module.lwe_secret_alloc(n_lwe);
+        let mut sk_lwe: LWESecret<Vec<u8>, i64> = module.lwe_secret_alloc(n_lwe);
         sk_lwe.fill_binary_block(params.block_size, &mut source_xs);
 
-        let mut sk_glwe: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank);
+        let mut sk_glwe: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc(rank);
         sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
 
         let mut sk_glwe_prepared = module.glwe_secret_prepared_alloc_from_infos(&params.glwe_layout);
@@ -94,7 +98,7 @@ where
 
         let bdd_enc_infos = BDDEncryptionInfos::from_default_sigma(&params.bdd_layout).unwrap();
         let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(params.glwe_layout).unwrap();
-        let mut bdd_key: BDDKey<Vec<u8>, BRA> = BDDKey::alloc_from_infos(&module, &params.bdd_layout);
+        let mut bdd_key: BDDKey<BE::OwnedBuf, BRA, BE::ZnxWord> = BDDKey::alloc_from_infos(&module, &params.bdd_layout);
         bdd_key.encrypt_sk(
             &module,
             &sk_lwe,
@@ -107,7 +111,7 @@ where
 
         let input_a = 255_u32;
 
-        let mut a_enc: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&module, &params.glwe_layout);
+        let mut a_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> = FheUint::alloc_from_infos(&module, &params.glwe_layout);
         a_enc.encrypt_sk(
             &module,
             input_a,

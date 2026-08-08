@@ -15,10 +15,10 @@ use poulpy_core::layouts::{
     GGLWEInfos, GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEAutomorphismKey, GLWEAutomorphismKeyHelper,
     GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWESwitchingKey, GLWESwitchingKeyDegrees,
     GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory, GLWETensorKey, GLWETensorKeyPrepared,
-    GLWETensorKeyPreparedFactory, GLWEToBackendRef, GetGaloisElement, LWEInfos, ModuleCoreAlloc,
-    prepared::{GLWEAutomorphismKeyPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
+    GLWETensorKeyPreparedFactory, GLWETensorKeyPreparedToBackendRef, GLWEToBackendRef, GetGaloisElement, LWEInfos,
+    ModuleCoreAlloc, prepared::GLWEAutomorphismKeyPreparedToBackendRef,
 };
-use poulpy_hal::layouts::{Backend, Data, HostDataRef, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data, HostDataRef, Module, ScratchArena, ZnxWord};
 
 use super::plan::PaCoPlan;
 pub(crate) use crate::layouts::validation::{
@@ -138,12 +138,12 @@ pub trait PaCoKeys<BE: Backend> {
 /// Construct with [`Self::new`]. The fields are private so the validated
 /// degree, rank, radix, metadata, and required-key invariants cannot be
 /// invalidated afterwards.
-pub struct PaCoKeySet<D: Data> {
+pub struct PaCoKeySet<D: Data, W: ZnxWord> {
     parameters: PaCoKeyParameters,
-    bootstrapping_keys: [CKKSCiphertext<D>; 4],
-    rotation_keys: HashMap<i64, GLWEAutomorphismKey<D>>,
-    tensor_key: GLWETensorKey<D>,
-    encapsulation_key: Option<GLWESwitchingKey<D>>,
+    bootstrapping_keys: [CKKSCiphertext<D, W>; 4],
+    rotation_keys: HashMap<i64, GLWEAutomorphismKey<D, W>>,
+    tensor_key: GLWETensorKey<D, W>,
+    encapsulation_key: Option<GLWESwitchingKey<D, W>>,
 }
 
 /// Eagerly prepared PaCo key material ready for a backend pipeline.
@@ -152,25 +152,25 @@ pub struct PaCoKeySet<D: Data> {
 /// all preprocessed gadget keys, keeping key ownership in one bundle.
 pub struct PaCoKeysPrepared<D: Data, BE: Backend> {
     parameters: PaCoKeyParameters,
-    bootstrapping_keys: [CKKSCiphertext<D>; 4],
+    bootstrapping_keys: [CKKSCiphertext<D, BE::ZnxWord>; 4],
     rotation_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>,
     tensor_key: GLWETensorKeyPrepared<D, BE>,
     encapsulation_key: Option<GLWESwitchingKeyPrepared<D, BE>>,
 }
 
 /// Owned components returned by [`PaCoKeySet::into_parts`].
-pub type PaCoKeySetParts<D> = (
+pub type PaCoKeySetParts<D, W> = (
     PaCoKeyParameters,
-    [CKKSCiphertext<D>; 4],
-    HashMap<i64, GLWEAutomorphismKey<D>>,
-    GLWETensorKey<D>,
-    Option<GLWESwitchingKey<D>>,
+    [CKKSCiphertext<D, W>; 4],
+    HashMap<i64, GLWEAutomorphismKey<D, W>>,
+    GLWETensorKey<D, W>,
+    Option<GLWESwitchingKey<D, W>>,
 );
 
 /// Owned components returned by [`PaCoKeysPrepared::into_parts`].
 pub type PaCoKeysPreparedParts<D, BE> = (
     PaCoKeyParameters,
-    [CKKSCiphertext<D>; 4],
+    [CKKSCiphertext<D, <BE as Backend>::ZnxWord>; 4],
     HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>,
     GLWETensorKeyPrepared<D, BE>,
     Option<GLWESwitchingKeyPrepared<D, BE>>,
@@ -186,13 +186,13 @@ trait ActiveCiphertextStorage {
     fn active_size(&self) -> usize;
 }
 
-impl<D: Data> ActiveCiphertextStorage for CKKSCiphertext<D> {
+impl<D: Data, W: ZnxWord> ActiveCiphertextStorage for CKKSCiphertext<D, W> {
     fn active_size(&self) -> usize {
         self.data().size()
     }
 }
 
-impl<D: Data> PaCoKeySet<D> {
+impl<D: Data, W: ZnxWord> PaCoKeySet<D, W> {
     /// Structured-secret parameters bound to this key material.
     pub fn parameters(&self) -> PaCoKeyParameters {
         self.parameters
@@ -206,13 +206,13 @@ impl<D: Data> PaCoKeySet<D> {
     /// compatibility, and optional encapsulation-key degrees.
     pub fn new(
         plan: &PaCoPlan,
-        bootstrapping_keys: [CKKSCiphertext<D>; 4],
-        rotation_keys: HashMap<i64, GLWEAutomorphismKey<D>>,
-        tensor_key: GLWETensorKey<D>,
-        encapsulation_key: Option<GLWESwitchingKey<D>>,
+        bootstrapping_keys: [CKKSCiphertext<D, W>; 4],
+        rotation_keys: HashMap<i64, GLWEAutomorphismKey<D, W>>,
+        tensor_key: GLWETensorKey<D, W>,
+        encapsulation_key: Option<GLWESwitchingKey<D, W>>,
     ) -> Result<Self>
     where
-        GLWESwitchingKey<D>: GLWESwitchingKeyDegrees,
+        GLWESwitchingKey<D, W>: GLWESwitchingKeyDegrees,
     {
         validate_material(
             plan,
@@ -240,7 +240,7 @@ impl<D: Data> PaCoKeySet<D> {
     /// revalidated against `plan` immediately before backend preprocessing,
     /// and insufficient scratch is reported as an error rather than reaching
     /// the lower-level preparation assertions.
-    pub fn prepare<BE: Backend<OwnedBuf = D>>(
+    pub fn prepare<BE: Backend<OwnedBuf = D, ZnxWord = W>>(
         &self,
         plan: &PaCoPlan,
         module: &Module<BE>,
@@ -248,11 +248,11 @@ impl<D: Data> PaCoKeySet<D> {
     ) -> Result<PaCoKeysPrepared<D, BE>>
     where
         D: HostDataRef,
-        CKKSCiphertext<D>: Clone,
-        GLWEAutomorphismKey<D>: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        GLWETensorKey<D>: GGLWEToBackendRef<BE> + GGLWEInfos,
-        GLWESwitchingKey<D>: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees + GGLWEInfos,
-        Module<BE>: ModuleCoreAlloc<OwnedBuf = D>
+        CKKSCiphertext<D, W>: Clone,
+        GLWEAutomorphismKey<D, W>: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        GLWETensorKey<D, W>: GGLWEToBackendRef<BE> + GGLWEInfos,
+        GLWESwitchingKey<D, W>: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees + GGLWEInfos,
+        Module<BE>: ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W>
             + GLWEAutomorphismKeyPreparedFactory<BE>
             + GLWETensorKeyPreparedFactory<BE>
             + GLWESwitchingKeyPreparedFactory<BE>,
@@ -301,7 +301,7 @@ impl<D: Data> PaCoKeySet<D> {
     /// This is the preferred eager-preparation path when the unprepared set is
     /// no longer needed. It applies the same full validation and scratch
     /// preflight as [`Self::prepare`].
-    pub fn into_prepare<BE: Backend<OwnedBuf = D>>(
+    pub fn into_prepare<BE: Backend<OwnedBuf = D, ZnxWord = W>>(
         self,
         plan: &PaCoPlan,
         module: &Module<BE>,
@@ -309,10 +309,10 @@ impl<D: Data> PaCoKeySet<D> {
     ) -> Result<PaCoKeysPrepared<D, BE>>
     where
         D: HostDataRef,
-        GLWEAutomorphismKey<D>: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        GLWETensorKey<D>: GGLWEToBackendRef<BE> + GGLWEInfos,
-        GLWESwitchingKey<D>: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees + GGLWEInfos,
-        Module<BE>: ModuleCoreAlloc<OwnedBuf = D>
+        GLWEAutomorphismKey<D, W>: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        GLWETensorKey<D, W>: GGLWEToBackendRef<BE> + GGLWEInfos,
+        GLWESwitchingKey<D, W>: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees + GGLWEInfos,
+        Module<BE>: ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W>
             + GLWEAutomorphismKeyPreparedFactory<BE>
             + GLWETensorKeyPreparedFactory<BE>
             + GLWESwitchingKeyPreparedFactory<BE>,
@@ -355,20 +355,21 @@ impl<D: Data> PaCoKeySet<D> {
     }
 }
 
-fn prepare_gadget_keys<D, BE>(
+fn prepare_gadget_keys<D, W, BE>(
     module: &Module<BE>,
-    rotation_keys: &HashMap<i64, GLWEAutomorphismKey<D>>,
-    tensor_key: &GLWETensorKey<D>,
-    encapsulation_key: Option<&GLWESwitchingKey<D>>,
+    rotation_keys: &HashMap<i64, GLWEAutomorphismKey<D, W>>,
+    tensor_key: &GLWETensorKey<D, W>,
+    encapsulation_key: Option<&GLWESwitchingKey<D, W>>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<PreparedGadgetKeys<D, BE>>
 where
     D: Data,
-    BE: Backend<OwnedBuf = D>,
-    GLWEAutomorphismKey<D>: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-    GLWETensorKey<D>: GGLWEToBackendRef<BE> + GGLWEInfos,
-    GLWESwitchingKey<D>: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees + GGLWEInfos,
-    Module<BE>: ModuleCoreAlloc<OwnedBuf = D>
+    W: ZnxWord,
+    BE: Backend<OwnedBuf = D, ZnxWord = W>,
+    GLWEAutomorphismKey<D, W>: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+    GLWETensorKey<D, W>: GGLWEToBackendRef<BE> + GGLWEInfos,
+    GLWESwitchingKey<D, W>: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees + GGLWEInfos,
+    Module<BE>: ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWETensorKeyPreparedFactory<BE>
         + GLWESwitchingKeyPreparedFactory<BE>,
@@ -408,29 +409,29 @@ where
     Ok((prepared_rotations, prepared_tensor, prepared_encapsulation))
 }
 
-impl<D: Data> PaCoKeySet<D> {
+impl<D: Data, W: ZnxWord> PaCoKeySet<D, W> {
     /// Returns the four unprepared bootstrapping ciphertexts.
-    pub fn bootstrapping_keys(&self) -> &[CKKSCiphertext<D>; 4] {
+    pub fn bootstrapping_keys(&self) -> &[CKKSCiphertext<D, W>; 4] {
         &self.bootstrapping_keys
     }
 
     /// Returns the unprepared automorphism-key map.
-    pub fn rotation_keys(&self) -> &HashMap<i64, GLWEAutomorphismKey<D>> {
+    pub fn rotation_keys(&self) -> &HashMap<i64, GLWEAutomorphismKey<D, W>> {
         &self.rotation_keys
     }
 
     /// Returns the unprepared tensor key.
-    pub fn tensor_key(&self) -> &GLWETensorKey<D> {
+    pub fn tensor_key(&self) -> &GLWETensorKey<D, W> {
         &self.tensor_key
     }
 
     /// Returns the optional unprepared dense-to-PaCo switching key.
-    pub fn encapsulation_key(&self) -> Option<&GLWESwitchingKey<D>> {
+    pub fn encapsulation_key(&self) -> Option<&GLWESwitchingKey<D, W>> {
         self.encapsulation_key.as_ref()
     }
 
     /// Decomposes the set into its unprepared key material.
-    pub fn into_parts(self) -> PaCoKeySetParts<D> {
+    pub fn into_parts(self) -> PaCoKeySetParts<D, W> {
         (
             self.parameters,
             self.bootstrapping_keys,
@@ -449,7 +450,7 @@ impl<D: Data, BE: Backend> PaCoKeysPrepared<D, BE> {
     /// checks as [`PaCoKeySet::new`].
     pub fn new(
         plan: &PaCoPlan,
-        bootstrapping_keys: [CKKSCiphertext<D>; 4],
+        bootstrapping_keys: [CKKSCiphertext<D, BE::ZnxWord>; 4],
         rotation_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>,
         tensor_key: GLWETensorKeyPrepared<D, BE>,
         encapsulation_key: Option<GLWESwitchingKeyPrepared<D, BE>>,
@@ -478,7 +479,7 @@ impl<D: Data, BE: Backend> PaCoKeysPrepared<D, BE> {
     }
 
     /// Returns the four backend-resident bootstrapping ciphertexts.
-    pub fn bootstrapping_keys(&self) -> &[CKKSCiphertext<D>; 4] {
+    pub fn bootstrapping_keys(&self) -> &[CKKSCiphertext<D, BE::ZnxWord>; 4] {
         &self.bootstrapping_keys
     }
 
@@ -511,12 +512,12 @@ impl<D: Data, BE: Backend> PaCoKeysPrepared<D, BE> {
 
 impl<D: Data, BE: Backend> PaCoKeys<BE> for PaCoKeysPrepared<D, BE>
 where
-    CKKSCiphertext<D>: GLWEToBackendRef<BE> + CKKSCtBounds,
+    CKKSCiphertext<D, BE::ZnxWord>: GLWEToBackendRef<BE> + CKKSCtBounds,
     GLWEAutomorphismKeyPrepared<D, BE>: CKKSAtkBounds<BE>,
     GLWETensorKeyPrepared<D, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     GLWESwitchingKeyPrepared<D, BE>: GGLWEPreparedToBackendRef<BE> + GGLWEInfos + GLWESwitchingKeyDegrees,
 {
-    type BootstrappingKey = CKKSCiphertext<D>;
+    type BootstrappingKey = CKKSCiphertext<D, BE::ZnxWord>;
     type AutomorphismKey = GLWEAutomorphismKeyPrepared<D, BE>;
     type RotationKeys = HashMap<i64, GLWEAutomorphismKeyPrepared<D, BE>>;
     type TensorKey = GLWETensorKeyPrepared<D, BE>;
@@ -694,7 +695,7 @@ mod tests {
 
     use crate::layouts::CKKSModuleAlloc;
 
-    struct MisreportedCiphertext(CKKSCiphertext<Vec<u8>>);
+    struct MisreportedCiphertext(CKKSCiphertext<Vec<u8>, i64>);
 
     impl LWEInfos for MisreportedCiphertext {
         fn n(&self) -> Degree {
@@ -721,8 +722,8 @@ mod tests {
     }
 
     impl GLWEToBackendRef<HostBytesBackend> for MisreportedCiphertext {
-        fn to_backend_ref(&self) -> GLWE<<HostBytesBackend as Backend>::BufRef<'_>> {
-            <CKKSCiphertext<Vec<u8>> as GLWEToBackendRef<HostBytesBackend>>::to_backend_ref(&self.0)
+        fn to_backend_ref(&self) -> GLWE<<HostBytesBackend as Backend>::BufRef<'_>, i64> {
+            <CKKSCiphertext<Vec<u8>, i64> as GLWEToBackendRef<HostBytesBackend>>::to_backend_ref(&self.0)
         }
     }
 

@@ -17,7 +17,7 @@ use poulpy_hal::{
 pub fn bench_svp_prepare<B>(params: &crate::params::SvpPrepareParams, c: &mut Criterion, label: &str)
 where
     Module<B>: SvpPrepare<B> + SvpPPolAlloc<B> + ModuleNew<B>,
-    B: Backend,
+    B: Backend<ZnxWord = i64>,
 {
     let group_name: String = format!("svp_prepare::{label}");
 
@@ -26,7 +26,7 @@ where
     fn runner<B>(log_n: usize) -> impl FnMut()
     where
         Module<B>: SvpPrepare<B> + SvpPPolAlloc<B> + ModuleNew<B>,
-        B: Backend,
+        B: Backend<ZnxWord = i64>,
     {
         let module: Module<B> = Module::<B>::new(1 << log_n);
 
@@ -56,7 +56,7 @@ where
 pub fn bench_svp_apply_dft<B>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
 where
     Module<B>: SvpApplyDft<B> + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
-    B: Backend,
+    B: Backend<ZnxWord = i64>,
 {
     let group_name: String = format!("svp_apply_dft::{label}");
 
@@ -65,7 +65,7 @@ where
     fn runner<B>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: SvpApplyDft<B> + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
-        B: Backend,
+        B: Backend<ZnxWord = i64>,
     {
         let n: usize = 1 << sweep[0];
         let cols: usize = sweep[1];
@@ -102,7 +102,7 @@ where
 pub fn bench_svp_apply_dft_to_dft<B>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
 where
     Module<B>: SvpApplyDftToDft<B> + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
-    B: Backend,
+    B: Backend<ZnxWord = i64>,
 {
     let group_name: String = format!("svp_apply_dft_to_dft::{label}");
 
@@ -111,7 +111,7 @@ where
     fn runner<B>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: SvpApplyDftToDft<B> + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
-        B: Backend,
+        B: Backend<ZnxWord = i64>,
     {
         let n: usize = 1 << sweep[0];
         let cols: usize = sweep[1];
@@ -145,7 +145,7 @@ where
 pub fn bench_svp_apply_dft_to_dft_assign<B>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
 where
     Module<B>: SvpApplyDftToDftAssign<B> + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
-    B: Backend,
+    B: Backend<ZnxWord = i64>,
 {
     let group_name: String = format!("svp_apply_dft_to_dft_assign::{label}");
 
@@ -154,7 +154,7 @@ where
     fn runner<B>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: SvpApplyDftToDftAssign<B> + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
-        B: Backend,
+        B: Backend<ZnxWord = i64>,
     {
         let n: usize = 1 << sweep[0];
         let cols: usize = sweep[1];

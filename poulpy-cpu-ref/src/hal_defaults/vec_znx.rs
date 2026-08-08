@@ -36,7 +36,7 @@ use poulpy_hal::{
 #[inline]
 fn take_host_typed<'a, BE, T>(arena: ScratchArena<'a, BE>, len: usize) -> (&'a mut [T], ScratchArena<'a, BE>)
 where
-    BE: Backend + 'a,
+    BE: Backend<ZnxWord = i64> + 'a,
     BE::BufMut<'a>: HostBufMut<'a>,
     T: Copy,
 {
@@ -61,7 +61,7 @@ where
 }
 
 #[doc(hidden)]
-pub trait BigWordHadamardProduct: Backend {
+pub trait BigWordHadamardProduct: Backend<ZnxWord = i64> {
     fn big_word_hadamard_product(res: &mut [Self::BigWord], a: &[i64], b: &[i64]);
 }
 
@@ -80,7 +80,7 @@ impl BigWordHadamardProduct for crate::NTT4x30Ref {
 }
 
 #[doc(hidden)]
-pub trait HalVecZnxDefault<BE: Backend>: Backend
+pub trait HalVecZnxDefault<BE: Backend<ZnxWord = i64>>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
@@ -1191,4 +1191,4 @@ where
     }
 }
 
-impl<BE: Backend> HalVecZnxDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
+impl<BE: Backend<ZnxWord = i64>> HalVecZnxDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}

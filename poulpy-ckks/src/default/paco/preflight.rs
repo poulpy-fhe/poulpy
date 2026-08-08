@@ -3,6 +3,7 @@
 //! Everything here inspects layouts, keys, and plans without mutating a ciphertext: conservative per-branch scratch bounds, the public tmp-bytes entry point, the branch-schedule arithmetic, and the encapsulation-key checks.
 //! The concurrency-bearing branch drivers live in [`parallel`](super::parallel); keeping them free of validation logic keeps that code independently reviewable.
 
+use crate::layouts::CKKSCiphertextOwned;
 use crate::{CKKSResult as Result, ckks_ensure};
 
 use anyhow::Context;
@@ -23,7 +24,6 @@ use crate::layouts::paco::{
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSMeta,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSMulOps, CKKSRotateOps, CKKSSubOps, PaCoScalar},
-    layouts::CKKSCiphertext,
     oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl},
 };
 
@@ -74,7 +74,7 @@ impl CKKSInfos for BranchScratchLayout {
 /// common runtime layouts have been validated.
 pub(super) fn direct_tmp_bytes_validated<BE, F, K>(
     module: &Module<BE>,
-    output: &CKKSCiphertext<BE::OwnedBuf>,
+    output: &CKKSCiphertextOwned<BE>,
     context: &PaCoContext<BE, F>,
     keys: &K,
 ) -> Result<usize>
@@ -180,7 +180,7 @@ where
 /// one-time dense-to-structured key switch in addition to a direct branch.
 pub(crate) fn paco_bootstrap_tmp_bytes<BE, F, K, Src>(
     module: &Module<BE>,
-    output: &CKKSCiphertext<BE::OwnedBuf>,
+    output: &CKKSCiphertextOwned<BE>,
     input: &Src,
     context: &PaCoContext<BE, F>,
     keys: &K,
@@ -207,7 +207,7 @@ where
 /// ciphertext or encapsulation temporary is mutated.
 pub(super) fn preflight<BE, F, K, Src>(
     module: &Module<BE>,
-    output: &CKKSCiphertext<BE::OwnedBuf>,
+    output: &CKKSCiphertextOwned<BE>,
     input: &Src,
     context: &PaCoContext<BE, F>,
     keys: &K,

@@ -127,8 +127,8 @@ where
         let size: usize = infos.size();
         assert_eq!(self.n() as u32, infos.n());
 
-        let lvl_0: usize = VecZnx::bytes_of(self.n(), 1, size);
-        let lvl_1: usize = VecZnx::bytes_of(self.n(), 1, size);
+        let lvl_0: usize = BE::bytes_of_vec_znx(self.n(), 1, size);
+        let lvl_1: usize = BE::bytes_of_vec_znx(self.n(), 1, size);
         let lvl_2: usize = self.vec_znx_normalize_tmp_bytes().max(
             self.bytes_of_vec_znx_dft(1, size) + self.bytes_of_vec_znx_big(1, size) + self.vec_znx_big_normalize_tmp_bytes(),
         );
@@ -272,9 +272,9 @@ where
         let cols: usize = (infos.rank() + 1).into();
         assert_eq!(self.n() as u32, infos.n());
         let lvl_0: usize = self.bytes_of_svp_ppol(1);
-        let lvl_1: usize = ScalarZnx::bytes_of(self.n(), 1);
+        let lvl_1: usize = BE::bytes_of_scalar_znx(self.n(), 1);
         let lvl_2: usize = cols
-            * (self.bytes_of_vec_znx_dft(1, size) + self.bytes_of_vec_znx_big(1, size) + VecZnx::bytes_of(self.n(), 1, size));
+            * (self.bytes_of_vec_znx_dft(1, size) + self.bytes_of_vec_znx_big(1, size) + BE::bytes_of_vec_znx(self.n(), 1, size));
         let lvl_3: usize = self.vec_znx_big_normalize_tmp_bytes();
 
         lvl_0 + lvl_1 + lvl_2 + lvl_3
@@ -487,7 +487,7 @@ pub(crate) trait GLWEEncryptSkInternal<BE: Backend> {
     fn glwe_encrypt_sk_internal<'pt, S, E>(
         &self,
         base2k: usize,
-        res: &mut VecZnx<BE::BufMut<'_>>,
+        res: &mut VecZnx<BE::BufMut<'_>, BE::ZnxWord>,
         pt: GLWEEncryptSkPlaintext<'pt, BE>,
         sk: &S,
         enc_infos: &E,
@@ -523,7 +523,7 @@ where
     fn glwe_encrypt_sk_internal<'pt, S, E>(
         &self,
         base2k: usize,
-        res: &mut VecZnx<BE::BufMut<'_>>,
+        res: &mut VecZnx<BE::BufMut<'_>, BE::ZnxWord>,
         pt: GLWEEncryptSkPlaintext<'pt, BE>,
         sk: &S,
         enc_infos: &E,

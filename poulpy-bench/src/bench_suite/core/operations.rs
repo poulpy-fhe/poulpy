@@ -10,16 +10,16 @@ use std::hint::black_box;
 
 use criterion::Criterion;
 
-pub fn bench_glwe_add_into<BE: Backend<OwnedBuf = Vec<u8>>>(infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
+pub fn bench_glwe_add_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
 where
     Module<BE>: ModuleNew<BE> + GLWEAdd<BE>,
 {
     let n: usize = infos.n().into();
     let module: Module<BE> = Module::<BE>::new(n as u64);
 
-    let mut res: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(infos);
-    let a: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(infos);
-    let b: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(infos);
+    let mut res: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(infos);
+    let a: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(infos);
+    let b: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(infos);
 
     let group_name = format!("glwe_add_into::{label}");
     let mut group = c.benchmark_group(group_name);
@@ -32,15 +32,18 @@ where
     group.finish();
 }
 
-pub fn bench_glwe_add_assign<BE: Backend<OwnedBuf = Vec<u8>>>(infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
-where
+pub fn bench_glwe_add_assign<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
+    infos: &impl GLWEInfos,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<BE>: ModuleNew<BE> + GLWEAdd<BE>,
 {
     let n: usize = infos.n().into();
     let module: Module<BE> = Module::<BE>::new(n as u64);
 
-    let mut res: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(infos);
-    let b: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(infos);
+    let mut res: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(infos);
+    let b: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(infos);
 
     let group_name = format!("glwe_add_assign::{label}");
     let mut group = c.benchmark_group(group_name);
@@ -53,16 +56,16 @@ where
     group.finish();
 }
 
-pub fn bench_glwe_sub<BE: Backend<OwnedBuf = Vec<u8>>>(infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
+pub fn bench_glwe_sub<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
 where
     Module<BE>: ModuleNew<BE> + GLWESub<BE>,
 {
     let n: usize = infos.n().into();
     let module: Module<BE> = Module::<BE>::new(n as u64);
 
-    let mut res: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(infos);
-    let a: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(infos);
-    let b: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(infos);
+    let mut res: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(infos);
+    let a: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(infos);
+    let b: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(infos);
 
     let group_name = format!("glwe_sub::{label}");
     let mut group = c.benchmark_group(group_name);
@@ -75,15 +78,18 @@ where
     group.finish();
 }
 
-pub fn bench_glwe_sub_assign<BE: Backend<OwnedBuf = Vec<u8>>>(infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
-where
+pub fn bench_glwe_sub_assign<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
+    infos: &impl GLWEInfos,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<BE>: ModuleNew<BE> + GLWESub<BE>,
 {
     let n: usize = infos.n().into();
     let module: Module<BE> = Module::<BE>::new(n as u64);
 
-    let mut res: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(infos);
-    let b: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(infos);
+    let mut res: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(infos);
+    let b: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(infos);
 
     let group_name = format!("glwe_sub_assign::{label}");
     let mut group = c.benchmark_group(group_name);
@@ -96,8 +102,11 @@ where
     group.finish();
 }
 
-pub fn bench_glwe_normalize<BE: Backend<OwnedBuf = Vec<u8>>>(infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
-where
+pub fn bench_glwe_normalize<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
+    infos: &impl GLWEInfos,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<BE>: ModuleNew<BE> + GLWENormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
@@ -106,8 +115,8 @@ where
     let n: usize = infos.n().into();
     let module: Module<BE> = Module::<BE>::new(n as u64);
 
-    let mut res: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(infos);
-    let a: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(infos);
+    let mut res: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(infos);
+    let a: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(infos);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_normalize_tmp_bytes());
 
     let group_name = format!("glwe_normalize::{label}");
@@ -121,8 +130,11 @@ where
     group.finish();
 }
 
-pub fn bench_glwe_normalize_assign<BE: Backend<OwnedBuf = Vec<u8>>>(infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
-where
+pub fn bench_glwe_normalize_assign<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
+    infos: &impl GLWEInfos,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<BE>: ModuleNew<BE> + GLWENormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
@@ -130,7 +142,7 @@ where
     let n: usize = infos.n().into();
     let module: Module<BE> = Module::<BE>::new(n as u64);
 
-    let mut res: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(infos);
+    let mut res: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(infos);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_normalize_tmp_bytes());
 
     let group_name = format!("glwe_normalize_assign::{label}");
@@ -144,8 +156,11 @@ where
     group.finish();
 }
 
-pub fn bench_glwe_mul_plain<BE: Backend<OwnedBuf = Vec<u8>>>(infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
-where
+pub fn bench_glwe_mul_plain<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
+    infos: &impl GLWEInfos,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<BE>: ModuleNew<BE> + GLWEMulPlain<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut + AsRef<[u8]> + AsMut<[u8]> + Sync,
@@ -153,9 +168,9 @@ where
     let n: usize = infos.n().into();
     let module: Module<BE> = Module::<BE>::new(n as u64);
 
-    let mut ct_out: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(infos);
-    let ct_in: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(infos);
-    let pt: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(infos);
+    let mut ct_out: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(infos);
+    let ct_in: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(infos);
+    let pt: GLWEPlaintext<Vec<u8>, i64> = module.glwe_plaintext_alloc_from_infos(infos);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_mul_plain_tmp_bytes(infos, infos, infos));
 
     let group_name = format!("glwe_mul_plain::{label}");
@@ -169,8 +184,11 @@ where
     group.finish();
 }
 
-pub fn bench_glwe_mul_plain_assign<BE: Backend<OwnedBuf = Vec<u8>>>(infos: &impl GLWEInfos, c: &mut Criterion, label: &str)
-where
+pub fn bench_glwe_mul_plain_assign<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
+    infos: &impl GLWEInfos,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<BE>: ModuleNew<BE> + GLWEMulPlain<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'x> BE::BufMut<'x>: poulpy_hal::layouts::HostDataMut + AsRef<[u8]> + AsMut<[u8]> + Sync,
@@ -178,8 +196,8 @@ where
     let n: usize = infos.n().into();
     let module: Module<BE> = Module::<BE>::new(n as u64);
 
-    let mut ct: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(infos);
-    let pt: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(infos);
+    let mut ct: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(infos);
+    let pt: GLWEPlaintext<Vec<u8>, i64> = module.glwe_plaintext_alloc_from_infos(infos);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_mul_plain_tmp_bytes(infos, infos, infos));
 
     let group_name = format!("glwe_mul_plain_assign::{label}");

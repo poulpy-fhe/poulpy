@@ -8,6 +8,7 @@ use poulpy_core::{
         prepared::GLWESecretPrepared,
     },
 };
+use poulpy_hal::layouts::ZnxWord;
 use std::collections::HashMap;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -112,7 +113,7 @@ impl CircuitBootstrappingKeyInfos for CircuitBootstrappingKeyLayout {
 pub trait CircuitBootstrappingKeyEncryptSk<BRA, BE>
 where
     BRA: BlindRotationAlgo,
-    BE: Backend<OwnedBuf = Vec<u8>>,
+    BE: Backend,
 {
     /// Returns the minimum scratch-space size (in bytes) required by
     /// [`circuit_bootstrapping_key_encrypt_sk`][Self::circuit_bootstrapping_key_encrypt_sk].
@@ -128,7 +129,7 @@ where
     #[allow(clippy::too_many_arguments)]
     fn circuit_bootstrapping_key_encrypt_sk<S0, S1>(
         &self,
-        res: &mut CircuitBootstrappingKey<BE::OwnedBuf, BRA>,
+        res: &mut CircuitBootstrappingKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
         sk_lwe: &S0,
         sk_glwe: &S1,
         enc_infos: &CircuitBootstrappingEncryptionInfos,
@@ -140,10 +141,10 @@ where
         S1: GLWESecretToBackendRef<BE> + GLWEInfos + GetDistribution;
 }
 
-impl<D: Data, BRA: BlindRotationAlgo> CircuitBootstrappingKey<D, BRA> {
+impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> CircuitBootstrappingKey<D, BRA, W> {
     pub fn alloc_from_infos<M, A: CircuitBootstrappingKeyInfos>(module: &M, infos: &A) -> Self
     where
-        M: ModuleCoreAlloc<OwnedBuf = D> + ModuleN,
+        M: ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W> + ModuleN,
     {
         let atk_infos: &GLWEAutomorphismKeyLayout = &infos.atk_infos();
         let brk_infos: &BlindRotationKeyLayout = &infos.brk_infos();
@@ -188,13 +189,13 @@ impl<D: Data, BRA: BlindRotationAlgo> CircuitBootstrappingKey<D, BRA> {
 /// 1. Allocate with [`CircuitBootstrappingKey::alloc_from_infos`].
 /// 2. Fill with [`CircuitBootstrappingKey::encrypt_sk`].
 /// 3. Prepare with `CircuitBootstrappingKeyPrepared::prepare`.
-pub struct CircuitBootstrappingKey<D: Data, BRA: BlindRotationAlgo> {
-    pub(crate) brk: BlindRotationKey<D, BRA>,
-    pub(crate) tsk: GGLWEToGGSWKey<D>,
-    pub(crate) atk: HashMap<i64, GLWEAutomorphismKey<D>>,
+pub struct CircuitBootstrappingKey<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> {
+    pub(crate) brk: BlindRotationKey<D, BRA, W>,
+    pub(crate) tsk: GGLWEToGGSWKey<D, W>,
+    pub(crate) atk: HashMap<i64, GLWEAutomorphismKey<D, W>>,
 }
 
-impl<BRA: BlindRotationAlgo> CircuitBootstrappingKey<Vec<u8>, BRA> {
+impl<D: Data, BRA: BlindRotationAlgo, W: ZnxWord> CircuitBootstrappingKey<D, BRA, W> {
     #[allow(clippy::too_many_arguments)]
     pub fn encrypt_sk<M, S0, S1, BE>(
         &mut self,
@@ -209,13 +210,13 @@ impl<BRA: BlindRotationAlgo> CircuitBootstrappingKey<Vec<u8>, BRA> {
         S0: LWESecretToBackendRef<BE> + GetDistribution + LWEInfos,
         S1: GLWESecretToBackendRef<BE> + GLWEInfos + GetDistribution,
         M: CircuitBootstrappingKeyEncryptSk<BRA, BE>,
-        BE: Backend<OwnedBuf = Vec<u8>> + HostBackend,
+        BE: Backend<OwnedBuf = D, ZnxWord = W> + HostBackend,
     {
         module.circuit_bootstrapping_key_encrypt_sk(self, sk_lwe, sk_glwe, enc_infos, source_xe, source_xa, scratch);
     }
 }
 
-impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>>> CircuitBootstrappingKeyEncryptSk<BRA, BE> for Module<BE>
+impl<BRA: BlindRotationAlgo, BE: Backend> CircuitBootstrappingKeyEncryptSk<BRA, BE> for Module<BE>
 where
     Self: GGLWEToGGSWKeyEncryptSk<BE>
         + BlindRotationKeyEncryptSk<BRA, BE>
@@ -235,7 +236,7 @@ where
 
     fn circuit_bootstrapping_key_encrypt_sk<S0, S1>(
         &self,
-        res: &mut CircuitBootstrappingKey<BE::OwnedBuf, BRA>,
+        res: &mut CircuitBootstrappingKey<BE::OwnedBuf, BRA, BE::ZnxWord>,
         sk_lwe: &S0,
         sk_glwe: &S1,
         enc_infos: &CircuitBootstrappingEncryptionInfos,
@@ -302,7 +303,7 @@ where
     }
 }
 
-impl<D: HostDataRef, BRA: BlindRotationAlgo> CircuitBootstrappingKeyInfos for CircuitBootstrappingKey<D, BRA> {
+impl<D: HostDataRef, BRA: BlindRotationAlgo, W: ZnxWord> CircuitBootstrappingKeyInfos for CircuitBootstrappingKey<D, BRA, W> {
     fn block_size(&self) -> usize {
         self.brk.block_size()
     }
@@ -343,7 +344,7 @@ impl<D: HostDataRef, BRA: BlindRotationAlgo> CircuitBootstrappingKeyInfos for Ci
     }
 }
 
-impl<D: HostDataMut, BRA: BlindRotationAlgo> ReaderFrom for CircuitBootstrappingKey<D, BRA> {
+impl<D: HostDataMut, BRA: BlindRotationAlgo, W: ZnxWord> ReaderFrom for CircuitBootstrappingKey<D, BRA, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.brk.read_from(reader)?;
         let n = reader.read_u64::<LittleEndian>()? as usize;
@@ -364,8 +365,8 @@ impl<D: HostDataMut, BRA: BlindRotationAlgo> ReaderFrom for CircuitBootstrapping
     }
 }
 
-impl<D: HostDataRef, BRA: BlindRotationAlgo> WriterTo for CircuitBootstrappingKey<D, BRA> {
-    fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+impl<D: HostDataRef, BRA: BlindRotationAlgo, W: ZnxWord> WriterTo for CircuitBootstrappingKey<D, BRA, W> {
+    fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         self.brk.write_to(writer)?;
         writer.write_u64::<LittleEndian>(self.atk.len() as u64)?;
         // HashMap iteration order is undefined; sort for stable, canonical blobs.

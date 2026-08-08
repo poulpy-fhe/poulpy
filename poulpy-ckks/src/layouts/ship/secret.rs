@@ -77,7 +77,7 @@ impl ShipSecretSpec {
     }
 
     /// Writes the support into the coefficients of a host GLWE secret.
-    pub fn fill_glwe_secret(&self, plan: &ShipPlan, sk: &mut GLWESecret<Vec<u8>>) -> Result<()> {
+    pub fn fill_glwe_secret(&self, plan: &ShipPlan, sk: &mut GLWESecret<Vec<u8>, i64>) -> Result<()> {
         ensure!(
             sk.n().as_usize() == plan.n(),
             "SHIP secret degree {} does not match plan degree {}",

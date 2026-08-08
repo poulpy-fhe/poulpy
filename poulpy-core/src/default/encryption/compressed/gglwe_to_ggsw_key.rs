@@ -6,11 +6,12 @@ use poulpy_hal::{
     source::Source,
 };
 
+use crate::api::GLWEBytesOf;
 use crate::{
     EncryptionInfos, GGLWECompressedEncryptSk, GetDistribution, ScratchArenaTakeCore,
     layouts::{
-        GGLWEInfos, GGLWEToGGSWKeyCompressedToBackendMut, GLWEInfos, GLWESecret, GLWESecretTensor, GLWESecretTensorFactory,
-        GLWESecretToBackendRef, prepared::GLWESecretPreparedFactory,
+        GGLWEInfos, GGLWEToGGSWKeyCompressedToBackendMut, GLWEInfos, GLWESecretTensorFactory, GLWESecretToBackendRef,
+        prepared::GLWESecretPreparedFactory,
     },
 };
 
@@ -49,8 +50,8 @@ where
         assert_eq!(self.n() as u32, infos.n());
 
         let sk_prepared: usize = self.glwe_secret_prepared_bytes_of(infos.rank());
-        let sk_tensor: usize = GLWESecretTensor::bytes_of_from_infos(infos);
-        let sk_ij: usize = GLWESecret::bytes_of(self.n().into(), infos.rank());
+        let sk_tensor: usize = self.glwe_secret_tensor_bytes_of_from_infos(infos);
+        let sk_ij: usize = self.glwe_secret_bytes_of(self.n().into(), infos.rank());
         let lvl_0: usize = sk_prepared;
         let lvl_1: usize = sk_tensor;
         let lvl_2: usize = sk_ij;

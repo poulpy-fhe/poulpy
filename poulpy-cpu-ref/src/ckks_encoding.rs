@@ -260,7 +260,7 @@ where
 #[doc(hidden)]
 pub fn encode_coeffs_into<BE, F, P>(pt: &mut P, coeffs: &CKKSEncodingBufferBackendRef<'_, BE, F>) -> Result<()>
 where
-    BE: Backend,
+    BE: Backend<ZnxWord = i64>,
     F: CKKSEncodingScalar + NumCast,
     P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -308,7 +308,7 @@ where
 #[doc(hidden)]
 pub fn decode_coeffs_into<BE, F, P>(pt: &P, coeffs: &mut CKKSEncodingBufferBackendMut<'_, BE, F>) -> Result<()>
 where
-    BE: Backend,
+    BE: Backend<ZnxWord = i64>,
     F: CKKSEncodingScalar,
     P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -463,7 +463,7 @@ mod tests {
 
     fn roundtrip_all_dimensions<BE, F>(module: &Module<BE>)
     where
-        BE: Backend<OwnedBuf = Vec<u8>>,
+        BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>,
         F: CKKSEncodingScalar,
         Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     {
@@ -521,7 +521,7 @@ mod tests {
             log_sparsity: 1,
             log_delta: 40,
         });
-        let bytes = GLWEPlaintext::<Vec<u8>>::bytes_of_from_infos(&layout);
+        let bytes = GLWEPlaintext::<Vec<u8>, i64>::bytes_of_from_infos(&layout);
         let mut pt_scratch = ScratchOwned::<FFT64Ref>::alloc(bytes);
         let (mut pt, _) = pt_scratch.arena().take_ckks_plaintext_like_scratch(&layout);
 

@@ -11,7 +11,7 @@ pub trait ModuleTableCacheAccess {
     fn module_table_cache(&self) -> &ModuleTableCache;
 }
 
-impl<BE: Backend> ModuleTableCacheAccess for Module<BE>
+impl<BE: Backend<ZnxWord = i64>> ModuleTableCacheAccess for Module<BE>
 where
     BE::Handle: ModuleTableCacheProvider,
 {

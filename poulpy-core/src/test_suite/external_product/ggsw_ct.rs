@@ -74,11 +74,11 @@ where
             })
             .unwrap();
 
-            let mut ggsw_in: GGSW<Vec<u8>> = module.ggsw_alloc_from_infos(&ggsw_in_infos);
-            let mut ggsw_out: GGSW<Vec<u8>> = module.ggsw_alloc_from_infos(&ggsw_out_infos);
-            let mut ggsw_apply: GGSW<Vec<u8>> = module.ggsw_alloc_from_infos(&ggsw_apply_infos);
-            let mut pt_in: ScalarZnx<Vec<u8>> = module.scalar_znx_alloc(1);
-            let mut pt_apply: ScalarZnx<Vec<u8>> = module.scalar_znx_alloc(1);
+            let mut ggsw_in: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_in_infos);
+            let mut ggsw_out: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_out_infos);
+            let mut ggsw_apply: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_apply_infos);
+            let mut pt_in: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
+            let mut pt_apply: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
             let mut source_xe: Source = Source::new([0u8; 32]);
@@ -96,7 +96,7 @@ where
                     | module.ggsw_external_product_tmp_bytes(&ggsw_out_infos, &ggsw_in_infos, &ggsw_apply_infos),
             );
 
-            let mut sk: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank.into());
+            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
             sk.fill_ternary_prob(0.5, &mut source_xs);
 
             let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
@@ -162,7 +162,7 @@ where
                             module,
                             row,
                             col,
-                            &<ScalarZnx<Vec<u8>> as ScalarZnxToBackendRef<poulpy_hal::layouts::HostBytesBackend>>::to_backend_ref(
+                            &<ScalarZnx<Vec<u8>, i64> as ScalarZnxToBackendRef<poulpy_hal::layouts::HostBytesBackend>>::to_backend_ref(
                                 &pt_in,
                             ),
                             &sk_prepared,
@@ -227,11 +227,11 @@ where
             })
             .unwrap();
 
-            let mut ggsw_out: GGSW<Vec<u8>> = module.ggsw_alloc_from_infos(&ggsw_out_infos);
-            let mut ggsw_apply: GGSW<Vec<u8>> = module.ggsw_alloc_from_infos(&ggsw_apply_infos);
+            let mut ggsw_out: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_out_infos);
+            let mut ggsw_apply: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_apply_infos);
 
-            let mut pt_in: ScalarZnx<Vec<u8>> = module.scalar_znx_alloc(1);
-            let mut pt_apply: ScalarZnx<Vec<u8>> = module.scalar_znx_alloc(1);
+            let mut pt_in: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
+            let mut pt_apply: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
             let mut source_xe: Source = Source::new([0u8; 32]);
@@ -249,7 +249,7 @@ where
                     | module.ggsw_external_product_tmp_bytes(&ggsw_out_infos, &ggsw_out_infos, &ggsw_apply_infos),
             );
 
-            let mut sk: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank.into());
+            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
             sk.fill_ternary_prob(0.5, &mut source_xs);
 
             let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
@@ -315,7 +315,7 @@ where
                             module,
                             row,
                             col,
-                            &<ScalarZnx<Vec<u8>> as ScalarZnxToBackendRef<poulpy_hal::layouts::HostBytesBackend>>::to_backend_ref(
+                            &<ScalarZnx<Vec<u8>, i64> as ScalarZnxToBackendRef<poulpy_hal::layouts::HostBytesBackend>>::to_backend_ref(
                                 &pt_in,
                             ),
                             &sk_prepared,

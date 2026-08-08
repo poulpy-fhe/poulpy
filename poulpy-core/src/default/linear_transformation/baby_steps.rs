@@ -30,9 +30,10 @@ use poulpy_hal::{
 
 use crate::{
     GLWEAutomorphism, ScratchArenaTakeCore,
+    api::GLWEBytesOf,
     default::{keyswitching::GGLWEProductDefault, operations::msb_mask_bottom_limb},
     layouts::{
-        GGLWEInfos, GLWE, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
+        GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
         prepared::GGLWEPreparedToBackendRef,
     },
 };
@@ -79,7 +80,8 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes<BE, M, A, 
 ) -> usize
 where
     BE: Backend,
-    M: ModuleN
+    M: GLWEBytesOf<BE>
+        + ModuleN
         + Convolution<BE>
         + GLWEAutomorphism<BE>
         + GGLWEProductDefault<BE>
@@ -94,7 +96,7 @@ where
     let cols = a_infos.rank().as_usize() + 1;
     let a_size = a_infos.size();
     let key_size = key_infos.size();
-    let baby = GLWE::<Vec<u8>>::bytes_of_from_infos(a_infos);
+    let baby = module.glwe_bytes_of_from_infos(a_infos);
     let prepare = module.cnv_prepare_left_tmp_bytes(a_infos.size(), a_infos.size());
 
     let hoisted_a_dft = module.bytes_of_vec_znx_dft(cols - 1, a_size);
@@ -121,7 +123,8 @@ fn glwe_hoisted_baby_rotation<BE, M, R, A, H, K>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: ModuleN
+    M: GLWEBytesOf<BE>
+        + ModuleN
         + GaloisElement
         + GGLWEProductDefault<BE>
         + VecZnxAutomorphismAssignBackend<BE>
@@ -202,7 +205,8 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: CnvPVecAlloc<BE>
+    M: GLWEBytesOf<BE>
+        + CnvPVecAlloc<BE>
         + Convolution<BE>
         + GaloisElement
         + GLWEAutomorphism<BE>

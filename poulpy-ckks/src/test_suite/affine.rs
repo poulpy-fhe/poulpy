@@ -15,10 +15,11 @@ use poulpy_hal::{
     layouts::{HostBytesBackend, Module},
 };
 
+use crate::layouts::CKKSPlaintextOwned;
 use crate::{
     CKKSInfos, CKKSLayout, SetCKKSInfos,
     api::CKKSAffineOps,
-    layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec},
+    layouts::{CKKSModuleAlloc, CKKSPlaintextVecHostCodec},
 };
 use poulpy_core::layouts::LWEInfos;
 
@@ -39,7 +40,7 @@ fn encode_affine_const<F: TestScalar>(
     offset: F,
     scale: F,
     prec: CKKSLayout,
-) -> CKKSPlaintext<Vec<u8>>
+) -> CKKSPlaintextOwned<HostBytesBackend>
 where
     Module<HostBytesBackend>: CKKSModuleAlloc<HostBytesBackend>,
 {

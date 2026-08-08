@@ -22,7 +22,7 @@ where
         + GLWERotate<BE>
         + GLWETensoring<BE>
         + ModuleN
-        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + VecZnxCopyBackend<BE>,
 {
     fn ckks_mul_tmp_bytes<R, A, B, T>(&self, res: &R, a: &A, b: &B, tsk: &T) -> usize

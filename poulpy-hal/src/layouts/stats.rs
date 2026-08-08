@@ -21,7 +21,7 @@ impl Stats {
     }
 }
 
-impl<D: HostDataRef> VecZnx<D> {
+impl<D: HostDataRef> VecZnx<D, i64> {
     /// Computes [`Stats`] (max absolute value and standard deviation) for
     /// column `col` by decoding all limbs into arbitrary-precision floats.
     pub fn stats(&self, base2k: usize, col: usize) -> Stats {
@@ -61,7 +61,7 @@ impl<D: HostDataRef> VecZnx<D> {
 impl<D: HostDataRef, B: Backend<BigWord = i64>> VecZnxBig<D, i64, B> {
     pub fn stats(&self, base2k: usize, col: usize) -> Stats {
         let shape = self.shape();
-        let znx: VecZnx<&[u8]> =
+        let znx: VecZnx<&[u8], i64> =
             VecZnx::from_data_with_max_size(self.data.as_ref(), shape.n(), shape.cols(), shape.size(), shape.max_size());
         znx.stats(base2k, col)
     }

@@ -1,3 +1,4 @@
+use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero,
@@ -186,7 +187,7 @@ use poulpy_hal::{
 
 use crate::{
     default::operations::GLWENormalizeDefault,
-    layouts::{GLWE, GLWELayout, GLWEToBackendMut},
+    layouts::{GLWELayout, GLWEToBackendMut},
     oep::GLWEKeyswitchDefault,
 };
 
@@ -226,7 +227,8 @@ fn glwe_keyswitch_dft_fill<'r, BE, M, A>(
 pub fn glwe_keyswitch_tmp_bytes_default<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
-    M: ModuleN
+    M: GLWEBytesOf<BE>
+        + ModuleN
         + GLWEKeyswitchInternal<BE>
         + GLWENormalizeDefault<BE>
         + VecZnxDftBytesOf
@@ -250,14 +252,14 @@ where
             .vec_znx_idft_apply_tmp_bytes()
             .max(module.vec_znx_big_normalize_tmp_bytes());
     let lvl_2: usize = if a_infos.base2k() != key_infos.base2k() {
-        let small_term_tmp: usize = poulpy_hal::layouts::VecZnx::<Vec<u8>>::bytes_of(module.n(), 1, key_infos.size());
+        let small_term_tmp: usize = BE::bytes_of_vec_znx(module.n(), 1, key_infos.size());
         let a_conv_infos: GLWELayout = GLWELayout {
             n: a_infos.n(),
             base2k: key_infos.base2k(),
             k: a_infos.k(),
             rank: a_infos.rank(),
         };
-        let lvl_2_0: usize = GLWE::<Vec<u8>>::bytes_of_from_infos(&a_conv_infos);
+        let lvl_2_0: usize = module.glwe_bytes_of_from_infos(&a_conv_infos);
         let lvl_2_1: usize = module
             .glwe_normalize_tmp_bytes_default()
             .max(module.glwe_keyswitch_internal_tmp_bytes(res_infos, &a_conv_infos, key_infos));
@@ -279,7 +281,8 @@ where
 pub fn glwe_keyswitch_default<BE, M, R, A, K>(module: &M, res: &mut R, a: &A, key: &K, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
-    M: GLWEKeyswitchDefault<BE>
+    M: GLWEBytesOf<BE>
+        + GLWEKeyswitchDefault<BE>
         + ModuleN
         + GLWEKeyswitchInternal<BE>
         + GLWENormalizeDefault<BE>
@@ -391,7 +394,8 @@ where
 pub fn glwe_keyswitch_assign_default<BE, M, R, K>(module: &M, res: &mut R, key: &K, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
-    M: GLWEKeyswitchDefault<BE>
+    M: GLWEBytesOf<BE>
+        + GLWEKeyswitchDefault<BE>
         + ModuleN
         + GLWEKeyswitchInternal<BE>
         + GLWENormalizeDefault<BE>

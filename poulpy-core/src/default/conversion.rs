@@ -6,6 +6,7 @@
 
 #![allow(private_bounds)]
 
+use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
@@ -14,7 +15,7 @@ use poulpy_hal::{
         VecZnxRotateBackend, VecZnxZeroBackend,
     },
     layouts::{
-        Backend, ScratchArena, VecZnx, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendRef, VecZnxDftToBackendRef,
+        Backend, ScratchArena, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendRef, VecZnxDftToBackendRef,
         VecZnxToBackendMut, VecZnxToBackendRef, ZnxInfos,
     },
 };
@@ -23,7 +24,7 @@ use crate::{
     GLWERotate, ScratchArenaTakeCore,
     default::{keyswitching::GGLWEProductDefault, operations::GLWECopyDefault},
     layouts::{
-        GGLWEInfos, GGLWEToBackendRef, GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWE, GLWEInfos, GLWELayout, GLWEToBackendMut,
+        GGLWEInfos, GGLWEToBackendRef, GGSWAtViewMut, GGSWInfos, GGSWToBackendMut, GLWEInfos, GLWELayout, GLWEToBackendMut,
         GLWEToBackendRef, GLWEViewMut, GLWEViewRef, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendMut, LWEToBackendMut,
         LWEToBackendRef, Rank, glwe_backend_ref_from_mut,
         prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
@@ -73,7 +74,7 @@ where
     if a_infos.rank().as_usize() == 1 {
         0
     } else {
-        VecZnx::<Vec<u8>>::bytes_of(module.n(), 1, lwe_infos.size())
+        BE::bytes_of_vec_znx(module.n(), 1, lwe_infos.size())
     }
 }
 
@@ -150,7 +151,7 @@ where
     R: LWEMatrixInfos,
     A: GLWEInfos,
 {
-    VecZnx::<Vec<u8>>::bytes_of(module.n(), 1, a_infos.size())
+    BE::bytes_of_vec_znx(module.n(), 1, a_infos.size())
 }
 
 pub fn glwe_expand_lwe_matrix_default<BE, M, R, A>(module: &M, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
@@ -221,7 +222,7 @@ where
 pub fn glwe_from_lwe_tmp_bytes_default<BE, M, R, A, K>(module: &M, glwe_infos: &R, lwe_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
-    M: ModuleN + GLWEKeyswitchDefault<BE> + VecZnxNormalizeTmpBytes,
+    M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitchDefault<BE> + VecZnxNormalizeTmpBytes,
     R: GLWEInfos,
     A: LWEInfos,
     K: GGLWEInfos,
@@ -229,7 +230,7 @@ where
     assert_eq!(module.n() as u32, glwe_infos.n());
     assert_eq!(module.n() as u32, key_infos.n());
 
-    let lvl_0: usize = GLWE::<Vec<u8>>::bytes_of(
+    let lvl_0: usize = module.glwe_bytes_of(
         module.n().into(),
         key_infos.base2k(),
         lwe_infos.k().max(glwe_infos.k()),
@@ -240,7 +241,7 @@ where
     let lvl_1_a_conv: usize = if lwe_infos.base2k() == key_infos.base2k() {
         0
     } else {
-        VecZnx::bytes_of(module.n(), 1, lwe_infos.size()) + module.vec_znx_normalize_tmp_bytes()
+        BE::bytes_of_vec_znx(module.n(), 1, lwe_infos.size()) + module.vec_znx_normalize_tmp_bytes()
     };
 
     let lvl_1: usize = lvl_1_ks.max(lvl_1_a_conv);
@@ -251,7 +252,8 @@ where
 pub fn glwe_from_lwe_default<BE, M, R, A, K>(module: &M, res: &mut R, lwe: &A, ksk: &K, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
-    M: ConversionDefault<BE>
+    M: GLWEBytesOf<BE>
+        + ConversionDefault<BE>
         + ModuleN
         + GLWEKeyswitchDefault<BE>
         + VecZnxCopyRangeBackend<BE>
@@ -346,7 +348,7 @@ where
 pub fn lwe_from_glwe_tmp_bytes_default<BE, M, R, A, K>(module: &M, lwe_infos: &R, glwe_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
-    M: ModuleN + GLWEKeyswitchDefault<BE>,
+    M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitchDefault<BE>,
     R: LWEInfos,
     A: GLWEInfos,
     K: GGLWEInfos,
@@ -361,9 +363,9 @@ where
         rank: Rank(1),
     };
 
-    let lvl_0: usize = GLWE::<Vec<u8>>::bytes_of(module.n().into(), lwe_infos.base2k(), lwe_infos.k(), 1u32.into());
+    let lvl_0: usize = module.glwe_bytes_of(module.n().into(), lwe_infos.base2k(), lwe_infos.k(), 1u32.into());
     let lvl_1: usize = module.glwe_keyswitch_tmp_bytes_default(&res_infos, glwe_infos, key_infos);
-    let lvl_2: usize = GLWE::<Vec<u8>>::bytes_of_from_infos(glwe_infos);
+    let lvl_2: usize = module.glwe_bytes_of_from_infos(glwe_infos);
 
     lvl_0 + lvl_1 + lvl_2
 }
@@ -377,7 +379,8 @@ pub fn lwe_from_glwe_default<BE, M, R, A, K>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: ConversionDefault<BE>
+    M: GLWEBytesOf<BE>
+        + ConversionDefault<BE>
         + ModuleN
         + GLWEKeyswitchDefault<BE>
         + GLWERotate<BE>
@@ -474,7 +477,8 @@ where
 pub fn ggsw_expand_rows_tmp_bytes_default<BE, M, R, A>(module: &M, res_infos: &R, tsk_infos: &A) -> usize
 where
     BE: Backend,
-    M: ModuleN
+    M: GLWEBytesOf<BE>
+        + ModuleN
         + GGLWEProductDefault<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalizeTmpBytes
@@ -495,7 +499,7 @@ where
     let a_size: usize = res_infos.k().as_usize().div_ceil(tsk_base2k);
     let tsk_size: usize = tsk_infos.size();
 
-    let lvl_0: usize = module.bytes_of_vec_znx_dft(cols - 1, a_size) + VecZnx::bytes_of(module.n(), 1, a_size);
+    let lvl_0: usize = module.bytes_of_vec_znx_dft(cols - 1, a_size) + BE::bytes_of_vec_znx(module.n(), 1, a_size);
     let lvl_1_res_dft: usize = module.bytes_of_vec_znx_dft(cols, tsk_size);
     let lvl_1_gglwe_prod: usize = module.gglwe_product_dft_tmp_bytes_default(tsk_size, a_size, tsk_infos);
     let lvl_1_big: usize = module.bytes_of_vec_znx_big(cols, tsk_size)
@@ -511,7 +515,8 @@ where
 pub fn ggsw_expand_row_default<BE, M, R, T>(module: &M, res: &mut R, tsk: &T, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
-    M: ConversionDefault<BE>
+    M: GLWEBytesOf<BE>
+        + ConversionDefault<BE>
         + ModuleN
         + GGLWEProductDefault<BE>
         + VecZnxBigAddSmallAssign<BE>
@@ -603,7 +608,8 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, T, BE: Backend>(
     tsk_size: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    M: GGLWEProductDefault<BE>
+    M: GLWEBytesOf<BE>
+        + GGLWEProductDefault<BE>
         + ModuleN
         + VecZnxBigBytesOf
         + VecZnxBigAddSmallAssign<BE>

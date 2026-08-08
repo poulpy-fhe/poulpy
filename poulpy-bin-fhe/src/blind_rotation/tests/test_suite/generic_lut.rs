@@ -7,7 +7,7 @@ use crate::blind_rotation::{DivRound, LookUpTableLayout, LookupTable, LookupTabl
 
 pub fn test_lut_standard<M>(module: &M)
 where
-    M: LookupTableFactory + ModuleN + ModuleCoreAlloc<OwnedBuf = Vec<u8>>,
+    M: LookupTableFactory<Vec<u8>, i64> + ModuleN + ModuleCoreAlloc<OwnedBuf = Vec<u8>, ZnxWord = i64>,
 {
     let base2k: usize = 20;
     let k_lut: usize = 40;
@@ -26,7 +26,7 @@ where
         base2k: base2k.into(),
     };
 
-    let mut lut: LookupTable = LookupTable::alloc(module, &lut_infos);
+    let mut lut: LookupTable<Vec<u8>, i64> = LookupTable::alloc(module, &lut_infos);
     lut.set(module, &f, log_scale);
 
     let half_step: i64 = lut.domain_size().div_round(message_modulus << 1) as i64;
@@ -46,7 +46,7 @@ where
 
 pub fn test_lut_extended<M>(module: &M)
 where
-    M: LookupTableFactory + ModuleN + ModuleCoreAlloc<OwnedBuf = Vec<u8>>,
+    M: LookupTableFactory<Vec<u8>, i64> + ModuleN + ModuleCoreAlloc<OwnedBuf = Vec<u8>, ZnxWord = i64>,
 {
     let base2k: usize = 20;
     let k_lut: usize = 40;
@@ -65,7 +65,7 @@ where
         base2k: base2k.into(),
     };
 
-    let mut lut: LookupTable = LookupTable::alloc(module, &lut_infos);
+    let mut lut: LookupTable<Vec<u8>, i64> = LookupTable::alloc(module, &lut_infos);
     lut.set(module, &f, log_scale);
 
     let half_step: i64 = lut.domain_size().div_round(message_modulus << 1) as i64;

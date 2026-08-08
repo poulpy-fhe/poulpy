@@ -1,3 +1,4 @@
+use poulpy_hal::layouts::ZnxWord;
 use std::fmt;
 
 use poulpy_hal::{
@@ -145,17 +146,17 @@ impl LWEInfos for LWELayout {
 ///
 /// `D: Data` is the storage backend (e.g. `Vec<u8>`, `&[u8]`, `&mut [u8]`).
 #[derive(PartialEq, Eq, Clone)]
-pub struct LWE<D: Data> {
-    pub(crate) body: VecZnx<D>,
-    pub(crate) mask: VecZnx<D>,
+pub struct LWE<D: Data, W: ZnxWord> {
+    pub(crate) body: VecZnx<D, W>,
+    pub(crate) mask: VecZnx<D, W>,
     pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
 }
 
-pub type LWEBackendRef<'a, BE> = LWE<<BE as Backend>::BufRef<'a>>;
-pub type LWEBackendMut<'a, BE> = LWE<<BE as Backend>::BufMut<'a>>;
+pub type LWEBackendRef<'a, BE> = LWE<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord>;
+pub type LWEBackendMut<'a, BE> = LWE<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord>;
 
-impl<D: Data> LWEInfos for LWE<D> {
+impl<D: Data, W: ZnxWord> LWEInfos for LWE<D, W> {
     fn base2k(&self) -> Base2K {
         self.base2k
     }
@@ -173,30 +174,30 @@ impl<D: Data> LWEInfos for LWE<D> {
     }
 }
 
-impl<D: Data> SetBase2k for LWE<D> {
+impl<D: Data, W: ZnxWord> SetBase2k for LWE<D, W> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k
     }
 }
 
-impl<D: Data> LWE<D> {
+impl<D: Data, W: ZnxWord> LWE<D, W> {
     /// Returns a shared reference to the body [`VecZnx`] (n = 1).
-    pub fn body(&self) -> &VecZnx<D> {
+    pub fn body(&self) -> &VecZnx<D, W> {
         &self.body
     }
 
     /// Returns a mutable reference to the body [`VecZnx`] (n = 1).
-    pub fn body_mut(&mut self) -> &mut VecZnx<D> {
+    pub fn body_mut(&mut self) -> &mut VecZnx<D, W> {
         &mut self.body
     }
 
     /// Returns a shared reference to the mask [`VecZnx`] (n = lwe_dim).
-    pub fn mask(&self) -> &VecZnx<D> {
+    pub fn mask(&self) -> &VecZnx<D, W> {
         &self.mask
     }
 
     /// Returns a mutable reference to the mask [`VecZnx`] (n = lwe_dim).
-    pub fn mask_mut(&mut self) -> &mut VecZnx<D> {
+    pub fn mask_mut(&mut self) -> &mut VecZnx<D, W> {
         &mut self.mask
     }
 
@@ -259,24 +260,24 @@ impl<D: Data> LWE<D> {
     }
 }
 
-impl<D: HostDataRef> LWE<D> {
+impl<D: HostDataRef, W: ZnxWord> LWE<D, W> {
     /// Copies this ciphertext's backing bytes into an owned buffer of
     /// backend `To`, routing via host bytes.
-    pub fn to_backend<BE, To>(&self, dst: &Module<To>) -> LWE<To::OwnedBuf>
+    pub fn to_backend<BE, To>(&self, dst: &Module<To>) -> LWE<To::OwnedBuf, To::ZnxWord>
     where
-        BE: Backend<OwnedBuf = D>,
-        To: Backend,
+        BE: Backend<OwnedBuf = D, ZnxWord = W>,
+        To: Backend<ZnxWord = W>,
         To: TransferFrom<BE>,
     {
         dst.upload_lwe(self)
     }
 }
 
-impl<D: Data> LWE<D> {
+impl<D: Data, W: ZnxWord> LWE<D, W> {
     /// Zero-cost rename when both backends share the same `OwnedBuf`.
-    pub fn reinterpret<To>(self) -> LWE<To::OwnedBuf>
+    pub fn reinterpret<To>(self) -> LWE<To::OwnedBuf, To::ZnxWord>
     where
-        To: Backend<OwnedBuf = D>,
+        To: Backend<OwnedBuf = D, ZnxWord = W>,
     {
         let body_shape = self.body.shape();
         let body_data = self.body.data;
@@ -303,13 +304,13 @@ impl<D: Data> LWE<D> {
     }
 }
 
-impl<D: HostDataRef> fmt::Debug for LWE<D> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Debug for LWE<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: HostDataRef> fmt::Display for LWE<D> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Display for LWE<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -322,16 +323,16 @@ impl<D: HostDataRef> fmt::Display for LWE<D> {
     }
 }
 
-impl<D: HostDataMut> FillUniform for LWE<D>
+impl<D: HostDataMut, W: ZnxWord> FillUniform for LWE<D, W>
 where
-    VecZnx<D>: FillUniform,
+    VecZnx<D, W>: FillUniform,
 {
     fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
         self.mask.fill_uniform(log_bound, source);
     }
 }
 
-impl LWE<Vec<u8>> {
+impl<W: ZnxWord> LWE<Vec<u8>, W> {
     /// Allocates a new [`LWE`] with the given parameters.
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
@@ -349,13 +350,13 @@ impl LWE<Vec<u8>> {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
         LWE {
             body: VecZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<Vec<u8>>::bytes_of(1, 1, size)),
+                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<Vec<u8>, W>::bytes_of(1, 1, size)),
                 1,
                 1,
                 size,
             ),
             mask: VecZnx::from_data(
-                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<Vec<u8>>::bytes_of(n.as_usize(), 1, size)),
+                poulpy_hal::layouts::HostBytesBackend::alloc_bytes(VecZnx::<Vec<u8>, W>::bytes_of(n.as_usize(), 1, size)),
                 n.as_usize(),
                 1,
                 size,
@@ -380,7 +381,7 @@ impl LWE<Vec<u8>> {
     /// * `k` -- torus precision.
     pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision) -> usize {
         let size: usize = k.0.div_ceil(base2k.0) as usize;
-        VecZnx::<Vec<u8>>::bytes_of(1, 1, size) + VecZnx::<Vec<u8>>::bytes_of(n.as_usize(), 1, size)
+        VecZnx::<Vec<u8>, W>::bytes_of(1, 1, size) + VecZnx::<Vec<u8>, W>::bytes_of(n.as_usize(), 1, size)
     }
 }
 
@@ -388,9 +389,9 @@ pub trait LWEToBackendRef<BE: Backend> {
     fn to_backend_ref(&self) -> LWEBackendRef<'_, BE>;
 }
 
-impl<BE: Backend, D: Data> LWEToBackendRef<BE> for LWE<D>
+impl<BE: Backend, D: Data> LWEToBackendRef<BE> for LWE<D, BE::ZnxWord>
 where
-    VecZnx<D>: VecZnxToBackendRef<BE>,
+    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE>,
 {
     fn to_backend_ref(&self) -> LWEBackendRef<'_, BE> {
         LWE {
@@ -406,9 +407,9 @@ pub trait LWEToBackendMut<BE: Backend>: LWEToBackendRef<BE> {
     fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE>;
 }
 
-impl<BE: Backend, D: Data> LWEToBackendMut<BE> for LWE<D>
+impl<BE: Backend, D: Data> LWEToBackendMut<BE> for LWE<D, BE::ZnxWord>
 where
-    VecZnx<D>: VecZnxToBackendRef<BE> + VecZnxToBackendMut<BE>,
+    VecZnx<D, BE::ZnxWord>: VecZnxToBackendRef<BE> + VecZnxToBackendMut<BE>,
 {
     fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE> {
         LWE {
@@ -420,7 +421,7 @@ where
     }
 }
 
-impl<'b, BE: Backend + 'b> LWEToBackendRef<BE> for &mut LWE<BE::BufMut<'b>> {
+impl<'b, BE: Backend + 'b> LWEToBackendRef<BE> for &mut LWE<BE::BufMut<'b>, BE::ZnxWord> {
     fn to_backend_ref(&self) -> LWEBackendRef<'_, BE> {
         LWE {
             base2k: self.base2k,
@@ -431,7 +432,7 @@ impl<'b, BE: Backend + 'b> LWEToBackendRef<BE> for &mut LWE<BE::BufMut<'b>> {
     }
 }
 
-impl<'b, BE: Backend + 'b> LWEToBackendMut<BE> for &mut LWE<BE::BufMut<'b>> {
+impl<'b, BE: Backend + 'b> LWEToBackendMut<BE> for &mut LWE<BE::BufMut<'b>, BE::ZnxWord> {
     fn to_backend_mut(&mut self) -> LWEBackendMut<'_, BE> {
         LWE {
             base2k: self.base2k,
@@ -442,7 +443,7 @@ impl<'b, BE: Backend + 'b> LWEToBackendMut<BE> for &mut LWE<BE::BufMut<'b>> {
     }
 }
 
-impl<D: HostDataMut> ReaderFrom for LWE<D> {
+impl<D: HostDataMut, W: ZnxWord> ReaderFrom for LWE<D, W> {
     /// Deserialises an [`LWE`] in little-endian binary format.
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.base2k = Base2K(reader.read_u32::<LittleEndian>()?);
@@ -452,9 +453,9 @@ impl<D: HostDataMut> ReaderFrom for LWE<D> {
     }
 }
 
-impl<D: HostDataRef> WriterTo for LWE<D> {
+impl<D: HostDataRef, W: ZnxWord> WriterTo for LWE<D, W> {
     /// Serialises the [`LWE`] in little-endian binary format.
-    fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+    fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         writer.write_u32::<LittleEndian>(self.base2k.into())?;
         self.body.write_to(writer)?;
         self.mask.write_to(writer)

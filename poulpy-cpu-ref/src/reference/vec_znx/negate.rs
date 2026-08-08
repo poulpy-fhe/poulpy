@@ -5,7 +5,7 @@ use crate::{
 
 pub fn vec_znx_negate<'r, 'a, BE>(res: &mut VecZnxBackendMut<'r, BE>, res_col: usize, a: &VecZnxBackendRef<'a, BE>, a_col: usize)
 where
-    BE: Backend + ZnxNegate + ZnxZero,
+    BE: Backend<ZnxWord = i64> + ZnxNegate + ZnxZero,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
@@ -27,7 +27,7 @@ where
 
 pub fn vec_znx_negate_assign<'r, BE>(res: &mut VecZnxBackendMut<'r, BE>, res_col: usize)
 where
-    BE: Backend + ZnxNegateAssign,
+    BE: Backend<ZnxWord = i64> + ZnxNegateAssign,
     BE::BufMut<'r>: HostDataMut,
 {
     for j in 0..res.size() {

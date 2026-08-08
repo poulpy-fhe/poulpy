@@ -43,7 +43,9 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    layouts::{Backend, CyclotomicOrder, Data, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchArena, TransferFrom},
+    layouts::{
+        Backend, CyclotomicOrder, Data, HostBytesBackend, HostDataMut, HostDataRef, HostStaged, Module, ScratchArena, ZnxWord,
+    },
     source::Source,
 };
 
@@ -94,15 +96,15 @@ pub trait BootstrappingKeys<BE: Backend> {
 /// buffer `D` (backend agnostic). Call [`Self::prepare`] to obtain the prepared
 /// [`BootstrappingKeysPrepared`] the pipeline consumes, or prepare individual keys
 /// on the fly.
-pub struct BootstrappingKeySet<D: Data> {
+pub struct BootstrappingKeySet<D: Data, W: ZnxWord> {
     /// Rotation keys indexed by Galois element (the engine-wide convention).
-    pub rotation_keys: HashMap<i64, GLWEAutomorphismKey<D>>,
+    pub rotation_keys: HashMap<i64, GLWEAutomorphismKey<D, W>>,
     /// Conjugation key (Galois element `−1`).
-    pub conjugation_key: GLWEAutomorphismKey<D>,
+    pub conjugation_key: GLWEAutomorphismKey<D, W>,
     /// Relinearization (tensor) key for EvalMod.
-    pub tensor_key: GLWETensorKey<D>,
+    pub tensor_key: GLWETensorKey<D, W>,
     /// `(denseToSparse, sparseToDense)` encapsulation keys, or `None`.
-    pub encapsulation_keys: Option<(GLWESwitchingKey<D>, GLWESwitchingKey<D>)>,
+    pub encapsulation_keys: Option<(GLWESwitchingKey<D, W>, GLWESwitchingKey<D, W>)>,
 }
 
 /// The **prepared** (preprocessed) bootstrapping keys, ready for the pipeline.
@@ -148,7 +150,7 @@ where
     }
 }
 
-impl<D: Data> BootstrappingKeySet<D> {
+impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
     /// Preprocesses every key into a [`BootstrappingKeysPrepared`] bundle.
     ///
     /// Convenience for the CPU path that prepares the whole set up front; streaming
@@ -161,10 +163,10 @@ impl<D: Data> BootstrappingKeySet<D> {
     ) -> BootstrappingKeysPrepared<BE::OwnedBuf, BE>
     where
         D: HostDataRef,
-        GLWEAutomorphismKey<D>: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        GLWETensorKey<D>: GGLWEToBackendRef<BE> + GGLWEInfos,
-        GLWESwitchingKey<D>: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees + GGLWEInfos,
-        Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
+        GLWEAutomorphismKey<D, W>: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        GLWETensorKey<D, W>: GGLWEToBackendRef<BE> + GGLWEInfos,
+        GLWESwitchingKey<D, W>: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees + GGLWEInfos,
+        Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + GLWEAutomorphismKeyPreparedFactory<BE>
             + GLWETensorKeyPreparedFactory<BE>
             + GLWESwitchingKeyPreparedFactory<BE>,
@@ -270,17 +272,17 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<BootstrappingKeySet<BE::OwnedBuf>>
+    ) -> Result<BootstrappingKeySet<BE::OwnedBuf, BE::ZnxWord>>
     where
-        BE: TransferFrom<HostBytesBackend>,
+        BE: HostStaged,
         BE::OwnedBuf: HostDataMut,
-        Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
+        Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + ModuleTransfer<BE>
             + CyclotomicOrder
             + GLWEAutomorphismKeyEncryptSk<BE>
             + GLWETensorKeyEncryptSk<BE>
             + GLWESwitchingKeyEncryptSk<BE>,
-        Module<HostBytesBackend>: ModuleCoreAlloc<OwnedBuf = Vec<u8>>,
+        Module<HostBytesBackend>: ModuleCoreAlloc<OwnedBuf = Vec<u8>, ZnxWord = i64>,
     {
         let sparse_secret_hamming_weight = self.sparse_secret_hamming_weight();
         anyhow::ensure!(
