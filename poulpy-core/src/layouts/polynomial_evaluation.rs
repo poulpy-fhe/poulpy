@@ -40,6 +40,32 @@ pub enum Parity {
     Odd,
 }
 
+/// Input rewrite attached to a decomposed polynomial.
+///
+/// Chebyshev polynomials with a known parity can be folded through
+/// `T₂(x) = 2x² - 1`, halving the encoded degree. Odd polynomials additionally
+/// factor out one copy of the original input.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PolynomialInputTransform {
+    /// Evaluate the encoded polynomial directly on the input.
+    #[default]
+    Identity,
+    /// Evaluate the encoded polynomial on `T₂(x)`.
+    ChebyshevT2,
+    /// Evaluate the encoded polynomial on `T₂(x)`, then multiply by `x`.
+    ChebyshevT2TimesInput,
+}
+
+impl PolynomialInputTransform {
+    fn extra_depth(self) -> usize {
+        match self {
+            Self::Identity => 0,
+            Self::ChebyshevT2 => 1,
+            Self::ChebyshevT2TimesInput => 2,
+        }
+    }
+}
+
 // ── BSGS split-strategy planning ─────────────────────────────────────────────
 
 /// Chooses how [`Polynomial::decompose_bsgs_with`] picks `log_split`.
@@ -610,6 +636,89 @@ where
         self.evaluate(u * x + w)
     }
 
+    /// Folds an even or odd Chebyshev polynomial through `u = T₂(x)`.
+    ///
+    /// For even `P`, returns `Q` such that `P(x) = Q(T₂(x))`. For odd `P`,
+    /// returns `Q` such that `P(x) = x·Q(T₂(x))`. The returned polynomial is
+    /// expressed on the canonical `u ∈ [-1, 1]` interval; the accompanying
+    /// transform records how to recover the source polynomial.
+    pub fn fold_chebyshev_t2(&self) -> Result<(Self, PolynomialInputTransform)> {
+        ensure!(self.basis == Basis::Chebyshev, "T₂ folding requires a Chebyshev polynomial");
+
+        match self.parity {
+            Parity::Even => {
+                ensure!(self.degree() >= 2, "T₂ folding an even polynomial requires degree ≥ 2");
+                ensure!(
+                    self.coeffs
+                        .iter()
+                        .enumerate()
+                        .all(|(i, &c)| i.is_multiple_of(2) || c == F::zero()),
+                    "even T₂ folding requires zero odd coefficients"
+                );
+                let coeffs = self.coeffs.iter().step_by(2).copied().collect();
+                Ok((
+                    Self::new_with_parity(Basis::Chebyshev, coeffs, Parity::Full),
+                    PolynomialInputTransform::ChebyshevT2,
+                ))
+            }
+            Parity::Odd => {
+                ensure!(self.degree() >= 3, "T₂ folding an odd polynomial requires degree ≥ 3");
+                ensure!(
+                    self.coeffs
+                        .iter()
+                        .enumerate()
+                        .all(|(i, &c)| !i.is_multiple_of(2) || c == F::zero()),
+                    "odd T₂ folding requires zero even coefficients"
+                );
+
+                // Rₖ(u) = T₂ₖ₊₁(x) / x in the Chebyshev basis of
+                // u = T₂(x). Build Rₖ with the recurrence
+                // R₀ = 1, R₁ = 2T₁ - T₀,
+                // Rₖ₊₁ = 2T₁ Rₖ - Rₖ₋₁.
+                let odd_coeffs: Vec<F> = self.coeffs.iter().skip(1).step_by(2).copied().collect();
+                let mut q = vec![F::zero(); odd_coeffs.len()];
+                let mut r_prev = Vec::new();
+                let mut r = vec![F::one()];
+                let two = F::one() + F::one();
+
+                for (k, &coefficient) in odd_coeffs.iter().enumerate() {
+                    for (i, &value) in r.iter().enumerate() {
+                        q[i] = q[i] + coefficient * value;
+                    }
+                    if k + 1 == odd_coeffs.len() {
+                        break;
+                    }
+
+                    let mut next = if k == 0 {
+                        vec![-F::one(), two]
+                    } else {
+                        let mut next = vec![F::zero(); r.len() + 1];
+                        for (i, &value) in r.iter().enumerate() {
+                            if i == 0 {
+                                next[1] = next[1] + two * value;
+                            } else {
+                                next[i - 1] = next[i - 1] + value;
+                                next[i + 1] = next[i + 1] + value;
+                            }
+                        }
+                        for (i, &value) in r_prev.iter().enumerate() {
+                            next[i] = next[i] - value;
+                        }
+                        next
+                    };
+                    std::mem::swap(&mut r_prev, &mut r);
+                    std::mem::swap(&mut r, &mut next);
+                }
+
+                Ok((
+                    Self::new_with_parity(Basis::Chebyshev, q, Parity::Full),
+                    PolynomialInputTransform::ChebyshevT2TimesInput,
+                ))
+            }
+            Parity::Full => Err(anyhow!("T₂ folding requires even or odd parity")),
+        }
+    }
+
     /// Decomposes this polynomial into a [`BSGSPolynomial`], encoding each
     /// baby-step coefficient slice with the scheme-supplied `encode` closure.
     pub fn decompose_bsgs_with<C>(
@@ -645,9 +754,32 @@ where
             baby_steps,
             parity: self.parity,
             split_strategy,
+            input_transform: PolynomialInputTransform::Identity,
             a: self.a.to_f64().expect("interval lower bound must convert to f64"),
             b: self.b.to_f64().expect("interval upper bound must convert to f64"),
         })
+    }
+
+    /// Folds this even/odd Chebyshev polynomial through `T₂`, then decomposes
+    /// and encodes the lower-degree polynomial for BSGS evaluation.
+    ///
+    /// This is explicit because the odd transform costs a final ciphertext
+    /// multiplication and can increase depth for some degrees. The returned
+    /// decomposition carries the transform and includes its cost in
+    /// [`BSGSPolynomial::eval_depth`] and [`BSGSPolynomial::consumed_bits`].
+    pub fn decompose_bsgs_t2_with<C>(
+        &self,
+        split_strategy: SplitStrategy,
+        encode: impl FnMut(&[F]) -> Result<C>,
+    ) -> Result<BSGSPolynomial<C>> {
+        let (folded, input_transform) = self.fold_chebyshev_t2()?;
+        let mut bsgs = folded.decompose_bsgs_with(split_strategy, encode)?;
+        bsgs.input_transform = input_transform;
+        // The public interval still describes the source input. Evaluation first
+        // maps that interval to [-1, 1], then applies the attached T₂ transform.
+        bsgs.a = self.a.to_f64().expect("interval lower bound must convert to f64");
+        bsgs.b = self.b.to_f64().expect("interval upper bound must convert to f64");
+        Ok(bsgs)
     }
 }
 
@@ -751,6 +883,7 @@ pub struct BSGSPolynomial<C> {
     baby_steps: Vec<C>,
     parity: Parity,
     split_strategy: SplitStrategy,
+    input_transform: PolynomialInputTransform,
     /// Approximation interval `[a, b]`, carried from the source [`Polynomial`]
     /// (stored as `f64`, decoupled from the erased coefficient type `C`). See
     /// [`change_of_basis`](Self::change_of_basis).
@@ -791,6 +924,10 @@ where
     fn split_strategy(&self) -> SplitStrategy {
         self.split_strategy
     }
+
+    fn input_transform(&self) -> PolynomialInputTransform {
+        self.input_transform
+    }
 }
 
 impl<C> BSGSPolynomial<C> {
@@ -799,7 +936,10 @@ impl<C> BSGSPolynomial<C> {
         self.basis
     }
 
-    /// Returns the original polynomial degree.
+    /// Returns the degree encoded by this BSGS decomposition.
+    ///
+    /// This is half the source degree when [`Self::input_transform`] is a T₂
+    /// fold.
     pub fn degree(&self) -> usize {
         self.degree
     }
@@ -816,7 +956,7 @@ impl<C> BSGSPolynomial<C> {
 
     /// Number consecutives multiplications needed to evaluate this polynomial.
     pub fn eval_depth(&self) -> usize {
-        bsgs_eval_depth(self.degree(), self.split_strategy)
+        bsgs_eval_depth(self.degree(), self.split_strategy) + self.input_transform.extra_depth()
     }
 
     /// `log_budget` bits consumed evaluating this polynomial on a ciphertext, as
@@ -847,7 +987,7 @@ impl<C> BSGSPolynomial<C> {
             self.basis,
             input_log_delta,
             coeff_log_delta,
-        )
+        ) + self.input_transform.extra_depth() * input_log_delta
     }
 
     /// Returns all encoded baby-step coefficient polynomials.
@@ -865,6 +1005,11 @@ impl<C> BSGSPolynomial<C> {
     /// Returns the polynomial parity carried by this decomposition.
     pub fn parity(&self) -> Parity {
         self.parity
+    }
+
+    /// Returns the input rewrite required by this decomposition.
+    pub fn input_transform(&self) -> PolynomialInputTransform {
+        self.input_transform
     }
 
     /// The approximation interval `[a, b]` carried from the source polynomial.
@@ -887,6 +1032,7 @@ impl<C> BSGSPolynomial<C> {
             baby_steps: self.baby_steps.iter().map(&mut f).collect(),
             parity: self.parity,
             split_strategy: self.split_strategy,
+            input_transform: self.input_transform,
             a: self.a,
             b: self.b,
         }
@@ -920,6 +1066,9 @@ pub trait BSGSPolynomialInfos<BE: Backend> {
     fn parity(&self) -> Parity;
     fn log_split(&self) -> usize;
     fn split_strategy(&self) -> SplitStrategy;
+    fn input_transform(&self) -> PolynomialInputTransform {
+        PolynomialInputTransform::Identity
+    }
 }
 
 /// A single evaluated baby step with its degree.
@@ -974,6 +1123,11 @@ impl<A> PowerBasis<A> {
     /// Stores `value` as the power at degree `n`, replacing any existing entry.
     pub fn set_power(&mut self, n: usize, value: A) {
         self.values.insert(n, value);
+    }
+
+    /// Removes and returns a stored power.
+    pub fn take_power(&mut self, n: usize) -> Option<A> {
+        self.values.remove(&n)
     }
 }
 
@@ -1075,6 +1229,77 @@ mod tests {
             .unwrap();
         assert_eq!(bsgs.interval(), (0.0, 4.0));
         assert_eq!(bsgs.change_of_basis(), (u, w));
+    }
+
+    #[test]
+    fn even_chebyshev_t2_fold_matches_source() {
+        let poly = Polynomial::new_with_parity(
+            Basis::Chebyshev,
+            vec![1.0_f64, 0.0, -0.5, 0.0, 0.25, 0.0, 0.125],
+            Parity::Even,
+        );
+        let (folded, transform) = poly.fold_chebyshev_t2().unwrap();
+
+        assert_eq!(transform, PolynomialInputTransform::ChebyshevT2);
+        assert_eq!(folded.coeffs, vec![1.0, -0.5, 0.25, 0.125]);
+        for i in 0..=64 {
+            let x = -1.0 + 2.0 * i as f64 / 64.0;
+            assert!((poly.evaluate(x) - folded.evaluate(2.0 * x * x - 1.0)).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn odd_chebyshev_t2_fold_matches_source() {
+        let poly = Polynomial::new_with_parity(
+            Basis::Chebyshev,
+            vec![0.0_f64, 1.0, 0.0, -0.5, 0.0, 0.25, 0.0, -0.125],
+            Parity::Odd,
+        );
+        let (folded, transform) = poly.fold_chebyshev_t2().unwrap();
+
+        assert_eq!(transform, PolynomialInputTransform::ChebyshevT2TimesInput);
+        for i in 0..=64 {
+            let x = -1.0 + 2.0 * i as f64 / 64.0;
+            assert!((poly.evaluate(x) - x * folded.evaluate(2.0 * x * x - 1.0)).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn t2_bsgs_preserves_source_interval_and_accounts_for_transform() {
+        let even = Polynomial::new_with_parity(Basis::Chebyshev, vec![1.0_f64, 0.0, 2.0, 0.0, 3.0, 0.0, 4.0], Parity::Even)
+            .with_interval(-3.0, 5.0);
+        let even_bsgs = even
+            .decompose_bsgs_t2_with(SplitStrategy::MinDepth, |c| Ok::<_, anyhow::Error>(c.to_vec()))
+            .unwrap();
+        assert_eq!(even_bsgs.input_transform(), PolynomialInputTransform::ChebyshevT2);
+        assert_eq!(even_bsgs.degree(), 3);
+        assert_eq!(even_bsgs.parity(), Parity::Full);
+        assert_eq!(even_bsgs.interval(), (-3.0, 5.0));
+        assert_eq!(even_bsgs.eval_depth(), bsgs_eval_depth(3, SplitStrategy::MinDepth) + 1);
+
+        let odd = Polynomial::new_with_parity(
+            Basis::Chebyshev,
+            vec![0.0_f64, 1.0, 0.0, 2.0, 0.0, 3.0, 0.0, 4.0],
+            Parity::Odd,
+        );
+        let odd_bsgs = odd
+            .decompose_bsgs_t2_with(SplitStrategy::MinDepth, |c| Ok::<_, anyhow::Error>(c.to_vec()))
+            .unwrap();
+        assert_eq!(odd_bsgs.input_transform(), PolynomialInputTransform::ChebyshevT2TimesInput);
+        assert_eq!(odd_bsgs.degree(), 3);
+        assert_eq!(odd_bsgs.eval_depth(), bsgs_eval_depth(3, SplitStrategy::MinDepth) + 2);
+        assert_eq!(
+            odd_bsgs.consumed_bits(5, 3),
+            bsgs_consumed_bits(3, SplitStrategy::MinDepth, Parity::Full, Basis::Chebyshev, 5, 3) + 10
+        );
+    }
+
+    #[test]
+    fn power_basis_can_transfer_ownership_of_a_power() {
+        let mut powers = PowerBasis::new(Basis::Monomial, 1_u32);
+        powers.set_power(2, 4);
+        assert_eq!(powers.take_power(2), Some(4));
+        assert!(!powers.contains_power(2));
     }
 
     #[test]

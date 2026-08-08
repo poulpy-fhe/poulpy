@@ -11,8 +11,8 @@ use crate::{
 };
 
 pub use poulpy_core::layouts::{
-    BSGSPolynomial, Basis, DEFAULT_SPLIT_STRATEGY, Parity, Polynomial, SplitStrategy, change_of_basis, evaluate_coeffs,
-    split_degree,
+    BSGSPolynomial, Basis, DEFAULT_SPLIT_STRATEGY, Parity, Polynomial, PolynomialInputTransform, SplitStrategy, change_of_basis,
+    evaluate_coeffs, split_degree,
 };
 
 /// CKKS encoding of a [`Polynomial`] into a [`BSGSPolynomial`] of plaintexts.
@@ -27,6 +27,16 @@ pub trait EncodeBSGS {
 
     /// Decomposes and encodes using an explicit [`SplitStrategy`].
     fn encode_bsgs_with(
+        &self,
+        module: &Module<HostBytesBackend>,
+        base2k: Base2K,
+        coeff_meta: CoeffsMeta,
+        strategy: SplitStrategy,
+    ) -> Result<BSGSPolynomial<CKKSPlaintext<Vec<u8>>>>;
+
+    /// Folds an even/odd Chebyshev polynomial through `T₂`, then decomposes
+    /// and encodes the lower-degree polynomial with an explicit split strategy.
+    fn encode_bsgs_t2_with(
         &self,
         module: &Module<HostBytesBackend>,
         base2k: Base2K,
@@ -62,6 +72,24 @@ where
             pt.set_meta(coeff_meta.meta);
             pt.encode_host_floats(baby_coeffs)
                 .map_err(|e| anyhow!("encode_bsgs: step {step_idx}: {e}"))?;
+            step_idx += 1;
+            Ok(pt)
+        })
+    }
+
+    fn encode_bsgs_t2_with(
+        &self,
+        module: &Module<HostBytesBackend>,
+        base2k: Base2K,
+        coeff_meta: CoeffsMeta,
+        strategy: SplitStrategy,
+    ) -> Result<BSGSPolynomial<CKKSPlaintext<Vec<u8>>>> {
+        let mut step_idx = 0usize;
+        self.decompose_bsgs_t2_with(strategy, |baby_coeffs| {
+            let mut pt = module.ckks_pt_coeffs_alloc(baby_coeffs.len(), base2k, coeff_meta.k);
+            pt.set_meta(coeff_meta.meta);
+            pt.encode_host_floats(baby_coeffs)
+                .map_err(|e| anyhow!("encode_bsgs_t2: step {step_idx}: {e}"))?;
             step_idx += 1;
             Ok(pt)
         })
@@ -155,6 +183,20 @@ where
         let (re_poly, im_poly) = self.split_with_shared_parity();
         let re = re_poly.encode_bsgs_with(module, base2k, coeff_meta, strategy)?;
         let im = im_poly.encode_bsgs_with(module, base2k, coeff_meta, strategy)?;
+        Ok(ComplexBSGSPolynomial { re, im })
+    }
+
+    /// Encodes both components through the same even/odd Chebyshev T₂ fold.
+    pub fn encode_bsgs_t2_with(
+        &self,
+        module: &Module<HostBytesBackend>,
+        base2k: Base2K,
+        coeff_meta: CoeffsMeta,
+        strategy: SplitStrategy,
+    ) -> Result<ComplexBSGSPolynomial<CKKSPlaintext<Vec<u8>>>> {
+        let (re_poly, im_poly) = self.split_with_shared_parity();
+        let re = re_poly.encode_bsgs_t2_with(module, base2k, coeff_meta, strategy)?;
+        let im = im_poly.encode_bsgs_t2_with(module, base2k, coeff_meta, strategy)?;
         Ok(ComplexBSGSPolynomial { re, im })
     }
 }

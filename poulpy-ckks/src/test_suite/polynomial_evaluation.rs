@@ -12,7 +12,8 @@ use crate::{
     api::{CKKSMulOps, CKKSPolynomialEvaluationOps},
     layouts::{CKKSCiphertext, CKKSPlaintext, CKKSPlaintextVecHostCodec},
     polynomial::{
-        BSGSPolynomial, Basis, ComplexBSGSPolynomial, ComplexPolynomial, EncodeBSGS, Parity, Polynomial, SplitStrategy,
+        BSGSPolynomial, Basis, ComplexBSGSPolynomial, ComplexPolynomial, EncodeBSGS, Parity, Polynomial,
+        PolynomialInputTransform, SplitStrategy,
     },
     power_basis::{PowerBasis, PowerBasisGen, PowerBasisInsert},
     test_suite::CKKSTestParams,
@@ -989,6 +990,113 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31_min_mult<BE, F, E>(
         &want_im,
         &mut scratch.borrow(),
     );
+}
+
+pub fn test_eval_poly_const_coeffs_chebyshev_t2<BE, F, E>(
+    params: CKKSTestParams,
+    module: &Module<BE>,
+    host_module: &Module<HostBytesBackend>,
+) where
+    BE: TestContextBackend,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
+    for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
+    Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
+    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+    F: TestScalar,
+    E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
+{
+    let m = params.n / 2;
+    let encoder = ReferenceEncoder::<E>::new(m).unwrap();
+    let quarter = F::from_f64(0.25).unwrap();
+    let (input, _) = test_vector_1::<F>(m);
+    let input_re: Vec<F> = input.iter().map(|&x| x * quarter).collect();
+    let input_im = vec![F::zero(); m];
+    let input_meta = precision_at(&params, params.prec().log_delta().min(20));
+    let (quantized_re, _) = quantized_slots(host_module, &encoder, params.base2k.into(), input_meta, &input_re, &input_im);
+
+    let even_coeffs: Vec<F> = (0_usize..=14)
+        .map(|i| {
+            if i.is_multiple_of(2) {
+                F::from_f64(1.0 / (i + 1) as f64).unwrap()
+            } else {
+                F::zero()
+            }
+        })
+        .collect();
+    let even = Polynomial::new_with_parity(Basis::Chebyshev, even_coeffs, Parity::Even)
+        .encode_bsgs_t2_with(host_module, params.base2k.into(), PT_PREC.into(), SplitStrategy::MinDepth)
+        .expect("even Chebyshev T₂ encoding should succeed");
+    assert_eq!(even.input_transform(), PolynomialInputTransform::ChebyshevT2);
+
+    let odd_coeffs: Vec<F> = (0_usize..=7)
+        .map(|i| {
+            if !i.is_multiple_of(2) {
+                F::from_f64(1.0 / i as f64).unwrap()
+            } else {
+                F::zero()
+            }
+        })
+        .collect();
+    let odd = Polynomial::new_with_parity(Basis::Chebyshev, odd_coeffs, Parity::Odd)
+        .encode_bsgs_t2_with(host_module, params.base2k.into(), PT_PREC.into(), SplitStrategy::MinMult)
+        .expect("odd Chebyshev T₂ encoding should succeed");
+    assert_eq!(odd.input_transform(), PolynomialInputTransform::ChebyshevT2TimesInput);
+
+    let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
+    let mut scratch = alloc_scratch(&params, module);
+    let tsk = gen_tsk(&params, module, &sk_raw, &mut scratch.borrow());
+    let input_ct = ckks_encrypt_with_prec(
+        &params,
+        module,
+        host_module,
+        &encoder,
+        &sk,
+        params.k,
+        &input_re,
+        &input_im,
+        input_meta,
+        &mut scratch.borrow(),
+    );
+    let (input_log_delta, input_log_budget) = (input_ct.log_delta(), input_ct.log_budget());
+    let two = F::one() + F::one();
+
+    for (label, bsgs_host, multiply_input) in [("even", even, false), ("odd", odd, true)] {
+        let want_re: Vec<F> = quantized_re
+            .iter()
+            .map(|&x| {
+                let value = eval_encoded_bsgs_chebyshev(&bsgs_host, two * x * x - F::one());
+                if multiply_input { x * value } else { value }
+            })
+            .collect();
+        let want_im = vec![F::zero(); m];
+        let bsgs = upload_bsgs(module, &bsgs_host);
+        let mut res = alloc_ct(&params, module, params.k);
+        module
+            .ckks_eval_poly_real_const_coeffs(&mut res, &input_ct, &bsgs, &tsk, &mut scratch.borrow())
+            .expect("Chebyshev T₂ evaluation should succeed");
+
+        assert_consumed_bits::<BE, _>(
+            label,
+            &bsgs_host,
+            input_log_delta,
+            input_log_budget,
+            PT_PREC.log_delta(),
+            &res,
+        );
+        assert_decrypt_precision(
+            label,
+            &params,
+            module,
+            &encoder,
+            &res,
+            &sk,
+            &want_re,
+            &want_im,
+            &mut scratch.borrow(),
+        );
+    }
 }
 
 pub fn test_eval_poly_const_coeffs_complex_cubic<BE, F, E>(
