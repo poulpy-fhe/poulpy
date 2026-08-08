@@ -150,7 +150,7 @@ where
                         .borrow()
                         .take_vec_znx_dft_scratch(self, cols, ((a_size + di) / dsize).min(dnum));
 
-                let res_compute_size = res.max_size() - ((dsize - di) as isize - 2).max(0) as usize;
+                let res_compute_size = res.size() - ((dsize - di) as isize - 2).max(0) as usize;
                 let mut res_view = res.with_size_mut(res_compute_size);
 
                 for j in 0..cols {

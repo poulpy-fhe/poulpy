@@ -5,8 +5,8 @@ use std::{
 };
 
 use crate::layouts::{
-    Backend, Data, DataView, DataViewMut, DftWord, DigestU64, HostDataMut, HostDataRef, VecZnxBig, VecZnxShape, ZnxInfos,
-    ZnxView, ZnxViewMut, ZnxZero,
+    Backend, Data, DataView, DataViewMut, DftWord, DigestU64, HostDataMut, HostDataRef, VecZnxBig, VecZnxInfos, VecZnxShape,
+    ZnxInfos, ZnxView, ZnxViewMut, ZnxZero,
 };
 
 /// Polynomial vector in DFT (evaluation) domain.
@@ -53,7 +53,6 @@ impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> DigestU64 for VecZnxDf
         h.write_usize(self.n());
         h.write_usize(self.cols());
         h.write_usize(self.size());
-        h.write_usize(self.max_size());
         h.finish()
     }
 }
@@ -93,20 +92,22 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
 }
 
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for VecZnxDft<D, W, B> {
-    fn cols(&self) -> usize {
-        self.shape.cols()
-    }
-
-    fn rows(&self) -> usize {
-        1
-    }
-
     fn n(&self) -> usize {
         self.shape.n()
     }
 
     fn size(&self) -> usize {
         self.shape.size()
+    }
+
+    fn poly_count(&self) -> usize {
+        crate::layouts::checked_product(&[self.cols(), self.size()], "polynomial count")
+    }
+}
+
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxInfos for VecZnxDft<D, W, B> {
+    fn cols(&self) -> usize {
+        self.shape.cols()
     }
 }
 
@@ -127,22 +128,18 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
     pub fn shape(&self) -> VecZnxShape {
         self.shape
     }
-
-    pub fn max_size(&self) -> usize {
-        self.shape.max_size()
-    }
 }
 
 impl<'b, B: Backend + 'b> VecZnxDftBackendMut<'b, B> {
     /// Reborrows this buffer as a mutable view with a temporary compute size.
     ///
-    /// The returned view has the same allocation capacity as `self`, but HAL
+    /// The returned view addresses the same allocation, but HAL
     /// kernels see `size` as the active limb count. Dropping the view leaves
     /// `self`'s metadata unchanged.
     ///
     /// # Panics
     ///
-    /// Panics if `size > max_size`.
+    /// Panics if `size > self.size()`.
     pub fn with_size_mut(&mut self, size: usize) -> VecZnxDftBackendMut<'_, B> {
         VecZnxDft {
             data: B::view_mut_ref(&mut self.data),
@@ -167,7 +164,7 @@ impl<B: Backend> VecZnxDft<B::OwnedBuf, B::DftWord, B> {
         let data: <B as Backend>::OwnedBuf = B::alloc_zeroed_bytes(B::bytes_of_vec_znx_dft(n, cols, size));
         VecZnxDft {
             data,
-            shape: VecZnxShape::new(n, cols, size, size),
+            shape: VecZnxShape::new(n, cols, size),
             _phantom: PhantomData,
         }
     }
@@ -183,7 +180,7 @@ impl<B: Backend> VecZnxDft<B::OwnedBuf, B::DftWord, B> {
         let data: <B as Backend>::OwnedBuf = B::from_host_bytes(&data);
         VecZnxDft {
             data,
-            shape: VecZnxShape::new(n, cols, size, size),
+            shape: VecZnxShape::new(n, cols, size),
             _phantom: PhantomData,
         }
     }
@@ -222,15 +219,7 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
     pub fn from_data(data: D, n: usize, cols: usize, size: usize) -> Self {
         Self {
             data,
-            shape: VecZnxShape::new(n, cols, size, size),
-            _phantom: PhantomData,
-        }
-    }
-
-    pub fn from_data_with_max_size(data: D, n: usize, cols: usize, size: usize, max_size: usize) -> Self {
-        Self {
-            data,
-            shape: VecZnxShape::new(n, cols, size, max_size),
+            shape: VecZnxShape::new(n, cols, size),
             _phantom: PhantomData,
         }
     }
@@ -349,8 +338,8 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
     {
         let shape = self.shape;
         assert_eq!(
-            B::bytes_of_vec_znx_dft(shape.n(), shape.cols(), shape.max_size()),
-            B2::bytes_of_vec_znx_dft(shape.n(), shape.cols(), shape.max_size()),
+            B::bytes_of_vec_znx_dft(shape.n(), shape.cols(), shape.size()),
+            B2::bytes_of_vec_znx_dft(shape.n(), shape.cols(), shape.size()),
             "into_backend: byte sizes diverge despite declared layout compatibility"
         );
         VecZnxDft {

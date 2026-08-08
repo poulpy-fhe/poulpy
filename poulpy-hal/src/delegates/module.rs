@@ -32,10 +32,6 @@ impl<B: Backend> VecZnxAlloc<B> for Module<B> {
     fn vec_znx_alloc(&self, cols: usize, size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord> {
         Module::<B>::vec_znx_alloc(self, cols, size)
     }
-
-    fn vec_znx_alloc_with_max_size(&self, cols: usize, size: usize, max_size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord> {
-        Module::<B>::vec_znx_alloc_with_max_size(self, cols, size, max_size)
-    }
 }
 
 impl<B: Backend> MatZnxAlloc<B> for Module<B> {

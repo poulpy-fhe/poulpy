@@ -10,11 +10,10 @@ where
     From: Backend<ZnxWord = To::ZnxWord>,
     To: Backend + TransferFrom<From>,
 {
-    VecZnx::from_data_with_max_size(
+    VecZnx::from_data(
         <To as TransferFrom<From>>::transfer_buf(src.data()),
         src.n(),
         src.cols(),
-        src.size(),
         src.size(),
     )
 }
