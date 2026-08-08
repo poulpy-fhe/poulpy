@@ -133,7 +133,7 @@ The orchestrator selects the pipeline from the compiled context.
 
 The **C2S-first** pipeline feeds EvalMod's clean residue into SlotsToCoeffs. Without a bypass transform this is the standard recipe.
 
-The **S2C-first** pipeline splits the input into real and imaginary halves, applies the `1/2`-scaled SlotsToCoeffs at the bottom of the input modulus, raises the resulting coefficient ciphertext, then runs CoeffsToSlots and EvalMod at the top of the raised modulus. The two EvalMod outputs are recombined and relabeled at the original input scale. EvalRound+ is not supported with this order.
+The **S2C-first** pipeline splits the input into real and imaginary halves, applies the `1/2`-scaled SlotsToCoeffs at the bottom of the input modulus, and raises the resulting coefficient ciphertext. The standard variant then runs CoeffsToSlots and EvalMod at the top of the raised modulus; its two EvalMod outputs are recombined and relabeled at the original input scale.
 
 The **EvalRound+** pipeline ([eprint 2024/1379](https://eprint.iacr.org/2024/1379)) runs CoeffsToSlots twice — a low-precision transform that feeds EvalMod, and a high-precision "bypass" transform — and combines them as
 
@@ -142,8 +142,8 @@ r1 = r0_hp − K·r0_lp + EvalMod(r0_lp)
 ```
 
 The low-precision DFT error `e` cancels: the high-precision branch holds `Δm + I·q`, the scaled low-precision branch holds `Δm + I·q + e`, and EvalMod yields `Δm + e`, so the integer part and `e` both annihilate and leave `Δm` at the **high-precision** transform's accuracy.
-Because EvalMod only has to resolve the large integer part, halving its CoeffsToSlots precision shrinks the bootstrap modulus by `num_factors × (hp_log_delta − lp_log_delta)` bits, while the high-precision transform runs inside the depth the low-precision path already occupies and so does not enlarge `k_boot`.
-EvalRound+ is used when a C2S-first context carries a bypass transform.
+Because EvalMod only has to resolve the large integer part, halving its CoeffsToSlots precision shrinks the bootstrap modulus by `num_factors × (hp_log_delta − lp_log_delta)` bits. The bootstrap budget charges the larger of the high-precision transform and the low-precision CoeffsToSlots plus EvalMod branch; with the standard parameters, the high-precision transform fits inside the latter and does not enlarge `k_boot`.
+EvalRound+ is used when either pipeline carries a bypass transform. With S2C-first, the initial SlotsToCoeffs remains below ModUp and the same LP/HP CoeffsToSlots cancellation runs above it.
 
 ## Parameters and keys
 

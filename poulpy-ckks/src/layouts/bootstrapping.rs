@@ -129,11 +129,6 @@ impl BootstrappingPlan {
         if slots_to_coeffs.kind() != DFTType::Decode {
             return Err(invalid("slots_to_coeffs must be a DFTType::Decode plan".to_string()));
         }
-        if pipeline == BootstrappingPipeline::S2CFirst && techniques.eval_round_plus.is_some() {
-            return Err(invalid(
-                "EvalRound+ is not supported with S2C-first bootstrapping".to_string(),
-            ));
-        }
         if let Some(sse) = techniques.sparse_secret_encapsulation
             && sse.hamming_weight == 0
         {
@@ -210,11 +205,18 @@ impl BootstrappingPlan {
     }
 
     /// Budget consumed after ModUp.
+    ///
+    /// EvalRound+ evaluates its bypass in parallel with the low-precision
+    /// CoeffsToSlots + EvalMod branch, so the wider of the two branch costs is
+    /// charged before any trailing SlotsToCoeffs.
     pub fn post_mod_up_consumed_bits(&self) -> usize {
         let c2s_eval_mod = self.coeffs_to_slots.consumed_bits() + self.eval_mod.consumed_bits();
+        let eval_round = self
+            .coeffs_to_slots_bypass()
+            .map_or(c2s_eval_mod, |bypass| c2s_eval_mod.max(bypass.consumed_bits()));
         match self.pipeline {
-            BootstrappingPipeline::C2SFirst => c2s_eval_mod + self.slots_to_coeffs.consumed_bits(),
-            BootstrappingPipeline::S2CFirst => c2s_eval_mod,
+            BootstrappingPipeline::C2SFirst => eval_round + self.slots_to_coeffs.consumed_bits(),
+            BootstrappingPipeline::S2CFirst => eval_round,
         }
     }
 
@@ -438,8 +440,8 @@ mod tests {
     }
 
     #[test]
-    fn recipe_rejects_eval_round_plus_with_s2c_first() {
-        let err = plan(
+    fn recipe_accepts_eval_round_plus_with_s2c_first() {
+        let plan = plan(
             BootstrappingPipeline::S2CFirst,
             BootstrappingTechniques {
                 sparse_secret_encapsulation: None,
@@ -449,8 +451,41 @@ mod tests {
             },
             16,
         )
-        .unwrap_err();
-        assert!(err.to_string().contains("EvalRound+"));
+        .unwrap();
+        assert!(plan.coeffs_to_slots_bypass().is_some());
+    }
+
+    #[test]
+    fn recipe_accounts_for_eval_round_plus_bypass() {
+        let bypass = DFTPlan::new(
+            DFTType::Encode,
+            vec![(1, 1); 10],
+            DFTOutputFormat::SplitRealAndImag,
+            CoeffsMeta::from_delta_budget(8, 2),
+        )
+        .unwrap();
+        let bypass_cost = bypass.consumed_bits();
+
+        for pipeline in [BootstrappingPipeline::C2SFirst, BootstrappingPipeline::S2CFirst] {
+            let plan = plan(
+                pipeline,
+                BootstrappingTechniques {
+                    sparse_secret_encapsulation: None,
+                    eval_round_plus: Some(EvalRoundPlus {
+                        coeffs_to_slots_bypass: bypass.clone(),
+                    }),
+                },
+                16,
+            )
+            .unwrap();
+
+            let trailing_s2c = match pipeline {
+                BootstrappingPipeline::C2SFirst => plan.slots_to_coeffs().consumed_bits(),
+                BootstrappingPipeline::S2CFirst => 0,
+            };
+            assert!(bypass_cost > plan.coeffs_to_slots().consumed_bits() + plan.eval_mod().consumed_bits());
+            assert_eq!(plan.post_mod_up_consumed_bits(), bypass_cost + trailing_s2c);
+        }
     }
 
     #[test]

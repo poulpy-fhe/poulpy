@@ -25,7 +25,7 @@ use crate::{
 /// but a ready-made orchestrator is provided: [`ckks_bootstrap`](Self::ckks_bootstrap).
 /// It consumes a compiled [`BootstrappingContext`] and a prepared
 /// [`BootstrappingKeys`], and selects C2S-first or S2C-first from the context.
-/// EvalRound+ is selected separately by the C2S-first recipe's optional bypass.
+/// EvalRound+ is selected separately by either recipe's optional bypass.
 /// Sparse-secret encapsulation is also selected by the compiled recipe; the
 /// supplied keys must carry the matching
 /// [encapsulation keys](BootstrappingKeys::encapsulation_keys).
@@ -108,7 +108,8 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     where
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
 
-    /// S2C-first bootstrap for ciphertexts known to contain real slots only.
+    /// Standard S2C-first bootstrap for ciphertexts known to contain real slots
+    /// only. EvalRound+ contexts are not supported by this specialized path.
     #[allow(clippy::too_many_arguments)]
     fn ckks_bootstrap_real<F, K>(
         &self,
