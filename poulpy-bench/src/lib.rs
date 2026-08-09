@@ -82,13 +82,7 @@ pub fn ckks_criterion_config() -> criterion::Criterion {
 }
 
 pub fn upload_host_vec_znx<BE: Backend<ZnxWord = i64>>(src: &VecZnx<Vec<u8>, i64>) -> VecZnx<BE::OwnedBuf, BE::ZnxWord> {
-    VecZnx::from_data_with_max_size(
-        BE::from_host_bytes(src.data()),
-        src.n(),
-        src.cols(),
-        src.size(),
-        src.max_size(),
-    )
+    VecZnx::from_data(BE::from_host_bytes(src.data()), src.n(), src.cols(), src.size())
 }
 
 pub fn upload_host_scalar_znx<BE: Backend<ZnxWord = i64>>(src: &ScalarZnx<Vec<u8>, i64>) -> ScalarZnx<BE::OwnedBuf, BE::ZnxWord> {

@@ -8,7 +8,7 @@ use crate::{
     alloc_aligned,
     layouts::{
         Backend, Data, DataView, DataViewMut, DigestU64, FillUniform, HostDataMut, HostDataRef, ReaderFrom, ScalarZnx,
-        ToOwnedDeep, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
+        ToOwnedDeep, VecZnxInfos, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
     },
     source::Source,
 };
@@ -33,21 +33,21 @@ use rand::Rng;
 /// The type parameter `W` names the coefficient word (byte-layout
 /// contract) of the buffer.
 ///
-/// **Invariant:** `size <= max_size`. The `max_size` field records the
-/// allocated capacity; `size` can be reduced without reallocation.
+/// **Invariant:** `size` is both the working width and the allocated width, and
+/// is fixed at construction. Operating on a narrower width is done through a
+/// borrowed view (see [`vec_znx_backend_mut_with_size`]), never by mutating the
+/// owner.
 #[repr(C)]
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug, Default)]
 pub struct VecZnxShape {
     n: usize,
     cols: usize,
     size: usize,
-    max_size: usize,
 }
 
 impl VecZnxShape {
-    pub const fn new(n: usize, cols: usize, size: usize, max_size: usize) -> Self {
-        assert!(size <= max_size);
-        Self { n, cols, size, max_size }
+    pub const fn new(n: usize, cols: usize, size: usize) -> Self {
+        Self { n, cols, size }
     }
 
     pub const fn n(self) -> usize {
@@ -62,12 +62,9 @@ impl VecZnxShape {
         self.size
     }
 
-    pub const fn max_size(self) -> usize {
-        self.max_size
-    }
-
+    /// Narrows the working width. Views can only ever shrink.
     pub(crate) const fn with_size(self, size: usize) -> Self {
-        assert!(size <= self.max_size);
+        assert!(size <= self.size);
         Self { size, ..self }
     }
 }
@@ -112,7 +109,6 @@ impl<D: HostDataRef, W: ZnxWord> DigestU64 for VecZnx<D, W> {
         h.write_usize(self.n());
         h.write_usize(self.cols());
         h.write_usize(self.size());
-        h.write_usize(self.max_size());
         h.finish()
     }
 }
@@ -135,12 +131,11 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W> {
         BE: Backend<OwnedBuf = D>,
     {
         let shape = self.shape();
-        VecZnx::from_data_with_max_size(
+        VecZnx::from_data(
             crate::layouts::HostBytesBackend::from_bytes(BE::to_host_bytes(&self.data)),
             shape.n(),
             shape.cols(),
             shape.size(),
-            shape.max_size(),
         )
     }
 
@@ -160,20 +155,22 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Debug for VecZnx<D, W> {
 }
 
 impl<D: Data, W: ZnxWord> ZnxInfos for VecZnx<D, W> {
-    fn cols(&self) -> usize {
-        self.shape.cols()
-    }
-
-    fn rows(&self) -> usize {
-        1
-    }
-
     fn n(&self) -> usize {
         self.shape.n()
     }
 
     fn size(&self) -> usize {
         self.shape.size()
+    }
+
+    fn poly_count(&self) -> usize {
+        crate::layouts::checked_product(&[self.cols(), self.size()], "polynomial count")
+    }
+}
+
+impl<D: Data, W: ZnxWord> VecZnxInfos for VecZnx<D, W> {
+    fn cols(&self) -> usize {
+        self.shape.cols()
     }
 }
 
@@ -210,11 +207,6 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W> {
     pub fn shape(&self) -> VecZnxShape {
         self.shape
     }
-
-    /// Returns the allocated limb capacity.
-    pub fn max_size(&self) -> usize {
-        self.shape.max_size()
-    }
 }
 
 impl<D: Data, W: ZnxWord> VecZnx<D, W> {
@@ -242,12 +234,11 @@ impl<D: Data, W: ZnxWord> VecZnx<D, W> {
 
 impl<W: ZnxWord> VecZnx<Vec<u8>, W> {
     /// Allocates a zero-initialized `VecZnx` aligned to [`DEFAULTALIGN`](crate::DEFAULTALIGN).
-    /// Sets `max_size = size`.
     pub(crate) fn alloc(n: usize, cols: usize, size: usize) -> Self {
         let data: Vec<u8> = alloc_aligned::<u8>(Self::bytes_of(n, cols, size));
         Self {
             data,
-            shape: VecZnxShape::new(n, cols, size, size),
+            shape: VecZnxShape::new(n, cols, size),
             _phantom: PhantomData,
         }
     }
@@ -272,7 +263,7 @@ impl<W: ZnxWord> VecZnx<Vec<u8>, W> {
         crate::assert_alignment(data.as_ptr());
         Self {
             data,
-            shape: VecZnxShape::new(n, cols, size, size),
+            shape: VecZnxShape::new(n, cols, size),
             _phantom: PhantomData,
         }
     }
@@ -280,23 +271,10 @@ impl<W: ZnxWord> VecZnx<Vec<u8>, W> {
 
 impl<D: Data, W: ZnxWord> VecZnx<D, W> {
     /// Constructs a `VecZnx` from raw parts without validation.
-    /// Sets `max_size = size`.
     pub fn from_data(data: D, n: usize, cols: usize, size: usize) -> Self {
         Self {
             data,
-            shape: VecZnxShape::new(n, cols, size, size),
-            _phantom: PhantomData,
-        }
-    }
-
-    /// Constructs a `VecZnx` from raw parts, preserving both `size` and `max_size`.
-    ///
-    /// Used by cross-backend transfer to rebuild a layout over a fresh
-    /// buffer without shrinking its capacity.
-    pub fn from_data_with_max_size(data: D, n: usize, cols: usize, size: usize, max_size: usize) -> Self {
-        Self {
-            data,
-            shape: VecZnxShape::new(n, cols, size, max_size),
+            shape: VecZnxShape::new(n, cols, size),
             _phantom: PhantomData,
         }
     }
@@ -553,13 +531,33 @@ impl<'b, B: Backend + 'b> VecZnxReborrowBackendMut<B> for VecZnx<B::BufMut<'b>, 
     }
 }
 
+/// Narrows a mutable backend view to a smaller working size.
+///
+/// The returned view addresses the same allocation, but HAL kernels see `size`
+/// as the active limb count. This is the only way to operate on fewer limbs
+/// than a `VecZnx` was allocated with: the owner's own size never changes.
+///
+/// Free-standing rather than inherent because `VecZnxBackendMut<'_, B>` reaches
+/// `B` only through associated types, which leaves `B` unconstrained in an
+/// `impl` header.
+///
+/// # Panics
+///
+/// Panics if `size > vec.size()`.
+pub fn vec_znx_backend_mut_with_size<'a, B: Backend>(vec: VecZnxBackendMut<'a, B>, size: usize) -> VecZnxBackendMut<'a, B> {
+    VecZnx {
+        data: vec.data,
+        shape: vec.shape.with_size(size),
+        _phantom: PhantomData,
+    }
+}
+
 impl<D: HostDataMut, W: ZnxWord> ReaderFrom for VecZnx<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         // Read into temporaries first to avoid leaving self in an inconsistent state on error.
         let new_n: usize = reader.read_u64::<LittleEndian>()? as usize;
         let new_cols: usize = reader.read_u64::<LittleEndian>()? as usize;
         let new_size: usize = reader.read_u64::<LittleEndian>()? as usize;
-        let new_max_size: usize = reader.read_u64::<LittleEndian>()? as usize;
         let len: usize = reader.read_u64::<LittleEndian>()? as usize;
 
         // Validate metadata consistency: n * cols * size * sizeof(W) must match data length.
@@ -585,7 +583,7 @@ impl<D: HostDataMut, W: ZnxWord> ReaderFrom for VecZnx<D, W> {
         reader.read_exact(&mut buf[..len])?;
 
         // Only commit metadata after successful read.
-        self.shape = VecZnxShape::new(new_n, new_cols, new_size, new_max_size);
+        self.shape = VecZnxShape::new(new_n, new_cols, new_size);
         Ok(())
     }
 }
@@ -595,7 +593,6 @@ impl<D: HostDataRef, W: ZnxWord> WriterTo for VecZnx<D, W> {
         writer.write_u64::<LittleEndian>(self.n() as u64)?;
         writer.write_u64::<LittleEndian>(self.cols() as u64)?;
         writer.write_u64::<LittleEndian>(self.size() as u64)?;
-        writer.write_u64::<LittleEndian>(self.max_size() as u64)?;
         let coeff_bytes: usize = crate::layouts::checked_product(
             &[self.n(), self.cols(), self.size(), size_of::<W>()],
             "VecZnx logical byte size",

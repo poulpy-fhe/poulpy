@@ -28,7 +28,6 @@ pub trait ScalarZnxAlloc<B: Backend>: ModuleN {
 /// Allocates backend-owned [`VecZnx`](crate::layouts::VecZnx) layouts.
 pub trait VecZnxAlloc<B: Backend>: ModuleN {
     fn vec_znx_alloc(&self, cols: usize, size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord>;
-    fn vec_znx_alloc_with_max_size(&self, cols: usize, size: usize, max_size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord>;
 }
 
 /// Allocates backend-owned [`MatZnx`](crate::layouts::MatZnx) layouts.

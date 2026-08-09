@@ -4,7 +4,9 @@ use std::{
     marker::PhantomData,
 };
 
-use crate::layouts::{Backend, Data, DataView, DataViewMut, DftWord, DigestU64, HostDataRef, ScalarZnxShape, ZnxInfos, ZnxView};
+use crate::layouts::{
+    Backend, Data, DataView, DataViewMut, DftWord, DigestU64, HostDataRef, ScalarZnxShape, VecZnxInfos, ZnxInfos, ZnxView,
+};
 
 /// Prepared (DFT-domain) scalar polynomial for scalar-vector products.
 ///
@@ -59,20 +61,22 @@ impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> ZnxView for SvpPPol<D,
 }
 
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for SvpPPol<D, W, B> {
-    fn cols(&self) -> usize {
-        self.shape.cols()
-    }
-
-    fn rows(&self) -> usize {
-        1
-    }
-
     fn n(&self) -> usize {
         self.shape.n()
     }
 
     fn size(&self) -> usize {
         1
+    }
+
+    fn poly_count(&self) -> usize {
+        crate::layouts::checked_product(&[self.cols(), self.size()], "polynomial count")
+    }
+}
+
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxInfos for SvpPPol<D, W, B> {
+    fn cols(&self) -> usize {
+        self.shape.cols()
     }
 }
 

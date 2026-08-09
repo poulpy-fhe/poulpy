@@ -23,9 +23,7 @@ use poulpy_hal::{
         VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApply,
         VecZnxIdftApplyTmpBytes,
     },
-    layouts::{
-        Backend, GaloisElement, ScratchArena, VecZnxBigToBackendRef, VecZnxDftBackendRef, VecZnxDftToBackendRef, ZnxInfos,
-    },
+    layouts::{Backend, GaloisElement, ScratchArena, VecZnxBigToBackendRef, VecZnxDftBackendRef, VecZnxDftToBackendRef},
 };
 
 use crate::{

@@ -49,7 +49,7 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWETensor<D, W> {
     }
 
     fn max_size(&self) -> usize {
-        self.data.max_size()
+        self.data.size()
     }
 
     fn k(&self) -> TorusPrecision {

@@ -78,7 +78,7 @@ fn ship_switching_key_product<BE>(
             scratch
                 .borrow()
                 .take_vec_znx_dft_scratch(module, cols, ((a_size + di) / dsize).min(dnum));
-        let res_compute_size = res.max_size() - ((dsize - di) as isize - 2).max(0) as usize;
+        let res_compute_size = res.size() - ((dsize - di) as isize - 2).max(0) as usize;
         let mut res_view = res.with_size_mut(res_compute_size);
         for j in 0..cols {
             module.vec_znx_dft_copy(dsize, dsize - di - 1, &mut ai_dft.to_backend_mut(), j, a, j);

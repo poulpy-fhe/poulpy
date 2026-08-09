@@ -63,7 +63,7 @@ fn glwe_external_product_dft_fill<BE, M>(
                 let (mut a_dft, mut scratch_1) = scratch
                     .borrow()
                     .take_vec_znx_dft_scratch(module, cols, (a.size() + di) / dsize);
-                let res_compute_size = res_dft.max_size() - ((dsize - di) as isize - 2).max(0) as usize;
+                let res_compute_size = res_dft.size() - ((dsize - di) as isize - 2).max(0) as usize;
                 let mut res_view = res_dft.with_size_mut(res_compute_size);
 
                 for j in 0..cols {

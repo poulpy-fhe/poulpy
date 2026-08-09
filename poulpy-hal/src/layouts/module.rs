@@ -288,7 +288,10 @@ impl<B: Backend> Module<B> {
     /// Allocates a zero-initialized backend-owned [`VecZnx`].
     #[inline]
     pub fn vec_znx_alloc(&self, cols: usize, size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord> {
-        self.vec_znx_alloc_with_max_size(cols, size, size)
+        let n = self.n();
+        let len = self.bytes_of_vec_znx_n(n, cols, size);
+        let bytes = B::alloc_zeroed_bytes(len);
+        VecZnx::from_data(bytes, n, cols, size)
     }
 
     /// Returns the byte size of a [`VecZnx`] with this module's ring degree.
@@ -301,15 +304,6 @@ impl<B: Backend> Module<B> {
     #[inline]
     pub fn bytes_of_vec_znx_n(&self, n: usize, cols: usize, size: usize) -> usize {
         B::bytes_of_vec_znx(n, cols, size)
-    }
-
-    /// Allocates a zero-initialized backend-owned [`VecZnx`] with explicit limb capacity.
-    #[inline]
-    pub fn vec_znx_alloc_with_max_size(&self, cols: usize, size: usize, max_size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord> {
-        let n = self.n();
-        let len = self.bytes_of_vec_znx_n(n, cols, max_size);
-        let bytes = B::alloc_zeroed_bytes(len);
-        VecZnx::from_data_with_max_size(bytes, n, cols, size, max_size)
     }
 
     /// Allocates a zero-initialized backend-owned [`MatZnx`].
