@@ -99,7 +99,7 @@ where
     where
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
     {
-        BE::ckks_bootstrap_real::<F, K>(self, ct_out, ct_in, ctx, keys, scratch)
+        BE::ckks_bootstrap_real_impl::<F, K>(self, ct_out, ct_in, ctx, keys, scratch)
     }
 
     fn ckks_functional_bootstrap<F, K>(
@@ -114,7 +114,7 @@ where
     where
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
     {
-        BE::ckks_functional_bootstrap::<F, K>(self, ct_out, ct_in, ctx, lut, keys, scratch)
+        BE::ckks_functional_bootstrap_impl::<F, K>(self, ct_out, ct_in, ctx, lut, keys, scratch)
     }
 
     fn ckks_functional_bootstrap_real<F, K>(
@@ -129,7 +129,7 @@ where
     where
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
     {
-        BE::ckks_functional_bootstrap_real::<F, K>(self, ct_out, ct_in, ctx, lut, keys, scratch)
+        BE::ckks_functional_bootstrap_real_impl::<F, K>(self, ct_out, ct_in, ctx, lut, keys, scratch)
     }
 
     fn ckks_functional_bootstrap_multi<F, K>(
@@ -144,6 +144,6 @@ where
     where
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
     {
-        BE::ckks_functional_bootstrap_multi::<F, K>(self, ct_outs, ct_in, ctx, luts, keys, scratch)
+        BE::ckks_functional_bootstrap_multi_impl::<F, K>(self, ct_outs, ct_in, ctx, luts, keys, scratch)
     }
 }

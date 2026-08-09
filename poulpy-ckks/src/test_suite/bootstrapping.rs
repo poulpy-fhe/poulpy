@@ -351,7 +351,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
             &mut ct_real,
             &mut ct_imag,
             &ct,
-            &ctx.coeffs_to_slots,
+            ctx.coeffs_to_slots(),
             bsk.rotation_keys(),
             bsk.conjugation_key(),
             &mut scratch.borrow(),
@@ -401,7 +401,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
         .ckks_eval_mod(
             &mut res_real,
             &ct_real,
-            &ctx.eval_mod,
+            ctx.eval_mod(),
             bsk.tensor_key(),
             &mut scratch.borrow(),
         )
@@ -412,7 +412,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
         .ckks_eval_mod(
             &mut res_imag,
             &ct_imag,
-            &ctx.eval_mod,
+            ctx.eval_mod(),
             bsk.tensor_key(),
             &mut scratch.borrow(),
         )
@@ -447,7 +447,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
             &mut ct_out,
             &res_real,
             &res_imag,
-            &ctx.slots_to_coeffs,
+            ctx.slots_to_coeffs(),
             bsk.rotation_keys(),
             &mut scratch.borrow(),
         )
@@ -729,7 +729,7 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
             &mut r0_lp,
             &mut i0_lp,
             &ct,
-            &ctx.coeffs_to_slots,
+            ctx.coeffs_to_slots(),
             bsk.rotation_keys(),
             bsk.conjugation_key(),
             &mut scratch.borrow(),
@@ -742,7 +742,7 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
             &mut r0_hp,
             &mut i0_hp,
             &ct,
-            &ctx.coeffs_to_slots_bypass.unwrap(),
+            ctx.coeffs_to_slots_bypass().unwrap(),
             bsk.rotation_keys(),
             bsk.conjugation_key(),
             &mut scratch.borrow(),
@@ -755,10 +755,10 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
     let mut res_imag = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let now = Instant::now();
     module
-        .ckks_eval_mod(&mut res_real, &r0_lp, &ctx.eval_mod, bsk.tensor_key(), &mut scratch.borrow())
+        .ckks_eval_mod(&mut res_real, &r0_lp, ctx.eval_mod(), bsk.tensor_key(), &mut scratch.borrow())
         .unwrap();
     module
-        .ckks_eval_mod(&mut res_imag, &i0_lp, &ctx.eval_mod, bsk.tensor_key(), &mut scratch.borrow())
+        .ckks_eval_mod(&mut res_imag, &i0_lp, ctx.eval_mod(), bsk.tensor_key(), &mut scratch.borrow())
         .unwrap();
     println!("[evalround] eval_mod x2: {:?}", now.elapsed());
 
@@ -787,7 +787,7 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
             &mut ct_out,
             &r0_hp,
             &i0_hp,
-            &ctx.slots_to_coeffs,
+            ctx.slots_to_coeffs(),
             bsk.rotation_keys(),
             &mut scratch.borrow(),
         )
