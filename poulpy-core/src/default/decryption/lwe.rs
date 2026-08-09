@@ -8,6 +8,7 @@ use poulpy_hal::{
 
 use crate::layouts::{LWEInfos, LWEPlaintextToBackendMut, LWESecretToBackendRef, LWEToBackendRef, SetBase2k};
 
+#[doc(hidden)]
 pub fn lwe_decrypt_tmp_bytes_default<M, BE: Backend, A>(module: &M, infos: &A) -> usize
 where
     M: VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
@@ -19,6 +20,7 @@ where
         + 2 * (BE::SCRATCH_ALIGN - 1)
 }
 
+#[doc(hidden)]
 pub fn lwe_decrypt_default<M, BE, R, P, S>(module: &M, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
 where
     M: VecZnxScalarProduct<BE>

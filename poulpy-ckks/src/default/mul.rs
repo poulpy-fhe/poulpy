@@ -2,7 +2,7 @@ use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     GLWECopy, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWETensoring, GiantStepTensorBounds, ScratchArenaTakeCore,
-    glwe_prepare_right, glwe_tensor_apply_prepared_right,
+    default::operations::{GLWEPrepareRightDefault, GLWETensorApplyPreparedRightDefault},
     layouts::{
         GGLWEInfos, GLWEInfos, GLWELayout, GLWEPlaintextLayout, GLWETensorViewMut, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         ModuleCoreAlloc, TorusPrecision, prepared::GLWETensorKeyPreparedToBackendRef,
@@ -112,7 +112,7 @@ pub trait CKKSMulDefault<BE: Backend> {
 
     fn ckks_prepare_right_default<A>(&self, a: &A, scratch: &mut ScratchArena<'_, BE>) -> Result<CKKSPreparedRight<BE>>
     where
-        Self: Convolution<BE> + CnvPVecAlloc<BE> + Sized,
+        Self: Convolution<BE> + CnvPVecAlloc<BE> + GLWEPrepareRightDefault<BE> + Sized,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
     {
         // Hoist `a` once into a backend-resident right operand. `glwe_prepare_right`
@@ -122,7 +122,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         let k: usize = a.k().into();
         let size = k.div_ceil(a.base2k().as_usize());
         let mut prep = self.cnv_pvec_right_alloc(cols, size);
-        glwe_prepare_right(self, &mut prep, a, k, scratch);
+        self.glwe_prepare_right_default(&mut prep, a, k, scratch);
         Ok(CKKSPreparedRight {
             prep,
             size,
@@ -146,7 +146,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWETensoring<BE> + GiantStepTensorBounds<BE>,
+        Self: GLWETensoring<BE> + GiantStepTensorBounds<BE> + GLWETensorApplyPreparedRightDefault<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
@@ -188,7 +188,9 @@ pub trait CKKSMulDefault<BE: Backend> {
             },
             StampOrder::AfterApply,
             scratch,
-            |tmp, dst_ref, s| glwe_tensor_apply_prepared_right(self, cnv_offset, tmp, dst_ref, &prepared.prep, prepared.size, s),
+            |tmp, dst_ref, s| {
+                self.glwe_tensor_apply_prepared_right_default(cnv_offset, tmp, dst_ref, &prepared.prep, prepared.size, s)
+            },
         )
     }
 

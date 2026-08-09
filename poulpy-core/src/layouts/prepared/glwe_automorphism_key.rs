@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena, VmpPMatBackendRef};
+use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena, VmpPMat, VmpPMatBackendRef};
 
 use crate::layouts::prepared::{GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef, GGLWEPreparedVmpPMatRef};
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWELayout, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef,
-    GGLWEPreparedFactory, GGLWEToBackendRef, GLWEAutomorphismKeyHelper, GLWEInfos, GetGaloisElement, LWEInfos, Rank,
+    Base2K, Dnum, Dsize, GGLWEInfos, GGLWELayout, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef,
+    GGLWEPreparedFactory, GGLWEToBackendRef, GLWEAutomorphismKeyCore, GLWEAutomorphismKeyHelper, GetGaloisElement, Rank,
     SetGaloisElement, TorusPrecision,
 };
 
@@ -23,69 +23,12 @@ where
     }
 }
 
-#[derive(PartialEq)]
-pub struct GLWEAutomorphismKeyPrepared<D: Data, B: Backend> {
-    pub(crate) key: GGLWEPrepared<D, B>,
-    pub(crate) p: i64,
-}
-
-impl<D: Data, B: Backend> LWEInfos for GLWEAutomorphismKeyPrepared<D, B> {
-    fn n(&self) -> Degree {
-        self.key.n()
-    }
-
-    fn base2k(&self) -> Base2K {
-        self.key.base2k()
-    }
-
-    fn max_size(&self) -> usize {
-        self.key.max_size()
-    }
-
-    fn k(&self) -> TorusPrecision {
-        self.key.k()
-    }
-}
-
-impl<D: Data, B: Backend> GetGaloisElement for GLWEAutomorphismKeyPrepared<D, B> {
-    fn p(&self) -> i64 {
-        self.p
-    }
-}
-
-impl<D: Data, B: Backend> SetGaloisElement for GLWEAutomorphismKeyPrepared<D, B> {
-    fn set_p(&mut self, p: i64) {
-        self.p = p
-    }
-}
-
-impl<D: Data, B: Backend> GLWEInfos for GLWEAutomorphismKeyPrepared<D, B> {
-    fn rank(&self) -> Rank {
-        self.rank_out()
-    }
-}
-
-impl<D: Data, B: Backend> GGLWEInfos for GLWEAutomorphismKeyPrepared<D, B> {
-    fn k_aux(&self) -> TorusPrecision {
-        self.key.k_aux()
-    }
-
-    fn rank_in(&self) -> Rank {
-        self.key.rank_in()
-    }
-
-    fn rank_out(&self) -> Rank {
-        self.key.rank_out()
-    }
-
-    fn dsize(&self) -> Dsize {
-        self.key.dsize()
-    }
-
-    fn dnum(&self) -> Dnum {
-        self.key.dnum()
-    }
-}
+/// DFT-domain (prepared) variant of a GLWE automorphism key.
+///
+/// This is [`GLWEAutomorphismKeyCore`] over a `VmpPMat` payload; the `Infos`
+/// traits and the Galois-element accessors come from the payload-generic impls
+/// there.
+pub type GLWEAutomorphismKeyPrepared<D, B> = GLWEAutomorphismKeyCore<VmpPMat<D, <B as Backend>::DftWord, B>>;
 
 pub trait GLWEAutomorphismKeyPreparedFactory<B: Backend>
 where

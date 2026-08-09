@@ -1,7 +1,7 @@
 use poulpy_hal::layouts::VecZnxBigToBackendRef;
 use poulpy_hal::layouts::VecZnxDftToBackendMut;
 use poulpy_hal::layouts::VecZnxDftToBackendRef;
-use poulpy_hal::layouts::{VecZnxBigToBackendMut, ZnxWord};
+use poulpy_hal::layouts::{VecZnxBigToBackendMut, VecZnxInfos, ZnxWord};
 use poulpy_hal::{
     api::{
         ModuleN, SvpApplyDftToDft, SvpPrepare, VecZnxBigAlloc, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
@@ -29,21 +29,33 @@ pub(crate) fn pairs(rank: usize) -> usize {
     (((rank + 1) * rank) >> 1).max(1)
 }
 
-pub struct GLWESecretTensor<D: Data, W: ZnxWord> {
-    pub(crate) data: ScalarZnx<D, W>,
+/// The tensor of a GLWE secret with itself, generic over the HAL payload
+/// holding its polynomials.
+///
+/// `P` selects the computational domain: [`GLWESecretTensor`] is the
+/// coefficient-domain spelling (payload `ScalarZnx`) and
+/// [`GLWESecretTensorPrepared`](crate::layouts::GLWESecretTensorPrepared) the
+/// prepared one (payload `SvpPPol`); both are aliases of this struct.
+///
+/// The payload holds [`pairs(rank)`] columns, one per distinct unordered
+/// product, so the rank cannot be recovered from the column count and is
+/// carried as its own field.
+pub struct GLWESecretTensorCore<P> {
+    pub(crate) data: P,
     pub(crate) rank: Rank,
     pub(crate) dist: Distribution,
 }
 
-impl<W: ZnxWord> GLWESecretTensor<Vec<u8>, W> {}
+/// Coefficient-domain GLWE secret tensor.
+pub type GLWESecretTensor<D, W> = GLWESecretTensorCore<ScalarZnx<D, W>>;
 
-impl<D: Data, W: ZnxWord> GetDistribution for GLWESecretTensor<D, W> {
+impl<P> GetDistribution for GLWESecretTensorCore<P> {
     fn dist(&self) -> &Distribution {
         &self.dist
     }
 }
 
-impl<D: Data, W: ZnxWord> GetDistributionMut for GLWESecretTensor<D, W> {
+impl<P> GetDistributionMut for GLWESecretTensorCore<P> {
     fn dist_mut(&mut self) -> &mut Distribution {
         &mut self.dist
     }
@@ -59,7 +71,11 @@ impl<D: Data, W: ZnxWord> GLWESecretTensor<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEInfos for GLWESecretTensor<D, W> {
+/// Like [`GLWESecretCore`](crate::layouts::GLWESecretCore), a secret tensor has
+/// no torus precision and no limb decomposition: `base2k` reports `0` and `k()`
+/// panics. `max_size()` is the payload's width, which is `1` for both legal
+/// payloads (`ScalarZnx` and `SvpPPol` both report `size() == 1`).
+impl<P: VecZnxInfos> LWEInfos for GLWESecretTensorCore<P> {
     fn base2k(&self) -> Base2K {
         Base2K(0)
     }
@@ -69,7 +85,7 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWESecretTensor<D, W> {
     }
 
     fn max_size(&self) -> usize {
-        1
+        self.data.size()
     }
 
     fn k(&self) -> super::TorusPrecision {
@@ -106,7 +122,12 @@ impl<D: HostDataMut, W: ZnxWord> GLWESecretTensor<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GLWESecretTensor<D, W> {
+/// Note the difference from both a ciphertext and a plain secret: the rank is
+/// the field, not derived from the column count, which is [`pairs(rank)`].
+impl<P> GLWEInfos for GLWESecretTensorCore<P>
+where
+    Self: LWEInfos,
+{
     fn rank(&self) -> Rank {
         self.rank
     }

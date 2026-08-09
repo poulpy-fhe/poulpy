@@ -1,15 +1,15 @@
 use poulpy_hal::{
     api::VmpPrepare,
-    layouts::{Backend, Data, HostDataMut, Module, ScratchArena},
+    layouts::{Backend, Data, HostDataMut, Module, ScratchArena, VmpPMat},
 };
 
 use crate::layouts::prepared::{GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef};
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEPrepared, GGLWEPreparedFactory, GGLWEToGGSWKeyToBackendRef, GLWEInfos,
-    LWEInfos, Rank, TorusPrecision,
+    Base2K, Dnum, Dsize, GGLWEInfos, GGLWEPrepared, GGLWEPreparedFactory, GGLWEToGGSWKeyCore, GGLWEToGGSWKeyToBackendRef,
+    GLWEInfos, Rank, TorusPrecision,
 };
 
-/// DFT-domain (prepared) variant of [`GGLWEToGGSWKey`].
+/// DFT-domain (prepared) variant of [`GGLWEToGGSWKey`](crate::layouts::GGLWEToGGSWKey).
 ///
 /// Stores a collection of [`GGLWEPrepared`] matrices (one per rank element)
 /// with polynomials in the frequency domain of the backend's DFT/NTT transform,
@@ -17,58 +17,9 @@ use crate::layouts::{
 /// key-switching operations.
 ///
 /// Requires `rank_in == rank_out`. Tied to a specific backend via `BE: Backend`.
-pub struct GGLWEToGGSWKeyPrepared<D: Data, BE: Backend> {
-    pub(crate) keys: Vec<GGLWEPrepared<D, BE>>,
-}
-
-/// Provides LWE-level parameter accessors, delegating to the first key element.
-impl<D: Data, BE: Backend> LWEInfos for GGLWEToGGSWKeyPrepared<D, BE> {
-    fn n(&self) -> Degree {
-        self.keys[0].n()
-    }
-
-    fn base2k(&self) -> Base2K {
-        self.keys[0].base2k()
-    }
-
-    fn max_size(&self) -> usize {
-        self.keys[0].max_size()
-    }
-
-    fn k(&self) -> TorusPrecision {
-        self.keys[0].k()
-    }
-}
-
-/// Provides the GLWE rank, derived from the output rank.
-impl<D: Data, BE: Backend> GLWEInfos for GGLWEToGGSWKeyPrepared<D, BE> {
-    fn rank(&self) -> Rank {
-        self.keys[0].rank_out()
-    }
-}
-
-/// Provides GGLWE-specific parameter accessors. Note that `rank_in == rank_out` for this type.
-impl<D: Data, BE: Backend> GGLWEInfos for GGLWEToGGSWKeyPrepared<D, BE> {
-    fn k_aux(&self) -> TorusPrecision {
-        self.keys[0].k_aux()
-    }
-
-    fn rank_in(&self) -> Rank {
-        self.rank_out()
-    }
-
-    fn rank_out(&self) -> Rank {
-        self.keys[0].rank_out()
-    }
-
-    fn dsize(&self) -> Dsize {
-        self.keys[0].dsize()
-    }
-
-    fn dnum(&self) -> Dnum {
-        self.keys[0].dnum()
-    }
-}
+/// This is [`GGLWEToGGSWKeyCore`] over a `VmpPMat` payload; the `Infos` traits
+/// come from the payload-generic impls there.
+pub type GGLWEToGGSWKeyPrepared<D, BE> = GGLWEToGGSWKeyCore<VmpPMat<D, <BE as Backend>::DftWord, BE>>;
 
 /// Factory trait for allocating and preparing [`GGLWEToGGSWKeyPrepared`] instances.
 pub trait GGLWEToGGSWKeyPreparedFactory<BE: Backend> {

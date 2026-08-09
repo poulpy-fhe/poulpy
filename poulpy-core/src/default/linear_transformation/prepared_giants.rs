@@ -9,13 +9,13 @@
 
 use poulpy_hal::{
     api::{
-        CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigAddAssign, VecZnxBigAddSmallAssign, VecZnxBigAlloc,
+        CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxBigAddAssign, VecZnxBigAddSmallAssign,
         VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmallBackend,
         VecZnxBigNormalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf,
         VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA, VecZnxIdftApplyTmpBytes,
     },
     layouts::{
-        Backend, GaloisElement, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut,
+        Backend, GaloisElement, Module, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut,
         VecZnxDftToBackendMut, VecZnxDftToBackendRef,
     },
 };
@@ -72,7 +72,7 @@ pub trait DiagonalProd<BE: Backend>: LWEInfos + Sized {
         gs: &LinearTransformationGiantStep<Self>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        M: CnvPVecBytesOf + Convolution<BE> + ModuleN;
+        M: CnvPVecBytesOf + Convolution<BE> + ModuleN + GLWEStreamedProdDefault<BE>;
 }
 
 impl<BE: Backend> DiagonalProd<BE> for PreparedDiagonal<BE::OwnedBuf, BE> {
@@ -84,15 +84,16 @@ impl<BE: Backend> DiagonalProd<BE> for PreparedDiagonal<BE::OwnedBuf, BE> {
         gs: &LinearTransformationGiantStep<Self>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
+        M: CnvPVecBytesOf + Convolution<BE> + ModuleN + GLWEStreamedProdDefault<BE>,
     {
         glwe_accumulate_prepared_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, gs, scratch);
     }
 }
 
-/// Reference streamed PROD, exposed for the scheme layer to wire into its
-/// [`DiagonalProd`] impl for its own plaintext diagonal type.
-pub fn glwe_accumulate_streamed_baby_steps_dft<BE, M, P>(
+/// Reference streamed PROD, reached by the scheme layer through
+/// [`GLWEStreamedProdDefault`] when wiring its own plaintext diagonal type into
+/// [`DiagonalProd`].
+pub(crate) fn glwe_accumulate_streamed_baby_steps_dft<BE, M, P>(
     module: &M,
     cnv_offset_hi: usize,
     prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
@@ -152,7 +153,6 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
         + GLWEKeyswitchInternal<BE>
         + VecZnxBigAddAssign<BE>
         + VecZnxBigAddSmallAssign<BE>
-        + VecZnxBigAlloc<BE>
         + VecZnxBigAutomorphismAssign<BE>
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigBytesOf
@@ -167,6 +167,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
         + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpA<BE>
+        + GLWEStreamedProdDefault<BE>
         + VecZnxIdftApplyTmpBytes
         + GLWEMulPlain<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -348,5 +349,41 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
             module.glwe_copy(res, &fallback_acc);
             res_initialized = true;
         }
+    }
+}
+
+/// Module entry point for the reference streamed PROD.
+///
+/// A downstream scheme implements [`DiagonalProd`] for its own diagonal type and
+/// calls this from inside that impl, so the reference accumulation stays behind
+/// the module rather than being a free function.
+#[doc(hidden)]
+pub trait GLWEStreamedProdDefault<BE: Backend> {
+    fn glwe_accumulate_streamed_baby_steps_dft_default<P>(
+        &self,
+        cnv_offset_hi: usize,
+        prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
+        lhs: &LinearTransformationBabySteps<BE>,
+        gs: &LinearTransformationGiantStep<P>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        P: GLWEToBackendRef<BE> + crate::layouts::IntPolyInfos + GLWEInfos;
+}
+
+impl<BE: Backend> GLWEStreamedProdDefault<BE> for Module<BE>
+where
+    Self: CnvPVecBytesOf + Convolution<BE> + ModuleN,
+{
+    fn glwe_accumulate_streamed_baby_steps_dft_default<P>(
+        &self,
+        cnv_offset_hi: usize,
+        prod_dft: &mut VecZnxDftBackendMut<'_, BE>,
+        lhs: &LinearTransformationBabySteps<BE>,
+        gs: &LinearTransformationGiantStep<P>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        P: GLWEToBackendRef<BE> + crate::layouts::IntPolyInfos + GLWEInfos,
+    {
+        glwe_accumulate_streamed_baby_steps_dft(self, cnv_offset_hi, prod_dft, lhs, gs, scratch)
     }
 }

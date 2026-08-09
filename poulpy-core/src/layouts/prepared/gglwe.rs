@@ -2,12 +2,11 @@ use poulpy_hal::layouts::VmpPMatToBackendMut;
 use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
     api::{VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes},
-    layouts::{Backend, Data, Module, ScratchArena, VmpPMat, VmpPMatBackendRef},
+    layouts::{Backend, Module, ScratchArena, VmpPMat, VmpPMatBackendRef},
 };
 
-use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEToBackendRef, GLWEInfos, GetDegree, LWEInfos, Rank, TorusPrecision,
-};
+use crate::layouts::GGLWECore;
+use crate::layouts::{Base2K, Dnum, Dsize, GGLWEInfos, GGLWEToBackendRef, GetDegree, LWEInfos, Rank, TorusPrecision};
 
 /// DFT-domain (prepared) variant of [`GGLWE`].
 ///
@@ -17,65 +16,13 @@ use crate::layouts::{
 /// represents a prepared matrix suitable for vector-matrix products.
 ///
 /// Tied to a specific backend via `B: Backend`.
-#[derive(PartialEq)]
-pub struct GGLWEPrepared<D: Data, B: Backend> {
-    pub(crate) data: VmpPMat<D, B::DftWord, B>,
-    pub(crate) k_aux: TorusPrecision,
-    pub(crate) base2k: Base2K,
-    pub(crate) dsize: Dsize,
-}
+/// This is [`GGLWECore`] over a `VmpPMat` payload: the same semantic object as a
+/// coefficient-domain GGLWE, in the prepared domain. `LWEInfos` / `GLWEInfos` /
+/// `GGLWEInfos` all come from the payload-generic impls on `GGLWECore`.
+pub type GGLWEPrepared<D, B> = GGLWECore<VmpPMat<D, <B as Backend>::DftWord, B>>;
 
 pub type GGLWEPreparedBackendRef<'a, B> = GGLWEPrepared<<B as Backend>::BufRef<'a>, B>;
 pub type GGLWEPreparedBackendMut<'a, B> = GGLWEPrepared<<B as Backend>::BufMut<'a>, B>;
-
-/// Provides LWE-level parameter accessors (degree, base2k, precision, size).
-impl<D: Data, B: Backend> LWEInfos for GGLWEPrepared<D, B> {
-    fn n(&self) -> Degree {
-        Degree(self.data.n() as u32)
-    }
-
-    fn base2k(&self) -> Base2K {
-        self.base2k
-    }
-
-    fn max_size(&self) -> usize {
-        crate::layouts::key_size(self.base2k, self.dnum(), self.dsize, self.k_aux)
-    }
-
-    fn k(&self) -> TorusPrecision {
-        crate::layouts::key_k(self.base2k, self.dnum(), self.dsize, self.k_aux)
-    }
-}
-
-/// Provides the GLWE rank, derived from the output rank.
-impl<D: Data, B: Backend> GLWEInfos for GGLWEPrepared<D, B> {
-    fn rank(&self) -> Rank {
-        self.rank_out()
-    }
-}
-
-/// Provides GGLWE-specific parameter accessors (input/output rank, dsize, dnum).
-impl<D: Data, B: Backend> GGLWEInfos for GGLWEPrepared<D, B> {
-    fn k_aux(&self) -> TorusPrecision {
-        self.k_aux
-    }
-
-    fn rank_in(&self) -> Rank {
-        Rank(self.data.cols_in() as u32)
-    }
-
-    fn rank_out(&self) -> Rank {
-        Rank(self.data.cols_out() as u32 - 1)
-    }
-
-    fn dsize(&self) -> Dsize {
-        self.dsize
-    }
-
-    fn dnum(&self) -> Dnum {
-        Dnum(self.data.rows() as u32)
-    }
-}
 
 /// Factory trait for allocating and preparing [`GGLWEPrepared`] instances.
 ///

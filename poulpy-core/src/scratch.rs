@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{ModuleN, ScratchArenaTakeBasic, SvpPPolBytesOf, VmpPMatBytesOf},
+    api::{ModuleN, ScratchArenaTakeBasic, SvpPPolBytesOf, VecZnxBigBytesOf, VecZnxDftBytesOf, VmpPMatBytesOf},
     layouts::{Backend, ScratchArena},
 };
 
@@ -7,9 +7,9 @@ use crate::{
     dist::Distribution,
     layouts::{
         Degree, GGLWE, GGLWEInfos, GGLWEPreparedViewMut, GGLWEViewMut, GGSW, GGSWInfos, GGSWPreparedViewMut, GGSWViewMut, GLWE,
-        GLWEInfos, GLWEPlaintext, GLWEPlaintextViewMut, GLWESecret, GLWESecretPreparedViewMut, GLWESecretTensor,
-        GLWESecretTensorViewMut, GLWESecretViewMut, GLWETensor, GLWETensorViewMut, GLWEViewMut, LWE, LWEInfos, LWEPlaintext,
-        LWEPlaintextViewMut, LWEViewMut, Rank,
+        GLWEBigViewMut, GLWECore, GLWEInfos, GLWEPlaintext, GLWEPlaintextViewMut, GLWEPreparedViewMut, GLWESecret,
+        GLWESecretPreparedViewMut, GLWESecretTensor, GLWESecretTensorViewMut, GLWESecretViewMut, GLWETensor, GLWETensorViewMut,
+        GLWEViewMut, LWE, LWEInfos, LWEPlaintext, LWEPlaintextViewMut, LWEViewMut, Rank,
         prepared::{GGLWEPrepared, GGSWPrepared, GLWESecretPrepared},
     },
 };
@@ -116,6 +116,53 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
         let (data, scratch) = self.take_vec_znx_scratch(infos.n().into(), 1, infos.size());
         (
             GLWEPlaintextViewMut::from_inner(GLWEPlaintext {
+                k: infos.k(),
+                base2k: infos.base2k(),
+                data: data.into_inner(),
+            }),
+            scratch,
+        )
+    }
+
+    /// Allocates a [`GLWEPrepared`] (DFT-domain GLWE) from scratch space.
+    ///
+    /// Carved at `infos.size()` limbs, so the view's width is exactly the
+    /// requested `k`. A HAL layout's size is its allocation, so the carve must
+    /// be made at the width the operation intends to compute at; narrowing
+    /// afterwards is a borrow that cannot be widened back.
+    fn take_glwe_prepared_scratch<A, M>(self, module: &M, infos: &A) -> (GLWEPreparedViewMut<'a, B>, Self)
+    where
+        B: 'a,
+        A: GLWEInfos,
+        M: ModuleN + VecZnxDftBytesOf,
+    {
+        assert_eq!(module.n() as u32, infos.n());
+        let (data, scratch) = self.take_vec_znx_dft_scratch(module, (infos.rank() + 1).into(), infos.size());
+        (
+            GLWEPreparedViewMut::from_inner(GLWECore {
+                k: infos.k(),
+                base2k: infos.base2k(),
+                data: data.into_inner(),
+            }),
+            scratch,
+        )
+    }
+
+    /// Allocates a [`GLWEBig`] (big/accumulator-domain GLWE) from scratch space.
+    ///
+    /// This is the deferred-normalization intermediate. Size it at the width the
+    /// producing operation accumulates at, which is generally the key's width
+    /// rather than the final result's.
+    fn take_glwe_big_scratch<A, M>(self, module: &M, infos: &A) -> (GLWEBigViewMut<'a, B>, Self)
+    where
+        B: 'a,
+        A: GLWEInfos,
+        M: ModuleN + VecZnxBigBytesOf,
+    {
+        assert_eq!(module.n() as u32, infos.n());
+        let (data, scratch) = self.take_vec_znx_big_scratch(module, (infos.rank() + 1).into(), infos.size());
+        (
+            GLWEBigViewMut::from_inner(GLWECore {
                 k: infos.k(),
                 base2k: infos.base2k(),
                 data: data.into_inner(),

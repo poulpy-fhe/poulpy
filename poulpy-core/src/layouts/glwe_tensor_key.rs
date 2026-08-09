@@ -4,11 +4,11 @@ use poulpy_hal::{
 };
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos,
+    Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut, GGLWEBackendRef, GGLWECore, GGLWEInfos,
     GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos, GLWEViewMut, GLWEViewRef, LWEInfos, Rank, TorusPrecision,
 };
 
-use poulpy_hal::layouts::ZnxWord;
+use poulpy_hal::layouts::{MatZnx, MatZnxInfos, ZnxWord};
 use std::fmt;
 
 /// Plain-data descriptor for a [`GLWETensorKey`] carrying only the
@@ -27,17 +27,29 @@ pub struct GLWETensorKeyLayout {
     pub dsize: Dsize,
 }
 
-/// GLWE tensor key used for relinearisation after a tensor product.
+/// GLWE tensor key used for relinearisation after a tensor product, generic
+/// over the HAL payload holding its polynomials.
 ///
-/// Wraps a [`GGLWE`] whose `rank_in` equals the number of unique
+/// Wraps a [`GGLWECore`] whose `rank_in` equals the number of unique
 /// pairs `max(1, rank*(rank+1)/2)` produced by the tensor product.
+///
+/// `P` selects the computational domain: [`GLWETensorKey`] is the
+/// coefficient-domain spelling (payload `MatZnx`) and
+/// [`GLWETensorKeyPrepared`](crate::layouts::GLWETensorKeyPrepared) the
+/// prepared one (payload `VmpPMat`); both are aliases of this struct.
+#[derive(PartialEq, Clone)]
+pub struct GLWETensorKeyCore<P>(pub(crate) GGLWECore<P>);
+
+/// Coefficient-domain GLWE tensor key.
 ///
 /// `D: Data` is the backing storage type (e.g. `Vec<u8>`, `&[u8]`,
 /// `&mut [u8]`).
-#[derive(PartialEq, Eq, Clone)]
-pub struct GLWETensorKey<D: Data, W: ZnxWord>(pub(crate) GGLWE<D, W>);
+pub type GLWETensorKey<D, W> = GLWETensorKeyCore<MatZnx<D, W>>;
 
-impl<D: Data, W: ZnxWord> LWEInfos for GLWETensorKey<D, W> {
+// `Eq` stays coefficient-domain only, mirroring `GGLWECore`.
+impl<D: Data, W: ZnxWord> Eq for GLWETensorKeyCore<MatZnx<D, W>> {}
+
+impl<P: MatZnxInfos> LWEInfos for GLWETensorKeyCore<P> {
     fn n(&self) -> Degree {
         self.0.n()
     }
@@ -55,13 +67,13 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWETensorKey<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GLWETensorKey<D, W> {
+impl<P: MatZnxInfos> GLWEInfos for GLWETensorKeyCore<P> {
     fn rank(&self) -> Rank {
         self.0.rank_out()
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWEInfos for GLWETensorKey<D, W> {
+impl<P: MatZnxInfos> GGLWEInfos for GLWETensorKeyCore<P> {
     fn k_aux(&self) -> TorusPrecision {
         self.0.k_aux()
     }
@@ -176,7 +188,7 @@ impl<W: ZnxWord> GLWETensorKey<Vec<u8>, W> {
     /// Allocates a new [`GLWETensorKey`] with the given parameters.
     pub(crate) fn alloc(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> Self {
         let pairs: u32 = (((rank.0 + 1) * rank.0) >> 1).max(1);
-        GLWETensorKey(GGLWE::alloc(n, base2k, dnum, dsize, k_aux, Rank(pairs), rank))
+        GLWETensorKeyCore(GGLWE::alloc(n, base2k, dnum, dsize, k_aux, Rank(pairs), rank))
     }
 
     /// Returns the byte count required for a [`GLWETensorKey`] with the given parameters.

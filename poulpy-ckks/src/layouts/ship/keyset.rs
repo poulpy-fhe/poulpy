@@ -11,6 +11,7 @@
 use anyhow::{Result, ensure};
 use poulpy_core::{
     EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ModuleTransfer,
+    layouts::msb_mask_bottom_limb,
     layouts::{
         Base2K, GGLWEInfos, GGLWEToBackendRef, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared,
         GLWEAutomorphismKeyPreparedFactory, GLWEInfos, GLWELayout, GLWESecret, GLWESecretLayout, GLWESecretPreparedFactory,
@@ -18,7 +19,6 @@ use poulpy_core::{
         GLWETensorKeyLayout, GLWETensorKeyPrepared, GLWETensorKeyPreparedFactory, GLWEToBackendRef, GetGaloisElement, LWEInfos,
         ModuleCoreAlloc, Rank,
     },
-    msb_mask_bottom_limb,
 };
 use poulpy_hal::layouts::HostStaged;
 use poulpy_hal::{

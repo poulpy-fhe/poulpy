@@ -10,6 +10,7 @@ use crate::layouts::{
     GLWEInfos, GLWEToBackendMut, LWEInfos, LWEMatrixInfos, LWEMatrixToBackendRef, LWESecretToBackendRef, Rank, SetBase2k,
 };
 
+#[doc(hidden)]
 pub fn lwe_matrix_decrypt_tmp_bytes_default<BE: Backend, A>(module: &Module<BE>, infos: &A) -> usize
 where
     Module<BE>: VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
@@ -21,6 +22,7 @@ where
         + 3 * (BE::SCRATCH_ALIGN - 1)
 }
 
+#[doc(hidden)]
 pub fn lwe_matrix_decrypt_default<BE, R, P, S>(
     module: &Module<BE>,
     res: &R,

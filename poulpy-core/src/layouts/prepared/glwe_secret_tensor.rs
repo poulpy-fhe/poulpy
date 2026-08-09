@@ -2,62 +2,26 @@ use poulpy_hal::layouts::SvpPPolToBackendMut;
 use poulpy_hal::layouts::SvpPPolToBackendRef;
 use poulpy_hal::{
     api::{SvpPPolAlloc, SvpPPolBytesOf},
-    layouts::{Backend, Data, HostDataMut, HostDataRef, Module, SvpPPol, ZnxInfos},
+    layouts::{Backend, Module, SvpPPol},
 };
 
 use crate::{
     GetDistribution, GetDistributionMut,
     dist::Distribution,
     layouts::{
-        Base2K, Degree, GLWEInfos, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretPreparedToBackendMut,
-        GLWESecretPreparedToBackendRef, GLWESecretToBackendRef, GetDegree, LWEInfos, Rank,
+        GLWEInfos, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretPreparedToBackendMut, GLWESecretPreparedToBackendRef,
+        GLWESecretTensorCore, GLWESecretToBackendRef, GetDegree, Rank,
     },
 };
 
-/// DFT-domain (prepared) variant of [`GLWESecretTensor`].
+/// DFT-domain (prepared) variant of [`GLWESecretTensor`](crate::layouts::GLWESecretTensor).
 ///
 /// Stores the GLWE secret tensor with polynomials in the frequency domain
 /// for fast tensor operations. Tied to a specific backend via `B: Backend`.
-pub struct GLWESecretTensorPrepared<D: Data, B: Backend> {
-    pub(crate) data: SvpPPol<D, B::DftWord, B>,
-    pub(crate) rank: Rank,
-    pub(crate) dist: Distribution,
-}
-
-impl<D: HostDataRef, BE: Backend> GetDistribution for GLWESecretTensorPrepared<D, BE> {
-    fn dist(&self) -> &Distribution {
-        &self.dist
-    }
-}
-
-impl<D: HostDataMut, BE: Backend> GetDistributionMut for GLWESecretTensorPrepared<D, BE> {
-    fn dist_mut(&mut self) -> &mut Distribution {
-        &mut self.dist
-    }
-}
-
-impl<D: Data, B: Backend> LWEInfos for GLWESecretTensorPrepared<D, B> {
-    fn base2k(&self) -> Base2K {
-        Base2K(0)
-    }
-
-    fn n(&self) -> Degree {
-        Degree(self.data.n() as u32)
-    }
-
-    fn max_size(&self) -> usize {
-        self.data.size()
-    }
-
-    fn k(&self) -> crate::layouts::TorusPrecision {
-        unimplemented!("this method is not defined on secrets")
-    }
-}
-impl<D: Data, B: Backend> GLWEInfos for GLWESecretTensorPrepared<D, B> {
-    fn rank(&self) -> Rank {
-        self.rank
-    }
-}
+/// This is [`GLWESecretTensorCore`] over an `SvpPPol` payload: the same
+/// semantic object as a coefficient-domain secret tensor, in the prepared
+/// domain.
+pub type GLWESecretTensorPrepared<D, B> = GLWESecretTensorCore<SvpPPol<D, <B as Backend>::DftWord, B>>;
 
 pub trait GLWESecretTensorPreparedFactory<B: Backend> {
     fn glwe_secret_tensor_prepared_alloc(&self, rank: Rank) -> GLWESecretTensorPrepared<B::OwnedBuf, B>;
@@ -116,16 +80,10 @@ where
 }
 
 // module-only API: allocation/size helpers are provided by `GLWESecretTensorPreparedFactory` on `Module`.
-
-impl<D: Data, B: Backend> GLWESecretTensorPrepared<D, B> {
-    pub fn n(&self) -> Degree {
-        Degree(self.data.n() as u32)
-    }
-
-    pub fn rank(&self) -> Rank {
-        Rank(self.data.cols() as u32)
-    }
-}
+//
+// `n()` and `rank()` come from `LWEInfos`/`GLWEInfos` on `GLWESecretTensorCore`.
+// The inherent pair that used to live here reported `rank = data.cols()`, which
+// is `pairs(rank)` for a tensor, and shadowed the correct trait method.
 
 // module-only API: preparation is provided by `GLWESecretTensorPreparedFactory` on `Module`.
 

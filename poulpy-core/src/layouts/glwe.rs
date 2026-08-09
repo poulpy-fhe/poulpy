@@ -9,6 +9,7 @@ use poulpy_hal::{
 use crate::api::ModuleTransfer;
 use crate::layouts::{Base2K, Degree, LWEInfos, Rank, SetBase2k, SetK, TorusPrecision};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use poulpy_hal::layouts::VecZnxInfos;
 use poulpy_hal::layouts::ZnxWord;
 use std::fmt;
 
@@ -83,61 +84,80 @@ impl GLWEInfos for GLWELayout {
     }
 }
 
-/// A GLWE (Generalised LWE) ciphertext over the polynomial ring `Z[X]/(X^n + 1)`.
+/// A GLWE (Generalised LWE) ciphertext, generic over the HAL payload holding
+/// its polynomials.
 ///
-/// Wraps a [`VecZnx`] with `rank + 1` columns: the first column is the body
-/// polynomial, and the remaining `rank` columns are the mask polynomials.
+/// The payload carries `rank + 1` columns: the first column is the body
+/// polynomial, and the remaining `rank` columns are the mask polynomials. The
+/// wrapper adds the semantic metadata the payload does not have: the limb width
+/// `base2k` and the claimed torus precision `k`.
 ///
-/// `D: Data` is the storage backend (e.g. `Vec<u8>`, `&[u8]`, `&mut [u8]`).
-#[derive(PartialEq, Eq, Clone)]
-pub struct GLWE<D: Data, W: ZnxWord> {
-    pub(crate) data: VecZnx<D, W>,
+/// `P` selects the computational domain. `GLWE<D, W>` is the coefficient-domain
+/// spelling (payload [`VecZnx`]) and [`GLWEPrepared`](crate::layouts::GLWEPrepared)
+/// the DFT-domain one (payload `VecZnxDft`); both are aliases of this struct.
+#[derive(PartialEq, Clone)]
+pub struct GLWECore<P> {
+    pub(crate) data: P,
     pub(crate) k: TorusPrecision,
     pub(crate) base2k: Base2K,
 }
 
+/// Coefficient-domain GLWE ciphertext.
+///
+/// `D: Data` is the storage backend (e.g. `Vec<u8>`, `&[u8]`, `&mut [u8]`).
+pub type GLWE<D, W> = GLWECore<VecZnx<D, W>>;
+
+// `Eq` is coefficient-domain only, matching the surface before `GLWECore` was
+// introduced: the prepared layouts carry `PartialEq` without `Eq` on purpose.
+// Deriving it on `GLWECore` would hand `Eq` to every payload that has it,
+// including `VecZnxDft`.
+impl<D: Data, W: ZnxWord> Eq for GLWECore<VecZnx<D, W>> {}
+
 pub type GLWEBackendRef<'a, BE> = GLWE<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord>;
 pub type GLWEBackendMut<'a, BE> = GLWE<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord>;
 
-impl<D: Data, W: ZnxWord> SetBase2k for GLWE<D, W> {
+impl<P> SetBase2k for GLWECore<P> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k
     }
 }
 
-impl<D: Data, W: ZnxWord> SetBase2k for &mut GLWE<D, W> {
+impl<P> SetBase2k for &mut GLWECore<P> {
     fn set_base2k(&mut self, base2k: Base2K) {
         self.base2k = base2k
     }
 }
 
-impl<D: Data, W: ZnxWord> SetK for GLWE<D, W> {
+impl<P> SetK for GLWECore<P> {
     fn set_k(&mut self, k: TorusPrecision) {
         self.k = k
     }
 }
 
-impl<D: Data, W: ZnxWord> SetK for &mut GLWE<D, W> {
+impl<P> SetK for &mut GLWECore<P> {
     fn set_k(&mut self, k: TorusPrecision) {
         self.k = k
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWE<D, W> {
-    /// Returns a shared reference to the underlying [`VecZnx`].
-    pub fn data(&self) -> &VecZnx<D, W> {
+impl<P> GLWECore<P> {
+    /// Returns a shared reference to the underlying payload.
+    pub fn data(&self) -> &P {
         &self.data
     }
-}
 
-impl<D: Data, W: ZnxWord> GLWE<D, W> {
-    /// Returns a mutable reference to the underlying [`VecZnx`].
-    pub fn data_mut(&mut self) -> &mut VecZnx<D, W> {
+    /// Returns a mutable reference to the underlying payload.
+    pub fn data_mut(&mut self) -> &mut P {
         &mut self.data
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEInfos for GLWE<D, W> {
+/// Shape is read off the payload; `base2k` and `k` come from the wrapper.
+///
+/// `max_size()` is the payload's `size()`: a HAL layout has a single width that
+/// is its allocation, so the allocation/claim split lives entirely here, with
+/// `size()` derived from `k`.
+impl<P: VecZnxInfos> LWEInfos for GLWECore<P> {
     fn base2k(&self) -> Base2K {
         self.base2k
     }
@@ -155,7 +175,7 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWE<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GLWE<D, W> {
+impl<P: VecZnxInfos> GLWEInfos for GLWECore<P> {
     fn rank(&self) -> Rank {
         Rank(self.data.cols() as u32 - 1)
     }

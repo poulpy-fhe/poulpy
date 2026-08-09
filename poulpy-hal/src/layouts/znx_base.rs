@@ -125,6 +125,22 @@ pub trait DataViewMut: DataView {
 /// For a container with `cols` columns and `size` limbs, limb `j` of
 /// column `i` starts at scalar offset `n * (j * cols + i)`.
 ///
+/// The ordering was originally chosen to make re-slicing by limb an unscattered
+/// copy: any *range of limbs* is contiguous across all columns. That motivation
+/// is historical — containers are no longer truncated, only viewed at a smaller
+/// `size`. What still binds is the consequence: a narrowed view is a **prefix**
+/// of the allocation, so `with_size` is a pure metadata change and a container
+/// needs only one width. Under column-major (`n * (i * size + j)`) a narrowed
+/// view is `cols` disjoint sub-ranges, so addressing it would require carrying
+/// the allocation stride alongside the working width.
+///
+/// The cost is paid on the hot path: per-column DFT/IDFT walks one column's
+/// limbs with stride `n * cols * step` (`step = dsize` for gadget
+/// decomposition), reading `n` contiguous scalars per limb but crossing the
+/// whole allocation between them. Column-major would keep that walk inside one
+/// column at stride `n * step`. Whether that costs anything measurable is
+/// untested; see `docs/core-domain-generic-layouts-plan.md`.
+///
 /// The associated `Scalar` type is the container's word type `W`
 /// (`i64` by default for coefficient-domain types, the backend-declared
 /// `DftWord`/`BigWord` for DFT/big representations).

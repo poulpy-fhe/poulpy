@@ -31,7 +31,7 @@ use crate::{
 };
 
 #[inline(always)]
-pub fn trace_galois_elements(log_n: usize, cyclotomic_order: i64) -> Vec<i64> {
+pub(crate) fn trace_galois_elements(log_n: usize, cyclotomic_order: i64) -> Vec<i64> {
     (0..log_n)
         .map(|i| {
             if i == 0 {

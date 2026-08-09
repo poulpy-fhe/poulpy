@@ -18,7 +18,7 @@ use poulpy_hal::{
 
 use crate::layouts::IntPolyInfos;
 use crate::{
-    default::operations::msb_mask_bottom_limb,
+    layouts::msb_mask_bottom_limb,
     layouts::{
         GLWEInfos, GLWEToBackendRef, LWEInfos, LinearTransformation, LinearTransformationDiagonal, LinearTransformationGiantStep,
         LinearTransformationLayout, LinearTransformationPlan, prepared::PreparedDiagonal,
@@ -98,6 +98,7 @@ impl<BE: Backend> LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>> {
 }
 
 /// Reference impl: scratch bytes for `glwe_prepare_linear_transformation_rhs`.
+#[doc(hidden)]
 pub fn glwe_prepare_linear_transformation_rhs_tmp_bytes_default<BE, M, P>(module: &M, pt_infos: &P) -> usize
 where
     BE: Backend,
@@ -114,6 +115,7 @@ where
 /// [`LinearTransformation::alloc_prepared`](LinearTransformation::alloc_prepared)
 /// for the same BSGS schedule (giant rotations and baby rotations) that `lt`
 /// follows.
+#[doc(hidden)]
 pub fn glwe_prepare_linear_transformation_rhs_default<BE, M, P>(
     module: &M,
     prepared: &mut LinearTransformation<PreparedDiagonal<BE::OwnedBuf, BE>>,

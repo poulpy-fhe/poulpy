@@ -1,7 +1,7 @@
 use poulpy_hal::layouts::{
-    Backend, ScalarZnx, SvpPPolReborrowBackendMut, SvpPPolReborrowBackendRef, VmpPMatReborrowBackendMut,
-    VmpPMatReborrowBackendRef, mat_znx_backend_mut_from_mut, mat_znx_backend_ref_from_mut, vec_znx_backend_mut_from_mut,
-    vec_znx_backend_ref_from_mut, vec_znx_backend_ref_from_ref,
+    Backend, ScalarZnx, SvpPPolReborrowBackendMut, SvpPPolReborrowBackendRef, VecZnxDftReborrowBackendMut,
+    VecZnxDftReborrowBackendRef, VmpPMatReborrowBackendMut, VmpPMatReborrowBackendRef, mat_znx_backend_mut_from_mut,
+    mat_znx_backend_ref_from_mut, vec_znx_backend_mut_from_mut, vec_znx_backend_ref_from_mut, vec_znx_backend_ref_from_ref,
 };
 
 use crate::{
@@ -12,7 +12,9 @@ use crate::{
         GGLWEPreparedBackendRef, GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef, GGLWEToBackendMut, GGLWEToBackendRef,
         GGSW, GGSWBackendMut, GGSWBackendRef, GGSWInfos, GGSWPrepared, GGSWPreparedBackendMut, GGSWPreparedBackendRef,
         GGSWPreparedToBackendMut, GGSWPreparedToBackendRef, GGSWToBackendMut, GGSWToBackendRef, GLWE, GLWEBackendMut,
-        GLWEBackendRef, GLWEPlaintext, GLWESecret, GLWESecretBackendMut, GLWESecretBackendRef, GLWESecretPrepared,
+        GLWEBackendRef, GLWEBig, GLWEBigBackendMut, GLWEBigBackendRef, GLWEBigToBackendMut, GLWEBigToBackendRef, GLWECore,
+        GLWEPlaintext, GLWEPrepared, GLWEPreparedBackendMut, GLWEPreparedBackendRef, GLWEPreparedToBackendMut,
+        GLWEPreparedToBackendRef, GLWESecret, GLWESecretBackendMut, GLWESecretBackendRef, GLWESecretPrepared,
         GLWESecretPreparedBackendMut, GLWESecretPreparedBackendRef, GLWESecretPreparedToBackendMut,
         GLWESecretPreparedToBackendRef, GLWESecretTensor, GLWESecretToBackendMut, GLWESecretToBackendRef, GLWETensor,
         GLWEToBackendMut, GLWEToBackendRef, LWE, LWEBackendMut, LWEBackendRef, LWEPlaintext, LWEPlaintextBackendMut,
@@ -90,6 +92,8 @@ view_wrapper!(GLWEPlaintextViewMut, GLWEPlaintext<BE::BufMut<'a>, BE::ZnxWord>);
 view_wrapper!(GLWETensorViewMut, GLWETensor<BE::BufMut<'a>, BE::ZnxWord>);
 view_wrapper!(GLWESecretViewMut, GLWESecret<BE::BufMut<'a>, BE::ZnxWord>);
 view_wrapper!(GLWESecretTensorViewMut, GLWESecretTensor<BE::BufMut<'a>, BE::ZnxWord>);
+view_wrapper!(GLWEPreparedViewMut, GLWEPrepared<BE::BufMut<'a>, BE>);
+view_wrapper!(GLWEBigViewMut, GLWEBig<BE::BufMut<'a>, BE>);
 view_wrapper!(GLWESecretPreparedViewMut, GLWESecretPrepared<BE::BufMut<'a>, BE>);
 view_wrapper!(GGLWEViewMut, GGLWE<BE::BufMut<'a>, BE::ZnxWord>);
 view_wrapper!(GGLWEPreparedViewMut, GGLWEPrepared<BE::BufMut<'a>, BE>);
@@ -159,6 +163,8 @@ macro_rules! impl_glwe_infos {
 
 impl_glwe_infos!(GLWEViewMut);
 impl_glwe_infos!(GLWEViewRef);
+impl_glwe_infos!(GLWEPreparedViewMut);
+impl_glwe_infos!(GLWEBigViewMut);
 impl_glwe_infos!(GLWEPlaintextViewMut);
 impl_glwe_infos!(GLWETensorViewMut);
 impl_glwe_infos!(GLWESecretViewMut);
@@ -436,6 +442,38 @@ impl<'a, BE: Backend + 'a> GGLWEToBackendMut<BE> for GGLWEViewMut<'a, BE> {
             dsize: self.inner.dsize,
             data: mat_znx_backend_mut_from_mut::<BE>(&mut self.inner.data),
         })
+    }
+}
+
+impl<'a, BE: Backend + 'a> GLWEPreparedToBackendRef<BE> for GLWEPreparedViewMut<'a, BE> {
+    fn to_backend_ref(&self) -> GLWEPreparedBackendRef<'_, BE> {
+        GLWECore {
+            base2k: self.inner.base2k,
+            k: self.inner.k,
+            data: self.inner.data.reborrow_backend_ref(),
+        }
+    }
+}
+
+impl<'a, BE: Backend + 'a> GLWEPreparedToBackendMut<BE> for GLWEPreparedViewMut<'a, BE> {
+    fn to_backend_mut(&mut self) -> GLWEPreparedBackendMut<'_, BE> {
+        GLWECore {
+            base2k: self.inner.base2k,
+            k: self.inner.k,
+            data: self.inner.data.reborrow_backend_mut(),
+        }
+    }
+}
+
+impl<'a, BE: Backend + 'a> GLWEBigToBackendRef<BE> for GLWEBigViewMut<'a, BE> {
+    fn to_backend_ref(&self) -> GLWEBigBackendRef<'_, BE> {
+        crate::layouts::glwe_big_backend_ref_from_mut::<BE>(&self.inner)
+    }
+}
+
+impl<'a, BE: Backend + 'a> GLWEBigToBackendMut<BE> for GLWEBigViewMut<'a, BE> {
+    fn to_backend_mut(&mut self) -> GLWEBigBackendMut<'_, BE> {
+        crate::layouts::glwe_big_backend_mut_from_mut::<BE>(&mut self.inner)
     }
 }
 

@@ -20,19 +20,22 @@ use std::collections::BTreeMap;
 use poulpy_hal::{
     api::{
         CnvPVecAlloc, Convolution, ModuleN, ScratchArenaTakeBasic, VecZnxAutomorphismAssignBackend, VecZnxBigAddSmallAssign,
-        VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApply,
+        VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApply,
         VecZnxIdftApplyTmpBytes,
     },
-    layouts::{Backend, GaloisElement, ScratchArena, VecZnxBigToBackendRef, VecZnxDftBackendRef, VecZnxDftToBackendRef},
+    layouts::{Backend, GaloisElement, ScratchArena, VecZnxDftBackendRef, VecZnxDftReborrowBackendRef},
 };
 
 use crate::{
     GLWEAutomorphism, ScratchArenaTakeCore,
     api::GLWEBytesOf,
-    default::{keyswitching::GGLWEProductDefault, operations::msb_mask_bottom_limb},
+    default::keyswitching::{
+        GGLWEProductDefault, glwe_finalize_big_default, glwe_keyswitch_from_mask_into_big_default, glwe_mask_dft_apply_default,
+    },
+    layouts::msb_mask_bottom_limb,
     layouts::{
-        GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
-        prepared::GGLWEPreparedToBackendRef,
+        GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement,
+        LWEInfos, TorusPrecision, prepared::GGLWEPreparedToBackendRef,
     },
 };
 
@@ -115,7 +118,7 @@ fn glwe_hoisted_baby_rotation<BE, M, R, A, H, K>(
     baby: &mut R,
     rot: i64,
     a: &A,
-    a_dft_ref: &VecZnxDftBackendRef<'_, BE>,
+    mask_dft: &VecZnxDftBackendRef<'_, BE>,
     key_size: usize,
     keys: &H,
     scratch: &mut ScratchArena<'_, BE>,
@@ -129,61 +132,39 @@ fn glwe_hoisted_baby_rotation<BE, M, R, A, H, K>(
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalizeTmpBytes
         + VecZnxDftBytesOf
-        + VecZnxDftZero<BE>
-        + VecZnxIdftApply<BE>,
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
-    let cols = a.rank().as_usize() + 1;
     let key: &K = keys
         .get_automorphism_key(module.galois_element(rot))
         .unwrap_or_else(|| panic!("missing automorphism key for baby-step rotation {rot}"));
-    let key_ref = key.to_backend_ref();
-    assert_eq!(key_ref.base2k(), a.base2k());
+    assert_eq!(key.base2k(), a.base2k());
 
-    let (mut res_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, key_size);
-    if key_ref.dsize().as_usize() > 1 {
-        // See `glwe_hoisted_baby_rotations`: multi-digit VMP accumulates into
-        // top limbs that must not contain stale scratch contents.
-        for col in 0..res_dft.cols() {
-            module.vec_znx_dft_zero(&mut res_dft, col);
-        }
-    }
-    module.gglwe_product_dft_default(&mut res_dft, a_dft_ref, &key_ref, &mut scratch_1.borrow());
+    // Stages 1 and 2 of a keyswitch, from the already-transformed mask: VMP,
+    // inverse transform, body fold. Stage 3 is the finalize below.
+    let big_layout: GLWELayout = GLWELayout {
+        n: a.n(),
+        base2k: key.base2k(),
+        k: TorusPrecision((key_size * key.base2k().as_usize()) as u32),
+        rank: key.rank_out(),
+    };
 
-    let (mut res_big, mut scratch_2) = scratch_1.take_vec_znx_big_scratch(module, cols, key_size);
-    let res_dft_ref = res_dft.to_backend_ref();
+    scratch.scope(|scratch_phase| {
+        let (mut res_big, mut scratch_1) = scratch_phase.take_glwe_big_scratch(module, &big_layout);
+        glwe_keyswitch_from_mask_into_big_default(module, &mut res_big, mask_dft, a, key, &mut scratch_1.borrow());
+        glwe_finalize_big_default(module, baby, &res_big, &mut scratch_1.borrow());
+    });
+
+    let cols = a.rank().as_usize() + 1;
+    let mut baby_ref = baby.to_backend_mut();
     for col in 0..cols {
-        module.vec_znx_idft_apply(&mut res_big, col, &res_dft_ref, col, &mut scratch_2.borrow());
-    }
-    {
-        let a_ref = a.to_backend_ref();
-        module.vec_znx_big_add_small_assign(&mut res_big, 0, &a_ref.data, 0);
-    }
-
-    let res_big_ref = res_big.to_backend_ref();
-    let baby_base2k = baby.base2k().as_usize();
-    let a_base2k = a.base2k().as_usize();
-    {
-        let mut baby_ref = baby.to_backend_mut();
-        for col in 0..cols {
-            module.vec_znx_big_normalize(
-                &mut baby_ref.data,
-                baby_base2k,
-                0,
-                col,
-                &res_big_ref,
-                a_base2k,
-                col,
-                &mut scratch_2.borrow(),
-            );
-        }
-        for col in 0..cols {
-            module.vec_znx_automorphism_assign_backend(key.p(), &mut baby_ref.data, col, &mut scratch_2.borrow());
-        }
+        module.vec_znx_automorphism_assign_backend(key.p(), &mut baby_ref.data, col, &mut scratch.borrow());
     }
 }
 
@@ -204,7 +185,6 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
 ) where
     BE: Backend,
     M: GLWEBytesOf<BE>
-        + CnvPVecAlloc<BE>
         + Convolution<BE>
         + GaloisElement
         + GLWEAutomorphism<BE>
@@ -216,8 +196,10 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
         + VecZnxBigNormalize<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
-        + VecZnxDftZero<BE>
-        + VecZnxIdftApply<BE>,
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxIdftApply<BE>
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxDftApply<BE>,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     H: GLWEAutomorphismKeyHelper<K, BE>,
@@ -226,6 +208,20 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
     let a_size = a.size();
     let mask = msb_mask_bottom_limb(a.base2k().as_usize(), a.k().as_usize());
     let has_nonzero_rotation = cache.values.keys().any(|&rot| rot != 0);
+    // TODO: the `base2k` equality is conservative, not fundamental. Hoisting
+    // shares one transformed mask across every rotation, and
+    // `glwe_keyswitch_from_mask_into_big` needs that mask already at the key's
+    // `base2k`; on a mismatch we fall back to converting per rotation. Converting
+    // `a` once up front and then hoisting would work, and is the shape
+    // `glwe_keyswitch_into_big` already uses for its own mismatched-`base2k`
+    // branch. Left alone on purpose: the mismatch is representable but no
+    // parameter set in practice takes this branch, so the fallback exists for
+    // correctness, not for a workload. The ~6-8.5% in
+    // `docs/core-domain-generic-layouts-plan.md` is an upper bound derived from
+    // standalone keyswitch stage timings, and a baby rotation is a keyswitch
+    // *plus* the automorphisms below, so the real figure is lower still. If a
+    // parameter set ever does land here, A/B it on `ckks_linear_transformation`
+    // rather than trusting that bound.
     let (use_hoisted, key_size) = if has_nonzero_rotation {
         let key_infos = keys.automorphism_key_infos();
         (a.base2k() == key_infos.base2k(), key_infos.work_size(a.k()))
@@ -235,14 +231,12 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
 
     if use_hoisted {
         let scratch = scratch.borrow();
-        let (mut a_dft, mut loop_scratch) = scratch.take_vec_znx_dft_scratch(module, cols - 1, a_size);
-        {
-            let a_ref = a.to_backend_ref();
-            for col_i in 0..cols - 1 {
-                module.vec_znx_dft_apply(1, 0, &mut a_dft, col_i, &a_ref.data, col_i + 1);
-            }
-        }
-        let a_dft_ref = a_dft.to_backend_ref();
+        // One transform of the mask, reused by every rotation below. The typed
+        // mask makes "these are the mask columns, not a whole ciphertext"
+        // checkable instead of a comment.
+        let (mut mask_dft, mut loop_scratch) = scratch.take_vec_znx_dft_scratch(module, cols - 1, a_size);
+        glwe_mask_dft_apply_default(module, &mut mask_dft, a);
+        let mask_dft_ref = mask_dft.reborrow_backend_ref();
 
         for (&rot, prepared) in cache.values.iter_mut() {
             assert_eq!(prepared.cols(), cols, "prepared baby cache has wrong column count");
@@ -257,7 +251,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
                     &mut baby,
                     rot,
                     a,
-                    &a_dft_ref,
+                    &mask_dft_ref,
                     key_size,
                     keys,
                     &mut baby_scratch.borrow(),

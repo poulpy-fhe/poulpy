@@ -19,6 +19,7 @@ use crate::{
     },
 };
 
+#[doc(hidden)]
 pub fn glwe_tensor_decrypt_tmp_bytes_default<M, BE: Backend, A>(module: &M, infos: &A) -> usize
 where
     M: ModuleN
@@ -38,6 +39,7 @@ where
     lvl_0 + lvl_1
 }
 
+#[doc(hidden)]
 pub fn glwe_tensor_decrypt_default<M, BE: Backend, R: Data, P: Data, S0: Data, S1: Data>(
     module: &M,
     res: &GLWETensor<R, BE::ZnxWord>,

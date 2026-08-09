@@ -9,7 +9,7 @@ use std::collections::HashMap;
 
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxBigAlloc, VecZnxBigNormalize,
+        CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxBigAlloc, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxFillUniformSourceBackend, VecZnxIdftApplyTmpA,
     },
     layouts::{GaloisElement, HostDataMut, HostDataRef, Module, ScratchOwned, VecZnx},
@@ -20,12 +20,12 @@ use poulpy_hal::{
 use crate::{
     EncryptionLayout, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECopy, GLWEEncryptSk, GLWELinearTransformations,
     LinearTransformationBabySteps,
+    layouts::msb_mask_bottom_limb,
     layouts::{
         GLWE, GLWEAutomorphismKey, GLWEAutomorphismKeyLayout, GLWELayout, GLWEPlaintext, GLWESecret, GLWESecretPreparedFactory,
         GLWEToBackendRef, LWEInfos, ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory, GLWESecretPrepared},
     },
-    msb_mask_bottom_limb,
 };
 
 pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite::TestBackend>(
@@ -38,18 +38,14 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     Module<BE>: GLWEAutomorphism<BE>
         + GLWEAutomorphismKeyEncryptSk<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
-        + CnvPVecAlloc<BE>
         + Convolution<BE>
         + GLWECopy<BE>
         + GLWEEncryptSk<BE>
         + GLWELinearTransformations<BE>
         + GLWESecretPreparedFactory<BE>
         + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-        + VecZnxAlloc<BE>
-        + VecZnxBigAlloc<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxDftAlloc<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxFillUniformSourceBackend<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,

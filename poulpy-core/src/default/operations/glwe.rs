@@ -23,6 +23,8 @@ use crate::{
 };
 
 #[doc(hidden)]
+use crate::layouts::msb_mask_bottom_limb;
+
 pub trait GLWEMulConstDefault<BE: Backend> {
     fn glwe_mul_const_tmp_bytes_default<R, A, B>(&self, res: &R, a: &A, b: &B) -> usize
     where
@@ -1107,7 +1109,13 @@ pub(crate) fn glwe_tensor_apply_loop<BE, M, R, AP, BP>(
 /// Scratch bytes for [`glwe_tensor_apply_prepared_right`].
 ///
 /// `a` is prepared into a `CnvPVecL`; `b_prep` is supplied already prepared.
-pub fn glwe_tensor_apply_prepared_right_tmp_bytes<BE, M, R, A>(module: &M, res: &R, a: &A, a_size: usize, b_size: usize) -> usize
+pub(crate) fn glwe_tensor_apply_prepared_right_tmp_bytes<BE, M, R, A>(
+    module: &M,
+    res: &R,
+    a: &A,
+    a_size: usize,
+    b_size: usize,
+) -> usize
 where
     BE: Backend,
     M: Sized + ModuleN + CnvPVecBytesOf + VecZnxDftBytesOf + VecZnxBigBytesOf + Convolution<BE> + VecZnxBigNormalizeTmpBytes,
@@ -1146,7 +1154,7 @@ where
 /// against the supplied `b_prep`. `a_k` masks `a`'s bottom limb and
 /// `b_size` is the limb count of the operand `b_prep` was prepared from.
 #[allow(clippy::too_many_arguments)]
-pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
+pub(crate) fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
     module: &M,
     cnv_offset: usize,
     res: &mut R,
@@ -1216,7 +1224,7 @@ pub fn glwe_tensor_apply_prepared_right<BE, M, R, A, BP>(
 ///
 /// `b_k` masks the bottom limb of `b`. The prepared operand can then be
 /// reused across several [`glwe_tensor_apply_prepared_right`] calls.
-pub fn glwe_prepare_right<BE, M, B, BP>(module: &M, b_prep: &mut BP, b: &B, b_k: usize, scratch: &mut ScratchArena<'_, BE>)
+pub(crate) fn glwe_prepare_right<BE, M, B, BP>(module: &M, b_prep: &mut BP, b: &B, b_k: usize, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
     M: Convolution<BE>,
@@ -1236,14 +1244,6 @@ where
     let b_mask = msb_mask_bottom_limb(b_base2k, b_k);
     let b_backend = b.to_backend_ref();
     module.cnv_prepare_right(&mut b_prep.to_backend_mut(), &b_backend.data, b_mask, scratch);
-}
-
-#[inline]
-pub fn msb_mask_bottom_limb(base2k: usize, k: usize) -> i64 {
-    match k % base2k {
-        0 => !0i64,
-        r => (!0i64) << (base2k - r),
-    }
 }
 
 pub(crate) fn cnv_offset_to_limb_offset(cnv_offset: usize, base2k: usize) -> (usize, i64) {
@@ -1938,5 +1938,78 @@ where
             let mut scratch_iter = scratch.borrow();
             self.vec_znx_normalize_assign_backend(res.base2k().into(), &mut res.data, i, &mut scratch_iter);
         }
+    }
+}
+
+/// Module entry point for hoisting a right convolution operand.
+#[doc(hidden)]
+pub trait GLWEPrepareRightDefault<BE: Backend> {
+    fn glwe_prepare_right_default<B, BP>(&self, b_prep: &mut BP, b: &B, b_k: usize, scratch: &mut ScratchArena<'_, BE>)
+    where
+        B: GLWEToBackendRef<BE> + GLWEInfos,
+        BP: CnvPVecRToBackendMut<BE>;
+}
+
+impl<BE: Backend> GLWEPrepareRightDefault<BE> for Module<BE>
+where
+    Self: Convolution<BE>,
+{
+    fn glwe_prepare_right_default<B, BP>(&self, b_prep: &mut BP, b: &B, b_k: usize, scratch: &mut ScratchArena<'_, BE>)
+    where
+        B: GLWEToBackendRef<BE> + GLWEInfos,
+        BP: CnvPVecRToBackendMut<BE>,
+    {
+        glwe_prepare_right(self, b_prep, b, b_k, scratch)
+    }
+}
+
+/// Module entry point for a tensor product against a pre-hoisted right operand.
+#[doc(hidden)]
+pub trait GLWETensorApplyPreparedRightDefault<BE: Backend> {
+    #[allow(clippy::too_many_arguments)]
+    fn glwe_tensor_apply_prepared_right_default<R, A, BP>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &A,
+        b_prep: &BP,
+        b_size: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        BP: CnvPVecRToBackendRef<BE>;
+}
+
+impl<BE: Backend> GLWETensorApplyPreparedRightDefault<BE> for Module<BE>
+where
+    Self: Sized
+        + ModuleN
+        + CnvPVecBytesOf
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxBigNormalize<BE>
+        + Convolution<BE>
+        + VecZnxSubAssignBackend<BE>
+        + VecZnxAddAssignBackend<BE>
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxCopyBackend<BE>
+        + VecZnxNegateBackend<BE>,
+{
+    fn glwe_tensor_apply_prepared_right_default<R, A, BP>(
+        &self,
+        cnv_offset: usize,
+        res: &mut R,
+        a: &A,
+        b_prep: &BP,
+        b_size: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        BP: CnvPVecRToBackendRef<BE>,
+    {
+        glwe_tensor_apply_prepared_right(self, cnv_offset, res, a, b_prep, b_size, scratch)
     }
 }

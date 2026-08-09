@@ -1,13 +1,15 @@
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftBackendRef};
 
 use crate::{
-    api::{GGLWEKeyswitch, GGSWKeyswitch, GLWEKeyswitch, LWEKeyswitch},
+    api::{GGLWEKeyswitch, GGSWKeyswitch, GLWEFinalizeBig, GLWEKeyswitch, GLWEKeyswitchIntoBig, LWEKeyswitch},
     layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEInfos,
-        GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEToBackendMut, LWEToBackendRef,
+        GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GGSWInfos, GGSWToBackendMut, GGSWToBackendRef, GLWEBigToBackendMut,
+        GLWEBigToBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, LWEToBackendMut, LWEToBackendRef,
         prepared::{GGLWEPreparedToBackendRef, GGLWEToGGSWKeyPreparedToBackendRef},
     },
-    oep::{GGLWEKeyswitchImpl, GGSWKeyswitchImpl, GLWEKeyswitchImpl, LWEKeyswitchImpl},
+    oep::{
+        GGLWEKeyswitchImpl, GGSWKeyswitchImpl, GLWEFinalizeBigImpl, GLWEKeyswitchImpl, GLWEKeyswitchIntoBigImpl, LWEKeyswitchImpl,
+    },
 };
 
 macro_rules! impl_keyswitching_delegate {
@@ -48,6 +50,75 @@ impl_keyswitching_delegate!(
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
         BE::glwe_keyswitch_assign(self, res, key, scratch)
+    }
+);
+
+impl_keyswitching_delegate!(
+    GLWEKeyswitchIntoBig<BE>,
+    [BE: Backend + GLWEKeyswitchIntoBigImpl<BE>],
+    fn glwe_keyswitch_into_big_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        K: GGLWEInfos,
+    {
+        BE::glwe_keyswitch_into_big_tmp_bytes(self, res_infos, a_infos, key_infos)
+    }
+
+    fn glwe_keyswitch_into_big<R, A, K>(&self, res_big: &mut R, a: &A, key: &K, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GLWEBigToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        BE::glwe_keyswitch_into_big(self, res_big, a, key, scratch)
+    }
+
+    fn glwe_mask_dft_apply<A>(&self, res: &mut VecZnxDftBackendMut<'_, BE>, a: &A)
+    where
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+    {
+        BE::glwe_mask_dft_apply(self, res, a)
+    }
+
+    fn glwe_keyswitch_from_mask_into_big_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+    where
+        R: GLWEInfos,
+        A: GLWEInfos,
+        K: GGLWEInfos,
+    {
+        BE::glwe_keyswitch_from_mask_into_big_tmp_bytes(self, res_infos, a_infos, key_infos)
+    }
+
+    fn glwe_keyswitch_from_mask_into_big<R, A, K>(
+        &self,
+        res_big: &mut R,
+        mask_dft: &VecZnxDftBackendRef<'_, BE>,
+        a: &A,
+        key: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEBigToBackendMut<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + GLWEInfos,
+        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        BE::glwe_keyswitch_from_mask_into_big(self, res_big, mask_dft, a, key, scratch)
+    }
+);
+
+impl_keyswitching_delegate!(
+    GLWEFinalizeBig<BE>,
+    [BE: Backend + GLWEFinalizeBigImpl<BE>],
+    fn glwe_finalize_big_tmp_bytes(&self) -> usize {
+        BE::glwe_finalize_big_tmp_bytes(self)
+    }
+
+    fn glwe_finalize_big_into<R, A>(&self, res: &mut R, a_big: &A, scratch: &mut ScratchArena<'_, BE>)
+    where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        A: GLWEBigToBackendRef<BE> + GLWEInfos,
+    {
+        BE::glwe_finalize_big_into(self, res, a_big, scratch)
     }
 );
 

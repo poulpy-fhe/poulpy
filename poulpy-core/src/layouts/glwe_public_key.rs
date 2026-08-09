@@ -1,24 +1,39 @@
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, VecZnx, WriterTo, ZnxWord};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, VecZnx, VecZnxInfos, WriterTo, ZnxWord};
 
 use crate::{
     GetDistribution, GetDistributionMut,
     dist::Distribution,
-    layouts::{Base2K, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, TorusPrecision},
+    layouts::{Base2K, Degree, GLWE, GLWECore, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank, TorusPrecision},
 };
 
-#[derive(PartialEq, Eq)]
-pub struct GLWEPublicKey<D: Data, W: ZnxWord> {
-    pub(crate) key: GLWE<D, W>,
+/// A GLWE public key, generic over the HAL payload holding its polynomials.
+///
+/// `P` selects the computational domain: [`GLWEPublicKey`] is the
+/// coefficient-domain spelling (payload `VecZnx`) and
+/// [`GLWEPublicKeyPrepared`](crate::layouts::GLWEPublicKeyPrepared) the
+/// prepared one (payload `VecZnxDft`); both are aliases of this struct.
+///
+/// It is a [`GLWECore`] plus the distribution the key was sampled from, which
+/// public-key encryption needs and a ciphertext does not carry.
+#[derive(PartialEq)]
+pub struct GLWEPublicKeyCore<P> {
+    pub(crate) key: GLWECore<P>,
     pub(crate) dist: Distribution,
 }
 
-impl<D: HostDataMut, W: ZnxWord> GetDistributionMut for GLWEPublicKey<D, W> {
+/// Coefficient-domain GLWE public key.
+pub type GLWEPublicKey<D, W> = GLWEPublicKeyCore<VecZnx<D, W>>;
+
+// `Eq` stays coefficient-domain only, mirroring `GLWECore`.
+impl<D: Data, W: ZnxWord> Eq for GLWEPublicKeyCore<VecZnx<D, W>> {}
+
+impl<P> GetDistributionMut for GLWEPublicKeyCore<P> {
     fn dist_mut(&mut self) -> &mut Distribution {
         &mut self.dist
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> GetDistribution for GLWEPublicKey<D, W> {
+impl<P> GetDistribution for GLWEPublicKeyCore<P> {
     fn dist(&self) -> &Distribution {
         &self.dist
     }
@@ -32,7 +47,9 @@ pub struct GLWEPublicKeyLayout {
     pub rank: Rank,
 }
 
-impl<D: Data, W: ZnxWord> LWEInfos for GLWEPublicKey<D, W> {
+/// Delegated wholesale to the wrapped key: a public key advertises exactly the
+/// shape of the ciphertext it is.
+impl<P: VecZnxInfos> LWEInfos for GLWEPublicKeyCore<P> {
     fn base2k(&self) -> Base2K {
         self.key.base2k()
     }
@@ -50,7 +67,7 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWEPublicKey<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GLWEPublicKey<D, W> {
+impl<P: VecZnxInfos> GLWEInfos for GLWEPublicKeyCore<P> {
     fn rank(&self) -> Rank {
         self.key.rank()
     }

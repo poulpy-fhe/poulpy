@@ -17,6 +17,7 @@ use crate::{
     oep::{ConversionDefault, GGSWKeyswitchDefault, GLWEKeyswitchDefault},
 };
 
+#[doc(hidden)]
 pub fn ggsw_keyswitch_tmp_bytes_default<BE, M, R, A, K, T>(
     module: &M,
     res_infos: &R,
@@ -46,6 +47,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
+#[doc(hidden)]
 pub fn ggsw_keyswitch_default<BE, M, R, A, K, T>(
     module: &M,
     res: &mut R,
@@ -83,6 +85,7 @@ pub fn ggsw_keyswitch_default<BE, M, R, A, K, T>(
     module.ggsw_expand_row_default(&mut res_backend, tsk, scratch)
 }
 
+#[doc(hidden)]
 pub fn ggsw_keyswitch_assign_default<BE, M, R, K, T>(
     module: &M,
     res: &mut R,

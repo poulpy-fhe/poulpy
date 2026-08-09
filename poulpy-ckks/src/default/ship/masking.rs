@@ -3,8 +3,8 @@
 
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::{
+    layouts::msb_mask_bottom_limb,
     layouts::{GLWEToBackendMut, GLWEToBackendRef, LWEInfos},
-    msb_mask_bottom_limb,
 };
 use poulpy_hal::{
     api::{

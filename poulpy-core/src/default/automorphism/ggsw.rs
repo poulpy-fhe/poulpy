@@ -14,6 +14,7 @@ use crate::{
     oep::{ConversionDefault, GGSWAutomorphismDefault, GLWEAutomorphismDefault},
 };
 
+#[doc(hidden)]
 pub fn ggsw_automorphism_tmp_bytes_default<BE, M, R, A, K, T>(
     module: &M,
     res_infos: &R,
@@ -35,6 +36,7 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
+#[doc(hidden)]
 pub fn ggsw_automorphism_default<BE, M, R, A, K, T>(
     module: &M,
     res: &mut R,
@@ -63,6 +65,7 @@ pub fn ggsw_automorphism_default<BE, M, R, A, K, T>(
     module.ggsw_expand_row_default(&mut res.to_backend_mut(), tsk, scratch);
 }
 
+#[doc(hidden)]
 pub fn ggsw_automorphism_assign_default<BE, M, R, K, T>(
     module: &M,
     res: &mut R,

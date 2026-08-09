@@ -11,7 +11,7 @@ use crate::layouts::{
     Base2K, Degree, Dnum, Dsize, GGSWAtViewRef, GLWE, GLWEInfos, GLWEViewMut, GLWEViewRef, LWEInfos, Rank, TorusPrecision,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use poulpy_hal::layouts::ZnxWord;
+use poulpy_hal::layouts::{MatZnxInfos, ZnxWord};
 
 use std::{
     fmt,
@@ -117,13 +117,27 @@ impl GGLWEInfos for GGLWELayout {
     }
 }
 
-#[derive(PartialEq, Eq, Clone)]
-pub struct GGLWE<D: Data, W: ZnxWord> {
-    pub(crate) data: MatZnx<D, W>,
+/// A GGLWE key/ciphertext, generic over the HAL payload holding its gadget
+/// matrix.
+///
+/// `P` selects the computational domain: `GGLWE<D, W>` is the coefficient-domain
+/// spelling (payload `MatZnx`) and
+/// [`GGLWEPrepared`](crate::layouts::GGLWEPrepared) the prepared one (payload
+/// `VmpPMat`); both are aliases of this struct.
+#[derive(PartialEq, Clone)]
+pub struct GGLWECore<P> {
+    pub(crate) data: P,
     pub(crate) k_aux: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) dsize: Dsize,
 }
+
+/// Coefficient-domain GGLWE.
+pub type GGLWE<D, W> = GGLWECore<MatZnx<D, W>>;
+
+// Coefficient-domain only, matching the pre-`GGLWECore` surface: the prepared
+// layouts carry `PartialEq` without `Eq` on purpose.
+impl<D: Data, W: ZnxWord> Eq for GGLWECore<MatZnx<D, W>> {}
 
 pub struct GGLWEBackendRef<'a, BE: Backend + 'a> {
     inner: GGLWE<BE::BufRef<'a>, BE::ZnxWord>,
@@ -229,7 +243,7 @@ impl<'a, BE: Backend + 'a> GGLWEToBackendMut<BE> for GGLWEBackendMut<'a, BE> {
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEInfos for GGLWE<D, W> {
+impl<P: MatZnxInfos> LWEInfos for GGLWECore<P> {
     fn base2k(&self) -> Base2K {
         self.base2k
     }
@@ -247,13 +261,16 @@ impl<D: Data, W: ZnxWord> LWEInfos for GGLWE<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GGLWE<D, W> {
+impl<P: MatZnxInfos> GLWEInfos for GGLWECore<P> {
     fn rank(&self) -> Rank {
         self.rank_out()
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWEInfos for GGLWE<D, W> {
+// The two matrix payloads read their dimensions the same way, but note the
+// asymmetry the `MatZnxInfos` split exists to make expressible: `rank_in` is
+// `cols_in` with no `-1`, while `rank_out` is `cols_out - 1`.
+impl<P: MatZnxInfos> GGLWEInfos for GGLWECore<P> {
     fn k_aux(&self) -> TorusPrecision {
         self.k_aux
     }

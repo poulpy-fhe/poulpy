@@ -35,4 +35,4 @@ pub use eval::{
     glwe_prepare_linear_transformation_baby_steps_tmp_bytes_default,
 };
 pub use prepare::{glwe_prepare_linear_transformation_rhs_default, glwe_prepare_linear_transformation_rhs_tmp_bytes_default};
-pub use prepared_giants::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft};
+pub use prepared_giants::{DiagonalProd, GLWEStreamedProdDefault};

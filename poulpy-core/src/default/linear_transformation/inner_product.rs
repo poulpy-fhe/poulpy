@@ -15,8 +15,8 @@ use poulpy_hal::{
 
 use crate::{
     LinearTransformationGiantStep,
-    default::operations::msb_mask_bottom_limb,
     layouts::IntPolyInfos,
+    layouts::msb_mask_bottom_limb,
     layouts::{GLWEInfos, GLWEToBackendRef, prepared::PreparedDiagonal},
 };
 

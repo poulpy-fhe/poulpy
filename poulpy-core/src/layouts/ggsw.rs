@@ -12,7 +12,7 @@ use std::{
 
 use crate::api::ModuleTransfer;
 use crate::layouts::{Base2K, Degree, Dnum, Dsize, GLWE, GLWEInfos, GLWEViewMut, GLWEViewRef, LWEInfos, Rank, TorusPrecision};
-use poulpy_hal::layouts::ZnxWord;
+use poulpy_hal::layouts::{MatZnxInfos, ZnxWord};
 
 /// Trait providing the parameter accessors for a GGSW (Gadget GSW) ciphertext.
 ///
@@ -118,13 +118,24 @@ impl GGSWInfos for GGSWLayout {
 /// Used as the left operand of external products.
 ///
 /// `D: Data` is the storage backend (e.g. `Vec<u8>`, `&[u8]`, `&mut [u8]`).
-#[derive(PartialEq, Eq, Clone)]
-pub struct GGSW<D: Data, W: ZnxWord> {
-    pub(crate) data: MatZnx<D, W>,
+/// A GGSW ciphertext, generic over the HAL payload holding its gadget matrix.
+///
+/// `P` selects the computational domain: `GGSW<D, W>` is the coefficient-domain
+/// spelling (payload `MatZnx`) and [`GGSWPrepared`](crate::layouts::GGSWPrepared)
+/// the prepared one (payload `VmpPMat`); both are aliases of this struct.
+#[derive(PartialEq, Clone)]
+pub struct GGSWCore<P> {
+    pub(crate) data: P,
     pub(crate) k_aux: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) dsize: Dsize,
 }
+
+/// Coefficient-domain GGSW.
+pub type GGSW<D, W> = GGSWCore<MatZnx<D, W>>;
+
+// Coefficient-domain only; see the note on `GGLWECore`.
+impl<D: Data, W: ZnxWord> Eq for GGSWCore<MatZnx<D, W>> {}
 
 pub struct GGSWBackendRef<'a, BE: Backend + 'a> {
     inner: GGSW<BE::BufRef<'a>, BE::ZnxWord>,
@@ -315,7 +326,7 @@ impl<'a, BE: Backend + 'a> GGSWAtViewRef<BE> for &GGSWBackendRef<'a, BE> {
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEInfos for GGSW<D, W> {
+impl<P: MatZnxInfos> LWEInfos for GGSWCore<P> {
     fn n(&self) -> Degree {
         Degree(self.data.n() as u32)
     }
@@ -333,13 +344,13 @@ impl<D: Data, W: ZnxWord> LWEInfos for GGSW<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GGSW<D, W> {
+impl<P: MatZnxInfos> GLWEInfos for GGSWCore<P> {
     fn rank(&self) -> Rank {
         Rank(self.data.cols_out() as u32 - 1)
     }
 }
 
-impl<D: Data, W: ZnxWord> GGSWInfos for GGSW<D, W> {
+impl<P: MatZnxInfos> GGSWInfos for GGSWCore<P> {
     fn k_aux(&self) -> TorusPrecision {
         self.k_aux
     }

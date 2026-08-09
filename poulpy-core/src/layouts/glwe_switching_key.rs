@@ -4,11 +4,11 @@ use poulpy_hal::{
 };
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos,
+    Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut, GGLWEBackendRef, GGLWECore, GGLWEInfos,
     GGLWEToBackendMut, GGLWEToBackendRef, GLWE, GLWEInfos, GLWEViewMut, GLWEViewRef, LWEInfos, Rank, TorusPrecision,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use poulpy_hal::layouts::ZnxWord;
+use poulpy_hal::layouts::{MatZnx, MatZnxInfos, ZnxWord};
 
 use std::fmt;
 
@@ -74,19 +74,33 @@ impl GGLWEInfos for GLWESwitchingKeyLayout {
     }
 }
 
-/// GLWE key-switching key.
+/// GLWE key-switching key, generic over the HAL payload holding its
+/// polynomials.
 ///
-/// Wraps a [`GGLWE`] and additionally stores the polynomial degrees of
+/// Wraps a [`GGLWECore`] and additionally stores the polynomial degrees of
 /// the input and output secret keys (`input_degree` / `output_degree`).
 ///
-/// `D: Data` is the backing storage type (e.g. `Vec<u8>`, `&[u8]`,
-/// `&mut [u8]`).
-#[derive(PartialEq, Eq, Clone)]
-pub struct GLWESwitchingKey<D: Data, W: ZnxWord> {
-    pub(crate) key: GGLWE<D, W>,
+/// `P` selects the computational domain: [`GLWESwitchingKey`] is the
+/// coefficient-domain spelling (payload `MatZnx`) and
+/// [`GLWESwitchingKeyPrepared`](crate::layouts::GLWESwitchingKeyPrepared) the
+/// prepared one (payload `VmpPMat`); both are aliases of this struct. The
+/// wrapper stays nominal in either domain, so a bare `GGLWECore` still cannot
+/// stand in for a switching key.
+#[derive(PartialEq, Clone)]
+pub struct GLWESwitchingKeyCore<P> {
+    pub(crate) key: GGLWECore<P>,
     pub(crate) input_degree: Degree,  // Degree of sk_in
     pub(crate) output_degree: Degree, // Degree of sk_out
 }
+
+/// Coefficient-domain GLWE key-switching key.
+///
+/// `D: Data` is the backing storage type (e.g. `Vec<u8>`, `&[u8]`,
+/// `&mut [u8]`).
+pub type GLWESwitchingKey<D, W> = GLWESwitchingKeyCore<MatZnx<D, W>>;
+
+// `Eq` stays coefficient-domain only, mirroring `GGLWECore`.
+impl<D: Data, W: ZnxWord> Eq for GLWESwitchingKeyCore<MatZnx<D, W>> {}
 
 /// Provides read access to the input and output secret-key degrees
 /// stored in a [`GLWESwitchingKey`].
@@ -97,7 +111,7 @@ pub trait GLWESwitchingKeyDegrees {
     fn output_degree(&self) -> &Degree;
 }
 
-impl<D: HostDataRef, W: ZnxWord> GLWESwitchingKeyDegrees for GLWESwitchingKey<D, W> {
+impl<P> GLWESwitchingKeyDegrees for GLWESwitchingKeyCore<P> {
     fn output_degree(&self) -> &Degree {
         &self.output_degree
     }
@@ -116,7 +130,7 @@ pub trait GLWESwitchingKeyDegreesMut {
     fn output_degree(&mut self) -> &mut Degree;
 }
 
-impl<D: HostDataMut, W: ZnxWord> GLWESwitchingKeyDegreesMut for GLWESwitchingKey<D, W> {
+impl<P> GLWESwitchingKeyDegreesMut for GLWESwitchingKeyCore<P> {
     fn output_degree(&mut self) -> &mut Degree {
         &mut self.output_degree
     }
@@ -126,7 +140,9 @@ impl<D: HostDataMut, W: ZnxWord> GLWESwitchingKeyDegreesMut for GLWESwitchingKey
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEInfos for GLWESwitchingKey<D, W> {
+/// Delegated wholesale to the wrapped gadget key; the wrapper adds only the
+/// secret-key degrees, which are not layout information.
+impl<P: MatZnxInfos> LWEInfos for GLWESwitchingKeyCore<P> {
     fn n(&self) -> Degree {
         self.key.n()
     }
@@ -144,13 +160,13 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWESwitchingKey<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GLWESwitchingKey<D, W> {
+impl<P: MatZnxInfos> GLWEInfos for GLWESwitchingKeyCore<P> {
     fn rank(&self) -> Rank {
         self.rank_out()
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWEInfos for GLWESwitchingKey<D, W> {
+impl<P: MatZnxInfos> GGLWEInfos for GLWESwitchingKeyCore<P> {
     fn k_aux(&self) -> TorusPrecision {
         self.key.k_aux()
     }

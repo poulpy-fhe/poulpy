@@ -1,63 +1,16 @@
-use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena, VmpPMat};
 
 use crate::layouts::prepared::{GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef};
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedFactory, GGLWEToBackendRef,
-    GLWEInfos, LWEInfos, Rank, TorusPrecision,
+    Base2K, Dnum, Dsize, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut, GGLWEPreparedFactory, GGLWEToBackendRef,
+    GLWETensorKeyCore, Rank, TorusPrecision,
 };
 
 /// DFT-domain (prepared) variant of a GLWE tensor key.
 ///
-/// A newtype wrapper around [`GGLWEPrepared`] for tensor operations.
-/// Tied to a specific backend via `B: Backend`.
-#[derive(PartialEq)]
-pub struct GLWETensorKeyPrepared<D: Data, B: Backend>(pub(crate) GGLWEPrepared<D, B>);
-
-impl<D: Data, B: Backend> LWEInfos for GLWETensorKeyPrepared<D, B> {
-    fn n(&self) -> Degree {
-        self.0.n()
-    }
-
-    fn base2k(&self) -> Base2K {
-        self.0.base2k()
-    }
-
-    fn max_size(&self) -> usize {
-        self.0.max_size()
-    }
-
-    fn k(&self) -> TorusPrecision {
-        self.0.k()
-    }
-}
-
-impl<D: Data, B: Backend> GLWEInfos for GLWETensorKeyPrepared<D, B> {
-    fn rank(&self) -> Rank {
-        self.rank_out()
-    }
-}
-
-impl<D: Data, B: Backend> GGLWEInfos for GLWETensorKeyPrepared<D, B> {
-    fn k_aux(&self) -> TorusPrecision {
-        self.0.k_aux()
-    }
-
-    fn rank_in(&self) -> Rank {
-        self.0.rank_in()
-    }
-
-    fn rank_out(&self) -> Rank {
-        self.0.rank_out()
-    }
-
-    fn dsize(&self) -> Dsize {
-        self.0.dsize()
-    }
-
-    fn dnum(&self) -> Dnum {
-        self.0.dnum()
-    }
-}
+/// This is [`GLWETensorKeyCore`] over a `VmpPMat` payload; the `Infos` traits
+/// come from the payload-generic impls there.
+pub type GLWETensorKeyPrepared<D, B> = GLWETensorKeyCore<VmpPMat<D, <B as Backend>::DftWord, B>>;
 
 pub trait GLWETensorKeyPreparedFactory<B: Backend>
 where
@@ -72,7 +25,7 @@ where
         rank: Rank,
     ) -> GLWETensorKeyPrepared<B::OwnedBuf, B> {
         let pairs: u32 = (((rank.as_u32() + 1) * rank.as_u32()) >> 1).max(1);
-        GLWETensorKeyPrepared(self.gglwe_prepared_alloc(base2k, dnum, dsize, k_aux, Rank(pairs), rank))
+        GLWETensorKeyCore(self.gglwe_prepared_alloc(base2k, dnum, dsize, k_aux, Rank(pairs), rank))
     }
 
     fn alloc_tensor_key_prepared_from_infos<A>(&self, infos: &A) -> GLWETensorKeyPrepared<B::OwnedBuf, B>
@@ -141,7 +94,7 @@ where
     GGLWEPrepared<D, B>: GGLWEPreparedToBackendRef<B>,
 {
     fn to_backend_ref(&self) -> GLWETensorKeyPreparedBackendRef<'_, B> {
-        GLWETensorKeyPrepared(self.0.to_backend_ref())
+        GLWETensorKeyCore(self.0.to_backend_ref())
     }
 }
 
@@ -154,7 +107,7 @@ where
     GGLWEPrepared<D, B>: GGLWEPreparedToBackendMut<B>,
 {
     fn to_backend_mut(&mut self) -> GLWETensorKeyPreparedBackendMut<'_, B> {
-        GLWETensorKeyPrepared(self.0.to_backend_mut())
+        GLWETensorKeyCore(self.0.to_backend_mut())
     }
 }
 

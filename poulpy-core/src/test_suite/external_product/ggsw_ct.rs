@@ -21,12 +21,8 @@ where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GGSWEncryptSk<BE>
-        + GGSWExternalProduct<BE>
-        + GLWESecretPreparedFactory<BE>
-        + GGSWPreparedFactory<BE>
-        + VecZnxRotateAssignBackend<BE>
-        + GGSWNoise<BE>,
+    Module<BE>:
+        GGSWEncryptSk<BE> + GGSWExternalProduct<BE> + GLWESecretPreparedFactory<BE> + GGSWPreparedFactory<BE> + GGSWNoise<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;
@@ -184,12 +180,8 @@ where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: GGSWEncryptSk<BE>
-        + GGSWExternalProduct<BE>
-        + GLWESecretPreparedFactory<BE>
-        + GGSWPreparedFactory<BE>
-        + VecZnxRotateAssignBackend<BE>
-        + GGSWNoise<BE>,
+    Module<BE>:
+        GGSWEncryptSk<BE> + GGSWExternalProduct<BE> + GLWESecretPreparedFactory<BE> + GGSWPreparedFactory<BE> + GGSWNoise<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let base2k: usize = params.base2k;

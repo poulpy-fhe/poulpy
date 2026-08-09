@@ -149,6 +149,7 @@ where
 
 // === Free-function defaults for GLWEExternalProductDefault ===
 
+#[doc(hidden)]
 pub fn glwe_external_product_dft_fill_tmp_bytes_default<BE, M, A, G>(module: &M, a_infos: &A, ggsw_infos: &G) -> usize
 where
     BE: Backend,
@@ -170,6 +171,7 @@ where
     lvl_0.next_multiple_of(align) + lvl_1.next_multiple_of(align) + lvl_2
 }
 
+#[doc(hidden)]
 pub fn glwe_external_product_tmp_bytes_default<BE, M, R, A, G>(module: &M, res_infos: &R, a_infos: &A, ggsw_infos: &G) -> usize
 where
     BE: Backend,
@@ -212,6 +214,7 @@ where
     lvl_0.next_multiple_of(align) + lvl_1.max(lvl_2)
 }
 
+#[doc(hidden)]
 pub fn glwe_external_product_default<BE, M, R, A, G>(module: &M, res: &mut R, a: &A, ggsw: &G, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
@@ -290,6 +293,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn glwe_external_product_assign_default<BE, M, R, G>(module: &M, res: &mut R, ggsw: &G, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,

@@ -20,11 +20,10 @@ use crate::{
     },
 };
 
-fn write_vec_znx_bytes(out: &mut Vec<u8>, n: u64, cols: u64, size: u64, max_size: u64, coeffs: &[i64]) {
+fn write_vec_znx_bytes(out: &mut Vec<u8>, n: u64, cols: u64, size: u64, coeffs: &[i64]) {
     out.write_u64::<LittleEndian>(n).unwrap();
     out.write_u64::<LittleEndian>(cols).unwrap();
     out.write_u64::<LittleEndian>(size).unwrap();
-    out.write_u64::<LittleEndian>(max_size).unwrap();
 
     let mut raw = Vec::with_capacity(std::mem::size_of_val(coeffs));
     for coeff in coeffs {
@@ -50,14 +49,21 @@ where
     let mut bytes = Vec::new();
 
     bytes.write_u32::<LittleEndian>(32).unwrap();
-    write_vec_znx_bytes(&mut bytes, 1, 1, 1, 1, &[123]);
-    write_vec_znx_bytes(&mut bytes, 2, 1, 2, 2, &[1, 2, 3, 4]);
+    write_vec_znx_bytes(&mut bytes, 1, 1, 1, &[123]);
+    write_vec_znx_bytes(&mut bytes, 2, 1, 2, &[1, 2, 3, 4]);
 
     let err = lwe
         .read_from(&mut &bytes[..])
         .expect_err("malformed LWE body/mask shape must be rejected");
 
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidData);
+    // Both `VecZnx` payloads are individually well-formed, so the rejection has
+    // to come from the LWE-level body/mask agreement check, not from a length
+    // mismatch inside either payload.
+    assert!(
+        err.to_string().contains("body and mask sizes must match"),
+        "expected the LWE shape check to reject, got: {err}"
+    );
 }
 
 pub fn test_lwe_secret_from_glwe_secret_flattens_rank_and_preserves_metadata<BE: crate::test_suite::TestBackend>(

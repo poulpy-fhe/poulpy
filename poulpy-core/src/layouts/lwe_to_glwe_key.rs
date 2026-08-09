@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::ZnxWord;
+use poulpy_hal::layouts::{MatZnx, MatZnxInfos, ZnxWord};
 use std::fmt;
 
 use poulpy_hal::{
@@ -8,8 +8,8 @@ use poulpy_hal::{
 
 use crate::layouts::{
     Base2K, Degree, Dnum, Dsize, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos, GGLWEToBackendMut,
-    GGLWEToBackendRef, GLWEInfos, GLWESwitchingKey, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, GLWEViewMut,
-    GLWEViewRef, LWEInfos, Rank, TorusPrecision,
+    GGLWEToBackendRef, GLWEInfos, GLWESwitchingKey, GLWESwitchingKeyCore, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut,
+    GLWEViewMut, GLWEViewRef, LWEInfos, Rank, TorusPrecision,
 };
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
@@ -67,10 +67,20 @@ impl GGLWEInfos for LWEToGLWEKeyLayout {
     }
 }
 
-#[derive(PartialEq, Eq, Clone)]
-pub struct LWEToGLWEKey<D: Data, W: ZnxWord>(pub(crate) GLWESwitchingKey<D, W>);
+/// `P` selects the computational domain: [`LWEToGLWEKey`] is the coefficient-domain
+/// spelling (payload `MatZnx`) and [`LWEToGLWEKeyPrepared`](crate::layouts::LWEToGLWEKeyPrepared)
+/// the prepared one (payload `VmpPMat`); both are aliases of this struct. The
+/// wrapper stays nominal in either domain.
+#[derive(PartialEq, Clone)]
+pub struct LWEToGLWEKeyCore<P>(pub(crate) GLWESwitchingKeyCore<P>);
 
-impl<D: Data, W: ZnxWord> LWEInfos for LWEToGLWEKey<D, W> {
+/// Coefficient-domain LWE→GLWE key-switching key.
+pub type LWEToGLWEKey<D, W> = LWEToGLWEKeyCore<MatZnx<D, W>>;
+
+// `Eq` stays coefficient-domain only, mirroring `GGLWECore`.
+impl<D: Data, W: ZnxWord> Eq for LWEToGLWEKeyCore<MatZnx<D, W>> {}
+
+impl<P: MatZnxInfos> LWEInfos for LWEToGLWEKeyCore<P> {
     fn base2k(&self) -> Base2K {
         self.0.base2k()
     }
@@ -88,12 +98,12 @@ impl<D: Data, W: ZnxWord> LWEInfos for LWEToGLWEKey<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for LWEToGLWEKey<D, W> {
+impl<P: MatZnxInfos> GLWEInfos for LWEToGLWEKeyCore<P> {
     fn rank(&self) -> Rank {
         self.rank_out()
     }
 }
-impl<D: Data, W: ZnxWord> GGLWEInfos for LWEToGLWEKey<D, W> {
+impl<P: MatZnxInfos> GGLWEInfos for LWEToGLWEKeyCore<P> {
     fn k_aux(&self) -> TorusPrecision {
         self.0.k_aux()
     }
@@ -161,7 +171,7 @@ impl<W: ZnxWord> LWEToGLWEKey<Vec<u8>, W> {
     }
 
     pub(crate) fn alloc(n: Degree, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision, rank_out: Rank) -> Self {
-        LWEToGLWEKey(GLWESwitchingKey::alloc(n, base2k, dnum, Dsize(1), k_aux, Rank(1), rank_out))
+        LWEToGLWEKeyCore(GLWESwitchingKey::alloc(n, base2k, dnum, Dsize(1), k_aux, Rank(1), rank_out))
     }
 
     pub fn bytes_of_from_infos<A>(infos: &A) -> usize
@@ -182,7 +192,7 @@ impl_gglwe_to_backend_for_field!(LWEToGLWEKey<D, BE::ZnxWord>, 0, GLWESwitchingK
 
 impl_gglwe_at_view_for_field!(LWEToGLWEKey<BE::OwnedBuf, BE::ZnxWord>; 0.key);
 
-impl<D: HostDataMut, W: ZnxWord> GLWESwitchingKeyDegreesMut for LWEToGLWEKey<D, W> {
+impl<P> GLWESwitchingKeyDegreesMut for LWEToGLWEKeyCore<P> {
     fn input_degree(&mut self) -> &mut Degree {
         &mut self.0.input_degree
     }
@@ -192,7 +202,7 @@ impl<D: HostDataMut, W: ZnxWord> GLWESwitchingKeyDegreesMut for LWEToGLWEKey<D, 
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> GLWESwitchingKeyDegrees for LWEToGLWEKey<D, W> {
+impl<P> GLWESwitchingKeyDegrees for LWEToGLWEKeyCore<P> {
     fn input_degree(&self) -> &Degree {
         &self.0.input_degree
     }

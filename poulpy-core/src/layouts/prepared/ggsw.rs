@@ -2,66 +2,24 @@ use poulpy_hal::layouts::VmpPMatToBackendMut;
 use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
     api::{VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes, VmpZero},
-    layouts::{Backend, Data, HostDataRef, Module, ScratchArena, VmpPMat},
+    layouts::{Backend, HostDataRef, Module, ScratchArena, VmpPMat},
 };
 
-use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGSWInfos, GGSWToBackendRef, GLWEInfos, GetDegree, LWEInfos, Rank, TorusPrecision,
-};
+use crate::layouts::GGSWCore;
+use crate::layouts::{Base2K, Dnum, Dsize, GGSWInfos, GGSWToBackendRef, GetDegree, LWEInfos, Rank, TorusPrecision};
 
 /// DFT-domain (prepared) variant of [`GGSW`].
 ///
 /// Stores the GGSW gadget matrix with polynomials in the frequency domain
 /// of the backend's DFT/NTT transform, enabling O(N log N) polynomial
 /// operations. Tied to a specific backend via `B: Backend`.
-#[derive(PartialEq)]
-pub struct GGSWPrepared<D: Data, B: Backend> {
-    pub(crate) data: VmpPMat<D, B::DftWord, B>,
-    pub(crate) k_aux: TorusPrecision,
-    pub(crate) base2k: Base2K,
-    pub(crate) dsize: Dsize,
-}
+/// This is [`GGSWCore`] over a `VmpPMat` payload: the same semantic object as a
+/// coefficient-domain GGSW, in the prepared domain. `LWEInfos` / `GLWEInfos` /
+/// `GGSWInfos` all come from the payload-generic impls on `GGSWCore`.
+pub type GGSWPrepared<D, B> = GGSWCore<VmpPMat<D, <B as Backend>::DftWord, B>>;
 
 pub type GGSWPreparedBackendRef<'a, B> = GGSWPrepared<<B as Backend>::BufRef<'a>, B>;
 pub type GGSWPreparedBackendMut<'a, B> = GGSWPrepared<<B as Backend>::BufMut<'a>, B>;
-
-impl<D: Data, B: Backend> LWEInfos for GGSWPrepared<D, B> {
-    fn n(&self) -> Degree {
-        Degree(self.data.n() as u32)
-    }
-
-    fn base2k(&self) -> Base2K {
-        self.base2k
-    }
-
-    fn max_size(&self) -> usize {
-        crate::layouts::key_size(self.base2k, self.dnum(), self.dsize, self.k_aux)
-    }
-
-    fn k(&self) -> TorusPrecision {
-        crate::layouts::key_k(self.base2k, self.dnum(), self.dsize, self.k_aux)
-    }
-}
-
-impl<D: Data, B: Backend> GLWEInfos for GGSWPrepared<D, B> {
-    fn rank(&self) -> Rank {
-        Rank(self.data.cols_out() as u32 - 1)
-    }
-}
-
-impl<D: Data, B: Backend> GGSWInfos for GGSWPrepared<D, B> {
-    fn k_aux(&self) -> TorusPrecision {
-        self.k_aux
-    }
-
-    fn dsize(&self) -> Dsize {
-        self.dsize
-    }
-
-    fn dnum(&self) -> Dnum {
-        Dnum(self.data.rows() as u32)
-    }
-}
 
 /// Trait for allocating and preparing DFT-domain GGSW ciphertexts.
 pub trait GGSWPreparedFactory<B: Backend>

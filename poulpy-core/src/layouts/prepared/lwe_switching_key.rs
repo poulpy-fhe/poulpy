@@ -1,8 +1,9 @@
+use poulpy_hal::layouts::VmpPMat;
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendRef, GGLWEPreparedToBackendMut,
-    GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEInfos, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, LWEInfos, Rank,
+    Base2K, Dnum, Dsize, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendRef, GGLWEPreparedToBackendMut,
+    GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, LWESwitchingKeyCore, Rank,
     TorusPrecision,
     prepared::{
         GLWESwitchingKeyPrepared, GLWESwitchingKeyPreparedFactory, GLWESwitchingKeyPreparedToBackendMut,
@@ -14,53 +15,11 @@ use crate::layouts::{
 ///
 /// A newtype wrapper around [`GLWESwitchingKeyPrepared`] for LWE key-switching.
 /// Tied to a specific backend via `B: Backend`.
-#[derive(PartialEq)]
-pub struct LWESwitchingKeyPrepared<D: Data, B: Backend>(pub(crate) GLWESwitchingKeyPrepared<D, B>);
-
-impl<D: Data, B: Backend> LWEInfos for LWESwitchingKeyPrepared<D, B> {
-    fn base2k(&self) -> Base2K {
-        self.0.base2k()
-    }
-
-    fn n(&self) -> Degree {
-        self.0.n()
-    }
-
-    fn max_size(&self) -> usize {
-        self.0.max_size()
-    }
-
-    fn k(&self) -> TorusPrecision {
-        self.0.k()
-    }
-}
-impl<D: Data, B: Backend> GLWEInfos for LWESwitchingKeyPrepared<D, B> {
-    fn rank(&self) -> Rank {
-        self.rank_out()
-    }
-}
-
-impl<D: Data, B: Backend> GGLWEInfos for LWESwitchingKeyPrepared<D, B> {
-    fn k_aux(&self) -> TorusPrecision {
-        self.0.k_aux()
-    }
-
-    fn dsize(&self) -> Dsize {
-        self.0.dsize()
-    }
-
-    fn rank_in(&self) -> Rank {
-        self.0.rank_in()
-    }
-
-    fn rank_out(&self) -> Rank {
-        self.0.rank_out()
-    }
-
-    fn dnum(&self) -> Dnum {
-        self.0.dnum()
-    }
-}
+/// DFT-domain (prepared) variant of a LWE key-switching key.
+///
+/// This is [`LWESwitchingKeyCore`] over a `VmpPMat` payload; the `Infos` traits and the
+/// degree accessors come from the payload-generic impls there.
+pub type LWESwitchingKeyPrepared<D, B> = LWESwitchingKeyCore<VmpPMat<D, <B as Backend>::DftWord, B>>;
 
 pub trait LWESwitchingKeyPreparedFactory<B: Backend>
 where
@@ -72,7 +31,7 @@ where
         dnum: Dnum,
         k_aux: TorusPrecision,
     ) -> LWESwitchingKeyPrepared<B::OwnedBuf, B> {
-        LWESwitchingKeyPrepared(self.glwe_switching_key_prepared_alloc(base2k, dnum, Dsize(1), k_aux, Rank(1), Rank(1)))
+        LWESwitchingKeyCore(self.glwe_switching_key_prepared_alloc(base2k, dnum, Dsize(1), k_aux, Rank(1), Rank(1)))
     }
 
     fn lwe_switching_key_prepared_alloc_from_infos<A>(&self, infos: &A) -> LWESwitchingKeyPrepared<B::OwnedBuf, B>
@@ -139,16 +98,6 @@ where
     }
 }
 
-impl<D: Data, B: Backend> GLWESwitchingKeyDegreesMut for LWESwitchingKeyPrepared<D, B> {
-    fn input_degree(&mut self) -> &mut Degree {
-        &mut self.0.input_degree
-    }
-
-    fn output_degree(&mut self) -> &mut Degree {
-        &mut self.0.output_degree
-    }
-}
-
 pub type LWESwitchingKeyPreparedBackendRef<'a, B> = LWESwitchingKeyPrepared<<B as Backend>::BufRef<'a>, B>;
 pub type LWESwitchingKeyPreparedBackendMut<'a, B> = LWESwitchingKeyPrepared<<B as Backend>::BufMut<'a>, B>;
 
@@ -161,7 +110,7 @@ where
     GLWESwitchingKeyPrepared<D, B>: GLWESwitchingKeyPreparedToBackendRef<B>,
 {
     fn to_backend_ref(&self) -> LWESwitchingKeyPreparedBackendRef<'_, B> {
-        LWESwitchingKeyPrepared(self.0.to_backend_ref())
+        LWESwitchingKeyCore(self.0.to_backend_ref())
     }
 }
 
@@ -183,6 +132,6 @@ where
     GLWESwitchingKeyPrepared<D, B>: GLWESwitchingKeyPreparedToBackendMut<B>,
 {
     fn to_backend_mut(&mut self) -> LWESwitchingKeyPreparedBackendMut<'_, B> {
-        LWESwitchingKeyPrepared(self.0.to_backend_mut())
+        LWESwitchingKeyCore(self.0.to_backend_mut())
     }
 }

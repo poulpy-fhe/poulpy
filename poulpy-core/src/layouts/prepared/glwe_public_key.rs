@@ -1,14 +1,14 @@
 use poulpy_hal::{
     api::{VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf},
-    layouts::{Backend, Data, HostDataMut, HostDataRef, Module},
+    layouts::{Backend, Data, Module, VecZnxDft},
 };
 
 use crate::{
     GetDistribution, GetDistributionMut,
     dist::Distribution,
     layouts::{
-        Base2K, Degree, GLWEInfos, GLWEPrepared, GLWEPreparedBackendMut, GLWEPreparedBackendRef, GLWEPreparedFactory,
-        GLWEPreparedToBackendMut, GLWEPreparedToBackendRef, GLWEToBackendRef, GetDegree, LWEInfos, Rank, TorusPrecision,
+        Base2K, GLWEInfos, GLWEPrepared, GLWEPreparedBackendMut, GLWEPreparedBackendRef, GLWEPreparedFactory,
+        GLWEPreparedToBackendMut, GLWEPreparedToBackendRef, GLWEPublicKeyCore, GLWEToBackendRef, GetDegree, Rank, TorusPrecision,
     },
 };
 
@@ -16,47 +16,11 @@ use crate::{
 ///
 /// Wraps a [`GLWEPrepared`] with distribution metadata for public-key
 /// encryption. Tied to a specific backend via `B: Backend`.
-#[derive(PartialEq)]
-pub struct GLWEPublicKeyPrepared<D: Data, B: Backend> {
-    pub(crate) key: GLWEPrepared<D, B>,
-    pub(crate) dist: Distribution,
-}
-
-impl<D: HostDataRef, BE: Backend> GetDistribution for GLWEPublicKeyPrepared<D, BE> {
-    fn dist(&self) -> &Distribution {
-        &self.dist
-    }
-}
-
-impl<D: HostDataMut, BE: Backend> GetDistributionMut for GLWEPublicKeyPrepared<D, BE> {
-    fn dist_mut(&mut self) -> &mut Distribution {
-        &mut self.dist
-    }
-}
-
-impl<D: Data, B: Backend> LWEInfos for GLWEPublicKeyPrepared<D, B> {
-    fn base2k(&self) -> Base2K {
-        self.key.base2k()
-    }
-
-    fn max_size(&self) -> usize {
-        self.key.max_size()
-    }
-
-    fn n(&self) -> Degree {
-        self.key.n()
-    }
-
-    fn k(&self) -> TorusPrecision {
-        self.key.k()
-    }
-}
-
-impl<D: Data, B: Backend> GLWEInfos for GLWEPublicKeyPrepared<D, B> {
-    fn rank(&self) -> Rank {
-        self.key.rank()
-    }
-}
+///
+/// This is [`GLWEPublicKeyCore`] over a `VecZnxDft` payload; `LWEInfos`,
+/// `GLWEInfos` and the distribution accessors come from the payload-generic
+/// impls there.
+pub type GLWEPublicKeyPrepared<D, B> = GLWEPublicKeyCore<VecZnxDft<D, <B as Backend>::DftWord, B>>;
 
 pub trait GLWEPublicKeyPreparedFactory<B: Backend>
 where

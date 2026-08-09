@@ -2,49 +2,25 @@ use poulpy_hal::layouts::VecZnxDftToBackendMut;
 use poulpy_hal::layouts::VecZnxDftToBackendRef;
 use poulpy_hal::{
     api::{VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf},
-    layouts::{Backend, Data, Module, VecZnxDft},
+    layouts::{Backend, Module, VecZnxDft},
 };
 
-use crate::layouts::{Base2K, Degree, GLWEInfos, GLWEToBackendRef, GetDegree, LWEInfos, Rank, TorusPrecision};
+use crate::layouts::{Base2K, GLWECore, GLWEInfos, GLWEToBackendRef, GetDegree, LWEInfos, Rank, TorusPrecision};
 
-/// DFT-domain (prepared) variant of [`GLWE`].
+/// DFT-domain (prepared) variant of [`GLWE`](crate::layouts::GLWE).
 ///
 /// Stores polynomials in the frequency domain of the backend's DFT/NTT
 /// transform, enabling O(N log N) polynomial multiplication.
 /// Tied to a specific backend via `B: Backend`.
-#[derive(PartialEq)]
-pub struct GLWEPrepared<D: Data, B: Backend> {
-    pub(crate) data: VecZnxDft<D, B::DftWord, B>,
-    pub(crate) k: TorusPrecision,
-    pub(crate) base2k: Base2K,
-}
+///
+/// This is [`GLWECore`] over a `VecZnxDft` payload: the same semantic object as
+/// a coefficient-domain GLWE, in a different computational domain. `LWEInfos`
+/// and `GLWEInfos` come from the payload-generic impls on `GLWECore`, so this
+/// module only carries what is genuinely DFT-specific.
+pub type GLWEPrepared<D, B> = GLWECore<VecZnxDft<D, <B as Backend>::DftWord, B>>;
 
 pub type GLWEPreparedBackendRef<'a, B> = GLWEPrepared<<B as Backend>::BufRef<'a>, B>;
 pub type GLWEPreparedBackendMut<'a, B> = GLWEPrepared<<B as Backend>::BufMut<'a>, B>;
-
-impl<D: Data, B: Backend> LWEInfos for GLWEPrepared<D, B> {
-    fn base2k(&self) -> Base2K {
-        self.base2k
-    }
-
-    fn max_size(&self) -> usize {
-        self.data.size()
-    }
-
-    fn n(&self) -> Degree {
-        Degree(self.data.n() as u32)
-    }
-
-    fn k(&self) -> TorusPrecision {
-        self.k
-    }
-}
-
-impl<D: Data, B: Backend> GLWEInfos for GLWEPrepared<D, B> {
-    fn rank(&self) -> Rank {
-        Rank(self.data.cols() as u32 - 1)
-    }
-}
 
 /// Trait for allocating and preparing DFT-domain GLWE ciphertexts.
 pub trait GLWEPreparedFactory<B: Backend>

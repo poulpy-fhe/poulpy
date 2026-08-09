@@ -12,6 +12,7 @@ use crate::{
     oep::{GGLWEExternalProductDefault, GLWEExternalProductDefault},
 };
 
+#[doc(hidden)]
 pub fn gglwe_external_product_tmp_bytes_default<BE, M, R, A, B>(module: &M, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
 where
     BE: Backend,
@@ -23,6 +24,7 @@ where
     module.glwe_external_product_tmp_bytes_default(res_infos, a_infos, b_infos)
 }
 
+#[doc(hidden)]
 pub fn gglwe_external_product_default<BE, M, R, A, B>(module: &M, res: &mut R, a: &A, b: &B, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
@@ -86,6 +88,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn gglwe_external_product_assign_default<BE, M, R, A>(module: &M, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,

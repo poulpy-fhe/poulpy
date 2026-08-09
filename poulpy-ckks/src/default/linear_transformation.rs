@@ -12,7 +12,7 @@ use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     GLWECopy, GLWELinearTransformations, LinearTransformationBabySteps, LinearTransformationGiantStep,
     LinearTransformationPrepared,
-    default::linear_transformation::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft},
+    default::linear_transformation::{DiagonalProd, GLWEStreamedProdDefault},
     layouts::{GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::PreparedDiagonal},
 };
 use poulpy_hal::{
@@ -48,9 +48,9 @@ where
         gs: &LinearTransformationGiantStep<Self>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        M: CnvPVecBytesOf + Convolution<BE> + ModuleN,
+        M: CnvPVecBytesOf + Convolution<BE> + ModuleN + GLWEStreamedProdDefault<BE>,
     {
-        glwe_accumulate_streamed_baby_steps_dft(module, cnv_offset_hi, prod_dft, lhs, gs, scratch);
+        module.glwe_accumulate_streamed_baby_steps_dft_default(cnv_offset_hi, prod_dft, lhs, gs, scratch);
     }
 }
 

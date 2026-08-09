@@ -12,9 +12,9 @@
 
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, CnvPVecBytesOf, Convolution, VecZnxAutomorphismAssignBackend, VecZnxBigAddAssign, VecZnxBigAddSmallAssign,
-        VecZnxBigAlloc, VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf,
-        VecZnxBigFromSmallBackend, VecZnxBigNormalize, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply,
+        CnvPVecBytesOf, Convolution, VecZnxAutomorphismAssignBackend, VecZnxBigAddAssign, VecZnxBigAddSmallAssign,
+        VecZnxBigAutomorphismAssign, VecZnxBigAutomorphismAssignTmpBytes, VecZnxBigBytesOf, VecZnxBigFromSmallBackend,
+        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftApply,
         VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpA,
         VecZnxIdftApplyTmpBytes,
     },
@@ -31,7 +31,7 @@ use crate::{
             },
             inner_product::glwe_accumulate_prepared_baby_steps_dft_tmp_bytes,
             lazy::{glwe_lazy_giant_automorphism_from_dft_tmp_bytes, glwe_lazy_giant_automorphism_tmp_bytes},
-            prepared_giants::{DiagonalProd, glwe_eval_giant_steps},
+            prepared_giants::{DiagonalProd, GLWEStreamedProdDefault, glwe_eval_giant_steps},
         },
     },
     layouts::{
@@ -45,6 +45,7 @@ use crate::api::GLWEBytesOf;
 
 /// HAL/op bounds required by the eval reference path. Repeated on each free
 /// function so backends only pull in what a method actually needs.
+#[doc(hidden)]
 pub fn glwe_eval_linear_transformation_tmp_bytes_default<BE, M, R, A, B, K>(module: &M, res: &R, a: &A, pt: &B, key: &K) -> usize
 where
     BE: Backend,
@@ -107,6 +108,7 @@ where
 ///
 /// Sizes both the hoisted baby route (DFT the mask once, VMP per key) and the
 /// plain per-baby `glwe_automorphism` fallback, and takes the larger.
+#[doc(hidden)]
 pub fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes_default<BE, M, A, K>(module: &M, a: &A, key: &K) -> usize
 where
     BE: Backend,
@@ -135,6 +137,7 @@ where
 /// across transforms that share the input. `a_k` is the CKKS-supplied
 /// base2k alignment for the input. Forwards to the internal
 /// `glwe_prepare_linear_transformation_baby_steps`.
+#[doc(hidden)]
 pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H, K>(
     module: &M,
     cache: &mut LinearTransformationBabySteps<BE>,
@@ -144,7 +147,6 @@ pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H, K>(
 ) where
     BE: Backend,
     M: GLWEBytesOf<BE>
-        + CnvPVecAlloc<BE>
         + Convolution<BE>
         + GLWEAutomorphism<BE>
         + GGLWEProductDefault<BE>
@@ -155,8 +157,10 @@ pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H, K>(
         + VecZnxBigNormalize<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftBytesOf
-        + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxDftApply<BE>
         + GaloisElement,
     A: GLWEToBackendRef<BE> + GLWEInfos,
     K: GetGaloisElement + GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
@@ -178,6 +182,7 @@ pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H, K>(
 ///
 /// Asserts at least one non-empty giant step (a fully-pruned transform is a
 /// caller bug), then delegates to the shared `glwe_eval_giant_steps` loop.
+#[doc(hidden)]
 pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H, K>(
     module: &M,
     cnv_offset: usize,
@@ -200,7 +205,6 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H, K>(
         + GLWEKeyswitchInternal<BE>
         + VecZnxBigAddAssign<BE>
         + VecZnxBigAddSmallAssign<BE>
-        + VecZnxBigAlloc<BE>
         + VecZnxBigAutomorphismAssign<BE>
         + VecZnxBigAutomorphismAssignTmpBytes
         + VecZnxBigBytesOf
@@ -211,10 +215,14 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H, K>(
         + VecZnxDftApply<BE>
         + VecZnxDftAutomorphism<BE>
         + VecZnxDftBytesOf
-        + VecZnxDftCopy<BE>
         + VecZnxDftZero<BE>
+        + VecZnxDftCopy<BE>
         + VecZnxIdftApply<BE>
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxDftApply<BE>
         + VecZnxIdftApplyTmpA<BE>
+        + GLWEStreamedProdDefault<BE>
         + VecZnxIdftApplyTmpBytes
         + GLWEMulPlain<BE>
         + GaloisElement,
@@ -236,6 +244,7 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H, K>(
 /// The streamed inner product additionally holds one resident `CnvPVecR`
 /// diagonal slot and a `cnv_prepare_right` scratch on top of the prepared
 /// evaluation budget.
+#[doc(hidden)]
 pub fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_default<BE, M, R, A, B, K>(
     module: &M,
     res: &R,

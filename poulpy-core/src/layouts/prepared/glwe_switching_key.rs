@@ -1,91 +1,23 @@
 use poulpy_hal::layouts::{Backend, Data, Module, ScratchArena};
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef, GGLWEToBackendRef, GLWEInfos,
-    GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, LWEInfos, Rank, TorusPrecision,
+    Base2K, Degree, Dnum, Dsize, GGLWEInfos, GGLWEPreparedBackendMut, GGLWEPreparedBackendRef, GGLWEToBackendRef,
+    GLWESwitchingKeyCore, GLWESwitchingKeyDegrees, GLWESwitchingKeyDegreesMut, Rank, TorusPrecision,
     prepared::{
         GGLWEPrepared, GGLWEPreparedFactory, GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef, GGLWEPreparedVmpPMatRef,
     },
 };
-use poulpy_hal::layouts::VmpPMatBackendRef;
+use poulpy_hal::layouts::{VmpPMat, VmpPMatBackendRef};
 
 /// DFT-domain (prepared) variant of a GLWE switching key.
 ///
 /// Wraps a [`GGLWEPrepared`] with input/output degree metadata for
 /// key-switching between GLWE ciphertexts. Tied to a specific backend
 /// via `B: Backend`.
-#[derive(PartialEq)]
-pub struct GLWESwitchingKeyPrepared<D: Data, B: Backend> {
-    pub(crate) key: GGLWEPrepared<D, B>,
-    pub(crate) input_degree: Degree,  // Degree of sk_in
-    pub(crate) output_degree: Degree, // Degree of sk_out
-}
-
-impl<D: Data, BE: Backend> GLWESwitchingKeyDegrees for GLWESwitchingKeyPrepared<D, BE> {
-    fn output_degree(&self) -> &Degree {
-        &self.output_degree
-    }
-
-    fn input_degree(&self) -> &Degree {
-        &self.input_degree
-    }
-}
-
-impl<D: Data, BE: Backend> GLWESwitchingKeyDegreesMut for GLWESwitchingKeyPrepared<D, BE> {
-    fn output_degree(&mut self) -> &mut Degree {
-        &mut self.output_degree
-    }
-
-    fn input_degree(&mut self) -> &mut Degree {
-        &mut self.input_degree
-    }
-}
-
-impl<D: Data, B: Backend> LWEInfos for GLWESwitchingKeyPrepared<D, B> {
-    fn n(&self) -> Degree {
-        self.key.n()
-    }
-
-    fn base2k(&self) -> Base2K {
-        self.key.base2k()
-    }
-
-    fn max_size(&self) -> usize {
-        self.key.max_size()
-    }
-
-    fn k(&self) -> TorusPrecision {
-        self.key.k()
-    }
-}
-
-impl<D: Data, B: Backend> GLWEInfos for GLWESwitchingKeyPrepared<D, B> {
-    fn rank(&self) -> Rank {
-        self.rank_out()
-    }
-}
-
-impl<D: Data, B: Backend> GGLWEInfos for GLWESwitchingKeyPrepared<D, B> {
-    fn k_aux(&self) -> TorusPrecision {
-        self.key.k_aux()
-    }
-
-    fn rank_in(&self) -> Rank {
-        self.key.rank_in()
-    }
-
-    fn rank_out(&self) -> Rank {
-        self.key.rank_out()
-    }
-
-    fn dsize(&self) -> Dsize {
-        self.key.dsize()
-    }
-
-    fn dnum(&self) -> Dnum {
-        self.key.dnum()
-    }
-}
+///
+/// This is [`GLWESwitchingKeyCore`] over a `VmpPMat` payload; the `Infos`
+/// traits and the degree accessors come from the payload-generic impls there.
+pub type GLWESwitchingKeyPrepared<D, B> = GLWESwitchingKeyCore<VmpPMat<D, <B as Backend>::DftWord, B>>;
 
 pub trait GLWESwitchingKeyPreparedFactory<B: Backend>
 where

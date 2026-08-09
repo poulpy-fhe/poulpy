@@ -4,11 +4,11 @@ use poulpy_hal::{
 };
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEBackendMut, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos, LWEInfos,
-    Rank, TorusPrecision,
+    Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEBackendMut, GGLWECore, GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWEInfos,
+    LWEInfos, Rank, TorusPrecision,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use poulpy_hal::layouts::ZnxWord;
+use poulpy_hal::layouts::{MatZnx, MatZnxInfos, ZnxWord};
 
 use std::{
     fmt,
@@ -25,10 +25,24 @@ pub struct GGLWEToGGSWKeyLayout {
     pub dsize: Dsize,
 }
 
-#[derive(PartialEq, Eq, Clone)]
-pub struct GGLWEToGGSWKey<D: Data, W: ZnxWord> {
-    pub(crate) keys: Vec<GGLWE<D, W>>,
+/// A GGLWE-to-GGSW key, generic over the HAL payload holding its polynomials.
+///
+/// Holds one [`GGLWECore`] per rank element.
+///
+/// `P` selects the computational domain: [`GGLWEToGGSWKey`] is the
+/// coefficient-domain spelling (payload `MatZnx`) and
+/// [`GGLWEToGGSWKeyPrepared`](crate::layouts::GGLWEToGGSWKeyPrepared) the
+/// prepared one (payload `VmpPMat`); both are aliases of this struct.
+#[derive(PartialEq, Clone)]
+pub struct GGLWEToGGSWKeyCore<P> {
+    pub(crate) keys: Vec<GGLWECore<P>>,
 }
+
+/// Coefficient-domain GGLWE-to-GGSW key.
+pub type GGLWEToGGSWKey<D, W> = GGLWEToGGSWKeyCore<MatZnx<D, W>>;
+
+// `Eq` stays coefficient-domain only, mirroring `GGLWECore`.
+impl<D: Data, W: ZnxWord> Eq for GGLWEToGGSWKeyCore<MatZnx<D, W>> {}
 
 pub struct GGLWEToGGSWKeyBackendRef<'a, BE: Backend + 'a> {
     inner: GGLWEToGGSWKey<BE::BufRef<'a>, BE::ZnxWord>,
@@ -116,7 +130,7 @@ impl<'a, BE: Backend + 'a> DerefMut for GGLWEToGGSWKeyBackendMut<'a, BE> {
 impl_gglwe_infos_for_inner!(GGLWEToGGSWKeyBackendRef<'a, BE>, ['a, BE: Backend + 'a]; inner);
 impl_gglwe_infos_for_inner!(GGLWEToGGSWKeyBackendMut<'a, BE>, ['a, BE: Backend + 'a]; inner);
 
-impl<D: Data, W: ZnxWord> LWEInfos for GGLWEToGGSWKey<D, W> {
+impl<P: MatZnxInfos> LWEInfos for GGLWEToGGSWKeyCore<P> {
     fn n(&self) -> Degree {
         self.keys[0].n()
     }
@@ -134,13 +148,13 @@ impl<D: Data, W: ZnxWord> LWEInfos for GGLWEToGGSWKey<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GGLWEToGGSWKey<D, W> {
+impl<P: MatZnxInfos> GLWEInfos for GGLWEToGGSWKeyCore<P> {
     fn rank(&self) -> Rank {
         self.keys[0].rank_out()
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWEInfos for GGLWEToGGSWKey<D, W> {
+impl<P: MatZnxInfos> GGLWEInfos for GGLWEToGGSWKeyCore<P> {
     fn k_aux(&self) -> TorusPrecision {
         self.keys[0].k_aux()
     }

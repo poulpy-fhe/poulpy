@@ -19,6 +19,7 @@ use crate::{
     oep::{GLWEKeyswitchDefault, LWEKeyswitchDefault},
 };
 
+#[doc(hidden)]
 pub fn lwe_keyswitch_tmp_bytes_default<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
@@ -52,6 +53,7 @@ where
     lvl_0 + lvl_1 + lvl_2
 }
 
+#[doc(hidden)]
 pub fn lwe_keyswitch_default<BE, M, R, A, K>(module: &M, res: &mut R, a: &A, ksk: &K, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,

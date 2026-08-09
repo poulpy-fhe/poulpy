@@ -12,6 +12,7 @@ use crate::layouts::{
     prepared::{GLWESecretPreparedBackendRef, GLWESecretPreparedToBackendRef},
 };
 
+#[doc(hidden)]
 pub fn glwe_decrypt_tmp_bytes_default<M, BE: Backend, A>(module: &M, infos: &A) -> usize
 where
     M: ModuleN + VecZnxDftBytesOf + VecZnxBigBytesOf + VecZnxBigNormalizeTmpBytes,
@@ -27,6 +28,7 @@ where
     lvl_0 + lvl_1
 }
 
+#[doc(hidden)]
 pub fn glwe_decrypt_default<M, BE: Backend, R, P, S>(module: &M, res: &R, pt: &mut P, sk: &S, scratch: &mut ScratchArena<'_, BE>)
 where
     M: ModuleN

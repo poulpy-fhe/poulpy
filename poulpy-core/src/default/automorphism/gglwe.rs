@@ -19,6 +19,7 @@ use crate::{
     oep::{GGLWEAutomorphismDefault, GLWEKeyswitchDefault},
 };
 
+#[doc(hidden)]
 pub fn glwe_automorphism_key_automorphism_tmp_bytes_default<BE, M, R, A, K>(
     module: &M,
     res_infos: &R,
@@ -46,6 +47,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn glwe_automorphism_key_automorphism_default<BE, M, R, A, K>(
     module: &M,
     res: &mut R,
@@ -130,6 +132,7 @@ pub fn glwe_automorphism_key_automorphism_default<BE, M, R, A, K>(
     res.set_p((p * key.p()) % module.cyclotomic_order());
 }
 
+#[doc(hidden)]
 pub fn glwe_automorphism_key_automorphism_assign_default<BE, M, R, K>(
     module: &M,
     res: &mut R,

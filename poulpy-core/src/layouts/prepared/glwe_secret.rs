@@ -2,13 +2,14 @@ use poulpy_hal::layouts::SvpPPolToBackendMut;
 use poulpy_hal::layouts::SvpPPolToBackendRef;
 use poulpy_hal::{
     api::{SvpPPolAlloc, SvpPPolBytesOf, SvpPrepare},
-    layouts::{Backend, Data, Module, SvpPPol, ZnxInfos},
+    layouts::{Backend, Data, Module, SvpPPol},
 };
 
 use crate::{
     GetDistribution, GetDistributionMut,
     dist::Distribution,
-    layouts::{Base2K, Degree, GLWEInfos, GLWESecretToBackendRef, GetDegree, LWEInfos, Rank},
+    layouts::GLWESecretCore,
+    layouts::{Degree, GLWEInfos, GLWESecretToBackendRef, GetDegree, Rank},
 };
 
 /// DFT-domain (prepared) variant of [`GLWESecret`].
@@ -16,46 +17,16 @@ use crate::{
 /// Stores the GLWE secret key with polynomials in the frequency domain
 /// for fast multiplication during encryption and decryption. Tied to a
 /// specific backend via `B: Backend`.
-pub struct GLWESecretPrepared<D: Data, B: Backend> {
-    pub(crate) data: SvpPPol<D, B::DftWord, B>,
-    pub(crate) dist: Distribution,
-}
+/// This is [`GLWESecretCore`] over an `SvpPPol` payload: the same semantic
+/// object as a coefficient-domain secret, in the prepared domain.
+pub type GLWESecretPrepared<D, B> = GLWESecretCore<SvpPPol<D, <B as Backend>::DftWord, B>>;
 
 pub type GLWESecretPreparedBackendRef<'a, B> = GLWESecretPrepared<<B as Backend>::BufRef<'a>, B>;
 pub type GLWESecretPreparedBackendMut<'a, B> = GLWESecretPrepared<<B as Backend>::BufMut<'a>, B>;
 
-impl<D: Data, BE: Backend> GetDistribution for GLWESecretPrepared<D, BE> {
-    fn dist(&self) -> &Distribution {
-        &self.dist
-    }
-}
-
 impl<D: Data, BE: Backend> GetDistributionMut for GLWESecretPrepared<D, BE> {
     fn dist_mut(&mut self) -> &mut Distribution {
         &mut self.dist
-    }
-}
-
-impl<D: Data, B: Backend> LWEInfos for GLWESecretPrepared<D, B> {
-    fn base2k(&self) -> Base2K {
-        Base2K(0)
-    }
-
-    fn n(&self) -> Degree {
-        Degree(self.data.n() as u32)
-    }
-
-    fn max_size(&self) -> usize {
-        self.data.size()
-    }
-    fn k(&self) -> crate::layouts::TorusPrecision {
-        unimplemented!("this method is not defined on secrets")
-    }
-}
-
-impl<D: Data, B: Backend> GLWEInfos for GLWESecretPrepared<D, B> {
-    fn rank(&self) -> Rank {
-        Rank(self.data.cols() as u32)
     }
 }
 

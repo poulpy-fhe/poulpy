@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::ZnxWord;
+use poulpy_hal::layouts::{VecZnxInfos, ZnxWord};
 use poulpy_hal::{
     api::{ScalarZnxAutomorphismBackend, VecZnxCopyRangeBackend},
     layouts::{
@@ -50,16 +50,44 @@ impl GLWEInfos for GLWESecretLayout {
     }
 }
 
-#[derive(PartialEq, Eq, Clone)]
-pub struct GLWESecret<D: Data, W: ZnxWord> {
-    pub(crate) data: ScalarZnx<D, W>,
+/// A GLWE secret key, generic over the HAL payload holding its polynomials.
+///
+/// `P` selects the computational domain: `GLWESecret<D, W>` is the
+/// coefficient-domain spelling (payload `ScalarZnx`) and
+/// [`GLWESecretPrepared`](crate::layouts::GLWESecretPrepared) the prepared one
+/// (payload `SvpPPol`); both are aliases of this struct.
+#[derive(Clone)]
+pub struct GLWESecretCore<P> {
+    pub(crate) data: P,
     pub(crate) dist: Distribution,
 }
+
+/// Coefficient-domain GLWE secret.
+pub type GLWESecret<D, W> = GLWESecretCore<ScalarZnx<D, W>>;
+
+// `PartialEq`/`Eq` stay coefficient-domain only: `GLWESecretPrepared` carries
+// neither today, and comparing prepared secrets is not a meaningful operation
+// to hand out for free just because `SvpPPol` happens to implement them.
+impl<D: Data, W: ZnxWord> PartialEq for GLWESecretCore<ScalarZnx<D, W>> {
+    fn eq(&self, other: &Self) -> bool {
+        self.data == other.data && self.dist == other.dist
+    }
+}
+
+impl<D: Data, W: ZnxWord> Eq for GLWESecretCore<ScalarZnx<D, W>> {}
 
 pub type GLWESecretBackendRef<'a, BE> = GLWESecret<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord>;
 pub type GLWESecretBackendMut<'a, BE> = GLWESecret<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord>;
 
-impl<D: Data, W: ZnxWord> LWEInfos for GLWESecret<D, W> {
+/// Secrets deliberately do **not** get the payload-generic `LWEInfos` used by
+/// the ciphertext families.
+///
+/// A secret has no torus precision and no limb decomposition: `base2k` is
+/// reported as `0` and `k()` panics rather than inventing a value. `max_size()`
+/// is the payload's width, which is `1` for both legal payloads (`ScalarZnx`
+/// and `SvpPPol` both report `size() == 1`), so this reproduces the two
+/// previous impls exactly.
+impl<P: VecZnxInfos> LWEInfos for GLWESecretCore<P> {
     fn base2k(&self) -> Base2K {
         Base2K(0)
     }
@@ -69,7 +97,7 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWESecret<D, W> {
     }
 
     fn max_size(&self) -> usize {
-        1
+        self.data.size()
     }
 
     fn k(&self) -> super::TorusPrecision {
@@ -77,13 +105,15 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWESecret<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GetDistribution for GLWESecret<D, W> {
+impl<P> GetDistribution for GLWESecretCore<P> {
     fn dist(&self) -> &Distribution {
         &self.dist
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GLWESecret<D, W> {
+/// Note the difference from a ciphertext: a secret's `rank` is its column
+/// count, with no `-1`, because it has no body polynomial.
+impl<P: VecZnxInfos> GLWEInfos for GLWESecretCore<P> {
     fn rank(&self) -> Rank {
         Rank(self.data.cols() as u32)
     }

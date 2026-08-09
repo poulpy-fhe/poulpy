@@ -27,6 +27,7 @@ use crate::{
     oep::{GLWEAutomorphismDefault, GLWEKeyswitchDefault},
 };
 
+#[doc(hidden)]
 pub fn glwe_automorphism_tmp_bytes_default<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
@@ -54,6 +55,7 @@ where
     lvl_auto.max(lvl_conv + lvl_ks)
 }
 
+#[doc(hidden)]
 pub fn glwe_automorphism_default<BE, M, R, A, K>(module: &M, res: &mut R, a: &A, key: &K, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
@@ -77,6 +79,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn glwe_automorphism_assign_default<BE, M, R, K>(module: &M, res: &mut R, key: &K, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
@@ -100,6 +103,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn glwe_automorphism_add_default<BE, M, R, A, K>(module: &M, res: &mut R, a: &A, key: &K, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
@@ -168,6 +172,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn glwe_automorphism_add_assign_default<BE, M, R, K>(module: &M, res: &mut R, key: &K, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
@@ -235,6 +240,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn glwe_automorphism_sub_default<BE, M, R, A, K>(module: &M, res: &mut R, a: &A, key: &K, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
@@ -302,6 +308,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn glwe_automorphism_sub_negate_default<BE, M, R, A, K>(
     module: &M,
     res: &mut R,
@@ -374,6 +381,7 @@ pub fn glwe_automorphism_sub_negate_default<BE, M, R, A, K>(
     }
 }
 
+#[doc(hidden)]
 pub fn glwe_automorphism_sub_assign_default<BE, M, R, K>(module: &M, res: &mut R, key: &K, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
@@ -439,6 +447,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn glwe_automorphism_sub_negate_assign_default<BE, M, R, K>(
     module: &M,
     res: &mut R,

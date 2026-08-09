@@ -4,11 +4,11 @@ use poulpy_hal::{
 };
 
 use crate::layouts::{
-    Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos,
+    Base2K, Degree, Dnum, Dsize, GGLWE, GGLWEAtViewMut, GGLWEAtViewRef, GGLWEBackendMut, GGLWEBackendRef, GGLWECore, GGLWEInfos,
     GGLWELayout, GGLWEToBackendMut, GGLWEToBackendRef, GLWE, GLWEInfos, GLWEViewMut, GLWEViewRef, LWEInfos, Rank, TorusPrecision,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use poulpy_hal::layouts::ZnxWord;
+use poulpy_hal::layouts::{MatZnx, MatZnxInfos, ZnxWord};
 
 use std::fmt;
 
@@ -36,18 +36,31 @@ pub struct GLWEAutomorphismKeyLayout {
     pub rank: Rank,
     pub dsize: Dsize,
 }
-/// GLWE automorphism (Galois) key.
+/// GLWE automorphism (Galois) key, generic over the HAL payload holding its
+/// polynomials.
 ///
-/// Wraps a [`GGLWE`] together with the Galois element index `p` that
+/// Wraps a [`GGLWECore`] together with the Galois element index `p` that
 /// identifies which automorphism this key materialises.
+///
+/// `P` selects the computational domain: [`GLWEAutomorphismKey`] is the
+/// coefficient-domain spelling (payload `MatZnx`) and
+/// [`GLWEAutomorphismKeyPrepared`](crate::layouts::GLWEAutomorphismKeyPrepared)
+/// the prepared one (payload `VmpPMat`); both are aliases of this struct. The
+/// wrapper stays nominal in either domain.
+#[derive(PartialEq, Clone)]
+pub struct GLWEAutomorphismKeyCore<P> {
+    pub(crate) key: GGLWECore<P>,
+    pub(crate) p: i64,
+}
+
+/// Coefficient-domain GLWE automorphism key.
 ///
 /// `D: Data` is the backing storage type (e.g. `Vec<u8>`, `&[u8]`,
 /// `&mut [u8]`).
-#[derive(PartialEq, Eq, Clone)]
-pub struct GLWEAutomorphismKey<D: Data, W: ZnxWord> {
-    pub(crate) key: GGLWE<D, W>,
-    pub(crate) p: i64,
-}
+pub type GLWEAutomorphismKey<D, W> = GLWEAutomorphismKeyCore<MatZnx<D, W>>;
+
+// `Eq` stays coefficient-domain only, mirroring `GGLWECore`.
+impl<D: Data, W: ZnxWord> Eq for GLWEAutomorphismKeyCore<MatZnx<D, W>> {}
 
 /// Provides read access to the Galois element index `p`.
 pub trait GetGaloisElement {
@@ -61,26 +74,28 @@ pub trait SetGaloisElement {
     fn set_p(&mut self, p: i64);
 }
 
-impl<D: HostDataMut, W: ZnxWord> SetGaloisElement for GLWEAutomorphismKey<D, W> {
+impl<P> SetGaloisElement for GLWEAutomorphismKeyCore<P> {
     fn set_p(&mut self, p: i64) {
         self.p = p
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> GetGaloisElement for GLWEAutomorphismKey<D, W> {
+impl<P> GetGaloisElement for GLWEAutomorphismKeyCore<P> {
     fn p(&self) -> i64 {
         self.p
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEAutomorphismKey<D, W> {
+impl<P> GLWEAutomorphismKeyCore<P> {
     /// Returns the Galois element index `p`.
     pub fn p(&self) -> i64 {
         self.p
     }
 }
 
-impl<D: Data, W: ZnxWord> LWEInfos for GLWEAutomorphismKey<D, W> {
+/// Delegated wholesale to the wrapped gadget key; the wrapper adds only the
+/// Galois element, which is not layout information.
+impl<P: MatZnxInfos> LWEInfos for GLWEAutomorphismKeyCore<P> {
     fn n(&self) -> Degree {
         self.key.n()
     }
@@ -98,13 +113,13 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWEAutomorphismKey<D, W> {
     }
 }
 
-impl<D: Data, W: ZnxWord> GLWEInfos for GLWEAutomorphismKey<D, W> {
+impl<P: MatZnxInfos> GLWEInfos for GLWEAutomorphismKeyCore<P> {
     fn rank(&self) -> Rank {
         self.rank_out()
     }
 }
 
-impl<D: Data, W: ZnxWord> GGLWEInfos for GLWEAutomorphismKey<D, W> {
+impl<P: MatZnxInfos> GGLWEInfos for GLWEAutomorphismKeyCore<P> {
     fn k_aux(&self) -> TorusPrecision {
         self.key.k_aux()
     }

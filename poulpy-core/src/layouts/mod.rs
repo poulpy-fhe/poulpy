@@ -36,6 +36,7 @@ mod gglwe_to_ggsw_key;
 mod ggsw;
 mod glwe;
 mod glwe_automorphism_key;
+mod glwe_big;
 mod glwe_plaintext;
 mod glwe_public_key;
 mod glwe_secret;
@@ -74,6 +75,7 @@ pub use gglwe_to_ggsw_key::*;
 pub use ggsw::*;
 pub use glwe::*;
 pub use glwe_automorphism_key::*;
+pub use glwe_big::*;
 pub use glwe_plaintext::*;
 pub use glwe_public_key::*;
 pub use glwe_secret::*;
@@ -560,7 +562,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
     }
 
     fn glwe_tensor_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWETensorKey<B::OwnedBuf, B::ZnxWord> {
-        GLWETensorKey(self.gglwe_alloc_from_infos(infos))
+        GLWETensorKeyCore(self.gglwe_alloc_from_infos(infos))
     }
     fn glwe_tensor_key_alloc(
         &self,
@@ -585,7 +587,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
     fn glwe_to_lwe_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> GLWEToLWEKey<B::OwnedBuf, B::ZnxWord> {
         assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for GLWEToLWEKey");
         assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for GLWEToLWEKey");
-        GLWEToLWEKey(self.glwe_switching_key_alloc_from_infos(infos))
+        GLWEToLWEKeyCore(self.glwe_switching_key_alloc_from_infos(infos))
     }
     fn glwe_to_lwe_key_alloc(
         &self,
@@ -712,7 +714,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
         assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for LWESwitchingKey");
         assert_eq!(infos.rank_in().0, 1, "rank_in > 1 is not supported for LWESwitchingKey");
         assert_eq!(infos.rank_out().0, 1, "rank_out > 1 is not supported for LWESwitchingKey");
-        LWESwitchingKey(self.glwe_switching_key_alloc_from_infos(infos))
+        LWESwitchingKeyCore(self.glwe_switching_key_alloc_from_infos(infos))
     }
     fn lwe_switching_key_alloc(
         &self,
@@ -727,7 +729,7 @@ impl<B: Backend> ModuleCoreAlloc for Module<B> {
     fn lwe_to_glwe_key_alloc_from_infos<A: GGLWEInfos>(&self, infos: &A) -> LWEToGLWEKey<B::OwnedBuf, B::ZnxWord> {
         assert_eq!(infos.rank_in().0, 1, "rank_in > 1 is not supported for LWEToGLWEKey");
         assert_eq!(infos.dsize().0, 1, "dsize > 1 is not supported for LWEToGLWEKey");
-        LWEToGLWEKey(self.glwe_switching_key_alloc_from_infos(infos))
+        LWEToGLWEKeyCore(self.glwe_switching_key_alloc_from_infos(infos))
     }
     fn lwe_to_glwe_key_alloc(
         &self,
@@ -1284,11 +1286,50 @@ pub fn key_k(base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision) ->
     TorusPrecision(dnum.0 * dsize.0 * base2k.0 + k_aux.0)
 }
 
+/// Mask selecting the bits of the bottom limb that carry data.
+///
+/// A pure function of the layout, like [`key_size`] and [`key_k`]: it takes no
+/// module and performs no operation, so it lives here rather than among the
+/// backend-facing default implementations.
+#[inline]
+pub fn msb_mask_bottom_limb(base2k: usize, k: usize) -> i64 {
+    match k % base2k {
+        0 => !0i64,
+        r => (!0i64) << (base2k - r),
+    }
+}
+
 /// Number of limbs stored per row of a key: `ceil((dnum*dsize*base2k + k_aux) / base2k)`,
 /// i.e. the `dnum * dsize` gadget limbs plus `ceil(k_aux / base2k)` auxiliary
 /// (guard) limbs used for noise management.
 pub fn key_size(base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision) -> usize {
     key_k(base2k, dnum, dsize, k_aux).0.div_ceil(base2k.0) as usize
+}
+
+/// Accumulation layout of a keyswitch: the `base2k` and limb count the result
+/// is accumulated at before normalization.
+///
+/// Per the domain contract, a big-domain result carries the **key's** `base2k`
+/// and an occupied width of `key.work_size(a.k())` limbs, and its `k` is a
+/// magnitude bound on an un-normalized accumulator, not a precision claim.
+/// Carve the destination of
+/// [`GLWEKeyswitchIntoBig::glwe_keyswitch_into_big`](crate::api::GLWEKeyswitchIntoBig::glwe_keyswitch_into_big)
+/// with this.
+///
+/// Like [`key_size`] and [`key_k`], this is pure layout arithmetic: it takes no
+/// module, so it is not part of any backend override surface.
+pub fn glwe_keyswitch_big_layout<A, K>(a_infos: &A, key_infos: &K) -> GLWELayout
+where
+    A: GLWEInfos,
+    K: GGLWEInfos,
+{
+    let key_size: usize = key_infos.work_size(a_infos.k());
+    GLWELayout {
+        n: a_infos.n(),
+        base2k: key_infos.base2k(),
+        k: TorusPrecision((key_size * key_infos.base2k().as_usize()) as u32),
+        rank: key_infos.rank_out(),
+    }
 }
 
 /// Number of key limbs an operation should process for an input ciphertext of

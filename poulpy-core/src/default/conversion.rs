@@ -10,9 +10,9 @@ use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxCopyRangeBackend, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero,
-        VecZnxExtractCoeffBackend, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
-        VecZnxRotateBackend, VecZnxZeroBackend,
+        VecZnxBigNormalizeTmpBytes, VecZnxCopyRangeBackend, VecZnxDftApply, VecZnxDftBytesOf, VecZnxExtractCoeffBackend,
+        VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes, VecZnxRotateBackend,
+        VecZnxZeroBackend,
     },
     layouts::{
         Backend, ScratchArena, VecZnxBackendRef, VecZnxBigToBackendRef, VecZnxDftBackendRef, VecZnxDftToBackendRef,
@@ -32,6 +32,7 @@ use crate::{
     oep::{ConversionDefault, GLWEKeyswitchDefault},
 };
 
+#[doc(hidden)]
 pub fn lwe_sample_extract_default<BE, M, R, A>(module: &M, res: &mut R, a: &A)
 where
     BE: Backend,
@@ -57,6 +58,7 @@ where
     });
 }
 
+#[doc(hidden)]
 pub fn glwe_expand_lwe_tmp_bytes_default<BE, M, R, A>(module: &M, lwe_infos: &R, a_infos: &A) -> usize
 where
     BE: Backend,
@@ -101,6 +103,7 @@ where
     );
 }
 
+#[doc(hidden)]
 pub fn glwe_expand_lwe_default<BE, M, R, A>(module: &M, res: &mut [R], a: &A, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
@@ -144,6 +147,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn glwe_expand_lwe_matrix_tmp_bytes_default<BE, M, R, A>(module: &M, _res_infos: &R, a_infos: &A) -> usize
 where
     BE: Backend,
@@ -154,6 +158,7 @@ where
     BE::bytes_of_vec_znx(module.n(), 1, a_infos.size())
 }
 
+#[doc(hidden)]
 pub fn glwe_expand_lwe_matrix_default<BE, M, R, A>(module: &M, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
@@ -219,6 +224,7 @@ where
     }
 }
 
+#[doc(hidden)]
 pub fn glwe_from_lwe_tmp_bytes_default<BE, M, R, A, K>(module: &M, glwe_infos: &R, lwe_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
@@ -249,6 +255,7 @@ where
     lvl_0 + lvl_1
 }
 
+#[doc(hidden)]
 pub fn glwe_from_lwe_default<BE, M, R, A, K>(module: &M, res: &mut R, lwe: &A, ksk: &K, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
@@ -345,6 +352,7 @@ where
     module.glwe_keyswitch_default(&mut res_view, &glwe_view, ksk, &mut scratch_1)
 }
 
+#[doc(hidden)]
 pub fn lwe_from_glwe_tmp_bytes_default<BE, M, R, A, K>(module: &M, lwe_infos: &R, glwe_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
@@ -370,6 +378,7 @@ where
     lvl_0 + lvl_1 + lvl_2
 }
 
+#[doc(hidden)]
 pub fn lwe_from_glwe_default<BE, M, R, A, K>(
     module: &M,
     res: &mut R,
@@ -431,6 +440,7 @@ pub fn lwe_from_glwe_default<BE, M, R, A, K>(
     }
 }
 
+#[doc(hidden)]
 pub fn ggsw_from_gglwe_tmp_bytes_default<BE, M, R, A>(module: &M, res_infos: &R, tsk_infos: &A) -> usize
 where
     BE: Backend,
@@ -441,6 +451,7 @@ where
     module.ggsw_expand_rows_tmp_bytes_default(res_infos, tsk_infos)
 }
 
+#[doc(hidden)]
 pub fn ggsw_from_gglwe_default<BE, M, R, A, T>(module: &M, res: &mut R, a: &A, tsk: &T, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
@@ -474,6 +485,7 @@ where
     module.ggsw_expand_row_default(&mut res_backend, tsk, scratch)
 }
 
+#[doc(hidden)]
 pub fn ggsw_expand_rows_tmp_bytes_default<BE, M, R, A>(module: &M, res_infos: &R, tsk_infos: &A) -> usize
 where
     BE: Backend,
@@ -512,6 +524,7 @@ where
     lvl_0 + lvl_1.max(lvl_2)
 }
 
+#[doc(hidden)]
 pub fn ggsw_expand_row_default<BE, M, R, T>(module: &M, res: &mut R, tsk: &T, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
@@ -523,7 +536,6 @@ where
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
         + VecZnxDftApply<BE>
-        + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>
         + VecZnxNormalize<BE>,
     R: GGSWToBackendMut<BE> + GGSWInfos,
@@ -614,7 +626,6 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, T, BE: Backend>(
         + VecZnxBigBytesOf
         + VecZnxBigAddSmallAssign<BE>
         + VecZnxBigNormalize<BE>
-        + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>,
     R: GGSWAtViewMut<BE> + GGSWInfos,
     T: GGLWEToGGSWKeyPreparedToBackendRef<BE>,
@@ -624,10 +635,9 @@ fn ggsw_expand_rows_internal<'a, 'b, R, M, T, BE: Backend>(
 
     for col in 1..cols {
         let scratch_row = scratch.borrow();
+        // No pre-zeroing: the gadget product overwrites every limb on its first
+        // digit pass.
         let (mut res_dft, mut scratch_1) = scratch_row.take_vec_znx_dft_scratch(module, cols, tsk_size);
-        for j in 0..cols {
-            module.vec_znx_dft_zero(&mut res_dft, j);
-        }
 
         {
             let mut scratch_prod = scratch_1.borrow();
