@@ -278,6 +278,10 @@ macro_rules! core_backend_test_suite {
                 glwe_automorphism_assign => $crate::test_suite::automorphism::test_glwe_automorphism_assign,
                 glwe_external_product => $crate::test_suite::external_product::test_glwe_external_product,
                 glwe_external_product_assign => $crate::test_suite::external_product::test_glwe_external_product_assign,
+                glwe_keyswitch_ignores_dirty_scratch =>
+                    $crate::test_suite::keyswitch::test_glwe_keyswitch_ignores_dirty_scratch,
+                glwe_external_product_ignores_dirty_scratch =>
+                    $crate::test_suite::keyswitch::test_glwe_external_product_ignores_dirty_scratch,
                 glwe_rotate => $crate::test_suite::test_glwe_rotate,
                 glwe_trace_assign => $crate::test_suite::test_glwe_trace_assign,
                 glwe_hoisted_baby_rotations_match_automorphism =>
