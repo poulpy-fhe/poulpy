@@ -254,18 +254,6 @@ pub(crate) const MASK42: u64 = (1u64 << 42) - 1;
 pub(crate) const MASK22: u64 = (1u64 << 22) - 1;
 pub(crate) const MASK20: u64 = (1u64 << 20) - 1;
 
-/// Scalar pack: three canonical 42-bit residues into `(w0, w1)`.
-#[inline(always)]
-pub(crate) fn pack_scalar_3x42(p0: u64, p1: u64, p2: u64) -> (u64, u64) {
-    (p0 | (p1 & MASK22) << 42, (p1 >> 22) | (p2 << 20))
-}
-
-/// Scalar unpack: `(w0, w1)` into three canonical 42-bit residues.
-#[inline(always)]
-pub(crate) fn unpack_scalar_3x42(w0: u64, w1: u64) -> (u64, u64, u64) {
-    (w0 & MASK42, (w0 >> 42) | ((w1 & MASK20) << 22), w1 >> 20)
-}
-
 /// Pointer to the packed limb `(col, j)` of a `VecZnxDft` u64 view.
 #[inline(always)]
 fn limb2n(base: *mut u64, n: usize, cols: usize, col: usize, j: usize) -> *mut u64 {

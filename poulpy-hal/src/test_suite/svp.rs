@@ -11,8 +11,8 @@ use crate::layouts::VecZnxDftToBackendRef;
 
 use crate::{
     api::{
-        ScratchOwnedAlloc, SvpApplyDft, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxBigAlloc,
-        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApplyTmpA,
+        ScratchOwnedAlloc, SvpApplyDft, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPPolCopyBackend, SvpPrepare,
+        VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApplyTmpA,
     },
     layouts::{Backend, FillUniform, HostBytesBackend, Module, ScratchOwned, SvpPPolOwned},
     source::Source,
@@ -170,6 +170,7 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
     Module<BR>: SvpPrepare<BR>
         + SvpApplyDftToDft<BR>
         + SvpPPolAlloc<BR>
+        + SvpPPolCopyBackend<BR>
         + VecZnxDftAlloc<BR>
         + VecZnxBigAlloc<BR>
         + VecZnxBigNormalize<BR>
@@ -179,6 +180,7 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
     Module<BT>: SvpPrepare<BT>
         + SvpApplyDftToDft<BT>
         + SvpPPolAlloc<BT>
+        + SvpPPolCopyBackend<BT>
         + VecZnxDftAlloc<BT>
         + VecZnxBigAlloc<BT>
         + VecZnxBigNormalize<BT>
@@ -221,6 +223,20 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
         );
     }
 
+    // Exercise the backend-private prepared representation and its column
+    // stride by copying the two factors in reverse order.
+    let mut svp_ref_copy: SvpPPolOwned<BR> = module_ref.svp_ppol_alloc(cols);
+    let mut svp_test_copy: SvpPPolOwned<BT> = module_test.svp_ppol_alloc(cols);
+    for j in 0..cols {
+        module_ref.svp_ppol_copy_backend(&mut svp_ref_copy.to_backend_mut(), cols - 1 - j, &svp_ref.to_backend_ref(), j);
+        module_test.svp_ppol_copy_backend(
+            &mut svp_test_copy.to_backend_mut(),
+            cols - 1 - j,
+            &svp_test.to_backend_ref(),
+            j,
+        );
+    }
+
     for a_size in [3] {
         let mut a = module_host.vec_znx_alloc(cols, a_size);
         a.fill_uniform(base2k, &mut source);
@@ -257,16 +273,16 @@ pub fn test_svp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                 module_ref.svp_apply_dft_to_dft(
                     &mut res_dft_ref.to_backend_mut(),
                     j,
-                    &svp_ref.to_backend_ref(),
-                    j,
+                    &svp_ref_copy.to_backend_ref(),
+                    cols - 1 - j,
                     &a_dft_ref.to_backend_ref(),
                     j,
                 );
                 module_test.svp_apply_dft_to_dft(
                     &mut res_dft_test.to_backend_mut(),
                     j,
-                    &svp_test.to_backend_ref(),
-                    j,
+                    &svp_test_copy.to_backend_ref(),
+                    cols - 1 - j,
                     &a_dft_test.to_backend_ref(),
                     j,
                 );

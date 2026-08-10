@@ -133,6 +133,14 @@ impl Backend for NTT3x42Ifma {
         &mut buf[offset..offset + len]
     }
 
+    fn bytes_of_svp_ppol(n: usize, cols: usize) -> usize {
+        // Three canonical residues followed by their three Harvey quotients.
+        [n, cols, 6, size_of::<u64>()]
+            .into_iter()
+            .try_fold(1usize, usize::checked_mul)
+            .expect("IFMA SvpPPol byte size overflows usize")
+    }
+
     fn bytes_of_vec_znx_dft(n: usize, cols: usize, size: usize) -> usize {
         [n, cols, size, 2, size_of::<u64>()]
             .into_iter()
