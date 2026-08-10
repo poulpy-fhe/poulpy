@@ -207,6 +207,115 @@ fn test_convolution_direct() {
     test_convolution_accumulate(&module, 50);
 }
 
+#[test]
+fn test_vmp_apply_dft_to_dft_digits_strided_bit_identical() {
+    use poulpy_hal::{
+        api::{
+            ScratchOwnedAlloc, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftCopy, VmpApplyDftToDft, VmpApplyDftToDftAccumulate,
+            VmpApplyDftToDftDigitsStrided, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        },
+        layouts::{
+            FillUniform, MatZnxToBackendRef, ScratchOwned, VecZnxDftReborrowBackendRef, VecZnxDftToBackendMut,
+            VecZnxDftToBackendRef, VecZnxToBackendRef, VmpPMatToBackendMut, VmpPMatToBackendRef,
+        },
+        source::Source,
+    };
+
+    let module = Module::<NTT4x30Avx512>::new(64);
+    let mut source = Source::new([2u8; 32]);
+    let cases: [(usize, usize, usize, usize); 6] = [
+        (2, 1, 2, 4),
+        (2, 2, 1, 5),
+        (3, 1, 1, 7),
+        (3, 2, 2, 2),
+        (2, 1, 1, 1),
+        (3, 2, 1, 8),
+    ];
+
+    let mut any_nonzero = false;
+    for (dsize, cols_in, cols_out, a_size) in cases {
+        let rows = a_size.div_ceil(dsize);
+        let size_out = a_size;
+        let mut scratch: ScratchOwned<NTT4x30Avx512> = ScratchOwned::alloc(
+            module
+                .vmp_apply_dft_to_dft_tmp_bytes(size_out, a_size, rows, cols_in, cols_out, size_out)
+                .max(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size_out)),
+        );
+
+        let mut a = module.vec_znx_alloc(cols_in, a_size);
+        a.fill_uniform(50, &mut source);
+        let mut a_dft = module.vec_znx_dft_alloc(cols_in, a_size);
+        for col in 0..cols_in {
+            module.vec_znx_dft_apply(
+                1,
+                0,
+                &mut a_dft.to_backend_mut(),
+                col,
+                &VecZnxToBackendRef::<NTT4x30Avx512>::to_backend_ref(&a),
+                col,
+            );
+        }
+
+        let mut mat = module.mat_znx_alloc(rows, cols_in, cols_out, size_out);
+        mat.fill_uniform(50, &mut source);
+        let mut pmat = module.vmp_pmat_alloc(rows, cols_in, cols_out, size_out);
+        module.vmp_prepare(
+            &mut pmat.to_backend_mut(),
+            &MatZnxToBackendRef::<NTT4x30Avx512>::to_backend_ref(&mat),
+            &mut scratch.arena(),
+        );
+
+        let mut res_sequential = module.vec_znx_dft_alloc(cols_out, size_out);
+        for di in 0..dsize {
+            let digit_size = ((a_size + di) / dsize).min(rows);
+            let mut digit = module.vec_znx_dft_alloc(cols_in, digit_size.max(1));
+            let mut digit_backend = digit.to_backend_mut();
+            let mut digit_view = digit_backend.with_size_mut(digit_size);
+            for col in 0..cols_in {
+                module.vec_znx_dft_copy(dsize, dsize - di - 1, &mut digit_view, col, &a_dft.to_backend_ref(), col);
+            }
+            let res_size = res_sequential.max_size() - ((dsize - di) as isize - 2).max(0) as usize;
+            let mut res_backend = res_sequential.to_backend_mut();
+            let mut res_view = res_backend.with_size_mut(res_size);
+            if di == 0 {
+                module.vmp_apply_dft_to_dft(
+                    &mut res_view,
+                    &digit_view.reborrow_backend_ref(),
+                    &pmat.to_backend_ref(),
+                    0,
+                    &mut scratch.arena(),
+                );
+            } else {
+                module.vmp_apply_dft_to_dft_accumulate(
+                    &mut res_view,
+                    &digit_view.reborrow_backend_ref(),
+                    &pmat.to_backend_ref(),
+                    di,
+                    &mut scratch.arena(),
+                );
+            }
+        }
+
+        let mut res_strided = module.vec_znx_dft_alloc(cols_out, size_out);
+        module.vmp_apply_dft_to_dft_digits_strided(
+            &mut res_strided.to_backend_mut(),
+            &a_dft.to_backend_ref(),
+            dsize,
+            &pmat.to_backend_ref(),
+            &mut scratch.arena(),
+        );
+
+        let sequential = res_sequential.data.as_slice();
+        let strided = res_strided.data.as_slice();
+        any_nonzero |= sequential.iter().any(|&byte| byte != 0);
+        assert_eq!(
+            sequential, strided,
+            "strided VMP differs for dsize={dsize}, cols_in={cols_in}, cols_out={cols_out}, a_size={a_size}"
+        );
+    }
+    assert!(any_nonzero);
+}
+
 cross_backend_test_suite! {
     mod word_compat,
     backend_ref =  poulpy_cpu_ref::NTT4x30Ref,

@@ -160,6 +160,50 @@ unsafe fn extract_blk_pair_prime_major_avx512(n: usize, row_max: usize, blk_pair
     }
 }
 
+/// Strided-digit variant of [`extract_blk_pair_prime_major_avx512`].
+#[allow(clippy::too_many_arguments)]
+#[target_feature(enable = "avx512f")]
+unsafe fn extract_blk_pair_prime_major_strided_avx512(
+    n: usize,
+    row_max: usize,
+    blk_pair: usize,
+    src: &[u64],
+    cols: usize,
+    limb_base: usize,
+    limb_step: usize,
+    dst: &mut [u64],
+) {
+    debug_assert!(n.is_multiple_of(4));
+    debug_assert!(dst.len() >= 16 * row_max);
+
+    let plane_stride = 4 * row_max;
+    let coeff_base = 16 * blk_pair;
+    let idx_p0 = _mm512_set_epi64(0, 0, 0, 0, 12, 8, 4, 0);
+    let idx_p1 = _mm512_set_epi64(0, 0, 0, 0, 13, 9, 5, 1);
+    let idx_p2 = _mm512_set_epi64(0, 0, 0, 0, 14, 10, 6, 2);
+    let idx_p3 = _mm512_set_epi64(0, 0, 0, 0, 15, 11, 7, 3);
+
+    let mut col = 0usize;
+    let mut flat = limb_base * cols;
+    for row in 0..row_max {
+        let row_base = flat * 4 * n + coeff_base;
+        let v0 = unsafe { _mm512_loadu_si512(src.as_ptr().add(row_base) as *const __m512i) };
+        let v1 = unsafe { _mm512_loadu_si512(src.as_ptr().add(row_base + 8) as *const __m512i) };
+        for (p, idx) in [idx_p0, idx_p1, idx_p2, idx_p3].into_iter().enumerate() {
+            let dst_ptr = unsafe { dst.as_mut_ptr().add(p * plane_stride + row * 4) as *mut __m256i };
+            let plane = _mm512_permutex2var_epi64(v0, idx, v1);
+            unsafe { _mm256_storeu_si256(dst_ptr, _mm512_castsi512_si256(plane)) };
+        }
+
+        col += 1;
+        flat += 1;
+        if col == cols {
+            col = 0;
+            flat += (limb_step - 1) * cols;
+        }
+    }
+}
+
 /// Non-temporal write of one x2-block (8 u64) into a q120b vector.
 ///
 /// `VecZnxDft` storage is 64-byte aligned, and every x2-block offset is a
@@ -174,6 +218,20 @@ unsafe fn save_blk_overwrite_nt(_n: usize, blk: usize, dst: &mut [u64], src: &[u
     unsafe {
         _mm256_stream_si256(dst_ptr, _mm256_loadu_si256(src_ptr));
         _mm256_stream_si256(dst_ptr.add(1), _mm256_loadu_si256(src_ptr.add(1)));
+    }
+}
+
+/// Cached overwrite used when a following gadget digit immediately reads the
+/// same block for accumulation.
+#[target_feature(enable = "avx512f")]
+unsafe fn save_blk_overwrite(blk: usize, dst: &mut [u64], src: &[u64]) {
+    debug_assert!(src.len() >= 8);
+    let off = 8 * blk;
+    unsafe {
+        _mm512_storeu_si512(
+            dst.as_mut_ptr().add(off) as *mut __m512i,
+            _mm512_loadu_si512(src.as_ptr() as *const __m512i),
+        );
     }
 }
 
@@ -330,6 +388,116 @@ pub(crate) fn vmp_apply_dft_to_dft_accumulate_avx(
             meta,
             tmp,
         );
+    }
+}
+
+pub(crate) fn vmp_apply_digits_strided_tmp_bytes_avx(
+    a_cols: usize,
+    a_size: usize,
+    dsize: usize,
+    b_rows: usize,
+    b_cols_in: usize,
+) -> usize {
+    let nrows = b_rows * b_cols_in;
+    let row_max = (0..dsize)
+        .map(|di| (a_cols * ((a_size + di) / dsize).min(b_rows)).min(nrows))
+        .max()
+        .unwrap_or(0);
+    (16 + 16 * row_max) * size_of::<u64>()
+}
+
+/// Applies all gadget digits directly from their interleaved source limbs.
+/// The block-pair outer loop keeps the prepared-matrix working set hot and
+/// avoids materializing a temporary DFT vector for every digit.
+pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
+    module: &Module<NTT4x30Avx512>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx512>,
+    dsize: usize,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Avx512>,
+    tmp: &mut [u64],
+) {
+    let n = res.n();
+    let max_size = res.max_size();
+    debug_assert_eq!(max_size, res.size());
+    if dsize == 0 || n < 4 {
+        return;
+    }
+
+    let n_block_pairs = n / 4;
+    let nrows = pmat.cols_in() * pmat.rows();
+    let ncols = pmat.cols_out() * pmat.size();
+    let cols_out = pmat.cols_out();
+    let res_cols = res.cols();
+    let a_cols = a.cols();
+    let a_size = a.size();
+    let dnum = pmat.rows();
+    let meta = module.get_bbc_meta();
+
+    let plane_stride = nrows * 4;
+    let col_stride = nrows * 16;
+    let bp_stride = ncols * nrows * 16;
+
+    let mut row_maxs = Vec::with_capacity(dsize);
+    let mut limb_offsets = Vec::with_capacity(dsize);
+    let mut col_maxs = Vec::with_capacity(dsize);
+    for di in 0..dsize {
+        let digit_limbs = ((a_size + di) / dsize).min(dnum);
+        let pad = ((dsize - di) as isize - 2).max(0) as usize;
+        let res_size_di = res_cols * (max_size - pad);
+        let limb_offset = di * cols_out;
+        row_maxs.push((a_cols * digit_limbs).min(nrows));
+        limb_offsets.push(limb_offset);
+        col_maxs.push(ncols.min(res_size_di + limb_offset));
+    }
+
+    let a_u64: &[u64] = cast_slice(a.raw());
+    let res_u64: &mut [u64] = cast_slice_mut(res.raw_mut());
+    let pmat_u64: &[u64] = cast_slice(pmat.raw());
+    let res_size_0 = res_cols * (max_size - (dsize as isize - 2).max(0) as usize);
+    for col in col_maxs[0]..res_size_0 {
+        res_u64[col * 4 * n..(col + 1) * 4 * n].fill(0);
+    }
+
+    let (blkpair_output, x_pm) = tmp.split_at_mut(16);
+    for bp in 0..n_block_pairs {
+        for di in 0..dsize {
+            let limb_offset = limb_offsets[di];
+            let col_max = col_maxs[di];
+            if limb_offset >= col_max {
+                continue;
+            }
+            let row_max = row_maxs[di];
+            let x_pm = &mut x_pm[..16 * row_max];
+            unsafe {
+                extract_blk_pair_prime_major_strided_avx512(n, row_max, bp, a_u64, a_cols, dsize - 1 - di, dsize, x_pm);
+            }
+
+            for col_pmat in limb_offset..col_max {
+                let col_res = col_pmat - limb_offset;
+                let y_off = bp * bp_stride + col_pmat * col_stride;
+                unsafe {
+                    vec_mat1col_product_blkpair_bbc_pm_avx512(
+                        meta,
+                        row_max,
+                        blkpair_output,
+                        x_pm,
+                        &pmat_u64[y_off..],
+                        plane_stride,
+                    );
+                    let base = col_res * 4 * n;
+                    let blk0 = 2 * bp;
+                    let blk1 = blk0 + 1;
+                    if di == 0 {
+                        save_blk_overwrite(blk0, &mut res_u64[base..], &blkpair_output[0..8]);
+                        save_blk_overwrite(blk1, &mut res_u64[base..], &blkpair_output[8..16]);
+                    } else {
+                        save_blk_add(n, blk0, &mut res_u64[base..], &blkpair_output[0..8]);
+                        save_blk_add(n, blk1, &mut res_u64[base..], &blkpair_output[8..16]);
+                    }
+                }
+            }
+        }
     }
 }
 
