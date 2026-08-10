@@ -125,6 +125,18 @@ pub trait VmpApplyDftToDftAccumulate<B: Backend> {
     );
 }
 
+pub trait VmpApplyDftToDftDigitsStrided<B: Backend> {
+    /// Runs every gadget digit while reading the digit rows directly from `a`.
+    fn vmp_apply_dft_to_dft_digits_strided<'r>(
+        &self,
+        res: &mut VecZnxDftBackendMut<'r, B>,
+        a: &VecZnxDftBackendRef<'_, B>,
+        dsize: usize,
+        pmat: &VmpPMatBackendRef<'_, B>,
+        scratch: &mut ScratchArena<'_, B>,
+    );
+}
+
 /// Zeroes all entries of a [`VmpPMat`](crate::layouts::VmpPMat).
 pub trait VmpZero<B: Backend> {
     fn vmp_zero(&self, res: &mut VmpPMatBackendMut<'_, B>);

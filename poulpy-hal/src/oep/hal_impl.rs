@@ -1024,6 +1024,51 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
+    /// Runs every gadget digit, reading the digits from interleaved rows of `a`.
+    fn vmp_apply_dft_to_dft_digits_strided(
+        module: &Module<BE>,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        a: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
+        dsize: usize,
+        pmat: &crate::layouts::VmpPMatBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        Module<BE>: crate::api::VecZnxDftCopy<BE>,
+    {
+        use crate::{
+            api::{ScratchArenaTakeBasic, VecZnxDftCopy},
+            layouts::VecZnxDftToBackendRef,
+        };
+
+        let cols = a.cols();
+        let a_size = a.size();
+        let dnum = pmat.rows();
+        for di in 0..dsize {
+            let (mut digit, mut scratch_digit) =
+                scratch
+                    .borrow()
+                    .take_vec_znx_dft_scratch(module, cols, ((a_size + di) / dsize).min(dnum));
+            for col in 0..cols {
+                module.vec_znx_dft_copy(dsize, dsize - di - 1, &mut digit, col, a, col);
+            }
+
+            let compute_size = res.size() - ((dsize - di) as isize - 2).max(0) as usize;
+            let mut res_view = res.with_size_mut(compute_size);
+            if di == 0 {
+                Self::vmp_apply_dft_to_dft(module, &mut res_view, &digit.to_backend_ref(), pmat, 0, &mut scratch_digit);
+            } else {
+                Self::vmp_apply_dft_to_dft_accumulate(
+                    module,
+                    &mut res_view,
+                    &digit.to_backend_ref(),
+                    pmat,
+                    di,
+                    &mut scratch_digit,
+                );
+            }
+        }
+    }
+
     fn vmp_zero(module: &Module<BE>, res: &mut crate::layouts::VmpPMatBackendMut<'_, BE>);
 }
 
