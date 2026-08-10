@@ -212,6 +212,7 @@ backend_test_suite! {
     tests = {
         test_vec_znx_fill_uniform => poulpy_hal::test_suite::vec_znx::test_vec_znx_fill_uniform,
         test_vec_znx_seed_sampling_matches_source_wrappers => poulpy_hal::test_suite::vec_znx::test_vec_znx_seed_sampling_matches_source_wrappers,
+        test_scalar_znx_binary_hw_has_exact_weight => poulpy_hal::test_suite::vec_znx::test_scalar_znx_binary_hw_has_exact_weight,
         test_scalar_znx_secret_seed_sampling_matches_source_wrappers => poulpy_hal::test_suite::vec_znx::test_scalar_znx_secret_seed_sampling_matches_source_wrappers,
         test_vec_znx_fill_normal => poulpy_hal::test_suite::vec_znx::test_vec_znx_fill_normal,
         test_vec_znx_add_normal => poulpy_hal::test_suite::vec_znx::test_vec_znx_add_normal,
