@@ -179,9 +179,7 @@ impl<D: HostDataMut, W: ZnxWord> ScalarZnx<D, W> {
         // Zero-initialize before setting non-zero entries, since shuffle will
         // mix positions and we need indices hw..n to be zero.
         self.at_mut(col, 0).fill(W::zero());
-        self.at_mut(col, 0)[..hw]
-            .iter_mut()
-            .for_each(|x: &mut W| *x = W::from_i64((source.next_u32() & 1) as i64));
+        self.at_mut(col, 0)[..hw].fill(W::from_i64(1));
         self.at_mut(col, 0).shuffle(source);
     }
 
