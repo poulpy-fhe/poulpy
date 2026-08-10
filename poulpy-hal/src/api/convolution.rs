@@ -213,6 +213,21 @@ pub trait Convolution<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
+    /// Returns scratch bytes for [`cnv_tensor_rank1_dft`](Convolution::cnv_tensor_rank1_dft).
+    fn cnv_tensor_rank1_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
+
+    fn cnv_tensor_rank1_dft_is_fused(&self) -> bool;
+
+    /// Computes `(a0b0, a0b1 + a1b0, a1b1)` in DFT columns 0 through 2.
+    fn cnv_tensor_rank1_dft(
+        &self,
+        cnv_offset: usize,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        a: &CnvPVecLBackendRef<'_, BE>,
+        b: &CnvPVecRBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+
     /// Returns scratch bytes required for [`cnv_prepare_self`](Convolution::cnv_prepare_self).
     fn cnv_prepare_self_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize;
 

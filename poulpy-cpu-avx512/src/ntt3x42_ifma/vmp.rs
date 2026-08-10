@@ -25,7 +25,7 @@ use crate::ntt3x42_ifma::{
 };
 use poulpy_hal::layouts::{
     DataView, DataViewMut, MatZnxBackendRef, Module, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut,
-    VmpPMatBackendRef, ZnxInfos, ZnxView,
+    VmpPMatBackendRef, ZnxInfos,
 };
 
 use super::{
@@ -723,8 +723,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_ifma(
     tmp: &mut [u64],
 ) {
     let n = res.n();
-    let max_size = res.max_size();
-    debug_assert_eq!(max_size, res.size());
+    let output_size = res.size();
 
     let dsize = digits.len();
     if dsize == 0 || n < 2 {
@@ -748,7 +747,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_ifma(
         let a_u64: &[u64] = &cast_slice::<_, u64>(a.data())[..2 * n * a.poly_count()];
         let a_size = a_u64.len() / (2 * n);
         let pad = ((dsize - di) as isize - 2).max(0) as usize;
-        let res_size_di = res_cols * (max_size - pad);
+        let res_size_di = res_cols * (output_size - pad);
         let limb_off = di * cols_out;
         a_slices.push(a_u64);
         row_maxs.push(nrows.min(a_size));
@@ -756,10 +755,10 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_ifma(
         col_maxs.push(ncols.min(res_size_di + limb_off));
     }
 
-    let res_u64: &mut [u64] = &mut cast_slice_mut::<_, u64>(res.data_mut())[..2 * n * res_cols * max_size];
+    let res_u64: &mut [u64] = &mut cast_slice_mut::<_, u64>(res.data_mut())[..2 * n * res_cols * output_size];
     let pmat_u64: &[u64] = cast_slice(pmat.data());
 
-    let res_size_0 = res_cols * (max_size - (dsize as isize - 2).max(0) as usize);
+    let res_size_0 = res_cols * (output_size - (dsize as isize - 2).max(0) as usize);
     for col in col_maxs[0]..res_size_0 {
         res_u64[col * 2 * n..(col + 1) * 2 * n].fill(0);
     }
@@ -840,8 +839,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma(
     tmp: &mut [u64],
 ) {
     let n = res.n();
-    let max_size = res.max_size();
-    debug_assert_eq!(max_size, res.size());
+    let output_size = res.size();
 
     if dsize == 0 || n < 2 {
         return;
@@ -865,7 +863,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma(
     for di in 0..dsize {
         let digit_limbs = ((a_size + di) / dsize).min(dnum);
         let pad = ((dsize - di) as isize - 2).max(0) as usize;
-        let res_size_di = res_cols * (max_size - pad);
+        let res_size_di = res_cols * (output_size - pad);
         let limb_off = di * cols_out;
         row_maxs.push(nrows.min(a_cols * digit_limbs));
         limb_offs.push(limb_off);
@@ -873,10 +871,10 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma(
     }
 
     let a_u64: &[u64] = &cast_slice::<_, u64>(a.data())[..2 * n * a.poly_count()];
-    let res_u64: &mut [u64] = &mut cast_slice_mut::<_, u64>(res.data_mut())[..2 * n * res_cols * max_size];
+    let res_u64: &mut [u64] = &mut cast_slice_mut::<_, u64>(res.data_mut())[..2 * n * res_cols * output_size];
     let pmat_u64: &[u64] = cast_slice(pmat.data());
 
-    let res_size_0 = res_cols * (max_size - (dsize as isize - 2).max(0) as usize);
+    let res_size_0 = res_cols * (output_size - (dsize as isize - 2).max(0) as usize);
     for col in col_maxs[0]..res_size_0 {
         res_u64[col * 2 * n..(col + 1) * 2 * n].fill(0);
     }

@@ -1052,11 +1052,15 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend {
                 module.vec_znx_dft_copy(dsize, dsize - di - 1, &mut digit, col, a, col);
             }
 
-            let compute_size = res.size() - ((dsize - di) as isize - 2).max(0) as usize;
-            let mut res_view = res.with_size_mut(compute_size);
             if di == 0 {
-                Self::vmp_apply_dft_to_dft(module, &mut res_view, &digit.to_backend_ref(), pmat, 0, &mut scratch_digit);
+                // The overwriting pass must cover the full destination so no
+                // limb retains incoming scratch contents. Later accumulating
+                // passes may safely use narrowed views because this pass has
+                // initialized the skipped high limbs.
+                Self::vmp_apply_dft_to_dft(module, res, &digit.to_backend_ref(), pmat, 0, &mut scratch_digit);
             } else {
+                let compute_size = res.size() - ((dsize - di) as isize - 2).max(0) as usize;
+                let mut res_view = res.with_size_mut(compute_size);
                 Self::vmp_apply_dft_to_dft_accumulate(
                     module,
                     &mut res_view,
@@ -1271,6 +1275,34 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend {
         j: usize,
         scratch: &mut ScratchArena<'_, BE>,
     );
+
+    fn cnv_tensor_rank1_dft_tmp_bytes(
+        module: &Module<BE>,
+        cnv_offset: usize,
+        res_size: usize,
+        a_size: usize,
+        b_size: usize,
+    ) -> usize {
+        Self::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
+    }
+
+    fn cnv_tensor_rank1_dft_is_fused(_module: &Module<BE>) -> bool {
+        false
+    }
+
+    fn cnv_tensor_rank1_dft(
+        module: &Module<BE>,
+        cnv_offset: usize,
+        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+        a: &crate::layouts::CnvPVecLBackendRef<'_, BE>,
+        b: &crate::layouts::CnvPVecRBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) {
+        Self::cnv_apply_dft(module, cnv_offset, res, 0, a, 0, b, 0, scratch);
+        Self::cnv_apply_dft(module, cnv_offset, res, 1, a, 0, b, 1, scratch);
+        Self::cnv_apply_dft_accumulate(module, cnv_offset, res, 1, a, 1, b, 0, scratch);
+        Self::cnv_apply_dft(module, cnv_offset, res, 2, a, 1, b, 1, scratch);
+    }
 
     fn cnv_prepare_self_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize;
 

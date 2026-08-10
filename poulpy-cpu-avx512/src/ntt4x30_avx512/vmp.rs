@@ -418,8 +418,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
     tmp: &mut [u64],
 ) {
     let n = res.n();
-    let max_size = res.max_size();
-    debug_assert_eq!(max_size, res.size());
+    let output_size = res.size();
     if dsize == 0 || n < 4 {
         return;
     }
@@ -444,7 +443,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
     for di in 0..dsize {
         let digit_limbs = ((a_size + di) / dsize).min(dnum);
         let pad = ((dsize - di) as isize - 2).max(0) as usize;
-        let res_size_di = res_cols * (max_size - pad);
+        let res_size_di = res_cols * (output_size - pad);
         let limb_offset = di * cols_out;
         row_maxs.push((a_cols * digit_limbs).min(nrows));
         limb_offsets.push(limb_offset);
@@ -454,7 +453,7 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
     let a_u64: &[u64] = cast_slice(a.raw());
     let res_u64: &mut [u64] = cast_slice_mut(res.raw_mut());
     let pmat_u64: &[u64] = cast_slice(pmat.raw());
-    let res_size_0 = res_cols * (max_size - (dsize as isize - 2).max(0) as usize);
+    let res_size_0 = res_cols * (output_size - (dsize as isize - 2).max(0) as usize);
     for col in col_maxs[0]..res_size_0 {
         res_u64[col * 4 * n..(col + 1) * 4 * n].fill(0);
     }

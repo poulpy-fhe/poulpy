@@ -611,7 +611,14 @@ where
             + self.bytes_of_vec_znx_big(1, pairwise_dft_size)
             + BE::bytes_of_vec_znx(self.n(), 1, res_size)
             + lvl_2_pairwise.max(self.vec_znx_big_normalize_tmp_bytes());
-        let lvl_2: usize = lvl_2a.max(lvl_2b);
+        let lvl_2: usize = if cols == 2 && matches!(self.n(), 32768 | 65536) && self.cnv_tensor_rank1_dft_is_fused() {
+            self.bytes_of_vec_znx_dft(3, diag_dft_size)
+                + self
+                    .cnv_tensor_rank1_dft_tmp_bytes(cnv_offset, diag_dft_size, a_size, b_size)
+                    .max(self.bytes_of_vec_znx_big(1, diag_dft_size) + self.vec_znx_big_normalize_tmp_bytes())
+        } else {
+            lvl_2a.max(lvl_2b)
+        };
 
         lvl_0 + lvl_1.max(lvl_2)
     }
@@ -986,16 +993,93 @@ where
         self.cnv_prepare_left(&mut a_prep, &a_backend.data, a_mask, &mut prep_scratch);
         self.cnv_prepare_right(&mut b_prep, &b_backend.data, b_mask, &mut prep_scratch);
 
-        glwe_tensor_apply_loop(
-            self,
-            cnv_offset,
-            res,
-            &a_prep,
-            &b_prep,
-            a_size,
-            b_size,
+        if cols == 2 && matches!(self.n(), 32768 | 65536) && self.cnv_tensor_rank1_dft_is_fused() {
+            glwe_tensor_apply_loop_rank1(
+                self,
+                cnv_offset,
+                res,
+                &a_prep,
+                &b_prep,
+                a_size,
+                b_size,
+                ab_base2k,
+                &mut scratch,
+            );
+        } else {
+            glwe_tensor_apply_loop(
+                self,
+                cnv_offset,
+                res,
+                &a_prep,
+                &b_prep,
+                a_size,
+                b_size,
+                ab_base2k,
+                &mut scratch,
+            );
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn glwe_tensor_apply_loop_rank1<BE, M, R, AP, BP>(
+    module: &M,
+    cnv_offset: usize,
+    res: &mut R,
+    a_prep: &AP,
+    b_prep: &BP,
+    a_size: usize,
+    b_size: usize,
+    ab_base2k: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend,
+    M: Sized
+        + ModuleN
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxBigNormalize<BE>
+        + Convolution<BE>
+        + VecZnxBigNormalizeTmpBytes,
+    R: GLWEToBackendMut<BE> + GLWEInfos,
+    AP: CnvPVecLToBackendRef<BE>,
+    BP: CnvPVecRToBackendRef<BE>,
+{
+    let res_base2k = res.base2k().as_usize();
+    let (cnv_offset_hi, cnv_offset_lo) = cnv_offset_to_limb_offset(cnv_offset, ab_base2k);
+    let dft_size = normalize_input_limb_bound_with_offset(
+        a_size + b_size - cnv_offset_hi,
+        res.size(),
+        res_base2k,
+        ab_base2k,
+        cnv_offset_lo,
+    );
+    let (mut tensor_dft, mut scratch) = scratch.borrow().take_vec_znx_dft_scratch(module, 3, dft_size);
+    module.cnv_tensor_rank1_dft(
+        cnv_offset_hi,
+        &mut tensor_dft.to_backend_mut(),
+        &a_prep.to_backend_ref(),
+        &b_prep.to_backend_ref(),
+        &mut scratch,
+    );
+
+    for col in 0..3 {
+        let (mut product_big, mut norm_scratch) = scratch.borrow().take_vec_znx_big_scratch(module, 1, dft_size);
+        {
+            let mut product_big_backend = product_big.to_backend_mut();
+            let mut tensor_dft_backend = tensor_dft.to_backend_mut();
+            module.vec_znx_idft_apply_tmpa(&mut product_big_backend, 0, &mut tensor_dft_backend, col);
+        }
+        module.vec_znx_big_normalize(
+            &mut res.to_backend_mut().data,
+            res_base2k,
+            cnv_offset_lo,
+            col,
+            &product_big.to_backend_ref(),
             ab_base2k,
-            &mut scratch,
+            0,
+            &mut norm_scratch,
         );
     }
 }

@@ -3,6 +3,7 @@ use poulpy_hal::{
     layouts::Module,
     test_suite::convolution::{
         test_convolution, test_convolution_accumulate, test_convolution_by_const, test_convolution_pairwise,
+        test_convolution_tensor_rank1,
     },
 };
 
@@ -204,6 +205,7 @@ fn test_convolution_direct() {
     test_convolution(&module, 50);
     test_convolution_by_const(&module, 50);
     test_convolution_pairwise(&module, 50);
+    test_convolution_tensor_rank1(&module, 50);
     test_convolution_accumulate(&module, 50);
 }
 
@@ -274,7 +276,7 @@ fn test_vmp_apply_dft_to_dft_digits_strided_bit_identical() {
             for col in 0..cols_in {
                 module.vec_znx_dft_copy(dsize, dsize - di - 1, &mut digit_view, col, &a_dft.to_backend_ref(), col);
             }
-            let res_size = res_sequential.max_size() - ((dsize - di) as isize - 2).max(0) as usize;
+            let res_size = res_sequential.size() - ((dsize - di) as isize - 2).max(0) as usize;
             let mut res_backend = res_sequential.to_backend_mut();
             let mut res_view = res_backend.with_size_mut(res_size);
             if di == 0 {
