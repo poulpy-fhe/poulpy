@@ -111,7 +111,7 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWEPlaintext<D, W> {
     }
 
     fn max_size(&self) -> usize {
-        self.data.max_size()
+        self.data.size()
     }
 
     fn n(&self) -> Degree {
@@ -199,7 +199,7 @@ impl<D: Data, W: ZnxWord> GLWEPlaintext<D, W> {
         let shape = self.data.shape();
         let data = self.data.data;
         GLWEPlaintext {
-            data: VecZnx::from_data_with_max_size(data, shape.n(), shape.cols(), shape.size(), shape.size()),
+            data: VecZnx::from_data(data, shape.n(), shape.cols(), shape.size()),
             base2k: self.base2k,
             k: self.k,
         }

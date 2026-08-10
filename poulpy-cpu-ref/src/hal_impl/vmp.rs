@@ -24,9 +24,9 @@ macro_rules! hal_impl_vmp {
         ) where
             R: VecZnxDftToBackendMut<Self>,
         {
-            let a_cols = <poulpy_hal::layouts::VecZnxBackendRef<'_, Self> as ZnxInfos>::cols(a);
+            let a_cols = <poulpy_hal::layouts::VecZnxBackendRef<'_, Self> as poulpy_hal::layouts::VecZnxInfos>::cols(a);
             let a_size = <poulpy_hal::layouts::VecZnxBackendRef<'_, Self> as ZnxInfos>::size(a);
-            let b_rows = <poulpy_hal::layouts::VmpPMatBackendRef<'_, Self> as ZnxInfos>::rows(b);
+            let b_rows = <poulpy_hal::layouts::VmpPMatBackendRef<'_, Self> as poulpy_hal::layouts::MatZnxInfos>::rows(b);
             let cols_to_copy = a_cols.min(b.cols_in());
             let a_start_col = a_cols - cols_to_copy;
             let a_dft_size = a_size.min(b_rows);

@@ -11,7 +11,7 @@ use crate::{
     alloc_aligned,
     layouts::{
         Backend, Data, DataView, DataViewMut, DigestU64, FillUniform, HostDataMut, HostDataRef, ReaderFrom, ToOwnedDeep, VecZnx,
-        VecZnxBackendMut, VecZnxBackendRef, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
+        VecZnxBackendMut, VecZnxBackendRef, VecZnxInfos, WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
     },
     source::Source,
 };
@@ -91,20 +91,22 @@ impl<D: HostDataRef, W: ZnxWord> ToOwnedDeep for ScalarZnx<D, W> {
 }
 
 impl<D: Data, W: ZnxWord> ZnxInfos for ScalarZnx<D, W> {
-    fn cols(&self) -> usize {
-        self.shape.cols()
-    }
-
-    fn rows(&self) -> usize {
-        1
-    }
-
     fn n(&self) -> usize {
         self.shape.n()
     }
 
     fn size(&self) -> usize {
         1
+    }
+
+    fn poly_count(&self) -> usize {
+        crate::layouts::checked_product(&[self.cols(), self.size()], "polynomial count")
+    }
+}
+
+impl<D: Data, W: ZnxWord> VecZnxInfos for ScalarZnx<D, W> {
+    fn cols(&self) -> usize {
+        self.shape.cols()
     }
 }
 
@@ -177,9 +179,7 @@ impl<D: HostDataMut, W: ZnxWord> ScalarZnx<D, W> {
         // Zero-initialize before setting non-zero entries, since shuffle will
         // mix positions and we need indices hw..n to be zero.
         self.at_mut(col, 0).fill(W::zero());
-        self.at_mut(col, 0)[..hw]
-            .iter_mut()
-            .for_each(|x: &mut W| *x = W::from_i64((source.next_u32() & 1) as i64));
+        self.at_mut(col, 0)[..hw].fill(W::from_i64(1));
         self.at_mut(col, 0).shuffle(source);
     }
 

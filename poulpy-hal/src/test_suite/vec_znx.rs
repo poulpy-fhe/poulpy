@@ -1,6 +1,6 @@
 use super::{
     TestParams, alloc_host_vec_znx, download_scalar_znx, download_vec_znx, scalar_znx_backend_mut, scalar_znx_backend_ref,
-    upload_scalar_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref,
+    upload_scalar_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_mut_sized, vec_znx_backend_ref,
 };
 use std::f64::consts::SQRT_2;
 
@@ -1512,15 +1512,15 @@ pub fn test_vec_znx_normalize_coeff_backend<BR: crate::test_suite::TestBackend, 
 
         for res_size in [1, 2, 3, 4] {
             for res_offset in -(base2k as i64)..=(base2k as i64) {
-                let expected = alloc_host_vec_znx::<BR>(1, cols, res_size, 4);
-                let actual = alloc_host_vec_znx::<BT>(1, cols, res_size, 4);
+                let expected = alloc_host_vec_znx::<BR>(1, cols, 4);
+                let actual = alloc_host_vec_znx::<BT>(1, cols, 4);
                 let mut expected_backend = upload_vec_znx::<BR>(&expected);
                 let mut actual_backend = upload_vec_znx::<BT>(&actual);
 
                 for col_i in 0..cols {
                     let coeff = coeffs[(col_i + a_size + res_size) % coeffs.len()];
                     module_ref.vec_znx_normalize_coeff_backend(
-                        &mut vec_znx_backend_mut::<BR>(&mut expected_backend),
+                        &mut vec_znx_backend_mut_sized::<BR>(&mut expected_backend, res_size),
                         base2k,
                         res_offset,
                         col_i,
@@ -1531,7 +1531,7 @@ pub fn test_vec_znx_normalize_coeff_backend<BR: crate::test_suite::TestBackend, 
                         &mut scratch_ref.arena(),
                     );
                     module_test.vec_znx_normalize_coeff_backend(
-                        &mut vec_znx_backend_mut::<BT>(&mut actual_backend),
+                        &mut vec_znx_backend_mut_sized::<BT>(&mut actual_backend, res_size),
                         base2k,
                         res_offset,
                         col_i,
@@ -1634,8 +1634,8 @@ pub fn test_vec_znx_lsh_coeff_backend<BR: crate::test_suite::TestBackend, BT: cr
         let a_test = upload_vec_znx::<BT>(&a);
         for res_size in [1, 2, 3, 4] {
             for k in 0..=(base2k * (a_size + 1)) {
-                let expected = alloc_host_vec_znx::<BR>(1, cols, res_size, 4);
-                let actual = alloc_host_vec_znx::<BT>(1, cols, res_size, 4);
+                let expected = alloc_host_vec_znx::<BR>(1, cols, 4);
+                let actual = alloc_host_vec_znx::<BT>(1, cols, 4);
                 let mut expected_backend = upload_vec_znx::<BR>(&expected);
                 let mut actual_backend = upload_vec_znx::<BT>(&actual);
                 for col_i in 0..cols {
@@ -1643,7 +1643,7 @@ pub fn test_vec_znx_lsh_coeff_backend<BR: crate::test_suite::TestBackend, BT: cr
                     module_ref.vec_znx_lsh_coeff_backend(
                         base2k,
                         k,
-                        &mut vec_znx_backend_mut::<BR>(&mut expected_backend),
+                        &mut vec_znx_backend_mut_sized::<BR>(&mut expected_backend, res_size),
                         col_i,
                         &vec_znx_backend_ref::<BR>(&a_ref),
                         col_i,
@@ -1653,7 +1653,7 @@ pub fn test_vec_znx_lsh_coeff_backend<BR: crate::test_suite::TestBackend, BT: cr
                     module_test.vec_znx_lsh_coeff_backend(
                         base2k,
                         k,
-                        &mut vec_znx_backend_mut::<BT>(&mut actual_backend),
+                        &mut vec_znx_backend_mut_sized::<BT>(&mut actual_backend, res_size),
                         col_i,
                         &vec_znx_backend_ref::<BT>(&a_test),
                         col_i,
@@ -1699,8 +1699,8 @@ pub fn test_vec_znx_lsh_add_coeff_into_backend<BR: crate::test_suite::TestBacken
         let a_test = upload_vec_znx::<BT>(&a);
         for res_size in [1, 2, 3, 4] {
             for k in 0..=(base2k * (a_size + 1)) {
-                let mut expected = alloc_host_vec_znx::<BR>(1, cols, res_size, 4);
-                let mut actual = alloc_host_vec_znx::<BT>(1, cols, res_size, 4);
+                let mut expected = alloc_host_vec_znx::<BR>(1, cols, 4);
+                let mut actual = alloc_host_vec_znx::<BT>(1, cols, 4);
                 expected.fill_uniform(base2k, &mut source);
                 actual.raw_mut().copy_from_slice(expected.raw());
                 let mut expected_backend = upload_vec_znx::<BR>(&expected);
@@ -1710,7 +1710,7 @@ pub fn test_vec_znx_lsh_add_coeff_into_backend<BR: crate::test_suite::TestBacken
                     module_ref.vec_znx_lsh_add_coeff_into_backend(
                         base2k,
                         k,
-                        &mut vec_znx_backend_mut::<BR>(&mut expected_backend),
+                        &mut vec_znx_backend_mut_sized::<BR>(&mut expected_backend, res_size),
                         col_i,
                         &vec_znx_backend_ref::<BR>(&a_ref),
                         col_i,
@@ -1720,7 +1720,7 @@ pub fn test_vec_znx_lsh_add_coeff_into_backend<BR: crate::test_suite::TestBacken
                     module_test.vec_znx_lsh_add_coeff_into_backend(
                         base2k,
                         k,
-                        &mut vec_znx_backend_mut::<BT>(&mut actual_backend),
+                        &mut vec_znx_backend_mut_sized::<BT>(&mut actual_backend, res_size),
                         col_i,
                         &vec_znx_backend_ref::<BT>(&a_test),
                         col_i,
@@ -1766,8 +1766,8 @@ pub fn test_vec_znx_lsh_add_coeff_to_coeff_backend<BR: crate::test_suite::TestBa
         let a_test = upload_vec_znx::<BT>(&a);
         for res_size in [1, 2, 3, 4] {
             for k in 0..=(base2k * (a_size + 1)) {
-                let mut expected = alloc_host_vec_znx::<BR>(n, cols, res_size, 4);
-                let mut actual = alloc_host_vec_znx::<BT>(n, cols, res_size, 4);
+                let mut expected = alloc_host_vec_znx::<BR>(n, cols, 4);
+                let mut actual = alloc_host_vec_znx::<BT>(n, cols, 4);
                 expected.fill_uniform(base2k, &mut source);
                 actual.raw_mut().copy_from_slice(expected.raw());
                 let mut expected_backend = upload_vec_znx::<BR>(&expected);
@@ -1778,7 +1778,7 @@ pub fn test_vec_znx_lsh_add_coeff_to_coeff_backend<BR: crate::test_suite::TestBa
                     module_ref.vec_znx_lsh_add_coeff_to_coeff_backend(
                         base2k,
                         k,
-                        &mut vec_znx_backend_mut::<BR>(&mut expected_backend),
+                        &mut vec_znx_backend_mut_sized::<BR>(&mut expected_backend, res_size),
                         col_i,
                         &vec_znx_backend_ref::<BR>(&a_ref),
                         col_i,
@@ -1789,7 +1789,7 @@ pub fn test_vec_znx_lsh_add_coeff_to_coeff_backend<BR: crate::test_suite::TestBa
                     module_test.vec_znx_lsh_add_coeff_to_coeff_backend(
                         base2k,
                         k,
-                        &mut vec_znx_backend_mut::<BT>(&mut actual_backend),
+                        &mut vec_znx_backend_mut_sized::<BT>(&mut actual_backend, res_size),
                         col_i,
                         &vec_znx_backend_ref::<BT>(&a_test),
                         col_i,
@@ -1836,8 +1836,8 @@ pub fn test_vec_znx_lsh_sub_coeff_to_coeff_backend<BR: crate::test_suite::TestBa
         let a_test = upload_vec_znx::<BT>(&a);
         for res_size in [1, 2, 3, 4] {
             for k in 0..=(base2k * (a_size + 1)) {
-                let mut expected = alloc_host_vec_znx::<BR>(n, cols, res_size, 4);
-                let mut actual = alloc_host_vec_znx::<BT>(n, cols, res_size, 4);
+                let mut expected = alloc_host_vec_znx::<BR>(n, cols, 4);
+                let mut actual = alloc_host_vec_znx::<BT>(n, cols, 4);
                 expected.fill_uniform(base2k, &mut source);
                 actual.raw_mut().copy_from_slice(expected.raw());
                 let mut expected_backend = upload_vec_znx::<BR>(&expected);
@@ -1848,7 +1848,7 @@ pub fn test_vec_znx_lsh_sub_coeff_to_coeff_backend<BR: crate::test_suite::TestBa
                     module_ref.vec_znx_lsh_sub_coeff_to_coeff_backend(
                         base2k,
                         k,
-                        &mut vec_znx_backend_mut::<BR>(&mut expected_backend),
+                        &mut vec_znx_backend_mut_sized::<BR>(&mut expected_backend, res_size),
                         col_i,
                         &vec_znx_backend_ref::<BR>(&a_ref),
                         col_i,
@@ -1859,7 +1859,7 @@ pub fn test_vec_znx_lsh_sub_coeff_to_coeff_backend<BR: crate::test_suite::TestBa
                     module_test.vec_znx_lsh_sub_coeff_to_coeff_backend(
                         base2k,
                         k,
-                        &mut vec_znx_backend_mut::<BT>(&mut actual_backend),
+                        &mut vec_znx_backend_mut_sized::<BT>(&mut actual_backend, res_size),
                         col_i,
                         &vec_znx_backend_ref::<BT>(&a_test),
                         col_i,
@@ -1906,8 +1906,8 @@ pub fn test_vec_znx_rsh_coeff_backend<BR: crate::test_suite::TestBackend, BT: cr
         let a_test = upload_vec_znx::<BT>(&a);
         for res_size in [1, 2, 3, 4] {
             for k in 0..=(base2k * (a_size + 1)) {
-                let expected = alloc_host_vec_znx::<BR>(1, cols, res_size, 4);
-                let actual = alloc_host_vec_znx::<BT>(1, cols, res_size, 4);
+                let expected = alloc_host_vec_znx::<BR>(1, cols, 4);
+                let actual = alloc_host_vec_znx::<BT>(1, cols, 4);
                 let mut expected_backend = upload_vec_znx::<BR>(&expected);
                 let mut actual_backend = upload_vec_znx::<BT>(&actual);
                 for col_i in 0..cols {
@@ -1915,7 +1915,7 @@ pub fn test_vec_znx_rsh_coeff_backend<BR: crate::test_suite::TestBackend, BT: cr
                     module_ref.vec_znx_rsh_coeff_backend(
                         base2k,
                         k,
-                        &mut vec_znx_backend_mut::<BR>(&mut expected_backend),
+                        &mut vec_znx_backend_mut_sized::<BR>(&mut expected_backend, res_size),
                         col_i,
                         &vec_znx_backend_ref::<BR>(&a_ref),
                         col_i,
@@ -1925,7 +1925,7 @@ pub fn test_vec_znx_rsh_coeff_backend<BR: crate::test_suite::TestBackend, BT: cr
                     module_test.vec_znx_rsh_coeff_backend(
                         base2k,
                         k,
-                        &mut vec_znx_backend_mut::<BT>(&mut actual_backend),
+                        &mut vec_znx_backend_mut_sized::<BT>(&mut actual_backend, res_size),
                         col_i,
                         &vec_znx_backend_ref::<BT>(&a_test),
                         col_i,
@@ -1971,8 +1971,8 @@ pub fn test_vec_znx_rsh_add_coeff_into_backend<BR: crate::test_suite::TestBacken
         let a_test = upload_vec_znx::<BT>(&a);
         for res_size in [1, 2, 3, 4] {
             for k in 0..=(base2k * (a_size + 1)) {
-                let mut expected = alloc_host_vec_znx::<BR>(n, cols, res_size, 4);
-                let mut actual = alloc_host_vec_znx::<BT>(n, cols, res_size, 4);
+                let mut expected = alloc_host_vec_znx::<BR>(n, cols, 4);
+                let mut actual = alloc_host_vec_znx::<BT>(n, cols, 4);
                 expected.fill_uniform(base2k, &mut source);
                 actual.raw_mut().copy_from_slice(expected.raw());
                 let mut expected_backend = upload_vec_znx::<BR>(&expected);
@@ -1983,7 +1983,7 @@ pub fn test_vec_znx_rsh_add_coeff_into_backend<BR: crate::test_suite::TestBacken
                     module_ref.vec_znx_rsh_add_coeff_into_backend(
                         base2k,
                         k,
-                        &mut vec_znx_backend_mut::<BR>(&mut expected_backend),
+                        &mut vec_znx_backend_mut_sized::<BR>(&mut expected_backend, res_size),
                         col_i,
                         &vec_znx_backend_ref::<BR>(&a_ref),
                         col_i,
@@ -1994,7 +1994,7 @@ pub fn test_vec_znx_rsh_add_coeff_into_backend<BR: crate::test_suite::TestBacken
                     module_test.vec_znx_rsh_add_coeff_into_backend(
                         base2k,
                         k,
-                        &mut vec_znx_backend_mut::<BT>(&mut actual_backend),
+                        &mut vec_znx_backend_mut_sized::<BT>(&mut actual_backend, res_size),
                         col_i,
                         &vec_znx_backend_ref::<BT>(&a_test),
                         col_i,
@@ -2041,8 +2041,8 @@ pub fn test_vec_znx_rsh_sub_coeff_into_backend<BR: crate::test_suite::TestBacken
         let a_test = upload_vec_znx::<BT>(&a);
         for res_size in [1, 2, 3, 4] {
             for k in 0..=(base2k * (a_size + 1)) {
-                let mut expected = alloc_host_vec_znx::<BR>(n, cols, res_size, 4);
-                let mut actual = alloc_host_vec_znx::<BT>(n, cols, res_size, 4);
+                let mut expected = alloc_host_vec_znx::<BR>(n, cols, 4);
+                let mut actual = alloc_host_vec_znx::<BT>(n, cols, 4);
                 expected.fill_uniform(base2k, &mut source);
                 actual.raw_mut().copy_from_slice(expected.raw());
                 let mut expected_backend = upload_vec_znx::<BR>(&expected);
@@ -2053,7 +2053,7 @@ pub fn test_vec_znx_rsh_sub_coeff_into_backend<BR: crate::test_suite::TestBacken
                     module_ref.vec_znx_rsh_sub_coeff_into_backend(
                         base2k,
                         k,
-                        &mut vec_znx_backend_mut::<BR>(&mut expected_backend),
+                        &mut vec_znx_backend_mut_sized::<BR>(&mut expected_backend, res_size),
                         col_i,
                         &vec_znx_backend_ref::<BR>(&a_ref),
                         col_i,
@@ -2064,7 +2064,7 @@ pub fn test_vec_znx_rsh_sub_coeff_into_backend<BR: crate::test_suite::TestBacken
                     module_test.vec_znx_rsh_sub_coeff_into_backend(
                         base2k,
                         k,
-                        &mut vec_znx_backend_mut::<BT>(&mut actual_backend),
+                        &mut vec_znx_backend_mut_sized::<BT>(&mut actual_backend, res_size),
                         col_i,
                         &vec_znx_backend_ref::<BT>(&a_test),
                         col_i,
@@ -2330,6 +2330,29 @@ pub fn test_vec_znx_seed_sampling_matches_source_wrappers<B: crate::test_suite::
         seed,
     );
     assert_eq!(download_vec_znx::<B>(&wrapper_normal), download_vec_znx::<B>(&backend_normal));
+}
+
+pub fn test_scalar_znx_binary_hw_has_exact_weight<B: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<B>)
+where
+    Module<B>: ScalarZnxFillBinaryHwSourceBackend<B>,
+{
+    let n = params.size;
+    let hw = n / 8;
+    let host_init = ScalarZnx::alloc(n, 1);
+    let mut sampled = upload_scalar_znx::<B>(&host_init);
+
+    module.scalar_znx_fill_binary_hw_source_backend(
+        &mut <ScalarZnx<B::OwnedBuf, B::ZnxWord> as ScalarZnxToBackendMut<B>>::to_backend_mut(&mut sampled),
+        0,
+        hw,
+        &mut Source::new([0u8; 32]),
+    );
+
+    let sampled = download_scalar_znx::<B>(&sampled);
+    let coefficients = sampled.at(0, 0);
+
+    assert!(coefficients.iter().all(|&x| x == 0 || x == 1));
+    assert_eq!(coefficients.iter().filter(|&&x| x == 1).count(), hw);
 }
 
 pub fn test_scalar_znx_secret_seed_sampling_matches_source_wrappers<B: crate::test_suite::TestBackend>(
@@ -3035,22 +3058,22 @@ pub fn test_vec_znx_extract_coeff_backend<BR: crate::test_suite::TestBackend, BT
         let a_test = upload_vec_znx::<BT>(&a);
 
         for res_size in [1, 2, 3, 4] {
-            let expected = alloc_host_vec_znx::<BR>(1, cols, res_size, 4);
-            let actual = alloc_host_vec_znx::<BT>(1, cols, res_size, 4);
+            let expected = alloc_host_vec_znx::<BR>(1, cols, 4);
+            let actual = alloc_host_vec_znx::<BT>(1, cols, 4);
             let mut expected_backend = upload_vec_znx::<BR>(&expected);
             let mut actual_backend = upload_vec_znx::<BT>(&actual);
 
             for col_i in 0..cols {
                 let coeff = coeffs[(col_i + a_size + res_size) % coeffs.len()];
                 module_ref.vec_znx_extract_coeff_backend(
-                    &mut vec_znx_backend_mut::<BR>(&mut expected_backend),
+                    &mut vec_znx_backend_mut_sized::<BR>(&mut expected_backend, res_size),
                     col_i,
                     &vec_znx_backend_ref::<BR>(&a_ref),
                     col_i,
                     coeff,
                 );
                 module_test.vec_znx_extract_coeff_backend(
-                    &mut vec_znx_backend_mut::<BT>(&mut actual_backend),
+                    &mut vec_znx_backend_mut_sized::<BT>(&mut actual_backend, res_size),
                     col_i,
                     &vec_znx_backend_ref::<BT>(&a_test),
                     col_i,

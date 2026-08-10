@@ -111,20 +111,8 @@ impl<D: Data, W: ZnxWord> LWEMatrix<D, W> {
         let body_shape = self.body.shape();
         let mask_shape = self.mask.shape();
         LWEMatrix {
-            body: VecZnx::from_data_with_max_size(
-                self.body.data,
-                body_shape.n(),
-                body_shape.cols(),
-                body_shape.size(),
-                body_shape.size(),
-            ),
-            mask: VecZnx::from_data_with_max_size(
-                self.mask.data,
-                mask_shape.n(),
-                mask_shape.cols(),
-                mask_shape.size(),
-                mask_shape.size(),
-            ),
+            body: VecZnx::from_data(self.body.data, body_shape.n(), body_shape.cols(), body_shape.size()),
+            mask: VecZnx::from_data(self.mask.data, mask_shape.n(), mask_shape.cols(), mask_shape.size()),
             base2k: self.base2k,
             k: self.k,
         }

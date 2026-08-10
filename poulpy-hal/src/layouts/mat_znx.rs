@@ -1,8 +1,8 @@
 use crate::{
     alloc_aligned,
     layouts::{
-        Backend, Data, DataView, DataViewMut, DigestU64, FillUniform, HostDataMut, HostDataRef, ReaderFrom, ToOwnedDeep, VecZnx,
-        WriterTo, ZnxInfos, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
+        Backend, Data, DataView, DataViewMut, DigestU64, FillUniform, HostDataMut, HostDataRef, MatZnxInfos, ReaderFrom,
+        ToOwnedDeep, VecZnx, WriterTo, ZnxInfos, ZnxWord, ZnxZero,
     },
     source::Source,
 };
@@ -108,14 +108,6 @@ impl<D: HostDataRef, W: ZnxWord> fmt::Debug for MatZnx<D, W> {
 }
 
 impl<D: Data, W: ZnxWord> ZnxInfos for MatZnx<D, W> {
-    fn cols(&self) -> usize {
-        self.shape.cols_in()
-    }
-
-    fn rows(&self) -> usize {
-        self.shape.rows()
-    }
-
     fn n(&self) -> usize {
         self.shape.n()
     }
@@ -132,6 +124,20 @@ impl<D: Data, W: ZnxWord> ZnxInfos for MatZnx<D, W> {
     }
 }
 
+impl<D: Data, W: ZnxWord> MatZnxInfos for MatZnx<D, W> {
+    fn rows(&self) -> usize {
+        self.shape.rows()
+    }
+
+    fn cols_in(&self) -> usize {
+        self.shape.cols_in()
+    }
+
+    fn cols_out(&self) -> usize {
+        self.shape.cols_out()
+    }
+}
+
 impl<D: Data, W: ZnxWord> DataView for MatZnx<D, W> {
     type D = D;
     fn data(&self) -> &Self::D {
@@ -145,8 +151,24 @@ impl<D: Data, W: ZnxWord> DataViewMut for MatZnx<D, W> {
     }
 }
 
-impl<D: HostDataRef, W: ZnxWord> ZnxView for MatZnx<D, W> {
-    type Scalar = W;
+impl<D: HostDataRef, W: ZnxWord> MatZnx<D, W> {
+    /// Returns the whole element view as a scalar slice.
+    ///
+    /// A matrix container has no flat `(col, limb)` indexing, so it exposes the
+    /// buffer rather than implementing [`ZnxView`]. Use [`Self::at`] to address
+    /// an individual entry.
+    pub fn raw(&self) -> &[W] {
+        let span: usize = crate::layouts::element_view_span(self);
+        crate::layouts::raw_scalars(self.data.as_ref(), span)
+    }
+}
+
+impl<D: HostDataMut, W: ZnxWord> MatZnx<D, W> {
+    /// Mutable counterpart of [`Self::raw`].
+    pub fn raw_mut(&mut self) -> &mut [W] {
+        let span: usize = crate::layouts::element_view_span(self);
+        crate::layouts::raw_scalars_mut(self.data.as_mut(), span)
+    }
 }
 
 impl<D: Data, W: ZnxWord> MatZnx<D, W> {

@@ -166,7 +166,7 @@ impl<D: Data, W: ZnxWord> LWEInfos for LWE<D, W> {
     }
 
     fn max_size(&self) -> usize {
-        self.mask.max_size().min(self.body.max_size())
+        self.mask.size().min(self.body.size())
     }
 
     fn k(&self) -> TorusPrecision {
@@ -236,26 +236,6 @@ impl<D: Data, W: ZnxWord> LWE<D, W> {
                 ),
             ));
         }
-        if self.body.size() > self.body.max_size() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "LWE body size must not exceed max_size, got size={} max_size={}",
-                    self.body.size(),
-                    self.body.max_size()
-                ),
-            ));
-        }
-        if self.mask.size() > self.mask.max_size() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "LWE mask size must not exceed max_size, got size={} max_size={}",
-                    self.mask.size(),
-                    self.mask.max_size()
-                ),
-            ));
-        }
         Ok(())
     }
 }
@@ -284,20 +264,8 @@ impl<D: Data, W: ZnxWord> LWE<D, W> {
         let mask_shape = self.mask.shape();
         let mask_data = self.mask.data;
         LWE {
-            body: VecZnx::from_data_with_max_size(
-                body_data,
-                body_shape.n(),
-                body_shape.cols(),
-                body_shape.size(),
-                body_shape.size(),
-            ),
-            mask: VecZnx::from_data_with_max_size(
-                mask_data,
-                mask_shape.n(),
-                mask_shape.cols(),
-                mask_shape.size(),
-                mask_shape.size(),
-            ),
+            body: VecZnx::from_data(body_data, body_shape.n(), body_shape.cols(), body_shape.size()),
+            mask: VecZnx::from_data(mask_data, mask_shape.n(), mask_shape.cols(), mask_shape.size()),
             base2k: self.base2k,
             k: self.k,
         }

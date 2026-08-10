@@ -149,13 +149,7 @@ pub fn download_glwe<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
 ) -> GLWE<Vec<u8>, BE::ZnxWord> {
     let shape = src.data.shape();
     GLWE {
-        data: poulpy_hal::layouts::VecZnx::from_data_with_max_size(
-            BE::to_host_bytes(&src.data.data),
-            shape.n(),
-            shape.cols(),
-            shape.size(),
-            shape.size(),
-        ),
+        data: poulpy_hal::layouts::VecZnx::from_data(BE::to_host_bytes(&src.data.data), shape.n(), shape.cols(), shape.size()),
         k: src.k,
         base2k: src.base2k,
     }
@@ -177,13 +171,7 @@ pub fn download_glwe_plaintext<BE: HostBackend<OwnedBuf = Vec<u8>, ZnxWord = i64
 ) -> GLWEPlaintext<Vec<u8>, BE::ZnxWord> {
     let shape = src.data.shape();
     GLWEPlaintext {
-        data: poulpy_hal::layouts::VecZnx::from_data_with_max_size(
-            BE::to_host_bytes(&src.data.data),
-            shape.n(),
-            shape.cols(),
-            shape.size(),
-            shape.size(),
-        ),
+        data: poulpy_hal::layouts::VecZnx::from_data(BE::to_host_bytes(&src.data.data), shape.n(), shape.cols(), shape.size()),
         k: src.k,
         base2k: src.base2k,
     }
@@ -290,6 +278,10 @@ macro_rules! core_backend_test_suite {
                 glwe_automorphism_assign => $crate::test_suite::automorphism::test_glwe_automorphism_assign,
                 glwe_external_product => $crate::test_suite::external_product::test_glwe_external_product,
                 glwe_external_product_assign => $crate::test_suite::external_product::test_glwe_external_product_assign,
+                glwe_keyswitch_ignores_dirty_scratch =>
+                    $crate::test_suite::keyswitch::test_glwe_keyswitch_ignores_dirty_scratch,
+                glwe_external_product_ignores_dirty_scratch =>
+                    $crate::test_suite::keyswitch::test_glwe_external_product_ignores_dirty_scratch,
                 glwe_rotate => $crate::test_suite::test_glwe_rotate,
                 glwe_trace_assign => $crate::test_suite::test_glwe_trace_assign,
                 glwe_hoisted_baby_rotations_match_automorphism =>

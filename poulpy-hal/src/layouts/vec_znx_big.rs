@@ -6,8 +6,8 @@ use std::{
 use std::fmt;
 
 use crate::layouts::{
-    Backend, BigWord, Data, DataView, DataViewMut, DigestU64, HostDataMut, HostDataRef, VecZnxShape, ZnxInfos, ZnxView,
-    ZnxViewMut, ZnxZero,
+    Backend, BigWord, Data, DataView, DataViewMut, DigestU64, HostDataMut, HostDataRef, VecZnxInfos, VecZnxShape, ZnxInfos,
+    ZnxView, ZnxViewMut, ZnxZero,
 };
 
 /// Extended-precision polynomial vector used as a result accumulator.
@@ -54,7 +54,6 @@ impl<D: HostDataRef, W: BigWord, B: Backend<BigWord = W>> DigestU64 for VecZnxBi
         h.write_usize(self.n());
         h.write_usize(self.cols());
         h.write_usize(self.size());
-        h.write_usize(self.max_size());
         h.finish()
     }
 }
@@ -64,20 +63,22 @@ impl<D: HostDataRef, W: BigWord, B: Backend<BigWord = W>> ZnxView for VecZnxBig<
 }
 
 impl<D: Data, W: BigWord, B: Backend<BigWord = W>> ZnxInfos for VecZnxBig<D, W, B> {
-    fn cols(&self) -> usize {
-        self.shape.cols()
-    }
-
-    fn rows(&self) -> usize {
-        1
-    }
-
     fn n(&self) -> usize {
         self.shape.n()
     }
 
     fn size(&self) -> usize {
         self.shape.size()
+    }
+
+    fn poly_count(&self) -> usize {
+        crate::layouts::checked_product(&[self.cols(), self.size()], "polynomial count")
+    }
+}
+
+impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxInfos for VecZnxBig<D, W, B> {
+    fn cols(&self) -> usize {
+        self.shape.cols()
     }
 }
 
@@ -110,10 +111,6 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
     pub fn shape(&self) -> VecZnxShape {
         self.shape
     }
-
-    pub fn max_size(&self) -> usize {
-        self.shape.max_size()
-    }
 }
 
 impl<D: HostDataMut, W: BigWord, B: Backend<BigWord = W>> ZnxZero for VecZnxBig<D, W, B> {
@@ -134,7 +131,7 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
         let data: <B as Backend>::OwnedBuf = B::alloc_zeroed_bytes(B::bytes_of_vec_znx_big(n, cols, size));
         VecZnxBig {
             data,
-            shape: VecZnxShape::new(n, cols, size, size),
+            shape: VecZnxShape::new(n, cols, size),
             _phantom: PhantomData,
         }
     }
@@ -153,7 +150,7 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
         let data: <B as Backend>::OwnedBuf = B::from_host_bytes(&data);
         VecZnxBig {
             data,
-            shape: VecZnxShape::new(n, cols, size, size),
+            shape: VecZnxShape::new(n, cols, size),
             _phantom: PhantomData,
         }
     }
@@ -163,15 +160,7 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
     pub fn from_data(data: D, n: usize, cols: usize, size: usize) -> Self {
         Self {
             data,
-            shape: VecZnxShape::new(n, cols, size, size),
-            _phantom: PhantomData,
-        }
-    }
-
-    pub fn from_data_with_max_size(data: D, n: usize, cols: usize, size: usize, max_size: usize) -> Self {
-        Self {
-            data,
-            shape: VecZnxShape::new(n, cols, size, max_size),
+            shape: VecZnxShape::new(n, cols, size),
             _phantom: PhantomData,
         }
     }
@@ -316,8 +305,8 @@ impl<D: Data, W: BigWord, B: Backend<BigWord = W>> VecZnxBig<D, W, B> {
     {
         let shape = self.shape;
         assert_eq!(
-            B::bytes_of_vec_znx_big(shape.n(), shape.cols(), shape.max_size()),
-            B2::bytes_of_vec_znx_big(shape.n(), shape.cols(), shape.max_size()),
+            B::bytes_of_vec_znx_big(shape.n(), shape.cols(), shape.size()),
+            B2::bytes_of_vec_znx_big(shape.n(), shape.cols(), shape.size()),
             "into_backend: byte sizes diverge despite declared layout compatibility"
         );
         VecZnxBig {

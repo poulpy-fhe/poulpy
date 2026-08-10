@@ -61,8 +61,7 @@ impl<D: HostDataRef> VecZnx<D, i64> {
 impl<D: HostDataRef, B: Backend<BigWord = i64>> VecZnxBig<D, i64, B> {
     pub fn stats(&self, base2k: usize, col: usize) -> Stats {
         let shape = self.shape();
-        let znx: VecZnx<&[u8], i64> =
-            VecZnx::from_data_with_max_size(self.data.as_ref(), shape.n(), shape.cols(), shape.size(), shape.max_size());
+        let znx: VecZnx<&[u8], i64> = VecZnx::from_data(self.data.as_ref(), shape.n(), shape.cols(), shape.size());
         znx.stats(base2k, col)
     }
 }

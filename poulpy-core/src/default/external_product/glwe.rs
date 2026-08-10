@@ -9,9 +9,9 @@ use crate::api::GLWEBytesOf;
 use poulpy_hal::layouts::VecZnxDftBackendMut;
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
-        VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize,
-        VecZnxNormalizeTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
+        ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply,
+        VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes, VmpApplyDftToDft,
+        VmpApplyDftToDftAccumulate, VmpApplyDftToDftTmpBytes,
     },
     layouts::{Backend, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
 };
@@ -42,10 +42,9 @@ fn glwe_external_product_dft_fill<BE, M>(
         + VecZnxNormalizeTmpBytes
         + VecZnxDftApply<BE>
         + VmpApplyDftToDft<BE>
-        + VecZnxDftAddAssign<BE>
+        + VmpApplyDftToDftAccumulate<BE>
         + VecZnxIdftApply<BE>
-        + VecZnxIdftApplyTmpBytes
-        + VecZnxDftZero<BE>,
+        + VecZnxIdftApplyTmpBytes,
 {
     let cols: usize = (ggsw.rank() + 1).into();
     let dsize: usize = ggsw.dsize().into();
@@ -59,34 +58,39 @@ fn glwe_external_product_dft_fill<BE, M>(
             let a_dft_ref = a_dft.to_backend_ref();
             module.vmp_apply_dft_to_dft(res_dft, &a_dft_ref, &ggsw.data, 0, &mut scratch_1.borrow());
         } else {
+            // Same shape as `gglwe_product_dft_default`, and the same two
+            // constraints hold; see the comment there for why. In short:
+            // `di == 0` is the overwriting pass and must run at the **full**
+            // width so no limb of `res_dft` keeps stale scratch, and it must be
+            // `di == 0` because `vmp_apply_dft_to_dft` covers its destination
+            // fully only at `limb_offset == 0`. The accumulating passes may keep
+            // the narrow view. `- 2` rather than `- 1` because an elementary
+            // limb product spans two limbs; do not tighten it.
+            //
+            // The one difference from the keyswitch: there the operand arrives
+            // already in DFT and each digit is sliced out with
+            // `vec_znx_dft_copy`, here it arrives in coefficients and the stride
+            // is folded into `vec_znx_dft_apply`, so no full-width DFT of `a` is
+            // ever materialized.
             for di in 0..dsize {
-                let (mut a_dft, mut scratch_1) = scratch
-                    .borrow()
-                    .take_vec_znx_dft_scratch(module, cols, (a.size() + di) / dsize);
-                let res_compute_size = res_dft.max_size() - ((dsize - di) as isize - 2).max(0) as usize;
-                let mut res_view = res_dft.with_size_mut(res_compute_size);
+                let (mut a_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, (a_size + di) / dsize);
 
                 for j in 0..cols {
                     module.vec_znx_dft_apply(dsize, dsize - 1 - di, &mut a_dft, j, &a.data, j);
                 }
 
                 if di == 0 {
-                    module.vmp_apply_dft_to_dft(&mut res_view, &a_dft.to_backend_ref(), &ggsw.data, 0, &mut scratch_1.borrow());
+                    module.vmp_apply_dft_to_dft(res_dft, &a_dft.to_backend_ref(), &ggsw.data, 0, &mut scratch_1.borrow());
                 } else {
-                    let (mut res_dft_tmp, mut scratch_2) =
-                        scratch_1
-                            .borrow()
-                            .take_vec_znx_dft_scratch(module, res_view.cols(), res_view.size());
-                    module.vmp_apply_dft_to_dft(
-                        &mut res_dft_tmp,
+                    let res_compute_size = res_dft.size() - ((dsize - di) as isize - 2).max(0) as usize;
+                    let mut res_view = res_dft.with_size_mut(res_compute_size);
+                    module.vmp_apply_dft_to_dft_accumulate(
+                        &mut res_view,
                         &a_dft.to_backend_ref(),
                         &ggsw.data,
                         di,
-                        &mut scratch_2.borrow(),
+                        &mut scratch_1.borrow(),
                     );
-                    for col in 0..cols {
-                        module.vec_znx_dft_add_assign(&mut res_view, col, &res_dft_tmp.to_backend_ref(), col);
-                    }
                 }
             }
         }
@@ -101,13 +105,12 @@ where
         + VecZnxNormalizeTmpBytes
         + VecZnxDftApply<BE>
         + VmpApplyDftToDft<BE>
-        + VecZnxDftAddAssign<BE>
+        + VmpApplyDftToDftAccumulate<BE>
         + VecZnxBigBytesOf
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalize<BE>
-        + VecZnxNormalize<BE>
-        + VecZnxDftZero<BE>,
+        + VecZnxNormalize<BE>,
 {
     fn glwe_external_product_internal_tmp_bytes<R, A, B>(&self, _res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where
@@ -223,7 +226,6 @@ where
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
         + VecZnxDftBytesOf
-        + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     A: GLWEToBackendRef<BE> + GLWEInfos,
@@ -249,9 +251,6 @@ where
     let (mut res_dft, scratch_1) = scratch
         .borrow()
         .take_vec_znx_dft_scratch(module, (res.rank() + 1).into(), key_size);
-    for col in 0..res_dft.cols() {
-        module.vec_znx_dft_zero(&mut res_dft, col);
-    }
 
     let mut scratch = scratch_1;
     if a_base2k != ggsw_base2k {
@@ -301,7 +300,6 @@ where
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
         + VecZnxDftBytesOf
-        + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
     G: GGSWPreparedToBackendRef<BE> + GGSWInfos,
@@ -322,9 +320,6 @@ where
     let (mut res_dft, scratch_1) = scratch
         .borrow()
         .take_vec_znx_dft_scratch(module, (res.rank() + 1).into(), key_size);
-    for col in 0..res_dft.cols() {
-        module.vec_znx_dft_zero(&mut res_dft, col);
-    }
 
     let mut scratch = scratch_1;
     if res_base2k != ggsw_base2k {

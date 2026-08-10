@@ -1,8 +1,8 @@
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero,
-        VmpApplyDftToDft, VmpApplyDftToDftAccumulate, VmpApplyDftToDftTmpBytes,
+        ModuleN, ScratchArenaTakeBasic, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VmpApplyDftToDft,
+        VmpApplyDftToDftAccumulate, VmpApplyDftToDftTmpBytes,
     },
     layouts::{Backend, Module, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendRef},
 };
@@ -70,7 +70,6 @@ impl<BE: Backend> GGLWEProductDefault<BE> for Module<BE> where
         + VmpApplyDftToDft<BE>
         + VmpApplyDftToDftAccumulate<BE>
         + VecZnxDftAddAssign<BE>
-        + VecZnxDftZero<BE>
         + VecZnxDftCopy<BE>
 {
 }
@@ -84,7 +83,6 @@ where
         + VmpApplyDftToDft<BE>
         + VmpApplyDftToDftAccumulate<BE>
         + VecZnxDftAddAssign<BE>
-        + VecZnxDftZero<BE>
         + VecZnxDftCopy<BE>,
 {
     fn gglwe_product_dft_tmp_bytes_default<K>(&self, res_size: usize, a_size: usize, key_infos: &K) -> usize
@@ -144,24 +142,53 @@ where
             let dsize: usize = key.dsize().into();
             let dnum: usize = key.dnum().into();
 
+            // `di == 0` is the overwriting pass and must leave no limb of `res`
+            // holding stale scratch, so it runs at the **full** width: the VMP
+            // zeroes whatever it does not compute, which is exactly the tail the
+            // narrowed view used to leave untouched. Two properties make this
+            // the only workable shape, and both are easy to break:
+            //
+            //   - the overwrite must be `di == 0`. `vmp_apply_dft_to_dft` covers
+            //     `res` fully only at `limb_offset == 0`; at any other offset it
+            //     writes `0..col_max - limb_offset` and zeroes from `col_max`,
+            //     leaving a gap in between. So the digits cannot be walked in
+            //     reverse to get a wider first pass.
+            //   - the accumulating passes may keep the narrow view, since every
+            //     limb they skip was already written by `di == 0`.
+            //
+            // Net effect: callers hand in arbitrary scratch. Before this, the
+            // top `dsize - 2` limbs were outside the overwriting view and
+            // silently accumulated stale bytes, so each caller had to pre-zero,
+            // an obligation invisible at the call site and, on the automorphism
+            // path, not actually met.
             for di in 0..dsize {
                 let (mut ai_dft, mut scratch_1) =
                     scratch
                         .borrow()
                         .take_vec_znx_dft_scratch(self, cols, ((a_size + di) / dsize).min(dnum));
 
-                let res_compute_size = res.max_size() - ((dsize - di) as isize - 2).max(0) as usize;
-                let mut res_view = res.with_size_mut(res_compute_size);
-
                 for j in 0..cols {
                     self.vec_znx_dft_copy(dsize, dsize - di - 1, &mut ai_dft, j, a, j);
                 }
 
                 if di == 0 {
-                    self.vmp_apply_dft_to_dft(&mut res_view, &ai_dft.to_backend_ref(), &key.data, 0, &mut scratch_1.borrow());
+                    self.vmp_apply_dft_to_dft(res, &ai_dft.to_backend_ref(), &key.data, 0, &mut scratch_1.borrow());
                 } else {
-                    // Accumulate directly into res, folding the per-column DFT add into the
-                    // VMP save (drops the res_dft_tmp buffer + the separate add pass).
+                    // Pass `di` consumes `a`'s limbs at offset `dsize - di - 1`
+                    // within each digit, so its product sits `dsize - 1 - di`
+                    // limbs below the top. That is the bound for a *point*
+                    // contribution, and it is not the one to use: an elementary
+                    // limb product has magnitude ~`2^(2*base2k + log_n)`, so it
+                    // spans at least two limbs rather than landing in one, and
+                    // reaches one limb further down than the naive count. Hence
+                    // `- 2`, not `- 1`.
+                    //
+                    // Do not "tighten" this to `- 1`: the keyswitch noise sweep
+                    // does not catch it (the difference measured 1e-6 bits at
+                    // n=2^12, base2k=18), so a green suite is not evidence that
+                    // the limb was free.
+                    let res_compute_size = res.size() - ((dsize - di) as isize - 2).max(0) as usize;
+                    let mut res_view = res.with_size_mut(res_compute_size);
                     self.vmp_apply_dft_to_dft_accumulate(
                         &mut res_view,
                         &ai_dft.to_backend_ref(),
@@ -290,7 +317,6 @@ where
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
         + VecZnxDftBytesOf
-        + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>
         + VecZnxNormalize<BE>,
     R: GLWEToBackendMut<BE> + GLWEInfos,
@@ -332,9 +358,6 @@ where
     let key: GGLWEPreparedBackendRef<'_, BE> = key.to_backend_ref();
 
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, key_size);
-    for col in 0..res_dft.cols() {
-        module.vec_znx_dft_zero(&mut res_dft, col);
-    }
 
     let mut scratch = scratch_1;
     if a_base2k != key_base2k {
@@ -403,7 +426,6 @@ where
         + VecZnxBigBytesOf
         + VecZnxBigNormalize<BE>
         + VecZnxDftBytesOf
-        + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>
         + VecZnxNormalize<BE>
         + VecZnxNormalizeAssignBackend<BE>,
@@ -441,9 +463,6 @@ where
     let key_base2k: usize = key.base2k().as_usize();
     let cols: usize = (res.rank() + 1).into();
     let (mut res_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, key_size);
-    for col in 0..res_dft.cols() {
-        module.vec_znx_dft_zero(&mut res_dft, col);
-    }
 
     let (res_big, mut scratch) = if res_base2k != key_base2k {
         let scratch = scratch_1;

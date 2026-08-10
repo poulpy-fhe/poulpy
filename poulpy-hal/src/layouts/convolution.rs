@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use crate::layouts::{Backend, Data, DataView, DataViewMut, DftWord, HostDataRef, ZnxInfos, ZnxView};
+use crate::layouts::{Backend, Data, DataView, DataViewMut, DftWord, HostDataRef, VecZnxInfos, ZnxInfos, ZnxView};
 
 #[repr(C)]
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug, Default)]
@@ -41,20 +41,22 @@ pub struct CnvPVecR<D: Data, W: DftWord, B: Backend<DftWord = W>> {
 }
 
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for CnvPVecR<D, W, B> {
-    fn cols(&self) -> usize {
-        self.shape.cols()
-    }
-
     fn n(&self) -> usize {
         self.shape.n()
     }
 
-    fn rows(&self) -> usize {
-        1
-    }
-
     fn size(&self) -> usize {
         self.shape.size()
+    }
+
+    fn poly_count(&self) -> usize {
+        crate::layouts::checked_product(&[self.cols(), self.size()], "polynomial count")
+    }
+}
+
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxInfos for CnvPVecR<D, W, B> {
+    fn cols(&self) -> usize {
+        self.shape.cols()
     }
 }
 
@@ -150,20 +152,22 @@ pub struct CnvPVecL<D: Data, W: DftWord, B: Backend<DftWord = W>> {
 }
 
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for CnvPVecL<D, W, B> {
-    fn cols(&self) -> usize {
-        self.shape.cols()
-    }
-
     fn n(&self) -> usize {
         self.shape.n()
     }
 
-    fn rows(&self) -> usize {
-        1
-    }
-
     fn size(&self) -> usize {
         self.shape.size()
+    }
+
+    fn poly_count(&self) -> usize {
+        crate::layouts::checked_product(&[self.cols(), self.size()], "polynomial count")
+    }
+}
+
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxInfos for CnvPVecL<D, W, B> {
+    fn cols(&self) -> usize {
+        self.shape.cols()
     }
 }
 

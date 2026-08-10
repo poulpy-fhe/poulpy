@@ -23,9 +23,7 @@ use poulpy_hal::{
         VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApply,
         VecZnxIdftApplyTmpBytes,
     },
-    layouts::{
-        Backend, GaloisElement, ScratchArena, VecZnxBigToBackendRef, VecZnxDftBackendRef, VecZnxDftToBackendRef, ZnxInfos,
-    },
+    layouts::{Backend, GaloisElement, ScratchArena, VecZnxBigToBackendRef, VecZnxDftBackendRef, VecZnxDftToBackendRef},
 };
 
 use crate::{
@@ -150,9 +148,6 @@ fn glwe_hoisted_baby_rotation<BE, M, R, A, H, K>(
     if key_ref.dsize().as_usize() > 1 {
         // See `glwe_hoisted_baby_rotations`: multi-digit VMP accumulates into
         // top limbs that must not contain stale scratch contents.
-        for col in 0..res_dft.cols() {
-            module.vec_znx_dft_zero(&mut res_dft, col);
-        }
     }
     module.gglwe_product_dft_default(&mut res_dft, a_dft_ref, &key_ref, &mut scratch_1.borrow());
 
