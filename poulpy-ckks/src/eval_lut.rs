@@ -185,6 +185,10 @@ where
                 tsk,
                 &mut scratch,
             )?;
+            // Conjugation aligns to the destination width, so restore the
+            // shared scratch view to the current result before each reuse.
+            conj.set_meta(res_i.meta());
+            conj.set_k(res_i.k());
             module.ckks_conjugate_into(&mut conj, &*res_i, conj_key, &mut scratch)?;
             module.ckks_add_assign(res_i, &conj, &mut scratch)?;
         }

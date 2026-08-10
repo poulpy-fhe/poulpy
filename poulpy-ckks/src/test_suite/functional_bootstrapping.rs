@@ -1,5 +1,9 @@
-use poulpy_core::layouts::{
-    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
+use poulpy_core::{
+    GLWEBytesOf,
+    layouts::{
+        GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        prepared::GLWETensorKeyPreparedToBackendRef,
+    },
 };
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -9,7 +13,9 @@ use poulpy_hal::{
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos,
-    api::{CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSEncodingOps, CKKSPolynomialEvaluationOps},
+    api::{
+        CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSEncodingOps, CKKSEvalModOps, CKKSPolynomialEvaluationOps,
+    },
     layouts::{
         BootstrappingContext, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
         CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, DFTOutputFormat, DFTPlan, DFTType,
@@ -142,9 +148,9 @@ where
     let table_values: &[&[usize]] = match case {
         Case::General => &[&[0, 1, 0, 0]],
         Case::Multi => &[
-            &[0, 0, 0, 0, 0, 0, 0, 0],
             &[5, 2, 7, 0, 3, 6, 1, 4],
             &[0, 1, 2, 3, 4, 5, 6, 7],
+            &[0, 0, 0, 0, 0, 0, 0, 0],
         ],
         Case::Binary => &[&[3, 1]],
     };
@@ -170,7 +176,15 @@ where
         Case::Multi => HostLuts::Multi(
             tables
                 .iter()
-                .map(|table| {
+                .enumerate()
+                .map(|(index, table)| {
+                    // A later LUT with a lower coefficient scale retains more
+                    // output width than the LUT evaluated before it.
+                    let coeffs_meta = if index == 1 {
+                        CoeffsMeta::from_delta_budget(LUT_LOG_DELTA - 5, params.base2k)
+                    } else {
+                        coeffs_meta
+                    };
                     EncodedLut::general(host_module, table, params.base2k.into(), coeffs_meta, SplitStrategy::MinDepth).unwrap()
                 })
                 .collect(),
@@ -256,6 +270,17 @@ where
             module.ckks_functional_bootstrap_multi_tmp_bytes(&output_spec, &input_spec, &ctx, luts, &keys_layout)
         }
     };
+    if let HostLuts::Encoded(lut) = &backend_luts
+        && lut.requires_eval_mod()
+    {
+        let boot_layout = crate::CKKSLayout {
+            glwe_layout: output_spec.glwe_layout,
+            meta: CKKSMeta::default(),
+        };
+        let boot_ct_bytes = module.glwe_bytes_of_from_infos(&boot_layout);
+        let eval_mod_tmp = module.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key);
+        assert!(boot_tmp >= 4 * boot_ct_bytes + eval_mod_tmp);
+    }
     if boot_tmp > initial_tmp {
         scratch = ScratchOwned::<BE>::alloc(boot_tmp);
     }

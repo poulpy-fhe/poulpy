@@ -163,7 +163,7 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
         // LUT-evaluation temporary. Direct S2C instead holds one boot-width
         // ciphertext beside its input-width buffer.
         let carved = (4 * boot_bytes).max(boot_bytes + in_bytes);
-        let nested = self
+        let mut nested = self
             .ckks_all_ops_with_atk_tmp_bytes(
                 &boot_layout,
                 &keys_layout.tensor_key,
@@ -176,6 +176,10 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
                 &keys_layout.automorphism_key,
                 lut.coeffs(),
             ));
+        if lut.requires_eval_mod() {
+            nested =
+                nested.max(self.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key));
+        }
         base.max(carved + nested)
     }
 
