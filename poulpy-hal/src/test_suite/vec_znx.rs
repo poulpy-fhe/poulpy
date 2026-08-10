@@ -2332,6 +2332,29 @@ pub fn test_vec_znx_seed_sampling_matches_source_wrappers<B: crate::test_suite::
     assert_eq!(download_vec_znx::<B>(&wrapper_normal), download_vec_znx::<B>(&backend_normal));
 }
 
+pub fn test_scalar_znx_binary_hw_has_exact_weight<B: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<B>)
+where
+    Module<B>: ScalarZnxFillBinaryHwSourceBackend<B>,
+{
+    let n = params.size;
+    let hw = n / 8;
+    let host_init = ScalarZnx::alloc(n, 1);
+    let mut sampled = upload_scalar_znx::<B>(&host_init);
+
+    module.scalar_znx_fill_binary_hw_source_backend(
+        &mut <ScalarZnx<B::OwnedBuf, B::ZnxWord> as ScalarZnxToBackendMut<B>>::to_backend_mut(&mut sampled),
+        0,
+        hw,
+        &mut Source::new([0u8; 32]),
+    );
+
+    let sampled = download_scalar_znx::<B>(&sampled);
+    let coefficients = sampled.at(0, 0);
+
+    assert!(coefficients.iter().all(|&x| x == 0 || x == 1));
+    assert_eq!(coefficients.iter().filter(|&&x| x == 1).count(), hw);
+}
+
 pub fn test_scalar_znx_secret_seed_sampling_matches_source_wrappers<B: crate::test_suite::TestBackend>(
     _params: &TestParams,
     module: &Module<B>,
