@@ -1,5 +1,6 @@
 use poulpy_hal::{
-    layouts::Module,
+    DEFAULTALIGN, is_aligned,
+    layouts::{Backend, Module},
     test_suite::convolution::{
         test_convolution, test_convolution_accumulate, test_convolution_by_const, test_convolution_pairwise,
     },
@@ -291,4 +292,14 @@ fn test_convolution_accumulate_ntt3x42_ifma() {
 #[should_panic(expected = "NTT3x42Ifma requires n >= 8")]
 fn test_ntt3x42_ifma_rejects_too_small_ring() {
     let _ = Module::<NTT3x42Ifma>::new(4);
+}
+
+#[test]
+fn test_ntt3x42_ifma_zeroed_allocation_alignment_and_padding() {
+    for len in [1usize, 63, 64, 65, 4_096, (1 << 20) + 1] {
+        let bytes = <NTT3x42Ifma as Backend>::alloc_zeroed_bytes(len);
+        assert_eq!(bytes.len(), len.next_multiple_of(DEFAULTALIGN));
+        assert!(is_aligned(bytes.as_ptr()));
+        assert!(bytes.iter().all(|&byte| byte == 0));
+    }
 }
