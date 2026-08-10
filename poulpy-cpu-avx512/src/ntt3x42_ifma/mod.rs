@@ -27,6 +27,7 @@ pub(crate) mod module;
 mod prim;
 pub(crate) mod primes;
 pub(crate) mod reference;
+mod serial;
 pub(crate) mod svp;
 pub(crate) mod tables;
 pub(crate) mod traits;
