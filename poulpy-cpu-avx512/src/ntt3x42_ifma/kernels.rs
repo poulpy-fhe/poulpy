@@ -192,7 +192,7 @@ unsafe fn write_fwd_interleaved_t1(arg1: __m512i, arg2: __m512i, out: *mut u64) 
 
 /// Largest sub-transform handled directly by the breadth-first base case.
 /// Sub-transforms larger than this split depth-first for cache locality.
-const BASE_NTT_SIZE: usize = 1024;
+const BASE_NTT_SIZE: usize = 2048;
 
 /// Breadth-first forward transform of one sub-plane of length `n_sub`.
 ///
@@ -1098,6 +1098,16 @@ mod tests {
     }
 
     #[test]
+    fn ntt_avx512_vs_ref_n32768_pseudorandom() {
+        ntt_avx512_vs_ref_pseudorandom(32768);
+    }
+
+    #[test]
+    fn ntt_avx512_vs_ref_n65536_pseudorandom() {
+        ntt_avx512_vs_ref_pseudorandom(65536);
+    }
+
+    #[test]
     fn intt_avx512_vs_ref_n4096_pseudorandom() {
         intt_avx512_vs_ref_pseudorandom(4096);
     }
@@ -1110,6 +1120,16 @@ mod tests {
     #[test]
     fn intt_avx512_vs_ref_n16384_pseudorandom() {
         intt_avx512_vs_ref_pseudorandom(16384);
+    }
+
+    #[test]
+    fn intt_avx512_vs_ref_n32768_pseudorandom() {
+        intt_avx512_vs_ref_pseudorandom(32768);
+    }
+
+    #[test]
+    fn intt_avx512_vs_ref_n65536_pseudorandom() {
+        intt_avx512_vs_ref_pseudorandom(65536);
     }
 
     #[test]

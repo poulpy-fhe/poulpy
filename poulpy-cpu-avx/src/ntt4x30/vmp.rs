@@ -7,7 +7,10 @@
 use std::mem::size_of;
 
 use bytemuck::{cast_slice, cast_slice_mut};
-use core::arch::x86_64::{__m256i, _mm256_loadu_si256, _mm256_set_epi64x, _mm256_storeu_si256};
+use core::arch::x86_64::{
+    __m256i, _mm256_add_epi64, _mm256_and_si256, _mm256_cmpgt_epi64, _mm256_loadu_si256, _mm256_set_epi64x, _mm256_set1_epi64x,
+    _mm256_storeu_si256, _mm256_sub_epi64, _mm256_xor_si256,
+};
 
 use poulpy_cpu_ref::reference::ntt4x30::{
     NttCFromB, NttDFTExecute, NttFromZnx64, mat_vec::BbcMeta, primes::Primes30, types::Q_SHIFTED, vec_znx_dft::NttModuleHandle,
@@ -197,13 +200,30 @@ unsafe fn save_blk_overwrite(_n: usize, blk: usize, dst: &mut [u64], src: &[u64]
     }
 }
 
-#[inline(always)]
-fn save_blk_add(n: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
+// Inputs are in `[0, 2q)`, so one unsigned conditional subtract reduces them.
+#[target_feature(enable = "avx2")]
+unsafe fn save_blk_add(n: usize, blk: usize, dst: &mut [u64], src: &[u64]) {
     debug_assert!(src.len() >= 8);
     debug_assert!(dst.len() >= 4 * n);
-    for i in 0..8 {
-        let k = i % 4;
-        dst[8 * blk + i] = dst[8 * blk + i] % Q_SHIFTED[k] + src[i] % Q_SHIFTED[k];
+    unsafe {
+        let q = _mm256_loadu_si256(Q_SHIFTED.as_ptr() as *const __m256i);
+        let one = _mm256_set1_epi64x(1);
+        let q_minus_one = _mm256_sub_epi64(q, one);
+        let sign = _mm256_set1_epi64x(i64::MIN);
+        let q_minus_one_signed = _mm256_xor_si256(q_minus_one, sign);
+        let base = dst.as_mut_ptr().add(8 * blk);
+
+        for half in 0..2 {
+            let dp = base.add(4 * half) as *mut __m256i;
+            let sp = src.as_ptr().add(4 * half) as *const __m256i;
+            let dv = _mm256_loadu_si256(dp as *const __m256i);
+            let sv = _mm256_loadu_si256(sp);
+            let dm = _mm256_cmpgt_epi64(_mm256_xor_si256(dv, sign), q_minus_one_signed);
+            let sm = _mm256_cmpgt_epi64(_mm256_xor_si256(sv, sign), q_minus_one_signed);
+            let dr = _mm256_sub_epi64(dv, _mm256_and_si256(dm, q));
+            let sr = _mm256_sub_epi64(sv, _mm256_and_si256(sm, q));
+            _mm256_storeu_si256(dp, _mm256_add_epi64(dr, sr));
+        }
     }
 }
 
@@ -262,8 +282,8 @@ unsafe fn vmp_apply_core_avx_pm<const OVERWRITE: bool>(
                 unsafe { save_blk_overwrite(n, blk0, &mut res_u64[base..], &blkpair_output[0..8]) };
                 unsafe { save_blk_overwrite(n, blk1, &mut res_u64[base..], &blkpair_output[8..16]) };
             } else {
-                save_blk_add(n, blk0, &mut res_u64[base..], &blkpair_output[0..8]);
-                save_blk_add(n, blk1, &mut res_u64[base..], &blkpair_output[8..16]);
+                unsafe { save_blk_add(n, blk0, &mut res_u64[base..], &blkpair_output[0..8]) };
+                unsafe { save_blk_add(n, blk1, &mut res_u64[base..], &blkpair_output[8..16]) };
             }
         }
     }
@@ -451,7 +471,8 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
 #[cfg(test)]
 mod tests {
     use super::{
-        extract_1blk_from_contiguous_q120b_avx2, extract_blk_pair_prime_major_avx2, extract_blk_pair_prime_major_strided_avx2,
+        Q_SHIFTED, extract_1blk_from_contiguous_q120b_avx2, extract_blk_pair_prime_major_avx2,
+        extract_blk_pair_prime_major_strided_avx2, save_blk_add,
     };
     use poulpy_cpu_ref::reference::ntt4x30::mat_vec::extract_1blk_from_contiguous_q120b_ref;
 
@@ -504,6 +525,43 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn save_blk_add_matches_scalar_modulo() {
+        let n = 64usize;
+        let blk = 3usize;
+        let mut state = 0x9e37_79b9_7f4a_7c15u64;
+
+        for iteration in 0..256 {
+            let mut dst = vec![0u64; 4 * n];
+            let mut src = [0u64; 8];
+            for i in 0..8 {
+                let q = Q_SHIFTED[i % 4];
+                state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                dst[8 * blk + i] = state % (2 * q);
+                state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                src[i] = state % (2 * q);
+            }
+
+            // Include every reduction boundary explicitly as well as random inputs.
+            if iteration == 0 {
+                for i in 0..8 {
+                    let q = Q_SHIFTED[i % 4];
+                    dst[8 * blk + i] = [0, q - 1, q, 2 * q - 1][i % 4];
+                    src[i] = [2 * q - 1, q, q - 1, 0][i % 4];
+                }
+            }
+
+            let mut expected = dst.clone();
+            for i in 0..8 {
+                let q = Q_SHIFTED[i % 4];
+                expected[8 * blk + i] = dst[8 * blk + i] % q + src[i] % q;
+            }
+
+            unsafe { save_blk_add(n, blk, &mut dst, &src) };
+            assert_eq!(dst, expected, "iteration={iteration}");
         }
     }
 }
