@@ -351,7 +351,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
             &mut ct_real,
             &mut ct_imag,
             &ct,
-            &ctx.coeffs_to_slots,
+            ctx.coeffs_to_slots(),
             bsk.rotation_keys(),
             bsk.conjugation_key(),
             &mut scratch.borrow(),
@@ -401,7 +401,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
         .ckks_eval_mod(
             &mut res_real,
             &ct_real,
-            &ctx.eval_mod,
+            ctx.eval_mod(),
             bsk.tensor_key(),
             &mut scratch.borrow(),
         )
@@ -412,7 +412,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
         .ckks_eval_mod(
             &mut res_imag,
             &ct_imag,
-            &ctx.eval_mod,
+            ctx.eval_mod(),
             bsk.tensor_key(),
             &mut scratch.borrow(),
         )
@@ -447,7 +447,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
             &mut ct_out,
             &res_real,
             &res_imag,
-            &ctx.slots_to_coeffs,
+            ctx.slots_to_coeffs(),
             bsk.rotation_keys(),
             &mut scratch.borrow(),
         )
@@ -729,7 +729,7 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
             &mut r0_lp,
             &mut i0_lp,
             &ct,
-            &ctx.coeffs_to_slots,
+            ctx.coeffs_to_slots(),
             bsk.rotation_keys(),
             bsk.conjugation_key(),
             &mut scratch.borrow(),
@@ -742,7 +742,7 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
             &mut r0_hp,
             &mut i0_hp,
             &ct,
-            &ctx.coeffs_to_slots_bypass.unwrap(),
+            ctx.coeffs_to_slots_bypass().unwrap(),
             bsk.rotation_keys(),
             bsk.conjugation_key(),
             &mut scratch.borrow(),
@@ -755,10 +755,10 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
     let mut res_imag = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
     let now = Instant::now();
     module
-        .ckks_eval_mod(&mut res_real, &r0_lp, &ctx.eval_mod, bsk.tensor_key(), &mut scratch.borrow())
+        .ckks_eval_mod(&mut res_real, &r0_lp, ctx.eval_mod(), bsk.tensor_key(), &mut scratch.borrow())
         .unwrap();
     module
-        .ckks_eval_mod(&mut res_imag, &i0_lp, &ctx.eval_mod, bsk.tensor_key(), &mut scratch.borrow())
+        .ckks_eval_mod(&mut res_imag, &i0_lp, ctx.eval_mod(), bsk.tensor_key(), &mut scratch.borrow())
         .unwrap();
     println!("[evalround] eval_mod x2: {:?}", now.elapsed());
 
@@ -787,7 +787,7 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
             &mut ct_out,
             &r0_hp,
             &i0_hp,
-            &ctx.slots_to_coeffs,
+            ctx.slots_to_coeffs(),
             bsk.rotation_keys(),
             &mut scratch.borrow(),
         )
@@ -1037,6 +1037,33 @@ where
         assert_eq!(ct_bs.log_delta(), log_delta);
         decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow())
     };
+
+    if !eval_round_plus {
+        let im_zero = vec![F::zero(); m];
+        let ct_real = ckks_encrypt_with_prec(
+            &tp,
+            &module,
+            &host_module,
+            &encoder,
+            &sk,
+            k_in,
+            &re,
+            &im_zero,
+            ckks_spec(n, base2k, log_delta, k_in - log_delta),
+            &mut scratch.borrow(),
+        );
+        let (real_bs_re, real_bs_im) = {
+            let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+            module
+                .ckks_bootstrap_real(&mut ct_bs, &ct_real, &ctx, &bsk, &mut scratch.borrow())
+                .unwrap();
+            assert_eq!(ct_bs.k().as_usize(), k_boot - plan.post_mod_up_consumed_bits());
+            assert_eq!(ct_bs.log_delta(), log_delta);
+            decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow())
+        };
+        assert!(precision_stats(&real_bs_re, &re, log_delta).avg_log2_prec >= 5.0);
+        assert!(precision_stats(&real_bs_im, &im_zero, log_delta).avg_log2_prec >= 5.0);
+    }
 
     let insufficient_k = log_delta + plan.pre_mod_up_consumed_bits() - 1;
     let ct_insufficient = ckks_encrypt_with_prec(

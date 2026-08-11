@@ -321,6 +321,27 @@ pub trait ScratchArenaTakeCKKS<'a, BE: Backend>: ScratchArenaTakeCore<'a, BE> + 
         (CKKSCiphertextViewMut::from_inner(inner, meta), scratch)
     }
 
+    /// Carves several same-layout CKKS ciphertexts from scratch space.
+    fn take_ckks_ciphertext_slice_scratch<I>(
+        self,
+        size: usize,
+        infos: &I,
+        meta: CKKSMeta,
+    ) -> (Vec<CKKSCiphertextViewMut<'a, BE>>, Self)
+    where
+        BE: 'a,
+        I: GLWEInfos,
+    {
+        let (inner, scratch) = self.take_glwe_slice_scratch(size, infos);
+        (
+            inner
+                .into_iter()
+                .map(|ct| CKKSCiphertextViewMut::from_inner(ct, meta))
+                .collect(),
+            scratch,
+        )
+    }
+
     fn take_ckks_ciphertext_like_scratch<C>(self, ct: &C) -> (CKKSCiphertextViewMut<'a, BE>, Self)
     where
         BE: 'a,

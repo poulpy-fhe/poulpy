@@ -127,6 +127,28 @@ k_boot = plan.bootstrap_k(k_out)
 
 EvalMod is charged at the scale it runs (`f_mod_log_delta`), not the message scale; the surrounding set-scale round-trip is budget-neutral and does not enter the total.
 
+## Functional bootstrapping
+
+Functional bootstrapping replaces the final identity refresh with a lookup table.
+`EncodedLut::general` interprets a table of length `p` as `table[m]` for integer messages `m = 0..p`; `p` must be a nonzero power of two.
+The input contract is:
+
+```text
+ct_in.log_budget() - slots_to_coeffs.consumed_bits() = log2(p)
+```
+
+The output scale is `ct_in.log_delta() + log2(p)`.
+Use `BootstrappingPlan::functional_bootstrap_k` to size the raised ciphertext for a desired output width, then round that width to whole limbs if necessary.
+LUTs are encoded on the host and uploaded once with `EncodedLut::to_backend`.
+
+General LUTs use trigonometric Hermite interpolation on the unit circle.
+They therefore require an S2C-first recipe whose EvalMod type is `ExpCmplx` with `scaling = 2π`.
+The multi-LUT entry point shares the S2C and power-basis work between equal-arity general LUTs; binary or mixed batches fall back to evaluating each LUT against the shared transformed input.
+
+`EncodedLut::binary` is specialized for two entries.
+Its cosine polynomial is controlled by `degree`, `k_interval`, and `log_interval_reduction`; it skips EvalMod and is cheaper than the general construction.
+For now it still uses a `BootstrappingPlan` containing an EvalMod plan because EvalMod is not optional in the compiled context, although those tables are not evaluated by the binary path.
+
 ## Pipeline order and EvalRound+
 
 The orchestrator selects the pipeline from the compiled context.

@@ -42,41 +42,6 @@ use crate::{
     oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl},
 };
 
-/// Operations used by the backend-generic PaCo composition.
-pub(crate) trait PaCoBootstrapModule<BE: Backend>:
-    CKKSMulOps<BE>
-    + CKKSAddOps<BE>
-    + CKKSSubOps<BE>
-    + CKKSConjugateOps<BE>
-    + CKKSCopyOps<BE>
-    + CKKSRotateOps<BE>
-    + PaCoSlotOps<BE>
-    + CKKSLinearTransformationOps<BE>
-    + CKKSModuleAlloc<BE>
-    + GLWERotate<BE>
-    + GLWEAutomorphism<BE>
-    + GLWELinearTransformations<BE>
-    + CyclotomicOrder
-{
-}
-
-impl<BE: Backend, M> PaCoBootstrapModule<BE> for M where
-    M: CKKSMulOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSRotateOps<BE>
-        + PaCoSlotOps<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWERotate<BE>
-        + GLWEAutomorphism<BE>
-        + GLWELinearTransformations<BE>
-        + CyclotomicOrder
-{
-}
-
 #[derive(Clone, Copy)]
 struct BranchExecution {
     shift: i64,
@@ -103,7 +68,20 @@ fn run_branch_into<BE, F, K, Src>(
 ) -> Result<()>
 where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
-    Module<BE>: PaCoBootstrapModule<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRotateOps<BE>
+        + PaCoSlotOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWERotate<BE>
+        + GLWEAutomorphism<BE>
+        + GLWELinearTransformations<BE>
+        + GLWEKeyswitch<BE>
+        + CyclotomicOrder,
     K: PaCoKeys<BE>,
     F: PaCoScalar,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
@@ -160,7 +138,20 @@ pub(crate) fn paco_bootstrap_direct_into<BE, F, K, Src>(
 ) -> Result<()>
 where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
-    Module<BE>: PaCoBootstrapModule<BE> + GLWEKeyswitch<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRotateOps<BE>
+        + PaCoSlotOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWERotate<BE>
+        + GLWEAutomorphism<BE>
+        + GLWELinearTransformations<BE>
+        + GLWEKeyswitch<BE>
+        + CyclotomicOrder,
     K: PaCoKeys<BE>,
     F: PaCoScalar,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
@@ -191,7 +182,20 @@ fn paco_bootstrap_direct_validated_into<BE, F, K, Src>(
 ) -> Result<()>
 where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
-    Module<BE>: PaCoBootstrapModule<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRotateOps<BE>
+        + PaCoSlotOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWERotate<BE>
+        + GLWEAutomorphism<BE>
+        + GLWELinearTransformations<BE>
+        + GLWEKeyswitch<BE>
+        + CyclotomicOrder,
     K: PaCoKeys<BE>,
     F: PaCoScalar,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
@@ -278,7 +282,20 @@ pub(crate) fn paco_bootstrap_into<BE, F, K, Src>(
 ) -> Result<()>
 where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
-    Module<BE>: PaCoBootstrapModule<BE> + GLWEKeyswitch<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRotateOps<BE>
+        + PaCoSlotOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWERotate<BE>
+        + GLWEAutomorphism<BE>
+        + GLWELinearTransformations<BE>
+        + GLWEKeyswitch<BE>
+        + CyclotomicOrder,
     K: PaCoKeys<BE>,
     F: PaCoScalar,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
@@ -315,7 +332,20 @@ pub(crate) fn paco_bootstrap_parallel_direct_into<BE, F, K, Src>(
 ) -> Result<()>
 where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
-    Module<BE>: PaCoBootstrapModule<BE> + GLWEKeyswitch<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRotateOps<BE>
+        + PaCoSlotOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWERotate<BE>
+        + GLWEAutomorphism<BE>
+        + GLWELinearTransformations<BE>
+        + GLWEKeyswitch<BE>
+        + CyclotomicOrder,
     K: PaCoKeys<BE> + Sync,
     F: PaCoScalar,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
@@ -352,7 +382,20 @@ fn paco_bootstrap_parallel_direct_validated_into<BE, F, K, Src>(
 ) -> Result<()>
 where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
-    Module<BE>: PaCoBootstrapModule<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRotateOps<BE>
+        + PaCoSlotOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWERotate<BE>
+        + GLWEAutomorphism<BE>
+        + GLWELinearTransformations<BE>
+        + GLWEKeyswitch<BE>
+        + CyclotomicOrder,
     K: PaCoKeys<BE> + Sync,
     F: PaCoScalar,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
@@ -542,7 +585,20 @@ pub(crate) fn paco_bootstrap_parallel_into<BE, F, K, Src>(
 ) -> Result<()>
 where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
-    Module<BE>: PaCoBootstrapModule<BE> + GLWEKeyswitch<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRotateOps<BE>
+        + PaCoSlotOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWERotate<BE>
+        + GLWEAutomorphism<BE>
+        + GLWELinearTransformations<BE>
+        + GLWEKeyswitch<BE>
+        + CyclotomicOrder,
     K: PaCoKeys<BE> + Sync,
     F: PaCoScalar,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,

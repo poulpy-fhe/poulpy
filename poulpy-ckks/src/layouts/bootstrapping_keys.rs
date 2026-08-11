@@ -297,11 +297,11 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
 
         // Rotation keys: the union of both DFTs' (and the bypass') Galois elements.
         let mut gal_set: BTreeSet<i64> = BTreeSet::new();
-        gal_set.extend(self.coeffs_to_slots.galois_elements(order));
-        if let Some(bypass) = &self.coeffs_to_slots_bypass {
+        gal_set.extend(self.coeffs_to_slots().galois_elements(order));
+        if let Some(bypass) = self.coeffs_to_slots_bypass() {
             gal_set.extend(bypass.galois_elements(order));
         }
-        gal_set.extend(self.slots_to_coeffs.galois_elements(order));
+        gal_set.extend(self.slots_to_coeffs().galois_elements(order));
 
         let mut rotation_keys = HashMap::with_capacity(gal_set.len());
         for p in gal_set {

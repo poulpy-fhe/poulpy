@@ -856,6 +856,18 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::bootstrapping::test_bootstrapping_s2c_first_e2e
             );
             run_test!(
+                functional_bootstrapping_e2e,
+                $crate::test_suite::functional_bootstrapping::test_functional_bootstrapping_e2e
+            );
+            run_test!(
+                functional_bootstrapping_multi_e2e,
+                $crate::test_suite::functional_bootstrapping::test_functional_bootstrapping_multi_e2e
+            );
+            run_test!(
+                functional_bootstrapping_binary_e2e,
+                $crate::test_suite::functional_bootstrapping::test_functional_bootstrapping_binary_e2e
+            );
+            run_test!(
                 mul_add_const_zero_preserves_dst_meta,
                 $crate::test_suite::mul_add::test_mul_add_const_zero_preserves_dst_meta
             );
@@ -948,6 +960,7 @@ pub mod encoding;
 pub mod encryption;
 pub mod errors;
 pub mod eval_mod;
+pub mod functional_bootstrapping;
 pub mod helpers;
 pub mod imag;
 pub mod linear_transformation;
