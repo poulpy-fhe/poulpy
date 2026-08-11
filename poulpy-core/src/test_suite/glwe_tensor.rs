@@ -89,12 +89,15 @@ where
                 .max(module.glwe_tensor_relinearize_tmp_bytes(&res_relin, &res_tensor, &tsk_infos)),
         );
 
+        // Distinct seeds: with a shared one the secret, the mask and the error
+        // are all drawn from the same byte stream, correlating `s` with `a` and
+        // `e` and making the measured tensoring noise unrepresentative.
         let mut source_xs: Source = Source::new([0u8; 32]);
-        let mut source_xe: Source = Source::new([0u8; 32]);
-        let mut source_xa: Source = Source::new([0u8; 32]);
+        let mut source_xe: Source = Source::new([1u8; 32]);
+        let mut source_xa: Source = Source::new([2u8; 32]);
 
         let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
-        sk.fill_ternary_prob(0.5, &mut source_xs);
+        module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
         let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
         module.glwe_secret_prepare(&mut sk_dft, &sk);
@@ -282,12 +285,15 @@ where
                 .max(module.glwe_tensor_relinearize_tmp_bytes(&res_relin_tensor, &res_tensor, &tsk_infos)),
         );
 
+        // Distinct seeds: with a shared one the secret, the mask and the error
+        // are all drawn from the same byte stream, correlating `s` with `a` and
+        // `e` and making the measured tensoring noise unrepresentative.
         let mut source_xs: Source = Source::new([0u8; 32]);
-        let mut source_xe: Source = Source::new([0u8; 32]);
-        let mut source_xa: Source = Source::new([0u8; 32]);
+        let mut source_xe: Source = Source::new([1u8; 32]);
+        let mut source_xa: Source = Source::new([2u8; 32]);
 
         let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
-        sk.fill_ternary_prob(0.5, &mut source_xs);
+        module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
         let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
         module.glwe_secret_prepare(&mut sk_dft, &sk);
@@ -402,12 +408,15 @@ where
                 .max((module).glwe_decrypt_tmp_bytes(&glwe_out_infos)),
         );
 
+        // Distinct seeds: with a shared one the secret, the mask and the error
+        // are all drawn from the same byte stream, correlating `s` with `a` and
+        // `e` and making the measured tensoring noise unrepresentative.
         let mut source_xs: Source = Source::new([0u8; 32]);
-        let mut source_xe: Source = Source::new([0u8; 32]);
-        let mut source_xa: Source = Source::new([0u8; 32]);
+        let mut source_xe: Source = Source::new([1u8; 32]);
+        let mut source_xa: Source = Source::new([2u8; 32]);
 
         let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
-        sk.fill_ternary_prob(0.5, &mut source_xs);
+        module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
         let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
         module.glwe_secret_prepare(&mut sk_dft, &sk);
@@ -528,12 +537,15 @@ where
                 .max(module.glwe_mul_const_tmp_bytes(&res, &a, &pt_b)),
         );
 
+        // Distinct seeds: with a shared one the secret, the mask and the error
+        // are all drawn from the same byte stream, correlating `s` with `a` and
+        // `e` and making the measured tensoring noise unrepresentative.
         let mut source_xs: Source = Source::new([0u8; 32]);
-        let mut source_xe: Source = Source::new([0u8; 32]);
-        let mut source_xa: Source = Source::new([0u8; 32]);
+        let mut source_xe: Source = Source::new([1u8; 32]);
+        let mut source_xa: Source = Source::new([2u8; 32]);
 
         let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
-        sk.fill_ternary_prob(0.5, &mut source_xs);
+        module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
         let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
         module.glwe_secret_prepare(&mut sk_dft, &sk);

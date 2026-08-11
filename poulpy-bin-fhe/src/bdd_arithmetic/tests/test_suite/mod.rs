@@ -41,8 +41,8 @@ pub use xor::*;
 
 use poulpy_core::layouts::{
     Base2K, Degree, Dnum, Dsize, GGLWEToGGSWKeyLayout, GGSWLayout, GLWEAutomorphismKeyLayout, GLWELayout, GLWESecret,
-    GLWESecretPrepared, GLWESecretPreparedFactory, GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, LWESecret, ModuleCoreAlloc, Rank,
-    TorusPrecision,
+    GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, GLWESwitchingKeyLayout, GLWEToLWEKeyLayout, LWESecret,
+    LWESecretSampling, ModuleCoreAlloc, Rank, TorusPrecision,
 };
 
 use crate::{
@@ -107,14 +107,14 @@ impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + Ho
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
 
         let mut sk_glwe: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(TEST_RANK.into());
-        sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
+        module.glwe_secret_fill_ternary_prob(&mut sk_glwe, 0.5, &mut source_xs);
         let mut sk_glwe_prep: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(TEST_RANK.into());
         module.glwe_secret_prepare(&mut sk_glwe_prep, &sk_glwe);
 
         let n_lwe: u32 = TEST_N_LWE;
         let block_size: u32 = TEST_BLOCK_SIZE;
         let mut sk_lwe: LWESecret<BE::OwnedBuf, BE::ZnxWord> = module.lwe_secret_alloc(n_lwe.into());
-        sk_lwe.fill_binary_block(block_size as usize, &mut source_xs);
+        module.lwe_secret_fill_binary_block(&mut sk_lwe, block_size as usize, &mut source_xs);
         let bdd_key_infos: BDDKeyLayout = TEST_BDD_KEY_LAYOUT;
         let mut bdd_key: BDDKey<BE::OwnedBuf, BRA, BE::ZnxWord> = BDDKey::alloc_from_infos(&module, &bdd_key_infos);
         let bdd_enc_infos = BDDEncryptionInfos::from_default_sigma(&bdd_key_infos).unwrap();

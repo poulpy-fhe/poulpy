@@ -43,13 +43,12 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    layouts::{
-        Backend, CyclotomicOrder, Data, HostBytesBackend, HostDataMut, HostDataRef, HostStaged, Module, ScratchArena, ZnxWord,
-    },
+    layouts::{Backend, CyclotomicOrder, Data, HostDataMut, HostDataRef, HostStaged, Module, ScratchArena, ZnxWord},
     source::Source,
 };
 
 use crate::layouts::BootstrappingContext;
+use poulpy_core::layouts::GLWESecretSampling;
 
 /// Pipeline-facing access to the **prepared** evaluation keys a CKKS bootstrap
 /// consumes.
@@ -265,7 +264,6 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
     pub fn generate_keys(
         &self,
         module: &Module<BE>,
-        host_module: &Module<HostBytesBackend>,
         sk_dense: &BackendGLWESecret<BE>,
         layout: &BootstrappingKeysLayout,
         source_xs: &mut Source,
@@ -281,8 +279,8 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
             + CyclotomicOrder
             + GLWEAutomorphismKeyEncryptSk<BE>
             + GLWETensorKeyEncryptSk<BE>
-            + GLWESwitchingKeyEncryptSk<BE>,
-        Module<HostBytesBackend>: ModuleCoreAlloc<OwnedBuf = Vec<u8>, ZnxWord = i64>,
+            + GLWESwitchingKeyEncryptSk<BE>
+            + GLWESecretSampling<BE>,
     {
         let sparse_secret_hamming_weight = self.sparse_secret_hamming_weight();
         anyhow::ensure!(
@@ -326,9 +324,8 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
                     n: sk_dense.n(),
                     rank: sk_dense.rank(),
                 };
-                let mut sk_sparse_host = host_module.glwe_secret_alloc_from_infos(&sk_layout);
-                sk_sparse_host.fill_ternary_hw(hamming_weight, source_xs);
-                let sk_sparse = module.upload_glwe_secret::<HostBytesBackend>(&sk_sparse_host);
+                let mut sk_sparse = module.glwe_secret_alloc_from_infos(&sk_layout);
+                module.glwe_secret_fill_ternary_hw(&mut sk_sparse, hamming_weight, source_xs);
 
                 let d2s_enc = EncryptionLayout::new_from_default_sigma(encaps.dense_to_sparse)?;
                 let s2d_enc = EncryptionLayout::new_from_default_sigma(encaps.sparse_to_dense)?;

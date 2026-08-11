@@ -28,6 +28,7 @@ use poulpy_ckks::{
     polynomial::{BSGSPolynomial, Basis, EncodeBSGS, Polynomial},
     power_basis::{PowerBasis, PowerBasisGen},
 };
+use poulpy_core::layouts::GLWESecretSampling;
 use poulpy_core::{
     EncryptionLayout, GLWETensorKeyEncryptSk,
     layouts::{
@@ -197,7 +198,7 @@ fn setup() -> Result<SetupArtifacts> {
     let mut source_xe = Source::new([2u8; 32]);
 
     let mut sk_raw = module.glwe_secret_alloc_from_infos(&glwe_layout());
-    sk_raw.fill_ternary_hw(HW, &mut source_xs);
+    module.glwe_secret_fill_ternary_hw(&mut sk_raw, HW, &mut source_xs);
 
     let mut sk = module.glwe_secret_prepared_alloc_from_infos(&glwe_layout());
     module.glwe_secret_prepare(&mut sk, &sk_raw);

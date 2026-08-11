@@ -5,6 +5,7 @@ use poulpy_hal::{
     test_suite::TestParams,
 };
 
+use crate::layouts::GLWESecretSampling;
 use crate::{
     EncryptionLayout, GGLWECompressedEncryptSk, GGLWEEncryptSk, GGLWEKeyswitch, GLWESwitchingKeyCompressedEncryptSk,
     GLWESwitchingKeyEncryptSk,
@@ -67,10 +68,10 @@ where
                 );
 
                 let mut sk_in: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank_in.into());
-                sk_in.fill_ternary_prob(0.5, &mut source_xs);
+                module.glwe_secret_fill_ternary_prob(&mut sk_in, 0.5, &mut source_xs);
 
                 let mut sk_out: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank_out.into());
-                sk_out.fill_ternary_prob(0.5, &mut source_xs);
+                module.glwe_secret_fill_ternary_prob(&mut sk_out, 0.5, &mut source_xs);
                 let mut sk_out_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> =
                     module.glwe_secret_prepared_alloc(rank_out.into());
                 module.glwe_secret_prepare(&mut sk_out_prepared, &sk_out);
@@ -133,9 +134,9 @@ where
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_switching_key_encrypt_sk_tmp_bytes(&gglwe_infos));
 
         let mut sk_in: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(1_u32.into());
-        sk_in.fill_ternary_prob(0.5, &mut source_xs);
+        module.glwe_secret_fill_ternary_prob(&mut sk_in, 0.5, &mut source_xs);
         let mut sk_out: GLWESecret<Vec<u8>, i64> = GLWESecret::alloc(smaller_n.into(), 1_u32.into());
-        sk_out.fill_ternary_prob(0.5, &mut source_xs);
+        module.glwe_secret_fill_ternary_prob(&mut sk_out, 0.5, &mut source_xs);
 
         module.glwe_switching_key_encrypt_sk(
             &mut ksk,
@@ -202,10 +203,10 @@ pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::Tes
                 );
 
                 let mut sk_in: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank_in.into());
-                sk_in.fill_ternary_prob(0.5, &mut source_xs);
+                module.glwe_secret_fill_ternary_prob(&mut sk_in, 0.5, &mut source_xs);
 
                 let mut sk_out: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank_out.into());
-                sk_out.fill_ternary_prob(0.5, &mut source_xs);
+                module.glwe_secret_fill_ternary_prob(&mut sk_out, 0.5, &mut source_xs);
                 let mut sk_out_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> =
                     module.glwe_secret_prepared_alloc(rank_out.into());
                 module.glwe_secret_prepare(&mut sk_out_prepared, &sk_out);
@@ -276,9 +277,9 @@ pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::Tes
             ScratchOwned::alloc(module.glwe_switching_key_compressed_encrypt_sk_tmp_bytes(&gglwe_infos));
 
         let mut sk_in: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(1_u32.into());
-        sk_in.fill_ternary_prob(0.5, &mut source_xs);
+        module.glwe_secret_fill_ternary_prob(&mut sk_in, 0.5, &mut source_xs);
         let mut sk_out: GLWESecret<Vec<u8>, i64> = GLWESecret::alloc(smaller_n.into(), 1_u32.into());
-        sk_out.fill_ternary_prob(0.5, &mut source_xs);
+        module.glwe_secret_fill_ternary_prob(&mut sk_out, 0.5, &mut source_xs);
 
         module.glwe_switching_key_compressed_encrypt_sk(
             &mut ksk_compressed,
@@ -343,10 +344,10 @@ where
                 );
 
                 let mut sk_in: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank_in.into());
-                sk_in.fill_ternary_prob(0.5, &mut source_xs);
+                module.glwe_secret_fill_ternary_prob(&mut sk_in, 0.5, &mut source_xs);
 
                 let mut sk_out: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank_out.into());
-                sk_out.fill_ternary_prob(0.5, &mut source_xs);
+                module.glwe_secret_fill_ternary_prob(&mut sk_out, 0.5, &mut source_xs);
                 let mut sk_out_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> =
                     module.glwe_secret_prepared_alloc(rank_out.into());
                 module.glwe_secret_prepare(&mut sk_out_prepared, &sk_out);

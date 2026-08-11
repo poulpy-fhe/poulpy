@@ -1,16 +1,20 @@
 use poulpy_hal::layouts::ZnxWord;
 use poulpy_hal::{
-    api::{ScalarZnxAutomorphismBackend, VecZnxCopyRangeBackend},
+    api::{
+        ScalarZnxAutomorphismBackend, ScalarZnxFillBinaryBlockSourceBackend, ScalarZnxFillBinaryHwSourceBackend,
+        ScalarZnxFillBinaryProbSourceBackend, ScalarZnxFillTernaryHwSourceBackend, ScalarZnxFillTernaryProbSourceBackend,
+        VecZnxCopyRangeBackend, VecZnxZeroBackend,
+    },
     layouts::{
         Backend, Data, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendMut, ScalarZnxToBackendRef, TransferFrom,
-        ZnxViewMut, ZnxZero, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_mut,
+        ZnxViewMut, scalar_znx_as_vec_znx_backend_mut_from_mut, scalar_znx_as_vec_znx_backend_ref_from_mut,
     },
     oep::HalVecZnxImpl,
     source::Source,
 };
 
 use crate::{
-    GetDistribution,
+    GetDistribution, GetDistributionMut,
     api::ModuleTransfer,
     dist::Distribution,
     layouts::{Base2K, Degree, GLWEInfos, LWEInfos, LWESecretToBackendMut, Rank},
@@ -85,6 +89,12 @@ impl<D: Data, W: ZnxWord> LWEInfos for GLWESecret<D, W> {
 impl<D: Data, W: ZnxWord> GetDistribution for GLWESecret<D, W> {
     fn dist(&self) -> &Distribution {
         &self.dist
+    }
+}
+
+impl<D: Data, W: ZnxWord> GetDistributionMut for GLWESecret<D, W> {
+    fn dist_mut(&mut self) -> &mut Distribution {
+        &mut self.dist
     }
 }
 
@@ -167,34 +177,6 @@ impl<W: ZnxWord> GLWESecret<Vec<u8>, W> {
 }
 
 impl<D: HostDataMut, W: ZnxWord> GLWESecret<D, W> {
-    pub fn fill_ternary_prob(&mut self, prob: f64, source: &mut Source) {
-        (0..self.rank().into()).for_each(|i| {
-            self.data.fill_ternary_prob(i, prob, source);
-        });
-        self.dist = Distribution::TernaryProb(prob);
-    }
-
-    pub fn fill_ternary_hw(&mut self, hw: usize, source: &mut Source) {
-        (0..self.rank().into()).for_each(|i| {
-            self.data.fill_ternary_hw(i, hw, source);
-        });
-        self.dist = Distribution::TernaryFixed(hw);
-    }
-
-    pub fn fill_binary_prob(&mut self, prob: f64, source: &mut Source) {
-        (0..self.rank().into()).for_each(|i| {
-            self.data.fill_binary_prob(i, prob, source);
-        });
-        self.dist = Distribution::BinaryProb(prob);
-    }
-
-    pub fn fill_binary_hw(&mut self, hw: usize, source: &mut Source) {
-        (0..self.rank().into()).for_each(|i| {
-            self.data.fill_binary_hw(i, hw, source);
-        });
-        self.dist = Distribution::BinaryFixed(hw);
-    }
-
     /// Sets column `col` to the caller-provided binary `{0, 1}` coefficient
     /// vector and tags the distribution as [`Distribution::BinaryFixed`] with
     /// the vector's Hamming weight. For structured binary secrets whose
@@ -213,17 +195,142 @@ impl<D: HostDataMut, W: ZnxWord> GLWESecret<D, W> {
         dst.iter_mut().zip(coeffs.iter()).for_each(|(d, &c)| *d = W::from_i64(c));
         self.dist = Distribution::BinaryFixed(coeffs.iter().filter(|&&x| x != 0).count());
     }
+}
 
-    pub fn fill_binary_block(&mut self, block_size: usize, source: &mut Source) {
-        (0..self.rank().into()).for_each(|i| {
-            self.data.fill_binary_block(i, block_size, source);
-        });
-        self.dist = Distribution::BinaryBlock(block_size);
+/// Secret-key sampling, dispatched to the backend.
+///
+/// Sampling is a backend operation like any other: it is routed through the
+/// `ScalarZnxFill*` extension points so a backend can substitute its own
+/// implementation (device-side generation, a secure element, a hardware RNG),
+/// rather than being a host-memory method on the layout.
+///
+/// Each entry point fills every one of the secret's `rank` polynomials and
+/// tags it with the matching [`Distribution`]. See [`Distribution`] for what
+/// that tag does and does not describe afterwards.
+pub trait GLWESecretSampling<BE: Backend> {
+    /// Ternary `{-1, 0, 1}` coefficients, each non-zero with probability `prob`.
+    fn glwe_secret_fill_ternary_prob<S>(&self, sk: &mut S, prob: f64, source: &mut Source)
+    where
+        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos;
+
+    /// Ternary `{-1, 0, 1}` coefficients with exactly `hw` non-zero entries.
+    fn glwe_secret_fill_ternary_hw<S>(&self, sk: &mut S, hw: usize, source: &mut Source)
+    where
+        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos;
+
+    /// Binary `{0, 1}` coefficients, each set with probability `prob`.
+    fn glwe_secret_fill_binary_prob<S>(&self, sk: &mut S, prob: f64, source: &mut Source)
+    where
+        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos;
+
+    /// Binary `{0, 1}` coefficients with exactly `hw` ones.
+    fn glwe_secret_fill_binary_hw<S>(&self, sk: &mut S, hw: usize, source: &mut Source)
+    where
+        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos;
+
+    /// Binary coefficients with at most one `1` per block of `block_size`.
+    fn glwe_secret_fill_binary_block<S>(&self, sk: &mut S, block_size: usize, source: &mut Source)
+    where
+        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos;
+
+    /// All-zero secret, tagged [`Distribution::ZERO`] (debug / testing only).
+    fn glwe_secret_fill_zero<S>(&self, sk: &mut S)
+    where
+        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos;
+}
+
+impl<BE: Backend> GLWESecretSampling<BE> for Module<BE>
+where
+    Self: ScalarZnxFillTernaryProbSourceBackend<BE>
+        + ScalarZnxFillTernaryHwSourceBackend<BE>
+        + ScalarZnxFillBinaryProbSourceBackend<BE>
+        + ScalarZnxFillBinaryHwSourceBackend<BE>
+        + ScalarZnxFillBinaryBlockSourceBackend<BE>
+        + VecZnxZeroBackend<BE>,
+{
+    fn glwe_secret_fill_ternary_prob<S>(&self, sk: &mut S, prob: f64, source: &mut Source)
+    where
+        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos,
+    {
+        let rank: usize = sk.rank().into();
+        {
+            let mut sk_backend = sk.to_backend_mut();
+            for i in 0..rank {
+                self.scalar_znx_fill_ternary_prob_source_backend(&mut sk_backend.data, i, prob, source);
+            }
+        }
+        *sk.dist_mut() = Distribution::TernaryProb(prob);
     }
 
-    pub fn fill_zero(&mut self) {
-        self.data.zero();
-        self.dist = Distribution::ZERO;
+    fn glwe_secret_fill_ternary_hw<S>(&self, sk: &mut S, hw: usize, source: &mut Source)
+    where
+        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos,
+    {
+        let rank: usize = sk.rank().into();
+        {
+            let mut sk_backend = sk.to_backend_mut();
+            for i in 0..rank {
+                self.scalar_znx_fill_ternary_hw_source_backend(&mut sk_backend.data, i, hw, source);
+            }
+        }
+        *sk.dist_mut() = Distribution::TernaryFixed(hw);
+    }
+
+    fn glwe_secret_fill_binary_prob<S>(&self, sk: &mut S, prob: f64, source: &mut Source)
+    where
+        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos,
+    {
+        let rank: usize = sk.rank().into();
+        {
+            let mut sk_backend = sk.to_backend_mut();
+            for i in 0..rank {
+                self.scalar_znx_fill_binary_prob_source_backend(&mut sk_backend.data, i, prob, source);
+            }
+        }
+        *sk.dist_mut() = Distribution::BinaryProb(prob);
+    }
+
+    fn glwe_secret_fill_binary_hw<S>(&self, sk: &mut S, hw: usize, source: &mut Source)
+    where
+        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos,
+    {
+        let rank: usize = sk.rank().into();
+        {
+            let mut sk_backend = sk.to_backend_mut();
+            for i in 0..rank {
+                self.scalar_znx_fill_binary_hw_source_backend(&mut sk_backend.data, i, hw, source);
+            }
+        }
+        *sk.dist_mut() = Distribution::BinaryFixed(hw);
+    }
+
+    fn glwe_secret_fill_binary_block<S>(&self, sk: &mut S, block_size: usize, source: &mut Source)
+    where
+        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos,
+    {
+        let rank: usize = sk.rank().into();
+        {
+            let mut sk_backend = sk.to_backend_mut();
+            for i in 0..rank {
+                self.scalar_znx_fill_binary_block_source_backend(&mut sk_backend.data, i, block_size, source);
+            }
+        }
+        *sk.dist_mut() = Distribution::BinaryBlock(block_size);
+    }
+
+    fn glwe_secret_fill_zero<S>(&self, sk: &mut S)
+    where
+        S: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos,
+    {
+        let rank: usize = sk.rank().into();
+        {
+            let mut sk_backend = sk.to_backend_mut();
+            let mut sk_vec = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut sk_backend.data);
+            for i in 0..rank {
+                self.vec_znx_zero_backend(&mut sk_vec, i);
+            }
+        }
+        *sk.dist_mut() = Distribution::ZERO;
     }
 }
 

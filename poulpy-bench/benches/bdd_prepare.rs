@@ -18,6 +18,7 @@ use poulpy_bin_fhe::{
     blind_rotation::{BlindRotationAlgo, BlindRotationKeyInfos, BlindRotationKeyLayout, CGGI},
     circuit_bootstrapping::{CircuitBootstrappingKeyEncryptSk, CircuitBootstrappingKeyLayout},
 };
+use poulpy_core::layouts::{GLWESecretSampling, LWESecretSampling};
 use poulpy_hal::{
     api::{ModuleN, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, HostBackend, HostDataMut, HostDataRef, Module, ScratchOwned},
@@ -88,10 +89,10 @@ pub fn benc_bdd_prepare<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBac
         let mut source_xe: Source = Source::new([1u8; 32]);
 
         let mut sk_lwe: LWESecret<Vec<u8>, i64> = module.lwe_secret_alloc(n_lwe);
-        sk_lwe.fill_binary_block(params.block_size, &mut source_xs);
+        module.lwe_secret_fill_binary_block(&mut sk_lwe, params.block_size, &mut source_xs);
 
         let mut sk_glwe: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc(rank);
-        sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
+        module.glwe_secret_fill_ternary_prob(&mut sk_glwe, 0.5, &mut source_xs);
 
         let mut sk_glwe_prepared = module.glwe_secret_prepared_alloc_from_infos(&params.glwe_layout);
         module.glwe_secret_prepare(&mut sk_glwe_prepared, &sk_glwe);

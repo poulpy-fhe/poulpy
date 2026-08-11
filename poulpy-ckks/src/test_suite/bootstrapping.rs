@@ -246,7 +246,6 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
     let bsk = ctx
         .generate_keys(
             &module,
-            &host_module,
             &sk_raw,
             &keys_layout,
             &mut src_xs,
@@ -659,7 +658,6 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
     let bsk = ctx
         .generate_keys(
             &module,
-            &host_module,
             &sk_raw,
             &keys_layout,
             &mut src_xs,
@@ -1003,7 +1001,6 @@ where
     let bsk = ctx
         .generate_keys(
             &module,
-            &host_module,
             &sk_raw,
             &keys_layout,
             &mut src_xs,

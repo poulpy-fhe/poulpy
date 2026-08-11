@@ -49,6 +49,7 @@ use poulpy_hal::{
 };
 
 use super::CKKSTestParams;
+use poulpy_core::layouts::GLWESecretSampling;
 
 // ─── deterministic per-call RNG seeds ────────────────────────────────────────
 
@@ -186,6 +187,7 @@ pub trait TestContextModule<BE: Backend>:
     + GLWENormalize<BE>
     + GLWESub<BE>
     + GLWESecretPreparedFactory<BE>
+    + GLWESecretSampling<BE>
     + GLWETensorKeyPreparedFactory<BE>
     + GLWEAutomorphismKeyPreparedFactory<BE>
     + GLWETensorKeyEncryptSk<BE>
@@ -225,6 +227,7 @@ impl<BE: Backend, M> TestContextModule<BE> for M where
         + GLWENormalize<BE>
         + GLWESub<BE>
         + GLWESecretPreparedFactory<BE>
+        + GLWESecretSampling<BE>
         + GLWETensorKeyPreparedFactory<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + GLWETensorKeyEncryptSk<BE>
@@ -663,7 +666,7 @@ where
 pub fn gen_sk_with_raw<BE>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
+    _host_module: &Module<HostBytesBackend>,
     seed: [u8; 32],
 ) -> (BackendGLWESecret<BE>, GLWESecretPrepared<BE::OwnedBuf, BE>)
 where
@@ -673,9 +676,8 @@ where
 {
     let glwe_infos = params.glwe_layout();
     let mut source = Source::new(seed);
-    let mut sk_host = host_module.glwe_secret_alloc_from_infos(&glwe_infos);
-    sk_host.fill_ternary_hw(params.hw, &mut source);
-    let sk_raw = module.upload_glwe_secret(&sk_host);
+    let mut sk_raw = module.glwe_secret_alloc_from_infos(&glwe_infos);
+    module.glwe_secret_fill_ternary_hw(&mut sk_raw, params.hw, &mut source);
     let mut sk = module.glwe_secret_prepared_alloc_from_infos(&glwe_infos);
     module.glwe_secret_prepare(&mut sk, &sk_raw);
     (sk_raw, sk)
@@ -773,7 +775,7 @@ where
 pub fn gen_encapsulation_keys<BE>(
     params: &CKKSTestParams,
     module: &Module<BE>,
-    host_module: &Module<HostBytesBackend>,
+    _host_module: &Module<HostBytesBackend>,
     sk_dense_raw: &BackendGLWESecret<BE>,
     ephemeral_secret_weight: usize,
     k_in: usize,
@@ -790,9 +792,8 @@ where
 {
     // Sparse ephemeral secret skSparse (fixed Hamming weight).
     let mut source = Source::new(next_test_seed(7));
-    let mut sk_sparse_host = host_module.glwe_secret_alloc_from_infos(&params.glwe_layout());
-    sk_sparse_host.fill_ternary_hw(ephemeral_secret_weight, &mut source);
-    let sk_sparse_raw = module.upload_glwe_secret(&sk_sparse_host);
+    let mut sk_sparse_raw = module.glwe_secret_alloc_from_infos(&params.glwe_layout());
+    module.glwe_secret_fill_ternary_hw(&mut sk_sparse_raw, ephemeral_secret_weight, &mut source);
 
     let dense_to_sparse = gen_switching_key(params, module, sk_dense_raw, &sk_sparse_raw, k_in, scratch);
     let sparse_to_dense = gen_switching_key(params, module, &sk_sparse_raw, sk_dense_raw, k_out, scratch);

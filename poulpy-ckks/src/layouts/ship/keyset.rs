@@ -9,6 +9,7 @@
 //! convolution operands.
 
 use anyhow::{Result, ensure};
+use poulpy_core::{Distribution, GetDistributionMut};
 use poulpy_core::{
     EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ModuleTransfer,
     layouts::{
@@ -25,7 +26,7 @@ use poulpy_hal::{
     api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution},
     layouts::{
         Backend, CnvPVecL, CnvPVecLToBackendMut, Data, GaloisElement, HostBytesBackend, HostDataMut, HostDataRef, Module,
-        ScratchArena, ZnxView, ZnxViewMut, ZnxWord,
+        ScratchArena, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
     },
     source::Source,
 };
@@ -375,8 +376,11 @@ where
     let m = n.as_usize() / 2;
     let gal_el = module.galois_element(((m - (rot % m)) % m) as i64);
 
+    // Host-side deterministic construction, not sampling: zero the buffer
+    // directly rather than going through the backend sampling API.
     let mut sk_in_host = host_module.glwe_secret_alloc_from_infos(&GLWESecretLayout { n, rank: Rank(2) });
-    sk_in_host.fill_zero();
+    sk_in_host.data_mut().zero();
+    *sk_in_host.dist_mut() = Distribution::ZERO;
     if beta {
         let src = sk_dense_host.data().at(0, 0).to_vec();
         let data = sk_in_host.data_mut();
@@ -386,7 +390,8 @@ where
     let sk_in = module.upload_glwe_secret(&sk_in_host);
 
     let mut sk_out_host = host_module.glwe_secret_alloc_from_infos(&GLWESecretLayout { n, rank: Rank(1) });
-    sk_out_host.fill_zero();
+    sk_out_host.data_mut().zero();
+    *sk_out_host.dist_mut() = Distribution::ZERO;
     znx_automorphism_apply(
         module.galois_element_inv(gal_el),
         sk_dense_host.data().at(0, 0),

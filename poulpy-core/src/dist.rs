@@ -90,11 +90,12 @@ impl<T: GetDistributionMut + ?Sized> GetDistributionMut for &mut T {
 /// `s^2` in ring degree `N` (for instance `s^2 = h/N` for
 /// [`TernaryFixed(h)`](Self::TernaryFixed)), then for independent
 /// components `i != j` each coefficient of `s_i * s_j` mod `X^N + 1` is a
-/// sum of `N` independent products and has variance `N * s^4`. The
-/// diagonal blocks `s_i^2` follow the same order of magnitude, with a
-/// correction from the `s_k^2` terms, which are non-negative and therefore
-/// no longer zero-mean. In both cases the statistics stay a closed-form
-/// function of the base distribution recorded here.
+/// sum of `N` independent products and has variance `N * s^4`. The diagonal
+/// blocks `s_i^2` carry twice that, `2 * N * s^4`, because each unordered
+/// pair `s_a * s_b` contributes to the same coefficient from both orders.
+/// Both are measured to hold on the reference backend. The statistics of
+/// the tensor therefore stay a closed-form function of the base
+/// distribution recorded here; see `var_tensor_key` in the noise module.
 #[derive(Clone, Copy, Debug)]
 pub enum Distribution {
     /// Ternary in {-1, 0, 1} with exactly `h` non-zero coefficients.

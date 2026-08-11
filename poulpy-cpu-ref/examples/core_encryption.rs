@@ -1,3 +1,4 @@
+use poulpy_core::layouts::GLWESecretSampling;
 use poulpy_core::{
     DEFAULT_SIGMA_XE, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWESub,
     layouts::{
@@ -44,7 +45,7 @@ fn main() {
         ScratchOwned::alloc(module.glwe_encrypt_sk_tmp_bytes(&glwe_ct_infos) | module.glwe_decrypt_tmp_bytes(&glwe_ct_infos));
 
     let mut sk: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc_from_infos(&glwe_ct_infos);
-    sk.fill_ternary_prob(0.5, &mut source_xs);
+    module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
     let mut sk_prepared: GLWESecretPrepared<<BackendImpl as Backend>::OwnedBuf, BackendImpl> =
         module.glwe_secret_prepared_alloc(rank);

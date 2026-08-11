@@ -22,6 +22,7 @@ use poulpy_bin_fhe::{
         CircuitBootstrappingKeyPreparedFactory,
     },
 };
+use poulpy_core::layouts::{GLWESecretSampling, LWESecretSampling};
 
 pub fn bench_circuit_bootstrapping<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend, BRA: BlindRotationAlgo>(
     c: &mut Criterion,
@@ -97,10 +98,10 @@ pub fn bench_circuit_bootstrapping<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64
     let mut source_xe: Source = Source::new([1u8; 32]);
 
     let mut sk_lwe: LWESecret<Vec<u8>, i64> = module.lwe_secret_alloc(n_lwe);
-    sk_lwe.fill_binary_block(7, &mut source_xs);
+    module.lwe_secret_fill_binary_block(&mut sk_lwe, 7, &mut source_xs);
 
     let mut sk_glwe: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc(rank);
-    sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
+    module.glwe_secret_fill_ternary_prob(&mut sk_glwe, 0.5, &mut source_xs);
 
     let ct_lwe: LWE<Vec<u8>, i64> = module.lwe_alloc_from_infos(&lwe_infos);
 
