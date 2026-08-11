@@ -2,22 +2,25 @@
 
 use crate::CKKSResult as Result;
 use poulpy_core::{
-    GLWEKeyswitch,
+    GLWEKeyswitch, GLWEZero,
     layouts::{GLWELayout, Rank},
 };
 
 use crate::{CKKSLayout, CKKSMeta};
-use poulpy_hal::layouts::{Backend, Module};
-
-use super::{
-    bootstrap::{ShipBootstrapModule, validate_runtime},
-    masking::ship_masking_tmp_bytes,
-    mux::ship_mux_rotate_tmp_bytes,
+use poulpy_hal::{
+    api::{
+        CnvPVecBytesOf, Convolution, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
+        VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApplyTmpA,
+        VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
+    },
+    layouts::{Backend, Module},
 };
+
+use super::{bootstrap::validate_runtime, masking::ship_masking_tmp_bytes, mux::ship_mux_rotate_tmp_bytes};
 use crate::{
     CKKSCtBounds,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSMulOps, CKKSSubOps, ShipScalar},
-    layouts::{CKKSCiphertextOwned, ShipKeysPrepared},
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, ShipKeysPrepared},
     oep::{CKKSEncodingImpl, CKKSShipCoeffEncodingImpl},
 };
 
@@ -33,7 +36,28 @@ pub(crate) fn ship_bootstrap_tmp_bytes<BE, F, Src>(
 where
     BE: Backend + CKKSShipCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
     F: ShipScalar,
-    Module<BE>: ShipBootstrapModule<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSImagOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWEKeyswitch<BE>
+        + GLWEZero<BE>
+        + Convolution<BE>
+        + CnvPVecBytesOf
+        + VecZnxDftApply<BE>
+        + VecZnxDftZero<BE>
+        + VecZnxDftCopy<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxDftAutomorphism<BE>
+        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxBigNormalize<BE>
+        + VmpApplyDftToDft<BE>
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VmpApplyDftToDftTmpBytes
+        + VecZnxBigNormalizeTmpBytes,
     Src: CKKSCtBounds,
 {
     let params = keys.parameters();

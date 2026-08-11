@@ -7,6 +7,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use std::ops::Deref;
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos,
@@ -51,26 +52,35 @@ where
     (boot_layout, in_layout)
 }
 
-/// Default (backend-generic) implementation of the CKKS bootstrapping
-/// primitives.
-///
-/// The only genuinely new primitive bootstrapping needs is the modulus raise
-/// ([`Self::ckks_mod_up_into_default`]); the full refresh
-/// ([`Self::ckks_bootstrap_default`]) composes it with CoeffsToSlots, EvalMod and
-/// SlotsToCoeffs from the existing op traits. See
-/// [`CKKSBootstrappingOps`](crate::api::CKKSBootstrappingOps) for the documented
-/// semantics.
-#[doc(hidden)]
-pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
-    fn ckks_mod_up_tmp_bytes_default(&self) -> usize
+/// Private backend-generic implementation of the CKKS bootstrapping
+/// composition. Keeping this as a helper value, rather than another trait,
+/// leaves the public operation trait as the single execution abstraction.
+pub(crate) struct BootstrappingDefault<'a, BE: Backend>(&'a Module<BE>);
+
+impl<'a, BE: Backend> BootstrappingDefault<'a, BE> {
+    pub(crate) fn new(module: &'a Module<BE>) -> Self {
+        Self(module)
+    }
+}
+
+impl<BE: Backend> Deref for BootstrappingDefault<'_, BE> {
+    type Target = Module<BE>;
+
+    fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
+impl<BE: Backend> BootstrappingDefault<'_, BE> {
+    pub(crate) fn ckks_mod_up_tmp_bytes_default(&self) -> usize
     where
-        Self: GLWEShift<BE>,
+        Module<BE>: GLWEShift<BE>,
     {
         self.glwe_shift_tmp_bytes()
     }
 
     /// Scratch upper bound for [`Self::ckks_bootstrap_default`].
-    fn ckks_bootstrap_tmp_bytes_default<C1, C2, F>(
+    pub(crate) fn ckks_bootstrap_tmp_bytes_default<C1, C2, F>(
         &self,
         ct_out: &C1,
         ct_in: &C2,
@@ -78,8 +88,8 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
-        Self: GLWEBytesOf<BE>,
-        Self: CKKSAllOpsTmpBytes<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
+        Module<BE>: GLWEBytesOf<BE>,
+        Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
         CKKSCiphertextOwned<BE>: CKKSCtBounds,
@@ -140,7 +150,7 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
         carved + nested
     }
 
-    fn ckks_functional_bootstrap_tmp_bytes_default<C1, C2, F>(
+    pub(crate) fn ckks_functional_bootstrap_tmp_bytes_default<C1, C2, F>(
         &self,
         ct_out: &C1,
         ct_in: &C2,
@@ -149,8 +159,8 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
-        Self: GLWEBytesOf<BE>,
-        Self: CKKSAllOpsTmpBytes<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
+        Module<BE>: GLWEBytesOf<BE>,
+        Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
         CKKSCiphertextOwned<BE>: CKKSCtBounds,
@@ -183,7 +193,7 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
         base.max(carved + nested)
     }
 
-    fn ckks_functional_bootstrap_multi_tmp_bytes_default<C1, C2, F>(
+    pub(crate) fn ckks_functional_bootstrap_multi_tmp_bytes_default<C1, C2, F>(
         &self,
         ct_out: &C1,
         ct_in: &C2,
@@ -192,8 +202,8 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
-        Self: GLWEBytesOf<BE>,
-        Self: CKKSAllOpsTmpBytes<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
+        Module<BE>: GLWEBytesOf<BE>,
+        Module<BE>: CKKSAllOpsTmpBytes<BE> + CKKSEvalModOps<BE> + GLWEKeyswitch<BE>,
         C1: CKKSCtBounds,
         C2: CKKSCtBounds,
         CKKSCiphertextOwned<BE>: CKKSCtBounds,
@@ -207,9 +217,14 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
         single.saturating_add(luts.len().saturating_mul(self.glwe_bytes_of_from_infos(&boot_layout)))
     }
 
-    fn ckks_mod_up_into_default<Dst, Src>(&self, dst: &mut Dst, src: &Src, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
+    pub(crate) fn ckks_mod_up_into_default<Dst, Src>(
+        &self,
+        dst: &mut Dst,
+        src: &Src,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
     where
-        Self: GLWECopy<BE> + GLWEShift<BE>,
+        Module<BE>: GLWECopy<BE> + GLWEShift<BE>,
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
         Src: GLWEToBackendRef<BE> + CKKSInfos,
     {
@@ -256,7 +271,7 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE>,
+        Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE>,
         K: BootstrappingKeys<BE>,
         Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -274,7 +289,7 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
 
     fn recombine_halves<R1, R2>(&self, res_re: &mut R1, res_im: &mut R2, scratch: &mut ScratchArena<'_, BE>) -> Result<()>
     where
-        Self: CKKSImagOps<BE> + CKKSAddOps<BE>,
+        Module<BE>: CKKSImagOps<BE> + CKKSAddOps<BE>,
         R1: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         R2: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
@@ -293,7 +308,7 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSDFTOps<BE>,
+        Module<BE>: CKKSDFTOps<BE>,
         K: BootstrappingKeys<BE>,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -318,7 +333,7 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSDFTOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
+        Module<BE>: CKKSDFTOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
         K: BootstrappingKeys<BE>,
         R1: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         R2: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
@@ -340,7 +355,7 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: CKKSEvalModOps<BE>,
+        Module<BE>: CKKSEvalModOps<BE>,
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
         R1: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
@@ -360,7 +375,7 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWECopy<BE>
+        Module<BE>: GLWECopy<BE>
             + GLWEShift<BE>
             + GLWEKeyswitch<BE>
             + CKKSAddOps<BE>
@@ -444,7 +459,7 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSCopyOps<BE> + CKKSPow2Ops<BE> + CKKSDFTOps<BE>,
+        Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + CKKSCopyOps<BE> + CKKSPow2Ops<BE> + CKKSDFTOps<BE>,
         K: BootstrappingKeys<BE>,
         R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         CKKSCiphertextOwned<BE>:
@@ -486,7 +501,7 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
     /// [`CKKSBootstrappingOps::ckks_bootstrap`](crate::api::CKKSBootstrappingOps::ckks_bootstrap).
     /// Pipeline is selected from the context.
     #[allow(clippy::too_many_arguments)]
-    fn ckks_bootstrap_default<F, K>(
+    pub(crate) fn ckks_bootstrap_default<F, K>(
         &self,
         ct_out: &mut CKKSCiphertextOwned<BE>,
         ct_in: &CKKSCiphertextOwned<BE>,
@@ -495,7 +510,7 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWECopy<BE>
+        Module<BE>: GLWECopy<BE>
             + GLWEShift<BE>
             + GLWEKeyswitch<BE>
             + CKKSCopyOps<BE>
@@ -650,7 +665,7 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
         })
     }
 
-    fn ckks_bootstrap_real_default<F, K>(
+    pub(crate) fn ckks_bootstrap_real_default<F, K>(
         &self,
         ct_out: &mut CKKSCiphertextOwned<BE>,
         ct_in: &CKKSCiphertextOwned<BE>,
@@ -659,7 +674,7 @@ pub trait CKKSBootstrappingOpsDefault<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Self: GLWECopy<BE>
+        Module<BE>: GLWECopy<BE>
             + GLWEShift<BE>
             + GLWEKeyswitch<BE>
             + CKKSCopyOps<BE>
@@ -817,7 +832,7 @@ where
     Ok(())
 }
 
-pub fn ckks_functional_bootstrap_default<BE, F, K>(
+pub(crate) fn ckks_functional_bootstrap_default<BE, F, K>(
     module: &Module<BE>,
     ct_out: &mut CKKSCiphertextOwned<BE>,
     ct_in: &CKKSCiphertextOwned<BE>,
@@ -828,8 +843,7 @@ pub fn ckks_functional_bootstrap_default<BE, F, K>(
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: CKKSBootstrappingOpsDefault<BE>
-        + GLWECopy<BE>
+    Module<BE>: GLWECopy<BE>
         + GLWEShift<BE>
         + CKKSModuleAlloc<BE>
         + GLWEKeyswitch<BE>
@@ -851,7 +865,7 @@ where
     ckks_functional_bootstrap_with_slots(module, ct_out, ct_in, ctx, lut, keys, SlotsKind::Complex, scratch)
 }
 
-pub fn ckks_functional_bootstrap_real_default<BE, F, K>(
+pub(crate) fn ckks_functional_bootstrap_real_default<BE, F, K>(
     module: &Module<BE>,
     ct_out: &mut CKKSCiphertextOwned<BE>,
     ct_in: &CKKSCiphertextOwned<BE>,
@@ -862,8 +876,7 @@ pub fn ckks_functional_bootstrap_real_default<BE, F, K>(
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: CKKSBootstrappingOpsDefault<BE>
-        + GLWECopy<BE>
+    Module<BE>: GLWECopy<BE>
         + GLWEShift<BE>
         + CKKSModuleAlloc<BE>
         + GLWEKeyswitch<BE>
@@ -898,8 +911,7 @@ fn ckks_functional_bootstrap_with_slots<BE, F, K>(
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: CKKSBootstrappingOpsDefault<BE>
-        + GLWECopy<BE>
+    Module<BE>: GLWECopy<BE>
         + GLWEShift<BE>
         + CKKSModuleAlloc<BE>
         + GLWEKeyswitch<BE>
@@ -944,19 +956,20 @@ where
     };
     scratch.scope(|scratch_local| {
         let (mut ct_raised, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta());
-        module.ckks_bootstrap_s2c_mod_up(&mut ct_raised, ct_in, ctx, keys, &mut scratch_local)?;
+        let default = BootstrappingDefault::new(module);
+        default.ckks_bootstrap_s2c_mod_up(&mut ct_raised, ct_in, ctx, keys, &mut scratch_local)?;
         if slots_kind == SlotsKind::Real {
             let (mut r0, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
-            module.ckks_bootstrap_coeffs_to_slots_real(&mut ct_raised, &mut r0, ctx, keys, &mut scratch_local)?;
+            default.ckks_bootstrap_coeffs_to_slots_real(&mut ct_raised, &mut r0, ctx, keys, &mut scratch_local)?;
             return ckks_eval_encoded_lut(module, ct_out, &ct_raised, ctx, lut, keys, &mut scratch_local);
         }
 
         let (mut r0, scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
         let (mut i0, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
-        module.ckks_bootstrap_coeffs_to_slots(&ct_raised, &mut r0, &mut i0, ctx, keys, &mut scratch_local)?;
+        default.ckks_bootstrap_coeffs_to_slots(&ct_raised, &mut r0, &mut i0, ctx, keys, &mut scratch_local)?;
         ckks_eval_encoded_lut(module, ct_out, &r0, ctx, lut, keys, &mut scratch_local)?;
         ckks_eval_encoded_lut(module, &mut ct_raised, &i0, ctx, lut, keys, &mut scratch_local)?;
-        module.recombine_halves(ct_out, &mut ct_raised, &mut scratch_local)
+        default.recombine_halves(ct_out, &mut ct_raised, &mut scratch_local)
     })?;
     ct_out.set_meta(output_meta);
     ckks_ensure!(
@@ -968,7 +981,7 @@ where
     Ok(())
 }
 
-pub fn ckks_functional_bootstrap_multi_default<BE, F, K>(
+pub(crate) fn ckks_functional_bootstrap_multi_default<BE, F, K>(
     module: &Module<BE>,
     ct_outs: &mut [CKKSCiphertextOwned<BE>],
     ct_in: &CKKSCiphertextOwned<BE>,
@@ -979,8 +992,7 @@ pub fn ckks_functional_bootstrap_multi_default<BE, F, K>(
 ) -> Result<()>
 where
     BE: Backend,
-    Module<BE>: CKKSBootstrappingOpsDefault<BE>
-        + GLWECopy<BE>
+    Module<BE>: GLWECopy<BE>
         + GLWEShift<BE>
         + CKKSModuleAlloc<BE>
         + GLWEKeyswitch<BE>
@@ -1051,10 +1063,11 @@ where
     };
     scratch.scope(|scratch_local| {
         let (mut ct_raised, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_in.meta());
-        module.ckks_bootstrap_s2c_mod_up(&mut ct_raised, ct_in, ctx, keys, &mut scratch_local)?;
+        let default = BootstrappingDefault::new(module);
+        default.ckks_bootstrap_s2c_mod_up(&mut ct_raised, ct_in, ctx, keys, &mut scratch_local)?;
         let (mut r0, scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
         let (mut i0, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(&boot_layout, ct_raised.meta());
-        module.ckks_bootstrap_coeffs_to_slots(&ct_raised, &mut r0, &mut i0, ctx, keys, &mut scratch_local)?;
+        default.ckks_bootstrap_coeffs_to_slots(&ct_raised, &mut r0, &mut i0, ctx, keys, &mut scratch_local)?;
 
         let (mut im_outs, mut scratch_local) =
             scratch_local.take_ckks_ciphertext_slice_scratch(luts.len(), &boot_layout, CKKSMeta::default());
@@ -1087,7 +1100,7 @@ where
         }
 
         for (ct_out, im_i) in ct_outs.iter_mut().zip(im_outs.iter_mut()) {
-            module.recombine_halves(ct_out, im_i, &mut scratch_local)?;
+            default.recombine_halves(ct_out, im_i, &mut scratch_local)?;
         }
         Result::Ok(())
     })?;

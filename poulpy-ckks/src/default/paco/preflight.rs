@@ -14,16 +14,19 @@ use poulpy_core::{
         GLWEToBackendRef, LWEInfos, Rank, TorusPrecision,
     },
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
 
-use super::{bootstrap::validate_runtime, parallel::PaCoBootstrapModule};
+use super::{bootstrap::validate_runtime, ops::PaCoSlotOps};
 use crate::layouts::paco::{
     context::PaCoContext,
     keyset::{PaCoKeys, validate_gadget_backend_view},
 };
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSMeta,
-    api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSMulOps, CKKSRotateOps, CKKSSubOps, PaCoScalar},
+    api::{
+        CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSRotateOps, CKKSSubOps, PaCoScalar,
+    },
+    layouts::CKKSModuleAlloc,
     oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl},
 };
 
@@ -81,7 +84,20 @@ pub(super) fn direct_tmp_bytes_validated<BE, F, K>(
 where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
     F: PaCoScalar,
-    Module<BE>: PaCoBootstrapModule<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRotateOps<BE>
+        + PaCoSlotOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWERotate<BE>
+        + GLWEAutomorphism<BE>
+        + GLWELinearTransformations<BE>
+        + GLWEKeyswitch<BE>
+        + CyclotomicOrder,
     K: PaCoKeys<BE>,
 {
     let plan = context.plan();
@@ -189,7 +205,20 @@ pub(crate) fn paco_bootstrap_tmp_bytes<BE, F, K, Src>(
 where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
     F: PaCoScalar,
-    Module<BE>: PaCoBootstrapModule<BE> + GLWEKeyswitch<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRotateOps<BE>
+        + PaCoSlotOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWERotate<BE>
+        + GLWEAutomorphism<BE>
+        + GLWELinearTransformations<BE>
+        + GLWEKeyswitch<BE>
+        + CyclotomicOrder,
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
@@ -217,7 +246,20 @@ pub(super) fn preflight<BE, F, K, Src>(
 where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
     F: PaCoScalar,
-    Module<BE>: PaCoBootstrapModule<BE> + GLWEKeyswitch<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRotateOps<BE>
+        + PaCoSlotOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWERotate<BE>
+        + GLWEAutomorphism<BE>
+        + GLWELinearTransformations<BE>
+        + GLWEKeyswitch<BE>
+        + CyclotomicOrder,
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {

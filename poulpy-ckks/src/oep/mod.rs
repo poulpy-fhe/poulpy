@@ -8,12 +8,11 @@
 //! Most families follow the **opt-in marker** pattern: the family's blanket `unsafe impl<BE> CKKS*Impl<BE> for BE` is gated on `Module<BE>: CKKS*Default<BE>`, and a backend opts in with the family's one-line `impl_ckks_*_defaults!` macro (or bypasses the reference chain entirely by implementing the OEP trait natively).
 //! Three kinds of family are deliberate exceptions:
 //!
-//! - **Unconditional blankets** — [`CKKSEvalModImpl`] and [`CKKSBootstrappingImpl`]: pure compositions of already-wired families, so they blanket over any backend whose constituent families are wired; there is no per-backend macro because there is nothing backend-specific to opt into.
+//! - **Unconditional blankets** — [`CKKSEvalModImpl`]: pure compositions of already-wired families, so they blanket over any backend whose constituent families are wired; there is no per-backend macro because there is nothing backend-specific to opt into.
 //! - **Scalar-generic encoding seams** — [`CKKSEncodingImpl<BE, F>`], [`DFTMatrixImpl<BE, F>`], and [`CKKSPaCoCoeffEncodingImpl`]: parameterized by the encoding scalar and tied to the backend's FFT/codec plumbing, they are wired by backend-crate-side macros (e.g. `impl_ckks_encoding_*!` in the CPU backends) rather than by crate-side default markers, keeping host/FFT bounds out of this crate's API per the no-host-bounds rule.
-//! - **No-OEP families** — the composite ops (`CKKSMulAddOps`, `CKKSMulSubOps`, `CKKSAffineOps`, `CKKSAddManyOps`, `CKKSDotProductOps`, linear transformations): pure api-level compositions of other families' ops, implemented directly on `Module<BE>` in the delegates layer with no override seam of their own — overriding their constituents overrides them.
+//! - **No-OEP families** — bootstrapping and the composite ops (`CKKSMulAddOps`, `CKKSMulSubOps`, `CKKSAffineOps`, `CKKSAddManyOps`, `CKKSDotProductOps`, linear transformations): pure api-level compositions of other families' ops, implemented directly on `Module<BE>` in the delegates layer with no override seam of their own — overriding their constituents overrides them.
 
 mod add;
-mod bootstrapping;
 mod carry_verb;
 mod ckks_impl;
 mod conjugate;
@@ -35,8 +34,6 @@ mod sub;
 
 pub use add::CKKSAddImpl;
 pub use add::impl_ckks_add_defaults;
-pub use bootstrapping::CKKSBootstrappingImpl;
-pub use bootstrapping::impl_ckks_bootstrapping_defaults;
 pub use ckks_impl::CKKSImpl;
 pub use conjugate::CKKSConjugateImpl;
 pub use conjugate::impl_ckks_conjugate_defaults;
