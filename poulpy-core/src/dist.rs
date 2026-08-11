@@ -2,13 +2,20 @@ use std::io::{Read, Result, Write};
 
 /// Read-only access to the [`Distribution`] associated with a secret key.
 pub trait GetDistribution {
-    /// Returns a reference to the distribution descriptor.
+    /// Returns the distribution the *base* secret was sampled from.
+    ///
+    /// See [`Distribution`] for what this tag does and does not describe;
+    /// in particular it is not re-derived for secrets obtained as products
+    /// of other secrets.
     fn dist(&self) -> &Distribution;
 }
 
 /// Mutable access to the [`Distribution`] associated with a secret key.
 pub trait GetDistributionMut {
-    /// Returns a mutable reference to the distribution descriptor.
+    /// Returns a mutable reference to the base-secret distribution tag.
+    ///
+    /// Only sampling routines and the transforms that propagate the tag
+    /// should write through this; see [`Distribution`].
     fn dist_mut(&mut self) -> &mut Distribution;
 }
 
@@ -30,8 +37,8 @@ impl<T: GetDistributionMut + ?Sized> GetDistributionMut for &mut T {
     }
 }
 
-/// Describes the probability distribution used to sample secret-key
-/// coefficients.
+/// Describes the probability distribution the *base* secret was sampled
+/// from.
 ///
 /// Each variant encodes either a fixed Hamming weight or a per-coefficient
 /// probability. The enum is serialised as a single little-endian `u64`
@@ -40,6 +47,54 @@ impl<T: GetDistributionMut + ?Sized> GetDistributionMut for &mut T {
 /// For probabilistic variants the `f64` payload is stored with a
 /// precision loss below 2^-44 (8 least-significant mantissa bits
 /// are discarded to fit the tag byte).
+///
+/// # What this tag means
+///
+/// It records how the key material was originally sampled, which is what
+/// the security estimate and the noise analysis are stated against. It is
+/// *not* a claim that a given buffer's coefficients are, right now, an
+/// i.i.d. sample from that distribution.
+///
+/// The tag is set only by the `fill_*` samplers (and by
+/// [`Distribution::ZERO`] for the debug all-zero secret). Every other
+/// operation on a secret propagates it verbatim.
+///
+/// # Transforms that preserve it
+///
+/// A secret keeps its tag under any transform that permutes and/or negates
+/// coefficients, or that only changes the representation:
+///
+/// - the `X -> X^-1` automorphism used by
+///   `glwe_secret_from_lwe_secret` / `lwe_secret_from_glwe_secret`, and
+///   any other `X -> X^k` automorphism: the multiset of non-zero
+///   coefficients, and hence the Hamming weight and the per-coefficient
+///   marginals, are unchanged (up to sign, which the ternary and binary
+///   families are analysed against anyway);
+/// - flattening a rank-`r` GLWE secret into an LWE secret and back: the
+///   tag describes each polynomial component of the source key and is not
+///   rescaled by the rank;
+/// - DFT preparation ([`GLWESecretPrepared`](crate::layouts::GLWESecretPrepared))
+///   and transfers between backends: pure changes of representation.
+///
+/// # Where it deliberately does not describe the coefficients
+///
+/// [`GLWESecretTensor`](crate::layouts::GLWESecretTensor) holds the products
+/// `s_i * s_j` of a base secret `(s_0, ..., s_{r-1})`, e.g.
+/// `(1, s_0, s_1)^(x)2 = (s_0^2, s_0*s_1, s_1^2)`. Those coefficients are
+/// *not* ternary or binary any more, and no variant of this enum describes
+/// them. The tensor key still carries the base secret's tag, on purpose:
+/// it is the handle on the underlying secret's parameters, from which the
+/// product's own statistics follow.
+///
+/// Concretely, if the base secret has zero-mean coefficients of variance
+/// `s^2` in ring degree `N` (for instance `s^2 = h/N` for
+/// [`TernaryFixed(h)`](Self::TernaryFixed)), then for independent
+/// components `i != j` each coefficient of `s_i * s_j` mod `X^N + 1` is a
+/// sum of `N` independent products and has variance `N * s^4`. The
+/// diagonal blocks `s_i^2` follow the same order of magnitude, with a
+/// correction from the `s_k^2` terms, which are non-negative and therefore
+/// no longer zero-mean. In both cases the statistics stay a closed-form
+/// function of the base distribution recorded here.
 #[derive(Clone, Copy, Debug)]
 pub enum Distribution {
     /// Ternary in {-1, 0, 1} with exactly `h` non-zero coefficients.

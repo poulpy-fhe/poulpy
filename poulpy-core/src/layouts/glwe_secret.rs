@@ -53,6 +53,11 @@ impl GLWEInfos for GLWESecretLayout {
 #[derive(PartialEq, Eq, Clone)]
 pub struct GLWESecret<D: Data, W: ZnxWord> {
     pub(crate) data: ScalarZnx<D, W>,
+    /// Distribution the base secret was sampled from, shared by all `rank`
+    /// polynomial components. See [`Distribution`] for how this tag is
+    /// propagated: it survives automorphisms, LWE/GLWE conversions, DFT
+    /// preparation and backend transfers, and is *not* redefined for
+    /// derived products such as [`GLWESecretTensor`](super::GLWESecretTensor).
     pub(crate) dist: Distribution,
 }
 
@@ -253,6 +258,10 @@ pub trait SecretConversion<B: Backend> {
     /// the X → X⁻¹ automorphism (k = -1). The result is the GLWE polynomial key
     /// whose ring product with a mask decrypts LWE ciphertexts produced by
     /// `glwe_expand_lwe`.
+    ///
+    /// The source's [`Distribution`] tag is copied unchanged: the automorphism
+    /// only permutes and negates coefficients, so the base secret it describes
+    /// is the same one.
     fn glwe_secret_from_lwe_secret<S>(&self, src: &S) -> GLWESecret<B::OwnedBuf, B::ZnxWord>
     where
         S: LWESecretToBackendRef<B>;
@@ -270,9 +279,12 @@ pub trait SecretConversion<B: Backend> {
     /// `glwe_secret_from_lwe_secret`: applying both conversions recovers the
     /// original key.
     ///
-    /// Distribution metadata is preserved from the source secret. In particular,
-    /// fixed-weight metadata denotes the advertised fixed-weight distribution of
-    /// the source key and is not multiplied by the rank during flattening.
+    /// The source's [`Distribution`] tag is copied unchanged: the automorphism
+    /// only permutes and negates coefficients, and the packing only relocates
+    /// them, so the base secret described by the tag is the same one. In
+    /// particular, fixed-weight metadata denotes the advertised fixed-weight
+    /// distribution of each polynomial component of the source key and is not
+    /// multiplied by the rank during flattening.
     fn lwe_secret_from_glwe_secret<S>(&self, src: &S, lwe_n: Degree) -> LWESecret<B::OwnedBuf, B::ZnxWord>
     where
         S: GLWESecretToBackendRef<B>;

@@ -16,6 +16,10 @@ use crate::{
 
 pub struct LWESecret<D: Data, W: ZnxWord> {
     pub(crate) data: ScalarZnx<D, W>,
+    /// Distribution the base secret was sampled from. When this secret is
+    /// obtained by flattening a GLWE secret, the tag is that of the source
+    /// key's polynomial components and is not rescaled by the rank.
+    /// See [`Distribution`].
     pub(crate) dist: Distribution,
 }
 

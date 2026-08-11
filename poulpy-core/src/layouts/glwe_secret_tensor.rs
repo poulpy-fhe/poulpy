@@ -17,10 +17,7 @@ use poulpy_hal::{
 use crate::{
     GetDistribution, GetDistributionMut, ScratchArenaTakeCore,
     dist::Distribution,
-    layouts::{
-        Base2K, Degree, GLWEInfos, GLWESecret, GLWESecretBackendMut, GLWESecretBackendRef, GLWESecretPreparedFactory,
-        GLWESecretToBackendMut, GLWESecretToBackendRef, LWEInfos, Rank,
-    },
+    layouts::{Base2K, Degree, GLWEInfos, GLWESecretPreparedFactory, GLWESecretToBackendRef, LWEInfos, Rank},
 };
 
 /// Number of distinct unordered secret-key products for a rank-`r` tensor key.
@@ -29,9 +26,20 @@ pub(crate) fn pairs(rank: usize) -> usize {
     (((rank + 1) * rank) >> 1).max(1)
 }
 
+/// Tensor of a [`GLWESecret`]: the `(rank + 1) * rank / 2` distinct products
+/// `s_i * s_j` of a base secret `(s_0, ..., s_{rank-1})`, e.g.
+/// `(1, s_0, s_1)^(x)2 = (s_0^2, s_0*s_1, s_1^2)`.
+///
+/// Note that `dist` is the tag of the *base* secret, not of the stored
+/// products: the coefficients held here are neither ternary nor binary, and
+/// no [`Distribution`] variant describes them. The tag is kept because the
+/// products' own statistics are a closed-form function of the base
+/// distribution (see [`Distribution`] for the variance).
 pub struct GLWESecretTensor<D: Data, W: ZnxWord> {
     pub(crate) data: ScalarZnx<D, W>,
     pub(crate) rank: Rank,
+    /// Distribution of the base secret this tensor was derived from, *not*
+    /// of the `s_i * s_j` coefficients stored in `data`.
     pub(crate) dist: Distribution,
 }
 
@@ -112,21 +120,41 @@ impl<D: Data, W: ZnxWord> GLWEInfos for GLWESecretTensor<D, W> {
     }
 }
 
-impl<BE: Backend> GLWESecretToBackendRef<BE> for GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord> {
-    fn to_backend_ref(&self) -> GLWESecretBackendRef<'_, BE> {
-        GLWESecret {
+pub type GLWESecretTensorBackendRef<'a, BE> = GLWESecretTensor<<BE as Backend>::BufRef<'a>, <BE as Backend>::ZnxWord>;
+pub type GLWESecretTensorBackendMut<'a, BE> = GLWESecretTensor<<BE as Backend>::BufMut<'a>, <BE as Backend>::ZnxWord>;
+
+/// Backend view of a tensor secret.
+///
+/// Deliberately distinct from [`GLWESecretToBackendRef`]: a tensor secret is
+/// not interchangeable with the base secret it was derived from, so it is
+/// not accepted by APIs that ask for a [`GLWESecret`].
+pub trait GLWESecretTensorToBackendRef<BE: Backend> {
+    fn to_backend_ref(&self) -> GLWESecretTensorBackendRef<'_, BE>;
+}
+
+impl<BE: Backend> GLWESecretTensorToBackendRef<BE> for GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord> {
+    fn to_backend_ref(&self) -> GLWESecretTensorBackendRef<'_, BE> {
+        GLWESecretTensor {
             data: <ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxToBackendRef<BE>>::to_backend_ref(&self.data),
+            rank: self.rank,
             dist: self.dist,
         }
     }
 }
 
-impl<BE: Backend> GLWESecretToBackendMut<BE> for GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord> {
-    fn to_backend_mut(&mut self) -> GLWESecretBackendMut<'_, BE> {
-        GLWESecret {
+/// Mutable backend view of a tensor secret. See [`GLWESecretTensorToBackendRef`].
+pub trait GLWESecretTensorToBackendMut<BE: Backend>: GLWESecretTensorToBackendRef<BE> {
+    fn to_backend_mut(&mut self) -> GLWESecretTensorBackendMut<'_, BE>;
+}
+
+impl<BE: Backend> GLWESecretTensorToBackendMut<BE> for GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord> {
+    fn to_backend_mut(&mut self) -> GLWESecretTensorBackendMut<'_, BE> {
+        let rank = self.rank;
+        GLWESecretTensor {
             data: <ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as poulpy_hal::layouts::ScalarZnxToBackendMut<BE>>::to_backend_mut(
                 &mut self.data,
             ),
+            rank,
             dist: self.dist,
         }
     }
@@ -176,9 +204,15 @@ impl<W: ZnxWord> GLWESecretTensor<Vec<u8>, W> {
 pub trait GLWESecretTensorFactory<BE: Backend> {
     fn glwe_secret_tensor_prepare_tmp_bytes(&self, rank: Rank) -> usize;
 
+    /// Fills `res` with the pairwise products `s_i * s_j` of the base secret
+    /// `other`.
+    ///
+    /// `res` inherits `other`'s [`Distribution`] tag. That tag keeps
+    /// describing the base secret: the products written into `res` follow a
+    /// different (derived) distribution, which no tag variant encodes.
     fn glwe_secret_tensor_prepare<R, O>(&self, res: &mut R, other: &O, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos,
+        R: GLWESecretTensorToBackendMut<BE> + GetDistributionMut + GLWEInfos,
         O: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos;
 }
 
@@ -201,13 +235,15 @@ where
 
     fn glwe_secret_tensor_prepare<R, A>(&self, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
-        R: GLWESecretToBackendMut<BE> + GetDistributionMut + GLWEInfos,
+        R: GLWESecretTensorToBackendMut<BE> + GetDistributionMut + GLWEInfos,
         A: GLWESecretToBackendRef<BE> + GetDistribution + GLWEInfos,
     {
         let res = &mut res.to_backend_mut();
         let a = a.to_backend_ref();
 
-        assert_eq!(res.rank(), pairs(a.rank().into()) as u32);
+        // `res.rank()` is the rank of the base secret the tensor is derived
+        // from; its column count is `pairs(rank)`.
+        assert_eq!(res.rank(), a.rank());
         assert_eq!(res.n(), self.n() as u32);
         assert_eq!(a.n(), self.n() as u32);
         assert!(
@@ -245,6 +281,8 @@ where
             data: BE::alloc_bytes(self.vec_znx_big_normalize_tmp_bytes()),
             _phantom: std::marker::PhantomData,
         };
+        // Tag of the base secret `a`, carried over as-is: the products below
+        // are not distributed like `a`, but their statistics derive from it.
         res.dist = *a.dist();
         let mut res_backend = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(res.data_mut());
 
