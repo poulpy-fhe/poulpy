@@ -71,6 +71,69 @@ pub(crate) fn var_noise_gglwe_product_v2(
     noise
 }
 
+/// Variance of `s (x) s`'s contribution to a tensor-product decryption.
+///
+/// The tensor key of a rank-`r` secret holds one constant component, `r`
+/// linear components `s_i` (per-coefficient variance `var_xs`) and the
+/// quadratic products (see [`Distribution`](crate::dist::Distribution)):
+///
+/// - `r` diagonal ones `s_i^2`, whose coefficients pair `s_a s_b` twice and
+///   so have per-coefficient variance `2 * n * var_xs^2`;
+/// - `r(r-1)/2` off-diagonal ones `s_i * s_j`, at `n * var_xs^2`.
+///
+/// Each component is hit by an independent error and enters through a ring
+/// product, adding a factor `n` to every non-constant term. Collecting the
+/// quadratic ones gives the `r(r+3)/2` multiplier below.
+pub(crate) fn var_tensor_key(n: f64, rank: f64, var_xs: f64) -> f64 {
+    let var_si_x_sj: f64 = n * var_xs * var_xs;
+    1.0 + rank * n * var_xs + 0.5 * rank * (rank + 3.0) * n * var_si_x_sj
+}
+
+/// Variance of the decryption error of a GLWE tensor product, **before**
+/// relinearization, at the output scale.
+///
+/// The operands' own errors are the dominant source: each tensor component
+/// carries them, and decryption folds the components against `s (x) s`, which
+/// amplifies by [`var_tensor_key`]. The convolution offset `cnv_offset`
+/// rescales the product (it drops `cnv_offset` low bits), so everything below
+/// it is amplified by `2^cnv_offset`.
+///
+/// Calibrated against the reference backend over rank, ring degree, torus
+/// precision, secret variance, operand noise and convolution offset; it is an
+/// upper estimate, running ~0.3 bits above the measured standard deviation.
+/// Relinearization noise is additive and much smaller than this multiplicative
+/// term, so the same bound covers the relinearized result.
+pub(crate) fn var_noise_glwe_tensor(n: f64, rank: f64, var_xs: f64, var_e_a: f64, var_e_b: f64, cnv_offset: usize) -> f64 {
+    let scale: f64 = ((2 * cnv_offset) as f64).exp2();
+    (var_e_a + var_e_b) * var_tensor_key(n, rank, var_xs) * scale
+}
+
+/// `log2` of the standard deviation of [`var_noise_glwe_tensor`].
+///
+/// `sigma_a` / `sigma_b` are the operands' error standard deviations relative
+/// to their torus precision `k_a` / `k_b` (an error placed at `k` with
+/// standard deviation `sigma` has torus variance `(sigma * 2^-k)^2`).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn log2_std_noise_glwe_tensor(
+    n: f64,
+    rank: f64,
+    var_xs: f64,
+    sigma_a: f64,
+    k_a: usize,
+    sigma_b: f64,
+    k_b: usize,
+    cnv_offset: usize,
+) -> f64 {
+    let var_e = |sigma: f64, k: usize| {
+        let s: f64 = sigma * (-(k as f64)).exp2();
+        s * s
+    };
+    var_noise_glwe_tensor(n, rank, var_xs, var_e(sigma_a, k_a), var_e(sigma_b, k_b), cnv_offset)
+        .sqrt()
+        .log2()
+        .min(-1.0)
+}
+
 #[allow(clippy::too_many_arguments)]
 #[allow(dead_code)]
 pub(crate) fn log2_std_noise_gglwe_product(
