@@ -49,7 +49,9 @@ pub fn test_circuit_bootstrapping_to_exponent<
         + GGSWNoise<BE>
         + GLWEEncryptSk<BE>
         + ScalarZnxAlloc<BE>
-        + VecZnxRotateAssignBackend<BE>,
+        + VecZnxRotateAssignBackend<BE>
+        + GLWESecretSampling<BE>
+        + LWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     BE::OwnedBuf: HostDataRef + HostDataMut,
     for<'a> BE::BufRef<'a>: HostDataRef,
@@ -255,7 +257,9 @@ pub fn test_circuit_bootstrapping_to_constant<
         + GGSWNoise<BE>
         + GLWEEncryptSk<BE>
         + ScalarZnxAlloc<BE>
-        + VecZnxRotateAssignBackend<BE>,
+        + VecZnxRotateAssignBackend<BE>
+        + GLWESecretSampling<BE>
+        + LWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     BE::OwnedBuf: HostDataRef + HostDataMut,
     for<'a> BE::BufRef<'a>: HostDataRef,

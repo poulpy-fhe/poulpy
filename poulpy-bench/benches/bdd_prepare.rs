@@ -38,7 +38,9 @@ pub fn benc_bdd_prepare<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBac
         + GLWEEncryptSk<BE>
         + BDDKeyEncryptSk<BRA, BE>
         + BDDKeyPreparedFactory<BRA, BE>
-        + FheUintPrepare<BRA, BE>,
+        + FheUintPrepare<BRA, BE>
+        + GLWESecretSampling<BE>
+        + LWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     BE::OwnedBuf: HostDataRef + HostDataMut,
     for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
@@ -69,7 +71,9 @@ pub fn benc_bdd_prepare<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBac
             + GLWEEncryptSk<BE>
             + BDDKeyEncryptSk<BRA, BE>
             + BDDKeyPreparedFactory<BRA, BE>
-            + FheUintPrepare<BRA, BE>,
+            + FheUintPrepare<BRA, BE>
+            + GLWESecretSampling<BE>
+            + LWESecretSampling<BE>,
         ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
         BE::OwnedBuf: HostDataRef + HostDataMut,
         for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,

@@ -19,7 +19,7 @@ pub fn bench_glwe_decrypt<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostB
     c: &mut Criterion,
     label: &str,
 ) where
-    Module<BE>: ModuleNew<BE> + GLWEDecrypt<BE> + GLWEEncryptSk<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: ModuleNew<BE> + GLWEDecrypt<BE> + GLWEEncryptSk<BE> + GLWESecretPreparedFactory<BE> + GLWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
     for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,

@@ -60,7 +60,9 @@ where
         + BDDKeyEncryptSk<BRA, BE>
         + BDDKeyPreparedFactory<BRA, BE>
         + FheUintPrepare<BRA, BE>
-        + ExecuteBDDCircuit2WTo1W<BE>,
+        + ExecuteBDDCircuit2WTo1W<BE>
+        + GLWESecretSampling<BE>
+        + LWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     BE::OwnedBuf: HostDataRef + HostDataMut,
     for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
@@ -230,7 +232,9 @@ fn bench_operation<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend,
         + BDDKeyEncryptSk<BRA, BE>
         + BDDKeyPreparedFactory<BRA, BE>
         + FheUintPrepare<BRA, BE>
-        + ExecuteBDDCircuit2WTo1W<BE>,
+        + ExecuteBDDCircuit2WTo1W<BE>
+        + GLWESecretSampling<BE>
+        + LWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     BE::OwnedBuf: HostDataRef + HostDataMut,
     for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
@@ -265,7 +269,9 @@ pub fn benc_bdd_arithmetic<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + Host
         + BDDKeyEncryptSk<BRA, BE>
         + BDDKeyPreparedFactory<BRA, BE>
         + FheUintPrepare<BRA, BE>
-        + ExecuteBDDCircuit2WTo1W<BE>,
+        + ExecuteBDDCircuit2WTo1W<BE>
+        + GLWESecretSampling<BE>
+        + LWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     BE::OwnedBuf: HostDataRef + HostDataMut,
     for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,

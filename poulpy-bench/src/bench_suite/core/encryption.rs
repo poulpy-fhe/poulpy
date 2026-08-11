@@ -20,7 +20,7 @@ pub fn bench_glwe_encrypt_sk<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
     c: &mut Criterion,
     label: &str,
 ) where
-    Module<BE>: ModuleNew<BE> + GLWEEncryptSk<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: ModuleNew<BE> + GLWEEncryptSk<BE> + GLWESecretPreparedFactory<BE> + GLWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let n: usize = infos.n().into();
@@ -64,7 +64,7 @@ pub fn bench_ggsw_encrypt_sk<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
     c: &mut Criterion,
     label: &str,
 ) where
-    Module<BE>: ModuleNew<BE> + GGSWEncryptSk<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: ModuleNew<BE> + GGSWEncryptSk<BE> + GLWESecretPreparedFactory<BE> + GLWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
     for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
@@ -113,7 +113,7 @@ pub fn bench_glwe_automorphism_key_encrypt_sk<BE: Backend<OwnedBuf = Vec<u8>, Zn
     c: &mut Criterion,
     label: &str,
 ) where
-    Module<BE>: ModuleNew<BE> + GLWEAutomorphismKeyEncryptSk<BE>,
+    Module<BE>: ModuleNew<BE> + GLWEAutomorphismKeyEncryptSk<BE> + GLWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let n: usize = atk_infos.n().into();

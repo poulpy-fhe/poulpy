@@ -57,7 +57,9 @@ where
         + BDDKeyPreparedFactory<BRA, BE>
         + FheUintPrepare<BRA, BE>
         + ExecuteBDDCircuit2WTo1W<BE>
-        + GLWEBlindSelection<u32, BE>,
+        + GLWEBlindSelection<u32, BE>
+        + GLWESecretSampling<BE>
+        + LWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     BE::OwnedBuf: HostDataRef + HostDataMut,
     for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8], ZnxWord = i64> + 'static,

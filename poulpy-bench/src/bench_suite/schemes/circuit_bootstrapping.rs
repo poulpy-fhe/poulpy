@@ -40,7 +40,9 @@ pub fn bench_circuit_bootstrapping<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64
         + GGSWPreparedFactory<BE>
         + GGSWNoise<BE>
         + GLWEEncryptSk<BE>
-        + VecZnxRotateAssignBackend<BE>,
+        + VecZnxRotateAssignBackend<BE>
+        + GLWESecretSampling<BE>
+        + LWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let group_name: String = format!("circuit_bootstrapping::{label}");

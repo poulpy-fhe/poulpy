@@ -32,7 +32,9 @@ pub fn test_blind_rotation<BRA: BlindRotationAlgo, M, BE: Backend<OwnedBuf = Vec
         + LookupTableFactory<BE::OwnedBuf, BE::ZnxWord>
         + GLWESecretPreparedFactory<BE>
         + GLWEDecrypt<BE>
-        + LWEEncryptSk<BE>,
+        + LWEEncryptSk<BE>
+        + GLWESecretSampling<BE>
+        + LWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     BE::OwnedBuf: HostDataRef + HostDataMut,
     for<'a> BE::BufMut<'a>: HostDataMut + AsMut<[u8]> + AsRef<[u8]> + Sync,

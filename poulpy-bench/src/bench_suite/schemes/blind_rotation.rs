@@ -30,7 +30,9 @@ where
         + LookupTableFactory<BE::OwnedBuf, BE::ZnxWord>
         + GLWESecretPreparedFactory<BE>
         + GLWEDecrypt<BE>
-        + LWEEncryptSk<BE>,
+        + LWEEncryptSk<BE>
+        + GLWESecretSampling<BE>
+        + LWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let group_name: String = format!("blind_rotate::{label}");

@@ -26,7 +26,8 @@ pub fn bench_glwe_external_product<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64
         + GGSWEncryptSk<BE>
         + GGSWPreparedFactory<BE>
         + GLWEEncryptSk<BE>
-        + GLWESecretPreparedFactory<BE>,
+        + GLWESecretPreparedFactory<BE>
+        + GLWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
     for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
@@ -99,7 +100,8 @@ pub fn bench_glwe_external_product_assign<BE: Backend<OwnedBuf = Vec<u8>, ZnxWor
         + GGSWEncryptSk<BE>
         + GGSWPreparedFactory<BE>
         + GLWEEncryptSk<BE>
-        + GLWESecretPreparedFactory<BE>,
+        + GLWESecretPreparedFactory<BE>
+        + GLWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
     for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,

@@ -64,7 +64,9 @@ where
         + BDDKeyEncryptSk<BRA, BE>
         + GLWESecretPreparedFactory<BE>
         + BlindRotationKeyPreparedFactory<BRA, BE>
-        + BDDKeyPreparedFactory<BRA, BE>,
+        + BDDKeyPreparedFactory<BRA, BE>
+        + GLWESecretSampling<BE>
+        + LWESecretSampling<BE>,
     BE: HalModuleImpl<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     BE::OwnedBuf: poulpy_hal::layouts::HostDataRef + poulpy_hal::layouts::HostDataMut,
@@ -93,7 +95,9 @@ impl<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + Ho
             + GLWESecretPreparedFactory<BE>
             + BlindRotationKeyPreparedFactory<BRA, BE>
             + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-            + BDDKeyPreparedFactory<BRA, BE>,
+            + BDDKeyPreparedFactory<BRA, BE>
+            + GLWESecretSampling<BE>
+            + LWESecretSampling<BE>,
         ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
         BE::OwnedBuf: poulpy_hal::layouts::HostDataRef + poulpy_hal::layouts::HostDataMut,
         for<'a> BE::BufMut<'a>: HostDataMut,
