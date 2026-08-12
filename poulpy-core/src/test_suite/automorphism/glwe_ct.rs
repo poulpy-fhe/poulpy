@@ -15,7 +15,7 @@ use crate::{
         GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
-    var_noise_gglwe_product_v2,
+    noise::GGLWENoiseModel,
 };
 
 pub fn test_glwe_automorphism<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
@@ -44,8 +44,7 @@ where
     let p: i64 = -5;
     for rank in 1_usize..3 {
         for dsize in 1..max_dsize + 1 {
-            let k_ksk: usize = k_in + key_base2k * dsize;
-            let k_out: usize = k_ksk; // Better capture noise.
+            let k_out: usize = k_in + key_base2k * dsize; // Better capture noise.
 
             let n: usize = module.n();
             let dnum: usize = k_in.div_ceil(key_base2k * dsize);
@@ -132,21 +131,13 @@ where
 
             module.glwe_automorphism(&mut ct_out, &ct_in, &autokey_prepared, &mut scratch.borrow());
 
-            let max_noise: f64 = var_noise_gglwe_product_v2(
-                module.n() as f64,
-                k_ksk,
-                dnum,
-                max_dsize,
-                key_base2k,
+            let max_noise: f64 = autokey_infos.log2_std_noise_keyswitch(
+                &ct_in_infos,
                 0.5,
-                0.5,
-                0f64,
+                DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                 DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                 0f64,
-                rank as f64,
-            )
-            .sqrt()
-            .log2();
+            );
 
             module.glwe_normalize(&mut pt_out, &pt_in, &mut scratch.borrow());
             module.vec_znx_automorphism_assign_backend(
@@ -193,8 +184,6 @@ where
     let p: i64 = -5;
     for rank in 1_usize..3 {
         for dsize in 1..max_dsize + 1 {
-            let k_ksk: usize = k_out + key_base2k * dsize;
-
             let n: usize = module.n();
             let dnum: usize = k_out.div_ceil(key_base2k * dsize);
 
@@ -271,21 +260,13 @@ where
 
             module.glwe_automorphism_assign(&mut ct, &autokey_prepared, &mut scratch.borrow());
 
-            let max_noise: f64 = var_noise_gglwe_product_v2(
-                module.n() as f64,
-                k_ksk,
-                dnum,
-                dsize,
-                key_base2k,
+            let max_noise: f64 = autokey_infos.log2_std_noise_keyswitch(
+                &ct_out_infos,
                 0.5,
-                0.5,
-                0f64,
+                DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                 DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                 0f64,
-                rank as f64,
-            )
-            .sqrt()
-            .log2();
+            );
 
             module.vec_znx_automorphism_assign_backend(
                 p,

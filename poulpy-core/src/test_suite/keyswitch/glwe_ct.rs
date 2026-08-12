@@ -14,7 +14,7 @@ use crate::{
         GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
         prepared::{GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
-    var_noise_gglwe_product_v2,
+    noise::GGLWENoiseModel,
 };
 
 #[allow(clippy::too_many_arguments)]
@@ -43,8 +43,7 @@ where
     for rank_in in 1_usize..3 {
         for rank_out in 1_usize..3 {
             for dsize in 1_usize..max_dsize + 1 {
-                let k_ksk: usize = k_in + key_base2k * dsize;
-                let k_out: usize = k_ksk; // better capture noise
+                let k_out: usize = k_in + key_base2k * dsize; // better capture noise
 
                 let n: usize = module.n();
                 let dnum: usize = k_in.div_ceil(key_base2k * dsize);
@@ -138,22 +137,13 @@ where
 
                 module.glwe_keyswitch(&mut glwe_out, &glwe_in, &ksk_prepared, &mut scratch.borrow());
 
-                let noise_max: f64 = var_noise_gglwe_product_v2(
-                    module.n() as f64,
-                    k_ksk,
-                    dnum,
-                    dsize,
-                    key_base2k,
+                let noise_max: f64 = ksk_infos.log2_std_noise_keyswitch(
+                    &glwe_in_infos,
                     0.5,
-                    0.5,
-                    0f64,
+                    DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                     DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                     0f64,
-                    rank_in as f64,
-                )
-                .sqrt()
-                .log2()
-                    + 1.0;
+                ) + 1.0;
 
                 module.glwe_normalize(&mut pt_out, &pt_in, &mut scratch.borrow());
 
@@ -190,8 +180,6 @@ where
 
     for rank in 1_usize..3 {
         for dsize in 1..max_dsize + 1 {
-            let k_ksk: usize = k_out + key_base2k * dsize;
-
             let n: usize = module.n();
             let dnum: usize = k_out.div_ceil(key_base2k * dsize);
             let glwe_out_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
@@ -272,22 +260,13 @@ where
 
             module.glwe_keyswitch_assign(&mut glwe_out, &ksk_prepared, &mut scratch.borrow());
 
-            let noise_max: f64 = var_noise_gglwe_product_v2(
-                module.n() as f64,
-                k_ksk,
-                dnum,
-                dsize,
-                key_base2k,
+            let noise_max: f64 = ksk_infos.log2_std_noise_keyswitch(
+                &glwe_out_infos,
                 0.5,
-                0.5,
-                0f64,
+                DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                 DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                 0f64,
-                rank as f64,
-            )
-            .sqrt()
-            .log2()
-                + 1.0;
+            ) + 1.0;
 
             let noise_have = module
                 .glwe_noise(&glwe_out, &pt_want, &sk_out_prepared, &mut scratch.borrow())

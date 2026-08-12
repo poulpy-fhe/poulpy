@@ -15,7 +15,7 @@ use crate::{
         GLWESwitchingKeyPreparedFactory, ModuleCoreAlloc,
         prepared::{GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
-    noise::noise_ggsw_keyswitch,
+    noise::GGLWENoiseModel,
 };
 
 #[allow(clippy::too_many_arguments)]
@@ -43,9 +43,6 @@ where
 
     for rank in 1_usize..3 {
         for dsize in 1..max_dsize + 1 {
-            let k_ksk: usize = k_in + key_base2k * dsize;
-            let k_tsk: usize = k_ksk;
-
             let n: usize = module.n();
             let dnum_in: usize = k_in / in_base2k;
             let dnum_ksk: usize = k_in.div_ceil(key_base2k * dsize);
@@ -165,18 +162,14 @@ where
             module.ggsw_keyswitch(&mut ggsw_out, &ggsw_in, &ksk_prepared, &tsk_prepared, &mut scratch.borrow());
 
             let max_noise = |col_j: usize| -> f64 {
-                noise_ggsw_keyswitch(
-                    n as f64,
-                    key_base2k * dsize,
+                ksk_apply_infos.log2_std_noise_ggsw_keyswitch(
+                    &tsk_infos,
                     col_j,
+                    &ggsw_in_infos,
                     var_xs,
-                    0f64,
+                    DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                     DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                     0f64,
-                    rank as f64,
-                    k_in,
-                    k_ksk,
-                    k_tsk,
                 ) + 0.5
             };
 
@@ -227,9 +220,6 @@ where
 
     for rank in 1_usize..3 {
         for dsize in 1..max_dsize + 1 {
-            let k_ksk: usize = k_out + key_base2k * dsize;
-            let k_tsk: usize = k_ksk;
-
             let n: usize = module.n();
             let dnum_in: usize = k_out / out_base2k;
             let dnum_ksk: usize = k_out.div_ceil(key_base2k * dsize);
@@ -338,18 +328,14 @@ where
             module.ggsw_keyswitch_assign(&mut ggsw_out, &ksk_prepared, &tsk_prepared, &mut scratch.borrow());
 
             let max_noise = |col_j: usize| -> f64 {
-                noise_ggsw_keyswitch(
-                    n as f64,
-                    key_base2k * dsize,
+                ksk_apply_infos.log2_std_noise_ggsw_keyswitch(
+                    &tsk_infos,
                     col_j,
+                    &ggsw_out_infos,
                     var_xs,
-                    0f64,
+                    DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                     DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                     0f64,
-                    rank as f64,
-                    k_out,
-                    k_ksk,
-                    k_tsk,
                 ) + 0.5
             };
 

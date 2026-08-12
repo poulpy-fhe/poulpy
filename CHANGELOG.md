@@ -51,6 +51,7 @@ Adds two native CKKS bootstrapping families, **PaCo** (Coron & Seuré, [ePrint 2
 - **Breaking:** every gadget-key layout stores an auxiliary guard `k_aux` in place of the total precision `k`, derived as `k() = dnum·dsize·base2k + k_aux` and enforcing `k_aux ≥ dsize·base2k`. A former `Dnum(d)` key with an implicit zero guard migrates to `Dnum(d−1)` with `k_aux = dsize·base2k`.
 - **Breaking:** the gadget-key operations (`glwe_keyswitch`, `glwe_external_product`, `glwe_automorphism`, `glwe_tensor_relinearize`, and their compositions) no longer take an output/working size argument; it is derived from the input's `k` and the key's `(dsize, k_aux)`.
 - **Breaking:** key allocation and byte-sizing signatures move to a uniform `(…, dnum, dsize, k_aux, rank…)` order.
+- The noise model follows: `GGLWENoiseModel` / `GGSWNoiseModel`, blanket-implemented over the layouts, take the operand and the error variances only (`ksk.log2_std_noise_keyswitch(&ct_in, …)`). Evaluated at the key's real precision, the bounds gain the operand's carried error and the uncovered decomposition residue.
 
 ### `poulpy-ckks`: PaCo bootstrapping
 

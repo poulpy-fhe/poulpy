@@ -16,7 +16,7 @@ use crate::{
         GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
-    noise::var_noise_gglwe_product,
+    noise::GGLWENoiseModel,
     test_suite::{download_glwe_plaintext, upload_glwe, upload_glwe_automorphism_key, upload_glwe_plaintext, upload_glwe_secret},
 };
 
@@ -45,11 +45,7 @@ where
 
         let dsize: usize = 1;
         let dnum: usize = k.div_ceil(key_base2k * dsize);
-        // Auxiliary guard: one full gadget digit plus log2(n) for ring-multiplication
-        // noise growth. The key's total torus width is then gadget + guard, which is
-        // what the noise model must be evaluated at.
         let k_aux: usize = dsize * key_base2k + module.log_n();
-        let k_autokey: usize = dnum * dsize * key_base2k + k_aux;
 
         let glwe_out_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
             n: n.into(),
@@ -159,25 +155,18 @@ where
 
         let noise_have: f64 = pt_want.stats().std().log2();
 
-        let mut noise_want: f64 = var_noise_gglwe_product(
-            n as f64,
-            key_base2k * dsize,
+        let mut noise_want: f64 = key_infos.var_noise_keyswitch(
+            &glwe_out_infos,
             0.5,
-            0.5,
-            1.0 / 12.0,
+            DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
             DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
             0.0,
-            rank as f64,
-            k,
-            k_autokey,
         );
-        noise_want += DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE * (-2.0 * (k) as f64).exp2();
+        // Residue left by the decomposition of the mask, folded against the secret.
         noise_want += n as f64 * 1.0 / 12.0 * 0.5 * rank as f64 * (-2.0 * (k) as f64).exp2();
         noise_want = noise_want.sqrt().log2();
 
-        // The model is an upper bound: measuring *less* noise than predicted is always
-        // acceptable (e.g. a larger `k_aux` guard than the model assumes), so only the
-        // upper side is asserted.
+        // The model is an upper bound, so only the upper side is asserted.
         let noise_max: f64 = noise_want + 1.0;
         assert!(noise_have <= noise_max, "noise_have: {noise_have} > noise_max: {noise_max}");
     }

@@ -13,7 +13,7 @@ use crate::{
         GLWESecretPreparedFactory, ModuleCoreAlloc,
         prepared::{GLWEAutomorphismKeyPrepared, GLWESecretPrepared},
     },
-    var_noise_gglwe_product_v2,
+    noise::GGLWENoiseModel,
 };
 
 #[allow(clippy::too_many_arguments)]
@@ -44,8 +44,6 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::TestBacke
     let p1: i64 = -5;
     for rank in 1_usize..3 {
         for dsize in 1..max_dsize + 1 {
-            let k_ksk: usize = k_in + key_base2k * dsize;
-
             let n: usize = module.n();
             let dsize_in: usize = 1;
 
@@ -168,22 +166,13 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::TestBacke
             let mut sk_auto_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk_auto);
             module.glwe_secret_prepare(&mut sk_auto_dft, &sk_auto);
 
-            let max_noise: f64 = var_noise_gglwe_product_v2(
-                module.n() as f64,
-                k_ksk,
-                dnum_ksk,
-                dsize,
-                key_base2k,
+            let max_noise: f64 = auto_key_apply_infos.log2_std_noise_keyswitch(
+                &auto_key_in_infos,
                 0.5,
-                0.5,
-                0f64,
+                DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                 DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                 0f64,
-                rank as f64,
-            )
-            .sqrt()
-            .log2()
-                + 0.5;
+            ) + 0.5;
 
             for row in 0..auto_key_out.dnum().as_usize() {
                 for col in 0..auto_key_out.rank().as_usize() {
@@ -227,8 +216,6 @@ pub fn test_gglwe_automorphism_key_automorphism_assign<BE: crate::test_suite::Te
     let p1: i64 = -5;
     for rank in 1_usize..3 {
         for dsize in 1..max_dsize + 1 {
-            let k_ksk: usize = k_out + key_base2k * dsize;
-
             let n: usize = module.n();
             let dsize_in: usize = 1;
 
@@ -330,22 +317,13 @@ pub fn test_gglwe_automorphism_key_automorphism_assign<BE: crate::test_suite::Te
             let mut sk_auto_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk_auto);
             module.glwe_secret_prepare(&mut sk_auto_dft, &sk_auto);
 
-            let max_noise: f64 = var_noise_gglwe_product_v2(
-                module.n() as f64,
-                k_ksk,
-                dnum_ksk,
-                dsize,
-                key_base2k,
+            let max_noise: f64 = auto_key_apply_layout.log2_std_noise_keyswitch(
+                &auto_key_layout,
                 0.5,
-                0.5,
-                0f64,
+                DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                 DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                 0f64,
-                rank as f64,
-            )
-            .sqrt()
-            .log2()
-                + 0.5;
+            ) + 0.5;
 
             for row in 0..auto_key.dnum().as_usize() {
                 for col in 0..auto_key.rank().as_usize() {

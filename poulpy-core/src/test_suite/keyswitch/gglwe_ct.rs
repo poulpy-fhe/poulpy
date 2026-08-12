@@ -14,8 +14,7 @@ use crate::{
         GLWESwitchingKeyPreparedFactory, LWEInfos, ModuleCoreAlloc,
         prepared::{GLWESecretPrepared, GLWESwitchingKeyPrepared},
     },
-    noise::log2_std_noise_gglwe_product,
-    var_noise_gglwe_product_v2,
+    noise::GGLWENoiseModel,
 };
 
 pub fn test_gglwe_switching_key_keyswitch<BE: crate::test_suite::TestBackend>(params: &TestParams, module: &Module<BE>)
@@ -41,8 +40,6 @@ where
         for rank_out_s0s1 in 1_usize..3 {
             for rank_out_s1s2 in 1_usize..3 {
                 for dsize in 1_usize..max_dsize + 1 {
-                    let k_ksk: usize = k_in + key_base2k * dsize;
-
                     let n: usize = module.n();
                     let dsize_in: usize = 1;
                     let dnum_in: usize = k_in / in_base2k;
@@ -148,22 +145,13 @@ where
                         &mut scratch_apply.borrow(),
                     );
 
-                    let max_noise: f64 = var_noise_gglwe_product_v2(
-                        module.n() as f64,
-                        k_ksk,
-                        dnum_ksk,
-                        dsize,
-                        key_base2k,
+                    let max_noise: f64 = gglwe_s1s2_infos.log2_std_noise_keyswitch(
+                        &gglwe_s0s1_infos,
                         0.5,
-                        0.5,
-                        0f64,
+                        DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                         DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                         0f64,
-                        rank_out_s0s1 as f64,
-                    )
-                    .sqrt()
-                    .log2()
-                        + 0.5;
+                    ) + 0.5;
 
                     for row in 0..gglwe_s0s2.dnum().as_usize() {
                         for col in 0..gglwe_s0s2.rank_in().as_usize() {
@@ -210,8 +198,6 @@ where
     for rank_in in 1_usize..3 {
         for rank_out in 1_usize..3 {
             for dsize in 1_usize..max_dsize + 1 {
-                let k_ksk: usize = k_out + key_base2k * dsize;
-
                 let n: usize = module.n();
                 let dsize_in: usize = 1;
 
@@ -257,8 +243,6 @@ where
                     module.gglwe_keyswitch_tmp_bytes(&gglwe_s0s1_infos, &gglwe_s0s1_infos, &gglwe_s1s2_infos)
                         | module.gglwe_noise_tmp_bytes(&gglwe_s0s1_infos),
                 );
-
-                println!("k_out: {k_out}, k_ksk: {k_ksk}");
 
                 println!(
                     "{} {} {}",
@@ -329,17 +313,12 @@ where
 
                 let gglwe_s0s2: GLWESwitchingKey<BE::OwnedBuf, BE::ZnxWord> = gglwe_s0s1;
 
-                let max_noise: f64 = log2_std_noise_gglwe_product(
-                    n as f64,
-                    key_base2k * dsize,
+                let max_noise: f64 = gglwe_s1s2_infos.log2_std_noise_keyswitch(
+                    &gglwe_s0s1_infos,
                     var_xs,
-                    var_xs,
-                    0f64,
+                    DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                     DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                     0f64,
-                    rank_out as f64,
-                    k_out,
-                    k_ksk,
                 ) + 0.5;
 
                 for row in 0..gglwe_s0s2.dnum().as_usize() {

@@ -14,7 +14,7 @@ use crate::{
         ModuleCoreAlloc,
         prepared::{GGSWPrepared, GLWESecretPrepared},
     },
-    noise::noise_ggsw_product,
+    noise::GGSWNoiseModel,
 };
 
 #[allow(clippy::too_many_arguments)]
@@ -152,18 +152,14 @@ where
             let var_a0_err: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
             let var_a1_err: f64 = 1f64 / 12f64;
 
-            let max_noise: f64 = noise_ggsw_product(
-                n as f64,
-                key_base2k * max_dsize,
+            let max_noise: f64 = ggsw_apply_infos.log2_std_noise_external_product(
+                &glwe_in_infos,
                 0.5,
                 var_msg,
                 var_a0_err,
                 var_a1_err,
                 var_gct_err_lhs,
                 var_gct_err_rhs,
-                rank as f64,
-                k_in,
-                k_ggsw,
             ) + 1.0;
 
             let noise = module
@@ -199,8 +195,6 @@ where
 
     for rank in 1_usize..3 {
         for dsize in 1..max_dsize + 1 {
-            let k_ggsw: usize = k_out + key_base2k * dsize;
-
             let n: usize = module.n();
             let dnum: usize = k_out.div_ceil(out_base2k * max_dsize);
 
@@ -297,18 +291,14 @@ where
             let var_a0_err: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
             let var_a1_err: f64 = 1f64 / 12f64;
 
-            let max_noise: f64 = noise_ggsw_product(
-                n as f64,
-                key_base2k * max_dsize,
+            let max_noise: f64 = ggsw_apply_infos.log2_std_noise_external_product(
+                &glwe_out_infos,
                 0.5,
                 var_msg,
                 var_a0_err,
                 var_a1_err,
                 var_gct_err_lhs,
                 var_gct_err_rhs,
-                rank as f64,
-                k_out,
-                k_ggsw,
             ) + 1.0;
 
             let noise = module
