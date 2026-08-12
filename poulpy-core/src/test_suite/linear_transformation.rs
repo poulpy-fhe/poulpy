@@ -17,6 +17,7 @@ use poulpy_hal::{
     test_suite::{TestParams, vec_znx_backend_mut},
 };
 
+use crate::layouts::GLWESecretSampling;
 use crate::{
     EncryptionLayout, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECopy, GLWEEncryptSk, GLWELinearTransformations,
     LinearTransformationBabySteps,
@@ -98,7 +99,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
             | module.vec_znx_big_normalize_tmp_bytes(),
     );
 
-    sk.fill_ternary_prob(0.5, &mut source_xs);
+    module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
     let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
     module.glwe_secret_prepare(&mut sk_prepared, &sk);
 

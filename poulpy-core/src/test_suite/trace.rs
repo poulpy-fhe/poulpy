@@ -7,6 +7,7 @@ use poulpy_hal::{
     test_suite::{TestParams, vec_znx_backend_mut},
 };
 
+use crate::layouts::GLWESecretSampling;
 use crate::{
     EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWETrace,
     encryption::DEFAULT_SIGMA_XE,
@@ -84,7 +85,7 @@ where
         );
 
         let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&glwe_out_infos);
-        sk.fill_ternary_prob(0.5, &mut source_xs);
+        module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
         let sk_backend = upload_glwe_secret(module, &sk);
 
         let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);

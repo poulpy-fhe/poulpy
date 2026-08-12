@@ -5,6 +5,7 @@ use poulpy_hal::{
     test_suite::TestParams,
 };
 
+use crate::layouts::GLWESecretSampling;
 use crate::{
     EncryptionLayout, GGLWEToGGSWKeyEncryptSk, GGSWEncryptSk, GGSWKeyswitch, GGSWNoise, GLWESwitchingKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
@@ -112,13 +113,13 @@ where
             let var_xs: f64 = 0.5;
 
             let mut sk_in: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
-            sk_in.fill_ternary_prob(var_xs, &mut source_xs);
+            module.glwe_secret_fill_ternary_prob(&mut sk_in, var_xs, &mut source_xs);
 
             let mut sk_in_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
             module.glwe_secret_prepare(&mut sk_in_prepared, &sk_in);
 
             let mut sk_out: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
-            sk_out.fill_ternary_prob(var_xs, &mut source_xs);
+            module.glwe_secret_fill_ternary_prob(&mut sk_out, var_xs, &mut source_xs);
 
             let mut sk_out_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
             module.glwe_secret_prepare(&mut sk_out_prepared, &sk_out);
@@ -285,13 +286,13 @@ where
             let var_xs: f64 = 0.5;
 
             let mut sk_in: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
-            sk_in.fill_ternary_prob(var_xs, &mut source_xs);
+            module.glwe_secret_fill_ternary_prob(&mut sk_in, var_xs, &mut source_xs);
 
             let mut sk_in_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
             module.glwe_secret_prepare(&mut sk_in_prepared, &sk_in);
 
             let mut sk_out: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
-            sk_out.fill_ternary_prob(var_xs, &mut source_xs);
+            module.glwe_secret_fill_ternary_prob(&mut sk_out, var_xs, &mut source_xs);
 
             let mut sk_out_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
             module.glwe_secret_prepare(&mut sk_out_prepared, &sk_out);

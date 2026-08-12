@@ -24,6 +24,7 @@ use poulpy_core::{
     },
 };
 
+use poulpy_core::layouts::GLWESecretSampling;
 use poulpy_hal::layouts::NoiseInfos;
 use poulpy_hal::{
     layouts::{Backend, Data, HostBackend, HostDataMut, HostDataRef, Module, ReaderFrom, ScratchArena, WriterTo, ZnxWord},
@@ -192,7 +193,10 @@ pub trait BDDKeyEncryptSk<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostData
 impl<BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>, BRA: BlindRotationAlgo> BDDKeyEncryptSk<BRA, BE>
     for Module<BE>
 where
-    Self: CircuitBootstrappingKeyEncryptSk<BRA, BE> + GLWEToLWESwitchingKeyEncryptSk<BE> + GLWESwitchingKeyEncryptSk<BE>,
+    Self: CircuitBootstrappingKeyEncryptSk<BRA, BE>
+        + GLWEToLWESwitchingKeyEncryptSk<BE>
+        + GLWESwitchingKeyEncryptSk<BE>
+        + GLWESecretSampling<BE>,
 {
     fn bdd_key_encrypt_sk_tmp_bytes<A>(&self, infos: &A) -> usize
     where
@@ -222,7 +226,7 @@ where
                 .as_ref()
                 .expect("ks_glwe enc_infos missing when ks_glwe key exists");
             let mut sk_out: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = self.glwe_secret_alloc(key.rank_out());
-            sk_out.fill_ternary_prob(0.5, source_xe);
+            self.glwe_secret_fill_ternary_prob(&mut sk_out, 0.5, source_xe);
             self.glwe_switching_key_encrypt_sk(key, sk_glwe, &sk_out, ks_glwe_infos, source_xe, source_xa, scratch);
             self.glwe_to_lwe_key_encrypt_sk(
                 &mut res.ks_lwe,

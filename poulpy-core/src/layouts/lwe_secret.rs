@@ -1,14 +1,18 @@
 use poulpy_hal::layouts::ZnxWord;
 use poulpy_hal::{
+    api::{
+        ScalarZnxFillBinaryBlockSourceBackend, ScalarZnxFillBinaryHwSourceBackend, ScalarZnxFillBinaryProbSourceBackend,
+        ScalarZnxFillTernaryHwSourceBackend, ScalarZnxFillTernaryProbSourceBackend, VecZnxZeroBackend,
+    },
     layouts::{
-        Backend, Data, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendMut, ScalarZnxToBackendRef, TransferFrom,
-        ZnxView, ZnxZero,
+        Backend, Data, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendMut, ScalarZnxToBackendRef, TransferFrom, ZnxView,
+        scalar_znx_as_vec_znx_backend_mut_from_mut,
     },
     source::Source,
 };
 
 use crate::{
-    GetDistribution,
+    GetDistribution, GetDistributionMut,
     api::ModuleTransfer,
     dist::Distribution,
     layouts::{Base2K, Degree, LWEInfos},
@@ -16,6 +20,10 @@ use crate::{
 
 pub struct LWESecret<D: Data, W: ZnxWord> {
     pub(crate) data: ScalarZnx<D, W>,
+    /// Distribution the base secret was sampled from. When this secret is
+    /// obtained by flattening a GLWE secret, the tag is that of the source
+    /// key's polynomial components and is not rescaled by the rank.
+    /// See [`Distribution`].
     pub(crate) dist: Distribution,
 }
 
@@ -82,6 +90,12 @@ impl<D: HostDataRef, W: ZnxWord> GetDistribution for LWESecret<D, W> {
     }
 }
 
+impl<D: Data, W: ZnxWord> GetDistributionMut for LWESecret<D, W> {
+    fn dist_mut(&mut self) -> &mut Distribution {
+        &mut self.dist
+    }
+}
+
 impl<D: HostDataRef, W: ZnxWord> LWESecret<D, W> {
     /// Borrows the secret's coefficients in the layout's own word.
     pub fn raw(&self) -> &[W] {
@@ -111,35 +125,118 @@ impl<D: Data, W: ZnxWord> LWEInfos for LWESecret<D, W> {
     }
 }
 
-impl<D: HostDataMut, W: ZnxWord> LWESecret<D, W> {
-    pub fn fill_ternary_prob(&mut self, prob: f64, source: &mut Source) {
-        self.data.fill_ternary_prob(0, prob, source);
-        self.dist = Distribution::TernaryProb(prob);
+/// Secret-key sampling, dispatched to the backend.
+///
+/// The LWE counterpart of [`GLWESecretSampling`](crate::layouts::GLWESecretSampling):
+/// sampling is routed through the `ScalarZnxFill*` extension points so a
+/// backend can substitute its own implementation, rather than being a
+/// host-memory method on the layout.
+pub trait LWESecretSampling<BE: Backend> {
+    /// Ternary `{-1, 0, 1}` coefficients, each non-zero with probability `prob`.
+    fn lwe_secret_fill_ternary_prob<S>(&self, sk: &mut S, prob: f64, source: &mut Source)
+    where
+        S: LWESecretToBackendMut<BE> + GetDistributionMut;
+
+    /// Ternary `{-1, 0, 1}` coefficients with exactly `hw` non-zero entries.
+    fn lwe_secret_fill_ternary_hw<S>(&self, sk: &mut S, hw: usize, source: &mut Source)
+    where
+        S: LWESecretToBackendMut<BE> + GetDistributionMut;
+
+    /// Binary `{0, 1}` coefficients, each set with probability `prob`.
+    fn lwe_secret_fill_binary_prob<S>(&self, sk: &mut S, prob: f64, source: &mut Source)
+    where
+        S: LWESecretToBackendMut<BE> + GetDistributionMut;
+
+    /// Binary `{0, 1}` coefficients with exactly `hw` ones.
+    fn lwe_secret_fill_binary_hw<S>(&self, sk: &mut S, hw: usize, source: &mut Source)
+    where
+        S: LWESecretToBackendMut<BE> + GetDistributionMut;
+
+    /// Binary coefficients with at most one `1` per block of `block_size`.
+    fn lwe_secret_fill_binary_block<S>(&self, sk: &mut S, block_size: usize, source: &mut Source)
+    where
+        S: LWESecretToBackendMut<BE> + GetDistributionMut;
+
+    /// All-zero secret, tagged [`Distribution::ZERO`] (debug / testing only).
+    fn lwe_secret_fill_zero<S>(&self, sk: &mut S)
+    where
+        S: LWESecretToBackendMut<BE> + GetDistributionMut;
+}
+
+impl<BE: Backend> LWESecretSampling<BE> for Module<BE>
+where
+    Self: ScalarZnxFillTernaryProbSourceBackend<BE>
+        + ScalarZnxFillTernaryHwSourceBackend<BE>
+        + ScalarZnxFillBinaryProbSourceBackend<BE>
+        + ScalarZnxFillBinaryHwSourceBackend<BE>
+        + ScalarZnxFillBinaryBlockSourceBackend<BE>
+        + VecZnxZeroBackend<BE>,
+{
+    fn lwe_secret_fill_ternary_prob<S>(&self, sk: &mut S, prob: f64, source: &mut Source)
+    where
+        S: LWESecretToBackendMut<BE> + GetDistributionMut,
+    {
+        {
+            let mut sk_backend = sk.to_backend_mut();
+            self.scalar_znx_fill_ternary_prob_source_backend(&mut sk_backend.data, 0, prob, source);
+        }
+        *sk.dist_mut() = Distribution::TernaryProb(prob);
     }
 
-    pub fn fill_ternary_hw(&mut self, hw: usize, source: &mut Source) {
-        self.data.fill_ternary_hw(0, hw, source);
-        self.dist = Distribution::TernaryFixed(hw);
+    fn lwe_secret_fill_ternary_hw<S>(&self, sk: &mut S, hw: usize, source: &mut Source)
+    where
+        S: LWESecretToBackendMut<BE> + GetDistributionMut,
+    {
+        {
+            let mut sk_backend = sk.to_backend_mut();
+            self.scalar_znx_fill_ternary_hw_source_backend(&mut sk_backend.data, 0, hw, source);
+        }
+        *sk.dist_mut() = Distribution::TernaryFixed(hw);
     }
 
-    pub fn fill_binary_prob(&mut self, prob: f64, source: &mut Source) {
-        self.data.fill_binary_prob(0, prob, source);
-        self.dist = Distribution::BinaryProb(prob);
+    fn lwe_secret_fill_binary_prob<S>(&self, sk: &mut S, prob: f64, source: &mut Source)
+    where
+        S: LWESecretToBackendMut<BE> + GetDistributionMut,
+    {
+        {
+            let mut sk_backend = sk.to_backend_mut();
+            self.scalar_znx_fill_binary_prob_source_backend(&mut sk_backend.data, 0, prob, source);
+        }
+        *sk.dist_mut() = Distribution::BinaryProb(prob);
     }
 
-    pub fn fill_binary_hw(&mut self, hw: usize, source: &mut Source) {
-        self.data.fill_binary_hw(0, hw, source);
-        self.dist = Distribution::BinaryFixed(hw);
+    fn lwe_secret_fill_binary_hw<S>(&self, sk: &mut S, hw: usize, source: &mut Source)
+    where
+        S: LWESecretToBackendMut<BE> + GetDistributionMut,
+    {
+        {
+            let mut sk_backend = sk.to_backend_mut();
+            self.scalar_znx_fill_binary_hw_source_backend(&mut sk_backend.data, 0, hw, source);
+        }
+        *sk.dist_mut() = Distribution::BinaryFixed(hw);
     }
 
-    pub fn fill_binary_block(&mut self, block_size: usize, source: &mut Source) {
-        self.data.fill_binary_block(0, block_size, source);
-        self.dist = Distribution::BinaryBlock(block_size);
+    fn lwe_secret_fill_binary_block<S>(&self, sk: &mut S, block_size: usize, source: &mut Source)
+    where
+        S: LWESecretToBackendMut<BE> + GetDistributionMut,
+    {
+        {
+            let mut sk_backend = sk.to_backend_mut();
+            self.scalar_znx_fill_binary_block_source_backend(&mut sk_backend.data, 0, block_size, source);
+        }
+        *sk.dist_mut() = Distribution::BinaryBlock(block_size);
     }
 
-    pub fn fill_zero(&mut self) {
-        self.data.zero();
-        self.dist = Distribution::ZERO;
+    fn lwe_secret_fill_zero<S>(&self, sk: &mut S)
+    where
+        S: LWESecretToBackendMut<BE> + GetDistributionMut,
+    {
+        {
+            let mut sk_backend = sk.to_backend_mut();
+            let mut sk_vec = scalar_znx_as_vec_znx_backend_mut_from_mut::<BE>(&mut sk_backend.data);
+            self.vec_znx_zero_backend(&mut sk_vec, 0);
+        }
+        *sk.dist_mut() = Distribution::ZERO;
     }
 }
 

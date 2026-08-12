@@ -13,6 +13,7 @@ use poulpy_hal::{
 use std::hint::black_box;
 
 use criterion::Criterion;
+use poulpy_core::layouts::GLWESecretSampling;
 
 pub fn bench_glwe_external_product<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
     glwe_infos: &impl GLWEInfos,
@@ -25,7 +26,8 @@ pub fn bench_glwe_external_product<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64
         + GGSWEncryptSk<BE>
         + GGSWPreparedFactory<BE>
         + GLWEEncryptSk<BE>
-        + GLWESecretPreparedFactory<BE>,
+        + GLWESecretPreparedFactory<BE>
+        + GLWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
     for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
@@ -38,7 +40,7 @@ pub fn bench_glwe_external_product<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64
     let mut source_xe = Source::new([2u8; 32]);
 
     let mut sk: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc_from_infos(ggsw_infos);
-    sk.fill_ternary_prob(0.5, &mut source_xs);
+    module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
     let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(ggsw_infos.rank());
     module.glwe_secret_prepare(&mut sk_prepared, &sk);
@@ -98,7 +100,8 @@ pub fn bench_glwe_external_product_assign<BE: Backend<OwnedBuf = Vec<u8>, ZnxWor
         + GGSWEncryptSk<BE>
         + GGSWPreparedFactory<BE>
         + GLWEEncryptSk<BE>
-        + GLWESecretPreparedFactory<BE>,
+        + GLWESecretPreparedFactory<BE>
+        + GLWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
     for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
@@ -111,7 +114,7 @@ pub fn bench_glwe_external_product_assign<BE: Backend<OwnedBuf = Vec<u8>, ZnxWor
     let mut source_xe = Source::new([2u8; 32]);
 
     let mut sk: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc_from_infos(infos);
-    sk.fill_ternary_prob(0.5, &mut source_xs);
+    module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
     let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(infos.rank());
     module.glwe_secret_prepare(&mut sk_prepared, &sk);

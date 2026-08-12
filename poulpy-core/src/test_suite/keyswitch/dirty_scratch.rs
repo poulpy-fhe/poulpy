@@ -17,6 +17,7 @@ use poulpy_hal::{
     test_suite::{TestParams, vec_znx_backend_mut},
 };
 
+use crate::layouts::GLWESecretSampling;
 use crate::{
     EncryptionLayout, GGSWEncryptSk, GLWEEncryptSk, GLWEExternalProduct, GLWEKeyswitch, GLWESwitchingKeyEncryptSk,
     layouts::{
@@ -109,7 +110,7 @@ where
         );
 
         let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
-        sk.fill_ternary_prob(0.5, &mut source_xs);
+        module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
         let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
         module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
@@ -234,7 +235,7 @@ pub fn test_glwe_external_product_ignores_dirty_scratch<BE: crate::test_suite::T
         );
 
         let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
-        sk.fill_ternary_prob(0.5, &mut source_xs);
+        module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
         let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(rank.into());
         module.glwe_secret_prepare(&mut sk_prepared, &sk);
 

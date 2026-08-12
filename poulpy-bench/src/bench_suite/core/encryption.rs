@@ -13,13 +13,14 @@ use poulpy_hal::{
 use std::hint::black_box;
 
 use criterion::Criterion;
+use poulpy_core::layouts::GLWESecretSampling;
 
 pub fn bench_glwe_encrypt_sk<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
     infos: &impl GLWEInfos,
     c: &mut Criterion,
     label: &str,
 ) where
-    Module<BE>: ModuleNew<BE> + GLWEEncryptSk<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: ModuleNew<BE> + GLWEEncryptSk<BE> + GLWESecretPreparedFactory<BE> + GLWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let n: usize = infos.n().into();
@@ -30,7 +31,7 @@ pub fn bench_glwe_encrypt_sk<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
     let mut source_xe = Source::new([2u8; 32]);
 
     let mut sk: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc_from_infos(infos);
-    sk.fill_ternary_prob(0.5, &mut source_xs);
+    module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
     let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(infos.rank());
     module.glwe_secret_prepare(&mut sk_prepared, &sk);
@@ -63,7 +64,7 @@ pub fn bench_ggsw_encrypt_sk<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
     c: &mut Criterion,
     label: &str,
 ) where
-    Module<BE>: ModuleNew<BE> + GGSWEncryptSk<BE> + GLWESecretPreparedFactory<BE>,
+    Module<BE>: ModuleNew<BE> + GGSWEncryptSk<BE> + GLWESecretPreparedFactory<BE> + GLWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
     for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
@@ -76,7 +77,7 @@ pub fn bench_ggsw_encrypt_sk<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
     let mut source_xe = Source::new([2u8; 32]);
 
     let mut sk: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc_from_infos(infos);
-    sk.fill_ternary_prob(0.5, &mut source_xs);
+    module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
     let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(infos.rank());
     module.glwe_secret_prepare(&mut sk_prepared, &sk);
@@ -112,7 +113,7 @@ pub fn bench_glwe_automorphism_key_encrypt_sk<BE: Backend<OwnedBuf = Vec<u8>, Zn
     c: &mut Criterion,
     label: &str,
 ) where
-    Module<BE>: ModuleNew<BE> + GLWEAutomorphismKeyEncryptSk<BE>,
+    Module<BE>: ModuleNew<BE> + GLWEAutomorphismKeyEncryptSk<BE> + GLWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let n: usize = atk_infos.n().into();
@@ -123,7 +124,7 @@ pub fn bench_glwe_automorphism_key_encrypt_sk<BE: Backend<OwnedBuf = Vec<u8>, Zn
     let mut source_xe = Source::new([2u8; 32]);
 
     let mut sk: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc_from_infos(atk_infos);
-    sk.fill_ternary_prob(0.5, &mut source_xs);
+    module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
     let mut atk: GLWEAutomorphismKey<Vec<u8>, i64> = module.glwe_automorphism_key_alloc_from_infos(atk_infos);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_automorphism_key_encrypt_sk_tmp_bytes(atk_infos));

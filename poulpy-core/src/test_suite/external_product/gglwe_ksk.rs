@@ -5,6 +5,7 @@ use poulpy_hal::{
     test_suite::TestParams,
 };
 
+use crate::layouts::GLWESecretSampling;
 use crate::{
     EncryptionLayout, GGLWEExternalProduct, GGLWENoise, GGSWEncryptSk, GLWESwitchingKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
@@ -104,10 +105,10 @@ where
                 let var_xs: f64 = 0.5;
 
                 let mut sk_in: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank_in.into());
-                sk_in.fill_ternary_prob(var_xs, &mut source_xs);
+                module.glwe_secret_fill_ternary_prob(&mut sk_in, var_xs, &mut source_xs);
 
                 let mut sk_out: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank_out.into());
-                sk_out.fill_ternary_prob(var_xs, &mut source_xs);
+                module.glwe_secret_fill_ternary_prob(&mut sk_out, var_xs, &mut source_xs);
 
                 let mut sk_out_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> =
                     module.glwe_secret_prepared_alloc(rank_out.into());
@@ -268,10 +269,10 @@ pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::T
                 let var_xs: f64 = 0.5;
 
                 let mut sk_in: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank_in.into());
-                sk_in.fill_ternary_prob(var_xs, &mut source_xs);
+                module.glwe_secret_fill_ternary_prob(&mut sk_in, var_xs, &mut source_xs);
 
                 let mut sk_out: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank_out.into());
-                sk_out.fill_ternary_prob(var_xs, &mut source_xs);
+                module.glwe_secret_fill_ternary_prob(&mut sk_out, var_xs, &mut source_xs);
 
                 let mut sk_out_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> =
                     module.glwe_secret_prepared_alloc(rank_out.into());

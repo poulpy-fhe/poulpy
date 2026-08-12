@@ -5,6 +5,7 @@ use poulpy_hal::{
     test_suite::{TestParams, vec_znx_backend_mut, vec_znx_backend_ref},
 };
 
+use crate::layouts::LWESecretSampling;
 use crate::{
     EncryptionLayout, LWEDecrypt, LWEEncryptSk, LWEKeyswitch, LWESwitchingKeyEncrypt,
     layouts::{
@@ -70,10 +71,10 @@ where
     );
 
     let mut sk_lwe_in: LWESecret<BE::OwnedBuf, BE::ZnxWord> = module.lwe_secret_alloc(n_lwe_in.into());
-    sk_lwe_in.fill_ternary_prob(0.5, &mut source_xs);
+    module.lwe_secret_fill_ternary_prob(&mut sk_lwe_in, 0.5, &mut source_xs);
 
     let mut sk_lwe_out: LWESecret<BE::OwnedBuf, BE::ZnxWord> = module.lwe_secret_alloc(n_lwe_out.into());
-    sk_lwe_out.fill_ternary_prob(0.5, &mut source_xs);
+    module.lwe_secret_fill_ternary_prob(&mut sk_lwe_out, 0.5, &mut source_xs);
 
     let data: i64 = 17;
 

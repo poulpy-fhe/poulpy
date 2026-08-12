@@ -2,7 +2,11 @@
 
 use anyhow::{Result, ensure};
 use poulpy_core::layouts::{GLWESecret, LWEInfos};
-use poulpy_hal::{layouts::ZnxViewMut, source::Source};
+use poulpy_core::{Distribution, GetDistributionMut};
+use poulpy_hal::{
+    layouts::{ZnxViewMut, ZnxZero},
+    source::Source,
+};
 
 use super::plan::ShipPlan;
 
@@ -84,11 +88,12 @@ impl ShipSecretSpec {
             sk.n(),
             plan.n()
         );
-        sk.fill_zero();
+        sk.data_mut().zero();
         let col = sk.data_mut().at_mut(0, 0);
         for &(idx, sign) in &self.support {
             col[idx] = sign;
         }
+        *sk.dist_mut() = Distribution::ENCAPSULATED("ship");
         Ok(())
     }
 }

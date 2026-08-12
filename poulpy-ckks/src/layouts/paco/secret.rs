@@ -20,6 +20,7 @@ use std::fmt::Debug;
 
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{GLWEInfos, GLWESecret, LWEInfos};
+use poulpy_core::{Distribution, GetDistributionMut};
 use poulpy_hal::{
     layouts::{Backend, HostDataMut, Module, ScratchArena},
     source::Source,
@@ -405,10 +406,10 @@ impl PaCoSecretSpec {
     }
 
     /// Writes the structured secret into a host-backed rank-1 [`GLWESecret`]
-    /// (the coefficients of the internal `sk_coeffs` representation, tagged
-    /// `BinaryFixed(h)` — which is literally true: the key is binary of Hamming
-    /// weight `h`). The secret can then be uploaded/prepared like any other
-    /// GLWE secret.
+    /// (the coefficients of the internal `sk_coeffs` representation). The
+    /// secret can then be uploaded/prepared like any other GLWE secret, but is
+    /// tagged [`Distribution::ENCAPSULATED`]: it cannot back a public key and
+    /// cannot be serialized.
     pub fn fill_glwe_secret<D: HostDataMut>(&self, p: &PaCoPlan, sk: &mut GLWESecret<D, i64>) -> Result<()> {
         self.check(p)?;
         ensure!(
@@ -424,6 +425,7 @@ impl PaCoSecretSpec {
         );
         let coeffs = self.sk_coeffs(p)?;
         sk.fill_binary_coeffs(0, &coeffs);
+        *sk.dist_mut() = Distribution::ENCAPSULATED("paco");
         Ok(())
     }
 

@@ -1,3 +1,4 @@
+use poulpy_core::layouts::{GLWESecretSampling, LWESecretSampling};
 use poulpy_core::{
     DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
     layouts::{
@@ -145,14 +146,14 @@ fn main() {
     // LWE secret
     let mut sk_lwe: LWESecret<<BackendImpl as Backend>::OwnedBuf, <BackendImpl as Backend>::ZnxWord> =
         module.lwe_secret_alloc(n_lwe.into());
-    sk_lwe.fill_binary_block(block_size, &mut source_xs);
-    // sk_lwe.fill_zero(); // for testing
+    module.lwe_secret_fill_binary_block(&mut sk_lwe, block_size, &mut source_xs);
+    // module.lwe_secret_fill_zero(&mut sk_lwe); // for testing
 
     // GLWE secret
     let mut sk_glwe: GLWESecret<<BackendImpl as Backend>::OwnedBuf, <BackendImpl as Backend>::ZnxWord> =
         module.glwe_secret_alloc(rank.into());
-    sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
-    // sk_glwe.fill_zero(); // for testing
+    module.glwe_secret_fill_ternary_prob(&mut sk_glwe, 0.5, &mut source_xs);
+    // module.glwe_secret_fill_zero(&mut sk_glwe); // for testing
 
     // GLWE secret prepared (opaque backend dependant write only struct)
     let mut sk_glwe_prepared: GLWESecretPrepared<<BackendImpl as Backend>::OwnedBuf, BackendImpl> =

@@ -22,6 +22,7 @@ use poulpy_hal::{
 };
 use rand::RngExt;
 
+use poulpy_core::layouts::{GLWESecretSampling, LWESecretSampling};
 #[cfg(all(feature = "enable-avx", target_arch = "x86_64"))]
 use poulpy_cpu_avx::FFT64Avx;
 #[cfg(not(all(feature = "enable-avx", target_arch = "x86_64")))]
@@ -56,7 +57,9 @@ where
         + BDDKeyPreparedFactory<BRA, BE>
         + FheUintPrepare<BRA, BE>
         + ExecuteBDDCircuit2WTo1W<BE>
-        + GLWEBlindSelection<u32, BE>,
+        + GLWEBlindSelection<u32, BE>
+        + GLWESecretSampling<BE>
+        + LWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     BE::OwnedBuf: HostDataRef + HostDataMut,
     for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8], ZnxWord = i64> + 'static,
@@ -151,10 +154,10 @@ where
     ////////// Key Generation and Preparation
     // Generating the GLWE and LWE key
     let mut sk_glwe = module.glwe_secret_alloc_from_infos(&glwe_layout);
-    sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
+    module.glwe_secret_fill_ternary_prob(&mut sk_glwe, 0.5, &mut source_xs);
 
     let mut sk_lwe = module.lwe_secret_alloc(bdd_layout.cbt_layout.brk_layout.n_lwe);
-    sk_lwe.fill_binary_block(BINARY_BLOCK_SIZE as usize, &mut source_xs);
+    module.lwe_secret_fill_binary_block(&mut sk_lwe, BINARY_BLOCK_SIZE as usize, &mut source_xs);
 
     // Preparing the private keys
     let mut sk_glwe_prepared = module.glwe_secret_prepared_alloc_from_infos(&glwe_layout);

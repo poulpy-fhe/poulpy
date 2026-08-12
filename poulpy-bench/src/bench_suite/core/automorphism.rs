@@ -13,6 +13,7 @@ use poulpy_hal::{
 use std::hint::black_box;
 
 use criterion::Criterion;
+use poulpy_core::layouts::GLWESecretSampling;
 
 /// Benchmarks the GLWE automorphism operation.
 ///
@@ -31,7 +32,8 @@ pub fn bench_glwe_automorphism<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
         + GLWEAutomorphismKeyEncryptSk<BE>
         + GLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
-        + GLWEAutomorphismKeyPreparedFactory<BE>,
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + GLWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
     for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
@@ -44,7 +46,7 @@ pub fn bench_glwe_automorphism<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
     let mut source_xe = Source::new([2u8; 32]);
 
     let mut sk: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc_from_infos(atk_infos);
-    sk.fill_ternary_prob(0.5, &mut source_xs);
+    module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
     let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(atk_infos.rank_out());
     module.glwe_secret_prepare(&mut sk_prepared, &sk);

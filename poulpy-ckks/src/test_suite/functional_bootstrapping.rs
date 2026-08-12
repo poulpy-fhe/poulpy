@@ -290,7 +290,6 @@ where
     let keys = ctx
         .generate_keys(
             module,
-            host_module,
             &sk_raw,
             &keys_layout,
             &mut xs,
