@@ -88,14 +88,12 @@ impl ShipSecretSpec {
             sk.n(),
             plan.n()
         );
-        // Host-side deterministic construction, not sampling: zero the buffer
-        // directly rather than going through the backend sampling API.
         sk.data_mut().zero();
-        *sk.dist_mut() = Distribution::ZERO;
         let col = sk.data_mut().at_mut(0, 0);
         for &(idx, sign) in &self.support {
             col[idx] = sign;
         }
+        *sk.dist_mut() = Distribution::ENCAPSULATED("ship");
         Ok(())
     }
 }

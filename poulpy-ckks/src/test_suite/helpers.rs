@@ -50,6 +50,7 @@ use poulpy_hal::{
 
 use super::CKKSTestParams;
 use poulpy_core::layouts::GLWESecretSampling;
+use poulpy_core::{Distribution, GetDistributionMut};
 
 // ─── deterministic per-call RNG seeds ────────────────────────────────────────
 
@@ -794,6 +795,7 @@ where
     let mut source = Source::new(next_test_seed(7));
     let mut sk_sparse_raw = module.glwe_secret_alloc_from_infos(&params.glwe_layout());
     module.glwe_secret_fill_ternary_hw(&mut sk_sparse_raw, ephemeral_secret_weight, &mut source);
+    *sk_sparse_raw.dist_mut() = Distribution::ENCAPSULATED("sparse-encapsulation");
 
     let dense_to_sparse = gen_switching_key(params, module, sk_dense_raw, &sk_sparse_raw, k_in, scratch);
     let sparse_to_dense = gen_switching_key(params, module, &sk_sparse_raw, sk_dense_raw, k_out, scratch);

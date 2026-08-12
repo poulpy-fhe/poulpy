@@ -51,6 +51,10 @@ where
                 panic!("invalid sk: SecretDistribution::NONE")
             }
 
+            if let Distribution::ENCAPSULATED(name) = sk_ref.dist {
+                panic!("invalid sk: {name} is tagged for encapsulation and cannot back a public key")
+            }
+
             // Its ok to allocate scratch space here since pk is usually generated only once.
             let mut scratch: ScratchOwned<BE> =
                 ScratchOwned::alloc(<Module<BE> as GLWEEncryptSk<BE>>::glwe_encrypt_sk_tmp_bytes(self, res));

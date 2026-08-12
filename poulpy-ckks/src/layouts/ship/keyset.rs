@@ -9,7 +9,7 @@
 //! convolution operands.
 
 use anyhow::{Result, ensure};
-use poulpy_core::{Distribution, GetDistributionMut};
+use poulpy_core::{Distribution, GetDistribution, GetDistributionMut};
 use poulpy_core::{
     EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ModuleTransfer,
     layouts::{
@@ -376,8 +376,7 @@ where
     let m = n.as_usize() / 2;
     let gal_el = module.galois_element(((m - (rot % m)) % m) as i64);
 
-    // Host-side deterministic construction, not sampling: zero the buffer
-    // directly rather than going through the backend sampling API.
+    // `(beta * s, beta)`: the second column is the constant 1, not a secret.
     let mut sk_in_host = host_module.glwe_secret_alloc_from_infos(&GLWESecretLayout { n, rank: Rank(2) });
     sk_in_host.data_mut().zero();
     *sk_in_host.dist_mut() = Distribution::ZERO;
@@ -386,17 +385,19 @@ where
         let data = sk_in_host.data_mut();
         data.at_mut(0, 0).copy_from_slice(&src);
         data.at_mut(1, 0)[0] = 1;
+        *sk_in_host.dist_mut() = Distribution::ENCAPSULATED("ship");
     }
     let sk_in = module.upload_glwe_secret(&sk_in_host);
 
     let mut sk_out_host = host_module.glwe_secret_alloc_from_infos(&GLWESecretLayout { n, rank: Rank(1) });
     sk_out_host.data_mut().zero();
-    *sk_out_host.dist_mut() = Distribution::ZERO;
     znx_automorphism_apply(
         module.galois_element_inv(gal_el),
         sk_dense_host.data().at(0, 0),
         sk_out_host.data_mut().at_mut(0, 0),
     );
+    // An automorphism preserves the distribution.
+    *sk_out_host.dist_mut() = *sk_dense_host.dist();
     let sk_out = module.upload_glwe_secret(&sk_out_host);
 
     let b2k = base2k.as_usize();

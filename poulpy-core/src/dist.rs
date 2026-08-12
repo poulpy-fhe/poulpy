@@ -108,6 +108,9 @@ pub enum Distribution {
     BinaryProb(f64),
     /// Binary in {0, 1} split into blocks of size 2^k, with one 1 per block.
     BinaryBlock(usize),
+    /// Encapsulated category, only valid within its ephemeral context: cannot
+    /// back a public key and cannot be serialized.
+    ENCAPSULATED(&'static str),
     /// All-zero secret (debug / testing only).
     ZERO,
     /// Uninitialized — no distribution has been set yet.
@@ -146,6 +149,9 @@ impl Distribution {
     /// The top byte carries a variant tag; the lower 56 bits carry either
     /// a `usize` payload (for fixed/block variants) or a truncated `f64`
     /// (for probabilistic variants).
+    ///
+    /// [`ENCAPSULATED`](Self::ENCAPSULATED) has no wire form and returns
+    /// [`std::io::ErrorKind::InvalidData`].
     pub fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
         let word: u64 = match self {
             Distribution::TernaryFixed(v) => (TAG_TERNARY_FIXED as u64) << 56 | (*v as u64),
@@ -155,6 +161,12 @@ impl Distribution {
             Distribution::BinaryBlock(v) => (TAG_BINARY_BLOCK as u64) << 56 | (*v as u64),
             Distribution::ZERO => (TAG_ZERO as u64) << 56,
             Distribution::NONE => (TAG_NONE as u64) << 56,
+            Distribution::ENCAPSULATED(name) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Distribution::ENCAPSULATED({name}) is not serializable"),
+                ));
+            }
         };
         writer.write_u64::<LittleEndian>(word)
     }
@@ -192,6 +204,7 @@ impl PartialEq for Distribution {
             (BinaryFixed(a), BinaryFixed(b)) => a == b,
             (BinaryProb(a), BinaryProb(b)) => a.to_bits() == b.to_bits(),
             (BinaryBlock(a), BinaryBlock(b)) => a == b,
+            (ENCAPSULATED(a), ENCAPSULATED(b)) => a == b,
             (ZERO, ZERO) => true,
             (NONE, NONE) => true,
             _ => false,

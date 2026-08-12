@@ -49,6 +49,7 @@ use poulpy_hal::{
 
 use crate::layouts::BootstrappingContext;
 use poulpy_core::layouts::GLWESecretSampling;
+use poulpy_core::{Distribution, GetDistributionMut};
 
 /// Pipeline-facing access to the **prepared** evaluation keys a CKKS bootstrap
 /// consumes.
@@ -326,6 +327,7 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
                 };
                 let mut sk_sparse = module.glwe_secret_alloc_from_infos(&sk_layout);
                 module.glwe_secret_fill_ternary_hw(&mut sk_sparse, hamming_weight, source_xs);
+                *sk_sparse.dist_mut() = Distribution::ENCAPSULATED("sparse-encapsulation");
 
                 let d2s_enc = EncryptionLayout::new_from_default_sigma(encaps.dense_to_sparse)?;
                 let s2d_enc = EncryptionLayout::new_from_default_sigma(encaps.sparse_to_dense)?;
