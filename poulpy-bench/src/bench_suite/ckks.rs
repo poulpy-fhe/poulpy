@@ -2,7 +2,7 @@ use std::{collections::HashMap, hint::black_box};
 
 use criterion::{BenchmarkId, Criterion};
 use poulpy_ckks::{
-    CKKSMeta, SetCKKSInfos,
+    CKKSMeta, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAddManyOps, CKKSAddOps, CKKSConjugateOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps,
         CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
@@ -233,6 +233,7 @@ fn ckks_ct_meta() -> CKKSMeta {
     CKKSMeta {
         log_sparsity: 0,
         log_delta: LOG_DELTA,
+        slots: SlotsKind::Complex,
     }
 }
 
@@ -240,6 +241,7 @@ fn ckks_pt_meta() -> CKKSMeta {
     CKKSMeta {
         log_sparsity: 0,
         log_delta: LOG_DELTA,
+        slots: SlotsKind::Complex,
     }
 }
 
@@ -740,6 +742,7 @@ fn mul_ckks_ct_meta(p: &CkksMulParams) -> CKKSMeta {
     CKKSMeta {
         log_sparsity: 0,
         log_delta: p.log_delta,
+        slots: SlotsKind::Complex,
     }
 }
 

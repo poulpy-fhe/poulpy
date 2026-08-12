@@ -9,7 +9,7 @@ use poulpy_hal::{
 };
 
 use crate::GLWEToBackendRef;
-use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub, ckks_offset_unary};
+use crate::{CKKSInfos, SetCKKSInfos, SlotsKind, checked_log_budget_sub, ckks_offset_unary};
 
 pub trait CKKSImagDefault<BE: Backend> {
     fn ckks_mul_i_tmp_bytes_default(&self) -> usize
@@ -44,6 +44,8 @@ pub trait CKKSImagDefault<BE: Backend> {
         }
         dst.set_meta(src.meta());
         dst.set_log_budget(log_budget);
+        // Multiplying by `i` maps the reals onto the imaginary axis.
+        dst.set_slots(SlotsKind::Complex);
         Ok(())
     }
 
@@ -53,6 +55,7 @@ pub trait CKKSImagDefault<BE: Backend> {
         Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
     {
         self.glwe_rotate_assign((self.n() / 2) as i64, dst, scratch);
+        dst.set_slots(SlotsKind::Complex);
         Ok(())
     }
 

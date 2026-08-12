@@ -27,6 +27,7 @@ use std::collections::HashMap;
 
 use anyhow::ensure;
 
+use crate::SlotsKind;
 use crate::{
     CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos,
     api::{CKKSEncodingOps, CKKSLinearTransformationOps},
@@ -78,6 +79,7 @@ fn chain_params(base: &CKKSTestParams, num_factors: usize) -> CKKSTestParams {
         prec_meta: CKKSMeta {
             log_sparsity: 0,
             log_delta,
+            slots: SlotsKind::Complex,
         },
         prec_log_budget: 10,
         hw: base.hw.min(base.n / 2),
@@ -126,6 +128,7 @@ where
                 meta: CKKSMeta {
                     log_sparsity: (m_full / m_dim).trailing_zeros() as usize,
                     log_delta,
+                    slots: SlotsKind::Complex,
                 },
             };
             crate::default::ckks_encode_linear_transformation_from_diagonals(
@@ -190,6 +193,7 @@ where
     pt_want.set_meta(CKKSMeta {
         log_sparsity: ct.log_sparsity(),
         log_delta: ct.log_delta(),
+        slots: SlotsKind::Complex,
     });
     encoder_full.encode_reim(&mut pt_want, &want_re, &want_im).unwrap();
     let noise = module.glwe_noise(&ct, &pt_want, &sk, &mut scratch.borrow()).std().log2();

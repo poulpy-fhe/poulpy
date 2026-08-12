@@ -167,6 +167,7 @@ where
     let work_meta = CKKSMeta {
         log_delta: s_eval,
         log_sparsity: ct.log_sparsity(),
+        slots: ct.slots(),
     };
 
     match &params.f_mod_bsgs {

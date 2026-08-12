@@ -41,9 +41,24 @@ All outputs are caller-allocated:
   `ckks_paco_bootstrap_parallel_into`: the corresponding bounded-parallel
   variants.
 
-Each method takes `kappa`. `kappa = 1` is seqPaCo and recovers `C` coefficient
-classes; larger powers of two recover `kappa*C` classes. Parallel evaluation
-uses the caller plus a borrowed slice of reusable `PaCoWorker` contexts. Each
+The branch count is derived from the input, not passed in. A ciphertext at
+`log_sparsity = s` encodes `M(X^(2^s))`, so its live coefficients are the
+`N/2^s` multiples of `2^s`; one branch recovers `C` coefficients at gap `N/C`
+from position 0, and branch `b` runs on the input pre-rotated by `-b*stride`.
+Taking
+
+```text
+kappa  = N / (C * 2^s)
+stride = N / (kappa * C) = 2^s
+```
+
+makes the branches cover the multiples of `2^s` exactly once: every live
+coefficient is refreshed, and no branch spends work on a coefficient the
+sparsity guarantees is zero. A dense input therefore costs `N/C` branches and a
+maximally sparse one (`N/2^s = C`) costs a single branch, which is seqPaCo. An
+input leaving fewer than `C` live coefficients, or one whose `N/(C*2^s)` is not
+a power of two, is rejected. Parallel evaluation uses the caller plus a borrowed
+slice of reusable `PaCoWorker` contexts. Each
 worker owns a separately configured backend module handle and scratch arena;
 at most `1 + workers.len()` branches run concurrently, and branches are
 recombined in increasing order.
@@ -90,7 +105,7 @@ let context = PaCoContext::<MyBackend, f64>::compile(
 
 let mut output = module.ckks_ciphertext_alloc(Base2K(base2k), k_boot.into());
 module.ckks_paco_bootstrap_into(
-    &mut output, &exhausted_input, &context, &keys, kappa, &mut scratch,
+    &mut output, &exhausted_input, &context, &keys, &mut scratch,
 )?;
 ```
 
@@ -120,7 +135,8 @@ backend.
 
 ## Key and ciphertext contract
 
-The exhausted input has ring degree `N`, rank one, dense metadata, a valid limb
+The exhausted input has ring degree `N`, rank one, a sparsity leaving at least
+`C` live coefficients, a valid limb
 radix, and effective torus width `log_q`. It is accepted through a generic
 backend-readable bound rather than a concrete buffer type, so owned
 ciphertexts and scratch-carved views are equally valid inputs; the output is
@@ -169,7 +185,7 @@ invalid result.
 After recombination the output metadata is:
 
 ```text
-log_sparsity = log2(N / (kappa*C))
+log_sparsity = log2(N / (kappa*C)) = the input's own log_sparsity
 log_delta    = bootstrap_scale - (log_q - 2 - input_scale - extra_scale_log2)
 ```
 

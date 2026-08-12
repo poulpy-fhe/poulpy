@@ -47,6 +47,7 @@ use poulpy_hal::{
     source::Source,
 };
 
+use crate::SlotsKind;
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos,
     api::{
@@ -175,6 +176,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
         prec_meta: CKKSMeta {
             log_sparsity: 0,
             log_delta,
+            slots: SlotsKind::Complex,
         },
         prec_log_budget: 8,
         hw: 192,
@@ -317,6 +319,33 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
                 s.avg_log2_prec
             );
         }
+    }
+
+    // A real-tagged input must come back real-tagged, whichever pipeline the
+    // recipe selects, and its imaginary part must stay zero.
+    {
+        let im_zero = vec![F::zero(); m];
+        let mut ct_real = ckks_encrypt_with_prec(
+            &tp,
+            &module,
+            &host_module,
+            &encoder,
+            &sk,
+            log_modulus_in,
+            &re,
+            &im_zero,
+            ckks_spec(n, base2k, log_delta, log_modulus_in - log_delta),
+            &mut scratch.borrow(),
+        );
+        ct_real.set_slots(SlotsKind::Real);
+        let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+        module
+            .ckks_bootstrap(&mut ct_bs, &ct_real, &ctx, &bsk, &mut scratch.borrow())
+            .unwrap();
+        assert_eq!(ct_bs.slots(), SlotsKind::Real, "standard output slot kind");
+        let (re_bs, im_bs) = decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow());
+        assert!(precision_stats(&re_bs, &re, log_delta).avg_log2_prec >= MIN_AVG_LOG2_PREC);
+        assert!(precision_stats(&im_bs, &im_zero, log_delta).avg_log2_prec >= 5.0);
     }
 
     let now = Instant::now();
@@ -597,6 +626,7 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
         prec_meta: CKKSMeta {
             log_sparsity: 0,
             log_delta,
+            slots: SlotsKind::Complex,
         },
         prec_log_budget: 8,
         hw: 192,
@@ -706,6 +736,33 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
                 s.avg_log2_prec
             );
         }
+    }
+
+    // A real-tagged input must come back real-tagged, whichever pipeline the
+    // recipe selects, and its imaginary part must stay zero.
+    {
+        let im_zero = vec![F::zero(); m];
+        let mut ct_real = ckks_encrypt_with_prec(
+            &tp,
+            &module,
+            &host_module,
+            &encoder,
+            &sk,
+            log_modulus_in,
+            &re,
+            &im_zero,
+            ckks_spec(n, base2k, log_delta, log_modulus_in - log_delta),
+            &mut scratch.borrow(),
+        );
+        ct_real.set_slots(SlotsKind::Real);
+        let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+        module
+            .ckks_bootstrap(&mut ct_bs, &ct_real, &ctx, &bsk, &mut scratch.borrow())
+            .unwrap();
+        assert_eq!(ct_bs.slots(), SlotsKind::Real, "evalround output slot kind");
+        let (re_bs, im_bs) = decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow());
+        assert!(precision_stats(&re_bs, &re, log_delta).avg_log2_prec >= MIN_AVG_LOG2_PREC);
+        assert!(precision_stats(&im_bs, &im_zero, log_delta).avg_log2_prec >= 5.0);
     }
 
     // 1) (encapsulate) denseToSparse, ModUp, sparseToDense.
@@ -941,6 +998,7 @@ where
         prec_meta: CKKSMeta {
             log_sparsity: 0,
             log_delta,
+            slots: SlotsKind::Complex,
         },
         prec_log_budget: 8,
         hw: 192,
@@ -1037,7 +1095,7 @@ where
         decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow())
     };
 
-    if !eval_round_plus {
+    {
         let im_zero = vec![F::zero(); m];
         let ct_real = ckks_encrypt_with_prec(
             &tp,
@@ -1051,11 +1109,15 @@ where
             ckks_spec(n, base2k, log_delta, k_in - log_delta),
             &mut scratch.borrow(),
         );
+        // Declaring the slots real selects the single-EvalMod pipeline.
+        let mut ct_real = ct_real;
+        ct_real.set_slots(SlotsKind::Real);
         let (real_bs_re, real_bs_im) = {
             let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
             module
-                .ckks_bootstrap_real(&mut ct_bs, &ct_real, &ctx, &bsk, &mut scratch.borrow())
+                .ckks_bootstrap(&mut ct_bs, &ct_real, &ctx, &bsk, &mut scratch.borrow())
                 .unwrap();
+            assert_eq!(ct_bs.slots(), SlotsKind::Real);
             assert_eq!(ct_bs.k().as_usize(), k_boot - plan.post_mod_up_consumed_bits());
             assert_eq!(ct_bs.log_delta(), log_delta);
             decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow())

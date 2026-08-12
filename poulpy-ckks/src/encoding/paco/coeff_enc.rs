@@ -31,6 +31,7 @@ use crate::layouts::CKKSCiphertext;
 use std::fmt::Debug;
 
 use super::cpx::Cpx;
+use crate::SlotsKind;
 use crate::default::dft::DftScalar;
 use crate::layouts::paco::{
     plan::PaCoPlan,
@@ -258,6 +259,7 @@ where
         pt.set_meta_checked(CKKSMeta {
             log_sparsity: 0,
             log_delta,
+            slots: SlotsKind::Complex,
         })?;
         encoding_values[..re.len()].copy_from_slice(&re);
         encoding_values[re.len()..].copy_from_slice(&im);

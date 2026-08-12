@@ -7,6 +7,7 @@ use poulpy_core::layouts::{
 use poulpy_hal::api::CnvPVecBytesOf;
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
+use crate::SlotsKind;
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
     api::{CKKSAddOps, CKKSCopyOps, CKKSEvalModOps, CKKSMulOps, CKKSSubOps, PolynomialInputTransform},
@@ -76,6 +77,7 @@ where
             meta: CKKSMeta {
                 log_sparsity: ct.log_sparsity(),
                 log_delta: params.plan.f_mod_log_delta,
+                slots: SlotsKind::Complex,
             },
         };
 

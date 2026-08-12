@@ -17,6 +17,7 @@ use poulpy_core::{
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
 
 use super::{bootstrap::validate_runtime, ops::PaCoSlotOps};
+use crate::SlotsKind;
 use crate::layouts::paco::{
     context::PaCoContext,
     keyset::{PaCoKeys, validate_gadget_backend_view},
@@ -131,6 +132,7 @@ where
         meta: CKKSMeta {
             log_sparsity: 0,
             log_delta: plan.log_delta_bsk(),
+            slots: SlotsKind::Complex,
         },
     };
 
@@ -160,6 +162,7 @@ where
         meta: CKKSMeta {
             log_sparsity: 0,
             log_delta: plan.c2s().log_delta().max(plan.stc().log_delta()),
+            slots: SlotsKind::Complex,
         },
     };
 
@@ -280,28 +283,41 @@ where
     Ok((output_meta, direct))
 }
 
-/// Validates `kappa` and returns the coefficient stride `N/(kappa*C)`.
-pub(super) fn branch_stride<BE: Backend + CKKSPaCoCoeffEncodingImpl<BE>, F: PaCoScalar>(
+/// Branch schedule for an input at `log_sparsity`: the number of branches
+/// `kappa` and the coefficient stride between them.
+///
+/// A ciphertext at `log_sparsity = s` carries `M(X^(2^s))`, so its live
+/// coefficients are the `N/2^s` multiples of `2^s`. One branch refreshes `C`
+/// coefficient classes at gap `N/C` from position 0, and branch `b` is
+/// evaluated on the input pre-rotated by `-b*stride`, so `kappa` branches
+/// cover the multiples of `stride = N/(kappa*C)`. Taking
+/// `kappa = N/(C*2^s)` makes that stride exactly `2^s`: every live
+/// coefficient is refreshed once, and no branch spends work on a coefficient
+/// the sparsity guarantees is zero.
+pub(super) fn branch_schedule<BE: Backend + CKKSPaCoCoeffEncodingImpl<BE>, F: PaCoScalar>(
     context: &PaCoContext<BE, F>,
-    kappa: usize,
-) -> Result<usize> {
+    log_sparsity: usize,
+) -> Result<(usize, usize)> {
+    let (n, c) = (context.plan().n(), context.plan().c());
+    let stride = 1usize
+        .checked_shl(log_sparsity as u32)
+        .context("PaCo input sparsity 2^log_sparsity overflows usize")?;
+    let live = c.checked_mul(stride).context("PaCo C*2^log_sparsity overflows usize")?;
     ckks_ensure!(
-        kappa > 0 && kappa.is_power_of_two(),
-        "PaCo kappa must be a non-zero power of two, got {kappa}"
-    );
-    let active = kappa
-        .checked_mul(context.plan().c())
-        .context("PaCo kappa*C overflows usize")?;
-    ckks_ensure!(
-        active <= context.plan().n(),
-        "PaCo kappa*C={active} exceeds ring degree {}",
-        context.plan().n(),
+        live <= n,
+        "PaCo input at log_sparsity={log_sparsity} has {} live coefficients, fewer than the plan's C={c} classes",
+        n / stride,
     );
     ckks_ensure!(
-        context.plan().n().is_multiple_of(active),
-        "PaCo kappa*C must divide the ring degree"
+        n.is_multiple_of(live),
+        "PaCo C*2^log_sparsity={live} must divide the ring degree {n}"
     );
-    Ok(context.plan().n() / active)
+    let kappa = n / live;
+    ckks_ensure!(
+        kappa.is_power_of_two(),
+        "PaCo branch count N/(C*2^log_sparsity)={kappa} is not a power of two"
+    );
+    Ok((kappa, stride))
 }
 
 pub(super) fn checked_branch_shift(branch: usize, stride: usize) -> Result<i64> {

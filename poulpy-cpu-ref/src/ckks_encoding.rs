@@ -445,7 +445,7 @@ macro_rules! impl_ckks_encoding {
 mod tests {
     use crate::{FFT64Ref, NTT4x30Ref};
     use poulpy_ckks::{
-        CKKSMeta, SetCKKSInfos,
+        CKKSMeta, SetCKKSInfos, SlotsKind,
         api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
         layouts::{CKKSEncodingBuffer, CKKSModuleAlloc, ScratchArenaTakeCKKS},
     };
@@ -481,6 +481,7 @@ mod tests {
                 pt.set_meta(CKKSMeta {
                     log_sparsity,
                     log_delta: 40,
+                    slots: SlotsKind::Complex,
                 });
                 module.ckks_encode_reim_into(&mut pt, &re, &im, &mut scratch).unwrap();
                 let mut got_re = vec![F::zero(); slots];
@@ -520,6 +521,7 @@ mod tests {
         layout.set_meta(CKKSMeta {
             log_sparsity: 1,
             log_delta: 40,
+            slots: SlotsKind::Complex,
         });
         let bytes = GLWEPlaintext::<Vec<u8>, i64>::bytes_of_from_infos(&layout);
         let mut pt_scratch = ScratchOwned::<FFT64Ref>::alloc(bytes);
@@ -572,6 +574,7 @@ mod tests {
         pt.set_meta(CKKSMeta {
             log_sparsity: 0,
             log_delta: 40,
+            slots: SlotsKind::Complex,
         });
 
         let three = [0.0; 3];

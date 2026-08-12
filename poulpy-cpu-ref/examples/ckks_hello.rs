@@ -16,6 +16,7 @@
 //! `ckks_poly2.rs`.
 
 use anyhow::Result;
+use poulpy_ckks::SlotsKind;
 use poulpy_ckks::prelude::*;
 use poulpy_core::layouts::GLWESecretSampling;
 use poulpy_core::{
@@ -84,6 +85,7 @@ fn main() -> Result<()> {
     let meta = CKKSMeta {
         log_delta: LOG_DELTA,
         log_sparsity: 0,
+        slots: SlotsKind::Complex,
     };
     let mut scratch = ScratchOwned::<BackendImpl>::alloc(module.ckks_all_ops_tmp_bytes(&ct_infos, &tsk_layout(), &ct_infos));
 

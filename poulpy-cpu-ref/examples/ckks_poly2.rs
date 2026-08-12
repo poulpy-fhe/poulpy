@@ -21,7 +21,7 @@
 
 use anyhow::Result;
 use poulpy_ckks::{
-    CKKSInfos, CKKSLayout, CKKSMeta, CoeffsMeta, SetCKKSInfos,
+    CKKSInfos, CKKSLayout, CKKSMeta, CoeffsMeta, SetCKKSInfos, SlotsKind,
     api::CKKSEncodingHostOps,
     api::{CKKSAllOpsTmpBytes, CKKSDecryptOps, CKKSEncryptOps, CKKSPolynomialEvaluationOps},
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
@@ -69,6 +69,7 @@ const PREC_CT: CKKSLayout = CKKSLayout {
     meta: CKKSMeta {
         log_sparsity: 0,
         log_delta: 45,
+        slots: SlotsKind::Complex,
     },
 };
 
@@ -80,6 +81,7 @@ const COEFF_META: CoeffsMeta = CoeffsMeta {
     meta: CKKSMeta {
         log_sparsity: 0,
         log_delta: 45,
+        slots: SlotsKind::Complex,
     },
 };
 const ABS_ERROR_TOLERANCE: f64 = 5e-5;

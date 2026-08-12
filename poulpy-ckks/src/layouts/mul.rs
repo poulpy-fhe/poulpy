@@ -1,5 +1,6 @@
 //! Prepared right operand for hoisted CKKS `ct×ct` multiplication.
 
+use crate::SlotsKind;
 use poulpy_core::layouts::GLWELayout;
 use poulpy_hal::layouts::Backend;
 use poulpy_hal::layouts::CnvPVecROwned;
@@ -26,6 +27,8 @@ pub struct CKKSPreparedRight<BE: Backend> {
     pub(crate) k: usize,
     /// `log_sparsity` of the source ciphertext.
     pub(crate) log_sparsity: usize,
+    /// Slot kind of the source ciphertext.
+    pub(crate) slots: SlotsKind,
     /// Ring/radix/rank identity captured at prepare time; prepared operands are
     /// long-lived cached objects, so `ckks_mul_prepared_assign` validates this
     /// against the destination before use.

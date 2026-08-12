@@ -6,6 +6,7 @@ use num_traits::{Float, FloatConst, FromPrimitive};
 use poulpy_core::layouts::Base2K;
 use poulpy_hal::layouts::{HostBytesBackend, Module};
 
+use crate::SlotsKind;
 use crate::{
     CoeffsMeta, SetCKKSInfos,
     layouts::{CKKSModuleAlloc, CKKSPlaintextVecHostCodec, CKKSScalar},
@@ -70,7 +71,9 @@ where
         let mut step_idx = 0usize;
         self.decompose_bsgs_with(strategy, |baby_coeffs| {
             let mut pt = module.ckks_pt_coeffs_alloc(baby_coeffs.len(), base2k, coeff_meta.k);
-            pt.set_meta(coeff_meta.meta);
+            let mut meta = coeff_meta.meta;
+            meta.slots = SlotsKind::Real;
+            pt.set_meta(meta);
             pt.encode_host_floats(baby_coeffs)
                 .map_err(|e| anyhow!("encode_bsgs: step {step_idx}: {e}"))?;
             step_idx += 1;

@@ -30,7 +30,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSInfos,
+    CKKSInfos, SetCKKSInfos,
     api::{CKKSLinearTransformationOps, CKKSPaCoOps, PaCoScalar},
     default::paco::ops::PaCoSlotOps,
     encoding::paco::coeff_enc::glwe_column_residues,
@@ -226,7 +226,7 @@ fn seq_bootstrap_case<BE, F, E>(
     let coeffs: Vec<F> = (0..params.n)
         .map(|i| F::from_f64(0.4 * (((i.wrapping_mul(2654435761) % 1024) as f64) / 512.0 - 1.0)).unwrap())
         .collect();
-    let ct_in = ckks_encrypt_coeffs(
+    let mut ct_in = ckks_encrypt_coeffs(
         &params,
         &module,
         &host_module,
@@ -236,6 +236,9 @@ fn seq_bootstrap_case<BE, F, E>(
         ckks_spec(params.n, params.base2k, log_msg, 10),
         &mut scratch.borrow(),
     );
+    // One branch recovers `C` coefficients, so an input at this sparsity is
+    // exactly the single-branch seqPaCo schedule this test models.
+    ct_in.set_log_sparsity((p.n() / p.c()).trailing_zeros() as usize);
 
     // Cleartext model from the same residues.
     let host_in = ct_in.to_host_owned::<BE>();
@@ -250,12 +253,12 @@ fn seq_bootstrap_case<BE, F, E>(
     // clear margin from structural failures at signal level.
     let final_bound = ((k_in as f64 - log_delta as f64 + 10.0 - log_msg as f64) + (-2.0)) / 2.0;
 
-    // Run through the caller-allocated public direct API (`kappa = 1`) and
+    // Run through the caller-allocated public direct API (one branch) and
     // compare only the final ciphertext with the independent cleartext model.
     let bsk_budget = k_boot - log_delta;
     let mut out = module.ckks_ciphertext_alloc(params.base2k.into(), k_out);
     module
-        .ckks_paco_bootstrap_direct_into::<_, _>(&mut out, &ct_in, &ctx, &keys, 1, &mut scratch.borrow())
+        .ckks_paco_bootstrap_direct_into::<_, _>(&mut out, &ct_in, &ctx, &keys, &mut scratch.borrow())
         .unwrap();
     assert_slots::<BE, F, E>(
         &format!("paco_seq_bootstrap[final]({paco_h},{paco_c},{slot_order:?})"),
@@ -276,7 +279,7 @@ fn seq_bootstrap_case<BE, F, E>(
         let k_low = k_out.as_usize() - 5;
         let mut out_low = module.ckks_ciphertext_alloc(params.base2k.into(), k_low.into());
         module
-            .ckks_paco_bootstrap_direct_into::<_, _>(&mut out_low, &ct_in, &ctx, &keys, 1, &mut scratch.borrow())
+            .ckks_paco_bootstrap_direct_into::<_, _>(&mut out_low, &ct_in, &ctx, &keys, &mut scratch.borrow())
             .unwrap();
         assert_eq!(
             poulpy_core::layouts::LWEInfos::k(&out_low).as_usize(),
@@ -346,7 +349,7 @@ fn seq_bootstrap_case<BE, F, E>(
     module.glwe_copy(&mut ct_view, &ct_in);
     let mut out_view = module.ckks_ciphertext_alloc(params.base2k.into(), k_out);
     module
-        .ckks_paco_bootstrap_direct_into::<_, _>(&mut out_view, &ct_view, &ctx, &keys, 1, &mut scratch.borrow())
+        .ckks_paco_bootstrap_direct_into::<_, _>(&mut out_view, &ct_view, &ctx, &keys, &mut scratch.borrow())
         .unwrap();
     assert_eq!(
         out_view.meta(),
