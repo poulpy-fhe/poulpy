@@ -246,6 +246,7 @@ precision/depth-based degree selection, composite sign coefficients, and
 `PolynomialApproximation`. The latter owns both the prepared BSGS polynomial
 and its interval map; `CKKSApproximationOps::ckks_eval_approximation` applies
 that map and evaluates the polynomial in one reusable operation.
+The `_with` selectors accept explicit `RemezOptions` for downstream planners.
 
 The crate includes a runnable example at
 [`poulpy-cpu-ref/examples/ckks_poly2.rs`](../poulpy-cpu-ref/examples/ckks_poly2.rs)

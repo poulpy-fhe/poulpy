@@ -7,7 +7,7 @@ use num_traits::{Float, FloatConst, FromPrimitive, ToPrimitive};
 
 use poulpy_core::layouts::{SplitStrategy, bsgs_eval_depth};
 
-use super::remez::{Minimax, Parity, minimax};
+use super::remez::{Minimax, Parity, RemezOptions, minimax_with};
 
 /// `−log2(error)` bits of precision (`+∞` for a zero error).
 pub fn error_bits<F: Float + ToPrimitive>(error: F) -> f64 {
@@ -34,13 +34,15 @@ impl<F: Float + ToPrimitive> DegreeChoice<F> {
 
 fn start_step(parity: Parity) -> (usize, usize) {
     match parity {
-        Parity::Full => (0, 1),
-        Parity::Even => (0, 2),
+        // BSGS plans require degree >= 1.
+        Parity::Full => (1, 1),
+        Parity::Even => (2, 2),
         Parity::Odd => (1, 2),
     }
 }
 
-/// Smallest degree whose minimax error over `[a, b]` is `≤ 2^{−target_bits}`.
+/// Smallest BSGS-evaluable degree whose minimax error over `[a, b]` is
+/// `≤ 2^{−target_bits}`.
 ///
 /// Steps by 1 (full) or 2 (even/odd). Errors if `max_degree` is reached first.
 pub fn degree_for_precision<F, Fun>(
@@ -51,6 +53,25 @@ pub fn degree_for_precision<F, Fun>(
     target_bits: f64,
     max_degree: usize,
     strategy: SplitStrategy,
+) -> Result<DegreeChoice<F>>
+where
+    F: Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
+    Fun: Fn(F) -> F + Copy,
+{
+    degree_for_precision_with(f, a, b, parity, target_bits, max_degree, strategy, RemezOptions::default())
+}
+
+/// [`degree_for_precision`] with explicit [`RemezOptions`].
+#[allow(clippy::too_many_arguments)]
+pub fn degree_for_precision_with<F, Fun>(
+    f: Fun,
+    a: F,
+    b: F,
+    parity: Parity,
+    target_bits: f64,
+    max_degree: usize,
+    strategy: SplitStrategy,
+    opts: RemezOptions,
 ) -> Result<DegreeChoice<F>>
 where
     F: Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
@@ -69,10 +90,27 @@ where
     );
     let mut degree = start;
     let mut best_bits = f64::NEG_INFINITY;
+    let mut finite_fits = 0usize;
+    let mut last_error = None;
     while degree <= max_degree {
-        let mm = minimax(f, a, b, degree, parity).map_err(|e| anyhow!("degree_for_precision: {e}"))?;
-        best_bits = best_bits.max(error_bits(mm.error));
-        if mm.error <= threshold {
+        let mm = match minimax_with(f, a, b, degree, parity, opts) {
+            Ok(mm) => mm,
+            Err(error) => {
+                last_error = Some(format!("degree {degree}: {error}"));
+                let Some(next) = degree.checked_add(step) else {
+                    break;
+                };
+                degree = next;
+                continue;
+            }
+        };
+        if !mm.error.is_finite() {
+            last_error = Some(format!("degree {degree}: non-finite approximation error"));
+        } else {
+            finite_fits += 1;
+            best_bits = best_bits.max(error_bits(mm.error));
+        }
+        if mm.error.is_finite() && mm.error <= threshold {
             let depth = bsgs_eval_depth(degree, strategy);
             return Ok(DegreeChoice {
                 degree,
@@ -80,7 +118,16 @@ where
                 depth,
             });
         }
-        degree += step;
+        let Some(next) = degree.checked_add(step) else {
+            break;
+        };
+        degree = next;
+    }
+    if finite_fits == 0 {
+        bail!(
+            "degree_for_precision: no degree produced a finite fit{}",
+            last_error.map_or_else(String::new, |error| format!(" ({error})"))
+        );
     }
     bail!("degree_for_precision: {target_bits:.1} bits not reached by degree {max_degree} (best {best_bits:.1} bits)");
 }
@@ -99,29 +146,70 @@ where
     F: Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
     Fun: Fn(F) -> F + Copy,
 {
+    precision_at_depth_with(f, a, b, parity, max_depth, max_degree, strategy, RemezOptions::default())
+}
+
+/// [`precision_at_depth`] with explicit [`RemezOptions`].
+#[allow(clippy::too_many_arguments)]
+pub fn precision_at_depth_with<F, Fun>(
+    f: Fun,
+    a: F,
+    b: F,
+    parity: Parity,
+    max_depth: usize,
+    max_degree: usize,
+    strategy: SplitStrategy,
+    opts: RemezOptions,
+) -> Result<DegreeChoice<F>>
+where
+    F: Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
+    Fun: Fn(F) -> F + Copy,
+{
     let (start, step) = start_step(parity);
     ensure!(
         max_degree >= start,
         "precision_at_depth: max_degree {max_degree} is below the first {parity:?} degree {start}"
     );
-    let mut best: Option<usize> = None;
+    let mut best: Option<DegreeChoice<F>> = None;
+    let mut last_error = None;
     let mut degree = start;
-    // bsgs_eval_depth is monotone non-decreasing in degree, so stop at the first overflow.
+    // Finite-precision fit errors need not improve with degree.
     while degree <= max_degree {
-        if bsgs_eval_depth(degree, strategy) <= max_depth {
-            best = Some(degree);
-            degree += step;
-        } else {
+        let depth = bsgs_eval_depth(degree, strategy);
+        if depth > max_depth {
             break;
         }
+        match minimax_with(f, a, b, degree, parity, opts) {
+            Ok(mm) if mm.error.is_finite() => {
+                let replace = best.as_ref().is_none_or(|current| {
+                    mm.error < current.minimax.error
+                        || (mm.error == current.minimax.error && mm.converged && !current.minimax.converged)
+                });
+                if replace {
+                    best = Some(DegreeChoice {
+                        degree,
+                        minimax: mm,
+                        depth,
+                    });
+                }
+            }
+            Ok(_) => {
+                last_error = Some(format!("degree {degree}: non-finite approximation error"));
+            }
+            Err(error) => {
+                last_error = Some(format!("degree {degree}: {error}"));
+            }
+        }
+        let Some(next) = degree.checked_add(step) else {
+            break;
+        };
+        degree = next;
     }
-    let degree = best.ok_or_else(|| anyhow!("precision_at_depth: no degree fits within depth {max_depth}"))?;
-    let mm = minimax(f, a, b, degree, parity).map_err(|e| anyhow!("precision_at_depth: {e}"))?;
-    let depth = bsgs_eval_depth(degree, strategy);
-    Ok(DegreeChoice {
-        degree,
-        minimax: mm,
-        depth,
+    best.ok_or_else(|| {
+        anyhow!(
+            "precision_at_depth: no degree produced a finite fit within depth {max_depth}{}",
+            last_error.map_or_else(String::new, |error| format!(" ({error})"))
+        )
     })
 }
 
@@ -159,10 +247,28 @@ mod tests {
         let dc = precision_at_depth(f, -1.0, 1.0, Parity::Full, budget, 64, SplitStrategy::MinDepth).unwrap();
         assert!(dc.depth <= budget, "chosen depth {} exceeds budget {budget}", dc.depth);
         assert!(dc.bits() > 0.0);
-        // A deeper budget admits at least as high a degree (precision may already
-        // be saturated at f64 machine precision, so compare degree, not bits).
+        // A deeper budget cannot make the best measured precision worse.
         let deeper = precision_at_depth(f, -1.0, 1.0, Parity::Full, budget + 2, 64, SplitStrategy::MinDepth).unwrap();
         assert!(deeper.depth <= budget + 2);
-        assert!(deeper.degree >= dc.degree, "deeper budget picked lower degree");
+        assert!(deeper.minimax.error <= dc.minimax.error, "deeper budget picked a worse fit");
+    }
+
+    #[test]
+    fn depth_selection_skips_unstable_highest_degree() {
+        let dc = precision_at_depth(|x: f64| x.exp(), -1.0, 1.0, Parity::Full, 7, 64, SplitStrategy::MinDepth).unwrap();
+        assert!(
+            dc.minimax.error < 1e-10,
+            "selected degree {} with error {}",
+            dc.degree,
+            dc.minimax.error
+        );
+    }
+
+    #[test]
+    fn selected_constant_is_bsgs_evaluable() {
+        let full = degree_for_precision(|_: f64| 1.0, -1.0, 1.0, Parity::Full, 10.0, 4, SplitStrategy::MinDepth).unwrap();
+        let even = degree_for_precision(|_: f64| 1.0, -1.0, 1.0, Parity::Even, 10.0, 4, SplitStrategy::MinDepth).unwrap();
+        assert_eq!(full.degree, 1);
+        assert_eq!(even.degree, 2);
     }
 }

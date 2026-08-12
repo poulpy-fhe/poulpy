@@ -16,7 +16,7 @@ pub struct RemezOptions {
     pub max_iters: usize,
     /// Relative equioscillation tolerance.
     pub rel_tol: f64,
-    /// Extrema grid density multiplier.
+    /// Minimum extrema-grid density multiplier.
     pub grid_mult: usize,
 }
 
@@ -122,8 +122,8 @@ where
         let alt = match select_alternating(extrema, m) {
             Some(a) => a,
             None => {
-                // Grid too coarse to resolve n+2 alternating extrema: report best so far.
                 error = grid_sup_error(&g, &coeffs, grid_len);
+                converged = error == F::zero();
                 break;
             }
         };

@@ -9,7 +9,7 @@ use poulpy_hal::layouts::{HostBytesBackend, Module};
 
 use crate::{
     CoeffsMeta, SetCKKSInfos,
-    layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, CKKSScalar},
+    layouts::{CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, CKKSScalar},
     polynomial::{BSGSPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
 };
 
@@ -26,7 +26,7 @@ pub struct PolynomialApproximation<P> {
     pub coeff_log_delta: usize,
 }
 
-impl PolynomialApproximation<CKKSPlaintext<Vec<u8>>> {
+impl PolynomialApproximation<CKKSPlaintextOwned<HostBytesBackend>> {
     /// Prepares `poly` and its interval map on the host.
     pub fn from_polynomial<F, M>(
         poly: &Polynomial<F>,
@@ -38,7 +38,7 @@ impl PolynomialApproximation<CKKSPlaintext<Vec<u8>>> {
     where
         F: CKKSScalar + Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
         M: Into<CoeffsMeta>,
-        CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>,
+        CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
     {
         let coeff_meta = coeff_meta.into();
         let bsgs = poly
@@ -54,15 +54,7 @@ impl PolynomialApproximation<CKKSPlaintext<Vec<u8>>> {
                 .map_err(|e| anyhow!("polynomial approximation: affine encoding failed: {e}"))?;
             Some(pt)
         };
-        let scale_pow2 = affine.as_ref().and_then(|_| {
-            let scale = scale.to_f64()?;
-            let exponent = scale.log2().round();
-            if exponent >= i32::MIN as f64 && exponent <= i32::MAX as f64 && 2f64.powi(exponent as i32) == scale {
-                Some(exponent as i32)
-            } else {
-                None
-            }
-        });
+        let scale_pow2 = affine.as_ref().and_then(|_| exact_power_of_two_exponent(scale));
         Ok(Self {
             poly: bsgs,
             affine,
@@ -70,6 +62,19 @@ impl PolynomialApproximation<CKKSPlaintext<Vec<u8>>> {
             coeff_log_delta: coeff_meta.log_delta(),
         })
     }
+}
+
+/// Returns `e` exactly when `value == 2^e` in `F`.
+fn exact_power_of_two_exponent<F>(value: F) -> Option<i32>
+where
+    F: Float + FromPrimitive + ToPrimitive,
+{
+    if !value.is_finite() || value <= F::zero() {
+        return None;
+    }
+    let exponent = value.log2().round().to_i32()?;
+    let candidate = F::from_i32(exponent)?.exp2();
+    (candidate == value).then_some(exponent)
 }
 
 impl<P> PolynomialApproximation<P> {
@@ -126,8 +131,9 @@ impl<P> PolynomialApproximation<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Quad;
 
-    fn prepare(a: f64, b: f64) -> PolynomialApproximation<CKKSPlaintext<Vec<u8>>> {
+    fn prepare(a: f64, b: f64) -> PolynomialApproximation<CKKSPlaintextOwned<HostBytesBackend>> {
         let module = Module::<HostBytesBackend>::new(256);
         let poly = Polynomial::chebyshev_interpolate(4, a, b, |x| x * x).unwrap();
         PolynomialApproximation::from_polynomial(
@@ -154,5 +160,12 @@ mod tests {
         assert_eq!(plan.scale_pow2, None);
         assert_eq!(plan.output_log_delta(30), 30);
         assert_eq!(plan.consumed_bits(30), 30 + plan.poly.consumed_bits(30, 30));
+    }
+
+    #[test]
+    fn quad_near_power_of_two_is_not_exact() {
+        let near_one = Quad::new(1.0f128 + 2.0f128.powi(-60));
+        assert_eq!(exact_power_of_two_exponent(near_one), None);
+        assert_eq!(exact_power_of_two_exponent(Quad::new(0.25)), Some(-2));
     }
 }

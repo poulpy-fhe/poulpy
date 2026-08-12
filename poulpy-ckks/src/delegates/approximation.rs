@@ -1,7 +1,8 @@
 //! Composite evaluation of prepared polynomial approximations.
 
+use poulpy_core::GLWEBytesOf;
 use poulpy_core::layouts::{
-    BSGSMeta, GGLWEInfos, GLWE, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, SetBSGSMeta,
+    BSGSMeta, GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos, SetBSGSMeta,
     prepared::{GLWETensorKeyPrepared, GLWETensorKeyPreparedToBackendRef},
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -13,7 +14,7 @@ use crate::{
         CKKSPow2Ops,
     },
     ckks_ensure,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, PolynomialApproximation, ScratchArenaTakeCKKS},
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, PolynomialApproximation, ScratchArenaTakeCKKS},
 };
 
 impl<BE: Backend> CKKSApproximationOps<BE> for Module<BE>
@@ -25,24 +26,33 @@ where
         + CKKSModuleAlloc<BE>
         + CKKSPolynomialEvaluationOps<BE>
         + CKKSPow2Ops<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
 {
-    fn ckks_approximation_tmp_bytes<R, T, P>(&self, res: &R, tsk: &T, approximation: &PolynomialApproximation<P>) -> usize
+    fn ckks_approximation_tmp_bytes<R, I, T, P>(
+        &self,
+        res: &R,
+        input: &I,
+        tsk: &T,
+        approximation: &PolynomialApproximation<P>,
+    ) -> usize
     where
         R: CKKSCtBounds,
+        I: CKKSCtBounds,
         T: GGLWEInfos,
         P: CKKSInfos + LWEInfos,
     {
         let coeffs = approximation.poly.baby_step(0);
-        let eval = self.ckks_all_ops_tmp_bytes(res, tsk, coeffs);
+        let eval = self
+            .ckks_all_ops_tmp_bytes(res, tsk, coeffs)
+            .max(self.ckks_all_ops_tmp_bytes(input, tsk, coeffs));
         match &approximation.affine {
             Some(affine) => {
-                let ct = GLWE::<Vec<u8>>::bytes_of_from_infos(res);
+                let ct = self.glwe_bytes_of_from_infos(input);
                 let map = if approximation.scale_pow2.is_some() {
                     eval
                 } else {
-                    eval.max(self.ckks_affine_pt_const_tmp_bytes(res, res, affine))
+                    eval.max(self.ckks_affine_pt_const_tmp_bytes(input, input, affine))
                 };
                 ct + map
             }
@@ -65,8 +75,8 @@ where
     {
         let required = approximation.consumed_bits(input.log_delta());
         ckks_ensure!(
-            input.log_budget() > required,
-            "ckks_eval_approximation: log_budget {} <= {required} bits required at log_delta {}",
+            input.log_budget() >= required,
+            "ckks_eval_approximation: log_budget {} < {required} bits required at log_delta {}",
             input.log_budget(),
             input.log_delta()
         );

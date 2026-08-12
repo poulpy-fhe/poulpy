@@ -22,12 +22,14 @@ where
     let odd_degs: Vec<usize> = (0..).map(|j| 2 * j + 1).take_while(|&d| d <= degree).collect();
     let nb = odd_degs.len();
     let m = nb + 1; // reference points = odd coefficients + leveled error
-    let grid_len = opts
-        .grid_mult
+    let interval_bits = (hi / lo).log2().ceil().to_usize().unwrap_or(usize::MAX);
+    let grid_mult = opts.grid_mult.max(interval_bits.saturating_mul(64));
+    let grid_len = grid_mult
         .checked_mul(m)
         .ok_or_else(|| anyhow!("minimax_odd_const1: grid size overflow"))?
         .max(256);
-    let rel_tol = F::from_f64(opts.rel_tol).unwrap();
+    let interval_tol = (lo / hi).to_f64().unwrap_or(opts.rel_tol);
+    let rel_tol = F::from_f64(opts.rel_tol.min(interval_tol)).unwrap();
     let two = F::one() + F::one();
 
     // Map a Chebyshev–Lobatto node y ∈ [−1, 1] to x ∈ [lo, hi], ascending.
@@ -86,7 +88,7 @@ where
     Ok((full, error))
 }
 
-/// Builds odd factors for `sign` on `[−1, −tau] ∪ [tau, 1]`.
+/// Builds normalized odd factors for `sign` on `[−1, −tau] ∪ [tau, 1]`.
 pub fn sign_composite_coeffs<F>(
     tau: F,
     target_bits: f64,
@@ -132,16 +134,22 @@ where
     for i in 0..max_factors {
         let deg = degrees[i.min(degrees.len() - 1)];
         let (coeffs, e) = minimax_odd_const1(lo, hi, deg, opts).map_err(|e| anyhow!("sign_composite_coeffs: factor {i}: {e}"))?;
-        rows.push(coeffs);
         if e <= target {
+            rows.push(coeffs);
             return Ok(rows);
         }
-        // The next factor sees this factor's image [1−e, 1+e].
-        lo = one - e;
-        hi = one + e;
-        if lo <= F::zero() {
+        let next_lo = one - e;
+        let next_hi = one + e;
+        if next_lo <= F::zero() {
             bail!("sign_composite_coeffs: factor {i} (degree {deg}) too weak for tau (error {e:?} ≥ 1)");
         }
+        let mut coeffs = coeffs;
+        for coeff in &mut coeffs {
+            *coeff = *coeff / next_hi;
+        }
+        rows.push(coeffs);
+        lo = next_lo / next_hi;
+        hi = one;
     }
     bail!("sign_composite_coeffs: {target_bits} bits not reached in {max_factors} factors");
 }
@@ -198,5 +206,18 @@ mod tests {
         let coarse = sign_composite_coeffs::<f64>(0.2, 15.0, &[15], 12, RemezOptions::default()).unwrap();
         let fine = sign_composite_coeffs::<f64>(0.02, 15.0, &[15], 12, RemezOptions::default()).unwrap();
         assert!(fine.len() >= coarse.len(), "finer tau should need at least as many factors");
+    }
+
+    #[test]
+    fn resolves_lattigo_scale_gap() {
+        let rows = sign_composite_coeffs::<crate::Quad>(
+            crate::Quad::new(2.0f128.powi(-30)),
+            20.0,
+            &[15, 15, 15, 17, 31, 31, 31, 31],
+            8,
+            RemezOptions::default(),
+        )
+        .unwrap();
+        assert!(!rows.is_empty());
     }
 }

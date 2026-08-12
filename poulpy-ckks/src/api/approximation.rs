@@ -10,10 +10,17 @@ use crate::{CKKSCtBounds, CKKSInfos, CKKSResult as Result, SetCKKSInfos, layouts
 
 /// Homomorphic evaluation of reusable, interval-mapped polynomial plans.
 pub trait CKKSApproximationOps<BE: Backend> {
-    /// Scratch bytes for [`Self::ckks_eval_approximation`].
-    fn ckks_approximation_tmp_bytes<R, T, P>(&self, res: &R, tsk: &T, approximation: &PolynomialApproximation<P>) -> usize
+    /// Scratch bytes for evaluation with these input and output layouts.
+    fn ckks_approximation_tmp_bytes<R, I, T, P>(
+        &self,
+        res: &R,
+        input: &I,
+        tsk: &T,
+        approximation: &PolynomialApproximation<P>,
+    ) -> usize
     where
         R: CKKSCtBounds,
+        I: CKKSCtBounds,
         T: GGLWEInfos,
         P: CKKSInfos + LWEInfos;
 
