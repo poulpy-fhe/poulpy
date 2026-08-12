@@ -27,6 +27,7 @@ use poulpy_core::layouts::{Base2K, DiagonalArithmetic, LWEInfos, TorusPrecision}
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
 
 use super::plan::{PaCoDFTPlan, PaCoPlan};
+use crate::SlotsKind;
 use crate::default::paco::{
     lt::{PaCoPsiTail, paco_psi_c2s_factors, paco_stc_factors},
     ops::conj_rotate_galois_element,
@@ -229,6 +230,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
                     meta: CKKSMeta {
                         log_sparsity: (full_slots / slots).trailing_zeros() as usize,
                         log_delta: dft.log_delta(),
+                        slots: SlotsKind::Complex,
                     },
                 },
                 diagonals,
@@ -310,6 +312,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
                 pt.set_meta_checked(CKKSMeta {
                     log_sparsity: 0,
                     log_delta: dft.log_delta(),
+                    slots: SlotsKind::Complex,
                 })?;
                 module
                     .ckks_encode_reim_into(&mut pt, &re, &im, scratch)

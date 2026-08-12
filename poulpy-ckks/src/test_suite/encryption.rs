@@ -12,6 +12,7 @@ use poulpy_hal::{
     layouts::{HostBytesBackend, Module},
 };
 
+use crate::SlotsKind;
 use crate::{test_suite::CKKSTestParams, test_suite::reference_encoder::ReferenceEncoder};
 
 fn extract_src_prec(params: &CKKSTestParams) -> CKKSLayout {
@@ -254,6 +255,7 @@ pub fn test_decrypt_extract_output_hom_rem_too_large<BE, F, E>(
     pt.set_meta(CKKSMeta {
         log_sparsity: 0,
         log_delta: src_prec.log_delta(),
+        slots: SlotsKind::Complex,
     });
     let err = module.ckks_decrypt(&mut pt, &ct, &sk, &mut scratch.borrow()).unwrap_err();
     assert_ckks_error(

@@ -14,7 +14,7 @@ use poulpy_core::layouts::{
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    CKKSCtBounds, SetCKKSInfos,
+    CKKSCtBounds, SetCKKSInfos, SlotsKind,
     api::{
         Basis, CKKSAddOps, CKKSAffineOps, CKKSConjugateOps, CKKSCopyOps, CKKSEvalModOps, CKKSMulOps, CKKSPolynomialEvaluationOps,
         CKKSPow2Ops, CKKSSubOps,
@@ -106,95 +106,105 @@ where
         module.ckks_conjugate_into(&mut conj, &*res, conj_key, &mut scratch)?;
         module.ckks_add_assign(res, &conj, &mut scratch)
     })?;
+    // `T + conj(T) = 2·Re(T)` interpolates the (real) table.
+    res.set_slots(SlotsKind::Real);
 
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn ckks_eval_lut_multi<BE, F, K, C, R>(
+/// Builds the shared `E(x) = exp(2πi·x)` power basis for a batch of general
+/// LUTs: one EvalMod, then the union of every LUT's baby-step schedule.
+///
+/// Equal-arity LUTs have the same message ratio, but their coefficient parity
+/// (and, for some split strategies, their BSGS split) can still differ, so the
+/// populated schedule must not depend on which LUT happens to be first.
+pub(crate) fn ckks_lut_power_basis<BE, F, C>(
     module: &Module<BE>,
-    res: &mut [R],
     ct: &C,
+    layout: &GLWELayout,
     eval_exp: &EvalMod<F, CKKSPlaintextOwned<BE>>,
     luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
-    conj_key: &K,
     tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<()>
+) -> Result<PowerBasis<CKKSCiphertextOwned<BE>>>
 where
     BE: Backend,
     Module<BE>: CKKSEvalModOps<BE>
         + CKKSPolynomialEvaluationOps<BE>
-        + CKKSConjugateOps<BE>
         + CKKSAddOps<BE>
         + CKKSCopyOps<BE>
         + CKKSMulOps<BE>
         + CKKSPow2Ops<BE>
         + CKKSSubOps<BE>
         + CKKSModuleAlloc<BE>,
-    K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
-    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
-    ensure!(!luts.is_empty(), "ckks_eval_lut_multi: at least one LUT is required");
-    ensure!(
-        res.len() == luts.len(),
-        "ckks_eval_lut_multi: res/luts length mismatch ({} vs {})",
-        res.len(),
-        luts.len()
-    );
-    let mut x1 = module.ckks_ciphertext_alloc(res[0].base2k(), res[0].k());
-    module.ckks_eval_mod(&mut x1, ct, eval_exp, tsk, scratch)?;
-    let head = &luts[0]
-        .general_series()
-        .expect("shared multi-LUT evaluation is selected only for general LUTs")
+    let series = luts
+        .iter()
+        .map(|lut| {
+            lut.general_series()
+                .ok_or_else(|| anyhow!("ckks_lut_power_basis: shared evaluation supports general LUTs only"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let head = &series
+        .first()
+        .ok_or_else(|| anyhow!("ckks_lut_power_basis: at least one LUT is required"))?
         .re;
+
+    let mut x1 = module.ckks_ciphertext_alloc(layout.base2k, layout.k);
+    module.ckks_eval_mod(&mut x1, ct, eval_exp, tsk, scratch)?;
     let mut power_basis = PowerBasis::new(head.basis(), x1);
-    // Equal-arity LUTs have the same message ratio, but their coefficient
-    // parity (and, for some split strategies, their BSGS split) can still
-    // differ. Populate the union of every schedule so the result does not
-    // depend on which LUT happens to be first.
-    for encoded in luts {
-        let lut = encoded
-            .general_series()
-            .expect("shared multi-LUT evaluation is selected only for general LUTs");
+    for lut in &series {
         ensure!(
             lut.re.basis() == head.basis(),
-            "ckks_eval_lut_multi: all LUTs must use the same polynomial basis"
+            "ckks_lut_power_basis: all LUTs must use the same polynomial basis"
         );
         power_basis.populate(lut.re.degree(), lut.re.log_split(), lut.re.parity(), module, tsk, scratch)?;
     }
+    Ok(power_basis)
+}
 
+/// Evaluates one general LUT against a [`ckks_lut_power_basis`] result.
+pub(crate) fn ckks_eval_lut_from_basis<BE, K, R>(
+    module: &Module<BE>,
+    res: &mut R,
+    lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
+    power_basis: &PowerBasis<CKKSCiphertextOwned<BE>>,
+    conj_key: &K,
+    tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
+    scratch: &mut ScratchArena<'_, BE>,
+) -> Result<()>
+where
+    BE: Backend,
+    Module<BE>: CKKSPolynomialEvaluationOps<BE> + CKKSConjugateOps<BE> + CKKSAddOps<BE>,
+    K: GLWEAutomorphismKeyPreparedToBackendRef<BE> + GGLWEPreparedToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+    GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
+{
+    let series = lut
+        .general_series()
+        .ok_or_else(|| anyhow!("ckks_eval_lut_from_basis: shared evaluation supports general LUTs only"))?;
+    module.ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
+        res,
+        series,
+        power_basis,
+        tsk,
+        scratch,
+    )?;
     let layout = GLWELayout {
-        n: res[0].n(),
-        base2k: res[0].base2k(),
-        k: res[0].k(),
-        rank: res[0].rank(),
+        n: res.n(),
+        base2k: res.base2k(),
+        k: res.k(),
+        rank: res.rank(),
     };
-    scratch.scope(|scratch| -> Result<()> {
-        let (mut conj, mut scratch) = scratch.take_ckks_ciphertext_scratch(&layout, res[0].meta());
-        for (res_i, encoded) in res.iter_mut().zip(luts) {
-            let lut = encoded
-                .general_series()
-                .expect("shared multi-LUT evaluation is selected only for general LUTs");
-            module.ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
-                res_i,
-                lut,
-                &power_basis,
-                tsk,
-                &mut scratch,
-            )?;
-            // Conjugation aligns to the destination width, so restore the
-            // shared scratch view to the current result before each reuse.
-            conj.set_meta(res_i.meta());
-            conj.set_k(res_i.k());
-            module.ckks_conjugate_into(&mut conj, &*res_i, conj_key, &mut scratch)?;
-            module.ckks_add_assign(res_i, &conj, &mut scratch)?;
-        }
-        Ok(())
+    scratch.scope(|scratch| {
+        let (mut conj, mut scratch) = scratch.take_ckks_ciphertext_scratch(&layout, res.meta());
+        module.ckks_conjugate_into(&mut conj, &*res, conj_key, &mut scratch)?;
+        module.ckks_add_assign(res, &conj, &mut scratch)
     })?;
-
+    // `T + conj(T) = 2·Re(T)` interpolates the (real) table.
+    res.set_slots(SlotsKind::Real);
     Ok(())
 }
 

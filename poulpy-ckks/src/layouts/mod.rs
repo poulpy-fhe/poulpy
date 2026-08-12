@@ -159,7 +159,7 @@ pub(crate) use encoding_buffer::{
 };
 pub use eval_mod::{EvalMod, EvalModBsgs, EvalModPlan, EvalModPoly, EvalModType, compile_eval_mod};
 pub use functional_bootstrapping::EncodedLut;
-pub(crate) use functional_bootstrapping::{EncodedLutKind, SlotsKind};
+pub(crate) use functional_bootstrapping::EncodedLutKind;
 pub use mul::CKKSPreparedRight;
 pub use paco::{
     PaCoContext, PaCoDFTPlan, PaCoKeyParameters, PaCoKeySet, PaCoKeySetParts, PaCoKeys, PaCoKeysPrepared, PaCoKeysPreparedParts,

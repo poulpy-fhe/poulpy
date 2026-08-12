@@ -20,6 +20,7 @@ use poulpy_hal::{
 };
 use std::collections::HashMap;
 
+use crate::SlotsKind;
 use crate::{
     CKKSInfos, CKKSMeta, SetCKKSInfos,
     api::CKKSConjugateOps,
@@ -108,6 +109,7 @@ pub(crate) fn assert_slots<BE, F, E>(
         meta: CKKSMeta {
             log_sparsity: 0,
             log_delta,
+            slots: SlotsKind::Complex,
         },
     };
     // Full-precision decrypt on the backend, then download to host bytes.
@@ -120,6 +122,7 @@ pub(crate) fn assert_slots<BE, F, E>(
     want_pt.set_meta(CKKSMeta {
         log_sparsity: 0,
         log_delta,
+        slots: SlotsKind::Complex,
     });
     encoder.encode_reim(&mut want_pt, &want_re, &want_im).unwrap();
 

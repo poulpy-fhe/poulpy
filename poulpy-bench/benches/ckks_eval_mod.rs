@@ -8,7 +8,7 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use poulpy_ckks::{
-    CKKSInfos, CKKSLayout, CKKSMeta, CoeffsMeta,
+    CKKSInfos, CKKSLayout, CKKSMeta, CoeffsMeta, SlotsKind,
     api::CKKSEvalModOps,
     api::{CKKSAddOps, CKKSCopyOps, CKKSEncodingHostOps, CKKSMulOps},
     layouts::{
@@ -43,6 +43,7 @@ const PT_LAYOUT: CKKSLayout = CKKSLayout {
     meta: CKKSMeta {
         log_delta: EVAL_MOD_LOG_DELTA,
         log_sparsity: 0,
+        slots: SlotsKind::Complex,
     },
 };
 
@@ -53,6 +54,7 @@ const COEFF_META: CoeffsMeta = CoeffsMeta {
     meta: CKKSMeta {
         log_delta: EVAL_MOD_LOG_DELTA,
         log_sparsity: 0,
+        slots: SlotsKind::Complex,
     },
 };
 
@@ -170,6 +172,7 @@ fn bench_ntt4x30_ref(c: &mut Criterion) {
     let input_meta = CKKSMeta {
         log_delta: LOG_DELTA,
         log_sparsity: 0,
+        slots: SlotsKind::Complex,
     };
 
     let ct_template = module.ckks_ciphertext_alloc_from_glwe_infos(&glwe_layout);

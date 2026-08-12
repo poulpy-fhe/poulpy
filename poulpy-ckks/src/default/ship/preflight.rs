@@ -17,6 +17,7 @@ use poulpy_hal::{
 };
 
 use super::{bootstrap::validate_runtime, masking::ship_masking_tmp_bytes, mux::ship_mux_rotate_tmp_bytes};
+use crate::SlotsKind;
 use crate::{
     CKKSCtBounds,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSMulOps, CKKSSubOps, ShipScalar},
@@ -77,6 +78,7 @@ where
         meta: CKKSMeta {
             log_delta: plan.log_delta_work(),
             log_sparsity: 0,
+            slots: SlotsKind::Complex,
         },
     };
 

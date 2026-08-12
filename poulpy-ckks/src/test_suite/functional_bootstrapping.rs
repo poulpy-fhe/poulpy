@@ -12,14 +12,14 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos,
+    CKKSCtBounds, CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSEncodingOps, CKKSEvalModOps, CKKSPolynomialEvaluationOps,
     },
     layouts::{
         BootstrappingContext, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
         CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, DFTOutputFormat, DFTPlan, DFTType,
-        EncapsulationKeysLayout, EncodedLut, SlotsKind, SparseSecretEncapsulation, eval_mod::EvalModPlan,
+        EncapsulationKeysLayout, EncodedLut, SparseSecretEncapsulation, eval_mod::EvalModPlan,
     },
     polynomial::SplitStrategy,
     test_suite::{
@@ -44,11 +44,6 @@ enum Case {
     General,
     Multi,
     Binary,
-}
-
-enum HostLuts {
-    Encoded(EncodedLut<CKKSPlaintextOwned<HostBytesBackend>>),
-    Multi(Vec<EncodedLut<CKKSPlaintextOwned<HostBytesBackend>>>),
 }
 
 pub fn test_functional_bootstrapping_e2e<BE, F, E>(
@@ -162,34 +157,8 @@ where
     let plan = fbt_plan(params.base2k);
     let coeffs_meta = CoeffsMeta::from_delta_budget(LUT_LOG_DELTA, params.base2k);
 
-    let host_luts = match case {
-        Case::General => HostLuts::Encoded(
-            EncodedLut::general(
-                host_module,
-                &tables[0],
-                params.base2k.into(),
-                coeffs_meta,
-                SplitStrategy::MinDepth,
-            )
-            .unwrap(),
-        ),
-        Case::Multi => HostLuts::Multi(
-            tables
-                .iter()
-                .enumerate()
-                .map(|(index, table)| {
-                    // A later LUT with a lower coefficient scale retains more
-                    // output width than the LUT evaluated before it.
-                    let coeffs_meta = if index == 1 {
-                        CoeffsMeta::from_delta_budget(LUT_LOG_DELTA - 5, params.base2k)
-                    } else {
-                        coeffs_meta
-                    };
-                    EncodedLut::general(host_module, table, params.base2k.into(), coeffs_meta, SplitStrategy::MinDepth).unwrap()
-                })
-                .collect(),
-        ),
-        Case::Binary => HostLuts::Encoded(
+    let host_luts: Vec<EncodedLut<CKKSPlaintextOwned<HostBytesBackend>>> = match case {
+        Case::Binary => vec![
             EncodedLut::binary(
                 host_module,
                 tables[0][0],
@@ -202,20 +171,27 @@ where
                 SplitStrategy::MinDepth,
             )
             .unwrap(),
-        ),
+        ],
+        Case::General | Case::Multi => tables
+            .iter()
+            .enumerate()
+            .map(|(index, table)| {
+                // A later LUT with a lower coefficient scale retains more
+                // output width than the LUT evaluated before it.
+                let coeffs_meta = if index == 1 {
+                    CoeffsMeta::from_delta_budget(LUT_LOG_DELTA - 5, params.base2k)
+                } else {
+                    coeffs_meta
+                };
+                EncodedLut::general(host_module, table, params.base2k.into(), coeffs_meta, SplitStrategy::MinDepth).unwrap()
+            })
+            .collect(),
     };
-    let log_msg_ratio = match &host_luts {
-        HostLuts::Encoded(lut) => lut.log_msg_ratio(),
-        HostLuts::Multi(luts) => luts[0].log_msg_ratio(),
-    };
+    let log_msg_ratio = host_luts[0].log_msg_ratio();
     let log_modulus_in = INPUT_LOG_DELTA + log_msg_ratio;
     let k_in = plan.input_k(log_modulus_in);
     let output_k = log_modulus_in + 2 * INPUT_LOG_DELTA;
-    let budget_lut = match &host_luts {
-        HostLuts::Encoded(lut) => lut,
-        HostLuts::Multi(luts) => &luts[0],
-    };
-    let functional_k = plan.functional_bootstrap_k(output_k, INPUT_LOG_DELTA, budget_lut).unwrap();
+    let functional_k = plan.functional_bootstrap_k(output_k, INPUT_LOG_DELTA, &host_luts[0]).unwrap();
     let expected_functional_k = match case {
         Case::General => 769,
         Case::Multi => 814,
@@ -223,15 +199,13 @@ where
     };
     assert_eq!(functional_k, expected_functional_k);
     let k_boot = functional_k.next_multiple_of(2 * params.base2k);
-    let backend_luts = match &host_luts {
-        HostLuts::Encoded(lut) => HostLuts::Encoded(lut.to_backend(module)),
-        HostLuts::Multi(luts) => HostLuts::Multi(luts.iter().map(|lut| lut.to_backend(module)).collect()),
-    };
+    let backend_luts: Vec<_> = host_luts.iter().map(|lut| lut.to_backend(module)).collect();
     let tp = CKKSTestParams {
         k: k_boot,
         prec_meta: CKKSMeta {
             log_sparsity: 0,
             log_delta: INPUT_LOG_DELTA,
+            slots: SlotsKind::Complex,
         },
         prec_log_budget: 10,
         hw: 192,
@@ -264,15 +238,8 @@ where
     };
     let output_spec = ckks_spec(params.n, params.base2k, INPUT_LOG_DELTA, k_boot - INPUT_LOG_DELTA);
     let input_spec = ckks_spec(params.n, params.base2k, INPUT_LOG_DELTA, k_in - INPUT_LOG_DELTA);
-    let boot_tmp = match &backend_luts {
-        HostLuts::Encoded(lut) => module.ckks_functional_bootstrap_tmp_bytes(&output_spec, &input_spec, &ctx, lut, &keys_layout),
-        HostLuts::Multi(luts) => {
-            module.ckks_functional_bootstrap_multi_tmp_bytes(&output_spec, &input_spec, &ctx, luts, &keys_layout)
-        }
-    };
-    if let HostLuts::Encoded(lut) = &backend_luts
-        && lut.requires_eval_mod()
-    {
+    let boot_tmp = module.ckks_functional_bootstrap_tmp_bytes(&output_spec, &input_spec, &ctx, &backend_luts, &keys_layout);
+    if backend_luts.iter().any(|lut| lut.requires_eval_mod()) {
         let boot_layout = crate::CKKSLayout {
             glwe_layout: output_spec.glwe_layout,
             meta: CKKSMeta::default(),
@@ -305,9 +272,6 @@ where
     let mut source = Source::new([9u8; 32]);
     let sample = |source: &mut Source| ((source.next_f64(0.0, 1.0) * p as f64) as usize).min(p - 1);
     for slots_kind in [SlotsKind::Complex, SlotsKind::Real] {
-        if slots_kind == SlotsKind::Real && matches!(case, Case::Multi) {
-            continue;
-        }
         let messages_re: Vec<_> = (0..params.n / 2).map(|_| sample(&mut source)).collect();
         let messages_im: Vec<_> = (0..params.n / 2)
             .map(|_| {
@@ -320,7 +284,7 @@ where
             .collect();
         let re: Vec<F> = messages_re.iter().map(|&value| F::from_usize(value).unwrap()).collect();
         let im: Vec<F> = messages_im.iter().map(|&value| F::from_usize(value).unwrap()).collect();
-        let ct = ckks_encrypt_with_prec(
+        let mut ct = ckks_encrypt_with_prec(
             &tp,
             module,
             host_module,
@@ -332,38 +296,20 @@ where
             input_spec,
             &mut scratch.borrow(),
         );
+        ct.set_slots(slots_kind);
 
-        let outputs = match &backend_luts {
-            HostLuts::Encoded(lut) => {
-                let mut output = module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into());
-                match slots_kind {
-                    SlotsKind::Complex => {
-                        module.ckks_functional_bootstrap(&mut output, &ct, &ctx, lut, &keys, &mut op_scratch.borrow())
-                    }
-                    SlotsKind::Real => {
-                        module.ckks_functional_bootstrap_real(&mut output, &ct, &ctx, lut, &keys, &mut op_scratch.borrow())
-                    }
-                }
-                .unwrap();
-                vec![output]
-            }
-            HostLuts::Multi(luts) => {
-                let mut outputs: Vec<_> = luts
-                    .iter()
-                    .map(|_| module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into()))
-                    .collect();
-                module
-                    .ckks_functional_bootstrap_multi(&mut outputs, &ct, &ctx, luts, &keys, &mut op_scratch.borrow())
-                    .unwrap();
-                outputs
-            }
-        };
+        // One entry point for one LUT or many; the slot kind of the input
+        // selects the pipeline.
+        let mut outputs: Vec<_> = backend_luts
+            .iter()
+            .map(|_| module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into()))
+            .collect();
+        module
+            .ckks_functional_bootstrap(&mut outputs, &ct, &ctx, &backend_luts, &keys, &mut op_scratch.borrow())
+            .unwrap();
 
         for (index, (output, table)) in outputs.iter().zip(&tables).enumerate() {
-            let lut = match &backend_luts {
-                HostLuts::Encoded(lut) => lut,
-                HostLuts::Multi(luts) => &luts[index],
-            };
+            let lut = &backend_luts[index];
             let output_log_delta = INPUT_LOG_DELTA + lut.log_msg_ratio();
             let eval_mod_bits = if lut.requires_eval_mod() {
                 plan.eval_mod().consumed_bits()
@@ -374,6 +320,7 @@ where
                 k_boot - plan.coeffs_to_slots().consumed_bits() - eval_mod_bits - lut.consumed_bits(output_log_delta);
             assert_eq!(output.k().as_usize(), expected_k);
             assert_eq!(output.log_delta(), output_log_delta);
+            assert_eq!(output.slots(), slots_kind);
             let (got_re, got_im) = ckks_decrypt_decode::<BE, F, E>(&tp, module, &encoder, output, &sk, &mut scratch.borrow());
             let want_re: Vec<F> = messages_re.iter().map(|&message| table[message]).collect();
             let want_im: Vec<F> = if slots_kind == SlotsKind::Real {
@@ -407,34 +354,42 @@ where
             .unwrap();
             let mut output = module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into());
             let error = module
-                .ckks_functional_bootstrap(&mut output, &ct, &ctx, &wrong_ratio_lut, &keys, &mut op_scratch.borrow())
+                .ckks_functional_bootstrap(
+                    std::slice::from_mut(&mut output),
+                    &ct,
+                    &ctx,
+                    std::slice::from_ref(&wrong_ratio_lut),
+                    &keys,
+                    &mut op_scratch.borrow(),
+                )
                 .unwrap_err();
             assert!(error.to_string().contains("log_msg_ratio"));
-
-            let HostLuts::Encoded(lut) = &backend_luts else {
-                unreachable!()
-            };
 
             // Reusing a wider allocation at a narrower effective width must
             // remain within the scratch size queried for that effective width.
             let mut wide_output = module.ckks_ciphertext_alloc(params.base2k.into(), (k_boot + 4 * params.base2k).into());
             wide_output.set_k(k_boot.into());
             module
-                .ckks_functional_bootstrap(&mut wide_output, &ct, &ctx, lut, &keys, &mut op_scratch.borrow())
+                .ckks_functional_bootstrap(
+                    std::slice::from_mut(&mut wide_output),
+                    &ct,
+                    &ctx,
+                    &backend_luts,
+                    &keys,
+                    &mut op_scratch.borrow(),
+                )
                 .unwrap();
         }
 
         if slots_kind == SlotsKind::Complex && matches!(case, Case::Multi) {
-            let HostLuts::Multi(luts) = &backend_luts else {
-                unreachable!()
-            };
+            let luts = &backend_luts;
             let mut outputs: Vec<_> = luts
                 .iter()
                 .map(|_| module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into()))
                 .collect();
             outputs[1].set_k((k_boot - params.base2k).into());
             let error = module
-                .ckks_functional_bootstrap_multi(&mut outputs, &ct, &ctx, luts, &keys, &mut op_scratch.borrow())
+                .ckks_functional_bootstrap(&mut outputs, &ct, &ctx, luts, &keys, &mut op_scratch.borrow())
                 .unwrap_err();
             assert!(error.to_string().contains("share one rank-1 layout"));
 
@@ -458,7 +413,7 @@ where
                 .unwrap(),
             ];
             let error = module
-                .ckks_functional_bootstrap_multi(
+                .ckks_functional_bootstrap(
                     &mut outputs[..2],
                     &ct,
                     &ctx,
@@ -492,16 +447,13 @@ where
                 .unwrap(),
             ];
             let error = module
-                .ckks_functional_bootstrap_multi(&mut outputs[..2], &ct, &ctx, &binary_luts, &keys, &mut op_scratch.borrow())
+                .ckks_functional_bootstrap(&mut outputs[..2], &ct, &ctx, &binary_luts, &keys, &mut op_scratch.borrow())
                 .unwrap_err();
             assert!(error.to_string().contains("log_msg_ratio"));
         }
     }
 
     if matches!(case, Case::General) {
-        let HostLuts::Encoded(lut) = &backend_luts else {
-            unreachable!()
-        };
         let insufficient_k = INPUT_LOG_DELTA + plan.pre_mod_up_consumed_bits() - 1;
         let zeros = vec![F::zero(); params.n / 2];
         let ct = ckks_encrypt_with_prec(
@@ -518,7 +470,14 @@ where
         );
         let mut output = module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into());
         let error = module
-            .ckks_functional_bootstrap(&mut output, &ct, &ctx, lut, &keys, &mut op_scratch.borrow())
+            .ckks_functional_bootstrap(
+                std::slice::from_mut(&mut output),
+                &ct,
+                &ctx,
+                &backend_luts,
+                &keys,
+                &mut op_scratch.borrow(),
+            )
             .unwrap_err();
         assert!(error.to_string().contains("functional bootstrap needs log_budget"));
     }

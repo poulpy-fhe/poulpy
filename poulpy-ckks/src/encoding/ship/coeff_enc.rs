@@ -10,6 +10,7 @@ use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{Base2K, GLWEInfos, LWEInfos};
 use poulpy_hal::layouts::{Backend, HostDataRef, Module};
 
+use crate::SlotsKind;
 use crate::{
     CKKSMeta,
     api::{CKKSEncodingOps, ShipScalar},
@@ -52,6 +53,7 @@ where
     pt.set_meta_checked(CKKSMeta {
         log_delta,
         log_sparsity: 0,
+        slots: SlotsKind::Complex,
     })?;
     module.ckks_encode_slots_assign_into(&mut pt, &mut buffer)?;
     Ok(pt)

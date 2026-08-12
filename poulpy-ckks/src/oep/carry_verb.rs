@@ -105,7 +105,7 @@ macro_rules! ckks_carry_verb_oep {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds;
+                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos;
                 fn [<ckks_ $verb _pt_vec_tmp_bytes_impl>](module: &Module<BE>) -> usize;
                 fn [<ckks_ $verb _pt_vec_into_impl>]<Dst, A, P>(
                     module: &Module<BE>,
@@ -137,7 +137,7 @@ macro_rules! ckks_carry_verb_oep {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds,
+                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
                     P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
                 fn [<ckks_ $verb _pt_vec_assign_unnormalized_impl>]<Dst, P>(
                     module: &Module<BE>,
@@ -186,7 +186,7 @@ macro_rules! ckks_carry_verb_oep {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds,
+                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
                     P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos;
                 fn [<ckks_ $verb _pt_const_assign_unnormalized_impl>]<Dst, P>(
                     module: &Module<BE>,
@@ -298,7 +298,7 @@ macro_rules! ckks_carry_verb_oep {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds,
+                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
                 {
                     $Default::[<ckks_ $verb _one_assign_default>](module, dst, scratch)
                 }
@@ -345,7 +345,7 @@ macro_rules! ckks_carry_verb_oep {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds,
+                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
                     P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
                 {
                     $Default::[<ckks_ $verb _pt_vec_assign_default>](module, dst, pt, scratch)
@@ -421,7 +421,7 @@ macro_rules! ckks_carry_verb_oep {
                     scratch: &mut ScratchArena<'_, BE>,
                 ) -> Result<()>
                 where
-                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds,
+                    Dst: GLWEToBackendMut<BE> + CKKSCtBounds + SetCKKSInfos,
                     P: GLWEToBackendRef<BE> + CKKSCtBounds + ::poulpy_core::layouts::IntPolyInfos,
                 {
                     $Default::[<ckks_ $verb _pt_const_assign_default>](module, dst, dst_coeff, pt, pt_coeff, scratch)

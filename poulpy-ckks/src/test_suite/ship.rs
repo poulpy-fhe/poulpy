@@ -21,7 +21,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSInfos, SetCKKSInfos,
+    CKKSInfos, SetCKKSInfos, SlotsKind,
     api::{CKKSCopyOps, CKKSEncodingOps, CKKSShipOps, ShipScalar},
     encoding::ship::masks::{ship_pre_rotated_masks, ship_pre_rotated_masks_omega2},
     layouts::CKKSPlaintextVecHostCodec,
@@ -493,6 +493,11 @@ fn ship_bootstrap_case<BE, F, E>(
     } else {
         CKKSShipOps::<BE, F>::ckks_ship_bootstrap_into(module, &mut out, &ct0, &keys, &mut ship_scratch.borrow()).unwrap();
     }
+    assert_eq!(
+        out.slots(),
+        if complex { SlotsKind::Complex } else { SlotsKind::Real },
+        "ship_bootstrap: output slot kind"
+    );
     assert!(
         out.log_budget() >= plan.log_budget_out(),
         "ship_bootstrap: no budget regained (log_budget={} < {})",

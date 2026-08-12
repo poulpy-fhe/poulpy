@@ -49,6 +49,7 @@ use poulpy_hal::{
 };
 
 use super::CKKSTestParams;
+use crate::SlotsKind;
 use poulpy_core::layouts::GLWESecretSampling;
 use poulpy_core::{Distribution, GetDistributionMut};
 
@@ -97,6 +98,7 @@ pub const PT_PREC: CKKSLayout = CKKSLayout {
     meta: CKKSMeta {
         log_sparsity: 0,
         log_delta: 8,
+        slots: SlotsKind::Complex,
     },
 };
 
@@ -128,7 +130,11 @@ pub fn ckks_spec_sparse(n: usize, base2k: usize, log_delta: usize, log_budget: u
             k: (log_delta + log_budget).into(),
             rank: Rank(1),
         },
-        meta: CKKSMeta { log_sparsity, log_delta },
+        meta: CKKSMeta {
+            log_sparsity,
+            log_delta,
+            slots: SlotsKind::Complex,
+        },
     }
 }
 
@@ -493,6 +499,7 @@ pub fn precision_at(params: &CKKSTestParams, log_delta: usize) -> CKKSLayout {
         meta: CKKSMeta {
             log_sparsity: 0,
             log_delta,
+            slots: SlotsKind::Complex,
         },
     }
 }
@@ -992,6 +999,7 @@ where
         meta: CKKSMeta {
             log_sparsity: 0,
             log_delta,
+            slots: SlotsKind::Complex,
         },
     };
     let pt = ckks_decrypt_with_prec(module, ct, sk, prec, scratch).unwrap();
@@ -1203,6 +1211,7 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
     pt_want.set_meta(CKKSMeta {
         log_sparsity: ct.log_sparsity(),
         log_delta: ct.log_delta(),
+        slots: SlotsKind::Complex,
     });
     encoder.encode_reim(&mut pt_want, want_re, want_im).unwrap();
 
@@ -1251,6 +1260,7 @@ pub fn assert_decrypt_precision_at_log_delta<BE, F, E>(
     pt_decode.set_meta(CKKSMeta {
         log_sparsity: ct.log_sparsity(),
         log_delta: ct.log_delta(),
+        slots: SlotsKind::Complex,
     });
     module.ckks_extract_pt(&mut pt_decode, &full_pt, scratch).unwrap();
     let pt_host = download_pt::<BE>(&pt_decode);

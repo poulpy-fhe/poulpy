@@ -33,6 +33,7 @@ use poulpy_hal::{
     source::Source,
 };
 
+use crate::SlotsKind;
 use crate::{
     CKKSInfos, CKKSMeta,
     api::{CKKSAddOps, CKKSLinearTransformationOps, CKKSMulOps},
@@ -236,6 +237,7 @@ where
                     meta: CKKSMeta {
                         log_sparsity: (m_full / n_paco).trailing_zeros() as usize,
                         log_delta,
+                        slots: SlotsKind::Complex,
                     },
                 },
                 cd,

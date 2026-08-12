@@ -15,6 +15,11 @@
 //! - `log_delta`: base-2 logarithm of the encoded plaintext scaling factor
 //! - `log_budget`: remaining homomorphic headroom, also tracked in bits
 //!
+//! [`CKKSMeta`] also records the [`SlotsKind`] of a value: whether its slots are
+//! known to be real, or may carry an imaginary part. Operations compose that
+//! claim, keeping `Real` only when every operand is real, so a caller can state
+//! it once at encoding time and have the pipelines specialize on it.
+//!
 //! Together they define the semantic torus width of a value:
 //! `k() = log_delta + log_budget`.
 //! Storage is rounded up to the next multiple of `base2k`, so the allocated
@@ -86,7 +91,7 @@ pub mod prelude {
         CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, PolynomialApproximation, UnnormalizedCKKSCiphertext,
     };
     pub use crate::{
-        CKKSCompositionError, CKKSError, CKKSInfos, CKKSLayout, CKKSMeta, CKKSResult, CoeffsMeta, Quad, SetCKKSInfos,
+        CKKSCompositionError, CKKSError, CKKSInfos, CKKSLayout, CKKSMeta, CKKSResult, CoeffsMeta, Quad, SetCKKSInfos, SlotsKind,
     };
 }
 pub mod oep;
@@ -150,6 +155,38 @@ impl<BE: Backend, T> CKKSAtkBounds<BE> for T where
 {
 }
 
+/// Which subfield the encoded slots are known to live in.
+///
+/// The reals are a subring of the complexes, so the two variants are ordered
+/// claims rather than exclusive tags: [`SlotsKind::Real`] is the stronger one,
+/// [`SlotsKind::Complex`] is always sound. Operations compose the claim with
+/// [`SlotsKind::join`], which keeps `Real` only when every operand is `Real`.
+/// `Complex` is the default, so a value that never states its kind is never
+/// mistaken for a real one.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum SlotsKind {
+    /// Every slot has a zero imaginary part.
+    Real,
+    /// Slots may carry a nonzero imaginary part.
+    #[default]
+    Complex,
+}
+
+impl SlotsKind {
+    /// Kind of a value built from two operands: `Real` only when both are.
+    pub fn join(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Real, Self::Real) => Self::Real,
+            _ => Self::Complex,
+        }
+    }
+
+    /// Whether the slots are known to be real.
+    pub fn is_real(self) -> bool {
+        self == Self::Real
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 /// CKKS semantic precision metadata carried by ciphertexts and plaintexts.
 ///
@@ -165,6 +202,8 @@ pub struct CKKSMeta {
     /// carries `(N/2) >> s` distinct slots, each replicated `2^s` times, i.e. a
     /// coefficient gap of `2^s`.
     pub log_sparsity: usize,
+    /// Subfield the slots are known to live in. See [`SlotsKind`].
+    pub slots: SlotsKind,
 }
 
 /// Common metadata accessors for CKKS ciphertext and plaintext containers.
@@ -192,6 +231,11 @@ pub trait CKKSInfos: LWEInfos {
     /// replication); `0` is dense. See [`CKKSMeta::log_sparsity`].
     fn log_sparsity(&self) -> usize {
         self.meta().log_sparsity
+    }
+
+    /// Returns the subfield the slots are known to live in. See [`SlotsKind`].
+    fn slots(&self) -> SlotsKind {
+        self.meta().slots
     }
 }
 
@@ -226,6 +270,13 @@ pub trait SetCKKSInfos: CKKSInfos {
     fn set_log_sparsity(&mut self, log_sparsity: usize) {
         let mut meta = self.meta();
         meta.log_sparsity = log_sparsity;
+        self.set_meta(meta);
+    }
+
+    /// Updates only the slot kind. See [`SlotsKind`].
+    fn set_slots(&mut self, slots: SlotsKind) {
+        let mut meta = self.meta();
+        meta.slots = slots;
         self.set_meta(meta);
     }
 }
@@ -269,6 +320,7 @@ impl CoeffsMeta {
             meta: CKKSMeta {
                 log_delta,
                 log_sparsity: 0,
+                slots: SlotsKind::Complex,
             },
         }
     }
@@ -383,6 +435,25 @@ where
 }
 
 #[cfg(test)]
+mod slots_kind_tests {
+    use super::SlotsKind::{self, Complex, Real};
+
+    #[test]
+    fn join_keeps_real_only_when_both_operands_are_real() {
+        assert_eq!(Real.join(Real), Real);
+        assert_eq!(Real.join(Complex), Complex);
+        assert_eq!(Complex.join(Real), Complex);
+        assert_eq!(Complex.join(Complex), Complex);
+    }
+
+    #[test]
+    fn unstated_kind_is_complex() {
+        assert_eq!(SlotsKind::default(), Complex);
+        assert!(!SlotsKind::default().is_real());
+    }
+}
+
+#[cfg(test)]
 mod offset_tests {
     use super::*;
 
@@ -397,6 +468,7 @@ mod offset_tests {
             meta: CKKSMeta {
                 log_delta,
                 log_sparsity: 0,
+                slots: SlotsKind::Complex,
             },
         }
     }

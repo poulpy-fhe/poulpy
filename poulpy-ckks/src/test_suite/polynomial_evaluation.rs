@@ -24,6 +24,7 @@ use super::helpers::{
     ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, gen_tsk, precision_at, quantized_const, quantized_slots, test_vector_1,
     upload_pt,
 };
+use crate::SlotsKind;
 
 /// Asserts the eval consumed exactly `bsgs.consumed_bits(input_ld, coeff_ld)`
 /// of `log_budget` and preserved `log_delta`. `input_log_budget`/`input_log_delta`
@@ -1621,6 +1622,7 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
         prec_meta: CKKSMeta {
             log_sparsity: 0,
             log_delta: input_log_delta,
+            slots: SlotsKind::Complex,
         },
         prec_log_budget: k - input_log_delta,
         hw: m,

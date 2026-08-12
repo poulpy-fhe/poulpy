@@ -8,7 +8,7 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use poulpy_ckks::{
-    CKKSInfos, CKKSLayout, CKKSMeta,
+    CKKSInfos, CKKSLayout, CKKSMeta, SlotsKind,
     api::{CKKSAllOpsTmpBytes, CKKSCopyOps, CKKSPolynomialEvaluationOps},
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
     polynomial::{Basis, ComplexPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
@@ -40,6 +40,7 @@ const COEFF_META: CKKSLayout = CKKSLayout {
     meta: CKKSMeta {
         log_sparsity: 0,
         log_delta: LOG_DELTA,
+        slots: SlotsKind::Complex,
     },
 };
 
@@ -85,6 +86,7 @@ fn $fn(c: &mut Criterion) {
     let input_meta = CKKSMeta {
         log_sparsity: 0,
         log_delta: LOG_DELTA,
+        slots: SlotsKind::Complex,
     };
 
     let ct_template = module.ckks_ciphertext_alloc_from_glwe_infos(&glwe_layout);
