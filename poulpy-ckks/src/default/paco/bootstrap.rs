@@ -444,6 +444,7 @@ where
     output.set_meta_checked(CKKSMeta {
         log_delta: output_scale,
         log_sparsity: gap.trailing_zeros() as usize,
+        slots: input.slots(),
     })?;
 
     // Write the result into the caller's destination. The accumulator already carries

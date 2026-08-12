@@ -7,6 +7,7 @@
 //! CKKS metadata onto the result. See `docs/linear_transformation.md`.
 
 use crate::CKKSAtkBounds;
+use crate::SlotsKind;
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
@@ -208,6 +209,9 @@ where
         self.glwe_eval_linear_transformation_into(cnv_offset, dst, babies, lt, keys, scratch);
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
+        // Diagonals are complex in general, so a transformed value leaves the
+        // reals unless the caller can prove otherwise.
+        dst.set_slots(SlotsKind::Complex);
         Ok(())
     }
 

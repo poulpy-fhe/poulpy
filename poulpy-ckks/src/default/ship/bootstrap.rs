@@ -18,6 +18,7 @@ use super::{
     masking::ship_masking_accumulate,
     mux::{ship_mux_plans, ship_mux_rotate},
 };
+use crate::SlotsKind;
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSMeta,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSMulOps, CKKSSubOps, ShipScalar},
@@ -157,6 +158,7 @@ where
         leaf0.set_meta_checked(CKKSMeta {
             log_delta: ld,
             log_sparsity: 0,
+            slots: SlotsKind::Complex,
         })?;
         module.ckks_add_pt_vec_assign(&mut leaf0, pt0, scratch)?;
         let mut half_leaves = Vec::with_capacity(plan.sparse_hamming_weight() + 1);

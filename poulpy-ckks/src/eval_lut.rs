@@ -14,7 +14,7 @@ use poulpy_core::layouts::{
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
-    CKKSCtBounds, SetCKKSInfos,
+    CKKSCtBounds, SetCKKSInfos, SlotsKind,
     api::{
         Basis, CKKSAddOps, CKKSAffineOps, CKKSConjugateOps, CKKSCopyOps, CKKSEvalModOps, CKKSMulOps, CKKSPolynomialEvaluationOps,
         CKKSPow2Ops, CKKSSubOps,
@@ -106,6 +106,8 @@ where
         module.ckks_conjugate_into(&mut conj, &*res, conj_key, &mut scratch)?;
         module.ckks_add_assign(res, &conj, &mut scratch)
     })?;
+    // `T + conj(T) = 2·Re(T)` interpolates the (real) table.
+    res.set_slots(SlotsKind::Real);
 
     Ok(())
 }
@@ -191,6 +193,7 @@ where
             conj.set_k(res_i.k());
             module.ckks_conjugate_into(&mut conj, &*res_i, conj_key, &mut scratch)?;
             module.ckks_add_assign(res_i, &conj, &mut scratch)?;
+            res_i.set_slots(SlotsKind::Real);
         }
         Ok(())
     })?;

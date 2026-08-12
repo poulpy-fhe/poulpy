@@ -12,14 +12,14 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos,
+    CKKSCtBounds, CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSEncodingOps, CKKSEvalModOps, CKKSPolynomialEvaluationOps,
     },
     layouts::{
         BootstrappingContext, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
         CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, DFTOutputFormat, DFTPlan, DFTType,
-        EncapsulationKeysLayout, EncodedLut, SlotsKind, SparseSecretEncapsulation, eval_mod::EvalModPlan,
+        EncapsulationKeysLayout, EncodedLut, SparseSecretEncapsulation, eval_mod::EvalModPlan,
     },
     polynomial::SplitStrategy,
     test_suite::{
@@ -232,6 +232,7 @@ where
         prec_meta: CKKSMeta {
             log_sparsity: 0,
             log_delta: INPUT_LOG_DELTA,
+            slots: SlotsKind::Complex,
         },
         prec_log_budget: 10,
         hw: 192,
@@ -320,7 +321,7 @@ where
             .collect();
         let re: Vec<F> = messages_re.iter().map(|&value| F::from_usize(value).unwrap()).collect();
         let im: Vec<F> = messages_im.iter().map(|&value| F::from_usize(value).unwrap()).collect();
-        let ct = ckks_encrypt_with_prec(
+        let mut ct = ckks_encrypt_with_prec(
             &tp,
             module,
             host_module,
@@ -332,6 +333,7 @@ where
             input_spec,
             &mut scratch.borrow(),
         );
+        ct.set_slots(slots_kind);
 
         let outputs = match &backend_luts {
             HostLuts::Encoded(lut) => {
@@ -374,6 +376,7 @@ where
                 k_boot - plan.coeffs_to_slots().consumed_bits() - eval_mod_bits - lut.consumed_bits(output_log_delta);
             assert_eq!(output.k().as_usize(), expected_k);
             assert_eq!(output.log_delta(), output_log_delta);
+            assert_eq!(output.slots(), slots_kind);
             let (got_re, got_im) = ckks_decrypt_decode::<BE, F, E>(&tp, module, &encoder, output, &sk, &mut scratch.borrow());
             let want_re: Vec<F> = messages_re.iter().map(|&message| table[message]).collect();
             let want_im: Vec<F> = if slots_kind == SlotsKind::Real {

@@ -13,6 +13,7 @@ use poulpy_hal::{
     layouts::{Backend, ScratchArena},
 };
 
+use crate::SlotsKind;
 use crate::{
     CKKSInfos, SetCKKSInfos, checked_log_budget_sub, checked_mul_ct_log_budget, checked_mul_pt_log_budget,
     layouts::CKKSPreparedRight,
@@ -77,6 +78,7 @@ pub trait CKKSMulDefault<BE: Backend> {
                 log_delta: res_log_delta,
                 // The product of values sparse at `s` and `t` is sparse at `min(s, t)`.
                 log_sparsity: Some(a.log_sparsity().min(b.log_sparsity())),
+                slots: Some(a.slots().join(b.slots())),
             },
             StampOrder::BeforeApply,
             scratch,
@@ -103,6 +105,7 @@ pub trait CKKSMulDefault<BE: Backend> {
                 log_delta: res_log_delta,
                 // The product of values sparse at `s` and `t` is sparse at `min(s, t)`.
                 log_sparsity: Some(dst.log_sparsity().min(a.log_sparsity())),
+                slots: Some(dst.slots().join(a.slots())),
             },
             StampOrder::AfterApply,
             scratch,
@@ -129,6 +132,7 @@ pub trait CKKSMulDefault<BE: Backend> {
             log_delta: a.log_delta(),
             k,
             log_sparsity: a.log_sparsity(),
+            slots: a.slots(),
             layout: GLWELayout {
                 n: a.n(),
                 base2k: a.base2k(),
@@ -185,6 +189,7 @@ pub trait CKKSMulDefault<BE: Backend> {
                 log_delta: res_log_delta,
                 // The product of values sparse at `s` and `t` is sparse at `min(s, t)`.
                 log_sparsity: Some(dst.log_sparsity().min(prepared.log_sparsity)),
+                slots: Some(dst.slots().join(prepared.slots)),
             },
             StampOrder::AfterApply,
             scratch,
@@ -236,6 +241,7 @@ pub trait CKKSMulDefault<BE: Backend> {
                 log_budget: res_log_budget,
                 log_delta: res_log_delta,
                 log_sparsity: Some(a.log_sparsity()),
+                slots: Some(a.slots()),
             },
             StampOrder::BeforeApply,
             scratch,
@@ -259,8 +265,10 @@ pub trait CKKSMulDefault<BE: Backend> {
             MulStamp {
                 log_budget: res_log_budget,
                 log_delta: res_log_delta,
-                // `min(dst, dst)` is the identity — squaring leaves sparsity as-is.
+                // `min(dst, dst)` is the identity, so squaring leaves both
+                // the sparsity and the slot kind as-is.
                 log_sparsity: None,
+                slots: None,
             },
             StampOrder::AfterApply,
             scratch,
@@ -324,6 +332,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         dst.set_log_delta(res_log_delta);
         // The product of values sparse at `s` and `t` is sparse at `min(s, t)`.
         dst.set_log_sparsity(a.log_sparsity().min(pt.log_sparsity()));
+        dst.set_slots(a.slots().join(pt.slots()));
         self.glwe_mul_plain(cnv_offset, dst, a, pt, scratch);
         Ok(())
     }
@@ -343,6 +352,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         dst.set_log_delta(res_log_delta);
         // The product of values sparse at `s` and `t` is sparse at `min(s, t)`.
         dst.set_log_sparsity(dst.log_sparsity().min(pt.log_sparsity()));
+        dst.set_slots(dst.slots().join(pt.slots()));
         Ok(())
     }
 
@@ -368,6 +378,7 @@ pub trait CKKSMulDefault<BE: Backend> {
         dst.set_log_delta(res_log_delta);
         // A scalar-constant multiply preserves the operand's sparsity pattern.
         dst.set_log_sparsity(a.log_sparsity());
+        dst.set_slots(a.slots().join(pt.slots()));
         self.glwe_mul_const(cnv_offset, dst, a, pt, pt_coeff, scratch);
 
         Ok(())
@@ -391,6 +402,7 @@ pub trait CKKSMulDefault<BE: Backend> {
 
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
+        dst.set_slots(dst.slots().join(cnst.slots()));
         Ok(())
     }
 }
@@ -402,6 +414,7 @@ struct MulStamp {
     log_budget: usize,
     log_delta: usize,
     log_sparsity: Option<usize>,
+    slots: Option<SlotsKind>,
 }
 
 /// When [`tensor_mul_core`] stamps the result metadata relative to the
@@ -446,6 +459,9 @@ where
         dst.set_log_delta(stamp.log_delta);
         if let Some(log_sparsity) = stamp.log_sparsity {
             dst.set_log_sparsity(log_sparsity);
+        }
+        if let Some(slots) = stamp.slots {
+            dst.set_slots(slots);
         }
     };
     if matches!(order, StampOrder::BeforeApply) {

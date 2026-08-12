@@ -39,6 +39,7 @@ use crate::{
 };
 
 use super::{plan::ShipPlan, secret::ShipSecretSpec};
+use crate::SlotsKind;
 
 /// Plan dimensions and radix that determine the SHIP key material's meaning.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -483,6 +484,7 @@ impl<D: Data> ShipKeySet<D, i64> {
         let mask_meta = CKKSMeta {
             log_delta: ld,
             log_sparsity: 0,
+            slots: SlotsKind::Complex,
         };
         let enc_infos = EncryptionLayout::new_from_default_sigma(GLWELayout {
             n,

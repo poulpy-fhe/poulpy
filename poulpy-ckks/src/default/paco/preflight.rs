@@ -17,6 +17,7 @@ use poulpy_core::{
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
 
 use super::{bootstrap::validate_runtime, ops::PaCoSlotOps};
+use crate::SlotsKind;
 use crate::layouts::paco::{
     context::PaCoContext,
     keyset::{PaCoKeys, validate_gadget_backend_view},
@@ -131,6 +132,7 @@ where
         meta: CKKSMeta {
             log_sparsity: 0,
             log_delta: plan.log_delta_bsk(),
+            slots: SlotsKind::Complex,
         },
     };
 
@@ -160,6 +162,7 @@ where
         meta: CKKSMeta {
             log_sparsity: 0,
             log_delta: plan.c2s().log_delta().max(plan.stc().log_delta()),
+            slots: SlotsKind::Complex,
         },
     };
 

@@ -122,6 +122,7 @@ fn set_recombined_sparsity<BE: Backend + CKKSPaCoCoeffEncodingImpl<BE>, F: PaCoS
         .set_meta_checked(CKKSMeta {
             log_delta: output.log_delta(),
             log_sparsity: gap.trailing_zeros() as usize,
+            slots: output.slots(),
         })
         .map_err(Into::into)
 }

@@ -47,6 +47,7 @@ use poulpy_hal::{
     source::Source,
 };
 
+use crate::SlotsKind;
 use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos,
     api::{
@@ -173,6 +174,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
         prec_meta: CKKSMeta {
             log_sparsity: 0,
             log_delta,
+            slots: SlotsKind::Complex,
         },
         prec_log_budget: 8,
         hw: 192,
@@ -595,6 +597,7 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
         prec_meta: CKKSMeta {
             log_sparsity: 0,
             log_delta,
+            slots: SlotsKind::Complex,
         },
         prec_log_budget: 8,
         hw: 192,
@@ -939,6 +942,7 @@ where
         prec_meta: CKKSMeta {
             log_sparsity: 0,
             log_delta,
+            slots: SlotsKind::Complex,
         },
         prec_log_budget: 8,
         hw: 192,

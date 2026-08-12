@@ -12,6 +12,7 @@ use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{Base2K, GLWEPlaintext};
 use poulpy_hal::layouts::Backend;
 
+use crate::SlotsKind;
 use crate::{
     CKKSMeta, SetCKKSInfos,
     layouts::{CKKSModuleAlloc, CKKSPlaintext},
@@ -34,6 +35,7 @@ where
     let meta = CKKSMeta {
         log_sparsity: 0,
         log_delta: 1,
+        slots: SlotsKind::Real,
     };
 
     // Monomial plaintext: total torus width is `log_delta` (budget 0).
@@ -172,6 +174,7 @@ macro_rules! ckks_carry_verb_default {
                     dst.set_log_budget(log_budget);
                     // The sum/product of values sparse at `s` and `t` is sparse at `min(s, t)`.
                     dst.set_log_sparsity(a.log_sparsity().min(b.log_sparsity()));
+                    dst.set_slots(a.slots().join(b.slots()));
                     Ok(())
                 }
 
@@ -217,6 +220,7 @@ macro_rules! ckks_carry_verb_default {
                     dst.set_log_delta(dst.log_delta().min(a.log_delta()));
                     // The sum/product of values sparse at `s` and `t` is sparse at `min(s, t)`.
                     dst.set_log_sparsity(dst.log_sparsity().min(a.log_sparsity()));
+                    dst.set_slots(dst.slots().join(a.slots()));
                     Ok(())
                 }
 
@@ -230,7 +234,7 @@ macro_rules! ckks_carry_verb_default {
                         $(+ $PtConstBound<BE>)+
                         + CKKSPlaintextDefault<BE>
                         + CKKSModuleAlloc<BE>,
-                    Dst: GLWEToBackendMut<BE> + CKKSInfos,
+                    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                 {
                     let one = $crate::default::carry_verb::ckks_one_pt::<BE, Self>(self, dst.base2k())?;
                     self.[<ckks_ $verb _pt_const_assign_default>](dst, 0, &one, 0, scratch)
@@ -280,7 +284,7 @@ macro_rules! ckks_carry_verb_default {
                 ) -> Result<()>
                 where
                     Self: GLWENormalize<BE> $(+ $PtVecBound<BE>)+ + CKKSPlaintextDefault<BE>,
-                    Dst: GLWEToBackendMut<BE> + CKKSInfos,
+                    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
                     self.[<ckks_ $verb _pt_vec_assign_unnormalized_default>](dst, pt, scratch)?;
@@ -296,10 +300,11 @@ macro_rules! ckks_carry_verb_default {
                 ) -> Result<()>
                 where
                     Self: CKKSPlaintextDefault<BE> $(+ $PtVecBound<BE>)+,
-                    Dst: GLWEToBackendMut<BE> + CKKSInfos,
+                    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
                     CKKSPlaintextDefault::[<ckks_ $verb _pt_vec_into_default>](self, dst, pt, scratch)?;
+                    dst.set_slots(dst.slots().join(pt.slots()));
                     Ok(())
                 }
 
@@ -352,7 +357,7 @@ macro_rules! ckks_carry_verb_default {
                 ) -> Result<()>
                 where
                     Self: GLWENormalize<BE> $(+ $PtConstBound<BE>)+ + CKKSPlaintextDefault<BE>,
-                    Dst: GLWEToBackendMut<BE> + CKKSInfos,
+                    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
                     self.[<ckks_ $verb _pt_const_assign_unnormalized_default>](dst, dst_coeff, cst, const_coeff, scratch)?;
@@ -370,10 +375,11 @@ macro_rules! ckks_carry_verb_default {
                 ) -> Result<()>
                 where
                     Self: CKKSPlaintextDefault<BE> $(+ $PtConstBound<BE>)+,
-                    Dst: GLWEToBackendMut<BE> + CKKSInfos,
+                    Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos,
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
                     CKKSPlaintextDefault::[<ckks_ $verb _pt_const_into_default>](self, dst, dst_coeff, cst, const_coeff, scratch)?;
+                    dst.set_slots(dst.slots().join(cst.slots()));
                     Ok(())
                 }
             }

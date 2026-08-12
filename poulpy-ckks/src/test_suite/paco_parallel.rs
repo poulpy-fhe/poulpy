@@ -23,6 +23,7 @@ use poulpy_hal::{
     source::Source,
 };
 
+use crate::SlotsKind;
 use crate::{
     CKKSInfos, CKKSMeta, SetCKKSInfos,
     api::{CKKSLinearTransformationOps, CKKSPaCoOps, PaCoScalar},
@@ -91,6 +92,7 @@ where
         meta: CKKSMeta {
             log_sparsity: 0,
             log_delta,
+            slots: SlotsKind::Complex,
         },
     };
     let pt = ckks_decrypt_with_prec(module, ct, sk, prec, scratch).unwrap();

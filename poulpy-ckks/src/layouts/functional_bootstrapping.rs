@@ -12,7 +12,7 @@ use poulpy_core::layouts::Base2K;
 use poulpy_hal::layouts::{Backend, HostBytesBackend, HostStaged, Module};
 
 use crate::{
-    CKKSInfos, CoeffsMeta, SetCKKSInfos,
+    CKKSInfos, CoeffsMeta, SetCKKSInfos, SlotsKind,
     eval_lut::{cos_hermite_binary, trig_hermite_lut},
     layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, CKKSScalar},
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
@@ -35,12 +35,6 @@ pub(crate) enum EncodedLutKind<P> {
         affine: P,
         log_interval_reduction: usize,
     },
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum SlotsKind {
-    Complex,
-    Real,
 }
 
 impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
@@ -91,7 +85,9 @@ impl EncodedLut<CKKSPlaintextOwned<HostBytesBackend>> {
         let (cos_poly, affine) = cos_hermite_binary(f0, f1, degree, k_interval, log_interval_reduction)?;
         let cos = <Polynomial<F> as EncodeBSGS>::encode_bsgs_with(&cos_poly, host_module, base2k, coeffs_meta, strategy)?;
         let mut affine_pt = host_module.ckks_pt_coeffs_alloc(2, base2k, coeffs_meta.k);
-        affine_pt.set_meta(coeffs_meta.meta);
+        let mut affine_meta = coeffs_meta.meta;
+        affine_meta.slots = SlotsKind::Real;
+        affine_pt.set_meta(affine_meta);
         affine_pt.encode_host_floats(&affine).map_err(|e| anyhow!("affine: {e}"))?;
         Ok(Self {
             kind: EncodedLutKind::Binary {

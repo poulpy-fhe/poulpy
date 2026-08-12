@@ -10,7 +10,7 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 use std::ops::Deref;
 
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos,
+    CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSMeta, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAddOps, CKKSAffineOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSDFTOps, CKKSEvalModOps, CKKSImagOps,
         CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps,
@@ -18,7 +18,7 @@ use crate::{
     eval_lut::{ckks_eval_lut, ckks_eval_lut_binary, ckks_eval_lut_multi},
     layouts::{
         BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingPipeline, CKKSCiphertextOwned,
-        CKKSModuleAlloc, CKKSPlaintextOwned, EncodedLut, EncodedLutKind, EvalModType, ScratchArenaTakeCKKS, SlotsKind,
+        CKKSModuleAlloc, CKKSPlaintextOwned, EncodedLut, EncodedLutKind, EvalModType, ScratchArenaTakeCKKS,
     },
 };
 use poulpy_core::GLWEBytesOf;
@@ -257,6 +257,7 @@ impl<BE: Backend> BootstrappingDefault<'_, BE> {
         dst.set_meta(CKKSMeta {
             log_delta: src.log_delta(),
             log_sparsity: src.log_sparsity(),
+            slots: src.slots(),
         });
         dst.set_k(k_large.into());
 
@@ -340,7 +341,10 @@ impl<BE: Backend> BootstrappingDefault<'_, BE> {
     {
         self.ckks_dft_evaluate_assign(ct, ctx.coeffs_to_slots(), keys.rotation_keys(), scratch)?;
         self.ckks_conjugate_into(conjugate, &*ct, keys.conjugation_key(), scratch)?;
-        self.ckks_add_assign(ct, &*conjugate, scratch)
+        self.ckks_add_assign(ct, &*conjugate, scratch)?;
+        // `z + conj(z) = 2·Re(z)` holds the input polynomial's coefficients.
+        ct.set_slots(SlotsKind::Real);
+        Ok(())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -445,6 +449,7 @@ impl<BE: Backend> BootstrappingDefault<'_, BE> {
             ct_out.set_meta(CKKSMeta {
                 log_sparsity: ct_in.log_sparsity(),
                 log_delta: ct_in.log_delta(),
+                slots: ct_in.slots(),
             });
             Result::Ok(())
         })
@@ -492,6 +497,7 @@ impl<BE: Backend> BootstrappingDefault<'_, BE> {
             ct_raised.set_meta(CKKSMeta {
                 log_sparsity: ct_in.log_sparsity(),
                 log_delta: log_modulus_in,
+                slots: ct_in.slots(),
             });
             Result::Ok(())
         })
@@ -591,6 +597,7 @@ impl<BE: Backend> BootstrappingDefault<'_, BE> {
             ct.set_meta(CKKSMeta {
                 log_sparsity: ct_in.log_sparsity(),
                 log_delta: log_modulus_in.as_usize(),
+                slots: ct_in.slots(),
             });
 
             // CoeffsToSlots (split): coefficients → (real, imag) slots. In the standard
@@ -720,6 +727,7 @@ impl<BE: Backend> BootstrappingDefault<'_, BE> {
             ct_out.set_meta(CKKSMeta {
                 log_sparsity: ct_in.log_sparsity(),
                 log_delta: ct_in.log_delta(),
+                slots: ct_in.slots(),
             });
             Result::Ok(())
         })
@@ -772,6 +780,7 @@ fn functional_output_contract<BE: Backend, F>(
         CKKSMeta {
             log_delta,
             log_sparsity: ct_in.log_sparsity(),
+            slots: ct_in.slots(),
         },
         output_k,
     ))
