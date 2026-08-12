@@ -8,7 +8,9 @@
 //! - a **conjugation key** (Galois element `−1`) for the split `CoeffsToSlots`;
 //! - a **tensor (relinearization) key** for EvalMod's `ct×ct` squaring;
 //! - optionally, the **sparse-secret encapsulation** key-switching keys
-//!   (`denseToSparse`, `sparseToDense`; <https://eprint.iacr.org/2022/024>).
+//!   (`denseToSparse`, `sparseToDense`; <https://eprint.iacr.org/2022/024>),
+//!   whose sparse ephemeral secret is sampled inside
+//!   [`BootstrappingContext::generate_keys`] and never escapes it.
 //!
 //! ## Unprepared vs prepared
 //!
@@ -16,9 +18,7 @@
 //! [`BootstrappingKeySet`] — the encrypted, *not yet preprocessed* keys. Keys are
 //! kept unprepared on purpose: the unprepared form is what one serializes to send
 //! online, and on accelerators (GPU) it is what lives in device memory, prepared
-//! on the fly right before use (less memory / traffic than caching the prepared
-//! form). Both the set and the individual key types are generic over the data
-//! buffer `D`, so they are backend agnostic and movable across contexts.
+//! on the fly right before use.
 //!
 //! [`BootstrappingKeySet::prepare`] produces a **prepared**
 //! [`BootstrappingKeysPrepared`] bundle (everything preprocessed up front) for the
@@ -32,7 +32,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use anyhow::Result;
 use poulpy_core::{
-    EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ModuleTransfer,
+    EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk,
     layouts::{
         BackendGLWESecret, GGLWEInfos, GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEAutomorphismKey,
         GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
@@ -43,7 +43,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    layouts::{Backend, CyclotomicOrder, Data, HostDataMut, HostDataRef, HostStaged, Module, ScratchArena, ZnxWord},
+    layouts::{Backend, CyclotomicOrder, Data, HostDataMut, HostDataRef, Module, ScratchArena, ZnxWord},
     source::Source,
 };
 
@@ -252,13 +252,12 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
     /// matrices; the conjugation key is the Galois-element-`−1` automorphism; the
     /// tensor key relinearizes EvalMod; and, when the compiled recipe enables
     /// sparse-secret encapsulation, a fresh sparse ephemeral secret is sampled
-    /// on `host_module` at the recipe's Hamming weight and the two encapsulation
+    /// from `source_xs` at the recipe's Hamming weight and the two encapsulation
     /// key-switching keys are derived from `sk_dense`.
     ///
-    /// Key generation is deliberately host-side: the ephemeral secret is sampled
-    /// on `host_module` and uploaded, hence the `TransferFrom<HostBytesBackend>`
-    /// bound. Keygen runs once per keyset, so no backend-resident sampling path
-    /// is provided.
+    /// The ephemeral secret never leaves this call and is tagged
+    /// [`Distribution::ENCAPSULATED`], so it can neither back a public key nor
+    /// be serialized.
     ///
     /// `scratch` must be large enough for the key encrypt operations.
     #[allow(clippy::too_many_arguments)]
@@ -273,10 +272,8 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<BootstrappingKeySet<BE::OwnedBuf, BE::ZnxWord>>
     where
-        BE: HostStaged,
         BE::OwnedBuf: HostDataMut,
         Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
-            + ModuleTransfer<BE>
             + CyclotomicOrder
             + GLWEAutomorphismKeyEncryptSk<BE>
             + GLWETensorKeyEncryptSk<BE>

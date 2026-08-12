@@ -47,12 +47,12 @@ where
             assert_eq!(res.n(), self.n() as u32);
             assert_eq!(sk_ref.n(), self.n() as u32);
 
-            if sk_ref.dist == Distribution::NONE {
-                panic!("invalid sk: SecretDistribution::NONE")
-            }
-
-            if let Distribution::ENCAPSULATED(name) = sk_ref.dist {
-                panic!("invalid sk: {name} is tagged for encapsulation and cannot back a public key")
+            match sk_ref.dist {
+                Distribution::NONE => panic!("invalid sk: SecretDistribution::NONE"),
+                Distribution::ENCAPSULATED(name) => {
+                    panic!("invalid sk: {name} is tagged for encapsulation and cannot back a public key")
+                }
+                _ => {}
             }
 
             // Its ok to allocate scratch space here since pk is usually generated only once.
