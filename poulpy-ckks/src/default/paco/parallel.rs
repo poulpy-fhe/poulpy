@@ -30,7 +30,7 @@ use poulpy_hal::{
 use super::{
     bootstrap::paco_bootstrap_branch_validated_into,
     ops::PaCoSlotOps,
-    preflight::{branch_stride, checked_branch_shift, direct_tmp_bytes_validated, preflight, validate_encapsulation_key},
+    preflight::{branch_schedule, checked_branch_shift, direct_tmp_bytes_validated, preflight, validate_encapsulation_key},
 };
 use crate::layouts::paco::{context::PaCoContext, keyset::PaCoKeys};
 use crate::{
@@ -134,7 +134,6 @@ pub(crate) fn paco_bootstrap_direct_into<BE, F, K, Src>(
     input: &Src,
     context: &PaCoContext<BE, F>,
     keys: &K,
-    kappa: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -159,7 +158,7 @@ where
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
-    let stride = branch_stride(context, kappa)?;
+    let (kappa, stride) = branch_schedule(context, input.log_sparsity())?;
     let (output_meta, required_scratch) = preflight(module, output, input, context, keys, false, scratch)?;
     let schedule = ValidatedSchedule {
         kappa,
@@ -278,7 +277,6 @@ pub(crate) fn paco_bootstrap_into<BE, F, K, Src>(
     input: &Src,
     context: &PaCoContext<BE, F>,
     keys: &K,
-    kappa: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
@@ -303,7 +301,7 @@ where
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
-    let stride = branch_stride(context, kappa)?;
+    let (kappa, stride) = branch_schedule(context, input.log_sparsity())?;
     let (output_meta, required_scratch) = preflight(module, output, input, context, keys, true, scratch)?;
     let schedule = ValidatedSchedule {
         kappa,
@@ -327,7 +325,6 @@ pub(crate) fn paco_bootstrap_parallel_direct_into<BE, F, K, Src>(
     input: &Src,
     context: &PaCoContext<BE, F>,
     keys: &K,
-    kappa: usize,
     workers: &mut [PaCoWorker<BE>],
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -355,7 +352,7 @@ where
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
 {
-    let stride = branch_stride(context, kappa)?;
+    let (kappa, stride) = branch_schedule(context, input.log_sparsity())?;
     let (output_meta, required_scratch) = preflight(module, output, input, context, keys, false, scratch)?;
     let schedule = ValidatedSchedule {
         kappa,
@@ -580,7 +577,6 @@ pub(crate) fn paco_bootstrap_parallel_into<BE, F, K, Src>(
     input: &Src,
     context: &PaCoContext<BE, F>,
     keys: &K,
-    kappa: usize,
     workers: &mut [PaCoWorker<BE>],
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
@@ -608,7 +604,7 @@ where
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
-    let stride = branch_stride(context, kappa)?;
+    let (kappa, stride) = branch_schedule(context, input.log_sparsity())?;
     let (output_meta, required_scratch) = preflight(module, output, input, context, keys, true, scratch)?;
     let schedule = ValidatedSchedule {
         kappa,

@@ -146,11 +146,6 @@ where
         input.log_delta(),
         input.k()
     );
-    ckks_ensure!(
-        input.log_sparsity() == 0,
-        "PaCo input must be dense, got log_sparsity={}",
-        input.log_sparsity()
-    );
     validate_backend_storage_capacity::<BE, _>("PaCo input", input)?;
 
     ckks_ensure!(
@@ -434,8 +429,9 @@ where
     // re-applied only after this function returns. So the ciphertext produced
     // here genuinely carries sparsity `log2(N/C)`, and that is its metadata.
     // When `kappa > 1`, the driver later re-stamps the finer `log2(N/(kappa*C))`
-    // gap — not a correction, but the genuinely denser structure the recombined
-    // sum of `kappa` interleaved branches then holds.
+    // gap, which is not a correction but the genuinely denser structure the
+    // recombined sum of `kappa` interleaved branches then holds: for the
+    // derived `kappa = N/(C*2^s)` that is the input's own `s`.
     let gap = plan.n() / plan.c();
     ckks_ensure!(
         gap.is_power_of_two(),

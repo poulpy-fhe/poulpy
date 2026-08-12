@@ -18,9 +18,8 @@ use super::{
     masking::ship_masking_accumulate,
     mux::{ship_mux_plans, ship_mux_rotate},
 };
-use crate::SlotsKind;
 use crate::{
-    CKKSCtBounds, CKKSInfos, CKKSMeta,
+    CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos, SlotsKind,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSMulOps, CKKSSubOps, ShipScalar},
     layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, ShipKeysPrepared},
     oep::{CKKSEncodingImpl, CKKSShipCoeffEncodingImpl},
@@ -263,6 +262,8 @@ where
     let mut conj = module.ckks_ciphertext_alloc(base2k, root.k());
     module.ckks_conjugate_into(&mut conj, &root, keys.conjugation_key(), scratch)?;
     module.ckks_add_into(output, &root, &conj, scratch)?;
+    // `root + conj(root) = 2·Re(root)`.
+    output.set_slots(SlotsKind::Real);
     Ok(())
 }
 
