@@ -247,6 +247,7 @@ precision/depth-based degree selection, composite sign coefficients, and
 and its interval map; `CKKSApproximationOps::ckks_eval_approximation` applies
 that map and evaluates the polynomial in one reusable operation.
 The `_with` selectors accept explicit `RemezOptions` for downstream planners.
+Composite-sign generation can propagate a CKKS error margin between factors.
 
 The crate includes a runnable example at
 [`poulpy-cpu-ref/examples/ckks_poly2.rs`](../poulpy-cpu-ref/examples/ckks_poly2.rs)

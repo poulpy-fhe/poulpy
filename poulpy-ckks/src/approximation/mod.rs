@@ -14,4 +14,4 @@ pub use remez::{Minimax, Parity, RemezOptions, minimax, minimax_with};
 pub use select::{
     DegreeChoice, degree_for_precision, degree_for_precision_with, error_bits, precision_at_depth, precision_at_depth_with,
 };
-pub use sign::sign_composite_coeffs;
+pub use sign::{sign_composite_coeffs, sign_composite_coeffs_with_margin};

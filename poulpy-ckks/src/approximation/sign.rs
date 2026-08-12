@@ -8,7 +8,7 @@ use num_traits::{Float, FloatConst, FromPrimitive};
 use super::remez::{RemezOptions, cheb_basis, cheb_lobatto, eval_cheb, parabolic_vertex, select_alternating, solve};
 
 /// Fits an odd polynomial to `1` on positive `[lo, hi]`.
-pub(crate) fn minimax_odd_const1<F>(lo: F, hi: F, degree: usize, opts: RemezOptions) -> Result<(Vec<F>, F)>
+pub(crate) fn minimax_odd_const1<F>(lo: F, hi: F, degree: usize, opts: RemezOptions) -> Result<(Vec<F>, F, F)>
 where
     F: Float + FloatConst + FromPrimitive + Debug,
 {
@@ -37,7 +37,8 @@ where
     let mut refs: Vec<F> = (0..m).map(|i| map(-cheb_lobatto::<F>(i, m))).collect();
 
     let mut full = vec![F::zero(); degree + 1];
-    let mut error = F::zero();
+    let mut undershoot = F::zero();
+    let mut overshoot = F::zero();
     for _ in 0..opts.max_iters {
         // Σ_j c_j·T_{odd_degs[j]}(x_i) + (−1)^i·E = 1.
         let mut mat: Vec<Vec<F>> = Vec::with_capacity(m);
@@ -70,25 +71,24 @@ where
         }
         extrema.push((xs[grid_len - 1], es[grid_len - 1]));
 
+        undershoot = extrema.iter().map(|&(_, e)| e).fold(F::zero(), F::max);
+        overshoot = extrema.iter().map(|&(_, e)| -e).fold(F::zero(), F::max);
+
         let alt = match select_alternating(extrema, m) {
             Some(a) => a,
-            None => {
-                error = es.iter().map(|e| e.abs()).fold(F::zero(), F::max);
-                break;
-            }
+            None => break,
         };
         let emax = alt.iter().map(|&(_, e)| e.abs()).fold(F::zero(), F::max);
         let emin = alt.iter().map(|&(_, e)| e.abs()).fold(F::infinity(), F::min);
-        error = emax;
         refs = alt.into_iter().map(|(x, _)| x).collect();
         if emax > F::zero() && (emax - emin) <= rel_tol * emax {
             break;
         }
     }
-    Ok((full, error))
+    Ok((full, undershoot, overshoot))
 }
 
-/// Builds normalized odd factors for `sign` on `[−1, −tau] ∪ [tau, 1]`.
+/// Builds normalized odd factors without an evaluation-error margin.
 pub fn sign_composite_coeffs<F>(
     tau: F,
     target_bits: f64,
@@ -99,49 +99,72 @@ pub fn sign_composite_coeffs<F>(
 where
     F: Float + FloatConst + FromPrimitive + Debug,
 {
+    sign_composite_coeffs_with_margin(tau, F::zero(), target_bits, degrees, max_factors, opts)
+}
+
+/// Builds normalized odd factors, propagating `error_margin` between factors.
+pub fn sign_composite_coeffs_with_margin<F>(
+    tau: F,
+    error_margin: F,
+    target_bits: f64,
+    degrees: &[usize],
+    max_factors: usize,
+    opts: RemezOptions,
+) -> Result<Vec<Vec<F>>>
+where
+    F: Float + FloatConst + FromPrimitive + Debug,
+{
     if !tau.is_finite() || tau <= F::zero() || tau >= F::one() {
-        bail!("sign_composite_coeffs: tau must lie in (0, 1)");
+        bail!("sign_composite_coeffs_with_margin: tau must lie in (0, 1)");
+    }
+    if !error_margin.is_finite() || error_margin < F::zero() {
+        bail!("sign_composite_coeffs_with_margin: error_margin must be finite and non-negative");
     }
     if !target_bits.is_finite() || target_bits <= 0.0 {
-        bail!("sign_composite_coeffs: target_bits must be positive and finite");
+        bail!("sign_composite_coeffs_with_margin: target_bits must be positive and finite");
     }
     if degrees.is_empty() {
-        bail!("sign_composite_coeffs: degrees must be non-empty");
+        bail!("sign_composite_coeffs_with_margin: degrees must be non-empty");
     }
     for (i, &degree) in degrees.iter().enumerate() {
         if degree == 0 || degree.is_multiple_of(2) {
-            bail!("sign_composite_coeffs: degrees[{i}] must be positive and odd, got {degree}");
+            bail!("sign_composite_coeffs_with_margin: degrees[{i}] must be positive and odd, got {degree}");
         }
     }
     if max_factors == 0 {
-        bail!("sign_composite_coeffs: max_factors must be positive");
+        bail!("sign_composite_coeffs_with_margin: max_factors must be positive");
     }
     if opts.max_iters == 0 {
-        bail!("sign_composite_coeffs: max_iters must be positive");
+        bail!("sign_composite_coeffs_with_margin: max_iters must be positive");
     }
     if !opts.rel_tol.is_finite() || opts.rel_tol <= 0.0 {
-        bail!("sign_composite_coeffs: rel_tol must be positive and finite");
+        bail!("sign_composite_coeffs_with_margin: rel_tol must be positive and finite");
     }
     if opts.grid_mult == 0 {
-        bail!("sign_composite_coeffs: grid_mult must be positive");
+        bail!("sign_composite_coeffs_with_margin: grid_mult must be positive");
     }
     let target = F::from_f64(2f64.powf(-target_bits))
-        .ok_or_else(|| anyhow!("sign_composite_coeffs: target_bits {target_bits} not representable"))?;
+        .ok_or_else(|| anyhow!("sign_composite_coeffs_with_margin: target_bits {target_bits} not representable"))?;
     let one = F::one();
     let mut lo = tau;
-    let mut hi = one;
+    let mut hi = one + error_margin;
+    if !hi.is_finite() {
+        bail!("sign_composite_coeffs_with_margin: error_margin overflows the input interval");
+    }
     let mut rows: Vec<Vec<F>> = Vec::new();
     for i in 0..max_factors {
         let deg = degrees[i.min(degrees.len() - 1)];
-        let (coeffs, e) = minimax_odd_const1(lo, hi, deg, opts).map_err(|e| anyhow!("sign_composite_coeffs: factor {i}: {e}"))?;
-        if e <= target {
+        let (coeffs, undershoot, overshoot) =
+            minimax_odd_const1(lo, hi, deg, opts).map_err(|e| anyhow!("sign_composite_coeffs_with_margin: factor {i}: {e}"))?;
+        let error = undershoot.max(overshoot);
+        if error <= target {
             rows.push(coeffs);
             return Ok(rows);
         }
-        let next_lo = one - e;
-        let next_hi = one + e;
+        let next_lo = one - undershoot - error_margin;
+        let next_hi = one + overshoot + error_margin;
         if next_lo <= F::zero() {
-            bail!("sign_composite_coeffs: factor {i} (degree {deg}) too weak for tau (error {e:?} ≥ 1)");
+            bail!("sign_composite_coeffs_with_margin: factor {i} (degree {deg}) has a non-positive image bound");
         }
         let mut coeffs = coeffs;
         for coeff in &mut coeffs {
@@ -151,7 +174,7 @@ where
         lo = next_lo / next_hi;
         hi = one;
     }
-    bail!("sign_composite_coeffs: {target_bits} bits not reached in {max_factors} factors");
+    bail!("sign_composite_coeffs_with_margin: {target_bits} bits not reached in {max_factors} factors");
 }
 
 #[cfg(test)]
@@ -177,15 +200,15 @@ mod tests {
 
     #[test]
     fn single_factor_is_odd_and_fits() {
-        let (c, e) = minimax_odd_const1(0.2_f64, 1.0, 15, RemezOptions::default()).unwrap();
+        let (c, undershoot, overshoot) = minimax_odd_const1(0.2_f64, 1.0, 15, RemezOptions::default()).unwrap();
         assert_eq!(c.len(), 16);
         for (k, &ck) in c.iter().enumerate() {
             if k % 2 == 0 {
                 assert_eq!(ck, 0.0, "even coeff {k} must be zero");
             }
         }
-        // On [0.2, 1] a degree-15 odd poly resolves sign comfortably.
-        assert!(e < 0.5, "degree-15 error {e} on [0.2,1] unexpectedly large");
+        let error = undershoot.max(overshoot);
+        assert!(error < 0.5, "degree-15 error {error} on [0.2,1] unexpectedly large");
     }
 
     #[test]
@@ -202,6 +225,13 @@ mod tests {
     }
 
     #[test]
+    fn zero_margin_matches_wrapper() {
+        let plain = sign_composite_coeffs(0.1_f64, 15.0, &[15], 8, RemezOptions::default()).unwrap();
+        let explicit = sign_composite_coeffs_with_margin(0.1_f64, 0.0, 15.0, &[15], 8, RemezOptions::default()).unwrap();
+        assert_eq!(plain, explicit);
+    }
+
+    #[test]
     fn more_factors_for_finer_tau() {
         let coarse = sign_composite_coeffs::<f64>(0.2, 15.0, &[15], 12, RemezOptions::default()).unwrap();
         let fine = sign_composite_coeffs::<f64>(0.02, 15.0, &[15], 12, RemezOptions::default()).unwrap();
@@ -209,9 +239,10 @@ mod tests {
     }
 
     #[test]
-    fn resolves_lattigo_scale_gap() {
-        let rows = sign_composite_coeffs::<crate::Quad>(
+    fn resolves_small_gap_with_margin() {
+        let rows = sign_composite_coeffs_with_margin::<crate::Quad>(
             crate::Quad::new(2.0f128.powi(-30)),
+            crate::Quad::new(2.0f128.powi(-35)),
             20.0,
             &[15, 15, 15, 17, 31, 31, 31, 31],
             8,
@@ -219,5 +250,10 @@ mod tests {
         )
         .unwrap();
         assert!(!rows.is_empty());
+    }
+
+    #[test]
+    fn rejects_negative_error_margin() {
+        assert!(sign_composite_coeffs_with_margin(0.1_f64, -1e-6, 10.0, &[15], 2, RemezOptions::default()).is_err());
     }
 }
