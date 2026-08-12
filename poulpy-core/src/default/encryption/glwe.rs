@@ -412,7 +412,7 @@ where
                     "invalid public key: SecretDistribution::NONE, ensure it has been correctly intialized through \
                      Self::generate"
                 ),
-                Distribution::ENCAPSULATED(name) => panic!("invalid public key: secret {name} is encapsulated"),
+                Distribution::ENCAPSULATED(name) => panic!("invalid public key: secret {name} is tagged for encapsulation"),
                 Distribution::TernaryFixed(hw) => {
                     self.scalar_znx_fill_ternary_hw_source_backend(&mut u_backend, 0, *hw, source_xu)
                 }
