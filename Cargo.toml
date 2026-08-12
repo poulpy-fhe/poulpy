@@ -18,6 +18,7 @@ poulpy-cpu-arm = {path = "poulpy-cpu-arm"}
 poulpy-cpu-ref = {path = "poulpy-cpu-ref"}
 poulpy-cpu-avx512 = {path = "poulpy-cpu-avx512"}
 poulpy-bin-fhe = {path = "poulpy-bin-fhe"}
+poulpy-bench = {path = "poulpy-bench"}
 poulpy-ckks = {path = "poulpy-ckks"}
 dashu-float = "0.4.5"
 rand = "0.10.2"

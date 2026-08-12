@@ -18,6 +18,7 @@ anyhow = {workspace = true}
 poulpy-ckks = {workspace = true, optional = true}
 poulpy-core = {workspace = true}
 poulpy-hal = {workspace = true}
+#poulpy-bench = {workspace = true}
 dashu-float = {workspace = true}
 bytemuck = {workspace = true}
 itertools = {workspace = true}
@@ -50,3 +51,15 @@ required-features = ["enable-core"]
 
 [dev-dependencies]
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
+criterion = {workspace = true}
+# TODO: poulpy-bench's lib is currently #![cfg]-gated on its bench features
+poulpy-bench = {workspace = true} #  features = ["hal-bench", "bin-fhe-bench", "ckks-bench", "core-bench"]
+
+[[bench]]
+name = "standard"
+harness = false
+required-features = ["enable-core", "enable-ckks"]
+
+[[bench]]
+name = "light"
+harness = false

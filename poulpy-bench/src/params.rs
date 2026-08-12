@@ -1,85 +1,57 @@
-//! JSON-configurable benchmark parameters.
-//!
-//! Load the active parameter set with [`BenchParams::get`].  All benchmark
-//! binaries call this once; a [`std::sync::OnceLock`] ensures the JSON file
-//! is only parsed once per process.
-//!
-//! # Environment variable
-//!
-//! Set `POULPY_BENCH_PARAMS` to either:
-//! - a path to a JSON file (`/path/to/params.json`), or
-//! - an inline JSON string (`{"core":{"n":2048}}`).
-//!
-//! Any field omitted from the JSON falls back to its default value.
-//!
-//! # Example JSON file
-//!
-//! ```json
-//! {
-//!   "hal":  { "sweeps": [[10,2,2],[12,2,8],[14,2,32]] },
-//!   "cnv":  { "sweeps": [[10,1],[12,4],[14,16]] },
-//!   "vmp":  { "sweeps": [[10,2,1,2,3],[12,7,1,2,8]] },
-//!   "svp_prepare": { "log_n_values": [10,12,14] },
-//!   "core": { "n": 4096, "base2k": 18, "k": 54, "rank": 1, "dsize": 1 }
-//! }
-//! ```
+use std::fmt::Display;
 
 use serde::{Deserialize, Serialize};
 
-/// HAL sweep parameters for `vec_znx*`, `vec_znx_dft`, and `svp` benchmarks.
-///
-/// Each entry is `[log_n, cols, size]`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct HalSweepParams {
-    pub sweeps: Vec<[usize; 3]>,
+
+#[derive(Debug, Clone)]
+pub struct HalSweepParms {
+    pub n: usize,
+    pub cols: usize,
+    pub size: usize,
 }
 
-impl Default for HalSweepParams {
-    fn default() -> Self {
-        Self {
-            sweeps: vec![[10, 2, 2], [11, 2, 4], [12, 2, 8], [13, 2, 16], [14, 2, 32]],
-        }
+impl Display for HalSweepParms {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}x({}x{})", self.n, self.cols, self.size)
     }
 }
 
-/// Sweep parameters for convolution benchmarks.
-///
-/// Each entry is `[log_n, size]`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct CnvSweepParams {
-    pub sweeps: Vec<[usize; 2]>,
+pub struct VmpSweepParms {
+    pub n: usize,
+    pub rows: usize,
+    pub cols_in: usize,
+    pub cols_out: usize,
+    pub size: usize,
 }
 
-impl Default for CnvSweepParams {
-    fn default() -> Self {
-        Self {
-            sweeps: vec![[10, 1], [11, 2], [12, 4], [13, 8], [14, 16], [15, 32], [16, 64]],
-        }
+impl Display for VmpSweepParms {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}x({}x{})x({}x{})", self.n, self.rows, self.cols_in, self.cols_out, self.size)
     }
 }
 
-/// Sweep parameters for VMP benchmarks.
-///
-/// Each entry is `[log_n, rows, cols_in, cols_out, size]`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct VmpSweepParams {
-    pub sweeps: Vec<[usize; 5]>,
+pub struct CnvSweepParms { 
+    pub n: usize,
+    pub size: usize,
 }
 
-impl Default for VmpSweepParams {
-    fn default() -> Self {
-        Self {
-            sweeps: vec![
-                [10, 2, 1, 2, 3],
-                [11, 4, 1, 2, 5],
-                [12, 7, 1, 2, 8],
-                [13, 15, 1, 2, 16],
-                [14, 31, 1, 2, 32],
-            ],
-        }
+impl Display for CnvSweepParms {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}x{}", self.n, self.size)
+    }
+}
+
+/// Sweep parameters for the negacyclic reim FFT/IFFT (`m` is the transform
+/// half-length passed to `NegacyclicFFTNew::new`; the transformed data has
+/// length `2 * m`).
+#[derive(Debug, Clone)]
+pub struct ReimSweepParams {
+    pub m: usize,
+}
+
+impl Display for ReimSweepParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "m={}", self.m)
     }
 }
 
@@ -109,6 +81,12 @@ pub struct CoreParams {
     pub dsize: u32,
 }
 
+impl Display for CoreParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "(n={},base2k={},k={},rank={},dsize={})", self.n, self.base2k, self.k, self.rank, self.dsize)
+    }
+}
+
 impl Default for CoreParams {
     fn default() -> Self {
         Self {
@@ -131,63 +109,164 @@ pub fn key_dnum_k_aux(k: u32, base2k: u32, dsize: u32) -> (u32, u32) {
     (dnum, k - dnum * digit)
 }
 
-/// Top-level container for all configurable benchmark parameters.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct BenchParams {
-    /// Backend labels to benchmark (used by the shell wrapper script).
-    ///
-    /// Available: `fft64-ref`, `ntt4x30-ref`, `fft64-avx`, `ntt4x30-avx`,
-    /// `fft64-avx512`, `ntt4x30-avx512`, `ntt-ifma`.
-    /// If any AVX backend is listed, `--features enable-avx` is added
-    /// automatically; if any AVX-512F backend is listed, `--features
-    /// enable-avx512f` is added automatically; if any IFMA backend is listed,
-    /// `--features enable-ifma` is added automatically. Omit or leave empty to
-    /// run all compiled-in backends.
-    #[serde(default)]
-    pub backends: Vec<String>,
-    /// List of bench binaries to run (used by the shell wrapper script).
-    ///
-    /// When empty or absent, the script runs its built-in default set.
-    /// Available names: `vec_znx`, `vec_znx_big`, `vec_znx_dft`, `convolution`,
-    /// `svp`, `vmp`, `fft`, `ntt`, `operations`, `encryption`, `decryption`,
-    /// `glwe_tensor`,
-    /// `automorphism`, `external_product`, `keyswitch`,
-    /// `blind_rotate`, `circuit_bootstrapping`, `bdd_prepare`, `bdd_arithmetic`,
-    /// `ckks_leveled`, `ckks_linear_transformation`, `standard`.
-    #[serde(default)]
-    pub run: Vec<String>,
-    #[serde(default)]
-    pub hal: HalSweepParams,
-    #[serde(default)]
-    pub cnv: CnvSweepParams,
-    #[serde(default)]
-    pub vmp: VmpSweepParams,
-    #[serde(default)]
-    pub svp_prepare: SvpPrepareParams,
-    #[serde(default)]
-    pub core: CoreParams,
+/// One point of the CKKS benchmark sweep.
+///
+/// The number of limbs (`k = limbs * base2k`) and the gadget split (`dsize`,
+/// `dnum`) are scaled down with `n`, so the benchmark shape stays representative
+/// across sizes (smaller rings support smaller moduli / fewer limbs). `dnum` is
+/// derived as `⌈k / (dsize * base2k)⌉`, matching `tsk_layout`.
+#[derive(Clone, Copy)]
+pub struct CkksBenchParams {
+    pub n: usize,
+    pub base2k: usize,
+    pub k: usize,
+    pub log_delta: usize,
+    pub dsize: usize,
 }
 
-impl BenchParams {
-    /// Return the process-wide parameter set, loading it on first call.
-    ///
-    /// Reads `POULPY_BENCH_PARAMS` as a JSON file path or inline JSON string.
-    /// Falls back silently to [`Default`] if the variable is unset or the
-    /// content cannot be parsed (a warning is printed to stderr in that case).
-    pub fn get() -> &'static Self {
-        static PARAMS: std::sync::OnceLock<BenchParams> = std::sync::OnceLock::new();
-        PARAMS.get_or_init(Self::load)
+impl Display for CkksBenchParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "(n={},base2k={},k={},log_delta={},dsize={})",
+            self.n, self.base2k, self.k, self.log_delta, self.dsize
+        )
     }
+}
 
-    fn load() -> Self {
-        let Ok(val) = std::env::var("POULPY_BENCH_PARAMS") else {
-            return Self::default();
-        };
-        // Try as a file path first, then as inline JSON.
-        let json = std::fs::read_to_string(&val).unwrap_or(val.clone());
-        serde_json::from_str(&json).unwrap_or_else(|e| {
-            eprintln!("POULPY_BENCH_PARAMS: failed to parse: {e}");
-            Self::default()
-        })
+/// Parameters shared by the `poulpy-bin-fhe` blind-rotation and
+/// circuit-bootstrapping benchmarks — enough to build the `Module`, the GLWE
+/// layout, and the LWE layout. Everything specific to one benchmark (its
+/// per-key gadget-decomposition shape, message encoding, ...) lives in that
+/// benchmark's own params struct — see [`BlindRotateBenchParams`] and
+/// [`CircuitBootstrappingBenchParam`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BinFheBenchParams {
+    pub n_glwe: u32,
+    pub n_lwe: u32,
+    pub base2k: u32,
+    pub k_aux: u32,
+    pub rank: u32, // Same rank for GLWE and GGLWE keys, for now. Could be split if needed.
+}
+
+impl Display for BinFheBenchParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "(n_glwe={},n_lwe={},base2k={},k_aux={},rank={})",
+            self.n_glwe, self.n_lwe, self.base2k, self.k_aux, self.rank
+        )
     }
+}
+
+/// Parameters for the blind-rotation benchmark: the shared GLWE/LWE shape
+/// from [`BinFheBenchParams`], plus the constants specific to this benchmark
+/// (LWE secret block size, look-up-table extension factor, and the log2 of
+/// the plaintext message modulus).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlindRotateBenchParams {
+    pub bin_fhe_params: BinFheBenchParams,
+    pub block_size: usize,
+    pub extension_factor: usize,
+    pub log_message_modulus: usize,
+}
+
+impl Display for BlindRotateBenchParams {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{},block_size={},extension_factor={},log_message_modulus={}",
+            self.bin_fhe_params, self.block_size, self.extension_factor, self.log_message_modulus
+        )
+    }
+}
+
+/// Parameters for the circuit-bootstrapping benchmark: the shared GLWE/LWE
+/// shape from [`BinFheBenchParams`], the gadget-decomposition shape
+/// (`dnum`/`dsize`) for each key involved (which can differ per key — the
+/// blind-rotation key `brk` has no `dsize` of its own, its layout only
+/// carries a `dnum`), and the `log_domain`/`extension_factor` passed to
+/// `execute_to_constant`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CircuitBootstrappingBenchParam {
+    pub bin_fhe_params: BinFheBenchParams,
+    pub brk_dnum: u32,
+    pub atk_dnum: u32,
+    pub atk_dsize: u32,
+    pub tsk_dnum: u32,
+    pub tsk_dsize: u32,
+    pub ggsw_dnum: u32,
+    pub ggsw_dsize: u32,
+    pub log_domain: usize,
+    pub extension_factor: usize,
+}
+
+impl Display for CircuitBootstrappingBenchParam {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{},brk_dnum={},atk_dnum={},atk_dsize={},tsk_dnum={},tsk_dsize={},ggsw_dnum={},ggsw_dsize={},log_domain={},extension_factor={}",
+            self.bin_fhe_params,
+            self.brk_dnum,
+            self.atk_dnum,
+            self.atk_dsize,
+            self.tsk_dnum,
+            self.tsk_dsize,
+            self.ggsw_dnum,
+            self.ggsw_dsize,
+            self.log_domain,
+            self.extension_factor
+        )
+    }
+}
+
+
+pub fn default_bench_params_hal() -> Vec<HalSweepParms> {
+    vec![
+        HalSweepParms { n: 1 << 10, cols: 2, size: 2 },
+        HalSweepParms { n: 1 << 11, cols: 2, size: 4 },
+        HalSweepParms { n: 1 << 12, cols: 2, size: 8 },
+        HalSweepParms { n: 1 << 13, cols: 2, size: 16 },
+        HalSweepParms { n: 1 << 14, cols: 2, size: 32 },
+    ]
+}
+
+pub fn default_bench_params_vmp() -> Vec<VmpSweepParms> {
+    vec![
+        VmpSweepParms { n: 1 << 10, rows: 2, cols_in: 1, cols_out: 2, size: 3 },
+        VmpSweepParms { n: 1 << 11, rows: 4, cols_in: 1, cols_out: 2, size: 5 },
+        VmpSweepParms { n: 1 << 12, rows: 7, cols_in: 1, cols_out: 2, size: 8 },
+        VmpSweepParms { n: 1 << 13, rows: 15, cols_in: 1, cols_out: 2, size: 16 },
+        VmpSweepParms { n: 1 << 14, rows: 31, cols_in: 1, cols_out: 2, size: 32 },
+    ]
+}
+
+pub fn default_bench_params_cnv() -> Vec<CnvSweepParms> {
+    vec![
+        CnvSweepParms { n: 1 << 10, size: 2 },
+        CnvSweepParms { n: 1 << 11, size: 4 },
+        CnvSweepParms { n: 1 << 12, size: 8 },
+        CnvSweepParms { n: 1 << 13, size: 16 },
+        CnvSweepParms { n: 1 << 14, size: 32 },
+    ]
+}
+
+pub fn default_bench_params_core() -> Vec<CoreParams> {
+    vec![
+        CoreParams { n: 1 << 12, base2k: 52, k: 54 * 2, rank: 1, dsize: 1 },
+        CoreParams { n: 1 << 13, base2k: 52, k: 54 * 3, rank: 1, dsize: 1 },
+        CoreParams { n: 1 << 14, base2k: 52, k: 54 * 6, rank: 1, dsize: 1 },
+        CoreParams { n: 1 << 15, base2k: 52, k: 54 * 12, rank: 1, dsize: 3 },
+        CoreParams { n: 1 << 16, base2k: 52, k: 54 * 24, rank: 1, dsize: 6 },
+    ]
+}
+
+pub fn default_bench_params_ckks() -> Vec<CkksBenchParams> {
+    vec![
+        CkksBenchParams { n: 1 << 12, base2k: 52, k: 52, log_delta: 40, dsize: 1 },
+        CkksBenchParams { n: 1 << 13, base2k: 52, k: 52 * 3, log_delta: 40, dsize: 1 },
+        CkksBenchParams { n: 1 << 14, base2k: 52, k: 52 * 6, log_delta: 40, dsize: 1 },
+        CkksBenchParams { n: 1 << 15, base2k: 52, k: 52 * 12, log_delta: 40, dsize: 3 },
+        CkksBenchParams { n: 1 << 16, base2k: 52, k: 52 * 24, log_delta: 40, dsize: 6 },
+    ]
 }
