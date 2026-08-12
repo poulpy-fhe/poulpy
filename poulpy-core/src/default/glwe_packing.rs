@@ -1,3 +1,4 @@
+use crate::api::GLWEBytesOf;
 use std::collections::HashMap;
 
 use poulpy_hal::{
@@ -8,7 +9,7 @@ use poulpy_hal::{
 use crate::{
     GLWEAdd, GLWEAutomorphism, GLWECopy, GLWENormalize, GLWERotate, GLWEShift, GLWESub, GLWETrace,
     layouts::{
-        GGLWEInfos, GLWE, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut, GetGaloisElement, ModuleCoreAlloc,
+        GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut, GetGaloisElement, ModuleCoreAlloc,
         prepared::GGLWEPreparedToBackendRef,
     },
 };
@@ -22,13 +23,14 @@ fn pack_internal<M, A, B, K, BE: Backend>(
     auto_key: &K,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    M: GLWEAutomorphism<BE>
+    M: GLWEBytesOf<BE>
+        + GLWEAutomorphism<BE>
         + GLWERotate<BE>
         + GLWESub<BE>
         + GLWEShift<BE>
         + GLWEAdd<BE>
         + GLWENormalize<BE>
-        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + ?Sized,
     A: GLWEToBackendMut<BE> + GLWEInfos,
     B: GLWEToBackendMut<BE> + GLWEInfos,
@@ -106,14 +108,20 @@ pub mod glwe_packing_defaults_impl {
     pub fn glwe_pack_tmp_bytes_default<BE, M, R, K>(module: &M, res: &R, key: &K) -> usize
     where
         BE: Backend,
-        M: GLWEAutomorphism<BE> + ModuleLogN + GLWERotate<BE> + GLWEShift<BE> + GLWENormalize<BE> + GLWETrace<BE>,
+        M: GLWEBytesOf<BE>
+            + GLWEAutomorphism<BE>
+            + ModuleLogN
+            + GLWERotate<BE>
+            + GLWEShift<BE>
+            + GLWENormalize<BE>
+            + GLWETrace<BE>,
         R: GLWEInfos,
         K: GGLWEInfos,
     {
         assert_eq!(module.n() as u32, res.n());
         assert_eq!(module.n() as u32, key.n());
 
-        let lvl_0: usize = GLWE::<Vec<u8>>::bytes_of_from_infos(res);
+        let lvl_0: usize = module.glwe_bytes_of_from_infos(res);
         let lvl_1: usize = module
             .glwe_rotate_tmp_bytes()
             .max(module.glwe_shift_tmp_bytes())
@@ -132,10 +140,11 @@ pub mod glwe_packing_defaults_impl {
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         BE: Backend,
-        M: GLWEAutomorphism<BE>
+        M: GLWEBytesOf<BE>
+            + GLWEAutomorphism<BE>
             + GaloisElement
             + ModuleLogN
-            + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
+            + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + GLWERotate<BE>
             + GLWESub<BE>
             + GLWEShift<BE>

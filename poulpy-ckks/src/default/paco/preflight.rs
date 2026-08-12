@@ -3,6 +3,7 @@
 //! Everything here inspects layouts, keys, and plans without mutating a ciphertext: conservative per-branch scratch bounds, the public tmp-bytes entry point, the branch-schedule arithmetic, and the encapsulation-key checks.
 //! The concurrency-bearing branch drivers live in [`parallel`](super::parallel); keeping them free of validation logic keeps that code independently reviewable.
 
+use crate::layouts::CKKSCiphertextOwned;
 use crate::{CKKSResult as Result, ckks_ensure};
 
 use anyhow::Context;
@@ -13,17 +14,19 @@ use poulpy_core::{
         GLWEToBackendRef, LWEInfos, Rank, TorusPrecision,
     },
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
 
-use super::{bootstrap::validate_runtime, parallel::PaCoBootstrapModule};
+use super::{bootstrap::validate_runtime, ops::PaCoSlotOps};
 use crate::layouts::paco::{
     context::PaCoContext,
     keyset::{PaCoKeys, validate_gadget_backend_view},
 };
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSMeta,
-    api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSMulOps, CKKSRotateOps, CKKSSubOps, PaCoScalar},
-    layouts::CKKSCiphertext,
+    api::{
+        CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSRotateOps, CKKSSubOps, PaCoScalar,
+    },
+    layouts::CKKSModuleAlloc,
     oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl},
 };
 
@@ -74,14 +77,27 @@ impl CKKSInfos for BranchScratchLayout {
 /// common runtime layouts have been validated.
 pub(super) fn direct_tmp_bytes_validated<BE, F, K>(
     module: &Module<BE>,
-    output: &CKKSCiphertext<BE::OwnedBuf>,
+    output: &CKKSCiphertextOwned<BE>,
     context: &PaCoContext<BE, F>,
     keys: &K,
 ) -> Result<usize>
 where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
     F: PaCoScalar,
-    Module<BE>: PaCoBootstrapModule<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRotateOps<BE>
+        + PaCoSlotOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWERotate<BE>
+        + GLWEAutomorphism<BE>
+        + GLWELinearTransformations<BE>
+        + GLWEKeyswitch<BE>
+        + CyclotomicOrder,
     K: PaCoKeys<BE>,
 {
     let plan = context.plan();
@@ -180,7 +196,7 @@ where
 /// one-time dense-to-structured key switch in addition to a direct branch.
 pub(crate) fn paco_bootstrap_tmp_bytes<BE, F, K, Src>(
     module: &Module<BE>,
-    output: &CKKSCiphertext<BE::OwnedBuf>,
+    output: &CKKSCiphertextOwned<BE>,
     input: &Src,
     context: &PaCoContext<BE, F>,
     keys: &K,
@@ -189,7 +205,20 @@ pub(crate) fn paco_bootstrap_tmp_bytes<BE, F, K, Src>(
 where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
     F: PaCoScalar,
-    Module<BE>: PaCoBootstrapModule<BE> + GLWEKeyswitch<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRotateOps<BE>
+        + PaCoSlotOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWERotate<BE>
+        + GLWEAutomorphism<BE>
+        + GLWELinearTransformations<BE>
+        + GLWEKeyswitch<BE>
+        + CyclotomicOrder,
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
@@ -207,7 +236,7 @@ where
 /// ciphertext or encapsulation temporary is mutated.
 pub(super) fn preflight<BE, F, K, Src>(
     module: &Module<BE>,
-    output: &CKKSCiphertext<BE::OwnedBuf>,
+    output: &CKKSCiphertextOwned<BE>,
     input: &Src,
     context: &PaCoContext<BE, F>,
     keys: &K,
@@ -217,7 +246,20 @@ pub(super) fn preflight<BE, F, K, Src>(
 where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
     F: PaCoScalar,
-    Module<BE>: PaCoBootstrapModule<BE> + GLWEKeyswitch<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRotateOps<BE>
+        + PaCoSlotOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWERotate<BE>
+        + GLWEAutomorphism<BE>
+        + GLWELinearTransformations<BE>
+        + GLWEKeyswitch<BE>
+        + CyclotomicOrder,
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {

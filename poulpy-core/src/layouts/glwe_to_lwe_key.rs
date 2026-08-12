@@ -9,6 +9,7 @@ use crate::layouts::{
     GLWEViewRef, LWEInfos, Rank, TorusPrecision,
 };
 
+use poulpy_hal::layouts::ZnxWord;
 use std::fmt;
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug)]
@@ -67,9 +68,9 @@ impl GGLWEInfos for GLWEToLWEKeyLayout {
 
 /// A special [`GLWESwitchingKey`] required for the conversion from `GLWE` to `LWE`.
 #[derive(PartialEq, Eq, Clone)]
-pub struct GLWEToLWEKey<D: Data>(pub(crate) GLWESwitchingKey<D>);
+pub struct GLWEToLWEKey<D: Data, W: ZnxWord>(pub(crate) GLWESwitchingKey<D, W>);
 
-impl<D: Data> LWEInfos for GLWEToLWEKey<D> {
+impl<D: Data, W: ZnxWord> LWEInfos for GLWEToLWEKey<D, W> {
     fn base2k(&self) -> Base2K {
         self.0.base2k()
     }
@@ -87,12 +88,12 @@ impl<D: Data> LWEInfos for GLWEToLWEKey<D> {
     }
 }
 
-impl<D: Data> GLWEInfos for GLWEToLWEKey<D> {
+impl<D: Data, W: ZnxWord> GLWEInfos for GLWEToLWEKey<D, W> {
     fn rank(&self) -> Rank {
         self.rank_out()
     }
 }
-impl<D: Data> GGLWEInfos for GLWEToLWEKey<D> {
+impl<D: Data, W: ZnxWord> GGLWEInfos for GLWEToLWEKey<D, W> {
     fn k_aux(&self) -> TorusPrecision {
         self.0.k_aux()
     }
@@ -114,32 +115,32 @@ impl<D: Data> GGLWEInfos for GLWEToLWEKey<D> {
     }
 }
 
-impl<D: HostDataRef> fmt::Debug for GLWEToLWEKey<D> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GLWEToLWEKey<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: HostDataMut> FillUniform for GLWEToLWEKey<D> {
+impl<D: HostDataMut, W: ZnxWord> FillUniform for GLWEToLWEKey<D, W> {
     fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
         self.0.fill_uniform(log_bound, source);
     }
 }
 
-impl<D: HostDataRef> fmt::Display for GLWEToLWEKey<D> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Display for GLWEToLWEKey<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "(GLWEToLWEKey) {}", self.0)
     }
 }
 
-impl<D: HostDataMut> ReaderFrom for GLWEToLWEKey<D> {
+impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEToLWEKey<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.0.read_from(reader)
     }
 }
 
-impl<D: HostDataRef> WriterTo for GLWEToLWEKey<D> {
-    fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWEToLWEKey<D, W> {
+    fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         self.0.write_to(writer)
     }
 }
@@ -148,7 +149,7 @@ impl<D: HostDataRef> WriterTo for GLWEToLWEKey<D> {
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl GLWEToLWEKey<Vec<u8>> {
+impl<W: ZnxWord> GLWEToLWEKey<Vec<u8>, W> {
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
         A: GGLWEInfos,
@@ -172,15 +173,15 @@ impl GLWEToLWEKey<Vec<u8>> {
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, k_aux: TorusPrecision, rank_in: Rank) -> usize {
-        GLWESwitchingKey::bytes_of(n, base2k, dnum, Dsize(1), k_aux, rank_in, Rank(1))
+        GLWESwitchingKey::<Vec<u8>, W>::bytes_of(n, base2k, dnum, Dsize(1), k_aux, rank_in, Rank(1))
     }
 }
 
-impl_gglwe_to_backend_for_field!(GLWEToLWEKey<D>, 0, GLWESwitchingKey<D>);
+impl_gglwe_to_backend_for_field!(GLWEToLWEKey<D, BE::ZnxWord>, 0, GLWESwitchingKey<D, BE::ZnxWord>);
 
-impl_gglwe_at_view_for_field!(GLWEToLWEKey<BE::OwnedBuf>; 0.key);
+impl_gglwe_at_view_for_field!(GLWEToLWEKey<BE::OwnedBuf, BE::ZnxWord>; 0.key);
 
-impl<D: HostDataMut> GLWESwitchingKeyDegreesMut for GLWEToLWEKey<D> {
+impl<D: HostDataMut, W: ZnxWord> GLWESwitchingKeyDegreesMut for GLWEToLWEKey<D, W> {
     fn input_degree(&mut self) -> &mut Degree {
         &mut self.0.input_degree
     }
@@ -190,7 +191,7 @@ impl<D: HostDataMut> GLWESwitchingKeyDegreesMut for GLWEToLWEKey<D> {
     }
 }
 
-impl<D: HostDataRef> GLWESwitchingKeyDegrees for GLWEToLWEKey<D> {
+impl<D: HostDataRef, W: ZnxWord> GLWESwitchingKeyDegrees for GLWEToLWEKey<D, W> {
     fn input_degree(&self) -> &Degree {
         &self.0.input_degree
     }

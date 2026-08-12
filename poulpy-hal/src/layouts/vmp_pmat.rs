@@ -3,7 +3,7 @@ use std::{
     marker::PhantomData,
 };
 
-use crate::layouts::{Backend, Data, DataView, DataViewMut, DftWord, DigestU64, HostDataRef, ZnxInfos, ZnxView};
+use crate::layouts::{Backend, Data, DataView, DataViewMut, DftWord, DigestU64, HostDataMut, HostDataRef, MatZnxInfos, ZnxInfos};
 
 #[repr(C)]
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug, Default)]
@@ -104,19 +104,27 @@ impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> DigestU64 for VmpPMat<
     }
 }
 
-impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> ZnxView for VmpPMat<D, W, B> {
-    type Scalar = W;
+impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
+    /// Returns the whole element view as a scalar slice.
+    ///
+    /// The prepared matrix is packed in a backend-defined order with no flat
+    /// `(col, limb)` indexing, so it exposes the buffer rather than
+    /// implementing [`ZnxView`](crate::layouts::ZnxView).
+    pub fn raw(&self) -> &[W] {
+        let span: usize = crate::layouts::element_view_span(self);
+        crate::layouts::raw_scalars(self.data.as_ref(), span)
+    }
+}
+
+impl<D: HostDataMut, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
+    /// Mutable counterpart of [`Self::raw`].
+    pub fn raw_mut(&mut self) -> &mut [W] {
+        let span: usize = crate::layouts::element_view_span(self);
+        crate::layouts::raw_scalars_mut(self.data.as_mut(), span)
+    }
 }
 
 impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for VmpPMat<D, W, B> {
-    fn cols(&self) -> usize {
-        self.shape.cols_in()
-    }
-
-    fn rows(&self) -> usize {
-        self.shape.rows()
-    }
-
     fn n(&self) -> usize {
         self.shape.n()
     }
@@ -130,6 +138,20 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for VmpPMat<D, W, B>
             &[self.rows(), self.cols_in(), self.size(), self.cols_out()],
             "VmpPMat polynomial count",
         )
+    }
+}
+
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> MatZnxInfos for VmpPMat<D, W, B> {
+    fn rows(&self) -> usize {
+        self.shape.rows()
+    }
+
+    fn cols_in(&self) -> usize {
+        self.shape.cols_in()
+    }
+
+    fn cols_out(&self) -> usize {
+        self.shape.cols_out()
     }
 }
 

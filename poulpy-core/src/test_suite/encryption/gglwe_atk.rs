@@ -5,6 +5,7 @@ use poulpy_hal::{
     test_suite::TestParams,
 };
 
+use crate::layouts::GLWESecretSampling;
 use crate::{
     EncryptionLayout, GGLWEKeyswitch, GLWEAutomorphismKeyCompressedEncryptSk, GLWEAutomorphismKeyEncryptSk,
     GLWESwitchingKeyCompressedEncryptSk, GLWESwitchingKeyEncryptSk,
@@ -54,7 +55,8 @@ pub fn test_gglwe_automorphism_key_encrypt_sk<BE: crate::test_suite::TestBackend
             })
             .unwrap();
 
-            let mut atk: GLWEAutomorphismKey<Vec<u8>> = module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
+            let mut atk: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
+                module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
             let mut source_xe: Source = Source::new([0u8; 32]);
@@ -66,8 +68,8 @@ pub fn test_gglwe_automorphism_key_encrypt_sk<BE: crate::test_suite::TestBackend
                     .max(module.gglwe_noise_tmp_bytes(&atk_infos)),
             );
 
-            let mut sk: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(&atk_infos);
-            sk.fill_ternary_prob(0.5, &mut source_xs);
+            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&atk_infos);
+            module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
             let p = -5;
 
@@ -81,7 +83,7 @@ pub fn test_gglwe_automorphism_key_encrypt_sk<BE: crate::test_suite::TestBackend
                 &mut crate::test_suite::scratch_host_arena(&mut scratch),
             );
 
-            let mut sk_out: GLWESecret<Vec<u8>> = sk.clone();
+            let mut sk_out: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = sk.clone();
             let sk_backend = ScalarZnx::from_data(BE::from_host_bytes(sk.data().data.as_ref()), sk.data().n(), sk.data().cols());
             let mut sk_out_backend = ScalarZnx::from_data(
                 BE::from_host_bytes(sk_out.data().data.as_ref()),
@@ -161,7 +163,7 @@ pub fn test_gglwe_automorphism_key_compressed_encrypt_sk<BE: crate::test_suite::
             })
             .unwrap();
 
-            let mut atk_compressed: GLWEAutomorphismKeyCompressed<Vec<u8>> =
+            let mut atk_compressed: GLWEAutomorphismKeyCompressed<BE::OwnedBuf, BE::ZnxWord> =
                 module.glwe_automorphism_key_compressed_alloc_from_infos(&atk_infos);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
@@ -173,8 +175,8 @@ pub fn test_gglwe_automorphism_key_compressed_encrypt_sk<BE: crate::test_suite::
                     .max(module.gglwe_noise_tmp_bytes(&atk_infos)),
             );
 
-            let mut sk: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(&atk_infos);
-            sk.fill_ternary_prob(0.5, &mut source_xs);
+            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&atk_infos);
+            module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
             let p: i64 = -5;
 
@@ -190,7 +192,7 @@ pub fn test_gglwe_automorphism_key_compressed_encrypt_sk<BE: crate::test_suite::
                 &mut crate::test_suite::scratch_host_arena(&mut scratch),
             );
 
-            let mut sk_out: GLWESecret<Vec<u8>> = sk.clone();
+            let mut sk_out: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = sk.clone();
             let sk_backend = ScalarZnx::from_data(BE::from_host_bytes(sk.data().data.as_ref()), sk.data().n(), sk.data().cols());
             let mut sk_out_backend = ScalarZnx::from_data(
                 BE::from_host_bytes(sk_out.data().data.as_ref()),
@@ -214,7 +216,8 @@ pub fn test_gglwe_automorphism_key_compressed_encrypt_sk<BE: crate::test_suite::
             let mut sk_out_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(sk_out.rank());
             module.glwe_secret_prepare(&mut sk_out_prepared, &sk_out);
 
-            let mut atk: GLWEAutomorphismKey<Vec<u8>> = module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
+            let mut atk: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
+                module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
             module.decompress_automorphism_key(&mut atk, &atk_compressed);
 
             let max_noise: f64 = DEFAULT_SIGMA_XE.log2() - (k_ksk as f64) + 0.5;

@@ -1,32 +1,30 @@
 use std::fmt::Debug;
 
 use crate::{
-    layouts::{Backend, FillUniform, ReaderFrom, WriterTo},
+    layouts::{Backend, FillUniform, MatZnxOwned, ReaderFrom, ScalarZnxOwned, VecZnxOwned, WriterTo, ZnxWord},
     source::Source,
 };
 
-fn allocate_host_scalar_znx(n: usize, cols: usize) -> crate::layouts::ScalarZnx<Vec<u8>> {
+fn allocate_host_scalar_znx<W: ZnxWord>(n: usize, cols: usize) -> ScalarZnxOwned<W> {
     crate::layouts::ScalarZnx::from_data(
-        crate::layouts::HostBytesBackend::alloc_bytes(crate::layouts::ScalarZnx::<Vec<u8>>::bytes_of(n, cols)),
+        crate::layouts::HostBytesBackend::alloc_bytes(ScalarZnxOwned::<W>::bytes_of(n, cols)),
         n,
         cols,
     )
 }
 
-fn allocate_host_vec_znx(n: usize, cols: usize, size: usize) -> crate::layouts::VecZnx<Vec<u8>> {
+fn allocate_host_vec_znx<W: ZnxWord>(n: usize, cols: usize, size: usize) -> VecZnxOwned<W> {
     crate::layouts::VecZnx::from_data(
-        crate::layouts::HostBytesBackend::alloc_bytes(crate::layouts::VecZnx::<Vec<u8>>::bytes_of(n, cols, size)),
+        crate::layouts::HostBytesBackend::alloc_bytes(VecZnxOwned::<W>::bytes_of(n, cols, size)),
         n,
         cols,
         size,
     )
 }
 
-fn allocate_host_mat_znx(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> crate::layouts::MatZnx<Vec<u8>> {
+fn allocate_host_mat_znx<W: ZnxWord>(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> MatZnxOwned<W> {
     crate::layouts::MatZnx::from_data(
-        crate::layouts::HostBytesBackend::alloc_bytes(crate::layouts::MatZnx::<Vec<u8>>::bytes_of(
-            n, rows, cols_in, cols_out, size,
-        )),
+        crate::layouts::HostBytesBackend::alloc_bytes(MatZnxOwned::<W>::bytes_of(n, rows, cols_in, cols_out, size)),
         n,
         rows,
         cols_in,
@@ -64,18 +62,18 @@ where
 
 #[test]
 fn scalar_znx_serialize() {
-    let original = allocate_host_scalar_znx(1024, 3);
+    let original = allocate_host_scalar_znx::<i64>(1024, 3);
     test_reader_writer_interface(original);
 }
 
 #[test]
 fn vec_znx_serialize() {
-    let original = allocate_host_vec_znx(1024, 3, 4);
+    let original = allocate_host_vec_znx::<i64>(1024, 3, 4);
     test_reader_writer_interface(original);
 }
 
 #[test]
 fn mat_znx_serialize() {
-    let original = allocate_host_mat_znx(1024, 3, 2, 2, 4);
+    let original = allocate_host_mat_znx::<i64>(1024, 3, 2, 2, 4);
     test_reader_writer_interface(original);
 }

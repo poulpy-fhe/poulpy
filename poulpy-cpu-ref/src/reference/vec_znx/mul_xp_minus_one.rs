@@ -19,7 +19,7 @@ pub fn vec_znx_mul_xp_minus_one<'r, 'a, BE>(
     a: &VecZnxBackendRef<'a, BE>,
     a_col: usize,
 ) where
-    BE: Backend + ZnxRotate + ZnxZero + ZnxSubAssign,
+    BE: Backend<ZnxWord = i64> + ZnxRotate + ZnxZero + ZnxSubAssign,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
@@ -29,7 +29,7 @@ pub fn vec_znx_mul_xp_minus_one<'r, 'a, BE>(
 
 pub fn vec_znx_mul_xp_minus_one_assign<'r, BE>(p: i64, res: &mut VecZnxBackendMut<'r, BE>, res_col: usize, tmp: &mut [i64])
 where
-    BE: Backend + ZnxRotate + ZnxNegate + ZnxSubNegateAssign,
+    BE: Backend<ZnxWord = i64> + ZnxRotate + ZnxNegate + ZnxSubNegateAssign,
     BE::BufMut<'r>: HostDataMut,
 {
     #[cfg(debug_assertions)]

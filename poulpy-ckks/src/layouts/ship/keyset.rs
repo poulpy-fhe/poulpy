@@ -9,6 +9,7 @@
 //! convolution operands.
 
 use anyhow::{Result, ensure};
+use poulpy_core::{Distribution, GetDistribution, GetDistributionMut};
 use poulpy_core::{
     EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ModuleTransfer,
     layouts::{
@@ -20,11 +21,12 @@ use poulpy_core::{
     },
     msb_mask_bottom_limb,
 };
+use poulpy_hal::layouts::HostStaged;
 use poulpy_hal::{
     api::{CnvPVecAlloc, CnvPVecBytesOf, Convolution},
     layouts::{
         Backend, CnvPVecL, CnvPVecLToBackendMut, Data, GaloisElement, HostBytesBackend, HostDataMut, HostDataRef, Module,
-        ScratchArena, TransferFrom, ZnxView, ZnxViewMut,
+        ScratchArena, ZnxView, ZnxViewMut, ZnxWord, ZnxZero,
     },
     source::Source,
 };
@@ -33,7 +35,7 @@ use crate::{
     CKKSInfos, CKKSMeta,
     api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncryptOps, ShipScalar},
     encoding::ship::masks::ship_mask_slot_vectors,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
+    layouts::{CKKSCiphertext, CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned},
 };
 
 use super::{plan::ShipPlan, secret::ShipSecretSpec};
@@ -78,14 +80,14 @@ impl ShipKeyParameters {
 /// and whose output secret is `s(X^{g^-1})` with `g = 5^(-rot)`, so that
 /// applying `X -> X^g` to the keyswitch output realizes `beta * Rot_rot`
 /// under `s`.
-pub struct HMuxRotKey<D: Data> {
-    pub(crate) key: GLWESwitchingKey<D>,
+pub struct HMuxRotKey<D: Data, W: ZnxWord> {
+    pub(crate) key: GLWESwitchingKey<D, W>,
     pub(crate) gal_el: i64,
 }
 
-impl<D: Data> HMuxRotKey<D> {
+impl<D: Data, W: ZnxWord> HMuxRotKey<D, W> {
     /// The underlying rank-2 -> 1 switching key.
-    pub fn key(&self) -> &GLWESwitchingKey<D> {
+    pub fn key(&self) -> &GLWESwitchingKey<D, W> {
         &self.key
     }
 
@@ -105,10 +107,10 @@ pub struct HMuxRotKeyPrepared<D: Data, BE: Backend> {
 /// position the `b` hoisted mux keys, plus the `4*theta` encrypted selector
 /// masks in candidate-major order (`masks2` carries the `omega_2` set of the
 /// complex bootstrap; the mux keys are shared between both halves).
-pub struct ShipIndexKeys<D: Data> {
-    pub(crate) mux_keys: Vec<Vec<HMuxRotKey<D>>>,
-    pub(crate) masks: Vec<CKKSCiphertext<D>>,
-    pub(crate) masks2: Vec<CKKSCiphertext<D>>,
+pub struct ShipIndexKeys<D: Data, W: ZnxWord> {
+    pub(crate) mux_keys: Vec<Vec<HMuxRotKey<D, W>>>,
+    pub(crate) masks: Vec<CKKSCiphertext<D, W>>,
+    pub(crate) masks2: Vec<CKKSCiphertext<D, W>>,
 }
 
 /// Prepared form of [`ShipIndexKeys`]: the masks become left convolution
@@ -138,12 +140,12 @@ impl<D: Data, BE: Backend> ShipIndexKeysPrepared<D, BE> {
 }
 
 /// Validated, unprepared SHIP key material.
-pub struct ShipKeySet<D: Data> {
+pub struct ShipKeySet<D: Data, W: ZnxWord> {
     parameters: ShipKeyParameters,
-    index_keys: Vec<ShipIndexKeys<D>>,
-    dense_to_sparse: GLWESwitchingKey<D>,
-    tensor_key: GLWETensorKey<D>,
-    conjugation_key: GLWEAutomorphismKey<D>,
+    index_keys: Vec<ShipIndexKeys<D, W>>,
+    dense_to_sparse: GLWESwitchingKey<D, W>,
+    tensor_key: GLWETensorKey<D, W>,
+    conjugation_key: GLWEAutomorphismKey<D, W>,
 }
 
 /// Eagerly prepared SHIP key material ready for a backend pipeline.
@@ -191,16 +193,16 @@ fn znx_automorphism_apply(gal_el: i64, src: &[i64], dst: &mut [i64]) {
     }
 }
 
-impl<D: Data> ShipKeySet<D> {
+impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
     /// Builds and validates an unprepared SHIP key set.
     pub fn new(
         plan: &ShipPlan,
         base2k: Base2K,
         complex: bool,
-        index_keys: Vec<ShipIndexKeys<D>>,
-        dense_to_sparse: GLWESwitchingKey<D>,
-        tensor_key: GLWETensorKey<D>,
-        conjugation_key: GLWEAutomorphismKey<D>,
+        index_keys: Vec<ShipIndexKeys<D, W>>,
+        dense_to_sparse: GLWESwitchingKey<D, W>,
+        tensor_key: GLWETensorKey<D, W>,
+        conjugation_key: GLWEAutomorphismKey<D, W>,
     ) -> Result<Self> {
         let parameters = ShipKeyParameters::from_plan(plan, base2k, complex);
         validate_material(&parameters, &index_keys, &dense_to_sparse, &tensor_key, &conjugation_key)?;
@@ -221,18 +223,18 @@ impl<D: Data> ShipKeySet<D> {
     /// Prepares every key for `module`: gadget keys are preprocessed and the
     /// selector masks become left convolution operands. `scratch` must hold
     /// the per-key prepare scratch, which is validated up front.
-    pub fn prepare<BE: Backend<OwnedBuf = D>>(
+    pub fn prepare<BE: Backend<OwnedBuf = D, ZnxWord = W>>(
         &self,
         module: &Module<BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<ShipKeysPrepared<D, BE>>
     where
         D: HostDataRef,
-        CKKSCiphertext<D>: GLWEToBackendRef<BE>,
-        GLWESwitchingKey<D>: GGLWEToBackendRef<BE> + GGLWEInfos,
-        GLWETensorKey<D>: GGLWEToBackendRef<BE> + GGLWEInfos,
-        GLWEAutomorphismKey<D>: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        Module<BE>: ModuleCoreAlloc<OwnedBuf = D>
+        CKKSCiphertext<D, W>: GLWEToBackendRef<BE>,
+        GLWESwitchingKey<D, W>: GGLWEToBackendRef<BE> + GGLWEInfos,
+        GLWETensorKey<D, W>: GGLWEToBackendRef<BE> + GGLWEInfos,
+        GLWEAutomorphismKey<D, W>: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        Module<BE>: ModuleCoreAlloc<OwnedBuf = D, ZnxWord = W>
             + GLWESwitchingKeyPreparedFactory<BE>
             + GLWEAutomorphismKeyPreparedFactory<BE>
             + GLWETensorKeyPreparedFactory<BE>
@@ -264,7 +266,7 @@ impl<D: Data> ShipKeySet<D> {
         );
 
         let prepare_masks =
-            |masks: &[CKKSCiphertext<D>], scratch: &mut ScratchArena<'_, BE>| -> Vec<CnvPVecL<D, BE::DftWord, BE>> {
+            |masks: &[CKKSCiphertext<D, W>], scratch: &mut ScratchArena<'_, BE>| -> Vec<CnvPVecL<D, BE::DftWord, BE>> {
                 masks
                     .iter()
                     .map(|ct| {
@@ -351,7 +353,7 @@ impl<D: Data, BE: Backend> ShipKeysPrepared<D, BE> {
 pub(crate) fn hmux_rot_key_encrypt_sk<BE>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
-    sk_dense_host: &GLWESecret<Vec<u8>>,
+    sk_dense_host: &GLWESecret<Vec<u8>, i64>,
     beta: bool,
     rot: usize,
     k_ct: usize,
@@ -360,34 +362,42 @@ pub(crate) fn hmux_rot_key_encrypt_sk<BE>(
     source_xe: &mut Source,
     source_xa: &mut Source,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<HMuxRotKey<BE::OwnedBuf>>
+) -> Result<HMuxRotKey<BE::OwnedBuf, BE::ZnxWord>>
 where
-    BE: Backend + TransferFrom<HostBytesBackend>,
+    BE: HostStaged,
     BE::OwnedBuf: HostDataRef + HostDataMut,
-    Module<BE>: GLWESwitchingKeyEncryptSk<BE> + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf> + ModuleTransfer<BE> + GaloisElement,
-    Module<HostBytesBackend>: ModuleCoreAlloc<OwnedBuf = Vec<u8>>,
+    Module<BE>: GLWESwitchingKeyEncryptSk<BE>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
+        + ModuleTransfer<BE>
+        + GaloisElement,
+    Module<HostBytesBackend>: ModuleCoreAlloc<OwnedBuf = Vec<u8>, ZnxWord = i64>,
 {
     let n = sk_dense_host.n();
     let m = n.as_usize() / 2;
     let gal_el = module.galois_element(((m - (rot % m)) % m) as i64);
 
+    // `(beta * s, beta)`: the second column is the constant 1, not a secret.
     let mut sk_in_host = host_module.glwe_secret_alloc_from_infos(&GLWESecretLayout { n, rank: Rank(2) });
-    sk_in_host.fill_zero();
+    sk_in_host.data_mut().zero();
+    *sk_in_host.dist_mut() = Distribution::ZERO;
     if beta {
         let src = sk_dense_host.data().at(0, 0).to_vec();
         let data = sk_in_host.data_mut();
         data.at_mut(0, 0).copy_from_slice(&src);
         data.at_mut(1, 0)[0] = 1;
+        *sk_in_host.dist_mut() = Distribution::ENCAPSULATED("ship");
     }
     let sk_in = module.upload_glwe_secret(&sk_in_host);
 
     let mut sk_out_host = host_module.glwe_secret_alloc_from_infos(&GLWESecretLayout { n, rank: Rank(1) });
-    sk_out_host.fill_zero();
+    sk_out_host.data_mut().zero();
     znx_automorphism_apply(
         module.galois_element_inv(gal_el),
         sk_dense_host.data().at(0, 0),
         sk_out_host.data_mut().at_mut(0, 0),
     );
+    // An automorphism preserves the distribution.
+    *sk_out_host.dist_mut() = *sk_dense_host.dist();
     let sk_out = module.upload_glwe_secret(&sk_out_host);
 
     let b2k = base2k.as_usize();
@@ -405,7 +415,11 @@ where
     Ok(HMuxRotKey { key, gal_el })
 }
 
-impl<D: Data> ShipKeySet<D> {
+// Generation is word-pinned, not by choice: `generate` stages its key material
+// through `Module<HostBytesBackend>` (and already took a host `GLWESecret<Vec<u8>,
+// i64>`), so the material it uploads carries that backend's word. Because it
+// returns `Self`, the word cannot be constrained per-method and lands here.
+impl<D: Data> ShipKeySet<D, i64> {
     /// Generates the full SHIP key set for `sk_dense_host` and the sparse
     /// support of `spec`.
     ///
@@ -421,29 +435,29 @@ impl<D: Data> ShipKeySet<D> {
         plan: &ShipPlan,
         base2k: Base2K,
         spec: &ShipSecretSpec,
-        sk_dense_host: &GLWESecret<Vec<u8>>,
+        sk_dense_host: &GLWESecret<Vec<u8>, i64>,
         layout: &ShipKeysLayout,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<Self>
     where
-        BE: Backend<OwnedBuf = D> + TransferFrom<HostBytesBackend>,
+        BE: HostStaged + Backend<OwnedBuf = D>,
         D: HostDataRef + HostDataMut,
         F: ShipScalar,
         Module<BE>: GLWESwitchingKeyEncryptSk<BE>
             + GLWEAutomorphismKeyEncryptSk<BE>
             + GLWETensorKeyEncryptSk<BE>
             + GLWESecretPreparedFactory<BE>
-            + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
+            + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + ModuleTransfer<BE>
             + CKKSModuleAlloc<BE>
             + CKKSEncryptOps<BE>
             + CKKSEncodingOps<BE, F>
             + GaloisElement,
-        Module<HostBytesBackend>: ModuleCoreAlloc<OwnedBuf = Vec<u8>>,
-        CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
-        CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
+        Module<HostBytesBackend>: ModuleCoreAlloc<OwnedBuf = Vec<u8>, ZnxWord = i64>,
+        CKKSCiphertextOwned<BE>: GLWEToBackendRef<BE>,
+        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     {
         let n = sk_dense_host.n();
         ensure!(
@@ -485,7 +499,7 @@ impl<D: Data> ShipKeySet<D> {
         for (slot, &(j, s_j)) in spec.support().iter().enumerate() {
             let u = spec.offset(plan, slot);
 
-            let mut encrypt_masks = |omega2: bool| -> Result<Vec<CKKSCiphertext<BE::OwnedBuf>>> {
+            let mut encrypt_masks = |omega2: bool| -> Result<Vec<CKKSCiphertextOwned<BE>>> {
                 ship_mask_slot_vectors::<F>(plan, slot, j, s_j, u, omega2)
                     .into_iter()
                     .map(|re| {
@@ -574,12 +588,12 @@ impl<D: Data> ShipKeySet<D> {
 }
 
 /// Validates the unprepared SHIP key representation against its parameters.
-fn validate_material<D: Data>(
+fn validate_material<D: Data, W: ZnxWord>(
     parameters: &ShipKeyParameters,
-    index_keys: &[ShipIndexKeys<D>],
-    dense_to_sparse: &GLWESwitchingKey<D>,
-    tensor_key: &GLWETensorKey<D>,
-    conjugation_key: &GLWEAutomorphismKey<D>,
+    index_keys: &[ShipIndexKeys<D, W>],
+    dense_to_sparse: &GLWESwitchingKey<D, W>,
+    tensor_key: &GLWETensorKey<D, W>,
+    conjugation_key: &GLWEAutomorphismKey<D, W>,
 ) -> Result<()> {
     let plan = &parameters.plan;
     let n = plan.n();

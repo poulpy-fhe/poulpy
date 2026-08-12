@@ -648,7 +648,7 @@ pub fn test_dot_product_const_aligned<BE, F, E>(
             )
         })
         .collect();
-    let consts: Vec<CKKSPlaintext<_>> = const_coeffs
+    let consts: Vec<CKKSPlaintext<_, _>> = const_coeffs
         .iter()
         .map(|r| ckks_pt_cst_full::<BE, F>(host_module, module, params.base2k.into(), PT_PREC, m, Some(*r), None))
         .collect();

@@ -21,67 +21,14 @@ use super::{
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSMeta,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSMulOps, CKKSSubOps, ShipScalar},
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, ShipKeysPrepared},
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, ShipKeysPrepared},
     oep::{CKKSEncodingImpl, CKKSShipCoeffEncodingImpl},
 };
-
-/// Composite of the operation families the SHIP circuit consumes.
-pub(crate) trait ShipBootstrapModule<BE: Backend>:
-    CKKSMulOps<BE>
-    + CKKSAddOps<BE>
-    + CKKSSubOps<BE>
-    + CKKSImagOps<BE>
-    + CKKSConjugateOps<BE>
-    + CKKSModuleAlloc<BE>
-    + GLWEKeyswitch<BE>
-    + GLWEZero<BE>
-    + Convolution<BE>
-    + CnvPVecBytesOf
-    + VecZnxDftApply<BE>
-    + VecZnxDftZero<BE>
-    + VecZnxDftCopy<BE>
-    + VecZnxDftAddAssign<BE>
-    + VecZnxDftAutomorphism<BE>
-    + VecZnxIdftApplyTmpA<BE>
-    + VecZnxBigNormalize<BE>
-    + VmpApplyDftToDft<BE>
-    + VecZnxDftBytesOf
-    + VecZnxBigBytesOf
-    + VmpApplyDftToDftTmpBytes
-    + VecZnxBigNormalizeTmpBytes
-{
-}
-
-impl<BE: Backend, M> ShipBootstrapModule<BE> for M where
-    M: CKKSMulOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSImagOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWEKeyswitch<BE>
-        + GLWEZero<BE>
-        + Convolution<BE>
-        + CnvPVecBytesOf
-        + VecZnxDftApply<BE>
-        + VecZnxDftZero<BE>
-        + VecZnxDftCopy<BE>
-        + VecZnxDftAddAssign<BE>
-        + VecZnxDftAutomorphism<BE>
-        + VecZnxIdftApplyTmpA<BE>
-        + VecZnxBigNormalize<BE>
-        + VmpApplyDftToDft<BE>
-        + VecZnxDftBytesOf
-        + VecZnxBigBytesOf
-        + VmpApplyDftToDftTmpBytes
-        + VecZnxBigNormalizeTmpBytes
-{
-}
 
 /// Validates the runtime ciphertexts against the key bundle's parameters.
 pub(crate) fn validate_runtime<BE, Src>(
     module: &Module<BE>,
-    output: &CKKSCiphertext<BE::OwnedBuf>,
+    output: &CKKSCiphertextOwned<BE>,
     input: &Src,
     keys: &ShipKeysPrepared<BE::OwnedBuf, BE>,
     complex: bool,
@@ -145,13 +92,34 @@ fn ship_bootstrap_roots<BE, F, Src>(
     keys: &ShipKeysPrepared<BE::OwnedBuf, BE>,
     complex: bool,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<Vec<CKKSCiphertext<BE::OwnedBuf>>>
+) -> Result<Vec<CKKSCiphertextOwned<BE>>>
 where
     BE: Backend + CKKSShipCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
     F: ShipScalar,
-    Module<BE>: ShipBootstrapModule<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSImagOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWEKeyswitch<BE>
+        + GLWEZero<BE>
+        + Convolution<BE>
+        + CnvPVecBytesOf
+        + VecZnxDftApply<BE>
+        + VecZnxDftZero<BE>
+        + VecZnxDftCopy<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxDftAutomorphism<BE>
+        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxBigNormalize<BE>
+        + VmpApplyDftToDft<BE>
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VmpApplyDftToDftTmpBytes
+        + VecZnxBigNormalizeTmpBytes,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     const OP: &str = "ckks_ship_bootstrap";
@@ -177,7 +145,7 @@ where
     );
 
     // Leaf 0 per half: trivial encryption of pt0 / pt0_2.
-    let mut leaves: Vec<Vec<CKKSCiphertext<BE::OwnedBuf>>> = Vec::with_capacity(halves);
+    let mut leaves: Vec<Vec<CKKSCiphertextOwned<BE>>> = Vec::with_capacity(halves);
     for half in 0..halves {
         let pt0 = if half == 0 {
             &enc.pt0
@@ -251,7 +219,7 @@ where
 /// Real-case SHIP bootstrap: `output = root + Conj(root)`.
 pub(crate) fn ship_bootstrap_into<BE, F, Src>(
     module: &Module<BE>,
-    output: &mut CKKSCiphertext<BE::OwnedBuf>,
+    output: &mut CKKSCiphertextOwned<BE>,
     input: &Src,
     keys: &ShipKeysPrepared<BE::OwnedBuf, BE>,
     scratch: &mut ScratchArena<'_, BE>,
@@ -259,9 +227,30 @@ pub(crate) fn ship_bootstrap_into<BE, F, Src>(
 where
     BE: Backend + CKKSShipCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
     F: ShipScalar,
-    Module<BE>: ShipBootstrapModule<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSImagOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWEKeyswitch<BE>
+        + GLWEZero<BE>
+        + Convolution<BE>
+        + CnvPVecBytesOf
+        + VecZnxDftApply<BE>
+        + VecZnxDftZero<BE>
+        + VecZnxDftCopy<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxDftAutomorphism<BE>
+        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxBigNormalize<BE>
+        + VmpApplyDftToDft<BE>
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VmpApplyDftToDftTmpBytes
+        + VecZnxBigNormalizeTmpBytes,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     validate_runtime(module, output, input, keys, false)?;
@@ -279,7 +268,7 @@ where
 /// `output = (v1 + i*v2) + Conj(v1 - i*v2)` over the two per-half roots.
 pub(crate) fn ship_bootstrap_complex_into<BE, F, Src>(
     module: &Module<BE>,
-    output: &mut CKKSCiphertext<BE::OwnedBuf>,
+    output: &mut CKKSCiphertextOwned<BE>,
     input: &Src,
     keys: &ShipKeysPrepared<BE::OwnedBuf, BE>,
     scratch: &mut ScratchArena<'_, BE>,
@@ -287,9 +276,30 @@ pub(crate) fn ship_bootstrap_complex_into<BE, F, Src>(
 where
     BE: Backend + CKKSShipCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
     F: ShipScalar,
-    Module<BE>: ShipBootstrapModule<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSImagOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWEKeyswitch<BE>
+        + GLWEZero<BE>
+        + Convolution<BE>
+        + CnvPVecBytesOf
+        + VecZnxDftApply<BE>
+        + VecZnxDftZero<BE>
+        + VecZnxDftCopy<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxDftAutomorphism<BE>
+        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxBigNormalize<BE>
+        + VmpApplyDftToDft<BE>
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VmpApplyDftToDftTmpBytes
+        + VecZnxBigNormalizeTmpBytes,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     validate_runtime(module, output, input, keys, true)?;

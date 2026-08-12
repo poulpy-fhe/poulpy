@@ -13,13 +13,11 @@ use poulpy_core::{
     GLWECopy, GLWELinearTransformations, LinearTransformationBabySteps, LinearTransformationGiantStep,
     LinearTransformationPrepared,
     default::linear_transformation::{DiagonalProd, glwe_accumulate_streamed_baby_steps_dft},
-    layouts::{
-        GGLWEInfos, GLWE, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::PreparedDiagonal,
-    },
+    layouts::{GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::PreparedDiagonal},
 };
 use poulpy_hal::{
     api::{CnvPVecBytesOf, Convolution, ModuleN},
-    layouts::{Backend, CyclotomicOrder, Data, Module, ScratchArena, VecZnxDftBackendMut, galois_element},
+    layouts::{Backend, CyclotomicOrder, Data, Module, ScratchArena, VecZnxDftBackendMut, ZnxWord, galois_element},
 };
 
 use crate::{
@@ -28,6 +26,7 @@ use crate::{
     default::mul::mul_pt_params_raw,
     layouts::{CKKSModuleAlloc, CKKSPlaintext, ScratchArenaTakeCKKS},
 };
+use poulpy_core::GLWEBytesOf;
 
 /// Per-giant streamed PROD for CKKS plaintext diagonals.
 ///
@@ -37,9 +36,9 @@ use crate::{
 /// [`CKKSPlaintext`] diagonal on the fly. Implementing it here (per concrete
 /// plaintext type) is what lets the resident and streamed transforms share the
 /// single `LinearTransformation<P>` container without overlapping impls.
-impl<BE: Backend, D: Data> DiagonalProd<BE> for CKKSPlaintext<D>
+impl<BE: Backend, D: Data> DiagonalProd<BE> for CKKSPlaintext<D, BE::ZnxWord>
 where
-    CKKSPlaintext<D>: GLWEToBackendRef<BE>,
+    CKKSPlaintext<D, BE::ZnxWord>: GLWEToBackendRef<BE>,
 {
     fn accumulate_giant_prod<M>(
         module: &M,
@@ -56,7 +55,7 @@ where
 }
 
 /// Streamed-diagonal scale: a [`CKKSPlaintext`] carries its scale as `log_delta`.
-impl<D: Data> LtDiagonalScale for CKKSPlaintext<D> {
+impl<D: Data, W: ZnxWord> LtDiagonalScale for CKKSPlaintext<D, W> {
     fn lt_log_scale(&self) -> usize {
         self.log_delta()
     }
@@ -100,7 +99,7 @@ where
         // sizes from above, so the result is a safe upper bound. The extra
         // ct-sized buffer is the dst-shaped working copy the `_assign` wrappers
         // carve from scratch (an upper bound for the `_into` paths, which skip it).
-        self.glwe_eval_linear_transformation_tmp_bytes(ct, ct, ct, key) + GLWE::<Vec<u8>>::bytes_of_from_infos(ct)
+        self.glwe_eval_linear_transformation_tmp_bytes(ct, ct, ct, key) + self.glwe_bytes_of_from_infos(ct)
     }
 
     fn ckks_eval_linear_transformation_streamed_tmp_bytes<C, K>(&self, ct: &C, key: &K) -> usize
@@ -111,7 +110,7 @@ where
         // `ct` doubles as the plaintext-operand proxy (upper bound on diagonal
         // shape). The extra ct-sized buffer covers the `_assign` wrappers'
         // scratch-carved working copy, as above.
-        self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, ct, key) + GLWE::<Vec<u8>>::bytes_of_from_infos(ct)
+        self.glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes(ct, ct, ct, key) + self.glwe_bytes_of_from_infos(ct)
     }
 
     // ---------- populate ----------

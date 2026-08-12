@@ -25,7 +25,7 @@ use crate::{
     api::CKKSConjugateOps,
     default::paco::ops::{PaCoSlotOps, fold_rotations},
     encoding::paco::cpx::Cpx,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc},
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
@@ -82,7 +82,7 @@ pub(crate) fn assert_slots<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
     encoder: &ReferenceEncoder<E>,
-    ct: &CKKSCiphertext<BE::OwnedBuf>,
+    ct: &CKKSCiphertextOwned<BE>,
     sk: &poulpy_core::layouts::prepared::GLWESecretPrepared<BE::OwnedBuf, BE>,
     want: &[Cpx],
     bound: f64,

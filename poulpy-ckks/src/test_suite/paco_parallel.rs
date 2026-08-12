@@ -45,8 +45,8 @@ const KAPPA: usize = 4;
 /// Asserts that a rejected public call did not alter either the ciphertext's
 /// semantic/layout metadata or its backend bytes.
 fn assert_ciphertext_unchanged<BE>(
-    before: &crate::layouts::CKKSCiphertext<Vec<u8>>,
-    after: &crate::layouts::CKKSCiphertext<BE::OwnedBuf>,
+    before: &crate::layouts::CKKSCiphertextOwned<HostBytesBackend>,
+    after: &crate::layouts::CKKSCiphertextOwned<BE>,
 ) where
     BE: TestContextBackend,
 {
@@ -70,7 +70,7 @@ fn assert_ciphertext_unchanged<BE>(
 /// of `BE`.
 fn decrypt_coeffs_host<BE>(
     module: &Module<BE>,
-    ct: &crate::layouts::CKKSCiphertext<BE::OwnedBuf>,
+    ct: &crate::layouts::CKKSCiphertextOwned<BE>,
     sk: &poulpy_core::layouts::prepared::GLWESecretPrepared<BE::OwnedBuf, BE>,
     n: usize,
     scratch: &mut poulpy_hal::layouts::ScratchArena<'_, BE>,

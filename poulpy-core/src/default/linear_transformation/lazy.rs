@@ -127,9 +127,6 @@ pub(super) fn glwe_lazy_giant_automorphism_from_dft<BE, M, K>(
     }
 
     let (mut ks_dft, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(module, cols, key_size);
-    for col in 0..ks_dft.cols() {
-        module.vec_znx_dft_zero(&mut ks_dft, col);
-    }
     let key_ref = key.to_backend_ref();
     module.gglwe_product_dft_default(&mut ks_dft, &a_dft.to_backend_ref(), &key_ref, &mut scratch_2.borrow());
 

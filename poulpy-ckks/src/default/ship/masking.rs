@@ -20,7 +20,7 @@ use poulpy_hal::{
 use crate::{
     CKKSInfos, SetCKKSInfos,
     default::mul::mul_pt_params_raw,
-    layouts::{CKKSCiphertext, CKKSPlaintext, ShipPlan},
+    layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, ShipPlan},
 };
 
 /// Scratch bytes for [`ship_masking_accumulate`].
@@ -45,17 +45,17 @@ where
 /// the DFT domain with a single IDFT + normalize per column.
 pub(crate) fn ship_masking_accumulate<BE>(
     module: &Module<BE>,
-    acc: &mut CKKSCiphertext<BE::OwnedBuf>,
+    acc: &mut CKKSCiphertextOwned<BE>,
     plan: &ShipPlan,
     masks: &[CnvPVecL<BE::OwnedBuf, BE::DftWord, BE>],
-    pis: &[CKKSPlaintext<BE::OwnedBuf>],
+    pis: &[CKKSPlaintextOwned<BE>],
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend,
     Module<BE>: Convolution<BE> + CnvPVecBytesOf + VecZnxDftBytesOf + VecZnxIdftApplyTmpA<BE> + VecZnxBigNormalize<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
 {
     const OP: &str = "ship_masking_accumulate";
     ckks_ensure!(

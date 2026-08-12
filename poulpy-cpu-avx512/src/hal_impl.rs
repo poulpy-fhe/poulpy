@@ -9,15 +9,16 @@ use poulpy_cpu_ref::hal_defaults::{
 use poulpy_hal::{
     api::{HostBufMut, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
     layouts::{
-        Backend, MatZnxBackendRef, Module, NoiseInfos, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut,
-        VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
+        Backend, MatZnxBackendRef, MatZnxInfos, Module, NoiseInfos, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
+        VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VmpPMatBackendMut,
+        VmpPMatBackendRef, ZnxInfos,
     },
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
 fn take_host_typed<'a, BE, T>(arena: ScratchArena<'a, BE>, len: usize) -> (&'a mut [T], ScratchArena<'a, BE>)
 where
-    BE: Backend + 'a,
+    BE: Backend<ZnxWord = i64> + 'a,
     BE::BufMut<'a>: HostBufMut<'a>,
     T: Copy,
 {
@@ -115,9 +116,9 @@ unsafe impl HalVmpImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     ) where
         R: VecZnxDftToBackendMut<Self>,
     {
-        let a_cols = <VecZnxBackendRef<'_, Self> as ZnxInfos>::cols(a);
+        let a_cols = <VecZnxBackendRef<'_, Self> as VecZnxInfos>::cols(a);
         let a_size = <VecZnxBackendRef<'_, Self> as ZnxInfos>::size(a);
-        let b_rows = <VmpPMatBackendRef<'_, Self> as ZnxInfos>::rows(b);
+        let b_rows = <VmpPMatBackendRef<'_, Self> as MatZnxInfos>::rows(b);
         let cols_to_copy = a_cols.min(b.cols_in());
         let a_start_col = a_cols - cols_to_copy;
         let a_dft_size = a_size.min(b_rows);
@@ -600,9 +601,9 @@ mod ifma_impl {
     use poulpy_hal::{
         api::{ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
         layouts::{
-            Backend, MatZnxBackendRef, Module, NoiseInfos, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef,
-            VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef,
-            VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
+            Backend, MatZnxBackendRef, MatZnxInfos, Module, NoiseInfos, ScalarZnxBackendRef, SvpPPolBackendMut,
+            SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef,
+            VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
         },
         oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
     };
@@ -652,9 +653,9 @@ mod ifma_impl {
         ) where
             R: VecZnxDftToBackendMut<Self>,
         {
-            let a_cols = <VecZnxBackendRef<'_, Self> as ZnxInfos>::cols(a);
+            let a_cols = <VecZnxBackendRef<'_, Self> as VecZnxInfos>::cols(a);
             let a_size = <VecZnxBackendRef<'_, Self> as ZnxInfos>::size(a);
-            let b_rows = <VmpPMatBackendRef<'_, Self> as ZnxInfos>::rows(b);
+            let b_rows = <VmpPMatBackendRef<'_, Self> as MatZnxInfos>::rows(b);
             let cols_to_copy = a_cols.min(b.cols_in());
             let a_start_col = a_cols - cols_to_copy;
             let a_dft_size = a_size.min(b_rows);

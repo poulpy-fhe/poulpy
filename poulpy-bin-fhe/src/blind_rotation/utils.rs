@@ -9,7 +9,7 @@ pub(crate) fn set_xai_plus_y<C, B: Backend>(
     ai: usize,
     y: i64,
     res: &mut SvpPPolOwned<B>,
-    buf: &mut ScalarZnx<C>,
+    buf: &mut ScalarZnx<C, i64>,
 ) where
     C: HostDataMut,
     Module<B>: SvpPrepare<B>,
@@ -32,7 +32,7 @@ pub(crate) fn set_xai_plus_y<C, B: Backend>(
     module.svp_prepare(
         &mut res_backend,
         0,
-        &<ScalarZnx<B::OwnedBuf> as ScalarZnxToBackendRef<B>>::to_backend_ref(&buf_backend),
+        &<ScalarZnx<B::OwnedBuf, B::ZnxWord> as ScalarZnxToBackendRef<B>>::to_backend_ref(&buf_backend),
         0,
     );
 

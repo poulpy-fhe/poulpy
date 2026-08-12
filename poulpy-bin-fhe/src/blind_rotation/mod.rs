@@ -2,7 +2,7 @@
 //!
 //! This module provides the foundational GLWE blind-rotation primitive used
 //! throughout the binary FHE scheme.  Blind rotation evaluates a function
-//! `f : Z_{2N} -> T_q` encoded in a [`LookupTable`] on an encrypted index
+//! `f : Z_{2N} -> T_q` encoded in a [`LookupTable<Vec<u8>, i64>`] on an encrypted index
 //! provided by an LWE ciphertext, producing a fresh GLWE ciphertext whose
 //! constant term decrypts to `f(dec(lwe))` (modulo rounding noise).
 //!
@@ -10,7 +10,7 @@
 //!
 //! | Type | Role |
 //! |------|------|
-//! | [`LookupTable`] | Encoded evaluation function, allocated from a [`LookUpTableLayout`] |
+//! | [`LookupTable<Vec<u8>, i64>`] | Encoded evaluation function, allocated from a [`LookUpTableLayout`] |
 //! | [`BlindRotationKey`] | Raw (standard) bootstrapping key — one GGSW per LWE dimension |
 //! | [`BlindRotationKeyCompressed`] | Seed-compressed form of the bootstrapping key |
 //! | [`BlindRotationKeyPrepared`] | DFT-pre-processed form for fast on-line evaluation |

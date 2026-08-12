@@ -1,15 +1,25 @@
 use crate::{CKKSResult as Result, ckks_ensure};
-use poulpy_core::layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef};
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_core::{
+    GLWEKeyswitch, GLWEZero,
+    layouts::{Base2K, GLWEToBackendMut, GLWEToBackendRef},
+};
+use poulpy_hal::{
+    api::{
+        CnvPVecBytesOf, Convolution, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
+        VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApplyTmpA,
+        VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
+    },
+    layouts::{Backend, Module, ScratchArena},
+};
 
 use crate::{
     CKKSCtBounds,
-    api::{CKKSShipOps, ShipScalar},
+    api::{CKKSAddOps, CKKSConjugateOps, CKKSImagOps, CKKSMulOps, CKKSShipOps, CKKSSubOps, ShipScalar},
     default::ship::{
-        bootstrap::{ShipBootstrapModule, ship_bootstrap_complex_into, ship_bootstrap_into},
+        bootstrap::{ship_bootstrap_complex_into, ship_bootstrap_into},
         preflight::ship_bootstrap_tmp_bytes,
     },
-    layouts::{CKKSCiphertext, CKKSPlaintext, ShipCoeffEncodings, ShipKeysPrepared, ShipPlan},
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, ShipCoeffEncodings, ShipKeysPrepared, ShipPlan},
     oep::{CKKSEncodingImpl, CKKSShipCoeffEncodingImpl},
 };
 
@@ -17,13 +27,34 @@ impl<BE, F> CKKSShipOps<BE, F> for Module<BE>
 where
     BE: Backend + CKKSShipCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
     F: ShipScalar,
-    Module<BE>: ShipBootstrapModule<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSImagOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWEKeyswitch<BE>
+        + GLWEZero<BE>
+        + Convolution<BE>
+        + CnvPVecBytesOf
+        + VecZnxDftApply<BE>
+        + VecZnxDftZero<BE>
+        + VecZnxDftCopy<BE>
+        + VecZnxDftAddAssign<BE>
+        + VecZnxDftAutomorphism<BE>
+        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxBigNormalize<BE>
+        + VmpApplyDftToDft<BE>
+        + VecZnxDftBytesOf
+        + VecZnxBigBytesOf
+        + VmpApplyDftToDftTmpBytes
+        + VecZnxBigNormalizeTmpBytes,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
 {
     fn ckks_ship_bootstrap_tmp_bytes<Src>(
         &self,
-        output: &CKKSCiphertext<BE::OwnedBuf>,
+        output: &CKKSCiphertextOwned<BE>,
         input: &Src,
         keys: &ShipKeysPrepared<BE::OwnedBuf, BE>,
     ) -> Result<usize>
@@ -44,7 +75,7 @@ where
         base2k: Base2K,
         complex: bool,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<ShipCoeffEncodings<BE::OwnedBuf>>
+    ) -> Result<ShipCoeffEncodings<BE::OwnedBuf, BE::ZnxWord>>
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
@@ -59,7 +90,7 @@ where
 
     fn ckks_ship_bootstrap_into<Src>(
         &self,
-        output: &mut CKKSCiphertext<BE::OwnedBuf>,
+        output: &mut CKKSCiphertextOwned<BE>,
         input: &Src,
         keys: &ShipKeysPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
@@ -72,7 +103,7 @@ where
 
     fn ckks_ship_bootstrap_complex_into<Src>(
         &self,
-        output: &mut CKKSCiphertext<BE::OwnedBuf>,
+        output: &mut CKKSCiphertextOwned<BE>,
         input: &Src,
         keys: &ShipKeysPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,

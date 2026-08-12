@@ -11,7 +11,7 @@ use poulpy_hal::{
 
 pub fn bench_vec_znx_sub<B>(c: &mut Criterion, label: &str)
 where
-    B: Backend,
+    B: Backend<ZnxWord = i64>,
     Module<B>: VecZnxSubBackend<B> + ModuleNew<B>,
     B::OwnedBuf: AsMut<[u8]>,
 {
@@ -19,7 +19,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(params: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(params: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxSubBackend<B> + ModuleNew<B>,
         B::OwnedBuf: AsMut<[u8]>,
@@ -40,9 +40,9 @@ where
         source.fill_bytes(c.data_mut().as_mut());
 
         move || {
-            let a = <VecZnx<B::OwnedBuf> as VecZnxToBackendRef<B>>::to_backend_ref(&a);
-            let b = <VecZnx<B::OwnedBuf> as VecZnxToBackendRef<B>>::to_backend_ref(&b);
-            let mut c = <VecZnx<B::OwnedBuf> as VecZnxToBackendMut<B>>::to_backend_mut(&mut c);
+            let a = <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendRef<B>>::to_backend_ref(&a);
+            let b = <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendRef<B>>::to_backend_ref(&b);
+            let mut c = <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendMut<B>>::to_backend_mut(&mut c);
             for i in 0..cols {
                 module.vec_znx_sub_backend(&mut c, i, &a, i, &b, i);
             }
@@ -61,7 +61,7 @@ where
 
 pub fn bench_vec_znx_sub_assign<B>(c: &mut Criterion, label: &str)
 where
-    B: Backend,
+    B: Backend<ZnxWord = i64>,
     Module<B>: VecZnxSubAssignBackend<B> + ModuleNew<B>,
     B::OwnedBuf: AsMut<[u8]>,
 {
@@ -69,7 +69,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(params: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(params: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxSubAssignBackend<B> + ModuleNew<B>,
         B::OwnedBuf: AsMut<[u8]>,
@@ -88,8 +88,8 @@ where
         source.fill_bytes(b.data_mut().as_mut());
 
         move || {
-            let a = <VecZnx<B::OwnedBuf> as VecZnxToBackendRef<B>>::to_backend_ref(&a);
-            let mut b = <VecZnx<B::OwnedBuf> as VecZnxToBackendMut<B>>::to_backend_mut(&mut b);
+            let a = <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendRef<B>>::to_backend_ref(&a);
+            let mut b = <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendMut<B>>::to_backend_mut(&mut b);
             for i in 0..cols {
                 module.vec_znx_sub_assign_backend(&mut b, i, &a, i);
             }
@@ -108,7 +108,7 @@ where
 
 pub fn bench_vec_znx_sub_negate_assign<B>(c: &mut Criterion, label: &str)
 where
-    B: Backend,
+    B: Backend<ZnxWord = i64>,
     Module<B>: VecZnxSubNegateAssignBackend<B> + ModuleNew<B>,
     B::OwnedBuf: AsMut<[u8]>,
 {
@@ -116,7 +116,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(params: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(params: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxSubNegateAssignBackend<B> + ModuleNew<B>,
         B::OwnedBuf: AsMut<[u8]>,
@@ -135,8 +135,8 @@ where
         source.fill_bytes(b.data_mut().as_mut());
 
         move || {
-            let a = <VecZnx<B::OwnedBuf> as VecZnxToBackendRef<B>>::to_backend_ref(&a);
-            let mut b = <VecZnx<B::OwnedBuf> as VecZnxToBackendMut<B>>::to_backend_mut(&mut b);
+            let a = <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendRef<B>>::to_backend_ref(&a);
+            let mut b = <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendMut<B>>::to_backend_mut(&mut b);
             for i in 0..cols {
                 module.vec_znx_sub_negate_assign_backend(&mut b, i, &a, i);
             }

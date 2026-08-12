@@ -19,7 +19,7 @@ use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSMeta,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSSubOps, PaCoScalar},
     layouts::{
-        CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext,
+        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned,
         paco::{
             context::{PaCoContext, PaCoPsiTailMaterial},
             keyset::{PaCoKeyParameters, PaCoKeys, validate_backend_storage_capacity, validate_gadget_backend_view},
@@ -99,7 +99,7 @@ pub(crate) fn branch_working_k(plan: &PaCoPlan, output_k: usize) -> Result<usize
 pub(crate) fn validate_runtime<BE, F, K, Src>(
     module: &Module<BE>,
     context: &PaCoContext<BE, F>,
-    output: &CKKSCiphertext<BE::OwnedBuf>,
+    output: &CKKSCiphertextOwned<BE>,
     input: &Src,
     keys: &K,
 ) -> Result<(usize, usize)>
@@ -285,7 +285,7 @@ where
 /// validation is completed before the output is mutated.
 pub(crate) fn paco_bootstrap_branch_validated_into<BE, F, K, Src>(
     module: &Module<BE>,
-    output: &mut CKKSCiphertext<BE::OwnedBuf>,
+    output: &mut CKKSCiphertextOwned<BE>,
     input: &Src,
     context: &PaCoContext<BE, F>,
     keys: &K,
@@ -305,8 +305,8 @@ where
         + CKKSModuleAlloc<BE>
         + CyclotomicOrder,
     F: PaCoScalar,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let (output_scale, expected_final_k) = output_meta;

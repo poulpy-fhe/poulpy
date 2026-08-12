@@ -5,16 +5,16 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSDFTOps, CKKSEvalModOps},
-    layouts::{BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertext},
+    layouts::{
+        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned, CKKSPlaintextOwned, EncodedLut,
+    },
 };
 
 /// CKKS bootstrapping.
 ///
-/// Bootstrapping is the pipeline `ModUp → CoeffsToSlots → EvalMod →
-/// SlotsToCoeffs`. Of those, only **ModUp** (the modulus raise) is a new
-/// primitive, defined directly on this trait. The other three stages are reused
-/// verbatim from their own op traits, which this trait **re-exports as
-/// supertraits**:
+/// Only **ModUp** is a bootstrapping-specific primitive. CoeffsToSlots,
+/// EvalMod, and SlotsToCoeffs are reused from their own op traits, which this
+/// trait re-exports as supertraits:
 ///
 /// - CoeffsToSlots / SlotsToCoeffs via [`CKKSDFTOps`](crate::api::CKKSDFTOps)
 ///   ([`ckks_coeffs_to_slots`](CKKSDFTOps::ckks_coeffs_to_slots),
@@ -26,11 +26,10 @@ use crate::{
 /// The composable stages stay public so callers can assemble custom pipelines,
 /// but a ready-made orchestrator is provided: [`ckks_bootstrap`](Self::ckks_bootstrap).
 /// It consumes a compiled [`BootstrappingContext`] and a prepared
-/// [`BootstrappingKeys`], and selects the pipeline from the context — the classic
-/// refresh when [`coeffs_to_slots_bypass`](BootstrappingContext::coeffs_to_slots_bypass)
-/// is absent, the EvalRound+ variant (<https://eprint.iacr.org/2024/1379>) when it
-/// is present. Sparse-secret encapsulation of ModUp is selected by the compiled
-/// recipe; the supplied keys must carry the matching
+/// [`BootstrappingKeys`], and selects C2S-first or S2C-first from the context.
+/// EvalRound+ is selected separately by either recipe's optional bypass.
+/// Sparse-secret encapsulation is also selected by the compiled recipe; the
+/// supplied keys must carry the matching
 /// [encapsulation keys](BootstrappingKeys::encapsulation_keys).
 pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE> {
     /// Returns scratch bytes required by [`Self::ckks_mod_up_into`].
@@ -39,14 +38,42 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     /// Scratch upper bound for a full [`Self::ckks_bootstrap`] call: the
     /// pipeline working ciphertexts it carves from scratch plus the largest
     /// nested stage. `ct_out`/`ct_in` provide the bootstrap and input widths,
-    /// `ctx` selects the pipeline variant (standard vs EvalRound+) and the
-    /// EvalMod parameters, and `keys_layout` sizes the key-dependent stages
+    /// `ctx` selects the pipeline, optional EvalRound+ variant, and EvalMod
+    /// parameters; `keys_layout` sizes the key-dependent stages
     /// (rotations, tensor key, optional encapsulation switches).
     fn ckks_bootstrap_tmp_bytes<C1, C2, F>(
         &self,
         ct_out: &C1,
         ct_in: &C2,
         ctx: &BootstrappingContext<BE, F>,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds;
+
+    /// Scratch upper bound for functional bootstrap with `lut`.
+    fn ckks_functional_bootstrap_tmp_bytes<C1, C2, F>(
+        &self,
+        ct_out: &C1,
+        ct_in: &C2,
+        ctx: &BootstrappingContext<BE, F>,
+        lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds;
+
+    /// Scratch upper bound for a multi-LUT functional bootstrap. `ct_out`
+    /// provides the shared output layout required by
+    /// [`Self::ckks_functional_bootstrap_multi`].
+    fn ckks_functional_bootstrap_multi_tmp_bytes<C1, C2, F>(
+        &self,
+        ct_out: &C1,
+        ct_in: &C2,
+        ctx: &BootstrappingContext<BE, F>,
+        luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
@@ -75,22 +102,76 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     /// [`BootstrappingContext::coeffs_to_slots`]); EvalMod applies its own scale
     /// round-trip, so no further scaling is needed at call time.
     ///
-    /// The pipeline is selected from the context:
+    /// The pipeline is selected from [`BootstrappingContext::pipeline`]:
     ///
-    /// - **standard** (`ModUp → CoeffsToSlots → EvalMod → SlotsToCoeffs`) when
-    ///   [`coeffs_to_slots_bypass`](BootstrappingContext::coeffs_to_slots_bypass) is
-    ///   `None`;
-    /// - **EvalRound+** (<https://eprint.iacr.org/2024/1379>) when it is `Some`: EvalMod
-    ///   runs on the low-precision CoeffsToSlots whose DFT error `e` cancels in the
-    ///   round `r0_hp − K·r0_lp + EvalMod(r0_lp)`, recovering the message at the
-    ///   high-precision bypass transform's precision (`K = f_mod_interval`, read from
-    ///   the compiled EvalMod, must be a power of two).
-    #[allow(clippy::too_many_arguments)]
+    /// - [`C2SFirst`](crate::layouts::BootstrappingPipeline::C2SFirst): `ModUp → CoeffsToSlots →
+    ///   EvalMod → SlotsToCoeffs`. The final transform restores the message ratio.
+    /// - [`S2CFirst`](crate::layouts::BootstrappingPipeline::S2CFirst): `SlotsToCoeffs → ModUp →
+    ///   CoeffsToSlots → EvalMod`. The first transform uses scaling `1/2`; the
+    ///   output is relabeled at `ct_in.log_delta`.
+    ///
+    /// Use [`BootstrappingPlan::input_k`](crate::layouts::BootstrappingPlan::input_k)
+    /// and [`BootstrappingPlan::bootstrap_k`](crate::layouts::BootstrappingPlan::bootstrap_k)
+    /// to place the pre- and post-ModUp costs correctly.
     fn ckks_bootstrap<F, K>(
         &self,
-        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
+
+    /// Standard S2C-first bootstrap for ciphertexts known to contain real slots
+    /// only. EvalRound+ contexts are not supported by this specialized path.
+    fn ckks_bootstrap_real<F, K>(
+        &self,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
+        ctx: &BootstrappingContext<BE, F>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
+
+    /// Refreshes `ct_in` through an S2C-first context and applies `lut` to each
+    /// real and imaginary slot half before recombining them in `ct_out`. The LUT
+    /// derives the required message ratio from its table length.
+    fn ckks_functional_bootstrap<F, K>(
+        &self,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
+        ctx: &BootstrappingContext<BE, F>,
+        lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
+
+    /// Functional bootstrap for ciphertexts known to contain real slots only.
+    fn ckks_functional_bootstrap_real<F, K>(
+        &self,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
+        ctx: &BootstrappingContext<BE, F>,
+        lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
+        keys: &K,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) -> Result<()>
+    where
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
+
+    /// Applies several equal-arity LUTs through one shared functional bootstrap.
+    fn ckks_functional_bootstrap_multi<F, K>(
+        &self,
+        ct_outs: &mut [CKKSCiphertextOwned<BE>],
+        ct_in: &CKKSCiphertextOwned<BE>,
+        ctx: &BootstrappingContext<BE, F>,
+        luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>

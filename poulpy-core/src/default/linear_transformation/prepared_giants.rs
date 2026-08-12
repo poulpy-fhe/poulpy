@@ -144,7 +144,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
         + GaloisElement
         + GLWEAdd<BE>
         + GLWECopy<BE>
-        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + CnvPVecBytesOf
         + Convolution<BE>
         + ModuleN
@@ -303,7 +303,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
     // normalized into the temporary SMALL ciphertext.
     let (mut prod_dft, scratch_phase) = scratch.take_vec_znx_dft_scratch(module, cols, prod_size);
     let (mut prod_col_big, mut scratch_phase) = scratch_phase.take_vec_znx_big_scratch(module, 1, prod_size);
-    let mut fallback_acc: GLWE<BE::OwnedBuf> = module.glwe_alloc_from_infos(res);
+    let mut fallback_acc: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(res);
     let mut res_initialized = false;
 
     for g in 0..num_giant_steps {
@@ -317,7 +317,7 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
                 &rhs.giant_steps[g],
                 &mut scratch_phase,
             );
-            let mut acc_backend = <GLWE<BE::OwnedBuf> as GLWEToBackendMut<BE>>::to_backend_mut(&mut fallback_acc);
+            let mut acc_backend = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendMut<BE>>::to_backend_mut(&mut fallback_acc);
             for col in 0..cols {
                 module.vec_znx_idft_apply_tmpa(&mut prod_col_big, 0, &mut prod_dft_backend, col);
                 let prod_col_big_ref = prod_col_big.to_backend_ref();

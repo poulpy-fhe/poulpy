@@ -14,7 +14,8 @@ use crate::{
         GGSWPreparedToBackendMut, GGSWPreparedToBackendRef, GGSWToBackendMut, GGSWToBackendRef, GLWE, GLWEBackendMut,
         GLWEBackendRef, GLWEPlaintext, GLWESecret, GLWESecretBackendMut, GLWESecretBackendRef, GLWESecretPrepared,
         GLWESecretPreparedBackendMut, GLWESecretPreparedBackendRef, GLWESecretPreparedToBackendMut,
-        GLWESecretPreparedToBackendRef, GLWESecretTensor, GLWESecretToBackendMut, GLWESecretToBackendRef, GLWETensor,
+        GLWESecretPreparedToBackendRef, GLWESecretTensor, GLWESecretTensorBackendMut, GLWESecretTensorBackendRef,
+        GLWESecretTensorToBackendMut, GLWESecretTensorToBackendRef, GLWESecretToBackendMut, GLWESecretToBackendRef, GLWETensor,
         GLWEToBackendMut, GLWEToBackendRef, LWE, LWEBackendMut, LWEBackendRef, LWEPlaintext, LWEPlaintextBackendMut,
         LWEPlaintextBackendRef, LWEPlaintextToBackendMut, LWEPlaintextToBackendRef, LWEToBackendMut, LWEToBackendRef, Rank,
         SetBase2k, SetGGLWEInfos, SetK, TorusPrecision,
@@ -82,18 +83,18 @@ macro_rules! view_wrapper {
     };
 }
 
-view_wrapper!(LWEViewMut, LWE<BE::BufMut<'a>>);
-view_wrapper!(LWEPlaintextViewMut, LWEPlaintext<BE::BufMut<'a>>);
-view_wrapper!(GLWEViewRef, GLWE<BE::BufRef<'a>>);
-view_wrapper!(GLWEViewMut, GLWE<BE::BufMut<'a>>);
-view_wrapper!(GLWEPlaintextViewMut, GLWEPlaintext<BE::BufMut<'a>>);
-view_wrapper!(GLWETensorViewMut, GLWETensor<BE::BufMut<'a>>);
-view_wrapper!(GLWESecretViewMut, GLWESecret<BE::BufMut<'a>>);
-view_wrapper!(GLWESecretTensorViewMut, GLWESecretTensor<BE::BufMut<'a>>);
+view_wrapper!(LWEViewMut, LWE<BE::BufMut<'a>, BE::ZnxWord>);
+view_wrapper!(LWEPlaintextViewMut, LWEPlaintext<BE::BufMut<'a>, BE::ZnxWord>);
+view_wrapper!(GLWEViewRef, GLWE<BE::BufRef<'a>, BE::ZnxWord>);
+view_wrapper!(GLWEViewMut, GLWE<BE::BufMut<'a>, BE::ZnxWord>);
+view_wrapper!(GLWEPlaintextViewMut, GLWEPlaintext<BE::BufMut<'a>, BE::ZnxWord>);
+view_wrapper!(GLWETensorViewMut, GLWETensor<BE::BufMut<'a>, BE::ZnxWord>);
+view_wrapper!(GLWESecretViewMut, GLWESecret<BE::BufMut<'a>, BE::ZnxWord>);
+view_wrapper!(GLWESecretTensorViewMut, GLWESecretTensor<BE::BufMut<'a>, BE::ZnxWord>);
 view_wrapper!(GLWESecretPreparedViewMut, GLWESecretPrepared<BE::BufMut<'a>, BE>);
-view_wrapper!(GGLWEViewMut, GGLWE<BE::BufMut<'a>>);
+view_wrapper!(GGLWEViewMut, GGLWE<BE::BufMut<'a>, BE::ZnxWord>);
 view_wrapper!(GGLWEPreparedViewMut, GGLWEPrepared<BE::BufMut<'a>, BE>);
-view_wrapper!(GGSWViewMut, GGSW<BE::BufMut<'a>>);
+view_wrapper!(GGSWViewMut, GGSW<BE::BufMut<'a>, BE::ZnxWord>);
 view_wrapper!(GGSWPreparedViewMut, GGSWPrepared<BE::BufMut<'a>, BE>);
 
 impl<'a, BE: Backend + 'a> GGLWEViewMut<'a, BE> {
@@ -375,10 +376,11 @@ impl<'a, BE: Backend + 'a> GLWESecretToBackendMut<BE> for GLWESecretViewMut<'a, 
     }
 }
 
-impl<'a, BE: Backend + 'a> GLWESecretToBackendRef<BE> for GLWESecretTensorViewMut<'a, BE> {
-    fn to_backend_ref(&self) -> GLWESecretBackendRef<'_, BE> {
-        GLWESecret {
+impl<'a, BE: Backend + 'a> GLWESecretTensorToBackendRef<BE> for GLWESecretTensorViewMut<'a, BE> {
+    fn to_backend_ref(&self) -> GLWESecretTensorBackendRef<'_, BE> {
+        GLWESecretTensor {
             dist: self.inner.dist,
+            rank: self.inner.rank,
             data: ScalarZnx::from_data(
                 BE::view_ref_mut(&self.inner.data.data),
                 self.inner.data.n(),
@@ -388,12 +390,13 @@ impl<'a, BE: Backend + 'a> GLWESecretToBackendRef<BE> for GLWESecretTensorViewMu
     }
 }
 
-impl<'a, BE: Backend + 'a> GLWESecretToBackendMut<BE> for GLWESecretTensorViewMut<'a, BE> {
-    fn to_backend_mut(&mut self) -> GLWESecretBackendMut<'_, BE> {
+impl<'a, BE: Backend + 'a> GLWESecretTensorToBackendMut<BE> for GLWESecretTensorViewMut<'a, BE> {
+    fn to_backend_mut(&mut self) -> GLWESecretTensorBackendMut<'_, BE> {
         let n = self.inner.data.n();
         let cols = self.inner.data.cols();
-        GLWESecret {
+        GLWESecretTensor {
             dist: self.inner.dist,
+            rank: self.inner.rank,
             data: ScalarZnx::from_data(BE::view_mut_ref(&mut self.inner.data.data), n, cols),
         }
     }

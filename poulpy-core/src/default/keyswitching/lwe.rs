@@ -4,6 +4,7 @@
 
 #![allow(private_bounds)]
 
+use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{ModuleN, VecZnxCopyRangeBackend, VecZnxZeroBackend},
     layouts::{Backend, ScratchArena},
@@ -12,8 +13,8 @@ use poulpy_hal::{
 use crate::{
     ScratchArenaTakeCore,
     layouts::{
-        GGLWEInfos, GLWE, GLWELayout, LWEInfos, LWEToBackendMut, LWEToBackendRef, Rank, TorusPrecision,
-        glwe_backend_ref_from_mut, prepared::GGLWEPreparedToBackendRef,
+        GGLWEInfos, GLWELayout, LWEInfos, LWEToBackendMut, LWEToBackendRef, Rank, TorusPrecision, glwe_backend_ref_from_mut,
+        prepared::GGLWEPreparedToBackendRef,
     },
     oep::{GLWEKeyswitchDefault, LWEKeyswitchDefault},
 };
@@ -21,7 +22,7 @@ use crate::{
 pub fn lwe_keyswitch_tmp_bytes_default<BE, M, R, A, K>(module: &M, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
-    M: ModuleN + GLWEKeyswitchDefault<BE>,
+    M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitchDefault<BE>,
     R: LWEInfos,
     A: LWEInfos,
     K: GGLWEInfos,
@@ -44,8 +45,8 @@ where
         rank: Rank(1),
     };
 
-    let lvl_0: usize = GLWE::<Vec<u8>>::bytes_of_from_infos(&glwe_a_infos);
-    let lvl_1: usize = GLWE::<Vec<u8>>::bytes_of_from_infos(&glwe_res_infos);
+    let lvl_0: usize = module.glwe_bytes_of_from_infos(&glwe_a_infos);
+    let lvl_1: usize = module.glwe_bytes_of_from_infos(&glwe_res_infos);
     let lvl_2: usize = module.glwe_keyswitch_tmp_bytes_default(&glwe_res_infos, &glwe_a_infos, key_infos);
 
     lvl_0 + lvl_1 + lvl_2
@@ -54,7 +55,12 @@ where
 pub fn lwe_keyswitch_default<BE, M, R, A, K>(module: &M, res: &mut R, a: &A, ksk: &K, scratch: &mut ScratchArena<'_, BE>)
 where
     BE: Backend,
-    M: LWEKeyswitchDefault<BE> + ModuleN + GLWEKeyswitchDefault<BE> + VecZnxCopyRangeBackend<BE> + VecZnxZeroBackend<BE>,
+    M: GLWEBytesOf<BE>
+        + LWEKeyswitchDefault<BE>
+        + ModuleN
+        + GLWEKeyswitchDefault<BE>
+        + VecZnxCopyRangeBackend<BE>
+        + VecZnxZeroBackend<BE>,
     R: LWEToBackendMut<BE> + LWEInfos,
     A: LWEToBackendRef<BE> + LWEInfos,
     K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,

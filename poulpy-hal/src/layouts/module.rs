@@ -123,6 +123,10 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     fn region_mut_ref<'a, 'b>(buf: &'a mut Self::BufMut<'b>, offset: usize, len: usize) -> Self::BufMut<'a>
     where
         Self: 'b;
+    /// Bytes size of `ZnxWord`.
+    fn size_of_znx_word() -> usize {
+        size_of::<Self::ZnxWord>()
+    }
     /// Bytes size of `BigWord`.
     fn size_of_big_word() -> usize {
         size_of::<Self::BigWord>()
@@ -140,6 +144,21 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     /// carved regions satisfy both alignment and SIMD requirements.
     const SCRATCH_ALIGN: usize = 64;
 
+    /// Byte size of a [`crate::layouts::VecZnx`] buffer.
+    fn bytes_of_vec_znx(n: usize, cols: usize, size: usize) -> usize {
+        checked_product(&[n, cols, size, Self::size_of_znx_word()], "VecZnx byte size")
+    }
+    /// Byte size of a [`crate::layouts::ScalarZnx`] buffer.
+    fn bytes_of_scalar_znx(n: usize, cols: usize) -> usize {
+        checked_product(&[n, cols, Self::size_of_znx_word()], "ScalarZnx byte size")
+    }
+    /// Byte size of a [`crate::layouts::MatZnx`] buffer.
+    fn bytes_of_mat_znx(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
+        checked_product(
+            &[rows, cols_in, Self::bytes_of_vec_znx(n, cols_out, size)],
+            "MatZnx byte size",
+        )
+    }
     /// Byte size of a [`crate::layouts::VecZnxDft`] buffer.
     fn bytes_of_vec_znx_dft(n: usize, cols: usize, size: usize) -> usize {
         checked_product(&[n, cols, size, Self::size_of_dft_word()], "VecZnxDft byte size")
@@ -259,17 +278,20 @@ impl<B: Backend> Module<B> {
 
     /// Allocates a zero-initialized backend-owned [`ScalarZnx`].
     #[inline]
-    pub fn scalar_znx_alloc(&self, cols: usize) -> ScalarZnx<B::OwnedBuf> {
+    pub fn scalar_znx_alloc(&self, cols: usize) -> ScalarZnx<B::OwnedBuf, B::ZnxWord> {
         let n = self.n();
-        let len = ScalarZnx::<Vec<u8>>::bytes_of(n, cols);
+        let len = B::bytes_of_scalar_znx(n, cols);
         let bytes = B::alloc_zeroed_bytes(len);
         ScalarZnx::from_data(bytes, n, cols)
     }
 
     /// Allocates a zero-initialized backend-owned [`VecZnx`].
     #[inline]
-    pub fn vec_znx_alloc(&self, cols: usize, size: usize) -> VecZnx<B::OwnedBuf> {
-        self.vec_znx_alloc_with_max_size(cols, size, size)
+    pub fn vec_znx_alloc(&self, cols: usize, size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord> {
+        let n = self.n();
+        let len = self.bytes_of_vec_znx_n(n, cols, size);
+        let bytes = B::alloc_zeroed_bytes(len);
+        VecZnx::from_data(bytes, n, cols, size)
     }
 
     /// Returns the byte size of a [`VecZnx`] with this module's ring degree.
@@ -281,23 +303,14 @@ impl<B: Backend> Module<B> {
     /// Returns the byte size of a [`VecZnx`] with an explicit coefficient degree.
     #[inline]
     pub fn bytes_of_vec_znx_n(&self, n: usize, cols: usize, size: usize) -> usize {
-        VecZnx::<Vec<u8>>::bytes_of(n, cols, size)
-    }
-
-    /// Allocates a zero-initialized backend-owned [`VecZnx`] with explicit limb capacity.
-    #[inline]
-    pub fn vec_znx_alloc_with_max_size(&self, cols: usize, size: usize, max_size: usize) -> VecZnx<B::OwnedBuf> {
-        let n = self.n();
-        let len = self.bytes_of_vec_znx_n(n, cols, max_size);
-        let bytes = B::alloc_zeroed_bytes(len);
-        VecZnx::from_data_with_max_size(bytes, n, cols, size, max_size)
+        B::bytes_of_vec_znx(n, cols, size)
     }
 
     /// Allocates a zero-initialized backend-owned [`MatZnx`].
     #[inline]
-    pub fn mat_znx_alloc(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> MatZnx<B::OwnedBuf> {
+    pub fn mat_znx_alloc(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> MatZnx<B::OwnedBuf, B::ZnxWord> {
         let n = self.n();
-        let len = MatZnx::<Vec<u8>>::bytes_of(n, rows, cols_in, cols_out, size);
+        let len = B::bytes_of_mat_znx(n, rows, cols_in, cols_out, size);
         let bytes = B::alloc_zeroed_bytes(len);
         MatZnx::from_data(bytes, n, rows, cols_in, cols_out, size)
     }

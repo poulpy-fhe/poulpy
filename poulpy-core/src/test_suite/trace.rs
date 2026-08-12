@@ -7,6 +7,7 @@ use poulpy_hal::{
     test_suite::{TestParams, vec_znx_backend_mut},
 };
 
+use crate::layouts::GLWESecretSampling;
 use crate::{
     EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWEDecrypt, GLWEEncryptSk, GLWETrace,
     encryption::DEFAULT_SIGMA_XE,
@@ -68,9 +69,9 @@ where
         })
         .unwrap();
 
-        let glwe_out_template: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_out_infos);
-        let pt_template: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
-        let mut pt_want: GLWEPlaintext<Vec<u8>>;
+        let glwe_out_template: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_out_infos);
+        let pt_template: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_out_infos);
+        let mut pt_want: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord>;
 
         let mut source_xs: Source = Source::new([0u8; 32]);
         let mut source_xe: Source = Source::new([0u8; 32]);
@@ -83,8 +84,8 @@ where
                 | module.glwe_trace_tmp_bytes(&glwe_out_infos, &glwe_out_infos, &key_infos),
         );
 
-        let mut sk: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(&glwe_out_infos);
-        sk.fill_ternary_prob(0.5, &mut source_xs);
+        let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&glwe_out_infos);
+        module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
         let sk_backend = upload_glwe_secret(module, &sk);
 
         let mut sk_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
@@ -114,7 +115,8 @@ where
 
         let mut auto_keys: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>> = HashMap::new();
         let gal_els: Vec<i64> = module.glwe_trace_galois_elements();
-        let tmp_template: GLWEAutomorphismKey<Vec<u8>> = module.glwe_automorphism_key_alloc_from_infos(&key_infos);
+        let tmp_template: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
+            module.glwe_automorphism_key_alloc_from_infos(&key_infos);
         gal_els.iter().for_each(|gal_el| {
             let mut tmp = upload_glwe_automorphism_key(module, &tmp_template);
             module.glwe_automorphism_key_encrypt_sk(
@@ -135,12 +137,15 @@ where
         module.glwe_trace_assign(&mut glwe_out, 0, &auto_keys, &mut scratch.borrow());
         let mut pt_have_backend = upload_glwe_plaintext(module, &pt_template);
         module.glwe_decrypt(&glwe_out, &mut pt_have_backend, &sk_dft, &mut scratch.borrow());
-        let pt_have: GLWEPlaintext<Vec<u8>> = download_glwe_plaintext(module, &pt_have_backend);
+        let pt_have: GLWEPlaintext<Vec<u8>, BE::ZnxWord> = download_glwe_plaintext(module, &pt_have_backend);
 
         {
             let mut pt_want_data =
-                <poulpy_hal::layouts::VecZnx<Vec<u8>> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut pt_want.data);
-            let pt_have_data = <poulpy_hal::layouts::VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(&pt_have.data);
+                <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(
+                    &mut pt_want.data,
+                );
+            let pt_have_data =
+                <poulpy_hal::layouts::VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(&pt_have.data);
             module.vec_znx_sub_assign_backend(&mut pt_want_data, 0, &pt_have_data, 0);
         }
         let mut pt_noise = upload_glwe_plaintext(module, &pt_want);
