@@ -24,6 +24,7 @@ use super::helpers::{
     TestContextBackend, TestContextModule, TestScalar, ckks_decrypt_decode, ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw,
     gen_tsk, precision_stats,
 };
+use crate::SlotsKind;
 
 fn alloc_scratch_eval_mod<BE, F>(
     params: &super::CKKSTestParams,
@@ -165,6 +166,7 @@ fn run_eval_mod_case<BE, F, E>(
         prec_meta: CKKSMeta {
             log_sparsity: 0,
             log_delta: input_log_delta,
+            slots: SlotsKind::Complex,
         },
         prec_log_budget: 10,
         dsize,

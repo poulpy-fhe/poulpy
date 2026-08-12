@@ -70,6 +70,7 @@ where
     ) -> anyhow::Result<()> {
         res.set_log_delta(seed.log_delta());
         res.set_log_budget(seed.log_budget());
+        res.set_slots(seed.slots());
         module.glwe_zero(res);
         Ok(())
     }

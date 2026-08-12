@@ -339,6 +339,7 @@ impl<F: CKKSScalar, D: HostDataMut + HostDataRef> CKKSPlaintextVecHostCodec<F> f
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::SlotsKind;
     use crate::layouts::CKKSModuleAlloc;
     use poulpy_hal::layouts::{HostBytesBackend, Module};
 
@@ -348,6 +349,7 @@ mod tests {
         let prec = CKKSMeta {
             log_sparsity: 0,
             log_delta: 40,
+            slots: SlotsKind::Complex,
         };
         let base2k: Base2K = 52usize.into();
 
@@ -369,6 +371,7 @@ mod tests {
         let prec = CKKSMeta {
             log_sparsity: 0,
             log_delta: 40,
+            slots: SlotsKind::Complex,
         };
         let base2k: Base2K = 50usize.into();
 

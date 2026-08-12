@@ -6,6 +6,7 @@ use poulpy_hal::{
     layouts::{HostBytesBackend, Module},
 };
 
+use crate::SlotsKind;
 use crate::{
     CKKSInfos, CKKSMeta, SetCKKSInfos,
     layouts::CKKSModuleAlloc,
@@ -44,6 +45,7 @@ pub fn test_encode_decode_reim_roundtrip<BE, F, E>(
     pt.set_meta(CKKSMeta {
         log_sparsity: 0,
         log_delta,
+        slots: SlotsKind::Complex,
     });
     encoder.encode_reim(&mut pt, &re_in, &im_in).unwrap();
 

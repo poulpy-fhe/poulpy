@@ -1,12 +1,13 @@
 //! Public PaCo bootstrapping operations.
 //!
-//! The API follows the crate's caller-allocated convention. A single
-//! sequential entry point accepts `kappa`: `kappa = 1` evaluates seqPaCo and
-//! recovers `C` coefficient classes, while larger powers of two evaluate the
-//! deterministic Algorithm-5 branch composition. The `_direct` variants
-//! expect an input already under the structured PaCo secret; the default
-//! variants first use the optional dense-to-PaCo switching key in
-//! [`PaCoKeys`](crate::layouts::PaCoKeys).
+//! The API follows the crate's caller-allocated convention. The branch count
+//! is derived from the input: a ciphertext at `log_sparsity = s` has `N/2^s`
+//! live coefficients, and one branch recovers `C` of them, so the drivers run
+//! `kappa = N/(C*2^s)` branches of the deterministic Algorithm-5 composition
+//! (`kappa = 1`, seqPaCo, is what a maximally sparse input asks for). The
+//! `_direct` variants expect an input already under the structured PaCo
+//! secret; the default variants first use the optional dense-to-PaCo
+//! switching key in [`PaCoKeys`](crate::layouts::PaCoKeys).
 
 use crate::CKKSResult as Result;
 use crate::layouts::CKKSPlaintextOwned;
@@ -65,8 +66,9 @@ impl PaCoScalar for crate::Quad {
 /// output capacity, evaluation-key layouts, required Galois elements, and
 /// scale/budget arithmetic before evaluating the circuit. The output is under
 /// the application key encrypting the four bootstrapping ciphertexts. Its
-/// `log_sparsity` is `log2(N / (kappa*C))`; its scale is the validated PaCo
-/// re-anchoring of the exhausted input scale.
+/// `log_sparsity` is the input's own, every live coefficient having been
+/// refreshed; its scale is the validated PaCo re-anchoring of the exhausted
+/// input scale.
 ///
 /// The scalar is a trait parameter so the methods stay free of backend
 /// bounds: the delegating impl on `Module<BE>` requires the
@@ -128,26 +130,27 @@ pub trait CKKSPaCoOps<BE: Backend, F: PaCoScalar> {
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds;
 
-    /// Bootstraps `kappa*C` coefficient classes sequentially when `input` is
-    /// already under the structured PaCo secret.
+    /// Refreshes every live coefficient of `input` sequentially, when `input`
+    /// is already under the structured PaCo secret.
     ///
-    /// `kappa` must be a non-zero power of two and `kappa*C <= N`. Branches are
-    /// recombined in increasing branch order, making the result deterministic.
+    /// The input's `log_sparsity` sets the branch count `N/(C*2^log_sparsity)`,
+    /// which must be a power of two, so the input must leave at least `C` live
+    /// coefficients. Branches are recombined in increasing branch order, making
+    /// the result deterministic.
     fn ckks_paco_bootstrap_direct_into<K, Src>(
         &self,
         output: &mut CKKSCiphertextOwned<BE>,
         input: &Src,
         context: &PaCoContext<BE, F>,
         keys: &K,
-        kappa: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         K: PaCoKeys<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds;
 
-    /// Bootstraps `kappa*C` coefficient classes sequentially after switching a
-    /// dense-key input to the structured PaCo secret.
+    /// Refreshes every live coefficient of `input` sequentially, after
+    /// switching a dense-key input to the structured PaCo secret.
     ///
     /// Fails if `keys` has no dense-to-PaCo switching key. No switch back is
     /// needed: the bootstrapping ciphertexts transfer the result directly to
@@ -158,7 +161,6 @@ pub trait CKKSPaCoOps<BE: Backend, F: PaCoScalar> {
         input: &Src,
         context: &PaCoContext<BE, F>,
         keys: &K,
-        kappa: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
@@ -182,7 +184,6 @@ pub trait CKKSPaCoOps<BE: Backend, F: PaCoScalar> {
         input: &Src,
         context: &PaCoContext<BE, F>,
         keys: &K,
-        kappa: usize,
         workers: &mut [PaCoWorker<BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -203,7 +204,6 @@ pub trait CKKSPaCoOps<BE: Backend, F: PaCoScalar> {
         input: &Src,
         context: &PaCoContext<BE, F>,
         keys: &K,
-        kappa: usize,
         workers: &mut [PaCoWorker<BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>

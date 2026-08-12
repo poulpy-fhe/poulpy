@@ -143,7 +143,8 @@ LUTs are encoded on the host and uploaded once with `EncodedLut::to_backend`.
 
 General LUTs use trigonometric Hermite interpolation on the unit circle.
 They therefore require an S2C-first recipe whose EvalMod type is `ExpCmplx` with `scaling = 2π`.
-The multi-LUT entry point shares the S2C and power-basis work between equal-arity general LUTs; binary or mixed batches fall back to evaluating each LUT against the shared transformed input.
+`ckks_functional_bootstrap` takes a slice of LUTs and a slice of outputs, so one LUT and many go through the same entry point: the batch shares the SlotsToCoeffs, ModUp and CoeffsToSlots stages, and equal-arity general LUTs additionally share the power basis of each transformed half (binary or mixed batches fall back to evaluating each LUT against the shared transformed input). Each imaginary half is folded into its output as it is produced, so the scratch bound does not grow with the batch size.
+Real slots are selected by the input's metadata rather than by a separate entry point: `ct.set_slots(SlotsKind::Real)` makes both `ckks_bootstrap` and `ckks_functional_bootstrap` skip the imaginary branch.
 
 `EncodedLut::binary` is specialized for two entries.
 Its cosine polynomial is controlled by `degree`, `k_interval`, and `log_interval_reduction`; it skips EvalMod and is cheaper than the general construction.

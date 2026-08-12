@@ -34,6 +34,7 @@ use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena},
 };
 
+use crate::SlotsKind;
 use crate::{
     CKKSCompositionError, CKKSCtBounds, SetCKKSInfos,
     api::{
@@ -383,6 +384,9 @@ where
     module.ckks_sub_into(&mut tmp, ct_real, ct_imag, scratch)?;
     module.ckks_add_assign(ct_real, ct_imag, scratch)?;
     module.ckks_div_i_into(ct_imag, &tmp, scratch)?;
+    // Both halves are the (real) coefficients of the input polynomial.
+    ct_real.set_slots(SlotsKind::Real);
+    ct_imag.set_slots(SlotsKind::Real);
     Ok(())
 }
 
@@ -470,6 +474,8 @@ where
     // The repack doubles the live slot count.
     let log_sparsity = ct_in.log_sparsity().saturating_sub(1);
     ct_out.set_log_sparsity(log_sparsity);
+    // `[Re | Im]` packs the input polynomial's (real) coefficients.
+    ct_out.set_slots(SlotsKind::Real);
     Ok(())
 }
 
