@@ -378,7 +378,8 @@ pub trait CKKSMulDefault<BE: Backend> {
         dst.set_log_delta(res_log_delta);
         // A scalar-constant multiply preserves the operand's sparsity pattern.
         dst.set_log_sparsity(a.log_sparsity());
-        dst.set_slots(a.slots().join(pt.slots()));
+        // A scalar-constant multiply is always real.
+        dst.set_slots(a.slots());
         self.glwe_mul_const(cnv_offset, dst, a, pt, pt_coeff, scratch);
 
         Ok(())
@@ -402,7 +403,7 @@ pub trait CKKSMulDefault<BE: Backend> {
 
         dst.set_log_budget(res_log_budget);
         dst.set_log_delta(res_log_delta);
-        dst.set_slots(dst.slots().join(cnst.slots()));
+        // A real scalar multiplier leaves the slot kind unchanged.
         Ok(())
     }
 }

@@ -379,7 +379,10 @@ macro_rules! ckks_carry_verb_default {
                     P: GLWEToBackendRef<BE> + ::poulpy_core::layouts::IntPolyInfos + CKKSInfos,
                 {
                     CKKSPlaintextDefault::[<ckks_ $verb _pt_const_into_default>](self, dst, dst_coeff, cst, const_coeff, scratch)?;
-                    dst.set_slots(dst.slots().join(cst.slots()));
+                    // cst is always tagged as real, it's where dst_coeff lands
+                    // that selects if the added constant is real (X^{0}) or imaginary (X^{N/2}).
+                    let added = if dst_coeff == 0 { $crate::SlotsKind::Real } else { $crate::SlotsKind::Complex };
+                    dst.set_slots(dst.slots().join(added));
                     Ok(())
                 }
             }

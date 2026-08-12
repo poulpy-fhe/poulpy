@@ -655,7 +655,7 @@ impl<BE: Backend> BootstrappingDefault<'_, BE> {
                     )?;
                 }
             }
-
+            ct_out.set_slots(ct_in.slots());
             Result::Ok(())
         })
     }

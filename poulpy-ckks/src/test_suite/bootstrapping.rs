@@ -319,6 +319,33 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
         }
     }
 
+    // A real-tagged input must come back real-tagged, whichever pipeline the
+    // recipe selects, and its imaginary part must stay zero.
+    {
+        let im_zero = vec![F::zero(); m];
+        let mut ct_real = ckks_encrypt_with_prec(
+            &tp,
+            &module,
+            &host_module,
+            &encoder,
+            &sk,
+            log_modulus_in,
+            &re,
+            &im_zero,
+            ckks_spec(n, base2k, log_delta, log_modulus_in - log_delta),
+            &mut scratch.borrow(),
+        );
+        ct_real.set_slots(SlotsKind::Real);
+        let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+        module
+            .ckks_bootstrap(&mut ct_bs, &ct_real, &ctx, &bsk, &mut scratch.borrow())
+            .unwrap();
+        assert_eq!(ct_bs.slots(), SlotsKind::Real, "standard output slot kind");
+        let (re_bs, im_bs) = decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow());
+        assert!(precision_stats(&re_bs, &re, log_delta).avg_log2_prec >= MIN_AVG_LOG2_PREC);
+        assert!(precision_stats(&im_bs, &im_zero, log_delta).avg_log2_prec >= 5.0);
+    }
+
     let now = Instant::now();
     // 1) (encapsulate) denseToSparse, ModUp, sparseToDense — so the integer
     //    wrap-around `I(X)·q` ModUp exposes is bounded by the *sparse* secret's
@@ -709,6 +736,33 @@ pub fn test_bootstrapping_evalround_e2e<BE, F, E>(
         }
     }
 
+    // A real-tagged input must come back real-tagged, whichever pipeline the
+    // recipe selects, and its imaginary part must stay zero.
+    {
+        let im_zero = vec![F::zero(); m];
+        let mut ct_real = ckks_encrypt_with_prec(
+            &tp,
+            &module,
+            &host_module,
+            &encoder,
+            &sk,
+            log_modulus_in,
+            &re,
+            &im_zero,
+            ckks_spec(n, base2k, log_delta, log_modulus_in - log_delta),
+            &mut scratch.borrow(),
+        );
+        ct_real.set_slots(SlotsKind::Real);
+        let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
+        module
+            .ckks_bootstrap(&mut ct_bs, &ct_real, &ctx, &bsk, &mut scratch.borrow())
+            .unwrap();
+        assert_eq!(ct_bs.slots(), SlotsKind::Real, "evalround output slot kind");
+        let (re_bs, im_bs) = decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow());
+        assert!(precision_stats(&re_bs, &re, log_delta).avg_log2_prec >= MIN_AVG_LOG2_PREC);
+        assert!(precision_stats(&im_bs, &im_zero, log_delta).avg_log2_prec >= 5.0);
+    }
+
     // 1) (encapsulate) denseToSparse, ModUp, sparseToDense.
     if let Some((dense_to_sparse, _)) = bsk.encapsulation_keys() {
         module.glwe_keyswitch_assign(&mut ct0, dense_to_sparse, &mut scratch.borrow());
@@ -1039,7 +1093,7 @@ where
         decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow())
     };
 
-    if !eval_round_plus {
+    {
         let im_zero = vec![F::zero(); m];
         let ct_real = ckks_encrypt_with_prec(
             &tp,

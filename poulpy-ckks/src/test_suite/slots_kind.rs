@@ -10,7 +10,8 @@ use poulpy_hal::{
 };
 
 use super::helpers::{
-    TestContextBackend, TestContextModule, TestScalar, alloc_ct, alloc_scratch, ckks_encrypt, gen_sk_with_raw, gen_tsk,
+    TestContextBackend, TestContextHostModule, TestContextModule, TestScalar, add_sub_const_pt, alloc_ct, alloc_scratch,
+    ckks_encrypt, gen_sk_with_raw, gen_tsk,
 };
 use crate::{
     CKKSInfos, SetCKKSInfos, SlotsKind,
@@ -24,6 +25,7 @@ where
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
+    Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
 {
@@ -104,4 +106,39 @@ where
     let mut acc = a.clone();
     module.ckks_div_i_assign(&mut acc, &mut scratch.borrow()).unwrap();
     assert_eq!(acc.slots(), SlotsKind::Complex);
+
+    // A constant is one quantized coefficient, always a real scalar, so the
+    // plaintext's own (default `Complex`) kind must not leak into the result.
+    // What decides an added constant is where it lands: coefficient 0 is the
+    // real constant term, `n/2` the imaginary one.
+    let cst = add_sub_const_pt::<BE, F>(host_module, module, params.base2k.into());
+    assert_eq!(cst.slots(), SlotsKind::Complex, "the constant plaintext is unlabelled");
+
+    let mut acc = a.clone();
+    acc.set_slots(SlotsKind::Real);
+    module
+        .ckks_add_pt_const_assign(&mut acc, 0, &cst, 0, &mut scratch.borrow())
+        .unwrap();
+    assert_eq!(acc.slots(), SlotsKind::Real, "a real constant term keeps real slots");
+
+    let mut acc = a.clone();
+    acc.set_slots(SlotsKind::Real);
+    module
+        .ckks_add_pt_const_assign(&mut acc, m, &cst, 0, &mut scratch.borrow())
+        .unwrap();
+    assert_eq!(acc.slots(), SlotsKind::Complex, "an imaginary constant term leaves the reals");
+
+    let mut acc = a.clone();
+    acc.set_slots(SlotsKind::Real);
+    module
+        .ckks_sub_pt_const_assign(&mut acc, m, &cst, 0, &mut scratch.borrow())
+        .unwrap();
+    assert_eq!(acc.slots(), SlotsKind::Complex, "subtracting one is no different");
+
+    let mut acc = a.clone();
+    acc.set_slots(SlotsKind::Real);
+    module
+        .ckks_mul_pt_const_assign(&mut acc, &cst, 0, &mut scratch.borrow())
+        .unwrap();
+    assert_eq!(acc.slots(), SlotsKind::Real, "a real scalar multiplier keeps real slots");
 }
