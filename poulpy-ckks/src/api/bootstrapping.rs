@@ -52,23 +52,10 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
         C1: CKKSCtBounds,
         C2: CKKSCtBounds;
 
-    /// Scratch upper bound for functional bootstrap with `lut`.
+    /// Scratch upper bound for [`Self::ckks_functional_bootstrap`] with `luts`.
+    /// `ct_out` provides the shared output layout every result must have; the
+    /// bound does not grow with the number of LUTs.
     fn ckks_functional_bootstrap_tmp_bytes<C1, C2, F>(
-        &self,
-        ct_out: &C1,
-        ct_in: &C2,
-        ctx: &BootstrappingContext<BE, F>,
-        lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
-        keys_layout: &BootstrappingKeysLayout,
-    ) -> usize
-    where
-        C1: CKKSCtBounds,
-        C2: CKKSCtBounds;
-
-    /// Scratch upper bound for a multi-LUT functional bootstrap. `ct_out`
-    /// provides the shared output layout required by
-    /// [`Self::ckks_functional_bootstrap_multi`].
-    fn ckks_functional_bootstrap_multi_tmp_bytes<C1, C2, F>(
         &self,
         ct_out: &C1,
         ct_in: &C2,
@@ -124,49 +111,22 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     where
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
 
-    /// Standard S2C-first bootstrap for ciphertexts known to contain real slots
-    /// only. EvalRound+ contexts are not supported by this specialized path.
-    fn ckks_bootstrap_real<F, K>(
-        &self,
-        ct_out: &mut CKKSCiphertextOwned<BE>,
-        ct_in: &CKKSCiphertextOwned<BE>,
-        ctx: &BootstrappingContext<BE, F>,
-        keys: &K,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
-
-    /// Refreshes `ct_in` through an S2C-first context and applies `lut` to each
-    /// real and imaginary slot half before recombining them in `ct_out`. The LUT
-    /// derives the required message ratio from its table length.
+    /// Refreshes `ct_in` through an S2C-first context and applies each LUT of
+    /// `luts` to it, writing the results into `ct_outs`.
+    ///
+    /// One LUT or many: the batch shares the SlotsToCoeffs, ModUp and
+    /// CoeffsToSlots stages, and equal-arity general LUTs additionally share
+    /// the power basis of each transformed half, so `n` LUTs cost one bootstrap
+    /// plus `n` polynomial evaluations. `ct_outs` and `luts` must have the same
+    /// length, every LUT must have the same message ratio, and every output
+    /// must share one rank-1 layout.
+    ///
+    /// Each LUT derives its required message ratio from its table length, and
+    /// the slot kind of `ct_in` selects the pipeline: [`SlotsKind::Real`] slots
+    /// skip the imaginary branch entirely.
+    ///
+    /// [`SlotsKind::Real`]: crate::SlotsKind::Real
     fn ckks_functional_bootstrap<F, K>(
-        &self,
-        ct_out: &mut CKKSCiphertextOwned<BE>,
-        ct_in: &CKKSCiphertextOwned<BE>,
-        ctx: &BootstrappingContext<BE, F>,
-        lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
-        keys: &K,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
-
-    /// Functional bootstrap for ciphertexts known to contain real slots only.
-    fn ckks_functional_bootstrap_real<F, K>(
-        &self,
-        ct_out: &mut CKKSCiphertextOwned<BE>,
-        ct_in: &CKKSCiphertextOwned<BE>,
-        ctx: &BootstrappingContext<BE, F>,
-        lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
-        keys: &K,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<()>
-    where
-        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
-
-    /// Applies several equal-arity LUTs through one shared functional bootstrap.
-    fn ckks_functional_bootstrap_multi<F, K>(
         &self,
         ct_outs: &mut [CKKSCiphertextOwned<BE>],
         ct_in: &CKKSCiphertextOwned<BE>,

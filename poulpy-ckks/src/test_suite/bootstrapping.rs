@@ -1053,11 +1053,15 @@ where
             ckks_spec(n, base2k, log_delta, k_in - log_delta),
             &mut scratch.borrow(),
         );
+        // Declaring the slots real selects the single-EvalMod pipeline.
+        let mut ct_real = ct_real;
+        ct_real.set_slots(SlotsKind::Real);
         let (real_bs_re, real_bs_im) = {
             let mut ct_bs = module.ckks_ciphertext_alloc(base2k.into(), k_boot.into());
             module
-                .ckks_bootstrap_real(&mut ct_bs, &ct_real, &ctx, &bsk, &mut scratch.borrow())
+                .ckks_bootstrap(&mut ct_bs, &ct_real, &ctx, &bsk, &mut scratch.borrow())
                 .unwrap();
+            assert_eq!(ct_bs.slots(), SlotsKind::Real);
             assert_eq!(ct_bs.k().as_usize(), k_boot - plan.post_mod_up_consumed_bits());
             assert_eq!(ct_bs.log_delta(), log_delta);
             decrypt(&module, &encoder, &ct_bs, &sk, &mut scratch.borrow())
