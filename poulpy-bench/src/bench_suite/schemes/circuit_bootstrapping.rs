@@ -22,8 +22,9 @@ use poulpy_bin_fhe::{
         CircuitBootstrappingKeyPreparedFactory,
     },
 };
+use poulpy_core::layouts::{GLWESecretSampling, LWESecretSampling};
 
-pub fn bench_circuit_bootstrapping<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend, BRA: BlindRotationAlgo>(
+pub fn bench_circuit_bootstrapping<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend, BRA: BlindRotationAlgo>(
     c: &mut Criterion,
     label: &str,
 ) where
@@ -39,7 +40,9 @@ pub fn bench_circuit_bootstrapping<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend
         + GGSWPreparedFactory<BE>
         + GGSWNoise<BE>
         + GLWEEncryptSk<BE>
-        + VecZnxRotateAssignBackend<BE>,
+        + VecZnxRotateAssignBackend<BE>
+        + GLWESecretSampling<BE>
+        + LWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let group_name: String = format!("circuit_bootstrapping::{label}");
@@ -96,17 +99,18 @@ pub fn bench_circuit_bootstrapping<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend
     let mut source_xa: Source = Source::new([1u8; 32]);
     let mut source_xe: Source = Source::new([1u8; 32]);
 
-    let mut sk_lwe: LWESecret<Vec<u8>> = module.lwe_secret_alloc(n_lwe);
-    sk_lwe.fill_binary_block(7, &mut source_xs);
+    let mut sk_lwe: LWESecret<Vec<u8>, i64> = module.lwe_secret_alloc(n_lwe);
+    module.lwe_secret_fill_binary_block(&mut sk_lwe, 7, &mut source_xs);
 
-    let mut sk_glwe: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank);
-    sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
+    let mut sk_glwe: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc(rank);
+    module.glwe_secret_fill_ternary_prob(&mut sk_glwe, 0.5, &mut source_xs);
 
-    let ct_lwe: LWE<Vec<u8>> = module.lwe_alloc_from_infos(&lwe_infos);
+    let ct_lwe: LWE<Vec<u8>, i64> = module.lwe_alloc_from_infos(&lwe_infos);
 
     let cbt_enc_infos = CircuitBootstrappingEncryptionInfos::from_default_sigma(&cbt_infos).unwrap();
 
-    let mut cbt_key: CircuitBootstrappingKey<Vec<u8>, BRA> = CircuitBootstrappingKey::alloc_from_infos(&module, &cbt_infos);
+    let mut cbt_key: CircuitBootstrappingKey<BE::OwnedBuf, BRA, BE::ZnxWord> =
+        CircuitBootstrappingKey::alloc_from_infos(&module, &cbt_infos);
     module.circuit_bootstrapping_key_encrypt_sk(
         &mut cbt_key,
         &sk_lwe,
@@ -117,7 +121,7 @@ pub fn bench_circuit_bootstrapping<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend
         &mut scratch.borrow(),
     );
 
-    let mut res: GGSW<Vec<u8>> = module.ggsw_alloc_from_infos(&ggsw_infos);
+    let mut res: GGSW<Vec<u8>, i64> = module.ggsw_alloc_from_infos(&ggsw_infos);
     let mut cbt_prepared: CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE> =
         CircuitBootstrappingKeyPrepared::alloc_from_infos(&module, &cbt_infos);
     cbt_prepared.prepare(&module, &cbt_key, &mut scratch.borrow());

@@ -179,7 +179,7 @@ pub unsafe trait NttHandleFactory: Sized {
 /// automatically satisfies `NttModuleHandle`.
 impl<B> NttModuleHandle for Module<B>
 where
-    B: Backend,
+    B: Backend<ZnxWord = i64>,
     B::Handle: NttHandleProvider,
 {
     fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30> {
@@ -207,7 +207,7 @@ where
 /// `at(col, limb)` returns `&[Q120bScalar]` of length `n`; we cast to
 /// `&[u64]` of length `4*n`.
 #[inline(always)]
-fn limb_u64<D: crate::layouts::HostDataRef, BE: Backend<DftWord = Q120bScalar>>(
+fn limb_u64<D: crate::layouts::HostDataRef, BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>>(
     v: &VecZnxDft<D, BE::DftWord, BE>,
     col: usize,
     limb: usize,
@@ -216,7 +216,7 @@ fn limb_u64<D: crate::layouts::HostDataRef, BE: Backend<DftWord = Q120bScalar>>(
 }
 
 #[inline(always)]
-fn limb_u64_mut<D: crate::layouts::HostDataMut, BE: Backend<DftWord = Q120bScalar>>(
+fn limb_u64_mut<D: crate::layouts::HostDataMut, BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>>(
     v: &mut VecZnxDft<D, BE::DftWord, BE>,
     col: usize,
     limb: usize,
@@ -244,8 +244,8 @@ pub fn ntt4x30_vec_znx_dft_apply<BE>(
     a: &VecZnxBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<DftWord = Q120bScalar> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttZero + 'static,
-    for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttZero + 'static,
+    for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
     let a_size = a.size();
     let res_size = res.size();
@@ -298,7 +298,10 @@ pub fn ntt4x30_vec_znx_idft_apply<BE>(
     a_col: usize,
     tmp: &mut [u64],
 ) where
-    BE: Backend<DftWord = Q120bScalar, BigWord = i128> + NttDFTExecute<NttTableInv<Primes30>> + NttToZnx128 + NttCopy,
+    BE: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64>
+        + NttDFTExecute<NttTableInv<Primes30>>
+        + NttToZnx128
+        + NttCopy,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -332,7 +335,7 @@ pub fn ntt4x30_vec_znx_idft_apply_tmpa<BE>(
     a: &mut VecZnxDftBackendMut<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<DftWord = Q120bScalar, BigWord = i128> + NttDFTExecute<NttTableInv<Primes30>> + NttToZnx128,
+    BE: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64> + NttDFTExecute<NttTableInv<Primes30>> + NttToZnx128,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {
     let n = res.n();
@@ -362,7 +365,7 @@ pub fn ntt4x30_vec_znx_idft_apply_consume<'a, BE>(
     mut a: VecZnxDftBackendMut<'a, BE>,
 ) -> VecZnxBigBackendMut<'a, BE>
 where
-    BE: Backend<DftWord = Q120bScalar, BigWord = i128>,
+    BE: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64>,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {
     let table = module.get_intt_table();
@@ -478,7 +481,7 @@ pub fn ntt4x30_vec_znx_dft_add_into<BE>(
     b: &VecZnxDftBackendRef<'_, BE>,
     b_col: usize,
 ) where
-    BE: Backend<DftWord = Q120bScalar> + NttAdd + NttCopy + NttZero,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttAdd + NttCopy + NttZero,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -528,7 +531,7 @@ pub fn ntt4x30_vec_znx_dft_add_assign<BE>(
     a: &VecZnxDftBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<DftWord = Q120bScalar> + NttAddAssign,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttAddAssign,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -549,7 +552,7 @@ pub fn ntt4x30_vec_znx_dft_add_scaled_assign<BE>(
     a_col: usize,
     a_scale: i64,
 ) where
-    BE: Backend<DftWord = Q120bScalar> + NttAddAssign,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttAddAssign,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -585,7 +588,7 @@ pub fn ntt4x30_vec_znx_dft_sub<BE>(
     b: &VecZnxDftBackendRef<'_, BE>,
     b_col: usize,
 ) where
-    BE: Backend<DftWord = Q120bScalar> + NttSub + NttNegate + NttCopy + NttZero,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttSub + NttNegate + NttCopy + NttZero,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -635,7 +638,7 @@ pub fn ntt4x30_vec_znx_dft_sub_assign<BE>(
     a: &VecZnxDftBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<DftWord = Q120bScalar> + NttSubAssign,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttSubAssign,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -654,7 +657,7 @@ pub fn ntt4x30_vec_znx_dft_sub_negate_assign<BE>(
     a: &VecZnxDftBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<DftWord = Q120bScalar> + NttSubNegateAssign + NttNegateAssign,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttSubNegateAssign + NttNegateAssign,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -679,7 +682,7 @@ pub fn ntt4x30_vec_znx_dft_copy<BE>(
     a: &VecZnxDftBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<DftWord = Q120bScalar> + NttCopy + NttZero,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttCopy + NttZero,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -707,7 +710,7 @@ pub fn ntt4x30_vec_znx_dft_copy<BE>(
 /// Zero all limbs of `res[res_col]`.
 pub fn ntt4x30_vec_znx_dft_zero<BE>(res: &mut VecZnxDftBackendMut<'_, BE>, res_col: usize)
 where
-    BE: Backend<DftWord = Q120bScalar> + NttZero,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttZero,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {
     for j in 0..res.size() {
@@ -767,7 +770,7 @@ pub fn ntt4x30_vec_znx_dft_automorphism<BE>(
     a: &VecZnxDftBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<DftWord = Q120bScalar> + NttZero,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttZero,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {

@@ -15,7 +15,7 @@ use crate::blind_rotation::{
     utils::set_xai_plus_y,
 };
 
-impl<BE: Backend> BlindRotationKeyPreparedFactory<CGGI, BE> for Module<BE>
+impl<BE: Backend<ZnxWord = i64>> BlindRotationKeyPreparedFactory<CGGI, BE> for Module<BE>
 where
     Self: GGSWPreparedFactory<BE> + SvpPPolAlloc<BE> + SvpPrepare<BE>,
     BE::OwnedBuf: HostDataMut + HostDataRef,
@@ -44,7 +44,7 @@ where
     fn prepare_blind_rotation_key(
         &self,
         res: &mut BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>,
-        other: &BlindRotationKey<BE::OwnedBuf, CGGI>,
+        other: &BlindRotationKey<BE::OwnedBuf, CGGI, BE::ZnxWord>,
         scratch: &mut ScratchArena<'_, BE>,
     ) {
         #[cfg(debug_assertions)]
@@ -62,7 +62,7 @@ where
 
         if let Distribution::BinaryBlock(_) = other.dist {
             let mut x_pow_a: Vec<SvpPPolOwned<BE>> = Vec::with_capacity(n << 1);
-            let mut buf: ScalarZnx<BE::OwnedBuf> = self.scalar_znx_alloc(1);
+            let mut buf: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = self.scalar_znx_alloc(1);
             (0..n << 1).for_each(|i| {
                 let mut res: SvpPPolOwned<BE> = self.svp_ppol_alloc(1);
                 set_xai_plus_y(self, i, 0, &mut res, &mut buf);

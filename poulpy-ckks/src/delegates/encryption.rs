@@ -57,7 +57,7 @@ where
         + VecZnxLshTmpBytes
         + VecZnxRshBackend<BE>
         + VecZnxRshTmpBytes
-        + poulpy_core::layouts::ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>,
+        + poulpy_core::layouts::ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>,
     BE::OwnedBuf: HostDataMut,
 {
     fn ckks_decrypt_tmp_bytes<A>(&self, ct_infos: &A) -> usize

@@ -38,14 +38,14 @@ macro_rules! impl_gglwe_at_view_for_field {
 
 macro_rules! impl_glwe_host_at_for_field {
     ($ty:ty; $($field:tt)+) => {
-        impl<D: HostDataRef> $ty {
-            pub fn at(&self, row: usize, col: usize) -> GLWE<&[u8]> {
+        impl<D: HostDataRef, W: ZnxWord> $ty {
+            pub fn at(&self, row: usize, col: usize) -> GLWE<&[u8], W> {
                 self.$($field)+.at(row, col)
             }
         }
 
-        impl<D: HostDataMut> $ty {
-            pub fn at_mut(&mut self, row: usize, col: usize) -> GLWE<&mut [u8]> {
+        impl<D: HostDataMut, W: ZnxWord> $ty {
+            pub fn at_mut(&mut self, row: usize, col: usize) -> GLWE<&mut [u8], W> {
                 self.$($field)+.at_mut(row, col)
             }
         }

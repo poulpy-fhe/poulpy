@@ -18,7 +18,7 @@ use crate::{
         PolynomialInputTransform, PowerBasisHelper,
     },
     default::polynomial_evaluation::PolynomialEvaluationDefault,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc},
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
     polynomial::ComplexBSGSPolynomial,
     power_basis::{PowerBasis, PowerBasisGen},
 };
@@ -29,13 +29,13 @@ fn polynomial_input<BE, S>(
     transform: PolynomialInputTransform,
     tsk: &GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<CKKSCiphertext<BE::OwnedBuf>>
+) -> Result<CKKSCiphertextOwned<BE>>
 where
     BE: Backend,
     Module<BE>: CKKSCopyOps<BE> + CKKSMulOps<BE> + CKKSPow2Ops<BE> + CKKSSubOps<BE> + CKKSModuleAlloc<BE>,
     S: GLWEToBackendRef<BE> + CKKSCtBounds,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     let mut input = module.ckks_ciphertext_alloc_from_infos(src);
     module.ckks_copy(&mut input, src, scratch)?;
@@ -109,7 +109,7 @@ pub unsafe trait CKKSPolynomialEvaluationImpl<BE: Backend>: Backend {
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-        CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
 
     fn ckks_eval_poly_complex_const_coeffs_impl<R, S, C>(
         module: &Module<BE>,
@@ -124,7 +124,7 @@ pub unsafe trait CKKSPolynomialEvaluationImpl<BE: Backend>: Backend {
         S: GLWEToBackendRef<BE> + CKKSCtBounds,
         C: GLWEToBackendRef<BE> + GLWEInfos + poulpy_core::layouts::BSGSMeta + CKKSCtBounds + IntPolyInfos,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-        CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
 }
 
 unsafe impl<BE: Backend> CKKSPolynomialEvaluationImpl<BE> for BE
@@ -199,7 +199,7 @@ where
         B: BSGSPolynomialInfos<BE>,
         B::Coeffs: CKKSCtBounds,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-        CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
         let transform = bsgs.input_transform();
         let x1 = polynomial_input(module, src, transform, tsk, scratch)?;
@@ -228,7 +228,7 @@ where
         S: GLWEToBackendRef<BE> + CKKSCtBounds,
         C: GLWEToBackendRef<BE> + GLWEInfos + poulpy_core::layouts::BSGSMeta + CKKSCtBounds + IntPolyInfos,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-        CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     {
         let transform = poly.re.input_transform();
         ckks_ensure!(

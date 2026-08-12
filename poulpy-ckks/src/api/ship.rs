@@ -15,7 +15,7 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 use crate::{
     CKKSCtBounds,
     api::CKKSEncodingScalar,
-    layouts::{CKKSCiphertext, ShipCoeffEncodings, ShipKeysPrepared, ShipPlan},
+    layouts::{CKKSCiphertextOwned, ShipCoeffEncodings, ShipKeysPrepared, ShipPlan},
 };
 
 mod sealed {
@@ -57,7 +57,7 @@ pub trait CKKSShipOps<BE: Backend, F: ShipScalar> {
     /// layouts are validated while computing the bound.
     fn ckks_ship_bootstrap_tmp_bytes<Src>(
         &self,
-        output: &CKKSCiphertext<BE::OwnedBuf>,
+        output: &CKKSCiphertextOwned<BE>,
         input: &Src,
         keys: &ShipKeysPrepared<BE::OwnedBuf, BE>,
     ) -> Result<usize>
@@ -79,7 +79,7 @@ pub trait CKKSShipOps<BE: Backend, F: ShipScalar> {
         base2k: Base2K,
         complex: bool,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<ShipCoeffEncodings<BE::OwnedBuf>>
+    ) -> Result<ShipCoeffEncodings<BE::OwnedBuf, BE::ZnxWord>>
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds;
 
@@ -88,7 +88,7 @@ pub trait CKKSShipOps<BE: Backend, F: ShipScalar> {
     /// ciphertext at the raised precision encoding the cleartexts.
     fn ckks_ship_bootstrap_into<Src>(
         &self,
-        output: &mut CKKSCiphertext<BE::OwnedBuf>,
+        output: &mut CKKSCiphertextOwned<BE>,
         input: &Src,
         keys: &ShipKeysPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,
@@ -101,7 +101,7 @@ pub trait CKKSShipOps<BE: Backend, F: ShipScalar> {
     /// Requires keys generated with `complex`.
     fn ckks_ship_bootstrap_complex_into<Src>(
         &self,
-        output: &mut CKKSCiphertext<BE::OwnedBuf>,
+        output: &mut CKKSCiphertextOwned<BE>,
         input: &Src,
         keys: &ShipKeysPrepared<BE::OwnedBuf, BE>,
         scratch: &mut ScratchArena<'_, BE>,

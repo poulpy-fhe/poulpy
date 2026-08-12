@@ -1,4 +1,4 @@
-use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, VecZnx, WriterTo};
+use poulpy_hal::layouts::{Backend, Data, HostDataMut, HostDataRef, ReaderFrom, VecZnx, WriterTo, ZnxWord};
 
 use crate::{
     GetDistribution, GetDistributionMut,
@@ -7,18 +7,18 @@ use crate::{
 };
 
 #[derive(PartialEq, Eq)]
-pub struct GLWEPublicKey<D: Data> {
-    pub(crate) key: GLWE<D>,
+pub struct GLWEPublicKey<D: Data, W: ZnxWord> {
+    pub(crate) key: GLWE<D, W>,
     pub(crate) dist: Distribution,
 }
 
-impl<D: HostDataMut> GetDistributionMut for GLWEPublicKey<D> {
+impl<D: HostDataMut, W: ZnxWord> GetDistributionMut for GLWEPublicKey<D, W> {
     fn dist_mut(&mut self) -> &mut Distribution {
         &mut self.dist
     }
 }
 
-impl<D: HostDataRef> GetDistribution for GLWEPublicKey<D> {
+impl<D: HostDataRef, W: ZnxWord> GetDistribution for GLWEPublicKey<D, W> {
     fn dist(&self) -> &Distribution {
         &self.dist
     }
@@ -32,7 +32,7 @@ pub struct GLWEPublicKeyLayout {
     pub rank: Rank,
 }
 
-impl<D: Data> LWEInfos for GLWEPublicKey<D> {
+impl<D: Data, W: ZnxWord> LWEInfos for GLWEPublicKey<D, W> {
     fn base2k(&self) -> Base2K {
         self.key.base2k()
     }
@@ -50,7 +50,7 @@ impl<D: Data> LWEInfos for GLWEPublicKey<D> {
     }
 }
 
-impl<D: Data> GLWEInfos for GLWEPublicKey<D> {
+impl<D: Data, W: ZnxWord> GLWEInfos for GLWEPublicKey<D, W> {
     fn rank(&self) -> Rank {
         self.key.rank()
     }
@@ -84,7 +84,7 @@ impl GLWEInfos for GLWEPublicKeyLayout {
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl GLWEPublicKey<Vec<u8>> {
+impl<W: ZnxWord> GLWEPublicKey<Vec<u8>, W> {
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
         A: GLWEInfos,
@@ -107,19 +107,19 @@ impl GLWEPublicKey<Vec<u8>> {
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, k: TorusPrecision, rank: Rank) -> usize {
-        VecZnx::bytes_of(n.into(), (rank + 1).into(), k.0.div_ceil(base2k.0) as usize)
+        VecZnx::<Vec<u8>, W>::bytes_of(n.into(), (rank + 1).into(), k.0.div_ceil(base2k.0) as usize)
     }
 }
 
-impl<D: HostDataMut> ReaderFrom for GLWEPublicKey<D> {
+impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GLWEPublicKey<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         self.dist = Distribution::read_from(reader)?;
         self.key.read_from(reader)
     }
 }
 
-impl<D: HostDataRef> WriterTo for GLWEPublicKey<D> {
-    fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+impl<D: HostDataRef, W: ZnxWord> WriterTo for GLWEPublicKey<D, W> {
+    fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         match self.dist.write_to(writer) {
             Ok(()) => {}
             Err(e) => return Err(e),
@@ -128,20 +128,20 @@ impl<D: HostDataRef> WriterTo for GLWEPublicKey<D> {
     }
 }
 
-impl<BE: Backend, D: Data> GLWEToBackendRef<BE> for GLWEPublicKey<D>
+impl<BE: Backend, D: Data> GLWEToBackendRef<BE> for GLWEPublicKey<D, BE::ZnxWord>
 where
-    GLWE<D>: GLWEToBackendRef<BE>,
+    GLWE<D, BE::ZnxWord>: GLWEToBackendRef<BE>,
 {
-    fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>> {
+    fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
         self.key.to_backend_ref()
     }
 }
 
-impl<BE: Backend, D: Data> GLWEToBackendMut<BE> for GLWEPublicKey<D>
+impl<BE: Backend, D: Data> GLWEToBackendMut<BE> for GLWEPublicKey<D, BE::ZnxWord>
 where
-    GLWE<D>: GLWEToBackendMut<BE>,
+    GLWE<D, BE::ZnxWord>: GLWEToBackendMut<BE>,
 {
-    fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>> {
+    fn to_backend_mut(&mut self) -> GLWE<BE::BufMut<'_>, BE::ZnxWord> {
         self.key.to_backend_mut()
     }
 }

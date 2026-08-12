@@ -5,7 +5,7 @@ use poulpy_core::layouts::{
     SetBSGSMeta, TorusPrecision,
 };
 use poulpy_hal::api::CnvPVecBytesOf;
-use poulpy_hal::layouts::{Backend, Module, ScratchArena, VecZnx};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
@@ -80,7 +80,7 @@ where
         };
 
         let cols: usize = (work.rank() + 1).into();
-        let compact_work = VecZnx::bytes_of(work.n().into(), cols, work.max_size());
+        let compact_work = BE::bytes_of_vec_znx(work.n().into(), cols, work.max_size());
         // The giant step hoists the prepared `X^{gsp}` right operand, kept alive
         // across the baby-step pairs that share it.
         let hoisted_right = self.bytes_of_cnv_pvec_right(cols, work.max_size());
@@ -93,7 +93,8 @@ where
             // Scratch is a physical working-set budget: size the square-scope
             // copy off `res`'s allocated capacity, the upper bound on the limbs
             // any runtime re-expansion can expose.
-            self.ckks_square_tmp_bytes(res, res, tsk) + VecZnx::bytes_of(res.n().into(), (res.rank() + 1).into(), res.max_size()),
+            self.ckks_square_tmp_bytes(res, res, tsk)
+                + BE::bytes_of_vec_znx(res.n().into(), (res.rank() + 1).into(), res.max_size()),
         );
         // Identity base polynomials transfer an owned, relabelled input directly
         // into the power basis. Scratch only needs a full working ciphertext for

@@ -16,7 +16,7 @@ pub fn vec_znx_rotate<'r, 'a, BE>(
     a: &VecZnxBackendRef<'a, BE>,
     a_col: usize,
 ) where
-    BE: Backend + ZnxRotate + ZnxZero,
+    BE: Backend<ZnxWord = i64> + ZnxRotate + ZnxZero,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
@@ -41,7 +41,7 @@ pub fn vec_znx_rotate<'r, 'a, BE>(
 
 pub fn vec_znx_rotate_assign<'r, BE>(p: i64, res: &mut VecZnxBackendMut<'r, BE>, res_col: usize, tmp: &mut [i64])
 where
-    BE: Backend + ZnxRotate + ZnxCopy,
+    BE: Backend<ZnxWord = i64> + ZnxRotate + ZnxCopy,
     BE::BufMut<'r>: HostDataMut,
 {
     #[cfg(debug_assertions)]

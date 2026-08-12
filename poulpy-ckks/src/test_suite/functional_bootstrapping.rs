@@ -1,5 +1,9 @@
-use poulpy_core::layouts::{
-    GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
+use poulpy_core::{
+    GLWEBytesOf,
+    layouts::{
+        GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        prepared::GLWETensorKeyPreparedToBackendRef,
+    },
 };
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
@@ -8,12 +12,14 @@ use poulpy_hal::{
 };
 
 use crate::{
-    CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos,
-    api::{CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSEncodingOps, CKKSPolynomialEvaluationOps},
+    CKKSCtBounds, CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos,
+    api::{
+        CKKSAllOpsTmpBytes, CKKSBootstrappingOps, CKKSDFTMatrixOps, CKKSEncodingOps, CKKSEvalModOps, CKKSPolynomialEvaluationOps,
+    },
     layouts::{
         BootstrappingContext, BootstrappingKeysLayout, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques,
-        CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, DFTOutputFormat, DFTPlan, DFTType,
-        EncapsulationKeysLayout, EncodedLut, EvalModType, SparseSecretEncapsulation, eval_mod::EvalModPlan,
+        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, DFTOutputFormat, DFTPlan, DFTType,
+        EncapsulationKeysLayout, EncodedLut, SlotsKind, SparseSecretEncapsulation, eval_mod::EvalModPlan,
     },
     polynomial::SplitStrategy,
     test_suite::{
@@ -40,15 +46,9 @@ enum Case {
     Binary,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum SlotsKind {
-    Complex,
-    Real,
-}
-
 enum HostLuts {
-    Encoded(EncodedLut<CKKSPlaintext<Vec<u8>>>),
-    Multi(Vec<EncodedLut<CKKSPlaintext<Vec<u8>>>>),
+    Encoded(EncodedLut<CKKSPlaintextOwned<HostBytesBackend>>),
+    Multi(Vec<EncodedLut<CKKSPlaintextOwned<HostBytesBackend>>>),
 }
 
 pub fn test_functional_bootstrapping_e2e<BE, F, E>(
@@ -68,9 +68,9 @@ pub fn test_functional_bootstrapping_e2e<BE, F, E>(
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<f64> + CKKSPlaintextVecHostCodec<F>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64> + CKKSPlaintextVecHostCodec<F>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     run_case::<BE, F, E>(Case::General, params, module, host_module);
@@ -93,9 +93,9 @@ pub fn test_functional_bootstrapping_multi_e2e<BE, F, E>(
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<f64> + CKKSPlaintextVecHostCodec<F>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64> + CKKSPlaintextVecHostCodec<F>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     run_case::<BE, F, E>(Case::Multi, params, module, host_module);
@@ -118,9 +118,9 @@ pub fn test_functional_bootstrapping_binary_e2e<BE, F, E>(
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<f64> + CKKSPlaintextVecHostCodec<F>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64> + CKKSPlaintextVecHostCodec<F>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     run_case::<BE, F, E>(Case::Binary, params, module, host_module);
@@ -140,17 +140,17 @@ where
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<f64> + CKKSPlaintextVecHostCodec<F>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64> + CKKSPlaintextVecHostCodec<F>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
 {
     let table_values: &[&[usize]] = match case {
         Case::General => &[&[0, 1, 0, 0]],
         Case::Multi => &[
-            &[0, 0, 0, 0, 0, 0, 0, 0],
             &[5, 2, 7, 0, 3, 6, 1, 4],
             &[0, 1, 2, 3, 4, 5, 6, 7],
+            &[0, 0, 0, 0, 0, 0, 0, 0],
         ],
         Case::Binary => &[&[3, 1]],
     };
@@ -176,7 +176,15 @@ where
         Case::Multi => HostLuts::Multi(
             tables
                 .iter()
-                .map(|table| {
+                .enumerate()
+                .map(|(index, table)| {
+                    // A later LUT with a lower coefficient scale retains more
+                    // output width than the LUT evaluated before it.
+                    let coeffs_meta = if index == 1 {
+                        CoeffsMeta::from_delta_budget(LUT_LOG_DELTA - 5, params.base2k)
+                    } else {
+                        coeffs_meta
+                    };
                     EncodedLut::general(host_module, table, params.base2k.into(), coeffs_meta, SplitStrategy::MinDepth).unwrap()
                 })
                 .collect(),
@@ -207,17 +215,18 @@ where
         HostLuts::Encoded(lut) => lut,
         HostLuts::Multi(luts) => &luts[0],
     };
-    let functional_k = plan.functional_bootstrap_k(output_k, log_modulus_in, budget_lut);
-    let eval_mod_cost = if matches!(case, Case::Binary) {
-        0
-    } else {
-        plan.eval_mod().consumed_bits()
+    let functional_k = plan.functional_bootstrap_k(output_k, INPUT_LOG_DELTA, budget_lut).unwrap();
+    let expected_functional_k = match case {
+        Case::General => 769,
+        Case::Multi => 814,
+        Case::Binary => 668,
     };
-    assert_eq!(
-        functional_k,
-        output_k + plan.coeffs_to_slots().consumed_bits() + eval_mod_cost + budget_lut.consumed_bits(log_modulus_in)
-    );
+    assert_eq!(functional_k, expected_functional_k);
     let k_boot = functional_k.next_multiple_of(2 * params.base2k);
+    let backend_luts = match &host_luts {
+        HostLuts::Encoded(lut) => HostLuts::Encoded(lut.to_backend(module)),
+        HostLuts::Multi(luts) => HostLuts::Multi(luts.iter().map(|lut| lut.to_backend(module)).collect()),
+    };
     let tp = CKKSTestParams {
         k: k_boot,
         prec_meta: CKKSMeta {
@@ -244,7 +253,7 @@ where
         );
         ScratchOwned::<BE>::alloc(initial_tmp)
     };
-    let mut ctx = BootstrappingContext::<BE, F>::compile(module, params.base2k.into(), &plan, &mut scratch.borrow()).unwrap();
+    let ctx = BootstrappingContext::<BE, F>::compile(module, params.base2k.into(), &plan, &mut scratch.borrow()).unwrap();
     let keys_layout = BootstrappingKeysLayout {
         automorphism_key: tp.atk_layout().layout,
         tensor_key: tp.tsk_layout().layout,
@@ -255,14 +264,23 @@ where
     };
     let output_spec = ckks_spec(params.n, params.base2k, INPUT_LOG_DELTA, k_boot - INPUT_LOG_DELTA);
     let input_spec = ckks_spec(params.n, params.base2k, INPUT_LOG_DELTA, k_in - INPUT_LOG_DELTA);
-    let boot_tmp = match &host_luts {
+    let boot_tmp = match &backend_luts {
         HostLuts::Encoded(lut) => module.ckks_functional_bootstrap_tmp_bytes(&output_spec, &input_spec, &ctx, lut, &keys_layout),
-        HostLuts::Multi(luts) => luts
-            .iter()
-            .map(|lut| module.ckks_functional_bootstrap_tmp_bytes(&output_spec, &input_spec, &ctx, lut, &keys_layout))
-            .max()
-            .unwrap(),
+        HostLuts::Multi(luts) => {
+            module.ckks_functional_bootstrap_multi_tmp_bytes(&output_spec, &input_spec, &ctx, luts, &keys_layout)
+        }
     };
+    if let HostLuts::Encoded(lut) = &backend_luts
+        && lut.requires_eval_mod()
+    {
+        let boot_layout = crate::CKKSLayout {
+            glwe_layout: output_spec.glwe_layout,
+            meta: CKKSMeta::default(),
+        };
+        let boot_ct_bytes = module.glwe_bytes_of_from_infos(&boot_layout);
+        let eval_mod_tmp = module.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key);
+        assert!(boot_tmp >= 4 * boot_ct_bytes + eval_mod_tmp);
+    }
     if boot_tmp > initial_tmp {
         scratch = ScratchOwned::<BE>::alloc(boot_tmp);
     }
@@ -272,7 +290,6 @@ where
     let keys = ctx
         .generate_keys(
             module,
-            host_module,
             &sk_raw,
             &keys_layout,
             &mut xs,
@@ -284,10 +301,6 @@ where
         .prepare(module, &mut scratch.borrow());
 
     let mut op_scratch = ScratchOwned::<BE>::alloc(boot_tmp);
-
-    if matches!(case, Case::Binary) {
-        ctx.eval_mod.plan.eval_mod_type = EvalModType::CosHK;
-    }
 
     let mut source = Source::new([9u8; 32]);
     let sample = |source: &mut Source| ((source.next_f64(0.0, 1.0) * p as f64) as usize).min(p - 1);
@@ -320,7 +333,7 @@ where
             &mut scratch.borrow(),
         );
 
-        let outputs = match &host_luts {
+        let outputs = match &backend_luts {
             HostLuts::Encoded(lut) => {
                 let mut output = module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into());
                 match slots_kind {
@@ -347,6 +360,20 @@ where
         };
 
         for (index, (output, table)) in outputs.iter().zip(&tables).enumerate() {
+            let lut = match &backend_luts {
+                HostLuts::Encoded(lut) => lut,
+                HostLuts::Multi(luts) => &luts[index],
+            };
+            let output_log_delta = INPUT_LOG_DELTA + lut.log_msg_ratio();
+            let eval_mod_bits = if lut.requires_eval_mod() {
+                plan.eval_mod().consumed_bits()
+            } else {
+                0
+            };
+            let expected_k =
+                k_boot - plan.coeffs_to_slots().consumed_bits() - eval_mod_bits - lut.consumed_bits(output_log_delta);
+            assert_eq!(output.k().as_usize(), expected_k);
+            assert_eq!(output.log_delta(), output_log_delta);
             let (got_re, got_im) = ckks_decrypt_decode::<BE, F, E>(&tp, module, &encoder, output, &sk, &mut scratch.borrow());
             let want_re: Vec<F> = messages_re.iter().map(|&message| table[message]).collect();
             let want_im: Vec<F> = if slots_kind == SlotsKind::Real {
@@ -357,8 +384,9 @@ where
             for (got, want, part) in [(&got_re, &want_re, "re"), (&got_im, &want_im, "im")] {
                 let stats = precision_stats(got, want, output.log_delta());
                 assert!(
-                    stats.avg_log2_prec >= 5.0,
-                    "functional bootstrapping [{index}] ({part}) averaged {:.1} bits",
+                    stats.min_log2_prec >= 8.0,
+                    "functional bootstrapping [{index}] ({part}) worst slot had {:.1} bits (average {:.1})",
+                    stats.min_log2_prec,
                     stats.avg_log2_prec
                 );
             }
@@ -383,20 +411,9 @@ where
                 .unwrap_err();
             assert!(error.to_string().contains("log_msg_ratio"));
 
-            ctx.eval_mod.plan.eval_mod_type = EvalModType::CosHK;
-            let HostLuts::Encoded(lut) = &host_luts else { unreachable!() };
-            let error = module
-                .ckks_functional_bootstrap(&mut output, &ct, &ctx, lut, &keys, &mut op_scratch.borrow())
-                .unwrap_err();
-            assert!(error.to_string().contains("ExpCmplx"));
-            ctx.eval_mod.plan.eval_mod_type = EvalModType::ExpCmplx;
-
-            ctx.eval_mod.plan.scaling = None;
-            let error = module
-                .ckks_functional_bootstrap(&mut output, &ct, &ctx, lut, &keys, &mut op_scratch.borrow())
-                .unwrap_err();
-            assert!(error.to_string().contains("unit-circle"));
-            ctx.eval_mod.plan.scaling = Some(std::f64::consts::TAU);
+            let HostLuts::Encoded(lut) = &backend_luts else {
+                unreachable!()
+            };
 
             // Reusing a wider allocation at a narrower effective width must
             // remain within the scratch size queried for that effective width.
@@ -408,7 +425,9 @@ where
         }
 
         if slots_kind == SlotsKind::Complex && matches!(case, Case::Multi) {
-            let HostLuts::Multi(luts) = &host_luts else { unreachable!() };
+            let HostLuts::Multi(luts) = &backend_luts else {
+                unreachable!()
+            };
             let mut outputs: Vec<_> = luts
                 .iter()
                 .map(|_| module.ckks_ciphertext_alloc(params.base2k.into(), k_boot.into()))
@@ -475,12 +494,14 @@ where
             let error = module
                 .ckks_functional_bootstrap_multi(&mut outputs[..2], &ct, &ctx, &binary_luts, &keys, &mut op_scratch.borrow())
                 .unwrap_err();
-            assert!(error.to_string().contains("supports general LUTs only"));
+            assert!(error.to_string().contains("log_msg_ratio"));
         }
     }
 
     if matches!(case, Case::General) {
-        let HostLuts::Encoded(lut) = &host_luts else { unreachable!() };
+        let HostLuts::Encoded(lut) = &backend_luts else {
+            unreachable!()
+        };
         let insufficient_k = INPUT_LOG_DELTA + plan.pre_mod_up_consumed_bits() - 1;
         let zeros = vec![F::zero(); params.n / 2];
         let ct = ckks_encrypt_with_prec(
@@ -499,10 +520,7 @@ where
         let error = module
             .ckks_functional_bootstrap(&mut output, &ct, &ctx, lut, &keys, &mut op_scratch.borrow())
             .unwrap_err();
-        assert!(matches!(
-            error.composition(),
-            Some(CKKSCompositionError::MultiplicationPrecisionUnderflow { .. })
-        ));
+        assert!(error.to_string().contains("functional bootstrap needs log_budget"));
     }
 }
 

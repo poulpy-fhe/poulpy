@@ -14,8 +14,9 @@ use poulpy_hal::{
 use std::hint::black_box;
 
 use criterion::Criterion;
+use poulpy_core::layouts::GLWESecretSampling;
 
-pub fn bench_glwe_keyswitch<BE: Backend<OwnedBuf = Vec<u8>>>(
+pub fn bench_glwe_keyswitch<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>>(
     glwe_in: &impl GLWEInfos,
     glwe_out: &impl GLWEInfos,
     gglwe: &impl GGLWEInfos,
@@ -27,7 +28,8 @@ pub fn bench_glwe_keyswitch<BE: Backend<OwnedBuf = Vec<u8>>>(
         + GLWEEncryptSk<BE>
         + GLWEKeyswitch<BE>
         + GLWESecretPreparedFactory<BE>
-        + GLWESwitchingKeyPreparedFactory<BE>,
+        + GLWESwitchingKeyPreparedFactory<BE>
+        + GLWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
     for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
@@ -35,9 +37,9 @@ pub fn bench_glwe_keyswitch<BE: Backend<OwnedBuf = Vec<u8>>>(
     let n: usize = gglwe.n().into();
     let module: Module<BE> = Module::<BE>::new(n as u64);
 
-    let mut ksk: GLWESwitchingKey<Vec<u8>> = module.glwe_switching_key_alloc_from_infos(gglwe);
-    let mut ct_in: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(glwe_in);
-    let mut ct_out: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(glwe_out);
+    let mut ksk: GLWESwitchingKey<Vec<u8>, i64> = module.glwe_switching_key_alloc_from_infos(gglwe);
+    let mut ct_in: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(glwe_in);
+    let mut ct_out: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(glwe_out);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module.glwe_switching_key_encrypt_sk_tmp_bytes(gglwe)
@@ -49,14 +51,14 @@ pub fn bench_glwe_keyswitch<BE: Backend<OwnedBuf = Vec<u8>>>(
     let mut source_xe: Source = Source::new([1u8; 32]);
     let mut source_xa: Source = Source::new([2u8; 32]);
 
-    let mut sk_in: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(glwe_in);
-    sk_in.fill_ternary_prob(0.5, &mut source_xs);
+    let mut sk_in: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc_from_infos(glwe_in);
+    module.glwe_secret_fill_ternary_prob(&mut sk_in, 0.5, &mut source_xs);
 
     let mut sk_in_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(glwe_in.rank());
     module.glwe_secret_prepare(&mut sk_in_prepared, &sk_in);
 
-    let mut sk_out: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(glwe_out);
-    sk_out.fill_ternary_prob(0.5, &mut source_xs);
+    let mut sk_out: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc_from_infos(glwe_out);
+    module.glwe_secret_fill_ternary_prob(&mut sk_out, 0.5, &mut source_xs);
 
     let ksk_enc_infos = NoiseInfos::new(gglwe.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
     let glwe_enc_infos = NoiseInfos::new(glwe_in.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();

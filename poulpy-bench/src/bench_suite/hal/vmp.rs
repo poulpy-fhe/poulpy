@@ -19,7 +19,7 @@ use poulpy_hal::{
 pub fn bench_vmp_prepare<B>(params: &crate::params::VmpSweepParams, c: &mut Criterion, label: &str)
 where
     Module<B>: ModuleNew<B> + VmpPMatAlloc<B> + VmpPrepare<B> + VmpPrepareTmpBytes,
-    B: Backend,
+    B: Backend<ZnxWord = i64>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     let group_name: String = format!("vmp_prepare::{label}");
@@ -29,7 +29,7 @@ where
     fn runner<B>(sweep: [usize; 5]) -> impl FnMut()
     where
         Module<B>: ModuleNew<B> + VmpPMatAlloc<B> + VmpPrepare<B> + VmpPrepareTmpBytes,
-        B: Backend,
+        B: Backend<ZnxWord = i64>,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
     {
         let module: Module<B> = Module::<B>::new(1 << sweep[0]);
@@ -71,7 +71,7 @@ where
     group.finish();
 }
 
-pub fn bench_vmp_apply_dft<B: Backend>(params: &crate::params::VmpSweepParams, c: &mut Criterion, label: &str)
+pub fn bench_vmp_apply_dft<B: Backend<ZnxWord = i64>>(params: &crate::params::VmpSweepParams, c: &mut Criterion, label: &str)
 where
     Module<B>: ModuleNew<B> + VmpApplyDftTmpBytes + VmpApplyDft<B> + VmpPMatAlloc<B> + VecZnxDftAlloc<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -80,7 +80,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 5]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 5]) -> impl FnMut()
     where
         Module<B>: ModuleNew<B> + VmpApplyDftTmpBytes + VmpApplyDft<B> + VmpPMatAlloc<B> + VecZnxDftAlloc<B>,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -126,8 +126,11 @@ where
     group.finish();
 }
 
-pub fn bench_vmp_apply_dft_to_dft<B: Backend>(params: &crate::params::VmpSweepParams, c: &mut Criterion, label: &str)
-where
+pub fn bench_vmp_apply_dft_to_dft<B: Backend<ZnxWord = i64>>(
+    params: &crate::params::VmpSweepParams,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<B>: ModuleNew<B> + VecZnxDftAlloc<B> + VmpPMatAlloc<B> + VmpApplyDftToDft<B> + VmpApplyDftToDftTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
@@ -135,7 +138,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 5]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 5]) -> impl FnMut()
     where
         Module<B>: ModuleNew<B> + VecZnxDftAlloc<B> + VmpPMatAlloc<B> + VmpApplyDftToDft<B> + VmpApplyDftToDftTmpBytes,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,

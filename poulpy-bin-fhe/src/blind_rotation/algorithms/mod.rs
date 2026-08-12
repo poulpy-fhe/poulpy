@@ -20,7 +20,7 @@ use crate::blind_rotation::{
 /// usage at the type level.  Currently the only implementation is [`CGGI`].
 pub trait BlindRotationAlgo: Sync {
     /// Allocates a zero-filled [`BlindRotationKey`] from a dimension descriptor.
-    fn alloc_key<M, A>(module: &M, infos: &A) -> BlindRotationKey<M::OwnedBuf, Self>
+    fn alloc_key<M, A>(module: &M, infos: &A) -> BlindRotationKey<M::OwnedBuf, Self, M::ZnxWord>
     where
         M: ModuleCoreAlloc + ModuleN,
         A: BlindRotationKeyInfos,
@@ -65,14 +65,14 @@ pub trait BlindRotationExecute<BRA: BlindRotationAlgo, BE: Backend> {
     fn blind_rotation_execute<R, DL>(
         &self,
         res: &mut R,
-        lwe: &LWE<DL>,
-        lut: &LookupTable<BE::OwnedBuf>,
+        lwe: &LWE<DL, i64>,
+        lut: &LookupTable<BE::OwnedBuf, BE::ZnxWord>,
         brk: &BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         DL: Data,
-        LWE<DL>: LWEToBackendRef<BE>;
+        LWE<DL, i64>: LWEToBackendRef<BE>;
 }
 
 impl<BRA: BlindRotationAlgo, BE: Backend> BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE>
@@ -86,14 +86,14 @@ where
         &self,
         module: &M,
         res: &mut R,
-        lwe: &LWE<DI>,
-        lut: &LookupTable<BE::OwnedBuf>,
+        lwe: &LWE<DI, i64>,
+        lut: &LookupTable<BE::OwnedBuf, BE::ZnxWord>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
         M: BlindRotationExecute<BRA, BE>,
         R: GLWEToBackendMut<BE> + GLWEInfos,
         DI: Data,
-        LWE<DI>: LWEToBackendRef<BE>,
+        LWE<DI, i64>: LWEToBackendRef<BE>,
     {
         module.blind_rotation_execute(res, lwe, lut, self, scratch);
     }
@@ -143,6 +143,7 @@ where
     BE: Backend,
     A: LWEToBackendRef<BE> + LWEInfos,
     for<'a> BE::BufRef<'a>: HostDataRef,
+    BE: Backend<ZnxWord = i64>,
 {
     let lwe = lwe.to_backend_ref();
     let base2k: usize = lwe.base2k().into();

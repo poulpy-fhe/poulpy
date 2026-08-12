@@ -16,7 +16,7 @@ use poulpy_core::{
 };
 use poulpy_hal::layouts::{Backend, galois_element};
 
-use crate::{CKKSMeta, CoeffsMeta, layouts::CKKSPlaintext};
+use crate::{CKKSMeta, CoeffsMeta, layouts::CKKSPlaintextOwned};
 
 /// Distinguishes the two homomorphic transforms.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -491,7 +491,7 @@ impl DFTPlan {
 /// at eval time (the default — host-resident, streamed) or a prepared
 /// [`LinearTransformationPrepared`] keeping the convolution-domain diagonals
 /// resident ([`DFTMatrixPrepared`]). See [`DFTMatrix`].
-pub struct DFTMatrixFactors<BE: Backend, R = LinearTransformation<CKKSPlaintext<<BE as Backend>::OwnedBuf>>> {
+pub struct DFTMatrixFactors<BE: Backend, R = LinearTransformation<CKKSPlaintextOwned<BE>>> {
     /// The resolved parameters this matrix was generated from (canonical
     /// `format`, populated `factor_log_delta`).
     pub plan: DFTPlan,
@@ -585,7 +585,7 @@ impl DftFormat for Repack {
 /// [`ckks_new_dft_matrix`]: crate::default::dft::ckks_new_dft_matrix
 /// [`ckks_prepare_dft_matrix`]: crate::default::dft::ckks_prepare_dft_matrix
 /// [`ckks_coeffs_to_slots_repack`]: crate::default::dft::ckks_coeffs_to_slots_repack
-pub struct DFTMatrix<BE: Backend, Dir, Fmt, R = LinearTransformation<CKKSPlaintext<<BE as Backend>::OwnedBuf>>> {
+pub struct DFTMatrix<BE: Backend, Dir, Fmt, R = LinearTransformation<CKKSPlaintextOwned<BE>>> {
     pub(crate) inner: DFTMatrixFactors<BE, R>,
     _marker: PhantomData<(Dir, Fmt)>,
 }

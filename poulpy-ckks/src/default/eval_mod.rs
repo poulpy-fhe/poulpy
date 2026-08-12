@@ -23,7 +23,7 @@ use crate::{
     CKKSCtBounds, CKKSMeta, SetCKKSInfos,
     api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps, PolynomialInputTransform},
     layouts::{
-        CKKSCiphertext, CKKSModuleAlloc, ScratchArenaTakeCKKS,
+        CKKSCiphertextOwned, CKKSModuleAlloc, ScratchArenaTakeCKKS,
         eval_mod::{EvalMod, EvalModBsgs},
     },
     power_basis::{PowerBasis, PowerBasisGen},
@@ -63,7 +63,7 @@ pub trait CKKSEvalModOpsDefault<BE: Backend> {
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
         P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-        CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
 }
 
 impl<BE: Backend> CKKSEvalModOpsDefault<BE> for Module<BE>
@@ -76,7 +76,7 @@ where
         + CKKSModuleAlloc<BE>
         + CKKSPow2Ops<BE>
         + GLWECopy<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
 {
     fn ckks_eval_mod_default<R, C, P, F>(
@@ -133,7 +133,7 @@ where
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
     P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     // EvalMod runs at its own plan scale `f_mod_log_delta`: reinterpret the
     // working ciphertext to it on entry, then return the result to the input
@@ -242,7 +242,7 @@ where
 /// Allocates the single owned EvalMod input that becomes power-basis element 1.
 /// Copying directly from `ct` avoids the scratch copy followed by the generic
 /// polynomial evaluator's second owned copy.
-fn eval_mod_input<BE, C>(module: &Module<BE>, ct: &C, layout: &GLWELayout, meta: CKKSMeta) -> CKKSCiphertext<BE::OwnedBuf>
+fn eval_mod_input<BE, C>(module: &Module<BE>, ct: &C, layout: &GLWELayout, meta: CKKSMeta) -> CKKSCiphertextOwned<BE>
 where
     BE: Backend,
     Module<BE>: CKKSModuleAlloc<BE> + GLWECopy<BE>,

@@ -23,7 +23,8 @@
 //! the prepared, backend-resident homomorphic DFT matrices and the encoded,
 //! uploaded EvalMod, built once and reused across bootstraps.
 
-use anyhow::Result;
+use crate::layouts::CKKSPlaintextOwned;
+use anyhow::{Result, ensure};
 use poulpy_core::{
     default::linear_transformation::DiagonalProd,
     layouts::{Base2K, GLWEToBackendRef},
@@ -34,8 +35,8 @@ use crate::{
     CKKSCtBounds, CKKSInfos,
     api::{CKKSDFTMatrixOps, CKKSDFTOps, CKKSEncodingOps, CKKSEncodingScalar},
     layouts::{
-        CKKSModuleAlloc, CKKSPlaintext, DFTMatrix, DFTMatrixPrepared, DFTPlan, DFTType, Decode, Encode, EncodedLut, EvalMod,
-        EvalModPlan, Split, eval_mod::compile_eval_mod,
+        CKKSModuleAlloc, DFTMatrix, DFTMatrixPrepared, DFTPlan, DFTType, Decode, Encode, EncodedLut, EvalMod, EvalModPlan, Split,
+        eval_mod::compile_eval_mod,
     },
 };
 
@@ -231,13 +232,24 @@ impl BootstrappingPlan {
     }
 
     /// Raised width required by an S2C-first functional bootstrap.
-    pub fn functional_bootstrap_k<P>(&self, output_k: usize, log_delta: usize, lut: &EncodedLut<P>) -> usize
+    ///
+    /// `log_delta` is the input ciphertext scale; the LUT message ratio is
+    /// folded in to obtain the post-S2C scale used by the LUT evaluation.
+    pub fn functional_bootstrap_k<P>(&self, output_k: usize, log_delta: usize, lut: &EncodedLut<P>) -> Result<usize>
     where
         P: CKKSInfos,
     {
-        assert!(self.pipeline == BootstrappingPipeline::S2CFirst);
-        let eval_mod = lut.requires_eval_mod() as usize * self.eval_mod.consumed_bits();
-        output_k + self.coeffs_to_slots.consumed_bits() + eval_mod + lut.consumed_bits(log_delta)
+        ensure!(
+            self.pipeline == BootstrappingPipeline::S2CFirst,
+            "functional bootstrapping requires an S2C-first plan"
+        );
+        let eval_mod = if lut.requires_eval_mod() {
+            self.eval_mod.consumed_bits()
+        } else {
+            0
+        };
+        let lut_log_delta = log_delta + lut.log_msg_ratio();
+        Ok(output_k + self.coeffs_to_slots.consumed_bits() + eval_mod + lut.consumed_bits(lut_log_delta))
     }
 
     /// Total `log_budget` bits the pipeline consumes: the two DFT stages plus
@@ -277,26 +289,51 @@ pub struct BootstrappingContext<BE: Backend, F> {
     /// CoeffsToSlots stage with
     /// [`with_scaling`](DFTPlan::with_scaling)`(1.0 / f_mod_interval as f64)`)
     /// before [`Self::compile`]. `compile` performs no implicit scaling.
-    pub coeffs_to_slots: DFTMatrixPrepared<BE, Encode, Split>,
+    coeffs_to_slots: DFTMatrixPrepared<BE, Encode, Split>,
 
     /// Prepared bypass CoeffsToSlots matrix
-    pub coeffs_to_slots_bypass: Option<DFTMatrixPrepared<BE, Encode, Split>>,
+    coeffs_to_slots_bypass: Option<DFTMatrixPrepared<BE, Encode, Split>>,
 
     /// Prepared SlotsToCoeffs matrix (homomorphic decoding). S2C-first plans
     /// use scaling `1/2` to cancel the initial real/imaginary split.
-    pub slots_to_coeffs: DFTMatrixPrepared<BE, Decode, Split>,
+    slots_to_coeffs: DFTMatrixPrepared<BE, Decode, Split>,
 
     /// Encoded, backend-resident EvalMod (`x mod 1`).
-    pub eval_mod: EvalMod<F, CKKSPlaintext<BE::OwnedBuf>>,
+    eval_mod: EvalMod<F, CKKSPlaintextOwned<BE>>,
 
     /// Selected ModUp/EvalMod pipeline.
-    pub pipeline: BootstrappingPipeline,
+    pipeline: BootstrappingPipeline,
 
     /// Ephemeral sparse-secret weight required by the recipe, if enabled.
     sparse_secret_hamming_weight: Option<usize>,
 }
 
 impl<BE: Backend, F> BootstrappingContext<BE, F> {
+    /// Selected ModUp/EvalMod pipeline.
+    pub fn pipeline(&self) -> BootstrappingPipeline {
+        self.pipeline
+    }
+
+    /// Prepared CoeffsToSlots matrix.
+    pub fn coeffs_to_slots(&self) -> &DFTMatrixPrepared<BE, Encode, Split> {
+        &self.coeffs_to_slots
+    }
+
+    /// Prepared EvalRound+ bypass matrix, when enabled.
+    pub fn coeffs_to_slots_bypass(&self) -> Option<&DFTMatrixPrepared<BE, Encode, Split>> {
+        self.coeffs_to_slots_bypass.as_ref()
+    }
+
+    /// Prepared SlotsToCoeffs matrix.
+    pub fn slots_to_coeffs(&self) -> &DFTMatrixPrepared<BE, Decode, Split> {
+        &self.slots_to_coeffs
+    }
+
+    /// Encoded, backend-resident EvalMod circuit.
+    pub fn eval_mod(&self) -> &EvalMod<F, CKKSPlaintextOwned<BE>> {
+        &self.eval_mod
+    }
+
     /// Ephemeral sparse-secret weight required by the compiled recipe.
     pub fn sparse_secret_hamming_weight(&self) -> Option<usize> {
         self.sparse_secret_hamming_weight
@@ -321,7 +358,7 @@ where
     ) -> Result<Self>
     where
         Module<BE>: CKKSDFTOps<BE> + CKKSDFTMatrixOps<BE, F> + CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
-        CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
+        CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
     {
         let c2s_lt: DFTMatrix<BE, Encode, Split> =
             module.ckks_new_dft_matrix::<Encode, Split>(base2k, &plan.coeffs_to_slots, scratch)?;

@@ -4,6 +4,7 @@
 //!
 //! Re-exported publicly through `crate::oep::gglwe_automorphism_defaults`.
 
+use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{ModuleN, VecZnxAutomorphismAssignBackend, VecZnxAutomorphismAssignTmpBytes, VecZnxAutomorphismBackend},
     layouts::{Backend, CyclotomicOrder, GaloisElement, ScratchArena},
@@ -12,7 +13,7 @@ use poulpy_hal::{
 use crate::{
     ScratchArenaTakeCore,
     layouts::{
-        GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWE, GLWEViewRef, GetGaloisElement, SetGaloisElement,
+        GGLWEInfos, GGLWEToBackendMut, GGLWEToBackendRef, GLWEViewRef, GetGaloisElement, SetGaloisElement,
         glwe_backend_ref_from_mut, prepared::GGLWEPreparedToBackendRef,
     },
     oep::{GGLWEAutomorphismDefault, GLWEKeyswitchDefault},
@@ -26,7 +27,7 @@ pub fn glwe_automorphism_key_automorphism_tmp_bytes_default<BE, M, R, A, K>(
 ) -> usize
 where
     BE: Backend,
-    M: ModuleN + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssignTmpBytes,
+    M: GLWEBytesOf<BE> + ModuleN + GLWEKeyswitchDefault<BE> + VecZnxAutomorphismAssignTmpBytes,
     R: GGLWEInfos,
     A: GGLWEInfos,
     K: GGLWEInfos,
@@ -41,7 +42,7 @@ where
     if res_infos.glwe_layout() == a_infos.glwe_layout() {
         lvl_0.max(lvl_1)
     } else {
-        GLWE::<Vec<u8>>::bytes_of_from_infos(a_infos) + lvl_0.max(lvl_1)
+        module.glwe_bytes_of_from_infos(a_infos) + lvl_0.max(lvl_1)
     }
 }
 
@@ -53,7 +54,8 @@ pub fn glwe_automorphism_key_automorphism_default<BE, M, R, A, K>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GGLWEAutomorphismDefault<BE>
+    M: GLWEBytesOf<BE>
+        + GGLWEAutomorphismDefault<BE>
         + GaloisElement
         + GLWEKeyswitchDefault<BE>
         + VecZnxAutomorphismBackend<BE>

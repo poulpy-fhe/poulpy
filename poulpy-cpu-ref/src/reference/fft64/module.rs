@@ -139,7 +139,7 @@ pub unsafe trait FFT64HandleFactory: Sized {
     fn assert_fft64_runtime_support() {}
 }
 
-impl<BE: Backend> FFTModuleHandle<BE::DftWord> for Module<BE>
+impl<BE: Backend<ZnxWord = i64>> FFTModuleHandle<BE::DftWord> for Module<BE>
 where
     BE::DftWord: Float + FloatConst + Debug,
     BE::Handle: FFTHandleProvider<BE::DftWord>,

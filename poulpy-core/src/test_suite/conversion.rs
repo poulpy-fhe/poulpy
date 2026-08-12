@@ -8,6 +8,7 @@ use poulpy_hal::{
 
 use byteorder::{LittleEndian, WriteBytesExt};
 
+use crate::layouts::{GLWESecretSampling, LWESecretSampling};
 use crate::{
     DEFAULT_SIGMA_XE, EncryptionLayout, GLWEDecrypt, GLWEEncryptSk, GLWEExpandLWE, GLWEExpandLWEMatrix, GLWEFromLWE, GLWENoise,
     GLWENormalize, GLWEToLWESwitchingKeyEncryptSk, LWEDecrypt, LWEEncryptSk, LWEFromGLWE, LWEMatrixDecrypt,
@@ -46,7 +47,7 @@ where
         k: TorusPrecision(64),
     };
 
-    let mut lwe = LWE::<Vec<u8>>::alloc_from_infos(&infos);
+    let mut lwe = LWE::<Vec<u8>, i64>::alloc_from_infos(&infos);
     let mut bytes = Vec::new();
 
     bytes.write_u32::<LittleEndian>(32).unwrap();
@@ -67,12 +68,12 @@ pub fn test_lwe_secret_from_glwe_secret_flattens_rank_and_preserves_metadata<BE:
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
     for<'a> BE::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> BE::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
-    Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf> + SecretConversion<BE>,
+    Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord> + SecretConversion<BE>,
 {
     let rank = Rank(2);
     let mut source = Source::new([9u8; 32]);
     let mut sk_glwe = module.glwe_secret_alloc(rank);
-    sk_glwe.fill_ternary_hw(3, &mut source);
+    module.glwe_secret_fill_ternary_hw(&mut sk_glwe, 3, &mut source);
 
     let lwe_n = Degree((module.n() * rank.as_usize()) as u32);
     let sk_lwe = module.lwe_secret_from_glwe_secret(&sk_glwe, lwe_n);
@@ -117,8 +118,8 @@ where
                 rank: Rank(rank as u32),
             };
 
-            let mut sk: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank.into());
-            sk.fill_ternary_prob(0.5, &mut source_xs);
+            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank.into());
+            module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
             let mut sk_prep: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
             module.glwe_secret_prepare(&mut sk_prep, &sk);
@@ -129,11 +130,11 @@ where
                     .max(module.glwe_noise_tmp_bytes(&glwe_infos_out)),
             );
 
-            let mut ct_in: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_infos_in);
-            let mut ct_out: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_infos_out);
+            let mut ct_in: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos_in);
+            let mut ct_out: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos_out);
 
-            let pt_in: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos_in);
-            let pt_out: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos_out);
+            let pt_in: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos_in);
+            let pt_out: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos_out);
 
             module.glwe_encrypt_sk(
                 &mut ct_in,
@@ -221,21 +222,21 @@ where
             | (module).glwe_decrypt_tmp_bytes(&glwe_infos),
     );
 
-    let mut sk_glwe: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(&glwe_infos);
-    sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
+    let mut sk_glwe: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&glwe_infos);
+    module.glwe_secret_fill_ternary_prob(&mut sk_glwe, 0.5, &mut source_xs);
 
     let mut sk_glwe_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk_glwe);
     module.glwe_secret_prepare(&mut sk_glwe_prepared, &sk_glwe);
 
-    let mut sk_lwe: LWESecret<Vec<u8>> = module.lwe_secret_alloc(n_lwe);
-    sk_lwe.fill_ternary_prob(0.5, &mut source_xs);
+    let mut sk_lwe: LWESecret<BE::OwnedBuf, BE::ZnxWord> = module.lwe_secret_alloc(n_lwe);
+    module.lwe_secret_fill_ternary_prob(&mut sk_lwe, 0.5, &mut source_xs);
 
     let data: i64 = 17;
 
-    let mut lwe_pt: LWEPlaintext<Vec<u8>> = module.lwe_plaintext_alloc_from_infos(&lwe_infos);
+    let mut lwe_pt: LWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.lwe_plaintext_alloc_from_infos(&lwe_infos);
     lwe_pt.encode_i64(data, k_lwe_pt);
 
-    let mut lwe_ct: LWE<Vec<u8>> = module.lwe_alloc_from_infos(&lwe_infos);
+    let mut lwe_ct: LWE<BE::OwnedBuf, BE::ZnxWord> = module.lwe_alloc_from_infos(&lwe_infos);
     module.lwe_encrypt_sk(
         &mut lwe_ct,
         &lwe_pt,
@@ -246,7 +247,7 @@ where
         &mut scratch.borrow(),
     );
 
-    let mut ksk: LWEToGLWEKey<Vec<u8>> = module.lwe_to_glwe_key_alloc_from_infos(&lwe_to_glwe_infos);
+    let mut ksk: LWEToGLWEKey<BE::OwnedBuf, BE::ZnxWord> = module.lwe_to_glwe_key_alloc_from_infos(&lwe_to_glwe_infos);
 
     module.lwe_to_glwe_key_encrypt_sk(
         &mut ksk,
@@ -258,14 +259,14 @@ where
         &mut crate::test_suite::scratch_host_arena(&mut scratch),
     );
 
-    let mut glwe_ct: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_infos);
+    let mut glwe_ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
 
     let mut ksk_prepared: LWEToGLWEKeyPrepared<BE::OwnedBuf, BE> = module.lwe_to_glwe_key_prepared_alloc_from_infos(&ksk);
     module.lwe_to_glwe_key_prepare(&mut ksk_prepared, &ksk, &mut scratch.borrow());
 
     module.glwe_from_lwe(&mut glwe_ct, &lwe_ct, &ksk_prepared, &mut scratch.borrow());
 
-    let mut glwe_pt: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+    let mut glwe_pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
     module.glwe_decrypt(&glwe_ct, &mut glwe_pt, &sk_glwe_prepared, &mut scratch.borrow());
 
     let mut lwe_pt_conv = module.lwe_plaintext_alloc(glwe_pt.base2k(), lwe_pt.k());
@@ -343,23 +344,23 @@ where
             | (module).glwe_decrypt_tmp_bytes(&glwe_infos),
     );
 
-    let mut sk_glwe: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(&glwe_infos);
-    sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
+    let mut sk_glwe: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&glwe_infos);
+    module.glwe_secret_fill_ternary_prob(&mut sk_glwe, 0.5, &mut source_xs);
 
     let mut sk_glwe_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk_glwe);
     module.glwe_secret_prepare(&mut sk_glwe_prepared, &sk_glwe);
 
-    let mut sk_lwe: LWESecret<Vec<u8>> = module.lwe_secret_alloc(n_lwe);
-    sk_lwe.fill_ternary_prob(0.5, &mut source_xs);
+    let mut sk_lwe: LWESecret<BE::OwnedBuf, BE::ZnxWord> = module.lwe_secret_alloc(n_lwe);
+    module.lwe_secret_fill_ternary_prob(&mut sk_lwe, 0.5, &mut source_xs);
 
     let a_idx: usize = 1;
 
     let mut data: Vec<i64> = vec![0i64; module.n()];
     data[a_idx] = 17;
-    let mut glwe_pt: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+    let mut glwe_pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
     glwe_pt.encode_vec_i64(&data, k_lwe_pt);
 
-    let mut glwe_ct: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_infos);
+    let mut glwe_ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
     module.glwe_encrypt_sk(
         &mut glwe_ct,
         &glwe_pt,
@@ -370,7 +371,7 @@ where
         &mut scratch.borrow(),
     );
 
-    let mut ksk: GLWEToLWEKey<Vec<u8>> = module.glwe_to_lwe_key_alloc_from_infos(&glwe_to_lwe_infos);
+    let mut ksk: GLWEToLWEKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_to_lwe_key_alloc_from_infos(&glwe_to_lwe_infos);
 
     module.glwe_to_lwe_key_encrypt_sk(
         &mut ksk,
@@ -382,17 +383,17 @@ where
         &mut scratch.arena(),
     );
 
-    let mut lwe_ct: LWE<Vec<u8>> = module.lwe_alloc_from_infos(&lwe_infos);
+    let mut lwe_ct: LWE<BE::OwnedBuf, BE::ZnxWord> = module.lwe_alloc_from_infos(&lwe_infos);
 
     let mut ksk_prepared: GLWEToLWEKeyPrepared<BE::OwnedBuf, BE> = module.glwe_to_lwe_key_prepared_alloc_from_infos(&ksk);
     module.glwe_to_lwe_key_prepare(&mut ksk_prepared, &ksk, &mut scratch.borrow());
 
     module.lwe_from_glwe(&mut lwe_ct, &glwe_ct, a_idx, &ksk_prepared, &mut scratch.borrow());
 
-    let mut lwe_pt: LWEPlaintext<Vec<u8>> = module.lwe_plaintext_alloc_from_infos(&lwe_infos);
+    let mut lwe_pt: LWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.lwe_plaintext_alloc_from_infos(&lwe_infos);
     module.lwe_decrypt(&lwe_ct, &mut lwe_pt, &sk_lwe, &mut scratch.borrow());
 
-    let mut glwe_pt_conv = GLWEPlaintext::<Vec<u8>>::alloc(glwe_ct.n(), lwe_pt.base2k(), lwe_pt.k());
+    let mut glwe_pt_conv: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc(lwe_pt.base2k(), lwe_pt.k());
 
     module.vec_znx_normalize(
         &mut vec_znx_backend_mut::<BE>(&mut glwe_pt_conv.data),
@@ -445,8 +446,8 @@ where
         let mut source_xa: Source = Source::new([0u8; 32]);
         let mut source_xe: Source = Source::new([0u8; 32]);
 
-        let mut sk_glwe: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank);
-        sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
+        let mut sk_glwe: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank);
+        module.glwe_secret_fill_ternary_prob(&mut sk_glwe, 0.5, &mut source_xs);
 
         let mut sk_glwe_prep: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk_glwe);
         module.glwe_secret_prepare(&mut sk_glwe_prep, &sk_glwe);
@@ -457,7 +458,7 @@ where
         let mut data: Vec<i64> = vec![0i64; n];
         data[a_idx] = 17;
 
-        let mut glwe_pt: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+        let mut glwe_pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
         glwe_pt.encode_vec_i64(&data, k_pt);
 
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
@@ -466,7 +467,7 @@ where
                 | module.glwe_expand_lwe_tmp_bytes(&lwe_infos, &glwe_infos),
         );
 
-        let mut glwe_ct: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_infos);
+        let mut glwe_ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
         module.glwe_encrypt_sk(
             &mut glwe_ct,
             &glwe_pt,
@@ -477,13 +478,13 @@ where
             &mut scratch.borrow(),
         );
 
-        let mut lwe_cts: Vec<LWE<Vec<u8>>> = (0..n).map(|_| module.lwe_alloc_from_infos(&lwe_infos)).collect();
+        let mut lwe_cts: Vec<LWE<BE::OwnedBuf, BE::ZnxWord>> = (0..n).map(|_| module.lwe_alloc_from_infos(&lwe_infos)).collect();
         module.glwe_expand_lwe(lwe_cts.as_mut_slice(), &glwe_ct, &mut scratch.borrow());
 
-        let mut lwe_pt: LWEPlaintext<Vec<u8>> = module.lwe_plaintext_alloc_from_infos(&lwe_infos);
+        let mut lwe_pt: LWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.lwe_plaintext_alloc_from_infos(&lwe_infos);
         module.lwe_decrypt(&lwe_cts[a_idx], &mut lwe_pt, &sk_lwe, &mut scratch.borrow());
 
-        let mut glwe_pt_conv = GLWEPlaintext::<Vec<u8>>::alloc(glwe_ct.n(), lwe_pt.base2k(), lwe_pt.k());
+        let mut glwe_pt_conv: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc(lwe_pt.base2k(), lwe_pt.k());
         module.vec_znx_normalize(
             &mut vec_znx_backend_mut::<BE>(&mut glwe_pt_conv.data),
             lwe_pt.base2k().as_usize(),
@@ -589,8 +590,8 @@ where
         let mut source_xa: Source = Source::new([0u8; 32]);
         let mut source_xe: Source = Source::new([0u8; 32]);
 
-        let mut sk_glwe: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank);
-        sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
+        let mut sk_glwe: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc(rank);
+        module.glwe_secret_fill_ternary_prob(&mut sk_glwe, 0.5, &mut source_xs);
 
         let mut sk_glwe_prep: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk_glwe);
         module.glwe_secret_prepare(&mut sk_glwe_prep, &sk_glwe);
@@ -601,7 +602,7 @@ where
             *x = (i as i64 % 7) - 3;
         }
 
-        let mut glwe_pt: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+        let mut glwe_pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
         glwe_pt.encode_vec_i64(&data, k_pt);
 
         let scratch_bytes = module
@@ -611,7 +612,7 @@ where
             .max(module.lwe_matrix_decrypt_tmp_bytes(&matrix_infos));
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(scratch_bytes);
 
-        let mut glwe_ct: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_infos);
+        let mut glwe_ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
         module.glwe_encrypt_sk(
             &mut glwe_ct,
             &glwe_pt,
@@ -622,7 +623,7 @@ where
             &mut scratch.borrow(),
         );
 
-        let mut glwe_pt_dec: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+        let mut glwe_pt_dec: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
         module.glwe_decrypt(&glwe_ct, &mut glwe_pt_dec, &sk_glwe_prep, &mut scratch.borrow());
 
         let mut lwe_matrix = module.lwe_matrix_alloc_from_infos(&matrix_infos);

@@ -161,7 +161,7 @@ where
         + GLWETensoring<BE>
         + GiantStepTensorBounds<BE>
         + CnvPVecAlloc<BE>
-        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + VecZnxCopyBackend<BE>,
 {
     fn ckks_mul_tmp_bytes_impl<R: GLWEInfos, A: GLWEInfos, B: GLWEInfos, T: GGLWEInfos>(

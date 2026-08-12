@@ -17,6 +17,7 @@
 
 use anyhow::Result;
 use poulpy_ckks::prelude::*;
+use poulpy_core::layouts::GLWESecretSampling;
 use poulpy_core::{
     EncryptionLayout, GLWETensorKeyEncryptSk,
     layouts::{
@@ -74,7 +75,7 @@ fn main() -> Result<()> {
     let mut source_xe = Source::new([2u8; 32]);
 
     let mut sk_raw = module.glwe_secret_alloc_from_infos(&glwe_layout());
-    sk_raw.fill_ternary_hw(HW, &mut source_xs);
+    module.glwe_secret_fill_ternary_hw(&mut sk_raw, HW, &mut source_xs);
     let mut sk = module.glwe_secret_prepared_alloc_from_infos(&glwe_layout());
     module.glwe_secret_prepare(&mut sk, &sk_raw);
 
@@ -103,7 +104,7 @@ fn main() -> Result<()> {
     let b_re: Vec<f64> = (0..M).map(|i| 0.25 + 0.5 * (i as f64 / M as f64)).collect();
     let zeros = vec![0.0f64; M];
 
-    let mut encrypt = |re: &[f64]| -> Result<CKKSCiphertext<Vec<u8>>> {
+    let mut encrypt = |re: &[f64]| -> Result<CKKSCiphertext<Vec<u8>, i64>> {
         let mut pt = module.ckks_pt_vec_alloc(BASE2K.into(), CT_K.into());
         pt.set_meta(meta);
         module.ckks_encode_reim_into(&mut pt, re, &zeros, &mut scratch.borrow())?;

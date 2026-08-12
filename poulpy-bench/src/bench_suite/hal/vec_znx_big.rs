@@ -18,8 +18,11 @@ use poulpy_hal::{
     source::Source,
 };
 
-pub fn bench_vec_znx_big_add_into<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
-where
+pub fn bench_vec_znx_big_add_into<B: Backend<ZnxWord = i64>>(
+    params: &crate::params::HalSweepParams,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<B>: VecZnxBigAddInto<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
     B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
 {
@@ -27,7 +30,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxBigAddInto<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
         B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
@@ -69,8 +72,11 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_big_add_assign<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
-where
+pub fn bench_vec_znx_big_add_assign<B: Backend<ZnxWord = i64>>(
+    params: &crate::params::HalSweepParams,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<B>: VecZnxBigAddAssign<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
     B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
 {
@@ -78,7 +84,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxBigAddAssign<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
         B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
@@ -117,8 +123,11 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_big_add_small_into<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
-where
+pub fn bench_vec_znx_big_add_small_into<B: Backend<ZnxWord = i64>>(
+    params: &crate::params::HalSweepParams,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<B>: VecZnxBigAddSmallIntoBackend<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
     B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
 {
@@ -126,7 +135,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxBigAddSmallIntoBackend<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
         B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
@@ -168,8 +177,11 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_big_add_small_assign<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
-where
+pub fn bench_vec_znx_big_add_small_assign<B: Backend<ZnxWord = i64>>(
+    params: &crate::params::HalSweepParams,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<B>: VecZnxBigAddSmallAssign<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
     B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
 {
@@ -177,7 +189,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxBigAddSmallAssign<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
         B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
@@ -216,8 +228,11 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_big_automorphism<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
-where
+pub fn bench_vec_znx_big_automorphism<B: Backend<ZnxWord = i64>>(
+    params: &crate::params::HalSweepParams,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<B>: VecZnxBigAutomorphism<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
     B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
 {
@@ -225,7 +240,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxBigAutomorphism<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
         B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
@@ -264,8 +279,11 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_automorphism_assign<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
-where
+pub fn bench_vec_znx_automorphism_assign<B: Backend<ZnxWord = i64>>(
+    params: &crate::params::HalSweepParams,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<B>: VecZnxBigAutomorphismAssign<B> + VecZnxBigAutomorphismAssignTmpBytes + ModuleNew<B> + VecZnxBigAlloc<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
     B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
@@ -274,7 +292,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxBigAutomorphismAssign<B> + ModuleNew<B> + VecZnxBigAutomorphismAssignTmpBytes + VecZnxBigAlloc<B>,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -313,7 +331,7 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_big_negate<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_big_negate<B: Backend<ZnxWord = i64>>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
 where
     Module<B>: VecZnxBigNegate<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
     B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
@@ -322,7 +340,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxBigNegate<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
         B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
@@ -360,8 +378,11 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_big_negate_assign<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
-where
+pub fn bench_vec_znx_big_negate_assign<B: Backend<ZnxWord = i64>>(
+    params: &crate::params::HalSweepParams,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<B>: VecZnxBigNegateAssign<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
     B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
 {
@@ -369,7 +390,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxBigNegateAssign<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
         B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
@@ -404,7 +425,7 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_normalize<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_normalize<B: Backend<ZnxWord = i64>>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
 where
     Module<B>: VecZnxBigNormalize<B> + ModuleNew<B> + VecZnxBigNormalizeTmpBytes + VecZnxBigAlloc<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -414,7 +435,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxBigNormalize<B> + ModuleNew<B> + VecZnxBigNormalizeTmpBytes + VecZnxBigAlloc<B>,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -458,8 +479,11 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_normalize_add_assign<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
-where
+pub fn bench_vec_znx_normalize_add_assign<B: Backend<ZnxWord = i64>>(
+    params: &crate::params::HalSweepParams,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<B>: VecZnxAddAssignBackend<B>
         + VecZnxAlloc<B>
         + VecZnxBigNormalize<B>
@@ -472,7 +496,7 @@ where
     let group_name: String = format!("vec_znx_big_normalize_add_assign::{label}");
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxAddAssignBackend<B>
             + VecZnxAlloc<B>
@@ -526,8 +550,11 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_normalize_sub_assign<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
-where
+pub fn bench_vec_znx_normalize_sub_assign<B: Backend<ZnxWord = i64>>(
+    params: &crate::params::HalSweepParams,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<B>: VecZnxAlloc<B>
         + VecZnxBigNormalize<B>
         + VecZnxBigNormalizeTmpBytes
@@ -540,7 +567,7 @@ where
     let group_name: String = format!("vec_znx_big_normalize_sub_assign::{label}");
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxAlloc<B>
             + VecZnxBigNormalize<B>
@@ -594,7 +621,7 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_normalize_add_assign_compare<B: Backend>(
+pub fn bench_vec_znx_normalize_add_assign_compare<B: Backend<ZnxWord = i64>>(
     params: &crate::params::HalSweepParams,
     c: &mut Criterion,
     label: &str,
@@ -674,7 +701,7 @@ pub fn bench_vec_znx_normalize_add_assign_compare<B: Backend>(
     group.finish();
 }
 
-pub fn bench_vec_znx_normalize_sub_assign_compare<B: Backend>(
+pub fn bench_vec_znx_normalize_sub_assign_compare<B: Backend<ZnxWord = i64>>(
     params: &crate::params::HalSweepParams,
     c: &mut Criterion,
     label: &str,
@@ -754,7 +781,7 @@ pub fn bench_vec_znx_normalize_sub_assign_compare<B: Backend>(
     group.finish();
 }
 
-pub fn bench_vec_znx_big_sub<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
+pub fn bench_vec_znx_big_sub<B: Backend<ZnxWord = i64>>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
 where
     Module<B>: VecZnxBigSub<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
     B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
@@ -763,7 +790,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxBigSub<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
         B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
@@ -804,8 +831,11 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_big_sub_assign<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
-where
+pub fn bench_vec_znx_big_sub_assign<B: Backend<ZnxWord = i64>>(
+    params: &crate::params::HalSweepParams,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<B>: VecZnxBigSubAssign<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
     B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
 {
@@ -813,7 +843,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxBigSubAssign<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
         B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
@@ -851,8 +881,11 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_big_sub_negate_assign<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
-where
+pub fn bench_vec_znx_big_sub_negate_assign<B: Backend<ZnxWord = i64>>(
+    params: &crate::params::HalSweepParams,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<B>: VecZnxBigSubNegateAssign<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
     B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
 {
@@ -860,7 +893,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxBigSubNegateAssign<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
         B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
@@ -898,8 +931,11 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_big_sub_small_a<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
-where
+pub fn bench_vec_znx_big_sub_small_a<B: Backend<ZnxWord = i64>>(
+    params: &crate::params::HalSweepParams,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<B>: VecZnxBigSubSmallABackend<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
     B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
 {
@@ -907,7 +943,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxBigSubSmallABackend<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
         B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
@@ -948,8 +984,11 @@ where
     group.finish();
 }
 
-pub fn bench_vec_znx_big_sub_small_b<B: Backend>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
-where
+pub fn bench_vec_znx_big_sub_small_b<B: Backend<ZnxWord = i64>>(
+    params: &crate::params::HalSweepParams,
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<B>: VecZnxBigSubSmallBBackend<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
     B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
 {
@@ -957,7 +996,7 @@ where
 
     let mut group = c.benchmark_group(group_name);
 
-    fn runner<B: Backend>(sweep: [usize; 3]) -> impl FnMut()
+    fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 3]) -> impl FnMut()
     where
         Module<B>: VecZnxBigSubSmallBBackend<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
         B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,

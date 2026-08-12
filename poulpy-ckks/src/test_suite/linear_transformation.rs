@@ -18,7 +18,7 @@ use poulpy_hal::{
 
 use crate::{
     api::{CKKSLinearTransformationOps, LinearTransformation, LinearTransformationPrepared},
-    layouts::{CKKSPlaintext, ComplexDiagonals},
+    layouts::{CKKSPlaintextOwned, ComplexDiagonals},
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
@@ -63,7 +63,7 @@ fn encode_lt<BE, F>(
     n1: usize,
     transpose: bool,
     scratch: &mut ScratchArena<'_, BE>,
-) -> LinearTransformation<CKKSPlaintext<BE::OwnedBuf>>
+) -> LinearTransformation<CKKSPlaintextOwned<BE>>
 where
     BE: TestContextBackend,
     Module<BE>: TestContextModule<BE> + CKKSEncodingOps<BE, F>,
@@ -86,7 +86,7 @@ where
 /// resident (`P = PreparedDiagonal`) and streamed (`P = CKKSPlaintext`) paths.
 fn prepare_lt<BE>(
     module: &Module<BE>,
-    lt: &LinearTransformation<CKKSPlaintext<BE::OwnedBuf>>,
+    lt: &LinearTransformation<CKKSPlaintextOwned<BE>>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> LinearTransformationPrepared<BE>
 where

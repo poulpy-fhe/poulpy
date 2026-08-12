@@ -5,7 +5,9 @@ use poulpy_hal::layouts::{Backend, ScratchArena};
 use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSDFTOps, CKKSEvalModOps},
-    layouts::{BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertext, CKKSPlaintext, EncodedLut},
+    layouts::{
+        BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned, CKKSPlaintextOwned, EncodedLut,
+    },
 };
 
 /// CKKS bootstrapping.
@@ -56,7 +58,22 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
         ct_out: &C1,
         ct_in: &C2,
         ctx: &BootstrappingContext<BE, F>,
-        lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+        lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
+        keys_layout: &BootstrappingKeysLayout,
+    ) -> usize
+    where
+        C1: CKKSCtBounds,
+        C2: CKKSCtBounds;
+
+    /// Scratch upper bound for a multi-LUT functional bootstrap. `ct_out`
+    /// provides the shared output layout required by
+    /// [`Self::ckks_functional_bootstrap_multi`].
+    fn ckks_functional_bootstrap_multi_tmp_bytes<C1, C2, F>(
+        &self,
+        ct_out: &C1,
+        ct_in: &C2,
+        ctx: &BootstrappingContext<BE, F>,
+        luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
         keys_layout: &BootstrappingKeysLayout,
     ) -> usize
     where
@@ -96,11 +113,10 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     /// Use [`BootstrappingPlan::input_k`](crate::layouts::BootstrappingPlan::input_k)
     /// and [`BootstrappingPlan::bootstrap_k`](crate::layouts::BootstrappingPlan::bootstrap_k)
     /// to place the pre- and post-ModUp costs correctly.
-    #[allow(clippy::too_many_arguments)]
     fn ckks_bootstrap<F, K>(
         &self,
-        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -110,11 +126,10 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
 
     /// Standard S2C-first bootstrap for ciphertexts known to contain real slots
     /// only. EvalRound+ contexts are not supported by this specialized path.
-    #[allow(clippy::too_many_arguments)]
     fn ckks_bootstrap_real<F, K>(
         &self,
-        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
@@ -125,13 +140,12 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
     /// Refreshes `ct_in` through an S2C-first context and applies `lut` to each
     /// real and imaginary slot half before recombining them in `ct_out`. The LUT
     /// derives the required message ratio from its table length.
-    #[allow(clippy::too_many_arguments)]
     fn ckks_functional_bootstrap<F, K>(
         &self,
-        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
-        lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+        lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -139,27 +153,25 @@ pub trait CKKSBootstrappingOps<BE: Backend>: CKKSDFTOps<BE> + CKKSEvalModOps<BE>
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
 
     /// Functional bootstrap for ciphertexts known to contain real slots only.
-    #[allow(clippy::too_many_arguments)]
     fn ckks_functional_bootstrap_real<F, K>(
         &self,
-        ct_out: &mut CKKSCiphertext<BE::OwnedBuf>,
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_out: &mut CKKSCiphertextOwned<BE>,
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
-        lut: &EncodedLut<CKKSPlaintext<BE::OwnedBuf>>,
+        lut: &EncodedLut<CKKSPlaintextOwned<BE>>,
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>;
 
-    /// Applies several equal-arity general LUTs through one shared functional bootstrap.
-    #[allow(clippy::too_many_arguments)]
+    /// Applies several equal-arity LUTs through one shared functional bootstrap.
     fn ckks_functional_bootstrap_multi<F, K>(
         &self,
-        ct_outs: &mut [CKKSCiphertext<BE::OwnedBuf>],
-        ct_in: &CKKSCiphertext<BE::OwnedBuf>,
+        ct_outs: &mut [CKKSCiphertextOwned<BE>],
+        ct_in: &CKKSCiphertextOwned<BE>,
         ctx: &BootstrappingContext<BE, F>,
-        luts: &[EncodedLut<CKKSPlaintext<BE::OwnedBuf>>],
+        luts: &[EncodedLut<CKKSPlaintextOwned<BE>>],
         keys: &K,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>

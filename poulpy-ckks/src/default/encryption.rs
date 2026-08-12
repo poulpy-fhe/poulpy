@@ -1,6 +1,6 @@
 use crate::CKKSResult as Result;
 use poulpy_core::layouts::IntPolyInfos;
-use poulpy_core::layouts::{GLWEInfos, GLWEPlaintext, GLWESecretPreparedToBackendRef, GLWEToBackendMut};
+use poulpy_core::layouts::{GLWEInfos, GLWESecretPreparedToBackendRef, GLWEToBackendMut};
 use poulpy_core::{EncryptionInfos, GLWEDecrypt, GLWEEncryptSk, GLWENormalize, ScratchArenaTakeCore};
 use poulpy_hal::{
     api::{
@@ -15,6 +15,7 @@ use crate::GLWEToBackendRef;
 use crate::{CKKSInfos, SetCKKSInfos, checked_log_budget_sub};
 
 use super::CKKSPlaintextDefault;
+use poulpy_core::GLWEBytesOf;
 
 pub trait CKKSEncryptionDefault<BE: Backend> {
     fn ckks_encrypt_sk_tmp_bytes_default<A>(&self, ct_infos: &A) -> usize
@@ -68,6 +69,7 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
 
     fn ckks_decrypt_tmp_bytes_default<A>(&self, ct_infos: &A) -> usize
     where
+        Self: GLWEBytesOf<BE>,
         A: GLWEInfos + CKKSInfos,
         Self: GLWEDecrypt<BE>
             + VecZnxLshBackend<BE>
@@ -76,7 +78,7 @@ pub trait CKKSEncryptionDefault<BE: Backend> {
             + VecZnxRshTmpBytes
             + CKKSPlaintextDefault<BE>,
     {
-        GLWEPlaintext::<Vec<u8>>::bytes_of_from_infos(ct_infos)
+        self.glwe_plaintext_bytes_of_from_infos(ct_infos)
             + self
                 .glwe_decrypt_tmp_bytes(ct_infos)
                 .max(self.ckks_extract_pt_tmp_bytes_default())

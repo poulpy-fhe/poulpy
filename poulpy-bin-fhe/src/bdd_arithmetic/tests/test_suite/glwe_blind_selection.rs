@@ -1,3 +1,4 @@
+use poulpy_hal::layouts::{HostDataMut, HostDataRef};
 use std::collections::HashMap;
 
 use poulpy_core::{
@@ -9,7 +10,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBackend, HostDataMut, Module, ScratchOwned},
+    layouts::{Backend, HostBackend, Module, ScratchOwned},
     source::Source,
 };
 use rand::Rng;
@@ -32,7 +33,7 @@ where
         + GLWEBlindSelection<u32, BE>
         + GLWEDecrypt<BE>
         + GLWEEncryptSk<BE>,
-    BE: Backend<OwnedBuf = Vec<u8>> + HostBackend,
+    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
     BE: 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -68,7 +69,7 @@ where
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
 
-    let mut res: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_infos);
+    let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
 
     let k: u32 = source.next_u32();
 
@@ -97,10 +98,10 @@ where
     data.iter_mut().enumerate().for_each(|(i, x)| *x = i as i64);
 
     for _ in 0..32_usize.div_ceil(digit) {
-        let mut pt: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+        let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
 
-        let mut cts_map: HashMap<usize, &mut GLWE<Vec<u8>>> = HashMap::new();
-        let mut cts: Vec<GLWE<Vec<u8>>> = Vec::new();
+        let mut cts_map: HashMap<usize, &mut GLWE<BE::OwnedBuf, BE::ZnxWord>> = HashMap::new();
+        let mut cts: Vec<GLWE<BE::OwnedBuf, BE::ZnxWord>> = Vec::new();
 
         for value in data.iter().take(1 << digit) {
             pt.encode_coeff_i64(*value, TorusPrecision(base2k.as_u32()), 0);

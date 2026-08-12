@@ -7,6 +7,7 @@
 //! The macro is `pub(crate)`: it is an implementation detail of the two verb modules, not a backend-facing extension point.
 
 use crate::CKKSResult as Result;
+use crate::layouts::CKKSPlaintextOwned;
 use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{Base2K, GLWEPlaintext};
 use poulpy_hal::layouts::Backend;
@@ -25,7 +26,7 @@ use crate::{
 /// scratch view), and the value is a degree-1, single-limb monomial, so the
 /// per-call cost is one tiny allocation. Revisit if the HAL grows a
 /// view-targeted host upload.
-pub(crate) fn ckks_one_pt<BE, M>(module: &M, base2k: Base2K) -> Result<CKKSPlaintext<BE::OwnedBuf>>
+pub(crate) fn ckks_one_pt<BE, M>(module: &M, base2k: Base2K) -> Result<CKKSPlaintextOwned<BE>>
 where
     BE: Backend,
     M: CKKSModuleAlloc<BE> + ?Sized,

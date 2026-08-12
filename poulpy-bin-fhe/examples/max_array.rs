@@ -22,6 +22,7 @@ use poulpy_hal::{
 };
 use rand::RngExt;
 
+use poulpy_core::layouts::{GLWESecretSampling, LWESecretSampling};
 #[cfg(all(feature = "enable-avx", target_arch = "x86_64"))]
 use poulpy_cpu_avx::FFT64Avx;
 #[cfg(not(all(feature = "enable-avx", target_arch = "x86_64")))]
@@ -32,7 +33,7 @@ use poulpy_cpu_ref::FFT64Ref;
 
 fn example_max_array<BE, BRA: BlindRotationAlgo>()
 where
-    BE: Backend<OwnedBuf = Vec<u8>> + HostBackend + 'static,
+    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend + 'static,
     Module<BE>: ModuleNew<BE>
         + ModuleN
         + GLWESecretPreparedFactory<BE>
@@ -46,10 +47,12 @@ where
         + BDDKeyPreparedFactory<BRA, BE>
         + FheUintPrepare<BRA, BE>
         + ExecuteBDDCircuit2WTo1W<BE>
-        + GLWEBlindSelection<u32, BE>,
+        + GLWEBlindSelection<u32, BE>
+        + GLWESecretSampling<BE>
+        + LWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     BE::OwnedBuf: HostDataRef + HostDataMut,
-    for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8]> + 'static,
+    for<'a> BE: Backend<BufMut<'a> = &'a mut [u8], BufRef<'a> = &'a [u8], ZnxWord = i64> + 'static,
     for<'a> BE::BufMut<'a>: AsMut<[u8]> + AsRef<[u8]> + Sync,
 {
     ////////// Parameter Selection
@@ -141,10 +144,10 @@ where
     ////////// Key Generation and Preparation
     // Generating the GLWE and LWE key
     let mut sk_glwe = module.glwe_secret_alloc_from_infos(&glwe_layout);
-    sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
+    module.glwe_secret_fill_ternary_prob(&mut sk_glwe, 0.5, &mut source_xs);
 
     let mut sk_lwe = module.lwe_secret_alloc(Degree(N_LWE));
-    sk_lwe.fill_binary_block(BINARY_BLOCK_SIZE as usize, &mut source_xs);
+    module.lwe_secret_fill_binary_block(&mut sk_lwe, BINARY_BLOCK_SIZE as usize, &mut source_xs);
 
     // Preparing the private keys
     let mut sk_glwe_prepared = module.glwe_secret_prepared_alloc_from_infos(&glwe_layout);
@@ -156,7 +159,7 @@ where
     let bdd_enc_infos = BDDEncryptionInfos::from_default_sigma(&bdd_layout).unwrap();
     let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(glwe_layout).unwrap();
 
-    let mut bdd_key: BDDKey<Vec<u8>, BRA> = BDDKey::alloc_from_infos(&module, &bdd_layout);
+    let mut bdd_key: BDDKey<Vec<u8>, BRA, i64> = BDDKey::alloc_from_infos(&module, &bdd_layout);
     bdd_key.encrypt_sk(
         &module,
         &sk_lwe,
@@ -172,7 +175,7 @@ where
     let mut rng = rand::rng();
     let inputs: Vec<u32> = (0..3).map(|_| rng.random_range(0..u32::MAX - 1)).collect();
 
-    let mut inputs_enc: Vec<FheUint<Vec<u8>, u32>> = Vec::new();
+    let mut inputs_enc: Vec<FheUint<Vec<u8>, u32, i64>> = Vec::new();
     for input in &inputs {
         let mut next_input = FheUint::alloc_from_infos(&module, &glwe_layout);
         next_input.encrypt_sk(
@@ -194,7 +197,7 @@ where
     let mut bdd_key_prepared: BDDKeyPrepared<BE::OwnedBuf, BRA, BE> = BDDKeyPrepared::alloc_from_infos(&module, &bdd_layout);
     bdd_key_prepared.prepare(&module, &bdd_key, &mut scratch.borrow());
 
-    let mut max_enc: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&module, &glwe_layout);
+    let mut max_enc: FheUint<Vec<u8>, u32, i64> = FheUint::alloc_from_infos(&module, &glwe_layout);
     max_enc.encrypt_sk(
         &module,
         0,
@@ -205,10 +208,10 @@ where
         &mut scratch.borrow(),
     );
     // Copy of max_enc for the HashMap
-    let mut max_enc_copy: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&module, &glwe_layout);
+    let mut max_enc_copy: FheUint<Vec<u8>, u32, i64> = FheUint::alloc_from_infos(&module, &glwe_layout);
 
     // Allocating the intermediate ciphertext c_enc
-    let mut compare_enc: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&module, &glwe_layout);
+    let mut compare_enc: FheUint<Vec<u8>, u32, i64> = FheUint::alloc_from_infos(&module, &glwe_layout);
     let mut compare_enc_prepared: FheUintPrepared<BE::OwnedBuf, u32, BE> =
         FheUintPrepared::alloc_from_infos(&module, &ggsw_layout);
 

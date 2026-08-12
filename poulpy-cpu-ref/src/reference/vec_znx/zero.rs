@@ -5,7 +5,7 @@ use crate::{
 
 pub fn vec_znx_zero<'r, BE>(res: &mut VecZnxBackendMut<'r, BE>, res_col: usize)
 where
-    BE: Backend + ZnxZero,
+    BE: Backend<ZnxWord = i64> + ZnxZero,
     BE::BufMut<'r>: HostDataMut,
 {
     let res_size = res.size();

@@ -15,7 +15,7 @@ pub fn vec_znx_switch_ring<'r, 'a, BE>(
     a: &VecZnxBackendRef<'a, BE>,
     a_col: usize,
 ) where
-    BE: Backend + ZnxCopy + ZnxSwitchRing + ZnxZero,
+    BE: Backend<ZnxWord = i64> + ZnxCopy + ZnxSwitchRing + ZnxZero,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {

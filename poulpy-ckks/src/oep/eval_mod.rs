@@ -10,7 +10,7 @@ use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSSubOps},
     default::eval_mod::CKKSEvalModOpsDefault,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, eval_mod::EvalMod},
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, eval_mod::EvalMod},
 };
 
 /// Backend override hook for [`CKKSEvalModOps`](crate::api::CKKSEvalModOps).
@@ -51,7 +51,7 @@ where
         + CKKSCopyOps<BE>
         + CKKSModuleAlloc<BE>
         + CKKSEvalModOpsDefault<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
 {
     fn ckks_eval_mod_impl<R, C, P, F>(
