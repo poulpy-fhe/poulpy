@@ -13,7 +13,7 @@ use crate::{
         GGSW, GGSWInfos, GGSWLayout, GGSWPreparedFactory, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
         prepared::{GGSWPrepared, GLWESecretPrepared},
     },
-    noise::noise_ggsw_product,
+    noise::GGSWNoiseModel,
 };
 
 #[allow(clippy::too_many_arguments)]
@@ -39,8 +39,6 @@ where
 
     for rank in 1_usize..3 {
         for dsize in 1..max_dsize + 1 {
-            let k_apply: usize = k_in + key_base2k * dsize;
-
             let n: usize = module.n();
             let dnum: usize = k_in.div_ceil(key_base2k * dsize);
             let dnum_in: usize = k_in / in_base2k;
@@ -133,26 +131,22 @@ where
                 module.vec_znx_rotate_assign_backend(k as i64, &mut pt_in_as_vec, 0, &mut scratch.borrow());
             }
 
-            let var_gct_err_lhs: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
-            let var_gct_err_rhs: f64 = 0f64;
+            let var_key_err_body: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
+            let var_key_err_mask: f64 = 0f64;
 
             let var_msg: f64 = 1f64 / n as f64; // X^{k}
             let var_a0_err: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
-            let var_a1_err: f64 = 1f64 / 12f64;
+            let var_a1_err: f64 = 0f64;
 
             let max_noise = |_col_j: usize| -> f64 {
-                noise_ggsw_product(
-                    n as f64,
-                    key_base2k * dsize,
+                ggsw_apply_infos.log2_std_noise_external_product(
+                    &ggsw_in_infos,
                     0.5,
                     var_msg,
                     var_a0_err,
                     var_a1_err,
-                    var_gct_err_lhs,
-                    var_gct_err_rhs,
-                    rank as f64,
-                    k_in,
-                    k_apply,
+                    var_key_err_body,
+                    var_key_err_mask,
                 ) + 0.5
             };
 
@@ -201,8 +195,6 @@ where
 
     for rank in 1_usize..3 {
         for dsize in 1..max_dsize + 1 {
-            let k_apply: usize = k_out + key_base2k * dsize;
-
             let n: usize = module.n();
             let dnum: usize = k_out.div_ceil(dsize * key_base2k);
             let dnum_in: usize = k_out / out_base2k;
@@ -286,26 +278,22 @@ where
                 module.vec_znx_rotate_assign_backend(k as i64, &mut pt_in_as_vec, 0, &mut scratch.borrow());
             }
 
-            let var_gct_err_lhs: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
-            let var_gct_err_rhs: f64 = 0f64;
+            let var_key_err_body: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
+            let var_key_err_mask: f64 = 0f64;
 
             let var_msg: f64 = 1f64 / n as f64; // X^{k}
             let var_a0_err: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
-            let var_a1_err: f64 = 1f64 / 12f64;
+            let var_a1_err: f64 = 0f64;
 
             let max_noise = |_col_j: usize| -> f64 {
-                noise_ggsw_product(
-                    n as f64,
-                    key_base2k * dsize,
+                ggsw_apply_infos.log2_std_noise_external_product(
+                    &ggsw_out_infos,
                     0.5,
                     var_msg,
                     var_a0_err,
                     var_a1_err,
-                    var_gct_err_lhs,
-                    var_gct_err_rhs,
-                    rank as f64,
-                    k_out,
-                    k_apply,
+                    var_key_err_body,
+                    var_key_err_mask,
                 ) + 0.5
             };
 

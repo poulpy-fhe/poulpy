@@ -9,7 +9,7 @@ use poulpy_core::layouts::{
 
 use crate::{CKKSCtBounds, SetCKKSInfos, layouts::CKKSCiphertextOwned, polynomial::ComplexBSGSPolynomial};
 
-pub use poulpy_core::layouts::{BSGSPolynomialInfos, BabyStep, Basis, Parity, PowerBasisHelper};
+pub use poulpy_core::layouts::{BSGSPolynomialInfos, BabyStep, Basis, Parity, PolynomialInputTransform, PowerBasisHelper};
 
 pub trait CKKSPolynomialEvaluationOps<BE: Backend> {
     fn ckks_eval_poly_real_const_coeffs_from_power_basis<R, B, A, G, T>(

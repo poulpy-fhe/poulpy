@@ -12,7 +12,7 @@ use crate::{
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GGLWEInfos, GLWEAutomorphismKey, GLWEAutomorphismKeyDecompress, GLWEAutomorphismKeyLayout, GLWEInfos, GLWESecret,
-        GLWESecretPreparedFactory, GLWESwitchingKeyDecompress, ModuleCoreAlloc, ModuleCoreCompressedAlloc,
+        GLWESecretPreparedFactory, GLWESwitchingKeyDecompress, LWEInfos, ModuleCoreAlloc, ModuleCoreCompressedAlloc,
         compressed::GLWEAutomorphismKeyCompressed, prepared::GLWESecretPrepared,
     },
     noise::GGLWENoise,
@@ -107,7 +107,7 @@ pub fn test_gglwe_automorphism_key_encrypt_sk<BE: crate::test_suite::TestBackend
             let mut sk_out_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc(sk_out.rank());
             module.glwe_secret_prepare(&mut sk_out_prepared, &sk_out);
 
-            let max_noise: f64 = DEFAULT_SIGMA_XE.log2() - (k_ksk as f64) + 0.5;
+            let max_noise: f64 = DEFAULT_SIGMA_XE.log2() - (atk_infos.k().as_usize() as f64) + 0.5;
 
             for row in 0..atk.dnum().as_usize() {
                 for col in 0..atk.rank().as_usize() {
@@ -220,7 +220,7 @@ pub fn test_gglwe_automorphism_key_compressed_encrypt_sk<BE: crate::test_suite::
                 module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
             module.decompress_automorphism_key(&mut atk, &atk_compressed);
 
-            let max_noise: f64 = DEFAULT_SIGMA_XE.log2() - (k_ksk as f64) + 0.5;
+            let max_noise: f64 = DEFAULT_SIGMA_XE.log2() - (atk_infos.k().as_usize() as f64) + 0.5;
 
             for row in 0..atk.dnum().as_usize() {
                 for col in 0..atk.rank().as_usize() {

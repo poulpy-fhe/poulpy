@@ -12,7 +12,7 @@ use std::collections::BTreeSet;
 
 use poulpy_core::{
     LinearTransformationPrepared,
-    layouts::{LinearTransformation, LinearTransformationLayout, LinearTransformationStrategy},
+    layouts::{LinearTransformation, LinearTransformationLayout, LinearTransformationStrategy, optimal_bsgs_giant_step},
 };
 use poulpy_hal::layouts::{Backend, galois_element};
 
@@ -307,6 +307,38 @@ impl DFTPlan {
     /// Default `false`.
     pub fn with_bit_reversed(mut self, bit_reversed: bool) -> Self {
         self.bit_reversed = bit_reversed;
+        self
+    }
+
+    /// Replaces each factor's BSGS width with the structure-aware optimum for
+    /// its non-zero diagonals on a degree-`2^log_n` ring.
+    ///
+    /// This minimizes and balances the backend-independent baby/giant rotation
+    /// counts. A backend-specific optimum may differ, so the tuning is explicit
+    /// rather than part of [`Self::new`]. Call this after
+    /// [`Self::with_bit_reversed`], since bit reversal changes the diagonal
+    /// geometry. Sparse repack doubles only the boundary factor (last `Encode`,
+    /// first `Decode`). Depths, scale, and budget consumption are unchanged.
+    pub fn with_optimal_bsgs(mut self, log_n: usize) -> Self {
+        let sparse = self.is_sparse_repack(log_n);
+        let slots = 1usize << self.log_slots();
+        let last_factor = self.num_factors() - 1;
+        let giant_steps: Vec<_> = self
+            .diagonal_indexes(log_n)
+            .into_iter()
+            .enumerate()
+            .map(|(i, indexes)| {
+                let repack_boundary = match self.kind {
+                    DFTType::Encode => i == last_factor,
+                    DFTType::Decode => i == 0,
+                };
+                let factor_slots = if sparse && repack_boundary { slots << 1 } else { slots };
+                optimal_bsgs_giant_step(indexes, factor_slots)
+            })
+            .collect();
+        for (step, giant_step) in self.schedule.steps.iter_mut().zip(giant_steps) {
+            step.giant_step = giant_step;
+        }
         self
     }
 
@@ -624,5 +656,102 @@ impl<BE: Backend, Dir, Fmt: DftFormat, R> DFTMatrix<BE, Dir, Fmt, R> {
     /// `Fmt` type-state.
     pub fn is_sparse(&self) -> bool {
         Fmt::FORMAT == DFTOutputFormat::RepackImagAsReal
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn plan(kind: DFTType, depths: &[usize], format: DFTOutputFormat) -> DFTPlan {
+        DFTPlan::new(
+            kind,
+            depths.iter().map(|&depth| (depth, 1)).collect::<Vec<_>>(),
+            format,
+            CoeffsMeta::from_delta_budget(30, 2),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn optimal_bsgs_matches_dense_dft_geometry() {
+        let encode = plan(DFTType::Encode, &[2, 3, 3, 3], DFTOutputFormat::SplitRealAndImag);
+        let encode_indexes = encode.diagonal_indexes(12);
+        let encode = encode.with_optimal_bsgs(12);
+        assert_eq!(encode.schedule().giant_steps(), vec![1024, 256, 32, 4]);
+        assert_eq!(encode.diagonal_indexes(12), encode_indexes);
+
+        let decode = plan(DFTType::Decode, &[3, 3, 3, 2], DFTOutputFormat::SplitRealAndImag).with_optimal_bsgs(12);
+        assert_eq!(decode.schedule().giant_steps(), vec![4, 32, 256, 1024]);
+    }
+
+    #[test]
+    fn optimal_bsgs_doubles_only_the_sparse_repack_boundary() {
+        let encode = plan(DFTType::Encode, &[1, 1], DFTOutputFormat::RepackImagAsReal).with_optimal_bsgs(4);
+        assert_eq!(encode.schedule().giant_steps(), vec![2, 3]);
+
+        let decode = plan(DFTType::Decode, &[1, 1], DFTOutputFormat::RepackImagAsReal);
+        let consumed_bits = decode.consumed_bits();
+        let decode = decode.with_optimal_bsgs(4);
+        assert_eq!(decode.schedule().giant_steps(), vec![4, 2]);
+        assert_eq!(decode.consumed_bits(), consumed_bits);
+    }
+
+    fn bsgs_cost(indexes: &[i64], slots: usize, giant_step: usize) -> (usize, [usize; 2], BTreeSet<i64>) {
+        let index = LinearTransformationLayout {
+            indexes: indexes.to_vec(),
+            slots,
+            strategy: LinearTransformationStrategy::Bsgs { giant_step },
+        }
+        .index();
+        let products = index.index.iter().map(Vec::len).sum();
+        let rotations: BTreeSet<_> = index
+            .baby_steps
+            .iter()
+            .chain(&index.giant_steps)
+            .copied()
+            .filter(|&rotation| rotation != 0)
+            .collect();
+        let mut rotations_by_side = [
+            index.baby_steps.iter().filter(|&&rotation| rotation != 0).count(),
+            index.giant_steps.iter().filter(|&&rotation| rotation != 0).count(),
+        ];
+        rotations_by_side.sort_unstable();
+        (products, rotations_by_side, rotations)
+    }
+
+    #[test]
+    fn sparse_bsgs_boundary_tuning_preserves_evaluation_cost() {
+        for log_slots in 2..=10 {
+            for factor_width in 1..=4 {
+                let mut depths = vec![factor_width; log_slots / factor_width];
+                if log_slots % factor_width != 0 {
+                    depths.push(log_slots % factor_width);
+                }
+                for kind in [DFTType::Encode, DFTType::Decode] {
+                    for bit_reversed in [false, true] {
+                        let plan = plan(kind, &depths, DFTOutputFormat::RepackImagAsReal).with_bit_reversed(bit_reversed);
+                        let log_n = log_slots + 2;
+                        let indexes = plan.diagonal_indexes(log_n);
+                        let doubled_slots = 1 << (log_slots + 1);
+                        let old_giant_steps: Vec<_> = indexes
+                            .iter()
+                            .map(|factor| optimal_bsgs_giant_step(factor.iter().copied(), doubled_slots))
+                            .collect();
+                        let tuned = plan.with_optimal_bsgs(log_n);
+
+                        for ((factor, old_giant_step), new_giant_step) in
+                            indexes.iter().zip(old_giant_steps).zip(tuned.schedule().giant_steps())
+                        {
+                            assert_eq!(
+                                bsgs_cost(factor, doubled_slots, old_giant_step),
+                                bsgs_cost(factor, doubled_slots, new_giant_step),
+                                "log_slots={log_slots}, depths={depths:?}, kind={kind:?}, bit_reversed={bit_reversed}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
     }
 }
