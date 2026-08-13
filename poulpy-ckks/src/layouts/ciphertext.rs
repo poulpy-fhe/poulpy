@@ -12,8 +12,8 @@ use std::{
 
 use anyhow::Result;
 use poulpy_core::layouts::{
-    BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, LWEInfos, Rank, SetBSGSMeta,
-    SetK, TorusPrecision,
+    BSGSMeta, Base2K, Degree, GLWE, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GLWEViewMut, GLWEViewRef, LWEInfos, Rank,
+    SetBSGSMeta, SetK, TorusPrecision,
 };
 use poulpy_core::{GLWENormalize, ScratchArenaTakeCore};
 use poulpy_hal::layouts::{Backend, Data, HostDataRef, ScratchArena, ZnxWord};
@@ -241,6 +241,55 @@ where
 /// Backend-owned CKKS ciphertext: the backend's buffer type and its coefficient word.
 pub type CKKSCiphertextOwned<BE> = CKKSCiphertext<<BE as Backend>::OwnedBuf, <BE as Backend>::ZnxWord>;
 
+pub(crate) struct CKKSCiphertextViewRef<'a, BE: Backend + 'a> {
+    inner: GLWEViewRef<'a, BE>,
+    meta: CKKSMeta,
+}
+
+impl<'a, BE: Backend + 'a> Deref for CKKSCiphertextViewRef<'a, BE> {
+    type Target = GLWEViewRef<'a, BE>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<'a, BE: Backend + 'a> LWEInfos for CKKSCiphertextViewRef<'a, BE> {
+    fn base2k(&self) -> Base2K {
+        self.inner.base2k()
+    }
+
+    fn n(&self) -> Degree {
+        self.inner.n()
+    }
+
+    fn max_size(&self) -> usize {
+        self.inner.max_size()
+    }
+
+    fn k(&self) -> TorusPrecision {
+        self.inner.k()
+    }
+}
+
+impl<'a, BE: Backend + 'a> GLWEInfos for CKKSCiphertextViewRef<'a, BE> {
+    fn rank(&self) -> Rank {
+        self.inner.rank()
+    }
+}
+
+impl<'a, BE: Backend + 'a> CKKSInfos for CKKSCiphertextViewRef<'a, BE> {
+    fn meta(&self) -> CKKSMeta {
+        self.meta
+    }
+}
+
+impl<'a, BE: Backend + 'a> GLWEToBackendRef<BE> for CKKSCiphertextViewRef<'a, BE> {
+    fn to_backend_ref(&self) -> GLWE<BE::BufRef<'_>, BE::ZnxWord> {
+        self.inner.to_backend_ref()
+    }
+}
+
 /// Scratch-backed mutable CKKS ciphertext view.
 ///
 /// This is the CKKS analogue of core's [`GLWEViewMut`]: the limb storage is
@@ -254,6 +303,13 @@ pub struct CKKSCiphertextViewMut<'a, BE: Backend + 'a> {
 impl<'a, BE: Backend + 'a> CKKSCiphertextViewMut<'a, BE> {
     pub(crate) fn from_inner(inner: GLWEViewMut<'a, BE>, meta: CKKSMeta) -> Self {
         Self { inner, meta }
+    }
+
+    pub(crate) fn to_backend_view_ref(&self) -> CKKSCiphertextViewRef<'_, BE> {
+        CKKSCiphertextViewRef {
+            inner: GLWEViewRef::from_inner(self.inner.to_backend_ref()),
+            meta: self.meta,
+        }
     }
 }
 

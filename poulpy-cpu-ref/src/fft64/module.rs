@@ -38,6 +38,7 @@ pub struct FFT64RefHandle {
 }
 
 impl Backend for FFT64Ref {
+    type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type DftWord = f64;
     type ZnxWord = i64;
     type BigWord = i64;

@@ -7,7 +7,10 @@ use poulpy_core::{
         prepared::{GGLWEPreparedToBackendRef, GLWETensorKeyPreparedToBackendRef},
     },
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::{
+    execution::TaskExecutor,
+    layouts::{Backend, Module, ScratchArena},
+};
 use std::ops::Deref;
 
 use crate::{
@@ -125,6 +128,12 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
             BootstrappingPipeline::S2CFirst => post_mod_up.max(boot_ct_bytes + in_ct_bytes),
         };
 
+        let eval_mod_tmp = self.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key);
+        let eval_mod_tmp = if <BE::TaskExecutor as TaskExecutor>::IS_PARALLEL {
+            2 * eval_mod_tmp.next_multiple_of(BE::SCRATCH_ALIGN)
+        } else {
+            eval_mod_tmp
+        };
         let mut nested = self
             .ckks_all_ops_with_atk_tmp_bytes(
                 &boot_layout,
@@ -138,7 +147,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
                 &keys_layout.automorphism_key,
                 &coeffs_layout,
             ))
-            .max(self.ckks_eval_mod_tmp_bytes(&boot_layout, &boot_layout, ctx.eval_mod(), &keys_layout.tensor_key));
+            .max(eval_mod_tmp);
 
         if let Some(encaps) = &keys_layout.encapsulation {
             if ctx.pipeline() == BootstrappingPipeline::C2SFirst {
@@ -346,13 +355,32 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
     ) -> Result<()>
     where
         Module<BE>: CKKSEvalModOps<BE>,
-        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
-        C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        R1: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
-        R2: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
+        F: Sync,
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
+        C: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
+        R1: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
+        R2: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Send,
     {
-        self.ckks_eval_mod(res_real, r0, ctx.eval_mod(), keys.tensor_key(), scratch)?;
-        self.ckks_eval_mod(res_imag, i0, ctx.eval_mod(), keys.tensor_key(), scratch)?;
+        if !<BE::TaskExecutor as TaskExecutor>::IS_PARALLEL {
+            self.ckks_eval_mod(res_real, r0, ctx.eval_mod(), keys.tensor_key(), scratch)?;
+            self.ckks_eval_mod(res_imag, i0, ctx.eval_mod(), keys.tensor_key(), scratch)?;
+            return Ok(());
+        }
+
+        let task_bytes = self
+            .ckks_eval_mod_tmp_bytes(res_real, r0, ctx.eval_mod(), keys.tensor_key())
+            .max(self.ckks_eval_mod_tmp_bytes(res_imag, i0, ctx.eval_mod(), keys.tensor_key()))
+            .next_multiple_of(BE::SCRATCH_ALIGN);
+        let (arenas, _) = scratch.borrow().split(2, task_bytes);
+        let mut arenas = arenas.into_iter();
+        let mut scratch_real = arenas.next().unwrap();
+        let mut scratch_imag = arenas.next().unwrap();
+        let (real, imag) = <BE::TaskExecutor as TaskExecutor>::join(
+            || self.ckks_eval_mod(res_real, r0, ctx.eval_mod(), keys.tensor_key(), &mut scratch_real),
+            || self.ckks_eval_mod(res_imag, i0, ctx.eval_mod(), keys.tensor_key(), &mut scratch_imag),
+        );
+        real?;
+        imag?;
         Ok(())
     }
 
@@ -365,6 +393,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
+        F: Sync,
         Module<BE>: GLWECopy<BE>
             + GLWEShift<BE>
             + GLWEKeyswitch<BE>
@@ -376,7 +405,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
             + CKKSEvalModOps<BE>
             + CKKSCopyOps<BE>
             + CKKSPow2Ops<BE>,
-        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
         CKKSCiphertextOwned<BE>:
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -397,7 +426,19 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
             self.ckks_bootstrap_coeffs_to_slots(&ct_raised, &mut r0, &mut i0, ctx, keys, &mut scratch_local)?;
             match ctx.coeffs_to_slots_bypass() {
                 None => {
-                    self.ckks_bootstrap_eval_mod_halves(&r0, &i0, ct_out, &mut ct_raised, ctx, keys, &mut scratch_local)?;
+                    {
+                        let r0_ref = r0.to_backend_view_ref();
+                        let i0_ref = i0.to_backend_view_ref();
+                        self.ckks_bootstrap_eval_mod_halves(
+                            &r0_ref,
+                            &i0_ref,
+                            ct_out,
+                            &mut ct_raised,
+                            ctx,
+                            keys,
+                            &mut scratch_local,
+                        )?;
+                    }
                     self.recombine_halves(ct_out, &mut ct_raised, &mut scratch_local)?;
                 }
                 Some(bypass) => {
@@ -414,7 +455,19 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
                         &mut scratch_local,
                     )?;
 
-                    self.ckks_bootstrap_eval_mod_halves(&r0, &i0, ct_out, &mut ct_raised, ctx, keys, &mut scratch_local)?;
+                    {
+                        let r0_ref = r0.to_backend_view_ref();
+                        let i0_ref = i0.to_backend_view_ref();
+                        self.ckks_bootstrap_eval_mod_halves(
+                            &r0_ref,
+                            &i0_ref,
+                            ct_out,
+                            &mut ct_raised,
+                            ctx,
+                            keys,
+                            &mut scratch_local,
+                        )?;
+                    }
 
                     ckks_ensure!(
                         ctx.eval_mod().plan.f_mod_interval.is_power_of_two(),
@@ -502,6 +555,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
+        F: Sync,
         Module<BE>: GLWECopy<BE>
             + GLWEShift<BE>
             + GLWEKeyswitch<BE>
@@ -513,7 +567,7 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
             + CKKSImagOps<BE>
             + CKKSDFTOps<BE>
             + CKKSEvalModOps<BE>,
-        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>>,
+        K: BootstrappingKeys<BE, TensorKey = GLWETensorKeyPrepared<BE::OwnedBuf, BE>> + Sync,
         CKKSCiphertextOwned<BE>:
             GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + BSGSMeta,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,

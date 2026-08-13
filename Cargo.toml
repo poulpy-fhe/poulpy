@@ -36,6 +36,7 @@ criterion = "0.8.2"
 byteorder = "1.5.0"
 zstd = "0.13.3"
 once_cell = "1.21.4"
+rayon = "1.11.0"
 bytemuck = { version = "1.25.0", features = ["min_const_generics"] }
 paste = "1.0.15"
 serde = "1"

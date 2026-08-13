@@ -84,6 +84,7 @@ pub struct FFT64AvxHandle {
 }
 
 impl Backend for FFT64Avx {
+    type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type DftWord = f64;
     type ZnxWord = i64;
     type BigWord = i64;

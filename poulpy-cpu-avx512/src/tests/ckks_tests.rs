@@ -48,3 +48,13 @@ ckks_backend_test_suite!(
     params = poulpy_ckks::test_suite::NTT4X30_PARAMS_F128,
     rotations = super::ATK_ROTATIONS,
 );
+
+#[cfg(feature = "enable-rayon")]
+ckks_backend_test_suite!(
+    mod ntt3x42_ifma_rayon_f64,
+    backend = crate::NTT3x42IfmaRayon,
+    scalar = f64,
+    encoder = crate::FFT64Avx512ReimTable,
+    params = poulpy_ckks::test_suite::NTT4X30_PARAMS_F64,
+    rotations = super::ATK_ROTATIONS,
+);

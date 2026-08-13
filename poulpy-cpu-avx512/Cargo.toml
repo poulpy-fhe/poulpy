@@ -16,6 +16,7 @@ doctest = false
 enable-avx512f = []
 enable-ifma = ["enable-avx512f"]
 enable-ckks = ["dep:poulpy-ckks", "poulpy-cpu-ref/enable-ckks"]
+enable-rayon = ["enable-ifma", "dep:rayon"]
 
 [dependencies]
 bytemuck = {workspace = true}
@@ -31,6 +32,7 @@ byteorder = {workspace = true}
 once_cell = {workspace = true}
 rand_chacha = {workspace = true}
 paste = {workspace = true}
+rayon = {workspace = true, optional = true}
 
 [dev-dependencies]
 poulpy-ckks = {workspace = true, features = ["test-utils"]}

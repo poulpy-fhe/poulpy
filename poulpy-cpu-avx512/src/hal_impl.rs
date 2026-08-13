@@ -712,7 +712,14 @@ mod ifma_impl {
         ) {
             let bytes = crate::ntt3x42_ifma::vmp::vmp_apply_tmp_bytes_ifma(a.size(), b.rows(), b.cols_in());
             let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-            crate::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_ifma(module, res, a, b, limb_offset, tmp);
+            crate::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_ifma::<poulpy_hal::execution::SerialTaskExecutor>(
+                module,
+                res,
+                a,
+                b,
+                limb_offset,
+                tmp,
+            );
         }
 
         fn vmp_apply_dft_to_dft_accumulate_tmp_bytes(
@@ -737,7 +744,35 @@ mod ifma_impl {
         ) {
             let bytes = crate::ntt3x42_ifma::vmp::vmp_apply_tmp_bytes_ifma(a.size(), b.rows(), b.cols_in());
             let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-            crate::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_accumulate_ifma(module, res, a, b, limb_offset, tmp);
+            crate::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_accumulate_ifma::<poulpy_hal::execution::SerialTaskExecutor>(
+                module,
+                res,
+                a,
+                b,
+                limb_offset,
+                tmp,
+            );
+        }
+
+        fn vmp_apply_dft_to_dft_digits_strided(
+            module: &Module<Self>,
+            res: &mut VecZnxDftBackendMut<'_, Self>,
+            a: &VecZnxDftBackendRef<'_, Self>,
+            dsize: usize,
+            b: &VmpPMatBackendRef<'_, Self>,
+            scratch: &mut ScratchArena<'_, Self>,
+        ) {
+            let bytes = crate::ntt3x42_ifma::vmp::vmp_apply_digits_strided_tmp_bytes_ifma(
+                a.cols(),
+                a.size(),
+                dsize,
+                b.rows(),
+                b.cols_in(),
+            );
+            let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+            crate::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_digits_strided_ifma::<poulpy_hal::execution::SerialTaskExecutor>(
+                module, res, a, dsize, b, tmp,
+            );
         }
 
         fn vmp_zero(_module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {

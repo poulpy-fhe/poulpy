@@ -45,6 +45,7 @@ pub struct NTT4x30AvxHandle {
 impl Backend for NTT4x30Avx {
     const DFT_IS_EXACT: bool = true;
 
+    type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type DftWord = Q120bScalar;
     type ZnxWord = i64;
     type BigWord = i128;

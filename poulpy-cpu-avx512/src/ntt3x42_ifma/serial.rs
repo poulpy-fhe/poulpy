@@ -1,5 +1,18 @@
 //! Serial task dispatch used by the single-threaded IFMA kernels.
 
+#[derive(Clone, Copy)]
+pub(crate) struct SendPtr<T>(pub(crate) *mut T);
+
+unsafe impl<T> Send for SendPtr<T> {}
+unsafe impl<T> Sync for SendPtr<T> {}
+
+impl<T> SendPtr<T> {
+    #[inline(always)]
+    pub(crate) fn get(self) -> *mut T {
+        self.0
+    }
+}
+
 #[inline(always)]
 pub(crate) fn for_index(count: usize, _work: usize, mut task: impl FnMut(usize)) {
     for index in 0..count {

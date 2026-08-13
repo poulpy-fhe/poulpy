@@ -137,6 +137,7 @@ where
 pub struct HostBytesBackend;
 
 impl Backend for HostBytesBackend {
+    type TaskExecutor = crate::execution::SerialTaskExecutor;
     type ZnxWord = i64;
     type BigWord = i128;
     type DftWord = i64;
@@ -456,10 +457,13 @@ impl<BE> HostStaged for BE where BE: Backend<ZnxWord = i64, OwnedBuf: CopyToHost
 /// scalar types, and handle representation as a source backend.
 #[macro_export]
 macro_rules! impl_backend_from {
-    ($be:ty, $from:ty) => {
+    (@executor $from:ty, $executor:ty) => { $executor };
+    (@executor $from:ty) => { <$from as poulpy_hal::layouts::Backend>::TaskExecutor };
+    ($be:ty, $from:ty $(, $executor:ty)?) => {
         impl poulpy_hal::layouts::Backend for $be {
             const DFT_IS_EXACT: bool = <$from as poulpy_hal::layouts::Backend>::DFT_IS_EXACT;
 
+            type TaskExecutor = poulpy_hal::impl_backend_from!(@executor $from $(, $executor)?);
             type ZnxWord = <$from as poulpy_hal::layouts::Backend>::ZnxWord;
             type BigWord = <$from as poulpy_hal::layouts::Backend>::BigWord;
             type DftWord = <$from as poulpy_hal::layouts::Backend>::DftWord;

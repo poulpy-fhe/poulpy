@@ -1,10 +1,11 @@
 //! AVX-512 / AVX-512-IFMA accelerated CPU backends for the Poulpy lattice cryptography library.
 //!
-//! This crate provides three backend implementations for [`poulpy_hal`]:
+//! This crate provides four backend implementations for [`poulpy_hal`]:
 //!
 //! - `FFT64Avx512`: f64 FFT backend, gated on `enable-avx512f`.
 //! - `NTT4x30Avx512`: Q120 NTT backend over four ~30-bit CRT primes, gated on `enable-avx512f`.
 //! - `NTT3x42Ifma`: Q126 NTT backend over three ~42-bit CRT primes, gated on `enable-ifma`.
+//! - `NTT3x42IfmaRayon`: opt-in parallel host variant of `NTT3x42Ifma`, gated on `enable-rayon`.
 //!
 //! # Architecture
 //!
@@ -90,6 +91,7 @@
 //!
 //! - `enable-avx512f`: exports `FFT64Avx512` and `NTT4x30Avx512`.
 //! - `enable-ifma`: implies `enable-avx512f` and also exports `NTT3x42Ifma`.
+//! - `enable-rayon`: implies `enable-ifma` and exports `NTT3x42IfmaRayon`.
 //! - `enable-ckks`: wires these backends into `poulpy-ckks` defaults.
 //!
 //! # Platform support
@@ -163,6 +165,11 @@ mod ntt3x42_ifma;
 pub use fft64::{FFT64Avx512, FFT64Avx512ReimTable, ReimFFTAvx512, ReimIFFTAvx512};
 #[cfg(feature = "enable-ifma")]
 pub use ntt3x42_ifma::NTT3x42Ifma;
+#[cfg(feature = "enable-rayon")]
+pub use ntt3x42_ifma::NTT3x42IfmaRayon;
+#[cfg(feature = "enable-rayon")]
+#[doc(hidden)]
+pub use ntt3x42_ifma::NTT3x42IfmaRayonExecutor;
 #[cfg(feature = "enable-avx512f")]
 pub use ntt4x30_avx512::NTT4x30Avx512;
 

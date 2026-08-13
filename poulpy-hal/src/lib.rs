@@ -105,6 +105,9 @@ pub mod api;
 /// the safe API layer to the unsafe backend implementations.
 pub mod delegates;
 
+/// Backend-selected task execution policies.
+pub mod execution;
+
 /// Backend-agnostic data layout types for polynomials, vectors, matrices,
 /// and prepared (DFT-domain) representations.
 ///

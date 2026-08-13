@@ -21,6 +21,7 @@ pub struct FFT64NeonHandle {
 }
 
 impl Backend for FFT64Neon {
+    type TaskExecutor = poulpy_hal::execution::SerialTaskExecutor;
     type DftWord = f64;
     type ZnxWord = i64;
     type BigWord = i64;
