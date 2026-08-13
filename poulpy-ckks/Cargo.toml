@@ -15,7 +15,7 @@ documentation = "https://docs.rs/poulpy-ckks"
 # dependents skip the ~17k lines of test code entirely.
 test-utils = []
 # Route `Quad`'s transcendental math through libquadmath (`f128` crate);
-# x86_64-linux only, else a no-op. The `Quad` type itself is unchanged.
+# x86_64 only, else a no-op. The `Quad` type itself is unchanged.
 libquadmath = ["dep:f128"]
 
 [dependencies]
@@ -27,12 +27,10 @@ bytemuck = {workspace = true}
 paste = {workspace = true}
 dashu-float = {workspace = true}
 
-# libquadmath backing for `Quad` (x86_64-linux only). The `f128` crate compiles a
-# C shim against <quadmath.h>, which ships with GCC's libquadmath and is absent on
-# macOS/clang — hence the `target_os` gate, not just `target_arch`.
-[target.'cfg(all(target_arch = "x86_64", target_os = "linux"))'.dependencies]
+# libquadmath backing for `Quad` (x86_64 only).
+[target.'cfg(target_arch = "x86_64")'.dependencies]
 f128 = { version = "0.2", optional = true }
 
 # Reference for the portable-`Quad` bit-parity test.
-[target.'cfg(all(target_arch = "x86_64", target_os = "linux"))'.dev-dependencies]
+[target.'cfg(target_arch = "x86_64")'.dev-dependencies]
 f128 = "0.2"
