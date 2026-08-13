@@ -18,10 +18,6 @@ env:
     poulpy-cpu-ref/enable-core
     poulpy-cpu-ref/enable-ckks
     poulpy-bin-fhe/enable-bin-fhe
-    poulpy-bench/hal-bench
-    poulpy-bench/core-bench
-    poulpy-bench/bin-fhe-bench
-    poulpy-bench/ckks-bench
   AVX_FEATURES: >-
     poulpy-core/enable-core
     poulpy-core/enable-avx
@@ -31,11 +27,6 @@ env:
     poulpy-cpu-avx/enable-ckks
     poulpy-bin-fhe/enable-bin-fhe
     poulpy-bin-fhe/enable-avx
-    poulpy-bench/hal-bench
-    poulpy-bench/core-bench
-    poulpy-bench/bin-fhe-bench
-    poulpy-bench/ckks-bench
-    poulpy-bench/enable-avx
   AVX512_FEATURES: >-
     poulpy-core/enable-core
     poulpy-core/enable-avx
@@ -49,12 +40,6 @@ env:
     poulpy-bin-fhe/enable-bin-fhe
     poulpy-bin-fhe/enable-avx
     poulpy-bin-fhe/enable-ifma
-    poulpy-bench/hal-bench
-    poulpy-bench/core-bench
-    poulpy-bench/bin-fhe-bench
-    poulpy-bench/ckks-bench
-    poulpy-bench/enable-avx
-    poulpy-bench/enable-ifma
   NEON_FEATURES: >-
     poulpy-core/enable-core
     poulpy-core/enable-neon
@@ -64,11 +49,6 @@ env:
     poulpy-cpu-arm/enable-neon
     poulpy-bin-fhe/enable-bin-fhe
     poulpy-bin-fhe/enable-neon
-    poulpy-bench/hal-bench
-    poulpy-bench/core-bench
-    poulpy-bench/bin-fhe-bench
-    poulpy-bench/ckks-bench
-    poulpy-bench/enable-neon
 
 jobs:
   portable:
