@@ -289,3 +289,56 @@ where
     ops.extend(operations_ops::<BE, _>());
     ops
 }
+
+// ── standard ─────────────────────────────────────────────────────────────────
+
+/// A small, representative cross-section of core ops for library-wide
+/// regression tracking.
+pub fn standard_ops<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend, M: criterion::measurement::Measurement>()
+-> Vec<BenchOp<M, CoreParams>>
+where
+    Module<BE>: ModuleNew<BE>
+        + GLWEEncryptSk<BE>
+        + GLWESecretPreparedFactory<BE>
+        + GLWESecretSampling<BE>
+        + GGSWEncryptSk<BE>
+        + GLWEExternalProduct<BE>
+        + GGSWPreparedFactory<BE>
+        + GLWEAutomorphism<BE>
+        + GLWEAutomorphismKeyEncryptSk<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + GLWESwitchingKeyEncryptSk<BE>
+        + GLWEKeyswitch<BE>
+        + GLWESwitchingKeyPreparedFactory<BE>
+        + GLWEDecrypt<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
+    for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
+{
+    vec![
+        BenchOp {
+            name: "glwe_encrypt_sk",
+            runner: encryption::runner_glwe_encrypt_sk::<BE, _>,
+        },
+        BenchOp {
+            name: "ggsw_encrypt_sk",
+            runner: encryption::runner_ggsw_encrypt_sk::<BE, _>,
+        },
+        BenchOp {
+            name: "glwe_external_product_assign",
+            runner: external_product::runner_glwe_external_product_assign::<BE, _>,
+        },
+        BenchOp {
+            name: "glwe_automorphism",
+            runner: automorphism::runner_glwe_automorphism::<BE, _>,
+        },
+        BenchOp {
+            name: "glwe_keyswitch",
+            runner: keyswitch::runner_glwe_keyswitch::<BE, _>,
+        },
+        BenchOp {
+            name: "glwe_decrypt",
+            runner: decryption::runner_glwe_decrypt::<BE, _>,
+        },
+    ]
+}

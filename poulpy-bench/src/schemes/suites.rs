@@ -278,3 +278,95 @@ where
         runner: bin_fhe::runner_circuit_bootstrapping::<BE, BRA, _>,
     }]
 }
+
+// ── standard ─────────────────────────────────────────────────────────────────
+
+/// A small, representative cross-section of CKKS ops for library-wide
+/// regression tracking. Kept independent of [`bin_fhe_standard_ops`] (rather
+/// than one combined function) since the two schemes are typically
+/// benchmarked against different backends (e.g. an NTT-friendly backend for
+/// CKKS, an FFT-friendly one for bin-fhe).
+pub fn ckks_standard_ops<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: criterion::measurement::Measurement>()
+-> Vec<BenchOp<M, CkksBenchParams>>
+where
+    Module<BE>: ModuleNew<BE>
+        + CKKSAddOps<BE>
+        + CKKSMulOps<BE>
+        + GLWETensorKeyPreparedFactory<BE>
+        + CKKSRotateOps<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + CKKSEncodingOps<BE, f64>,
+{
+    vec![
+        BenchOp {
+            name: "ckks_add_into",
+            runner: ckks::runner_ckks_add_into::<BE, _>,
+        },
+        BenchOp {
+            name: "ckks_mul_into",
+            runner: ckks::runner_ckks_mul_into::<BE, _>,
+        },
+        BenchOp {
+            name: "ckks_mul_pt_vec_into",
+            runner: ckks::runner_ckks_mul_pt_vec_into::<BE, _>,
+        },
+        BenchOp {
+            name: "ckks_rotate_into",
+            runner: ckks::runner_ckks_rotate_into::<BE, _>,
+        },
+        BenchOp {
+            name: "ckks_encode_slots_assign_into",
+            runner: ckks::runner_ckks_encode_slots_assign_into::<BE, _>,
+        },
+        BenchOp {
+            name: "ckks_decode_slots_into",
+            runner: ckks::runner_ckks_decode_slots_into::<BE, _>,
+        },
+    ]
+}
+
+/// A small, representative cross-section of bin-fhe ops for library-wide
+/// regression tracking. Returns two tables since blind rotation and circuit
+/// bootstrapping sweep different parameter types. See
+/// [`ckks_standard_ops`] for why this is kept separate from the CKKS table.
+#[allow(clippy::type_complexity)]
+pub fn bin_fhe_standard_ops<
+    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend,
+    BRA: BlindRotationAlgo,
+    M: criterion::measurement::Measurement,
+>() -> (
+    [BenchOp<M, BlindRotateBenchParams>; 1],
+    [BenchOp<M, CircuitBootstrappingBenchParam>; 1],
+)
+where
+    Module<BE>: ModuleN
+        + ModuleNew<BE>
+        + BlindRotationKeyEncryptSk<BRA, BE>
+        + BlindRotationKeyPreparedFactory<BRA, BE>
+        + BlindRotationExecute<BRA, BE>
+        + LookupTableFactory<BE::OwnedBuf, BE::ZnxWord>
+        + GLWESecretPreparedFactory<BE>
+        + GLWEDecrypt<BE>
+        + LWEEncryptSk<BE>
+        + GLWESecretSampling<BE>
+        + LWESecretSampling<BE>
+        + GLWEExternalProduct<BE>
+        + CircuitBootstrappingKeyEncryptSk<BRA, BE>
+        + CircuitBootstrappingKeyPreparedFactory<BRA, BE>
+        + CircuitBootstrappingExecute<BRA, BE>
+        + GGSWPreparedFactory<BE>
+        + GGSWNoise<BE>
+        + GLWEEncryptSk<BE>
+        + VecZnxRotateAssignBackend<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let blind_rotate = [BenchOp {
+        name: "blind_rotate",
+        runner: bin_fhe::runner_blind_rotate::<BE, BRA, _>,
+    }];
+    let circuit_bootstrapping = [BenchOp {
+        name: "circuit_bootstrapping",
+        runner: bin_fhe::runner_circuit_bootstrapping::<BE, BRA, _>,
+    }];
+    (blind_rotate, circuit_bootstrapping)
+}

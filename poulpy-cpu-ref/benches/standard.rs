@@ -1,67 +1,115 @@
+//! Standard benchmark binary: a small, representative cross-section of ops
+//! (`hal::suites::standard_ops`, `core::suites::standard_ops`,
+//! `schemes::suites::{ckks_standard_ops, bin_fhe_standard_ops}`), swept over
+//! `log_n` in {13, 14, 15}.
+//!
+//! Scheme-level benchmarks run against the backend each scheme is meant for:
+//! CKKS against the NTT backend, bin-fhe (blind rotation / circuit
+//! bootstrapping) against the FFT backend. HAL and core — the shared
+//! building blocks underneath both — run against both backends, each swept
+//! at the sizes matching that backend's scheme: `log_n` 13/14/15 (matching
+//! CKKS) for the NTT backend, and the bin-fhe ring degree for the FFT one.
+//!
+//! See `full.rs` for every op family over the full parameter grid, and
+//! `light.rs` for this same cross-section at a single size.
+
 use criterion::{Criterion, criterion_group, criterion_main, measurement::WallTime};
-
-use poulpy_bench::params::{
-    default_bench_params_ckks, default_bench_params_cnv, default_bench_params_core, default_bench_params_hal,
-    default_bench_params_vmp,
+use poulpy_bench::{
+    bench_ops,
+    params::{
+        default_bench_params_blind_rotate, default_bench_params_circuit_bootstrapping, default_bench_params_ckks,
+        default_bench_params_core, default_bench_params_hal, default_bench_params_vmp,
+    },
 };
+use poulpy_bin_fhe::blind_rotation::CGGI;
 
-type BE = poulpy_cpu_ref::NTT4x30Ref;
+type NTT = poulpy_cpu_ref::NTT4x30Ref;
+type FFT = poulpy_cpu_ref::FFT64Ref;
 
-// ── Layer 1: HAL – full suite (every op family) ───────────────────────────────
+const STANDARD_N: [u64; 3] = [1 << 13, 1 << 14, 1 << 15];
+
+fn is_standard_n(n: u64) -> bool {
+    STANDARD_N.contains(&n)
+}
+
+/// The single ring degree bin-fhe's representative params use — HAL/core's
+/// FFT-backend run is swept at this one size to match.
+fn bin_fhe_n() -> u64 {
+    default_bench_params_blind_rotate().bin_fhe_params.n_glwe as u64
+}
+
+// ── Layer 1: HAL ────────────────────────────────────────────────────────────
 
 fn hal(c: &mut Criterion) {
-    use poulpy_bench::{
-        bench_ops,
-        hal::suites::{all_vec_znx_ops, convolution_ops, svp_ops, vmp_ops},
-    };
+    use poulpy_bench::hal::suites::standard_ops;
 
-    bench_ops(
-        &all_vec_znx_ops::<BE, WallTime>(),
-        default_bench_params_hal().as_slice(),
-        "NTT4x30Ref",
-        c,
-    );
-    bench_ops(
-        &svp_ops::<BE, WallTime>(),
-        default_bench_params_hal().as_slice(),
-        "NTT4x30Ref",
-        c,
-    );
-    bench_ops(
-        &vmp_ops::<BE, WallTime>(),
-        default_bench_params_vmp().as_slice(),
-        "NTT4x30Ref",
-        c,
-    );
-    bench_ops(
-        &convolution_ops::<BE, WallTime>(),
-        default_bench_params_cnv().as_slice(),
-        "NTT4x30Ref",
-        c,
-    );
+    let (hal_ops_ntt, vmp_ops_ntt) = standard_ops::<NTT, WallTime>();
+    let hal_params_ntt: Vec<_> = default_bench_params_hal()
+        .into_iter()
+        .filter(|p| is_standard_n(p.n as u64))
+        .collect();
+    let vmp_params_ntt: Vec<_> = default_bench_params_vmp()
+        .into_iter()
+        .filter(|p| is_standard_n(p.n as u64))
+        .collect();
+    bench_ops(&hal_ops_ntt, hal_params_ntt.as_slice(), "NTT4x30Ref", c);
+    bench_ops(&vmp_ops_ntt, vmp_params_ntt.as_slice(), "NTT4x30Ref", c);
+
+    let (hal_ops_fft, vmp_ops_fft) = standard_ops::<FFT, WallTime>();
+    let hal_params_fft: Vec<_> = default_bench_params_hal()
+        .into_iter()
+        .filter(|p| p.n as u64 == bin_fhe_n())
+        .collect();
+    let vmp_params_fft: Vec<_> = default_bench_params_vmp()
+        .into_iter()
+        .filter(|p| p.n as u64 == bin_fhe_n())
+        .collect();
+    bench_ops(&hal_ops_fft, hal_params_fft.as_slice(), "FFT64Ref", c);
+    bench_ops(&vmp_ops_fft, vmp_params_fft.as_slice(), "FFT64Ref", c);
 }
 
-// ── Layer 2: Core – encryption ───────────────────────────────────────────────
+// ── Layer 2: Core ───────────────────────────────────────────────────────────
+
 fn core(c: &mut Criterion) {
-    use poulpy_bench::{bench_ops, core::suites::all_ops};
+    use poulpy_bench::core::suites::standard_ops;
 
-    bench_ops(
-        &all_ops::<BE, WallTime>(),
-        default_bench_params_core().as_slice(),
-        "NTT4x30Ref",
-        c,
-    );
+    let core_ops_ntt = standard_ops::<NTT, WallTime>();
+    let core_params_ntt: Vec<_> = default_bench_params_core()
+        .into_iter()
+        .filter(|p| is_standard_n(p.n as u64))
+        .collect();
+    bench_ops(&core_ops_ntt, core_params_ntt.as_slice(), "NTT4x30Ref", c);
+
+    let core_ops_fft = standard_ops::<FFT, WallTime>();
+    let core_params_fft: Vec<_> = default_bench_params_core()
+        .into_iter()
+        .filter(|p| p.n as u64 == bin_fhe_n())
+        .collect();
+    bench_ops(&core_ops_fft, core_params_fft.as_slice(), "FFT64Ref", c);
 }
 
-// ── Layer 3: Scheme ──────────────────────────────────────────────────────────
+// ── Layer 3: Scheme ─────────────────────────────────────────────────────────
 
 fn ckks(c: &mut Criterion) {
-    use poulpy_bench::{bench_ops, schemes::suites::all_ops};
+    use poulpy_bench::schemes::suites::ckks_standard_ops;
 
+    let ckks_ops = ckks_standard_ops::<NTT, WallTime>();
+    let ckks_params: Vec<_> = default_bench_params_ckks()
+        .into_iter()
+        .filter(|p| is_standard_n(p.n as u64))
+        .collect();
+    bench_ops(&ckks_ops, ckks_params.as_slice(), "NTT4x30Ref", c);
+}
+
+fn bin_fhe(c: &mut Criterion) {
+    use poulpy_bench::schemes::suites::bin_fhe_standard_ops;
+
+    let (blind_rotate_ops, circuit_bootstrapping_ops) = bin_fhe_standard_ops::<FFT, CGGI, WallTime>();
+    bench_ops(&blind_rotate_ops, &[default_bench_params_blind_rotate()], "FFT64Ref", c);
     bench_ops(
-        &all_ops::<BE, WallTime>(),
-        default_bench_params_ckks().as_slice(),
-        "NTT4x30Ref",
+        &circuit_bootstrapping_ops,
+        &[default_bench_params_circuit_bootstrapping()],
+        "FFT64Ref",
         c,
     );
 }
@@ -69,13 +117,7 @@ fn ckks(c: &mut Criterion) {
 criterion_group! {
     name = benches;
     config = poulpy_bench::criterion_config();
-    targets =
-    // Layer 1 – HAL FFT-domain,
-    hal,
-    // // Layer 2 – Core,
-    core,
-    // Layer 3 – Scheme,
-    ckks
+    targets = hal, core, ckks, bin_fhe
 }
 
 criterion_main!(benches);

@@ -194,7 +194,6 @@ pub fn runner_circuit_bootstrapping<
     let rank = cbt_infos.brk_layout.rank;
 
     let module: Module<BE> = Module::<BE>::new(n_glwe.as_u32() as u64);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
 
     let mut source_xs: Source = Source::new([1u8; 32]);
     let mut source_xa: Source = Source::new([1u8; 32]);
@@ -207,9 +206,12 @@ pub fn runner_circuit_bootstrapping<
     module.glwe_secret_fill_ternary_prob(&mut sk_glwe, 0.5, &mut source_xs);
 
     let ct_lwe: LWE<Vec<u8>, i64> = module.lwe_alloc_from_infos(&lwe_infos);
+    let mut res: GGSW<Vec<u8>, i64> = module.ggsw_alloc_from_infos(&ggsw_infos);
 
     let cbt_enc_infos = CircuitBootstrappingEncryptionInfos::from_default_sigma(&cbt_infos).unwrap();
 
+    let mut scratch: ScratchOwned<BE> =
+        ScratchOwned::alloc(module.circuit_bootstrapping_execute_tmp_bytes(7, params.extension_factor, &res, &cbt_infos));
     let mut cbt_key: CircuitBootstrappingKey<BE::OwnedBuf, BRA, BE::ZnxWord> =
         CircuitBootstrappingKey::alloc_from_infos(&module, &cbt_infos);
     module.circuit_bootstrapping_key_encrypt_sk(
@@ -222,7 +224,6 @@ pub fn runner_circuit_bootstrapping<
         &mut scratch.borrow(),
     );
 
-    let mut res: GGSW<Vec<u8>, i64> = module.ggsw_alloc_from_infos(&ggsw_infos);
     let mut cbt_prepared: CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE> =
         CircuitBootstrappingKeyPrepared::alloc_from_infos(&module, &cbt_infos);
     cbt_prepared.prepare(&module, &cbt_key, &mut scratch.borrow());

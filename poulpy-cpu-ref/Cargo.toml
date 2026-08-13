@@ -51,9 +51,15 @@ required-features = ["enable-core"]
 
 [dev-dependencies]
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
+poulpy-bin-fhe = {workspace = true}
 criterion = {workspace = true}
 # TODO: poulpy-bench's lib is currently #![cfg]-gated on its bench features
 poulpy-bench = {workspace = true} #  features = ["hal-bench", "bin-fhe-bench", "ckks-bench", "core-bench"]
+
+[[bench]]
+name = "full"
+harness = false
+required-features = ["enable-core", "enable-ckks"]
 
 [[bench]]
 name = "standard"
@@ -63,3 +69,4 @@ required-features = ["enable-core", "enable-ckks"]
 [[bench]]
 name = "light"
 harness = false
+required-features = ["enable-core", "enable-ckks"]

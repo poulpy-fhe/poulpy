@@ -696,6 +696,7 @@ dependencies = [
  "itertools 0.15.0",
  "once_cell",
  "poulpy-bench",
+ "poulpy-bin-fhe",
  "poulpy-ckks",
  "poulpy-core",
  "poulpy-hal",

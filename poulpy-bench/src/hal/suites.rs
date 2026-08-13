@@ -481,3 +481,70 @@ where
     ops.extend(vec_znx_big_ops::<B, M>());
     ops
 }
+
+// ── standard ─────────────────────────────────────────────────────────────────
+
+/// A small, representative cross-section of HAL ops for library-wide
+/// regression tracking. Returns two tables since `vmp_apply_dft_to_dft`
+/// sweeps a different parameter type than the rest.
+#[allow(clippy::type_complexity)]
+pub fn standard_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>()
+-> (Vec<BenchOp<M, HalSweepParms>>, [BenchOp<M, VmpSweepParms>; 1])
+where
+    Module<B>: ModuleNew<B>
+        + VecZnxDftApply<B>
+        + VecZnxDftAlloc<B>
+        + VecZnxIdftApply<B>
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxBigAlloc<B>
+        + SvpApplyDftToDft<B>
+        + SvpPPolAlloc<B>
+        + VecZnxAddIntoBackend<B>
+        + VecZnxAlloc<B>
+        + VecZnxNormalize<B>
+        + VecZnxNormalizeTmpBytes
+        + VecZnxBigAddInto<B>
+        + VecZnxBigNormalize<B>
+        + VecZnxBigNormalizeTmpBytes
+        + VmpPMatAlloc<B>
+        + VmpApplyDftToDft<B>
+        + VmpApplyDftToDftTmpBytes,
+    ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
+    B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
+{
+    let hal_ops = vec![
+        BenchOp {
+            name: "vec_znx_dft_apply",
+            runner: vec_znx_dft::runner_vec_znx_dft_apply::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_idft_apply",
+            runner: vec_znx_dft::runner_vec_znx_idft_apply::<B, M>,
+        },
+        BenchOp {
+            name: "svp_apply_dft_to_dft",
+            runner: svp::runner_svp_apply_dft_to_dft::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_add_into",
+            runner: vec_znx::runner_vec_znx_add_into::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_normalize",
+            runner: vec_znx::runner_vec_znx_normalize::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_big_add_into",
+            runner: vec_znx_big::runner_vec_znx_big_add_into::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_big_normalize",
+            runner: vec_znx_big::runner_vec_znx_big_normalize::<B, M>,
+        },
+    ];
+    let vmp_ops = [BenchOp {
+        name: "vmp_apply_dft_to_dft",
+        runner: vmp::runner_vmp_apply_dft_to_dft::<B, M>,
+    }];
+    (hal_ops, vmp_ops)
+}

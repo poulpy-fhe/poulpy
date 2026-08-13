@@ -256,6 +256,11 @@ pub fn default_bench_params_hal() -> Vec<HalSweepParms> {
             cols: 2,
             size: 32,
         },
+        HalSweepParms {
+            n: 1 << 15,
+            cols: 2,
+            size: 64,
+        },
     ]
 }
 
@@ -296,6 +301,13 @@ pub fn default_bench_params_vmp() -> Vec<VmpSweepParms> {
             cols_out: 2,
             size: 32,
         },
+        VmpSweepParms {
+            n: 1 << 15,
+            rows: 63,
+            cols_in: 1,
+            cols_out: 2,
+            size: 64,
+        },
     ]
 }
 
@@ -306,6 +318,7 @@ pub fn default_bench_params_cnv() -> Vec<CnvSweepParms> {
         CnvSweepParms { n: 1 << 12, size: 8 },
         CnvSweepParms { n: 1 << 13, size: 16 },
         CnvSweepParms { n: 1 << 14, size: 32 },
+        CnvSweepParms { n: 1 << 15, size: 64 },
     ]
 }
 
@@ -392,4 +405,46 @@ pub fn default_bench_params_ckks() -> Vec<CkksBenchParams> {
             slots: SlotsKind::Complex,
         },
     ]
+}
+
+/// Single representative blind-rotation benchmark point. Unlike the other
+/// `default_bench_params_*` sweeps, bin-fhe params aren't indexed by a single
+/// `log_n` (the GLWE ring, LWE dimension, and per-key gadget shapes vary
+/// independently), so this is one fixed, non-swept parameter set.
+pub fn default_bench_params_blind_rotate() -> BlindRotateBenchParams {
+    BlindRotateBenchParams {
+        bin_fhe_params: BinFheBenchParams {
+            n_glwe: 1 << 12,
+            n_lwe: 630,
+            base2k: 18,
+            k_aux: 54,
+            rank: 1,
+        },
+        block_size: 7,
+        extension_factor: 1,
+        log_message_modulus: 2,
+    }
+}
+
+/// Single representative circuit-bootstrapping benchmark point (see
+/// [`default_bench_params_blind_rotate`] for why this isn't a `log_n` sweep).
+pub fn default_bench_params_circuit_bootstrapping() -> CircuitBootstrappingBenchParam {
+    CircuitBootstrappingBenchParam {
+        bin_fhe_params: BinFheBenchParams {
+            n_glwe: 1 << 12,
+            n_lwe: 630,
+            base2k: 18,
+            k_aux: 90,
+            rank: 1,
+        },
+        brk_dnum: 4,
+        atk_dnum: 4,
+        atk_dsize: 1,
+        tsk_dnum: 4,
+        tsk_dsize: 1,
+        ggsw_dnum: 3,
+        ggsw_dsize: 1,
+        log_domain: 1,
+        extension_factor: 1,
+    }
 }

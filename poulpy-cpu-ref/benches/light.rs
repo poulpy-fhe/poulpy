@@ -1,46 +1,112 @@
-//! Light HAL benchmark suite: just the DFT/iDFT ops and convolution, for a
-//! fast sanity-check run (e.g. in CI) without paying for the full HAL sweep
-//! in `standard.rs`. Needs neither `enable-core` nor `enable-ckks` since it
-//! only touches HAL-layer ops.
+//! Light benchmark binary: the same representative cross-section and
+//! backend split as `standard.rs`, but the NTT-backend sweep is a single
+//! size (`log_n` = 14) for a fast, CI-sized run.
 
 use criterion::{Criterion, criterion_group, criterion_main, measurement::WallTime};
+use poulpy_bench::{
+    bench_ops,
+    params::{
+        default_bench_params_blind_rotate, default_bench_params_circuit_bootstrapping, default_bench_params_ckks,
+        default_bench_params_core, default_bench_params_hal, default_bench_params_vmp,
+    },
+};
+use poulpy_bin_fhe::blind_rotation::CGGI;
 
-use poulpy_bench::params::{default_bench_params_cnv, default_bench_params_hal};
-use poulpy_bench::{BenchOp, hal::vec_znx_dft};
+type NTT = poulpy_cpu_ref::NTT4x30Ref;
+type FFT = poulpy_cpu_ref::FFT64Ref;
 
-type BE = poulpy_cpu_ref::NTT4x30Ref;
+const LIGHT_N: u64 = 1 << 14;
 
-const MAX_N: usize = 1 << 12;
+fn is_light_n(n: u64) -> bool {
+    n == LIGHT_N
+}
 
-fn hal_light(c: &mut Criterion) {
-    use poulpy_bench::{bench_ops, hal::suites::convolution_ops};
+/// The single ring degree bin-fhe's representative params use — HAL/core's
+/// FFT-backend run is swept at this one size to match.
+fn bin_fhe_n() -> u64 {
+    default_bench_params_blind_rotate().bin_fhe_params.n_glwe as u64
+}
 
-    let hal_params: Vec<_> = default_bench_params_hal().into_iter().filter(|p| p.n <= MAX_N).collect();
-    let cnv_params: Vec<_> = default_bench_params_cnv().into_iter().filter(|p| p.n <= MAX_N).collect();
+// ── Layer 1: HAL ────────────────────────────────────────────────────────────
 
+fn hal(c: &mut Criterion) {
+    use poulpy_bench::hal::suites::standard_ops;
+
+    let (hal_ops_ntt, vmp_ops_ntt) = standard_ops::<NTT, WallTime>();
+    let hal_params_ntt: Vec<_> = default_bench_params_hal()
+        .into_iter()
+        .filter(|p| is_light_n(p.n as u64))
+        .collect();
+    let vmp_params_ntt: Vec<_> = default_bench_params_vmp()
+        .into_iter()
+        .filter(|p| is_light_n(p.n as u64))
+        .collect();
+    bench_ops(&hal_ops_ntt, hal_params_ntt.as_slice(), "NTT4x30Ref", c);
+    bench_ops(&vmp_ops_ntt, vmp_params_ntt.as_slice(), "NTT4x30Ref", c);
+
+    let (hal_ops_fft, vmp_ops_fft) = standard_ops::<FFT, WallTime>();
+    let hal_params_fft: Vec<_> = default_bench_params_hal()
+        .into_iter()
+        .filter(|p| p.n as u64 == bin_fhe_n())
+        .collect();
+    let vmp_params_fft: Vec<_> = default_bench_params_vmp()
+        .into_iter()
+        .filter(|p| p.n as u64 == bin_fhe_n())
+        .collect();
+    bench_ops(&hal_ops_fft, hal_params_fft.as_slice(), "FFT64Ref", c);
+    bench_ops(&vmp_ops_fft, vmp_params_fft.as_slice(), "FFT64Ref", c);
+}
+
+// ── Layer 2: Core ───────────────────────────────────────────────────────────
+
+fn core(c: &mut Criterion) {
+    use poulpy_bench::core::suites::standard_ops;
+
+    let core_ops_ntt = standard_ops::<NTT, WallTime>();
+    let core_params_ntt: Vec<_> = default_bench_params_core()
+        .into_iter()
+        .filter(|p| is_light_n(p.n as u64))
+        .collect();
+    bench_ops(&core_ops_ntt, core_params_ntt.as_slice(), "NTT4x30Ref", c);
+
+    let core_ops_fft = standard_ops::<FFT, WallTime>();
+    let core_params_fft: Vec<_> = default_bench_params_core()
+        .into_iter()
+        .filter(|p| p.n as u64 == bin_fhe_n())
+        .collect();
+    bench_ops(&core_ops_fft, core_params_fft.as_slice(), "FFT64Ref", c);
+}
+
+// ── Layer 3: Scheme ─────────────────────────────────────────────────────────
+
+fn ckks(c: &mut Criterion) {
+    use poulpy_bench::schemes::suites::ckks_standard_ops;
+
+    let ckks_ops = ckks_standard_ops::<NTT, WallTime>();
+    let ckks_params: Vec<_> = default_bench_params_ckks()
+        .into_iter()
+        .filter(|p| is_light_n(p.n as u64))
+        .collect();
+    bench_ops(&ckks_ops, ckks_params.as_slice(), "NTT4x30Ref", c);
+}
+
+fn bin_fhe(c: &mut Criterion) {
+    use poulpy_bench::schemes::suites::bin_fhe_standard_ops;
+
+    let (blind_rotate_ops, circuit_bootstrapping_ops) = bin_fhe_standard_ops::<FFT, CGGI, WallTime>();
+    bench_ops(&blind_rotate_ops, &[default_bench_params_blind_rotate()], "FFT64Ref", c);
     bench_ops(
-        &[
-            BenchOp {
-                name: "vec_znx_dft_apply",
-                runner: vec_znx_dft::runner_vec_znx_dft_apply::<BE, WallTime>,
-            },
-            BenchOp {
-                name: "vec_znx_idft_apply",
-                runner: vec_znx_dft::runner_vec_znx_idft_apply::<BE, WallTime>,
-            },
-        ],
-        hal_params.as_slice(),
-        "NTT4x30Ref",
+        &circuit_bootstrapping_ops,
+        &[default_bench_params_circuit_bootstrapping()],
+        "FFT64Ref",
         c,
     );
-
-    bench_ops(&convolution_ops::<BE, WallTime>(), cnv_params.as_slice(), "NTT4x30Ref", c);
 }
 
 criterion_group! {
     name = benches;
     config = poulpy_bench::criterion_config();
-    targets = hal_light
+    targets = hal, core, ckks, bin_fhe
 }
 
 criterion_main!(benches);
