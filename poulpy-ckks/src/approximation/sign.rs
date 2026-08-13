@@ -5,7 +5,9 @@ use std::fmt::Debug;
 use anyhow::{Result, anyhow, bail};
 use num_traits::{Float, FloatConst, FromPrimitive};
 
-use super::remez::{RemezOptions, cheb_basis, cheb_lobatto, eval_cheb, parabolic_vertex, select_alternating, solve};
+#[cfg(test)]
+use super::remez::eval_cheb;
+use super::remez::{RemezOptions, fit_chebyshev_on_intervals, grid_error_bounds};
 
 /// Fits an odd polynomial to `1` on positive `[lo, hi]`.
 pub(crate) fn minimax_odd_const1<F>(lo: F, hi: F, degree: usize, opts: RemezOptions) -> Result<(Vec<F>, F, F)>
@@ -20,72 +22,19 @@ where
     }
 
     let odd_degs: Vec<usize> = (0..).map(|j| 2 * j + 1).take_while(|&d| d <= degree).collect();
-    let nb = odd_degs.len();
-    let m = nb + 1; // reference points = odd coefficients + leveled error
     let interval_bits = (hi / lo).log2().ceil().to_usize().unwrap_or(usize::MAX);
-    let grid_mult = opts.grid_mult.max(interval_bits.saturating_mul(64));
-    let grid_len = grid_mult
-        .checked_mul(m)
-        .ok_or_else(|| anyhow!("minimax_odd_const1: grid size overflow"))?
-        .max(256);
     let interval_tol = (lo / hi).to_f64().unwrap_or(opts.rel_tol);
-    let rel_tol = F::from_f64(opts.rel_tol.min(interval_tol)).unwrap();
-    let two = F::one() + F::one();
-
-    // Map a Chebyshev–Lobatto node y ∈ [−1, 1] to x ∈ [lo, hi], ascending.
-    let map = |y: F| lo + (hi - lo) * (y + F::one()) / two;
-    let mut refs: Vec<F> = (0..m).map(|i| map(-cheb_lobatto::<F>(i, m))).collect();
-
-    let mut full = vec![F::zero(); degree + 1];
-    let mut undershoot = F::zero();
-    let mut overshoot = F::zero();
-    for _ in 0..opts.max_iters {
-        // Σ_j c_j·T_{odd_degs[j]}(x_i) + (−1)^i·E = 1.
-        let mut mat: Vec<Vec<F>> = Vec::with_capacity(m);
-        let mut rhs: Vec<F> = Vec::with_capacity(m);
-        for (i, &xi) in refs.iter().enumerate() {
-            let t = cheb_basis::<F>(xi, degree);
-            let mut row: Vec<F> = odd_degs.iter().map(|&d| t[d]).collect();
-            row.push(if i % 2 == 0 { F::one() } else { -F::one() });
-            mat.push(row);
-            rhs.push(F::one());
-        }
-        let sol = match solve(mat, rhs) {
-            Some(s) => s,
-            None => bail!("minimax_odd_const1: singular reference system"),
-        };
-        full.iter_mut().for_each(|c| *c = F::zero());
-        for (j, &d) in odd_degs.iter().enumerate() {
-            full[d] = sol[j];
-        }
-
-        // Extrema of e(x) = 1 − p(x) on a dense grid over [lo, hi].
-        let xs: Vec<F> = (0..grid_len).map(|k| map(-cheb_lobatto::<F>(k, grid_len))).collect();
-        let es: Vec<F> = xs.iter().map(|&x| F::one() - eval_cheb(&full, x)).collect();
-        let mut extrema: Vec<(F, F)> = Vec::new();
-        extrema.push((xs[0], es[0]));
-        for k in 1..grid_len - 1 {
-            if es[k].abs() >= es[k - 1].abs() && es[k].abs() >= es[k + 1].abs() {
-                extrema.push(parabolic_vertex(xs[k - 1], es[k - 1], xs[k], es[k], xs[k + 1], es[k + 1]));
-            }
-        }
-        extrema.push((xs[grid_len - 1], es[grid_len - 1]));
-
-        undershoot = extrema.iter().map(|&(_, e)| e).fold(F::zero(), F::max);
-        overshoot = extrema.iter().map(|&(_, e)| -e).fold(F::zero(), F::max);
-
-        let alt = match select_alternating(extrema, m) {
-            Some(a) => a,
-            None => break,
-        };
-        let emax = alt.iter().map(|&(_, e)| e.abs()).fold(F::zero(), F::max);
-        let emin = alt.iter().map(|&(_, e)| e.abs()).fold(F::infinity(), F::min);
-        refs = alt.into_iter().map(|(x, _)| x).collect();
-        if emax > F::zero() && (emax - emin) <= rel_tol * emax {
-            break;
-        }
-    }
-    Ok((full, undershoot, overshoot))
+    let fit_opts = RemezOptions {
+        grid_mult: opts.grid_mult.max(interval_bits.saturating_mul(64)),
+        rel_tol: opts.rel_tol.min(interval_tol),
+        ..opts
+    };
+    let target = |_: F| F::one();
+    let domain = [(lo, hi)];
+    let fit = fit_chebyshev_on_intervals(&target, &domain, degree, &odd_degs, fit_opts)
+        .map_err(|error| anyhow!("minimax_odd_const1: {error}"))?;
+    let (undershoot, overshoot) = grid_error_bounds(&target, &fit.coeffs, &domain, fit.grid_len);
+    Ok((fit.coeffs, undershoot, overshoot))
 }
 
 /// Builds normalized odd factors without an evaluation-error margin.

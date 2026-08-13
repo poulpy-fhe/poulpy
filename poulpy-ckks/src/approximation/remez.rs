@@ -2,7 +2,7 @@
 
 use std::fmt::Debug;
 
-use anyhow::{Result, bail, ensure};
+use anyhow::{Result, ensure};
 use num_traits::{Float, FloatConst, FromPrimitive};
 
 use crate::{api::Basis, polynomial::Polynomial};
@@ -32,9 +32,11 @@ impl Default for RemezOptions {
 
 /// A fitted minimax polynomial and its achieved sup-norm error.
 pub struct Minimax<F> {
-    /// Chebyshev-basis polynomial over the requested interval `[a, b]`.
+    /// Polynomial normalized over the convex hull of `intervals`.
     pub poly: Polynomial<F>,
-    /// Estimated sup-norm error `max_{x∈[a,b]} |f(x) − poly(x)|`.
+    /// Ordered, pairwise-disjoint intervals on which the fit was performed.
+    pub intervals: Vec<(F, F)>,
+    /// Estimated sup-norm error over [`intervals`](Self::intervals).
     pub error: F,
     /// Exchange iterations performed.
     pub iters: usize,
@@ -51,7 +53,7 @@ where
     F: Float + FloatConst + FromPrimitive + Debug,
     Fun: Fn(F) -> F,
 {
-    minimax_with(f, a, b, degree, parity, RemezOptions::default())
+    minimax_multi_interval_with(f, &[(a, b)], degree, parity, RemezOptions::default())
 }
 
 /// [`minimax`] with explicit [`RemezOptions`].
@@ -60,111 +62,289 @@ where
     F: Float + FloatConst + FromPrimitive + Debug,
     Fun: Fn(F) -> F,
 {
-    ensure!(a.is_finite() && b.is_finite(), "minimax: interval endpoints must be finite");
-    ensure!(b > a, "minimax: empty interval [a, b]");
+    minimax_multi_interval_with(f, &[(a, b)], degree, parity, opts)
+}
+
+/// Best degree-`degree` minimax approximation on a union of intervals.
+///
+/// Intervals must be ordered and disjoint. The polynomial's input map spans
+/// their convex hull, but gaps are excluded from the fit. Even and odd fits
+/// require a symmetric domain and target.
+pub fn minimax_multi_interval<F, Fun>(f: Fun, intervals: &[(F, F)], degree: usize, parity: Parity) -> Result<Minimax<F>>
+where
+    F: Float + FloatConst + FromPrimitive + Debug,
+    Fun: Fn(F) -> F,
+{
+    minimax_multi_interval_with(f, intervals, degree, parity, RemezOptions::default())
+}
+
+/// [`minimax_multi_interval`] with explicit [`RemezOptions`].
+pub fn minimax_multi_interval_with<F, Fun>(
+    f: Fun,
+    intervals: &[(F, F)],
+    degree: usize,
+    parity: Parity,
+    opts: RemezOptions,
+) -> Result<Minimax<F>>
+where
+    F: Float + FloatConst + FromPrimitive + Debug,
+    Fun: Fn(F) -> F,
+{
+    validate_intervals(intervals)?;
+    validate_options(opts)?;
+    if parity != Parity::Full {
+        ensure!(
+            intervals_are_symmetric(intervals),
+            "minimax: even/odd parity requires intervals symmetric about zero"
+        );
+    }
+
+    let a = intervals[0].0;
+    let b = intervals[intervals.len() - 1].1;
+    let two = F::one() + F::one();
+    let mid = a / two + b / two;
+    let half = (b - a) / two;
+    let g = |y: F| f(mid + half * y);
+    let mapped: Vec<(F, F)> = intervals
+        .iter()
+        .map(|&(lo, hi)| ((lo - mid) / half, (hi - mid) / half))
+        .collect();
+    let fit_domain = match parity {
+        Parity::Full => mapped.clone(),
+        Parity::Even | Parity::Odd => positive_half(&mapped),
+    };
+    let degrees: Vec<usize> = (0..=degree)
+        .filter(|k| match parity {
+            Parity::Full => true,
+            Parity::Even => k.is_multiple_of(2),
+            Parity::Odd => !k.is_multiple_of(2),
+        })
+        .collect();
+    let mut fit = fit_chebyshev_on_intervals(&g, &fit_domain, degree, &degrees, opts)?;
+    fit.error = estimate_sup_error(&g, &fit.coeffs, &mapped, fit.grid_len);
+
+    let poly = Polynomial::new_with_parity(Basis::Chebyshev, fit.coeffs, parity).with_interval(a, b);
+    Ok(Minimax {
+        poly,
+        intervals: intervals.to_vec(),
+        error: fit.error,
+        iters: fit.iters,
+        converged: fit.converged,
+    })
+}
+
+fn validate_intervals<F: Float + Debug>(intervals: &[(F, F)]) -> Result<()> {
+    ensure!(!intervals.is_empty(), "minimax: intervals must be non-empty");
+    for (i, &(a, b)) in intervals.iter().enumerate() {
+        ensure!(
+            a.is_finite() && b.is_finite(),
+            "minimax: intervals[{i}] endpoints must be finite"
+        );
+        ensure!(b > a, "minimax: intervals[{i}] is empty or reversed");
+        ensure!((b - a).is_finite(), "minimax: intervals[{i}] width must be finite");
+        if i > 0 {
+            ensure!(
+                intervals[i - 1].1 < a,
+                "minimax: intervals must be ordered and pairwise disjoint (intervals[{}] and intervals[{i}])",
+                i - 1
+            );
+        }
+    }
+    ensure!(
+        (intervals[intervals.len() - 1].1 - intervals[0].0).is_finite(),
+        "minimax: interval hull width must be finite"
+    );
+    Ok(())
+}
+
+fn validate_options(opts: RemezOptions) -> Result<()> {
     ensure!(opts.max_iters > 0, "minimax: max_iters must be positive");
     ensure!(
         opts.rel_tol.is_finite() && opts.rel_tol > 0.0,
         "minimax: rel_tol must be positive and finite"
     );
     ensure!(opts.grid_mult > 0, "minimax: grid_mult must be positive");
-    if parity != Parity::Full {
-        ensure!(
-            (a + b).abs() <= F::epsilon() * (b - a),
-            "minimax: even/odd parity requires a symmetric interval a == -b"
-        );
-    }
+    Ok(())
+}
 
-    let two = F::one() + F::one();
-    let mid = (a + b) / two;
-    let half = (b - a) / two;
-    // Approximate g(y) = f(x(y)) for y ∈ [−1, 1], x = mid + half·y; the returned
-    // Chebyshev coefficients are expressed in y, exactly what poulpy evaluates.
-    let g = |y: F| f(mid + half * y);
+fn intervals_are_symmetric<F: Float + FromPrimitive>(intervals: &[(F, F)]) -> bool {
+    let span = intervals[intervals.len() - 1].1 - intervals[0].0;
+    let tolerance = F::epsilon() * span * F::from_u8(8).unwrap();
+    intervals
+        .iter()
+        .zip(intervals.iter().rev())
+        .all(|(&(a, b), &(c, d))| (a + d).abs() <= tolerance && (b + c).abs() <= tolerance)
+}
 
-    let n = degree;
-    let m = n + 2; // reference points = coefficients (n+1) + leveled error
-    let grid_len = opts
+fn positive_half<F: Float>(intervals: &[(F, F)]) -> Vec<(F, F)> {
+    intervals
+        .iter()
+        .filter_map(|&(a, b)| if b <= F::zero() { None } else { Some((a.max(F::zero()), b)) })
+        .collect()
+}
+
+pub(crate) struct RemezFit<F> {
+    pub(crate) coeffs: Vec<F>,
+    pub(crate) error: F,
+    pub(crate) iters: usize,
+    pub(crate) converged: bool,
+    pub(crate) grid_len: usize,
+}
+
+pub(crate) fn fit_chebyshev_on_intervals<F, G>(
+    g: &G,
+    intervals: &[(F, F)],
+    degree: usize,
+    degrees: &[usize],
+    opts: RemezOptions,
+) -> Result<RemezFit<F>>
+where
+    F: Float + FloatConst + FromPrimitive + Debug,
+    G: Fn(F) -> F,
+{
+    ensure!(!intervals.is_empty(), "minimax: fit domain must be non-empty");
+    let m = degrees.len() + 1;
+    let mut grid_len = opts
         .grid_mult
         .checked_mul(m)
         .ok_or_else(|| anyhow::anyhow!("minimax: grid size overflow"))?
         .max(256);
     let rel_tol = F::from_f64(opts.rel_tol).unwrap();
 
-    // Initial references: Chebyshev–Lobatto nodes, ascending in [−1, 1].
-    let mut refs: Vec<F> = (0..m).map(|i| -cheb_lobatto::<F>(i, m)).collect();
+    if degrees.is_empty() {
+        let coeffs = vec![F::zero(); degree + 1];
+        return Ok(RemezFit {
+            error: estimate_sup_error(g, &coeffs, intervals, grid_len),
+            coeffs,
+            iters: 0,
+            converged: true,
+            grid_len,
+        });
+    }
 
-    let mut coeffs = vec![F::zero(); n + 1];
-    let mut error = F::zero();
+    let mut refs = initial_references(intervals, m);
+    let mut coeffs = vec![F::zero(); degree + 1];
     let mut converged = false;
     let mut iters = 0;
 
     for it in 0..opts.max_iters {
         iters = it + 1;
-
-        // Solve p(y_i) + (−1)^i·E = g(y_i) for the n+1 coefficients and E.
         let mut mat: Vec<Vec<F>> = Vec::with_capacity(m);
         let mut rhs: Vec<F> = Vec::with_capacity(m);
         for (i, &yi) in refs.iter().enumerate() {
-            let mut row = cheb_basis::<F>(yi, n);
-            row.push(if i % 2 == 0 { F::one() } else { -F::one() });
+            let basis = cheb_basis::<F>(yi, degree);
+            let mut row: Vec<F> = degrees.iter().map(|&k| basis[k]).collect();
+            row.push(if i.is_multiple_of(2) { F::one() } else { -F::one() });
             mat.push(row);
             rhs.push(g(yi));
         }
-        let sol = match solve(mat, rhs) {
-            Some(s) => s,
-            None => bail!("minimax: singular reference system at iteration {it}"),
-        };
-        coeffs.copy_from_slice(&sol[..=n]);
+        let sol = solve(mat, rhs).ok_or_else(|| anyhow::anyhow!("minimax: singular reference system at iteration {it}"))?;
+        coeffs.fill(F::zero());
+        for (&k, &coefficient) in degrees.iter().zip(&sol) {
+            coeffs[k] = coefficient;
+        }
 
-        // Extrema of e(y) = g(y) − p(y) on a dense Chebyshev–Lobatto grid.
-        let extrema = find_extrema(&g, &coeffs, grid_len);
-        let alt = match select_alternating(extrema, m) {
-            Some(a) => a,
-            None => {
-                error = grid_sup_error(&g, &coeffs, grid_len);
-                converged = error == F::zero();
+        let mut exchange = None;
+        for _ in 0..=6 {
+            let extrema = find_extrema(g, &coeffs, intervals, grid_len);
+            let egrid = extrema.iter().map(|&(_, error)| error.abs()).fold(F::zero(), F::max);
+            let value_scale = extrema
+                .iter()
+                .map(|&(x, _)| g(x).abs().max(eval_cheb(&coeffs, x).abs()))
+                .fold(F::one(), F::max);
+            let roundoff = F::epsilon() * F::from_usize(1024 * (degree + 1)).unwrap() * value_scale;
+            if egrid <= roundoff {
+                converged = true;
                 break;
             }
-        };
-
-        // Stop on equioscillation: all n+2 alternating extrema equal in magnitude.
+            if let Some(alt) = select_alternating(extrema, m) {
+                exchange = Some(alt);
+                break;
+            }
+            let Some(next) = grid_len.checked_mul(2) else {
+                break;
+            };
+            grid_len = next;
+        }
+        if converged {
+            break;
+        }
+        let Some(alt) = exchange else { break };
         let emax = alt.iter().map(|&(_, e)| e.abs()).fold(F::zero(), F::max);
         let emin = alt.iter().map(|&(_, e)| e.abs()).fold(F::infinity(), F::min);
-        error = emax;
         refs = alt.into_iter().map(|(y, _)| y).collect();
-        if emax > F::zero() && (emax - emin) <= rel_tol * emax {
+        if emin > F::zero() && (emax - emin) <= rel_tol * emin {
             converged = true;
             break;
         }
     }
 
-    if parity != Parity::Full {
-        let keep_even = parity == Parity::Even;
-        for (k, c) in coeffs.iter_mut().enumerate() {
-            if (k % 2 == 0) != keep_even {
-                *c = F::zero();
-            }
-        }
-        error = grid_sup_error(&g, &coeffs, grid_len);
-    }
-
-    let poly = Polynomial::new_with_parity(Basis::Chebyshev, coeffs, parity).with_interval(a, b);
-    Ok(Minimax {
-        poly,
-        error,
+    Ok(RemezFit {
+        error: estimate_sup_error(g, &coeffs, intervals, grid_len),
+        coeffs,
         iters,
         converged,
+        grid_len,
     })
 }
 
-/// `cos(π·i/(m−1))` — the `i`-th Chebyshev–Lobatto node magnitude for `m` nodes.
+fn initial_references<F>(intervals: &[(F, F)], m: usize) -> Vec<F>
+where
+    F: Float + FloatConst + FromPrimitive,
+{
+    let counts = allocate_references(intervals, m);
+    let two = F::one() + F::one();
+    intervals
+        .iter()
+        .zip(counts)
+        .flat_map(|(&(a, b), count)| {
+            let mid = a / two + b / two;
+            let half = (b - a) / two;
+            (0..count).map(move |i| {
+                let theta = F::PI() * F::from_usize(2 * i + 1).unwrap() / F::from_usize(2 * count).unwrap();
+                mid - half * theta.cos()
+            })
+        })
+        .collect()
+}
+
+fn allocate_references<F: Float + FromPrimitive>(intervals: &[(F, F)], m: usize) -> Vec<usize> {
+    let widths: Vec<F> = intervals.iter().map(|&(a, b)| b - a).collect();
+    let mut counts = vec![0; intervals.len()];
+    let seeded = m.min(intervals.len());
+
+    for _ in 0..seeded {
+        let next = widths
+            .iter()
+            .enumerate()
+            .filter(|&(i, _)| counts[i] == 0)
+            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap())
+            .unwrap()
+            .0;
+        counts[next] = 1;
+    }
+
+    for _ in seeded..m {
+        let next = widths
+            .iter()
+            .enumerate()
+            .max_by(|&(i, a), &(j, b)| {
+                let qa = *a / F::from_usize(counts[i] + 1).unwrap();
+                let qb = *b / F::from_usize(counts[j] + 1).unwrap();
+                qa.partial_cmp(&qb).unwrap()
+            })
+            .unwrap()
+            .0;
+        counts[next] += 1;
+    }
+    counts
+}
+
 pub(crate) fn cheb_lobatto<F: Float + FloatConst + FromPrimitive>(i: usize, m: usize) -> F {
     let pi = F::PI();
     (pi * F::from_usize(i).unwrap() / F::from_usize(m - 1).unwrap()).cos()
 }
 
-/// `[T_0(y), …, T_n(y)]`.
 pub(crate) fn cheb_basis<F: Float>(y: F, n: usize) -> Vec<F> {
     let two = F::one() + F::one();
     let mut t = Vec::with_capacity(n + 1);
@@ -178,7 +358,6 @@ pub(crate) fn cheb_basis<F: Float>(y: F, n: usize) -> Vec<F> {
     t
 }
 
-/// Clenshaw evaluation of `Σ c_k T_k(y)`.
 pub(crate) fn eval_cheb<F: Float>(c: &[F], y: F) -> F {
     let two = F::one() + F::one();
     let mut d = F::zero();
@@ -191,75 +370,95 @@ pub(crate) fn eval_cheb<F: Float>(c: &[F], y: F) -> F {
     y * d - dd + c[0]
 }
 
-/// Signed error `e(y) = g(y) − p(y)` at the local extrema of `|e|` on a dense
-/// Chebyshev–Lobatto grid, each refined by parabolic interpolation.
-fn find_extrema<F, G>(g: &G, coeffs: &[F], grid_len: usize) -> Vec<(F, F)>
+fn find_extrema<F, G>(g: &G, coeffs: &[F], intervals: &[(F, F)], grid_len: usize) -> Vec<(F, F)>
 where
     F: Float + FloatConst + FromPrimitive,
     G: Fn(F) -> F,
 {
-    let ys: Vec<F> = (0..grid_len).map(|j| -cheb_lobatto::<F>(j, grid_len)).collect();
-    let es: Vec<F> = ys.iter().map(|&y| g(y) - eval_cheb(coeffs, y)).collect();
-
     let mut out: Vec<(F, F)> = Vec::new();
-    out.push((ys[0], es[0]));
-    for j in 1..grid_len - 1 {
-        let (a, b, c) = (es[j - 1].abs(), es[j].abs(), es[j + 1].abs());
-        if b >= a && b >= c {
-            let (yr, er) = parabolic_vertex(ys[j - 1], es[j - 1], ys[j], es[j], ys[j + 1], es[j + 1]);
-            out.push((yr, er));
+    let two = F::one() + F::one();
+    for &(a, b) in intervals {
+        let mid = a / two + b / two;
+        let half = (b - a) / two;
+        let xs: Vec<F> = (0..grid_len).map(|j| mid - half * cheb_lobatto::<F>(j, grid_len)).collect();
+        let es: Vec<F> = xs.iter().map(|&x| g(x) - eval_cheb(coeffs, x)).collect();
+
+        out.push((xs[0], es[0]));
+        for j in 1..grid_len - 1 {
+            let (left, current, right) = (es[j - 1].abs(), es[j].abs(), es[j + 1].abs());
+            if current >= left && current >= right {
+                out.push(refine_extremum(g, coeffs, xs[j - 1], xs[j + 1]));
+            }
         }
+        out.push((xs[grid_len - 1], es[grid_len - 1]));
     }
-    out.push((ys[grid_len - 1], es[grid_len - 1]));
     out
 }
 
-/// Sup-norm error estimate over the dense grid.
-fn grid_sup_error<F, G>(g: &G, coeffs: &[F], grid_len: usize) -> F
+fn refine_extremum<F, G>(g: &G, coeffs: &[F], mut a: F, mut b: F) -> (F, F)
+where
+    F: Float + FromPrimitive,
+    G: Fn(F) -> F,
+{
+    let two = F::one() + F::one();
+    let ratio = (F::from_u8(5).unwrap().sqrt() - F::one()) / two;
+    let mut x0 = b - ratio * (b - a);
+    let mut x1 = a + ratio * (b - a);
+    let mut e0 = g(x0) - eval_cheb(coeffs, x0);
+    let mut e1 = g(x1) - eval_cheb(coeffs, x1);
+
+    for _ in 0..256 {
+        let scale = F::one() + a.abs().max(b.abs());
+        if b - a <= F::epsilon() * F::from_u8(16).unwrap() * scale {
+            break;
+        }
+        if e0.abs() < e1.abs() {
+            a = x0;
+            x0 = x1;
+            e0 = e1;
+            x1 = a + ratio * (b - a);
+            e1 = g(x1) - eval_cheb(coeffs, x1);
+        } else {
+            b = x1;
+            x1 = x0;
+            e1 = e0;
+            x0 = b - ratio * (b - a);
+            e0 = g(x0) - eval_cheb(coeffs, x0);
+        }
+    }
+
+    if e0.abs() >= e1.abs() { (x0, e0) } else { (x1, e1) }
+}
+
+fn estimate_sup_error<F, G>(g: &G, coeffs: &[F], intervals: &[(F, F)], grid_len: usize) -> F
 where
     F: Float + FloatConst + FromPrimitive,
     G: Fn(F) -> F,
 {
-    (0..grid_len)
-        .map(|j| {
-            let y = -cheb_lobatto::<F>(j, grid_len);
-            (g(y) - eval_cheb(coeffs, y)).abs()
-        })
+    find_extrema(g, coeffs, intervals, grid_len)
+        .into_iter()
+        .map(|(_, e)| e.abs())
         .fold(F::zero(), F::max)
 }
 
-/// Vertex `(y*, e*)` of the parabola through the three points; falls back to the
-/// middle point if the fit is degenerate or the vertex leaves `[y0, y2]`.
-pub(crate) fn parabolic_vertex<F: Float>(y0: F, e0: F, y1: F, e1: F, y2: F, e2: F) -> (F, F) {
-    let half = (F::one() + F::one()).recip();
-    let d1 = y1 - y0;
-    let d2 = y1 - y2;
-    let num = d1 * d1 * (e1 - e2) - d2 * d2 * (e1 - e0);
-    let den = d1 * (e1 - e2) - d2 * (e1 - e0);
-    if den == F::zero() {
-        return (y1, e1);
-    }
-    let ystar = y1 - half * num / den;
-    if ystar <= y0 || ystar >= y2 {
-        return (y1, e1);
-    }
-    (ystar, lagrange3(y0, e0, y1, e1, y2, e2, ystar))
+pub(crate) fn grid_error_bounds<F, G>(g: &G, coeffs: &[F], intervals: &[(F, F)], grid_len: usize) -> (F, F)
+where
+    F: Float + FloatConst + FromPrimitive,
+    G: Fn(F) -> F,
+{
+    find_extrema(g, coeffs, intervals, grid_len)
+        .into_iter()
+        .fold((F::zero(), F::zero()), |(positive, negative), (_, error)| {
+            (positive.max(error), negative.max(-error))
+        })
 }
 
-/// Quadratic Lagrange interpolation of three points at `x`.
-pub(crate) fn lagrange3<F: Float>(x0: F, y0: F, x1: F, y1: F, x2: F, y2: F, x: F) -> F {
-    let l0 = (x - x1) * (x - x2) / ((x0 - x1) * (x0 - x2));
-    let l1 = (x - x0) * (x - x2) / ((x1 - x0) * (x1 - x2));
-    let l2 = (x - x0) * (x - x1) / ((x2 - x0) * (x2 - x1));
-    y0 * l0 + y1 * l1 + y2 * l2
-}
-
-/// Reduces candidate extrema to exactly `m` sign-alternating points (largest
-/// magnitude per sign run, trimmed from the ends). Returns `None` if fewer than
-/// `m` survive.
 pub(crate) fn select_alternating<F: Float>(extrema: Vec<(F, F)>, m: usize) -> Option<Vec<(F, F)>> {
     let mut merged: Vec<(F, F)> = Vec::new();
     for (y, e) in extrema {
+        if e == F::zero() {
+            continue;
+        }
         if let Some(&(_, le)) = merged.last()
             && (le >= F::zero()) == (e >= F::zero())
         {
@@ -274,16 +473,50 @@ pub(crate) fn select_alternating<F: Float>(extrema: Vec<(F, F)>, m: usize) -> Op
         return None;
     }
     while merged.len() > m {
-        if merged.first().unwrap().1.abs() <= merged.last().unwrap().1.abs() {
-            merged.remove(0);
-        } else {
-            merged.pop();
+        match merged.len() - m {
+            1 => {
+                if merged[0].1.abs() <= merged[merged.len() - 1].1.abs() {
+                    merged.remove(0);
+                } else {
+                    merged.pop();
+                }
+            }
+            2 => {
+                let i = (0..merged.len())
+                    .min_by(|&i, &j| {
+                        let ei = merged[i].1.abs() + merged[(i + 1) % merged.len()].1.abs();
+                        let ej = merged[j].1.abs() + merged[(j + 1) % merged.len()].1.abs();
+                        ei.partial_cmp(&ej).unwrap()
+                    })
+                    .unwrap();
+                if i == merged.len() - 1 {
+                    merged.pop();
+                    merged.remove(0);
+                } else {
+                    merged.drain(i..i + 2);
+                }
+            }
+            _ => {
+                let i = (0..merged.len() - 1)
+                    .min_by(|&i, &j| {
+                        let ei = merged[i].1.abs() + merged[i + 1].1.abs();
+                        let ej = merged[j].1.abs() + merged[j + 1].1.abs();
+                        ei.partial_cmp(&ej).unwrap()
+                    })
+                    .unwrap();
+                if i == 0 {
+                    merged.remove(0);
+                } else if i == merged.len() - 2 {
+                    merged.pop();
+                } else {
+                    merged.drain(i..i + 2);
+                }
+            }
         }
     }
     Some(merged)
 }
 
-/// Gaussian elimination with partial pivoting; `None` if singular.
 #[allow(clippy::needless_range_loop)]
 pub(crate) fn solve<F: Float>(mut a: Vec<Vec<F>>, mut b: Vec<F>) -> Option<Vec<F>> {
     let n = b.len();
@@ -328,7 +561,6 @@ pub(crate) fn solve<F: Float>(mut a: Vec<Vec<F>>, mut b: Vec<F>) -> Option<Vec<F
 mod tests {
     use super::*;
 
-    /// Dense sup-norm error of a `Polynomial` against `f` over its interval.
     fn sup_error(poly: &Polynomial<f64>, f: impl Fn(f64) -> f64, n: usize) -> f64 {
         let (a, b) = (poly.a, poly.b);
         (0..=n)
@@ -339,12 +571,23 @@ mod tests {
             .fold(0.0, f64::max)
     }
 
+    fn sup_error_on_intervals(poly: &Polynomial<f64>, intervals: &[(f64, f64)], f: impl Fn(f64) -> f64, n: usize) -> f64 {
+        intervals
+            .iter()
+            .flat_map(|&(a, b)| {
+                let f = &f;
+                (0..=n).map(move |i| {
+                    let x = a + (b - a) * (i as f64) / (n as f64);
+                    (poly.evaluate_on_interval(x) - f(x)).abs()
+                })
+            })
+            .fold(0.0, f64::max)
+    }
+
     #[test]
     fn recovers_low_degree_polynomial() {
-        // f(x) = x^3 is odd; the degree-3 minimax is x^3 itself.
         let r = minimax(|x: f64| x * x * x, -1.0, 1.0, 3, Parity::Odd).unwrap();
         assert!(r.error < 1e-9, "recovery error {} too large", r.error);
-        // x^3 = (3·T1 + T3)/4.
         assert!((r.poly.coeffs[1] - 0.75).abs() < 1e-9);
         assert!((r.poly.coeffs[3] - 0.25).abs() < 1e-9);
         assert!(r.poly.coeffs[0].abs() < 1e-9 && r.poly.coeffs[2].abs() < 1e-9);
@@ -352,7 +595,6 @@ mod tests {
 
     #[test]
     fn minimax_beats_or_matches_interpolation() {
-        // Minimax is sup-norm optimal, so ≤ Chebyshev interpolation error.
         let f = |x: f64| x.exp();
         let deg = 8;
         let mm = minimax(f, -1.0, 1.0, deg, Parity::Full).unwrap();
@@ -366,8 +608,6 @@ mod tests {
 
     #[test]
     fn equioscillates() {
-        // At the optimum the reported error equals the leveled error, i.e. the
-        // extrema equioscillate: check the error is close to the true sup error.
         let f = |x: f64| (2.0 * x).sin();
         let mm = minimax(f, -1.0, 1.0, 7, Parity::Odd).unwrap();
         let e = sup_error(&mm.poly, f, 8000);
@@ -388,10 +628,78 @@ mod tests {
 
     #[test]
     fn fits_on_shifted_interval() {
-        // exp on [0, 2]: interval metadata must be respected by the evaluator.
         let f = |x: f64| x.exp();
         let mm = minimax(f, 0.0, 2.0, 10, Parity::Full).unwrap();
         assert!(mm.converged);
         assert!(sup_error(&mm.poly, f, 4000) < 1e-6);
+    }
+
+    #[test]
+    fn fits_a_true_union_without_approximating_the_gap() {
+        let intervals = [(-1.0, -0.2), (0.2, 1.0)];
+        let sign = |x: f64| if x < 0.0 { -1.0 } else { 1.0 };
+        let mm = minimax_multi_interval(sign, &intervals, 15, Parity::Odd).unwrap();
+        let measured = sup_error_on_intervals(&mm.poly, &intervals, sign, 8000);
+
+        assert!(mm.converged, "multi-interval sign fit did not converge");
+        assert_eq!(mm.intervals, intervals);
+        assert_eq!(mm.poly.interval(), (-1.0, 1.0));
+        assert!(measured < 0.025, "degree-15 sign error {measured:e} unexpectedly large");
+        assert!(
+            (measured - mm.error).abs() <= 2e-3 * measured,
+            "reported {} vs measured {measured:e}",
+            mm.error
+        );
+    }
+
+    #[test]
+    fn multi_interval_validates_domain_invariants() {
+        let f = |x: f64| x;
+        assert!(minimax_multi_interval(f, &[], 3, Parity::Full).is_err());
+        assert!(minimax_multi_interval(f, &[(0.0, 1.0), (0.5, 2.0)], 3, Parity::Full).is_err());
+        assert!(minimax_multi_interval(f, &[(1.0, 2.0), (-2.0, -1.0)], 3, Parity::Full).is_err());
+        assert!(minimax_multi_interval(f, &[(-1.0, -0.2), (0.3, 1.0)], 3, Parity::Odd).is_err());
+        assert!(minimax_multi_interval(f, &[(-f64::MAX, f64::MAX)], 3, Parity::Full).is_err());
+    }
+
+    #[test]
+    fn multi_interval_hull_map_handles_shifted_domains() {
+        let intervals = [(0.0, 0.5), (1.5, 2.0), (3.0, 4.0)];
+        let f = |x: f64| x * x * x - 2.0 * x + 1.0;
+        let mm = minimax_multi_interval(f, &intervals, 3, Parity::Full).unwrap();
+        assert_eq!(mm.poly.interval(), (0.0, 4.0));
+        let error = sup_error_on_intervals(&mm.poly, &intervals, f, 1000);
+        assert!(error < 1e-11, "shifted-domain recovery error {error:e}");
+    }
+
+    #[test]
+    fn initial_references_cover_unbalanced_intervals() {
+        let intervals = [(-1.0, -0.99), (-0.4, 0.4), (0.999, 1.0)];
+        let refs = initial_references(&intervals, 8);
+        assert_eq!(refs.len(), 8);
+        assert!(intervals.iter().all(|&(a, b)| refs.iter().any(|&x| a < x && x < b)));
+    }
+
+    #[test]
+    fn exchange_removes_a_weak_interior_pair() {
+        let extrema = vec![(0.0, 10.0), (1.0, -1.0), (2.0, 1.0), (3.0, -10.0), (4.0, 10.0), (5.0, -10.0)];
+        let selected = select_alternating(extrema, 4).unwrap();
+        assert_eq!(selected, vec![(0.0, 10.0), (3.0, -10.0), (4.0, 10.0), (5.0, -10.0)]);
+    }
+
+    #[test]
+    fn equioscillates_across_unbalanced_intervals() {
+        let intervals = [(-1.0, -0.9), (-0.2, -0.1), (0.1, 0.2), (0.9, 1.0)];
+        let f = |x: f64| 1.0 / (1.0 + 25.0 * x * x);
+        let mm = minimax_multi_interval(f, &intervals, 16, Parity::Even).unwrap();
+        assert!(mm.converged, "unbalanced fit did not converge in {} iterations", mm.iters);
+
+        let positive = [(0.1, 0.2), (0.9, 1.0)];
+        let extrema = find_extrema(&f, &mm.poly.coeffs, &positive, 4096);
+        let selected = select_alternating(extrema, 10).unwrap();
+        let emax = selected.iter().map(|(_, e)| e.abs()).fold(0.0, f64::max);
+        let emin = selected.iter().map(|(_, e)| e.abs()).fold(f64::INFINITY, f64::min);
+        assert!((emax - emin) <= 2e-3 * emin, "error spread [{emin:e}, {emax:e}]");
+        assert!(positive.iter().all(|&(a, b)| selected.iter().any(|&(x, _)| a <= x && x <= b)));
     }
 }

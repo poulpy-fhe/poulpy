@@ -248,6 +248,10 @@ and its interval map; `CKKSApproximationOps::ckks_eval_approximation` applies
 that map and evaluates the polynomial in one reusable operation.
 The `_with` selectors accept explicit `RemezOptions` for downstream planners.
 Composite-sign generation can propagate a CKKS error margin between factors.
+`minimax_multi_interval` and the matching degree/depth selectors fit a single
+polynomial on an ordered union such as `[-1, -τ] ∪ [τ, 1]`; its Chebyshev
+input map spans the union's convex hull, while the excluded gaps do not
+contribute to the reported sup-norm error.
 
 The crate includes a runnable example at
 [`poulpy-cpu-ref/examples/ckks_poly2.rs`](../poulpy-cpu-ref/examples/ckks_poly2.rs)

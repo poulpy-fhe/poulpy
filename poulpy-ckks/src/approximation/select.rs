@@ -7,7 +7,7 @@ use num_traits::{Float, FloatConst, FromPrimitive, ToPrimitive};
 
 use poulpy_core::layouts::{SplitStrategy, bsgs_eval_depth};
 
-use super::remez::{Minimax, Parity, RemezOptions, minimax_with};
+use super::remez::{Minimax, Parity, RemezOptions, minimax_multi_interval_with};
 
 /// `−log2(error)` bits of precision (`+∞` for a zero error).
 pub fn error_bits<F: Float + ToPrimitive>(error: F) -> f64 {
@@ -77,6 +77,48 @@ where
     F: Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
     Fun: Fn(F) -> F + Copy,
 {
+    degree_for_precision_multi_interval_with(f, &[(a, b)], parity, target_bits, max_degree, strategy, opts)
+}
+
+/// [`degree_for_precision`] over an ordered union of disjoint `intervals`.
+pub fn degree_for_precision_multi_interval<F, Fun>(
+    f: Fun,
+    intervals: &[(F, F)],
+    parity: Parity,
+    target_bits: f64,
+    max_degree: usize,
+    strategy: SplitStrategy,
+) -> Result<DegreeChoice<F>>
+where
+    F: Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
+    Fun: Fn(F) -> F + Copy,
+{
+    degree_for_precision_multi_interval_with(
+        f,
+        intervals,
+        parity,
+        target_bits,
+        max_degree,
+        strategy,
+        RemezOptions::default(),
+    )
+}
+
+/// [`degree_for_precision_multi_interval`] with explicit [`RemezOptions`].
+#[allow(clippy::too_many_arguments)]
+pub fn degree_for_precision_multi_interval_with<F, Fun>(
+    f: Fun,
+    intervals: &[(F, F)],
+    parity: Parity,
+    target_bits: f64,
+    max_degree: usize,
+    strategy: SplitStrategy,
+    opts: RemezOptions,
+) -> Result<DegreeChoice<F>>
+where
+    F: Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
+    Fun: Fn(F) -> F + Copy,
+{
     ensure!(
         target_bits.is_finite() && target_bits > 0.0,
         "degree_for_precision: target_bits must be positive and finite"
@@ -93,7 +135,7 @@ where
     let mut finite_fits = 0usize;
     let mut last_error = None;
     while degree <= max_degree {
-        let mm = match minimax_with(f, a, b, degree, parity, opts) {
+        let mm = match minimax_multi_interval_with(f, intervals, degree, parity, opts) {
             Ok(mm) => mm,
             Err(error) => {
                 last_error = Some(format!("degree {degree}: {error}"));
@@ -165,6 +207,40 @@ where
     F: Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
     Fun: Fn(F) -> F + Copy,
 {
+    precision_at_depth_multi_interval_with(f, &[(a, b)], parity, max_depth, max_degree, strategy, opts)
+}
+
+/// [`precision_at_depth`] over an ordered union of disjoint `intervals`.
+pub fn precision_at_depth_multi_interval<F, Fun>(
+    f: Fun,
+    intervals: &[(F, F)],
+    parity: Parity,
+    max_depth: usize,
+    max_degree: usize,
+    strategy: SplitStrategy,
+) -> Result<DegreeChoice<F>>
+where
+    F: Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
+    Fun: Fn(F) -> F + Copy,
+{
+    precision_at_depth_multi_interval_with(f, intervals, parity, max_depth, max_degree, strategy, RemezOptions::default())
+}
+
+/// [`precision_at_depth_multi_interval`] with explicit [`RemezOptions`].
+#[allow(clippy::too_many_arguments)]
+pub fn precision_at_depth_multi_interval_with<F, Fun>(
+    f: Fun,
+    intervals: &[(F, F)],
+    parity: Parity,
+    max_depth: usize,
+    max_degree: usize,
+    strategy: SplitStrategy,
+    opts: RemezOptions,
+) -> Result<DegreeChoice<F>>
+where
+    F: Float + FloatConst + FromPrimitive + ToPrimitive + Debug,
+    Fun: Fn(F) -> F + Copy,
+{
     let (start, step) = start_step(parity);
     ensure!(
         max_degree >= start,
@@ -179,7 +255,7 @@ where
         if depth > max_depth {
             break;
         }
-        match minimax_with(f, a, b, degree, parity, opts) {
+        match minimax_multi_interval_with(f, intervals, degree, parity, opts) {
             Ok(mm) if mm.error.is_finite() => {
                 let replace = best.as_ref().is_none_or(|current| {
                     mm.error < current.minimax.error
@@ -270,5 +346,15 @@ mod tests {
         let even = degree_for_precision(|_: f64| 1.0, -1.0, 1.0, Parity::Even, 10.0, 4, SplitStrategy::MinDepth).unwrap();
         assert_eq!(full.degree, 1);
         assert_eq!(even.degree, 2);
+    }
+
+    #[test]
+    fn selects_degree_over_disjoint_intervals() {
+        let intervals = [(-1.0, -0.2), (0.2, 1.0)];
+        let sign = |x: f64| if x < 0.0 { -1.0 } else { 1.0 };
+        let choice =
+            degree_for_precision_multi_interval(sign, &intervals, Parity::Odd, 5.0, 31, SplitStrategy::MinDepth).unwrap();
+        assert!(choice.bits() >= 5.0);
+        assert_eq!(choice.minimax.intervals, intervals);
     }
 }
