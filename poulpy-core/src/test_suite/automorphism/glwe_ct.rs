@@ -134,6 +134,7 @@ where
             let max_noise: f64 = autokey_infos.log2_std_noise_keyswitch(
                 &ct_in_infos,
                 0.5,
+                0.5,
                 DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                 DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                 0f64,
@@ -262,6 +263,7 @@ where
 
             let max_noise: f64 = autokey_infos.log2_std_noise_keyswitch(
                 &ct_out_infos,
+                0.5,
                 0.5,
                 DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                 DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,

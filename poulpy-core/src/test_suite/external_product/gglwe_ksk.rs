@@ -146,12 +146,12 @@ where
                     });
                 }
 
-                let var_gct_err_lhs: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
-                let var_gct_err_rhs: f64 = 0f64;
+                let var_key_err_body: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
+                let var_key_err_mask: f64 = 0f64;
 
                 let var_msg: f64 = 1f64 / n as f64; // X^{k}
                 let var_a0_err: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
-                let var_a1_err: f64 = 1f64 / 12f64;
+                let var_a1_err: f64 = 0f64;
 
                 let max_noise: f64 = ggsw_infos.log2_std_noise_external_product(
                     &gglwe_in_infos,
@@ -159,8 +159,8 @@ where
                     var_msg,
                     var_a0_err,
                     var_a1_err,
-                    var_gct_err_lhs,
-                    var_gct_err_rhs,
+                    var_key_err_body,
+                    var_key_err_mask,
                 ) + 0.5;
 
                 for row in 0..ct_gglwe_out.dnum().as_usize() {
@@ -304,12 +304,12 @@ pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::T
                     });
                 }
 
-                let var_gct_err_lhs: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
-                let var_gct_err_rhs: f64 = 0f64;
+                let var_key_err_body: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
+                let var_key_err_mask: f64 = 0f64;
 
                 let var_msg: f64 = 1f64 / n as f64; // X^{k}
                 let var_a0_err: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
-                let var_a1_err: f64 = 1f64 / 12f64;
+                let var_a1_err: f64 = 0f64;
 
                 let max_noise: f64 = ggsw_infos.log2_std_noise_external_product(
                     &gglwe_out_infos,
@@ -317,8 +317,8 @@ pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::T
                     var_msg,
                     var_a0_err,
                     var_a1_err,
-                    var_gct_err_lhs,
-                    var_gct_err_rhs,
+                    var_key_err_body,
+                    var_key_err_mask,
                 ) + 0.5;
 
                 for row in 0..ct_gglwe.dnum().as_usize() {

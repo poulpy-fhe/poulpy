@@ -140,6 +140,7 @@ where
                 let noise_max: f64 = ksk_infos.log2_std_noise_keyswitch(
                     &glwe_in_infos,
                     0.5,
+                    0.5,
                     DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                     DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                     0f64,
@@ -152,6 +153,10 @@ where
                     .std()
                     .log2();
 
+                println!(
+                    "DBG glwe_ks have={noise_have:.2} max={noise_max:.2} slack={:.2}",
+                    noise_max - noise_have
+                );
                 assert!(noise_have <= noise_max, "noise_have: {noise_have} > noise_max: {noise_max}");
             }
         }
@@ -263,6 +268,7 @@ where
             let noise_max: f64 = ksk_infos.log2_std_noise_keyswitch(
                 &glwe_out_infos,
                 0.5,
+                0.5,
                 DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                 DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                 0f64,
@@ -273,6 +279,10 @@ where
                 .std()
                 .log2();
 
+            println!(
+                "DBG glwe_ks have={noise_have:.2} max={noise_max:.2} slack={:.2}",
+                noise_max - noise_have
+            );
             assert!(noise_have <= noise_max, "noise_have: {noise_have} > noise_max: {noise_max}");
         }
     }

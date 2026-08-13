@@ -169,6 +169,7 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::TestBacke
             let max_noise: f64 = auto_key_apply_infos.log2_std_noise_keyswitch(
                 &auto_key_in_infos,
                 0.5,
+                0.5,
                 DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                 DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                 0f64,
@@ -319,6 +320,7 @@ pub fn test_gglwe_automorphism_key_automorphism_assign<BE: crate::test_suite::Te
 
             let max_noise: f64 = auto_key_apply_layout.log2_std_noise_keyswitch(
                 &auto_key_layout,
+                0.5,
                 0.5,
                 DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                 DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,

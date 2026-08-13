@@ -145,12 +145,12 @@ where
 
             module.glwe_normalize(&mut pt_out, &pt_in, &mut scratch.borrow());
 
-            let var_gct_err_lhs: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
-            let var_gct_err_rhs: f64 = 0f64;
+            let var_key_err_body: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
+            let var_key_err_mask: f64 = 0f64;
 
             let var_msg: f64 = 1f64 / n as f64; // X^{k}
             let var_a0_err: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
-            let var_a1_err: f64 = 1f64 / 12f64;
+            let var_a1_err: f64 = 0f64;
 
             let max_noise: f64 = ggsw_apply_infos.log2_std_noise_external_product(
                 &glwe_in_infos,
@@ -158,14 +158,18 @@ where
                 var_msg,
                 var_a0_err,
                 var_a1_err,
-                var_gct_err_lhs,
-                var_gct_err_rhs,
+                var_key_err_body,
+                var_key_err_mask,
             ) + 1.0;
 
             let noise = module
                 .glwe_noise(&glwe_out, &pt_out, &sk_prepared, &mut scratch.borrow())
                 .std()
                 .log2();
+            println!(
+                "DBG ext_prod have={noise:.2} max={max_noise:.2} slack={:.2}",
+                max_noise - noise
+            );
             assert!(noise <= max_noise, "noise: {noise} > max_noise: {max_noise}")
         }
     }
@@ -284,12 +288,12 @@ where
                 &mut scratch.borrow(),
             );
 
-            let var_gct_err_lhs: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
-            let var_gct_err_rhs: f64 = 0f64;
+            let var_key_err_body: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
+            let var_key_err_mask: f64 = 0f64;
 
             let var_msg: f64 = 1f64 / n as f64; // X^{k}
             let var_a0_err: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
-            let var_a1_err: f64 = 1f64 / 12f64;
+            let var_a1_err: f64 = 0f64;
 
             let max_noise: f64 = ggsw_apply_infos.log2_std_noise_external_product(
                 &glwe_out_infos,
@@ -297,14 +301,18 @@ where
                 var_msg,
                 var_a0_err,
                 var_a1_err,
-                var_gct_err_lhs,
-                var_gct_err_rhs,
+                var_key_err_body,
+                var_key_err_mask,
             ) + 1.0;
 
             let noise = module
                 .glwe_noise(&glwe_out, &pt_want, &sk_prepared, &mut scratch.borrow())
                 .std()
                 .log2();
+            println!(
+                "DBG ext_prod have={noise:.2} max={max_noise:.2} slack={:.2}",
+                max_noise - noise
+            );
             assert!(noise <= max_noise, "noise: {noise} > max_noise: {max_noise}")
         }
     }

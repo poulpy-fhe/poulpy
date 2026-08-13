@@ -148,6 +148,7 @@ where
                     let max_noise: f64 = gglwe_s1s2_infos.log2_std_noise_keyswitch(
                         &gglwe_s0s1_infos,
                         0.5,
+                        0.5,
                         DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                         DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                         0f64,
@@ -315,6 +316,7 @@ where
 
                 let max_noise: f64 = gglwe_s1s2_infos.log2_std_noise_keyswitch(
                     &gglwe_s0s1_infos,
+                    var_xs,
                     var_xs,
                     DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                     DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,

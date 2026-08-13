@@ -35,9 +35,12 @@ use crate::layouts::{GGLWEInfos, GGLWELayout, GGSWInfos, GLWEInfos, LWEInfos};
 ///
 /// `k_aux` makes the key's torus precision a property of its layout
 /// (`k() = dnum * dsize * base2k + k_aux`, see [`crate::layouts::key_k`]), so
-/// the operations below take only the operand they are applied to and the error
-/// variances, which are no property of a layout; everything else is read off
-/// the key.
+/// the operations below take only the operands they are applied to and the
+/// error variances, which are no property of a layout; everything else is read
+/// off the key.
+///
+/// `var_xs_in` is the variance of the secret the operand is encrypted under,
+/// `var_xs_out` the one of the secret the key is encrypted under.
 pub(crate) trait GGLWENoiseModel: GGLWEInfos {
     /// `B = dsize * base2k`.
     fn digit_bits(&self) -> usize {
@@ -67,7 +70,8 @@ pub(crate) trait GGLWENoiseModel: GGLWEInfos {
     /// Writing `a = sum_{i<d} a_i * 2^{-(i+1)B} + r`, the digits reproduce `a`
     /// down to `2^{-dB}` and leave `r` uniform of width `2^{-dB}`, hence the
     /// same `width^2/12`. Once `dB >= k_in` the operand holds no bits below the
-    /// cover, so `r = 0`.
+    /// cover, so `r = 0`. What a dropped component then costs depends on what it
+    /// would have been multiplied by, so each operation weights `Var(r)` itself.
     fn var_residue<A: LWEInfos + ?Sized>(&self, input: &A) -> f64 {
         let cover: usize = self.digits(input) as usize * self.digit_bits();
         if cover >= input.k().as_usize() {
@@ -77,98 +81,112 @@ pub(crate) trait GGLWENoiseModel: GGLWEInfos {
         }
     }
 
-    /// `Var = rank_in * n * (d * Var(a_i) * (Var(e_lhs) + var_xs * Var(e_rhs)) * 2^{-2k} + var_xs * Var(r))`.
+    /// `Var = rank_in * n * d * Var(a_i) * (Var(e_body) + var_xs_out * Var(e_mask)) * 2^{-2k}`,
+    /// the key's own error as one gadget product injects it.
     ///
-    /// Each of the `rank_in` decomposed components `a` is replaced by
-    /// `sum_{i<d} a_i * key_i`, so the phase gains `sum_i a_i * e_i` with `e_i`
-    /// the key row's error at precision `k`, of variance
-    /// `(Var(e_lhs) + var_xs * Var(e_rhs)) * 2^{-2k}` as decryption sees it
-    /// (`e_rhs` sits on the key's mask side, weighted by one secret
-    /// coefficient). The `d` digits are independent and each product is a ring
-    /// product, giving `d * n * Var(a_i)` per component. The residue `r` the
-    /// decomposition drops stays in the phase against the secret, adding
-    /// `n * var_xs * Var(r)`.
-    fn var_gadget_product<A: LWEInfos + ?Sized>(
+    /// Each of the `rank_in` decomposed components is spent on `d` independent
+    /// digits, each meeting one key row through a ring product (hence `n`). A row
+    /// carries `e_body + s_out * e_mask` as decryption sees it, so its mask-side
+    /// error is weighted by the secret the **key** is encrypted under.
+    fn var_key_error<A: LWEInfos + ?Sized>(
         &self,
         input: &A,
-        var_xs: f64,
-        var_key_err_lhs: f64,
-        var_key_err_rhs: f64,
+        var_xs_out: f64,
+        var_key_err_body: f64,
+        var_key_err_mask: f64,
     ) -> f64 {
-        let var_key_err: f64 =
-            self.digits(input) * self.var_digit() * (var_key_err_lhs + var_xs * var_key_err_rhs) * var_scale(self);
-        (self.rank_in().as_usize() as f64) * (self.n().as_usize() as f64) * (var_key_err + var_xs * self.var_residue(input))
+        (self.rank_in().as_usize() as f64)
+            * (self.n().as_usize() as f64)
+            * self.digits(input)
+            * self.var_digit()
+            * (var_key_err_body + var_xs_out * var_key_err_mask)
+            * var_scale(self)
     }
 
-    /// `Var = Var(e_in) * 2^{-2k_in} + Var_gadget`.
+    /// `Var = Var(e_in) * 2^{-2k_in} + Var_key + rank_in * n * var_xs_in * Var(r)`.
     ///
-    /// A key-switch rewrites `sum_j a_j * s_j` and leaves the body untouched,
-    /// so the operand's phase error carries over unchanged and adds to the
-    /// independent [`Self::var_gadget_product`].
+    /// A key-switch rewrites `sum_j a_j * s_in,j` and leaves the body untouched,
+    /// so the operand's phase error carries over unchanged. Past the key error
+    /// of [`Self::var_key_error`], every mask the gadget truncates loses
+    /// `r_j * s_in,j` from the phase, a ring product against the **source**
+    /// secret.
+    #[allow(clippy::too_many_arguments)]
     fn var_noise_keyswitch<A: GLWEInfos>(
         &self,
         input: &A,
-        var_xs: f64,
+        var_xs_in: f64,
+        var_xs_out: f64,
         var_in_err: f64,
-        var_key_err_lhs: f64,
-        var_key_err_rhs: f64,
+        var_key_err_body: f64,
+        var_key_err_mask: f64,
     ) -> f64 {
-        var_in_err * var_scale(input) + self.var_gadget_product(input, var_xs, var_key_err_lhs, var_key_err_rhs)
+        var_in_err * var_scale(input)
+            + self.var_key_error(input, var_xs_out, var_key_err_body, var_key_err_mask)
+            + (self.rank_in().as_usize() as f64) * (self.n().as_usize() as f64) * var_xs_in * self.var_residue(input)
     }
 
     /// `log2 sqrt(Var)` of [`Self::var_noise_keyswitch`].
+    #[allow(clippy::too_many_arguments)]
     fn log2_std_noise_keyswitch<A: GLWEInfos>(
         &self,
         input: &A,
-        var_xs: f64,
+        var_xs_in: f64,
+        var_xs_out: f64,
         var_in_err: f64,
-        var_key_err_lhs: f64,
-        var_key_err_rhs: f64,
+        var_key_err_body: f64,
+        var_key_err_mask: f64,
     ) -> f64 {
-        log2_std(self.var_noise_keyswitch(input, var_xs, var_in_err, var_key_err_lhs, var_key_err_rhs))
+        log2_std(self.var_noise_keyswitch(input, var_xs_in, var_xs_out, var_in_err, var_key_err_body, var_key_err_mask))
     }
 
     /// `log2 sqrt(Var)` of the `col`-th column of a GGSW key-switched (or
-    /// automorphed) with `self` and rebuilt with `tsk`:
+    /// automorphed) from `input` into `res` with `self`, then expanded with
+    /// `tsk`:
     ///
     /// ```text
-    /// col = 0: Var_ks(self)
-    /// col > 0: (1 + n*var_xs) * (Var_ks(self) + Var_gadget(tsk)
-    ///                            + (rank+1) * n^2 * var_xs^2 * (Var(e_in) + 1/12) * 2^{-2k_in})
+    /// col = 0: Var_ks
+    /// col > 0: n * var_xs_out * Var_ks + Var_key(tsk) + rank * n^2 * var_xs_out^2 * Var(r_tsk)
     /// ```
     ///
-    /// Column `0` is the key-switch of the row. Column `j` is that row times
-    /// `s_j`, obtained through the tensor key: its gadget product against a full
-    /// GLWE row decomposes all `rank + 1` components, the residue `1/12` that
-    /// decomposition drops meets the tensor secret `s_i (x) s_j` of variance
-    /// `n * var_xs^2`, and the closing multiplication by `s_j` is a ring product
-    /// scaling the whole column by `1 + n * var_xs`.
+    /// Column `0` is the key-switch of the row. Column `col` is rebuilt as
+    /// `sum_j a_j * tsk_j` with the row's body re-inserted, undecomposed, in
+    /// slot `col`, so decryption multiplies the whole row phase by `s_out,col`:
+    /// one ring product over `Var_ks`, and the tensor key's own error enters
+    /// unscaled next to it. Only the `rank` masks meet the gadget, and a residue
+    /// there is lost against `s_j * s_col`, of variance `n * var_xs_out^2`. The
+    /// operand of that second product is the key-switched row, hence `res`.
+    /// This branch runs up to ~0.2 bits under the measurement, the square
+    /// `s_col^2` carrying a mean a variance model ignores.
     #[allow(clippy::too_many_arguments)]
-    fn log2_std_noise_ggsw_keyswitch<T: GGLWEInfos, A: GLWEInfos>(
+    fn log2_std_noise_ggsw_keyswitch<T: GGLWEInfos, A: GLWEInfos, B: GLWEInfos>(
         &self,
         tsk: &T,
         col: usize,
         input: &A,
-        var_xs: f64,
+        res: &B,
+        var_xs_in: f64,
+        var_xs_out: f64,
         var_in_err: f64,
-        var_key_err_lhs: f64,
-        var_key_err_rhs: f64,
+        var_key_err_body: f64,
+        var_key_err_mask: f64,
     ) -> f64 {
-        let mut noise: f64 = self.var_noise_keyswitch(input, var_xs, var_in_err, var_key_err_lhs, var_key_err_rhs);
+        let noise: f64 = self.var_noise_keyswitch(input, var_xs_in, var_xs_out, var_in_err, var_key_err_body, var_key_err_mask);
 
-        if col > 0 {
-            let tsk: GGLWELayout = GGLWELayout {
-                rank_in: tsk.rank_out() + 1,
-                ..tsk.gglwe_layout()
-            };
-            let n: f64 = tsk.n().as_usize() as f64;
-            let var_si_x_sj: f64 = n * var_xs * var_xs;
-            noise += tsk.var_gadget_product(input, var_xs, var_key_err_lhs, var_key_err_rhs);
-            noise += (tsk.rank_in().as_usize() as f64) * var_si_x_sj * (var_in_err + 1f64 / 12.0) * n * var_scale(input);
-            noise *= 1.0 + n * var_xs;
+        if col == 0 {
+            return log2_std(noise);
         }
 
-        log2_std(noise)
+        let n: f64 = tsk.n().as_usize() as f64;
+        let rank: f64 = tsk.rank_in().as_usize() as f64;
+        // sum_j Var(s_j * s_col) over the rank masks: (rank-1) off-diagonal at
+        // n*var_xs^2, and the j = col square at twice that.
+        let var_s_x_s_col: f64 = (rank + 1.0) * n * var_xs_out * var_xs_out;
+
+        log2_std(
+            n * var_xs_out * noise
+                + tsk.var_key_error(res, var_xs_out, var_key_err_body, var_key_err_mask)
+                + n * var_s_x_s_col * tsk.var_residue(res),
+        )
     }
 }
 
@@ -195,13 +213,17 @@ pub(crate) trait GGSWNoiseModel: GGSWInfos {
     /// a message of variance `var_msg`:
     ///
     /// ```text
-    /// Var = Var_gadget + n * var_msg * (Var(e_body) + rank * var_xs * Var(e_mask)) * 2^{-2k_in}
+    /// fold = 1 + rank * n * var_xs
+    /// Var  = Var_key + n * var_msg * fold * Var(r)
+    ///                + n * var_msg * (Var(e_body) + rank * n * var_xs * Var(e_mask)) * 2^{-2k_in}
     /// ```
     ///
-    /// The product is `ct * m`, so besides the gadget product against the GGSW
-    /// the operand's own error rides the message through a ring product: its
-    /// body error directly, and the error carried by each of its `rank` masks
-    /// folded against the secret at decryption.
+    /// The product is `(ct - r) * m` for `r` the residues the gadget drops, so
+    /// the phase misses `m * (r_body - sum_j r_j * s_j)`: a dropped component
+    /// rides the message through a ring product, the masks folding once more
+    /// against the secret, which is the `fold` factor. A zero message therefore
+    /// costs nothing. The operand's own error travels the same route, hence the
+    /// identical weighting.
     #[allow(clippy::too_many_arguments)]
     fn log2_std_noise_external_product<A: GLWEInfos>(
         &self,
@@ -210,16 +232,17 @@ pub(crate) trait GGSWNoiseModel: GGSWInfos {
         var_msg: f64,
         var_in_err_body: f64,
         var_in_err_mask: f64,
-        var_key_err_lhs: f64,
-        var_key_err_rhs: f64,
+        var_key_err_body: f64,
+        var_key_err_mask: f64,
     ) -> f64 {
+        let key: GGLWELayout = self.as_gadget_key();
         let n: f64 = self.n().as_usize() as f64;
-        let scale_in: f64 = var_scale(input);
-        let mut noise: f64 = self
-            .as_gadget_key()
-            .var_gadget_product(input, var_xs, var_key_err_lhs, var_key_err_rhs);
-        noise += var_msg * var_in_err_body * n * scale_in;
-        noise += var_msg * var_in_err_mask * n * var_xs * (self.rank().as_usize() as f64) * scale_in;
+        let rank: f64 = self.rank().as_usize() as f64;
+        let fold: f64 = 1.0 + rank * n * var_xs;
+
+        let mut noise: f64 = key.var_key_error(input, var_xs, var_key_err_body, var_key_err_mask);
+        noise += n * var_msg * fold * key.var_residue(input);
+        noise += n * var_msg * (var_in_err_body + rank * n * var_xs * var_in_err_mask) * var_scale(input);
         log2_std(noise)
     }
 }

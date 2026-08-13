@@ -166,6 +166,8 @@ where
                     &tsk_infos,
                     col_j,
                     &ggsw_in_infos,
+                    &ggsw_out_infos,
+                    var_xs,
                     var_xs,
                     DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                     DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
@@ -189,6 +191,10 @@ where
                         .std()
                         .log2();
                     let max_noise = max_noise(col);
+                    println!(
+                        "DBG ggsw_ks col={col} have={noise:.2} max={max_noise:.2} slack={:.2}",
+                        max_noise - noise
+                    );
                     assert!(noise <= max_noise, "noise: {noise} > max_noise: {max_noise}")
                 }
             }
@@ -332,6 +338,8 @@ where
                     &tsk_infos,
                     col_j,
                     &ggsw_out_infos,
+                    &ggsw_out_infos,
+                    var_xs,
                     var_xs,
                     DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
                     DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE,
@@ -355,6 +363,10 @@ where
                         .std()
                         .log2();
                     let max_noise = max_noise(col);
+                    println!(
+                        "DBG ggsw_ks col={col} have={noise:.2} max={max_noise:.2} slack={:.2}",
+                        max_noise - noise
+                    );
                     assert!(noise <= max_noise, "noise: {noise} > max_noise: {max_noise}")
                 }
             }
