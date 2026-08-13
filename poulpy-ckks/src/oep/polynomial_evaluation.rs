@@ -23,6 +23,9 @@ use crate::{
     power_basis::{PowerBasis, PowerBasisGen},
 };
 
+/// Builds the folded input (`x`, `x²`, or `T₂(x)`) for one-shot evaluation.
+/// It lives in the OEP because the default engine only consumes a prepared
+/// power basis.
 fn polynomial_input<BE, S>(
     module: &Module<BE>,
     src: &S,
