@@ -20,12 +20,12 @@ use crate::{
     params::CoreParams,
 };
 
-/// Op tables for each core capability group. Each function returns the raw
-/// [`BenchOp`] table for that group only, scoped to the traits its own ops
-/// need — a backend implementing just a subset of `poulpy-core` can still
-/// build and run the tables for what it supports. Compose across groups and
-/// drive [`bench_ops`](crate::bench_ops) directly, or use [`all_ops`]
-/// to run every group at once.
+// Op tables for each core capability group. Each function returns the raw
+// [`BenchOp`] table for that group only, scoped to the traits its own ops
+// need — a backend implementing just a subset of `poulpy-core` can still
+// build and run the tables for what it supports. Compose across groups and
+// drive [`bench_ops`](crate::bench_ops) directly, or use [`all_ops`]
+// to run every group at once.
 
 // ── encryption ───────────────────────────────────────────────────────────────
 

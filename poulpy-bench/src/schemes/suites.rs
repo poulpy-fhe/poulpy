@@ -27,12 +27,11 @@ use crate::{
     schemes::{bin_fhe, ckks},
 };
 
-/// Op tables for each CKKS capability group, one per `poulpy-ckks` API trait.
-/// Each function returns the raw [`BenchOp`] table for that group only,
-/// scoped to the traits its own ops need — a backend implementing just a
-/// subset of the CKKS API can still build and run the tables for what it
-/// supports. Compose across groups and drive [`bench_ops`](crate::bench_ops)
-/// directly, or use [`all_ops`] to run every group at once.
+// Op tables for each CKKS capability group, one per `poulpy-ckks` API trait.
+// Each function returns the raw [`BenchOp`] table for that group only,
+// scoped to the traits its own ops need — a backend implementing just a
+// subset of the CKKS API can still build and run the tables for what it
+// supports.
 
 // ── add ──────────────────────────────────────────────────────────────────────
 

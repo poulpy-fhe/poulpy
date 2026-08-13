@@ -28,18 +28,10 @@ use crate::{
     params::{CnvSweepParms, HalSweepParms, ReimSweepParams, VmpSweepParms},
 };
 
-/// Op tables for each HAL capability group. Each function returns the raw
-/// [`BenchOp`] table for that group only, scoped to the traits its own ops need —
-/// a backend implementing just a subset of the HAL can still build and run the
-/// tables for what it supports. Compose across groups and drive
-/// [`bench_ops`](crate::bench_ops) directly; e.g.:
-///
-/// ```ignore
-/// let mut ops = Vec::new();
-/// ops.extend(vec_znx_dft_ops::<MyBackend, WallTime>());
-/// ops.extend(convolution_ops::<MyBackend, WallTime>());
-/// bench_ops(&ops, &hal_params, "mybackend", c);
-/// ```
+// Op tables for each HAL capability group. Each function returns the raw
+// [`BenchOp`] table for that group only, scoped to the traits its own ops need —
+// a backend implementing just a subset of the HAL can still build and run the
+// tables for what it supports. 
 
 // ── vec_znx_dft ──────────────────────────────────────────────────────────────
 
