@@ -1,292 +1,68 @@
 # poulpy-bench
 
-Consolidated [Criterion](https://bheisler.github.io/criterion.rs/book/) benchmark suite for the poulpy workspace.
+Shared benchmarking library for the poulpy workspace. `poulpy-bench` does not
+ship its own runnable benchmarks — it provides the runners, sweep
+parameters, and composition primitives that a backend crate (e.g.
+`poulpy-cpu-ref`) uses to build its own `benches/*.rs` binaries.
 
-Each benchmark binary covers one subsystem. Binaries that operate on generic polynomial or FHE operations run against **all available backends**; binaries that target transform-domain-specific operations (DFT, convolution, VMP/SVP) are restricted to the **FFT64 family**.
+## Why a library, not binaries
 
-## Backends and feature flags
+A backend crate depends on `poulpy-bench`, not the other way around. This
+lets each backend assemble exactly the benchmarks it can run: one that
+implements only part of the HAL, core, or CKKS surface can still benchmark
+the part it supports, rather than being forced into an all-or-nothing suite.
 
-| Backend | Type | Feature flag | Label in output |
-|---|---|---|---|
-| `FFT64Ref` | FFT64, portable | *(always enabled)* | `fft64-ref` |
-| `NTT4x30Ref` | NTT4x30, portable | *(always enabled)* | `ntt4x30-ref` |
-| `FFT64Avx` | FFT64, AVX2/FMA | `enable-avx` | `fft64-avx` |
-| `NTT4x30Avx` | NTT4x30, AVX2/FMA | `enable-avx` | `ntt4x30-avx` |
+## Core abstraction
 
-The `enable-avx` flag enables the `poulpy-cpu-avx` backend and requires `target_arch = "x86_64"`.
+Every benchmarked operation is a **runner**:
 
-Benchmark binaries are also feature-gated by family:
-
-| Feature | Enables |
-|---|---|
-| `hal-bench` | HAL-level polynomial, transform, convolution, FFT, and NTT benchmarks |
-| `core-bench` | `poulpy-core` benchmarks |
-| `bin-fhe-bench` | `poulpy-bin-fhe` scheme benchmarks |
-| `ckks-bench` | CKKS benchmarks |
-
-Useful compile/test commands:
-
-```sh
-cargo check -p poulpy-bench --all-targets --features hal-bench
-cargo check -p poulpy-bench --all-targets --features core-bench
-cargo check -p poulpy-bench --all-targets --features bin-fhe-bench
-cargo check -p poulpy-bench --all-targets --features ckks-bench
-
-cargo clippy -p poulpy-bench --all-targets \
-  --features hal-bench,core-bench,bin-fhe-bench,ckks-bench -- -D warnings
+```rust
+fn(&mut Bencher<'_, M>, &P)
 ```
 
-## Benchmark binaries
+which sets up its inputs once and times the operation via `bencher.iter(...)`.
+Runners are grouped into tables of `BenchOp<M, P>`, and `bench_ops` drives a
+table against a slice of sweep parameters `&[P]`, producing one Criterion
+group per op. Both live in [`src/lib.rs`](src/lib.rs).
 
-### HAL-level (backend-agnostic polynomial arithmetic)
+Each module exposes its runner suites as builder functions of the form:
 
-| Binary | Subsystem | Backends |
-|---|---|---|
-| `vec_znx` | `VecZnx` add / sub / negate / rotate / automorphism / shift | all |
-| `vec_znx_big` | `VecZnxBig` add / sub / negate / normalize / automorphism | all |
-| `vec_znx_dft` | DFT-domain add / sub / apply / iDFT | FFT64 only |
-| `convolution` | Polynomial convolution (prepare + apply) | FFT64 only |
-| `svp` | Scalar-vector product (prepare, DFT-to-DFT) | FFT64 only |
-| `vmp` | Vector-matrix product (prepare, DFT-to-DFT) | FFT64 only |
-| `fft` | Raw FFT / iFFT primitive | hardcoded (ref + avx) |
-| `ntt` | Raw NTT / iNTT primitive | hardcoded (ref + avx) |
+```rust
+pub fn <group>_ops<Backend, Measurement>() -> [BenchOp<M, P>; N]
+```
 
-### Core-level (scheme-agnostic FHE operations)
+so a caller can filter, reorder, or `.extend()` several tables together
+before running them — no Criterion involved until `bench_ops` is called.
+Most modules also expose `all_ops()` (every group in that layer, concatenated)
+and/or `standard_ops()` (a small representative cross-section), built from
+the same underlying `*_ops` tables.
 
-| Binary | Subsystem | Backends |
-|---|---|---|
-| `operations` | GLWE add / sub / normalize / mul-plain | all |
-| `coeff_mat` | `CoeffMatrix x LWEMatrix -> LWEMatrix` | all |
-| `encryption` | GLWE / GGSW / automorphism-key encryption | all |
-| `decryption` | GLWE decryption | all |
-| `automorphism` | GLWE automorphism | all |
-| `external_product` | GLWE external product (inplace + out-of-place) | all |
-| `keyswitch` | GLWE key-switching | all |
+## Layout
 
-### Scheme-level (end-to-end FHE primitives)
-
-| Binary | Subsystem | Backends |
-|---|---|---|
-| `ckks_add`, `ckks_sub`, `ckks_mul`, `ckks_unary`, `ckks_automorphism`, `ckks_composite` | CKKS arithmetic and automorphism primitives | NTT family |
-| `ckks_linear_transformation` | CKKS linear transformation: one-shot, prepared BSGS, direct sparse, dense, and many-prepared evaluation | NTT family |
-| `blind_rotate` | Blind rotation (CGGI / AP) | hardcoded |
-| `circuit_bootstrapping` | Circuit bootstrapping | hardcoded |
-| `bdd_prepare` | BDD key preparation | hardcoded |
-| `bdd_arithmetic` | BDD homomorphic arithmetic | hardcoded |
-
-### Regression tracking
-
-| Binary | Purpose |
+| Module | Covers |
 |---|---|
-| `standard` | One representative run across **all layers** with fixed parameters — used for version-to-version regression tracking |
+| [`hal`](src/hal) | `poulpy-hal` trait operations: `vec_znx`, `vec_znx_dft`, `vec_znx_big`, `svp`, `vmp`, `convolution`, `reim` |
+| [`core`](src/core) | `poulpy-core` GLWE/GGSW operations: encryption, decryption, keyswitch, automorphism, external product, tensoring |
+| [`schemes`](src/schemes) | `poulpy-ckks` (CKKS) and `poulpy-bin-fhe` (blind rotation, circuit bootstrapping) |
+| [`params`](src/params.rs) | Sweep-parameter structs and `default_bench_params_*` builders shared across backends |
 
-The `standard` binary uses a single parameter set (`N=4096`, `base2k=18`, `k=54`, `rank=1`) for all HAL and core benchmarks, and the standard parameter sets embedded in the scheme crates for the scheme-level benchmarks. Its results can be saved as named baselines for direct comparison across releases (see [Save and compare baselines](#save-and-compare-baselines)).
+## Using it from a backend crate
 
-## Configuring parameters via JSON
+Add `poulpy-bench` as a dev-dependency, then write a `benches/*.rs` binary
+that picks the ops it wants and drives them with `bench_ops`:
 
-All sweep ranges and layout parameters are overridable at runtime through the `POULPY_BENCH_PARAMS` environment variable. Set it to either a **path to a JSON file** or an **inline JSON string**. Any field omitted from the JSON falls back to the built-in default.
+```rust
+use criterion::{Criterion, criterion_group, criterion_main, measurement::WallTime};
+use poulpy_bench::{bench_ops, hal::suites::vec_znx_ops, params::default_bench_params_hal};
 
-### JSON schema
-
-```json
-{
-  "run": ["vec_znx_big", "vmp", "external_product"],
-  "hal": {
-    "sweeps": [[10,2,2],[11,2,4],[12,2,8],[13,2,16],[14,2,32]]
-  },
-  "cnv": {
-    "sweeps": [[10,1],[11,2],[12,4],[13,8],[14,16],[15,32],[16,64]]
-  },
-  "vmp": {
-    "sweeps": [[10,2,1,2,3],[11,4,1,2,5],[12,7,1,2,8],[13,15,1,2,16],[14,31,1,2,32]]
-  },
-  "coeff_mat": {
-    "sweeps": [[10,1024,1,8,3],[11,2048,1,8,5],[12,4096,2,8,8]]
-  },
-  "svp_prepare": {
-    "log_n": [10,11,12,13,14]
-  },
-  "core": {
-    "n": 4096, "base2k": 18, "k": 54, "rank": 1, "dsize": 1
-  }
+fn hal(c: &mut Criterion) {
+    bench_ops(&vec_znx_ops::<MyBackend, WallTime>(), default_bench_params_hal().as_slice(), "my-backend", c);
 }
+
+criterion_group!(benches, hal);
+criterion_main!(benches);
 ```
 
-Field reference:
-
-| Section | Field | Applies to | Description |
-|---|---|---|---|
-| `backends` | `["label", ...]` | shell script | Backends to run: `fft64-ref`, `ntt4x30-ref`, `fft64-avx`, `ntt4x30-avx`. AVX feature is auto-enabled when an AVX backend is listed. Omit to run all compiled-in backends. |
-| `run` | `["name", ...]` | shell script | What to run. Binary names (e.g. `"vec_znx_big"`) run the whole binary; function names (e.g. `"vec_znx_big_add_into"`) are used as a Criterion filter across the default binary set. Mix freely. Omit or leave empty to run the default set in full. |
-| `hal.sweeps` | `[[log_n, cols, size], ...]` | `vec_znx_big`, `vec_znx_dft`, `svp` | Sweep points for generic HAL ops |
-| `cnv.sweeps` | `[[log_n, size], ...]` | `convolution` | Sweep points for convolution |
-| `vmp.sweeps` | `[[log_n, rows, cols_in, cols_out, size], ...]` | `vmp` | Sweep points for VMP |
-| `coeff_mat.sweeps` | `[[log_n, rows_in, lwe_n, rows_out, size], ...]` | `coeff_mat` | Sweep points for `CoeffMatrix x LWEMatrix` |
-| `svp_prepare.log_n` | `[log_n, ...]` | `svp` prepare | Ring degrees for SVP prepare |
-| `core.n` | power of two | all core/scheme/standard | Ring degree `N` |
-| `core.base2k` | integer | all core/scheme/standard | Limb bit-width |
-| `core.k` | integer | all core/scheme/standard | Total torus precision |
-| `core.rank` | integer | all core/scheme/standard | GLWE rank |
-| `core.dsize` | integer | all core/scheme/standard | Decomposition size |
-
-### Examples
-
-**Single ring degree — benchmark `vec_znx_big` only at N=4096:**
-
-```sh
-POULPY_BENCH_PARAMS='{"hal":{"sweeps":[[12,2,8]]}}' \
-  cargo bench -p poulpy-bench --bench vec_znx_big --features hal-bench
-```
-
-**Custom core params — run `standard` at a smaller parameter set:**
-
-```sh
-POULPY_BENCH_PARAMS='{"core":{"n":1024,"base2k":14,"k":42,"rank":1,"dsize":1}}' \
-  cargo bench -p poulpy-bench --bench standard --features hal-bench,core-bench,bin-fhe-bench
-```
-
-**From a file — full custom sweep for a profiling run:**
-
-```sh
-# bench_params.json
-cat > bench_params.json <<'EOF'
-{
-  "hal":  { "sweeps": [[10,2,2],[12,2,8],[14,2,32]] },
-  "cnv":  { "sweeps": [[10,1],[12,4],[14,16]] },
-  "vmp":  { "sweeps": [[10,2,1,2,3],[12,7,1,2,8]] },
-  "coeff_mat": { "sweeps": [[10,1024,1,8,3],[12,4096,2,8,8]] },
-  "core": { "n": 4096, "base2k": 18, "k": 54, "rank": 1, "dsize": 1 }
-}
-EOF
-
-POULPY_BENCH_PARAMS=bench_params.json \
-  cargo bench -p poulpy-bench --features hal-bench,core-bench,bin-fhe-bench,ckks-bench,enable-avx
-```
-
-**Regression baseline at a specific parameter set:**
-
-```sh
-POULPY_BENCH_PARAMS='{"core":{"n":4096,"base2k":18,"k":54,"rank":1,"dsize":1}}' \
-  cargo bench -p poulpy-bench --bench standard --features hal-bench,core-bench,bin-fhe-bench -- --save-baseline v0.6.0
-
-# later, compare against it with the same params
-POULPY_BENCH_PARAMS='{"core":{"n":4096,"base2k":18,"k":54,"rank":1,"dsize":1}}' \
-  cargo bench -p poulpy-bench --bench standard --features hal-bench,core-bench,bin-fhe-bench -- --baseline v0.6.0
-```
-
-## Running benchmarks
-
-### All benchmarks, reference backends only
-
-```sh
-cargo bench -p poulpy-bench --features hal-bench,core-bench,bin-fhe-bench,ckks-bench
-```
-
-### All benchmarks with AVX acceleration
-
-```sh
-RUSTFLAGS="-C target-feature=+avx2,+fma" \
-cargo bench -p poulpy-bench --features hal-bench,core-bench,bin-fhe-bench,ckks-bench,enable-avx
-```
-
-### One binary
-
-```sh
-# run only the vec_znx binary
-cargo bench -p poulpy-bench --bench vec_znx --features hal-bench
-
-# with AVX
-RUSTFLAGS="-C target-feature=+avx2,+fma" \
-cargo bench -p poulpy-bench --bench vec_znx --features hal-bench,enable-avx
-```
-
-### One group or function within a binary
-
-Criterion accepts a regex filter as a trailing argument (after `--`).
-The benchmark ID format is `<group_name>/<parameter>` where the group name
-encodes the operation and backend label.
-
-```sh
-# all vec_znx benchmarks on the ntt4x30-ref backend
-cargo bench -p poulpy-bench --bench vec_znx --features hal-bench -- ntt4x30-ref
-
-# only the add benchmark, all backends
-cargo bench -p poulpy-bench --bench vec_znx --features hal-bench -- vec_znx_add_into
-
-# CKKS linear transformation, reference NTT backend
-cargo bench -p poulpy-bench --bench ckks_linear_transformation --features ckks-bench -- ntt4x30-ref
-
-# one specific backend × operation
-cargo bench -p poulpy-bench --bench vec_znx --features hal-bench -- "vec_znx_add_into::fft64-ref"
-
-# all encryption benchmarks, AVX only
-RUSTFLAGS="-C target-feature=+avx2,+fma" \
-cargo bench -p poulpy-bench --bench encryption --features core-bench,enable-avx -- avx
-```
-
-### CKKS linear transformation metadata
-
-The `ckks_linear_transformation` binary prints a small CSV-style manifest once
-per backend before Criterion timing starts. It records:
-
-| Field | Meaning |
-|---|---|
-| `diagonals` | Number of non-zero linear-transform diagonals in the case |
-| `babies` | Distinct baby-step rotations materialized for the case |
-| `giants` | Non-empty giant-step buckets |
-| `required_rotations` | Unique non-zero automorphism keys required by the schedule |
-| `scratch` | Allocated scratch arena, with `eval_tmp_bound` and `prepare_tmp_bound` |
-
-The timing rows are still Criterion benchmark IDs. The manifest is there to make
-runtime comparisons easier to read alongside schedule shape and scratch pressure.
-
-Precision behavior is validated by the CKKS linear-transformation tests on
-`FFT64/f64`, `NTT4x30/f64`, and `NTT4x30/f128`. The benchmark binary itself runs on
-the NTT family, including `ntt4x30-avx` when `enable-avx` and AVX2/FMA
-`RUSTFLAGS` are used.
-
-For production use, the prepared CKKS linear-transformation API is the promoted
-performance path: prepare once, then evaluate one or many times. The borrowed
-one-shot API remains in the benchmark as the convenience path and prepares a
-temporary cache from the borrowed transform internally.
-
-### Standard regression binary
-
-```sh
-# run the standard binary (ref backends)
-cargo bench -p poulpy-bench --bench standard --features hal-bench,core-bench,bin-fhe-bench
-
-# with AVX acceleration
-RUSTFLAGS="-C target-feature=+avx2,+fma" \
-cargo bench -p poulpy-bench --bench standard --features hal-bench,core-bench,bin-fhe-bench,enable-avx
-```
-
-### Save and compare baselines
-
-```sh
-# save a named baseline (e.g. tagging a release)
-cargo bench -p poulpy-bench --bench standard --features hal-bench,core-bench,bin-fhe-bench -- --save-baseline v0.6.0
-
-# run again later and compare against it
-cargo bench -p poulpy-bench --bench standard --features hal-bench,core-bench,bin-fhe-bench -- --baseline v0.6.0
-```
-
-The same `--save-baseline` / `--baseline` flags work on any bench binary:
-
-```sh
-# save a baseline named "before"
-cargo bench -p poulpy-bench --bench vec_znx --features hal-bench -- --save-baseline before
-
-# bench again and compare
-cargo bench -p poulpy-bench --bench vec_znx --features hal-bench -- --baseline before
-```
-
-Criterion HTML reports are written to `target/criterion/`.
-
-## Adding a new backend
-
-1. Add the backend crate to `[dependencies]` in `Cargo.toml` (behind an optional feature if needed).
-2. Add one entry to the appropriate private family macro in [`src/lib.rs`](src/lib.rs):
-   - `for_each_fft_backend_family!` for an FFT64 backend
-   - `for_each_ntt_backend_family!` for an NTT4x30 backend
-3. No bench files need to change.
+See [`poulpy-cpu-ref/benches`](../poulpy-cpu-ref/benches) for a complete
+worked example, including its three-tier `full` / `standard` / `light`
+binaries.
