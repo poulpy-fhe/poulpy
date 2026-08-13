@@ -526,7 +526,7 @@ pub fn runner_ckks_decode_slots_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i
 {
     let module = Module::<BE>::new(cp.n as u64);
 
-    let mut pt =  module.ckks_pt_vec_alloc(cp.base2k.into(), 127usize.into()); // TODO: should this be a benchmark parameter? 
+    let mut pt = module.ckks_pt_vec_alloc(cp.base2k.into(), 127usize.into()); // TODO: should this be a benchmark parameter? 
     pt.set_meta(ckks_ct_meta(cp));
 
     let values = ckks_encoding_values(cp.n);
