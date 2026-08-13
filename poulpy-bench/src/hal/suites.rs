@@ -31,7 +31,7 @@ use crate::{
 // Op tables for each HAL capability group. Each function returns the raw
 // [`BenchOp`] table for that group only, scoped to the traits its own ops need —
 // a backend implementing just a subset of the HAL can still build and run the
-// tables for what it supports. 
+// tables for what it supports.
 
 // ── vec_znx_dft ──────────────────────────────────────────────────────────────
 
