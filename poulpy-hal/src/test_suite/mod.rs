@@ -8,7 +8,7 @@
 
 use crate::layouts::{
     Backend, DataView, HostBytesBackend, HostDataRef, MatZnx, ScalarZnx, ScalarZnxBackendMut, ScalarZnxBackendRef,
-    ScalarZnxToBackendMut, ScalarZnxToBackendRef, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxToBackendMut,
+    ScalarZnxToBackendMut, ScalarZnxToBackendRef, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxOwned, VecZnxToBackendMut,
     VecZnxToBackendRef,
 };
 
@@ -19,6 +19,7 @@ pub mod vec_znx;
 pub mod vec_znx_big;
 pub mod vec_znx_dft;
 pub mod vmp;
+pub mod word_compat;
 
 /// Parameters passed to every test function in a
 /// [`backend_test_suite!`](crate::backend_test_suite) or
@@ -43,61 +44,85 @@ pub struct TestParams {
 ///
 /// Tests upload only coefficient-domain host layouts (`ScalarZnx`, `VecZnx`,
 /// `MatZnx`) and keep all intermediate layouts backend-local.
-pub trait TestBackend: Backend {}
+///
+/// Pinned to `ZnxWord = i64`: the suites drive `encode_*`/`decode_*` and
+/// `FillUniform`, which are i64-only. A backend with a narrower coefficient
+/// word needs its own suites.
+pub trait TestBackend: Backend<ZnxWord = i64> {}
 
-impl<BE: Backend> TestBackend for BE {}
+impl<BE: Backend<ZnxWord = i64>> TestBackend for BE {}
 
-pub fn vec_znx_backend_ref<'a, BE: Backend>(vec: &'a VecZnx<BE::OwnedBuf>) -> VecZnxBackendRef<'a, BE> {
-    <VecZnx<BE::OwnedBuf> as VecZnxToBackendRef<BE>>::to_backend_ref(vec)
+pub fn vec_znx_backend_ref<'a, BE: Backend>(vec: &'a VecZnx<BE::OwnedBuf, BE::ZnxWord>) -> VecZnxBackendRef<'a, BE> {
+    <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(vec)
 }
 
-pub fn vec_znx_backend_mut<'a, BE: Backend>(vec: &'a mut VecZnx<BE::OwnedBuf>) -> VecZnxBackendMut<'a, BE> {
-    <VecZnx<BE::OwnedBuf> as VecZnxToBackendMut<BE>>::to_backend_mut(vec)
+pub fn vec_znx_backend_mut<'a, BE: Backend>(vec: &'a mut VecZnx<BE::OwnedBuf, BE::ZnxWord>) -> VecZnxBackendMut<'a, BE> {
+    <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(vec)
 }
 
-pub fn scalar_znx_backend_ref<'a, BE: Backend>(scalar: &'a ScalarZnx<BE::OwnedBuf>) -> ScalarZnxBackendRef<'a, BE> {
-    <ScalarZnx<BE::OwnedBuf> as ScalarZnxToBackendRef<BE>>::to_backend_ref(scalar)
+/// Mutable backend view narrowed to `size` limbs, leaving the allocation intact.
+///
+/// Lets a test hand a kernel fewer limbs than were allocated, so that writes
+/// past `size` show up in the full-buffer comparison.
+pub fn vec_znx_backend_mut_sized<'a, BE: Backend>(
+    vec: &'a mut VecZnx<BE::OwnedBuf, BE::ZnxWord>,
+    size: usize,
+) -> VecZnxBackendMut<'a, BE> {
+    crate::layouts::vec_znx_backend_mut_with_size::<BE>(vec_znx_backend_mut::<BE>(vec), size)
 }
 
-pub fn scalar_znx_backend_mut<'a, BE: Backend>(scalar: &'a mut ScalarZnx<BE::OwnedBuf>) -> ScalarZnxBackendMut<'a, BE> {
-    <ScalarZnx<BE::OwnedBuf> as ScalarZnxToBackendMut<BE>>::to_backend_mut(scalar)
+pub fn scalar_znx_backend_ref<'a, BE: Backend>(scalar: &'a ScalarZnx<BE::OwnedBuf, BE::ZnxWord>) -> ScalarZnxBackendRef<'a, BE> {
+    <ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxToBackendRef<BE>>::to_backend_ref(scalar)
 }
 
-pub fn upload_scalar_znx<BE: Backend>(host: &ScalarZnx<impl HostDataRef>) -> ScalarZnx<BE::OwnedBuf> {
+pub fn scalar_znx_backend_mut<'a, BE: Backend>(
+    scalar: &'a mut ScalarZnx<BE::OwnedBuf, BE::ZnxWord>,
+) -> ScalarZnxBackendMut<'a, BE> {
+    <ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxToBackendMut<BE>>::to_backend_mut(scalar)
+}
+
+/// Zeroed host template sized for `BE`'s coefficient word.
+///
+/// Sizing has to use `BE::ZnxWord` and not the host's own word: the result is
+/// uploaded to `BE`, and a backend with a narrower word needs a proportionally
+/// smaller buffer for the same shape.
+pub fn alloc_host_vec_znx<BE: Backend>(n: usize, cols: usize, size: usize) -> VecZnxOwned<BE::ZnxWord> {
+    VecZnx::from_data(
+        crate::alloc_aligned::<u8>(VecZnxOwned::<BE::ZnxWord>::bytes_of(n, cols, size)),
+        n,
+        cols,
+        size,
+    )
+}
+
+pub fn upload_scalar_znx<BE: Backend>(host: &ScalarZnx<impl HostDataRef, BE::ZnxWord>) -> ScalarZnx<BE::OwnedBuf, BE::ZnxWord> {
     let shape = host.shape();
     ScalarZnx::from_data(BE::from_host_bytes(host.data.as_ref()), shape.n(), shape.cols())
 }
 
-pub fn download_scalar_znx<BE: Backend>(backend: &ScalarZnx<BE::OwnedBuf>) -> ScalarZnx<Vec<u8>> {
+pub fn download_scalar_znx<BE: Backend>(backend: &ScalarZnx<BE::OwnedBuf, BE::ZnxWord>) -> ScalarZnx<Vec<u8>, BE::ZnxWord> {
     let shape = backend.shape();
     let host_bytes = BE::to_host_bytes(&backend.data);
     ScalarZnx::from_data(HostBytesBackend::from_host_bytes(&host_bytes), shape.n(), shape.cols())
 }
 
-pub fn upload_vec_znx<BE: Backend>(host: &VecZnx<impl HostDataRef>) -> VecZnx<BE::OwnedBuf> {
+pub fn upload_vec_znx<BE: Backend>(host: &VecZnx<impl HostDataRef, BE::ZnxWord>) -> VecZnx<BE::OwnedBuf, BE::ZnxWord> {
     let shape = host.shape();
-    VecZnx::from_data_with_max_size(
-        BE::from_host_bytes(host.data.as_ref()),
-        shape.n(),
-        shape.cols(),
-        shape.size(),
-        shape.max_size(),
-    )
+    VecZnx::from_data(BE::from_host_bytes(host.data.as_ref()), shape.n(), shape.cols(), shape.size())
 }
 
-pub fn download_vec_znx<BE: Backend>(backend: &VecZnx<BE::OwnedBuf>) -> VecZnx<Vec<u8>> {
+pub fn download_vec_znx<BE: Backend>(backend: &VecZnx<BE::OwnedBuf, BE::ZnxWord>) -> VecZnx<Vec<u8>, BE::ZnxWord> {
     let shape = backend.shape();
     let host_bytes = BE::to_host_bytes(&backend.data);
-    VecZnx::from_data_with_max_size(
+    VecZnx::from_data(
         HostBytesBackend::from_host_bytes(&host_bytes),
         shape.n(),
         shape.cols(),
         shape.size(),
-        shape.max_size(),
     )
 }
 
-pub fn upload_mat_znx<BE: Backend>(host: &MatZnx<impl HostDataRef>) -> MatZnx<BE::OwnedBuf> {
+pub fn upload_mat_znx<BE: Backend>(host: &MatZnx<impl HostDataRef, BE::ZnxWord>) -> MatZnx<BE::OwnedBuf, BE::ZnxWord> {
     let shape = host.shape();
     MatZnx::from_data(
         BE::from_host_bytes(host.data().as_ref()),
@@ -109,7 +134,7 @@ pub fn upload_mat_znx<BE: Backend>(host: &MatZnx<impl HostDataRef>) -> MatZnx<BE
     )
 }
 
-pub fn download_mat_znx<BE: Backend>(backend: &MatZnx<BE::OwnedBuf>) -> MatZnx<Vec<u8>> {
+pub fn download_mat_znx<BE: Backend>(backend: &MatZnx<BE::OwnedBuf, BE::ZnxWord>) -> MatZnx<Vec<u8>, BE::ZnxWord> {
     let shape = backend.shape();
     let host_bytes = BE::to_host_bytes(backend.data());
     MatZnx::from_data(

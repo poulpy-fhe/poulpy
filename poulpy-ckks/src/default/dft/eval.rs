@@ -22,11 +22,11 @@
 
 use crate::CKKSAtkBounds;
 use crate::{CKKSResult as Result, ckks_ensure};
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     default::linear_transformation::DiagonalProd,
     layouts::{
-        Base2K, Compact, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, LinearTransformation,
-        LinearTransformationStrategy,
+        Base2K, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, LinearTransformation, LinearTransformationStrategy,
     },
 };
 use poulpy_hal::{
@@ -34,6 +34,7 @@ use poulpy_hal::{
     layouts::{Backend, Module, ScratchArena},
 };
 
+use crate::SlotsKind;
 use crate::{
     CKKSCompositionError, CKKSCtBounds, SetCKKSInfos,
     api::{
@@ -42,7 +43,7 @@ use crate::{
     },
     default::dft::matrices::{DftScalar, gen_dft_matrices},
     layouts::{
-        CKKSModuleAlloc, CKKSPlaintext, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTOutputFormat, DFTPlan, Decode,
+        CKKSModuleAlloc, CKKSPlaintextOwned, DFTMatrix, DFTMatrixFactors, DFTMatrixPrepared, DFTOutputFormat, DFTPlan, Decode,
         DftDirection, DftFormat, Encode, Repack, Split, Standard,
     },
     oep::CKKSEncodingImpl,
@@ -50,7 +51,7 @@ use crate::{
 
 /// One unprepared factor: the diagonals of a single DFT factor matrix encoded
 /// as a CKKS linear transformation (plaintext diagonals).
-type DftFactorLt<BE> = LinearTransformation<CKKSPlaintext<<BE as Backend>::OwnedBuf>>;
+type DftFactorLt<BE> = LinearTransformation<CKKSPlaintextOwned<BE>>;
 
 fn checked_dft_log_slots(literal: &DFTPlan, log_n: usize) -> Result<usize> {
     // Shape validity (including a non-overflowing layer sum) is guaranteed by
@@ -135,7 +136,7 @@ pub fn ckks_prepare_dft_matrix<Dir, Fmt, BE, P>(
 where
     BE: Backend,
     Module<BE>: CnvPVecAlloc<BE> + CKKSLinearTransformationOps<BE>,
-    P: GLWEToBackendRef<BE> + CKKSCtBounds + DiagonalProd<BE>,
+    P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + DiagonalProd<BE>,
 {
     let inner = dft.inner();
     let plan = inner.plan.clone();
@@ -252,9 +253,9 @@ pub fn ckks_dft_evaluate_assign<BE, Dir, Fmt, P, Dst, H, K>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalScale,
+    P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     K: CKKSAtkBounds<BE>,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
@@ -262,7 +263,6 @@ where
     // factor's baby-step keyswitches operate on fewer limbs as the budget shrinks.
     for factor in dft.factor_operands() {
         eval_factor(module, ct, factor, keys, scratch)?;
-        ct.compact();
     }
     Ok(())
 }
@@ -280,9 +280,9 @@ fn eval_factor<BE, P, Dst, H, K>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalScale,
+    P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     K: CKKSAtkBounds<BE>,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
@@ -306,9 +306,9 @@ pub fn ckks_coeffs_to_slots_assign<BE, P, Dst, H, K>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalScale,
+    P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     K: CKKSAtkBounds<BE>,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
@@ -327,9 +327,9 @@ pub fn ckks_slots_to_coeffs_assign<BE, P, Dst, H, K>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalScale,
+    P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE>,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     K: CKKSAtkBounds<BE>,
     H: GLWEAutomorphismKeyHelper<K, BE>,
 {
@@ -358,7 +358,7 @@ pub fn ckks_coeffs_to_slots_split<BE, P, Dst, Src, H, K>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalScale,
+    P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
     Module<BE>: CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>
         + CKKSModuleAlloc<BE>
@@ -367,7 +367,7 @@ where
         + CKKSAddOps<BE>
         + CKKSSubOps<BE>
         + CKKSImagOps<BE>,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     K: CKKSAtkBounds<BE>,
     H: GLWEAutomorphismKeyHelper<K, BE>,
@@ -384,6 +384,9 @@ where
     module.ckks_sub_into(&mut tmp, ct_real, ct_imag, scratch)?;
     module.ckks_add_assign(ct_real, ct_imag, scratch)?;
     module.ckks_div_i_into(ct_imag, &tmp, scratch)?;
+    // Both halves are the (real) coefficients of the input polynomial.
+    ct_real.set_slots(SlotsKind::Real);
+    ct_imag.set_slots(SlotsKind::Real);
     Ok(())
 }
 
@@ -403,9 +406,9 @@ pub fn ckks_slots_to_coeffs_split<BE, P, Dst, Src, H, K>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalScale,
+    P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + CKKSAddOps<BE> + CKKSImagOps<BE>,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     K: CKKSAtkBounds<BE>,
     H: GLWEAutomorphismKeyHelper<K, BE>,
@@ -435,7 +438,7 @@ pub fn ckks_coeffs_to_slots_repack<BE, P, Dst, Src, H, K>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalScale,
+    P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
     Module<BE>: CKKSLinearTransformationOps<BE>
         + CnvPVecAlloc<BE>
         + CKKSModuleAlloc<BE>
@@ -445,7 +448,7 @@ where
         + CKKSSubOps<BE>
         + CKKSImagOps<BE>
         + CKKSRotateOps<BE>,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     K: CKKSAtkBounds<BE>,
     H: GLWEAutomorphismKeyHelper<K, BE>,
@@ -471,6 +474,8 @@ where
     // The repack doubles the live slot count.
     let log_sparsity = ct_in.log_sparsity().saturating_sub(1);
     ct_out.set_log_sparsity(log_sparsity);
+    // `[Re | Im]` packs the input polynomial's (real) coefficients.
+    ct_out.set_slots(SlotsKind::Real);
     Ok(())
 }
 
@@ -491,9 +496,9 @@ pub fn ckks_slots_to_coeffs_repack<BE, P, Dst, Src, H, K>(
 ) -> Result<()>
 where
     BE: Backend,
-    P: DiagonalProd<BE> + LtDiagonalScale,
+    P: DiagonalProd<BE> + LtDiagonalScale + IntPolyInfos,
     Module<BE>: CKKSLinearTransformationOps<BE> + CnvPVecAlloc<BE> + CKKSCopyOps<BE>,
-    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+    Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     K: CKKSAtkBounds<BE>,
     H: GLWEAutomorphismKeyHelper<K, BE>,

@@ -15,7 +15,7 @@ use poulpy_hal::{
 use crate::hal::helpers::{random_host_vec_znx, upload_host_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
 use crate::params::HalSweepParms;
 
-pub fn runner_vec_znx_lsh_assign<B: Backend, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
+pub fn runner_vec_znx_lsh_assign<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
     Module<B>: VecZnxLshAssignBackend<B> + VecZnxLshTmpBytes + ModuleNew<B> + VecZnxAlloc<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -40,7 +40,7 @@ where
     });
 }
 
-pub fn runner_vec_znx_lsh<B: Backend, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
+pub fn runner_vec_znx_lsh<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
     Module<B>: VecZnxLshBackend<B> + ModuleNew<B> + VecZnxAlloc<B> + VecZnxLshTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -67,7 +67,7 @@ where
     });
 }
 
-pub fn runner_vec_znx_rsh_assign<B: Backend, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
+pub fn runner_vec_znx_rsh_assign<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
     Module<B>: VecZnxRshAssignBackend<B> + ModuleNew<B> + VecZnxAlloc<B> + VecZnxRshTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -92,7 +92,7 @@ where
     });
 }
 
-pub fn runner_vec_znx_rsh<B: Backend, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
+pub fn runner_vec_znx_rsh<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
     Module<B>: VecZnxRshBackend<B> + ModuleNew<B> + VecZnxAlloc<B> + VecZnxRshTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,

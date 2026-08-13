@@ -1,16 +1,22 @@
 # Bootstrapping in Poulpy
 
 This document describes how Poulpy refreshes the homomorphic budget of a CKKS ciphertext.
-It covers the four-stage pipeline, the modulus-raise mechanism, the scale and budget accounting through each stage, the standard and EvalRound+ variants, the parameters and keys, and where to find the code.
+It covers the C2S-first and S2C-first pipelines, the modulus raise, budget accounting, optional techniques, parameters, and keys.
 
 ## Overview
 
 Given a ciphertext whose homomorphic budget has been consumed down to a small modulus, bootstrapping produces a ciphertext encrypting the same plaintext at a larger modulus, regaining budget.
 
-The usual pipeline is
+The C2S-first pipeline is
 
 ```text
 ModUp ─► CoeffsToSlots ─► EvalMod ─► SlotsToCoeffs
+```
+
+The slim S2C-first pipeline moves SlotsToCoeffs below the modulus raise:
+
+```text
+SlotsToCoeffs ─► ModUp ─► CoeffsToSlots ─► EvalMod
 ```
 
 ModUp is the modulus raise, provided by the bootstrapping trait (`CKKSBootstrappingOps`).
@@ -52,8 +58,9 @@ denseToSparse ─► ModUp ─► sparseToDense
 ```
 
 so `I·q` stays small and EvalMod can use a much smaller interval `K` with negligible failure probability ([eprint 2022/024](https://eprint.iacr.org/2022/024)).
-It is configured entirely on the key side: set `BootstrappingKeysLayout::encapsulation` (an `EncapsulationKeysLayout` carrying the ephemeral secret weight) to generate the two key-switching keys, and the pipeline enables the trick exactly when those keys are present in the key set.
-The keys are derived from the dense secret and so are part of the keys, not of the secret-independent `BootstrappingPlan`/`BootstrappingContext`.
+It is selected by the bootstrapping recipe through `BootstrappingTechniques::sparse_secret_encapsulation`, whose Hamming weight must be chosen together with EvalMod's interval.
+`BootstrappingKeysLayout::encapsulation` contains only the two physical key-switch layouts; key generation rejects its presence or absence when it disagrees with the compiled recipe, and execution likewise rejects a mismatched key set.
+The generated keys remain part of the key bundle, while the public Hamming-weight parameter is retained by the otherwise secret-independent `BootstrappingPlan`/`BootstrappingContext`.
 
 ## The homomorphic DFT (CoeffsToSlots / SlotsToCoeffs)
 
@@ -69,7 +76,7 @@ The split forward transform needs a conjugation key — the automorphism for Gal
 Scale accounting is implicit.
 Poulpy's torus plaintext-multiply already realigns its result to the input `log_delta` through its `cnv_offset`, so the rescale is folded into each linear-transform evaluation: the transform is simply one prepared linear transformation per factor, chained, with no explicit rescale between factors.
 Each factor consumes its per-factor `log_delta` of budget, so the whole transform consumes `num_factors × factor_log_delta` bits.
-Two constant scalings ride along the matrices for free: CoeffsToSlots is pre-scaled by `1/K` to land in EvalMod's `[−1, 1]` domain, and SlotsToCoeffs scales up by `2^log_msg_ratio` to restore the message scale.
+Two constant scalings ride along the matrices for free. CoeffsToSlots is pre-scaled by `1/K`. C2S-first uses `2^log_msg_ratio` on its final SlotsToCoeffs; S2C-first uses `1/2` on its initial SlotsToCoeffs to cancel the real/imaginary split.
 
 ## EvalMod
 
@@ -92,7 +99,7 @@ EvalMod runs at its own scale.
 ## Scale and budget chain
 
 A ciphertext enters at the input modulus `2^log_modulus_in` carrying `Δ·m` with `log_msg_ratio` bits of headroom, and leaves at the bootstrap modulus `2^k_boot` carrying the same `Δ·m` with a much larger budget.
-The budget is tracked exactly, stage by stage; the table below mirrors the per-stage assertions in the end-to-end test.
+For C2S-first, the budget is tracked as follows.
 
 | After stage | `log_budget` |
 | --- | --- |
@@ -102,28 +109,54 @@ The budget is tracked exactly, stage by stage; the table below mirrors the per-s
 | EvalMod | previous `−` `eval_mod.consumed_bits()` |
 | SlotsToCoeffs | previous `−` `slots_to_coeffs.consumed_bits()` |
 
-The whole pipeline consumes
+The total circuit cost is
 
 ```text
-consumed_bits = coeffs_to_slots.consumed_bits()
-              + eval_mod.consumed_bits()
-              + slots_to_coeffs.consumed_bits()
+consumed_bits = pre_mod_up_consumed_bits()
+              + post_mod_up_consumed_bits()
 ```
 
-and the bootstrap modulus is sized from that, leaving head-room for the refreshed output:
+S2C-first places SlotsToCoeffs at the bottom of the input modulus. CoeffsToSlots and EvalMod consume the top of the raised modulus. The plan exposes both sides directly:
 
 ```text
-k_boot = log_modulus_in + consumed_bits + levels_after_boot·log_delta
+k_in   = plan.input_k(log_modulus_in)
+k_boot = plan.bootstrap_k(k_out)
 ```
+
+`k_out` is the desired output torus width before limb rounding. For C2S-first it uses the post-SlotsToCoeffs scale; for S2C-first it uses the original input scale.
 
 EvalMod is charged at the scale it runs (`f_mod_log_delta`), not the message scale; the surrounding set-scale round-trip is budget-neutral and does not enter the total.
 
-## Standard and EvalRound+ pipelines
+## Functional bootstrapping
+
+Functional bootstrapping replaces the final identity refresh with a lookup table.
+`EncodedLut::general` interprets a table of length `p` as `table[m]` for integer messages `m = 0..p`; `p` must be a nonzero power of two.
+The input contract is:
+
+```text
+ct_in.log_budget() - slots_to_coeffs.consumed_bits() = log2(p)
+```
+
+The output scale is `ct_in.log_delta() + log2(p)`.
+Use `BootstrappingPlan::functional_bootstrap_k` to size the raised ciphertext for a desired output width, then round that width to whole limbs if necessary.
+LUTs are encoded on the host and uploaded once with `EncodedLut::to_backend`.
+
+General LUTs use trigonometric Hermite interpolation on the unit circle.
+They therefore require an S2C-first recipe whose EvalMod type is `ExpCmplx` with `scaling = 2π`.
+`ckks_functional_bootstrap` takes a slice of LUTs and a slice of outputs, so one LUT and many go through the same entry point: the batch shares the SlotsToCoeffs, ModUp and CoeffsToSlots stages, and equal-arity general LUTs additionally share the power basis of each transformed half (binary or mixed batches fall back to evaluating each LUT against the shared transformed input). Each imaginary half is folded into its output as it is produced, so the scratch bound does not grow with the batch size.
+Real slots are selected by the input's metadata rather than by a separate entry point: `ct.set_slots(SlotsKind::Real)` makes both `ckks_bootstrap` and `ckks_functional_bootstrap` skip the imaginary branch.
+
+`EncodedLut::binary` is specialized for two entries.
+Its cosine polynomial is controlled by `degree`, `k_interval`, and `log_interval_reduction`; it skips EvalMod and is cheaper than the general construction.
+For now it still uses a `BootstrappingPlan` containing an EvalMod plan because EvalMod is not optional in the compiled context, although those tables are not evaluated by the binary path.
+
+## Pipeline order and EvalRound+
 
 The orchestrator selects the pipeline from the compiled context.
 
-The **standard** pipeline feeds EvalMod's clean residue straight into SlotsToCoeffs.
-It is used when the context carries no bypass transform.
+The **C2S-first** pipeline feeds EvalMod's clean residue into SlotsToCoeffs. Without a bypass transform this is the standard recipe.
+
+The **S2C-first** pipeline splits the input into real and imaginary halves, applies the `1/2`-scaled SlotsToCoeffs at the bottom of the input modulus, and raises the resulting coefficient ciphertext. The standard variant then runs CoeffsToSlots and EvalMod at the top of the raised modulus; its two EvalMod outputs are recombined and relabeled at the original input scale.
 
 The **EvalRound+** pipeline ([eprint 2024/1379](https://eprint.iacr.org/2024/1379)) runs CoeffsToSlots twice — a low-precision transform that feeds EvalMod, and a high-precision "bypass" transform — and combines them as
 
@@ -132,13 +165,13 @@ r1 = r0_hp − K·r0_lp + EvalMod(r0_lp)
 ```
 
 The low-precision DFT error `e` cancels: the high-precision branch holds `Δm + I·q`, the scaled low-precision branch holds `Δm + I·q + e`, and EvalMod yields `Δm + e`, so the integer part and `e` both annihilate and leave `Δm` at the **high-precision** transform's accuracy.
-Because EvalMod only has to resolve the large integer part, halving its CoeffsToSlots precision shrinks the bootstrap modulus by `num_factors × (hp_log_delta − lp_log_delta)` bits, while the high-precision transform runs inside the depth the low-precision path already occupies and so does not enlarge `k_boot`.
-This pipeline is used when the context carries a bypass transform.
+Because EvalMod only has to resolve the large integer part, halving its CoeffsToSlots precision shrinks the bootstrap modulus by `num_factors × (hp_log_delta − lp_log_delta)` bits. The bootstrap budget charges the larger of the high-precision transform and the low-precision CoeffsToSlots plus EvalMod branch; with the standard parameters, the high-precision transform fits inside the latter and does not enlarge `k_boot`.
+EvalRound+ is used when either pipeline carries a bypass transform. With S2C-first, the initial SlotsToCoeffs remains below ModUp and the same LP/HP CoeffsToSlots cancellation runs above it.
 
 ## Parameters and keys
 
-A `BootstrappingPlan` is the parameter bundle: the two homomorphic DFT plans (and an optional bypass) and the EvalMod plan. (Sparse-secret encapsulation is key-material configuration — see `EncapsulationKeysLayout` above — not part of the plan.)
-The constructors validate once — `DFTPlan::new` checks the factorization schedule (`(depth, giant_step)` pairs in evaluation order), `BootstrappingPlan::new` checks the stage directions — so a plan that exists is always shape-valid and the derived-key APIs (`galois_elements`) are infallible.
+A `BootstrappingPlan` is the complete ModUp/EvalMod recipe: its C2S-first or S2C-first pipeline, optional techniques (sparse-secret encapsulation and EvalRound+), the two homomorphic DFT plans, and the EvalMod plan.
+The constructors validate once — `DFTPlan::new` checks the factorization schedule (`(depth, giant_step)` pairs in evaluation order), while `BootstrappingPlan::new` checks the selected pipeline, stage directions, sparse weight, and EvalRound+ constraints — so a plan that exists is always shape-valid and the derived-key APIs (`galois_elements`) are infallible.
 
 ```rust
 // Coefficient meta: CoeffsMeta::from_delta_budget(log_delta, log_budget).
@@ -161,6 +194,13 @@ let slots_to_coeffs = DFTPlan::new(
 .with_scaling((11_f64).exp2())?;            // 2^log_msg_ratio
 
 let plan = BootstrappingPlan::new(
+    BootstrappingPipeline::C2SFirst,
+    BootstrappingTechniques {
+        sparse_secret_encapsulation: Some(SparseSecretEncapsulation {
+            hamming_weight: 32,
+        }),
+        eval_round_plus: None,               // Some(EvalRoundPlus { ... }) selects EvalRound+
+    },
     coeffs_to_slots,
     EvalModPlan {
         eval_mod_type: EvalModType::CosHK,
@@ -175,10 +215,10 @@ let plan = BootstrappingPlan::new(
         f_mod_log_delta: 60,
     },
     slots_to_coeffs,
-)?;                                         // .with_coeffs_to_slots_bypass(..)? selects EvalRound+
+)?;
 ```
 
-`BootstrappingContext::compile` turns the plan into the resident, secret-independent form: the prepared backend-resident DFT matrices (with the `1/K` and message-ratio scalings baked in) and the encoded, uploaded EvalMod.
+`BootstrappingContext::compile` turns the plan into the resident, secret-independent form: the prepared backend-resident DFT matrices and the encoded, uploaded EvalMod.
 It is built once and reused across bootstraps.
 
 The keys are generated by `generate_keys`, which returns the unprepared `BootstrappingKeySet` — the serializable, GPU-resident form — and a `prepare` step preprocesses the whole set for evaluation.
@@ -193,10 +233,10 @@ Four key roles are used:
 
 ## Cost and where to look
 
-The pipeline costs the modulus of the three sub-circuits — `consumed_bits` above — and a handful of key-switches per DFT factor plus the EvalMod multiplications; the bootstrap modulus `k_boot` follows from the sizing formula.
+The total arithmetic cost is `consumed_bits`; its placement around ModUp is given by the pre- and post-ModUp costs.
 A small self-contained parameter set (ring degree `n = 2048`, `K = 16`, message ratio `2^11`, `log_delta = 45`, a degree-30 `CosHK` EvalMod) recovers the slots to a few bits of precision on the reference backend, which is the floor the end-to-end test asserts; wider parameters recover proportionally more.
 
-- `poulpy-ckks/src/test_suite/bootstrapping.rs` is the reference composition, with both the standard and the EvalRound+ pipelines spelled out stage by stage and cross-checked against the `ckks_bootstrap` orchestrator.
+- `poulpy-ckks/src/test_suite/bootstrapping.rs` contains the C2S-first, EvalRound+, and S2C-first reference compositions.
 - `poulpy-cpu-ref/examples/bootstrap_trace.rs` runs the standard pipeline for profiling.
 
 ```sh

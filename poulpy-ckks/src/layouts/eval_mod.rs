@@ -52,7 +52,7 @@ use crate::{
     polynomial::{BSGSPolynomial, ComplexBSGSPolynomial, ComplexPolynomial, Polynomial, SplitStrategy},
 };
 
-use super::{CKKSModuleAlloc, CKKSPlaintext, CKKSScalar};
+use super::{CKKSModuleAlloc, CKKSPlaintextOwned, CKKSScalar};
 
 // Fallible scalar conversions: building the host-side polynomials goes through
 // the generic float `F`, and a conversion that is not exactly representable in
@@ -139,7 +139,8 @@ pub struct EvalModPlan {
     /// the integer part wraps at the plaintext modulus `q = 2^k =
     /// 2^(log_delta + log_budget)`, so the ratio is `q/Δ = 2^log_budget` — i.e.
     /// `log_message_ratio` is the `log_budget` of the value being reduced, the bit
-    /// gap between the payload and the integer part.
+    /// gap between the payload and the integer part. Ignored by
+    /// [`EvalModType::ExpCmplx`].
     pub log_msg_ratio: usize,
     /// Degree of the base polynomial approximation.
     pub f_mod_degree: usize,
@@ -168,6 +169,29 @@ pub struct EvalModPlan {
 }
 
 impl EvalModPlan {
+    /// Builds the unit-circle exponential used by functional bootstrapping.
+    pub fn complex_exponential(
+        f_mod_degree: usize,
+        f_mod_interval: usize,
+        f_mod_log_interval_reduction: usize,
+        split_strategy: SplitStrategy,
+        coeffs_meta: CoeffsMeta,
+        f_mod_log_delta: usize,
+    ) -> Self {
+        Self {
+            eval_mod_type: EvalModType::ExpCmplx,
+            log_msg_ratio: 0,
+            f_mod_degree,
+            f_mod_interval,
+            f_mod_log_interval_reduction,
+            f_mod_inv_degree: None,
+            scaling: Some(std::f64::consts::TAU),
+            split_strategy,
+            coeffs_meta,
+            f_mod_log_delta,
+        }
+    }
+
     /// Multiplicative levels the eval_mod pipeline consumes: BSGS depth of the
     /// base `f` polynomial + `f_mod_log_interval_reduction` range-extension steps
     /// + BSGS depth of the optional inverse `f⁻¹` post-composition.
@@ -289,7 +313,7 @@ fn encode_bsgs_backend<BE, F>(
     coeff_meta: CoeffsMeta,
     strategy: SplitStrategy,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<BSGSPolynomial<CKKSPlaintext<BE::OwnedBuf>>>
+) -> Result<BSGSPolynomial<CKKSPlaintextOwned<BE>>>
 where
     BE: Backend,
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
@@ -314,7 +338,7 @@ fn encode_complex_bsgs_backend<BE, F>(
     coeff_meta: CoeffsMeta,
     strategy: SplitStrategy,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<ComplexBSGSPolynomial<CKKSPlaintext<BE::OwnedBuf>>>
+) -> Result<ComplexBSGSPolynomial<CKKSPlaintextOwned<BE>>>
 where
     BE: Backend,
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
@@ -343,7 +367,7 @@ pub fn compile_eval_mod<BE, F>(
     lit: EvalModPlan,
     module: &Module<BE>,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<EvalMod<F, CKKSPlaintext<BE::OwnedBuf>>>
+) -> Result<EvalMod<F, CKKSPlaintextOwned<BE>>>
 where
     BE: Backend,
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
@@ -487,7 +511,7 @@ fn compile_eval_mod_exp<BE, F>(
     lit: EvalModPlan,
     module: &Module<BE>,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<EvalMod<F, CKKSPlaintext<BE::OwnedBuf>>>
+) -> Result<EvalMod<F, CKKSPlaintextOwned<BE>>>
 where
     BE: Backend,
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,

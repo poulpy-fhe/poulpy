@@ -9,10 +9,11 @@
 //! [`CKKSEvalModOps`](crate::api::CKKSEvalModOps).
 
 use crate::{CKKSResult as Result, ckks_ensure};
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::{
     GLWECopy,
     layouts::{
-        BSGSMeta, Compact, GGLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, Rank, SetBSGSMeta,
+        BSGSMeta, GGLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, Rank, SetBSGSMeta,
         prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
@@ -22,7 +23,7 @@ use crate::{
     CKKSCtBounds, CKKSMeta, SetCKKSInfos,
     api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps},
     layouts::{
-        CKKSCiphertext, CKKSModuleAlloc, ScratchArenaTakeCKKS,
+        CKKSCiphertextOwned, CKKSModuleAlloc, ScratchArenaTakeCKKS,
         eval_mod::{EvalMod, EvalModBsgs},
     },
 };
@@ -57,11 +58,11 @@ pub trait CKKSEvalModOpsDefault<BE: Backend> {
             + CKKSModuleAlloc<BE>
             + Sized,
         BE: Backend,
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
         GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-        CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
+        CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos;
 }
 
 impl<BE: Backend> CKKSEvalModOpsDefault<BE> for Module<BE>
@@ -74,7 +75,7 @@ where
         + CKKSModuleAlloc<BE>
         + CKKSPow2Ops<BE>
         + GLWECopy<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
 {
     fn ckks_eval_mod_default<R, C, P, F>(
@@ -86,9 +87,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
+        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
     {
         eval_mod(self, res, ct, params, tsk, scratch)
     }
@@ -127,11 +128,11 @@ where
         + CKKSModuleAlloc<BE>
         + CKKSPow2Ops<BE>
         + GLWECopy<BE>,
-    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
+    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
     C: GLWEToBackendRef<BE> + CKKSCtBounds,
-    P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
+    P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta + IntPolyInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
 {
     // EvalMod runs at its own plan scale `f_mod_log_delta`: reinterpret the
     // working ciphertext to it on entry, then return the result to the input
@@ -172,6 +173,7 @@ where
             CKKSMeta {
                 log_delta: s_eval,
                 log_sparsity: ct.log_sparsity(),
+                slots: ct.slots(),
             },
         );
         module.glwe_copy(&mut t1, ct);
@@ -190,7 +192,6 @@ where
 
                 if let Some(inv) = params.f_mod_inv_bsgs.as_ref() {
                     module.ckks_copy(&mut t1, &*res, &mut scratch_local)?;
-                    Compact::compact(&mut t1);
                     module.ckks_eval_poly_real_const_coeffs(res, &t1, inv, tsk, &mut scratch_local)?;
                 }
             }
@@ -214,8 +215,6 @@ where
     if s_eval != s_in {
         res.set_log_delta(s_in);
     }
-
-    res.compact();
 
     Ok(())
 }

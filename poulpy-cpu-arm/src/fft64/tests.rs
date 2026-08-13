@@ -130,3 +130,13 @@ fn test_convolution_direct() {
     test_convolution_by_const(&module, 12);
     test_convolution_pairwise(&module, 12);
 }
+
+cross_backend_test_suite! {
+    mod word_compat,
+    backend_ref =  poulpy_cpu_ref::FFT64Ref,
+    backend_test = crate::FFT64Neon,
+    params = TestParams { size: 1<<8, base2k: 12 },
+    tests = {
+        test_word_compat_dft_cross_idft => poulpy_hal::test_suite::word_compat::test_word_compat_dft_cross_idft,
+    }
+}

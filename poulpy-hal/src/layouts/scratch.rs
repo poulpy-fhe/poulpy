@@ -117,7 +117,8 @@ impl<'a, B: Backend> ScratchArena<'a, B> {
 
     /// Splits this arena into `n` disjoint aligned chunks of `len` bytes each.
     pub fn split(self, n: usize, len: usize) -> (Vec<Self>, Self) {
-        assert!(self.available() >= n * len);
+        let needed = n.checked_mul(len).expect("scratch arena split byte size overflows usize");
+        assert!(self.available() >= needed);
         let mut arenas: Vec<Self> = Vec::with_capacity(n);
         let mut arena: Self = self;
         for _ in 0..n {
@@ -160,5 +161,14 @@ impl<'a, B: Backend> ScratchArena<'a, B> {
 
 #[inline]
 fn align_up<B: Backend>(offset: usize) -> usize {
-    offset.next_multiple_of(B::SCRATCH_ALIGN)
+    let align = B::SCRATCH_ALIGN;
+    assert!(align != 0, "B::SCRATCH_ALIGN must be non-zero");
+    let rem = offset % align;
+    if rem == 0 {
+        offset
+    } else {
+        offset
+            .checked_add(align - rem)
+            .expect("scratch arena alignment overflows usize")
+    }
 }

@@ -10,7 +10,7 @@ use poulpy_hal::{
 use crate::hal::helpers::{random_host_vec_znx, upload_host_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
 use crate::params::HalSweepParms;
 
-pub fn runner_vec_znx_negate<B: Backend, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
+pub fn runner_vec_znx_negate<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
     Module<B>: VecZnxNegateBackend<B> + ModuleNew<B> + VecZnxAlloc<B>,
 {
@@ -32,7 +32,7 @@ where
     });
 }
 
-pub fn runner_vec_znx_negate_assign<B: Backend, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
+pub fn runner_vec_znx_negate_assign<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
     Module<B>: VecZnxNegateAssignBackend<B> + ModuleNew<B> + VecZnxAlloc<B>,
 {

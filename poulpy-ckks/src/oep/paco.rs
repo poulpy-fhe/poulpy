@@ -1,13 +1,9 @@
 use crate::CKKSResult as Result;
+use crate::layouts::CKKSPlaintextOwned;
 use poulpy_core::layouts::{Base2K, GLWEToBackendRef};
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
-use crate::{
-    CKKSCtBounds,
-    api::PaCoScalar,
-    layouts::{CKKSPlaintext, PaCoPlan},
-    oep::CKKSEncodingImpl,
-};
+use crate::{CKKSCtBounds, api::PaCoScalar, layouts::PaCoPlan, oep::CKKSEncodingImpl};
 
 /// Backend extension point for the PaCo coefficient encoding: the ciphertext
 /// → four-β-plaintexts transformation consumed by PaCo's blind rotation.
@@ -54,7 +50,7 @@ pub unsafe trait CKKSPaCoCoeffEncodingImpl<BE: Backend>: Backend {
         plan: &PaCoPlan,
         base2k: Base2K,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<[CKKSPlaintext<BE::OwnedBuf>; 4]>
+    ) -> Result<[CKKSPlaintextOwned<BE>; 4]>
     where
         F: PaCoScalar,
         BE: CKKSEncodingImpl<BE, F>,

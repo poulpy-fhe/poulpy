@@ -1,4 +1,8 @@
 use super::{TestParams, download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
+use crate::layouts::VecZnxBigToBackendMut;
+use crate::layouts::VecZnxBigToBackendRef;
+use crate::layouts::VecZnxDftToBackendMut;
+use crate::layouts::VecZnxDftToBackendRef;
 
 use crate::{
     api::{
@@ -7,19 +11,16 @@ use crate::{
         VecZnxDftCopy, VecZnxDftSub, VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxIdftApply, VecZnxIdftApplyTmpA,
         VecZnxIdftApplyTmpBytes,
     },
-    layouts::{
-        Backend, FillUniform, HostBytesBackend, Module, ScratchOwned, VecZnx, VecZnxBig, VecZnxBigToBackendMut,
-        VecZnxBigToBackendRef, VecZnxDft, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef,
-    },
+    layouts::{FillUniform, HostBytesBackend, Module, ScratchOwned, VecZnx, VecZnxOwned, VecZnxToBackendMut, VecZnxToBackendRef},
     source::Source,
 };
 
-type VecZnxDftOwned<BE> = VecZnxDft<<BE as Backend>::OwnedBuf, BE>;
-type VecZnxBigOwned<BE> = VecZnxBig<<BE as Backend>::OwnedBuf, BE>;
+use crate::layouts::VecZnxBigOwned;
+use crate::layouts::VecZnxDftOwned;
 
 fn idft_into_alloc<BE>(module: &Module<BE>, a: &mut VecZnxDftOwned<BE>) -> VecZnxBigOwned<BE>
 where
-    BE: Backend,
+    BE: crate::test_suite::TestBackend,
     Module<BE>: VecZnxBigAlloc<BE> + VecZnxIdftApplyTmpA<BE>,
 {
     let cols = a.cols();
@@ -33,14 +34,14 @@ where
     res
 }
 
-fn dft_of_uploaded_vec_znx<BE>(
+pub(crate) fn dft_of_uploaded_vec_znx<BE>(
     module: &Module<BE>,
-    host: &VecZnx<impl crate::layouts::HostDataRef>,
+    host: &VecZnx<impl crate::layouts::HostDataRef, i64>,
     steps: usize,
     offset: usize,
 ) -> VecZnxDftOwned<BE>
 where
-    BE: Backend,
+    BE: crate::test_suite::TestBackend,
     Module<BE>: VecZnxDftAlloc<BE> + VecZnxDftApply<BE>,
 {
     let cols = host.cols();
@@ -53,7 +54,7 @@ where
             offset,
             &mut out.to_backend_mut(),
             j,
-            &<VecZnx<BE::OwnedBuf> as VecZnxToBackendRef<BE>>::to_backend_ref(&backend),
+            &<VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(&backend),
             j,
         );
     }
@@ -65,16 +66,16 @@ fn normalize_big_to_host<BE>(
     base2k: usize,
     big: &VecZnxBigOwned<BE>,
     scratch: &mut ScratchOwned<BE>,
-) -> VecZnx<Vec<u8>>
+) -> VecZnxOwned<BE::ZnxWord>
 where
-    BE: Backend,
+    BE: crate::test_suite::TestBackend,
     Module<BE>: VecZnxBigNormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
     let mut backend = module.vec_znx_alloc(big.cols(), big.size());
     for j in 0..big.cols() {
         module.vec_znx_big_normalize(
-            &mut <VecZnx<BE::OwnedBuf> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut backend),
+            &mut <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(&mut backend),
             base2k,
             0,
             j,
@@ -92,9 +93,9 @@ fn idft_tmpa_to_host<BE>(
     base2k: usize,
     dft: &mut VecZnxDftOwned<BE>,
     scratch: &mut ScratchOwned<BE>,
-) -> VecZnx<Vec<u8>>
+) -> VecZnxOwned<BE::ZnxWord>
 where
-    BE: Backend,
+    BE: crate::test_suite::TestBackend,
     Module<BE>: VecZnxBigAlloc<BE> + VecZnxIdftApplyTmpA<BE> + VecZnxBigNormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
@@ -102,15 +103,15 @@ where
     normalize_big_to_host(module, base2k, &big, scratch)
 }
 
-fn idft_apply_to_host<BE>(
+pub(crate) fn idft_apply_to_host<BE>(
     module: &Module<BE>,
     base2k: usize,
     dft: &VecZnxDftOwned<BE>,
     res_size: usize,
     scratch: &mut ScratchOwned<BE>,
-) -> VecZnx<Vec<u8>>
+) -> VecZnxOwned<BE::ZnxWord>
 where
-    BE: Backend,
+    BE: crate::test_suite::TestBackend,
     Module<BE>: VecZnxBigAlloc<BE> + VecZnxIdftApply<BE> + VecZnxBigNormalize<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
@@ -658,7 +659,7 @@ fn contract_check_one_backend<BE>(
     cols: usize,
     p_values: &[i64],
 ) where
-    BE: Backend,
+    BE: crate::test_suite::TestBackend,
     Module<BE>: VecZnxDftAlloc<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftAutomorphism<BE>

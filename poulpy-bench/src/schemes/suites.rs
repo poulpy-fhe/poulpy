@@ -5,7 +5,7 @@ use poulpy_bin_fhe::{
 use poulpy_ckks::api::{CKKSAddOps, CKKSConjugateOps, CKKSEncodingOps, CKKSMulOps, CKKSNegOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps};
 use poulpy_core::{
     GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
-    layouts::{GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWETensorKeyPreparedFactory},
+    layouts::{GGSWPreparedFactory, GLWEAutomorphismKeyPreparedFactory, GLWESecretPreparedFactory, GLWESecretSampling, GLWETensorKeyPreparedFactory, LWESecretSampling},
 };
 use poulpy_hal::{
     api::{ModuleN, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssignBackend},
@@ -27,7 +27,7 @@ use crate::{
 
 // ── add ──────────────────────────────────────────────────────────────────────
 
-pub fn ckks_add_ops<BE: Backend<OwnedBuf = Vec<u8>>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CkksBenchParams>; 3]
+pub fn ckks_add_ops<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CkksBenchParams>; 3]
 where
     Module<BE>: ModuleNew<BE> + CKKSAddOps<BE>,
 {
@@ -40,7 +40,7 @@ where
 
 // ── sub ──────────────────────────────────────────────────────────────────────
 
-pub fn ckks_sub_ops<BE: Backend<OwnedBuf = Vec<u8>>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CkksBenchParams>; 3]
+pub fn ckks_sub_ops<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CkksBenchParams>; 3]
 where
     Module<BE>: ModuleNew<BE> + CKKSSubOps<BE>,
 {
@@ -53,7 +53,7 @@ where
 
 // ── neg ──────────────────────────────────────────────────────────────────────
 
-pub fn ckks_neg_ops<BE: Backend<OwnedBuf = Vec<u8>>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CkksBenchParams>; 1]
+pub fn ckks_neg_ops<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CkksBenchParams>; 1]
 where
     Module<BE>: ModuleNew<BE> + CKKSNegOps<BE>,
 {
@@ -62,7 +62,7 @@ where
 
 // ── pow2 ─────────────────────────────────────────────────────────────────────
 
-pub fn ckks_pow2_ops<BE: Backend<OwnedBuf = Vec<u8>>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CkksBenchParams>; 2]
+pub fn ckks_pow2_ops<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CkksBenchParams>; 2]
 where
     Module<BE>: ModuleNew<BE> + CKKSPow2Ops<BE>,
 {
@@ -74,7 +74,7 @@ where
 
 // ── mul ──────────────────────────────────────────────────────────────────────
 
-pub fn ckks_mul_ops<BE: Backend<OwnedBuf = Vec<u8>>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CkksBenchParams>; 4]
+pub fn ckks_mul_ops<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: criterion::measurement::Measurement>() -> [BenchOp<M, CkksBenchParams>; 4]
 where
     Module<BE>: ModuleNew<BE> + CKKSMulOps<BE> + GLWETensorKeyPreparedFactory<BE>,
 {
@@ -88,7 +88,7 @@ where
 
 // ── rotate ───────────────────────────────────────────────────────────────────
 
-pub fn ckks_rotate_ops<BE: Backend<OwnedBuf = Vec<u8>>, M: criterion::measurement::Measurement>()
+pub fn ckks_rotate_ops<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: criterion::measurement::Measurement>()
 -> [BenchOp<M, CkksBenchParams>; 1]
 where
     Module<BE>: ModuleNew<BE> + CKKSRotateOps<BE> + GLWEAutomorphismKeyPreparedFactory<BE>,
@@ -98,7 +98,7 @@ where
 
 // ── conjugate ────────────────────────────────────────────────────────────────
 
-pub fn ckks_conjugate_ops<BE: Backend<OwnedBuf = Vec<u8>>, M: criterion::measurement::Measurement>()
+pub fn ckks_conjugate_ops<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: criterion::measurement::Measurement>()
 -> [BenchOp<M, CkksBenchParams>; 1]
 where
     Module<BE>: ModuleNew<BE> + CKKSConjugateOps<BE> + GLWEAutomorphismKeyPreparedFactory<BE>,
@@ -108,7 +108,7 @@ where
 
 // ── encoding ─────────────────────────────────────────────────────────────────
 
-pub fn ckks_encoding_ops<BE: Backend<OwnedBuf = Vec<u8>>, M: criterion::measurement::Measurement>()
+pub fn ckks_encoding_ops<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: criterion::measurement::Measurement>()
 -> [BenchOp<M, CkksBenchParams>; 4]
 where
     Module<BE>: ModuleNew<BE> + CKKSEncodingOps<BE, f64>,
@@ -126,7 +126,7 @@ where
 /// Concatenates every CKKS-layer group into a single table. Requires a
 /// backend that implements the full CKKS API; a backend supporting only part
 /// of it should instead compose the `ckks_*_ops` tables it needs directly.
-pub fn all_ops<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend, M: criterion::measurement::Measurement>() -> Vec<BenchOp<M, CkksBenchParams>> 
+pub fn all_ops<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend, M: criterion::measurement::Measurement>() -> Vec<BenchOp<M, CkksBenchParams>> 
 where
     Module<BE>: ModuleNew<BE>
         + CKKSAddOps<BE>
@@ -154,7 +154,7 @@ where
 
 // ── bin_fhe ──────────────────────────────────────────────────────────────────
 
-pub fn blind_rotate_ops<BE: Backend<OwnedBuf = Vec<u8>>, BRA: BlindRotationAlgo, M: criterion::measurement::Measurement>()
+pub fn blind_rotate_ops<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, BRA: BlindRotationAlgo, M: criterion::measurement::Measurement>()
 -> [BenchOp<M, BlindRotateBenchParams>; 1]
 where
     Module<BE>: ModuleN
@@ -162,16 +162,18 @@ where
         + BlindRotationKeyEncryptSk<BRA, BE>
         + BlindRotationKeyPreparedFactory<BRA, BE>
         + BlindRotationExecute<BRA, BE>
-        + LookupTableFactory
+        + LookupTableFactory<BE::OwnedBuf, BE::ZnxWord>
         + GLWESecretPreparedFactory<BE>
         + GLWEDecrypt<BE>
-        + LWEEncryptSk<BE>,
+        + LWEEncryptSk<BE>
+        + GLWESecretSampling<BE>
+        + LWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     [BenchOp { name: "blind_rotate", runner: bin_fhe::runner_blind_rotate::<BE, BRA, _> }]
 }
 
-pub fn circuit_bootstrapping_ops<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend, BRA: BlindRotationAlgo, M: criterion::measurement::Measurement>()
+pub fn circuit_bootstrapping_ops<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend, BRA: BlindRotationAlgo, M: criterion::measurement::Measurement>()
 -> [BenchOp<M, CircuitBootstrappingBenchParam>; 1]
 where
     Module<BE>: ModuleNew<BE>
@@ -186,7 +188,9 @@ where
         + GGSWPreparedFactory<BE>
         + GGSWNoise<BE>
         + GLWEEncryptSk<BE>
-        + VecZnxRotateAssignBackend<BE>,
+        + VecZnxRotateAssignBackend<BE>        
+        + GLWESecretSampling<BE>
+        + LWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     [BenchOp { name: "circuit_bootstrapping", runner: bin_fhe::runner_circuit_bootstrapping::<BE, BRA, _> }]

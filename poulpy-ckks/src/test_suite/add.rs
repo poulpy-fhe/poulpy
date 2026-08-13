@@ -40,6 +40,7 @@
 //! | [`test_add_const_into_real_only`] | out-of-place, real coefficient only |
 //! | [`test_add_const_into_lsh_alignment`] | out-of-place, constant `max_k` above budget → left-shift alignment |
 use crate::{CKKSCompositionError, CKKSInfos, SetCKKSInfos, api::CKKSAddOps, layouts::CKKSModuleAlloc};
+use poulpy_core::layouts::IntPolyInfos;
 
 use super::helpers::{
     ADD_SUB_CONST, PT_PREC, TestContextBackend, TestContextModule, TestScalar, TestVector, add_sub_const_pt, alloc_ct,
@@ -725,9 +726,9 @@ pub fn test_add_pt_vec_into_lsh_alignment<BE, F, E>(
     let pt_prec = ckks_spec(params.n, params.base2k, PT_PREC.log_delta(), ct1.log_budget());
     let pt = encode_and_upload_pt(host_module, module, &encoder, params.base2k.into(), pt_prec, &re2, &im2);
     assert!(
-        pt.max_k().as_usize() > ct1.log_budget() + pt.log_delta(),
+        pt.encoded_k().as_usize() > ct1.log_budget() + pt.log_delta(),
         "test setup no longer triggers the Lsh alignment path (max_k={} <= available={})",
-        pt.max_k().as_usize(),
+        pt.encoded_k().as_usize(),
         ct1.log_budget() + pt.log_delta()
     );
     let (want_re, want_im) = want_add(
@@ -851,9 +852,9 @@ pub fn test_add_const_into_lsh_alignment<BE, F, E>(
         Some(ADD_SUB_CONST.1),
     );
     assert!(
-        cst.max_k().as_usize() > ct.log_budget() + cst.log_delta(),
+        cst.encoded_k().as_usize() > ct.log_budget() + cst.log_delta(),
         "test setup no longer triggers the Lsh alignment path (max_k={} <= available={})",
-        cst.max_k().as_usize(),
+        cst.encoded_k().as_usize(),
         ct.log_budget() + cst.log_delta()
     );
     module

@@ -16,8 +16,8 @@
 //!
 //! # Scalar types
 //!
-//! - `ScalarPrep = Q126Scalar` — 24-byte marker for three planar prime residues.
-//! - `ScalarBig  = i128` — CRT-reconstructed large coefficients.
+//! - `DftWord = Q126Scalar` — 24-byte marker for three planar prime residues.
+//! - `BigWord  = i128` — CRT-reconstructed large coefficients.
 
 pub(crate) mod bbc_meta;
 pub(crate) mod convolution;
@@ -48,8 +48,8 @@ mod tests;
 ///
 /// # Backend characteristics
 ///
-/// - **ScalarPrep**: `Q126Scalar` — 24-byte marker for three planar prime residues.
-/// - **ScalarBig**: `i128` — large-coefficient ring elements use 128-bit signed integers.
+/// - **DftWord**: `Q126Scalar` — 24-byte marker for three planar prime residues.
+/// - **BigWord**: `i128` — large-coefficient ring elements use 128-bit signed integers.
 /// - **Prime set**: `Primes42` (three ~42-bit primes, Q ≈ 2^126).
 ///
 /// # CPU feature requirements
@@ -61,5 +61,5 @@ mod tests;
 /// # Thread safety
 ///
 /// `NTT3x42Ifma` is `Send + Sync` (derived from being a zero-sized, field-less struct).
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NTT3x42Ifma;

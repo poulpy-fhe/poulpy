@@ -9,7 +9,7 @@
 use crate::{CKKSResult as Result, ckks_ensure};
 use anyhow::Context;
 use poulpy_core::layouts::{
-    Compact, GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyPreparedToBackendRef, GLWEInfos, GLWETensorKeyPreparedToBackendRef,
+    GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyPreparedToBackendRef, GLWEInfos, GLWETensorKeyPreparedToBackendRef,
     GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos, TorusPrecision,
 };
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
@@ -19,7 +19,7 @@ use crate::{
     CKKSCompositionError, CKKSCtBounds, CKKSInfos, CKKSMeta,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSSubOps, PaCoScalar},
     layouts::{
-        CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext,
+        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned,
         paco::{
             context::{PaCoContext, PaCoPsiTailMaterial},
             keyset::{PaCoKeyParameters, PaCoKeys, validate_backend_storage_capacity, validate_gadget_backend_view},
@@ -99,7 +99,7 @@ pub(crate) fn branch_working_k(plan: &PaCoPlan, output_k: usize) -> Result<usize
 pub(crate) fn validate_runtime<BE, F, K, Src>(
     module: &Module<BE>,
     context: &PaCoContext<BE, F>,
-    output: &CKKSCiphertext<BE::OwnedBuf>,
+    output: &CKKSCiphertextOwned<BE>,
     input: &Src,
     keys: &K,
 ) -> Result<(usize, usize)>
@@ -145,11 +145,6 @@ where
         "PaCo input scale {} exceeds its torus width {}",
         input.log_delta(),
         input.k()
-    );
-    ckks_ensure!(
-        input.log_sparsity() == 0,
-        "PaCo input must be dense, got log_sparsity={}",
-        input.log_sparsity()
     );
     validate_backend_storage_capacity::<BE, _>("PaCo input", input)?;
 
@@ -285,7 +280,7 @@ where
 /// validation is completed before the output is mutated.
 pub(crate) fn paco_bootstrap_branch_validated_into<BE, F, K, Src>(
     module: &Module<BE>,
-    output: &mut CKKSCiphertext<BE::OwnedBuf>,
+    output: &mut CKKSCiphertextOwned<BE>,
     input: &Src,
     context: &PaCoContext<BE, F>,
     keys: &K,
@@ -305,8 +300,8 @@ where
         + CKKSModuleAlloc<BE>
         + CyclotomicOrder,
     F: PaCoScalar,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let (output_scale, expected_final_k) = output_meta;
@@ -434,8 +429,9 @@ where
     // re-applied only after this function returns. So the ciphertext produced
     // here genuinely carries sparsity `log2(N/C)`, and that is its metadata.
     // When `kappa > 1`, the driver later re-stamps the finer `log2(N/(kappa*C))`
-    // gap — not a correction, but the genuinely denser structure the recombined
-    // sum of `kappa` interleaved branches then holds.
+    // gap, which is not a correction but the genuinely denser structure the
+    // recombined sum of `kappa` interleaved branches then holds: for the
+    // derived `kappa = N/(C*2^s)` that is the input's own `s`.
     let gap = plan.n() / plan.c();
     ckks_ensure!(
         gap.is_power_of_two(),
@@ -444,6 +440,7 @@ where
     output.set_meta_checked(CKKSMeta {
         log_delta: output_scale,
         log_sparsity: gap.trailing_zeros() as usize,
+        slots: input.slots(),
     })?;
 
     // Write the result into the caller's destination. The accumulator already carries

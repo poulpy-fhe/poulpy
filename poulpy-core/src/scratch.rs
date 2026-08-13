@@ -160,7 +160,7 @@ pub trait ScratchArenaTakeCore<'a, B: Backend>: ScratchArenaTakeBasic<'a, B> + S
     where
         B: 'a,
     {
-        let (data, scratch) = self.take_scalar_znx_scratch(n.into(), GLWESecretTensor::pairs(rank.into()));
+        let (data, scratch) = self.take_scalar_znx_scratch(n.into(), crate::layouts::pairs(rank.into()));
         (
             GLWESecretTensorViewMut::from_inner(GLWESecretTensor {
                 data: data.into_inner(),

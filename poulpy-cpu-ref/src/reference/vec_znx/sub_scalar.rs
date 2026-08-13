@@ -12,7 +12,7 @@ pub fn vec_znx_sub_scalar<'r, 'a, BE>(
     b_col: usize,
     b_limb: usize,
 ) where
-    BE: Backend + ZnxSub + ZnxZero,
+    BE: Backend<ZnxWord = i64> + ZnxSub + ZnxZero,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
@@ -43,7 +43,7 @@ pub fn vec_znx_sub_scalar_assign<'r, 'a, BE>(
     a: &ScalarZnxBackendRef<'a, BE>,
     a_col: usize,
 ) where
-    BE: Backend + ZnxSubAssign,
+    BE: Backend<ZnxWord = i64> + ZnxSubAssign,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {

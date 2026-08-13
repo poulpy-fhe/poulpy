@@ -2,7 +2,7 @@ use std::{collections::HashMap, hint::black_box};
 
 use criterion::{BenchmarkId, Criterion};
 use poulpy_ckks::{
-    CKKSMeta, SetCKKSInfos,
+    CKKSMeta, SetCKKSInfos, SlotsKind,
     api::{
         CKKSAddManyOps, CKKSAddOps, CKKSConjugateOps, CKKSDotProductOps, CKKSMulAddOps, CKKSMulOps, CKKSMulSubOps, CKKSNegOps,
         CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
@@ -90,7 +90,7 @@ const CKKS_MUL_SWEEP: &[CkksMulParams] = &[
 ];
 
 pub trait CkksBenchBackend:
-    Backend<OwnedBuf = Vec<u8>>
+    Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>
     + CKKSImpl<Self>
     + GLWEKeyswitchImpl<Self>
     + GLWEAddImpl<Self>
@@ -127,7 +127,7 @@ pub trait CkksBenchBackend:
 where
     Self: Sized,
     Module<Self>: ModuleNew<Self>
-        + ModuleCoreAlloc<OwnedBuf = Self::OwnedBuf>
+        + ModuleCoreAlloc<OwnedBuf = Self::OwnedBuf, ZnxWord = i64>
         + GLWETensorKeyPreparedFactory<Self>
         + GLWEAutomorphismKeyPreparedFactory<Self>
         + CKKSAddOps<Self>
@@ -149,7 +149,7 @@ where
 
 impl<BE> CkksBenchBackend for BE
 where
-    BE: Backend<OwnedBuf = Vec<u8>>
+    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>
         + CKKSImpl<BE>
         + GLWEKeyswitchImpl<BE>
         + GLWEAddImpl<BE>
@@ -184,7 +184,7 @@ where
         + HalConvolutionImpl<BE>
         + LinearTransformationImpl<BE>,
     Module<BE>: ModuleNew<BE>
-        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
         + GLWETensorKeyPreparedFactory<BE>
         + GLWEAutomorphismKeyPreparedFactory<BE>
         + CKKSAddOps<BE>
@@ -210,12 +210,12 @@ where
 {
     module: Module<BE>,
     scratch: ScratchOwned<BE>,
-    ct_a: CKKSCiphertext<Vec<u8>>,
-    ct_b: CKKSCiphertext<Vec<u8>>,
-    ct_dst: CKKSCiphertext<Vec<u8>>,
-    pt: CKKSPlaintext<Vec<u8>>,
-    cst: CKKSPlaintext<Vec<u8>>,
-    const_full: CKKSPlaintext<Vec<u8>>,
+    ct_a: CKKSCiphertext<Vec<u8>, i64>,
+    ct_b: CKKSCiphertext<Vec<u8>, i64>,
+    ct_dst: CKKSCiphertext<Vec<u8>, i64>,
+    pt: CKKSPlaintext<Vec<u8>, i64>,
+    cst: CKKSPlaintext<Vec<u8>, i64>,
+    const_full: CKKSPlaintext<Vec<u8>, i64>,
     tsk: poulpy_core::layouts::GLWETensorKeyPrepared<BE::OwnedBuf, BE>,
     atks: HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
 }
@@ -233,6 +233,7 @@ fn ckks_ct_meta() -> CKKSMeta {
     CKKSMeta {
         log_sparsity: 0,
         log_delta: LOG_DELTA,
+        slots: SlotsKind::Complex,
     }
 }
 
@@ -240,6 +241,7 @@ fn ckks_pt_meta() -> CKKSMeta {
     CKKSMeta {
         log_sparsity: 0,
         log_delta: LOG_DELTA,
+        slots: SlotsKind::Complex,
     }
 }
 
@@ -269,7 +271,7 @@ fn atk_layout() -> EncryptionLayout<GLWEAutomorphismKeyLayout> {
     .unwrap()
 }
 
-fn reset_dst(dst: &mut CKKSCiphertext<Vec<u8>>) {
+fn reset_dst(dst: &mut CKKSCiphertext<Vec<u8>, i64>) {
     dst.data_mut().raw_mut().fill(0);
     dst.set_meta_checked(ckks_ct_meta()).unwrap();
 }
@@ -293,14 +295,14 @@ fn build_linear_transform<BE>(
     module: &Module<BE>,
     diag_indices: &[usize],
     strategy: LinearTransformationStrategy,
-) -> LinearTransformation<CKKSPlaintext<Vec<u8>>>
+) -> LinearTransformation<CKKSPlaintext<Vec<u8>, i64>>
 where
     BE: CkksBenchBackend,
 {
     let n1 = strategy_giant_step(strategy);
     let baby_steps: Vec<i64> = (0..n1).map(|k| k as i64).collect();
     let n2 = diag_indices.iter().copied().max().map_or(0, |i| (i / n1) + 1);
-    let mut giant_steps: Vec<GiantStep<CKKSPlaintext<Vec<u8>>>> = (0..n2)
+    let mut giant_steps: Vec<GiantStep<CKKSPlaintext<Vec<u8>, i64>>> = (0..n2)
         .map(|j| GiantStep {
             rot: (n1 * j) as i64,
             diagonals: Vec::new(),
@@ -323,7 +325,7 @@ where
 
 fn prepare_linear_transform<BE>(
     module: &Module<BE>,
-    lt: &LinearTransformation<CKKSPlaintext<Vec<u8>>>,
+    lt: &LinearTransformation<CKKSPlaintext<Vec<u8>, i64>>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> LinearTransformationPrepared<BE>
 where
@@ -348,7 +350,7 @@ where
 fn prepare_babies<BE>(
     module: &Module<BE>,
     baby_steps: &[i64],
-    src: &CKKSCiphertext<Vec<u8>>,
+    src: &CKKSCiphertext<Vec<u8>, i64>,
     atks: &HashMap<i64, GLWEAutomorphismKeyPrepared<BE::OwnedBuf, BE>>,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> LinearTransformationBabySteps<BE>
@@ -510,7 +512,7 @@ where
 fn bench_lt_case<BE>(
     group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
     module: &Module<BE>,
-    ct_src: &CKKSCiphertext<Vec<u8>>,
+    ct_src: &CKKSCiphertext<Vec<u8>, i64>,
     label: &str,
     diag_indices: &[usize],
     strategy: LinearTransformationStrategy,
@@ -740,6 +742,7 @@ fn mul_ckks_ct_meta(p: &CkksMulParams) -> CKKSMeta {
     CKKSMeta {
         log_sparsity: 0,
         log_delta: p.log_delta,
+        slots: SlotsKind::Complex,
     }
 }
 
@@ -755,7 +758,13 @@ fn mul_tsk_layout(p: &CkksMulParams) -> GLWETensorKeyLayout {
     }
 }
 
+<<<<<<< HEAD:poulpy-bench/old_benches/ckks.rs
 fn reset_dst_meta(dst: &mut CKKSCiphertext<Vec<u8>>, meta: CKKSMeta) {
+=======
+fn reset_dst_meta(dst: &mut CKKSCiphertext<Vec<u8>, i64>, meta: CKKSMeta) {
+    dst.data_mut().raw_mut().fill(0);
+    dst.set_meta_checked(meta).unwrap();
+>>>>>>> main:poulpy-bench/src/bench_suite/ckks.rs
 }
 
 /// Lean per-size setup for the `ckks_mul` sweep: only the operands, plaintexts,
@@ -930,8 +939,8 @@ where
     BE: CkksBenchBackend,
 {
     let mut s = setup::<BE>();
-    let many_a: Vec<&CKKSCiphertext<Vec<u8>>> = (0..MANY_TERMS).map(|_| &s.ct_a).collect();
-    let many_b: Vec<&CKKSCiphertext<Vec<u8>>> = (0..MANY_TERMS).map(|_| &s.ct_b).collect();
+    let many_a: Vec<&CKKSCiphertext<Vec<u8>, i64>> = (0..MANY_TERMS).map(|_| &s.ct_a).collect();
+    let many_b: Vec<&CKKSCiphertext<Vec<u8>, i64>> = (0..MANY_TERMS).map(|_| &s.ct_b).collect();
     let pts: Vec<&_> = (0..MANY_TERMS).map(|_| &s.pt).collect();
     let const_fulls: Vec<&_> = (0..MANY_TERMS).map(|_| &s.const_full).collect();
     let pt_coeffs: Vec<usize> = vec![0; MANY_TERMS];

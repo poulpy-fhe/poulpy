@@ -22,16 +22,16 @@ fn glwe_layout(cp: &CoreParams) -> GLWELayout {
     }
 }
 
-pub fn runner_glwe_add_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
+pub fn runner_glwe_add_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
 where
     Module<BE>: ModuleNew<BE> + GLWEAdd<BE>,
 {
     let infos = glwe_layout(cp);
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);
 
-    let mut res: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&infos);
-    let a: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&infos);
-    let b: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&infos);
+    let mut res: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
+    let a: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
+    let b: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
 
     bencher.iter(|| {
         module.glwe_add_into(&mut res, &a, &b);
@@ -39,7 +39,7 @@ where
     });
 }
 
-pub fn runner_glwe_add_assign<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+pub fn runner_glwe_add_assign<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CoreParams,
 ) where
@@ -48,8 +48,8 @@ pub fn runner_glwe_add_assign<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
     let infos = glwe_layout(cp);
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);
 
-    let mut res: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&infos);
-    let b: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&infos);
+    let mut res: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
+    let b: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
 
     bencher.iter(|| {
         module.glwe_add_assign(&mut res, &b);
@@ -57,16 +57,16 @@ pub fn runner_glwe_add_assign<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
     });
 }
 
-pub fn runner_glwe_sub<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
+pub fn runner_glwe_sub<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
 where
     Module<BE>: ModuleNew<BE> + GLWESub<BE>,
 {
     let infos = glwe_layout(cp);
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);
 
-    let mut res: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&infos);
-    let a: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&infos);
-    let b: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&infos);
+    let mut res: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
+    let a: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
+    let b: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
 
     bencher.iter(|| {
         module.glwe_sub(&mut res, &a, &b);
@@ -74,7 +74,7 @@ where
     });
 }
 
-pub fn runner_glwe_sub_assign<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+pub fn runner_glwe_sub_assign<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CoreParams,
 ) where
@@ -83,8 +83,8 @@ pub fn runner_glwe_sub_assign<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
     let infos = glwe_layout(cp);
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);
 
-    let mut res: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&infos);
-    let b: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&infos);
+    let mut res: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
+    let b: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
 
     bencher.iter(|| {
         module.glwe_sub_assign(&mut res, &b);
@@ -92,7 +92,7 @@ pub fn runner_glwe_sub_assign<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
     });
 }
 
-pub fn runner_glwe_normalize<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+pub fn runner_glwe_normalize<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CoreParams,
 ) where
@@ -104,8 +104,8 @@ pub fn runner_glwe_normalize<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
     let infos = glwe_layout(cp);
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);
 
-    let mut res: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&infos);
-    let a: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&infos);
+    let mut res: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
+    let a: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_normalize_tmp_bytes());
 
     bencher.iter(|| {
@@ -114,7 +114,7 @@ pub fn runner_glwe_normalize<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
     });
 }
 
-pub fn runner_glwe_normalize_assign<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+pub fn runner_glwe_normalize_assign<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CoreParams,
 ) where
@@ -125,7 +125,7 @@ pub fn runner_glwe_normalize_assign<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurem
     let infos = glwe_layout(cp);
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);
 
-    let mut res: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&infos);
+    let mut res: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_normalize_tmp_bytes());
 
     bencher.iter(|| {
@@ -134,7 +134,7 @@ pub fn runner_glwe_normalize_assign<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurem
     });
 }
 
-pub fn runner_glwe_mul_plain<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+pub fn runner_glwe_mul_plain<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CoreParams,
 ) where
@@ -145,9 +145,9 @@ pub fn runner_glwe_mul_plain<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
     let infos = glwe_layout(cp);
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);
 
-    let mut ct_out: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&infos);
-    let ct_in: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&infos);
-    let pt: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&infos);
+    let mut ct_out: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
+    let ct_in: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
+    let pt: GLWEPlaintext<Vec<u8>, i64> = module.glwe_plaintext_alloc_from_infos(&infos);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_mul_plain_tmp_bytes(&ct_out, &ct_in, &pt)*2); // TODO: have to double it for some reason.
 
     bencher.iter(|| {
@@ -156,7 +156,7 @@ pub fn runner_glwe_mul_plain<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
     });
 }
 
-pub fn runner_glwe_mul_plain_assign<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+pub fn runner_glwe_mul_plain_assign<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CoreParams,
 ) where
@@ -167,8 +167,8 @@ pub fn runner_glwe_mul_plain_assign<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurem
     let infos = glwe_layout(cp);
     let module: Module<BE> = Module::<BE>::new(cp.n as u64);
 
-    let mut ct: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&infos);
-    let pt: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&infos);
+    let mut ct: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
+    let pt: GLWEPlaintext<Vec<u8>, i64> = module.glwe_plaintext_alloc_from_infos(&infos);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_mul_plain_tmp_bytes(&infos, &ct, &pt)*2); // TODO: have to double it for some reason.
 
     bencher.iter(|| {

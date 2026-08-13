@@ -21,6 +21,7 @@ use poulpy_bin_fhe::{
         CircuitBootstrappingKeyLayout, CircuitBootstrappingKeyPrepared,
     },
 };
+use poulpy_core::layouts::{GLWESecretSampling, LWESecretSampling};
 use poulpy_hal::{
     api::{ModuleN, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, HostBackend, HostDataMut, HostDataRef, Module, ScratchArena, ScratchOwned},
@@ -28,7 +29,7 @@ use poulpy_hal::{
 };
 
 // Common setup data structure
-struct BenchmarkSetup<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend, BRA: BlindRotationAlgo> {
+struct BenchmarkSetup<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend, BRA: BlindRotationAlgo> {
     module: Module<BE>,
     scratch: ScratchOwned<BE>,
     a_enc_prepared: FheUintPrepared<BE::OwnedBuf, u32, BE>,
@@ -45,7 +46,7 @@ struct Params {
     bdd_layout: BDDKeyLayout,
 }
 
-fn setup_benchmark<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend, BRA: BlindRotationAlgo>(
+fn setup_benchmark<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend, BRA: BlindRotationAlgo>(
     params: &Params,
 ) -> BenchmarkSetup<BE, BRA>
 where
@@ -59,7 +60,9 @@ where
         + BDDKeyEncryptSk<BRA, BE>
         + BDDKeyPreparedFactory<BRA, BE>
         + FheUintPrepare<BRA, BE>
-        + ExecuteBDDCircuit2WTo1W<BE>,
+        + ExecuteBDDCircuit2WTo1W<BE>
+        + GLWESecretSampling<BE>
+        + LWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     BE::OwnedBuf: HostDataRef + HostDataMut,
     for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
@@ -78,15 +81,15 @@ where
     let mut source_xa: Source = Source::new([1u8; 32]);
     let mut source_xe: Source = Source::new([1u8; 32]);
 
-    let mut sk_lwe: LWESecret<Vec<u8>> = module.lwe_secret_alloc(n_lwe);
-    sk_lwe.fill_binary_block(params.block_size, &mut source_xs);
+    let mut sk_lwe: LWESecret<Vec<u8>, i64> = module.lwe_secret_alloc(n_lwe);
+    module.lwe_secret_fill_binary_block(&mut sk_lwe, params.block_size, &mut source_xs);
 
-    let mut sk_glwe: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank);
-    sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
+    let mut sk_glwe: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc(rank);
+    module.glwe_secret_fill_ternary_prob(&mut sk_glwe, 0.5, &mut source_xs);
 
     // Circuit bootstrapping evaluation key
     let cbt_enc_infos = CircuitBootstrappingEncryptionInfos::from_default_sigma(&params.bdd_layout.cbt_layout).unwrap();
-    let mut cbt_key: CircuitBootstrappingKey<Vec<u8>, BRA> =
+    let mut cbt_key: CircuitBootstrappingKey<BE::OwnedBuf, BRA, BE::ZnxWord> =
         CircuitBootstrappingKey::alloc_from_infos(&module, &params.bdd_layout.cbt_layout);
     cbt_key.encrypt_sk(
         &module,
@@ -107,7 +110,7 @@ where
 
     let bdd_enc_infos = BDDEncryptionInfos::from_default_sigma(&params.bdd_layout).unwrap();
     let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(params.glwe_layout).unwrap();
-    let mut bdd_key: BDDKey<Vec<u8>, BRA> = BDDKey::alloc_from_infos(&module, &params.bdd_layout);
+    let mut bdd_key: BDDKey<BE::OwnedBuf, BRA, BE::ZnxWord> = BDDKey::alloc_from_infos(&module, &params.bdd_layout);
     bdd_key.encrypt_sk(
         &module,
         &sk_lwe,
@@ -121,7 +124,7 @@ where
     let input_a = 255_u32;
     let input_b = 30_u32;
 
-    let mut a_enc: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&module, &params.glwe_layout);
+    let mut a_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> = FheUint::alloc_from_infos(&module, &params.glwe_layout);
     a_enc.encrypt_sk(
         &module,
         input_a,
@@ -132,7 +135,7 @@ where
         &mut scratch.borrow(),
     );
 
-    let mut b_enc: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&module, &params.glwe_layout);
+    let mut b_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> = FheUint::alloc_from_infos(&module, &params.glwe_layout);
     b_enc.encrypt_sk(
         &module,
         input_b,
@@ -172,7 +175,7 @@ where
     }
 }
 
-fn create_runner<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend, BRA: BlindRotationAlgo, F>(
+fn create_runner<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend, BRA: BlindRotationAlgo, F>(
     setup: BenchmarkSetup<BE, BRA>,
     operation: F,
 ) -> impl FnMut()
@@ -180,7 +183,7 @@ where
     Module<BE>: ExecuteBDDCircuit2WTo1W<BE>,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
     F: Fn(
-        &mut FheUint<Vec<u8>, u32>,
+        &mut FheUint<BE::OwnedBuf, u32, BE::ZnxWord>,
         &Module<BE>,
         &FheUintPrepared<BE::OwnedBuf, u32, BE>,
         &FheUintPrepared<BE::OwnedBuf, u32, BE>,
@@ -197,7 +200,7 @@ where
         glwe_layout,
     } = setup;
 
-    let mut c_enc: FheUint<Vec<u8>, u32> = FheUint::alloc_from_infos(&module, &glwe_layout);
+    let mut c_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> = FheUint::alloc_from_infos(&module, &glwe_layout);
 
     move || {
         operation(
@@ -212,7 +215,7 @@ where
     }
 }
 
-fn bench_operation<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend, BRA: BlindRotationAlgo, F>(
+fn bench_operation<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend, BRA: BlindRotationAlgo, F>(
     group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
     params: &Params,
     operation_name: &str,
@@ -229,13 +232,15 @@ fn bench_operation<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend, BRA: BlindRota
         + BDDKeyEncryptSk<BRA, BE>
         + BDDKeyPreparedFactory<BRA, BE>
         + FheUintPrepare<BRA, BE>
-        + ExecuteBDDCircuit2WTo1W<BE>,
+        + ExecuteBDDCircuit2WTo1W<BE>
+        + GLWESecretSampling<BE>
+        + LWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     BE::OwnedBuf: HostDataRef + HostDataMut,
     for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
     for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
     F: Fn(
-            &mut FheUint<Vec<u8>, u32>,
+            &mut FheUint<BE::OwnedBuf, u32, BE::ZnxWord>,
             &Module<BE>,
             &FheUintPrepared<BE::OwnedBuf, u32, BE>,
             &FheUintPrepared<BE::OwnedBuf, u32, BE>,
@@ -249,8 +254,10 @@ fn bench_operation<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend, BRA: BlindRota
     group.bench_with_input(id, &(), |b, _| b.iter(&mut runner));
 }
 
-pub fn benc_bdd_arithmetic<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend, BRA: BlindRotationAlgo>(c: &mut Criterion, label: &str)
-where
+pub fn benc_bdd_arithmetic<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend, BRA: BlindRotationAlgo>(
+    c: &mut Criterion,
+    label: &str,
+) where
     Module<BE>: ModuleNew<BE>
         + ModuleN
         + GLWESecretPreparedFactory<BE>
@@ -262,7 +269,9 @@ where
         + BDDKeyEncryptSk<BRA, BE>
         + BDDKeyPreparedFactory<BRA, BE>
         + FheUintPrepare<BRA, BE>
-        + ExecuteBDDCircuit2WTo1W<BE>,
+        + ExecuteBDDCircuit2WTo1W<BE>
+        + GLWESecretSampling<BE>
+        + LWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     BE::OwnedBuf: HostDataRef + HostDataMut,
     for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,

@@ -46,7 +46,7 @@ use crate::{
 /// 2. Apply the forward NTT (via [`NttDFTExecute`]).
 /// 3. Convert q120b → q120c (via [`NttCFromB`]) and store in `res`.
 ///
-/// `res` must be a [`SvpPPol`] with `ScalarPrep = Q120bScalar`.
+/// `res` must be a [`SvpPPol`] with `DftWord = Q120bScalar`.
 /// A temporary heap buffer of `4 * n` u64 values is allocated internally
 /// (this is a setup/key-preparation function, not a hot path).
 pub fn ntt4x30_svp_prepare<'r, 'a, BE>(
@@ -56,7 +56,7 @@ pub fn ntt4x30_svp_prepare<'r, 'a, BE>(
     a: &ScalarZnxBackendRef<'a, BE>,
     a_col: usize,
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttCFromB,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttCFromB,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
@@ -96,7 +96,7 @@ pub fn ntt4x30_svp_apply_dft_to_dft<'r, 'a, 'b, BE>(
     b: &VecZnxDftBackendRef<'b, BE>,
     b_col: usize,
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttMulBbc + NttZero,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttMulBbc + NttZero,
     BE::BufMut<'r>: HostDataMut,
     for<'x> BE::BufRef<'x>: HostDataRef,
 {
@@ -150,7 +150,7 @@ pub fn ntt4x30_svp_apply_dft_to_dft_assign<'r, 'a, BE>(
     a: &SvpPPolBackendRef<'a, BE>,
     a_col: usize,
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttMulBbc,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttMulBbc,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
@@ -169,7 +169,7 @@ pub fn ntt4x30_svp_apply_dft_to_dft_assign<'r, 'a, BE>(
             let x_elem: Q120bScalar = res_slice[n_i];
             let x_u32: &[u32] = cast_slice(std::slice::from_ref(&x_elem));
             BE::ntt_mul_bbc(meta, 1, &mut product, x_u32, &a_u32[8 * n_i..8 * n_i + 8]);
-            res_slice[n_i] = Q120bScalar(product);
+            res_slice[n_i] = crate::reference::ntt4x30::types::CrtWord(product);
         }
     }
 }

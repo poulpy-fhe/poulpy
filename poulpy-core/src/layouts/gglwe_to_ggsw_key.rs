@@ -8,6 +8,7 @@ use crate::layouts::{
     Rank, TorusPrecision,
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use poulpy_hal::layouts::ZnxWord;
 
 use std::{
     fmt,
@@ -25,20 +26,20 @@ pub struct GGLWEToGGSWKeyLayout {
 }
 
 #[derive(PartialEq, Eq, Clone)]
-pub struct GGLWEToGGSWKey<D: Data> {
-    pub(crate) keys: Vec<GGLWE<D>>,
+pub struct GGLWEToGGSWKey<D: Data, W: ZnxWord> {
+    pub(crate) keys: Vec<GGLWE<D, W>>,
 }
 
 pub struct GGLWEToGGSWKeyBackendRef<'a, BE: Backend + 'a> {
-    inner: GGLWEToGGSWKey<BE::BufRef<'a>>,
+    inner: GGLWEToGGSWKey<BE::BufRef<'a>, BE::ZnxWord>,
 }
 
 impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyBackendRef<'a, BE> {
-    pub fn from_inner(inner: GGLWEToGGSWKey<BE::BufRef<'a>>) -> Self {
+    pub fn from_inner(inner: GGLWEToGGSWKey<BE::BufRef<'a>, BE::ZnxWord>) -> Self {
         Self { inner }
     }
 
-    pub fn into_inner(self) -> GGLWEToGGSWKey<BE::BufRef<'a>> {
+    pub fn into_inner(self) -> GGLWEToGGSWKey<BE::BufRef<'a>, BE::ZnxWord> {
         self.inner
     }
 
@@ -55,7 +56,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyBackendRef<'a, BE> {
 }
 
 impl<'a, BE: Backend + 'a> Deref for GGLWEToGGSWKeyBackendRef<'a, BE> {
-    type Target = GGLWEToGGSWKey<BE::BufRef<'a>>;
+    type Target = GGLWEToGGSWKey<BE::BufRef<'a>, BE::ZnxWord>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
@@ -63,15 +64,15 @@ impl<'a, BE: Backend + 'a> Deref for GGLWEToGGSWKeyBackendRef<'a, BE> {
 }
 
 pub struct GGLWEToGGSWKeyBackendMut<'a, BE: Backend + 'a> {
-    inner: GGLWEToGGSWKey<BE::BufMut<'a>>,
+    inner: GGLWEToGGSWKey<BE::BufMut<'a>, BE::ZnxWord>,
 }
 
 impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyBackendMut<'a, BE> {
-    pub fn from_inner(inner: GGLWEToGGSWKey<BE::BufMut<'a>>) -> Self {
+    pub fn from_inner(inner: GGLWEToGGSWKey<BE::BufMut<'a>, BE::ZnxWord>) -> Self {
         Self { inner }
     }
 
-    pub fn into_inner(self) -> GGLWEToGGSWKey<BE::BufMut<'a>> {
+    pub fn into_inner(self) -> GGLWEToGGSWKey<BE::BufMut<'a>, BE::ZnxWord> {
         self.inner
     }
 
@@ -99,7 +100,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyBackendMut<'a, BE> {
 }
 
 impl<'a, BE: Backend + 'a> Deref for GGLWEToGGSWKeyBackendMut<'a, BE> {
-    type Target = GGLWEToGGSWKey<BE::BufMut<'a>>;
+    type Target = GGLWEToGGSWKey<BE::BufMut<'a>, BE::ZnxWord>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
@@ -115,7 +116,7 @@ impl<'a, BE: Backend + 'a> DerefMut for GGLWEToGGSWKeyBackendMut<'a, BE> {
 impl_gglwe_infos_for_inner!(GGLWEToGGSWKeyBackendRef<'a, BE>, ['a, BE: Backend + 'a]; inner);
 impl_gglwe_infos_for_inner!(GGLWEToGGSWKeyBackendMut<'a, BE>, ['a, BE: Backend + 'a]; inner);
 
-impl<D: Data> LWEInfos for GGLWEToGGSWKey<D> {
+impl<D: Data, W: ZnxWord> LWEInfos for GGLWEToGGSWKey<D, W> {
     fn n(&self) -> Degree {
         self.keys[0].n()
     }
@@ -133,13 +134,13 @@ impl<D: Data> LWEInfos for GGLWEToGGSWKey<D> {
     }
 }
 
-impl<D: Data> GLWEInfos for GGLWEToGGSWKey<D> {
+impl<D: Data, W: ZnxWord> GLWEInfos for GGLWEToGGSWKey<D, W> {
     fn rank(&self) -> Rank {
         self.keys[0].rank_out()
     }
 }
 
-impl<D: Data> GGLWEInfos for GGLWEToGGSWKey<D> {
+impl<D: Data, W: ZnxWord> GGLWEInfos for GGLWEToGGSWKey<D, W> {
     fn k_aux(&self) -> TorusPrecision {
         self.keys[0].k_aux()
     }
@@ -207,21 +208,21 @@ impl GGLWEInfos for GGLWEToGGSWKeyLayout {
     }
 }
 
-impl<D: HostDataRef> fmt::Debug for GGLWEToGGSWKey<D> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GGLWEToGGSWKey<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: HostDataMut> FillUniform for GGLWEToGGSWKey<D> {
+impl<D: HostDataMut, W: ZnxWord> FillUniform for GGLWEToGGSWKey<D, W> {
     fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
         self.keys
             .iter_mut()
-            .for_each(|key: &mut GGLWE<D>| key.fill_uniform(log_bound, source))
+            .for_each(|key: &mut GGLWE<D, W>| key.fill_uniform(log_bound, source))
     }
 }
 
-impl<D: HostDataRef> fmt::Display for GGLWEToGGSWKey<D> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Display for GGLWEToGGSWKey<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "(GGLWEToGGSWKey)",)?;
         for (i, key) in self.keys.iter().enumerate() {
@@ -235,7 +236,7 @@ impl<D: HostDataRef> fmt::Display for GGLWEToGGSWKey<D> {
     dead_code,
     reason = "host-owned constructors are kept for serialization and host-only staging"
 )]
-impl GGLWEToGGSWKey<Vec<u8>> {
+impl<W: ZnxWord> GGLWEToGGSWKey<Vec<u8>, W> {
     pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
     where
         A: GGLWEInfos,
@@ -283,27 +284,27 @@ impl GGLWEToGGSWKey<Vec<u8>> {
     }
 
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
-        rank.as_usize() * GGLWE::bytes_of(n, base2k, dnum, dsize, k_aux, rank, rank)
+        rank.as_usize() * GGLWE::<Vec<u8>, W>::bytes_of(n, base2k, dnum, dsize, k_aux, rank, rank)
     }
 }
 
-impl<D: HostDataMut> GGLWEToGGSWKey<D> {
+impl<D: HostDataMut, W: ZnxWord> GGLWEToGGSWKey<D, W> {
     // Returns a mutable reference to GGLWE_{s}([s[i]*s[0], s[i]*s[1], ..., s[i]*s[rank]])
-    pub fn at_mut(&mut self, i: usize) -> &mut GGLWE<D> {
+    pub fn at_mut(&mut self, i: usize) -> &mut GGLWE<D, W> {
         assert!((i as u32) < self.rank());
         &mut self.keys[i]
     }
 }
 
-impl<D: HostDataRef> GGLWEToGGSWKey<D> {
+impl<D: HostDataRef, W: ZnxWord> GGLWEToGGSWKey<D, W> {
     // Returns a reference to GGLWE_{s}(s[i] * s[j])
-    pub fn at(&self, i: usize) -> &GGLWE<D> {
+    pub fn at(&self, i: usize) -> &GGLWE<D, W> {
         assert!((i as u32) < self.rank());
         &self.keys[i]
     }
 }
 
-impl<D: HostDataMut> ReaderFrom for GGLWEToGGSWKey<D> {
+impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGLWEToGGSWKey<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         let len: usize = reader.read_u64::<LittleEndian>()? as usize;
         if self.keys.len() != len {
@@ -319,8 +320,8 @@ impl<D: HostDataMut> ReaderFrom for GGLWEToGGSWKey<D> {
     }
 }
 
-impl<D: HostDataRef> WriterTo for GGLWEToGGSWKey<D> {
-    fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+impl<D: HostDataRef, W: ZnxWord> WriterTo for GGLWEToGGSWKey<D, W> {
+    fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         writer.write_u64::<LittleEndian>(self.keys.len() as u64)?;
         for key in &self.keys {
             key.write_to(writer)?;
@@ -333,9 +334,9 @@ pub trait GGLWEToGGSWKeyToBackendRef<BE: Backend> {
     fn to_backend_ref(&self) -> GGLWEToGGSWKeyBackendRef<'_, BE>;
 }
 
-impl<BE: Backend, D: Data> GGLWEToGGSWKeyToBackendRef<BE> for GGLWEToGGSWKey<D>
+impl<BE: Backend, D: Data> GGLWEToGGSWKeyToBackendRef<BE> for GGLWEToGGSWKey<D, BE::ZnxWord>
 where
-    GGLWE<D>: GGLWEToBackendRef<BE>,
+    GGLWE<D, BE::ZnxWord>: GGLWEToBackendRef<BE>,
 {
     fn to_backend_ref(&self) -> GGLWEToGGSWKeyBackendRef<'_, BE> {
         GGLWEToGGSWKeyBackendRef::from_inner(GGLWEToGGSWKey {
@@ -352,9 +353,9 @@ pub trait GGLWEToGGSWKeyToBackendMut<BE: Backend>: GGLWEToGGSWKeyToBackendRef<BE
     fn to_backend_mut(&mut self) -> GGLWEToGGSWKeyBackendMut<'_, BE>;
 }
 
-impl<BE: Backend, D: Data> GGLWEToGGSWKeyToBackendMut<BE> for GGLWEToGGSWKey<D>
+impl<BE: Backend, D: Data> GGLWEToGGSWKeyToBackendMut<BE> for GGLWEToGGSWKey<D, BE::ZnxWord>
 where
-    GGLWE<D>: GGLWEToBackendMut<BE>,
+    GGLWE<D, BE::ZnxWord>: GGLWEToBackendMut<BE>,
 {
     fn to_backend_mut(&mut self) -> GGLWEToGGSWKeyBackendMut<'_, BE> {
         GGLWEToGGSWKeyBackendMut::from_inner(GGLWEToGGSWKey {
@@ -367,14 +368,14 @@ where
     }
 }
 
-impl<BE: Backend> GGLWEToGGSWKeyToBackendRef<BE> for &mut GGLWEToGGSWKey<BE::OwnedBuf> {
+impl<BE: Backend> GGLWEToGGSWKeyToBackendRef<BE> for &mut GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GGLWEToGGSWKeyBackendRef<'_, BE> {
-        <GGLWEToGGSWKey<BE::OwnedBuf> as GGLWEToGGSWKeyToBackendRef<BE>>::to_backend_ref(self)
+        <GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> as GGLWEToGGSWKeyToBackendRef<BE>>::to_backend_ref(self)
     }
 }
 
-impl<BE: Backend> GGLWEToGGSWKeyToBackendMut<BE> for &mut GGLWEToGGSWKey<BE::OwnedBuf> {
+impl<BE: Backend> GGLWEToGGSWKeyToBackendMut<BE> for &mut GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> {
     fn to_backend_mut(&mut self) -> GGLWEToGGSWKeyBackendMut<'_, BE> {
-        <GGLWEToGGSWKey<BE::OwnedBuf> as GGLWEToGGSWKeyToBackendMut<BE>>::to_backend_mut(self)
+        <GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> as GGLWEToGGSWKeyToBackendMut<BE>>::to_backend_mut(self)
     }
 }

@@ -16,10 +16,10 @@ pub mod plaintext;
 pub mod polynomial_evaluation;
 pub mod pow2;
 pub mod rotate;
+pub mod ship;
 pub mod sub;
 
 pub use add::CKKSAddDefault;
-pub use bootstrapping::CKKSBootstrappingOpsDefault;
 pub use dft::gen_dft_matrices;
 pub use eval_mod::CKKSEvalModOpsDefault;
 pub use linear_transformation_diagonals::ckks_encode_linear_transformation_from_diagonals;

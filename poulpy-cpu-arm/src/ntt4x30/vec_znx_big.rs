@@ -85,9 +85,9 @@ impl I128BigOps for NTT4x30Neon {
 #[cfg(not(target_arch = "aarch64"))]
 impl I128BigOps for NTT4x30Neon {}
 
-impl poulpy_cpu_ref::hal_defaults::ScalarBigHadamardProduct for NTT4x30Neon {
+impl poulpy_cpu_ref::hal_defaults::BigWordHadamardProduct for NTT4x30Neon {
     #[inline(always)]
-    fn scalar_big_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
+    fn big_word_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
         <Self as I128BigOps>::i128_hadamard_product_i64(res, a, b)
     }
 }

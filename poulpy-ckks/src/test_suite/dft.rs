@@ -28,12 +28,13 @@ use poulpy_hal::{
 
 use poulpy_core::{GLWENoise, layouts::LWEInfos};
 
+use crate::SlotsKind;
 use crate::{
     CKKSInfos, CKKSMeta, CoeffsMeta, SetCKKSInfos,
     api::{CKKSDFTMatrixOps, CKKSDFTOps},
     layouts::{
-        CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, CKKSPlaintextVecHostCodec, DFTMatrix, DFTOutputFormat, DFTPlan, DFTType,
-        Decode, Encode, Repack, Split, Standard,
+        CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec, DFTMatrix, DFTOutputFormat, DFTPlan,
+        DFTType, Decode, Encode, Repack, Split, Standard,
     },
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
@@ -70,6 +71,7 @@ fn dense_params(params: &CKKSTestParams) -> CKKSTestParams {
         prec_meta: CKKSMeta {
             log_sparsity: 0,
             log_delta,
+            slots: SlotsKind::Complex,
         },
         prec_log_budget: 10,
         hw: params.hw.min(1 << DENSE_LOG_SLOTS),
@@ -92,6 +94,7 @@ fn sparse_params(params: &CKKSTestParams) -> CKKSTestParams {
         prec_meta: CKKSMeta {
             log_sparsity: 3,
             log_delta,
+            slots: SlotsKind::Complex,
         },
         prec_log_budget: 10,
         hw: params.hw.min(32),
@@ -144,7 +147,7 @@ fn noise_bound(log_delta: usize) -> f64 {
 
 /// Allocates a CKKS plaintext at the same `(base2k, log_delta, log_budget,
 /// log_sparsity)` as `ct` — the scale [`GLWENoise`] needs the expected value at.
-fn want_plaintext<BE>(module: &Module<BE>, ct: &CKKSCiphertext<BE::OwnedBuf>) -> CKKSPlaintext<BE::OwnedBuf>
+fn want_plaintext<BE>(module: &Module<BE>, ct: &CKKSCiphertextOwned<BE>) -> CKKSPlaintextOwned<BE>
 where
     BE: TestContextBackend,
     Module<BE>: CKKSModuleAlloc<BE>,
@@ -153,6 +156,7 @@ where
     pt.set_meta(CKKSMeta {
         log_sparsity: ct.log_sparsity(),
         log_delta: ct.log_delta(),
+        slots: SlotsKind::Complex,
     });
     pt
 }
@@ -172,7 +176,7 @@ pub fn test_dft_coeffs_to_slots_standard<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
-    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<f64>,
+    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64>,
 {
     let params = dense_params(&params);
     let m = params.n / 2;
@@ -249,7 +253,7 @@ pub fn test_dft_slots_to_coeffs_standard<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
-    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<f64>,
+    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64>,
 {
     let params = dense_params(&params);
     let m = params.n / 2;
@@ -326,7 +330,7 @@ pub fn test_dft_coeffs_to_slots_split<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
-    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<f64>,
+    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64>,
 {
     let params = dense_params(&params);
     let m = params.n / 2;
@@ -418,7 +422,7 @@ pub fn test_dft_coeffs_to_slots_repack_sparse<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
-    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<f64>,
+    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64>,
 {
     let params = sparse_params(&params);
     let base2k = params.base2k;
@@ -511,7 +515,7 @@ pub fn test_dft_slots_to_coeffs_split<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
-    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<f64>,
+    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64>,
 {
     let params = dense_params(&params);
     let m = params.n / 2;
@@ -601,7 +605,7 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
-    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<f64>,
+    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64>,
 {
     let params = sparse_params(&params);
     let base2k = params.base2k;
@@ -645,6 +649,7 @@ pub fn test_dft_slots_to_coeffs_repack_sparse<BE, F, E>(
     host_pt.set_meta(CKKSMeta {
         log_sparsity: 2,
         log_delta,
+        slots: SlotsKind::Complex,
     });
     small.encode_reim(&mut host_pt, &want_re, &want_im).unwrap();
     let mut ct_in = ckks_encrypt_pt(&params, &module, &sk, params.k, &host_pt, &mut scratch.borrow());
@@ -693,7 +698,7 @@ pub fn test_dft_plan_helpers_match_compiled<BE, F, E>(
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
     for<'a> <BE as Backend>::BufRef<'a>: HostDataRef,
     for<'a> <BE as Backend>::BufMut<'a>: HostDataMut,
-    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<f64>,
+    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<f64>,
 {
     // ---- dense (full slot count): Split, Encode + Decode ----
     {

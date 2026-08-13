@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+use poulpy_ckks::SlotsKind;
 use serde::{Deserialize, Serialize};
 
 
@@ -122,6 +123,7 @@ pub struct CkksBenchParams {
     pub k: usize,
     pub log_delta: usize,
     pub dsize: usize,
+    pub slots: SlotsKind,
 }
 
 impl Display for CkksBenchParams {
@@ -263,10 +265,10 @@ pub fn default_bench_params_core() -> Vec<CoreParams> {
 
 pub fn default_bench_params_ckks() -> Vec<CkksBenchParams> {
     vec![
-        CkksBenchParams { n: 1 << 12, base2k: 52, k: 52, log_delta: 40, dsize: 1 },
-        CkksBenchParams { n: 1 << 13, base2k: 52, k: 52 * 3, log_delta: 40, dsize: 1 },
-        CkksBenchParams { n: 1 << 14, base2k: 52, k: 52 * 6, log_delta: 40, dsize: 1 },
-        CkksBenchParams { n: 1 << 15, base2k: 52, k: 52 * 12, log_delta: 40, dsize: 3 },
-        CkksBenchParams { n: 1 << 16, base2k: 52, k: 52 * 24, log_delta: 40, dsize: 6 },
+        CkksBenchParams { n: 1 << 12, base2k: 52, k: 52, log_delta: 20, dsize: 1 , slots: SlotsKind::Complex},
+        CkksBenchParams { n: 1 << 13, base2k: 52, k: 52 * 3, log_delta: 40, dsize: 1 , slots: SlotsKind::Complex},
+        CkksBenchParams { n: 1 << 14, base2k: 52, k: 52 * 6, log_delta: 40, dsize: 1 , slots: SlotsKind::Complex},
+        CkksBenchParams { n: 1 << 15, base2k: 52, k: 52 * 12, log_delta: 40, dsize: 3 , slots: SlotsKind::Complex},
+        CkksBenchParams { n: 1 << 16, base2k: 52, k: 52 * 24, log_delta: 40, dsize: 6 , slots: SlotsKind::Complex},
     ]
 }

@@ -13,8 +13,8 @@ mod reim4;
 ///
 /// # Backend characteristics
 ///
-/// - **ScalarPrep**: `f64` — DFT-domain coefficients are 64-bit IEEE 754 floats.
-/// - **ScalarBig**: `i64` — large-coefficient ring elements use 64-bit signed integers.
+/// - **DftWord**: `f64` — DFT-domain coefficients are 64-bit IEEE 754 floats.
+/// - **BigWord**: `i64` — large-coefficient ring elements use 64-bit signed integers.
 /// - **FFT tables**: precomputed twiddle factors stored in the module handle
 ///   ([`FFTModuleHandle`]), shared across all operations on the same module.
 ///
@@ -52,6 +52,7 @@ mod reim4;
 /// let module: Module<FFT64Avx> = Module::new(1024);
 /// // Use module for FHE operations...
 /// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FFT64Avx {}
 
 #[cfg(test)]

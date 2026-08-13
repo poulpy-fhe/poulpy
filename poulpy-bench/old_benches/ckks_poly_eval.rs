@@ -8,7 +8,7 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use poulpy_ckks::{
-    CKKSInfos, CKKSLayout, CKKSMeta,
+    CKKSInfos, CKKSLayout, CKKSMeta, SlotsKind,
     api::{CKKSAllOpsTmpBytes, CKKSCopyOps, CKKSPolynomialEvaluationOps},
     layouts::{CKKSCiphertext, CKKSModuleAlloc},
     polynomial::{Basis, ComplexPolynomial, EncodeBSGS, Polynomial, SplitStrategy},
@@ -40,6 +40,7 @@ const COEFF_META: CKKSLayout = CKKSLayout {
     meta: CKKSMeta {
         log_sparsity: 0,
         log_delta: LOG_DELTA,
+        slots: SlotsKind::Complex,
     },
 };
 
@@ -85,6 +86,7 @@ fn $fn(c: &mut Criterion) {
     let input_meta = CKKSMeta {
         log_sparsity: 0,
         log_delta: LOG_DELTA,
+        slots: SlotsKind::Complex,
     };
 
     let ct_template = module.ckks_ciphertext_alloc_from_glwe_infos(&glwe_layout);
@@ -129,7 +131,7 @@ fn $fn(c: &mut Criterion) {
                 {
                     let mut sc = scratch.borrow();
                     module
-                        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<Vec<u8>>, _, _>(
+                        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<Vec<u8>, i64>, _, _>(
                             &mut ct_res,
                             &bsgs,
                             &pb,
@@ -166,7 +168,7 @@ fn $fn(c: &mut Criterion) {
                     {
                         let mut sc = scratch.borrow();
                         module
-                            .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<Vec<u8>>, _, _>(
+                            .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<Vec<u8>, i64>, _, _>(
                                 black_box(&mut ct_res),
                                 black_box(&bsgs),
                                 black_box(&pb),
@@ -204,7 +206,7 @@ fn $fn(c: &mut Criterion) {
             {
                 let mut sc = scratch.borrow();
                 module
-                    .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<Vec<u8>>, _, _>(
+                    .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<Vec<u8>, i64>, _, _>(
                         &mut ct_res,
                         &complex_bsgs,
                         &pb,
@@ -239,7 +241,7 @@ fn $fn(c: &mut Criterion) {
                 {
                     let mut sc = scratch.borrow();
                     module
-                        .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<Vec<u8>>, _, _>(
+                        .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<Vec<u8>, i64>, _, _>(
                             black_box(&mut ct_res),
                             black_box(&complex_bsgs),
                             &pb,

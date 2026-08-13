@@ -1,3 +1,4 @@
+use poulpy_core::layouts::{GLWESecretSampling, LWESecretSampling};
 use poulpy_core::{
     DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
     layouts::{
@@ -143,14 +144,16 @@ fn main() {
     let mut source_xe: Source = Source::new([1u8; 32]);
 
     // LWE secret
-    let mut sk_lwe: LWESecret<Vec<u8>> = module.lwe_secret_alloc(n_lwe.into());
-    sk_lwe.fill_binary_block(block_size, &mut source_xs);
-    // sk_lwe.fill_zero(); // for testing
+    let mut sk_lwe: LWESecret<<BackendImpl as Backend>::OwnedBuf, <BackendImpl as Backend>::ZnxWord> =
+        module.lwe_secret_alloc(n_lwe.into());
+    module.lwe_secret_fill_binary_block(&mut sk_lwe, block_size, &mut source_xs);
+    // module.lwe_secret_fill_zero(&mut sk_lwe); // for testing
 
     // GLWE secret
-    let mut sk_glwe: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank.into());
-    sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
-    // sk_glwe.fill_zero(); // for testing
+    let mut sk_glwe: GLWESecret<<BackendImpl as Backend>::OwnedBuf, <BackendImpl as Backend>::ZnxWord> =
+        module.glwe_secret_alloc(rank.into());
+    module.glwe_secret_fill_ternary_prob(&mut sk_glwe, 0.5, &mut source_xs);
+    // module.glwe_secret_fill_zero(&mut sk_glwe); // for testing
 
     // GLWE secret prepared (opaque backend dependant write only struct)
     let mut sk_glwe_prepared: GLWESecretPrepared<<BackendImpl as Backend>::OwnedBuf, BackendImpl> =
@@ -161,7 +164,8 @@ fn main() {
     let data: i64 = 1 % (1 << k_lwe_pt);
 
     // LWE plaintext
-    let mut pt_lwe: LWEPlaintext<Vec<u8>> = module.lwe_plaintext_alloc(base2k.into(), k_lwe_pt.into());
+    let mut pt_lwe: LWEPlaintext<<BackendImpl as Backend>::OwnedBuf, <BackendImpl as Backend>::ZnxWord> =
+        module.lwe_plaintext_alloc(base2k.into(), k_lwe_pt.into());
 
     // LWE plaintext(data * 2^{- (k_lwe_pt + 1)})
     pt_lwe.encode_i64(data, (k_lwe_pt + 1).into()); // +1 for padding bit
@@ -169,14 +173,15 @@ fn main() {
     // Normalize plaintext to nicely print coefficients
     module.vec_znx_normalize_assign_backend(
         base2k,
-        &mut <poulpy_hal::layouts::VecZnx<Vec<u8>> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(pt_lwe.data_mut()),
+        &mut <poulpy_hal::layouts::VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(pt_lwe.data_mut()),
         0,
         &mut scratch.borrow(),
     );
     println!("pt_lwe: {pt_lwe}");
 
     // LWE ciphertext
-    let mut ct_lwe: LWE<Vec<u8>> = module.lwe_alloc_from_infos(&lwe_infos);
+    let mut ct_lwe: LWE<<BackendImpl as Backend>::OwnedBuf, <BackendImpl as Backend>::ZnxWord> =
+        module.lwe_alloc_from_infos(&lwe_infos);
 
     let lwe_enc_infos = NoiseInfos::new(lwe_infos.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
     let cbt_enc_infos = CircuitBootstrappingEncryptionInfos::from_default_sigma(&cbt_layout).unwrap();
@@ -195,7 +200,8 @@ fn main() {
     let now: Instant = Instant::now();
 
     // Circuit bootstrapping evaluation key
-    let mut cbt_key: CircuitBootstrappingKey<Vec<u8>, CGGI> = CircuitBootstrappingKey::alloc_from_infos(&module, &cbt_layout);
+    let mut cbt_key: CircuitBootstrappingKey<Vec<u8>, CGGI, i64> =
+        CircuitBootstrappingKey::alloc_from_infos(&module, &cbt_layout);
 
     module.circuit_bootstrapping_key_encrypt_sk(
         &mut cbt_key,
@@ -210,7 +216,8 @@ fn main() {
     println!("CBT-KGEN: {} ms", now.elapsed().as_millis());
 
     // Output GGSW
-    let mut res: GGSW<Vec<u8>> = module.ggsw_alloc_from_infos(&ggsw_infos);
+    let mut res: GGSW<<BackendImpl as Backend>::OwnedBuf, <BackendImpl as Backend>::ZnxWord> =
+        module.ggsw_alloc_from_infos(&ggsw_infos);
 
     // Circuit bootstrapping key prepared (opaque backend dependant write only struct)
     let mut cbt_prepared: CircuitBootstrappingKeyPrepared<<BackendImpl as Backend>::OwnedBuf, CGGI, BackendImpl> =
@@ -223,7 +230,8 @@ fn main() {
     println!("CBT: {} ms", now.elapsed().as_millis());
 
     // Allocate "ideal" GGSW(data) plaintext
-    let mut pt_ggsw: ScalarZnx<Vec<u8>> = module.scalar_znx_alloc(1);
+    let mut pt_ggsw: ScalarZnx<<BackendImpl as Backend>::OwnedBuf, <BackendImpl as Backend>::ZnxWord> =
+        module.scalar_znx_alloc(1);
     pt_ggsw.at_mut(0, 0)[0] = data;
     let pt_ggsw_ref = ScalarZnx::from_data(pt_ggsw.data.as_slice(), pt_ggsw.n(), pt_ggsw.cols());
 
@@ -249,11 +257,13 @@ fn main() {
     };
 
     // GLWE ciphertext modulus
-    let mut ct_glwe: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_infos);
+    let mut ct_glwe: GLWE<<BackendImpl as Backend>::OwnedBuf, <BackendImpl as Backend>::ZnxWord> =
+        module.glwe_alloc_from_infos(&glwe_infos);
 
     // Some GLWE plaintext with signed data
     let k_glwe_pt: usize = 3;
-    let mut pt_glwe: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+    let mut pt_glwe: GLWEPlaintext<<BackendImpl as Backend>::OwnedBuf, <BackendImpl as Backend>::ZnxWord> =
+        module.glwe_plaintext_alloc_from_infos(&glwe_infos);
     let mut data_vec: Vec<i64> = vec![0i64; n_glwe];
     data_vec
         .iter_mut()
@@ -263,7 +273,7 @@ fn main() {
     pt_glwe.encode_vec_i64(&data_vec, (k_lwe_pt + 2).into());
     module.vec_znx_normalize_assign_backend(
         base2k,
-        &mut <poulpy_hal::layouts::VecZnx<Vec<u8>> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(pt_glwe.data_mut()),
+        &mut <poulpy_hal::layouts::VecZnx<Vec<u8>, i64> as VecZnxToBackendMut<BackendImpl>>::to_backend_mut(pt_glwe.data_mut()),
         0,
         &mut scratch.borrow(),
     );
@@ -293,7 +303,8 @@ fn main() {
     }
 
     // Decrypt
-    let mut pt_res: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+    let mut pt_res: GLWEPlaintext<<BackendImpl as Backend>::OwnedBuf, <BackendImpl as Backend>::ZnxWord> =
+        module.glwe_plaintext_alloc_from_infos(&glwe_infos);
     module.glwe_decrypt(&ct_glwe, &mut pt_res, &sk_glwe_prepared, &mut scratch.borrow());
 
     println!("pt_res: {:?}", &pt_res.data().at(0, 0)[..64]);

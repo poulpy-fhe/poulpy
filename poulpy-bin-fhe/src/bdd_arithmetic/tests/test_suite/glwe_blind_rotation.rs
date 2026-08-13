@@ -5,6 +5,7 @@ use poulpy_core::{
         GLWESecretPreparedFactory, ModuleCoreAlloc, Rank, TorusPrecision,
     },
 };
+use poulpy_hal::layouts::HostDataRef;
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, HostBackend, HostDataMut, Module, ScratchOwned},
@@ -30,7 +31,7 @@ where
         + GLWEBlindRotation<BE>
         + GLWEDecrypt<BE>
         + GLWEEncryptSk<BE>,
-    BE: Backend<OwnedBuf = Vec<u8>> + HostBackend,
+    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
     BE: 'static,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'a> BE::BufMut<'a>: HostDataMut,
@@ -66,9 +67,9 @@ where
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(1 << 22);
 
-    let mut res: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_infos);
+    let mut res: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&glwe_infos);
 
-    let mut test_glwe: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+    let mut test_glwe: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
     let mut data: Vec<i64> = vec![0i64; module.n()];
     data.iter_mut().enumerate().for_each(|(i, x)| *x = i as i64);
     test_glwe.encode_vec_i64(&data, base2k.as_usize().into());
@@ -96,7 +97,7 @@ where
     // Starting bit
     let mut bit_start: usize = 0;
 
-    let mut pt: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
+    let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&glwe_infos);
 
     for _ in 0..32_usize.div_ceil(module.log_n()) {
         // By how many bits to left shift

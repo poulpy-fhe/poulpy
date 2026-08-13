@@ -12,6 +12,7 @@ use poulpy_core::{
     },
 };
 
+use crate::SlotsKind;
 use crate::{CKKSLayout, CKKSMeta};
 
 /// Shared CKKS parameter set for test instantiation.
@@ -121,6 +122,7 @@ pub const NTT4X30_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     prec_meta: CKKSMeta {
         log_sparsity: 0,
         log_delta: 40,
+        slots: SlotsKind::Complex,
     },
     prec_log_budget: 30,
     hw: 192,
@@ -136,6 +138,7 @@ pub const FFT64_PARAMS_F64: CKKSTestParams = CKKSTestParams {
     prec_meta: CKKSMeta {
         log_sparsity: 0,
         log_delta: 30,
+        slots: SlotsKind::Complex,
     },
     prec_log_budget: 10,
     hw: 192,
@@ -151,6 +154,7 @@ pub const NTT4X30_PARAMS_F128: CKKSTestParams = CKKSTestParams {
     prec_meta: CKKSMeta {
         log_sparsity: 0,
         log_delta: 80,
+        slots: SlotsKind::Complex,
     },
     prec_log_budget: 30,
     hw: 192,
@@ -344,6 +348,10 @@ macro_rules! ckks_backend_test_suite {
             run_test!(
                 encode_decode_reim_roundtrip,
                 $crate::test_suite::encoding::test_encode_decode_reim_roundtrip
+            );
+            run_test!(
+                slots_kind_composition,
+                $crate::test_suite::slots_kind::test_slots_kind_composition
             );
             run_test!(encrypt_decrypt, $crate::test_suite::encryption::test_encrypt_decrypt);
             run_test!(
@@ -582,6 +590,13 @@ macro_rules! ckks_backend_test_suite {
             run_test_ignored!(
                 paco_paper_scale,
                 $crate::test_suite::paco_bootstrap::test_paco_paper_scale
+            );
+            run_test!(ship_host_replica, $crate::test_suite::ship::test_ship_host_replica);
+            run_test!(ship_mux_rotate, $crate::test_suite::ship::test_ship_mux_rotate);
+            run_test!(ship_bootstrap, $crate::test_suite::ship::test_ship_bootstrap);
+            run_test!(
+                ship_bootstrap_complex,
+                $crate::test_suite::ship::test_ship_bootstrap_complex
             );
             run_test!(
                 dft_coeffs_to_slots_standard,
@@ -845,6 +860,22 @@ macro_rules! ckks_backend_test_suite {
                 $crate::test_suite::bootstrapping::test_bootstrapping_evalround_e2e
             );
             run_test!(
+                bootstrapping_s2c_first_e2e,
+                $crate::test_suite::bootstrapping::test_bootstrapping_s2c_first_e2e
+            );
+            run_test!(
+                functional_bootstrapping_e2e,
+                $crate::test_suite::functional_bootstrapping::test_functional_bootstrapping_e2e
+            );
+            run_test!(
+                functional_bootstrapping_multi_e2e,
+                $crate::test_suite::functional_bootstrapping::test_functional_bootstrapping_multi_e2e
+            );
+            run_test!(
+                functional_bootstrapping_binary_e2e,
+                $crate::test_suite::functional_bootstrapping::test_functional_bootstrapping_binary_e2e
+            );
+            run_test!(
                 mul_add_const_zero_preserves_dst_meta,
                 $crate::test_suite::mul_add::test_mul_add_const_zero_preserves_dst_meta
             );
@@ -937,6 +968,7 @@ pub mod encoding;
 pub mod encryption;
 pub mod errors;
 pub mod eval_mod;
+pub mod functional_bootstrapping;
 pub mod helpers;
 pub mod imag;
 pub mod linear_transformation;
@@ -956,5 +988,7 @@ pub mod polynomial_evaluation;
 #[doc(hidden)]
 pub mod reference_encoder;
 pub mod rotate;
+pub mod ship;
+pub mod slots_kind;
 pub mod sub;
 pub mod sub_unsafe;

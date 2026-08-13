@@ -1,11 +1,13 @@
 use crate::CKKSResult as Result;
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{
-    BSGSMeta, Base2K, Compact, Degree, GGLWEInfos, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef,
-    LWEInfos, Rank, SetBSGSMeta, TorusPrecision,
+    BSGSMeta, Base2K, Degree, GGLWEInfos, GLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
+    SetBSGSMeta, TorusPrecision,
 };
 use poulpy_hal::api::CnvPVecBytesOf;
-use poulpy_hal::layouts::{Backend, Module, ScratchArena, VecZnx};
+use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
+use crate::SlotsKind;
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
     api::{CKKSAddOps, CKKSCopyOps, CKKSEvalModOps, CKKSMulOps, CKKSSubOps},
@@ -75,11 +77,12 @@ where
             meta: CKKSMeta {
                 log_sparsity: ct.log_sparsity(),
                 log_delta: params.plan.f_mod_log_delta,
+                slots: SlotsKind::Complex,
             },
         };
 
         let cols: usize = (work.rank() + 1).into();
-        let compact_work = VecZnx::bytes_of(work.n().into(), cols, work.max_size());
+        let compact_work = BE::bytes_of_vec_znx(work.n().into(), cols, work.max_size());
         // The giant step hoists the prepared `X^{gsp}` right operand, kept alive
         // across the baby-step pairs that share it.
         let hoisted_right = self.bytes_of_cnv_pvec_right(cols, work.max_size());
@@ -89,7 +92,11 @@ where
             + 3 * compact_work
             + hoisted_right;
         let square_scope = (self.ckks_square_tmp_bytes(&work, &work, tsk) + compact_work).max(
-            self.ckks_square_tmp_bytes(res, res, tsk) + VecZnx::bytes_of(res.n().into(), (res.rank() + 1).into(), res.max_size()),
+            // Scratch is a physical working-set budget: size the square-scope
+            // copy off `res`'s allocated capacity, the upper bound on the limbs
+            // any runtime re-expansion can expose.
+            self.ckks_square_tmp_bytes(res, res, tsk)
+                + BE::bytes_of_vec_znx(res.n().into(), (res.rank() + 1).into(), res.max_size()),
         );
         // The working copy `t1` (the input re-labelled at the plan scale — the
         // `work` shape) is carved from this scratch and lives for the whole
@@ -112,9 +119,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
     {
         BE::ckks_eval_mod_impl::<R, C, P, F>(self, res, ct, params, tsk, scratch)
     }

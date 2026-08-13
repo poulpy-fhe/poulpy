@@ -1,11 +1,10 @@
 use crate::CKKSResult as Result;
 use crate::default::mul::CKKSMulDefault;
+use poulpy_core::layouts::IntPolyInfos;
 
 use poulpy_core::{
     GLWEAdd, GLWECopy, GLWEMulConst, GLWEMulPlain, GLWERotate, GLWETensoring, GiantStepTensorBounds,
-    layouts::{
-        Compact, GGLWEInfos, GLWEInfos, LWEInfos, ModuleCoreAlloc, TorusPrecision, prepared::GLWETensorKeyPreparedToBackendRef,
-    },
+    layouts::{GGLWEInfos, GLWEInfos, LWEInfos, ModuleCoreAlloc, TorusPrecision, prepared::GLWETensorKeyPreparedToBackendRef},
 };
 use poulpy_hal::{
     api::{CnvPVecAlloc, VecZnxCopyBackend},
@@ -54,7 +53,7 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         B: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
@@ -66,7 +65,7 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
     fn ckks_prepare_right_impl<A>(
@@ -84,7 +83,7 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
     fn ckks_square_into_impl<Dst, A, T>(
         module: &Module<BE>,
@@ -94,7 +93,7 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
     fn ckks_square_assign_impl<Dst, T>(
@@ -104,7 +103,7 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos;
     fn ckks_mul_pt_vec_into_impl<Dst, A, P>(
         module: &Module<BE>,
@@ -114,9 +113,9 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        P: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds;
+        P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + CKKSCtBounds;
     fn ckks_mul_pt_vec_assign_impl<Dst, P>(
         module: &Module<BE>,
         dst: &mut Dst,
@@ -124,8 +123,8 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
-        P: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + CKKSCtBounds;
     fn ckks_mul_pt_const_into_impl<Dst, A, P>(
         module: &Module<BE>,
         dst: &mut Dst,
@@ -135,9 +134,9 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        P: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds;
+        P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + CKKSCtBounds;
     fn ckks_mul_pt_const_assign_impl<Dst, P>(
         module: &Module<BE>,
         dst: &mut Dst,
@@ -146,8 +145,8 @@ pub unsafe trait CKKSMulImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
-        P: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds;
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + CKKSCtBounds;
 }
 
 unsafe impl<BE: Backend> CKKSMulImpl<BE> for BE
@@ -162,7 +161,7 @@ where
         + GLWETensoring<BE>
         + GiantStepTensorBounds<BE>
         + CnvPVecAlloc<BE>
-        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + VecZnxCopyBackend<BE>,
 {
     fn ckks_mul_tmp_bytes_impl<R: GLWEInfos, A: GLWEInfos, B: GLWEInfos, T: GGLWEInfos>(
@@ -211,7 +210,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         B: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
@@ -227,7 +226,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
@@ -249,7 +248,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
         module.ckks_mul_prepared_assign_default(dst, prepared, tsk, scratch)
@@ -263,7 +262,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
@@ -277,7 +276,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         T: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     {
         module.ckks_square_assign_default(dst, tsk, scratch)
@@ -291,9 +290,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        P: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + CKKSCtBounds,
     {
         module.ckks_mul_pt_vec_into_default(dst, a, pt, scratch)
     }
@@ -305,8 +304,8 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
-        P: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + CKKSCtBounds,
     {
         module.ckks_mul_pt_vec_assign_default(dst, pt, scratch)
     }
@@ -320,9 +319,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
         A: GLWEToBackendRef<BE> + CKKSInfos + GLWEInfos,
-        P: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds,
+        P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + CKKSCtBounds,
     {
         module.ckks_mul_pt_const_into_default(dst, a, pt, pt_coeff, scratch)
     }
@@ -335,8 +334,8 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos + Compact,
-        P: GLWEToBackendRef<BE> + LWEInfos + CKKSCtBounds,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSInfos + SetCKKSInfos + GLWEInfos,
+        P: GLWEToBackendRef<BE> + LWEInfos + IntPolyInfos + CKKSCtBounds,
     {
         module.ckks_mul_pt_const_assign_default(dst, pt, pt_coeff, scratch)
     }

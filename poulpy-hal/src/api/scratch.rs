@@ -185,7 +185,7 @@ impl<'a, B: Backend> ScratchArenaTakeBasic<'a, B> for ScratchArena<'a, B> {
     where
         B: 'a,
     {
-        let (data, arena) = self.take_region(ScalarZnx::bytes_of(n, cols));
+        let (data, arena) = self.take_region(B::bytes_of_scalar_znx(n, cols));
         (ScalarZnxViewMut::from_inner(ScalarZnx::from_data(data, n, cols)), arena)
     }
 
@@ -202,7 +202,7 @@ impl<'a, B: Backend> ScratchArenaTakeBasic<'a, B> for ScratchArena<'a, B> {
     where
         B: 'a,
     {
-        let (data, arena) = self.take_region(VecZnx::bytes_of(n, cols, size));
+        let (data, arena) = self.take_region(B::bytes_of_vec_znx(n, cols, size));
         (VecZnxViewMut::from_inner(VecZnx::from_data(data, n, cols, size)), arena)
     }
 
@@ -264,7 +264,7 @@ impl<'a, B: Backend> ScratchArenaTakeBasic<'a, B> for ScratchArena<'a, B> {
     where
         B: 'a,
     {
-        let (data, arena) = self.take_region(MatZnx::bytes_of(n, rows, cols_in, cols_out, size));
+        let (data, arena) = self.take_region(B::bytes_of_mat_znx(n, rows, cols_in, cols_out, size));
         (
             MatZnxViewMut::from_inner(MatZnx::from_data(data, n, rows, cols_in, cols_out, size)),
             arena,

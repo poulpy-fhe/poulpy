@@ -12,13 +12,15 @@
 //! schedule-dependent. Stage-internal working memory, by contrast, comes from
 //! each worker's own scratch arena (`PaCoWorker`), sized per worker.
 
+use crate::layouts::CKKSCiphertextOwned;
+use crate::layouts::CKKSPlaintextOwned;
 use crate::{CKKSError, CKKSResult as Result, ckks_ensure};
 use std::{sync::mpsc::sync_channel, thread};
 
 use anyhow::Context;
 use poulpy_core::{
     GLWEAutomorphism, GLWEKeyswitch, GLWELinearTransformations, GLWERotate,
-    layouts::{Compact, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision},
+    layouts::{GLWEToBackendMut, GLWEToBackendRef, LWEInfos, TorusPrecision},
 };
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
@@ -28,7 +30,7 @@ use poulpy_hal::{
 use super::{
     bootstrap::paco_bootstrap_branch_validated_into,
     ops::PaCoSlotOps,
-    preflight::{branch_stride, checked_branch_shift, direct_tmp_bytes_validated, preflight, validate_encapsulation_key},
+    preflight::{branch_schedule, checked_branch_shift, direct_tmp_bytes_validated, preflight, validate_encapsulation_key},
 };
 use crate::layouts::paco::{context::PaCoContext, keyset::PaCoKeys};
 use crate::{
@@ -36,44 +38,9 @@ use crate::{
     api::{
         CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSRotateOps, CKKSSubOps, PaCoScalar,
     },
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, PaCoWorker},
+    layouts::{CKKSModuleAlloc, PaCoWorker},
     oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl},
 };
-
-/// Operations used by the backend-generic PaCo composition.
-pub(crate) trait PaCoBootstrapModule<BE: Backend>:
-    CKKSMulOps<BE>
-    + CKKSAddOps<BE>
-    + CKKSSubOps<BE>
-    + CKKSConjugateOps<BE>
-    + CKKSCopyOps<BE>
-    + CKKSRotateOps<BE>
-    + PaCoSlotOps<BE>
-    + CKKSLinearTransformationOps<BE>
-    + CKKSModuleAlloc<BE>
-    + GLWERotate<BE>
-    + GLWEAutomorphism<BE>
-    + GLWELinearTransformations<BE>
-    + CyclotomicOrder
-{
-}
-
-impl<BE: Backend, M> PaCoBootstrapModule<BE> for M where
-    M: CKKSMulOps<BE>
-        + CKKSAddOps<BE>
-        + CKKSSubOps<BE>
-        + CKKSConjugateOps<BE>
-        + CKKSCopyOps<BE>
-        + CKKSRotateOps<BE>
-        + PaCoSlotOps<BE>
-        + CKKSLinearTransformationOps<BE>
-        + CKKSModuleAlloc<BE>
-        + GLWERotate<BE>
-        + GLWEAutomorphism<BE>
-        + GLWELinearTransformations<BE>
-        + CyclotomicOrder
-{
-}
 
 #[derive(Clone, Copy)]
 struct BranchExecution {
@@ -92,7 +59,7 @@ struct ValidatedSchedule {
 /// Evaluates one shifted branch into `output`.
 fn run_branch_into<BE, F, K, Src>(
     module: &Module<BE>,
-    output: &mut CKKSCiphertext<BE::OwnedBuf>,
+    output: &mut CKKSCiphertextOwned<BE>,
     input: &Src,
     context: &PaCoContext<BE, F>,
     keys: &K,
@@ -101,11 +68,24 @@ fn run_branch_into<BE, F, K, Src>(
 ) -> Result<()>
 where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
-    Module<BE>: PaCoBootstrapModule<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRotateOps<BE>
+        + PaCoSlotOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWERotate<BE>
+        + GLWEAutomorphism<BE>
+        + GLWELinearTransformations<BE>
+        + GLWEKeyswitch<BE>
+        + CyclotomicOrder,
     K: PaCoKeys<BE>,
     F: PaCoScalar,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     if branch.shift == 0 {
@@ -129,7 +109,7 @@ where
 }
 
 fn set_recombined_sparsity<BE: Backend + CKKSPaCoCoeffEncodingImpl<BE>, F: PaCoScalar>(
-    output: &mut CKKSCiphertext<BE::OwnedBuf>,
+    output: &mut CKKSCiphertextOwned<BE>,
     context: &PaCoContext<BE, F>,
     kappa: usize,
 ) -> Result<()> {
@@ -142,6 +122,7 @@ fn set_recombined_sparsity<BE: Backend + CKKSPaCoCoeffEncodingImpl<BE>, F: PaCoS
         .set_meta_checked(CKKSMeta {
             log_delta: output.log_delta(),
             log_sparsity: gap.trailing_zeros() as usize,
+            slots: output.slots(),
         })
         .map_err(Into::into)
 }
@@ -149,23 +130,35 @@ fn set_recombined_sparsity<BE: Backend + CKKSPaCoCoeffEncodingImpl<BE>, F: PaCoS
 /// Sequential direct-mode driver shared by the public operation delegate.
 pub(crate) fn paco_bootstrap_direct_into<BE, F, K, Src>(
     module: &Module<BE>,
-    output: &mut CKKSCiphertext<BE::OwnedBuf>,
+    output: &mut CKKSCiphertextOwned<BE>,
     input: &Src,
     context: &PaCoContext<BE, F>,
     keys: &K,
-    kappa: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
-    Module<BE>: PaCoBootstrapModule<BE> + GLWEKeyswitch<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRotateOps<BE>
+        + PaCoSlotOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWERotate<BE>
+        + GLWEAutomorphism<BE>
+        + GLWELinearTransformations<BE>
+        + GLWEKeyswitch<BE>
+        + CyclotomicOrder,
     K: PaCoKeys<BE>,
     F: PaCoScalar,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
-    let stride = branch_stride(context, kappa)?;
+    let (kappa, stride) = branch_schedule(context, input.log_sparsity())?;
     let (output_meta, required_scratch) = preflight(module, output, input, context, keys, false, scratch)?;
     let schedule = ValidatedSchedule {
         kappa,
@@ -180,7 +173,7 @@ where
 /// validated the common ciphertext, context, and key invariants once.
 fn paco_bootstrap_direct_validated_into<BE, F, K, Src>(
     module: &Module<BE>,
-    output: &mut CKKSCiphertext<BE::OwnedBuf>,
+    output: &mut CKKSCiphertextOwned<BE>,
     input: &Src,
     context: &PaCoContext<BE, F>,
     keys: &K,
@@ -189,11 +182,24 @@ fn paco_bootstrap_direct_validated_into<BE, F, K, Src>(
 ) -> Result<()>
 where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
-    Module<BE>: PaCoBootstrapModule<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRotateOps<BE>
+        + PaCoSlotOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWERotate<BE>
+        + GLWEAutomorphism<BE>
+        + GLWELinearTransformations<BE>
+        + GLWEKeyswitch<BE>
+        + CyclotomicOrder,
     K: PaCoKeys<BE>,
     F: PaCoScalar,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     ckks_ensure!(
@@ -218,9 +224,9 @@ where
         return set_recombined_sparsity(output, context, schedule.kappa);
     }
     for branch in 1..schedule.kappa {
-        // A branch compacts its logical width. Reusing that backing buffer
-        // without clearing now-inactive high limbs would let later
-        // automorphisms observe stale data, so keep branch temporaries fresh.
+        // Keep branch temporaries fresh: reusing a backing buffer across
+        // branches would let later automorphisms observe stale limbs from a
+        // previous branch.
         let mut branch_output = module.ckks_ciphertext_alloc(context.base2k(), output.k());
         run_branch_into::<BE, F, K, _>(
             module,
@@ -247,13 +253,13 @@ fn encapsulate_input<BE, F, K, Src>(
     context: &PaCoContext<BE, F>,
     keys: &K,
     scratch: &mut ScratchArena<'_, BE>,
-) -> Result<CKKSCiphertext<BE::OwnedBuf>>
+) -> Result<CKKSCiphertextOwned<BE>>
 where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
     F: PaCoScalar,
     Module<BE>: CKKSModuleAlloc<BE> + GLWEKeyswitch<BE>,
     K: PaCoKeys<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
     let switching_key = validate_encapsulation_key(input, context, keys)?;
@@ -267,23 +273,35 @@ where
 /// Sequential encapsulated driver shared by the public operation delegate.
 pub(crate) fn paco_bootstrap_into<BE, F, K, Src>(
     module: &Module<BE>,
-    output: &mut CKKSCiphertext<BE::OwnedBuf>,
+    output: &mut CKKSCiphertextOwned<BE>,
     input: &Src,
     context: &PaCoContext<BE, F>,
     keys: &K,
-    kappa: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
-    Module<BE>: PaCoBootstrapModule<BE> + GLWEKeyswitch<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRotateOps<BE>
+        + PaCoSlotOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWERotate<BE>
+        + GLWEAutomorphism<BE>
+        + GLWELinearTransformations<BE>
+        + GLWEKeyswitch<BE>
+        + CyclotomicOrder,
     K: PaCoKeys<BE>,
     F: PaCoScalar,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
-    let stride = branch_stride(context, kappa)?;
+    let (kappa, stride) = branch_schedule(context, input.log_sparsity())?;
     let (output_meta, required_scratch) = preflight(module, output, input, context, keys, true, scratch)?;
     let schedule = ValidatedSchedule {
         kappa,
@@ -303,26 +321,38 @@ where
 )]
 pub(crate) fn paco_bootstrap_parallel_direct_into<BE, F, K, Src>(
     module: &Module<BE>,
-    output: &mut CKKSCiphertext<BE::OwnedBuf>,
+    output: &mut CKKSCiphertextOwned<BE>,
     input: &Src,
     context: &PaCoContext<BE, F>,
     keys: &K,
-    kappa: usize,
     workers: &mut [PaCoWorker<BE>],
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
-    Module<BE>: PaCoBootstrapModule<BE> + GLWEKeyswitch<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRotateOps<BE>
+        + PaCoSlotOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWERotate<BE>
+        + GLWEAutomorphism<BE>
+        + GLWELinearTransformations<BE>
+        + GLWEKeyswitch<BE>
+        + CyclotomicOrder,
     K: PaCoKeys<BE> + Sync,
     F: PaCoScalar,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
     PaCoContext<BE, F>: Sync,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact + Send + Sync,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Send + Sync,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
 {
-    let stride = branch_stride(context, kappa)?;
+    let (kappa, stride) = branch_schedule(context, input.log_sparsity())?;
     let (output_meta, required_scratch) = preflight(module, output, input, context, keys, false, scratch)?;
     let schedule = ValidatedSchedule {
         kappa,
@@ -340,7 +370,7 @@ where
 )]
 fn paco_bootstrap_parallel_direct_validated_into<BE, F, K, Src>(
     module: &Module<BE>,
-    output: &mut CKKSCiphertext<BE::OwnedBuf>,
+    output: &mut CKKSCiphertextOwned<BE>,
     input: &Src,
     context: &PaCoContext<BE, F>,
     keys: &K,
@@ -350,13 +380,26 @@ fn paco_bootstrap_parallel_direct_validated_into<BE, F, K, Src>(
 ) -> Result<()>
 where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
-    Module<BE>: PaCoBootstrapModule<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRotateOps<BE>
+        + PaCoSlotOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWERotate<BE>
+        + GLWEAutomorphism<BE>
+        + GLWELinearTransformations<BE>
+        + GLWEKeyswitch<BE>
+        + CyclotomicOrder,
     K: PaCoKeys<BE> + Sync,
     F: PaCoScalar,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
     PaCoContext<BE, F>: Sync,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact + Send + Sync,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Send + Sync,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
 {
     // The caller thread evaluates branch zero while the remaining execution
@@ -412,7 +455,7 @@ where
                 .name(format!("paco-{}", worker + 1))
                 .spawn_scoped(scope, move || {
                     for branch in ((worker + 1)..schedule.kappa).step_by(background_workers) {
-                        let result = (|| -> Result<(usize, CKKSCiphertext<BE::OwnedBuf>)> {
+                        let result = (|| -> Result<(usize, CKKSCiphertextOwned<BE>)> {
                             let mut branch_output = worker_module
                                 .ckks_ciphertext_alloc(context.base2k(), TorusPrecision(schedule.output_meta.1 as u32));
                             run_branch_into::<BE, F, K, _>(
@@ -530,26 +573,38 @@ where
 )]
 pub(crate) fn paco_bootstrap_parallel_into<BE, F, K, Src>(
     module: &Module<BE>,
-    output: &mut CKKSCiphertext<BE::OwnedBuf>,
+    output: &mut CKKSCiphertextOwned<BE>,
     input: &Src,
     context: &PaCoContext<BE, F>,
     keys: &K,
-    kappa: usize,
     workers: &mut [PaCoWorker<BE>],
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
-    Module<BE>: PaCoBootstrapModule<BE> + GLWEKeyswitch<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRotateOps<BE>
+        + PaCoSlotOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWERotate<BE>
+        + GLWEAutomorphism<BE>
+        + GLWELinearTransformations<BE>
+        + GLWEKeyswitch<BE>
+        + CyclotomicOrder,
     K: PaCoKeys<BE> + Sync,
     F: PaCoScalar,
     ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
     PaCoContext<BE, F>: Sync,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact + Send + Sync,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Send + Sync,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
-    let stride = branch_stride(context, kappa)?;
+    let (kappa, stride) = branch_schedule(context, input.log_sparsity())?;
     let (output_meta, required_scratch) = preflight(module, output, input, context, keys, true, scratch)?;
     let schedule = ValidatedSchedule {
         kappa,

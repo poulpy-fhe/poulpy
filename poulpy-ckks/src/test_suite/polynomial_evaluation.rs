@@ -10,7 +10,7 @@ use poulpy_hal::{
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSMeta, SetCKKSInfos,
     api::{CKKSMulOps, CKKSPolynomialEvaluationOps},
-    layouts::{CKKSCiphertext, CKKSPlaintext, CKKSPlaintextVecHostCodec},
+    layouts::{CKKSCiphertextOwned, CKKSPlaintextOwned, CKKSPlaintextVecHostCodec},
     polynomial::{
         BSGSPolynomial, Basis, ComplexBSGSPolynomial, ComplexPolynomial, EncodeBSGS, Parity, Polynomial, SplitStrategy,
     },
@@ -24,6 +24,7 @@ use super::helpers::{
     ckks_encrypt_with_prec, ckks_spec, gen_sk_with_raw, gen_tsk, precision_at, quantized_const, quantized_slots, test_vector_1,
     upload_pt,
 };
+use crate::SlotsKind;
 
 /// Asserts the eval consumed exactly `bsgs.consumed_bits(input_ld, coeff_ld)`
 /// of `log_budget` and preserved `log_delta`. `input_log_budget`/`input_log_delta`
@@ -34,7 +35,7 @@ fn assert_consumed_bits<BE, C>(
     input_log_delta: usize,
     input_log_budget: usize,
     coeff_log_delta: usize,
-    res: &CKKSCiphertext<BE::OwnedBuf>,
+    res: &CKKSCiphertextOwned<BE>,
 ) where
     BE: poulpy_hal::layouts::Backend,
 {
@@ -110,7 +111,7 @@ fn chebyshev_value<F: TestScalar>(x: F, degree: usize) -> F {
     t_prev
 }
 
-fn eval_encoded_bsgs_chebyshev<F: TestScalar>(poly: &BSGSPolynomial<CKKSPlaintext<Vec<u8>>>, x: F) -> F {
+fn eval_encoded_bsgs_chebyshev<F: TestScalar>(poly: &BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend>>, x: F) -> F {
     #[derive(Clone, Copy)]
     struct Step<F> {
         degree: usize,
@@ -150,8 +151,8 @@ fn eval_encoded_bsgs_chebyshev<F: TestScalar>(poly: &BSGSPolynomial<CKKSPlaintex
 
 fn upload_bsgs<BE>(
     module: &Module<BE>,
-    poly: &BSGSPolynomial<CKKSPlaintext<Vec<u8>>>,
-) -> BSGSPolynomial<CKKSPlaintext<BE::OwnedBuf>>
+    poly: &BSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend>>,
+) -> BSGSPolynomial<CKKSPlaintextOwned<BE>>
 where
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -163,8 +164,8 @@ where
 
 fn upload_complex_bsgs<BE>(
     module: &Module<BE>,
-    poly: &ComplexBSGSPolynomial<CKKSPlaintext<Vec<u8>>>,
-) -> ComplexBSGSPolynomial<CKKSPlaintext<BE::OwnedBuf>>
+    poly: &ComplexBSGSPolynomial<CKKSPlaintextOwned<HostBytesBackend>>,
+) -> ComplexBSGSPolynomial<CKKSPlaintextOwned<BE>>
 where
     BE: TestContextBackend,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
@@ -183,7 +184,7 @@ pub fn test_power_basis_populate_degree7<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -250,7 +251,7 @@ pub fn test_power_basis_populate_chebyshev_degree7<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -386,8 +387,8 @@ pub fn test_eval_poly_const_coeffs_cubic<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -452,7 +453,7 @@ pub fn test_eval_poly_const_coeffs_cubic<BE, F, E>(
 
     let mut res = alloc_ct(&params, module, params.k);
     module
-        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<BE::OwnedBuf>, _, _>(
+        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             &mut res,
             &poly,
             &power_basis,
@@ -485,8 +486,8 @@ pub fn test_eval_poly_rejects_power_basis_mismatch<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -520,7 +521,7 @@ pub fn test_eval_poly_rejects_power_basis_mismatch<BE, F, E>(
 
     let mut res = alloc_ct(&params, module, params.k);
     let err = module
-        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<BE::OwnedBuf>, _, _>(
+        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             &mut res,
             &bsgs,
             &power_basis,
@@ -545,8 +546,8 @@ pub fn test_eval_poly_const_coeffs_exp7<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -605,7 +606,7 @@ pub fn test_eval_poly_const_coeffs_exp7<BE, F, E>(
 
     let mut res = alloc_ct(&params, module, params.k);
     module
-        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<BE::OwnedBuf>, _, _>(
+        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             &mut res,
             &bsgs,
             &pb,
@@ -638,8 +639,8 @@ pub fn test_eval_poly_const_coeffs_even_monomial<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -701,7 +702,7 @@ pub fn test_eval_poly_const_coeffs_even_monomial<BE, F, E>(
 
     let mut res = alloc_ct(&params, module, params.k);
     module
-        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<BE::OwnedBuf>, _, _>(
+        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             &mut res,
             &bsgs,
             &pb,
@@ -734,8 +735,8 @@ pub fn test_eval_poly_const_coeffs_odd_monomial<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -797,7 +798,7 @@ pub fn test_eval_poly_const_coeffs_odd_monomial<BE, F, E>(
 
     let mut res = alloc_ct(&params, module, params.k);
     module
-        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<BE::OwnedBuf>, _, _>(
+        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             &mut res,
             &bsgs,
             &pb,
@@ -830,8 +831,8 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -882,7 +883,7 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31<BE, F, E>(
 
     let mut res = alloc_ct(&params, module, params.k);
     module
-        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<BE::OwnedBuf>, _, _>(
+        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             &mut res,
             &bsgs,
             &pb,
@@ -915,8 +916,8 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31_min_mult<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -967,7 +968,7 @@ pub fn test_eval_poly_const_coeffs_chebyshev_degree31_min_mult<BE, F, E>(
 
     let mut res = alloc_ct(&params, module, params.k);
     module
-        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<BE::OwnedBuf>, _, _>(
+        .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             &mut res,
             &bsgs,
             &pb,
@@ -1000,8 +1001,8 @@ pub fn test_eval_poly_const_coeffs_complex_cubic<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -1081,7 +1082,7 @@ pub fn test_eval_poly_const_coeffs_complex_cubic<BE, F, E>(
 
     let mut res = alloc_ct(&params, module, params.k);
     module
-        .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<BE::OwnedBuf>, _, _>(
+        .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             &mut res,
             &poly,
             &power_basis,
@@ -1114,8 +1115,8 @@ pub fn test_eval_poly_const_coeffs_complex_chebyshev<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -1213,7 +1214,7 @@ pub fn test_eval_poly_const_coeffs_complex_chebyshev<BE, F, E>(
 
     let mut res = alloc_ct(&params, module, params.k);
     module
-        .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<BE::OwnedBuf>, _, _>(
+        .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             &mut res,
             &poly,
             &pb,
@@ -1258,8 +1259,8 @@ pub fn test_eval_poly_const_coeffs_complex_even<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -1337,7 +1338,7 @@ pub fn test_eval_poly_const_coeffs_complex_even<BE, F, E>(
 
     let mut res = alloc_ct(&params, module, params.k);
     module
-        .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<BE::OwnedBuf>, _, _>(
+        .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             &mut res,
             &poly,
             &pb,
@@ -1370,8 +1371,8 @@ pub fn test_eval_poly_const_coeffs_complex_odd<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -1449,7 +1450,7 @@ pub fn test_eval_poly_const_coeffs_complex_odd<BE, F, E>(
 
     let mut res = alloc_ct(&params, module, params.k);
     module
-        .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<BE::OwnedBuf>, _, _>(
+        .ckks_eval_poly_complex_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
             &mut res,
             &poly,
             &pb,
@@ -1482,8 +1483,8 @@ pub fn test_eval_poly_const_coeffs_complex_fold<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -1596,9 +1597,9 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufRef<'a>: poulpy_hal::layouts::HostDataRef,
     for<'a> <BE as poulpy_hal::layouts::Backend>::BufMut<'a>: poulpy_hal::layouts::HostDataMut,
     Module<BE>: TestContextModule<BE> + CKKSPolynomialEvaluationOps<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE> + LWEInfos,
-    CKKSPlaintext<Vec<u8>>: CKKSPlaintextVecHostCodec<F>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE> + LWEInfos,
+    CKKSPlaintextOwned<HostBytesBackend>: CKKSPlaintextVecHostCodec<F>,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GLWETensorKeyPreparedToBackendRef<BE> + GGLWEInfos,
     F: TestScalar,
     E: NegacyclicFFT<F> + NegacyclicFFTNew<F>,
@@ -1621,6 +1622,7 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
         prec_meta: CKKSMeta {
             log_sparsity: 0,
             log_delta: input_log_delta,
+            slots: SlotsKind::Complex,
         },
         prec_log_budget: k - input_log_delta,
         hw: m,
@@ -1671,7 +1673,7 @@ pub fn test_eval_poly_consumed_bits_sweep<BE, F, E>(
 
             let mut res = alloc_ct(&params, &module, k);
             module
-                .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<BE::OwnedBuf>, _, _>(
+                .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertextOwned<BE>, _, _>(
                     &mut res,
                     &bsgs,
                     &pb,

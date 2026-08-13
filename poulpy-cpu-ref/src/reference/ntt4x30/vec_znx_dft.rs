@@ -34,7 +34,7 @@ use crate::{
         NttSubNegateAssign, NttToZnx128, NttZero,
         mat_vec::{BbbMeta, BbcMeta},
         ntt::{NttTable, NttTableInv, intt_ref},
-        primes::{PrimeSet, Primes30},
+        primes::{PrimeSetCrt4, Primes30},
         types::Q120bScalar,
     },
 };
@@ -44,12 +44,12 @@ use crate::{
 // ──────────────────────────────────────────────────────────────────────────────
 
 /// Forward and inverse NTT tables for one ring degree.
-pub struct NttPlan<P: PrimeSet> {
+pub struct NttPlan<P: PrimeSetCrt4> {
     ntt: NttTable<P>,
     intt: NttTableInv<P>,
 }
 
-impl<P: PrimeSet> NttPlan<P> {
+impl<P: PrimeSetCrt4> NttPlan<P> {
     pub fn new(n: usize) -> Self {
         Self {
             ntt: NttTable::new(n),
@@ -67,12 +67,12 @@ impl<P: PrimeSet> NttPlan<P> {
 }
 
 /// Complete geometric family of NTT plans up to a maximum ring degree.
-pub struct NttPlanSet<P: PrimeSet> {
+pub struct NttPlanSet<P: PrimeSetCrt4> {
     plans: Vec<NttPlan<P>>,
     max_n: usize,
 }
 
-impl<P: PrimeSet> NttPlanSet<P> {
+impl<P: PrimeSetCrt4> NttPlanSet<P> {
     pub fn new(max_n: usize) -> Self {
         assert!(
             max_n.is_power_of_two(),
@@ -179,7 +179,7 @@ pub unsafe trait NttHandleFactory: Sized {
 /// automatically satisfies `NttModuleHandle`.
 impl<B> NttModuleHandle for Module<B>
 where
-    B: Backend,
+    B: Backend<ZnxWord = i64>,
     B::Handle: NttHandleProvider,
 {
     fn get_ntt_plan(&self, n: usize) -> &NttPlan<Primes30> {
@@ -207,8 +207,8 @@ where
 /// `at(col, limb)` returns `&[Q120bScalar]` of length `n`; we cast to
 /// `&[u64]` of length `4*n`.
 #[inline(always)]
-fn limb_u64<D: crate::layouts::HostDataRef, BE: Backend<ScalarPrep = Q120bScalar>>(
-    v: &VecZnxDft<D, BE>,
+fn limb_u64<D: crate::layouts::HostDataRef, BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>>(
+    v: &VecZnxDft<D, BE::DftWord, BE>,
     col: usize,
     limb: usize,
 ) -> &[u64] {
@@ -216,8 +216,8 @@ fn limb_u64<D: crate::layouts::HostDataRef, BE: Backend<ScalarPrep = Q120bScalar
 }
 
 #[inline(always)]
-fn limb_u64_mut<D: crate::layouts::HostDataMut, BE: Backend<ScalarPrep = Q120bScalar>>(
-    v: &mut VecZnxDft<D, BE>,
+fn limb_u64_mut<D: crate::layouts::HostDataMut, BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>>(
+    v: &mut VecZnxDft<D, BE::DftWord, BE>,
     col: usize,
     limb: usize,
 ) -> &mut [u64] {
@@ -244,8 +244,8 @@ pub fn ntt4x30_vec_znx_dft_apply<BE>(
     a: &VecZnxBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttZero + 'static,
-    for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8]>,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttZero + 'static,
+    for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
     let a_size = a.size();
     let res_size = res.size();
@@ -258,16 +258,16 @@ pub fn ntt4x30_vec_znx_dft_apply<BE>(
     for j in 0..min_steps {
         let limb = offset + j * step;
         if limb < a_size {
-            let res_slice: &mut [u64] = limb_u64_mut(res, res_col, j);
+            let res_slice: &mut [u64] = limb_u64_mut::<_, BE>(res, res_col, j);
             BE::ntt_from_znx64(res_slice, a.at(a_col, limb));
             BE::ntt_dft_execute(table, res_slice);
         } else {
-            BE::ntt_zero(limb_u64_mut(res, res_col, j));
+            BE::ntt_zero(limb_u64_mut::<_, BE>(res, res_col, j));
         }
     }
 
     for j in min_steps..res_size {
-        BE::ntt_zero(limb_u64_mut(res, res_col, j));
+        BE::ntt_zero(limb_u64_mut::<_, BE>(res, res_col, j));
     }
 }
 
@@ -298,7 +298,10 @@ pub fn ntt4x30_vec_znx_idft_apply<BE>(
     a_col: usize,
     tmp: &mut [u64],
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar, ScalarBig = i128> + NttDFTExecute<NttTableInv<Primes30>> + NttToZnx128 + NttCopy,
+    BE: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64>
+        + NttDFTExecute<NttTableInv<Primes30>>
+        + NttToZnx128
+        + NttCopy,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -309,7 +312,7 @@ pub fn ntt4x30_vec_znx_idft_apply<BE>(
     let table = module.get_intt_table();
 
     for j in 0..min_size {
-        let a_slice: &[u64] = limb_u64(a, a_col, j);
+        let a_slice: &[u64] = limb_u64::<_, BE>(a, a_col, j);
         let tmp_n: &mut [u64] = &mut tmp[..4 * n];
         BE::ntt_copy(tmp_n, a_slice);
         BE::ntt_dft_execute(table, tmp_n);
@@ -332,7 +335,7 @@ pub fn ntt4x30_vec_znx_idft_apply_tmpa<BE>(
     a: &mut VecZnxDftBackendMut<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar, ScalarBig = i128> + NttDFTExecute<NttTableInv<Primes30>> + NttToZnx128,
+    BE: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64> + NttDFTExecute<NttTableInv<Primes30>> + NttToZnx128,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {
     let n = res.n();
@@ -342,8 +345,8 @@ pub fn ntt4x30_vec_znx_idft_apply_tmpa<BE>(
     let table = module.get_intt_table();
 
     for j in 0..min_size {
-        BE::ntt_dft_execute(table, limb_u64_mut(a, a_col, j));
-        let a_slice: &[u64] = limb_u64(a, a_col, j);
+        BE::ntt_dft_execute(table, limb_u64_mut::<_, BE>(a, a_col, j));
+        let a_slice: &[u64] = limb_u64::<_, BE>(a, a_col, j);
         BE::ntt_to_znx128(res.at_mut(res_col, j), n, a_slice);
     }
 
@@ -362,7 +365,7 @@ pub fn ntt4x30_vec_znx_idft_apply_consume<'a, BE>(
     mut a: VecZnxDftBackendMut<'a, BE>,
 ) -> VecZnxBigBackendMut<'a, BE>
 where
-    BE: Backend<ScalarPrep = Q120bScalar, ScalarBig = i128>,
+    BE: Backend<DftWord = Q120bScalar, BigWord = i128, ZnxWord = i64>,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {
     let table = module.get_intt_table();
@@ -408,7 +411,7 @@ fn reduce_q120b_crt(x: u64, q: u64, mu: u64, pow32_crt: u64, pow16_crt: u64, crt
 
 #[allow(dead_code)]
 unsafe fn compact_all_blocks_scalar(n: usize, n_blocks: usize, u64_ptr: *mut u64, table: &NttTableInv<Primes30>) {
-    let q_u64: [u64; 4] = Primes30::Q.map(|qi| qi as u64);
+    let q_u64: [u64; 4] = <Primes30 as crate::reference::ntt4x30::primes::PrimeSet>::Q.map(|qi| qi as u64);
     let mu: [u64; 4] = q_u64.map(|qi| (1u64 << 61) / qi);
     let crt: [u64; 4] = Primes30::CRT_CST.map(|c| c as u64);
 
@@ -478,7 +481,7 @@ pub fn ntt4x30_vec_znx_dft_add_into<BE>(
     b: &VecZnxDftBackendRef<'_, BE>,
     b_col: usize,
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttAdd + NttCopy + NttZero,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttAdd + NttCopy + NttZero,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -490,25 +493,33 @@ pub fn ntt4x30_vec_znx_dft_add_into<BE>(
         let sum_size = a_size.min(res_size);
         let cpy_size = b_size.min(res_size);
         for j in 0..sum_size {
-            BE::ntt_add(limb_u64_mut(res, res_col, j), limb_u64(a, a_col, j), limb_u64(b, b_col, j));
+            BE::ntt_add(
+                limb_u64_mut::<_, BE>(res, res_col, j),
+                limb_u64::<_, BE>(a, a_col, j),
+                limb_u64::<_, BE>(b, b_col, j),
+            );
         }
         for j in sum_size..cpy_size {
-            BE::ntt_copy(limb_u64_mut(res, res_col, j), limb_u64(b, b_col, j));
+            BE::ntt_copy(limb_u64_mut::<_, BE>(res, res_col, j), limb_u64::<_, BE>(b, b_col, j));
         }
         for j in cpy_size..res_size {
-            BE::ntt_zero(limb_u64_mut(res, res_col, j));
+            BE::ntt_zero(limb_u64_mut::<_, BE>(res, res_col, j));
         }
     } else {
         let sum_size = b_size.min(res_size);
         let cpy_size = a_size.min(res_size);
         for j in 0..sum_size {
-            BE::ntt_add(limb_u64_mut(res, res_col, j), limb_u64(a, a_col, j), limb_u64(b, b_col, j));
+            BE::ntt_add(
+                limb_u64_mut::<_, BE>(res, res_col, j),
+                limb_u64::<_, BE>(a, a_col, j),
+                limb_u64::<_, BE>(b, b_col, j),
+            );
         }
         for j in sum_size..cpy_size {
-            BE::ntt_copy(limb_u64_mut(res, res_col, j), limb_u64(a, a_col, j));
+            BE::ntt_copy(limb_u64_mut::<_, BE>(res, res_col, j), limb_u64::<_, BE>(a, a_col, j));
         }
         for j in cpy_size..res_size {
-            BE::ntt_zero(limb_u64_mut(res, res_col, j));
+            BE::ntt_zero(limb_u64_mut::<_, BE>(res, res_col, j));
         }
     }
 }
@@ -520,13 +531,13 @@ pub fn ntt4x30_vec_znx_dft_add_assign<BE>(
     a: &VecZnxDftBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttAddAssign,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttAddAssign,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
     let sum_size = res.size().min(a.size());
     for j in 0..sum_size {
-        BE::ntt_add_assign(limb_u64_mut(res, res_col, j), limb_u64(a, a_col, j));
+        BE::ntt_add_assign(limb_u64_mut::<_, BE>(res, res_col, j), limb_u64::<_, BE>(a, a_col, j));
     }
 }
 
@@ -541,7 +552,7 @@ pub fn ntt4x30_vec_znx_dft_add_scaled_assign<BE>(
     a_col: usize,
     a_scale: i64,
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttAddAssign,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttAddAssign,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -552,18 +563,18 @@ pub fn ntt4x30_vec_znx_dft_add_scaled_assign<BE>(
         let shift = (a_scale as usize).min(a_size);
         let sum_size = a_size.min(res_size).saturating_sub(shift);
         for j in 0..sum_size {
-            BE::ntt_add_assign(limb_u64_mut(res, res_col, j), limb_u64(a, a_col, j + shift));
+            BE::ntt_add_assign(limb_u64_mut::<_, BE>(res, res_col, j), limb_u64::<_, BE>(a, a_col, j + shift));
         }
     } else if a_scale < 0 {
         let shift = (a_scale.unsigned_abs() as usize).min(res_size);
         let sum_size = a_size.min(res_size.saturating_sub(shift));
         for j in 0..sum_size {
-            BE::ntt_add_assign(limb_u64_mut(res, res_col, j + shift), limb_u64(a, a_col, j));
+            BE::ntt_add_assign(limb_u64_mut::<_, BE>(res, res_col, j + shift), limb_u64::<_, BE>(a, a_col, j));
         }
     } else {
         let sum_size = a_size.min(res_size);
         for j in 0..sum_size {
-            BE::ntt_add_assign(limb_u64_mut(res, res_col, j), limb_u64(a, a_col, j));
+            BE::ntt_add_assign(limb_u64_mut::<_, BE>(res, res_col, j), limb_u64::<_, BE>(a, a_col, j));
         }
     }
 }
@@ -577,7 +588,7 @@ pub fn ntt4x30_vec_znx_dft_sub<BE>(
     b: &VecZnxDftBackendRef<'_, BE>,
     b_col: usize,
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttSub + NttNegate + NttCopy + NttZero,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttSub + NttNegate + NttCopy + NttZero,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -589,25 +600,33 @@ pub fn ntt4x30_vec_znx_dft_sub<BE>(
         let sum_size = a_size.min(res_size);
         let cpy_size = b_size.min(res_size);
         for j in 0..sum_size {
-            BE::ntt_sub(limb_u64_mut(res, res_col, j), limb_u64(a, a_col, j), limb_u64(b, b_col, j));
+            BE::ntt_sub(
+                limb_u64_mut::<_, BE>(res, res_col, j),
+                limb_u64::<_, BE>(a, a_col, j),
+                limb_u64::<_, BE>(b, b_col, j),
+            );
         }
         for j in sum_size..cpy_size {
-            BE::ntt_negate(limb_u64_mut(res, res_col, j), limb_u64(b, b_col, j));
+            BE::ntt_negate(limb_u64_mut::<_, BE>(res, res_col, j), limb_u64::<_, BE>(b, b_col, j));
         }
         for j in cpy_size..res_size {
-            BE::ntt_zero(limb_u64_mut(res, res_col, j));
+            BE::ntt_zero(limb_u64_mut::<_, BE>(res, res_col, j));
         }
     } else {
         let sum_size = b_size.min(res_size);
         let cpy_size = a_size.min(res_size);
         for j in 0..sum_size {
-            BE::ntt_sub(limb_u64_mut(res, res_col, j), limb_u64(a, a_col, j), limb_u64(b, b_col, j));
+            BE::ntt_sub(
+                limb_u64_mut::<_, BE>(res, res_col, j),
+                limb_u64::<_, BE>(a, a_col, j),
+                limb_u64::<_, BE>(b, b_col, j),
+            );
         }
         for j in sum_size..cpy_size {
-            BE::ntt_copy(limb_u64_mut(res, res_col, j), limb_u64(a, a_col, j));
+            BE::ntt_copy(limb_u64_mut::<_, BE>(res, res_col, j), limb_u64::<_, BE>(a, a_col, j));
         }
         for j in cpy_size..res_size {
-            BE::ntt_zero(limb_u64_mut(res, res_col, j));
+            BE::ntt_zero(limb_u64_mut::<_, BE>(res, res_col, j));
         }
     }
 }
@@ -619,13 +638,13 @@ pub fn ntt4x30_vec_znx_dft_sub_assign<BE>(
     a: &VecZnxDftBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttSubAssign,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttSubAssign,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
     let sum_size = res.size().min(a.size());
     for j in 0..sum_size {
-        BE::ntt_sub_assign(limb_u64_mut(res, res_col, j), limb_u64(a, a_col, j));
+        BE::ntt_sub_assign(limb_u64_mut::<_, BE>(res, res_col, j), limb_u64::<_, BE>(a, a_col, j));
     }
 }
 
@@ -638,17 +657,17 @@ pub fn ntt4x30_vec_znx_dft_sub_negate_assign<BE>(
     a: &VecZnxDftBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttSubNegateAssign + NttNegateAssign,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttSubNegateAssign + NttNegateAssign,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
     let res_size = res.size();
     let sum_size = res_size.min(a.size());
     for j in 0..sum_size {
-        BE::ntt_sub_negate_assign(limb_u64_mut(res, res_col, j), limb_u64(a, a_col, j));
+        BE::ntt_sub_negate_assign(limb_u64_mut::<_, BE>(res, res_col, j), limb_u64::<_, BE>(a, a_col, j));
     }
     for j in sum_size..res_size {
-        BE::ntt_negate_assign(limb_u64_mut(res, res_col, j));
+        BE::ntt_negate_assign(limb_u64_mut::<_, BE>(res, res_col, j));
     }
 }
 
@@ -663,7 +682,7 @@ pub fn ntt4x30_vec_znx_dft_copy<BE>(
     a: &VecZnxDftBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttCopy + NttZero,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttCopy + NttZero,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -678,24 +697,24 @@ pub fn ntt4x30_vec_znx_dft_copy<BE>(
     for j in 0..min_steps {
         let limb = offset + j * step;
         if limb < a.size() {
-            BE::ntt_copy(limb_u64_mut(res, res_col, j), limb_u64(a, a_col, limb));
+            BE::ntt_copy(limb_u64_mut::<_, BE>(res, res_col, j), limb_u64::<_, BE>(a, a_col, limb));
         } else {
-            BE::ntt_zero(limb_u64_mut(res, res_col, j));
+            BE::ntt_zero(limb_u64_mut::<_, BE>(res, res_col, j));
         }
     }
     for j in min_steps..res.size() {
-        BE::ntt_zero(limb_u64_mut(res, res_col, j));
+        BE::ntt_zero(limb_u64_mut::<_, BE>(res, res_col, j));
     }
 }
 
 /// Zero all limbs of `res[res_col]`.
 pub fn ntt4x30_vec_znx_dft_zero<BE>(res: &mut VecZnxDftBackendMut<'_, BE>, res_col: usize)
 where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttZero,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttZero,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {
     for j in 0..res.size() {
-        BE::ntt_zero(limb_u64_mut(res, res_col, j));
+        BE::ntt_zero(limb_u64_mut::<_, BE>(res, res_col, j));
     }
 }
 
@@ -751,7 +770,7 @@ pub fn ntt4x30_vec_znx_dft_automorphism<BE>(
     a: &VecZnxDftBackendRef<'_, BE>,
     a_col: usize,
 ) where
-    BE: Backend<ScalarPrep = Q120bScalar> + NttZero,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttZero,
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
 {
@@ -768,8 +787,8 @@ pub fn ntt4x30_vec_znx_dft_automorphism<BE>(
     let perm: &[u32] = &plan.perm;
 
     for limb in 0..min_size {
-        let a_slice: &[u64] = limb_u64(a, a_col, limb);
-        let res_slice: &mut [u64] = limb_u64_mut(res, res_col, limb);
+        let a_slice: &[u64] = limb_u64::<_, BE>(a, a_col, limb);
+        let res_slice: &mut [u64] = limb_u64_mut::<_, BE>(res, res_col, limb);
 
         for i in 0..n {
             let s = perm[i] as usize;
@@ -780,6 +799,6 @@ pub fn ntt4x30_vec_znx_dft_automorphism<BE>(
     }
 
     for limb in min_size..res_size {
-        BE::ntt_zero(limb_u64_mut(res, res_col, limb));
+        BE::ntt_zero(limb_u64_mut::<_, BE>(res, res_col, limb));
     }
 }

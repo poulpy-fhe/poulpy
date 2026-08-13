@@ -10,6 +10,8 @@ use poulpy_hal::{
     },
 };
 
+use crate::ScratchArenaTakeCore;
+use crate::api::GLWEBytesOf;
 use crate::layouts::{GGSW, GGSWInfos, GGSWToBackendRef, GLWEToBackendMut, GLWEToBackendRef, GLWEViewRef, LWEInfos};
 use crate::noise::glwe::glwe_noise_backend_inner;
 use crate::{
@@ -18,23 +20,23 @@ use crate::{
     decryption::GLWEDecrypt,
     layouts::prepared::GLWESecretPreparedToBackendRef,
 };
-use crate::{ScratchArenaTakeCore, layouts::GLWEPlaintext};
 
-impl<D: HostDataRef> GGSW<D> {
+// Coefficient-word fence: noise measurement ends in `VecZnx::stats`, which is i64-only.
+impl<D: HostDataRef> GGSW<D, i64> {
     pub fn noise<M, BE, S>(
         &self,
         module: &M,
         row: usize,
         col: usize,
-        pt_want: &ScalarZnx<&[u8]>,
+        pt_want: &ScalarZnx<&[u8], i64>,
         sk_prepared: &S,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Stats
     where
-        GGSW<D>: GGSWToBackendRef<BE>,
+        GGSW<D, BE::ZnxWord>: GGSWToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE>,
         M: GGSWNoise<BE>,
-        BE: HostBackend,
+        BE: HostBackend<ZnxWord = i64>,
         for<'a> BE::BufRef<'a>: HostDataRef,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
@@ -67,7 +69,7 @@ where
     {
         assert_eq!(self.n() as u32, infos.n());
 
-        let lvl_0: usize = GLWEPlaintext::<Vec<u8>>::bytes_of_from_infos(infos);
+        let lvl_0: usize = self.glwe_plaintext_bytes_of_from_infos(infos);
         let lvl_1_glwe_noise: usize = self.glwe_noise_tmp_bytes(infos);
         let lvl_1_mul: usize = self.bytes_of_vec_znx_dft(1, infos.size())
             + self.bytes_of_vec_znx_big(1, infos.size())
@@ -82,14 +84,14 @@ where
         res: &R,
         res_row: usize,
         res_col: usize,
-        pt_want: &ScalarZnx<&[u8]>,
+        pt_want: &ScalarZnx<&[u8], i64>,
         sk_prepared: &S,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Stats
     where
         R: GGSWToBackendRef<BE> + GGSWInfos,
         S: GLWESecretPreparedToBackendRef<BE>,
-        BE: HostBackend,
+        BE: HostBackend<ZnxWord = i64>,
         for<'a> BE::BufRef<'a>: HostDataRef,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
@@ -107,7 +109,7 @@ where
 
         let (mut pt, mut scratch_1) = scratch.borrow().take_glwe_plaintext_scratch(&res_backend);
         pt.data_mut().zero();
-        let pt_want_backend: ScalarZnx<BE::OwnedBuf> =
+        let pt_want_backend: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> =
             ScalarZnx::from_data(BE::from_host_bytes(pt_want.data), pt_want.n(), pt_want.cols());
         {
             let mut pt_backend = pt.to_backend_mut();
@@ -115,7 +117,7 @@ where
                 &mut pt_backend.data,
                 0,
                 (dsize - 1) + res_row * dsize,
-                &<ScalarZnx<BE::OwnedBuf> as ScalarZnxToBackendRef<BE>>::to_backend_ref(&pt_want_backend),
+                &<ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxToBackendRef<BE>>::to_backend_ref(&pt_want_backend),
                 0,
             );
         }

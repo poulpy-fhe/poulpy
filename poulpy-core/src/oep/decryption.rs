@@ -48,14 +48,14 @@ pub unsafe trait DecryptionImpl<BE: Backend>: Backend {
 
     fn glwe_tensor_decrypt<R: Data, P: Data, S0: Data, S1: Data>(
         module: &Module<BE>,
-        res: &GLWETensor<R>,
-        pt: &mut GLWEPlaintext<P>,
+        res: &GLWETensor<R, BE::ZnxWord>,
+        pt: &mut GLWEPlaintext<P, BE::ZnxWord>,
         sk: &GLWESecretPrepared<S0, BE>,
         sk_tensor: &GLWESecretTensorPrepared<S1, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        GLWETensor<R>: GLWEToBackendRef<BE> + GLWEInfos,
-        GLWEPlaintext<P>: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
+        GLWETensor<R, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
+        GLWEPlaintext<P, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
         GLWESecretPrepared<S0, BE>: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         GLWESecretTensorPrepared<S1, BE>: GLWESecretTensorPreparedToBackendRef<BE> + GLWEInfos;
 
@@ -103,14 +103,14 @@ pub trait DecryptionDefault<BE: Backend> {
 
     fn glwe_tensor_decrypt_default<R: Data, P: Data, S0: Data, S1: Data>(
         &self,
-        res: &GLWETensor<R>,
-        pt: &mut GLWEPlaintext<P>,
+        res: &GLWETensor<R, BE::ZnxWord>,
+        pt: &mut GLWEPlaintext<P, BE::ZnxWord>,
         sk: &GLWESecretPrepared<S0, BE>,
         sk_tensor: &GLWESecretTensorPrepared<S1, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        GLWETensor<R>: GLWEToBackendRef<BE> + GLWEInfos,
-        GLWEPlaintext<P>: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
+        GLWETensor<R, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
+        GLWEPlaintext<P, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
         GLWESecretPrepared<S0, BE>: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         GLWESecretTensorPrepared<S1, BE>: GLWESecretTensorPreparedToBackendRef<BE> + GLWEInfos;
 
@@ -195,14 +195,15 @@ macro_rules! impl_decryption_defaults_full {
                 S1: ::poulpy_hal::layouts::Data,
             >(
                 &self,
-                res: &$crate::layouts::GLWETensor<R>,
-                pt: &mut $crate::layouts::GLWEPlaintext<P>,
+                res: &$crate::layouts::GLWETensor<R, <$be as poulpy_hal::layouts::Backend>::ZnxWord>,
+                pt: &mut $crate::layouts::GLWEPlaintext<P, <$be as poulpy_hal::layouts::Backend>::ZnxWord>,
                 sk: &$crate::layouts::GLWESecretPrepared<S0, $be>,
                 sk_tensor: &$crate::layouts::GLWESecretTensorPrepared<S1, $be>,
                 scratch: &mut ::poulpy_hal::layouts::ScratchArena<'_, $be>,
             ) where
-                $crate::layouts::GLWETensor<R>: $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
-                $crate::layouts::GLWEPlaintext<P>:
+                $crate::layouts::GLWETensor<R, <$be as poulpy_hal::layouts::Backend>::ZnxWord>:
+                    $crate::layouts::GLWEToBackendRef<$be> + $crate::layouts::GLWEInfos,
+                $crate::layouts::GLWEPlaintext<P, <$be as poulpy_hal::layouts::Backend>::ZnxWord>:
                     $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos + $crate::layouts::SetBase2k,
                 $crate::layouts::GLWESecretPrepared<S0, $be>:
                     $crate::layouts::prepared::GLWESecretPreparedToBackendRef<$be> + $crate::layouts::GLWEInfos,
@@ -280,14 +281,14 @@ where
 
     fn glwe_tensor_decrypt<R: Data, P: Data, S0: Data, S1: Data>(
         module: &Module<BE>,
-        res: &GLWETensor<R>,
-        pt: &mut GLWEPlaintext<P>,
+        res: &GLWETensor<R, BE::ZnxWord>,
+        pt: &mut GLWEPlaintext<P, BE::ZnxWord>,
         sk: &GLWESecretPrepared<S0, BE>,
         sk_tensor: &GLWESecretTensorPrepared<S1, BE>,
         scratch: &mut ScratchArena<'_, BE>,
     ) where
-        GLWETensor<R>: GLWEToBackendRef<BE> + GLWEInfos,
-        GLWEPlaintext<P>: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
+        GLWETensor<R, BE::ZnxWord>: GLWEToBackendRef<BE> + GLWEInfos,
+        GLWEPlaintext<P, BE::ZnxWord>: GLWEToBackendMut<BE> + GLWEInfos + SetBase2k,
         GLWESecretPrepared<S0, BE>: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
         GLWESecretTensorPrepared<S1, BE>: GLWESecretTensorPreparedToBackendRef<BE> + GLWEInfos,
     {

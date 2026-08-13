@@ -11,7 +11,7 @@ pub fn vec_znx_sub<'r, 'a, BE>(
     b: &VecZnxBackendRef<'a, BE>,
     b_col: usize,
 ) where
-    BE: Backend + ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
+    BE: Backend<ZnxWord = i64> + ZnxSub + ZnxNegate + ZnxZero + ZnxCopy,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
@@ -64,7 +64,7 @@ pub fn vec_znx_sub_assign<'r, 'a, BE>(
     a: &VecZnxBackendRef<'a, BE>,
     a_col: usize,
 ) where
-    BE: Backend + ZnxSubAssign,
+    BE: Backend<ZnxWord = i64> + ZnxSubAssign,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
@@ -89,7 +89,7 @@ pub fn vec_znx_sub_negate_assign<'r, 'a, BE>(
     a: &VecZnxBackendRef<'a, BE>,
     a_col: usize,
 ) where
-    BE: Backend + ZnxSubNegateAssign + ZnxNegateAssign,
+    BE: Backend<ZnxWord = i64> + ZnxSubNegateAssign + ZnxNegateAssign,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {

@@ -9,21 +9,26 @@ use poulpy_cpu_ref::hal_defaults::{
 use poulpy_hal::{
     api::{HostBufMut, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
     layouts::{
-        Backend, MatZnxBackendRef, Module, NoiseInfos, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftBackendMut,
-        VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
+        Backend, MatZnxBackendRef, MatZnxInfos, Module, NoiseInfos, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
+        VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VmpPMatBackendMut,
+        VmpPMatBackendRef, ZnxInfos,
     },
     oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
 };
 
 fn take_host_typed<'a, BE, T>(arena: ScratchArena<'a, BE>, len: usize) -> (&'a mut [T], ScratchArena<'a, BE>)
 where
-    BE: Backend + 'a,
+    BE: Backend<ZnxWord = i64> + 'a,
     BE::BufMut<'a>: HostBufMut<'a>,
     T: Copy,
 {
-    debug_assert!(BE::SCRATCH_ALIGN.is_multiple_of(std::mem::align_of::<T>()));
-    let (buf, arena) = arena.take_region(len * std::mem::size_of::<T>());
+    assert!(BE::SCRATCH_ALIGN.is_multiple_of(std::mem::align_of::<T>()));
+    let byte_len = len
+        .checked_mul(std::mem::size_of::<T>())
+        .expect("typed scratch byte size overflows usize");
+    let (buf, arena) = arena.take_region(byte_len);
     let bytes: &'a mut [u8] = buf.into_bytes();
+    assert!((bytes.as_mut_ptr() as usize).is_multiple_of(std::mem::align_of::<T>()));
     let slice = unsafe { std::slice::from_raw_parts_mut(bytes.as_mut_ptr() as *mut T, len) };
     (slice, arena)
 }
@@ -69,7 +74,7 @@ unsafe impl HalVecZnxDftImpl<FFT64Avx512> for FFT64Avx512 {
         a: &VecZnxDftBackendRef<'_, Self>,
         a_col: usize,
     ) {
-        crate::fft64::fft64_vec_znx_dft_automorphism_avx512(plan, res, res_col, a, a_col);
+        crate::fft64::fft64_vec_znx_dft_automorphism_avx512::<Self>(plan, res, res_col, a, a_col);
     }
 }
 
@@ -111,9 +116,9 @@ unsafe impl HalVmpImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     ) where
         R: VecZnxDftToBackendMut<Self>,
     {
-        let a_cols = <VecZnxBackendRef<'_, Self> as ZnxInfos>::cols(a);
+        let a_cols = <VecZnxBackendRef<'_, Self> as VecZnxInfos>::cols(a);
         let a_size = <VecZnxBackendRef<'_, Self> as ZnxInfos>::size(a);
-        let b_rows = <VmpPMatBackendRef<'_, Self> as ZnxInfos>::rows(b);
+        let b_rows = <VmpPMatBackendRef<'_, Self> as MatZnxInfos>::rows(b);
         let cols_to_copy = a_cols.min(b.cols_in());
         let a_start_col = a_cols - cols_to_copy;
         let a_dft_size = a_size.min(b_rows);
@@ -299,7 +304,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         let bytes =
             poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_apply_dft_tmp_bytes(res.size(), a.size(), b.size());
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_apply_dft(
+        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_apply_dft::<Self>(
             module, cnv_offset, res, res_col, a, a_col, b, b_col, tmp,
         );
     }
@@ -317,7 +322,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     ) {
         let bytes = poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_prepare_left_lazy_tmp_bytes(module.n());
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_prepare_left_lazy(module, res, a, mask, tmp);
+        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_prepare_left_lazy::<Self>(module, res, a, mask, tmp);
     }
 
     fn cnv_prepare_right_lazy_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
@@ -334,7 +339,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         let n_u64 = poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_prepare_right_lazy_tmp_bytes(module.n())
             / size_of::<u64>();
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), n_u64);
-        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_prepare_right_lazy(module, res, a, mask, tmp);
+        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_prepare_right_lazy::<Self>(module, res, a, mask, tmp);
     }
 
     fn cnv_apply_dft_lazy_tmp_bytes(
@@ -420,7 +425,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
             b.size(),
         );
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_pairwise_apply_dft(
+        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_pairwise_apply_dft::<Self>(
             module, cnv_offset, res, res_col, a, b, i, j, tmp,
         );
     }
@@ -596,9 +601,9 @@ mod ifma_impl {
     use poulpy_hal::{
         api::{ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
         layouts::{
-            Backend, MatZnxBackendRef, Module, NoiseInfos, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef,
-            VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef,
-            VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
+            Backend, MatZnxBackendRef, MatZnxInfos, Module, NoiseInfos, ScalarZnxBackendRef, SvpPPolBackendMut,
+            SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef,
+            VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
         },
         oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
     };
@@ -648,9 +653,9 @@ mod ifma_impl {
         ) where
             R: VecZnxDftToBackendMut<Self>,
         {
-            let a_cols = <VecZnxBackendRef<'_, Self> as ZnxInfos>::cols(a);
+            let a_cols = <VecZnxBackendRef<'_, Self> as VecZnxInfos>::cols(a);
             let a_size = <VecZnxBackendRef<'_, Self> as ZnxInfos>::size(a);
-            let b_rows = <VmpPMatBackendRef<'_, Self> as ZnxInfos>::rows(b);
+            let b_rows = <VmpPMatBackendRef<'_, Self> as MatZnxInfos>::rows(b);
             let cols_to_copy = a_cols.min(b.cols_in());
             let a_start_col = a_cols - cols_to_copy;
             let a_dft_size = a_size.min(b_rows);

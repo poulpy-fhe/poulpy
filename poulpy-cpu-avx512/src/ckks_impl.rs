@@ -2,10 +2,9 @@
 use crate::NTT3x42Ifma;
 use crate::{FFT64Avx512, NTT4x30Avx512};
 use poulpy_ckks::{
-    impl_ckks_add_defaults, impl_ckks_bootstrapping_defaults, impl_ckks_conjugate_defaults, impl_ckks_copy_defaults,
-    impl_ckks_dft_defaults, impl_ckks_encryption_defaults, impl_ckks_imag_defaults, impl_ckks_mul_defaults,
-    impl_ckks_neg_defaults, impl_ckks_plaintext_defaults, impl_ckks_pow2_defaults, impl_ckks_rotate_defaults,
-    impl_ckks_sub_defaults,
+    impl_ckks_add_defaults, impl_ckks_conjugate_defaults, impl_ckks_copy_defaults, impl_ckks_dft_defaults,
+    impl_ckks_encryption_defaults, impl_ckks_imag_defaults, impl_ckks_mul_defaults, impl_ckks_neg_defaults,
+    impl_ckks_plaintext_defaults, impl_ckks_pow2_defaults, impl_ckks_rotate_defaults, impl_ckks_sub_defaults,
 };
 
 impl_ckks_conjugate_defaults!(FFT64Avx512);
@@ -70,11 +69,16 @@ select_avx512_encoding_transform!(NTT3x42Ifma);
 
 ::poulpy_cpu_ref::impl_ckks_encoding!(FFT64Avx512);
 ::poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(FFT64Avx512);
+::poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(FFT64Avx512);
 ::poulpy_cpu_ref::impl_ckks_encoding!(NTT4x30Avx512);
 ::poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(NTT4x30Avx512);
+::poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
 ::poulpy_cpu_ref::impl_ckks_encoding!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
 ::poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(NTT3x42Ifma);
+#[cfg(feature = "enable-ifma")]
+::poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(NTT3x42Ifma);
 
 impl_ckks_add_defaults!(FFT64Avx512);
 impl_ckks_add_defaults!(NTT4x30Avx512);
@@ -95,8 +99,3 @@ impl_ckks_dft_defaults!(FFT64Avx512);
 impl_ckks_dft_defaults!(NTT4x30Avx512);
 #[cfg(feature = "enable-ifma")]
 impl_ckks_dft_defaults!(NTT3x42Ifma);
-
-impl_ckks_bootstrapping_defaults!(FFT64Avx512);
-impl_ckks_bootstrapping_defaults!(NTT4x30Avx512);
-#[cfg(feature = "enable-ifma")]
-impl_ckks_bootstrapping_defaults!(NTT3x42Ifma);

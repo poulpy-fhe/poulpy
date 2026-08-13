@@ -5,6 +5,7 @@ use poulpy_hal::{
     test_suite::TestParams,
 };
 
+use crate::layouts::GLWESecretSampling;
 use crate::{
     DEFAULT_SIGMA_XE, EncryptionLayout, GGLWENoise, GLWEAutomorphismKeyAutomorphism, GLWEAutomorphismKeyEncryptSk,
     layouts::{
@@ -81,10 +82,11 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::TestBacke
             })
             .unwrap();
 
-            let mut auto_key_in: GLWEAutomorphismKey<Vec<u8>> = module.glwe_automorphism_key_alloc_from_infos(&auto_key_in_infos);
-            let mut auto_key_out: GLWEAutomorphismKey<Vec<u8>> =
+            let mut auto_key_in: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
+                module.glwe_automorphism_key_alloc_from_infos(&auto_key_in_infos);
+            let mut auto_key_out: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
                 module.glwe_automorphism_key_alloc_from_infos(&auto_key_out_infos);
-            let mut auto_key_apply: GLWEAutomorphismKey<Vec<u8>> =
+            let mut auto_key_apply: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
                 module.glwe_automorphism_key_alloc_from_infos(&auto_key_apply_infos);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
@@ -102,8 +104,8 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::TestBacke
                     )),
             );
 
-            let mut sk: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(&auto_key_in);
-            sk.fill_ternary_prob(0.5, &mut source_xs);
+            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&auto_key_in);
+            module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
             // gglwe_{s1}(s0) = s0 -> s1
             module.glwe_automorphism_key_encrypt_sk(
@@ -140,8 +142,8 @@ pub fn test_gglwe_automorphism_key_automorphism<BE: crate::test_suite::TestBacke
                 &mut scratch.borrow(),
             );
 
-            let mut sk_auto: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(&auto_key_out_infos);
-            sk_auto.fill_zero(); // Necessary to avoid panic of unfilled sk
+            let mut sk_auto: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&auto_key_out_infos);
+            module.glwe_secret_fill_zero(&mut sk_auto); // Necessary to avoid panic of unfilled sk
             let sk_backend = ScalarZnx::from_data(BE::from_host_bytes(sk.data().data.as_ref()), sk.data().n(), sk.data().cols());
             let mut sk_auto_backend = ScalarZnx::from_data(
                 BE::from_host_bytes(sk_auto.data().data.as_ref()),
@@ -253,8 +255,9 @@ pub fn test_gglwe_automorphism_key_automorphism_assign<BE: crate::test_suite::Te
             })
             .unwrap();
 
-            let mut auto_key: GLWEAutomorphismKey<Vec<u8>> = module.glwe_automorphism_key_alloc_from_infos(&auto_key_layout);
-            let mut auto_key_apply: GLWEAutomorphismKey<Vec<u8>> =
+            let mut auto_key: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
+                module.glwe_automorphism_key_alloc_from_infos(&auto_key_layout);
+            let mut auto_key_apply: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
                 module.glwe_automorphism_key_alloc_from_infos(&auto_key_apply_layout);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
@@ -267,8 +270,8 @@ pub fn test_gglwe_automorphism_key_automorphism_assign<BE: crate::test_suite::Te
                     | module.glwe_automorphism_key_automorphism_tmp_bytes(&auto_key, &auto_key, &auto_key_apply),
             );
 
-            let mut sk: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(&auto_key);
-            sk.fill_ternary_prob(0.5, &mut source_xs);
+            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&auto_key);
+            module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
 
             // gglwe_{s1}(s0) = s0 -> s1
             module.glwe_automorphism_key_encrypt_sk(
@@ -300,8 +303,8 @@ pub fn test_gglwe_automorphism_key_automorphism_assign<BE: crate::test_suite::Te
             // gglwe_{s1}(s0) (x) gglwe_{s2}(s1) = gglwe_{s2}(s0)
             module.glwe_automorphism_key_automorphism_assign(&mut auto_key, &auto_key_apply_prepared, &mut scratch.borrow());
 
-            let mut sk_auto: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(&auto_key);
-            sk_auto.fill_zero(); // Necessary to avoid panic of unfilled sk
+            let mut sk_auto: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&auto_key);
+            module.glwe_secret_fill_zero(&mut sk_auto); // Necessary to avoid panic of unfilled sk
 
             let sk_backend = ScalarZnx::from_data(BE::from_host_bytes(sk.data().data.as_ref()), sk.data().n(), sk.data().cols());
             let mut sk_auto_backend = ScalarZnx::from_data(

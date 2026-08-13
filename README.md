@@ -176,10 +176,10 @@ Consider joining our [telegram](https://t.me/+uy7_HADsdN1jNmU1) group for any qu
 Please use the following BibTeX entry for citing Poulpy:
 
     @misc{poulpy,
-        title = {Poulpy v0.6.0},
+        title = {Poulpy v0.7.0},
         author = {Jean-Philippe Bossuat and Jules Dumezy and Rasoul Akhavan Mahdavi and Janmajaya Mall and Cedoor and Luis Ruiz-Lopez},
         affiliation = {Jean-Philippe Bossuat: Ideal Rings Lab and PhantomZone; Jules Dumezy: CEA-List, Universit{\'e} Paris-Saclay; Rasoul Akhavan Mahdavi: University of Waterloo; Janmajaya Mall: PhantomZone; Cedoor: Independent contributor; Luis Ruiz-Lopez: University of Waterloo},
         howpublished = {Online: \url{https://github.com/poulpy-fhe/poulpy}},
-        month = May,
+        month = July,
         year = 2026,
     }

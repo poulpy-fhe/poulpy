@@ -1,7 +1,6 @@
 //! Evaluation keys for CKKS bootstrapping.
 //!
-//! The refresh pipeline (`ModUp → CoeffsToSlots → EvalMod → SlotsToCoeffs`)
-//! consumes four kinds of key material:
+//! The bootstrapping pipelines consume four kinds of key material:
 //!
 //! - **rotation (automorphism) keys** for the two homomorphic DFTs — the union
 //!   of the Galois elements of `CoeffsToSlots` (incl. the optional high-precision
@@ -9,7 +8,9 @@
 //! - a **conjugation key** (Galois element `−1`) for the split `CoeffsToSlots`;
 //! - a **tensor (relinearization) key** for EvalMod's `ct×ct` squaring;
 //! - optionally, the **sparse-secret encapsulation** key-switching keys
-//!   (`denseToSparse`, `sparseToDense`; <https://eprint.iacr.org/2022/024>).
+//!   (`denseToSparse`, `sparseToDense`; <https://eprint.iacr.org/2022/024>),
+//!   whose sparse ephemeral secret is sampled inside
+//!   [`BootstrappingContext::generate_keys`] and never escapes it.
 //!
 //! ## Unprepared vs prepared
 //!
@@ -17,9 +18,7 @@
 //! [`BootstrappingKeySet`] — the encrypted, *not yet preprocessed* keys. Keys are
 //! kept unprepared on purpose: the unprepared form is what one serializes to send
 //! online, and on accelerators (GPU) it is what lives in device memory, prepared
-//! on the fly right before use (less memory / traffic than caching the prepared
-//! form). Both the set and the individual key types are generic over the data
-//! buffer `D`, so they are backend agnostic and movable across contexts.
+//! on the fly right before use.
 //!
 //! [`BootstrappingKeySet::prepare`] produces a **prepared**
 //! [`BootstrappingKeysPrepared`] bundle (everything preprocessed up front) for the
@@ -33,7 +32,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use anyhow::Result;
 use poulpy_core::{
-    EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk, ModuleTransfer,
+    EncryptionLayout, GLWEAutomorphismKeyEncryptSk, GLWESwitchingKeyEncryptSk, GLWETensorKeyEncryptSk,
     layouts::{
         BackendGLWESecret, GGLWEInfos, GGLWEPreparedToBackendRef, GGLWEToBackendRef, GLWEAutomorphismKey,
         GLWEAutomorphismKeyHelper, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPrepared, GLWEAutomorphismKeyPreparedFactory,
@@ -44,11 +43,13 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    layouts::{Backend, CyclotomicOrder, Data, HostBytesBackend, HostDataMut, HostDataRef, Module, ScratchArena, TransferFrom},
+    layouts::{Backend, CyclotomicOrder, Data, HostDataMut, HostDataRef, Module, ScratchArena, ZnxWord},
     source::Source,
 };
 
 use crate::layouts::BootstrappingContext;
+use poulpy_core::layouts::GLWESecretSampling;
+use poulpy_core::{Distribution, GetDistributionMut};
 
 /// Pipeline-facing access to the **prepared** evaluation keys a CKKS bootstrap
 /// consumes.
@@ -95,15 +96,15 @@ pub trait BootstrappingKeys<BE: Backend> {
 /// buffer `D` (backend agnostic). Call [`Self::prepare`] to obtain the prepared
 /// [`BootstrappingKeysPrepared`] the pipeline consumes, or prepare individual keys
 /// on the fly.
-pub struct BootstrappingKeySet<D: Data> {
+pub struct BootstrappingKeySet<D: Data, W: ZnxWord> {
     /// Rotation keys indexed by Galois element (the engine-wide convention).
-    pub rotation_keys: HashMap<i64, GLWEAutomorphismKey<D>>,
+    pub rotation_keys: HashMap<i64, GLWEAutomorphismKey<D, W>>,
     /// Conjugation key (Galois element `−1`).
-    pub conjugation_key: GLWEAutomorphismKey<D>,
+    pub conjugation_key: GLWEAutomorphismKey<D, W>,
     /// Relinearization (tensor) key for EvalMod.
-    pub tensor_key: GLWETensorKey<D>,
+    pub tensor_key: GLWETensorKey<D, W>,
     /// `(denseToSparse, sparseToDense)` encapsulation keys, or `None`.
-    pub encapsulation_keys: Option<(GLWESwitchingKey<D>, GLWESwitchingKey<D>)>,
+    pub encapsulation_keys: Option<(GLWESwitchingKey<D, W>, GLWESwitchingKey<D, W>)>,
 }
 
 /// The **prepared** (preprocessed) bootstrapping keys, ready for the pipeline.
@@ -149,7 +150,7 @@ where
     }
 }
 
-impl<D: Data> BootstrappingKeySet<D> {
+impl<D: Data, W: ZnxWord> BootstrappingKeySet<D, W> {
     /// Preprocesses every key into a [`BootstrappingKeysPrepared`] bundle.
     ///
     /// Convenience for the CPU path that prepares the whole set up front; streaming
@@ -162,10 +163,10 @@ impl<D: Data> BootstrappingKeySet<D> {
     ) -> BootstrappingKeysPrepared<BE::OwnedBuf, BE>
     where
         D: HostDataRef,
-        GLWEAutomorphismKey<D>: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
-        GLWETensorKey<D>: GGLWEToBackendRef<BE> + GGLWEInfos,
-        GLWESwitchingKey<D>: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees + GGLWEInfos,
-        Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
+        GLWEAutomorphismKey<D, W>: GGLWEToBackendRef<BE> + GetGaloisElement + GGLWEInfos,
+        GLWETensorKey<D, W>: GGLWEToBackendRef<BE> + GGLWEInfos,
+        GLWESwitchingKey<D, W>: GGLWEToBackendRef<BE> + GLWESwitchingKeyDegrees + GGLWEInfos,
+        Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + GLWEAutomorphismKeyPreparedFactory<BE>
             + GLWETensorKeyPreparedFactory<BE>
             + GLWESwitchingKeyPreparedFactory<BE>,
@@ -219,27 +220,20 @@ pub struct BootstrappingKeysLayout {
     pub automorphism_key: GLWEAutomorphismKeyLayout,
     /// Layout of the EvalMod relinearization (tensor) key.
     pub tensor_key: GLWETensorKeyLayout,
-    /// Sparse-secret encapsulation parameters, or `None` to disable the trick.
+    /// Physical layouts for the sparse-secret encapsulation keys required by
+    /// the recipe, or `None` when the recipe disables the technique.
     pub encapsulation: Option<EncapsulationKeysLayout>,
 }
 
 /// Layout of the sparse-secret encapsulation key-switching keys
 /// (<https://eprint.iacr.org/2022/024>).
 ///
-/// This is the **single source of truth** for the encapsulation trick: setting
-/// [`BootstrappingKeysLayout::encapsulation`] generates the two key-switching
-/// keys, and the pipeline enables the trick exactly when those keys are
-/// present in the key set (`denseToSparse → ModUp → sparseToDense`). Under a
-/// sparse key the integer wrap-around `I·q` exposed by ModUp is bounded by
-/// `ephemeral_secret_weight` instead of the dense weight, so EvalMod can use a
-/// much smaller interval `K` (`f_mod_interval`) with negligible failure
-/// probability — choose the plan's `f_mod_interval` accordingly. The keys are
-/// derived from the dense secret at keygen; nothing about the trick is stored
-/// in the secret-independent `BootstrappingPlan`/`BootstrappingContext`.
+/// The compiled recipe is the source of truth for whether encapsulation is
+/// enabled and for the ephemeral secret's Hamming weight. This type describes
+/// only the two physical key-switch layouts. Key generation rejects a layout
+/// whose optional presence disagrees with the recipe.
 #[derive(Clone, Copy, Debug)]
 pub struct EncapsulationKeysLayout {
-    /// Hamming weight of the ephemeral sparse secret.
-    pub ephemeral_secret_weight: usize,
     /// `denseToSparse` key layout (sized at the input modulus).
     pub dense_to_sparse: GLWESwitchingKeyLayout,
     /// `sparseToDense` key layout (sized at the bootstrap modulus).
@@ -256,51 +250,54 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
     /// The rotation keys cover the union of the Galois elements of the compiled
     /// `CoeffsToSlots` (and its high-precision bypass, if any) and `SlotsToCoeffs`
     /// matrices; the conjugation key is the Galois-element-`−1` automorphism; the
-    /// tensor key relinearizes EvalMod; and, when
-    /// [`BootstrappingKeysLayout::encapsulation`] is set, a fresh sparse ephemeral
-    /// secret is sampled (on `host_module`, weight
-    /// [`EncapsulationKeysLayout::ephemeral_secret_weight`]) and the two
-    /// encapsulation key-switching keys are derived from `sk_dense`.
+    /// tensor key relinearizes EvalMod; and, when the compiled recipe enables
+    /// sparse-secret encapsulation, a fresh sparse ephemeral secret is sampled
+    /// from `source_xs` at the recipe's Hamming weight and the two encapsulation
+    /// key-switching keys are derived from `sk_dense`.
     ///
-    /// Key generation is deliberately host-side: the ephemeral secret is sampled
-    /// on `host_module` and uploaded, hence the `TransferFrom<HostBytesBackend>`
-    /// bound. Keygen runs once per keyset, so no backend-resident sampling path
-    /// is provided.
+    /// The ephemeral secret never leaves this call and is tagged
+    /// [`Distribution::ENCAPSULATED`], so it can neither back a public key nor
+    /// be serialized.
     ///
     /// `scratch` must be large enough for the key encrypt operations.
     #[allow(clippy::too_many_arguments)]
     pub fn generate_keys(
         &self,
         module: &Module<BE>,
-        host_module: &Module<HostBytesBackend>,
         sk_dense: &BackendGLWESecret<BE>,
         layout: &BootstrappingKeysLayout,
         source_xs: &mut Source,
         source_xe: &mut Source,
         source_xa: &mut Source,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<BootstrappingKeySet<BE::OwnedBuf>>
+    ) -> Result<BootstrappingKeySet<BE::OwnedBuf, BE::ZnxWord>>
     where
-        BE: TransferFrom<HostBytesBackend>,
         BE::OwnedBuf: HostDataMut,
-        Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
-            + ModuleTransfer<BE>
+        Module<BE>: ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
             + CyclotomicOrder
             + GLWEAutomorphismKeyEncryptSk<BE>
             + GLWETensorKeyEncryptSk<BE>
-            + GLWESwitchingKeyEncryptSk<BE>,
-        Module<HostBytesBackend>: ModuleCoreAlloc<OwnedBuf = Vec<u8>>,
+            + GLWESwitchingKeyEncryptSk<BE>
+            + GLWESecretSampling<BE>,
     {
+        let sparse_secret_hamming_weight = self.sparse_secret_hamming_weight();
+        anyhow::ensure!(
+            sparse_secret_hamming_weight.is_some() == layout.encapsulation.is_some(),
+            "bootstrapping key layout encapsulation does not match the compiled recipe (expected {}, got {})",
+            sparse_secret_hamming_weight.is_some(),
+            layout.encapsulation.is_some()
+        );
+
         let order = module.cyclotomic_order();
         let atk_enc = EncryptionLayout::new_from_default_sigma(layout.automorphism_key)?;
 
         // Rotation keys: the union of both DFTs' (and the bypass') Galois elements.
         let mut gal_set: BTreeSet<i64> = BTreeSet::new();
-        gal_set.extend(self.coeffs_to_slots.galois_elements(order));
-        if let Some(bypass) = &self.coeffs_to_slots_bypass {
+        gal_set.extend(self.coeffs_to_slots().galois_elements(order));
+        if let Some(bypass) = self.coeffs_to_slots_bypass() {
             gal_set.extend(bypass.galois_elements(order));
         }
-        gal_set.extend(self.slots_to_coeffs.galois_elements(order));
+        gal_set.extend(self.slots_to_coeffs().galois_elements(order));
 
         let mut rotation_keys = HashMap::with_capacity(gal_set.len());
         for p in gal_set {
@@ -319,15 +316,15 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
         module.glwe_tensor_key_encrypt_sk(&mut tensor_key, sk_dense, &tsk_enc, source_xe, source_xa, scratch);
 
         // Sparse-secret encapsulation key-switching keys.
-        let encapsulation_keys = match &layout.encapsulation {
-            Some(encaps) => {
+        let encapsulation_keys = match (sparse_secret_hamming_weight, &layout.encapsulation) {
+            (Some(hamming_weight), Some(encaps)) => {
                 let sk_layout = GLWESecretLayout {
                     n: sk_dense.n(),
                     rank: sk_dense.rank(),
                 };
-                let mut sk_sparse_host = host_module.glwe_secret_alloc_from_infos(&sk_layout);
-                sk_sparse_host.fill_ternary_hw(encaps.ephemeral_secret_weight, source_xs);
-                let sk_sparse = module.upload_glwe_secret::<HostBytesBackend>(&sk_sparse_host);
+                let mut sk_sparse = module.glwe_secret_alloc_from_infos(&sk_layout);
+                module.glwe_secret_fill_ternary_hw(&mut sk_sparse, hamming_weight, source_xs);
+                *sk_sparse.dist_mut() = Distribution::ENCAPSULATED("sparse-encapsulation");
 
                 let d2s_enc = EncryptionLayout::new_from_default_sigma(encaps.dense_to_sparse)?;
                 let s2d_enc = EncryptionLayout::new_from_default_sigma(encaps.sparse_to_dense)?;
@@ -354,7 +351,8 @@ impl<BE: Backend, F> BootstrappingContext<BE, F> {
                 );
                 Some((dense_to_sparse, sparse_to_dense))
             }
-            None => None,
+            (None, None) => None,
+            _ => unreachable!("recipe/layout encapsulation mismatch validated above"),
         };
 
         Ok(BootstrappingKeySet {

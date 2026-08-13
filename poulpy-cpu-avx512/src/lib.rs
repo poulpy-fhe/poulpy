@@ -27,9 +27,9 @@
 //!
 //! # Scalar types
 //!
-//! - `FFT64Avx512`: `ScalarPrep = f64`, `ScalarBig = i64`.
-//! - `NTT4x30Avx512`: `ScalarPrep = Q120bScalar`, `ScalarBig = i128`.
-//! - `NTT3x42Ifma`: `ScalarPrep = Q126Scalar`, `ScalarBig = i128`.
+//! - `FFT64Avx512`: `DftWord = f64`, `BigWord = i64`.
+//! - `NTT4x30Avx512`: `DftWord = Q120bScalar`, `BigWord = i128`.
+//! - `NTT3x42Ifma`: `DftWord = Q126Scalar`, `BigWord = i128`.
 //!
 //! # CPU requirements
 //!
@@ -292,3 +292,6 @@ mod transfer_impls {
         }
     }
 }
+
+#[cfg(feature = "enable-avx512f")]
+mod layout_compat;

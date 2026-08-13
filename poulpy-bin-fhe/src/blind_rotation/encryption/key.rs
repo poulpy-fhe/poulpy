@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    layouts::{Backend, HostBackend, HostDataMut, ScratchArena},
+    layouts::{Backend, HostBackend, HostDataMut, ScratchArena, ZnxWord},
     source::Source,
 };
 
@@ -40,7 +40,7 @@ pub trait BlindRotationKeyEncryptSk<BRA: BlindRotationAlgo, B: Backend> {
     #[allow(clippy::too_many_arguments)]
     fn blind_rotation_key_encrypt_sk<S0, S1, E>(
         &self,
-        res: &mut BlindRotationKey<B::OwnedBuf, BRA>,
+        res: &mut BlindRotationKey<B::OwnedBuf, BRA, B::ZnxWord>,
         sk_glwe: &S0,
         sk_lwe: &S1,
         enc_infos: &E,
@@ -53,7 +53,7 @@ pub trait BlindRotationKeyEncryptSk<BRA: BlindRotationAlgo, B: Backend> {
         S1: LWESecretToBackendRef<B> + LWEInfos + GetDistribution;
 }
 
-impl<D: HostDataMut, BRA: BlindRotationAlgo> BlindRotationKey<D, BRA> {
+impl<D: HostDataMut, BRA: BlindRotationAlgo, W: ZnxWord> BlindRotationKey<D, BRA, W> {
     #[allow(clippy::too_many_arguments)]
     pub fn encrypt_sk<M, S0, S1, E, BE>(
         &mut self,
@@ -69,13 +69,13 @@ impl<D: HostDataMut, BRA: BlindRotationAlgo> BlindRotationKey<D, BRA> {
         S1: LWESecretToBackendRef<BE> + LWEInfos + GetDistribution,
         E: EncryptionInfos,
         M: BlindRotationKeyEncryptSk<BRA, BE>,
-        BE: Backend<OwnedBuf = D> + HostBackend,
+        BE: Backend<OwnedBuf = D, ZnxWord = W> + HostBackend,
     {
         module.blind_rotation_key_encrypt_sk(self, sk_glwe, sk_lwe, enc_infos, source_xe, source_xa, scratch);
     }
 }
 
-impl<BRA: BlindRotationAlgo> BlindRotationKey<Vec<u8>, BRA> {
+impl<BRA: BlindRotationAlgo> BlindRotationKey<Vec<u8>, BRA, i64> {
     pub fn encrypt_sk_tmp_bytes<A, M, BE: Backend>(module: &M, infos: &A) -> usize
     where
         A: GGSWInfos,

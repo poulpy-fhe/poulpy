@@ -4,9 +4,7 @@ use criterion::{Bencher, measurement::Measurement};
 use poulpy_core::{
     EncryptionLayout, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
     layouts::{
-        Base2K, Dnum, Dsize, GGLWEToGGSWKeyLayout, GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWEAutomorphismKeyLayout,
-        GLWELayout, GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory, LWE, LWEInfos, LWELayout, LWESecret,
-        ModuleCoreAlloc, TorusPrecision,
+        Base2K, Dnum, Dsize, GGLWEToGGSWKeyLayout, GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWEAutomorphismKeyLayout, GLWELayout, GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, LWE, LWEInfos, LWELayout, LWESecret, LWESecretSampling, ModuleCoreAlloc, TorusPrecision
     },
 };
 use poulpy_hal::{
@@ -30,7 +28,7 @@ use poulpy_bin_fhe::{
 
 use crate::params::{BlindRotateBenchParams, CircuitBootstrappingBenchParam};
 
-pub fn runner_blind_rotate<BE: Backend<OwnedBuf = Vec<u8>>, BRA: BlindRotationAlgo, M: Measurement>(
+pub fn runner_blind_rotate<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, BRA: BlindRotationAlgo, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     params: &BlindRotateBenchParams,
 ) where
@@ -39,10 +37,12 @@ pub fn runner_blind_rotate<BE: Backend<OwnedBuf = Vec<u8>>, BRA: BlindRotationAl
         + BlindRotationKeyEncryptSk<BRA, BE>
         + BlindRotationKeyPreparedFactory<BRA, BE>
         + BlindRotationExecute<BRA, BE>
-        + LookupTableFactory
+        + LookupTableFactory<BE::OwnedBuf, BE::ZnxWord>
         + GLWESecretPreparedFactory<BE>
         + GLWEDecrypt<BE>
-        + LWEEncryptSk<BE>,
+        + LWEEncryptSk<BE>
+        + GLWESecretSampling<BE>
+        + LWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let message_modulus: usize = 1 << params.log_message_modulus;
@@ -74,17 +74,18 @@ pub fn runner_blind_rotate<BE: Backend<OwnedBuf = Vec<u8>>, BRA: BlindRotationAl
         base2k: Base2K(params.bin_fhe_params.base2k),
     };
 
-    let mut sk_glwe: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(&glwe_infos);
-    sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
+     let mut sk_glwe: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc_from_infos(&glwe_infos);
+    module.glwe_secret_fill_ternary_prob(&mut sk_glwe, 0.5, &mut source_xs);
     let mut sk_glwe_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&glwe_infos);
     module.glwe_secret_prepare(&mut sk_glwe_dft, &sk_glwe);
 
-    let mut sk_lwe: LWESecret<Vec<u8>> = module.lwe_secret_alloc(params.bin_fhe_params.n_lwe.into());
-    sk_lwe.fill_binary_block(params.block_size, &mut source_xs);
+    let mut sk_lwe: LWESecret<Vec<u8>, i64> = module.lwe_secret_alloc(params.bin_fhe_params.n_lwe.into());
+    module.lwe_secret_fill_binary_block(&mut sk_lwe, params.block_size, &mut source_xs);
 
     let brk_enc_infos = EncryptionLayout::new_from_default_sigma(brk_infos).unwrap();
 
-    let mut brk: BlindRotationKey<Vec<u8>, BRA> = BlindRotationKey::<Vec<u8>, BRA>::alloc(&module, &brk_infos);
+    let mut brk: BlindRotationKey<BE::OwnedBuf, BRA, BE::ZnxWord> =
+        BlindRotationKey::<BE::OwnedBuf, BRA, BE::ZnxWord>::alloc(&module, &brk_infos);
     module.blind_rotation_key_encrypt_sk(
         &mut brk,
         &sk_glwe_dft,
@@ -98,9 +99,9 @@ pub fn runner_blind_rotate<BE: Backend<OwnedBuf = Vec<u8>>, BRA: BlindRotationAl
     let mut brk_prepared: BlindRotationKeyPrepared<BE::OwnedBuf, BRA, BE> = BlindRotationKeyPrepared::alloc(&module, &brk);
     brk_prepared.prepare(&module, &brk, &mut scratch.borrow());
 
-    let mut res: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&glwe_infos);
+    let mut res: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&glwe_infos);
     res.data_mut().fill_uniform(glwe_infos.base2k().as_usize(), &mut source_xa);
-    let mut lwe: LWE<Vec<u8>> = module.lwe_alloc_from_infos(&lwe_infos);
+    let mut lwe: LWE<Vec<u8>, i64> = module.lwe_alloc_from_infos(&lwe_infos);
     lwe.fill_uniform(lwe_infos.base2k().as_usize(), &mut source_xa);
 
     let mut f_vec: Vec<i64> = vec![0i64; message_modulus];
@@ -112,7 +113,7 @@ pub fn runner_blind_rotate<BE: Backend<OwnedBuf = Vec<u8>>, BRA: BlindRotationAl
         k: TorusPrecision(2),
         base2k: Base2K(17),
     };
-    let mut lut: LookupTable = LookupTable::alloc(&module, &lut_infos);
+    let mut lut: LookupTable<BE::OwnedBuf, BE::ZnxWord> = LookupTable::alloc(&module, &lut_infos);
     lut.set(&module, &f_vec, params.log_message_modulus + 1);
 
     bencher.iter(|| {
@@ -121,7 +122,7 @@ pub fn runner_blind_rotate<BE: Backend<OwnedBuf = Vec<u8>>, BRA: BlindRotationAl
     });
 }
 
-pub fn runner_circuit_bootstrapping<BE: Backend<OwnedBuf = Vec<u8>> + HostBackend, BRA: BlindRotationAlgo, M: Measurement>(
+pub fn runner_circuit_bootstrapping<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend, BRA: BlindRotationAlgo, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     params: &CircuitBootstrappingBenchParam,
 ) where
@@ -137,7 +138,9 @@ pub fn runner_circuit_bootstrapping<BE: Backend<OwnedBuf = Vec<u8>> + HostBacken
         + GGSWPreparedFactory<BE>
         + GGSWNoise<BE>
         + GLWEEncryptSk<BE>
-        + VecZnxRotateAssignBackend<BE>,
+        + VecZnxRotateAssignBackend<BE>
+        + GLWESecretSampling<BE>
+        + LWESecretSampling<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let cbt_infos: CircuitBootstrappingKeyLayout = CircuitBootstrappingKeyLayout {
@@ -191,17 +194,18 @@ pub fn runner_circuit_bootstrapping<BE: Backend<OwnedBuf = Vec<u8>> + HostBacken
     let mut source_xa: Source = Source::new([1u8; 32]);
     let mut source_xe: Source = Source::new([1u8; 32]);
 
-    let mut sk_lwe: LWESecret<Vec<u8>> = module.lwe_secret_alloc(n_lwe);
-    sk_lwe.fill_binary_block(7, &mut source_xs);
+    let mut sk_lwe: LWESecret<Vec<u8>, i64> = module.lwe_secret_alloc(n_lwe);
+    module.lwe_secret_fill_binary_block(&mut sk_lwe, 7, &mut source_xs);
 
-    let mut sk_glwe: GLWESecret<Vec<u8>> = module.glwe_secret_alloc(rank);
-    sk_glwe.fill_ternary_prob(0.5, &mut source_xs);
+    let mut sk_glwe: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc(rank);
+    module.glwe_secret_fill_ternary_prob(&mut sk_glwe, 0.5, &mut source_xs);
 
-    let ct_lwe: LWE<Vec<u8>> = module.lwe_alloc_from_infos(&lwe_infos);
+    let ct_lwe: LWE<Vec<u8>, i64> = module.lwe_alloc_from_infos(&lwe_infos);
 
     let cbt_enc_infos = CircuitBootstrappingEncryptionInfos::from_default_sigma(&cbt_infos).unwrap();
 
-    let mut cbt_key: CircuitBootstrappingKey<Vec<u8>, BRA> = CircuitBootstrappingKey::alloc_from_infos(&module, &cbt_infos);
+    let mut cbt_key: CircuitBootstrappingKey<BE::OwnedBuf, BRA, BE::ZnxWord> =
+        CircuitBootstrappingKey::alloc_from_infos(&module, &cbt_infos);
     module.circuit_bootstrapping_key_encrypt_sk(
         &mut cbt_key,
         &sk_lwe,
@@ -212,7 +216,7 @@ pub fn runner_circuit_bootstrapping<BE: Backend<OwnedBuf = Vec<u8>> + HostBacken
         &mut scratch.borrow(),
     );
 
-    let mut res: GGSW<Vec<u8>> = module.ggsw_alloc_from_infos(&ggsw_infos);
+    let mut res: GGSW<Vec<u8>, i64> = module.ggsw_alloc_from_infos(&ggsw_infos);
     let mut cbt_prepared: CircuitBootstrappingKeyPrepared<BE::OwnedBuf, BRA, BE> =
         CircuitBootstrappingKeyPrepared::alloc_from_infos(&module, &cbt_infos);
     cbt_prepared.prepare(&module, &cbt_key, &mut scratch.borrow());

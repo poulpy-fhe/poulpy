@@ -11,7 +11,7 @@
 //! | `CKKSPlaintext<D>` | Quantized CKKS plaintext in the torus / ZNX domain |
 
 /// Implements the full CKKS scratch-view trait bundle for a nominal backend
-/// view wrapper: [`CKKSInfos`](crate::CKKSInfos), [`SetCKKSInfos`](crate::SetCKKSInfos), `SetK`, `SetSize`, `Compact` (deliberate no-op — a scratch view's borrowed limb count is fixed for the lifetime of the arena allocation), `BSGSMeta`, and `SetBSGSMeta`.
+/// view wrapper: [`CKKSInfos`](crate::CKKSInfos), [`SetCKKSInfos`](crate::SetCKKSInfos), `SetK`, `BSGSMeta`, and `SetBSGSMeta`.
 ///
 /// Two arms, selected by where the CKKS metadata lives:
 ///
@@ -29,18 +29,6 @@ macro_rules! impl_ckks_infos {
             fn set_k(&mut self, k: ::poulpy_core::layouts::TorusPrecision) {
                 ::poulpy_core::layouts::SetK::set_k(&mut self.inner, k);
             }
-        }
-
-        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::SetSize for $name<'a, BE> {
-            fn set_size(&mut self, size: usize) {
-                ::poulpy_core::layouts::SetSize::set_size(&mut self.inner, size);
-            }
-        }
-
-        impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::Compact for $name<'a, BE> {
-            // Scratch-backed views intentionally skip compaction; the borrowed
-            // limb count is fixed for the lifetime of the arena allocation.
-            fn compact(&mut self) {}
         }
 
         impl<'a, BE: ::poulpy_hal::layouts::Backend + 'a> ::poulpy_core::layouts::BSGSMeta for $name<'a, BE> {
@@ -135,19 +123,24 @@ pub mod complex_diagonals;
 pub mod dft;
 mod encoding_buffer;
 pub mod eval_mod;
+pub mod functional_bootstrapping;
 pub mod mul;
 pub mod paco;
 pub mod plaintext;
+pub mod ship;
 pub(crate) mod validation;
 
 pub use alloc::CKKSModuleAlloc;
-pub use bootstrapping::{BootstrappingContext, BootstrappingPlan};
+pub use bootstrapping::{
+    BootstrappingContext, BootstrappingPipeline, BootstrappingPlan, BootstrappingTechniques, EvalRoundPlus,
+    SparseSecretEncapsulation,
+};
 pub use bootstrapping_keys::{
     BootstrappingKeySet, BootstrappingKeys, BootstrappingKeysLayout, BootstrappingKeysPrepared, EncapsulationKeysLayout,
 };
 pub use ciphertext::{
-    CKKSCiphertext, CKKSCiphertextViewMut, CKKSNormalizationState, Normalized, ScratchArenaTakeCKKS, Unnormalized,
-    UnnormalizedCKKSCiphertext,
+    CKKSCiphertext, CKKSCiphertextOwned, CKKSCiphertextViewMut, CKKSNormalizationState, Normalized, ScratchArenaTakeCKKS,
+    Unnormalized, UnnormalizedCKKSCiphertext,
 };
 pub use complex_diagonals::ComplexDiagonals;
 pub use dft::{
@@ -163,12 +156,18 @@ pub(crate) use encoding_buffer::{
     copy_reim_host_into_encoding_buffer,
 };
 pub use eval_mod::{EvalMod, EvalModBsgs, EvalModPlan, EvalModPoly, EvalModType, compile_eval_mod};
+pub use functional_bootstrapping::EncodedLut;
+pub(crate) use functional_bootstrapping::EncodedLutKind;
 pub use mul::CKKSPreparedRight;
 pub use paco::{
     PaCoContext, PaCoDFTPlan, PaCoKeyParameters, PaCoKeySet, PaCoKeySetParts, PaCoKeys, PaCoKeysPrepared, PaCoKeysPreparedParts,
     PaCoPlan, PaCoSecretSpec, PaCoSlotOrder, PaCoWorker,
 };
-pub use plaintext::{CKKSPlaintext, CKKSPlaintextViewMut};
+pub use plaintext::{CKKSPlaintext, CKKSPlaintextOwned, CKKSPlaintextViewMut};
+pub use ship::{
+    HMuxRotKey, HMuxRotKeyPrepared, ShipCoeffEncodings, ShipIndexKeys, ShipIndexKeysPrepared, ShipKeyParameters, ShipKeySet,
+    ShipKeysLayout, ShipKeysPrepared, ShipPlan, ShipSecretSpec,
+};
 
 use std::fmt::Debug;
 

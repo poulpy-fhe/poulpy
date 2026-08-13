@@ -36,43 +36,51 @@ use poulpy_hal::{
 #[inline]
 fn take_host_typed<'a, BE, T>(arena: ScratchArena<'a, BE>, len: usize) -> (&'a mut [T], ScratchArena<'a, BE>)
 where
-    BE: Backend + 'a,
+    BE: Backend<ZnxWord = i64> + 'a,
     BE::BufMut<'a>: HostBufMut<'a>,
     T: Copy,
 {
-    debug_assert!(
+    assert!(
         BE::SCRATCH_ALIGN.is_multiple_of(std::mem::align_of::<T>()),
         "B::SCRATCH_ALIGN ({}) must be a multiple of align_of::<T>() ({})",
         BE::SCRATCH_ALIGN,
         std::mem::align_of::<T>()
     );
-    let (buf, arena) = arena.take_region(len * std::mem::size_of::<T>());
+    let byte_len = len
+        .checked_mul(std::mem::size_of::<T>())
+        .expect("typed scratch byte size overflows usize");
+    let (buf, arena) = arena.take_region(byte_len);
     let bytes: &'a mut [u8] = buf.into_bytes();
+    assert!(
+        (bytes.as_mut_ptr() as usize).is_multiple_of(std::mem::align_of::<T>()),
+        "scratch region is not aligned to align_of::<T>() = {}",
+        std::mem::align_of::<T>()
+    );
     let slice = unsafe { std::slice::from_raw_parts_mut(bytes.as_mut_ptr() as *mut T, len) };
     (slice, arena)
 }
 
 #[doc(hidden)]
-pub trait ScalarBigHadamardProduct: Backend {
-    fn scalar_big_hadamard_product(res: &mut [Self::ScalarBig], a: &[i64], b: &[i64]);
+pub trait BigWordHadamardProduct: Backend<ZnxWord = i64> {
+    fn big_word_hadamard_product(res: &mut [Self::BigWord], a: &[i64], b: &[i64]);
 }
 
-impl ScalarBigHadamardProduct for crate::FFT64Ref {
+impl BigWordHadamardProduct for crate::FFT64Ref {
     #[inline(always)]
-    fn scalar_big_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
+    fn big_word_hadamard_product(res: &mut [i64], a: &[i64], b: &[i64]) {
         Self::i64_hadamard_product(res, a, b)
     }
 }
 
-impl ScalarBigHadamardProduct for crate::NTT4x30Ref {
+impl BigWordHadamardProduct for crate::NTT4x30Ref {
     #[inline(always)]
-    fn scalar_big_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
+    fn big_word_hadamard_product(res: &mut [i128], a: &[i64], b: &[i64]) {
         Self::i128_hadamard_product_i64(res, a, b)
     }
 }
 
 #[doc(hidden)]
-pub trait HalVecZnxDefault<BE: Backend>: Backend
+pub trait HalVecZnxDefault<BE: Backend<ZnxWord = i64>>: Backend
 where
     BE::OwnedBuf: poulpy_hal::layouts::HostDataMut,
 {
@@ -158,7 +166,7 @@ where
         b: &ScalarZnxBackendRef<'_, BE>,
         b_col: usize,
     ) where
-        BE: ScalarBigHadamardProduct,
+        BE: BigWordHadamardProduct,
         for<'x> BE::BufMut<'x>: HostDataMut,
         for<'x> BE::BufRef<'x>: poulpy_hal::layouts::HostDataRef,
     {
@@ -171,7 +179,7 @@ where
             let a_slice = a.at(a_col, limb);
             let b_slice = b.at(b_col, 0);
 
-            BE::scalar_big_hadamard_product(res_slice, a_slice, b_slice);
+            BE::big_word_hadamard_product(res_slice, a_slice, b_slice);
         }
     }
 
@@ -1183,4 +1191,4 @@ where
     }
 }
 
-impl<BE: Backend> HalVecZnxDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}
+impl<BE: Backend<ZnxWord = i64>> HalVecZnxDefault<BE> for BE where BE::OwnedBuf: poulpy_hal::layouts::HostDataMut {}

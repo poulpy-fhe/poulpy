@@ -1,24 +1,27 @@
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::{
-    GLWEKeyswitch,
-    layouts::{Compact, GLWEToBackendMut, GLWEToBackendRef},
+    GLWEAutomorphism, GLWEKeyswitch, GLWELinearTransformations, GLWERotate,
+    layouts::{GLWEToBackendMut, GLWEToBackendRef},
 };
 use poulpy_hal::{
     api::ScratchOwnedBorrow,
-    layouts::{Backend, Module, ScratchArena, ScratchOwned},
+    layouts::{Backend, CyclotomicOrder, Module, ScratchArena, ScratchOwned},
 };
 
 use crate::{
     CKKSCtBounds,
-    api::{CKKSPaCoOps, PaCoScalar},
+    api::{
+        CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSPaCoOps, CKKSRotateOps,
+        CKKSSubOps, PaCoScalar,
+    },
     default::paco::{
+        ops::PaCoSlotOps,
         parallel::{
-            PaCoBootstrapModule, paco_bootstrap_direct_into, paco_bootstrap_into, paco_bootstrap_parallel_direct_into,
-            paco_bootstrap_parallel_into,
+            paco_bootstrap_direct_into, paco_bootstrap_into, paco_bootstrap_parallel_direct_into, paco_bootstrap_parallel_into,
         },
         preflight::paco_bootstrap_tmp_bytes,
     },
-    layouts::{CKKSCiphertext, CKKSPlaintext, PaCoContext, PaCoKeys, PaCoWorker},
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, CKKSPlaintextOwned, PaCoContext, PaCoKeys, PaCoWorker},
     oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl},
 };
 
@@ -26,14 +29,27 @@ impl<BE, F> CKKSPaCoOps<BE, F> for Module<BE>
 where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
     F: PaCoScalar,
-    Module<BE>: PaCoBootstrapModule<BE> + GLWEKeyswitch<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Compact + Send + Sync,
-    CKKSPlaintext<BE::OwnedBuf>: GLWEToBackendRef<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRotateOps<BE>
+        + PaCoSlotOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWERotate<BE>
+        + GLWEAutomorphism<BE>
+        + GLWELinearTransformations<BE>
+        + GLWEKeyswitch<BE>
+        + CyclotomicOrder,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + Send + Sync,
+    CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,
     BE::OwnedBuf: Sync,
 {
     fn ckks_paco_bootstrap_direct_tmp_bytes<K, Src>(
         &self,
-        output: &CKKSCiphertext<BE::OwnedBuf>,
+        output: &CKKSCiphertextOwned<BE>,
         input: &Src,
         context: &PaCoContext<BE, F>,
         keys: &K,
@@ -47,7 +63,7 @@ where
 
     fn ckks_paco_bootstrap_tmp_bytes<K, Src>(
         &self,
-        output: &CKKSCiphertext<BE::OwnedBuf>,
+        output: &CKKSCiphertextOwned<BE>,
         input: &Src,
         context: &PaCoContext<BE, F>,
         keys: &K,
@@ -64,7 +80,7 @@ where
         ciphertext: &Src,
         context: &PaCoContext<BE, F>,
         scratch: &mut ScratchArena<'_, BE>,
-    ) -> Result<[CKKSPlaintext<BE::OwnedBuf>; 4]>
+    ) -> Result<[CKKSPlaintextOwned<BE>; 4]>
     where
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
@@ -83,43 +99,40 @@ where
 
     fn ckks_paco_bootstrap_direct_into<K, Src>(
         &self,
-        output: &mut CKKSCiphertext<BE::OwnedBuf>,
+        output: &mut CKKSCiphertextOwned<BE>,
         input: &Src,
         context: &PaCoContext<BE, F>,
         keys: &K,
-        kappa: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         K: PaCoKeys<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        paco_bootstrap_direct_into::<BE, F, K, Src>(self, output, input, context, keys, kappa, scratch)
+        paco_bootstrap_direct_into::<BE, F, K, Src>(self, output, input, context, keys, scratch)
     }
 
     fn ckks_paco_bootstrap_into<K, Src>(
         &self,
-        output: &mut CKKSCiphertext<BE::OwnedBuf>,
+        output: &mut CKKSCiphertextOwned<BE>,
         input: &Src,
         context: &PaCoContext<BE, F>,
         keys: &K,
-        kappa: usize,
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
         K: PaCoKeys<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds,
     {
-        paco_bootstrap_into::<BE, F, K, Src>(self, output, input, context, keys, kappa, scratch)
+        paco_bootstrap_into::<BE, F, K, Src>(self, output, input, context, keys, scratch)
     }
 
     fn ckks_paco_bootstrap_parallel_direct_into<K, Src>(
         &self,
-        output: &mut CKKSCiphertext<BE::OwnedBuf>,
+        output: &mut CKKSCiphertextOwned<BE>,
         input: &Src,
         context: &PaCoContext<BE, F>,
         keys: &K,
-        kappa: usize,
         workers: &mut [PaCoWorker<BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -128,16 +141,15 @@ where
         ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
     {
-        paco_bootstrap_parallel_direct_into::<BE, F, K, Src>(self, output, input, context, keys, kappa, workers, scratch)
+        paco_bootstrap_parallel_direct_into::<BE, F, K, Src>(self, output, input, context, keys, workers, scratch)
     }
 
     fn ckks_paco_bootstrap_parallel_into<K, Src>(
         &self,
-        output: &mut CKKSCiphertext<BE::OwnedBuf>,
+        output: &mut CKKSCiphertextOwned<BE>,
         input: &Src,
         context: &PaCoContext<BE, F>,
         keys: &K,
-        kappa: usize,
         workers: &mut [PaCoWorker<BE>],
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
@@ -146,6 +158,6 @@ where
         ScratchOwned<BE>: ScratchOwnedBorrow<BE>,
         Src: GLWEToBackendRef<BE> + CKKSCtBounds + Sync,
     {
-        paco_bootstrap_parallel_into::<BE, F, K, Src>(self, output, input, context, keys, kappa, workers, scratch)
+        paco_bootstrap_parallel_into::<BE, F, K, Src>(self, output, input, context, keys, workers, scratch)
     }
 }

@@ -1,3 +1,4 @@
+use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{
         ModuleN, SvpApplyDftToDftAssign, VecZnxBigAddAssign, VecZnxBigBytesOf, VecZnxBigFromSmallBackend, VecZnxBigNormalize,
@@ -11,11 +12,12 @@ use crate::{
     api::GLWENoise,
     decryption::{GLWEDecrypt, glwe_decrypt_backend_inner},
     layouts::{
-        GLWEBackendRef, GLWEInfos, GLWEPlaintext, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        GLWEBackendRef, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
         prepared::{GLWESecretPreparedBackendRef, GLWESecretPreparedToBackendRef},
     },
 };
 
+// Coefficient-word fence: ends in `VecZnx::stats`, which is i64-only.
 pub(crate) fn glwe_noise_backend_inner<M, BE>(
     module: &M,
     res_backend: &GLWEBackendRef<'_, BE>,
@@ -24,7 +26,8 @@ pub(crate) fn glwe_noise_backend_inner<M, BE>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Stats
 where
-    M: GLWENoise<BE>
+    M: GLWEBytesOf<BE>
+        + GLWENoise<BE>
         + GLWEDecrypt<BE>
         + GLWENormalize<BE>
         + VecZnxSubAssignBackend<BE>
@@ -38,7 +41,7 @@ where
         + VecZnxBigAddAssign<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes,
-    BE: HostBackend,
+    BE: HostBackend<ZnxWord = i64>,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     assert!(
@@ -83,7 +86,7 @@ where
     where
         A: GLWEInfos,
     {
-        let lvl_0: usize = GLWEPlaintext::<Vec<u8>>::bytes_of_from_infos(infos);
+        let lvl_0: usize = self.glwe_plaintext_bytes_of_from_infos(infos);
         let lvl_1: usize = self.glwe_normalize_tmp_bytes().max(self.glwe_decrypt_tmp_bytes(infos));
 
         lvl_0 + lvl_1
@@ -94,7 +97,7 @@ where
         R: GLWEToBackendRef<BE> + GLWEInfos,
         P: GLWEToBackendRef<BE>,
         S: GLWESecretPreparedToBackendRef<BE> + GLWEInfos,
-        BE: HostBackend,
+        BE: HostBackend<ZnxWord = i64>,
         for<'a> BE::BufMut<'a>: HostDataMut,
     {
         let res_backend = res.to_backend_ref();

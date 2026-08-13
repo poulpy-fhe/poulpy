@@ -13,7 +13,7 @@ pub fn svp_prepare<'r, 'a, BE>(
     a: &ScalarZnxBackendRef<'a, BE>,
     a_col: usize,
 ) where
-    BE: Backend<ScalarPrep = f64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64>,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64>,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
@@ -30,7 +30,7 @@ pub fn svp_apply_dft<'r, 'a, BE>(
     b: &VecZnxBackendRef<'a, BE>,
     b_col: usize,
 ) where
-    BE: Backend<ScalarPrep = f64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64>,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64>,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
@@ -59,7 +59,7 @@ pub fn svp_apply_dft_to_dft<'r, 'a, BE>(
     b: &VecZnxDftBackendRef<'a, BE>,
     b_col: usize,
 ) where
-    BE: Backend<ScalarPrep = f64> + ReimArith,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
@@ -83,7 +83,7 @@ pub fn svp_apply_dft_to_dft_assign<'r, 'a, BE>(
     a: &SvpPPolBackendRef<'a, BE>,
     a_col: usize,
 ) where
-    BE: Backend<ScalarPrep = f64> + ReimArith,
+    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {

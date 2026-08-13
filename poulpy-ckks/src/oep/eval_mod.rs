@@ -1,6 +1,7 @@
 use crate::CKKSResult as Result;
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{
-    BSGSMeta, Compact, GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta,
+    BSGSMeta, GGLWEInfos, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, SetBSGSMeta,
     prepared::GLWETensorKeyPreparedToBackendRef,
 };
 use poulpy_hal::layouts::{Backend, Module, ScratchArena};
@@ -9,7 +10,7 @@ use crate::{
     CKKSCtBounds, SetCKKSInfos,
     api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSSubOps},
     default::eval_mod::CKKSEvalModOpsDefault,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc, eval_mod::EvalMod},
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc, eval_mod::EvalMod},
 };
 
 /// Backend override hook for [`CKKSEvalModOps`](crate::api::CKKSEvalModOps).
@@ -36,9 +37,9 @@ pub unsafe trait CKKSEvalModImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta;
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta;
 }
 
 unsafe impl<BE: Backend> CKKSEvalModImpl<BE> for BE
@@ -50,7 +51,7 @@ where
         + CKKSCopyOps<BE>
         + CKKSModuleAlloc<BE>
         + CKKSEvalModOpsDefault<BE>,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     GLWETensorKeyPrepared<BE::OwnedBuf, BE>: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,
 {
     fn ckks_eval_mod_impl<R, C, P, F>(
@@ -62,9 +63,9 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta + Compact,
+        R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + SetBSGSMeta,
         C: GLWEToBackendRef<BE> + CKKSCtBounds,
-        P: GLWEToBackendRef<BE> + CKKSCtBounds + BSGSMeta,
+        P: GLWEToBackendRef<BE> + IntPolyInfos + CKKSCtBounds + BSGSMeta,
     {
         module.ckks_eval_mod_default(res, ct, params, tsk, scratch)
     }

@@ -911,6 +911,7 @@ mod tests {
         },
         tables::{Ntt3x42IfmaTable, Ntt3x42IfmaTableInv},
     };
+    use poulpy_hal::layouts::PrimeSet;
 
     #[test]
     fn harvey_modmul_simd_vs_scalar() {

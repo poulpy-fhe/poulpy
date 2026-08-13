@@ -28,6 +28,7 @@ fn ckks_ct_meta(cp: &CkksBenchParams) -> CKKSMeta {
     CKKSMeta {
         log_sparsity: 0,
         log_delta: cp.log_delta,
+        slots: cp.slots,
     }
 }
 
@@ -57,7 +58,7 @@ fn atk_layout(cp : &CkksBenchParams) -> EncryptionLayout<GLWEAutomorphismKeyLayo
 }
 
 
-pub fn runner_ckks_add_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
+pub fn runner_ckks_add_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
 where
     Module<BE>: ModuleNew<BE> + CKKSAddOps<BE>,
 {
@@ -83,7 +84,7 @@ where
 }
 
 
-pub fn runner_ckks_mul_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
+pub fn runner_ckks_mul_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
 where
     Module<BE>: ModuleNew<BE> + CKKSMulOps<BE> + GLWETensorKeyPreparedFactory<BE>,
 {
@@ -116,7 +117,7 @@ where
 }
 
 
-pub fn runner_ckks_rotate_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
+pub fn runner_ckks_rotate_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
 where
     Module<BE>: ModuleNew<BE> + CKKSRotateOps<BE> + GLWEAutomorphismKeyPreparedFactory<BE>,
 {
@@ -150,7 +151,7 @@ where
     });
 }
 
-pub fn runner_ckks_conjugate_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+pub fn runner_ckks_conjugate_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
@@ -180,7 +181,7 @@ pub fn runner_ckks_conjugate_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measuremen
     });
 }
 
-pub fn runner_ckks_add_pt_vec_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+pub fn runner_ckks_add_pt_vec_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
@@ -209,7 +210,7 @@ pub fn runner_ckks_add_pt_vec_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measureme
     });
 }
 
-pub fn runner_ckks_add_pt_const_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+pub fn runner_ckks_add_pt_const_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
@@ -238,7 +239,7 @@ pub fn runner_ckks_add_pt_const_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measure
     });
 }
 
-pub fn runner_ckks_sub_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
+pub fn runner_ckks_sub_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
 where
     Module<BE>: ModuleNew<BE> + CKKSSubOps<BE>,
 {
@@ -264,7 +265,7 @@ where
     });
 }
 
-pub fn runner_ckks_sub_pt_vec_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+pub fn runner_ckks_sub_pt_vec_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
@@ -293,7 +294,7 @@ pub fn runner_ckks_sub_pt_vec_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measureme
     });
 }
 
-pub fn runner_ckks_sub_pt_const_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+pub fn runner_ckks_sub_pt_const_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
@@ -322,7 +323,7 @@ pub fn runner_ckks_sub_pt_const_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measure
     });
 }
 
-pub fn runner_ckks_neg_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
+pub fn runner_ckks_neg_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
 where
     Module<BE>: ModuleNew<BE> + CKKSNegOps<BE>,
 {
@@ -344,7 +345,7 @@ where
     });
 }
 
-pub fn runner_ckks_mul_pow2_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+pub fn runner_ckks_mul_pow2_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
@@ -370,7 +371,7 @@ pub fn runner_ckks_mul_pow2_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement
     });
 }
 
-pub fn runner_ckks_div_pow2_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+pub fn runner_ckks_div_pow2_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
@@ -396,7 +397,7 @@ pub fn runner_ckks_div_pow2_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement
     });
 }
 
-pub fn runner_ckks_square_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+pub fn runner_ckks_square_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
@@ -425,7 +426,7 @@ pub fn runner_ckks_square_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
     });
 }
 
-pub fn runner_ckks_mul_pt_vec_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+pub fn runner_ckks_mul_pt_vec_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
@@ -454,7 +455,7 @@ pub fn runner_ckks_mul_pt_vec_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measureme
     });
 }
 
-pub fn runner_ckks_mul_pt_const_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+pub fn runner_ckks_mul_pt_const_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
@@ -487,7 +488,7 @@ fn ckks_encoding_values(len: usize) -> Vec<f64> {
     (0..len).map(|i| (i as f64 + 1.0) / len as f64).collect()
 }
 
-pub fn runner_ckks_encode_slots_assign_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+pub fn runner_ckks_encode_slots_assign_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
@@ -507,7 +508,7 @@ pub fn runner_ckks_encode_slots_assign_into<BE: Backend<OwnedBuf = Vec<u8>>, M: 
     });
 }
 
-pub fn runner_ckks_decode_slots_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+pub fn runner_ckks_decode_slots_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
@@ -530,7 +531,7 @@ pub fn runner_ckks_decode_slots_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measure
     });
 }
 
-pub fn runner_ckks_encode_coeffs_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+pub fn runner_ckks_encode_coeffs_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where
@@ -550,7 +551,7 @@ pub fn runner_ckks_encode_coeffs_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measur
     });
 }
 
-pub fn runner_ckks_decode_coeffs_into<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+pub fn runner_ckks_decode_coeffs_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CkksBenchParams,
 ) where

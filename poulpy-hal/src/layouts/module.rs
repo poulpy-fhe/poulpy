@@ -1,13 +1,6 @@
-use std::{
-    fmt::{Debug, Display},
-    marker::PhantomData,
-    ptr::NonNull,
-};
+use std::{marker::PhantomData, ptr::NonNull};
 
-use bytemuck::Pod;
-use rand_distr::num_traits::Zero;
-
-use crate::layouts::{Data, Location, MatZnx, ScalarZnx, VecZnx};
+use crate::layouts::{Data, Location, MatZnx, ScalarZnx, VecZnx, checked_product};
 use crate::{
     GALOISGENERATOR,
     api::{ModuleLogN, ModuleN},
@@ -15,21 +8,23 @@ use crate::{
 
 /// Core trait that every backend (CPU, GPU, FPGA, ...) must implement.
 ///
-/// Defines the scalar types used for DFT-domain (`ScalarPrep`) and
-/// extended-precision (`ScalarBig`) representations, as well as the
-/// opaque `Handle` type that holds backend-specific precomputed state
-/// (e.g. FFT twiddle factors).
+/// Defines the word types used for the coefficient domain (`ZnxWord`),
+/// DFT-domain (`DftWord`) and extended-precision (`BigWord`)
+/// representations, as well as the opaque `Handle` type that holds
+/// backend-specific precomputed state (e.g. FFT twiddle factors).
 ///
 /// # Safety
 ///
 /// [`destroy`](Backend::destroy) is called during [`Module`] drop and must
 /// correctly deallocate the handle without double-free.
 #[allow(clippy::missing_safety_doc)]
-pub trait Backend: Sized + Sync + Send {
-    /// Scalar type for extended-precision (big) polynomial representations.
-    type ScalarBig: Copy + Zero + Display + Debug + Pod;
-    /// Scalar type for DFT-domain (prepared) polynomial representations.
-    type ScalarPrep: Copy + Zero + Display + Debug + Pod;
+pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
+    /// Word type for coefficient-domain (small) polynomial representations.
+    type ZnxWord: crate::layouts::ZnxWord;
+    /// Word type for extended-precision (big) polynomial representations.
+    type BigWord: crate::layouts::BigWord;
+    /// Word type for DFT-domain (prepared) polynomial representations.
+    type DftWord: crate::layouts::DftWord;
     /// Owned backend storage for layouts and scratch.
     ///
     /// This buffer may be host-resident or device-resident. It is intentionally
@@ -128,13 +123,17 @@ pub trait Backend: Sized + Sync + Send {
     fn region_mut_ref<'a, 'b>(buf: &'a mut Self::BufMut<'b>, offset: usize, len: usize) -> Self::BufMut<'a>
     where
         Self: 'b;
-    /// Bytes size of `ScalarBig`.
-    fn size_of_scalar_big() -> usize {
-        size_of::<Self::ScalarBig>()
+    /// Bytes size of `ZnxWord`.
+    fn size_of_znx_word() -> usize {
+        size_of::<Self::ZnxWord>()
     }
-    /// Bytes size of `ScalarPrep`.
-    fn size_of_scalar_prep() -> usize {
-        size_of::<Self::ScalarPrep>()
+    /// Bytes size of `BigWord`.
+    fn size_of_big_word() -> usize {
+        size_of::<Self::BigWord>()
+    }
+    /// Bytes size of `DftWord`.
+    fn size_of_dft_word() -> usize {
+        size_of::<Self::DftWord>()
     }
 
     /// Required alignment (in bytes) for scratch-arena carved regions.
@@ -145,29 +144,47 @@ pub trait Backend: Sized + Sync + Send {
     /// carved regions satisfy both alignment and SIMD requirements.
     const SCRATCH_ALIGN: usize = 64;
 
+    /// Byte size of a [`crate::layouts::VecZnx`] buffer.
+    fn bytes_of_vec_znx(n: usize, cols: usize, size: usize) -> usize {
+        checked_product(&[n, cols, size, Self::size_of_znx_word()], "VecZnx byte size")
+    }
+    /// Byte size of a [`crate::layouts::ScalarZnx`] buffer.
+    fn bytes_of_scalar_znx(n: usize, cols: usize) -> usize {
+        checked_product(&[n, cols, Self::size_of_znx_word()], "ScalarZnx byte size")
+    }
+    /// Byte size of a [`crate::layouts::MatZnx`] buffer.
+    fn bytes_of_mat_znx(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
+        checked_product(
+            &[rows, cols_in, Self::bytes_of_vec_znx(n, cols_out, size)],
+            "MatZnx byte size",
+        )
+    }
     /// Byte size of a [`crate::layouts::VecZnxDft`] buffer.
     fn bytes_of_vec_znx_dft(n: usize, cols: usize, size: usize) -> usize {
-        n * cols * size * Self::size_of_scalar_prep()
+        checked_product(&[n, cols, size, Self::size_of_dft_word()], "VecZnxDft byte size")
     }
     /// Byte size of a [`crate::layouts::VecZnxBig`] buffer.
     fn bytes_of_vec_znx_big(n: usize, cols: usize, size: usize) -> usize {
-        n * cols * size * Self::size_of_scalar_big()
+        checked_product(&[n, cols, size, Self::size_of_big_word()], "VecZnxBig byte size")
     }
     /// Byte size of a [`crate::layouts::SvpPPol`] buffer.
     fn bytes_of_svp_ppol(n: usize, cols: usize) -> usize {
-        n * cols * Self::size_of_scalar_prep()
+        checked_product(&[n, cols, Self::size_of_dft_word()], "SvpPPol byte size")
     }
     /// Byte size of a [`crate::layouts::VmpPMat`] buffer.
     fn bytes_of_vmp_pmat(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
-        n * rows * cols_in * cols_out * size * Self::size_of_scalar_prep()
+        checked_product(
+            &[n, rows, cols_in, cols_out, size, Self::size_of_dft_word()],
+            "VmpPMat byte size",
+        )
     }
     /// Byte size of a [`crate::layouts::CnvPVecL`] buffer.
     fn bytes_of_cnv_pvec_left(n: usize, cols: usize, size: usize) -> usize {
-        n * cols * size * Self::size_of_scalar_prep()
+        checked_product(&[n, cols, size, Self::size_of_dft_word()], "CnvPVecL byte size")
     }
     /// Byte size of a [`crate::layouts::CnvPVecR`] buffer.
     fn bytes_of_cnv_pvec_right(n: usize, cols: usize, size: usize) -> usize {
-        n * cols * size * Self::size_of_scalar_prep()
+        checked_product(&[n, cols, size, Self::size_of_dft_word()], "CnvPVecR byte size")
     }
     /// Deallocates a backend handle.
     ///
@@ -261,17 +278,20 @@ impl<B: Backend> Module<B> {
 
     /// Allocates a zero-initialized backend-owned [`ScalarZnx`].
     #[inline]
-    pub fn scalar_znx_alloc(&self, cols: usize) -> ScalarZnx<B::OwnedBuf> {
+    pub fn scalar_znx_alloc(&self, cols: usize) -> ScalarZnx<B::OwnedBuf, B::ZnxWord> {
         let n = self.n();
-        let len = ScalarZnx::<Vec<u8>>::bytes_of(n, cols);
+        let len = B::bytes_of_scalar_znx(n, cols);
         let bytes = B::alloc_zeroed_bytes(len);
         ScalarZnx::from_data(bytes, n, cols)
     }
 
     /// Allocates a zero-initialized backend-owned [`VecZnx`].
     #[inline]
-    pub fn vec_znx_alloc(&self, cols: usize, size: usize) -> VecZnx<B::OwnedBuf> {
-        self.vec_znx_alloc_with_max_size(cols, size, size)
+    pub fn vec_znx_alloc(&self, cols: usize, size: usize) -> VecZnx<B::OwnedBuf, B::ZnxWord> {
+        let n = self.n();
+        let len = self.bytes_of_vec_znx_n(n, cols, size);
+        let bytes = B::alloc_zeroed_bytes(len);
+        VecZnx::from_data(bytes, n, cols, size)
     }
 
     /// Returns the byte size of a [`VecZnx`] with this module's ring degree.
@@ -283,23 +303,14 @@ impl<B: Backend> Module<B> {
     /// Returns the byte size of a [`VecZnx`] with an explicit coefficient degree.
     #[inline]
     pub fn bytes_of_vec_znx_n(&self, n: usize, cols: usize, size: usize) -> usize {
-        VecZnx::<Vec<u8>>::bytes_of(n, cols, size)
-    }
-
-    /// Allocates a zero-initialized backend-owned [`VecZnx`] with explicit limb capacity.
-    #[inline]
-    pub fn vec_znx_alloc_with_max_size(&self, cols: usize, size: usize, max_size: usize) -> VecZnx<B::OwnedBuf> {
-        let n = self.n();
-        let len = self.bytes_of_vec_znx_n(n, cols, max_size);
-        let bytes = B::alloc_zeroed_bytes(len);
-        VecZnx::from_data_with_max_size(bytes, n, cols, size, max_size)
+        B::bytes_of_vec_znx(n, cols, size)
     }
 
     /// Allocates a zero-initialized backend-owned [`MatZnx`].
     #[inline]
-    pub fn mat_znx_alloc(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> MatZnx<B::OwnedBuf> {
+    pub fn mat_znx_alloc(&self, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> MatZnx<B::OwnedBuf, B::ZnxWord> {
         let n = self.n();
-        let len = MatZnx::<Vec<u8>>::bytes_of(n, rows, cols_in, cols_out, size);
+        let len = B::bytes_of_mat_znx(n, rows, cols_in, cols_out, size);
         let bytes = B::alloc_zeroed_bytes(len);
         MatZnx::from_data(bytes, n, rows, cols_in, cols_out, size)
     }

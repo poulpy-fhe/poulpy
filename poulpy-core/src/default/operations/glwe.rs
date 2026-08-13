@@ -9,16 +9,16 @@ use poulpy_hal::{
         VecZnxSubAssignBackend, VecZnxSubBackend, VecZnxSubNegateAssignBackend, VecZnxZeroBackend,
     },
     layouts::{
-        Backend, CnvPVecLToBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, Module, ScratchArena, VecZnx,
-        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut,
-        VecZnxToBackendRef,
+        Backend, CnvPVecLToBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, Module, ScratchArena, VecZnxBigToBackendMut,
+        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef,
     },
 };
 
 use crate::{
     default::keyswitching::GGLWEProductDefault,
     layouts::{
-        Base2K, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, prepared::GLWETensorKeyPreparedToBackendRef,
+        Base2K, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos,
+        prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
 
@@ -75,7 +75,7 @@ where
         let cnv_offset = a.size().max(b_size);
         let res_size: usize = (res.size() * res_base2k).div_ceil(a_base2k);
         let res_dft_size: usize = a.size() + b_size - cnv_offset.saturating_sub(1);
-        let lvl_0: usize = self.bytes_of_vec_znx_big(1, res_dft_size) + VecZnx::bytes_of(self.n(), 1, res.size());
+        let lvl_0: usize = self.bytes_of_vec_znx_big(1, res_dft_size) + BE::bytes_of_vec_znx(self.n(), 1, res.size());
         let lvl_1_cnv: usize = self.cnv_by_const_apply_tmp_bytes(res_size, cnv_offset, a.size(), b_size);
         let lvl_1_norm: usize = self.vec_znx_big_normalize_tmp_bytes();
         let lvl_1: usize = lvl_1_cnv.max(lvl_1_norm);
@@ -260,7 +260,7 @@ where
         let lvl_2_cnv_apply: usize = self.cnv_apply_dft_lazy_tmp_bytes(cnv_offset, res_dft_size, a_size, b_size);
 
         let lvl_2_res_dft: usize = self.bytes_of_vec_znx_dft(1, res_dft_size);
-        let lvl_2_res_tmp: usize = self.bytes_of_vec_znx_big(1, res_dft_size) + VecZnx::bytes_of(self.n(), 1, res.size());
+        let lvl_2_res_tmp: usize = self.bytes_of_vec_znx_big(1, res_dft_size) + BE::bytes_of_vec_znx(self.n(), 1, res.size());
         let lvl_2_norm: usize = self.vec_znx_big_normalize_tmp_bytes();
         let lvl_2: usize = lvl_2_res_tmp + lvl_2_res_dft + lvl_2_cnv_apply.max(lvl_2_norm);
 
@@ -272,7 +272,7 @@ where
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos,
+        B: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
     {
         let scratch = scratch.borrow();
         assert_eq!(res.rank(), a.rank());
@@ -284,11 +284,11 @@ where
         );
 
         let a_k = a.k().as_usize();
-        // `b` is the plaintext (a full-width integer polynomial), so its bottom-limb
-        // mask must span its full `max_k`, not the effective `k` — masking at `k`
-        // would zero the low bits of the last limb and lose precision in the
-        // convolution (see the effective-k vs max-k invariant).
-        let b_k = b.max_k().as_usize();
+        // `b` is the plaintext: an integer polynomial consumed at its declared
+        // `encoded_k()` — every encoded limb carries data, so masking at the
+        // effective `k` would zero the last limb's low bits and lose precision
+        // in the convolution.
+        let b_k = b.encoded_k().as_usize();
         let ab_base2k: usize = a.base2k().as_usize();
         assert_eq!(b.base2k().as_usize(), ab_base2k);
         assert_eq!(a_k.div_ceil(ab_base2k), a.size());
@@ -357,7 +357,7 @@ where
     fn glwe_mul_plain_assign_default<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos,
+        A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos,
     {
         let scratch = scratch.borrow();
         assert!(
@@ -368,10 +368,9 @@ where
         );
 
         let res_k = res.k().as_usize();
-        // `a` is the plaintext (a full-width integer polynomial): mask its bottom
-        // limb at `max_k`, not the effective `k`, to avoid zeroing the last limb's
-        // low bits and losing convolution precision (effective-k vs max-k invariant).
-        let a_k = a.max_k().as_usize();
+        // `a` is the plaintext: an integer polynomial consumed at its declared
+        // `encoded_k()` (see `glwe_mul_plain`).
+        let a_k = a.encoded_k().as_usize();
         let ab_base2k: usize = a.base2k().as_usize();
         assert_eq!(res.base2k().as_usize(), ab_base2k);
         assert_eq!(res_k.div_ceil(ab_base2k), res.size());
@@ -452,12 +451,12 @@ pub trait GLWEMulPlainDefault<BE: Backend> {
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         A: GLWEToBackendRef<BE> + GLWEInfos,
-        B: GLWEToBackendRef<BE> + GLWEInfos;
+        B: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
 
     fn glwe_mul_plain_assign_default<R, A>(&self, cnv_offset: usize, res: &mut R, a: &A, scratch: &mut ScratchArena<'_, BE>)
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
-        A: GLWEToBackendRef<BE> + GLWEInfos;
+        A: GLWEToBackendRef<BE> + IntPolyInfos + GLWEInfos;
 }
 
 #[doc(hidden)]
@@ -537,7 +536,7 @@ where
         let cnv_offset = a_size;
 
         let lvl_0: usize = self.bytes_of_cnv_pvec_left(cols, a_size) + self.bytes_of_cnv_pvec_right(cols, a_size);
-        let lvl_diag_cache: usize = VecZnx::bytes_of(self.n(), cols, res_size);
+        let lvl_diag_cache: usize = BE::bytes_of_vec_znx(self.n(), cols, res_size);
         let lvl_1: usize = self.cnv_prepare_self_tmp_bytes(a_size, a_size);
         let diag_dft_size =
             normalize_input_limb_bound_worst_case(2 * a_size, res_size, res.base2k().as_usize(), a.base2k().as_usize());
@@ -548,11 +547,11 @@ where
 
         let lvl_2a: usize = self.bytes_of_vec_znx_dft(1, diag_dft_size)
             + self.bytes_of_vec_znx_big(1, diag_dft_size)
-            + VecZnx::bytes_of(self.n(), 1, res_size)
+            + BE::bytes_of_vec_znx(self.n(), 1, res_size)
             + lvl_2_apply.max(self.vec_znx_big_normalize_tmp_bytes());
         let lvl_2b: usize = self.bytes_of_vec_znx_dft(1, pairwise_dft_size)
             + self.bytes_of_vec_znx_big(1, pairwise_dft_size)
-            + VecZnx::bytes_of(self.n(), 1, res_size)
+            + BE::bytes_of_vec_znx(self.n(), 1, res_size)
             + lvl_2_pairwise.max(self.vec_znx_big_normalize_tmp_bytes());
         let lvl_2: usize = lvl_2a.max(lvl_2b);
 
@@ -592,11 +591,11 @@ where
 
         let lvl_2a: usize = self.bytes_of_vec_znx_dft(1, diag_dft_size)
             + self.bytes_of_vec_znx_big(1, diag_dft_size)
-            + VecZnx::bytes_of(self.n(), 1, res_size)
+            + BE::bytes_of_vec_znx(self.n(), 1, res_size)
             + lvl_2_apply.max(self.vec_znx_big_normalize_tmp_bytes());
         let lvl_2b: usize = self.bytes_of_vec_znx_dft(1, pairwise_dft_size)
             + self.bytes_of_vec_znx_big(1, pairwise_dft_size)
-            + VecZnx::bytes_of(self.n(), 1, res_size)
+            + BE::bytes_of_vec_znx(self.n(), 1, res_size)
             + lvl_2_pairwise.max(self.vec_znx_big_normalize_tmp_bytes());
         let lvl_2: usize = lvl_2a.max(lvl_2b);
 
@@ -625,19 +624,19 @@ where
         let lvl_0: usize = self.bytes_of_vec_znx_dft(pairs, a_dft_size);
 
         let lvl_1_pre_conv: usize = if a_base2k != key_base2k {
-            VecZnx::bytes_of(self.n(), 1, a_dft_size) + self.vec_znx_normalize_tmp_bytes()
+            BE::bytes_of_vec_znx(self.n(), 1, a_dft_size) + self.vec_znx_normalize_tmp_bytes()
         } else {
             0
         };
         let lvl_1_res_dft: usize = self.bytes_of_vec_znx_dft(cols, tsk.size());
         let lvl_1_gglwe_product: usize = self.gglwe_product_dft_tmp_bytes_default(res.size(), a_dft_size, tsk);
         let lvl_1_post_conv: usize = if res_base2k != key_base2k {
-            VecZnx::bytes_of(self.n(), 1, a_dft_size) + self.vec_znx_normalize_tmp_bytes()
+            BE::bytes_of_vec_znx(self.n(), 1, a_dft_size) + self.vec_znx_normalize_tmp_bytes()
         } else {
             0
         };
         let lvl_1_big_norm: usize = self.bytes_of_vec_znx_big(cols, tsk.size())
-            + VecZnx::bytes_of(self.n(), 1, res.size())
+            + BE::bytes_of_vec_znx(self.n(), 1, res.size())
             + self.vec_znx_big_normalize_tmp_bytes();
         let lvl_1_main: usize = lvl_1_res_dft + lvl_1_gglwe_product.max(lvl_1_post_conv).max(lvl_1_big_norm);
         let lvl_1: usize = lvl_1_pre_conv.max(lvl_1_main);
@@ -1130,11 +1129,11 @@ where
 
     let lvl_2a: usize = module.bytes_of_vec_znx_dft(1, diag_dft_size)
         + module.bytes_of_vec_znx_big(1, diag_dft_size)
-        + VecZnx::bytes_of(module.n(), 1, res_size)
+        + BE::bytes_of_vec_znx(module.n(), 1, res_size)
         + lvl_2_apply.max(module.vec_znx_big_normalize_tmp_bytes());
     let lvl_2b: usize = module.bytes_of_vec_znx_dft(1, pairwise_dft_size)
         + module.bytes_of_vec_znx_big(1, pairwise_dft_size)
-        + VecZnx::bytes_of(module.n(), 1, res_size)
+        + BE::bytes_of_vec_znx(module.n(), 1, res_size)
         + lvl_2_pairwise.max(module.vec_znx_big_normalize_tmp_bytes());
     let lvl_2: usize = lvl_2a.max(lvl_2b);
 

@@ -1,6 +1,8 @@
+use poulpy_hal::layouts::VmpPMatToBackendMut;
+use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
     api::{VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes},
-    layouts::{Backend, Data, Module, ScratchArena, VmpPMat, VmpPMatBackendRef, VmpPMatToBackendMut, VmpPMatToBackendRef},
+    layouts::{Backend, Data, Module, ScratchArena, VmpPMat, VmpPMatBackendRef},
 };
 
 use crate::layouts::{
@@ -15,9 +17,9 @@ use crate::layouts::{
 /// represents a prepared matrix suitable for vector-matrix products.
 ///
 /// Tied to a specific backend via `B: Backend`.
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq)]
 pub struct GGLWEPrepared<D: Data, B: Backend> {
-    pub(crate) data: VmpPMat<D, B>,
+    pub(crate) data: VmpPMat<D, B::DftWord, B>,
     pub(crate) k_aux: TorusPrecision,
     pub(crate) base2k: Base2K,
     pub(crate) dsize: Dsize,

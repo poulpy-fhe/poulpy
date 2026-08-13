@@ -3,7 +3,7 @@ use std::{
     marker::PhantomData,
 };
 
-use crate::layouts::{Backend, Data, DataView, DataViewMut, DigestU64, HostDataRef, ZnxInfos, ZnxView};
+use crate::layouts::{Backend, Data, DataView, DataViewMut, DftWord, DigestU64, HostDataMut, HostDataRef, MatZnxInfos, ZnxInfos};
 
 #[repr(C)]
 #[derive(PartialEq, Eq, Clone, Copy, Hash, Debug, Default)]
@@ -51,24 +51,47 @@ impl VmpPMatShape {
 ///
 /// A `VmpPMat` stores a matrix of `rows * cols_in` entries, where each
 /// entry is a [`VecZnxDft`](crate::layouts::VecZnxDft) of `cols_out`
-/// columns and `size` limbs, all in the backend's prepared representation.
+/// columns and `size` limbs, all in the prepared representation named by
+/// the [`DftWord`] type `W`.
 ///
 /// Used as the right operand in
 /// [`VmpApplyDftToDft`](crate::api::VmpApplyDftToDft). Create via
 /// [`VmpPrepare`](crate::api::VmpPrepare) from a coefficient-domain
 /// [`MatZnx`](crate::layouts::MatZnx).
 ///
+/// Note that a backend may pack this matrix more compactly than
+/// `size_of::<W>()` per coefficient; [`Backend::bytes_of_vmp_pmat`] is
+/// authoritative for the buffer size.
+///
 /// Ring degree `n` is always a power of two, so each prepared polynomial's DFT
 /// coefficient count matches vector lane widths relative to buffer alignment.
 #[repr(C)]
-#[derive(PartialEq, Eq, Hash)]
-pub struct VmpPMat<D: Data, B: Backend> {
+pub struct VmpPMat<D: Data, W: DftWord, B: Backend<DftWord = W>> {
     data: D,
     shape: VmpPMatShape,
-    _phantom: PhantomData<B>,
+    _phantom: PhantomData<(W, B)>,
 }
 
-impl<D: HostDataRef, B: Backend> DigestU64 for VmpPMat<D, B> {
+// Equality (and hashing, where provided) is defined directly on the
+// representation: same shape, same buffer bytes. No `W`/`B` value is ever
+// compared, so no bound on them is needed — in particular `Eq` holds even
+// for non-`Eq` words like `f64` (byte equality is a total equivalence).
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> PartialEq for VmpPMat<D, W, B> {
+    fn eq(&self, other: &Self) -> bool {
+        self.shape == other.shape && self.data == other.data
+    }
+}
+
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> Eq for VmpPMat<D, W, B> {}
+
+impl<D: Data + std::hash::Hash, W: DftWord, B: Backend<DftWord = W>> std::hash::Hash for VmpPMat<D, W, B> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.shape.hash(state);
+        self.data.hash(state);
+    }
+}
+
+impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> DigestU64 for VmpPMat<D, W, B> {
     fn digest_u64(&self) -> u64 {
         let mut h: DefaultHasher = DefaultHasher::new();
         h.write(self.data.as_ref());
@@ -81,19 +104,27 @@ impl<D: HostDataRef, B: Backend> DigestU64 for VmpPMat<D, B> {
     }
 }
 
-impl<D: HostDataRef, B: Backend> ZnxView for VmpPMat<D, B> {
-    type Scalar = B::ScalarPrep;
+impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
+    /// Returns the whole element view as a scalar slice.
+    ///
+    /// The prepared matrix is packed in a backend-defined order with no flat
+    /// `(col, limb)` indexing, so it exposes the buffer rather than
+    /// implementing [`ZnxView`](crate::layouts::ZnxView).
+    pub fn raw(&self) -> &[W] {
+        let span: usize = crate::layouts::element_view_span(self);
+        crate::layouts::raw_scalars(self.data.as_ref(), span)
+    }
 }
 
-impl<D: Data, B: Backend> ZnxInfos for VmpPMat<D, B> {
-    fn cols(&self) -> usize {
-        self.shape.cols_in()
+impl<D: HostDataMut, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
+    /// Mutable counterpart of [`Self::raw`].
+    pub fn raw_mut(&mut self) -> &mut [W] {
+        let span: usize = crate::layouts::element_view_span(self);
+        crate::layouts::raw_scalars_mut(self.data.as_mut(), span)
     }
+}
 
-    fn rows(&self) -> usize {
-        self.shape.rows()
-    }
-
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> ZnxInfos for VmpPMat<D, W, B> {
     fn n(&self) -> usize {
         self.shape.n()
     }
@@ -103,24 +134,41 @@ impl<D: Data, B: Backend> ZnxInfos for VmpPMat<D, B> {
     }
 
     fn poly_count(&self) -> usize {
-        self.rows() * self.cols_in() * self.size() * self.cols_out()
+        crate::layouts::checked_product(
+            &[self.rows(), self.cols_in(), self.size(), self.cols_out()],
+            "VmpPMat polynomial count",
+        )
     }
 }
 
-impl<D: Data, B: Backend> DataView for VmpPMat<D, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> MatZnxInfos for VmpPMat<D, W, B> {
+    fn rows(&self) -> usize {
+        self.shape.rows()
+    }
+
+    fn cols_in(&self) -> usize {
+        self.shape.cols_in()
+    }
+
+    fn cols_out(&self) -> usize {
+        self.shape.cols_out()
+    }
+}
+
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> DataView for VmpPMat<D, W, B> {
     type D = D;
     fn data(&self) -> &Self::D {
         &self.data
     }
 }
 
-impl<D: Data, B: Backend> DataViewMut for VmpPMat<D, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> DataViewMut for VmpPMat<D, W, B> {
     fn data_mut(&mut self) -> &mut Self::D {
         &mut self.data
     }
 }
 
-impl<D: Data, B: Backend> VmpPMat<D, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
     pub fn shape(&self) -> VmpPMatShape {
         self.shape
     }
@@ -148,10 +196,14 @@ impl<D: Data, B: Backend> VmpPMat<D, B> {
     }
 }
 
-impl<B: Backend> VmpPMat<<B as Backend>::OwnedBuf, B> {
-    pub fn alloc(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> Self {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
+    /// Allocates a zero-initialized backend-owned `VmpPMat`.
+    pub fn alloc(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> VmpPMatOwned<B>
+    where
+        B: Backend<OwnedBuf = D>,
+    {
         let data: <B as Backend>::OwnedBuf = B::alloc_zeroed_bytes(B::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size));
-        Self {
+        VmpPMat {
             data,
             shape: VmpPMatShape::new(n, rows, cols_in, cols_out, size),
             _phantom: PhantomData,
@@ -160,16 +212,18 @@ impl<B: Backend> VmpPMat<<B as Backend>::OwnedBuf, B> {
 }
 
 /// Owned `VmpPMat` backed by a backend-owned buffer.
-pub type VmpPMatOwned<B> = VmpPMat<<B as Backend>::OwnedBuf, B>;
+pub type VmpPMatOwned<B> = VmpPMat<<B as Backend>::OwnedBuf, <B as Backend>::DftWord, B>;
 /// Immutably borrowed `VmpPMat`.
-pub type VmpPMatRef<'a, B> = VmpPMat<&'a [u8], B>;
+pub type VmpPMatRef<'a, B> = VmpPMat<&'a [u8], <B as Backend>::DftWord, B>;
 /// Shared backend-native borrow of a `VmpPMat`.
-pub type VmpPMatBackendRef<'a, B> = VmpPMat<<B as Backend>::BufRef<'a>, B>;
+pub type VmpPMatBackendRef<'a, B> = VmpPMat<<B as Backend>::BufRef<'a>, <B as Backend>::DftWord, B>;
 /// Mutable backend-native borrow of a `VmpPMat`.
-pub type VmpPMatBackendMut<'a, B> = VmpPMat<<B as Backend>::BufMut<'a>, B>;
+pub type VmpPMatBackendMut<'a, B> = VmpPMat<<B as Backend>::BufMut<'a>, <B as Backend>::DftWord, B>;
 
 /// Reborrow an immutable backend-native `VmpPMat` view as a shared backend-native view.
-pub fn vmp_pmat_backend_ref_from_ref<'a, 'b, B: Backend + 'b>(pmat: &'a VmpPMat<B::BufRef<'b>, B>) -> VmpPMatBackendRef<'a, B> {
+pub fn vmp_pmat_backend_ref_from_ref<'a, 'b, B: Backend + 'b>(
+    pmat: &'a VmpPMat<B::BufRef<'b>, B::DftWord, B>,
+) -> VmpPMatBackendRef<'a, B> {
     VmpPMat {
         data: B::view_ref(&pmat.data),
         shape: pmat.shape,
@@ -201,7 +255,7 @@ pub trait VmpPMatToBackendRef<B: Backend> {
     fn to_backend_ref(&self) -> VmpPMatBackendRef<'_, B>;
 }
 
-impl<B: Backend> VmpPMatToBackendRef<B> for VmpPMat<B::OwnedBuf, B> {
+impl<B: Backend> VmpPMatToBackendRef<B> for VmpPMat<B::OwnedBuf, B::DftWord, B> {
     fn to_backend_ref(&self) -> VmpPMatBackendRef<'_, B> {
         VmpPMat {
             data: B::view(&self.data),
@@ -211,7 +265,7 @@ impl<B: Backend> VmpPMatToBackendRef<B> for VmpPMat<B::OwnedBuf, B> {
     }
 }
 
-impl<'b, B: Backend + 'b> VmpPMatToBackendRef<B> for &VmpPMat<B::BufRef<'b>, B> {
+impl<'b, B: Backend + 'b> VmpPMatToBackendRef<B> for &VmpPMat<B::BufRef<'b>, B::DftWord, B> {
     fn to_backend_ref(&self) -> VmpPMatBackendRef<'_, B> {
         VmpPMat {
             data: B::view_ref(&self.data),
@@ -226,7 +280,7 @@ pub trait VmpPMatReborrowBackendRef<B: Backend> {
     fn reborrow_backend_ref(&self) -> VmpPMatBackendRef<'_, B>;
 }
 
-impl<'b, B: Backend + 'b> VmpPMatReborrowBackendRef<B> for VmpPMat<B::BufMut<'b>, B> {
+impl<'b, B: Backend + 'b> VmpPMatReborrowBackendRef<B> for VmpPMat<B::BufMut<'b>, B::DftWord, B> {
     fn reborrow_backend_ref(&self) -> VmpPMatBackendRef<'_, B> {
         VmpPMat {
             data: B::view_ref_mut(&self.data),
@@ -241,7 +295,7 @@ pub trait VmpPMatToBackendMut<B: Backend> {
     fn to_backend_mut(&mut self) -> VmpPMatBackendMut<'_, B>;
 }
 
-impl<B: Backend> VmpPMatToBackendMut<B> for VmpPMat<B::OwnedBuf, B> {
+impl<B: Backend> VmpPMatToBackendMut<B> for VmpPMat<B::OwnedBuf, B::DftWord, B> {
     fn to_backend_mut(&mut self) -> VmpPMatBackendMut<'_, B> {
         VmpPMat {
             data: B::view_mut(&mut self.data),
@@ -251,7 +305,7 @@ impl<B: Backend> VmpPMatToBackendMut<B> for VmpPMat<B::OwnedBuf, B> {
     }
 }
 
-impl<'b, B: Backend + 'b> VmpPMatToBackendMut<B> for &mut VmpPMat<B::BufMut<'b>, B> {
+impl<'b, B: Backend + 'b> VmpPMatToBackendMut<B> for &mut VmpPMat<B::BufMut<'b>, B::DftWord, B> {
     fn to_backend_mut(&mut self) -> VmpPMatBackendMut<'_, B> {
         vmp_pmat_backend_mut_from_mut::<B>(self)
     }
@@ -262,17 +316,43 @@ pub trait VmpPMatReborrowBackendMut<B: Backend> {
     fn reborrow_backend_mut(&mut self) -> VmpPMatBackendMut<'_, B>;
 }
 
-impl<'b, B: Backend + 'b> VmpPMatReborrowBackendMut<B> for VmpPMat<B::BufMut<'b>, B> {
+impl<'b, B: Backend + 'b> VmpPMatReborrowBackendMut<B> for VmpPMat<B::BufMut<'b>, B::DftWord, B> {
     fn reborrow_backend_mut(&mut self) -> VmpPMatBackendMut<'_, B> {
         vmp_pmat_backend_mut_from_mut::<B>(self)
     }
 }
 
-impl<D: Data, B: Backend> VmpPMat<D, B> {
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
     pub fn from_data(data: D, n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> Self {
         Self {
             data,
             shape: VmpPMatShape::new(n, rows, cols_in, cols_out, size),
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VmpPMat<D, W, B> {
+    /// Zero-copy re-tag of this container to a layout-compatible backend `B2`.
+    ///
+    /// The buffer moves as-is; only the type tag changes. Requires the
+    /// [`VmpPMatLayoutCompatible`](crate::layouts::VmpPMatLayoutCompatible) marker declared by the backend
+    /// pair. `D` is kept, so for further backend-native use `B2`'s buffer
+    /// types must match `D` (true for all current CPU backends).
+    pub fn into_backend<B2>(self) -> VmpPMat<D, W, B2>
+    where
+        B2: Backend<DftWord = W>,
+        B: crate::layouts::VmpPMatLayoutCompatible<B2>,
+    {
+        let shape = self.shape;
+        assert_eq!(
+            B::bytes_of_vmp_pmat(shape.n(), shape.rows(), shape.cols_in(), shape.cols_out(), shape.size()),
+            B2::bytes_of_vmp_pmat(shape.n(), shape.rows(), shape.cols_in(), shape.cols_out(), shape.size()),
+            "into_backend: byte sizes diverge despite declared layout compatibility"
+        );
+        VmpPMat {
+            data: self.data,
+            shape,
             _phantom: PhantomData,
         }
     }

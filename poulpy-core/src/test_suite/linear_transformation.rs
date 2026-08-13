@@ -1,3 +1,10 @@
+use poulpy_hal::layouts::CnvPVecLToBackendMut;
+use poulpy_hal::layouts::CnvPVecLToBackendRef;
+use poulpy_hal::layouts::CnvPVecRToBackendMut;
+use poulpy_hal::layouts::CnvPVecRToBackendRef;
+use poulpy_hal::layouts::VecZnxBigToBackendMut;
+use poulpy_hal::layouts::VecZnxBigToBackendRef;
+use poulpy_hal::layouts::VecZnxDftToBackendMut;
 use std::collections::HashMap;
 
 use poulpy_hal::{
@@ -5,14 +12,12 @@ use poulpy_hal::{
         CnvPVecAlloc, Convolution, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxBigAlloc, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxFillUniformSourceBackend, VecZnxIdftApplyTmpA,
     },
-    layouts::{
-        CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, GaloisElement, HostDataMut,
-        HostDataRef, Module, ScratchOwned, VecZnx, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut,
-    },
+    layouts::{GaloisElement, HostDataMut, HostDataRef, Module, ScratchOwned, VecZnx},
     source::Source,
     test_suite::{TestParams, vec_znx_backend_mut},
 };
 
+use crate::layouts::GLWESecretSampling;
 use crate::{
     EncryptionLayout, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWECopy, GLWEEncryptSk, GLWELinearTransformations,
     LinearTransformationBabySteps,
@@ -40,7 +45,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         + GLWEEncryptSk<BE>
         + GLWELinearTransformations<BE>
         + GLWESecretPreparedFactory<BE>
-        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + VecZnxAlloc<BE>
         + VecZnxBigAlloc<BE>
         + VecZnxBigNormalize<BE>
@@ -75,9 +80,9 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     })
     .unwrap();
 
-    let mut ct: GLWE<Vec<u8>> = module.glwe_alloc_from_infos(&ct_infos);
-    let mut pt: GLWEPlaintext<Vec<u8>> = module.glwe_plaintext_alloc_from_infos(&ct_infos);
-    let mut sk: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(&ct_infos);
+    let mut ct: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct_infos);
+    let mut pt: GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> = module.glwe_plaintext_alloc_from_infos(&ct_infos);
+    let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&ct_infos);
     let mut source_xs = Source::new([3u8; 32]);
     let mut source_xe = Source::new([4u8; 32]);
     let mut source_xa = Source::new([5u8; 32]);
@@ -94,7 +99,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
             | module.vec_znx_big_normalize_tmp_bytes(),
     );
 
-    sk.fill_ternary_prob(0.5, &mut source_xs);
+    module.glwe_secret_fill_ternary_prob(&mut sk, 0.5, &mut source_xs);
     let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
     module.glwe_secret_prepare(&mut sk_prepared, &sk);
 
@@ -111,7 +116,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
 
     let mut atks = HashMap::new();
     for &rot in baby_steps.iter().filter(|&&rot| rot != 0) {
-        let mut atk: GLWEAutomorphismKey<Vec<u8>> = module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
+        let mut atk: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> = module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
         module.glwe_automorphism_key_encrypt_sk(
             &mut atk,
             module.galois_element(rot),
@@ -133,7 +138,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
     assert_eq!(prepared_babies.baby_steps().collect::<Vec<_>>(), baby_steps);
 
     let mut right_prepared = module.cnv_pvec_right_alloc(1, pt.size());
-    let pt_ref = <GLWEPlaintext<Vec<u8>> as GLWEToBackendRef<BE>>::to_backend_ref(&pt);
+    let pt_ref = <GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(&pt);
     module.cnv_prepare_right(
         &mut right_prepared.to_backend_mut(),
         &pt_ref.data,
@@ -143,7 +148,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
 
     let mask = msb_mask_bottom_limb(ct.base2k().as_usize(), k_in);
     for &rot in &baby_steps {
-        let mut expected: GLWE<BE::OwnedBuf> = module.glwe_alloc_from_infos(&ct);
+        let mut expected: GLWE<BE::OwnedBuf, BE::ZnxWord> = module.glwe_alloc_from_infos(&ct);
         if rot == 0 {
             module.glwe_copy(&mut expected, &ct);
         } else {
@@ -152,7 +157,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         }
 
         let mut expected_prepared = module.cnv_pvec_left_alloc(rank + 1, expected.size());
-        let expected_ref = <GLWE<BE::OwnedBuf> as GLWEToBackendRef<BE>>::to_backend_ref(&expected);
+        let expected_ref = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(&expected);
         module.cnv_prepare_left(
             &mut expected_prepared.to_backend_mut(),
             &expected_ref.data,
@@ -168,8 +173,8 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
         );
 
         for col in 0..rank + 1 {
-            let mut have: VecZnx<Vec<u8>> = module.vec_znx_alloc(1, product_size);
-            let mut want: VecZnx<Vec<u8>> = module.vec_znx_alloc(1, product_size);
+            let mut have: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(1, product_size);
+            let mut want: VecZnx<BE::OwnedBuf, BE::ZnxWord> = module.vec_znx_alloc(1, product_size);
             let mut have_dft = module.vec_znx_dft_alloc(1, product_size);
             let mut want_dft = module.vec_znx_dft_alloc(1, product_size);
             let mut have_big = module.vec_znx_big_alloc(1, product_size);

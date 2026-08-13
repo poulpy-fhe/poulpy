@@ -41,13 +41,15 @@ use crate::{
 };
 
 use super::LinearTransformationBabySteps;
+use crate::api::GLWEBytesOf;
 
 /// HAL/op bounds required by the eval reference path. Repeated on each free
 /// function so backends only pull in what a method actually needs.
 pub fn glwe_eval_linear_transformation_tmp_bytes_default<BE, M, R, A, B, K>(module: &M, res: &R, a: &A, pt: &B, key: &K) -> usize
 where
     BE: Backend,
-    M: poulpy_hal::api::ModuleN
+    M: GLWEBytesOf<BE>
+        + poulpy_hal::api::ModuleN
         + GLWEAutomorphism<BE>
         + GLWEMulPlain<BE>
         + Convolution<BE>
@@ -69,12 +71,9 @@ where
     // one-column BIG scratch before regular GLWE automorphism. Size both routes
     // and take the larger budget.
     let cols = a.rank().as_usize() + 1;
-    // Scratch is allocated up-front and must cover the physical working set, so
-    // the budget is sized off the operands' allocated capacity (`max_size()`)
-    // rather than their current meta-derived `size()`. After the LWEInfos
-    // refactor a ciphertext's `size()` reflects only its active limbs, which can
-    // be far smaller than the limbs the runtime baby-step/PROD path actually
-    // uses (mirrors how `ckks_mul_tmp_bytes` budgets off `max_k()`).
+    // Scratch is allocated up-front and must cover the physical working set,
+    // so the budget is sized off the operands' allocated width (`max_size()`)
+    // rather than their meta-derived `size()`.
     let a_size = a.max_size();
     let pt_size = pt.max_size();
     let cnv_offset_hi = pt_size.saturating_sub(1);
@@ -111,7 +110,8 @@ where
 pub fn glwe_prepare_linear_transformation_baby_steps_tmp_bytes_default<BE, M, A, K>(module: &M, a: &A, key: &K) -> usize
 where
     BE: Backend,
-    M: poulpy_hal::api::ModuleN
+    M: GLWEBytesOf<BE>
+        + poulpy_hal::api::ModuleN
         + Convolution<BE>
         + GLWEAutomorphism<BE>
         + GGLWEProductDefault<BE>
@@ -143,7 +143,8 @@ pub fn glwe_prepare_linear_transformation_baby_steps_default<BE, M, A, H, K>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: CnvPVecAlloc<BE>
+    M: GLWEBytesOf<BE>
+        + CnvPVecAlloc<BE>
         + Convolution<BE>
         + GLWEAutomorphism<BE>
         + GGLWEProductDefault<BE>
@@ -187,10 +188,11 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H, K>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    M: GLWEAutomorphism<BE>
+    M: GLWEBytesOf<BE>
+        + GLWEAutomorphism<BE>
         + GLWEAdd<BE>
         + GLWECopy<BE>
-        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf>
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = BE::ZnxWord>
         + CnvPVecBytesOf
         + Convolution<BE>
         + poulpy_hal::api::ModuleN
@@ -243,7 +245,8 @@ pub fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_default<BE, M, R
 ) -> usize
 where
     BE: Backend,
-    M: poulpy_hal::api::ModuleN
+    M: GLWEBytesOf<BE>
+        + poulpy_hal::api::ModuleN
         + GLWEAutomorphism<BE>
         + GLWEMulPlain<BE>
         + CnvPVecBytesOf

@@ -1,6 +1,8 @@
+use poulpy_hal::layouts::SvpPPolToBackendMut;
+use poulpy_hal::layouts::SvpPPolToBackendRef;
 use poulpy_hal::{
     api::{SvpPPolAlloc, SvpPPolBytesOf, SvpPrepare},
-    layouts::{Backend, Data, Module, SvpPPol, SvpPPolToBackendMut, SvpPPolToBackendRef, ZnxInfos},
+    layouts::{Backend, Data, Module, SvpPPol, ZnxInfos},
 };
 
 use crate::{
@@ -9,13 +11,16 @@ use crate::{
     layouts::{Base2K, Degree, GLWEInfos, GLWESecretToBackendRef, GetDegree, LWEInfos, Rank},
 };
 
-/// DFT-domain (prepared) variant of [`GLWESecret`].
+/// DFT-domain (prepared) variant of [`GLWESecret`](crate::layouts::GLWESecret).
 ///
 /// Stores the GLWE secret key with polynomials in the frequency domain
 /// for fast multiplication during encryption and decryption. Tied to a
 /// specific backend via `B: Backend`.
 pub struct GLWESecretPrepared<D: Data, B: Backend> {
-    pub(crate) data: SvpPPol<D, B>,
+    pub(crate) data: SvpPPol<D, B::DftWord, B>,
+    /// Distribution the base secret was sampled from, carried over from the
+    /// coefficient-domain secret. Preparation is a change of representation,
+    /// so the tag applies unchanged. See [`Distribution`].
     pub(crate) dist: Distribution,
 }
 

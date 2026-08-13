@@ -19,6 +19,7 @@
 //! scheduled alone it is the unfused fast tail — one fused conj-rotate
 //! keyswitch and one μ-mask multiplication ([`PaCoPsiTailMaterial`]).
 
+use crate::layouts::CKKSPlaintextOwned;
 use std::marker::PhantomData;
 
 use anyhow::{Context, Result, ensure};
@@ -26,6 +27,7 @@ use poulpy_core::layouts::{Base2K, DiagonalArithmetic, LWEInfos, TorusPrecision}
 use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
 
 use super::plan::{PaCoDFTPlan, PaCoPlan};
+use crate::SlotsKind;
 use crate::default::paco::{
     lt::{PaCoPsiTail, paco_psi_c2s_factors, paco_stc_factors},
     ops::conj_rotate_galois_element,
@@ -33,7 +35,7 @@ use crate::default::paco::{
 use crate::{
     CKKSMeta,
     api::{CKKSEncodingHostOps, CKKSEncodingOps, LinearTransformation, PaCoScalar},
-    layouts::{CKKSModuleAlloc, CKKSPlaintext, CKKSScalar},
+    layouts::{CKKSModuleAlloc, CKKSScalar},
 };
 
 /// Compiled, backend-resident plaintext material for one validated PaCo plan.
@@ -54,9 +56,9 @@ use crate::{
 pub struct PaCoContext<BE: Backend, F> {
     plan: PaCoPlan,
     base2k: Base2K,
-    coeffs_to_slots: Vec<LinearTransformation<CKKSPlaintext<BE::OwnedBuf>>>,
+    coeffs_to_slots: Vec<LinearTransformation<CKKSPlaintextOwned<BE>>>,
     psi_tail: PaCoPsiTailMaterial<BE>,
-    slots_to_coeffs: Vec<LinearTransformation<CKKSPlaintext<BE::OwnedBuf>>>,
+    slots_to_coeffs: Vec<LinearTransformation<CKKSPlaintextOwned<BE>>>,
     galois_elements: Vec<i64>,
     scalar: PhantomData<F>,
 }
@@ -66,12 +68,12 @@ pub struct PaCoContext<BE: Backend, F> {
 pub(crate) enum PaCoPsiTailMaterial<BE: Backend> {
     /// The conjugation-augmented pair `(A, B)`: one plain conjugation
     /// keyswitch, then `A·w + B·conj(w)` at one level.
-    Pair([LinearTransformation<CKKSPlaintext<BE::OwnedBuf>>; 2]),
+    Pair([LinearTransformation<CKKSPlaintextOwned<BE>>; 2]),
     /// The operation-lean unfused tail (ψ scheduled alone): one fused
     /// conj-rotate keyswitch (`galois_element`), one addition, and one
     /// multiplication by the share-scaled μ mask plaintext.
     Mask {
-        mu: CKKSPlaintext<BE::OwnedBuf>,
+        mu: CKKSPlaintextOwned<BE>,
         galois_element: i64,
     },
 }
@@ -209,7 +211,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
                              dft: &PaCoDFTPlan,
                              giant_step: usize,
                              scratch: &mut ScratchArena<'_, BE>|
-         -> Result<LinearTransformation<CKKSPlaintext<BE::OwnedBuf>>> {
+         -> Result<LinearTransformation<CKKSPlaintextOwned<BE>>> {
             validate_factor_encoding(diagonals, dft)?;
             let slots = diagonals.slots();
             ensure!(
@@ -228,6 +230,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
                     meta: CKKSMeta {
                         log_sparsity: (full_slots / slots).trailing_zeros() as usize,
                         log_delta: dft.log_delta(),
+                        slots: SlotsKind::Complex,
                     },
                 },
                 diagonals,
@@ -242,7 +245,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
                             dft: &PaCoDFTPlan,
                             giant_steps: &[usize],
                             scratch: &mut ScratchArena<'_, BE>|
-         -> Result<Vec<LinearTransformation<CKKSPlaintext<BE::OwnedBuf>>>> {
+         -> Result<Vec<LinearTransformation<CKKSPlaintextOwned<BE>>>> {
             ensure!(
                 factors.len() == giant_steps.len(),
                 "PaCo generated {} factors for a {}-entry BSGS schedule",
@@ -309,6 +312,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
                 pt.set_meta_checked(CKKSMeta {
                     log_sparsity: 0,
                     log_delta: dft.log_delta(),
+                    slots: SlotsKind::Complex,
                 })?;
                 module
                     .ckks_encode_reim_into(&mut pt, &re, &im, scratch)
@@ -376,7 +380,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
         &self.galois_elements
     }
 
-    pub(crate) fn coeffs_to_slots(&self) -> &[LinearTransformation<CKKSPlaintext<BE::OwnedBuf>>] {
+    pub(crate) fn coeffs_to_slots(&self) -> &[LinearTransformation<CKKSPlaintextOwned<BE>>] {
         &self.coeffs_to_slots
     }
 
@@ -384,7 +388,7 @@ impl<BE: Backend, F> PaCoContext<BE, F> {
         &self.psi_tail
     }
 
-    pub(crate) fn slots_to_coeffs(&self) -> &[LinearTransformation<CKKSPlaintext<BE::OwnedBuf>>] {
+    pub(crate) fn slots_to_coeffs(&self) -> &[LinearTransformation<CKKSPlaintextOwned<BE>>] {
         &self.slots_to_coeffs
     }
 }

@@ -5,6 +5,7 @@ use poulpy_hal::{
     test_suite::TestParams,
 };
 
+use crate::layouts::GLWESecretSampling;
 use crate::{
     EncryptionLayout, GGLWEToGGSWKeyEncryptSk, GGSWAutomorphism, GGSWEncryptSk, GGSWNoise, GLWEAutomorphismKeyEncryptSk,
     encryption::DEFAULT_SIGMA_XE,
@@ -95,11 +96,12 @@ where
             })
             .unwrap();
 
-            let ct_in_template: GGSW<Vec<u8>> = module.ggsw_alloc_from_infos(&ggsw_in_layout);
-            let ct_out_template: GGSW<Vec<u8>> = module.ggsw_alloc_from_infos(&ggsw_out_layout);
-            let tsk_template: GGLWEToGGSWKey<Vec<u8>> = module.gglwe_to_ggsw_key_alloc_from_infos(&tsk_layout);
-            let auto_key_template: GLWEAutomorphismKey<Vec<u8>> = module.glwe_automorphism_key_alloc_from_infos(&auto_key_layout);
-            let mut pt_scalar: ScalarZnx<Vec<u8>> = module.scalar_znx_alloc(1);
+            let ct_in_template: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_in_layout);
+            let ct_out_template: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_out_layout);
+            let tsk_template: GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> = module.gglwe_to_ggsw_key_alloc_from_infos(&tsk_layout);
+            let auto_key_template: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
+                module.glwe_automorphism_key_alloc_from_infos(&auto_key_layout);
+            let mut pt_scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
             let mut source_xe: Source = Source::new([0u8; 32]);
@@ -114,8 +116,8 @@ where
 
             let var_xs: f64 = 0.5;
 
-            let mut sk: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(&ct_out_template);
-            sk.fill_ternary_prob(var_xs, &mut source_xs);
+            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&ct_out_template);
+            module.glwe_secret_fill_ternary_prob(&mut sk, var_xs, &mut source_xs);
             let sk_backend = upload_glwe_secret(module, &sk);
 
             let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
@@ -197,7 +199,9 @@ where
                             module,
                             row,
                             col,
-                            &<ScalarZnx<Vec<u8>> as ScalarZnxToBackendRef<HostBytesBackend>>::to_backend_ref(&pt_scalar_noise),
+                            &<ScalarZnx<Vec<u8>, i64> as ScalarZnxToBackendRef<HostBytesBackend>>::to_backend_ref(
+                                &pt_scalar_noise,
+                            ),
                             &sk_prepared,
                             &mut scratch.borrow(),
                         )
@@ -275,10 +279,11 @@ where
             })
             .unwrap();
 
-            let ct_template: GGSW<Vec<u8>> = module.ggsw_alloc_from_infos(&ggsw_out_layout);
-            let tsk_template: GGLWEToGGSWKey<Vec<u8>> = module.gglwe_to_ggsw_key_alloc_from_infos(&tsk_layout);
-            let auto_key_template: GLWEAutomorphismKey<Vec<u8>> = module.glwe_automorphism_key_alloc_from_infos(&auto_key_layout);
-            let mut pt_scalar: ScalarZnx<Vec<u8>> = module.scalar_znx_alloc(1);
+            let ct_template: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_out_layout);
+            let tsk_template: GGLWEToGGSWKey<BE::OwnedBuf, BE::ZnxWord> = module.gglwe_to_ggsw_key_alloc_from_infos(&tsk_layout);
+            let auto_key_template: GLWEAutomorphismKey<BE::OwnedBuf, BE::ZnxWord> =
+                module.glwe_automorphism_key_alloc_from_infos(&auto_key_layout);
+            let mut pt_scalar: ScalarZnx<BE::OwnedBuf, BE::ZnxWord> = module.scalar_znx_alloc(1);
 
             let mut source_xs: Source = Source::new([0u8; 32]);
             let mut source_xe: Source = Source::new([0u8; 32]);
@@ -293,8 +298,8 @@ where
 
             let var_xs: f64 = 0.5;
 
-            let mut sk: GLWESecret<Vec<u8>> = module.glwe_secret_alloc_from_infos(&ct_template);
-            sk.fill_ternary_prob(var_xs, &mut source_xs);
+            let mut sk: GLWESecret<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_alloc_from_infos(&ct_template);
+            module.glwe_secret_fill_ternary_prob(&mut sk, var_xs, &mut source_xs);
             let sk_backend = upload_glwe_secret(module, &sk);
 
             let mut sk_prepared: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&sk);
@@ -375,7 +380,9 @@ where
                             module,
                             row,
                             col,
-                            &<ScalarZnx<Vec<u8>> as ScalarZnxToBackendRef<HostBytesBackend>>::to_backend_ref(&pt_scalar_noise),
+                            &<ScalarZnx<Vec<u8>, i64> as ScalarZnxToBackendRef<HostBytesBackend>>::to_backend_ref(
+                                &pt_scalar_noise,
+                            ),
                             &sk_prepared,
                             &mut scratch.borrow(),
                         )

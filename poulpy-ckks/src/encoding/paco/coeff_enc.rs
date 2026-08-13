@@ -15,6 +15,7 @@
 //! polynomials `b̃_v^{(r)}` packed (per chunk `r`, one `2C`-wide block per
 //! `v`) exactly like the σ_t vectors of [`key`](super::key).
 
+use crate::layouts::CKKSPlaintextOwned;
 use anyhow::{Context, Result, ensure};
 use poulpy_core::layouts::{Base2K, GLWEInfos, LWEInfos};
 use poulpy_hal::layouts::{Backend, HostDataRef, Module, VecZnx};
@@ -25,11 +26,12 @@ use crate::{
     layouts::{CKKSEncodingBuffer, CKKSModuleAlloc},
 };
 
-use crate::layouts::{CKKSCiphertext, CKKSPlaintext};
+use crate::layouts::CKKSCiphertext;
 
 use std::fmt::Debug;
 
 use super::cpx::Cpx;
+use crate::SlotsKind;
 use crate::default::dft::DftScalar;
 use crate::layouts::paco::{
     plan::PaCoPlan,
@@ -191,12 +193,15 @@ where
 /// non-representable coefficients, or a failed encoding.
 pub fn paco_coeff_encodings_host<BE, D, F>(
     module: &Module<BE>,
-    ct: &CKKSCiphertext<D>,
+    ct: &CKKSCiphertext<D, BE::ZnxWord>,
     plan: &PaCoPlan,
     base2k: Base2K,
-) -> Result<[CKKSPlaintext<BE::OwnedBuf>; 4]>
+) -> Result<[CKKSPlaintextOwned<BE>; 4]>
 where
-    BE: Backend,
+    // Host reference encoder: recomposes the ciphertext limbs through the i64
+    // `decode_vec_i64` path, so it applies only to an i64-word backend. Device
+    // backends bypass it via the OEP impl.
+    BE: Backend<ZnxWord = i64>,
     Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     D: HostDataRef,
     F: PaCoScalar,
@@ -254,6 +259,7 @@ where
         pt.set_meta_checked(CKKSMeta {
             log_sparsity: 0,
             log_delta,
+            slots: SlotsKind::Complex,
         })?;
         encoding_values[..re.len()].copy_from_slice(&re);
         encoding_values[re.len()..].copy_from_slice(&im);
@@ -275,7 +281,12 @@ where
 /// reduction is applied — every consumer, including [`psi`] and centered
 /// representative conversion in the test model, depends only on the residue
 /// class.
-pub(crate) fn glwe_column_residues<D: HostDataRef>(data: &VecZnx<D>, col: usize, k: usize, base2k: usize) -> Result<Vec<i64>> {
+pub(crate) fn glwe_column_residues<D: HostDataRef>(
+    data: &VecZnx<D, i64>,
+    col: usize,
+    k: usize,
+    base2k: usize,
+) -> Result<Vec<i64>> {
     ensure!(k > 0, "residue modulus exponent k must be positive");
     ensure!(k <= 63, "residues must fit an i64 modulus, got k = {k}");
     ensure!(base2k > 0, "residue limb width base2k must be positive");
@@ -306,7 +317,7 @@ pub(crate) fn glwe_column_residues<D: HostDataRef>(data: &VecZnx<D>, col: usize,
 /// as `body + mask·s`, matching the paper's `m = ct0 + s·ct1` — no sign
 /// adjustment is needed.
 pub(crate) fn exhausted_ciphertext_residues<D: HostDataRef>(
-    ct: &CKKSCiphertext<D>,
+    ct: &CKKSCiphertext<D, i64>,
     p: &PaCoPlan,
 ) -> Result<(Vec<i64>, Vec<i64>)> {
     ensure!(

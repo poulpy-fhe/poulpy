@@ -3,6 +3,7 @@
 //! Everything here inspects layouts, keys, and plans without mutating a ciphertext: conservative per-branch scratch bounds, the public tmp-bytes entry point, the branch-schedule arithmetic, and the encapsulation-key checks.
 //! The concurrency-bearing branch drivers live in [`parallel`](super::parallel); keeping them free of validation logic keeps that code independently reviewable.
 
+use crate::layouts::CKKSCiphertextOwned;
 use crate::{CKKSResult as Result, ckks_ensure};
 
 use anyhow::Context;
@@ -13,17 +14,20 @@ use poulpy_core::{
         GLWEToBackendRef, LWEInfos, Rank, TorusPrecision,
     },
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::layouts::{Backend, CyclotomicOrder, Module, ScratchArena};
 
-use super::{bootstrap::validate_runtime, parallel::PaCoBootstrapModule};
+use super::{bootstrap::validate_runtime, ops::PaCoSlotOps};
+use crate::SlotsKind;
 use crate::layouts::paco::{
     context::PaCoContext,
     keyset::{PaCoKeys, validate_gadget_backend_view},
 };
 use crate::{
     CKKSCtBounds, CKKSInfos, CKKSLayout, CKKSMeta,
-    api::{CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSMulOps, CKKSRotateOps, CKKSSubOps, PaCoScalar},
-    layouts::CKKSCiphertext,
+    api::{
+        CKKSAddOps, CKKSConjugateOps, CKKSCopyOps, CKKSLinearTransformationOps, CKKSMulOps, CKKSRotateOps, CKKSSubOps, PaCoScalar,
+    },
+    layouts::CKKSModuleAlloc,
     oep::{CKKSEncodingImpl, CKKSPaCoCoeffEncodingImpl},
 };
 
@@ -74,14 +78,27 @@ impl CKKSInfos for BranchScratchLayout {
 /// common runtime layouts have been validated.
 pub(super) fn direct_tmp_bytes_validated<BE, F, K>(
     module: &Module<BE>,
-    output: &CKKSCiphertext<BE::OwnedBuf>,
+    output: &CKKSCiphertextOwned<BE>,
     context: &PaCoContext<BE, F>,
     keys: &K,
 ) -> Result<usize>
 where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
     F: PaCoScalar,
-    Module<BE>: PaCoBootstrapModule<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRotateOps<BE>
+        + PaCoSlotOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWERotate<BE>
+        + GLWEAutomorphism<BE>
+        + GLWELinearTransformations<BE>
+        + GLWEKeyswitch<BE>
+        + CyclotomicOrder,
     K: PaCoKeys<BE>,
 {
     let plan = context.plan();
@@ -115,6 +132,7 @@ where
         meta: CKKSMeta {
             log_sparsity: 0,
             log_delta: plan.log_delta_bsk(),
+            slots: SlotsKind::Complex,
         },
     };
 
@@ -144,6 +162,7 @@ where
         meta: CKKSMeta {
             log_sparsity: 0,
             log_delta: plan.c2s().log_delta().max(plan.stc().log_delta()),
+            slots: SlotsKind::Complex,
         },
     };
 
@@ -180,7 +199,7 @@ where
 /// one-time dense-to-structured key switch in addition to a direct branch.
 pub(crate) fn paco_bootstrap_tmp_bytes<BE, F, K, Src>(
     module: &Module<BE>,
-    output: &CKKSCiphertext<BE::OwnedBuf>,
+    output: &CKKSCiphertextOwned<BE>,
     input: &Src,
     context: &PaCoContext<BE, F>,
     keys: &K,
@@ -189,7 +208,20 @@ pub(crate) fn paco_bootstrap_tmp_bytes<BE, F, K, Src>(
 where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
     F: PaCoScalar,
-    Module<BE>: PaCoBootstrapModule<BE> + GLWEKeyswitch<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRotateOps<BE>
+        + PaCoSlotOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWERotate<BE>
+        + GLWEAutomorphism<BE>
+        + GLWELinearTransformations<BE>
+        + GLWEKeyswitch<BE>
+        + CyclotomicOrder,
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
@@ -207,7 +239,7 @@ where
 /// ciphertext or encapsulation temporary is mutated.
 pub(super) fn preflight<BE, F, K, Src>(
     module: &Module<BE>,
-    output: &CKKSCiphertext<BE::OwnedBuf>,
+    output: &CKKSCiphertextOwned<BE>,
     input: &Src,
     context: &PaCoContext<BE, F>,
     keys: &K,
@@ -217,7 +249,20 @@ pub(super) fn preflight<BE, F, K, Src>(
 where
     BE: Backend + CKKSPaCoCoeffEncodingImpl<BE> + CKKSEncodingImpl<BE, F>,
     F: PaCoScalar,
-    Module<BE>: PaCoBootstrapModule<BE> + GLWEKeyswitch<BE>,
+    Module<BE>: CKKSMulOps<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSCopyOps<BE>
+        + CKKSRotateOps<BE>
+        + PaCoSlotOps<BE>
+        + CKKSLinearTransformationOps<BE>
+        + CKKSModuleAlloc<BE>
+        + GLWERotate<BE>
+        + GLWEAutomorphism<BE>
+        + GLWELinearTransformations<BE>
+        + GLWEKeyswitch<BE>
+        + CyclotomicOrder,
     K: PaCoKeys<BE>,
     Src: GLWEToBackendRef<BE> + CKKSCtBounds,
 {
@@ -238,28 +283,41 @@ where
     Ok((output_meta, direct))
 }
 
-/// Validates `kappa` and returns the coefficient stride `N/(kappa*C)`.
-pub(super) fn branch_stride<BE: Backend + CKKSPaCoCoeffEncodingImpl<BE>, F: PaCoScalar>(
+/// Branch schedule for an input at `log_sparsity`: the number of branches
+/// `kappa` and the coefficient stride between them.
+///
+/// A ciphertext at `log_sparsity = s` carries `M(X^(2^s))`, so its live
+/// coefficients are the `N/2^s` multiples of `2^s`. One branch refreshes `C`
+/// coefficient classes at gap `N/C` from position 0, and branch `b` is
+/// evaluated on the input pre-rotated by `-b*stride`, so `kappa` branches
+/// cover the multiples of `stride = N/(kappa*C)`. Taking
+/// `kappa = N/(C*2^s)` makes that stride exactly `2^s`: every live
+/// coefficient is refreshed once, and no branch spends work on a coefficient
+/// the sparsity guarantees is zero.
+pub(super) fn branch_schedule<BE: Backend + CKKSPaCoCoeffEncodingImpl<BE>, F: PaCoScalar>(
     context: &PaCoContext<BE, F>,
-    kappa: usize,
-) -> Result<usize> {
+    log_sparsity: usize,
+) -> Result<(usize, usize)> {
+    let (n, c) = (context.plan().n(), context.plan().c());
+    let stride = 1usize
+        .checked_shl(log_sparsity as u32)
+        .context("PaCo input sparsity 2^log_sparsity overflows usize")?;
+    let live = c.checked_mul(stride).context("PaCo C*2^log_sparsity overflows usize")?;
     ckks_ensure!(
-        kappa > 0 && kappa.is_power_of_two(),
-        "PaCo kappa must be a non-zero power of two, got {kappa}"
-    );
-    let active = kappa
-        .checked_mul(context.plan().c())
-        .context("PaCo kappa*C overflows usize")?;
-    ckks_ensure!(
-        active <= context.plan().n(),
-        "PaCo kappa*C={active} exceeds ring degree {}",
-        context.plan().n(),
+        live <= n,
+        "PaCo input at log_sparsity={log_sparsity} has {} live coefficients, fewer than the plan's C={c} classes",
+        n / stride,
     );
     ckks_ensure!(
-        context.plan().n().is_multiple_of(active),
-        "PaCo kappa*C must divide the ring degree"
+        n.is_multiple_of(live),
+        "PaCo C*2^log_sparsity={live} must divide the ring degree {n}"
     );
-    Ok(context.plan().n() / active)
+    let kappa = n / live;
+    ckks_ensure!(
+        kappa.is_power_of_two(),
+        "PaCo branch count N/(C*2^log_sparsity)={kappa} is not a power of two"
+    );
+    Ok((kappa, stride))
 }
 
 pub(super) fn checked_branch_shift(branch: usize, stride: usize) -> Result<i64> {

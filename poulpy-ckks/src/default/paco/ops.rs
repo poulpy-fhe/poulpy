@@ -36,8 +36,7 @@ use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::{
     GLWEAutomorphism,
     layouts::{
-        Compact, GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef,
-        prepared::GLWETensorKeyPreparedToBackendRef,
+        GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEToBackendMut, GLWEToBackendRef, prepared::GLWETensorKeyPreparedToBackendRef,
     },
 };
 use poulpy_hal::{
@@ -48,7 +47,7 @@ use poulpy_hal::{
 use crate::{
     CKKSCompositionError, CKKSCtBounds, SetCKKSInfos,
     api::{CKKSMulOps, CKKSRotateOps},
-    layouts::{CKKSCiphertext, CKKSModuleAlloc},
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
 };
 
 /// The rotation amounts of a `Tr_{a→b}` / `Pr_{a→b}` fold, in application
@@ -117,7 +116,7 @@ pub trait PaCoSlotOps<BE: Backend> {
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>;
@@ -126,7 +125,7 @@ pub trait PaCoSlotOps<BE: Backend> {
 impl<BE: Backend> PaCoSlotOps<BE> for Module<BE>
 where
     Module<BE>: CKKSRotateOps<BE> + CKKSMulOps<BE> + CKKSModuleAlloc<BE> + GLWEAutomorphism<BE> + CyclotomicOrder + ModuleN,
-    CKKSCiphertext<BE::OwnedBuf>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
+    CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
 {
     fn ckks_slot_trace_assign<Dst, H, K>(
         &self,
@@ -164,7 +163,7 @@ where
         scratch: &mut ScratchArena<'_, BE>,
     ) -> Result<()>
     where
-        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos + Compact,
+        Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
         K: CKKSAtkBounds<BE>,
         H: GLWEAutomorphismKeyHelper<K, BE>,
         T: GGLWEInfos + GLWETensorKeyPreparedToBackendRef<BE>,

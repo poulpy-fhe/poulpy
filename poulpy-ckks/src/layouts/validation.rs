@@ -97,7 +97,10 @@ where
     Ok(())
 }
 
-/// Rejects metadata that exposes more torus limbs than the backing layout.
+/// Rejects metadata that claims more torus precision than the backing
+/// allocation can hold. Active-limb sufficiency (a backend view truncated
+/// below the metadata) is checked separately by
+/// [`validate_backend_storage_capacity`].
 pub(crate) fn validate_storage_capacity<K: LWEInfos + ?Sized>(name: &str, key: &K) -> Result<()> {
     let base2k = key.base2k().as_usize();
     ensure!((1..=63).contains(&base2k), "{name} base2k must be in [1, 63], got {base2k}");
@@ -114,7 +117,7 @@ pub(crate) fn validate_storage_capacity<K: LWEInfos + ?Sized>(name: &str, key: &
 }
 
 /// Validates both allocated capacity and active backend limbs for a runtime
-/// ciphertext-like operand. This catches compacted or malformed custom key
+/// ciphertext-like operand. This catches truncated or malformed custom key
 /// stores whose metadata still advertises more precision than their active
 /// view exposes.
 pub(crate) fn validate_backend_storage_capacity<BE, K>(name: &str, key: &K) -> Result<()>

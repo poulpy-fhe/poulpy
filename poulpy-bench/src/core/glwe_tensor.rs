@@ -1,3 +1,7 @@
+use poulpy_hal::layouts::CnvPVecLToBackendMut;
+use poulpy_hal::layouts::CnvPVecLToBackendRef;
+use poulpy_hal::layouts::CnvPVecRToBackendMut;
+use poulpy_hal::layouts::CnvPVecRToBackendRef;
 use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
@@ -14,9 +18,8 @@ use poulpy_hal::{
         VecZnxIdftApplyTmpA, VecZnxSubAssignBackend,
     },
     layouts::{
-        Backend, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecRToBackendMut, CnvPVecRToBackendRef, HostDataMut, Module,
-        ScratchOwned, VecZnx, VecZnxBigReborrowBackendMut, VecZnxDftReborrowBackendMut, VecZnxReborrowBackendMut,
-        VecZnxToBackendRef, ZnxView, ZnxViewMut, vec_znx_big_backend_ref_from_mut,
+        Backend, HostDataMut, Module, ScratchOwned, VecZnx, VecZnxBigToBackendMut, VecZnxDftToBackendMut,
+        VecZnxReborrowBackendMut, VecZnxToBackendRef, ZnxView, ZnxViewMut, vec_znx_big_backend_ref_from_mut,
     },
 };
 
@@ -69,7 +72,7 @@ fn tensor_key_layout(cp: &CoreParams) -> GLWETensorKeyLayout {
 
 /// Relinearization (the keyswitch phase of `ckks_mul`). The tensor key is left
 /// zeroed: the op is data-independent, so this times the real kernel path.
-pub fn runner_glwe_tensor_relinearize<BE: Backend, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
+pub fn runner_glwe_tensor_relinearize<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
 where
     Module<BE>: ModuleNew<BE> + GLWETensoring<BE> + GLWETensorKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
@@ -91,7 +94,7 @@ where
     });
 }
 
-pub fn runner_glwe_tensor_apply<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+pub fn runner_glwe_tensor_apply<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CoreParams,
 ) where
@@ -113,7 +116,7 @@ pub fn runner_glwe_tensor_apply<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>
     });
 }
 
-pub fn runner_glwe_tensor_prepare_left<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+pub fn runner_glwe_tensor_prepare_left<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CoreParams,
 ) where
@@ -134,7 +137,7 @@ pub fn runner_glwe_tensor_prepare_left<BE: Backend<OwnedBuf = Vec<u8>>, M: Measu
         let mut a_prep_backend = a_prep.to_backend_mut();
         module.cnv_prepare_left(
             &mut a_prep_backend,
-            &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(a.data()),
+            &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<BE>>::to_backend_ref(a.data()),
             a_mask,
             &mut scratch.borrow(),
         );
@@ -142,7 +145,7 @@ pub fn runner_glwe_tensor_prepare_left<BE: Backend<OwnedBuf = Vec<u8>>, M: Measu
     });
 }
 
-pub fn runner_glwe_tensor_prepare_right<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+pub fn runner_glwe_tensor_prepare_right<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CoreParams,
 ) where
@@ -163,7 +166,7 @@ pub fn runner_glwe_tensor_prepare_right<BE: Backend<OwnedBuf = Vec<u8>>, M: Meas
         let mut b_prep_backend = b_prep.to_backend_mut();
         module.cnv_prepare_right(
             &mut b_prep_backend,
-            &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(b.data()),
+            &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<BE>>::to_backend_ref(b.data()),
             b_mask,
             &mut scratch.borrow(),
         );
@@ -171,7 +174,7 @@ pub fn runner_glwe_tensor_prepare_right<BE: Backend<OwnedBuf = Vec<u8>>, M: Meas
     });
 }
 
-pub fn runner_glwe_tensor_diag_lane<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+pub fn runner_glwe_tensor_diag_lane<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CoreParams,
 ) where
@@ -199,8 +202,8 @@ pub fn runner_glwe_tensor_diag_lane<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurem
         cnv_offset_lo,
     );
 
-    let a_mask = msb_mask_bottom_limb(base2k, a.max_k().as_usize());
-    let b_mask = msb_mask_bottom_limb(base2k, b.max_k().as_usize());
+    let a_mask = msb_mask_bottom_limb(base2k, a.k().as_usize());
+    let b_mask = msb_mask_bottom_limb(base2k, b.k().as_usize());
     let mut a_prep = module.cnv_pvec_left_alloc(cols, a.max_size());
     let mut b_prep = module.cnv_pvec_right_alloc(cols, b.max_size());
     let mut prep_scratch = ScratchOwned::<BE>::alloc(
@@ -212,7 +215,7 @@ pub fn runner_glwe_tensor_diag_lane<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurem
         let mut a_prep_backend = a_prep.to_backend_mut();
         module.cnv_prepare_left(
             &mut a_prep_backend,
-            &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(a.data()),
+            &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<BE>>::to_backend_ref(a.data()),
             a_mask,
             &mut prep_scratch.borrow(),
         );
@@ -221,7 +224,7 @@ pub fn runner_glwe_tensor_diag_lane<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurem
         let mut b_prep_backend = b_prep.to_backend_mut();
         module.cnv_prepare_right(
             &mut b_prep_backend,
-            &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(b.data()),
+            &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<BE>>::to_backend_ref(b.data()),
             b_mask,
             &mut prep_scratch.borrow(),
         );
@@ -244,14 +247,8 @@ pub fn runner_glwe_tensor_diag_lane<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurem
         );
         let (mut res_big, scratch) = scratch.take_vec_znx_big_scratch(&module, 1, diag_dft_size);
         {
-            let mut res_big_backend =
-                <poulpy_hal::layouts::VecZnxBig<BE::BufMut<'_>, BE> as VecZnxBigReborrowBackendMut<BE>>::reborrow_backend_mut(
-                    &mut res_big,
-                );
-            let mut res_dft_backend =
-                <poulpy_hal::layouts::VecZnxDft<BE::BufMut<'_>, BE> as VecZnxDftReborrowBackendMut<BE>>::reborrow_backend_mut(
-                    &mut res_dft,
-                );
+            let mut res_big_backend = res_big.to_backend_mut();
+            let mut res_dft_backend = res_dft.to_backend_mut();
             module.vec_znx_idft_apply_tmpa(&mut res_big_backend, 0, &mut res_dft_backend, 0);
         }
         let (mut tmp, mut scratch) = scratch.take_vec_znx_scratch(n, 1, tensor.max_size());
@@ -269,7 +266,8 @@ pub fn runner_glwe_tensor_diag_lane<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurem
     });
 }
 
-pub fn runner_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+
+pub fn runner_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CoreParams,
 ) where
@@ -285,14 +283,13 @@ pub fn runner_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>, M: Meas
     for<'x> BE::BufRef<'x>: AsRef<[u8]> + Send,
 {
     let glwe_infos = glwe_layout(cp);
-    let n: usize = cp.n as usize;
+     let n: usize = glwe_infos.n().into();
     let cols: usize = (glwe_infos.rank() + 1).into();
     if cols < 2 {
-        // This op needs rank >= 1 (cols >= 2)
-        panic!("runner_glwe_tensor_pairwise_lane: rank must be >= 1 (cols >= 2)");
+        return;
     }
 
-    let module = Module::<BE>::new(cp.n as u64);
+    let module = Module::<BE>::new(n as u64);
 
     let a = module.glwe_alloc_from_infos(&glwe_infos);
     let b = module.glwe_alloc_from_infos(&glwe_infos);
@@ -307,8 +304,8 @@ pub fn runner_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>, M: Meas
         cnv_offset_lo,
     );
 
-    let a_mask = msb_mask_bottom_limb(base2k, a.max_k().as_usize());
-    let b_mask = msb_mask_bottom_limb(base2k, b.max_k().as_usize());
+    let a_mask = msb_mask_bottom_limb(base2k, a.k().as_usize());
+    let b_mask = msb_mask_bottom_limb(base2k, b.k().as_usize());
     let mut a_prep = module.cnv_pvec_left_alloc(cols, a.max_size());
     let mut b_prep = module.cnv_pvec_right_alloc(cols, b.max_size());
     let mut prep_scratch = ScratchOwned::<BE>::alloc(
@@ -320,7 +317,7 @@ pub fn runner_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>, M: Meas
         let mut a_prep_backend = a_prep.to_backend_mut();
         module.cnv_prepare_left(
             &mut a_prep_backend,
-            &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(a.data()),
+            &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<BE>>::to_backend_ref(a.data()),
             a_mask,
             &mut prep_scratch.borrow(),
         );
@@ -329,7 +326,7 @@ pub fn runner_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>, M: Meas
         let mut b_prep_backend = b_prep.to_backend_mut();
         module.cnv_prepare_right(
             &mut b_prep_backend,
-            &<VecZnx<Vec<u8>> as VecZnxToBackendRef<BE>>::to_backend_ref(b.data()),
+            &<VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<BE>>::to_backend_ref(b.data()),
             b_mask,
             &mut prep_scratch.borrow(),
         );
@@ -354,12 +351,8 @@ pub fn runner_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>, M: Meas
             );
             let (mut res_big, scratch) = scratch.take_vec_znx_big_scratch(&module, 1, pairwise_dft_size);
             {
-                let mut res_big_backend = <poulpy_hal::layouts::VecZnxBig<BE::BufMut<'_>, BE> as VecZnxBigReborrowBackendMut<
-                    BE,
-                >>::reborrow_backend_mut(&mut res_big);
-                let mut res_dft_backend = <poulpy_hal::layouts::VecZnxDft<BE::BufMut<'_>, BE> as VecZnxDftReborrowBackendMut<
-                    BE,
-                >>::reborrow_backend_mut(&mut res_dft);
+                let mut res_big_backend = res_big.to_backend_mut();
+                let mut res_dft_backend = res_dft.to_backend_mut();
                 module.vec_znx_idft_apply_tmpa(&mut res_big_backend, 0, &mut res_dft_backend, 0);
             }
             let (mut tmp, mut scratch) = scratch.take_vec_znx_scratch(n, 1, tensor.max_size());
@@ -368,7 +361,7 @@ pub fn runner_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>, M: Meas
                 base2k,
                 cnv_offset_lo,
                 0,
-                &vec_znx_big_backend_ref_from_mut(&res_big),
+                &vec_znx_big_backend_ref_from_mut::<BE>(&res_big),
                 base2k,
                 0,
                 &mut scratch,
@@ -397,14 +390,8 @@ pub fn runner_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>, M: Meas
         );
         let (mut res_big, scratch) = scratch.take_vec_znx_big_scratch(&module, 1, pairwise_dft_size);
         {
-            let mut res_big_backend =
-                <poulpy_hal::layouts::VecZnxBig<BE::BufMut<'_>, BE> as VecZnxBigReborrowBackendMut<BE>>::reborrow_backend_mut(
-                    &mut res_big,
-                );
-            let mut res_dft_backend =
-                <poulpy_hal::layouts::VecZnxDft<BE::BufMut<'_>, BE> as VecZnxDftReborrowBackendMut<BE>>::reborrow_backend_mut(
-                    &mut res_dft,
-                );
+            let mut res_big_backend = res_big.to_backend_mut();
+            let mut res_dft_backend = res_dft.to_backend_mut();
             module.vec_znx_idft_apply_tmpa(&mut res_big_backend, 0, &mut res_dft_backend, 0);
         }
         let (mut tmp, mut scratch) = scratch.take_vec_znx_scratch(n, 1, tensor.max_size());
@@ -413,20 +400,22 @@ pub fn runner_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>>, M: Meas
             base2k,
             cnv_offset_lo,
             0,
-            &vec_znx_big_backend_ref_from_mut(&res_big),
+            &vec_znx_big_backend_ref_from_mut::<BE>(&res_big),
             base2k,
             0,
             &mut scratch,
         );
-        let mut tmp_mut = <VecZnx<BE::BufMut<'_>> as VecZnxReborrowBackendMut<BE>>::reborrow_backend_mut(&mut tmp);
-        let diag_terms_ref = <VecZnx<BE::OwnedBuf> as poulpy_hal::layouts::VecZnxToBackendRef<BE>>::to_backend_ref(&diag_terms);
+        let mut tmp_mut =
+            <VecZnx<BE::BufMut<'_>, BE::ZnxWord> as VecZnxReborrowBackendMut<BE>>::reborrow_backend_mut(&mut tmp);
+        let diag_terms_ref =
+            <VecZnx<BE::OwnedBuf, BE::ZnxWord> as poulpy_hal::layouts::VecZnxToBackendRef<BE>>::to_backend_ref(&diag_terms);
         module.vec_znx_sub_assign_backend(&mut tmp_mut, 0, &diag_terms_ref, 0);
         module.vec_znx_sub_assign_backend(&mut tmp_mut, 0, &diag_terms_ref, 1);
         black_box(());
     });
 }
 
-pub fn runner_glwe_tensor_square_apply<BE: Backend<OwnedBuf = Vec<u8>>, M: Measurement>(
+pub fn runner_glwe_tensor_square_apply<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CoreParams,
 ) where

@@ -11,7 +11,9 @@
 //! portions of the API that still require direct byte access.
 
 mod convolution;
+mod crt;
 mod encoding;
+mod layout_compat;
 mod mat_znx;
 mod module;
 mod plan_cache;
@@ -25,9 +27,12 @@ mod vec_znx;
 mod vec_znx_big;
 mod vec_znx_dft;
 mod vmp_pmat;
+mod word;
 mod znx_base;
 
 pub use convolution::*;
+pub use crt::*;
+pub use layout_compat::*;
 pub use mat_znx::*;
 pub use module::*;
 pub use plan_cache::*;
@@ -41,6 +46,7 @@ pub use vec_znx::*;
 pub use vec_znx_big::*;
 pub use vec_znx_dft::*;
 pub use vmp_pmat::*;
+pub use word::*;
 pub use znx_base::*;
 
 use anyhow::Result;
@@ -68,6 +74,17 @@ pub trait HostDataRef = Data + AsRef<[u8]> + Sync;
 /// and cross-thread transfer via [`Send`]. Types satisfying this bound
 /// support in-place modification and can be moved between threads.
 pub trait HostDataMut = HostDataRef + AsMut<[u8]> + Send;
+
+#[inline]
+pub(crate) fn checked_product(factors: &[usize], context: &str) -> usize {
+    factors
+        .iter()
+        .copied()
+        .try_fold(1usize, usize::checked_mul)
+        .unwrap_or_else(|| {
+            panic!("{context} overflows usize");
+        })
+}
 
 mod private {
     pub trait Sealed {}
@@ -116,12 +133,13 @@ where
 
 /// Minimal host-resident backend used as the default backend adapter for
 /// host-visible byte-slice views in generic helper code.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
 pub struct HostBytesBackend;
 
 impl Backend for HostBytesBackend {
-    type ScalarBig = i128;
-    type ScalarPrep = i64;
+    type ZnxWord = i64;
+    type BigWord = i128;
+    type DftWord = i64;
     type OwnedBuf = Vec<u8>;
     type BufRef<'a> = &'a [u8];
     type BufMut<'a> = &'a mut [u8];
@@ -302,8 +320,26 @@ pub type OwnedBuf<BE> = <BE as Backend>::OwnedBuf;
 /// All other backend-to-backend transfers (e.g. `FFT64Ref` ↔ `NTT4x30Ref`,
 /// `FFT64Ref` → `FFT64Avx`) must be implemented explicitly in the respective
 /// backend crates.
+///
+/// # Scope: this is a byte move, not a conversion
+///
+/// [`Self::transfer_buf`] receives an opaque buffer with no shape (`n`, `cols`,
+/// `size`) and no `base2k`, so it cannot re-decompose limbs. The layout-level
+/// helpers built on it (`ModuleTransfer::upload_*` / `download_*`) therefore
+/// re-attach the source's shape to the destination, and they require both
+/// backends to agree on the coefficient word (`To: Backend<ZnxWord =
+/// From::ZnxWord>`). Only the buffer type may differ, which is what makes
+/// host → device staging work.
+///
+/// Moving a value between backends whose limb axis differs (a different word,
+/// a different `base2k`, hence a different limb count for the same torus
+/// precision) is a re-encoding rather than a copy: it needs both `base2k`
+/// values and a caller-allocated destination at its own layout. That is a
+/// separate operation and is deliberately not expressible here.
 pub trait TransferFrom<From: Backend>: Backend {
     /// Transfers a buffer owned by `From` into `Self`.
+    ///
+    /// Byte-for-byte; the caller guarantees both sides share a layout.
     fn transfer_buf(src: &From::OwnedBuf) -> Self::OwnedBuf;
 }
 
@@ -312,6 +348,15 @@ impl<T: Backend<Location = Host, OwnedBuf = Vec<u8>>> TransferFrom<HostBytesBack
         T::from_host_bytes(src)
     }
 }
+
+/// A backend that can exchange coefficient data with [`HostBytesBackend`].
+///
+/// Bundles the two requirements of a host-staged transfer: the byte move itself
+/// ([`TransferFrom`]) and agreement on the coefficient word, since
+/// [`TransferFrom::transfer_buf`] is a copy and cannot re-decompose limbs.
+pub trait HostStaged: Backend<ZnxWord = <HostBytesBackend as Backend>::ZnxWord> + TransferFrom<HostBytesBackend> {}
+
+impl<BE> HostStaged for BE where BE: Backend<ZnxWord = <HostBytesBackend as Backend>::ZnxWord> + TransferFrom<HostBytesBackend> {}
 
 /// Implement a backend marker by forwarding all storage- and handle-level
 /// behavior to an existing backend.
@@ -323,8 +368,9 @@ impl<T: Backend<Location = Host, OwnedBuf = Vec<u8>>> TransferFrom<HostBytesBack
 macro_rules! impl_backend_from {
     ($be:ty, $from:ty) => {
         impl poulpy_hal::layouts::Backend for $be {
-            type ScalarBig = <$from as poulpy_hal::layouts::Backend>::ScalarBig;
-            type ScalarPrep = <$from as poulpy_hal::layouts::Backend>::ScalarPrep;
+            type ZnxWord = <$from as poulpy_hal::layouts::Backend>::ZnxWord;
+            type BigWord = <$from as poulpy_hal::layouts::Backend>::BigWord;
+            type DftWord = <$from as poulpy_hal::layouts::Backend>::DftWord;
             type OwnedBuf = <$from as poulpy_hal::layouts::Backend>::OwnedBuf;
             type BufRef<'a> = <$from as poulpy_hal::layouts::Backend>::BufRef<'a>;
             type BufMut<'a> = <$from as poulpy_hal::layouts::Backend>::BufMut<'a>;
@@ -432,7 +478,51 @@ macro_rules! impl_backend_from {
             unsafe fn destroy(handle: std::ptr::NonNull<Self::Handle>) {
                 <$from as poulpy_hal::layouts::Backend>::destroy(handle)
             }
+
+            // Sizing must be forwarded explicitly: these are defaulted trait
+            // methods, so without forwarding the delegate would silently get
+            // the word-derived defaults instead of the source backend's
+            // overrides (e.g. the packed IFMA `bytes_of_vmp_pmat`), breaking
+            // the layout compatibility asserted by the markers below.
+            const SCRATCH_ALIGN: usize = <$from as poulpy_hal::layouts::Backend>::SCRATCH_ALIGN;
+
+            fn bytes_of_vec_znx_dft(n: usize, cols: usize, size: usize) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::bytes_of_vec_znx_dft(n, cols, size)
+            }
+
+            fn bytes_of_vec_znx_big(n: usize, cols: usize, size: usize) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::bytes_of_vec_znx_big(n, cols, size)
+            }
+
+            fn bytes_of_svp_ppol(n: usize, cols: usize) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::bytes_of_svp_ppol(n, cols)
+            }
+
+            fn bytes_of_vmp_pmat(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size)
+            }
+
+            fn bytes_of_cnv_pvec_left(n: usize, cols: usize, size: usize) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::bytes_of_cnv_pvec_left(n, cols, size)
+            }
+
+            fn bytes_of_cnv_pvec_right(n: usize, cols: usize, size: usize) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::bytes_of_cnv_pvec_right(n, cols, size)
+            }
         }
+
+        // A delegating backend forwards all storage behavior verbatim, so every
+        // container layout is shared with the source backend by construction.
+        unsafe impl poulpy_hal::layouts::VecZnxDftLayoutCompatible<$from> for $be {}
+        unsafe impl poulpy_hal::layouts::VecZnxDftLayoutCompatible<$be> for $from {}
+        unsafe impl poulpy_hal::layouts::VecZnxBigLayoutCompatible<$from> for $be {}
+        unsafe impl poulpy_hal::layouts::VecZnxBigLayoutCompatible<$be> for $from {}
+        unsafe impl poulpy_hal::layouts::SvpPPolLayoutCompatible<$from> for $be {}
+        unsafe impl poulpy_hal::layouts::SvpPPolLayoutCompatible<$be> for $from {}
+        unsafe impl poulpy_hal::layouts::VmpPMatLayoutCompatible<$from> for $be {}
+        unsafe impl poulpy_hal::layouts::VmpPMatLayoutCompatible<$be> for $from {}
+        unsafe impl poulpy_hal::layouts::CnvPVecLayoutCompatible<$from> for $be {}
+        unsafe impl poulpy_hal::layouts::CnvPVecLayoutCompatible<$be> for $from {}
     };
 }
 

@@ -43,7 +43,7 @@ use crate::{
 
 // ── vec_znx_dft ──────────────────────────────────────────────────────────────
 
-pub fn vec_znx_dft_ops<B: Backend + 'static, M: Measurement>() -> [BenchOp<M, HalSweepParms>; 8]
+pub fn vec_znx_dft_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, HalSweepParms>; 8]
 where
     Module<B>: ModuleNew<B>
         + VecZnxDftAlloc<B>
@@ -73,7 +73,7 @@ where
 
 // ── vec_znx_big ──────────────────────────────────────────────────────────────
 
-pub fn vec_znx_big_ops<B: Backend + 'static, M: Measurement>() -> [BenchOp<M, HalSweepParms>; 16]
+pub fn vec_znx_big_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, HalSweepParms>; 16]
 where
     Module<B>: ModuleNew<B>
         + VecZnxAlloc<B>
@@ -121,7 +121,7 @@ where
 
 // ── svp ──────────────────────────────────────────────────────────────────────
 
-pub fn svp_ops<B: Backend + 'static, M: Measurement>() -> [BenchOp<M, HalSweepParms>; 4]
+pub fn svp_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, HalSweepParms>; 4]
 where
     Module<B>: ModuleNew<B> + SvpPPolAlloc<B> + VecZnxDftAlloc<B> + SvpPrepare<B> + SvpApplyDft<B> + SvpApplyDftToDft<B> + SvpApplyDftToDftAssign<B>,
 {
@@ -135,7 +135,7 @@ where
 
 // ── vec_znx ──────────────────────────────────────────────────────────────────
 
-pub fn vec_znx_ops<B: Backend + 'static, M: Measurement>() -> [BenchOp<M, HalSweepParms>; 19]
+pub fn vec_znx_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, HalSweepParms>; 19]
 where
     Module<B>: ModuleNew<B>
         + VecZnxAlloc<B>
@@ -192,7 +192,7 @@ where
 
 // ── vmp ──────────────────────────────────────────────────────────────────────
 
-pub fn vmp_ops<B: Backend + 'static, M: Measurement>() -> [BenchOp<M, VmpSweepParms>; 3]
+pub fn vmp_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, VmpSweepParms>; 3]
 where
     Module<B>: ModuleNew<B>
         + VmpPMatAlloc<B>
@@ -214,7 +214,7 @@ where
 
 // ── convolution ──────────────────────────────────────────────────────────────
 
-pub fn convolution_ops<B: Backend + 'static, M: Measurement>() -> [BenchOp<M, CnvSweepParms>; 6]
+pub fn convolution_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, CnvSweepParms>; 6]
 where
     Module<B>: ModuleNew<B> + Convolution<B> + CnvPVecAlloc<B> + VecZnxDftAlloc<B> + VecZnxBigAlloc<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
@@ -244,7 +244,7 @@ pub fn reim_ops<T: NegacyclicFFT<f64> + NegacyclicFFTNew<f64>, M: Measurement>()
 /// (`vec_znx`, `vec_znx_dft`, `vec_znx_big`) into a single table. Excludes
 /// `svp`, `vmp`, and `convolution`, which sweep different parameter types —
 /// call [`svp_ops`] separately.
-pub fn all_vec_znx_ops<B: Backend + 'static, M: Measurement>() -> Vec<BenchOp<M, HalSweepParms>>
+pub fn all_vec_znx_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> Vec<BenchOp<M, HalSweepParms>>
 where
     Module<B>: ModuleNew<B>
         + VecZnxAlloc<B>

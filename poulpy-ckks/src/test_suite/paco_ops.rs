@@ -12,6 +12,7 @@
 //!   signed Galois element `−5^k` applied through the
 //!   plain conjugation op must equal `conj(rotate(·, k))`, in one keyswitch.
 
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_core::layouts::{GLWELayout, LWEInfos, Rank};
 use poulpy_hal::{
     api::{NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedBorrow},
@@ -19,12 +20,13 @@ use poulpy_hal::{
 };
 use std::collections::HashMap;
 
+use crate::SlotsKind;
 use crate::{
     CKKSInfos, CKKSMeta, SetCKKSInfos,
     api::CKKSConjugateOps,
     default::paco::ops::{PaCoSlotOps, fold_rotations},
     encoding::paco::cpx::Cpx,
-    layouts::{CKKSCiphertext, CKKSModuleAlloc},
+    layouts::{CKKSCiphertextOwned, CKKSModuleAlloc},
     test_suite::reference_encoder::ReferenceEncoder,
     test_suite::{
         CKKSTestParams,
@@ -81,7 +83,7 @@ pub(crate) fn assert_slots<BE, F, E>(
     module: &Module<BE>,
     host_module: &Module<HostBytesBackend>,
     encoder: &ReferenceEncoder<E>,
-    ct: &CKKSCiphertext<BE::OwnedBuf>,
+    ct: &CKKSCiphertextOwned<BE>,
     sk: &poulpy_core::layouts::prepared::GLWESecretPrepared<BE::OwnedBuf, BE>,
     want: &[Cpx],
     bound: f64,
@@ -107,6 +109,7 @@ pub(crate) fn assert_slots<BE, F, E>(
         meta: CKKSMeta {
             log_sparsity: 0,
             log_delta,
+            slots: SlotsKind::Complex,
         },
     };
     // Full-precision decrypt on the backend, then download to host bytes.
@@ -119,6 +122,7 @@ pub(crate) fn assert_slots<BE, F, E>(
     want_pt.set_meta(CKKSMeta {
         log_sparsity: 0,
         log_delta,
+        slots: SlotsKind::Complex,
     });
     encoder.encode_reim(&mut want_pt, &want_re, &want_im).unwrap();
 
@@ -128,7 +132,7 @@ pub(crate) fn assert_slots<BE, F, E>(
     let n = ct.n().as_usize();
     let size = a.size().min(b.size());
     // Digits align to the plaintexts' STORAGE width (max_k), not effective k.
-    let (max_k, b2k) = (got_pt.max_k().as_usize() as i32, base2k.as_usize() as i32);
+    let (max_k, b2k) = (got_pt.encoded_k().as_usize() as i32, base2k.as_usize() as i32);
     let mut max_err = 0.0f64;
     for i in 0..n {
         let mut e = 0.0f64;

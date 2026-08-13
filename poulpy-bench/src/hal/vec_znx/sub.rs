@@ -28,9 +28,9 @@ where
     source.fill_bytes(c.data_mut().as_mut());
 
     bencher.iter(|| {
-        let a = <VecZnx<B::OwnedBuf> as VecZnxToBackendRef<B>>::to_backend_ref(&a);
-        let b = <VecZnx<B::OwnedBuf> as VecZnxToBackendRef<B>>::to_backend_ref(&b);
-        let mut c = <VecZnx<B::OwnedBuf> as VecZnxToBackendMut<B>>::to_backend_mut(&mut c);
+        let a = <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendRef<B>>::to_backend_ref(&a);
+        let b = <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendRef<B>>::to_backend_ref(&b);
+        let mut c = <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendMut<B>>::to_backend_mut(&mut c);
         for i in 0..sweep.cols {
             module.vec_znx_sub_backend(&mut c, i, &a, i, &b, i);
         }
@@ -53,8 +53,8 @@ where
     source.fill_bytes(b.data_mut().as_mut());
 
     bencher.iter(|| {
-        let a = <VecZnx<B::OwnedBuf> as VecZnxToBackendRef<B>>::to_backend_ref(&a);
-        let mut b = <VecZnx<B::OwnedBuf> as VecZnxToBackendMut<B>>::to_backend_mut(&mut b);
+        let a = <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendRef<B>>::to_backend_ref(&a);
+        let mut b = <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendMut<B>>::to_backend_mut(&mut b);
         for i in 0..sweep.cols {
             module.vec_znx_sub_assign_backend(&mut b, i, &a, i);
         }
@@ -77,8 +77,8 @@ where
     source.fill_bytes(b.data_mut().as_mut());
 
     bencher.iter(|| {
-        let a = <VecZnx<B::OwnedBuf> as VecZnxToBackendRef<B>>::to_backend_ref(&a);
-        let mut b = <VecZnx<B::OwnedBuf> as VecZnxToBackendMut<B>>::to_backend_mut(&mut b);
+        let a = <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendRef<B>>::to_backend_ref(&a);
+        let mut b = <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendMut<B>>::to_backend_mut(&mut b);
         for i in 0..sweep.cols {
             module.vec_znx_sub_negate_assign_backend(&mut b, i, &a, i);
         }

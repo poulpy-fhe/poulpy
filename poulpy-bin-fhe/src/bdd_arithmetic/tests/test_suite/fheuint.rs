@@ -2,6 +2,7 @@ use poulpy_core::{
     EncryptionLayout, GLWEAdd, GLWECopy, GLWEDecrypt, GLWEEncryptSk, GLWERotate, GLWESub, GLWETrace,
     layouts::{GLWELayout, GLWESecretPrepared},
 };
+use poulpy_hal::layouts::HostDataRef;
 use poulpy_hal::{
     api::{ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, HostBackend, HostDataMut, Module, ScratchOwned},
@@ -17,7 +18,7 @@ use crate::{
     blind_rotation::BlindRotationAlgo,
 };
 
-pub fn test_fhe_uint_sext<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>> + HostBackend>(
+pub fn test_fhe_uint_sext<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend>(
     test_context: &TestContext<BRA, BE>,
 ) where
     Module<BE>: GLWEEncryptSk<BE> + GLWERotate<BE> + GLWETrace<BE> + GLWESub<BE> + GLWEAdd<BE> + GLWECopy<BE> + GLWEDecrypt<BE>,
@@ -37,7 +38,8 @@ pub fn test_fhe_uint_sext<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>
 
     let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(glwe_infos).unwrap();
 
-    let mut a_enc: FheUint<Vec<u8>, u32> = FheUint::<Vec<u8>, u32>::alloc_from_infos(module, &glwe_infos);
+    let mut a_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
+        FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
 
     for j in 0..3 {
         let a: u32 = 0x8483_8281;
@@ -86,7 +88,10 @@ pub(crate) fn sext(x: u32, bits: u32) -> u32 {
     hi | lo
 }
 
-pub fn test_fhe_uint_splice_u8<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>> + HostBackend>(
+pub fn test_fhe_uint_splice_u8<
+    BRA: BlindRotationAlgo,
+    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
+>(
     test_context: &TestContext<BRA, BE>,
 ) where
     Module<BE>: GLWEEncryptSk<BE> + GLWERotate<BE> + GLWETrace<BE> + GLWESub<BE> + GLWEAdd<BE> + GLWECopy<BE> + GLWEDecrypt<BE>,
@@ -106,9 +111,12 @@ pub fn test_fhe_uint_splice_u8<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Ve
 
     let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(glwe_infos).unwrap();
 
-    let mut a_enc: FheUint<Vec<u8>, u32> = FheUint::<Vec<u8>, u32>::alloc_from_infos(module, &glwe_infos);
-    let mut b_enc: FheUint<Vec<u8>, u32> = FheUint::<Vec<u8>, u32>::alloc_from_infos(module, &glwe_infos);
-    let mut c_enc: FheUint<Vec<u8>, u32> = FheUint::<Vec<u8>, u32>::alloc_from_infos(module, &glwe_infos);
+    let mut a_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
+        FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
+    let mut b_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
+        FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
+    let mut c_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
+        FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
 
     let a: u32 = 0xFFFFFFFF;
     let b: u32 = 0xAABBCCDD;
@@ -148,7 +156,10 @@ pub fn test_fhe_uint_splice_u8<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Ve
     }
 }
 
-pub fn test_fhe_uint_splice_u16<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>> + HostBackend>(
+pub fn test_fhe_uint_splice_u16<
+    BRA: BlindRotationAlgo,
+    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
+>(
     test_context: &TestContext<BRA, BE>,
 ) where
     Module<BE>: GLWEEncryptSk<BE> + GLWERotate<BE> + GLWETrace<BE> + GLWESub<BE> + GLWEAdd<BE> + GLWECopy<BE> + GLWEDecrypt<BE>,
@@ -168,9 +179,12 @@ pub fn test_fhe_uint_splice_u16<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = V
 
     let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(glwe_infos).unwrap();
 
-    let mut a_enc: FheUint<Vec<u8>, u32> = FheUint::<Vec<u8>, u32>::alloc_from_infos(module, &glwe_infos);
-    let mut b_enc: FheUint<Vec<u8>, u32> = FheUint::<Vec<u8>, u32>::alloc_from_infos(module, &glwe_infos);
-    let mut c_enc: FheUint<Vec<u8>, u32> = FheUint::<Vec<u8>, u32>::alloc_from_infos(module, &glwe_infos);
+    let mut a_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
+        FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
+    let mut b_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
+        FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
+    let mut c_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
+        FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
 
     let a: u32 = 0xFFFFFFFF;
     let b: u32 = 0xAABBCCDD;
@@ -207,7 +221,10 @@ pub fn test_fhe_uint_splice_u16<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = V
     }
 }
 
-pub fn test_fhe_uint_get_bit_glwe<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf = Vec<u8>> + HostBackend>(
+pub fn test_fhe_uint_get_bit_glwe<
+    BRA: BlindRotationAlgo,
+    BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64> + HostBackend,
+>(
     test_context: &TestContext<BRA, BE>,
 ) where
     Module<BE>: GLWEEncryptSk<BE> + GLWERotate<BE> + GLWETrace<BE> + GLWESub<BE> + GLWEAdd<BE> + GLWEDecrypt<BE>,
@@ -227,8 +244,10 @@ pub fn test_fhe_uint_get_bit_glwe<BRA: BlindRotationAlgo, BE: Backend<OwnedBuf =
 
     let glwe_enc_infos = EncryptionLayout::new_from_default_sigma(glwe_infos).unwrap();
 
-    let mut a_enc: FheUint<Vec<u8>, u32> = FheUint::<Vec<u8>, u32>::alloc_from_infos(module, &glwe_infos);
-    let mut c_enc: FheUint<Vec<u8>, u32> = FheUint::<Vec<u8>, u32>::alloc_from_infos(module, &glwe_infos);
+    let mut a_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
+        FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
+    let mut c_enc: FheUint<BE::OwnedBuf, u32, BE::ZnxWord> =
+        FheUint::<BE::OwnedBuf, u32, i64>::alloc_from_infos(module, &glwe_infos);
 
     let a: u32 = source_xa.next_u32();
 

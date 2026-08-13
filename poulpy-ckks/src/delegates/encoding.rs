@@ -1,5 +1,6 @@
 use crate::{CKKSResult as Result, ckks_ensure};
 use poulpy_core::layouts::GLWEInfos;
+use poulpy_core::layouts::IntPolyInfos;
 use poulpy_hal::layouts::{Backend, Module};
 
 use crate::{
@@ -39,7 +40,7 @@ where
 {
     fn ckks_encode_coeffs_into<P, C>(&self, pt: &mut P, coeffs: &C) -> Result<()>
     where
-        P: CKKSPlaintextToBackendMut<BE>,
+        P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos,
         C: CKKSEncodingBufferToBackendRef<BE, F>,
     {
         validate_coefficients(self.max_n(), pt, coeffs.len())?;
@@ -48,7 +49,7 @@ where
 
     fn ckks_decode_coeffs_into<P, C>(&self, pt: &P, coeffs: &mut C) -> Result<()>
     where
-        P: CKKSPlaintextToBackendRef<BE>,
+        P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
         C: CKKSEncodingBufferToBackendMut<BE, F>,
     {
         validate_coefficients(self.max_n(), pt, coeffs.len())?;

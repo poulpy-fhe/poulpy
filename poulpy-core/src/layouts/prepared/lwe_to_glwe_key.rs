@@ -11,7 +11,7 @@ use crate::layouts::{
 };
 
 /// A special `GLWESwitchingKey` required for the conversion from `LWE` to `GLWE`.
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq)]
 pub struct LWEToGLWEKeyPrepared<D: Data, B: Backend>(pub(crate) GLWESwitchingKeyPrepared<D, B>);
 
 impl<D: Data, B: Backend> LWEInfos for LWEToGLWEKeyPrepared<D, B> {

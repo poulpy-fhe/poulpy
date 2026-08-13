@@ -6,7 +6,7 @@ use crate::{
 
 pub fn vec_znx_fill_uniform_ref<'r, BE>(base2k: usize, res: &mut VecZnxBackendMut<'r, BE>, res_col: usize, source: &mut Source)
 where
-    BE: Backend,
+    BE: Backend<ZnxWord = i64>,
     BE::BufMut<'r>: HostDataMut,
 {
     for j in 0..res.size() {
@@ -21,7 +21,7 @@ pub fn vec_znx_fill_normal_ref<'r, BE>(
     noise_infos: NoiseInfos,
     source: &mut Source,
 ) where
-    BE: Backend,
+    BE: Backend<ZnxWord = i64>,
     BE::BufMut<'r>: HostDataMut,
 {
     assert!(
@@ -46,7 +46,7 @@ pub fn vec_znx_add_normal_ref<'r, BE>(
     noise_infos: NoiseInfos,
     source: &mut Source,
 ) where
-    BE: Backend,
+    BE: Backend<ZnxWord = i64>,
     BE::BufMut<'r>: HostDataMut,
 {
     assert!(

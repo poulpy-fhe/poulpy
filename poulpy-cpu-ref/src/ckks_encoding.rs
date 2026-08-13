@@ -13,6 +13,7 @@
 //! `2·max_n` scalars (~100 KiB of `f64` at `n = 65536`), and in exchange every
 //! backend follows one code path and can use its own accelerated kernels.
 
+use poulpy_core::layouts::IntPolyInfos;
 use std::marker::PhantomData;
 
 use anyhow::{Context, Result, ensure};
@@ -259,9 +260,9 @@ where
 #[doc(hidden)]
 pub fn encode_coeffs_into<BE, F, P>(pt: &mut P, coeffs: &CKKSEncodingBufferBackendRef<'_, BE, F>) -> Result<()>
 where
-    BE: Backend,
+    BE: Backend<ZnxWord = i64>,
     F: CKKSEncodingScalar + NumCast,
-    P: CKKSPlaintextToBackendMut<BE>,
+    P: CKKSPlaintextToBackendMut<BE> + IntPolyInfos,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -273,7 +274,7 @@ where
         .context("CKKS plaintext scale exponent is not representable by the codec scalar")?
         .exp2();
     let base2k = pt.base2k().as_usize();
-    let k = pt.max_k().as_usize();
+    let k = pt.encoded_k().as_usize();
     let mut backend = pt.to_backend_mut();
 
     if log_delta + log_budget <= 63 {
@@ -307,9 +308,9 @@ where
 #[doc(hidden)]
 pub fn decode_coeffs_into<BE, F, P>(pt: &P, coeffs: &mut CKKSEncodingBufferBackendMut<'_, BE, F>) -> Result<()>
 where
-    BE: Backend,
+    BE: Backend<ZnxWord = i64>,
     F: CKKSEncodingScalar,
-    P: CKKSPlaintextToBackendRef<BE>,
+    P: CKKSPlaintextToBackendRef<BE> + IntPolyInfos,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
@@ -325,7 +326,7 @@ where
     let scale =
         (-F::from_usize(log_delta).context("CKKS plaintext scale exponent is not representable by the codec scalar")?).exp2();
     let base2k = pt.base2k().as_usize();
-    let k = pt.max_k().as_usize();
+    let k = pt.encoded_k().as_usize();
     let backend = pt.to_backend_ref();
 
     if log_delta + log_budget <= 63 {
@@ -401,7 +402,7 @@ macro_rules! impl_ckks_encoding {
                 coeffs: &::poulpy_ckks::layouts::CKKSEncodingBufferBackendRef<'_, $be, F>,
             ) -> ::poulpy_ckks::CKKSResult<()>
             where
-                P: ::poulpy_ckks::CKKSPlaintextToBackendMut<$be>,
+                P: ::poulpy_ckks::CKKSPlaintextToBackendMut<$be> + ::poulpy_core::layouts::IntPolyInfos,
             {
                 $crate::ckks_encoding::encode_coeffs_into::<$be, F, P>(pt, coeffs).map_err(::poulpy_ckks::CKKSError::from)
             }
@@ -412,7 +413,7 @@ macro_rules! impl_ckks_encoding {
                 coeffs: &mut ::poulpy_ckks::layouts::CKKSEncodingBufferBackendMut<'_, $be, F>,
             ) -> ::poulpy_ckks::CKKSResult<()>
             where
-                P: ::poulpy_ckks::CKKSPlaintextToBackendRef<$be>,
+                P: ::poulpy_ckks::CKKSPlaintextToBackendRef<$be> + ::poulpy_core::layouts::IntPolyInfos,
             {
                 $crate::ckks_encoding::decode_coeffs_into::<$be, F, P>(pt, coeffs).map_err(::poulpy_ckks::CKKSError::from)
             }
@@ -444,7 +445,7 @@ macro_rules! impl_ckks_encoding {
 mod tests {
     use crate::{FFT64Ref, NTT4x30Ref};
     use poulpy_ckks::{
-        CKKSMeta, SetCKKSInfos,
+        CKKSMeta, SetCKKSInfos, SlotsKind,
         api::{CKKSEncodingHostOps, CKKSEncodingOps, CKKSEncodingScalar},
         layouts::{CKKSEncodingBuffer, CKKSModuleAlloc, ScratchArenaTakeCKKS},
     };
@@ -462,7 +463,7 @@ mod tests {
 
     fn roundtrip_all_dimensions<BE, F>(module: &Module<BE>)
     where
-        BE: Backend<OwnedBuf = Vec<u8>>,
+        BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>,
         F: CKKSEncodingScalar,
         Module<BE>: CKKSModuleAlloc<BE> + CKKSEncodingOps<BE, F>,
     {
@@ -480,6 +481,7 @@ mod tests {
                 pt.set_meta(CKKSMeta {
                     log_sparsity,
                     log_delta: 40,
+                    slots: SlotsKind::Complex,
                 });
                 module.ckks_encode_reim_into(&mut pt, &re, &im, &mut scratch).unwrap();
                 let mut got_re = vec![F::zero(); slots];
@@ -519,8 +521,9 @@ mod tests {
         layout.set_meta(CKKSMeta {
             log_sparsity: 1,
             log_delta: 40,
+            slots: SlotsKind::Complex,
         });
-        let bytes = GLWEPlaintext::<Vec<u8>>::bytes_of_from_infos(&layout);
+        let bytes = GLWEPlaintext::<Vec<u8>, i64>::bytes_of_from_infos(&layout);
         let mut pt_scratch = ScratchOwned::<FFT64Ref>::alloc(bytes);
         let (mut pt, _) = pt_scratch.arena().take_ckks_plaintext_like_scratch(&layout);
 
@@ -571,6 +574,7 @@ mod tests {
         pt.set_meta(CKKSMeta {
             log_sparsity: 0,
             log_delta: 40,
+            slots: SlotsKind::Complex,
         });
 
         let three = [0.0; 3];

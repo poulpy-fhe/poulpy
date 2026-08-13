@@ -11,6 +11,7 @@ use crate::layouts::{
     },
 };
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use poulpy_hal::layouts::ZnxWord;
 
 use std::{
     fmt,
@@ -23,20 +24,20 @@ use std::{
 /// used for GGLWE-to-GGSW conversion. The mask of each GGLWE is
 /// regenerated from its PRNG seed during decompression.
 #[derive(PartialEq, Eq, Clone)]
-pub struct GGLWEToGGSWKeyCompressed<D: Data> {
-    pub(crate) keys: Vec<GGLWECompressed<D>>,
+pub struct GGLWEToGGSWKeyCompressed<D: Data, W: ZnxWord> {
+    pub(crate) keys: Vec<GGLWECompressed<D, W>>,
 }
 
 pub struct GGLWEToGGSWKeyCompressedBackendRef<'a, BE: Backend + 'a> {
-    inner: GGLWEToGGSWKeyCompressed<BE::BufRef<'a>>,
+    inner: GGLWEToGGSWKeyCompressed<BE::BufRef<'a>, BE::ZnxWord>,
 }
 
 impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyCompressedBackendRef<'a, BE> {
-    pub fn from_inner(inner: GGLWEToGGSWKeyCompressed<BE::BufRef<'a>>) -> Self {
+    pub fn from_inner(inner: GGLWEToGGSWKeyCompressed<BE::BufRef<'a>, BE::ZnxWord>) -> Self {
         Self { inner }
     }
 
-    pub fn into_inner(self) -> GGLWEToGGSWKeyCompressed<BE::BufRef<'a>> {
+    pub fn into_inner(self) -> GGLWEToGGSWKeyCompressed<BE::BufRef<'a>, BE::ZnxWord> {
         self.inner
     }
 
@@ -55,7 +56,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyCompressedBackendRef<'a, BE> {
 }
 
 impl<'a, BE: Backend + 'a> Deref for GGLWEToGGSWKeyCompressedBackendRef<'a, BE> {
-    type Target = GGLWEToGGSWKeyCompressed<BE::BufRef<'a>>;
+    type Target = GGLWEToGGSWKeyCompressed<BE::BufRef<'a>, BE::ZnxWord>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
@@ -63,15 +64,15 @@ impl<'a, BE: Backend + 'a> Deref for GGLWEToGGSWKeyCompressedBackendRef<'a, BE> 
 }
 
 pub struct GGLWEToGGSWKeyCompressedBackendMut<'a, BE: Backend + 'a> {
-    inner: GGLWEToGGSWKeyCompressed<BE::BufMut<'a>>,
+    inner: GGLWEToGGSWKeyCompressed<BE::BufMut<'a>, BE::ZnxWord>,
 }
 
 impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyCompressedBackendMut<'a, BE> {
-    pub fn from_inner(inner: GGLWEToGGSWKeyCompressed<BE::BufMut<'a>>) -> Self {
+    pub fn from_inner(inner: GGLWEToGGSWKeyCompressed<BE::BufMut<'a>, BE::ZnxWord>) -> Self {
         Self { inner }
     }
 
-    pub fn into_inner(self) -> GGLWEToGGSWKeyCompressed<BE::BufMut<'a>> {
+    pub fn into_inner(self) -> GGLWEToGGSWKeyCompressed<BE::BufMut<'a>, BE::ZnxWord> {
         self.inner
     }
 
@@ -103,7 +104,7 @@ impl<'a, BE: Backend + 'a> GGLWEToGGSWKeyCompressedBackendMut<'a, BE> {
 }
 
 impl<'a, BE: Backend + 'a> Deref for GGLWEToGGSWKeyCompressedBackendMut<'a, BE> {
-    type Target = GGLWEToGGSWKeyCompressed<BE::BufMut<'a>>;
+    type Target = GGLWEToGGSWKeyCompressed<BE::BufMut<'a>, BE::ZnxWord>;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
@@ -119,7 +120,7 @@ impl<'a, BE: Backend + 'a> DerefMut for GGLWEToGGSWKeyCompressedBackendMut<'a, B
 impl_gglwe_infos_for_inner!(GGLWEToGGSWKeyCompressedBackendRef<'a, BE>, ['a, BE: Backend + 'a]; inner);
 impl_gglwe_infos_for_inner!(GGLWEToGGSWKeyCompressedBackendMut<'a, BE>, ['a, BE: Backend + 'a]; inner);
 
-impl<D: Data> LWEInfos for GGLWEToGGSWKeyCompressed<D> {
+impl<D: Data, W: ZnxWord> LWEInfos for GGLWEToGGSWKeyCompressed<D, W> {
     fn n(&self) -> Degree {
         self.keys[0].n()
     }
@@ -137,13 +138,13 @@ impl<D: Data> LWEInfos for GGLWEToGGSWKeyCompressed<D> {
     }
 }
 
-impl<D: Data> GLWEInfos for GGLWEToGGSWKeyCompressed<D> {
+impl<D: Data, W: ZnxWord> GLWEInfos for GGLWEToGGSWKeyCompressed<D, W> {
     fn rank(&self) -> Rank {
         self.keys[0].rank_out()
     }
 }
 
-impl<D: Data> GGLWEInfos for GGLWEToGGSWKeyCompressed<D> {
+impl<D: Data, W: ZnxWord> GGLWEInfos for GGLWEToGGSWKeyCompressed<D, W> {
     fn k_aux(&self) -> TorusPrecision {
         self.keys[0].k_aux()
     }
@@ -165,21 +166,21 @@ impl<D: Data> GGLWEInfos for GGLWEToGGSWKeyCompressed<D> {
     }
 }
 
-impl<D: HostDataRef> fmt::Debug for GGLWEToGGSWKeyCompressed<D> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Debug for GGLWEToGGSWKeyCompressed<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl<D: HostDataMut> FillUniform for GGLWEToGGSWKeyCompressed<D> {
+impl<D: HostDataMut, W: ZnxWord> FillUniform for GGLWEToGGSWKeyCompressed<D, W> {
     fn fill_uniform(&mut self, log_bound: usize, source: &mut Source) {
         self.keys
             .iter_mut()
-            .for_each(|key: &mut GGLWECompressed<D>| key.fill_uniform(log_bound, source))
+            .for_each(|key: &mut GGLWECompressed<D, W>| key.fill_uniform(log_bound, source))
     }
 }
 
-impl<D: HostDataRef> fmt::Display for GGLWEToGGSWKeyCompressed<D> {
+impl<D: HostDataRef, W: ZnxWord> fmt::Display for GGLWEToGGSWKeyCompressed<D, W> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "(GGLWEToGGSWKeyCompressed)",)?;
         for (i, key) in self.keys.iter().enumerate() {
@@ -189,9 +190,9 @@ impl<D: HostDataRef> fmt::Display for GGLWEToGGSWKeyCompressed<D> {
     }
 }
 
-impl GGLWEToGGSWKeyCompressed<Vec<u8>> {
+impl<D: Data, W: ZnxWord> GGLWEToGGSWKeyCompressed<D, W> {
     /// Allocates a new compressed GGLWE-to-GGSW key by copying parameters from an existing info provider.
-    pub(crate) fn alloc_from_infos<A>(infos: &A) -> Self
+    pub(crate) fn alloc_from_infos<B: Backend<OwnedBuf = D, ZnxWord = W>, A>(infos: &A) -> Self
     where
         A: GGLWEInfos,
     {
@@ -200,7 +201,7 @@ impl GGLWEToGGSWKeyCompressed<Vec<u8>> {
             infos.rank_out(),
             "rank_in != rank_out is not supported for GGLWEToGGSWKeyCompressed"
         );
-        Self::alloc(
+        Self::alloc::<B>(
             infos.n(),
             infos.base2k(),
             infos.dnum(),
@@ -211,10 +212,17 @@ impl GGLWEToGGSWKeyCompressed<Vec<u8>> {
     }
 
     /// Allocates a new compressed GGLWE-to-GGSW key with the given parameters.
-    pub(crate) fn alloc(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> Self {
+    pub(crate) fn alloc<B: Backend<OwnedBuf = D, ZnxWord = W>>(
+        n: Degree,
+        base2k: Base2K,
+        dnum: Dnum,
+        dsize: Dsize,
+        k_aux: TorusPrecision,
+        rank: Rank,
+    ) -> Self {
         GGLWEToGGSWKeyCompressed {
             keys: (0..rank.as_usize())
-                .map(|_| GGLWECompressed::alloc(n, base2k, dnum, dsize, k_aux, rank, rank))
+                .map(|_| GGLWECompressed::alloc::<B>(n, base2k, dnum, dsize, k_aux, rank, rank))
                 .collect(),
         }
     }
@@ -241,27 +249,27 @@ impl GGLWEToGGSWKeyCompressed<Vec<u8>> {
 
     /// Returns the serialized byte size for a compressed GGLWE-to-GGSW key with the given parameters.
     pub fn bytes_of(n: Degree, base2k: Base2K, dnum: Dnum, dsize: Dsize, k_aux: TorusPrecision, rank: Rank) -> usize {
-        rank.as_usize() * GGLWECompressed::bytes_of(n, base2k, dnum, dsize, k_aux, rank)
+        rank.as_usize() * GGLWECompressed::<Vec<u8>, W>::bytes_of(n, base2k, dnum, dsize, k_aux, rank)
     }
 }
 
-impl<D: HostDataMut> GGLWEToGGSWKeyCompressed<D> {
+impl<D: HostDataMut, W: ZnxWord> GGLWEToGGSWKeyCompressed<D, W> {
     // Returns a mutable reference to GGLWE_{s}([s[i]*s[0], s[i]*s[1], ..., s[i]*s[rank]])
-    pub fn at_mut(&mut self, i: usize) -> &mut GGLWECompressed<D> {
+    pub fn at_mut(&mut self, i: usize) -> &mut GGLWECompressed<D, W> {
         assert!((i as u32) < self.rank());
         &mut self.keys[i]
     }
 }
 
-impl<D: HostDataRef> GGLWEToGGSWKeyCompressed<D> {
+impl<D: HostDataRef, W: ZnxWord> GGLWEToGGSWKeyCompressed<D, W> {
     // Returns a reference to GGLWE_{s}(s[i] * s[j])
-    pub fn at(&self, i: usize) -> &GGLWECompressed<D> {
+    pub fn at(&self, i: usize) -> &GGLWECompressed<D, W> {
         assert!((i as u32) < self.rank());
         &self.keys[i]
     }
 }
 
-impl<D: HostDataMut> ReaderFrom for GGLWEToGGSWKeyCompressed<D> {
+impl<D: HostDataMut, W: ZnxWord> ReaderFrom for GGLWEToGGSWKeyCompressed<D, W> {
     fn read_from<R: std::io::Read>(&mut self, reader: &mut R) -> std::io::Result<()> {
         let len: usize = reader.read_u64::<LittleEndian>()? as usize;
         if self.keys.len() != len {
@@ -277,8 +285,8 @@ impl<D: HostDataMut> ReaderFrom for GGLWEToGGSWKeyCompressed<D> {
     }
 }
 
-impl<D: HostDataRef> WriterTo for GGLWEToGGSWKeyCompressed<D> {
-    fn write_to<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+impl<D: HostDataRef, W: ZnxWord> WriterTo for GGLWEToGGSWKeyCompressed<D, W> {
+    fn write_to<Wr: std::io::Write>(&self, writer: &mut Wr) -> std::io::Result<()> {
         writer.write_u64::<LittleEndian>(self.keys.len() as u64)?;
         for key in &self.keys {
             key.write_to(writer)?;
@@ -326,7 +334,7 @@ pub trait GGLWEToGGSWKeyCompressedToBackendRef<BE: Backend> {
     fn to_backend_ref(&self) -> GGLWEToGGSWKeyCompressedBackendRef<'_, BE>;
 }
 
-impl<BE: Backend> GGLWEToGGSWKeyCompressedToBackendRef<BE> for GGLWEToGGSWKeyCompressed<BE::OwnedBuf> {
+impl<BE: Backend> GGLWEToGGSWKeyCompressedToBackendRef<BE> for GGLWEToGGSWKeyCompressed<BE::OwnedBuf, BE::ZnxWord> {
     fn to_backend_ref(&self) -> GGLWEToGGSWKeyCompressedBackendRef<'_, BE> {
         GGLWEToGGSWKeyCompressedBackendRef::from_inner(GGLWEToGGSWKeyCompressed {
             keys: self
@@ -342,7 +350,7 @@ pub trait GGLWEToGGSWKeyCompressedToBackendMut<BE: Backend>: GGLWEToGGSWKeyCompr
     fn to_backend_mut(&mut self) -> GGLWEToGGSWKeyCompressedBackendMut<'_, BE>;
 }
 
-impl<BE: Backend> GGLWEToGGSWKeyCompressedToBackendMut<BE> for GGLWEToGGSWKeyCompressed<BE::OwnedBuf> {
+impl<BE: Backend> GGLWEToGGSWKeyCompressedToBackendMut<BE> for GGLWEToGGSWKeyCompressed<BE::OwnedBuf, BE::ZnxWord> {
     fn to_backend_mut(&mut self) -> GGLWEToGGSWKeyCompressedBackendMut<'_, BE> {
         GGLWEToGGSWKeyCompressedBackendMut::from_inner(GGLWEToGGSWKeyCompressed {
             keys: self

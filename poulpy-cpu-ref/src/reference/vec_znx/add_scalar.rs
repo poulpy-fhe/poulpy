@@ -12,7 +12,7 @@ pub fn vec_znx_add_scalar_into<'r, 'a, BE>(
     b_col: usize,
     b_limb: usize,
 ) where
-    BE: Backend + ZnxAdd + ZnxCopy + ZnxZero,
+    BE: Backend<ZnxWord = i64> + ZnxAdd + ZnxCopy + ZnxZero,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {
@@ -43,7 +43,7 @@ pub fn vec_znx_add_scalar_assign<'r, 'a, BE>(
     a: &ScalarZnxBackendRef<'a, BE>,
     a_col: usize,
 ) where
-    BE: Backend + ZnxAddAssign,
+    BE: Backend<ZnxWord = i64> + ZnxAddAssign,
     BE::BufMut<'r>: HostDataMut,
     BE::BufRef<'a>: HostDataRef,
 {

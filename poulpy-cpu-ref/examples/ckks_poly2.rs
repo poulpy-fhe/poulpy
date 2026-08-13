@@ -21,13 +21,14 @@
 
 use anyhow::Result;
 use poulpy_ckks::{
-    CKKSInfos, CKKSLayout, CKKSMeta, CoeffsMeta, SetCKKSInfos,
+    CKKSInfos, CKKSLayout, CKKSMeta, CoeffsMeta, SetCKKSInfos, SlotsKind,
     api::CKKSEncodingHostOps,
     api::{CKKSAllOpsTmpBytes, CKKSDecryptOps, CKKSEncryptOps, CKKSPolynomialEvaluationOps},
     layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext},
     polynomial::{BSGSPolynomial, Basis, EncodeBSGS, Polynomial},
     power_basis::{PowerBasis, PowerBasisGen},
 };
+use poulpy_core::layouts::GLWESecretSampling;
 use poulpy_core::{
     EncryptionLayout, GLWETensorKeyEncryptSk,
     layouts::{
@@ -68,6 +69,7 @@ const PREC_CT: CKKSLayout = CKKSLayout {
     meta: CKKSMeta {
         log_sparsity: 0,
         log_delta: 45,
+        slots: SlotsKind::Complex,
     },
 };
 
@@ -79,6 +81,7 @@ const COEFF_META: CoeffsMeta = CoeffsMeta {
     meta: CKKSMeta {
         log_sparsity: 0,
         log_delta: 45,
+        slots: SlotsKind::Complex,
     },
 };
 const ABS_ERROR_TOLERANCE: f64 = 5e-5;
@@ -95,18 +98,18 @@ struct SetupArtifacts {
 struct EncodingArtifacts {
     x_re: Vec<f64>,
     poly: Polynomial<f64>,
-    bsgs: BSGSPolynomial<CKKSPlaintext<Vec<u8>>>,
-    pt_znx: CKKSPlaintext<Vec<u8>>,
+    bsgs: BSGSPolynomial<CKKSPlaintext<Vec<u8>, i64>>,
+    pt_znx: CKKSPlaintext<Vec<u8>, i64>,
 }
 
 /// Ciphertext produced by the encryption phase.
 struct EncryptionArtifacts {
-    ct_x: CKKSCiphertext<Vec<u8>>,
+    ct_x: CKKSCiphertext<Vec<u8>, i64>,
 }
 
 /// Ciphertext produced by the homomorphic evaluation phase.
 struct EvaluationArtifacts {
-    ct_sin: CKKSCiphertext<Vec<u8>>,
+    ct_sin: CKKSCiphertext<Vec<u8>, i64>,
 }
 
 /// Decoded values recovered after decryption.
@@ -125,12 +128,13 @@ fn glwe_layout() -> EncryptionLayout<GLWELayout> {
 }
 
 fn tsk_layout() -> EncryptionLayout<GLWETensorKeyLayout> {
-    let k = CT_K + DSIZE * BASE2K;
-    let dnum = CT_K.div_ceil(DSIZE * BASE2K);
+    let digit_bits = DSIZE * BASE2K;
+    let dnum = CT_K.div_ceil(digit_bits);
+    let k_aux = digit_bits + N.ilog2() as usize;
     EncryptionLayout::new_from_default_sigma(GLWETensorKeyLayout {
         n: N.into(),
         base2k: BASE2K.into(),
-        k_aux: (k - dnum * DSIZE * BASE2K).into(),
+        k_aux: k_aux.into(),
         rank: Rank(1),
         dsize: DSIZE.into(),
         dnum: dnum.into(),
@@ -156,7 +160,7 @@ fn print_phase(name: &str) {
     println!("\n== {name} ==");
 }
 
-fn print_ct_meta(label: &str, ct: &CKKSCiphertext<Vec<u8>>) {
+fn print_ct_meta(label: &str, ct: &CKKSCiphertext<Vec<u8>, i64>) {
     println!(
         "  {label:<28} log_delta={:>2} log_budget={:>3} k={:>3} limbs={:>2} max_k={:>3}",
         ct.log_delta(),
@@ -167,7 +171,7 @@ fn print_ct_meta(label: &str, ct: &CKKSCiphertext<Vec<u8>>) {
     );
 }
 
-fn print_pt_meta(label: &str, pt: &CKKSPlaintext<Vec<u8>>) {
+fn print_pt_meta(label: &str, pt: &CKKSPlaintext<Vec<u8>, i64>) {
     println!(
         "  {label:<28} log_delta={:>2} log_budget={:>3} k={:>3} limbs={:>2} max_k={:>3}",
         pt.log_delta(),
@@ -196,7 +200,7 @@ fn setup() -> Result<SetupArtifacts> {
     let mut source_xe = Source::new([2u8; 32]);
 
     let mut sk_raw = module.glwe_secret_alloc_from_infos(&glwe_layout());
-    sk_raw.fill_ternary_hw(HW, &mut source_xs);
+    module.glwe_secret_fill_ternary_hw(&mut sk_raw, HW, &mut source_xs);
 
     let mut sk = module.glwe_secret_prepared_alloc_from_infos(&glwe_layout());
     module.glwe_secret_prepare(&mut sk, &sk_raw);
@@ -337,7 +341,7 @@ fn evaluation(
             let mut scratch = setup.scratch.borrow();
             setup
                 .module
-                .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<Vec<u8>>, _, _>(
+                .ckks_eval_poly_real_const_coeffs_from_power_basis::<_, _, CKKSCiphertext<Vec<u8>, i64>, _, _>(
                     &mut ct_sin,
                     &encoding.bsgs,
                     &pb,

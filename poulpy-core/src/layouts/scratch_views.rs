@@ -8,16 +8,17 @@ use crate::{
     GetDistribution, GetDistributionMut,
     dist::Distribution,
     layouts::{
-        Base2K, Compact, GGLWE, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut,
+        Base2K, GGLWE, GGLWEBackendMut, GGLWEBackendRef, GGLWEInfos, GGLWEPrepared, GGLWEPreparedBackendMut,
         GGLWEPreparedBackendRef, GGLWEPreparedToBackendMut, GGLWEPreparedToBackendRef, GGLWEToBackendMut, GGLWEToBackendRef,
         GGSW, GGSWBackendMut, GGSWBackendRef, GGSWInfos, GGSWPrepared, GGSWPreparedBackendMut, GGSWPreparedBackendRef,
         GGSWPreparedToBackendMut, GGSWPreparedToBackendRef, GGSWToBackendMut, GGSWToBackendRef, GLWE, GLWEBackendMut,
         GLWEBackendRef, GLWEPlaintext, GLWESecret, GLWESecretBackendMut, GLWESecretBackendRef, GLWESecretPrepared,
         GLWESecretPreparedBackendMut, GLWESecretPreparedBackendRef, GLWESecretPreparedToBackendMut,
-        GLWESecretPreparedToBackendRef, GLWESecretTensor, GLWESecretToBackendMut, GLWESecretToBackendRef, GLWETensor,
+        GLWESecretPreparedToBackendRef, GLWESecretTensor, GLWESecretTensorBackendMut, GLWESecretTensorBackendRef,
+        GLWESecretTensorToBackendMut, GLWESecretTensorToBackendRef, GLWESecretToBackendMut, GLWESecretToBackendRef, GLWETensor,
         GLWEToBackendMut, GLWEToBackendRef, LWE, LWEBackendMut, LWEBackendRef, LWEPlaintext, LWEPlaintextBackendMut,
         LWEPlaintextBackendRef, LWEPlaintextToBackendMut, LWEPlaintextToBackendRef, LWEToBackendMut, LWEToBackendRef, Rank,
-        SetBase2k, SetGGLWEInfos, SetK, SetSize, TorusPrecision,
+        SetBase2k, SetGGLWEInfos, SetK, TorusPrecision,
     },
 };
 
@@ -82,18 +83,18 @@ macro_rules! view_wrapper {
     };
 }
 
-view_wrapper!(LWEViewMut, LWE<BE::BufMut<'a>>);
-view_wrapper!(LWEPlaintextViewMut, LWEPlaintext<BE::BufMut<'a>>);
-view_wrapper!(GLWEViewRef, GLWE<BE::BufRef<'a>>);
-view_wrapper!(GLWEViewMut, GLWE<BE::BufMut<'a>>);
-view_wrapper!(GLWEPlaintextViewMut, GLWEPlaintext<BE::BufMut<'a>>);
-view_wrapper!(GLWETensorViewMut, GLWETensor<BE::BufMut<'a>>);
-view_wrapper!(GLWESecretViewMut, GLWESecret<BE::BufMut<'a>>);
-view_wrapper!(GLWESecretTensorViewMut, GLWESecretTensor<BE::BufMut<'a>>);
+view_wrapper!(LWEViewMut, LWE<BE::BufMut<'a>, BE::ZnxWord>);
+view_wrapper!(LWEPlaintextViewMut, LWEPlaintext<BE::BufMut<'a>, BE::ZnxWord>);
+view_wrapper!(GLWEViewRef, GLWE<BE::BufRef<'a>, BE::ZnxWord>);
+view_wrapper!(GLWEViewMut, GLWE<BE::BufMut<'a>, BE::ZnxWord>);
+view_wrapper!(GLWEPlaintextViewMut, GLWEPlaintext<BE::BufMut<'a>, BE::ZnxWord>);
+view_wrapper!(GLWETensorViewMut, GLWETensor<BE::BufMut<'a>, BE::ZnxWord>);
+view_wrapper!(GLWESecretViewMut, GLWESecret<BE::BufMut<'a>, BE::ZnxWord>);
+view_wrapper!(GLWESecretTensorViewMut, GLWESecretTensor<BE::BufMut<'a>, BE::ZnxWord>);
 view_wrapper!(GLWESecretPreparedViewMut, GLWESecretPrepared<BE::BufMut<'a>, BE>);
-view_wrapper!(GGLWEViewMut, GGLWE<BE::BufMut<'a>>);
+view_wrapper!(GGLWEViewMut, GGLWE<BE::BufMut<'a>, BE::ZnxWord>);
 view_wrapper!(GGLWEPreparedViewMut, GGLWEPrepared<BE::BufMut<'a>, BE>);
-view_wrapper!(GGSWViewMut, GGSW<BE::BufMut<'a>>);
+view_wrapper!(GGSWViewMut, GGSW<BE::BufMut<'a>, BE::ZnxWord>);
 view_wrapper!(GGSWPreparedViewMut, GGSWPrepared<BE::BufMut<'a>, BE>);
 
 impl<'a, BE: Backend + 'a> GGLWEViewMut<'a, BE> {
@@ -120,19 +121,23 @@ impl_set_lwe_infos!(LWEViewMut);
 impl_set_lwe_infos!(GLWEViewMut);
 impl_set_lwe_infos!(GLWEPlaintextViewMut);
 
+impl<'a, BE: Backend + 'a> crate::layouts::IntPolyInfos for GLWEPlaintextViewMut<'a, BE> {
+    fn encoded_k(&self) -> crate::layouts::TorusPrecision {
+        self.inner.encoded_k()
+    }
+}
+
+impl<'a, BE: Backend + 'a> crate::layouts::IntPolyInfos for LWEPlaintextViewMut<'a, BE> {
+    fn encoded_k(&self) -> crate::layouts::TorusPrecision {
+        self.inner.encoded_k()
+    }
+}
+
 impl<'a, BE: Backend + 'a> SetK for GLWEViewMut<'a, BE> {
     fn set_k(&mut self, k: TorusPrecision) {
         self.inner.set_k(k);
     }
 }
-
-impl<'a, BE: Backend + 'a> SetSize for GLWEViewMut<'a, BE> {
-    fn set_size(&mut self, size: usize) {
-        self.inner.set_size(size);
-    }
-}
-
-impl<'a, BE: Backend + 'a> Compact for GLWEViewMut<'a, BE> {}
 
 impl<'a, BE: Backend + 'a> SetBase2k for LWEPlaintextViewMut<'a, BE> {
     fn set_base2k(&mut self, base2k: Base2K) {
@@ -371,10 +376,11 @@ impl<'a, BE: Backend + 'a> GLWESecretToBackendMut<BE> for GLWESecretViewMut<'a, 
     }
 }
 
-impl<'a, BE: Backend + 'a> GLWESecretToBackendRef<BE> for GLWESecretTensorViewMut<'a, BE> {
-    fn to_backend_ref(&self) -> GLWESecretBackendRef<'_, BE> {
-        GLWESecret {
+impl<'a, BE: Backend + 'a> GLWESecretTensorToBackendRef<BE> for GLWESecretTensorViewMut<'a, BE> {
+    fn to_backend_ref(&self) -> GLWESecretTensorBackendRef<'_, BE> {
+        GLWESecretTensor {
             dist: self.inner.dist,
+            rank: self.inner.rank,
             data: ScalarZnx::from_data(
                 BE::view_ref_mut(&self.inner.data.data),
                 self.inner.data.n(),
@@ -384,12 +390,13 @@ impl<'a, BE: Backend + 'a> GLWESecretToBackendRef<BE> for GLWESecretTensorViewMu
     }
 }
 
-impl<'a, BE: Backend + 'a> GLWESecretToBackendMut<BE> for GLWESecretTensorViewMut<'a, BE> {
-    fn to_backend_mut(&mut self) -> GLWESecretBackendMut<'_, BE> {
+impl<'a, BE: Backend + 'a> GLWESecretTensorToBackendMut<BE> for GLWESecretTensorViewMut<'a, BE> {
+    fn to_backend_mut(&mut self) -> GLWESecretTensorBackendMut<'_, BE> {
         let n = self.inner.data.n();
         let cols = self.inner.data.cols();
-        GLWESecret {
+        GLWESecretTensor {
             dist: self.inner.dist,
+            rank: self.inner.rank,
             data: ScalarZnx::from_data(BE::view_mut_ref(&mut self.inner.data.data), n, cols),
         }
     }

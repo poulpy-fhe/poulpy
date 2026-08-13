@@ -5,8 +5,7 @@ use criterion::{Bencher, measurement::Measurement};
 use poulpy_hal::{
     api::{CnvPVecAlloc, Convolution, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxBigAlloc, VecZnxDftAlloc},
     layouts::{
-        Backend, CnvPVecL, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecR, CnvPVecRToBackendMut, CnvPVecRToBackendRef,
-        Module, ScratchOwned, VecZnxBig, VecZnxBigToBackendMut, VecZnxDftToBackendMut,
+        Backend, CnvPVecLOwned, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecROwned, CnvPVecRToBackendMut, CnvPVecRToBackendRef, Module, ScratchOwned, VecZnxBig, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxDftToBackendMut
     },
     source::Source,
 };
@@ -16,7 +15,7 @@ use crate::params::CnvSweepParms;
 
 pub fn runner_cnv_prepare_left<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
-    BE: Backend + 'static,
+    BE: Backend<ZnxWord = i64> + 'static,
     Module<BE>: ModuleNew<BE> + Convolution<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -26,7 +25,7 @@ where
 
     let module: Module<BE> = Module::<BE>::new(sweep.n as u64);
 
-    let mut a_prep: CnvPVecL<BE::OwnedBuf, BE> = module.cnv_pvec_left_alloc(1, sweep.size);
+    let mut a_prep: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(1, sweep.size);
 
     let a = random_host_vec_znx(module.n(), 1, sweep.size, &mut source);
     let a = upload_host_vec_znx::<BE>(&a);
@@ -43,7 +42,7 @@ where
 
 pub fn runner_cnv_prepare_right<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
-    BE: Backend + 'static,
+    BE: Backend<ZnxWord = i64> + 'static,
     Module<BE>: ModuleNew<BE> + Convolution<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -53,7 +52,7 @@ where
 
     let module: Module<BE> = Module::<BE>::new(sweep.n as u64);
 
-    let mut a_prep: CnvPVecR<BE::OwnedBuf, BE> = module.cnv_pvec_right_alloc(1, sweep.size);
+    let mut a_prep: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(1, sweep.size);
 
     let a = random_host_vec_znx(module.n(), 1, sweep.size, &mut source);
     let a = upload_host_vec_znx::<BE>(&a);
@@ -70,7 +69,7 @@ where
 
 pub fn runner_cnv_apply_dft<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
-    BE: Backend + 'static,
+    BE: Backend<ZnxWord = i64> + 'static,
     Module<BE>: ModuleNew<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -80,8 +79,8 @@ where
 
     let module: Module<BE> = Module::<BE>::new(sweep.n as u64);
 
-    let a_prep: CnvPVecL<BE::OwnedBuf, BE> = random_backend_cnv_pvec_left::<BE>(module.n(), 1, sweep.size, &mut source);
-    let b_prep: CnvPVecR<BE::OwnedBuf, BE> = random_backend_cnv_pvec_right::<BE>(module.n(), 1, sweep.size, &mut source);
+    let a_prep: CnvPVecLOwned<BE> = random_backend_cnv_pvec_left::<BE>(module.n(), 1, sweep.size, &mut source);
+    let b_prep: CnvPVecROwned<BE> = random_backend_cnv_pvec_right::<BE>(module.n(), 1, sweep.size, &mut source);
     let mut c_dft = module.vec_znx_dft_alloc(1, c_size);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
@@ -109,7 +108,7 @@ where
 
 pub fn runner_cnv_apply_dft_accumulate<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
-    BE: Backend + 'static,
+    BE: Backend<ZnxWord = i64> + 'static,
     Module<BE>: ModuleNew<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -119,8 +118,8 @@ where
 
     let module: Module<BE> = Module::<BE>::new(sweep.n as u64);
 
-    let a_prep: CnvPVecL<BE::OwnedBuf, BE> = random_backend_cnv_pvec_left::<BE>(module.n(), 1, sweep.size, &mut source);
-    let b_prep: CnvPVecR<BE::OwnedBuf, BE> = random_backend_cnv_pvec_right::<BE>(module.n(), 1, sweep.size, &mut source);
+    let a_prep: CnvPVecLOwned<BE> = random_backend_cnv_pvec_left::<BE>(module.n(), 1, sweep.size, &mut source);
+    let b_prep: CnvPVecROwned<BE> = random_backend_cnv_pvec_right::<BE>(module.n(), 1, sweep.size, &mut source);
     let mut c_dft = module.vec_znx_dft_alloc(1, c_size);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
@@ -161,7 +160,7 @@ where
 
 pub fn runner_cnv_pairwise_apply_dft<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
-    BE: Backend + 'static,
+    BE: Backend<ZnxWord = i64> + 'static,
     Module<BE>: ModuleNew<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -172,8 +171,8 @@ where
     let cols = 2;
     let c_size: usize = sweep.size + sweep.size - 1;
 
-    let a_prep: CnvPVecL<BE::OwnedBuf, BE> = random_backend_cnv_pvec_left::<BE>(module.n(), cols, sweep.size, &mut source);
-    let b_prep: CnvPVecR<BE::OwnedBuf, BE> = random_backend_cnv_pvec_right::<BE>(module.n(), cols, sweep.size, &mut source);
+    let a_prep: CnvPVecLOwned<BE> = random_backend_cnv_pvec_left::<BE>(module.n(), cols, sweep.size, &mut source);
+    let b_prep: CnvPVecROwned<BE> = random_backend_cnv_pvec_right::<BE>(module.n(), cols, sweep.size, &mut source);
     let mut c_dft = module.vec_znx_dft_alloc(1, c_size);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
@@ -201,7 +200,7 @@ where
 
 pub fn runner_cnv_by_const_apply<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where
-    BE: Backend + 'static,
+    BE: Backend<ZnxWord = i64> + 'static,
     Module<BE>: ModuleNew<BE> + Convolution<BE> + VecZnxBigAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
@@ -214,7 +213,7 @@ where
 
     let a = random_host_vec_znx(module.n(), cols, sweep.size, &mut source);
     let a = upload_host_vec_znx::<BE>(&a);
-    let mut c_big: VecZnxBig<BE::OwnedBuf, BE> = module.vec_znx_big_alloc(1, c_size);
+    let mut c_big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, c_size);
 
     let b = random_host_vec_znx(module.n(), 1, sweep.size, &mut source);
     let b = upload_host_vec_znx::<BE>(&b);
