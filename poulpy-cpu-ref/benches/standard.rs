@@ -39,9 +39,9 @@ criterion_group! {
     config = poulpy_bench::criterion_config();
     targets =
     // Layer 1 – HAL FFT-domain,
-    // hal,
-    // // // Layer 2 – Core,
-    // core,
+    hal,
+    // // Layer 2 – Core,
+    core,
     // Layer 3 – Scheme,
     ckks
 }

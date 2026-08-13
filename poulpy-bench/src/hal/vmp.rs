@@ -8,7 +8,8 @@ use poulpy_hal::{
         VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
     },
     layouts::{
-        Backend, Module, ScratchOwned, VecZnxDft, VecZnxDftOwned, VecZnxDftToBackendMut, VmpPMat, VmpPMatOwned, VmpPMatToBackendMut, VmpPMatToBackendRef
+        Backend, Module, ScratchOwned, VecZnxDftOwned, VecZnxDftToBackendMut, VmpPMatOwned, VmpPMatToBackendMut,
+        VmpPMatToBackendRef,
     },
     source::Source,
 };

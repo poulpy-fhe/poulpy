@@ -1,14 +1,23 @@
-use std::{collections::HashMap,hint::black_box};
+use std::{collections::HashMap, hint::black_box};
 
+use crate::params::CkksBenchParams;
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_ckks::{
     CKKSMeta, SetCKKSInfos,
     api::{CKKSAddOps, CKKSConjugateOps, CKKSEncodingOps, CKKSMulOps, CKKSNegOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps},
     layouts::{CKKSEncodingBuffer, CKKSModuleAlloc},
 };
-use poulpy_core::{EncryptionLayout, layouts::{Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, Rank, SetGaloisElement, TorusPrecision}};
-use poulpy_hal::{api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow}, layouts::{Backend, GaloisElement, Module, ScratchOwned}};
-use crate::params::CkksBenchParams;
+use poulpy_core::{
+    EncryptionLayout,
+    layouts::{
+        Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKeyLayout, GLWEAutomorphismKeyPreparedFactory, GLWELayout,
+        GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, Rank, SetGaloisElement, TorusPrecision,
+    },
+};
+use poulpy_hal::{
+    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
+    layouts::{Backend, GaloisElement, Module, ScratchOwned},
+};
 
 const ROTATION: i64 = 1;
 const CONJUGATE: i64 = -1;
@@ -19,10 +28,9 @@ fn ckks_layout(cp: &CkksBenchParams) -> GLWELayout {
         n: Degree(cp.n as u32),
         base2k: Base2K(cp.base2k as u32),
         k: TorusPrecision(cp.k as u32),
-        rank: Rank(1), 
+        rank: Rank(1),
     }
 }
-
 
 fn ckks_ct_meta(cp: &CkksBenchParams) -> CKKSMeta {
     CKKSMeta {
@@ -44,7 +52,7 @@ fn mul_tsk_layout(p: &CkksBenchParams) -> GLWETensorKeyLayout {
     }
 }
 
-fn atk_layout(cp : &CkksBenchParams) -> EncryptionLayout<GLWEAutomorphismKeyLayout> {
+fn atk_layout(cp: &CkksBenchParams) -> EncryptionLayout<GLWEAutomorphismKeyLayout> {
     let (dnum, k_aux) = crate::params::key_dnum_k_aux((cp.k + cp.dsize * cp.base2k) as u32, cp.base2k as u32, cp.dsize as u32);
     EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
         n: Degree(cp.n as u32),
@@ -57,12 +65,12 @@ fn atk_layout(cp : &CkksBenchParams) -> EncryptionLayout<GLWEAutomorphismKeyLayo
     .unwrap()
 }
 
-
-pub fn runner_ckks_add_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
-where
+pub fn runner_ckks_add_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
+    bencher: &mut Bencher<'_, M>,
+    cp: &CkksBenchParams,
+) where
     Module<BE>: ModuleNew<BE> + CKKSAddOps<BE>,
 {
-
     let module = Module::<BE>::new(cp.n as u64);
 
     let ct_layout = ckks_layout(cp);
@@ -78,17 +86,19 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_add_tmp_bytes());
 
     bencher.iter(|| {
-       module.ckks_add_into(&mut ct_dst, &ct_a, &ct_b, &mut scratch.borrow()).unwrap();
+        module
+            .ckks_add_into(&mut ct_dst, &ct_a, &ct_b, &mut scratch.borrow())
+            .unwrap();
         black_box(());
     });
 }
 
-
-pub fn runner_ckks_mul_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
-where
+pub fn runner_ckks_mul_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
+    bencher: &mut Bencher<'_, M>,
+    cp: &CkksBenchParams,
+) where
     Module<BE>: ModuleNew<BE> + CKKSMulOps<BE> + GLWETensorKeyPreparedFactory<BE>,
 {
-
     let module = Module::<BE>::new(cp.n as u64);
 
     let ct_layout = ckks_layout(cp);
@@ -107,18 +117,17 @@ where
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_mul_tmp_bytes(&ct_a, &ct_a, &ct_a, &tsk));
 
     bencher.iter(|| {
-        module.ckks_mul_into(&mut ct_dst,
-                        &ct_a,
-                        &ct_b,
-                        &tsk,
-                        &mut scratch.borrow()).unwrap();
+        module
+            .ckks_mul_into(&mut ct_dst, &ct_a, &ct_b, &tsk, &mut scratch.borrow())
+            .unwrap();
         black_box(());
     });
 }
 
-
-pub fn runner_ckks_rotate_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
-where
+pub fn runner_ckks_rotate_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
+    bencher: &mut Bencher<'_, M>,
+    cp: &CkksBenchParams,
+) where
     Module<BE>: ModuleNew<BE> + CKKSRotateOps<BE> + GLWEAutomorphismKeyPreparedFactory<BE>,
 {
     let module = Module::<BE>::new(cp.n as u64);
@@ -138,15 +147,12 @@ where
     rotate_key.set_p(module.galois_element(ROTATION));
     atks.insert(module.galois_element(ROTATION), rotate_key);
 
-
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_rotate_tmp_bytes(&ct_a, &ak));
 
     bencher.iter(|| {
-        module.ckks_rotate_into(&mut ct_dst,
-                        &ct_a,
-                        ROTATION, 
-                        &atks,
-                        &mut scratch.borrow()).unwrap();
+        module
+            .ckks_rotate_into(&mut ct_dst, &ct_a, ROTATION, &atks, &mut scratch.borrow())
+            .unwrap();
         black_box(());
     });
 }
@@ -239,8 +245,10 @@ pub fn runner_ckks_add_pt_const_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i
     });
 }
 
-pub fn runner_ckks_sub_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
-where
+pub fn runner_ckks_sub_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
+    bencher: &mut Bencher<'_, M>,
+    cp: &CkksBenchParams,
+) where
     Module<BE>: ModuleNew<BE> + CKKSSubOps<BE>,
 {
     let module = Module::<BE>::new(cp.n as u64);
@@ -287,7 +295,7 @@ pub fn runner_ckks_sub_pt_vec_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_sub_pt_vec_tmp_bytes());
 
     bencher.iter(|| {
-            module
+        module
             .ckks_sub_pt_vec_into(&mut ct_dst, &ct_a, &pt, &mut scratch.borrow())
             .unwrap();
         black_box(());
@@ -323,8 +331,10 @@ pub fn runner_ckks_sub_pt_const_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i
     });
 }
 
-pub fn runner_ckks_neg_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CkksBenchParams)
-where
+pub fn runner_ckks_neg_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
+    bencher: &mut Bencher<'_, M>,
+    cp: &CkksBenchParams,
+) where
     Module<BE>: ModuleNew<BE> + CKKSNegOps<BE>,
 {
     let module = Module::<BE>::new(cp.n as u64);
@@ -390,7 +400,7 @@ pub fn runner_ckks_div_pow2_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>,
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.ckks_div_pow2_tmp_bytes());
 
     bencher.iter(|| {
-            module
+        module
             .ckks_div_pow2_into(&mut ct_dst, &ct_a, POW2_BITS, &mut scratch.borrow())
             .unwrap();
         black_box(());
@@ -496,7 +506,7 @@ pub fn runner_ckks_encode_slots_assign_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxW
 {
     let module = Module::<BE>::new(cp.n as u64);
 
-    let mut pt = module.ckks_plaintext_alloc(Degree(cp.n as u32), Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
+    let mut pt = module.ckks_pt_vec_alloc(cp.base2k.into(), cp.k.into());
     pt.set_meta(ckks_ct_meta(cp));
 
     let values = ckks_encoding_values(cp.n);
@@ -516,7 +526,7 @@ pub fn runner_ckks_decode_slots_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i
 {
     let module = Module::<BE>::new(cp.n as u64);
 
-    let mut pt = module.ckks_plaintext_alloc(Degree(cp.n as u32), Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
+    let mut pt =  module.ckks_pt_vec_alloc(cp.base2k.into(), 127usize.into()); // TODO: should this be a benchmark parameter? 
     pt.set_meta(ckks_ct_meta(cp));
 
     let values = ckks_encoding_values(cp.n);
@@ -539,7 +549,7 @@ pub fn runner_ckks_encode_coeffs_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = 
 {
     let module = Module::<BE>::new(cp.n as u64);
 
-    let mut pt = module.ckks_plaintext_alloc(Degree(cp.n as u32), Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
+    let mut pt = module.ckks_pt_vec_alloc(cp.base2k.into(), 127usize.into()); // TODO: should this be a benchmark parameter? 
     pt.set_meta(ckks_ct_meta(cp));
 
     let values = ckks_encoding_values(cp.n);
@@ -559,7 +569,7 @@ pub fn runner_ckks_decode_coeffs_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = 
 {
     let module = Module::<BE>::new(cp.n as u64);
 
-    let mut pt = module.ckks_plaintext_alloc(Degree(cp.n as u32), Base2K(cp.base2k as u32), TorusPrecision(cp.k as u32));
+    let mut pt = module.ckks_pt_vec_alloc(cp.base2k.into(), 127usize.into()); // TODO: should this be a benchmark parameter? 
     pt.set_meta(ckks_ct_meta(cp));
 
     let values = ckks_encoding_values(cp.n);

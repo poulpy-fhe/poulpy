@@ -6,8 +6,7 @@ use criterion::{Bencher, measurement::Measurement};
 use poulpy_hal::{
     api::{
         ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxAlloc, VecZnxLshAssignBackend, VecZnxLshBackend,
-        VecZnxRshAssignBackend, VecZnxRshBackend,
-        VecZnxLshTmpBytes, VecZnxRshTmpBytes
+        VecZnxLshTmpBytes, VecZnxRshAssignBackend, VecZnxRshBackend, VecZnxRshTmpBytes,
     },
     layouts::{Backend, Module, ScratchOwned},
 };

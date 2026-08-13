@@ -8,7 +8,7 @@ use poulpy_hal::{
         VecZnxDftApply, VecZnxDftSub, VecZnxDftSubAssign, VecZnxDftSubNegateAssign, VecZnxIdftApply, VecZnxIdftApplyTmpA,
         VecZnxIdftApplyTmpBytes,
     },
-    layouts::{Backend, Module, ScratchOwned, VecZnxBig, VecZnxBigOwned, VecZnxDft, VecZnxDftOwned},
+    layouts::{Backend, Module, ScratchOwned, VecZnxBigOwned, VecZnxDftOwned},
     source::Source,
 };
 
@@ -41,8 +41,10 @@ where
     });
 }
 
-pub fn runner_vec_znx_dft_add_assign<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
-where
+pub fn runner_vec_znx_dft_add_assign<B: Backend<ZnxWord = i64>, M: Measurement>(
+    bencher: &mut Bencher<'_, M>,
+    sweep: &HalSweepParms,
+) where
     Module<B>: VecZnxDftAddAssign<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -108,8 +110,10 @@ where
     });
 }
 
-pub fn runner_vec_znx_idft_apply_tmpa<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
-where
+pub fn runner_vec_znx_idft_apply_tmpa<B: Backend<ZnxWord = i64>, M: Measurement>(
+    bencher: &mut Bencher<'_, M>,
+    sweep: &HalSweepParms,
+) where
     Module<B>: VecZnxIdftApplyTmpA<B> + ModuleNew<B> + VecZnxDftAlloc<B> + VecZnxBigAlloc<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -152,8 +156,10 @@ where
     });
 }
 
-pub fn runner_vec_znx_dft_sub_assign<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
-where
+pub fn runner_vec_znx_dft_sub_assign<B: Backend<ZnxWord = i64>, M: Measurement>(
+    bencher: &mut Bencher<'_, M>,
+    sweep: &HalSweepParms,
+) where
     Module<B>: VecZnxDftSubAssign<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
@@ -173,8 +179,10 @@ where
     });
 }
 
-pub fn runner_vec_znx_dft_sub_negate_assign<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
-where
+pub fn runner_vec_znx_dft_sub_negate_assign<B: Backend<ZnxWord = i64>, M: Measurement>(
+    bencher: &mut Bencher<'_, M>,
+    sweep: &HalSweepParms,
+) where
     Module<B>: VecZnxDftSubNegateAssign<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);

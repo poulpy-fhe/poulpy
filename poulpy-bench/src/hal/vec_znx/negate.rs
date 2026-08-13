@@ -32,8 +32,10 @@ where
     });
 }
 
-pub fn runner_vec_znx_negate_assign<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
-where
+pub fn runner_vec_znx_negate_assign<B: Backend<ZnxWord = i64>, M: Measurement>(
+    bencher: &mut Bencher<'_, M>,
+    sweep: &HalSweepParms,
+) where
     Module<B>: VecZnxNegateAssignBackend<B> + ModuleNew<B> + VecZnxAlloc<B>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);

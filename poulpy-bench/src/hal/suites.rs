@@ -60,14 +60,38 @@ where
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     [
-        BenchOp { name: "vec_znx_dft_add_into", runner: vec_znx_dft::runner_vec_znx_dft_add_into::<B, M> },
-        BenchOp { name: "vec_znx_dft_add_assign", runner: vec_znx_dft::runner_vec_znx_dft_add_assign::<B, M> },
-        BenchOp { name: "vec_znx_dft_apply", runner: vec_znx_dft::runner_vec_znx_dft_apply::<B, M> },
-        BenchOp { name: "vec_znx_idft_apply", runner: vec_znx_dft::runner_vec_znx_idft_apply::<B, M> },
-        BenchOp { name: "vec_znx_idft_apply_tmpa", runner: vec_znx_dft::runner_vec_znx_idft_apply_tmpa::<B, M> },
-        BenchOp { name: "vec_znx_dft_sub", runner: vec_znx_dft::runner_vec_znx_dft_sub::<B, M> },
-        BenchOp { name: "vec_znx_dft_sub_assign", runner: vec_znx_dft::runner_vec_znx_dft_sub_assign::<B, M> },
-        BenchOp { name: "vec_znx_dft_sub_negate_assign", runner: vec_znx_dft::runner_vec_znx_dft_sub_negate_assign::<B, M> },
+        BenchOp {
+            name: "vec_znx_dft_add_into",
+            runner: vec_znx_dft::runner_vec_znx_dft_add_into::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_dft_add_assign",
+            runner: vec_znx_dft::runner_vec_znx_dft_add_assign::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_dft_apply",
+            runner: vec_znx_dft::runner_vec_znx_dft_apply::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_idft_apply",
+            runner: vec_znx_dft::runner_vec_znx_idft_apply::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_idft_apply_tmpa",
+            runner: vec_znx_dft::runner_vec_znx_idft_apply_tmpa::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_dft_sub",
+            runner: vec_znx_dft::runner_vec_znx_dft_sub::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_dft_sub_assign",
+            runner: vec_znx_dft::runner_vec_znx_dft_sub_assign::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_dft_sub_negate_assign",
+            runner: vec_znx_dft::runner_vec_znx_dft_sub_negate_assign::<B, M>,
+        },
     ]
 }
 
@@ -100,22 +124,70 @@ where
     B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
 {
     [
-        BenchOp { name: "vec_znx_big_add_into", runner: vec_znx_big::runner_vec_znx_big_add_into::<B, M> },
-        BenchOp { name: "vec_znx_big_add_assign", runner: vec_znx_big::runner_vec_znx_big_add_assign::<B, M> },
-        BenchOp { name: "vec_znx_big_add_small_into", runner: vec_znx_big::runner_vec_znx_big_add_small_into::<B, M> },
-        BenchOp { name: "vec_znx_big_add_small_assign", runner: vec_znx_big::runner_vec_znx_big_add_small_assign::<B, M> },
-        BenchOp { name: "vec_znx_big_automorphism", runner: vec_znx_big::runner_vec_znx_big_automorphism::<B, M> },
-        BenchOp { name: "vec_znx_big_automorphism_assign", runner: vec_znx_big::runner_vec_znx_big_automorphism_assign::<B, M> },
-        BenchOp { name: "vec_znx_big_negate", runner: vec_znx_big::runner_vec_znx_big_negate::<B, M> },
-        BenchOp { name: "vec_znx_big_negate_assign", runner: vec_znx_big::runner_vec_znx_big_negate_assign::<B, M> },
-        BenchOp { name: "vec_znx_big_normalize", runner: vec_znx_big::runner_vec_znx_big_normalize::<B, M> },
-        BenchOp { name: "vec_znx_big_normalize_add_assign", runner: vec_znx_big::runner_vec_znx_big_normalize_add_assign::<B, M> },
-        BenchOp { name: "vec_znx_big_normalize_sub_assign", runner: vec_znx_big::runner_vec_znx_big_normalize_sub_assign::<B, M> },
-        BenchOp { name: "vec_znx_big_sub", runner: vec_znx_big::runner_vec_znx_big_sub::<B, M> },
-        BenchOp { name: "vec_znx_big_sub_assign", runner: vec_znx_big::runner_vec_znx_big_sub_assign::<B, M> },
-        BenchOp { name: "vec_znx_big_sub_negate_assign", runner: vec_znx_big::runner_vec_znx_big_sub_negate_assign::<B, M> },
-        BenchOp { name: "vec_znx_big_sub_small_a", runner: vec_znx_big::runner_vec_znx_big_sub_small_a::<B, M> },
-        BenchOp { name: "vec_znx_big_sub_small_b", runner: vec_znx_big::runner_vec_znx_big_sub_small_b::<B, M> },
+        BenchOp {
+            name: "vec_znx_big_add_into",
+            runner: vec_znx_big::runner_vec_znx_big_add_into::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_big_add_assign",
+            runner: vec_znx_big::runner_vec_znx_big_add_assign::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_big_add_small_into",
+            runner: vec_znx_big::runner_vec_znx_big_add_small_into::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_big_add_small_assign",
+            runner: vec_znx_big::runner_vec_znx_big_add_small_assign::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_big_automorphism",
+            runner: vec_znx_big::runner_vec_znx_big_automorphism::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_big_automorphism_assign",
+            runner: vec_znx_big::runner_vec_znx_big_automorphism_assign::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_big_negate",
+            runner: vec_znx_big::runner_vec_znx_big_negate::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_big_negate_assign",
+            runner: vec_znx_big::runner_vec_znx_big_negate_assign::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_big_normalize",
+            runner: vec_znx_big::runner_vec_znx_big_normalize::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_big_normalize_add_assign",
+            runner: vec_znx_big::runner_vec_znx_big_normalize_add_assign::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_big_normalize_sub_assign",
+            runner: vec_znx_big::runner_vec_znx_big_normalize_sub_assign::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_big_sub",
+            runner: vec_znx_big::runner_vec_znx_big_sub::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_big_sub_assign",
+            runner: vec_znx_big::runner_vec_znx_big_sub_assign::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_big_sub_negate_assign",
+            runner: vec_znx_big::runner_vec_znx_big_sub_negate_assign::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_big_sub_small_a",
+            runner: vec_znx_big::runner_vec_znx_big_sub_small_a::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_big_sub_small_b",
+            runner: vec_znx_big::runner_vec_znx_big_sub_small_b::<B, M>,
+        },
     ]
 }
 
@@ -123,13 +195,31 @@ where
 
 pub fn svp_ops<B: Backend<ZnxWord = i64> + 'static, M: Measurement>() -> [BenchOp<M, HalSweepParms>; 4]
 where
-    Module<B>: ModuleNew<B> + SvpPPolAlloc<B> + VecZnxDftAlloc<B> + SvpPrepare<B> + SvpApplyDft<B> + SvpApplyDftToDft<B> + SvpApplyDftToDftAssign<B>,
+    Module<B>: ModuleNew<B>
+        + SvpPPolAlloc<B>
+        + VecZnxDftAlloc<B>
+        + SvpPrepare<B>
+        + SvpApplyDft<B>
+        + SvpApplyDftToDft<B>
+        + SvpApplyDftToDftAssign<B>,
 {
     [
-        BenchOp { name: "svp_prepare", runner: svp::runner_svp_prepare::<B, M> },
-        BenchOp { name: "svp_apply_dft", runner: svp::runner_svp_apply_dft::<B, M> },
-        BenchOp { name: "svp_apply_dft_to_dft", runner: svp::runner_svp_apply_dft_to_dft::<B, M> },
-        BenchOp { name: "svp_apply_dft_to_dft_assign", runner: svp::runner_svp_apply_dft_to_dft_assign::<B, M> },
+        BenchOp {
+            name: "svp_prepare",
+            runner: svp::runner_svp_prepare::<B, M>,
+        },
+        BenchOp {
+            name: "svp_apply_dft",
+            runner: svp::runner_svp_apply_dft::<B, M>,
+        },
+        BenchOp {
+            name: "svp_apply_dft_to_dft",
+            runner: svp::runner_svp_apply_dft_to_dft::<B, M>,
+        },
+        BenchOp {
+            name: "svp_apply_dft_to_dft_assign",
+            runner: svp::runner_svp_apply_dft_to_dft_assign::<B, M>,
+        },
     ]
 }
 
@@ -168,25 +258,82 @@ where
     B::OwnedBuf: AsMut<[u8]>,
 {
     [
-        BenchOp { name: "vec_znx_add_into", runner: vec_znx::runner_vec_znx_add_into::<B, M> },
-        BenchOp { name: "vec_znx_add_assign", runner: vec_znx::runner_vec_znx_add_assign::<B, M> },
-        BenchOp { name: "vec_znx_automorphism", runner: vec_znx::runner_vec_znx_automorphism::<B, M> },
-        BenchOp { name: "vec_znx_automorphism_assign", runner: vec_znx::runner_vec_znx_automorphism_assign::<B, M> },
-        BenchOp { name: "vec_znx_mul_xp_minus_one", runner: vec_znx::runner_vec_znx_mul_xp_minus_one::<B, M> },
-        BenchOp { name: "vec_znx_mul_xp_minus_one_assign", runner: vec_znx::runner_vec_znx_mul_xp_minus_one_assign::<B, M> },
-        BenchOp { name: "vec_znx_negate", runner: vec_znx::runner_vec_znx_negate::<B, M> },
-        BenchOp { name: "vec_znx_negate_assign", runner: vec_znx::runner_vec_znx_negate_assign::<B, M> },
-        BenchOp { name: "vec_znx_normalize", runner: vec_znx::runner_vec_znx_normalize::<B, M> },
-        BenchOp { name: "vec_znx_normalize_assign", runner: vec_znx::runner_vec_znx_normalize_assign::<B, M> },
-        BenchOp { name: "vec_znx_rotate", runner: vec_znx::runner_vec_znx_rotate::<B, M> },
-        BenchOp { name: "vec_znx_rotate_assign", runner: vec_znx::runner_vec_znx_rotate_assign::<B, M> },
-        BenchOp { name: "vec_znx_lsh", runner: vec_znx::runner_vec_znx_lsh::<B, M> },
-        BenchOp { name: "vec_znx_lsh_assign", runner: vec_znx::runner_vec_znx_lsh_assign::<B, M> },
-        BenchOp { name: "vec_znx_rsh", runner: vec_znx::runner_vec_znx_rsh::<B, M> },
-        BenchOp { name: "vec_znx_rsh_assign", runner: vec_znx::runner_vec_znx_rsh_assign::<B, M> },
-        BenchOp { name: "vec_znx_sub", runner: vec_znx::runner_vec_znx_sub::<B, M> },
-        BenchOp { name: "vec_znx_sub_assign", runner: vec_znx::runner_vec_znx_sub_assign::<B, M> },
-        BenchOp { name: "vec_znx_sub_negate_assign", runner: vec_znx::runner_vec_znx_sub_negate_assign::<B, M> },
+        BenchOp {
+            name: "vec_znx_add_into",
+            runner: vec_znx::runner_vec_znx_add_into::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_add_assign",
+            runner: vec_znx::runner_vec_znx_add_assign::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_automorphism",
+            runner: vec_znx::runner_vec_znx_automorphism::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_automorphism_assign",
+            runner: vec_znx::runner_vec_znx_automorphism_assign::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_mul_xp_minus_one",
+            runner: vec_znx::runner_vec_znx_mul_xp_minus_one::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_mul_xp_minus_one_assign",
+            runner: vec_znx::runner_vec_znx_mul_xp_minus_one_assign::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_negate",
+            runner: vec_znx::runner_vec_znx_negate::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_negate_assign",
+            runner: vec_znx::runner_vec_znx_negate_assign::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_normalize",
+            runner: vec_znx::runner_vec_znx_normalize::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_normalize_assign",
+            runner: vec_znx::runner_vec_znx_normalize_assign::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_rotate",
+            runner: vec_znx::runner_vec_znx_rotate::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_rotate_assign",
+            runner: vec_znx::runner_vec_znx_rotate_assign::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_lsh",
+            runner: vec_znx::runner_vec_znx_lsh::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_lsh_assign",
+            runner: vec_znx::runner_vec_znx_lsh_assign::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_rsh",
+            runner: vec_znx::runner_vec_znx_rsh::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_rsh_assign",
+            runner: vec_znx::runner_vec_znx_rsh_assign::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_sub",
+            runner: vec_znx::runner_vec_znx_sub::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_sub_assign",
+            runner: vec_znx::runner_vec_znx_sub_assign::<B, M>,
+        },
+        BenchOp {
+            name: "vec_znx_sub_negate_assign",
+            runner: vec_znx::runner_vec_znx_sub_negate_assign::<B, M>,
+        },
     ]
 }
 
@@ -206,9 +353,18 @@ where
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     [
-        BenchOp { name: "vmp_prepare", runner: vmp::runner_vmp_prepare::<B, M> },
-        BenchOp { name: "vmp_apply_dft", runner: vmp::runner_vmp_apply_dft::<B, M> },
-        BenchOp { name: "vmp_apply_dft_to_dft", runner: vmp::runner_vmp_apply_dft_to_dft::<B, M> },
+        BenchOp {
+            name: "vmp_prepare",
+            runner: vmp::runner_vmp_prepare::<B, M>,
+        },
+        BenchOp {
+            name: "vmp_apply_dft",
+            runner: vmp::runner_vmp_apply_dft::<B, M>,
+        },
+        BenchOp {
+            name: "vmp_apply_dft_to_dft",
+            runner: vmp::runner_vmp_apply_dft_to_dft::<B, M>,
+        },
     ]
 }
 
@@ -220,12 +376,30 @@ where
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
     [
-        BenchOp { name: "cnv_prepare_left", runner: convolution::runner_cnv_prepare_left::<B, M> },
-        BenchOp { name: "cnv_prepare_right", runner: convolution::runner_cnv_prepare_right::<B, M> },
-        BenchOp { name: "cnv_apply_dft", runner: convolution::runner_cnv_apply_dft::<B, M> },
-        BenchOp { name: "cnv_apply_dft_accumulate", runner: convolution::runner_cnv_apply_dft_accumulate::<B, M> },
-        BenchOp { name: "cnv_pairwise_apply_dft", runner: convolution::runner_cnv_pairwise_apply_dft::<B, M> },
-        BenchOp { name: "cnv_by_const_apply", runner: convolution::runner_cnv_by_const_apply::<B, M> },
+        BenchOp {
+            name: "cnv_prepare_left",
+            runner: convolution::runner_cnv_prepare_left::<B, M>,
+        },
+        BenchOp {
+            name: "cnv_prepare_right",
+            runner: convolution::runner_cnv_prepare_right::<B, M>,
+        },
+        BenchOp {
+            name: "cnv_apply_dft",
+            runner: convolution::runner_cnv_apply_dft::<B, M>,
+        },
+        BenchOp {
+            name: "cnv_apply_dft_accumulate",
+            runner: convolution::runner_cnv_apply_dft_accumulate::<B, M>,
+        },
+        BenchOp {
+            name: "cnv_pairwise_apply_dft",
+            runner: convolution::runner_cnv_pairwise_apply_dft::<B, M>,
+        },
+        BenchOp {
+            name: "cnv_by_const_apply",
+            runner: convolution::runner_cnv_by_const_apply::<B, M>,
+        },
     ]
 }
 
@@ -233,8 +407,14 @@ where
 
 pub fn reim_ops<T: NegacyclicFFT<f64> + NegacyclicFFTNew<f64>, M: Measurement>() -> [BenchOp<M, ReimSweepParams>; 2] {
     [
-        BenchOp { name: "reim_fft", runner: reim::runner_reim_fft::<T, M> },
-        BenchOp { name: "reim_ifft", runner: reim::runner_reim_ifft::<T, M> },
+        BenchOp {
+            name: "reim_fft",
+            runner: reim::runner_reim_fft::<T, M>,
+        },
+        BenchOp {
+            name: "reim_ifft",
+            runner: reim::runner_reim_ifft::<T, M>,
+        },
     ]
 }
 

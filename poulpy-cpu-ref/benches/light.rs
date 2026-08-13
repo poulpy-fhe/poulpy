@@ -10,7 +10,6 @@ use poulpy_bench::params::{default_bench_params_cnv, default_bench_params_hal};
 
 type BE = poulpy_cpu_ref::NTT4x30Ref;
 
-/// Caps the standard sweep down to `log_n` in `[10, 12]` for a fast CI-sized run.
 const MAX_N: usize = 1 << 12;
 
 fn hal_light(c: &mut Criterion) {

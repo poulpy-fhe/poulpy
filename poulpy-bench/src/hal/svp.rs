@@ -5,7 +5,8 @@ use criterion::{Bencher, measurement::Measurement};
 use poulpy_hal::{
     api::{ModuleNew, SvpApplyDft, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxDftAlloc},
     layouts::{
-        Backend, Module, SvpPPol, SvpPPolOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnxDft, VecZnxDftOwned, VecZnxDftToBackendMut, VecZnxDftToBackendRef
+        Backend, Module, SvpPPolOwned, SvpPPolToBackendMut, SvpPPolToBackendRef, VecZnxDftOwned, VecZnxDftToBackendMut,
+        VecZnxDftToBackendRef,
     },
     source::Source,
 };

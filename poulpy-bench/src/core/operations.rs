@@ -22,8 +22,10 @@ fn glwe_layout(cp: &CoreParams) -> GLWELayout {
     }
 }
 
-pub fn runner_glwe_add_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
-where
+pub fn runner_glwe_add_into<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
+    bencher: &mut Bencher<'_, M>,
+    cp: &CoreParams,
+) where
     Module<BE>: ModuleNew<BE> + GLWEAdd<BE>,
 {
     let infos = glwe_layout(cp);
@@ -57,8 +59,10 @@ pub fn runner_glwe_add_assign<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M:
     });
 }
 
-pub fn runner_glwe_sub<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
-where
+pub fn runner_glwe_sub<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
+    bencher: &mut Bencher<'_, M>,
+    cp: &CoreParams,
+) where
     Module<BE>: ModuleNew<BE> + GLWESub<BE>,
 {
     let infos = glwe_layout(cp);
@@ -148,7 +152,7 @@ pub fn runner_glwe_mul_plain<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: 
     let mut ct_out: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
     let ct_in: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
     let pt: GLWEPlaintext<Vec<u8>, i64> = module.glwe_plaintext_alloc_from_infos(&infos);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_mul_plain_tmp_bytes(&ct_out, &ct_in, &pt)*2); // TODO: have to double it for some reason.
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_mul_plain_tmp_bytes(&ct_out, &ct_in, &pt) * 2); // TODO: have to double it for some reason.
 
     bencher.iter(|| {
         module.glwe_mul_plain(0, &mut ct_out, &ct_in, &pt, &mut scratch.borrow());
@@ -169,7 +173,7 @@ pub fn runner_glwe_mul_plain_assign<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i6
 
     let mut ct: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
     let pt: GLWEPlaintext<Vec<u8>, i64> = module.glwe_plaintext_alloc_from_infos(&infos);
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_mul_plain_tmp_bytes(&infos, &ct, &pt)*2); // TODO: have to double it for some reason.
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.glwe_mul_plain_tmp_bytes(&infos, &ct, &pt) * 2); // TODO: have to double it for some reason.
 
     bencher.iter(|| {
         module.glwe_mul_plain_assign(0, &mut ct, &pt, &mut scratch.borrow());

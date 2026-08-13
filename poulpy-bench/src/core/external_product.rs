@@ -1,7 +1,9 @@
 use poulpy_core::{
     DEFAULT_BOUND_XE, DEFAULT_SIGMA_XE, GGSWEncryptSk, GLWEEncryptSk, GLWEExternalProduct,
     layouts::{
-        Base2K, Degree, Dnum, Dsize, GGSW, GGSWLayout, GLWE, GLWEInfos, GLWELayout, GLWESecret, GLWESecretPreparedFactory, GLWESecretSampling, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision, prepared::{GGSWPrepared, GGSWPreparedFactory, GLWESecretPrepared}
+        Base2K, Degree, Dnum, Dsize, GGSW, GGSWLayout, GLWE, GLWEInfos, GLWELayout, GLWESecret, GLWESecretPreparedFactory,
+        GLWESecretSampling, LWEInfos, ModuleCoreAlloc, Rank, TorusPrecision,
+        prepared::{GGSWPrepared, GGSWPreparedFactory, GLWESecretPrepared},
     },
 };
 use poulpy_hal::{

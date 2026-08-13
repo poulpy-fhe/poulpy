@@ -3,7 +3,6 @@ use std::fmt::Display;
 use poulpy_ckks::SlotsKind;
 use serde::{Deserialize, Serialize};
 
-
 #[derive(Debug, Clone)]
 pub struct HalSweepParms {
     pub n: usize,
@@ -27,11 +26,15 @@ pub struct VmpSweepParms {
 
 impl Display for VmpSweepParms {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}x({}x{})x({}x{})", self.n, self.rows, self.cols_in, self.cols_out, self.size)
+        write!(
+            f,
+            "{}x({}x{})x({}x{})",
+            self.n, self.rows, self.cols_in, self.cols_out, self.size
+        )
     }
 }
 
-pub struct CnvSweepParms { 
+pub struct CnvSweepParms {
     pub n: usize,
     pub size: usize,
 }
@@ -84,7 +87,11 @@ pub struct CoreParams {
 
 impl Display for CoreParams {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "(n={},base2k={},k={},rank={},dsize={})", self.n, self.base2k, self.k, self.rank, self.dsize)
+        write!(
+            f,
+            "(n={},base2k={},k={},rank={},dsize={})",
+            self.n, self.base2k, self.k, self.rank, self.dsize
+        )
     }
 }
 
@@ -222,24 +229,73 @@ impl Display for CircuitBootstrappingBenchParam {
     }
 }
 
-
 pub fn default_bench_params_hal() -> Vec<HalSweepParms> {
     vec![
-        HalSweepParms { n: 1 << 10, cols: 2, size: 2 },
-        HalSweepParms { n: 1 << 11, cols: 2, size: 4 },
-        HalSweepParms { n: 1 << 12, cols: 2, size: 8 },
-        HalSweepParms { n: 1 << 13, cols: 2, size: 16 },
-        HalSweepParms { n: 1 << 14, cols: 2, size: 32 },
+        HalSweepParms {
+            n: 1 << 10,
+            cols: 2,
+            size: 2,
+        },
+        HalSweepParms {
+            n: 1 << 11,
+            cols: 2,
+            size: 4,
+        },
+        HalSweepParms {
+            n: 1 << 12,
+            cols: 2,
+            size: 8,
+        },
+        HalSweepParms {
+            n: 1 << 13,
+            cols: 2,
+            size: 16,
+        },
+        HalSweepParms {
+            n: 1 << 14,
+            cols: 2,
+            size: 32,
+        },
     ]
 }
 
 pub fn default_bench_params_vmp() -> Vec<VmpSweepParms> {
     vec![
-        VmpSweepParms { n: 1 << 10, rows: 2, cols_in: 1, cols_out: 2, size: 3 },
-        VmpSweepParms { n: 1 << 11, rows: 4, cols_in: 1, cols_out: 2, size: 5 },
-        VmpSweepParms { n: 1 << 12, rows: 7, cols_in: 1, cols_out: 2, size: 8 },
-        VmpSweepParms { n: 1 << 13, rows: 15, cols_in: 1, cols_out: 2, size: 16 },
-        VmpSweepParms { n: 1 << 14, rows: 31, cols_in: 1, cols_out: 2, size: 32 },
+        VmpSweepParms {
+            n: 1 << 10,
+            rows: 2,
+            cols_in: 1,
+            cols_out: 2,
+            size: 3,
+        },
+        VmpSweepParms {
+            n: 1 << 11,
+            rows: 4,
+            cols_in: 1,
+            cols_out: 2,
+            size: 5,
+        },
+        VmpSweepParms {
+            n: 1 << 12,
+            rows: 7,
+            cols_in: 1,
+            cols_out: 2,
+            size: 8,
+        },
+        VmpSweepParms {
+            n: 1 << 13,
+            rows: 15,
+            cols_in: 1,
+            cols_out: 2,
+            size: 16,
+        },
+        VmpSweepParms {
+            n: 1 << 14,
+            rows: 31,
+            cols_in: 1,
+            cols_out: 2,
+            size: 32,
+        },
     ]
 }
 
@@ -255,20 +311,85 @@ pub fn default_bench_params_cnv() -> Vec<CnvSweepParms> {
 
 pub fn default_bench_params_core() -> Vec<CoreParams> {
     vec![
-        CoreParams { n: 1 << 12, base2k: 52, k: 54 * 2, rank: 1, dsize: 1 },
-        CoreParams { n: 1 << 13, base2k: 52, k: 54 * 3, rank: 1, dsize: 1 },
-        CoreParams { n: 1 << 14, base2k: 52, k: 54 * 6, rank: 1, dsize: 1 },
-        CoreParams { n: 1 << 15, base2k: 52, k: 54 * 12, rank: 1, dsize: 3 },
-        CoreParams { n: 1 << 16, base2k: 52, k: 54 * 24, rank: 1, dsize: 6 },
+        CoreParams {
+            n: 1 << 12,
+            base2k: 52,
+            k: 54 * 2,
+            rank: 1,
+            dsize: 1,
+        },
+        CoreParams {
+            n: 1 << 13,
+            base2k: 52,
+            k: 54 * 3,
+            rank: 1,
+            dsize: 1,
+        },
+        CoreParams {
+            n: 1 << 14,
+            base2k: 52,
+            k: 54 * 6,
+            rank: 1,
+            dsize: 1,
+        },
+        CoreParams {
+            n: 1 << 15,
+            base2k: 52,
+            k: 54 * 12,
+            rank: 1,
+            dsize: 3,
+        },
+        CoreParams {
+            n: 1 << 16,
+            base2k: 52,
+            k: 54 * 24,
+            rank: 1,
+            dsize: 6,
+        },
     ]
 }
 
 pub fn default_bench_params_ckks() -> Vec<CkksBenchParams> {
     vec![
-        CkksBenchParams { n: 1 << 12, base2k: 52, k: 52, log_delta: 20, dsize: 1 , slots: SlotsKind::Complex},
-        CkksBenchParams { n: 1 << 13, base2k: 52, k: 52 * 3, log_delta: 40, dsize: 1 , slots: SlotsKind::Complex},
-        CkksBenchParams { n: 1 << 14, base2k: 52, k: 52 * 6, log_delta: 40, dsize: 1 , slots: SlotsKind::Complex},
-        CkksBenchParams { n: 1 << 15, base2k: 52, k: 52 * 12, log_delta: 40, dsize: 3 , slots: SlotsKind::Complex},
-        CkksBenchParams { n: 1 << 16, base2k: 52, k: 52 * 24, log_delta: 40, dsize: 6 , slots: SlotsKind::Complex},
+        CkksBenchParams {
+            n: 1 << 12,
+            base2k: 52,
+            k: 52,
+            log_delta: 20,
+            dsize: 1,
+            slots: SlotsKind::Complex,
+        },
+        CkksBenchParams {
+            n: 1 << 13,
+            base2k: 52,
+            k: 52 * 3,
+            log_delta: 40,
+            dsize: 1,
+            slots: SlotsKind::Complex,
+        },
+        CkksBenchParams {
+            n: 1 << 14,
+            base2k: 52,
+            k: 52 * 6,
+            log_delta: 40,
+            dsize: 1,
+            slots: SlotsKind::Complex,
+        },
+        CkksBenchParams {
+            n: 1 << 15,
+            base2k: 52,
+            k: 52 * 12,
+            log_delta: 40,
+            dsize: 3,
+            slots: SlotsKind::Complex,
+        },
+        CkksBenchParams {
+            n: 1 << 16,
+            base2k: 52,
+            k: 52 * 24,
+            log_delta: 40,
+            dsize: 6,
+            slots: SlotsKind::Complex,
+        },
     ]
 }

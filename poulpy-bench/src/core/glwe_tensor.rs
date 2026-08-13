@@ -72,8 +72,10 @@ fn tensor_key_layout(cp: &CoreParams) -> GLWETensorKeyLayout {
 
 /// Relinearization (the keyswitch phase of `ckks_mul`). The tensor key is left
 /// zeroed: the op is data-independent, so this times the real kernel path.
-pub fn runner_glwe_tensor_relinearize<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
-where
+pub fn runner_glwe_tensor_relinearize<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
+    bencher: &mut Bencher<'_, M>,
+    cp: &CoreParams,
+) where
     Module<BE>: ModuleNew<BE> + GLWETensoring<BE> + GLWETensorKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'x> BE::BufMut<'x>: HostDataMut + AsRef<[u8]> + AsMut<[u8]> + Sync,
@@ -266,7 +268,6 @@ pub fn runner_glwe_tensor_diag_lane<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i6
     });
 }
 
-
 pub fn runner_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CoreParams,
@@ -283,7 +284,7 @@ pub fn runner_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord 
     for<'x> BE::BufRef<'x>: AsRef<[u8]> + Send,
 {
     let glwe_infos = glwe_layout(cp);
-     let n: usize = glwe_infos.n().into();
+    let n: usize = glwe_infos.n().into();
     let cols: usize = (glwe_infos.rank() + 1).into();
     if cols < 2 {
         return;
@@ -405,8 +406,7 @@ pub fn runner_glwe_tensor_pairwise_lane<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord 
             0,
             &mut scratch,
         );
-        let mut tmp_mut =
-            <VecZnx<BE::BufMut<'_>, BE::ZnxWord> as VecZnxReborrowBackendMut<BE>>::reborrow_backend_mut(&mut tmp);
+        let mut tmp_mut = <VecZnx<BE::BufMut<'_>, BE::ZnxWord> as VecZnxReborrowBackendMut<BE>>::reborrow_backend_mut(&mut tmp);
         let diag_terms_ref =
             <VecZnx<BE::OwnedBuf, BE::ZnxWord> as poulpy_hal::layouts::VecZnxToBackendRef<BE>>::to_backend_ref(&diag_terms);
         module.vec_znx_sub_assign_backend(&mut tmp_mut, 0, &diag_terms_ref, 0);

@@ -85,7 +85,7 @@ pub fn bench_ops<M: Measurement, P: Display>(ops: &[BenchOp<M, P>], sweeps: &[P]
     for op in ops {
         let mut group = c.benchmark_group(format!("{}/{}", label, op.name));
         for sweep in sweeps {
-            group.bench_with_input( BenchmarkId::from_parameter(sweep), sweep, op.runner);
+            group.bench_with_input(BenchmarkId::from_parameter(sweep), sweep, op.runner);
         }
         group.finish();
     }

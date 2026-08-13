@@ -5,12 +5,15 @@ use criterion::{Bencher, measurement::Measurement};
 use poulpy_hal::{
     api::{CnvPVecAlloc, Convolution, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxBigAlloc, VecZnxDftAlloc},
     layouts::{
-        Backend, CnvPVecLOwned, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecROwned, CnvPVecRToBackendMut, CnvPVecRToBackendRef, Module, ScratchOwned, VecZnxBig, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxDftToBackendMut
+        Backend, CnvPVecLOwned, CnvPVecLToBackendMut, CnvPVecLToBackendRef, CnvPVecROwned, CnvPVecRToBackendMut,
+        CnvPVecRToBackendRef, Module, ScratchOwned, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxDftToBackendMut,
     },
     source::Source,
 };
 
-use crate::hal::helpers::{random_backend_cnv_pvec_left, random_backend_cnv_pvec_right, random_host_vec_znx, upload_host_vec_znx, vec_znx_backend_ref};
+use crate::hal::helpers::{
+    random_backend_cnv_pvec_left, random_backend_cnv_pvec_right, random_host_vec_znx, upload_host_vec_znx, vec_znx_backend_ref,
+};
 use crate::params::CnvSweepParms;
 
 pub fn runner_cnv_prepare_left<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
@@ -218,7 +221,8 @@ where
     let b = random_host_vec_znx(module.n(), 1, sweep.size, &mut source);
     let b = upload_host_vec_znx::<BE>(&b);
 
-    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.cnv_by_const_apply_tmp_bytes(0, c_size, sweep.size, sweep.size));
+    let mut scratch: ScratchOwned<BE> =
+        ScratchOwned::alloc(module.cnv_by_const_apply_tmp_bytes(0, c_size, sweep.size, sweep.size));
 
     bencher.iter(|| {
         let mut c_big_backend = c_big.to_backend_mut();

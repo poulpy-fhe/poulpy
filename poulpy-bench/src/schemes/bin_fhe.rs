@@ -4,7 +4,9 @@ use criterion::{Bencher, measurement::Measurement};
 use poulpy_core::{
     EncryptionLayout, GGSWNoise, GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, LWEEncryptSk,
     layouts::{
-        Base2K, Dnum, Dsize, GGLWEToGGSWKeyLayout, GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWEAutomorphismKeyLayout, GLWELayout, GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, LWE, LWEInfos, LWELayout, LWESecret, LWESecretSampling, ModuleCoreAlloc, TorusPrecision
+        Base2K, Dnum, Dsize, GGLWEToGGSWKeyLayout, GGSW, GGSWLayout, GGSWPreparedFactory, GLWE, GLWEAutomorphismKeyLayout,
+        GLWELayout, GLWESecret, GLWESecretPrepared, GLWESecretPreparedFactory, GLWESecretSampling, LWE, LWEInfos, LWELayout,
+        LWESecret, LWESecretSampling, ModuleCoreAlloc, TorusPrecision,
     },
 };
 use poulpy_hal::{
@@ -74,7 +76,7 @@ pub fn runner_blind_rotate<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, BRA: 
         base2k: Base2K(params.bin_fhe_params.base2k),
     };
 
-     let mut sk_glwe: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc_from_infos(&glwe_infos);
+    let mut sk_glwe: GLWESecret<Vec<u8>, i64> = module.glwe_secret_alloc_from_infos(&glwe_infos);
     module.glwe_secret_fill_ternary_prob(&mut sk_glwe, 0.5, &mut source_xs);
     let mut sk_glwe_dft: GLWESecretPrepared<BE::OwnedBuf, BE> = module.glwe_secret_prepared_alloc_from_infos(&glwe_infos);
     module.glwe_secret_prepare(&mut sk_glwe_dft, &sk_glwe);
@@ -122,7 +124,11 @@ pub fn runner_blind_rotate<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, BRA: 
     });
 }
 
-pub fn runner_circuit_bootstrapping<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend, BRA: BlindRotationAlgo, M: Measurement>(
+pub fn runner_circuit_bootstrapping<
+    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend,
+    BRA: BlindRotationAlgo,
+    M: Measurement,
+>(
     bencher: &mut Bencher<'_, M>,
     params: &CircuitBootstrappingBenchParam,
 ) where
@@ -222,7 +228,14 @@ pub fn runner_circuit_bootstrapping<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i6
     cbt_prepared.prepare(&module, &cbt_key, &mut scratch.borrow());
 
     bencher.iter(|| {
-        cbt_prepared.execute_to_constant(&module, &mut res, &ct_lwe, params.log_domain, params.extension_factor, &mut scratch.borrow());
+        cbt_prepared.execute_to_constant(
+            &module,
+            &mut res,
+            &ct_lwe,
+            params.log_domain,
+            params.extension_factor,
+            &mut scratch.borrow(),
+        );
         black_box(());
     });
 }

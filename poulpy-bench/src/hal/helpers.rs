@@ -3,7 +3,11 @@
 //! API.
 
 use poulpy_hal::layouts::{
-    Backend,  CnvPVecLOwned,  CnvPVecROwned, DataView, MatZnx, MatZnxBackendRef, MatZnxToBackendRef, ScalarZnx, ScalarZnxBackendRef, ScalarZnxToBackendRef, SvpPPol, SvpPPolOwned, VecZnx, VecZnxBackendMut, VecZnxBackendRef, VecZnxBig, VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDft, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftOwned, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef, VmpPMat, VmpPMatOwned
+    Backend, CnvPVecLOwned, CnvPVecROwned, DataView, MatZnx, MatZnxBackendRef, MatZnxToBackendRef, ScalarZnx,
+    ScalarZnxBackendRef, ScalarZnxToBackendRef, SvpPPol, SvpPPolOwned, VecZnx, VecZnxBackendMut, VecZnxBackendRef,
+    VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut,
+    VecZnxDftBackendRef, VecZnxDftOwned, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef,
+    VmpPMat, VmpPMatOwned,
 };
 use poulpy_hal::source::Source;
 use rand::Rng;
@@ -13,7 +17,6 @@ fn random_aligned_host_bytes(len: usize, source: &mut Source) -> Vec<u8> {
     source.fill_bytes(&mut bytes);
     bytes
 }
-
 
 pub fn upload_host_vec_znx<BE: Backend<ZnxWord = i64>>(src: &VecZnx<Vec<u8>, i64>) -> VecZnx<BE::OwnedBuf, BE::ZnxWord> {
     VecZnx::from_data(BE::from_host_bytes(src.data()), src.n(), src.cols(), src.size())
@@ -67,6 +70,7 @@ pub fn random_backend_vec_znx_dft<BE: Backend<ZnxWord = i64>>(
     VecZnxDftOwned::<BE>::from_bytes(n, cols, size, bytes)
 }
 
+#[allow(dead_code)]
 pub fn random_backend_vec_znx_big<BE: Backend<ZnxWord = i64>>(
     n: usize,
     cols: usize,
@@ -151,6 +155,7 @@ pub fn vec_znx_dft_backend_mut<'a, BE: Backend<ZnxWord = i64>>(src: &'a mut VecZ
     src.to_backend_mut()
 }
 
+#[allow(dead_code)]
 pub fn vec_znx_big_backend_ref<'a, BE: Backend<ZnxWord = i64>>(src: &'a VecZnxBigOwned<BE>) -> VecZnxBigBackendRef<'a, BE> {
     src.to_backend_ref()
 }
@@ -159,50 +164,45 @@ pub fn vec_znx_big_backend_mut<'a, BE: Backend<ZnxWord = i64>>(src: &'a mut VecZ
     src.to_backend_mut()
 }
 
-#[cfg(any(feature = "core-bench", feature = "bin-fhe-bench", feature = "ckks-bench"))]
-pub fn upload_host_glwe<BE>(module: &Module<BE>, src: &GLWE<Vec<u8>, i64>) -> GLWE<BE::OwnedBuf, BE::ZnxWord>
-where
-    BE: Backend<ZnxWord = i64> + TransferFrom<BenchHostBackend>,
-    Module<BE>: ModuleTransfer<BE>,
-{
-    module.upload_glwe::<BenchHostBackend>(src)
-}
+// pub fn upload_host_glwe<BE>(module: &Module<BE>, src: &GLWE<Vec<u8>, i64>) -> GLWE<BE::OwnedBuf, BE::ZnxWord>
+// where
+//     BE: Backend<ZnxWord = i64> + TransferFrom<BenchHostBackend>,
+//     Module<BE>: ModuleTransfer<BE>,
+// {
+//     module.upload_glwe::<BenchHostBackend>(src)
+// }
 
-#[cfg(any(feature = "core-bench", feature = "bin-fhe-bench", feature = "ckks-bench"))]
-pub fn upload_host_lwe<BE>(module: &Module<BE>, src: &LWE<Vec<u8>, i64>) -> LWE<BE::OwnedBuf, BE::ZnxWord>
-where
-    BE: Backend<ZnxWord = i64> + TransferFrom<BenchHostBackend>,
-    Module<BE>: ModuleTransfer<BE>,
-{
-    module.upload_lwe::<BenchHostBackend>(src)
-}
+// pub fn upload_host_lwe<BE>(module: &Module<BE>, src: &LWE<Vec<u8>, i64>) -> LWE<BE::OwnedBuf, BE::ZnxWord>
+// where
+//     BE: Backend<ZnxWord = i64> + TransferFrom<BenchHostBackend>,
+//     Module<BE>: ModuleTransfer<BE>,
+// {
+//     module.upload_lwe::<BenchHostBackend>(src)
+// }
 
-#[cfg(any(feature = "core-bench", feature = "bin-fhe-bench", feature = "ckks-bench"))]
-pub fn upload_host_lwe_secret<BE>(module: &Module<BE>, src: &LWESecret<Vec<u8>, i64>) -> LWESecret<BE::OwnedBuf, BE::ZnxWord>
-where
-    BE: Backend<ZnxWord = i64> + TransferFrom<BenchHostBackend>,
-    Module<BE>: ModuleTransfer<BE>,
-{
-    module.upload_lwe_secret::<BenchHostBackend>(src)
-}
+// pub fn upload_host_lwe_secret<BE>(module: &Module<BE>, src: &LWESecret<Vec<u8>, i64>) -> LWESecret<BE::OwnedBuf, BE::ZnxWord>
+// where
+//     BE: Backend<ZnxWord = i64> + TransferFrom<BenchHostBackend>,
+//     Module<BE>: ModuleTransfer<BE>,
+// {
+//     module.upload_lwe_secret::<BenchHostBackend>(src)
+// }
 
-#[cfg(any(feature = "core-bench", feature = "bin-fhe-bench", feature = "ckks-bench"))]
-pub fn upload_host_glwe_plaintext<BE>(
-    module: &Module<BE>,
-    src: &GLWEPlaintext<Vec<u8>, i64>,
-) -> GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord>
-where
-    BE: Backend<ZnxWord = i64> + TransferFrom<BenchHostBackend>,
-    Module<BE>: ModuleTransfer<BE>,
-{
-    module.upload_glwe_plaintext::<BenchHostBackend>(src)
-}
+// pub fn upload_host_glwe_plaintext<BE>(
+//     module: &Module<BE>,
+//     src: &GLWEPlaintext<Vec<u8>, i64>,
+// ) -> GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord>
+// where
+//     BE: Backend<ZnxWord = i64> + TransferFrom<BenchHostBackend>,
+//     Module<BE>: ModuleTransfer<BE>,
+// {
+//     module.upload_glwe_plaintext::<BenchHostBackend>(src)
+// }
 
-#[cfg(any(feature = "core-bench", feature = "bin-fhe-bench", feature = "ckks-bench"))]
-pub fn upload_host_ggsw<BE>(module: &Module<BE>, src: &GGSW<Vec<u8>, i64>) -> GGSW<BE::OwnedBuf, BE::ZnxWord>
-where
-    BE: Backend<ZnxWord = i64> + TransferFrom<BenchHostBackend>,
-    Module<BE>: ModuleTransfer<BE>,
-{
-    module.upload_ggsw::<BenchHostBackend>(src)
-}
+// pub fn upload_host_ggsw<BE>(module: &Module<BE>, src: &GGSW<Vec<u8>, i64>) -> GGSW<BE::OwnedBuf, BE::ZnxWord>
+// where
+//     BE: Backend<ZnxWord = i64> + TransferFrom<BenchHostBackend>,
+//     Module<BE>: ModuleTransfer<BE>,
+// {
+//     module.upload_ggsw::<BenchHostBackend>(src)
+// }
