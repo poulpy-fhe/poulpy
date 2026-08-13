@@ -1,7 +1,7 @@
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{
-        ModuleN, SvpApplyDftToDftAssign, VecZnxBigAddAssign, VecZnxBigBytesOf, VecZnxBigFromSmallBackend, VecZnxBigNormalize,
+        ModuleN, SvpApplyPPolDftToDftAssign, VecZnxBigAddAssign, VecZnxBigBytesOf, VecZnxBigFromSmallBackend, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApplyTmpA, VecZnxSubAssignBackend,
     },
     layouts::{Backend, HostBackend, HostDataMut, Module, ScratchArena, Stats},
@@ -36,7 +36,7 @@ where
         + VecZnxBigBytesOf
         + VecZnxBigFromSmallBackend<BE>
         + VecZnxDftApply<BE>
-        + SvpApplyDftToDftAssign<BE>
+        + SvpApplyPPolDftToDftAssign<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigAddAssign<BE>
         + VecZnxBigNormalize<BE>
@@ -75,7 +75,7 @@ where
         + VecZnxBigBytesOf
         + VecZnxBigFromSmallBackend<BE>
         + VecZnxDftApply<BE>
-        + SvpApplyDftToDftAssign<BE>
+        + SvpApplyPPolDftToDftAssign<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigAddAssign<BE>
         + VecZnxBigNormalize<BE>

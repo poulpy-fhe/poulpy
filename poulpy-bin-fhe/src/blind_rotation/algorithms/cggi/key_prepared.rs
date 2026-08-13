@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::{SvpPPolAlloc, SvpPrepare},
+    api::{SvpPPolAlloc, SvpPreparePPol},
     layouts::{Backend, HostDataMut, HostDataRef, Module, ScalarZnx, ScratchArena, SvpPPolOwned},
 };
 
@@ -17,7 +17,7 @@ use crate::blind_rotation::{
 
 impl<BE: Backend<ZnxWord = i64>> BlindRotationKeyPreparedFactory<CGGI, BE> for Module<BE>
 where
-    Self: GGSWPreparedFactory<BE> + SvpPPolAlloc<BE> + SvpPrepare<BE>,
+    Self: GGSWPreparedFactory<BE> + SvpPPolAlloc<BE> + SvpPreparePPol<BE>,
     BE::OwnedBuf: HostDataMut + HostDataRef,
 {
     fn blind_rotation_key_prepared_alloc<A>(&self, infos: &A) -> BlindRotationKeyPrepared<BE::OwnedBuf, CGGI, BE>

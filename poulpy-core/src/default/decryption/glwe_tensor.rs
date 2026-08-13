@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{
-        ModuleN, SvpApplyDftToDftAssign, SvpPPolBytesOf, SvpPPolCopyBackend, VecZnxBigAddAssign, VecZnxBigBytesOf,
+        ModuleN, SvpApplyPPolDftToDftAssign, SvpPPolBytesOf, SvpPPolCopyBackend, VecZnxBigAddAssign, VecZnxBigBytesOf,
         VecZnxBigFromSmallBackend, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf,
         VecZnxIdftApplyTmpA,
     },
@@ -51,7 +51,7 @@ pub fn glwe_tensor_decrypt_default<M, BE: Backend, R: Data, P: Data, S0: Data, S
         + VecZnxBigBytesOf
         + VecZnxBigFromSmallBackend<BE>
         + VecZnxDftApply<BE>
-        + SvpApplyDftToDftAssign<BE>
+        + SvpApplyPPolDftToDftAssign<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigAddAssign<BE>
         + VecZnxBigNormalize<BE>

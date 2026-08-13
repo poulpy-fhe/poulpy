@@ -1,7 +1,7 @@
 use poulpy_hal::layouts::SvpPPolToBackendMut;
 use poulpy_hal::layouts::SvpPPolToBackendRef;
 use poulpy_hal::{
-    api::{SvpPPolAlloc, SvpPPolBytesOf, SvpPrepare},
+    api::{SvpPPolAlloc, SvpPPolBytesOf, SvpPreparePPol},
     layouts::{Backend, Data, HostDataMut, HostDataRef, Module, SvpPPol, ZnxInfos},
 };
 
@@ -126,7 +126,7 @@ where
             let cols: usize = other.data.cols();
             assert_eq!(res.data.cols(), cols);
             for i in 0..cols {
-                self.svp_prepare(&mut res.data, i, &other.data, i);
+                self.svp_prepare_ppol(&mut res.data, i, &other.data, i);
             }
         }
 

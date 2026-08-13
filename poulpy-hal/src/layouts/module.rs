@@ -171,6 +171,10 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     fn bytes_of_svp_ppol(n: usize, cols: usize) -> usize {
         checked_product(&[n, cols, Self::size_of_dft_word()], "SvpPPol byte size")
     }
+    /// Byte size of a [`crate::layouts::SvpTPol`] buffer.
+    fn bytes_of_svp_tpol(n: usize, cols: usize) -> usize {
+        checked_product(&[n, cols, Self::size_of_dft_word()], "SvpTPol byte size")
+    }
     /// Byte size of a [`crate::layouts::VmpPMat`] buffer.
     fn bytes_of_vmp_pmat(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
         checked_product(

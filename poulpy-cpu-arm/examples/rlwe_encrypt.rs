@@ -12,8 +12,8 @@ use poulpy_cpu_ref::FFT64Ref as BackendImpl;
 
 use poulpy_hal::{
     api::{
-        ScalarZnxFillTernaryProbSourceBackend, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDftAssign, SvpPPolAlloc,
-        SvpPrepare, VecZnxAddNormalSourceBackend, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigNormalize,
+        ScalarZnxFillTernaryProbSourceBackend, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyPPolDftToDftAssign, SvpPPolAlloc,
+        SvpPreparePPol, VecZnxAddNormalSourceBackend, VecZnxBigAddSmallAssign, VecZnxBigAlloc, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallNegateAssign, VecZnxDftAlloc, VecZnxDftApply,
         VecZnxFillUniformSourceBackend, VecZnxIdftApplyTmpA, VecZnxNormalizeAssignBackend,
     },
@@ -53,7 +53,7 @@ fn main() {
     let mut s_dft = module.svp_ppol_alloc(s.cols());
 
     // s_dft <- DFT(s)
-    module.svp_prepare(
+    module.svp_prepare_ppol(
         &mut s_dft.to_backend_mut(),
         0,
         &<ScalarZnx<Vec<u8>, i64> as ScalarZnxToBackendRef<BackendImpl>>::to_backend_ref(&s),
@@ -80,7 +80,7 @@ fn main() {
     module.vec_znx_dft_apply(1, 0, &mut buf_dft.to_backend_mut(), 0, &ct_backend, 1);
 
     // Applies DFT(ct[1]) * DFT(s)
-    module.svp_apply_dft_to_dft_assign(
+    module.svp_apply_ppol_dft_to_dft_assign(
         &mut buf_dft.to_backend_mut(), // DFT(ct[1] * s)
         0,                             // Selects the first column of res
         &s_dft.to_backend_ref(),       // DFT(s)
@@ -146,7 +146,7 @@ fn main() {
     // DFT(ct[1] * s)
     let ct_backend = <VecZnx<Vec<u8>, i64> as VecZnxToBackendRef<BackendImpl>>::to_backend_ref(&ct);
     module.vec_znx_dft_apply(1, 0, &mut buf_dft.to_backend_mut(), 0, &ct_backend, 1);
-    module.svp_apply_dft_to_dft_assign(
+    module.svp_apply_ppol_dft_to_dft_assign(
         &mut buf_dft.to_backend_mut(),
         0, // Selects the first column of res.
         &s_dft.to_backend_ref(),

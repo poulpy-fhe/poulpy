@@ -9,23 +9,26 @@ use std::hint::black_box;
 use criterion::{BenchmarkId, Criterion};
 
 use poulpy_hal::{
-    api::{ModuleNew, SvpApplyDft, SvpApplyDftToDft, SvpApplyDftToDftAssign, SvpPPolAlloc, SvpPrepare, VecZnxDftAlloc},
+    api::{
+        ModuleNew, SvpApplyPPolDftToDft, SvpApplyPPolDftToDftAssign, SvpApplyPPolSmallToDft, SvpPPolAlloc, SvpPreparePPol,
+        VecZnxDftAlloc,
+    },
     layouts::{Backend, Module},
     source::Source,
 };
 
-pub fn bench_svp_prepare<B>(params: &crate::params::SvpPrepareParams, c: &mut Criterion, label: &str)
+pub fn bench_svp_prepare_ppol<B>(params: &crate::params::SvpPrepareParams, c: &mut Criterion, label: &str)
 where
-    Module<B>: SvpPrepare<B> + SvpPPolAlloc<B> + ModuleNew<B>,
+    Module<B>: SvpPreparePPol<B> + SvpPPolAlloc<B> + ModuleNew<B>,
     B: Backend<ZnxWord = i64>,
 {
-    let group_name: String = format!("svp_prepare::{label}");
+    let group_name: String = format!("svp_prepare_ppol::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
     fn runner<B>(log_n: usize) -> impl FnMut()
     where
-        Module<B>: SvpPrepare<B> + SvpPPolAlloc<B> + ModuleNew<B>,
+        Module<B>: SvpPreparePPol<B> + SvpPPolAlloc<B> + ModuleNew<B>,
         B: Backend<ZnxWord = i64>,
     {
         let module: Module<B> = Module::<B>::new(1 << log_n);
@@ -39,7 +42,7 @@ where
 
         move || {
             let a_backend = crate::scalar_znx_backend_ref::<B>(&a);
-            module.svp_prepare(&mut svp.to_backend_mut(), 0, &a_backend, 0);
+            module.svp_prepare_ppol(&mut svp.to_backend_mut(), 0, &a_backend, 0);
             black_box(());
         }
     }
@@ -53,18 +56,18 @@ where
     group.finish();
 }
 
-pub fn bench_svp_apply_dft<B>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
+pub fn bench_svp_apply_ppol_small_to_dft<B>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
 where
-    Module<B>: SvpApplyDft<B> + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
+    Module<B>: SvpApplyPPolSmallToDft<B> + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
     B: Backend<ZnxWord = i64>,
 {
-    let group_name: String = format!("svp_apply_dft::{label}");
+    let group_name: String = format!("svp_apply_ppol_small_to_dft::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
     fn runner<B>(sweep: [usize; 3]) -> impl FnMut()
     where
-        Module<B>: SvpApplyDft<B> + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
+        Module<B>: SvpApplyPPolSmallToDft<B> + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
         B: Backend<ZnxWord = i64>,
     {
         let n: usize = 1 << sweep[0];
@@ -84,7 +87,7 @@ where
             let a = crate::vec_znx_backend_ref::<B>(&a);
             let mut res = res.to_backend_mut();
             for j in 0..cols {
-                module.svp_apply_dft(&mut res, j, &svp, j, &a, j);
+                module.svp_apply_ppol_small_to_dft(&mut res, j, &svp, j, &a, j);
             }
             black_box(());
         }
@@ -99,18 +102,18 @@ where
     group.finish();
 }
 
-pub fn bench_svp_apply_dft_to_dft<B>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
+pub fn bench_svp_apply_ppol_dft_to_dft<B>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
 where
-    Module<B>: SvpApplyDftToDft<B> + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
+    Module<B>: SvpApplyPPolDftToDft<B> + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
     B: Backend<ZnxWord = i64>,
 {
-    let group_name: String = format!("svp_apply_dft_to_dft::{label}");
+    let group_name: String = format!("svp_apply_ppol_dft_to_dft::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
     fn runner<B>(sweep: [usize; 3]) -> impl FnMut()
     where
-        Module<B>: SvpApplyDftToDft<B> + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
+        Module<B>: SvpApplyPPolDftToDft<B> + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
         B: Backend<ZnxWord = i64>,
     {
         let n: usize = 1 << sweep[0];
@@ -127,7 +130,7 @@ where
         move || {
             let svp = svp.to_backend_ref();
             for j in 0..cols {
-                module.svp_apply_dft_to_dft(&mut res.to_backend_mut(), j, &svp, j, &a.to_backend_ref(), j);
+                module.svp_apply_ppol_dft_to_dft(&mut res.to_backend_mut(), j, &svp, j, &a.to_backend_ref(), j);
             }
             black_box(());
         }
@@ -142,18 +145,18 @@ where
     group.finish();
 }
 
-pub fn bench_svp_apply_dft_to_dft_assign<B>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
+pub fn bench_svp_apply_ppol_dft_to_dft_assign<B>(params: &crate::params::HalSweepParams, c: &mut Criterion, label: &str)
 where
-    Module<B>: SvpApplyDftToDftAssign<B> + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
+    Module<B>: SvpApplyPPolDftToDftAssign<B> + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
     B: Backend<ZnxWord = i64>,
 {
-    let group_name: String = format!("svp_apply_dft_to_dft_assign::{label}");
+    let group_name: String = format!("svp_apply_ppol_dft_to_dft_assign::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
     fn runner<B>(sweep: [usize; 3]) -> impl FnMut()
     where
-        Module<B>: SvpApplyDftToDftAssign<B> + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
+        Module<B>: SvpApplyPPolDftToDftAssign<B> + SvpPPolAlloc<B> + ModuleNew<B> + VecZnxDftAlloc<B>,
         B: Backend<ZnxWord = i64>,
     {
         let n: usize = 1 << sweep[0];
@@ -169,7 +172,7 @@ where
         move || {
             let svp = svp.to_backend_ref();
             for j in 0..cols {
-                module.svp_apply_dft_to_dft_assign(&mut res.to_backend_mut(), j, &svp, j);
+                module.svp_apply_ppol_dft_to_dft_assign(&mut res.to_backend_mut(), j, &svp, j);
             }
             black_box(());
         }

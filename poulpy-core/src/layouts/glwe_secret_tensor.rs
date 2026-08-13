@@ -4,8 +4,8 @@ use poulpy_hal::layouts::VecZnxDftToBackendRef;
 use poulpy_hal::layouts::{VecZnxBigToBackendMut, ZnxWord};
 use poulpy_hal::{
     api::{
-        ModuleN, SvpApplyDftToDft, SvpPrepare, VecZnxBigAlloc, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
-        VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApplyTmpA,
+        ModuleN, SvpApplyPPolDftToDft, SvpPreparePPol, VecZnxBigAlloc, VecZnxBigBytesOf, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApplyTmpA,
     },
     layouts::{
         Backend, Data, HostDataMut, HostDataRef, Module, ScalarZnx, ScalarZnxToBackendRef, ScratchArena, ScratchOwned,
@@ -222,7 +222,7 @@ where
         + GLWESecretPreparedFactory<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxDftApply<BE>
-        + SvpApplyDftToDft<BE>
+        + SvpApplyPPolDftToDft<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxDftBytesOf
@@ -260,7 +260,7 @@ where
         {
             let mut a_prepared_data = a_prepared.data.reborrow_backend_mut();
             for i in 0..rank {
-                self.svp_prepare(&mut a_prepared_data, i, a.data(), i);
+                self.svp_prepare_ppol(&mut a_prepared_data, i, a.data(), i);
             }
         }
         a_prepared.dist = *a.dist();
@@ -294,7 +294,7 @@ where
                 let a_dft_ref = a_dft.to_backend_ref();
                 {
                     let mut a_ij_dft_backend = a_ij_dft.to_backend_mut();
-                    self.svp_apply_dft_to_dft(&mut a_ij_dft_backend, 0, &a_prepared_backend_ref, j, &a_dft_ref, i);
+                    self.svp_apply_ppol_dft_to_dft(&mut a_ij_dft_backend, 0, &a_prepared_backend_ref, j, &a_dft_ref, i);
                 }
                 {
                     let mut a_ij_big = a_ij_big_backend.to_backend_mut();

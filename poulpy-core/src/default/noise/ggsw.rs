@@ -1,6 +1,6 @@
 use poulpy_hal::{
     api::{
-        ScratchArenaTakeBasic, SvpApplyDftToDftAssign, VecZnxAddScalarAssignBackend, VecZnxBigAddAssign, VecZnxBigBytesOf,
+        ScratchArenaTakeBasic, SvpApplyPPolDftToDftAssign, VecZnxAddScalarAssignBackend, VecZnxBigAddAssign, VecZnxBigBytesOf,
         VecZnxBigFromSmallBackend, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf,
         VecZnxIdftApplyTmpA, VecZnxSubAssignBackend,
     },
@@ -48,7 +48,7 @@ impl<BE: Backend + HostBackend> GGSWNoise<BE> for Module<BE>
 where
     Module<BE>: VecZnxAddScalarAssignBackend<BE>
         + VecZnxDftApply<BE>
-        + SvpApplyDftToDftAssign<BE>
+        + SvpApplyPPolDftToDftAssign<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigBytesOf
         + VecZnxDftBytesOf
@@ -129,7 +129,7 @@ where
             self.vec_znx_dft_apply(1, 0, &mut pt_dft, 0, &pt.to_backend_ref().data, 0);
             {
                 let mut pt_dft_backend = pt_dft.to_backend_mut();
-                self.svp_apply_dft_to_dft_assign(&mut pt_dft_backend, 0, &sk_backend.data, res_col - 1);
+                self.svp_apply_ppol_dft_to_dft_assign(&mut pt_dft_backend, 0, &sk_backend.data, res_col - 1);
             }
             let (mut pt_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(self, 1, res_backend.size());
             {

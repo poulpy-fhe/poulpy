@@ -1,7 +1,7 @@
 use poulpy_hal::layouts::SvpPPolToBackendMut;
 use poulpy_hal::layouts::SvpPPolToBackendRef;
 use poulpy_hal::{
-    api::{SvpPPolAlloc, SvpPPolBytesOf, SvpPrepare},
+    api::{SvpPPolAlloc, SvpPPolBytesOf, SvpPreparePPol},
     layouts::{Backend, Data, Module, SvpPPol, ZnxInfos},
 };
 
@@ -64,7 +64,7 @@ impl<D: Data, B: Backend> GLWEInfos for GLWESecretPrepared<D, B> {
 
 pub trait GLWESecretPreparedFactory<B: Backend>
 where
-    Self: GetDegree + SvpPPolBytesOf + SvpPPolAlloc<B> + SvpPrepare<B>,
+    Self: GetDegree + SvpPPolBytesOf + SvpPPolAlloc<B> + SvpPreparePPol<B>,
 {
     fn glwe_secret_prepared_alloc(&self, rank: Rank) -> GLWESecretPrepared<B::OwnedBuf, B> {
         GLWESecretPrepared {
@@ -100,7 +100,7 @@ where
             let mut res = res.to_backend_mut();
             let other = other.to_backend_ref();
             for i in 0..res.rank().into() {
-                self.svp_prepare(&mut res.data, i, &other.data, i);
+                self.svp_prepare_ppol(&mut res.data, i, &other.data, i);
             }
         }
 
@@ -109,7 +109,7 @@ where
 }
 
 impl<B: Backend> GLWESecretPreparedFactory<B> for Module<B> where
-    Self: GetDegree + SvpPPolBytesOf + SvpPPolAlloc<B> + SvpPrepare<B>
+    Self: GetDegree + SvpPPolBytesOf + SvpPPolAlloc<B> + SvpPreparePPol<B>
 {
 }
 

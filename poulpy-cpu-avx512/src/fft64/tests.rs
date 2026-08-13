@@ -60,8 +60,9 @@ cross_backend_test_suite! {
     backend_test = crate::FFT64Avx512,
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
-        test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
-        test_svp_apply_dft_to_dft_assign => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft_assign,
+        test_svp_apply_ppol_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_ppol_dft_to_dft,
+        test_svp_apply_ppol_dft_to_dft_assign => poulpy_hal::test_suite::svp::test_svp_apply_ppol_dft_to_dft_assign,
+        test_svp_apply_domain_matrix => poulpy_hal::test_suite::svp::test_svp_apply_domain_matrix,
     }
 }
 

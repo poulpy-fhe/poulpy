@@ -1,7 +1,8 @@
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, SvpApplyDftToDftAssign, VecZnxBigAddAssign, VecZnxBigBytesOf, VecZnxBigFromSmallBackend,
-        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf, VecZnxIdftApplyTmpA,
+        ModuleN, ScratchArenaTakeBasic, SvpApplyPPolDftToDftAssign, VecZnxBigAddAssign, VecZnxBigBytesOf,
+        VecZnxBigFromSmallBackend, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply, VecZnxDftBytesOf,
+        VecZnxIdftApplyTmpA,
     },
     layouts::{Backend, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut},
 };
@@ -34,7 +35,7 @@ where
         + VecZnxBigBytesOf
         + VecZnxBigFromSmallBackend<BE>
         + VecZnxDftApply<BE>
-        + SvpApplyDftToDftAssign<BE>
+        + SvpApplyPPolDftToDftAssign<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigAddAssign<BE>
         + VecZnxBigNormalize<BE>
@@ -62,7 +63,7 @@ pub(crate) fn glwe_decrypt_backend_inner<'arena, 'scratch, M, BE: Backend>(
         + VecZnxBigBytesOf
         + VecZnxBigFromSmallBackend<BE>
         + VecZnxDftApply<BE>
-        + SvpApplyDftToDftAssign<BE>
+        + SvpApplyPPolDftToDftAssign<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigAddAssign<BE>
         + VecZnxBigNormalize<BE>
@@ -90,7 +91,7 @@ pub(crate) fn glwe_decrypt_backend_inner<'arena, 'scratch, M, BE: Backend>(
         module.vec_znx_dft_apply(1, 0, &mut ci_dft, 0, &res.data, i);
         {
             let mut ci_dft_backend = ci_dft.to_backend_mut();
-            module.svp_apply_dft_to_dft_assign(&mut ci_dft_backend, 0, &sk.data, i - 1);
+            module.svp_apply_ppol_dft_to_dft_assign(&mut ci_dft_backend, 0, &sk.data, i - 1);
         }
         let (mut ci_big, _) = scratch_2.take_vec_znx_big_scratch(module, 1, res.size());
         {

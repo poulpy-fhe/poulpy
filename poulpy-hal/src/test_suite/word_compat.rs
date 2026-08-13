@@ -22,16 +22,19 @@ use super::{
     vec_znx_dft::{dft_of_uploaded_vec_znx, idft_apply_to_host},
 };
 use crate::layouts::SvpPPolToBackendMut;
+use crate::layouts::SvpTPolToBackendMut;
 use crate::layouts::VmpPMatToBackendMut;
 
 use crate::{
     api::{
-        ScratchOwnedAlloc, SvpPPolAlloc, SvpPrepare, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
-        VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApply, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        ScratchOwnedAlloc, SvpPPolAlloc, SvpPreparePPol, SvpPrepareTPol, SvpTPolAlloc, VecZnxBigAlloc, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApply, VmpPMatAlloc, VmpPrepare,
+        VmpPrepareTmpBytes,
     },
     layouts::{
         DataView, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, Module, ScratchOwned, SvpPPolLayoutCompatible,
-        SvpPPolOwned, VecZnxDftLayoutCompatible, VecZnxDftOwned, VmpPMatLayoutCompatible, VmpPMatOwned,
+        SvpPPolOwned, SvpTPolLayoutCompatible, SvpTPolOwned, VecZnxDftLayoutCompatible, VecZnxDftOwned, VmpPMatLayoutCompatible,
+        VmpPMatOwned,
     },
     source::Source,
 };
@@ -66,9 +69,9 @@ pub fn test_word_compat_dft_bytes<BA, BB>(
     }
 }
 
-/// Same input, `svp_prepare` on each backend: the resulting `SvpPPol` buffers
+/// Same input, `svp_prepare_ppol` on each backend: the resulting `SvpPPol` buffers
 /// must be byte-identical. Exact-arithmetic (NTT/CRT) words only.
-pub fn test_word_compat_svp_prepare_bytes<BA, BB>(
+pub fn test_word_compat_svp_prepare_ppol_bytes<BA, BB>(
     params: &TestParams,
     module_host: &Module<HostBytesBackend>,
     module_a: &Module<BA>,
@@ -76,8 +79,8 @@ pub fn test_word_compat_svp_prepare_bytes<BA, BB>(
 ) where
     BA: crate::test_suite::TestBackend + SvpPPolLayoutCompatible<BB>,
     BB: crate::test_suite::TestBackend,
-    Module<BA>: SvpPPolAlloc<BA> + SvpPrepare<BA>,
-    Module<BB>: SvpPPolAlloc<BB> + SvpPrepare<BB>,
+    Module<BA>: SvpPPolAlloc<BA> + SvpPreparePPol<BA>,
+    Module<BB>: SvpPPolAlloc<BB> + SvpPreparePPol<BB>,
 {
     let base2k = params.base2k;
     assert_eq!(module_a.n(), module_b.n());
@@ -92,12 +95,47 @@ pub fn test_word_compat_svp_prepare_bytes<BA, BB>(
     let mut svp_a: SvpPPolOwned<BA> = module_a.svp_ppol_alloc(cols);
     let mut svp_b: SvpPPolOwned<BB> = module_b.svp_ppol_alloc(cols);
     for j in 0..cols {
-        module_a.svp_prepare(&mut svp_a.to_backend_mut(), j, &scalar_znx_backend_ref::<BA>(&scalar_a), j);
-        module_b.svp_prepare(&mut svp_b.to_backend_mut(), j, &scalar_znx_backend_ref::<BB>(&scalar_b), j);
+        module_a.svp_prepare_ppol(&mut svp_a.to_backend_mut(), j, &scalar_znx_backend_ref::<BA>(&scalar_a), j);
+        module_b.svp_prepare_ppol(&mut svp_b.to_backend_mut(), j, &scalar_znx_backend_ref::<BB>(&scalar_b), j);
     }
     assert!(
         BA::to_host_bytes(&svp_a.data) == BB::to_host_bytes(&svp_b.data),
         "shared DftWord but different SvpPPol buffer bytes: one backend violates the word contract"
+    );
+}
+
+/// Same input, `svp_prepare_tpol` on each backend: the resulting `SvpTPol` buffers
+/// must be byte-identical. Exact-arithmetic (NTT/CRT) words only.
+pub fn test_word_compat_svp_prepare_tpol_bytes<BA, BB>(
+    params: &TestParams,
+    module_host: &Module<HostBytesBackend>,
+    module_a: &Module<BA>,
+    module_b: &Module<BB>,
+) where
+    BA: crate::test_suite::TestBackend + SvpTPolLayoutCompatible<BB>,
+    BB: crate::test_suite::TestBackend,
+    Module<BA>: SvpTPolAlloc<BA> + SvpPrepareTPol<BA>,
+    Module<BB>: SvpTPolAlloc<BB> + SvpPrepareTPol<BB>,
+{
+    let base2k = params.base2k;
+    assert_eq!(module_a.n(), module_b.n());
+    let cols = 2;
+    let mut source = Source::new([0u8; 32]);
+
+    let mut scalar = module_host.scalar_znx_alloc(cols);
+    scalar.fill_uniform(base2k, &mut source);
+    let scalar_a = upload_scalar_znx::<BA>(&scalar);
+    let scalar_b = upload_scalar_znx::<BB>(&scalar);
+
+    let mut svp_a: SvpTPolOwned<BA> = module_a.svp_tpol_alloc(cols);
+    let mut svp_b: SvpTPolOwned<BB> = module_b.svp_tpol_alloc(cols);
+    for j in 0..cols {
+        module_a.svp_prepare_tpol(&mut svp_a.to_backend_mut(), j, &scalar_znx_backend_ref::<BA>(&scalar_a), j);
+        module_b.svp_prepare_tpol(&mut svp_b.to_backend_mut(), j, &scalar_znx_backend_ref::<BB>(&scalar_b), j);
+    }
+    assert!(
+        BA::to_host_bytes(&svp_a.data) == BB::to_host_bytes(&svp_b.data),
+        "shared DftWord but different SvpTPol buffer bytes: one backend violates the word contract"
     );
 }
 

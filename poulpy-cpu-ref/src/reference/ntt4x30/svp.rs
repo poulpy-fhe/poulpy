@@ -1,33 +1,23 @@
 //! SVP (scalar-vector product) operations for the NTT4x30 backend.
 //!
-//! This module provides the NTT-domain SVP primitives used by
-//! `poulpy-cpu-ref`.  The workflow is:
-//!
-//! 1. **Prepare** — encode a `ScalarZnx` (i64 coefficients) into the
-//!    [`SvpPPol`] prepared format (q120c, NTT domain) via
-//!    [`ntt4x30_svp_prepare`].
-//! 2. **Apply** — multiply a [`VecZnxDft`] (q120b) by a prepared
-//!    [`SvpPPol`] (q120c) to obtain a new [`VecZnxDft`] (q120b) via
-//!    one of the `ntt4x30_svp_apply_dft_to_dft*` functions.
-//!
-//! # Storage formats
+//! Prepare encodes a `ScalarZnx` (i64) into the prepared q120c NTT-domain
+//! format; apply multiplies a `VecZnxDft` (q120b) by it back into q120b.
 //!
 //! | Layout | Scalar type | u64/u32 view | Bytes/coeff |
 //! |--------|-------------|--------------|-------------|
 //! | `VecZnxDft` (q120b) | `Q120bScalar` | 4 u64 | 32 |
-//! | `SvpPPol` (q120c)   | `Q120bScalar` | 8 u32 | 32 |
+//! | prepared (q120c)    | `Q120bScalar` | 8 u32 | 32 |
 //!
-//! Both layouts share the same [`Q120bScalar`] element type but differ in
-//! their arithmetic interpretation.  Use [`bytemuck::cast_slice`] /
-//! [`bytemuck::cast_slice_mut`] to obtain the appropriate `&[u32]` or
-//! `&[u64]` view.
+//! Every kernel takes its prepared operand as the concrete layout type. Both
+//! tiers share the q120c encoding on this backend, so each pair forwards to one
+//! private inner routine.
 
 use bytemuck::{cast_slice, cast_slice_mut};
 
 use crate::{
     layouts::{
-        Backend, HostDataMut, HostDataRef, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, VecZnxDftBackendMut,
-        VecZnxDftBackendRef, ZnxView, ZnxViewMut,
+        Backend, HostDataMut, HostDataRef, ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, SvpTPolBackendMut,
+        SvpTPolBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, ZnxView, ZnxViewMut,
     },
     reference::ntt4x30::{
         NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc, NttZero, ntt::NttTable, primes::Primes30, types::Q120bScalar,
@@ -35,81 +25,38 @@ use crate::{
     },
 };
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Prepare
-// ──────────────────────────────────────────────────────────────────────────────
-
-/// Encode a scalar polynomial into the q120c NTT-domain prepared format.
-///
-/// Steps:
-/// 1. Map i64 coefficients of `a` to q120b (via [`NttFromZnx64`]).
-/// 2. Apply the forward NTT (via [`NttDFTExecute`]).
-/// 3. Convert q120b → q120c (via [`NttCFromB`]) and store in `res`.
-///
-/// `res` must be a [`SvpPPol`] with `DftWord = Q120bScalar`.
-/// A temporary heap buffer of `4 * n` u64 values is allocated internally
-/// (this is a setup/key-preparation function, not a hot path).
-pub fn ntt4x30_svp_prepare<'r, 'a, BE>(
-    module: &impl NttModuleHandle,
-    res: &mut SvpPPolBackendMut<'r, BE>,
-    res_col: usize,
-    a: &ScalarZnxBackendRef<'a, BE>,
-    a_col: usize,
-) where
+/// Maps the i64 coefficients to q120b, applies the forward NTT, then converts
+/// q120b to q120c. Allocates a `4 * n` u64 scratch: this is a key-preparation
+/// routine, not a hot path.
+fn prepare_inner<BE>(module: &impl NttModuleHandle, n: usize, res: &mut [Q120bScalar], a: &[i64])
+where
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttCFromB,
-    BE::BufMut<'r>: HostDataMut,
-    BE::BufRef<'a>: HostDataRef,
 {
-    let n = res.n();
-
-    // Temporary q120b working buffer (heap-allocated; prepare is not hot).
     let mut tmp = vec![0u64; 4 * n];
-    BE::ntt_from_znx64(&mut tmp, a.at(a_col, 0));
+    BE::ntt_from_znx64(&mut tmp, a);
     BE::ntt_dft_execute(module.get_ntt_table(), &mut tmp);
-
-    // Write q120c into the SvpPPol buffer.
-    let res_u32: &mut [u32] = cast_slice_mut(res.at_mut(res_col, 0));
-    BE::ntt_c_from_b(n, res_u32, &tmp);
+    BE::ntt_c_from_b(n, cast_slice_mut(res), &tmp);
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Apply: overwrite
-// ──────────────────────────────────────────────────────────────────────────────
-
-/// Pointwise DFT-domain multiply: `res = a ⊙ b`.
-///
-/// For each active limb `j` and each NTT coefficient index `n_i`:
-/// ```text
-/// res[res_col, j, n_i]  =  a[a_col, n_i]  ×  b[b_col, j, n_i]   (mod Q)
-/// ```
-/// Limbs of `res` beyond `b.size()` are zeroed.
-///
-/// `a`: prepared [`SvpPPol`] in q120c format.
-/// `b`: input [`VecZnxDft`] in q120b format.
-/// `res`: output [`VecZnxDft`] in q120b format.
-pub fn ntt4x30_svp_apply_dft_to_dft<'r, 'a, 'b, BE>(
+fn dft_to_dft_inner<'r, 'b, BE>(
     module: &impl NttModuleHandle,
     res: &mut VecZnxDftBackendMut<'r, BE>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'a, BE>,
-    a_col: usize,
+    pol: &[Q120bScalar],
     b: &VecZnxDftBackendRef<'b, BE>,
     b_col: usize,
 ) where
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttMulBbc + NttZero,
     BE::BufMut<'r>: HostDataMut,
-    for<'x> BE::BufRef<'x>: HostDataRef,
+    BE::BufRef<'b>: HostDataRef,
 {
     let meta = module.get_bbc_meta();
     let n = res.n();
     let res_size = res.size();
-    let b_size = b.size();
-    let min_size = res_size.min(b_size);
+    let min_size = res_size.min(b.size());
 
-    // q120c view of the prepared polynomial (constant across all limbs).
-    let a_u32: &[u32] = cast_slice(a.at(a_col, 0));
+    let a_u32: &[u32] = cast_slice(pol);
 
-    // Active limbs: pointwise multiply (overwrite).
     for j in 0..min_size {
         let res_u64: &mut [u64] = cast_slice_mut(res.at_mut(res_col, j));
         let b_u32: &[u32] = cast_slice(b.at(b_col, j));
@@ -124,42 +71,25 @@ pub fn ntt4x30_svp_apply_dft_to_dft<'r, 'a, 'b, BE>(
         }
     }
 
-    // Remaining limbs: zero.
     for j in min_size..res_size {
         BE::ntt_zero(cast_slice_mut(res.at_mut(res_col, j)));
     }
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Apply: in-place overwrite
-// ──────────────────────────────────────────────────────────────────────────────
-
-/// Pointwise DFT-domain multiply in place: `res = a ⊙ res`.
-///
-/// For each active limb `j` and each NTT coefficient index `n_i`:
-/// ```text
-/// res[res_col, j, n_i]  =  a[a_col, n_i]  ×  res[res_col, j, n_i]   (mod Q)
-/// ```
-///
-/// Processes each q120b coefficient by copying it (since [`Q120bScalar`] is
-/// `Copy`) before overwriting to avoid aliasing conflicts.
-pub fn ntt4x30_svp_apply_dft_to_dft_assign<'r, 'a, BE>(
+fn dft_to_dft_assign_inner<'r, BE>(
     module: &impl NttModuleHandle,
     res: &mut VecZnxDftBackendMut<'r, BE>,
     res_col: usize,
-    a: &SvpPPolBackendRef<'a, BE>,
-    a_col: usize,
+    pol: &[Q120bScalar],
 ) where
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttMulBbc,
     BE::BufMut<'r>: HostDataMut,
-    BE::BufRef<'a>: HostDataRef,
 {
     let meta = module.get_bbc_meta();
     let n = res.n();
     let res_size = res.size();
 
-    // Borrow a's q120c data once; it is valid for the entire loop.
-    let a_u32: &[u32] = cast_slice(a.at(a_col, 0));
+    let a_u32: &[u32] = cast_slice(pol);
 
     for j in 0..res_size {
         let res_slice: &mut [Q120bScalar] = res.at_mut(res_col, j);
@@ -172,4 +102,100 @@ pub fn ntt4x30_svp_apply_dft_to_dft_assign<'r, 'a, BE>(
             res_slice[n_i] = crate::reference::ntt4x30::types::CrtWord(product);
         }
     }
+}
+
+/// Encodes a scalar polynomial into an [`SvpPPol`](crate::layouts::SvpPPol).
+pub fn ntt4x30_svp_prepare_ppol<'r, 'a, BE>(
+    module: &impl NttModuleHandle,
+    res: &mut SvpPPolBackendMut<'r, BE>,
+    res_col: usize,
+    a: &ScalarZnxBackendRef<'a, BE>,
+    a_col: usize,
+) where
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttCFromB,
+    BE::BufMut<'r>: HostDataMut,
+    BE::BufRef<'a>: HostDataRef,
+{
+    let n = res.n();
+    prepare_inner::<BE>(module, n, res.at_mut(res_col, 0), a.at(a_col, 0));
+}
+
+/// Encodes a scalar polynomial into an [`SvpTPol`](crate::layouts::SvpTPol).
+pub fn ntt4x30_svp_prepare_tpol<'r, 'a, BE>(
+    module: &impl NttModuleHandle,
+    res: &mut SvpTPolBackendMut<'r, BE>,
+    res_col: usize,
+    a: &ScalarZnxBackendRef<'a, BE>,
+    a_col: usize,
+) where
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttCFromB,
+    BE::BufMut<'r>: HostDataMut,
+    BE::BufRef<'a>: HostDataRef,
+{
+    let n = res.n();
+    prepare_inner::<BE>(module, n, res.at_mut(res_col, 0), a.at(a_col, 0));
+}
+
+/// Pointwise DFT-domain multiply `res = a * b`, zeroing limbs past `b.size()`.
+pub fn ntt4x30_svp_apply_ppol_dft_to_dft<'r, 'a, 'b, BE>(
+    module: &impl NttModuleHandle,
+    res: &mut VecZnxDftBackendMut<'r, BE>,
+    res_col: usize,
+    a: &SvpPPolBackendRef<'a, BE>,
+    a_col: usize,
+    b: &VecZnxDftBackendRef<'b, BE>,
+    b_col: usize,
+) where
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttMulBbc + NttZero,
+    BE::BufMut<'r>: HostDataMut,
+    for<'x> BE::BufRef<'x>: HostDataRef,
+{
+    dft_to_dft_inner::<BE>(module, res, res_col, a.at(a_col, 0), b, b_col);
+}
+
+/// Pointwise DFT-domain multiply `res = a * b`, zeroing limbs past `b.size()`.
+pub fn ntt4x30_svp_apply_tpol_dft_to_dft<'r, 'a, 'b, BE>(
+    module: &impl NttModuleHandle,
+    res: &mut VecZnxDftBackendMut<'r, BE>,
+    res_col: usize,
+    a: &SvpTPolBackendRef<'a, BE>,
+    a_col: usize,
+    b: &VecZnxDftBackendRef<'b, BE>,
+    b_col: usize,
+) where
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttMulBbc + NttZero,
+    BE::BufMut<'r>: HostDataMut,
+    for<'x> BE::BufRef<'x>: HostDataRef,
+{
+    dft_to_dft_inner::<BE>(module, res, res_col, a.at(a_col, 0), b, b_col);
+}
+
+/// Pointwise DFT-domain multiply in place: `res = a * res`.
+pub fn ntt4x30_svp_apply_ppol_dft_to_dft_assign<'r, 'a, BE>(
+    module: &impl NttModuleHandle,
+    res: &mut VecZnxDftBackendMut<'r, BE>,
+    res_col: usize,
+    a: &SvpPPolBackendRef<'a, BE>,
+    a_col: usize,
+) where
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttMulBbc,
+    BE::BufMut<'r>: HostDataMut,
+    BE::BufRef<'a>: HostDataRef,
+{
+    dft_to_dft_assign_inner::<BE>(module, res, res_col, a.at(a_col, 0));
+}
+
+/// Pointwise DFT-domain multiply in place: `res = a * res`.
+pub fn ntt4x30_svp_apply_tpol_dft_to_dft_assign<'r, 'a, BE>(
+    module: &impl NttModuleHandle,
+    res: &mut VecZnxDftBackendMut<'r, BE>,
+    res_col: usize,
+    a: &SvpTPolBackendRef<'a, BE>,
+    a_col: usize,
+) where
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttMulBbc,
+    BE::BufMut<'r>: HostDataMut,
+    BE::BufRef<'a>: HostDataRef,
+{
+    dft_to_dft_assign_inner::<BE>(module, res, res_col, a.at(a_col, 0));
 }

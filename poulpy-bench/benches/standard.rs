@@ -41,8 +41,8 @@ fn std_vmp_apply_dft_to_dft(c: &mut Criterion) {
     poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::hal::vmp::bench_vmp_apply_dft_to_dft, &p().vmp; c);
 }
 
-fn std_svp_apply_dft_to_dft(c: &mut Criterion) {
-    poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::hal::svp::bench_svp_apply_dft_to_dft, &p().hal; c);
+fn std_svp_apply_ppol_dft_to_dft(c: &mut Criterion) {
+    poulpy_bench::for_each_backend!(poulpy_bench::bench_suite::hal::svp::bench_svp_apply_ppol_dft_to_dft, &p().hal; c);
 }
 
 // ── Layer 1: HAL – coefficient domain (all backends) ────────────────────────
@@ -207,7 +207,7 @@ criterion_group! {
     std_vec_znx_dft_apply,
     std_vec_znx_idft_apply,
     std_vmp_apply_dft_to_dft,
-    std_svp_apply_dft_to_dft,
+    std_svp_apply_ppol_dft_to_dft,
     // Layer 1 – HAL coefficient-domain,
     std_vec_znx_add_into,
     std_vec_znx_normalize,

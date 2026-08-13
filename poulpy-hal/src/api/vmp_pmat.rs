@@ -81,7 +81,7 @@ pub trait VmpApplyDftToDftAccumulateTmpBytes {
 pub trait VmpApplyDftToDft<B: Backend> {
     /// Applies the vector matrix product [crate::layouts::VecZnxDft] x [crate::layouts::VmpPMat].
     ///
-    /// A vector matrix product numerically equivalent to a sum of [crate::api::SvpApplyDft],
+    /// A vector matrix product numerically equivalent to a sum of [crate::api::SvpApplyPPolSmallToDft],
     /// where each [crate::layouts::SvpPPol] is a limb of the input [crate::layouts::VecZnx] in DFT,
     /// and each vector a [crate::layouts::VecZnxDft] (row) of the [crate::layouts::VmpPMat].
     ///

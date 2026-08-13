@@ -1,6 +1,6 @@
 use poulpy_hal::layouts::SvpPPolToBackendMut;
 use poulpy_hal::{
-    api::SvpPrepare,
+    api::SvpPreparePPol,
     layouts::{Backend, HostDataMut, Module, ScalarZnx, ScalarZnxToBackendRef, SvpPPolOwned, ZnxViewMut},
 };
 
@@ -12,7 +12,7 @@ pub(crate) fn set_xai_plus_y<C, B: Backend>(
     buf: &mut ScalarZnx<C, i64>,
 ) where
     C: HostDataMut,
-    Module<B>: SvpPrepare<B>,
+    Module<B>: SvpPreparePPol<B>,
 {
     let n: usize = res.n();
 
@@ -29,7 +29,7 @@ pub(crate) fn set_xai_plus_y<C, B: Backend>(
     let mut res_backend = res.to_backend_mut();
     let buf_ref = buf.to_ref();
     let buf_backend = ScalarZnx::from_data(B::from_host_bytes(buf_ref.data), buf_ref.n(), buf_ref.cols());
-    module.svp_prepare(
+    module.svp_prepare_ppol(
         &mut res_backend,
         0,
         &<ScalarZnx<B::OwnedBuf, B::ZnxWord> as ScalarZnxToBackendRef<B>>::to_backend_ref(&buf_backend),

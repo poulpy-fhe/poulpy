@@ -23,6 +23,7 @@ mod scratch_views;
 mod serialization;
 mod stats;
 mod svp_ppol;
+mod svp_tpol;
 mod vec_znx;
 mod vec_znx_big;
 mod vec_znx_dft;
@@ -42,6 +43,7 @@ pub use scratch_views::*;
 pub use serialization::*;
 pub use stats::*;
 pub use svp_ppol::*;
+pub use svp_tpol::*;
 pub use vec_znx::*;
 pub use vec_znx_big::*;
 pub use vec_znx_dft::*;
@@ -498,6 +500,10 @@ macro_rules! impl_backend_from {
                 <$from as poulpy_hal::layouts::Backend>::bytes_of_svp_ppol(n, cols)
             }
 
+            fn bytes_of_svp_tpol(n: usize, cols: usize) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::bytes_of_svp_tpol(n, cols)
+            }
+
             fn bytes_of_vmp_pmat(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
                 <$from as poulpy_hal::layouts::Backend>::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size)
             }
@@ -519,6 +525,8 @@ macro_rules! impl_backend_from {
         unsafe impl poulpy_hal::layouts::VecZnxBigLayoutCompatible<$be> for $from {}
         unsafe impl poulpy_hal::layouts::SvpPPolLayoutCompatible<$from> for $be {}
         unsafe impl poulpy_hal::layouts::SvpPPolLayoutCompatible<$be> for $from {}
+        unsafe impl poulpy_hal::layouts::SvpTPolLayoutCompatible<$from> for $be {}
+        unsafe impl poulpy_hal::layouts::SvpTPolLayoutCompatible<$be> for $from {}
         unsafe impl poulpy_hal::layouts::VmpPMatLayoutCompatible<$from> for $be {}
         unsafe impl poulpy_hal::layouts::VmpPMatLayoutCompatible<$be> for $from {}
         unsafe impl poulpy_hal::layouts::CnvPVecLayoutCompatible<$from> for $be {}

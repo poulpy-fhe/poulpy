@@ -55,8 +55,9 @@ cross_backend_test_suite! {
     backend_test = crate::NTT4x30Neon,
     params = TestParams { size: 1<<8, base2k: 50 },
     tests = {
-        test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
-        test_svp_apply_dft_to_dft_assign => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft_assign,
+        test_svp_apply_ppol_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_ppol_dft_to_dft,
+        test_svp_apply_ppol_dft_to_dft_assign => poulpy_hal::test_suite::svp::test_svp_apply_ppol_dft_to_dft_assign,
+        test_svp_apply_domain_matrix => poulpy_hal::test_suite::svp::test_svp_apply_domain_matrix,
     }
 }
 
@@ -138,7 +139,7 @@ cross_backend_test_suite! {
     tests = {
         test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
         test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
-        test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
+        test_svp_apply_ppol_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_ppol_dft_to_dft,
     }
 }
 
@@ -151,7 +152,7 @@ cross_backend_test_suite! {
     tests = {
         test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
         test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
-        test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
+        test_svp_apply_ppol_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_ppol_dft_to_dft,
     }
 }
 
@@ -164,7 +165,7 @@ cross_backend_test_suite! {
     tests = {
         test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
         test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
-        test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
+        test_svp_apply_ppol_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_ppol_dft_to_dft,
     }
 }
 
@@ -177,7 +178,7 @@ cross_backend_test_suite! {
     tests = {
         test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
         test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
-        test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
+        test_svp_apply_ppol_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_ppol_dft_to_dft,
     }
 }
 
@@ -196,7 +197,8 @@ cross_backend_test_suite! {
     params = TestParams { size: 1<<8, base2k: 50 },
     tests = {
         test_word_compat_dft_bytes => poulpy_hal::test_suite::word_compat::test_word_compat_dft_bytes,
-        test_word_compat_svp_prepare_bytes => poulpy_hal::test_suite::word_compat::test_word_compat_svp_prepare_bytes,
+        test_word_compat_svp_prepare_ppol_bytes => poulpy_hal::test_suite::word_compat::test_word_compat_svp_prepare_ppol_bytes,
+        test_word_compat_svp_prepare_tpol_bytes => poulpy_hal::test_suite::word_compat::test_word_compat_svp_prepare_tpol_bytes,
         test_word_compat_dft_cross_idft => poulpy_hal::test_suite::word_compat::test_word_compat_dft_cross_idft,
     }
 }

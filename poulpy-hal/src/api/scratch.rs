@@ -5,11 +5,11 @@
 //! objects (e.g., [`VecZnx`], [`VecZnxDft`], [`VmpPMat`]) out of them.
 
 use crate::{
-    api::{CnvPVecBytesOf, ModuleN, SvpPPolBytesOf, VecZnxBigBytesOf, VecZnxDftBytesOf, VmpPMatBytesOf},
+    api::{CnvPVecBytesOf, ModuleN, SvpPPolBytesOf, SvpTPolBytesOf, VecZnxBigBytesOf, VecZnxDftBytesOf, VmpPMatBytesOf},
     layouts::{
         Backend, CnvPVecL, CnvPVecLViewMut, CnvPVecR, CnvPVecRViewMut, MatZnx, MatZnxViewMut, ScalarZnx, ScalarZnxViewMut,
-        ScratchArena, SvpPPol, SvpPPolViewMut, VecZnx, VecZnxBig, VecZnxBigViewMut, VecZnxDft, VecZnxDftViewMut, VecZnxViewMut,
-        VmpPMat, VmpPMatViewMut,
+        ScratchArena, SvpPPol, SvpPPolViewMut, SvpTPol, SvpTPolViewMut, VecZnx, VecZnxBig, VecZnxBigViewMut, VecZnxDft,
+        VecZnxDftViewMut, VecZnxViewMut, VmpPMat, VmpPMatViewMut,
     },
 };
 
@@ -71,6 +71,12 @@ pub trait ScratchArenaTakeBasic<'a, B: Backend>: Sized {
     where
         B: 'a,
         M: SvpPPolBytesOf + ModuleN;
+
+    /// Takes a [`SvpTPol`] from the scratch arena.
+    fn take_svp_tpol_scratch<M>(self, module: &M, cols: usize) -> (SvpTPolViewMut<'a, B>, Self)
+    where
+        B: 'a,
+        M: SvpTPolBytesOf + ModuleN;
 
     /// Takes a [`VecZnx`] from the scratch arena.
     fn take_vec_znx_scratch(self, n: usize, cols: usize, size: usize) -> (VecZnxViewMut<'a, B>, Self)
@@ -196,6 +202,15 @@ impl<'a, B: Backend> ScratchArenaTakeBasic<'a, B> for ScratchArena<'a, B> {
     {
         let (data, arena) = self.take_region(module.bytes_of_svp_ppol(cols));
         (SvpPPolViewMut::from_inner(SvpPPol::from_data(data, module.n(), cols)), arena)
+    }
+
+    fn take_svp_tpol_scratch<M>(self, module: &M, cols: usize) -> (SvpTPolViewMut<'a, B>, Self)
+    where
+        B: 'a,
+        M: SvpTPolBytesOf + ModuleN,
+    {
+        let (data, arena) = self.take_region(module.bytes_of_svp_tpol(cols));
+        (SvpTPolViewMut::from_inner(SvpTPol::from_data(data, module.n(), cols)), arena)
     }
 
     fn take_vec_znx_scratch(self, n: usize, cols: usize, size: usize) -> (VecZnxViewMut<'a, B>, Self)

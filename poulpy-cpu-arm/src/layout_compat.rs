@@ -10,7 +10,9 @@
 //! q120c), and the `CnvPVec` layouts are unverified.
 
 use poulpy_cpu_ref::{FFT64Ref, NTT4x30Ref};
-use poulpy_hal::layouts::{SvpPPolLayoutCompatible, VecZnxBigLayoutCompatible, VecZnxDftLayoutCompatible};
+use poulpy_hal::layouts::{
+    SvpPPolLayoutCompatible, SvpTPolLayoutCompatible, VecZnxBigLayoutCompatible, VecZnxDftLayoutCompatible,
+};
 
 use crate::FFT64Neon;
 use crate::NTT4x30Neon;
@@ -20,11 +22,15 @@ unsafe impl VecZnxDftLayoutCompatible<FFT64Ref> for FFT64Neon {}
 unsafe impl VecZnxBigLayoutCompatible<FFT64Neon> for FFT64Ref {}
 unsafe impl VecZnxBigLayoutCompatible<FFT64Ref> for FFT64Neon {}
 unsafe impl SvpPPolLayoutCompatible<FFT64Neon> for FFT64Ref {}
+unsafe impl SvpTPolLayoutCompatible<FFT64Neon> for FFT64Ref {}
 unsafe impl SvpPPolLayoutCompatible<FFT64Ref> for FFT64Neon {}
+unsafe impl SvpTPolLayoutCompatible<FFT64Ref> for FFT64Neon {}
 
 unsafe impl VecZnxDftLayoutCompatible<NTT4x30Neon> for NTT4x30Ref {}
 unsafe impl VecZnxDftLayoutCompatible<NTT4x30Ref> for NTT4x30Neon {}
 unsafe impl VecZnxBigLayoutCompatible<NTT4x30Neon> for NTT4x30Ref {}
 unsafe impl VecZnxBigLayoutCompatible<NTT4x30Ref> for NTT4x30Neon {}
 unsafe impl SvpPPolLayoutCompatible<NTT4x30Neon> for NTT4x30Ref {}
+unsafe impl SvpTPolLayoutCompatible<NTT4x30Neon> for NTT4x30Ref {}
 unsafe impl SvpPPolLayoutCompatible<NTT4x30Ref> for NTT4x30Neon {}
+unsafe impl SvpTPolLayoutCompatible<NTT4x30Ref> for NTT4x30Neon {}

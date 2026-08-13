@@ -1,8 +1,8 @@
 use poulpy_hal::{
     api::{
         ModuleN, ScalarZnxFillBinaryBlockSourceBackend, ScalarZnxFillBinaryHwSourceBackend, ScalarZnxFillBinaryProbSourceBackend,
-        ScalarZnxFillTernaryHwSourceBackend, ScalarZnxFillTernaryProbSourceBackend, ScratchArenaTakeBasic, SvpApplyDftToDft,
-        SvpApplyDftToDftAssign, SvpPPolBytesOf, SvpPrepare, VecZnxAddAssignBackend, VecZnxAddNormalSourceBackend,
+        ScalarZnxFillTernaryHwSourceBackend, ScalarZnxFillTernaryProbSourceBackend, ScratchArenaTakeBasic, SvpApplyPPolDftToDft,
+        SvpApplyPPolDftToDftAssign, SvpPPolBytesOf, SvpPreparePPol, VecZnxAddAssignBackend, VecZnxAddNormalSourceBackend,
         VecZnxBigAddNormal, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftApply,
         VecZnxDftBytesOf, VecZnxFillUniformSourceBackend, VecZnxIdftApplyTmpA, VecZnxNormalize, VecZnxNormalizeAssignBackend,
         VecZnxNormalizeTmpBytes, VecZnxSubAssignBackend, VecZnxSubNegateAssignBackend, VecZnxZeroBackend,
@@ -355,8 +355,8 @@ pub(crate) trait GLWEEncryptPkInternal<BE: Backend> {
 
 impl<BE: Backend> GLWEEncryptPkInternal<BE> for Module<BE>
 where
-    Self: SvpPrepare<BE>
-        + SvpApplyDftToDft<BE>
+    Self: SvpPreparePPol<BE>
+        + SvpApplyPPolDftToDft<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigAddNormal<BE>
         + VecZnxBigNormalize<BE>
@@ -433,7 +433,7 @@ where
             }
 
             let u_backend_ref = ScalarZnx::from_data(BE::view_ref_mut(&u_backend.data), u_backend.n(), u_backend.cols());
-            self.svp_prepare(&mut u_dft, 0, &u_backend_ref, 0);
+            self.svp_prepare_ppol(&mut u_dft, 0, &u_backend_ref, 0);
             scratch_1 = scratch_2;
         }
 
@@ -447,7 +447,7 @@ where
                 let u_dft_ref = u_dft.to_backend_ref();
                 {
                     let mut ci_dft_backend = ci_dft.to_backend_mut();
-                    self.svp_apply_dft_to_dft(&mut ci_dft_backend, 0, &u_dft_ref, 0, &pk.data, i);
+                    self.svp_apply_ppol_dft_to_dft(&mut ci_dft_backend, 0, &u_dft_ref, 0, &pk.data, i);
                 }
 
                 // ci_big = u * p[i]
@@ -507,7 +507,7 @@ where
         + VecZnxDftBytesOf
         + VecZnxBigNormalize<BE>
         + VecZnxDftApply<BE>
-        + SvpApplyDftToDftAssign<BE>
+        + SvpApplyPPolDftToDftAssign<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxNormalizeTmpBytes
         + VecZnxFillUniformSourceBackend<BE>
@@ -573,7 +573,7 @@ where
             {
                 let (mut ci_dft, scratch_3) = scratch_2.borrow().take_vec_znx_dft_scratch(self, 1, size);
                 self.vec_znx_dft_apply(1, 0, &mut ci_dft.to_backend_mut(), 0, &ci.to_backend_ref(), 0);
-                self.svp_apply_dft_to_dft_assign(&mut ci_dft.to_backend_mut(), 0, &sk.data, i - 1);
+                self.svp_apply_ppol_dft_to_dft_assign(&mut ci_dft.to_backend_mut(), 0, &sk.data, i - 1);
                 let (mut ci_big, mut scratch_4) = scratch_3.take_vec_znx_big_scratch(self, 1, size);
                 self.vec_znx_idft_apply_tmpa(&mut ci_big.to_backend_mut(), 0, &mut ci_dft.to_backend_mut(), 0);
                 self.vec_znx_big_normalize(

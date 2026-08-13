@@ -3,7 +3,7 @@
 //! Prepared variants store polynomials in the frequency domain of the
 //! backend's DFT/NTT transform, enabling O(N log N) polynomial
 //! multiplication via [`poulpy_hal`]'s `VmpApplyDftToDft` and
-//! `SvpApplyDft` operations.
+//! `SvpApplyPPolSmallToDft` operations.
 //!
 //! Every prepared type is parametrised by `B: Backend` in addition
 //! to `D: Data`, making it tied to a specific backend instance.

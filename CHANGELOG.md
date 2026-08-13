@@ -4,6 +4,16 @@
 
 Adds two native CKKS bootstrapping families, **PaCo** (Coron & Seuré, [ePrint 2025/886](https://eprint.iacr.org/2025/886)) and **SHIP** (Cheon, Hanrot, Kim & Stehlé, [ePrint 2025/784](https://eprint.iacr.org/2025/784)); moves CKKS encoding onto a backend-resident op family; keys every polynomial layout by an explicit word type (`ZnxWord` / `BigWord` / `DftWord`) and the DFT/big containers by their backend; and lands a production-readiness pass over `poulpy-ckks` (typed errors, constructor-validated plans, scratch-carved intermediates, binary128-exact tables, four-layer consolidation).
 
+### `poulpy-hal`: prepared-domain SVP apply API
+
+Implements the SVP tier of `docs/spec/prepared_domain_apply_api.md`. Both operands are now named by their domain at the call site, and each domain token is the layout actually passed: `small` (`ScalarZnx`), `tpol` (`SvpTPol`, transformed hot-prep) or `ppol` (`SvpPPol`, packed cold-prep) for the scalar, `small` (`VecZnx`) or `dft` (`VecZnxDft`) for the vector.
+
+- Add the `SvpTPol` layout family (`SvpTPolOwned` / `*BackendRef` / `*BackendMut` / `*ToBackendRef` / `*ToBackendMut` / `*ReborrowBackend*`), `Backend::bytes_of_svp_tpol`, the `SvpTPolLayoutCompatible` marker, `SvpTPolViewMut`, and `take_svp_tpol_scratch`. `SvpTPol` and `SvpPPol` share a physical layout on every current CPU backend; the split is type-level so a backend can specialize the hot-prep form without touching callers.
+- **Breaking:** `svp_prepare` → `svp_prepare_ppol`, `svp_apply_dft` → `svp_apply_ppol_small_to_dft`, `svp_apply_dft_to_dft` → `svp_apply_ppol_dft_to_dft`, `svp_apply_dft_to_dft_assign` → `svp_apply_ppol_dft_to_dft_assign`. No deprecated aliases. The traits rename to match (`SvpPrepare` → `SvpPreparePPol`, `SvpApplyDft` → `SvpApplyPPolSmallToDft`, and so on), and `api::svp_ppol` / `delegates::svp_ppol` become `api::svp` / `delegates::svp`.
+- Add the full apply matrix: six `svp_apply_<scalar>_<vector>_to_dft`, three `_dft_to_dft_assign`, six `_to_big` and six `_to_small`, plus `SvpPrepareTPol`, `SvpTPolAlloc`, `SvpTPolBytesOf` and `SvpTPolCopyBackend`. `_to_big` and `_to_small` are OEP primitives so backends may fuse the IDFT and normalization; their scratch is sized by the two shared traits `SvpApplyToBigTmpBytes` and `SvpApplyToSmallTmpBytes`.
+- The `small` scalar variants prepare on every call and take no scratch: they are one-shot paths, documented as such.
+- `test_suite::svp::test_svp_apply_domain_matrix` pins all eighteen apply variants and the three assign variants to a single reference product, and `word_compat` gains `test_word_compat_svp_prepare_tpol_bytes`.
+
 ### `poulpy-hal`: word-keyed layouts
 
 - Add `layouts::word` with the word traits `ZnxWord` (coefficient domain), `BigWord` (accumulator) and `DftWord` (prepared/DFT). A word names a byte-layout convention and governs sizing, element views, and serialization interpretation.

@@ -601,9 +601,9 @@ mod ifma_impl {
     use poulpy_hal::{
         api::{ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
         layouts::{
-            Backend, MatZnxBackendRef, MatZnxInfos, Module, NoiseInfos, ScalarZnxBackendRef, SvpPPolBackendMut,
-            SvpPPolBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxDftBackendRef,
-            VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
+            Backend, MatZnxBackendRef, MatZnxInfos, Module, NoiseInfos, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
+            VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos,
+            VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
         },
         oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
     };
@@ -745,66 +745,15 @@ mod ifma_impl {
         }
     }
 
-    use poulpy_cpu_ref::hal_defaults::{NTT4x30SvpDefault, NTT4x30VecZnxBigDefault};
+    use crate::ntt3x42_ifma::svp::NTT3x42IfmaSvpDefault;
+    use poulpy_cpu_ref::hal_defaults::NTT4x30VecZnxBigDefault;
 
     unsafe impl HalVecZnxBigImpl<NTT3x42Ifma> for NTT3x42Ifma {
         poulpy_cpu_ref::hal_impl_vec_znx_big!(NTT4x30VecZnxBigDefault);
     }
 
     unsafe impl HalSvpImpl<NTT3x42Ifma> for NTT3x42Ifma {
-        fn svp_prepare(
-            module: &Module<Self>,
-            res: &mut SvpPPolBackendMut<'_, Self>,
-            res_col: usize,
-            a: &ScalarZnxBackendRef<'_, Self>,
-            a_col: usize,
-        ) {
-            crate::ntt3x42_ifma::svp::svp_prepare(module, res, res_col, a, a_col);
-        }
-
-        fn svp_ppol_copy_backend(
-            module: &Module<Self>,
-            res: &mut SvpPPolBackendMut<'_, Self>,
-            res_col: usize,
-            a: &SvpPPolBackendRef<'_, Self>,
-            a_col: usize,
-        ) {
-            <Self as NTT4x30SvpDefault<Self>>::svp_ppol_copy_backend_default(module, res, res_col, a, a_col);
-        }
-
-        fn svp_apply_dft(
-            module: &Module<Self>,
-            res: &mut VecZnxDftBackendMut<'_, Self>,
-            res_col: usize,
-            a: &SvpPPolBackendRef<'_, Self>,
-            a_col: usize,
-            b: &VecZnxBackendRef<'_, Self>,
-            b_col: usize,
-        ) {
-            crate::ntt3x42_ifma::svp::svp_apply_dft(module, res, res_col, a, a_col, b, b_col);
-        }
-
-        fn svp_apply_dft_to_dft(
-            module: &Module<Self>,
-            res: &mut VecZnxDftBackendMut<'_, Self>,
-            res_col: usize,
-            a: &SvpPPolBackendRef<'_, Self>,
-            a_col: usize,
-            b: &VecZnxDftBackendRef<'_, Self>,
-            b_col: usize,
-        ) {
-            crate::ntt3x42_ifma::svp::svp_apply_dft_to_dft(module, res, res_col, a, a_col, b, b_col);
-        }
-
-        fn svp_apply_dft_to_dft_assign(
-            module: &Module<Self>,
-            res: &mut VecZnxDftBackendMut<'_, Self>,
-            res_col: usize,
-            a: &SvpPPolBackendRef<'_, Self>,
-            a_col: usize,
-        ) {
-            crate::ntt3x42_ifma::svp::svp_apply_dft_to_dft_assign(module, res, res_col, a, a_col);
-        }
+        poulpy_cpu_ref::hal_impl_svp!(NTT3x42IfmaSvpDefault);
     }
 
     unsafe impl HalVecZnxDftImpl<NTT3x42Ifma> for NTT3x42Ifma {

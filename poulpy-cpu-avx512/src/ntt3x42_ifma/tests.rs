@@ -95,9 +95,10 @@ mod ntt3x42_ifma_tests {
         backend_test = crate::NTT3x42Ifma,
         params = TestParams { size: 1<<8, base2k: 50 },
         tests = {
-            test_svp_apply_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft,
-            test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
-            test_svp_apply_dft_to_dft_assign => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft_assign,
+            test_svp_apply_ppol_small_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_ppol_small_to_dft,
+            test_svp_apply_ppol_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_ppol_dft_to_dft,
+            test_svp_apply_ppol_dft_to_dft_assign => poulpy_hal::test_suite::svp::test_svp_apply_ppol_dft_to_dft_assign,
+        test_svp_apply_domain_matrix => poulpy_hal::test_suite::svp::test_svp_apply_domain_matrix,
         }
     }
 
@@ -165,7 +166,7 @@ mod ntt3x42_ifma_tests {
         tests = {
             test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
             test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
-            test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
+            test_svp_apply_ppol_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_ppol_dft_to_dft,
         }
     }
 
@@ -178,7 +179,7 @@ mod ntt3x42_ifma_tests {
         tests = {
             test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
             test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
-            test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
+            test_svp_apply_ppol_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_ppol_dft_to_dft,
         }
     }
 
@@ -191,7 +192,7 @@ mod ntt3x42_ifma_tests {
         tests = {
             test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
             test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
-            test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
+            test_svp_apply_ppol_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_ppol_dft_to_dft,
         }
     }
 
@@ -204,7 +205,7 @@ mod ntt3x42_ifma_tests {
         tests = {
             test_vec_znx_idft_apply => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply,
             test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
-            test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
+            test_svp_apply_ppol_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_ppol_dft_to_dft,
         }
     }
 

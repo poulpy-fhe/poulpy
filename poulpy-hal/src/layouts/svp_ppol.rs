@@ -8,15 +8,15 @@ use crate::layouts::{
     Backend, Data, DataView, DataViewMut, DftWord, DigestU64, HostDataRef, ScalarZnxShape, VecZnxInfos, ZnxInfos, ZnxView,
 };
 
-/// Prepared (DFT-domain) scalar polynomial for scalar-vector products.
+/// Packed (cold-prep) scalar polynomial for scalar-vector products.
 ///
-/// An `SvpPPol` holds a single polynomial in a prepared representation
-/// named by its [`DftWord`] type `W`. It is used as the left operand in
-/// [`SvpApplyDft`](crate::api::SvpApplyDft) to efficiently multiply a
-/// scalar polynomial by each column of a [`VecZnxDft`](crate::layouts::VecZnxDft).
+/// `SvpPPol` is the expensive-to-build prepared form, optimized for amortized
+/// repeated apply; [`SvpTPol`](crate::layouts::SvpTPol) is the cheaper hot-prep
+/// form for short reuse.
 ///
-/// Create via [`SvpPrepare`](crate::api::SvpPrepare) from a
-/// coefficient-domain [`ScalarZnx`](crate::layouts::ScalarZnx).
+/// Create via [`SvpPreparePPol`](crate::api::SvpPreparePPol) from a
+/// coefficient-domain [`ScalarZnx`](crate::layouts::ScalarZnx), then consume
+/// through the `svp_apply_ppol_*` family.
 ///
 /// Ring degree `n` is always a power of two, so the DFT-domain layout has a
 /// coefficient count that matches vector lane widths relative to buffer alignment.
