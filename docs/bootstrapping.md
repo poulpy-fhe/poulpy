@@ -171,7 +171,7 @@ EvalRound+ is used when either pipeline carries a bypass transform. With S2C-fir
 ## Parameters and keys
 
 A `BootstrappingPlan` is the complete ModUp/EvalMod recipe: its C2S-first or S2C-first pipeline, optional techniques (sparse-secret encapsulation and EvalRound+), the two homomorphic DFT plans, and the EvalMod plan.
-The constructors validate once — `DFTPlan::new` checks the factorization schedule (`(depth, giant_step)` pairs in evaluation order), while `BootstrappingPlan::new` checks the selected pipeline, stage directions, sparse weight, and EvalRound+ constraints — so a plan that exists is always shape-valid and the derived-key APIs (`galois_elements`) are infallible.
+The constructors validate once — `DFTPlan::new` checks the factorization schedule (`(depth, giant_step)` pairs in evaluation order), while `BootstrappingPlan::new` checks the selected pipeline, stage directions, sparse weight, and EvalRound+ constraints — so a plan that exists is always shape-valid and the derived-key APIs (`galois_elements`) are infallible. `DFTPlan::with_optimal_bsgs(log_n)` can replace the per-factor widths with the structure-aware, rotation-count-balanced defaults for the target ring.
 
 ```rust
 // Coefficient meta: CoeffsMeta::from_delta_budget(log_delta, log_budget).
@@ -179,18 +179,20 @@ let meta = CoeffsMeta::from_delta_budget;
 
 let coeffs_to_slots = DFTPlan::new(
     DFTType::Encode,
-    vec![(2, 4), (2, 4), (3, 4), (3, 4)],   // (depth, giant_step) per factor
+    vec![(2, 1), (2, 1), (3, 1), (3, 1)],   // (depth, giant_step) per factor
     DFTOutputFormat::SplitRealAndImag,
     meta(58, 2),
 )?
+.with_optimal_bsgs(11)                       // ring degree 2^11
 .with_scaling(1.0 / 16.0)?;                 // 1 / K
 
 let slots_to_coeffs = DFTPlan::new(
     DFTType::Decode,
-    vec![(3, 4), (3, 4), (2, 4), (2, 4)],
+    vec![(3, 1), (3, 1), (2, 1), (2, 1)],
     DFTOutputFormat::SplitRealAndImag,
     meta(39, 2),
 )?
+.with_optimal_bsgs(11)
 .with_scaling((11_f64).exp2())?;            // 2^log_msg_ratio
 
 let plan = BootstrappingPlan::new(

@@ -118,6 +118,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
         meta(58, 2),
     )
     .unwrap()
+    .with_optimal_bsgs(LOG_SLOTS + 1)
     .with_scaling(1. / FMOD_INTERVAL as f64)
     .unwrap();
     let slots_to_coeffs = DFTPlan::new(
@@ -127,6 +128,7 @@ pub fn test_bootstrapping_standard_e2e<BE, F, E>(
         meta(39, 2),
     )
     .unwrap()
+    .with_optimal_bsgs(LOG_SLOTS + 1)
     .with_scaling((LOG_MSG_RATIO as f64).exp2())
     .unwrap();
     let plan = BootstrappingPlan::new(
