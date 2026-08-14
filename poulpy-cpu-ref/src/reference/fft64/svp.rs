@@ -16,7 +16,7 @@ use crate::{
 
 fn prepare_inner<BE>(table: &ReimFFTTable<f64>, res: &mut [f64], a: &[i64])
 where
-    BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64>,
+    BE: ReimArith + ReimFFTExecute<ReimFFTTable<f64>, f64>,
 {
     BE::reim_from_znx(res, a);
     BE::reim_dft_execute(table, res);

@@ -3,19 +3,26 @@ use std::mem::size_of;
 
 use crate::{FFT64Neon, NTT4x30Neon};
 use poulpy_cpu_ref::hal_defaults::{
-    FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault, FFT64VecZnxDftDefault, FFT64VmpDefault,
-    HalVecZnxDefault, NTT4x30ConvolutionDefault, NTT4x30ModuleDefault, NTT4x30SvpDefault, NTT4x30VecZnxBigDefault,
-    NTT4x30VecZnxDftDefault, NTT4x30VmpDefault,
+    FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpPPolDefault, FFT64SvpTPolDefault, FFT64VecZnxBigDefault,
+    FFT64VecZnxDftDefault, FFT64VmpPMatDefault, FFT64VmpTMatDefault, HalVecZnxDefault, NTT4x30ConvolutionDefault,
+    NTT4x30ModuleDefault, NTT4x30SvpPPolDefault, NTT4x30SvpTPolDefault, NTT4x30VecZnxBigDefault, NTT4x30VecZnxDftDefault,
 };
 #[allow(unused_imports)]
 use poulpy_hal::{
-    api::{HostBufMut, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
-    layouts::{
-        Backend, MatZnxBackendRef, MatZnxInfos, Module, NoiseInfos, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
-        VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VmpPMatBackendMut,
-        VmpPMatBackendRef, ZnxInfos,
+    api::{
+        HostBufMut, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
+        VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApplyTmpA, VmpApplyPMatDftToDft, VmpTMatBytesOf,
     },
-    oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
+    layouts::{
+        Backend, MatZnxBackendRef, MatZnxInfos, Module, NoiseInfos, ScratchArena, SvpTPolToBackendMut, SvpTPolToBackendRef,
+        VecZnxBackendMut, VecZnxBackendRef, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut,
+        VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VmpPMatBackendMut, VmpPMatBackendRef,
+        VmpTMatBackendMut, VmpTMatBackendRef, VmpTMatToBackendMut, VmpTMatToBackendRef, ZnxInfos,
+    },
+    oep::{
+        HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalSvpPPolImpl, HalSvpTPolImpl, HalVecZnxBigImpl, HalVecZnxDftImpl,
+        HalVecZnxImpl, HalVmpImpl, HalVmpPMatImpl, HalVmpTMatImpl,
+    },
 };
 
 #[cfg(target_arch = "aarch64")]
@@ -49,8 +56,16 @@ unsafe impl HalModuleImpl<FFT64Neon> for FFT64Neon {
     poulpy_cpu_ref::hal_impl_module!(FFT64ModuleDefault);
 }
 
+unsafe impl HalVmpPMatImpl<FFT64Neon> for FFT64Neon {
+    poulpy_cpu_ref::hal_impl_vmp_pmat!(FFT64VmpPMatDefault);
+}
+
+unsafe impl HalVmpTMatImpl<FFT64Neon> for FFT64Neon {
+    poulpy_cpu_ref::hal_impl_vmp_tmat!(FFT64VmpTMatDefault);
+}
+
 unsafe impl HalVmpImpl<FFT64Neon> for FFT64Neon {
-    poulpy_cpu_ref::hal_impl_vmp!(FFT64VmpDefault);
+    poulpy_cpu_ref::hal_impl_vmp!();
 }
 
 unsafe impl HalConvolutionImpl<FFT64Neon> for FFT64Neon {
@@ -61,8 +76,16 @@ unsafe impl HalVecZnxBigImpl<FFT64Neon> for FFT64Neon {
     poulpy_cpu_ref::hal_impl_vec_znx_big!(FFT64VecZnxBigDefault);
 }
 
+unsafe impl HalSvpPPolImpl<FFT64Neon> for FFT64Neon {
+    poulpy_cpu_ref::hal_impl_svp_ppol!(FFT64SvpPPolDefault);
+}
+
+unsafe impl HalSvpTPolImpl<FFT64Neon> for FFT64Neon {
+    poulpy_cpu_ref::hal_impl_svp_tpol!(FFT64SvpTPolDefault);
+}
+
 unsafe impl HalSvpImpl<FFT64Neon> for FFT64Neon {
-    poulpy_cpu_ref::hal_impl_svp!(FFT64SvpDefault);
+    poulpy_cpu_ref::hal_impl_svp!();
 }
 
 unsafe impl HalVecZnxDftImpl<FFT64Neon> for FFT64Neon {
@@ -82,125 +105,185 @@ unsafe impl HalModuleImpl<NTT4x30Neon> for NTT4x30Neon {
 }
 
 #[cfg(target_arch = "aarch64")]
-unsafe impl HalVmpImpl<NTT4x30Neon> for NTT4x30Neon {
-    fn vmp_apply_dft_tmp_bytes(
-        module: &Module<Self>,
-        res_size: usize,
-        a_size: usize,
-        b_rows: usize,
-        b_cols_in: usize,
-        b_cols_out: usize,
-        b_size: usize,
-    ) -> usize {
-        let a_dft_size = a_size.min(b_rows);
-        <Self as Backend>::bytes_of_vec_znx_dft(module.n(), b_cols_in, a_dft_size)
-            + Self::vmp_apply_dft_to_dft_tmp_bytes(module, res_size, a_dft_size, b_rows, b_cols_in, b_cols_out, b_size)
+unsafe impl HalVmpPMatImpl<NTT4x30Neon> for NTT4x30Neon {
+    fn vmp_prepare_pmat_tmp_bytes(module: &Module<Self>, _r: usize, _ci: usize, _co: usize, _s: usize) -> usize {
+        crate::ntt4x30::vmp::vmp_prepare_pmat_tmp_bytes_neon(module.n())
     }
 
-    fn vmp_apply_dft<R>(
-        module: &Module<Self>,
-        res: &mut R,
-        a: &VecZnxBackendRef<'_, Self>,
-        b: &VmpPMatBackendRef<'_, Self>,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        R: VecZnxDftToBackendMut<Self>,
-    {
-        let a_cols = <VecZnxBackendRef<'_, Self> as VecZnxInfos>::cols(a);
-        let a_size = <VecZnxBackendRef<'_, Self> as ZnxInfos>::size(a);
-        let b_rows = <VmpPMatBackendRef<'_, Self> as MatZnxInfos>::rows(b);
-        let cols_to_copy = a_cols.min(b.cols_in());
-        let a_start_col = a_cols - cols_to_copy;
-        let a_dft_size = a_size.min(b_rows);
-        let offset = b.cols_in() - cols_to_copy;
-
-        scratch.consume(|scratch| {
-            let (mut a_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(module, b.cols_in(), a_dft_size);
-            for j in 0..offset {
-                module.vec_znx_dft_zero(&mut a_dft, j);
-            }
-            for j in 0..cols_to_copy {
-                module.vec_znx_dft_apply(1, 0, &mut a_dft, offset + j, a, a_start_col + j);
-            }
-            let mut res_ref = res.to_backend_mut();
-            module.vmp_apply_dft_to_dft(&mut res_ref, &a_dft.to_backend_ref(), b, 0, &mut scratch);
-            ((), scratch)
-        })
-    }
-
-    fn vmp_prepare_tmp_bytes(module: &Module<Self>, _rows: usize, _cols_in: usize, _cols_out: usize, _size: usize) -> usize {
-        crate::ntt4x30::vmp::vmp_prepare_tmp_bytes_neon(module.n())
-    }
-
-    fn vmp_prepare(
+    fn vmp_prepare_pmat(
         module: &Module<Self>,
         res: &mut VmpPMatBackendMut<'_, Self>,
         a: &MatZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt4x30::vmp::vmp_prepare_tmp_bytes_neon(module.n());
+        let bytes = crate::ntt4x30::vmp::vmp_prepare_pmat_tmp_bytes_neon(module.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30::vmp::vmp_prepare_neon_pm(module, res, a, tmp);
+        crate::ntt4x30::vmp::vmp_prepare_pmat_neon_pm(module, res, a, tmp);
     }
 
-    fn vmp_apply_dft_to_dft_tmp_bytes(
+    #[allow(clippy::too_many_arguments)]
+    fn vmp_apply_pmat_dft_to_dft_tmp_bytes(
         _module: &Module<Self>,
         _res_size: usize,
-        a_size: usize,
-        b_rows: usize,
-        b_cols_in: usize,
-        _b_cols_out: usize,
-        _b_size: usize,
+        a_rows: usize,
+        a_cols_in: usize,
+        _a_cols_out: usize,
+        _a_size: usize,
+        b_size: usize,
     ) -> usize {
-        crate::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(a_size, b_rows, b_cols_in)
+        crate::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(b_size, a_rows, a_cols_in)
     }
 
-    fn vmp_apply_dft_to_dft(
+    #[allow(clippy::too_many_arguments)]
+    fn vmp_apply_pmat_dft_to_dft(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &VecZnxDftBackendRef<'_, Self>,
-        b: &VmpPMatBackendRef<'_, Self>,
+        a: &VmpPMatBackendRef<'_, Self>,
+        b: &VecZnxDftBackendRef<'_, Self>,
         limb_offset: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(a.size(), b.rows(), b.cols_in());
+        let bytes = crate::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(b.size(), a.rows(), a.cols_in());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30::vmp::vmp_apply_dft_to_dft_neon(module, res, a, b, limb_offset, tmp);
+        crate::ntt4x30::vmp::vmp_apply_pmat_dft_to_dft_neon(module, res, b, a, limb_offset, tmp);
     }
 
-    fn vmp_apply_dft_to_dft_accumulate_tmp_bytes(
+    fn vmp_zero(_module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
+        poulpy_cpu_ref::reference::ntt4x30::vmp::ntt4x30_vmp_zero::<Self>(res);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn vmp_apply_pmat_dft_to_dft_accumulate_tmp_bytes(
         _module: &Module<Self>,
         _res_size: usize,
-        a_size: usize,
-        b_rows: usize,
-        b_cols_in: usize,
-        _b_cols_out: usize,
-        _b_size: usize,
+        a_rows: usize,
+        a_cols_in: usize,
+        _a_cols_out: usize,
+        _a_size: usize,
+        b_size: usize,
     ) -> usize {
-        crate::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(a_size, b_rows, b_cols_in)
+        crate::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(b_size, a_rows, a_cols_in)
     }
 
-    fn vmp_apply_dft_to_dft_accumulate(
+    /// Uses this backend's fused accumulating kernel rather than the trait's
+    /// temporary-plus-add default.
+    #[allow(clippy::too_many_arguments)]
+    fn vmp_apply_pmat_dft_to_dft_accumulate(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &VecZnxDftBackendRef<'_, Self>,
-        b: &VmpPMatBackendRef<'_, Self>,
+        a: &VmpPMatBackendRef<'_, Self>,
+        b: &VecZnxDftBackendRef<'_, Self>,
         limb_offset: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(a.size(), b.rows(), b.cols_in());
+        let bytes = crate::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(b.size(), a.rows(), a.cols_in());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30::vmp::vmp_apply_dft_to_dft_accumulate_neon(module, res, a, b, limb_offset, tmp);
+        crate::ntt4x30::vmp::vmp_apply_pmat_dft_to_dft_accumulate_neon(module, res, b, a, limb_offset, tmp);
     }
 
-    fn vmp_zero(module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
-        <Self as NTT4x30VmpDefault<Self>>::vmp_zero_default(module, res)
+    poulpy_cpu_ref::hal_impl_vmp_pmat!(kernels: skip);
+}
+
+#[cfg(target_arch = "aarch64")]
+unsafe impl HalVmpTMatImpl<NTT4x30Neon> for NTT4x30Neon {
+    /// This backend builds both tiers identically, so the hot-prep tier uses the
+    /// same accelerated packing and kernels as the packed tier.
+    fn vmp_prepare_tmat_tmp_bytes(module: &Module<Self>, _r: usize, _ci: usize, _co: usize, _s: usize) -> usize {
+        crate::ntt4x30::vmp::vmp_prepare_pmat_tmp_bytes_neon(module.n())
     }
+
+    fn vmp_prepare_tmat(
+        module: &Module<Self>,
+        res: &mut VmpTMatBackendMut<'_, Self>,
+        a: &MatZnxBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let bytes = crate::ntt4x30::vmp::vmp_prepare_pmat_tmp_bytes_neon(module.n());
+        let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+        crate::ntt4x30::vmp::vmp_prepare_tmat_neon_pm(module, res, a, tmp);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn vmp_apply_tmat_dft_to_dft_tmp_bytes(
+        _module: &Module<Self>,
+        _res_size: usize,
+        a_rows: usize,
+        a_cols_in: usize,
+        _a_cols_out: usize,
+        _a_size: usize,
+        b_size: usize,
+    ) -> usize {
+        crate::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(b_size, a_rows, a_cols_in)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn vmp_apply_tmat_dft_to_dft(
+        module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        a: &VmpTMatBackendRef<'_, Self>,
+        b: &VecZnxDftBackendRef<'_, Self>,
+        limb_offset: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let bytes = crate::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(b.size(), a.rows(), a.cols_in());
+        let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+        crate::ntt4x30::vmp::vmp_apply_tmat_dft_to_dft_neon(module, res, b, a, limb_offset, tmp);
+    }
+
+    fn vmp_tmat_zero(_module: &Module<Self>, res: &mut VmpTMatBackendMut<'_, Self>) {
+        poulpy_cpu_ref::reference::ntt4x30::vmp::ntt4x30_vmp_tmat_zero::<Self>(res);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn vmp_apply_tmat_dft_to_dft_accumulate_tmp_bytes(
+        _module: &Module<Self>,
+        _res_size: usize,
+        a_rows: usize,
+        a_cols_in: usize,
+        _a_cols_out: usize,
+        _a_size: usize,
+        b_size: usize,
+    ) -> usize {
+        crate::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(b_size, a_rows, a_cols_in)
+    }
+
+    /// Uses this backend's fused accumulating kernel rather than the trait's
+    /// temporary-plus-add default.
+    #[allow(clippy::too_many_arguments)]
+    fn vmp_apply_tmat_dft_to_dft_accumulate(
+        module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        a: &VmpTMatBackendRef<'_, Self>,
+        b: &VecZnxDftBackendRef<'_, Self>,
+        limb_offset: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let bytes = crate::ntt4x30::vmp::vmp_apply_tmp_bytes_neon(b.size(), a.rows(), a.cols_in());
+        let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+        crate::ntt4x30::vmp::vmp_apply_tmat_dft_to_dft_accumulate_neon(module, res, b, a, limb_offset, tmp);
+    }
+
+    poulpy_cpu_ref::hal_impl_vmp_tmat!(kernels: skip);
+}
+
+#[cfg(target_arch = "aarch64")]
+unsafe impl HalVmpImpl<NTT4x30Neon> for NTT4x30Neon {
+    poulpy_cpu_ref::hal_impl_vmp!();
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+unsafe impl HalVmpPMatImpl<NTT4x30Neon> for NTT4x30Neon {
+    poulpy_cpu_ref::hal_impl_vmp_pmat!(NTT4x30VmpPMatDefault);
+}
+
+#[cfg(not(target_arch = "aarch64"))]
+unsafe impl HalVmpTMatImpl<NTT4x30Neon> for NTT4x30Neon {
+    poulpy_cpu_ref::hal_impl_vmp_tmat!(NTT4x30VmpTMatDefault);
 }
 
 #[cfg(not(target_arch = "aarch64"))]
 unsafe impl HalVmpImpl<NTT4x30Neon> for NTT4x30Neon {
-    poulpy_cpu_ref::hal_impl_vmp!(NTT4x30VmpDefault);
+    poulpy_cpu_ref::hal_impl_vmp!();
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -395,8 +478,16 @@ unsafe impl HalVecZnxBigImpl<NTT4x30Neon> for NTT4x30Neon {
     poulpy_cpu_ref::hal_impl_vec_znx_big!(NTT4x30VecZnxBigDefault);
 }
 
+unsafe impl HalSvpPPolImpl<NTT4x30Neon> for NTT4x30Neon {
+    poulpy_cpu_ref::hal_impl_svp_ppol!(NTT4x30SvpPPolDefault);
+}
+
+unsafe impl HalSvpTPolImpl<NTT4x30Neon> for NTT4x30Neon {
+    poulpy_cpu_ref::hal_impl_svp_tpol!(NTT4x30SvpTPolDefault);
+}
+
 unsafe impl HalSvpImpl<NTT4x30Neon> for NTT4x30Neon {
-    poulpy_cpu_ref::hal_impl_svp!(NTT4x30SvpDefault);
+    poulpy_cpu_ref::hal_impl_svp!();
 }
 
 unsafe impl HalVecZnxDftImpl<NTT4x30Neon> for NTT4x30Neon {

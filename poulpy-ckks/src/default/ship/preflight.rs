@@ -11,7 +11,7 @@ use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
         VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApplyTmpA,
-        VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
+        VmpApplyPMatDftToDft, VmpApplyPMatDftToDftTmpBytes,
     },
     layouts::{Backend, Module},
 };
@@ -54,10 +54,10 @@ where
         + VecZnxDftAutomorphism<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
-        + VmpApplyDftToDft<BE>
+        + VmpApplyPMatDftToDft<BE>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VmpApplyDftToDftTmpBytes
+        + VmpApplyPMatDftToDftTmpBytes
         + VecZnxBigNormalizeTmpBytes,
     Src: CKKSCtBounds,
 {

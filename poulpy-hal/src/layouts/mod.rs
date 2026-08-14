@@ -28,6 +28,7 @@ mod vec_znx;
 mod vec_znx_big;
 mod vec_znx_dft;
 mod vmp_pmat;
+mod vmp_tmat;
 mod word;
 mod znx_base;
 
@@ -48,6 +49,7 @@ pub use vec_znx::*;
 pub use vec_znx_big::*;
 pub use vec_znx_dft::*;
 pub use vmp_pmat::*;
+pub use vmp_tmat::*;
 pub use word::*;
 pub use znx_base::*;
 
@@ -508,6 +510,10 @@ macro_rules! impl_backend_from {
                 <$from as poulpy_hal::layouts::Backend>::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size)
             }
 
+            fn bytes_of_vmp_tmat(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::bytes_of_vmp_tmat(n, rows, cols_in, cols_out, size)
+            }
+
             fn bytes_of_cnv_pvec_left(n: usize, cols: usize, size: usize) -> usize {
                 <$from as poulpy_hal::layouts::Backend>::bytes_of_cnv_pvec_left(n, cols, size)
             }
@@ -529,6 +535,8 @@ macro_rules! impl_backend_from {
         unsafe impl poulpy_hal::layouts::SvpTPolLayoutCompatible<$be> for $from {}
         unsafe impl poulpy_hal::layouts::VmpPMatLayoutCompatible<$from> for $be {}
         unsafe impl poulpy_hal::layouts::VmpPMatLayoutCompatible<$be> for $from {}
+        unsafe impl poulpy_hal::layouts::VmpTMatLayoutCompatible<$from> for $be {}
+        unsafe impl poulpy_hal::layouts::VmpTMatLayoutCompatible<$be> for $from {}
         unsafe impl poulpy_hal::layouts::CnvPVecLayoutCompatible<$from> for $be {}
         unsafe impl poulpy_hal::layouts::CnvPVecLayoutCompatible<$be> for $from {}
     };

@@ -6,7 +6,7 @@
 //! - **vec\_znx\_big** -- extended-precision accumulator operations.
 //! - **vec\_znx\_dft** -- DFT-domain operations (forward/inverse transform, arithmetic).
 //! - **svp** -- scalar-vector product preparation and application.
-//! - **vmp\_pmat** -- vector-matrix product preparation and application.
+//! - **vmp** -- vector-matrix product preparation and application.
 //! - **coeff\_mat\_pmat** -- coefficient-matrix preparation and application.
 //! - **convolution** -- bivariate convolution preparation and application.
 //! - **scratch** -- scratch buffer management.
@@ -22,7 +22,7 @@ mod svp;
 mod vec_znx;
 mod vec_znx_big;
 mod vec_znx_dft;
-mod vmp_pmat;
+mod vmp;
 
 pub use convolution::*;
 pub use module::*;
@@ -32,4 +32,4 @@ pub use svp::*;
 pub use vec_znx::*;
 pub use vec_znx_big::*;
 pub use vec_znx_dft::*;
-pub use vmp_pmat::*;
+pub use vmp::*;

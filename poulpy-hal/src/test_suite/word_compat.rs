@@ -24,17 +24,18 @@ use super::{
 use crate::layouts::SvpPPolToBackendMut;
 use crate::layouts::SvpTPolToBackendMut;
 use crate::layouts::VmpPMatToBackendMut;
+use crate::layouts::VmpTMatToBackendMut;
 
 use crate::{
     api::{
         ScratchOwnedAlloc, SvpPPolAlloc, SvpPreparePPol, SvpPrepareTPol, SvpTPolAlloc, VecZnxBigAlloc, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApply, VmpPMatAlloc, VmpPrepare,
-        VmpPrepareTmpBytes,
+        VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApply, VmpPMatAlloc, VmpPreparePMat,
+        VmpPreparePMatTmpBytes, VmpPrepareTMat, VmpPrepareTMatTmpBytes, VmpTMatAlloc,
     },
     layouts::{
         DataView, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, Module, ScratchOwned, SvpPPolLayoutCompatible,
         SvpPPolOwned, SvpTPolLayoutCompatible, SvpTPolOwned, VecZnxDftLayoutCompatible, VecZnxDftOwned, VmpPMatLayoutCompatible,
-        VmpPMatOwned,
+        VmpPMatOwned, VmpTMatLayoutCompatible, VmpTMatOwned,
     },
     source::Source,
 };
@@ -139,7 +140,7 @@ pub fn test_word_compat_svp_prepare_tpol_bytes<BA, BB>(
     );
 }
 
-/// Same input, `vmp_prepare` on each backend: the resulting `VmpPMat` buffers
+/// Same input, `vmp_prepare_pmat` on each backend: the resulting `VmpPMat` buffers
 /// must be byte-identical. Exact-arithmetic (NTT/CRT) words only.
 ///
 /// A backend pair that packs `VmpPMat` differently must not declare
@@ -148,7 +149,7 @@ pub fn test_word_compat_svp_prepare_tpol_bytes<BA, BB>(
 /// against the reference backend (block-interleaved q120c): their divergence
 /// under the shared `Q120bScalar` word is now prevented by construction, the
 /// backends being distinct container types with no `VmpPMat` marker.
-pub fn test_word_compat_vmp_prepare_bytes<BA, BB>(
+pub fn test_word_compat_vmp_prepare_pmat_bytes<BA, BB>(
     params: &TestParams,
     module_host: &Module<HostBytesBackend>,
     module_a: &Module<BA>,
@@ -156,8 +157,8 @@ pub fn test_word_compat_vmp_prepare_bytes<BA, BB>(
 ) where
     BA: crate::test_suite::TestBackend + VmpPMatLayoutCompatible<BB>,
     BB: crate::test_suite::TestBackend,
-    Module<BA>: VmpPMatAlloc<BA> + VmpPrepare<BA> + VmpPrepareTmpBytes,
-    Module<BB>: VmpPMatAlloc<BB> + VmpPrepare<BB> + VmpPrepareTmpBytes,
+    Module<BA>: VmpPMatAlloc<BA> + VmpPreparePMat<BA> + VmpPreparePMatTmpBytes,
+    Module<BB>: VmpPMatAlloc<BB> + VmpPreparePMat<BB> + VmpPreparePMatTmpBytes,
     ScratchOwned<BA>: ScratchOwnedAlloc<BA>,
     ScratchOwned<BB>: ScratchOwnedAlloc<BB>,
 {
@@ -166,8 +167,8 @@ pub fn test_word_compat_vmp_prepare_bytes<BA, BB>(
     let (rows, cols_in, cols_out, size) = (2, 2, 2, 3);
     let mut source = Source::new([0u8; 32]);
 
-    let mut scratch_a: ScratchOwned<BA> = ScratchOwned::alloc(module_a.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size));
-    let mut scratch_b: ScratchOwned<BB> = ScratchOwned::alloc(module_b.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size));
+    let mut scratch_a: ScratchOwned<BA> = ScratchOwned::alloc(module_a.vmp_prepare_pmat_tmp_bytes(rows, cols_in, cols_out, size));
+    let mut scratch_b: ScratchOwned<BB> = ScratchOwned::alloc(module_b.vmp_prepare_pmat_tmp_bytes(rows, cols_in, cols_out, size));
 
     let mut mat = module_host.mat_znx_alloc(rows, cols_in, cols_out, size);
     mat.fill_uniform(base2k, &mut source);
@@ -176,12 +177,12 @@ pub fn test_word_compat_vmp_prepare_bytes<BA, BB>(
 
     let mut pmat_a: VmpPMatOwned<BA> = module_a.vmp_pmat_alloc(rows, cols_in, cols_out, size);
     let mut pmat_b: VmpPMatOwned<BB> = module_b.vmp_pmat_alloc(rows, cols_in, cols_out, size);
-    module_a.vmp_prepare(
+    module_a.vmp_prepare_pmat(
         &mut pmat_a.to_backend_mut(),
         &<MatZnx<BA::OwnedBuf, BA::ZnxWord> as MatZnxToBackendRef<BA>>::to_backend_ref(&mat_a),
         &mut scratch_a.arena(),
     );
-    module_b.vmp_prepare(
+    module_b.vmp_prepare_pmat(
         &mut pmat_b.to_backend_mut(),
         &<MatZnx<BB::OwnedBuf, BB::ZnxWord> as MatZnxToBackendRef<BB>>::to_backend_ref(&mat_b),
         &mut scratch_b.arena(),
@@ -189,6 +190,59 @@ pub fn test_word_compat_vmp_prepare_bytes<BA, BB>(
     assert!(
         BA::to_host_bytes(pmat_a.data()) == BB::to_host_bytes(pmat_b.data()),
         "shared DftWord but different VmpPMat buffer bytes: one backend violates the word contract"
+    );
+}
+
+/// Same input, `vmp_prepare_tmat` on each backend: the resulting `VmpTMat` buffers
+/// must be byte-identical. Exact-arithmetic (NTT/CRT) words only.
+///
+/// A backend pair that packs `VmpTMat` differently must not declare
+/// [`VmpTMatLayoutCompatible`] and therefore cannot instantiate this test —
+/// notably the accelerated NTT4x30 backends (prime-major planar layout)
+/// against the reference backend (block-interleaved q120c): their divergence
+/// under the shared `Q120bScalar` word is now prevented by construction, the
+/// backends being distinct container types with no `VmpTMat` marker.
+pub fn test_word_compat_vmp_prepare_tmat_bytes<BA, BB>(
+    params: &TestParams,
+    module_host: &Module<HostBytesBackend>,
+    module_a: &Module<BA>,
+    module_b: &Module<BB>,
+) where
+    BA: crate::test_suite::TestBackend + VmpTMatLayoutCompatible<BB>,
+    BB: crate::test_suite::TestBackend,
+    Module<BA>: VmpTMatAlloc<BA> + VmpPrepareTMat<BA> + VmpPrepareTMatTmpBytes,
+    Module<BB>: VmpTMatAlloc<BB> + VmpPrepareTMat<BB> + VmpPrepareTMatTmpBytes,
+    ScratchOwned<BA>: ScratchOwnedAlloc<BA>,
+    ScratchOwned<BB>: ScratchOwnedAlloc<BB>,
+{
+    let base2k = params.base2k;
+    assert_eq!(module_a.n(), module_b.n());
+    let (rows, cols_in, cols_out, size) = (2, 2, 2, 3);
+    let mut source = Source::new([0u8; 32]);
+
+    let mut scratch_a: ScratchOwned<BA> = ScratchOwned::alloc(module_a.vmp_prepare_tmat_tmp_bytes(rows, cols_in, cols_out, size));
+    let mut scratch_b: ScratchOwned<BB> = ScratchOwned::alloc(module_b.vmp_prepare_tmat_tmp_bytes(rows, cols_in, cols_out, size));
+
+    let mut mat = module_host.mat_znx_alloc(rows, cols_in, cols_out, size);
+    mat.fill_uniform(base2k, &mut source);
+    let mat_a = upload_mat_znx::<BA>(&mat);
+    let mat_b = upload_mat_znx::<BB>(&mat);
+
+    let mut pmat_a: VmpTMatOwned<BA> = module_a.vmp_tmat_alloc(rows, cols_in, cols_out, size);
+    let mut pmat_b: VmpTMatOwned<BB> = module_b.vmp_tmat_alloc(rows, cols_in, cols_out, size);
+    module_a.vmp_prepare_tmat(
+        &mut pmat_a.to_backend_mut(),
+        &<MatZnx<BA::OwnedBuf, BA::ZnxWord> as MatZnxToBackendRef<BA>>::to_backend_ref(&mat_a),
+        &mut scratch_a.arena(),
+    );
+    module_b.vmp_prepare_tmat(
+        &mut pmat_b.to_backend_mut(),
+        &<MatZnx<BB::OwnedBuf, BB::ZnxWord> as MatZnxToBackendRef<BB>>::to_backend_ref(&mat_b),
+        &mut scratch_b.arena(),
+    );
+    assert!(
+        BA::to_host_bytes(pmat_a.data()) == BB::to_host_bytes(pmat_b.data()),
+        "shared DftWord but different VmpTMat buffer bytes: one backend violates the word contract"
     );
 }
 

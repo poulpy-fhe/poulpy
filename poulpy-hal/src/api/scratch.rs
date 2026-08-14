@@ -5,11 +5,14 @@
 //! objects (e.g., [`VecZnx`], [`VecZnxDft`], [`VmpPMat`]) out of them.
 
 use crate::{
-    api::{CnvPVecBytesOf, ModuleN, SvpPPolBytesOf, SvpTPolBytesOf, VecZnxBigBytesOf, VecZnxDftBytesOf, VmpPMatBytesOf},
+    api::{
+        CnvPVecBytesOf, ModuleN, SvpPPolBytesOf, SvpTPolBytesOf, VecZnxBigBytesOf, VecZnxDftBytesOf, VmpPMatBytesOf,
+        VmpTMatBytesOf,
+    },
     layouts::{
         Backend, CnvPVecL, CnvPVecLViewMut, CnvPVecR, CnvPVecRViewMut, MatZnx, MatZnxViewMut, ScalarZnx, ScalarZnxViewMut,
         ScratchArena, SvpPPol, SvpPPolViewMut, SvpTPol, SvpTPolViewMut, VecZnx, VecZnxBig, VecZnxBigViewMut, VecZnxDft,
-        VecZnxDftViewMut, VecZnxViewMut, VmpPMat, VmpPMatViewMut,
+        VecZnxDftViewMut, VecZnxViewMut, VmpPMat, VmpPMatViewMut, VmpTMat, VmpTMatViewMut,
     },
 };
 
@@ -149,6 +152,19 @@ pub trait ScratchArenaTakeBasic<'a, B: Backend>: Sized {
         B: 'a,
         M: VmpPMatBytesOf + ModuleN;
 
+    /// Takes a [`VmpTMat`] from the scratch arena.
+    fn take_vmp_tmat_scratch<M>(
+        self,
+        module: &M,
+        rows: usize,
+        cols_in: usize,
+        cols_out: usize,
+        size: usize,
+    ) -> (VmpTMatViewMut<'a, B>, Self)
+    where
+        B: 'a,
+        M: VmpTMatBytesOf + ModuleN;
+
     /// Takes a [`MatZnx`] from the scratch arena.
     fn take_mat_znx_scratch(
         self,
@@ -264,6 +280,25 @@ impl<'a, B: Backend> ScratchArenaTakeBasic<'a, B> for ScratchArena<'a, B> {
         let (data, arena) = self.take_region(module.bytes_of_vmp_pmat(rows, cols_in, cols_out, size));
         (
             VmpPMatViewMut::from_inner(VmpPMat::from_data(data, module.n(), rows, cols_in, cols_out, size)),
+            arena,
+        )
+    }
+
+    fn take_vmp_tmat_scratch<M>(
+        self,
+        module: &M,
+        rows: usize,
+        cols_in: usize,
+        cols_out: usize,
+        size: usize,
+    ) -> (VmpTMatViewMut<'a, B>, Self)
+    where
+        B: 'a,
+        M: VmpTMatBytesOf + ModuleN,
+    {
+        let (data, arena) = self.take_region(module.bytes_of_vmp_tmat(rows, cols_in, cols_out, size));
+        (
+            VmpTMatViewMut::from_inner(VmpTMat::from_data(data, module.n(), rows, cols_in, cols_out, size)),
             arena,
         )
     }

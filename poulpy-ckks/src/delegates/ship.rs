@@ -7,7 +7,7 @@ use poulpy_hal::{
     api::{
         CnvPVecBytesOf, Convolution, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
         VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApplyTmpA,
-        VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
+        VmpApplyPMatDftToDft, VmpApplyPMatDftToDftTmpBytes,
     },
     layouts::{Backend, Module, ScratchArena},
 };
@@ -44,10 +44,10 @@ where
         + VecZnxDftAutomorphism<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
-        + VmpApplyDftToDft<BE>
+        + VmpApplyPMatDftToDft<BE>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VmpApplyDftToDftTmpBytes
+        + VmpApplyPMatDftToDftTmpBytes
         + VecZnxBigNormalizeTmpBytes,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
     CKKSPlaintextOwned<BE>: GLWEToBackendRef<BE>,

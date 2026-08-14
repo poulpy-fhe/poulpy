@@ -1,7 +1,7 @@
 use poulpy_hal::layouts::VmpPMatToBackendMut;
 use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
-    api::{VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes},
+    api::{VmpPMatAlloc, VmpPMatBytesOf, VmpPreparePMat, VmpPreparePMatTmpBytes},
     layouts::{Backend, Data, Module, ScratchArena, VmpPMat, VmpPMatBackendRef},
 };
 
@@ -83,7 +83,7 @@ impl<D: Data, B: Backend> GGLWEInfos for GGLWEPrepared<D, B> {
 /// byte-size queries, and the prepare transform.
 pub trait GGLWEPreparedFactory<BE: Backend>
 where
-    Self: GetDegree + VmpPMatAlloc<BE> + VmpPMatBytesOf + VmpPrepare<BE> + VmpPrepareTmpBytes,
+    Self: GetDegree + VmpPMatAlloc<BE> + VmpPMatBytesOf + VmpPreparePMat<BE> + VmpPreparePMatTmpBytes,
 {
     /// Allocates a new [`GGLWEPrepared`] with the given parameters.
     fn gglwe_prepared_alloc(
@@ -157,7 +157,7 @@ where
     where
         A: GGLWEInfos,
     {
-        let lvl_0: usize = self.vmp_prepare_tmp_bytes(
+        let lvl_0: usize = self.vmp_prepare_pmat_tmp_bytes(
             infos.dnum().into(),
             infos.rank_in().into(),
             (infos.rank() + 1).into(),
@@ -188,12 +188,12 @@ where
             scratch.available(),
             self.gglwe_prepare_tmp_bytes(&res)
         );
-        self.vmp_prepare(&mut res.data, &other.data, scratch);
+        self.vmp_prepare_pmat(&mut res.data, &other.data, scratch);
     }
 }
 
 impl<BE: Backend> GGLWEPreparedFactory<BE> for Module<BE> where
-    Module<BE>: GetDegree + VmpPMatAlloc<BE> + VmpPMatBytesOf + VmpPrepare<BE> + VmpPrepareTmpBytes
+    Module<BE>: GetDegree + VmpPMatAlloc<BE> + VmpPMatBytesOf + VmpPreparePMat<BE> + VmpPreparePMatTmpBytes
 {
 }
 

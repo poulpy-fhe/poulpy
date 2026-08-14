@@ -13,8 +13,8 @@ use poulpy_hal::{
     api::{
         CnvPVecAlloc, CnvPVecBytesOf, Convolution, NegacyclicFFT, NegacyclicFFTNew, ScratchOwnedAlloc, ScratchOwnedBorrow,
         VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign, VecZnxDftApply,
-        VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApplyTmpA, VmpApplyDftToDft,
-        VmpApplyDftToDftTmpBytes,
+        VecZnxDftAutomorphism, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApplyTmpA, VmpApplyPMatDftToDft,
+        VmpApplyPMatDftToDftTmpBytes,
     },
     layouts::{HostBytesBackend, Module, ScratchOwned},
     source::Source,
@@ -268,10 +268,10 @@ where
         + VecZnxDftAutomorphism<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
-        + VmpApplyDftToDft<BE>
+        + VmpApplyPMatDftToDft<BE>
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VmpApplyDftToDftTmpBytes
+        + VmpApplyPMatDftToDftTmpBytes
         + VecZnxBigNormalizeTmpBytes,
     Module<HostBytesBackend>: TestContextHostModule,
     F: TestScalar,

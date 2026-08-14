@@ -27,7 +27,7 @@ use crate::ntt3x42_ifma::{
 };
 use poulpy_hal::layouts::{
     DataView, DataViewMut, MatZnxBackendRef, Module, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut,
-    VmpPMatBackendRef, ZnxView, ZnxViewMut,
+    VmpPMatBackendRef, VmpTMatBackendMut, VmpTMatBackendRef, ZnxView, ZnxViewMut,
 };
 
 use super::{
@@ -204,7 +204,7 @@ unsafe fn save_planar_result<const OVERWRITE: bool>(
 // IFMA-local VMP prepare
 // ──────────────────────────────────────────────────────────────────────────────
 
-pub(crate) fn vmp_prepare_tmp_bytes_ifma(n: usize) -> usize {
+pub(crate) fn vmp_prepare_pmat_tmp_bytes_ifma(n: usize) -> usize {
     6 * n * size_of::<u64>()
 }
 
@@ -226,13 +226,17 @@ const MASK22: u64 = (1 << 22) - 1;
 ///
 /// Element `(blk_quad, col, row)` offset in u64:
 ///   `((blk_quad * ncols + col) * nrows + row) * 16`.
-pub(crate) fn vmp_prepare_ifma(
+///
+/// Shared body of the two prepare kernels: this backend builds both tiers
+/// identically, so they differ only in their destination container, passed
+/// here as its raw buffer `out`.
+fn prepare_inner(
     module: &Module<crate::NTT3x42Ifma>,
-    res: &mut VmpPMatBackendMut<'_, crate::NTT3x42Ifma>,
+    n: usize,
+    out: &mut [u64],
     a: &MatZnxBackendRef<'_, crate::NTT3x42Ifma>,
     tmp: &mut [u64],
 ) {
-    let n = res.n();
     let nrows = a.cols_in() * a.rows();
     let ncols = a.cols_out() * a.size();
     let n_blk_quads = n / 8;
@@ -240,7 +244,6 @@ pub(crate) fn vmp_prepare_ifma(
     let (tmp_b, tmp_c_u64) = tmp.split_at_mut(3 * n);
     let tmp_c_u64 = &mut tmp_c_u64[..3 * n];
     let mat_i64: &[i64] = a.raw();
-    let pmat_u64: &mut [u64] = cast_slice_mut(res.data_mut());
 
     let bq_stride = ncols * nrows * 16;
     let col_stride = nrows * 16;
@@ -262,12 +265,34 @@ pub(crate) fn vmp_prepare_ifma(
                     let p0 = tmp_c_u64[coeff_base + i];
                     let p1 = tmp_c_u64[n + coeff_base + i];
                     let p2 = tmp_c_u64[2 * n + coeff_base + i];
-                    pmat_u64[dst_base + i] = p0 | (p1 & MASK22) << 42;
-                    pmat_u64[dst_base + 8 + i] = (p1 >> 22) | (p2 << 20);
+                    out[dst_base + i] = p0 | (p1 & MASK22) << 42;
+                    out[dst_base + 8 + i] = (p1 >> 22) | (p2 << 20);
                 }
             }
         }
     }
+}
+
+/// Prepares `a` into the packed cold-prep [`VmpPMat`](poulpy_hal::layouts::VmpPMat).
+pub(crate) fn vmp_prepare_pmat_ifma(
+    module: &Module<crate::NTT3x42Ifma>,
+    res: &mut VmpPMatBackendMut<'_, crate::NTT3x42Ifma>,
+    a: &MatZnxBackendRef<'_, crate::NTT3x42Ifma>,
+    tmp: &mut [u64],
+) {
+    let n = res.n();
+    prepare_inner(module, n, cast_slice_mut(res.data_mut()), a, tmp);
+}
+
+/// Prepares `a` into the transformed hot-prep [`VmpTMat`](poulpy_hal::layouts::VmpTMat).
+pub(crate) fn vmp_prepare_tmat_ifma(
+    module: &Module<crate::NTT3x42Ifma>,
+    res: &mut VmpTMatBackendMut<'_, crate::NTT3x42Ifma>,
+    a: &MatZnxBackendRef<'_, crate::NTT3x42Ifma>,
+    tmp: &mut [u64],
+) {
+    let n = res.n();
+    prepare_inner(module, n, cast_slice_mut(res.data_mut()), a, tmp);
 }
 
 #[inline(always)]
@@ -720,33 +745,38 @@ unsafe fn vmp_apply_core_pm<const OVERWRITE: bool>(
 // Public IFMA hooks
 // ──────────────────────────────────────────────────────────────────────────────
 
+/// Shared body of the four `*_dft_to_dft{,_accumulate}` kernels.
+///
+/// The matrix arrives as its raw buffer plus shape, so both tiers and both
+/// accumulation modes reach the same core; `OVERWRITE` selects whether `res` is
+/// written or accumulated into.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn vmp_apply_dft_to_dft_ifma(
+fn dft_to_dft_inner<const OVERWRITE: bool>(
     module: &Module<crate::NTT3x42Ifma>,
     res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
     a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
-    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
+    mat: &[u64],
+    rows: usize,
+    cols_in: usize,
+    cols_out: usize,
+    size: usize,
     limb_offset: usize,
     tmp: &mut [u64],
 ) {
     let n = res.n();
-    let res_size = res.size();
-    let nrows = pmat.rows() * pmat.cols_in();
-    let ncols = pmat.cols_out() * pmat.size();
-    let limb_offset = limb_offset * pmat.cols_out();
-    let _ = res_size;
+    let nrows = rows * cols_in;
+    let ncols = cols_out * size;
 
     let res_u64: &mut [u64] = cast_slice_mut(res.raw_mut());
     let a_u64: &[u64] = cast_slice(a.raw());
-    let pmat_u64: &[u64] = cast_slice(pmat.data());
 
     unsafe {
-        vmp_apply_core_pm::<true>(
+        vmp_apply_core_pm::<OVERWRITE>(
             n,
             res_u64,
             a_u64,
-            pmat_u64,
-            limb_offset,
+            mat,
+            limb_offset * cols_out,
             nrows,
             ncols,
             &handle(module).meta_bbc,
@@ -755,8 +785,9 @@ pub(crate) fn vmp_apply_dft_to_dft_ifma(
     }
 }
 
+/// `res = pmat * a`, with the matrix cold-prepared.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn vmp_apply_dft_to_dft_accumulate_ifma(
+pub(crate) fn vmp_apply_pmat_dft_to_dft_ifma(
     module: &Module<crate::NTT3x42Ifma>,
     res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
     a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
@@ -764,30 +795,90 @@ pub(crate) fn vmp_apply_dft_to_dft_accumulate_ifma(
     limb_offset: usize,
     tmp: &mut [u64],
 ) {
-    let n = res.n();
-    let res_size = res.size();
-    let nrows = pmat.rows() * pmat.cols_in();
-    let ncols = pmat.cols_out() * pmat.size();
-    let limb_offset = limb_offset * pmat.cols_out();
-    let _ = res_size;
+    dft_to_dft_inner::<true>(
+        module,
+        res,
+        a,
+        cast_slice(pmat.data()),
+        pmat.rows(),
+        pmat.cols_in(),
+        pmat.cols_out(),
+        pmat.size(),
+        limb_offset,
+        tmp,
+    );
+}
 
-    let res_u64: &mut [u64] = cast_slice_mut(res.raw_mut());
-    let a_u64: &[u64] = cast_slice(a.raw());
-    let pmat_u64: &[u64] = cast_slice(pmat.data());
+/// `res = tmat * a`, with the matrix hot-prepared.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn vmp_apply_tmat_dft_to_dft_ifma(
+    module: &Module<crate::NTT3x42Ifma>,
+    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
+    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
+    tmat: &VmpTMatBackendRef<'_, crate::NTT3x42Ifma>,
+    limb_offset: usize,
+    tmp: &mut [u64],
+) {
+    dft_to_dft_inner::<true>(
+        module,
+        res,
+        a,
+        cast_slice(tmat.data()),
+        tmat.rows(),
+        tmat.cols_in(),
+        tmat.cols_out(),
+        tmat.size(),
+        limb_offset,
+        tmp,
+    );
+}
 
-    unsafe {
-        vmp_apply_core_pm::<false>(
-            n,
-            res_u64,
-            a_u64,
-            pmat_u64,
-            limb_offset,
-            nrows,
-            ncols,
-            &handle(module).meta_bbc,
-            tmp,
-        );
-    }
+/// `res += pmat * a`, with the matrix cold-prepared.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn vmp_apply_pmat_dft_to_dft_accumulate_ifma(
+    module: &Module<crate::NTT3x42Ifma>,
+    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
+    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
+    pmat: &VmpPMatBackendRef<'_, crate::NTT3x42Ifma>,
+    limb_offset: usize,
+    tmp: &mut [u64],
+) {
+    dft_to_dft_inner::<false>(
+        module,
+        res,
+        a,
+        cast_slice(pmat.data()),
+        pmat.rows(),
+        pmat.cols_in(),
+        pmat.cols_out(),
+        pmat.size(),
+        limb_offset,
+        tmp,
+    );
+}
+
+/// `res += tmat * a`, with the matrix hot-prepared.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn vmp_apply_tmat_dft_to_dft_accumulate_ifma(
+    module: &Module<crate::NTT3x42Ifma>,
+    res: &mut VecZnxDftBackendMut<'_, crate::NTT3x42Ifma>,
+    a: &VecZnxDftBackendRef<'_, crate::NTT3x42Ifma>,
+    tmat: &VmpTMatBackendRef<'_, crate::NTT3x42Ifma>,
+    limb_offset: usize,
+    tmp: &mut [u64],
+) {
+    dft_to_dft_inner::<false>(
+        module,
+        res,
+        a,
+        cast_slice(tmat.data()),
+        tmat.rows(),
+        tmat.cols_in(),
+        tmat.cols_out(),
+        tmat.size(),
+        limb_offset,
+        tmp,
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -796,5 +887,11 @@ pub(crate) fn vmp_apply_dft_to_dft_accumulate_ifma(
 
 /// Zero a `VmpPMat<NTT3x42Ifma>`.
 pub(crate) fn vmp_zero(res: &mut VmpPMatBackendMut<'_, crate::NTT3x42Ifma>) {
+    res.data_mut().as_mut().fill(0);
+}
+
+/// Hot-prep counterpart; this backend builds both tiers identically.
+/// Zero a `VmpPMat<NTT3x42Ifma>`.
+pub(crate) fn vmp_tmat_zero(res: &mut VmpTMatBackendMut<'_, crate::NTT3x42Ifma>) {
     res.data_mut().as_mut().fill(0);
 }

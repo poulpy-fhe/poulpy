@@ -12,8 +12,9 @@ use crate::layouts::{
     VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftReborrowBackendMut, VecZnxDftReborrowBackendRef,
     VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VecZnxReborrowBackendMut, VecZnxReborrowBackendRef,
     VecZnxToBackendMut, VecZnxToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, VmpPMatReborrowBackendMut,
-    VmpPMatReborrowBackendRef, VmpPMatToBackendMut, VmpPMatToBackendRef, ZnxInfos, mat_znx_backend_mut_from_mut,
-    mat_znx_backend_ref_from_mut,
+    VmpPMatReborrowBackendRef, VmpPMatToBackendMut, VmpPMatToBackendRef, VmpTMatBackendMut, VmpTMatBackendRef,
+    VmpTMatReborrowBackendMut, VmpTMatReborrowBackendRef, VmpTMatToBackendMut, VmpTMatToBackendRef, ZnxInfos,
+    mat_znx_backend_mut_from_mut, mat_znx_backend_ref_from_mut,
 };
 
 macro_rules! view_wrapper {
@@ -108,6 +109,7 @@ vec_view_wrapper!(VecZnxViewMut, VecZnxBackendMut<'a, B>);
 vec_view_wrapper!(VecZnxBigViewMut, VecZnxBigBackendMut<'a, B>);
 vec_view_wrapper!(VecZnxDftViewMut, VecZnxDftBackendMut<'a, B>);
 mat_view_wrapper!(VmpPMatViewMut, VmpPMatBackendMut<'a, B>);
+mat_view_wrapper!(VmpTMatViewMut, VmpTMatBackendMut<'a, B>);
 
 impl<'a, B: Backend + 'a> CnvPVecLToBackendRef<B> for CnvPVecLViewMut<'a, B> {
     fn to_backend_ref(&self) -> CnvPVecLBackendRef<'_, B> {
@@ -227,6 +229,18 @@ impl<'a, B: Backend + 'a> VmpPMatToBackendRef<B> for VmpPMatViewMut<'a, B> {
 
 impl<'a, B: Backend + 'a> VmpPMatToBackendMut<B> for VmpPMatViewMut<'a, B> {
     fn to_backend_mut(&mut self) -> VmpPMatBackendMut<'_, B> {
+        self.inner.reborrow_backend_mut()
+    }
+}
+
+impl<'a, B: Backend + 'a> VmpTMatToBackendRef<B> for VmpTMatViewMut<'a, B> {
+    fn to_backend_ref(&self) -> VmpTMatBackendRef<'_, B> {
+        self.inner.reborrow_backend_ref()
+    }
+}
+
+impl<'a, B: Backend + 'a> VmpTMatToBackendMut<B> for VmpTMatViewMut<'a, B> {
+    fn to_backend_mut(&mut self) -> VmpTMatBackendMut<'_, B> {
         self.inner.reborrow_backend_mut()
     }
 }

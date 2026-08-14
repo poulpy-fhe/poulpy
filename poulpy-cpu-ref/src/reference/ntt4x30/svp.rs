@@ -30,7 +30,7 @@ use crate::{
 /// routine, not a hot path.
 fn prepare_inner<BE>(module: &impl NttModuleHandle, n: usize, res: &mut [Q120bScalar], a: &[i64])
 where
-    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttCFromB,
+    BE: NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttCFromB,
 {
     let mut tmp = vec![0u64; 4 * n];
     BE::ntt_from_znx64(&mut tmp, a);

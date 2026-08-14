@@ -14,14 +14,14 @@ use poulpy_cpu_ref::reference::ntt4x30::{
 };
 use poulpy_hal::layouts::{
     DataViewMut, MatZnxBackendRef, Module, VecZnxDftBackendMut, VecZnxDftBackendRef, VmpPMatBackendMut, VmpPMatBackendRef,
-    ZnxView, ZnxViewMut,
+    VmpTMatBackendMut, VmpTMatBackendRef, ZnxView, ZnxViewMut,
 };
 
 use super::mat_vec_avx::vec_mat1col_product_blkpair_bbc_pm_avx2;
 use crate::NTT4x30Avx;
 
 /// Scratch space (in bytes) required by the AVX VMP prepare kernel.
-pub(crate) fn vmp_prepare_tmp_bytes_avx(n: usize) -> usize {
+pub(crate) fn vmp_prepare_pmat_tmp_bytes_avx(n: usize) -> usize {
     8 * n * size_of::<u64>()
 }
 
@@ -30,20 +30,12 @@ pub(crate) fn vmp_prepare_tmp_bytes_avx(n: usize) -> usize {
 /// The prepared matrix uses one plane per CRT prime. Within each plane the
 /// layout is `block_pair -> output_column -> input_row`, and every row stores
 /// four u64 values in lane order `[blk0.c0, blk0.c1, blk1.c0, blk1.c1]`.
-pub(crate) fn vmp_prepare_avx_pm(
-    module: &Module<NTT4x30Avx>,
-    res: &mut VmpPMatBackendMut<'_, NTT4x30Avx>,
-    a: &MatZnxBackendRef<'_, NTT4x30Avx>,
-    tmp: &mut [u64],
-) {
-    let n = res.n();
-
-    debug_assert_eq!(a.n(), n);
-    debug_assert_eq!(res.cols_in(), a.cols_in());
-    debug_assert_eq!(res.rows(), a.rows());
-    debug_assert_eq!(res.cols_out(), a.cols_out());
-    debug_assert_eq!(res.size(), a.size());
-    debug_assert!(std::mem::size_of_val(tmp) >= vmp_prepare_tmp_bytes_avx(n));
+///
+/// Shared body of the two prepare kernels: this backend builds both tiers
+/// identically, so they differ only in their destination container, passed
+/// here as its raw buffer `out`.
+fn prepare_inner(module: &Module<NTT4x30Avx>, n: usize, out: &mut [u64], a: &MatZnxBackendRef<'_, NTT4x30Avx>, tmp: &mut [u64]) {
+    debug_assert!(std::mem::size_of_val(tmp) >= vmp_prepare_pmat_tmp_bytes_avx(n));
     debug_assert!(n.is_multiple_of(4));
 
     let nrows = a.cols_in() * a.rows();
@@ -57,7 +49,6 @@ pub(crate) fn vmp_prepare_avx_pm(
     let tmp_c: &mut [u32] = cast_slice_mut(tmp_c_u64);
 
     let mat_i64: &[i64] = a.raw();
-    let pmat_u64: &mut [u64] = cast_slice_mut(res.data_mut());
 
     for row_i in 0..nrows {
         for col_i in 0..ncols {
@@ -71,8 +62,8 @@ pub(crate) fn vmp_prepare_avx_pm(
             for bp in 0..n_block_pairs {
                 let coeff_base = 16 * bp;
                 for p in 0..4usize {
-                    let dst = p * plane_stride + bp * bp_stride + col_i * col_stride + row_i * 4;
-                    pmat_u64[dst..dst + 4].copy_from_slice(&[
+                    let at = p * plane_stride + bp * bp_stride + col_i * col_stride + row_i * 4;
+                    out[at..at + 4].copy_from_slice(&[
                         tmp_c_u64[coeff_base + p],
                         tmp_c_u64[coeff_base + 4 + p],
                         tmp_c_u64[coeff_base + 8 + p],
@@ -82,6 +73,38 @@ pub(crate) fn vmp_prepare_avx_pm(
             }
         }
     }
+}
+
+/// Prepares `a` into the packed cold-prep [`VmpPMat`](poulpy_hal::layouts::VmpPMat).
+pub(crate) fn vmp_prepare_pmat_avx_pm(
+    module: &Module<NTT4x30Avx>,
+    res: &mut VmpPMatBackendMut<'_, NTT4x30Avx>,
+    a: &MatZnxBackendRef<'_, NTT4x30Avx>,
+    tmp: &mut [u64],
+) {
+    let n = res.n();
+    debug_assert_eq!(a.n(), n);
+    debug_assert_eq!(res.cols_in(), a.cols_in());
+    debug_assert_eq!(res.rows(), a.rows());
+    debug_assert_eq!(res.cols_out(), a.cols_out());
+    debug_assert_eq!(res.size(), a.size());
+    prepare_inner(module, n, cast_slice_mut(res.data_mut()), a, tmp);
+}
+
+/// Prepares `a` into the transformed hot-prep [`VmpTMat`](poulpy_hal::layouts::VmpTMat).
+pub(crate) fn vmp_prepare_tmat_avx_pm(
+    module: &Module<NTT4x30Avx>,
+    res: &mut VmpTMatBackendMut<'_, NTT4x30Avx>,
+    a: &MatZnxBackendRef<'_, NTT4x30Avx>,
+    tmp: &mut [u64],
+) {
+    let n = res.n();
+    debug_assert_eq!(a.n(), n);
+    debug_assert_eq!(res.cols_in(), a.cols_in());
+    debug_assert_eq!(res.rows(), a.rows());
+    debug_assert_eq!(res.cols_out(), a.cols_out());
+    debug_assert_eq!(res.size(), a.size());
+    prepare_inner(module, n, cast_slice_mut(res.data_mut()), a, tmp);
 }
 
 /// Scratch space (in bytes) required by the AVX VMP apply kernels.
@@ -234,39 +257,40 @@ unsafe fn vmp_apply_core_avx_pm<const OVERWRITE: bool>(
     }
 }
 
-pub(crate) fn vmp_apply_dft_to_dft_avx(
+/// Shared body of the four `*_dft_to_dft{,_accumulate}` kernels.
+///
+/// The matrix arrives as its raw buffer plus shape, so both tiers and both
+/// accumulation modes reach the same core; `OVERWRITE` selects whether `res` is
+/// written or accumulated into.
+#[allow(clippy::too_many_arguments)]
+fn dft_to_dft_inner<const OVERWRITE: bool>(
     module: &Module<NTT4x30Avx>,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx>,
     a: &VecZnxDftBackendRef<'_, NTT4x30Avx>,
-    pmat: &VmpPMatBackendRef<'_, NTT4x30Avx>,
+    mat: &[u64],
+    rows: usize,
+    cols_in: usize,
+    cols_out: usize,
+    size: usize,
     limb_offset: usize,
     tmp: &mut [u64],
 ) {
     let n = res.n();
-    let nrows = pmat.cols_in() * pmat.rows();
-    let ncols = pmat.cols_out() * pmat.size();
+    let nrows = cols_in * rows;
+    let ncols = cols_out * size;
     let meta = module.get_bbc_meta();
 
     let res_u64: &mut [u64] = cast_slice_mut(res.raw_mut());
     let a_u64: &[u64] = cast_slice(a.raw());
-    let pmat_u64: &[u64] = cast_slice(pmat.raw());
 
     unsafe {
-        vmp_apply_core_avx_pm::<true>(
-            n,
-            res_u64,
-            a_u64,
-            pmat_u64,
-            limb_offset * pmat.cols_out(),
-            nrows,
-            ncols,
-            meta,
-            tmp,
-        );
+        vmp_apply_core_avx_pm::<OVERWRITE>(n, res_u64, a_u64, mat, limb_offset * cols_out, nrows, ncols, meta, tmp);
     }
 }
 
-pub(crate) fn vmp_apply_dft_to_dft_accumulate_avx(
+/// `res = pmat * a`, with the matrix cold-prepared.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn vmp_apply_pmat_dft_to_dft_avx(
     module: &Module<NTT4x30Avx>,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx>,
     a: &VecZnxDftBackendRef<'_, NTT4x30Avx>,
@@ -274,28 +298,90 @@ pub(crate) fn vmp_apply_dft_to_dft_accumulate_avx(
     limb_offset: usize,
     tmp: &mut [u64],
 ) {
-    let n = res.n();
-    let nrows = pmat.cols_in() * pmat.rows();
-    let ncols = pmat.cols_out() * pmat.size();
-    let meta = module.get_bbc_meta();
+    dft_to_dft_inner::<true>(
+        module,
+        res,
+        a,
+        cast_slice(pmat.raw()),
+        pmat.rows(),
+        pmat.cols_in(),
+        pmat.cols_out(),
+        pmat.size(),
+        limb_offset,
+        tmp,
+    );
+}
 
-    let res_u64: &mut [u64] = cast_slice_mut(res.raw_mut());
-    let a_u64: &[u64] = cast_slice(a.raw());
-    let pmat_u64: &[u64] = cast_slice(pmat.raw());
+/// `res = tmat * a`, with the matrix hot-prepared.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn vmp_apply_tmat_dft_to_dft_avx(
+    module: &Module<NTT4x30Avx>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx>,
+    tmat: &VmpTMatBackendRef<'_, NTT4x30Avx>,
+    limb_offset: usize,
+    tmp: &mut [u64],
+) {
+    dft_to_dft_inner::<true>(
+        module,
+        res,
+        a,
+        cast_slice(tmat.raw()),
+        tmat.rows(),
+        tmat.cols_in(),
+        tmat.cols_out(),
+        tmat.size(),
+        limb_offset,
+        tmp,
+    );
+}
 
-    unsafe {
-        vmp_apply_core_avx_pm::<false>(
-            n,
-            res_u64,
-            a_u64,
-            pmat_u64,
-            limb_offset * pmat.cols_out(),
-            nrows,
-            ncols,
-            meta,
-            tmp,
-        );
-    }
+/// `res += pmat * a`, with the matrix cold-prepared.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn vmp_apply_pmat_dft_to_dft_accumulate_avx(
+    module: &Module<NTT4x30Avx>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx>,
+    pmat: &VmpPMatBackendRef<'_, NTT4x30Avx>,
+    limb_offset: usize,
+    tmp: &mut [u64],
+) {
+    dft_to_dft_inner::<false>(
+        module,
+        res,
+        a,
+        cast_slice(pmat.raw()),
+        pmat.rows(),
+        pmat.cols_in(),
+        pmat.cols_out(),
+        pmat.size(),
+        limb_offset,
+        tmp,
+    );
+}
+
+/// `res += tmat * a`, with the matrix hot-prepared.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn vmp_apply_tmat_dft_to_dft_accumulate_avx(
+    module: &Module<NTT4x30Avx>,
+    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx>,
+    a: &VecZnxDftBackendRef<'_, NTT4x30Avx>,
+    tmat: &VmpTMatBackendRef<'_, NTT4x30Avx>,
+    limb_offset: usize,
+    tmp: &mut [u64],
+) {
+    dft_to_dft_inner::<false>(
+        module,
+        res,
+        a,
+        cast_slice(tmat.raw()),
+        tmat.rows(),
+        tmat.cols_in(),
+        tmat.cols_out(),
+        tmat.size(),
+        limb_offset,
+        tmp,
+    );
 }
 
 #[cfg(test)]

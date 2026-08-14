@@ -55,9 +55,27 @@ cross_backend_test_suite! {
     backend_test = crate::NTT4x30Neon,
     params = TestParams { size: 1<<8, base2k: 50 },
     tests = {
+        test_svp_apply_small_small_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_small_small_to_dft,
+        test_svp_apply_small_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_small_dft_to_dft,
+        test_svp_apply_tpol_small_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_tpol_small_to_dft,
+        test_svp_apply_tpol_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_tpol_dft_to_dft,
+        test_svp_apply_ppol_small_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_ppol_small_to_dft,
         test_svp_apply_ppol_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_ppol_dft_to_dft,
+        test_svp_apply_small_small_to_big => poulpy_hal::test_suite::svp::test_svp_apply_small_small_to_big,
+        test_svp_apply_small_dft_to_big => poulpy_hal::test_suite::svp::test_svp_apply_small_dft_to_big,
+        test_svp_apply_tpol_small_to_big => poulpy_hal::test_suite::svp::test_svp_apply_tpol_small_to_big,
+        test_svp_apply_tpol_dft_to_big => poulpy_hal::test_suite::svp::test_svp_apply_tpol_dft_to_big,
+        test_svp_apply_ppol_small_to_big => poulpy_hal::test_suite::svp::test_svp_apply_ppol_small_to_big,
+        test_svp_apply_ppol_dft_to_big => poulpy_hal::test_suite::svp::test_svp_apply_ppol_dft_to_big,
+        test_svp_apply_small_small_to_small => poulpy_hal::test_suite::svp::test_svp_apply_small_small_to_small,
+        test_svp_apply_small_dft_to_small => poulpy_hal::test_suite::svp::test_svp_apply_small_dft_to_small,
+        test_svp_apply_tpol_small_to_small => poulpy_hal::test_suite::svp::test_svp_apply_tpol_small_to_small,
+        test_svp_apply_tpol_dft_to_small => poulpy_hal::test_suite::svp::test_svp_apply_tpol_dft_to_small,
+        test_svp_apply_ppol_small_to_small => poulpy_hal::test_suite::svp::test_svp_apply_ppol_small_to_small,
+        test_svp_apply_ppol_dft_to_small => poulpy_hal::test_suite::svp::test_svp_apply_ppol_dft_to_small,
+        test_svp_apply_small_dft_to_dft_assign => poulpy_hal::test_suite::svp::test_svp_apply_small_dft_to_dft_assign,
+        test_svp_apply_tpol_dft_to_dft_assign => poulpy_hal::test_suite::svp::test_svp_apply_tpol_dft_to_dft_assign,
         test_svp_apply_ppol_dft_to_dft_assign => poulpy_hal::test_suite::svp::test_svp_apply_ppol_dft_to_dft_assign,
-        test_svp_apply_domain_matrix => poulpy_hal::test_suite::svp::test_svp_apply_domain_matrix,
     }
 }
 
@@ -109,7 +127,7 @@ cross_backend_test_suite! {
     backend_test = crate::NTT4x30Neon,
     params = TestParams { size: 1<<8, base2k: 50 },
     tests = {
-        test_vmp_apply_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft,
+        test_vmp_apply_pmat_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_pmat_dft_to_dft,
     }
 }
 

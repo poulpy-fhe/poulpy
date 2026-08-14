@@ -9,26 +9,26 @@ use criterion::{BenchmarkId, Criterion};
 
 use poulpy_hal::{
     api::{
-        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxDftAlloc, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft,
-        VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxDftAlloc, VmpApplyPMatDftToDft, VmpApplyPMatDftToDftTmpBytes,
+        VmpApplyPMatSmallToDft, VmpApplyPMatSmallToDftTmpBytes, VmpPMatAlloc, VmpPreparePMat, VmpPreparePMatTmpBytes,
     },
     layouts::{Backend, Module, ScratchOwned},
     source::Source,
 };
 
-pub fn bench_vmp_prepare<B>(params: &crate::params::VmpSweepParams, c: &mut Criterion, label: &str)
+pub fn bench_vmp_prepare_pmat<B>(params: &crate::params::VmpSweepParams, c: &mut Criterion, label: &str)
 where
-    Module<B>: ModuleNew<B> + VmpPMatAlloc<B> + VmpPrepare<B> + VmpPrepareTmpBytes,
+    Module<B>: ModuleNew<B> + VmpPMatAlloc<B> + VmpPreparePMat<B> + VmpPreparePMatTmpBytes,
     B: Backend<ZnxWord = i64>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
-    let group_name: String = format!("vmp_prepare::{label}");
+    let group_name: String = format!("vmp_prepare_pmat::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
     fn runner<B>(sweep: [usize; 5]) -> impl FnMut()
     where
-        Module<B>: ModuleNew<B> + VmpPMatAlloc<B> + VmpPrepare<B> + VmpPrepareTmpBytes,
+        Module<B>: ModuleNew<B> + VmpPMatAlloc<B> + VmpPreparePMat<B> + VmpPreparePMatTmpBytes,
         B: Backend<ZnxWord = i64>,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
     {
@@ -41,7 +41,7 @@ where
 
         let mut source: Source = Source::new([0u8; 32]);
 
-        let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size));
+        let mut scratch: ScratchOwned<B> = ScratchOwned::alloc(module.vmp_prepare_pmat_tmp_bytes(rows, cols_in, cols_out, size));
 
         let mat = crate::random_host_mat_znx(module.n(), rows, cols_in, cols_out, size, &mut source);
         let mat = crate::upload_host_mat_znx::<B>(&mat);
@@ -50,7 +50,7 @@ where
         move || {
             let mut pmat_backend = pmat.to_backend_mut();
             let mat_backend = crate::mat_znx_backend_ref::<B>(&mat);
-            module.vmp_prepare(&mut pmat_backend, &mat_backend, &mut scratch.borrow());
+            module.vmp_prepare_pmat(&mut pmat_backend, &mat_backend, &mut scratch.borrow());
             black_box(());
         }
     }
@@ -71,18 +71,22 @@ where
     group.finish();
 }
 
-pub fn bench_vmp_apply_dft<B: Backend<ZnxWord = i64>>(params: &crate::params::VmpSweepParams, c: &mut Criterion, label: &str)
-where
-    Module<B>: ModuleNew<B> + VmpApplyDftTmpBytes + VmpApplyDft<B> + VmpPMatAlloc<B> + VecZnxDftAlloc<B>,
+pub fn bench_vmp_apply_pmat_small_to_dft<B: Backend<ZnxWord = i64>>(
+    params: &crate::params::VmpSweepParams,
+    c: &mut Criterion,
+    label: &str,
+) where
+    Module<B>: ModuleNew<B> + VmpApplyPMatSmallToDftTmpBytes + VmpApplyPMatSmallToDft<B> + VmpPMatAlloc<B> + VecZnxDftAlloc<B>,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
-    let group_name: String = format!("vmp_apply_dft::{label}");
+    let group_name: String = format!("vmp_apply_pmat_small_to_dft::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
     fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 5]) -> impl FnMut()
     where
-        Module<B>: ModuleNew<B> + VmpApplyDftTmpBytes + VmpApplyDft<B> + VmpPMatAlloc<B> + VecZnxDftAlloc<B>,
+        Module<B>:
+            ModuleNew<B> + VmpApplyPMatSmallToDftTmpBytes + VmpApplyPMatSmallToDft<B> + VmpPMatAlloc<B> + VecZnxDftAlloc<B>,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
     {
         let module: Module<B> = Module::<B>::new(1 << sweep[0]);
@@ -95,7 +99,7 @@ where
         let mut source: Source = Source::new([0u8; 32]);
 
         let mut scratch: ScratchOwned<B> =
-            ScratchOwned::alloc(module.vmp_apply_dft_tmp_bytes(size, size, rows, cols_in, cols_out, size));
+            ScratchOwned::alloc(module.vmp_apply_pmat_small_to_dft_tmp_bytes(size, rows, cols_in, cols_out, size, size));
 
         let mut res: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(cols_out, size);
         let a = crate::random_host_vec_znx(module.n(), cols_in, size, &mut source);
@@ -105,7 +109,7 @@ where
         move || {
             let pmat = pmat.to_backend_ref();
             let a = crate::vec_znx_backend_ref::<B>(&a);
-            module.vmp_apply_dft(&mut res, &a, &pmat, &mut scratch.borrow());
+            module.vmp_apply_pmat_small_to_dft(&mut res.to_backend_mut(), &pmat, &a, &mut scratch.borrow());
             black_box(());
         }
     }
@@ -126,21 +130,21 @@ where
     group.finish();
 }
 
-pub fn bench_vmp_apply_dft_to_dft<B: Backend<ZnxWord = i64>>(
+pub fn bench_vmp_apply_pmat_dft_to_dft<B: Backend<ZnxWord = i64>>(
     params: &crate::params::VmpSweepParams,
     c: &mut Criterion,
     label: &str,
 ) where
-    Module<B>: ModuleNew<B> + VecZnxDftAlloc<B> + VmpPMatAlloc<B> + VmpApplyDftToDft<B> + VmpApplyDftToDftTmpBytes,
+    Module<B>: ModuleNew<B> + VecZnxDftAlloc<B> + VmpPMatAlloc<B> + VmpApplyPMatDftToDft<B> + VmpApplyPMatDftToDftTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
-    let group_name: String = format!("vmp_apply_dft_to_dft::{label}");
+    let group_name: String = format!("vmp_apply_pmat_dft_to_dft::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
     fn runner<B: Backend<ZnxWord = i64>>(sweep: [usize; 5]) -> impl FnMut()
     where
-        Module<B>: ModuleNew<B> + VecZnxDftAlloc<B> + VmpPMatAlloc<B> + VmpApplyDftToDft<B> + VmpApplyDftToDftTmpBytes,
+        Module<B>: ModuleNew<B> + VecZnxDftAlloc<B> + VmpPMatAlloc<B> + VmpApplyPMatDftToDft<B> + VmpApplyPMatDftToDftTmpBytes,
         ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
     {
         let module: Module<B> = Module::<B>::new(1 << sweep[0]);
@@ -153,7 +157,7 @@ pub fn bench_vmp_apply_dft_to_dft<B: Backend<ZnxWord = i64>>(
         let mut source: Source = Source::new([0u8; 32]);
 
         let mut scratch: ScratchOwned<B> =
-            ScratchOwned::alloc(module.vmp_apply_dft_to_dft_tmp_bytes(size, size, rows, cols_in, cols_out, size));
+            ScratchOwned::alloc(module.vmp_apply_pmat_dft_to_dft_tmp_bytes(size, rows, cols_in, cols_out, size, size));
 
         let mut res: VecZnxDftOwned<B> = module.vec_znx_dft_alloc(cols_out, size);
         let a: VecZnxDftOwned<B> = crate::random_backend_vec_znx_dft::<B>(module.n(), cols_in, size, &mut source);
@@ -162,7 +166,7 @@ pub fn bench_vmp_apply_dft_to_dft<B: Backend<ZnxWord = i64>>(
         move || {
             let pmat = pmat.to_backend_ref();
             let a = crate::vec_znx_dft_backend_ref::<B>(&a);
-            module.vmp_apply_dft_to_dft(&mut res.to_backend_mut(), &a, &pmat, 0, &mut scratch.borrow());
+            module.vmp_apply_pmat_dft_to_dft(&mut res.to_backend_mut(), &pmat, &a, 0, &mut scratch.borrow());
             black_box(());
         }
     }

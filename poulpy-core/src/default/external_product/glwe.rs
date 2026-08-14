@@ -10,8 +10,8 @@ use poulpy_hal::layouts::VecZnxDftBackendMut;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftApply,
-        VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes, VmpApplyDftToDft,
-        VmpApplyDftToDftAccumulate, VmpApplyDftToDftTmpBytes,
+        VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes,
+        VmpApplyPMatDftToDft, VmpApplyPMatDftToDftAccumulate, VmpApplyPMatDftToDftTmpBytes,
     },
     layouts::{Backend, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
 };
@@ -38,11 +38,11 @@ fn glwe_external_product_dft_fill<BE, M>(
     M: GLWEBytesOf<BE>
         + ModuleN
         + VecZnxDftBytesOf
-        + VmpApplyDftToDftTmpBytes
+        + VmpApplyPMatDftToDftTmpBytes
         + VecZnxNormalizeTmpBytes
         + VecZnxDftApply<BE>
-        + VmpApplyDftToDft<BE>
-        + VmpApplyDftToDftAccumulate<BE>
+        + VmpApplyPMatDftToDft<BE>
+        + VmpApplyPMatDftToDftAccumulate<BE>
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpBytes,
 {
@@ -56,13 +56,13 @@ fn glwe_external_product_dft_fill<BE, M>(
                 module.vec_znx_dft_apply(1, 0, &mut a_dft, j, &a.data, j);
             }
             let a_dft_ref = a_dft.to_backend_ref();
-            module.vmp_apply_dft_to_dft(res_dft, &a_dft_ref, &ggsw.data, 0, &mut scratch_1.borrow());
+            module.vmp_apply_pmat_dft_to_dft(res_dft, &ggsw.data, &a_dft_ref, 0, &mut scratch_1.borrow());
         } else {
             // Same shape as `gglwe_product_dft_default`, and the same two
             // constraints hold; see the comment there for why. In short:
             // `di == 0` is the overwriting pass and must run at the **full**
             // width so no limb of `res_dft` keeps stale scratch, and it must be
-            // `di == 0` because `vmp_apply_dft_to_dft` covers its destination
+            // `di == 0` because `vmp_apply_pmat_dft_to_dft` covers its destination
             // fully only at `limb_offset == 0`. The accumulating passes may keep
             // the narrow view. `- 2` rather than `- 1` because an elementary
             // limb product spans two limbs; do not tighten it.
@@ -80,14 +80,14 @@ fn glwe_external_product_dft_fill<BE, M>(
                 }
 
                 if di == 0 {
-                    module.vmp_apply_dft_to_dft(res_dft, &a_dft.to_backend_ref(), &ggsw.data, 0, &mut scratch_1.borrow());
+                    module.vmp_apply_pmat_dft_to_dft(res_dft, &ggsw.data, &a_dft.to_backend_ref(), 0, &mut scratch_1.borrow());
                 } else {
                     let res_compute_size = res_dft.size() - ((dsize - di) as isize - 2).max(0) as usize;
                     let mut res_view = res_dft.with_size_mut(res_compute_size);
-                    module.vmp_apply_dft_to_dft_accumulate(
+                    module.vmp_apply_pmat_dft_to_dft_accumulate(
                         &mut res_view,
-                        &a_dft.to_backend_ref(),
                         &ggsw.data,
+                        &a_dft.to_backend_ref(),
                         di,
                         &mut scratch_1.borrow(),
                     );
@@ -101,11 +101,11 @@ impl<BE: Backend> GLWEExternalProductInternal<BE> for Module<BE>
 where
     Self: ModuleN
         + VecZnxDftBytesOf
-        + VmpApplyDftToDftTmpBytes
+        + VmpApplyPMatDftToDftTmpBytes
         + VecZnxNormalizeTmpBytes
         + VecZnxDftApply<BE>
-        + VmpApplyDftToDft<BE>
-        + VmpApplyDftToDftAccumulate<BE>
+        + VmpApplyPMatDftToDft<BE>
+        + VmpApplyPMatDftToDftAccumulate<BE>
         + VecZnxBigBytesOf
         + VecZnxIdftApply<BE>
         + VecZnxIdftApplyTmpBytes
@@ -128,7 +128,7 @@ where
         } else {
             0
         };
-        let lvl_2: usize = self.vmp_apply_dft_to_dft_tmp_bytes(ggsw_size, in_size, in_size, cols, cols, ggsw_size);
+        let lvl_2: usize = self.vmp_apply_pmat_dft_to_dft_tmp_bytes(ggsw_size, in_size, cols, cols, ggsw_size, in_size);
         let lvl_3: usize =
             self.bytes_of_vec_znx_big(cols, ggsw_size).next_multiple_of(align) + self.vec_znx_idft_apply_tmp_bytes();
         (lvl_0.next_multiple_of(align) + lvl_1.next_multiple_of(align) + lvl_2).max(lvl_3)
@@ -155,7 +155,7 @@ where
 pub fn glwe_external_product_dft_fill_tmp_bytes_default<BE, M, A, G>(module: &M, a_infos: &A, ggsw_infos: &G) -> usize
 where
     BE: Backend,
-    M: VecZnxDftBytesOf + VmpApplyDftToDftTmpBytes,
+    M: VecZnxDftBytesOf + VmpApplyPMatDftToDftTmpBytes,
     A: GLWEInfos,
     G: GGSWInfos,
 {
@@ -169,7 +169,7 @@ where
     } else {
         0
     };
-    let lvl_2: usize = module.vmp_apply_dft_to_dft_tmp_bytes(ggsw_size, in_size, in_size, cols, cols, ggsw_size);
+    let lvl_2: usize = module.vmp_apply_pmat_dft_to_dft_tmp_bytes(ggsw_size, in_size, cols, cols, ggsw_size, in_size);
     lvl_0.next_multiple_of(align) + lvl_1.next_multiple_of(align) + lvl_2
 }
 
@@ -183,7 +183,7 @@ where
         + ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VmpApplyDftToDftTmpBytes
+        + VmpApplyPMatDftToDftTmpBytes
         + VecZnxIdftApplyTmpBytes
         + VecZnxBigNormalizeTmpBytes,
     R: GLWEInfos,

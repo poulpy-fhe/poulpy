@@ -22,62 +22,9 @@
 //! applied more than once.
 
 use crate::layouts::{
-    Backend, ScalarZnxBackendRef, ScratchArena, SvpPPolBackendMut, SvpPPolBackendRef, SvpPPolOwned, SvpTPolBackendMut,
-    SvpTPolBackendRef, SvpTPolOwned, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
+    Backend, ScalarZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
     VecZnxDftBackendRef,
 };
-
-/// Allocates an [crate::layouts::SvpPPol].
-pub trait SvpPPolAlloc<B: Backend> {
-    fn svp_ppol_alloc(&self, cols: usize) -> SvpPPolOwned<B>;
-}
-
-/// Returns the size in bytes to allocate a [crate::layouts::SvpPPol].
-pub trait SvpPPolBytesOf {
-    fn bytes_of_svp_ppol(&self, cols: usize) -> usize;
-}
-
-/// Allocates an [crate::layouts::SvpTPol].
-pub trait SvpTPolAlloc<B: Backend> {
-    fn svp_tpol_alloc(&self, cols: usize) -> SvpTPolOwned<B>;
-}
-
-/// Returns the size in bytes to allocate a [crate::layouts::SvpTPol].
-pub trait SvpTPolBytesOf {
-    fn bytes_of_svp_tpol(&self, cols: usize) -> usize;
-}
-
-/// Prepare a [crate::layouts::ScalarZnx] into an [crate::layouts::SvpPPol].
-pub trait SvpPreparePPol<B: Backend> {
-    fn svp_prepare_ppol(&self, res: &mut SvpPPolBackendMut<'_, B>, res_col: usize, a: &ScalarZnxBackendRef<'_, B>, a_col: usize);
-}
-
-/// Prepare a [crate::layouts::ScalarZnx] into an [crate::layouts::SvpTPol].
-pub trait SvpPrepareTPol<B: Backend> {
-    fn svp_prepare_tpol(&self, res: &mut SvpTPolBackendMut<'_, B>, res_col: usize, a: &ScalarZnxBackendRef<'_, B>, a_col: usize);
-}
-
-/// Copy one packed prepared scalar polynomial column into another.
-pub trait SvpPPolCopyBackend<B: Backend> {
-    fn svp_ppol_copy_backend(
-        &self,
-        res: &mut SvpPPolBackendMut<'_, B>,
-        res_col: usize,
-        a: &SvpPPolBackendRef<'_, B>,
-        a_col: usize,
-    );
-}
-
-/// Copy one transformed prepared scalar polynomial column into another.
-pub trait SvpTPolCopyBackend<B: Backend> {
-    fn svp_tpol_copy_backend(
-        &self,
-        res: &mut SvpTPolBackendMut<'_, B>,
-        res_col: usize,
-        a: &SvpTPolBackendRef<'_, B>,
-        a_col: usize,
-    );
-}
 
 /// Scratch bytes required by the `svp_apply_*_to_big` family, for a result of
 /// `res_size` limbs.
@@ -168,23 +115,6 @@ svp_apply_trait!(
     SvpApplySmallDftToDft::svp_apply_small_dft_to_dft(ScalarZnxBackendRef<'_, B>, VecZnxDftBackendRef<'_, B>) -> dft
 );
 svp_apply_trait!(
-    /// `res = a * b`, with `a` hot-prepared and `b` in coefficient domain.
-    SvpApplyTPolSmallToDft::svp_apply_tpol_small_to_dft(SvpTPolBackendRef<'_, B>, VecZnxBackendRef<'_, B>) -> dft
-);
-svp_apply_trait!(
-    /// `res = a * b`, with `a` hot-prepared and `b` in DFT domain.
-    SvpApplyTPolDftToDft::svp_apply_tpol_dft_to_dft(SvpTPolBackendRef<'_, B>, VecZnxDftBackendRef<'_, B>) -> dft
-);
-svp_apply_trait!(
-    /// `res = a * b`, with `a` cold-prepared and `b` in coefficient domain.
-    SvpApplyPPolSmallToDft::svp_apply_ppol_small_to_dft(SvpPPolBackendRef<'_, B>, VecZnxBackendRef<'_, B>) -> dft
-);
-svp_apply_trait!(
-    /// `res = a * b`, with `a` cold-prepared and `b` in DFT domain.
-    SvpApplyPPolDftToDft::svp_apply_ppol_dft_to_dft(SvpPPolBackendRef<'_, B>, VecZnxDftBackendRef<'_, B>) -> dft
-);
-
-svp_apply_trait!(
     /// [`SvpApplySmallSmallToDft`] followed by an inverse DFT.
     SvpApplySmallSmallToBig::svp_apply_small_small_to_big(ScalarZnxBackendRef<'_, B>, VecZnxBackendRef<'_, B>) -> big
 );
@@ -193,23 +123,6 @@ svp_apply_trait!(
     SvpApplySmallDftToBig::svp_apply_small_dft_to_big(ScalarZnxBackendRef<'_, B>, VecZnxDftBackendRef<'_, B>) -> big
 );
 svp_apply_trait!(
-    /// [`SvpApplyTPolSmallToDft`] followed by an inverse DFT.
-    SvpApplyTPolSmallToBig::svp_apply_tpol_small_to_big(SvpTPolBackendRef<'_, B>, VecZnxBackendRef<'_, B>) -> big
-);
-svp_apply_trait!(
-    /// [`SvpApplyTPolDftToDft`] followed by an inverse DFT.
-    SvpApplyTPolDftToBig::svp_apply_tpol_dft_to_big(SvpTPolBackendRef<'_, B>, VecZnxDftBackendRef<'_, B>) -> big
-);
-svp_apply_trait!(
-    /// [`SvpApplyPPolSmallToDft`] followed by an inverse DFT.
-    SvpApplyPPolSmallToBig::svp_apply_ppol_small_to_big(SvpPPolBackendRef<'_, B>, VecZnxBackendRef<'_, B>) -> big
-);
-svp_apply_trait!(
-    /// [`SvpApplyPPolDftToDft`] followed by an inverse DFT.
-    SvpApplyPPolDftToBig::svp_apply_ppol_dft_to_big(SvpPPolBackendRef<'_, B>, VecZnxDftBackendRef<'_, B>) -> big
-);
-
-svp_apply_trait!(
     /// [`SvpApplySmallSmallToBig`] followed by a normalization.
     SvpApplySmallSmallToSmall::svp_apply_small_small_to_small(ScalarZnxBackendRef<'_, B>, VecZnxBackendRef<'_, B>) -> small
 );
@@ -217,23 +130,6 @@ svp_apply_trait!(
     /// [`SvpApplySmallDftToBig`] followed by a normalization.
     SvpApplySmallDftToSmall::svp_apply_small_dft_to_small(ScalarZnxBackendRef<'_, B>, VecZnxDftBackendRef<'_, B>) -> small
 );
-svp_apply_trait!(
-    /// [`SvpApplyTPolSmallToBig`] followed by a normalization.
-    SvpApplyTPolSmallToSmall::svp_apply_tpol_small_to_small(SvpTPolBackendRef<'_, B>, VecZnxBackendRef<'_, B>) -> small
-);
-svp_apply_trait!(
-    /// [`SvpApplyTPolDftToBig`] followed by a normalization.
-    SvpApplyTPolDftToSmall::svp_apply_tpol_dft_to_small(SvpTPolBackendRef<'_, B>, VecZnxDftBackendRef<'_, B>) -> small
-);
-svp_apply_trait!(
-    /// [`SvpApplyPPolSmallToBig`] followed by a normalization.
-    SvpApplyPPolSmallToSmall::svp_apply_ppol_small_to_small(SvpPPolBackendRef<'_, B>, VecZnxBackendRef<'_, B>) -> small
-);
-svp_apply_trait!(
-    /// [`SvpApplyPPolDftToBig`] followed by a normalization.
-    SvpApplyPPolDftToSmall::svp_apply_ppol_dft_to_small(SvpPPolBackendRef<'_, B>, VecZnxDftBackendRef<'_, B>) -> small
-);
-
 /// `res = a * res` with `a` an unprepared scalar.
 pub trait SvpApplySmallDftToDftAssign<B: Backend> {
     fn svp_apply_small_dft_to_dft_assign(
@@ -245,24 +141,8 @@ pub trait SvpApplySmallDftToDftAssign<B: Backend> {
     );
 }
 
-/// `res = a * res` with `a` hot-prepared.
-pub trait SvpApplyTPolDftToDftAssign<B: Backend> {
-    fn svp_apply_tpol_dft_to_dft_assign(
-        &self,
-        res: &mut VecZnxDftBackendMut<'_, B>,
-        res_col: usize,
-        a: &SvpTPolBackendRef<'_, B>,
-        a_col: usize,
-    );
-}
+mod ppol;
+mod tpol;
 
-/// `res = a * res` with `a` cold-prepared.
-pub trait SvpApplyPPolDftToDftAssign<B: Backend> {
-    fn svp_apply_ppol_dft_to_dft_assign(
-        &self,
-        res: &mut VecZnxDftBackendMut<'_, B>,
-        res_col: usize,
-        a: &SvpPPolBackendRef<'_, B>,
-        a_col: usize,
-    );
-}
+pub use ppol::*;
+pub use tpol::*;

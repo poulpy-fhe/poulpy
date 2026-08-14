@@ -2,18 +2,25 @@ use std::mem::size_of;
 
 use crate::{FFT64Avx512, NTT4x30Avx512};
 use poulpy_cpu_ref::hal_defaults::{
-    FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault, FFT64VecZnxDftDefault, FFT64VmpDefault,
-    HalVecZnxDefault, NTT4x30ConvolutionDefault, NTT4x30ModuleDefault, NTT4x30SvpDefault, NTT4x30VecZnxBigDefault,
-    NTT4x30VecZnxDftDefault, NTT4x30VmpDefault,
+    FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpPPolDefault, FFT64SvpTPolDefault, FFT64VecZnxBigDefault,
+    FFT64VecZnxDftDefault, FFT64VmpPMatDefault, FFT64VmpTMatDefault, HalVecZnxDefault, NTT4x30ConvolutionDefault,
+    NTT4x30ModuleDefault, NTT4x30SvpPPolDefault, NTT4x30SvpTPolDefault, NTT4x30VecZnxBigDefault, NTT4x30VecZnxDftDefault,
 };
 use poulpy_hal::{
-    api::{HostBufMut, ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
-    layouts::{
-        Backend, MatZnxBackendRef, MatZnxInfos, Module, NoiseInfos, ScratchArena, VecZnxBackendMut, VecZnxBackendRef,
-        VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos, VmpPMatBackendMut,
-        VmpPMatBackendRef, ZnxInfos,
+    api::{
+        HostBufMut, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign, VecZnxDftBytesOf,
+        VecZnxDftZero, VecZnxIdftApplyTmpA, VmpTMatBytesOf,
     },
-    oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
+    layouts::{
+        Backend, MatZnxBackendRef, Module, NoiseInfos, ScratchArena, SvpTPolToBackendMut, SvpTPolToBackendRef, VecZnxBackendMut,
+        VecZnxBackendRef, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
+        VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef, VmpTMatBackendMut, VmpTMatBackendRef,
+        VmpTMatToBackendMut, VmpTMatToBackendRef,
+    },
+    oep::{
+        HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalSvpPPolImpl, HalSvpTPolImpl, HalVecZnxBigImpl, HalVecZnxDftImpl,
+        HalVecZnxImpl, HalVmpImpl, HalVmpPMatImpl, HalVmpTMatImpl,
+    },
 };
 
 fn take_host_typed<'a, BE, T>(arena: ScratchArena<'a, BE>, len: usize) -> (&'a mut [T], ScratchArena<'a, BE>)
@@ -47,8 +54,16 @@ unsafe impl HalModuleImpl<FFT64Avx512> for FFT64Avx512 {
     poulpy_cpu_ref::hal_impl_module!(FFT64ModuleDefault);
 }
 
+unsafe impl HalVmpPMatImpl<FFT64Avx512> for FFT64Avx512 {
+    poulpy_cpu_ref::hal_impl_vmp_pmat!(FFT64VmpPMatDefault);
+}
+
+unsafe impl HalVmpTMatImpl<FFT64Avx512> for FFT64Avx512 {
+    poulpy_cpu_ref::hal_impl_vmp_tmat!(FFT64VmpTMatDefault);
+}
+
 unsafe impl HalVmpImpl<FFT64Avx512> for FFT64Avx512 {
-    poulpy_cpu_ref::hal_impl_vmp!(FFT64VmpDefault);
+    poulpy_cpu_ref::hal_impl_vmp!();
 }
 
 unsafe impl HalConvolutionImpl<FFT64Avx512> for FFT64Avx512 {
@@ -59,8 +74,16 @@ unsafe impl HalVecZnxBigImpl<FFT64Avx512> for FFT64Avx512 {
     poulpy_cpu_ref::hal_impl_vec_znx_big!(FFT64VecZnxBigDefault);
 }
 
+unsafe impl HalSvpPPolImpl<FFT64Avx512> for FFT64Avx512 {
+    poulpy_cpu_ref::hal_impl_svp_ppol!(FFT64SvpPPolDefault);
+}
+
+unsafe impl HalSvpTPolImpl<FFT64Avx512> for FFT64Avx512 {
+    poulpy_cpu_ref::hal_impl_svp_tpol!(FFT64SvpTPolDefault);
+}
+
 unsafe impl HalSvpImpl<FFT64Avx512> for FFT64Avx512 {
-    poulpy_cpu_ref::hal_impl_svp!(FFT64SvpDefault);
+    poulpy_cpu_ref::hal_impl_svp!();
 }
 
 unsafe impl HalVecZnxDftImpl<FFT64Avx512> for FFT64Avx512 {
@@ -92,120 +115,168 @@ unsafe impl HalModuleImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     poulpy_cpu_ref::hal_impl_module!(NTT4x30ModuleDefault);
 }
 
-unsafe impl HalVmpImpl<NTT4x30Avx512> for NTT4x30Avx512 {
-    fn vmp_apply_dft_tmp_bytes(
-        module: &Module<Self>,
-        res_size: usize,
-        a_size: usize,
-        b_rows: usize,
-        b_cols_in: usize,
-        b_cols_out: usize,
-        b_size: usize,
-    ) -> usize {
-        let a_dft_size = a_size.min(b_rows);
-        <Self as Backend>::bytes_of_vec_znx_dft(module.n(), b_cols_in, a_dft_size)
-            + Self::vmp_apply_dft_to_dft_tmp_bytes(module, res_size, a_dft_size, b_rows, b_cols_in, b_cols_out, b_size)
+unsafe impl HalVmpPMatImpl<NTT4x30Avx512> for NTT4x30Avx512 {
+    fn vmp_prepare_pmat_tmp_bytes(module: &Module<Self>, _r: usize, _ci: usize, _co: usize, _s: usize) -> usize {
+        crate::ntt4x30_avx512::vmp::vmp_prepare_pmat_tmp_bytes_avx(module.n())
     }
 
-    fn vmp_apply_dft<R>(
-        module: &Module<Self>,
-        res: &mut R,
-        a: &VecZnxBackendRef<'_, Self>,
-        b: &VmpPMatBackendRef<'_, Self>,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        R: VecZnxDftToBackendMut<Self>,
-    {
-        let a_cols = <VecZnxBackendRef<'_, Self> as VecZnxInfos>::cols(a);
-        let a_size = <VecZnxBackendRef<'_, Self> as ZnxInfos>::size(a);
-        let b_rows = <VmpPMatBackendRef<'_, Self> as MatZnxInfos>::rows(b);
-        let cols_to_copy = a_cols.min(b.cols_in());
-        let a_start_col = a_cols - cols_to_copy;
-        let a_dft_size = a_size.min(b_rows);
-        let offset = b.cols_in() - cols_to_copy;
-
-        scratch.consume(|scratch| {
-            let (mut a_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(module, b.cols_in(), a_dft_size);
-            for j in 0..offset {
-                module.vec_znx_dft_zero(&mut a_dft, j);
-            }
-            for j in 0..cols_to_copy {
-                module.vec_znx_dft_apply(1, 0, &mut a_dft, offset + j, a, a_start_col + j);
-            }
-            let mut res_ref = res.to_backend_mut();
-            module.vmp_apply_dft_to_dft(&mut res_ref, &a_dft.to_backend_ref(), b, 0, &mut scratch);
-            ((), scratch)
-        })
-    }
-
-    fn vmp_prepare_tmp_bytes(module: &Module<Self>, _rows: usize, _cols_in: usize, _cols_out: usize, _size: usize) -> usize {
-        crate::ntt4x30_avx512::vmp::vmp_prepare_tmp_bytes_avx(module.n())
-    }
-
-    fn vmp_prepare(
+    fn vmp_prepare_pmat(
         module: &Module<Self>,
         res: &mut VmpPMatBackendMut<'_, Self>,
         a: &MatZnxBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt4x30_avx512::vmp::vmp_prepare_tmp_bytes_avx(module.n());
+        let bytes = crate::ntt4x30_avx512::vmp::vmp_prepare_pmat_tmp_bytes_avx(module.n());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30_avx512::vmp::vmp_prepare_avx_pm(module, res, a, tmp);
+        crate::ntt4x30_avx512::vmp::vmp_prepare_pmat_avx_pm(module, res, a, tmp);
     }
 
-    fn vmp_apply_dft_to_dft_tmp_bytes(
+    #[allow(clippy::too_many_arguments)]
+    fn vmp_apply_pmat_dft_to_dft_tmp_bytes(
         _module: &Module<Self>,
         _res_size: usize,
-        a_size: usize,
-        b_rows: usize,
-        b_cols_in: usize,
-        _b_cols_out: usize,
-        _b_size: usize,
+        a_rows: usize,
+        a_cols_in: usize,
+        _a_cols_out: usize,
+        _a_size: usize,
+        b_size: usize,
     ) -> usize {
-        crate::ntt4x30_avx512::vmp::vmp_apply_tmp_bytes_avx(a_size, b_rows, b_cols_in)
+        crate::ntt4x30_avx512::vmp::vmp_apply_tmp_bytes_avx(b_size, a_rows, a_cols_in)
     }
 
-    fn vmp_apply_dft_to_dft(
+    #[allow(clippy::too_many_arguments)]
+    fn vmp_apply_pmat_dft_to_dft(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &VecZnxDftBackendRef<'_, Self>,
-        b: &VmpPMatBackendRef<'_, Self>,
+        a: &VmpPMatBackendRef<'_, Self>,
+        b: &VecZnxDftBackendRef<'_, Self>,
         limb_offset: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt4x30_avx512::vmp::vmp_apply_tmp_bytes_avx(a.size(), b.rows(), b.cols_in());
+        let bytes = crate::ntt4x30_avx512::vmp::vmp_apply_tmp_bytes_avx(b.size(), a.rows(), a.cols_in());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30_avx512::vmp::vmp_apply_dft_to_dft_avx(module, res, a, b, limb_offset, tmp);
+        crate::ntt4x30_avx512::vmp::vmp_apply_pmat_dft_to_dft_avx(module, res, b, a, limb_offset, tmp);
     }
 
-    fn vmp_apply_dft_to_dft_accumulate_tmp_bytes(
+    fn vmp_zero(_module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
+        poulpy_cpu_ref::reference::ntt4x30::vmp::ntt4x30_vmp_zero::<Self>(res);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn vmp_apply_pmat_dft_to_dft_accumulate_tmp_bytes(
         _module: &Module<Self>,
         _res_size: usize,
-        a_size: usize,
-        b_rows: usize,
-        b_cols_in: usize,
-        _b_cols_out: usize,
-        _b_size: usize,
+        a_rows: usize,
+        a_cols_in: usize,
+        _a_cols_out: usize,
+        _a_size: usize,
+        b_size: usize,
     ) -> usize {
-        crate::ntt4x30_avx512::vmp::vmp_apply_tmp_bytes_avx(a_size, b_rows, b_cols_in)
+        crate::ntt4x30_avx512::vmp::vmp_apply_tmp_bytes_avx(b_size, a_rows, a_cols_in)
     }
 
-    fn vmp_apply_dft_to_dft_accumulate(
+    /// Uses this backend's fused accumulating kernel rather than the trait's
+    /// temporary-plus-add default.
+    #[allow(clippy::too_many_arguments)]
+    fn vmp_apply_pmat_dft_to_dft_accumulate(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &VecZnxDftBackendRef<'_, Self>,
-        b: &VmpPMatBackendRef<'_, Self>,
+        a: &VmpPMatBackendRef<'_, Self>,
+        b: &VecZnxDftBackendRef<'_, Self>,
         limb_offset: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt4x30_avx512::vmp::vmp_apply_tmp_bytes_avx(a.size(), b.rows(), b.cols_in());
+        let bytes = crate::ntt4x30_avx512::vmp::vmp_apply_tmp_bytes_avx(b.size(), a.rows(), a.cols_in());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30_avx512::vmp::vmp_apply_dft_to_dft_accumulate_avx(module, res, a, b, limb_offset, tmp);
+        crate::ntt4x30_avx512::vmp::vmp_apply_pmat_dft_to_dft_accumulate_avx(module, res, b, a, limb_offset, tmp);
     }
 
-    fn vmp_zero(module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
-        <Self as NTT4x30VmpDefault<Self>>::vmp_zero_default(module, res)
+    poulpy_cpu_ref::hal_impl_vmp_pmat!(kernels: skip);
+}
+
+unsafe impl HalVmpTMatImpl<NTT4x30Avx512> for NTT4x30Avx512 {
+    /// This backend builds both tiers identically, so the hot-prep tier uses the
+    /// same accelerated packing and kernels as the packed tier.
+    fn vmp_prepare_tmat_tmp_bytes(module: &Module<Self>, _r: usize, _ci: usize, _co: usize, _s: usize) -> usize {
+        crate::ntt4x30_avx512::vmp::vmp_prepare_pmat_tmp_bytes_avx(module.n())
     }
+
+    fn vmp_prepare_tmat(
+        module: &Module<Self>,
+        res: &mut VmpTMatBackendMut<'_, Self>,
+        a: &MatZnxBackendRef<'_, Self>,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let bytes = crate::ntt4x30_avx512::vmp::vmp_prepare_pmat_tmp_bytes_avx(module.n());
+        let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+        crate::ntt4x30_avx512::vmp::vmp_prepare_tmat_avx_pm(module, res, a, tmp);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn vmp_apply_tmat_dft_to_dft_tmp_bytes(
+        _module: &Module<Self>,
+        _res_size: usize,
+        a_rows: usize,
+        a_cols_in: usize,
+        _a_cols_out: usize,
+        _a_size: usize,
+        b_size: usize,
+    ) -> usize {
+        crate::ntt4x30_avx512::vmp::vmp_apply_tmp_bytes_avx(b_size, a_rows, a_cols_in)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn vmp_apply_tmat_dft_to_dft(
+        module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        a: &VmpTMatBackendRef<'_, Self>,
+        b: &VecZnxDftBackendRef<'_, Self>,
+        limb_offset: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let bytes = crate::ntt4x30_avx512::vmp::vmp_apply_tmp_bytes_avx(b.size(), a.rows(), a.cols_in());
+        let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+        crate::ntt4x30_avx512::vmp::vmp_apply_tmat_dft_to_dft_avx(module, res, b, a, limb_offset, tmp);
+    }
+
+    fn vmp_tmat_zero(_module: &Module<Self>, res: &mut VmpTMatBackendMut<'_, Self>) {
+        poulpy_cpu_ref::reference::ntt4x30::vmp::ntt4x30_vmp_tmat_zero::<Self>(res);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn vmp_apply_tmat_dft_to_dft_accumulate_tmp_bytes(
+        _module: &Module<Self>,
+        _res_size: usize,
+        a_rows: usize,
+        a_cols_in: usize,
+        _a_cols_out: usize,
+        _a_size: usize,
+        b_size: usize,
+    ) -> usize {
+        crate::ntt4x30_avx512::vmp::vmp_apply_tmp_bytes_avx(b_size, a_rows, a_cols_in)
+    }
+
+    /// Uses this backend's fused accumulating kernel rather than the trait's
+    /// temporary-plus-add default.
+    #[allow(clippy::too_many_arguments)]
+    fn vmp_apply_tmat_dft_to_dft_accumulate(
+        module: &Module<Self>,
+        res: &mut VecZnxDftBackendMut<'_, Self>,
+        a: &VmpTMatBackendRef<'_, Self>,
+        b: &VecZnxDftBackendRef<'_, Self>,
+        limb_offset: usize,
+        scratch: &mut ScratchArena<'_, Self>,
+    ) {
+        let bytes = crate::ntt4x30_avx512::vmp::vmp_apply_tmp_bytes_avx(b.size(), a.rows(), a.cols_in());
+        let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+        crate::ntt4x30_avx512::vmp::vmp_apply_tmat_dft_to_dft_accumulate_avx(module, res, b, a, limb_offset, tmp);
+    }
+
+    poulpy_cpu_ref::hal_impl_vmp_tmat!(kernels: skip);
+}
+
+unsafe impl HalVmpImpl<NTT4x30Avx512> for NTT4x30Avx512 {
+    poulpy_cpu_ref::hal_impl_vmp!();
 }
 
 unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
@@ -451,8 +522,16 @@ unsafe impl HalVecZnxBigImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     poulpy_cpu_ref::hal_impl_vec_znx_big!(NTT4x30VecZnxBigDefault);
 }
 
+unsafe impl HalSvpPPolImpl<NTT4x30Avx512> for NTT4x30Avx512 {
+    poulpy_cpu_ref::hal_impl_svp_ppol!(NTT4x30SvpPPolDefault);
+}
+
+unsafe impl HalSvpTPolImpl<NTT4x30Avx512> for NTT4x30Avx512 {
+    poulpy_cpu_ref::hal_impl_svp_tpol!(NTT4x30SvpTPolDefault);
+}
+
 unsafe impl HalSvpImpl<NTT4x30Avx512> for NTT4x30Avx512 {
-    poulpy_cpu_ref::hal_impl_svp!(NTT4x30SvpDefault);
+    poulpy_cpu_ref::hal_impl_svp!();
 }
 
 unsafe impl HalVecZnxDftImpl<NTT4x30Avx512> for NTT4x30Avx512 {
@@ -597,15 +676,30 @@ unsafe impl HalVecZnxDftImpl<NTT4x30Avx512> for NTT4x30Avx512 {
 mod ifma_impl {
     use super::{ScratchArena, take_host_typed};
     use crate::NTT3x42Ifma;
+    use crate::ntt3x42_ifma::svp::{
+        svp_apply_ppol_dft_to_dft, svp_apply_ppol_dft_to_dft_assign, svp_apply_ppol_small_to_dft, svp_apply_tpol_dft_to_dft,
+        svp_apply_tpol_dft_to_dft_assign, svp_apply_tpol_small_to_dft, svp_prepare_ppol, svp_prepare_tpol,
+    };
     use poulpy_cpu_ref::hal_defaults::HalVecZnxDefault;
+    use poulpy_hal::api::{
+        VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign, VecZnxDftBytesOf, VecZnxDftZero,
+        VecZnxIdftApplyTmpA, VmpTMatBytesOf,
+    };
+    use poulpy_hal::layouts::{
+        ScalarZnxBackendRef, SvpPPolBackendMut, SvpPPolBackendRef, SvpTPolBackendMut, SvpTPolBackendRef, SvpTPolToBackendMut,
+        SvpTPolToBackendRef, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VmpTMatToBackendMut,
+        VmpTMatToBackendRef, ZnxView, ZnxViewMut,
+    };
+    use poulpy_hal::layouts::{VmpTMatBackendMut, VmpTMatBackendRef};
     use poulpy_hal::{
-        api::{ScratchArenaTakeBasic, VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
         layouts::{
-            Backend, MatZnxBackendRef, MatZnxInfos, Module, NoiseInfos, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut,
-            VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos,
-            VmpPMatBackendMut, VmpPMatBackendRef, ZnxInfos,
+            MatZnxBackendRef, Module, NoiseInfos, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
+            VecZnxDftBackendRef, VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef,
         },
-        oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
+        oep::{
+            HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalSvpPPolImpl, HalSvpTPolImpl, HalVecZnxBigImpl, HalVecZnxDftImpl,
+            HalVecZnxImpl, HalVmpImpl, HalVmpPMatImpl, HalVmpTMatImpl,
+        },
     };
     use std::mem::size_of;
 
@@ -624,136 +718,300 @@ mod ifma_impl {
     }
 
     unsafe impl HalModuleImpl<NTT3x42Ifma> for NTT3x42Ifma {
-        fn new(n: u64) -> Module<NTT3x42Ifma> {
+        fn new(n: u64) -> Module<Self> {
             crate::ntt3x42_ifma::module::module_new(n)
         }
     }
 
-    unsafe impl HalVmpImpl<NTT3x42Ifma> for NTT3x42Ifma {
-        fn vmp_apply_dft_tmp_bytes(
-            module: &Module<Self>,
-            res_size: usize,
-            a_size: usize,
-            b_rows: usize,
-            b_cols_in: usize,
-            b_cols_out: usize,
-            b_size: usize,
-        ) -> usize {
-            let a_dft_size = a_size.min(b_rows);
-            <Self as Backend>::bytes_of_vec_znx_dft(module.n(), b_cols_in, a_dft_size)
-                + Self::vmp_apply_dft_to_dft_tmp_bytes(module, res_size, a_dft_size, b_rows, b_cols_in, b_cols_out, b_size)
+    unsafe impl HalVmpPMatImpl<NTT3x42Ifma> for NTT3x42Ifma {
+        fn vmp_prepare_pmat_tmp_bytes(module: &Module<Self>, _r: usize, _ci: usize, _co: usize, _s: usize) -> usize {
+            crate::ntt3x42_ifma::vmp::vmp_prepare_pmat_tmp_bytes_ifma(module.n())
         }
 
-        fn vmp_apply_dft<R>(
-            module: &Module<Self>,
-            res: &mut R,
-            a: &VecZnxBackendRef<'_, Self>,
-            b: &VmpPMatBackendRef<'_, Self>,
-            scratch: &mut ScratchArena<'_, Self>,
-        ) where
-            R: VecZnxDftToBackendMut<Self>,
-        {
-            let a_cols = <VecZnxBackendRef<'_, Self> as VecZnxInfos>::cols(a);
-            let a_size = <VecZnxBackendRef<'_, Self> as ZnxInfos>::size(a);
-            let b_rows = <VmpPMatBackendRef<'_, Self> as MatZnxInfos>::rows(b);
-            let cols_to_copy = a_cols.min(b.cols_in());
-            let a_start_col = a_cols - cols_to_copy;
-            let a_dft_size = a_size.min(b_rows);
-            let offset = b.cols_in() - cols_to_copy;
-
-            scratch.consume(|scratch| {
-                let (mut a_dft, mut scratch) = scratch.take_vec_znx_dft_scratch(module, b.cols_in(), a_dft_size);
-                for j in 0..offset {
-                    module.vec_znx_dft_zero(&mut a_dft, j);
-                }
-                for j in 0..cols_to_copy {
-                    module.vec_znx_dft_apply(1, 0, &mut a_dft, offset + j, a, a_start_col + j);
-                }
-                let mut res_ref = res.to_backend_mut();
-                module.vmp_apply_dft_to_dft(&mut res_ref, &a_dft.to_backend_ref(), b, 0, &mut scratch);
-                ((), scratch)
-            })
-        }
-
-        fn vmp_prepare_tmp_bytes(module: &Module<Self>, _rows: usize, _cols_in: usize, _cols_out: usize, _size: usize) -> usize {
-            crate::ntt3x42_ifma::vmp::vmp_prepare_tmp_bytes_ifma(module.n())
-        }
-
-        fn vmp_prepare(
+        fn vmp_prepare_pmat(
             module: &Module<Self>,
             res: &mut VmpPMatBackendMut<'_, Self>,
             a: &MatZnxBackendRef<'_, Self>,
             scratch: &mut ScratchArena<'_, Self>,
         ) {
-            let bytes = crate::ntt3x42_ifma::vmp::vmp_prepare_tmp_bytes_ifma(module.n());
+            let bytes = crate::ntt3x42_ifma::vmp::vmp_prepare_pmat_tmp_bytes_ifma(module.n());
             let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-            crate::ntt3x42_ifma::vmp::vmp_prepare_ifma(module, res, a, tmp);
+            crate::ntt3x42_ifma::vmp::vmp_prepare_pmat_ifma(module, res, a, tmp);
         }
 
-        fn vmp_apply_dft_to_dft_tmp_bytes(
+        #[allow(clippy::too_many_arguments)]
+        fn vmp_apply_pmat_dft_to_dft_tmp_bytes(
             _module: &Module<Self>,
             _res_size: usize,
-            a_size: usize,
-            b_rows: usize,
-            b_cols_in: usize,
-            _b_cols_out: usize,
-            _b_size: usize,
+            a_rows: usize,
+            a_cols_in: usize,
+            _a_cols_out: usize,
+            _a_size: usize,
+            b_size: usize,
         ) -> usize {
-            crate::ntt3x42_ifma::vmp::vmp_apply_tmp_bytes_ifma(a_size, b_rows, b_cols_in)
+            crate::ntt3x42_ifma::vmp::vmp_apply_tmp_bytes_ifma(b_size, a_rows, a_cols_in)
         }
 
-        fn vmp_apply_dft_to_dft(
+        #[allow(clippy::too_many_arguments)]
+        fn vmp_apply_pmat_dft_to_dft(
             module: &Module<Self>,
             res: &mut VecZnxDftBackendMut<'_, Self>,
-            a: &VecZnxDftBackendRef<'_, Self>,
-            b: &VmpPMatBackendRef<'_, Self>,
+            a: &VmpPMatBackendRef<'_, Self>,
+            b: &VecZnxDftBackendRef<'_, Self>,
             limb_offset: usize,
             scratch: &mut ScratchArena<'_, Self>,
         ) {
-            let bytes = crate::ntt3x42_ifma::vmp::vmp_apply_tmp_bytes_ifma(a.size(), b.rows(), b.cols_in());
+            let bytes = crate::ntt3x42_ifma::vmp::vmp_apply_tmp_bytes_ifma(b.size(), a.rows(), a.cols_in());
             let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-            crate::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_ifma(module, res, a, b, limb_offset, tmp);
-        }
-
-        fn vmp_apply_dft_to_dft_accumulate_tmp_bytes(
-            _module: &Module<Self>,
-            _res_size: usize,
-            a_size: usize,
-            b_rows: usize,
-            b_cols_in: usize,
-            _b_cols_out: usize,
-            _b_size: usize,
-        ) -> usize {
-            crate::ntt3x42_ifma::vmp::vmp_apply_tmp_bytes_ifma(a_size, b_rows, b_cols_in)
-        }
-
-        fn vmp_apply_dft_to_dft_accumulate(
-            module: &Module<Self>,
-            res: &mut VecZnxDftBackendMut<'_, Self>,
-            a: &VecZnxDftBackendRef<'_, Self>,
-            b: &VmpPMatBackendRef<'_, Self>,
-            limb_offset: usize,
-            scratch: &mut ScratchArena<'_, Self>,
-        ) {
-            let bytes = crate::ntt3x42_ifma::vmp::vmp_apply_tmp_bytes_ifma(a.size(), b.rows(), b.cols_in());
-            let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-            crate::ntt3x42_ifma::vmp::vmp_apply_dft_to_dft_accumulate_ifma(module, res, a, b, limb_offset, tmp);
+            crate::ntt3x42_ifma::vmp::vmp_apply_pmat_dft_to_dft_ifma(module, res, b, a, limb_offset, tmp);
         }
 
         fn vmp_zero(_module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
             crate::ntt3x42_ifma::vmp::vmp_zero(res);
         }
+
+        #[allow(clippy::too_many_arguments)]
+        fn vmp_apply_pmat_dft_to_dft_accumulate_tmp_bytes(
+            _module: &Module<Self>,
+            _res_size: usize,
+            a_rows: usize,
+            a_cols_in: usize,
+            _a_cols_out: usize,
+            _a_size: usize,
+            b_size: usize,
+        ) -> usize {
+            crate::ntt3x42_ifma::vmp::vmp_apply_tmp_bytes_ifma(b_size, a_rows, a_cols_in)
+        }
+
+        /// Uses this backend's fused accumulating kernel rather than the trait's
+        /// temporary-plus-add default.
+        #[allow(clippy::too_many_arguments)]
+        fn vmp_apply_pmat_dft_to_dft_accumulate(
+            module: &Module<Self>,
+            res: &mut VecZnxDftBackendMut<'_, Self>,
+            a: &VmpPMatBackendRef<'_, Self>,
+            b: &VecZnxDftBackendRef<'_, Self>,
+            limb_offset: usize,
+            scratch: &mut ScratchArena<'_, Self>,
+        ) {
+            let bytes = crate::ntt3x42_ifma::vmp::vmp_apply_tmp_bytes_ifma(b.size(), a.rows(), a.cols_in());
+            let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+            crate::ntt3x42_ifma::vmp::vmp_apply_pmat_dft_to_dft_accumulate_ifma(module, res, b, a, limb_offset, tmp);
+        }
+
+        poulpy_cpu_ref::hal_impl_vmp_pmat!(kernels: skip);
     }
 
-    use crate::ntt3x42_ifma::svp::NTT3x42IfmaSvpDefault;
+    unsafe impl HalVmpTMatImpl<NTT3x42Ifma> for NTT3x42Ifma {
+        /// The hot-prep tier is not accelerated on this backend, so it uses the
+        /// reference encoding and reference kernels throughout. Prepare and apply
+        /// stay on the same layout, so the tier is self-consistent.
+        fn vmp_prepare_tmat_tmp_bytes(module: &Module<Self>, _r: usize, _ci: usize, _co: usize, _s: usize) -> usize {
+            crate::ntt3x42_ifma::vmp::vmp_prepare_pmat_tmp_bytes_ifma(module.n())
+        }
+
+        fn vmp_prepare_tmat(
+            module: &Module<Self>,
+            res: &mut VmpTMatBackendMut<'_, Self>,
+            a: &MatZnxBackendRef<'_, Self>,
+            scratch: &mut ScratchArena<'_, Self>,
+        ) {
+            let bytes = crate::ntt3x42_ifma::vmp::vmp_prepare_pmat_tmp_bytes_ifma(module.n());
+            let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+            crate::ntt3x42_ifma::vmp::vmp_prepare_tmat_ifma(module, res, a, tmp);
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        fn vmp_apply_tmat_dft_to_dft_tmp_bytes(
+            _module: &Module<Self>,
+            _res_size: usize,
+            a_rows: usize,
+            a_cols_in: usize,
+            _a_cols_out: usize,
+            _a_size: usize,
+            b_size: usize,
+        ) -> usize {
+            crate::ntt3x42_ifma::vmp::vmp_apply_tmp_bytes_ifma(b_size, a_rows, a_cols_in)
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        fn vmp_apply_tmat_dft_to_dft(
+            module: &Module<Self>,
+            res: &mut VecZnxDftBackendMut<'_, Self>,
+            a: &VmpTMatBackendRef<'_, Self>,
+            b: &VecZnxDftBackendRef<'_, Self>,
+            limb_offset: usize,
+            scratch: &mut ScratchArena<'_, Self>,
+        ) {
+            let bytes = crate::ntt3x42_ifma::vmp::vmp_apply_tmp_bytes_ifma(b.size(), a.rows(), a.cols_in());
+            let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+            crate::ntt3x42_ifma::vmp::vmp_apply_tmat_dft_to_dft_ifma(module, res, b, a, limb_offset, tmp);
+        }
+
+        fn vmp_tmat_zero(_module: &Module<Self>, res: &mut VmpTMatBackendMut<'_, Self>) {
+            crate::ntt3x42_ifma::vmp::vmp_tmat_zero(res);
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        fn vmp_apply_tmat_dft_to_dft_accumulate_tmp_bytes(
+            _module: &Module<Self>,
+            _res_size: usize,
+            a_rows: usize,
+            a_cols_in: usize,
+            _a_cols_out: usize,
+            _a_size: usize,
+            b_size: usize,
+        ) -> usize {
+            crate::ntt3x42_ifma::vmp::vmp_apply_tmp_bytes_ifma(b_size, a_rows, a_cols_in)
+        }
+
+        /// Uses this backend's fused accumulating kernel rather than the trait's
+        /// temporary-plus-add default.
+        #[allow(clippy::too_many_arguments)]
+        fn vmp_apply_tmat_dft_to_dft_accumulate(
+            module: &Module<Self>,
+            res: &mut VecZnxDftBackendMut<'_, Self>,
+            a: &VmpTMatBackendRef<'_, Self>,
+            b: &VecZnxDftBackendRef<'_, Self>,
+            limb_offset: usize,
+            scratch: &mut ScratchArena<'_, Self>,
+        ) {
+            let bytes = crate::ntt3x42_ifma::vmp::vmp_apply_tmp_bytes_ifma(b.size(), a.rows(), a.cols_in());
+            let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
+            crate::ntt3x42_ifma::vmp::vmp_apply_tmat_dft_to_dft_accumulate_ifma(module, res, b, a, limb_offset, tmp);
+        }
+
+        poulpy_cpu_ref::hal_impl_vmp_tmat!(kernels: skip);
+    }
+
+    unsafe impl HalVmpImpl<NTT3x42Ifma> for NTT3x42Ifma {
+        poulpy_cpu_ref::hal_impl_vmp!();
+    }
+
     use poulpy_cpu_ref::hal_defaults::NTT4x30VecZnxBigDefault;
 
     unsafe impl HalVecZnxBigImpl<NTT3x42Ifma> for NTT3x42Ifma {
         poulpy_cpu_ref::hal_impl_vec_znx_big!(NTT4x30VecZnxBigDefault);
     }
 
+    unsafe impl HalSvpPPolImpl<NTT3x42Ifma> for NTT3x42Ifma {
+        fn svp_prepare_ppol(
+            module: &Module<Self>,
+            res: &mut SvpPPolBackendMut<'_, Self>,
+            res_col: usize,
+            a: &ScalarZnxBackendRef<'_, Self>,
+            a_col: usize,
+        ) {
+            svp_prepare_ppol(module, res, res_col, a, a_col);
+        }
+
+        fn svp_apply_ppol_small_to_dft(
+            module: &Module<Self>,
+            res: &mut VecZnxDftBackendMut<'_, Self>,
+            res_col: usize,
+            a: &SvpPPolBackendRef<'_, Self>,
+            a_col: usize,
+            b: &VecZnxBackendRef<'_, Self>,
+            b_col: usize,
+        ) {
+            svp_apply_ppol_small_to_dft(module, res, res_col, a, a_col, b, b_col);
+        }
+
+        fn svp_apply_ppol_dft_to_dft(
+            _module: &Module<Self>,
+            res: &mut VecZnxDftBackendMut<'_, Self>,
+            res_col: usize,
+            a: &SvpPPolBackendRef<'_, Self>,
+            a_col: usize,
+            b: &VecZnxDftBackendRef<'_, Self>,
+            b_col: usize,
+        ) {
+            svp_apply_ppol_dft_to_dft(res, res_col, a, a_col, b, b_col);
+        }
+
+        fn svp_apply_ppol_dft_to_dft_assign(
+            _module: &Module<Self>,
+            res: &mut VecZnxDftBackendMut<'_, Self>,
+            res_col: usize,
+            a: &SvpPPolBackendRef<'_, Self>,
+            a_col: usize,
+        ) {
+            svp_apply_ppol_dft_to_dft_assign(res, res_col, a, a_col);
+        }
+
+        fn svp_ppol_copy_backend(
+            _module: &Module<Self>,
+            res: &mut SvpPPolBackendMut<'_, Self>,
+            res_col: usize,
+            a: &SvpPPolBackendRef<'_, Self>,
+            a_col: usize,
+        ) {
+            res.at_mut(res_col, 0).copy_from_slice(a.at(a_col, 0));
+        }
+
+        poulpy_cpu_ref::hal_impl_svp_ppol!(kernels: skip);
+    }
+
+    unsafe impl HalSvpTPolImpl<NTT3x42Ifma> for NTT3x42Ifma {
+        fn svp_prepare_tpol(
+            module: &Module<Self>,
+            res: &mut SvpTPolBackendMut<'_, Self>,
+            res_col: usize,
+            a: &ScalarZnxBackendRef<'_, Self>,
+            a_col: usize,
+        ) {
+            svp_prepare_tpol(module, res, res_col, a, a_col);
+        }
+
+        fn svp_apply_tpol_small_to_dft(
+            module: &Module<Self>,
+            res: &mut VecZnxDftBackendMut<'_, Self>,
+            res_col: usize,
+            a: &SvpTPolBackendRef<'_, Self>,
+            a_col: usize,
+            b: &VecZnxBackendRef<'_, Self>,
+            b_col: usize,
+        ) {
+            svp_apply_tpol_small_to_dft(module, res, res_col, a, a_col, b, b_col);
+        }
+
+        fn svp_apply_tpol_dft_to_dft(
+            _module: &Module<Self>,
+            res: &mut VecZnxDftBackendMut<'_, Self>,
+            res_col: usize,
+            a: &SvpTPolBackendRef<'_, Self>,
+            a_col: usize,
+            b: &VecZnxDftBackendRef<'_, Self>,
+            b_col: usize,
+        ) {
+            svp_apply_tpol_dft_to_dft(res, res_col, a, a_col, b, b_col);
+        }
+
+        fn svp_apply_tpol_dft_to_dft_assign(
+            _module: &Module<Self>,
+            res: &mut VecZnxDftBackendMut<'_, Self>,
+            res_col: usize,
+            a: &SvpTPolBackendRef<'_, Self>,
+            a_col: usize,
+        ) {
+            svp_apply_tpol_dft_to_dft_assign(res, res_col, a, a_col);
+        }
+
+        fn svp_tpol_copy_backend(
+            _module: &Module<Self>,
+            res: &mut SvpTPolBackendMut<'_, Self>,
+            res_col: usize,
+            a: &SvpTPolBackendRef<'_, Self>,
+            a_col: usize,
+        ) {
+            res.at_mut(res_col, 0).copy_from_slice(a.at(a_col, 0));
+        }
+
+        poulpy_cpu_ref::hal_impl_svp_tpol!(kernels: skip);
+    }
+
     unsafe impl HalSvpImpl<NTT3x42Ifma> for NTT3x42Ifma {
-        poulpy_cpu_ref::hal_impl_svp!(NTT3x42IfmaSvpDefault);
+        poulpy_cpu_ref::hal_impl_svp!();
     }
 
     unsafe impl HalVecZnxDftImpl<NTT3x42Ifma> for NTT3x42Ifma {

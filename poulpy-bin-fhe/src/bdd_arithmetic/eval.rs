@@ -14,7 +14,8 @@ use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxBigAddSmallAssign, VecZnxBigAddSmallIntoBackend, VecZnxBigBytesOf,
         VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxBigSubSmallABackend, VecZnxDftAddAssign, VecZnxDftApply,
-        VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApply, VecZnxNormalizeTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
+        VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApply, VecZnxNormalizeTmpBytes, VmpApplyPMatDftToDft,
+        VmpApplyPMatDftToDftTmpBytes,
     },
     layouts::{
         Backend, HostDataMut, Module, ScratchArena, VecZnxBigViewMut, ZnxZero, vec_znx_backend_ref_from_mut,
@@ -349,8 +350,8 @@ impl<BE: Backend<OwnedBuf: HostDataMut + HostDataRef, ZnxWord = i64>> Cswap<BE> 
         + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>
         + VecZnxNormalizeTmpBytes
-        + VmpApplyDftToDft<BE>
-        + VmpApplyDftToDftTmpBytes
+        + VmpApplyPMatDftToDft<BE>
+        + VmpApplyPMatDftToDftTmpBytes
 {
 }
 
@@ -386,8 +387,8 @@ where
         + VecZnxDftZero<BE>
         + VecZnxIdftApply<BE>
         + VecZnxNormalizeTmpBytes
-        + VmpApplyDftToDft<BE>
-        + VmpApplyDftToDftTmpBytes,
+        + VmpApplyPMatDftToDft<BE>
+        + VmpApplyPMatDftToDftTmpBytes,
 {
     /// Returns the minimum scratch-space size in bytes required by [`cswap`][Self::cswap].
     fn cswap_tmp_bytes<R, A, S>(&self, res_a_infos: &R, res_b_infos: &A, s_infos: &S) -> usize

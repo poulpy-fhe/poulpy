@@ -1,5 +1,5 @@
 use poulpy_hal::{
-    api::VmpPrepare,
+    api::VmpPreparePMat,
     layouts::{Backend, Data, HostDataMut, Module, ScratchArena},
 };
 
@@ -189,7 +189,7 @@ where
 
         assert_eq!(res.keys.len(), other.keys.len());
         for (a, b) in res.keys.iter_mut().zip(other.keys.iter()) {
-            self.vmp_prepare(&mut a.data, &b.data, &mut scratch.borrow());
+            self.vmp_prepare_pmat(&mut a.data, &b.data, &mut scratch.borrow());
         }
     }
 }

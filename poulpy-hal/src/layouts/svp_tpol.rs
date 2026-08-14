@@ -10,6 +10,15 @@ use crate::layouts::{
 
 /// Transformed (hot-prep) scalar polynomial for scalar-vector products.
 ///
+/// An `SvpTPol` holds the prepared form of `cols` scalar polynomials, in the
+/// representation named by the [`DftWord`] type `W`.
+///
+/// The internal arrangement is entirely backend-defined: nothing outside that
+/// backend's own kernels may assume a coefficient layout.
+/// [`Backend::bytes_of_svp_tpol`] is authoritative for the buffer size, and
+/// cross-backend reinterpretation is gated on
+/// [`SvpTPolLayoutCompatible`](crate::layouts::SvpTPolLayoutCompatible).
+///
 /// `SvpTPol` is the cheap-to-build prepared form, meant for short reuse or
 /// one-shot use; [`SvpPPol`](crate::layouts::SvpPPol) is the packed form,
 /// more expensive to build but optimized for amortized repeated apply. The
@@ -19,9 +28,6 @@ use crate::layouts::{
 /// Create via [`SvpPrepareTPol`](crate::api::SvpPrepareTPol) from a
 /// coefficient-domain [`ScalarZnx`](crate::layouts::ScalarZnx), then consume
 /// through the `svp_apply_tpol_*` family.
-///
-/// Ring degree `n` is always a power of two, so the DFT-domain layout has a
-/// coefficient count that matches vector lane widths relative to buffer alignment.
 #[repr(C)]
 pub struct SvpTPol<D: Data, W: DftWord, B: Backend<DftWord = W>> {
     pub data: D,

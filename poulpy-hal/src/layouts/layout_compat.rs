@@ -73,6 +73,17 @@ unsafe impl<B: Backend> SvpTPolLayoutCompatible<B> for B {}
 pub unsafe trait VmpPMatLayoutCompatible<B2: Backend>: Backend {}
 unsafe impl<B: Backend> VmpPMatLayoutCompatible<B> for B {}
 
+/// `B: VmpTMatLayoutCompatible<B2>` asserts `VmpTMat` buffers of `B` are
+/// byte-layout-identical to those of `B2`.
+///
+/// # Safety
+///
+/// Implementors assert byte-identical buffer layouts between `Self` and `B2`
+/// for this container family, for every shape (same convention, not merely
+/// the same size). Validate with the word-compat test suite.
+pub unsafe trait VmpTMatLayoutCompatible<B2: Backend>: Backend {}
+unsafe impl<B: Backend> VmpTMatLayoutCompatible<B> for B {}
+
 /// `B: VecZnxBigLayoutCompatible<B2>` asserts `VecZnxBig` buffers of `B` are
 /// byte-layout-identical to those of `B2`.
 ///

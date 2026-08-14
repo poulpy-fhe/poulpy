@@ -182,6 +182,13 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
             "VmpPMat byte size",
         )
     }
+    /// Byte size of a [`crate::layouts::VmpTMat`] buffer.
+    fn bytes_of_vmp_tmat(n: usize, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
+        checked_product(
+            &[n, rows, cols_in, cols_out, size, Self::size_of_dft_word()],
+            "VmpTMat byte size",
+        )
+    }
     /// Byte size of a [`crate::layouts::CnvPVecL`] buffer.
     fn bytes_of_cnv_pvec_left(n: usize, cols: usize, size: usize) -> usize {
         checked_product(&[n, cols, size, Self::size_of_dft_word()], "CnvPVecL byte size")

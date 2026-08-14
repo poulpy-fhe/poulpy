@@ -1,8 +1,8 @@
 use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{
-        ModuleN, ScratchArenaTakeBasic, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VmpApplyDftToDft,
-        VmpApplyDftToDftAccumulate, VmpApplyDftToDftTmpBytes,
+        ModuleN, ScratchArenaTakeBasic, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy,
+        VmpApplyPMatDftToDft, VmpApplyPMatDftToDftAccumulate, VmpApplyPMatDftToDftTmpBytes,
     },
     layouts::{Backend, Module, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendRef},
 };
@@ -66,9 +66,9 @@ impl<BE: Backend> GGLWEProductDefault<BE> for Module<BE> where
     Self: Sized
         + ModuleN
         + VecZnxDftBytesOf
-        + VmpApplyDftToDftTmpBytes
-        + VmpApplyDftToDft<BE>
-        + VmpApplyDftToDftAccumulate<BE>
+        + VmpApplyPMatDftToDftTmpBytes
+        + VmpApplyPMatDftToDft<BE>
+        + VmpApplyPMatDftToDftAccumulate<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftCopy<BE>
 {
@@ -79,9 +79,9 @@ where
     Self: Sized
         + ModuleN
         + VecZnxDftBytesOf
-        + VmpApplyDftToDftTmpBytes
-        + VmpApplyDftToDft<BE>
-        + VmpApplyDftToDftAccumulate<BE>
+        + VmpApplyPMatDftToDftTmpBytes
+        + VmpApplyPMatDftToDft<BE>
+        + VmpApplyPMatDftToDftAccumulate<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftCopy<BE>,
 {
@@ -92,13 +92,13 @@ where
         let dsize: usize = key_infos.dsize().as_usize();
 
         if dsize == 1 {
-            let lvl_0: usize = self.vmp_apply_dft_to_dft_tmp_bytes(
+            let lvl_0: usize = self.vmp_apply_pmat_dft_to_dft_tmp_bytes(
                 res_size,
-                a_size,
                 key_infos.dnum().into(),
                 (key_infos.rank_in()).into(),
                 (key_infos.rank_out() + 1).into(),
                 key_infos.size(),
+                a_size,
             );
             lvl_0
         } else {
@@ -107,13 +107,13 @@ where
             let cols_out: usize = (key_infos.rank_out() + 1).into();
             let lvl_0: usize = self.bytes_of_vec_znx_dft(key_infos.rank_in().into(), a_size);
             let lvl_1: usize = self.bytes_of_vec_znx_dft(cols_out, key_infos.size());
-            let lvl_2: usize = self.vmp_apply_dft_to_dft_tmp_bytes(
+            let lvl_2: usize = self.vmp_apply_pmat_dft_to_dft_tmp_bytes(
                 res_size,
-                a_size,
                 dnum,
                 (key_infos.rank_in()).into(),
                 (key_infos.rank_out() + 1).into(),
                 key_infos.size(),
+                a_size,
             );
 
             lvl_0 + lvl_1 + lvl_2
@@ -137,7 +137,7 @@ where
         );
 
         if key.dsize() == 1 {
-            self.vmp_apply_dft_to_dft(res, a, &key.data, 0, scratch);
+            self.vmp_apply_pmat_dft_to_dft(res, &key.data, a, 0, scratch);
         } else {
             let dsize: usize = key.dsize().into();
             let dnum: usize = key.dnum().into();
@@ -148,7 +148,7 @@ where
             // narrowed view used to leave untouched. Two properties make this
             // the only workable shape, and both are easy to break:
             //
-            //   - the overwrite must be `di == 0`. `vmp_apply_dft_to_dft` covers
+            //   - the overwrite must be `di == 0`. `vmp_apply_pmat_dft_to_dft` covers
             //     `res` fully only at `limb_offset == 0`; at any other offset it
             //     writes `0..col_max - limb_offset` and zeroes from `col_max`,
             //     leaving a gap in between. So the digits cannot be walked in
@@ -172,7 +172,7 @@ where
                 }
 
                 if di == 0 {
-                    self.vmp_apply_dft_to_dft(res, &ai_dft.to_backend_ref(), &key.data, 0, &mut scratch_1.borrow());
+                    self.vmp_apply_pmat_dft_to_dft(res, &key.data, &ai_dft.to_backend_ref(), 0, &mut scratch_1.borrow());
                 } else {
                     // Pass `di` consumes `a`'s limbs at offset `dsize - di - 1`
                     // within each digit, so its product sits `dsize - 1 - di`
@@ -189,10 +189,10 @@ where
                     // the limb was free.
                     let res_compute_size = res.size() - ((dsize - di) as isize - 2).max(0) as usize;
                     let mut res_view = res.with_size_mut(res_compute_size);
-                    self.vmp_apply_dft_to_dft_accumulate(
+                    self.vmp_apply_pmat_dft_to_dft_accumulate(
                         &mut res_view,
-                        &ai_dft.to_backend_ref(),
                         &key.data,
+                        &ai_dft.to_backend_ref(),
                         di,
                         &mut scratch_1.borrow(),
                     );

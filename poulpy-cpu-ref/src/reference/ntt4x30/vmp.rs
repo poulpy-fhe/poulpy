@@ -5,10 +5,10 @@
 //!
 //! 1. **Prepare** — encode a `MatZnx` (i64 coefficients) into the
 //!    [`VmpPMat`] prepared format (q120c, NTT domain) via
-//!    [`ntt4x30_vmp_prepare`].
+//!    [`ntt4x30_vmp_prepare_pmat`].
 //! 2. **Apply** — multiply a [`VecZnxDft`] (q120b) by a prepared
 //!    [`VmpPMat`] (q120c) to obtain a new [`VecZnxDft`] (q120b) via
-//!    [`ntt4x30_vmp_apply_dft_to_dft`].
+//!    [`ntt4x30_vmp_apply_pmat_dft_to_dft`].
 //!
 //! # Layout
 //!
@@ -31,7 +31,7 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use crate::{
     layouts::{
         Backend, DataViewMut, HostDataMut, HostDataRef, MatZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
-        VmpPMatBackendMut, VmpPMatBackendRef, ZnxView, ZnxViewMut,
+        VmpPMatBackendMut, VmpPMatBackendRef, VmpTMatBackendMut, VmpTMatBackendRef, ZnxView, ZnxViewMut,
     },
     reference::ntt4x30::{
         NttCFromB, NttDFTExecute, NttExtract1BlkContiguous, NttFromZnx64, NttMulBbc1ColX2, NttMulBbc2ColsX2, mat_vec::BbcMeta,
@@ -45,10 +45,10 @@ use crate::reference::ntt4x30::types::Q_SHIFTED;
 // Prepare
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Scratch space (in bytes) required by [`ntt4x30_vmp_prepare`].
+/// Scratch space (in bytes) required by [`ntt4x30_vmp_prepare_pmat`].
 ///
 /// Returns `4 * n * 8` bytes (one q120b NTT buffer of `4*n` u64).
-pub fn ntt4x30_vmp_prepare_tmp_bytes(n: usize) -> usize {
+pub fn ntt4x30_vmp_prepare_pmat_tmp_bytes(n: usize) -> usize {
     4 * n * size_of::<u64>()
 }
 
@@ -60,8 +60,8 @@ pub fn ntt4x30_vmp_prepare_tmp_bytes(n: usize) -> usize {
 /// 3. Convert q120b → q120c ([`NttCFromB`]).
 /// 4. Store in `res` in the block-interleaved layout (see module doc).
 ///
-/// `tmp` must hold at least `ntt4x30_vmp_prepare_tmp_bytes(n) / size_of::<u64>()` elements.
-pub fn ntt4x30_vmp_prepare<BE>(
+/// `tmp` must hold at least `ntt4x30_vmp_prepare_pmat_tmp_bytes(n) / size_of::<u64>()` elements.
+pub fn ntt4x30_vmp_prepare_pmat<BE>(
     module: &impl NttModuleHandle,
     res: &mut VmpPMatBackendMut<'_, BE>,
     a: &MatZnxBackendRef<'_, BE>,
@@ -78,7 +78,74 @@ pub fn ntt4x30_vmp_prepare<BE>(
     debug_assert_eq!(res.rows(), a.rows());
     debug_assert_eq!(res.cols_out(), a.cols_out());
     debug_assert_eq!(res.size(), a.size());
-    debug_assert!(std::mem::size_of_val(tmp) >= ntt4x30_vmp_prepare_tmp_bytes(n));
+    debug_assert!(std::mem::size_of_val(tmp) >= ntt4x30_vmp_prepare_pmat_tmp_bytes(n));
+
+    let nrows: usize = a.cols_in() * a.rows();
+    let ncols: usize = a.cols_out() * a.size();
+    let n_blks: usize = n / 2;
+    let offset: usize = nrows * ncols * 16; // u32 stride between blocks
+
+    let mat_i64: &[i64] = a.raw();
+    let pmat_u32: &mut [u32] = cast_slice_mut(res.data_mut().as_mut());
+
+    for row_i in 0..nrows {
+        for col_i in 0..ncols {
+            let pos = n * (row_i * ncols + col_i);
+
+            // Step 1 & 2: i64 → q120b → NTT (in-place in tmp)
+            BE::ntt_from_znx64(tmp, &mat_i64[pos..pos + n]);
+            BE::ntt_dft_execute(module.get_ntt_table(), tmp);
+
+            // Step 3: q120b → q120c (write into a local Vec to avoid aliasing).
+            let tmp_q120c: Vec<u32> = {
+                let mut v = vec![0u32; 8 * n];
+                BE::ntt_c_from_b(n, &mut v, tmp);
+                v
+            };
+
+            // Step 4: scatter into block-interleaved layout
+            let dst_base: usize = if col_i == ncols - 1 && !ncols.is_multiple_of(2) {
+                // Last odd column: uses the "single" slot layout
+                col_i * nrows * 16 + row_i * 16
+            } else {
+                // Paired column
+                (col_i / 2) * (nrows * 32) + row_i * 32 + (col_i % 2) * 16
+            };
+
+            for blk_j in 0..n_blks {
+                let pmat_off = dst_base + blk_j * offset;
+                pmat_u32[pmat_off..pmat_off + 16].copy_from_slice(&tmp_q120c[16 * blk_j..16 * blk_j + 16]);
+            }
+        }
+    }
+}
+
+pub fn ntt4x30_vmp_prepare_tmat_tmp_bytes(n: usize) -> usize {
+    ntt4x30_vmp_prepare_pmat_tmp_bytes(n)
+}
+
+/// Hot-prep counterpart of [`ntt4x30_vmp_prepare_pmat`].
+///
+/// NTT4x30 builds both tiers identically, so the encoding is the same q120c
+/// block-interleaved layout.
+pub fn ntt4x30_vmp_prepare_tmat<BE>(
+    module: &impl NttModuleHandle,
+    res: &mut VmpTMatBackendMut<'_, BE>,
+    a: &MatZnxBackendRef<'_, BE>,
+    tmp: &mut [u64],
+) where
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttDFTExecute<NttTable<Primes30>> + NttFromZnx64 + NttCFromB,
+    for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+{
+    let n = res.n();
+
+    debug_assert_eq!(a.n(), n);
+    debug_assert_eq!(res.cols_in(), a.cols_in());
+    debug_assert_eq!(res.rows(), a.rows());
+    debug_assert_eq!(res.cols_out(), a.cols_out());
+    debug_assert_eq!(res.size(), a.size());
+    debug_assert!(std::mem::size_of_val(tmp) >= ntt4x30_vmp_prepare_pmat_tmp_bytes(n));
 
     let nrows: usize = a.cols_in() * a.rows();
     let ncols: usize = a.cols_out() * a.size();
@@ -124,14 +191,14 @@ pub fn ntt4x30_vmp_prepare<BE>(
 // Apply helpers
 // ──────────────────────────────────────────────────────────────────────────────
 
-/// Scratch space (in bytes) required by `ntt4x30_vmp_apply_dft_to_dft*`.
+/// Scratch space (in bytes) required by `ntt4x30_vmp_apply_pmat_dft_to_dft*`.
 ///
 /// Allocates space for:
 /// - `mat2cols_output`: 16 u64 (two paired-column x2-block results)
 /// - `extracted_blk`:  8 × `row_max` u64 (one x2-block from each input row)
 ///
 /// where `row_max = a_size.min(b_rows) * b_cols_in`.
-pub fn ntt4x30_vmp_apply_dft_to_dft_tmp_bytes(a_size: usize, b_rows: usize, b_cols_in: usize) -> usize {
+pub fn ntt4x30_vmp_apply_pmat_dft_to_dft_tmp_bytes(a_size: usize, b_rows: usize, b_cols_in: usize) -> usize {
     let row_max = a_size.min(b_rows) * b_cols_in;
     (16 + 8 * row_max) * size_of::<u64>()
 }
@@ -168,7 +235,7 @@ fn zero_blk(n: usize, blk: usize, dst: &mut [u64]) {
 // ──────────────────────────────────────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
-fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, BE>(
+fn vmp_apply_pmat_dft_to_dft_core<const OVERWRITE: bool, BE>(
     n: usize,
     res_u64: &mut [u64],
     a_u64: &[u64],
@@ -303,12 +370,12 @@ fn vmp_apply_dft_to_dft_core<const OVERWRITE: bool, BE>(
 /// inner product of the input vector `a` with the corresponding column
 /// of `pmat` using lazy q120b × q120c accumulation.
 ///
-/// `tmp` must hold at least `ntt4x30_vmp_apply_dft_to_dft_tmp_bytes(...) / size_of::<u64>()` elements.
-pub fn ntt4x30_vmp_apply_dft_to_dft<BE>(
+/// `tmp` must hold at least `ntt4x30_vmp_apply_pmat_dft_to_dft_tmp_bytes(...) / size_of::<u64>()` elements.
+pub fn ntt4x30_vmp_apply_pmat_dft_to_dft<BE>(
     module: &impl NttModuleHandle,
     res: &mut VecZnxDftBackendMut<'_, BE>,
-    a: &VecZnxDftBackendRef<'_, BE>,
     pmat: &VmpPMatBackendRef<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE>,
     limb_offset: usize,
     tmp: &mut [u64],
 ) where
@@ -328,12 +395,50 @@ pub fn ntt4x30_vmp_apply_dft_to_dft<BE>(
     let a_u64: &[u64] = cast_slice(a.raw());
     let pmat_u32: &[u32] = cast_slice(pmat.raw());
 
-    vmp_apply_dft_to_dft_core::<true, BE>(
+    vmp_apply_pmat_dft_to_dft_core::<true, BE>(
         n,
         res_u64,
         a_u64,
         pmat_u32,
         limb_offset * pmat.cols_out(),
+        nrows,
+        ncols,
+        meta,
+        tmp,
+    );
+}
+
+/// Hot-prep counterpart of [`ntt4x30_vmp_apply_pmat_dft_to_dft`].
+pub fn ntt4x30_vmp_apply_tmat_dft_to_dft<BE>(
+    module: &impl NttModuleHandle,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    tmat: &VmpTMatBackendRef<'_, BE>,
+    a: &VecZnxDftBackendRef<'_, BE>,
+    limb_offset: usize,
+    tmp: &mut [u64],
+) where
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttExtract1BlkContiguous + NttMulBbc1ColX2 + NttMulBbc2ColsX2,
+    for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+{
+    debug_assert_eq!(res.n(), tmat.n());
+    debug_assert_eq!(a.n(), tmat.n());
+
+    let n = res.n();
+    let nrows = tmat.cols_in() * tmat.rows();
+    let ncols = tmat.cols_out() * tmat.size();
+    let meta = module.get_bbc_meta();
+
+    let res_u64: &mut [u64] = cast_slice_mut(res.raw_mut());
+    let a_u64: &[u64] = cast_slice(a.raw());
+    let tmat_u32: &[u32] = cast_slice(tmat.raw());
+
+    vmp_apply_pmat_dft_to_dft_core::<true, BE>(
+        n,
+        res_u64,
+        a_u64,
+        tmat_u32,
+        limb_offset * tmat.cols_out(),
         nrows,
         ncols,
         meta,
@@ -347,6 +452,14 @@ pub fn ntt4x30_vmp_apply_dft_to_dft<BE>(
 
 /// Zero all entries of a prepared polynomial matrix.
 pub fn ntt4x30_vmp_zero<BE: Backend<ZnxWord = i64>>(res: &mut VmpPMatBackendMut<'_, BE>)
+where
+    for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
+{
+    cast_slice_mut::<u8, u32>(res.data_mut().as_mut()).fill(0);
+}
+
+/// Zero all entries of a hot-prep polynomial matrix.
+pub fn ntt4x30_vmp_tmat_zero<BE: Backend<ZnxWord = i64>>(res: &mut VmpTMatBackendMut<'_, BE>)
 where
     for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
 {

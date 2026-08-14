@@ -1,17 +1,25 @@
 use crate::{
     FFT64Ref, NTT4x30Ref,
     hal_defaults::{
-        FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault, FFT64VecZnxDftDefault,
-        FFT64VmpDefault, HalVecZnxDefault, NTT4x30ConvolutionDefault, NTT4x30ModuleDefault, NTT4x30SvpDefault,
-        NTT4x30VecZnxBigDefault, NTT4x30VecZnxDftDefault, NTT4x30VmpDefault,
+        FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpPPolDefault, FFT64SvpTPolDefault, FFT64VecZnxBigDefault,
+        FFT64VecZnxDftDefault, FFT64VmpPMatDefault, FFT64VmpTMatDefault, HalVecZnxDefault, NTT4x30ConvolutionDefault,
+        NTT4x30ModuleDefault, NTT4x30SvpPPolDefault, NTT4x30SvpTPolDefault, NTT4x30VecZnxBigDefault, NTT4x30VecZnxDftDefault,
+        NTT4x30VmpPMatDefault, NTT4x30VmpTMatDefault,
     },
 };
 use poulpy_hal::{
-    api::{VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
-    layouts::{
-        Backend, Module, NoiseInfos, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, ZnxInfos,
+    api::{
+        VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign, VecZnxDftBytesOf, VecZnxDftZero,
+        VecZnxIdftApplyTmpA, VmpTMatBytesOf,
     },
-    oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
+    layouts::{
+        Module, NoiseInfos, SvpTPolToBackendMut, SvpTPolToBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigToBackendMut,
+        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpTMatToBackendMut, VmpTMatToBackendRef,
+    },
+    oep::{
+        HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalSvpPPolImpl, HalSvpTPolImpl, HalVecZnxBigImpl, HalVecZnxDftImpl,
+        HalVecZnxImpl, HalVmpImpl, HalVmpPMatImpl, HalVmpTMatImpl,
+    },
 };
 
 #[macro_use]
@@ -44,8 +52,16 @@ unsafe impl HalModuleImpl<FFT64Ref> for FFT64Ref {
     hal_impl_module!(FFT64ModuleDefault);
 }
 
+unsafe impl HalVmpPMatImpl<FFT64Ref> for FFT64Ref {
+    hal_impl_vmp_pmat!(FFT64VmpPMatDefault);
+}
+
+unsafe impl HalVmpTMatImpl<FFT64Ref> for FFT64Ref {
+    hal_impl_vmp_tmat!(FFT64VmpTMatDefault);
+}
+
 unsafe impl HalVmpImpl<FFT64Ref> for FFT64Ref {
-    hal_impl_vmp!(FFT64VmpDefault);
+    hal_impl_vmp!();
 }
 
 unsafe impl HalConvolutionImpl<FFT64Ref> for FFT64Ref {
@@ -56,8 +72,16 @@ unsafe impl HalVecZnxBigImpl<FFT64Ref> for FFT64Ref {
     hal_impl_vec_znx_big!(FFT64VecZnxBigDefault);
 }
 
+unsafe impl HalSvpPPolImpl<FFT64Ref> for FFT64Ref {
+    hal_impl_svp_ppol!(FFT64SvpPPolDefault);
+}
+
+unsafe impl HalSvpTPolImpl<FFT64Ref> for FFT64Ref {
+    hal_impl_svp_tpol!(FFT64SvpTPolDefault);
+}
+
 unsafe impl HalSvpImpl<FFT64Ref> for FFT64Ref {
-    hal_impl_svp!(FFT64SvpDefault);
+    hal_impl_svp!();
 }
 
 unsafe impl HalVecZnxDftImpl<FFT64Ref> for FFT64Ref {
@@ -76,8 +100,16 @@ unsafe impl HalModuleImpl<NTT4x30Ref> for NTT4x30Ref {
     hal_impl_module!(NTT4x30ModuleDefault);
 }
 
+unsafe impl HalVmpPMatImpl<NTT4x30Ref> for NTT4x30Ref {
+    hal_impl_vmp_pmat!(NTT4x30VmpPMatDefault);
+}
+
+unsafe impl HalVmpTMatImpl<NTT4x30Ref> for NTT4x30Ref {
+    hal_impl_vmp_tmat!(NTT4x30VmpTMatDefault);
+}
+
 unsafe impl HalVmpImpl<NTT4x30Ref> for NTT4x30Ref {
-    hal_impl_vmp!(NTT4x30VmpDefault);
+    hal_impl_vmp!();
 }
 
 unsafe impl HalConvolutionImpl<NTT4x30Ref> for NTT4x30Ref {
@@ -121,8 +153,16 @@ unsafe impl HalVecZnxBigImpl<NTT4x30Ref> for NTT4x30Ref {
     hal_impl_vec_znx_big!(NTT4x30VecZnxBigDefault);
 }
 
+unsafe impl HalSvpPPolImpl<NTT4x30Ref> for NTT4x30Ref {
+    hal_impl_svp_ppol!(NTT4x30SvpPPolDefault);
+}
+
+unsafe impl HalSvpTPolImpl<NTT4x30Ref> for NTT4x30Ref {
+    hal_impl_svp_tpol!(NTT4x30SvpTPolDefault);
+}
+
 unsafe impl HalSvpImpl<NTT4x30Ref> for NTT4x30Ref {
-    hal_impl_svp!(NTT4x30SvpDefault);
+    hal_impl_svp!();
 }
 
 unsafe impl HalVecZnxDftImpl<NTT4x30Ref> for NTT4x30Ref {

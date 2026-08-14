@@ -49,22 +49,26 @@ impl VmpPMatShape {
 
 /// Prepared (DFT-domain) polynomial matrix for vector-matrix products.
 ///
-/// A `VmpPMat` stores a matrix of `rows * cols_in` entries, where each
-/// entry is a [`VecZnxDft`](crate::layouts::VecZnxDft) of `cols_out`
-/// columns and `size` limbs, all in the prepared representation named by
-/// the [`DftWord`] type `W`.
+/// A `VmpPMat` holds the prepared form of a `rows * cols_in` by `cols_out`
+/// matrix of `size`-limb polynomials, in the representation named by the
+/// [`DftWord`] type `W`.
 ///
-/// Used as the right operand in
-/// [`VmpApplyDftToDft`](crate::api::VmpApplyDftToDft). Create via
-/// [`VmpPrepare`](crate::api::VmpPrepare) from a coefficient-domain
+/// The internal arrangement is entirely backend-defined and is **not** a
+/// sequence of [`VecZnxDft`](crate::layouts::VecZnxDft) entries: the FFT64
+/// backends store reim4 block-interleaved, the reference NTT4x30 backend q120c
+/// block-interleaved, and the accelerated NTT backends prime-major planar. A
+/// backend may also pack more compactly than `size_of::<W>()` per coefficient,
+/// as the AVX-512 IFMA backend does. Nothing outside a backend's own kernels may assume
+/// an entry layout: [`Backend::bytes_of_vmp_pmat`] is authoritative for the
+/// buffer size, and cross-backend reinterpretation is gated on
+/// [`VmpPMatLayoutCompatible`](crate::layouts::VmpPMatLayoutCompatible), which
+/// is deliberately not declared between the reference and accelerated NTT4x30
+/// backends.
+///
+/// Used as the matrix operand in
+/// [`VmpApplyPMatDftToDft`](crate::api::VmpApplyPMatDftToDft). Create via
+/// [`VmpPreparePMat`](crate::api::VmpPreparePMat) from a coefficient-domain
 /// [`MatZnx`](crate::layouts::MatZnx).
-///
-/// Note that a backend may pack this matrix more compactly than
-/// `size_of::<W>()` per coefficient; [`Backend::bytes_of_vmp_pmat`] is
-/// authoritative for the buffer size.
-///
-/// Ring degree `n` is always a power of two, so each prepared polynomial's DFT
-/// coefficient count matches vector lane widths relative to buffer alignment.
 #[repr(C)]
 pub struct VmpPMat<D: Data, W: DftWord, B: Backend<DftWord = W>> {
     data: D,

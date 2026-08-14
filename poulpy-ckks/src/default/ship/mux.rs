@@ -9,7 +9,7 @@ use poulpy_hal::{
     api::{
         ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
         VecZnxDftApply, VecZnxDftAutomorphism, VecZnxDftAutomorphismPlan, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero,
-        VecZnxIdftApplyTmpA, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes,
+        VecZnxIdftApplyTmpA, VmpApplyPMatDftToDft, VmpApplyPMatDftToDftTmpBytes,
     },
     layouts::{
         Backend, Module, ScratchArena, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
@@ -58,12 +58,12 @@ fn ship_switching_key_product<BE>(
     scratch: &mut ScratchArena<'_, BE>,
 ) where
     BE: Backend,
-    Module<BE>: VmpApplyDftToDft<BE> + VecZnxDftAddAssign<BE> + VecZnxDftCopy<BE> + VecZnxDftZero<BE> + VecZnxDftBytesOf,
+    Module<BE>: VmpApplyPMatDftToDft<BE> + VecZnxDftAddAssign<BE> + VecZnxDftCopy<BE> + VecZnxDftZero<BE> + VecZnxDftBytesOf,
 {
     let pmat = key.vmp_pmat_backend_ref();
     let dsize = key.dsize().as_usize();
     if dsize == 1 {
-        module.vmp_apply_dft_to_dft(res, a, &pmat, 0, scratch);
+        module.vmp_apply_pmat_dft_to_dft(res, &pmat, a, 0, scratch);
         return;
     }
     let dnum: usize = key.dnum().into();
@@ -84,13 +84,13 @@ fn ship_switching_key_product<BE>(
             module.vec_znx_dft_copy(dsize, dsize - di - 1, &mut ai_dft.to_backend_mut(), j, a, j);
         }
         if di == 0 {
-            module.vmp_apply_dft_to_dft(&mut res_view, &ai_dft.to_backend_ref(), &pmat, 0, &mut scratch_1.borrow());
+            module.vmp_apply_pmat_dft_to_dft(&mut res_view, &pmat, &ai_dft.to_backend_ref(), 0, &mut scratch_1.borrow());
         } else {
             let (mut res_tmp, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(module, cols_out, res_view.size());
-            module.vmp_apply_dft_to_dft(
+            module.vmp_apply_pmat_dft_to_dft(
                 &mut res_tmp.to_backend_mut(),
-                &ai_dft.to_backend_ref(),
                 &pmat,
+                &ai_dft.to_backend_ref(),
                 di,
                 &mut scratch_2.borrow(),
             );
@@ -107,13 +107,13 @@ where
     BE: Backend,
     C: LWEInfos,
     K: GGLWEInfos,
-    Module<BE>: VecZnxDftBytesOf + VecZnxBigBytesOf + VmpApplyDftToDftTmpBytes + VecZnxBigNormalizeTmpBytes,
+    Module<BE>: VecZnxDftBytesOf + VecZnxBigBytesOf + VmpApplyPMatDftToDftTmpBytes + VecZnxBigNormalizeTmpBytes,
 {
     let a_size = ct.size();
     let key_size = key.size();
     let dsize = key.dsize().as_usize();
     let dnum: usize = key.dnum().into();
-    let vmp = module.vmp_apply_dft_to_dft_tmp_bytes(key_size, a_size, dnum, 2, 2, key_size);
+    let vmp = module.vmp_apply_pmat_dft_to_dft_tmp_bytes(key_size, dnum, 2, 2, key_size, a_size);
     let product = if dsize == 1 {
         vmp
     } else {
@@ -145,7 +145,7 @@ where
         + VecZnxDftAutomorphism<BE>
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
-        + VmpApplyDftToDft<BE>
+        + VmpApplyPMatDftToDft<BE>
         + VecZnxDftBytesOf,
     CKKSCiphertextOwned<BE>: GLWEToBackendMut<BE> + GLWEToBackendRef<BE>,
 {

@@ -140,9 +140,27 @@ cross_backend_test_suite! {
     backend_test = crate::NTT4x30Ref,
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
+        test_svp_apply_small_small_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_small_small_to_dft,
+        test_svp_apply_small_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_small_dft_to_dft,
+        test_svp_apply_tpol_small_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_tpol_small_to_dft,
+        test_svp_apply_tpol_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_tpol_dft_to_dft,
+        test_svp_apply_ppol_small_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_ppol_small_to_dft,
         test_svp_apply_ppol_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_ppol_dft_to_dft,
+        test_svp_apply_small_small_to_big => poulpy_hal::test_suite::svp::test_svp_apply_small_small_to_big,
+        test_svp_apply_small_dft_to_big => poulpy_hal::test_suite::svp::test_svp_apply_small_dft_to_big,
+        test_svp_apply_tpol_small_to_big => poulpy_hal::test_suite::svp::test_svp_apply_tpol_small_to_big,
+        test_svp_apply_tpol_dft_to_big => poulpy_hal::test_suite::svp::test_svp_apply_tpol_dft_to_big,
+        test_svp_apply_ppol_small_to_big => poulpy_hal::test_suite::svp::test_svp_apply_ppol_small_to_big,
+        test_svp_apply_ppol_dft_to_big => poulpy_hal::test_suite::svp::test_svp_apply_ppol_dft_to_big,
+        test_svp_apply_small_small_to_small => poulpy_hal::test_suite::svp::test_svp_apply_small_small_to_small,
+        test_svp_apply_small_dft_to_small => poulpy_hal::test_suite::svp::test_svp_apply_small_dft_to_small,
+        test_svp_apply_tpol_small_to_small => poulpy_hal::test_suite::svp::test_svp_apply_tpol_small_to_small,
+        test_svp_apply_tpol_dft_to_small => poulpy_hal::test_suite::svp::test_svp_apply_tpol_dft_to_small,
+        test_svp_apply_ppol_small_to_small => poulpy_hal::test_suite::svp::test_svp_apply_ppol_small_to_small,
+        test_svp_apply_ppol_dft_to_small => poulpy_hal::test_suite::svp::test_svp_apply_ppol_dft_to_small,
+        test_svp_apply_small_dft_to_dft_assign => poulpy_hal::test_suite::svp::test_svp_apply_small_dft_to_dft_assign,
+        test_svp_apply_tpol_dft_to_dft_assign => poulpy_hal::test_suite::svp::test_svp_apply_tpol_dft_to_dft_assign,
         test_svp_apply_ppol_dft_to_dft_assign => poulpy_hal::test_suite::svp::test_svp_apply_ppol_dft_to_dft_assign,
-        test_svp_apply_domain_matrix => poulpy_hal::test_suite::svp::test_svp_apply_domain_matrix,
     }
 }
 cross_backend_test_suite! {
@@ -201,8 +219,30 @@ cross_backend_test_suite! {
     backend_test = crate::NTT4x30Ref,
     params = TestParams { size: 1<<8, base2k: 12 },
     tests = {
-        test_vmp_apply_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft,
-        test_vmp_apply_dft_to_dft_accumulate => poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_accumulate,
+        test_vmp_apply_small_small_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_small_small_to_dft,
+        test_vmp_apply_small_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_small_dft_to_dft,
+        test_vmp_apply_tmat_small_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_tmat_small_to_dft,
+        test_vmp_apply_tmat_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_tmat_dft_to_dft,
+        test_vmp_apply_pmat_small_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_pmat_small_to_dft,
+        test_vmp_apply_pmat_dft_to_dft => poulpy_hal::test_suite::vmp::test_vmp_apply_pmat_dft_to_dft,
+        test_vmp_apply_small_small_to_dft_accumulate => poulpy_hal::test_suite::vmp::test_vmp_apply_small_small_to_dft_accumulate,
+        test_vmp_apply_small_dft_to_dft_accumulate => poulpy_hal::test_suite::vmp::test_vmp_apply_small_dft_to_dft_accumulate,
+        test_vmp_apply_tmat_small_to_dft_accumulate => poulpy_hal::test_suite::vmp::test_vmp_apply_tmat_small_to_dft_accumulate,
+        test_vmp_apply_tmat_dft_to_dft_accumulate => poulpy_hal::test_suite::vmp::test_vmp_apply_tmat_dft_to_dft_accumulate,
+        test_vmp_apply_pmat_small_to_dft_accumulate => poulpy_hal::test_suite::vmp::test_vmp_apply_pmat_small_to_dft_accumulate,
+        test_vmp_apply_pmat_dft_to_dft_accumulate => poulpy_hal::test_suite::vmp::test_vmp_apply_pmat_dft_to_dft_accumulate,
+        test_vmp_apply_small_small_to_big => poulpy_hal::test_suite::vmp::test_vmp_apply_small_small_to_big,
+        test_vmp_apply_small_dft_to_big => poulpy_hal::test_suite::vmp::test_vmp_apply_small_dft_to_big,
+        test_vmp_apply_tmat_small_to_big => poulpy_hal::test_suite::vmp::test_vmp_apply_tmat_small_to_big,
+        test_vmp_apply_tmat_dft_to_big => poulpy_hal::test_suite::vmp::test_vmp_apply_tmat_dft_to_big,
+        test_vmp_apply_pmat_small_to_big => poulpy_hal::test_suite::vmp::test_vmp_apply_pmat_small_to_big,
+        test_vmp_apply_pmat_dft_to_big => poulpy_hal::test_suite::vmp::test_vmp_apply_pmat_dft_to_big,
+        test_vmp_apply_small_small_to_small => poulpy_hal::test_suite::vmp::test_vmp_apply_small_small_to_small,
+        test_vmp_apply_small_dft_to_small => poulpy_hal::test_suite::vmp::test_vmp_apply_small_dft_to_small,
+        test_vmp_apply_tmat_small_to_small => poulpy_hal::test_suite::vmp::test_vmp_apply_tmat_small_to_small,
+        test_vmp_apply_tmat_dft_to_small => poulpy_hal::test_suite::vmp::test_vmp_apply_tmat_dft_to_small,
+        test_vmp_apply_pmat_small_to_small => poulpy_hal::test_suite::vmp::test_vmp_apply_pmat_small_to_small,
+        test_vmp_apply_pmat_dft_to_small => poulpy_hal::test_suite::vmp::test_vmp_apply_pmat_dft_to_small,
     }
 }
 
@@ -287,8 +327,8 @@ fn test_vec_znx_rsh_assign_multi_limb_matches_rsh() {
 #[test]
 fn test_ntt4x30_vmp_apply_truncated_res_matches_full_prefix() {
     use poulpy_hal::api::{
-        ScratchOwnedAlloc, VecZnxDftAlloc, VecZnxDftApply, VmpApplyDftToDft, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare,
-        VmpPrepareTmpBytes,
+        ScratchOwnedAlloc, VecZnxDftAlloc, VecZnxDftApply, VmpApplyPMatDftToDft, VmpApplyPMatDftToDftTmpBytes, VmpPMatAlloc,
+        VmpPreparePMat, VmpPreparePMatTmpBytes,
     };
     use poulpy_hal::layouts::{
         Backend, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, ScratchOwned, VecZnx, VecZnxDftOwned, VmpPMatOwned,
@@ -307,8 +347,8 @@ fn test_ntt4x30_vmp_apply_truncated_res_matches_full_prefix() {
 
     let mut scratch: ScratchOwned<NTT4x30Ref> = ScratchOwned::alloc(
         module
-            .vmp_apply_dft_to_dft_tmp_bytes(mat_size, rows, rows, cols_in, cols_out, mat_size)
-            .max(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, mat_size)),
+            .vmp_apply_pmat_dft_to_dft_tmp_bytes(mat_size, rows, cols_in, cols_out, mat_size, rows)
+            .max(module.vmp_prepare_pmat_tmp_bytes(rows, cols_in, cols_out, mat_size)),
     );
 
     let mut a: VecZnx<Vec<u8>, i64> = module_host.vec_znx_alloc(cols_in, rows);
@@ -328,17 +368,17 @@ fn test_ntt4x30_vmp_apply_truncated_res_matches_full_prefix() {
     mat.fill_uniform(base2k, &mut source);
     let mat_be = upload_mat_znx::<NTT4x30Ref>(&mat);
     let mut pmat: VmpPMatOwned<NTT4x30Ref> = module.vmp_pmat_alloc(rows, cols_in, cols_out, mat_size);
-    module.vmp_prepare(
+    module.vmp_prepare_pmat(
         &mut pmat.to_backend_mut(),
         &<MatZnx<<NTT4x30Ref as Backend>::OwnedBuf, i64> as MatZnxToBackendRef<NTT4x30Ref>>::to_backend_ref(&mat_be),
         &mut scratch.arena(),
     );
 
     let mut res_full: VecZnxDftOwned<NTT4x30Ref> = module.vec_znx_dft_alloc(cols_out, mat_size);
-    module.vmp_apply_dft_to_dft(
+    module.vmp_apply_pmat_dft_to_dft(
         &mut res_full.to_backend_mut(),
-        &a_dft.to_backend_ref(),
         &pmat.to_backend_ref(),
+        &a_dft.to_backend_ref(),
         0,
         &mut scratch.arena(),
     );
@@ -347,10 +387,10 @@ fn test_ntt4x30_vmp_apply_truncated_res_matches_full_prefix() {
     // odd truncated sizes hit the trailing-column path on a paired pmat column
     for res_size in [1usize, 3] {
         let mut res_trunc: VecZnxDftOwned<NTT4x30Ref> = module.vec_znx_dft_alloc(cols_out, res_size);
-        module.vmp_apply_dft_to_dft(
+        module.vmp_apply_pmat_dft_to_dft(
             &mut res_trunc.to_backend_mut(),
-            &a_dft.to_backend_ref(),
             &pmat.to_backend_ref(),
+            &a_dft.to_backend_ref(),
             0,
             &mut scratch.arena(),
         );

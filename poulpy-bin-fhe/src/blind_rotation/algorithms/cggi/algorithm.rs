@@ -5,8 +5,8 @@ use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, SvpApplyPPolDftToDft, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize,
         VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftSubAssign, VecZnxDftZero,
-        VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxRotateBackend, VecZnxZeroBackend, VmpApplyDftToDft,
-        VmpApplyDftToDftTmpBytes,
+        VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxRotateBackend, VecZnxZeroBackend, VmpApplyPMatDftToDft,
+        VmpApplyPMatDftToDftTmpBytes,
     },
     layouts::{
         Backend, Data, HostDataMut, HostDataRef, Module, ScratchArena, SvpPPolOwned, VecZnxDftToBackendMut,
@@ -31,7 +31,7 @@ where
     BE::OwnedBuf: HostDataMut + HostDataRef,
     Self: VecZnxDftBytesOf
         + VecZnxBigBytesOf
-        + VmpApplyDftToDftTmpBytes
+        + VmpApplyPMatDftToDftTmpBytes
         + VecZnxBigNormalizeTmpBytes
         + VecZnxIdftApplyTmpBytes
         + GLWEExternalProduct<BE>
@@ -39,7 +39,7 @@ where
         + VecZnxRotateBackend<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftZero<BE>
-        + VmpApplyDftToDft<BE>
+        + VmpApplyPMatDftToDft<BE>
         + SvpApplyPPolDftToDft<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftSubAssign<BE>
@@ -81,7 +81,7 @@ where
             let vmp_res: usize = self.bytes_of_vec_znx_dft(cols, brk_size) * extension_factor;
             let vmp_xai: usize = self.bytes_of_vec_znx_dft(1, brk_size);
             let acc_dft_add: usize = vmp_res;
-            let vmp: usize = self.vmp_apply_dft_to_dft_tmp_bytes(brk_size, dnum, dnum, 2, 2, brk_size); // GGSW product: (1 x 2) x (2 x 2)
+            let vmp: usize = self.vmp_apply_pmat_dft_to_dft_tmp_bytes(brk_size, dnum, 2, 2, brk_size, dnum); // GGSW product: (1 x 2) x (2 x 2)
             let acc: usize = if extension_factor > 1 {
                 BE::bytes_of_vec_znx(self.n(), cols, glwe_infos.size()) * extension_factor
             } else {
@@ -156,7 +156,7 @@ fn execute_block_binary_extended<R, DataIn, M, BE: Backend<ZnxWord = i64> + 'sta
         + VecZnxRotateBackend<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftZero<BE>
-        + VmpApplyDftToDft<BE>
+        + VmpApplyPMatDftToDft<BE>
         + SvpApplyPPolDftToDft<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftSubAssign<BE>
@@ -244,10 +244,10 @@ fn execute_block_binary_extended<R, DataIn, M, BE: Backend<ZnxWord = i64> + 'sta
             for i in 0..extension_factor {
                 let skii_ref = skii.data().to_backend_ref();
                 scratch_5.scope(|mut scratch_local| {
-                    module.vmp_apply_dft_to_dft(
+                    module.vmp_apply_pmat_dft_to_dft(
                         &mut vmp_res[i],
-                        &vec_znx_dft_backend_ref_from_mut::<BE>(&acc_dft[i]),
                         &skii_ref,
+                        &vec_znx_dft_backend_ref_from_mut::<BE>(&acc_dft[i]),
                         0,
                         &mut scratch_local,
                     );
@@ -367,7 +367,7 @@ fn execute_block_binary<R, DataIn, M, BE: Backend<ZnxWord = i64> + 'static>(
         + VecZnxRotateBackend<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftZero<BE>
-        + VmpApplyDftToDft<BE>
+        + VmpApplyPMatDftToDft<BE>
         + SvpApplyPPolDftToDft<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftSubAssign<BE>
@@ -437,7 +437,7 @@ fn execute_block_binary<R, DataIn, M, BE: Backend<ZnxWord = i64> + 'static>(
 
             // vmp_res = DFT(acc) * BRK[i]
             let skii_ref = skii.data().to_backend_ref();
-            module.vmp_apply_dft_to_dft(&mut vmp_res, &acc_dft.to_backend_ref(), &skii_ref, 0, &mut scratch_4.borrow());
+            module.vmp_apply_pmat_dft_to_dft(&mut vmp_res, &skii_ref, &acc_dft.to_backend_ref(), 0, &mut scratch_4.borrow());
 
             // DFT(X^ai -1) * (DFT(acc) * BRK[i])
             for i in 0..cols {

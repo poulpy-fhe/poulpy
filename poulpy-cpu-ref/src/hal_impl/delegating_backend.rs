@@ -1,16 +1,24 @@
 use poulpy_hal::{
-    api::{VecZnxDftApply, VecZnxDftZero, VmpApplyDftToDft},
-    layouts::{
-        Backend, Module, NoiseInfos, VecZnxBackendMut, VecZnxBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, ZnxInfos,
+    api::{
+        ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
+        VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApplyTmpA, VmpTMatBytesOf,
     },
-    oep::{HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalVecZnxBigImpl, HalVecZnxDftImpl, HalVecZnxImpl, HalVmpImpl},
+    layouts::{
+        MatZnxInfos, Module, NoiseInfos, SvpTPolToBackendMut, SvpTPolToBackendRef, VecZnxBackendMut, VecZnxBackendRef,
+        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos,
+        VmpTMatToBackendMut, VmpTMatToBackendRef, ZnxInfos,
+    },
+    oep::{
+        HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalSvpPPolImpl, HalSvpTPolImpl, HalVecZnxBigImpl, HalVecZnxDftImpl,
+        HalVecZnxImpl, HalVmpImpl, HalVmpPMatImpl, HalVmpTMatImpl,
+    },
 };
 
 use crate::{
     FFT64Ref,
     hal_defaults::{
-        BigWordHadamardProduct, FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpDefault, FFT64VecZnxBigDefault,
-        FFT64VecZnxDftDefault, FFT64VmpDefault, HalVecZnxDefault,
+        BigWordHadamardProduct, FFT64ConvolutionDefault, FFT64ModuleDefault, FFT64SvpPPolDefault, FFT64SvpTPolDefault,
+        FFT64VecZnxBigDefault, FFT64VecZnxDftDefault, FFT64VmpPMatDefault, FFT64VmpTMatDefault, HalVecZnxDefault,
     },
     reference::{
         fft64::{
@@ -155,8 +163,16 @@ unsafe impl HalModuleImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
     crate::hal_impl_module!(FFT64ModuleDefault);
 }
 
+unsafe impl HalVmpPMatImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
+    crate::hal_impl_vmp_pmat!(FFT64VmpPMatDefault);
+}
+
+unsafe impl HalVmpTMatImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
+    crate::hal_impl_vmp_tmat!(FFT64VmpTMatDefault);
+}
+
 unsafe impl HalVmpImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
-    crate::hal_impl_vmp!(FFT64VmpDefault);
+    crate::hal_impl_vmp!();
 }
 
 unsafe impl HalConvolutionImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
@@ -167,8 +183,16 @@ unsafe impl HalVecZnxBigImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
     crate::hal_impl_vec_znx_big!(FFT64VecZnxBigDefault);
 }
 
+unsafe impl HalSvpPPolImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
+    crate::hal_impl_svp_ppol!(FFT64SvpPPolDefault);
+}
+
+unsafe impl HalSvpTPolImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
+    crate::hal_impl_svp_tpol!(FFT64SvpTPolDefault);
+}
+
 unsafe impl HalSvpImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
-    crate::hal_impl_svp!(FFT64SvpDefault);
+    crate::hal_impl_svp!();
 }
 
 unsafe impl HalVecZnxDftImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {

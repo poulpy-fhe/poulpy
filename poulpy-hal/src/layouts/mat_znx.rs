@@ -66,7 +66,7 @@ impl MatZnxShape {
 /// The type parameter `W` names the coefficient word (byte-layout contract)
 /// of the buffer.
 ///
-/// Used primarily as the plaintext input to [`VmpPrepare`](crate::api::VmpPrepare),
+/// Used primarily as the plaintext input to [`VmpPreparePMat`](crate::api::VmpPreparePMat),
 /// which converts a `MatZnx` into a prepared [`VmpPMat`](crate::layouts::VmpPMat)
 /// for vector-matrix products.
 #[repr(C)]
