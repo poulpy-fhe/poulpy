@@ -26,231 +26,137 @@
 
 use crate::layouts::{
     Backend, MatZnxBackendRef, ScratchArena, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
-    VecZnxDftBackendRef, VmpPMatBackendMut,
+    VecZnxDftBackendRef,
 };
 
-/// Zeroes all entries of a [`VmpPMat`](crate::layouts::VmpPMat).
-pub trait VmpZero<B: Backend> {
-    fn vmp_zero(&self, res: &mut VmpPMatBackendMut<'_, B>);
+/// Declares one `vmp_apply_<matrix>_<vector>_to_<out>` trait plus its
+/// `*TmpBytes` companion, which is the same for every variant.
+///
+/// `$a` is the matrix-operand view type and `$b` the vector-operand view type.
+/// A trailing `, limb_offset` in the operand list adds that parameter, which
+/// only the DFT-domain vector variants carry. The trailing token selects the
+/// output domain; `dft` also covers the `_accumulate` variants, whose signature
+/// is identical.
+macro_rules! vmp_apply_trait {
+    (
+        $(#[$meta:meta])*
+        $trait:ident :: $method:ident ($a:ty, $b:ty $(, $off:ident)?) -> dft
+    ) => {
+        vmp_apply_tmp_bytes_trait!($trait, $method);
+        $(#[$meta])*
+        pub trait $trait<B: Backend> {
+            #[allow(clippy::too_many_arguments)]
+            fn $method(
+                &self,
+                res: &mut VecZnxDftBackendMut<'_, B>,
+                a: &$a,
+                b: &$b,
+                $($off: usize,)?
+                scratch: &mut ScratchArena<'_, B>,
+            );
+        }
+    };
+    (
+        $(#[$meta:meta])*
+        $trait:ident :: $method:ident ($a:ty, $b:ty $(, $off:ident)?) -> big
+    ) => {
+        vmp_apply_tmp_bytes_trait!($trait, $method);
+        $(#[$meta])*
+        pub trait $trait<B: Backend> {
+            #[allow(clippy::too_many_arguments)]
+            fn $method(
+                &self,
+                res: &mut VecZnxBigBackendMut<'_, B>,
+                a: &$a,
+                b: &$b,
+                $($off: usize,)?
+                scratch: &mut ScratchArena<'_, B>,
+            );
+        }
+    };
+    (
+        $(#[$meta:meta])*
+        $trait:ident :: $method:ident ($a:ty, $b:ty $(, $off:ident)?) -> small
+    ) => {
+        vmp_apply_tmp_bytes_trait!($trait, $method);
+        $(#[$meta])*
+        pub trait $trait<B: Backend> {
+            #[allow(clippy::too_many_arguments)]
+            fn $method(
+                &self,
+                res: &mut VecZnxBackendMut<'_, B>,
+                res_base2k: usize,
+                res_offset: i64,
+                a: &$a,
+                b: &$b,
+                b_base2k: usize,
+                $($off: usize,)?
+                scratch: &mut ScratchArena<'_, B>,
+            );
+        }
+    };
 }
 
-/// Returns scratch bytes required for [`VmpApplySmallSmallToDft`].
-#[allow(clippy::too_many_arguments)]
-pub trait VmpApplySmallSmallToDftTmpBytes {
-    fn vmp_apply_small_small_to_dft_tmp_bytes(
-        &self,
-        res_size: usize,
-        a_rows: usize,
-        a_cols_in: usize,
-        a_cols_out: usize,
-        a_size: usize,
-        b_size: usize,
-    ) -> usize;
+/// Declares the `*TmpBytes` companion of one apply trait. Split out only so the
+/// three [`vmp_apply_trait!`] arms share it; the shape does not vary.
+macro_rules! vmp_apply_tmp_bytes_trait {
+    ($trait:ident, $method:ident) => {
+        paste::paste! {
+            #[doc = concat!("Returns scratch bytes required for [`", stringify!($trait), "`].")]
+            pub trait [<$trait TmpBytes>] {
+                #[allow(clippy::too_many_arguments)]
+                fn [<$method _tmp_bytes>](
+                    &self,
+                    res_size: usize,
+                    a_rows: usize,
+                    a_cols_in: usize,
+                    a_cols_out: usize,
+                    a_size: usize,
+                    b_size: usize,
+                ) -> usize;
+            }
+        }
+    };
 }
 
-/// `res = a * b`, with an unprepared matrix and `b` in coefficient domain.
-pub trait VmpApplySmallSmallToDft<B: Backend> {
-    #[allow(clippy::too_many_arguments)]
-    fn vmp_apply_small_small_to_dft(
-        &self,
-        res: &mut VecZnxDftBackendMut<'_, B>,
-        a: &MatZnxBackendRef<'_, B>,
-        b: &VecZnxBackendRef<'_, B>,
-        scratch: &mut ScratchArena<'_, B>,
-    );
-}
-
-/// Returns scratch bytes required for [`VmpApplySmallDftToDft`].
-#[allow(clippy::too_many_arguments)]
-pub trait VmpApplySmallDftToDftTmpBytes {
-    fn vmp_apply_small_dft_to_dft_tmp_bytes(
-        &self,
-        res_size: usize,
-        a_rows: usize,
-        a_cols_in: usize,
-        a_cols_out: usize,
-        a_size: usize,
-        b_size: usize,
-    ) -> usize;
-}
-
-/// `res = a * b`, with an unprepared matrix and `b` in DFT domain.
-pub trait VmpApplySmallDftToDft<B: Backend> {
-    #[allow(clippy::too_many_arguments)]
-    fn vmp_apply_small_dft_to_dft(
-        &self,
-        res: &mut VecZnxDftBackendMut<'_, B>,
-        a: &MatZnxBackendRef<'_, B>,
-        b: &VecZnxDftBackendRef<'_, B>,
-        limb_offset: usize,
-        scratch: &mut ScratchArena<'_, B>,
-    );
-}
-
-/// Returns scratch bytes required for [`VmpApplySmallSmallToDftAccumulate`].
-#[allow(clippy::too_many_arguments)]
-pub trait VmpApplySmallSmallToDftAccumulateTmpBytes {
-    fn vmp_apply_small_small_to_dft_accumulate_tmp_bytes(
-        &self,
-        res_size: usize,
-        a_rows: usize,
-        a_cols_in: usize,
-        a_cols_out: usize,
-        a_size: usize,
-        b_size: usize,
-    ) -> usize;
-}
-
-/// `res += a * b`, with an unprepared matrix and `b` in coefficient domain.
-pub trait VmpApplySmallSmallToDftAccumulate<B: Backend> {
-    #[allow(clippy::too_many_arguments)]
-    fn vmp_apply_small_small_to_dft_accumulate(
-        &self,
-        res: &mut VecZnxDftBackendMut<'_, B>,
-        a: &MatZnxBackendRef<'_, B>,
-        b: &VecZnxBackendRef<'_, B>,
-        scratch: &mut ScratchArena<'_, B>,
-    );
-}
-
-/// Returns scratch bytes required for [`VmpApplySmallDftToDftAccumulate`].
-#[allow(clippy::too_many_arguments)]
-pub trait VmpApplySmallDftToDftAccumulateTmpBytes {
-    fn vmp_apply_small_dft_to_dft_accumulate_tmp_bytes(
-        &self,
-        res_size: usize,
-        a_rows: usize,
-        a_cols_in: usize,
-        a_cols_out: usize,
-        a_size: usize,
-        b_size: usize,
-    ) -> usize;
-}
-
-/// `res += a * b`, with an unprepared matrix and `b` in DFT domain.
-pub trait VmpApplySmallDftToDftAccumulate<B: Backend> {
-    #[allow(clippy::too_many_arguments)]
-    fn vmp_apply_small_dft_to_dft_accumulate(
-        &self,
-        res: &mut VecZnxDftBackendMut<'_, B>,
-        a: &MatZnxBackendRef<'_, B>,
-        b: &VecZnxDftBackendRef<'_, B>,
-        limb_offset: usize,
-        scratch: &mut ScratchArena<'_, B>,
-    );
-}
-
-/// Returns scratch bytes required for [`VmpApplySmallSmallToBig`].
-#[allow(clippy::too_many_arguments)]
-pub trait VmpApplySmallSmallToBigTmpBytes {
-    fn vmp_apply_small_small_to_big_tmp_bytes(
-        &self,
-        res_size: usize,
-        a_rows: usize,
-        a_cols_in: usize,
-        a_cols_out: usize,
-        a_size: usize,
-        b_size: usize,
-    ) -> usize;
-}
-
-/// `res = a * b`, IDFT applied, with an unprepared matrix and `b` in coefficient domain.
-pub trait VmpApplySmallSmallToBig<B: Backend> {
-    #[allow(clippy::too_many_arguments)]
-    fn vmp_apply_small_small_to_big(
-        &self,
-        res: &mut VecZnxBigBackendMut<'_, B>,
-        a: &MatZnxBackendRef<'_, B>,
-        b: &VecZnxBackendRef<'_, B>,
-        scratch: &mut ScratchArena<'_, B>,
-    );
-}
-
-/// Returns scratch bytes required for [`VmpApplySmallDftToBig`].
-#[allow(clippy::too_many_arguments)]
-pub trait VmpApplySmallDftToBigTmpBytes {
-    fn vmp_apply_small_dft_to_big_tmp_bytes(
-        &self,
-        res_size: usize,
-        a_rows: usize,
-        a_cols_in: usize,
-        a_cols_out: usize,
-        a_size: usize,
-        b_size: usize,
-    ) -> usize;
-}
-
-/// `res = a * b`, IDFT applied, with an unprepared matrix and `b` in DFT domain.
-pub trait VmpApplySmallDftToBig<B: Backend> {
-    #[allow(clippy::too_many_arguments)]
-    fn vmp_apply_small_dft_to_big(
-        &self,
-        res: &mut VecZnxBigBackendMut<'_, B>,
-        a: &MatZnxBackendRef<'_, B>,
-        b: &VecZnxDftBackendRef<'_, B>,
-        limb_offset: usize,
-        scratch: &mut ScratchArena<'_, B>,
-    );
-}
-
-/// Returns scratch bytes required for [`VmpApplySmallSmallToSmall`].
-#[allow(clippy::too_many_arguments)]
-pub trait VmpApplySmallSmallToSmallTmpBytes {
-    fn vmp_apply_small_small_to_small_tmp_bytes(
-        &self,
-        res_size: usize,
-        a_rows: usize,
-        a_cols_in: usize,
-        a_cols_out: usize,
-        a_size: usize,
-        b_size: usize,
-    ) -> usize;
-}
-
-/// `res = a * b`, IDFT and normalization applied, with an unprepared matrix and `b` in coefficient domain.
-pub trait VmpApplySmallSmallToSmall<B: Backend> {
-    #[allow(clippy::too_many_arguments)]
-    fn vmp_apply_small_small_to_small(
-        &self,
-        res: &mut VecZnxBackendMut<'_, B>,
-        res_base2k: usize,
-        res_offset: i64,
-        a: &MatZnxBackendRef<'_, B>,
-        b: &VecZnxBackendRef<'_, B>,
-        b_base2k: usize,
-        scratch: &mut ScratchArena<'_, B>,
-    );
-}
-
-/// Returns scratch bytes required for [`VmpApplySmallDftToSmall`].
-#[allow(clippy::too_many_arguments)]
-pub trait VmpApplySmallDftToSmallTmpBytes {
-    fn vmp_apply_small_dft_to_small_tmp_bytes(
-        &self,
-        res_size: usize,
-        a_rows: usize,
-        a_cols_in: usize,
-        a_cols_out: usize,
-        a_size: usize,
-        b_size: usize,
-    ) -> usize;
-}
-
-/// `res = a * b`, IDFT and normalization applied, with an unprepared matrix and `b` in DFT domain.
-pub trait VmpApplySmallDftToSmall<B: Backend> {
-    #[allow(clippy::too_many_arguments)]
-    fn vmp_apply_small_dft_to_small(
-        &self,
-        res: &mut VecZnxBackendMut<'_, B>,
-        res_base2k: usize,
-        res_offset: i64,
-        a: &MatZnxBackendRef<'_, B>,
-        b: &VecZnxDftBackendRef<'_, B>,
-        b_base2k: usize,
-        limb_offset: usize,
-        scratch: &mut ScratchArena<'_, B>,
-    );
-}
+vmp_apply_trait!(
+    /// `res = a * b`, with an unprepared matrix and `b` in coefficient domain.
+    VmpApplySmallSmallToDft::vmp_apply_small_small_to_dft(MatZnxBackendRef<'_, B>, VecZnxBackendRef<'_, B>) -> dft
+);
+vmp_apply_trait!(
+    /// `res = a * b`, with an unprepared matrix and `b` in DFT domain.
+    VmpApplySmallDftToDft::vmp_apply_small_dft_to_dft(MatZnxBackendRef<'_, B>, VecZnxDftBackendRef<'_, B>, limb_offset) -> dft
+);
+vmp_apply_trait!(
+    /// `res += a * b`, with an unprepared matrix and `b` in coefficient domain.
+    VmpApplySmallSmallToDftAccumulate::vmp_apply_small_small_to_dft_accumulate(
+        MatZnxBackendRef<'_, B>, VecZnxBackendRef<'_, B>
+    ) -> dft
+);
+vmp_apply_trait!(
+    /// `res += a * b`, with an unprepared matrix and `b` in DFT domain.
+    VmpApplySmallDftToDftAccumulate::vmp_apply_small_dft_to_dft_accumulate(
+        MatZnxBackendRef<'_, B>, VecZnxDftBackendRef<'_, B>, limb_offset
+    ) -> dft
+);
+vmp_apply_trait!(
+    /// `res = a * b`, IDFT applied, with an unprepared matrix and `b` in coefficient domain.
+    VmpApplySmallSmallToBig::vmp_apply_small_small_to_big(MatZnxBackendRef<'_, B>, VecZnxBackendRef<'_, B>) -> big
+);
+vmp_apply_trait!(
+    /// `res = a * b`, IDFT applied, with an unprepared matrix and `b` in DFT domain.
+    VmpApplySmallDftToBig::vmp_apply_small_dft_to_big(MatZnxBackendRef<'_, B>, VecZnxDftBackendRef<'_, B>, limb_offset) -> big
+);
+vmp_apply_trait!(
+    /// `res = a * b`, IDFT and normalization applied, with an unprepared matrix and `b` in coefficient domain.
+    VmpApplySmallSmallToSmall::vmp_apply_small_small_to_small(MatZnxBackendRef<'_, B>, VecZnxBackendRef<'_, B>) -> small
+);
+vmp_apply_trait!(
+    /// `res = a * b`, IDFT and normalization applied, with an unprepared matrix and `b` in DFT domain.
+    VmpApplySmallDftToSmall::vmp_apply_small_dft_to_small(
+        MatZnxBackendRef<'_, B>, VecZnxDftBackendRef<'_, B>, limb_offset
+    ) -> small
+);
 
 mod pmat;
 mod tmat;

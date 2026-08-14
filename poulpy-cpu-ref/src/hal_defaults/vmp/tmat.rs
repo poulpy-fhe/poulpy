@@ -14,10 +14,7 @@ use crate::reference::{
     },
 };
 use poulpy_hal::{
-    api::{
-        HostBufMut, ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
-        VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApplyTmpA, VmpTMatBytesOf,
-    },
+    api::{HostBufMut, ScratchArenaTakeBasic, VecZnxDftAddAssign, VecZnxDftBytesOf, VecZnxDftZero},
     layouts::{
         Backend, HostDataMut, HostDataRef, MatZnxBackendRef, Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftBackendRef,
         VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpTMatBackendMut, VmpTMatBackendRef,
@@ -53,15 +50,6 @@ pub trait FFT64VmpTMatDefault<BE: Backend<ZnxWord = i64>>: Backend {
         let bytes = fft64_vmp::vmp_prepare_tmat_tmp_bytes(module.n());
         let (tmp, _) = take_host_typed::<BE, f64>(scratch.borrow(), bytes / size_of::<f64>());
         fft64_vmp::vmp_prepare_tmat::<BE>(module.get_fft_table(), res, a, tmp);
-    }
-    #[allow(clippy::too_many_arguments)]
-    fn vmp_tmat_zero_default(module: &Module<BE>, res: &mut VmpTMatBackendMut<'_, BE>)
-    where
-        BE: Backend<DftWord = f64, ZnxWord = i64>,
-        for<'x> BE::BufMut<'x>: HostDataMut + HostBufMut<'x>,
-    {
-        let _ = module;
-        fft64_vmp::vmp_tmat_zero::<BE>(res);
     }
     #[allow(clippy::too_many_arguments)]
     fn vmp_apply_tmat_dft_to_dft_tmp_bytes_default(
@@ -166,14 +154,6 @@ pub trait NTT4x30VmpTMatDefault<BE: Backend<ZnxWord = i64>>: Backend {
         let bytes = ntt4x30_vmp::ntt4x30_vmp_prepare_tmat_tmp_bytes(module.n());
         let (tmp, _) = take_host_typed::<BE, u64>(scratch.borrow(), bytes / size_of::<u64>());
         ntt4x30_vmp::ntt4x30_vmp_prepare_tmat::<BE>(module, res, a, tmp);
-    }
-    #[allow(clippy::too_many_arguments)]
-    fn vmp_tmat_zero_default(module: &Module<BE>, res: &mut VmpTMatBackendMut<'_, BE>)
-    where
-        for<'x> BE::BufMut<'x>: HostDataMut + HostBufMut<'x>,
-    {
-        let _ = module;
-        ntt4x30_vmp::ntt4x30_vmp_tmat_zero::<BE>(res);
     }
     #[allow(clippy::too_many_arguments)]
     fn vmp_apply_tmat_dft_to_dft_tmp_bytes_default(

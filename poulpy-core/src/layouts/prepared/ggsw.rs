@@ -1,7 +1,7 @@
 use poulpy_hal::layouts::VmpPMatToBackendMut;
 use poulpy_hal::layouts::VmpPMatToBackendRef;
 use poulpy_hal::{
-    api::{VmpPMatAlloc, VmpPMatBytesOf, VmpPreparePMat, VmpPreparePMatTmpBytes, VmpZero},
+    api::{VmpPMatAlloc, VmpPMatBytesOf, VmpPreparePMat, VmpPreparePMatTmpBytes},
     layouts::{Backend, Data, HostDataRef, Module, ScratchArena, VmpPMat},
 };
 
@@ -66,7 +66,7 @@ impl<D: Data, B: Backend> GGSWInfos for GGSWPrepared<D, B> {
 /// Trait for allocating and preparing DFT-domain GGSW ciphertexts.
 pub trait GGSWPreparedFactory<B: Backend>
 where
-    Self: GetDegree + VmpPMatAlloc<B> + VmpPMatBytesOf + VmpPreparePMatTmpBytes + VmpPreparePMat<B> + VmpZero<B>,
+    Self: GetDegree + VmpPMatAlloc<B> + VmpPMatBytesOf + VmpPreparePMatTmpBytes + VmpPreparePMat<B>,
 {
     /// Allocates a new prepared GGSW with the given parameters.
     fn ggsw_prepared_alloc(
@@ -141,18 +141,10 @@ where
         );
         self.vmp_prepare_pmat(&mut res.data, &other.data, scratch);
     }
-
-    fn ggsw_zero<R>(&self, res: &mut R)
-    where
-        R: GGSWPreparedToBackendMut<B>,
-    {
-        let mut res = res.to_backend_mut();
-        self.vmp_zero(&mut res.data);
-    }
 }
 
 impl<B: Backend> GGSWPreparedFactory<B> for Module<B> where
-    Self: GetDegree + VmpPMatAlloc<B> + VmpPMatBytesOf + VmpPreparePMatTmpBytes + VmpPreparePMat<B> + VmpZero<B>
+    Self: GetDegree + VmpPMatAlloc<B> + VmpPMatBytesOf + VmpPreparePMatTmpBytes + VmpPreparePMat<B>
 {
 }
 

@@ -14,10 +14,7 @@ use crate::reference::{
     },
 };
 use poulpy_hal::{
-    api::{
-        HostBufMut, ModuleN, ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes,
-        VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApplyTmpA, VmpTMatBytesOf,
-    },
+    api::{HostBufMut, ScratchArenaTakeBasic, VecZnxDftAddAssign, VecZnxDftBytesOf, VecZnxDftZero},
     layouts::{
         Backend, HostDataMut, HostDataRef, MatZnxBackendRef, Module, ScratchArena, VecZnxDftBackendMut, VecZnxDftBackendRef,
         VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpPMatBackendMut, VmpPMatBackendRef,
@@ -27,16 +24,6 @@ use std::mem::size_of;
 
 #[doc(hidden)]
 pub trait FFT64VmpPMatDefault<BE: Backend<ZnxWord = i64>>: Backend {
-    #[allow(clippy::too_many_arguments)]
-    fn vmp_zero_default(module: &Module<BE>, res: &mut VmpPMatBackendMut<'_, BE>)
-    where
-        BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
-        for<'x> BE::BufMut<'x>: HostDataMut + HostBufMut<'x>,
-    {
-        let _ = module;
-        fft64_vmp::vmp_zero::<BE>(res);
-    }
-
     #[allow(clippy::too_many_arguments)]
     fn vmp_prepare_pmat_tmp_bytes_default(
         module: &Module<BE>,
@@ -141,15 +128,6 @@ impl<BE: Backend<ZnxWord = i64>> FFT64VmpPMatDefault<BE> for BE {}
 
 #[doc(hidden)]
 pub trait NTT4x30VmpPMatDefault<BE: Backend<ZnxWord = i64>>: Backend {
-    #[allow(clippy::too_many_arguments)]
-    fn vmp_zero_default(module: &Module<BE>, res: &mut VmpPMatBackendMut<'_, BE>)
-    where
-        for<'x> BE::BufMut<'x>: HostDataMut + HostBufMut<'x>,
-    {
-        let _ = module;
-        ntt4x30_vmp::ntt4x30_vmp_zero::<BE>(res);
-    }
-
     #[allow(clippy::too_many_arguments)]
     fn vmp_prepare_pmat_tmp_bytes_default(
         module: &Module<BE>,

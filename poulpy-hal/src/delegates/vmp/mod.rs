@@ -281,12 +281,5 @@ impl_vmp_delegate!(
     }
 );
 
-impl_vmp_delegate!(
-    VmpZero<B>,
-    fn vmp_zero(&self, res: &mut VmpPMatBackendMut<'_, B>) {
-        B::vmp_zero(self, res);
-    }
-);
-
 mod pmat;
 mod tmat;

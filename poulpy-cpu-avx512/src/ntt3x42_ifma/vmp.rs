@@ -880,18 +880,3 @@ pub(crate) fn vmp_apply_tmat_dft_to_dft_accumulate_ifma(
         tmp,
     );
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// vmp_zero
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Zero a `VmpPMat<NTT3x42Ifma>`.
-pub(crate) fn vmp_zero(res: &mut VmpPMatBackendMut<'_, crate::NTT3x42Ifma>) {
-    res.data_mut().as_mut().fill(0);
-}
-
-/// Hot-prep counterpart; this backend builds both tiers identically.
-/// Zero a `VmpPMat<NTT3x42Ifma>`.
-pub(crate) fn vmp_tmat_zero(res: &mut VmpTMatBackendMut<'_, crate::NTT3x42Ifma>) {
-    res.data_mut().as_mut().fill(0);
-}

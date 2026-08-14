@@ -1,12 +1,11 @@
 use poulpy_hal::{
     api::{
-        ScratchArenaTakeBasic, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
-        VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApplyTmpA, VmpTMatBytesOf,
+        VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign, VecZnxDftBytesOf, VecZnxDftZero,
+        VecZnxIdftApplyTmpA, VmpTMatBytesOf,
     },
     layouts::{
-        MatZnxInfos, Module, NoiseInfos, SvpTPolToBackendMut, SvpTPolToBackendRef, VecZnxBackendMut, VecZnxBackendRef,
-        VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxInfos,
-        VmpTMatToBackendMut, VmpTMatToBackendRef, ZnxInfos,
+        Module, NoiseInfos, SvpTPolToBackendMut, SvpTPolToBackendRef, VecZnxBackendMut, VecZnxBackendRef, VecZnxBigToBackendMut,
+        VecZnxBigToBackendRef, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VmpTMatToBackendMut, VmpTMatToBackendRef,
     },
     oep::{
         HalConvolutionImpl, HalModuleImpl, HalSvpImpl, HalSvpPPolImpl, HalSvpTPolImpl, HalVecZnxBigImpl, HalVecZnxDftImpl,

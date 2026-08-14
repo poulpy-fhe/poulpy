@@ -75,11 +75,6 @@ macro_rules! hal_impl_vmp_pmat {
         fn vmp_prepare_pmat_tmp_bytes(module: &Module<Self>, rows: usize, cols_in: usize, cols_out: usize, size: usize) -> usize {
             <Self as $defaults<Self>>::vmp_prepare_pmat_tmp_bytes_default(module, rows, cols_in, cols_out, size)
         }
-        #[allow(clippy::too_many_arguments)]
-        fn vmp_zero(module: &Module<Self>, res: &mut poulpy_hal::layouts::VmpPMatBackendMut<'_, Self>) {
-            <Self as $defaults<Self>>::vmp_zero_default(module, res)
-        }
-
         $crate::__hal_impl_vmp_pmat_derived!();
     };
 

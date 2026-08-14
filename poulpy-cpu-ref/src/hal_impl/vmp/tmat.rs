@@ -35,11 +35,6 @@ macro_rules! hal_impl_vmp_tmat {
         }
 
         #[allow(clippy::too_many_arguments)]
-        fn vmp_tmat_zero(module: &Module<Self>, res: &mut poulpy_hal::layouts::VmpTMatBackendMut<'_, Self>) {
-            <Self as $defaults<Self>>::vmp_tmat_zero_default(module, res)
-        }
-
-        #[allow(clippy::too_many_arguments)]
         fn vmp_apply_tmat_dft_to_dft(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,

@@ -146,22 +146,6 @@ pub fn vmp_apply_pmat_dft_to_dft_tmp_bytes(a_size: usize, prows: usize, pcols_in
     (16 + 8 * row_max * pcols_in) * size_of::<f64>()
 }
 
-pub fn vmp_zero<BE>(res: &mut VmpPMatBackendMut<'_, BE>)
-where
-    BE: Backend<DftWord = f64, ZnxWord = i64>,
-    for<'x> BE::BufMut<'x>: HostDataMut,
-{
-    res.raw_mut().fill(0.0);
-}
-
-pub fn vmp_tmat_zero<BE>(res: &mut VmpTMatBackendMut<'_, BE>)
-where
-    BE: Backend<DftWord = f64, ZnxWord = i64>,
-    for<'x> BE::BufMut<'x>: HostDataMut,
-{
-    res.raw_mut().fill(0.0);
-}
-
 /// `res = pmat * a` (or `res += pmat * a` when `OVERWRITE` is false in the core),
 /// with the matrix packed cold-prep.
 pub fn vmp_apply_pmat_dft_to_dft<const OVERWRITE: bool, BE>(

@@ -160,10 +160,6 @@ unsafe impl HalVmpPMatImpl<NTT4x30Avx> for NTT4x30Avx {
         crate::ntt4x30::vmp::vmp_apply_pmat_dft_to_dft_avx(module, res, b, a, limb_offset, tmp);
     }
 
-    fn vmp_zero(_module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
-        poulpy_cpu_ref::reference::ntt4x30::vmp::ntt4x30_vmp_zero::<Self>(res);
-    }
-
     #[allow(clippy::too_many_arguments)]
     fn vmp_apply_pmat_dft_to_dft_accumulate_tmp_bytes(
         _module: &Module<Self>,
@@ -239,10 +235,6 @@ unsafe impl HalVmpTMatImpl<NTT4x30Avx> for NTT4x30Avx {
         let bytes = crate::ntt4x30::vmp::vmp_apply_tmp_bytes_avx(b.size(), a.rows(), a.cols_in());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         crate::ntt4x30::vmp::vmp_apply_tmat_dft_to_dft_avx(module, res, b, a, limb_offset, tmp);
-    }
-
-    fn vmp_tmat_zero(_module: &Module<Self>, res: &mut VmpTMatBackendMut<'_, Self>) {
-        poulpy_cpu_ref::reference::ntt4x30::vmp::ntt4x30_vmp_tmat_zero::<Self>(res);
     }
 
     #[allow(clippy::too_many_arguments)]

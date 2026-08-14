@@ -275,10 +275,3 @@ impl_vmp_delegate!(
         B::vmp_apply_tmat_dft_to_small(self, res, res_base2k, res_offset, a, b, b_base2k, limb_offset, scratch);
     }
 );
-
-impl_vmp_delegate!(
-    VmpTMatZero<B>,
-    fn vmp_tmat_zero(&self, res: &mut VmpTMatBackendMut<'_, B>) {
-        B::vmp_tmat_zero(self, res);
-    }
-);

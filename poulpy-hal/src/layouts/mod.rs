@@ -22,11 +22,15 @@ mod scratch;
 mod scratch_views;
 mod serialization;
 mod stats;
+#[macro_use]
+mod svp_pol_family;
 mod svp_ppol;
 mod svp_tpol;
 mod vec_znx;
 mod vec_znx_big;
 mod vec_znx_dft;
+#[macro_use]
+mod vmp_mat_family;
 mod vmp_pmat;
 mod vmp_tmat;
 mod word;

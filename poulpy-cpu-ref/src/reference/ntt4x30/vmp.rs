@@ -449,19 +449,3 @@ pub fn ntt4x30_vmp_apply_tmat_dft_to_dft<BE>(
 // ──────────────────────────────────────────────────────────────────────────────
 // Utility
 // ──────────────────────────────────────────────────────────────────────────────
-
-/// Zero all entries of a prepared polynomial matrix.
-pub fn ntt4x30_vmp_zero<BE: Backend<ZnxWord = i64>>(res: &mut VmpPMatBackendMut<'_, BE>)
-where
-    for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
-{
-    cast_slice_mut::<u8, u32>(res.data_mut().as_mut()).fill(0);
-}
-
-/// Zero all entries of a hot-prep polynomial matrix.
-pub fn ntt4x30_vmp_tmat_zero<BE: Backend<ZnxWord = i64>>(res: &mut VmpTMatBackendMut<'_, BE>)
-where
-    for<'x> <BE as Backend>::BufMut<'x>: HostDataMut,
-{
-    cast_slice_mut::<u8, u32>(res.data_mut().as_mut()).fill(0);
-}

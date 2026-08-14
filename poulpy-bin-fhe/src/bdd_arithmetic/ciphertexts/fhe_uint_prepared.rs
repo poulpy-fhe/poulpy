@@ -471,19 +471,19 @@ where
         let mut tmp_lwe: LWE<BE::OwnedBuf, BE::ZnxWord> = self.lwe_alloc_from_infos(bits);
         let mut scratch_1 = scratch_local;
 
+        // `tmp_ggsw` is still the zero-initialized allocation here, so preparing it
+        // is the prepared-zero the out-of-range slots need. Done before the bit
+        // loop overwrites it.
+        for i in (0..bit_start).chain(bit_end..T::BITS as usize) {
+            let mut scratch_bit = scratch_1.borrow();
+            self.ggsw_prepare(&mut res.bits[i], &tmp_ggsw, &mut scratch_bit);
+        }
+
         for bit in bit_start..bit_end {
             let mut scratch_bit = scratch_1.borrow();
             bits.get_bit_lwe(self, bit, &mut tmp_lwe, ks_glwe, ks_lwe, &mut scratch_bit);
             cbt.execute_to_constant(self, &mut tmp_ggsw, &tmp_lwe, 1, 1, &mut scratch_bit);
             self.ggsw_prepare(&mut res.bits[bit], &tmp_ggsw, &mut scratch_bit);
-        }
-
-        for i in 0..bit_start {
-            self.ggsw_zero(&mut res.bits[i]);
-        }
-
-        for i in bit_end..T::BITS as usize {
-            self.ggsw_zero(&mut res.bits[i]);
         }
     }
 }
