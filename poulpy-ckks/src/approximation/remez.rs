@@ -1,4 +1,37 @@
-//! Host-side Remez fitting in the Chebyshev basis.
+//! Polynomial minimax approximation by the Remez exchange algorithm.
+//!
+//! This module approximates a scalar function by a Chebyshev series while
+//! minimizing the largest absolute error on one interval or a disjoint union
+//! of intervals. The public entry points run the following pipeline:
+//!
+//! 1. Map the convex hull of the requested domain to `[-1, 1]` and select the
+//!    Chebyshev degrees allowed by [`Parity`].
+//! 2. Seed one more reference point than there are active coefficients, using
+//!    Chebyshev roots distributed across the fitted intervals.
+//! 3. Solve `p(y_i) + (-1)^i E = f(y_i)` for the coefficients of `p` and the
+//!    common signed error `E`.
+//! 4. Find extrema of `f - p` on a Chebyshev--Lobatto grid, refine them with a
+//!    golden-section search, and choose a new alternating reference set.
+//! 5. Repeat the solve/exchange steps until the selected error magnitudes are
+//!    equal within [`RemezOptions::rel_tol`].
+//!
+//! Step 3 enforces equioscillation at the current references; steps 4--5 move
+//! those references to the actual error extrema. By the alternation theorem,
+//! the resulting polynomial is the best uniform approximation when the usual
+//! continuity and convergence assumptions hold. Gaps between intervals are
+//! part of the polynomial's input normalization but are not part of the error
+//! objective.
+//!
+//! The extrema search is numerical, so [`Minimax::error`] is an estimate rather
+//! than a certified bound. This implementation uses absolute error and a
+//! multi-point exchange.
+//!
+//! # References
+//!
+//! - [NIST DLMF §3.11](https://dlmf.nist.gov/3.11) covers minimax
+//!   approximation, Chebyshev recurrences, and Clenshaw evaluation.
+//! - [Lee et al., *High-Precision Bootstrapping of RNS-CKKS*](https://eprint.iacr.org/2020/552)
+//!   describes the improved multi-interval Remez exchange strategy.
 
 use std::fmt::Debug;
 
@@ -9,14 +42,30 @@ use crate::{api::Basis, polynomial::Polynomial};
 
 pub use crate::api::Parity;
 
-/// Remez options.
+/// Controls accuracy and work in the Remez exchange loop.
+///
+/// The defaults target a practical host-side fit rather than a certified
+/// result. Increase [`grid_mult`](Self::grid_mult) when narrow features may be
+/// missed, or tighten [`rel_tol`](Self::rel_tol) when more uniform extrema are
+/// required.
 #[derive(Clone, Copy, Debug)]
 pub struct RemezOptions {
-    /// Maximum exchange iterations.
+    /// Maximum number of equioscillation solve/exchange iterations.
+    ///
+    /// Must be nonzero. Reaching this limit returns the latest fit with
+    /// [`Minimax::converged`] set to `false`.
     pub max_iters: usize,
-    /// Relative equioscillation tolerance.
+    /// Maximum relative spread among the selected absolute error extrema.
+    ///
+    /// Convergence is declared when `(max_error - min_error) <= rel_tol *
+    /// min_error`. Must be finite and strictly positive.
     pub rel_tol: f64,
-    /// Minimum extrema-grid density multiplier.
+    /// Multiplier for the initial extrema-search grid density.
+    ///
+    /// Each connected interval receives at least
+    /// `max(256, grid_mult * reference_count)` Chebyshev--Lobatto samples. The
+    /// grid is doubled when it fails to expose enough alternating extrema.
+    /// Must be nonzero.
     pub grid_mult: usize,
 }
 
@@ -30,24 +79,40 @@ impl Default for RemezOptions {
     }
 }
 
-/// A fitted minimax polynomial and its achieved sup-norm error.
+/// The result of a Remez minimax fit.
 pub struct Minimax<F> {
-    /// Polynomial normalized over the convex hull of `intervals`.
+    /// Chebyshev polynomial normalized over the convex hull of `intervals`.
+    ///
+    /// Evaluate it in the original coordinates with
+    /// [`Polynomial::evaluate_on_interval`]. Its inactive parity coefficients
+    /// are exactly zero.
     pub poly: Polynomial<F>,
     /// Ordered, pairwise-disjoint intervals on which the fit was performed.
     pub intervals: Vec<(F, F)>,
-    /// Estimated sup-norm error over [`intervals`](Self::intervals).
+    /// Estimated absolute sup-norm error over [`intervals`](Self::intervals).
+    ///
+    /// This is the largest refined grid extremum of `|f - poly|`, not a
+    /// rigorous upper bound.
     pub error: F,
-    /// Exchange iterations performed.
+    /// Number of equioscillation systems solved.
     pub iters: usize,
-    /// Whether the exchange converged within `max_iters`.
+    /// Whether the error was negligible at floating-point precision or the
+    /// selected extrema met the requested equioscillation tolerance.
     pub converged: bool,
 }
 
-/// Best degree-`degree` minimax approximation of `f` on `[a, b]` (default options).
+/// Approximates `f` on `[a, b]` by a degree-at-most-`degree` minimax polynomial.
 ///
-/// For `Parity::Even`/`Odd` the interval must be symmetric (`a == −b`); the
-/// off-parity coefficients are forced to zero.
+/// This is the single-interval convenience wrapper around
+/// [`minimax_multi_interval_with`] using [`RemezOptions::default`]. For
+/// [`Parity::Even`] or [`Parity::Odd`], `[a, b]` must be symmetric about zero
+/// and `f` is assumed to have the requested parity; inactive coefficients are
+/// forced to zero.
+///
+/// # Errors
+///
+/// Returns an error if the interval is non-finite, empty, or incompatible with
+/// `parity`, or if the Remez reference system becomes singular.
 pub fn minimax<F, Fun>(f: Fun, a: F, b: F, degree: usize, parity: Parity) -> Result<Minimax<F>>
 where
     F: Float + FloatConst + FromPrimitive + Debug,
@@ -56,7 +121,10 @@ where
     minimax_multi_interval_with(f, &[(a, b)], degree, parity, RemezOptions::default())
 }
 
-/// [`minimax`] with explicit [`RemezOptions`].
+/// Approximates `f` on one interval with explicit [`RemezOptions`].
+///
+/// The domain, parity, output, and error behavior are the same as for
+/// [`minimax`].
 pub fn minimax_with<F, Fun>(f: Fun, a: F, b: F, degree: usize, parity: Parity, opts: RemezOptions) -> Result<Minimax<F>>
 where
     F: Float + FloatConst + FromPrimitive + Debug,
@@ -65,11 +133,20 @@ where
     minimax_multi_interval_with(f, &[(a, b)], degree, parity, opts)
 }
 
-/// Best degree-`degree` minimax approximation on a union of intervals.
+/// Approximates `f` by a degree-at-most-`degree` minimax polynomial on a union
+/// of intervals.
 ///
-/// Intervals must be ordered and disjoint. The polynomial's input map spans
-/// their convex hull, but gaps are excluded from the fit. Even and odd fits
-/// require a symmetric domain and target.
+/// This calls [`minimax_multi_interval_with`] with
+/// [`RemezOptions::default`]. `intervals` must be nonempty, ordered by their
+/// lower endpoint, and pairwise disjoint. The returned polynomial is normalized
+/// over their convex hull, while open gaps are excluded from the objective.
+/// Even and odd fits require a domain symmetric about zero and assume a target
+/// of the corresponding parity.
+///
+/// # Errors
+///
+/// Returns an error for an invalid domain or parity constraint, or if a Remez
+/// reference system becomes singular.
 pub fn minimax_multi_interval<F, Fun>(f: Fun, intervals: &[(F, F)], degree: usize, parity: Parity) -> Result<Minimax<F>>
 where
     F: Float + FloatConst + FromPrimitive + Debug,
@@ -78,7 +155,26 @@ where
     minimax_multi_interval_with(f, intervals, degree, parity, RemezOptions::default())
 }
 
-/// [`minimax_multi_interval`] with explicit [`RemezOptions`].
+/// Runs the complete Remez fit on a union of intervals with explicit options.
+///
+/// The interval hull is affinely mapped to `[-1, 1]`, where the Chebyshev
+/// coefficients are fitted. Parity-constrained fits use only the positive half
+/// of the symmetric mapped domain, then measure the final error over the full
+/// domain. The returned [`Polynomial`] stores the inverse interval mapping.
+///
+/// `degree` is an upper bound: for a parity-constrained fit the largest active
+/// degree can be smaller. For example, an odd fit with `degree == 0` is the
+/// zero polynomial.
+///
+/// # Errors
+///
+/// Returns an error when:
+///
+/// - `intervals` is empty, non-finite, unordered, overlapping, or contains an
+///   empty interval;
+/// - an even or odd fit is requested on a domain not symmetric about zero;
+/// - an option is zero, non-finite, or otherwise invalid; or
+/// - an equioscillation linear system is singular.
 pub fn minimax_multi_interval_with<F, Fun>(
     f: Fun,
     intervals: &[(F, F)],
@@ -133,6 +229,7 @@ where
     })
 }
 
+/// Checks the domain invariants required before normalization and fitting.
 fn validate_intervals<F: Float + Debug>(intervals: &[(F, F)]) -> Result<()> {
     ensure!(!intervals.is_empty(), "minimax: intervals must be non-empty");
     for (i, &(a, b)) in intervals.iter().enumerate() {
@@ -157,6 +254,7 @@ fn validate_intervals<F: Float + Debug>(intervals: &[(F, F)]) -> Result<()> {
     Ok(())
 }
 
+/// Rejects option values that cannot define a finite, nonempty search.
 fn validate_options(opts: RemezOptions) -> Result<()> {
     ensure!(opts.max_iters > 0, "minimax: max_iters must be positive");
     ensure!(
@@ -167,6 +265,9 @@ fn validate_options(opts: RemezOptions) -> Result<()> {
     Ok(())
 }
 
+/// Tests whether ordered intervals mirror each other about zero.
+///
+/// Endpoint comparisons allow a small span-scaled floating-point tolerance.
 fn intervals_are_symmetric<F: Float + FromPrimitive>(intervals: &[(F, F)]) -> bool {
     let span = intervals[intervals.len() - 1].1 - intervals[0].0;
     let tolerance = F::epsilon() * span * F::from_u8(8).unwrap();
@@ -176,6 +277,10 @@ fn intervals_are_symmetric<F: Float + FromPrimitive>(intervals: &[(F, F)]) -> bo
         .all(|(&(a, b), &(c, d))| (a + d).abs() <= tolerance && (b + c).abs() <= tolerance)
 }
 
+/// Intersects a symmetric interval union with the positive half-axis.
+///
+/// Even and odd errors mirror across zero, so fitting this half avoids
+/// duplicate reference points without changing the uniform objective.
 fn positive_half<F: Float>(intervals: &[(F, F)]) -> Vec<(F, F)> {
     intervals
         .iter()
@@ -183,14 +288,34 @@ fn positive_half<F: Float>(intervals: &[(F, F)]) -> Vec<(F, F)> {
         .collect()
 }
 
+/// Internal fit data in the coordinates consumed by the Chebyshev series.
 pub(crate) struct RemezFit<F> {
+    /// Dense coefficient vector; degrees excluded from the fit contain zero.
     pub(crate) coeffs: Vec<F>,
+    /// Estimated maximum absolute error on the supplied fit domain.
     pub(crate) error: F,
+    /// Number of equioscillation systems solved.
     pub(crate) iters: usize,
+    /// Whether a numerical or equioscillation stopping criterion was met.
     pub(crate) converged: bool,
+    /// Final per-interval grid length, reused for downstream error estimates.
     pub(crate) grid_len: usize,
 }
 
+/// Performs the Remez exchange in Chebyshev coordinates.
+///
+/// `degrees` identifies the active coefficients among `0..=degree`; it must be
+/// sorted, unique, and in range. With `q = degrees.len()`, each iteration uses
+/// `q + 1` references to solve for `q` coefficients plus the common alternating
+/// error. Excluded coefficients remain exactly zero.
+///
+/// The loop uses a multi-point exchange: it replaces every reference with a
+/// selected extremum of `g - p`. If a grid does not reveal enough alternating
+/// extrema, the grid is repeatedly doubled before the fit is declared
+/// unconverged. A target representable to roundoff is accepted immediately.
+///
+/// This is also the lower-level fitting primitive used by the composite-sign
+/// planner, which supplies its own coordinates and active odd degrees.
 pub(crate) fn fit_chebyshev_on_intervals<F, G>(
     g: &G,
     intervals: &[(F, F)],
@@ -222,6 +347,7 @@ where
         });
     }
 
+    // Step 1: seed the control/reference set near the expected extrema.
     let mut refs = initial_references(intervals, m);
     let mut coeffs = vec![F::zero(); degree + 1];
     let mut converged = false;
@@ -229,6 +355,7 @@ where
 
     for it in 0..opts.max_iters {
         iters = it + 1;
+        // Step 2: impose equal, alternating signed error at every reference.
         let mut mat: Vec<Vec<F>> = Vec::with_capacity(m);
         let mut rhs: Vec<F> = Vec::with_capacity(m);
         for (i, &yi) in refs.iter().enumerate() {
@@ -244,6 +371,7 @@ where
             coeffs[k] = coefficient;
         }
 
+        // Step 3: find and refine the actual extrema of the new error curve.
         let mut exchange = None;
         for _ in 0..=6 {
             let extrema = find_extrema(g, &coeffs, intervals, grid_len);
@@ -270,6 +398,7 @@ where
             break;
         }
         let Some(alt) = exchange else { break };
+        // Step 4: exchange all references and test for equioscillation.
         let emax = alt.iter().map(|&(_, e)| e.abs()).fold(F::zero(), F::max);
         let emin = alt.iter().map(|&(_, e)| e.abs()).fold(F::infinity(), F::min);
         refs = alt.into_iter().map(|(y, _)| y).collect();
@@ -288,6 +417,11 @@ where
     })
 }
 
+/// Seeds `m` ordered references with mapped Chebyshev roots.
+///
+/// [`allocate_references`] decides how many roots each interval receives;
+/// roots cluster near interval endpoints, which gives a robust initial view of
+/// the extrema commonly seen in polynomial approximation.
 fn initial_references<F>(intervals: &[(F, F)], m: usize) -> Vec<F>
 where
     F: Float + FloatConst + FromPrimitive,
@@ -308,6 +442,12 @@ where
         .collect()
 }
 
+/// Distributes `m` reference points across intervals approximately by width.
+///
+/// The widest intervals are seeded first so as many components as possible are
+/// covered. Each remaining point goes to the interval maximizing
+/// `width / (count + 1)`, preventing small components from consuming a
+/// disproportionate share while keeping the allocation balanced.
 fn allocate_references<F: Float + FromPrimitive>(intervals: &[(F, F)], m: usize) -> Vec<usize> {
     let widths: Vec<F> = intervals.iter().map(|&(a, b)| b - a).collect();
     let mut counts = vec![0; intervals.len()];
@@ -340,11 +480,20 @@ fn allocate_references<F: Float + FromPrimitive>(intervals: &[(F, F)], m: usize)
     counts
 }
 
+/// Returns Chebyshev--Lobatto node `cos(iπ / (m - 1))`.
+///
+/// Callers use `0 <= i < m` and `m >= 2`. These endpoint-inclusive nodes
+/// cluster where polynomial error can vary quickly and form the coarse extrema
+/// search grid.
 pub(crate) fn cheb_lobatto<F: Float + FloatConst + FromPrimitive>(i: usize, m: usize) -> F {
     let pi = F::PI();
     (pi * F::from_usize(i).unwrap() / F::from_usize(m - 1).unwrap()).cos()
 }
 
+/// Evaluates `T_0(y), ..., T_n(y)` with the three-term Chebyshev recurrence.
+///
+/// Uses `T_0 = 1`, `T_1 = y`, and `T_k = 2y T_{k-1} - T_{k-2}`. The Remez
+/// solve uses the resulting row to express the polynomial at one reference.
 pub(crate) fn cheb_basis<F: Float>(y: F, n: usize) -> Vec<F> {
     let two = F::one() + F::one();
     let mut t = Vec::with_capacity(n + 1);
@@ -358,6 +507,10 @@ pub(crate) fn cheb_basis<F: Float>(y: F, n: usize) -> Vec<F> {
     t
 }
 
+/// Evaluates `sum_k c[k] T_k(y)` with Clenshaw's backward recurrence.
+///
+/// Clenshaw evaluation avoids materializing every basis value during the dense
+/// error scan. `c` must be nonempty.
 pub(crate) fn eval_cheb<F: Float>(c: &[F], y: F) -> F {
     let two = F::one() + F::one();
     let mut d = F::zero();
@@ -370,6 +523,13 @@ pub(crate) fn eval_cheb<F: Float>(c: &[F], y: F) -> F {
     y * d - dd + c[0]
 }
 
+/// Finds candidate extrema of the signed error `g - p` on every interval.
+///
+/// Each interval is sampled at `grid_len` Chebyshev--Lobatto points. Endpoints
+/// are always candidates; an interior sample is a candidate when its absolute
+/// error is no smaller than both neighbors. Interior candidates are refined by
+/// [`refine_extremum`]. Results remain ordered by coordinate, including across
+/// gaps in a multi-interval domain.
 fn find_extrema<F, G>(g: &G, coeffs: &[F], intervals: &[(F, F)], grid_len: usize) -> Vec<(F, F)>
 where
     F: Float + FloatConst + FromPrimitive,
@@ -395,6 +555,11 @@ where
     out
 }
 
+/// Refines a bracketed local maximum of `|g - p|` by golden-section search.
+///
+/// The derivative-free search reuses one function value per step and stops
+/// when the bracket reaches a scale-aware floating-point width, or after 256
+/// iterations. It returns the better of its two remaining interior probes.
 fn refine_extremum<F, G>(g: &G, coeffs: &[F], mut a: F, mut b: F) -> (F, F)
 where
     F: Float + FromPrimitive,
@@ -430,6 +595,10 @@ where
     if e0.abs() >= e1.abs() { (x0, e0) } else { (x1, e1) }
 }
 
+/// Estimates `max |g - p|` from the grid-detected, refined extrema.
+///
+/// This shares the extrema search used by the exchange step and is therefore a
+/// numerical estimate, not an interval-arithmetic certificate.
 fn estimate_sup_error<F, G>(g: &G, coeffs: &[F], intervals: &[(F, F)], grid_len: usize) -> F
 where
     F: Float + FloatConst + FromPrimitive,
@@ -441,6 +610,11 @@ where
         .fold(F::zero(), F::max)
 }
 
+/// Estimates the largest undershoot and overshoot of `p` relative to `g`.
+///
+/// Because signed error is defined as `g - p`, the returned pair is
+/// `(max(g - p), max(p - g))`. The composite-sign planner uses these directional
+/// bounds to propagate the image interval between polynomial factors.
 pub(crate) fn grid_error_bounds<F, G>(g: &G, coeffs: &[F], intervals: &[(F, F)], grid_len: usize) -> (F, F)
 where
     F: Float + FloatConst + FromPrimitive,
@@ -453,6 +627,16 @@ where
         })
 }
 
+/// Selects exactly `m` ordered extrema whose nonzero errors alternate in sign.
+///
+/// First, consecutive extrema of the same sign are collapsed to the one with
+/// greatest magnitude. If too many alternating extrema remain, weak endpoint
+/// or adjacent pairs are removed; removing pairs preserves alternation. This is
+/// the multi-point exchange policy that turns detected extrema into the next
+/// Remez reference set.
+///
+/// Returns `None` when fewer than `m` alternating extrema were detected, which
+/// tells the caller to retry on a denser grid.
 pub(crate) fn select_alternating<F: Float>(extrema: Vec<(F, F)>, m: usize) -> Option<Vec<(F, F)>> {
     let mut merged: Vec<(F, F)> = Vec::new();
     for (y, e) in extrema {
@@ -518,6 +702,12 @@ pub(crate) fn select_alternating<F: Float>(extrema: Vec<(F, F)>, m: usize) -> Op
 }
 
 #[allow(clippy::needless_range_loop)]
+/// Solves a dense square linear system by Gaussian elimination.
+///
+/// Partial pivoting chooses the largest available absolute pivot in each
+/// column, followed by back substitution. The Remez loop uses this for its
+/// equioscillation system. Returns `None` only for an exactly zero pivot; it
+/// does not estimate conditioning or apply a near-singularity threshold.
 pub(crate) fn solve<F: Float>(mut a: Vec<Vec<F>>, mut b: Vec<F>) -> Option<Vec<F>> {
     let n = b.len();
     for col in 0..n {
