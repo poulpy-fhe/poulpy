@@ -6,13 +6,14 @@
 
 use crate::{
     api::{
-        CnvPVecBytesOf, ModuleN, SvpPPolBytesOf, SvpTPolBytesOf, VecZnxBigBytesOf, VecZnxDftBytesOf, VmpPMatBytesOf,
-        VmpTMatBytesOf,
+        CnvPVecBytesOf, CnvTVecBytesOf, ModuleN, SvpPPolBytesOf, SvpTPolBytesOf, VecZnxBigBytesOf, VecZnxDftBytesOf,
+        VmpPMatBytesOf, VmpTMatBytesOf,
     },
     layouts::{
-        Backend, CnvPVecL, CnvPVecLViewMut, CnvPVecR, CnvPVecRViewMut, MatZnx, MatZnxViewMut, ScalarZnx, ScalarZnxViewMut,
-        ScratchArena, SvpPPol, SvpPPolViewMut, SvpTPol, SvpTPolViewMut, VecZnx, VecZnxBig, VecZnxBigViewMut, VecZnxDft,
-        VecZnxDftViewMut, VecZnxViewMut, VmpPMat, VmpPMatViewMut, VmpTMat, VmpTMatViewMut,
+        Backend, CnvPVecL, CnvPVecLViewMut, CnvPVecR, CnvPVecRViewMut, CnvTVecL, CnvTVecLViewMut, CnvTVecR, CnvTVecRViewMut,
+        MatZnx, MatZnxViewMut, ScalarZnx, ScalarZnxViewMut, ScratchArena, SvpPPol, SvpPPolViewMut, SvpTPol, SvpTPolViewMut,
+        VecZnx, VecZnxBig, VecZnxBigViewMut, VecZnxDft, VecZnxDftViewMut, VecZnxViewMut, VmpPMat, VmpPMatViewMut, VmpTMat,
+        VmpTMatViewMut,
     },
 };
 
@@ -63,6 +64,18 @@ pub trait ScratchArenaTakeBasic<'a, B: Backend>: Sized {
     where
         B: 'a,
         M: ModuleN + CnvPVecBytesOf;
+
+    /// Takes a [`CnvTVecL`](crate::layouts::CnvTVecL) from the scratch arena.
+    fn take_cnv_tvec_left_scratch<M>(self, module: &M, cols: usize, size: usize) -> (CnvTVecLViewMut<'a, B>, Self)
+    where
+        B: 'a,
+        M: ModuleN + CnvTVecBytesOf;
+
+    /// Takes a [`CnvTVecR`](crate::layouts::CnvTVecR) from the scratch arena.
+    fn take_cnv_tvec_right_scratch<M>(self, module: &M, cols: usize, size: usize) -> (CnvTVecRViewMut<'a, B>, Self)
+    where
+        B: 'a,
+        M: ModuleN + CnvTVecBytesOf;
 
     /// Takes a [`ScalarZnx`] from the scratch arena.
     fn take_scalar_znx_scratch(self, n: usize, cols: usize) -> (ScalarZnxViewMut<'a, B>, Self)
@@ -199,6 +212,30 @@ impl<'a, B: Backend> ScratchArenaTakeBasic<'a, B> for ScratchArena<'a, B> {
         let (data, arena) = self.take_region(module.bytes_of_cnv_pvec_right(cols, size));
         (
             CnvPVecRViewMut::from_inner(CnvPVecR::from_data(data, module.n(), cols, size)),
+            arena,
+        )
+    }
+
+    fn take_cnv_tvec_left_scratch<M>(self, module: &M, cols: usize, size: usize) -> (CnvTVecLViewMut<'a, B>, Self)
+    where
+        B: 'a,
+        M: ModuleN + CnvTVecBytesOf,
+    {
+        let (data, arena) = self.take_region(module.bytes_of_cnv_tvec_left(cols, size));
+        (
+            CnvTVecLViewMut::from_inner(CnvTVecL::from_data(data, module.n(), cols, size)),
+            arena,
+        )
+    }
+
+    fn take_cnv_tvec_right_scratch<M>(self, module: &M, cols: usize, size: usize) -> (CnvTVecRViewMut<'a, B>, Self)
+    where
+        B: 'a,
+        M: ModuleN + CnvTVecBytesOf,
+    {
+        let (data, arena) = self.take_region(module.bytes_of_cnv_tvec_right(cols, size));
+        (
+            CnvTVecRViewMut::from_inner(CnvTVecR::from_data(data, module.n(), cols, size)),
             arena,
         )
     }

@@ -44,21 +44,21 @@ const TILE: usize = 4;
 /// Block-group size of the accumulate flush.
 const CNV_ACC_GROUP: usize = 16;
 
-/// Scratch bytes required by [`cnv_apply_dft_ifma`] and its accumulate variant.
+/// Scratch bytes required by [`cnv_apply_pvec_to_dft_ifma`] and its accumulate variant.
 ///
 /// Stores the padded `a` window plus the accumulate staging group.
-pub(crate) fn cnv_apply_dft_ifma_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
+pub(crate) fn cnv_apply_pvec_to_dft_ifma_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
     let min_size: usize = res_size.min(a_size + b_size);
     (8 * (a_size + 2 * (TILE - 1)) + 8 * CNV_ACC_GROUP * min_size) * size_of::<u64>()
 }
 
-/// Scratch bytes required by [`cnv_pairwise_apply_dft_ifma`]: the apply
+/// Scratch bytes required by [`cnv_pairwise_apply_pvec_to_dft_ifma`]: the apply
 /// scratch plus the summed `b` rows.
-pub(crate) fn cnv_pairwise_apply_dft_ifma_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
+pub(crate) fn cnv_pairwise_apply_pvec_to_dft_ifma_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
     if a_size == 0 || b_size == 0 || res_size == 0 {
         0
     } else {
-        cnv_apply_dft_ifma_tmp_bytes(res_size, a_size, b_size) + 8 * b_size * size_of::<u64>()
+        cnv_apply_pvec_to_dft_ifma_tmp_bytes(res_size, a_size, b_size) + 8 * b_size * size_of::<u64>()
     }
 }
 
@@ -541,7 +541,7 @@ fn conv_columns_planar_scalar<const ACC: bool, const PAIRWISE: bool>(
 /// DFT-domain bivariate convolution `res[k] = Σ a[j] ⊙ b[k−j]`.
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
-pub(crate) unsafe fn cnv_apply_dft_ifma(
+pub(crate) unsafe fn cnv_apply_pvec_to_dft_ifma(
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     cnv_offset: usize,
     res_col: usize,
@@ -575,12 +575,12 @@ pub(crate) unsafe fn cnv_apply_dft_ifma(
     }
 }
 
-/// Accumulating variant of [`cnv_apply_dft_ifma`]: `res[k] += Σ a[j] ⊙ b[k−j]`
+/// Accumulating variant of [`cnv_apply_pvec_to_dft_ifma`]: `res[k] += Σ a[j] ⊙ b[k−j]`
 /// via `ntt3x42_ifma_add_assign` (bit-identical to apply + DFT add).
 /// Limbs `>= min_size` are left untouched.
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
-pub(crate) unsafe fn cnv_apply_dft_accumulate_ifma(
+pub(crate) unsafe fn cnv_apply_pvec_to_dft_accumulate_ifma(
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     cnv_offset: usize,
     res_col: usize,
@@ -614,10 +614,10 @@ pub(crate) unsafe fn cnv_apply_dft_accumulate_ifma(
 /// Pairwise DFT-domain convolution:
 /// `res[k] = Σ (a[col_0, k−j] + a[col_1, k−j]) ⊙ (b[col_0, j] + b[col_1, j])`.
 ///
-/// When `col_0 == col_1`, delegates to [`cnv_apply_dft_ifma`].
+/// When `col_0 == col_1`, delegates to [`cnv_apply_pvec_to_dft_ifma`].
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
-pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma(
+pub(crate) unsafe fn cnv_pairwise_apply_pvec_to_dft_ifma(
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     cnv_offset: usize,
     res_col: usize,
@@ -628,7 +628,7 @@ pub(crate) unsafe fn cnv_pairwise_apply_dft_ifma(
     tmp: &mut [u8],
 ) {
     if col_0 == col_1 {
-        unsafe { cnv_apply_dft_ifma(res, cnv_offset, res_col, a, col_0, b, col_1, tmp) };
+        unsafe { cnv_apply_pvec_to_dft_ifma(res, cnv_offset, res_col, a, col_0, b, col_1, tmp) };
         return;
     }
 
@@ -673,12 +673,12 @@ fn zero_row(dst: &mut [u64], size: usize, row: usize, n_blks: usize) {
     }
 }
 
-/// Scratch bytes required by [`cnv_prepare_left`]: one NTT-domain limb.
-pub(crate) fn cnv_prepare_left_tmp_bytes(n: usize) -> usize {
+/// Scratch bytes required by [`cnv_prepare_left_pvec`]: one NTT-domain limb.
+pub(crate) fn cnv_prepare_left_pvec_tmp_bytes(n: usize) -> usize {
     3 * n * size_of::<u64>()
 }
 
-pub(crate) fn cnv_prepare_left(
+pub(crate) fn cnv_prepare_left_pvec(
     module: &Module<NTT3x42Ifma>,
     res: &mut CnvPVecLBackendMut<'_, NTT3x42Ifma>,
     a: &VecZnxBackendRef<'_, NTT3x42Ifma>,
@@ -715,12 +715,12 @@ pub(crate) fn cnv_prepare_left(
     }
 }
 
-/// Scratch bytes required by [`cnv_prepare_right`]: NTT and converted limbs.
-pub(crate) fn cnv_prepare_right_tmp_bytes(n: usize) -> usize {
+/// Scratch bytes required by [`cnv_prepare_right_pvec`]: NTT and converted limbs.
+pub(crate) fn cnv_prepare_right_pvec_tmp_bytes(n: usize) -> usize {
     6 * n * size_of::<u64>()
 }
 
-pub(crate) fn cnv_prepare_right(
+pub(crate) fn cnv_prepare_right_pvec(
     module: &Module<NTT3x42Ifma>,
     res: &mut CnvPVecRBackendMut<'_, NTT3x42Ifma>,
     a: &VecZnxBackendRef<'_, NTT3x42Ifma>,
@@ -755,12 +755,12 @@ pub(crate) fn cnv_prepare_right(
     }
 }
 
-/// Scratch bytes required by [`cnv_prepare_self`]: NTT and converted limbs.
-pub(crate) fn cnv_prepare_self_tmp_bytes(n: usize) -> usize {
+/// Scratch bytes required by [`cnv_prepare_self_pvec`]: NTT and converted limbs.
+pub(crate) fn cnv_prepare_self_pvec_tmp_bytes(n: usize) -> usize {
     6 * n * size_of::<u64>()
 }
 
-pub(crate) fn cnv_prepare_self(
+pub(crate) fn cnv_prepare_self_pvec(
     module: &Module<NTT3x42Ifma>,
     left: &mut CnvPVecLBackendMut<'_, NTT3x42Ifma>,
     right: &mut CnvPVecRBackendMut<'_, NTT3x42Ifma>,

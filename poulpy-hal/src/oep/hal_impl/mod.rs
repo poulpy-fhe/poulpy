@@ -898,33 +898,139 @@ pub unsafe trait HalVecZnxDftImpl<BE: Backend>: Backend {
     );
 }
 
+use crate::layouts::{CnvPVecLBackendRef, CnvPVecRBackendRef, CnvTVecLBackendRef, CnvTVecRBackendRef};
+
+/// Declares one CNV prep tier's OEP methods.
+macro_rules! cnv_prepare_oep {
+    ($tier:ident, $L:ident, $R:ident) => {
+        paste::paste! {
+            fn [<cnv_prepare_left_ $tier _tmp_bytes>](module: &Module<BE>, res_size: usize, a_size: usize) -> usize;
+            fn [<cnv_prepare_left_ $tier>](
+                module: &Module<BE>,
+                res: &mut crate::layouts::$L<'_, BE>,
+                a: &crate::layouts::VecZnxBackendRef<'_, BE>,
+                mask: i64,
+                scratch: &mut ScratchArena<'_, BE>,
+            );
+            fn [<cnv_prepare_right_ $tier _tmp_bytes>](module: &Module<BE>, res_size: usize, a_size: usize) -> usize;
+            fn [<cnv_prepare_right_ $tier>](
+                module: &Module<BE>,
+                res: &mut crate::layouts::$R<'_, BE>,
+                a: &crate::layouts::VecZnxBackendRef<'_, BE>,
+                mask: i64,
+                scratch: &mut ScratchArena<'_, BE>,
+            );
+            fn [<cnv_prepare_self_ $tier _tmp_bytes>](module: &Module<BE>, res_size: usize, a_size: usize) -> usize;
+            fn [<cnv_prepare_self_ $tier>](
+                module: &Module<BE>,
+                left: &mut crate::layouts::$L<'_, BE>,
+                right: &mut crate::layouts::$R<'_, BE>,
+                a: &crate::layouts::VecZnxBackendRef<'_, BE>,
+                mask: i64,
+                scratch: &mut ScratchArena<'_, BE>,
+            );
+        }
+    };
+}
+
+/// Declares the six apply forms of one CNV operand pair as OEP methods.
+/// Declares one CNV prep tier's apply methods. All operands and results stay in
+/// the DFT domain; both operands are of the tier named by `$tier`.
+macro_rules! cnv_tier_oep {
+    ($tier:ident, $Tier:ident, $L:ty, $R:ty) => {
+        paste::paste! {
+            fn [<cnv_apply_ $tier _to_dft_tmp_bytes>](
+                module: &Module<BE>,
+                cnv_offset: usize,
+                res_size: usize,
+                a_size: usize,
+                b_size: usize,
+            ) -> usize;
+
+            #[allow(clippy::too_many_arguments)]
+            fn [<cnv_apply_ $tier _to_dft>](
+                module: &Module<BE>,
+                cnv_offset: usize,
+                res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+                res_col: usize,
+                a: &$L,
+                a_col: usize,
+                b: &$R,
+                b_col: usize,
+                scratch: &mut ScratchArena<'_, BE>,
+            );
+
+            fn [<cnv_apply_ $tier _to_dft_accumulate_tmp_bytes>](
+                module: &Module<BE>,
+                cnv_offset: usize,
+                res_size: usize,
+                a_size: usize,
+                b_size: usize,
+            ) -> usize;
+
+            #[allow(clippy::too_many_arguments)]
+            fn [<cnv_apply_ $tier _to_dft_accumulate>](
+                module: &Module<BE>,
+                cnv_offset: usize,
+                res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+                res_col: usize,
+                a: &$L,
+                a_col: usize,
+                b: &$R,
+                b_col: usize,
+                scratch: &mut ScratchArena<'_, BE>,
+            );
+
+            fn [<cnv_accumulate_ $tier _to_dft_tmp_bytes>](
+                module: &Module<BE>,
+                cnv_offset: usize,
+                res_size: usize,
+                a_size: usize,
+                b_size: usize,
+            ) -> usize;
+
+            fn [<cnv_accumulate_ $tier _to_dft>]<'a>(
+                module: &Module<BE>,
+                cnv_offset: usize,
+                res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+                res_col: usize,
+                terms: &[crate::layouts::[<CnvDftAccTerm $Tier>]<'a, BE>],
+                scratch: &mut ScratchArena<'_, BE>,
+            ) where
+                BE: 'a;
+
+            fn [<cnv_pairwise_apply_ $tier _to_dft_tmp_bytes>](
+                module: &Module<BE>,
+                cnv_offset: usize,
+                res_size: usize,
+                a_size: usize,
+                b_size: usize,
+            ) -> usize;
+
+            #[allow(clippy::too_many_arguments)]
+            fn [<cnv_pairwise_apply_ $tier _to_dft>](
+                module: &Module<BE>,
+                cnv_offset: usize,
+                res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
+                res_col: usize,
+                a: &$L,
+                b: &$R,
+                i: usize,
+                j: usize,
+                scratch: &mut ScratchArena<'_, BE>,
+            );
+        }
+    };
+}
+
 /// Convolution family extension point.
 ///
 /// # Safety
 /// Implementations must uphold the backend safety contract for prepared matrix
 /// layouts, scratch usage, and arithmetic correctness.
 pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend {
-    fn cnv_prepare_left_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize;
-
-    fn cnv_prepare_left(
-        module: &Module<BE>,
-        res: &mut crate::layouts::CnvPVecLBackendMut<'_, BE>,
-        a: &crate::layouts::VecZnxBackendRef<'_, BE>,
-        mask: i64,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
-    fn cnv_prepare_right_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize;
-
-    fn cnv_prepare_right(
-        module: &Module<BE>,
-        res: &mut crate::layouts::CnvPVecRBackendMut<'_, BE>,
-        a: &crate::layouts::VecZnxBackendRef<'_, BE>,
-        mask: i64,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
-    fn cnv_apply_dft_tmp_bytes(module: &Module<BE>, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize;
+    cnv_prepare_oep!(pvec, CnvPVecLBackendMut, CnvPVecRBackendMut);
+    cnv_prepare_oep!(tvec, CnvTVecLBackendMut, CnvTVecRBackendMut);
 
     fn cnv_by_const_apply_tmp_bytes(
         module: &Module<BE>,
@@ -948,166 +1054,8 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    #[allow(clippy::too_many_arguments)]
-    fn cnv_apply_dft(
-        module: &Module<BE>,
-        cnv_offset: usize,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
-        res_col: usize,
-        a: &crate::layouts::CnvPVecLBackendRef<'_, BE>,
-        a_col: usize,
-        b: &crate::layouts::CnvPVecRBackendRef<'_, BE>,
-        b_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
-    // Lazy convolution used by glwe_mul_plain; defaults delegate to the eager path.
-    fn cnv_prepare_left_lazy_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize {
-        Self::cnv_prepare_left_tmp_bytes(module, res_size, a_size)
-    }
-
-    fn cnv_prepare_left_lazy(
-        module: &Module<BE>,
-        res: &mut crate::layouts::CnvPVecLBackendMut<'_, BE>,
-        a: &crate::layouts::VecZnxBackendRef<'_, BE>,
-        mask: i64,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) {
-        Self::cnv_prepare_left(module, res, a, mask, scratch);
-    }
-
-    fn cnv_prepare_right_lazy_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize {
-        Self::cnv_prepare_right_tmp_bytes(module, res_size, a_size)
-    }
-
-    fn cnv_prepare_right_lazy(
-        module: &Module<BE>,
-        res: &mut crate::layouts::CnvPVecRBackendMut<'_, BE>,
-        a: &crate::layouts::VecZnxBackendRef<'_, BE>,
-        mask: i64,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) {
-        Self::cnv_prepare_right(module, res, a, mask, scratch);
-    }
-
-    fn cnv_apply_dft_lazy_tmp_bytes(
-        module: &Module<BE>,
-        cnv_offset: usize,
-        res_size: usize,
-        a_size: usize,
-        b_size: usize,
-    ) -> usize {
-        Self::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn cnv_apply_dft_lazy(
-        module: &Module<BE>,
-        cnv_offset: usize,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
-        res_col: usize,
-        a: &crate::layouts::CnvPVecLBackendRef<'_, BE>,
-        a_col: usize,
-        b: &crate::layouts::CnvPVecRBackendRef<'_, BE>,
-        b_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) {
-        Self::cnv_apply_dft(module, cnv_offset, res, res_col, a, a_col, b, b_col, scratch);
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn cnv_apply_dft_accumulate(
-        module: &Module<BE>,
-        cnv_offset: usize,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
-        res_col: usize,
-        a: &crate::layouts::CnvPVecLBackendRef<'_, BE>,
-        a_col: usize,
-        b: &crate::layouts::CnvPVecRBackendRef<'_, BE>,
-        b_col: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
-    /// Returns scratch bytes required for [`HalConvolutionImpl::cnv_accumulate_dft`].
-    ///
-    /// The default sizes the per-term fallback (one `cnv_apply_dft` /
-    /// `cnv_apply_dft_accumulate` scratch). Backends with a fused kernel should
-    /// override both methods together.
-    fn cnv_accumulate_dft_tmp_bytes(
-        module: &Module<BE>,
-        cnv_offset: usize,
-        res_size: usize,
-        a_size: usize,
-        b_size: usize,
-    ) -> usize {
-        Self::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
-    }
-
-    /// Computes `res[res_col] = Σ_t a_t ⊛ b_t` (overwriting).
-    ///
-    /// The default implementation overwrites with the first term
-    /// (`cnv_apply_dft`, which also zeroes the limbs past the convolution
-    /// bound) and folds the remaining terms with `cnv_apply_dft_accumulate`.
-    /// Backends should override it with a fused kernel that keeps the lazy
-    /// accumulators live across terms.
-    fn cnv_accumulate_dft<'a>(
-        module: &Module<BE>,
-        cnv_offset: usize,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
-        res_col: usize,
-        terms: &[crate::layouts::CnvDftAccTerm<'a, BE>],
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        BE: HalVecZnxDftImpl<BE> + 'a,
-    {
-        if terms.is_empty() {
-            <BE as HalVecZnxDftImpl<BE>>::vec_znx_dft_zero(module, res, res_col);
-            return;
-        }
-        for (idx, term) in terms.iter().enumerate() {
-            if idx == 0 {
-                Self::cnv_apply_dft(
-                    module, cnv_offset, res, res_col, &term.a, term.a_col, &term.b, term.b_col, scratch,
-                );
-            } else {
-                Self::cnv_apply_dft_accumulate(
-                    module, cnv_offset, res, res_col, &term.a, term.a_col, &term.b, term.b_col, scratch,
-                );
-            }
-        }
-    }
-
-    fn cnv_pairwise_apply_dft_tmp_bytes(
-        module: &Module<BE>,
-        cnv_offset: usize,
-        res_size: usize,
-        a_size: usize,
-        b_size: usize,
-    ) -> usize;
-
-    #[allow(clippy::too_many_arguments)]
-    fn cnv_pairwise_apply_dft(
-        module: &Module<BE>,
-        cnv_offset: usize,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
-        res_col: usize,
-        a: &crate::layouts::CnvPVecLBackendRef<'_, BE>,
-        b: &crate::layouts::CnvPVecRBackendRef<'_, BE>,
-        i: usize,
-        j: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
-
-    fn cnv_prepare_self_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize;
-
-    fn cnv_prepare_self(
-        module: &Module<BE>,
-        left: &mut crate::layouts::CnvPVecLBackendMut<'_, BE>,
-        right: &mut crate::layouts::CnvPVecRBackendMut<'_, BE>,
-        a: &crate::layouts::VecZnxBackendRef<'_, BE>,
-        mask: i64,
-        scratch: &mut ScratchArena<'_, BE>,
-    );
+    cnv_tier_oep!(pvec, Pvec, CnvPVecLBackendRef<'_, BE>, CnvPVecRBackendRef<'_, BE>);
+    cnv_tier_oep!(tvec, Tvec, CnvTVecLBackendRef<'_, BE>, CnvTVecRBackendRef<'_, BE>);
 }
 
 mod svp;

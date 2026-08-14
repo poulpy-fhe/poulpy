@@ -10,6 +10,8 @@
 //! `HostDataRef`/`HostDataMut` capture host-byte-readable buffers for the
 //! portions of the API that still require direct byte access.
 
+#[macro_use]
+mod cnv_vec_family;
 mod convolution;
 mod crt;
 mod encoding;
@@ -524,6 +526,12 @@ macro_rules! impl_backend_from {
 
             fn bytes_of_cnv_pvec_right(n: usize, cols: usize, size: usize) -> usize {
                 <$from as poulpy_hal::layouts::Backend>::bytes_of_cnv_pvec_right(n, cols, size)
+            }
+            fn bytes_of_cnv_tvec_left(n: usize, cols: usize, size: usize) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::bytes_of_cnv_tvec_left(n, cols, size)
+            }
+            fn bytes_of_cnv_tvec_right(n: usize, cols: usize, size: usize) -> usize {
+                <$from as poulpy_hal::layouts::Backend>::bytes_of_cnv_tvec_right(n, cols, size)
             }
         }
 

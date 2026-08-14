@@ -85,7 +85,7 @@ where
     let lazy_acc_dft = module.bytes_of_vec_znx_dft(cols, lazy_size);
     let lazy_acc_big = module.bytes_of_vec_znx_big(cols, lazy_size);
     let rot_dft = module.bytes_of_vec_znx_dft(cols, key.size());
-    let prepare_right = module.cnv_prepare_right_tmp_bytes(pt_size, pt_size);
+    let prepare_right = module.cnv_prepare_right_pvec_tmp_bytes(pt_size, pt_size);
     let lazy_dft = glwe_lazy_giant_automorphism_from_dft_tmp_bytes::<BE, _, _>(module, a.rank().as_usize(), prod_size, key);
     let fallback_path = prod_dft + prod_col_big + inner_dft;
     let lazy_dft_rot = rot_dft + lazy_dft;
@@ -234,7 +234,7 @@ pub fn glwe_eval_linear_transformation_into_default<BE, M, R, P, H, K>(
 /// Reference impl: scratch bytes for the streamed (unprepared-RHS) evaluation.
 ///
 /// The streamed inner product additionally holds one resident `CnvPVecR`
-/// diagonal slot and a `cnv_prepare_right` scratch on top of the prepared
+/// diagonal slot and a `cnv_prepare_right_pvec` scratch on top of the prepared
 /// evaluation budget.
 pub fn glwe_eval_linear_transformation_unprepared_rhs_tmp_bytes_default<BE, M, R, A, B, K>(
     module: &M,
@@ -266,5 +266,5 @@ where
 {
     glwe_eval_linear_transformation_tmp_bytes_default::<BE, _, _, _, _, _>(module, res, a, pt, key)
         + module.bytes_of_cnv_pvec_right(1, pt.size())
-        + module.cnv_prepare_right_tmp_bytes(pt.size(), pt.size())
+        + module.cnv_prepare_right_pvec_tmp_bytes(pt.size(), pt.size())
 }

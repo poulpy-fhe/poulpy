@@ -252,7 +252,7 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
             .glwe_switching_key_prepare_tmp_bytes(&self.dense_to_sparse)
             .max(module.prepare_tensor_key_tmp_bytes(&self.tensor_key))
             .max(module.glwe_automorphism_key_prepare_tmp_bytes(&self.conjugation_key))
-            .max(module.cnv_prepare_left_tmp_bytes(mask_size, mask_size));
+            .max(module.cnv_prepare_left_pvec_tmp_bytes(mask_size, mask_size));
         for ik in &self.index_keys {
             for group in &ik.mux_keys {
                 for mux in group {
@@ -272,7 +272,7 @@ impl<D: Data, W: ZnxWord> ShipKeySet<D, W> {
                     .iter()
                     .map(|ct| {
                         let mut prep = module.cnv_pvec_left_alloc(2, mask_size);
-                        module.cnv_prepare_left(
+                        module.cnv_prepare_left_pvec(
                             &mut prep.to_backend_mut(),
                             GLWEToBackendRef::<BE>::to_backend_ref(ct).data(),
                             mask_msb,

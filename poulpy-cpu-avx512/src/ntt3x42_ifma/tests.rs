@@ -2,6 +2,7 @@ use poulpy_hal::{
     layouts::Module,
     test_suite::convolution::{
         test_convolution, test_convolution_accumulate, test_convolution_by_const, test_convolution_pairwise,
+        test_convolution_tier_equivalence,
     },
 };
 
@@ -318,6 +319,7 @@ fn test_convolution_ntt3x42_ifma() {
 fn test_convolution_pairwise_ntt3x42_ifma() {
     let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(8);
     test_convolution_pairwise(&module, 12);
+    test_convolution_tier_equivalence(&module, 12, false);
 }
 
 #[test]

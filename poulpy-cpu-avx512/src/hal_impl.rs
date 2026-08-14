@@ -67,7 +67,11 @@ unsafe impl HalVmpImpl<FFT64Avx512> for FFT64Avx512 {
 }
 
 unsafe impl HalConvolutionImpl<FFT64Avx512> for FFT64Avx512 {
-    poulpy_cpu_ref::hal_impl_convolution!(FFT64ConvolutionDefault);
+    poulpy_cpu_ref::cnv_impl_prepares_pvec!(FFT64ConvolutionDefault);
+    poulpy_cpu_ref::cnv_impl_prepares_tvec!(FFT64ConvolutionDefault);
+    poulpy_cpu_ref::cnv_impl_by_const!(FFT64ConvolutionDefault);
+    poulpy_cpu_ref::cnv_impl_apply_pvec!(FFT64ConvolutionDefault);
+    poulpy_cpu_ref::cnv_impl_apply_tvec!(FFT64ConvolutionDefault);
 }
 
 unsafe impl HalVecZnxBigImpl<FFT64Avx512> for FFT64Avx512 {
@@ -272,11 +276,11 @@ unsafe impl HalVmpImpl<NTT4x30Avx512> for NTT4x30Avx512 {
 }
 
 unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
-    fn cnv_prepare_left_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_left_tmp_bytes_default(module, res_size, a_size)
+    fn cnv_prepare_left_pvec_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
+        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_left_pvec_tmp_bytes_default(module, res_size, a_size)
     }
 
-    fn cnv_prepare_left(
+    fn cnv_prepare_left_pvec(
         module: &Module<Self>,
         res: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
@@ -284,14 +288,14 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let mut scratch = scratch.borrow();
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_left_default(module, res, a, mask, &mut scratch);
+        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_left_pvec_default(module, res, a, mask, &mut scratch);
     }
 
-    fn cnv_prepare_right_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_right_tmp_bytes_default(module, res_size, a_size)
+    fn cnv_prepare_right_pvec_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
+        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_right_pvec_tmp_bytes_default(module, res_size, a_size)
     }
 
-    fn cnv_prepare_right(
+    fn cnv_prepare_right_pvec(
         module: &Module<Self>,
         res: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
@@ -299,17 +303,17 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let mut scratch = scratch.borrow();
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_right_default(module, res, a, mask, &mut scratch);
+        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_right_pvec_default(module, res, a, mask, &mut scratch);
     }
 
-    fn cnv_apply_dft_tmp_bytes(
+    fn cnv_apply_pvec_to_dft_tmp_bytes(
         _module: &Module<Self>,
         _cnv_offset: usize,
         res_size: usize,
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_apply_dft_tmp_bytes(res_size, a_size, b_size)
+        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_apply_pvec_to_dft_tmp_bytes(res_size, a_size, b_size)
     }
 
     fn cnv_by_const_apply_tmp_bytes(
@@ -353,7 +357,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn cnv_apply_dft(
+    fn cnv_apply_pvec_to_dft(
         module: &Module<Self>,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -364,78 +368,83 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         b_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes =
-            poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_apply_dft_tmp_bytes(res.size(), a.size(), b.size());
+        let bytes = poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_apply_pvec_to_dft_tmp_bytes(
+            res.size(),
+            a.size(),
+            b.size(),
+        );
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_apply_dft::<Self>(
+        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_apply_pvec_to_dft::<Self, _, _>(
             module, cnv_offset, res, res_col, a, a_col, b, b_col, tmp,
         );
     }
 
-    fn cnv_prepare_left_lazy_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
-        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_prepare_left_lazy_tmp_bytes(module.n())
+    fn cnv_prepare_left_tvec_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_prepare_left_tvec_tmp_bytes(module.n())
     }
 
-    fn cnv_prepare_left_lazy(
+    fn cnv_prepare_left_tvec(
         module: &Module<Self>,
-        res: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
+        res: &mut poulpy_hal::layouts::CnvTVecLBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
         mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_prepare_left_lazy_tmp_bytes(module.n());
+        let bytes = poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_prepare_left_tvec_tmp_bytes(module.n());
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_prepare_left_lazy::<Self>(module, res, a, mask, tmp);
+        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_prepare_left_tvec::<Self>(module, res, a, mask, tmp);
     }
 
-    fn cnv_prepare_right_lazy_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
-        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_prepare_right_lazy_tmp_bytes(module.n())
+    fn cnv_prepare_right_tvec_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_prepare_right_tvec_tmp_bytes(module.n())
     }
 
-    fn cnv_prepare_right_lazy(
+    fn cnv_prepare_right_tvec(
         module: &Module<Self>,
-        res: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
+        res: &mut poulpy_hal::layouts::CnvTVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
         mask: i64,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let n_u64 = poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_prepare_right_lazy_tmp_bytes(module.n())
+        let n_u64 = poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_prepare_right_tvec_tmp_bytes(module.n())
             / size_of::<u64>();
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), n_u64);
-        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_prepare_right_lazy::<Self>(module, res, a, mask, tmp);
+        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_prepare_right_tvec::<Self>(module, res, a, mask, tmp);
     }
 
-    fn cnv_apply_dft_lazy_tmp_bytes(
+    fn cnv_apply_tvec_to_dft_tmp_bytes(
         _module: &Module<Self>,
         _cnv_offset: usize,
         _res_size: usize,
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        crate::ntt4x30_avx512::convolution::cnv_apply_dft_lazy_avx_tmp_bytes(a_size, b_size)
+        crate::ntt4x30_avx512::convolution::cnv_apply_tvec_to_dft_avx_tmp_bytes(a_size, b_size)
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn cnv_apply_dft_lazy(
+    fn cnv_apply_tvec_to_dft(
         module: &Module<Self>,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         res_col: usize,
-        a: &poulpy_hal::layouts::CnvPVecLBackendRef<'_, Self>,
+        a: &poulpy_hal::layouts::CnvTVecLBackendRef<'_, Self>,
         a_col: usize,
-        b: &poulpy_hal::layouts::CnvPVecRBackendRef<'_, Self>,
+        b: &poulpy_hal::layouts::CnvTVecRBackendRef<'_, Self>,
         b_col: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = crate::ntt4x30_avx512::convolution::cnv_apply_dft_lazy_avx_tmp_bytes(a.size(), b.size());
+        let bytes = crate::ntt4x30_avx512::convolution::cnv_apply_tvec_to_dft_avx_tmp_bytes(a.size(), b.size());
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
         unsafe {
-            crate::ntt4x30_avx512::convolution::cnv_apply_dft_lazy_avx(module, res, cnv_offset, res_col, a, a_col, b, b_col, tmp);
+            crate::ntt4x30_avx512::convolution::cnv_apply_tvec_to_dft_avx(
+                module, res, cnv_offset, res_col, a, a_col, b, b_col, tmp,
+            );
         }
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn cnv_apply_dft_accumulate(
+    fn cnv_apply_pvec_to_dft_accumulate(
         module: &Module<Self>,
         cnv_offset: usize,
         mut res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -447,7 +456,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let mut scratch = scratch.borrow();
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_apply_dft_accumulate_default(
+        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_apply_pvec_to_dft_accumulate_default(
             module,
             cnv_offset,
             &mut res,
@@ -460,18 +469,20 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         );
     }
 
-    fn cnv_pairwise_apply_dft_tmp_bytes(
+    fn cnv_pairwise_apply_pvec_to_dft_tmp_bytes(
         _module: &Module<Self>,
         _cnv_offset: usize,
         res_size: usize,
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_pairwise_apply_dft_tmp_bytes(res_size, a_size, b_size)
+        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_pairwise_apply_pvec_to_dft_tmp_bytes(
+            res_size, a_size, b_size,
+        )
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn cnv_pairwise_apply_dft(
+    fn cnv_pairwise_apply_pvec_to_dft(
         module: &Module<Self>,
         cnv_offset: usize,
         res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -482,22 +493,22 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         j: usize,
         scratch: &mut ScratchArena<'_, Self>,
     ) {
-        let bytes = poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_pairwise_apply_dft_tmp_bytes(
+        let bytes = poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_pairwise_apply_pvec_to_dft_tmp_bytes(
             res.size(),
             a.size(),
             b.size(),
         );
         let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_pairwise_apply_dft::<Self>(
+        poulpy_cpu_ref::reference::ntt4x30::convolution::ntt4x30_cnv_pairwise_apply_pvec_to_dft::<Self, _, _>(
             module, cnv_offset, res, res_col, a, b, i, j, tmp,
         );
     }
 
-    fn cnv_prepare_self_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_self_tmp_bytes_default(module, res_size, a_size)
+    fn cnv_prepare_self_pvec_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
+        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_self_pvec_tmp_bytes_default(module, res_size, a_size)
     }
 
-    fn cnv_prepare_self(
+    fn cnv_prepare_self_pvec(
         module: &Module<Self>,
         left: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
         right: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
@@ -506,7 +517,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let mut scratch = scratch.borrow();
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_self_default(module, left, right, a, mask, &mut scratch);
+        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_self_pvec_default(module, left, right, a, mask, &mut scratch);
     }
 }
 
@@ -1142,46 +1153,46 @@ mod ifma_impl {
     }
 
     unsafe impl HalConvolutionImpl<NTT3x42Ifma> for NTT3x42Ifma {
-        fn cnv_prepare_left_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
-            crate::ntt3x42_ifma::convolution::cnv_prepare_left_tmp_bytes(module.n())
+        fn cnv_prepare_left_pvec_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+            crate::ntt3x42_ifma::convolution::cnv_prepare_left_pvec_tmp_bytes(module.n())
         }
 
-        fn cnv_prepare_left(
+        fn cnv_prepare_left_pvec(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
             a: &VecZnxBackendRef<'_, Self>,
             mask: i64,
             scratch: &mut ScratchArena<'_, Self>,
         ) {
-            let bytes = crate::ntt3x42_ifma::convolution::cnv_prepare_left_tmp_bytes(module.n());
+            let bytes = crate::ntt3x42_ifma::convolution::cnv_prepare_left_pvec_tmp_bytes(module.n());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-            crate::ntt3x42_ifma::convolution::cnv_prepare_left(module, res, a, mask, tmp);
+            crate::ntt3x42_ifma::convolution::cnv_prepare_left_pvec(module, res, a, mask, tmp);
         }
 
-        fn cnv_prepare_right_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
-            crate::ntt3x42_ifma::convolution::cnv_prepare_right_tmp_bytes(module.n())
+        fn cnv_prepare_right_pvec_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+            crate::ntt3x42_ifma::convolution::cnv_prepare_right_pvec_tmp_bytes(module.n())
         }
 
-        fn cnv_prepare_right(
+        fn cnv_prepare_right_pvec(
             module: &Module<Self>,
             res: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
             a: &VecZnxBackendRef<'_, Self>,
             mask: i64,
             scratch: &mut ScratchArena<'_, Self>,
         ) {
-            let bytes = crate::ntt3x42_ifma::convolution::cnv_prepare_right_tmp_bytes(module.n());
+            let bytes = crate::ntt3x42_ifma::convolution::cnv_prepare_right_pvec_tmp_bytes(module.n());
             let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-            crate::ntt3x42_ifma::convolution::cnv_prepare_right(module, res, a, mask, tmp);
+            crate::ntt3x42_ifma::convolution::cnv_prepare_right_pvec(module, res, a, mask, tmp);
         }
 
-        fn cnv_apply_dft_tmp_bytes(
+        fn cnv_apply_pvec_to_dft_tmp_bytes(
             _module: &Module<Self>,
             _cnv_offset: usize,
             res_size: usize,
             a_size: usize,
             b_size: usize,
         ) -> usize {
-            crate::ntt3x42_ifma::convolution::cnv_apply_dft_ifma_tmp_bytes(res_size, a_size, b_size)
+            crate::ntt3x42_ifma::convolution::cnv_apply_pvec_to_dft_ifma_tmp_bytes(res_size, a_size, b_size)
         }
 
         fn cnv_by_const_apply_tmp_bytes(
@@ -1213,7 +1224,7 @@ mod ifma_impl {
         }
 
         #[allow(clippy::too_many_arguments)]
-        fn cnv_apply_dft(
+        fn cnv_apply_pvec_to_dft(
             _module: &Module<Self>,
             cnv_offset: usize,
             res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -1224,15 +1235,15 @@ mod ifma_impl {
             b_col: usize,
             scratch: &mut ScratchArena<'_, Self>,
         ) {
-            let bytes = crate::ntt3x42_ifma::convolution::cnv_apply_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
+            let bytes = crate::ntt3x42_ifma::convolution::cnv_apply_pvec_to_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
             unsafe {
-                crate::ntt3x42_ifma::convolution::cnv_apply_dft_ifma(res, cnv_offset, res_col, a, a_col, b, b_col, tmp);
+                crate::ntt3x42_ifma::convolution::cnv_apply_pvec_to_dft_ifma(res, cnv_offset, res_col, a, a_col, b, b_col, tmp);
             }
         }
 
         #[allow(clippy::too_many_arguments)]
-        fn cnv_apply_dft_accumulate(
+        fn cnv_apply_pvec_to_dft_accumulate(
             _module: &Module<Self>,
             cnv_offset: usize,
             res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -1243,27 +1254,27 @@ mod ifma_impl {
             b_col: usize,
             scratch: &mut ScratchArena<'_, Self>,
         ) {
-            let bytes = crate::ntt3x42_ifma::convolution::cnv_apply_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
+            let bytes = crate::ntt3x42_ifma::convolution::cnv_apply_pvec_to_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
             unsafe {
-                crate::ntt3x42_ifma::convolution::cnv_apply_dft_accumulate_ifma(
+                crate::ntt3x42_ifma::convolution::cnv_apply_pvec_to_dft_accumulate_ifma(
                     res, cnv_offset, res_col, a, a_col, b, b_col, tmp,
                 );
             }
         }
 
-        fn cnv_pairwise_apply_dft_tmp_bytes(
+        fn cnv_pairwise_apply_pvec_to_dft_tmp_bytes(
             _module: &Module<Self>,
             _cnv_offset: usize,
             res_size: usize,
             a_size: usize,
             b_size: usize,
         ) -> usize {
-            crate::ntt3x42_ifma::convolution::cnv_pairwise_apply_dft_ifma_tmp_bytes(res_size, a_size, b_size)
+            crate::ntt3x42_ifma::convolution::cnv_pairwise_apply_pvec_to_dft_ifma_tmp_bytes(res_size, a_size, b_size)
         }
 
         #[allow(clippy::too_many_arguments)]
-        fn cnv_pairwise_apply_dft(
+        fn cnv_pairwise_apply_pvec_to_dft(
             _module: &Module<Self>,
             cnv_offset: usize,
             res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -1274,18 +1285,19 @@ mod ifma_impl {
             j: usize,
             scratch: &mut ScratchArena<'_, Self>,
         ) {
-            let bytes = crate::ntt3x42_ifma::convolution::cnv_pairwise_apply_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
+            let bytes =
+                crate::ntt3x42_ifma::convolution::cnv_pairwise_apply_pvec_to_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
             unsafe {
-                crate::ntt3x42_ifma::convolution::cnv_pairwise_apply_dft_ifma(res, cnv_offset, res_col, a, b, i, j, tmp);
+                crate::ntt3x42_ifma::convolution::cnv_pairwise_apply_pvec_to_dft_ifma(res, cnv_offset, res_col, a, b, i, j, tmp);
             }
         }
 
-        fn cnv_prepare_self_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
-            crate::ntt3x42_ifma::convolution::cnv_prepare_self_tmp_bytes(module.n())
+        fn cnv_prepare_self_pvec_tmp_bytes(module: &Module<Self>, _res_size: usize, _a_size: usize) -> usize {
+            crate::ntt3x42_ifma::convolution::cnv_prepare_self_pvec_tmp_bytes(module.n())
         }
 
-        fn cnv_prepare_self(
+        fn cnv_prepare_self_pvec(
             module: &Module<Self>,
             left: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
             right: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
@@ -1293,9 +1305,9 @@ mod ifma_impl {
             mask: i64,
             scratch: &mut ScratchArena<'_, Self>,
         ) {
-            let bytes = crate::ntt3x42_ifma::convolution::cnv_prepare_self_tmp_bytes(module.n());
+            let bytes = crate::ntt3x42_ifma::convolution::cnv_prepare_self_pvec_tmp_bytes(module.n());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
-            crate::ntt3x42_ifma::convolution::cnv_prepare_self(module, left, right, a, mask, tmp);
+            crate::ntt3x42_ifma::convolution::cnv_prepare_self_pvec(module, left, right, a, mask, tmp);
         }
     }
 }

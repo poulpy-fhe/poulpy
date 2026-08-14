@@ -3,6 +3,7 @@ use poulpy_hal::{
     layouts::Module,
     test_suite::convolution::{
         test_convolution, test_convolution_accumulate, test_convolution_by_const, test_convolution_pairwise,
+        test_convolution_tier_equivalence,
     },
 };
 
@@ -244,6 +245,7 @@ fn test_convolution_direct() {
     test_convolution(&module, 50);
     test_convolution_by_const(&module, 50);
     test_convolution_pairwise(&module, 50);
+    test_convolution_tier_equivalence(&module, 50, false);
     test_convolution_accumulate(&module, 50);
 }
 

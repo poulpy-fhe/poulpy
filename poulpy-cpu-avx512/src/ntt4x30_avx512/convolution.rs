@@ -7,7 +7,10 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::_mm_sfence;
 
 use poulpy_cpu_ref::reference::ntt4x30::{mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle};
-use poulpy_hal::layouts::{CnvPVecLBackendRef, CnvPVecRBackendRef, Module, VecZnxDftBackendMut, ZnxView, ZnxViewMut};
+use poulpy_hal::layouts::{
+    CnvPVecLBackendRef, CnvPVecRBackendRef, CnvTVecLBackendRef, CnvTVecRBackendRef, Module, VecZnxDftBackendMut, ZnxView,
+    ZnxViewMut,
+};
 
 use super::{
     arithmetic_avx512::{pack_left_1blk_x2_avx512, pack_right_1blk_x2_avx512},
@@ -15,20 +18,20 @@ use super::{
 };
 use crate::NTT4x30Avx512;
 
-pub(crate) fn cnv_apply_dft_lazy_avx_tmp_bytes(a_size: usize, b_size: usize) -> usize {
+pub(crate) fn cnv_apply_tvec_to_dft_avx_tmp_bytes(a_size: usize, b_size: usize) -> usize {
     16 * (a_size + b_size) * size_of::<u32>()
 }
 
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512f")]
-pub(crate) unsafe fn cnv_apply_dft_lazy_avx(
+pub(crate) unsafe fn cnv_apply_tvec_to_dft_avx(
     module: &Module<NTT4x30Avx512>,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx512>,
     cnv_offset: usize,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, NTT4x30Avx512>,
+    a: &CnvTVecLBackendRef<'_, NTT4x30Avx512>,
     a_col: usize,
-    b: &CnvPVecRBackendRef<'_, NTT4x30Avx512>,
+    b: &CnvTVecRBackendRef<'_, NTT4x30Avx512>,
     b_col: usize,
     tmp: &mut [u8],
 ) {

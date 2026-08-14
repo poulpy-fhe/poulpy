@@ -1,7 +1,7 @@
 use crate::{
     layouts::{
-        Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, HostDataRef, VecZnxBackendRef,
-        VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxInfos, ZnxView, ZnxViewMut, ZnxZero,
+        Backend, CnvPVecLBackendMut, CnvPVecRBackendMut, HostDataRef, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
+        VecZnxInfos, ZnxInfos, ZnxView, ZnxViewMut, ZnxZero,
     },
     reference::fft64::{
         reim::{ReimArith, ReimFFTExecute, ReimFFTTable},
@@ -10,7 +10,7 @@ use crate::{
     },
 };
 
-pub fn convolution_prepare_left<BE>(
+pub(crate) fn convolution_prepare_left<BE>(
     table: &ReimFFTTable<f64>,
     res: &mut CnvPVecLBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
@@ -20,10 +20,10 @@ pub fn convolution_prepare_left<BE>(
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
-    convolution_prepare::<_, BE>(table, res, a, mask, tmp)
+    convolution_prepare_generic::<_, BE>(table, res, a, mask, tmp)
 }
 
-pub fn convolution_prepare_right<BE>(
+pub(crate) fn convolution_prepare_right<BE>(
     table: &ReimFFTTable<f64>,
     res: &mut CnvPVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
@@ -33,10 +33,10 @@ pub fn convolution_prepare_right<BE>(
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
 {
-    convolution_prepare::<_, BE>(table, res, a, mask, tmp)
+    convolution_prepare_generic::<_, BE>(table, res, a, mask, tmp)
 }
 
-fn convolution_prepare<R, BE>(
+pub(crate) fn convolution_prepare_generic<R, BE>(
     table: &ReimFFTTable<f64>,
     res: &mut R,
     a: &VecZnxBackendRef<'_, BE>,
@@ -80,16 +80,18 @@ fn convolution_prepare<R, BE>(
     }
 }
 
-pub fn convolution_prepare_self<BE>(
+pub(crate) fn convolution_prepare_self<L, R, BE>(
     table: &ReimFFTTable<f64>,
-    left: &mut CnvPVecLBackendMut<'_, BE>,
-    right: &mut CnvPVecRBackendMut<'_, BE>,
+    left: &mut L,
+    right: &mut R,
     a: &VecZnxBackendRef<'_, BE>,
     mask: i64,
     tmp: &mut VecZnxDftBackendMut<'_, BE>,
 ) where
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + ReimFFTExecute<ReimFFTTable<f64>, f64> + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
+    L: VecZnxInfos + ZnxViewMut<Scalar = f64>,
+    R: VecZnxInfos + ZnxViewMut<Scalar = f64>,
 {
     let cols: usize = left.cols();
     assert_eq!(a.cols(), cols, "a.cols():{} != left.cols():{cols}", a.cols());
@@ -137,12 +139,12 @@ pub fn convolution_prepare_self<BE>(
     }
 }
 
-pub fn convolution_by_const_apply_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
+pub(crate) fn convolution_by_const_apply_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
     let min_size: usize = res_size.min(a_size + b_size - 1);
     size_of::<i64>() * (min_size + a_size) * 8
 }
 
-pub fn convolution_by_const_apply<BE>(
+pub(crate) fn convolution_by_const_apply<BE>(
     cnv_offset: usize,
     res: &mut VecZnxBigBackendMut<'_, BE>,
     res_col: usize,
@@ -194,23 +196,25 @@ pub fn convolution_by_const_apply<BE>(
     }
 }
 
-pub fn convolution_apply_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
+pub(crate) fn convolution_apply_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
     let min_size: usize = res_size.min(a_size + b_size - 1);
     // Covers both the generic per-block staging and the fused column kernels.
     size_of::<f64>() * 8 * min_size.max(a_size + 6 + b_size + 16 * min_size)
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn convolution_apply_dft<BE>(
+pub(crate) fn convolution_apply_dft<BE, A, B>(
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
+    a: &A,
     a_col: usize,
-    b: &CnvPVecRBackendRef<'_, BE>,
+    b: &B,
     b_col: usize,
     tmp: &mut [f64],
 ) where
+    A: ZnxView<Scalar = f64> + VecZnxInfos,
+    B: ZnxView<Scalar = f64> + VecZnxInfos,
     BE: Backend<DftWord = f64, ZnxWord = i64> + Reim4BlkMatVec + Reim4Convolution,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
@@ -256,16 +260,18 @@ pub fn convolution_apply_dft<BE>(
 /// Accumulating variant of [`convolution_apply_dft`]: `res[res_col] += a (x) b`,
 /// leaving limbs beyond `min(res.size(), a.size() + b.size() - 1)` untouched.
 #[allow(clippy::too_many_arguments)]
-pub fn convolution_apply_dft_accumulate<BE>(
+pub(crate) fn convolution_apply_dft_accumulate<BE, A, B>(
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
+    a: &A,
     a_col: usize,
-    b: &CnvPVecRBackendRef<'_, BE>,
+    b: &B,
     b_col: usize,
     tmp: &mut [f64],
 ) where
+    A: ZnxView<Scalar = f64> + VecZnxInfos,
+    B: ZnxView<Scalar = f64> + VecZnxInfos,
     BE: Backend<DftWord = f64, ZnxWord = i64> + Reim4BlkMatVec + Reim4Convolution,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
@@ -304,27 +310,29 @@ pub fn convolution_apply_dft_accumulate<BE>(
     );
 }
 
-pub fn convolution_pairwise_apply_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
+pub(crate) fn convolution_pairwise_apply_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
     convolution_apply_dft_tmp_bytes(res_size, a_size, b_size) + (a_size + b_size) * size_of::<f64>() * 8
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn convolution_pairwise_apply_dft<BE>(
+pub(crate) fn convolution_pairwise_apply_dft<BE, A, B>(
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
-    b: &CnvPVecRBackendRef<'_, BE>,
+    a: &A,
+    b: &B,
     col_i: usize,
     col_j: usize,
     tmp: &mut [f64],
 ) where
+    A: ZnxView<Scalar = f64> + VecZnxInfos,
+    B: ZnxView<Scalar = f64> + VecZnxInfos,
     BE: Backend<DftWord = f64, ZnxWord = i64> + ReimArith + Reim4BlkMatVec + Reim4Convolution,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
     if col_i == col_j {
-        convolution_apply_dft::<BE>(cnv_offset, res, res_col, a, col_i, b, col_j, tmp);
+        convolution_apply_dft::<BE, _, _>(cnv_offset, res, res_col, a, col_i, b, col_j, tmp);
         return;
     }
 

@@ -65,7 +65,11 @@ unsafe impl HalVmpImpl<FFT64Ref> for FFT64Ref {
 }
 
 unsafe impl HalConvolutionImpl<FFT64Ref> for FFT64Ref {
-    hal_impl_convolution!(FFT64ConvolutionDefault);
+    cnv_impl_prepares_pvec!(FFT64ConvolutionDefault);
+    cnv_impl_prepares_tvec!(FFT64ConvolutionDefault);
+    cnv_impl_by_const!(FFT64ConvolutionDefault);
+    cnv_impl_apply_pvec!(FFT64ConvolutionDefault);
+    cnv_impl_apply_tvec!(FFT64ConvolutionDefault);
 }
 
 unsafe impl HalVecZnxBigImpl<FFT64Ref> for FFT64Ref {
@@ -113,40 +117,11 @@ unsafe impl HalVmpImpl<NTT4x30Ref> for NTT4x30Ref {
 }
 
 unsafe impl HalConvolutionImpl<NTT4x30Ref> for NTT4x30Ref {
-    hal_impl_convolution!(NTT4x30ConvolutionDefault);
-
-    fn cnv_accumulate_dft_tmp_bytes(
-        module: &Module<Self>,
-        cnv_offset: usize,
-        res_size: usize,
-        a_size: usize,
-        b_size: usize,
-    ) -> usize {
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_accumulate_dft_tmp_bytes_default(
-            module, cnv_offset, res_size, a_size, b_size,
-        )
-    }
-
-    fn cnv_accumulate_dft<'a>(
-        module: &Module<Self>,
-        cnv_offset: usize,
-        mut res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
-        res_col: usize,
-        terms: &[poulpy_hal::layouts::CnvDftAccTerm<'a, Self>],
-        scratch: &mut poulpy_hal::layouts::ScratchArena<'_, Self>,
-    ) where
-        Self: HalVecZnxDftImpl<Self> + 'a,
-    {
-        let mut scratch = scratch.borrow();
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_accumulate_dft_default(
-            module,
-            cnv_offset,
-            &mut res,
-            res_col,
-            terms,
-            &mut scratch,
-        );
-    }
+    cnv_impl_prepares_pvec!(NTT4x30ConvolutionDefault);
+    cnv_impl_prepares_tvec!(NTT4x30ConvolutionDefault);
+    cnv_impl_by_const!(NTT4x30ConvolutionDefault);
+    cnv_impl_apply_pvec!(NTT4x30ConvolutionDefault);
+    cnv_impl_apply_tvec!(NTT4x30ConvolutionDefault);
 }
 
 unsafe impl HalVecZnxBigImpl<NTT4x30Ref> for NTT4x30Ref {

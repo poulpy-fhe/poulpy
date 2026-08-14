@@ -95,7 +95,7 @@ where
     let a_size = a_infos.size();
     let key_size = key_infos.size();
     let baby = module.glwe_bytes_of_from_infos(a_infos);
-    let prepare = module.cnv_prepare_left_tmp_bytes(a_infos.size(), a_infos.size());
+    let prepare = module.cnv_prepare_left_pvec_tmp_bytes(a_infos.size(), a_infos.size());
 
     let hoisted_a_dft = module.bytes_of_vec_znx_dft(cols - 1, a_size);
     let hoisted_rot = module.bytes_of_vec_znx_dft(cols, key_size)
@@ -246,7 +246,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
             assert_eq!(prepared.size(), a_size, "prepared baby cache has wrong size");
             if rot == 0 {
                 let a_ref = a.to_backend_ref();
-                module.cnv_prepare_left(&mut prepared.to_backend_mut(), &a_ref.data, mask, &mut loop_scratch.borrow());
+                module.cnv_prepare_left_pvec(&mut prepared.to_backend_mut(), &a_ref.data, mask, &mut loop_scratch.borrow());
             } else {
                 let (mut baby, mut baby_scratch) = loop_scratch.borrow().take_glwe_scratch(a);
                 glwe_hoisted_baby_rotation(
@@ -260,7 +260,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
                     &mut baby_scratch.borrow(),
                 );
                 let baby_ref = baby.to_backend_ref();
-                module.cnv_prepare_left(
+                module.cnv_prepare_left_pvec(
                     &mut prepared.to_backend_mut(),
                     &baby_ref.data,
                     mask,
@@ -274,7 +274,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
             assert_eq!(prepared.size(), a_size, "prepared baby cache has wrong size");
             if rot == 0 {
                 let a_ref = a.to_backend_ref();
-                module.cnv_prepare_left(&mut prepared.to_backend_mut(), &a_ref.data, mask, scratch);
+                module.cnv_prepare_left_pvec(&mut prepared.to_backend_mut(), &a_ref.data, mask, scratch);
             } else {
                 let key: &K = keys
                     .get_automorphism_key(module.galois_element(rot))
@@ -282,7 +282,7 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
                 let (mut baby, mut baby_scratch) = scratch.borrow().take_glwe_scratch(a);
                 module.glwe_automorphism(&mut baby, a, key, &mut baby_scratch.borrow());
                 let baby_ref = baby.to_backend_ref();
-                module.cnv_prepare_left(
+                module.cnv_prepare_left_pvec(
                     &mut prepared.to_backend_mut(),
                     &baby_ref.data,
                     mask,

@@ -18,7 +18,7 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use poulpy_cpu_ref::reference::ntt4x30::{
     convolution::cnv_accumulate_schedule, mat_vec::BbcMeta, primes::Primes30, types::Q120bScalar, vec_znx_dft::NttModuleHandle,
 };
-use poulpy_hal::layouts::{CnvDftAccTerm, Module, VecZnxDftBackendMut, ZnxView, ZnxViewMut};
+use poulpy_hal::layouts::{CnvDftAccTermPvec, Module, VecZnxDftBackendMut, ZnxView, ZnxViewMut};
 
 use super::mat_vec_avx::reduce_bbc;
 use crate::NTT4x30Avx;
@@ -26,8 +26,8 @@ use crate::NTT4x30Avx;
 /// Block-group size of the staged flush (matches the reference kernels).
 const GROUP: usize = 16;
 
-/// Scratch bytes required by [`cnv_accumulate_dft_avx`]: the group staging.
-pub(crate) fn cnv_accumulate_dft_avx_tmp_bytes(res_size: usize) -> usize {
+/// Scratch bytes required by [`cnv_accumulate_pvec_to_dft_avx`]: the group staging.
+pub(crate) fn cnv_accumulate_pvec_to_dft_avx_tmp_bytes(res_size: usize) -> usize {
     8 * GROUP * res_size * size_of::<u64>()
 }
 
@@ -40,12 +40,12 @@ struct WindowAvx {
     len: usize,
 }
 
-pub(crate) unsafe fn cnv_accumulate_dft_avx(
+pub(crate) unsafe fn cnv_accumulate_pvec_to_dft_avx(
     module: &Module<NTT4x30Avx>,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx>,
     res_col: usize,
-    terms: &[CnvDftAccTerm<'_, NTT4x30Avx>],
+    terms: &[CnvDftAccTermPvec<'_, NTT4x30Avx>],
     tmp: &mut [u8],
 ) {
     let n = res.n();

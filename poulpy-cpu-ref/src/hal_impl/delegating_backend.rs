@@ -175,7 +175,11 @@ unsafe impl HalVmpImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
 }
 
 unsafe impl HalConvolutionImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {
-    crate::hal_impl_convolution!(FFT64ConvolutionDefault);
+    crate::cnv_impl_prepares_pvec!(FFT64ConvolutionDefault);
+    crate::cnv_impl_prepares_tvec!(FFT64ConvolutionDefault);
+    crate::cnv_impl_by_const!(FFT64ConvolutionDefault);
+    crate::cnv_impl_apply_pvec!(FFT64ConvolutionDefault);
+    crate::cnv_impl_apply_tvec!(FFT64ConvolutionDefault);
 }
 
 unsafe impl HalVecZnxBigImpl<DelegatingFFT64Ref> for DelegatingFFT64Ref {

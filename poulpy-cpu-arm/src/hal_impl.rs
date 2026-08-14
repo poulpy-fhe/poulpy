@@ -69,7 +69,11 @@ unsafe impl HalVmpImpl<FFT64Neon> for FFT64Neon {
 }
 
 unsafe impl HalConvolutionImpl<FFT64Neon> for FFT64Neon {
-    poulpy_cpu_ref::hal_impl_convolution!(FFT64ConvolutionDefault);
+    poulpy_cpu_ref::cnv_impl_prepares_pvec!(FFT64ConvolutionDefault);
+    poulpy_cpu_ref::cnv_impl_prepares_tvec!(FFT64ConvolutionDefault);
+    poulpy_cpu_ref::cnv_impl_by_const!(FFT64ConvolutionDefault);
+    poulpy_cpu_ref::cnv_impl_apply_pvec!(FFT64ConvolutionDefault);
+    poulpy_cpu_ref::cnv_impl_apply_tvec!(FFT64ConvolutionDefault);
 }
 
 unsafe impl HalVecZnxBigImpl<FFT64Neon> for FFT64Neon {
@@ -280,11 +284,11 @@ unsafe impl HalVmpImpl<NTT4x30Neon> for NTT4x30Neon {
 
 #[cfg(target_arch = "aarch64")]
 unsafe impl HalConvolutionImpl<NTT4x30Neon> for NTT4x30Neon {
-    fn cnv_prepare_left_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_left_tmp_bytes_default(module, res_size, a_size)
+    fn cnv_prepare_left_pvec_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
+        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_left_pvec_tmp_bytes_default(module, res_size, a_size)
     }
 
-    fn cnv_prepare_left(
+    fn cnv_prepare_left_pvec(
         module: &Module<Self>,
         res: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
@@ -292,14 +296,14 @@ unsafe impl HalConvolutionImpl<NTT4x30Neon> for NTT4x30Neon {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let mut scratch = scratch.borrow();
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_left_default(module, res, a, mask, &mut scratch);
+        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_left_pvec_default(module, res, a, mask, &mut scratch);
     }
 
-    fn cnv_prepare_right_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_right_tmp_bytes_default(module, res_size, a_size)
+    fn cnv_prepare_right_pvec_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
+        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_right_pvec_tmp_bytes_default(module, res_size, a_size)
     }
 
-    fn cnv_prepare_right(
+    fn cnv_prepare_right_pvec(
         module: &Module<Self>,
         res: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
         a: &VecZnxBackendRef<'_, Self>,
@@ -307,11 +311,19 @@ unsafe impl HalConvolutionImpl<NTT4x30Neon> for NTT4x30Neon {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let mut scratch = scratch.borrow();
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_right_default(module, res, a, mask, &mut scratch);
+        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_right_pvec_default(module, res, a, mask, &mut scratch);
     }
 
-    fn cnv_apply_dft_tmp_bytes(module: &Module<Self>, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_apply_dft_tmp_bytes_default(module, cnv_offset, res_size, a_size, b_size)
+    fn cnv_apply_pvec_to_dft_tmp_bytes(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res_size: usize,
+        a_size: usize,
+        b_size: usize,
+    ) -> usize {
+        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_apply_pvec_to_dft_tmp_bytes_default(
+            module, cnv_offset, res_size, a_size, b_size,
+        )
     }
 
     fn cnv_by_const_apply_tmp_bytes(
@@ -355,7 +367,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Neon> for NTT4x30Neon {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn cnv_apply_dft(
+    fn cnv_apply_pvec_to_dft(
         module: &Module<Self>,
         cnv_offset: usize,
         mut res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -367,7 +379,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Neon> for NTT4x30Neon {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let mut scratch = scratch.borrow();
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_apply_dft_default(
+        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_apply_pvec_to_dft_default(
             module,
             cnv_offset,
             &mut res,
@@ -381,7 +393,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Neon> for NTT4x30Neon {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn cnv_apply_dft_accumulate(
+    fn cnv_apply_pvec_to_dft_accumulate(
         module: &Module<Self>,
         cnv_offset: usize,
         mut res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -393,7 +405,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Neon> for NTT4x30Neon {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let mut scratch = scratch.borrow();
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_apply_dft_accumulate_default(
+        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_apply_pvec_to_dft_accumulate_default(
             module,
             cnv_offset,
             &mut res,
@@ -406,20 +418,20 @@ unsafe impl HalConvolutionImpl<NTT4x30Neon> for NTT4x30Neon {
         );
     }
 
-    fn cnv_pairwise_apply_dft_tmp_bytes(
+    fn cnv_pairwise_apply_pvec_to_dft_tmp_bytes(
         module: &Module<Self>,
         cnv_offset: usize,
         res_size: usize,
         a_size: usize,
         b_size: usize,
     ) -> usize {
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_pairwise_apply_dft_tmp_bytes_default(
+        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_pairwise_apply_pvec_to_dft_tmp_bytes_default(
             module, cnv_offset, res_size, a_size, b_size,
         )
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn cnv_pairwise_apply_dft(
+    fn cnv_pairwise_apply_pvec_to_dft(
         module: &Module<Self>,
         cnv_offset: usize,
         mut res: &mut VecZnxDftBackendMut<'_, Self>,
@@ -431,7 +443,7 @@ unsafe impl HalConvolutionImpl<NTT4x30Neon> for NTT4x30Neon {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let mut scratch = scratch.borrow();
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_pairwise_apply_dft_default(
+        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_pairwise_apply_pvec_to_dft_default(
             module,
             cnv_offset,
             &mut res,
@@ -444,11 +456,11 @@ unsafe impl HalConvolutionImpl<NTT4x30Neon> for NTT4x30Neon {
         );
     }
 
-    fn cnv_prepare_self_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_self_tmp_bytes_default(module, res_size, a_size)
+    fn cnv_prepare_self_pvec_tmp_bytes(module: &Module<Self>, res_size: usize, a_size: usize) -> usize {
+        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_self_pvec_tmp_bytes_default(module, res_size, a_size)
     }
 
-    fn cnv_prepare_self(
+    fn cnv_prepare_self_pvec(
         module: &Module<Self>,
         left: &mut poulpy_hal::layouts::CnvPVecLBackendMut<'_, Self>,
         right: &mut poulpy_hal::layouts::CnvPVecRBackendMut<'_, Self>,
@@ -457,13 +469,17 @@ unsafe impl HalConvolutionImpl<NTT4x30Neon> for NTT4x30Neon {
         scratch: &mut ScratchArena<'_, Self>,
     ) {
         let mut scratch = scratch.borrow();
-        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_self_default(module, left, right, a, mask, &mut scratch);
+        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_self_pvec_default(module, left, right, a, mask, &mut scratch);
     }
 }
 
 #[cfg(not(target_arch = "aarch64"))]
 unsafe impl HalConvolutionImpl<NTT4x30Neon> for NTT4x30Neon {
-    poulpy_cpu_ref::hal_impl_convolution!(NTT4x30ConvolutionDefault);
+    poulpy_cpu_ref::cnv_impl_prepares_pvec!(NTT4x30ConvolutionDefault);
+    poulpy_cpu_ref::cnv_impl_prepares_tvec!(NTT4x30ConvolutionDefault);
+    poulpy_cpu_ref::cnv_impl_by_const!(NTT4x30ConvolutionDefault);
+    poulpy_cpu_ref::cnv_impl_apply_pvec!(NTT4x30ConvolutionDefault);
+    poulpy_cpu_ref::cnv_impl_apply_tvec!(NTT4x30ConvolutionDefault);
 }
 
 unsafe impl HalVecZnxBigImpl<NTT4x30Neon> for NTT4x30Neon {

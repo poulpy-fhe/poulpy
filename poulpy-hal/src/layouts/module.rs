@@ -197,6 +197,14 @@ pub trait Backend: Sized + Sync + Send + PartialEq + Eq {
     fn bytes_of_cnv_pvec_right(n: usize, cols: usize, size: usize) -> usize {
         checked_product(&[n, cols, size, Self::size_of_dft_word()], "CnvPVecR byte size")
     }
+    /// Byte size of a [`crate::layouts::CnvTVecL`] buffer.
+    fn bytes_of_cnv_tvec_left(n: usize, cols: usize, size: usize) -> usize {
+        checked_product(&[n, cols, size, Self::size_of_dft_word()], "CnvTVecL byte size")
+    }
+    /// Byte size of a [`crate::layouts::CnvTVecR`] buffer.
+    fn bytes_of_cnv_tvec_right(n: usize, cols: usize, size: usize) -> usize {
+        checked_product(&[n, cols, size, Self::size_of_dft_word()], "CnvTVecR byte size")
+    }
     /// Deallocates a backend handle.
     ///
     /// # Safety

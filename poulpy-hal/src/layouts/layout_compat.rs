@@ -105,3 +105,13 @@ unsafe impl<B: Backend> VecZnxBigLayoutCompatible<B> for B {}
 /// the same size. Validate with the word-compat test suite.
 pub unsafe trait CnvPVecLayoutCompatible<B2: Backend>: Backend {}
 unsafe impl<B: Backend> CnvPVecLayoutCompatible<B> for B {}
+
+/// `B: CnvTVecLayoutCompatible<B2>` asserts `CnvTVecL` **and** `CnvTVecR`
+/// buffers of `B` are byte-compatible with those of `B2`.
+///
+/// # Safety
+///
+/// Declaring this asserts both tiers' containers share a physical layout
+/// between the two backends; a mismatch reinterprets raw bytes.
+pub unsafe trait CnvTVecLayoutCompatible<B2: Backend>: Backend {}
+unsafe impl<B: Backend> CnvTVecLayoutCompatible<B> for B {}

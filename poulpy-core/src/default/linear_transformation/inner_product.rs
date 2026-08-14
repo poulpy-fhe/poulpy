@@ -2,15 +2,15 @@
 //!
 //! This is the PROD block from docs/linear_transformation.md: for one giant bucket,
 //! compute `Σ_k ũ_{j,k} ⊙ rot(v,k)` and leave the result in `VecZnxDft`.
-//! The first term overwrites each output column via `cnv_apply_dft` (which also
+//! The first term overwrites each output column via `cnv_apply_pvec_to_dft` (which also
 //! zeroes the limbs past the convolution bound); the remaining terms accumulate
-//! in place with `cnv_apply_dft_accumulate`, so no per-term result is ever
+//! in place with `cnv_apply_pvec_to_dft_accumulate`, so no per-term result is ever
 //! materialized.
 
 use poulpy_hal::layouts::CnvPVecLToBackendRef;
 use poulpy_hal::{
     api::{CnvPVecBytesOf, Convolution, ModuleN, ScratchArenaTakeBasic},
-    layouts::{Backend, CnvDftAccTerm, CnvPVecRToBackendRef, ScratchArena, VecZnxDftBackendMut},
+    layouts::{Backend, CnvDftAccTermPvec, CnvPVecRToBackendRef, ScratchArena, VecZnxDftBackendMut},
 };
 
 use crate::{
@@ -53,7 +53,7 @@ pub(super) fn glwe_accumulate_prepared_baby_steps_dft<BE, M>(
     assert_eq!(prod_dft.size(), res_dft_size);
 
     for col in 0..cols {
-        let terms: Vec<CnvDftAccTerm<'_, BE>> = gs
+        let terms: Vec<CnvDftAccTermPvec<'_, BE>> = gs
             .diagonals
             .iter()
             .map(|d| {
@@ -61,15 +61,10 @@ pub(super) fn glwe_accumulate_prepared_baby_steps_dft<BE, M>(
                 let baby = lhs.baby_step(d.baby);
                 assert_eq!(baby.cols(), cols);
                 assert_eq!(baby.size() + diagonal.size() - cnv_offset_hi, res_dft_size);
-                CnvDftAccTerm {
-                    a: baby.to_backend_ref(),
-                    a_col: col,
-                    b: diagonal.to_backend_ref(),
-                    b_col: 0,
-                }
+                CnvDftAccTermPvec::new(baby.to_backend_ref(), col, diagonal.to_backend_ref(), 0)
             })
             .collect();
-        module.cnv_accumulate_dft(cnv_offset_hi, prod_dft, col, &terms, scratch);
+        module.cnv_accumulate_pvec_to_dft(cnv_offset_hi, prod_dft, col, &terms, scratch);
     }
 }
 
@@ -85,12 +80,12 @@ where
     M: Convolution<BE>,
 {
     let res_dft_size = baby_size + diagonal_size - cnv_offset_hi;
-    module.cnv_accumulate_dft_tmp_bytes(cnv_offset_hi, res_dft_size, baby_size, diagonal_size)
+    module.cnv_accumulate_pvec_to_dft_tmp_bytes(cnv_offset_hi, res_dft_size, baby_size, diagonal_size)
 }
 
 /// PROD block for one giant step from an *unprepared* matrix: identical to
 /// [`glwe_accumulate_prepared_baby_steps_dft`] except each diagonal is prepared
-/// (`cnv_prepare_right`) on the fly into a single reused scratch `CnvPVecR` and
+/// (`cnv_prepare_right_pvec`) on the fly into a single reused scratch `CnvPVecR` and
 /// discarded immediately, so the full prepared RHS is never materialized. Trades
 /// per-eval recompute for memory — for memory-bound backends (e.g. GPU). The
 /// baby loop is the outer one so each diagonal is prepared exactly once per eval.
@@ -135,12 +130,12 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
         // Stream the RHS: prepare this diagonal on the fly, then reuse the slot.
         {
             let plaintext = d.plaintext.to_backend_ref();
-            module.cnv_prepare_right(&mut diagonal, &plaintext.data, mask, &mut scratch_1.borrow());
+            module.cnv_prepare_right_pvec(&mut diagonal, &plaintext.data, mask, &mut scratch_1.borrow());
         }
 
         for col in 0..cols {
             if term_idx == 0 {
-                module.cnv_apply_dft(
+                module.cnv_apply_pvec_to_dft(
                     cnv_offset_hi,
                     prod_dft,
                     col,
@@ -151,7 +146,7 @@ pub(super) fn glwe_accumulate_unprepared_baby_steps_dft<BE, M, P>(
                     &mut scratch_1.borrow(),
                 );
             } else {
-                module.cnv_apply_dft_accumulate(
+                module.cnv_apply_pvec_to_dft_accumulate(
                     cnv_offset_hi,
                     prod_dft,
                     col,

@@ -7,13 +7,17 @@ use crate::layouts::VecZnxBigToBackendMut;
 use crate::layouts::VecZnxBigToBackendRef;
 use crate::layouts::VecZnxDftToBackendMut;
 use crate::layouts::VecZnxDftToBackendRef;
+use crate::layouts::{
+    CnvDftAccTermPvec, CnvDftAccTermTvec, CnvTVecLOwned, CnvTVecLToBackendMut, CnvTVecLToBackendRef, CnvTVecROwned,
+    CnvTVecRToBackendMut, CnvTVecRToBackendRef,
+};
 use rand::Rng;
 
 use crate::{
     api::{
-        CnvPVecAlloc, Convolution, ModuleN, ScratchOwnedAlloc, VecZnxAddIntoBackend, VecZnxBigAlloc, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApplyTmpA,
-        VecZnxNormalizeAssignBackend,
+        CnvPVecAlloc, CnvTVecAlloc, Convolution, ModuleN, ScratchOwnedAlloc, VecZnxAddIntoBackend, VecZnxBigAlloc,
+        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply,
+        VecZnxIdftApplyTmpA, VecZnxNormalizeAssignBackend,
     },
     layouts::{DataView, FillUniform, ScratchArena, ScratchOwned, VecZnx, VecZnxOwned, ZnxView, ZnxViewMut, ZnxZero},
     source::Source,
@@ -150,15 +154,15 @@ where
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
-            .cnv_apply_dft_tmp_bytes(0, res_size, a_size, b_size)
-            .max(module.cnv_prepare_left_tmp_bytes(res_size, a_size))
-            .max(module.cnv_prepare_right_tmp_bytes(res_size, b_size))
+            .cnv_apply_pvec_to_dft_tmp_bytes(0, res_size, a_size, b_size)
+            .max(module.cnv_prepare_left_pvec_tmp_bytes(res_size, a_size))
+            .max(module.cnv_prepare_right_pvec_tmp_bytes(res_size, b_size))
             .max(module.vec_znx_big_normalize_tmp_bytes()),
     );
 
     {
         let mut a_prep_backend = a_prep.to_backend_mut();
-        module.cnv_prepare_left(
+        module.cnv_prepare_left_pvec(
             &mut a_prep_backend,
             &vec_znx_backend_ref::<BE>(&a_backend),
             !0i64,
@@ -167,7 +171,7 @@ where
     }
     {
         let mut b_prep_backend = b_prep.to_backend_mut();
-        module.cnv_prepare_right(
+        module.cnv_prepare_right_pvec(
             &mut b_prep_backend,
             &vec_znx_backend_ref::<BE>(&b_backend),
             !0i64,
@@ -178,7 +182,7 @@ where
     for a_col in 0..a.cols() {
         for b_col in 0..b.cols() {
             for cnv_offset in 0..res_size {
-                module.cnv_apply_dft(
+                module.cnv_apply_pvec_to_dft(
                     cnv_offset,
                     &mut res_dft.to_backend_mut(),
                     res_dft_col,
@@ -224,7 +228,7 @@ where
     }
 }
 
-/// `cnv_apply_dft_accumulate` matches `cnv_apply_dft` followed by a DFT add,
+/// `cnv_apply_pvec_to_dft_accumulate` matches `cnv_apply_pvec_to_dft` followed by a DFT add,
 /// bit-for-bit on the raw prepared data.
 pub fn test_convolution_accumulate<M, BE: crate::test_suite::TestBackend>(module: &M, _base2k: usize)
 where
@@ -258,14 +262,14 @@ where
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
-            .cnv_apply_dft_tmp_bytes(0, res_size, a_size, b_size)
-            .max(module.cnv_prepare_left_tmp_bytes(res_size, a_size))
-            .max(module.cnv_prepare_right_tmp_bytes(res_size, b_size)),
+            .cnv_apply_pvec_to_dft_tmp_bytes(0, res_size, a_size, b_size)
+            .max(module.cnv_prepare_left_pvec_tmp_bytes(res_size, a_size))
+            .max(module.cnv_prepare_right_pvec_tmp_bytes(res_size, b_size)),
     );
 
     {
         let mut a_prep_backend = a_prep.to_backend_mut();
-        module.cnv_prepare_left(
+        module.cnv_prepare_left_pvec(
             &mut a_prep_backend,
             &vec_znx_backend_ref::<BE>(&a_backend),
             !0i64,
@@ -274,7 +278,7 @@ where
     }
     {
         let mut b_prep_backend = b_prep.to_backend_mut();
-        module.cnv_prepare_right(
+        module.cnv_prepare_right_pvec(
             &mut b_prep_backend,
             &vec_znx_backend_ref::<BE>(&b_backend),
             !0i64,
@@ -284,7 +288,7 @@ where
 
     for res_col in 0..res_cols {
         // Identical deterministic initial accumulator content for both paths.
-        module.cnv_apply_dft(
+        module.cnv_apply_pvec_to_dft(
             0,
             &mut res_acc.to_backend_mut(),
             res_col,
@@ -294,7 +298,7 @@ where
             0,
             &mut scratch.arena(),
         );
-        module.cnv_apply_dft(
+        module.cnv_apply_pvec_to_dft(
             0,
             &mut res_ref.to_backend_mut(),
             res_col,
@@ -308,7 +312,7 @@ where
         for a_col in 0..cols {
             for b_col in 0..cols {
                 for cnv_offset in (0..res_size).step_by(3) {
-                    module.cnv_apply_dft_accumulate(
+                    module.cnv_apply_pvec_to_dft_accumulate(
                         cnv_offset,
                         &mut res_acc.to_backend_mut(),
                         res_col,
@@ -319,7 +323,7 @@ where
                         &mut scratch.arena(),
                     );
 
-                    module.cnv_apply_dft(
+                    module.cnv_apply_pvec_to_dft(
                         cnv_offset,
                         &mut tmp_dft.to_backend_mut(),
                         0,
@@ -341,8 +345,8 @@ where
     }
 }
 
-/// `cnv_accumulate_dft` matches the per-term `cnv_apply_dft` +
-/// `cnv_apply_dft_accumulate` sequence after normalization to the coefficient
+/// `cnv_accumulate_pvec_to_dft` matches the per-term `cnv_apply_pvec_to_dft` +
+/// `cnv_apply_pvec_to_dft_accumulate` sequence after normalization to the coefficient
 /// domain (the fused path reduces once per output, so the raw q120 lazy
 /// representatives may differ).
 pub fn test_convolution_accumulate_fused<M, BE: crate::test_suite::TestBackend>(module: &M, base2k: usize)
@@ -357,7 +361,7 @@ where
         + VecZnxBigAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
 {
-    use crate::layouts::CnvDftAccTerm;
+    use crate::layouts::CnvDftAccTermPvec;
 
     let mut source: Source = Source::new([0u8; 32]);
 
@@ -387,16 +391,16 @@ where
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
-            .cnv_accumulate_dft_tmp_bytes(0, res_size, a_size, b_size)
-            .max(module.cnv_apply_dft_tmp_bytes(0, res_size, a_size, b_size))
-            .max(module.cnv_prepare_left_tmp_bytes(res_size, a_size))
-            .max(module.cnv_prepare_right_tmp_bytes(res_size, b_size))
+            .cnv_accumulate_pvec_to_dft_tmp_bytes(0, res_size, a_size, b_size)
+            .max(module.cnv_apply_pvec_to_dft_tmp_bytes(0, res_size, a_size, b_size))
+            .max(module.cnv_prepare_left_pvec_tmp_bytes(res_size, a_size))
+            .max(module.cnv_prepare_right_pvec_tmp_bytes(res_size, b_size))
             .max(module.vec_znx_big_normalize_tmp_bytes()),
     );
 
     {
         let mut a_prep_backend = a_prep.to_backend_mut();
-        module.cnv_prepare_left(
+        module.cnv_prepare_left_pvec(
             &mut a_prep_backend,
             &vec_znx_backend_ref::<BE>(&a_backend),
             !0i64,
@@ -405,7 +409,7 @@ where
     }
     {
         let mut b_prep_backend = b_prep.to_backend_mut();
-        module.cnv_prepare_right(
+        module.cnv_prepare_right_pvec(
             &mut b_prep_backend,
             &vec_znx_backend_ref::<BE>(&b_backend),
             !0i64,
@@ -418,16 +422,11 @@ where
 
     for cnv_offset in (0..res_size).step_by(3) {
         {
-            let terms: Vec<CnvDftAccTerm<'_, BE>> = term_cols
+            let terms: Vec<CnvDftAccTermPvec<'_, BE>> = term_cols
                 .iter()
-                .map(|&(a_col, b_col)| CnvDftAccTerm {
-                    a: a_prep.to_backend_ref(),
-                    a_col,
-                    b: b_prep.to_backend_ref(),
-                    b_col,
-                })
+                .map(|&(a_col, b_col)| CnvDftAccTermPvec::new(a_prep.to_backend_ref(), a_col, b_prep.to_backend_ref(), b_col))
                 .collect();
-            module.cnv_accumulate_dft(
+            module.cnv_accumulate_pvec_to_dft(
                 cnv_offset,
                 &mut res_fused.to_backend_mut(),
                 res_col,
@@ -438,7 +437,7 @@ where
 
         for (idx, &(a_col, b_col)) in term_cols.iter().enumerate() {
             if idx == 0 {
-                module.cnv_apply_dft(
+                module.cnv_apply_pvec_to_dft(
                     cnv_offset,
                     &mut res_ref.to_backend_mut(),
                     res_col,
@@ -449,7 +448,7 @@ where
                     &mut scratch.arena(),
                 );
             } else {
-                module.cnv_apply_dft_accumulate(
+                module.cnv_apply_pvec_to_dft_accumulate(
                     cnv_offset,
                     &mut res_ref.to_backend_mut(),
                     res_col,
@@ -541,15 +540,15 @@ where
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
-            .cnv_pairwise_apply_dft_tmp_bytes(0, res_size, a_size, b_size)
-            .max(module.cnv_prepare_left_tmp_bytes(res_size, a_size))
-            .max(module.cnv_prepare_right_tmp_bytes(res_size, b_size))
+            .cnv_pairwise_apply_pvec_to_dft_tmp_bytes(0, res_size, a_size, b_size)
+            .max(module.cnv_prepare_left_pvec_tmp_bytes(res_size, a_size))
+            .max(module.cnv_prepare_right_pvec_tmp_bytes(res_size, b_size))
             .max(module.vec_znx_big_normalize_tmp_bytes()),
     );
 
     {
         let mut a_prep_backend = a_prep.to_backend_mut();
-        module.cnv_prepare_left(
+        module.cnv_prepare_left_pvec(
             &mut a_prep_backend,
             &vec_znx_backend_ref::<BE>(&a_backend),
             !0i64,
@@ -558,7 +557,7 @@ where
     }
     {
         let mut b_prep_backend = b_prep.to_backend_mut();
-        module.cnv_prepare_right(
+        module.cnv_prepare_right_pvec(
             &mut b_prep_backend,
             &vec_znx_backend_ref::<BE>(&b_backend),
             !0i64,
@@ -569,7 +568,7 @@ where
     for col_i in 0..cols {
         for col_j in 0..cols {
             for cnv_offset in 0..res_size {
-                module.cnv_pairwise_apply_dft(
+                module.cnv_pairwise_apply_pvec_to_dft(
                     cnv_offset,
                     &mut res_dft.to_backend_mut(),
                     res_dft_col,
@@ -783,5 +782,228 @@ fn negacyclic_convolution_naive(res: &mut [i64], a: &[i64], b: &[i64]) {
         for j in lim..n {
             res[i + j - n] -= ai * b[j];
         }
+    }
+}
+
+/// Pass `all_forms = false` for a backend whose `tvec` tier only implements the
+/// plain apply.
+///
+/// The `tvec` (hot-prep) tier computes the same convolution as the `pvec`
+/// (cold-prep) tier, for every DFT-domain form.
+///
+/// Compared after inverse DFT and normalization rather than on the prepared
+/// buffers, so it holds even where the two tiers use different internal layouts.
+pub fn test_convolution_tier_equivalence<M, BE: crate::test_suite::TestBackend>(module: &M, base2k: usize, all_forms: bool)
+where
+    M: ModuleN
+        + Convolution<BE>
+        + CnvPVecAlloc<BE>
+        + CnvTVecAlloc<BE>
+        + VecZnxDftAlloc<BE>
+        + VecZnxIdftApplyTmpA<BE>
+        + VecZnxBigNormalize<BE>
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxBigAlloc<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
+{
+    let mut source: Source = Source::new([1u8; 32]);
+
+    let cols: usize = 2;
+    let a_size: usize = 9;
+    let b_size: usize = 9;
+    let res_size: usize = a_size + b_size;
+
+    let mut a = VecZnx::alloc(module.n(), cols, a_size);
+    let mut b = VecZnx::alloc(module.n(), cols, b_size);
+    a.fill_uniform(17, &mut source);
+    b.fill_uniform(17, &mut source);
+
+    let a_backend = upload_vec_znx::<BE>(&a);
+    let b_backend = upload_vec_znx::<BE>(&b);
+
+    let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
+        module
+            .cnv_apply_pvec_to_dft_tmp_bytes(0, res_size, a_size, b_size)
+            .max(module.cnv_apply_tvec_to_dft_tmp_bytes(0, res_size, a_size, b_size))
+            .max(module.cnv_accumulate_pvec_to_dft_tmp_bytes(0, res_size, a_size, b_size))
+            .max(module.cnv_accumulate_tvec_to_dft_tmp_bytes(0, res_size, a_size, b_size))
+            .max(module.cnv_pairwise_apply_pvec_to_dft_tmp_bytes(0, res_size, a_size, b_size))
+            .max(module.cnv_pairwise_apply_tvec_to_dft_tmp_bytes(0, res_size, a_size, b_size))
+            .max(module.cnv_prepare_left_pvec_tmp_bytes(res_size, a_size))
+            .max(module.cnv_prepare_right_pvec_tmp_bytes(res_size, b_size))
+            .max(module.cnv_prepare_left_tvec_tmp_bytes(res_size, a_size))
+            .max(module.cnv_prepare_right_tvec_tmp_bytes(res_size, b_size))
+            .max(module.vec_znx_big_normalize_tmp_bytes()),
+    );
+
+    let mut a_p: CnvPVecLOwned<BE> = module.cnv_pvec_left_alloc(cols, a_size);
+    let mut b_p: CnvPVecROwned<BE> = module.cnv_pvec_right_alloc(cols, b_size);
+    let mut a_t: CnvTVecLOwned<BE> = module.cnv_tvec_left_alloc(cols, a_size);
+    let mut b_t: CnvTVecROwned<BE> = module.cnv_tvec_right_alloc(cols, b_size);
+
+    module.cnv_prepare_left_pvec(
+        &mut a_p.to_backend_mut(),
+        &vec_znx_backend_ref::<BE>(&a_backend),
+        !0i64,
+        &mut scratch.arena(),
+    );
+    module.cnv_prepare_right_pvec(
+        &mut b_p.to_backend_mut(),
+        &vec_znx_backend_ref::<BE>(&b_backend),
+        !0i64,
+        &mut scratch.arena(),
+    );
+    module.cnv_prepare_left_tvec(
+        &mut a_t.to_backend_mut(),
+        &vec_znx_backend_ref::<BE>(&a_backend),
+        !0i64,
+        &mut scratch.arena(),
+    );
+    module.cnv_prepare_right_tvec(
+        &mut b_t.to_backend_mut(),
+        &vec_znx_backend_ref::<BE>(&b_backend),
+        !0i64,
+        &mut scratch.arena(),
+    );
+
+    let mut res_dft: VecZnxDftOwned<BE> = module.vec_znx_dft_alloc(1, res_size);
+    let mut res_big: VecZnxBigOwned<BE> = module.vec_znx_big_alloc(1, res_size);
+
+    // Inverse-DFT and normalize the current `res_dft` into a host `VecZnx`.
+    macro_rules! settle {
+        () => {{
+            module.vec_znx_idft_apply_tmpa(&mut res_big.to_backend_mut(), 0, &mut res_dft.to_backend_mut(), 0);
+            let mut out = upload_vec_znx::<BE>(&VecZnx::alloc(module.n(), 1, res_size));
+            module.vec_znx_big_normalize(
+                &mut vec_znx_backend_mut::<BE>(&mut out),
+                base2k,
+                0,
+                0,
+                &res_big.to_backend_ref(),
+                base2k,
+                0,
+                &mut scratch.arena(),
+            );
+            download_vec_znx::<BE>(&out)
+        }};
+    }
+
+    for cnv_offset in [0usize, 1, res_size - 1] {
+        for a_col in 0..cols {
+            for b_col in 0..cols {
+                // 1. apply_to_dft
+                module.cnv_apply_pvec_to_dft(
+                    cnv_offset,
+                    &mut res_dft.to_backend_mut(),
+                    0,
+                    &a_p.to_backend_ref(),
+                    a_col,
+                    &b_p.to_backend_ref(),
+                    b_col,
+                    &mut scratch.arena(),
+                );
+                let want = settle!();
+                module.cnv_apply_tvec_to_dft(
+                    cnv_offset,
+                    &mut res_dft.to_backend_mut(),
+                    0,
+                    &a_t.to_backend_ref(),
+                    a_col,
+                    &b_t.to_backend_ref(),
+                    b_col,
+                    &mut scratch.arena(),
+                );
+                assert_eq!(want, settle!(), "apply_to_dft: tvec != pvec");
+
+                if !all_forms {
+                    continue;
+                }
+
+                // 2. apply_to_dft_accumulate, on top of the result just verified in 1
+                module.cnv_apply_pvec_to_dft(
+                    cnv_offset,
+                    &mut res_dft.to_backend_mut(),
+                    0,
+                    &a_p.to_backend_ref(),
+                    a_col,
+                    &b_p.to_backend_ref(),
+                    b_col,
+                    &mut scratch.arena(),
+                );
+                module.cnv_apply_pvec_to_dft_accumulate(
+                    cnv_offset,
+                    &mut res_dft.to_backend_mut(),
+                    0,
+                    &a_p.to_backend_ref(),
+                    a_col,
+                    &b_p.to_backend_ref(),
+                    b_col,
+                    &mut scratch.arena(),
+                );
+                let want = settle!();
+                module.cnv_apply_tvec_to_dft(
+                    cnv_offset,
+                    &mut res_dft.to_backend_mut(),
+                    0,
+                    &a_t.to_backend_ref(),
+                    a_col,
+                    &b_t.to_backend_ref(),
+                    b_col,
+                    &mut scratch.arena(),
+                );
+                module.cnv_apply_tvec_to_dft_accumulate(
+                    cnv_offset,
+                    &mut res_dft.to_backend_mut(),
+                    0,
+                    &a_t.to_backend_ref(),
+                    a_col,
+                    &b_t.to_backend_ref(),
+                    b_col,
+                    &mut scratch.arena(),
+                );
+                assert_eq!(want, settle!(), "apply_to_dft_accumulate: tvec != pvec");
+
+                // 3. pairwise_apply_to_dft
+                module.cnv_pairwise_apply_pvec_to_dft(
+                    cnv_offset,
+                    &mut res_dft.to_backend_mut(),
+                    0,
+                    &a_p.to_backend_ref(),
+                    &b_p.to_backend_ref(),
+                    a_col,
+                    b_col,
+                    &mut scratch.arena(),
+                );
+                let want = settle!();
+                module.cnv_pairwise_apply_tvec_to_dft(
+                    cnv_offset,
+                    &mut res_dft.to_backend_mut(),
+                    0,
+                    &a_t.to_backend_ref(),
+                    &b_t.to_backend_ref(),
+                    a_col,
+                    b_col,
+                    &mut scratch.arena(),
+                );
+                assert_eq!(want, settle!(), "pairwise_apply_to_dft: tvec != pvec");
+            }
+        }
+
+        if !all_forms {
+            continue;
+        }
+
+        // 4. accumulate_to_dft over a multi-term slice
+        let terms_p: Vec<CnvDftAccTermPvec<'_, BE>> = (0..cols)
+            .map(|c| CnvDftAccTermPvec::new(a_p.to_backend_ref(), c, b_p.to_backend_ref(), c))
+            .collect();
+        module.cnv_accumulate_pvec_to_dft(cnv_offset, &mut res_dft.to_backend_mut(), 0, &terms_p, &mut scratch.arena());
+        let want = settle!();
+
+        let terms_t: Vec<CnvDftAccTermTvec<'_, BE>> = (0..cols)
+            .map(|c| CnvDftAccTermTvec::new(a_t.to_backend_ref(), c, b_t.to_backend_ref(), c))
+            .collect();
+        module.cnv_accumulate_tvec_to_dft(cnv_offset, &mut res_dft.to_backend_mut(), 0, &terms_t, &mut scratch.arena());
+        assert_eq!(want, settle!(), "accumulate_to_dft: tvec != pvec");
     }
 }

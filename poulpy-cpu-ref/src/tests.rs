@@ -6,7 +6,7 @@ use poulpy_hal::{
     layouts::Module,
     test_suite::convolution::{
         test_convolution, test_convolution_accumulate, test_convolution_accumulate_fused, test_convolution_by_const,
-        test_convolution_pairwise,
+        test_convolution_pairwise, test_convolution_tier_equivalence,
     },
 };
 
@@ -33,6 +33,7 @@ fn test_convolution_fft64_ref() {
 fn test_convolution_pairwise_fft64_ref() {
     let module: Module<FFT64Ref> = Module::<FFT64Ref>::new(8);
     test_convolution_pairwise(&module, 17);
+    test_convolution_tier_equivalence(&module, 17, true);
 }
 
 #[test]
@@ -63,6 +64,7 @@ fn test_convolution_ntt4x30_ref() {
 fn test_convolution_pairwise_ntt4x30_ref() {
     let module: Module<NTT4x30Ref> = Module::<NTT4x30Ref>::new(8);
     test_convolution_pairwise(&module, 50);
+    test_convolution_tier_equivalence(&module, 50, false);
 }
 
 #[test]

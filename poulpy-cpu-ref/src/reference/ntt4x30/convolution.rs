@@ -13,8 +13,8 @@ use bytemuck::{cast_slice, cast_slice_mut};
 
 use crate::{
     layouts::{
-        Backend, CnvPVecLBackendMut, CnvPVecLBackendRef, CnvPVecRBackendMut, CnvPVecRBackendRef, HostDataRef, VecZnxBackendRef,
-        VecZnxBigBackendMut, VecZnxDftBackendMut, ZnxView, ZnxViewMut,
+        Backend, CnvTVecLBackendMut, CnvTVecRBackendMut, HostDataRef, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut,
+        VecZnxInfos, ZnxView, ZnxViewMut,
     },
     reference::ntt4x30::{
         NttAddAssign, NttCFromB, NttDFTExecute, NttFromZnx64, NttMulBbc1ColX2, NttPackLeft1BlkX2, NttPackRight1BlkX2,
@@ -38,20 +38,20 @@ pub(crate) const CNV_ACC_GROUP: usize = 16;
 /// Block-group size of the prepare canonicalize-and-scatter staging.
 const PREP_GROUP: usize = 64;
 
-/// Scratch bytes required by [`ntt4x30_cnv_apply_dft`] and its accumulate
+/// Scratch bytes required by [`ntt4x30_cnv_apply_pvec_to_dft`] and its accumulate
 /// variant: the padded `a` window plus the accumulate staging group.
-pub fn ntt4x30_cnv_apply_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
+pub fn ntt4x30_cnv_apply_pvec_to_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
     let min_size: usize = res_size.min(a_size + b_size);
     16 * (a_size + 2 * (TILE - 1)) * size_of::<u32>() + 8 * CNV_ACC_GROUP * min_size * size_of::<u64>()
 }
 
-/// Scratch bytes required by [`ntt4x30_cnv_pairwise_apply_dft`]: the apply
+/// Scratch bytes required by [`ntt4x30_cnv_pairwise_apply_pvec_to_dft`]: the apply
 /// scratch plus the summed `b` rows.
-pub fn ntt4x30_cnv_pairwise_apply_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
+pub fn ntt4x30_cnv_pairwise_apply_pvec_to_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
     if a_size == 0 || b_size == 0 || res_size == 0 {
         0
     } else {
-        ntt4x30_cnv_apply_dft_tmp_bytes(res_size, a_size, b_size) + 16 * b_size * size_of::<u32>()
+        ntt4x30_cnv_apply_pvec_to_dft_tmp_bytes(res_size, a_size, b_size) + 16 * b_size * size_of::<u32>()
     }
 }
 
@@ -212,17 +212,19 @@ fn col_slice_u32(raw: &[Q120bScalar], n: usize, size: usize, col: usize) -> &[u3
 ///
 /// Output limbs `min_size..res.size()` are zeroed.
 #[allow(clippy::too_many_arguments)]
-pub fn ntt4x30_cnv_apply_dft<BE>(
+pub fn ntt4x30_cnv_apply_pvec_to_dft<BE, A, B>(
     module: &impl NttModuleHandle,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
+    a: &A,
     a_col: usize,
-    b: &CnvPVecRBackendRef<'_, BE>,
+    b: &B,
     b_col: usize,
     tmp: &mut [u8],
 ) where
+    A: ZnxView<Scalar = Q120bScalar> + VecZnxInfos,
+    B: ZnxView<Scalar = Q120bScalar> + VecZnxInfos,
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttAddAssign + NttMulBbc1ColX2,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
@@ -245,21 +247,23 @@ pub fn ntt4x30_cnv_apply_dft<BE>(
     );
 }
 
-/// Accumulating variant of [`ntt4x30_cnv_apply_dft`]: `res[k] += Σ a[j] ⊙ b[k−j]`
+/// Accumulating variant of [`ntt4x30_cnv_apply_pvec_to_dft`]: `res[k] += Σ a[j] ⊙ b[k−j]`
 /// via the backend `ntt_add_assign` kernel (bit-identical to apply + DFT add).
 /// Limbs `>= min_size` are left untouched.
 #[allow(clippy::too_many_arguments)]
-pub fn ntt4x30_cnv_apply_dft_accumulate<BE>(
+pub fn ntt4x30_cnv_apply_pvec_to_dft_accumulate<BE, A, B>(
     module: &impl NttModuleHandle,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
+    a: &A,
     a_col: usize,
-    b: &CnvPVecRBackendRef<'_, BE>,
+    b: &B,
     b_col: usize,
     tmp: &mut [u8],
 ) where
+    A: ZnxView<Scalar = Q120bScalar> + VecZnxInfos,
+    B: ZnxView<Scalar = Q120bScalar> + VecZnxInfos,
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttAddAssign + NttMulBbc1ColX2,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
@@ -279,8 +283,8 @@ pub fn ntt4x30_cnv_apply_dft_accumulate<BE>(
     );
 }
 
-/// Scratch bytes required by [`ntt4x30_cnv_accumulate_dft`]: the group staging.
-pub fn ntt4x30_cnv_accumulate_dft_tmp_bytes(res_size: usize, _a_size: usize, _b_size: usize) -> usize {
+/// Scratch bytes required by [`ntt4x30_cnv_accumulate_pvec_to_dft`]: the group staging.
+pub fn ntt4x30_cnv_accumulate_pvec_to_dft_tmp_bytes(res_size: usize, _a_size: usize, _b_size: usize) -> usize {
     8 * CNV_ACC_GROUP * res_size * size_of::<u64>()
 }
 
@@ -333,13 +337,13 @@ pub fn cnv_accumulate_schedule(cnv_offset: usize, res_size: usize, term_sizes: &
 /// All terms of one output limb are summed in the lazy q120 accumulators and
 /// reduced once, and the destination column is written exactly once through the
 /// staged group flush — the result is congruent to, but not bit-identical with,
-/// a sequence of [`ntt4x30_cnv_apply_dft_accumulate`] calls.
-pub fn ntt4x30_cnv_accumulate_dft<BE>(
+/// a sequence of [`ntt4x30_cnv_apply_pvec_to_dft_accumulate`] calls.
+pub fn ntt4x30_cnv_accumulate_pvec_to_dft<BE>(
     module: &impl NttModuleHandle,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
-    terms: &[crate::layouts::CnvDftAccTerm<'_, BE>],
+    terms: &[crate::layouts::CnvDftAccTermPvec<'_, BE>],
     tmp: &mut [u8],
 ) where
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
@@ -424,25 +428,27 @@ pub fn ntt4x30_cnv_accumulate_dft<BE>(
 /// Compute the pairwise DFT-domain convolution
 /// `res = (a[:,i] + a[:,j]) ⊙ (b[:,i] + b[:,j])`.
 ///
-/// When `col_i == col_j` this delegates to [`ntt4x30_cnv_apply_dft`].
+/// When `col_i == col_j` this delegates to [`ntt4x30_cnv_apply_pvec_to_dft`].
 #[allow(clippy::too_many_arguments)]
-pub fn ntt4x30_cnv_pairwise_apply_dft<BE>(
+pub fn ntt4x30_cnv_pairwise_apply_pvec_to_dft<BE, A, B>(
     module: &impl NttModuleHandle,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
-    b: &CnvPVecRBackendRef<'_, BE>,
+    a: &A,
+    b: &B,
     col_i: usize,
     col_j: usize,
     tmp: &mut [u8],
 ) where
+    A: ZnxView<Scalar = Q120bScalar> + VecZnxInfos,
+    B: ZnxView<Scalar = Q120bScalar> + VecZnxInfos,
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttAddAssign + NttMulBbc1ColX2,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
 {
     if col_i == col_j {
-        ntt4x30_cnv_apply_dft::<BE>(module, cnv_offset, res, res_col, a, col_i, b, col_j, tmp);
+        ntt4x30_cnv_apply_pvec_to_dft::<BE, _, _>(module, cnv_offset, res, res_col, a, col_i, b, col_j, tmp);
         return;
     }
 
@@ -475,17 +481,17 @@ fn zero_row_u32(dst: &mut [u32], size: usize, row: usize, n_blks: usize) {
     }
 }
 
-/// Scratch bytes required by [`ntt4x30_cnv_prepare_left`]: NTT and canonical limbs.
-pub fn ntt4x30_cnv_prepare_left_tmp_bytes(n: usize) -> usize {
+/// Scratch bytes required by [`ntt4x30_cnv_prepare_left_pvec`]: NTT and canonical limbs.
+pub fn ntt4x30_cnv_prepare_left_pvec_tmp_bytes(n: usize) -> usize {
     8 * n * size_of::<u64>()
 }
 
 /// Encode a `VecZnx` into a `CnvPVecL` (canonical u32 rows, block-major).
 ///
 /// Limbs of `res` beyond `a.size()` are zeroed.
-pub fn ntt4x30_cnv_prepare_left<BE>(
+pub fn ntt4x30_cnv_prepare_left_pvec<L, BE>(
     module: &impl NttModuleHandle,
-    res: &mut CnvPVecLBackendMut<'_, BE>,
+    res: &mut L,
     a: &VecZnxBackendRef<'_, BE>,
     mask: i64,
     tmp: &mut [u8],
@@ -496,6 +502,7 @@ pub fn ntt4x30_cnv_prepare_left<BE>(
         + NttPackLeft1BlkX2
         + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
+    L: VecZnxInfos + ZnxViewMut<Scalar = Q120bScalar>,
 {
     let n = res.n();
     let table = module.get_ntt_table();
@@ -538,22 +545,23 @@ pub fn ntt4x30_cnv_prepare_left<BE>(
     }
 }
 
-/// Scratch bytes required by [`ntt4x30_cnv_prepare_right`]: NTT and converted limbs.
-pub fn ntt4x30_cnv_prepare_right_tmp_bytes(n: usize) -> usize {
+/// Scratch bytes required by [`ntt4x30_cnv_prepare_right_pvec`]: NTT and converted limbs.
+pub fn ntt4x30_cnv_prepare_right_pvec_tmp_bytes(n: usize) -> usize {
     8 * n * size_of::<u64>()
 }
 
 /// Encode a `VecZnx` into a `CnvPVecR` (q120c rows, block-major, reversed
 /// limb order). Limbs of `res` beyond `a.size()` are zeroed.
-pub fn ntt4x30_cnv_prepare_right<BE>(
+pub fn ntt4x30_cnv_prepare_right_pvec<R, BE>(
     module: &impl NttModuleHandle,
-    res: &mut CnvPVecRBackendMut<'_, BE>,
+    res: &mut R,
     a: &VecZnxBackendRef<'_, BE>,
     mask: i64,
     tmp: &mut [u64],
 ) where
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttFromZnx64 + NttDFTExecute<NttTable<Primes30>> + NttCFromB + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
+    R: VecZnxInfos + ZnxViewMut<Scalar = Q120bScalar>,
 {
     let n = res.n();
     let table = module.get_ntt_table();
@@ -590,17 +598,17 @@ pub fn ntt4x30_cnv_prepare_right<BE>(
     }
 }
 
-/// Scratch bytes required by [`ntt4x30_cnv_prepare_self`]: NTT, canonical and
+/// Scratch bytes required by [`ntt4x30_cnv_prepare_self_pvec`]: NTT, canonical and
 /// converted limbs.
-pub fn ntt4x30_cnv_prepare_self_tmp_bytes(n: usize) -> usize {
+pub fn ntt4x30_cnv_prepare_self_pvec_tmp_bytes(n: usize) -> usize {
     12 * n * size_of::<u64>()
 }
 
 /// Encode a `VecZnx` into both `CnvPVecL` and `CnvPVecR` sharing the NTT.
-pub fn ntt4x30_cnv_prepare_self<BE>(
+pub fn ntt4x30_cnv_prepare_self_pvec<L, R, BE>(
     module: &impl NttModuleHandle,
-    left: &mut CnvPVecLBackendMut<'_, BE>,
-    right: &mut CnvPVecRBackendMut<'_, BE>,
+    left: &mut L,
+    right: &mut R,
     a: &VecZnxBackendRef<'_, BE>,
     mask: i64,
     tmp: &mut [u8],
@@ -612,6 +620,8 @@ pub fn ntt4x30_cnv_prepare_self<BE>(
         + NttPackLeft1BlkX2
         + 'static,
     for<'x> BE: Backend<BufRef<'x> = &'x [u8], BufMut<'x> = &'x mut [u8], ZnxWord = i64>,
+    L: VecZnxInfos + ZnxViewMut<Scalar = Q120bScalar>,
+    R: VecZnxInfos + ZnxViewMut<Scalar = Q120bScalar>,
 {
     let n = left.n();
     let table = module.get_ntt_table();
@@ -730,13 +740,13 @@ pub fn ntt4x30_cnv_by_const_apply<BE>(
 // block on the fly. Avoids the eager block-major canonicalization that only
 // amortizes for the operand-reusing tensor product.
 
-pub fn ntt4x30_cnv_prepare_left_lazy_tmp_bytes(_n: usize) -> usize {
+pub fn ntt4x30_cnv_prepare_left_tvec_tmp_bytes(_n: usize) -> usize {
     0
 }
 
-pub fn ntt4x30_cnv_prepare_left_lazy<BE>(
+pub fn ntt4x30_cnv_prepare_left_tvec<BE>(
     module: &impl NttModuleHandle,
-    res: &mut CnvPVecLBackendMut<'_, BE>,
+    res: &mut CnvTVecLBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
     mask: i64,
     _tmp: &mut [u8],
@@ -767,13 +777,13 @@ pub fn ntt4x30_cnv_prepare_left_lazy<BE>(
     }
 }
 
-pub fn ntt4x30_cnv_prepare_right_lazy_tmp_bytes(n: usize) -> usize {
+pub fn ntt4x30_cnv_prepare_right_tvec_tmp_bytes(n: usize) -> usize {
     4 * n * size_of::<u64>()
 }
 
-pub fn ntt4x30_cnv_prepare_right_lazy<BE>(
+pub fn ntt4x30_cnv_prepare_right_tvec<BE>(
     module: &impl NttModuleHandle,
-    res: &mut CnvPVecRBackendMut<'_, BE>,
+    res: &mut CnvTVecRBackendMut<'_, BE>,
     a: &VecZnxBackendRef<'_, BE>,
     mask: i64,
     tmp: &mut [u64],
@@ -807,22 +817,24 @@ pub fn ntt4x30_cnv_prepare_right_lazy<BE>(
     }
 }
 
-pub fn ntt4x30_cnv_apply_dft_lazy_tmp_bytes(_res_size: usize, a_size: usize, b_size: usize) -> usize {
+pub fn ntt4x30_cnv_apply_tvec_to_dft_tmp_bytes(_res_size: usize, a_size: usize, b_size: usize) -> usize {
     (16 * (a_size + b_size)) * size_of::<u32>()
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn ntt4x30_cnv_apply_dft_lazy<BE>(
+pub fn ntt4x30_cnv_apply_tvec_to_dft<BE, A, B>(
     module: &impl NttModuleHandle,
     cnv_offset: usize,
     res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
-    a: &CnvPVecLBackendRef<'_, BE>,
+    a: &A,
     a_col: usize,
-    b: &CnvPVecRBackendRef<'_, BE>,
+    b: &B,
     b_col: usize,
     tmp: &mut [u8],
 ) where
+    A: ZnxView<Scalar = Q120bScalar> + VecZnxInfos,
+    B: ZnxView<Scalar = Q120bScalar> + VecZnxInfos,
     BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttMulBbc1ColX2 + NttPackLeft1BlkX2 + NttPackRight1BlkX2,
     for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
     for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
@@ -885,4 +897,63 @@ pub fn ntt4x30_cnv_apply_dft_lazy<BE>(
     for j in min_size..res_size {
         cast_slice_mut::<_, u64>(res.at_mut(res_col, j)).fill(0);
     }
+}
+
+// The tvec (lazy) tier packs at apply time. Only the plain apply has a kernel;
+// the accumulating and pairwise forms are declared here so the tier is complete
+// at the HAL boundary, and panic rather than silently running the pvec kernel
+// over tvec-shaped operands.
+
+pub fn ntt4x30_cnv_apply_tvec_to_dft_accumulate_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
+    ntt4x30_cnv_apply_tvec_to_dft_tmp_bytes(res_size, a_size, b_size)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn ntt4x30_cnv_apply_tvec_to_dft_accumulate<BE, A, B>(
+    _module: &impl NttModuleHandle,
+    _cnv_offset: usize,
+    _res: &mut VecZnxDftBackendMut<'_, BE>,
+    _res_col: usize,
+    _a: &A,
+    _a_col: usize,
+    _b: &B,
+    _b_col: usize,
+    _tmp: &mut [u8],
+) where
+    A: ZnxView<Scalar = Q120bScalar> + VecZnxInfos,
+    B: ZnxView<Scalar = Q120bScalar> + VecZnxInfos,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttMulBbc1ColX2 + NttPackLeft1BlkX2 + NttPackRight1BlkX2,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
+{
+    unimplemented!("ntt4x30: no accumulating apply kernel for the tvec (lazy) tier yet")
+}
+
+pub fn ntt4x30_cnv_pairwise_apply_tvec_to_dft_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
+    ntt4x30_cnv_apply_tvec_to_dft_tmp_bytes(res_size, a_size, b_size)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn ntt4x30_cnv_pairwise_apply_tvec_to_dft<BE, A, B>(
+    _module: &impl NttModuleHandle,
+    _cnv_offset: usize,
+    _res: &mut VecZnxDftBackendMut<'_, BE>,
+    _res_col: usize,
+    _a: &A,
+    _b: &B,
+    _i: usize,
+    _j: usize,
+    _tmp: &mut [u8],
+) where
+    A: ZnxView<Scalar = Q120bScalar> + VecZnxInfos,
+    B: ZnxView<Scalar = Q120bScalar> + VecZnxInfos,
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64> + NttMulBbc1ColX2 + NttPackLeft1BlkX2 + NttPackRight1BlkX2,
+    for<'x> <BE as Backend>::BufRef<'x>: HostDataRef,
+    for<'x> <BE as Backend>::BufMut<'x>: crate::layouts::HostDataMut,
+{
+    unimplemented!("ntt4x30: no pairwise kernel for the tvec (lazy) tier yet")
+}
+
+pub fn ntt4x30_cnv_apply_pvec_to_dft_accumulate_tmp_bytes(res_size: usize, a_size: usize, b_size: usize) -> usize {
+    ntt4x30_cnv_apply_pvec_to_dft_tmp_bytes(res_size, a_size, b_size)
 }

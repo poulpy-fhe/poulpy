@@ -190,7 +190,7 @@ where
             .ok_or_else(|| anyhow::anyhow!("linear transformation has no diagonals"))?;
         // The diagonal scale (`lt_log_scale`) and its effective torus width `k` are
         // read off the first diagonal. The convolution offset must match the width
-        // the diagonal data was masked/positioned at in `cnv_prepare_right` (its
+        // the diagonal data was masked/positioned at in `cnv_prepare_right_pvec` (its
         // effective `k`), which can be below the rounded physical `max_k`.
         let (pt_log_scale, pt_max_k) = (first.lt_log_scale(), first.encoded_k().as_usize());
         ensure_uniform_diagonal_scale(lt, pt_log_scale, pt_max_k)?;

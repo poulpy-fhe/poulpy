@@ -12,7 +12,7 @@ use poulpy_hal::{
         VecZnxDftBytesOf, VecZnxIdftApplyTmpA,
     },
     layouts::{
-        Backend, CnvDftAccTerm, CnvPVecL, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Module, ScratchArena,
+        Backend, CnvDftAccTermPvec, CnvPVecL, CnvPVecLToBackendRef, CnvPVecRToBackendRef, Module, ScratchArena,
         VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftToBackendMut,
     },
 };
@@ -34,8 +34,8 @@ where
     let res_dft_size = a_size + b_size;
     let preps = 4 * plan.theta() * module.bytes_of_cnv_pvec_right(1, b_size);
     let work = module
-        .cnv_prepare_right_tmp_bytes(b_size, b_size)
-        .max(module.cnv_accumulate_dft_tmp_bytes(0, res_dft_size, a_size, b_size))
+        .cnv_prepare_right_pvec_tmp_bytes(b_size, b_size)
+        .max(module.cnv_accumulate_pvec_to_dft_tmp_bytes(0, res_dft_size, a_size, b_size))
         .max(module.bytes_of_vec_znx_big(2, res_dft_size) + module.vec_znx_big_normalize_tmp_bytes());
     module.bytes_of_vec_znx_dft(2, res_dft_size) + preps + work
 }
@@ -94,25 +94,21 @@ where
             "{OP}: inconsistent operand sizes"
         );
         let (mut b_prep, next) = rest.take_cnv_pvec_right_scratch(module, 1, b_size);
-        rest = next
-            .apply_mut(|s| module.cnv_prepare_right(&mut b_prep, GLWEToBackendRef::<BE>::to_backend_ref(pi).data(), b_mask, s));
+        rest = next.apply_mut(|s| {
+            module.cnv_prepare_right_pvec(&mut b_prep, GLWEToBackendRef::<BE>::to_backend_ref(pi).data(), b_mask, s)
+        });
         preps.push(b_prep);
     }
 
     {
         let mut sum_dft_mut = sum_dft.to_backend_mut();
         for col in 0..2 {
-            let terms: Vec<CnvDftAccTerm<'_, BE>> = masks
+            let terms: Vec<CnvDftAccTermPvec<'_, BE>> = masks
                 .iter()
                 .zip(&preps)
-                .map(|(mask, prep)| CnvDftAccTerm {
-                    a: mask.to_backend_ref(),
-                    a_col: col,
-                    b: prep.to_backend_ref(),
-                    b_col: 0,
-                })
+                .map(|(mask, prep)| CnvDftAccTermPvec::new(mask.to_backend_ref(), col, prep.to_backend_ref(), 0))
                 .collect();
-            module.cnv_accumulate_dft(cnv_offset_hi, &mut sum_dft_mut, col, &terms, &mut rest.borrow());
+            module.cnv_accumulate_pvec_to_dft(cnv_offset_hi, &mut sum_dft_mut, col, &terms, &mut rest.borrow());
         }
     }
 

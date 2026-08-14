@@ -104,7 +104,7 @@ where
     M: Convolution<BE>,
     P: LWEInfos,
 {
-    module.cnv_prepare_right_tmp_bytes(pt_infos.size(), pt_infos.size())
+    module.cnv_prepare_right_pvec_tmp_bytes(pt_infos.size(), pt_infos.size())
 }
 
 /// Reference impl: encodes every diagonal of `lt` into the matching
@@ -178,7 +178,7 @@ pub fn glwe_prepare_linear_transformation_rhs_default<BE, M, P>(
                 .find(|p| p.baby == d.baby)
                 .unwrap_or_else(|| panic!("prepared cache has no diagonal slot for baby {} at giant {}", d.baby, gs.rot));
             let plaintext_backend = plaintext.to_backend_ref();
-            module.cnv_prepare_right(
+            module.cnv_prepare_right_pvec(
                 &mut prepared_slot.plaintext.cnv_mut().to_backend_mut(),
                 &plaintext_backend.data,
                 mask,

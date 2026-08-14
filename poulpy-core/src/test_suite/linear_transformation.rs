@@ -94,8 +94,8 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
             | module.glwe_automorphism_key_prepare_tmp_bytes(&atk_infos)
             | module.glwe_encrypt_sk_tmp_bytes(&ct_infos)
             | module.glwe_eval_linear_transformation_tmp_bytes(&ct_infos, &ct_infos, &ct_infos, &atk_infos)
-            | module.cnv_prepare_right_tmp_bytes(pt.size(), pt.size())
-            | module.cnv_apply_dft_tmp_bytes(0, product_size, ct_infos.size(), pt.size())
+            | module.cnv_prepare_right_pvec_tmp_bytes(pt.size(), pt.size())
+            | module.cnv_apply_pvec_to_dft_tmp_bytes(0, product_size, ct_infos.size(), pt.size())
             | module.vec_znx_big_normalize_tmp_bytes(),
     );
 
@@ -139,7 +139,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
 
     let mut right_prepared = module.cnv_pvec_right_alloc(1, pt.size());
     let pt_ref = <GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(&pt);
-    module.cnv_prepare_right(
+    module.cnv_prepare_right_pvec(
         &mut right_prepared.to_backend_mut(),
         &pt_ref.data,
         !0i64,
@@ -158,7 +158,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
 
         let mut expected_prepared = module.cnv_pvec_left_alloc(rank + 1, expected.size());
         let expected_ref = <GLWE<BE::OwnedBuf, BE::ZnxWord> as GLWEToBackendRef<BE>>::to_backend_ref(&expected);
-        module.cnv_prepare_left(
+        module.cnv_prepare_left_pvec(
             &mut expected_prepared.to_backend_mut(),
             &expected_ref.data,
             mask,
@@ -181,7 +181,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
             let mut want_big = module.vec_znx_big_alloc(1, product_size);
             let right_ref = right_prepared.to_backend_ref();
 
-            module.cnv_apply_dft(
+            module.cnv_apply_pvec_to_dft(
                 0,
                 &mut have_dft.to_backend_mut(),
                 0,
@@ -203,7 +203,7 @@ pub fn test_glwe_hoisted_baby_rotations_match_automorphism<BE: crate::test_suite
                 &mut scratch.borrow(),
             );
 
-            module.cnv_apply_dft(
+            module.cnv_apply_pvec_to_dft(
                 0,
                 &mut want_dft.to_backend_mut(),
                 0,

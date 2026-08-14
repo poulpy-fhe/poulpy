@@ -17,13 +17,13 @@ use poulpy_hal::{
     source::Source,
 };
 
-pub fn bench_cnv_prepare_left<BE>(params: &crate::params::CnvSweepParams, c: &mut Criterion, label: &str)
+pub fn bench_cnv_prepare_left_pvec<BE>(params: &crate::params::CnvSweepParams, c: &mut Criterion, label: &str)
 where
     BE: Backend<ZnxWord = i64> + 'static,
     Module<BE>: ModuleNew<BE> + Convolution<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    let group_name: String = format!("cnv_prepare_left::{label}");
+    let group_name: String = format!("cnv_prepare_left_pvec::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
@@ -44,12 +44,12 @@ where
         let a = crate::random_host_vec_znx(module.n(), 1, size, &mut source);
         let a = crate::upload_host_vec_znx::<BE>(&a);
 
-        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.cnv_prepare_left_tmp_bytes(c_size, size));
+        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.cnv_prepare_left_pvec_tmp_bytes(c_size, size));
 
         move || {
             let mut a_prep_backend = a_prep.to_backend_mut();
             let a_backend = crate::vec_znx_backend_ref::<BE>(&a);
-            module.cnv_prepare_left(&mut a_prep_backend, &a_backend, !0i64, &mut scratch.borrow());
+            module.cnv_prepare_left_pvec(&mut a_prep_backend, &a_backend, !0i64, &mut scratch.borrow());
             black_box(());
         }
     }
@@ -65,13 +65,13 @@ where
     group.finish();
 }
 
-pub fn bench_cnv_prepare_right<BE>(params: &crate::params::CnvSweepParams, c: &mut Criterion, label: &str)
+pub fn bench_cnv_prepare_right_pvec<BE>(params: &crate::params::CnvSweepParams, c: &mut Criterion, label: &str)
 where
     BE: Backend<ZnxWord = i64> + 'static,
     Module<BE>: ModuleNew<BE> + Convolution<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    let group_name: String = format!("cnv_prepare_right::{label}");
+    let group_name: String = format!("cnv_prepare_right_pvec::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
@@ -92,12 +92,12 @@ where
         let a = crate::random_host_vec_znx(module.n(), 1, size, &mut source);
         let a = crate::upload_host_vec_znx::<BE>(&a);
 
-        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.cnv_prepare_right_tmp_bytes(c_size, size));
+        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(module.cnv_prepare_right_pvec_tmp_bytes(c_size, size));
 
         move || {
             let mut a_prep_backend = a_prep.to_backend_mut();
             let a_backend = crate::vec_znx_backend_ref::<BE>(&a);
-            module.cnv_prepare_right(&mut a_prep_backend, &a_backend, !0i64, &mut scratch.borrow());
+            module.cnv_prepare_right_pvec(&mut a_prep_backend, &a_backend, !0i64, &mut scratch.borrow());
             black_box(());
         }
     }
@@ -113,13 +113,13 @@ where
     group.finish();
 }
 
-pub fn bench_cnv_apply_dft<BE>(params: &crate::params::CnvSweepParams, c: &mut Criterion, label: &str)
+pub fn bench_cnv_apply_pvec_to_dft<BE>(params: &crate::params::CnvSweepParams, c: &mut Criterion, label: &str)
 where
     BE: Backend<ZnxWord = i64> + 'static,
     Module<BE>: ModuleNew<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    let group_name: String = format!("cnv_apply_dft::{label}");
+    let group_name: String = format!("cnv_apply_pvec_to_dft::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
@@ -141,13 +141,13 @@ where
 
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
             module
-                .cnv_apply_dft_tmp_bytes(0, c_size, size, size)
-                .max(module.cnv_prepare_left_tmp_bytes(c_size, size))
-                .max(module.cnv_prepare_right_tmp_bytes(c_size, size)),
+                .cnv_apply_pvec_to_dft_tmp_bytes(0, c_size, size, size)
+                .max(module.cnv_prepare_left_pvec_tmp_bytes(c_size, size))
+                .max(module.cnv_prepare_right_pvec_tmp_bytes(c_size, size)),
         );
         move || {
             let mut c_dft_backend = c_dft.to_backend_mut();
-            module.cnv_apply_dft(
+            module.cnv_apply_pvec_to_dft(
                 0,
                 &mut c_dft_backend,
                 0,
@@ -172,13 +172,13 @@ where
     group.finish();
 }
 
-pub fn bench_cnv_apply_dft_accumulate<BE>(params: &crate::params::CnvSweepParams, c: &mut Criterion, label: &str)
+pub fn bench_cnv_apply_pvec_to_dft_accumulate<BE>(params: &crate::params::CnvSweepParams, c: &mut Criterion, label: &str)
 where
     BE: Backend<ZnxWord = i64> + 'static,
     Module<BE>: ModuleNew<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    let group_name: String = format!("cnv_apply_dft_accumulate::{label}");
+    let group_name: String = format!("cnv_apply_pvec_to_dft_accumulate::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
@@ -200,13 +200,13 @@ where
 
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
             module
-                .cnv_apply_dft_tmp_bytes(0, c_size, size, size)
-                .max(module.cnv_prepare_left_tmp_bytes(c_size, size))
-                .max(module.cnv_prepare_right_tmp_bytes(c_size, size)),
+                .cnv_apply_pvec_to_dft_tmp_bytes(0, c_size, size, size)
+                .max(module.cnv_prepare_left_pvec_tmp_bytes(c_size, size))
+                .max(module.cnv_prepare_right_pvec_tmp_bytes(c_size, size)),
         );
         {
             let mut c_dft_backend = c_dft.to_backend_mut();
-            module.cnv_apply_dft(
+            module.cnv_apply_pvec_to_dft(
                 0,
                 &mut c_dft_backend,
                 0,
@@ -219,7 +219,7 @@ where
         }
         move || {
             let mut c_dft_backend = c_dft.to_backend_mut();
-            module.cnv_apply_dft_accumulate(
+            module.cnv_apply_pvec_to_dft_accumulate(
                 0,
                 &mut c_dft_backend,
                 0,
@@ -244,13 +244,13 @@ where
     group.finish();
 }
 
-pub fn bench_cnv_pairwise_apply_dft<BE>(params: &crate::params::CnvSweepParams, c: &mut Criterion, label: &str)
+pub fn bench_cnv_pairwise_apply_pvec_to_dft<BE>(params: &crate::params::CnvSweepParams, c: &mut Criterion, label: &str)
 where
     BE: Backend<ZnxWord = i64> + 'static,
     Module<BE>: ModuleNew<BE> + Convolution<BE> + VecZnxDftAlloc<BE> + CnvPVecAlloc<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
-    let group_name: String = format!("cnv_pairwise_apply_dft::{label}");
+    let group_name: String = format!("cnv_pairwise_apply_pvec_to_dft::{label}");
 
     let mut group = c.benchmark_group(group_name);
 
@@ -273,13 +273,13 @@ where
 
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
             module
-                .cnv_pairwise_apply_dft_tmp_bytes(0, c_size, size, size)
-                .max(module.cnv_prepare_left_tmp_bytes(c_size, size))
-                .max(module.cnv_prepare_right_tmp_bytes(c_size, size)),
+                .cnv_pairwise_apply_pvec_to_dft_tmp_bytes(0, c_size, size, size)
+                .max(module.cnv_prepare_left_pvec_tmp_bytes(c_size, size))
+                .max(module.cnv_prepare_right_pvec_tmp_bytes(c_size, size)),
         );
         move || {
             let mut c_dft_backend = c_dft.to_backend_mut();
-            module.cnv_pairwise_apply_dft(
+            module.cnv_pairwise_apply_pvec_to_dft(
                 0,
                 &mut c_dft_backend,
                 0,
