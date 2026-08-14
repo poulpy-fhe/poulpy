@@ -53,6 +53,9 @@ Adds two native CKKS bootstrapping families, **PaCo** (Coron & Seuré, [ePrint 2
 - **Breaking:** key allocation and byte-sizing signatures move to a uniform `(…, dnum, dsize, k_aux, rank…)` order.
 - The noise model follows: `GGLWENoiseModel` / `GGSWNoiseModel`, blanket-implemented over the layouts, take the operand and the error variances only (`ksk.log2_std_noise_keyswitch(&ct_in, …)`). Evaluated at the key's real precision, the bounds gain the operand's carried error and the uncovered decomposition residue.
 
+### `poulpy-ckks`: reusable approximation planning
+- Add the `approximation` module with host-side single- and multi-interval Remez minimax fitting, precision/depth-based degree selection, and composite sign coefficient generation. Add `PolynomialApproximation` and `CKKSApproximationOps` for reusable interval mapping and prepared BSGS evaluation, including exact power-of-two scale and modulus-consumption accounting.
+
 ### `poulpy-ckks`: PaCo bootstrapping
 
 - Add PaCo as a native CKKS operation refreshing selected polynomial coefficients without ModUp or EvalMod: blind rotation → partial CoeffsToSlots → product fold (the EvalMod substitute) → SlotToCoeff′, driven by a structured low-weight secret.

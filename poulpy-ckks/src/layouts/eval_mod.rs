@@ -280,7 +280,7 @@ pub enum EvalModPoly<F> {
 /// homomorphic evaluation, plus the host-side polynomials kept for reference.
 ///
 /// `F` is the host floating-point scalar the polynomials were built in; `P` is
-/// the plaintext storage type — a host [`CKKSPlaintext`] right after
+/// the plaintext storage type — a host [`CKKSPlaintext`](crate::layouts::CKKSPlaintext) right after
 /// [`compile_eval_mod`]. Evaluate it with
 /// [`CKKSEvalModOps::ckks_eval_mod`](crate::api::CKKSEvalModOps::ckks_eval_mod).
 pub struct EvalMod<F, P> {

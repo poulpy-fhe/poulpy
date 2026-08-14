@@ -44,6 +44,7 @@
 //!
 //! | Module | Role |
 //! |--------|------|
+//! | [`approximation`] | Reusable minimax fitting, precision/depth selection, composite sign generation, and prepared interval-mapped polynomial evaluation |
 //! | [`encoding`] | CKKS encoders/decoders, including slot-wise real/imaginary packing |
 //! | [`layouts`] | CKKS ciphertext/plaintext wrappers and metadata-aware allocation helpers |
 //! | [`api`] | The public op traits: leveled arithmetic (add, sub, mul, neg, rotate, conjugate), encryption, decryption, rescale, and scratch sizing |
@@ -56,6 +57,7 @@ use poulpy_core::layouts::{
 use poulpy_hal::layouts::Backend;
 
 pub mod api;
+pub mod approximation;
 pub(crate) mod cosine;
 pub mod default;
 pub(crate) mod delegates;
@@ -81,10 +83,13 @@ pub mod layouts;
 /// `poulpy-hal`.
 pub mod prelude {
     pub use crate::api::{
-        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSConjugateOps, CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps, CKKSEncodingOps,
-        CKKSEncryptOps, CKKSImagOps, CKKSMulOps, CKKSNegOps, CKKSPlaintextVecOps, CKKSPow2Ops, CKKSRotateOps, CKKSSubOps,
+        CKKSAddOps, CKKSAllOpsTmpBytes, CKKSApproximationOps, CKKSConjugateOps, CKKSCopyOps, CKKSDecryptOps, CKKSEncodingHostOps,
+        CKKSEncodingOps, CKKSEncryptOps, CKKSImagOps, CKKSMulOps, CKKSNegOps, CKKSPlaintextVecOps, CKKSPow2Ops, CKKSRotateOps,
+        CKKSSubOps,
     };
-    pub use crate::layouts::{CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, UnnormalizedCKKSCiphertext};
+    pub use crate::layouts::{
+        CKKSCiphertext, CKKSModuleAlloc, CKKSPlaintext, PolynomialApproximation, UnnormalizedCKKSCiphertext,
+    };
     pub use crate::{
         CKKSCompositionError, CKKSError, CKKSInfos, CKKSLayout, CKKSMeta, CKKSResult, CoeffsMeta, Quad, SetCKKSInfos, SlotsKind,
     };
