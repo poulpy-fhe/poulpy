@@ -555,7 +555,12 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     {
         let mut scratch = scratch.borrow();
         <Self as NTT4x30ConvolutionDefault<Self>>::cnv_accumulate_pvec_to_dft_default(
-            module, cnv_offset, &mut res, res_col, terms, &mut scratch,
+            module,
+            cnv_offset,
+            &mut res,
+            res_col,
+            terms,
+            &mut scratch,
         )
     }
 
@@ -583,7 +588,12 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     {
         let mut scratch = scratch.borrow();
         <Self as NTT4x30ConvolutionDefault<Self>>::cnv_accumulate_tvec_to_dft_default(
-            module, cnv_offset, &mut res, res_col, terms, &mut scratch,
+            module,
+            cnv_offset,
+            &mut res,
+            res_col,
+            terms,
+            &mut scratch,
         )
     }
 
@@ -613,7 +623,15 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     ) {
         let mut scratch = scratch.borrow();
         <Self as NTT4x30ConvolutionDefault<Self>>::cnv_apply_tvec_to_dft_accumulate_default(
-            module, cnv_offset, &mut res, res_col, a, a_col, b, b_col, &mut scratch,
+            module,
+            cnv_offset,
+            &mut res,
+            res_col,
+            a,
+            a_col,
+            b,
+            b_col,
+            &mut scratch,
         )
     }
 
@@ -643,7 +661,15 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
     ) {
         let mut scratch = scratch.borrow();
         <Self as NTT4x30ConvolutionDefault<Self>>::cnv_pairwise_apply_tvec_to_dft_default(
-            module, cnv_offset, &mut res, res_col, a, b, i, j, &mut scratch,
+            module,
+            cnv_offset,
+            &mut res,
+            res_col,
+            a,
+            b,
+            i,
+            j,
+            &mut scratch,
         )
     }
 
@@ -662,7 +688,6 @@ unsafe impl HalConvolutionImpl<NTT4x30Avx512> for NTT4x30Avx512 {
         let mut scratch = scratch.borrow();
         <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_self_tvec_default(module, left, right, a, mask, &mut scratch);
     }
-
 }
 
 unsafe impl HalVecZnxBigImpl<NTT4x30Avx512> for NTT4x30Avx512 {
@@ -1465,8 +1490,7 @@ mod ifma_impl {
             scratch: &mut ScratchArena<'_, Self>,
         ) {
             let bytes = crate::ntt3x42_ifma::convolution::cnv_prepare_left_pvec_tmp_bytes(module.n());
-            let (tmp, _) = take_host_typed::<Self, u8>(
-                scratch.borrow(), bytes / size_of::<u8>());
+            let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes / size_of::<u8>());
             crate::ntt3x42_ifma::convolution::cnv_prepare_left_pvec(module, res, a, mask, tmp);
         }
 
@@ -1482,8 +1506,7 @@ mod ifma_impl {
             scratch: &mut ScratchArena<'_, Self>,
         ) {
             let bytes = crate::ntt3x42_ifma::convolution::cnv_prepare_right_pvec_tmp_bytes(module.n());
-            let (tmp, _) = take_host_typed::<Self, u64>(
-                scratch.borrow(), bytes / size_of::<u64>());
+            let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
             crate::ntt3x42_ifma::convolution::cnv_prepare_right_pvec(module, res, a, mask, tmp);
         }
 
@@ -1531,7 +1554,9 @@ mod ifma_impl {
             let bytes = crate::ntt3x42_ifma::convolution::cnv_apply_pvec_to_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
             unsafe {
-                crate::ntt3x42_ifma::convolution::cnv_apply_pvec_to_dft_accumulate_ifma(res, cnv_offset, res_col, a, a_col, b, b_col, tmp);
+                crate::ntt3x42_ifma::convolution::cnv_apply_pvec_to_dft_accumulate_ifma(
+                    res, cnv_offset, res_col, a, a_col, b, b_col, tmp,
+                );
             }
         }
 
@@ -1577,7 +1602,8 @@ mod ifma_impl {
             j: usize,
             scratch: &mut ScratchArena<'_, Self>,
         ) {
-            let bytes = crate::ntt3x42_ifma::convolution::cnv_pairwise_apply_pvec_to_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
+            let bytes =
+                crate::ntt3x42_ifma::convolution::cnv_pairwise_apply_pvec_to_dft_ifma_tmp_bytes(res.size(), a.size(), b.size());
             let (tmp, _) = take_host_typed::<Self, u8>(scratch.borrow(), bytes);
             unsafe {
                 crate::ntt3x42_ifma::convolution::cnv_pairwise_apply_pvec_to_dft_ifma(res, cnv_offset, res_col, a, b, i, j, tmp);
@@ -1625,8 +1651,7 @@ mod ifma_impl {
                 poulpy_hal::layouts::ZnxZero::zero_at(res, res_col, j);
             }
             for t in terms {
-                Self::cnv_apply_pvec_to_dft_accumulate(
-                    module, cnv_offset, res, res_col, &t.a, t.a_col, &t.b, t.b_col, scratch);
+                Self::cnv_apply_pvec_to_dft_accumulate(module, cnv_offset, res, res_col, &t.a, t.a_col, &t.b, t.b_col, scratch);
             }
         }
 
@@ -1654,10 +1679,8 @@ mod ifma_impl {
                 poulpy_hal::layouts::ZnxZero::zero_at(res, res_col, j);
             }
             for t in terms {
-                Self::cnv_apply_tvec_to_dft_accumulate(
-                    module, cnv_offset, res, res_col, &t.a, t.a_col, &t.b, t.b_col, scratch);
+                Self::cnv_apply_tvec_to_dft_accumulate(module, cnv_offset, res, res_col, &t.a, t.a_col, &t.b, t.b_col, scratch);
             }
         }
-
     }
 }

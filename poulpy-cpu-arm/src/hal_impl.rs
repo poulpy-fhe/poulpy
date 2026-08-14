@@ -471,6 +471,53 @@ unsafe impl HalConvolutionImpl<NTT4x30Neon> for NTT4x30Neon {
         let mut scratch = scratch.borrow();
         <Self as NTT4x30ConvolutionDefault<Self>>::cnv_prepare_self_pvec_default(module, left, right, a, mask, &mut scratch);
     }
+    poulpy_cpu_ref::cnv_impl_prepares_tvec!(NTT4x30ConvolutionDefault);
+    poulpy_cpu_ref::cnv_impl_apply_tvec!(NTT4x30ConvolutionDefault);
+
+    fn cnv_apply_pvec_to_dft_accumulate_tmp_bytes(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res_size: usize,
+        a_size: usize,
+        b_size: usize,
+    ) -> usize {
+        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_apply_pvec_to_dft_accumulate_tmp_bytes_default(
+            module, cnv_offset, res_size, a_size, b_size,
+        )
+    }
+
+    fn cnv_accumulate_pvec_to_dft_tmp_bytes(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        res_size: usize,
+        a_size: usize,
+        b_size: usize,
+    ) -> usize {
+        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_accumulate_pvec_to_dft_tmp_bytes_default(
+            module, cnv_offset, res_size, a_size, b_size,
+        )
+    }
+
+    fn cnv_accumulate_pvec_to_dft<'a>(
+        module: &Module<Self>,
+        cnv_offset: usize,
+        mut res: &mut poulpy_hal::layouts::VecZnxDftBackendMut<'_, Self>,
+        res_col: usize,
+        terms: &[poulpy_hal::layouts::CnvDftAccTermPvec<'a, Self>],
+        scratch: &mut ScratchArena<'_, Self>,
+    ) where
+        Self: 'a,
+    {
+        let mut scratch = scratch.borrow();
+        <Self as NTT4x30ConvolutionDefault<Self>>::cnv_accumulate_pvec_to_dft_default(
+            module,
+            cnv_offset,
+            &mut res,
+            res_col,
+            terms,
+            &mut scratch,
+        )
+    }
 }
 
 #[cfg(not(target_arch = "aarch64"))]

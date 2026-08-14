@@ -21,10 +21,7 @@ use crate::ntt3x42_ifma::{
     traits::{Ntt3x42IfmaAddAssign, Ntt3x42IfmaCFromB, Ntt3x42IfmaFromZnx64},
     types::Q126Scalar,
 };
-use poulpy_hal::layouts::{
-    Module, VecZnxBackendRef,
-    VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxInfos, ZnxView, ZnxViewMut,
-};
+use poulpy_hal::layouts::{Module, VecZnxBackendRef, VecZnxBigBackendMut, VecZnxDftBackendMut, VecZnxInfos, ZnxView, ZnxViewMut};
 
 use super::mat_vec_ifma::{PrimeConsts512, reduce_bbc_ifma_simd_512, reduce_bbc_single_prime_512};
 
@@ -541,7 +538,10 @@ fn conv_columns_planar_scalar<const ACC: bool, const PAIRWISE: bool>(
 /// DFT-domain bivariate convolution `res[k] = Σ a[j] ⊙ b[k−j]`.
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
-pub(crate) unsafe fn cnv_apply_pvec_to_dft_ifma<A: VecZnxInfos + ZnxView<Scalar = Q126Scalar>, B: VecZnxInfos + ZnxView<Scalar = Q126Scalar>>(
+pub(crate) unsafe fn cnv_apply_pvec_to_dft_ifma<
+    A: VecZnxInfos + ZnxView<Scalar = Q126Scalar>,
+    B: VecZnxInfos + ZnxView<Scalar = Q126Scalar>,
+>(
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     cnv_offset: usize,
     res_col: usize,
@@ -580,7 +580,10 @@ pub(crate) unsafe fn cnv_apply_pvec_to_dft_ifma<A: VecZnxInfos + ZnxView<Scalar 
 /// Limbs `>= min_size` are left untouched.
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
-pub(crate) unsafe fn cnv_apply_pvec_to_dft_accumulate_ifma<A: VecZnxInfos + ZnxView<Scalar = Q126Scalar>, B: VecZnxInfos + ZnxView<Scalar = Q126Scalar>>(
+pub(crate) unsafe fn cnv_apply_pvec_to_dft_accumulate_ifma<
+    A: VecZnxInfos + ZnxView<Scalar = Q126Scalar>,
+    B: VecZnxInfos + ZnxView<Scalar = Q126Scalar>,
+>(
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     cnv_offset: usize,
     res_col: usize,
@@ -617,7 +620,10 @@ pub(crate) unsafe fn cnv_apply_pvec_to_dft_accumulate_ifma<A: VecZnxInfos + ZnxV
 /// When `col_0 == col_1`, delegates to [`cnv_apply_pvec_to_dft_ifma`].
 #[allow(clippy::too_many_arguments)]
 #[target_feature(enable = "avx512ifma,avx512vl")]
-pub(crate) unsafe fn cnv_pairwise_apply_pvec_to_dft_ifma<A: VecZnxInfos + ZnxView<Scalar = Q126Scalar>, B: VecZnxInfos + ZnxView<Scalar = Q126Scalar>>(
+pub(crate) unsafe fn cnv_pairwise_apply_pvec_to_dft_ifma<
+    A: VecZnxInfos + ZnxView<Scalar = Q126Scalar>,
+    B: VecZnxInfos + ZnxView<Scalar = Q126Scalar>,
+>(
     res: &mut VecZnxDftBackendMut<'_, NTT3x42Ifma>,
     cnv_offset: usize,
     res_col: usize,
@@ -760,7 +766,10 @@ pub(crate) fn cnv_prepare_self_pvec_tmp_bytes(n: usize) -> usize {
     6 * n * size_of::<u64>()
 }
 
-pub(crate) fn cnv_prepare_self_pvec<L: VecZnxInfos + ZnxViewMut<Scalar = Q126Scalar>, R: VecZnxInfos + ZnxViewMut<Scalar = Q126Scalar>>(
+pub(crate) fn cnv_prepare_self_pvec<
+    L: VecZnxInfos + ZnxViewMut<Scalar = Q126Scalar>,
+    R: VecZnxInfos + ZnxViewMut<Scalar = Q126Scalar>,
+>(
     module: &Module<NTT3x42Ifma>,
     left: &mut L,
     right: &mut R,

@@ -7,10 +7,7 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use core::arch::x86_64::_mm_sfence;
 
 use poulpy_cpu_ref::reference::ntt4x30::{mat_vec::BbcMeta, primes::Primes30, vec_znx_dft::NttModuleHandle};
-use poulpy_hal::layouts::{
-    CnvTVecLBackendRef, CnvTVecRBackendRef, Module, VecZnxDftBackendMut, ZnxView,
-    ZnxViewMut,
-};
+use poulpy_hal::layouts::{CnvTVecLBackendRef, CnvTVecRBackendRef, Module, VecZnxDftBackendMut, ZnxView, ZnxViewMut};
 
 use super::{
     arithmetic_avx512::{pack_left_1blk_x2_avx512, pack_right_1blk_x2_avx512},
