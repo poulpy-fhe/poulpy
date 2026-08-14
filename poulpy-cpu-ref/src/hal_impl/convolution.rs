@@ -410,6 +410,8 @@ macro_rules! cnv_impl_apply_tvec {
     };
 }
 
+/// `cnv_by_const_apply`, forwarded to the defaults trait.
+#[macro_export]
 macro_rules! cnv_impl_by_const {
     ($defaults:ident) => {
         fn cnv_by_const_apply_tmp_bytes(
