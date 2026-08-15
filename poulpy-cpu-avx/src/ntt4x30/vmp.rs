@@ -409,7 +409,14 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
     let mut col_maxs = Vec::with_capacity(dsize);
     for di in 0..dsize {
         let digit_limbs = ((a_size + di) / dsize).min(dnum);
-        let pad = ((dsize - di) as isize - 2).max(0) as usize;
+        // Match the default implementation: the first (overwriting) digit
+        // initializes the full destination. Only accumulating digits use the
+        // narrowed output view.
+        let pad = if di == 0 {
+            0
+        } else {
+            ((dsize - di) as isize - 2).max(0) as usize
+        };
         let res_size_di = res_cols * (output_size - pad);
         let limb_offset = di * cols_out;
         row_maxs.push((a_cols * digit_limbs).min(nrows));
@@ -420,8 +427,8 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
     let a_u64: &[u64] = cast_slice(a.raw());
     let res_u64: &mut [u64] = cast_slice_mut(res.raw_mut());
     let pmat_u64: &[u64] = cast_slice(pmat.raw());
-    let res_size_0 = res_cols * (output_size - (dsize as isize - 2).max(0) as usize);
-    for col in col_maxs[0]..res_size_0 {
+    let res_flat = res_cols * output_size;
+    for col in col_maxs[0]..res_flat {
         res_u64[col * 4 * n..(col + 1) * 4 * n].fill(0);
     }
 

@@ -746,7 +746,14 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_ifma(
     for (di, a) in digits.iter().enumerate() {
         let a_u64: &[u64] = &cast_slice::<_, u64>(a.data())[..2 * n * a.poly_count()];
         let a_size = a_u64.len() / (2 * n);
-        let pad = ((dsize - di) as isize - 2).max(0) as usize;
+        // Match the default implementation: the first (overwriting) digit
+        // initializes the full destination. Only accumulating digits use the
+        // narrowed output view.
+        let pad = if di == 0 {
+            0
+        } else {
+            ((dsize - di) as isize - 2).max(0) as usize
+        };
         let res_size_di = res_cols * (output_size - pad);
         let limb_off = di * cols_out;
         a_slices.push(a_u64);
@@ -758,8 +765,8 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_ifma(
     let res_u64: &mut [u64] = &mut cast_slice_mut::<_, u64>(res.data_mut())[..2 * n * res_cols * output_size];
     let pmat_u64: &[u64] = cast_slice(pmat.data());
 
-    let res_size_0 = res_cols * (output_size - (dsize as isize - 2).max(0) as usize);
-    for col in col_maxs[0]..res_size_0 {
+    let res_flat = res_cols * output_size;
+    for col in col_maxs[0]..res_flat {
         res_u64[col * 2 * n..(col + 1) * 2 * n].fill(0);
     }
 
@@ -862,7 +869,14 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma(
     let mut col_maxs: Vec<usize> = Vec::with_capacity(dsize);
     for di in 0..dsize {
         let digit_limbs = ((a_size + di) / dsize).min(dnum);
-        let pad = ((dsize - di) as isize - 2).max(0) as usize;
+        // Match the default implementation: the first (overwriting) digit
+        // initializes the full destination. Only accumulating digits use the
+        // narrowed output view.
+        let pad = if di == 0 {
+            0
+        } else {
+            ((dsize - di) as isize - 2).max(0) as usize
+        };
         let res_size_di = res_cols * (output_size - pad);
         let limb_off = di * cols_out;
         row_maxs.push(nrows.min(a_cols * digit_limbs));
@@ -874,8 +888,8 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma(
     let res_u64: &mut [u64] = &mut cast_slice_mut::<_, u64>(res.data_mut())[..2 * n * res_cols * output_size];
     let pmat_u64: &[u64] = cast_slice(pmat.data());
 
-    let res_size_0 = res_cols * (output_size - (dsize as isize - 2).max(0) as usize);
-    for col in col_maxs[0]..res_size_0 {
+    let res_flat = res_cols * output_size;
+    for col in col_maxs[0]..res_flat {
         res_u64[col * 2 * n..(col + 1) * 2 * n].fill(0);
     }
 

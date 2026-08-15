@@ -5,11 +5,12 @@ use bytemuck::{Pod, Zeroable};
 use rand_distr::num_traits::Zero;
 use std::{fmt, ops::Add};
 
-/// 24-byte prepared-domain scalar marker for the 3-prime IFMA backend.
+/// Prepared-domain identity marker for the 3-prime IFMA backend.
 ///
-/// `VecZnxDft<NTT3x42Ifma>` stores each limb as three prime planes of `n`
-/// consecutive `u64` values. This type exists for HAL sizing only; interpreting
-/// a limb as `n` consecutive `Q126Scalar` values is not semantically correct.
+/// `VecZnxDft<NTT3x42Ifma>` packs the three 42-bit residues of each coefficient
+/// into two `u64` words. This 24-byte type identifies the backend's DFT family;
+/// it is not the physical element type and must not be used to view the packed
+/// buffer. The backend overrides the relevant byte-sizing methods accordingly.
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct Q126Scalar(pub [u64; 3]);
@@ -19,10 +20,10 @@ pub struct Q126Scalar(pub [u64; 3]);
 unsafe impl Zeroable for Q126Scalar {}
 unsafe impl Pod for Q126Scalar {}
 
-/// `Q126Scalar` is an identity + sizing contract over planar storage, not an
-/// element view: buffers tagged with it store three prime planes of `n`
-/// consecutive `u64` values per limb. Cross-backend interchange requires both
-/// matching word types and the relevant layout-compatibility marker.
+/// `Q126Scalar` is an identity token, not an element view. Buffers tagged with
+/// it use the backend's packed two-word representation. Cross-backend
+/// interchange requires both matching word types and the relevant
+/// layout-compatibility marker.
 impl poulpy_hal::layouts::DftWord for Q126Scalar {}
 
 impl fmt::Display for Q126Scalar {
