@@ -188,7 +188,9 @@ unsafe impl<P: PrimeSet, T: LaneElem> Pod for CrtWord<P, T> {}
 /// Byte-layout contract: `n` consecutive `P::Lanes<T>::LEN`-lane CRT blocks per
 /// limb, in the NTT ordering of `P`. Cross-backend interchange also
 /// requires the relevant layout-compatibility marker.
-impl<P: PrimeSet, T: LaneElem> DftWord for CrtWord<P, T> {}
+impl<P: PrimeSet, T: LaneElem> DftWord for CrtWord<P, T> {
+    const IS_EXACT: bool = true;
+}
 
 impl<P: PrimeSet, T: LaneElem> Add for CrtWord<P, T> {
     type Output = Self;

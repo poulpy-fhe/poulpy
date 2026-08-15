@@ -754,7 +754,12 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_ifma(
         } else {
             ((dsize - di) as isize - 2).max(0) as usize
         };
-        let res_size_di = res_cols * (output_size - pad);
+        let active_size = if di == 0 {
+            output_size
+        } else {
+            output_size.min(pmat.size().saturating_sub(pad))
+        };
+        let res_size_di = res_cols * active_size;
         let limb_off = di * cols_out;
         a_slices.push(a_u64);
         row_maxs.push(nrows.min(a_size));
@@ -877,7 +882,12 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_ifma(
         } else {
             ((dsize - di) as isize - 2).max(0) as usize
         };
-        let res_size_di = res_cols * (output_size - pad);
+        let active_size = if di == 0 {
+            output_size
+        } else {
+            output_size.min(pmat.size().saturating_sub(pad))
+        };
+        let res_size_di = res_cols * active_size;
         let limb_off = di * cols_out;
         row_maxs.push(nrows.min(a_cols * digit_limbs));
         limb_offs.push(limb_off);

@@ -4,7 +4,9 @@ use poulpy_hal::{
         ModuleN, ScratchArenaTakeBasic, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VmpApplyDftToDft,
         VmpApplyDftToDftAccumulate, VmpApplyDftToDftDigitsStrided, VmpApplyDftToDftTmpBytes,
     },
-    layouts::{Backend, Module, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendRef},
+    layouts::{
+        Backend, DftWord, Module, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef, VecZnxDftToBackendRef,
+    },
 };
 
 use crate::{
@@ -18,17 +20,27 @@ pub(crate) trait GLWEKeyswitchInternal<BE: Backend>
 where
     Self: GGLWEProductDefault<BE> + VecZnxDftApply<BE>,
 {
+    fn glwe_keyswitch_internal_tmp_bytes_from_sizes<K>(&self, cols: usize, res_size: usize, a_size: usize, key_infos: &K) -> usize
+    where
+        K: GGLWEInfos,
+    {
+        let lvl_0: usize = self.bytes_of_vec_znx_dft(cols - 1, a_size);
+        let lvl_1: usize = self.gglwe_product_dft_tmp_bytes_default(res_size, a_size, key_infos);
+        lvl_0 + lvl_1
+    }
+
     fn glwe_keyswitch_internal_tmp_bytes<R, A, K>(&self, res_infos: &R, a_infos: &A, key_infos: &K) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
         K: GGLWEInfos,
     {
-        let cols: usize = (a_infos.rank() + 1).into();
-        let a_size: usize = a_infos.size();
-        let lvl_0: usize = self.bytes_of_vec_znx_dft(cols - 1, a_size);
-        let lvl_1: usize = self.gglwe_product_dft_tmp_bytes_default(res_infos.size(), a_size, key_infos);
-        lvl_0 + lvl_1
+        self.glwe_keyswitch_internal_tmp_bytes_from_sizes(
+            a_infos.rank().as_usize() + 1,
+            res_infos.size(),
+            a_infos.size(),
+            key_infos,
+        )
     }
 
     fn glwe_keyswitch_internal<'r, A, K>(
@@ -44,11 +56,12 @@ where
         let a = a.to_backend_ref();
         let key: GGLWEPreparedBackendRef<'_, BE> = key.to_backend_ref();
         assert_eq!(a.base2k(), key.base2k());
+        let tmp_bytes = self.glwe_keyswitch_internal_tmp_bytes_from_sizes(a.rank().as_usize() + 1, res.size(), a.size(), &key);
         assert!(
-            scratch.available() >= self.glwe_keyswitch_internal_tmp_bytes(&key, &a, &key),
+            scratch.available() >= tmp_bytes,
             "scratch.available(): {} < GLWEKeyswitchInternal::glwe_keyswitch_internal_tmp_bytes: {}",
             scratch.available(),
-            self.glwe_keyswitch_internal_tmp_bytes(&key, &a, &key)
+            tmp_bytes
         );
         let cols: usize = (a.rank() + 1).into();
         let a_size: usize = a.size();
@@ -175,11 +188,12 @@ fn glwe_keyswitch_dft_fill<'r, BE, M, A>(
 {
     let a = a.to_backend_ref();
     assert_eq!(a.base2k(), key.base2k());
+    let tmp_bytes = module.glwe_keyswitch_internal_tmp_bytes_from_sizes(a.rank().as_usize() + 1, res.size(), a.size(), key);
     assert!(
-        scratch.available() >= module.glwe_keyswitch_internal_tmp_bytes(key, &a, key),
+        scratch.available() >= tmp_bytes,
         "scratch.available(): {} < GLWEKeyswitchInternal::glwe_keyswitch_internal_tmp_bytes: {}",
         scratch.available(),
-        module.glwe_keyswitch_internal_tmp_bytes(key, &a, key)
+        tmp_bytes
     );
     let cols: usize = (a.rank() + 1).into();
     let a_size: usize = a.size();
@@ -192,6 +206,25 @@ fn glwe_keyswitch_dft_fill<'r, BE, M, A>(
         let a_dft_ref = a_dft.to_backend_ref();
         module.gglwe_product_dft_default(res, &a_dft_ref, key, &mut scratch_1.borrow());
     });
+}
+
+/// Number of limbs whose VMP result can affect a keyswitch output.
+///
+/// Products beyond the input/output precision plus two carry/rounding limbs
+/// contribute at most to the final rounding error, so materializing and
+/// inverse-transforming the rest of the key's guard region is unnecessary.
+fn glwe_keyswitch_output_size<R, A, K>(res_infos: &R, a_infos: &A, key_infos: &K, exact_dft: bool) -> usize
+where
+    R: GLWEInfos,
+    A: GLWEInfos,
+    K: GGLWEInfos,
+{
+    let key_size = key_infos.work_size(a_infos.k());
+    if exact_dft && a_infos.base2k() == key_infos.base2k() && res_infos.base2k() == key_infos.base2k() {
+        key_size.min(a_infos.size().max(res_infos.size()).saturating_add(2))
+    } else {
+        key_size
+    }
 }
 
 #[allow(private_bounds)]
@@ -216,14 +249,17 @@ where
     assert_eq!(module.n() as u32, key_infos.n());
 
     let cols: usize = res_infos.rank().as_usize() + 1;
-    let lvl_0: usize = module.bytes_of_vec_znx_dft(cols, key_infos.size());
-    let lvl_1_big: usize = module.bytes_of_vec_znx_big(cols, key_infos.size());
+    let a_cols: usize = a_infos.rank().as_usize() + 1;
+    let output_size = glwe_keyswitch_output_size(res_infos, a_infos, key_infos, <<BE as Backend>::DftWord as DftWord>::IS_EXACT);
+    let a_dft_size = a_infos.k().div_ceil(key_infos.base2k()) as usize;
+    let lvl_0: usize = module.bytes_of_vec_znx_dft(cols, output_size);
+    let lvl_1_big: usize = module.bytes_of_vec_znx_big(cols, output_size);
     let lvl_1: usize = lvl_1_big
         + module
             .vec_znx_idft_apply_tmp_bytes()
             .max(module.vec_znx_big_normalize_tmp_bytes());
     let lvl_2: usize = if a_infos.base2k() != key_infos.base2k() {
-        let small_term_tmp: usize = BE::bytes_of_vec_znx(module.n(), 1, key_infos.size());
+        let small_term_tmp: usize = BE::bytes_of_vec_znx(module.n(), 1, output_size);
         let a_conv_infos: GLWELayout = GLWELayout {
             n: a_infos.n(),
             base2k: key_infos.base2k(),
@@ -233,7 +269,7 @@ where
         let lvl_2_0: usize = module.glwe_bytes_of_from_infos(&a_conv_infos);
         let lvl_2_1: usize = module
             .glwe_normalize_tmp_bytes_default()
-            .max(module.glwe_keyswitch_internal_tmp_bytes(res_infos, &a_conv_infos, key_infos));
+            .max(module.glwe_keyswitch_internal_tmp_bytes_from_sizes(a_cols, output_size, a_dft_size, key_infos));
         let lvl_2_2: usize = lvl_1_big
             + small_term_tmp
             + module
@@ -242,7 +278,7 @@ where
                 .max(module.vec_znx_normalize_tmp_bytes());
         lvl_2_0 + lvl_2_1.max(lvl_2_2)
     } else {
-        lvl_1.max(module.glwe_keyswitch_internal_tmp_bytes(res_infos, a_infos, key_infos))
+        lvl_1.max(module.glwe_keyswitch_internal_tmp_bytes_from_sizes(a_cols, output_size, a_dft_size, key_infos))
     };
 
     lvl_0 + lvl_2
@@ -293,7 +329,7 @@ where
         module.glwe_keyswitch_tmp_bytes_default(res, a, key)
     );
 
-    let key_size = key.work_size(a.k());
+    let output_size = glwe_keyswitch_output_size(res, a, key, <<BE as Backend>::DftWord as DftWord>::IS_EXACT);
 
     let a_base2k: usize = a.base2k().into();
     let key_base2k: usize = key.base2k().into();
@@ -301,7 +337,7 @@ where
     let cols: usize = (res.rank() + 1).into();
     let key: GGLWEPreparedBackendRef<'_, BE> = key.to_backend_ref();
 
-    let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, key_size);
+    let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
 
     let mut scratch = scratch_1;
     if a_base2k != key_base2k {
@@ -319,13 +355,13 @@ where
         glwe_keyswitch_dft_fill(module, &mut res_dft, a, &key, &mut scratch.borrow());
     }
 
-    let (mut res_big, mut scratch) = scratch.borrow().take_vec_znx_big_scratch(module, cols, key_size);
+    let (mut res_big, mut scratch) = scratch.borrow().take_vec_znx_big_scratch(module, cols, output_size);
     let res_dft_ref = res_dft.to_backend_ref();
     for i in 0..cols {
         module.vec_znx_idft_apply(&mut res_big, i, &res_dft_ref, i, &mut scratch.borrow());
     }
     if a_base2k != key_base2k {
-        let (mut res_small, mut scratch_2) = scratch.borrow().take_vec_znx_scratch(module.n(), 1, key_size);
+        let (mut res_small, mut scratch_2) = scratch.borrow().take_vec_znx_scratch(module.n(), 1, output_size);
         module.vec_znx_normalize(
             &mut res_small,
             key_base2k,
@@ -401,12 +437,12 @@ where
         module.glwe_keyswitch_tmp_bytes_default(res, res, key)
     );
 
-    let key_size = key.work_size(res.k());
+    let output_size = glwe_keyswitch_output_size(res, res, key, <<BE as Backend>::DftWord as DftWord>::IS_EXACT);
 
     let res_base2k: usize = res.base2k().as_usize();
     let key_base2k: usize = key.base2k().as_usize();
     let cols: usize = (res.rank() + 1).into();
-    let (mut res_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, key_size);
+    let (mut res_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
 
     let (res_big, mut scratch) = if res_base2k != key_base2k {
         let scratch = scratch_1;
@@ -420,12 +456,12 @@ where
 
         module.glwe_keyswitch_internal(&mut res_dft, &res_conv, key, &mut scratch_3);
 
-        let (mut res_big, mut scratch) = scratch_3.take_vec_znx_big_scratch(module, cols, key_size);
+        let (mut res_big, mut scratch) = scratch_3.take_vec_znx_big_scratch(module, cols, output_size);
         let res_dft_ref = res_dft.to_backend_ref();
         for i in 0..cols {
             module.vec_znx_idft_apply(&mut res_big, i, &res_dft_ref, i, &mut scratch);
         }
-        let (mut res_small, mut scratch_2) = scratch.take_vec_znx_scratch(module.n(), 1, key_size);
+        let (mut res_small, mut scratch_2) = scratch.take_vec_znx_scratch(module.n(), 1, output_size);
         let res_ref = GLWEToBackendRef::<BE>::to_backend_ref(res);
         module.vec_znx_normalize(
             &mut res_small,
@@ -446,7 +482,7 @@ where
             module.glwe_keyswitch_internal(&mut res_dft, res, key, &mut ks_scratch);
         }
         let res_ref = GLWEToBackendRef::<BE>::to_backend_ref(res);
-        let (mut res_big, mut scratch) = scratch_1.take_vec_znx_big_scratch(module, cols, key_size);
+        let (mut res_big, mut scratch) = scratch_1.take_vec_znx_big_scratch(module, cols, output_size);
         let res_dft_ref = res_dft.to_backend_ref();
         for i in 0..cols {
             module.vec_znx_idft_apply(&mut res_big, i, &res_dft_ref, i, &mut scratch);

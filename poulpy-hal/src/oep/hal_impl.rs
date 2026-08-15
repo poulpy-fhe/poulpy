@@ -1059,7 +1059,8 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend {
                 // initialized the skipped high limbs.
                 Self::vmp_apply_dft_to_dft(module, res, &digit.to_backend_ref(), pmat, 0, &mut scratch_digit);
             } else {
-                let compute_size = res.size() - ((dsize - di) as isize - 2).max(0) as usize;
+                let pad = ((dsize - di) as isize - 2).max(0) as usize;
+                let compute_size = res.size().min(pmat.size().saturating_sub(pad));
                 let mut res_view = res.with_size_mut(compute_size);
                 Self::vmp_apply_dft_to_dft_accumulate(
                     module,
