@@ -1,7 +1,6 @@
 use core::panic;
 use poulpy_hal::layouts::HostDataRef;
 
-use itertools::Itertools;
 use poulpy_core::{
     GLWECopy, GLWENormalize, GLWESub, ScratchArenaTakeCore,
     api::GLWEExternalProductInternal,
@@ -136,7 +135,7 @@ pub trait ExecuteBDDCircuit<BE: Backend<OwnedBuf: HostDataMut + HostDataRef>> {
     ) where
         G: GetGGSWBit<BE> + BitSize,
         C: GetBitCircuitInfo,
-        O: HostDataMut,
+        O: HostDataMut + Send,
         GLWE<O, BE::ZnxWord>: GLWEToBackendMut<BE>,
     {
         self.execute_bdd_circuit_multi_thread(1, out, inputs, circuit, scratch);
@@ -144,14 +143,14 @@ pub trait ExecuteBDDCircuit<BE: Backend<OwnedBuf: HostDataMut + HostDataRef>> {
 
     /// Multi-threaded BDD circuit evaluation.
     ///
-    /// Partitions the output bits across `threads` OS threads using
-    /// `std::thread::scope`.  Each thread receives a dedicated slice of the
+    /// Partitions the output bits across at most `threads` workers using the
+    /// selected backend's task executor. Each worker receives a dedicated slice of the
     /// scratch arena of size
     /// [`execute_bdd_circuit_tmp_bytes`][Self::execute_bdd_circuit_tmp_bytes].
     ///
     /// # Panics
     ///
-    /// Panics if `scratch.available() < threads * scratch_thread_size`.
+    /// Panics if the arena cannot provide one scratch slice per active worker.
     fn execute_bdd_circuit_multi_thread<C, G, O>(
         &self,
         threads: usize,
@@ -162,7 +161,7 @@ pub trait ExecuteBDDCircuit<BE: Backend<OwnedBuf: HostDataMut + HostDataRef>> {
     ) where
         G: GetGGSWBit<BE> + BitSize,
         C: GetBitCircuitInfo,
-        O: HostDataMut,
+        O: HostDataMut + Send,
         GLWE<O, BE::ZnxWord>: GLWEToBackendMut<BE>;
 }
 
@@ -195,7 +194,7 @@ where
     ) where
         G: GetGGSWBit<BE> + BitSize,
         C: GetBitCircuitInfo,
-        O: HostDataMut,
+        O: HostDataMut + Send,
         GLWE<O, BE::ZnxWord>: GLWEToBackendMut<BE>,
     {
         #[cfg(debug_assertions)]
@@ -214,21 +213,43 @@ where
             );
         }
 
-        let _ = threads;
-
-        for (bit_idx, out_i) in out[..circuit.output_size()].iter_mut().enumerate() {
-            let (nodes, state_size) = circuit.get_circuit(bit_idx);
-
-            if state_size == 0 {
-                out_i.data_mut().zero();
-            } else {
-                eval_level(self, out_i, inputs, nodes, state_size, &mut scratch.borrow());
-            }
-        }
-
-        for out_i in out.iter_mut().skip(circuit.output_size()) {
+        let output_size = circuit.output_size();
+        for out_i in out.iter_mut().skip(output_size) {
             out_i.data_mut().zero();
         }
+        if output_size == 0 {
+            return;
+        }
+
+        let workers = crate::parallel::worker_count::<BE::TaskExecutor>(threads, output_size);
+        let scratch_thread_size = crate::parallel::worker_scratch_bytes::<BE>(self.execute_bdd_circuit_tmp_bytes(
+            &out[0],
+            circuit.max_state_size(),
+            inputs.get_bit(0),
+        ));
+        let needed = workers
+            .checked_mul(scratch_thread_size)
+            .expect("BDD parallel scratch size overflows usize");
+        assert!(
+            scratch.available() >= needed,
+            "scratch.available():{} < parallel BDD scratch bytes:{needed}",
+            scratch.available()
+        );
+        let (worker_scratch, _) = scratch.borrow().split(workers, scratch_thread_size);
+
+        crate::parallel::for_each_with_scratch::<BE::TaskExecutor, BE, _, _>(
+            &mut out[..output_size],
+            0,
+            worker_scratch,
+            &|bit_idx, out_i, scratch| {
+                let (nodes, state_size) = circuit.get_circuit(bit_idx);
+                if state_size == 0 {
+                    out_i.data_mut().zero();
+                } else {
+                    eval_level(self, out_i, inputs, nodes, state_size, scratch);
+                }
+            },
+        );
     }
 }
 
@@ -249,20 +270,14 @@ fn eval_level<M, G, R, BE>(
 {
     assert!(nodes.len().is_multiple_of(state_size));
 
-    // TODO(device): the current BDD evaluator still uses host-owned temporary
-    // levels because the node execution logic performs host-visible zero/one
-    // initialization over the intermediate GLWEs.
-    let mut level: Vec<GLWE<BE::OwnedBuf, BE::ZnxWord>> =
-        (0..state_size * 2).map(|_| module.glwe_alloc_from_infos(res)).collect();
-    let mut scratch_1 = scratch.borrow();
+    let (mut level, mut scratch_1) = scratch.borrow().take_glwe_slice_scratch(2 * state_size, res);
 
     level.iter_mut().for_each(|ct| ct.data_mut().zero());
 
     // TODO: implement API on GLWE
     level[1].data_mut().encode_coeff_i64(res.base2k().into(), 0, 2, 0, 1);
 
-    let mut level_ref: Vec<&mut GLWE<BE::OwnedBuf, BE::ZnxWord>> = level.iter_mut().collect_vec();
-    let (mut prev_level, mut next_level) = level_ref.split_at_mut(state_size);
+    let (mut prev_level, mut next_level) = level.split_at_mut(state_size);
 
     let (all_but_last, last) = nodes.split_at(nodes.len() - state_size);
 
@@ -271,14 +286,14 @@ fn eval_level<M, G, R, BE>(
             match node {
                 Node::Cmux(in_idx, hi_idx, lo_idx) => {
                     module.cmux(
-                        next_level[j],
-                        prev_level[*hi_idx],
-                        prev_level[*lo_idx],
+                        &mut next_level[j],
+                        &prev_level[*hi_idx],
+                        &prev_level[*lo_idx],
                         inputs.get_bit(*in_idx),
                         &mut scratch_1.borrow(),
                     );
                 }
-                Node::Copy => module.glwe_copy(next_level[j], prev_level[j]), /* Update BDD circuits to order Cmux -> Copy -> None so that mem swap can be used */
+                Node::Copy => module.glwe_copy(&mut next_level[j], &prev_level[j]), /* Update BDD circuits to order Cmux -> Copy -> None so that mem swap can be used */
                 Node::None => {}
             }
         }
@@ -292,8 +307,8 @@ fn eval_level<M, G, R, BE>(
         Node::Cmux(in_idx, hi_idx, lo_idx) => {
             module.cmux(
                 res,
-                prev_level[*hi_idx],
-                prev_level[*lo_idx],
+                &prev_level[*hi_idx],
+                &prev_level[*lo_idx],
                 inputs.get_bit(*in_idx),
                 &mut scratch_1.borrow(),
             );
@@ -662,12 +677,15 @@ where
             rank: res_infos.rank(),
         };
         let output_size = glwe_external_product_output_size::<BE, _, _, _>(&tmp_infos, &tmp_infos, selector_infos);
-        let res_dft: usize = self.bytes_of_vec_znx_dft((selector_infos.rank() + 1).into(), output_size);
+        let cols: usize = (selector_infos.rank() + 1).into();
+        let res_dft: usize = self.bytes_of_vec_znx_dft(cols, output_size);
+        let res_big: usize = self.bytes_of_vec_znx_big(cols, output_size);
         self.glwe_bytes_of_from_infos(res_infos)
             + self
                 .glwe_bytes_of_from_infos(a_infos)
                 .max(self.glwe_bytes_of_from_infos(&tmp_infos))
             + res_dft
+            + res_big
             + self
                 .glwe_external_product_internal_tmp_bytes(&tmp_infos, &tmp_infos, selector_infos)
                 .max(self.vec_znx_big_normalize_tmp_bytes())

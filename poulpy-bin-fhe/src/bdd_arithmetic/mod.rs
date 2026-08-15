@@ -43,9 +43,9 @@
 //! ## Threading
 //!
 //! Both `FheUintPrepared` construction and BDD circuit evaluation expose
-//! `_multi_thread` variants that partition independent output bits across OS
-//! threads using `std::thread::scope`.  Each thread receives its own scratch
-//! slice; the key structures are `Sync`.
+//! `_multi_thread` variants that partition independent output bits through the
+//! selected backend's task executor. Each worker receives its own scratch
+//! slice; the key structures are `Sync`. Serial backends remain serial.
 //!
 //! ## Scratch-Space Allocation
 //!
