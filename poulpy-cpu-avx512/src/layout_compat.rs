@@ -13,6 +13,8 @@ use poulpy_cpu_ref::{FFT64Ref, NTT4x30Ref};
 use poulpy_hal::layouts::{SvpPPolLayoutCompatible, VecZnxBigLayoutCompatible, VecZnxDftLayoutCompatible};
 
 use crate::FFT64Avx512;
+#[cfg(feature = "enable-rayon")]
+use crate::FFT64Avx512Rayon;
 use crate::NTT4x30Avx512;
 
 unsafe impl VecZnxDftLayoutCompatible<FFT64Avx512> for FFT64Ref {}
@@ -21,6 +23,19 @@ unsafe impl VecZnxBigLayoutCompatible<FFT64Avx512> for FFT64Ref {}
 unsafe impl VecZnxBigLayoutCompatible<FFT64Ref> for FFT64Avx512 {}
 unsafe impl SvpPPolLayoutCompatible<FFT64Avx512> for FFT64Ref {}
 unsafe impl SvpPPolLayoutCompatible<FFT64Ref> for FFT64Avx512 {}
+
+#[cfg(feature = "enable-rayon")]
+unsafe impl VecZnxDftLayoutCompatible<FFT64Avx512Rayon> for FFT64Ref {}
+#[cfg(feature = "enable-rayon")]
+unsafe impl VecZnxDftLayoutCompatible<FFT64Ref> for FFT64Avx512Rayon {}
+#[cfg(feature = "enable-rayon")]
+unsafe impl VecZnxBigLayoutCompatible<FFT64Avx512Rayon> for FFT64Ref {}
+#[cfg(feature = "enable-rayon")]
+unsafe impl VecZnxBigLayoutCompatible<FFT64Ref> for FFT64Avx512Rayon {}
+#[cfg(feature = "enable-rayon")]
+unsafe impl SvpPPolLayoutCompatible<FFT64Avx512Rayon> for FFT64Ref {}
+#[cfg(feature = "enable-rayon")]
+unsafe impl SvpPPolLayoutCompatible<FFT64Ref> for FFT64Avx512Rayon {}
 
 unsafe impl VecZnxDftLayoutCompatible<NTT4x30Avx512> for NTT4x30Ref {}
 unsafe impl VecZnxDftLayoutCompatible<NTT4x30Ref> for NTT4x30Avx512 {}

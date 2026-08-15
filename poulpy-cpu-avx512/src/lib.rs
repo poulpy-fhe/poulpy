@@ -1,8 +1,9 @@
 //! AVX-512 / AVX-512-IFMA accelerated CPU backends for the Poulpy lattice cryptography library.
 //!
-//! This crate provides four backend implementations for [`poulpy_hal`]:
+//! This crate provides five backend implementations for [`poulpy_hal`]:
 //!
 //! - `FFT64Avx512`: f64 FFT backend, gated on `enable-avx512f`.
+//! - `FFT64Avx512Rayon`: Rayon-scheduled FFT backend, gated on `enable-rayon`.
 //! - `NTT4x30Avx512`: Q120 NTT backend over four ~30-bit CRT primes, gated on `enable-avx512f`.
 //! - `NTT3x42Ifma`: Q126 NTT backend over three ~42-bit CRT primes, gated on `enable-ifma`.
 //! - `NTT3x42IfmaRayon`: opt-in parallel host variant of `NTT3x42Ifma`, gated on `enable-rayon`.
@@ -91,7 +92,8 @@
 //!
 //! - `enable-avx512f`: exports `FFT64Avx512` and `NTT4x30Avx512`.
 //! - `enable-ifma`: implies `enable-avx512f` and also exports `NTT3x42Ifma`.
-//! - `enable-rayon`: implies `enable-ifma` and exports `NTT3x42IfmaRayon`.
+//! - `enable-rayon`: implies `enable-avx512f` and exports `FFT64Avx512Rayon`;
+//!   with `enable-ifma`, it also exports `NTT3x42IfmaRayon`.
 //! - `enable-ckks`: wires these backends into `poulpy-ckks` defaults.
 //!
 //! # Platform support
@@ -145,6 +147,8 @@ compile_error!(
     "feature `enable-ifma` requires AVX512VL. Build with RUSTFLAGS=\"-C target-feature=+avx512f,+avx512ifma,+avx512vl\"."
 );
 
+#[cfg(feature = "enable-rayon")]
+mod execution;
 #[cfg(feature = "enable-avx512f")]
 mod fft64;
 #[cfg(feature = "enable-avx512f")]
@@ -161,13 +165,15 @@ mod vec_znx_big_avx512;
 #[cfg(feature = "enable-ifma")]
 mod ntt3x42_ifma;
 
+#[cfg(all(feature = "enable-avx512f", feature = "enable-rayon"))]
+pub use fft64::FFT64Avx512Rayon;
 #[cfg(feature = "enable-avx512f")]
 pub use fft64::{FFT64Avx512, FFT64Avx512ReimTable, ReimFFTAvx512, ReimIFFTAvx512};
 #[cfg(feature = "enable-ifma")]
 pub use ntt3x42_ifma::NTT3x42Ifma;
-#[cfg(feature = "enable-rayon")]
+#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 pub use ntt3x42_ifma::NTT3x42IfmaRayon;
-#[cfg(feature = "enable-rayon")]
+#[cfg(all(feature = "enable-ifma", feature = "enable-rayon"))]
 #[doc(hidden)]
 pub use ntt3x42_ifma::NTT3x42IfmaRayonExecutor;
 #[cfg(feature = "enable-avx512f")]

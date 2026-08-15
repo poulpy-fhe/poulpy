@@ -39,7 +39,7 @@ fn base_dft_ref<'a>(a: &'a VecZnxDftBackendRef<'_, NTT3x42IfmaRayon>) -> VecZnxD
     VecZnxDft::from_data(&**a.data(), a.n(), a.cols(), a.size())
 }
 
-fn base_dft_mut<'a>(a: &'a mut VecZnxDftBackendMut<'_, NTT3x42IfmaRayon>) -> VecZnxDftBackendMut<'a, NTT3x42Ifma> {
+pub(crate) fn base_dft_mut<'a>(a: &'a mut VecZnxDftBackendMut<'_, NTT3x42IfmaRayon>) -> VecZnxDftBackendMut<'a, NTT3x42Ifma> {
     let (n, cols, size) = (a.n(), a.cols(), a.size());
     VecZnxDft::from_data(&mut **a.data_mut(), n, cols, size)
 }
@@ -67,7 +67,7 @@ fn base_vmp_mut<'a>(a: &'a mut VmpPMatBackendMut<'_, NTT3x42IfmaRayon>) -> VmpPM
     VmpPMat::from_data(&mut **a.data_mut(), n, rows, cols_in, cols_out, size)
 }
 
-fn base_cnv_l_ref<'a>(a: &'a CnvPVecLBackendRef<'_, NTT3x42IfmaRayon>) -> CnvPVecLBackendRef<'a, NTT3x42Ifma> {
+pub(crate) fn base_cnv_l_ref<'a>(a: &'a CnvPVecLBackendRef<'_, NTT3x42IfmaRayon>) -> CnvPVecLBackendRef<'a, NTT3x42Ifma> {
     CnvPVecL::from_data(&**a.data(), a.n(), a.cols(), a.size())
 }
 
@@ -76,7 +76,7 @@ fn base_cnv_l_mut<'a>(a: &'a mut CnvPVecLBackendMut<'_, NTT3x42IfmaRayon>) -> Cn
     CnvPVecL::from_data(&mut **a.data_mut(), n, cols, size)
 }
 
-fn base_cnv_r_ref<'a>(a: &'a CnvPVecRBackendRef<'_, NTT3x42IfmaRayon>) -> CnvPVecRBackendRef<'a, NTT3x42Ifma> {
+pub(crate) fn base_cnv_r_ref<'a>(a: &'a CnvPVecRBackendRef<'_, NTT3x42IfmaRayon>) -> CnvPVecRBackendRef<'a, NTT3x42Ifma> {
     CnvPVecR::from_data(&**a.data(), a.n(), a.cols(), a.size())
 }
 
@@ -116,6 +116,7 @@ fn parallel_chunk_len(len: usize) -> Option<usize> {
     }
 }
 
+#[inline]
 fn parallel_limb_tasks(count: usize) -> bool {
     count > 1 && ::rayon::current_num_threads() > 1
 }
@@ -332,6 +333,7 @@ unsafe impl HalVecZnxBigImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
 }
 
 unsafe impl HalVecZnxDftImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
+    #[inline(always)]
     fn vec_znx_dft_apply(
         module: &Module<Self>,
         step: usize,
@@ -376,6 +378,7 @@ unsafe impl HalVecZnxDftImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         <NTT3x42Ifma as HalVecZnxDftImpl<NTT3x42Ifma>>::vec_znx_idft_apply_tmp_bytes(base_module(module))
     }
 
+    #[inline(always)]
     fn vec_znx_idft_apply(
         module: &Module<Self>,
         res: &mut VecZnxBigBackendMut<'_, Self>,
@@ -413,6 +416,7 @@ unsafe impl HalVecZnxDftImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         )
     }
 
+    #[inline(always)]
     fn vec_znx_idft_apply_tmpa(
         module: &Module<Self>,
         res: &mut VecZnxBigBackendMut<'_, Self>,
@@ -837,30 +841,56 @@ unsafe impl HalVmpImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
         )
     }
 
-    fn vmp_apply_dft_to_dft_digits_strided(
+    fn vmp_zero(module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
+        <NTT3x42Ifma as HalVmpImpl<NTT3x42Ifma>>::vmp_zero(base_module(module), &mut base_vmp_mut(res))
+    }
+}
+
+unsafe impl poulpy_core::oep::GGLWEProductDigitsStridedImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
+    fn gglwe_product_digits_strided_tmp_bytes(
+        _module: &Module<Self>,
+        _res_size: usize,
+        a_cols: usize,
+        a_size: usize,
+        dsize: usize,
+        pmat_rows: usize,
+        pmat_cols_in: usize,
+        _pmat_cols_out: usize,
+        _pmat_size: usize,
+    ) -> usize {
+        super::vmp::vmp_apply_digits_strided_tmp_bytes_ifma(a_cols, a_size, dsize, pmat_rows, pmat_cols_in)
+    }
+
+    fn gglwe_product_digits_strided(
         module: &Module<Self>,
         res: &mut VecZnxDftBackendMut<'_, Self>,
         a: &VecZnxDftBackendRef<'_, Self>,
         dsize: usize,
+        product_limbs: usize,
         pmat: &VmpPMatBackendRef<'_, Self>,
         scratch: &mut ScratchArena<'_, Self>,
-    ) where
-        Module<Self>: poulpy_hal::api::VecZnxDftCopy<Self>,
-    {
-        let bytes = super::vmp::vmp_apply_digits_strided_tmp_bytes_ifma(a.cols(), a.size(), dsize, pmat.rows(), pmat.cols_in());
+    ) {
+        let bytes = Self::gglwe_product_digits_strided_tmp_bytes(
+            module,
+            res.size(),
+            a.cols(),
+            a.size(),
+            dsize,
+            pmat.rows(),
+            pmat.cols_in(),
+            pmat.cols_out(),
+            pmat.size(),
+        );
         let (tmp, _) = crate::hal_impl::take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         super::vmp::vmp_apply_dft_to_dft_digits_strided_ifma::<NTT3x42IfmaRayonExecutor>(
             base_module(module),
             &mut base_dft_mut(res),
             &base_dft_ref(a),
             dsize,
+            product_limbs,
             &base_vmp_ref(pmat),
             tmp,
-        )
-    }
-
-    fn vmp_zero(module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {
-        <NTT3x42Ifma as HalVmpImpl<NTT3x42Ifma>>::vmp_zero(base_module(module), &mut base_vmp_mut(res))
+        );
     }
 }
 
@@ -1047,45 +1077,6 @@ unsafe impl HalConvolutionImpl<NTT3x42IfmaRayon> for NTT3x42IfmaRayon {
             &base_cnv_r_ref(b),
             i,
             j,
-            &mut scratch,
-        )
-    }
-
-    fn cnv_tensor_rank1_dft_tmp_bytes(
-        module: &Module<Self>,
-        cnv_offset: usize,
-        res_size: usize,
-        a_size: usize,
-        b_size: usize,
-    ) -> usize {
-        <NTT3x42Ifma as HalConvolutionImpl<NTT3x42Ifma>>::cnv_tensor_rank1_dft_tmp_bytes(
-            base_module(module),
-            cnv_offset,
-            res_size,
-            a_size,
-            b_size,
-        )
-    }
-
-    fn cnv_tensor_rank1_dft_is_fused(module: &Module<Self>) -> bool {
-        <NTT3x42Ifma as HalConvolutionImpl<NTT3x42Ifma>>::cnv_tensor_rank1_dft_is_fused(base_module(module))
-    }
-
-    fn cnv_tensor_rank1_dft(
-        module: &Module<Self>,
-        cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &CnvPVecLBackendRef<'_, Self>,
-        b: &CnvPVecRBackendRef<'_, Self>,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) {
-        let mut scratch = scratch.borrow().into_backend::<NTT3x42Ifma>();
-        <NTT3x42Ifma as HalConvolutionImpl<NTT3x42Ifma>>::cnv_tensor_rank1_dft(
-            base_module(module),
-            cnv_offset,
-            &mut base_dft_mut(res),
-            &base_cnv_l_ref(a),
-            &base_cnv_r_ref(b),
             &mut scratch,
         )
     }

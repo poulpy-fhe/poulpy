@@ -16,7 +16,9 @@ doctest = false
 enable-avx512f = []
 enable-ifma = ["enable-avx512f"]
 enable-ckks = ["dep:poulpy-ckks", "poulpy-cpu-ref/enable-ckks"]
-enable-rayon = ["enable-ifma", "dep:rayon"]
+# Enable backend-owned Rayon scheduling. Concrete parallel backends are
+# available when their corresponding SIMD feature is enabled as well.
+enable-rayon = ["enable-avx512f", "dep:rayon"]
 
 [dependencies]
 bytemuck = {workspace = true}
