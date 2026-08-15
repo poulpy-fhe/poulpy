@@ -14,6 +14,7 @@ doctest = false
 
 [features]
 enable-avx = []
+enable-rayon = ["enable-avx", "dep:rayon"]
 enable-ckks = ["dep:poulpy-ckks", "poulpy-cpu-ref/enable-ckks"]
 
 [dependencies]
@@ -30,6 +31,7 @@ byteorder = {workspace = true}
 once_cell = {workspace = true}
 rand_chacha = {workspace = true}
 paste = {workspace = true}
+rayon = {workspace = true, optional = true}
 
 [dev-dependencies]
 poulpy-ckks = {workspace = true, features = ["test-utils"]}

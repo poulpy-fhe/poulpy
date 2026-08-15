@@ -18,10 +18,9 @@ use bytemuck::{cast_slice, cast_slice_mut};
 use poulpy_cpu_ref::reference::ntt4x30::{
     convolution::cnv_accumulate_schedule, mat_vec::BbcMeta, primes::Primes30, types::Q120bScalar, vec_znx_dft::NttModuleHandle,
 };
-use poulpy_hal::layouts::{CnvDftAccTerm, Module, VecZnxDftBackendMut, ZnxView, ZnxViewMut};
+use poulpy_hal::layouts::{Backend, CnvDftAccTerm, HostDataMut, HostDataRef, Module, VecZnxDftBackendMut, ZnxView, ZnxViewMut};
 
 use super::mat_vec_avx::reduce_bbc;
-use crate::NTT4x30Avx;
 
 /// Block-group size of the staged flush (matches the reference kernels).
 const GROUP: usize = 16;
@@ -40,14 +39,19 @@ struct WindowAvx {
     len: usize,
 }
 
-pub(crate) unsafe fn cnv_accumulate_dft_avx(
-    module: &Module<NTT4x30Avx>,
+pub(crate) unsafe fn cnv_accumulate_dft_avx<BE>(
+    module: &Module<BE>,
     cnv_offset: usize,
-    res: &mut VecZnxDftBackendMut<'_, NTT4x30Avx>,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
     res_col: usize,
-    terms: &[CnvDftAccTerm<'_, NTT4x30Avx>],
+    terms: &[CnvDftAccTerm<'_, BE>],
     tmp: &mut [u8],
-) {
+) where
+    BE: Backend<DftWord = Q120bScalar, ZnxWord = i64>,
+    for<'a> BE::BufRef<'a>: HostDataRef,
+    for<'a> BE::BufMut<'a>: HostDataMut,
+    Module<BE>: NttModuleHandle,
+{
     let n = res.n();
     let res_size = res.size();
     if res_size == 0 {

@@ -7,6 +7,15 @@ pub trait TaskExecutor: Send + Sync + 'static {
         Self::IS_PARALLEL
     }
 
+    /// Maximum number of tasks that should be scheduled concurrently by a
+    /// backend-generic composite operation.
+    ///
+    /// Executors backed by a dynamic pool should report the pool width at the
+    /// call site. The default keeps runtime-neutral and serial executors at one.
+    fn max_parallelism() -> usize {
+        1
+    }
+
     fn join<A, B, RA, RB>(left: A, right: B) -> (RA, RB)
     where
         A: FnOnce() -> RA + Send,

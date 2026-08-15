@@ -668,6 +668,7 @@ dependencies = [
  "rand_chacha",
  "rand_core",
  "rand_distr",
+ "rayon",
 ]
 
 [[package]]

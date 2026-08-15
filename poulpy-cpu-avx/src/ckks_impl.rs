@@ -1,3 +1,5 @@
+#[cfg(feature = "enable-rayon")]
+use crate::NTT4x30AvxRayon;
 use crate::{FFT64Avx, NTT4x30Avx};
 use poulpy_ckks::{
     impl_ckks_add_defaults, impl_ckks_conjugate_defaults, impl_ckks_copy_defaults, impl_ckks_dft_defaults,
@@ -56,3 +58,25 @@ impl_ckks_plaintext_defaults!(FFT64Avx);
 impl_ckks_plaintext_defaults!(NTT4x30Avx);
 impl_ckks_dft_defaults!(FFT64Avx);
 impl_ckks_dft_defaults!(NTT4x30Avx);
+
+#[cfg(feature = "enable-rayon")]
+mod rayon_defaults {
+    use super::*;
+
+    impl_ckks_conjugate_defaults!(NTT4x30AvxRayon);
+    impl_ckks_copy_defaults!(NTT4x30AvxRayon);
+    impl_ckks_encryption_defaults!(NTT4x30AvxRayon);
+    impl_ckks_imag_defaults!(NTT4x30AvxRayon);
+    impl_ckks_mul_defaults!(NTT4x30AvxRayon);
+    impl_ckks_neg_defaults!(NTT4x30AvxRayon);
+    impl_ckks_pow2_defaults!(NTT4x30AvxRayon);
+    impl_ckks_rotate_defaults!(NTT4x30AvxRayon);
+    select_avx_encoding_transform!(NTT4x30AvxRayon);
+    ::poulpy_cpu_ref::impl_ckks_encoding!(NTT4x30AvxRayon);
+    ::poulpy_cpu_ref::impl_ckks_paco_coeff_encoding!(NTT4x30AvxRayon);
+    ::poulpy_cpu_ref::impl_ckks_ship_coeff_encoding!(NTT4x30AvxRayon);
+    impl_ckks_add_defaults!(NTT4x30AvxRayon);
+    impl_ckks_sub_defaults!(NTT4x30AvxRayon);
+    impl_ckks_plaintext_defaults!(NTT4x30AvxRayon);
+    impl_ckks_dft_defaults!(NTT4x30AvxRayon);
+}
