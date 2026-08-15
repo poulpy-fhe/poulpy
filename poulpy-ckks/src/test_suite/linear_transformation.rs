@@ -116,13 +116,20 @@ where
     let encoder = ReferenceEncoder::<E>::new(m).unwrap();
     let (a_re, a_im) = test_vector_1::<F>(m);
     let (sk_raw, sk) = gen_sk_with_raw(&params, module, host_module, [0u8; 32]);
-    let mut scratch = alloc_scratch(&params, module);
+    // Exercise multi-limb automorphism products and multiple non-identity
+    // giant rotations. Exact backends then cover the shortened shared
+    // accumulator, while approximate backends retain the full key width.
+    let key_params = CKKSTestParams {
+        dsize: params.dsize.max(4),
+        ..params
+    };
+    let mut scratch = alloc_scratch(&key_params, module);
 
-    // Complex matrix B (four diagonals), decomposed with n1 = 2 baby steps.
+    // Complex matrix B (six diagonals), decomposed with n1 = 2 baby steps.
     // Encode both orientations through the `transpose` flag and check each one.
     let n1 = 2;
     let strategy = LinearTransformationStrategy::Bsgs { giant_step: n1 };
-    let b = complex_diagonals::<F>(&[0, 1, 2, 3], m);
+    let b = complex_diagonals::<F>(&[0, 1, 2, 3, 4, 5], m);
     let lt_left = encode_lt(module, &params, &b, n1, false, &mut scratch.borrow());
     let lt_right = encode_lt(module, &params, &b, n1, true, &mut scratch.borrow());
 
@@ -135,7 +142,7 @@ where
         .chain(lt_right.galois_elements(order))
     {
         atks.entry(p)
-            .or_insert_with(|| gen_atk(&params, module, p, &sk_raw, &mut scratch.borrow()));
+            .or_insert_with(|| gen_atk(&key_params, module, p, &sk_raw, &mut scratch.borrow()));
     }
 
     let ct = ckks_encrypt(

@@ -288,6 +288,10 @@ where
 
     let mut xe = Source::new([21u8; 32]);
     let mut xa = Source::new([22u8; 32]);
+    // Exercise the multi-limb gadget path. On exact backends this also covers
+    // the shortened accumulator used when several mux products share one
+    // normalization.
+    let mux_dsize = params.dsize.max(4);
     let mut gen_key = |beta: bool, rot: usize, scratch: &mut ScratchOwned<BE>| {
         let key = hmux_rot_key_encrypt_sk(
             module,
@@ -297,7 +301,7 @@ where
             rot,
             k,
             params.base2k.into(),
-            params.dsize,
+            mux_dsize,
             &mut xe,
             &mut xa,
             &mut scratch.borrow(),
@@ -319,13 +323,17 @@ where
     let group_id = vec![gen_key(true, 0, &mut scratch), gen_key(false, 5, &mut scratch)];
     let group_zero = vec![gen_key(false, 0, &mut scratch), gen_key(false, 5, &mut scratch)];
 
-    let mux_bytes =
-        crate::default::ship::mux::ship_mux_rotate_tmp_bytes(module, &alloc_ct(&params, module, k), &group_rot[0].key);
+    let mux_bytes = crate::default::ship::mux::ship_mux_rotate_tmp_bytes(
+        module,
+        &alloc_ct(&params, module, k),
+        &group_rot[0].key,
+        group_rot.len(),
+    );
     let plans = crate::default::ship::mux::ship_mux_plans(
         module,
         [group_rot.as_slice(), group_id.as_slice(), group_zero.as_slice()].into_iter(),
     );
-    let mut scratch = ScratchOwned::<BE>::alloc(mux_bytes.max(scratch.borrow().available()));
+    let mut mux_scratch = ScratchOwned::<BE>::alloc(mux_bytes);
 
     let ct = ckks_encrypt(
         &params,
@@ -343,7 +351,7 @@ where
     let (want_re, want_im) = want_rotate(&re1, &im1, -5, m);
     let mut out = alloc_ct(&params, module, k);
     module.ckks_copy(&mut out, &ct, &mut scratch.borrow()).unwrap();
-    crate::default::ship::mux::ship_mux_rotate(module, &mut out, &group_rot, &plans, &mut scratch.borrow()).unwrap();
+    crate::default::ship::mux::ship_mux_rotate(module, &mut out, &group_rot, &plans, &mut mux_scratch.borrow()).unwrap();
     assert_eq!(out.log_delta(), ct.log_delta());
     assert_eq!(out.log_budget(), ct.log_budget());
     assert_decrypt_precision(
@@ -361,7 +369,7 @@ where
     // digit = 0: identity.
     let mut out_id = alloc_ct(&params, module, k);
     module.ckks_copy(&mut out_id, &ct, &mut scratch.borrow()).unwrap();
-    crate::default::ship::mux::ship_mux_rotate(module, &mut out_id, &group_id, &plans, &mut scratch.borrow()).unwrap();
+    crate::default::ship::mux::ship_mux_rotate(module, &mut out_id, &group_id, &plans, &mut mux_scratch.borrow()).unwrap();
     assert_decrypt_precision(
         "mux_rotate(digit=0)",
         &params,
@@ -378,7 +386,7 @@ where
     let zeros = vec![F::zero(); m];
     let mut out_zero = alloc_ct(&params, module, k);
     module.ckks_copy(&mut out_zero, &ct, &mut scratch.borrow()).unwrap();
-    crate::default::ship::mux::ship_mux_rotate(module, &mut out_zero, &group_zero, &plans, &mut scratch.borrow()).unwrap();
+    crate::default::ship::mux::ship_mux_rotate(module, &mut out_zero, &group_zero, &plans, &mut mux_scratch.borrow()).unwrap();
     assert_decrypt_precision(
         "mux_rotate(empty)",
         &params,

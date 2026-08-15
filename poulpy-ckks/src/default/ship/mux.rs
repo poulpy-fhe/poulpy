@@ -1,9 +1,12 @@
 //! Hoisted base-B mux blind rotation (SHIP §5.1, Algorithm 5).
 
 use crate::{CKKSResult as Result, ckks_ensure};
-use poulpy_core::layouts::{
-    GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-    prepared::{GGLWEPreparedVmpPMatRef, GLWESwitchingKeyPrepared},
+use poulpy_core::{
+    default::keyswitching::glwe::gglwe_product_accumulation_output_size,
+    layouts::{
+        GGLWEInfos, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
+        prepared::{GGLWEPreparedVmpPMatRef, GLWESwitchingKeyPrepared},
+    },
 };
 use poulpy_hal::{
     api::{
@@ -78,7 +81,8 @@ fn ship_switching_key_product<BE>(
             scratch
                 .borrow()
                 .take_vec_znx_dft_scratch(module, cols, ((a_size + di) / dsize).min(dnum));
-        let res_compute_size = res.size() - ((dsize - di) as isize - 2).max(0) as usize;
+        let pad = ((dsize - di) as isize - 2).max(0) as usize;
+        let res_compute_size = res.size().min(pmat.size().saturating_sub(pad));
         let mut res_view = res.with_size_mut(res_compute_size);
         for j in 0..cols {
             module.vec_znx_dft_copy(dsize, dsize - di - 1, &mut ai_dft.to_backend_mut(), j, a, j);
@@ -102,7 +106,7 @@ fn ship_switching_key_product<BE>(
 }
 
 /// Scratch bytes for [`ship_mux_rotate`].
-pub(crate) fn ship_mux_rotate_tmp_bytes<BE, C, K>(module: &Module<BE>, ct: &C, key: &K) -> usize
+pub(crate) fn ship_mux_rotate_tmp_bytes<BE, C, K>(module: &Module<BE>, ct: &C, key: &K, term_count: usize) -> usize
 where
     BE: Backend,
     C: LWEInfos,
@@ -111,17 +115,18 @@ where
 {
     let a_size = ct.size();
     let key_size = key.size();
+    let output_size = gglwe_product_accumulation_output_size::<BE, _, _, _>(ct, ct, key, term_count);
     let dsize = key.dsize().as_usize();
     let dnum: usize = key.dnum().into();
-    let vmp = module.vmp_apply_dft_to_dft_tmp_bytes(key_size, a_size, dnum, 2, 2, key_size);
+    let vmp = module.vmp_apply_dft_to_dft_tmp_bytes(output_size, a_size, dnum, 2, 2, key_size);
     let product = if dsize == 1 {
         vmp
     } else {
-        module.bytes_of_vec_znx_dft(2, a_size.div_ceil(dsize).min(dnum)) + module.bytes_of_vec_znx_dft(2, key_size) + vmp
+        module.bytes_of_vec_znx_dft(2, a_size.div_ceil(dsize).min(dnum)) + module.bytes_of_vec_znx_dft(2, output_size) + vmp
     };
-    let mux = 2 * module.bytes_of_vec_znx_dft(2, key_size) + product;
-    let finalize = module.bytes_of_vec_znx_big(2, key_size) + module.vec_znx_big_normalize_tmp_bytes();
-    module.bytes_of_vec_znx_dft(2, a_size) + module.bytes_of_vec_znx_dft(2, key_size) + mux.max(finalize)
+    let mux = 2 * module.bytes_of_vec_znx_dft(2, output_size) + product;
+    let finalize = module.bytes_of_vec_znx_big(2, output_size) + module.vec_znx_big_normalize_tmp_bytes();
+    module.bytes_of_vec_znx_dft(2, a_size) + module.bytes_of_vec_znx_dft(2, output_size) + mux.max(finalize)
 }
 
 /// Hoisted B-to-1 mux-rotate: `ct <- sum_d beta_d * Rot_{rot_d}(ct)` over the
@@ -153,6 +158,7 @@ where
     ckks_ensure!(!keys.is_empty(), "{OP}: empty key group");
     let a_size = ct.size();
     let key_size = keys[0].key.size();
+    let output_size = gglwe_product_accumulation_output_size::<BE, _, _, _>(ct, ct, &keys[0].key, keys.len());
     let base2k = ct.base2k().as_usize();
     ckks_ensure!(
         keys[0].key.base2k().as_usize() == base2k,
@@ -169,14 +175,14 @@ where
     }
     let a_dft_ref = a_dft.to_backend_ref();
 
-    let (mut sum_dft, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(module, 2, key_size);
+    let (mut sum_dft, mut scratch_2) = scratch_1.take_vec_znx_dft_scratch(module, 2, output_size);
     {
         let mut sum_dft_mut = sum_dft.to_backend_mut();
         for col in 0..2 {
             module.vec_znx_dft_zero(&mut sum_dft_mut, col);
         }
-        let (mut prod_dft, scratch_3) = scratch_2.borrow().take_vec_znx_dft_scratch(module, 2, key_size);
-        let (mut rot_dft, mut scratch_4) = scratch_3.take_vec_znx_dft_scratch(module, 2, key_size);
+        let (mut prod_dft, scratch_3) = scratch_2.borrow().take_vec_znx_dft_scratch(module, 2, output_size);
+        let (mut rot_dft, mut scratch_4) = scratch_3.take_vec_znx_dft_scratch(module, 2, output_size);
         for key in keys {
             ckks_ensure!(key.key.size() == key_size, "{OP}: inconsistent key sizes in group");
             {
@@ -207,7 +213,7 @@ where
         }
     }
 
-    let (mut res_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(module, 2, key_size);
+    let (mut res_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(module, 2, output_size);
     {
         let mut res_big_mut = res_big.to_backend_mut();
         let mut sum_dft_mut = sum_dft.to_backend_mut();

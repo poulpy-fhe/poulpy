@@ -94,7 +94,7 @@ where
     for ik in keys.index_keys() {
         for group in ik.mux_keys() {
             if let Some(mux) = group.first() {
-                bytes = bytes.max(ship_mux_rotate_tmp_bytes(module, &raised, &mux.key));
+                bytes = bytes.max(ship_mux_rotate_tmp_bytes(module, &raised, &mux.key, group.len()));
             }
         }
     }

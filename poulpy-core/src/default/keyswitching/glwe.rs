@@ -213,11 +213,28 @@ fn glwe_keyswitch_dft_fill<'r, BE, M, A>(
 /// Products beyond the input/output precision plus two carry/rounding limbs
 /// contribute at most to the final rounding error, so materializing and
 /// inverse-transforming the rest of the key's guard region is unnecessary.
-pub(crate) fn gglwe_product_output_size<BE, R, A, K>(res_infos: &R, a_infos: &A, key_infos: &K) -> usize
+pub fn gglwe_product_output_size<BE, R, A, K>(res_infos: &R, a_infos: &A, key_infos: &K) -> usize
 where
     BE: Backend,
-    R: GLWEInfos,
-    A: GLWEInfos,
+    R: LWEInfos,
+    A: LWEInfos,
+    K: GGLWEInfos,
+{
+    gglwe_product_accumulation_output_size::<BE, _, _, _>(res_infos, a_infos, key_infos, 1)
+}
+
+/// Number of limbs required when `term_count` GGLWE/VMP products are summed
+/// before a single normalization.
+///
+/// Relative to one product, summing `term_count` values can amplify the
+/// discarded tail by that factor. Exact, same-base backends therefore retain
+/// `ceil(log_B(term_count))` additional radix-`B` limbs. Other backends keep
+/// the complete work region.
+pub fn gglwe_product_accumulation_output_size<BE, R, A, K>(res_infos: &R, a_infos: &A, key_infos: &K, term_count: usize) -> usize
+where
+    BE: Backend,
+    R: LWEInfos,
+    A: LWEInfos,
     K: GGLWEInfos,
 {
     let key_size = key_infos.work_size(a_infos.k());
@@ -225,7 +242,19 @@ where
         && a_infos.base2k() == key_infos.base2k()
         && res_infos.base2k() == key_infos.base2k()
     {
-        key_size.min(a_infos.size().max(res_infos.size()).saturating_add(2))
+        let carry_bits = if term_count <= 1 {
+            0
+        } else {
+            usize::BITS as usize - (term_count - 1).leading_zeros() as usize
+        };
+        let carry_limbs = carry_bits.div_ceil(key_infos.base2k().as_usize());
+        key_size.min(
+            a_infos
+                .size()
+                .max(res_infos.size())
+                .saturating_add(2)
+                .saturating_add(carry_limbs),
+        )
     } else {
         key_size
     }
