@@ -134,6 +134,19 @@ Adds two native CKKS bootstrapping families, **PaCo** (Coron & Seuré, [ePrint 2
 - Add `ckks_paco.rs` and `ckks_ship.rs` with the `impl_ckks_paco_coeff_encoding!` and `impl_ckks_ship_coeff_encoding!` macros, invoked by every backend.
 - Fix `poulpy-cpu-avx512` compiling with `enable-ckks,enable-avx512f` but without `enable-ifma`.
 
+### `poulpy-hal` / `poulpy-core`: fused VMP and rank-one convolution
+
+- Add `VmpApplyDftToDftDigitsStrided`, which applies every gadget digit directly from an interleaved DFT input. The portable default materializes one digit at a time; accelerated backends can fuse the passes while preserving full-destination overwrite semantics for nonzero buffers and `dsize > 2`.
+- Add the `Convolution::cnv_tensor_rank1_dft` backend hook (with scratch sizing and fused-capability queries) for the three rank-one products `(a0b0, a0b1 + a1b0, a1b1)`. The core tensor-product path dispatches to it at the large NTT sizes supported by a backend.
+- Optimize rank-one tensor squaring on compact DFT backends with a direct three-product path, avoiding the coefficient-domain diagonal cache and its associated scratch allocation.
+
+### `poulpy-cpu-avx` / `poulpy-cpu-avx512`: NTT, VMP and convolution optimization
+
+- Pack `NTT3x42Ifma` transform-domain vectors and prepared convolution operands into two `u64` words per coefficient instead of three. The existing packed VMP representation is retained, reducing `VecZnxDft` and `CnvPVecL/R` storage and bandwidth by one third.
+- Fuse multi-digit VMP on `NTT4x30Avx`, `NTT4x30Avx512` and `NTT3x42Ifma`: digit rows are read directly from their interleaved source, matrix data is streamed once per output block, and intermediate digit buffers are removed. The AVX accumulating save is also vectorized.
+- Vectorize packed `NTT3x42Ifma` scalar-vector products, enlarge the cache-resident NTT base case, and fuse the forward NTT stages specialized for `n = 2^15` and `n = 2^16`.
+- Fuse rank-one tensor convolution on the AVX-512 NTT backends, computing all three output columns while the prepared inputs remain resident.
+
 ### `poulpy-hal`: word genericity delivered
 
 - **Breaking:** `VecZnx`, `ScalarZnx` and `MatZnx` lose the `= i64` default on their word parameter. Sizing follows, and `ZnxWord` gains `from_i64` so `FillUniform` and the secret samplers are word-generic. `layouts::encoding` stays bound to `ZnxWord = i64`.
