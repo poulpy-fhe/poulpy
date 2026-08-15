@@ -29,7 +29,10 @@ use poulpy_hal::{
 use crate::{
     GLWEAutomorphism, ScratchArenaTakeCore,
     api::GLWEBytesOf,
-    default::{keyswitching::GGLWEProductDefault, operations::msb_mask_bottom_limb},
+    default::{
+        keyswitching::{GGLWEProductDefault, gglwe_product_output_size},
+        operations::msb_mask_bottom_limb,
+    },
     layouts::{
         GGLWEInfos, GLWEAutomorphismKeyHelper, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, GetGaloisElement, LWEInfos,
         prepared::GGLWEPreparedToBackendRef,
@@ -93,7 +96,7 @@ where
 {
     let cols = a_infos.rank().as_usize() + 1;
     let a_size = a_infos.size();
-    let key_size = key_infos.size();
+    let key_size = gglwe_product_output_size::<BE, _, _, _>(a_infos, a_infos, key_infos);
     let baby = module.glwe_bytes_of_from_infos(a_infos);
     let prepare = module.cnv_prepare_left_tmp_bytes(a_infos.size(), a_infos.size());
 
@@ -225,7 +228,10 @@ pub(super) fn glwe_prepare_linear_transformation_baby_steps<BE, M, A, H, K>(
     let has_nonzero_rotation = cache.values.keys().any(|&rot| rot != 0);
     let (use_hoisted, key_size) = if has_nonzero_rotation {
         let key_infos = keys.automorphism_key_infos();
-        (a.base2k() == key_infos.base2k(), key_infos.work_size(a.k()))
+        (
+            a.base2k() == key_infos.base2k(),
+            gglwe_product_output_size::<BE, _, _, _>(a, a, &key_infos),
+        )
     } else {
         (false, a.size())
     };

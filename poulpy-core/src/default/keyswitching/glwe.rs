@@ -208,19 +208,23 @@ fn glwe_keyswitch_dft_fill<'r, BE, M, A>(
     });
 }
 
-/// Number of limbs whose VMP result can affect a keyswitch output.
+/// Number of limbs whose GGLWE/VMP result can affect an immediately normalized output.
 ///
 /// Products beyond the input/output precision plus two carry/rounding limbs
 /// contribute at most to the final rounding error, so materializing and
 /// inverse-transforming the rest of the key's guard region is unnecessary.
-fn glwe_keyswitch_output_size<R, A, K>(res_infos: &R, a_infos: &A, key_infos: &K, exact_dft: bool) -> usize
+pub(crate) fn gglwe_product_output_size<BE, R, A, K>(res_infos: &R, a_infos: &A, key_infos: &K) -> usize
 where
+    BE: Backend,
     R: GLWEInfos,
     A: GLWEInfos,
     K: GGLWEInfos,
 {
     let key_size = key_infos.work_size(a_infos.k());
-    if exact_dft && a_infos.base2k() == key_infos.base2k() && res_infos.base2k() == key_infos.base2k() {
+    if <<BE as Backend>::DftWord as DftWord>::IS_EXACT
+        && a_infos.base2k() == key_infos.base2k()
+        && res_infos.base2k() == key_infos.base2k()
+    {
         key_size.min(a_infos.size().max(res_infos.size()).saturating_add(2))
     } else {
         key_size
@@ -250,7 +254,7 @@ where
 
     let cols: usize = res_infos.rank().as_usize() + 1;
     let a_cols: usize = a_infos.rank().as_usize() + 1;
-    let output_size = glwe_keyswitch_output_size(res_infos, a_infos, key_infos, <<BE as Backend>::DftWord as DftWord>::IS_EXACT);
+    let output_size = gglwe_product_output_size::<BE, _, _, _>(res_infos, a_infos, key_infos);
     let a_dft_size = a_infos.k().div_ceil(key_infos.base2k()) as usize;
     let lvl_0: usize = module.bytes_of_vec_znx_dft(cols, output_size);
     let lvl_1_big: usize = module.bytes_of_vec_znx_big(cols, output_size);
@@ -329,7 +333,7 @@ where
         module.glwe_keyswitch_tmp_bytes_default(res, a, key)
     );
 
-    let output_size = glwe_keyswitch_output_size(res, a, key, <<BE as Backend>::DftWord as DftWord>::IS_EXACT);
+    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, a, key);
 
     let a_base2k: usize = a.base2k().into();
     let key_base2k: usize = key.base2k().into();
@@ -437,7 +441,7 @@ where
         module.glwe_keyswitch_tmp_bytes_default(res, res, key)
     );
 
-    let output_size = glwe_keyswitch_output_size(res, res, key, <<BE as Backend>::DftWord as DftWord>::IS_EXACT);
+    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, res, key);
 
     let res_base2k: usize = res.base2k().as_usize();
     let key_base2k: usize = key.base2k().as_usize();

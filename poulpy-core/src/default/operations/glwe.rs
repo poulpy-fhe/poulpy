@@ -16,7 +16,7 @@ use poulpy_hal::{
 };
 
 use crate::{
-    default::keyswitching::GGLWEProductDefault,
+    default::keyswitching::{GGLWEProductDefault, gglwe_product_output_size},
     layouts::{
         Base2K, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos,
         prepared::GLWETensorKeyPreparedToBackendRef,
@@ -641,6 +641,7 @@ where
         let pairs: usize = tsk.rank_in().as_usize();
 
         let a_dft_size: usize = (a.size() * a_base2k).div_ceil(key_base2k);
+        let output_size = gglwe_product_output_size::<BE, _, _, _>(res, a, tsk);
 
         let lvl_0: usize = self.bytes_of_vec_znx_dft(pairs, a_dft_size);
 
@@ -649,14 +650,14 @@ where
         } else {
             0
         };
-        let lvl_1_res_dft: usize = self.bytes_of_vec_znx_dft(cols, tsk.size());
-        let lvl_1_gglwe_product: usize = self.gglwe_product_dft_tmp_bytes_default(res.size(), a_dft_size, tsk);
+        let lvl_1_res_dft: usize = self.bytes_of_vec_znx_dft(cols, output_size);
+        let lvl_1_gglwe_product: usize = self.gglwe_product_dft_tmp_bytes_default(output_size, a_dft_size, tsk);
         let lvl_1_post_conv: usize = if res_base2k != key_base2k {
             BE::bytes_of_vec_znx(self.n(), 1, a_dft_size) + self.vec_znx_normalize_tmp_bytes()
         } else {
             0
         };
-        let lvl_1_big_norm: usize = self.bytes_of_vec_znx_big(cols, tsk.size())
+        let lvl_1_big_norm: usize = self.bytes_of_vec_znx_big(cols, output_size)
             + BE::bytes_of_vec_znx(self.n(), 1, res.size())
             + self.vec_znx_big_normalize_tmp_bytes();
         let lvl_1_main: usize = lvl_1_res_dft + lvl_1_gglwe_product.max(lvl_1_post_conv).max(lvl_1_big_norm);
@@ -679,7 +680,7 @@ where
             self.glwe_tensor_relinearize_tmp_bytes_default(res, a, tsk)
         );
 
-        let tsk_size = tsk.work_size(a.k());
+        let output_size = gglwe_product_output_size::<BE, _, _, _>(res, a, tsk);
 
         let a_base2k: usize = a.base2k().into();
         let key_base2k: usize = tsk.base2k().into();
@@ -715,12 +716,12 @@ where
             }
         }
 
-        let (mut res_dft, mut scratch_2) = scratch.borrow().take_vec_znx_dft_scratch(self, cols, tsk_size);
+        let (mut res_dft, mut scratch_2) = scratch.borrow().take_vec_znx_dft_scratch(self, cols, output_size);
         let tsk = tsk.to_backend_ref();
 
         let a_dft_ref = a_dft.to_backend_ref();
         self.gglwe_product_dft_default(&mut res_dft, &a_dft_ref, &tsk.0, &mut scratch_2);
-        let (mut res_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(self, cols, tsk_size);
+        let (mut res_big, mut scratch_3) = scratch_2.take_vec_znx_big_scratch(self, cols, output_size);
         {
             let mut res_big_backend = res_big.to_backend_mut();
             let mut res_dft_backend = res_dft.to_backend_mut();

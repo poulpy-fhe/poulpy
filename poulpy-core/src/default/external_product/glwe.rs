@@ -13,7 +13,7 @@ use poulpy_hal::{
         VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes, VmpApplyDftToDft,
         VmpApplyDftToDftAccumulate, VmpApplyDftToDftTmpBytes,
     },
-    layouts::{Backend, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
+    layouts::{Backend, DftWord, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
 };
 
 use crate::{
@@ -26,6 +26,30 @@ use crate::{
     },
     oep::GLWEExternalProductDefault,
 };
+
+/// Number of limbs whose GGSW external-product result can affect an
+/// immediately normalized output.
+///
+/// This is public so fused higher-level operations which use
+/// [`GLWEExternalProductInternal`] can size their DFT/BIG intermediates with
+/// exactly the same rule as the default external-product implementation.
+pub fn glwe_external_product_output_size<BE, R, A, G>(res_infos: &R, a_infos: &A, ggsw_infos: &G) -> usize
+where
+    BE: Backend,
+    R: GLWEInfos,
+    A: GLWEInfos,
+    G: GGSWInfos,
+{
+    let key_size = ggsw_infos.work_size(a_infos.k());
+    if <<BE as Backend>::DftWord as DftWord>::IS_EXACT
+        && a_infos.base2k() == ggsw_infos.base2k()
+        && res_infos.base2k() == ggsw_infos.base2k()
+    {
+        key_size.min(a_infos.size().max(res_infos.size()).saturating_add(2))
+    } else {
+        key_size
+    }
+}
 
 fn glwe_external_product_dft_fill<BE, M>(
     module: &M,
@@ -82,7 +106,8 @@ fn glwe_external_product_dft_fill<BE, M>(
                 if di == 0 {
                     module.vmp_apply_dft_to_dft(res_dft, &a_dft.to_backend_ref(), &ggsw.data, 0, &mut scratch_1.borrow());
                 } else {
-                    let res_compute_size = res_dft.size() - ((dsize - di) as isize - 2).max(0) as usize;
+                    let pad = ((dsize - di) as isize - 2).max(0) as usize;
+                    let res_compute_size = res_dft.size().min(ggsw.size().saturating_sub(pad));
                     let mut res_view = res_dft.with_size_mut(res_compute_size);
                     module.vmp_apply_dft_to_dft_accumulate(
                         &mut res_view,
@@ -112,7 +137,7 @@ where
         + VecZnxBigNormalize<BE>
         + VecZnxNormalize<BE>,
 {
-    fn glwe_external_product_internal_tmp_bytes<R, A, B>(&self, _res_infos: &R, a_infos: &A, b_infos: &B) -> usize
+    fn glwe_external_product_internal_tmp_bytes<R, A, B>(&self, res_infos: &R, a_infos: &A, b_infos: &B) -> usize
     where
         R: GLWEInfos,
         A: GLWEInfos,
@@ -120,17 +145,17 @@ where
     {
         let align: usize = BE::SCRATCH_ALIGN;
         let in_size: usize = a_infos.k().div_ceil(b_infos.base2k()).div_ceil(b_infos.dsize().into()) as usize;
-        let ggsw_size: usize = b_infos.size();
+        let output_size = glwe_external_product_output_size::<BE, _, _, _>(res_infos, a_infos, b_infos);
         let cols: usize = (b_infos.rank() + 1).into();
         let lvl_0: usize = self.bytes_of_vec_znx_dft(cols, in_size);
         let lvl_1: usize = if b_infos.dsize() > 1 {
-            self.bytes_of_vec_znx_dft(cols, ggsw_size)
+            self.bytes_of_vec_znx_dft(cols, output_size)
         } else {
             0
         };
-        let lvl_2: usize = self.vmp_apply_dft_to_dft_tmp_bytes(ggsw_size, in_size, in_size, cols, cols, ggsw_size);
+        let lvl_2: usize = self.vmp_apply_dft_to_dft_tmp_bytes(output_size, in_size, in_size, cols, cols, b_infos.size());
         let lvl_3: usize =
-            self.bytes_of_vec_znx_big(cols, ggsw_size).next_multiple_of(align) + self.vec_znx_idft_apply_tmp_bytes();
+            self.bytes_of_vec_znx_big(cols, output_size).next_multiple_of(align) + self.vec_znx_idft_apply_tmp_bytes();
         (lvl_0.next_multiple_of(align) + lvl_1.next_multiple_of(align) + lvl_2).max(lvl_3)
     }
 
@@ -192,8 +217,9 @@ where
 {
     let align: usize = BE::SCRATCH_ALIGN;
     let cols: usize = res_infos.rank().as_usize() + 1;
-    let lvl_0: usize = module.bytes_of_vec_znx_dft(cols, ggsw_infos.size());
-    let lvl_1: usize = module.bytes_of_vec_znx_big(cols, ggsw_infos.size()).next_multiple_of(align)
+    let output_size = glwe_external_product_output_size::<BE, _, _, _>(res_infos, a_infos, ggsw_infos);
+    let lvl_0: usize = module.bytes_of_vec_znx_dft(cols, output_size);
+    let lvl_1: usize = module.bytes_of_vec_znx_big(cols, output_size).next_multiple_of(align)
         + module
             .vec_znx_idft_apply_tmp_bytes()
             .max(module.vec_znx_big_normalize_tmp_bytes());
@@ -242,7 +268,7 @@ where
         module.glwe_external_product_tmp_bytes_default(res, a, ggsw)
     );
 
-    let key_size = ggsw.work_size(a.k());
+    let output_size = glwe_external_product_output_size::<BE, _, _, _>(res, a, ggsw);
 
     let a_base2k: usize = a.base2k().into();
     let ggsw_base2k: usize = ggsw.base2k().into();
@@ -250,7 +276,7 @@ where
     let cols: usize = (res.rank() + 1).into();
     let (mut res_dft, scratch_1) = scratch
         .borrow()
-        .take_vec_znx_dft_scratch(module, (res.rank() + 1).into(), key_size);
+        .take_vec_znx_dft_scratch(module, (res.rank() + 1).into(), output_size);
 
     let mut scratch = scratch_1;
     if a_base2k != ggsw_base2k {
@@ -313,13 +339,13 @@ where
         module.glwe_external_product_tmp_bytes_default(res, res, ggsw)
     );
 
-    let key_size = ggsw.work_size(res.k());
+    let output_size = glwe_external_product_output_size::<BE, _, _, _>(res, res, ggsw);
     let res_base2k: usize = res.base2k().as_usize();
     let ggsw_base2k: usize = ggsw.base2k().as_usize();
     let cols: usize = (res.rank() + 1).into();
     let (mut res_dft, scratch_1) = scratch
         .borrow()
-        .take_vec_znx_dft_scratch(module, (res.rank() + 1).into(), key_size);
+        .take_vec_znx_dft_scratch(module, (res.rank() + 1).into(), output_size);
 
     let mut scratch = scratch_1;
     if res_base2k != ggsw_base2k {
