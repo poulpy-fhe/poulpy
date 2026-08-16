@@ -1,36 +1,35 @@
 use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
-use rand::Rng;
 
 use poulpy_hal::{
     api::{
         ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxRotateAssignBackend, VecZnxRotateAssignTmpBytes,
         VecZnxRotateBackend,
     },
-    layouts::{Backend, DataViewMut, Module, ScratchOwned, VecZnx, VecZnxToBackendMut, VecZnxToBackendRef},
+    layouts::{Backend, Module, ScratchOwned},
     source::Source,
 };
 
+use crate::hal::helpers::{random_host_vec_znx, upload_host_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
 use crate::params::HalSweepParms;
 
-pub fn runner_vec_znx_rotate<B: Backend, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
+pub fn runner_vec_znx_rotate<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
     Module<B>: VecZnxRotateBackend<B> + ModuleNew<B>,
-    B::OwnedBuf: AsMut<[u8]>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
 
     let mut source: Source = Source::new([0u8; 32]);
 
-    let mut a = module.vec_znx_alloc(sweep.cols, sweep.size);
-    let mut res = module.vec_znx_alloc(sweep.cols, sweep.size);
-    source.fill_bytes(a.data_mut().as_mut());
-    source.fill_bytes(res.data_mut().as_mut());
+    let a = random_host_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
+    let a = upload_host_vec_znx::<B>(&a);
+    let res = random_host_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
+    let mut res = upload_host_vec_znx::<B>(&res);
 
     bencher.iter(|| {
-        let a = <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendRef<B>>::to_backend_ref(&a);
-        let mut res = <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendMut<B>>::to_backend_mut(&mut res);
+        let a = vec_znx_backend_ref::<B>(&a);
+        let mut res = vec_znx_backend_mut::<B>(&mut res);
         for i in 0..sweep.cols {
             module.vec_znx_rotate_backend(-7, &mut res, i, &a, i);
         }
@@ -38,11 +37,10 @@ where
     });
 }
 
-pub fn runner_vec_znx_rotate_assign<B: Backend, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
+pub fn runner_vec_znx_rotate_assign<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where
     Module<B>: VecZnxRotateAssignBackend<B> + ModuleNew<B> + VecZnxRotateAssignTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
-    B::OwnedBuf: AsMut<[u8]>,
 {
     let module: Module<B> = Module::<B>::new(sweep.n as u64);
 
@@ -50,11 +48,11 @@ where
 
     let mut scratch = ScratchOwned::alloc(module.vec_znx_rotate_assign_tmp_bytes());
 
-    let mut res = module.vec_znx_alloc(sweep.cols, sweep.size);
-    source.fill_bytes(res.data_mut().as_mut());
+    let res = random_host_vec_znx(module.n(), sweep.cols, sweep.size, &mut source);
+    let mut res = upload_host_vec_znx::<B>(&res);
 
     bencher.iter(|| {
-        let mut res = <VecZnx<B::OwnedBuf, B::ZnxWord> as VecZnxToBackendMut<B>>::to_backend_mut(&mut res);
+        let mut res = vec_znx_backend_mut::<B>(&mut res);
         for i in 0..sweep.cols {
             module.vec_znx_rotate_assign_backend(-7, &mut res, i, &mut scratch.borrow());
         }

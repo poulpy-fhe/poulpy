@@ -70,7 +70,6 @@ pub fn random_backend_vec_znx_dft<BE: Backend<ZnxWord = i64>>(
     VecZnxDftOwned::<BE>::from_bytes(n, cols, size, bytes)
 }
 
-#[allow(dead_code)]
 pub fn random_backend_vec_znx_big<BE: Backend<ZnxWord = i64>>(
     n: usize,
     cols: usize,
@@ -163,46 +162,3 @@ pub fn vec_znx_big_backend_ref<'a, BE: Backend<ZnxWord = i64>>(src: &'a VecZnxBi
 pub fn vec_znx_big_backend_mut<'a, BE: Backend<ZnxWord = i64>>(src: &'a mut VecZnxBigOwned<BE>) -> VecZnxBigBackendMut<'a, BE> {
     src.to_backend_mut()
 }
-
-// pub fn upload_host_glwe<BE>(module: &Module<BE>, src: &GLWE<Vec<u8>, i64>) -> GLWE<BE::OwnedBuf, BE::ZnxWord>
-// where
-//     BE: Backend<ZnxWord = i64> + TransferFrom<BenchHostBackend>,
-//     Module<BE>: ModuleTransfer<BE>,
-// {
-//     module.upload_glwe::<BenchHostBackend>(src)
-// }
-
-// pub fn upload_host_lwe<BE>(module: &Module<BE>, src: &LWE<Vec<u8>, i64>) -> LWE<BE::OwnedBuf, BE::ZnxWord>
-// where
-//     BE: Backend<ZnxWord = i64> + TransferFrom<BenchHostBackend>,
-//     Module<BE>: ModuleTransfer<BE>,
-// {
-//     module.upload_lwe::<BenchHostBackend>(src)
-// }
-
-// pub fn upload_host_lwe_secret<BE>(module: &Module<BE>, src: &LWESecret<Vec<u8>, i64>) -> LWESecret<BE::OwnedBuf, BE::ZnxWord>
-// where
-//     BE: Backend<ZnxWord = i64> + TransferFrom<BenchHostBackend>,
-//     Module<BE>: ModuleTransfer<BE>,
-// {
-//     module.upload_lwe_secret::<BenchHostBackend>(src)
-// }
-
-// pub fn upload_host_glwe_plaintext<BE>(
-//     module: &Module<BE>,
-//     src: &GLWEPlaintext<Vec<u8>, i64>,
-// ) -> GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord>
-// where
-//     BE: Backend<ZnxWord = i64> + TransferFrom<BenchHostBackend>,
-//     Module<BE>: ModuleTransfer<BE>,
-// {
-//     module.upload_glwe_plaintext::<BenchHostBackend>(src)
-// }
-
-// pub fn upload_host_ggsw<BE>(module: &Module<BE>, src: &GGSW<Vec<u8>, i64>) -> GGSW<BE::OwnedBuf, BE::ZnxWord>
-// where
-//     BE: Backend<ZnxWord = i64> + TransferFrom<BenchHostBackend>,
-//     Module<BE>: ModuleTransfer<BE>,
-// {
-//     module.upload_ggsw::<BenchHostBackend>(src)
-// }
