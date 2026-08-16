@@ -25,9 +25,9 @@ use criterion::measurement::Measurement;
 use crate::{
     BenchOp,
     hal::{
-        convolution, reim,
+        convolution,
         params::{CnvSweepParms, HalSweepParms, ReimSweepParams, VmpSweepParms},
-        svp, vec_znx, vec_znx_big, vec_znx_dft, vmp,
+        reim, svp, vec_znx, vec_znx_big, vec_znx_dft, vmp,
     },
 };
 

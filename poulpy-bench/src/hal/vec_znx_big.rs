@@ -348,8 +348,10 @@ where
     });
 }
 
-pub fn runner_vec_znx_big_sub_assign<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
-where
+pub fn runner_vec_znx_big_sub_assign<B: Backend<ZnxWord = i64>, M: Measurement>(
+    bencher: &mut Bencher<'_, M>,
+    sweep: &HalSweepParms,
+) where
     Module<B>: VecZnxBigSubAssign<B> + ModuleNew<B> + VecZnxBigAlloc<B>,
     B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
 {

@@ -62,7 +62,8 @@ pub fn runner_glwe_keyswitch<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: 
     let mut ct_out: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(glwe_out);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-        module.glwe_switching_key_encrypt_sk_tmp_bytes(gglwe)
+        module
+            .glwe_switching_key_encrypt_sk_tmp_bytes(gglwe)
             .max(module.glwe_encrypt_sk_tmp_bytes(glwe_in))
             .max(module.glwe_keyswitch_tmp_bytes(glwe_out, glwe_in, gglwe)),
     );

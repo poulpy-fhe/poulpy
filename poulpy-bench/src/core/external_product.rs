@@ -66,7 +66,8 @@ pub fn runner_glwe_external_product<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i6
     let mut ct_glwe_out: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&glwe_infos);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-        module.ggsw_encrypt_sk_tmp_bytes(&ggsw_infos)
+        module
+            .ggsw_encrypt_sk_tmp_bytes(&ggsw_infos)
             .max(module.glwe_encrypt_sk_tmp_bytes(&glwe_infos))
             .max(module.glwe_external_product_tmp_bytes(&glwe_infos, &glwe_infos, &ggsw_infos)),
     );
@@ -142,7 +143,8 @@ pub fn runner_glwe_external_product_assign<BE: Backend<OwnedBuf = Vec<u8>, ZnxWo
     let mut ct_glwe: GLWE<Vec<u8>, i64> = module.glwe_alloc_from_infos(&infos);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-        module.ggsw_encrypt_sk_tmp_bytes(&infos)
+        module
+            .ggsw_encrypt_sk_tmp_bytes(&infos)
             .max(module.glwe_encrypt_sk_tmp_bytes(&infos))
             .max(module.glwe_external_product_tmp_bytes(&infos, &infos, &infos)),
     );

@@ -19,8 +19,8 @@ use poulpy_bench::schemes::params::{
 };
 use poulpy_bin_fhe::blind_rotation::CGGI;
 
-type NTT = poulpy_cpu_ref::NTT4x30Ref;
-type FFT = poulpy_cpu_ref::FFT64Ref;
+type Ntt = poulpy_cpu_ref::NTT4x30Ref;
+type Fft = poulpy_cpu_ref::FFT64Ref;
 
 // ── Layer 1: HAL – full suite (every op family) ───────────────────────────────
 
@@ -31,50 +31,50 @@ fn hal(c: &mut Criterion) {
     };
 
     bench_ops(
-        &all_vec_znx_ops::<NTT, WallTime>(),
+        &all_vec_znx_ops::<Ntt, WallTime>(),
         default_bench_params_hal().as_slice(),
         "NTT4x30Ref/hal",
         c,
     );
     bench_ops(
-        &svp_ops::<NTT, WallTime>(),
+        &svp_ops::<Ntt, WallTime>(),
         default_bench_params_hal().as_slice(),
         "NTT4x30Ref/hal",
         c,
     );
     bench_ops(
-        &vmp_ops::<NTT, WallTime>(),
+        &vmp_ops::<Ntt, WallTime>(),
         default_bench_params_vmp().as_slice(),
         "NTT4x30Ref/hal",
         c,
     );
     bench_ops(
-        &convolution_ops::<NTT, WallTime>(),
+        &convolution_ops::<Ntt, WallTime>(),
         default_bench_params_cnv().as_slice(),
         "NTT4x30Ref/hal",
         c,
     );
 
     bench_ops(
-        &all_vec_znx_ops::<FFT, WallTime>(),
+        &all_vec_znx_ops::<Fft, WallTime>(),
         default_bench_params_hal().as_slice(),
         "FFT64Ref/hal",
         c,
     );
     bench_ops(
-        &svp_ops::<FFT, WallTime>(),
+        &svp_ops::<Fft, WallTime>(),
         default_bench_params_hal().as_slice(),
         "FFT64Ref/hal",
         c,
     );
     bench_ops(
-        &vmp_ops::<FFT, WallTime>(),
+        &vmp_ops::<Fft, WallTime>(),
         default_bench_params_vmp().as_slice(),
         "FFT64Ref/hal",
         c,
     );
     bench_ops(
-        &convolution_ops::<FFT, WallTime>(),
+        &convolution_ops::<Fft, WallTime>(),
         default_bench_params_cnv().as_slice(),
         "FFT64Ref/hal",
         c,
@@ -86,13 +86,13 @@ fn core(c: &mut Criterion) {
     use poulpy_bench::{bench_ops, core::suites::all_ops};
 
     bench_ops(
-        &all_ops::<NTT, WallTime>(),
+        &all_ops::<Ntt, WallTime>(),
         default_bench_params_core().as_slice(),
         "NTT4x30Ref/core",
         c,
     );
     bench_ops(
-        &all_ops::<FFT, WallTime>(),
+        &all_ops::<Fft, WallTime>(),
         default_bench_params_core().as_slice(),
         "FFT64Ref/core",
         c,
@@ -105,7 +105,7 @@ fn ckks(c: &mut Criterion) {
     use poulpy_bench::{bench_ops, schemes::suites::all_ops};
 
     bench_ops(
-        &all_ops::<NTT, WallTime>(),
+        &all_ops::<Ntt, WallTime>(),
         default_bench_params_ckks().as_slice(),
         "NTT4x30Ref/ckks",
         c,
@@ -115,8 +115,13 @@ fn ckks(c: &mut Criterion) {
 fn bin_fhe(c: &mut Criterion) {
     use poulpy_bench::{bench_ops, schemes::suites::bin_fhe_standard_ops};
 
-    let (blind_rotate_ops, circuit_bootstrapping_ops) = bin_fhe_standard_ops::<FFT, CGGI, WallTime>();
-    bench_ops(&blind_rotate_ops, &[default_bench_params_blind_rotate()], "FFT64Ref/bin_fhe", c);
+    let (blind_rotate_ops, circuit_bootstrapping_ops) = bin_fhe_standard_ops::<Fft, CGGI, WallTime>();
+    bench_ops(
+        &blind_rotate_ops,
+        &[default_bench_params_blind_rotate()],
+        "FFT64Ref/bin_fhe",
+        c,
+    );
     bench_ops(
         &circuit_bootstrapping_ops,
         &[default_bench_params_circuit_bootstrapping()],

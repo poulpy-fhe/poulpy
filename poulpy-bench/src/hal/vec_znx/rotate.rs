@@ -37,8 +37,10 @@ where
     });
 }
 
-pub fn runner_vec_znx_rotate_assign<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
-where
+pub fn runner_vec_znx_rotate_assign<B: Backend<ZnxWord = i64>, M: Measurement>(
+    bencher: &mut Bencher<'_, M>,
+    sweep: &HalSweepParms,
+) where
     Module<B>: VecZnxRotateAssignBackend<B> + ModuleNew<B> + VecZnxRotateAssignTmpBytes,
     ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
 {
