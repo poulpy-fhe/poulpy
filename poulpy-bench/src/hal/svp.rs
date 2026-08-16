@@ -15,7 +15,7 @@ use crate::hal::helpers::{
     random_backend_svp_ppol, random_backend_vec_znx_dft, random_host_scalar_znx, random_host_vec_znx, scalar_znx_backend_ref,
     upload_host_scalar_znx, upload_host_vec_znx, vec_znx_backend_ref,
 };
-use crate::params::HalSweepParms;
+use crate::hal::params::HalSweepParms;
 
 pub fn runner_svp_prepare<B, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where

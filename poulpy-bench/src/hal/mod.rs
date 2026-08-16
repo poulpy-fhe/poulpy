@@ -1,5 +1,6 @@
 pub mod convolution;
 mod helpers;
+pub mod params;
 pub mod reim;
 pub mod suites;
 pub mod svp;

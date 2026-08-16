@@ -14,7 +14,7 @@ use poulpy_hal::{
 use crate::hal::helpers::{
     random_backend_cnv_pvec_left, random_backend_cnv_pvec_right, random_host_vec_znx, upload_host_vec_znx, vec_znx_backend_ref,
 };
-use crate::params::CnvSweepParms;
+use crate::hal::params::CnvSweepParms;
 
 pub fn runner_cnv_prepare_left<BE, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &CnvSweepParms)
 where

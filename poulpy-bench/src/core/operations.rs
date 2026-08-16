@@ -11,7 +11,7 @@ use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
 
-use crate::params::CoreParams;
+use crate::core::params::CoreParams;
 
 fn glwe_layout(cp: &CoreParams) -> GLWELayout {
     GLWELayout {

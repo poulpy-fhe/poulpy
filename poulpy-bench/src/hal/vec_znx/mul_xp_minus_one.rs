@@ -12,7 +12,7 @@ use poulpy_hal::{
 };
 
 use crate::hal::helpers::{random_host_vec_znx, upload_host_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref};
-use crate::params::HalSweepParms;
+use crate::hal::params::HalSweepParms;
 
 pub fn runner_vec_znx_mul_xp_minus_one<B: Backend<ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,

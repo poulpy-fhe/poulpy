@@ -16,7 +16,7 @@ use crate::hal::helpers::{
     random_backend_vec_znx_dft, random_host_vec_znx, upload_host_vec_znx, vec_znx_backend_ref, vec_znx_big_backend_mut,
     vec_znx_dft_backend_mut, vec_znx_dft_backend_ref,
 };
-use crate::params::HalSweepParms;
+use crate::hal::params::HalSweepParms;
 
 pub fn runner_vec_znx_dft_add_into<B: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &HalSweepParms)
 where

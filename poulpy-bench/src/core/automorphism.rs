@@ -15,7 +15,7 @@ use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
 
-use crate::params::{CoreParams, key_dnum_k_aux};
+use crate::core::params::{CoreParams, key_dnum_k_aux};
 
 /// Benchmarks the GLWE automorphism operation with a fixed Galois element (`X -> X^3`).
 pub fn runner_glwe_automorphism<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(

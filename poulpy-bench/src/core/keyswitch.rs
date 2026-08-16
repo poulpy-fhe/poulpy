@@ -16,7 +16,7 @@ use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
 
-use crate::params::{CoreParams, key_dnum_k_aux};
+use crate::core::params::{CoreParams, key_dnum_k_aux};
 
 pub fn runner_glwe_keyswitch<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,

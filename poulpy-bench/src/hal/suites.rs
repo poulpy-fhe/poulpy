@@ -24,8 +24,11 @@ use criterion::measurement::Measurement;
 
 use crate::{
     BenchOp,
-    hal::{convolution, reim, svp, vec_znx, vec_znx_big, vec_znx_dft, vmp},
-    params::{CnvSweepParms, HalSweepParms, ReimSweepParams, VmpSweepParms},
+    hal::{
+        convolution, reim,
+        params::{CnvSweepParms, HalSweepParms, ReimSweepParams, VmpSweepParms},
+        svp, vec_znx, vec_znx_big, vec_znx_dft, vmp,
+    },
 };
 
 // Op tables for each HAL capability group. Each function returns the raw

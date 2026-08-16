@@ -16,8 +16,7 @@ use poulpy_hal::{
 
 use crate::{
     BenchOp,
-    core::{automorphism, decryption, encryption, external_product, glwe_tensor, keyswitch, operations},
-    params::CoreParams,
+    core::{automorphism, decryption, encryption, external_product, glwe_tensor, keyswitch, operations, params::CoreParams},
 };
 
 // Op tables for each core capability group. Each function returns the raw

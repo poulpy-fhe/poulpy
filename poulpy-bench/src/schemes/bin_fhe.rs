@@ -28,7 +28,7 @@ use poulpy_bin_fhe::{
     },
 };
 
-use crate::params::{BlindRotateBenchParams, CircuitBootstrappingBenchParam};
+use crate::schemes::params::{BlindRotateBenchParams, CircuitBootstrappingBenchParam};
 
 pub fn runner_blind_rotate<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, BRA: BlindRotationAlgo, M: Measurement>(
     bencher: &mut Bencher<'_, M>,

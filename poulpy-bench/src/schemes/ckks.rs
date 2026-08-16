@@ -1,6 +1,6 @@
 use std::{collections::HashMap, hint::black_box};
 
-use crate::params::CkksBenchParams;
+use crate::schemes::params::CkksBenchParams;
 use criterion::{Bencher, measurement::Measurement};
 use poulpy_ckks::{
     CKKSMeta, SetCKKSInfos,
@@ -41,7 +41,7 @@ fn ckks_ct_meta(cp: &CkksBenchParams) -> CKKSMeta {
 }
 
 fn mul_tsk_layout(p: &CkksBenchParams) -> GLWETensorKeyLayout {
-    let (dnum, k_aux) = crate::params::key_dnum_k_aux((p.k + p.dsize * p.base2k) as u32, p.base2k as u32, p.dsize as u32);
+    let (dnum, k_aux) = crate::core::params::key_dnum_k_aux((p.k + p.dsize * p.base2k) as u32, p.base2k as u32, p.dsize as u32);
     GLWETensorKeyLayout {
         n: Degree(p.n as u32),
         base2k: Base2K(p.base2k as u32),
@@ -53,7 +53,7 @@ fn mul_tsk_layout(p: &CkksBenchParams) -> GLWETensorKeyLayout {
 }
 
 fn atk_layout(cp: &CkksBenchParams) -> EncryptionLayout<GLWEAutomorphismKeyLayout> {
-    let (dnum, k_aux) = crate::params::key_dnum_k_aux((cp.k + cp.dsize * cp.base2k) as u32, cp.base2k as u32, cp.dsize as u32);
+    let (dnum, k_aux) = crate::core::params::key_dnum_k_aux((cp.k + cp.dsize * cp.base2k) as u32, cp.base2k as u32, cp.dsize as u32);
     EncryptionLayout::new_from_default_sigma(GLWEAutomorphismKeyLayout {
         n: Degree(cp.n as u32),
         base2k: Base2K(cp.base2k as u32),

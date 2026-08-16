@@ -31,7 +31,8 @@
 //!
 //! # Params
 //!
-//! [`params`] holds the sweep-parameter structs each layer's runners take
+//! Each layer has its own `params` module (`hal::params`, `core::params`,
+//! `schemes::params`) holding the sweep-parameter structs its runners take
 //! (`HalSweepParms`, `CoreParams`, `CkksBenchParams`, ...) plus
 //! `default_bench_params_*` functions giving every backend the same
 //! reasonable default sweep, so results can be comparable across backends.
@@ -44,7 +45,6 @@
 
 pub mod core;
 pub mod hal;
-pub mod params;
 pub mod schemes;
 
 use std::fmt::Display;

@@ -4,7 +4,7 @@ use criterion::{Bencher, measurement::Measurement};
 
 use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
 
-use crate::params::ReimSweepParams;
+use crate::hal::params::ReimSweepParams;
 
 fn reim_values(m: usize) -> Vec<f64> {
     let mut values: Vec<f64> = vec![0f64; m << 1];

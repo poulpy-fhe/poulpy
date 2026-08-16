@@ -14,7 +14,7 @@ use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
 
-use crate::params::CoreParams;
+use crate::core::params::CoreParams;
 
 pub fn runner_glwe_decrypt<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend, M: Measurement>(
     bencher: &mut Bencher<'_, M>,

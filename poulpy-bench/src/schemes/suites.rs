@@ -23,8 +23,10 @@ use poulpy_hal::{
 
 use crate::{
     BenchOp,
-    params::{BlindRotateBenchParams, CircuitBootstrappingBenchParam, CkksBenchParams},
-    schemes::{bin_fhe, ckks},
+    schemes::{
+        bin_fhe, ckks,
+        params::{BlindRotateBenchParams, CircuitBootstrappingBenchParam, CkksBenchParams},
+    },
 };
 
 // Op tables for each CKKS capability group, one per `poulpy-ckks` API trait.

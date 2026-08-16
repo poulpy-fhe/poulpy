@@ -18,7 +18,7 @@ use crate::hal::helpers::{
     mat_znx_backend_ref, random_backend_vec_znx_dft, random_backend_vmp_pmat, random_host_mat_znx, random_host_vec_znx,
     upload_host_mat_znx, upload_host_vec_znx, vec_znx_backend_ref, vec_znx_dft_backend_ref,
 };
-use crate::params::VmpSweepParms;
+use crate::hal::params::VmpSweepParms;
 
 pub fn runner_vmp_prepare<B, M: Measurement>(bencher: &mut Bencher<'_, M>, sweep: &VmpSweepParms)
 where

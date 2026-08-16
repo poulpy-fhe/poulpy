@@ -23,7 +23,7 @@ use poulpy_hal::{
     },
 };
 
-use crate::params::{CoreParams, key_dnum_k_aux};
+use crate::core::params::{CoreParams, key_dnum_k_aux};
 
 #[inline]
 fn msb_mask_bottom_limb(base2k: usize, k: usize) -> i64 {
