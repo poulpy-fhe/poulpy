@@ -67,8 +67,8 @@ pub fn runner_glwe_automorphism<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, 
     let mut atk: GLWEAutomorphismKey<Vec<u8>, i64> = module.glwe_automorphism_key_alloc_from_infos(&atk_infos);
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module.glwe_automorphism_key_encrypt_sk_tmp_bytes(&atk_infos)
-            | module.glwe_encrypt_sk_tmp_bytes(&glwe_infos)
-            | module.glwe_automorphism_tmp_bytes(&glwe_infos, &glwe_infos, &atk_infos),
+            .max(module.glwe_encrypt_sk_tmp_bytes(&glwe_infos))
+            .max(module.glwe_automorphism_tmp_bytes(&glwe_infos, &glwe_infos, &atk_infos)),
     );
 
     let atk_enc_infos = NoiseInfos::new(atk_infos.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();

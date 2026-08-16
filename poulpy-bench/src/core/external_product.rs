@@ -67,8 +67,8 @@ pub fn runner_glwe_external_product<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i6
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module.ggsw_encrypt_sk_tmp_bytes(&ggsw_infos)
-            | module.glwe_encrypt_sk_tmp_bytes(&glwe_infos)
-            | module.glwe_external_product_tmp_bytes(&glwe_infos, &glwe_infos, &ggsw_infos),
+            .max(module.glwe_encrypt_sk_tmp_bytes(&glwe_infos))
+            .max(module.glwe_external_product_tmp_bytes(&glwe_infos, &glwe_infos, &ggsw_infos)),
     );
 
     let ggsw_enc_infos = NoiseInfos::new(ggsw_infos.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
@@ -143,8 +143,8 @@ pub fn runner_glwe_external_product_assign<BE: Backend<OwnedBuf = Vec<u8>, ZnxWo
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module.ggsw_encrypt_sk_tmp_bytes(&infos)
-            | module.glwe_encrypt_sk_tmp_bytes(&infos)
-            | module.glwe_external_product_tmp_bytes(&infos, &infos, &infos),
+            .max(module.glwe_encrypt_sk_tmp_bytes(&infos))
+            .max(module.glwe_external_product_tmp_bytes(&infos, &infos, &infos)),
     );
 
     let enc_infos = NoiseInfos::new(infos.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();

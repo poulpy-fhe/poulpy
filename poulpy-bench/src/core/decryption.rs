@@ -48,7 +48,7 @@ pub fn runner_glwe_decrypt<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + Host
     let mut pt: GLWEPlaintext<Vec<u8>, i64> = module.glwe_plaintext_alloc_from_infos(&infos);
 
     let mut scratch: ScratchOwned<BE> =
-        ScratchOwned::alloc(module.glwe_encrypt_sk_tmp_bytes(&infos) | module.glwe_decrypt_tmp_bytes(&infos));
+        ScratchOwned::alloc(module.glwe_encrypt_sk_tmp_bytes(&infos).max(module.glwe_decrypt_tmp_bytes(&infos)));
 
     let enc_infos = NoiseInfos::new(infos.k().as_usize(), DEFAULT_SIGMA_XE, DEFAULT_BOUND_XE).unwrap();
     module.glwe_encrypt_zero_sk(
