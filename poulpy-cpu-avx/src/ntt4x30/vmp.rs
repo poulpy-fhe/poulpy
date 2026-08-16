@@ -156,6 +156,7 @@ unsafe fn extract_blk_pair_prime_major_strided_avx2(
     cols: usize,
     limb_base: usize,
     limb_step: usize,
+    row_start: usize,
     dst: &mut [u64],
 ) {
     debug_assert!(n.is_multiple_of(4));
@@ -163,9 +164,11 @@ unsafe fn extract_blk_pair_prime_major_strided_avx2(
 
     let plane_stride = 4 * row_max;
     let coeff_base = 16 * blk_pair;
-    let mut col = 0usize;
-    let mut flat = limb_base * cols;
     for row in 0..row_max {
+        let logical_row = row_start + row;
+        let col = logical_row % cols;
+        let digit = logical_row / cols;
+        let flat = (limb_base + digit * limb_step) * cols + col;
         let row_base = flat * 4 * n + coeff_base;
         for p in 0..4usize {
             let dst_ptr = unsafe { dst.as_mut_ptr().add(p * plane_stride + row * 4) as *mut __m256i };
@@ -176,13 +179,6 @@ unsafe fn extract_blk_pair_prime_major_strided_avx2(
                 src[row_base + p] as i64,
             );
             unsafe { _mm256_storeu_si256(dst_ptr, plane) };
-        }
-
-        col += 1;
-        flat += 1;
-        if col == cols {
-            col = 0;
-            flat += (limb_step - 1) * cols;
         }
     }
 }
@@ -248,10 +244,16 @@ unsafe fn vmp_apply_core_avx_pm<const OVERWRITE: bool>(
     let res_size = res_u64.len() / (4 * n);
     let n_block_pairs = n / 4;
 
-    let row_max = nrows.min(a_size);
+    let row_end = nrows.min(a_size);
+    let row_start = a_u64
+        .chunks_exact(4 * n)
+        .take(row_end)
+        .take_while(|row| row.iter().all(|&x| x == 0))
+        .count();
+    let row_max = row_end - row_start;
     let col_max = ncols.min(res_size + limb_offset);
 
-    if limb_offset >= col_max {
+    if limb_offset >= col_max || row_max == 0 {
         if OVERWRITE {
             res_u64.fill(0);
         }
@@ -263,13 +265,14 @@ unsafe fn vmp_apply_core_avx_pm<const OVERWRITE: bool>(
     let plane_stride = n_block_pairs * ncols * nrows * 4;
     let bp_stride = ncols * nrows * 4;
     let col_stride = nrows * 4;
+    let a_u64 = &a_u64[row_start * 4 * n..];
 
     for bp in 0..n_block_pairs {
         unsafe { extract_blk_pair_prime_major_avx2(n, row_max, bp, a_u64, x_pm) };
 
         for col_pmat in limb_offset..col_max {
             let col_res = col_pmat - limb_offset;
-            let y_off = bp * bp_stride + col_pmat * col_stride;
+            let y_off = bp * bp_stride + col_pmat * col_stride + row_start * 4;
 
             unsafe {
                 vec_mat1col_product_blkpair_bbc_pm_avx2(meta, row_max, blkpair_output, x_pm, &pmat_u64[y_off..], plane_stride)
@@ -399,12 +402,16 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
     let a_size = a.size();
     let dnum = pmat.rows();
     let meta = module.get_bbc_meta();
+    let a_u64: &[u64] = cast_slice(a.raw());
+    let res_u64: &mut [u64] = cast_slice_mut(res.raw_mut());
+    let pmat_u64: &[u64] = cast_slice(pmat.raw());
 
     let plane_stride = n_block_pairs * ncols * nrows * 4;
     let bp_stride = ncols * nrows * 4;
     let col_stride = nrows * 4;
 
     let mut row_maxs = Vec::with_capacity(dsize);
+    let mut row_starts = Vec::with_capacity(dsize);
     let mut limb_offsets = Vec::with_capacity(dsize);
     let mut col_maxs = Vec::with_capacity(dsize);
     for di in 0..dsize {
@@ -424,17 +431,27 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
         };
         let res_size_di = res_cols * active_size;
         let limb_offset = di * cols_out;
-        row_maxs.push((a_cols * digit_limbs).min(nrows));
+        let row_end = (a_cols * digit_limbs).min(nrows);
+        let limb_base = dsize - 1 - di;
+        let row_start = (0..row_end)
+            .take_while(|&row| {
+                let flat = (limb_base + (row / a_cols) * dsize) * a_cols + row % a_cols;
+                a_u64[flat * 4 * n..(flat + 1) * 4 * n].iter().all(|&x| x == 0)
+            })
+            .count();
+        row_starts.push(row_start);
+        row_maxs.push(row_end - row_start);
         limb_offsets.push(limb_offset);
         col_maxs.push(ncols.min(res_size_di + limb_offset));
     }
 
-    let a_u64: &[u64] = cast_slice(a.raw());
-    let res_u64: &mut [u64] = cast_slice_mut(res.raw_mut());
-    let pmat_u64: &[u64] = cast_slice(pmat.raw());
     let res_flat = res_cols * output_size;
-    for col in col_maxs[0]..res_flat {
-        res_u64[col * 4 * n..(col + 1) * 4 * n].fill(0);
+    if row_maxs[0] == 0 {
+        res_u64.fill(0);
+    } else {
+        for col in col_maxs[0]..res_flat {
+            res_u64[col * 4 * n..(col + 1) * 4 * n].fill(0);
+        }
     }
 
     let (blkpair_output, x_pm) = tmp.split_at_mut(16);
@@ -446,14 +463,18 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
                 continue;
             }
             let row_max = row_maxs[di];
+            if row_max == 0 {
+                continue;
+            }
+            let row_start = row_starts[di];
             let x_pm = &mut x_pm[..16 * row_max];
             unsafe {
-                extract_blk_pair_prime_major_strided_avx2(n, row_max, bp, a_u64, a_cols, dsize - 1 - di, dsize, x_pm);
+                extract_blk_pair_prime_major_strided_avx2(n, row_max, bp, a_u64, a_cols, dsize - 1 - di, dsize, row_start, x_pm);
             }
 
             for col_pmat in limb_offset..col_max {
                 let col_res = col_pmat - limb_offset;
-                let y_off = bp * bp_stride + col_pmat * col_stride;
+                let y_off = bp * bp_stride + col_pmat * col_stride + row_start * 4;
                 unsafe {
                     vec_mat1col_product_blkpair_bbc_pm_avx2(
                         meta,
@@ -529,7 +550,9 @@ mod tests {
                     let mut expected = vec![0u64; 16 * row_max];
                     let mut got = vec![0u64; 16 * row_max];
                     unsafe { extract_blk_pair_prime_major_avx2(n, row_max, bp, &materialized, &mut expected) };
-                    unsafe { extract_blk_pair_prime_major_strided_avx2(n, row_max, bp, &src, cols, limb_base, dsize, &mut got) };
+                    unsafe {
+                        extract_blk_pair_prime_major_strided_avx2(n, row_max, bp, &src, cols, limb_base, dsize, 0, &mut got)
+                    };
                     assert_eq!(
                         got, expected,
                         "n={n}, cols={cols}, dsize={dsize}, a_size={a_size}, di={di}, bp={bp}"

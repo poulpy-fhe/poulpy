@@ -20,8 +20,8 @@ use crate::{
 };
 
 use crate::layouts::VecZnxBigOwned;
-use crate::layouts::VecZnxDftOwned;
 use crate::layouts::VmpPMatOwned;
+use crate::layouts::{VecZnxDft, VecZnxDftOwned};
 
 fn idft_into_alloc<BE>(module: &Module<BE>, a: &mut VecZnxDftOwned<BE>) -> VecZnxBigOwned<BE>
 where
@@ -48,6 +48,7 @@ where
     Module<BE>: VecZnxDftAlloc<BE>
         + VecZnxDftApply<BE>
         + VecZnxDftCopy<BE>
+        + VecZnxDftZero<BE>
         + VmpApplyDftToDft<BE>
         + VmpApplyDftToDftAccumulate<BE>
         + VmpApplyDftToDftDigitsStrided<BE>
@@ -67,7 +68,12 @@ where
         (3, 2, 1, 8),
     ];
 
-    for (dsize, cols_in, cols_out, a_size) in cases {
+    for (dsize, cols_in, cols_out, a_size, sparse) in cases.into_iter().flat_map(|(dsize, cols_in, cols_out, a_size)| {
+        [
+            (dsize, cols_in, cols_out, a_size, false),
+            (dsize, cols_in, cols_out, a_size, true),
+        ]
+    }) {
         let rows = a_size.div_ceil(dsize);
         let size_out = a_size;
         let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
@@ -88,6 +94,16 @@ where
                 &VecZnxToBackendRef::<BE>::to_backend_ref(&a),
                 col,
             );
+        }
+        if sparse && a_size > 1 {
+            let prefix_size = a_size - 1;
+            let n = a_dft.n();
+            let len = BE::bytes_of_vec_znx_dft(n, cols_in, prefix_size);
+            let data = BE::region_mut(&mut a_dft.data, 0, len);
+            let mut prefix = VecZnxDft::from_data(data, n, cols_in, prefix_size);
+            for col in 0..cols_in {
+                module.vec_znx_dft_zero(&mut prefix, col);
+            }
         }
 
         let mut mat = module.mat_znx_alloc(rows, cols_in, cols_out, size_out);
@@ -305,6 +321,7 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
         + VecZnxIdftApplyTmpA<BR>
         + VecZnxBigNormalize<BR>
         + VecZnxDftApply<BR>
+        + VecZnxDftZero<BR>
         + VmpPrepareTmpBytes
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BR>: ScratchOwnedAlloc<BR>,
@@ -318,6 +335,7 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
         + VecZnxIdftApplyTmpA<BT>
         + VecZnxBigNormalize<BT>
         + VecZnxDftApply<BT>
+        + VecZnxDftZero<BT>
         + VmpPrepareTmpBytes
         + VecZnxBigNormalizeTmpBytes,
     ScratchOwned<BT>: ScratchOwnedAlloc<BT>,
@@ -375,6 +393,20 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                             &vec_znx_backend_ref::<BT>(&a_test_backend),
                             j,
                         );
+                    }
+                    if cols_in == 1 && cols_out == 1 && size_in == max_size && size_out == max_size {
+                        let prefix_size = size_in - 1;
+                        let n_ref = a_dft_ref.n();
+                        let len_ref = BR::bytes_of_vec_znx_dft(n_ref, cols_in, prefix_size);
+                        let data_ref = BR::region_mut(&mut a_dft_ref.data, 0, len_ref);
+                        let mut prefix_ref = VecZnxDft::from_data(data_ref, n_ref, cols_in, prefix_size);
+                        module_ref.vec_znx_dft_zero(&mut prefix_ref, 0);
+
+                        let n_test = a_dft_test.n();
+                        let len_test = BT::bytes_of_vec_znx_dft(n_test, cols_in, prefix_size);
+                        let data_test = BT::region_mut(&mut a_dft_test.data, 0, len_test);
+                        let mut prefix_test = VecZnxDft::from_data(data_test, n_test, cols_in, prefix_size);
+                        module_test.vec_znx_dft_zero(&mut prefix_test, 0);
                     }
 
                     assert_eq!(a.digest_u64(), a_digest);

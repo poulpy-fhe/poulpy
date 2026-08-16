@@ -262,8 +262,14 @@ impl<BE: Backend> BootstrappingDefault<'_, BE> {
         match keys.encapsulation_keys() {
             Some((dense_to_sparse, sparse_to_dense)) => {
                 self.glwe_keyswitch_assign(src, dense_to_sparse, scratch);
+                let modulus_raise = dst.k().as_usize() - src.k().as_usize();
+                let base2k = dst.base2k().as_usize();
                 self.ckks_mod_up_into_default(dst, src, scratch)?;
-                self.glwe_keyswitch_assign(dst, sparse_to_dense, scratch);
+                if modulus_raise.is_multiple_of(base2k) {
+                    self.glwe_keyswitch_modup_assign(dst, sparse_to_dense, modulus_raise / base2k, scratch);
+                } else {
+                    self.glwe_keyswitch_assign(dst, sparse_to_dense, scratch);
+                }
             }
             None => self.ckks_mod_up_into_default(dst, src, scratch)?,
         }

@@ -25,6 +25,16 @@ pub trait GLWEKeyswitch<BE: Backend> {
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
+
+    fn glwe_keyswitch_modup_assign<R, K>(
+        &self,
+        res: &mut R,
+        key: &K,
+        leading_zero_limbs: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 }
 
 pub trait GGLWEKeyswitch<BE: Backend> {

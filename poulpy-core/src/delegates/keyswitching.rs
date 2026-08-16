@@ -49,6 +49,19 @@ impl_keyswitching_delegate!(
     {
         BE::glwe_keyswitch_assign(self, res, key, scratch)
     }
+
+    fn glwe_keyswitch_modup_assign<R, K>(
+        &self,
+        res: &mut R,
+        key: &K,
+        leading_zero_limbs: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        BE::glwe_keyswitch_modup_assign(self, res, key, leading_zero_limbs, scratch)
+    }
 );
 
 impl_keyswitching_delegate!(

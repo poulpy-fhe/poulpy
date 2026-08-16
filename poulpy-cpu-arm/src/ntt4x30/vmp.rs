@@ -174,10 +174,16 @@ fn vmp_apply_core_neon_pm<const OVERWRITE: bool>(
     let res_size = res_u64.len() / (4 * n);
     let n_block_pairs = n / 4;
 
-    let row_max = nrows.min(a_size);
+    let row_end = nrows.min(a_size);
+    let row_start = a_u64
+        .chunks_exact(4 * n)
+        .take(row_end)
+        .take_while(|row| row.iter().all(|&x| x == 0))
+        .count();
+    let row_max = row_end - row_start;
     let col_max = ncols.min(res_size + limb_offset);
 
-    if limb_offset >= col_max {
+    if limb_offset >= col_max || row_max == 0 {
         if OVERWRITE {
             res_u64.fill(0);
         }
@@ -189,13 +195,14 @@ fn vmp_apply_core_neon_pm<const OVERWRITE: bool>(
     let plane_stride = n_block_pairs * ncols * nrows * 4;
     let bp_stride = ncols * nrows * 4;
     let col_stride = nrows * 4;
+    let a_u64 = &a_u64[row_start * 4 * n..];
 
     for bp in 0..n_block_pairs {
         extract_blk_pair_prime_major_neon(n, row_max, bp, a_u64, x_pm);
 
         for col_pmat in limb_offset..col_max {
             let col_res = col_pmat - limb_offset;
-            let y_off = bp * bp_stride + col_pmat * col_stride;
+            let y_off = bp * bp_stride + col_pmat * col_stride + row_start * 4;
 
             unsafe {
                 vec_mat1col_product_blkpair_bbc_pm_neon(meta, row_max, blkpair_output, x_pm, &pmat_u64[y_off..], plane_stride)

@@ -31,6 +31,16 @@ pub unsafe trait GLWEKeyswitchImpl<BE: Backend>: Backend {
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
+
+    fn glwe_keyswitch_modup_assign<R, K>(
+        module: &Module<BE>,
+        res: &mut R,
+        key: &K,
+        leading_zero_limbs: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 }
 
 /// Backend-provided GGLWE key-switching operations.
@@ -135,6 +145,16 @@ pub trait GLWEKeyswitchDefault<BE: Backend> {
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
+
+    fn glwe_keyswitch_modup_assign_default<R, K>(
+        &self,
+        res: &mut R,
+        key: &K,
+        leading_zero_limbs: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 }
 
 /// Override surface for the GGLWE key-switching sub-family.
@@ -230,6 +250,19 @@ where
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
         module.glwe_keyswitch_assign_default(res, key, scratch)
+    }
+
+    fn glwe_keyswitch_modup_assign<R, K>(
+        module: &Module<BE>,
+        res: &mut R,
+        key: &K,
+        leading_zero_limbs: usize,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) where
+        R: GLWEToBackendMut<BE> + GLWEInfos,
+        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    {
+        module.glwe_keyswitch_modup_assign_default(res, key, leading_zero_limbs, scratch)
     }
 }
 
@@ -373,6 +406,25 @@ macro_rules! impl_glwe_keyswitch_defaults_full {
                 K: $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be> + $crate::layouts::GGLWEInfos,
             {
                 $crate::default::keyswitching::glwe::glwe_keyswitch_assign_default::<$be, _, _, _>(self, res, key, scratch)
+            }
+
+            fn glwe_keyswitch_modup_assign_default<R, K>(
+                &self,
+                res: &mut R,
+                key: &K,
+                leading_zero_limbs: usize,
+                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
+            ) where
+                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
+                K: $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be> + $crate::layouts::GGLWEInfos,
+            {
+                $crate::default::keyswitching::glwe::glwe_keyswitch_modup_assign_default::<$be, _, _, _>(
+                    self,
+                    res,
+                    key,
+                    leading_zero_limbs,
+                    scratch,
+                )
             }
         }
     };

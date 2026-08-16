@@ -141,7 +141,7 @@ where
 
     {
         let mut scratch = scratch_2;
-        module.glwe_keyswitch_internal(&mut res_dft, &a_conv, key, &mut scratch);
+        module.glwe_keyswitch_internal(&mut res_dft, &a_conv, key, 0, &mut scratch);
         let (mut res_big, mut scratch) = scratch.borrow().take_vec_znx_big_scratch(module, cols, output_size);
         let res_dft_ref = res_dft.to_backend_ref();
         for i in 0..cols {
@@ -204,7 +204,7 @@ where
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
     let (mut res_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&res_layout);
     module.glwe_normalize_default(&mut res_conv, res, &mut scratch_2);
-    module.glwe_keyswitch_internal(&mut res_dft, &res_conv, key, &mut scratch_2);
+    module.glwe_keyswitch_internal(&mut res_dft, &res_conv, key, 0, &mut scratch_2);
 
     {
         let res_norm = res_conv.to_backend_ref();
@@ -275,7 +275,7 @@ where
 
     {
         let mut scratch = scratch_2;
-        module.glwe_keyswitch_internal(&mut res_dft, &a_conv, key, &mut scratch);
+        module.glwe_keyswitch_internal(&mut res_dft, &a_conv, key, 0, &mut scratch);
         let (mut res_big, mut scratch) = scratch.borrow().take_vec_znx_big_scratch(module, cols, output_size);
         let res_dft_ref = res_dft.to_backend_ref();
         for i in 0..cols {
@@ -347,7 +347,7 @@ pub fn glwe_automorphism_sub_negate_default<BE, M, R, A, K>(
 
     {
         let mut scratch = scratch_2;
-        module.glwe_keyswitch_internal(&mut res_dft, &a_conv, key, &mut scratch);
+        module.glwe_keyswitch_internal(&mut res_dft, &a_conv, key, 0, &mut scratch);
         let (mut res_big, mut scratch) = scratch.borrow().take_vec_znx_big_scratch(module, cols, output_size);
         let res_dft_ref = res_dft.to_backend_ref();
         for i in 0..cols {
@@ -409,7 +409,7 @@ where
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
     let (mut res_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&res_layout);
     module.glwe_normalize_default(&mut res_conv, res, &mut scratch_2);
-    module.glwe_keyswitch_internal(&mut res_dft, &res_conv, key, &mut scratch_2);
+    module.glwe_keyswitch_internal(&mut res_dft, &res_conv, key, 0, &mut scratch_2);
 
     {
         let res_norm = res_conv.to_backend_ref();
@@ -478,7 +478,7 @@ pub fn glwe_automorphism_sub_negate_assign_default<BE, M, R, K>(
     let (mut res_dft, scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
     let (mut res_conv, mut scratch_2) = scratch_1.take_glwe_scratch(&res_layout);
     module.glwe_normalize_default(&mut res_conv, res, &mut scratch_2);
-    module.glwe_keyswitch_internal(&mut res_dft, &res_conv, key, &mut scratch_2);
+    module.glwe_keyswitch_internal(&mut res_dft, &res_conv, key, 0, &mut scratch_2);
 
     {
         let res_norm = res_conv.to_backend_ref();
