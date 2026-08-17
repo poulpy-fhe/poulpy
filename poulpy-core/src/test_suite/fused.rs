@@ -1,11 +1,16 @@
 //! Direct parity tests for Core-owned backend fusion seams.
 
-use crate::oep::{GGLWEProductDigitsStridedImpl, GLWETensorRank1DftImpl};
+use crate::{
+    default::operations::glwe_tensor_apply_loop,
+    layouts::{GLWELayout, ModuleCoreAlloc},
+    oep::{GGLWEProductDigitsStridedImpl, GLWETensorRank1DftImpl},
+};
 use poulpy_hal::{
     api::{
-        CnvPVecAlloc, Convolution, ScratchOwnedAlloc, VecZnxAlloc, VecZnxBigAlloc, VecZnxBigNormalize,
-        VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero,
-        VecZnxIdftApplyTmpA, VmpApplyDftToDft, VmpApplyDftToDftAccumulate, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare,
+        CnvPVecAlloc, Convolution, ScratchOwnedAlloc, VecZnxAddAssignBackend, VecZnxAlloc, VecZnxBigAlloc, VecZnxBigBytesOf,
+        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftAlloc, VecZnxDftApply, VecZnxDftBytesOf,
+        VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApplyTmpA, VecZnxNegateBackend, VecZnxNormalize, VecZnxNormalizeTmpBytes,
+        VecZnxSubAssignBackend, VmpApplyDftToDft, VmpApplyDftToDftAccumulate, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare,
         VmpPrepareTmpBytes,
     },
     layouts::{
@@ -17,8 +22,9 @@ use poulpy_hal::{
     test_suite::{download_vec_znx, upload_vec_znx, vec_znx_backend_mut, vec_znx_backend_ref},
 };
 
-/// Verifies the Core rank-one tensor hook against generic convolutions.
-pub fn test_glwe_tensor_rank1_dft<BE>(module: &Module<BE>, base2k: usize)
+/// Verifies the Core rank-one tensor hook against Core's general all-rank
+/// tensor implementation.
+pub fn test_glwe_tensor_rank1_dft<BE>(module: &Module<BE>, base2k: usize, size: usize)
 where
     BE: poulpy_hal::test_suite::TestBackend<OwnedBuf = Vec<u8>> + GLWETensorRank1DftImpl<BE>,
     Module<BE>: CnvPVecAlloc<BE>
@@ -28,13 +34,18 @@ where
         + VecZnxIdftApplyTmpA<BE>
         + VecZnxBigNormalize<BE>
         + VecZnxBigNormalizeTmpBytes
-        + VecZnxBigAlloc<BE>,
+        + VecZnxBigAlloc<BE>
+        + VecZnxAddAssignBackend<BE>
+        + VecZnxCopyBackend<BE>
+        + VecZnxNegateBackend<BE>
+        + VecZnxNormalize<BE>
+        + VecZnxNormalizeTmpBytes
+        + VecZnxSubAssignBackend<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
     for<'a> BE::BufRef<'a>: HostDataRef,
     for<'a> BE::BufMut<'a>: HostDataMut,
 {
     let mut source = Source::new([19u8; 32]);
-    let size = 15;
     let res_size = 2 * size;
     let mut a = module.vec_znx_alloc(2, size);
     let mut b = module.vec_znx_alloc(2, size);
@@ -44,11 +55,20 @@ where
     let b_backend = upload_vec_znx::<BE>(&b);
     let mut a_prep = module.cnv_pvec_left_alloc(2, size);
     let mut b_prep = module.cnv_pvec_right_alloc(2, size);
+    let generic_loop_bytes = module.bytes_of_vec_znx_dft(1, res_size)
+        + module.bytes_of_vec_znx_big(1, res_size)
+        + BE::bytes_of_vec_znx(module.n(), 1, res_size)
+        + module
+            .cnv_apply_dft_tmp_bytes(0, res_size, size, size)
+            .max(module.cnv_pairwise_apply_dft_tmp_bytes(0, res_size, size, size))
+            .max(module.vec_znx_big_normalize_tmp_bytes());
     let scratch_bytes = BE::glwe_tensor_rank1_dft_tmp_bytes(module, 0, res_size, size, size)
         .max(module.cnv_apply_dft_tmp_bytes(0, res_size, size, size))
         .max(module.cnv_prepare_left_tmp_bytes(size, size))
         .max(module.cnv_prepare_right_tmp_bytes(size, size))
-        .max(module.vec_znx_big_normalize_tmp_bytes());
+        .max(module.vec_znx_big_normalize_tmp_bytes())
+        .max(module.vec_znx_normalize_tmp_bytes())
+        .max(generic_loop_bytes);
     let mut scratch = ScratchOwned::<BE>::alloc(scratch_bytes);
     module.cnv_prepare_left(
         &mut a_prep.to_backend_mut(),
@@ -65,7 +85,6 @@ where
 
     for offset in 0..res_size {
         let mut have_dft = module.vec_znx_dft_alloc(3, res_size);
-        let mut want_dft = module.vec_znx_dft_alloc(3, res_size);
         BE::glwe_tensor_rank1_dft(
             module,
             offset,
@@ -74,55 +93,12 @@ where
             &b_prep.to_backend_ref(),
             &mut scratch.arena(),
         );
-        module.cnv_apply_dft(
-            offset,
-            &mut want_dft.to_backend_mut(),
-            0,
-            &a_prep.to_backend_ref(),
-            0,
-            &b_prep.to_backend_ref(),
-            0,
-            &mut scratch.arena(),
-        );
-        module.cnv_apply_dft(
-            offset,
-            &mut want_dft.to_backend_mut(),
-            1,
-            &a_prep.to_backend_ref(),
-            0,
-            &b_prep.to_backend_ref(),
-            1,
-            &mut scratch.arena(),
-        );
-        module.cnv_apply_dft_accumulate(
-            offset,
-            &mut want_dft.to_backend_mut(),
-            1,
-            &a_prep.to_backend_ref(),
-            1,
-            &b_prep.to_backend_ref(),
-            0,
-            &mut scratch.arena(),
-        );
-        module.cnv_apply_dft(
-            offset,
-            &mut want_dft.to_backend_mut(),
-            2,
-            &a_prep.to_backend_ref(),
-            1,
-            &b_prep.to_backend_ref(),
-            1,
-            &mut scratch.arena(),
-        );
 
         let mut have_big = module.vec_znx_big_alloc(1, res_size);
-        let mut want_big = module.vec_znx_big_alloc(1, res_size);
         let template = module.vec_znx_alloc(3, res_size);
         let mut have_backend = upload_vec_znx::<BE>(&template);
-        let mut want_backend = upload_vec_znx::<BE>(&template);
         for col in 0..3 {
             module.vec_znx_idft_apply_tmpa(&mut have_big.to_backend_mut(), 0, &mut have_dft.to_backend_mut(), col);
-            module.vec_znx_idft_apply_tmpa(&mut want_big.to_backend_mut(), 0, &mut want_dft.to_backend_mut(), col);
             module.vec_znx_big_normalize(
                 &mut vec_znx_backend_mut::<BE>(&mut have_backend),
                 base2k,
@@ -133,18 +109,54 @@ where
                 0,
                 &mut scratch.arena(),
             );
-            module.vec_znx_big_normalize(
-                &mut vec_znx_backend_mut::<BE>(&mut want_backend),
+        }
+
+        let output_layout = GLWELayout {
+            n: module.n().into(),
+            base2k: base2k.into(),
+            k: (res_size * base2k).into(),
+            rank: 1usize.into(),
+        };
+        let mut want = module.glwe_tensor_alloc_from_infos(&output_layout);
+        glwe_tensor_apply_loop(
+            module,
+            (offset + 1) * base2k,
+            &mut want,
+            &a_prep,
+            &b_prep,
+            size,
+            size,
+            base2k,
+            &mut scratch.arena(),
+        );
+        let mut have_normalized = module.vec_znx_alloc(3, res_size);
+        let mut want_normalized = module.vec_znx_alloc(3, res_size);
+        for col in 0..3 {
+            module.vec_znx_normalize(
+                &mut vec_znx_backend_mut::<BE>(&mut have_normalized),
                 base2k,
                 0,
                 col,
-                &want_big.to_backend_ref(),
+                &vec_znx_backend_ref::<BE>(&have_backend),
+                base2k,
+                col,
+                &mut scratch.arena(),
+            );
+            module.vec_znx_normalize(
+                &mut vec_znx_backend_mut::<BE>(&mut want_normalized),
                 base2k,
                 0,
+                col,
+                &vec_znx_backend_ref::<BE>(want.data()),
+                base2k,
+                col,
                 &mut scratch.arena(),
             );
         }
-        assert_eq!(download_vec_znx::<BE>(&have_backend), download_vec_znx::<BE>(&want_backend));
+        assert_eq!(
+            download_vec_znx::<BE>(&have_normalized),
+            download_vec_znx::<BE>(&want_normalized)
+        );
     }
 }
 

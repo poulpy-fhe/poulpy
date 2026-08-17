@@ -24,9 +24,7 @@ unsafe impl Pod for Q126Scalar {}
 /// it use the backend's packed two-word representation. Cross-backend
 /// interchange requires both matching word types and the relevant
 /// layout-compatibility marker.
-impl poulpy_hal::layouts::DftWord for Q126Scalar {
-    const IS_EXACT: bool = true;
-}
+impl poulpy_hal::layouts::DftWord for Q126Scalar {}
 
 impl fmt::Display for Q126Scalar {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

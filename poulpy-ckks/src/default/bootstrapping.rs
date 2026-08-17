@@ -14,7 +14,7 @@ use poulpy_hal::{
         ModuleN, ScratchArenaTakeBasic, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxDftApply,
         VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApply, VmpApplyDftToDft,
     },
-    layouts::{Backend, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxDft, VecZnxDftBackendMut, VecZnxDftToBackendRef},
+    layouts::{Backend, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxDftBackendMut, VecZnxDftToBackendRef},
 };
 use std::ops::Deref;
 
@@ -876,8 +876,9 @@ impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> BootstrappingDefault<'_, BE> {
 }
 
 /// Reference SSE pipeline: switch to the sparse secret before ModUp to bound
-/// wrap-around, then restore the dense secret afterward. A limb-aligned raise
-/// lets the second switch skip ModUp's known-zero prefix.
+/// wrap-around, then restore the dense secret afterward. Every complete limb
+/// introduced by the raise is a known-zero prefix that the second switch can
+/// skip; a remaining partial limb is processed normally.
 #[doc(hidden)]
 pub fn ckks_encapsulated_mod_up_default<BE, Dst, Src, D2S, S2D>(
     module: &Module<BE>,
@@ -910,8 +911,11 @@ where
     let modulus_raise = dst.k().as_usize() - src.k().as_usize();
     let base2k = dst.base2k().as_usize();
     BootstrappingDefault::new(module).ckks_mod_up_into_default(dst, src, scratch)?;
-    if modulus_raise != 0 && modulus_raise.is_multiple_of(base2k) {
-        ckks_keyswitch_assign_known_zero_limbs(module, dst, sparse_to_dense, modulus_raise / base2k, scratch);
+    // ModUp introduces `floor(modulus_raise / base2k)` complete zero limbs.
+    // Any remaining bits occupy the next limb, which must still be transformed.
+    let leading_zero_limbs = modulus_raise / base2k;
+    if leading_zero_limbs != 0 {
+        ckks_keyswitch_assign_known_zero_limbs(module, dst, sparse_to_dense, leading_zero_limbs, scratch);
     } else {
         module.glwe_keyswitch_assign(dst, sparse_to_dense, scratch);
     }
@@ -1003,15 +1007,12 @@ fn ckks_keyswitch_dft_fill_known_zero_limbs<BE, R, K>(
     assert!(leading_zero_limbs <= a.size());
 
     let cols = (a.rank() + 1).as_usize();
-    let n = a.n().as_usize();
     let a_size = a.size();
     scratch.scope(|scratch_phase| {
         let (mut a_dft, mut product_scratch) = scratch_phase.take_vec_znx_dft_scratch(module, cols - 1, a_size);
 
         if leading_zero_limbs != 0 {
-            let len = BE::bytes_of_vec_znx_dft(n, cols - 1, leading_zero_limbs);
-            let data = BE::region_mut_ref(&mut a_dft.data, 0, len);
-            let mut prefix = VecZnxDft::from_data(data, n, cols - 1, leading_zero_limbs);
+            let mut prefix = a_dft.with_limb_range_mut(0, leading_zero_limbs);
             for col in 0..cols - 1 {
                 module.vec_znx_dft_zero(&mut prefix, col);
             }
@@ -1019,10 +1020,7 @@ fn ckks_keyswitch_dft_fill_known_zero_limbs<BE, R, K>(
 
         let active_limbs = a_size - leading_zero_limbs;
         if active_limbs != 0 {
-            let offset = BE::bytes_of_vec_znx_dft(n, cols - 1, leading_zero_limbs);
-            let len = BE::bytes_of_vec_znx_dft(n, cols - 1, active_limbs);
-            let data = BE::region_mut_ref(&mut a_dft.data, offset, len);
-            let mut active = VecZnxDft::from_data(data, n, cols - 1, active_limbs);
+            let mut active = a_dft.with_limb_range_mut(leading_zero_limbs, a_size);
             for col in 0..cols - 1 {
                 module.vec_znx_dft_apply(1, leading_zero_limbs, &mut active, col, a.data(), col + 1);
             }

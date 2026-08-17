@@ -23,7 +23,7 @@ use poulpy_hal::{
 use crate::{
     GLWEAdd, GLWEAutomorphism, GLWECopy, GLWEMulPlain, LinearTransformation, LinearTransformationGiantStep,
     default::{
-        keyswitching::{GGLWEProductDefault, GLWEKeyswitchInternal, gglwe_product_accumulation_output_size},
+        keyswitching::{GGLWEProductDefault, GLWEKeyswitchInternal},
         linear_transformation::{
             inner_product::{glwe_accumulate_prepared_baby_steps_dft, glwe_accumulate_unprepared_baby_steps_dft},
             lazy::{
@@ -197,12 +197,16 @@ pub(super) fn glwe_eval_giant_steps<BE, M, R, P, H, K>(
         let key_infos = keys.automorphism_key_infos();
         let key_base2k = key_infos.base2k();
         let bases_match = res_base2k == key_base2k && prod_base2k == key_base2k;
-        let work_size = key_infos.work_size(res.k());
-        let output_size = gglwe_product_accumulation_output_size::<BE, _, _, _>(res, res, &key_infos, nonzero_giant_rotations)
-            // PROD may carry a partial low limb beyond the destination's live
-            // precision. Preserve the same guard below that wider input.
-            .saturating_add(prod_size.saturating_sub(res.size()))
-            .min(work_size);
+        // PROD may carry a partial low limb beyond the destination's live
+        // precision. Preserve the same guard below that wider input while the
+        // sizing helper applies the key's work-region cap.
+        let output_size = crate::default::keyswitching::gglwe_product_accumulation_output_size_with_tail::<BE, _, _, _>(
+            res,
+            res,
+            &key_infos,
+            nonzero_giant_rotations,
+            prod_size.saturating_sub(res.size()),
+        );
         (bases_match, output_size)
     } else {
         // No giant rotation: BIG-flow accumulator is always valid (no key required).

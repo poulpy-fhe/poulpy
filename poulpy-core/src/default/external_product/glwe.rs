@@ -13,7 +13,7 @@ use poulpy_hal::{
         VecZnxDftBytesOf, VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes, VmpApplyDftToDft,
         VmpApplyDftToDftAccumulate, VmpApplyDftToDftTmpBytes,
     },
-    layouts::{Backend, DftWord, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
+    layouts::{Backend, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxDftToBackendRef},
 };
 
 use crate::{
@@ -21,18 +21,21 @@ use crate::{
     api::GLWEExternalProductInternal,
     default::operations::GLWENormalizeDefault,
     layouts::{
-        GGSWInfos, GGSWPreparedBackendRef, GLWEBackendRef, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-        gadget_product_output_size, prepared::GGSWPreparedToBackendRef,
+        GGSWInfos, GGSWPreparedBackendRef, GLWEBackendRef, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef,
+        GadgetProductOutputSizeParams, LWEInfos, gadget_product_output_size, prepared::GGSWPreparedToBackendRef,
     },
     oep::GLWEExternalProductDefault,
 };
 
-/// Number of limbs whose GGSW external-product result can affect an
-/// immediately normalized output.
+/// Practical limb window used for an immediately normalized GGSW external
+/// product.
 ///
 /// This is public so fused higher-level operations which use
 /// [`GLWEExternalProductInternal`] can size their DFT/BIG intermediates with
-/// exactly the same rule as the default external-product implementation.
+/// exactly the same rule as the default implementation. Although any lower
+/// limb can affect rounding through a sufficiently long carry chain, the
+/// window includes the worst-case norm growth of the signed DFT products and
+/// their VMP accumulation.
 pub fn glwe_external_product_output_size<BE, R, A, G>(res_infos: &R, a_infos: &A, ggsw_infos: &G) -> usize
 where
     BE: Backend,
@@ -40,18 +43,23 @@ where
     A: GLWEInfos,
     G: GGSWInfos,
 {
-    let work_size = ggsw_infos.work_size(a_infos.k());
-    let exact_same_radix = <<BE as Backend>::DftWord as DftWord>::IS_EXACT
-        && a_infos.base2k() == ggsw_infos.base2k()
-        && res_infos.base2k() == ggsw_infos.base2k();
-    gadget_product_output_size(
-        work_size,
-        a_infos.size(),
-        res_infos.size(),
-        ggsw_infos.base2k(),
-        exact_same_radix,
-        1,
-    )
+    let product_terms = ggsw_infos
+        .n()
+        .as_usize()
+        .saturating_mul(ggsw_infos.dnum().as_usize())
+        .saturating_mul(ggsw_infos.dsize().as_usize())
+        .saturating_mul((ggsw_infos.rank() + 1).as_usize());
+    gadget_product_output_size(GadgetProductOutputSizeParams {
+        key_size: ggsw_infos.size(),
+        key_base2k: ggsw_infos.base2k(),
+        input_k: a_infos.k(),
+        output_k: res_infos.k(),
+        dsize: ggsw_infos.dsize(),
+        k_aux: ggsw_infos.k_aux(),
+        dft_is_exact: BE::DFT_IS_EXACT,
+        product_terms,
+        extra_live_limbs: 0,
+    })
 }
 
 fn glwe_external_product_dft_fill<BE, M>(

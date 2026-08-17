@@ -71,12 +71,7 @@ impl BigWord for i128 {}
 /// Implementors range from plain elements (`f64` for split-complex FFT
 /// backends) to packed CRT-lane blocks. There is deliberately no `Eq`/`Hash`
 /// bound so that `f64` qualifies.
-pub trait DftWord: Pod + Copy + Zero + Display + Debug + Send + Sync + PartialEq + 'static {
-    /// Whether transform-domain arithmetic is exact within its documented
-    /// operand bounds. CRT/NTT words are exact; floating-point FFT words are
-    /// approximate.
-    const IS_EXACT: bool = false;
-}
+pub trait DftWord: Pod + Copy + Zero + Display + Debug + Send + Sync + PartialEq + 'static {}
 
 /// Split-complex FFT representation over `f64` (spqlios ordering).
 impl DftWord for f64 {}

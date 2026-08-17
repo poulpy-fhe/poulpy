@@ -40,7 +40,7 @@ fn test_convolution_pairwise_fft64_ref() {
 #[test]
 #[cfg(feature = "enable-core")]
 fn test_glwe_tensor_rank1_dft_fft64_ref() {
-    test_glwe_tensor_rank1_dft(&Module::<FFT64Ref>::new(8), 17);
+    test_glwe_tensor_rank1_dft(&Module::<FFT64Ref>::new(8), 17, 15);
 }
 
 #[test]
@@ -76,7 +76,7 @@ fn test_convolution_pairwise_ntt4x30_ref() {
 #[test]
 #[cfg(feature = "enable-core")]
 fn test_glwe_tensor_rank1_dft_ntt4x30_ref() {
-    test_glwe_tensor_rank1_dft(&Module::<NTT4x30Ref>::new(8), 50);
+    test_glwe_tensor_rank1_dft(&Module::<NTT4x30Ref>::new(8), 50, 15);
 }
 
 #[test]

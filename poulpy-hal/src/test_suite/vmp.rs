@@ -17,8 +17,8 @@ use crate::{
 };
 
 use crate::layouts::VecZnxBigOwned;
+use crate::layouts::VecZnxDftOwned;
 use crate::layouts::VmpPMatOwned;
-use crate::layouts::{VecZnxDft, VecZnxDftOwned};
 
 fn idft_into_alloc<BE>(module: &Module<BE>, a: &mut VecZnxDftOwned<BE>) -> VecZnxBigOwned<BE>
 where
@@ -257,16 +257,12 @@ pub fn test_vmp_apply_dft_to_dft<BR: crate::test_suite::TestBackend, BT: crate::
                     }
                     if cols_in == 1 && cols_out == 1 && size_in == max_size && size_out == max_size {
                         let prefix_size = size_in - 1;
-                        let n_ref = a_dft_ref.n();
-                        let len_ref = BR::bytes_of_vec_znx_dft(n_ref, cols_in, prefix_size);
-                        let data_ref = BR::region_mut(&mut a_dft_ref.data, 0, len_ref);
-                        let mut prefix_ref = VecZnxDft::from_data(data_ref, n_ref, cols_in, prefix_size);
+                        let mut a_dft_ref = a_dft_ref.to_backend_mut();
+                        let mut prefix_ref = a_dft_ref.with_limb_range_mut(0, prefix_size);
                         module_ref.vec_znx_dft_zero(&mut prefix_ref, 0);
 
-                        let n_test = a_dft_test.n();
-                        let len_test = BT::bytes_of_vec_znx_dft(n_test, cols_in, prefix_size);
-                        let data_test = BT::region_mut(&mut a_dft_test.data, 0, len_test);
-                        let mut prefix_test = VecZnxDft::from_data(data_test, n_test, cols_in, prefix_size);
+                        let mut a_dft_test = a_dft_test.to_backend_mut();
+                        let mut prefix_test = a_dft_test.with_limb_range_mut(0, prefix_size);
                         module_test.vec_znx_dft_zero(&mut prefix_test, 0);
                     }
 

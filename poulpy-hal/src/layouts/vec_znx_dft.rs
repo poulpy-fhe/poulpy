@@ -150,9 +150,33 @@ impl<'b, B: Backend + 'b> VecZnxDftBackendMut<'b, B> {
     ///
     /// Panics if `size > self.size()`.
     pub fn with_size_mut(&mut self, size: usize) -> VecZnxDftBackendMut<'_, B> {
+        self.with_limb_range_mut(0, size)
+    }
+
+    /// Reborrows a contiguous range of DFT limbs as a mutable vector.
+    ///
+    /// The returned view contains limbs `start..end` for every column and
+    /// renumbers `start` as limb zero. Dropping it leaves `self` unchanged.
+    /// This is the typed alternative to manually slicing the backend buffer.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless `start <= end <= self.size()`.
+    pub fn with_limb_range_mut(&mut self, start: usize, end: usize) -> VecZnxDftBackendMut<'_, B> {
+        assert!(start <= end, "DFT limb range start ({start}) exceeds end ({end})");
+        assert!(
+            end <= self.size(),
+            "DFT limb range end ({end}) exceeds size ({})",
+            self.size()
+        );
+
+        let n = self.n();
+        let cols = self.cols();
+        let offset = B::bytes_of_vec_znx_dft(n, cols, start);
+        let len = B::bytes_of_vec_znx_dft(n, cols, end - start);
         VecZnxDft {
-            data: B::view_mut_ref(&mut self.data),
-            shape: self.shape.with_size(size),
+            data: B::region_mut_ref(&mut self.data, offset, len),
+            shape: VecZnxShape::new(n, cols, end - start),
             _phantom: PhantomData,
         }
     }
@@ -409,5 +433,30 @@ impl<D: Data, W: DftWord, B: Backend<DftWord = W>> VecZnxDft<D, W, B> {
             shape,
             _phantom: PhantomData,
         }
+    }
+}
+
+#[cfg(test)]
+mod limb_range_tests {
+    use super::*;
+    use crate::layouts::{HostBytesBackend, VecZnxDftToBackendMut};
+
+    #[test]
+    fn mutable_limb_range_rebases_a_nonzero_start() {
+        let (n, cols, size) = (4, 2, 4);
+        let mut dft = VecZnxDft::<Vec<u8>, i64, HostBytesBackend>::alloc(n, cols, size);
+        dft.data.fill(0xA5);
+
+        {
+            let mut backend = dft.to_backend_mut();
+            let middle = backend.with_limb_range_mut(1, 3);
+            assert_eq!((middle.n(), middle.cols(), middle.size()), (n, cols, 2));
+            middle.data.fill(0);
+        }
+
+        let limb_bytes = HostBytesBackend::bytes_of_vec_znx_dft(n, cols, 1);
+        assert!(dft.data[..limb_bytes].iter().all(|byte| *byte == 0xA5));
+        assert!(dft.data[limb_bytes..3 * limb_bytes].iter().all(|byte| *byte == 0));
+        assert!(dft.data[3 * limb_bytes..].iter().all(|byte| *byte == 0xA5));
     }
 }

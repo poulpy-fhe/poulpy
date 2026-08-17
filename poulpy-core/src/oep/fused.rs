@@ -31,9 +31,6 @@ pub unsafe trait GLWETensorRank1DftImpl<BE: Backend>: Backend {
         b_size: usize,
     ) -> usize;
 
-    /// Whether this backend provides a genuinely fused implementation.
-    fn glwe_tensor_rank1_dft_is_fused(module: &Module<BE>) -> bool;
-
     fn glwe_tensor_rank1_dft(
         module: &Module<BE>,
         cnv_offset: usize,
@@ -145,10 +142,6 @@ macro_rules! impl_glwe_tensor_rank1_dft_default {
                 b_size: usize,
             ) -> usize {
                 $crate::oep::glwe_tensor_rank1_dft_tmp_bytes_default(module, cnv_offset, res_size, a_size, b_size)
-            }
-
-            fn glwe_tensor_rank1_dft_is_fused(_module: &::poulpy_hal::layouts::Module<$be>) -> bool {
-                false
             }
 
             fn glwe_tensor_rank1_dft(
