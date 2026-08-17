@@ -312,11 +312,11 @@ jobs:
           restore-keys: |
             arm64-cargo-neon-
 
-      - name: Check NEON backend (workspace libs)
-        run: cargo check --workspace --features "$NEON_FEATURES"
+      - name: Check NEON backend
+        run: cargo check --workspace --all-targets --features "$NEON_FEATURES"
 
-      - name: Clippy NEON backend (workspace libs)
-        run: cargo clippy --workspace --features "$NEON_FEATURES" -- -D warnings
+      - name: Clippy NEON backend
+        run: cargo clippy --workspace --all-targets --features "$NEON_FEATURES" -- -D warnings
 
       - name: Test NEON backend
         run: cargo test -p poulpy-cpu-arm --features "enable-neon,enable-ckks"
