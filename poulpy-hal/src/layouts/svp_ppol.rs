@@ -228,6 +228,14 @@ impl<D: HostDataRef, W: DftWord, B: Backend<DftWord = W>> fmt::Display for SvpPP
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "SvpPPol(n={}, cols={})", self.n(), self.cols())?;
 
+        let element_bytes = crate::layouts::element_view_span(self)
+            .checked_mul(size_of::<W>())
+            .expect("SvpPPol element-view byte size overflows usize");
+        let backend_bytes = B::bytes_of_svp_ppol(self.n(), self.cols());
+        if element_bytes != backend_bytes {
+            return writeln!(f, "  <backend-packed representation: {backend_bytes} bytes>");
+        }
+
         for col in 0..self.cols() {
             writeln!(f, "Column {col}:")?;
             let coeffs = self.at(col, 0);

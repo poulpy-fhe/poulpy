@@ -13,7 +13,10 @@ mod ntt3x42_ifma_tests {
     use crate::ntt3x42_ifma::{
         primes::Primes42, reference::arithmetic::b_ntt3x42_ifma_to_znx128_ref, vec_znx_dft::simd_b_ntt3x42_ifma_to_znx128,
     };
-    use poulpy_hal::{backend_test_suite, cross_backend_test_suite};
+    use poulpy_hal::{
+        backend_test_suite, cross_backend_test_suite,
+        layouts::{Backend, SvpPPolOwned, VecZnxDftOwned, ZnxZero},
+    };
 
     cross_backend_test_suite! {
         mod vec_znx,
@@ -207,6 +210,35 @@ mod ntt3x42_ifma_tests {
             test_vec_znx_idft_apply_consume => poulpy_hal::test_suite::vec_znx_dft::test_vec_znx_idft_apply_alloc,
             test_svp_apply_dft_to_dft => poulpy_hal::test_suite::svp::test_svp_apply_dft_to_dft,
         }
+    }
+
+    #[test]
+    fn test_packed_layout_zero_and_display() {
+        const N: usize = 64;
+        const COLS: usize = 2;
+        const SIZE: usize = 3;
+
+        let mut dft = VecZnxDftOwned::<crate::NTT3x42Ifma>::alloc(N, COLS, SIZE);
+        let block_bytes = <crate::NTT3x42Ifma as Backend>::bytes_of_vec_znx_dft(N, 1, 1);
+        let byte_len = <crate::NTT3x42Ifma as Backend>::bytes_of_vec_znx_dft(N, COLS, SIZE);
+        dft.data[..byte_len].fill(0xa5);
+
+        dft.zero_at(1, 1);
+
+        let offset = (COLS + 1) * block_bytes;
+        assert!(dft.data[..offset].iter().all(|&byte| byte == 0xa5));
+        assert!(dft.data[offset..offset + block_bytes].iter().all(|&byte| byte == 0));
+        assert!(dft.data[offset + block_bytes..byte_len].iter().all(|&byte| byte == 0xa5));
+
+        let display = format!("{dft}");
+        assert!(display.contains("<backend-packed representation:"));
+
+        dft.zero();
+        assert!(dft.data[..byte_len].iter().all(|&byte| byte == 0));
+
+        let svp = SvpPPolOwned::<crate::NTT3x42Ifma>::alloc(N, COLS);
+        let display = format!("{svp}");
+        assert!(display.contains("<backend-packed representation:"));
     }
 
     #[test]
