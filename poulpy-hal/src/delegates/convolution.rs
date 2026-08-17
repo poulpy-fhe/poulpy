@@ -181,22 +181,6 @@ impl_convolution_delegate!(
     ) {
         <BE as HalConvolutionImpl<BE>>::cnv_pairwise_apply_dft(self, cnv_offset, res, res_col, a, b, i, j, scratch)
     },
-    fn cnv_tensor_rank1_dft_tmp_bytes(&self, cnv_offset: usize, res_size: usize, a_size: usize, b_size: usize) -> usize {
-        <BE as HalConvolutionImpl<BE>>::cnv_tensor_rank1_dft_tmp_bytes(self, cnv_offset, res_size, a_size, b_size)
-    },
-    fn cnv_tensor_rank1_dft_is_fused(&self) -> bool {
-        <BE as HalConvolutionImpl<BE>>::cnv_tensor_rank1_dft_is_fused(self)
-    },
-    fn cnv_tensor_rank1_dft(
-        &self,
-        cnv_offset: usize,
-        res: &mut VecZnxDftBackendMut<'_, BE>,
-        a: &CnvPVecLBackendRef<'_, BE>,
-        b: &CnvPVecRBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) {
-        <BE as HalConvolutionImpl<BE>>::cnv_tensor_rank1_dft(self, cnv_offset, res, a, b, scratch)
-    },
     fn cnv_prepare_self_tmp_bytes(&self, res_size: usize, a_size: usize) -> usize {
         <BE as HalConvolutionImpl<BE>>::cnv_prepare_self_tmp_bytes(self, res_size, a_size)
     },

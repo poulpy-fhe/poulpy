@@ -22,7 +22,7 @@ use crate::{
     default::operations::GLWENormalizeDefault,
     layouts::{
         GGSWInfos, GGSWPreparedBackendRef, GLWEBackendRef, GLWEInfos, GLWELayout, GLWEToBackendMut, GLWEToBackendRef, LWEInfos,
-        prepared::GGSWPreparedToBackendRef,
+        gadget_product_output_size, prepared::GGSWPreparedToBackendRef,
     },
     oep::GLWEExternalProductDefault,
 };
@@ -40,15 +40,18 @@ where
     A: GLWEInfos,
     G: GGSWInfos,
 {
-    let key_size = ggsw_infos.work_size(a_infos.k());
-    if <<BE as Backend>::DftWord as DftWord>::IS_EXACT
+    let work_size = ggsw_infos.work_size(a_infos.k());
+    let exact_same_radix = <<BE as Backend>::DftWord as DftWord>::IS_EXACT
         && a_infos.base2k() == ggsw_infos.base2k()
-        && res_infos.base2k() == ggsw_infos.base2k()
-    {
-        key_size.min(a_infos.size().max(res_infos.size()).saturating_add(2))
-    } else {
-        key_size
-    }
+        && res_infos.base2k() == ggsw_infos.base2k();
+    gadget_product_output_size(
+        work_size,
+        a_infos.size(),
+        res_infos.size(),
+        ggsw_infos.base2k(),
+        exact_same_radix,
+        1,
+    )
 }
 
 fn glwe_external_product_dft_fill<BE, M>(

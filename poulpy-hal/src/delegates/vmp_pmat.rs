@@ -1,8 +1,7 @@
 use crate::{
     api::{
         VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft, VmpApplyDftToDftAccumulate, VmpApplyDftToDftAccumulateTmpBytes,
-        VmpApplyDftToDftDigitsStrided, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes,
-        VmpZero,
+        VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPMatBytesOf, VmpPrepare, VmpPrepareTmpBytes, VmpZero,
     },
     layouts::{
         Backend, MatZnxBackendRef, Module, ScratchArena, VecZnxBackendRef, VecZnxDftBackendMut, VecZnxDftBackendRef,
@@ -135,23 +134,6 @@ impl_vmp_delegate!(
         B::vmp_apply_dft_to_dft_accumulate(self, res, a, b, limb_offset, scratch);
     }
 );
-
-impl<B> VmpApplyDftToDftDigitsStrided<B> for Module<B>
-where
-    B: Backend<ZnxWord = i64> + HalVmpImpl<B>,
-    Module<B>: crate::api::VecZnxDftCopy<B>,
-{
-    fn vmp_apply_dft_to_dft_digits_strided(
-        &self,
-        res: &mut VecZnxDftBackendMut<'_, B>,
-        a: &VecZnxDftBackendRef<'_, B>,
-        dsize: usize,
-        pmat: &VmpPMatBackendRef<'_, B>,
-        scratch: &mut ScratchArena<'_, B>,
-    ) {
-        B::vmp_apply_dft_to_dft_digits_strided(self, res, a, dsize, pmat, scratch);
-    }
-}
 
 impl_vmp_delegate!(
     VmpZero<B>,

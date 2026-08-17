@@ -1309,3 +1309,46 @@ pub fn key_work_size(base2k: Base2K, input_k: TorusPrecision, dsize: Dsize, k_au
     let digits: u32 = input_k.0.div_ceil(digit_bits);
     (digits * dsize.0 + k_aux.0.div_ceil(base2k.0)) as usize
 }
+
+/// Narrows [`key_work_size`] to the limbs that can affect an immediately
+/// normalized product. Exact same-radix arithmetic can discard the distant
+/// guard-region tail; other arithmetic retains the complete work region.
+pub(crate) fn gadget_product_output_size(
+    work_size: usize,
+    input_size: usize,
+    output_size: usize,
+    base2k: Base2K,
+    exact_same_radix: bool,
+    term_count: usize,
+) -> usize {
+    if !exact_same_radix {
+        return work_size;
+    }
+
+    let carry_bits = if term_count <= 1 {
+        0
+    } else {
+        usize::BITS as usize - (term_count - 1).leading_zeros() as usize
+    };
+    let carry_limbs = carry_bits.div_ceil(base2k.as_usize());
+    work_size.min(input_size.max(output_size).saturating_add(2).saturating_add(carry_limbs))
+}
+
+#[cfg(test)]
+mod gadget_sizing_tests {
+    use super::*;
+
+    #[test]
+    fn work_size_rounds_input_to_a_whole_digit_before_aux_limbs() {
+        // Two 2-limb digits plus two auxiliary limbs.
+        assert_eq!(key_work_size(Base2K(30), TorusPrecision(61), Dsize(2), TorusPrecision(31)), 6);
+    }
+
+    #[test]
+    fn output_size_is_a_second_stage_bounded_by_work_size() {
+        assert_eq!(gadget_product_output_size(12, 3, 4, Base2K(30), true, 1), 6);
+        assert_eq!(gadget_product_output_size(5, 3, 4, Base2K(30), true, 1), 5);
+        assert_eq!(gadget_product_output_size(12, 3, 4, Base2K(30), false, 1), 12);
+        assert_eq!(gadget_product_output_size(12, 3, 4, Base2K(1), true, 5), 9);
+    }
+}

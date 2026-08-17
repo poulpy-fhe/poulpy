@@ -1024,56 +1024,6 @@ pub unsafe trait HalVmpImpl<BE: Backend>: Backend {
         scratch: &mut ScratchArena<'_, BE>,
     );
 
-    /// Runs every gadget digit, reading the digits from interleaved rows of `a`.
-    fn vmp_apply_dft_to_dft_digits_strided(
-        module: &Module<BE>,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
-        a: &crate::layouts::VecZnxDftBackendRef<'_, BE>,
-        dsize: usize,
-        pmat: &crate::layouts::VmpPMatBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        Module<BE>: crate::api::VecZnxDftCopy<BE>,
-    {
-        use crate::{
-            api::{ScratchArenaTakeBasic, VecZnxDftCopy},
-            layouts::VecZnxDftToBackendRef,
-        };
-
-        let cols = a.cols();
-        let a_size = a.size();
-        let dnum = pmat.rows();
-        for di in 0..dsize {
-            let (mut digit, mut scratch_digit) =
-                scratch
-                    .borrow()
-                    .take_vec_znx_dft_scratch(module, cols, ((a_size + di) / dsize).min(dnum));
-            for col in 0..cols {
-                module.vec_znx_dft_copy(dsize, dsize - di - 1, &mut digit, col, a, col);
-            }
-
-            if di == 0 {
-                // The overwriting pass must cover the full destination so no
-                // limb retains incoming scratch contents. Later accumulating
-                // passes may safely use narrowed views because this pass has
-                // initialized the skipped high limbs.
-                Self::vmp_apply_dft_to_dft(module, res, &digit.to_backend_ref(), pmat, 0, &mut scratch_digit);
-            } else {
-                let pad = ((dsize - di) as isize - 2).max(0) as usize;
-                let compute_size = res.size().min(pmat.size().saturating_sub(pad));
-                let mut res_view = res.with_size_mut(compute_size);
-                Self::vmp_apply_dft_to_dft_accumulate(
-                    module,
-                    &mut res_view,
-                    &digit.to_backend_ref(),
-                    pmat,
-                    di,
-                    &mut scratch_digit,
-                );
-            }
-        }
-    }
-
     fn vmp_zero(module: &Module<BE>, res: &mut crate::layouts::VmpPMatBackendMut<'_, BE>);
 }
 
@@ -1276,34 +1226,6 @@ pub unsafe trait HalConvolutionImpl<BE: Backend>: Backend {
         j: usize,
         scratch: &mut ScratchArena<'_, BE>,
     );
-
-    fn cnv_tensor_rank1_dft_tmp_bytes(
-        module: &Module<BE>,
-        cnv_offset: usize,
-        res_size: usize,
-        a_size: usize,
-        b_size: usize,
-    ) -> usize {
-        Self::cnv_apply_dft_tmp_bytes(module, cnv_offset, res_size, a_size, b_size)
-    }
-
-    fn cnv_tensor_rank1_dft_is_fused(_module: &Module<BE>) -> bool {
-        false
-    }
-
-    fn cnv_tensor_rank1_dft(
-        module: &Module<BE>,
-        cnv_offset: usize,
-        res: &mut crate::layouts::VecZnxDftBackendMut<'_, BE>,
-        a: &crate::layouts::CnvPVecLBackendRef<'_, BE>,
-        b: &crate::layouts::CnvPVecRBackendRef<'_, BE>,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) {
-        Self::cnv_apply_dft(module, cnv_offset, res, 0, a, 0, b, 0, scratch);
-        Self::cnv_apply_dft(module, cnv_offset, res, 1, a, 0, b, 1, scratch);
-        Self::cnv_apply_dft_accumulate(module, cnv_offset, res, 1, a, 1, b, 0, scratch);
-        Self::cnv_apply_dft(module, cnv_offset, res, 2, a, 1, b, 1, scratch);
-    }
 
     fn cnv_prepare_self_tmp_bytes(module: &Module<BE>, res_size: usize, a_size: usize) -> usize;
 

@@ -8,14 +8,11 @@ use crate::layouts::VmpPMatToBackendRef;
 use crate::{
     api::{
         ModuleNew, ScratchOwnedAlloc, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAddAssign,
-        VecZnxDftAlloc, VecZnxDftApply, VecZnxDftCopy, VecZnxDftZero, VecZnxIdftApplyTmpA, VmpApplyDft, VmpApplyDftTmpBytes,
-        VmpApplyDftToDft, VmpApplyDftToDftAccumulate, VmpApplyDftToDftAccumulateTmpBytes, VmpApplyDftToDftDigitsStrided,
-        VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare, VmpPrepareTmpBytes,
+        VecZnxDftAlloc, VecZnxDftApply, VecZnxDftZero, VecZnxIdftApplyTmpA, VmpApplyDft, VmpApplyDftTmpBytes, VmpApplyDftToDft,
+        VmpApplyDftToDftAccumulate, VmpApplyDftToDftAccumulateTmpBytes, VmpApplyDftToDftTmpBytes, VmpPMatAlloc, VmpPrepare,
+        VmpPrepareTmpBytes,
     },
-    layouts::{
-        Backend, DigestU64, FillUniform, HostBytesBackend, HostDataMut, MatZnx, MatZnxToBackendRef, Module, ScratchOwned,
-        VecZnxDftReborrowBackendRef, VecZnxToBackendRef,
-    },
+    layouts::{Backend, DigestU64, FillUniform, HostBytesBackend, MatZnx, MatZnxToBackendRef, Module, ScratchOwned},
     source::Source,
 };
 
@@ -37,142 +34,6 @@ where
         module.vec_znx_idft_apply_tmpa(&mut res_backend, j, &mut a_backend, j);
     }
     res
-}
-
-/// Verifies that the fused multi-digit VMP has the same overwrite semantics as
-/// the sequential implementation, including when the destination is nonzero.
-pub fn test_vmp_apply_dft_to_dft_digits_strided<BE>(module: &Module<BE>, base2k: usize)
-where
-    BE: crate::test_suite::TestBackend,
-    BE::OwnedBuf: HostDataMut,
-    Module<BE>: VecZnxDftAlloc<BE>
-        + VecZnxDftApply<BE>
-        + VecZnxDftCopy<BE>
-        + VecZnxDftZero<BE>
-        + VmpApplyDftToDft<BE>
-        + VmpApplyDftToDftAccumulate<BE>
-        + VmpApplyDftToDftDigitsStrided<BE>
-        + VmpApplyDftToDftTmpBytes
-        + VmpPMatAlloc<BE>
-        + VmpPrepare<BE>
-        + VmpPrepareTmpBytes,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-{
-    let mut source = Source::new([2u8; 32]);
-    let cases: [(usize, usize, usize, usize); 6] = [
-        (2, 1, 2, 4),
-        (2, 2, 1, 5),
-        (3, 1, 1, 7),
-        (3, 2, 2, 2),
-        (2, 1, 1, 1),
-        (3, 2, 1, 8),
-    ];
-
-    for (dsize, cols_in, cols_out, a_size, sparse) in cases.into_iter().flat_map(|(dsize, cols_in, cols_out, a_size)| {
-        [
-            (dsize, cols_in, cols_out, a_size, false),
-            (dsize, cols_in, cols_out, a_size, true),
-        ]
-    }) {
-        let rows = a_size.div_ceil(dsize);
-        let size_out = a_size;
-        let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
-            module
-                .vmp_apply_dft_to_dft_tmp_bytes(size_out, a_size, rows, cols_in, cols_out, size_out)
-                .max(module.vmp_prepare_tmp_bytes(rows, cols_in, cols_out, size_out)),
-        );
-
-        let mut a = module.vec_znx_alloc(cols_in, a_size);
-        a.fill_uniform(base2k, &mut source);
-        let mut a_dft = module.vec_znx_dft_alloc(cols_in, a_size);
-        for col in 0..cols_in {
-            module.vec_znx_dft_apply(
-                1,
-                0,
-                &mut a_dft.to_backend_mut(),
-                col,
-                &VecZnxToBackendRef::<BE>::to_backend_ref(&a),
-                col,
-            );
-        }
-        if sparse && a_size > 1 {
-            let prefix_size = a_size - 1;
-            let n = a_dft.n();
-            let len = BE::bytes_of_vec_znx_dft(n, cols_in, prefix_size);
-            let data = BE::region_mut(&mut a_dft.data, 0, len);
-            let mut prefix = VecZnxDft::from_data(data, n, cols_in, prefix_size);
-            for col in 0..cols_in {
-                module.vec_znx_dft_zero(&mut prefix, col);
-            }
-        }
-
-        let mut mat = module.mat_znx_alloc(rows, cols_in, cols_out, size_out);
-        mat.fill_uniform(base2k, &mut source);
-        let mut pmat = module.vmp_pmat_alloc(rows, cols_in, cols_out, size_out);
-        module.vmp_prepare(
-            &mut pmat.to_backend_mut(),
-            &MatZnxToBackendRef::<BE>::to_backend_ref(&mat),
-            &mut scratch.arena(),
-        );
-
-        let mut res_sequential = module.vec_znx_dft_alloc(cols_out, size_out);
-        let sentinel = vec![1u8; BE::len_bytes(&res_sequential.data)];
-        BE::copy_from_host(&mut res_sequential.data, &sentinel);
-        for di in 0..dsize {
-            let digit_size = ((a_size + di) / dsize).min(rows);
-            let mut digit = module.vec_znx_dft_alloc(cols_in, digit_size.max(1));
-            let mut digit_backend = digit.to_backend_mut();
-            let mut digit_view = digit_backend.with_size_mut(digit_size);
-            for col in 0..cols_in {
-                module.vec_znx_dft_copy(dsize, dsize - di - 1, &mut digit_view, col, &a_dft.to_backend_ref(), col);
-            }
-
-            let mut res_backend = res_sequential.to_backend_mut();
-            if di == 0 {
-                module.vmp_apply_dft_to_dft(
-                    &mut res_backend,
-                    &digit_view.reborrow_backend_ref(),
-                    &pmat.to_backend_ref(),
-                    0,
-                    &mut scratch.arena(),
-                );
-            } else {
-                let res_size = res_backend.size() - ((dsize - di) as isize - 2).max(0) as usize;
-                let mut res_view = res_backend.with_size_mut(res_size);
-                module.vmp_apply_dft_to_dft_accumulate(
-                    &mut res_view,
-                    &digit_view.reborrow_backend_ref(),
-                    &pmat.to_backend_ref(),
-                    di,
-                    &mut scratch.arena(),
-                );
-            }
-        }
-
-        let mut res_strided = module.vec_znx_dft_alloc(cols_out, size_out);
-        BE::copy_from_host(&mut res_strided.data, &sentinel);
-        module.vmp_apply_dft_to_dft_digits_strided(
-            &mut res_strided.to_backend_mut(),
-            &a_dft.to_backend_ref(),
-            dsize,
-            &pmat.to_backend_ref(),
-            &mut scratch.arena(),
-        );
-
-        let sequential = BE::to_host_bytes(&res_sequential.data);
-        let strided = BE::to_host_bytes(&res_strided.data);
-        assert_ne!(
-            sequential, sentinel,
-            "sequential VMP did not overwrite the nonzero destination"
-        );
-        if let Some(index) = sequential.iter().zip(&strided).position(|(lhs, rhs)| lhs != rhs) {
-            panic!(
-                "strided VMP differs at byte {index} (sequential={}, strided={}) for dsize={dsize}, \
-                 cols_in={cols_in}, cols_out={cols_out}, a_size={a_size}",
-                sequential[index], strided[index]
-            );
-        }
-    }
 }
 
 pub fn test_vmp_apply_dft<BR: crate::test_suite::TestBackend, BT: crate::test_suite::TestBackend>(

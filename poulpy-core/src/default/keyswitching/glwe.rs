@@ -2,7 +2,7 @@ use crate::api::GLWEBytesOf;
 use poulpy_hal::{
     api::{
         ModuleN, ScratchArenaTakeBasic, VecZnxDftAddAssign, VecZnxDftApply, VecZnxDftBytesOf, VecZnxDftCopy, VecZnxDftZero,
-        VmpApplyDftToDft, VmpApplyDftToDftAccumulate, VmpApplyDftToDftDigitsStrided, VmpApplyDftToDftTmpBytes,
+        VmpApplyDftToDft, VmpApplyDftToDftAccumulate, VmpApplyDftToDftTmpBytes,
     },
     layouts::{
         Backend, DftWord, Module, ScratchArena, VecZnxBackendRef, VecZnxDft, VecZnxDftBackendMut, VecZnxDftBackendRef,
@@ -12,7 +12,11 @@ use poulpy_hal::{
 
 use crate::{
     ScratchArenaTakeCore,
-    layouts::{GGLWEInfos, GGLWEPreparedBackendRef, GLWEInfos, GLWEToBackendRef, LWEInfos, prepared::GGLWEPreparedToBackendRef},
+    layouts::{
+        GGLWEInfos, GGLWEPreparedBackendRef, GLWEInfos, GLWEToBackendRef, LWEInfos, gadget_product_output_size,
+        prepared::GGLWEPreparedToBackendRef,
+    },
+    oep::GGLWEProductDigitsStridedImpl,
 };
 
 impl<BE: Backend> GLWEKeyswitchInternal<BE> for Module<BE> where
@@ -97,17 +101,28 @@ where
     }
 }
 
-impl<BE: Backend> GGLWEProductDefault<BE> for Module<BE> where
+impl<BE: Backend> GGLWEProductDefault<BE> for Module<BE>
+where
+    BE: GGLWEProductDigitsStridedImpl<BE>,
     Self: Sized
         + ModuleN
         + VecZnxDftBytesOf
         + VmpApplyDftToDftTmpBytes
         + VmpApplyDftToDft<BE>
         + VmpApplyDftToDftAccumulate<BE>
-        + VmpApplyDftToDftDigitsStrided<BE>
         + VecZnxDftAddAssign<BE>
-        + VecZnxDftCopy<BE>
+        + VecZnxDftCopy<BE>,
 {
+    fn gglwe_product_digits_strided_default(
+        &self,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        a: &VecZnxDftBackendRef<'_, BE>,
+        dsize: usize,
+        key: &GGLWEPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    ) {
+        BE::gglwe_product_digits_strided(self, res, a, dsize, &key.data, scratch);
+    }
 }
 
 pub(crate) trait GGLWEProductDefault<BE: Backend>
@@ -118,10 +133,18 @@ where
         + VmpApplyDftToDftTmpBytes
         + VmpApplyDftToDft<BE>
         + VmpApplyDftToDftAccumulate<BE>
-        + VmpApplyDftToDftDigitsStrided<BE>
         + VecZnxDftAddAssign<BE>
         + VecZnxDftCopy<BE>,
 {
+    fn gglwe_product_digits_strided_default(
+        &self,
+        res: &mut VecZnxDftBackendMut<'_, BE>,
+        a: &VecZnxDftBackendRef<'_, BE>,
+        dsize: usize,
+        key: &GGLWEPreparedBackendRef<'_, BE>,
+        scratch: &mut ScratchArena<'_, BE>,
+    );
+
     fn gglwe_product_dft_tmp_bytes_default<K>(&self, res_size: usize, a_size: usize, key_infos: &K) -> usize
     where
         K: GGLWEInfos,
@@ -176,7 +199,7 @@ where
             self.vmp_apply_dft_to_dft(res, a, &key.data, 0, scratch);
         } else {
             let dsize: usize = key.dsize().into();
-            self.vmp_apply_dft_to_dft_digits_strided(res, a, dsize, &key.data, scratch);
+            self.gglwe_product_digits_strided_default(res, a, dsize, key, scratch);
         }
     }
 }
@@ -259,27 +282,18 @@ where
     A: LWEInfos,
     K: GGLWEInfos,
 {
-    let key_size = key_infos.work_size(a_infos.k());
-    if <<BE as Backend>::DftWord as DftWord>::IS_EXACT
+    let work_size = key_infos.work_size(a_infos.k());
+    let exact_same_radix = <<BE as Backend>::DftWord as DftWord>::IS_EXACT
         && a_infos.base2k() == key_infos.base2k()
-        && res_infos.base2k() == key_infos.base2k()
-    {
-        let carry_bits = if term_count <= 1 {
-            0
-        } else {
-            usize::BITS as usize - (term_count - 1).leading_zeros() as usize
-        };
-        let carry_limbs = carry_bits.div_ceil(key_infos.base2k().as_usize());
-        key_size.min(
-            a_infos
-                .size()
-                .max(res_infos.size())
-                .saturating_add(2)
-                .saturating_add(carry_limbs),
-        )
-    } else {
-        key_size
-    }
+        && res_infos.base2k() == key_infos.base2k();
+    gadget_product_output_size(
+        work_size,
+        a_infos.size(),
+        res_infos.size(),
+        key_infos.base2k(),
+        exact_same_radix,
+        term_count,
+    )
 }
 
 #[allow(private_bounds)]
@@ -471,7 +485,11 @@ where
 }
 
 #[allow(private_bounds)]
-pub fn glwe_keyswitch_modup_assign_default<BE, M, R, K>(
+/// Low-level key-switch helper that skips a proven least-significant zero-limb
+/// prefix. It requires matching input/key radices and is intentionally absent
+/// from [`crate::api::GLWEKeyswitch`].
+#[doc(hidden)]
+pub fn glwe_keyswitch_assign_known_zero_limbs_default<BE, M, R, K>(
     module: &M,
     res: &mut R,
     key: &K,

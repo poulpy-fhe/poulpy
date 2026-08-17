@@ -209,8 +209,8 @@ fn test_convolution_direct() {
 }
 
 #[test]
-fn test_vmp_apply_dft_to_dft_digits_strided_bit_identical() {
-    poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_digits_strided(&Module::<NTT4x30Avx>::new(64), 50);
+fn test_gglwe_product_digits_strided_bit_identical() {
+    poulpy_core::test_suite::fused::test_gglwe_product_digits_strided(&Module::<NTT4x30Avx>::new(64), 50);
 }
 
 cross_backend_test_suite! {

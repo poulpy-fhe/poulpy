@@ -3,7 +3,6 @@ use poulpy_hal::{
     layouts::Module,
     test_suite::convolution::{
         test_convolution, test_convolution_accumulate, test_convolution_by_const, test_convolution_pairwise,
-        test_convolution_tensor_rank1,
     },
 };
 
@@ -205,13 +204,13 @@ fn test_convolution_direct() {
     test_convolution(&module, 50);
     test_convolution_by_const(&module, 50);
     test_convolution_pairwise(&module, 50);
-    test_convolution_tensor_rank1(&module, 50);
+    poulpy_core::test_suite::fused::test_glwe_tensor_rank1_dft(&module, 50);
     test_convolution_accumulate(&module, 50);
 }
 
 #[test]
-fn test_vmp_apply_dft_to_dft_digits_strided_bit_identical() {
-    poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_digits_strided(&Module::<NTT4x30Avx512>::new(64), 50);
+fn test_gglwe_product_digits_strided_bit_identical() {
+    poulpy_core::test_suite::fused::test_gglwe_product_digits_strided(&Module::<NTT4x30Avx512>::new(64), 50);
 }
 
 cross_backend_test_suite! {

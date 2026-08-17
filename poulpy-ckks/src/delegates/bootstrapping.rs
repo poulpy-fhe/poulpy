@@ -19,9 +19,10 @@ use crate::{
         BootstrappingContext, BootstrappingKeys, BootstrappingKeysLayout, CKKSCiphertextOwned, CKKSModuleAlloc,
         CKKSPlaintextOwned, EncodedLut,
     },
+    oep::CKKSEncapsulatedModUpImpl,
 };
 
-impl<BE: Backend> CKKSBootstrappingOps<BE> for Module<BE>
+impl<BE: Backend + CKKSEncapsulatedModUpImpl<BE>> CKKSBootstrappingOps<BE> for Module<BE>
 where
     Module<BE>: GLWEBytesOf<BE>
         + GLWECopy<BE>

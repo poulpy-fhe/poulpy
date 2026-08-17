@@ -21,6 +21,7 @@ use crate::{
         Base2K, GGLWEInfos, GLWEInfos, GLWEToBackendMut, GLWEToBackendRef, IntPolyInfos, LWEInfos,
         prepared::GLWETensorKeyPreparedToBackendRef,
     },
+    oep::GLWETensorRank1DftImpl,
 };
 
 fn tensor_square_rank1_direct_enabled<BE: Backend>() -> bool {
@@ -509,6 +510,7 @@ pub trait GLWETensoringDefault<BE: Backend> {
 
 impl<BE: Backend> GLWETensoringDefault<BE> for Module<BE>
 where
+    BE: GLWETensorRank1DftImpl<BE>,
     Self: Sized
         + ModuleN
         + CnvPVecBytesOf
@@ -611,10 +613,9 @@ where
             + self.bytes_of_vec_znx_big(1, pairwise_dft_size)
             + BE::bytes_of_vec_znx(self.n(), 1, res_size)
             + lvl_2_pairwise.max(self.vec_znx_big_normalize_tmp_bytes());
-        let lvl_2: usize = if cols == 2 && matches!(self.n(), 32768 | 65536) && self.cnv_tensor_rank1_dft_is_fused() {
+        let lvl_2: usize = if cols == 2 && matches!(self.n(), 32768 | 65536) && BE::glwe_tensor_rank1_dft_is_fused(self) {
             self.bytes_of_vec_znx_dft(3, diag_dft_size)
-                + self
-                    .cnv_tensor_rank1_dft_tmp_bytes(cnv_offset, diag_dft_size, a_size, b_size)
+                + BE::glwe_tensor_rank1_dft_tmp_bytes(self, cnv_offset, diag_dft_size, a_size, b_size)
                     .max(self.bytes_of_vec_znx_big(1, diag_dft_size) + self.vec_znx_big_normalize_tmp_bytes())
         } else {
             lvl_2a.max(lvl_2b)
@@ -994,7 +995,7 @@ where
         self.cnv_prepare_left(&mut a_prep, &a_backend.data, a_mask, &mut prep_scratch);
         self.cnv_prepare_right(&mut b_prep, &b_backend.data, b_mask, &mut prep_scratch);
 
-        if cols == 2 && matches!(self.n(), 32768 | 65536) && self.cnv_tensor_rank1_dft_is_fused() {
+        if cols == 2 && matches!(self.n(), 32768 | 65536) && BE::glwe_tensor_rank1_dft_is_fused(self) {
             glwe_tensor_apply_loop_rank1(
                 self,
                 cnv_offset,
@@ -1023,8 +1024,8 @@ where
 }
 
 #[allow(clippy::too_many_arguments)]
-fn glwe_tensor_apply_loop_rank1<BE, M, R, AP, BP>(
-    module: &M,
+fn glwe_tensor_apply_loop_rank1<BE, R, AP, BP>(
+    module: &Module<BE>,
     cnv_offset: usize,
     res: &mut R,
     a_prep: &AP,
@@ -1034,8 +1035,8 @@ fn glwe_tensor_apply_loop_rank1<BE, M, R, AP, BP>(
     ab_base2k: usize,
     scratch: &mut ScratchArena<'_, BE>,
 ) where
-    BE: Backend,
-    M: Sized
+    BE: Backend + GLWETensorRank1DftImpl<BE>,
+    Module<BE>: Sized
         + ModuleN
         + VecZnxDftBytesOf
         + VecZnxBigBytesOf
@@ -1057,7 +1058,8 @@ fn glwe_tensor_apply_loop_rank1<BE, M, R, AP, BP>(
         cnv_offset_lo,
     );
     let (mut tensor_dft, mut scratch) = scratch.borrow().take_vec_znx_dft_scratch(module, 3, dft_size);
-    module.cnv_tensor_rank1_dft(
+    BE::glwe_tensor_rank1_dft(
+        module,
         cnv_offset_hi,
         &mut tensor_dft.to_backend_mut(),
         &a_prep.to_backend_ref(),

@@ -31,16 +31,6 @@ pub unsafe trait GLWEKeyswitchImpl<BE: Backend>: Backend {
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
-
-    fn glwe_keyswitch_modup_assign<R, K>(
-        module: &Module<BE>,
-        res: &mut R,
-        key: &K,
-        leading_zero_limbs: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 }
 
 /// Backend-provided GGLWE key-switching operations.
@@ -146,7 +136,10 @@ pub trait GLWEKeyswitchDefault<BE: Backend> {
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 
-    fn glwe_keyswitch_modup_assign_default<R, K>(
+    /// Skips a proven least-significant zero-limb prefix during decomposition.
+    /// The input and key must use the same radix.
+    #[doc(hidden)]
+    fn glwe_keyswitch_assign_known_zero_limbs_default<R, K>(
         &self,
         res: &mut R,
         key: &K,
@@ -250,19 +243,6 @@ where
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     {
         module.glwe_keyswitch_assign_default(res, key, scratch)
-    }
-
-    fn glwe_keyswitch_modup_assign<R, K>(
-        module: &Module<BE>,
-        res: &mut R,
-        key: &K,
-        leading_zero_limbs: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    {
-        module.glwe_keyswitch_modup_assign_default(res, key, leading_zero_limbs, scratch)
     }
 }
 
@@ -408,7 +388,7 @@ macro_rules! impl_glwe_keyswitch_defaults_full {
                 $crate::default::keyswitching::glwe::glwe_keyswitch_assign_default::<$be, _, _, _>(self, res, key, scratch)
             }
 
-            fn glwe_keyswitch_modup_assign_default<R, K>(
+            fn glwe_keyswitch_assign_known_zero_limbs_default<R, K>(
                 &self,
                 res: &mut R,
                 key: &K,
@@ -418,7 +398,7 @@ macro_rules! impl_glwe_keyswitch_defaults_full {
                 R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
                 K: $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be> + $crate::layouts::GGLWEInfos,
             {
-                $crate::default::keyswitching::glwe::glwe_keyswitch_modup_assign_default::<$be, _, _, _>(
+                $crate::default::keyswitching::glwe::glwe_keyswitch_assign_known_zero_limbs_default::<$be, _, _, _>(
                     self,
                     res,
                     key,

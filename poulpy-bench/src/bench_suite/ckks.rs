@@ -21,10 +21,11 @@ use poulpy_core::{
         GLWELayout, GLWETensorKeyLayout, GLWETensorKeyPreparedFactory, ModuleCoreAlloc, Rank, SetGaloisElement, TorusPrecision,
     },
     oep::{
-        AutomorphismImpl, ConversionImpl, DecryptionImpl, GGLWEExternalProductImpl, GGLWEKeyswitchImpl, GGSWExternalProductImpl,
-        GGSWKeyswitchImpl, GGSWRotateImpl, GLWEAddImpl, GLWECopyImpl, GLWEExternalProductImpl, GLWEKeyswitchImpl,
-        GLWEMulConstImpl, GLWEMulPlainImpl, GLWEMulXpMinusOneImpl, GLWENegateImpl, GLWENormalizeImpl, GLWEPackImpl,
-        GLWERotateImpl, GLWEShiftImpl, GLWESubImpl, GLWETensoringImpl, GLWETraceImpl, LWEKeyswitchImpl, LinearTransformationImpl,
+        AutomorphismImpl, ConversionImpl, DecryptionImpl, GGLWEExternalProductImpl, GGLWEKeyswitchImpl,
+        GGLWEProductDigitsStridedImpl, GGSWExternalProductImpl, GGSWKeyswitchImpl, GGSWRotateImpl, GLWEAddImpl, GLWECopyImpl,
+        GLWEExternalProductImpl, GLWEKeyswitchImpl, GLWEMulConstImpl, GLWEMulPlainImpl, GLWEMulXpMinusOneImpl, GLWENegateImpl,
+        GLWENormalizeImpl, GLWEPackImpl, GLWERotateImpl, GLWEShiftImpl, GLWESubImpl, GLWETensorRank1DftImpl, GLWETensoringImpl,
+        GLWETraceImpl, LWEKeyswitchImpl, LinearTransformationImpl,
     },
 };
 use poulpy_hal::{
@@ -104,6 +105,8 @@ pub trait CkksBenchBackend:
     + GGLWEExternalProductImpl<Self>
     + GGSWExternalProductImpl<Self>
     + GLWETensoringImpl<Self>
+    + GLWETensorRank1DftImpl<Self>
+    + GGLWEProductDigitsStridedImpl<Self>
     + GLWEMulConstImpl<Self>
     + GLWEMulPlainImpl<Self>
     + GLWERotateImpl<Self>
@@ -163,6 +166,8 @@ where
         + GGLWEExternalProductImpl<BE>
         + GGSWExternalProductImpl<BE>
         + GLWETensoringImpl<BE>
+        + GLWETensorRank1DftImpl<BE>
+        + GGLWEProductDigitsStridedImpl<BE>
         + GLWEMulConstImpl<BE>
         + GLWEMulPlainImpl<BE>
         + GLWERotateImpl<BE>

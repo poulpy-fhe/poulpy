@@ -302,7 +302,7 @@ unsafe fn vmp_apply_core_avx_pm<const OVERWRITE: bool>(
 
         for col_pmat in limb_offset..col_max {
             let col_res = col_pmat - limb_offset;
-            let y_off = bp * bp_stride + col_pmat * col_stride + row_start * 16;
+            let y_off = bp * bp_stride + col_pmat * col_stride + row_start * 4;
 
             unsafe {
                 vec_mat1col_product_blkpair_bbc_pm_avx512(meta, row_max, blkpair_output, x_pm, &pmat_u64[y_off..], plane_stride)
@@ -517,7 +517,8 @@ pub(crate) fn vmp_apply_dft_to_dft_digits_strided_avx(
 
             for col_pmat in limb_offset..col_max {
                 let col_res = col_pmat - limb_offset;
-                let y_off = bp * bp_stride + col_pmat * col_stride + row_start * 16;
+                // `row_start` is an offset within each prime plane.
+                let y_off = bp * bp_stride + col_pmat * col_stride + row_start * 4;
                 unsafe {
                     vec_mat1col_product_blkpair_bbc_pm_avx512(
                         meta,

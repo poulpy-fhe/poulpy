@@ -17,7 +17,7 @@ use poulpy_hal::{
 };
 
 #[inline]
-fn take_host_typed<'a, BE, T>(arena: ScratchArena<'a, BE>, len: usize) -> (&'a mut [T], ScratchArena<'a, BE>)
+pub(crate) fn take_host_typed<'a, BE, T>(arena: ScratchArena<'a, BE>, len: usize) -> (&'a mut [T], ScratchArena<'a, BE>)
 where
     BE: Backend<ZnxWord = i64> + 'a,
     BE::BufMut<'a>: HostBufMut<'a>,
@@ -203,19 +203,6 @@ unsafe impl HalVmpImpl<NTT4x30Avx> for NTT4x30Avx {
         let bytes = crate::ntt4x30::vmp::vmp_apply_tmp_bytes_avx(a.size(), b.rows(), b.cols_in());
         let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
         crate::ntt4x30::vmp::vmp_apply_dft_to_dft_accumulate_avx(module, res, a, b, limb_offset, tmp);
-    }
-
-    fn vmp_apply_dft_to_dft_digits_strided(
-        module: &Module<Self>,
-        res: &mut VecZnxDftBackendMut<'_, Self>,
-        a: &VecZnxDftBackendRef<'_, Self>,
-        dsize: usize,
-        b: &VmpPMatBackendRef<'_, Self>,
-        scratch: &mut ScratchArena<'_, Self>,
-    ) {
-        let bytes = crate::ntt4x30::vmp::vmp_apply_digits_strided_tmp_bytes_avx(a.cols(), a.size(), dsize, b.rows(), b.cols_in());
-        let (tmp, _) = take_host_typed::<Self, u64>(scratch.borrow(), bytes / size_of::<u64>());
-        crate::ntt4x30::vmp::vmp_apply_dft_to_dft_digits_strided_avx(module, res, a, dsize, b, tmp);
     }
 
     fn vmp_zero(module: &Module<Self>, res: &mut VmpPMatBackendMut<'_, Self>) {

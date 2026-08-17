@@ -11,9 +11,9 @@ use rand::Rng;
 
 use crate::{
     api::{
-        CnvPVecAlloc, Convolution, ModuleN, ScratchOwnedAlloc, VecZnxAddIntoBackend, VecZnxAlloc, VecZnxBigAlloc,
-        VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply,
-        VecZnxIdftApplyTmpA, VecZnxNormalizeAssignBackend,
+        CnvPVecAlloc, Convolution, ModuleN, ScratchOwnedAlloc, VecZnxAddIntoBackend, VecZnxBigAlloc, VecZnxBigNormalize,
+        VecZnxBigNormalizeTmpBytes, VecZnxCopyBackend, VecZnxDftAddAssign, VecZnxDftAlloc, VecZnxDftApply, VecZnxIdftApplyTmpA,
+        VecZnxNormalizeAssignBackend,
     },
     layouts::{DataView, FillUniform, ScratchArena, ScratchOwned, VecZnx, VecZnxOwned, ZnxView, ZnxViewMut, ZnxZero},
     source::Source,
@@ -649,134 +649,6 @@ where
                 assert_eq!(res_want, res_have);
             }
         }
-    }
-}
-
-pub fn test_convolution_tensor_rank1<M, BE: crate::test_suite::TestBackend<OwnedBuf = Vec<u8>>>(module: &M, base2k: usize)
-where
-    M: ModuleN
-        + Convolution<BE>
-        + CnvPVecAlloc<BE>
-        + VecZnxAlloc<BE>
-        + VecZnxDftAlloc<BE>
-        + VecZnxIdftApplyTmpA<BE>
-        + VecZnxBigNormalize<BE>
-        + VecZnxBigNormalizeTmpBytes
-        + VecZnxBigAlloc<BE>,
-    ScratchOwned<BE>: ScratchOwnedAlloc<BE>,
-{
-    let mut source = Source::new([19u8; 32]);
-    let size = 15;
-    let res_size = 2 * size;
-    let mut a = module.vec_znx_alloc(2, size);
-    let mut b = module.vec_znx_alloc(2, size);
-    a.fill_uniform(17, &mut source);
-    b.fill_uniform(17, &mut source);
-    let a_backend = upload_vec_znx::<BE>(&a);
-    let b_backend = upload_vec_znx::<BE>(&b);
-    let mut a_prep = module.cnv_pvec_left_alloc(2, size);
-    let mut b_prep = module.cnv_pvec_right_alloc(2, size);
-    let scratch_bytes = module
-        .cnv_tensor_rank1_dft_tmp_bytes(0, res_size, size, size)
-        .max(module.cnv_apply_dft_tmp_bytes(0, res_size, size, size))
-        .max(module.cnv_prepare_left_tmp_bytes(size, size))
-        .max(module.cnv_prepare_right_tmp_bytes(size, size))
-        .max(module.vec_znx_big_normalize_tmp_bytes());
-    let mut scratch = ScratchOwned::<BE>::alloc(scratch_bytes);
-    module.cnv_prepare_left(
-        &mut a_prep.to_backend_mut(),
-        &vec_znx_backend_ref::<BE>(&a_backend),
-        !0,
-        &mut scratch.arena(),
-    );
-    module.cnv_prepare_right(
-        &mut b_prep.to_backend_mut(),
-        &vec_znx_backend_ref::<BE>(&b_backend),
-        !0,
-        &mut scratch.arena(),
-    );
-
-    for offset in 0..res_size {
-        let mut have_dft = module.vec_znx_dft_alloc(3, res_size);
-        let mut want_dft = module.vec_znx_dft_alloc(3, res_size);
-        module.cnv_tensor_rank1_dft(
-            offset,
-            &mut have_dft.to_backend_mut(),
-            &a_prep.to_backend_ref(),
-            &b_prep.to_backend_ref(),
-            &mut scratch.arena(),
-        );
-        module.cnv_apply_dft(
-            offset,
-            &mut want_dft.to_backend_mut(),
-            0,
-            &a_prep.to_backend_ref(),
-            0,
-            &b_prep.to_backend_ref(),
-            0,
-            &mut scratch.arena(),
-        );
-        module.cnv_apply_dft(
-            offset,
-            &mut want_dft.to_backend_mut(),
-            1,
-            &a_prep.to_backend_ref(),
-            0,
-            &b_prep.to_backend_ref(),
-            1,
-            &mut scratch.arena(),
-        );
-        module.cnv_apply_dft_accumulate(
-            offset,
-            &mut want_dft.to_backend_mut(),
-            1,
-            &a_prep.to_backend_ref(),
-            1,
-            &b_prep.to_backend_ref(),
-            0,
-            &mut scratch.arena(),
-        );
-        module.cnv_apply_dft(
-            offset,
-            &mut want_dft.to_backend_mut(),
-            2,
-            &a_prep.to_backend_ref(),
-            1,
-            &b_prep.to_backend_ref(),
-            1,
-            &mut scratch.arena(),
-        );
-
-        let mut have_big = module.vec_znx_big_alloc(1, res_size);
-        let mut want_big = module.vec_znx_big_alloc(1, res_size);
-        let template = module.vec_znx_alloc(3, res_size);
-        let mut have_backend = upload_vec_znx::<BE>(&template);
-        let mut want_backend = upload_vec_znx::<BE>(&template);
-        for col in 0..3 {
-            module.vec_znx_idft_apply_tmpa(&mut have_big.to_backend_mut(), 0, &mut have_dft.to_backend_mut(), col);
-            module.vec_znx_idft_apply_tmpa(&mut want_big.to_backend_mut(), 0, &mut want_dft.to_backend_mut(), col);
-            module.vec_znx_big_normalize(
-                &mut vec_znx_backend_mut::<BE>(&mut have_backend),
-                base2k,
-                0,
-                col,
-                &have_big.to_backend_ref(),
-                base2k,
-                0,
-                &mut scratch.arena(),
-            );
-            module.vec_znx_big_normalize(
-                &mut vec_znx_backend_mut::<BE>(&mut want_backend),
-                base2k,
-                0,
-                col,
-                &want_big.to_backend_ref(),
-                base2k,
-                0,
-                &mut scratch.arena(),
-            );
-        }
-        assert_eq!(download_vec_znx::<BE>(&have_backend), download_vec_znx::<BE>(&want_backend));
     }
 }
 

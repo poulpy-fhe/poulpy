@@ -3,7 +3,6 @@ use poulpy_hal::{
     layouts::{Backend, Module},
     test_suite::convolution::{
         test_convolution, test_convolution_accumulate, test_convolution_by_const, test_convolution_pairwise,
-        test_convolution_tensor_rank1,
     },
 };
 
@@ -266,11 +265,6 @@ mod ntt3x42_ifma_tests {
 }
 
 #[test]
-fn test_vmp_apply_dft_to_dft_digits_strided_bit_identical() {
-    poulpy_hal::test_suite::vmp::test_vmp_apply_dft_to_dft_digits_strided(&Module::<NTT3x42Ifma>::new(64), 50);
-}
-
-#[test]
 fn test_convolution_by_const_ntt3x42_ifma() {
     let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(8);
     test_convolution_by_const(&module, 12);
@@ -289,9 +283,13 @@ fn test_convolution_pairwise_ntt3x42_ifma() {
 }
 
 #[test]
-fn test_convolution_tensor_rank1_ntt3x42_ifma() {
-    let module: Module<NTT3x42Ifma> = Module::<NTT3x42Ifma>::new(8);
-    test_convolution_tensor_rank1(&module, 12);
+fn test_glwe_tensor_rank1_dft_ntt3x42_ifma() {
+    poulpy_core::test_suite::fused::test_glwe_tensor_rank1_dft(&Module::<NTT3x42Ifma>::new(8), 12);
+}
+
+#[test]
+fn test_gglwe_product_digits_strided_bit_identical() {
+    poulpy_core::test_suite::fused::test_gglwe_product_digits_strided(&Module::<NTT3x42Ifma>::new(64), 50);
 }
 
 #[test]
