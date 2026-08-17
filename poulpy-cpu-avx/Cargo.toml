@@ -33,8 +33,26 @@ paste = {workspace = true}
 
 [dev-dependencies]
 poulpy-ckks = {workspace = true, features = ["test-utils"]}
+poulpy-bin-fhe = {workspace = true}
+poulpy-bench = {workspace = true}
+criterion = {workspace = true}
 anyhow = {workspace = true}
 
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
+
+[[bench]]
+name = "full"
+harness = false
+required-features = ["enable-avx", "enable-ckks"]
+
+[[bench]]
+name = "standard"
+harness = false
+required-features = ["enable-avx", "enable-ckks"]
+
+[[bench]]
+name = "light"
+harness = false
+required-features = ["enable-avx", "enable-ckks"]

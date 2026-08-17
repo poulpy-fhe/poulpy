@@ -1,68 +1,110 @@
-#![cfg(any(
-    feature = "hal-bench",
-    feature = "core-bench",
-    feature = "bin-fhe-bench",
-    feature = "ckks-bench"
-))]
-
-//! Shared helpers for `poulpy-bench` benchmark binaries.
+//! Shared infrastructure for writing Criterion benchmarks against any
+//! `poulpy` backend (`poulpy-cpu-ref`, `-avx`, `-avx512`, `-arm`, ...).
 //!
-//! # Public dispatch macros
+//! Backend crates don't define their own benchmark logic — they write a thin
+//! `benches/*.rs` binary that picks a backend type and calls into the runners
+//! and suites defined here.
 //!
-//! Three macros are exported for bench files to use:
+//! # Layered module organization
 //!
-//! ```text
-//! for_each_fft_backend!(path [, leading_arg]* ; criterion_ref)
-//! for_each_ntt_backend!(path [, leading_arg]* ; criterion_ref)
-//! for_each_backend!(path [, leading_arg]* ; criterion_ref)
-//! ```
+//! Benchmarks are organized by layer, mirroring the crate stack they exercise:
 //!
-//! Each expands to one call per matching backend:
+//! - [`hal`]: raw `poulpy-hal` trait operations (`vec_znx`, `vec_znx_dft`,
+//!   `vec_znx_big`, `svp`, `vmp`, `convolution`, `reim`).
+//! - [`core`]: `poulpy-core` GLWE/GGSW operations (encryption, decryption,
+//!   keyswitch, automorphism, external product, tensoring).
+//! - [`schemes`]: full scheme-level operations (`ckks`, `bin_fhe`).
 //!
-//! ```text
-//! path::<BackendType>(leading_args..., criterion_ref, "backend-label");
-//! ```
+//! # The runner / `BenchOp` / suite pattern
 //!
-//! Use:
-//! - `for_each_fft_backend!` for FFT64-specific operations (`fft` primitive benches)
-//! - `for_each_ntt_backend!` for NTT-family-specific operations (`ntt` primitive benches)
-//! - `for_each_backend!` for operations that work with any backend (generic GLWE ops, vec_znx, etc.)
+//! Every benchmarked operation is a **runner**: a
+//! `fn(&mut Bencher<'_, M>, &P)` that sets up its inputs once and times the
+//! operation via `bencher.iter(...)`, generic over the backend and scoped to
+//! exactly the traits it needs. Each module groups its runners into a data
+//! table of [`BenchOp`]s (e.g. `hal::suites::vec_znx_ops`) — plain data, not
+//! yet wired to Criterion, so callers can filter, reorder, or merge tables
+//! from different groups before running them. [`bench_ops`] drives a
+//! `&[BenchOp<M, P>]` against a sweep of parameters `&[P]`, one Criterion
+//! group per op.
+//!
+//! # Tiers: `bench_*` criterion_group targets
+//!
+//! Each layer's `suites` module (`hal::suites`, `core::suites`,
+//! `schemes::suites`) additionally exposes single-backend-type-parameter
+//! `bench_*` functions meant to be registered directly as `criterion_group!`
+//! targets.
+//!
+//! - `bench_hal_ckks`/`bench_hal_binfhe`, `bench_core_ckks`/
+//!   `bench_core_binfhe`, `bench_ckks`, `bench_binfhe`: the **full** tier.
+//! - `suites::standard::{bench_hal_ckks, bench_hal_binfhe, ...}`: a smaller, representative cross-section of ops,
+//!   with the `_ckks` sweep restricted to `log_n` 13/14/15.
+//! - `suites::light::{...}`: same shape as `standard`, but the `_ckks`
+//!   sweep is a single size (`log_n` = 14) instead of {13, 14, 15}.
+//!
+//! # Params
+//!
+//! Each layer has its own `params` module (`hal::params`, `core::params`,
+//! `schemes::params`) holding the sweep-parameter structs its runners take
+//! (`HalSweepParms`, `CoreParams`, `CkksBenchParams`, ...) plus
+//! `default_bench_params_*` functions giving every backend the same
+//! reasonable default sweep, so results can be comparable across backends.
 //!
 //! # Adding a new backend
 //!
-//! 1. Add the crate to `[dependencies]` in `poulpy-bench/Cargo.toml` (optionally behind a feature).
-//! 2. Add one `#[cfg(...)] { use $fn as __f; __f::<NewType>(...); }` line to the appropriate
-//!    private family macro below (`for_each_fft_backend_family!` or `for_each_ntt_backend_family!`).
-//! 3. No bench files need to change.
+//! Write a `benches/*.rs` binary in the backend crate that imports the
+//! `bench_*` functions it needs from this crate and registers them in a
+//! `criterion_group!`, e.g.:
+//!
+//! ```rust,ignore
+//! use poulpy_bench::hal::suites::{bench_hal_binfhe, bench_hal_ckks};
+//!
+//! criterion_group! {
+//!     name = benches;
+//!     config = poulpy_bench::criterion_config();
+//!     targets =
+//!      bench_hal_ckks::<Ntt>,
+//!      bench_hal_binfhe::<Fft>,
+//!      // ... core, ckks, bin_fhe targets
+//! }
+//! ```
+//!
+//! No changes needed here — a backend implementing the full HAL/core/CKKS
+//! surface just plugs its own marker types in via turbofish.
 
-pub mod bench_suite;
-pub mod params;
+pub mod core;
+pub mod hal;
+pub mod schemes;
 
-#[cfg(any(feature = "core-bench", feature = "bin-fhe-bench", feature = "ckks-bench"))]
-use poulpy_core::{
-    api::ModuleTransfer,
-    layouts::{GGSW, GLWE, GLWEPlaintext, LWE, LWESecret},
-};
-use poulpy_hal::layouts::{
-    Backend, CnvPVecLOwned, CnvPVecROwned, DataView, MatZnx, MatZnxBackendRef, MatZnxToBackendRef, ScalarZnx,
-    ScalarZnxBackendRef, ScalarZnxToBackendRef, SvpPPol, SvpPPolOwned, VecZnx, VecZnxBackendMut, VecZnxBackendRef,
-    VecZnxBigBackendMut, VecZnxBigBackendRef, VecZnxBigOwned, VecZnxBigToBackendMut, VecZnxBigToBackendRef, VecZnxDftBackendMut,
-    VecZnxDftBackendRef, VecZnxDftOwned, VecZnxDftToBackendMut, VecZnxDftToBackendRef, VecZnxToBackendMut, VecZnxToBackendRef,
-    VmpPMat, VmpPMatOwned,
-};
-#[cfg(any(feature = "core-bench", feature = "bin-fhe-bench", feature = "ckks-bench"))]
-use poulpy_hal::layouts::{Module, TransferFrom};
-use poulpy_hal::source::Source;
-use rand::Rng;
+use std::fmt::Display;
+use std::marker::PhantomData;
 
-#[cfg(any(feature = "core-bench", feature = "bin-fhe-bench", feature = "ckks-bench"))]
-type BenchHostBackend = poulpy_cpu_ref::FFT64Ref;
+use criterion::{Bencher, BenchmarkId, Criterion, measurement::Measurement};
 
-fn random_aligned_host_bytes(len: usize, source: &mut Source) -> Vec<u8> {
-    let mut bytes = poulpy_hal::alloc_aligned_custom::<u8>(len, poulpy_hal::DEFAULTALIGN);
-    source.fill_bytes(&mut bytes);
-    bytes
+/// Ring degrees swept by each layer's `standard` tier — matches the CKKS
+/// scheme-level cross-section, so an NTT-friendly backend's HAL/core/CKKS
+/// results line up across layers.
+pub(crate) const STANDARD_N: [u64; 3] = [1 << 13, 1 << 14, 1 << 15];
+
+pub(crate) fn is_standard_n(n: u64) -> bool {
+    STANDARD_N.contains(&n)
 }
+
+/// The single ring degree each layer's `light` tier sweeps.
+pub(crate) const LIGHT_N: u64 = 1 << 14;
+
+pub(crate) fn is_light_n(n: u64) -> bool {
+    n == LIGHT_N
+}
+
+/// The ring degree bin-fhe's first representative param set uses — every
+/// layer's `*_binfhe` tier function is pinned to this one size, to match
+/// the FFT-friendly backend also used for [`schemes::suites::bench_binfhe`].
+pub(crate) fn bin_fhe_n() -> u64 {
+    schemes::params::default_bench_params_blind_rotate()[0].bin_fhe_params.n_glwe as u64
+}
+
+// #[cfg(any(feature = "core-bench", feature = "bin-fhe-bench", feature = "ckks-bench"))]
+// type BenchHostBackend = poulpy_cpu_ref::FFT64Ref;
 
 /// Return the shared Criterion configuration used by all bench binaries.
 ///
@@ -81,291 +123,51 @@ pub fn ckks_criterion_config() -> criterion::Criterion {
     criterion_config()
 }
 
-pub fn upload_host_vec_znx<BE: Backend<ZnxWord = i64>>(src: &VecZnx<Vec<u8>, i64>) -> VecZnx<BE::OwnedBuf, BE::ZnxWord> {
-    VecZnx::from_data(BE::from_host_bytes(src.data()), src.n(), src.cols(), src.size())
+/// One named operation in a benchmark suite: a criterion group (`layer`,
+/// `name`) and the runner that gets swept over every `P` entry. `layer`
+/// (`"hal"`, `"core"`, `"ckks"`, `"bin_fhe"`, ...) is a property of which
+/// suite table the op came from, not of how it's run.
+pub struct BenchOp<M: Measurement, P> {
+    pub layer: &'static str,
+    pub name: &'static str,
+    pub runner: fn(&mut Bencher<'_, M>, &P),
 }
 
-pub fn upload_host_scalar_znx<BE: Backend<ZnxWord = i64>>(src: &ScalarZnx<Vec<u8>, i64>) -> ScalarZnx<BE::OwnedBuf, BE::ZnxWord> {
-    ScalarZnx::from_data(BE::from_host_bytes(src.data()), src.n(), src.cols())
+/// The short name Criterion group labels use for a backend marker type
+/// (e.g. `poulpy_cpu_ref::ntt4x30::NTT4x30Ref` -> `"NTT4x30Ref"`).
+fn backend_name<BE: ?Sized>() -> &'static str {
+    std::any::type_name::<BE>().rsplit("::").next().unwrap()
 }
 
-pub fn upload_host_mat_znx<BE: Backend<ZnxWord = i64>>(src: &MatZnx<Vec<u8>, i64>) -> MatZnx<BE::OwnedBuf, BE::ZnxWord> {
-    MatZnx::from_data(
-        BE::from_host_bytes(src.data()),
-        src.n(),
-        src.rows(),
-        src.cols_in(),
-        src.cols_out(),
-        src.size(),
-    )
-}
-
-pub fn random_host_scalar_znx(n: usize, cols: usize, source: &mut Source) -> ScalarZnx<Vec<u8>, i64> {
-    let bytes = random_aligned_host_bytes(ScalarZnx::<Vec<u8>, i64>::bytes_of(n, cols), source);
-    ScalarZnx::from_bytes(n, cols, bytes)
-}
-
-pub fn random_host_vec_znx(n: usize, cols: usize, size: usize, source: &mut Source) -> VecZnx<Vec<u8>, i64> {
-    let bytes = random_aligned_host_bytes(VecZnx::<Vec<u8>, i64>::bytes_of(n, cols, size), source);
-    VecZnx::from_bytes(n, cols, size, bytes)
-}
-
-pub fn random_host_mat_znx(
-    n: usize,
-    rows: usize,
-    cols_in: usize,
-    cols_out: usize,
-    size: usize,
-    source: &mut Source,
-) -> MatZnx<Vec<u8>, i64> {
-    let bytes = random_aligned_host_bytes(MatZnx::<Vec<u8>, i64>::bytes_of(n, rows, cols_in, cols_out, size), source);
-    MatZnx::from_bytes(n, rows, cols_in, cols_out, size, bytes)
-}
-
-pub fn random_backend_vec_znx_dft<BE: Backend<ZnxWord = i64>>(
-    n: usize,
-    cols: usize,
-    size: usize,
-    source: &mut Source,
-) -> VecZnxDftOwned<BE> {
-    let mut bytes = vec![0u8; BE::bytes_of_vec_znx_dft(n, cols, size)];
-    source.fill_bytes(&mut bytes);
-    VecZnxDftOwned::<BE>::from_bytes(n, cols, size, bytes)
-}
-
-pub fn random_backend_vec_znx_big<BE: Backend<ZnxWord = i64>>(
-    n: usize,
-    cols: usize,
-    size: usize,
-    source: &mut Source,
-) -> VecZnxBigOwned<BE> {
-    let mut bytes = vec![0u8; BE::bytes_of_vec_znx_big(n, cols, size)];
-    source.fill_bytes(&mut bytes);
-    VecZnxBigOwned::<BE>::from_bytes(n, cols, size, bytes)
-}
-
-pub fn random_backend_svp_ppol<BE: Backend<ZnxWord = i64>>(n: usize, cols: usize, source: &mut Source) -> SvpPPolOwned<BE> {
-    let mut bytes = vec![0u8; BE::bytes_of_svp_ppol(n, cols)];
-    source.fill_bytes(&mut bytes);
-    SvpPPol::from_data(BE::from_host_bytes(&bytes), n, cols)
-}
-
-pub fn random_backend_vmp_pmat<BE: Backend<ZnxWord = i64>>(
-    n: usize,
-    rows: usize,
-    cols_in: usize,
-    cols_out: usize,
-    size: usize,
-    source: &mut Source,
-) -> VmpPMatOwned<BE> {
-    let mut bytes = vec![0u8; BE::bytes_of_vmp_pmat(n, rows, cols_in, cols_out, size)];
-    source.fill_bytes(&mut bytes);
-    VmpPMat::from_data(BE::from_host_bytes(&bytes), n, rows, cols_in, cols_out, size)
-}
-
-pub fn random_backend_cnv_pvec_left<BE: Backend<ZnxWord = i64>>(
-    n: usize,
-    cols: usize,
-    size: usize,
-    source: &mut Source,
-) -> CnvPVecLOwned<BE> {
-    let mut bytes = vec![0u8; BE::bytes_of_cnv_pvec_left(n, cols, size)];
-    source.fill_bytes(&mut bytes);
-    CnvPVecLOwned::<BE>::from_bytes(n, cols, size, bytes)
-}
-
-pub fn random_backend_cnv_pvec_right<BE: Backend<ZnxWord = i64>>(
-    n: usize,
-    cols: usize,
-    size: usize,
-    source: &mut Source,
-) -> CnvPVecROwned<BE> {
-    let mut bytes = vec![0u8; BE::bytes_of_cnv_pvec_right(n, cols, size)];
-    source.fill_bytes(&mut bytes);
-    CnvPVecROwned::<BE>::from_bytes(n, cols, size, bytes)
-}
-
-pub fn scalar_znx_backend_ref<'a, BE: Backend<ZnxWord = i64>>(
-    src: &'a ScalarZnx<BE::OwnedBuf, BE::ZnxWord>,
-) -> ScalarZnxBackendRef<'a, BE> {
-    <ScalarZnx<BE::OwnedBuf, BE::ZnxWord> as ScalarZnxToBackendRef<BE>>::to_backend_ref(src)
-}
-
-pub fn vec_znx_backend_ref<'a, BE: Backend<ZnxWord = i64>>(
-    src: &'a VecZnx<BE::OwnedBuf, BE::ZnxWord>,
-) -> VecZnxBackendRef<'a, BE> {
-    <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendRef<BE>>::to_backend_ref(src)
-}
-
-pub fn vec_znx_backend_mut<'a, BE: Backend<ZnxWord = i64>>(
-    src: &'a mut VecZnx<BE::OwnedBuf, BE::ZnxWord>,
-) -> VecZnxBackendMut<'a, BE> {
-    <VecZnx<BE::OwnedBuf, BE::ZnxWord> as VecZnxToBackendMut<BE>>::to_backend_mut(src)
-}
-
-pub fn mat_znx_backend_ref<'a, BE: Backend<ZnxWord = i64>>(
-    src: &'a MatZnx<BE::OwnedBuf, BE::ZnxWord>,
-) -> MatZnxBackendRef<'a, BE> {
-    <MatZnx<BE::OwnedBuf, BE::ZnxWord> as MatZnxToBackendRef<BE>>::to_backend_ref(src)
-}
-
-pub fn vec_znx_dft_backend_ref<'a, BE: Backend<ZnxWord = i64>>(src: &'a VecZnxDftOwned<BE>) -> VecZnxDftBackendRef<'a, BE> {
-    src.to_backend_ref()
-}
-
-pub fn vec_znx_dft_backend_mut<'a, BE: Backend<ZnxWord = i64>>(src: &'a mut VecZnxDftOwned<BE>) -> VecZnxDftBackendMut<'a, BE> {
-    src.to_backend_mut()
-}
-
-pub fn vec_znx_big_backend_ref<'a, BE: Backend<ZnxWord = i64>>(src: &'a VecZnxBigOwned<BE>) -> VecZnxBigBackendRef<'a, BE> {
-    src.to_backend_ref()
-}
-
-pub fn vec_znx_big_backend_mut<'a, BE: Backend<ZnxWord = i64>>(src: &'a mut VecZnxBigOwned<BE>) -> VecZnxBigBackendMut<'a, BE> {
-    src.to_backend_mut()
-}
-
-#[cfg(any(feature = "core-bench", feature = "bin-fhe-bench", feature = "ckks-bench"))]
-pub fn upload_host_glwe<BE>(module: &Module<BE>, src: &GLWE<Vec<u8>, i64>) -> GLWE<BE::OwnedBuf, BE::ZnxWord>
-where
-    BE: Backend<ZnxWord = i64> + TransferFrom<BenchHostBackend>,
-    Module<BE>: ModuleTransfer<BE>,
-{
-    module.upload_glwe::<BenchHostBackend>(src)
-}
-
-#[cfg(any(feature = "core-bench", feature = "bin-fhe-bench", feature = "ckks-bench"))]
-pub fn upload_host_lwe<BE>(module: &Module<BE>, src: &LWE<Vec<u8>, i64>) -> LWE<BE::OwnedBuf, BE::ZnxWord>
-where
-    BE: Backend<ZnxWord = i64> + TransferFrom<BenchHostBackend>,
-    Module<BE>: ModuleTransfer<BE>,
-{
-    module.upload_lwe::<BenchHostBackend>(src)
-}
-
-#[cfg(any(feature = "core-bench", feature = "bin-fhe-bench", feature = "ckks-bench"))]
-pub fn upload_host_lwe_secret<BE>(module: &Module<BE>, src: &LWESecret<Vec<u8>, i64>) -> LWESecret<BE::OwnedBuf, BE::ZnxWord>
-where
-    BE: Backend<ZnxWord = i64> + TransferFrom<BenchHostBackend>,
-    Module<BE>: ModuleTransfer<BE>,
-{
-    module.upload_lwe_secret::<BenchHostBackend>(src)
-}
-
-#[cfg(any(feature = "core-bench", feature = "bin-fhe-bench", feature = "ckks-bench"))]
-pub fn upload_host_glwe_plaintext<BE>(
-    module: &Module<BE>,
-    src: &GLWEPlaintext<Vec<u8>, i64>,
-) -> GLWEPlaintext<BE::OwnedBuf, BE::ZnxWord>
-where
-    BE: Backend<ZnxWord = i64> + TransferFrom<BenchHostBackend>,
-    Module<BE>: ModuleTransfer<BE>,
-{
-    module.upload_glwe_plaintext::<BenchHostBackend>(src)
-}
-
-#[cfg(any(feature = "core-bench", feature = "bin-fhe-bench", feature = "ckks-bench"))]
-pub fn upload_host_ggsw<BE>(module: &Module<BE>, src: &GGSW<Vec<u8>, i64>) -> GGSW<BE::OwnedBuf, BE::ZnxWord>
-where
-    BE: Backend<ZnxWord = i64> + TransferFrom<BenchHostBackend>,
-    Module<BE>: ModuleTransfer<BE>,
-{
-    module.upload_ggsw::<BenchHostBackend>(src)
-}
-
-/// Private: expands to every FFT64 backend in tier order (ref → avx → neon → gpu).
-#[doc(hidden)]
-#[macro_export]
-macro_rules! for_each_fft_backend_family {
-    ($fn:path $(, $arg:expr)* ; $c:expr) => {{
-        {
-            use $fn as __f;
-            __f::<poulpy_cpu_ref::FFT64Ref>($($arg,)* $c, "fft64-ref");
-        }
-        #[cfg(all(feature = "enable-avx", target_arch = "x86_64"))]
-        {
-            use $fn as __f;
-            __f::<poulpy_cpu_avx::FFT64Avx>($($arg,)* $c, "fft64-avx");
-        }
-        #[cfg(all(feature = "enable-avx512f", target_arch = "x86_64"))]
-        {
-            use $fn as __f;
-            __f::<poulpy_cpu_avx512::FFT64Avx512>($($arg,)* $c, "fft64-avx512");
-        }
-        #[cfg(all(feature = "enable-neon", target_arch = "aarch64"))]
-        {
-            use $fn as __f;
-            __f::<poulpy_cpu_arm::FFT64Neon>($($arg,)* $c, "fft64-neon");
-        }
-        // #[cfg(feature = "enable-gpu")]
-        // { use $fn as __f; __f::<poulpy_gpu::FFT64GPU>($($arg,)* $c, "fft64-gpu"); }
-    }};
-}
-
-/// Private: expands to every NTT-family backend in tier order
-/// (ntt4x30-ref → ntt4x30-avx → ntt4x30-avx512 → ntt-ifma → ntt4x30-neon → gpu).
-#[doc(hidden)]
-#[macro_export]
-macro_rules! for_each_ntt_backend_family {
-    ($fn:path $(, $arg:expr)* ; $c:expr) => {{
-        {
-            use $fn as __f;
-            __f::<poulpy_cpu_ref::NTT4x30Ref>($($arg,)* $c, "ntt4x30-ref");
-        }
-        #[cfg(all(feature = "enable-avx", target_arch = "x86_64"))]
-        {
-            use $fn as __f;
-            __f::<poulpy_cpu_avx::NTT4x30Avx>($($arg,)* $c, "ntt4x30-avx");
-        }
-        #[cfg(all(feature = "enable-avx512f", target_arch = "x86_64"))]
-        {
-            use $fn as __f;
-            __f::<poulpy_cpu_avx512::NTT4x30Avx512>($($arg,)* $c, "ntt4x30-avx512");
-        }
-        #[cfg(all(feature = "enable-ifma", target_arch = "x86_64"))]
-        {
-            use $fn as __f;
-            __f::<poulpy_cpu_avx512::NTT3x42Ifma>($($arg,)* $c, "ntt-ifma");
-        }
-        #[cfg(all(feature = "enable-neon", target_arch = "aarch64"))]
-        {
-            use $fn as __f;
-            __f::<poulpy_cpu_arm::NTT4x30Neon>($($arg,)* $c, "ntt4x30-neon");
-        }
-        // #[cfg(feature = "enable-gpu")]
-        // { use $fn as __f; __f::<poulpy_gpu::NTT4x30GPU>($($arg,)* $c, "ntt4x30-gpu"); }
-    }};
-}
-
-/// Run a bench function against every FFT64 backend.
+/// Runs one criterion group per op in `ops`, each expanded over every entry
+/// in `sweeps`. `BE` — the backend the ops were built against (e.g.
+/// `Ntt`/`Fft` in the `poulpy-cpu-ref` benches) — names the run; it's given
+/// as `PhantomData<BE>` rather than turbofish so this composes inside other
+/// generic functions, where `BE` may be an abstract type parameter with no
+/// nameable value. Each op's own `layer` field distinguishes it inside the
+/// run, so results from multiple variants don't collide.
 ///
-/// Use for operations that are specific to the FFT64 transform domain
-/// (DFT, convolution, VMP/SVP with DFT).
-#[macro_export]
-macro_rules! for_each_fft_backend {
-    ($fn:path $(, $arg:expr)* ; $c:expr) => {{
-        poulpy_bench::for_each_fft_backend_family!($fn $(, $arg)* ; $c);
-    }};
-}
-
-/// Run a bench function against every NTT4x30 backend.
-///
-/// Use for operations that are specific to the NTT4x30 transform domain.
-#[macro_export]
-macro_rules! for_each_ntt_backend {
-    ($fn:path $(, $arg:expr)* ; $c:expr) => {{
-        poulpy_bench::for_each_ntt_backend_family!($fn $(, $arg)* ; $c);
-    }};
-}
-
-/// Run a bench function against every available backend (FFT64 and NTT-family).
-///
-/// Use for operations that work with any backend: generic GLWE operations,
-/// `vec_znx` / `vec_znx_big` arithmetic, encryption, decryption, key-switching, etc.
-#[macro_export]
-macro_rules! for_each_backend {
-    ($fn:path $(, $arg:expr)* ; $c:expr) => {{
-        poulpy_bench::for_each_fft_backend_family!($fn $(, $arg)* ; $c);
-        poulpy_bench::for_each_ntt_backend_family!($fn $(, $arg)* ; $c);
-    }};
+/// `ops` and `sweeps` are taken as iterators rather than slices, so callers
+/// can feed them a suite's own `Vec`/array directly, or a lazy `.filter()`
+/// chain, without first collecting into an intermediate collection.
+pub fn bench_ops<'a, BE, M, P, O, S>(_backend: PhantomData<BE>, ops: O, sweeps: S, c: &mut Criterion<M>)
+where
+    M: Measurement,
+    P: Display,
+    O: IntoIterator<Item = &'a BenchOp<M, P>>,
+    S: IntoIterator<Item = P>,
+    M: 'a,
+    P: 'a,
+{
+    let backend = backend_name::<BE>();
+    // `sweeps` is expanded once per op, so it must be replayable even though
+    // an arbitrary iterator/generator is only good for a single pass.
+    let sweeps: Vec<P> = sweeps.into_iter().collect();
+    for op in ops {
+        let mut group = c.benchmark_group(format!("{}/{}/{}", backend, op.layer, op.name));
+        for sweep in &sweeps {
+            group.bench_with_input(BenchmarkId::from_parameter(sweep), sweep, op.runner);
+        }
+        group.finish();
+    }
 }
