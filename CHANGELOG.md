@@ -124,6 +124,7 @@ Adds two native CKKS bootstrapping families, **PaCo** (Coron & Seuré, [ePrint 2
 - Add `ckks_encoding.rs`, the CPU encoding implementation, behind `impl_ckks_encoding_fft64_f64!`, `impl_ckks_encoding_owned_for!` and `impl_ckks_encoding_owned!`. Every backend wires `f64` and `Quad`.
 - **Breaking:** backend ring handles hold plan *sets* covering every power-of-two sub-dimension: `FFT64PlanSet` / `get_fft_plan(n)` replace `get_fft_table` / `get_ifft_table`, and `NttPlanSet` / `get_ntt_plan(n)` replace `get_ntt_table` / `get_intt_table`. Handles carry the new `ModulePlanCache`; the old cache names remain as aliases.
 - Add `ckks_paco.rs` and `ckks_ship.rs` with the `impl_ckks_paco_coeff_encoding!` and `impl_ckks_ship_coeff_encoding!` macros, invoked by every backend.
+- Add benchmarks binaries based on Criterion and the new `poulpy-bench` harness.
 - Fix `poulpy-cpu-avx512` compiling with `enable-ckks,enable-avx512f` but without `enable-ifma`.
 
 ### `poulpy-hal`: word genericity delivered
@@ -154,6 +155,10 @@ Adds two native CKKS bootstrapping families, **PaCo** (Coron & Seuré, [ePrint 2
 - 75 bounds state `Backend<OwnedBuf: HostDataMut + HostDataRef>` instead of `OwnedBuf = Vec<u8>`, and key allocation moves off host storage.
 - What stays pinned is genuinely i64: the BDD and CGGI evaluation path writes message bits into i64 coefficients, so those items keep `ZnxWord = i64` where the requirement is created.
 - Fixed: the compressed `CircuitBootstrappingKey` was generic over its buffer but held host key material, so a device instantiation would have compiled while silently holding it; and the CGGI blind rotation sized backend scratch with the host `VecZnx::bytes_of`.
+
+### `poulpy-bench`: new generic benchmarking API
+
+- Completely reworked the exisiting crate into a composable API for the backend crates to instantiate their benchmarks easily and with minimal boilerplate. The crate defines a generic runner for each backend operation, and a generic sweep driver that turns a table of runners plus a param sweep into Criterion groups. Backends can compose their own benchmark suites by selecting the operations they implement and the sweeps they want to run. See `poulpy-bench/README.md`.
 
 ### Build & Docs
 
