@@ -18,10 +18,6 @@ env:
     poulpy-cpu-ref/enable-core
     poulpy-cpu-ref/enable-ckks
     poulpy-bin-fhe/enable-bin-fhe
-    poulpy-bench/hal-bench
-    poulpy-bench/core-bench
-    poulpy-bench/bin-fhe-bench
-    poulpy-bench/ckks-bench
   AVX_FEATURES: >-
     poulpy-core/enable-core
     poulpy-core/enable-avx
@@ -31,11 +27,6 @@ env:
     poulpy-cpu-avx/enable-ckks
     poulpy-bin-fhe/enable-bin-fhe
     poulpy-bin-fhe/enable-avx
-    poulpy-bench/hal-bench
-    poulpy-bench/core-bench
-    poulpy-bench/bin-fhe-bench
-    poulpy-bench/ckks-bench
-    poulpy-bench/enable-avx
   AVX512_FEATURES: >-
     poulpy-core/enable-core
     poulpy-core/enable-avx
@@ -49,12 +40,6 @@ env:
     poulpy-bin-fhe/enable-bin-fhe
     poulpy-bin-fhe/enable-avx
     poulpy-bin-fhe/enable-ifma
-    poulpy-bench/hal-bench
-    poulpy-bench/core-bench
-    poulpy-bench/bin-fhe-bench
-    poulpy-bench/ckks-bench
-    poulpy-bench/enable-avx
-    poulpy-bench/enable-ifma
   NEON_FEATURES: >-
     poulpy-core/enable-core
     poulpy-core/enable-neon
@@ -64,11 +49,6 @@ env:
     poulpy-cpu-arm/enable-neon
     poulpy-bin-fhe/enable-bin-fhe
     poulpy-bin-fhe/enable-neon
-    poulpy-bench/hal-bench
-    poulpy-bench/core-bench
-    poulpy-bench/bin-fhe-bench
-    poulpy-bench/ckks-bench
-    poulpy-bench/enable-neon
 
 jobs:
   portable:
@@ -332,11 +312,11 @@ jobs:
           restore-keys: |
             arm64-cargo-neon-
 
-      - name: Check NEON backend (workspace libs)
-        run: cargo check --workspace --features "$NEON_FEATURES"
+      - name: Check NEON backend
+        run: cargo check --workspace --all-targets --features "$NEON_FEATURES"
 
-      - name: Clippy NEON backend (workspace libs)
-        run: cargo clippy --workspace --features "$NEON_FEATURES" -- -D warnings
+      - name: Clippy NEON backend
+        run: cargo clippy --workspace --all-targets --features "$NEON_FEATURES" -- -D warnings
 
       - name: Test NEON backend
         run: cargo test -p poulpy-cpu-arm --features "enable-neon,enable-ckks"

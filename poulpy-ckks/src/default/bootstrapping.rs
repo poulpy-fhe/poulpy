@@ -907,8 +907,15 @@ where
     D2S: poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
     S2D: GGLWEPreparedToBackendRef<BE> + GGLWEPreparedVmpPMatRef<BE> + GGLWEInfos,
 {
+    let dst_k = dst.k().as_usize();
+    let src_k = src.k().as_usize();
+    ckks_ensure!(
+        dst_k >= src_k,
+        "ckks_mod_up: dst.k ({dst_k}) < src.k ({src_k}); ModUp must widen, not shrink, the modulus"
+    );
+    let modulus_raise = dst_k - src_k;
+
     module.glwe_keyswitch_assign(src, dense_to_sparse, scratch);
-    let modulus_raise = dst.k().as_usize() - src.k().as_usize();
     let base2k = dst.base2k().as_usize();
     BootstrappingDefault::new(module).ckks_mod_up_into_default(dst, src, scratch)?;
     // ModUp introduces `floor(modulus_raise / base2k)` complete zero limbs.

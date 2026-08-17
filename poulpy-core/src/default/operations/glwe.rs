@@ -254,16 +254,14 @@ where
 
         let a_size: usize = a.size();
         let b_size: usize = b.size();
-        let cnv_offset: usize = a_size.min(b_size);
 
         let lvl_0: usize = self.bytes_of_cnv_pvec_left(cols, a_size) + self.bytes_of_cnv_pvec_right(1, b_size);
         let lvl_1: usize = self
             .cnv_prepare_left_lazy_tmp_bytes(a_size, a_size)
             .max(self.cnv_prepare_right_lazy_tmp_bytes(b_size, b_size));
 
-        let res_dft_size =
-            normalize_input_limb_bound_worst_case(a_size + b_size, res.size(), res.base2k().as_usize(), ab_base2k.as_usize());
-        let lvl_2_cnv_apply: usize = self.cnv_apply_dft_lazy_tmp_bytes(cnv_offset, res_dft_size, a_size, b_size);
+        let res_dft_size = a_size + b_size;
+        let lvl_2_cnv_apply: usize = self.cnv_apply_dft_lazy_tmp_bytes(0, res_dft_size, a_size, b_size);
 
         let lvl_2_res_dft: usize = self.bytes_of_vec_znx_dft(1, res_dft_size);
         let lvl_2_res_tmp: usize = self.bytes_of_vec_znx_big(1, res_dft_size) + BE::bytes_of_vec_znx(self.n(), 1, res.size());
