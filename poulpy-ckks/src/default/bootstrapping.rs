@@ -1,13 +1,21 @@
 use crate::{CKKSResult as Result, ckks_ensure};
-use poulpy_core::oep::GLWEKeyswitchDefault;
 use poulpy_core::{
     GLWECopy, GLWEKeyswitch, GLWEShift,
+    default::keyswitching::glwe::gglwe_product_output_size,
     layouts::{
         BSGSMeta, GGLWEInfos, GLWEInfos, GLWELayout, GLWETensorKeyPrepared, GLWEToBackendMut, GLWEToBackendRef, LWEInfos, Rank,
-        SetBSGSMeta, prepared::GLWETensorKeyPreparedToBackendRef,
+        SetBSGSMeta,
+        prepared::{GGLWEPreparedToBackendRef, GGLWEPreparedVmpPMatRef, GLWETensorKeyPreparedToBackendRef},
     },
+    oep::GGLWEProductDigitsStridedImpl,
 };
-use poulpy_hal::layouts::{Backend, Module, ScratchArena};
+use poulpy_hal::{
+    api::{
+        ModuleN, ScratchArenaTakeBasic, VecZnxBigAddSmallAssign, VecZnxBigBytesOf, VecZnxBigNormalize, VecZnxDftApply,
+        VecZnxDftBytesOf, VecZnxDftZero, VecZnxIdftApply, VmpApplyDftToDft,
+    },
+    layouts::{Backend, Module, ScratchArena, VecZnxBigToBackendRef, VecZnxDft, VecZnxDftBackendMut, VecZnxDftToBackendRef},
+};
 use std::ops::Deref;
 
 use crate::{
@@ -880,23 +888,154 @@ pub fn ckks_encapsulated_mod_up_default<BE, Dst, Src, D2S, S2D>(
     scratch: &mut ScratchArena<'_, BE>,
 ) -> Result<()>
 where
-    BE: Backend + CKKSEncapsulatedModUpImpl<BE>,
-    Module<BE>: GLWECopy<BE> + GLWEShift<BE> + GLWEKeyswitch<BE> + GLWEKeyswitchDefault<BE>,
+    BE: Backend + CKKSEncapsulatedModUpImpl<BE> + GGLWEProductDigitsStridedImpl<BE>,
+    Module<BE>: GLWECopy<BE>
+        + GLWEShift<BE>
+        + GLWEKeyswitch<BE>
+        + ModuleN
+        + VecZnxBigAddSmallAssign<BE>
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalize<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxDftBytesOf
+        + VecZnxDftZero<BE>
+        + VecZnxIdftApply<BE>
+        + VmpApplyDftToDft<BE>,
     Dst: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     Src: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + CKKSCtBounds + SetCKKSInfos,
     D2S: poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
-    S2D: poulpy_core::layouts::prepared::GGLWEPreparedToBackendRef<BE> + GGLWEInfos,
+    S2D: GGLWEPreparedToBackendRef<BE> + GGLWEPreparedVmpPMatRef<BE> + GGLWEInfos,
 {
     module.glwe_keyswitch_assign(src, dense_to_sparse, scratch);
     let modulus_raise = dst.k().as_usize() - src.k().as_usize();
     let base2k = dst.base2k().as_usize();
     BootstrappingDefault::new(module).ckks_mod_up_into_default(dst, src, scratch)?;
-    if modulus_raise.is_multiple_of(base2k) {
-        module.glwe_keyswitch_assign_known_zero_limbs_default(dst, sparse_to_dense, modulus_raise / base2k, scratch);
+    if modulus_raise != 0 && modulus_raise.is_multiple_of(base2k) {
+        ckks_keyswitch_assign_known_zero_limbs(module, dst, sparse_to_dense, modulus_raise / base2k, scratch);
     } else {
         module.glwe_keyswitch_assign(dst, sparse_to_dense, scratch);
     }
     Ok(())
+}
+
+/// CKKS-specific second key switch after ModUp. The low limbs introduced by
+/// the modulus raise are known to be zero, so their forward transforms can be
+/// skipped.
+fn ckks_keyswitch_assign_known_zero_limbs<BE, R, K>(
+    module: &Module<BE>,
+    res: &mut R,
+    key: &K,
+    leading_zero_limbs: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend + GGLWEProductDigitsStridedImpl<BE>,
+    Module<BE>: GLWEKeyswitch<BE>
+        + ModuleN
+        + VecZnxBigAddSmallAssign<BE>
+        + VecZnxBigBytesOf
+        + VecZnxBigNormalize<BE>
+        + VecZnxDftApply<BE>
+        + VecZnxDftBytesOf
+        + VecZnxDftZero<BE>
+        + VecZnxIdftApply<BE>
+        + VmpApplyDftToDft<BE>,
+    R: GLWEToBackendMut<BE> + GLWEToBackendRef<BE> + GLWEInfos,
+    K: GGLWEPreparedToBackendRef<BE> + GGLWEPreparedVmpPMatRef<BE> + GGLWEInfos,
+{
+    assert_eq!(res.rank(), key.rank_in());
+    assert_eq!(res.rank(), key.rank_out());
+    assert_eq!(res.n(), module.n() as u32);
+    assert_eq!(key.n(), module.n() as u32);
+    assert_eq!(res.base2k(), key.base2k());
+    assert!(leading_zero_limbs <= res.size());
+    assert!(scratch.available() >= module.glwe_keyswitch_tmp_bytes(res, res, key));
+
+    let output_size = gglwe_product_output_size::<BE, _, _, _>(res, res, key);
+    let base2k = res.base2k().as_usize();
+    let cols = (res.rank() + 1).as_usize();
+    let (mut res_dft, mut scratch_1) = scratch.borrow().take_vec_znx_dft_scratch(module, cols, output_size);
+
+    {
+        let mut ks_scratch = scratch_1.borrow();
+        ckks_keyswitch_dft_fill_known_zero_limbs(module, &mut res_dft, res, key, leading_zero_limbs, &mut ks_scratch);
+    }
+
+    let res_ref = res.to_backend_ref();
+    let (mut res_big, mut scratch) = scratch_1.take_vec_znx_big_scratch(module, cols, output_size);
+    let res_dft_ref = res_dft.to_backend_ref();
+    for col in 0..cols {
+        module.vec_znx_idft_apply(&mut res_big, col, &res_dft_ref, col, &mut scratch.borrow());
+    }
+    module.vec_znx_big_add_small_assign(&mut res_big, 0, res_ref.data(), 0);
+    drop(res_ref);
+
+    let res_big_ref = res_big.to_backend_ref();
+    let mut res_ref = res.to_backend_mut();
+    for col in 0..cols {
+        module.vec_znx_big_normalize(
+            res_ref.data_mut(),
+            base2k,
+            0,
+            col,
+            &res_big_ref,
+            base2k,
+            col,
+            &mut scratch.borrow(),
+        );
+    }
+}
+
+fn ckks_keyswitch_dft_fill_known_zero_limbs<BE, R, K>(
+    module: &Module<BE>,
+    res: &mut VecZnxDftBackendMut<'_, BE>,
+    a: &R,
+    key: &K,
+    leading_zero_limbs: usize,
+    scratch: &mut ScratchArena<'_, BE>,
+) where
+    BE: Backend + GGLWEProductDigitsStridedImpl<BE>,
+    Module<BE>: ModuleN + VecZnxDftApply<BE> + VecZnxDftBytesOf + VecZnxDftZero<BE> + VmpApplyDftToDft<BE>,
+    R: GLWEToBackendRef<BE> + GLWEInfos,
+    K: GGLWEPreparedToBackendRef<BE> + GGLWEPreparedVmpPMatRef<BE> + GGLWEInfos,
+{
+    let a = a.to_backend_ref();
+    assert_eq!(a.base2k(), key.base2k());
+    assert!(leading_zero_limbs <= a.size());
+
+    let cols = (a.rank() + 1).as_usize();
+    let n = a.n().as_usize();
+    let a_size = a.size();
+    scratch.scope(|scratch_phase| {
+        let (mut a_dft, mut product_scratch) = scratch_phase.take_vec_znx_dft_scratch(module, cols - 1, a_size);
+
+        if leading_zero_limbs != 0 {
+            let len = BE::bytes_of_vec_znx_dft(n, cols - 1, leading_zero_limbs);
+            let data = BE::region_mut_ref(&mut a_dft.data, 0, len);
+            let mut prefix = VecZnxDft::from_data(data, n, cols - 1, leading_zero_limbs);
+            for col in 0..cols - 1 {
+                module.vec_znx_dft_zero(&mut prefix, col);
+            }
+        }
+
+        let active_limbs = a_size - leading_zero_limbs;
+        if active_limbs != 0 {
+            let offset = BE::bytes_of_vec_znx_dft(n, cols - 1, leading_zero_limbs);
+            let len = BE::bytes_of_vec_znx_dft(n, cols - 1, active_limbs);
+            let data = BE::region_mut_ref(&mut a_dft.data, offset, len);
+            let mut active = VecZnxDft::from_data(data, n, cols - 1, active_limbs);
+            for col in 0..cols - 1 {
+                module.vec_znx_dft_apply(1, leading_zero_limbs, &mut active, col, a.data(), col + 1);
+            }
+        }
+
+        let a_dft = a_dft.to_backend_ref();
+        let pmat = key.vmp_pmat_backend_ref();
+        if key.dsize().as_usize() == 1 {
+            module.vmp_apply_dft_to_dft(res, &a_dft, &pmat, 0, &mut product_scratch);
+        } else {
+            BE::gglwe_product_digits_strided(module, res, &a_dft, key.dsize().as_usize(), &pmat, &mut product_scratch);
+        }
+    });
 }
 
 /// Scratch bound for [`ckks_encapsulated_mod_up_default`].

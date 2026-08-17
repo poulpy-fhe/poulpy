@@ -135,19 +135,6 @@ pub trait GLWEKeyswitchDefault<BE: Backend> {
     where
         R: GLWEToBackendMut<BE> + GLWEInfos,
         K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
-
-    /// Skips a proven least-significant zero-limb prefix during decomposition.
-    /// The input and key must use the same radix.
-    #[doc(hidden)]
-    fn glwe_keyswitch_assign_known_zero_limbs_default<R, K>(
-        &self,
-        res: &mut R,
-        key: &K,
-        leading_zero_limbs: usize,
-        scratch: &mut ScratchArena<'_, BE>,
-    ) where
-        R: GLWEToBackendMut<BE> + GLWEInfos,
-        K: GGLWEPreparedToBackendRef<BE> + GGLWEInfos;
 }
 
 /// Override surface for the GGLWE key-switching sub-family.
@@ -386,25 +373,6 @@ macro_rules! impl_glwe_keyswitch_defaults_full {
                 K: $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be> + $crate::layouts::GGLWEInfos,
             {
                 $crate::default::keyswitching::glwe::glwe_keyswitch_assign_default::<$be, _, _, _>(self, res, key, scratch)
-            }
-
-            fn glwe_keyswitch_assign_known_zero_limbs_default<R, K>(
-                &self,
-                res: &mut R,
-                key: &K,
-                leading_zero_limbs: usize,
-                scratch: &mut ::poulpy_hal::layouts::ScratchArena<$be>,
-            ) where
-                R: $crate::layouts::GLWEToBackendMut<$be> + $crate::layouts::GLWEInfos,
-                K: $crate::layouts::prepared::GGLWEPreparedToBackendRef<$be> + $crate::layouts::GGLWEInfos,
-            {
-                $crate::default::keyswitching::glwe::glwe_keyswitch_assign_known_zero_limbs_default::<$be, _, _, _>(
-                    self,
-                    res,
-                    key,
-                    leading_zero_limbs,
-                    scratch,
-                )
             }
         }
     };
