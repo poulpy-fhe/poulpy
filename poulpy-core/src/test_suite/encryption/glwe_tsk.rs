@@ -12,7 +12,7 @@ use crate::{
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         Dsize, GGLWEDecompress, GGLWEInfos, GLWESecret, GLWESecretPreparedFactory, GLWESecretTensor, GLWESecretTensorFactory,
-        GLWETensorKey, GLWETensorKeyCompressed, GLWETensorKeyDecompress, GLWETensorKeyLayout, ModuleCoreAlloc,
+        GLWETensorKey, GLWETensorKeyCompressed, GLWETensorKeyDecompress, GLWETensorKeyLayout, LWEInfos, ModuleCoreAlloc,
         ModuleCoreCompressedAlloc, prepared::GLWESecretPrepared,
     },
 };
@@ -76,7 +76,7 @@ where
         let mut sk_tensor: GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_tensor_alloc_from_infos(&sk);
         module.glwe_secret_tensor_prepare(&mut sk_tensor, &sk, &mut crate::test_suite::scratch_host_arena(&mut scratch));
 
-        let max_noise: f64 = DEFAULT_SIGMA_XE.log2() - (k as f64) + 0.5;
+        let max_noise: f64 = DEFAULT_SIGMA_XE.log2() - (tensor_key_infos.k().as_usize() as f64) + 0.5;
 
         for row in 0..tensor_key.dnum().as_usize() {
             for col in 0..tensor_key.rank_in().as_usize() {
@@ -165,7 +165,7 @@ where
         let mut sk_tensor: GLWESecretTensor<BE::OwnedBuf, BE::ZnxWord> = module.glwe_secret_tensor_alloc_from_infos(&sk);
         module.glwe_secret_tensor_prepare(&mut sk_tensor, &sk, &mut crate::test_suite::scratch_host_arena(&mut scratch));
 
-        let max_noise: f64 = DEFAULT_SIGMA_XE.log2() - (k as f64) + 0.5;
+        let max_noise: f64 = DEFAULT_SIGMA_XE.log2() - (tensor_key_infos.k().as_usize() as f64) + 0.5;
 
         for row in 0..tensor_key.dnum().as_usize() {
             for col in 0..tensor_key.rank_in().as_usize() {

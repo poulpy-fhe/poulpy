@@ -13,7 +13,8 @@ use crate::{
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
         GGLWE, GGLWECompressed, GGLWEDecompress, GGLWEInfos, GGLWELayout, GLWESecret, GLWESecretPreparedFactory,
-        GLWESwitchingKey, GLWESwitchingKeyCompressed, GLWESwitchingKeyDecompress, ModuleCoreAlloc, ModuleCoreCompressedAlloc,
+        GLWESwitchingKey, GLWESwitchingKeyCompressed, GLWESwitchingKeyDecompress, LWEInfos, ModuleCoreAlloc,
+        ModuleCoreCompressedAlloc,
         prepared::{GGLWEPreparedFactory, GLWESecretPrepared},
     },
     noise::GGLWENoise,
@@ -86,7 +87,7 @@ where
                     &mut scratch.arena(),
                 );
 
-                let max_noise: f64 = DEFAULT_SIGMA_XE.log2() - (k_ksk as f64) + 0.5;
+                let max_noise: f64 = DEFAULT_SIGMA_XE.log2() - (gglwe_infos.k().as_usize() as f64) + 0.5;
 
                 for row in 0..ksk.dnum().as_usize() {
                     for col in 0..ksk.rank_in().as_usize() {
@@ -227,7 +228,7 @@ pub fn test_gglwe_switching_key_compressed_encrypt_sk<BE: crate::test_suite::Tes
                     module.glwe_switching_key_alloc_from_infos(&gglwe_infos);
                 module.decompress_glwe_switching_key(&mut ksk, &ksk_compressed);
 
-                let max_noise: f64 = DEFAULT_SIGMA_XE.log2() - (k_ksk as f64) + 0.5;
+                let max_noise: f64 = DEFAULT_SIGMA_XE.log2() - (gglwe_infos.k().as_usize() as f64) + 0.5;
 
                 for row in 0..ksk.dnum().as_usize() {
                     for col in 0..ksk.rank_in().as_usize() {
@@ -367,7 +368,7 @@ where
                 let mut ksk: GGLWE<BE::OwnedBuf, BE::ZnxWord> = module.gglwe_alloc_from_infos(&gglwe_infos);
                 module.decompress_gglwe(&mut ksk, &ksk_compressed);
 
-                let max_noise: f64 = DEFAULT_SIGMA_XE.log2() - (k_ksk as f64) + 0.5;
+                let max_noise: f64 = DEFAULT_SIGMA_XE.log2() - (gglwe_infos.k().as_usize() as f64) + 0.5;
 
                 for row in 0..ksk.dnum().as_usize() {
                     for col in 0..ksk.rank_in().as_usize() {

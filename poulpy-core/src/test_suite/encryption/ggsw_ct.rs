@@ -10,7 +10,7 @@ use crate::{
     EncryptionLayout, GGSWCompressedEncryptSk, GGSWEncryptSk, GGSWNoise,
     encryption::DEFAULT_SIGMA_XE,
     layouts::{
-        GGSW, GGSWDecompress, GGSWInfos, GGSWLayout, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, ModuleCoreAlloc,
+        GGSW, GGSWDecompress, GGSWInfos, GGSWLayout, GLWEInfos, GLWESecret, GLWESecretPreparedFactory, LWEInfos, ModuleCoreAlloc,
         ModuleCoreCompressedAlloc, compressed::GGSWCompressed, prepared::GLWESecretPrepared,
     },
 };
@@ -73,7 +73,7 @@ where
                 &mut scratch.borrow(),
             );
 
-            let noise_f = |_col_i: usize| -(k as f64) + DEFAULT_SIGMA_XE.log2() + 0.5;
+            let noise_f = |_col_i: usize| -(ggsw_infos.k().as_usize() as f64) + DEFAULT_SIGMA_XE.log2() + 0.5;
 
             for row in 0..ct.dnum().as_usize() {
                 for col in 0..ct.rank().as_usize() + 1 {
@@ -162,7 +162,7 @@ where
                 &mut scratch.borrow(),
             );
 
-            let noise_f = |_col_i: usize| -(k as f64) + DEFAULT_SIGMA_XE.log2() + 0.5;
+            let noise_f = |_col_i: usize| -(ggsw_infos.k().as_usize() as f64) + DEFAULT_SIGMA_XE.log2() + 0.5;
 
             let mut ct: GGSW<BE::OwnedBuf, BE::ZnxWord> = module.ggsw_alloc_from_infos(&ggsw_infos);
             module.decompress_ggsw(&mut ct, &ct_compressed);

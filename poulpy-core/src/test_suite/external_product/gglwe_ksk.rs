@@ -14,7 +14,7 @@ use crate::{
         GLWESwitchingKeyLayout, ModuleCoreAlloc,
         prepared::{GGSWPrepared, GLWESecretPrepared},
     },
-    noise::noise_ggsw_product,
+    noise::GGSWNoiseModel,
 };
 
 #[allow(clippy::too_many_arguments)]
@@ -42,8 +42,6 @@ where
     for rank_in in 1_usize..3 {
         for rank_out in 1_usize..3 {
             for dsize in 1_usize..max_dsize + 1 {
-                let k_ggsw: usize = k_in + key_base2k * dsize;
-
                 let n: usize = module.n();
                 let dnum_in: usize = k_in / in_base2k;
                 let dnum: usize = k_in.div_ceil(key_base2k * dsize);
@@ -148,25 +146,21 @@ where
                     });
                 }
 
-                let var_gct_err_lhs: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
-                let var_gct_err_rhs: f64 = 0f64;
+                let var_key_err_body: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
+                let var_key_err_mask: f64 = 0f64;
 
                 let var_msg: f64 = 1f64 / n as f64; // X^{k}
                 let var_a0_err: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
-                let var_a1_err: f64 = 1f64 / 12f64;
+                let var_a1_err: f64 = 0f64;
 
-                let max_noise: f64 = noise_ggsw_product(
-                    n as f64,
-                    key_base2k * dsize,
+                let max_noise: f64 = ggsw_infos.log2_std_noise_external_product(
+                    &gglwe_in_infos,
                     var_xs,
                     var_msg,
                     var_a0_err,
                     var_a1_err,
-                    var_gct_err_lhs,
-                    var_gct_err_rhs,
-                    rank_out as f64,
-                    k_in,
-                    k_ggsw,
+                    var_key_err_body,
+                    var_key_err_mask,
                 ) + 0.5;
 
                 for row in 0..ct_gglwe_out.dnum().as_usize() {
@@ -217,8 +211,6 @@ pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::T
     for rank_in in 1_usize..3 {
         for rank_out in 1_usize..3 {
             for dsize in 1_usize..max_dsize + 1 {
-                let k_ggsw: usize = k_out + key_base2k * dsize;
-
                 let n: usize = module.n();
                 let dnum_in: usize = k_out / out_base2k;
                 let dnum: usize = k_out.div_ceil(key_base2k * dsize);
@@ -312,25 +304,21 @@ pub fn test_gglwe_switching_key_external_product_assign<BE: crate::test_suite::T
                     });
                 }
 
-                let var_gct_err_lhs: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
-                let var_gct_err_rhs: f64 = 0f64;
+                let var_key_err_body: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
+                let var_key_err_mask: f64 = 0f64;
 
                 let var_msg: f64 = 1f64 / n as f64; // X^{k}
                 let var_a0_err: f64 = DEFAULT_SIGMA_XE * DEFAULT_SIGMA_XE;
-                let var_a1_err: f64 = 1f64 / 12f64;
+                let var_a1_err: f64 = 0f64;
 
-                let max_noise: f64 = noise_ggsw_product(
-                    n as f64,
-                    key_base2k * dsize,
+                let max_noise: f64 = ggsw_infos.log2_std_noise_external_product(
+                    &gglwe_out_infos,
                     var_xs,
                     var_msg,
                     var_a0_err,
                     var_a1_err,
-                    var_gct_err_lhs,
-                    var_gct_err_rhs,
-                    rank_out as f64,
-                    k_out,
-                    k_ggsw,
+                    var_key_err_body,
+                    var_key_err_mask,
                 ) + 0.5;
 
                 for row in 0..ct_gglwe.dnum().as_usize() {

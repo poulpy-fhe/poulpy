@@ -21,11 +21,12 @@ use poulpy_hal::layouts::{Backend, Module, ScratchArena};
 
 use crate::{
     CKKSCtBounds, CKKSMeta, SetCKKSInfos,
-    api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps},
+    api::{CKKSAddOps, CKKSCopyOps, CKKSMulOps, CKKSPolynomialEvaluationOps, CKKSPow2Ops, CKKSSubOps, PolynomialInputTransform},
     layouts::{
         CKKSCiphertextOwned, CKKSModuleAlloc, ScratchArenaTakeCKKS,
         eval_mod::{EvalMod, EvalModBsgs},
     },
+    power_basis::{PowerBasis, PowerBasisGen},
 };
 
 /// Backend-generic reference implementation of [`CKKSEvalModOps`].
@@ -157,53 +158,73 @@ where
         got = ct.log_budget(),
     );
 
-    // The working copy at the plan scale is carved from scratch (accounted for
-    // by `ckks_eval_mod_tmp_bytes`), not heap-allocated: it lives for the whole
-    // evaluation (the inverse stage reuses it), so its bytes are charged on top
-    // of every nested stage. `glwe_copy` zero-fills the destination limbs
-    // beyond the source, so the dirty scratch region is fully defined.
-    scratch.scope(|scratch_local| {
-        let (mut t1, mut scratch_local) = scratch_local.take_ckks_ciphertext_scratch(
-            &GLWELayout {
-                n: ct.n(),
-                base2k: ct.base2k(),
-                k: (s_budget + s_eval).into(),
-                rank: Rank(1),
-            },
-            CKKSMeta {
-                log_delta: s_eval,
-                log_sparsity: ct.log_sparsity(),
-                slots: ct.slots(),
-            },
-        );
-        module.glwe_copy(&mut t1, ct);
+    let work_layout = GLWELayout {
+        n: ct.n(),
+        base2k: ct.base2k(),
+        k: (s_budget + s_eval).into(),
+        rank: Rank(1),
+    };
+    let work_meta = CKKSMeta {
+        log_delta: s_eval,
+        log_sparsity: ct.log_sparsity(),
+        slots: ct.slots(),
+    };
 
-        match &params.f_mod_bsgs {
-            EvalModBsgs::Real(bsgs) => {
-                module.ckks_eval_poly_real_const_coeffs(res, &t1, bsgs, tsk, &mut scratch_local)?;
+    match &params.f_mod_bsgs {
+        EvalModBsgs::Real(bsgs) => {
+            if bsgs.input_transform() == PolynomialInputTransform::Identity {
+                // The generic one-shot evaluator would copy this input again
+                // before building its power basis. Hand ownership over directly.
+                let x1 = eval_mod_input(module, ct, &work_layout, work_meta);
+                let mut power_basis = PowerBasis::new(bsgs.basis(), x1);
+                power_basis.populate(bsgs.degree(), bsgs.log_split(), bsgs.parity(), module, tsk, scratch)?;
+                module.ckks_eval_poly_real_const_coeffs_from_power_basis(res, bsgs, &power_basis, tsk, scratch)?;
+            } else {
+                scratch.scope(|scratch_local| {
+                    let (mut input, mut nested) = scratch_local.take_ckks_ciphertext_scratch(&work_layout, work_meta);
+                    module.glwe_copy(&mut input, ct);
+                    module.ckks_eval_poly_real_const_coeffs(res, &input, bsgs, tsk, &mut nested)
+                })?;
+            }
 
-                if let Some(consts) = params.range_extension_consts.as_ref() {
-                    for i in 0..params.plan.f_mod_log_interval_reduction {
-                        module.ckks_square_assign(res, tsk, &mut scratch_local)?;
-                        module.ckks_mul_pow2_assign(res, 1, &mut scratch_local)?;
-                        module.ckks_sub_pt_const_assign(res, 0, consts, i, &mut scratch_local)?;
-                    }
-                }
-
-                if let Some(inv) = params.f_mod_inv_bsgs.as_ref() {
-                    module.ckks_copy(&mut t1, &*res, &mut scratch_local)?;
-                    module.ckks_eval_poly_real_const_coeffs(res, &t1, inv, tsk, &mut scratch_local)?;
+            if let Some(consts) = params.range_extension_consts.as_ref() {
+                for i in 0..params.plan.f_mod_log_interval_reduction {
+                    module.ckks_square_assign(res, tsk, scratch)?;
+                    module.ckks_mul_pow2_assign(res, 1, scratch)?;
+                    module.ckks_sub_pt_const_assign(res, 0, consts, i, scratch)?;
                 }
             }
-            EvalModBsgs::Complex(bsgs) => {
-                module.ckks_eval_poly_complex_const_coeffs(res, &t1, bsgs, tsk, &mut scratch_local)?;
-                for _ in 0..params.plan.f_mod_log_interval_reduction {
-                    module.ckks_square_assign(res, tsk, &mut scratch_local)?;
-                }
+
+            if let Some(inv) = params.f_mod_inv_bsgs.as_ref() {
+                // The inverse consumes the base result, so this is the only
+                // stage that still needs a separate working copy.
+                scratch.scope(|scratch_local| {
+                    let (mut input, mut nested) = scratch_local.take_ckks_ciphertext_scratch(&work_layout, work_meta);
+                    module.ckks_copy(&mut input, &*res, &mut nested)?;
+                    module.ckks_eval_poly_real_const_coeffs(res, &input, inv, tsk, &mut nested)
+                })?;
             }
         }
-        Result::Ok(())
-    })?;
+        EvalModBsgs::Complex(bsgs) => {
+            if bsgs.re.input_transform() == PolynomialInputTransform::Identity
+                && bsgs.im.input_transform() == PolynomialInputTransform::Identity
+            {
+                let x1 = eval_mod_input(module, ct, &work_layout, work_meta);
+                let mut power_basis = PowerBasis::new(bsgs.re.basis(), x1);
+                power_basis.populate(bsgs.re.degree(), bsgs.re.log_split(), bsgs.re.parity(), module, tsk, scratch)?;
+                module.ckks_eval_poly_complex_const_coeffs_from_power_basis(res, bsgs, &power_basis, tsk, scratch)?;
+            } else {
+                scratch.scope(|scratch_local| {
+                    let (mut input, mut nested) = scratch_local.take_ckks_ciphertext_scratch(&work_layout, work_meta);
+                    module.glwe_copy(&mut input, ct);
+                    module.ckks_eval_poly_complex_const_coeffs(res, &input, bsgs, tsk, &mut nested)
+                })?;
+            }
+            for _ in 0..params.plan.f_mod_log_interval_reduction {
+                module.ckks_square_assign(res, tsk, scratch)?;
+            }
+        }
+    }
 
     // Restore the input scale on the result. This is a pure metadata relabel
     // (`set_log_delta`), not a rescale: entry raised the scale `s_in -> s_eval`
@@ -217,4 +238,19 @@ where
     }
 
     Ok(())
+}
+
+/// Allocates the single owned EvalMod input that becomes power-basis element 1.
+/// Copying directly from `ct` avoids the scratch copy followed by the generic
+/// polynomial evaluator's second owned copy.
+fn eval_mod_input<BE, C>(module: &Module<BE>, ct: &C, layout: &GLWELayout, meta: CKKSMeta) -> CKKSCiphertextOwned<BE>
+where
+    BE: Backend,
+    Module<BE>: CKKSModuleAlloc<BE> + GLWECopy<BE>,
+    C: GLWEToBackendRef<BE> + CKKSCtBounds,
+{
+    let mut input = module.ckks_ciphertext_alloc(layout.base2k, layout.k);
+    module.glwe_copy(&mut input, ct);
+    input.set_meta(meta);
+    input
 }
