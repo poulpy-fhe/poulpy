@@ -160,12 +160,13 @@ pub fn default_bench_params_ckks() -> Vec<CkksBenchParams> {
     ]
 }
 
-/// Single representative blind-rotation benchmark point. Unlike the other
-/// `default_bench_params_*` sweeps, bin-fhe params aren't indexed by a single
-/// `log_n` (the GLWE ring, LWE dimension, and per-key gadget shapes vary
-/// independently), so this is one fixed, non-swept parameter set.
-pub fn default_bench_params_blind_rotate() -> BlindRotateBenchParams {
-    BlindRotateBenchParams {
+/// Blind-rotation benchmark points. Unlike the other `default_bench_params_*`
+/// sweeps, bin-fhe params aren't indexed by a single `log_n` (the GLWE ring,
+/// LWE dimension, and per-key gadget shapes vary independently) — currently
+/// a single representative parameter set, but more will be added as
+/// additional bin-fhe parameter regimes become relevant to benchmark.
+pub fn default_bench_params_blind_rotate() -> Vec<BlindRotateBenchParams> {
+    vec![BlindRotateBenchParams {
         bin_fhe_params: BinFheBenchParams {
             n_glwe: 1 << 12,
             n_lwe: 630,
@@ -176,13 +177,13 @@ pub fn default_bench_params_blind_rotate() -> BlindRotateBenchParams {
         block_size: 7,
         extension_factor: 1,
         log_message_modulus: 2,
-    }
+    }]
 }
 
-/// Single representative circuit-bootstrapping benchmark point (see
+/// Circuit-bootstrapping benchmark points (see
 /// [`default_bench_params_blind_rotate`] for why this isn't a `log_n` sweep).
-pub fn default_bench_params_circuit_bootstrapping() -> CircuitBootstrappingBenchParam {
-    CircuitBootstrappingBenchParam {
+pub fn default_bench_params_circuit_bootstrapping() -> Vec<CircuitBootstrappingBenchParam> {
+    vec![CircuitBootstrappingBenchParam {
         bin_fhe_params: BinFheBenchParams {
             n_glwe: 1 << 12,
             n_lwe: 630,
@@ -199,5 +200,5 @@ pub fn default_bench_params_circuit_bootstrapping() -> CircuitBootstrappingBench
         ggsw_dsize: 1,
         log_domain: 1,
         extension_factor: 1,
-    }
+    }]
 }

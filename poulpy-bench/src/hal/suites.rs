@@ -20,13 +20,18 @@ use poulpy_hal::{
 
 use poulpy_hal::api::{NegacyclicFFT, NegacyclicFFTNew};
 
-use criterion::measurement::Measurement;
+use std::marker::PhantomData;
+
+use criterion::{Criterion, measurement::Measurement, measurement::WallTime};
 
 use crate::{
-    BenchOp,
+    BenchOp, bench_ops, bin_fhe_n,
     hal::{
         convolution,
-        params::{CnvSweepParms, HalSweepParms, ReimSweepParams, VmpSweepParms},
+        params::{
+            CnvSweepParms, HalSweepParms, ReimSweepParams, VmpSweepParms, default_bench_params_cnv, default_bench_params_hal,
+            default_bench_params_vmp,
+        },
         reim, svp, vec_znx, vec_znx_big, vec_znx_dft, vmp,
     },
 };
@@ -616,4 +621,412 @@ where
         runner: vmp::runner_vmp_apply_dft_to_dft::<B, M>,
     }];
     (hal_ops, vmp_ops)
+}
+
+// ── bench_hal (criterion_group targets) ─────────────────────────────────────
+
+/// Every HAL op family (`vec_znx`, `vec_znx_dft`, `vec_znx_big`, `svp`,
+/// `vmp`, `convolution`), swept at every size matching CKKS (`log_n`
+/// 10–15) — the full tier's CKKS/NTT-role sweep. `where` clause is the
+/// union of [`all_vec_znx_ops`], [`svp_ops`], [`vmp_ops`], and
+/// [`convolution_ops`]'s own.
+pub fn bench_hal_ckks<B>(c: &mut Criterion<WallTime>)
+where
+    B: Backend<ZnxWord = i64> + 'static,
+    Module<B>: ModuleNew<B>
+        + VecZnxAlloc<B>
+        + VecZnxAddIntoBackend<B>
+        + VecZnxAddAssignBackend<B>
+        + VecZnxAutomorphismBackend<B>
+        + VecZnxAutomorphismAssignBackend<B>
+        + VecZnxAutomorphismAssignTmpBytes
+        + VecZnxMulXpMinusOneBackend<B>
+        + VecZnxMulXpMinusOneAssignBackend<B>
+        + VecZnxMulXpMinusOneAssignTmpBytes
+        + VecZnxNegateBackend<B>
+        + VecZnxNegateAssignBackend<B>
+        + VecZnxNormalize<B>
+        + VecZnxNormalizeAssignBackend<B>
+        + VecZnxNormalizeTmpBytes
+        + VecZnxRotateBackend<B>
+        + VecZnxRotateAssignBackend<B>
+        + VecZnxRotateAssignTmpBytes
+        + VecZnxLshBackend<B>
+        + VecZnxLshAssignBackend<B>
+        + VecZnxLshTmpBytes
+        + VecZnxRshBackend<B>
+        + VecZnxRshAssignBackend<B>
+        + VecZnxRshTmpBytes
+        + VecZnxSubBackend<B>
+        + VecZnxSubAssignBackend<B>
+        + VecZnxSubNegateAssignBackend<B>
+        + VecZnxDftAlloc<B>
+        + VecZnxBigAlloc<B>
+        + VecZnxDftAddInto<B>
+        + VecZnxDftAddAssign<B>
+        + VecZnxDftApply<B>
+        + VecZnxIdftApply<B>
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxIdftApplyTmpA<B>
+        + VecZnxDftSub<B>
+        + VecZnxDftSubAssign<B>
+        + VecZnxDftSubNegateAssign<B>
+        + VecZnxBigAddInto<B>
+        + VecZnxBigAddAssign<B>
+        + VecZnxBigAddSmallIntoBackend<B>
+        + VecZnxBigAddSmallAssign<B>
+        + VecZnxBigAutomorphism<B>
+        + VecZnxBigAutomorphismAssign<B>
+        + VecZnxBigAutomorphismAssignTmpBytes
+        + VecZnxBigNegate<B>
+        + VecZnxBigNegateAssign<B>
+        + VecZnxBigNormalize<B>
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxBigSub<B>
+        + VecZnxBigSubAssign<B>
+        + VecZnxBigSubNegateAssign<B>
+        + VecZnxBigSubSmallABackend<B>
+        + VecZnxBigSubSmallBBackend<B>
+        + SvpPPolAlloc<B>
+        + SvpPrepare<B>
+        + SvpApplyDft<B>
+        + SvpApplyDftToDft<B>
+        + SvpApplyDftToDftAssign<B>
+        + VmpPMatAlloc<B>
+        + VmpPrepare<B>
+        + VmpPrepareTmpBytes
+        + VmpApplyDft<B>
+        + VmpApplyDftTmpBytes
+        + VmpApplyDftToDft<B>
+        + VmpApplyDftToDftTmpBytes
+        + Convolution<B>
+        + CnvPVecAlloc<B>,
+    ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
+    B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
+{
+    bench_ops(
+        PhantomData::<B>,
+        &all_vec_znx_ops::<B, WallTime>(),
+        default_bench_params_hal(),
+        c,
+    );
+    bench_ops(PhantomData::<B>, &svp_ops::<B, WallTime>(), default_bench_params_hal(), c);
+    bench_ops(PhantomData::<B>, &vmp_ops::<B, WallTime>(), default_bench_params_vmp(), c);
+    bench_ops(
+        PhantomData::<B>,
+        &convolution_ops::<B, WallTime>(),
+        default_bench_params_cnv(),
+        c,
+    );
+}
+
+/// Every HAL op family, pinned to the single ring degree bin-fhe's
+/// representative params use — the full tier's bin-fhe/FFT-role sweep.
+/// Same op tables as [`bench_hal_ckks`] (comprehensive family coverage),
+/// but the FFT-friendly backend is only ever exercised at bin-fhe's one
+/// size, so unlike `bench_hal_ckks` this doesn't sweep the full `log_n`
+/// grid.
+pub fn bench_hal_binfhe<B>(c: &mut Criterion<WallTime>)
+where
+    B: Backend<ZnxWord = i64> + 'static,
+    Module<B>: ModuleNew<B>
+        + VecZnxAlloc<B>
+        + VecZnxAddIntoBackend<B>
+        + VecZnxAddAssignBackend<B>
+        + VecZnxAutomorphismBackend<B>
+        + VecZnxAutomorphismAssignBackend<B>
+        + VecZnxAutomorphismAssignTmpBytes
+        + VecZnxMulXpMinusOneBackend<B>
+        + VecZnxMulXpMinusOneAssignBackend<B>
+        + VecZnxMulXpMinusOneAssignTmpBytes
+        + VecZnxNegateBackend<B>
+        + VecZnxNegateAssignBackend<B>
+        + VecZnxNormalize<B>
+        + VecZnxNormalizeAssignBackend<B>
+        + VecZnxNormalizeTmpBytes
+        + VecZnxRotateBackend<B>
+        + VecZnxRotateAssignBackend<B>
+        + VecZnxRotateAssignTmpBytes
+        + VecZnxLshBackend<B>
+        + VecZnxLshAssignBackend<B>
+        + VecZnxLshTmpBytes
+        + VecZnxRshBackend<B>
+        + VecZnxRshAssignBackend<B>
+        + VecZnxRshTmpBytes
+        + VecZnxSubBackend<B>
+        + VecZnxSubAssignBackend<B>
+        + VecZnxSubNegateAssignBackend<B>
+        + VecZnxDftAlloc<B>
+        + VecZnxBigAlloc<B>
+        + VecZnxDftAddInto<B>
+        + VecZnxDftAddAssign<B>
+        + VecZnxDftApply<B>
+        + VecZnxIdftApply<B>
+        + VecZnxIdftApplyTmpBytes
+        + VecZnxIdftApplyTmpA<B>
+        + VecZnxDftSub<B>
+        + VecZnxDftSubAssign<B>
+        + VecZnxDftSubNegateAssign<B>
+        + VecZnxBigAddInto<B>
+        + VecZnxBigAddAssign<B>
+        + VecZnxBigAddSmallIntoBackend<B>
+        + VecZnxBigAddSmallAssign<B>
+        + VecZnxBigAutomorphism<B>
+        + VecZnxBigAutomorphismAssign<B>
+        + VecZnxBigAutomorphismAssignTmpBytes
+        + VecZnxBigNegate<B>
+        + VecZnxBigNegateAssign<B>
+        + VecZnxBigNormalize<B>
+        + VecZnxBigNormalizeTmpBytes
+        + VecZnxBigSub<B>
+        + VecZnxBigSubAssign<B>
+        + VecZnxBigSubNegateAssign<B>
+        + VecZnxBigSubSmallABackend<B>
+        + VecZnxBigSubSmallBBackend<B>
+        + SvpPPolAlloc<B>
+        + SvpPrepare<B>
+        + SvpApplyDft<B>
+        + SvpApplyDftToDft<B>
+        + SvpApplyDftToDftAssign<B>
+        + VmpPMatAlloc<B>
+        + VmpPrepare<B>
+        + VmpPrepareTmpBytes
+        + VmpApplyDft<B>
+        + VmpApplyDftTmpBytes
+        + VmpApplyDftToDft<B>
+        + VmpApplyDftToDftTmpBytes
+        + Convolution<B>
+        + CnvPVecAlloc<B>,
+    ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
+    B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
+{
+    bench_ops(
+        PhantomData::<B>,
+        &all_vec_znx_ops::<B, WallTime>(),
+        default_bench_params_hal().into_iter().filter(|p| p.n as u64 == bin_fhe_n()),
+        c,
+    );
+    bench_ops(
+        PhantomData::<B>,
+        &svp_ops::<B, WallTime>(),
+        default_bench_params_hal().into_iter().filter(|p| p.n as u64 == bin_fhe_n()),
+        c,
+    );
+    bench_ops(
+        PhantomData::<B>,
+        &vmp_ops::<B, WallTime>(),
+        default_bench_params_vmp().into_iter().filter(|p| p.n as u64 == bin_fhe_n()),
+        c,
+    );
+    bench_ops(
+        PhantomData::<B>,
+        &convolution_ops::<B, WallTime>(),
+        default_bench_params_cnv().into_iter().filter(|p| p.n as u64 == bin_fhe_n()),
+        c,
+    );
+}
+
+/// `standard` tier: HAL ops swept at the sizes matching CKKS (`log_n`
+/// 13/14/15), or pinned to bin-fhe's ring degree. `where` clause matches
+/// [`standard_ops`]'s own.
+pub mod standard {
+    use std::marker::PhantomData;
+
+    use criterion::{Criterion, measurement::WallTime};
+    use poulpy_hal::layouts::{Backend, Module, ScratchOwned};
+
+    use super::{
+        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDft, SvpPPolAlloc, VecZnxAddIntoBackend, VecZnxAlloc,
+        VecZnxBigAddInto, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxDftApply,
+        VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes, VmpApplyDftToDft,
+        VmpApplyDftToDftTmpBytes, VmpPMatAlloc, standard_ops,
+    };
+    use crate::{
+        bench_ops, bin_fhe_n,
+        hal::params::{default_bench_params_hal, default_bench_params_vmp},
+        is_standard_n,
+    };
+
+    /// HAL ops swept at the sizes matching CKKS (`log_n` 13/14/15).
+    pub fn bench_hal_ckks<B>(c: &mut Criterion<WallTime>)
+    where
+        B: Backend<ZnxWord = i64> + 'static,
+        Module<B>: ModuleNew<B>
+            + VecZnxDftApply<B>
+            + VecZnxDftAlloc<B>
+            + VecZnxIdftApply<B>
+            + VecZnxIdftApplyTmpBytes
+            + VecZnxBigAlloc<B>
+            + SvpApplyDftToDft<B>
+            + SvpPPolAlloc<B>
+            + VecZnxAddIntoBackend<B>
+            + VecZnxAlloc<B>
+            + VecZnxNormalize<B>
+            + VecZnxNormalizeTmpBytes
+            + VecZnxBigAddInto<B>
+            + VecZnxBigNormalize<B>
+            + VecZnxBigNormalizeTmpBytes
+            + VmpPMatAlloc<B>
+            + VmpApplyDftToDft<B>
+            + VmpApplyDftToDftTmpBytes,
+        ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
+        B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
+    {
+        let (hal_ops, vmp_ops) = standard_ops::<B, WallTime>();
+        bench_ops(
+            PhantomData::<B>,
+            &hal_ops,
+            default_bench_params_hal().into_iter().filter(|p| is_standard_n(p.n as u64)),
+            c,
+        );
+        bench_ops(
+            PhantomData::<B>,
+            &vmp_ops,
+            default_bench_params_vmp().into_iter().filter(|p| is_standard_n(p.n as u64)),
+            c,
+        );
+    }
+
+    /// HAL ops pinned to the single ring degree bin-fhe's representative
+    /// params use.
+    pub fn bench_hal_binfhe<B>(c: &mut Criterion<WallTime>)
+    where
+        B: Backend<ZnxWord = i64> + 'static,
+        Module<B>: ModuleNew<B>
+            + VecZnxDftApply<B>
+            + VecZnxDftAlloc<B>
+            + VecZnxIdftApply<B>
+            + VecZnxIdftApplyTmpBytes
+            + VecZnxBigAlloc<B>
+            + SvpApplyDftToDft<B>
+            + SvpPPolAlloc<B>
+            + VecZnxAddIntoBackend<B>
+            + VecZnxAlloc<B>
+            + VecZnxNormalize<B>
+            + VecZnxNormalizeTmpBytes
+            + VecZnxBigAddInto<B>
+            + VecZnxBigNormalize<B>
+            + VecZnxBigNormalizeTmpBytes
+            + VmpPMatAlloc<B>
+            + VmpApplyDftToDft<B>
+            + VmpApplyDftToDftTmpBytes,
+        ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
+        B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
+    {
+        let (hal_ops, vmp_ops) = standard_ops::<B, WallTime>();
+        bench_ops(
+            PhantomData::<B>,
+            &hal_ops,
+            default_bench_params_hal().into_iter().filter(|p| p.n as u64 == bin_fhe_n()),
+            c,
+        );
+        bench_ops(
+            PhantomData::<B>,
+            &vmp_ops,
+            default_bench_params_vmp().into_iter().filter(|p| p.n as u64 == bin_fhe_n()),
+            c,
+        );
+    }
+}
+
+/// `light` tier: same cross-section as [`standard`], but the CKKS-matched
+/// sweep is a single size (`log_n` = 14) instead of {13, 14, 15}.
+pub mod light {
+    use std::marker::PhantomData;
+
+    use criterion::{Criterion, measurement::WallTime};
+    use poulpy_hal::layouts::{Backend, Module, ScratchOwned};
+
+    use super::{
+        ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, SvpApplyDftToDft, SvpPPolAlloc, VecZnxAddIntoBackend, VecZnxAlloc,
+        VecZnxBigAddInto, VecZnxBigAlloc, VecZnxBigNormalize, VecZnxBigNormalizeTmpBytes, VecZnxDftAlloc, VecZnxDftApply,
+        VecZnxIdftApply, VecZnxIdftApplyTmpBytes, VecZnxNormalize, VecZnxNormalizeTmpBytes, VmpApplyDftToDft,
+        VmpApplyDftToDftTmpBytes, VmpPMatAlloc, standard_ops,
+    };
+    use crate::{
+        bench_ops, bin_fhe_n,
+        hal::params::{default_bench_params_hal, default_bench_params_vmp},
+        is_light_n,
+    };
+
+    /// HAL ops swept at the single size matching CKKS (`log_n` = 14).
+    pub fn bench_hal_ckks<B>(c: &mut Criterion<WallTime>)
+    where
+        B: Backend<ZnxWord = i64> + 'static,
+        Module<B>: ModuleNew<B>
+            + VecZnxDftApply<B>
+            + VecZnxDftAlloc<B>
+            + VecZnxIdftApply<B>
+            + VecZnxIdftApplyTmpBytes
+            + VecZnxBigAlloc<B>
+            + SvpApplyDftToDft<B>
+            + SvpPPolAlloc<B>
+            + VecZnxAddIntoBackend<B>
+            + VecZnxAlloc<B>
+            + VecZnxNormalize<B>
+            + VecZnxNormalizeTmpBytes
+            + VecZnxBigAddInto<B>
+            + VecZnxBigNormalize<B>
+            + VecZnxBigNormalizeTmpBytes
+            + VmpPMatAlloc<B>
+            + VmpApplyDftToDft<B>
+            + VmpApplyDftToDftTmpBytes,
+        ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
+        B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
+    {
+        let (hal_ops, vmp_ops) = standard_ops::<B, WallTime>();
+        bench_ops(
+            PhantomData::<B>,
+            &hal_ops,
+            default_bench_params_hal().into_iter().filter(|p| is_light_n(p.n as u64)),
+            c,
+        );
+        bench_ops(
+            PhantomData::<B>,
+            &vmp_ops,
+            default_bench_params_vmp().into_iter().filter(|p| is_light_n(p.n as u64)),
+            c,
+        );
+    }
+
+    /// HAL ops pinned to the single ring degree bin-fhe's representative
+    /// params use.
+    pub fn bench_hal_binfhe<B>(c: &mut Criterion<WallTime>)
+    where
+        B: Backend<ZnxWord = i64> + 'static,
+        Module<B>: ModuleNew<B>
+            + VecZnxDftApply<B>
+            + VecZnxDftAlloc<B>
+            + VecZnxIdftApply<B>
+            + VecZnxIdftApplyTmpBytes
+            + VecZnxBigAlloc<B>
+            + SvpApplyDftToDft<B>
+            + SvpPPolAlloc<B>
+            + VecZnxAddIntoBackend<B>
+            + VecZnxAlloc<B>
+            + VecZnxNormalize<B>
+            + VecZnxNormalizeTmpBytes
+            + VecZnxBigAddInto<B>
+            + VecZnxBigNormalize<B>
+            + VecZnxBigNormalizeTmpBytes
+            + VmpPMatAlloc<B>
+            + VmpApplyDftToDft<B>
+            + VmpApplyDftToDftTmpBytes,
+        ScratchOwned<B>: ScratchOwnedAlloc<B> + ScratchOwnedBorrow<B>,
+        B::OwnedBuf: AsRef<[u8]> + AsMut<[u8]>,
+    {
+        let (hal_ops, vmp_ops) = standard_ops::<B, WallTime>();
+        bench_ops(
+            PhantomData::<B>,
+            &hal_ops,
+            default_bench_params_hal().into_iter().filter(|p| p.n as u64 == bin_fhe_n()),
+            c,
+        );
+        bench_ops(
+            PhantomData::<B>,
+            &vmp_ops,
+            default_bench_params_vmp().into_iter().filter(|p| p.n as u64 == bin_fhe_n()),
+            c,
+        );
+    }
 }

@@ -25,7 +25,9 @@ Runners are grouped into tables of `BenchOp<M, P>` — each entry carries a
 `layer` (`"hal"`, `"core"`, `"ckks"`, `"bin_fhe"`, ...) alongside its `name`
 and `runner`. `bench_ops` drives a table against an iterator of sweep
 parameters, producing one Criterion group per op, named
-`<backend>/<layer>/<name>`. Both live in [`src/lib.rs`](src/lib.rs).
+`<backend>/<layer>/<name>`. Both live in [`src/lib.rs`](src/lib.rs). Most
+backend crates don't need to call `bench_ops` directly — see
+[Using it from a backend crate](#using-it-from-a-backend-crate) below.
 
 Each module exposes its runner suites as builder functions of the form:
 
@@ -54,31 +56,73 @@ same reasonable defaults.
 
 ## Using it from a backend crate
 
-Add `poulpy-bench` as a dev-dependency, then write a `benches/*.rs` binary
-that picks the ops it wants and drives them with `bench_ops`. `bench_ops`
-takes the backend as a value (a zero-sized marker type, e.g. a unit struct
-implementing `poulpy_hal::layouts::Backend`) rather than a type parameter, so
-the backend name is inferred and doesn't need turbofish:
+For a backend implementing the full HAL/core/CKKS/bin-fhe surface, add
+`poulpy-bench` as a dev-dependency and register the ready-made `bench_*`
+functions directly in `criterion_group!` — each layer's `suites` module
+(`hal::suites`, `core::suites`, `schemes::suites`) exposes them for all
+three tiers:
+
+- `bench_hal_ckks`/`bench_hal_binfhe`, `bench_core_ckks`/`bench_core_binfhe`,
+  `bench_ckks`, `bench_binfhe` (top of each `suites` module): the **full**
+  tier — every op in that layer.
+- `suites::standard::{bench_hal_ckks, bench_hal_binfhe, ...}`: the
+  **standard** tier — a smaller, representative cross-section of ops.
+- `suites::light::{...}`: same shape as `standard`, but sweeps a single set of params.
+
+
+These functions enable a backend to build a complete benchmark binary with just a few
+lines of code:
 
 ```rust
-use criterion::{Criterion, criterion_group, criterion_main, measurement::WallTime};
-use poulpy_bench::{bench_ops, hal::{params::default_bench_params_hal, suites::vec_znx_ops}};
+use criterion::{criterion_group, criterion_main};
+use poulpy_bench::core::suites::{bench_core_binfhe, bench_core_ckks};
+use poulpy_bench::hal::suites::{bench_hal_binfhe, bench_hal_ckks};
+use poulpy_bench::schemes::suites::{bench_binfhe, bench_ckks};
+use poulpy_bin_fhe::blind_rotation::CGGI;
 
-fn hal(c: &mut Criterion) {
-    bench_ops(MyBackend, &vec_znx_ops::<MyBackend, WallTime>(), default_bench_params_hal(), c);
+use my_backend_crate::{FftBackend, NttBackend};
+
+criterion_group! {
+    name = benches;
+    config = poulpy_bench::criterion_config();
+    targets =
+     bench_hal_ckks::<NttBackend>,
+     bench_hal_binfhe::<FftBackend>,
+     bench_core_ckks::<NttBackend>,
+     bench_core_binfhe::<FftBackend>,
+     bench_ckks::<NttBackend>,
+     bench_binfhe::<FftBackend, CGGI>
 }
 
-criterion_group!(benches, hal);
 criterion_main!(benches);
 ```
 
-Each resulting Criterion group is named `<backend>/<layer>/<op name>`, e.g.
-`MyBackend/hal/vec_znx_add_into`, with sweep parameters as the benchmark id
-inside that group.
+See [`poulpy-cpu-ref/benches`](../poulpy-cpu-ref/benches) — or any of
+`poulpy-cpu-avx`/`-avx512`/`-arm`'s `benches/` — for the complete, minimal
+`full.rs` / `standard.rs` / `light.rs` binaries this produces.
 
-See [`poulpy-cpu-ref/benches`](../poulpy-cpu-ref/benches) for a complete
-worked example, including its three-tier `full` / `standard` / `light`
-binaries.
+### Composing your own tables
+
+The crate exposes a deeper API than the `bench_*` functions, so a backend can compose its
+own tables of `BenchOp`s and call `bench_ops` directly. For example, a backend that
+implements the HAL but not the core layer can still benchmark the HAL ops it supports, and
+a backend that implements only a subset of the HAL can still benchmark the ops it
+supports. A backend can also filter, reorder, or extend the tables before passing them to
+`bench_ops`. 
+
+```rust
+use std::marker::PhantomData;
+
+use criterion::{Criterion, criterion_group, criterion_main, measurement::WallTime};
+use poulpy_bench::{bench_ops, hal::{params::default_bench_params_hal, suites::vec_znx_ops}};
+
+fn hal<BE: MyBackendBound>(c: &mut Criterion<WallTime>) {
+    bench_ops(PhantomData::<BE>, &vec_znx_ops::<BE, WallTime>(), default_bench_params_hal(), c);
+}
+
+criterion_group!(benches, hal::<MyBackend>);
+criterion_main!(benches);
+```
 
 ## Running benchmarks
 
@@ -88,7 +132,7 @@ backend doesn't need to compile ops it can't run). Run them with
 `cargo bench -p <backend-crate> --bench <binary>`, enabling whatever
 features the binary needs.
 
-For exemple, the `poulpy-cpu-ref` backend ships three binaries — `full` (every op, full
+For example, the `poulpy-cpu-ref` backend ships three binaries — `full` (every op, full
 parameter grid), `standard` (a representative cross-section), and `light`
 (a single-parameter test) — all three require the `enable-ckks` feature
 (which pulls in `enable-core`):

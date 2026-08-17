@@ -11,9 +11,16 @@ use poulpy_hal::{
     layouts::{Backend, HostBackend, HostDataMut, Module, ScratchOwned},
 };
 
+use std::marker::PhantomData;
+
+use criterion::{Criterion, measurement::WallTime};
+
 use crate::{
-    BenchOp,
-    core::{automorphism, decryption, encryption, external_product, glwe_tensor, keyswitch, operations, params::CoreParams},
+    BenchOp, bench_ops, bin_fhe_n,
+    core::{
+        automorphism, decryption, encryption, external_product, glwe_tensor, keyswitch, operations,
+        params::{CoreParams, default_bench_params_core},
+    },
 };
 
 // Op tables for each core capability group. Each function returns the raw
@@ -334,4 +341,238 @@ where
             runner: decryption::runner_glwe_decrypt::<BE, _>,
         },
     ]
+}
+
+// ── bench_core (criterion_group targets) ────────────────────────────────────
+
+/// Every core op family (encryption, decryption, keyswitch, automorphism,
+/// external product, tensoring, add/sub/normalize/mul-plain), swept at
+/// every size matching CKKS (`log_n` 12–16) — the full tier's
+/// CKKS/NTT-role sweep. `where` clause matches [`all_ops`]'s own.
+pub fn bench_core_ckks<BE>(c: &mut Criterion<WallTime>)
+where
+    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend,
+    Module<BE>: ModuleNew<BE>
+        + GLWEEncryptSk<BE>
+        + GLWESecretPreparedFactory<BE>
+        + GGSWEncryptSk<BE>
+        + GLWEAutomorphismKeyEncryptSk<BE>
+        + GLWEDecrypt<BE>
+        + GLWEAutomorphism<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + GLWEExternalProduct<BE>
+        + GGSWPreparedFactory<BE>
+        + GLWESwitchingKeyEncryptSk<BE>
+        + GLWEKeyswitch<BE>
+        + GLWESwitchingKeyPreparedFactory<BE>
+        + GLWETensoring<BE>
+        + GLWETensorKeyPreparedFactory<BE>
+        + GLWEAdd<BE>
+        + GLWESub<BE>
+        + GLWENormalize<BE>
+        + GLWEMulPlain<BE>
+        + GLWESecretSampling<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    for<'a> BE::BufMut<'a>: HostDataMut + AsRef<[u8]> + AsMut<[u8]> + Sync,
+    for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
+{
+    bench_ops(PhantomData::<BE>, &all_ops::<BE, WallTime>(), default_bench_params_core(), c);
+}
+
+/// Every core op family, pinned to the single ring degree bin-fhe's
+/// representative params use — the full tier's bin-fhe/FFT-role sweep.
+/// Same op table as [`bench_core_ckks`] (comprehensive family coverage),
+/// but the FFT-friendly backend is only ever exercised at bin-fhe's one
+/// size, so unlike `bench_core_ckks` this doesn't sweep the full `log_n`
+/// grid.
+pub fn bench_core_binfhe<BE>(c: &mut Criterion<WallTime>)
+where
+    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend,
+    Module<BE>: ModuleNew<BE>
+        + GLWEEncryptSk<BE>
+        + GLWESecretPreparedFactory<BE>
+        + GGSWEncryptSk<BE>
+        + GLWEAutomorphismKeyEncryptSk<BE>
+        + GLWEDecrypt<BE>
+        + GLWEAutomorphism<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + GLWEExternalProduct<BE>
+        + GGSWPreparedFactory<BE>
+        + GLWESwitchingKeyEncryptSk<BE>
+        + GLWEKeyswitch<BE>
+        + GLWESwitchingKeyPreparedFactory<BE>
+        + GLWETensoring<BE>
+        + GLWETensorKeyPreparedFactory<BE>
+        + GLWEAdd<BE>
+        + GLWESub<BE>
+        + GLWENormalize<BE>
+        + GLWEMulPlain<BE>
+        + GLWESecretSampling<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+    for<'a> BE::BufMut<'a>: HostDataMut + AsRef<[u8]> + AsMut<[u8]> + Sync,
+    for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
+{
+    bench_ops(
+        PhantomData::<BE>,
+        &all_ops::<BE, WallTime>(),
+        default_bench_params_core().into_iter().filter(|p| p.n as u64 == bin_fhe_n()),
+        c,
+    );
+}
+
+/// `standard` tier: core ops swept at the sizes matching CKKS (`log_n`
+/// 13/14/15), or pinned to bin-fhe's ring degree. `where` clause matches
+/// [`standard_ops`]'s own.
+pub mod standard {
+    use std::marker::PhantomData;
+
+    use criterion::{Criterion, measurement::WallTime};
+    use poulpy_hal::layouts::{Backend, HostBackend, Module, ScratchOwned};
+
+    use super::{
+        GGSWEncryptSk, GGSWPreparedFactory, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWEAutomorphismKeyPreparedFactory,
+        GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEKeyswitch, GLWESecretPreparedFactory, GLWESecretSampling,
+        GLWESwitchingKeyEncryptSk, GLWESwitchingKeyPreparedFactory, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow,
+        standard_ops,
+    };
+    use crate::{bench_ops, bin_fhe_n, core::params::default_bench_params_core, is_standard_n};
+
+    /// Core ops swept at the sizes matching CKKS (`log_n` 13/14/15).
+    pub fn bench_core_ckks<BE>(c: &mut Criterion<WallTime>)
+    where
+        BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend,
+        Module<BE>: ModuleNew<BE>
+            + GLWEEncryptSk<BE>
+            + GLWESecretPreparedFactory<BE>
+            + GLWESecretSampling<BE>
+            + GGSWEncryptSk<BE>
+            + GLWEExternalProduct<BE>
+            + GGSWPreparedFactory<BE>
+            + GLWEAutomorphism<BE>
+            + GLWEAutomorphismKeyEncryptSk<BE>
+            + GLWEAutomorphismKeyPreparedFactory<BE>
+            + GLWESwitchingKeyEncryptSk<BE>
+            + GLWEKeyswitch<BE>
+            + GLWESwitchingKeyPreparedFactory<BE>
+            + GLWEDecrypt<BE>,
+        ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+        for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
+        for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
+    {
+        bench_ops(
+            PhantomData::<BE>,
+            &standard_ops::<BE, WallTime>(),
+            default_bench_params_core().into_iter().filter(|p| is_standard_n(p.n as u64)),
+            c,
+        );
+    }
+
+    /// Core ops pinned to the single ring degree bin-fhe's representative
+    /// params use.
+    pub fn bench_core_binfhe<BE>(c: &mut Criterion<WallTime>)
+    where
+        BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend,
+        Module<BE>: ModuleNew<BE>
+            + GLWEEncryptSk<BE>
+            + GLWESecretPreparedFactory<BE>
+            + GLWESecretSampling<BE>
+            + GGSWEncryptSk<BE>
+            + GLWEExternalProduct<BE>
+            + GGSWPreparedFactory<BE>
+            + GLWEAutomorphism<BE>
+            + GLWEAutomorphismKeyEncryptSk<BE>
+            + GLWEAutomorphismKeyPreparedFactory<BE>
+            + GLWESwitchingKeyEncryptSk<BE>
+            + GLWEKeyswitch<BE>
+            + GLWESwitchingKeyPreparedFactory<BE>
+            + GLWEDecrypt<BE>,
+        ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+        for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
+        for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
+    {
+        bench_ops(
+            PhantomData::<BE>,
+            &standard_ops::<BE, WallTime>(),
+            default_bench_params_core().into_iter().filter(|p| p.n as u64 == bin_fhe_n()),
+            c,
+        );
+    }
+}
+
+/// `light` tier: same cross-section as [`standard`], but the CKKS-matched
+/// sweep is a single size (`log_n` = 14) instead of {13, 14, 15}.
+pub mod light {
+    use std::marker::PhantomData;
+
+    use criterion::{Criterion, measurement::WallTime};
+    use poulpy_hal::layouts::{Backend, HostBackend, Module, ScratchOwned};
+
+    use super::{
+        GGSWEncryptSk, GGSWPreparedFactory, GLWEAutomorphism, GLWEAutomorphismKeyEncryptSk, GLWEAutomorphismKeyPreparedFactory,
+        GLWEDecrypt, GLWEEncryptSk, GLWEExternalProduct, GLWEKeyswitch, GLWESecretPreparedFactory, GLWESecretSampling,
+        GLWESwitchingKeyEncryptSk, GLWESwitchingKeyPreparedFactory, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow,
+        standard_ops,
+    };
+    use crate::{bench_ops, bin_fhe_n, core::params::default_bench_params_core, is_light_n};
+
+    /// Core ops swept at the single size matching CKKS (`log_n` = 14).
+    pub fn bench_core_ckks<BE>(c: &mut Criterion<WallTime>)
+    where
+        BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend,
+        Module<BE>: ModuleNew<BE>
+            + GLWEEncryptSk<BE>
+            + GLWESecretPreparedFactory<BE>
+            + GLWESecretSampling<BE>
+            + GGSWEncryptSk<BE>
+            + GLWEExternalProduct<BE>
+            + GGSWPreparedFactory<BE>
+            + GLWEAutomorphism<BE>
+            + GLWEAutomorphismKeyEncryptSk<BE>
+            + GLWEAutomorphismKeyPreparedFactory<BE>
+            + GLWESwitchingKeyEncryptSk<BE>
+            + GLWEKeyswitch<BE>
+            + GLWESwitchingKeyPreparedFactory<BE>
+            + GLWEDecrypt<BE>,
+        ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+        for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
+        for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
+    {
+        bench_ops(
+            PhantomData::<BE>,
+            &standard_ops::<BE, WallTime>(),
+            default_bench_params_core().into_iter().filter(|p| is_light_n(p.n as u64)),
+            c,
+        );
+    }
+
+    /// Core ops pinned to the single ring degree bin-fhe's representative
+    /// params use.
+    pub fn bench_core_binfhe<BE>(c: &mut Criterion<WallTime>)
+    where
+        BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend,
+        Module<BE>: ModuleNew<BE>
+            + GLWEEncryptSk<BE>
+            + GLWESecretPreparedFactory<BE>
+            + GLWESecretSampling<BE>
+            + GGSWEncryptSk<BE>
+            + GLWEExternalProduct<BE>
+            + GGSWPreparedFactory<BE>
+            + GLWEAutomorphism<BE>
+            + GLWEAutomorphismKeyEncryptSk<BE>
+            + GLWEAutomorphismKeyPreparedFactory<BE>
+            + GLWESwitchingKeyEncryptSk<BE>
+            + GLWEKeyswitch<BE>
+            + GLWESwitchingKeyPreparedFactory<BE>
+            + GLWEDecrypt<BE>,
+        ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+        for<'a> BE::BufMut<'a>: AsRef<[u8]> + AsMut<[u8]> + Sync,
+        for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
+    {
+        bench_ops(
+            PhantomData::<BE>,
+            &standard_ops::<BE, WallTime>(),
+            default_bench_params_core().into_iter().filter(|p| p.n as u64 == bin_fhe_n()),
+            c,
+        );
+    }
 }

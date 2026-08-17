@@ -25,9 +25,21 @@
 //! yet wired to Criterion, so callers can filter, reorder, or merge tables
 //! from different groups before running them. [`bench_ops`] drives a
 //! `&[BenchOp<M, P>]` against a sweep of parameters `&[P]`, one Criterion
-//! group per op. Some modules (`core`, `schemes`) additionally expose a
-//! `bench_suite_*` convenience function that bundles the standard table and
-//! calls [`bench_ops`] directly.
+//! group per op.
+//!
+//! # Tiers: `bench_*` criterion_group targets
+//!
+//! Each layer's `suites` module (`hal::suites`, `core::suites`,
+//! `schemes::suites`) additionally exposes single-backend-type-parameter
+//! `bench_*` functions meant to be registered directly as `criterion_group!`
+//! targets.
+//!
+//! - `bench_hal_ckks`/`bench_hal_binfhe`, `bench_core_ckks`/
+//!   `bench_core_binfhe`, `bench_ckks`, `bench_binfhe`: the **full** tier.
+//! - `suites::standard::{bench_hal_ckks, bench_hal_binfhe, ...}`: a smaller, representative cross-section of ops,
+//!   with the `_ckks` sweep restricted to `log_n` 13/14/15.
+//! - `suites::light::{...}`: same shape as `standard`, but the `_ckks`
+//!   sweep is a single size (`log_n` = 14) instead of {13, 14, 15}.
 //!
 //! # Params
 //!
@@ -40,16 +52,56 @@
 //! # Adding a new backend
 //!
 //! Write a `benches/*.rs` binary in the backend crate that imports the
-//! relevant `*_ops`/`bench_suite_*` functions from this crate and drives them
-//! against the backend's own type — no changes needed here.
+//! `bench_*` functions it needs from this crate and registers them in a
+//! `criterion_group!`, e.g.:
+//!
+//! ```rust,ignore
+//! use poulpy_bench::hal::suites::{bench_hal_binfhe, bench_hal_ckks};
+//!
+//! criterion_group! {
+//!     name = benches;
+//!     config = poulpy_bench::criterion_config();
+//!     targets =
+//!      bench_hal_ckks::<Ntt>,
+//!      bench_hal_binfhe::<Fft>,
+//!      // ... core, ckks, bin_fhe targets
+//! }
+//! ```
+//!
+//! No changes needed here — a backend implementing the full HAL/core/CKKS
+//! surface just plugs its own marker types in via turbofish.
 
 pub mod core;
 pub mod hal;
 pub mod schemes;
 
 use std::fmt::Display;
+use std::marker::PhantomData;
 
 use criterion::{Bencher, BenchmarkId, Criterion, measurement::Measurement};
+
+/// Ring degrees swept by each layer's `standard` tier — matches the CKKS
+/// scheme-level cross-section, so an NTT-friendly backend's HAL/core/CKKS
+/// results line up across layers.
+pub(crate) const STANDARD_N: [u64; 3] = [1 << 13, 1 << 14, 1 << 15];
+
+pub(crate) fn is_standard_n(n: u64) -> bool {
+    STANDARD_N.contains(&n)
+}
+
+/// The single ring degree each layer's `light` tier sweeps.
+pub(crate) const LIGHT_N: u64 = 1 << 14;
+
+pub(crate) fn is_light_n(n: u64) -> bool {
+    n == LIGHT_N
+}
+
+/// The ring degree bin-fhe's first representative param set uses — every
+/// layer's `*_binfhe` tier function is pinned to this one size, to match
+/// the FFT-friendly backend also used for [`schemes::suites::bench_binfhe`].
+pub(crate) fn bin_fhe_n() -> u64 {
+    schemes::params::default_bench_params_blind_rotate()[0].bin_fhe_params.n_glwe as u64
+}
 
 // #[cfg(any(feature = "core-bench", feature = "bin-fhe-bench", feature = "ckks-bench"))]
 // type BenchHostBackend = poulpy_cpu_ref::FFT64Ref;
@@ -88,17 +140,17 @@ fn backend_name<BE: ?Sized>() -> &'static str {
 }
 
 /// Runs one criterion group per op in `ops`, each expanded over every entry
-/// in `sweeps`. `backend` — a zero-sized instance of the backend marker type
-/// the ops were built against (e.g. `Ntt`/`Fft` in the `poulpy-cpu-ref`
-/// benches) — names the run; it's a value purely so `BE` can be inferred
-/// from it, letting callers skip turbofish entirely. Each op's own `layer`
-/// field distinguishes it inside the run, so results from multiple variants
-/// don't collide.
+/// in `sweeps`. `BE` — the backend the ops were built against (e.g.
+/// `Ntt`/`Fft` in the `poulpy-cpu-ref` benches) — names the run; it's given
+/// as `PhantomData<BE>` rather than turbofish so this composes inside other
+/// generic functions, where `BE` may be an abstract type parameter with no
+/// nameable value. Each op's own `layer` field distinguishes it inside the
+/// run, so results from multiple variants don't collide.
 ///
 /// `ops` and `sweeps` are taken as iterators rather than slices, so callers
 /// can feed them a suite's own `Vec`/array directly, or a lazy `.filter()`
 /// chain, without first collecting into an intermediate collection.
-pub fn bench_ops<'a, BE, M, P, O, S>(_backend: BE, ops: O, sweeps: S, c: &mut Criterion<M>)
+pub fn bench_ops<'a, BE, M, P, O, S>(_backend: PhantomData<BE>, ops: O, sweeps: S, c: &mut Criterion<M>)
 where
     M: Measurement,
     P: Display,

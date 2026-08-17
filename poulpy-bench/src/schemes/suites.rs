@@ -21,11 +21,18 @@ use poulpy_hal::{
     layouts::{Backend, HostBackend, Module, ScratchOwned},
 };
 
+use std::marker::PhantomData;
+
+use criterion::{Criterion, measurement::WallTime};
+
 use crate::{
-    BenchOp,
+    BenchOp, bench_ops,
     schemes::{
         bin_fhe, ckks,
-        params::{BlindRotateBenchParams, CircuitBootstrappingBenchParam, CkksBenchParams},
+        params::{
+            BlindRotateBenchParams, CircuitBootstrappingBenchParam, CkksBenchParams, default_bench_params_blind_rotate,
+            default_bench_params_circuit_bootstrapping, default_bench_params_ckks,
+        },
     },
 };
 
@@ -400,4 +407,137 @@ where
         runner: bin_fhe::runner_circuit_bootstrapping::<BE, BRA, _>,
     }];
     (blind_rotate, circuit_bootstrapping)
+}
+
+// ── bench_ckks / bench_binfhe (criterion_group targets) ─────────────────────
+
+/// Every CKKS op family, unfiltered — the full tier. `where` clause matches
+/// [`all_ops`]'s own. Takes exactly one backend type parameter; a
+/// `criterion_group!` registers it once per backend to cover.
+pub fn bench_ckks<BE>(c: &mut Criterion<WallTime>)
+where
+    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend,
+    Module<BE>: ModuleNew<BE>
+        + CKKSAddOps<BE>
+        + CKKSSubOps<BE>
+        + CKKSNegOps<BE>
+        + CKKSPow2Ops<BE>
+        + CKKSMulOps<BE>
+        + GLWETensorKeyPreparedFactory<BE>
+        + CKKSRotateOps<BE>
+        + GLWEAutomorphismKeyPreparedFactory<BE>
+        + CKKSConjugateOps<BE>
+        + CKKSEncodingOps<BE, f64>,
+{
+    bench_ops(PhantomData::<BE>, &all_ops::<BE, WallTime>(), default_bench_params_ckks(), c);
+}
+
+/// Blind rotation and circuit bootstrapping, each at its single
+/// representative parameter set — identical across all three tiers, since
+/// bin-fhe has no full/standard/light distinction. `where` clause matches
+/// [`bin_fhe_standard_ops`]'s own.
+pub fn bench_binfhe<BE, BRA>(c: &mut Criterion<WallTime>)
+where
+    BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64> + HostBackend,
+    BRA: BlindRotationAlgo,
+    Module<BE>: ModuleN
+        + ModuleNew<BE>
+        + BlindRotationKeyEncryptSk<BRA, BE>
+        + BlindRotationKeyPreparedFactory<BRA, BE>
+        + BlindRotationExecute<BRA, BE>
+        + LookupTableFactory<BE::OwnedBuf, BE::ZnxWord>
+        + GLWESecretPreparedFactory<BE>
+        + GLWEDecrypt<BE>
+        + LWEEncryptSk<BE>
+        + GLWESecretSampling<BE>
+        + LWESecretSampling<BE>
+        + GLWEExternalProduct<BE>
+        + CircuitBootstrappingKeyEncryptSk<BRA, BE>
+        + CircuitBootstrappingKeyPreparedFactory<BRA, BE>
+        + CircuitBootstrappingExecute<BRA, BE>
+        + GGSWPreparedFactory<BE>
+        + GGSWNoise<BE>
+        + GLWEEncryptSk<BE>
+        + VecZnxRotateAssignBackend<BE>,
+    ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
+{
+    let (blind_rotate_ops, circuit_bootstrapping_ops) = bin_fhe_standard_ops::<BE, BRA, WallTime>();
+    bench_ops(PhantomData::<BE>, &blind_rotate_ops, default_bench_params_blind_rotate(), c);
+    bench_ops(
+        PhantomData::<BE>,
+        &circuit_bootstrapping_ops,
+        default_bench_params_circuit_bootstrapping(),
+        c,
+    );
+}
+
+/// `standard` tier: a small, representative cross-section of CKKS ops.
+pub mod standard {
+    use std::marker::PhantomData;
+
+    use criterion::{Criterion, measurement::WallTime};
+    use poulpy_hal::layouts::Backend;
+
+    use super::{
+        CKKSAddOps, CKKSEncodingOps, CKKSMulOps, CKKSRotateOps, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory,
+        Module, ModuleNew, ckks_standard_ops,
+    };
+    use crate::{bench_ops, is_standard_n, schemes::params::default_bench_params_ckks};
+
+    /// A small, representative cross-section of CKKS ops, swept at `log_n`
+    /// 13/14/15. `where` clause matches [`ckks_standard_ops`]'s own.
+    pub fn bench_ckks<BE>(c: &mut Criterion<WallTime>)
+    where
+        BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>,
+        Module<BE>: ModuleNew<BE>
+            + CKKSAddOps<BE>
+            + CKKSMulOps<BE>
+            + GLWETensorKeyPreparedFactory<BE>
+            + CKKSRotateOps<BE>
+            + GLWEAutomorphismKeyPreparedFactory<BE>
+            + CKKSEncodingOps<BE, f64>,
+    {
+        bench_ops(
+            PhantomData::<BE>,
+            &ckks_standard_ops::<BE, WallTime>(),
+            default_bench_params_ckks().into_iter().filter(|p| is_standard_n(p.n as u64)),
+            c,
+        );
+    }
+}
+
+/// `light` tier: same cross-section as [`standard`], but at a single size.
+pub mod light {
+    use std::marker::PhantomData;
+
+    use criterion::{Criterion, measurement::WallTime};
+    use poulpy_hal::layouts::Backend;
+
+    use super::{
+        CKKSAddOps, CKKSEncodingOps, CKKSMulOps, CKKSRotateOps, GLWEAutomorphismKeyPreparedFactory, GLWETensorKeyPreparedFactory,
+        Module, ModuleNew, ckks_standard_ops,
+    };
+    use crate::{bench_ops, is_light_n, schemes::params::default_bench_params_ckks};
+
+    /// A small, representative cross-section of CKKS ops, at the single
+    /// `log_n` = 14 size. `where` clause matches [`ckks_standard_ops`]'s
+    /// own.
+    pub fn bench_ckks<BE>(c: &mut Criterion<WallTime>)
+    where
+        BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>,
+        Module<BE>: ModuleNew<BE>
+            + CKKSAddOps<BE>
+            + CKKSMulOps<BE>
+            + GLWETensorKeyPreparedFactory<BE>
+            + CKKSRotateOps<BE>
+            + GLWEAutomorphismKeyPreparedFactory<BE>
+            + CKKSEncodingOps<BE, f64>,
+    {
+        bench_ops(
+            PhantomData::<BE>,
+            &ckks_standard_ops::<BE, WallTime>(),
+            default_bench_params_ckks().into_iter().filter(|p| is_light_n(p.n as u64)),
+            c,
+        );
+    }
 }
