@@ -71,20 +71,49 @@ pub fn ckks_criterion_config() -> criterion::Criterion {
     criterion_config()
 }
 
-/// One named operation in a benchmark suite: a criterion group (`name`) and
-/// the runner that gets swept over every `P` entry.
+/// One named operation in a benchmark suite: a criterion group (`layer`,
+/// `name`) and the runner that gets swept over every `P` entry. `layer`
+/// (`"hal"`, `"core"`, `"ckks"`, `"bin_fhe"`, ...) is a property of which
+/// suite table the op came from, not of how it's run.
 pub struct BenchOp<M: Measurement, P> {
+    pub layer: &'static str,
     pub name: &'static str,
     pub runner: fn(&mut Bencher<'_, M>, &P),
 }
 
+/// The short name Criterion group labels use for a backend marker type
+/// (e.g. `poulpy_cpu_ref::ntt4x30::NTT4x30Ref` -> `"NTT4x30Ref"`).
+fn backend_name<BE: ?Sized>() -> &'static str {
+    std::any::type_name::<BE>().rsplit("::").next().unwrap()
+}
+
 /// Runs one criterion group per op in `ops`, each expanded over every entry
-/// in `sweeps`. `label` distinguishes the run (e.g. a backend tag) inside
-/// each op's group, so results from multiple variants don't collide.
-pub fn bench_ops<M: Measurement, P: Display>(ops: &[BenchOp<M, P>], sweeps: &[P], label: &str, c: &mut Criterion<M>) {
+/// in `sweeps`. `backend` — a zero-sized instance of the backend marker type
+/// the ops were built against (e.g. `Ntt`/`Fft` in the `poulpy-cpu-ref`
+/// benches) — names the run; it's a value purely so `BE` can be inferred
+/// from it, letting callers skip turbofish entirely. Each op's own `layer`
+/// field distinguishes it inside the run, so results from multiple variants
+/// don't collide.
+///
+/// `ops` and `sweeps` are taken as iterators rather than slices, so callers
+/// can feed them a suite's own `Vec`/array directly, or a lazy `.filter()`
+/// chain, without first collecting into an intermediate collection.
+pub fn bench_ops<'a, BE, M, P, O, S>(_backend: BE, ops: O, sweeps: S, c: &mut Criterion<M>)
+where
+    M: Measurement,
+    P: Display,
+    O: IntoIterator<Item = &'a BenchOp<M, P>>,
+    S: IntoIterator<Item = P>,
+    M: 'a,
+    P: 'a,
+{
+    let backend = backend_name::<BE>();
+    // `sweeps` is expanded once per op, so it must be replayable even though
+    // an arbitrary iterator/generator is only good for a single pass.
+    let sweeps: Vec<P> = sweeps.into_iter().collect();
     for op in ops {
-        let mut group = c.benchmark_group(format!("{}/{}", label, op.name));
-        for sweep in sweeps {
+        let mut group = c.benchmark_group(format!("{}/{}/{}", backend, op.layer, op.name));
+        for sweep in &sweeps {
             group.bench_with_input(BenchmarkId::from_parameter(sweep), sweep, op.runner);
         }
         group.finish();

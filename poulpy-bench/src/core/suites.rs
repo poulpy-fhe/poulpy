@@ -40,14 +40,17 @@ where
 {
     [
         BenchOp {
+            layer: "core",
             name: "glwe_encrypt_sk",
             runner: encryption::runner_glwe_encrypt_sk::<BE, _>,
         },
         BenchOp {
+            layer: "core",
             name: "ggsw_encrypt_sk",
             runner: encryption::runner_ggsw_encrypt_sk::<BE, _>,
         },
         BenchOp {
+            layer: "core",
             name: "glwe_automorphism_key_encrypt_sk",
             runner: encryption::runner_glwe_automorphism_key_encrypt_sk::<BE, _>,
         },
@@ -65,6 +68,7 @@ where
     for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
 {
     [BenchOp {
+        layer: "core",
         name: "glwe_decrypt",
         runner: decryption::runner_glwe_decrypt::<BE, _>,
     }]
@@ -87,6 +91,7 @@ where
     for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
 {
     [BenchOp {
+        layer: "core",
         name: "glwe_automorphism",
         runner: automorphism::runner_glwe_automorphism::<BE, _>,
     }]
@@ -110,10 +115,12 @@ where
 {
     [
         BenchOp {
+            layer: "core",
             name: "glwe_external_product",
             runner: external_product::runner_glwe_external_product::<BE, _>,
         },
         BenchOp {
+            layer: "core",
             name: "glwe_external_product_assign",
             runner: external_product::runner_glwe_external_product_assign::<BE, _>,
         },
@@ -137,6 +144,7 @@ where
     for<'a> BE::BufRef<'a>: AsRef<[u8]> + Send,
 {
     [BenchOp {
+        layer: "core",
         name: "glwe_keyswitch",
         runner: keyswitch::runner_glwe_keyswitch::<BE, _>,
     }]
@@ -154,14 +162,17 @@ where
 {
     [
         BenchOp {
+            layer: "core",
             name: "glwe_tensor_relinearize",
             runner: glwe_tensor::runner_glwe_tensor_relinearize::<BE, _>,
         },
         BenchOp {
+            layer: "core",
             name: "glwe_tensor_apply",
             runner: glwe_tensor::runner_glwe_tensor_apply::<BE, _>,
         },
         BenchOp {
+            layer: "core",
             name: "glwe_tensor_square_apply",
             runner: glwe_tensor::runner_glwe_tensor_square_apply::<BE, _>,
         },
@@ -180,34 +191,42 @@ where
 {
     [
         BenchOp {
+            layer: "core",
             name: "glwe_add_into",
             runner: operations::runner_glwe_add_into::<BE, _>,
         },
         BenchOp {
+            layer: "core",
             name: "glwe_add_assign",
             runner: operations::runner_glwe_add_assign::<BE, _>,
         },
         BenchOp {
+            layer: "core",
             name: "glwe_sub",
             runner: operations::runner_glwe_sub::<BE, _>,
         },
         BenchOp {
+            layer: "core",
             name: "glwe_sub_assign",
             runner: operations::runner_glwe_sub_assign::<BE, _>,
         },
         BenchOp {
+            layer: "core",
             name: "glwe_normalize",
             runner: operations::runner_glwe_normalize::<BE, _>,
         },
         BenchOp {
+            layer: "core",
             name: "glwe_normalize_assign",
             runner: operations::runner_glwe_normalize_assign::<BE, _>,
         },
         BenchOp {
+            layer: "core",
             name: "glwe_mul_plain",
             runner: operations::runner_glwe_mul_plain::<BE, _>,
         },
         BenchOp {
+            layer: "core",
             name: "glwe_mul_plain_assign",
             runner: operations::runner_glwe_mul_plain_assign::<BE, _>,
         },
@@ -285,26 +304,32 @@ where
 {
     vec![
         BenchOp {
+            layer: "core",
             name: "glwe_encrypt_sk",
             runner: encryption::runner_glwe_encrypt_sk::<BE, _>,
         },
         BenchOp {
+            layer: "core",
             name: "ggsw_encrypt_sk",
             runner: encryption::runner_ggsw_encrypt_sk::<BE, _>,
         },
         BenchOp {
+            layer: "core",
             name: "glwe_external_product_assign",
             runner: external_product::runner_glwe_external_product_assign::<BE, _>,
         },
         BenchOp {
+            layer: "core",
             name: "glwe_automorphism",
             runner: automorphism::runner_glwe_automorphism::<BE, _>,
         },
         BenchOp {
+            layer: "core",
             name: "glwe_keyswitch",
             runner: keyswitch::runner_glwe_keyswitch::<BE, _>,
         },
         BenchOp {
+            layer: "core",
             name: "glwe_decrypt",
             runner: decryption::runner_glwe_decrypt::<BE, _>,
         },

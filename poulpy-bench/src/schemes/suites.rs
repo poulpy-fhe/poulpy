@@ -44,14 +44,17 @@ where
 {
     [
         BenchOp {
+            layer: "ckks",
             name: "ckks_add_into",
             runner: ckks::runner_ckks_add_into::<BE, _>,
         },
         BenchOp {
+            layer: "ckks",
             name: "ckks_add_pt_vec_into",
             runner: ckks::runner_ckks_add_pt_vec_into::<BE, _>,
         },
         BenchOp {
+            layer: "ckks",
             name: "ckks_add_pt_const_into",
             runner: ckks::runner_ckks_add_pt_const_into::<BE, _>,
         },
@@ -67,14 +70,17 @@ where
 {
     [
         BenchOp {
+            layer: "ckks",
             name: "ckks_sub_into",
             runner: ckks::runner_ckks_sub_into::<BE, _>,
         },
         BenchOp {
+            layer: "ckks",
             name: "ckks_sub_pt_vec_into",
             runner: ckks::runner_ckks_sub_pt_vec_into::<BE, _>,
         },
         BenchOp {
+            layer: "ckks",
             name: "ckks_sub_pt_const_into",
             runner: ckks::runner_ckks_sub_pt_const_into::<BE, _>,
         },
@@ -89,6 +95,7 @@ where
     Module<BE>: ModuleNew<BE> + CKKSNegOps<BE>,
 {
     [BenchOp {
+        layer: "ckks",
         name: "ckks_neg_into",
         runner: ckks::runner_ckks_neg_into::<BE, _>,
     }]
@@ -103,10 +110,12 @@ where
 {
     [
         BenchOp {
+            layer: "ckks",
             name: "ckks_mul_pow2_into",
             runner: ckks::runner_ckks_mul_pow2_into::<BE, _>,
         },
         BenchOp {
+            layer: "ckks",
             name: "ckks_div_pow2_into",
             runner: ckks::runner_ckks_div_pow2_into::<BE, _>,
         },
@@ -122,18 +131,22 @@ where
 {
     [
         BenchOp {
+            layer: "ckks",
             name: "ckks_mul_into",
             runner: ckks::runner_ckks_mul_into::<BE, _>,
         },
         BenchOp {
+            layer: "ckks",
             name: "ckks_square_into",
             runner: ckks::runner_ckks_square_into::<BE, _>,
         },
         BenchOp {
+            layer: "ckks",
             name: "ckks_mul_pt_vec_into",
             runner: ckks::runner_ckks_mul_pt_vec_into::<BE, _>,
         },
         BenchOp {
+            layer: "ckks",
             name: "ckks_mul_pt_const_into",
             runner: ckks::runner_ckks_mul_pt_const_into::<BE, _>,
         },
@@ -148,6 +161,7 @@ where
     Module<BE>: ModuleNew<BE> + CKKSRotateOps<BE> + GLWEAutomorphismKeyPreparedFactory<BE>,
 {
     [BenchOp {
+        layer: "ckks",
         name: "ckks_rotate_into",
         runner: ckks::runner_ckks_rotate_into::<BE, _>,
     }]
@@ -161,6 +175,7 @@ where
     Module<BE>: ModuleNew<BE> + CKKSConjugateOps<BE> + GLWEAutomorphismKeyPreparedFactory<BE>,
 {
     [BenchOp {
+        layer: "ckks",
         name: "ckks_conjugate_into",
         runner: ckks::runner_ckks_conjugate_into::<BE, _>,
     }]
@@ -175,18 +190,22 @@ where
 {
     [
         BenchOp {
+            layer: "ckks",
             name: "ckks_encode_slots_assign_into",
             runner: ckks::runner_ckks_encode_slots_assign_into::<BE, _>,
         },
         BenchOp {
+            layer: "ckks",
             name: "ckks_decode_slots_into",
             runner: ckks::runner_ckks_decode_slots_into::<BE, _>,
         },
         BenchOp {
+            layer: "ckks",
             name: "ckks_encode_coeffs_into",
             runner: ckks::runner_ckks_encode_coeffs_into::<BE, _>,
         },
         BenchOp {
+            layer: "ckks",
             name: "ckks_decode_coeffs_into",
             runner: ckks::runner_ckks_decode_coeffs_into::<BE, _>,
         },
@@ -247,6 +266,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     [BenchOp {
+        layer: "bin_fhe",
         name: "blind_rotate",
         runner: bin_fhe::runner_blind_rotate::<BE, BRA, _>,
     }]
@@ -276,6 +296,7 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     [BenchOp {
+        layer: "bin_fhe",
         name: "circuit_bootstrapping",
         runner: bin_fhe::runner_circuit_bootstrapping::<BE, BRA, _>,
     }]
@@ -301,26 +322,32 @@ where
 {
     vec![
         BenchOp {
+            layer: "ckks",
             name: "ckks_add_into",
             runner: ckks::runner_ckks_add_into::<BE, _>,
         },
         BenchOp {
+            layer: "ckks",
             name: "ckks_mul_into",
             runner: ckks::runner_ckks_mul_into::<BE, _>,
         },
         BenchOp {
+            layer: "ckks",
             name: "ckks_mul_pt_vec_into",
             runner: ckks::runner_ckks_mul_pt_vec_into::<BE, _>,
         },
         BenchOp {
+            layer: "ckks",
             name: "ckks_rotate_into",
             runner: ckks::runner_ckks_rotate_into::<BE, _>,
         },
         BenchOp {
+            layer: "ckks",
             name: "ckks_encode_slots_assign_into",
             runner: ckks::runner_ckks_encode_slots_assign_into::<BE, _>,
         },
         BenchOp {
+            layer: "ckks",
             name: "ckks_decode_slots_into",
             runner: ckks::runner_ckks_decode_slots_into::<BE, _>,
         },
@@ -363,10 +390,12 @@ where
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
 {
     let blind_rotate = [BenchOp {
+        layer: "bin_fhe",
         name: "blind_rotate",
         runner: bin_fhe::runner_blind_rotate::<BE, BRA, _>,
     }];
     let circuit_bootstrapping = [BenchOp {
+        layer: "bin_fhe",
         name: "circuit_bootstrapping",
         runner: bin_fhe::runner_circuit_bootstrapping::<BE, BRA, _>,
     }];
