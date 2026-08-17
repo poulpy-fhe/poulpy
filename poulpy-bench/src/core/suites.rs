@@ -7,10 +7,7 @@ use poulpy_core::{
     },
 };
 use poulpy_hal::{
-    api::{
-        CnvPVecAlloc, Convolution, ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxBigNormalize, VecZnxIdftApplyTmpA,
-        VecZnxSubAssignBackend,
-    },
+    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, HostBackend, HostDataMut, Module, ScratchOwned},
 };
 
@@ -148,16 +145,9 @@ where
 // ── glwe_tensor ──────────────────────────────────────────────────────────────
 
 pub fn glwe_tensor_ops<BE: Backend<OwnedBuf = Vec<u8>, ZnxWord = i64>, M: criterion::measurement::Measurement>()
--> [BenchOp<M, CoreParams>; 7]
+-> [BenchOp<M, CoreParams>; 3]
 where
-    Module<BE>: ModuleNew<BE>
-        + GLWETensoring<BE>
-        + GLWETensorKeyPreparedFactory<BE>
-        + Convolution<BE>
-        + CnvPVecAlloc<BE>
-        + VecZnxIdftApplyTmpA<BE>
-        + VecZnxBigNormalize<BE>
-        + VecZnxSubAssignBackend<BE>,
+    Module<BE>: ModuleNew<BE> + GLWETensoring<BE> + GLWETensorKeyPreparedFactory<BE>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     for<'x> BE::BufMut<'x>: HostDataMut + AsRef<[u8]> + AsMut<[u8]> + Sync,
     for<'x> BE::BufRef<'x>: AsRef<[u8]> + Send,
@@ -170,22 +160,6 @@ where
         BenchOp {
             name: "glwe_tensor_apply",
             runner: glwe_tensor::runner_glwe_tensor_apply::<BE, _>,
-        },
-        BenchOp {
-            name: "glwe_tensor_prepare_left",
-            runner: glwe_tensor::runner_glwe_tensor_prepare_left::<BE, _>,
-        },
-        BenchOp {
-            name: "glwe_tensor_prepare_right",
-            runner: glwe_tensor::runner_glwe_tensor_prepare_right::<BE, _>,
-        },
-        BenchOp {
-            name: "glwe_tensor_diag_lane",
-            runner: glwe_tensor::runner_glwe_tensor_diag_lane::<BE, _>,
-        },
-        BenchOp {
-            name: "glwe_tensor_pairwise_lane",
-            runner: glwe_tensor::runner_glwe_tensor_pairwise_lane::<BE, _>,
         },
         BenchOp {
             name: "glwe_tensor_square_apply",
@@ -264,11 +238,6 @@ where
         + GLWESwitchingKeyPreparedFactory<BE>
         + GLWETensoring<BE>
         + GLWETensorKeyPreparedFactory<BE>
-        + Convolution<BE>
-        + CnvPVecAlloc<BE>
-        + VecZnxIdftApplyTmpA<BE>
-        + VecZnxBigNormalize<BE>
-        + VecZnxSubAssignBackend<BE>
         + GLWEAdd<BE>
         + GLWESub<BE>
         + GLWENormalize<BE>
