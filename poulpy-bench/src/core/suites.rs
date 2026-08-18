@@ -9,7 +9,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, CopyFromHost, HostBackend, HostDataMut, MatZnx, MatZnxAtBackendMut, Module, ScratchOwned},
+    layouts::{Backend, CopyFromHost, HostDataMut, MatZnx, MatZnxAtBackendMut, Module, ScratchOwned},
 };
 
 use std::marker::PhantomData;
@@ -66,7 +66,7 @@ where
 
 // ── decryption ───────────────────────────────────────────────────────────────
 
-pub fn decryption_ops<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost> + HostBackend, M: criterion::measurement::Measurement>()
+pub fn decryption_ops<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: criterion::measurement::Measurement>()
 -> [BenchOp<M, CoreParams>; 1]
 where
     Module<BE>: ModuleNew<BE>
@@ -245,7 +245,7 @@ where
 /// backend that implements the full `poulpy-core` surface; a backend
 /// supporting only part of it should instead compose the `*_ops` tables it
 /// needs directly.
-pub fn all_ops<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost> + HostBackend, M: criterion::measurement::Measurement>()
+pub fn all_ops<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: criterion::measurement::Measurement>()
 -> Vec<BenchOp<M, CoreParams>>
 where
     Module<BE>: ModuleNew<BE>
@@ -295,7 +295,7 @@ where
 
 /// A small, representative cross-section of core ops for library-wide
 /// regression tracking.
-pub fn standard_ops<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost> + HostBackend, M: criterion::measurement::Measurement>()
+pub fn standard_ops<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: criterion::measurement::Measurement>()
 -> Vec<BenchOp<M, CoreParams>>
 where
     Module<BE>: ModuleNew<BE>
@@ -364,7 +364,7 @@ where
 /// CKKS/NTT-role sweep. `where` clause matches [`all_ops`]'s own.
 pub fn bench_core_ckks<BE>(c: &mut Criterion<WallTime>)
 where
-    BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost> + HostBackend,
+    BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>,
     Module<BE>: ModuleNew<BE>
         + GLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
@@ -408,7 +408,7 @@ where
 /// grid.
 pub fn bench_core_binfhe<BE>(c: &mut Criterion<WallTime>)
 where
-    BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost> + HostBackend,
+    BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>,
     Module<BE>: ModuleNew<BE>
         + GLWEEncryptSk<BE>
         + GLWESecretPreparedFactory<BE>
@@ -456,7 +456,7 @@ pub mod standard {
     use std::marker::PhantomData;
 
     use criterion::{Criterion, measurement::WallTime};
-    use poulpy_hal::layouts::{Backend, CopyFromHost, HostBackend, MatZnx, MatZnxAtBackendMut, Module, ScratchOwned};
+    use poulpy_hal::layouts::{Backend, CopyFromHost, MatZnx, MatZnxAtBackendMut, Module, ScratchOwned};
 
     use super::{
         GGLWEAtBackendMut, GGLWEPreparedFactory, GGSW, GGSWAtBackendMut, GGSWEncryptSk, GGSWPreparedFactory, GLWEAutomorphism,
@@ -470,7 +470,7 @@ pub mod standard {
     /// Core ops swept at the sizes matching CKKS (`log_n` 13/14/15).
     pub fn bench_core_ckks<BE>(c: &mut Criterion<WallTime>)
     where
-        BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost> + HostBackend,
+        BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>,
         Module<BE>: ModuleNew<BE>
             + GLWEEncryptSk<BE>
             + GLWESecretPreparedFactory<BE>
@@ -507,7 +507,7 @@ pub mod standard {
     /// params use.
     pub fn bench_core_binfhe<BE>(c: &mut Criterion<WallTime>)
     where
-        BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost> + HostBackend,
+        BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>,
         Module<BE>: ModuleNew<BE>
             + GLWEEncryptSk<BE>
             + GLWESecretPreparedFactory<BE>
@@ -547,7 +547,7 @@ pub mod light {
     use std::marker::PhantomData;
 
     use criterion::{Criterion, measurement::WallTime};
-    use poulpy_hal::layouts::{Backend, CopyFromHost, HostBackend, MatZnx, MatZnxAtBackendMut, Module, ScratchOwned};
+    use poulpy_hal::layouts::{Backend, CopyFromHost, MatZnx, MatZnxAtBackendMut, Module, ScratchOwned};
 
     use super::{
         GGLWEAtBackendMut, GGLWEPreparedFactory, GGSW, GGSWAtBackendMut, GGSWEncryptSk, GGSWPreparedFactory, GLWEAutomorphism,
@@ -561,7 +561,7 @@ pub mod light {
     /// Core ops swept at the single size matching CKKS (`log_n` = 14).
     pub fn bench_core_ckks<BE>(c: &mut Criterion<WallTime>)
     where
-        BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost> + HostBackend,
+        BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>,
         Module<BE>: ModuleNew<BE>
             + GLWEEncryptSk<BE>
             + GLWESecretPreparedFactory<BE>
@@ -598,7 +598,7 @@ pub mod light {
     /// params use.
     pub fn bench_core_binfhe<BE>(c: &mut Criterion<WallTime>)
     where
-        BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost> + HostBackend,
+        BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>,
         Module<BE>: ModuleNew<BE>
             + GLWEEncryptSk<BE>
             + GLWESecretPreparedFactory<BE>

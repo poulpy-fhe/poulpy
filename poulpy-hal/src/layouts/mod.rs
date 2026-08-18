@@ -314,36 +314,6 @@ pub trait DigestU64 {
 /// Backend-owned byte buffer type alias.
 pub type OwnedBuf<BE> = <BE as Backend>::OwnedBuf;
 
-/// Cross-backend buffer transfer into the destination backend `Self`.
-///
-/// This is intentionally destination-owned so the canonical public API can
-/// hang off `Module<To>` as `upload_*` / `download_*`.
-///
-/// Each concrete backend pair must provide an explicit impl. Two restricted
-/// blankets are provided for [`HostBytesBackend`] so that test/bench helpers
-/// that use it as a staging type continue to work without boilerplate:
-/// - any host `Vec<u8>` backend → `HostBytesBackend`
-/// - `HostBytesBackend` → any host `Vec<u8>` backend
-///
-/// All other backend-to-backend transfers (e.g. `FFT64Ref` ↔ `NTT4x30Ref`,
-/// `FFT64Ref` → `FFT64Avx`) must be implemented explicitly in the respective
-/// backend crates.
-///
-/// # Scope: this is a byte move, not a conversion
-///
-/// [`Self::transfer_buf`] receives an opaque buffer with no shape (`n`, `cols`,
-/// `size`) and no `base2k`, so it cannot re-decompose limbs. The layout-level
-/// helpers built on it (`TransferTo::to_backend`) therefore
-/// re-attach the source's shape to the destination, and they require both
-/// backends to agree on the coefficient word (`To: Backend<ZnxWord =
-/// From::ZnxWord>`). Only the buffer type may differ, which is what makes
-/// host → device staging work.
-///
-/// Moving a value between backends whose limb axis differs (a different word,
-/// a different `base2k`, hence a different limb count for the same torus
-/// precision) is a re-encoding rather than a copy: it needs both `base2k`
-/// values and a caller-allocated destination at its own layout. That is a
-/// separate operation and is deliberately not expressible here.
 /// A buffer whose bytes can be read out to the host.
 ///
 /// Implemented by the buffer rather than the backend: a transfer needs to know

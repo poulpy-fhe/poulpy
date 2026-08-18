@@ -26,7 +26,7 @@ Adds two native CKKS bootstrapping families, **PaCo** (Coron & Seuré, [ePrint 2
 
 ### `poulpy-bench`
 
-- All 19 `core` runners drop `OwnedBuf = Vec<u8>` and the host-view bounds, so a device backend can run them. Non-measured operands are built on a host staging module and transferred in (`core::fill`) rather than encrypted, so the tested backend needs no sampling kernel.
+- All 19 `core` runners drop `OwnedBuf = Vec<u8>`, the host-view bounds and `HostBackend`, so a device backend can run them. Non-measured operands are built on a host staging module and transferred in (`core::fill`) rather than encrypted, so the tested backend needs no sampling kernel.
 - Fixed: the operation and tensor runners timed on zeroed buffers, which can hit float-FFT denormals.
 
 ### `poulpy-core`
@@ -34,6 +34,7 @@ Adds two native CKKS bootstrapping families, **PaCo** (Coron & Seuré, [ePrint 2
 - The prepared layouts follow the HAL re-key transparently; their derived `Eq` is dropped in favor of `PartialEq`.
 - **Breaking:** remove `GGLWEPreparedVmpPMatRef`; use the inherent `GGLWEPrepared::data()`, which is generic over the buffer.
 - Remove 47 dead `#[allow(private_bounds)]` from `oep`.
+- **Breaking:** remove the exported `impl_glwe_rotate_impl_from!`; the blanket `GLWERotateImpl` impl supersedes it.
 - **Breaking:** `GLWEKeyswitchInternal` and `GGLWEProductDefault` become public; they appear in the bounds of the public `glwe_keyswitch*_default` functions.
 - The `*Default` override surfaces are no longer `#[doc(hidden)]`; `oep`'s module docs describe the `*Impl` / `*Default` split with a worked override.
 - The gadget-digit width rule moves from an in-function comment to the `GLWEKeyswitchDefault` contract.
@@ -42,8 +43,7 @@ Adds two native CKKS bootstrapping families, **PaCo** (Coron & Seuré, [ePrint 2
 - **Breaking:** remove `ModuleTransfer` and the inherent `Layout::to_backend` methods (29 in total) in favour of `api::TransferInto`, which writes into a destination the caller allocates: `src.transfer_into(&mut dst)`. Checks shape, not just byte length.
 - **Breaking:** `test_suite` splits into `test_suite::noise` (the existing scheme-correctness suite, moved wholesale) and `test_suite::parity`. `core_backend_test_suite!` is unchanged.
 - Add `BackendGLWESwitchingKey<BE>` / `BackendGLWEAutomorphismKey<BE>`.
-- `core_parity_test_suite!` takes an optional `shapes = ParityShapes { .. }`, restricting the rank and `dsize` sweep for a backend with a narrower envelope.
-- Add `test_suite::parity` and `core_parity_test_suite!`: runs one operation on a reference and a tested backend over identical uniform inputs and asserts byte equality. Covers key-switch (GLWE, assign, GGLWE), automorphism, external product and the keyless GLWE operations. Needs no secrets, encryption or noise model.
+- Add `test_suite::parity` and `core_parity_test_suite!`: runs one operation on a reference and a tested backend over identical uniform inputs and asserts byte equality. Covers key-switch (GLWE, assign, GGLWE), automorphism, external product and the keyless GLWE operations. Needs no secrets, encryption or noise model. An optional `shapes = ParityShapes { .. }` restricts the rank and `dsize` sweep for a backend with a narrower envelope.
 - `poulpy-cpu-avx`, `-avx512` and `-arm` run the parity suite against their `poulpy-cpu-ref` sibling, for the FFT64 and NTT4x30 families.
 
 ### `poulpy-hal`
@@ -52,7 +52,6 @@ Adds two native CKKS bootstrapping families, **PaCo** (Coron & Seuré, [ePrint 2
 - **Breaking:** replace `TransferFrom` with the buffer traits `CopyToHost` / `CopyFromHost` and the free `transfer_buf_into(src, dst)`; the ~44 hand-written per-backend-pair impls are removed. `HostStaged` becomes `Backend<ZnxWord = i64, OwnedBuf: CopyToHost + CopyFromHost>`.
 - Add `layouts::vec_znx_backend_ref` / `vec_znx_backend_mut` / `vec_znx_reborrow_backend_mut`; `test_suite` re-exports them.
 - Add `HalModuleImpl::Config` (defaulting to `()`) and `new_with(n, config)`, mirrored on `ModuleNew`, for device selection at construction. Requires `#![feature(associated_type_defaults)]`.
-
 - Add `ModulePlanCache`, a per-`Module` typed cache of immutable plan families with a `with_or_create` accessor, plus `unsafe trait ModulePlanCacheProvider` for backend handles that own it.
 - **Breaking:** `Backend` gains two required methods, `copy_view_to_host` and `copy_host_to_view`.
 - **Breaking:** remove the public `set_size` / `with_size` resizing API from `VecZnx`, `VecZnxDft` and `VecZnxBig`; temporary compute widths are scoped views.

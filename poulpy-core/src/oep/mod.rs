@@ -94,8 +94,6 @@ pub use linear_transformation::*;
 pub use operations::*;
 pub use polynomial_evaluation::*;
 
-pub use crate::impl_glwe_rotate_impl_from;
-
 pub use crate::{
     impl_conversion_defaults_full, impl_decryption_defaults_full, impl_encryption_defaults_full,
     impl_gglwe_automorphism_defaults_full, impl_gglwe_external_product_defaults_full, impl_gglwe_keyswitch_defaults_full,

@@ -7,7 +7,7 @@ use poulpy_core::{
 };
 use poulpy_hal::{
     api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
-    layouts::{Backend, HostBackend, Module, NoiseInfos, ScratchOwned},
+    layouts::{Backend, Module, NoiseInfos, ScratchOwned},
     source::Source,
 };
 use std::hint::black_box;
@@ -16,10 +16,8 @@ use criterion::{Bencher, measurement::Measurement};
 
 use crate::core::params::CoreParams;
 
-pub fn runner_glwe_decrypt<BE: Backend<ZnxWord = i64> + HostBackend, M: Measurement>(
-    bencher: &mut Bencher<'_, M>,
-    cp: &CoreParams,
-) where
+pub fn runner_glwe_decrypt<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
+where
     Module<BE>: ModuleNew<BE>
         + GLWEDecrypt<BE>
         + GLWEEncryptSk<BE>
