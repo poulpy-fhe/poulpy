@@ -27,7 +27,8 @@ use poulpy_hal::layouts::{
 };
 
 use crate::layouts::{
-    GGLWE, GGSW, GLWE, GLWEAutomorphismKey, GLWEPlaintext, GLWESecret, GLWESwitchingKey, LWE, LWEPlaintext, LWESecret,
+    GGLWE, GGSW, GLWE, GLWEAutomorphismKey, GLWEPlaintext, GLWESecret, GLWESwitchingKey, GLWETensor, GLWETensorKey, LWE,
+    LWEPlaintext, LWESecret,
 };
 
 /// Moves `Self` into an already-allocated destination.
@@ -202,5 +203,30 @@ where
     fn transfer_into(&self, dst: &mut LWESecret<D2, W>) {
         move_scalar_znx(&self.data, &mut dst.data);
         dst.dist = self.dist;
+    }
+}
+
+impl<D1, D2, W> TransferInto<GLWETensor<D2, W>> for GLWETensor<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut GLWETensor<D2, W>) {
+        assert_eq!(self.base2k, dst.base2k, "transfer_into: GLWETensor base2k");
+        assert_eq!(self.k, dst.k, "transfer_into: GLWETensor k");
+        assert_eq!(self.rank, dst.rank, "transfer_into: GLWETensor rank");
+        move_vec_znx(&self.data, &mut dst.data);
+    }
+}
+
+impl<D1, D2, W> TransferInto<GLWETensorKey<D2, W>> for GLWETensorKey<D1, W>
+where
+    D1: Data + CopyToHost,
+    D2: Data + CopyFromHost,
+    W: ZnxWord,
+{
+    fn transfer_into(&self, dst: &mut GLWETensorKey<D2, W>) {
+        self.0.transfer_into(&mut dst.0);
     }
 }

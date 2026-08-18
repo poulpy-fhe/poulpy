@@ -14,7 +14,7 @@ use crate::{
         Base2K, Degree, Dnum, Dsize, GGLWELayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision,
         prepared::GGLWEPreparedFactory,
     },
-    test_suite::parity::{ParityBackend, ref_gglwe, ref_glwe},
+    test_suite::parity::{ParityBackend, ParityShapes, ref_gglwe, ref_glwe},
 };
 
 /// Key layout for a `rank_in -> rank_out` switch covering `k` bits of input.
@@ -36,8 +36,12 @@ fn key_layout(n: u32, base2k: usize, k: usize, dsize: usize, rank_in: usize, ran
 /// Sweeps `dsize` and both ranks, so every branch of the digit loop is compared:
 /// the `dsize == 1` short circuit, the `di == 0` overwriting pass, and the
 /// narrowed accumulating passes above it.
-pub fn test_glwe_keyswitch_parity<BR, BT>(params: &TestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
-where
+pub fn test_glwe_keyswitch_parity<BR, BT>(
+    params: &TestParams,
+    shapes: &ParityShapes,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
@@ -53,9 +57,9 @@ where
     let k_in = 4 * base2k + 1;
     let mut source = Source::new([7u8; 32]);
 
-    for rank_in in 1..3usize {
-        for rank_out in 1..3usize {
-            for dsize in 1..=k_in.div_ceil(base2k) {
+    for &rank_in in &shapes.ranks {
+        for &rank_out in &shapes.ranks {
+            for dsize in shapes.dsizes(k_in, base2k) {
                 let a_infos = GLWELayout {
                     n: Degree(n),
                     base2k: Base2K(base2k as u32),
@@ -112,8 +116,12 @@ where
 }
 
 /// `glwe_keyswitch_assign` agrees with the reference backend byte-for-byte.
-pub fn test_glwe_keyswitch_assign_parity<BR, BT>(params: &TestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
-where
+pub fn test_glwe_keyswitch_assign_parity<BR, BT>(
+    params: &TestParams,
+    shapes: &ParityShapes,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
@@ -129,8 +137,8 @@ where
     let k = 4 * base2k + 1;
     let mut source = Source::new([11u8; 32]);
 
-    for rank in 1..3usize {
-        for dsize in 1..=k.div_ceil(base2k) {
+    for &rank in &shapes.ranks {
+        for dsize in shapes.dsizes(k, base2k) {
             let res_infos = GLWELayout {
                 n: Degree(n),
                 base2k: Base2K(base2k as u32),
@@ -174,8 +182,12 @@ where
 }
 
 /// `gglwe_keyswitch` agrees with the reference backend byte-for-byte.
-pub fn test_gglwe_keyswitch_parity<BR, BT>(params: &TestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
-where
+pub fn test_gglwe_keyswitch_parity<BR, BT>(
+    params: &TestParams,
+    shapes: &ParityShapes,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
@@ -191,8 +203,8 @@ where
     let k = 4 * base2k + 1;
     let mut source = Source::new([23u8; 32]);
 
-    for rank in 1..3usize {
-        for dsize in 1..=k.div_ceil(base2k) {
+    for &rank in &shapes.ranks {
+        for dsize in shapes.dsizes(k, base2k) {
             let a_infos = key_layout(n, base2k, k, 1, rank, rank);
             let res_infos = key_layout(n, base2k, k, 1, rank, rank);
             let key_infos = key_layout(n, base2k, k, dsize, rank, rank);

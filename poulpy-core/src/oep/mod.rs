@@ -49,11 +49,27 @@
 //!
 //! `Module<MyBackend>` now implements the public `GLWEKeyswitch` trait, and the
 //! override composes: the reference GGLWE and GGSW bodies call
-//! `glwe_keyswitch_default`, so they route through the fused kernel too. The same
-//! shape applies to families whose `*Impl` trait spans several sub-families
-//! (`AutomorphismImpl` needs `GLWEAutomorphismDefault`, `GGSWAutomorphismDefault`
-//! and `GGLWEAutomorphismDefault`): hand-write the accelerated one, macro-forward
-//! its siblings.
+//! `glwe_keyswitch_default`, so they route through the fused kernel too.
+//!
+//! The same shape applies where an `*Impl` trait spans several sub-families.
+//! `AutomorphismImpl` needs all three of `GLWEAutomorphismDefault`,
+//! `GGSWAutomorphismDefault` and `GGLWEAutomorphismDefault`, so a backend with
+//! only a fused GLWE automorphism hand-writes that one and macro-forwards the
+//! other two:
+//!
+//! ```ignore
+//! impl GLWEAutomorphismDefault<MyBackend> for Module<MyBackend> { /* 9 methods */ }
+//! impl_ggsw_automorphism_defaults_full!(MyBackend);
+//! impl_gglwe_automorphism_defaults_full!(MyBackend);
+//! ```
+//!
+//! Note the size of that first impl. A `*Default` trait is abstract, so an
+//! override owes *every* method, not just the interesting one:
+//! `GLWEKeyswitchDefault` is 3 methods, but `GLWEAutomorphismDefault` is 9 —
+//! the plain and assign forms plus the `add`, `sub` and `sub_negate`
+//! compositions. An accelerator that only wants to replace the core map still
+//! writes the other six, forwarding them to
+//! `crate::default::automorphism::glwe`.
 //!
 //! `poulpy-cpu-ref`'s `core_impl` module (feature `enable-core`) is the in-tree
 //! worked example, forwarding every family.

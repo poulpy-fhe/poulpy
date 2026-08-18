@@ -1,3 +1,4 @@
+use poulpy_core::api::TransferInto;
 use poulpy_core::{
     GLWEExternalProduct,
     layouts::{
@@ -5,8 +6,9 @@ use poulpy_core::{
         prepared::{GGSWPrepared, GGSWPreparedFactory},
     },
 };
+use poulpy_hal::layouts::CopyFromHost;
 use poulpy_hal::{
-    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow, VecZnxFillUniformSourceBackend},
+    api::{ModuleNew, ScratchOwnedAlloc, ScratchOwnedBorrow},
     layouts::{Backend, Module, ScratchOwned},
     source::Source,
 };
@@ -14,7 +16,7 @@ use std::hint::black_box;
 
 use criterion::{Bencher, measurement::Measurement};
 
-use crate::core::fill::{fill_ggsw, fill_glwe};
+use crate::core::fill::{host_ggsw, host_glwe, staging};
 use crate::core::params::{CoreParams, key_dnum_k_aux};
 
 fn layouts(cp: &CoreParams) -> (GLWELayout, GGSWLayout) {
@@ -39,13 +41,14 @@ fn layouts(cp: &CoreParams) -> (GLWELayout, GGSWLayout) {
 /// Times the GLWE x GGSW external product.
 ///
 /// Operands are uniform noise filled through the backend; see [`crate::core::fill`].
-pub fn runner_glwe_external_product<BE: Backend<ZnxWord = i64>, M: Measurement>(bencher: &mut Bencher<'_, M>, cp: &CoreParams)
-where
+pub fn runner_glwe_external_product<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: Measurement>(
+    bencher: &mut Bencher<'_, M>,
+    cp: &CoreParams,
+) where
     Module<BE>: ModuleNew<BE>
         + GLWEExternalProduct<BE>
         + GGSWPreparedFactory<BE>
-        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
-        + VecZnxFillUniformSourceBackend<BE>,
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     GGSW<BE::OwnedBuf, i64>: GGSWAtBackendMut<BE>,
 {
@@ -57,8 +60,9 @@ where
     let mut ct_glwe_in = module.glwe_alloc_from_infos(&glwe_infos);
     let mut ct_glwe_out = module.glwe_alloc_from_infos(&glwe_infos);
     let mut ct_ggsw: GGSW<BE::OwnedBuf, i64> = module.ggsw_alloc_from_infos(&ggsw_infos);
-    fill_glwe(&module, &mut ct_glwe_in, &mut source);
-    fill_ggsw(&module, &mut ct_ggsw, &mut source);
+    let host = staging(cp.n as usize);
+    host_glwe(&host, &glwe_infos, &mut source).transfer_into(&mut ct_glwe_in);
+    host_ggsw(&host, &ggsw_infos, &mut source).transfer_into(&mut ct_ggsw);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module
@@ -76,15 +80,14 @@ where
 }
 
 /// Times the in-place GLWE x GGSW external product.
-pub fn runner_glwe_external_product_assign<BE: Backend<ZnxWord = i64>, M: Measurement>(
+pub fn runner_glwe_external_product_assign<BE: Backend<ZnxWord = i64, OwnedBuf: CopyFromHost>, M: Measurement>(
     bencher: &mut Bencher<'_, M>,
     cp: &CoreParams,
 ) where
     Module<BE>: ModuleNew<BE>
         + GLWEExternalProduct<BE>
         + GGSWPreparedFactory<BE>
-        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>
-        + VecZnxFillUniformSourceBackend<BE>,
+        + ModuleCoreAlloc<OwnedBuf = BE::OwnedBuf, ZnxWord = i64>,
     ScratchOwned<BE>: ScratchOwnedAlloc<BE> + ScratchOwnedBorrow<BE>,
     GGSW<BE::OwnedBuf, i64>: GGSWAtBackendMut<BE>,
 {
@@ -95,8 +98,9 @@ pub fn runner_glwe_external_product_assign<BE: Backend<ZnxWord = i64>, M: Measur
 
     let mut ct_glwe = module.glwe_alloc_from_infos(&glwe_infos);
     let mut ct_ggsw: GGSW<BE::OwnedBuf, i64> = module.ggsw_alloc_from_infos(&ggsw_infos);
-    fill_glwe(&module, &mut ct_glwe, &mut source);
-    fill_ggsw(&module, &mut ct_ggsw, &mut source);
+    let host = staging(cp.n as usize);
+    host_glwe(&host, &glwe_infos, &mut source).transfer_into(&mut ct_glwe);
+    host_ggsw(&host, &ggsw_infos, &mut source).transfer_into(&mut ct_ggsw);
 
     let mut scratch: ScratchOwned<BE> = ScratchOwned::alloc(
         module

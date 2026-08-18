@@ -14,13 +14,14 @@ use crate::{
     GLWEAdd, GLWENegate, GLWENormalize, GLWERotate, GLWESub,
     api::TransferInto,
     layouts::{Base2K, Degree, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision},
-    test_suite::parity::{ParityBackend, ref_glwe},
+    test_suite::parity::{ParityBackend, ParityShapes, ref_glwe},
 };
 
 /// Layouts swept by the keyless operation tests.
-fn layouts(n: u32, base2k: usize) -> Vec<GLWELayout> {
+fn layouts(n: u32, base2k: usize, shapes: &ParityShapes) -> Vec<GLWELayout> {
     let mut out = Vec::new();
-    for rank in 1..3u32 {
+    for &rank in &shapes.ranks {
+        let rank = rank as u32;
         for limbs in [1usize, 2, 5] {
             out.push(GLWELayout {
                 n: Degree(n),
@@ -40,6 +41,7 @@ fn layouts(n: u32, base2k: usize) -> Vec<GLWELayout> {
 #[allow(clippy::too_many_arguments)]
 fn compare<BR, BT, FR, FT>(
     params: &TestParams,
+    shapes: &ParityShapes,
     module_ref: &Module<BR>,
     module_test: &Module<BT>,
     label: &str,
@@ -75,8 +77,8 @@ fn compare<BR, BT, FR, FT>(
     let n = module_ref.n() as u32;
     let mut source = Source::new([seed; 32]);
 
-    for a_infos in layouts(n, params.base2k) {
-        for res_infos in layouts(n, params.base2k) {
+    for a_infos in layouts(n, params.base2k, shapes) {
+        for res_infos in layouts(n, params.base2k, shapes) {
             if res_infos.rank != a_infos.rank {
                 continue;
             }
@@ -110,7 +112,7 @@ fn compare<BR, BT, FR, FT>(
 }
 
 /// `glwe_add_into` agrees with the reference backend.
-pub fn test_glwe_add_parity<BR, BT>(params: &TestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
+pub fn test_glwe_add_parity<BR, BT>(params: &TestParams, shapes: &ParityShapes, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: ParityBackend,
     BT: ParityBackend,
@@ -122,6 +124,7 @@ where
 {
     compare(
         params,
+        shapes,
         module_ref,
         module_test,
         "glwe_add_into",
@@ -133,7 +136,7 @@ where
 }
 
 /// `glwe_sub` agrees with the reference backend.
-pub fn test_glwe_sub_parity<BR, BT>(params: &TestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
+pub fn test_glwe_sub_parity<BR, BT>(params: &TestParams, shapes: &ParityShapes, module_ref: &Module<BR>, module_test: &Module<BT>)
 where
     BR: ParityBackend,
     BT: ParityBackend,
@@ -145,6 +148,7 @@ where
 {
     compare(
         params,
+        shapes,
         module_ref,
         module_test,
         "glwe_sub",
@@ -156,8 +160,12 @@ where
 }
 
 /// `glwe_negate` agrees with the reference backend.
-pub fn test_glwe_negate_parity<BR, BT>(params: &TestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
-where
+pub fn test_glwe_negate_parity<BR, BT>(
+    params: &TestParams,
+    shapes: &ParityShapes,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
@@ -168,6 +176,7 @@ where
 {
     compare(
         params,
+        shapes,
         module_ref,
         module_test,
         "glwe_negate",
@@ -182,8 +191,12 @@ where
 ///
 /// The one keyless operation that carries limb-carry logic, so the one most
 /// worth comparing byte-for-byte.
-pub fn test_glwe_normalize_parity<BR, BT>(params: &TestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
-where
+pub fn test_glwe_normalize_parity<BR, BT>(
+    params: &TestParams,
+    shapes: &ParityShapes,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
@@ -197,6 +210,7 @@ where
         .max(module_test.glwe_normalize_tmp_bytes());
     compare(
         params,
+        shapes,
         module_ref,
         module_test,
         "glwe_normalize",
@@ -208,8 +222,12 @@ where
 }
 
 /// `glwe_rotate` agrees with the reference backend.
-pub fn test_glwe_rotate_parity<BR, BT>(params: &TestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
-where
+pub fn test_glwe_rotate_parity<BR, BT>(
+    params: &TestParams,
+    shapes: &ParityShapes,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
@@ -221,6 +239,7 @@ where
     for k in [-5i64, 1, 7] {
         compare(
             params,
+            shapes,
             module_ref,
             module_test,
             "glwe_rotate",

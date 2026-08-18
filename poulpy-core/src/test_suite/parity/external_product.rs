@@ -13,12 +13,16 @@ use crate::{
     layouts::{
         Base2K, Degree, Dnum, Dsize, GGSWLayout, GLWELayout, ModuleCoreAlloc, Rank, TorusPrecision, prepared::GGSWPreparedFactory,
     },
-    test_suite::parity::{ParityBackend, ref_glwe},
+    test_suite::parity::{ParityBackend, ParityShapes, ref_glwe},
 };
 
 /// `glwe_external_product` agrees with the reference backend byte-for-byte.
-pub fn test_glwe_external_product_parity<BR, BT>(params: &TestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
-where
+pub fn test_glwe_external_product_parity<BR, BT>(
+    params: &TestParams,
+    shapes: &ParityShapes,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
@@ -34,8 +38,8 @@ where
     let k = 4 * base2k + 1;
     let mut source = Source::new([41u8; 32]);
 
-    for rank in 1..3usize {
-        for dsize in 1..=k.div_ceil(base2k) {
+    for &rank in &shapes.ranks {
+        for dsize in shapes.dsizes(k, base2k) {
             let a_infos = GLWELayout {
                 n: Degree(n),
                 base2k: Base2K(base2k as u32),

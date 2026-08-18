@@ -26,7 +26,7 @@ Adds two native CKKS bootstrapping families, **PaCo** (Coron & Seuré, [ePrint 2
 
 ### `poulpy-bench`
 
-- All 19 `core` runners drop `OwnedBuf = Vec<u8>` and the host-view bounds, so a device backend can run them. Non-measured operands are uniform noise filled through the backend (`core::fill`) rather than encrypted.
+- All 19 `core` runners drop `OwnedBuf = Vec<u8>` and the host-view bounds, so a device backend can run them. Non-measured operands are built on a host staging module and transferred in (`core::fill`) rather than encrypted, so the tested backend needs no sampling kernel.
 - Fixed: the operation and tensor runners timed on zeroed buffers, which can hit float-FFT denormals.
 
 ### `poulpy-core`
@@ -42,6 +42,7 @@ Adds two native CKKS bootstrapping families, **PaCo** (Coron & Seuré, [ePrint 2
 - **Breaking:** remove `ModuleTransfer` and the inherent `Layout::to_backend` methods (29 in total) in favour of `api::TransferInto`, which writes into a destination the caller allocates: `src.transfer_into(&mut dst)`. Checks shape, not just byte length.
 - **Breaking:** `test_suite` splits into `test_suite::noise` (the existing scheme-correctness suite, moved wholesale) and `test_suite::parity`. `core_backend_test_suite!` is unchanged.
 - Add `BackendGLWESwitchingKey<BE>` / `BackendGLWEAutomorphismKey<BE>`.
+- `core_parity_test_suite!` takes an optional `shapes = ParityShapes { .. }`, restricting the rank and `dsize` sweep for a backend with a narrower envelope.
 - Add `test_suite::parity` and `core_parity_test_suite!`: runs one operation on a reference and a tested backend over identical uniform inputs and asserts byte equality. Covers key-switch (GLWE, assign, GGLWE), automorphism, external product and the keyless GLWE operations. Needs no secrets, encryption or noise model.
 - `poulpy-cpu-avx`, `-avx512` and `-arm` run the parity suite against their `poulpy-cpu-ref` sibling, for the FFT64 and NTT4x30 families.
 

@@ -14,7 +14,7 @@ use crate::{
         BackendGLWEAutomorphismKey, Base2K, Degree, Dnum, Dsize, GLWEAutomorphismKeyLayout, GLWELayout, ModuleCoreAlloc, Rank,
         TorusPrecision, prepared::GLWEAutomorphismKeyPreparedFactory,
     },
-    test_suite::parity::{ParityBackend, ref_glwe},
+    test_suite::parity::{ParityBackend, ParityShapes, ref_glwe},
 };
 
 /// Allocates an automorphism key on the reference module, filled with noise.
@@ -35,8 +35,12 @@ where
 }
 
 /// `glwe_automorphism` agrees with the reference backend byte-for-byte.
-pub fn test_glwe_automorphism_parity<BR, BT>(params: &TestParams, module_ref: &Module<BR>, module_test: &Module<BT>)
-where
+pub fn test_glwe_automorphism_parity<BR, BT>(
+    params: &TestParams,
+    shapes: &ParityShapes,
+    module_ref: &Module<BR>,
+    module_test: &Module<BT>,
+) where
     BR: ParityBackend,
     BT: ParityBackend,
     BR::OwnedBuf: HostDataMut,
@@ -52,8 +56,8 @@ where
     let k = 4 * base2k + 1;
     let mut source = Source::new([31u8; 32]);
 
-    for rank in 1..3usize {
-        for dsize in 1..=k.div_ceil(base2k) {
+    for &rank in &shapes.ranks {
+        for dsize in shapes.dsizes(k, base2k) {
             for p in [-1i64, 5] {
                 let a_infos = GLWELayout {
                     n: Degree(n),
